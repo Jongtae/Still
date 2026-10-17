@@ -118,6 +118,8 @@ agentos start
 agentos guide
 ```
 
+If Still came from the predecessor's Homebrew tap (`brew install jongtae/agentos/agentos`, versions `v1.0.4`–`v1.4.1`), `brew upgrade` does not move it to this repository's tap. Switch once, after the first Still release: stop Still, run `brew uninstall agentos` and `brew untap jongtae/agentos`, then follow the Homebrew install above. Your data in `~/.local/share/agentos` is kept. The formula's `version_scheme` makes Still's `0.x` versions count as newer than those `1.x` builds.
+
 If you registered the background login service from a source checkout, run `agentos service upgrade` after replacing the executable rather than relying on the foreground command.
 
 Data persists in `~/.local/share/agentos`; uninstalling keeps it unless you ask to delete it ([Uninstall](#uninstall)). Back up the entire data directory while Still is stopped. This directory contains your private conversations and credentials; credentials have filesystem permissions, not application-level encryption.

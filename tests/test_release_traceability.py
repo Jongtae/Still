@@ -52,6 +52,7 @@ EXPECTED_FORMULA = '''class Agentos < Formula
   homepage "https://github.com/Jongtae/Still"
   url "https://github.com/Jongtae/Still/archive/refs/tags/v__VERSION__.tar.gz"
   sha256 "__SHA256__"
+  version_scheme 1
   depends_on "python@3.13"
 
   def install

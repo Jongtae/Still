@@ -24,7 +24,11 @@
 # `git archive`, so this value cannot honestly be precomputed here.
 #
 # The formula keeps the `agentos` name, command and data directory for
-# compatibility with existing installs (#4).
+# compatibility with existing installs (#4). `version_scheme 1` tells Homebrew
+# that Still's 0.x versions come after the predecessor's 1.x (v1.0.4-v1.4.1),
+# which would otherwise compare as newer. An install from the predecessor tap
+# `jongtae/agentos` still belongs to that tap; QUICKSTART "Restart and update"
+# gives the one-time switch.
 #
 # See docs/release.en.md for the full procedure.
 
@@ -33,6 +37,7 @@ class Agentos < Formula
   homepage "https://github.com/Jongtae/Still"
   url "https://github.com/Jongtae/Still/archive/refs/tags/v__VERSION__.tar.gz"
   sha256 "__SHA256__"
+  version_scheme 1
   depends_on "python@3.13"
 
   def install
