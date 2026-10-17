@@ -10,7 +10,7 @@ from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
 UV_VERSION = "0.11.33"
-SETUP_UV_REF = "c18668ad3cf93ea998bef934396af7bb5c839dc7"
+SETUP_UV_REF = "1c37ad07a6a961277cf70c0d37d6f313000f5884"
 MCP_VERSION = "2.3.0"
 
 
@@ -108,7 +108,7 @@ def _dependency_closure(packages: dict, roots: list[dict]) -> set[str]:
 
 def test_mcp_sdk_is_exact_and_host_only_in_the_resolved_package_graph() -> None:
     project = _toml("pyproject.toml")["project"]
-    assert project["optional-dependencies"]["mcp-host"] == [f"mcp=={MCP_VERSION}", "claude-agent-sdk==0.2.165"]
+    assert project["optional-dependencies"]["mcp-host"] == [f"mcp=={MCP_VERSION}", "claude-agent-sdk==0.2.166"]
     assert f"mcp-types=={MCP_VERSION}" in project["dependencies"]
     assert not any(dependency.split("=")[0] == "mcp" for dependency in project["dependencies"])
 
