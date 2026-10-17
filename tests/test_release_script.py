@@ -5,7 +5,8 @@ makes every repository edit. These tests run the edits against copies of the
 real files, then hold the result to the same invariants
 tests/test_release_traceability.py and tests/test_install_script.py hold main
 to, and pin the workflow's authority shape: nothing publishes before the
-`release` environment (owner approval) and its credential.
+`release` environment (owner approval) and its credential. Both the first Still
+release (#45) and a later one are exercised.
 """
 import json
 import re
@@ -36,10 +37,24 @@ class ReleaseScriptTests(unittest.TestCase):
             target = self.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(ROOT / name, target)
-        self.previous = release.newest_published(release.load_manifest(self.root))
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def publish_previous(self, version='8.0.0', tag_date='2026-10-30'):
+        """Put the copy in the state a recorded earlier release leaves behind."""
+        data = release.load_manifest(self.root)
+        if data['published']:
+            return release.newest_published(data)
+        data['published'].append({'version': version, 'tag': f'v{version}', 'commit': COMMIT,
+                                  'archive_sha256': 'd' * 64, 'state': 'published', 'tag_date': tag_date})
+        release.save_manifest(self.root, data)
+        for name in release.RELEASE_PROSE:
+            before, after = release.FIRST_RELEASE_PROSE[name]
+            path = self.root / name
+            path.write_text(path.read_text(encoding='utf-8').replace(
+                before, after.format(version=version, date=tag_date)), encoding='utf-8')
+        return data['published'][-1]
 
     def prepare(self, version='9.0.0', not_claimed='No live order was observed.'):
         """What a release-preparation PR does: name the version, state its boundary."""
@@ -74,14 +89,20 @@ class ReleaseScriptTests(unittest.TestCase):
         with self.assertRaisesRegex(release.ReleaseError, 'not_claimed'):
             release.check(self.root)
 
+    def test_the_first_release_needs_no_earlier_one(self):
+        self.assertIsNone(release.newest_published(release.load_manifest(self.root)))
+        self.prepare(version='0.1.0')
+        self.assertEqual(release.check(self.root), '0.1.0')
+
     def test_a_version_not_newer_than_the_published_one_is_refused(self):
-        self.prepare(version=self.previous['version'])
+        previous = self.publish_previous()
+        self.prepare(version=previous['version'])
         with self.assertRaisesRegex(release.ReleaseError, 'not newer'):
             release.check(self.root)
 
     def test_notes_carry_the_scope_and_the_boundary(self):
         self.prepare()
-        body = release.notes(self.root, '9.0.0', 'https://github.com/Jongtae/agentos/milestone/99')
+        body = release.notes(self.root, '9.0.0', 'https://github.com/Jongtae/Still/milestone/99')
         self.assertIn('every order asks first', body)
         self.assertIn('**Not claimed:** No live order was observed.', body)
         self.assertIn('milestone/99', body)
@@ -89,7 +110,7 @@ class ReleaseScriptTests(unittest.TestCase):
     def test_record_leaves_main_in_the_state_the_traceability_tests_require(self):
         self.prepare()
         following = release.record(self.root, '9.0.0', COMMIT, SHA, '2026-11-02',
-                                   'https://github.com/Jongtae/homebrew-agentos/pull/99')
+                                   'https://github.com/Jongtae/Still/pull/99')
         self.assertEqual(following, '9.0.1')
         data = release.load_manifest(self.root)
         published = release.newest_published(data)
@@ -111,10 +132,33 @@ class ReleaseScriptTests(unittest.TestCase):
         self.assertIn('AGENTOS_VERSION="9.0.0"', installer)
         self.assertIn(f'AGENTOS_ARCHIVE_SHA256="{SHA}"', installer)
 
+    def test_the_first_record_replaces_every_no_release_sentence(self):
+        self.prepare(version='0.1.0')
+        release.record(self.root, '0.1.0', COMMIT, SHA, '2026-11-02', 'formula-pr')
+        for name in release.RELEASE_PROSE:
+            before, after = release.FIRST_RELEASE_PROSE[name]
+            with self.subTest(name=name):
+                text = (self.root / name).read_text(encoding='utf-8')
+                self.assertNotIn(before, text)
+                self.assertIn(after.format(version='0.1.0', date='2026-11-02'), text)
+        installer = (self.root / release.INSTALLER).read_text(encoding='utf-8')
+        self.assertIn('AGENTOS_VERSION="0.1.0"', installer)
+
+    def test_the_first_record_refuses_a_reworded_no_release_sentence_and_changes_nothing(self):
+        self.prepare(version='0.1.0')
+        status = self.root / 'docs/product-status.ko.md'
+        before, _after = release.FIRST_RELEASE_PROSE['docs/product-status.ko.md']
+        status.write_text(status.read_text(encoding='utf-8').replace(before, '배포 예정입니다.'), encoding='utf-8')
+        readme_before = (self.root / 'README.md').read_text(encoding='utf-8')
+        with self.assertRaisesRegex(release.ReleaseError, 'product-status.ko.md no longer carries'):
+            release.record(self.root, '0.1.0', COMMIT, SHA, '2026-11-02', 'formula-pr')
+        self.assertEqual((self.root / 'README.md').read_text(encoding='utf-8'), readme_before)
+
     def test_record_moves_every_release_status_sentence_to_the_new_version(self):
+        previous = self.publish_previous()
         self.prepare()
-        release.record(self.root, '9.0.0', COMMIT, SHA, '2026-11-02', 'tap-pr')
-        old = 'v' + self.previous['version']
+        release.record(self.root, '9.0.0', COMMIT, SHA, '2026-11-02', 'formula-pr')
+        old = 'v' + previous['version']
         for name in release.RELEASE_PROSE:
             with self.subTest(name=name):
                 text = (self.root / name).read_text(encoding='utf-8')
@@ -125,49 +169,55 @@ class ReleaseScriptTests(unittest.TestCase):
                 self.assertIn('2026-11-02', (self.root / name).read_text(encoding='utf-8'))
 
     def test_record_refuses_a_reworded_status_sentence(self):
+        previous = self.publish_previous()
         self.prepare()
         readme = self.root / 'README.md'
-        readme.write_text(readme.read_text(encoding='utf-8').replace('v' + self.previous['version'], 'the latest'),
+        readme.write_text(readme.read_text(encoding='utf-8').replace('v' + previous['version'], 'the latest'),
                           encoding='utf-8')
         with self.assertRaisesRegex(release.ReleaseError, 'README.md no longer names'):
-            release.record(self.root, '9.0.0', COMMIT, SHA, '2026-11-02', 'tap-pr')
+            release.record(self.root, '9.0.0', COMMIT, SHA, '2026-11-02', 'formula-pr')
 
     def test_record_refuses_values_that_are_not_measurements(self):
         self.prepare()
         for commit, sha in (('main', SHA), (COMMIT, 'latest'), (COMMIT, 'A' * 64)):
             with self.subTest(commit=commit, sha=sha), self.assertRaises(release.ReleaseError):
-                release.record(self.root, '9.0.0', commit, sha, '2026-11-02', 'tap-pr')
+                release.record(self.root, '9.0.0', commit, sha, '2026-11-02', 'formula-pr')
 
-    def published_formula(self):
-        """The tap formula as published: the template body with real values, no header."""
-        template = (ROOT / 'deploy' / 'homebrew' / 'agentos.rb.template').read_text(encoding='utf-8')
-        body = template[template.index('class Agentos'):]
-        formula = self.root / 'agentos.rb'
-        formula.write_text(body.replace('__VERSION__', '1.3.0').replace('__SHA256__', 'c' * 64), encoding='utf-8')
-        return formula
-
-    def test_formula_points_at_the_tag_archive_and_its_checksum(self):
-        formula = self.published_formula()
-        release.formula(formula, 'Jongtae/agentos', '9.0.0', SHA)
-        text = formula.read_text(encoding='utf-8')
-        self.assertIn('url "https://github.com/Jongtae/agentos/archive/refs/tags/v9.0.0.tar.gz"', text)
+    def test_the_first_formula_is_written_from_the_template(self):
+        """No formula exists before the first release; `formula` creates it."""
+        self.assertFalse((self.root / release.FORMULA).exists())
+        release.formula(self.root, '0.1.0', SHA)
+        text = (self.root / release.FORMULA).read_text(encoding='utf-8')
+        self.assertTrue(text.startswith(release.FORMULA_HEADER))
+        self.assertIn('url "https://github.com/Jongtae/Still/archive/refs/tags/v0.1.0.tar.gz"', text)
         self.assertIn(f'sha256 "{SHA}"', text)
+        self.assertNotIn('__', text)
 
-    def test_formula_refuses_a_tap_body_that_drifted_from_the_template(self):
+    def test_formula_moves_an_existing_formula_to_the_new_archive(self):
+        release.formula(self.root, '0.1.0', 'c' * 64)
+        release.formula(self.root, '9.0.0', SHA)
+        text = (self.root / release.FORMULA).read_text(encoding='utf-8')
+        self.assertIn('url "https://github.com/Jongtae/Still/archive/refs/tags/v9.0.0.tar.gz"', text)
+        self.assertIn(f'sha256 "{SHA}"', text)
+        self.assertNotIn('v0.1.0', text)
+
+    def test_formula_refuses_a_formula_that_drifted_from_the_template(self):
         """`brew test` runs the formula's own test, so a weakened body would pass it."""
-        formula = self.published_formula()
-        before = formula.read_text(encoding='utf-8').replace('[mcp-host]', '')
-        formula.write_text(before, encoding='utf-8')
+        release.formula(self.root, '0.1.0', 'c' * 64)
+        path = self.root / release.FORMULA
+        before = path.read_text(encoding='utf-8').replace('[mcp-host]', '')
+        path.write_text(before, encoding='utf-8')
         with self.assertRaisesRegex(release.ReleaseError, 'differs from'):
-            release.formula(formula, 'Jongtae/agentos', '9.0.0', SHA)
-        self.assertEqual(formula.read_text(encoding='utf-8'), before)
+            release.formula(self.root, '9.0.0', SHA)
+        self.assertEqual(path.read_text(encoding='utf-8'), before)
 
     def test_formula_never_takes_the_template_placeholder(self):
-        """The in-repo template keeps `__SHA256__`; it is not a render source."""
-        formula = self.root / 'agentos.rb'
-        shutil.copy(ROOT / 'deploy' / 'homebrew' / 'agentos.rb.template', formula)
+        """A formula holding the template's `__SHA256__` slot is not a release formula."""
+        path = self.root / release.FORMULA
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / 'deploy' / 'homebrew' / 'agentos.rb.template', path)
         with self.assertRaisesRegex(release.ReleaseError, 'sha256'):
-            release.formula(formula, 'Jongtae/agentos', '9.0.0', SHA)
+            release.formula(self.root, '9.0.0', SHA)
 
     def test_pin_moves_every_readme_installer_url(self):
         release.pin(self.root, COMMIT)
@@ -229,10 +279,17 @@ class ReleaseWorkflowShapeTests(unittest.TestCase):
         first_mutation = next(i for i, step in enumerate(steps) if 'gh release create' in step.get('run', ''))
         self.assertGreater(first_mutation, 0)
 
-    def test_the_tap_merges_only_after_its_checks_pass(self):
-        tap = next(step for step in self.jobs['publish']['steps'] if step.get('id') == 'tap')['run']
-        self.assertLess(tap.index('gh pr checks'), tap.index('gh pr merge'))
-        self.assertIn('--fail-fast', tap)
+    def test_the_formula_merges_only_after_its_checks_pass(self):
+        step = next(step for step in self.jobs['publish']['steps'] if step.get('id') == 'formula')['run']
+        self.assertLess(step.index('gh pr checks'), step.index('gh pr merge'))
+        self.assertIn('--fail-fast', step)
+        self.assertIn('--repo "$GITHUB_REPOSITORY"', step)
+
+    def test_no_separate_tap_is_written(self):
+        """The formula lives in this repository (#45)."""
+        text = WORKFLOW.read_text(encoding='utf-8')
+        self.assertNotIn('homebrew-agentos', text)
+        self.assertNotIn('TAP', text)
 
     def test_every_wait_is_bounded(self):
         self.assertIn('timeout-minutes', self.jobs['publish'])

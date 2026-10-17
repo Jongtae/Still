@@ -126,6 +126,27 @@ README_RELEASE_BOUNDARIES = {
     "docs/i18n/README.zh-CN.md": "两种安装方式安装的都是从已打标签的 main 提交构建的 **v{version}**（{date}）。演示和日常使用画面来自真实使用会话，并非该发行版本的端到端验证；架构图属于产品方向。",
 }
 
+# Before the first Still release (#45) the same slot says no release exists.
+# `scripts/dev/release.py record` replaces each with its released form above.
+README_PRE_RELEASE_BOUNDARIES = {
+    "README.md": "no Still release is published yet, so both installers stop without installing anything until the first one. The demo and the everyday-use image come from real sessions; the architecture figure is product direction.",
+    "docs/i18n/README.ko.md": "아직 공개된 Still 배포본이 없어서, 첫 배포 전까지 두 설치 방법 모두 아무것도 설치하지 않고 멈춥니다. 데모와 일상 사용 화면은 실제 사용 세션에서 가져온 것이고, 구조 그림은 제품 방향을 보여 주는 예시입니다.",
+    "docs/i18n/README.ja.md": "Still の公開リリースはまだないため、最初のリリースまではどちらのインストール方法も何もインストールせずに止まります。デモと日常利用の画面は実際の利用セッションにもとづくもので、構成図は製品の方向性を示す例です。",
+    "docs/i18n/README.zh-CN.md": "Still 尚未发布任何版本，因此在首个版本发布前，两种安装方式都会直接停止，不安装任何内容。演示和日常使用画面来自真实使用会话；架构图属于产品方向。",
+}
+
+STATUS_RELEASE_SENTENCES = {
+    "docs/product-status.en.md": "**The Homebrew package installs the newest published release, `v{version}` ({date}), from its tagged main commit.** The [release manifest](release-manifest.json) records source coverage and local installed checks.",
+    "docs/product-status.ko.md": "**Homebrew 패키지는 태그가 붙은 main 커밋의 최신 공개 배포본 `v{version}`({date})을 설치합니다.** [release manifest](release-manifest.json)에 포함 소스와 로컬 설치 검증을 기록했습니다.",
+}
+
+STATUS_PRE_RELEASE_SENTENCES = {
+    "docs/product-status.en.md": "**No Still release is published yet; the Homebrew formula and the one-line installer install nothing until the first one.** The [release manifest](release-manifest.json) will record each release's source coverage and local installed checks.",
+    "docs/product-status.ko.md": "**아직 공개된 Still 배포본이 없어서, 첫 배포 전까지 Homebrew 포뮬러와 한 줄 설치 스크립트는 아무것도 설치하지 않습니다.** 배포본마다 포함 소스와 로컬 설치 검증을 [release manifest](release-manifest.json)에 기록합니다.",
+}
+
+BREW_INSTALL = "brew install jongtae/still/agentos"
+
 IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -420,7 +441,7 @@ def static_shared_facts(name: str) -> tuple[str, ...]:
 # Facts the status page must carry so the README can stay short without
 # the boundaries disappearing from the repository's public surface.
 STATUS_DOC_FACTS = (
-    "brew install jongtae/agentos/agentos",
+    BREW_INSTALL,
     "https://github.com/Jongtae/agentos/issues/472",
     "Owner · Context · Memory · Artifact · Capability · Runtime · Grant · Work · Event · Evidence",
     "downloaded != installed != enabled != connected != authorized-for-action",
@@ -432,15 +453,28 @@ def version_key(value: str) -> tuple[int, ...]:
     return tuple(int(part) for part in value.split("."))
 
 
-def newest_published_release(root: Path = ROOT) -> dict[str, str]:
+def newest_published_release(root: Path = ROOT) -> dict[str, str] | None:
+    """The newest published release, or None before the first Still release."""
     manifest = json.loads(
         (root / "docs" / "release-manifest.json").read_text(encoding="utf-8")
     )
     published = manifest["published"]
     if not published:
-        raise ValueError("release manifest records no published release")
+        return None
     newest = max(published, key=lambda row: version_key(row["version"]))
     return {"version": newest["version"], "tag_date": newest["tag_date"]}
+
+
+def readme_release_boundary(name: str, release: dict[str, str] | None) -> str:
+    if release is None:
+        return README_PRE_RELEASE_BOUNDARIES[name]
+    return README_RELEASE_BOUNDARIES[name].format(version=release["version"], date=release["tag_date"])
+
+
+def status_release_sentence(path: str, release: dict[str, str] | None) -> str:
+    if release is None:
+        return STATUS_PRE_RELEASE_SENTENCES[path]
+    return STATUS_RELEASE_SENTENCES[path].format(version=release["version"], date=release["tag_date"])
 
 
 def section_markers(body: str) -> tuple[str, ...]:
@@ -536,22 +570,23 @@ def validate_body(
     name: str,
     body: str,
     canonical_sections: tuple[str, ...],
-    release: dict[str, str],
+    release: dict[str, str] | None,
     root: Path,
 ) -> list[str]:
     errors: list[str] = []
-    release_version = release["version"]
 
     if "<!-- readme-parity:v1 -->" not in body:
         errors.append(f"{name}: missing readme-parity:v1 marker")
     for token in nav_links(name) + static_shared_facts(name) + (STATUS_DOC_LINKS[name],):
         if token not in COMMENT_RE.sub("", body):
             errors.append(f"{name}: expected {token!r}, found none")
-    if body.count(f"v{release_version}") != 1:
-        errors.append(
-            f"{name}: expected exactly one 'v{release_version}' next to the brew command, "
-            f"found {body.count(f'v{release_version}')}"
-        )
+    if release is not None:
+        tag = f"v{release['version']}"
+        if body.count(tag) != 1:
+            errors.append(
+                f"{name}: expected exactly one {tag!r} next to the brew command, "
+                f"found {body.count(tag)}"
+            )
 
     errors.extend(validate_heading_marker_discipline(name, body))
     actual_sections = section_markers(body)
@@ -579,16 +614,15 @@ def validate_body(
 
     installation = section("try-today")
     command_text = text_without_hidden_markup(installation)
-    for token in ("brew install jongtae/agentos/agentos", "scripts/install.sh | sh", "http://127.0.0.1:8787/"):
+    for token in (BREW_INSTALL, "scripts/install.sh | sh", "http://127.0.0.1:8787/"):
         if token not in command_text:
             errors.append(f"{name}: try-today is missing {token!r}")
-    boundary = README_RELEASE_BOUNDARIES[name].format(
-        version=release_version, date=release["tag_date"]
-    )
+    boundary = readme_release_boundary(name, release)
     if visible_prose(boundary) not in visible_prose(installation):
+        state = "before the first release" if release is None else (
+            f"for v{release['version']} ({release['tag_date']})")
         errors.append(
-            f"{name}: try-today is missing its visible published-release/main boundary "
-            f"for v{release_version} ({release['tag_date']})"
+            f"{name}: try-today is missing its visible published-release/main boundary {state}"
         )
     license_section = visible_prose(section("license"))
     for token in ("AGPL-3.0-only", "TRADEMARKS.md"):
@@ -597,10 +631,11 @@ def validate_body(
     return errors
 
 
-def validate_status_doc(path: str, name: str, body: str, release_version: str) -> list[str]:
+def validate_status_doc(path: str, name: str, body: str, release: dict[str, str] | None) -> list[str]:
     """The status page keeps the boundaries the README no longer spells out."""
     errors: list[str] = []
-    for token in STATUS_DOC_FACTS + (CAPABILITY_MARKERS[0], f"v{release_version}"):
+    release_token = status_release_sentence(path, release) if release is None else f"v{release['version']}"
+    for token in STATUS_DOC_FACTS + (CAPABILITY_MARKERS[0], release_token):
         count = body.count(token)
         if count != 1:
             errors.append(f"{path}: expected exactly one {token!r}, found {count}")
@@ -676,7 +711,6 @@ def validate_readmes(root: Path = ROOT) -> list[str]:
 
     try:
         release = newest_published_release(root)
-        release_version = release["version"]
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         errors.append(f"cannot determine newest published release: {exc}")
         return errors
@@ -691,7 +725,7 @@ def validate_readmes(root: Path = ROOT) -> list[str]:
             errors.append(f"{path}: missing status page")
             continue
         body = file.read_text(encoding="utf-8")
-        errors.extend(validate_status_doc(path, name, body, release_version))
+        errors.extend(validate_status_doc(path, name, body, release))
         rows = section_slice(body, "status", next_section_id(section_markers(body), "status")).count(
             STATUS_ROW_EVIDENCE_TOKEN
         )

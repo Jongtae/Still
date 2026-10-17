@@ -1,7 +1,7 @@
 #!/bin/sh
 # Still one-line installer for macOS, Linux and Windows (WSL2) (#1167).
 #
-#   curl -LsSf https://raw.githubusercontent.com/Jongtae/agentos/main/scripts/install.sh | sh
+#   curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh
 #
 # Adopted, not built: the official uv installer fetches uv and uv fetches a
 # managed Python, so no Homebrew, Xcode tools, system Python or git is needed.
@@ -14,11 +14,13 @@
 # this script downloads is checksum-verified. `--no-config` keeps the owner's
 # uv settings (indexes, offline mode) out of this install.
 # tests/test_install_script.py keeps these pins equal to the newest published
-# release; docs/release.en.md step 9 updates them with each release.
+# release; docs/release.en.md step 9 updates them with each release. Before
+# the first Still release both release pins are empty and the script stops
+# without downloading anything (#45).
 set -eu
 
-AGENTOS_VERSION="1.4.1"
-AGENTOS_ARCHIVE_SHA256="966821225282f16fdc29b8c3387be3c1b3f2e014d746ef5d1ac7e1801b7381d8"
+AGENTOS_VERSION=""
+AGENTOS_ARCHIVE_SHA256=""
 UV_VERSION="0.12.23"
 UV_INSTALLER_SHA256="b8e6c43099ee9f9a550984d3ad56948457c689e7a99c090b35377234ac241491"
 PYTHON_VERSION="3.13"
@@ -32,6 +34,9 @@ case "$(uname -s)" in
     fail "Windows runs Still inside WSL2. In PowerShell run 'wsl --install', restart, open Ubuntu and run this command there. See docs/QUICKSTART.md (Windows)." ;;
   *) fail "unsupported system $(uname -s); Still supports macOS, Linux and Windows through WSL2." ;;
 esac
+
+[ -n "$AGENTOS_VERSION" ] \
+  || fail "no Still release has been published yet, so there is nothing to install. To run Still from source, see https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md#remote-host--source-installation"
 
 download() { # url destination
   if command -v curl >/dev/null 2>&1; then curl -LsSf "$1" -o "$2"
@@ -54,7 +59,7 @@ trap 'rm -rf "$work"' EXIT INT TERM
 # Verify the Still release first, so a bad download changes nothing on this machine.
 archive="$work/agentos-$AGENTOS_VERSION.tar.gz"
 say "Downloading Still $AGENTOS_VERSION..."
-download "https://github.com/Jongtae/agentos/archive/refs/tags/v$AGENTOS_VERSION.tar.gz" "$archive"
+download "https://github.com/Jongtae/Still/archive/refs/tags/v$AGENTOS_VERSION.tar.gz" "$archive"
 [ "$(sha256_of "$archive")" = "$AGENTOS_ARCHIVE_SHA256" ] \
   || fail "checksum mismatch for v$AGENTOS_VERSION; nothing was installed."
 

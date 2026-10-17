@@ -545,7 +545,7 @@ wheels = [
 
 [[package]]
 name = "personal-agentos"
-version = "1.4.2"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography", version = "48.0.1", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and sys_platform != 'linux'" },

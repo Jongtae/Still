@@ -24,15 +24,18 @@ The main path is the one below: install, connect the AI subscription you already
 One command installs and starts Still. You do not need Homebrew, Python, Docker or git:
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/agentos/main/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh
 ```
+
+No Still release is published yet. Until the first one, `v0.1.0`, this command and the Homebrew commands below stop without installing anything; run Still from a checkout instead ([source installation](#remote-host--source-installation)).
 
 The [installer](../scripts/install.sh) first downloads the published release archive and checks its SHA-256 against the [release manifest](release-manifest.json); on a mismatch it installs nothing. If you do not already have a current [uv](https://docs.astral.sh/uv/), it installs a pinned version through Astral's official installer, which adds `~/.local/bin` to your shell `PATH`. It then installs Still with a uv-managed Python, ignoring your own uv settings, and starts it; the first setup described below then runs in the same terminal. Set `AGENTOS_NO_START=1` to install without starting. Later, open a new terminal and run `agentos start`. Running the same command again after a release updates Still. To remove it, see [Uninstall](#uninstall).
 
-If you use Homebrew on macOS, this installs the same release:
+If you use Homebrew on macOS, this installs the same release. This repository is its own tap, so add it once by URL:
 
 ```sh
-brew install jongtae/agentos/agentos
+brew tap jongtae/still https://github.com/Jongtae/Still
+brew install jongtae/still/agentos
 agentos start
 ```
 
@@ -109,11 +112,13 @@ The computer must remain running and awake for remote requests to be processed. 
 agentos start
 # Stop the process before upgrading:
 brew update
-brew upgrade jongtae/agentos/agentos
+brew upgrade jongtae/still/agentos
 agentos start
 # View only credential-free setup and recovery state:
 agentos guide
 ```
+
+If Still came from the predecessor's Homebrew tap (`brew install jongtae/agentos/agentos`, versions `v1.0.4`–`v1.4.1`), `brew upgrade` does not move it to this repository's tap. Switch once, after the first Still release: stop Still, run `brew uninstall agentos` and `brew untap jongtae/agentos`, then follow the Homebrew install above. Your data in `~/.local/share/agentos` is kept. The formula's `version_scheme` makes Still's `0.x` versions count as newer than those `1.x` builds.
 
 If you registered the background login service from a source checkout, run `agentos service upgrade` after replacing the executable rather than relying on the foreground command.
 
@@ -164,11 +169,10 @@ loopback and sets `RunAtLoad`/`KeepAlive`, so it is designed to start again at l
 What this does **not** yet cover, stated exactly:
 
 - **macOS only.** The lifecycle is launchd-specific. There is no systemd equivalent here.
-- **Released from `v1.1.0` (2026-09-23).** The published formula lives in the separate tap
-  `Jongtae/homebrew-agentos` — it is not in this repository by design, so its absence from
-  `git ls-files` here does not mean no artifact exists. `brew install` / `brew upgrade
-  jongtae/agentos/agentos` at `v1.1.0` or later provides `agentos service`; `v1.0.4` and
-  earlier do not. See [the release procedure](release.en.md).
+- **Shipped in the predecessor's `v1.1.0` (2026-09-23).** Those releases came from the
+  private predecessor repository and its separate tap, not from Still. A Still release will
+  include `agentos service`; the Homebrew formula then lives in this repository as
+  `Formula/agentos.rb`. See [the release procedure](release.en.md).
 - **Not covered by automated tests of real launchd.** Repository CI runs on Linux and cannot
   execute launchd. The automated evidence for these commands is injected-runner tests that
   substitute `launchctl`. The v1.3.0 Homebrew upgrade and foreground smoke were observed
@@ -429,7 +433,7 @@ agentos plugins remove example-plugin
 
 Tests use simulated provider and Telegram responses, plus a real local HTTP server for setup/chat/authentication. Live provider and Telegram testing requires your credentials and explicit operating scope.
 
-Source and Homebrew formula: [Jongtae/homebrew-agentos](https://github.com/Jongtae/homebrew-agentos).
+Source and Homebrew formula: [Jongtae/Still](https://github.com/Jongtae/Still) (the formula is `Formula/agentos.rb`, written at each release from `deploy/homebrew/agentos.rb.template`).
 
 ## Historical general tool runtime (0.2.0)
 

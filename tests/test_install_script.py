@@ -18,9 +18,13 @@ SCRIPT = ROOT / "scripts" / "install.sh"
 
 def pin(name, text=None):
     text = SCRIPT.read_text(encoding="utf-8") if text is None else text
-    match = re.search(rf'^{name}="([^"]+)"$', text, re.M)
+    match = re.search(rf'^{name}="([^"]*)"$', text, re.M)
     assert match, name
     return match.group(1)
+
+
+#: The version a released copy of the script installs in these tests.
+RELEASED = "9.9.9"
 
 
 FAKE_CURL = """#!/bin/sh
@@ -65,14 +69,21 @@ class InstallScriptTests(unittest.TestCase):
             return result, calls
 
     def with_archive_checksum(self, digest):
-        return re.sub(r'^AGENTOS_ARCHIVE_SHA256="[^"]+"$', f'AGENTOS_ARCHIVE_SHA256="{digest}"',
-                      SCRIPT.read_text(encoding="utf-8"), flags=re.M)
+        """The script as `release.py record` leaves it, pinned to RELEASED."""
+        text = SCRIPT.read_text(encoding="utf-8")
+        text = re.sub(r'^AGENTOS_VERSION="[^"]*"$', f'AGENTOS_VERSION="{RELEASED}"', text, flags=re.M)
+        return re.sub(r'^AGENTOS_ARCHIVE_SHA256="[^"]*"$', f'AGENTOS_ARCHIVE_SHA256="{digest}"', text, flags=re.M)
 
     def test_pins_match_the_newest_published_release(self):
         manifest = json.loads((ROOT / "docs" / "release-manifest.json").read_text(encoding="utf-8"))
-        newest = manifest["published"][-1]
-        self.assertEqual(pin("AGENTOS_VERSION"), newest["version"])
-        self.assertEqual(pin("AGENTOS_ARCHIVE_SHA256"), newest["archive_sha256"])
+        if manifest["published"]:
+            newest = manifest["published"][-1]
+            self.assertEqual(pin("AGENTOS_VERSION"), newest["version"])
+            self.assertEqual(pin("AGENTOS_ARCHIVE_SHA256"), newest["archive_sha256"])
+        else:
+            # Before the first Still release nothing is pinned (#45).
+            self.assertEqual(pin("AGENTOS_VERSION"), "")
+            self.assertEqual(pin("AGENTOS_ARCHIVE_SHA256"), "")
         self.assertRegex(pin("UV_VERSION"), r"^\d+\.\d+\.\d+$")
         self.assertRegex(pin("UV_INSTALLER_SHA256"), r"^[0-9a-f]{64}$")
         self.assertIn("https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-installer.sh",
@@ -81,12 +92,22 @@ class InstallScriptTests(unittest.TestCase):
     def test_script_is_valid_posix_shell(self):
         subprocess.run(["sh", "-n", str(SCRIPT)], check=True)
 
+    def test_an_unreleased_script_stops_before_any_download(self):
+        text = re.sub(r'^AGENTOS_(VERSION|ARCHIVE_SHA256)="[^"]*"$', r'AGENTOS_\1=""',
+                      SCRIPT.read_text(encoding="utf-8"), flags=re.M)
+        result, calls = self.run_script(text)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no Still release has been published yet", result.stderr)
+        self.assertIn("https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md", result.stderr)
+        self.assertEqual(calls, [])
+
     def test_verified_archive_is_installed_with_the_homebrew_extra_and_started(self):
         digest = hashlib.sha256(b"agentos-archive").hexdigest()
         result, calls = self.run_script(self.with_archive_checksum(digest))
         self.assertEqual(result.returncode, 0, result.stderr)
-        version = pin("AGENTOS_VERSION")
-        self.assertTrue(any(f"archive/refs/tags/v{version}.tar.gz" in call for call in calls))
+        version = RELEASED
+        self.assertTrue(any(f"https://github.com/Jongtae/Still/archive/refs/tags/v{version}.tar.gz" in call
+                            for call in calls))
         install = next(call for call in calls if call.startswith("uv --no-config tool install"))
         self.assertIn("--python 3.13", install)
         self.assertFalse(any("uv-installer.sh" in call for call in calls), "a current uv is reused")
@@ -103,7 +124,7 @@ class InstallScriptTests(unittest.TestCase):
     def test_checksum_mismatch_installs_nothing(self):
         for env in ({}, {"NO_FAKE_UV": "1"}):
             with self.subTest(env=env):
-                result, calls = self.run_script(SCRIPT.read_text(encoding="utf-8"), env=env)
+                result, calls = self.run_script(self.with_archive_checksum("0" * 64), env=env)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("checksum mismatch for v", result.stderr)
                 # The archive is verified before uv is fetched or used.

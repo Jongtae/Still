@@ -13,6 +13,8 @@ on:
       - scripts/install.sh
       - scripts/dev/install_smoke.sh
       - docs/release-manifest.json
+      - Formula/**
+      - deploy/homebrew/**
       - .gitattributes
       - .github/workflows/install-smoke.yml
   push:
@@ -21,6 +23,8 @@ on:
       - scripts/install.sh
       - scripts/dev/install_smoke.sh
       - docs/release-manifest.json
+      - Formula/**
+      - deploy/homebrew/**
       - .gitattributes
       - .github/workflows/install-smoke.yml
   schedule:
@@ -44,7 +48,7 @@ jobs:
       - uses: actions/checkout@v7
       - run: sh scripts/dev/install_smoke.sh installer
 
-  # The published Homebrew tap formula.
+  # This repository's own Homebrew formula (Formula/agentos.rb, #45).
   homebrew:
     strategy:
       fail-fast: false

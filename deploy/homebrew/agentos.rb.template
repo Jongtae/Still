@@ -1,30 +1,18 @@
-# Homebrew formula template for the `jongtae/agentos` tap.
+# Homebrew formula template for Still (#45).
 #
-# The published formula does NOT live in this repository -- the tap
-# `Jongtae/homebrew-agentos` is Formula-only by an explicit earlier migration
-# decision (docs/issue-branch-ledger.jsonl, first record). That is why
-# `git ls-files` finds no `.rb` here, and why "no formula exists" is the wrong
-# reading of that absence: a live tap exists and is what `brew install
-# jongtae/agentos/agentos` resolves.
+# This repository is its own tap: `brew tap jongtae/still
+# https://github.com/Jongtae/Still`, then `brew install jongtae/still/agentos`.
+# There is no separate tap project. Homebrew reads `Formula/agentos.rb`, which
+# `scripts/dev/release.py formula` writes from this template once a release's
+# tag archive exists; until the first Still release that file is absent.
 #
-# This template exists so the relationship is traceable FROM this repository.
-# Before it, the only links were a prose URL in QUICKSTART.md and a Python
-# default in scripts/dev/delivery.py.
+# THIS FILE IS THE RENDER SOURCE. Everything from the class declaration down is
+# copied into the formula with the two placeholders below filled in, and the
+# release workflow refuses a formula whose body has drifted from it. Change the
+# formula here, never in `Formula/agentos.rb`.
 #
-# THIS FILE IS A REFERENCE COPY, NOT A RENDER SOURCE. Nothing reads it.
-# The release path (`scripts/dev/delivery.py`) clones the tap and rewrites the two
-# lines of the *existing* Formula/agentos.rb with two `re.sub` calls. Do not
-# paste this file into the tap: this header describes in-repo test invariants
-# that are false and meaningless once published.
-#
-# Because nothing reads it, it can drift from the published formula while this
-# repository's suite stays green. If the tap formula changes structurally,
-# re-sync this file in the same release. That obligation is written down in
-# docs/release.en.md step 7 and is not automated.
-#
-# The two placeholders below mark what the release path substitutes, and are
-# only knowable after the tag is pushed, because the archive they describe
-# does not exist until then:
+# The placeholders are only knowable after the tag is pushed, because the
+# archive they describe does not exist until then:
 #
 #   __VERSION__  the release version, matching pyproject.toml, without the `v`
 #   __SHA256__   sha256 of the GitHub-generated tag archive
@@ -35,13 +23,21 @@
 # placeholder. GitHub's tarball is not byte-reproducible from a local
 # `git archive`, so this value cannot honestly be precomputed here.
 #
+# The formula keeps the `agentos` name, command and data directory for
+# compatibility with existing installs (#4). `version_scheme 1` tells Homebrew
+# that Still's 0.x versions come after the predecessor's 1.x (v1.0.4-v1.4.1),
+# which would otherwise compare as newer. An install from the predecessor tap
+# `jongtae/agentos` still belongs to that tap; QUICKSTART "Restart and update"
+# gives the one-time switch.
+#
 # See docs/release.en.md for the full procedure.
 
 class Agentos < Formula
   desc "Self-hosted personal agent with browser setup and Telegram"
-  homepage "https://github.com/Jongtae/agentos"
-  url "https://github.com/Jongtae/agentos/archive/refs/tags/v__VERSION__.tar.gz"
+  homepage "https://github.com/Jongtae/Still"
+  url "https://github.com/Jongtae/Still/archive/refs/tags/v__VERSION__.tar.gz"
   sha256 "__SHA256__"
+  version_scheme 1
   depends_on "python@3.13"
 
   def install

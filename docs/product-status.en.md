@@ -96,14 +96,15 @@ For installable agents the same rule holds: `downloaded != installed != enabled 
 <!-- readme-section:release -->
 ## The Homebrew release
 
-**The Homebrew package installs the newest published release, `v1.4.1` (2026-10-14), from its tagged main commit.** The [release manifest](release-manifest.json) records source coverage and local installed checks. Those checks establish package installation and foreground operation, not live Telegram, Google or shopping use, or the complete README demo scenes. The README’s everyday-use image is cut from real owner-pilot sessions, not release-specific validation.
+**No Still release is published yet; the Homebrew formula and the one-line installer install nothing until the first one.** The [release manifest](release-manifest.json) will record each release's source coverage and local installed checks. Those checks establish package installation and foreground operation, not live Telegram, Google or shopping use, or the complete README demo scenes. The README’s everyday-use image is cut from real owner-pilot sessions, not release-specific validation.
 
 ```sh
-brew install jongtae/agentos/agentos
+brew tap jongtae/still https://github.com/Jongtae/Still
+brew install jongtae/still/agentos
 agentos start
 ```
 
-The [release procedure](release.en.md) tracks publication. `v1.0.4` and earlier contain none of the scenes.
+The [release procedure](release.en.md) tracks publication.
 
 <!-- readme-section:license -->
 ## License

@@ -14,7 +14,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PIN = re.compile(r"(Jongtae/agentos/(?:blob/)?)([0-9a-f]{40})(/scripts/install\.sh)")
+#: Before the first release the README follows `main`; each release pins it
+#: to the commit whose installer installs that release (scripts/dev/release.py pin).
+PIN = re.compile(r"(Jongtae/Still/(?:blob/)?)([0-9a-f]{40}|main)(/scripts/install\.sh)")
 VERSION = re.compile(r'(<span data-release="version">)v[0-9]+\.[0-9]+\.[0-9]+(</span>)')
 
 
@@ -24,6 +26,9 @@ def release_values(root: Path = ROOT) -> tuple[str, str]:
     if len(pins) != 1:
         raise SystemExit(f"README.md must pin exactly one installer commit, found {sorted(pins)}")
     manifest = json.loads((root / "docs/release-manifest.json").read_text(encoding="utf-8"))
+    if not manifest["published"]:
+        # A site that names a version must not deploy before that version exists.
+        raise SystemExit("no Still release is published yet; nothing to stamp into the site")
     newest = max(manifest["published"], key=lambda row: tuple(int(x) for x in row["version"].split(".")))
     return pins.pop(), newest["version"]
 

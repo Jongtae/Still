@@ -12,7 +12,7 @@
 
 **내 컴퓨터에서 돌아가는 나만의 개인 에이전트.<br>일하는 AI를 바꿔도 기억과 진행 중인 일, 권한은 그대로 남습니다.**
 
-[![CI](https://github.com/Jongtae/agentos/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/agentos/actions/workflows/validate.yml) [![Full test suite](https://github.com/Jongtae/agentos/actions/workflows/full-validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/agentos/actions/workflows/full-validate.yml) [![Latest release](https://img.shields.io/github/v/release/Jongtae/agentos?sort=semver&label=release)](https://github.com/Jongtae/agentos/releases) [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](../../pyproject.toml) [![macOS | Linux | WSL2 limited](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2%20limited-555)](../../docs/QUICKSTART.md) [![License: AGPL 3.0](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](../../LICENSE)
+[![CI](https://github.com/Jongtae/Still/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/Still/actions/workflows/validate.yml) [![Full test suite](https://github.com/Jongtae/Still/actions/workflows/full-validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/Still/actions/workflows/full-validate.yml) [![Latest release](https://img.shields.io/github/v/release/Jongtae/Still?sort=semver&label=release)](https://github.com/Jongtae/Still/releases) [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](../../pyproject.toml) [![macOS | Linux | WSL2 limited](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2%20limited-555)](../../docs/QUICKSTART.md) [![License: AGPL 3.0](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](../../LICENSE)
 
 [English](../../README.md) | [한국어](README.ko.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
@@ -73,17 +73,18 @@ Still은 *그럴 필요가 없다*는 답을 찾아갑니다. 내가 설치하�
 macOS, Linux, Windows(WSL2)에서 명령 하나로 설치하고 바로 시작합니다. Homebrew, Python, Docker는 필요 없습니다.
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/agentos/95786a97d3a871e65e9397e5a191790aaf76a340/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh
 ```
 
-이 URL은 설치 스크립트를 특정 커밋으로 고정합니다. 실행 전에 [고정된 스크립트를 직접 확인](https://github.com/Jongtae/agentos/blob/95786a97d3a871e65e9397e5a191790aaf76a340/scripts/install.sh)할 수 있으며, 스크립트는 내려받는 Still 공개 아카이브와 uv 설치 프로그램의 체크섬을 검증합니다.
+실행 전에 [스크립트를 직접 확인](https://github.com/Jongtae/Still/blob/main/scripts/install.sh)할 수 있으며, 스크립트는 내려받는 Still 공개 아카이브와 uv 설치 프로그램의 체크섬을 검증합니다. 배포할 때마다 이 URL은 그 배포본을 설치하는 커밋으로 고정됩니다.
 
 Windows에서는 PowerShell에서 `wsl --install`을 실행하고 재시작한 뒤, Ubuntu를 열어 첫 번째 명령을 실행하세요. Windows 안내, 설치 스크립트가 하는 일, 소스 실행, 모든 설정은 [QUICKSTART](../../docs/QUICKSTART.md)에 있습니다. 대화하는 동안에는 `agentos start`를 계속 실행해 두세요.
 
 macOS에서 [Homebrew](https://brew.sh)를 쓴다면:
 
 ```sh
-brew install jongtae/agentos/agentos
+brew tap jongtae/still https://github.com/Jongtae/Still
+brew install jongtae/still/agentos
 agentos start
 ```
 
@@ -92,7 +93,7 @@ agentos start
 3. Telegram 페어링: 터미널에서 BotFather 토큰을 붙여 넣으면 페어링 링크가 출력됩니다. 링크를 열고 Start를 누르세요.
 4. 필요한 것을 말해 보세요. **“고양이가 요즘 사료를 잘 안 먹어. 어떻게 하면 좋을까?”** 며칠 뒤 **“50만 원 이하 로봇청소기 하나 골라 줘.”**라고만 해도, PA가 고양이 이야기를 알아서 기억하고 반영합니다.
 
-**배포 상태:** 두 설치 방법 모두 태그가 붙은 main 커밋으로 빌드한 **v1.4.1**(2026-10-14)을 설치합니다. 데모와 일상 사용 화면은 실제 사용 세션에서 가져온 것으로, 이 배포본을 처음부터 끝까지 검증한 결과는 아닙니다. 구조 그림은 제품 방향을 보여 주는 예시입니다. 배포본별 포함 범위는 [release manifest](../../docs/release-manifest.json)에, 제공 기능·테스트 근거·방향의 구분은 [현재 상태](../../docs/product-status.ko.md)에 정리되어 있습니다.
+**배포 상태:** 아직 공개된 Still 배포본이 없어서, 첫 배포 전까지 두 설치 방법 모두 아무것도 설치하지 않고 멈춥니다. 데모와 일상 사용 화면은 실제 사용 세션에서 가져온 것이고, 구조 그림은 제품 방향을 보여 주는 예시입니다. 배포본별 포함 범위는 [release manifest](../../docs/release-manifest.json)에, 제공 기능·테스트 근거·방향의 구분은 [현재 상태](../../docs/product-status.ko.md)에 정리되어 있습니다.
 
 **제거:** `agentos uninstall`은 백그라운드 서비스와 프로그램을 지우고, 데이터는 지우겠다고 고르지 않는 한 남깁니다([자세히](../../docs/QUICKSTART.md#uninstall)).
 

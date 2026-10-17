@@ -2,10 +2,11 @@
 
 <h2>1. 설치</h2>
 <p><strong>macOS 또는 Linux.</strong> Homebrew, Python, Docker, git이 없어도 됩니다.</p>
-<pre><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/agentos/main/scripts/install.sh | sh</code></pre>
+<pre><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh</code></pre>
 <p>설치 파일은 공개 릴리스 아카이브를 받아 릴리스 매니페스트의 SHA-256과 대조합니다. 값이 다르면 아무것도 설치하지 않습니다. 설치가 끝나면 같은 터미널에서 첫 설정이 바로 이어집니다. 나중에 다시 시작할 때는 새 터미널에서 <code>agentos start</code>를 입력합니다.</p>
 <p><strong>macOS, Homebrew 사용.</strong></p>
-<pre><code>brew install jongtae/agentos/agentos
+<pre><code>brew tap jongtae/still https://github.com/Jongtae/Still
+brew install jongtae/still/agentos
 agentos start</code></pre>
 <p><strong>Windows.</strong> Still은 아직 Windows에서 직접 실행되지 않습니다. WSL2의 Ubuntu를 열고 위의 설치 명령을 그대로 실행합니다. Codex나 Claude Code도 Ubuntu 안에서 설치하고 로그인해야 합니다. Still을 쓰는 동안에는 Ubuntu 창을 열어 두어야 합니다. 브라우저가 열리지 않으면 Windows 브라우저에서 <code>http://127.0.0.1:8787</code>을 엽니다.</p>
 
@@ -43,7 +44,7 @@ agentos start</code></pre>
   <thead><tr><th>하려는 일</th><th>명령</th></tr></thead>
   <tbody>
     <tr><td>다시 시작</td><td><code>agentos start</code></td></tr>
-    <tr><td>업데이트 (Homebrew)</td><td>실행 중이면 Ctrl-C로 멈춘 뒤 <code>brew update</code>, <code>brew upgrade jongtae/agentos/agentos</code>, <code>agentos start</code></td></tr>
+    <tr><td>업데이트 (Homebrew)</td><td>실행 중이면 Ctrl-C로 멈춘 뒤 <code>brew update</code>, <code>brew upgrade jongtae/still/agentos</code>, <code>agentos start</code></td></tr>
     <tr><td>업데이트 (설치 스크립트)</td><td>설치 명령을 다시 실행합니다</td></tr>
     <tr><td>프로그램 제거 (uv 설치)</td><td><code>uv tool uninstall personal-agentos</code></td></tr>
     <tr><td>현재 상태 확인</td><td><code>agentos guide</code> (작업 내용과 자격 증명은 표시하지 않습니다)</td></tr>

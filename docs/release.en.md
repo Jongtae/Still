@@ -9,24 +9,42 @@ closed with `blocked-manual-governance-execution-required`.
 
 ## What the published artifact actually is
 
-`brew install jongtae/agentos/agentos` resolves the tap repository
-**`Jongtae/homebrew-agentos`**, which holds `Formula/agentos.rb` and nothing
-else. The formula has never lived in this repository — the first record in
-`docs/issue-branch-ledger.jsonl` documents the migration that made the tap
-Formula-only.
+A Still release is a **GitHub tag source archive** of `Jongtae/Still`, not a
+wheel. Both install paths consume that archive:
 
-This matters because `git ls-files` in this repository finds no `.rb`, no tap
-and no checksum, and that absence has been misread as "no release artifact
-exists". It does exist. What the formula points at is a **GitHub tag source
-archive**, not a wheel:
+- `scripts/install.sh` pins its version and SHA-256;
+- the Homebrew formula `Formula/agentos.rb` in this repository points at it:
 
 ```ruby
-url "https://github.com/Jongtae/agentos/archive/refs/tags/vX.Y.Z.tar.gz"
+url "https://github.com/Jongtae/Still/archive/refs/tags/vX.Y.Z.tar.gz"
 sha256 "<64 hex>"
 ```
 
-`deploy/homebrew/agentos.rb.template` is the in-repo template for that file, so
-the relationship is traceable from here.
+There is no separate tap project (#45). This repository is its own tap:
+`brew tap jongtae/still https://github.com/Jongtae/Still`, then
+`brew install jongtae/still/agentos`. The formula keeps the `agentos` name,
+command and data directory for compatibility with existing installs.
+`deploy/homebrew/agentos.rb.template` is its render source: the release
+workflow writes `Formula/agentos.rb` from it and refuses a formula whose body
+drifted from it.
+
+The predecessor's releases (`v1.0.4`–`v1.4.1`, from the private
+`Jongtae/agentos` and its `Jongtae/homebrew-agentos` tap) are not Still
+releases. Their manifest is preserved unchanged in
+`docs/history/predecessor-release-manifest.json`.
+
+## Before the first release
+
+Still restarted its version at `0.1.0`, and `v0.1.0` is its first release.
+Until it is published, `docs/release-manifest.json` has no `published` entry,
+`scripts/install.sh` has empty release pins and stops without downloading
+anything, `Formula/agentos.rb` does not exist, and the README and product-status
+pages carry a "no Still release is published yet" sentence. The README installer
+URL follows `main`, because there is no release commit to pin it to.
+`scripts/stamp_site_release.py` refuses to stamp the site in this state, so
+`deploy-pages` cannot publish a site that names a version. The first `record`
+replaces each "no release yet" sentence with its released form, and the
+following `pin` pins the README installer to a commit.
 
 ## Ordering, and why the checksum cannot be precomputed
 
@@ -70,7 +88,7 @@ fallback when it cannot.
 The owner approves the `release` environment deployment in the Actions run.
 The `release` environment admits `main` only, requires the owner as reviewer
 and holds `RELEASE_TOKEN`, a fine-grained token limited to contents and pull
-requests on this repository and `Jongtae/homebrew-agentos`; the workflow stops
+requests on this repository; the workflow stops
 before any change if that secret is missing, and before the tag until
 `validate` has passed on the release commit itself. Code that runs with the
 credential comes from the approved release commit, never from a newer `main`.
@@ -82,30 +100,22 @@ accepts an existing PR only when it is merged or still open.
    from the manifest entry (`scripts/dev/release.py notes`) followed by
    GitHub's generated notes.
 6. **Compute the archive checksum** of
-   `https://github.com/Jongtae/agentos/archive/refs/tags/vX.Y.Z.tar.gz`.
+   `https://github.com/Jongtae/Still/archive/refs/tags/vX.Y.Z.tar.gz`.
    The workflow downloads it twice and fails if the two digests differ.
-7. **Update the tap formula in place.** Clone `Jongtae/homebrew-agentos`, and
-   rewrite the `url` tag and `sha256` only after the archive exists. Compare
-   the live formula's executable body with `deploy/homebrew/agentos.rb.template`
-   before opening a PR. In particular, `pip install` must include the
+7. **Write the formula.** Only after the archive exists, render
+   `Formula/agentos.rb` from `deploy/homebrew/agentos.rb.template` with the
+   tag and `sha256` (`scripts/dev/release.py formula`). An existing formula
+   must match the template in every line except `url` and `sha256`, or the
+   workflow refuses it. In particular, `pip install` must include the
    `[mcp-host]` extra and the formula test must import `mcp.server.stdio`;
    a plain `pip install buildpath` leaves the CLI bridge dependency absent.
-   The workflow rewrites only those two lines (`scripts/dev/release.py
-   formula`), refuses a tap formula whose remaining body differs from the
-   template, opens the tap PR, waits for the tap's own macOS
-   `brew install`/`brew test` check and merges only when it passes.
+   The workflow opens the formula PR in this repository, waits for its checks,
+   including the `install-smoke` macOS `brew install`/`brew test` of that exact
+   formula, and merges only when they pass.
 
-   **Do not paste `deploy/homebrew/agentos.rb.template` into the tap.** That
-   file is a reference copy for traceability from this repository, not a
-   render source: nothing reads it, and its 26-line comment header describes
-   in-repo test invariants that are false and meaningless once published.
-   If the tap formula ever changes structurally — a new Python dependency, a
-   different install block — re-sync the template in the same release and say
-   so in the PR. Nothing enforces that automatically; the template can drift
-   from the published formula while this repository's suite stays green,
-   which is the one failure mode this file has.
-8. **Verify the install**: `brew update`, `brew upgrade jongtae/agentos/agentos`,
-   `brew test jongtae/agentos/agentos` (which also checks the bridge import), then
+   Change the formula only in the template, never in `Formula/agentos.rb`.
+8. **Verify the install**: `brew update`, `brew upgrade jongtae/still/agentos`,
+   `brew test jongtae/still/agentos` (which also checks the bridge import), then
    `python3 scripts/quickstart_install_check.py`. This is the owner's step;
    the workflow records `observed` as "not yet recorded" until a follow-up
    change adds what the owner saw.
@@ -116,10 +126,10 @@ accepts an existing PR only when it is merged or still open.
    `AGENTOS_VERSION` and `AGENTOS_ARCHIVE_SHA256` in `scripts/install.sh` to
    that release; `tests/test_install_script.py` fails until they match, and
    the `install-smoke` workflow then runs the real installer on Linux and macOS.
-   The workflow also moves the release-status sentences in the four READMEs,
-   `docs/product-status.*.md` and the feedback issue template to the new
-   version (`scripts/dev/release.py record`), and refuses to guess when one
-   was reworded.
+   The workflow also moves the release-status sentences in the four READMEs
+   and `docs/product-status.*.md` to the new version
+   (`scripts/dev/release.py record`), and refuses to guess when one was
+   reworded.
 10. **Bump `pyproject.toml` to the next version immediately.** Steps 9 and 10
     must land together. `test_the_in_tree_version_is_not_a_published_version`
     fails the moment a version appears in `published` while `pyproject.toml`
@@ -149,4 +159,4 @@ Do not describe a release as verified on the strength of steps 1–4.
 
 ## Release decision policy
 
-Before following the publication steps above, consult [Release Governance and Version Policy](governance/release-policy.en.md). Merging ordinary code does not trigger a release; merging a release-preparation PR starts a workflow that publishes nothing until the owner approves it. AI may prepare the release brief but may not authorize publication or approve the `release` environment. The fail-closed `scripts/dev/delivery.py` helper stays disabled; archive-checksum ordering, Homebrew tap update, install smoke and manifest evidence rules are unchanged.
+Before following the publication steps above, consult [Release Governance and Version Policy](governance/release-policy.en.md). Merging ordinary code does not trigger a release; merging a release-preparation PR starts a workflow that publishes nothing until the owner approves it. AI may prepare the release brief but may not authorize publication or approve the `release` environment. The fail-closed `scripts/dev/delivery.py` helper stays disabled; archive-checksum ordering, Homebrew formula update, install smoke and manifest evidence rules are unchanged.

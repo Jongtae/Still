@@ -124,7 +124,7 @@ def resolve_cli_path(
                 return Path(os.path.abspath(candidate))
     raise ServiceControlError(
         "The installed Still executable could not be resolved.",
-        "Run `brew reinstall jongtae/agentos/agentos`, confirm `command -v agentos`, and retry service setup.",
+        "Run `brew reinstall jongtae/still/agentos`, confirm `command -v agentos`, and retry service setup.",
     )
 
 

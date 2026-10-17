@@ -5,7 +5,11 @@
 # platform job so the check itself is identical everywhere.
 #
 #   sh scripts/dev/install_smoke.sh installer   # one-line scripts/install.sh
-#   sh scripts/dev/install_smoke.sh homebrew    # brew install jongtae/agentos/agentos
+#   sh scripts/dev/install_smoke.sh homebrew    # brew install jongtae/still/agentos
+#
+# The Homebrew mode taps this checkout's own Formula/agentos.rb, so a formula
+# PR is tested before it merges (#45). Before the first Still release there is
+# no installer pin and no formula; each mode reports its own absence and passes.
 #
 # SMOKE_HTTP / SMOKE_NULL replace the HTTP client and its null device, e.g.
 # Windows curl.exe and NUL from inside WSL2 to check localhost forwarding.
@@ -15,15 +19,32 @@ mode=${1:-installer}
 port=18787
 home=$(mktemp -d)
 here=$(cd "$(dirname "$0")" && pwd)
+repo=$(cd "$here/../.." && pwd)
 
 case "$mode" in
   installer)
+    # The formula PR of the first release runs before the installer is pinned.
+    if grep -q '^AGENTOS_VERSION=""$' "$repo/scripts/install.sh"; then
+      echo "no Still release is recorded yet; scripts/install.sh has nothing to install"
+      exit 0
+    fi
     env -i HOME="$home" PATH=/usr/bin:/bin:/usr/sbin:/sbin AGENTOS_NO_START=1 sh "$here/../install.sh"
     run() { env -i HOME="$home" PATH="$home/.local/bin:/usr/bin:/bin" "$@"; }
     python="$home/.local/share/uv/tools/personal-agentos/bin/python"
     ;;
   homebrew)
-    brew install jongtae/agentos/agentos
+    [ -f "$repo/Formula/agentos.rb" ] || { echo "no Formula/agentos.rb yet; it is written at the first release"; exit 0; }
+    # A one-commit tap holding only this checkout's formula: Homebrew taps a
+    # git repository, and the PR checkout itself is a detached merge commit.
+    tap=$(mktemp -d)
+    mkdir "$tap/Formula"
+    cp "$repo/Formula/agentos.rb" "$tap/Formula/"
+    git -C "$tap" init -q -b main
+    git -C "$tap" add Formula
+    git -C "$tap" -c user.name=install-smoke -c user.email=install-smoke@localhost commit -q -m formula
+    brew tap jongtae/still "$tap"
+    brew install jongtae/still/agentos
+    brew test jongtae/still/agentos
     brew list --versions agentos
     run() { env HOME="$home" "$@"; }
     python="$(brew --prefix)/opt/agentos/libexec/bin/python"

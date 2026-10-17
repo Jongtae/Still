@@ -2,10 +2,11 @@
 
 <h2>1. Install</h2>
 <p><strong>macOS or Linux.</strong> You do not need Homebrew, Python, Docker or git.</p>
-<pre><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/agentos/main/scripts/install.sh | sh</code></pre>
+<pre><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh</code></pre>
 <p>The installer downloads the published release archive and checks its SHA-256 against the release manifest. If the values differ, nothing is installed. When it finishes, first-run setup continues in the same terminal. Later, open a new terminal and run <code>agentos start</code>.</p>
 <p><strong>macOS with Homebrew.</strong></p>
-<pre><code>brew install jongtae/agentos/agentos
+<pre><code>brew tap jongtae/still https://github.com/Jongtae/Still
+brew install jongtae/still/agentos
 agentos start</code></pre>
 <p><strong>Windows.</strong> Still does not run natively on Windows yet. Open the Ubuntu environment in WSL2 and run the install command above. Codex and Claude Code must also be installed and logged in inside Ubuntu. Keep the Ubuntu window open while you use Still. If no browser window opens, open <code>http://127.0.0.1:8787</code> in your Windows browser.</p>
 
@@ -43,7 +44,7 @@ agentos start</code></pre>
   <thead><tr><th>Task</th><th>Command</th></tr></thead>
   <tbody>
     <tr><td>Restart</td><td><code>agentos start</code></td></tr>
-    <tr><td>Update (Homebrew)</td><td>If it is running, stop it with Ctrl-C, then run <code>brew update</code>, <code>brew upgrade jongtae/agentos/agentos</code> and <code>agentos start</code></td></tr>
+    <tr><td>Update (Homebrew)</td><td>If it is running, stop it with Ctrl-C, then run <code>brew update</code>, <code>brew upgrade jongtae/still/agentos</code> and <code>agentos start</code></td></tr>
     <tr><td>Update (install script)</td><td>Run the install command again</td></tr>
     <tr><td>Remove the program (uv install)</td><td><code>uv tool uninstall personal-agentos</code></td></tr>
     <tr><td>Check current state</td><td><code>agentos guide</code> (does not show task content or credentials)</td></tr>

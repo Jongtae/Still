@@ -1,0 +1,99 @@
+{
+  "$comment": [
+    "Maps a release version to the work it carries, so a reader can tell which",
+    "build contains which journey. The published artifact is the GitHub tag",
+    "archive consumed by Jongtae/homebrew-agentos Formula/agentos.rb; the",
+    "formula is not in this repository by an explicit earlier migration",
+    "decision. See docs/release.en.md."
+  ],
+  "published": [
+    {
+      "version": "1.0.4",
+      "tag": "v1.0.4",
+      "tag_date": "2026-09-07",
+      "archive_sha256": "ef2fccc64af40a7914e2a9341dab8bd71706f37869a2f62dd420e5c3ac8afcfd",
+      "state": "published",
+      "carries": "Pre-EPIC-PA1. Contains no PA1 child: no Gmail connector, no `agentos service`, no PA1 connector contract, no memory service.",
+      "observed": "Tapped and installed locally at the time of writing (`brew list --versions agentos` -> `agentos 1.0.4`). Local operating observation, not a clean-machine install."
+    },
+    {
+      "version": "1.1.0",
+      "tag": "v1.1.0",
+      "tag_date": "2026-09-23",
+      "commit": "4510ad6",
+      "archive_sha256": "35c82bd40725490b6bb2ea3637f618b8e8bef9afa9cb2ccb9b1fe2bf858f2971",
+      "state": "published",
+      "carries": "EPIC-PA1 #386 children: #387 connector seam, #388 install/background lifecycle, #389 Gmail read/search, #390 Calendar policy core, #391 public research, #392 memory candidates, #382 web management, #393 Telegram capability handoff, #394 integration. Also #476 failed/partial-turn honesty, #488 refused/deferred durable writes, #487 README rewrite, #495 AGPL-3.0-only licence and trademark notice.",
+      "journeys": {
+        "J1": "partial - install/reboot owner_validation_pending",
+        "J2": "covered",
+        "J3": "covered offline - live Google OAuth owner_validation_pending",
+        "J4": "not reachable from any channel",
+        "J5": "partial - the routing-site provenance refusal ships; the discrimination itself does NOT. research.PublicResearch is imported by nothing in src/, so it is unreachable from any production path in this build",
+        "J6": "covered",
+        "J7": "covered",
+        "J8": "covered"
+      },
+      "not_claimed": "No live Google, OpenRouter or Telegram operation has been observed for any journey.",
+      "observed": "Tap PR Jongtae/homebrew-agentos#17. On the owner's Mac: `brew upgrade` 1.0.4 -> 1.1.0, `brew test` passed, `scripts/quickstart_install_check.py --executable <Cellar>/1.1.0/bin/agentos` reported installed_foreground_smoke with every field true and background_service owner_validation_pending. Local operating observation, not a clean-machine install.",
+      "currently_served_archive_sha256": "3a5303e9a05890eb1c263d856fd1790ac870319d2c40c5ee01a39a1ecaf4a322",
+      "archive_sha256_note": "The original publication checksum is retained above. Checked on 2026-10-07 after the repository rename, GitHub serves the same v1.1.0 tag URL with the checksum in currently_served_archive_sha256; the former tap formula used that served checksum. The change in archive bytes is not a source-change claim."
+    },
+    {
+      "version": "1.1.1",
+      "tag": "v1.1.1",
+      "commit": "febaa5b1fec7224aced53e105dee005e834e9408",
+      "archive_sha256": "fbd95903819ecaff4ac1f0d5bfa0e4131008657edae03465014cda8325c25510",
+      "state": "published",
+      "carries": "Current main source since v1.1.0 through febaa5b1: owner-context and Work continuity, model switching, browser/sign-in handoff, skill routing, Presence conversation behavior, and four-language public README/ontology work (#1120, #1123). Source PR #1121 aligned the formula template and traceability checks with the existing pinned mcp-host extra. Tap PR Jongtae/homebrew-agentos#20 installs this tag with that extra and validates its import. Source coverage and deterministic checks do not prove live external integrations.",
+      "tag_date": "2026-10-07",
+      "observed": "On the owner Mac, Homebrew upgraded agentos 1.1.0 -> 1.1.1 from tap PR Jongtae/homebrew-agentos#20. The served tag archive SHA-256 matched the formula. brew test passed CLI help and mcp.server.stdio import; explicit /opt/homebrew/Cellar/agentos/1.1.1/bin/agentos foreground quickstart smoke reported installed_cli, foreground_start, loopback_host, http_setup, authenticated_note, restart_persistence and single_instance true, with background_service owner_validation_pending. Local installed observation, not a clean-machine install or owner-live provider operation.",
+      "not_claimed": "No live Telegram, Google OAuth, shopping, financial service, or end-to-end README meeting journey was observed for this release. Background service persistence after a machine reboot remains owner validation."
+    },
+    {
+      "version": "1.3.0",
+      "tag": "v1.3.0",
+      "commit": "3a74b8ba27555677f5e58b5ffb9aeee7549b4aba",
+      "archive_sha256": "64cd09d1bbb2352e16b0ac56ec2fe96e5733d65ace2af300be80b5b2bbeb2682",
+      "state": "published",
+      "carries": "Main source since v1.1.1 (v1.2.0 was prepared but never tagged and is folded in): the checksum-pinned one-line uv installer with Homebrew kept and Windows through WSL2 (#1167); own Google client for Drive, Gmail and Calendar with token renewal (#1172) and Works using the owner's AI-side connections read-only by opt-in (#1197); authenticated API reads by secret-slot reference (#1216); conversation-first exact forget, complete deletion and undo of owner Memory, current-state claims and observations (#794 phase 3); host failure instead of worker shortfall when the Still bridge cannot start (#1130); re-delegation evidence for CLI tool calls (#808) and for quiet browser input steps (#899); reply source lists without unused search results (#1009); family-setup tunnel cleanup on restart (#929); browser mobile pages and payment-approval fixes (#1181, #1183); nightly real-WebKit and install-smoke CI. Tests and CI do not prove live external integrations.",
+      "tag_date": "2026-10-10",
+      "observed": "On the owner Mac, Homebrew upgraded agentos 1.1.1 -> 1.3.0 from tap PR Jongtae/homebrew-agentos#21; the served tag archive SHA-256 (measured twice after publication) matched the formula. brew test passed CLI help and mcp.server.stdio import; explicit /opt/homebrew/Cellar/agentos/1.3.0/bin/agentos foreground quickstart smoke reported installed_cli, foreground_start, loopback_host, http_setup, authenticated_note, restart_persistence and single_instance true, with background_service owner_validation_pending. Local installed observation, not a clean-machine install or owner-live provider operation.",
+      "not_claimed": "No live Telegram, Google OAuth, shopping, financial service or end-to-end README journey was observed for this release. Background service persistence after a machine reboot remains owner validation. v1.2.0 was never tagged."
+    },
+    {
+      "version": "1.4.0",
+      "tag": "v1.4.0",
+      "commit": "4802fc835769278271daaa04e46d90b67e4c49d6",
+      "archive_sha256": "f70c0102d7b546a5ef756331870290f9bc103865a54a02a4b528b414ba7d74bd",
+      "state": "published",
+      "carries": "Main source since v1.3.0; milestone v1.4.0 (V1.4-01 / CONNECT-01 #1295: #1296-#1302, #1286). Every service goes through the Connection and Delegation Contract: one Still decision point for every Claude Code and Codex tool call (#1296); owner introduction and trust records (#1297); mutate and payment-class effects on AI-side connections (#1298), with owner-markable money-capable connections where every non-read call, such as a securities order, needs per-action approval bound to its exact parameters; capability search and connect-in-conversation that continues the original Work after MCP, OAuth, browser or API setup (#1299, #1301); owner-registered API connections by secret-slot reference (#1300). Sandboxed code runs by the owner's AI with owner secret sets, owner-reviewed reads, a saved function library and a state-changing request sent once with exact approval (#1380, #1456, #1486). Approvals answered by reaction or reply with clear-signed messages (#1468-#1501); reservations seen and managed in conversation (#1455); first setup finished in the terminal on agentos start (#1475); the plan chooses worker reasoning effort and keeps Work on the owner's Main AI family (#1431, #1434); outcome-judgment accuracy fixes (#1440, #1445, #1451, #1466); Telegram bot identity and owner-language system lines (#1337, #1350); the Still homepage (#1314). Tests and CI do not prove live external integrations.",
+      "tag_date": "2026-10-14",
+      "observed": "Published by the release workflow after owner approval. The served tag archive SHA-256 was measured twice and matched; Homebrew tap PR https://github.com/Jongtae/homebrew-agentos/pull/22 merged after its macOS formula install and brew test passed. The owner's own installed upgrade is not yet recorded.",
+      "not_claimed": "No live securities order, payment, transfer or schedule was executed for this release; brokerage use was observed only for authenticated reads (cash balances and holdings, #1375 comment 2026-10-11). The uncoached live sequence request -> discovery -> connection preparation -> owner-only input -> same-Work result (CONNECT-LIVE-01 #1375) has not been observed on this build and continues in milestone v1.4.1 with #1380 and #1456. No live Telegram, Google OAuth or end-to-end README journey was observed for this release, and background service persistence after a machine reboot remains owner validation."
+    },
+    {
+      "version": "1.4.1",
+      "tag": "v1.4.1",
+      "commit": "ad7c30eac40a3eabd1c8a813c4b931da6263c4db",
+      "archive_sha256": "966821225282f16fdc29b8c3387be3c1b3f2e014d746ef5d1ac7e1801b7381d8",
+      "state": "published",
+      "carries": "Out-of-band patch on v1.4.0; milestone v1.4.1 (#1531, #1532). Intel Macs install again with the one-line installer and the Homebrew formula: cryptography publishes no Intel macOS wheel from 49.0.0, so Intel Macs now resolve cryptography 48.0.1 from its universal2 wheel instead of compiling it, while every other platform keeps the newest release. validate now fails when a supported platform would need a source build. The release workflow now also starts for a release-preparation PR that changes only this manifest, as a patch release shipping the placeholder version does (#1535). No Still runtime code change.",
+      "tag_date": "2026-10-14",
+      "observed": "Published by the release workflow after owner approval. The served tag archive SHA-256 was measured twice and matched; Homebrew tap PR https://github.com/Jongtae/homebrew-agentos/pull/23 merged after its macOS formula install and brew test passed. The owner's own installed upgrade is not yet recorded.",
+      "not_claimed": "No install on a real Intel Mac was observed before publication; resolution and a wheel-only install of the Intel macOS dependency set were checked with uv platform targeting, and Still crypto tests passed against cryptography 48.0.1 on Apple Silicon. cryptography 48.0.1 on Intel Macs carries GHSA-g6cj-pr64-35w5, GHSA-jwv3-5hgf-82ww and GHSA-m2h6-j472-rp4c in PKCS#7 decryption and the X.509 verifier, which Still does not call. Tests and CI do not prove live external integrations."
+    }
+  ],
+  "unpublished": [
+    {
+      "version": "1.4.2",
+      "tag": null,
+      "commit": null,
+      "why_no_commit": "The future tagged main merge commit does not exist; no earlier source SHA can stand in for it.",
+      "archive_sha256": null,
+      "state": "unpublished",
+      "why_no_checksum": "No v1.4.2 GitHub tag archive exists; its served SHA-256 must be measured only after publication.",
+      "carries": "Next development-source version after v1.4.1. This placeholder does not choose the next release's version or claim a new product capability; the release-preparation PR does."
+    }
+  ]
+}
