@@ -73,17 +73,18 @@ Still は、その必要はないという可能性を探ります。自分で�
 macOS、Linux、Windows（WSL2）で、コマンド一つでインストールしてそのまま起動します。Homebrew、Python、Docker は不要です。
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/agentos/95786a97d3a871e65e9397e5a191790aaf76a340/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh
 ```
 
-この URL はインストーラー自体も特定のコミットに固定します。実行前に[固定されたスクリプトを確認](https://github.com/Jongtae/agentos/blob/95786a97d3a871e65e9397e5a191790aaf76a340/scripts/install.sh)でき、スクリプトは公開済み Still アーカイブと、ダウンロードする uv インストーラーのチェックサムを検証します。
+実行前に[スクリプトを確認](https://github.com/Jongtae/Still/blob/main/scripts/install.sh)でき、スクリプトは公開済み Still アーカイブと、ダウンロードする uv インストーラーのチェックサムを検証します。リリースのたびに、この URL はそのリリースを入れるコミットに固定されます。
 
 Windows では PowerShell で `wsl --install` を実行して再起動し、Ubuntu を開いて最初のコマンドを実行してください。Windows の手順、インストーラーの動作、ソースからの実行、すべての設定は [QUICKSTART](../../docs/QUICKSTART.md) にあります。会話中は `agentos start` を起動したままにしてください。
 
 macOS で [Homebrew](https://brew.sh) を使っている場合：
 
 ```sh
-brew install jongtae/agentos/agentos
+brew tap jongtae/still https://github.com/Jongtae/Still
+brew install jongtae/still/agentos
 agentos start
 ```
 
@@ -92,7 +93,7 @@ agentos start
 3. Telegram のペアリング: ターミナルで @BotFather のトークンを貼り付けると、ペアリングリンクが表示されます。リンクを開いて Start を押してください。
 4. 必要なことを聞いてみてください。**「最近、猫がごはんをあまり食べない。どうしたらいい？」** 数日後に **「5万円以下のロボット掃除機を選んで。」** と言うだけで、PA が猫のことを自分から思い出して反映します。
 
-**リリース状況：** どちらのインストール方法でも、タグを付けた main コミットの **v1.4.1**（2026-10-14）が入ります。デモと日常利用の画面は実際の利用セッションにもとづくもので、この版の一連の動作を検証したものではありません。構成図は製品の方向性を示す例です。[release manifest](../../docs/release-manifest.json) は各リリースの範囲を記録し、[製品の状況](../../docs/product-status.en.md) は提供中の機能・テストの根拠・方向性を区別しています。
+**リリース状況：** Still の公開リリースはまだないため、最初のリリースまではどちらのインストール方法も何もインストールせずに止まります。デモと日常利用の画面は実際の利用セッションにもとづくもので、構成図は製品の方向性を示す例です。[release manifest](../../docs/release-manifest.json) は各リリースの範囲を記録し、[製品の状況](../../docs/product-status.en.md) は提供中の機能・テストの根拠・方向性を区別しています。
 
 **アンインストール：** `agentos uninstall` はバックグラウンドサービスとプログラムを削除し、データは削除を選ばない限り残します（[詳しく](../../docs/QUICKSTART.md#uninstall)）。
 

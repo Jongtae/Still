@@ -73,17 +73,18 @@ Still 探索的答案是：*不必*。在一个由你安装和掌控的开源环
 在 macOS、Linux 或 Windows（WSL2）上，一条命令即可安装并启动，无需 Homebrew、Python 或 Docker：
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/agentos/95786a97d3a871e65e9397e5a191790aaf76a340/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh
 ```
 
-该 URL 也把安装脚本本身固定到一个明确提交。运行前可以[检查固定版本的脚本](https://github.com/Jongtae/agentos/blob/95786a97d3a871e65e9397e5a191790aaf76a340/scripts/install.sh)；脚本会校验公开的 Still 归档和它下载的 uv 安装程序。
+运行前可以[检查脚本](https://github.com/Jongtae/Still/blob/main/scripts/install.sh)；脚本会校验公开的 Still 归档和它下载的 uv 安装程序。每次发布时，此 URL 都会固定到安装该版本的提交。
 
 在 Windows 上，请在 PowerShell 中运行 `wsl --install` 并重启，然后打开 Ubuntu 运行第一条命令。Windows 说明、安装脚本做了什么、从源码运行以及所有设置，请见 [QUICKSTART](../../docs/QUICKSTART.md)。对话期间请保持 `agentos start` 运行。
 
 如果你在 macOS 上使用 [Homebrew](https://brew.sh)：
 
 ```sh
-brew install jongtae/agentos/agentos
+brew tap jongtae/still https://github.com/Jongtae/Still
+brew install jongtae/still/agentos
 agentos start
 ```
 
@@ -92,7 +93,7 @@ agentos start
 3. Telegram 配对：在终端粘贴 @BotFather 的令牌后会输出配对链接。打开链接并点击 Start 即可。
 4. 问你真正需要的事：**“我家猫最近不怎么吃饭，该怎么办？”** 几天后只要说 **“帮我挑一台 3000 元以内的扫地机器人。”** PA 会自己记得你养猫，并把这一点考虑进去。
 
-**发布状态：** 两种安装方式安装的都是从已打标签的 main 提交构建的 **v1.4.1**（2026-10-14）。演示和日常使用画面来自真实使用会话，并非该发行版本的端到端验证；架构图属于产品方向。[release manifest](../../docs/release-manifest.json) 记录每个版本的覆盖范围，[产品状态](../../docs/product-status.en.md) 区分已提供的功能、测试依据和发展方向。
+**发布状态：** Still 尚未发布任何版本，因此在首个版本发布前，两种安装方式都会直接停止，不安装任何内容。演示和日常使用画面来自真实使用会话；架构图属于产品方向。[release manifest](../../docs/release-manifest.json) 记录每个版本的覆盖范围，[产品状态](../../docs/product-status.en.md) 区分已提供的功能、测试依据和发展方向。
 
 **卸载：** `agentos uninstall` 会移除后台服务和程序，除非你选择删除，否则数据会保留（[详情](../../docs/QUICKSTART.md#uninstall)）。
 

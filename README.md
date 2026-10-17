@@ -73,17 +73,18 @@ These are guiding principles, not a claim that every scenario already works. The
 On macOS, Linux or Windows (through WSL2), one command installs and starts Still. You do not need Homebrew, Python or Docker:
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/agentos/95786a97d3a871e65e9397e5a191790aaf76a340/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh
 ```
 
-The URL pins the installer itself. [Inspect the pinned script](https://github.com/Jongtae/agentos/blob/95786a97d3a871e65e9397e5a191790aaf76a340/scripts/install.sh) before running it; the script verifies the published Still archive and the uv installer it downloads.
+[Inspect the script](https://github.com/Jongtae/Still/blob/main/scripts/install.sh) before running it; it verifies the published Still archive and the uv installer it downloads. Each release pins this URL to the commit that installs that release.
 
 On Windows, run `wsl --install` in PowerShell, restart, open Ubuntu and run the first command there. Windows details, what the installer does, running from source and every setting are in [QUICKSTART](docs/QUICKSTART.md). Keep `agentos start` running while you talk.
 
 If you use [Homebrew](https://brew.sh) on macOS:
 
 ```sh
-brew install jongtae/agentos/agentos
+brew tap jongtae/still https://github.com/Jongtae/Still
+brew install jongtae/still/agentos
 agentos start
 ```
 
@@ -92,7 +93,7 @@ agentos start
 3. Telegram: paste the @BotFather token in the terminal, open the pairing link it prints and press Start.
 4. Ask for what you need: **“My cat has been off her food lately. What should I try?”** A few days later, just ask **“Find me a robot vacuum under $500.”** Your PA remembers the cat and takes it into account without being reminded.
 
-**Release status:** both installers install **v1.4.1** (2026-10-14), built from the tagged main commit. The demo and the everyday-use image come from real sessions and are not release-specific end-to-end validation; the architecture figure is product direction. The [release manifest](docs/release-manifest.json) records what each release covers, and [product status](docs/product-status.en.md) separates shipped behavior, test evidence and direction.
+**Release status:** no Still release is published yet, so both installers stop without installing anything until the first one. The demo and the everyday-use image come from real sessions; the architecture figure is product direction. The [release manifest](docs/release-manifest.json) records what each release covers, and [product status](docs/product-status.en.md) separates shipped behavior, test evidence and direction.
 
 **Uninstall:** `agentos uninstall` removes the background services and the program, and keeps your data unless you choose to delete it ([details](docs/QUICKSTART.md#uninstall)).
 

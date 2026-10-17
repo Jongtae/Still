@@ -5,7 +5,8 @@ name: release
 # main, so the `release` environment can admit main only. `prepare` only reads; the
 # `publish` job runs in the `release` environment, whose required reviewer is
 # the owner and whose RELEASE_TOKEN secret is the only credential that can
-# write the Homebrew tap or open PRs that run required CI. Every step is
+# open the PRs that run required CI. The Homebrew formula lives in this
+# repository (#45), so there is no separate tap to write. Every step is
 # re-runnable after a partial failure. Code that holds the credential always
 # runs from the approved release commit, never from a newer main. See docs/release.en.md and
 # docs/governance/release-policy.en.md.
@@ -105,7 +106,6 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       ISSUE: ${{ needs.prepare.outputs.issue }}
       COMMIT: ${{ github.sha }}
-      TAP: Jongtae/homebrew-agentos
     steps:
       - name: Require the release environment credential before any change
         env:
@@ -184,8 +184,8 @@ jobs:
           fi
           echo "sha256=$a" >> "$GITHUB_OUTPUT"
 
-      - id: tap
-        name: Update the Homebrew tap and merge it after its install test passes
+      - id: formula
+        name: Update the Homebrew formula and merge it after its install test passes
         timeout-minutes: 60
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -193,29 +193,40 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh auth setup-git
-          branch="agentos-$VERSION"
-          pr="$(gh pr list --repo "$TAP" --head "$branch" --state all --json url --jq '.[0].url // ""')"
+          branch="build/$ISSUE-formula-v$VERSION"
+          tree="$RUNNER_TEMP/formula"
+          pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state all --json url --jq '.[0].url // ""')"
           if [[ -z "$pr" ]]; then
-            gh repo clone "$TAP" "$RUNNER_TEMP/tap" -- --depth 1
-            cd "$RUNNER_TEMP/tap"
-            git checkout -B "$branch"
+            git fetch origin main
+            git worktree add -B "$branch" "$tree" origin/main
             # Refuses a formula whose body drifted from the reviewed template.
-            python3 "$GITHUB_WORKSPACE/scripts/dev/release.py" formula --file Formula/agentos.rb \
-              --repository "$GITHUB_REPOSITORY" --version "$VERSION" --sha256 "$SHA256"
+            python3 scripts/dev/release.py --root "$tree" formula --version "$VERSION" --sha256 "$SHA256"
+            cd "$tree"
+            git add Formula/agentos.rb
             git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
-              commit -am "release: install Still v$VERSION"
+              commit -m "release: install Still v$VERSION with Homebrew (#$ISSUE)"
             git push --force -u origin "$branch"
-            pr="$(gh pr create --repo "$TAP" --base main --head "$branch" \
-              --title "release: install Still v$VERSION" \
-              --body "Points the formula at the v$VERSION tag archive (SHA-256 $SHA256, measured twice after publication). Opened by the release workflow after owner approval (Jongtae/agentos#$ISSUE).")"
+            pr="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+              --title "release: install Still v$VERSION with Homebrew (#$ISSUE)" --body "$(cat <<EOF
+          ## What changed
+
+          Points \`Formula/agentos.rb\` at the v$VERSION tag archive (SHA-256 \`$SHA256\`, measured twice after publication), rendered from \`deploy/homebrew/agentos.rb.template\`. Opened by the release workflow after owner approval; it merges after the install-smoke Homebrew install and \`brew test\` pass.
+
+          ## Existing solutions review (Adopt / Adapt / Build)
+
+          - decision: N/A
+          - N/A reason: release formula data written by scripts/dev/release.py; no component, dependency or framework is introduced.
+
+          Refs #$ISSUE
+          EOF
+          )")"
           fi
-          case "$(gh pr view "$pr" --repo "$TAP" --json state --jq .state)" in
+          case "$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state --jq .state)" in
             MERGED) echo "$pr already merged" ;;
             OPEN)
               sleep 60
-              gh pr checks "$pr" --repo "$TAP" --watch --fail-fast --interval 30
-              gh pr merge "$pr" --repo "$TAP" --squash --delete-branch ;;
+              gh pr checks "$pr" --repo "$GITHUB_REPOSITORY" --watch --fail-fast --interval 30
+              gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --squash --delete-branch ;;
             *) echo "::error::$pr was closed without merging; reopen it or delete $branch and re-run"; exit 1 ;;
           esac
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
@@ -226,7 +237,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           SHA256: ${{ steps.archive.outputs.sha256 }}
-          TAP_PR: ${{ steps.tap.outputs.pr }}
+          FORMULA_PR: ${{ steps.formula.outputs.pr }}
         shell: bash
         run: |
           set -euo pipefail
@@ -238,7 +249,7 @@ jobs:
             git worktree add -B "$branch" "$tree" origin/main
             tag_date="$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json createdAt --jq '.createdAt[0:10]')"
             next="$(python3 scripts/dev/release.py --root "$tree" record --version "$VERSION" --commit "$COMMIT" \
-              --sha256 "$SHA256" --date "$tag_date" --tap-pr "$TAP_PR")"
+              --sha256 "$SHA256" --date "$tag_date" --formula-pr "$FORMULA_PR")"
             cd "$tree"
             uv lock
             git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
@@ -248,7 +259,7 @@ jobs:
               --title "release: record published v$VERSION (#$ISSUE)" --body "$(cat <<EOF
           ## What changed
 
-          Records the published v$VERSION: manifest \`published\` entry with the served archive SHA-256 \`$SHA256\`, \`scripts/install.sh\` pins, release-status prose, and $next as the next in-tree placeholder. Homebrew tap: $TAP_PR. Opened by the release workflow after owner approval; it merges itself when required CI passes.
+          Records the published v$VERSION: manifest \`published\` entry with the served archive SHA-256 \`$SHA256\`, \`scripts/install.sh\` pins, release-status prose, and $next as the next in-tree placeholder. Homebrew formula: $FORMULA_PR. Opened by the release workflow after owner approval; it merges itself when required CI passes.
 
           ## Existing solutions review (Adopt / Adapt / Build)
 

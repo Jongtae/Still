@@ -8,8 +8,10 @@ while a live tap, `Jongtae/homebrew-agentos`, was serving `v1.0.4` and was
 installed on the machine doing the audit.  The absence was real; the inference
 from it was wrong, and it was repeated into several permanent records.
 
-These tests make the relationship checkable instead of narrated, and make the
-two drift conditions fail loudly:
+Still keeps the formula in this repository instead (#45), so the relationship
+is now a file. These tests keep it checkable instead of narrated, keep the
+state before the first Still release honest, and make the two drift
+conditions fail loudly:
 
 * the in-tree version silently equalling the newest published release, which
   makes source indistinguishable from the shipped build;
@@ -28,25 +30,27 @@ SCRIPTS = ROOT / 'scripts'
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from verify_readme_localization import README_RELEASE_BOUNDARIES, visible_prose
+from verify_readme_localization import BREW_INSTALL, readme_release_boundary, visible_prose
 
 TEMPLATE = ROOT / 'deploy' / 'homebrew' / 'agentos.rb.template'
+FORMULA = ROOT / 'Formula' / 'agentos.rb'
 MANIFEST = ROOT / 'docs' / 'release-manifest.json'
+PREDECESSOR_MANIFEST = ROOT / 'docs' / 'history' / 'predecessor-release-manifest.json'
 RUNBOOK = ROOT / 'docs' / 'release.en.md'
 READMES = ('README.md', 'docs/i18n/README.ko.md', 'docs/i18n/README.ja.md', 'docs/i18n/README.zh-CN.md')
 
-#: The tap this repository's formula is published to. Hardcoded on purpose:
-#: if the tap moves, this test should fail and make someone update the
-#: runbook and the template together.
-TAP = 'Jongtae/homebrew-agentos'
-FORMULA_NAME = 'jongtae/agentos/agentos'
+#: This repository is its own tap. Hardcoded on purpose: if the tap moves,
+#: this test should fail and make someone update the runbook and the
+#: template together.
+TAP_COMMAND = 'brew tap jongtae/still https://github.com/Jongtae/Still'
+FORMULA_NAME = 'jongtae/still/agentos'
 
 #: The executable body, pinned literally. Changing the formula means changing
 #: this too, deliberately, in the same commit.
 EXPECTED_FORMULA = '''class Agentos < Formula
   desc "Self-hosted personal agent with browser setup and Telegram"
-  homepage "https://github.com/Jongtae/agentos"
-  url "https://github.com/Jongtae/agentos/archive/refs/tags/v__VERSION__.tar.gz"
+  homepage "https://github.com/Jongtae/Still"
+  url "https://github.com/Jongtae/Still/archive/refs/tags/v__VERSION__.tar.gz"
   sha256 "__SHA256__"
   depends_on "python@3.13"
 
@@ -89,6 +93,12 @@ def version_key(value):
     return tuple(int(part) for part in value.split('.'))
 
 
+def newest_release():
+    """The newest published Still release, or None before the first one."""
+    published = manifest()['published']
+    return max(published, key=lambda row: version_key(row['version'])) if published else None
+
+
 class ReleaseTraceabilityTests(unittest.TestCase):
     def test_the_release_manifest_and_runbook_exist(self):
         self.assertTrue(MANIFEST.is_file())
@@ -103,7 +113,6 @@ class ReleaseTraceabilityTests(unittest.TestCase):
         merged children past it.
         """
         published = {row['version'] for row in manifest()['published']}
-        self.assertTrue(published, 'the manifest records no published release')
         self.assertNotIn(
             project_version(), published,
             'pyproject version equals a published release, so source and '
@@ -133,6 +142,28 @@ class ReleaseTraceabilityTests(unittest.TestCase):
         self.assertIn(project_version(), known,
                       'the version in pyproject.toml is not recorded anywhere')
 
+    def test_predecessor_releases_are_history_not_still_releases(self):
+        """v1.0.4-v1.4.1 were tags of the private predecessor, kept unchanged."""
+        history = json.loads(PREDECESSOR_MANIFEST.read_text(encoding='utf-8'))
+        versions = {row['version'] for row in history['published']}
+        self.assertIn('1.4.1', versions)
+        for row in history['published']:
+            with self.subTest(version=row['version']):
+                self.assertRegex(row['archive_sha256'], r'^[0-9a-f]{64}$')
+        self.assertFalse(versions & {row['version'] for row in manifest()['published']},
+                         'a predecessor tag is recorded as a Still release')
+        self.assertIn('docs/history/predecessor-release-manifest.json', ' '.join(manifest()['$comment']))
+
+    def test_the_formula_exists_exactly_when_a_release_does(self):
+        """Before the first release there is no archive for a formula to name."""
+        release = newest_release()
+        if release is None:
+            self.assertFalse(FORMULA.exists(), 'a formula exists before any Still release')
+            return
+        body = FORMULA.read_text(encoding='utf-8')
+        self.assertIn(f'refs/tags/v{release["version"]}.tar.gz"', body)
+        self.assertIn(f'sha256 "{release["archive_sha256"]}"', body)
+
     # -- the template ------------------------------------------------------
 
     def test_the_template_keeps_its_placeholders(self):
@@ -153,21 +184,26 @@ class ReleaseTraceabilityTests(unittest.TestCase):
     def test_the_template_has_the_shape_the_tap_formula_has(self):
         body = TEMPLATE.read_text(encoding='utf-8')
         self.assertIn('class Agentos < Formula', body)
-        self.assertIn('homepage "https://github.com/Jongtae/agentos"', body)
-        self.assertIn('url "https://github.com/Jongtae/agentos/archive/'
+        self.assertIn('homepage "https://github.com/Jongtae/Still"', body)
+        self.assertIn('url "https://github.com/Jongtae/Still/archive/'
                       'refs/tags/v__VERSION__.tar.gz"', body)
         for block in ('def install', 'def caveats', 'test do'):
             self.assertIn(block, body)
 
     def test_the_template_records_where_the_published_formula_lives(self):
         """The link the repository was missing."""
-        self.assertIn(TAP, TEMPLATE.read_text(encoding='utf-8'))
+        body = TEMPLATE.read_text(encoding='utf-8')
+        self.assertIn('Formula/agentos.rb', body)
+        self.assertIn('brew tap jongtae/still', body)
+        self.assertNotIn('homebrew-agentos', body)
 
     # -- the claims made to the owner --------------------------------------
 
     def test_the_runbook_names_the_tap_and_the_post_publication_boundary(self):
-        body = RUNBOOK.read_text(encoding='utf-8')
-        self.assertIn(TAP, body)
+        body = RUNBOOK.read_text(encoding='utf-8').replace('\n', ' ')
+        self.assertIn(TAP_COMMAND, body)
+        self.assertIn('Formula/agentos.rb', body)
+        self.assertIn('Before the first release', body)
         self.assertIn('everything below publishes', body)
         self.assertIn('owner_validation_pending', body)
 
@@ -178,25 +214,25 @@ class ReleaseTraceabilityTests(unittest.TestCase):
         work on main. Each README must state that boundary within sight of the
         command, not only in QUICKSTART.
         """
-        release = max(manifest()['published'], key=lambda row: version_key(row['version']))
-        newest = release['version']
+        release = newest_release()
         for name in READMES:
             body = (ROOT / name).read_text(encoding='utf-8')
-            if 'brew install ' + FORMULA_NAME not in body:
+            if BREW_INSTALL not in body:
                 continue
             with self.subTest(readme=name):
-                index = body.index('brew install ' + FORMULA_NAME)
+                self.assertIn(TAP_COMMAND, body)
+                index = body.index(BREW_INSTALL)
                 window = body[index:index + 1200]
-                self.assertIn(newest, window,
-                              f'{name} offers brew install without naming the '
-                              f'version it actually installs')
+                if release is not None:
+                    self.assertIn(release['version'], window,
+                                  f'{name} offers brew install without naming the '
+                                  f'version it actually installs')
                 # Naming the version is not enough. Review replaced the
                 # caveat with "v1.0.4, the fully current baseline with every
                 # feature described below" -- the exact claim this test
-                # exists to prevent -- and it still passed.
-                boundary = README_RELEASE_BOUNDARIES[name].format(
-                    version=newest, date=release['tag_date']
-                )
+                # exists to prevent -- and it still passed. Before the first
+                # release the same slot must say no release exists.
+                boundary = readme_release_boundary(name, release)
                 self.assertIn(
                     boundary, window,
                     f'{name} must state the published-release/main boundary '

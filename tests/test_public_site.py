@@ -1,4 +1,7 @@
+import json
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).parents[1]
@@ -50,7 +53,15 @@ def test_site_release_stamp_follows_readme_and_manifest(tmp_path):
     sys.path.insert(0, str(ROOT / "scripts"))
     import stamp_site_release as stamp
 
-    commit, version = stamp.release_values(ROOT)
+    manifest = json.loads((ROOT / "docs/release-manifest.json").read_text(encoding="utf-8"))
+    if manifest["published"]:
+        commit, version = stamp.release_values(ROOT)
+    else:
+        # Before the first Still release (#45) nothing may be stamped; the
+        # stamp itself is checked with stand-in values.
+        with pytest.raises(SystemExit, match="no Still release is published yet"):
+            stamp.release_values(ROOT)
+        commit, version = "1" * 40, "0.1.0"
     copy = tmp_path / "site"
     shutil.copytree(SITE, copy)
     for page in copy.glob("*.html"):
@@ -61,7 +72,7 @@ def test_site_release_stamp_follows_readme_and_manifest(tmp_path):
     stamp.stamp(copy, commit, version)
     for name in ("index.html", "ko.html", "ja.html", "zh-CN.html"):
         body = (copy / name).read_text(encoding="utf-8")
-        assert f"Jongtae/agentos/{commit}/scripts/install.sh" in body
+        assert f"Jongtae/Still/{commit}/scripts/install.sh" in body
         assert f'<span data-release="version">v{version}</span>' in body
         assert "0" * 40 not in body
     workflow = (ROOT / ".github/workflows/deploy-pages.yml").read_text(encoding="utf-8")

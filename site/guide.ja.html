@@ -2,10 +2,11 @@
 
 <h2>1. インストール</h2>
 <p><strong>macOS または Linux.</strong> Homebrew、Python、Docker、git は不要です。</p>
-<pre><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/agentos/main/scripts/install.sh | sh</code></pre>
+<pre><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh</code></pre>
 <p>インストーラーは公開リリースのアーカイブを取得し、SHA-256 をリリースマニフェストと照合します。値が一致しなければ何もインストールしません。完了すると、同じターミナルで初回設定が続きます。次回からは新しいターミナルで <code>agentos start</code> を実行します。</p>
 <p><strong>macOS（Homebrew）.</strong></p>
-<pre><code>brew install jongtae/agentos/agentos
+<pre><code>brew tap jongtae/still https://github.com/Jongtae/Still
+brew install jongtae/still/agentos
 agentos start</code></pre>
 <p><strong>Windows.</strong> Still はまだ Windows でネイティブには動作しません。WSL2 の Ubuntu を開き、上のインストールコマンドを実行します。Codex や Claude Code も Ubuntu 内にインストールしてログインする必要があります。Still を使う間は Ubuntu のウィンドウを開いたままにしてください。ブラウザーが開かない場合は、Windows のブラウザーで <code>http://127.0.0.1:8787</code> を開きます。</p>
 
@@ -43,7 +44,7 @@ agentos start</code></pre>
   <thead><tr><th>目的</th><th>コマンド</th></tr></thead>
   <tbody>
     <tr><td>再起動</td><td><code>agentos start</code></td></tr>
-    <tr><td>更新（Homebrew）</td><td>実行中であれば Ctrl-C で止めてから、<code>brew update</code>、<code>brew upgrade jongtae/agentos/agentos</code>、<code>agentos start</code> を実行</td></tr>
+    <tr><td>更新（Homebrew）</td><td>実行中であれば Ctrl-C で止めてから、<code>brew update</code>、<code>brew upgrade jongtae/still/agentos</code>、<code>agentos start</code> を実行</td></tr>
     <tr><td>更新（インストールスクリプト）</td><td>インストールコマンドをもう一度実行</td></tr>
     <tr><td>プログラムの削除（uv でインストールした場合）</td><td><code>uv tool uninstall personal-agentos</code></td></tr>
     <tr><td>現在の状態の確認</td><td><code>agentos guide</code>（作業内容や認証情報は表示されません）</td></tr>

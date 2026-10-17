@@ -2,13 +2,13 @@
 """File edits the release workflow makes, kept testable outside Actions (#1472).
 
 `.github/workflows/release.yml` owns the order, the owner approval and every
-GitHub call (`gh release`, the tap PR, the record and pin PRs). This script
+GitHub call (`gh release`, the formula, record and pin PRs). This script
 only reads and rewrites repository files, so each step can be checked on a
 temporary copy:
 
 * ``check``    print the in-tree version once it is ready to publish;
 * ``notes``    print the GitHub release notes from its manifest entry;
-* ``formula``  point the Homebrew tap formula at the published tag archive;
+* ``formula``  write ``Formula/agentos.rb`` for the published tag archive;
 * ``record``   move the entry to ``published``, re-pin ``scripts/install.sh``,
                update the release-status prose and set the next placeholder;
 * ``pin``      pin the README installer to the commit that installs it.
@@ -30,19 +30,37 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from stamp_site_release import PIN  # noqa: E402  the README pin the site stamp reads
+from verify_readme_localization import (  # noqa: E402  the sentences the README check requires
+    README_PRE_RELEASE_BOUNDARIES,
+    README_RELEASE_BOUNDARIES,
+    STATUS_PRE_RELEASE_SENTENCES,
+    STATUS_RELEASE_SENTENCES,
+)
 
 MANIFEST = "docs/release-manifest.json"
 INSTALLER = "scripts/install.sh"
 PYPROJECT = "pyproject.toml"
 TEMPLATE = ROOT / "deploy" / "homebrew" / "agentos.rb.template"
+#: The Homebrew formula lives in this repository, which is its own tap (#45):
+#: `brew tap jongtae/still https://github.com/Jongtae/Still`. It is absent until
+#: the first release, because before then there is no archive to point at.
+FORMULA = "Formula/agentos.rb"
+FORMULA_HEADER = ("# Written by scripts/dev/release.py formula from deploy/homebrew/agentos.rb.template\n"
+                  "# for the published tag archive. Change the template, not this file.\n\n")
 READMES = ("README.md", "docs/i18n/README.ko.md", "docs/i18n/README.ja.md", "docs/i18n/README.zh-CN.md")
 #: Prose that names the newest published release. Each file must name it, so
 #: a reworded sentence fails here instead of silently keeping an old version.
 RELEASE_PROSE = READMES + (
     "docs/product-status.en.md",
     "docs/product-status.ko.md",
-    ".github/ISSUE_TEMPLATE/feedback.yml",
 )
+#: The sentence each file carries before the first Still release, and its
+#: released form. The first ``record`` replaces one with the other.
+FIRST_RELEASE_PROSE = {
+    **{name: (README_PRE_RELEASE_BOUNDARIES[name], README_RELEASE_BOUNDARIES[name]) for name in READMES},
+    **{name: (STATUS_PRE_RELEASE_SENTENCES[name], STATUS_RELEASE_SENTENCES[name])
+       for name in STATUS_PRE_RELEASE_SENTENCES},
+}
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 
 
@@ -67,7 +85,10 @@ def save_manifest(root: Path, data: dict) -> None:
     (root / MANIFEST).write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def newest_published(data: dict) -> dict:
+def newest_published(data: dict) -> dict | None:
+    """The newest published release, or None before the first Still release."""
+    if not data["published"]:
+        return None
     return max(data["published"], key=lambda row: version_key(row["version"]))
 
 
@@ -84,9 +105,9 @@ def check(root: Path) -> str:
     if not SEMVER.match(version):
         raise ReleaseError(f"{version} is not a stable X.Y.Z version")
     data = load_manifest(root)
-    newest = newest_published(data)["version"]
-    if version_key(version) <= version_key(newest):
-        raise ReleaseError(f"{version} is not newer than the published v{newest}")
+    newest = newest_published(data)
+    if newest and version_key(version) <= version_key(newest["version"]):
+        raise ReleaseError(f"{version} is not newer than the published v{newest['version']}")
     entry = unpublished_entry(data, version)
     # The post-release placeholder carries no boundary; a prepared release
     # must say what it does not claim before it can be published.
@@ -118,33 +139,40 @@ def _formula_body(text: str) -> str:
     return text[start:].strip()
 
 
-def formula(path: Path, repository: str, version: str, sha256: str, template: Path = TEMPLATE) -> None:
-    """Rewrite url and sha256, and refuse a tap formula that drifted from the template.
+def render_formula(version: str, sha256: str, template: Path = TEMPLATE) -> str:
+    body = _formula_body(template.read_text(encoding="utf-8"))
+    return FORMULA_HEADER + body.replace("__VERSION__", version).replace("__SHA256__", sha256) + "\n"
+
+
+def formula(root: Path, version: str, sha256: str, template: Path = TEMPLATE) -> None:
+    """Write the formula for a published archive; refuse one that drifted from the template.
 
     `brew test` runs the formula's own test block, so a weakened install body
     and test would still pass on their own; the reviewed template is the
-    reference for every other line (docs/release.en.md step 7).
+    reference for every line except url and sha256 (docs/release.en.md step 7).
     """
     if not re.fullmatch(r"[0-9a-f]{64}", sha256):
         raise ReleaseError("sha256 must be 64 lowercase hex characters")
-    text = path.read_text(encoding="utf-8")
-    text = _replace_once(text, r'^(\s*url ")[^"]+/archive/refs/tags/v[^"]+\.tar\.gz"',
-                         rf'\g<1>https://github.com/{repository}/archive/refs/tags/v{version}.tar.gz"',
-                         "the formula url")
-    text = _replace_once(text, r'^(\s*sha256 ")[0-9a-f]{64}"', rf'\g<1>{sha256}"', "the formula sha256")
-    expected = _formula_body(template.read_text(encoding="utf-8")
-                             .replace("__VERSION__", version).replace("__SHA256__", sha256))
-    if _formula_body(text) != expected:
-        raise ReleaseError(f"the tap formula differs from {template.name} beyond url and sha256; "
-                           "re-sync them by hand (docs/release.en.md step 7)")
-    path.write_text(text, encoding="utf-8")
+    rendered = render_formula(version, sha256, template)
+    path = root / FORMULA
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+        text = _replace_once(text, r'^(\s*url ")[^"]+/archive/refs/tags/v[^"]+\.tar\.gz"',
+                             rf'\g<1>https://github.com/Jongtae/Still/archive/refs/tags/v{version}.tar.gz"',
+                             "the formula url")
+        text = _replace_once(text, r'^(\s*sha256 ")[0-9a-f]{64}"', rf'\g<1>{sha256}"', "the formula sha256")
+        if _formula_body(text) != _formula_body(rendered):
+            raise ReleaseError(f"{FORMULA} differs from {template.name} beyond url and sha256; "
+                               "re-sync them by hand (docs/release.en.md step 7)")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(rendered, encoding="utf-8")
 
 
 def _set_installer_pin(text: str, name: str, value: str) -> str:
     return _replace_once(text, rf'^{name}="[^"]*"$', f'{name}="{value}"', f"{name} in {INSTALLER}")
 
 
-def record(root: Path, version: str, commit: str, sha256: str, tag_date: str, tap_pr: str) -> str:
+def record(root: Path, version: str, commit: str, sha256: str, tag_date: str, formula_pr: str) -> str:
     """Record a published release and return the next placeholder version."""
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ReleaseError("commit must be a full 40-character SHA")
@@ -165,7 +193,7 @@ def record(root: Path, version: str, commit: str, sha256: str, tag_date: str, ta
         "carries": entry["carries"],
         "tag_date": tag_date,
         "observed": (f"Published by the release workflow after owner approval. The served tag archive "
-                     f"SHA-256 was measured twice and matched; Homebrew tap PR {tap_pr} merged after its "
+                     f"SHA-256 was measured twice and matched; Homebrew formula PR {formula_pr} merged after its "
                      "macOS formula install and brew test passed. The owner's own installed upgrade is "
                      "not yet recorded."),
         "not_claimed": entry["not_claimed"],
@@ -194,6 +222,9 @@ def record(root: Path, version: str, commit: str, sha256: str, tag_date: str, ta
                                        f'version = "{following}"', f"the version in {PYPROJECT}"),
                          encoding="utf-8")
 
+    if previous is None:
+        _record_first_release_prose(root, version, tag_date)
+        return following
     old_name, new_name = f"v{previous['version']}", f"v{version}"
     for name in RELEASE_PROSE:
         path = root / name
@@ -208,6 +239,20 @@ def record(root: Path, version: str, commit: str, sha256: str, tag_date: str, ta
             raise ReleaseError(f"{name} no longer names {old_name}; update its release-status sentence by hand")
         path.write_text("".join(lines), encoding="utf-8")
     return following
+
+
+def _record_first_release_prose(root: Path, version: str, tag_date: str) -> None:
+    """Replace each "no release yet" sentence with its released form, all or nothing."""
+    texts = {}
+    for name in RELEASE_PROSE:
+        before, after = FIRST_RELEASE_PROSE[name]
+        text = (root / name).read_text(encoding="utf-8")
+        if text.count(before) != 1:
+            raise ReleaseError(f"{name} no longer carries its pre-release status sentence; "
+                               "update its release-status sentence by hand")
+        texts[name] = text.replace(before, after.format(version=version, date=tag_date))
+    for name, text in texts.items():
+        (root / name).write_text(text, encoding="utf-8")
 
 
 def pin(root: Path, commit: str) -> None:
@@ -231,8 +276,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--version", required=True)
     p.add_argument("--milestone-url", default="")
     p = sub.add_parser("formula")
-    p.add_argument("--file", type=Path, required=True)
-    p.add_argument("--repository", required=True)
     p.add_argument("--version", required=True)
     p.add_argument("--sha256", required=True)
     p = sub.add_parser("record")
@@ -240,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--commit", required=True)
     p.add_argument("--sha256", required=True)
     p.add_argument("--date", required=True)
-    p.add_argument("--tap-pr", required=True)
+    p.add_argument("--formula-pr", required=True)
     p = sub.add_parser("pin")
     p.add_argument("--commit", required=True)
     args = parser.parse_args(argv)
@@ -250,9 +293,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "notes":
             sys.stdout.write(notes(args.root, args.version, args.milestone_url))
         elif args.command == "formula":
-            formula(args.file, args.repository, args.version, args.sha256)
+            formula(args.root, args.version, args.sha256)
         elif args.command == "record":
-            print(record(args.root, args.version, args.commit, args.sha256, args.date, args.tap_pr))
+            print(record(args.root, args.version, args.commit, args.sha256, args.date, args.formula_pr))
         else:
             pin(args.root, args.commit)
     except ReleaseError as exc:

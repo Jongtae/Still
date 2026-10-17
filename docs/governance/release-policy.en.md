@@ -1,7 +1,7 @@
 # Release governance and version policy
 
 ## Purpose
-Separate code integration from public installation. **Merge != release**. This policy defines release decisions; [the release procedure](../release.en.md) remains authoritative for tag, checksum, tap, installer and manifest mechanics. Since #1472 those mechanics run in `.github/workflows/release.yml`, and only after the owner approves the `release` environment; the fail-closed `scripts/dev/delivery.py` helper stays disabled.
+Separate code integration from public installation. **Merge != release**. This policy defines release decisions; [the release procedure](../release.en.md) remains authoritative for tag, checksum, formula, installer and manifest mechanics. Since #1472 those mechanics run in `.github/workflows/release.yml`, and only after the owner approves the `release` environment; the fail-closed `scripts/dev/delivery.py` helper stays disabled.
 
 ## Versioning
 Use SemVer for the public interface and compatibility commitments: **patch** for compatible fixes, **minor** for compatible features, **major** for incompatible supported interfaces, configuration or durable-data behavior. Internal refactors do not automatically require major. Pre-releases such as `v1.4.0-rc.1` are opt-in validation candidates, never silently presented as stable. Public contract/compatibility boundaries must be specified before selecting a bump; do not imply unverified support for older versions.
@@ -11,7 +11,7 @@ For a local-first personal OS the compatibility promise is that **upgrading keep
 
 - durable owner state: Memory, Grants, approvals, Work/Event/Evidence and Artifacts, and the stores and migrations that hold them;
 - configuration and the owner's connections, secret slots and connected folders;
-- the `agentos` CLI commands and flags, and the install paths (Homebrew tap, one-line installer);
+- the `agentos` CLI commands and flags, and the install paths (Homebrew formula, one-line installer);
 - AgentPackage and skill manifest schemas;
 - supported platforms (macOS, Linux, Windows through WSL2) and Python versions.
 
@@ -40,7 +40,7 @@ Review readiness approximately monthly, **not** an automatic monthly publish. Se
 1. Identify exact merged revision, included issues/PRs, user-visible changes, supported platforms and proposed SemVer bump. The `vX.Y.Z` milestone has no open issues.
 2. Check required CI plus risk-triggered full validation and security/authority negative tests. Cancelled, missing or stale checks are not passing.
 3. Verify schema/config/memory compatibility, migration and recovery where changed; document rollback limitations.
-4. Execute release procedure's installed-smoke/upgrade checks on the actual published artifact, including Homebrew tap and install script consistency; distinguish CI/mock, installed-smoke and owner-live evidence.
+4. Execute release procedure's installed-smoke/upgrade checks on the actual published artifact, including Homebrew formula and install script consistency; distinguish CI/mock, installed-smoke and owner-live evidence.
 5. Reconcile `docs/release-manifest.json`, release notes, known limitations, product-status and security supported-version statements with actual published state. The manifest entry states `carries` and `not_claimed` before publication.
 6. Prepare a Release Decision Brief: version/tag/head, scope, evidence, failures/unknowns, compatibility, known risks, blockers, publish recommendation and human authorization.
 7. Explicit authorized approval precedes stable publication: the owner approves the `release` environment deployment of the release workflow. Follow the [release procedure](../release.en.md) ordering; the tag archive checksum exists only after the tag is published, so record post-publication verification and rollback response honestly.

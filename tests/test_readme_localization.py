@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import re
 import shutil
 import sys
@@ -731,7 +732,7 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
             target = root / "docs/i18n/README.zh-CN.md"
             body = target.read_text(encoding="utf-8")
             body = body.replace(
-                "brew install jongtae/agentos/agentos",
+                verifier.BREW_INSTALL,
                 "brew install some/fork/agentos",
                 1,
             )
@@ -741,7 +742,7 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
             self.assertTrue(
                 any(
                     "docs/i18n/README.zh-CN.md" in error
-                    and "brew install jongtae/agentos/agentos" in error
+                    and verifier.BREW_INSTALL in error
                     for error in errors
                 ),
                 errors,
@@ -751,9 +752,10 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
         tmp, root = self.temp_root()
         with tmp:
             manifest = root / "docs" / "release-manifest.json"
-            body = manifest.read_text(encoding="utf-8")
-            body = body.replace('"version": "1.1.0"', '"version": "9.9.9"', 1)
-            manifest.write_text(body, encoding="utf-8")
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            data["published"].append({"version": "9.9.9", "tag": "v9.9.9", "tag_date": "2026-11-02",
+                                      "archive_sha256": "a" * 64, "state": "published"})
+            manifest.write_text(json.dumps(data), encoding="utf-8")
 
             errors = verifier.validate_readmes(root)
             self.assertTrue(
@@ -763,13 +765,13 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
 
     def test_release_boundary_must_stay_beside_installation(self):
         release = verifier.newest_published_release(ROOT)
-        for name, template in verifier.README_RELEASE_BOUNDARIES.items():
+        for name in verifier.READMES:
             with self.subTest(readme=name):
                 tmp, root = self.temp_root()
                 with tmp:
                     target = root / name
                     body = target.read_text(encoding="utf-8")
-                    token = template.format(version=release["version"], date=release["tag_date"])
+                    token = verifier.readme_release_boundary(name, release)
                     self.assertIn(token, body)
                     body = body.replace(token, "", 1)
                     body += "\n" + token + "\n"
@@ -782,9 +784,7 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
         tmp, root = self.temp_root()
         with tmp:
             release = verifier.newest_published_release(root)
-            token = verifier.README_RELEASE_BOUNDARIES["README.md"].format(
-                version=release["version"], date=release["tag_date"]
-            )
+            token = verifier.readme_release_boundary("README.md", release)
             target = root / "README.md"
             body = target.read_text(encoding="utf-8")
             target.write_text(body.replace(token, "<!-- " + token + " -->", 1), encoding="utf-8")
@@ -814,9 +814,7 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
         }
         for name in verifier.READMES:
             claims = (
-                (verifier.README_RELEASE_BOUNDARIES[name].format(
-                    version=release["version"], date=release["tag_date"]
-                 ), "visible published-release/main boundary"),
+                (verifier.readme_release_boundary(name, release), "visible published-release/main boundary"),
                 (verifier.README_DIRECTION_DISCLAIMERS[name],
                  "visible illustrative product-direction boundary"),
             )
@@ -852,9 +850,7 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
         release = verifier.newest_published_release(ROOT)
         for name in verifier.READMES:
             for token in (
-                verifier.README_RELEASE_BOUNDARIES[name].format(
-                    version=release["version"], date=release["tag_date"]
-                ),
+                verifier.readme_release_boundary(name, release),
                 verifier.README_DIRECTION_DISCLAIMERS[name],
             ):
                 for sample in samples:
@@ -885,9 +881,7 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
         }
         for name in verifier.READMES:
             claims = (
-                (verifier.README_RELEASE_BOUNDARIES[name].format(
-                    version=release["version"], date=release["tag_date"]
-                 ), "visible published-release/main boundary"),
+                (verifier.readme_release_boundary(name, release), "visible published-release/main boundary"),
                 (verifier.README_DIRECTION_DISCLAIMERS[name],
                  "visible illustrative product-direction boundary"),
             )
@@ -915,7 +909,7 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
             for name in verifier.READMES:
                 target = root / name
                 body = target.read_text(encoding="utf-8")
-                self.assertIn("```sh\nbrew install jongtae/agentos/agentos", body)
+                self.assertIn("\n" + verifier.BREW_INSTALL + "\n", body)
                 target.write_text(body.replace("`main`", "`` main ``"), encoding="utf-8")
             self.assertEqual([], verifier.validate_readmes(root))
 
