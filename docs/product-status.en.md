@@ -13,14 +13,14 @@ This is the evidence and boundary page behind the [README](../README.md). It sep
 <!-- readme-section:demo-recording -->
 ## README demo
 
-The README demo is edited from seven Telegram and browser screen recordings made on 2026-10-11 and selected for public use on 2026-10-12 ([#1383](https://github.com/Jongtae/Still/issues/1383)). It shows a remembered coffee taste, an F1 model search continued on Amazon, beans that fit that taste, and the chosen beans in the cart after sign-in. [The demo record](assets/readme/demo/README.md) keeps the source digests and segments.
+The README demo is edited from seven Telegram and browser screen recordings made on 2026-10-11 and selected for public use on 2026-10-12 ([#1383](https://github.com/Jongtae/agentos/issues/1383)). It shows a remembered coffee taste, an F1 model search continued on Amazon, beans that fit that taste, and the chosen beans in the cart after sign-in. [The demo record](assets/readme/demo/README.md) keeps the source digests and segments.
 
 This is **edited screen-recording evidence**: the screens show the PA's replies, not an independent trace of the account, tool calls or checkout, and the recordings name no application revision or model. It does not show an AI switch, completed payment or a repeatability check of the published release. The historical synthetic audit and reconstructed illustrations below keep their original evidence class.
 
 <!-- readme-section:status -->
 ## What works, what still has friction
 
-The v1 journey table below is backed by the synthetic first-user audit [#472](https://github.com/Jongtae/Still/issues/472), with injected transports; **live provider operation was not run**, so fixture success is not live-service proof. The current release tag includes later Presence/Decision/execution source work, but this historical table does not validate the combined experience in live services. Current contracts and merged tests describe that later work at their own evidence levels.
+The v1 journey table below is backed by the synthetic first-user audit [#472](https://github.com/Jongtae/agentos/issues/472), with injected transports; **live provider operation was not run**, so fixture success is not live-service proof. The current release tag includes later Presence/Decision/execution source work, but this historical table does not validate the combined experience in live services. Current contracts and merged tests describe that later work at their own evidence levels.
 
 | Area | Current evidence |
 | --- | --- |

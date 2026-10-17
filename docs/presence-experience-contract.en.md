@@ -43,7 +43,7 @@ Presence requires useful action, not only natural projection. The [execution con
 
 ## Status and purpose
 
-This is the canonical owner-facing experience refinement for conversation, Settings, contextual capability handoff and recovery. It distills the 2026-09-23 focused [Presence and Settings UX research](research/presence-and-settings-ux.ko.md) into implementation and review rules. Experience convergence was tracked by [PRESENCE-01 #508](https://github.com/Jongtae/Still/issues/508). The 2026-09-24 selection of Presence and governance migration #523 are historical records. This document does not itself authorize runtime execution or select work outside the delivery-plan contract.
+This is the canonical owner-facing experience refinement for conversation, Settings, contextual capability handoff and recovery. It distills the 2026-09-23 focused [Presence and Settings UX research](research/presence-and-settings-ux.ko.md) into implementation and review rules. Experience convergence was tracked by [PRESENCE-01 #508](https://github.com/Jongtae/agentos/issues/508). The 2026-09-24 selection of Presence and governance migration #523 are historical records. This document does not itself authorize runtime execution or select work outside the delivery-plan contract.
 
 It does **not** replace the kernel authority model, the Owner Control Contract, Work/Event/Evidence semantics, Grants/approvals, or the Goal Execution Contract. It does not claim every target behavior is shipped. Current capability claims still require merged implementation and named evidence.
 

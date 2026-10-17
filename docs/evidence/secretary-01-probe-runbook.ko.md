@@ -1,6 +1,6 @@
 # SECRETARY-01 프로브 실행 절차 (A·B·C, 숨겨둔 D)
 
-SEC-EVAL-01 [#660](https://github.com/Jongtae/Still/issues/660) · 계약: [Secretary Agency Contract](../secretary-agency-contract.en.md) "Probe scenarios and the no-scenario-code rule", "Completion rule" · 감사 양식: [completion audit](secretary-01-completion-audit.en.md)
+SEC-EVAL-01 [#660](https://github.com/Jongtae/agentos/issues/660) · 계약: [Secretary Agency Contract](../secretary-agency-contract.en.md) "Probe scenarios and the no-scenario-code rule", "Completion rule" · 감사 양식: [completion audit](secretary-01-completion-audit.en.md)
 
 **이 문서는 실행 절차이지 증거가 아닙니다.** 증거는 소유자가 자기 설치본에서 실제로 실행한 뒤 남기는 `secretary-01-probe-<A|B|C|D>-<UTC 시각>-<작업 ID 앞 8자>.json` 기록과 그 기록을 확인한 감사 항목입니다. 이 문서가 있다는 사실, 테스트 통과, 픽스처 실행은 프로브 완료가 아닙니다.
 
@@ -74,7 +74,7 @@ SEC-EVAL-01 [#660](https://github.com/Jongtae/Still/issues/660) · 계약: [Secr
 
 ## 3. 프로브 B — 내일 일정 미리 알림
 
-**선행 조건**: 알림을 저장하고 보내는 Attention 준비 기능 SEC-ATTN-01 [#659](https://github.com/Jongtae/Still/issues/659)가 병합된 뒤에 실행합니다. 그 전에는 일정 읽기까지만 확인할 수 있고 프로브 B는 완료로 기록하지 않습니다.
+**선행 조건**: 알림을 저장하고 보내는 Attention 준비 기능 SEC-ATTN-01 [#659](https://github.com/Jongtae/agentos/issues/659)가 병합된 뒤에 실행합니다. 그 전에는 일정 읽기까지만 확인할 수 있고 프로브 B는 완료로 기록하지 않습니다.
 
 **준비**
 

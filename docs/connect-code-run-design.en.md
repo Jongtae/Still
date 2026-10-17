@@ -2,7 +2,7 @@
 
 ## Status
 
-Design and threat model for phase 2 of [#1380](https://github.com/Jongtae/Still/issues/1380), a child of CONNECT-LIVE-01 [#1375](https://github.com/Jongtae/Still/issues/1375) under V1.4-01. This document selects an implementation. It is not evidence that the capability works; phases 3 and 4 supply that. The owner delegated the review disposition for this program to the implementer on 2026-10-11. Any AI review is recorded as self-review.
+Design and threat model for phase 2 of [#1380](https://github.com/Jongtae/agentos/issues/1380), a child of CONNECT-LIVE-01 [#1375](https://github.com/Jongtae/agentos/issues/1375) under V1.4-01. This document selects an implementation. It is not evidence that the capability works; phases 3 and 4 supply that. The owner delegated the review disposition for this program to the implementer on 2026-10-11. Any AI review is recorded as self-review.
 
 ## Owner outcome
 

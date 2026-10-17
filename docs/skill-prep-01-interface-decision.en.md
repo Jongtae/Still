@@ -1,8 +1,8 @@
 # SKILL-PREP-01 — Skill-supply interface decision and pinned compatibility
 
-**Issue:** [#960](https://github.com/Jongtae/Still/issues/960) (child of [SKILL-SUPPLY-01 #959](https://github.com/Jongtae/Still/issues/959))
+**Issue:** [#960](https://github.com/Jongtae/agentos/issues/960) (child of [SKILL-SUPPLY-01 #959](https://github.com/Jongtae/agentos/issues/959))
 **Date:** 2026-10-02
-**Status:** decision record. It sets the contracts and gates for [#961](https://github.com/Jongtae/Still/issues/961). It changes no runtime behavior, dependency, constitution text or active goal.
+**Status:** decision record. It sets the contracts and gates for [#961](https://github.com/Jongtae/agentos/issues/961). It changes no runtime behavior, dependency, constitution text or active goal.
 **Inspected repository baseline:** `bd7fec18` (`main` after #965)
 **Governing specification:** [Supplied Skills and Reusable Execution — Implementation Preparation](skill-supply-execution-preparation.en.md), section 18
 
@@ -154,7 +154,7 @@ The upstream skill's `examples/*.md` mention Slack, Google Drive and Calendar as
 
 ## 8. C16 amendment — proposed here, applied by #974
 
-**Status update:** [#974](https://github.com/Jongtae/Still/issues/974) applies this amendment to the constitution and AGENTS.md. The replacement coverage in `tests/test_no_scenario_code.py` is:
+**Status update:** [#974](https://github.com/Jongtae/agentos/issues/974) applies this amendment to the constitution and AGENTS.md. The replacement coverage in `tests/test_no_scenario_code.py` is:
 
 - `CoreNamesNoSkill`: no core literal names a bundled skill, even inside a sentence.
 - `CoreReadsNoSkillFiles`: only `skills.py` refers to skill files.
@@ -200,7 +200,7 @@ No live model call, account mutation, evaluator or all-profile sweep is part of 
 
 ## 12. Implementation record (#961)
 
-[#961](https://github.com/Jongtae/Still/issues/961) implements sections 1–6 with these concrete choices.
+[#961](https://github.com/Jongtae/agentos/issues/961) implements sections 1–6 with these concrete choices.
 
 | Decision here | As implemented | Where |
 | --- | --- | --- |
@@ -221,7 +221,7 @@ No live model, live GitHub download during tests, or owner account was used. Mod
 
 ## 13. Management content (#962)
 
-[#962](https://github.com/Jongtae/Still/issues/962) adds the bundled skill `agentos/agentos-management`: a `SKILL.md` plus three references, one each for the Main AI, family assistants and site sharing.
+[#962](https://github.com/Jongtae/agentos/issues/962) adds the bundled skill `agentos/agentos-management`: a `SKILL.md` plus three references, one each for the Main AI, family assistants and site sharing.
 
 - **Content only.** It directs the worker to the existing `settings_read` and `settings_change` tools and their owning services. It adds no tool, setter or confirmation of its own.
 - **Not blocked by C16.** It names no owner task, site or provider. It describes Still's own settings, so it does not need the section 8 amendment that site and task know-how waits for.
@@ -233,7 +233,7 @@ No live model, live GitHub download during tests, or owner account was used. Mod
 
 ## 14. Shopping and site content (#963)
 
-[#963](https://github.com/Jongtae/Still/issues/963) adds content only.
+[#963](https://github.com/Jongtae/agentos/issues/963) adds content only.
 
 **Packaging.** The skills are published in this repository's `skills/` folder and installed through the #961 pinned-GitHub path. They are not bundled. The amended C16 (#974) requires an Still-authored site skill to get the same review as an external one and to be individually removable by the owner. Installed packages already meet both requirements, with no change to the common loader. The bundled `agentos-skills` guide lists their addresses, so the AI can offer to add one, and the owner confirms as for any skill.
 

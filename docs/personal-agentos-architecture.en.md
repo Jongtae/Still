@@ -56,7 +56,7 @@ Everything above the worker boundary remains authoritative when a worker changes
 
 ## Kernel primitives
 
-D-AP-01 / [#334](https://github.com/Jongtae/Still/issues/334) supplies the v0.1 schema/specification foundation. This architecture retains ten responsibility boundaries:
+D-AP-01 / [#334](https://github.com/Jongtae/agentos/issues/334) supplies the v0.1 schema/specification foundation. This architecture retains ten responsibility boundaries:
 
 ### Owner
 The human principal whose state is protected: identity, policies, devices/runtime claims, preferences and trust settings. Authority is not delegated to a package or marketplace.
@@ -171,7 +171,7 @@ Decision inference is not policy or authority. A decision result/confidence may 
 
 Implementations may include rules, the existing LLM path, local/small models, or optional specialist providers. Jev is currently only an optional/experimental adapter candidate; Jev-specific concepts such as `Choice`, `Score`, or `Noul` must be translated at the adapter boundary rather than becoming kernel vocabulary or a mandatory dependency.
 
-External decision providers remain subject to Work-scoped Context minimization, destination/Grant checks, budgets, cancellation, truthful provider/evidence reporting, and explicit fallback/safe-stop semantics. See [Provider-independent Decision Layer](decision-layer.en.md) and [#415](https://github.com/Jongtae/Still/issues/415).
+External decision providers remain subject to Work-scoped Context minimization, destination/Grant checks, budgets, cancellation, truthful provider/evidence reporting, and explicit fallback/safe-stop semantics. See [Provider-independent Decision Layer](decision-layer.en.md) and [#415](https://github.com/Jongtae/agentos/issues/415).
 
 ### Ruflo's place
 
@@ -201,7 +201,7 @@ Start with a capable default assistant and shared research/file/result/continuit
 
 A first useful Files package proves the same public Package/Runtime/Grant boundary external authors use. General/Research/Coding references remain subsequent SDK work, not hidden privilege. The first integrated app must do useful work, then survive revoke/remove/restart and replacement with owner results intact; denying every task is not success.
 
-[USE-01 #358](https://github.com/Jongtae/Still/issues/358) improves current defaults without waiting for the whole platform. [OBS-01 #359](https://github.com/Jongtae/Still/issues/359) projects actual progress and controls. [AGENT-UX-01 #360](https://github.com/Jongtae/Still/issues/360) consumes the existing #335/#337/#338/#340/#341/#342 contracts/implementations for install/run/revoke/remove/replacement. Preserve all unfinished update/rollback/event/SDK scope; downstream consumers are not reverse prerequisites of foundation tasks.
+[USE-01 #358](https://github.com/Jongtae/agentos/issues/358) improves current defaults without waiting for the whole platform. [OBS-01 #359](https://github.com/Jongtae/agentos/issues/359) projects actual progress and controls. [AGENT-UX-01 #360](https://github.com/Jongtae/agentos/issues/360) consumes the existing #335/#337/#338/#340/#341/#342 contracts/implementations for install/run/revoke/remove/replacement. Preserve all unfinished update/rollback/event/SDK scope; downstream consumers are not reverse prerequisites of foundation tasks.
 
 ## Autonomous acquisition
 

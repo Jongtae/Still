@@ -1,6 +1,6 @@
 # Whose Agent? — Editorial record and completed v0.3 review
 
-- Follow-up: [WHITEPAPER-02 #1045](https://github.com/Jongtae/Still/issues/1045).
+- Follow-up: [WHITEPAPER-02 #1045](https://github.com/Jongtae/agentos/issues/1045).
 - Manuscript: [Korean v0.3.1](whose-agent.ko.md), a wording-only copy edit that was not re-reviewed; the reviewed v0.3 artifact is pinned under *Exact approved artifact*.
 - Review date: 2026-10-06.
 - Method: **ten sequential role-based self-review passes by the same authoring assistant**; nine passes revised the manuscript and the tenth verified it without further edits.
@@ -18,19 +18,19 @@ Both final roles approved the same manuscript bytes:
 - Git content blob: `19e8aa29d38316aa306f15147e4b028ad73bfe9c`.
 - SHA-256 of UTF-8 file bytes: `0bae152ff20f37f02fb7ad922abacba5b5bc4e5cc9186f91374bac5ec2120916`.
 - Size: 73,904 bytes; 13 numbered substantive chapters; 18 footnote definitions.
-- [Immutable reviewed manuscript](https://github.com/Jongtae/Still/blob/27834b2aaa1bfc697c799797946115d4365fb89e/docs/whitepapers/whose-agent.ko.md).
+- [Immutable reviewed manuscript](https://github.com/Jongtae/agentos/blob/27834b2aaa1bfc697c799797946115d4365fb89e/docs/whitepapers/whose-agent.ko.md).
 
 Approval binds to that artifact, not to whatever a branch later contains. A substantive manuscript or source change requires reconsidering the affected gate. GitHub PR state and required Checks remain the source of truth for repository execution; this record is an editorial audit, not a duplicate CI ledger.
 
 ## Post-approval copy edit (v0.3.1, 2026-10-12)
 
-[#1414](https://github.com/Jongtae/Still/issues/1414) made a non-substantive Korean copy edit after the approval above: sixteen sentences reworded for flow (mainly the inverted "…것이 본 백서의 제안이다" construction) and the header updated to v0.3.1. No claim, example, source, chapter, footnote or evidence boundary changed. The approvals above still bind to the v0.3 artifact; the v0.3.1 wording was not re-run through the ten review roles.
+[#1414](https://github.com/Jongtae/agentos/issues/1414) made a non-substantive Korean copy edit after the approval above: sixteen sentences reworded for flow (mainly the inverted "…것이 본 백서의 제안이다" construction) and the header updated to v0.3.1. No claim, example, source, chapter, footnote or evidence boundary changed. The approvals above still bind to the v0.3 artifact; the v0.3.1 wording was not re-run through the ten review roles.
 
 ## Provenance and historical boundary
 
-The owner supplied the industrial thesis, examples and direction through a design discussion. The assistant integrated and edited the Korean manuscript. The first preserved version, v0.2, was published through [#1043](https://github.com/Jongtae/Still/issues/1043) / [#1044](https://github.com/Jongtae/Still/pull/1044), at baseline commit `435470d4f8a1b7a73ab9bd5e44e61aea6b2d6ef5`.
+The owner supplied the industrial thesis, examples and direction through a design discussion. The assistant integrated and edited the Korean manuscript. The first preserved version, v0.2, was published through [#1043](https://github.com/Jongtae/agentos/issues/1043) / [#1044](https://github.com/Jongtae/agentos/pull/1044), at baseline commit `435470d4f8a1b7a73ab9bd5e44e61aea6b2d6ef5`.
 
-Its manuscript blob was `2b935c2b81816f6aae0f4dc7ccf035edfea2f316`. Its [original review plan](https://github.com/Jongtae/Still/blob/435470d4f8a1b7a73ab9bd5e44e61aea6b2d6ef5/docs/whitepapers/review-plan.en.md) correctly said the ten rounds were unperformed then. The later owner instruction authorized preserving that draft on main, not retroactive expert approval. This follow-up actually performs the role-based review; it does not rewrite that history.
+Its manuscript blob was `2b935c2b81816f6aae0f4dc7ccf035edfea2f316`. Its [original review plan](https://github.com/Jongtae/agentos/blob/435470d4f8a1b7a73ab9bd5e44e61aea6b2d6ef5/docs/whitepapers/review-plan.en.md) correctly said the ten rounds were unperformed then. The later owner instruction authorized preserving that draft on main, not retroactive expert approval. This follow-up actually performs the role-based review; it does not rewrite that history.
 
 Only the intended whitepaper and public references are published. No raw private conversation, unrelated personal material, credentials, attachment dump or private-repository content is included. The already-public Presence research remains a historical report dated 2026-09-23, not a fresh runtime audit. Its observed blob is `60d4e5e52350f54d2887eb81ab7c608d0fe8bf8a`; v0.3 pins its repository citation to the baseline commit.
 
@@ -107,7 +107,7 @@ Public primary/official pages were retrieved on 2026-10-06; repository documents
 | apple2008 / summary, 1.2 | [Apple announcement](https://www.apple.com/newsroom/2008/03/06Apple-Announces-iPhone-2-0-Software-Beta/), 6 March 2008, SDK/distribution paragraphs | Developer access plus then-announced approval/exclusive distribution; not today's worldwide app policy. |
 | cma2022 / 1.2 | [CMA announcement](https://www.gov.uk/government/news/cma-plans-market-investigation-into-mobile-browsers-and-cloud-gaming), 10 June 2022 | The regulator's dated mobile-ecosystem findings; retained as attributed UK-period evidence, not a present global assessment. |
 | claude-memory / 4.2 | [Claude official help](https://support.claude.com/en/articles/12123587-import-and-export-your-memory-from-claude), import/export instructions and experimental limitation | Import/export exists and incorporation can fail; not complete context, task or authority migration. |
-| presence / 5, 12 | [Pinned public research](https://github.com/Jongtae/Still/blob/435470d4f8a1b7a73ab9bd5e44e61aea6b2d6ef5/docs/research/presence-and-settings-ux.ko.md), definition, Memory/Availability, optional proactivity, anti-patterns and reported dogfooding | What the 2026-09-23 report describes and proposes; not a fresh code audit, replicated HCI study or shipped capability. Secondary literature inside that report was not independently revalidated. |
+| presence / 5, 12 | [Pinned public research](https://github.com/Jongtae/agentos/blob/435470d4f8a1b7a73ab9bd5e44e61aea6b2d6ef5/docs/research/presence-and-settings-ux.ko.md), definition, Memory/Availability, optional proactivity, anti-patterns and reported dogfooding | What the 2026-09-23 report describes and proposes; not a fresh code audit, replicated HCI study or shipped capability. Secondary literature inside that report was not independently revalidated. |
 | constitution / 3 | [Development Constitution](../development-constitution.en.md), status and development sequence; [AGENTS.md](../../AGENTS.md) | Canonical implementation/governance authority remains separate. No runtime activation or policy modification follows from the paper. |
 | ucp / 6.2 | [UCP official documentation](https://ucp.dev/), capabilities overview | Catalog/cart/account-linking/checkout/order scope; no named retailer adoption, interoperability result or collaboration-quality claim. |
 | vc / summary, 7.1 | [W3C VC Data Model 2.0](https://www.w3.org/TR/vc-data-model-2.0/), introduction and verification definition | Verifiability is not truth of claims; signatures are not business-quality or completeness guarantees. |

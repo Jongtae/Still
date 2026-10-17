@@ -2,7 +2,7 @@
 
 ## Status and precedence
 
-CONN-DELEG-01 [#1221](https://github.com/Jongtae/Still/issues/1221). Owner direction 2026-10-09 (design conversation): the concepts below are to be written down concretely enough that any session or AI can be briefed against them and its result judged by them.
+CONN-DELEG-01 [#1221](https://github.com/Jongtae/agentos/issues/1221). Owner direction 2026-10-09 (design conversation): the concepts below are to be written down concretely enough that any session or AI can be briefed against them and its result judged by them.
 
 This is a current product contract. It issues no authority and claims no shipped behavior. Capability claims still need merged code and named evidence (C6). It does not select a goal; [`delivery-plan.yaml`](../delivery-plan.yaml) does.
 

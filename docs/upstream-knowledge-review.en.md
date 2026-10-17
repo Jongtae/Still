@@ -1,6 +1,6 @@
 # UPSTREAM-KNOWLEDGE-01 — frontend-design content review
 
-Issue: [#1026](https://github.com/Jongtae/Still/issues/1026), under
+Issue: [#1026](https://github.com/Jongtae/agentos/issues/1026), under
 UPSTREAM-01 #1022. Selection: the U14 pilot in the
 [upstream relationship map](upstream-relationship-map.en.md#selected-non-code-pilot-for-1026-frontend-design-revision-impact).
 Review date: 2026-10-06. This record supplements the existing development-skill

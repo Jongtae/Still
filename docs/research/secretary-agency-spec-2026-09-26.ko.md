@@ -4,7 +4,7 @@
 - **Evidence class:** owner-directed product specification produced with Codex deep research from the owner's problem statement; informed by repository contracts and external agent-design sources (IBM, Google A2A)
 - **Role:** durable product-definition research reference
 - **Canonical implementation contract:** [Secretary Agency Contract](../secretary-agency-contract.en.md)
-- **Governance issue:** [GOV-SECRETARY-01 #653](https://github.com/Jongtae/Still/issues/653)
+- **Governance issue:** [GOV-SECRETARY-01 #653](https://github.com/Jongtae/agentos/issues/653)
 - **Capability claim:** none. This document does not claim that the described behavior is shipped.
 - **Authority:** this research does not create runtime authority, activate a delivery goal or supersede Work/Event/Evidence truth semantics. Authority comes from the canonical contract, `delivery-plan.yaml` and the owner decisions recorded in #653.
 

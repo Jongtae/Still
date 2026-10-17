@@ -3,9 +3,9 @@
 ## Scope and evidence boundary
 
 This contract implements the first, bounded update path selected by
-UPSTREAM-UPDATE-01 [#1024](https://github.com/Jongtae/Still/issues/1024),
+UPSTREAM-UPDATE-01 [#1024](https://github.com/Jongtae/agentos/issues/1024),
 extended by the host-only stdio adoption in UPSTREAM-RUNTIME-01
-[#1025](https://github.com/Jongtae/Still/issues/1025).
+[#1025](https://github.com/Jongtae/agentos/issues/1025).
 It covers the root Python project and GitHub Actions. It does not enable
 production upgrades, deployment, auto-merge, repository write tokens in CI,
 owner data access, private indexes, or a second scheduler.
@@ -144,7 +144,7 @@ to turn a bounded update into an unrelated refresh.
 
 ## Host MCP package and recovery contract — #1025
 
-The Phase A decision [recorded in #1025](https://github.com/Jongtae/Still/issues/1025#issuecomment-6004656860)
+The Phase A decision [recorded in #1025](https://github.com/Jongtae/agentos/issues/1025#issuecomment-6004656860)
 **Adapts** the official public `mcp.server.stdio.stdio_server` and
 `mcp.shared.jsonrpc_dispatcher.JSONRPCDispatcher` APIs behind the existing
 host `mcp_bridge.serve` boundary. The exact release is
@@ -353,7 +353,7 @@ platform wheel hashes are in `uv.lock`. SDK import is lazy and version checked.
 A missing/different SDK or unsupported engine yields `unsupported`, never a
 fallback to another runtime or an inferred connection.
 
-Reuse review: [#1299 setup boundary](https://github.com/Jongtae/Still/issues/1299#issuecomment-6105194944).
+Reuse review: [#1299 setup boundary](https://github.com/Jongtae/agentos/issues/1299#issuecomment-6105194944).
 The existing `bounded_run` owns output limits, cancellation, timeout and
 whole-process-group cleanup. A dedicated helper suppresses SDK logs, passes
 only a selected public HTTP definition with strict MCP configuration and no

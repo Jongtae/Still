@@ -12,7 +12,7 @@
 
 **Your personal agent, on your own machine.<br>Change the AI underneath; keep its memory, open work and permissions.**
 
-[![CI](https://github.com/Jongtae/Still/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/Still/actions/workflows/validate.yml) [![Full test suite](https://github.com/Jongtae/Still/actions/workflows/full-validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/Still/actions/workflows/full-validate.yml) [![Latest release](https://img.shields.io/github/v/release/Jongtae/Still?sort=semver&label=release)](https://github.com/Jongtae/Still/releases) [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml) [![macOS | Linux | WSL2 limited](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2%20limited-555)](docs/QUICKSTART.md) [![License: AGPL 3.0](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](LICENSE)
+[![CI](https://github.com/Jongtae/agentos/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/agentos/actions/workflows/validate.yml) [![Full test suite](https://github.com/Jongtae/agentos/actions/workflows/full-validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/agentos/actions/workflows/full-validate.yml) [![Latest release](https://img.shields.io/github/v/release/Jongtae/agentos?sort=semver&label=release)](https://github.com/Jongtae/agentos/releases) [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml) [![macOS | Linux | WSL2 limited](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2%20limited-555)](docs/QUICKSTART.md) [![License: AGPL 3.0](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](LICENSE)
 
 [English](README.md) | [한국어](docs/i18n/README.ko.md) | [简体中文](docs/i18n/README.zh-CN.md) | [日本語](docs/i18n/README.ja.md)
 
@@ -42,7 +42,7 @@ Still explores an answer: *no*. It is an open-source environment you install and
 
 - **Bring the AI you already subscribe to.** Your ChatGPT plan through Codex, or your Claude plan through Claude Code, does the work. Other connections are listed in [QUICKSTART](docs/QUICKSTART.md#other-model-connections).
 - **One PA across conversations.** Memory, saved results and open-work state persist across conversations and restarts. Interrupted execution is reported rather than silently replayed.
-- **Your boundaries.** Access begins with the folders, accounts and tools you connect. Supported payment flows require per-action approval; [current browser limitations](https://github.com/Jongtae/Still/issues/758) are documented. [Secrets](.github/SECURITY.md) are excluded from model prompts, logs and Evidence.
+- **Your boundaries.** Access begins with the folders, accounts and tools you connect. Supported payment flows require per-action approval; [current browser limitations](https://github.com/Jongtae/agentos/issues/758) are documented. [Secrets](.github/SECURITY.md) are excluded from model prompts, logs and Evidence.
 - **Told, not hidden.** When your AI saves something to memory it says so and offers an exact undo. Each task records which of your information it used and where it went.
 - **Where you already talk.** Chat on Telegram from your phone, or in the browser on macOS or Linux. Windows works through [WSL2 with current limitations](docs/QUICKSTART.md#windows-wsl2).
 
@@ -58,7 +58,7 @@ These are not features of one particular AI model. They are the criteria by whic
 - **Execution:** It doesn't only answer questions; it can act in real services and on computers.
 - **Owner Control:** I retain control over my data, permissions and the outcomes of execution.
 
-These are guiding principles, not a claim that every scenario already works. The [product status](docs/product-status.en.md), real demo above and [known browser limitations](https://github.com/Jongtae/Still/issues/758) show what has been observed and what still needs work.
+These are guiding principles, not a claim that every scenario already works. The [product status](docs/product-status.en.md), real demo above and [known browser limitations](https://github.com/Jongtae/agentos/issues/758) show what has been observed and what still needs work.
 
 <!-- readme-section:try-today -->
 
@@ -73,10 +73,10 @@ These are guiding principles, not a claim that every scenario already works. The
 On macOS, Linux or Windows (through WSL2), one command installs and starts Still. You do not need Homebrew, Python or Docker:
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/95786a97d3a871e65e9397e5a191790aaf76a340/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/agentos/95786a97d3a871e65e9397e5a191790aaf76a340/scripts/install.sh | sh
 ```
 
-The URL pins the installer itself. [Inspect the pinned script](https://github.com/Jongtae/Still/blob/95786a97d3a871e65e9397e5a191790aaf76a340/scripts/install.sh) before running it; the script verifies the published Still archive and the uv installer it downloads.
+The URL pins the installer itself. [Inspect the pinned script](https://github.com/Jongtae/agentos/blob/95786a97d3a871e65e9397e5a191790aaf76a340/scripts/install.sh) before running it; the script verifies the published Still archive and the uv installer it downloads.
 
 On Windows, run `wsl --install` in PowerShell, restart, open Ubuntu and run the first command there. Windows details, what the installer does, running from source and every setting are in [QUICKSTART](docs/QUICKSTART.md). Keep `agentos start` running while you talk.
 
@@ -172,7 +172,7 @@ A latte you mentioned earlier comes back when you are choosing beans for the cof
 | [Documentation map](docs/README.md) | Every current contract and guide |
 | [Acknowledgements](docs/acknowledgements.en.md) | Research and projects that shaped the design |
 
-**Contributing.** Issues and pull requests are welcome. Start with [CONTRIBUTING](.github/CONTRIBUTING.md); [AGENTS.md](AGENTS.md) describes the development workflow. New to the code? The [contributor onboarding guide](docs/contributor-onboarding.en.md) maps it and suggests a first change. Tried it? Tell us what worked and what didn't through the [feedback form](https://github.com/Jongtae/Still/issues/new?template=feedback.yml) or [Discussions](https://github.com/Jongtae/Still/discussions).
+**Contributing.** Issues and pull requests are welcome. Start with [CONTRIBUTING](.github/CONTRIBUTING.md); [AGENTS.md](AGENTS.md) describes the development workflow. New to the code? The [contributor onboarding guide](docs/contributor-onboarding.en.md) maps it and suggests a first change. Tried it? Tell us what worked and what didn't through the [feedback form](https://github.com/Jongtae/agentos/issues/new?template=feedback.yml) or [Discussions](https://github.com/Jongtae/agentos/discussions).
 
 <!-- readme-section:license -->
 

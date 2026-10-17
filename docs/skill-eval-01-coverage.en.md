@@ -1,6 +1,6 @@
 # SKILL-EVAL-01 — Supplied-skill coverage, evidence and live-sample protocol
 
-**Issue:** [#964](https://github.com/Jongtae/Still/issues/964) (child of [SKILL-SUPPLY-01 #959](https://github.com/Jongtae/Still/issues/959))
+**Issue:** [#964](https://github.com/Jongtae/agentos/issues/964) (child of [SKILL-SUPPLY-01 #959](https://github.com/Jongtae/agentos/issues/959))
 **Date:** 2026-10-02
 **Status:** coverage map, gap checks and protocol. The owner approved the live sample in section 4 on 2026-10-02. Run 1 stopped at its first case (section 5), and no other live run has been made.
 **Code covered:** `main` after #976 (`efb5977`). Upstream fixture `anthropics/skills@8a1541c`. Reference skills `skills/shopping-cart` and `skills/emart-ssg` at that head.

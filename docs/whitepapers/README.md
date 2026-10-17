@@ -7,7 +7,7 @@ These documents develop industry, product and business hypotheses from Still des
 **Still 총람 — 두뇌는 빌리고, 비서는 내 것으로**
 
 - [Read the Korean manuscript — v0.1](personal-agentos-compendium.ko.md) or the [English edition](personal-agentos-compendium.en.md).
-- Tracking issue: [#1483](https://github.com/Jongtae/Still/issues/1483).
+- Tracking issue: [#1483](https://github.com/Jongtae/agentos/issues/1483).
 
 One document that gathers the project's technologies, concepts, theory, concerns, problem statements and problem-solving methods from 2026-09-05 to 2026-10-13 (2026-10-14 for the prompt audit and clean-up): the problem, the kernel concepts, "AI is the engine", memory and context, Presence, collaboration, authority and evidence, connection and delegation, skills, roles, the development method, dropped decisions with a timeline, business directions, and open questions. It integrates the argument of *Whose Agent?* below, which stays unchanged.
 
@@ -19,10 +19,10 @@ Each topic runs problem → deliberation → decision (including rejected or rev
 
 **누구의 에이전트인가 — AI 공급자 중심의 통합 환경에서 사용자 주도형 Agent 생태계로**
 
-- [Read the Korean manuscript — v0.3.1](whose-agent.ko.md), a wording-only copy edit of the reviewed v0.3 that was not itself re-reviewed. The [reviewed v0.3 artifact](https://github.com/Jongtae/Still/blob/27834b2aaa1bfc697c799797946115d4365fb89e/docs/whitepapers/whose-agent.ko.md) stays pinned.
+- [Read the Korean manuscript — v0.3.1](whose-agent.ko.md), a wording-only copy edit of the reviewed v0.3 that was not itself re-reviewed. The [reviewed v0.3 artifact](https://github.com/Jongtae/agentos/blob/27834b2aaa1bfc697c799797946115d4365fb89e/docs/whitepapers/whose-agent.ko.md) stays pinned.
 - [Executed review rounds, findings, source audit and final role decisions](review-plan.en.md).
-- [Review follow-up — WHITEPAPER-02 #1045](https://github.com/Jongtae/Still/issues/1045).
-- [Original draft preservation — PR #1044](https://github.com/Jongtae/Still/pull/1044).
+- [Review follow-up — WHITEPAPER-02 #1045](https://github.com/Jongtae/agentos/issues/1045).
+- [Original draft preservation — PR #1044](https://github.com/Jongtae/agentos/pull/1044).
 
 The manuscript retains the Jarvis opening, the internet/mobile analogy, portable memory, replaceable intelligence, persistent Presence, human-agent collaboration, skills, verifiable execution, business incentives, counterarguments and an evaluation agenda. Version 0.3 clarifies the conditions for industry-layer separation, model capability gaps, memory-import conflicts, concurrent edits, evidence coverage and key trust, adoption incentives, outcome costs and fair evaluation.
 
@@ -30,4 +30,4 @@ The manuscript retains the Jarvis opening, the internet/mobile analogy, portable
 
 Korean is the source language of this owner-facing manuscript. This guide and editorial record are in English; no English manuscript translation is claimed. Canonical development guidance remains in [AGENTS.md](../../AGENTS.md), the [Development Constitution](../development-constitution.en.md), and the relevant English product contracts. Nothing here changes `delivery-plan.yaml`, runtime authority, the active program or root README product claims.
 
-The case-study source is the already-public [2026-09-23 Presence and Settings UX research](https://github.com/Jongtae/Still/blob/435470d4f8a1b7a73ab9bd5e44e61aea6b2d6ef5/docs/research/presence-and-settings-ux.ko.md). Historical observations, industry inferences, hypothetical examples and proposed experiments remain distinguishable. Public references are in the manuscript's bibliography and the editorial source audit.
+The case-study source is the already-public [2026-09-23 Presence and Settings UX research](https://github.com/Jongtae/agentos/blob/435470d4f8a1b7a73ab9bd5e44e61aea6b2d6ef5/docs/research/presence-and-settings-ux.ko.md). Historical observations, industry inferences, hypothetical examples and proposed experiments remain distinguishable. Public references are in the manuscript's bibliography and the editorial source audit.

@@ -667,9 +667,9 @@ Work는 지속적인 실행·복구 단위로 유지한다. Event는 관측된 �
 
 ### [R1] 저장소의 현재 규칙을 확인한 범위
 
-`Jongtae/Still`의 기여 규칙과 PR 형식은 앞선 검토에서 확인했고, 추가 검토에서는 같은 기준 커밋의 `AGENTS.md`와 R2–R4를 대조했다. 기준 커밋은 `735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89`이다. 저장소 전체 코드 감사나 런타임 실행·성능·외부 연결의 검증은 아니다.
+`Jongtae/agentos`의 기여 규칙과 PR 형식은 앞선 검토에서 확인했고, 추가 검토에서는 같은 기준 커밋의 `AGENTS.md`와 R2–R4를 대조했다. 기준 커밋은 `735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89`이다. 저장소 전체 코드 감사나 런타임 실행·성능·외부 연결의 검증은 아니다.
 
-[AGENTS.md — 기준 커밋](https://github.com/Jongtae/Still/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/AGENTS.md)
+[AGENTS.md — 기준 커밋](https://github.com/Jongtae/agentos/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/AGENTS.md)
 
 특히 C16의 AI 실행 주체와 Decision Model 조정 역할, 버전이 있는 skill content와 커널의 구분, pilot의 현재 승인 경계를 참조한다. [P1]의 과거 연구 권고와 현재 규칙이 다른 부분은 현재 규칙을 우선한다. 본문 제안으로 기존 규칙을 조용히 변경하지 않는다.
 
@@ -687,11 +687,11 @@ Work는 지속적인 실행·복구 단위로 유지한다. Event는 관측된 �
 
 ### [R2–R4] 기존 스킬 설계와 현재 코드
 
-**[R2] Supplied Skills and Reusable Execution — Preparation.** 문서의 과거 baseline 4e51855…; §§1–7; §6 후속 amendment 표시. Supply first와 같은 AI 안의 스킬 재사용 방향을 이어받는다. 2026-10-01의 미구현 설명을 현재 코드 상태로 사용하지 않는다. [원문](https://github.com/Jongtae/Still/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/docs/skill-supply-execution-preparation.en.md)
+**[R2] Supplied Skills and Reusable Execution — Preparation.** 문서의 과거 baseline 4e51855…; §§1–7; §6 후속 amendment 표시. Supply first와 같은 AI 안의 스킬 재사용 방향을 이어받는다. 2026-10-01의 미구현 설명을 현재 코드 상태로 사용하지 않는다. [원문](https://github.com/Jongtae/agentos/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/docs/skill-supply-execution-preparation.en.md)
 
-**[R3] Still — manifests.py.** blob d43e54e08352e67129154b510ef4db8f3831ade0; 1–160 읽기. HOST_ACTIONS·스킬 선언·도구/역할 동시 선언 제한을 확인한다. 스킬 선언만으로 독립 실행 역할·새 권한을 만들 수 없다. [원문](https://github.com/Jongtae/Still/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/src/personal_agent/manifests.py)
+**[R3] Still — manifests.py.** blob d43e54e08352e67129154b510ef4db8f3831ade0; 1–160 읽기. HOST_ACTIONS·스킬 선언·도구/역할 동시 선언 제한을 확인한다. 스킬 선언만으로 독립 실행 역할·새 권한을 만들 수 없다. [원문](https://github.com/Jongtae/agentos/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/src/personal_agent/manifests.py)
 
-**[R4] Still — skills.py.** blob 85af637fb3e7aaaa76fb7a4ff5f8abf15e264844; 1–175·470–675 읽기. SkillLibrary.read·SkillBinding.load/check_current/recall 및 로드 한도를 확인한다. 코드 정적 읽기는 활성화·설치 성공·재시작·외부 동작 테스트가 아니다. [원문](https://github.com/Jongtae/Still/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/src/personal_agent/skills.py)
+**[R4] Still — skills.py.** blob 85af637fb3e7aaaa76fb7a4ff5f8abf15e264844; 1–175·470–675 읽기. SkillLibrary.read·SkillBinding.load/check_current/recall 및 로드 한도를 확인한다. 코드 정적 읽기는 활성화·설치 성공·재시작·외부 동작 테스트가 아니다. [원문](https://github.com/Jongtae/agentos/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/src/personal_agent/skills.py)
 
 ### [X01–X13] 선행 개념·구조·실무·공개 구현
 

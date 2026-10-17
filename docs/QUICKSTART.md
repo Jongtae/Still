@@ -24,7 +24,7 @@ The main path is the one below: install, connect the AI subscription you already
 One command installs and starts Still. You do not need Homebrew, Python, Docker or git:
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/agentos/main/scripts/install.sh | sh
 ```
 
 The [installer](../scripts/install.sh) first downloads the published release archive and checks its SHA-256 against the [release manifest](release-manifest.json); on a mismatch it installs nothing. If you do not already have a current [uv](https://docs.astral.sh/uv/), it installs a pinned version through Astral's official installer, which adds `~/.local/bin` to your shell `PATH`. It then installs Still with a uv-managed Python, ignoring your own uv settings, and starts it; the first setup described below then runs in the same terminal. Set `AGENTOS_NO_START=1` to install without starting. Later, open a new terminal and run `agentos start`. Running the same command again after a release updates Still. To remove it, see [Uninstall](#uninstall).
@@ -57,7 +57,7 @@ Still can also use a direct model connection: Ollama (an already running local m
 
 ## Windows (WSL2)
 
-Still does not run natively on Windows yet ([#1168](https://github.com/Jongtae/Still/issues/1168)). It runs in WSL2, the Linux environment built into Windows 10 and 11:
+Still does not run natively on Windows yet ([#1168](https://github.com/Jongtae/agentos/issues/1168)). It runs in WSL2, the Linux environment built into Windows 10 and 11:
 
 1. In PowerShell, run `wsl --install`, then restart Windows.
 2. Open **Ubuntu** from the Start menu and create your Linux user name and password.
@@ -68,7 +68,7 @@ Things that differ from macOS:
 
 - A Codex or Claude Code subscription must be installed and logged in inside Ubuntu, not in Windows.
 - Windows folders appear under `/mnt/c/`, for example `/mnt/c/Users/your-name/Documents/AgentOS`.
-- Keep the Ubuntu window open while you talk. The background login service and the embedded browser tool are macOS only for now ([#682](https://github.com/Jongtae/Still/issues/682)).
+- Keep the Ubuntu window open while you talk. The background login service and the embedded browser tool are macOS only for now ([#682](https://github.com/Jongtae/agentos/issues/682)).
 
 ## First task
 

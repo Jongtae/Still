@@ -13,14 +13,14 @@
 <!-- readme-section:demo-recording -->
 ## README 데모
 
-README 데모는 2026-10-11에 녹화한 Telegram과 브라우저 화면 녹화 일곱 개를 편집한 것으로, 2026-10-12에 공개용으로 선택했습니다([#1383](https://github.com/Jongtae/Still/issues/1383)). 기억해 둔 커피 취향, 아마존으로 이어지는 F1 모형 검색, 그 취향에 맞는 원두 추천, 로그인 뒤 장바구니에 담긴 원두를 보여 줍니다. 원본 해시와 편집 구간은 [데모 기록](assets/readme/demo/README.md)에 남아 있습니다.
+README 데모는 2026-10-11에 녹화한 Telegram과 브라우저 화면 녹화 일곱 개를 편집한 것으로, 2026-10-12에 공개용으로 선택했습니다([#1383](https://github.com/Jongtae/agentos/issues/1383)). 기억해 둔 커피 취향, 아마존으로 이어지는 F1 모형 검색, 그 취향에 맞는 원두 추천, 로그인 뒤 장바구니에 담긴 원두를 보여 줍니다. 원본 해시와 편집 구간은 [데모 기록](assets/readme/demo/README.md)에 남아 있습니다.
 
 증거 범위는 **편집한 화면 녹화**입니다. 화면은 PA의 응답을 보여 줄 뿐 계정·도구 호출·결제에 대한 독립적인 실행 기록이 아니며, 앱 리비전이나 모델도 표시되지 않습니다. AI 교체, 결제 완료, 공개 배포본의 반복 재현 검증은 보여 주지 않습니다. 아래의 과거 synthetic 감사와 재구성 그림은 원래의 증거 범위를 그대로 유지합니다.
 
 <!-- readme-section:status -->
 ## 지금 되는 것과 아직 마찰이 있는 것
 
-아래 v1 여정 표의 근거는 synthetic first-user audit [#472](https://github.com/Jongtae/Still/issues/472)입니다. 실제 제품 구성에 주입한 transport(injected transport)로 검증했으며, **실제 외부 제공자 운영은 실행하지 않았습니다.** 현재 배포 태그에는 그 뒤에 추가된 Presence·Decision·실행 소스도 들어 있지만, 이 표는 과거 시점의 기록이며 통합된 경험을 실제 서비스에서 검증한 것이 아닙니다. 이후 작업은 각 계약과 병합 테스트의 근거 수준에 맞춰 읽어야 합니다.
+아래 v1 여정 표의 근거는 synthetic first-user audit [#472](https://github.com/Jongtae/agentos/issues/472)입니다. 실제 제품 구성에 주입한 transport(injected transport)로 검증했으며, **실제 외부 제공자 운영은 실행하지 않았습니다.** 현재 배포 태그에는 그 뒤에 추가된 Presence·Decision·실행 소스도 들어 있지만, 이 표는 과거 시점의 기록이며 통합된 경험을 실제 서비스에서 검증한 것이 아닙니다. 이후 작업은 각 계약과 병합 테스트의 근거 수준에 맞춰 읽어야 합니다.
 
 | 영역 | 현재 근거 |
 | --- | --- |

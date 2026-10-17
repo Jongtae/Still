@@ -1,6 +1,6 @@
 # Assistant execution: delivery, ownership and completion
 
-Parent [#600](https://github.com/Jongtae/Still/issues/600). Normative [execution contract](assistant-execution-contract.en.md). Cost/reuse amendment [#612](https://github.com/Jongtae/Still/issues/612) is authoritative for verification depth. This is the 2026-09-25 owner-selected execution-integration refinement of PRESENCE-01, not a second coordinator. The two-child limit counts actively executing implementation worktrees, not backlog issue records.
+Parent [#600](https://github.com/Jongtae/agentos/issues/600). Normative [execution contract](assistant-execution-contract.en.md). Cost/reuse amendment [#612](https://github.com/Jongtae/agentos/issues/612) is authoritative for verification depth. This is the 2026-09-25 owner-selected execution-integration refinement of PRESENCE-01, not a second coordinator. The two-child limit counts actively executing implementation worktrees, not backlog issue records.
 
 ## Finite work breakdown
 

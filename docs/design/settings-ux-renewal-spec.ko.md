@@ -1,6 +1,6 @@
 # 설정 UI/UX 개선 명세 — 소유자 검토본
 
-- 명세 이슈: [#766](https://github.com/Jongtae/Still/issues/766)
+- 명세 이슈: [#766](https://github.com/Jongtae/agentos/issues/766)
 - 작성일: 2026-09-28
 - 기준: 소유자의 요청·첨부 화면과 `main`의 `00ccf640e69208c7d911469e7521bda5b54392c4` 코드
 - [영문 구현 명세](settings-ux-renewal-spec.en.md)가 정본입니다. 이 문서는 같은 결정을 한국어로 설명합니다.
@@ -261,7 +261,7 @@ WAI-ARIA의 대화상자·라디오 패턴, HTML 기본 `dialog`와 `details`, N
 
 ## 구현 착수 결정 · 2026-09-28
 
-소유자가 이 명세에 따른 구현과 PR 수정·머지를 위임했습니다. [#780](https://github.com/Jongtae/Still/issues/780)의 네 작업 단위 #781–#784를 순서대로 진행합니다. 위 시안은 여전히 설계 예시이며 실제 구현·검증·머지 근거는 각 PR에서 구분합니다.
+소유자가 이 명세에 따른 구현과 PR 수정·머지를 위임했습니다. [#780](https://github.com/Jongtae/agentos/issues/780)의 네 작업 단위 #781–#784를 순서대로 진행합니다. 위 시안은 여전히 설계 예시이며 실제 구현·검증·머지 근거는 각 PR에서 구분합니다.
 
 ## #809 후속 조정: 핵심 설정을 한 묶음으로 표시
 

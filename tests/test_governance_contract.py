@@ -363,11 +363,11 @@ def test_following_the_bootstrap_selects_nothing_while_no_goal_is_active() -> No
 
 
 def test_ai_is_the_engine_principle_is_pinned_in_governance() -> None:
-    """C16 (#712): the owner's AI is the engine; AgentOS orchestrates and removes blockers."""
+    """C16 (#712): the owner's AI is the engine; Still orchestrates and removes blockers."""
     constitution = _read("docs/development-constitution.en.md")
     _assert_all(
         constitution,
-        "### C16. AI is the engine; AgentOS orchestrates, it does not implement requests",
+        "### C16. AI is the engine; Still orchestrates, it does not implement requests",
         "The decision model orchestrates",
         "Never implement a specific owner request in code",
         # #974: know-how is skill content, never core code, never authority.
@@ -385,7 +385,7 @@ def test_ai_is_the_engine_principle_is_pinned_in_governance() -> None:
     _assert_all(
         agents,
         "## AI is the engine — Constitution C16",
-        "AgentOS code never implements a specific owner request",
+        "Still code never implements a specific owner request",
         "removes blockers",
         "am I removing a blocker or scripting the task?",
         "explicit, versioned skill content",

@@ -1,6 +1,6 @@
 # UPSTREAM-CONTRIB-01 — prepared contribution and release rejoin record
 
-Issue: [#1027](https://github.com/Jongtae/Still/issues/1027), under
+Issue: [#1027](https://github.com/Jongtae/agentos/issues/1027), under
 UPSTREAM-01 #1022. Review and reproduction date: 2026-10-06. This record is
 **prepared** inside Still. It does not report an external issue, comment,
 discussion or pull request as submitted. External posting, an agreement and any
@@ -15,7 +15,7 @@ Suffix List snapshots. The real Still consumer is
 [`browser_session.registrable_domain`](../src/personal_agent/browser_session.py),
 which uses the package's bundled data for login-site and destination boundaries.
 Still currently locks the known-good `1.0.2.20261002`; rejected update
-[PR #1077](https://github.com/Jongtae/Still/pull/1077) preserved that lock.
+[PR #1077](https://github.com/Jongtae/agentos/pull/1077) preserved that lock.
 
 The official MCP Python SDK response-drain finding is retained as a secondary
 rejoin record. It is genuine, but upstream
@@ -250,7 +250,7 @@ to hide publisher divergence.
 
 Still adopted `mcp==2.3.0`, tag commit
 [`2118f14f8a19bc158d8a1cf90af58d85d187f849`](https://github.com/modelcontextprotocol/python-sdk/releases/tag/v2.3.0),
-through [PR #1080](https://github.com/Jongtae/Still/pull/1080). Its host bridge
+through [PR #1080](https://github.com/Jongtae/agentos/pull/1080). Its host bridge
 uses the public `JSONRPCDispatcher` with an all-inline membership adapter to
 preserve serialized Work, budget and Evidence ordering and to flush accepted or
 rejected requests before EOF. Notifications are intercepted inline. This is a

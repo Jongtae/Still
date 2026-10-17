@@ -52,6 +52,6 @@ Collected in the [2026-09-28 owner-model and decision-journal review](research/o
 
 ## Product patterns observed
 
-- **Meta Muse** (observed 2026-09-28): conversational onboarding that asks for the user's name and explains what the agent can do. Noted as a direction for first-run onboarding in [#814](https://github.com/Jongtae/Still/issues/814).
+- **Meta Muse** (observed 2026-09-28): conversational onboarding that asks for the user's name and explains what the agent can do. Noted as a direction for first-run onboarding in [#814](https://github.com/Jongtae/agentos/issues/814).
 
 Corrections or additions are welcome through an issue.

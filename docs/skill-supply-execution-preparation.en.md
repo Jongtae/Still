@@ -1,6 +1,6 @@
 # Supplied Skills and Reusable Execution — Implementation Preparation
 
-**Programme:** [SKILL-SUPPLY-01 #959](https://github.com/Jongtae/Still/issues/959)  
+**Programme:** [SKILL-SUPPLY-01 #959](https://github.com/Jongtae/agentos/issues/959)  
 **Date:** 2026-10-01  
 **Status:** preparation proposal; runtime implementation is not activated  
 **Inspected baseline:** `4e518550b13e13c3cd06cdf05987948ac8169fca`  
@@ -39,21 +39,21 @@ All source links below are pinned to the inspected baseline. Recheck them at act
 
 | Seam | Baseline observation | Proposed treatment |
 | --- | --- | --- |
-| [`manifests.py`](https://github.com/Jongtae/Still/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/manifests.py) | Version-1 manifests declare roles/instructions/tools. Tools map to existing `HOST_ACTIONS`; built-in roles are researcher, reviewer and planner. | Extend the existing package representation with skill references and explicit compatibility metadata. Do not invent a second tool registry. |
-| [`plugins.py`](https://github.com/Jongtae/Still/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/plugins.py) | `PluginRegistry` stores validated JSON declarations; its current install writes `enabled=True`. It does not execute arbitrary package code. | Distinguish the current local declaration lifecycle from the proposed external acquisition/staging lifecycle. Do not claim staging already exists. |
-| [`agent_runtime.py`](https://github.com/Jongtae/Still/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/agent_runtime.py) | Module-level `action_definitions`, `Capabilities` and route-neutral guidance expose tools. `delegate_agent` creates a read-only child without browser/settings handlers, shares the Work budget and returns a report. | Prefer same-agent skill loading. Action-capable specialists require separate wiring and authority design; changing a role manifest alone is insufficient. |
-| [`settings_orchestrator.py`](https://github.com/Jongtae/Still/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/settings_orchestrator.py) | Authoritative services expose settings and family operations, including draft/apply/recovery behavior. | Management skills use existing reads/setters. Reconcile later owner-directed behavior rather than reimplementing control state. |
-| [`browser_session.py`](https://github.com/Jongtae/Still/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/browser_session.py) | macOS WebKit sessions, mediated observations, payment checks, limits and stateful browser actions already exist. | Reuse them; supplied skills cannot install another browser or bypass the session broker. |
-| [`family_share.py`](https://github.com/Jongtae/Still/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/family_share.py) | Per-site cookies are pushed between same-Mac instances; receiving Still enforces payment refusal and revocation can remain pending. | Preserve this boundary. It is not a provider-issued cart-only credential and not evidence of cross-vendor A2A support. |
-| [`shopping.json`](https://github.com/Jongtae/Still/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/evals/scenarios/shopping.json) | The two scenarios concern comparison and follow-up constraints, not cart mutation or supplied-skill first use. | Keep them and extend the existing evaluation harness with the missing cases. |
+| [`manifests.py`](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/manifests.py) | Version-1 manifests declare roles/instructions/tools. Tools map to existing `HOST_ACTIONS`; built-in roles are researcher, reviewer and planner. | Extend the existing package representation with skill references and explicit compatibility metadata. Do not invent a second tool registry. |
+| [`plugins.py`](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/plugins.py) | `PluginRegistry` stores validated JSON declarations; its current install writes `enabled=True`. It does not execute arbitrary package code. | Distinguish the current local declaration lifecycle from the proposed external acquisition/staging lifecycle. Do not claim staging already exists. |
+| [`agent_runtime.py`](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/agent_runtime.py) | Module-level `action_definitions`, `Capabilities` and route-neutral guidance expose tools. `delegate_agent` creates a read-only child without browser/settings handlers, shares the Work budget and returns a report. | Prefer same-agent skill loading. Action-capable specialists require separate wiring and authority design; changing a role manifest alone is insufficient. |
+| [`settings_orchestrator.py`](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/settings_orchestrator.py) | Authoritative services expose settings and family operations, including draft/apply/recovery behavior. | Management skills use existing reads/setters. Reconcile later owner-directed behavior rather than reimplementing control state. |
+| [`browser_session.py`](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/browser_session.py) | macOS WebKit sessions, mediated observations, payment checks, limits and stateful browser actions already exist. | Reuse them; supplied skills cannot install another browser or bypass the session broker. |
+| [`family_share.py`](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/family_share.py) | Per-site cookies are pushed between same-Mac instances; receiving Still enforces payment refusal and revocation can remain pending. | Preserve this boundary. It is not a provider-issued cart-only credential and not evidence of cross-vendor A2A support. |
+| [`shopping.json`](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/evals/scenarios/shopping.json) | The two scenarios concern comparison and follow-up constraints, not cart mutation or supplied-skill first use. | Keep them and extend the existing evaluation harness with the missing cases. |
 
 The missing connection is between reusable, distributed methods and the current execution/evidence paths. Core tool availability is not the same as supplied-skill execution support.
 
 ### Historical and concurrent work
 
-[#343](https://github.com/Jongtae/Still/issues/343) was checked as closed with `state_reason=not_planned`. Its ecosystem-import contract is prior art, not an active implementation queue. Do not reopen or rewrite it merely to attach this proposal. The [distribution foundation](agent-distribution-platform-foundation.en.md) and #333/#334 remain reusable historical contracts, not a requirement to revive their entire programme.
+[#343](https://github.com/Jongtae/agentos/issues/343) was checked as closed with `state_reason=not_planned`. Its ecosystem-import contract is prior art, not an active implementation queue. Do not reopen or rewrite it merely to attach this proposal. The [distribution foundation](agent-distribution-platform-foundation.en.md) and #333/#334 remain reusable historical contracts, not a requirement to revive their entire programme.
 
-[#548](https://github.com/Jongtae/Still/issues/548) concerns development-only skills; files under `.claude/skills` are not proof of product runtime support. [#661](https://github.com/Jongtae/Still/issues/661) already owns family A2A; this plan does not duplicate it. [#918](https://github.com/Jongtae/Still/issues/918) records owner-typed settings/family apply-notice-undo direction. Its actual merged implementation must be reconciled before management work; do not restore blanket confirmation from older text. Existing name/session/browser blocker fixes remain separate dependencies where applicable.
+[#548](https://github.com/Jongtae/agentos/issues/548) concerns development-only skills; files under `.claude/skills` are not proof of product runtime support. [#661](https://github.com/Jongtae/agentos/issues/661) already owns family A2A; this plan does not duplicate it. [#918](https://github.com/Jongtae/agentos/issues/918) records owner-typed settings/family apply-notice-undo direction. Its actual merged implementation must be reconciled before management work; do not restore blanket confirmation from older text. Existing name/session/browser blocker fixes remain separate dependencies where applicable.
 
 ## 4. Existing Solutions Review: Adopt / Adapt before Build
 
@@ -70,7 +70,7 @@ The sources in section 16 were checked on 2026-10-01. These findings concern doc
 
 Public market, provider-authored package, compatible package and behaviorally verified package are separate attributes. No official Emart/SSG skill is established by this review. A directory may contain only hosted agents, proprietary packages or unsupported scripts; catalogue presence proves neither download rights nor compatibility.
 
-[#960](https://github.com/Jongtae/Still/issues/960) must select exact library/source revisions and licences, inspect release/maintenance activity, dependency footprint, execution behavior and redistribution terms, and run a small model-free compatibility spike. There is no selected dependency version in this preparation. Existing stdlib/path/hash/JSON facilities and repository serializers should be reused for the narrow Still glue; choose an established safe frontmatter/schema parser where suitable. Build requires a documented unmet contract, not preference for fewer dependencies.
+[#960](https://github.com/Jongtae/agentos/issues/960) must select exact library/source revisions and licences, inspect release/maintenance activity, dependency footprint, execution behavior and redistribution terms, and run a small model-free compatibility spike. There is no selected dependency version in this preparation. Existing stdlib/path/hash/JSON facilities and repository serializers should be reused for the narrow Still glue; choose an established safe frontmatter/schema parser where suitable. Build requires a documented unmet contract, not preference for fewer dependencies.
 
 ## 5. Vocabulary and proposed composition
 
@@ -100,7 +100,7 @@ This is a responsibility diagram, not a mandate for new classes, stores or model
 
 ## 6. C16 reconciliation — proposed, not yet amended
 
-**Superseded:** [#974](https://github.com/Jongtae/Still/issues/974) amended C16 on 2026-10-02 (constitution C16 and AGENTS.md). The rest of this section is kept as the original proposal.
+**Superseded:** [#974](https://github.com/Jongtae/agentos/issues/974) amended C16 on 2026-10-02 (constitution C16 and AGENTS.md). The rest of this section is kept as the original proposal.
 
 Current [AGENTS.md](../AGENTS.md) prohibits task-named guidance as well as site/provider/category code branches. Therefore, saying that a site skill already complies without qualification would be inaccurate.
 
@@ -199,7 +199,7 @@ Human login/setup/approval is a continuation state, not permission to create dup
 
 ## 10. Reference slice: Still management
 
-[#962](https://github.com/Jongtae/Still/issues/962) supplies `agentos-management` through the common contract. It calls existing `settings_read`, `settings_change` and authoritative service setters; it is not another control plane or a privileged System Agent.
+[#962](https://github.com/Jongtae/agentos/issues/962) supplies `agentos-management` through the common contract. It calls existing `settings_read`, `settings_change` and authoritative service setters; it is not another control plane or a privileged System Agent.
 
 | Goal | Required observations | Failure/continuation rules |
 | --- | --- | --- |
@@ -211,7 +211,7 @@ Use stable internal IDs after resolving human-readable names; duplicate names re
 
 ## 11. Reference slice: shopping and site knowledge
 
-[#963](https://github.com/Jongtae/Still/issues/963) separates shared shopping semantics from site navigation knowledge. Inspect available public/provider packages first. If no suitable Emart package exists, publish an explicitly Still-authored reference; record the missing supplier rather than invent an official package.
+[#963](https://github.com/Jongtae/agentos/issues/963) separates shared shopping semantics from site navigation knowledge. Inspect available public/provider packages first. If no suitable Emart package exists, publish an explicitly Still-authored reference; record the missing supplier rather than invent an official package.
 
 Shared shopping knowledge covers product identity, variants, brand/pack/unit constraints, quantity meaning, alternatives allowed by the request, target account and outcome evidence. Site content covers entry points and navigation hints, contextual product controls and how to observe the result. Do not embed browser-engine replacement or per-site Python branches in core.
 
@@ -231,7 +231,7 @@ A second site fixture must use the same common contract without core edits. It s
 
 ## 13. Acceptance and measurement
 
-[#964](https://github.com/Jongtae/Still/issues/964) adapts the current evaluation harness. Freeze A/B conditions before tuning: A is existing Still; B uses supplied skill knowledge with the same supported model/tools; optional future C adds validated learned/replay behavior. A does not receive hidden warm-up knowledge. Reset fixture state so an already-added item is not counted as another completed mutation.
+[#964](https://github.com/Jongtae/agentos/issues/964) adapts the current evaluation harness. Freeze A/B conditions before tuning: A is existing Still; B uses supplied skill knowledge with the same supported model/tools; optional future C adds validated learned/replay behavior. A does not receive hidden warm-up knowledge. Reset fixture state so an already-added item is not counted as another completed mutation.
 
 The matrix below is a coverage inventory, not a mandatory live-model sweep for every child or content revision. Section 18 assigns preservation checks from #961 onward and limits verification to changed contracts. #964 consolidates reusable evidence and fills concrete gaps; it is not the first regression gate.
 
@@ -262,12 +262,12 @@ Normal development uses focused tests, fake source/service transports, temporary
 
 | Order | Issue | Scope | Gate |
 | --- | --- | --- | --- |
-| 0 | [#959](https://github.com/Jongtae/Still/issues/959) | This proposal, owner companion and bounded issue preparation | Documentation review; no runtime activation |
-| 1 | [#960](https://github.com/Jongtae/Still/issues/960) | Interface/pattern decision, C16 reconciliation and pinned reuse/compatibility spike | Stable behavioral contracts, bounded change surface and selected APIs/source/licence |
-| 2 | [#961](https://github.com/Jongtae/Still/issues/961) | Optional supplied knowledge, existing lifecycle and API/CLI loading | No-skill/off/miss path preserved; one real external source; focused boundary evidence |
-| 3a | [#962](https://github.com/Jongtae/Still/issues/962) | Built-in management skill | #961; existing setters and #918 behavior preserved |
-| 3b | [#963](https://github.com/Jongtae/Still/issues/963) | Common shopping and site packages | #961; existing browser contract preserved; no common-runtime rewrite |
-| 4 | [#964](https://github.com/Jongtae/Still/issues/964) | Consolidate first-use/repeat/recovery/portability evidence | Reuse child evidence; fill changed-contract gaps; bounded live opt-in separate |
+| 0 | [#959](https://github.com/Jongtae/agentos/issues/959) | This proposal, owner companion and bounded issue preparation | Documentation review; no runtime activation |
+| 1 | [#960](https://github.com/Jongtae/agentos/issues/960) | Interface/pattern decision, C16 reconciliation and pinned reuse/compatibility spike | Stable behavioral contracts, bounded change surface and selected APIs/source/licence |
+| 2 | [#961](https://github.com/Jongtae/agentos/issues/961) | Optional supplied knowledge, existing lifecycle and API/CLI loading | No-skill/off/miss path preserved; one real external source; focused boundary evidence |
+| 3a | [#962](https://github.com/Jongtae/agentos/issues/962) | Built-in management skill | #961; existing setters and #918 behavior preserved |
+| 3b | [#963](https://github.com/Jongtae/agentos/issues/963) | Common shopping and site packages | #961; existing browser contract preserved; no common-runtime rewrite |
+| 4 | [#964](https://github.com/Jongtae/agentos/issues/964) | Consolidate first-use/repeat/recovery/portability evidence | Reuse child evidence; fill changed-contract gaps; bounded live opt-in separate |
 
 All children are proposed and unassigned, not autonomous queues. Evaluation design may start after #960; results depend on implemented slices. #962/#963 may run in parallel only with separate content/test ownership after shared seams stabilize. Do not add these to an active delivery sequence without explicit bounded activation.
 
@@ -281,7 +281,7 @@ For later rollout, choose a staged default package set and rollback behavior wit
 
 ## 16. Evidence and public references
 
-Repository evidence: pinned source links in section 3; [AGENTS.md baseline](https://github.com/Jongtae/Still/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/AGENTS.md); [distribution foundation baseline](https://github.com/Jongtae/Still/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/docs/agent-distribution-platform-foundation.en.md); current issue links in sections 3 and 14. The conversation supplies owner intent, not measurements.
+Repository evidence: pinned source links in section 3; [AGENTS.md baseline](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/AGENTS.md); [distribution foundation baseline](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/docs/agent-distribution-platform-foundation.en.md); current issue links in sections 3 and 14. The conversation supplies owner intent, not measurements.
 
 Public primary sources checked 2026-10-01; mutable documentation is a research reference and must be pinned/rechecked before dependency selection:
 

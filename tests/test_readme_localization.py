@@ -214,7 +214,7 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
             label = verifier.PRODUCT_DIRECTION_LABELS["README.md"]
             body = body.replace(label + "\n\n", "", 1)
             scene_end = (
-                "> **Personal AgentOS:** gathers the allowed context, researches the options, "
+                "> **Still:** gathers the allowed context, researches the options, "
                 "separates what is known from what still needs verification, prepares the next "
                 "step, and stops at the approval boundary."
             )

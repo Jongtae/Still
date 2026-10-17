@@ -344,7 +344,7 @@ IAAP 직접 본문은 접근 실패했고 공식 검색 발췌만 사용했다. 
 
 ### [R1] Still — AGENTS.md
 
-[1차 자료](https://github.com/Jongtae/Still/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/AGENTS.md)
+[1차 자료](https://github.com/Jongtae/agentos/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/AGENTS.md)
 
 **판본/범위:** 735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89
 
@@ -358,7 +358,7 @@ IAAP 직접 본문은 접근 실패했고 공식 검색 발췌만 사용했다. 
 
 ### [R2] Supplied Skills and Reusable Execution — Preparation
 
-[1차 자료](https://github.com/Jongtae/Still/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/docs/skill-supply-execution-preparation.en.md)
+[1차 자료](https://github.com/Jongtae/agentos/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/docs/skill-supply-execution-preparation.en.md)
 
 **판본/범위:** 문서의 과거 baseline 4e51855…; §§1–7; §6 후속 amendment 표시
 
@@ -372,7 +372,7 @@ IAAP 직접 본문은 접근 실패했고 공식 검색 발췌만 사용했다. 
 
 ### [R3] Still — manifests.py
 
-[1차 자료](https://github.com/Jongtae/Still/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/src/personal_agent/manifests.py)
+[1차 자료](https://github.com/Jongtae/agentos/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/src/personal_agent/manifests.py)
 
 **판본/범위:** blob d43e54e08352e67129154b510ef4db8f3831ade0; 1–160 읽기
 
@@ -386,7 +386,7 @@ IAAP 직접 본문은 접근 실패했고 공식 검색 발췌만 사용했다. 
 
 ### [R4] Still — skills.py
 
-[1차 자료](https://github.com/Jongtae/Still/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/src/personal_agent/skills.py)
+[1차 자료](https://github.com/Jongtae/agentos/blob/735bfebe4a1555d4e8b7e4ce0acbc94fbd1f4e89/src/personal_agent/skills.py)
 
 **판본/범위:** blob 85af637fb3e7aaaa76fb7a4ff5f8abf15e264844; 1–175·470–675 읽기
 

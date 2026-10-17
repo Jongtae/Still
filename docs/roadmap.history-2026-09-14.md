@@ -1,8 +1,8 @@
-# Still roadmap
+# Personal AgentOS roadmap
 
 Use the [Goal Execution Contract](goal-execution-contract.en.md) with this tracker: the active delivery plan and a goal-ready issue select work; vision, roadmap order, historical entries, and planned/reserved issues do not activate themselves.
 
-Still is a local-first, owner-installed personal AI operating environment. The long-term architecture is **Personal AI Kernel + Agent Distribution Platform**: Still owns durable owner state and authority; packages, tools, models and delegated runtimes remain replaceable workers/capabilities. See the canonical [architecture](personal-agentos-architecture.en.md), [development constitution](development-constitution.en.md), and [Agent Distribution Platform foundation](agent-distribution-platform-foundation.en.md).
+Personal AgentOS is a local-first, owner-installed personal AI operating environment. The long-term architecture is **Personal AI Kernel + Agent Distribution Platform**: AgentOS owns durable owner state and authority; packages, tools, models and delegated runtimes remain replaceable workers/capabilities. See the canonical [architecture](personal-agentos-architecture.en.md), [development constitution](development-constitution.en.md), and [Agent Distribution Platform foundation](agent-distribution-platform-foundation.en.md).
 
 ## Proposed — Agent Distribution Platform / EPIC-ADP-01
 
@@ -58,7 +58,7 @@ Current product evidence does not include AgentPackage installation, a Registry/
 
 ## Completed — File-and-folder personal workspace
 
-Owner-authorized [#314](https://github.com/Jongtae/personal-agentos/issues/314) completed its finite A → B → C program. Still now treats owner files and folders as the material foundation and conversation/work as the experience: preserve originals, search and use approved material, save ordinary-file results, and reuse them after restart. A merged in PR #317; B merged in [PR #320](https://github.com/Jongtae/personal-agentos/pull/320); and C records the current requirement-to-evidence audit, two independent review artifacts, and the latest required CI. This completion is limited to automated deterministic-model and temporary local-file evidence; it does not claim external model, Telegram, Drive, scheduler, or personal-folder operation.
+Owner-authorized [#314](https://github.com/Jongtae/personal-agentos/issues/314) completed its finite A → B → C program. AgentOS now treats owner files and folders as the material foundation and conversation/work as the experience: preserve originals, search and use approved material, save ordinary-file results, and reuse them after restart. A merged in PR #317; B merged in [PR #320](https://github.com/Jongtae/personal-agentos/pull/320); and C records the current requirement-to-evidence audit, two independent review artifacts, and the latest required CI. This completion is limited to automated deterministic-model and temporary local-file evidence; it does not claim external model, Telegram, Drive, scheduler, or personal-folder operation.
 
 Connected reference folders are read-only by default; managed-workspace writes are scoped. Originals, derived material, drafts, final records, rebuildable indexes, and durable task/approval/evidence/recovery/auth state remain distinct. External AI, messenger, and agent transmission is separately controlled. This program does not implement OCR, transcription, video analysis, advanced large-library search, cloud-only import, material-bundle delegation, cloud sync, or destructive migration.
 
@@ -96,13 +96,13 @@ Owner-authorized [SCN-D-01 / #301](https://github.com/Jongtae/personal-agentos/i
 
 [#109](https://github.com/Jongtae/personal-agentos/issues/109) creates the user-scoped OCI container or managed lightweight VM, dedicated volume, mediated read-only file boundary, and hosted Kubernetes translation. The consumer never operates Docker or Kubernetes directly. See [the isolation boundary](runtime-isolation.md).
 
-## M2 — Still-owned execution boundary
+## M2 — AgentOS-owned execution boundary
 
-[#105](https://github.com/Jongtae/personal-agentos/issues/105) adds bounded execution adapters and Still MCP tools inside the isolated owner runtime. A turn receives an empty temporary working directory, a fixed minimal environment, structured output handling, a timeout, and only the `list_notes`, `save_note`, and `web_search` Still tool facade. Engines do not receive arbitrary host access, owner storage, credentials, document roots, or a route outside that runtime. Automated boundary coverage is complete; a real owner subscription turn still requires separately recorded live acceptance evidence.
+[#105](https://github.com/Jongtae/personal-agentos/issues/105) adds bounded execution adapters and AgentOS MCP tools inside the isolated owner runtime. A turn receives an empty temporary working directory, a fixed minimal environment, structured output handling, a timeout, and only the `list_notes`, `save_note`, and `web_search` AgentOS tool facade. Engines do not receive arbitrary host access, owner storage, credentials, document roots, or a route outside that runtime. Automated boundary coverage is complete; a real owner subscription turn still requires separately recorded live acceptance evidence.
 
 ## M3 — Personal Telegram bot and first work
 
-**delivered.** [#106](https://github.com/Jongtae/personal-agentos/issues/106) uses an owner-created BotFather bot: the owner pastes its token once into authenticated local Still, which validates it locally, creates a one-time private pairing link, and owns polling, recovery, and delivery. The token remains only in the local private connection store and is excluded from settings, logs, events, exports, and the redacted [live acceptance procedure](validation/h3-01-botfather-telegram-first-work.md).
+**delivered.** [#106](https://github.com/Jongtae/personal-agentos/issues/106) uses an owner-created BotFather bot: the owner pastes its token once into authenticated local AgentOS, which validates it locally, creates a one-time private pairing link, and owns polling, recovery, and delivery. The token remains only in the local private connection store and is excluded from settings, logs, events, exports, and the redacted [live acceptance procedure](validation/h3-01-botfather-telegram-first-work.md).
 
 ## M4 — Personal context inbox
 
@@ -122,9 +122,9 @@ The v1 runtime and 1.0.3 release are retained as documented maintenance history.
 
 The [V1-02 Telegram daily-work iteration](https://github.com/Jongtae/personal-agentos/issues/137) makes the existing paired-owner Telegram surface usable for routine natural-language requests: status-only task cards, progress, queued-only cancellation, document-sharing approval, and truthful restart or uncertain-delivery status. It does not replay interrupted work or uncertain Telegram sends.
 
-The [V1-03 safe personal-context iteration](https://github.com/Jongtae/personal-agentos/issues/138) adds an explicit Telegram context attachment form. The owner selects opaque local inbox IDs with `/context ID[,ID] -- request`; Still never selects or enumerates context from prose. Attached items remain local until a model-specific local sharing policy exists and, for an external model, the paired owner approves that exact queued job in Telegram. Results retain local source labels; cards, approvals, and progress controls do not reveal context content.
+The [V1-03 safe personal-context iteration](https://github.com/Jongtae/personal-agentos/issues/138) adds an explicit Telegram context attachment form. The owner selects opaque local inbox IDs with `/context ID[,ID] -- request`; AgentOS never selects or enumerates context from prose. Attached items remain local until a model-specific local sharing policy exists and, for an external model, the paired owner approves that exact queued job in Telegram. Results retain local source labels; cards, approvals, and progress controls do not reveal context content.
 
-## Historical — Still UX v1.1
+## Historical — AgentOS UX v1.1
 
 The [UX v1.1 epic](https://github.com/Jongtae/personal-agentos/issues/149) records delivered historical iterations: [UX-01](https://github.com/Jongtae/personal-agentos/issues/150) moved the web home to a conversation-first surface, later work added saved results, Telegram continuity, recovery language, and redacted source labels. It is not an active delivery selector. Its still-open GitHub epic is an administrative reconciliation item, not evidence that its work should restart. The detailed historical product basis is in [UX v1.1 personal-agent DM](ux-v1.1-personal-agent-dm.ko.md).
 
@@ -152,7 +152,7 @@ D-MP2-03 defines transparent owner-local Personal Space retrieval with source ev
 
 Design completion is not capability completion. Historical plans mechanically mapped every Master Plan design entry to its named implementation, bilingual contract, and automated-evidence declaration. A `development_complete` Master Plan claim remains limited to its recorded evidence and is not an external operating claim.
 
-The owner-directed subscription-engine Telegram stabilization cycle is complete in [#255](https://github.com/Jongtae/personal-agentos/pull/255). It fixes the `/summarize` command-only engine input defect, verifies the bounded Still MCP bridge/tool round trip and failure/restart/duplicate recovery with fixtures, and introduces the required `validate` CI check for `main`. The single heartbeat resumes only an owner-approved active goal; it cannot select a new feature or operating deployment. This is mock/fixture and CI evidence only; it does not claim a live engine, Telegram deployment, or provider connection.
+The owner-directed subscription-engine Telegram stabilization cycle is complete in [#255](https://github.com/Jongtae/personal-agentos/pull/255). It fixes the `/summarize` command-only engine input defect, verifies the bounded AgentOS MCP bridge/tool round trip and failure/restart/duplicate recovery with fixtures, and introduces the required `validate` CI check for `main`. The single heartbeat resumes only an owner-approved active goal; it cannot select a new feature or operating deployment. This is mock/fixture and CI evidence only; it does not claim a live engine, Telegram deployment, or provider connection.
 
 The original owner-approved operating deployment preparation cycle [#258](https://github.com/Jongtae/personal-agentos/pull/258) is historical only: its `v1.0.4` candidate claim was incorrect. [OP-02 / #261](https://github.com/Jongtae/personal-agentos/pull/261) corrected isolation/recovery design. TOP-01 [#272](https://github.com/Jongtae/personal-agentos/pull/272) proved the credential-free Compose lifecycle, and TOP-02/TOP-03 [#277](https://github.com/Jongtae/personal-agentos/pull/277) repaired the configured isolated-Codex path and completion gate. The reproducible candidate is `53912eeb1357ced37031234b1e5376f024dd0a96`, with successful main `validate` run `34204797899`. It proves development/fixture and local Compose evidence only: provider allowlist, official login, provider reachability, Telegram activation, and an operating deployment remain explicit owner-mode steps.
 

@@ -1,7 +1,7 @@
 # Connection support and evidence boundaries
 
 This inventory applies the [Connection and Delegation Contract](connection-delegation-contract.en.md)
-to CONNECT-01 [#1295](https://github.com/Jongtae/Still/issues/1295).
+to CONNECT-01 [#1295](https://github.com/Jongtae/agentos/issues/1295).
 It distinguishes supported mechanisms from the evidence available for them. It
 is not a connection grant, live operating claim, or replacement for the contract's
 discovery and route-choice rules and owner-choice precedence. The decision model chooses the worker;
@@ -65,7 +65,7 @@ This document describes support and evidence, rather than mirroring GitHub statu
 
 ## Program acceptance and evidence
 
-The final CONNECT-01 audit applies parent [#1295](https://github.com/Jongtae/Still/issues/1295)
+The final CONNECT-01 audit applies parent [#1295](https://github.com/Jongtae/agentos/issues/1295)
 CC1–CC8 without changing their meaning. #1301 owns this cross-route mapping;
 #1296 remains its historical per-call-decision dependency. The evidence below is
 model-free: scripted models and synthetic services exercise actual stores,

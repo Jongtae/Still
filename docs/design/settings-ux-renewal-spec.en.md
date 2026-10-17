@@ -2,7 +2,7 @@
 
 ## 1. Status, authority and outcome
 
-- Specification issue: [#766](https://github.com/Jongtae/Still/issues/766).
+- Specification issue: [#766](https://github.com/Jongtae/agentos/issues/766).
 - Owner request, 2026-09-28: document UI/UX improvements and how to implement them.
 - Evidence class: design specification based on owner feedback, two supplied screenshots, and source inspection at `00ccf640e69208c7d911469e7521bda5b54392c4`.
 - English is canonical; [Korean companion](settings-ux-renewal-spec.ko.md) presents the same decisions for owner review.

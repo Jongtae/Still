@@ -1,7 +1,7 @@
 # Still 스킬 공급과 재사용 가능한 실행 — 논의 정리와 구현 준비
 
 작성일: 2026-10-01  
-상위 이슈: [SKILL-SUPPLY-01 #959](https://github.com/Jongtae/Still/issues/959)  
+상위 이슈: [SKILL-SUPPLY-01 #959](https://github.com/Jongtae/agentos/issues/959)  
 기준 코드: `4e518550b13e13c3cd06cdf05987948ac8169fca`  
 영문 기준 명세: [Supplied Skills and Reusable Execution](../skill-supply-execution-preparation.en.md)
 
@@ -132,12 +132,12 @@
 
 | 순서 | 이슈 | 산출물 |
 | --- | --- | --- |
-| 0 | [#959 전체 준비](https://github.com/Jongtae/Still/issues/959) | 기준 명세, 한국어 설명, 이슈 연결 |
-| 1 | [#960 인터페이스·호환성·C16 검토](https://github.com/Jongtae/Still/issues/960) | 짧은 패턴 결정 기록·행동 계약표를 먼저 작성하고 공급원·버전 선정 |
-| 2 | [#961 공급·로딩 실행 경로](https://github.com/Jongtae/Still/issues/961) | 기존 실행을 유지하며 선택적으로 스킬 지식을 보강; 꺼짐·없음·오류 경로 보존 |
-| 3a | [#962 관리 스킬](https://github.com/Jongtae/Still/issues/962) | 기존 Main AI·가족 비서·공유 서비스 위의 지식과 대표 사례 |
-| 3b | [#963 쇼핑·사이트 스킬](https://github.com/Jongtae/Still/issues/963) | 기존 브라우저 계약 위의 사이트 지식; 관련 경계만 검증 |
-| 4 | [#964 근거 통합과 남은 검증](https://github.com/Jongtae/Still/issues/964) | 하위 이슈 근거를 재사용하고 구체적인 누락·변경만 확인 |
+| 0 | [#959 전체 준비](https://github.com/Jongtae/agentos/issues/959) | 기준 명세, 한국어 설명, 이슈 연결 |
+| 1 | [#960 인터페이스·호환성·C16 검토](https://github.com/Jongtae/agentos/issues/960) | 짧은 패턴 결정 기록·행동 계약표를 먼저 작성하고 공급원·버전 선정 |
+| 2 | [#961 공급·로딩 실행 경로](https://github.com/Jongtae/agentos/issues/961) | 기존 실행을 유지하며 선택적으로 스킬 지식을 보강; 꺼짐·없음·오류 경로 보존 |
+| 3a | [#962 관리 스킬](https://github.com/Jongtae/agentos/issues/962) | 기존 Main AI·가족 비서·공유 서비스 위의 지식과 대표 사례 |
+| 3b | [#963 쇼핑·사이트 스킬](https://github.com/Jongtae/agentos/issues/963) | 기존 브라우저 계약 위의 사이트 지식; 관련 경계만 검증 |
+| 4 | [#964 근거 통합과 남은 검증](https://github.com/Jongtae/agentos/issues/964) | 하위 이슈 근거를 재사용하고 구체적인 누락·변경만 확인 |
 
 하위 이슈는 모두 구현 제안 상태다. 문서가 있다는 이유로 실행을 자동 시작하지 않는다. 공통 로더 경로가 안정화된 뒤 관리·쇼핑 콘텐츠 작업은 파일 소유권을 나누어 병렬 진행할 수 있다. 기존 A2A나 브라우저 결함 이슈를 중복 구현하지 않는다.
 
