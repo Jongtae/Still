@@ -313,7 +313,7 @@ class ShownCalendarsTests(unittest.TestCase):
 
     def test_shown_calendars_are_read_tagged_and_merged_in_time_order(self):
         listing = {"items": [
-            {"id": "me@example.com", "summary": "jongtae lee", "primary": True, "selected": True},
+            {"id": "me@example.com", "summary": "primary account", "primary": True, "selected": True},
             {"id": "family#cal", "summary": "Family", "selected": True},
             {"id": "birthdays", "summary": "Birthdays", "selected": False},
             {"id": "ko.south_korea#holiday", "summary": "Holidays", "summaryOverride": "공휴일", "selected": True},
@@ -325,7 +325,7 @@ class ShownCalendarsTests(unittest.TestCase):
         provider, calls = self.provider(listing, events)
         result = provider.query(*self.WINDOW)
         self.assertEqual([row["id"] for row in result], ["holiday", "dinner", "mine"])
-        self.assertEqual([row["calendar"] for row in result], ["공휴일", "Family", "jongtae lee"])
+        self.assertEqual([row["calendar"] for row in result], ["공휴일", "Family", "primary account"])
         self.assertEqual([row["etag"] for row in result], ["", "", '"mine"'], "only primary events can be changed")
         self.assertNotIn("/calendar/v3/calendars/birthdays/events", calls)
 
