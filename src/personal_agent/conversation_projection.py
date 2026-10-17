@@ -1,0 +1,567 @@
+"""Owner-facing conversation projection (PRESENCE-CONV-01 / #510).
+
+The kernel stays mechanical: Work -> Event -> tool -> Evidence -> outcome.
+This module is the policy layer between that state and the one paired
+conversation.  It decides *what the owner reads*, never what is true: the
+outcome (succeeded / failed / partial / interrupted) and the blocker that
+stopped a turn are fixed by the service before anything here runs, and no
+wording below may soften them.  See docs/presence-experience-contract.en.md
+("Conversation projection rules").
+
+Two things live here:
+
+* the terminal bubble for one Work, which was `telegram_result_text` and
+  keeps its #476/#488 truth rules - a failed turn never carries the model's
+  prose, a partial turn separates what completed from what did not;
+* blocked turns - a request that could not start because something the
+  owner controls is missing (no AI route, an unverified model, a document
+  approval).  The first such turn gets the useful explanation and the next
+  action available *in conversation*; a repeat of the same blocker gets a
+  one-line reminder instead of the same failure again.  Which blocker it is
+  comes from typed state at the raise site, not from reading the wording.
+"""
+from .messages import msg
+import re
+import time
+
+TELEGRAM_RESULT_PREVIEW_CHARS = 3200
+
+TERMINAL_FAILED_HEADER = msg('projection.i_couldn_t_complete_this_request')
+TERMINAL_PARTIAL_HEADER = msg('terminal.partial')
+TERMINAL_INTERRUPTED_HEADER = msg('projection.this_request_was_interrupted_i_did')
+TERMINAL_NEXT_ACTION = msg('projection.see_the_run_record_and_next')
+#: Used only when an ``unknown`` Work carries no statement of its own.
+TERMINAL_UNKNOWN_EFFECT = (msg('projection.the_external_result_could_not_be'))
+#: #847: the note that closes a failed/partial/interrupted bubble that carries
+#: the AI's answer.  The answer comes first; one short sentence qualifies it.
+#: A count of steps replaces any tool name or tool error (those stay in 상세).
+TERMINAL_FAILED_NOTE = msg('projection.i_couldn_t_finish_what_you')
+TERMINAL_INTERRUPTED_NOTE = msg('projection.it_stopped_partway_so_i_could')
+TERMINAL_PARTIAL_NOTE = '{count} 단계는 끝내지 못했어요.'
+#: #1451: the closing line of a partial answer when no step failed and no gap was stated.
+TERMINAL_UNCONFIRMED_NOTE = msg('projection.answer_not_confirmed')
+#: One reason string in the owner's bubble: its first sentence, bounded.
+#: The full model-facing text stays in the Work record (상세).
+OWNER_REASON_CHARS = 120
+#: Upper bound of the closing note after an answer.
+ANSWER_NOTE_CHARS = 400
+#: Opens the portion that did not complete in a bubble without an answer.
+TERMINAL_UNFINISHED_LABEL = msg('projection.what_i_couldn_t_finish')
+#: Opens the portion of a partial Work that its own typed Evidence supports
+#: (#598 H1).  What follows is AgentOS's rendering of observed tool results,
+#: never the model's prose.
+TERMINAL_VERIFIED_LABEL = msg('projection.what_i_confirmed')
+#: Upper bound for the verified portion inside one bubble; the full record
+#: stays in the AgentOS web Task detail.
+TERMINAL_VERIFIED_CHARS = 1600
+TERMINAL_VERIFIED_MORE = msg('projection.see_the_rest_in_the_agentos')
+
+# --- owner words for internal tool ids (#598 X1) -----------------------------
+#: The same owner vocabulary the web Task detail uses (``TOOL_NAMES`` in
+#: web/app.js; shared keys must match, see tests).  Exact ids stay in
+#: 상세/기술 정보; conversation says what kind of step it was.
+TOOL_LABELS = {
+    'subscription_engine': msg('projection.subscription_cli_run'), 'model': 'AI 응답', 'web_search': '웹 검색',
+    'list_notes': '메모 조회', 'save_note': '메모 저장', 'save_memory': '기억 저장', 'memory_undo': msg('projection.undo_memory'), 'forget_record': '기억 잊기',
+    'list_memory': '기억 조회', 'search_memory': '기억 검색', 'local_authority': '폴더 권한', 'calendar_create': msg('handoff.create_event'),
+    'calendar_query': '일정 조회', 'calendar_draft_create': '일정 초안', 'calendar_draft_update': '일정 초안',
+    'calendar_draft_cancel': '일정 초안', 'weather': '날씨 조회', 'ask_location': '위치 확인',
+    'delegate_agent': msg('projection.handed_to_another_agent'), 'list_agents': '에이전트 목록 조회',
+    'find_files': '파일 찾기', 'read_file': '파일 읽기', 'list_roots': '연결 폴더 확인', 'public_page_read': msg('projection.read_a_public_page'),
+    'drive_search': msg('projection.find_drive_files'), 'drive_read': msg('projection.read_drive_file'), 'api_request': '인증 API 호출', 'code_run': '코드 실행',
+    'bounded_public_research': msg('projection.public_research'),
+    # SEC-BROWSER-01 (#656): steps in the owner-logged-in browser profile.
+    'browser_open': msg('projection.open_browser_page'), 'browser_read': msg('projection.read_browser_page'), 'browser_find': msg('projection.find_on_browser_page'), 'browser_click': msg('projection.click_in_browser'), 'browser_type': msg('projection.type_in_browser'),
+    # BROWSE-09 (#953): the owner is asked to sign in.
+    'browser_sign_in': '브라우저 로그인 요청',
+    # CONTEXT-STATE-01 (#627): a revisable hypothesis about today's situation.
+    'propose_current_state': msg('projection.record_current_situation'),
+    # SEC-ATTN-01 (#659): an owner-accepted reminder or preparation.
+    'schedule_preparation': '준비 예약',
+    # OWNER-SETTINGS-01 (#814): owner settings, changed only after the owner confirms.
+    'settings_read': '설정 확인', 'settings_change': msg('projection.settings_change_draft'),
+    'capability_search': msg('projection.find_a_way_to_connect'),
+    'information_use': msg('projection.check_information_used'),
+    # SKILL-SUPPLY-02 (#961): an installed skill's know-how read for this request.
+    'skill_load': '스킬 읽기', 'skill_resource': '스킬 자료 읽기',
+}
+#: A tool this catalogue does not name (for example an AgentPackage tool).
+TOOL_LABEL_FALLBACK = '도구 실행'
+
+
+def tool_label(tool_id):
+    """Owner words for one tool id; never the id itself."""
+    return TOOL_LABELS.get(tool_id, TOOL_LABEL_FALLBACK) if isinstance(tool_id, str) else TOOL_LABEL_FALLBACK
+
+
+#: Latin letters and digits whose Korean reading ends in a final consonant
+#: (엘, 엠, 엔, 알 / 영, 일, 삼, 육, 칠, 팔), for names such as ``Gmail``.
+_FINAL_CONSONANT_READINGS = frozenset('lmnr013678')
+
+
+def object_particle(word):
+    """``을`` or ``를`` for ``word`` - never the ``을(를)`` template (#598).
+
+    Hangul uses the final syllable's own consonant (Unicode composition:
+    ``(code - 0xAC00) % 28``); a Latin letter or digit uses how it is read.
+    Anything else keeps the neutral template rather than guessing.
+    """
+    text = str(word or '').rstrip(' )]}\'"')
+    if not text:
+        return '을(를)'
+    last = text[-1]
+    if '가' <= last <= '힣':
+        return '를' if (ord(last) - 0xAC00) % 28 == 0 else '을'
+    if last.isascii() and last.isalnum():
+        return '을' if last.lower() in _FINAL_CONSONANT_READINGS else '를'
+    return '을(를)'
+
+
+def first_sentence(text, limit):
+    """The first sentence of ``text`` on one line, at most ``limit`` characters (#752)."""
+    text = ' '.join(str(text or '').split())
+    match = re.search(r'[.!?。](?=\s)', text)
+    text = text[:match.end()] if match else text
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + '…'
+
+
+def owner_cause(steps):
+    """The owner-language cause of a failed/partial Work, or ``None``.
+
+    ``steps`` are ``(tool_id, reason)`` pairs observed for the Work, with the
+    reason already redacted by the caller.  The technical cause (with ids)
+    stays on the Work record for Task detail; this is what a bubble without
+    an answer reads (#598).  One generic rendering: no tool gets its own
+    wording.  A bubble that carries the answer reads ``answer_note`` instead.
+    """
+    entries = []
+    for tool, reason in steps:
+        label = tool_label(tool)
+        text = first_sentence(reason, OWNER_REASON_CHARS)
+        entry = f'{label}: {text}' if text else label
+        if entry not in entries:
+            entries.append(entry)
+    if not entries:
+        return None
+    return (TERMINAL_UNFINISHED_LABEL + ' — ' + ' · '.join(entries[:3]))[:400]
+
+
+def step_count_word(count):
+    """``한``/``두``/``세`` for one to three steps, ``몇`` beyond (no digits in the bubble)."""
+    return {1: '한', 2: '두', 3: '세'}.get(count, '몇')
+
+
+def answer_note(steps, outcome, kept=(), report=None):
+    """The one closing note after a failed/partial answer, or ``None`` (#847).
+
+    ``steps`` are the same ``(tool_id, reason)`` pairs ``owner_cause`` reads.
+    A reason in ``kept`` is a step's own owner-facing next step (a withheld
+    effect: an approval, a login, a confirmation) and is spoken as written;
+    every other step is only counted, so no tool name, host action or tool
+    error follows the answer.  A ``failed`` Work states that the request was
+    not finished instead of a count.  From the worker's typed report only
+    the question it asks the owner and its proposed next step follow, as
+    sentences, never as labelled lines; what stayed unknown is already the
+    answer's own business and stays in 상세.  #1451: the outcome judgment's
+    ``gap`` (what the reply left unserved) is said first among them.
+    """
+    spoken, counted = [], []
+    for tool, reason in steps:
+        text = first_sentence(reason, OWNER_REASON_CHARS)
+        if reason and reason in kept:
+            if text and text not in spoken:
+                spoken.append(text)
+        elif (tool, text) not in counted:
+            counted.append((tool, text))
+    parts = []
+    if outcome == 'failed':
+        parts.append(TERMINAL_FAILED_NOTE)
+    elif counted:
+        parts.append(TERMINAL_PARTIAL_NOTE.format(count=step_count_word(len(counted))))
+    parts.extend(spoken[:3])
+    if isinstance(report, dict):
+        # #1459: the judgment's line to the owner; its internal gap only where no note was given.
+        for key in ('note', 'gap', 'question', 'next'):
+            if key == 'gap' and 'note' in report:
+                continue
+            text = ' '.join(str(report.get(key) or '').split())
+            if text and text not in parts:
+                parts.append(text)
+    return clip_keeping_links(' '.join(parts), ANSWER_NOTE_CHARS) if parts else None
+
+
+#: SEC-LOOP-01 (#657): the report lines after the failed steps.
+REPORT_STATED_FAILED_LABEL = msg('projection.what_i_couldn_t_do')
+REPORT_UNKNOWN_LABEL = msg('projection.what_i_couldn_t_confirm')
+REPORT_NEXT_LABEL = msg('projection.suggested_next_step')
+REPORT_QUESTION_LABEL = msg('projection.questions_to_confirm')
+REPORT_STATEMENT_CHARS = 1200
+
+
+#: #709: an http(s) link inside owner-facing report text.
+_LINK = re.compile(r'https?://[^\s<>"\']+')
+#: A link is kept whole past a bound by at most this many characters.
+LINK_KEEP_CHARS = 2000
+#: The preview may grow by at most this much, so it stays under Telegram's 4096 characters.
+TELEGRAM_LINK_KEEP_CHARS = 800
+
+
+def _public_link(url):
+    """Whether ``url`` passes the existing public-URL checks (``search_providers.public_http_url``
+    and ``local_tools.normalize_public_url``: http(s), a host, no userinfo, no private address)."""
+    from .local_tools import normalize_public_url
+    from .search_providers import public_http_url
+    if not public_http_url(url):
+        return False
+    try:
+        normalize_public_url(url)
+    except ValueError:
+        return False
+    return True
+
+
+def clip_keeping_links(text, limit, keep=LINK_KEEP_CHARS):
+    """``text`` bounded to about ``limit`` characters without cutting a link in half (#709).
+
+    A public link the bound would split is kept whole (up to
+    ``keep`` more), so it stays clickable; any other link the
+    bound would split is dropped rather than left broken.  Text within the
+    bound is returned unchanged.
+    """
+    text = str(text or '')
+    if len(text) <= limit:
+        return text
+    for match in _LINK.finditer(text):
+        if match.start() >= limit:
+            break
+        if match.end() > limit:
+            url = match.group(0).rstrip('.,;:)]}')
+            end = match.start() + len(url)
+            if end <= limit:
+                break
+            if end - limit <= keep and _public_link(url):
+                return text[:end]
+            return text[:match.start()].rstrip()
+    return text[:limit]
+
+
+def report_statement(report):
+    """The unknown / next part of a run's typed report (#657), or ``None``.
+
+    ``report`` is ``agent_runtime.agency_report``: requested, observed
+    (rendered as the verified portion), failed (tool failures are rendered by
+    ``owner_cause``; only the worker's own ``assistant`` statements appear
+    here), unknown, the one question a ``needs_owner`` finish asks, and next.
+    Nothing here says a step completed.
+    """
+    if not isinstance(report, dict):
+        return None
+    lines = []
+    stated = [str(reason).strip() for tool, reason in report.get('failed') or ()
+              if tool == 'assistant' and str(reason or '').strip()]
+    if stated:
+        lines.append(REPORT_STATED_FAILED_LABEL + ' ' + ' · '.join(stated))
+    # #1459: the outcome judgment's line to the owner, already a sentence in the owner's language: no label.
+    note = str(report.get('note') or '').strip()
+    if note:
+        lines.append(note)
+    unknown = [str(item).strip() for item in report.get('unknown') or () if str(item or '').strip()]
+    if unknown:
+        lines.append(REPORT_UNKNOWN_LABEL + ' ' + ' · '.join(unknown))
+    question = str(report.get('question') or '').strip()
+    if question:
+        lines.append(REPORT_QUESTION_LABEL + ' ' + question)
+    step = str(report.get('next') or '').strip()
+    if step:
+        lines.append(REPORT_NEXT_LABEL + ' ' + step)
+    return clip_keeping_links('\n'.join(lines), REPORT_STATEMENT_CHARS) if lines else None
+
+
+#: #787: the steps a failed Work's workers tried, from its recorded tool events.
+REPORT_TRIED_LABEL = msg('projection.steps_tried')
+REPORT_TRIED_STATES = {'succeeded': '완료', 'failed': '실패'}
+REPORT_TRIED_ITEMS = 5
+
+
+def tried_statement(steps):
+    """``시도한 단계: ...`` of a Work's observed steps (#787), or ``None``.
+
+    ``steps`` are ``(tool_id, host, status)`` of the Work's own completed
+    tool events, in order; ``host`` is what the event itself recorded (or
+    empty).  One generic rendering in the same owner words as ``owner_cause``:
+    what kind of step, where, and whether it was observed to complete.
+    """
+    entries = []
+    for tool, host, status in steps:
+        state = REPORT_TRIED_STATES.get(status)
+        if not state:
+            continue
+        where = f' ({host})' if host else ''
+        entry = f'{tool_label(tool)}{where} {state}'
+        if entry not in entries:
+            entries.append(entry)
+    if not entries:
+        return None
+    more = f' 외 {len(entries) - REPORT_TRIED_ITEMS}건' if len(entries) > REPORT_TRIED_ITEMS else ''
+    return (REPORT_TRIED_LABEL + ' ' + ' · '.join(entries[:REPORT_TRIED_ITEMS]) + more)[:600]
+
+
+def verified_portion(parts):
+    """Join AgentOS-rendered verified parts into one bounded block, or ``None``."""
+    text = '\n\n'.join(part.strip() for part in parts or () if isinstance(part, str) and part.strip())
+    if not text:
+        return None
+    if len(text) > TERMINAL_VERIFIED_CHARS:
+        text = text[:TERMINAL_VERIFIED_CHARS].rstrip() + TERMINAL_VERIFIED_MORE
+    return text
+
+# --- blockers ---------------------------------------------------------------
+BLOCKER_NO_AI_ROUTE = 'no-ai-route'
+BLOCKER_MODEL_UNVERIFIED = 'model-unverified'
+BLOCKER_DOCUMENT_APPROVAL = 'document-approval'
+
+
+class BlockedTurn(ValueError):
+    """A turn that could not start for a reason the owner can resolve.
+
+    ``kind`` is the deterministic blocker identity the projection keys on;
+    ``str(exc)`` stays the plain cause for records that need it.
+    """
+
+    def __init__(self, kind, text):
+        super().__init__(text)
+        self.kind = kind
+
+
+def terminal_text(response, error=None, outcome=None, next_action=None, verified=None, note=None, waiting=False):
+    """The one readable terminal bubble for a paired owner.
+
+    * ``failed`` / ``partial`` / ``interrupted`` with an AI answer (#752,
+      #820, #847) - the AI's own answer first, then ``note`` (the Work's
+      recorded ``answer_note``) or one outcome sentence as the closing line.
+      The answer is always delivered: hiding it protected nothing, and left
+      the owner without the result.  No header, tool name or tool error
+      appears; the steps stay in 상세.  ``error`` is not read here.
+    * ``failed`` without an answer - the failure, its cause and the next step.
+    * ``partial`` / ``interrupted`` without an answer - the portion the Work's
+      own typed Evidence supports (``verified``, rendered by AgentOS from
+      observed tool results), then the portion that did not complete, and
+      the pointer to the record (#598 H1).
+    * ``unknown`` - a consequential external effect was attempted and its
+      result could not be observed.  ``error`` is the effect owner's own
+      complete statement (what could not be confirmed and what to check);
+      it is the whole bubble.  Model text is never shown, nothing claims
+      success, and no retry is offered here (#598 I1).
+    * ``succeeded`` and any unrecognised status - unchanged.
+
+    ``next_action`` replaces the generic web pointer when a safer, more
+    specific action exists; it never replaces the truth header.  Nothing
+    here upgrades the outcome: ``verified`` only adds what was observed.
+    """
+    cause = (error or '').strip()
+    action = next_action or TERMINAL_NEXT_ACTION
+    answer = (response or '').strip()
+    if outcome in ('failed', 'partial', 'interrupted') and answer:
+        # #847: the answer is the message.  The recorded note (owner words,
+        # no tool names) or one outcome sentence follows it; never a header.
+        if waiting:
+            # #1470/#1472: the Work waits for the owner's approval; the answer says so. Nothing is unconfirmed
+            # yet and no step failed: no closing line at all.
+            closing = ''
+        elif outcome == 'interrupted':
+            closing = TERMINAL_INTERRUPTED_NOTE
+        else:
+            closing = (note or '').strip() or (TERMINAL_FAILED_NOTE if outcome == 'failed'
+                                               else TERMINAL_UNCONFIRMED_NOTE)
+        text = answer + '\n\n' + closing if closing else answer
+    elif outcome == 'failed':
+        body = [TERMINAL_FAILED_HEADER]
+        if cause:
+            body.append(cause)
+        body.append(action)
+        text = '\n\n'.join(body)
+    elif outcome in ('partial', 'interrupted'):
+        body = [TERMINAL_PARTIAL_HEADER if outcome == 'partial' else TERMINAL_INTERRUPTED_HEADER]
+        observed = verified_portion([verified]) if outcome == 'partial' else None
+        if observed:
+            body.append(TERMINAL_VERIFIED_LABEL + '\n' + observed)
+        if cause:
+            body.append(cause)
+        body.append(action)
+        text = '\n\n'.join(body)
+    elif outcome == 'unknown':
+        text = cause or TERMINAL_UNKNOWN_EFFECT
+    else:
+        text = response or (TERMINAL_FAILED_HEADER + ' ' + (cause or action))
+    if len(text) > TELEGRAM_RESULT_PREVIEW_CHARS:
+        # #709: a link the preview bound would split stays whole (Telegram's 4096-character limit holds).
+        return clip_keeping_links(text, TELEGRAM_RESULT_PREVIEW_CHARS, keep=TELEGRAM_LINK_KEEP_CHARS) + '\n\n전체 결과는 AgentOS 웹에서 확인하세요.'
+    return text
+
+
+class ConversationProjection:
+    """Blocked-turn replies with once-per-blocker explanation.
+
+    The store keeps only ``{owner: {'kind', 'at'}}``: which blocker this owner
+    was last told about, never the utterance.  ``settings_url`` returns the
+    local AgentOS address when the installation can name one, else ''.
+    """
+
+    KEY = 'conversation_blocker'
+
+    def __init__(self, store, settings_url=None, now=time.time):
+        self.store, self.settings_url, self.now = store, settings_url or (lambda: ''), now
+
+    def _rows(self):
+        rows = self.store.config(self.KEY, {})
+        return rows if isinstance(rows, dict) else {}
+
+    def clear(self, owner):
+        rows = self._rows()
+        if rows.pop(str(owner), None) is not None:
+            self.store.put(self.KEY, rows)
+
+    def blocked_reply(self, owner, kind, cause):
+        """The reply for a blocked turn; a repeat of the same blocker is short."""
+        rows = self._rows()
+        previous = rows.get(str(owner))
+        repeat = isinstance(previous, dict) and previous.get('kind') == kind
+        rows[str(owner)] = {'kind': kind, 'at': float(self.now())}
+        self.store.put(self.KEY, rows)
+        if kind == BLOCKER_NO_AI_ROUTE:
+            return self._no_ai_route(repeat)
+        if kind == BLOCKER_MODEL_UNVERIFIED:
+            return self._model_unverified(repeat)
+        # Other blockers (a document approval the notification below asks
+        # for) already carry their next action in the cause.
+        return cause
+
+    def _where_to_connect(self):
+        url = self.settings_url()
+        if url:
+            return f'AI 연결은 이 컴퓨터의 AgentOS 설정에서 할 수 있습니다: {url}'
+        return (msg('projection.you_can_connect_an_ai_in'))
+
+    def _no_ai_route(self, repeat):
+        if repeat:
+            return 'AI가 아직 연결되지 않아 이 요청은 처리하지 못했습니다. ' + self._where_to_connect()
+        return ('아직 AI가 연결되지 않아 이 요청은 처리하지 못했습니다.\n\n'
+                '지금 바로 되는 일: 메모 남기기와 메모 목록 보기, 저장한 파일 찾기. '
+                '캘린더는 연결하면 쓸 수 있습니다. 메일 검색에는 Gmail 연결과 판단 기능 설정이 모두 필요합니다.\n\n'
+                + self._where_to_connect())
+
+    def _model_unverified(self, repeat):
+        if repeat:
+            return '연결한 AI의 확인이 아직 끝나지 않아 이 요청은 처리하지 못했습니다. ' + self._where_to_connect()
+        return ('연결한 AI가 도구 호출까지 되는지 아직 확인하지 못해 이 요청은 처리하지 못했습니다. '
+                '설정에서 “모델 연결 확인”을 한 번 실행하면 이어서 쓸 수 있습니다.\n\n' + self._where_to_connect())
+
+
+# --- truth qualifiers for stored turns (#494) -------------------------------
+#
+# #476 keeps an unverified model sentence out of the terminal bubble; the
+# same sentence is also stored in ``messages`` and read back by the web API,
+# by project views and by the next turn's model context.  The stored text is
+# never rewritten or deleted - preserving it is the point.  Instead every
+# reader attaches the producing Work's typed outcome at read time, through
+# the functions below, so one policy decides what "unverified" means for
+# every surface.  The outcome comes from the Work record, never from reading
+# the wording.
+
+#: Work outcomes whose assistant text is preserved and offered, not asserted.
+#: ``unknown``: a consequential effect was attempted and not observed (#598 I1).
+UNVERIFIED_OUTCOMES = ('failed', 'partial', 'interrupted', 'unknown')
+TRANSCRIPT_LABELS = {'failed': '완료하지 못함', 'partial': '일부 완료', 'interrupted': '중단됨',
+                     'unknown': '외부 결과 불확실'}
+TRANSCRIPT_NOTICE = msg('projection.this_is_not_a_verified_result')
+#: What a later model turn reads in front of an unverified earlier reply.  It
+#: names only the typed outcome, so no cause text or tool payload is added to
+#: what the route already receives.
+CONTEXT_QUALIFIER = ('[AgentOS record: the Work behind this earlier assistant reply ended "{outcome}". '
+                     'Any result, action or completion it states is unverified and is not an observed fact.]')
+#: #997 (REFERENT-01): what the owner was shown beyond an earlier reply's text.
+#: A reply delivered to Telegram renders a link preview card for the first URL
+#: in its text (Bot API default when ``link_preview_options`` is not sent, which
+#: ``deliver_one`` never does); that card is the most visible thing on the
+#: owner's screen and a later short reference often points at it.  Web chat
+#: shows no card, so only a Telegram-delivered reply carries this note.
+TELEGRAM_PREVIEW_NOTE = '[The owner saw this message on Telegram with a link preview card for: {url}]'
+#: The same URL characters ``telegram_presence._LINK`` accepts; a Markdown link's
+#: target and a bare URL are both found at their position in the text, so the
+#: first match is the first link Telegram renders.
+_URL = re.compile(r'https?://[^\s()"<>]+')
+#: Review P1: only a send Telegram confirmed says the owner saw the reply; pending,
+#: sending, unknown, cancelled and none do not.
+_DELIVERED = ('sent',)
+
+
+def previewed_link(text):
+    """The URL Telegram previews for a message with this text, or None (#997)."""
+    match = _URL.search(str(text or ''))
+    return match.group(0).rstrip('.,;:!?') if match else None
+
+
+def shown_note(row):
+    """What the owner saw beyond this stored reply's text, or None.
+
+    Derived only from delivery facts AgentOS already holds: the row's channel,
+    its Work's delivery state and the delivered text itself.  Never from the
+    wording of a later owner message.
+    """
+    if row.get('role') != 'assistant' or not str(row.get('channel') or '').startswith('telegram'):
+        return None
+    if row.get('delivery') not in _DELIVERED:
+        return None
+    url = previewed_link(row.get('content'))
+    return TELEGRAM_PREVIEW_NOTE.format(url=url) if url else None
+
+
+def turn_qualifier(outcome, cause=None):
+    """The typed truth qualifier for one Work's text, or ``None`` when none is needed."""
+    if outcome not in UNVERIFIED_OUTCOMES:
+        return None
+    return {'outcome': outcome, 'verified': False, 'label': TRANSCRIPT_LABELS[outcome],
+            'notice': TRANSCRIPT_NOTICE, 'cause': (cause or '').strip() or None}
+
+
+def qualify_transcript(rows):
+    """Attach ``qualifier`` to every stored turn; the stored text is untouched.
+
+    ``rows`` carry ``work_outcome`` / ``work_error`` joined from the Work that
+    produced them.  Those join columns are consumed here, so every reader sees
+    the same single field.  Owner turns are never qualified: they are
+    requests, not claims.
+    """
+    projected = []
+    for row in rows:
+        row = dict(row)
+        outcome, cause = row.pop('work_outcome', None), row.pop('work_error', None)
+        row['qualifier'] = turn_qualifier(outcome, cause) if row.get('role') == 'assistant' else None
+        # #997: the Work's delivery state, consumed here so ``shown_note`` reads one field.
+        if 'work_delivery' in row:
+            row['delivery'] = row.pop('work_delivery')
+        projected.append(row)
+    return projected
+
+
+def context_message(row):
+    """One stored turn as a later model turn may read it.
+
+    A qualified assistant reply keeps its full text - the owner may refer to
+    it ("try that again") - but is preceded by its outcome, so an unobserved
+    claim cannot re-enter the model's own context as an established fact.
+
+    A reply delivered to Telegram is also preceded by what the owner saw
+    beyond its text (#997: the link preview card), so a later short reference
+    can resolve to it.  Both notes lead, because ``turn_context`` caps a long
+    earlier turn from its end.
+    """
+    content = str(row.get('content') or '')
+    shown = shown_note(row)
+    if shown:
+        content = shown + '\n' + content
+    qualifier = row.get('qualifier')
+    if (row.get('role') == 'assistant' and isinstance(qualifier, dict)
+            and qualifier.get('outcome') in UNVERIFIED_OUTCOMES):
+        content = CONTEXT_QUALIFIER.format(outcome=qualifier['outcome']) + '\n' + content
+    return {'role': row.get('role'), 'content': content}

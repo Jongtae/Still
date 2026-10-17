@@ -1,0 +1,106 @@
+{
+  "sources": {
+    "2927bea1": {
+      "filename": "ScreenRecording_10-12-2026_01-01-21_1.mov",
+      "sha256": "323bf1125eb6d0c51b215292aa426e9b2a9407d051d512b9edfce0f5e99550eb"
+    },
+    "dc70e629": {
+      "filename": "ScreenRecording_10-12-2026_00-56-10_1.mov",
+      "sha256": "ec6dfe3124c888354a8e2dfd1cfde922f8d8784441f37cc6a882b91840c5ebfb"
+    }
+  },
+  "segments": [
+    {
+      "stage": 0,
+      "src": "dc70e629",
+      "at": 42.5,
+      "crop": [
+        0,
+        570,
+        1206,
+        870
+      ],
+      "key": "ai",
+      "hold": 2.6
+    },
+    {
+      "stage": 0,
+      "src": "dc70e629",
+      "at": 42.5,
+      "crop": [
+        0,
+        860,
+        1206,
+        1560
+      ],
+      "key": "switch",
+      "hold": 5.0
+    },
+    {
+      "bridge": 0,
+      "hold": 2.6
+    },
+    {
+      "stage": 1,
+      "src": "2927bea1",
+      "at": 2,
+      "crop": [
+        0,
+        340,
+        1206,
+        915
+      ],
+      "key": "recall",
+      "hold": 5.5
+    },
+    {
+      "stage": 1,
+      "src": "2927bea1",
+      "at": 2,
+      "crop": [
+        0,
+        930,
+        1206,
+        1360
+      ],
+      "key": "offer",
+      "hold": 5.5
+    }
+  ],
+  "fps": 10,
+  "outputs": {
+    "still-ai-switch.en.mp4": {
+      "bytes": 246767,
+      "sha256": "84a3e1a71ae6fa0a980d2c1ca29216fd68cdae395dd178e513ebf8604381a409"
+    },
+    "still-ai-switch-poster.en.jpg": {
+      "bytes": 85613,
+      "sha256": "8badeb6bb266ae038cf1c58a93661ec4b018688d20f8b6d3a050d4461559b720"
+    },
+    "still-ai-switch.ko.mp4": {
+      "bytes": 228245,
+      "sha256": "ee01d756efbda2dcca30ec0868d581d21254daf6788fd30abba18b6f412075ae"
+    },
+    "still-ai-switch-poster.ko.jpg": {
+      "bytes": 84107,
+      "sha256": "5d90a7e2b376adae0d42c6763a3ab35f6eee337d1f90ee8e71ea4de9c0a3e745"
+    },
+    "still-ai-switch.ja.mp4": {
+      "bytes": 253637,
+      "sha256": "6292418b9472df2098595f11d25c18e086cf3a03573db883f46d04e6ab948d7a"
+    },
+    "still-ai-switch-poster.ja.jpg": {
+      "bytes": 86398,
+      "sha256": "73991302fba36c1efb4a50e0b4dd0c1e94e854489d4271ff0709dd3ee08d7fb6"
+    },
+    "still-ai-switch.zh-CN.mp4": {
+      "bytes": 229615,
+      "sha256": "2d21d3d89e1772faf90c56390d5755e78f0e6db68b236ac12cfa967d445b2224"
+    },
+    "still-ai-switch-poster.zh-CN.jpg": {
+      "bytes": 83086,
+      "sha256": "a5a3fc7703bcedaf06d737d0fcdbe7a399a046ef1f78837f73ceaf1bc5240fc0"
+    }
+  },
+  "duration_s": 21.2
+}

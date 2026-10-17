@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="1095" viewBox="0 0 420 1095" role="img" aria-labelledby="title desc">
+<title id="title">Still</title><desc id="desc">与你的关系连接 Assistant、Finance、Research 三种专业视角；领域、角色、委托范围与权限进入 Decision Model；Unified Presence 维持同一段关系，并把你的介入反馈给判断。</desc>
+<style>text{font-family:Arial,"Noto Sans",sans-serif;fill:#243247} .bold{font-weight:700} .muted{fill:#526174} .blue{fill:#245b92}</style>
+<rect width="420" height="1095" fill="#fff"/>
+<text x="20" y="58.0" font-size="34" class="bold" text-anchor="start">Still</text>
+<text x="20" y="97.9" font-size="22" class="blue" text-anchor="start">承担多种专业角色，始终是同一段关</text>
+<text x="20" y="127.60000000000001" font-size="22" class="blue" text-anchor="start">系。</text>
+<rect x="20" y="159.3" width="380" height="108.75000000000001" rx="16" fill="#f0f2f5" stroke="#d8dee5"/>
+<text x="210.0" y="207.3" font-size="28" class="bold" text-anchor="middle">与你的关系</text>
+<text x="210.0" y="242.10000000000002" font-size="17" class="muted" text-anchor="middle">目标 · 记忆 · 偏好 · 承诺 · 权限</text>
+<path d="M210.0 272.05 L210.0 296.05" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<path d="M206.0 291.05 L210.0 296.05 L214.0 291.05" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<rect x="20" y="302.05" width="380" height="100.65" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="344.05" font-size="22" class="bold" text-anchor="middle">Assistant</text>
+<text x="210.0" y="376.75" font-size="17" class="muted" text-anchor="middle">事务协调</text>
+<rect x="20" y="414.70000000000005" width="380" height="100.65" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="456.70000000000005" font-size="22" class="bold" text-anchor="middle">Finance</text>
+<text x="210.0" y="489.40000000000003" font-size="17" class="muted" text-anchor="middle">资产管理</text>
+<rect x="20" y="527.35" width="380" height="100.65" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="569.35" font-size="22" class="bold" text-anchor="middle">Research</text>
+<text x="210.0" y="602.0500000000001" font-size="17" class="muted" text-anchor="middle">信息分析</text>
+<text x="210.0" y="661.0" font-size="19" class="muted" text-anchor="middle">领域 + 角色 + 委托范围 + 权限</text>
+<path d="M210.0 677.65 L210.0 701.65" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<path d="M206.0 696.65 L210.0 701.65 L214.0 696.65" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<rect x="20" y="707.65" width="380" height="131.70000000000002" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="755.65" font-size="28" class="bold" text-anchor="middle">Decision Model</text>
+<text x="210.0" y="790.4499999999999" font-size="17" class="muted" text-anchor="middle">判断 · 执行 · 委派 · 询问 · 汇报 · 跟</text>
+<text x="210.0" y="813.4" font-size="17" class="muted" text-anchor="middle">进</text>
+<path d="M210.0 843.35 L210.0 867.35" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<path d="M206.0 862.35 L210.0 867.35 L214.0 862.35" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<rect x="20" y="873.35" width="380" height="108.75000000000001" rx="16" fill="#eaf1f8" stroke="#cbd7e3"/>
+<text x="210.0" y="921.35" font-size="28" class="bold" text-anchor="middle">Unified Presence</text>
+<text x="210.0" y="956.15" font-size="17" class="muted" text-anchor="middle">同一段关系 · 合乎情境的沟通 · 持续协作</text>
+<text x="210.0" y="1015.1" font-size="17" class="blue" text-anchor="middle">执行观察 ↔ 你的介入 ↔ 判断更新</text>
+<path d="M20 1043.05H400" fill="none" stroke="#d4dce5" stroke-width="1.6"/>
+<text x="20" y="1070.05" font-size="15" class="muted" text-anchor="start">概念性的产品方向，并非已发布功能的证据。</text>
+</svg>

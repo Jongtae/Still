@@ -1,0 +1,100 @@
+{
+ "steps": {
+  "en": [
+   "Switch",
+   "Remember"
+  ],
+  "ko": [
+   "AI 바꾸기",
+   "기억 그대로"
+  ],
+  "ja": [
+   "AIを切り替え",
+   "記憶はそのまま"
+  ],
+  "zh-CN": [
+   "切换 AI",
+   "记忆仍在"
+  ]
+ },
+ "titles": {
+  "en": [
+   "Codex to Claude Code.",
+   "It still knows what came before."
+  ],
+  "ko": [
+   "Codex에서\nClaude Code로",
+   "아까 고른 것을\n그대로 기억해요"
+  ],
+  "ja": [
+   "Codex を\nClaude Code に",
+   "さっきの話を、\n覚えている。"
+  ],
+  "zh-CN": [
+   "换成\nClaude Code",
+   "之前聊过的，\n它都记得。"
+  ]
+ },
+ "captions": {
+  "ai": {
+   "en": "“/ai” shows the AI doing the work now: Codex.",
+   "ko": "/ai로 지금 일하는 AI를 확인해요. 지금은 Codex예요.",
+   "ja": "/ai で今働いている AI を確認。今は Codex です。",
+   "zh-CN": "用 /ai 查看当前工作的 AI：现在是 Codex。"
+  },
+  "switch": {
+   "en": "One command switches it. From the next request, Claude Code does the work.",
+   "ko": "명령 하나로 바꿔요. 다음 요청부터 Claude Code가 일해요.",
+   "ja": "コマンドひとつで切り替え。次の依頼から Claude Code が働きます。",
+   "zh-CN": "一条命令就能切换。从下一个请求起，由 Claude Code 来做。"
+  },
+  "recall": {
+   "en": "“Not the Jardin—something pricier this time.” It recalls the Momos Coffee beans it had called best for lattes.",
+   "ko": "“쟈뎅 말고 오랜만에 비싼 걸로.” 라떼용으로 제일 괜찮다던 모모스커피 원두를 떠올려요.",
+   "ja": "「Jardin じゃなくて、久しぶりに高いのを」。ラテに一番合うと言っていた Momos Coffee の豆を思い出します。",
+   "zh-CN": "“不要 Jardin，这次换贵一点的。”它想起之前说最适合拿铁的 Momos Coffee 咖啡豆。"
+  },
+  "offer": {
+   "en": "And it offers to swap the Jardin in the cart for them.",
+   "ko": "장바구니의 쟈뎅을 빼고 바꿔 넣겠다고 해요.",
+   "ja": "カートの Jardin を外して入れ替えると提案します。",
+   "zh-CN": "并提出把购物车里的 Jardin 换成它。"
+  }
+ },
+ "bridge": {
+  "en": [
+   "A different AI. The same conversation.",
+   "Nothing had to be explained again."
+  ],
+  "ko": [
+   "AI가 바뀌어도, 대화는 그대로.",
+   "다시 설명할 필요가 없었어요."
+  ],
+  "ja": [
+   "AI が替わっても、会話はそのまま。",
+   "説明し直す必要はありませんでした。"
+  ],
+  "zh-CN": [
+   "AI 换了，对话还在。",
+   "不需要重新解释。"
+  ]
+ },
+ "meta": {
+  "en": "TELEGRAM / RECORDED SESSION",
+  "ko": "TELEGRAM / 실제 사용 기록",
+  "ja": "TELEGRAM / 実際の利用記録",
+  "zh-CN": "TELEGRAM / 真实使用记录"
+ },
+ "excerpt": {
+  "en": "SCREEN EXCERPTS",
+  "ko": "화면 발췌",
+  "ja": "画面の抜粋",
+  "zh-CN": "画面节选"
+ },
+ "next": {
+  "en": "AFTER THE SWITCH",
+  "ko": "AI를 바꾼 뒤",
+  "ja": "切り替えのあと",
+  "zh-CN": "切换之后"
+ }
+}

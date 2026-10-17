@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="1138" viewBox="0 0 420 1138" role="img" aria-labelledby="title desc">
+<title id="title">Still</title><desc id="desc">나와의 관계가 Assistant·Finance·Research 전문 관점에 이어지고, 도메인·역할·위임 범위·권한이 Decision Model로 들어가며, Unified Presence가 하나의 관계를 지키면서 나의 개입을 판단에 되돌립니다.</desc>
+<style>text{font-family:Arial,"Noto Sans",sans-serif;fill:#243247} .bold{font-weight:700} .muted{fill:#526174} .blue{fill:#245b92}</style>
+<rect width="420" height="1138" fill="#fff"/>
+<text x="20" y="58.0" font-size="34" class="bold" text-anchor="start">Still</text>
+<text x="20" y="97.9" font-size="22" class="blue" text-anchor="start">여러 전문 역할을 맡아도, 관계는</text>
+<text x="20" y="127.60000000000001" font-size="22" class="blue" text-anchor="start">하나.</text>
+<rect x="20" y="159.3" width="380" height="108.75000000000001" rx="16" fill="#f0f2f5" stroke="#d8dee5"/>
+<text x="210.0" y="207.3" font-size="28" class="bold" text-anchor="middle">나와의 관계</text>
+<text x="210.0" y="242.10000000000002" font-size="17" class="muted" text-anchor="middle">목적 · 기억 · 선호 · 약속 · 권한</text>
+<path d="M210.0 272.05 L210.0 296.05" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<path d="M206.0 291.05 L210.0 296.05 L214.0 291.05" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<rect x="20" y="302.05" width="380" height="100.65" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="344.05" font-size="22" class="bold" text-anchor="middle">Assistant</text>
+<text x="210.0" y="376.75" font-size="17" class="muted" text-anchor="middle">업무 조율</text>
+<rect x="20" y="414.70000000000005" width="380" height="100.65" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="456.70000000000005" font-size="22" class="bold" text-anchor="middle">Finance</text>
+<text x="210.0" y="489.40000000000003" font-size="17" class="muted" text-anchor="middle">자산 관리</text>
+<rect x="20" y="527.35" width="380" height="100.65" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="569.35" font-size="22" class="bold" text-anchor="middle">Research</text>
+<text x="210.0" y="602.0500000000001" font-size="17" class="muted" text-anchor="middle">정보 분석</text>
+<text x="210.0" y="661.0" font-size="19" class="muted" text-anchor="middle">도메인 + 역할 + 위임 범위 + 권한</text>
+<path d="M210.0 677.65 L210.0 701.65" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<path d="M206.0 696.65 L210.0 701.65 L214.0 696.65" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<rect x="20" y="707.65" width="380" height="131.70000000000002" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="755.65" font-size="28" class="bold" text-anchor="middle">Decision Model</text>
+<text x="210.0" y="790.4499999999999" font-size="17" class="muted" text-anchor="middle">판단 · 실행 · 위임 · 질문 · 보고 ·</text>
+<text x="210.0" y="813.4" font-size="17" class="muted" text-anchor="middle">추적</text>
+<path d="M210.0 843.35 L210.0 867.35" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<path d="M206.0 862.35 L210.0 867.35 L214.0 862.35" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<rect x="20" y="873.35" width="380" height="131.70000000000002" rx="16" fill="#eaf1f8" stroke="#cbd7e3"/>
+<text x="210.0" y="921.35" font-size="28" class="bold" text-anchor="middle">Unified Presence</text>
+<text x="210.0" y="956.15" font-size="17" class="muted" text-anchor="middle">하나의 관계 · 맥락에 맞는 소통 · 지속적</text>
+<text x="210.0" y="979.1" font-size="17" class="muted" text-anchor="middle">협업</text>
+<text x="210.0" y="1038.0500000000002" font-size="17" class="blue" text-anchor="middle">실행 관찰 ↔ 나의 개입 ↔ 판단 갱신</text>
+<path d="M20 1066.0H400" fill="none" stroke="#d4dce5" stroke-width="1.6"/>
+<text x="20" y="1093.0" font-size="15" class="muted" text-anchor="start">개념적인 제품 방향이며, 배포된 기능의 근거가</text>
+<text x="20" y="1113.25" font-size="15" class="muted" text-anchor="start">아닙니다.</text>
+</svg>

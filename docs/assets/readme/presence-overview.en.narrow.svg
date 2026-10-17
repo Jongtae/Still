@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="1233" viewBox="0 0 420 1233" role="img" aria-labelledby="title desc">
+<title id="title">Still</title><desc id="desc">The owner relationship informs Assistant, Finance and Research professional lenses; domain, role, mandate and authority feed the Decision Model; Unified Presence keeps one relationship and feeds interventions back into decisions.</desc>
+<style>text{font-family:Arial,"Noto Sans",sans-serif;fill:#243247} .bold{font-weight:700} .muted{fill:#526174} .blue{fill:#245b92}</style>
+<rect width="420" height="1233" fill="#fff"/>
+<text x="20" y="58.0" font-size="34" class="bold" text-anchor="start">Still</text>
+<text x="20" y="97.9" font-size="22" class="blue" text-anchor="start">Many professional roles, one</text>
+<text x="20" y="127.60000000000001" font-size="22" class="blue" text-anchor="start">relationship.</text>
+<rect x="20" y="159.3" width="380" height="131.70000000000002" rx="16" fill="#f0f2f5" stroke="#d8dee5"/>
+<text x="210.0" y="207.3" font-size="28" class="bold" text-anchor="middle">Owner Relationship</text>
+<text x="210.0" y="242.10000000000002" font-size="17" class="muted" text-anchor="middle">Goals · Memory · Preferences ·</text>
+<text x="210.0" y="265.05" font-size="17" class="muted" text-anchor="middle">Commitments · Authority</text>
+<path d="M210.0 295.0 L210.0 319.0" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<path d="M206.0 314.0 L210.0 319.0 L214.0 314.0" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<rect x="20" y="325.0" width="380" height="100.65" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="367.0" font-size="22" class="bold" text-anchor="middle">Assistant</text>
+<text x="210.0" y="399.7" font-size="17" class="muted" text-anchor="middle">Work coordination</text>
+<rect x="20" y="437.65" width="380" height="100.65" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="479.65" font-size="22" class="bold" text-anchor="middle">Finance</text>
+<text x="210.0" y="512.3499999999999" font-size="17" class="muted" text-anchor="middle">Wealth context</text>
+<rect x="20" y="550.3" width="380" height="100.65" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="592.3" font-size="22" class="bold" text-anchor="middle">Research</text>
+<text x="210.0" y="625.0" font-size="17" class="muted" text-anchor="middle">Evidence analysis</text>
+<text x="210.0" y="683.9499999999999" font-size="19" class="muted" text-anchor="middle">Domain + Role + Mandate +</text>
+<text x="210.0" y="709.5999999999999" font-size="19" class="muted" text-anchor="middle">Authority</text>
+<path d="M210.0 726.2499999999999 L210.0 750.2499999999999" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<path d="M206.0 745.2499999999999 L210.0 750.2499999999999 L214.0 745.2499999999999" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<rect x="20" y="756.2499999999999" width="380" height="131.70000000000002" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="804.2499999999999" font-size="28" class="bold" text-anchor="middle">Decision Model</text>
+<text x="210.0" y="839.0499999999998" font-size="17" class="muted" text-anchor="middle">Reason · Act · Delegate · Ask ·</text>
+<text x="210.0" y="861.9999999999999" font-size="17" class="muted" text-anchor="middle">Report · Follow up</text>
+<path d="M210.0 891.9499999999999 L210.0 915.9499999999999" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<path d="M206.0 910.9499999999999 L210.0 915.9499999999999 L214.0 910.9499999999999" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<rect x="20" y="921.9499999999999" width="380" height="154.65000000000003" rx="16" fill="#eaf1f8" stroke="#cbd7e3"/>
+<text x="210.0" y="969.9499999999999" font-size="28" class="bold" text-anchor="middle">Unified Presence</text>
+<text x="210.0" y="1004.7499999999999" font-size="17" class="muted" text-anchor="middle">One relationship · Contextual</text>
+<text x="210.0" y="1027.6999999999998" font-size="17" class="muted" text-anchor="middle">communication · Continuing</text>
+<text x="210.0" y="1050.6499999999999" font-size="17" class="muted" text-anchor="middle">collaboration</text>
+<text x="210.0" y="1109.6" font-size="17" class="blue" text-anchor="middle">Execution observations ↔ your</text>
+<text x="210.0" y="1132.55" font-size="17" class="blue" text-anchor="middle">intervention ↔ decision updates</text>
+<path d="M20 1160.5H400" fill="none" stroke="#d4dce5" stroke-width="1.6"/>
+<text x="20" y="1187.5" font-size="15" class="muted" text-anchor="start">Conceptual product direction, not evidence</text>
+<text x="20" y="1207.75" font-size="15" class="muted" text-anchor="start">of shipped behavior.</text>
+</svg>

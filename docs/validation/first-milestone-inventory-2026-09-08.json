@@ -1,0 +1,3583 @@
+{
+  "snapshot_date": "2026-09-08",
+  "source_main": "a0a8be02ef12e06d5433e41b47907b6f050a4073",
+  "scope": "Snapshot before CLOSEOUT-01 issue #282; branch results executed, administrative closeout verified under #282 after merge.",
+  "issues": [
+    {
+      "number": 280,
+      "title": "[OP-03] Add owner-safe local operating doctor",
+      "state": "open",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/280",
+      "milestone": null
+    },
+    {
+      "number": 279,
+      "title": "[LEGACY-01] Record owner decision to retain prototype as historical",
+      "state": "open",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/279",
+      "milestone": null
+    },
+    {
+      "number": 276,
+      "title": "[TOP-03] Audit every valid requirement and finalize deployment candidate",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/276",
+      "milestone": null
+    },
+    {
+      "number": 274,
+      "title": "[TOP-02] Stabilize current product integration regression",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/274",
+      "milestone": null
+    },
+    {
+      "number": 269,
+      "title": "[STATUS-01] Reconcile current support and tracker claims",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/269",
+      "milestone": null
+    },
+    {
+      "number": 267,
+      "title": "[TOP-01] Verify credential-free Compose lifecycle and current deployment candidate",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/267",
+      "milestone": null
+    },
+    {
+      "number": 265,
+      "title": "[TOP-01] Complete approved AgentOS specification under one persistent goal",
+      "state": "open",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/265",
+      "milestone": null
+    },
+    {
+      "number": 260,
+      "title": "Remediate owner-approved operating deployment readiness",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/260",
+      "milestone": null
+    },
+    {
+      "number": 257,
+      "title": "Prepare owner-approved operating deployment",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/257",
+      "milestone": null
+    },
+    {
+      "number": 254,
+      "title": "Stabilize subscription-engine Telegram memory summaries",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/254",
+      "milestone": null
+    },
+    {
+      "number": 252,
+      "title": "Record I-MP2-03 delivery closeout",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/252",
+      "milestone": null
+    },
+    {
+      "number": 250,
+      "title": "I-MP2-03: Implement owner-local knowledge retrieval",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/250",
+      "milestone": null
+    },
+    {
+      "number": 248,
+      "title": "Record #246 design-to-implementation traceability closeout",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/248",
+      "milestone": null
+    },
+    {
+      "number": 246,
+      "title": "Require design-to-implementation traceability for Master Plan delivery",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/246",
+      "milestone": null
+    },
+    {
+      "number": 244,
+      "title": "D-MP2-03: define owner-local personal knowledge retrieval contract",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/244",
+      "milestone": null
+    },
+    {
+      "number": 242,
+      "title": "I-MP2-02: implement reviewed capability recommendations",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/242",
+      "milestone": null
+    },
+    {
+      "number": 240,
+      "title": "D-MP2-02: define reviewed capability discovery and recommendation contract",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/240",
+      "milestone": null
+    },
+    {
+      "number": 238,
+      "title": "Adopt autonomous MP2 delivery-cycle governance",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/238",
+      "milestone": null
+    },
+    {
+      "number": 236,
+      "title": "Reconcile I-MP2-01 delivery state after merged closeout",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/236",
+      "milestone": null
+    },
+    {
+      "number": 234,
+      "title": "I-MP2-01: implement conversation-first settings contract",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/234",
+      "milestone": null
+    },
+    {
+      "number": 232,
+      "title": "Reconcile delivery state with merged MP1 and D-MP2-01 work",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/232",
+      "milestone": null
+    },
+    {
+      "number": 230,
+      "title": "D-MP2-01: design conversation-first settings control",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/230",
+      "milestone": null
+    },
+    {
+      "number": 228,
+      "title": "Make active work documents goal-executable",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/228",
+      "milestone": null
+    },
+    {
+      "number": 226,
+      "title": "Document MP2 conversation-first settings proposal",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/226",
+      "milestone": null
+    },
+    {
+      "number": 224,
+      "title": "MP1 R-05: add orchestrated end-to-end core acceptance",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/224",
+      "milestone": null
+    },
+    {
+      "number": 222,
+      "title": "MP1 R-04: complete Drive contract through orchestrator",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/222",
+      "milestone": null
+    },
+    {
+      "number": 220,
+      "title": "MP1 R-03: complete Calendar approval contract through orchestrator",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/220",
+      "milestone": null
+    },
+    {
+      "number": 218,
+      "title": "MP1 R-02: complete A2A contract through orchestrator",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/218",
+      "milestone": null
+    },
+    {
+      "number": 216,
+      "title": "MP1 R-01: implement policy-owned ReAct orchestration",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/216",
+      "milestone": null
+    },
+    {
+      "number": 214,
+      "title": "MP1 remediation: re-scope incomplete integration requirements",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/214",
+      "milestone": null
+    },
+    {
+      "number": 212,
+      "title": "docs: mark MP1 development delivery complete",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/212",
+      "milestone": null
+    },
+    {
+      "number": 210,
+      "title": "closeout: record MP1 Personal Assistant Core delivery",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/210",
+      "milestone": null
+    },
+    {
+      "number": 208,
+      "title": "MP1 I-06: Release Personal Assistant Core",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/208",
+      "milestone": null
+    },
+    {
+      "number": 206,
+      "title": "MP1 D-06: Define integrated ReAct policy and release contract",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/206",
+      "milestone": null
+    },
+    {
+      "number": 204,
+      "title": "MP1 I-05: Deliver Calendar create-event approval flow",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/204",
+      "milestone": null
+    },
+    {
+      "number": 202,
+      "title": "MP1 D-05: Define Google Calendar create-event approval contract",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/202",
+      "milestone": null
+    },
+    {
+      "number": 200,
+      "title": "MP1 I-04: Deliver compatibility A2A delegation",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/200",
+      "milestone": null
+    },
+    {
+      "number": 198,
+      "title": "MP1 D-04: Define compatibility A2A delegation contract",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/198",
+      "milestone": null
+    },
+    {
+      "number": 196,
+      "title": "closeout: record MP1 I-03 Drive connector delivery",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/196",
+      "milestone": null
+    },
+    {
+      "number": 194,
+      "title": "closeout: record contract-first governance adoption",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/194",
+      "milestone": null
+    },
+    {
+      "number": 192,
+      "title": "governance: defer external integration configuration to operating deployment",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/192",
+      "milestone": null
+    },
+    {
+      "number": 190,
+      "title": "MP1 I-03: Deliver Google Drive read-only connector",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/190",
+      "milestone": null
+    },
+    {
+      "number": 188,
+      "title": "MP1 D-03: Define Google Drive read-only connector contract",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/188",
+      "milestone": null
+    },
+    {
+      "number": 186,
+      "title": "Governance: remove mandatory owner live acceptance gate",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/186",
+      "milestone": null
+    },
+    {
+      "number": 184,
+      "title": "MP1 I-02: Deliver reviewed capability registry",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/184",
+      "milestone": null
+    },
+    {
+      "number": 182,
+      "title": "MP1 D-02: Define reviewed capability lifecycle contract",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/182",
+      "milestone": null
+    },
+    {
+      "number": 179,
+      "title": "MP1 I-01: Deliver Personal Space and single-assistant UX",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/179",
+      "milestone": null
+    },
+    {
+      "number": 176,
+      "title": "MP1 D-01: Define the Personal Space memory and evidence boundary",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/176",
+      "milestone": null
+    },
+    {
+      "number": 174,
+      "title": "DOC-02: Add bilingual personal-assistant vision and Master Plan hierarchy",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/174",
+      "milestone": null
+    },
+    {
+      "number": 172,
+      "title": "DOC-01: Position AgentOS as a personal AI control plane and define the next proposed Hub v2 phase",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/172",
+      "milestone": null
+    },
+    {
+      "number": 170,
+      "title": "docs: localize README for Korean, Simplified Chinese, and Japanese",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/170",
+      "milestone": null
+    },
+    {
+      "number": 168,
+      "title": "[OPS-01] Enforce GitHub-first issue, branch, and worktree delivery workflow",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/168",
+      "milestone": null
+    },
+    {
+      "number": 164,
+      "title": "UX-05 fix: give paired Telegram task cards a practical cancellation window",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/164",
+      "milestone": null
+    },
+    {
+      "number": 162,
+      "title": "UX-06: Make Telegram conversation bubbles a first-class personal-assistant UX",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/162",
+      "milestone": null
+    },
+    {
+      "number": 159,
+      "title": "UX-03 follow-up: guide Telegram context selection without commands",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/159",
+      "milestone": 5
+    },
+    {
+      "number": 154,
+      "title": "UX-05: Verify and release the web and Telegram DM experience",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/154",
+      "milestone": 5
+    },
+    {
+      "number": 153,
+      "title": "UX-04: Explain data boundaries and recovery in human language",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/153",
+      "milestone": 5
+    },
+    {
+      "number": 152,
+      "title": "UX-03: Make Telegram the same concise personal-agent DM",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/152",
+      "milestone": 5
+    },
+    {
+      "number": 151,
+      "title": "UX-02: Add opt-in workspaces and saved results",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/151",
+      "milestone": 5
+    },
+    {
+      "number": 150,
+      "title": "UX-01: Make the web home a minimal personal-agent DM",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/150",
+      "milestone": 5
+    },
+    {
+      "number": 149,
+      "title": "Epic: AgentOS UX v1.1 — Personal-agent DM experience",
+      "state": "open",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/149",
+      "milestone": 5
+    },
+    {
+      "number": 147,
+      "title": "[V1 release repair] Record completed delivery evidence in roadmap",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/147",
+      "milestone": 4
+    },
+    {
+      "number": 140,
+      "title": "[V1-05] Release acceptance and distribution",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/140",
+      "milestone": 4
+    },
+    {
+      "number": 139,
+      "title": "[V1-04] Docker Compose VPS operation and recovery",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/139",
+      "milestone": 4
+    },
+    {
+      "number": 138,
+      "title": "[V1-03] Safe local documents and context in Telegram work",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/138",
+      "milestone": 4
+    },
+    {
+      "number": 137,
+      "title": "[V1-02] Telegram daily-work experience and recovery",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/137",
+      "milestone": 4
+    },
+    {
+      "number": 136,
+      "title": "[V1-01] Guided installation and owner lifecycle",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/136",
+      "milestone": 4
+    },
+    {
+      "number": 135,
+      "title": "EPIC: Personal AgentOS v1 Release",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/135",
+      "milestone": 4
+    },
+    {
+      "number": 131,
+      "title": "[H3 repair] Automate paired Telegram connection verification",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/131",
+      "milestone": null
+    },
+    {
+      "number": 129,
+      "title": "[H2 repair] Preflight public lookup for subscription-engine research requests",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/129",
+      "milestone": null
+    },
+    {
+      "number": 127,
+      "title": "[H2 repair] Parse Codex agent-message events before terminal usage",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/127",
+      "milestone": null
+    },
+    {
+      "number": 125,
+      "title": "[H2 repair] Use a writable private engine-run directory on macOS",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/125",
+      "milestone": null
+    },
+    {
+      "number": 123,
+      "title": "[H2 repair] Run Codex in an isolated directory with its official session",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/123",
+      "milestone": null
+    },
+    {
+      "number": 114,
+      "title": "[Delivery repair] Mark the next iteration ready after reconciliation",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/114",
+      "milestone": null
+    },
+    {
+      "number": 111,
+      "title": "[H0 repair] Clear frozen delivery state before Hub v2 selection",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/111",
+      "milestone": 3
+    },
+    {
+      "number": 109,
+      "title": "[H1-02] Isolate each personal AgentOS runtime from the Mac host",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/109",
+      "milestone": 3
+    },
+    {
+      "number": 108,
+      "title": "[H5-01] Provide trusted assistants and portable personal state",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/108",
+      "milestone": 3
+    },
+    {
+      "number": 107,
+      "title": "[H4-01] Build an opt-in local context inbox",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/107",
+      "milestone": 3
+    },
+    {
+      "number": 106,
+      "title": "[H3-01] Deliver first work through a BotFather-created personal bot",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/106",
+      "milestone": 3
+    },
+    {
+      "number": 105,
+      "title": "[H2-01] Run subscription engines through AgentOS-owned tools",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/105",
+      "milestone": 3
+    },
+    {
+      "number": 104,
+      "title": "[H1-01] Connect subscription engines without API-key setup",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/104",
+      "milestone": 3
+    },
+    {
+      "number": 103,
+      "title": "[H0-01] Rebaseline product direction and delivery sequence",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/103",
+      "milestone": 3
+    },
+    {
+      "number": 102,
+      "title": "EPIC: AgentOS Hub v2 / Subscription-connected personal work hub",
+      "state": "open",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/102",
+      "milestone": 3
+    },
+    {
+      "number": 100,
+      "title": "IDEA: Capture user-approved context from clipboard and browser activity",
+      "state": "open",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/100",
+      "milestone": null
+    },
+    {
+      "number": 98,
+      "title": "[P7 repair] Reserve a usable cancellation window for Telegram task cards",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/98",
+      "milestone": null
+    },
+    {
+      "number": 96,
+      "title": "[P7 repair] Restore Telegram status after successful polling",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/96",
+      "milestone": null
+    },
+    {
+      "number": 94,
+      "title": "[P7-04] Release verified Telegram task-card continuity",
+      "state": "open",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/94",
+      "milestone": null
+    },
+    {
+      "number": 93,
+      "title": "[M5 repair] Execute release and Homebrew publication from the delivery controller",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/93",
+      "milestone": null
+    },
+    {
+      "number": 91,
+      "title": "[P7-03a] Live paired Telegram task-card acceptance",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/91",
+      "milestone": null
+    },
+    {
+      "number": 89,
+      "title": "[P3 repair] Make source launchd imports independent of PYTHONPATH",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/89",
+      "milestone": null
+    },
+    {
+      "number": 87,
+      "title": "[P3 repair] Use a launchd-safe Python for the source delivery controller",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/87",
+      "milestone": null
+    },
+    {
+      "number": 85,
+      "title": "[P3 repair] Avoid launchd startup hangs from project working directories",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/85",
+      "milestone": null
+    },
+    {
+      "number": 83,
+      "title": "[P3 repair] Pin launchd delivery loop to the selected AgentOS runtime",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/83",
+      "milestone": null
+    },
+    {
+      "number": 81,
+      "title": "[P7 repair] Gate release on recorded paired Telegram acceptance",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/81",
+      "milestone": null
+    },
+    {
+      "number": 79,
+      "title": "[P7 repair] Add safe progress button to Telegram task cards",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/79",
+      "milestone": null
+    },
+    {
+      "number": 74,
+      "title": "[P7-00] Register M7 Telegram card delivery sequence",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/74",
+      "milestone": 2
+    },
+    {
+      "number": 73,
+      "title": "[P7-03] Verify Telegram task-card continuity",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/73",
+      "milestone": 2
+    },
+    {
+      "number": 72,
+      "title": "[P7-02] Add Telegram approvals and terminal notifications",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/72",
+      "milestone": 2
+    },
+    {
+      "number": 71,
+      "title": "[P7-01] Create natural-language Telegram task cards",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/71",
+      "milestone": 2
+    },
+    {
+      "number": 68,
+      "title": "[P6-00e] Bundle the delivery plan with installed AgentOS",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/68",
+      "milestone": 2
+    },
+    {
+      "number": 65,
+      "title": "[P6-00d] Make delivery PR merge independent of controller branch",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/65",
+      "milestone": 2
+    },
+    {
+      "number": 62,
+      "title": "[P6-00c] Use login-shell Git credentials for delivery pushes",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/62",
+      "milestone": 2
+    },
+    {
+      "number": 60,
+      "title": "[P6-00b] Remove conflicting Codex worker sandbox flags",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/60",
+      "milestone": 2
+    },
+    {
+      "number": 58,
+      "title": "[P6-00a] Make delivery worker compatible with current Codex CLI",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/58",
+      "milestone": 2
+    },
+    {
+      "number": 56,
+      "title": "[P6-00] Continue the delivery loop after v1",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/56",
+      "milestone": 2
+    },
+    {
+      "number": 55,
+      "title": "[P6-01] Activate declarative role and tool packages at runtime",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/55",
+      "milestone": 2
+    },
+    {
+      "number": 53,
+      "title": "[P5-05] Publish v1.0.1 validation and OpenAI patch",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/53",
+      "milestone": null
+    },
+    {
+      "number": 52,
+      "title": "[P5-04] Expose OpenAI gpt-4o-mini in settings",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/52",
+      "milestone": null
+    },
+    {
+      "number": 50,
+      "title": "EPIC: Stage 3 / Managed personal-agent hosting",
+      "state": "open",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/50",
+      "milestone": null
+    },
+    {
+      "number": 49,
+      "title": "EPIC: Stage 2 / Additional personal messaging channels",
+      "state": "open",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/49",
+      "milestone": null
+    },
+    {
+      "number": 48,
+      "title": "EPIC: Stage 2 / Native companion continuity",
+      "state": "open",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/48",
+      "milestone": null
+    },
+    {
+      "number": 47,
+      "title": "[P5-03] Add product-validation release gate",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/47",
+      "milestone": null
+    },
+    {
+      "number": 45,
+      "title": "[P5-01] Run v1 installation acceptance",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/45",
+      "milestone": 1
+    },
+    {
+      "number": 43,
+      "title": "[P4-02] Add local plugin lifecycle",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/43",
+      "milestone": 1
+    },
+    {
+      "number": 40,
+      "title": "[P4-01] Define declarative tool and role manifests",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/40",
+      "milestone": 1
+    },
+    {
+      "number": 38,
+      "title": "[P3-02] Provide backup restore and service operations",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/38",
+      "milestone": 1
+    },
+    {
+      "number": 37,
+      "title": "[P4-01] Define safe agent, tool, plugin, and runtime manifests",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/37",
+      "milestone": 1
+    },
+    {
+      "number": 36,
+      "title": "EPIC: Stage 2 / Phase 4 Extensibility and interoperable agent operation",
+      "state": "open",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/36",
+      "milestone": 1
+    },
+    {
+      "number": 34,
+      "title": "[P3-01] Provide Docker Compose VPS installation",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/34",
+      "milestone": 1
+    },
+    {
+      "number": 33,
+      "title": "EPIC: Stage 2 / Phase 2 Private documents and safety",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/33",
+      "milestone": 1
+    },
+    {
+      "number": 31,
+      "title": "[P2-02] Gate external model access to connected documents",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/31",
+      "milestone": 1
+    },
+    {
+      "number": 29,
+      "title": "[P2-01] Read connected documents with source locations",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/29",
+      "milestone": 1
+    },
+    {
+      "number": 27,
+      "title": "[P1 follow-up] Return completed tool evidence when final model text is blank",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/27",
+      "milestone": null
+    },
+    {
+      "number": 25,
+      "title": "[P1-03] Verify web and Telegram continuity under restart",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/25",
+      "milestone": 1
+    },
+    {
+      "number": 22,
+      "title": "[P1-02] Verify traceable recovery for every built-in capability",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/22",
+      "milestone": 1
+    },
+    {
+      "number": 17,
+      "title": "[P1-01b] Make scheduled delivery recovery reliable",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/17",
+      "milestone": 1
+    },
+    {
+      "number": 10,
+      "title": "[P1-01a] Add evidence-driven delivery loop for blocked runtime validation",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/10",
+      "milestone": 1
+    },
+    {
+      "number": 7,
+      "title": "[P1-01] Validate tool-capable model connections before agent work",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/7",
+      "milestone": 1
+    },
+    {
+      "number": 6,
+      "title": "EPIC: Stage 1 / Phase 1 Reliable personal runtime",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/6",
+      "milestone": 1
+    },
+    {
+      "number": 4,
+      "title": "[P0-02] Link the Homebrew tap to the versioned product release",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/4",
+      "milestone": 1
+    },
+    {
+      "number": 2,
+      "title": "[P0-01] Establish product governance and source separation",
+      "state": "closed",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/2",
+      "milestone": 1
+    },
+    {
+      "number": 1,
+      "title": "EPIC: Stage 1 / Phase 0 Product source and governance",
+      "state": "open",
+      "url": "https://github.com/Jongtae/personal-agentos/issues/1",
+      "milestone": 1
+    }
+  ],
+  "pull_requests": [
+    {
+      "number": 281,
+      "title": "feat: add owner-safe operating doctor",
+      "state": "open",
+      "merged_at": null,
+      "merge_commit": null,
+      "head_ref": "codex/280-owner-operating-doctor",
+      "head_sha": "8cc9b8f9ad1345e81346763564cd04bde31637c3",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/281"
+    },
+    {
+      "number": 278,
+      "title": "docs: close TOP completion evidence",
+      "state": "closed",
+      "merged_at": "2026-09-08T08:41:22Z",
+      "merge_commit": "a0a8be02ef12e06d5433e41b47907b6f050a4073",
+      "head_ref": "codex/276-top03-closeout",
+      "head_sha": "0c271e6a0ec77b2eafd3401ff4dcf7e67660a1a6",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/278"
+    },
+    {
+      "number": 277,
+      "title": "fix: complete final audit integration gaps",
+      "state": "closed",
+      "merged_at": "2026-09-08T08:29:43Z",
+      "merge_commit": "53912eeb1357ced37031234b1e5376f024dd0a96",
+      "head_ref": "codex/276-top03-final-audit",
+      "head_sha": "16112753c106de70fa3ba86f4957dec8137b8d28",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/277"
+    },
+    {
+      "number": 275,
+      "title": "fix: stabilize isolated-engine product probe",
+      "state": "closed",
+      "merged_at": "2026-09-08T08:04:34Z",
+      "merge_commit": "7da65930cb8df8cdf1134855d43a93c4d5364261",
+      "head_ref": "codex/274-top02-integration-regression",
+      "head_sha": "b79f2cbd0113568247e60776df81994065447f33",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/275"
+    },
+    {
+      "number": 273,
+      "title": "docs: close TOP-01 Compose lifecycle evidence",
+      "state": "closed",
+      "merged_at": "2026-09-08T08:13:56Z",
+      "merge_commit": "e3e431d9cfdf7e01d817e0b1f39ef184c482acdc",
+      "head_ref": "codex/267-compose-lifecycle-closeout",
+      "head_sha": "6ddcd55e889bc040974a358ff2d14da3ea423f7e",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/273"
+    },
+    {
+      "number": 272,
+      "title": "fix(compose): recover credential-free lifecycle acceptance",
+      "state": "closed",
+      "merged_at": "2026-09-08T07:46:19Z",
+      "merge_commit": "410a003a1332ceb2ec6dd32a74146b0422ac1d42",
+      "head_ref": "codex/267-compose-lifecycle-recovery",
+      "head_sha": "61150fb9b99fbda1db27ca10b76659c3487d491f",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/272"
+    },
+    {
+      "number": 271,
+      "title": "docs: record STATUS-01 closeout evidence",
+      "state": "closed",
+      "merged_at": "2026-09-08T07:09:47Z",
+      "merge_commit": "f194e335d18c0351e40a6280c8e58c7262dfb141",
+      "head_ref": "codex/269-status-claim-closeout",
+      "head_sha": "1cae52a256740a6a39a47eea9c93295e2fcef0e9",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/271"
+    },
+    {
+      "number": 270,
+      "title": "fix: reconcile current support and delivery claims",
+      "state": "closed",
+      "merged_at": "2026-09-08T07:06:59Z",
+      "merge_commit": "70e57c1fb1455c75bdf1e2083d4d382139c726a0",
+      "head_ref": "codex/269-status-claim-reconciliation",
+      "head_sha": "0a46a3737a58ca6f673c446b6042d6ed6e6f86a7",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/270"
+    },
+    {
+      "number": 268,
+      "title": "test: isolate credential-free Compose lifecycle acceptance",
+      "state": "closed",
+      "merged_at": "2026-09-08T06:54:45Z",
+      "merge_commit": "bc403742c91b0b9d2604a7f4a271d5351b9a0d89",
+      "head_ref": "codex/267-compose-lifecycle-validation",
+      "head_sha": "80d433bb5e53e885ceb30bf9b93400c84aeb5d2a",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/268"
+    },
+    {
+      "number": 266,
+      "title": "governance: establish top-level specification goal",
+      "state": "closed",
+      "merged_at": "2026-09-08T06:45:59Z",
+      "merge_commit": "5a4cdf3f18b490918e471b72e0e3b2fd01350f59",
+      "head_ref": "codex/265-top-level-spec-completion",
+      "head_sha": "beb4a7c079c319532e20447235d7918c00bb47d2",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/266"
+    },
+    {
+      "number": 264,
+      "title": "docs: close GOV-01 governance alignment",
+      "state": "closed",
+      "merged_at": "2026-09-08T06:37:37Z",
+      "merge_commit": "a81f5e56b1d9256772c2673188b9818666388768",
+      "head_ref": "codex/168-governance-closeout",
+      "head_sha": "43adedb75680f68c43e738752cba8e3f30665ce1",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/264"
+    },
+    {
+      "number": 263,
+      "title": "governance: align autonomous goal execution",
+      "state": "closed",
+      "merged_at": "2026-09-08T06:31:48Z",
+      "merge_commit": "d92a61693d557db80ff8378e5b6c46cca46b0e98",
+      "head_ref": "codex/168-governance-autonomy-alignment",
+      "head_sha": "b9fc230f09d4fb54127491f58708201442a478d8",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/263"
+    },
+    {
+      "number": 262,
+      "title": "docs: close OP-02 remediation cycle",
+      "state": "closed",
+      "merged_at": "2026-09-08T06:10:07Z",
+      "merge_commit": "21122ab297844fe7ef6546dc97ad374fbde8c96d",
+      "head_ref": "codex/op-02-closeout",
+      "head_sha": "ac9414eb53ecc79f16118179d4d319f5c8d4c168",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/262"
+    },
+    {
+      "number": 261,
+      "title": "ops: remediate OP-02 readiness boundaries",
+      "state": "closed",
+      "merged_at": "2026-09-08T06:04:23Z",
+      "merge_commit": "18538eabc00a20de64f4c5f5a6ac004aeda2469e",
+      "head_ref": "codex/op-02-operating-readiness-remediation",
+      "head_sha": "4ed79617271a67c9ad1682fae4fc153887d80a85",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/261"
+    },
+    {
+      "number": 259,
+      "title": "docs: close operating deployment preparation",
+      "state": "closed",
+      "merged_at": "2026-09-08T04:29:56Z",
+      "merge_commit": "5dfc071770a193cae9c6b1af8a660642a81fca9b",
+      "head_ref": "codex/ops-01-owner-approved-deployment",
+      "head_sha": "5ddbfb8a22d0abf175c1b77594fccd25826061dc",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/259"
+    },
+    {
+      "number": 258,
+      "title": "ops: prepare owner-approved deployment path",
+      "state": "closed",
+      "merged_at": "2026-09-08T04:27:04Z",
+      "merge_commit": "4f52c3618bbb59be740c4844ef6bf9e38a83711d",
+      "head_ref": "codex/ops-01-owner-approved-deployment",
+      "head_sha": "3e282adc749811bbdbaec3053c980c6acd36c147",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/258"
+    },
+    {
+      "number": 256,
+      "title": "docs: close subscription stabilization cycle",
+      "state": "closed",
+      "merged_at": "2026-09-08T04:08:06Z",
+      "merge_commit": "861033894fe54fc1f58219d90377419588f67491",
+      "head_ref": "codex/stabilize-subscription-telegram-summary",
+      "head_sha": "e95a8a854c481987c64ed44e9a81eb9b9264fbc7",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/256"
+    },
+    {
+      "number": 255,
+      "title": "stabilize: verify subscription Telegram summaries",
+      "state": "closed",
+      "merged_at": "2026-09-08T04:03:14Z",
+      "merge_commit": "471bac6120317f0f3f9d750089abb0e3203a74be",
+      "head_ref": "codex/stabilize-subscription-telegram-summary",
+      "head_sha": "9a953589ff3f32f4411f2101fa138581afe34279",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/255"
+    },
+    {
+      "number": 253,
+      "title": "docs: record I-MP2-03 closeout",
+      "state": "closed",
+      "merged_at": "2026-09-08T03:12:36Z",
+      "merge_commit": "9fb93a1b1589c2d89db09e915d244c6a0d5665e3",
+      "head_ref": "codex/i-mp2-03-closeout",
+      "head_sha": "12c3b0d443b656418fc1439d0b5b4c8e93a180ca",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/253"
+    },
+    {
+      "number": 251,
+      "title": "feat: add owner-local knowledge retrieval",
+      "state": "closed",
+      "merged_at": "2026-09-08T03:10:41Z",
+      "merge_commit": "7d3716d5dbb95e054dc62bcf2f34931ac46ecd41",
+      "head_ref": "codex/i-mp2-03-personal-knowledge-retrieval",
+      "head_sha": "ca9ba1ff8af87992644c1c4a13030035ef230453",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/251"
+    },
+    {
+      "number": 249,
+      "title": "docs: record traceability governance closeout",
+      "state": "closed",
+      "merged_at": "2026-09-08T02:52:47Z",
+      "merge_commit": "428e550cb4c1df04eb276d05a05afcfca412df77",
+      "head_ref": "codex/traceability-closeout",
+      "head_sha": "e942ef26dcea4d562073edcc6001629783d51d36",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/249"
+    },
+    {
+      "number": 247,
+      "title": "governance: enforce design-to-implementation traceability",
+      "state": "closed",
+      "merged_at": "2026-09-08T02:51:50Z",
+      "merge_commit": "5b805dbdf3ebcb41030aa668c0ca6ece43377c98",
+      "head_ref": "codex/design-implementation-traceability",
+      "head_sha": "707cdf775a093d642ed0d1121ef50d9bac0f0e1b",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/247"
+    },
+    {
+      "number": 245,
+      "title": "Define owner-local knowledge retrieval contract",
+      "state": "closed",
+      "merged_at": "2026-09-08T02:46:44Z",
+      "merge_commit": "a87860bb1d80d9d787bb8ca5c6749b4cccd3a629",
+      "head_ref": "codex/d-mp2-03-personal-knowledge-retrieval",
+      "head_sha": "0a919a75044bed93c662a714bf37e3c638c6d194",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/245"
+    },
+    {
+      "number": 243,
+      "title": "Implement reviewed capability recommendations",
+      "state": "closed",
+      "merged_at": "2026-09-08T02:26:38Z",
+      "merge_commit": "cf104ed1ff1f71517e6fc9be8fa2fba3a3a2c3b0",
+      "head_ref": "codex/i-mp2-02-capability-recommendations",
+      "head_sha": "925f7d66e02901c1b572df059c7e5fff98c0d6be",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/243"
+    },
+    {
+      "number": 241,
+      "title": "Define reviewed capability discovery contract",
+      "state": "closed",
+      "merged_at": "2026-09-08T01:54:22Z",
+      "merge_commit": "843a1c405dbf46166ed4cee8c4330a06f796cb02",
+      "head_ref": "codex/d-mp2-02-capability-discovery",
+      "head_sha": "392906b4eeae19a9c67ea3d79be60f843fa7074f",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/241"
+    },
+    {
+      "number": 239,
+      "title": "Delegate autonomous MP2 delivery cycle",
+      "state": "closed",
+      "merged_at": "2026-09-08T01:40:16Z",
+      "merge_commit": "9d4f0b73061fde4334737d0b51e32d9a007e543e",
+      "head_ref": "codex/autonomous-mp2-cycle-governance",
+      "head_sha": "6a26d24de3bee0a7b31a69ccb359a3450b222a90",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/239"
+    },
+    {
+      "number": 237,
+      "title": "Reconcile merged I-MP2-01 delivery state",
+      "state": "closed",
+      "merged_at": "2026-09-08T01:24:09Z",
+      "merge_commit": "ebd016281b61165b7ace5eb36683ba6caae0afbb",
+      "head_ref": "codex/reconcile-i-mp2-delivery-state",
+      "head_sha": "ebb21eb77fb4c734e59438c04af48a63afc48cfd",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/237"
+    },
+    {
+      "number": 235,
+      "title": "Implement conversation-first settings contract",
+      "state": "closed",
+      "merged_at": "2026-09-08T01:21:53Z",
+      "merge_commit": "9d2e3d0a0cb8fd8713014c790fd6f68b8e39546f",
+      "head_ref": "codex/i-mp2-01-conversation-settings",
+      "head_sha": "318a83a169c077aef169a0679651eb2b58496b00",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/235"
+    },
+    {
+      "number": 233,
+      "title": "Reconcile delivery state with merged work",
+      "state": "closed",
+      "merged_at": "2026-09-08T01:02:37Z",
+      "merge_commit": "94f0e13cd9563e9ae8464e7e3d78b34e258ecb53",
+      "head_ref": "codex/reconcile-delivery-state",
+      "head_sha": "cd1b3526fa3d73584d1ec90fc140cf113e50d91a",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/233"
+    },
+    {
+      "number": 231,
+      "title": "D-MP2-01: design conversation-first settings control",
+      "state": "closed",
+      "merged_at": "2026-09-08T00:45:00Z",
+      "merge_commit": "81690ee23b64fb57c05100a7c1b8935dce3b06db",
+      "head_ref": "codex/d-mp2-01-conversation-settings-contract",
+      "head_sha": "855c878e6e054092a8f97e95ed1ae32c2cfcd27e",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/231"
+    },
+    {
+      "number": 229,
+      "title": "Make active work documents goal-executable",
+      "state": "closed",
+      "merged_at": "2026-09-08T00:33:21Z",
+      "merge_commit": "229b7e5d3d71866b60578d5c00697660bae64e24",
+      "head_ref": "codex/goal-executable-work-docs",
+      "head_sha": "7c366f2578be59063181649169ee8692e5a88df1",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/229"
+    },
+    {
+      "number": 227,
+      "title": "Document conversation-first settings candidate",
+      "state": "closed",
+      "merged_at": "2026-09-08T00:23:32Z",
+      "merge_commit": "35d5eb5d2fc6f742116f949bda9daf7e679dcfbc",
+      "head_ref": "codex/mp2-conversation-settings-proposal",
+      "head_sha": "9cf0653f53157939a5011cc1a746f3415c5dcfbe",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/227"
+    },
+    {
+      "number": 225,
+      "title": "MP1 R-05: verify orchestrated core release",
+      "state": "closed",
+      "merged_at": "2026-09-08T00:15:23Z",
+      "merge_commit": "b2f6c660ff818573ca6a1855b14a9c1fc88dcfcc",
+      "head_ref": "codex/mp1-r05-core-acceptance",
+      "head_sha": "4139ad842fcf25be17a5b095c974e551f795e787",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/225"
+    },
+    {
+      "number": 223,
+      "title": "MP1 R-04: complete Drive contract through orchestrator",
+      "state": "closed",
+      "merged_at": "2026-09-08T00:10:56Z",
+      "merge_commit": "453c351a83f3296439d2ecd1b67fb88929a491c0",
+      "head_ref": "codex/mp1-r04-drive-contract",
+      "head_sha": "d6c433f8a1c467b9369bd5c68e86f8c67694df66",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/223"
+    },
+    {
+      "number": 221,
+      "title": "MP1 R-03: complete Calendar approval contract",
+      "state": "closed",
+      "merged_at": "2026-09-08T00:07:58Z",
+      "merge_commit": "afa085e47542d1e0969df62a2dcdea6d75328615",
+      "head_ref": "codex/mp1-r03-calendar-contract",
+      "head_sha": "1047a9789aa81b27886f0dd437d2cc81d8416f54",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/221"
+    },
+    {
+      "number": 219,
+      "title": "feat: complete MP1 A2A contract",
+      "state": "closed",
+      "merged_at": "2026-09-07T23:58:46Z",
+      "merge_commit": "25bdb7fea553023e9918a7265cc46021cdf63f78",
+      "head_ref": "codex/mp1-r02-a2a-contract",
+      "head_sha": "a7b5f17c214c06acf051569e65f6af8113245772",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/219"
+    },
+    {
+      "number": 217,
+      "title": "feat: add MP1 policy-owned ReAct orchestration",
+      "state": "closed",
+      "merged_at": "2026-09-07T23:54:52Z",
+      "merge_commit": "b169937a91504d555834b2ae4679ede9baecf249",
+      "head_ref": "codex/mp1-r01-react-orchestrator",
+      "head_sha": "7fc4ca2cfe5afa49dca4968595ebcccc03a5d542",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/217"
+    },
+    {
+      "number": 215,
+      "title": "docs: re-scope MP1 implementation gaps",
+      "state": "closed",
+      "merged_at": "2026-09-07T23:35:33Z",
+      "merge_commit": "299d26bdc3edd8c16627713e408eceec1b94bbc5",
+      "head_ref": "codex/mp1-remediation-plan",
+      "head_sha": "ba7a5742bd82769c2fe2087c1a99d16e108a4812",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/215"
+    },
+    {
+      "number": 213,
+      "title": "docs: mark MP1 development complete",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:58:01Z",
+      "merge_commit": "265edb6b055390bf6768b7301528d4221d9746c9",
+      "head_ref": "codex/mp1-status-closeout",
+      "head_sha": "2560d5723d0ce66671021173ea535e8701558492",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/213"
+    },
+    {
+      "number": 211,
+      "title": "docs: record MP1 core delivery closeout",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:56:52Z",
+      "merge_commit": "846d876074528d8dd952bf4f1e066e0b7d19facf",
+      "head_ref": "codex/mp1-core-closeout",
+      "head_sha": "5aa7e7f537b6feda547ed781cbd53fb4784297ba",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/211"
+    },
+    {
+      "number": 209,
+      "title": "test: release MP1 Personal Assistant Core",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:55:43Z",
+      "merge_commit": "f910f0a134ec81a4a6dd6bf601c83b7f32cc5994",
+      "head_ref": "codex/mp1-i06-core-release",
+      "head_sha": "796274174044bc460c778fea58aa1266e70d5041",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/209"
+    },
+    {
+      "number": 207,
+      "title": "docs: define MP1 integrated ReAct release contract",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:54:09Z",
+      "merge_commit": "cdadb515c1f1e0a784ba2e3da5167b9db591b8d5",
+      "head_ref": "codex/mp1-d06-react-contract",
+      "head_sha": "7ab98ce8712e8ddf7df4f3a1ba6214098b147d2b",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/207"
+    },
+    {
+      "number": 205,
+      "title": "feat: add Calendar create approval flow",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:53:03Z",
+      "merge_commit": "2d89c3c8aa76fe28042fd955550416daadb3c55e",
+      "head_ref": "codex/mp1-i05-calendar-create",
+      "head_sha": "b1c7fa64e157d46b56589387a81fdc79a525a315",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/205"
+    },
+    {
+      "number": 203,
+      "title": "docs: define MP1 Calendar approval contract",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:51:46Z",
+      "merge_commit": "a89bf6472787dd48594eb03aa64ee5a5d056ac89",
+      "head_ref": "codex/mp1-d05-calendar-contract",
+      "head_sha": "99161d356dcfee8c4644019b7282aa28bbee3a1b",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/203"
+    },
+    {
+      "number": 201,
+      "title": "feat: add compatibility A2A delegation",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:50:34Z",
+      "merge_commit": "074f09bda60c55db70fb91855877e8a2dee3d27d",
+      "head_ref": "codex/mp1-i04-a2a-delegation",
+      "head_sha": "293cca1ae61d2d04143eb2e71cf4cc2dd2f6d4bd",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/201"
+    },
+    {
+      "number": 199,
+      "title": "docs: define MP1 A2A delegation contract",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:49:19Z",
+      "merge_commit": "19fe4df83d6d33225a01b2c34c910881dc45bf51",
+      "head_ref": "codex/mp1-d04-a2a-contract",
+      "head_sha": "62e59e62b99b95623dc0b6efd49f06af2508224d",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/199"
+    },
+    {
+      "number": 197,
+      "title": "docs: close MP1 I-03 Drive iteration",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:48:15Z",
+      "merge_commit": "be09af8b995026f807ada698114778164abdcc1d",
+      "head_ref": "codex/mp1-i03-closeout",
+      "head_sha": "ea15cba139f40296e2241b47928cc4941a13a19b",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/197"
+    },
+    {
+      "number": 195,
+      "title": "docs: record governance adoption closeout",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:44:03Z",
+      "merge_commit": "e402a33028fe08c4debb4858e67265ec6a7c2bb6",
+      "head_ref": "codex/governance-closeout",
+      "head_sha": "676bc3c84da3a0c6ee523f1d42b14917b5fde07b",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/195"
+    },
+    {
+      "number": 193,
+      "title": "docs: adopt contract-first delivery governance",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:43:06Z",
+      "merge_commit": "3e05cd057d0b360d27752a0092bccb86e73a4bf7",
+      "head_ref": "codex/governance-deferred-external-integration",
+      "head_sha": "b1e95aef22137b8a7b7568ecad8880c1631a1c37",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/193"
+    },
+    {
+      "number": 191,
+      "title": "feat: add read-only Google Drive connector",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:46:33Z",
+      "merge_commit": "48964a58e97eeca696e8e97161e9589bc86039cb",
+      "head_ref": "codex/mp1-i03-drive-readonly",
+      "head_sha": "d6ea949ac06f95ab25f0ce9bac9252f4a71367c0",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/191"
+    },
+    {
+      "number": 189,
+      "title": "docs: define MP1 Drive connector contract",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:31:31Z",
+      "merge_commit": "722b6c106ed73da01e37bca4eedc4ef891cb84ab",
+      "head_ref": "codex/mp1-d03-drive-contract",
+      "head_sha": "193cd4275f21de3805b0dc46b5dbc64142a06e45",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/189"
+    },
+    {
+      "number": 187,
+      "title": "docs: remove mandatory live acceptance gate",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:29:01Z",
+      "merge_commit": "f1df34c658b2fbbe129f9dc11bc01fcf81e5099b",
+      "head_ref": "codex/governance-automated-validation",
+      "head_sha": "a8a51a8acbc8635ba6d48a9c6b13bba89e945f9e",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/187"
+    },
+    {
+      "number": 185,
+      "title": "feat: add reviewed capability lifecycle",
+      "state": "closed",
+      "merged_at": "2026-09-07T22:30:24Z",
+      "merge_commit": "693d7eb6a24a43d881d11de6c7d58011100e2d37",
+      "head_ref": "codex/mp1-i02-capability-registry",
+      "head_sha": "c2b2d94fade628be2f55ddf801dbb8e86d082a03",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/185"
+    },
+    {
+      "number": 183,
+      "title": "docs: define MP1 capability lifecycle contract",
+      "state": "closed",
+      "merged_at": "2026-09-07T17:17:17Z",
+      "merge_commit": "a646e1bb616258e65c87b524bd0449f88386ef6f",
+      "head_ref": "codex/mp1-d02-capability-lifecycle",
+      "head_sha": "24cabce40770c8cc4bf1487a12c8901ca74dac42",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/183"
+    },
+    {
+      "number": 181,
+      "title": "docs: close MP1 I-01 iteration",
+      "state": "closed",
+      "merged_at": "2026-09-07T17:15:24Z",
+      "merge_commit": "297e04fb650c942d22da9cb77b3d1d478713f325",
+      "head_ref": "codex/mp1-i01-closeout",
+      "head_sha": "b4d05e690fc67d325a15549735f2bde435dd4584",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/181"
+    },
+    {
+      "number": 180,
+      "title": "feat: add MP1 Personal Space read model",
+      "state": "closed",
+      "merged_at": "2026-09-07T17:14:11Z",
+      "merge_commit": "aa43c2269e62069c4a6102496236ed1763d72b2a",
+      "head_ref": "codex/mp1-i01-personal-space",
+      "head_sha": "7023a02c9e54c493f9365e807d661e2993a6d67a",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/180"
+    },
+    {
+      "number": 178,
+      "title": "docs: close MP1 D-01 design iteration",
+      "state": "closed",
+      "merged_at": "2026-09-07T17:09:30Z",
+      "merge_commit": "754d5b642e7f0d82f3fa983916e6d576197835ca",
+      "head_ref": "codex/mp1-d01-closeout",
+      "head_sha": "be1739b759cda09346d135e89bcd0f8cfa2dd17a",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/178"
+    },
+    {
+      "number": 177,
+      "title": "docs: define MP1 Personal Space boundary",
+      "state": "closed",
+      "merged_at": "2026-09-07T17:07:43Z",
+      "merge_commit": "759560a377de9eb20dd742e91d60a537dbe48082",
+      "head_ref": "codex/mp1-d01-personal-space-contract",
+      "head_sha": "9e26427161b07f1d89d113730a70f398d8c1d146",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/177"
+    },
+    {
+      "number": 175,
+      "title": "docs: add bilingual personal assistant master plans",
+      "state": "closed",
+      "merged_at": "2026-09-07T17:07:06Z",
+      "merge_commit": "9c548b4f0d1ea0cda3283ab2b286c5b7fe816831",
+      "head_ref": "codex/doc-02-master-plan-hierarchy",
+      "head_sha": "c0581ee47cee1c4eb82fd56d2485e1b9d2a96507",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/175"
+    },
+    {
+      "number": 173,
+      "title": "docs: position AgentOS as a personal AI control plane",
+      "state": "closed",
+      "merged_at": "2026-09-07T17:06:05Z",
+      "merge_commit": "3f4c044eab254a8c166494243c2cbd60801fcff4",
+      "head_ref": "codex/doc-01-personal-control-plane",
+      "head_sha": "435104b7ea47e9d88b5660a287a0928554fa10c7",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/173"
+    },
+    {
+      "number": 171,
+      "title": "docs: localize README navigation",
+      "state": "closed",
+      "merged_at": "2026-09-07T15:41:16Z",
+      "merge_commit": "74491f2a02db7afdb9bcc4b4002bb05cc46ebacb",
+      "head_ref": "delivery/issue-170-readme-i18n",
+      "head_sha": "2e9fd8e99ecebad9e74c51073d5d570685d84d40",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/171"
+    },
+    {
+      "number": 169,
+      "title": "docs: close UX-06 Telegram conversation validation",
+      "state": "closed",
+      "merged_at": "2026-09-07T14:17:01Z",
+      "merge_commit": "ff167965d9c938eb34a3cc86d5c7be5b03e33d0a",
+      "head_ref": "docs/ux-06-closeout",
+      "head_sha": "9dcb13a7553c4dcafe5e10b754d5fe29f2620527",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/169"
+    },
+    {
+      "number": 167,
+      "title": "feat: make Telegram conversation bubbles clearer",
+      "state": "closed",
+      "merged_at": "2026-09-07T14:12:04Z",
+      "merge_commit": "203842251afce08ecd927dedafb72469f23319c8",
+      "head_ref": "feature/ux-06-telegram-conversation",
+      "head_sha": "581833eb19e78a663d4c3412f768a16a61333bf6",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/167"
+    },
+    {
+      "number": 166,
+      "title": "fix: make Telegram task-card cancellation practical on mobile",
+      "state": "closed",
+      "merged_at": null,
+      "merge_commit": null,
+      "head_ref": "fix/telegram-card-cancellation-window",
+      "head_sha": "24bca08c3ca8ccd3ffd653560bf373a59bff8b62",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/166"
+    },
+    {
+      "number": 165,
+      "title": "test: cover UX-06 delivery sequence",
+      "state": "closed",
+      "merged_at": "2026-09-07T14:03:44Z",
+      "merge_commit": "b05f94de0b4fb6f02a6cb92efc0b0abd96c0edf1",
+      "head_ref": "fix/ux06-delivery-plan-tests",
+      "head_sha": "05401766c654113b2106e60e5ee468802bdd4d27",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/165"
+    },
+    {
+      "number": 163,
+      "title": "docs: plan UX-06 Telegram conversation experience",
+      "state": "closed",
+      "merged_at": "2026-09-07T14:01:53Z",
+      "merge_commit": "4020f46bf869c04f113b4f363afa250d4083dc0a",
+      "head_ref": "delivery/ux-06-telegram-conversation",
+      "head_sha": "6874d5ec12639ab214e6bf9605c10926c504c446",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/163"
+    },
+    {
+      "number": 161,
+      "title": "fix: require paired Telegram evidence before release",
+      "state": "closed",
+      "merged_at": "2026-09-07T13:55:54Z",
+      "merge_commit": "aceb54f2b86bb8ca1de1ce7b49433238c23d4fcd",
+      "head_ref": "delivery/ux-05",
+      "head_sha": "ee6c8c865c39df70f9bf0b39458fdbcd9c909653",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/161"
+    },
+    {
+      "number": 160,
+      "title": "feat: guide Telegram context selection without commands",
+      "state": "closed",
+      "merged_at": "2026-09-07T13:47:22Z",
+      "merge_commit": "d137c4e7127d94f2b9c512a8eb098f5faa3b46c0",
+      "head_ref": "delivery/ux-03a",
+      "head_sha": "3ade79fe8b977e680ab88d567bab38c853d124be",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/160"
+    },
+    {
+      "number": 158,
+      "title": "feat: explain result evidence and recovery in plain language",
+      "state": "closed",
+      "merged_at": "2026-09-07T13:42:28Z",
+      "merge_commit": "6c86a5c62bb07d27ad8463aa59fd875207650c25",
+      "head_ref": "delivery/ux-04",
+      "head_sha": "406aff744ca24e800606f876f95fdc8e7bba3928",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/158"
+    },
+    {
+      "number": 157,
+      "title": "Make Telegram work updates conversational",
+      "state": "closed",
+      "merged_at": "2026-09-07T13:34:11Z",
+      "merge_commit": "cd4a5d3c4093f1f9554746df7c50a62de44428b2",
+      "head_ref": "delivery/ux-03",
+      "head_sha": "725ff1da8c03b9cc0f81e0a56eaf8ffdcee2d3b3",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/157"
+    },
+    {
+      "number": 156,
+      "title": "Add opt-in AgentOS workspaces",
+      "state": "closed",
+      "merged_at": "2026-09-07T13:31:26Z",
+      "merge_commit": "da3945c48cf18452ff6760aa21996efd9b4ff4d2",
+      "head_ref": "delivery/ux-02",
+      "head_sha": "89b35a5d17b292c72f301fac867fc3db981689fa",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/156"
+    },
+    {
+      "number": 155,
+      "title": "Make AgentOS home a minimal personal-agent DM",
+      "state": "closed",
+      "merged_at": "2026-09-07T13:26:04Z",
+      "merge_commit": "f7064f401d7602f60816db1364b459442ca96227",
+      "head_ref": "delivery/ux-01",
+      "head_sha": "1aa92599b4583ccd915bde6ae4ea4d98c50d2ce2",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/155"
+    },
+    {
+      "number": 148,
+      "title": "docs: record delivered Hub v2 milestones",
+      "state": "closed",
+      "merged_at": "2026-09-07T12:15:00Z",
+      "merge_commit": "16e83ff4c786e9ade2fe4a1f8192de341c74acf2",
+      "head_ref": "fix/v1-roadmap-validation",
+      "head_sha": "c9f53b878156ec4243c7bd2244fd750b39d6b8b0",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/148"
+    },
+    {
+      "number": 146,
+      "title": "Release v1.0.4",
+      "state": "closed",
+      "merged_at": "2026-09-07T12:10:26Z",
+      "merge_commit": "dff3d2adc6cea2bae72b22e7549d245f6a912f64",
+      "head_ref": "release/v1.0.4",
+      "head_sha": "13aa9bfbf54374f1a879d8e85ed9da3afd08eac9",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/146"
+    },
+    {
+      "number": 145,
+      "title": "[V1-04] Prove Docker Compose VPS operation, health, update, backup, restore, and Telegram continuity.",
+      "state": "closed",
+      "merged_at": "2026-09-07T12:09:47Z",
+      "merge_commit": "2fca1812c1d1d51ae2e59b93242c724d7b7b2506",
+      "head_ref": "delivery/v1-04",
+      "head_sha": "5f4a5c6912f560115508ab3ebe426453da9b0d11",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/145"
+    },
+    {
+      "number": 144,
+      "title": "[V1-03] Connect opt-in local documents and context to Telegram work with source evidence and external-sharing approval.",
+      "state": "closed",
+      "merged_at": "2026-09-07T12:04:18Z",
+      "merge_commit": "583532c238391e8309c2e88b6d18557edcee15bf",
+      "head_ref": "delivery/v1-03",
+      "head_sha": "a5a007f6a7ed3ace21eac1f39edf060750bebddf",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/144"
+    },
+    {
+      "number": 143,
+      "title": "[V1-02] Make Telegram the natural daily-work interface with task progress, approvals, cancellation, and truthful recovery.",
+      "state": "closed",
+      "merged_at": "2026-09-07T11:58:02Z",
+      "merge_commit": "d3b9f07808e9f9b975ae25128f80a9a0b5480cd7",
+      "head_ref": "delivery/v1-02",
+      "head_sha": "60b7bede2f4542465a679ebea7e5dee056cd9da0",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/143"
+    },
+    {
+      "number": 142,
+      "title": "feat: guide safe v1 onboarding and recovery",
+      "state": "closed",
+      "merged_at": "2026-09-07T11:54:26Z",
+      "merge_commit": "61275506315b687d2c47ae1980598ccce96f47c8",
+      "head_ref": "delivery/v1-01",
+      "head_sha": "6332de4bf53b907dd5f667949bacbaf4f02ccc4e",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/142"
+    },
+    {
+      "number": 141,
+      "title": "docs: define Personal AgentOS v1 release delivery",
+      "state": "closed",
+      "merged_at": "2026-09-07T11:48:09Z",
+      "merge_commit": "d76733ff152f18512c12d3037a4cd128141442e3",
+      "head_ref": "docs/v1-release-plan",
+      "head_sha": "019d74915bbb18abd5897a4d3a600c6afcd269a3",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/141"
+    },
+    {
+      "number": 134,
+      "title": "[H5-01] Provide trusted assistants and portable owner state.",
+      "state": "closed",
+      "merged_at": "2026-09-07T11:44:30Z",
+      "merge_commit": "5824078bbfc1cab37c706b8b70b3c36ce45976e8",
+      "head_ref": "delivery/h5-01",
+      "head_sha": "0038002a870bb282c6f522706cedfe229f24df66",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/134"
+    },
+    {
+      "number": 133,
+      "title": "[H4-01] Build the opt-in local context inbox with safe sharing boundaries.",
+      "state": "closed",
+      "merged_at": "2026-09-07T11:23:40Z",
+      "merge_commit": "695ed102345548afecd84ac3a00cf2635318bf62",
+      "head_ref": "delivery/h4-01",
+      "head_sha": "4b457e4e45cde699fe2f25ce19e2dc6687f6b76e",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/133"
+    },
+    {
+      "number": 132,
+      "title": "fix: automate paired Telegram verification",
+      "state": "closed",
+      "merged_at": "2026-09-07T11:18:21Z",
+      "merge_commit": "422a871c70a3f2c5deb9a28e16b86231a933eafd",
+      "head_ref": "fix/telegram-auto-verification",
+      "head_sha": "632202d5a68a9f7b6733f2a59dda871a4f504d74",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/132"
+    },
+    {
+      "number": 130,
+      "title": "fix: record public lookup evidence for Codex requests",
+      "state": "closed",
+      "merged_at": "2026-09-07T11:13:20Z",
+      "merge_commit": "ccd8c83c17545fed0b23a46de2fcb3baa968dec6",
+      "head_ref": "fix/subscription-public-lookup",
+      "head_sha": "0dc2b253f83500a6508d602fd50baadf0a11ec28",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/130"
+    },
+    {
+      "number": 128,
+      "title": "fix: parse final Codex agent message from JSONL",
+      "state": "closed",
+      "merged_at": "2026-09-07T11:06:14Z",
+      "merge_commit": "b77251476fae77bd5e35f86178c2789dfb09ba4f",
+      "head_ref": "fix/codex-jsonl-final-message",
+      "head_sha": "b9b5d8fae5c21ad0f4d99d0ed0f62c33605273f5",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/128"
+    },
+    {
+      "number": 126,
+      "title": "fix: use owner-local engine runs on macOS",
+      "state": "closed",
+      "merged_at": "2026-09-07T11:04:35Z",
+      "merge_commit": "98d2b01ad2699daf73fa71c55dcee791b4ee480f",
+      "head_ref": "fix/local-engine-run-root",
+      "head_sha": "5993f9d79ade9a28db33fd6244b6c91ee86f7115",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/126"
+    },
+    {
+      "number": 124,
+      "title": "fix: run Codex with its official session in isolation",
+      "state": "closed",
+      "merged_at": "2026-09-07T11:02:23Z",
+      "merge_commit": "5941de286dca68d504464f1532e3e081e8a8b623",
+      "head_ref": "fix/codex-isolated-session",
+      "head_sha": "ff69f312830fe736d66dabf0120f6586098bb24b",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/124"
+    },
+    {
+      "number": 122,
+      "title": "fix: recognize legacy BotFather Telegram connections",
+      "state": "closed",
+      "merged_at": "2026-09-07T10:35:26Z",
+      "merge_commit": "7f1eb7e83cc5557526c68829cf205a718d8d6fbf",
+      "head_ref": "fix/h3-legacy-botfather-config",
+      "head_sha": "92d97930a83aa62fbd2e6f21bb0656daa70b62e5",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/122"
+    },
+    {
+      "number": 121,
+      "title": "fix: make BotFather the H3 personal-bot setup path",
+      "state": "closed",
+      "merged_at": "2026-09-07T10:33:05Z",
+      "merge_commit": "11b311dda948cd4eca75811e03ae85d656e69231",
+      "head_ref": "fix/h3-botfather-onboarding",
+      "head_sha": "b66d1f2bb5c47872cb0124ed5a78c8b17eaf244e",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/121"
+    },
+    {
+      "number": 120,
+      "title": "[H3-01] Add managed Telegram pairing boundary",
+      "state": "closed",
+      "merged_at": null,
+      "merge_commit": null,
+      "head_ref": "delivery/h3-01",
+      "head_sha": "e77474c13c1dd75273d3f423f2958b754b8a7823",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/120"
+    },
+    {
+      "number": 119,
+      "title": "[H3-01] Create personal Telegram bots and prove a live first-work acceptance.",
+      "state": "closed",
+      "merged_at": "2026-09-07T09:43:24Z",
+      "merge_commit": "2ed3e689d4984a34680a4c3aed40151054c95571",
+      "head_ref": "delivery/h3-01",
+      "head_sha": "e77474c13c1dd75273d3f423f2958b754b8a7823",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/119"
+    },
+    {
+      "number": 118,
+      "title": "[H2-01] Run subscription engines through AgentOS-owned MCP tools and bounded execution adapters.",
+      "state": "closed",
+      "merged_at": "2026-09-07T09:37:05Z",
+      "merge_commit": "86fd9720fdf520221a8c0786531d431c9587d10d",
+      "head_ref": "delivery/h2-01",
+      "head_sha": "708cd455c2a090c2774d8f1e75d50d234f90db9c",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/118"
+    },
+    {
+      "number": 117,
+      "title": "[H1-02] Isolate each owner AgentOS runtime from the Mac host and prepare the Kubernetes hosting boundary.",
+      "state": "closed",
+      "merged_at": "2026-09-07T09:32:02Z",
+      "merge_commit": "a2e46f003abbc8422440f4c985cb9933882d3061",
+      "head_ref": "delivery/h1-02",
+      "head_sha": "28e0430f8771f8943f01cd43ce4800038d591ebc",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/117"
+    },
+    {
+      "number": 116,
+      "title": "[H1-01] Connect Codex and Claude Code subscriptions without consumer API-key setup.",
+      "state": "closed",
+      "merged_at": "2026-09-07T09:25:59Z",
+      "merge_commit": "13c702358aa31be7de4c3caa9a13a3dba5d77e17",
+      "head_ref": "delivery/h1-01",
+      "head_sha": "62801f6c12c7d6f32552b794ffad5cd9e5b2d89b",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/116"
+    },
+    {
+      "number": 115,
+      "title": "fix: mark next delivery iteration ready after reconciliation",
+      "state": "closed",
+      "merged_at": "2026-09-07T09:09:35Z",
+      "merge_commit": "cedddf2ad85d63d85b7c8c2b4244a2d1f97756f3",
+      "head_ref": "fix/reconcile-next-ready",
+      "head_sha": "447b781a0ab65b78595d90af39b9ad8959be4a76",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/115"
+    },
+    {
+      "number": 113,
+      "title": "fix: use keyring credentials for delivery GitHub API calls",
+      "state": "closed",
+      "merged_at": "2026-09-07T09:08:24Z",
+      "merge_commit": "24d74ef02b4e8a6537f93551ea7ecc00de7bdd8a",
+      "head_ref": "fix/delivery-gh-keyring-auth",
+      "head_sha": "9d21a9b3f8387d1f494ab64fbe3926349d03fac1",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/113"
+    },
+    {
+      "number": 112,
+      "title": "[H0 repair] Clear frozen delivery state before Hub v2 selection",
+      "state": "closed",
+      "merged_at": "2026-09-07T09:05:18Z",
+      "merge_commit": "8e50b4cfe0e33604779fd4ee5f0878722740a295",
+      "head_ref": "fix/hub-delivery-state-migration",
+      "head_sha": "a97f18088682c1cc91ee7c61ff926590d1ef999b",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/112"
+    },
+    {
+      "number": 110,
+      "title": "docs: rebaseline AgentOS Hub v2 delivery",
+      "state": "closed",
+      "merged_at": "2026-09-07T09:01:40Z",
+      "merge_commit": "f18b4b31bfaf7e80deb4f0b5f3dc8f47a37e2bc2",
+      "head_ref": "docs/hub-v2-rebaseline",
+      "head_sha": "e73a276fed5bdb7ae96d218346e81fbd508e4658",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/110"
+    },
+    {
+      "number": 101,
+      "title": "docs: record user-approved context capture direction",
+      "state": "closed",
+      "merged_at": "2026-09-07T08:08:35Z",
+      "merge_commit": "18296e2ad6b8fb62402cdd9708d8c3b11dabc291",
+      "head_ref": "docs/context-capture-idea",
+      "head_sha": "724276ccc7d80375588fddea27846a5d77f1dd99",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/101"
+    },
+    {
+      "number": 99,
+      "title": "[P7 repair] Reserve a usable cancellation window for Telegram task cards",
+      "state": "closed",
+      "merged_at": "2026-09-07T07:48:42Z",
+      "merge_commit": "4a0d9de3565b67585e5b44402b0e7b1aea420afc",
+      "head_ref": "telegram-cancel-window",
+      "head_sha": "90fd965c61c0af71ae78916099d3ef8410fa8b05",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/99"
+    },
+    {
+      "number": 97,
+      "title": "[P7] Restore Telegram status after successful polling",
+      "state": "closed",
+      "merged_at": "2026-09-07T07:42:15Z",
+      "merge_commit": "53d14cd1ab8f5137eeb769fd38cc49a1c29f440f",
+      "head_ref": "telegram-status-recovery",
+      "head_sha": "358c5d0511147ea5786bf2d4e4aea11069df4e69",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/97"
+    },
+    {
+      "number": 95,
+      "title": "[M5] Execute releases from the delivery controller",
+      "state": "closed",
+      "merged_at": "2026-09-07T07:12:44Z",
+      "merge_commit": "f7c6fea87bae504f25e45fb4719b96b3cf8338c8",
+      "head_ref": "delivery-release-controller",
+      "head_sha": "4f1e3d9ae95e72f540335318ab81f2bf391994cf",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/95"
+    },
+    {
+      "number": 92,
+      "title": "[P7] Expose delivery loop acceptance status",
+      "state": "closed",
+      "merged_at": "2026-09-07T07:08:16Z",
+      "merge_commit": "d5bc1a2ec6c53341e7597893d65263cd706a5b8b",
+      "head_ref": "delivery-summary",
+      "head_sha": "5fec2f721449b90b56f7cbd471298c73ce6b5a57",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/92"
+    },
+    {
+      "number": 90,
+      "title": "[P3 repair] Bootstrap source imports for launchd",
+      "state": "closed",
+      "merged_at": "2026-09-07T07:03:48Z",
+      "merge_commit": "da854307b0bfa50bbd514a1e43f552c338f0f6bf",
+      "head_ref": "launchd-source-bootstrap",
+      "head_sha": "98d7f77d67c02ec8a32edb4c302e22d558abdedf",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/90"
+    },
+    {
+      "number": 88,
+      "title": "[P3 repair] Use a launchd-safe Python fallback",
+      "state": "closed",
+      "merged_at": "2026-09-07T07:01:40Z",
+      "merge_commit": "6581ae92b7ac00d09352e30071f9ffa0601febc1",
+      "head_ref": "launchd-safe-python",
+      "head_sha": "6a8ff3900727284dc2d44052947d2ea0fda405b3",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/88"
+    },
+    {
+      "number": 86,
+      "title": "[P3 repair] Start delivery loop from a stable launchd directory",
+      "state": "closed",
+      "merged_at": "2026-09-07T06:59:50Z",
+      "merge_commit": "888756eeb8fe89e73fbbc78b5402e91ccae36310",
+      "head_ref": "launchd-stable-cwd",
+      "head_sha": "8ff23e43dd83fce581ceddc8d9375ce86c08923b",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/86"
+    },
+    {
+      "number": 84,
+      "title": "[P3 repair] Pin launchd delivery loop to its runtime",
+      "state": "closed",
+      "merged_at": "2026-09-07T06:57:23Z",
+      "merge_commit": "83baf78b83b0d315c5126f3b6508cf2d1cbbf42c",
+      "head_ref": "launchd-runtime-pin",
+      "head_sha": "47c0eb0524792029fe3870e77fea866568007399",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/84"
+    },
+    {
+      "number": 82,
+      "title": "[P7 repair] Gate release on live Telegram acceptance",
+      "state": "closed",
+      "merged_at": "2026-09-07T06:54:08Z",
+      "merge_commit": "7e39e5ed0ee18465fb93b878a646fad6dc6c609c",
+      "head_ref": "p7-live-acceptance-gate",
+      "head_sha": "6c89e09684935ae928650451ee67063fb26a65a1",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/82"
+    },
+    {
+      "number": 80,
+      "title": "[P7 repair] Add safe Telegram task progress action",
+      "state": "closed",
+      "merged_at": "2026-09-07T06:48:58Z",
+      "merge_commit": "e22e3dfe61fc82fa720ef88fdb6a1740f3b43a90",
+      "head_ref": "p7-progress-card",
+      "head_sha": "8fa85e8d418d0b74608aa0c291a99782d5077d65",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/80"
+    },
+    {
+      "number": 78,
+      "title": "[P7-03] Verify live Telegram task-card continuity and shared web evidence.",
+      "state": "closed",
+      "merged_at": "2026-09-07T06:42:38Z",
+      "merge_commit": "8cb0fd34c4e64e31b60544a17cf85b319d8b613f",
+      "head_ref": "delivery/p7-03",
+      "head_sha": "fc912f57b437f5c33257539ff5641aacbd6a2b97",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/78"
+    },
+    {
+      "number": 77,
+      "title": "[P7-02] Add Telegram document-approval buttons and durable terminal notifications.",
+      "state": "closed",
+      "merged_at": "2026-09-07T06:38:57Z",
+      "merge_commit": "8bec1e902b20d6b4f644c45e6b42110bb7b87354",
+      "head_ref": "delivery/p7-02",
+      "head_sha": "39cd75ef5ab2366399cf0ecc884631fd42d540e2",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/77"
+    },
+    {
+      "number": 76,
+      "title": "[P7-01] Create natural-language Telegram task cards with safe inline progress and queued-job cancellation.",
+      "state": "closed",
+      "merged_at": "2026-09-07T06:33:15Z",
+      "merge_commit": "fb5170778ccf67766ecb2c4568e65e528a6348d0",
+      "head_ref": "delivery/p7-01",
+      "head_sha": "f7d4852709822dfb5e117ca85ba909a6a067aa03",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/76"
+    },
+    {
+      "number": 75,
+      "title": "[P7-00] Register Telegram task-card delivery sequence",
+      "state": "closed",
+      "merged_at": "2026-09-07T06:29:04Z",
+      "merge_commit": "570c23e9bf25d44f869a4b8b24a9a08f8306ab04",
+      "head_ref": "feature/p7-00-telegram-delivery",
+      "head_sha": "bcf6ad9b2348e2aa6cf91a01b90758eff9bd399a",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/75"
+    },
+    {
+      "number": 70,
+      "title": "release: prepare v1.0.3",
+      "state": "closed",
+      "merged_at": "2026-09-07T05:46:35Z",
+      "merge_commit": "e32868b1577d09c2ce7e3f538db5d50fc6f0f6f0",
+      "head_ref": "release/v1.0.3",
+      "head_sha": "5b2f023cba56c18123cb1e956ffdecd0c6c48d2a",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/70"
+    },
+    {
+      "number": 69,
+      "title": "[P6-00e] Bundle delivery plan with installed CLI",
+      "state": "closed",
+      "merged_at": "2026-09-07T05:46:09Z",
+      "merge_commit": "51bfcf10eacb3d6f747d47cbaf721c70bcbafba3",
+      "head_ref": "fix/p6-00e-packaged-plan",
+      "head_sha": "652ac0654c8898d5b6dbe963cbcda7e53b200566",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/69"
+    },
+    {
+      "number": 67,
+      "title": "release: prepare v1.0.2",
+      "state": "closed",
+      "merged_at": "2026-09-07T05:44:00Z",
+      "merge_commit": "91205278ebc452b2511a0812f848d330cbb5ad6e",
+      "head_ref": "release/v1.0.2",
+      "head_sha": "5f30c5c8992c7d9d2f5aeb232568f45c7836c696",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/67"
+    },
+    {
+      "number": 66,
+      "title": "[P6-00d] Make delivery PR merge branch-independent",
+      "state": "closed",
+      "merged_at": "2026-09-07T05:42:45Z",
+      "merge_commit": "0efbdaf74deb45ec2b33f355369a9e1d9d9a8714",
+      "head_ref": "fix/p6-00d-pr-merge",
+      "head_sha": "e403da944455bd90b95808c213fea5af3d09e212",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/66"
+    },
+    {
+      "number": 64,
+      "title": "[P6-01] Activate reviewed declaration-only role and tool packages at runtime.",
+      "state": "closed",
+      "merged_at": "2026-09-07T05:41:35Z",
+      "merge_commit": "c2341a3a5a7a14d4b6e998fd3bf2b966ddbb74e9",
+      "head_ref": "delivery/p6-01",
+      "head_sha": "01a7e486e08658c831c7c261efdd28613bc4c556",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/64"
+    },
+    {
+      "number": 63,
+      "title": "[P6-00c] Use shell credentials for delivery pushes",
+      "state": "closed",
+      "merged_at": "2026-09-07T05:39:11Z",
+      "merge_commit": "b0e0306a6d29e253235423b73625dd559b1c1fd0",
+      "head_ref": "fix/p6-00c-git-push-auth",
+      "head_sha": "5b73dad849b07c256f21dca60054184eda6059fa",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/63"
+    },
+    {
+      "number": 61,
+      "title": "[P6-00b] Fix Codex worker flags",
+      "state": "closed",
+      "merged_at": "2026-09-07T05:29:13Z",
+      "merge_commit": "51073a2b015c8b719245675ca362448668b9182a",
+      "head_ref": "fix/p6-00b-codex-flags",
+      "head_sha": "e6b9062ec408c238b4964a16137c32fa082b2bad",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/61"
+    },
+    {
+      "number": 59,
+      "title": "[P6-00a] Support current Codex delivery worker",
+      "state": "closed",
+      "merged_at": "2026-09-07T05:27:59Z",
+      "merge_commit": "d953b74205a1dae8a8f133e0b567d7558aec4b02",
+      "head_ref": "fix/p6-00a-codex-cli",
+      "head_sha": "9a4ce86c59bfe249ecba24e14674edcece5c26ea",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/59"
+    },
+    {
+      "number": 57,
+      "title": "[P6-00] Continue delivery loop after v1",
+      "state": "closed",
+      "merged_at": "2026-09-07T05:25:46Z",
+      "merge_commit": "6f4cb817d635879f6061e5a3bbc1b4a9e7d3c6a4",
+      "head_ref": "feature/p6-00-stage2-delivery-loop",
+      "head_sha": "07546a1a32617e06ae9af1df660adc53c65de69d",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/57"
+    },
+    {
+      "number": 54,
+      "title": "[P5-05] Publish v1.0.1",
+      "state": "closed",
+      "merged_at": "2026-09-07T05:12:20Z",
+      "merge_commit": "41e70fb3a161ad4138571d7644a1fbc1a4c8f92d",
+      "head_ref": "release/v1.0.1",
+      "head_sha": "770df575924d95be71840e40dd158c1cf502671f",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/54"
+    },
+    {
+      "number": 51,
+      "title": "[P5-03] Add product validation release gate",
+      "state": "closed",
+      "merged_at": "2026-09-07T05:10:40Z",
+      "merge_commit": "195c39f2d1ec443bc63cd8da2b73e8e3a98d4767",
+      "head_ref": "feature/p5-03-product-validation-gate",
+      "head_sha": "3e986a0ac3ee082705496b76c8850a4fc14d3be1",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/51"
+    },
+    {
+      "number": 46,
+      "title": "docs: record v1 installation acceptance",
+      "state": "closed",
+      "merged_at": "2026-09-07T03:50:24Z",
+      "merge_commit": "15e691ad5fc866e3587ca1850f0c717b0c101877",
+      "head_ref": "release/v1-acceptance",
+      "head_sha": "291d1550a845316d2bb0838935801cb2dadc6a58",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/46"
+    },
+    {
+      "number": 44,
+      "title": "feat: add local manifest plugin lifecycle",
+      "state": "closed",
+      "merged_at": "2026-09-07T03:48:26Z",
+      "merge_commit": "fdc299d70323f05ebc1da89a5b77c4687b3c9859",
+      "head_ref": "feature/p4-02-plugin-lifecycle",
+      "head_sha": "810e685537b4827e8846aa0bba525698d55686fa",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/44"
+    },
+    {
+      "number": 42,
+      "title": "docs: record M4 b3os design reference",
+      "state": "closed",
+      "merged_at": "2026-09-07T04:31:23Z",
+      "merge_commit": "8c04b96c7f682d47064143487a275ecbfcac509c",
+      "head_ref": "docs/m4-b3os-reference",
+      "head_sha": "4e9ada3b580924f76bbd83542c14c3757a178813",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/42"
+    },
+    {
+      "number": 41,
+      "title": "feat: add bounded tool role manifests",
+      "state": "closed",
+      "merged_at": "2026-09-07T03:47:14Z",
+      "merge_commit": "2243c3cd73f2e33ccdff00226e8d3247137a548c",
+      "head_ref": "feature/p4-01-manifests",
+      "head_sha": "8c7fb40699cc2ce807901a8253d40660c6ed87f2",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/41"
+    },
+    {
+      "number": 39,
+      "title": "feat: add backup restore and service templates",
+      "state": "closed",
+      "merged_at": "2026-09-07T03:46:21Z",
+      "merge_commit": "5c31bba1af16456388d70f3bd3a95dc3e7564043",
+      "head_ref": "feature/p3-02-operations",
+      "head_sha": "87af7801e13837ec1f59c2a9c67cce06c7358686",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/39"
+    },
+    {
+      "number": 35,
+      "title": "feat: add Docker Compose VPS runtime",
+      "state": "closed",
+      "merged_at": "2026-09-07T03:45:06Z",
+      "merge_commit": "6ddc37fbbc1969695c8f500bdbc916f0d2d1034d",
+      "head_ref": "feature/p3-01-compose-vps",
+      "head_sha": "74bbd2b743222ac2e4df309a4e423d3f3d59f6d1",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/35"
+    },
+    {
+      "number": 32,
+      "title": "feat: gate external document sharing by approval",
+      "state": "closed",
+      "merged_at": "2026-09-07T03:38:23Z",
+      "merge_commit": "2d8b3a76b5433fbec2a991a4608af1434e1cd3b5",
+      "head_ref": "feature/p2-02-document-boundary",
+      "head_sha": "c9fc2e0edae15f2b46594a94aadefc5102b13299",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/32"
+    },
+    {
+      "number": 30,
+      "title": "feat: read connected documents with source evidence",
+      "state": "closed",
+      "merged_at": "2026-09-07T03:30:16Z",
+      "merge_commit": "d2330d33b04a08fbc6bb5ece946ae7d973789057",
+      "head_ref": "feature/p2-01-connected-documents",
+      "head_sha": "64a9d5946be96824fd246e9532ed9f45d61c3fbf",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/30"
+    },
+    {
+      "number": 28,
+      "title": "fix: return completed tool evidence after blank model reply",
+      "state": "closed",
+      "merged_at": "2026-09-07T02:48:07Z",
+      "merge_commit": "1a078583a4a43090df35eac3ea7145bfefde6ecb",
+      "head_ref": "fix/weather-tool-fallback",
+      "head_sha": "739c13bc444bc00c9c9abfee9650fe428e1bd9f0",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/28"
+    },
+    {
+      "number": 26,
+      "title": "feat: support one-time mobile tunnel pairing",
+      "state": "closed",
+      "merged_at": "2026-09-07T02:40:32Z",
+      "merge_commit": "194b129ee0559a6d95481daf9b67bd340ec55f35",
+      "head_ref": "feature/p1-03-continuity-acceptance",
+      "head_sha": "07f264a575e322118054aeb05b121fe284ffc032",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/26"
+    },
+    {
+      "number": 24,
+      "title": "Prepare v0.2.9 trace recovery release",
+      "state": "closed",
+      "merged_at": "2026-09-07T01:57:10Z",
+      "merge_commit": "d8c347fe1fd1fa38dd871d67adb2bf1780c32530",
+      "head_ref": "release/personal-agentos-v0.2.9",
+      "head_sha": "a196f353e3ea62f19c80cc540505f954865cbb73",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/24"
+    },
+    {
+      "number": 23,
+      "title": "[P1-02] Add traceable capability recovery",
+      "state": "closed",
+      "merged_at": "2026-09-07T01:56:34Z",
+      "merge_commit": "2bb64cd3b44a0472640aaeece3ec5b386f919aef",
+      "head_ref": "feature/p1-02-traceable-recovery",
+      "head_sha": "4f3c29fa821a29633ae80e055e25c335fc969006",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/23"
+    },
+    {
+      "number": 21,
+      "title": "Prepare v0.2.8 launchd recovery release",
+      "state": "closed",
+      "merged_at": "2026-09-07T01:15:21Z",
+      "merge_commit": "203140013993d5b0dee13cdb144adf46dae3ba73",
+      "head_ref": "release/personal-agentos-v0.2.8",
+      "head_sha": "cdea888226d311fd0b787953d7282baf36c6bdbd",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/21"
+    },
+    {
+      "number": 20,
+      "title": "[P1-01b] Recover launchd delivery without GitHub PATH",
+      "state": "closed",
+      "merged_at": "2026-09-07T01:14:44Z",
+      "merge_commit": "1138ac166b78ad2f8b12d2df4c06f6ad5094ec07",
+      "head_ref": "fix/p1-01b-launchd-path",
+      "head_sha": "9d5bda3f009a2ea9ee28bc362664ee1e16aeb2a1",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/20"
+    },
+    {
+      "number": 19,
+      "title": "Prepare v0.2.7 delivery recovery release",
+      "state": "closed",
+      "merged_at": "2026-09-07T01:08:49Z",
+      "merge_commit": "d52e10437cedf0f5e1593119539584d9f3867c75",
+      "head_ref": "release/personal-agentos-v0.2.7",
+      "head_sha": "188e78e2f94ce11b6cb28e2af8f5bbb5943e9b9c",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/19"
+    },
+    {
+      "number": 18,
+      "title": "[P1-01b] Harden scheduled delivery recovery",
+      "state": "closed",
+      "merged_at": "2026-09-07T01:08:00Z",
+      "merge_commit": "37b4676630827de95993bb6521fa09798c747809",
+      "head_ref": "feature/p1-01b-schedule-resilience",
+      "head_sha": "2e4e00c7b099c753b657e6834d65c5a08f8fb20a",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/18"
+    },
+    {
+      "number": 16,
+      "title": "Prepare v0.2.6 delivery report release",
+      "state": "closed",
+      "merged_at": "2026-09-06T23:26:27Z",
+      "merge_commit": "3d649bf2eb9b7013297c5d8f1c76b19f3fe0529e",
+      "head_ref": "release/v0.2.6-delivery-report-isolation",
+      "head_sha": "06e9fdfc9734d47899ea9c557a8491fd37310a6b",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/16"
+    },
+    {
+      "number": 15,
+      "title": "Keep delivery reports outside source tree",
+      "state": "closed",
+      "merged_at": "2026-09-06T23:25:42Z",
+      "merge_commit": "c7ba264ceb569088987f0521cb56850ff97fb3b3",
+      "head_ref": "fix/delivery-report-isolation",
+      "head_sha": "8ae3fbb35e599877153d08c23ec71267d3f43c36",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/15"
+    },
+    {
+      "number": 14,
+      "title": "Prepare v0.2.5 schedule fix release",
+      "state": "closed",
+      "merged_at": "2026-09-06T23:23:15Z",
+      "merge_commit": "9342ae2169961919c0da9a69428b340896d46c95",
+      "head_ref": "release/v0.2.5-delivery-schedule",
+      "head_sha": "d97cacc3bc3bda164eeeff214080a8d6947ba8de",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/14"
+    },
+    {
+      "number": 13,
+      "title": "Fix delivery schedule repository root",
+      "state": "closed",
+      "merged_at": "2026-09-06T23:22:39Z",
+      "merge_commit": "ae300d1a5a7ef5e141c1c521daf29df83c235f0b",
+      "head_ref": "fix/delivery-schedule-root",
+      "head_sha": "455bc03c67acdd079f5b5fa8ff160161f7ad4e72",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/13"
+    },
+    {
+      "number": 12,
+      "title": "Prepare v0.2.4 delivery loop release",
+      "state": "closed",
+      "merged_at": "2026-09-06T13:45:32Z",
+      "merge_commit": "10f16da301687e667250a0d4859971f80df8be0b",
+      "head_ref": "release/v0.2.4-delivery-loop",
+      "head_sha": "83eeb64d2e40f9abe8a99f874793b575458616f4",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/12"
+    },
+    {
+      "number": 11,
+      "title": "Add evidence-driven delivery loop",
+      "state": "closed",
+      "merged_at": "2026-09-06T13:44:46Z",
+      "merge_commit": "3415e05266c4339afed76deb18ca6fc6fa87b61b",
+      "head_ref": "feature/p1-01a-delivery-loop",
+      "head_sha": "98deb4c3bf7e1803d046c345c93adf91b32b7894",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/11"
+    },
+    {
+      "number": 9,
+      "title": "Record v0.2.3 release validation",
+      "state": "closed",
+      "merged_at": "2026-09-06T13:15:12Z",
+      "merge_commit": "7ce6479ce0edce03f8cdba9330b5ac816f7e6a7d",
+      "head_ref": "docs/v0-2-3-release-record",
+      "head_sha": "8b77c2216c5e63c0f5d5e5e89f6ddac3e78ad950",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/9"
+    },
+    {
+      "number": 8,
+      "title": "Validate model tool calling before agent work",
+      "state": "closed",
+      "merged_at": "2026-09-06T11:34:07Z",
+      "merge_commit": "53cc88d03cf6e28ff583a1347d8a59c92751fa72",
+      "head_ref": "feature/p1-01-tool-capable-model-validation",
+      "head_sha": "422a9827455a1797095e7876112755ef595a8ddf",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/8"
+    },
+    {
+      "number": 5,
+      "title": "Record M0 product release separation closeout",
+      "state": "closed",
+      "merged_at": "2026-09-06T11:23:46Z",
+      "merge_commit": "47d82f2dc633e5202042f725610710e042e91de2",
+      "head_ref": "docs/m0-release-closeout",
+      "head_sha": "3adeb694bf2b9c8220e2dd6ee1c0e2b0b2d0e836",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/5"
+    },
+    {
+      "number": 3,
+      "title": "Establish Personal AgentOS v1 product governance",
+      "state": "closed",
+      "merged_at": "2026-09-06T11:19:14Z",
+      "merge_commit": "d27e4f462db4578b73772d3e8f85a8d553151a7b",
+      "head_ref": "feature/m0-product-governance",
+      "head_sha": "b7f7a1b90c4e95eafa0bcbc413f6453bd8d54faa",
+      "url": "https://github.com/Jongtae/personal-agentos/pull/3"
+    }
+  ],
+  "milestones": [
+    {
+      "number": 1,
+      "title": "Personal AgentOS v1",
+      "state": "open",
+      "open_issues": 2,
+      "closed_issues": 17
+    },
+    {
+      "number": 2,
+      "title": "Personal AgentOS Stage 2",
+      "state": "open",
+      "open_issues": 0,
+      "closed_issues": 11
+    },
+    {
+      "number": 3,
+      "title": "AgentOS Hub v2",
+      "state": "open",
+      "open_issues": 1,
+      "closed_issues": 8
+    },
+    {
+      "number": 4,
+      "title": "Personal AgentOS v1 Release",
+      "state": "open",
+      "open_issues": 0,
+      "closed_issues": 7
+    },
+    {
+      "number": 5,
+      "title": "AgentOS UX v1.1",
+      "state": "open",
+      "open_issues": 1,
+      "closed_issues": 6
+    }
+  ],
+  "branches": [
+    {
+      "ref": "codex/279-legacy-decision",
+      "sha": "a0a8be02ef12e06d5433e41b47907b6f050a4073",
+      "ancestor_of_main": true,
+      "merged_pr": null,
+      "merge_commit": null,
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "codex/280-owner-operating-doctor",
+      "sha": "8cc9b8f9ad1345e81346763564cd04bde31637c3",
+      "ancestor_of_main": false,
+      "merged_pr": null,
+      "merge_commit": null,
+      "disposition": "preserve-open-pr"
+    },
+    {
+      "ref": "codex/doc-01-personal-control-plane",
+      "sha": "435104b7ea47e9d88b5660a287a0928554fa10c7",
+      "ancestor_of_main": false,
+      "merged_pr": 173,
+      "merge_commit": "3f4c044eab254a8c166494243c2cbd60801fcff4",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "codex/doc-02-master-plan-hierarchy",
+      "sha": "c0581ee47cee1c4eb82fd56d2485e1b9d2a96507",
+      "ancestor_of_main": false,
+      "merged_pr": 175,
+      "merge_commit": "9c548b4f0d1ea0cda3283ab2b286c5b7fe816831",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "codex/governance-automated-validation",
+      "sha": "a8a51a8acbc8635ba6d48a9c6b13bba89e945f9e",
+      "ancestor_of_main": false,
+      "merged_pr": 187,
+      "merge_commit": "f1df34c658b2fbbe129f9dc11bc01fcf81e5099b",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "codex/mp1-d01-closeout",
+      "sha": "be1739b759cda09346d135e89bcd0f8cfa2dd17a",
+      "ancestor_of_main": false,
+      "merged_pr": 178,
+      "merge_commit": "754d5b642e7f0d82f3fa983916e6d576197835ca",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "codex/mp1-d01-personal-space-contract",
+      "sha": "9e26427161b07f1d89d113730a70f398d8c1d146",
+      "ancestor_of_main": false,
+      "merged_pr": 177,
+      "merge_commit": "759560a377de9eb20dd742e91d60a537dbe48082",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "codex/mp1-d02-capability-lifecycle",
+      "sha": "24cabce40770c8cc4bf1487a12c8901ca74dac42",
+      "ancestor_of_main": false,
+      "merged_pr": 183,
+      "merge_commit": "a646e1bb616258e65c87b524bd0449f88386ef6f",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "codex/mp1-d03-drive-contract",
+      "sha": "193cd4275f21de3805b0dc46b5dbc64142a06e45",
+      "ancestor_of_main": false,
+      "merged_pr": 189,
+      "merge_commit": "722b6c106ed73da01e37bca4eedc4ef891cb84ab",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "codex/mp1-i01-closeout",
+      "sha": "b4d05e690fc67d325a15549735f2bde435dd4584",
+      "ancestor_of_main": false,
+      "merged_pr": 181,
+      "merge_commit": "297e04fb650c942d22da9cb77b3d1d478713f325",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "codex/mp1-i01-personal-space",
+      "sha": "7023a02c9e54c493f9365e807d661e2993a6d67a",
+      "ancestor_of_main": false,
+      "merged_pr": 180,
+      "merge_commit": "aa43c2269e62069c4a6102496236ed1763d72b2a",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "codex/mp1-i02-capability-registry",
+      "sha": "c2b2d94fade628be2f55ddf801dbb8e86d082a03",
+      "ancestor_of_main": false,
+      "merged_pr": 185,
+      "merge_commit": "693d7eb6a24a43d881d11de6c7d58011100e2d37",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "codex/personal-agent-mvp",
+      "sha": "bb684e8a37ab6c2e81a976bbc7c55a688e3d11b6",
+      "ancestor_of_main": true,
+      "merged_pr": null,
+      "merge_commit": null,
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "delivery/issue-170-readme-i18n",
+      "sha": "2e9fd8e99ecebad9e74c51073d5d570685d84d40",
+      "ancestor_of_main": false,
+      "merged_pr": 171,
+      "merge_commit": "74491f2a02db7afdb9bcc4b4002bb05cc46ebacb",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "delivery/p6-01",
+      "sha": "01a7e486e08658c831c7c261efdd28613bc4c556",
+      "ancestor_of_main": false,
+      "merged_pr": 64,
+      "merge_commit": "c2341a3a5a7a14d4b6e998fd3bf2b966ddbb74e9",
+      "disposition": "detach-worktree-delete-merged",
+      "worktree_state": "clean"
+    },
+    {
+      "ref": "delivery/p7-01",
+      "sha": "f7d4852709822dfb5e117ca85ba909a6a067aa03",
+      "ancestor_of_main": false,
+      "merged_pr": 76,
+      "merge_commit": "fb5170778ccf67766ecb2c4568e65e528a6348d0",
+      "disposition": "detach-worktree-delete-merged",
+      "worktree_state": "clean"
+    },
+    {
+      "ref": "delivery/p7-02",
+      "sha": "39cd75ef5ab2366399cf0ecc884631fd42d540e2",
+      "ancestor_of_main": false,
+      "merged_pr": 77,
+      "merge_commit": "8bec1e902b20d6b4f644c45e6b42110bb7b87354",
+      "disposition": "detach-worktree-delete-merged",
+      "worktree_state": "clean"
+    },
+    {
+      "ref": "delivery/p7-03",
+      "sha": "fc912f57b437f5c33257539ff5641aacbd6a2b97",
+      "ancestor_of_main": false,
+      "merged_pr": 78,
+      "merge_commit": "8cb0fd34c4e64e31b60544a17cf85b319d8b613f",
+      "disposition": "detach-worktree-delete-merged",
+      "worktree_state": "clean"
+    },
+    {
+      "ref": "docs/168-github-first-delivery",
+      "sha": "fb796772a60d84316d3f42f14d064abb917ea909",
+      "ancestor_of_main": false,
+      "merged_pr": null,
+      "merge_commit": null,
+      "disposition": "preserve-worktree-clean",
+      "worktree_state": "clean"
+    },
+    {
+      "ref": "docs/context-capture-idea",
+      "sha": "724276ccc7d80375588fddea27846a5d77f1dd99",
+      "ancestor_of_main": false,
+      "merged_pr": 101,
+      "merge_commit": "18296e2ad6b8fb62402cdd9708d8c3b11dabc291",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "docs/m0-release-closeout",
+      "sha": "3adeb694bf2b9c8220e2dd6ee1c0e2b0b2d0e836",
+      "ancestor_of_main": false,
+      "merged_pr": 5,
+      "merge_commit": "47d82f2dc633e5202042f725610710e042e91de2",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "docs/m4-b3os-reference",
+      "sha": "4e9ada3b580924f76bbd83542c14c3757a178813",
+      "ancestor_of_main": false,
+      "merged_pr": 42,
+      "merge_commit": "8c04b96c7f682d47064143487a275ecbfcac509c",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "docs/ux-06-closeout",
+      "sha": "9dcb13a7553c4dcafe5e10b754d5fe29f2620527",
+      "ancestor_of_main": false,
+      "merged_pr": 169,
+      "merge_commit": "ff167965d9c938eb34a3cc86d5c7be5b03e33d0a",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "docs/v0-2-3-release-record",
+      "sha": "8b77c2216c5e63c0f5d5e5e89f6ddac3e78ad950",
+      "ancestor_of_main": false,
+      "merged_pr": 9,
+      "merge_commit": "7ce6479ce0edce03f8cdba9330b5ac816f7e6a7d",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/m0-product-governance",
+      "sha": "b7f7a1b90c4e95eafa0bcbc413f6453bd8d54faa",
+      "ancestor_of_main": false,
+      "merged_pr": 3,
+      "merge_commit": "d27e4f462db4578b73772d3e8f85a8d553151a7b",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/p1-01-tool-capable-model-validation",
+      "sha": "422a9827455a1797095e7876112755ef595a8ddf",
+      "ancestor_of_main": false,
+      "merged_pr": 8,
+      "merge_commit": "53cc88d03cf6e28ff583a1347d8a59c92751fa72",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/p1-01a-delivery-loop",
+      "sha": "98deb4c3bf7e1803d046c345c93adf91b32b7894",
+      "ancestor_of_main": false,
+      "merged_pr": 11,
+      "merge_commit": "3415e05266c4339afed76deb18ca6fc6fa87b61b",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/p1-01b-schedule-resilience",
+      "sha": "2e4e00c7b099c753b657e6834d65c5a08f8fb20a",
+      "ancestor_of_main": false,
+      "merged_pr": 18,
+      "merge_commit": "37b4676630827de95993bb6521fa09798c747809",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/p1-02-traceable-recovery",
+      "sha": "4f3c29fa821a29633ae80e055e25c335fc969006",
+      "ancestor_of_main": false,
+      "merged_pr": 23,
+      "merge_commit": "2bb64cd3b44a0472640aaeece3ec5b386f919aef",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/p1-03-continuity-acceptance",
+      "sha": "07f264a575e322118054aeb05b121fe284ffc032",
+      "ancestor_of_main": false,
+      "merged_pr": 26,
+      "merge_commit": "194b129ee0559a6d95481daf9b67bd340ec55f35",
+      "disposition": "preserve-worktree-dirty",
+      "worktree_state": "dirty"
+    },
+    {
+      "ref": "feature/p2-01-connected-documents",
+      "sha": "64a9d5946be96824fd246e9532ed9f45d61c3fbf",
+      "ancestor_of_main": false,
+      "merged_pr": 30,
+      "merge_commit": "d2330d33b04a08fbc6bb5ece946ae7d973789057",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/p2-02-document-boundary",
+      "sha": "c9fc2e0edae15f2b46594a94aadefc5102b13299",
+      "ancestor_of_main": false,
+      "merged_pr": 32,
+      "merge_commit": "2d8b3a76b5433fbec2a991a4608af1434e1cd3b5",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/p3-01-compose-vps",
+      "sha": "74bbd2b743222ac2e4df309a4e423d3f3d59f6d1",
+      "ancestor_of_main": false,
+      "merged_pr": 35,
+      "merge_commit": "6ddc37fbbc1969695c8f500bdbc916f0d2d1034d",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/p3-02-operations",
+      "sha": "87af7801e13837ec1f59c2a9c67cce06c7358686",
+      "ancestor_of_main": false,
+      "merged_pr": 39,
+      "merge_commit": "5c31bba1af16456388d70f3bd3a95dc3e7564043",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/p4-01-manifests",
+      "sha": "8c7fb40699cc2ce807901a8253d40660c6ed87f2",
+      "ancestor_of_main": false,
+      "merged_pr": 41,
+      "merge_commit": "2243c3cd73f2e33ccdff00226e8d3247137a548c",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/p4-02-plugin-lifecycle",
+      "sha": "810e685537b4827e8846aa0bba525698d55686fa",
+      "ancestor_of_main": false,
+      "merged_pr": 44,
+      "merge_commit": "fdc299d70323f05ebc1da89a5b77c4687b3c9859",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/p5-03-product-validation-gate",
+      "sha": "3e986a0ac3ee082705496b76c8850a4fc14d3be1",
+      "ancestor_of_main": false,
+      "merged_pr": 51,
+      "merge_commit": "195c39f2d1ec443bc63cd8da2b73e8e3a98d4767",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/p6-00-stage2-delivery-loop",
+      "sha": "07546a1a32617e06ae9af1df660adc53c65de69d",
+      "ancestor_of_main": false,
+      "merged_pr": 57,
+      "merge_commit": "6f4cb817d635879f6061e5a3bbc1b4a9e7d3c6a4",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/p7-00-telegram-delivery",
+      "sha": "bcf6ad9b2348e2aa6cf91a01b90758eff9bd399a",
+      "ancestor_of_main": false,
+      "merged_pr": 75,
+      "merge_commit": "570c23e9bf25d44f869a4b8b24a9a08f8306ab04",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "feature/ux-06-telegram-conversation",
+      "sha": "581833eb19e78a663d4c3412f768a16a61333bf6",
+      "ancestor_of_main": false,
+      "merged_pr": 167,
+      "merge_commit": "203842251afce08ecd927dedafb72469f23319c8",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "fix/delivery-report-isolation",
+      "sha": "8ae3fbb35e599877153d08c23ec71267d3f43c36",
+      "ancestor_of_main": false,
+      "merged_pr": 15,
+      "merge_commit": "c7ba264ceb569088987f0521cb56850ff97fb3b3",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "fix/delivery-schedule-root",
+      "sha": "455bc03c67acdd079f5b5fa8ff160161f7ad4e72",
+      "ancestor_of_main": false,
+      "merged_pr": 13,
+      "merge_commit": "ae300d1a5a7ef5e141c1c521daf29df83c235f0b",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "fix/p1-01b-launchd-path",
+      "sha": "9d5bda3f009a2ea9ee28bc362664ee1e16aeb2a1",
+      "ancestor_of_main": false,
+      "merged_pr": 20,
+      "merge_commit": "1138ac166b78ad2f8b12d2df4c06f6ad5094ec07",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "fix/p6-00a-codex-cli",
+      "sha": "9a4ce86c59bfe249ecba24e14674edcece5c26ea",
+      "ancestor_of_main": false,
+      "merged_pr": 59,
+      "merge_commit": "d953b74205a1dae8a8f133e0b567d7558aec4b02",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "fix/p6-00b-codex-flags",
+      "sha": "e6b9062ec408c238b4964a16137c32fa082b2bad",
+      "ancestor_of_main": false,
+      "merged_pr": 61,
+      "merge_commit": "51073a2b015c8b719245675ca362448668b9182a",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "fix/p6-00c-git-push-auth",
+      "sha": "5b73dad849b07c256f21dca60054184eda6059fa",
+      "ancestor_of_main": false,
+      "merged_pr": 63,
+      "merge_commit": "b0e0306a6d29e253235423b73625dd559b1c1fd0",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "fix/p6-00d-pr-merge",
+      "sha": "e403da944455bd90b95808c213fea5af3d09e212",
+      "ancestor_of_main": false,
+      "merged_pr": 66,
+      "merge_commit": "0efbdaf74deb45ec2b33f355369a9e1d9d9a8714",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "fix/p6-00e-packaged-plan",
+      "sha": "652ac0654c8898d5b6dbe963cbcda7e53b200566",
+      "ancestor_of_main": false,
+      "merged_pr": 69,
+      "merge_commit": "51bfcf10eacb3d6f747d47cbaf721c70bcbafba3",
+      "disposition": "preserve-worktree-dirty",
+      "worktree_state": "dirty"
+    },
+    {
+      "ref": "fix/weather-tool-fallback",
+      "sha": "739c13bc444bc00c9c9abfee9650fe428e1bd9f0",
+      "ancestor_of_main": false,
+      "merged_pr": 28,
+      "merge_commit": "1a078583a4a43090df35eac3ea7145bfefde6ecb",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "launchd-runtime-pin",
+      "sha": "47c0eb0524792029fe3870e77fea866568007399",
+      "ancestor_of_main": false,
+      "merged_pr": 84,
+      "merge_commit": "83baf78b83b0d315c5126f3b6508cf2d1cbbf42c",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "launchd-safe-python",
+      "sha": "6a8ff3900727284dc2d44052947d2ea0fda405b3",
+      "ancestor_of_main": false,
+      "merged_pr": 88,
+      "merge_commit": "6581ae92b7ac00d09352e30071f9ffa0601febc1",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "launchd-source-bootstrap",
+      "sha": "98d7f77d67c02ec8a32edb4c302e22d558abdedf",
+      "ancestor_of_main": false,
+      "merged_pr": 90,
+      "merge_commit": "da854307b0bfa50bbd514a1e43f552c338f0f6bf",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "launchd-stable-cwd",
+      "sha": "8ff23e43dd83fce581ceddc8d9375ce86c08923b",
+      "ancestor_of_main": false,
+      "merged_pr": 86,
+      "merge_commit": "888756eeb8fe89e73fbbc78b5402e91ccae36310",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "p7-live-acceptance-gate",
+      "sha": "6c89e09684935ae928650451ee67063fb26a65a1",
+      "ancestor_of_main": false,
+      "merged_pr": 82,
+      "merge_commit": "7e39e5ed0ee18465fb93b878a646fad6dc6c609c",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "p7-progress-card",
+      "sha": "8fa85e8d418d0b74608aa0c291a99782d5077d65",
+      "ancestor_of_main": false,
+      "merged_pr": 80,
+      "merge_commit": "e22e3dfe61fc82fa720ef88fdb6a1740f3b43a90",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "release/personal-agentos-v0.2.7",
+      "sha": "188e78e2f94ce11b6cb28e2af8f5bbb5943e9b9c",
+      "ancestor_of_main": false,
+      "merged_pr": 19,
+      "merge_commit": "d52e10437cedf0f5e1593119539584d9f3867c75",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "release/personal-agentos-v0.2.8",
+      "sha": "cdea888226d311fd0b787953d7282baf36c6bdbd",
+      "ancestor_of_main": false,
+      "merged_pr": 21,
+      "merge_commit": "203140013993d5b0dee13cdb144adf46dae3ba73",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "release/personal-agentos-v0.2.9",
+      "sha": "a196f353e3ea62f19c80cc540505f954865cbb73",
+      "ancestor_of_main": false,
+      "merged_pr": 24,
+      "merge_commit": "d8c347fe1fd1fa38dd871d67adb2bf1780c32530",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "release/v0.2.4-delivery-loop",
+      "sha": "83eeb64d2e40f9abe8a99f874793b575458616f4",
+      "ancestor_of_main": false,
+      "merged_pr": 12,
+      "merge_commit": "10f16da301687e667250a0d4859971f80df8be0b",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "release/v0.2.5-delivery-schedule",
+      "sha": "d97cacc3bc3bda164eeeff214080a8d6947ba8de",
+      "ancestor_of_main": false,
+      "merged_pr": 14,
+      "merge_commit": "9342ae2169961919c0da9a69428b340896d46c95",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "release/v0.2.6-delivery-report-isolation",
+      "sha": "06e9fdfc9734d47899ea9c557a8491fd37310a6b",
+      "ancestor_of_main": false,
+      "merged_pr": 16,
+      "merge_commit": "3d649bf2eb9b7013297c5d8f1c76b19f3fe0529e",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "release/v1.0.1",
+      "sha": "770df575924d95be71840e40dd158c1cf502671f",
+      "ancestor_of_main": false,
+      "merged_pr": 54,
+      "merge_commit": "41e70fb3a161ad4138571d7644a1fbc1a4c8f92d",
+      "disposition": "preserve-worktree-dirty",
+      "worktree_state": "dirty"
+    },
+    {
+      "ref": "release/v1.0.2",
+      "sha": "5f30c5c8992c7d9d2f5aeb232568f45c7836c696",
+      "ancestor_of_main": false,
+      "merged_pr": 67,
+      "merge_commit": "91205278ebc452b2511a0812f848d330cbb5ad6e",
+      "disposition": "preserve-worktree-dirty",
+      "worktree_state": "dirty"
+    },
+    {
+      "ref": "release/v1.0.3",
+      "sha": "5b2f023cba56c18123cb1e956ffdecd0c6c48d2a",
+      "ancestor_of_main": false,
+      "merged_pr": 70,
+      "merge_commit": "e32868b1577d09c2ce7e3f538db5d50fc6f0f6f0",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/codex/280-owner-operating-doctor",
+      "sha": "8cc9b8f9ad1345e81346763564cd04bde31637c3",
+      "ancestor_of_main": false,
+      "merged_pr": null,
+      "merge_commit": null,
+      "disposition": "preserve-open-pr"
+    },
+    {
+      "ref": "origin/codex/doc-01-personal-control-plane",
+      "sha": "435104b7ea47e9d88b5660a287a0928554fa10c7",
+      "ancestor_of_main": false,
+      "merged_pr": 173,
+      "merge_commit": "3f4c044eab254a8c166494243c2cbd60801fcff4",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/codex/doc-02-master-plan-hierarchy",
+      "sha": "c0581ee47cee1c4eb82fd56d2485e1b9d2a96507",
+      "ancestor_of_main": false,
+      "merged_pr": 175,
+      "merge_commit": "9c548b4f0d1ea0cda3283ab2b286c5b7fe816831",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/codex/governance-automated-validation",
+      "sha": "a8a51a8acbc8635ba6d48a9c6b13bba89e945f9e",
+      "ancestor_of_main": false,
+      "merged_pr": 187,
+      "merge_commit": "f1df34c658b2fbbe129f9dc11bc01fcf81e5099b",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/codex/mp1-d01-closeout",
+      "sha": "be1739b759cda09346d135e89bcd0f8cfa2dd17a",
+      "ancestor_of_main": false,
+      "merged_pr": 178,
+      "merge_commit": "754d5b642e7f0d82f3fa983916e6d576197835ca",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/codex/mp1-d01-personal-space-contract",
+      "sha": "9e26427161b07f1d89d113730a70f398d8c1d146",
+      "ancestor_of_main": false,
+      "merged_pr": 177,
+      "merge_commit": "759560a377de9eb20dd742e91d60a537dbe48082",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/codex/mp1-d02-capability-lifecycle",
+      "sha": "24cabce40770c8cc4bf1487a12c8901ca74dac42",
+      "ancestor_of_main": false,
+      "merged_pr": 183,
+      "merge_commit": "a646e1bb616258e65c87b524bd0449f88386ef6f",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/codex/mp1-d03-drive-contract",
+      "sha": "193cd4275f21de3805b0dc46b5dbc64142a06e45",
+      "ancestor_of_main": false,
+      "merged_pr": 189,
+      "merge_commit": "722b6c106ed73da01e37bca4eedc4ef891cb84ab",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/codex/mp1-i01-closeout",
+      "sha": "b4d05e690fc67d325a15549735f2bde435dd4584",
+      "ancestor_of_main": false,
+      "merged_pr": 181,
+      "merge_commit": "297e04fb650c942d22da9cb77b3d1d478713f325",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/codex/mp1-i01-personal-space",
+      "sha": "7023a02c9e54c493f9365e807d661e2993a6d67a",
+      "ancestor_of_main": false,
+      "merged_pr": 180,
+      "merge_commit": "aa43c2269e62069c4a6102496236ed1763d72b2a",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/codex/mp1-i02-capability-registry",
+      "sha": "c2b2d94fade628be2f55ddf801dbb8e86d082a03",
+      "ancestor_of_main": false,
+      "merged_pr": 185,
+      "merge_commit": "693d7eb6a24a43d881d11de6c7d58011100e2d37",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/delivery/p6-01",
+      "sha": "01a7e486e08658c831c7c261efdd28613bc4c556",
+      "ancestor_of_main": false,
+      "merged_pr": 64,
+      "merge_commit": "c2341a3a5a7a14d4b6e998fd3bf2b966ddbb74e9",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/feature/p1-03-continuity-acceptance",
+      "sha": "07f264a575e322118054aeb05b121fe284ffc032",
+      "ancestor_of_main": false,
+      "merged_pr": 26,
+      "merge_commit": "194b129ee0559a6d95481daf9b67bd340ec55f35",
+      "disposition": "preserve-dirty-worktree-remote"
+    },
+    {
+      "ref": "origin/feature/p2-01-connected-documents",
+      "sha": "64a9d5946be96824fd246e9532ed9f45d61c3fbf",
+      "ancestor_of_main": false,
+      "merged_pr": 30,
+      "merge_commit": "d2330d33b04a08fbc6bb5ece946ae7d973789057",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/feature/p2-02-document-boundary",
+      "sha": "c9fc2e0edae15f2b46594a94aadefc5102b13299",
+      "ancestor_of_main": false,
+      "merged_pr": 32,
+      "merge_commit": "2d8b3a76b5433fbec2a991a4608af1434e1cd3b5",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/feature/p3-01-compose-vps",
+      "sha": "74bbd2b743222ac2e4df309a4e423d3f3d59f6d1",
+      "ancestor_of_main": false,
+      "merged_pr": 35,
+      "merge_commit": "6ddc37fbbc1969695c8f500bdbc916f0d2d1034d",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/feature/p3-02-operations",
+      "sha": "87af7801e13837ec1f59c2a9c67cce06c7358686",
+      "ancestor_of_main": false,
+      "merged_pr": 39,
+      "merge_commit": "5c31bba1af16456388d70f3bd3a95dc3e7564043",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/feature/p4-01-manifests",
+      "sha": "8c7fb40699cc2ce807901a8253d40660c6ed87f2",
+      "ancestor_of_main": false,
+      "merged_pr": 41,
+      "merge_commit": "2243c3cd73f2e33ccdff00226e8d3247137a548c",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/feature/p4-02-plugin-lifecycle",
+      "sha": "810e685537b4827e8846aa0bba525698d55686fa",
+      "ancestor_of_main": false,
+      "merged_pr": 44,
+      "merge_commit": "fdc299d70323f05ebc1da89a5b77c4687b3c9859",
+      "disposition": "delete-merged"
+    },
+    {
+      "ref": "origin/fix/weather-tool-fallback",
+      "sha": "739c13bc444bc00c9c9abfee9650fe428e1bd9f0",
+      "ancestor_of_main": false,
+      "merged_pr": 28,
+      "merge_commit": "1a078583a4a43090df35eac3ea7145bfefde6ecb",
+      "disposition": "delete-merged"
+    }
+  ],
+  "branch_cleanup_results": [
+    {
+      "ref": "codex/279-legacy-decision",
+      "sha": "a0a8be02ef12e06d5433e41b47907b6f050a4073",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "codex/doc-01-personal-control-plane",
+      "sha": "435104b7ea47e9d88b5660a287a0928554fa10c7",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "codex/doc-02-master-plan-hierarchy",
+      "sha": "c0581ee47cee1c4eb82fd56d2485e1b9d2a96507",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "codex/governance-automated-validation",
+      "sha": "a8a51a8acbc8635ba6d48a9c6b13bba89e945f9e",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "codex/mp1-d01-closeout",
+      "sha": "be1739b759cda09346d135e89bcd0f8cfa2dd17a",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "codex/mp1-d01-personal-space-contract",
+      "sha": "9e26427161b07f1d89d113730a70f398d8c1d146",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "codex/mp1-d02-capability-lifecycle",
+      "sha": "24cabce40770c8cc4bf1487a12c8901ca74dac42",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "codex/mp1-d03-drive-contract",
+      "sha": "193cd4275f21de3805b0dc46b5dbc64142a06e45",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "codex/mp1-i01-closeout",
+      "sha": "b4d05e690fc67d325a15549735f2bde435dd4584",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "codex/mp1-i01-personal-space",
+      "sha": "7023a02c9e54c493f9365e807d661e2993a6d67a",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "codex/mp1-i02-capability-registry",
+      "sha": "c2b2d94fade628be2f55ddf801dbb8e86d082a03",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "codex/personal-agent-mvp",
+      "sha": "bb684e8a37ab6c2e81a976bbc7c55a688e3d11b6",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "delivery/issue-170-readme-i18n",
+      "sha": "2e9fd8e99ecebad9e74c51073d5d570685d84d40",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "delivery/p6-01",
+      "sha": "01a7e486e08658c831c7c261efdd28613bc4c556",
+      "result": "deleted",
+      "worktree": "retained-detached"
+    },
+    {
+      "ref": "delivery/p7-01",
+      "sha": "f7d4852709822dfb5e117ca85ba909a6a067aa03",
+      "result": "deleted",
+      "worktree": "retained-detached"
+    },
+    {
+      "ref": "delivery/p7-02",
+      "sha": "39cd75ef5ab2366399cf0ecc884631fd42d540e2",
+      "result": "deleted",
+      "worktree": "retained-detached"
+    },
+    {
+      "ref": "delivery/p7-03",
+      "sha": "fc912f57b437f5c33257539ff5641aacbd6a2b97",
+      "result": "deleted",
+      "worktree": "retained-detached"
+    },
+    {
+      "ref": "docs/context-capture-idea",
+      "sha": "724276ccc7d80375588fddea27846a5d77f1dd99",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "docs/m0-release-closeout",
+      "sha": "3adeb694bf2b9c8220e2dd6ee1c0e2b0b2d0e836",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "docs/m4-b3os-reference",
+      "sha": "4e9ada3b580924f76bbd83542c14c3757a178813",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "docs/ux-06-closeout",
+      "sha": "9dcb13a7553c4dcafe5e10b754d5fe29f2620527",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "docs/v0-2-3-release-record",
+      "sha": "8b77c2216c5e63c0f5d5e5e89f6ddac3e78ad950",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/m0-product-governance",
+      "sha": "b7f7a1b90c4e95eafa0bcbc413f6453bd8d54faa",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/p1-01-tool-capable-model-validation",
+      "sha": "422a9827455a1797095e7876112755ef595a8ddf",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/p1-01a-delivery-loop",
+      "sha": "98deb4c3bf7e1803d046c345c93adf91b32b7894",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/p1-01b-schedule-resilience",
+      "sha": "2e4e00c7b099c753b657e6834d65c5a08f8fb20a",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/p1-02-traceable-recovery",
+      "sha": "4f3c29fa821a29633ae80e055e25c335fc969006",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/p2-01-connected-documents",
+      "sha": "64a9d5946be96824fd246e9532ed9f45d61c3fbf",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/p2-02-document-boundary",
+      "sha": "c9fc2e0edae15f2b46594a94aadefc5102b13299",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/p3-01-compose-vps",
+      "sha": "74bbd2b743222ac2e4df309a4e423d3f3d59f6d1",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/p3-02-operations",
+      "sha": "87af7801e13837ec1f59c2a9c67cce06c7358686",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/p4-01-manifests",
+      "sha": "8c7fb40699cc2ce807901a8253d40660c6ed87f2",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/p4-02-plugin-lifecycle",
+      "sha": "810e685537b4827e8846aa0bba525698d55686fa",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/p5-03-product-validation-gate",
+      "sha": "3e986a0ac3ee082705496b76c8850a4fc14d3be1",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/p6-00-stage2-delivery-loop",
+      "sha": "07546a1a32617e06ae9af1df660adc53c65de69d",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/p7-00-telegram-delivery",
+      "sha": "bcf6ad9b2348e2aa6cf91a01b90758eff9bd399a",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "feature/ux-06-telegram-conversation",
+      "sha": "581833eb19e78a663d4c3412f768a16a61333bf6",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "fix/delivery-report-isolation",
+      "sha": "8ae3fbb35e599877153d08c23ec71267d3f43c36",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "fix/delivery-schedule-root",
+      "sha": "455bc03c67acdd079f5b5fa8ff160161f7ad4e72",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "fix/p1-01b-launchd-path",
+      "sha": "9d5bda3f009a2ea9ee28bc362664ee1e16aeb2a1",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "fix/p6-00a-codex-cli",
+      "sha": "9a4ce86c59bfe249ecba24e14674edcece5c26ea",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "fix/p6-00b-codex-flags",
+      "sha": "e6b9062ec408c238b4964a16137c32fa082b2bad",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "fix/p6-00c-git-push-auth",
+      "sha": "5b73dad849b07c256f21dca60054184eda6059fa",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "fix/p6-00d-pr-merge",
+      "sha": "e403da944455bd90b95808c213fea5af3d09e212",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "fix/weather-tool-fallback",
+      "sha": "739c13bc444bc00c9c9abfee9650fe428e1bd9f0",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "launchd-runtime-pin",
+      "sha": "47c0eb0524792029fe3870e77fea866568007399",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "launchd-safe-python",
+      "sha": "6a8ff3900727284dc2d44052947d2ea0fda405b3",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "launchd-source-bootstrap",
+      "sha": "98d7f77d67c02ec8a32edb4c302e22d558abdedf",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "launchd-stable-cwd",
+      "sha": "8ff23e43dd83fce581ceddc8d9375ce86c08923b",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "p7-live-acceptance-gate",
+      "sha": "6c89e09684935ae928650451ee67063fb26a65a1",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "p7-progress-card",
+      "sha": "8fa85e8d418d0b74608aa0c291a99782d5077d65",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "release/personal-agentos-v0.2.7",
+      "sha": "188e78e2f94ce11b6cb28e2af8f5bbb5943e9b9c",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "release/personal-agentos-v0.2.8",
+      "sha": "cdea888226d311fd0b787953d7282baf36c6bdbd",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "release/personal-agentos-v0.2.9",
+      "sha": "a196f353e3ea62f19c80cc540505f954865cbb73",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "release/v0.2.4-delivery-loop",
+      "sha": "83eeb64d2e40f9abe8a99f874793b575458616f4",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "release/v0.2.5-delivery-schedule",
+      "sha": "d97cacc3bc3bda164eeeff214080a8d6947ba8de",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "release/v0.2.6-delivery-report-isolation",
+      "sha": "06e9fdfc9734d47899ea9c557a8491fd37310a6b",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "release/v1.0.3",
+      "sha": "5b2f023cba56c18123cb1e956ffdecd0c6c48d2a",
+      "result": "deleted",
+      "worktree": null
+    },
+    {
+      "ref": "origin/codex/doc-01-personal-control-plane",
+      "sha": "435104b7ea47e9d88b5660a287a0928554fa10c7",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/codex/doc-02-master-plan-hierarchy",
+      "sha": "c0581ee47cee1c4eb82fd56d2485e1b9d2a96507",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/codex/governance-automated-validation",
+      "sha": "a8a51a8acbc8635ba6d48a9c6b13bba89e945f9e",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/codex/mp1-d01-closeout",
+      "sha": "be1739b759cda09346d135e89bcd0f8cfa2dd17a",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/codex/mp1-d01-personal-space-contract",
+      "sha": "9e26427161b07f1d89d113730a70f398d8c1d146",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/codex/mp1-d02-capability-lifecycle",
+      "sha": "24cabce40770c8cc4bf1487a12c8901ca74dac42",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/codex/mp1-d03-drive-contract",
+      "sha": "193cd4275f21de3805b0dc46b5dbc64142a06e45",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/codex/mp1-i01-closeout",
+      "sha": "b4d05e690fc67d325a15549735f2bde435dd4584",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/codex/mp1-i01-personal-space",
+      "sha": "7023a02c9e54c493f9365e807d661e2993a6d67a",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/codex/mp1-i02-capability-registry",
+      "sha": "c2b2d94fade628be2f55ddf801dbb8e86d082a03",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/delivery/p6-01",
+      "sha": "01a7e486e08658c831c7c261efdd28613bc4c556",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/feature/p2-01-connected-documents",
+      "sha": "64a9d5946be96824fd246e9532ed9f45d61c3fbf",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/feature/p2-02-document-boundary",
+      "sha": "c9fc2e0edae15f2b46594a94aadefc5102b13299",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/feature/p3-01-compose-vps",
+      "sha": "74bbd2b743222ac2e4df309a4e423d3f3d59f6d1",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/feature/p3-02-operations",
+      "sha": "87af7801e13837ec1f59c2a9c67cce06c7358686",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/feature/p4-01-manifests",
+      "sha": "8c7fb40699cc2ce807901a8253d40660c6ed87f2",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/feature/p4-02-plugin-lifecycle",
+      "sha": "810e685537b4827e8846aa0bba525698d55686fa",
+      "result": "deleted"
+    },
+    {
+      "ref": "origin/fix/weather-tool-fallback",
+      "sha": "739c13bc444bc00c9c9abfee9650fe428e1bd9f0",
+      "result": "deleted"
+    }
+  ]
+}

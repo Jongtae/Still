@@ -1,0 +1,11 @@
+[Unit]
+Description=Personal AgentOS
+After=network-online.target
+[Service]
+Type=simple
+WorkingDirectory=%h/personal-agentos
+ExecStart=/usr/local/bin/agentos start --host 127.0.0.1 --port 8787 --no-browser
+Restart=on-failure
+RestartSec=5
+[Install]
+WantedBy=default.target

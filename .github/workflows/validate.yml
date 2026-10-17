@@ -1,0 +1,83 @@
+name: validate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, reopened, synchronize]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Verify assistant execution specification and ownership
+        run: python3 scripts/verify_assistant_execution.py --check-spec
+
+      - name: Verify canonical documents and plan integrity
+        run: python3 scripts/verify_master_plan_docs.py
+
+      - name: Verify PR reuse review
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          trusted_validator="$RUNNER_TEMP/verify_reuse_review.py"
+          if git cat-file -e "$BASE_SHA:scripts/verify_reuse_review.py" 2>/dev/null; then
+            git show "$BASE_SHA:scripts/verify_reuse_review.py" > "$trusted_validator"
+          else
+            # Bootstrap this gate on the PR that first introduces it. Future
+            # PRs use the protected base revision above.
+            cp scripts/verify_reuse_review.py "$trusted_validator"
+          fi
+          python3 "$trusted_validator"
+
+      - name: Verify public README parity
+        run: python3 scripts/verify_readme_localization.py --check-git-diff
+
+      - name: Verify src layout
+        run: python3 scripts/verify_src_layout.py
+
+      - name: Verify ledger JSON
+        run: python3 -c "import json,pathlib; [json.loads(line) for line in pathlib.Path('docs/issue-branch-ledger.jsonl').read_text(encoding='utf-8').splitlines()]"
+
+      - name: Install pinned uv resolver
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: '0.11.33'
+          enable-cache: true
+
+      - name: Sync locked validation dependencies
+        run: uv sync --locked --group dev --no-python-downloads
+
+      - name: Verify every platform installs from wheels
+        run: sh scripts/dev/verify_wheels.sh
+
+      # These checks do not use service fixtures; classification coverage is local and model-free.
+      - name: Run focused governance and README tests
+        run: |
+          PATH="$PWD/.venv/bin:$PATH" python3 -m pytest --noconftest -q \
+            tests/test_readme_localization.py \
+            tests/test_reuse_review_gate.py \
+            tests/test_pr_preflight.py \
+            tests/test_governance_contract.py \
+            tests/test_verify_src_layout.py \
+            tests/test_release_script.py

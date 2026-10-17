@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="1138" viewBox="0 0 420 1138" role="img" aria-labelledby="title desc">
+<title id="title">Still</title><desc id="desc">あなたとの関係が Assistant・Finance・Research の専門的視点につながり、ドメイン・役割・委任範囲・権限が Decision Model に入り、Unified Presence が一つの関係を保ちながらあなたの介入を判断に戻します。</desc>
+<style>text{font-family:Arial,"Noto Sans",sans-serif;fill:#243247} .bold{font-weight:700} .muted{fill:#526174} .blue{fill:#245b92}</style>
+<rect width="420" height="1138" fill="#fff"/>
+<text x="20" y="58.0" font-size="34" class="bold" text-anchor="start">Still</text>
+<text x="20" y="97.9" font-size="22" class="blue" text-anchor="start">さまざまな専門的役割を担っても、関</text>
+<text x="20" y="127.60000000000001" font-size="22" class="blue" text-anchor="start">係は一つ。</text>
+<rect x="20" y="159.3" width="380" height="108.75000000000001" rx="16" fill="#f0f2f5" stroke="#d8dee5"/>
+<text x="210.0" y="207.3" font-size="28" class="bold" text-anchor="middle">あなたとの関係</text>
+<text x="210.0" y="242.10000000000002" font-size="17" class="muted" text-anchor="middle">目的 · 記憶 · 好み · 約束 · 権限</text>
+<path d="M210.0 272.05 L210.0 296.05" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<path d="M206.0 291.05 L210.0 296.05 L214.0 291.05" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<rect x="20" y="302.05" width="380" height="100.65" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="344.05" font-size="22" class="bold" text-anchor="middle">Assistant</text>
+<text x="210.0" y="376.75" font-size="17" class="muted" text-anchor="middle">業務調整</text>
+<rect x="20" y="414.70000000000005" width="380" height="100.65" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="456.70000000000005" font-size="22" class="bold" text-anchor="middle">Finance</text>
+<text x="210.0" y="489.40000000000003" font-size="17" class="muted" text-anchor="middle">資産管理</text>
+<rect x="20" y="527.35" width="380" height="100.65" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="569.35" font-size="22" class="bold" text-anchor="middle">Research</text>
+<text x="210.0" y="602.0500000000001" font-size="17" class="muted" text-anchor="middle">情報分析</text>
+<text x="210.0" y="661.0" font-size="19" class="muted" text-anchor="middle">ドメイン + 役割 + 委任範囲 + 権限</text>
+<path d="M210.0 677.65 L210.0 701.65" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<path d="M206.0 696.65 L210.0 701.65 L214.0 696.65" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<rect x="20" y="707.65" width="380" height="131.70000000000002" rx="16" fill="#ffffff" stroke="#d8dee5"/>
+<text x="210.0" y="755.65" font-size="28" class="bold" text-anchor="middle">Decision Model</text>
+<text x="210.0" y="790.4499999999999" font-size="17" class="muted" text-anchor="middle">判断 · 実行 · 委任 · 質問 · 報告 · 追</text>
+<text x="210.0" y="813.4" font-size="17" class="muted" text-anchor="middle">跡</text>
+<path d="M210.0 843.35 L210.0 867.35" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<path d="M206.0 862.35 L210.0 867.35 L214.0 862.35" fill="none" stroke="#8492a3" stroke-width="1.6"/>
+<rect x="20" y="873.35" width="380" height="131.70000000000002" rx="16" fill="#eaf1f8" stroke="#cbd7e3"/>
+<text x="210.0" y="921.35" font-size="28" class="bold" text-anchor="middle">Unified Presence</text>
+<text x="210.0" y="956.15" font-size="17" class="muted" text-anchor="middle">一つの関係 · 文脈に合った対話 · 継続的</text>
+<text x="210.0" y="979.1" font-size="17" class="muted" text-anchor="middle">な協働</text>
+<text x="210.0" y="1038.0500000000002" font-size="17" class="blue" text-anchor="middle">実行の観察 ↔ あなたの介入 ↔ 判断の更新</text>
+<path d="M20 1066.0H400" fill="none" stroke="#d4dce5" stroke-width="1.6"/>
+<text x="20" y="1093.0" font-size="15" class="muted" text-anchor="start">概念的な製品の方向性であり、提供済み機能の根拠では</text>
+<text x="20" y="1113.25" font-size="15" class="muted" text-anchor="start">ありません。</text>
+</svg>

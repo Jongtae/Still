@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>시작하기 | Still 개념 가이드</title>
+<meta name="description" content="Personal AgentOS 개념 가이드는 백서 『누구의 에이전트인가』와 『Personal AgentOS 총람』을 주제별로 나눠 쉽게 정리한 문서입니다. 이 페이지는 두 원고가 묻는 질문, 핵심 가설, 근거 표기, 읽는 순서를 설명합니다.">
+<link rel="stylesheet" href="../../assets/read.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+<header class="top">
+  <a class="brand" href="index.html">Still <span>개념 가이드</span></a>
+  <nav class="top-links" aria-label="사이트"><a href="../../ko.html">홈</a><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/README.md">원문</a><a href="https://github.com/Jongtae/Still">GitHub</a></nav>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="개념 가이드 목차">
+    <ol>
+      <li><a href="index.html" aria-current="page">시작하기</a></li>
+      <li><a href="memory.html">기억과 개인 상태</a></li>
+      <li><a href="ai.html">AI와 함께 일하기</a></li>
+      <li><a href="authority.html">권한·연결·증거</a></li>
+      <li><a href="limits.html">확인된 범위와 열린 질문</a></li>
+      <li><a href="glossary.html">용어</a></li>
+    </ol>
+    <p class="side-note">준비 중: 스킬과 전문성, 산업 가설과 반론, 개발 기록</p>
+  </nav>
+  <main id="main" class="doc">
+    <nav class="crumbs" aria-label="현재 위치"><ol><li><a href="index.html">개념 가이드</a></li></ol></nav>
+    <h1>시작하기</h1>
+    <p class="summary">Still 개념 가이드는 백서 『누구의 에이전트인가』와 『Still 총람』을 주제별로 나눠 쉽게 정리한 문서입니다. 이 페이지는 두 원고가 묻는 질문, 핵심 가설, 근거 표기, 읽는 순서를 설명합니다.</p>
+    <p class="meta">원고: 백서 요약·1–3장, 총람 들어가며·1–3장. 최종 갱신 2026년 10월 14일.</p>
+
+    <h2 id="audience">이 안내의 대상</h2>
+    <p>AI와 함께 일하거나 AI 시스템을 만들면서, 모델을 바꾸면 내 정보와 하던 일이 어떻게 되는지 궁금한 사람을 위한 안내입니다. 개발 지식은 필요하지 않습니다. 설치 방법은 다루지 않으며, 설치는 <a href="../../ko.html">Still 홈</a>에서 안내합니다.</p>
+    <p>이 안내에서 ‘백서’와 ‘총람’은 다음 두 원고를 가리킵니다.</p>
+    <dl class="defs">
+      <dt>백서: 『누구의 에이전트인가』 v0.3.1</dt>
+      <dd>산업·제품·비즈니스 전략 백서입니다. AI 공급자와 개인 에이전트의 관계를 다룹니다. 2026년 10월 6일에 검수하고 10월 12일에 문장을 다듬은 판입니다.</dd>
+      <dt>총람: 『Still 총람』 v0.1</dt>
+      <dd>2026년 9월 5일부터 10월 13일까지 저장소에 쌓인 개념, 설계, 시행착오를 한 문서로 엮었습니다. 백서의 논지도 포함합니다.</dd>
+    </dl>
+    <div class="note" role="note"><p><strong>참고</strong> 두 원고 모두 규범 문서가 아닙니다. 저장소의 실제 규칙은 개발 헌법과 영문 계약 문서가 정합니다. Still은 에이전트가 일해 주는 한 사람을 ‘소유자’라고 부릅니다. 이 안내는 Still의 규칙을 말할 때 ‘소유자’를, 백서의 산업 논의를 옮길 때 ‘사용자’를 씁니다.</p></div>
+
+    <h2 id="question">중심 질문</h2>
+    <p>백서는 가상의 사고실험으로 시작합니다. 아이언맨의 자비스가 외부 기업이 운영하는 AI 서비스라면, 토니 스타크는 자신의 일과 정보를 어디까지 맡길 수 있을까요? 답은 지능의 수준만으로 정해지지 않습니다. 원고는 네 가지를 묻습니다.</p>
+    <ul>
+      <li>나에 대한 기억은 어디에 남는가.</li>
+      <li>행동할 수 있는 범위는 누가 정하는가.</li>
+      <li>공급자가 조건을 바꾸거나 서비스를 멈추면 어떻게 되는가.</li>
+      <li>더 좋은 AI가 나왔을 때, 지금까지의 맥락과 진행 중인 일을 유지한 채 지능만 바꿀 수 있는가.</li>
+    </ul>
+    <blockquote><p>토니가 사용하는 것은 자신의 자비스인가, 아니면 다른 회사의 서비스를 자비스라고 부르고 있는 것인가.</p><cite>백서, 들어가며</cite></blockquote>
+    <p>클라우드를 쓰지 말자는 주장은 아닙니다. 계산과 추론은 밖에서 빌려 쓰더라도, 나에 대한 기억과 맡긴 권한, 이어 온 관계까지 그 공급자에게 묶여야 하는지를 묻는 것입니다.</p>
+    <p class="small">자비스와 토니 스타크는 질문을 설명하기 위한 가상의 예입니다. 작품 속 기술이나 실제 서비스의 능력에 대한 주장이 아닙니다.</p>
+
+    <h2 id="hypothesis">핵심 가설</h2>
+    <p class="basis"><span>근거</span> 가설. 백서 2장, 총람 1장</p>
+    <p>두 원고의 중심 가설은 이렇습니다. AI 모델을 공급하는 일과, 한 사람의 목표와 맥락을 기억하며 여러 도구로 일을 해 주는 개인 에이전트는 따로 떼어 낼 수 있는 별개의 제품이자 사업이라는 것입니다.</p>
+    <p>두 가지가 한 서비스에 묶여 있으면 모델을 고르는 일이 성능과 가격 비교로 끝나지 않습니다. 새 모델이 좋아도, 지금까지 쌓은 맥락을 처음부터 다시 쌓는 부담까지 따져야 하기 때문입니다. 백서는 이것을 잠금 효과(락인)의 핵심으로 봅니다. 데이터를 내려받을 수 있느냐보다, 떠난 뒤에도 하던 일을 이어 갈 수 있느냐가 문제라는 것입니다.</p>
+    <blockquote><p>모델의 차이는 수행 품질의 차이로 드러나야 한다. 그 차이를 비교하기 위해 사용자가 자신의 맥락과 통제권부터 포기해야 해서는 안 된다.</p><cite>백서 2장</cite></blockquote>
+    <div class="note" role="note"><p><strong>참고</strong> 이 가설은 모든 모델이 같은 결과를 낸다는 뜻이 아닙니다. 모델이 바뀌면 판단 방식과 품질도 달라질 수 있습니다. 백서는 모델을 통신망과 완전히 같은 것으로 보지 않으며, 역할을 나눈다고 해서 회사까지 나눠야 한다는 뜻도 아니라고 적습니다.</p></div>
+
+    <h2 id="layers">책임 영역</h2>
+    <p class="basis"><span>근거</span> 제안. 백서 3장</p>
+    <p>백서는 개인 에이전트 환경을 여섯 책임 영역으로 나눕니다. 공급자를 바꿀 때 영역마다 확인할 사항이 다릅니다.</p>
+    <div class="table-wrap" role="region" aria-labelledby="t1" tabindex="0">
+    <table>
+      <caption id="t1">표 1. 책임 영역과 공급자 변경 시 확인할 사항</caption>
+      <thead><tr><th scope="col">책임 영역</th><th scope="col">제공하는 가치</th><th scope="col">공급자 변경 시 확인할 사항</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">지능 공급</th><td>추론, 생성, 계획 등 모델의 처리 능력</td><td>품질·비용·지원 기능의 변화</td></tr>
+        <tr><th scope="row">실행 환경</th><td>도구, 브라우저, 로컬 프로그램, 외부 서비스의 실행</td><td>실제 접근 가능 범위와 실행 결과</td></tr>
+        <tr><th scope="row">개인 맥락과 기억</th><td>선호, 수정 사항, 관련 자료, 지속적인 작업 방식</td><td>의미·출처·적용 범위의 보존</td></tr>
+        <tr><th scope="row">작업 연속성</th><td>진행 중인 일, 보류 이유, 실패와 재개 상태</td><td>중복 실행 없이 이어갈 수 있는지</td></tr>
+        <tr><th scope="row">권한과 증거</th><td>위임 범위, 승인, 취소, 실제 결과의 확인</td><td>재승인 필요 여부와 기록의 신뢰성</td></tr>
+        <tr><th scope="row">사용자 경험</th><td>대화, 개입, 복구, 지속적인 Presence</td><td>사용자가 같은 일을 계속한다고 느끼는지</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">자료: 『누구의 에이전트인가』 v0.3.1, 3장. 원표 재수록.</p>
+    <p class="table-note">산업과 제품 설계를 검토하기 위한 모델입니다. Still이 모든 항목을 구현했다는 뜻이 아닙니다.</p>
+    <p>그렇다고 사용자가 모든 구성 요소를 직접 관리해야 하는 것은 아닙니다. 원고의 말을 빌리면 “선택할 수 있다는 것과 매번 선택해야 한다는 것은 다르다.” 좋은 기본값을 쓰다가, 필요할 때 공급자를 바꾸고, 권한을 회수하고, 데이터를 옮기고, 실제 실행 내역을 확인할 수 있으면 됩니다.</p>
+    <p>로컬에 설치한다고 통제가 보장되지도 않습니다. 기준은 위치가 아니라 경계입니다. 어떤 정보가 어디에 있고, 누가 무엇을 할 수 있으며, 사용자가 그 관계를 어떻게 바꿀 수 있는지입니다.</p>
+
+    <h2 id="history">역사에서 가져온 조건</h2>
+    <p class="basis"><span>근거</span> 사례. 백서 1장</p>
+    <p>백서는 인터넷과 모바일의 역사에서 누가 이겼는지가 아니라, 기술 계층이 나뉠 수 있었던 조건을 찾습니다.</p>
+    <ul>
+      <li>초기 온라인 서비스(CompuServe 등)는 토론 그룹, 뉴스, 이메일, 채팅을 한 환경에서 함께 제공했습니다.</li>
+      <li>CERN은 1993년 4월 30일 웹 소프트웨어를 누구나 쓸 수 있게 공개했습니다. RFC 3724는 새 서비스를 만들 때 통신망 안쪽보다 양 끝의 컴퓨터를 바꾸는 편이 대체로 쉽다는 점을 들어, end-to-end 원칙이 사용자의 선택을 넓힌다고 설명합니다.</li>
+      <li>2008년 Apple의 iPhone SDK와 App Store 발표는 외부 개발자의 판매 경로를 열었지만, Apple의 승인과 App Store를 통한 독점 배포도 함께 명시했습니다.</li>
+      <li>영국 경쟁시장청은 2022년 운영체제, 앱스토어, 브라우저를 중심으로 Apple과 Google의 영향력과 경쟁을 막는 요인을 설명했습니다. 당시 영국 시장에 대한 판단입니다.</li>
+    </ul>
+    <blockquote><p>기술 계층이 분리되는 것과 사용자 주도권이 강화되는 것은 같은 사건이 아니다.</p><cite>백서 1.2절</cite></blockquote>
+    <p>그래서 백서는 AI에 대해 세 가지 조건을 따져 보자고 제안합니다.</p>
+    <ul>
+      <li>다른 회사도 쓸 수 있는 안정적인 연결 방식이 있는가.</li>
+      <li>사용자가 맥락을 잃지 않고 공급자를 바꿀 수 있는가.</li>
+      <li>기업들이 연결을 열어 두고 유지할 경제적인 이유가 있는가.</li>
+    </ul>
+
+    <h2 id="evidence">근거 표기</h2>
+    <p>이 안내는 총람의 상태 표기를 그대로 씁니다. 각 절 제목 아래의 ‘근거’ 줄을 보면 그 절의 내용이 어떤 근거에 기대는지 알 수 있습니다. 표기는 신뢰의 순위가 아니라 근거의 종류입니다.</p>
+    <div class="table-wrap" role="region" aria-labelledby="t2" tabindex="0">
+    <table>
+      <caption id="t2">표 2. 근거 표기와 뜻</caption>
+      <thead><tr><th scope="col">표기</th><th scope="col">뜻</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">사례</th><td>출처와 시기가 있는 외부의 확인된 사례</td></tr>
+        <tr><th scope="row">가설</th><td>산업이나 제품에 관한 가설. 사례가 가설 전체를 입증하지는 않는다</td></tr>
+        <tr><th scope="row">제안</th><td>설계 제안이나 연구 결론. 구현이나 채택을 뜻하지 않는다</td></tr>
+        <tr><th scope="row">계약</th><td>저장소의 규범 문서가 정한 규칙. 구현 여부와는 별개다</td></tr>
+        <tr><th scope="row">구현</th><td>코드와 단위·통합 테스트로 확인됨. 실계정이나 실서비스 동작은 포함하지 않는다</td></tr>
+        <tr><th scope="row">관찰</th><td>소유자의 설치 환경이나 실계정에서 실제로 관찰됨</td></tr>
+        <tr><th scope="row">역사</th><td>대체되었거나 폐기된 결정. 당시 범위의 증거로만 남는다</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">자료: 『Still 총람』 v0.1, ‘이 문서를 읽는 법’. 원표 재수록.</p>
+
+    <h2 id="order">읽는 순서</h2>
+    <ol>
+      <li><a href="memory.html">기억과 개인 상태</a>: 기억을 옮긴다는 것의 세 수준, 기억과 권한의 구분, 지금의 기억 정책.</li>
+      <li><a href="ai.html">AI와 함께 일하기</a>: AI가 일하고 Still이 지키는 역할 분담, Presence, 사람과 에이전트의 협업.</li>
+      <li><a href="authority.html">권한·연결·증거</a>: 지금 지키는 보호 규칙, 행동의 종류, “처리했습니다”라는 말과 처리 증빙의 차이.</li>
+      <li><a href="limits.html">확인된 범위와 열린 질문</a>: 확인된 것과 아닌 것, 아직 실시하지 않은 검증 계획, 열린 질문.</li>
+      <li><a href="glossary.html">용어</a>: 이 안내에 나오는 말.</li>
+    </ol>
+    <p>스킬과 전문성, 산업 가설과 반론, 개발 기록 페이지는 준비 중입니다. 그동안은 원문을 참고하세요.</p>
+
+    <section class="page-sources" aria-labelledby="page-sources-title">
+      <h2 id="page-sources-title">이 페이지의 원문과 출처</h2>
+      <ul>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/whose-agent.ko.md">『누구의 에이전트인가』 v0.3.1</a>: 요약, 들어가며, 1–3장</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/personal-agentos-compendium.ko.md">『Still 총람』 v0.1</a>: 들어가며, 이 문서를 읽는 법, 1–3장</li>
+        <li><a href="https://www.computerhistory.org/revolution/the-web/20/400/2337">Computer History Museum, CompuServe</a></li>
+        <li><a href="https://home.cern/science/computing/the-birth-of-the-web/">CERN, The birth of the Web</a></li>
+        <li><a href="https://www.rfc-editor.org/rfc/rfc3724.html">IAB, RFC 3724, 2004년 3월</a></li>
+        <li><a href="https://www.apple.com/newsroom/2008/03/06Apple-Announces-iPhone-2-0-Software-Beta/">Apple, 2008년 3월 6일 발표</a></li>
+        <li><a href="https://www.gov.uk/government/news/cma-plans-market-investigation-into-mobile-browsers-and-cloud-gaming">UK CMA, 2022년 6월 10일 발표</a></li>
+      </ul>
+    </section>
+    <nav class="pager" aria-label="이전 다음 페이지"><a class="next" href="memory.html"><span>다음</span>기억과 개인 상태</a></nav>
+  </main>
+  <nav class="onpage" aria-labelledby="onpage-title">
+    <h2 id="onpage-title">이 페이지의 내용</h2>
+    <ol>
+      <li><a href="#audience">이 안내의 대상</a></li>
+      <li><a href="#question">중심 질문</a></li>
+      <li><a href="#hypothesis">핵심 가설</a></li>
+      <li><a href="#layers">책임 영역</a></li>
+      <li><a href="#history">역사에서 가져온 조건</a></li>
+      <li><a href="#evidence">근거 표기</a></li>
+      <li><a href="#order">읽는 순서</a></li>
+    </ol>
+  </nav>
+</div>
+<footer class="foot">
+  <p>이 안내는 프로젝트 소유자의 요청으로 AI 코딩 어시스턴트가 두 원고를 쉽게 다시 쓴 것입니다. 같은 AI의 자기 검토만 거쳤고, 독립 전문가나 사람의 검토가 아닙니다. 원문과 다르면 원문이 맞습니다. 제품 기능에 대한 약속이 아니며, 지금 되는 것은 <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">제품 현황</a>에 있습니다.</p>
+  <p>Still은 <a href="https://github.com/Jongtae/Still/blob/main/LICENSE">AGPL-3.0-only</a> 라이선스입니다. 이 페이지에는 로그인, 분석 도구, 스크립트가 없습니다. <a href="../../privacy.html">개인정보</a> <a href="../../terms.html">이용 조건</a></p>
+</footer>
+</body>
+</html>

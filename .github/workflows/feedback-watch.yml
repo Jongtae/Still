@@ -1,0 +1,32 @@
+name: feedback-watch
+
+# Files public mentions of Personal AgentOS as `feedback` issues (#1143, #1165).
+# Development infrastructure for the open-source project, not a product feature.
+# scripts/feedback_watch.py filters every source by name and files at most 5 issues per run.
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: List what would be filed without creating issues
+        type: boolean
+        default: true
+  schedule:
+    - cron: '23 0 * * 1,4'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: File new mentions
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run && '--dry-run' || '' }}
+        run: python scripts/feedback_watch.py $DRY_RUN

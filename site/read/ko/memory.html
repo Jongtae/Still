@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>기억과 개인 상태 | Still 개념 가이드</title>
+<meta name="description" content="기억을 옮긴다는 것은 대화 기록을 내보내는 것보다 넓습니다. 이 페이지는 기억 이동의 세 수준, 기억과 권한의 구분, 맥락과 기억의 차이, Personal AgentOS의 지금 기억 정책을 설명합니다.">
+<link rel="stylesheet" href="../../assets/read.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+<header class="top">
+  <a class="brand" href="index.html">Still <span>개념 가이드</span></a>
+  <nav class="top-links" aria-label="사이트"><a href="../../ko.html">홈</a><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/README.md">원문</a><a href="https://github.com/Jongtae/Still">GitHub</a></nav>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="개념 가이드 목차">
+    <ol>
+      <li><a href="index.html">시작하기</a></li>
+      <li><a href="memory.html" aria-current="page">기억과 개인 상태</a></li>
+      <li><a href="ai.html">AI와 함께 일하기</a></li>
+      <li><a href="authority.html">권한·연결·증거</a></li>
+      <li><a href="limits.html">확인된 범위와 열린 질문</a></li>
+      <li><a href="glossary.html">용어</a></li>
+    </ol>
+    <p class="side-note">준비 중: 스킬과 전문성, 산업 가설과 반론, 개발 기록</p>
+  </nav>
+  <main id="main" class="doc">
+    <nav class="crumbs" aria-label="현재 위치"><ol><li><a href="index.html">개념 가이드</a></li><li aria-current="page">기억과 개인 상태</li></ol></nav>
+    <h1>기억과 개인 상태</h1>
+    <p class="summary">기억을 옮긴다는 것은 대화 기록을 내보내는 것보다 넓습니다. 이 페이지는 기억 이동의 세 수준, 기억과 권한의 구분, 맥락과 기억의 차이, Still의 지금 기억 정책을 설명합니다.</p>
+    <p class="meta">원고: 백서 4장, 총람 5.1·5.3·7.4·7.9절, 24장. 최종 갱신 2026년 10월 14일.</p>
+
+    <h2 id="levels">기억 이동의 세 수준</h2>
+    <p class="basis"><span>근거</span> 제안. 백서 4.1절</p>
+    <p>백서는 기억의 이동을 세 수준으로 나눕니다.</p>
+    <dl class="defs">
+      <dt>데이터의 이동</dt><dd>기록을 읽을 수 있는 형식으로 가져옵니다.</dd>
+      <dt>의미의 이동</dt><dd>그 기록이 사실인지, 사용자의 선호인지, 모델이 추정한 내용인지, 나중에 수정됐는지까지 보존합니다.</dd>
+      <dt>사용의 연속성</dt><dd>새 환경이 그 정보를 알맞게 적용해, 사용자가 이미 설명하거나 정정한 내용을 반복하지 않게 합니다.</dd>
+    </dl>
+    <div class="note" role="note"><p><strong>예</strong> “평일에는 소고기를 피하고 싶다”는 선호가 “채식주의자”로 저장된다면 데이터는 이동했지만 의미는 바뀐 것입니다. 일시적인 출장 조건이 영구적인 생활 선호로 옮겨지는 경우도 같습니다.</p></div>
+    <p>그래서 백서는 내용과 함께 출처, 시점, 적용 범위, 사용자 확인 여부, 수정 관계, 유효 기간도 옮기자고 제안합니다. 옮기는 대상은 확인할 수 있게 저장된 정보입니다. 모델 안에만 반영된 학습 결과나 겉으로 드러나지 않는 상태까지 옮긴다는 약속은 아닙니다.</p>
+
+    <h2 id="existing">이미 있는 기능과의 차이</h2>
+    <p class="basis"><span>근거</span> 사례. 백서 4.2절</p>
+    <p>기억 이동을 지원하는 기능은 이미 있습니다. Claude의 공식 안내는 다른 AI 공급자와 기억을 가져오고 내보내는 기능을 설명하면서, 기억 가져오기는 실험적인 기능이라 항상 성공적으로 반영되지는 않을 수 있다고 밝힙니다.</p>
+    <p>따라서 문제는 “아무도 기억을 옮기지 못한다”가 아닙니다. 백서가 요구하는 다음 단계는 무엇이 옮겨졌고, 무엇이 빠졌으며, 어떤 의미가 바뀌었는지 사용자가 확인할 수 있을 만큼의 이전 품질입니다.</p>
+
+    <h2 id="not-authority">기억의 이전은 권한의 복제가 아닙니다</h2>
+    <p class="basis"><span>근거</span> 제안. 백서 4.3절</p>
+    <p>사용자가 특정 서점을 선호한다는 정보와, 그 서점 계정에서 구매할 수 있는 권한은 별개입니다. 진행 중인 구매 검토를 옮기는 것과 결제를 실행할 권한을 옮기는 것도 다릅니다. 백서가 제안하는 이전 절차는 다음과 같습니다.</p>
+    <ul>
+      <li>새 환경에서 필요한 권한을 다시 확인합니다.</li>
+      <li>옮긴 결과를 가져온 항목, 제외한 항목, 서로 충돌한 항목, 확인할 수 없는 항목으로 나눠 보여 줍니다.</li>
+      <li>과거 기록이 최근의 명시적인 수정과 충돌하면 과거 기록을 되살리지 않습니다. 철회되거나 수정된 기억도 되살리지 않습니다.</li>
+      <li>가져온 문장은 참고 데이터이며 새 권한을 주는 명령이 아닙니다. 연결 비밀값은 기억 묶음에 넣어 옮기지 않습니다.</li>
+      <li>사용자가 새 환경의 결과를 확인하기 전에 기존 자료를 자동으로 지우지 않습니다.</li>
+    </ul>
+    <blockquote><p>Portable Memory의 최종 시험은 데이터를 내보낼 수 있는지가 아니라, 사용자가 다른 환경으로 옮긴 뒤에도 자신의 맥락을 통제할 수 있는지다.</p><cite>백서 4.3절</cite></blockquote>
+    <p>이 기준은 Still 자신에게도 적용됩니다. 여러 모델을 연결할 수 있어도 Still을 떠날 수 없다면, 모델에서는 자유로워졌어도 사용자가 자유로워졌다고 보기는 어렵습니다.</p>
+
+    <h2 id="context">맥락은 기억이 아닙니다</h2>
+    <p class="basis"><span>근거</span> 계약. 총람 5.1·5.3절, 개발 헌법 C5</p>
+    <p>Still은 맥락(Context)과 기억(Memory)을 구분합니다. 맥락은 작업 하나를 위해 주어지는 정보입니다. 쓸 수 있는 범위와 출처가 정해져 있고, 기한이 지나면 사라지며, 자동으로 기억이 되지 않습니다. 기억은 Still이 관리하는 기준 기록, 곧 정본입니다.</p>
+    <p>대화 전체, 모델의 추론, 검색 결과, 파일 내용은 저절로 정본 기억이 되지 않습니다. 패키지나 외부 실행기의 내부 상태도 마찬가지입니다. 제3자가 저장하려는 기억은 승인 전까지 후보(<code>MemoryCandidate</code>)로 남습니다.</p>
+
+    <h2 id="policy">지금의 기억 정책</h2>
+    <p class="basis"><span>근거</span> 계약·구현. 총람 7.4절</p>
+    <p>처음에는 소유자가 직접 기억해 달라고 요청하고 확인해야 정본이 됐습니다. 그런데 실제로 써 보니, 기억할 사실이 생길 때마다 묻는 것 자체가 불편했습니다. 그래서 정책은 다음과 같이 바뀌었습니다.</p>
+    <div class="table-wrap" role="region" aria-labelledby="m1" tabindex="0">
+    <table>
+      <caption id="m1">표 1. 기억 정책의 변화</caption>
+      <thead><tr><th scope="col">시기</th><th scope="col">결정</th><th scope="col">내용</th></tr></thead>
+      <tbody>
+        <tr><td>#597</td><th scope="row">명시적 요청만 정본</th><td>명시적인 기억 요청과 소유자의 확인이 있어야 정본, 아니면 후보</td></tr>
+        <tr><td>#805 (09-28)</td><th scope="row">소유자 모델 유지</th><td>성공한 작업 뒤 판단 모델이 기억할 사실을 최대 5개까지 제안. 소유자가 말한 것과 추론한 것을 구분</td></tr>
+        <tr><td>#818, #836 (09-28)</td><th scope="row">한 작업에 한 번만 묻기</th><td>두 번 묻던 문제를 고치고, 내부 동작을 설명하던 문구를 없앰</td></tr>
+        <tr><td>#918 (10-02)</td><th scope="row">묻지 않고 저장, 알리고, 되돌리기</th><td>소유자 자신의 AI에 한해 바로 정본으로 저장. “기억했어요” 알림과 7일 되돌리기</td></tr>
+        <tr><td>#998 (10-04)</td><th scope="row">자기 검토</th><td>실패나 정정 뒤 놓친 것을 돌아보고 교훈 하나를 기억으로 남김</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">자료: 『Still 총람』 v0.1, 7.4절. 축약·재구성. 번호는 GitHub 이슈·PR입니다.</p>
+    <p>묻지 않고 바로 저장하는 방식은 소유자가 고른 AI에만 적용됩니다. 패키지 도구나 일을 넘겨받은 전문 에이전트 같은 제3자는 여전히 후보로 저장합니다. 비밀번호나 토큰처럼 보이는 값은 저장하지 않습니다.</p>
+    <div class="caution" role="note"><p><strong>주의</strong> 남은 위험도 기록되어 있습니다. 믿을 수 없는 웹 페이지의 문장에 속아 저장한 내용이 바로 기억이 될 수 있습니다. 지금은 출처 표시와 되돌리기로만 위험을 줄이고 있으며, 이런 공격(주입)을 막는 장치는 보류되어 있습니다.</p></div>
+
+    <h2 id="forget">정정, 잊기, 완전 삭제</h2>
+    <p class="basis"><span>근거</span> 계약. 총람 7.9절</p>
+    <p>기억을 고치고 잊는 일은 관리 화면 없이 대화에서 합니다. 계약은 세 동작을 나눕니다.</p>
+    <dl class="defs">
+      <dt>정정</dt><dd>“그건 잘못 기억했어”처럼 대화에서 고칩니다. “틀렸다”와 “이제 맞지 않게 됐다”를 구분합니다.</dd>
+      <dt>잊기</dt><dd>바로 쓰지 않게 하고, 내용은 뺀 처리 기록만 남기며, 7일 동안 되돌릴 수 있게 한 뒤 지웁니다.</dd>
+      <dt>완전 삭제</dt><dd>되돌리기 없이 즉시 지우고, 성공·부분 성공·실패를 구분해 알립니다.</dd>
+    </dl>
+    <p>내 컴퓨터에서 잊었다고 해서 AI 공급자 쪽 사본이나 내보낸 파일, 백업까지 지워졌다고 말하지 않습니다. 이 세 동작은 계약으로 정해졌지만 구현은 아직 끝나지 않았습니다.</p>
+
+    <h2 id="open">남은 문제</h2>
+    <p class="basis"><span>출처</span> 총람 24장</p>
+    <ul>
+      <li>에이전트가 어떤 사실을 얼마나 확신하는지 어떻게 보여 줄지 정해지지 않았습니다. 이를 정한 표준이나 제품은 찾지 못했고, 숫자 대신 몇 단계로 나눠 보여 주자는 설계 판단까지만 와 있습니다.</li>
+      <li>정정·잊기·완전 삭제 계약과, 데이터베이스 수준에서 잊는 방법에 대한 연구가 아직 서로 연결되지 않았습니다.</li>
+      <li>지금의 기억 저장소에는 유효 기간과 철회 시각이 기록되지 않습니다.</li>
+    </ul>
+    <p>다른 열린 질문은 <a href="limits.html">확인된 범위와 열린 질문</a>에 있습니다.</p>
+
+    <section class="page-sources" aria-labelledby="page-sources-title">
+      <h2 id="page-sources-title">이 페이지의 원문과 출처</h2>
+      <ul>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/whose-agent.ko.md">『누구의 에이전트인가』 v0.3.1</a>: 4장</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/personal-agentos-compendium.ko.md">『Still 총람』 v0.1</a>: 5.1, 5.3, 7.4, 7.9절, 24장</li>
+        <li><a href="https://support.claude.com/en/articles/12123587-import-and-export-your-memory-from-claude">Anthropic, Import and export your memory from Claude</a></li>
+      </ul>
+    </section>
+    <nav class="pager" aria-label="이전 다음 페이지"><a class="prev" href="index.html"><span>이전</span>시작하기</a><a class="next" href="ai.html"><span>다음</span>AI와 함께 일하기</a></nav>
+  </main>
+  <nav class="onpage" aria-labelledby="onpage-title">
+    <h2 id="onpage-title">이 페이지의 내용</h2>
+    <ol>
+      <li><a href="#levels">기억 이동의 세 수준</a></li>
+      <li><a href="#existing">이미 있는 기능과의 차이</a></li>
+      <li><a href="#not-authority">기억의 이전은 권한의 복제가 아닙니다</a></li>
+      <li><a href="#context">맥락은 기억이 아닙니다</a></li>
+      <li><a href="#policy">지금의 기억 정책</a></li>
+      <li><a href="#forget">정정, 잊기, 완전 삭제</a></li>
+      <li><a href="#open">남은 문제</a></li>
+    </ol>
+  </nav>
+</div>
+<footer class="foot">
+  <p>이 안내는 프로젝트 소유자의 요청으로 AI 코딩 어시스턴트가 두 원고를 쉽게 다시 쓴 것입니다. 같은 AI의 자기 검토만 거쳤고, 독립 전문가나 사람의 검토가 아닙니다. 원문과 다르면 원문이 맞습니다. 제품 기능에 대한 약속이 아니며, 지금 되는 것은 <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">제품 현황</a>에 있습니다.</p>
+  <p>Still은 <a href="https://github.com/Jongtae/Still/blob/main/LICENSE">AGPL-3.0-only</a> 라이선스입니다. 이 페이지에는 로그인, 분석 도구, 스크립트가 없습니다. <a href="../../privacy.html">개인정보</a> <a href="../../terms.html">이용 조건</a></p>
+</footer>
+</body>
+</html>

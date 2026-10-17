@@ -1,0 +1,1187 @@
+{
+  "created": "2026-10-11",
+  "evidence_class": "Edited owner-supplied Telegram/browser screen recordings, including an owner-confirmed post-login cart screen; not an independently verified backend or checkout trace.",
+  "runtime_revision": "not shown",
+  "model_identity": "not shown",
+  "owner_instructions": [
+    "Use the seven supplied videos for README GIFs and example screenshots.",
+    "Omit cart login screens and the initial cart-result screen.",
+    "Do not blur or mask other content.",
+    "Show the later post-login cart confirmation.",
+    "Make F1/Amazon continuity explicit.",
+    "Add scene explanations and the cart-add request.",
+    "Reduce displayed height and restyle with considered CSS."
+  ],
+  "excluded_sources": [
+    "37: repeated request and login handling omitted from this edit"
+  ],
+  "reuse_review": "N/A for AgentOS implementation: media/content editing outside the repository, no new component, abstraction, integration, dependency or framework. Adopt installed FFmpeg/Pillow/browser renderer; adapt existing site/assets/home.css tokens and OFL Figtree font.",
+  "sources": {
+    "31": {
+      "filename": "KakaoTalk_Video_2026-10-11-23-42-31.mp4",
+      "sha256": "bd1f3b3eb528381efc5e3bede874d6ab3e66a096af9ddb5a8fef70284218a50a",
+      "duration_s": 35.833333
+    },
+    "37": {
+      "filename": "KakaoTalk_Video_2026-10-11-23-42-37.mp4",
+      "sha256": "8a16abd6e08206847b8686cfa08f44e7ca30dcad6cd2aef8bba4c003a7fc6578",
+      "duration_s": 79.933333
+    },
+    "41": {
+      "filename": "KakaoTalk_Video_2026-10-11-23-42-41.mp4",
+      "sha256": "544583e69e5a4267f9521e38c6dbaf09a49e54042ec15d2c914d7a1ad86dbba7",
+      "duration_s": 148.965
+    },
+    "45": {
+      "filename": "KakaoTalk_Video_2026-10-11-23-42-45.mp4",
+      "sha256": "dad3a9fb6593125226aa8297324e568a692f9e935cf091df2d142ab886333685",
+      "duration_s": 60.9
+    },
+    "49": {
+      "filename": "KakaoTalk_Video_2026-10-11-23-42-49.mp4",
+      "sha256": "eea55c07e61e881a238e0f378b42f277987e60e3c926403db6a41ad92145861f",
+      "duration_s": 76.166667
+    },
+    "55": {
+      "filename": "KakaoTalk_Video_2026-10-11-23-42-55.mp4",
+      "sha256": "2eaa341fea62eb4f94d918f87a90e4a81d221aa6b040162bb6c48787d2a3a729",
+      "duration_s": 74.9
+    },
+    "06": {
+      "filename": "KakaoTalk_Video_2026-10-11-23-43-06.mp4",
+      "sha256": "5b024478b481fb4e5cf7a5a2f3fe6f00e4ac0670442c4559a592a3d001b97ad9",
+      "duration_s": 12.0
+    }
+  },
+  "segments": [
+    {
+      "stage": 0,
+      "src": "55",
+      "at": 0.5,
+      "hold": 3,
+      "crop": [
+        0,
+        250,
+        880,
+        830
+      ],
+      "key": "latte",
+      "output_start_s": 0.0,
+      "output_duration_s": 3.0
+    },
+    {
+      "bridge": 0,
+      "hold": 1.8,
+      "output_start_s": 3.0,
+      "output_duration_s": 1.8
+    },
+    {
+      "stage": 1,
+      "src": "55",
+      "start": 2,
+      "end": 7,
+      "speed": 5,
+      "crop": [
+        0,
+        270,
+        880,
+        1120
+      ],
+      "key": "f1ask",
+      "output_start_s": 4.8,
+      "output_duration_s": 1.0
+    },
+    {
+      "stage": 1,
+      "src": "55",
+      "start": 57.4,
+      "end": 62.4,
+      "speed": 2.5,
+      "crop": [
+        0,
+        310,
+        880,
+        1150
+      ],
+      "key": "f1reply",
+      "output_start_s": 5.8,
+      "output_duration_s": 2.0
+    },
+    {
+      "stage": 1,
+      "src": "55",
+      "at": 62,
+      "hold": 1.8,
+      "crop": [
+        0,
+        310,
+        880,
+        1150
+      ],
+      "key": "f1reply",
+      "output_start_s": 7.8,
+      "output_duration_s": 1.8
+    },
+    {
+      "stage": 1,
+      "src": "49",
+      "at": 15.2,
+      "hold": 1.8,
+      "crop": [
+        0,
+        250,
+        880,
+        430
+      ],
+      "key": "amazonask",
+      "output_start_s": 9.6,
+      "output_duration_s": 1.8
+    },
+    {
+      "stage": 1,
+      "src": "49",
+      "start": 69,
+      "end": 72,
+      "speed": 2,
+      "crop": [
+        0,
+        320,
+        880,
+        1180
+      ],
+      "key": "amazonreply",
+      "output_start_s": 11.4,
+      "output_duration_s": 1.5
+    },
+    {
+      "stage": 1,
+      "src": "49",
+      "at": 73,
+      "hold": 3,
+      "crop": [
+        0,
+        1120,
+        880,
+        1740
+      ],
+      "key": "amazonlimits",
+      "output_start_s": 12.9,
+      "output_duration_s": 3.0
+    },
+    {
+      "bridge": 1,
+      "hold": 1.8,
+      "output_start_s": 15.9,
+      "output_duration_s": 1.8
+    },
+    {
+      "stage": 2,
+      "src": "41",
+      "at": 0.5,
+      "hold": 1.5,
+      "crop": [
+        0,
+        250,
+        880,
+        440
+      ],
+      "key": "runningout",
+      "output_start_s": 17.7,
+      "output_duration_s": 1.5
+    },
+    {
+      "stage": 2,
+      "src": "41",
+      "at": 29.79,
+      "hold": 2.8,
+      "crop": [
+        0,
+        260,
+        880,
+        970
+      ],
+      "key": "context",
+      "output_start_s": 19.2,
+      "output_duration_s": 2.8
+    },
+    {
+      "stage": 2,
+      "src": "41",
+      "at": 59.59,
+      "hold": 0.9,
+      "crop": [
+        0,
+        250,
+        880,
+        420
+      ],
+      "key": "machine",
+      "output_start_s": 22.0,
+      "output_duration_s": 0.9
+    },
+    {
+      "stage": 2,
+      "src": "41",
+      "start": 100,
+      "end": 107,
+      "speed": 3.5,
+      "crop": [
+        0,
+        270,
+        880,
+        1110
+      ],
+      "key": "beans",
+      "output_start_s": 22.9,
+      "output_duration_s": 2.0
+    },
+    {
+      "stage": 2,
+      "src": "41",
+      "at": 112,
+      "hold": 2.6,
+      "crop": [
+        0,
+        490,
+        880,
+        1120
+      ],
+      "key": "memory",
+      "output_start_s": 24.9,
+      "output_duration_s": 2.6
+    },
+    {
+      "bridge": 2,
+      "hold": 1.8,
+      "output_start_s": 27.5,
+      "output_duration_s": 1.8
+    },
+    {
+      "stage": 3,
+      "src": "41",
+      "at": 132,
+      "hold": 1.8,
+      "crop": [
+        0,
+        250,
+        880,
+        430
+      ],
+      "key": "cartrequest",
+      "output_start_s": 29.3,
+      "output_duration_s": 1.8
+    },
+    {
+      "stage": 3,
+      "src": "31",
+      "at": 14.33,
+      "hold": 4.8,
+      "key": "cartconfirmed",
+      "output_start_s": 31.1,
+      "output_duration_s": 4.8,
+      "crops": [
+        [
+          22,
+          405,
+          828,
+          505
+        ],
+        [
+          22,
+          1155,
+          828,
+          1460
+        ]
+      ],
+      "separator": "ellipsis"
+    }
+  ],
+  "localized_captions": {
+    "welcome": [
+      "“From now on, just talk to me here.”",
+      "“이제 여기서, 평소처럼 말만 걸면 돼요.”",
+      "「これからは、ここで普通に話しかけてください。」",
+      "“以后就在这里，像平时一样跟我说话。”"
+    ],
+    "latte": [
+      "It recalls the latte you liked—and says the exact menu name was not confirmed.",
+      "좋아했던 라떼를 떠올리고, 정확한 메뉴명은 확인 못했다고 말해요.",
+      "気に入ったラテを思い出し、正確なメニュー名は未確認と伝えます。",
+      "想起你喜欢的拿铁，也说明尚未确认准确的菜单名称。"
+    ],
+    "f1ask": [
+      "“I am interested in F1 model cars. Where can I order one?”",
+      "“F1 모형 자동차에 관심 있어. 어디서 주문할 수 있어?”",
+      "「F1のモデルカーに興味があります。どこで注文できますか？」",
+      "“我对F1模型车感兴趣，在哪里可以订购？”"
+    ],
+    "f1reply": [
+      "The reply compares three places to browse, with links and availability caveats.",
+      "세 가지 구매처와 링크를 비교하고, 재고·배송 확인이 필요하다고 알려줘요.",
+      "3つの購入先とリンクを比較し、在庫や配送の確認が必要と伝えます。",
+      "比较三个购买渠道并给出链接，同时提醒需确认库存和配送。"
+    ],
+    "amazonask": [
+      "“Would you find more on Amazon?” The same conversation continues.",
+      "“아마존에서도 더 찾아줄래?” 같은 대화에서 이어서 부탁해요.",
+      "「Amazonでももっと探してくれる？」同じ会話が続きます。",
+      "“能在亚马逊上再找一些吗？”在同一段对话中继续。"
+    ],
+    "amazonreply": [
+      "It lists five models and prices, then recommends a first model.",
+      "모형 다섯 개와 당시 표시 가격을 정리하고, 첫 모형을 추천해요.",
+      "5つのモデルと当時の表示価格をまとめ、最初の1台を勧めます。",
+      "列出五款模型及当时显示的价格，并推荐第一款。"
+    ],
+    "amazonlimits": [
+      "The reply keeps its limits: final delivery costs need checking; some steps were not verified.",
+      "최종 배송비는 확인이 필요하고, 확인하지 못한 단계도 답변에 남아 있어요.",
+      "最終的な送料は要確認。確認できなかった段階も回答に残っています。",
+      "最终运费仍需确认；未能核实的步骤也保留在回答中。"
+    ],
+    "beanask": [
+      "“What beans does that latte use?”",
+      "“커피커피커피 라떼의 원두는 뭘 써?”",
+      "「あのラテには、どの豆を使っているの？」",
+      "“那杯拿铁用的是什么咖啡豆？”"
+    ],
+    "beanunknown": [
+      "It could not confirm the beans. It separates a visitor review from an official explanation.",
+      "원두는 확인하지 못했어요. 방문 후기와 매장 공식 설명도 구분해요.",
+      "豆は確認できませんでした。訪問者の口コミと公式説明を区別します。",
+      "未能确认咖啡豆；也区分了顾客点评与店铺官方说明。"
+    ],
+    "runningout": [
+      "“We are almost out of coffee beans at home.”",
+      "“집에서 먹는 원두 거의 다 떨어졌어.”",
+      "「家のコーヒー豆がもうすぐなくなる。」",
+      "“家里的咖啡豆快用完了。”"
+    ],
+    "context": [
+      "It uses your earlier latte preference and asks how you brew coffee at home.",
+      "앞서 좋아했던 라떼 취향을 참고하고, 집에서 어떻게 내려 마시는지 물어요.",
+      "前のラテの好みを参考に、家での淹れ方を尋ねます。",
+      "参考之前喜欢的拿铁口味，并询问你在家的冲煮方式。"
+    ],
+    "machine": [
+      "“A coffee machine.” It narrows the recommendation.",
+      "“커피머신.” 답을 듣고 추천을 좁혀요.",
+      "「コーヒーマシン。」答えに合わせて候補を絞ります。",
+      "“咖啡机。”根据回答缩小推荐范围。"
+    ],
+    "beans": [
+      "It compares three beans and picks Jardin Espresso Blend 500 g.",
+      "원두 세 가지를 비교하고 자뎅 에스프레소 블렌드 500g을 골라줘요.",
+      "3種類の豆を比較し、Jardin Espresso Blend 500gを選びます。",
+      "比较三款咖啡豆，推荐Jardin Espresso Blend 500克。"
+    ],
+    "memory": [
+      "“Remembered: you brew with a coffee machine at home.”",
+      "“기억했어요: 집에서는 커피머신으로 커피를 내려 마심.”",
+      "「覚えました：家ではコーヒーマシンで淹れる。」",
+      "“已记住：你在家用咖啡机冲煮。”"
+    ],
+    "cartrequest": [
+      "“Good, put the Jardin in the cart.”",
+      "“좋아 자뎅으로 넣어줘.”",
+      "「いいね、Jardinをカートに入れて。」",
+      "“好，把Jardin放入购物车。”"
+    ],
+    "cartconfirmed": [
+      "After sign-in: Jardin Espresso Blend 500 g, quantity 1, visible in the cart.",
+      "로그인 후 장바구니에서 자뎅 에스프레소 블렌드 500g, 수량 1개를 확인했어요.",
+      "ログイン後、カートにJardin Espresso Blend 500gが1点あることを確認。",
+      "登录后，购物车中确认有一件Jardin Espresso Blend 500克咖啡豆。"
+    ]
+  },
+  "stages": {
+    "en": [
+      "Your taste, remembered.",
+      "The search carries on.",
+      "Beans that fit your taste.",
+      "Chosen beans. In the cart."
+    ],
+    "ko": [
+      "기억한 취향이\n대화 속으로",
+      "한마디로\n이어지는 검색",
+      "내 취향에 맞는\n원두를 고르고",
+      "고른 원두가\n장바구니에"
+    ],
+    "ja": [
+      "好みを覚えて、会話へ。",
+      "ひと言で、検索の続きへ。",
+      "好みに合う豆を選ぶ。",
+      "選んだ豆が、カートに。"
+    ],
+    "zh-CN": [
+      "记住喜好，融入对话。",
+      "一句话，继续查找。",
+      "选出适合我的咖啡豆。",
+      "选好的豆，已在购物车。"
+    ]
+  },
+  "screenshots": [
+    {
+      "name": "01-coffee-memory",
+      "src": "55",
+      "at": 0.5,
+      "crop": [
+        0,
+        250,
+        880,
+        830
+      ],
+      "stage": 1,
+      "key": "latte"
+    },
+    {
+      "name": "02-f1-research",
+      "src": "55",
+      "at": 62,
+      "crop": [
+        0,
+        305,
+        880,
+        1700
+      ],
+      "stage": 2,
+      "key": "f1reply"
+    },
+    {
+      "name": "03-amazon-followup",
+      "src": "49",
+      "at": 73,
+      "crop": [
+        0,
+        310,
+        880,
+        1740
+      ],
+      "stage": 3,
+      "key": "amazonlimits"
+    },
+    {
+      "name": "04-latte-research",
+      "src": "45",
+      "at": 60.5,
+      "crop": [
+        0,
+        300,
+        880,
+        1760
+      ],
+      "stage": 4,
+      "key": "beanunknown"
+    },
+    {
+      "name": "05-coffee-context",
+      "src": "41",
+      "at": 29.79,
+      "crop": [
+        0,
+        260,
+        880,
+        970
+      ],
+      "stage": 5,
+      "key": "context"
+    },
+    {
+      "name": "06-bean-recommendation",
+      "src": "41",
+      "at": 112,
+      "crop": [
+        0,
+        495,
+        880,
+        1120
+      ],
+      "stage": 5,
+      "key": "beans"
+    },
+    {
+      "name": "07-getting-started",
+      "src": "06",
+      "at": 8.3,
+      "crop": [
+        0,
+        270,
+        880,
+        1720
+      ],
+      "stage": 0,
+      "key": "welcome"
+    }
+  ],
+  "outputs": {
+    "screenshots/01-coffee-memory.png": {
+      "crop": [
+        0,
+        250,
+        880,
+        830
+      ],
+      "source": "KakaoTalk_Video_2026-10-11-23-42-55.mp4",
+      "at_s": 0.5,
+      "bytes": 245144,
+      "sha256": "9b1abd252a2874efa622a32a277284a45c89f08f814276bbb9fd491e79a880ab"
+    },
+    "screenshots/02-f1-research.png": {
+      "crop": [
+        0,
+        305,
+        880,
+        1700
+      ],
+      "source": "KakaoTalk_Video_2026-10-11-23-42-55.mp4",
+      "at_s": 62,
+      "bytes": 825661,
+      "sha256": "1cde85b6ed7618df10dc04ba93e77457b4f08f47d92aee07805072da16054ae0"
+    },
+    "screenshots/03-amazon-followup.png": {
+      "crop": [
+        0,
+        310,
+        880,
+        1740
+      ],
+      "source": "KakaoTalk_Video_2026-10-11-23-42-49.mp4",
+      "at_s": 73,
+      "bytes": 674717,
+      "sha256": "c7bffdbb9c60c8ad75e8a12bd631476db532d42ac8cd48101a229502b164f6fd"
+    },
+    "screenshots/04-latte-research.png": {
+      "crop": [
+        0,
+        300,
+        880,
+        1760
+      ],
+      "source": "KakaoTalk_Video_2026-10-11-23-42-45.mp4",
+      "at_s": 60.5,
+      "bytes": 720411,
+      "sha256": "4480cca889f42234182d6c9debbb4ef6bba1a7b3eb2ea84e94aee50a89cd6f31"
+    },
+    "screenshots/05-coffee-context.png": {
+      "crop": [
+        0,
+        260,
+        880,
+        970
+      ],
+      "source": "KakaoTalk_Video_2026-10-11-23-42-41.mp4",
+      "at_s": 29.79,
+      "bytes": 264664,
+      "sha256": "834d796baaf5c63baf26fe935022b07ae02af2a87ef022eab58a3531c4d30bbf"
+    },
+    "screenshots/06-bean-recommendation.png": {
+      "crop": [
+        0,
+        495,
+        880,
+        1120
+      ],
+      "source": "KakaoTalk_Video_2026-10-11-23-42-41.mp4",
+      "at_s": 112,
+      "bytes": 332049,
+      "sha256": "183610545ce103716a3bf41afc16e2867846467ba5d495f2429c759476fcca10"
+    },
+    "screenshots/07-getting-started.png": {
+      "crop": [
+        0,
+        270,
+        880,
+        1720
+      ],
+      "source": "KakaoTalk_Video_2026-10-11-23-43-06.mp4",
+      "at_s": 8.3,
+      "bytes": 532707,
+      "sha256": "ce2f7e30c28babaedbcf580e0c6bea47c4627598f2226753e51b8e7fedcde289"
+    },
+    "readme-examples-v4.en.png": {
+      "width": 1800,
+      "height": 1320,
+      "bytes": 770345,
+      "sha256": "695cec0fd28fcb3ed94b918f65c221cda2191fdae9202e7a1aa2683126e64dcf"
+    },
+    "readme-examples-v4.ko.png": {
+      "width": 1800,
+      "height": 1320,
+      "bytes": 768441,
+      "sha256": "b6e644ac845dd7bad2dd4dc6b920ba368b2c44a105268dbba5d47e4a4e688de3"
+    },
+    "readme-examples-v4.ja.png": {
+      "width": 1800,
+      "height": 1320,
+      "bytes": 805334,
+      "sha256": "bca7574ea5a6d24ba88713361488f70fe73dde7d78472041ccf538280ed5842f"
+    },
+    "readme-examples-v4.zh-CN.png": {
+      "width": 1800,
+      "height": 1320,
+      "bytes": 790296,
+      "sha256": "0e4797fc34ac1d66c06271a2b62e7bf4f80d0b5b05a73819ac16c277656f75c6"
+    },
+    "demo-v4.en.gif": {
+      "width": 1200,
+      "height": 720,
+      "duration_s": 35.9,
+      "frames": 359,
+      "fps": 10,
+      "loop": true,
+      "bytes": 6751048,
+      "sha256": "ea870465da4a403a9ca98e2d0f9d8218f6f24831a2b617327379db9a1e637902"
+    },
+    "demo-v4.en.mp4": {
+      "width": 1200,
+      "height": 720,
+      "duration_s": 35.9,
+      "fps": 10,
+      "audio": false,
+      "bytes": 1529247,
+      "sha256": "42aa5b44ef9f739e91fb17ce442d81480d6a9a5e55bc7796322b125bfab51884"
+    },
+    "demo-poster-v4.en.png": {
+      "width": 1200,
+      "height": 720,
+      "bytes": 253041,
+      "sha256": "ad4dc5e2cc477ef5b4767c84b2c133c62e6c0a9ca432b2e59e01ee6989d8472d"
+    },
+    "demo-v4.ko.gif": {
+      "width": 1200,
+      "height": 720,
+      "duration_s": 35.9,
+      "frames": 359,
+      "fps": 10,
+      "loop": true,
+      "bytes": 6642509,
+      "sha256": "d31eeff49040531c26902e8d410b228b3f92420e1fb600c90f7530ec3bd266ae"
+    },
+    "demo-v4.ko.mp4": {
+      "width": 1200,
+      "height": 720,
+      "duration_s": 35.9,
+      "fps": 10,
+      "audio": false,
+      "bytes": 1484589,
+      "sha256": "642f655c6723927f072b7d1bb1e9b79e9ea8992be8f44ac639f414e4bd1c6534"
+    },
+    "demo-poster-v4.ko.png": {
+      "width": 1200,
+      "height": 720,
+      "bytes": 248046,
+      "sha256": "d5a1786d5f197b09c91df1904ea327bbd53c5ed36a677686f5c6b415c65109d9"
+    },
+    "demo-v4.ja.gif": {
+      "width": 1200,
+      "height": 720,
+      "duration_s": 35.9,
+      "frames": 359,
+      "fps": 10,
+      "loop": true,
+      "bytes": 6674882,
+      "sha256": "2232ff4fd288283a5325e7c5bc6cefda3ec3f9b938ad3fb8d284dc47bab48114"
+    },
+    "demo-poster-v4.ja.png": {
+      "width": 1200,
+      "height": 720,
+      "bytes": 260732,
+      "sha256": "f353ff193d16ad8cdffda1d8ec979dd4c376837982420d02e77806c220a51394"
+    },
+    "demo-v4.zh-CN.gif": {
+      "width": 1200,
+      "height": 720,
+      "duration_s": 35.9,
+      "frames": 359,
+      "fps": 10,
+      "loop": true,
+      "bytes": 6816917,
+      "sha256": "3d7ac6a0309899d28a0bff60d1fe16bf77edd053b25a2a4c0727562ddb581ea1"
+    },
+    "demo-poster-v4.zh-CN.png": {
+      "width": 1200,
+      "height": 720,
+      "bytes": 256288,
+      "sha256": "b2184c5b865e83b7f9eec40c169d55f5795c11b3cdf8b0a414a1766becd425b1"
+    },
+    "screenshots/08-cart-confirmed.png": {
+      "width": 806,
+      "height": 445,
+      "source": "KakaoTalk_Video_2026-10-11-23-42-31.mp4",
+      "at_s": 14.33,
+      "crops": [
+        [
+          22,
+          405,
+          828,
+          505
+        ],
+        [
+          22,
+          1155,
+          828,
+          1460
+        ]
+      ],
+      "separator": "ellipsis",
+      "bytes": 88123,
+      "sha256": "5bc6620afe340f6735d199521bdbd44e4937696244c5f89453fb694da586b711"
+    },
+    "preview.html": {
+      "bytes": 3077,
+      "sha256": "2742575c17f25e025dad2f4de138fe862a9f7914adf4299de26e63e955dbe73d"
+    },
+    "README-snippets.txt": {
+      "bytes": 2659,
+      "sha256": "df4c2bc8a027546e0ecc343c24dd63c598f6a0ce3a0cfdbebb4e7739969f0a17"
+    },
+    "rebuild/design.css": {
+      "bytes": 3747,
+      "sha256": "d64fdf000d23274dded20b9d5000b7bb82f784c0c4fe040a8266d9a55a2a7969"
+    },
+    "rebuild/DESIGN.md": {
+      "bytes": 1415,
+      "sha256": "1683f4714c2eb98f642039df750310b1c8535752af7669c2aa5354da865f8019"
+    }
+  },
+  "editing": "Waiting time removed; selected typing and scrolling accelerated; source crops kept readable. HTML/CSS follows existing site typography, spacing and palette. Scene explanations hold for 1.8 seconds; 0.2-second dissolves connect scenes. Final post-login cart confirmation holds 4.8 seconds. No blur or simulated messages.",
+  "triptych_excerpts": [
+    {
+      "panel": 1,
+      "sources": [
+        {
+          "source": "55",
+          "at_s": 0.5,
+          "crop": [
+            0,
+            250,
+            880,
+            830
+          ]
+        },
+        {
+          "source": "41",
+          "at_s": 29.79,
+          "crop": [
+            0,
+            260,
+            880,
+            970
+          ]
+        }
+      ]
+    },
+    {
+      "panel": 2,
+      "sources": [
+        {
+          "source": "55",
+          "at_s": 54,
+          "crop": [
+            0,
+            330,
+            880,
+            535
+          ]
+        },
+        {
+          "source": "49",
+          "at_s": 15.2,
+          "crop": [
+            0,
+            255,
+            880,
+            410
+          ]
+        },
+        {
+          "source": "49",
+          "at_s": 73,
+          "crop": [
+            0,
+            320,
+            880,
+            485
+          ]
+        },
+        {
+          "source": "49",
+          "at_s": 73,
+          "crop": [
+            0,
+            1120,
+            880,
+            1740
+          ]
+        }
+      ],
+      "omitted": "Middle model list, labelled as an excerpt"
+    },
+    {
+      "panel": 3,
+      "sources": [
+        {
+          "source": "41",
+          "at_s": 112,
+          "crop": [
+            0,
+            495,
+            880,
+            985
+          ]
+        },
+        {
+          "source": "41",
+          "at_s": 132,
+          "crop": [
+            0,
+            250,
+            880,
+            430
+          ]
+        },
+        {
+          "source": "31",
+          "at_s": 14.33,
+          "crops": [
+            [
+              22,
+              405,
+              828,
+              505
+            ],
+            [
+              22,
+              1155,
+              828,
+              1460
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "all_gifs_decoded": true,
+    "loop": true,
+    "dimensions": [
+      1200,
+      720
+    ],
+    "duration_s": 35.9,
+    "captions_fit": true,
+    "excluded_source_frames": "Source 31 uses the later cart screen at 14.33 seconds. The login form and first cart appearance near 7.17 seconds are omitted. No frames from source 37 are used. No blur applied.",
+    "source_originals": "SHA-256 captured; originals opened read-only",
+    "visual_review": "Representative GIF frames and localized screenshot figures inspected",
+    "v4_gifs_decoded": true,
+    "v4_dimensions": [
+      1200,
+      720
+    ],
+    "v4_duration_s": 35.9,
+    "v4_all_css_text_and_image_bounds_checked": true
+  },
+  "last_updated": "2026-10-12",
+  "recommended_readme_variant": "v4 CSS-styled landscape edit, 1200x720; at 800px display width, 480px high",
+  "wide_edit": {
+    "width": 1200,
+    "height": 720,
+    "duration_s": 35.9,
+    "segments": [
+      {
+        "stage": 0,
+        "src": "55",
+        "at": 0.5,
+        "hold": 3,
+        "crop": [
+          0,
+          250,
+          880,
+          830
+        ],
+        "key": "latte",
+        "output_start_s": 0.0,
+        "output_duration_s": 3.0
+      },
+      {
+        "bridge": 0,
+        "hold": 1.8,
+        "output_start_s": 3.0,
+        "output_duration_s": 1.8
+      },
+      {
+        "stage": 1,
+        "src": "55",
+        "start": 2,
+        "end": 7,
+        "speed": 5,
+        "crop": [
+          0,
+          270,
+          880,
+          1120
+        ],
+        "key": "f1ask",
+        "output_start_s": 4.8,
+        "output_duration_s": 1.0
+      },
+      {
+        "stage": 1,
+        "src": "55",
+        "start": 57.4,
+        "end": 62.4,
+        "speed": 2.5,
+        "crop": [
+          0,
+          310,
+          880,
+          1150
+        ],
+        "key": "f1reply",
+        "output_start_s": 5.8,
+        "output_duration_s": 2.0
+      },
+      {
+        "stage": 1,
+        "src": "55",
+        "at": 62,
+        "hold": 1.8,
+        "crop": [
+          0,
+          310,
+          880,
+          1150
+        ],
+        "key": "f1reply",
+        "output_start_s": 7.8,
+        "output_duration_s": 1.8
+      },
+      {
+        "stage": 1,
+        "src": "49",
+        "at": 15.2,
+        "hold": 1.8,
+        "crop": [
+          0,
+          250,
+          880,
+          430
+        ],
+        "key": "amazonask",
+        "output_start_s": 9.6,
+        "output_duration_s": 1.8
+      },
+      {
+        "stage": 1,
+        "src": "49",
+        "start": 69,
+        "end": 72,
+        "speed": 2,
+        "crop": [
+          0,
+          320,
+          880,
+          1180
+        ],
+        "key": "amazonreply",
+        "output_start_s": 11.4,
+        "output_duration_s": 1.5
+      },
+      {
+        "stage": 1,
+        "src": "49",
+        "at": 73,
+        "hold": 3,
+        "crop": [
+          0,
+          1120,
+          880,
+          1740
+        ],
+        "key": "amazonlimits",
+        "output_start_s": 12.9,
+        "output_duration_s": 3.0
+      },
+      {
+        "bridge": 1,
+        "hold": 1.8,
+        "output_start_s": 15.9,
+        "output_duration_s": 1.8
+      },
+      {
+        "stage": 2,
+        "src": "41",
+        "at": 0.5,
+        "hold": 1.5,
+        "crop": [
+          0,
+          250,
+          880,
+          440
+        ],
+        "key": "runningout",
+        "output_start_s": 17.7,
+        "output_duration_s": 1.5
+      },
+      {
+        "stage": 2,
+        "src": "41",
+        "at": 29.79,
+        "hold": 2.8,
+        "crop": [
+          0,
+          260,
+          880,
+          970
+        ],
+        "key": "context",
+        "output_start_s": 19.2,
+        "output_duration_s": 2.8
+      },
+      {
+        "stage": 2,
+        "src": "41",
+        "at": 59.59,
+        "hold": 0.9,
+        "crop": [
+          0,
+          250,
+          880,
+          420
+        ],
+        "key": "machine",
+        "output_start_s": 22.0,
+        "output_duration_s": 0.9
+      },
+      {
+        "stage": 2,
+        "src": "41",
+        "start": 100,
+        "end": 107,
+        "speed": 3.5,
+        "crop": [
+          0,
+          270,
+          880,
+          1110
+        ],
+        "key": "beans",
+        "output_start_s": 22.9,
+        "output_duration_s": 2.0
+      },
+      {
+        "stage": 2,
+        "src": "41",
+        "at": 112,
+        "hold": 2.6,
+        "crop": [
+          0,
+          490,
+          880,
+          1120
+        ],
+        "key": "memory",
+        "output_start_s": 24.9,
+        "output_duration_s": 2.6
+      },
+      {
+        "bridge": 2,
+        "hold": 1.8,
+        "output_start_s": 27.5,
+        "output_duration_s": 1.8
+      },
+      {
+        "stage": 3,
+        "src": "41",
+        "at": 132,
+        "hold": 1.8,
+        "crop": [
+          0,
+          250,
+          880,
+          430
+        ],
+        "key": "cartrequest",
+        "output_start_s": 29.3,
+        "output_duration_s": 1.8
+      },
+      {
+        "stage": 3,
+        "src": "31",
+        "at": 14.33,
+        "hold": 4.8,
+        "key": "cartconfirmed",
+        "output_start_s": 31.1,
+        "output_duration_s": 4.8,
+        "crops": [
+          [
+            22,
+            405,
+            828,
+            505
+          ],
+          [
+            22,
+            1155,
+            828,
+            1460
+          ]
+        ],
+        "separator": "ellipsis"
+      }
+    ],
+    "owner_correction": "Preserve F1/Amazon continuity, show the cart request and later authenticated cart confirmation, add bridges, reduce height, and adopt the existing site CSS design tokens.",
+    "cart_evidence": "Source 31 at 14.33s shows the cart item Jardin Espresso Blend 500 g, price 19,840 KRW, quantity 1. Owner confirms this is the post-login confirmation. Header and item are two labelled excerpts separated by an ellipsis. No backend trace or checkout validation is claimed."
+  },
+  "design": {
+    "tokens_source": "Existing site/assets/home.css (Still starter identity kit)",
+    "rendering": "Actual HTML/CSS through local browser; original source crops composited for GIF",
+    "font": "Figtree (SIL OFL), installed system CJK fonts",
+    "css_layout_checked_all_four_locales": true,
+    "blur_applied": false
+  },
+  "excluded_frames": [
+    "31: login form and first cart appearance at about 7.17 seconds omitted; later cart screen at 14.33 seconds retained"
+  ],
+  "v5_retime": {
+    "issue": "#1387",
+    "date": "2026-10-12",
+    "method": "retime.py rewrites GIF frame delays only; frames unchanged",
+    "factors": {
+      "hold": 2.0,
+      "bridge": 1.4,
+      "motion": 1.5
+    },
+    "note": "Segment times elsewhere in this manifest describe the v4 pace; the MP4 entries remain v4 outputs and are not published.",
+    "outputs": {
+      "demo-v5.en.gif": {
+        "from": "demo-v4.en.gif",
+        "frames": 359,
+        "duration_s": 65.31,
+        "bytes": 6751048,
+        "sha256": "467831817d334f882f2773858b52c3a8af83e209562d5a1fdf8c6a82401a5447"
+      },
+      "demo-v5.ko.gif": {
+        "from": "demo-v4.ko.gif",
+        "frames": 359,
+        "duration_s": 65.31,
+        "bytes": 6642509,
+        "sha256": "fbe917de8de47b5074f9cf7a56a0295f5386ed4b87b3183712162a757db27c34"
+      },
+      "demo-v5.ja.gif": {
+        "from": "demo-v4.ja.gif",
+        "frames": 359,
+        "duration_s": 65.31,
+        "bytes": 6674882,
+        "sha256": "87370f90860ed25578b86ed5196c558d2bcca2872518c623bccac225dc59232b"
+      },
+      "demo-v5.zh-CN.gif": {
+        "from": "demo-v4.zh-CN.gif",
+        "frames": 359,
+        "duration_s": 65.31,
+        "bytes": 6816917,
+        "sha256": "20bd7b86860579d73f5e85e2f0507404db9047450bd47a5e6b88029a4b6b8d7c"
+      }
+    }
+  }
+}

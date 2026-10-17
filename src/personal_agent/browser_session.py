@@ -1,0 +1,2633 @@
+"""Browser action capability inside an owner-logged-in profile (SEC-BROWSER-01 #656, SEC-BROWSER-02 #680).
+
+The owner logs in once, by hand, in a window of the embedded macOS system
+WebKit engine that AgentOS opens (no browser install, #680).  The model then
+opens, reads, finds, clicks and types on pages in that profile through five
+generic tools.  Two boundaries are enforced here, deterministically and
+independently of anything the model says (pilot posture, #653):
+
+* **Output mediation.**  Nothing leaves ``PageDriver.snapshot`` before
+  ``mediate_snapshot``: values of ``password`` inputs and of fields whose
+  ``autocomplete`` names a credential, one-time code or card field are
+  dropped; the existing saved-private-value matcher of public lookups
+  (``lookup_text_violations``, #605) and the CLI prompt secret pattern redact
+  page text; the raw DOM, cookies,
+  ``localStorage`` and storage state have no accessor at all.
+* **Payment guard.**  Typing into a card-number, CVC, card-expiry, one-time
+  code or password field, pressing a button of a form that contains such a
+  field, and pressing an element whose ``<label>`` forwards the press to a
+  control of such a form, need an owner approval bound to (Work, action, page
+  URL digest, target element) and verified at execution.  The model's
+  ``effect`` label can only add a requirement (``payment`` always needs
+  approval), never remove one.  Every step's approval is bound to the
+  target's own form or page state, the state of the form its label forwards
+  to, and the state of every payment form on the page, each with that form's
+  identity (position, method, action).  The worker also cancels, for a page's
+  whole life, any submit of such a form that no approval lets through,
+  whatever element, script, timer, callback or native ``submit`` triggered it
+  (#698, #700).  An approved step lets only its target's payment form through,
+  briefly past the step for that form's deferred submit.  A cancelled submit
+  is asked of the owner bound to that form and the digest of what it would
+  send (hidden amounts included); once exactly that is approved, the worker
+  releases the held submit (``release_submit``).
+
+Engine (#680): ``WebKitWorkerDriver`` drives ``personal_agent.browser_worker``,
+a subprocess that owns the Cocoa run loop and a ``WKWebView`` with an
+in-memory website data store.  Sign-in cookies live only in that memory and
+in the encrypted jar (``browser_jar``) whose key is in the macOS Keychain.
+The capability is macOS-only during the pilot; elsewhere, or without PyObjC,
+it is reported unavailable (``browser_unavailable_platform``) with no
+fallback engine.
+
+Reuse: Apple's WebKit through PyObjC (MIT) for the commodity browser
+mechanics; ``cryptography`` Fernet (as ``EncryptedCalendarSecretStore``) and
+the macOS Keychain for the jar; ``ToolError``, the Work budget, the lookup
+redactor and the exact-approval binding are the existing AgentOS symbols.  No
+site, provider or category is named anywhere in this module.
+"""
+from .messages import msg
+import functools
+import hashlib
+import hmac
+import unicodedata
+import importlib.util
+import ipaddress
+import itertools
+import json
+import logging
+import os
+import queue
+import shutil
+import re
+import secrets
+import subprocess
+import sys
+import threading
+import time
+import unicodedata
+from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit, unquote_plus
+
+from .agent_runtime import BROWSER_ACTIONS, ToolError, lookup_norm, lookup_text_violations, lookup_words
+from .bounded_execution import SECRET_PATTERN
+from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, KeychainKey, latest_token_expiry,
+                          store_account)
+from .browser_worker import PAYMENT_TOKENS, SECRET_TOKENS, destination_refusal
+
+#: The model's declared effect class of one action.
+EFFECTS = ('read', 'navigate', 'mutate', 'payment')
+#: Field ``autocomplete`` tokens whose values never reach the model or Evidence.
+GUARDED_AUTOCOMPLETE = frozenset(SECRET_TOKENS)   # one set, shared with the worker's submitted-state digest
+#: Fields where typing (and any button of the enclosing form) needs approval.
+PAYMENT_AUTOCOMPLETE = frozenset(PAYMENT_TOKENS)   # one set, shared with the worker's page-lifetime guard
+#: Actions the loop never memoises or deduplicates: the page is state.
+STATEFUL_ACTIONS = BROWSER_ACTIONS
+
+TEXT_LIMIT = 6000
+ELEMENT_LIMIT = 80
+#: #925: the most elements one snapshot numbers (the worker reads up to 300).  The page
+#: state lists the first ``ELEMENT_LIMIT``; ``browser_find`` and a click reach them all.
+READ_ELEMENT_LIMIT = 300
+#: #925: how much nearby text (e.g. its product card) a ``browser_find`` element match carries.
+NEAR_LIMIT = 120
+NAME_LIMIT = 120
+VALUE_LIMIT = 200
+FIND_LINES = 12
+STEPS_PER_WORK = 40
+ACTION_TIMEOUT_SECONDS = 20
+LOGIN_WINDOW_SECONDS = 1800
+REDACTED = '[가림]'
+
+CANCELLED_NOTE = '승인 없이 시도된 결제 양식 제출을 멈췄습니다'
+APPROVAL_TEXT = '결제 단계는 승인이 필요합니다. 소유자가 이 단계를 승인하면 이 요청을 한 번만 이어서 처리합니다.'
+LOGIN_REQUIRED_TEXT = '이 페이지는 로그인이 필요합니다. 설정의 브라우저 로그인 세션에서 "로그인 창 열기"로 먼저 로그인해 주세요. AgentOS는 비밀번호를 입력하지 않습니다.'
+STEP_BUDGET_TEXT = f'이 작업의 브라우저 단계 한도({STEPS_PER_WORK}회)에 도달해 더 실행하지 않았습니다.'
+TIMEOUT_TEXT = '브라우저 동작이 시간 안에 끝나지 않았습니다.'
+DESTINATION_CHECK_TIMEOUT_TEXT = msg('browser.destination_check_timeout')
+UNSUPPORTED_NAVIGATION_TEXT = msg('browser.unsupported_navigation')
+FAILED_TEXT = '브라우저 동작을 실행하지 못했습니다.'
+#: #932: the address's name has no DNS record (a typo or a guessed subdomain such as www.).
+HOST_NOT_FOUND_TEXT = ('이 주소의 도메인을 찾을 수 없습니다(DNS에 없는 이름). 오타나 없는 하위 도메인(예: www.)일 수 있으니, '
+                       '주소를 고치거나 검색으로 정확한 주소를 확인한 뒤 다시 여세요.')
+#: #942: the name exists but no site answers at that address (often a guessed domain).
+HOST_UNREACHABLE_TEXT = ('이 주소의 사이트에 연결할 수 없습니다(연결 거부·보안 연결 실패·시간 초과). 주소가 맞는지 확인하거나, '
+                         '로그인된 사이트 목록이나 검색으로 정확한 주소를 찾은 뒤 다시 여세요.')
+BUSY_TEXT = '브라우저 프로필을 다른 작업 또는 로그인 창이 사용하고 있어 지금은 실행하지 않았습니다.'
+NO_PAGE_TEXT = '열린 페이지가 없습니다. 먼저 browser_open으로 페이지를 여세요.'
+WORKER_DELETE_FAILED_TEXT = ('저장된 로그인 세션은 지웠지만 실행 중인 브라우저에서 지우지 못했습니다. 그 브라우저를 멈췄고 '
+                             '그 안의 내용은 저장하지 않습니다.')
+KEY_DELETE_FAILED_TEXT = ('로그인 세션은 삭제했지만 macOS 키체인의 암호화 키는 지우지 못했습니다. 키체인 접근 앱에서 '
+                          '"personal-agentos.browser-jar" 항목을 직접 삭제할 수 있습니다.')
+BLOCKED_TEXT = ('이 컴퓨터나 내부 네트워크(루프백·사설·링크 로컬·.local) 주소는 브라우저로 열지 않습니다. '
+                '공개 웹 주소만 열 수 있습니다.')
+UNAVAILABLE_TEXT = '이 작업 경로에는 브라우저 기능이 연결되어 있지 않습니다.'
+SUBMIT_REFUSED_TEXT = ('결제 양식일 수 있는 제출을 확인할 수 없어 멈췄습니다. 페이지를 다시 읽고 결제 버튼을 직접 눌러 '
+                       '승인을 요청하세요.')
+LOGIN_WINDOW_TEXT = ('로그인 창에서 직접 로그인한 뒤 창을 닫아 주세요. AgentOS는 입력 내용을 보지 않으며, 창을 닫으면 '
+                     '로그인 세션을 암호화해 저장합니다.')
+LIMITATION_TEXT = ('카드번호·CVC·일회용 코드 입력, 그 양식의 버튼, 한국어·영어·일본어·중국어의 흔한 결제·구매·주문 '
+                   '표현이 이름이나 글자에 있는 버튼과 링크는 승인 없이 실행하지 않습니다. 저장된 결제수단으로 결제하는 '
+                   '버튼이라도 그런 표현이 없으면(글자 없는 아이콘 버튼, “계속”, 다른 언어, 긴 링크 제목 속 단어 등) '
+                   '감지하지 못하며, 예약(“예약하기”)은 결제로 보지 않습니다.')
+
+
+# --- element classification (deterministic, site-independent) ---------------
+
+def autocomplete_field(value):
+    """The field-name token of an HTML ``autocomplete`` attribute.
+
+    The attribute is a token list (HTML Living Standard, "autofill detail
+    tokens"): an optional ``section-*`` token, an optional ``shipping`` or
+    ``billing`` token, an optional contact token (``home``/``work``/``mobile``/
+    ``fax``/``pager``), the field name, and an optional trailing ``webauthn``.
+    The field name is therefore the last token once ``webauthn`` is removed:
+    ``section-checkout billing cc-number`` is ``cc-number``.
+    """
+    tokens = str(value or '').strip().lower().split()
+    if tokens and tokens[-1] == 'webauthn':
+        tokens = tokens[:-1]
+    return tokens[-1] if tokens else ''
+
+
+def _autocomplete(element):
+    return autocomplete_field(element.get('autocomplete'))
+
+
+def guarded_field(element):
+    """A field whose value is session or credential material: never returned."""
+    return element.get('type') == 'password' or _autocomplete(element) in GUARDED_AUTOCOMPLETE
+
+
+def payment_field(element):
+    """A field typing into which needs the owner's per-step approval."""
+    return element.get('type') == 'password' or _autocomplete(element) in PAYMENT_AUTOCOMPLETE
+
+
+def button_like(element):
+    return element.get('role') == 'button' or element.get('tag') == 'button'
+
+
+#: #758: language-level signals that pressing a control commits a purchase or
+#: a payment.  A stored payment method (one-click checkout) or a card field hosted in
+#: another origin's frame leaves no card field on the page and the charge may be a
+#: ``fetch``, so the press itself needs the owner's approval.  Deliberately
+#: over-inclusive (a false match only asks the owner); no site, provider or task is
+#: named.  ``COMMIT_PHRASES`` match anywhere; ``COMMIT_VERBS`` (a bare verb, which
+#: article and search-result titles also carry) only in a short name or on a control
+#: that is not a link.  Nouns naming a history, method or policy page are left out.
+COMMIT_PHRASES = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"\bplace\s+(?:your\s+|the\s+|an\s+)?order\b",
+    r"\b(?:order|buy|pay|upgrade|subscribe)\s+now\b",
+    r"\b(?:confirm|complete|submit|finish)\s+(?:your\s+|the\s+)?(?:order|payment|purchase|checkout|subscription)\b",
+    r"\bstart\s+(?:your\s+|a\s+|the\s+)?(?:free\s+)?(?:trial|subscription|membership)\b",
+    r"\bexpress\s+checkout\b",
+    r"\b(?:send|transfer)\s+(?:the\s+)?(?:money|funds|[$€£¥₩]\s*\d)",
+    r"\b(?:pay|buy)\b\s*[$€£¥₩]?\s*\d",
+    r"\btop\s*-?\s*up\b",
+    r"(?:결제|구매|주문|구독|후원|충전|송금|이체)\s*(?:하기|진행|완료|확정|신청|시작)",
+    r"(?:바로|즉시|지금)\s*(?:결제|구매|주문)|간편\s*결제|정기\s*결제",
+    r"\d+\s*개\s*(?:구매|주문)",
+    r"\d[\d,.]*\s*원\s*(?:결제|구매|주문)",
+    r"注文(?:する|を確定|確定)|購入(?:する|手続き|確定)",
+    r"立即(?:购买|購買|订购|訂購|支付|付款)|提交(?:订单|訂單)|确认(?:支付|付款)|確認(?:支付|付款)",
+))
+COMMIT_VERBS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"\b(?:pay|buy|purchase)\b(?!\s+(?:history|methods?|options?|policy|details|guide)\b)",
+    r"\b(?:subscribe|donate)\b",
+    r"^\s*(?:order|renew)\b(?!\s+(?:history|status|details|tracking|summary|number|info)\b)",
+    r"購入(?!履歴|方法)|支払(?!い?方法)|決済(?!方法)|寄付|送金|チャージ",
+    r"支付(?!方式|方法|宝|寶)|付款(?!方式|方法)|购买(?!方式|方法|记录)|購買(?!方式|方法|紀錄)|下单|下單|订购|訂購|充值|转账|轉帳|捐款|订阅|訂閱",
+))
+#: #899 (owner decision 2026-09-30: judge a link by where it goes): a label *ending*
+#: in a commit noun ("구매", "결제 ₩12,000").  On a control that is not a navigating
+#: link this counts as before.  A navigating link - an http(s) address with no inline
+#: click handler (``nav_link``, measured by the worker) - only opens a page, so there
+#: it counts only when the noun is the whole label: "자주구매" or "재구매" is the name
+#: of a list page.  A ``#``/``javascript:``/``onclick`` link is judged as a button.
+COMMIT_NOUN_END = re.compile(r"(?:결제|구매|주문|송금|이체)\s*(?:$|[\d(₩])")
+COMMIT_NOUN_ALONE = re.compile(r"^(?:결제|구매|주문|송금|이체)\s*(?:$|[\d(₩])")
+#: A commit noun followed by a price ("세제 구매 ₩12,000") names a purchase wherever it
+#: stands, so it counts on a navigating link too (#905 review).
+COMMIT_NOUN_PRICE = re.compile(r"(?:결제|구매|주문|송금|이체)\s*[\d(₩]")
+#: A name at most this long is a control's label, not an article or result title.
+COMMIT_SHORT = 24
+#: A pressable ancestor's text longer than this is a content wrapper, not a control (#758).
+ANCESTOR_TEXT_LIMIT = 200
+def _commit_text(text):
+    """NFKC, without format characters (zero-width and the like a page could hide inside a word)."""
+    text = unicodedata.normalize('NFKC', str(text or ''))
+    return ' '.join(''.join(char for char in text if unicodedata.category(char) != 'Cf').split())
+
+
+def step_posted(message):
+    """``{'posted': bool}`` when the worker reported whether the step started a non-GET form submission (#899)."""
+    value = message.get('posted') if isinstance(message, dict) else None
+    return {'posted': value} if isinstance(value, bool) else {}
+
+
+def observe_step(page, answer, approved):
+    """Add what AgentOS observed of one click or typing step to its result (#899).
+
+    ``observed_step`` exists only when the driver reported ``posted``: whether
+    the page started a non-GET form submission during the step, and whether the
+    step spent an owner approval (a guarded payment or commit control).  A
+    ``fetch``/XHR request is not observable here (#758), so this narrows, never
+    proves, what the step changed; re-delegation also requires the call's own
+    declared ``read``/``navigate`` (``agent_runtime.page_load_only``).
+    """
+    if isinstance(answer, dict) and isinstance(answer.get('posted'), bool):
+        page['observed_step'] = {'posted': answer['posted'], 'approved': bool(approved)}
+    return page
+
+
+def commit_name(name, link=False):
+    """The text carries a purchase or payment commitment signal (#758).
+
+    NFKC-normalised with format characters removed, so full-width letters or a
+    zero-width character inside a word do not hide it.  On a link, a bare verb
+    counts only in a short name (a link titled with a verb is usually an article).
+    """
+    text = _commit_text(name)
+    if not text:
+        return False
+    if any(pattern.search(text) for pattern in COMMIT_PHRASES):
+        return True
+    if (COMMIT_NOUN_ALONE if link else COMMIT_NOUN_END).search(text) or COMMIT_NOUN_PRICE.search(text):
+        return True
+    return (not link or len(text) <= COMMIT_SHORT) and any(pattern.search(text) for pattern in COMMIT_VERBS)
+
+
+#: #936: a site's own confirmation question that a purchase, payment or transfer hangs on.
+#: Deliberately over-inclusive (a false match only leaves the question unconfirmed and says so).
+COMMIT_QUESTION = re.compile(
+    r"결제|구매|주문|송금|이체|충전|구독|후원|\b(?:pay(?:ment)?|purchase|checkout|order|subscri\w*|donat\w*|transfer)\b"
+    r"|注文|購入|支払|決済|送金|支付|付款|购买|購買|下单|下單|订购|訂購|转账|轉帳", re.IGNORECASE)
+
+
+def commit_question(text):
+    """A confirmation question that may commit a purchase or payment (#936)."""
+    text = _commit_text(text)
+    return bool(text) and (commit_name(text) or bool(COMMIT_QUESTION.search(text)))
+
+
+#: #936: what a page's own alert/confirm/prompt during a step said, and how it was answered.
+DIALOG_KINDS = ('alert', 'confirm', 'prompt')
+DIALOG_OUTCOMES = {
+    'accepted': '확인을 눌렀습니다',
+    'shown': '알림을 닫았습니다',
+    'declined': '취소했습니다',
+    'declined_payment': '결제·주문 확인이라 주인 승인 없이 확인하지 않았습니다',
+    'dismissed': '입력 창을 닫았습니다',
+    'owner': '이 기기에서 주인이 답했습니다',
+}
+DIALOG_TEXT_LIMIT = 200
+
+
+def page_shows_payment(snapshot):
+    """#937 review: the page shows a payment field, so a confirmation there may commit a charge."""
+    return any(row.get('payment') for row in snapshot.get('_elements') or ())
+
+
+def step_dialogs(message):
+    """The bounded ``[{kind, message, outcome}]`` a worker step reported (#936)."""
+    rows = message.get('dialogs') if isinstance(message, dict) else None
+    out = []
+    for row in (rows if isinstance(rows, list) else [])[:5]:
+        if not isinstance(row, dict) or row.get('kind') not in DIALOG_KINDS or row.get('outcome') not in DIALOG_OUTCOMES:
+            continue
+        out.append({'kind': row['kind'], 'message': str(row.get('message') or '')[:DIALOG_TEXT_LIMIT],
+                    'outcome': row['outcome']})
+    return out
+
+
+def _text_parts(value):
+    """A worker ``name | own text`` pair as its separate texts."""
+    return [part for part in str(value or '').split(' | ') if part.strip()]
+
+
+def commit_control(element):
+    """Pressing it can commit a payment (#758).
+
+    A pressable control (anything but a field that takes a value) whose accessible
+    name or own text (content, descendant image alt/svg title/aria-label, button
+    value) carries a commitment signal; or one whose ``<label>`` forwards the press
+    to such a control; or one inside such a control (a press bubbles to it).
+    """
+    return bool(_commit_match(element))
+
+
+def _is_link(element):
+    """A link that goes somewhere; a styled ``href="#"``/``javascript:`` link is a button (#758)."""
+    # #899 review P3-1: without the worker's measurement a link is judged as a button.
+    return bool(element.get('nav_link'))
+
+
+def _commit_match(element):
+    """The text that makes a press a commitment (#758), or ''.
+
+    Its own name and text (a bare verb on a navigating link only in a short name),
+    the control its label forwards to, and its pressable ancestors whose text is
+    control-sized (a longer one is a content wrapper).
+    """
+    if element.get('pressable', True):
+        link = _is_link(element)
+        for text in (element.get('name'), *_text_parts(element.get('own_text'))):
+            if commit_name(text, link):
+                return _commit_text(text)
+    for text in _text_parts(element.get('label_name')):
+        if commit_name(text):
+            return _commit_text(text)
+    for ancestor in str(element.get('ancestor_text') or '').split(' || '):
+        # A pressable ancestor with a control-sized text is judged like a button; a long one
+        # (an app root or content wrapper with a click handler) is content, not a control.
+        parts = _text_parts(ancestor)
+        if any(len(_commit_text(text)) > ANCESTOR_TEXT_LIMIT for text in parts):
+            continue
+        for text in parts:
+            if commit_name(text):
+                return _commit_text(text)
+    return ''
+
+
+def commit_detail(element):
+    """The text that made a press a commitment and what is around it, for the owner's prompt (#758)."""
+    return _commit_match(element)[:60], _commit_text(element.get('context'))[:160]
+
+
+def payment_forms(elements):
+    """Ids of the forms that contain a payment/credential field."""
+    return {element.get('form') for element in elements if element.get('form') is not None and payment_field(element)}
+
+
+def cancelled_note(record):
+    """The owner-facing note naming the form whose submit was cancelled (its page, no query)."""
+    if not isinstance(record, dict):
+        return ''
+    where, _ = mediate_url(page_reference(record.get('action')))
+    return f' · {CANCELLED_NOTE}: {where[:200]}' if where else f' · {CANCELLED_NOTE}'
+
+
+def forwards_to_payment_form(element, forms):
+    """Its ``<label>`` forwards a press to a control of one of ``forms`` (#698).
+
+    ``label_form`` is the form of the labeled control of the ``<label>`` the
+    element is, or sits inside, when that control is another element: the
+    ``for`` target, else the first labelable descendant (HTML's
+    ``label.control``).  A click there activates that control, so a span inside
+    ``<label for=pay>`` presses the pay button even outside the pay form.
+    """
+    return element.get('label_form') is not None and element['label_form'] in forms
+
+
+def guarded_submit(element, elements):
+    """A button of a form that contains a payment/credential field, or an element forwarding to one."""
+    forms = payment_forms(elements)
+    return ((button_like(element) and element.get('form') is not None and element['form'] in forms)
+            or forwards_to_payment_form(element, forms))
+
+
+USERNAME_TYPES = frozenset({'text', 'email', 'tel', ''})
+
+
+def login_form_present(elements, redirected=False):
+    """Generic login detection: a password field asking for the current password.
+
+    True when a ``password`` input (not ``new-password``) sits in a form that
+    also has a username-like text/email/tel field, or when the navigation was
+    redirected to a page with such a password field.  A change-password form
+    or a lone password field on an account page is not a login wall.  No
+    site, path or wording is consulted.
+    """
+    for element in elements:
+        if element.get('type') != 'password' or _autocomplete(element) == 'new-password':
+            continue
+        if redirected:
+            return True
+        form = element.get('form')
+        partners = [other for other in elements if other is not element and other.get('form') == form
+                    and other.get('tag') == 'input' and str(other.get('type') or '').lower() in USERNAME_TYPES]
+        if form is not None and partners:
+            return True
+        # #949: a page may leave both fields outside any <form> (a script submits them).  Only
+        # the plain pair counts: one password field on the page and one formless username-like
+        # field, so an account page with a search box and password changes is not a login wall.
+        if form is None and len(partners) == 1 and sum(1 for other in elements if other.get('type') == 'password') == 1:
+            return True
+    return False
+
+
+def target_key(element):
+    """The stable descriptor an approval is bound to (not the list number, which shifts)."""
+    return '|'.join(str(element.get(key) or '') for key in ('role', 'name', 'tag', 'type', 'autocomplete', 'form'))
+
+
+def digest(text):
+    return hashlib.sha256(str(text or '').encode()).hexdigest()
+
+
+def _host(parts):
+    """``host[:port]`` of a split URL, without any userinfo."""
+    try:
+        host, port = parts.hostname or '', parts.port
+    except ValueError:
+        host, port = parts.hostname or '', None
+    if ':' in host:
+        host = f'[{host}]'
+    return f'{host}:{port}' if port else host
+
+
+def page_reference(url):
+    """A URL without userinfo, query and fragment: what Evidence and approvals may carry."""
+    try:
+        parts = urlsplit(str(url or ''))
+    except ValueError:
+        return ''
+    return urlunsplit((parts.scheme, _host(parts), parts.path, '', ''))
+
+
+#: Binding fields, in order.  ``argument_digest`` is the normalized step
+#: argument (the typed text, the clicked target, the opened URL) and
+#: ``state_digest`` the relevant current page state, so an approval never
+#: covers different text or a changed form (price, quantity, terms).
+BINDING_FIELDS = ('work_id', 'action', 'page_digest', 'target_digest', 'argument_digest', 'state_digest')
+
+
+def step_binding(work_id, action, url, element_key, argument='', state=''):
+    """What one approval is bound to: Work, action, page, target, arguments and page state."""
+    return {'work_id': work_id, 'action': action, 'page_digest': digest(page_reference(url)),
+            'target_digest': digest(element_key), 'argument_digest': digest(argument), 'state_digest': digest(state)}
+
+
+def binding_digest(binding):
+    return digest('|'.join(str(binding.get(key) or '') for key in BINDING_FIELDS))
+
+
+def keyed_step_binding(store, binding):
+    """Installation-keyed approval/effect identity; never persist guessable hashes.
+
+    Shared with the existing browser and connector approval records. Keep the
+    key and byte format stable so existing one-use approvals remain valid.
+    """
+    secret = store.secret('browser_step_secret', create=lambda: secrets.token_hex(32)).encode()
+    keyed = lambda value: hmac.new(secret, str(value).encode(), hashlib.sha256).hexdigest()
+    return {'digest': keyed(binding_digest(binding)), 'page_digest': keyed('page|' + binding['page_digest']),
+            'target_digest': keyed('target|' + binding['target_digest']),
+            'step_digest': keyed('step|' + binding['argument_digest'] + '|' + binding['state_digest'])}
+
+
+def action_input_safe(store, values):
+    """Existing connector credential-structure guard, shared by API approvals.
+
+    Inspect names, nested JSON/form input, known secrets and credential shapes
+    before constructing approval cards. No masked value is silently approved.
+    """
+    from .current_context import redact_known_secrets
+    from .context_inbox import SENSITIVE
+    def sensitive_name(value):
+        name=re.sub(r'[^a-z0-9가-힣]','',str(value).lower())
+        return bool(any(part in name for part in
+            ('password','secret','privatekey','passphrase','passwd','credential','authorization','cookie','securitycode','비밀번호','인증번호'))
+            or name.endswith(('apikey','accesstoken','refreshtoken','sessiontoken','authtoken','bearertoken','idtoken'))
+            or name in ('token','auth','cvv','cvc','csc','pin','pincode','otp','onetimecode','ccnumber','ccnum','cardnumber','cccsc','토큰','키'))
+    pending=[values]
+    while pending:
+        value=pending.pop()
+        if isinstance(value,dict):
+            if any(sensitive_name(key) for key in value):return False
+            fields=[(str(key).casefold(),item) for key,item in value.items()]
+            if any(key=='value' for key,_ in fields) and any(sensitive_name(item) for key,item in fields if key in ('name','key','field')):return False
+            pending.extend(value.values())
+        elif isinstance(value,list):pending.extend(value)
+        elif isinstance(value,str):
+            if SENSITIVE.search(value) or redact_known_secrets(store,value)!=value:return False
+            if '%' in value:
+                decoded=unquote_plus(value)
+                if decoded!=value:pending.append(decoded)
+            if any(sensitive_name(match.group(1)) for match in re.finditer(r'([A-Za-z0-9가-힣_-]+)["\']?\s*[:=]',value)):return False
+            if value.lstrip().startswith(('{','[')):
+                try:pending.append(json.loads(value))
+                except (ValueError,RecursionError):pass
+    try:encoded=json.dumps(values,ensure_ascii=False,allow_nan=False)
+    except (TypeError,ValueError,RecursionError):return False
+    return not SENSITIVE.search(encoded) and redact_known_secrets(store,encoded)==encoded
+
+# --- output mediation --------------------------------------------------------
+
+def redact_private_values(text, excluded=()):
+    """Redact tokens of ``text`` that match a saved or withheld private value.
+
+    The matcher is the existing #605 lookup check (``lookup_text_violations``,
+    kept by #654): whole values, contained spans, jamo keys and digit runs.  It is applied
+    per line, so its rule "a matching digit run withholds every digit-bearing
+    token" stays on the line that carries the value instead of blanking every
+    number on the page.  Returns ``(text, redacted_count)``.  A page with
+    nothing to compare against is returned unchanged.
+    """
+    text = str(text or '')
+    excluded = [value for value in excluded if isinstance(value, str) and value.strip()]
+    if not text or not excluded:
+        return text, 0
+    lines = []
+    removed = 0
+    for line in text.split('\n'):
+        bad, digits_joined = lookup_text_violations(line, excluded) if line.strip() else (set(), False)
+        if not bad and not digits_joined:
+            lines.append(line)
+            continue
+        out = []
+        for token in re.split(r'(\s+)', line):
+            if not token or token.isspace():
+                out.append(token)
+                continue
+            if any(word in bad for word in lookup_words(token)) or (digits_joined and re.search(r'\d', lookup_norm(token))):
+                out.append(REDACTED)
+                removed += 1
+            else:
+                out.append(token)
+        lines.append(''.join(out))
+    return '\n'.join(lines), removed
+
+
+def scrub(text, excluded=()):
+    """Redact saved private values, then credential-shaped tokens (the CLI prompt pattern)."""
+    text, removed = redact_private_values(text, excluded)
+    text, count = SECRET_PATTERN.subn(REDACTED, text)
+    return text, removed + count
+
+
+def mediate_url(url, excluded=()):
+    """A model-visible URL: no userinfo, query or fragment; each path segment scrubbed.
+
+    Returns ``(url, redacted_count)``.  A path segment that carries a saved
+    private value or a credential-shaped token is replaced as a whole.
+    """
+    try:
+        parts = urlsplit(str(url or ''))
+    except ValueError:
+        return '', 0
+    removed = 0
+    host, count = scrub(_host(parts), excluded)
+    removed += count
+    segments = []
+    for segment in parts.path.split('/'):
+        cleaned, count = scrub(segment, excluded)
+        if count:
+            removed += count
+            cleaned = REDACTED
+        segments.append(cleaned)
+    return urlunsplit((parts.scheme, host, '/'.join(segments), '', '')), removed
+
+
+def mediate_snapshot(raw, excluded=(), requested_url=None):
+    """The only page state that may leave the driver.
+
+    ``raw`` is a ``PageDriver.snapshot`` result.  Guarded field values are
+    dropped, text and names are bounded and redacted, and the model sees a
+    numbered element list ``{n, role, name, href?, value?}``.  The internal
+    descriptor of each element stays in ``_elements`` for target resolution
+    and the payment guard; it is never returned to the model.
+    """
+    raw = raw if isinstance(raw, dict) else {}
+    elements = [element for element in (raw.get('elements') or []) if isinstance(element, dict)]
+    text, redacted = scrub(str(raw.get('text') or '')[:TEXT_LIMIT * 2], excluded)
+    text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    truncated = len(text) > TEXT_LIMIT
+    text = text[:TEXT_LIMIT]
+    redirected = bool(requested_url) and page_reference(requested_url) != page_reference(raw.get('url'))
+    login_required = login_form_present(elements, redirected)
+    visible = []
+    internal = []
+    for element in elements:
+        if element.get('disabled'):
+            continue
+        name, count = scrub(str(element.get('name') or '')[:NAME_LIMIT], excluded)
+        redacted += count
+        row = {'n': len(visible) + 1, 'role': str(element.get('role') or element.get('tag') or 'element'), 'name': name}
+        if element.get('href'):
+            href, count = mediate_url(element['href'], excluded)
+            redacted += count
+            row['href'] = href[:400]
+        if not guarded_field(element) and isinstance(element.get('value'), str) and element['value']:
+            value, count = scrub(element['value'][:VALUE_LIMIT], excluded)
+            redacted += count
+            row['value'] = value
+        near, count = scrub(' '.join(str(element.get('context') or '').split())[:NEAR_LIMIT], excluded)
+        redacted += count
+        if near:
+            row['_near'] = near
+        visible.append(row)
+        internal.append({**{key: element.get(key) for key in ('index', 'role', 'name', 'tag', 'type', 'autocomplete', 'form',
+                                                             'label_form')},
+                         'n': row['n'], 'guarded': guarded_field(element), 'payment': payment_field(element),
+                         'commit': commit_control(element), 'detail': commit_detail(element)})
+        if len(visible) >= READ_ELEMENT_LIMIT:
+            break
+    forms = payment_forms(elements)
+    for row in internal:
+        row['submit_guarded'] = guarded_submit(row, elements)
+        row['forwards_payment'] = forwards_to_payment_form(row, forms)
+    url, count = mediate_url(raw.get('url'), excluded)
+    redacted += count
+    title, count = scrub(str(raw.get('title') or '')[:200], excluded)
+    redacted += count
+    # #925: the page state lists the first ELEMENT_LIMIT rows; browser_find and a click
+    # reach every numbered row (a content-heavy page fills the first ones with menus).
+    listed = [{key: value for key, value in row.items() if not key.startswith('_')} for row in visible[:ELEMENT_LIMIT]]
+    snapshot = {'url': url, 'title': title, 'text': text,
+                'elements': listed, 'login_required': login_required, 'truncated': truncated,
+                'redacted_values': redacted}
+    if len(visible) > ELEMENT_LIMIT:
+        snapshot['more_elements'] = len(visible) - ELEMENT_LIMIT
+    if len(elements) >= READ_ELEMENT_LIMIT or len(visible) >= READ_ELEMENT_LIMIT:
+        # #926 review: the worker reads at most 300 controls; later ones are not numbered.
+        snapshot['elements_capped'] = True
+    snapshot['_rows'] = visible
+    snapshot['_elements'] = internal
+    # #934: where each form posts, so a step's destination host is known before it runs.
+    snapshot['_form_actions'] = {form['id']: form.get('action') for form in raw.get('forms') or []
+                                 if isinstance(form, dict) and 'id' in form}
+    # Internal only (never returned): the unmediated page reference the
+    # approval binds to, and the page state a guarded step is bound to.
+    snapshot['_page'] = page_reference(raw.get('url'))
+    states, identities = page_states(raw, elements, text, excluded)
+    snapshot['_states'] = states
+    # Every payment form's identity and state (#698): part of every step's binding.
+    snapshot['_payment_states'] = {identities[form_id]: states[form_id]
+                                   for form_id in payment_forms(elements) if form_id in identities}
+    return snapshot
+
+
+def form_identity(form):
+    """Which form: its position among the document's forms, its method and action page (no query)."""
+    form = form if isinstance(form, dict) else {}
+    return f"form {form.get('dom', '')}|{str(form.get('method') or '').lower()}|{page_reference(form.get('action'))}"
+
+
+def page_states(raw, elements, text, excluded=()):
+    """``({form id: state, None: page state}, {form id: identity})`` approvals are bound to.
+
+    A form's state is its identity (``form_identity``), its mediated visible
+    text (price, quantity, terms) and the mediated values of its non-guarded
+    fields; guarded values (card, code, password) are never part of it.  A
+    target outside any form is bound to the mediated page text.
+    """
+    forms, identities = {}, {}
+    for form in raw.get('forms') or []:
+        if isinstance(form, dict) and form.get('id') is not None:
+            forms[form['id']] = scrub(str(form.get('text') or '')[:TEXT_LIMIT], excluded)[0]
+            identities[form['id']] = form_identity(form)
+    states = {None: text}
+    referenced = {element.get(key) for element in elements for key in ('form', 'label_form')}
+    for form_id in referenced - {None}:
+        identities.setdefault(form_id, f'form ?{form_id}')
+        values = sorted((target_key(element), scrub(str(element.get('value') or ''), excluded)[0])
+                        for element in elements if element.get('form') == form_id and not guarded_field(element))
+        states[form_id] = (identities[form_id] + '\n' + forms.get(form_id, '') + '\n'
+                           + '\n'.join(f'{key}={value}' for key, value in values))
+    return states, identities
+
+
+def public_view(snapshot):
+    """The model-facing dict: everything but the internal element descriptors."""
+    return {key: value for key, value in snapshot.items() if not key.startswith('_')}
+
+
+#: #736: how many of the current page's elements a ``target_not_found`` names, and how long each name may be.
+TARGET_HINT_ELEMENTS = 15
+TARGET_HINT_NAME = 40
+
+
+def element_hint(snapshot):
+    """The current page's first elements as ``number name`` (mediated names, bounded), or ''.
+
+    #736: returned with ``target_not_found`` so the model can pick a real
+    element in one step instead of reading the page again.
+    """
+    rows = [row for row in snapshot.get('elements') or [] if isinstance(row, dict) and row.get('n') is not None]
+    parts = []
+    for row in rows[:TARGET_HINT_ELEMENTS]:
+        name = ' '.join(str(row.get('name') or row.get('role') or '').split())[:TARGET_HINT_NAME]
+        parts.append(f"{row['n']} {name}".strip())
+    if not parts:
+        return ''
+    more = f' 외 {len(rows) - len(parts)}개' if len(rows) > len(parts) else ''
+    return ' 현재 페이지의 요소: ' + ' · '.join(parts) + more + '.'
+
+
+def resolve_target(snapshot, target):
+    """The internal element ``target`` names: its list number or a visible-name match."""
+    rows = snapshot.get('_elements') or []
+    wanted = ' '.join(str(target or '').split())
+    if not wanted:
+        raise ToolError('target을 입력하세요: 요소 번호 또는 보이는 이름입니다.' + element_hint(snapshot), 'target_not_found')
+    if wanted.isdigit():
+        number = int(wanted)
+        for row in rows:
+            if row['n'] == number:
+                return row
+        raise ToolError(f'요소 번호 {number}은(는) 현재 페이지 목록에 없습니다.' + element_hint(snapshot), 'target_not_found')
+    key = wanted.casefold()
+    exact = [row for row in rows if ' '.join(str(row.get('name') or '').split()).casefold() == key]
+    if len(exact) == 1:
+        return exact[0]
+    partial = exact or [row for row in rows if key in ' '.join(str(row.get('name') or '').split()).casefold()]
+    if len(partial) == 1:
+        return partial[0]
+    if not partial:
+        raise ToolError('일치하는 요소가 없습니다. 요소 목록에 있는 번호나 이름을 사용하세요.' + element_hint(snapshot),
+                        'target_not_found')
+    raise ToolError('여러 요소가 일치합니다: ' + ', '.join(f"{row['n']}" for row in partial[:8]) + '. 요소 번호로 지정하세요.',
+                    'ambiguous_target')
+
+
+def find_in_snapshot(snapshot, text):
+    """Visible-text lines and elements containing ``text`` (case-insensitive)."""
+    wanted = ' '.join(str(text or '').split()).casefold()
+    if not wanted:
+        raise ValueError('찾을 텍스트를 입력하세요.')
+    lines = [line.strip() for line in str(snapshot.get('text') or '').splitlines() if wanted in line.casefold()]
+    # #925: every numbered element, not only the listed ones; each match names its nearby text.
+    rows = snapshot.get('_rows') or snapshot.get('elements') or []
+    elements = []
+    for row in rows:
+        if wanted in str(row.get('name') or '').casefold() or wanted in str(row.get('_near') or '').casefold():
+            match = {key: value for key, value in row.items() if not key.startswith('_')}
+            if row.get('_near'):
+                match['near'] = row['_near']
+            elements.append(match)
+    return {'url': snapshot.get('url'), 'query': text, 'lines': lines[:FIND_LINES], 'elements': elements[:FIND_LINES],
+            'found': bool(lines or elements)}
+
+
+# --- the session one Work drives ---------------------------------------------
+
+class NoApprovals:
+    """No owner approval surface: every guarded step is refused."""
+
+    def consume(self, binding):
+        return False
+
+    def request(self, binding, description):
+        return None
+
+
+class BrowserSession:
+    """One Work's page state over an injectable ``PageDriver``.
+
+    ``driver_factory`` returns the driver on first use (the engine is started
+    only when a browser tool actually runs); ``budget`` is the Work's shared
+    ``WorkBudget``; ``excluded`` returns the private values to redact;
+    ``approvals`` has ``consume(binding)`` and ``request(binding, text)``.
+    """
+
+    def __init__(self, driver_factory, *, work_id, budget=None, excluded=None, approvals=None,
+                 steps=STEPS_PER_WORK, action_seconds=ACTION_TIMEOUT_SECONDS, allowed_origins_for_tests=()):
+        self._factory = driver_factory
+        # Test-only exact ``host:port`` allowance for a local fixture site; only
+        # a test constructor sets it (never config or environment).
+        self._allowed_origins = frozenset(allowed_origins_for_tests)
+        self.driver = None
+        self.work_id = work_id
+        self.budget = budget
+        self.excluded = excluded
+        self.approvals = approvals or NoApprovals()
+        self.steps, self.steps_used = steps, 0
+        self.action_seconds = action_seconds
+        self.last = None
+        self._navigation_error = None
+        # The description of the last click/type sent to the current page: the
+        # owner reads it with a payment-form submit cancelled after it answered
+        # (#698).  Cleared by browser_open and a navigation (#700).
+        self._last_input = None
+        self._refused_pending = False   # a between-steps refused form post not yet told (#758)
+        # #934 (review P2-1): once this Work landed on a site whose sign-in was received from the
+        # owner, the reason it may not approve anything; it then holds for the rest of the Work.
+        self._refusal = None
+
+    # -- plumbing --
+    def _driver(self):
+        if self.driver is None:
+            try:
+                self.driver = self._factory()
+            except ToolError:
+                raise
+            except Exception as exc:
+                raise ToolError(FAILED_TEXT, 'browser_failed') from exc
+            if self.driver is None:
+                raise ToolError(UNAVAILABLE_TEXT, 'needs_setup', requires='browser-profile')
+        return self.driver
+
+    def _timeout(self):
+        seconds = self.action_seconds
+        if self.budget is not None:
+            try:
+                seconds = min(seconds, self.budget.remaining())
+            except Exception:
+                pass
+        return max(1.0, float(seconds))
+
+    def _spend_step(self):
+        if self.budget is not None:
+            self.budget.check()
+        if self.steps_used >= self.steps:
+            raise ToolError(STEP_BUDGET_TEXT, 'browser_step_budget')
+        self.steps_used += 1
+
+    def _call(self, operation, *args):
+        try:
+            return operation(*args, self._timeout())
+        except ToolError:
+            raise
+        except TimeoutError as exc:
+            error = ToolError(TIMEOUT_TEXT, 'browser_timeout')
+            if isinstance(getattr(exc, 'posted', None), bool):
+                error.posted = exc.posted   # #1496: the click/type step's observation, completed by ``_observed``
+            raise error from exc
+        except Exception as exc:
+            raise ToolError(FAILED_TEXT, 'browser_failed') from exc
+
+    @staticmethod
+    def _observed(exc, approved):
+        """#1496: a click or typing step that timed out after the worker observed it carries ``observed_step``.
+
+        The same observation a finished step's result carries (``observe_step``): whether the page
+        started a non-GET form submission, and whether the step spent an owner approval.
+        """
+        if isinstance(exc, ToolError) and exc.code == 'browser_timeout' and isinstance(getattr(exc, 'posted', None), bool):
+            exc.observed_step = {'posted': exc.posted, 'approved': bool(approved)}
+        return exc
+
+    def _excluded(self):
+        if self.excluded is None:
+            return ()
+        try:
+            return list(self.excluded())
+        except Exception:
+            return ()
+
+    def _snapshot(self, requested_url=None):
+        excluded = self._excluded()
+        raw = self._call(lambda timeout: self._driver().snapshot())
+        if self._navigation_error and urlsplit(str((raw or {}).get('url') or '')).scheme not in ('http', 'https'):
+            self.last = None
+            raise ToolError(NO_PAGE_TEXT, 'no_page')
+        self.last = mediate_snapshot(raw, excluded, requested_url)
+        self._note_refusal((landed_host(self.last.get('url')),))
+        if isinstance(raw, dict) and raw.get('refused_submit'):
+            # #758: a form post the guard refused between steps, with nothing to hold;
+            # the next result the model sees says so (``run``).
+            self._refused_pending = True
+        cancelled = raw.get('cancelled_submit') if isinstance(raw, dict) else None
+        if cancelled:
+            # A payment-form submit the worker cancelled after a step answered (a
+            # timer, an async callback).  Released only when the owner approved
+            # exactly it; the page it led to is then read instead.
+            self._cancelled_submit(cancelled, self._last_input or '결제 양식 제출')
+            self._last_input = None
+            self._settle()
+            return self._snapshot(requested_url)
+        return self.last
+
+    def _submit_binding(self, record):
+        """What the approval of a cancelled payment-form submit is bound to (#700).
+
+        That form (position, method, action page) on its page, and the digest
+        of what its submit would send (every submitted control's name and
+        value, hidden amounts included, card/code/password values excluded,
+        and the form's visible text), read when the worker cancelled it.
+        """
+        page = record.get('page') or (self.last or {}).get('_page')
+        return step_binding(self.work_id, 'browser_submit', page, form_identity(record), '', str(record.get('state') or ''))
+
+    def _cancelled_submit(self, record, description, depth=0):
+        """A payment-form submit the worker cancelled and holds (#698, #700).
+
+        When the owner already approved exactly that form in that state, the
+        worker releases the held submit and the step goes on (the answer is
+        the release's); otherwise the owner is asked, bound to that form's
+        submitted state rather than to the step that caused it, so the
+        resumed run matches however the page changed on the way to the submit.
+        """
+        record = record if isinstance(record, dict) else {}
+        binding = self._submit_binding(record)
+        # #934: a held payment-form submit in a Work that touched a family-shared site, or whose form
+        # posts to one, is never released or asked about.
+        self._refuse_unapprovable((landed_host(record.get('action')),))
+        if depth < 2 and self.approvals.consume(binding):
+            release = getattr(self._driver(), 'release_submit', None)
+            if not callable(release):
+                raise ToolError(FAILED_TEXT, 'browser_failed')
+            try:
+                return self._call(lambda timeout: release(record, timeout))
+            except ToolError as exc:
+                if exc.code != 'approval_required':
+                    raise
+                return self._cancelled_submit(getattr(exc, 'cancelled_form', None), description, depth + 1)
+        self._refuse(binding, description + cancelled_note(record))
+
+    def _settle(self):
+        """Let a page that renders its content after load finish rendering, bounded (#709).
+
+        Best effort and generic: a driver without ``settle`` (a test driver)
+        skips it, and a settle that fails or times out is not a failed step;
+        the snapshot reads whatever the page shows by then.
+        """
+        settle = getattr(self._driver(), 'settle', None)
+        if not callable(settle):
+            return
+        seconds = RENDER_SETTLE_SECONDS
+        if self.budget is not None:
+            try:
+                seconds = min(seconds, max(0.0, self.budget.remaining() - 1.0))
+            except Exception:
+                pass
+        if seconds <= 0:
+            return
+        try:
+            settle(seconds, self._timeout())
+        except ToolError:
+            raise
+        except Exception:
+            pass
+
+    def _page_state(self, requested_url=None):
+        snapshot = self._snapshot(requested_url)
+        if self._navigation_error:
+            snapshot['load_state'] = ('navigation_timeout' if self._navigation_error == 'browser_timeout'
+                                      else 'navigation_interrupted')
+        if snapshot['login_required']:
+            # Generic (`login_form_present`): the profile holds no session for
+            # this page.  #1269: the mediated page comes with the login request
+            # (guarded values are never in it), so the owner's AI can continue
+            # with an account the owner is already signed in to where the page
+            # offers one; it never types a password.
+            return {**public_view(snapshot), 'state': 'login_required',
+                    'needs_setup': True, 'requires': 'browser-login',
+                    'next_step': self._offer_login(snapshot['url']) or LOGIN_REQUIRED_TEXT}
+        return {'state': 'page', **public_view(snapshot)}
+
+    def _offer_login(self, url, explicit=False):
+        """Ask the owner to log in during this Work (#709), when the approvals surface can.
+
+        ``approvals.login_required(url)`` records the request; the service
+        shows the login window and asks the owner once this Work's run has
+        released the profile.  It returns the text the model reads instead
+        of the Settings pointer, or None.  Nothing is typed and nothing is
+        read from the login page.  ``explicit`` (#978): the model asked for
+        this sign-in itself (``browser_sign_in``), so its answer depends on
+        it and the login is offered however the Work ends.
+        """
+        offer = getattr(self.approvals, 'login_required', None)
+        if not callable(offer):
+            return None
+        try:
+            text = offer(url, explicit=True) if explicit else offer(url)
+        except Exception:
+            return None
+        return text if isinstance(text, str) and text else None
+
+    @staticmethod
+    def _effect(args):
+        effect = str(args.get('effect') or '').strip().lower()
+        if effect not in EFFECTS:
+            raise ValueError('effect는 read, navigate, mutate, payment 중 하나여야 합니다.')
+        return effect
+
+    def _guard(self, binding, description, required):
+        """Refuse a guarded step unless an exact owner approval is consumed now.
+
+        ``required`` is AgentOS's own classification of the target, or the
+        model's ``payment`` label (which can only ADD the requirement).  The
+        binding covers the step's arguments and the current page state too, so
+        different text or a changed form asks again.  Returns True when an
+        approval was consumed: only then does the worker let a submit of the
+        target's payment form through (#700).  An unguarded step still spends
+        an approval the owner gave for exactly it.  A guarded step always
+        needs its own approval, even while an approval of a cancelled submit
+        is issued: a press can pay by ``fetch`` without any submit (#700 review).
+        """
+        if required:
+            self._refuse_unapprovable()
+        if self._refusal:
+            # #935 re-review P3-a: on a shared site no approval is consumed, guarded or not.
+            return False
+        if self.approvals.consume(binding):
+            return True
+        if required:
+            self._refuse(binding, description)
+        return False
+
+    def _note_refusal(self, hosts):
+        """Remember the first reason ``approvals.refuse(host)`` gives for any of ``hosts`` (#934).
+
+        ``refuse`` (optional) answers the owner-facing reason, or None: on a
+        family instance a site whose sign-in the owner shared lets the family
+        assistant read and add to a cart, but its payment steps are the
+        account owner's alone.  The reason is sticky for the Work: a checkout
+        that hands off to a payment page on another domain (the ordinary
+        gateway hop) stays refused (review P2-1).
+        """
+        if self._refusal is not None:
+            return
+        refuse = getattr(self.approvals, 'refuse', None)
+        if not callable(refuse):
+            return
+        for host in hosts:
+            if not host:
+                continue
+            try:
+                reason = refuse(host)
+            except Exception:
+                reason = None
+            if reason:
+                self._refusal = str(reason)
+                return
+
+    def _refuse_unapprovable(self, hosts=()):
+        """Refuse a guarded step outright when this Work may not approve anything (#934).
+
+        Neither an approval request nor a consumed approval lets the step
+        through.  ``hosts`` adds hosts the step itself names (a held submit's
+        form action) to the current page's.
+        """
+        self._note_refusal((landed_host((self.last or {}).get('url')), *hosts))
+        if self._refusal:
+            raise ToolError(self._refusal, 'approval_refused')
+
+    def _refuse(self, binding, description):
+        try:
+            self.approvals.request(binding, description)
+        except Exception:
+            pass
+        raise ToolError(APPROVAL_TEXT, 'approval_required', requires='browser-step-approval')
+
+    def _input(self, operation, description):
+        """Run one click or type; a payment-form submit the worker cancelled asks the owner (#698).
+
+        An approved step lets a submit of its target's payment form through;
+        any other one is cancelled and handled by ``_cancelled_submit`` (#700).
+        """
+        self._last_input = description
+        try:
+            return self._call(operation)
+        except ToolError as exc:
+            if exc.code != 'approval_required':
+                raise
+            return self._cancelled_submit(getattr(exc, 'cancelled_form', None), description)
+
+    # -- the tools --
+    def run(self, action, args):
+        result = self._run(action, args)
+        if self._refused_pending and isinstance(result, dict):
+            self._refused_pending = False
+            result = {**result, 'submit_refused': SUBMIT_REFUSED_TEXT}
+        return result
+
+    def _run(self, action, args):
+        if action == 'browser_open':
+            return self.open(args)
+        if action == 'browser_read':
+            return self.read()
+        if action == 'browser_find':
+            return self.find(args)
+        if action == 'browser_click':
+            return self.click(args)
+        if action == 'browser_type':
+            return self.type(args)
+        if action == 'browser_sign_in':
+            return self.sign_in(args)
+        raise ValueError('허용하지 않은 도구입니다.')
+
+    def sign_in(self, args):
+        """Ask the owner to sign in at ``url`` now, without a sign-in page in the session (#953, BROWSE-09).
+
+        The model calls this when the request needs the owner's own account
+        and the session is signed out there.  It is the same in-flow login a
+        page with a sign-in form starts (``_page_state`` -> ``_offer_login``):
+        ``approvals.login_required(url)`` records the request, the service
+        shows the login window once this run released the profile and asks
+        the owner (on this Mac or from the phone, #939), and the Work resumes
+        once after the sign-in.  The URL is validated as ``browser_open``
+        validates its own (http(s) only; never this computer or a private
+        network); nothing is loaded, typed or read here, and the result is
+        the ``login_required`` state ``_page_state`` returns, so every
+        consumer of that state (withheld effect, the owner's text, the CLI
+        relay) treats it the same way.  It is a browser step for the budget.
+        """
+        url = str(args.get('url') or '').strip()
+        parts = urlsplit(url)
+        if parts.scheme not in ('http', 'https') or not parts.netloc:
+            raise ValueError('http 또는 https 주소만 열 수 있습니다.')
+        if local_destination(url, self._allowed_origins):
+            raise ToolError(BLOCKED_TEXT, 'blocked_destination')
+        self._spend_step()
+        # The login row, Evidence and the relay's page digest carry the site reference only
+        # (no query, fragment or userinfo): the window opens at that address.
+        reference = page_reference(url)
+        return {'state': 'login_required', 'url': reference, 'title': None,
+                'needs_setup': True, 'requires': 'browser-login',
+                'next_step': self._offer_login(reference, explicit=True) or LOGIN_REQUIRED_TEXT}
+
+    def open(self, args):
+        effect = self._effect(args)
+        url = str(args.get('url') or '').strip()
+        parts = urlsplit(url)
+        if parts.scheme not in ('http', 'https') or not parts.netloc:
+            raise ValueError('http 또는 https 주소만 열 수 있습니다.')
+        # #680 review P1-2: never this computer or its private network (the
+        # AgentOS UI included).  Name and literal here; the worker checks every
+        # navigation again after DNS resolution (redirects, forms, new windows).
+        if local_destination(url, self._allowed_origins):
+            raise ToolError(BLOCKED_TEXT, 'blocked_destination')
+        self._spend_step()
+        # #934: the requested destination counts before the page is opened: a shared site's payment
+        # deep link is refused here (no approval consumed), and any open of one makes the Work's
+        # refusal sticky.
+        self._note_refusal((parts.hostname,))
+        self._guard(step_binding(self.work_id, 'browser_open', url, url, url), f'{_host(parts)} 페이지 열기',
+                    effect == 'payment')
+        self._last_input = None   # a submit cancelled on the new page is not that step's (#700)
+        # A failed navigation must not leave old element numbers actionable.
+        self.last = None
+        self._navigation_error = None
+        try:
+            self._call(lambda timeout: self._driver().goto(url, timeout))
+        except ToolError as exc:
+            self._navigation_error = exc.code if exc.code in ('browser_timeout', 'unsupported_navigation') else None
+            raise
+        self._settle()
+        return self._page_state(requested_url=url)
+
+    def read(self):
+        # An interrupted navigation may leave a web document. Observe it only on
+        # an explicit read, with normal mediation; never replay navigation.
+        if not (self.driver is not None and self._navigation_error):
+            self._require_page()
+        self._spend_step()
+        self._settle()
+        return self._page_state()
+
+    def find(self, args):
+        self._require_page()
+        self._spend_step()
+        snapshot = self._snapshot()
+        return find_in_snapshot(snapshot, args.get('text'))
+
+    def _named_cover(self, exc, snapshot):
+        """``exc`` again, its covered-target refusal naming the cover in model terms (#1395).
+
+        The worker reports the covering layer's text and its controls by raw
+        index; the model knows controls by the numbers of the last page state,
+        so only controls listed there are named, and the text and names are
+        scrubbed like any page text.
+        """
+        cover = getattr(exc, 'cover', None)
+        if not isinstance(cover, dict):
+            return exc
+        numbers = {row.get('index'): row.get('n') for row in snapshot.get('_elements') or () if isinstance(row, dict)}
+        excluded = self._excluded()
+        controls = []
+        for item in cover.get('controls') or ():
+            n = numbers.get(item.get('index')) if isinstance(item, dict) else None
+            if isinstance(n, int):
+                controls.append({'index': n, 'name': scrub(str(item.get('name') or '')[:NAME_LIMIT], excluded)[0]})
+        text = scrub(str(cover.get('text') or '')[:400], excluded)[0]
+        return ToolError(target_text('target_obscured', {'text': text, 'controls': controls}), exc.code)
+
+    def click(self, args):
+        effect = self._effect(args)
+        self._require_page()
+        self._spend_step()
+        snapshot = self._snapshot()
+        element = resolve_target(snapshot, args.get('target'))
+        key = target_key(element)
+        state = self._state_of(snapshot, element)
+        description = f"'{element.get('name') or element.get('role')}' 버튼 누르기"
+        if element.get('commit'):
+            # #758: the owner reads (and the approval binds) the purchase text that made it a
+            # commitment and what is around it, not only a possibly neutral accessible name.
+            matched, context = element.get('detail') or ('', '')
+            matched, context = scrub(matched, self._excluded())[0], scrub(context, self._excluded())[0]
+            state += '\n\x1ecommit ' + matched + '\n' + context
+            # The purchase text leads, so the owner reads it within the stored label's 120 characters.
+            name = str(element.get('name') or element.get('role') or '')
+            description = f"'{name[:40]}' 버튼 누르기"
+            if matched and matched != name:
+                description = f"결제 신호 '{matched[:50]}' · " + description
+            if context:
+                description += f' · {context[:80]}'
+        binding = step_binding(self.work_id, 'browser_click', snapshot['_page'], key, key, state)
+        self._note_refusal(self._destinations(snapshot, element))
+        # #758: a control whose name commits a purchase needs approval whatever form it
+        # is in (a stored payment method or a fetch charge leaves no card field to see).
+        approved = self._guard(binding, description, element['submit_guarded'] or element['commit'] or effect == 'payment')
+        before = page_reference(snapshot.get('url'))
+        confirm_ok = not page_shows_payment(snapshot)
+        try:
+            answer = self._input(lambda timeout: self._driver().click(element['index'], timeout, approved=approved,
+                                                                      confirm_ok=confirm_ok),
+                                 description)
+        except ToolError as exc:
+            raise self._named_cover(self._observed(exc, approved), snapshot) from None
+        if isinstance(answer, dict) and answer.get('navigated'):
+            self._last_input = None   # #700: the page it was sent to is gone
+        # #736: the worker answers once any navigation the click started has
+        # committed; the content of the page it landed on is then settled too.
+        self._settle()
+        page = self._page_state()
+        if (isinstance(answer, dict) and answer.get('navigated')) or page_reference(page.get('url')) != before:
+            page['navigated'] = True
+            self._last_input = None
+        return self._with_dialogs(observe_step(page, answer, approved), answer)
+
+    def _with_dialogs(self, page, answer):
+        """#936: a page's own alert/confirm/prompt during the step, mediated like page text."""
+        rows = answer.get('dialogs') if isinstance(answer, dict) else None
+        if rows:
+            excluded = self._excluded()
+            page['dialogs'] = [{'kind': row['kind'], 'message': scrub(row['message'], excluded)[0],
+                                'answer': DIALOG_OUTCOMES[row['outcome']]} for row in rows]
+        return page
+
+    def type(self, args):
+        effect = self._effect(args)
+        self._require_page()
+        text = str(args.get('text') or '')
+        if len(text) > 2000:
+            raise ValueError('입력 텍스트는 2000자 이하여야 합니다.')
+        self._spend_step()
+        snapshot = self._snapshot()
+        element = resolve_target(snapshot, args.get('target'))
+        binding = step_binding(self.work_id, 'browser_type', snapshot['_page'], target_key(element), text,
+                               self._state_of(snapshot, element))
+        description = f"'{element.get('name') or element.get('role')}' 입력란에 입력"
+        self._note_refusal(self._destinations(snapshot, element))
+        # Typing presses the field first, so a label forwarding that press is guarded too.
+        required = element['payment'] or element.get('forwards_payment') or effect == 'payment'
+        approved = self._guard(binding, description, required)
+        confirm_ok = not page_shows_payment(snapshot)
+        try:
+            answer = self._input(lambda timeout: self._driver().type(element['index'], text, timeout, approved=approved,
+                                                                     confirm_ok=confirm_ok),
+                                 description)
+        except ToolError as exc:
+            raise self._named_cover(self._observed(exc, approved), snapshot) from None
+        return self._with_dialogs(observe_step(self._page_state(), answer, approved), answer)
+
+    @staticmethod
+    def _destinations(snapshot, element):
+        """The hosts a step on ``element`` may navigate to, known before it runs (#934): its link, its form's action."""
+        hosts = []
+        row = next((row for row in snapshot.get('_rows') or () if row.get('n') == element.get('n')), None)
+        if row and row.get('href'):
+            hosts.append(landed_host(row['href']))
+        actions = snapshot.get('_form_actions') or {}
+        for form_id in (element.get('form'), element.get('label_form')):
+            if form_id is not None and actions.get(form_id):
+                hosts.append(landed_host(actions[form_id]))
+        return [host for host in hosts if host]
+
+    @staticmethod
+    def _state_of(snapshot, element):
+        """The state a step on ``element`` is bound to (#698).
+
+        Its own form's state (else the page text), the state of the form its
+        label forwards a press to, and every payment form's state, each with
+        the form's identity: a changed non-card value of the payment form, or
+        a label pointed at another identical form, asks again.
+        """
+        states = snapshot.get('_states') or {}
+        parts = [states.get(element.get('form'), states.get(None, ''))]
+        if element.get('label_form') is not None:
+            parts.append('label -> ' + states.get(element['label_form'], ''))
+        payment = snapshot.get('_payment_states') or {}
+        parts.extend(payment[identity] for identity in sorted(payment))
+        return '\n\x1e'.join(parts)
+
+    def _require_page(self):
+        if self.driver is None or self.last is None:
+            raise ToolError(NO_PAGE_TEXT, 'no_page')
+
+    def close(self):
+        driver, self.driver = self.driver, None
+        if driver is not None:
+            try:
+                driver.close()
+            except Exception:
+                pass
+
+
+# --- the embedded engine (SEC-BROWSER-02 #680) ----------------------------------
+
+#: The typed refusal when this computer cannot run the embedded engine.
+UNAVAILABLE_CODE = 'browser_unavailable_platform'
+PLATFORM_TEXT = ('브라우저 기능은 시범 기간 동안 macOS에서만 제공됩니다. 이 컴퓨터에서는 브라우저가 필요한 단계를 '
+                 '실행하지 않습니다.')
+DEPENDENCY_TEXT = ('macOS 시스템 WebKit 연결 구성요소(pyobjc-framework-WebKit)가 없어 브라우저 기능을 사용할 수 '
+                   '없습니다. AgentOS를 다시 설치한 뒤 다시 시작하세요.')
+GOOGLE_NOTE = 'Google 로그인은 내장 브라우저에서 지원되지 않습니다.'
+TARGET_TEXT = ('대상 요소가 바뀌었거나 다른 요소에 가려져 있어 실행하지 않았습니다. browser_read로 페이지를 다시 '
+               '확인하세요.')
+HIDDEN_TEXT = '대상 요소가 화면에 보이지 않아 실행하지 않았습니다. browser_read로 페이지를 다시 확인하세요.'
+OBSCURED_TEXT = '대상 요소가 다른 요소에 가려져 있어 누르지 않았습니다.'
+
+
+def target_text(code, cover=None):
+    """The refusal the model reads for a target the worker would not press (#1395).
+
+    A covered target names what covers it - its text and the listed controls
+    inside it, by element number - so the model can close or move it rather
+    than re-reading and pressing the same element.  The press is refused the
+    same way whatever the reason.
+    """
+    if code == 'target_hidden':
+        return HIDDEN_TEXT
+    if code != 'target_obscured':
+        return TARGET_TEXT
+    cover = cover if isinstance(cover, dict) else {}
+    text = ' '.join(str(cover.get('text') or '').split())[:160]
+    controls = [f"{item['index']} {' '.join(str(item.get('name') or '').split())[:80]}".strip()
+                for item in (cover.get('controls') or [])[:8]
+                if isinstance(item, dict) and isinstance(item.get('index'), int) and not isinstance(item.get('index'), bool)]
+    if not text and not controls:
+        return OBSCURED_TEXT + ' browser_read로 페이지를 다시 확인하세요.'
+    parts = [OBSCURED_TEXT]
+    if text:
+        parts.append(f'가린 요소: “{text}”.')
+    if controls:
+        parts.append('그 안의 요소: ' + ' · '.join(controls) + '.')
+        parts.append('가린 요소를 닫거나 치운 뒤 다시 시도하세요.')
+    else:
+        # No numbered control to close it with: reading the page again is still the way on.
+        parts.append('browser_read로 페이지를 다시 확인해 가린 요소를 닫을 방법을 찾으세요.')
+    return ' '.join(parts)
+def local_destination(url, allowed_origins=()):
+    """True when ``url`` names this computer or a private network by name or literal address.
+
+    ``browser_worker.local_url`` over the public-page guard's tables
+    (``local_tools``): localhost, ``.local``/``.localhost``/``.internal``/
+    ``.home.arpa``, loopback, private, link-local, reserved and multicast.  No
+    DNS here; the worker resolves every navigation it performs.
+    ``allowed_origins`` is the test-only exact ``host:port`` allowance.
+    """
+    from .browser_worker import local_url
+    return local_url(url, allowed_origins)
+
+
+LOG = logging.getLogger(__name__)
+
+
+@functools.lru_cache(maxsize=1)
+def _public_suffix_list():
+    """The Mozilla Public Suffix List (``publicsuffixlist``'s bundled copy; never fetched), or None when absent."""
+    try:
+        from publicsuffixlist import PublicSuffixList
+    except ImportError:
+        LOG.warning('publicsuffixlist is not installed: login prompts show the whole host (pip install -e .)')
+        return None
+    return PublicSuffixList()
+
+
+def ascii_host(host):
+    """``host`` in ASCII, every non-ASCII label as its raw punycode (RFC 3492), so a lookalike is shown as spelled (#716).
+
+    Never raw Unicode and never an IDNA2003 mapping (the stdlib ``idna``
+    codec turns ``ß`` into ``ss``, another real domain, and rejects labels
+    WebKit's UTS #46 processing loads).  Only the compatibility folding UTS
+    #46 also applies is kept: NFKC, lowercase, the ideographic full stop as
+    a dot and a dropped soft hyphen; a label is never otherwise rewritten.
+    """
+    host = unicodedata.normalize('NFKC', str(host or '')).replace('\u3002', '.').replace('\u00ad', '').strip().lower().rstrip('.')
+    return '.'.join(label if label.isascii() else 'xn--' + label.encode('punycode').decode('ascii')
+                    for label in host.split('.'))
+
+
+def landed_host(url):
+    """The host of the page a login window landed on (``show``/``goto``'s final URL), or None (#749).
+
+    Only the host leaves the window: never its path, query or fragment.
+    """
+    try:
+        parts = urlsplit(str(url or ''))
+    except ValueError:
+        return None
+    return parts.hostname if parts.scheme in ('http', 'https') and parts.hostname else None
+
+
+def registrable_domain(host):
+    """The registrable domain (eTLD+1) of ``host`` by the Public Suffix List, in ASCII form (#716).
+
+    ``accounts.example.com.lookalike.io`` -> ``lookalike.io``; ``shop.example.co.kr``
+    -> ``example.co.kr``.  An IP literal, a bare public suffix, or a missing
+    list gives the whole host back: never a shorter name than the list supports.
+    """
+    host = ascii_host(host)
+    try:
+        ipaddress.ip_address(host.strip('[]'))
+        return host
+    except ValueError:
+        pass
+    psl = _public_suffix_list()
+    return (psl.privatesuffix(host) if psl is not None and host else None) or host
+
+
+#: Environment names a worker inherits: nothing else (no provider keys, tokens
+#: or AgentOS settings).  ``PYTHONPATH`` lets a source checkout find the package.
+WORKER_ENVIRONMENT = ('PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'PYTHONPATH')
+
+
+def worker_environment(base=None):
+    base = os.environ if base is None else base
+    env = {name: base[name] for name in WORKER_ENVIRONMENT if base.get(name)}
+    env.setdefault('PATH', '/usr/bin:/bin')
+    if env.get('PYTHONPATH'):
+        # The worker runs in the profile's folder: a relative entry would name another directory (#709 review).
+        env['PYTHONPATH'] = os.pathsep.join(os.path.abspath(entry) for entry in env['PYTHONPATH'].split(os.pathsep) if entry)
+    return env
+
+
+#: Worker error codes that mean "the element the guard classified is not what the pointer would hit".
+TARGET_ERRORS = frozenset({'target_missing', 'target_changed', 'target_hidden', 'target_obscured', 'not_typable',
+                           'not_focusable', 'bad_target', 'submit_changed'})
+WORKER_START_SECONDS = 30
+WORKER_GRACE_SECONDS = 5
+WORKER_QUIT_SECONDS = 5
+LOGIN_OPEN_SECONDS = 45
+#: #939: the phone inputs a login window accepts, as the worker's ``remote_*`` ops.
+REMOTE_INPUT_KINDS = ('tap', 'text', 'key', 'nav', 'dialog')
+#: #709: how long closing a login window waits for its save and release.
+LOGIN_CLOSE_SECONDS = 20
+#: #709: how many closed login windows' outcomes a profile remembers.
+LOGIN_WINDOWS_KEPT = 16
+#: #709: the longest a ``browser_open``/``browser_read`` waits for a
+#: client-rendered page's content to settle (``browser_worker.op_settle``).
+RENDER_SETTLE_SECONDS = 6.0
+#: #990: a site the owner signed in to through AgentOS is kept signed in by loading one of its
+#: pages in the hidden worker (saving cookies alone extends nothing): at least this often ...
+KEEPALIVE_SECONDS = 3 * 3600
+#: ... and this long before the earliest stored cookie of the site expires,
+KEEPALIVE_LEAD_SECONDS = 600
+#: but never more often than this.  Generic: no site has its own value (Constitution C16).
+KEEPALIVE_MIN_GAP_SECONDS = 3600
+#: #990: the profile holder name of a keep-alive, and how long another holder waits for one to finish.
+KEEPALIVE_HOLDER = 'keepalive'
+KEEPALIVE_YIELD_SECONDS = ACTION_TIMEOUT_SECONDS + 15
+#: #1041: each refresh's interval varies by up to this fraction either way, so refreshes never come
+#: at a machine-regular cadence (a regular one drew a bot-activity alert, 2026-10-06).
+KEEPALIVE_JITTER = 0.2
+
+
+def keepalive_interval(site, last):
+    """The interval before ``site``'s next refresh after the one at ``last`` (#1041).
+
+    ``KEEPALIVE_SECONDS`` varied by up to ``KEEPALIVE_JITTER`` either way,
+    deterministic for one ``(site, last)`` so every check before the refresh
+    sees the same due time.  Pure.
+    """
+    digest = hashlib.sha256(f'{site}|{float(last or 0):.3f}'.encode()).digest()
+    fraction = int.from_bytes(digest[:4], 'big') / 0xFFFFFFFF   # 0..1
+    return KEEPALIVE_SECONDS * (1 - KEEPALIVE_JITTER + 2 * KEEPALIVE_JITTER * fraction)
+
+
+def keepalive_due_at(expiries, last, now, interval=KEEPALIVE_SECONDS):
+    """When a signed-in site's session should next be refreshed (#990), from its cookies' expiries.
+
+    ``last`` is the later of the sign-in and the last refresh.  A cookie that
+    lived no longer than ``KEEPALIVE_LEAD_SECONDS`` past ``last`` (a token
+    re-issued every few minutes anyway), one already expired, or a
+    session-only one (``None``) sets no earlier time.  #1269: measured from
+    ``last``, not ``now``, so the earlier time can arrive: measured from
+    ``now`` a cookie left the list exactly when its refresh became due.
+    ``interval`` (#1041) is this refresh's jittered cadence
+    (``keepalive_interval``).  Pure.
+    """
+    last = float(last or 0)
+    interval = float(interval or KEEPALIVE_SECONDS)
+    due = last + interval
+    ahead = [float(expires) - KEEPALIVE_LEAD_SECONDS for expires in expiries or ()
+             if isinstance(expires, (int, float)) and float(expires) - last > KEEPALIVE_LEAD_SECONDS
+             and float(expires) > now]
+    if ahead:
+        due = min(due, min(ahead))
+    return max(due, last + min(KEEPALIVE_MIN_GAP_SECONDS, interval))
+
+
+#: #1015: a keep-alive is first one plain HTTP request with the site's stored cookies (no page, no
+#: browser memory); it says it is the same WebKit client the worker is (WKWebView's default agent).
+KEEPALIVE_HTTP_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)'
+KEEPALIVE_HTTP_TIMEOUT = 15
+#: Answers that mean the site refused a non-browser request; the refresh falls back to the browser.
+KEEPALIVE_HTTP_BLOCKED = frozenset({401, 403, 429, 503})
+
+
+def _cookie_from_row(row):
+    import http.cookiejar
+    domain = str(row.get('domain') or '')
+    expires = row.get('expires') if isinstance(row.get('expires'), (int, float)) else None
+    return http.cookiejar.Cookie(
+        0, str(row['name']), str(row.get('value') or ''), None, False, domain, domain.startswith('.'),
+        domain.startswith('.'), str(row.get('path') or '/'), True, bool(row.get('secure')),
+        int(expires) if expires is not None else None, expires is None, None, None,
+        {'HttpOnly': None} if row.get('http_only') else {})
+
+
+def _row_from_cookie(cookie, before):
+    old = before.get((cookie.name, cookie.domain, cookie.path)) or {}
+    return {'name': cookie.name, 'value': cookie.value, 'domain': cookie.domain, 'path': cookie.path,
+            'expires': cookie.expires, 'secure': bool(cookie.secure),
+            'http_only': bool(cookie.has_nonstandard_attr('HttpOnly')) or bool(old.get('http_only')),
+            'same_site': old.get('same_site')}
+
+
+def http_refresh(url, rows, *, allowed_origins=(), opener=None, refusal=destination_refusal):
+    """One GET of ``url`` with a site's stored cookie ``rows``, without a browser (#1015).
+
+    Returns ``(state, rows_after)``: ``refreshed`` with every row the site
+    still holds after the answer (rotated values and new cookies included),
+    ``blocked`` when the site refused a non-browser request
+    (``KEEPALIVE_HTTP_BLOCKED``), or ``failed``; ``rows_after`` is None unless
+    refreshed.  ``url`` and every redirect pass ``browser_open``'s address rule
+    after DNS resolution (``destination_refusal``).  Nothing of the page is read.
+    """
+    import http.cookiejar
+    import urllib.error
+    import urllib.request
+    if urlsplit(str(url or '')).scheme not in ('http', 'https') or refusal(url, allowed_origins):
+        return 'failed', None
+    jar = http.cookiejar.CookieJar()
+    before = {}
+    for row in rows or ():
+        if isinstance(row, dict) and row.get('name'):
+            before[(str(row['name']), str(row.get('domain') or ''), str(row.get('path') or '/'))] = row
+            jar.set_cookie(_cookie_from_row(row))
+
+    class Guarded(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            if urlsplit(newurl).scheme not in ('http', 'https') or refusal(newurl, allowed_origins):
+                raise urllib.error.URLError('blocked_destination')
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    build = opener or urllib.request.build_opener
+    client = build(urllib.request.HTTPCookieProcessor(jar), Guarded())
+    request = urllib.request.Request(url, headers={'User-Agent': KEEPALIVE_HTTP_AGENT,
+                                                   'Accept': 'text/html,application/xhtml+xml'})
+    try:
+        with client.open(request, timeout=KEEPALIVE_HTTP_TIMEOUT) as response:
+            response.read(65536)
+            status = getattr(response, 'status', 200)
+    except urllib.error.HTTPError as exc:
+        return ('blocked' if exc.code in KEEPALIVE_HTTP_BLOCKED else 'failed'), None
+    except Exception:
+        return 'failed', None
+    if status in KEEPALIVE_HTTP_BLOCKED:
+        return 'blocked', None
+    return 'refreshed', [_row_from_cookie(cookie, before) for cookie in jar]
+
+
+def webkit_unavailable_reason(platform=None, find_spec=None):
+    """None when the embedded macOS WebKit engine can run here, else ``platform`` or ``dependency``.
+
+    Only the presence of the PyObjC modules is checked; nothing is imported
+    into the server process (AppKit belongs to the worker's main thread).
+    """
+    platform = sys.platform if platform is None else platform
+    find_spec = importlib.util.find_spec if find_spec is None else find_spec
+    if platform != 'darwin':
+        return 'platform'
+    for module in ('objc', 'AppKit', 'WebKit', 'PyObjCTools'):
+        try:
+            if find_spec(module) is None:
+                return 'dependency'
+        except (ImportError, ValueError):
+            return 'dependency'
+    return None
+
+
+def unavailable_text(reason):
+    return DEPENDENCY_TEXT if reason == 'dependency' else PLATFORM_TEXT
+
+
+class WorkerError(RuntimeError):
+    """A worker op failed; ``code`` is the worker's AgentOS code, never library or page text."""
+
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
+
+
+class WebKitWorkerDriver:
+    """The real ``PageDriver``: the embedded WebKit worker process (``browser_worker``).
+
+    The worker owns its own main thread and Cocoa run loop; this object owns
+    the subprocess and speaks its JSON-lines protocol.  Every request carries
+    a timeout the worker enforces, and this side waits that long plus a grace
+    period before it kills an unresponsive worker.  A worker that exited or
+    was killed is restarted on the next call, with the jar's cookies imported
+    again (``seed``); the page it had open is gone, so the next target
+    lookup fails typed rather than acting on a different page.
+
+    Clicks and typing carry the descriptor (tag, type, autocomplete) of the
+    element the last snapshot listed at that index, so the worker refuses to
+    press a different element than the one the payment guard classified.
+    Nothing here returns HTML, and cookie rows go only to the jar.  The
+    worker's stderr is discarded so no library trace can carry page or
+    session text into a log.
+    """
+
+    def __init__(self, profile_id='default', *, seed=None, command=None, start_seconds=WORKER_START_SECONDS,
+                 grace_seconds=WORKER_GRACE_SECONDS, cwd=None, allowed_origins_for_tests=()):
+        self.profile_id = str(profile_id)
+        self._seed = seed
+        # ``-P``: the working directory is never on the worker's import path.
+        self._command = list(command) if command else [sys.executable, '-P', '-m', 'personal_agent.browser_worker',
+                                                       '--profile', self.profile_id]
+        if not command:
+            for origin in allowed_origins_for_tests:
+                self._command += ['--test-allow-origin', str(origin)]
+        # A fixed working directory (the profile's private folder) and a minimal environment.
+        self._cwd = str(cwd) if cwd else os.path.expanduser('~')
+        self.start_seconds, self.grace_seconds = start_seconds, grace_seconds
+        self._lock = threading.RLock()
+        self._proc = None
+        self._queue = None
+        self._ids = itertools.count(1)
+        self._visible = False
+        self._expect = {}
+        self.starts = 0
+        with self._lock:
+            self._start()
+
+    @property
+    def restarts(self):
+        return max(0, self.starts - 1)
+
+    # -- process ---------------------------------------------------------------
+    def _start(self):
+        self.starts += 1
+        proc = subprocess.Popen(self._command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                text=True, encoding='utf-8', bufsize=1, close_fds=True, cwd=self._cwd,
+                                env=worker_environment())
+        messages = queue.Queue()
+
+        def read():
+            try:
+                for line in proc.stdout:
+                    try:
+                        message = json.loads(line)
+                    except ValueError:
+                        continue
+                    if not isinstance(message, dict):
+                        continue
+                    if message.get('event') == 'hidden':
+                        self._visible = False
+                        continue
+                    messages.put(message)
+            except (OSError, ValueError):
+                pass
+            messages.put(None)
+        threading.Thread(target=read, name='agentos-browser-worker-pipe', daemon=True).start()
+        self._proc, self._queue, self._visible, self._expect = proc, messages, False, {}
+        deadline = time.monotonic() + self.start_seconds
+        while True:
+            try:
+                message = messages.get(timeout=max(0.01, deadline - time.monotonic()))
+            except queue.Empty:
+                message = None
+            if message is None or message.get('event') == 'unavailable':
+                self._kill()
+                raise WorkerError('worker_unavailable')
+            if message.get('event') == 'ready':
+                break
+        rows = []
+        if self._seed is not None:
+            try:
+                rows = list(self._seed() or [])
+            except Exception:
+                rows = []
+        if rows:
+            self._send('cookies_import', ACTION_TIMEOUT_SECONDS, cookies=rows)
+
+    def _kill(self):
+        proc, self._proc = self._proc, None
+        self._visible = False
+        if proc is None:
+            return
+        try:
+            proc.kill()
+            proc.wait(WORKER_QUIT_SECONDS)
+        except Exception:
+            pass
+        for stream in (proc.stdin, proc.stdout):
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+    def alive(self):
+        return self._proc is not None and self._proc.poll() is None
+
+    def _send(self, op, timeout, **arguments):
+        proc, messages = self._proc, self._queue
+        ident = next(self._ids)
+        timeout = max(1.0, float(timeout))
+        try:
+            proc.stdin.write(json.dumps({'id': ident, 'op': op, 'timeout': timeout, **arguments}, ensure_ascii=False) + '\n')
+            proc.stdin.flush()
+        except (OSError, ValueError, AttributeError):
+            self._kill()
+            raise WorkerError('worker_exited') from None
+        deadline = time.monotonic() + timeout + self.grace_seconds
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                # Unresponsive: kill it; the next call starts a fresh worker.
+                self._kill()
+                raise TimeoutError('browser timeout')
+            try:
+                message = messages.get(timeout=remaining)
+            except queue.Empty:
+                continue
+            if message is None:
+                self._kill()
+                raise WorkerError('worker_exited')
+            if message.get('id') != ident:
+                continue
+            if message.get('ok'):
+                return message
+            code = str(message.get('error') or 'worker_error')
+            if code == 'timeout':
+                timeout = TimeoutError('browser timeout')
+                # #1496: whether a click or typing step that timed out started a non-GET form submission.
+                if isinstance(message.get('posted'), bool):
+                    timeout.posted = message['posted']
+                raise timeout
+            if code in TARGET_ERRORS:
+                exc = ToolError(target_text(code), 'target_unavailable')
+                # #1395: the session renames the cover in the model's element numbers.
+                exc.cover = message.get('cover') if code == 'target_obscured' else None
+                raise exc
+            if code == 'unsupported_navigation':
+                raise ToolError(UNSUPPORTED_NAVIGATION_TEXT, 'unsupported_navigation')
+            if code == 'destination_check_timeout':
+                raise ToolError(DESTINATION_CHECK_TIMEOUT_TEXT, 'destination_check_timeout')
+            if code == 'blocked_destination':
+                raise ToolError(BLOCKED_TEXT, 'blocked_destination')
+            if code == 'host_not_found':
+                raise ToolError(HOST_NOT_FOUND_TEXT, 'host_not_found')
+            if code == 'host_unreachable':
+                raise ToolError(HOST_UNREACHABLE_TEXT, 'host_unreachable')
+            if code == 'submit_refused':
+                # #700: a form post the guard refused with no page form to hold (a
+                # resubmitted POST, or the page did not answer which form it was).
+                raise ToolError(SUBMIT_REFUSED_TEXT, 'submit_refused')
+            if code == 'approval_required':
+                # The worker cancelled a payment-form submit no approval let through (#698).
+                refusal = ToolError(APPROVAL_TEXT, 'approval_required', requires='browser-step-approval')
+                refusal.cancelled_form = message.get('form') if isinstance(message.get('form'), dict) else None
+                raise refusal
+            raise WorkerError(code)
+
+    def _request(self, op, timeout, **arguments):
+        with self._lock:
+            if not self.alive():
+                self._kill()
+                self._start()   # restart after a crash, with the jar's cookies
+            return self._send(op, timeout, **arguments)
+
+    # -- PageDriver ------------------------------------------------------------
+    def goto(self, url, timeout):
+        self._request('navigate', timeout, url=url)
+
+    def settle(self, seconds, timeout):
+        """Wait, bounded by ``seconds``, until a client-rendered page's content stops changing (#709)."""
+        self._request('settle', timeout, seconds=seconds)
+
+    def snapshot(self):
+        page = self._request('snapshot', ACTION_TIMEOUT_SECONDS).get('page') or {}
+        elements = [element for element in page.get('elements') or [] if isinstance(element, dict)]
+        guarded_forms = payment_forms(elements)
+        # The full descriptor the payment guard classified: the worker refuses
+        # to press or type into an element that no longer matches it.
+        self._expect = {element['index']: {'tag': str(element.get('tag') or ''), 'type': str(element.get('type') or ''),
+                                           'autocomplete': str(element.get('autocomplete') or ''),
+                                           'name': str(element.get('name') or ''),
+                                           # #758: the name of the control its label forwards to
+                                           'own_text': str(element.get('own_text') or ''),
+                                           'label_name': str(element.get('label_name') or ''),
+                                           'ancestor_text': str(element.get('ancestor_text') or ''),
+                                           'in_form': element.get('form') is not None,
+                                           'payment_form': (element.get('form') is not None and element.get('form') in guarded_forms)
+                                           or forwards_to_payment_form(element, guarded_forms),
+                                           # #899 review P2-2: a link rewritten or given a handler after
+                                           # the snapshot no longer matches and is not pressed.
+                                           'nav_link': bool(element.get('nav_link')),
+                                           # #905 review: a link rewritten to another address is refused too.
+                                           'href': str(element.get('href') or ''),
+                                           'pressable': bool(element.get('pressable', True))}
+                        for element in elements if isinstance(element.get('index'), int) and not isinstance(element.get('index'), bool)}
+        return page
+
+    def _target(self, index):
+        expect = self._expect.get(index)
+        if expect is None:
+            raise ToolError(TARGET_TEXT, 'target_unavailable')   # never an element nobody classified
+        return {'index': index, 'expect': expect, 'tokens': sorted(PAYMENT_AUTOCOMPLETE)}
+
+    def click(self, index, timeout, approved=False, confirm_ok=False):
+        """``approved``: the session consumed an owner approval for this step.
+
+        Only then does the worker let a submit of the target's payment form
+        through, during the step and briefly after it (#700); otherwise a
+        cancelled one answers ``approval_required`` with its form record.
+        Returns ``{'navigated': bool}``: whether the click started a main-frame
+        navigation (a same-view new-window load included) that the worker
+        waited for (#736).  No URL crosses here; the next snapshot is mediated.
+        """
+        # #937 review: a page's confirmation counts as approved only when the approval was for
+        # this press; ``confirm_ok`` is False on a page that shows a payment field.
+        message = self._request('click', timeout, approved=approved is True, dialog_approved=approved is True,
+                                confirm_ok=confirm_ok is True, **self._target(index))
+        return {'navigated': bool(message.get('navigated')), 'dialogs': step_dialogs(message), **step_posted(message)}
+
+    def type(self, index, text, timeout, approved=False, confirm_ok=False):
+        # #937 review: an approval to type into a field never confirms a payment question.
+        message = self._request('type', timeout, text=text, approved=approved is True, dialog_approved=False,
+                                confirm_ok=confirm_ok is True, **self._target(index))
+        return {'dialogs': step_dialogs(message), **step_posted(message)}
+
+    def release_submit(self, record, timeout):
+        """Release the cancelled payment-form submit ``record`` names, which the owner approved (#700).
+
+        ``record`` is the ``cancelled_form``/``cancelled_submit`` the worker
+        reported (form position, method, action, page, state digest); the
+        worker releases only that held submit, and only when the same form
+        would still send the same state.  Answers like ``click``.
+        """
+        record = record if isinstance(record, dict) else {}
+        form = {key: record.get(key) for key in ('dom', 'method', 'action', 'page', 'state')}
+        message = self._request('release_submit', timeout, form=form)
+        # #899 review P2: reported like a click; a released submit spent an approval, so it stays an effect anyway.
+        return {'navigated': bool(message.get('navigated')), **step_posted(message)}
+
+    # -- the owner's login window ---------------------------------------------------
+    def show(self, url, timeout):
+        """Show the window at ``url``; returns the URL its first navigation landed on (after redirects, #749)."""
+        # Visible before the request: a ``hidden`` event that arrives while the
+        # request is pending (the owner closed the window at once) must win.
+        self._visible = True
+        try:
+            message = self._request('show', timeout, url=url)
+        except Exception:
+            self._visible = False
+            raise
+        return message.get('url') if isinstance(message, dict) else None
+
+    def navigations(self):
+        """How many main-frame navigations this window committed or failed so far (#765): a count only,
+        never a URL.  Nothing is read from or typed into the page."""
+        count = self._request('state', ACTION_TIMEOUT_SECONDS).get('navigations')
+        return count if isinstance(count, int) and not isinstance(count, bool) else None
+
+    def hide(self):
+        self._request('hide', ACTION_TIMEOUT_SECONDS)
+        self._visible = False
+
+    def is_open(self):
+        return self.alive() and self._visible
+
+    # -- the phone's view of the login window (#939) -----------------------------------
+    # Only on the worker that shows the window: a worker that exited is never
+    # restarted for these (a restart would show nothing the owner signed in to).
+
+    def _request_shown(self, op, **arguments):
+        with self._lock:
+            if not self.alive() or not self._visible:
+                raise WorkerError('not_shown')
+            return self._send(op, ACTION_TIMEOUT_SECONDS, **arguments)
+
+    def frame(self):
+        """``{'jpeg': base64, 'width': points, 'height': points, 'dialog': {'kind', 'text'} or None}`` of the
+        frontmost login view; never kept here.  ``dialog`` is a page dialog waiting for an answer."""
+        message = self._request_shown('frame')
+        dialog = message.get('dialog') if isinstance(message.get('dialog'), dict) else None
+        return {'jpeg': str(message.get('jpeg') or ''), 'width': message.get('width'), 'height': message.get('height'),
+                'dialog': {'kind': str(dialog.get('kind') or ''), 'text': str(dialog.get('text') or '')} if dialog else None}
+
+    def remote_input(self, kind, **fields):
+        """One phone input into the login window: ``tap`` (x, y), ``text`` (text), ``key`` (key), ``nav``
+        (action) or ``dialog`` (answer)."""
+        if kind not in REMOTE_INPUT_KINDS:
+            raise WorkerError('bad_input')
+        self._request_shown('remote_' + kind, **fields)
+
+    def remote_begin(self):
+        """A phone session starts: the worker holds page dialogs for the phone's answer (#939)."""
+        self._request_shown('remote_begin')
+
+    def remote_end(self):
+        """The phone session ended: a held dialog is cancelled; dialogs go back to the Mac alone."""
+        with self._lock:
+            if self.alive():
+                self._send('remote_end', ACTION_TIMEOUT_SECONDS)
+
+    # -- session material: to and from the encrypted jar only ------------------------
+    def cookies_export(self):
+        """``({site: [cookie rows]}, [hosts opened])``: for ``CookieJar.save_export`` only."""
+        message = self._request('cookies_export', ACTION_TIMEOUT_SECONDS)
+        sites = message.get('sites') if isinstance(message.get('sites'), dict) else {}
+        return sites, [host for host in message.get('hosts') or [] if isinstance(host, str)]
+
+    def cookies_import(self, rows):
+        return self._request('cookies_import', ACTION_TIMEOUT_SECONDS, cookies=list(rows or [])).get('imported', 0)
+
+    def cookies_delete(self, site):
+        return self._request('cookies_delete', ACTION_TIMEOUT_SECONDS, site=site).get('deleted', 0)
+
+    def cookies_clear(self):
+        self._request('cookies_clear', ACTION_TIMEOUT_SECONDS)
+
+    def discard(self):
+        """Stop the worker without exporting anything; the next call starts a fresh one from the jar."""
+        with self._lock:
+            self._kill()
+
+    def close(self):
+        with self._lock:
+            if self.alive():
+                try:
+                    self._send('quit', WORKER_QUIT_SECONDS)
+                    self._proc.wait(WORKER_QUIT_SECONDS)
+                except Exception:
+                    pass
+            self._kill()
+
+
+# --- the profile the execution environment owns --------------------------------
+
+class BrowserProfile:
+    """The one browser profile: who may hold it now, its encrypted sessions and the login window.
+
+    One Work session or the owner's login window holds the profile at a time
+    (one non-blocking lock), so two workers never race to save the jar.
+    ``launcher`` is injectable (``(profile_dir, headless) -> PageDriver``);
+    the default starts the embedded WebKit worker with the jar's cookies.
+    When a driver closes, its cookies are exported into the jar first.
+    ``profile_dir`` (under ``store.private``) holds only the encrypted jar.
+    """
+
+    def __init__(self, profile_dir, *, launcher=None, headless=True, available=None, clock=time.time, jar=None):
+        self.profile_dir = Path(profile_dir)
+        self.jar = jar if jar is not None else CookieJar(self.profile_dir / JAR_NAME,
+                                                         KeychainKey(store_account(self.profile_dir)), clock)
+        self.launcher = launcher or self._launch_webkit
+        self.headless = headless
+        self._available = available if available is not None else (
+            (lambda: webkit_unavailable_reason() is None) if launcher is None else (lambda: True))
+        self.clock = clock
+        self._lock = threading.Lock()
+        self._jar_lock = threading.RLock()
+        self._holder = None
+        self._live = None
+        self._suppressed = set()
+        self._login_thread = None
+        # Login windows this process opened: id -> stop flag, closed event,
+        # close reason and whether the final save succeeded (#709).
+        self._login_windows = {}
+        # What the running worker was given from the jar (#680 review P2-3):
+        # sites imported, or why the import failed (then nothing is saved).
+        self._imported = set()
+        self._import_error = None
+        self.save_error = None
+        # #680 review (Codex P1): after a delete/clear the running worker could
+        # not perform, nothing that worker instance holds is ever saved.
+        self._unsavable = None
+        #: #990: the export last written to the jar by this holder; an identical export is not re-written.
+        self._save_mark = None
+        # Settings reads the jar through this cache so a locked Keychain never
+        # blocks a poll (#680 review P2-7).
+        self._view = None
+        self._view_refreshing = False
+        self._allowed_origins = ()
+        # #934: called with the names of the sites whose stored rows may have
+        # changed (None: every site) after a save or delete, outside the jar
+        # lock, never with a value.  The owner's service pushes shared sites.
+        self.on_saved = None
+        #: #950 review P1: ``() -> {site}`` a login window must never load or overwrite (a family
+        #: instance's sites received from the owner); None for none.  Agent sessions are unaffected.
+        self.login_excluded = None
+
+    def allow_origins_for_tests(self, *origins):
+        """Test-only: exact ``host:port`` fixture origins the worker may load.  Never set by config."""
+        self._allowed_origins = tuple(origins)
+
+    def _seed(self):
+        """The jar's rows for a (re)starting worker; records what was imported or why it failed."""
+        try:
+            sites, rows = self.jar.import_rows()
+        except JarError as exc:
+            self._import_error = str(exc)
+            return []
+        if self._suppressed:
+            # #950 review P1: a login window never holds a session it must not drive.
+            sites = set(sites) - self._suppressed
+            rows = [row for row in rows
+                    if registrable_domain(str(row.get('domain') or '').lstrip('.')) not in self._suppressed]
+        self._imported |= sites
+        return rows
+
+    def _launch_webkit(self, profile_dir, headless):
+        return WebKitWorkerDriver(self.profile_dir.name, seed=self._seed, cwd=self.profile_dir,
+                                  allowed_origins_for_tests=self._allowed_origins)
+
+    def remove_legacy_profile(self):
+        """Delete the pre-#680 Playwright Chromium profile (plaintext cookies) from ``profile_dir``.
+
+        Everything in that folder except the encrypted jar is the old profile.
+        Returns True when something was removed.
+        """
+        removed = False
+        try:
+            entries = list(self.profile_dir.iterdir()) if self.profile_dir.is_dir() else []
+        except OSError:
+            return False
+        for entry in entries:
+            if entry.name == JAR_NAME or entry.name.startswith(JAR_NAME + '.tmp-'):
+                continue
+            try:
+                if entry.is_dir() and not entry.is_symlink():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+                removed = True
+            except OSError:
+                continue
+        return removed
+
+    def available(self):
+        try:
+            return bool(self._available())
+        except Exception:
+            return False
+
+    def unavailable_reason(self):
+        """None, or ``platform`` / ``dependency`` (the typed refusal ``browser_unavailable_platform``)."""
+        if self.available():
+            return None
+        return webkit_unavailable_reason() or 'platform'
+
+    def unavailable_message(self):
+        reason = self.unavailable_reason()
+        return unavailable_text(reason) if reason else None
+
+    def status(self):
+        reason = self.unavailable_reason()
+        status = {'available': reason is None, 'unavailable_reason': reason, 'engine': 'macos-webkit',
+                  'message': unavailable_text(reason) if reason else None,
+                  'login_window_open': self._holder == 'login', 'in_use': self._holder is not None and self._holder != 'login',
+                  'limitation': LIMITATION_TEXT, 'google_note': GOOGLE_NOTE, 'sessions': []}
+        if reason is None:
+            state, sessions = self._jar_view()
+            status['storage'] = {'what': 'site-sign-in-cookies', 'path': str(self.jar.path),
+                                 'key': getattr(self.jar.key, 'location', 'macos-keychain'), 'key_service': JAR_SERVICE,
+                                 'sent_to_ai': False, 'state': state, 'save_error': self.save_error}
+            status['sessions'] = sessions
+        return status
+
+    def _jar_view(self):
+        """``(state, sessions)`` for Settings without blocking on the Keychain.
+
+        No file or a jar this process already read: answered at once.  Otherwise
+        the jar is decrypted on a background thread and Settings shows
+        ``checking`` until it finishes; a failure is shown for a minute before
+        the next attempt.
+        """
+        cached = self.jar.cached_sites()
+        if cached is not None:
+            self._view = None
+            return cached
+        view = self._view
+        if view is not None and view[0] != 'checking' and self.clock() - view[2] < 60:
+            return view[0], view[1]
+        if not self._view_refreshing:
+            self._view_refreshing = True
+            self._view = ('checking', [], self.clock())
+
+            def refresh():
+                try:
+                    state = self.jar.state()
+                    self._view = (state, self.jar.sites() if state == 'stored' else [], self.clock())
+                except Exception:
+                    self._view = ('unreadable', [], self.clock())
+                finally:
+                    self._view_refreshing = False
+            threading.Thread(target=refresh, name='agentos-browser-jar-view', daemon=True).start()
+        view = self._view or ('checking', [], self.clock())
+        return view[0], view[1]
+
+    # -- holding the profile ---------------------------------------------------
+    def _acquire(self, holder):
+        if not self._lock.acquire(blocking=False):
+            # #990: a session keep-alive is one short page load; anyone else waits for it rather than failing.
+            if self._holder != KEEPALIVE_HOLDER or not self._lock.acquire(timeout=KEEPALIVE_YIELD_SECONDS):
+                raise ToolError(BUSY_TEXT, 'browser_busy')
+        self._holder = holder
+        self._suppressed = set()
+        self._imported = set()
+        self._import_error = None
+        self._unsavable = None
+        self._save_mark = None
+
+    def _release(self):
+        self._holder = None
+        self._live = None
+        try:
+            self._lock.release()
+        except RuntimeError:
+            pass
+
+    def _save(self, driver):
+        """Export the driver's cookies into the jar (never elsewhere).  A failure keeps the old jar."""
+        if not hasattr(driver, 'cookies_export') or not _alive(driver):
+            return False   # a crashed worker has nothing new; never restart one just to export
+        with self._jar_lock:
+            if self._unsavable is not None and self._unsavable == _generation(driver):
+                self.save_error = 'worker_delete_failed'
+                return False
+            if self._import_error:
+                # The jar could not be read when this worker started (e.g. a
+                # locked Keychain): saving could replace sessions it never
+                # held.  Keep the jar as it is and tell the owner why.
+                self.save_error = self._import_error
+                return False
+            try:
+                sites, hosts = driver.cookies_export()
+            except Exception:
+                return False
+            sites = {site: rows for site, rows in sites.items() if site not in self._suppressed}
+            # #990: cookies that did not change since this holder's last write are not written again
+            # (and nothing is told to on_saved): a close right after the landing save writes nothing.
+            mark = _export_mark(sites, hosts, self._imported)
+            if mark == self._save_mark:
+                return True
+            try:
+                self.jar.save_export(sites, hosts, imported=self._imported)
+            except JarError as exc:
+                self.save_error = str(exc)
+                return False
+            except Exception:
+                return False
+            self._save_mark = mark
+            self.save_error = None
+            # Exported sites were replaced; imported sites missing from the export were dropped.
+            touched = set(sites) | set(self._imported)
+        self._saved(touched)
+        return True
+
+    def _saved(self, touched):
+        """Tell ``on_saved`` which sites' stored rows may have changed (#934); a failing hook never fails a save."""
+        hook = self.on_saved
+        if hook is None:
+            return
+        try:
+            hook(touched)
+        except Exception as exc:
+            LOG.warning('browser profile: saved hook failed (%s)', type(exc).__name__)
+
+    def import_site(self, site, rows):
+        """Store one site's rows pushed by the owner's instance (#934) and give them to a running worker.
+
+        The site's stored rows are replaced (empty ``rows`` removes them);
+        every other site is untouched.  A running worker drops the site and
+        imports the rows; when it cannot, it is stopped without saving, so
+        the Work's next step starts a fresh worker from the jar.  Returns
+        names and counts only.  Raises ``JarError`` when the jar cannot be
+        read; nothing is then written.  ``on_saved`` is not called: a site
+        received from the owner is never pushed anywhere.
+        """
+        site = str(site or '').strip().lower()
+        rows = [row for row in rows or () if isinstance(row, dict) and row.get('name')]
+        with self._jar_lock:
+            self._save_mark = None
+            self.jar.save_export({site: rows}, imported={site})
+            live = self._live
+            worker = None
+            if live is not None and hasattr(live, 'cookies_import') and _alive(live):
+                try:
+                    if hasattr(live, 'cookies_delete'):
+                        live.cookies_delete(site)
+                    if rows:
+                        live.cookies_import(rows)
+                    self._imported.add(site)
+                    worker = 'imported'
+                except Exception:
+                    self._worker_failed(live)
+                    worker = 'failed'
+        return {'site': site, 'cookies': len(rows), 'running_browser': worker}
+
+    def driver_factory(self, work_id):
+        """A zero-argument factory a ``BrowserSession`` calls on first use, or None when unavailable."""
+        if not self.available():
+            return None
+        def launch():
+            self._acquire(work_id)
+            try:
+                self.profile_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+                driver = self.launcher(self.profile_dir, self.headless)
+            except Exception:
+                self._release()
+                raise
+            self._live = driver
+            return _ReleasingDriver(driver, self._save, self._release)
+        return launch
+
+    # -- the owner's sessions (Settings) -------------------------------------------
+    def _worker_failed(self, live):
+        """A running worker could not drop sessions: never save from it, and stop it.
+
+        The worker is discarded (no export), so the Work's next step starts a
+        fresh worker from the jar, which no longer holds the deleted sessions.
+        """
+        self._unsavable = _generation(live)
+        discard = getattr(live, 'discard', None)
+        if callable(discard):
+            try:
+                discard()
+            except Exception:
+                pass
+
+    def delete_site(self, site):
+        """Remove one site's sign-in data from the jar and from a running worker.
+
+        ``deleted`` is True only when both succeeded.  When the running worker
+        could not delete it, the jar entry is still removed, that worker is
+        stopped without saving, and the reply says so (``running_browser``).
+        """
+        site = str(site or '').strip().lower()
+        if not site:
+            raise ValueError('삭제할 사이트를 지정하세요.')
+        with self._jar_lock:
+            self._save_mark = None
+            live = self._live
+            worker = None
+            if live is not None and hasattr(live, 'cookies_delete') and _alive(live):
+                try:
+                    live.cookies_delete(site)
+                    worker = 'deleted'
+                except Exception:
+                    self._suppressed.add(site)
+                    self._worker_failed(live)
+                    worker = 'failed'
+            try:
+                removed = self.jar.remove(site)
+            except Exception:
+                raise ValueError('저장된 로그인 세션을 읽지 못했습니다. "모두 삭제"로 초기화할 수 있습니다.') from None
+        self._saved({site})
+        if worker == 'failed':
+            return {'deleted': False, 'site': site, 'removed_from_jar': bool(removed), 'running_browser': 'failed',
+                    'message': WORKER_DELETE_FAILED_TEXT}
+        return {'deleted': bool(removed) or worker == 'deleted', 'site': site}
+
+    def delete_all(self):
+        """Delete the jar file, its Keychain key and the legacy profile, and clear a running worker.
+
+        Every part is reported: a running worker that could not clear, or a
+        Keychain key that could not be removed, makes ``deleted`` False with
+        the reason; nothing is acknowledged that did not happen.
+        """
+        with self._jar_lock:
+            self._save_mark = None
+            live = self._live
+            worker = None
+            if live is not None and hasattr(live, 'cookies_clear') and _alive(live):
+                try:
+                    live.cookies_clear()
+                    worker = 'cleared'
+                except Exception:
+                    self._worker_failed(live)
+                    worker = 'failed'
+            cleared = self.jar.clear()
+            legacy = self.remove_legacy_profile()
+            self.save_error = None
+        self._saved(None)
+        result = {'all': True, 'jar_deleted': cleared['jar_deleted'] or legacy, 'key_deleted': cleared['key_deleted'],
+                  'key_error': cleared['key_error'], 'running_browser': worker}
+        result['deleted'] = cleared['key_error'] is None and worker != 'failed'
+        if cleared['key_error']:
+            result['message'] = KEY_DELETE_FAILED_TEXT
+        elif worker == 'failed':
+            result['message'] = WORKER_DELETE_FAILED_TEXT
+        return result
+
+    # -- the owner's login window ------------------------------------------------------
+    def refresh_session_http(self, url, *, opener=None):
+        """Refresh a signed-in session with one HTTP request instead of a page (#1015).
+
+        Under the profile lock (no worker holds older cookies meanwhile), the
+        site's stored rows go out with one GET (``http_refresh``); what the
+        site answered replaces that site's rows only, and ``on_saved`` pushes
+        it like any save.  Returns ``{'state': refreshed | unchanged | answered
+        | blocked | failed | busy}``; ``blocked`` means the site refused a
+        non-browser request.  #1269: what the answer did to the session is
+        stated as observed, from the site's token cookies (``latest_token_expiry``):
+        ``refreshed`` only when their latest ``exp`` moved later, ``unchanged``
+        when the site holds such tokens and none moved (the request cannot
+        extend that session), ``answered`` when it holds none (the site answered;
+        whether the session lives is not known).
+        """
+        parts = urlsplit(str(url or ''))
+        site = registrable_domain(parts.hostname or '')
+        if not site:
+            return {'state': 'failed'}
+        try:
+            self._acquire(KEEPALIVE_HOLDER)
+        except ToolError:
+            return {'state': 'busy'}
+        try:
+            with self._jar_lock:
+                rows = self.jar.site_rows(site)
+            if not rows:
+                return {'state': 'failed'}
+            state, after = http_refresh(url, rows, allowed_origins=self._allowed_origins, opener=opener)
+            if state != 'refreshed':
+                return {'state': state}
+            with self._jar_lock:
+                self._save_mark = None
+                self.jar.save_export({site: after}, [parts.hostname], imported={site})
+            self._saved({site})
+            before_exp, after_exp = latest_token_expiry(rows), latest_token_expiry(after)
+            if before_exp is None and after_exp is None:
+                return {'state': 'answered'}
+            if after_exp is not None and (before_exp is None or after_exp > before_exp):
+                return {'state': 'refreshed'}
+            return {'state': 'unchanged'}
+        except Exception as exc:
+            return {'state': 'failed', 'error': type(exc).__name__}
+        finally:
+            self._release()
+
+    def open_for_login(self, url, wait=False, seconds=None, on_closed=None, on_opened=None):
+        """Show the worker window at ``url`` for the owner to log in by hand.
+
+        AgentOS navigates to ``url`` and does nothing else: no typing, no
+        reading.  The window's title shows the host it is on.  Cookies are
+        exported into the encrypted jar once its landing settled and when the owner
+        closes it (or after ``seconds``, by default ``LOGIN_WINDOW_SECONDS``,
+        or when ``close_login_window`` is called with the returned ``window``).
+
+        #709: once the window has closed, its cookies were saved and the
+        profile was released, ``on_closed(window, reason, saved)`` is called
+        on the window's thread.  ``reason`` is ``owner`` (the owner closed the
+        window), ``closed`` (``close_login_window``), ``timeout`` or
+        ``failed``; ``saved`` is whether the final save into the jar succeeded.
+
+        #716: with ``on_opened`` the caller does not wait for the window to
+        show: the profile is taken here (``busy`` is still answered at once)
+        and the result is ``opening``; ``on_opened(window, host)`` is called on
+        the window's thread once it shows, and a window that never showed calls
+        only ``on_closed(window, 'failed', False)``.  #749: ``host`` is the
+        host its first navigation landed on after redirects (``landed_host``),
+        or None when the engine did not say.  #762: the window's cookies are
+        saved into the jar once before ``on_opened``, so a jar reading taken
+        there is the state before the owner could sign in.
+        """
+        if not self.available():
+            return {'state': 'unavailable', 'reason': self.unavailable_reason(), 'message': self.unavailable_message()}
+        parts = urlsplit(str(url or ''))
+        if parts.scheme not in ('http', 'https') or not parts.netloc:
+            raise ValueError('http 또는 https 주소를 입력하세요.')
+        if local_destination(url, self._allowed_origins):
+            raise ValueError(BLOCKED_TEXT)
+        try:
+            self._acquire('login')
+        except ToolError:
+            return {'state': 'busy', 'message': BUSY_TEXT}
+        try:
+            # #950 review P1: excluded sites are neither loaded into the window nor saved back from it.
+            self._suppressed |= set(self.login_excluded() or ()) if callable(self.login_excluded) else set()
+        except Exception:
+            self._release()
+            raise
+        opened = threading.Event()
+        window_id = secrets.token_hex(8)
+        # The flag a programmatic close sets before it stops the loop, so an
+        # owner's close is never confused with it (#709).
+        record = {'stop': threading.Event(), 'done': threading.Event(), 'reason': None, 'saved': False}
+        self._login_windows[window_id] = record
+        for stale in list(self._login_windows)[:-LOGIN_WINDOWS_KEPT]:
+            self._login_windows.pop(stale, None)
+        stop = record['stop']
+        lifetime = LOGIN_WINDOW_SECONDS if seconds is None else max(1.0, min(float(seconds), LOGIN_WINDOW_SECONDS))
+        failure = []
+        def window():
+            driver = None
+            reason = 'failed'
+            try:
+                self.profile_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+                driver = self.launcher(self.profile_dir, False)
+                self._live = driver
+                record['driver'] = driver   # #939: what the phone drives, while the window is open
+                show = getattr(driver, 'show', None)
+                if show is not None:
+                    landed = show(url, LOGIN_OPEN_SECONDS)
+                else:
+                    landed = driver.goto(url, ACTION_TIMEOUT_SECONDS)
+                record['landed_host'] = landed_host(landed)
+                # #762: what the landing itself set (a sign-in domain's CSRF or anonymous cookies) is
+                # in the jar before the owner can act, so a later change there is the owner's doing.
+                record['landed_saved'] = bool(self._save(driver))
+                # #765: whether the owner navigated the window after its landing is login evidence
+                # alongside the cookies (a count only; AgentOS never reads or types into the page).
+                record['navigations'] = _navigations(driver)
+                opened.set()
+                if on_opened is not None:
+                    try:
+                        on_opened(window_id, record['landed_host'])
+                    except Exception:
+                        pass
+                deadline = self.clock() + lifetime
+                # #990: no periodic export while the window is open (it was every 15 s); the cookies are
+                # saved once the landing settled (above) and once when the window closes (below).
+                while driver.is_open() and self.clock() < deadline and not stop.is_set():
+                    stop.wait(0.5)
+                reason = 'closed' if stop.is_set() else 'timeout' if self.clock() >= deadline else 'owner'
+            except Exception as exc:
+                failure.append(type(exc).__name__)
+            finally:
+                record.pop('driver', None)   # #939: nothing drives a closing window
+                stored = False
+                if driver is not None:
+                    stored = bool(self._save(driver))
+                    # After the final save (Codex P2 on #773): a sign-in navigation that committed while
+                    # the save ran is counted with the cookies that save stored.
+                    after, before = _navigations(driver), record.get('navigations')
+                    record['navigated'] = after is not None and before is not None and after > before
+                    try:
+                        driver.close()
+                    except Exception:
+                        pass
+                self._release()
+                record['reason'], record['saved'] = reason, stored and not failure
+                record['done'].set()
+                opened.set()
+                if on_closed is not None:
+                    try:
+                        on_closed(window_id, reason, record['saved'])
+                    except Exception:
+                        pass
+        self._login_thread = threading.Thread(target=window, name='agentos-browser-login', daemon=True)
+        self._login_thread.start()
+        if wait:
+            self._login_thread.join()
+        elif on_opened is not None:
+            return {'state': 'opening', 'url': page_reference(url), 'message': LOGIN_WINDOW_TEXT, 'window': window_id}
+        else:
+            opened.wait(LOGIN_OPEN_SECONDS + WORKER_START_SECONDS + 5)
+        if failure:
+            return {'state': 'failed', 'message': FAILED_TEXT}
+        return {'state': 'closed' if wait else 'opened', 'url': page_reference(url), 'message': LOGIN_WINDOW_TEXT,
+                'window': window_id}
+
+    def site_cookie_marks(self, host):
+        """``(marks, now)`` of ``host``'s stored sign-in cookies (``CookieJar.site_cookie_marks``), or None when unreadable (#709)."""
+        try:
+            with self._jar_lock:
+                return self.jar.site_cookie_marks(host)
+        except Exception:
+            return None
+
+    def login_window_known(self, window):
+        """Whether ``window`` is a login window this process opened (a restart forgets every one)."""
+        return bool(window) and window in self._login_windows
+
+    def login_window_landed_saved(self, window):
+        """Whether ``window``'s save right after its first navigation succeeded (#762 review P2-1):
+        only then is a jar reading taken at ``on_opened`` a baseline after the landing."""
+        record = self._login_windows.get(window) if window else None
+        return bool(record and record.get('landed_saved'))
+
+    def login_window_navigated(self, window):
+        """Whether ``window``'s main frame navigated after its landing, before it closed (#765).
+        False when that was not observed (a crashed worker, a driver that cannot count)."""
+        record = self._login_windows.get(window) if window else None
+        return bool(record and record.get('navigated'))
+
+    def login_window_outcome(self, window):
+        """``(reason, saved)`` once ``window`` has closed, saved and released; None while it is open or unknown."""
+        record = self._login_windows.get(window) if window else None
+        if record is None or not record['done'].is_set():
+            return None
+        return record['reason'], bool(record['saved'])
+
+    def login_window_driver(self, window):
+        """The driver of login window ``window`` while it is open (#939), else None."""
+        record = self._login_windows.get(window) if window else None
+        if record is None or record['done'].is_set():
+            return None
+        return record.get('driver')
+
+    def login_window_frame(self, window):
+        """The phone's view of ``window``: ``WebKitWorkerDriver.frame`` of its driver, or None when the
+        window is not open or its driver cannot answer (#939).  The image is returned once, never kept."""
+        driver = self.login_window_driver(window)
+        frame = getattr(driver, 'frame', None) if driver is not None else None
+        if frame is None:
+            return None
+        try:
+            return frame()
+        except Exception:
+            return None
+
+    def login_window_remote(self, window, on):
+        """Begin (``on``) or end a phone session on ``window``'s driver (#939); True when the driver accepted it."""
+        driver = self.login_window_driver(window)
+        method = getattr(driver, 'remote_begin' if on else 'remote_end', None) if driver is not None else None
+        if method is None:
+            return False
+        try:
+            method()
+        except Exception:
+            return False
+        return True
+
+    def login_window_input(self, window, kind, **fields):
+        """One phone input into ``window`` (#939); True when the driver accepted it.  ``fields`` are never logged."""
+        driver = self.login_window_driver(window)
+        remote_input = getattr(driver, 'remote_input', None) if driver is not None else None
+        if remote_input is None:
+            return False
+        try:
+            remote_input(kind, **fields)
+        except Exception:
+            return False
+        return True
+
+    def close_login_window(self, window, timeout=LOGIN_CLOSE_SECONDS):
+        """Close the login window ``open_for_login`` returned as ``window``, and wait for it (#709).
+
+        Only that window: another login window is left alone.  Returns True
+        only when that window has closed (now, or earlier by the owner), its
+        final cookie save into the jar succeeded and the profile was
+        released.  False when this process never opened it (a restart), it
+        did not finish closing in ``timeout`` seconds, or the save failed.
+        ``timeout=0`` only asks it to close and never waits (#716): the
+        caller reads ``login_window_outcome`` later.
+        """
+        record = self._login_windows.get(window) if window else None
+        if record is None:
+            return False
+        record['stop'].set()
+        if not record['done'].wait(timeout):
+            return False
+        return bool(record['saved'])
+
+
+def _export_mark(sites, hosts, imported):
+    """A fingerprint of one cookie export (#990), compared in memory only and never stored or logged."""
+    return hashlib.sha256(json.dumps([sites, hosts, sorted(imported or ())], sort_keys=True, ensure_ascii=False,
+                                     default=str).encode()).hexdigest()
+
+
+def _generation(driver):
+    """Which worker process a driver runs now (a restart is a new generation)."""
+    return (id(driver), getattr(driver, 'starts', 0))
+
+
+def _navigations(driver):
+    """The driver's main-frame navigation count (#765), or None when it cannot say."""
+    count = getattr(driver, 'navigations', None)
+    if count is None or not _alive(driver):
+        return None
+    try:
+        count = count()
+    except Exception:
+        return None
+    return count if isinstance(count, int) and not isinstance(count, bool) else None
+
+
+def _alive(driver):
+    alive = getattr(driver, 'alive', None)
+    try:
+        return bool(alive()) if callable(alive) else True
+    except Exception:
+        return False
+
+
+class _ReleasingDriver:
+    """A driver whose ``close`` saves its cookies to the jar, closes it, and releases the profile (once)."""
+
+    def __init__(self, driver, save, release):
+        self._driver, self._save, self._release = driver, save, release
+
+    def __getattr__(self, name):
+        return getattr(self._driver, name)
+
+    def close(self):
+        save, self._save = self._save, lambda driver: None
+        try:
+            save(self._driver)
+        finally:
+            try:
+                self._driver.close()
+            finally:
+                release, self._release = self._release, lambda: None
+                release()

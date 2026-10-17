@@ -1,0 +1,95 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>설치와 사용 안내 — Still</title><link rel="stylesheet" href="assets/site.css"></head><body><header><strong>Still / Still</strong><nav aria-label="사이트"><a href="ko.html">홈</a><a href="install.html">연결 안내</a><a href="privacy.html">개인정보</a><a href="terms.html">이용 조건</a></nav></header><main><h1>설치와 사용 안내</h1><p>Still을 이 컴퓨터에 설치하고, AI와 텔레그램을 연결해 쓰는 순서입니다. 뒤쪽에는 가족 구성원용 인스턴스를 등록·중지·제거하는 방법이 있습니다. 명령은 모두 터미널에서 입력합니다.</p><p class="notice">이 페이지는 설치 명령과 화면 흐름만 설명합니다. 어떤 AI 계정이나 봇 토큰도 이 웹사이트에 입력하지 마세요.</p>
+
+<h2>1. 설치</h2>
+<p><strong>macOS 또는 Linux.</strong> Homebrew, Python, Docker, git이 없어도 됩니다.</p>
+<pre><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh</code></pre>
+<p>설치 파일은 공개 릴리스 아카이브를 받아 릴리스 매니페스트의 SHA-256과 대조합니다. 값이 다르면 아무것도 설치하지 않습니다. 설치가 끝나면 같은 터미널에서 첫 설정이 바로 이어집니다. 나중에 다시 시작할 때는 새 터미널에서 <code>agentos start</code>를 입력합니다.</p>
+<p><strong>macOS, Homebrew 사용.</strong></p>
+<pre><code>brew install jongtae/agentos/agentos
+agentos start</code></pre>
+<p><strong>Windows.</strong> Still은 아직 Windows에서 직접 실행되지 않습니다. WSL2의 Ubuntu를 열고 위의 설치 명령을 그대로 실행합니다. Codex나 Claude Code도 Ubuntu 안에서 설치하고 로그인해야 합니다. Still을 쓰는 동안에는 Ubuntu 창을 열어 두어야 합니다. 브라우저가 열리지 않으면 Windows 브라우저에서 <code>http://127.0.0.1:8787</code>을 엽니다.</p>
+
+<h2>2. 첫 실행 설정</h2>
+<p>터미널은 시스템 언어(한국어, 일본어, 중국어 간체, 그 밖에는 영어)를 따릅니다. 각 단계는 Enter로 건너뛸 수 있고, 끝낸 단계는 Ctrl-C로 중단해도 유지됩니다.</p>
+<ol>
+  <li><strong>접근 암호</strong> (선택, 12자 이상). 비워 두면 이 컴퓨터에서만 Still을 열 수 있습니다.</li>
+  <li><strong>AI 연결</strong>. ChatGPT(Codex), Claude(Claude Code), API 키 중 고르거나 나중에 브라우저에서 연결합니다.</li>
+  <li><strong>텔레그램</strong> (선택). BotFather에서 받은 봇 토큰을 붙여 넣으면 Still이 연결 링크를 보여 줍니다.</li>
+</ol>
+<p>설정이 끝나면 브라우저에서 <code>http://127.0.0.1:8787</code>이 열립니다. 언제든 <code>agentos start</code>를 다시 실행할 수 있으며, 끝난 설정은 반복되지 않고 멈춘 지점부터 이어집니다.</p>
+
+<h2>3. AI 연결</h2>
+<ul>
+  <li><strong>ChatGPT 구독 (Codex).</strong> 공식 Codex CLI를 설치하고 <code>codex login</code>을 실행합니다. 그다음 Still 설정에서 <strong>Codex 로그인 완료 · 선택</strong>을 누릅니다. Still은 Codex 로그인 정보를 요청하거나 읽거나 저장하지 않고, 사용자가 완료했다는 확인만 기록합니다.</li>
+  <li><strong>Claude 구독 (Claude Code).</strong> Claude Code를 설치하고 <code>claude setup-token</code>을 실행한 뒤, 나온 토큰을 Still의 Claude Code 토큰 칸에 한 번 붙여 넣습니다. 토큰은 이 컴퓨터의 비공개 자격 증명 저장소에만 보관되고 Claude Code에만 전달됩니다.</li>
+  <li><strong>직접 연결.</strong> Ollama, OpenAI 호환 Chat Completions 엔드포인트, OpenAI 또는 Anthropic API 키를 쓸 수 있습니다. 공급자, 엔드포인트, 모델 이름을 고르고 연결 테스트에 성공한 설정만 적용됩니다. API 키는 비공개 로컬 파일에 저장됩니다.</li>
+</ul>
+<p class="notice">요청 내용은 OpenAI 또는 Anthropic으로 전송됩니다. 구독 엔진에는 Still이 허용한 도구만 전달되며, 로컬 파일, 자격 증명, 임의 셸 명령에는 접근하지 못합니다.</p>
+
+<h2>4. 텔레그램 연결</h2>
+<ol>
+  <li>텔레그램의 BotFather에서 새 봇을 만들고 토큰을 받습니다. 웹훅이 설정되지 않은 전용 봇을 쓰는 것이 좋습니다.</li>
+  <li>브라우저에서 <strong>설정 → 외부 연결 → Telegram 연결 설정</strong>을 열고 토큰을 붙여 넣은 뒤 <strong>Telegram 연결</strong>을 누릅니다.</li>
+  <li><strong>Telegram 열기</strong>를 누르고 본인 계정에서 <strong>Start</strong>를 누르면 페어링이 끝납니다.</li>
+</ol>
+<p>페어링된 본인의 개인 대화만 요청을 보낼 수 있습니다. Still은 텔레그램과 아웃바운드 폴링으로 통신하므로 공개 인바운드 포트를 열 필요가 없습니다. 원격 요청을 처리하려면 컴퓨터가 켜져 있고 깨어 있어야 합니다.</p>
+
+<h2>5. 처음 써 보기</h2>
+<p>텔레그램 대화에 필요한 것을 그대로 요청합니다. 예를 들어 “우리 고양이가 요즘 밥을 잘 안 먹어. 뭘 해 보면 좋을까?”라고 물으면 답하면서 고양이를 기억해 두고, 나중에 “로봇청소기 500달러 이하로 찾아 줘”라고만 해도 고양이 털을 고려한 답을 받을 수 있습니다. Still은 기억해 둔 내용을 알려 주고, 되돌릴 수 있게 합니다.</p>
+<p>연결이 제대로 되었는지 모델 없이 확인하려면 <code>/note 금요일 출시 점검</code>을 보낸 뒤 <code>/notes</code>로 목록을 봅니다. 브라우저는 연결 설정과 작업 기록을 확인하는 곳입니다.</p>
+
+<h2>6. 다시 시작, 업데이트, 제거</h2>
+<table>
+  <thead><tr><th>하려는 일</th><th>명령</th></tr></thead>
+  <tbody>
+    <tr><td>다시 시작</td><td><code>agentos start</code></td></tr>
+    <tr><td>업데이트 (Homebrew)</td><td>실행 중이면 Ctrl-C로 멈춘 뒤 <code>brew update</code>, <code>brew upgrade jongtae/agentos/agentos</code>, <code>agentos start</code></td></tr>
+    <tr><td>업데이트 (설치 스크립트)</td><td>설치 명령을 다시 실행합니다</td></tr>
+    <tr><td>프로그램 제거 (uv 설치)</td><td><code>uv tool uninstall personal-agentos</code></td></tr>
+    <tr><td>현재 상태 확인</td><td><code>agentos guide</code> (작업 내용과 자격 증명은 표시하지 않습니다)</td></tr>
+  </tbody>
+</table>
+<p>데이터는 <code>~/.local/share/agentos</code>에 남습니다. 프로그램을 제거해도 이 폴더는 지워지지 않습니다. 백업은 Still을 멈춘 상태에서 폴더 전체를 복사하세요. 이 폴더에는 비공개 대화와 자격 증명이 들어 있습니다. 자격 증명은 파일 권한으로 보호되며, 애플리케이션이 따로 암호화하지는 않습니다.</p>
+
+<h2>7. 백그라운드 서비스 (macOS)</h2>
+<p>터미널을 열어 두지 않고 로그인할 때 Still이 자동으로 시작되도록 등록할 수 있습니다.</p>
+<pre><code>agentos service install    # 등록하고 시작
+agentos service status     # launchd 상태와 상태 점검 결과 확인
+agentos service restart
+agentos service stop       # 중지하고 영구 비활성화
+agentos service start      # 중지한 서비스를 다시 켬
+agentos service uninstall  # 등록만 제거, 데이터는 유지
+agentos service upgrade    # 실행 파일을 바꾼 뒤 서비스 정의를 갱신
+</code></pre>
+<p class="notice">등록된 서비스는 <code>KeepAlive</code> 설정으로 실행됩니다. 그래서 프로세스만 종료하면 launchd가 바로 다시 띄웁니다. 멈추려면 반드시 <code>service stop</code>을 사용하세요. 자동 재시작 테스트는 launchctl을 대체한 방식으로만 확인했고, 재부팅 후 동작은 소유자 실사용으로 확인해야 합니다.</p>
+
+<h2>8. 가족 구성원용 인스턴스</h2>
+<p>가족 구성원마다 이 Mac 안에 별도의 Still 인스턴스를 둘 수 있습니다. 인스턴스는 자기만의 기억, 폴더, 승인, 작업 기록과 텔레그램 봇을 가집니다. 사용자의 인스턴스와는 아무것도 공유하지 않습니다.</p>
+
+<h3>등록</h3>
+<pre><code>agentos family add spouse --display-name "아내 비서"</code></pre>
+<ul>
+  <li>인스턴스를 만들고 시작한 뒤, 설치된 <code>ngrok</code>으로 약 30분짜리 임시 HTTPS 설정 링크를 만들고 텔레그램으로 보냅니다.</li>
+  <li>가족 구성원은 링크를 열어 자기 텔레그램에서 봇을 만듭니다. 사용자의 봇, 폴더, 기억, 다른 연결은 복사되지 않습니다.</li>
+  <li>AI 경로는 사용자의 설정에서 필요한 키나 토큰만 복사합니다. 나중에 사용자가 키를 바꿔도 인스턴스는 기존 키를 계속 쓰므로, 필요하면 인스턴스에서 경로를 다시 설정합니다.</li>
+  <li>포트를 직접 정하려면 <code>--port 8797</code>처럼 지정합니다. 생략하면 8797부터 비어 있는 포트 쌍을 씁니다.</li>
+</ul>
+<p>링크 없이 서비스만 등록하려면 다음을 씁니다. 이름은 소문자, 숫자, 하이픈만 쓸 수 있고, 포트는 비어 있어야 하며 8787은 쓸 수 없습니다.</p>
+<pre><code>agentos service install --instance spouse --port 8797</code></pre>
+<p>설정 화면은 <code>http://127.0.0.1:8797/</code>에서 열립니다. 설정 링크는 해당 인스턴스의 <code>private/setup-link.txt</code>에 있습니다.</p>
+
+<h3>확인, 중지, 다시 시작, 제거</h3>
+<pre><code>agentos service status    --instance spouse   # 상태 확인
+agentos service stop      --instance spouse   # 중지하고 영구 비활성화
+agentos service start     --instance spouse   # 중지한 인스턴스를 다시 켬
+agentos service uninstall --instance spouse   # 등록 제거, 데이터는 유지</code></pre>
+<p>인스턴스를 완전히 없애려면 <strong>먼저 <code>stop</code>, 그다음 <code>uninstall</code></strong> 순서로 실행합니다. <code>uninstall</code>은 등록만 지우고 인스턴스 데이터 폴더(<code>~/.local/share/agentos-instances/spouse</code>)는 남깁니다. Still에는 인스턴스 데이터를 지우는 명령이 없습니다. 데이터까지 지우려면 인스턴스를 중지한 뒤 그 폴더를 직접 삭제합니다. 이 작업은 되돌릴 수 없습니다.</p>
+
+<h2>9. 문제 해결</h2>
+<ul>
+  <li><strong>브라우저가 열리지 않음.</strong> 설정 전에는 <code>~/.local/share/agentos/private/setup-link.txt</code>의 링크를 이 컴퓨터에서 엽니다. 이 파일은 설정 전에 남에게 보내지 마세요.</li>
+  <li><strong>포트 충돌.</strong> <code>agentos start --port 8788</code>처럼 다른 포트로 실행합니다.</li>
+  <li><strong>작업이 중간에 끊김.</strong> 재시작 후 진행 중이던 작업은 중단됨으로, 보내는 중이던 텔레그램 메시지는 확인 불가로 표시됩니다. Still은 이를 조용히 다시 보내지 않습니다. 웹 기록을 확인하고 필요하면 새로 요청하세요.</li>
+  <li><strong>상태 요약.</strong> <code>agentos guide</code>는 개수와 다음 단계만 보여 주며 작업 내용이나 자격 증명은 보여 주지 않습니다.</li>
+</ul>
+</main><footer><a href="ko.html">홈</a> · <a href="install.html">연결 안내</a> · <a href="privacy.html">개인정보</a> · <a href="terms.html">이용 조건</a></footer></body></html>

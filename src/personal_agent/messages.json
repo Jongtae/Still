@@ -1,0 +1,2714 @@
+{
+ "agent_runtime.a_needed_connection_isn_t_set": {
+  "ko": "필요한 연결이 아직 설정되지 않아 확인하지 못했습니다. 설정에서 연결을 먼저 확인해 주세요.",
+  "en": "A needed connection isn't set up yet, so I couldn't check. Please check the connection in Settings first.",
+  "ja": "必要な接続がまだ設定されていないため、確認できませんでした。まず設定で接続を確認してください。",
+  "zh": "所需的连接还没有设置，没能确认。请先在设置中检查连接。"
+ },
+ "procedures.saved": {
+  "ko": "이번에 된 방법({count}가지)을 저장해 뒀어요. 다음에 같은 연결로 요청하시면 더 빨리 처리해요. 원하지 않으시면 말씀해 주세요.",
+  "en": "I saved what worked this time ({count} step(s)). The next request through the same connection will go faster. Tell me if you don't want that.",
+  "ja": "今回うまくいった方法（{count}件）を保存しました。次に同じ接続で依頼されたときは、より早く処理します。不要ならお知らせください。",
+  "zh": "已保存这次成功的方法（{count}项）。下次通过同一连接提出请求时会更快处理。如果不需要，请告诉我。"
+ },
+ "agent_runtime.remembered": {
+  "ko": "기억했어요.",
+  "en": "Remembered.",
+  "ja": "覚えました。",
+  "zh": "记住了。"
+ },
+ "agent_runtime.searching_or_reading_stopped_at_its": {
+  "ko": "검색이나 읽기가 한도에서 멈춰 일부만 확인했습니다. 확인하지 못한 부분이 남아 있습니다.",
+  "en": "Searching or reading stopped at its limit, so I checked only part of it. Some parts are still unchecked.",
+  "ja": "検索や読み取りが上限で止まったため、一部だけ確認しました。確認できていない部分が残っています。",
+  "zh": "搜索或读取在上限处停止，只确认了一部分，还有未确认的部分。"
+ },
+ "agent_runtime.sources_looked_up": {
+  "ko": "조회 출처:",
+  "en": "Sources looked up:",
+  "ja": "参照した出典:",
+  "zh": "查询来源："
+ },
+ "agent_runtime.the_tools_finished_but_i_didn": {
+  "ko": "도구 실행은 끝났지만 결과를 설명하는 답변을 받지 못했습니다. 요청이 완료됐는지는 확인되지 않았습니다. 실행 기록을 확인해 주세요.",
+  "en": "The tools finished, but I didn't get an answer describing the result, so it's not confirmed the request was completed. Please check the run record.",
+  "ja": "ツールの実行は終わりましたが、結果を説明する返答を受け取れませんでした。依頼が完了したかは確認できていません。実行記録を確認してください。",
+  "zh": "工具已执行完，但没有收到说明结果的回复，无法确认请求是否完成。请查看执行记录。"
+ },
+ "agent_runtime.this_page_needs_a_sign_in": {
+  "ko": "이 페이지는 로그인이 필요합니다.",
+  "en": "This page needs a sign-in.",
+  "ja": "このページにはログインが必要です。",
+  "zh": "这个页面需要登录。"
+ },
+ "agent_runtime.this_preview_reaches_your_calendar_only": {
+  "ko": "소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.",
+  "en": "This preview reaches your calendar only after you approve it.",
+  "ja": "このプレビューは、承認されてから実際の予定に反映されます。",
+  "zh": "只有你批准后，这个预览才会写入实际日程。"
+ },
+ "agent_runtime.undone": {
+  "ko": "되돌렸어요.",
+  "en": "Undone.",
+  "ja": "元に戻しました。",
+  "zh": "已撤销。"
+ },
+ "attention.ask": {
+  "ko": "아직 답을 기다리는 게 있어요: {text}",
+  "en": "Still waiting on an answer: {text}",
+  "ja": "まだ返事を待っていることがあります: {text}",
+  "zh": "还有一件在等你回复：{text}"
+ },
+ "attention.prepared": {
+  "ko": "준비해 둔 답이 있어요: {text}",
+  "en": "I have an answer ready: {text}",
+  "ja": "用意しておいた答えがあります: {text}",
+  "zh": "我准备好了一个答复：{text}"
+ },
+ "attention.reminder": {
+  "ko": "{text} 알림 있어요.",
+  "en": "A reminder for {text}.",
+  "ja": "{text} のお知らせがあります。",
+  "zh": "有一条关于 {text} 的提醒。"
+ },
+ "button.accept": {
+  "ko": "수락",
+  "en": "Accept",
+  "ja": "承認",
+  "zh": "接受"
+ },
+ "button.apply": {
+  "ko": "적용",
+  "en": "Apply",
+  "ja": "適用",
+  "zh": "应用"
+ },
+ "button.approve": {
+  "ko": "승인",
+  "en": "Approve",
+  "ja": "承認",
+  "zh": "批准"
+ },
+ "button.deny": {
+  "ko": "거절",
+  "en": "Deny",
+  "ja": "拒否",
+  "zh": "拒绝"
+ },
+ "button.cancel_work": {
+  "ko": "작업 취소",
+  "en": "Cancel",
+  "ja": "キャンセル",
+  "zh": "取消"
+ },
+ "button.decline_schedule": {
+  "ko": "예약 안 함",
+  "en": "Don't schedule",
+  "ja": "予約しない",
+  "zh": "不预约"
+ },
+ "button.cancel_reservation": {
+  "ko": "예약 취소",
+  "en": "Cancel reservation",
+  "ja": "予約を取り消す",
+  "zh": "取消预约"
+ },
+ "button.details": {
+  "ko": "상세",
+  "en": "Details",
+  "ja": "詳細",
+  "zh": "详情"
+ },
+ "button.keep": {
+  "ko": "바꾸지 않음",
+  "en": "Don't change",
+  "ja": "変えない",
+  "zh": "不更改"
+ },
+ "button.no_context": {
+  "ko": "컨텍스트 없이 진행",
+  "en": "Continue without context",
+  "ja": "コンテキストなしで続ける",
+  "zh": "不带上下文继续"
+ },
+ "button.phone_sign_in": {
+  "ko": "휴대폰에서 로그인",
+  "en": "Sign in on my phone",
+  "ja": "スマートフォンでログイン",
+  "zh": "在手机上登录"
+ },
+ "button.progress": {
+  "ko": "진행 보기",
+  "en": "Progress",
+  "ja": "進行状況",
+  "zh": "进度"
+ },
+ "button.retry": {
+  "ko": "다시 시도",
+  "en": "Try again",
+  "ja": "もう一度",
+  "zh": "重试"
+ },
+ "button.signed_in": {
+  "ko": "로그인 완료",
+  "en": "Signed in",
+  "ja": "ログイン完了",
+  "zh": "已登录"
+ },
+ "button.stop_watching": {
+  "ko": "그만 지켜보기",
+  "en": "Stop watching",
+  "ja": "見守りをやめる",
+  "zh": "停止关注"
+ },
+ "button.undo": {
+  "ko": "되돌리기",
+  "en": "Undo",
+  "ja": "元に戻す",
+  "zh": "撤销"
+ },
+ "calendar_conversation.calendar_google_primary_calendar": {
+  "ko": "캘린더: Google 기본 캘린더",
+  "en": "Calendar: Google primary calendar",
+  "ja": "カレンダー：Googleのメインカレンダー",
+  "zh": "日历：Google 主日历"
+ },
+ "calendar_conversation.here_is_the_event_draft_it": {
+  "ko": "일정 초안입니다. 아직 캘린더에 만들지 않았습니다.",
+  "en": "Here is the event draft. It has not been added to the calendar yet.",
+  "ja": "予定の下書きです。まだカレンダーには作成していません。",
+  "zh": "这是日程草稿，还没有添加到日历。"
+ },
+ "calendar_conversation.i_cannot_confirm_whether_the_event": {
+  "ko": "일정을 만들었는지 확인할 수 없습니다. 캘린더를 직접 확인하고, 없으면 다시 요청해 주세요. 자동으로 다시 시도하지 않았습니다.",
+  "en": "I cannot confirm whether the event was created. Please check the calendar and make a new request if it is missing. I did not retry automatically.",
+  "ja": "予定が作成されたか確認できません。カレンダーを直接確認し、なければ再度依頼してください。自動では再試行していません。",
+  "zh": "无法确认是否已创建日程。请直接查看日历，如果没有，请重新请求。没有自动重试。"
+ },
+ "calendar_conversation.reply_approve_to_create_it_as": {
+  "ko": "\"승인\"이라고 답하면 이 내용 그대로 만듭니다. 바꾸려면 예: \"4시로\", \"제목은 치과 검진으로\". 그만두려면 \"취소\"라고 답해 주세요.",
+  "en": "Reply \"Approve\" to create it as shown. To change it, say something like \"Make it 4 pm\" or \"Change the title to dental checkup\". To stop, reply \"Cancel\".",
+  "ja": "「承認」と返信すると、この内容で作成します。変更する場合は「4時に」「タイトルを歯科検診に」などと伝えてください。やめる場合は「キャンセル」と返信してください。",
+  "zh": "回复“批准”就会按此内容创建。要修改，可以说“改到4点”或“标题改为牙齿检查”。要停止，请回复“取消”。"
+ },
+ "calendar_conversation.the_event_draft_was_canceled_no": {
+  "ko": "일정 초안을 취소했습니다. 아무 일정도 만들지 않았습니다.",
+  "en": "The event draft was canceled. No events were created.",
+  "ja": "予定の下書きをキャンセルしました。予定は作成していません。",
+  "zh": "已取消日程草稿，没有创建任何日程。"
+ },
+ "calendar_conversation.the_event_was_added_to_the": {
+  "ko": "캘린더에 일정을 만들었습니다.",
+  "en": "The event was added to the calendar.",
+  "ja": "カレンダーに予定を作成しました。",
+  "zh": "已在日历中创建日程。"
+ },
+ "card.awaiting_connection": {
+  "ko": "필요한 연결을 기다리고 있습니다. 연결이 확인되면 이 요청을 한 번만 이어서 처리합니다.",
+  "en": "Waiting for a connection. Once it is confirmed, I will continue this request once.",
+  "ja": "必要な接続を待っています。確認できたら、この依頼を一度だけ続けます。",
+  "zh": "正在等待所需的连接。确认后会继续处理一次这个请求。"
+ },
+ "card.interrupted": {
+  "ko": "작업이 중단되었습니다. 자동으로 다시 실행하지 않았습니다.",
+  "en": "This was interrupted. I did not run it again automatically.",
+  "ja": "作業が中断されました。自動ではやり直していません。",
+  "zh": "任务中断了，没有自动重新执行。"
+ },
+ "card.queued": {
+  "ko": "요청을 받았습니다. 곧 시작할게요.",
+  "en": "Got it. Starting shortly.",
+  "ja": "受け取りました。すぐに始めます。",
+  "zh": "收到，马上开始。"
+ },
+ "card.running": {
+  "ko": "요청을 처리하고 있어요.",
+  "en": "Working on it.",
+  "ja": "対応しています。",
+  "zh": "正在处理。"
+ },
+ "card.state": {
+  "ko": "이 요청은 {state} 상태입니다.",
+  "en": "This request is {state}.",
+  "ja": "この依頼は「{state}」です。",
+  "zh": "这个请求的状态：{state}。"
+ },
+ "card.succeeded": {
+  "ko": "요청을 처리했어요.",
+  "en": "Done.",
+  "ja": "対応しました。",
+  "zh": "已处理。"
+ },
+ "compose.by_the_way_text": {
+  "ko": "참, {text}",
+  "en": "By the way, {text}",
+  "ja": "ところで、{text}",
+  "zh": "对了，{text}"
+ },
+ "compose.i_couldn_t_check_count_of": {
+  "ko": "{count} 단계는 끝내지 못했어요.",
+  "en": "I couldn't finish {count} of the steps.",
+  "ja": "{count}つの手順は終えられませんでした。",
+  "zh": "有 {count} 个步骤没能完成。"
+ },
+ "compose.i_couldn_t_complete_this_request": {
+  "ko": "이 요청은 완료하지 못했습니다: {reason}",
+  "en": "I couldn't complete this request: {reason}",
+  "ja": "この依頼は完了できませんでした: {reason}",
+  "zh": "这个请求没能完成：{reason}"
+ },
+ "compose.remembered_fact": {
+  "ko": "기억했어요: {fact}",
+  "en": "Remembered: {fact}",
+  "ja": "覚えました: {fact}",
+  "zh": "记住了：{fact}"
+ },
+ "compose.steps_tried_steps": {
+  "ko": "시도한 단계: {steps}",
+  "en": "Steps tried: {steps}",
+  "ja": "試した手順: {steps}",
+  "zh": "尝试过的步骤：{steps}"
+ },
+ "compose.undo_n": {
+  "ko": "{n} 되돌리기",
+  "en": "Undo {n}",
+  "ja": "{n} を元に戻す",
+  "zh": "撤销 {n}"
+ },
+ "compose.undone_fact": {
+  "ko": "되돌렸어요: {fact}",
+  "en": "Undone: {fact}",
+  "ja": "元に戻しました: {fact}",
+  "zh": "已撤销：{fact}"
+ },
+ "decision_routes.anthropic_claude_code_subscription_account": {
+  "ko": "Anthropic (Claude Code 구독 계정)",
+  "en": "Anthropic (Claude Code subscription account)",
+  "ja": "Anthropic（Claude Code サブスクリプションアカウント）",
+  "zh": "Anthropic（Claude Code 订阅账户）"
+ },
+ "decision_routes.openai_codex_subscription_account": {
+  "ko": "OpenAI (Codex 구독 계정)",
+  "en": "OpenAI (Codex subscription account)",
+  "ja": "OpenAI（Codex サブスクリプションアカウント）",
+  "zh": "OpenAI（Codex 订阅账户）"
+ },
+ "drive_web_oauth.connect_google_drive": {
+  "ko": "Google Drive 연결하기",
+  "en": "Connect Google Drive",
+  "ja": "Google Drive をつなぐ",
+  "zh": "连接 Google Drive"
+ },
+ "drive_web_oauth.google_drive_access_was_not_allowed": {
+  "ko": "Google Drive 권한이 허용되지 않았습니다. 필요할 때 다시 연결해 주세요.",
+  "en": "Google Drive access was not allowed. Connect again when you need it.",
+  "ja": "Google Drive の権限が許可されませんでした。必要なときにもう一度接続してください。",
+  "zh": "未允许 Google Drive 权限。需要时请重新连接。"
+ },
+ "drive_web_oauth.google_drive_is_connected_i_can": {
+  "ko": "Google Drive가 연결되었습니다. Google Picker에서 선택한 파일만 읽을 수 있습니다.",
+  "en": "Google Drive is connected. I can read only files you choose in Google Picker.",
+  "ja": "Google Drive が接続されました。Google Picker で選んだファイルだけを読めます。",
+  "zh": "Google Drive 已连接。只能读取你在 Google Picker 中选择的文件。"
+ },
+ "drive_web_oauth.google_drive_needs_to_be_connected": {
+  "ko": "Google Drive 연결이 필요합니다. 선택한 파일만 읽을 수 있으며 전체 Drive 검색은 하지 않습니다.",
+  "en": "Google Drive needs to be connected. I can read only files you choose, and I never search your whole Drive.",
+  "ja": "Google Drive の接続が必要です。選んだファイルだけを読み、Drive 全体は検索しません。",
+  "zh": "需要连接 Google Drive。只能读取你选择的文件，不会搜索整个 Drive。"
+ },
+ "drive_web_oauth.i_couldn_t_finish_connecting_google": {
+  "ko": "Google Drive 연결을 완료하지 못했습니다. Telegram에서 새 연결 링크를 요청해 주세요.",
+  "en": "I couldn't finish connecting Google Drive. Ask for a new connection link in Telegram.",
+  "ja": "Google Drive の接続を完了できませんでした。Telegram で新しい接続リンクを依頼してください。",
+  "zh": "没能完成 Google Drive 连接。请在 Telegram 中请求新的连接链接。"
+ },
+ "family_setup.the_family_assistant_is_connected_your": {
+  "ko": "가족 비서 연결이 끝났어요. 이제 가족이 텔레그램에서 비서와 대화할 수 있어요.",
+  "en": "The family assistant is connected. Your family can now chat with the assistant in Telegram.",
+  "ja": "家族用アシスタントの接続が完了しました。これで家族がTelegramでアシスタントと話せます。",
+  "zh": "家人助手已连接好，家人现在可以在 Telegram 中与助手对话了。"
+ },
+ "family_share.not_connected": {
+  "ko": "연결 안 됨",
+  "en": "Not connected",
+  "ja": "未接続",
+  "zh": "未连接"
+ },
+ "handoff.create_event": {
+  "ko": "일정 만들기",
+  "en": "Create event",
+  "ja": "予定を作成",
+  "zh": "创建日程"
+ },
+ "handoff.create_google_calendar_events": {
+  "ko": "Google Calendar 일정 만들기",
+  "en": "Create Google Calendar events",
+  "ja": "Google Calendar の予定を作成",
+  "zh": "创建 Google Calendar 日程"
+ },
+ "handoff.folder_access_was_not_allowed_so": {
+  "ko": "폴더 권한을 허용하지 않아 요청을 실행하지 않았습니다. 폴더 권한은 추가하지 않았습니다.",
+  "en": "Folder access was not allowed, so the request did not run. No folder access was added.",
+  "ja": "フォルダー権限が許可されなかったため、依頼は実行していません。フォルダー権限は追加していません。",
+  "zh": "未允许文件夹权限，请求没有执行，也没有添加文件夹权限。"
+ },
+ "handoff.i_can_t_read_the_body": {
+  "ko": "찾은 메일의 본문을 읽는 기능은 아직 제공하지 않습니다. 제목, 보낸 사람, 날짜로 찾는 것까지만 할 수 있어요.",
+  "en": "I can't read the body of found mail yet. I can only find mail by subject, sender and date.",
+  "ja": "見つけたメールの本文を読む機能はまだありません。件名・差出人・日付で探すところまでです。",
+  "zh": "还不能读取找到的邮件正文，只能按主题、发件人和日期查找。"
+ },
+ "handoff.i_can_t_send_or_reply": {
+  "ko": "메일 보내기나 답장은 제공하지 않습니다. 아무것도 보내지 않았습니다. 메일 찾기는 도울 수 있어요.",
+  "en": "I can't send or reply to mail. Nothing was sent. I can help you find mail.",
+  "ja": "メールの送信や返信はできません。何も送っていません。メールを探すことはお手伝いできます。",
+  "zh": "不能发送或回复邮件，没有发送任何内容。可以帮你找邮件。"
+ },
+ "handoff.i_couldn_t_safely_tell_what": {
+  "ko": "요청을 안전하게 구분할 판단 기능을 사용할 수 없어 메일을 검색하거나 다른 처리를 하지 않았습니다. 메일을 찾으려는 요청이라면 검색할 내용을 다시 구체적으로 적어 주세요.",
+  "en": "I couldn't safely tell what this request is, so I didn't search mail or do anything else. If you want to find mail, tell me more specifically what to look for.",
+  "ja": "依頼の内容を安全に判断できなかったため、メールの検索も他の処理もしていません。メールを探したい場合は、探す内容をもう少し具体的に書いてください。",
+  "zh": "无法安全判断这个请求，所以没有搜索邮件，也没有做其他处理。如果是要找邮件，请更具体地写出要找的内容。"
+ },
+ "handoff.reading_the_chosen_folder_is_allowed": {
+  "ko": "선택한 폴더를 읽기로 허용했습니다. 방금 요청을 이어서 처리합니다.",
+  "en": "Reading the chosen folder is allowed. Continuing your request.",
+  "ja": "選んだフォルダーの読み取りを許可しました。依頼を続けます。",
+  "zh": "已允许读取所选文件夹，继续处理刚才的请求。"
+ },
+ "handoff.saved_result": {
+  "ko": "저장된 결과",
+  "en": "Saved result",
+  "ja": "保存した結果",
+  "zh": "已保存的结果"
+ },
+ "handoff.saving_results_to_the_chosen_folder": {
+  "ko": "선택한 폴더에 결과 파일을 만들도록 허용했습니다. 방금 요청을 이어서 처리합니다.",
+  "en": "Saving results to the chosen folder is allowed. Continuing your request.",
+  "ja": "選んだフォルダーに結果ファイルを作ることを許可しました。依頼を続けます。",
+  "zh": "已允许在所选文件夹中保存结果文件，继续处理刚才的请求。"
+ },
+ "handoff.that_request_was_already_continued_so": {
+  "ko": "이미 이어서 처리한 요청이라 다시 실행하지 않았습니다.",
+  "en": "That request was already continued, so I did not run it again.",
+  "ja": "すでに続けた依頼なので、もう一度は実行していません。",
+  "zh": "这个请求已经继续处理过，没有再执行。"
+ },
+ "handoff.the_approved_access_does_not_match": {
+  "ko": "승인된 권한 범위가 요청에 필요한 범위와 달라 요청을 이어서 처리하지 않았습니다.",
+  "en": "The approved access does not match what the request needs, so I did not continue it.",
+  "ja": "承認された権限の範囲が依頼に必要な範囲と違うため、続けていません。",
+  "zh": "批准的权限范围与请求所需不符，所以没有继续处理。"
+ },
+ "handoff.the_connection_couldn_t_be_confirmed": {
+  "ko": "연결이 확인되지 않아 요청을 이어서 처리하지 않았습니다.",
+  "en": "The connection couldn't be confirmed, so I did not continue the request.",
+  "ja": "接続を確認できなかったため、依頼は続けていません。",
+  "zh": "无法确认连接，没有继续处理请求。"
+ },
+ "handoff.the_connection_was_not_approved_so": {
+  "ko": "연결이 승인되지 않아 요청을 실행하지 않았습니다. 필요하면 다시 연결한 뒤 요청해 주세요.",
+  "en": "The connection was not approved, so the request did not run. Connect again and ask if you need it.",
+  "ja": "接続が承認されなかったため、依頼は実行していません。必要ならもう一度接続してから依頼してください。",
+  "zh": "连接未获批准，请求没有执行。需要的话请重新连接后再说。"
+ },
+ "handoff.the_request_waiting_for_a_connection": {
+  "ko": "연결을 기다리던 요청이 만료되어 이어서 처리하지 않았습니다. 다시 요청해 주세요.",
+  "en": "The request waiting for a connection expired, so I did not continue it. Please ask again.",
+  "ja": "接続を待っていた依頼が期限切れになったため、続けていません。もう一度依頼してください。",
+  "zh": "等待连接的请求已过期，没有继续处理。请再说一次。"
+ },
+ "handoff.the_request_waiting_for_folder_access": {
+  "ko": "폴더 권한을 기다리던 요청이 만료되어 이어서 처리하지 않았습니다. 폴더 권한은 추가하지 않았습니다. 다시 요청해 주세요.",
+  "en": "The request waiting for folder access expired, so I did not continue it. No folder access was added. Please ask again.",
+  "ja": "フォルダー権限を待っていた依頼が期限切れになったため、続けていません。フォルダー権限は追加していません。もう一度依頼してください。",
+  "zh": "等待文件夹权限的请求已过期，没有继续处理，也没有添加文件夹权限。请再说一次。"
+ },
+ "handoff.the_telegram_bot_connection_was_replaced": {
+  "ko": "Telegram 봇 연결이 교체되어 이전 요청은 이어서 처리하지 않았습니다. 필요하면 다시 요청해 주세요.",
+  "en": "The Telegram bot connection was replaced, so I did not continue the earlier request. Ask again if you need it.",
+  "ja": "Telegram ボットの接続が置き換わったため、前の依頼は続けていません。必要ならもう一度依頼してください。",
+  "zh": "Telegram 机器人连接已更换，之前的请求没有继续处理。需要的话请再说一次。"
+ },
+ "handoff.there_was_no_request_to_continue": {
+  "ko": "이어서 처리할 요청이 없어 아무 작업도 실행하지 않았습니다.",
+  "en": "There was no request to continue, so nothing ran.",
+  "ja": "続ける依頼がないため、何も実行していません。",
+  "zh": "没有可以继续的请求，没有执行任何操作。"
+ },
+ "handoff.your_request_changed_so_i_cancelled": {
+  "ko": "요청이 바뀌어 이전 요청을 취소했습니다. 연결이 끝나도 이전 요청은 실행하지 않습니다.",
+  "en": "Your request changed, so I cancelled the earlier one. It will not run even after the connection finishes.",
+  "ja": "依頼が変わったので前の依頼を取り消しました。接続が終わっても前の依頼は実行しません。",
+  "zh": "请求已变更，之前的请求已取消。连接完成后也不会执行之前的请求。"
+ },
+ "information_use.an_earlier_answer_s_information_use": {
+  "ko": "이전 답변의 사용 기록",
+  "en": "An earlier answer's information-use record",
+  "ja": "以前の回答の情報利用記録",
+  "zh": "之前回答的信息使用记录"
+ },
+ "information_use.cli_s_own_search": {
+  "ko": "CLI 자체 검색",
+  "en": "CLI's own search",
+  "ja": "CLI 自身の検索",
+  "zh": "CLI 自带搜索"
+ },
+ "information_use.included_in_request": {
+  "ko": "요청에 포함",
+  "en": "Included in request",
+  "ja": "リクエストに含めました",
+  "zh": "已包含在请求中"
+ },
+ "information_use.information_this_answer_used": {
+  "ko": "이 답변에 쓴 정보",
+  "en": "Information this answer used",
+  "ja": "この回答に使った情報",
+  "zh": "此回答使用的信息"
+ },
+ "information_use.material_attached_to_the_request": {
+  "ko": "요청에 붙인 자료",
+  "en": "Material attached to the request",
+  "ja": "依頼に添付した資料",
+  "zh": "附在请求中的资料"
+ },
+ "information_use.no_query_reported": {
+  "ko": "검색어 보고 없음",
+  "en": "No query reported",
+  "ja": "検索語の報告なし",
+  "zh": "未报告搜索词"
+ },
+ "information_use.not_sent": {
+  "ko": "전달하지 않음",
+  "en": "Not sent",
+  "ja": "送信されていません",
+  "zh": "未发送"
+ },
+ "information_use.prepared_answers": {
+  "ko": "준비해 둔 답변",
+  "en": "Prepared answers",
+  "ja": "準備しておいた回答",
+  "zh": "预先准备的回答"
+ },
+ "information_use.results_returned": {
+  "ko": "돌아온 결과",
+  "en": "Results returned",
+  "ja": "返ってきた結果",
+  "zh": "返回的结果"
+ },
+ "information_use.signed_in_browser_pages": {
+  "ko": "로그인한 브라우저 페이지",
+  "en": "Signed-in browser pages",
+  "ja": "ログイン済みのブラウザページ",
+  "zh": "已登录的浏览器页面"
+ },
+ "label.add": {
+  "ko": "추가",
+  "en": "Add",
+  "ja": "追加",
+  "zh": "添加"
+ },
+ "label.ai_response": {
+  "ko": "AI 응답",
+  "en": "AI response",
+  "ja": "AI の応答",
+  "zh": "AI 回复"
+ },
+ "label.blocked": {
+  "ko": "차단됨",
+  "en": "Blocked",
+  "ja": "ブロック済み",
+  "zh": "已阻止"
+ },
+ "label.calendar": {
+  "ko": "캘린더",
+  "en": "Calendar",
+  "ja": "カレンダー",
+  "zh": "日历"
+ },
+ "label.calendar_draft": {
+  "ko": "일정 초안",
+  "en": "Calendar draft",
+  "ja": "予定の下書き",
+  "zh": "日程草稿"
+ },
+ "label.cancel": {
+  "ko": "취소",
+  "en": "Cancel",
+  "ja": "キャンセル",
+  "zh": "取消"
+ },
+ "label.change": {
+  "ko": "변경",
+  "en": "Change",
+  "ja": "変更",
+  "zh": "更改"
+ },
+ "label.confirm": {
+  "ko": "확인",
+  "en": "Confirm",
+  "ja": "確定",
+  "zh": "确认"
+ },
+ "label.connected": {
+  "ko": "연결됨",
+  "en": "Connected",
+  "ja": "接続済み",
+  "zh": "已连接"
+ },
+ "label.current_context": {
+  "ko": "현재 맥락",
+  "en": "Current context",
+  "ja": "現在のコンテキスト",
+  "zh": "当前情境"
+ },
+ "label.current_situation": {
+  "ko": "현재 상황",
+  "en": "Current situation",
+  "ja": "現在の状況",
+  "zh": "当前情况"
+ },
+ "label.default_model": {
+  "ko": "기본 모델",
+  "en": "default model",
+  "ja": "既定モデル",
+  "zh": "默认模型"
+ },
+ "label.edit": {
+  "ko": "수정",
+  "en": "Edit",
+  "ja": "編集",
+  "zh": "修改"
+ },
+ "label.error": {
+  "ko": "오류",
+  "en": "Error",
+  "ja": "エラー",
+  "zh": "错误"
+ },
+ "label.events": {
+  "ko": "이벤트",
+  "en": "Events",
+  "ja": "イベント",
+  "zh": "事件"
+ },
+ "label.external_connections": {
+  "ko": "외부 연결",
+  "en": "External connections",
+  "ja": "外部接続",
+  "zh": "外部连接"
+ },
+ "label.failed": {
+  "ko": "실패",
+  "en": "Failed",
+  "ja": "失敗",
+  "zh": "失败"
+ },
+ "label.files": {
+  "ko": "파일",
+  "en": "Files",
+  "ja": "ファイル",
+  "zh": "文件"
+ },
+ "label.find_files": {
+  "ko": "파일 찾기",
+  "en": "Find files",
+  "ja": "ファイルを探す",
+  "zh": "查找文件"
+ },
+ "label.folder_permission": {
+  "ko": "폴더 권한",
+  "en": "Folder permission",
+  "ja": "フォルダー権限",
+  "zh": "文件夹权限"
+ },
+ "label.judgment_ai": {
+  "ko": "판단 AI",
+  "en": "Judgment AI",
+  "ja": "判断 AI",
+  "zh": "判断 AI"
+ },
+ "label.location_check": {
+  "ko": "위치 확인",
+  "en": "Location check",
+  "ja": "位置の確認",
+  "zh": "确认位置"
+ },
+ "label.main_ai": {
+  "ko": "기본 AI",
+  "en": "Main AI",
+  "ja": "メイン AI",
+  "zh": "主 AI"
+ },
+ "label.material": {
+  "ko": "자료",
+  "en": "Material",
+  "ja": "資料",
+  "zh": "资料"
+ },
+ "label.memory": {
+  "ko": "기억",
+  "en": "Memory",
+  "ja": "記憶",
+  "zh": "记忆"
+ },
+ "label.model": {
+  "ko": "모델",
+  "en": "Model",
+  "ja": "モデル",
+  "zh": "模型"
+ },
+ "label.needs_attention": {
+  "ko": "확인 필요",
+  "en": "Needs attention",
+  "ja": "確認が必要",
+  "zh": "需要确认"
+ },
+ "label.none": {
+  "ko": "없음",
+  "en": "None",
+  "ja": "なし",
+  "zh": "无"
+ },
+ "label.not_recorded": {
+  "ko": "기록 없음",
+  "en": "Not recorded",
+  "ja": "記録なし",
+  "zh": "无记录"
+ },
+ "label.note": {
+  "ko": "메모",
+  "en": "Note",
+  "ja": "メモ",
+  "zh": "备忘"
+ },
+ "label.off": {
+  "ko": "꺼짐",
+  "en": "Off",
+  "ja": "オフ",
+  "zh": "已关闭"
+ },
+ "label.on": {
+  "ko": "켜짐",
+  "en": "On",
+  "ja": "オン",
+  "zh": "已开启"
+ },
+ "label.one": {
+  "ko": "한",
+  "en": "one",
+  "ja": "1",
+  "zh": "一"
+ },
+ "label.other_connection": {
+  "ko": "기타 연결",
+  "en": "other connection",
+  "ja": "その他の接続",
+  "zh": "其他连接"
+ },
+ "label.partly_done": {
+  "ko": "일부 완료",
+  "en": "Partly done",
+  "ja": "一部完了",
+  "zh": "部分完成"
+ },
+ "label.profile": {
+  "ko": "프로필",
+  "en": "Profile",
+  "ja": "プロフィール",
+  "zh": "个人资料"
+ },
+ "label.projects": {
+  "ko": "프로젝트",
+  "en": "Projects",
+  "ja": "プロジェクト",
+  "zh": "项目"
+ },
+ "label.proposed": {
+  "ko": "제안",
+  "en": "Proposed",
+  "ja": "提案",
+  "zh": "提议"
+ },
+ "label.read_a_file": {
+  "ko": "파일 읽기",
+  "en": "Read a file",
+  "ja": "ファイルを読む",
+  "zh": "读取文件"
+ },
+ "label.read_calendar": {
+  "ko": "일정 조회",
+  "en": "Read calendar",
+  "ja": "予定を確認",
+  "zh": "查看日程"
+ },
+ "label.read_memory": {
+  "ko": "기억 조회",
+  "en": "Read memory",
+  "ja": "記憶を確認",
+  "zh": "查看记忆"
+ },
+ "label.read_notes": {
+  "ko": "메모 조회",
+  "en": "Read notes",
+  "ja": "メモを参照",
+  "zh": "查看备忘"
+ },
+ "label.reminder": {
+  "ko": "알림",
+  "en": "Reminder",
+  "ja": "リマインダー",
+  "zh": "提醒"
+ },
+ "label.remove": {
+  "ko": "빼기",
+  "en": "Remove",
+  "ja": "外す",
+  "zh": "移除"
+ },
+ "label.result": {
+  "ko": "결과",
+  "en": "Result",
+  "ja": "結果",
+  "zh": "结果"
+ },
+ "label.save": {
+  "ko": "저장",
+  "en": "Save",
+  "ja": "保存",
+  "zh": "保存"
+ },
+ "label.save_memory": {
+  "ko": "기억 저장",
+  "en": "Save memory",
+  "ja": "記憶を保存",
+  "zh": "保存记忆"
+ },
+ "label.save_note": {
+  "ko": "메모 저장",
+  "en": "Save note",
+  "ja": "メモを保存",
+  "zh": "保存备忘"
+ },
+ "label.schedule_a_preparation": {
+  "ko": "준비 예약",
+  "en": "Schedule a preparation",
+  "ja": "準備の予約",
+  "zh": "预约准备"
+ },
+ "label.separate_configuration": {
+  "ko": "따로 지정",
+  "en": "Separate configuration",
+  "ja": "個別に指定",
+  "zh": "单独设置"
+ },
+ "label.settings": {
+  "ko": "설정",
+  "en": "Settings",
+  "ja": "設定",
+  "zh": "设置"
+ },
+ "label.settings_check": {
+  "ko": "설정 확인",
+  "en": "Settings check",
+  "ja": "設定の確認",
+  "zh": "查看设置"
+ },
+ "label.sign_in": {
+  "ko": "로그인",
+  "en": "Sign-in",
+  "ja": "サインイン",
+  "zh": "登录"
+ },
+ "label.some": {
+  "ko": "몇",
+  "en": "some",
+  "ja": "いくつか",
+  "zh": "几"
+ },
+ "label.staged": {
+  "ko": "전달 대기",
+  "en": "Staged",
+  "ja": "送信待ち",
+  "zh": "待发送"
+ },
+ "label.text": {
+  "ko": "텍스트",
+  "en": "Text",
+  "ja": "テキスト",
+  "zh": "文本"
+ },
+ "label.three": {
+  "ko": "세",
+  "en": "three",
+  "ja": "3",
+  "zh": "三"
+ },
+ "label.time_zone": {
+  "ko": "시간대",
+  "en": "Time zone",
+  "ja": "タイムゾーン",
+  "zh": "时区"
+ },
+ "label.tool_run": {
+  "ko": "도구 실행",
+  "en": "Tool run",
+  "ja": "ツール実行",
+  "zh": "工具运行"
+ },
+ "label.two": {
+  "ko": "두",
+  "en": "two",
+  "ja": "2",
+  "zh": "两"
+ },
+ "label.undo_all": {
+  "ko": "모두 되돌리기",
+  "en": "Undo all",
+  "ja": "すべて元に戻す",
+  "zh": "全部撤销"
+ },
+ "label.use": {
+  "ko": "사용",
+  "en": "Use",
+  "ja": "使う",
+  "zh": "使用"
+ },
+ "label.waiting_for_a_connection": {
+  "ko": "연결 대기",
+  "en": "Waiting for a connection",
+  "ja": "接続待ち",
+  "zh": "等待连接"
+ },
+ "label.waiting_for_approval": {
+  "ko": "승인 대기",
+  "en": "Waiting for approval",
+  "ja": "承認待ち",
+  "zh": "等待批准"
+ },
+ "label.waiting_for_input": {
+  "ko": "입력 대기",
+  "en": "Waiting for input",
+  "ja": "入力待ち",
+  "zh": "等待输入"
+ },
+ "label.weather_lookup": {
+  "ko": "날씨 조회",
+  "en": "Weather lookup",
+  "ja": "天気の確認",
+  "zh": "查询天气"
+ },
+ "label.web_search": {
+  "ko": "웹 검색",
+  "en": "Web search",
+  "ja": "ウェブ検索",
+  "zh": "网页搜索"
+ },
+ "line.no_ai_is_connected_yet_so": {
+  "ko": "AI가 아직 연결되지 않아 이 요청은 처리하지 못했습니다.",
+  "en": "No AI is connected yet, so I couldn't handle this request.",
+  "ja": "AI がまだ接続されていないため、この依頼は処理できませんでした。",
+  "zh": "还没有连接 AI，所以没能处理这个请求。"
+ },
+ "line.only_some_steps_were_completed_see": {
+  "ko": "일부 단계만 완료했습니다. 아래 안내를 확인하세요.",
+  "en": "Only some steps were completed. See the note below.",
+  "ja": "一部の手順だけ完了しました。下の案内をご確認ください。",
+  "zh": "只完成了部分步骤，请看下面的说明。"
+ },
+ "main_ai.agentos_isolates_your_personal_codex_settings": {
+  "ko": "AgentOS는 Codex 개인 설정을 격리하므로 ~/.codex/config.toml의 모델은 쓰지 않습니다. 비워 두면 CLI 기본 모델을 씁니다.",
+  "en": "AgentOS isolates your personal Codex settings, so the model in ~/.codex/config.toml is not used. Leave it empty to use the CLI default model.",
+  "ja": "AgentOS は Codex の個人設定を隔離するため、~/.codex/config.toml のモデルは使いません。空欄なら CLI の既定モデルを使います。",
+  "zh": "AgentOS 会隔离 Codex 个人设置，因此不会使用 ~/.codex/config.toml 中的模型。留空则使用 CLI 默认模型。"
+ },
+ "main_ai.the_cli_is_not_signed_in": {
+  "ko": "CLI가 로그인되어 있지 않아 실행할 수 없습니다",
+  "en": "the CLI is not signed in, so it cannot run",
+  "ja": "CLI にログインしていないため実行できません",
+  "zh": "该 CLI 未登录，无法运行"
+ },
+ "main_ai.the_cli_was_not_found_on": {
+  "ko": "이 컴퓨터에서 CLI를 찾지 못해 실행할 수 없습니다",
+  "en": "the CLI was not found on this computer, so it cannot run",
+  "ja": "このコンピューターで CLI が見つからないため実行できません",
+  "zh": "在这台电脑上找不到该 CLI，无法运行"
+ },
+ "main_ai.the_isolated_runtime_deployment_does_not": {
+  "ko": "격리 런타임 배포는 작업 모델 지정을 지원하지 않아 CLI 기본 모델을 씁니다.",
+  "en": "The isolated runtime deployment does not support choosing a work model, so the CLI default model is used.",
+  "ja": "隔離ランタイムの配備は作業モデルの指定に対応していないため、CLI の既定モデルを使います。",
+  "zh": "隔离运行时部署不支持指定工作模型，因此使用 CLI 默认模型。"
+ },
+ "main_ai.the_isolated_runtime_deployment_offers_neither": {
+  "ko": "격리 런타임 배포에서는 CLI 자체 웹 검색과 브라우저 도구를 제공하지 않습니다",
+  "en": "the isolated runtime deployment offers neither the CLI's own web search nor the browser tools",
+  "ja": "隔離ランタイム構成では CLI 内蔵のウェブ検索とブラウザツールを提供しません",
+  "zh": "隔离运行时部署不提供 CLI 自带的网页搜索和浏览器工具"
+ },
+ "main_ai.the_strict_isolated_profile_does_not": {
+  "ko": "엄격 격리 실행 프로필에서는 브라우저 도구를 제공하지 않습니다",
+  "en": "the strict-isolated profile does not offer the browser tools",
+  "ja": "厳格隔離の実行プロファイルではブラウザツールを提供しません",
+  "zh": "严格隔离执行配置不提供浏览器工具"
+ },
+ "main_ai.turned_off_only_for_a_task": {
+  "ko": "개인 자료가 포함된 작업에서는 그 작업에 한해 꺼집니다",
+  "en": "turned off only for a task that includes private material",
+  "ja": "個人データを含む作業ではその作業に限りオフになります",
+  "zh": "仅在包含个人资料的任务中关闭"
+ },
+ "memory.ask": {
+  "ko": "기억해 둘까요?",
+  "en": "Shall I remember this?",
+  "ja": "覚えておきましょうか？",
+  "zh": "要我记住吗？"
+ },
+ "memory.saved": {
+  "ko": "기억했어요",
+  "en": "Remembered",
+  "ja": "覚えました",
+  "zh": "记住了"
+ },
+ "memory.saved_expired": {
+  "ko": "여기서는 더 되돌릴 수 없어요. 내 기록에서 지울 수 있어요.",
+  "en": "This can't be undone here any more. You can delete it in My records.",
+  "ja": "ここではもう元に戻せません。マイ記録で削除できます。",
+  "zh": "这里已经无法撤销了。可以在“我的记录”中删除。"
+ },
+ "memory.saved_outdated": {
+  "ko": "그 사이 바뀐 것이 있어 그대로 두었어요. 내 기록에서 볼 수 있어요.",
+  "en": "Something changed in the meantime, so I left it as is. You can see it in My records.",
+  "ja": "その間に変わったものがあるので、そのままにしました。マイ記録で確認できます。",
+  "zh": "期间有变化，所以保持原样。可以在“我的记录”中查看。"
+ },
+ "memory.settled.accepted": {
+  "ko": "기억해 둘게요.",
+  "en": "I'll remember that.",
+  "ja": "覚えておきます。",
+  "zh": "我会记住的。"
+ },
+ "memory.settled.mixed": {
+  "ko": "말씀하신 것만 기억해 둘게요.",
+  "en": "I'll remember only what you chose.",
+  "ja": "おっしゃったものだけ覚えておきます。",
+  "zh": "我只记住你选的那些。"
+ },
+ "memory.settled.rejected": {
+  "ko": "기억하지 않을게요.",
+  "en": "I won't remember it.",
+  "ja": "覚えないでおきます。",
+  "zh": "我不会记住。"
+ },
+ "memory.status.accepted": {
+  "ko": "기억해 둘게요",
+  "en": "I'll remember",
+  "ja": "覚えておきます",
+  "zh": "我会记住"
+ },
+ "memory.status.outdated": {
+  "ko": "그 사이 바뀌어 그대로 두었어요",
+  "en": "It changed in the meantime, so I left it",
+  "ja": "その間に変わったので、そのままにしました",
+  "zh": "期间有变化，所以保持原样"
+ },
+ "memory.status.rejected": {
+  "ko": "기억하지 않을게요",
+  "en": "I won't remember",
+  "ja": "覚えないでおきます",
+  "zh": "不记住"
+ },
+ "memory.undone": {
+  "ko": "되돌렸어요",
+  "en": "Undone",
+  "ja": "元に戻しました",
+  "zh": "已撤销"
+ },
+ "notice.completed": {
+  "ko": "작업이 완료되었습니다. 전체 결과는 AgentOS 웹에서 확인하세요.",
+  "en": "Done. See the full result in the AgentOS web app.",
+  "ja": "完了しました。結果の全体は AgentOS のウェブで確認してください。",
+  "zh": "已完成。完整结果请在 AgentOS 网页上查看。"
+ },
+ "notice.document_approved": {
+  "ko": "문서 공유를 승인했습니다. 같은 요청을 다시 보내 주세요.",
+  "en": "Document sharing approved. Please send the same request again.",
+  "ja": "ドキュメントの共有を承認しました。同じ依頼をもう一度送ってください。",
+  "zh": "已批准共享文档。请再次发送同样的请求。"
+ },
+ "notice.document_denied": {
+  "ko": "문서 공유를 허용하지 않았습니다.",
+  "en": "Document sharing was not allowed.",
+  "ja": "ドキュメントの共有は許可されませんでした。",
+  "zh": "未允许共享文档。"
+ },
+ "notice.failed": {
+  "ko": "작업을 완료하지 못했습니다. 자세한 내용은 AgentOS 웹에서 확인하세요.",
+  "en": "I couldn't complete it. See the details in the AgentOS web app.",
+  "ja": "完了できませんでした。詳しくは AgentOS のウェブで確認してください。",
+  "zh": "没能完成。详情请在 AgentOS 网页上查看。"
+ },
+ "notice.generic": {
+  "ko": "AgentOS 상태 알림",
+  "en": "AgentOS status update",
+  "ja": "AgentOS の状態のお知らせ",
+  "zh": "AgentOS 状态通知"
+ },
+ "notice.location_not_continued": {
+  "ko": "대기 중인 작업이 많아 보내 주신 위치로 요청을 이어서 처리하지 못했습니다. 잠시 후 위치를 다시 보내 주세요.",
+  "en": "There's a lot waiting, so I couldn't continue with the location you sent. Please send it again in a moment.",
+  "ja": "待機中の作業が多く、送っていただいた位置情報で続けられませんでした。少ししてからもう一度送ってください。",
+  "zh": "等待中的任务太多，没能用你发的位置继续处理。请稍后再发一次。"
+ },
+ "notice.payment_approval": {
+  "ko": "결제 단계는 승인이 필요합니다. 승인하면 이 요청을 한 번만 이어서 처리하고, 승인한 단계 하나만 실행합니다.",
+  "en": "A payment step needs your approval. If you approve, I will continue this request once and run only that step.",
+  "ja": "支払いの手順には承認が必要です。承認されたら、この依頼を一度だけ続け、承認された手順だけを実行します。",
+  "zh": "付款步骤需要你的批准。批准后我只会继续一次，并且只执行你批准的那一步。"
+ },
+ "notice.request_approval": {
+  "ko": "이 요청은 보내기 전에 승인이 필요해요. 승인하면 이 요청 하나만 한 번 보내요.",
+  "en": "This request needs your approval before it is sent. If you approve, only this one request is sent, once.",
+  "ja": "このリクエストは送る前に承認が必要です。承認すると、このリクエストだけを一度だけ送ります。",
+  "zh": "这个请求在发送前需要你的批准。批准后只发送这一个请求，且只发送一次。"
+ },
+ "notice.approval_answer_hint": {
+  "ko": "👍 승인 · \"취소\" 중단 · 10분 뒤 자동 취소",
+  "en": "👍 approve · \"cancel\" to stop · cancels itself in 10 minutes",
+  "ja": "👍で承認 · 「キャンセル」で中止 · 10分後に自動キャンセル",
+  "zh": "👍 批准 · 回复“取消”停止 · 10分钟后自动取消"
+ },
+ "notice.step_declined": {
+  "ko": "보내지 않았어요. 이 요청은 여기서 멈춰요.",
+  "en": "Not sent. This request stops here.",
+  "ja": "送りませんでした。このリクエストはここで止めます。",
+  "zh": "没有发送。这个请求到此为止。"
+ },
+ "notice.step_approved_resuming": {
+  "ko": "승인했어요. 이 요청을 한 번만 보내고 결과를 알려드릴게요.",
+  "en": "Approved. I will send this request once and tell you the result.",
+  "ja": "承認しました。このリクエストを一度だけ送り、結果をお知らせします。",
+  "zh": "已批准。我会只发送一次这个请求，并告诉你结果。"
+ },
+ "notice.step_approved_not_resumed": {
+  "ko": "승인은 받았지만 이어서 진행하지 못해 아무것도 보내지 않았어요.",
+  "en": "You approved, but I could not continue, so nothing was sent.",
+  "ja": "承認は受けましたが、続けられなかったため何も送っていません。",
+  "zh": "已收到批准，但无法继续，所以什么都没有发送。"
+ },
+ "notice.step_approval_stale": {
+  "ko": "이 승인 요청은 시간이 지났거나 이미 처리돼 아무것도 보내지 않았어요. 다시 요청해 주세요.",
+  "en": "This approval had expired or was already handled, so nothing was sent. Please ask again.",
+  "ja": "この承認依頼は期限切れか処理済みのため、何も送っていません。もう一度依頼してください。",
+  "zh": "这个批准请求已过期或已处理，所以什么都没有发送。请重新提出请求。"
+ },
+ "notice.preparation_accepted": {
+  "ko": "예약했어요. 취소하려면 아래 버튼을 누르거나 대화로 말해 주세요.",
+  "en": "Scheduled. To cancel, tap the button below or just tell me.",
+  "ja": "予約しました。取り消すには下のボタンを押すか、会話で伝えてください。",
+  "zh": "已预约。要取消，请点下面的按钮，或直接告诉我。"
+ },
+ "notice.preparation_scheduled": {
+  "ko": "예약했어요:",
+  "en": "Scheduled:",
+  "ja": "予約しました:",
+  "zh": "已预约："
+ },
+ "notice.preparation_cancel_hint": {
+  "ko": "취소하려면 아래 버튼을 누르거나 대화로 말해 주세요.",
+  "en": "To cancel, tap the button below or just tell me.",
+  "ja": "取り消すには下のボタンを押すか、会話で伝えてください。",
+  "zh": "要取消，请点下面的按钮，或直接告诉我。"
+ },
+ "notice.preparation_cancelled": {
+  "ko": "예약을 취소했어요. 이미 실행 중인 작업은 그대로 끝나요.",
+  "en": "Cancelled. A run already in progress still finishes.",
+  "ja": "予約を取り消しました。すでに実行中の作業はそのまま終わります。",
+  "zh": "已取消预约。已经在运行的任务会照常结束。"
+ },
+ "notice.preparation_already_settled": {
+  "ko": "이미 끝났거나 취소된 예약이라 바꾼 것이 없어요.",
+  "en": "Those reservations had already finished or been cancelled; nothing changed.",
+  "ja": "すでに終わったか取り消された予約なので、変えたものはありません。",
+  "zh": "这些预约已经结束或已取消，没有改动。"
+ },
+ "notice.preparation_denied": {
+  "ko": "준비를 예약하지 않았습니다.",
+  "en": "Not scheduled.",
+  "ja": "準備は予約しませんでした。",
+  "zh": "没有安排。"
+ },
+ "notice.step_approved": {
+  "ko": "이 단계를 승인했습니다. 요청을 한 번만 이어서 처리합니다.",
+  "en": "Step approved. I will continue the request once.",
+  "ja": "この手順を承認しました。依頼を一度だけ続けます。",
+  "zh": "已批准这一步，会继续处理一次。"
+ },
+ "notice.step_denied": {
+  "ko": "이 단계를 허용하지 않았습니다. 요청은 여기서 멈춥니다.",
+  "en": "Step not allowed. The request stops here.",
+  "ja": "この手順は許可されませんでした。依頼はここで止まります。",
+  "zh": "未允许这一步，请求到此为止。"
+ },
+ "preparations.shall_i_schedule_the_following_preparation": {
+  "ko": "다음 준비를 예약할까요? 수락하면 정해진 때에 실행합니다.",
+  "en": "Shall I schedule the following preparation? If you accept, it will run at the set time.",
+  "ja": "次の準備を予約しますか？承諾すると、決めた時刻に実行します。",
+  "zh": "要安排以下准备任务吗？接受后会在指定时间执行。"
+ },
+ "projection.check_information_used": {
+  "ko": "사용한 정보 확인",
+  "en": "Check information used",
+  "ja": "使った情報を確認",
+  "zh": "查看使用的信息"
+ },
+ "projection.click_in_browser": {
+  "ko": "브라우저에서 누르기",
+  "en": "Click in browser",
+  "ja": "ブラウザーでクリック",
+  "zh": "在浏览器中点击"
+ },
+ "projection.find_drive_files": {
+  "ko": "Drive 파일 찾기",
+  "en": "Find Drive files",
+  "ja": "Drive ファイルを検索",
+  "zh": "查找 Drive 文件"
+ },
+ "projection.find_a_way_to_connect": {
+  "ko": "연결 방법 찾기",
+  "en": "Find a way to connect",
+  "ja": "接続方法を探す",
+  "zh": "查找连接方式"
+ },
+ "projection.find_on_browser_page": {
+  "ko": "브라우저 페이지에서 찾기",
+  "en": "Find on browser page",
+  "ja": "ブラウザーのページ内を検索",
+  "zh": "在浏览器页面中查找"
+ },
+ "projection.handed_to_another_agent": {
+  "ko": "다른 에이전트에 맡김",
+  "en": "Handed to another agent",
+  "ja": "別のエージェントに依頼",
+  "zh": "交给其他代理"
+ },
+ "projection.i_couldn_t_complete_this_request": {
+  "ko": "이 요청은 완료하지 못했습니다.",
+  "en": "I couldn't complete this request.",
+  "ja": "この依頼は完了できませんでした。",
+  "zh": "这个请求没能完成。"
+ },
+ "projection.answer_not_confirmed": {
+  "ko": "이 답이 요청을 다 채웠는지는 확인하지 못했어요.",
+  "en": "I couldn't confirm that this answer fully covers your request.",
+  "ja": "この回答でご依頼を満たせたかは確認できませんでした。",
+  "zh": "我没能确认这个回答是否完全满足了你的请求。"
+ },
+ "projection.i_couldn_t_finish_what_you": {
+  "ko": "요청하신 작업은 끝내지 못했어요.",
+  "en": "I couldn't finish what you asked.",
+  "ja": "ご依頼の作業は終えられませんでした。",
+  "zh": "没能完成你交代的事。"
+ },
+ "projection.it_stopped_partway_so_i_could": {
+  "ko": "중간에 멈춰서 끝까지 확인하지 못했어요.",
+  "en": "It stopped partway, so I could not check everything.",
+  "ja": "途中で止まったため、最後まで確認できませんでした。",
+  "zh": "中途停止了，没能全部确认。"
+ },
+ "projection.open_browser_page": {
+  "ko": "브라우저 페이지 열기",
+  "en": "Open browser page",
+  "ja": "ブラウザーでページを開く",
+  "zh": "打开浏览器页面"
+ },
+ "projection.public_research": {
+  "ko": "공개 자료 조사",
+  "en": "Public research",
+  "ja": "公開資料の調査",
+  "zh": "公开资料调查"
+ },
+ "projection.questions_to_confirm": {
+  "ko": "확인이 필요한 질문:",
+  "en": "Questions to confirm:",
+  "ja": "確認が必要な質問:",
+  "zh": "需要确认的问题："
+ },
+ "projection.read_a_public_page": {
+  "ko": "공개 페이지 읽기",
+  "en": "Read a public page",
+  "ja": "公開ページを読む",
+  "zh": "读取公开页面"
+ },
+ "projection.read_browser_page": {
+  "ko": "브라우저 페이지 읽기",
+  "en": "Read browser page",
+  "ja": "ブラウザーのページを読む",
+  "zh": "读取浏览器页面"
+ },
+ "projection.read_drive_file": {
+  "ko": "Drive 파일 읽기",
+  "en": "Read Drive file",
+  "ja": "Drive ファイルを読む",
+  "zh": "读取 Drive 文件"
+ },
+ "projection.record_current_situation": {
+  "ko": "현재 상황 기록",
+  "en": "Record current situation",
+  "ja": "現在の状況を記録",
+  "zh": "记录当前情况"
+ },
+ "projection.see_the_rest_in_the_agentos": {
+  "ko": "… (나머지는 AgentOS 웹 기록에서 확인하세요.)",
+  "en": "… (see the rest in the AgentOS web record.)",
+  "ja": "…(残りは AgentOS のウェブの記録で確認してください。)",
+  "zh": "…（其余内容请在 AgentOS 网页记录中查看。）"
+ },
+ "projection.see_the_run_record_and_next": {
+  "ko": "AgentOS 웹에서 실행 기록과 다음 단계를 확인하세요.",
+  "en": "See the run record and next steps in the AgentOS web app.",
+  "ja": "AgentOS のウェブで実行記録と次の手順を確認してください。",
+  "zh": "请在 AgentOS 网页上查看执行记录和下一步。"
+ },
+ "projection.settings_change_draft": {
+  "ko": "설정 변경 초안",
+  "en": "Settings change draft",
+  "ja": "設定変更の下書き",
+  "zh": "设置更改草稿"
+ },
+ "projection.steps_tried": {
+  "ko": "시도한 단계:",
+  "en": "Steps tried:",
+  "ja": "試した手順:",
+  "zh": "尝试过的步骤："
+ },
+ "projection.subscription_cli_run": {
+  "ko": "구독 CLI 실행",
+  "en": "Subscription CLI run",
+  "ja": "サブスクリプション CLI 実行",
+  "zh": "订阅 CLI 运行"
+ },
+ "projection.suggested_next_step": {
+  "ko": "다음 단계 제안:",
+  "en": "Suggested next step:",
+  "ja": "次の手順の提案:",
+  "zh": "建议的下一步："
+ },
+ "projection.the_external_result_could_not_be": {
+  "ko": "외부 결과를 확인할 수 없습니다. 실제 결과를 직접 확인해 주세요. 자동으로 다시 시도하지 않았습니다.",
+  "en": "The external result could not be confirmed. Check the actual result yourself. It was not retried automatically.",
+  "ja": "外部の結果を確認できませんでした。実際の結果をご自身で確認してください。自動では再試行していません。",
+  "zh": "无法确认外部结果。请自行确认实际结果。未自动重试。"
+ },
+ "projection.this_is_not_a_verified_result": {
+  "ko": "확인된 결과가 아니므로 그대로 신뢰하지 마세요.",
+  "en": "This is not a verified result; do not rely on it as is.",
+  "ja": "確認済みの結果ではないため、そのまま信頼しないでください。",
+  "zh": "这不是已确认的结果，请勿直接信赖。"
+ },
+ "projection.this_request_was_interrupted_i_did": {
+  "ko": "이 요청은 중단되었습니다. 자동으로 다시 실행하지 않았습니다.",
+  "en": "This request was interrupted. I did not run it again automatically.",
+  "ja": "この依頼は中断されました。自動ではやり直していません。",
+  "zh": "这个请求中断了，没有自动重新执行。"
+ },
+ "projection.type_in_browser": {
+  "ko": "브라우저에 입력",
+  "en": "Type in browser",
+  "ja": "ブラウザーに入力",
+  "zh": "在浏览器中输入"
+ },
+ "projection.undo_memory": {
+  "ko": "기억 되돌림",
+  "en": "Undo memory",
+  "ja": "記憶を元に戻す",
+  "zh": "撤销记忆"
+ },
+ "projection.what_i_confirmed": {
+  "ko": "확인된 부분:",
+  "en": "What I confirmed:",
+  "ja": "確認できた点:",
+  "zh": "已确认："
+ },
+ "projection.what_i_couldn_t_confirm": {
+  "ko": "확인하지 못한 부분:",
+  "en": "What I couldn't confirm:",
+  "ja": "確認できなかった点:",
+  "zh": "未能确认："
+ },
+ "projection.what_i_couldn_t_do": {
+  "ko": "진행하지 못한 점:",
+  "en": "What I couldn't do:",
+  "ja": "進められなかった点:",
+  "zh": "未能进行的事："
+ },
+ "projection.what_i_couldn_t_finish": {
+  "ko": "완료하지 못한 부분",
+  "en": "What I couldn't finish",
+  "ja": "完了できなかった点",
+  "zh": "未完成的部分"
+ },
+ "projection.you_can_connect_an_ai_in": {
+  "ko": "AI 연결은 이 컴퓨터의 AgentOS 설정에서 할 수 있습니다. AgentOS를 시작할 때 표시된 주소(setup-link.txt)를 브라우저에서 여세요.",
+  "en": "You can connect an AI in AgentOS Settings on this computer. Open the address shown when AgentOS starts (setup-link.txt) in your browser.",
+  "ja": "AIはこのコンピューターのAgentOS設定で接続できます。AgentOSの起動時に表示されたアドレス（setup-link.txt）をブラウザーで開いてください。",
+  "zh": "可以在这台电脑的 AgentOS 设置中连接 AI。请在浏览器中打开 AgentOS 启动时显示的地址（setup-link.txt）。"
+ },
+ "quickstart.a_sign_in_is_needed": {
+  "ko": "로그인이 필요합니다.",
+  "en": "A sign-in is needed.",
+  "ja": "ログインが必要です。",
+  "zh": "需要登录。"
+ },
+ "quickstart.own_google_client": {
+  "ko": "자체 Google client",
+  "en": "Own Google client",
+  "ja": "独自の Google client",
+  "zh": "自有 Google client"
+ },
+ "remote_login.a_phone_login_link_is_already": {
+  "ko": "이미 휴대폰 로그인 링크가 열려 있어요. 그 링크가 닫힌 뒤에 다시 요청해 주세요.",
+  "en": "A phone login link is already open. Please request another after it closes.",
+  "ja": "スマートフォン用のログインリンクがすでに開いています。そのリンクが閉じてから、もう一度依頼してください。",
+  "zh": "已有一个手机登录链接处于开放状态，请等它关闭后再请求。"
+ },
+ "remote_login.i_couldn_t_open_the_phone": {
+  "ko": "휴대폰 링크를 열지 못했어요. Mac의 로그인 창에서 로그인해 주세요.",
+  "en": "I couldn't open the phone link. Please sign in through the Mac login window.",
+  "ja": "スマートフォン用のリンクを開けませんでした。Macのログイン画面でログインしてください。",
+  "zh": "无法打开手机链接，请在 Mac 的登录窗口中登录。"
+ },
+ "service.a_retry_was_already_requested": {
+  "ko": "이미 다시 시도를 요청했습니다.",
+  "en": "A retry was already requested.",
+  "ja": "すでに再試行を依頼しました。",
+  "zh": "已经请求过重试了。"
+ },
+ "service.agentos_is_automatically_checking_the_connection": {
+  "ko": "AgentOS가 연결과 공개 검색을 자동으로 확인하고 있습니다.",
+  "en": "AgentOS is automatically checking the connection and public search.",
+  "ja": "AgentOS が接続と公開検索を自動で確認しています。",
+  "zh": "AgentOS 正在自动检查连接和公开搜索。"
+ },
+ "service.an_output_folder_is_already_connected": {
+  "ko": "설정에서 이미 결과 저장 폴더가 연결되어 있어 선택한 폴더로 바꾸지 않았습니다. 기존 결과 저장 폴더로 방금 요청을 이어서 처리합니다.",
+  "en": "An output folder is already connected in Settings, so it was not changed to the selected folder. The recent request will continue using the existing output folder.",
+  "ja": "設定ですでに結果保存フォルダーが接続されているため、選択したフォルダーには変更していません。既存の保存先で直前の依頼を続けます。",
+  "zh": "设置中已有结果保存文件夹，因此没有更换为所选文件夹。将使用原有结果保存文件夹继续刚才的请求。"
+ },
+ "service.approval_for_this_task_is_required": {
+  "ko": "개인 컨텍스트를 외부 모델에 전달하려면 이 작업의 승인이 필요합니다. 컨텍스트 내용은 전송되지 않았습니다.",
+  "en": "Approval for this task is required to send personal context to an external model. No context content was sent.",
+  "ja": "個人コンテキストを外部モデルに送るには、この作業への承認が必要です。コンテキストの内容は送信していません。",
+  "zh": "将个人上下文发送给外部模型需要批准此任务。尚未发送上下文内容。"
+ },
+ "service.approval_is_required_to_send_connected": {
+  "ko": "연결 문서를 외부 모델에 전달하려면 승인이 필요합니다. 문서 내용은 전송되지 않았습니다.",
+  "en": "Approval is required to send connected documents to an external model. No document content was sent.",
+  "ja": "接続した文書を外部モデルに送るには承認が必要です。文書の内容は送信していません。",
+  "zh": "将已连接文档发送给外部模型需要批准，尚未发送文档内容。"
+ },
+ "service.ask_for_a_google_drive_file": {
+  "ko": "Telegram에서 Google Drive 파일을 요청하면 연결 링크를 보냅니다.",
+  "en": "Ask for a Google Drive file in Telegram to receive a connection link.",
+  "ja": "Telegram で Google Drive のファイルを頼むと接続リンクが届きます。",
+  "zh": "在 Telegram 中请求 Google Drive 文件时会发送连接链接。"
+ },
+ "service.check_the_telegram_connection_receiving_will": {
+  "ko": "Telegram 연결을 확인하세요. 수신을 다시 시도합니다.",
+  "en": "Check the Telegram connection. Receiving will be retried.",
+  "ja": "Telegram の接続を確認してください。受信を再試行します。",
+  "zh": "请检查 Telegram 连接。将重试接收。"
+ },
+ "service.check_which_record_to_open": {
+  "ko": "열 기록을 확인하세요.",
+  "en": "Check which record to open.",
+  "ja": "開く記録を確認してください。",
+  "zh": "请确认要打开的记录。"
+ },
+ "service.checked_the_sources": {
+  "ko": "근거를 확인했습니다.",
+  "en": "Checked the sources.",
+  "ja": "根拠を確認しました。",
+  "zh": "已确认依据。"
+ },
+ "service.choose_one_personal_context_item_for": {
+  "ko": "이번 요청에 참고할 개인 컨텍스트를 하나 선택하세요. 내용은 이 목록에 표시되지 않으며, 선택하지 않아도 요청은 그대로 진행할 수 있어요.",
+  "en": "Choose one personal context item for this request. Its contents won't appear in this list, and you can continue the request without choosing one.",
+  "ja": "今回の依頼で参考にする個人コンテキストを1つ選んでください。内容はこの一覧には表示されません。選ばずにそのまま依頼を進めることもできます。",
+  "zh": "请选择一项供本次请求参考的个人上下文。内容不会显示在此列表中，不选择也可以继续请求。"
+ },
+ "service.closing_the_sign_in_window_and": {
+  "ko": "로그인 창을 닫고 요청을 한 번 이어서 처리합니다.",
+  "en": "Closing the sign-in window and continuing the request once.",
+  "ja": "ログイン画面を閉じて、依頼を一度だけ続けます。",
+  "zh": "关闭登录窗口，并继续处理一次请求。"
+ },
+ "service.connect_your_personal_telegram_account": {
+  "ko": "개인 Telegram 계정을 연결하세요.",
+  "en": "Connect your personal Telegram account.",
+  "ja": "個人の Telegram アカウントを接続してください。",
+  "zh": "请连接你的个人 Telegram 账号。"
+ },
+ "service.context_sharing_for_this_task_is": {
+  "ko": "이 작업의 컨텍스트 공유를 승인했습니다. 작업을 계속합니다.",
+  "en": "Context sharing for this task is approved. Continuing.",
+  "ja": "この作業でのコンテキスト共有を承認しました。続けます。",
+  "zh": "已批准此任务的上下文共享，继续处理。"
+ },
+ "service.continue_on_the_mac_adding_or": {
+  "ko": "Mac에서 계속: 폴더 추가와 변경은 이 Mac에서 AgentOS를 열어 진행합니다. 연결된 폴더를 빼는 것은 여기서도 할 수 있습니다.",
+  "en": "Continue on the Mac: adding or changing a folder happens in AgentOS opened on this Mac. You can still remove a connected folder here.",
+  "ja": "Mac で続ける: フォルダーの追加と変更は、この Mac で AgentOS を開いて行います。接続済みのフォルダーはここでも外せます。",
+  "zh": "在 Mac 上继续：添加和更改文件夹需要在这台 Mac 上打开 AgentOS 进行。已连接的文件夹仍可在这里移除。"
+ },
+ "service.could_not_run": {
+  "ko": "실행하지 못했습니다.",
+  "en": "Could not run.",
+  "ja": "実行できませんでした。",
+  "zh": "未能运行。"
+ },
+ "service.disconnected_telegram": {
+  "ko": "Telegram 연결을 해제했습니다.",
+  "en": "Disconnected Telegram.",
+  "ja": "Telegram の接続を解除しました。",
+  "zh": "已断开 Telegram 连接。"
+ },
+ "service.document_sharing_approval_is_required_to": {
+  "ko": "승인된 참고 자료를 외부 모델에 전달하려면 문서 공유 승인이 필요합니다.",
+  "en": "Document-sharing approval is required to send approved reference material to an external model.",
+  "ja": "承認済みの参考資料を外部モデルに送るには、文書共有の承認が必要です。",
+  "zh": "将已批准的参考资料发送给外部模型，需要文档共享批准。"
+ },
+ "service.document_sharing_was_approved_the_request": {
+  "ko": "문서 공유를 승인했습니다. 폴더를 허용한 요청을 한 번만 이어서 처리합니다.",
+  "en": "Document sharing was approved. The request for which you allowed the folder will resume just once.",
+  "ja": "文書の共有を承認しました。フォルダーを許可した依頼を一度だけ再開します。",
+  "zh": "已批准文档共享，将继续刚才授权文件夹的请求一次。"
+ },
+ "service.done": {
+  "ko": "처리했습니다.",
+  "en": "Done.",
+  "ja": "処理しました。",
+  "zh": "已处理。"
+ },
+ "service.enter_the_site_address_to_log": {
+  "ko": "로그인할 사이트 주소를 입력하세요.",
+  "en": "Enter the site address to log in to.",
+  "ja": "ログインするサイトのアドレスを入力してください。",
+  "zh": "请输入要登录的网站地址。"
+ },
+ "service.finished_running": {
+  "ko": "실행을 완료했습니다.",
+  "en": "Finished running.",
+  "ja": "実行を完了しました。",
+  "zh": "已完成运行。"
+ },
+ "service.got_your_location_carrying_on": {
+  "ko": "위치 받았어요. 이어서 할게요.",
+  "en": "Got your location. Carrying on.",
+  "ja": "位置情報を受け取りました。続けます。",
+  "zh": "收到位置，继续处理。"
+ },
+ "service.got_your_stop_a_step_already": {
+  "ko": "멈춤 요청을 받았어요. 이미 진행 중인 단계는 되돌리지 못하지만 다음 단계는 실행하지 않아요. 끝나면 실제 결과를 그대로 알려드릴게요.",
+  "en": "Got your stop. A step already running can't be undone, but no further step will run. I'll tell you exactly what happened when it ends.",
+  "ja": "停止のご依頼を受けました。すでに進行中の手順は戻せませんが、次の手順は実行しません。終わったら実際の結果をそのままお伝えします。",
+  "zh": "收到停止请求。正在进行的步骤无法撤回，但不会执行下一步。结束后我会如实告诉你结果。"
+ },
+ "service.i_can_t_find_this_task": {
+  "ko": "이 작업 카드를 찾을 수 없습니다.",
+  "en": "I can't find this task card.",
+  "ja": "この作業カードが見つかりません。",
+  "zh": "找不到这张任务卡片。"
+ },
+ "service.i_could_not_confirm_that_the": {
+  "ko": "로그인 창을 닫고 로그인 세션을 저장했는지 확인하지 못해 요청을 이어서 처리하지 않았습니다. 다시 요청하면 필요할 때 로그인을 다시 요청합니다.",
+  "en": "I could not confirm that the login window was closed and the session saved, so the request was not resumed. If you request it again, I will ask you to sign in again if needed.",
+  "ja": "ログイン画面を閉じてセッションを保存したか確認できず、依頼を再開していません。再度依頼すると、必要な場合にもう一度ログインを求めます。",
+  "zh": "无法确认登录窗口是否已关闭、会话是否已保存，因此没有继续处理请求。重新请求时，如有需要会再次请您登录。"
+ },
+ "service.i_didn_t_change_it": {
+  "ko": "바꾸지 않았어요.",
+  "en": "I didn't change it.",
+  "ja": "変更しませんでした。",
+  "zh": "没有更改。"
+ },
+ "service.i_ll_send_you_a_link": {
+  "ko": "휴대폰에서 로그인할 링크를 보낼게요.",
+  "en": "I'll send you a link to sign in on your phone.",
+  "ja": "スマートフォンでログインするためのリンクを送ります。",
+  "zh": "我会发送手机登录链接。"
+ },
+ "service.i_ll_try_again": {
+  "ko": "다시 시도할게요.",
+  "en": "I'll try again.",
+  "ja": "もう一度やってみます。",
+  "zh": "我再试一次。"
+ },
+ "service.i_ve_already_applied_it": {
+  "ko": "이미 적용했어요.",
+  "en": "I've already applied it.",
+  "ja": "すでに適用しました。",
+  "zh": "已经应用了。"
+ },
+ "service.i_ve_attached_the_selected_context": {
+  "ko": "선택한 컨텍스트를 이 요청에만 연결했습니다. 작업을 시작할게요.",
+  "en": "I've attached the selected context to this request only. I'll start now.",
+  "ja": "選択したコンテキストを今回の依頼だけに紐づけました。作業を始めます。",
+  "zh": "已将所选上下文仅关联到本次请求，现在开始处理。"
+ },
+ "service.i_ve_closed_it_here_you": {
+  "ko": "여기서는 닫았어요. 남은 것은 내 기록에서 정할 수 있어요.",
+  "en": "I've closed it here. You can decide on the remaining items in My records.",
+  "ja": "ここでは閉じました。残りはマイ記録で決められます。",
+  "zh": "这里已关闭，剩余事项可以在我的记录中决定。"
+ },
+ "service.nothing_was_changed": {
+  "ko": "바꾸지 않았습니다.",
+  "en": "Nothing was changed.",
+  "ja": "変更していません。",
+  "zh": "没有更改。"
+ },
+ "service.observed_event": {
+  "ko": "관찰된 이벤트입니다.",
+  "en": "Observed event.",
+  "ja": "確認されたイベントです。",
+  "zh": "已观察到的事件。"
+ },
+ "service.please_choose_in_my_records_whether": {
+  "ko": "기억해 둘지는 내 기록에서 골라 주세요.",
+  "en": "Please choose in My records whether to remember it.",
+  "ja": "覚えておくかどうかは、マイ記録で選んでください。",
+  "zh": "请在“我的记录”中选择是否记住。"
+ },
+ "service.run_codex_login_in_a_terminal": {
+  "ko": "터미널에서 `codex login`을 실행해 로그인하세요.",
+  "en": "Run `codex login` in a terminal to sign in.",
+  "ja": "ターミナルで `codex login` を実行してログインしてください。",
+  "zh": "在终端运行 `codex login` 登录。"
+ },
+ "service.see_the_full_result_in_the": {
+  "ko": "전체 결과는 AgentOS 웹에서 확인하세요.",
+  "en": "See the full result in the AgentOS web app.",
+  "ja": "結果の全体は AgentOS のウェブで確認してください。",
+  "zh": "完整结果请在 AgentOS 网页上查看。"
+ },
+ "service.sign_in_skipped_i_will_finish": {
+  "ko": "로그인을 건너뛰었습니다. 요청은 지금까지의 결과로 마칩니다.",
+  "en": "Sign-in skipped. I will finish with what I have so far.",
+  "ja": "ログインをスキップしました。ここまでの結果で終えます。",
+  "zh": "已跳过登录。将以目前的结果结束请求。"
+ },
+ "service.skip_if_this_is_not_the": {
+  "ko": "예상한 사이트가 아니면 건너뛰기",
+  "en": "Skip if this is not the site you expected",
+  "ja": "思っていたサイトでなければスキップ",
+  "zh": "如果不是预期的网站就跳过"
+ },
+ "service.some_things_changed_in_the_meantime": {
+  "ko": "그 사이 바뀐 것이 있어 일부는 그대로 두었어요. 내 기록에서 볼 수 있어요.",
+  "en": "Some things changed in the meantime, so I left those as they were. You can see them in My records.",
+  "ja": "その間に変わったものがあり、一部はそのままにしました。マイ記録で確認できます。",
+  "zh": "期间有些内容发生了变化，所以部分内容保持了原样。可以在我的记录中查看。"
+ },
+ "service.started_applying_the_change": {
+  "ko": "적용을 시작했습니다.",
+  "en": "Started applying the change.",
+  "ja": "適用を開始しました。",
+  "zh": "已开始应用。"
+ },
+ "service.started_running": {
+  "ko": "실행을 시작했습니다.",
+  "en": "Started running.",
+  "ja": "実行を開始しました。",
+  "zh": "已开始运行。"
+ },
+ "service.state_unknown": {
+  "ko": "상태 알 수 없음",
+  "en": "State unknown",
+  "ja": "状態不明",
+  "zh": "状态未知"
+ },
+ "service.stopped_this_request_didn_t_run": {
+  "ko": "요청을 멈췄어요. 이 요청은 실행하지 않았습니다.",
+  "en": "Stopped. This request didn't run.",
+  "ja": "依頼を止めました。この依頼は実行していません。",
+  "zh": "已停止，这个请求没有执行。"
+ },
+ "service.telegram_delivery_could_not_be_verified": {
+  "ko": "Telegram 전달 여부를 확인할 수 없습니다. 자동으로 다시 보내지 않았습니다. AgentOS 웹 기록을 확인하세요.",
+  "en": "Telegram delivery could not be verified. The message was not resent automatically. Check the AgentOS web history.",
+  "ja": "Telegramへの配信を確認できません。自動では再送していません。AgentOSのウェブ履歴を確認してください。",
+  "zh": "无法确认是否通过 Telegram 送达，没有自动重发。请查看 AgentOS 网页记录。"
+ },
+ "service.the_login_session_was_not_saved": {
+  "ko": "로그인 세션이 저장되지 않아 요청을 이어서 처리하지 않았습니다.",
+  "en": "The login session was not saved, so the request was not resumed.",
+  "ja": "ログインセッションが保存されていないため、依頼を再開していません。",
+  "zh": "登录会话未保存，因此没有继续处理请求。"
+ },
+ "service.the_login_status_could_not_be": {
+  "ko": "로그인 상태를 확인하지 못해 전환하지 않았습니다. AI 설정에서 로그인 상태를 확인하세요.",
+  "en": "The login status could not be verified, so no switch was made. Check the login status in AI settings.",
+  "ja": "ログイン状態を確認できなかったため、切り替えていません。AI設定でログイン状態を確認してください。",
+  "zh": "未能确认登录状态，因此没有切换。请在 AI 设置中查看登录状态。"
+ },
+ "service.the_login_window_was_closed_but": {
+  "ko": "로그인 창을 닫았지만 요청을 이어서 처리할 수 없는 상태입니다. 다시 요청해 주세요.",
+  "en": "The login window was closed, but the request cannot be resumed in its current state. Please request it again.",
+  "ja": "ログイン画面を閉じましたが、依頼を続けられない状態です。もう一度依頼してください。",
+  "zh": "已关闭登录窗口，但当前无法继续处理请求。请重新请求。"
+ },
+ "service.the_note_was_saved_view_it": {
+  "ko": "메모를 저장했습니다. /notes로 확인하거나 /summarize로 정리할 수 있습니다.",
+  "en": "The note was saved. View it with /notes or organize it with /summarize.",
+  "ja": "メモを保存しました。/notesで確認するか、/summarizeで整理できます。",
+  "zh": "已保存笔记，可以用 /notes 查看，或用 /summarize 整理。"
+ },
+ "service.the_previous_request_attempted_an_action": {
+  "ko": "이전 요청이 상태를 바꾸는 작업을 시도해 자동으로 다시 실행하지 않았습니다.",
+  "en": "The previous request attempted an action that changes state, so it was not retried automatically.",
+  "ja": "前の依頼で状態を変える操作を試みたため、自動で再実行していません。",
+  "zh": "上一次请求尝试过更改状态的操作，因此没有自动重试。"
+ },
+ "service.the_previous_request_is_already_running": {
+  "ko": "이전 요청은 이미 실행 중이거나 끝난 상태라 여기서 취소하지 않았습니다.",
+  "en": "The previous request is already running or finished, so it was not canceled here.",
+  "ja": "前の依頼はすでに実行中か完了済みのため、ここではキャンセルしていません。",
+  "zh": "上一次请求已在执行中或已完成，因此没有在此取消。"
+ },
+ "service.the_previous_request_s_external_outcome": {
+  "ko": "이전 요청의 외부 결과가 불확실해 그 요청은 다시 실행하지 않았습니다. 중복으로 만들어질 수 있으니 실제 결과를 확인해 주세요. 이번 메시지는 새 요청으로 처리했습니다.",
+  "en": "The previous request's external outcome is uncertain, so it was not run again. Please check the actual result to avoid duplicates. This message was handled as a new request.",
+  "ja": "前の依頼の外部での結果が不明なため、再実行していません。重複作成の可能性があるので、実際の結果を確認してください。今回のメッセージは新しい依頼として処理しました。",
+  "zh": "上一次请求的外部结果不确定，因此没有重新执行。为避免重复创建，请检查实际结果。本条消息已作为新请求处理。"
+ },
+ "service.the_selected_google_drive_files_are": {
+  "ko": "선택한 Google Drive 파일을 준비했습니다. 원래 요청을 계속합니다.",
+  "en": "The selected Google Drive files are ready. The original request will continue.",
+  "ja": "選択したGoogle Driveのファイルを準備しました。元の依頼を続けます。",
+  "zh": "已准备好所选 Google Drive 文件，将继续原请求。"
+ },
+ "service.the_sign_in_request_timed_out": {
+  "ko": "로그인 요청 시간이 지나 창을 닫았습니다. 요청은 지금까지의 결과로 마칩니다.",
+  "en": "The sign-in request timed out and the window was closed. I will finish with what I have so far.",
+  "ja": "ログインの依頼時間が過ぎたので画面を閉じました。ここまでの結果で終えます。",
+  "zh": "登录请求超时，窗口已关闭。将以目前的结果结束请求。"
+ },
+ "service.the_task_was_interrupted_by_a": {
+  "ko": "재시작으로 작업이 중단되었습니다. 자동으로 다시 실행하지 않았습니다.",
+  "en": "The task was interrupted by a restart. It was not retried automatically.",
+  "ja": "再起動により作業が中断されました。自動では再実行していません。",
+  "zh": "任务因重启而中断，没有自动重试。"
+ },
+ "service.there_are_no_saved_notes_try": {
+  "ko": "저장된 메모가 없습니다. /note 내용으로 기록해 보세요.",
+  "en": "There are no saved notes. Try recording one with /note followed by its text.",
+  "ja": "保存済みのメモはありません。/noteの後に内容を入力して記録してみてください。",
+  "zh": "没有已保存的笔记，试试用 /note 加上内容来记录。"
+ },
+ "service.this_mac_s_ai_sign_in": {
+  "ko": "이 Mac의 AI 로그인과 그 연결은 소유자의 것이라 가족 비서에서는 쓸 수 없어요.",
+  "en": "This Mac's AI sign-in and its connections belong to the owner, so a family member's assistant cannot use them.",
+  "ja": "この Mac の AI ログインとその接続は所有者のものなので、家族のアシスタントでは使えません。",
+  "zh": "此 Mac 的 AI 登录及其连接属于所有者，家人的助理无法使用。"
+ },
+ "service.this_request_was_already_retried_once": {
+  "ko": "이 요청은 이미 한 번 다시 시도했습니다. 같은 요청을 중복으로 실행하지 않았습니다.",
+  "en": "This request was already retried once. I did not run it again.",
+  "ja": "この依頼はすでに一度やり直しました。同じ依頼を重ねて実行していません。",
+  "zh": "这个请求已经重试过一次，没有重复执行。"
+ },
+ "service.to_continue_the_request_for_which": {
+  "ko": "폴더를 허용한 방금 요청을 계속하려면 연결 문서 발췌문을 외부 모델에 보내는 승인이 필요합니다. 승인하면 그 요청을 한 번만 이어서 처리합니다. 아직 문서 내용은 전송되지 않았습니다.",
+  "en": "To continue the request for which you just allowed the folder, approval is needed to send excerpts from connected documents to an external model. Once approved, that request will resume just once. No document content has been sent yet.",
+  "ja": "フォルダーを許可した直前の依頼を続けるには、接続した文書の抜粋を外部モデルに送る承認が必要です。承認後、その依頼を一度だけ再開します。文書の内容はまだ送信していません。",
+  "zh": "要继续刚才授权文件夹的请求，需要批准将已连接文档的摘录发送给外部模型。批准后只会继续该请求一次。尚未发送文档内容。"
+ },
+ "service.trying_again_runs_the_same_request": {
+  "ko": "다시 시도하면 같은 요청을 한 번 다시 실행합니다.",
+  "en": "Trying again runs the same request once more.",
+  "ja": "もう一度やると、同じ依頼をもう一回実行します。",
+  "zh": "重试会把同样的请求再执行一次。"
+ },
+ "service.waiting_for_a_connection_choice": {
+  "ko": "연결 선택 대기",
+  "en": "Waiting for a connection choice",
+  "ja": "接続の選択待ち",
+  "zh": "等待选择连接"
+ },
+ "service.waiting_to_run": {
+  "ko": "실행을 기다리고 있습니다.",
+  "en": "Waiting to run.",
+  "ja": "実行を待っています。",
+  "zh": "正在等待执行。"
+ },
+ "service.watching_has_stopped_no_more_updates": {
+  "ko": "지켜보기를 멈췄습니다. 더 알리지 않습니다.",
+  "en": "Watching has stopped. No more updates will be sent.",
+  "ja": "見守りを停止しました。これ以上はお知らせしません。",
+  "zh": "已停止关注，不会再通知。"
+ },
+ "service.what_shall_we_do_together": {
+  "ko": "무엇을 함께할까요?",
+  "en": "What shall we do together?",
+  "ja": "何を一緒にしましょうか？",
+  "zh": "我们一起做点什么？"
+ },
+ "service.where_intermediate_execution_details_were_not": {
+  "ko": "중간 실행 정보가 저장되지 않은 구간은 마지막으로 관찰된 이벤트만 표시합니다.",
+  "en": "Where intermediate execution details were not saved, only the last observed event is shown.",
+  "ja": "途中の実行情報が保存されていない区間は、最後に確認されたイベントのみを表示します。",
+  "zh": "未保存中间执行信息的部分，仅显示最后观察到的事件。"
+ },
+ "service.your_account_is_connected_still_sent": {
+  "ko": "개인 계정이 연결되었습니다. Still이 Telegram에서 인사를 보냈습니다.",
+  "en": "Your account is connected. Still sent you a hello on Telegram.",
+  "ja": "アカウントが接続されました。Still が Telegram でごあいさつしました。",
+  "zh": "你的账号已连接。Still 已在 Telegram 上向你问好。"
+ },
+ "service.your_personal_telegram_account_is_connected": {
+  "ko": "개인 Telegram 계정이 연결되어 있습니다.",
+  "en": "Your personal Telegram account is connected.",
+  "ja": "個人の Telegram アカウントが接続されています。",
+  "zh": "个人 Telegram 账号已连接。"
+ },
+ "settings_orchestrator.follow_main_ai": {
+  "ko": "기본 AI 따라가기",
+  "en": "Follow Main AI",
+  "ja": "メイン AI に従う",
+  "zh": "跟随主要 AI"
+ },
+ "settings_orchestrator.not_available_under_the_current_policy": {
+  "ko": "현재 정책으로 사용할 수 없습니다.",
+  "en": "Not available under the current policy.",
+  "ja": "現在のポリシーでは使えません。",
+  "zh": "根据当前策略无法使用。"
+ },
+ "settings_orchestrator.not_set_up": {
+  "ko": "설정 안 됨",
+  "en": "Not set up",
+  "ja": "未設定",
+  "zh": "未设置"
+ },
+ "settings_orchestrator.not_used": {
+  "ko": "사용 안 함",
+  "en": "Not used",
+  "ja": "未使用",
+  "zh": "未使用"
+ },
+ "settings_orchestrator.sign_in_again": {
+  "ko": "다시 인증 필요",
+  "en": "Sign in again",
+  "ja": "再認証が必要",
+  "zh": "需要重新认证"
+ },
+ "settings_orchestrator.the_settings_change_was_canceled_nothing": {
+  "ko": "설정 변경을 취소했습니다. 아무것도 바꾸지 않았습니다.",
+  "en": "The settings change was canceled. Nothing was changed.",
+  "ja": "設定変更をキャンセルしました。何も変更していません。",
+  "zh": "已取消设置更改，没有更改任何内容。"
+ },
+ "settings_orchestrator.this_settings_change_was_requested_in": {
+  "ko": "대화에서 요청한 설정 변경입니다. 적용을 누르거나 대화에서 그렇게 하라고 답하기 전에는 아무것도 바뀌지 않습니다.",
+  "en": "This settings change was requested in chat. Nothing changes until you press Apply or reply in chat to go ahead.",
+  "ja": "会話で依頼された設定変更です。「適用」を押すか、会話で実行するよう返信するまで何も変わりません。",
+  "zh": "这是在对话中请求的设置更改。点击“应用”或在对话中回复同意之前，不会更改任何内容。"
+ },
+ "state.cancelled": {
+  "ko": "취소됨",
+  "en": "cancelled",
+  "ja": "キャンセル済み",
+  "zh": "已取消"
+ },
+ "state.failed": {
+  "ko": "완료하지 못함",
+  "en": "not completed",
+  "ja": "未完了",
+  "zh": "未完成"
+ },
+ "state.interrupted": {
+  "ko": "중단됨",
+  "en": "interrupted",
+  "ja": "中断",
+  "zh": "已中断"
+ },
+ "state.queued": {
+  "ko": "대기 중",
+  "en": "waiting",
+  "ja": "待機中",
+  "zh": "等待中"
+ },
+ "state.running": {
+  "ko": "진행 중",
+  "en": "in progress",
+  "ja": "進行中",
+  "zh": "进行中"
+ },
+ "state.succeeded": {
+  "ko": "완료",
+  "en": "done",
+  "ja": "完了",
+  "zh": "已完成"
+ },
+ "state.unknown": {
+  "ko": "외부 결과 불확실",
+  "en": "outside result unconfirmed",
+  "ja": "外部の結果が未確認",
+  "zh": "外部结果不确定"
+ },
+ "step.api": {
+  "ko": "데이터 가져오고 있어요",
+  "en": "Fetching the data",
+  "ja": "データを取得しています",
+  "zh": "正在获取数据"
+ },
+ "step.code_run": {
+  "ko": "코드로 확인하고 있어요",
+  "en": "Checking with code",
+  "ja": "コードで確認しています",
+  "zh": "正在用代码确认"
+ },
+ "step.capability_search": {
+  "ko": "연결할 방법을 찾고 있어요",
+  "en": "Looking for a way to connect",
+  "ja": "接続する方法を探しています",
+  "zh": "正在寻找连接方式"
+ },
+ "step.skill": {
+  "ko": "방법 안내를 읽고 있어요",
+  "en": "Reading a how-to guide",
+  "ja": "手順の案内を読んでいます",
+  "zh": "正在阅读操作指南"
+ },
+ "step.ask_location": {
+  "ko": "위치를 물어보려고 해요",
+  "en": "About to ask for your location",
+  "ja": "位置情報をお聞きしようとしています",
+  "zh": "准备问你的位置"
+ },
+ "step.calendar_draft": {
+  "ko": "일정 바꿀 안을 만들고 있어요",
+  "en": "Drafting a calendar change",
+  "ja": "予定変更の案を作っています",
+  "zh": "正在拟定日程更改"
+ },
+ "step.calendar_query": {
+  "ko": "일정 살펴보고 있어요",
+  "en": "Looking at your calendar",
+  "ja": "予定を見ています",
+  "zh": "正在查看日程"
+ },
+ "step.current_state": {
+  "ko": "지금 상황 정리하고 있어요",
+  "en": "Putting the current situation together",
+  "ja": "いまの状況をまとめています",
+  "zh": "正在整理当前情况"
+ },
+ "step.default": {
+  "ko": "잠깐 확인하고 있어요",
+  "en": "Checking for a moment",
+  "ja": "少し確認しています",
+  "zh": "稍等，正在确认"
+ },
+ "step.delegate": {
+  "ko": "전문 에이전트에게 부탁하고 있어요",
+  "en": "Asking a specialist agent",
+  "ja": "専門エージェントに頼んでいます",
+  "zh": "正在请专业代理帮忙"
+ },
+ "step.drive_read": {
+  "ko": "Drive 파일 읽어 보고 있어요",
+  "en": "Reading your Drive file",
+  "ja": "Drive のファイルを読んでいます",
+  "zh": "正在读取 Drive 文件"
+ },
+ "step.drive_search": {
+  "ko": "Drive에서 찾아보고 있어요",
+  "en": "Searching your Drive",
+  "ja": "Drive を探しています",
+  "zh": "正在 Drive 中查找"
+ },
+ "step.find_files": {
+  "ko": "파일 찾아보고 있어요",
+  "en": "Looking for the file",
+  "ja": "ファイルを探しています",
+  "zh": "正在查找文件"
+ },
+ "step.forget": {
+  "ko": "기억 정리하고 있어요",
+  "en": "Tidying up what I remember",
+  "ja": "記憶を整理しています",
+  "zh": "正在整理记忆"
+ },
+ "step.information_use": {
+  "ko": "어떤 정보를 썼는지 보고 있어요",
+  "en": "Checking which of your information was used",
+  "ja": "どの情報を使ったか確認しています",
+  "zh": "正在查看用到了哪些信息"
+ },
+ "step.list_agents": {
+  "ko": "도와줄 에이전트 찾고 있어요",
+  "en": "Finding an agent to help",
+  "ja": "手伝ってくれるエージェントを探しています",
+  "zh": "正在找能帮忙的代理"
+ },
+ "step.list_memory": {
+  "ko": "기억해 둔 걸 떠올리고 있어요",
+  "en": "Recalling what you told me",
+  "ja": "覚えていたことを思い出しています",
+  "zh": "正在回想你告诉过我的事"
+ },
+ "step.list_notes": {
+  "ko": "메모 살펴보고 있어요",
+  "en": "Looking through your notes",
+  "ja": "メモを見ています",
+  "zh": "正在查看笔记"
+ },
+ "step.page_click": {
+  "ko": "페이지에서 고르고 있어요",
+  "en": "Choosing on the page",
+  "ja": "ページで選んでいます",
+  "zh": "正在页面中选择"
+ },
+ "step.page_click.host": {
+  "ko": "{host}에서 고르고 있어요",
+  "en": "Choosing on {host}",
+  "ja": "{host} で選んでいます",
+  "zh": "正在 {host} 中选择"
+ },
+ "step.page_find": {
+  "ko": "페이지에서 찾아보고 있어요",
+  "en": "Searching the page",
+  "ja": "ページで探しています",
+  "zh": "正在页面中查找"
+ },
+ "step.page_find.host": {
+  "ko": "{host}에서 찾아보고 있어요",
+  "en": "Searching {host}",
+  "ja": "{host} で探しています",
+  "zh": "正在 {host} 中查找"
+ },
+ "step.page_open": {
+  "ko": "페이지 열어 보고 있어요",
+  "en": "Opening the page",
+  "ja": "ページを開いています",
+  "zh": "正在打开页面"
+ },
+ "step.page_open.host": {
+  "ko": "{host} 열어 보고 있어요",
+  "en": "Opening {host}",
+  "ja": "{host} を開いています",
+  "zh": "正在打开 {host}"
+ },
+ "step.page_read": {
+  "ko": "페이지 읽어 보고 있어요",
+  "en": "Reading the page",
+  "ja": "ページを読んでいます",
+  "zh": "正在阅读页面"
+ },
+ "step.page_read.host": {
+  "ko": "{host} 읽어 보고 있어요",
+  "en": "Reading {host}",
+  "ja": "{host} を読んでいます",
+  "zh": "正在阅读 {host}"
+ },
+ "step.page_type": {
+  "ko": "페이지에 입력하고 있어요",
+  "en": "Filling in the page",
+  "ja": "ページに入力しています",
+  "zh": "正在页面中输入"
+ },
+ "step.page_type.host": {
+  "ko": "{host}에 입력하고 있어요",
+  "en": "Filling in {host}",
+  "ja": "{host} に入力しています",
+  "zh": "正在 {host} 中输入"
+ },
+ "step.read_file": {
+  "ko": "파일 읽어 보고 있어요",
+  "en": "Reading the file",
+  "ja": "ファイルを読んでいます",
+  "zh": "正在读取文件"
+ },
+ "step.retry": {
+  "ko": "첫 시도로는 안 돼서 다른 방법으로 다시 하고 있어요",
+  "en": "The first try fell short; trying another way",
+  "ja": "最初の試みではうまくいかず、別の方法でやり直しています",
+  "zh": "第一次尝试没有成功，正在换个方法重试"
+ },
+ "step.roots": {
+  "ko": "연결된 폴더 보고 있어요",
+  "en": "Looking in your connected folder",
+  "ja": "接続したフォルダーを見ています",
+  "zh": "正在查看已连接的文件夹"
+ },
+ "step.save_memory": {
+  "ko": "기억해 두고 있어요",
+  "en": "Noting this down",
+  "ja": "覚えておいています",
+  "zh": "正在记下来"
+ },
+ "step.save_note": {
+  "ko": "메모 남기고 있어요",
+  "en": "Saving a note",
+  "ja": "メモを残しています",
+  "zh": "正在记笔记"
+ },
+ "step.schedule": {
+  "ko": "예약 잡고 있어요",
+  "en": "Making the booking",
+  "ja": "予約しています",
+  "zh": "正在预订"
+ },
+ "step.settings_change": {
+  "ko": "설정 바꿀 안을 만들고 있어요",
+  "en": "Drafting a settings change",
+  "ja": "設定変更の案を作っています",
+  "zh": "正在拟定设置更改"
+ },
+ "step.settings_read": {
+  "ko": "설정 보고 있어요",
+  "en": "Looking at the settings",
+  "ja": "設定を見ています",
+  "zh": "正在查看设置"
+ },
+ "step.sign_in": {
+  "ko": "로그인을 준비하고 있어요",
+  "en": "Getting sign-in ready",
+  "ja": "ログインを準備しています",
+  "zh": "正在准备登录"
+ },
+ "step.sign_in.host": {
+  "ko": "{host} 로그인을 준비하고 있어요",
+  "en": "Getting {host} sign-in ready",
+  "ja": "{host} のログインを準備しています",
+  "zh": "正在准备 {host} 登录"
+ },
+ "step.weather": {
+  "ko": "날씨 보고 있어요",
+  "en": "Checking the weather",
+  "ja": "天気を確認しています",
+  "zh": "正在查看天气"
+ },
+ "step.web": {
+  "ko": "웹에서 찾아보고 있어요",
+  "en": "Searching the web",
+  "ja": "ウェブで探しています",
+  "zh": "正在网上搜索"
+ },
+ "step.web.query": {
+  "ko": "웹에서 '{query}' 찾아보고 있어요",
+  "en": "Searching the web for '{query}'",
+  "ja": "ウェブで「{query}」を探しています",
+  "zh": "正在网上搜索“{query}”"
+ },
+ "telegram_presence.retry_requested": {
+  "ko": "다시 시도 요청함",
+  "en": "Retry requested",
+  "ja": "再試行を依頼済み",
+  "zh": "已请求重试"
+ },
+ "terminal.partial": {
+  "ko": "일부 단계만 완료했습니다.",
+  "en": "Only some steps were completed.",
+  "ja": "一部の手順だけ完了しました。",
+  "zh": "只完成了部分步骤。"
+ },
+ "service.the_photo_could_not_be_received": {
+  "ko": "보내 주신 사진을 받아오지 못했어요. 잠시 후 사진을 한 번 더 보내 주세요.",
+  "en": "I couldn't receive the photo you sent. Please send it again in a moment.",
+  "ja": "送っていただいた写真を受け取れませんでした。少し時間をおいて、もう一度送ってください。",
+  "zh": "没能收到你发来的照片。请稍后再发一次。"
+ },
+ "first_run.intro": {
+  "ko": "AgentOS 첫 설정을 이 터미널에서 진행합니다. 건너뛰려면 Enter를 누르세요.",
+  "en": "Let's set up AgentOS here in the terminal. Press Enter to skip a step.",
+  "ja": "AgentOS の初期設定をこのターミナルで行います。スキップするには Enter を押してください。",
+  "zh": "将在此终端中完成 AgentOS 的首次设置。按 Enter 可跳过某一步。"
+ },
+ "first_run.stopped": {
+  "ko": "설정을 멈췄습니다. `agentos start`를 다시 실행하면 남은 단계부터 이어집니다.",
+  "en": "Setup stopped. Run `agentos start` again to continue from the remaining steps.",
+  "ja": "設定を中断しました。`agentos start` をもう一度実行すると、残りのステップから再開します。",
+  "zh": "设置已暂停。再次运行 `agentos start` 会从剩余的步骤继续。"
+ },
+ "first_run.access_title": {
+  "ko": "1. 접근 비밀번호",
+  "en": "1. Access password",
+  "ja": "1. アクセスパスワード",
+  "zh": "1. 访问密码"
+ },
+ "first_run.access_help": {
+  "ko": "AgentOS 화면을 열 때 쓸 비밀번호를 따로 정할 수 있습니다. Mac 로그인 암호가 아니라 AgentOS에서만 쓰는 새 비밀번호입니다. 정하지 않으면 이 컴퓨터에서만 열립니다.",
+  "en": "You can set a separate password for opening AgentOS. It is a new password only for AgentOS, not your Mac login password. Without one, AgentOS opens only on this computer.",
+  "ja": "AgentOS を開くときのパスワードを別に設定できます。Mac のログインパスワードではなく、AgentOS だけで使う新しいパスワードです。設定しない場合は、このコンピュータからのみ開けます。",
+  "zh": "可以为打开 AgentOS 单独设置密码。这是只用于 AgentOS 的新密码，不是 Mac 的登录密码。不设置时，只能在这台电脑上打开。"
+ },
+ "first_run.password_too_short": {
+  "ko": "12자 이상으로 입력하세요.",
+  "en": "Use at least 12 characters.",
+  "ja": "12 文字以上で入力してください。",
+  "zh": "请输入至少 12 个字符。"
+ },
+ "first_run.ai_title": {
+  "ko": "2. AI 연결",
+  "en": "2. AI connection",
+  "ja": "2. AI の接続",
+  "zh": "2. 连接 AI"
+ },
+ "first_run.ai_help": {
+  "ko": "이미 쓰는 구독이나 API 키 중 하나를 연결합니다.",
+  "en": "Connect a subscription you already have, or an API key.",
+  "ja": "お使いのサブスクリプションか API キーのどちらかを接続します。",
+  "zh": "连接你已有的订阅或 API 密钥。"
+ },
+ "first_run.ai_codex": {
+  "ko": "1) ChatGPT 구독 (Codex)",
+  "en": "1) ChatGPT subscription (Codex)",
+  "ja": "1) ChatGPT サブスクリプション (Codex)",
+  "zh": "1) ChatGPT 订阅 (Codex)"
+ },
+ "first_run.ai_claude": {
+  "ko": "2) Claude 구독 (Claude Code)",
+  "en": "2) Claude subscription (Claude Code)",
+  "ja": "2) Claude サブスクリプション (Claude Code)",
+  "zh": "2) Claude 订阅 (Claude Code)"
+ },
+ "first_run.ai_api": {
+  "ko": "3) API 키 (OpenAI, Anthropic, 호환 서버, Ollama)",
+  "en": "3) API key (OpenAI, Anthropic, compatible server, Ollama)",
+  "ja": "3) API キー (OpenAI、Anthropic、互換サーバー、Ollama)",
+  "zh": "3) API 密钥 (OpenAI、Anthropic、兼容服务器、Ollama)"
+ },
+ "first_run.ai_later": {
+  "ko": "4) 나중에 브라우저에서 연결",
+  "en": "4) Connect later in the browser",
+  "ja": "4) 後でブラウザで接続",
+  "zh": "4) 稍后在浏览器中连接"
+ },
+ "first_run.choice_prompt": {
+  "ko": "번호:",
+  "en": "Number:",
+  "ja": "番号:",
+  "zh": "编号:"
+ },
+ "first_run.choose_one_to_four": {
+  "ko": "1~4 중에서 고르세요.",
+  "en": "Choose 1 to 4.",
+  "ja": "1〜4 から選んでください。",
+  "zh": "请在 1 到 4 中选择。"
+ },
+ "first_run.codex_signed_in": {
+  "ko": "Codex에 이미 로그인되어 있어 바로 연결합니다.",
+  "en": "Codex is already signed in, so it connects right away.",
+  "ja": "Codex にはすでにログインしているので、そのまま接続します。",
+  "zh": "Codex 已登录，直接连接。"
+ },
+ "first_run.codex_login_prompt": {
+  "ko": "지금 `codex login`을 실행할까요? [Y/n]",
+  "en": "Run `codex login` now? [Y/n]",
+  "ja": "今 `codex login` を実行しますか? [Y/n]",
+  "zh": "现在运行 `codex login` 吗? [Y/n]"
+ },
+ "first_run.claude_signed_in": {
+  "ko": "Claude Code에 이미 로그인되어 있어 바로 연결합니다.",
+  "en": "Claude Code is already signed in, so it connects right away.",
+  "ja": "Claude Code にはすでにログインしているので、そのまま接続します。",
+  "zh": "Claude Code 已登录，直接连接。"
+ },
+ "first_run.claude_setup_token": {
+  "ko": "이어서 나오는 안내를 따라 `claude setup-token`을 실행합니다.",
+  "en": "`claude setup-token` runs next; follow its instructions.",
+  "ja": "続いて `claude setup-token` を実行します。表示される案内に従ってください。",
+  "zh": "接下来运行 `claude setup-token`，请按提示操作。"
+ },
+ "first_run.claude_token_prompt": {
+  "ko": "표시된 토큰을 붙여 넣으세요:",
+  "en": "Paste the token it showed:",
+  "ja": "表示されたトークンを貼り付けてください:",
+  "zh": "粘贴显示的令牌:"
+ },
+ "first_run.token_empty": {
+  "ko": "토큰이 비어 있습니다. 다시 고르세요.",
+  "en": "The token is empty. Choose again.",
+  "ja": "トークンが空です。もう一度選んでください。",
+  "zh": "令牌为空。请重新选择。"
+ },
+ "first_run.engine_connected": {
+  "ko": "{name} 구독으로 연결했습니다.",
+  "en": "Connected with your {name} subscription.",
+  "ja": "{name} のサブスクリプションで接続しました。",
+  "zh": "已通过 {name} 订阅连接。"
+ },
+ "first_run.api_compatible": {
+  "ko": "3) OpenAI 호환 서버 (기본: OpenRouter)",
+  "en": "3) OpenAI-compatible server (default: OpenRouter)",
+  "ja": "3) OpenAI 互換サーバー (既定: OpenRouter)",
+  "zh": "3) OpenAI 兼容服务器 (默认: OpenRouter)"
+ },
+ "first_run.api_ollama": {
+  "ko": "4) Ollama (이 컴퓨터의 로컬 모델)",
+  "en": "4) Ollama (a local model on this computer)",
+  "ja": "4) Ollama (このコンピュータのローカルモデル)",
+  "zh": "4) Ollama (这台电脑上的本地模型)"
+ },
+ "first_run.server_prompt": {
+  "ko": "서버 주소 [{endpoint}]:",
+  "en": "Server address [{endpoint}]:",
+  "ja": "サーバーアドレス [{endpoint}]:",
+  "zh": "服务器地址 [{endpoint}]:"
+ },
+ "first_run.model_prompt": {
+  "ko": "모델 이름:",
+  "en": "Model name:",
+  "ja": "モデル名:",
+  "zh": "模型名称:"
+ },
+ "first_run.api_key_prompt": {
+  "ko": "API 키 (화면에 표시되지 않습니다):",
+  "en": "API key (not shown on screen):",
+  "ja": "API キー (画面には表示されません):",
+  "zh": "API 密钥 (不会显示在屏幕上):"
+ },
+ "first_run.api_test_failed": {
+  "ko": "연결 확인 실패: {error}. 다시 고르세요.",
+  "en": "Connection check failed: {error}. Choose again.",
+  "ja": "接続の確認に失敗しました: {error}。もう一度選んでください。",
+  "zh": "连接检查失败: {error}。请重新选择。"
+ },
+ "first_run.no_model_reply": {
+  "ko": "모델 응답을 받지 못했습니다",
+  "en": "no reply from the model",
+  "ja": "モデルから応答がありませんでした",
+  "zh": "没有收到模型的回复"
+ },
+ "first_run.api_connected": {
+  "ko": "API 연결을 확인하고 사용하도록 설정했습니다.",
+  "en": "The API connection was checked and is now the AI in use.",
+  "ja": "API 接続を確認し、使用する AI に設定しました。",
+  "zh": "已确认 API 连接并设为使用的 AI。"
+ },
+ "first_run.telegram_title": {
+  "ko": "3. Telegram (선택)",
+  "en": "3. Telegram (optional)",
+  "ja": "3. Telegram (任意)",
+  "zh": "3. Telegram (可选)"
+ },
+ "first_run.telegram_help": {
+  "ko": "휴대폰의 Telegram에서 내 봇으로 AgentOS와 대화할 수 있습니다.",
+  "en": "Talk to AgentOS from your phone through your own Telegram bot.",
+  "ja": "スマートフォンの Telegram から、自分のボットで AgentOS と話せます。",
+  "zh": "可以在手机的 Telegram 中通过自己的机器人与 AgentOS 对话。"
+ },
+ "first_run.bot_token_prompt": {
+  "ko": "봇 토큰 (비우면 나중에):",
+  "en": "Bot token (empty to do this later):",
+  "ja": "ボットトークン (空欄で後で):",
+  "zh": "机器人令牌 (留空稍后再做):"
+ },
+ "first_run.telegram_pairing": {
+  "ko": "페어링 링크를 Telegram에서 엽니다. Start를 누르면 연결됩니다:",
+  "en": "Opening the pairing link in Telegram. Press Start to finish:",
+  "ja": "ペアリングリンクを Telegram で開きます。Start を押すと接続されます:",
+  "zh": "正在 Telegram 中打开配对链接。点击 Start 即可完成连接:"
+ },
+ "first_run.finished": {
+  "ko": "설정이 끝났습니다. 마지막 확인은 브라우저 화면에서 합니다.",
+  "en": "Setup is done. The browser opens for a final check.",
+  "ja": "設定が完了しました。最後の確認はブラウザの画面で行います。",
+  "zh": "设置完成。最后在浏览器中确认。"
+ },
+ "service.onboarding_claim_needed": {
+  "ko": "이 컴퓨터에서 초기 설정 링크를 열어 개인 환경을 만드세요.",
+  "en": "Open the setup link on this computer to create your personal environment.",
+  "ja": "このコンピュータで初期設定のリンクを開いて、個人環境を作成してください。",
+  "zh": "请在这台电脑上打开初始设置链接，创建你的个人环境。"
+ },
+ "service.onboarding_engine_selected": {
+  "ko": "{engine}의 공식 로그인 연결이 선택되었습니다.",
+  "en": "The official {engine} sign-in is selected.",
+  "ja": "{engine} の公式ログインによる接続が選択されています。",
+  "zh": "已选择 {engine} 的官方登录连接。"
+ },
+ "service.onboarding_engine_login_needed": {
+  "ko": "Codex 또는 Claude Code에서 공식 로그인한 뒤 AgentOS에서 연결하세요.",
+  "en": "Sign in to Codex or Claude Code officially, then connect it in AgentOS.",
+  "ja": "Codex または Claude Code に公式の方法でログインしてから、AgentOS で接続してください。",
+  "zh": "请先通过官方方式登录 Codex 或 Claude Code，然后在 AgentOS 中连接。"
+ },
+ "service.onboarding_engine_install_needed": {
+  "ko": "Codex 또는 Claude Code CLI를 공식 안내로 설치·로그인하거나 모델을 연결하세요.",
+  "en": "Install and sign in to the Codex or Claude Code CLI with the official instructions, or connect a model.",
+  "ja": "公式の手順で Codex または Claude Code CLI をインストールしてログインするか、モデルを接続してください。",
+  "zh": "请按官方说明安装并登录 Codex 或 Claude Code CLI，或者连接一个模型。"
+ },
+ "service.onboarding_model_ready": {
+  "ko": "모델과 도구 호출이 확인되었습니다.",
+  "en": "The model and its tool calls were checked.",
+  "ja": "モデルとツール呼び出しを確認しました。",
+  "zh": "模型和工具调用已确认。"
+ },
+ "service.onboarding_model_needed": {
+  "ko": "선택한 모델을 저장하고 연결 확인을 실행하세요.",
+  "en": "Save the chosen model and run the connection check.",
+  "ja": "選んだモデルを保存し、接続の確認を実行してください。",
+  "zh": "请保存所选模型并运行连接检查。"
+ },
+ "service.onboarding_recovery_attention": {
+  "ko": "재시작 중이던 작업 또는 Telegram 전달은 자동 재시도하지 않았습니다. 웹 기록에서 결과를 확인하고 필요하면 새 요청으로 다시 시작하세요.",
+  "en": "Work or Telegram deliveries cut off by the restart were not retried automatically. Check the results in the web history and start a new request if needed.",
+  "ja": "再起動で中断した作業や Telegram への送信は自動で再試行していません。Web の履歴で結果を確認し、必要なら新しい依頼としてやり直してください。",
+  "zh": "因重启中断的工作或 Telegram 发送没有自动重试。请在网页记录中查看结果，如有需要请重新发起请求。"
+ },
+ "service.onboarding_recovery_ready": {
+  "ko": "자동 재시도하지 않은 중단 작업이나 불확실한 전달이 없습니다.",
+  "en": "No interrupted work or uncertain delivery is waiting.",
+  "ja": "中断した作業や不確かな送信は残っていません。",
+  "zh": "没有中断的工作或不确定的发送。"
+ },
+ "service.engine_signed_out": {
+  "ko": "{name}에 로그인되어 있지 않아 전환하지 않았습니다. {help}",
+  "en": "{name} is not signed in, so the AI was not switched. {help}",
+  "ja": "{name} にログインしていないため、切り替えませんでした。{help}",
+  "zh": "{name} 未登录，因此没有切换。{help}"
+ },
+ "service.claude_setup_token_help": {
+  "ko": "터미널에서 `claude setup-token`을 실행하고, 표시된 토큰을 설정 › AI 연결 › Claude Code에 붙여 넣으세요.",
+  "en": "Run `claude setup-token` in a terminal and paste the token it shows into Settings › AI connection › Claude Code.",
+  "ja": "ターミナルで `claude setup-token` を実行し、表示されたトークンを 設定 › AI の接続 › Claude Code に貼り付けてください。",
+  "zh": "在终端中运行 `claude setup-token`，然后把显示的令牌粘贴到 设置 › 连接 AI › Claude Code。"
+ },
+ "notice.request_title_money": {
+  "ko": "💸 돈이 오가는 요청이에요",
+  "en": "💸 This request moves money",
+  "ja": "💸 お金が動くリクエストです",
+  "zh": "💸 这是涉及资金的请求"
+ },
+ "notice.request_title": {
+  "ko": "승인이 필요한 요청이에요",
+  "en": "This request needs your approval",
+  "ja": "承認が必要なリクエストです",
+  "zh": "这个请求需要你的批准"
+ },
+ "notice.request_check_ok": {
+  "ko": "✅ 요약의 숫자가 실제 요청과 같아요: {numbers}",
+  "en": "✅ The numbers in the summary match the actual request: {numbers}",
+  "ja": "✅ 要約の数字は実際のリクエストと同じです: {numbers}",
+  "zh": "✅ 摘要中的数字与实际请求一致：{numbers}"
+ },
+ "notice.request_check_warn": {
+  "ko": "⚠️ 요약의 숫자 중 실제 요청에 없는 것이 있어요: {numbers}. 아래 원문을 확인해 주세요.",
+  "en": "⚠️ Some numbers in the summary are not in the actual request: {numbers}. Please check the request below.",
+  "ja": "⚠️ 要約の数字のうち、実際のリクエストにないものがあります: {numbers}。下の原文を確認してください。",
+  "zh": "⚠️ 摘要中有些数字不在实际请求中：{numbers}。请查看下面的原文。"
+ },
+ "notice.request_raw": {
+  "ko": "실제로 보낼 요청",
+  "en": "The exact request to send",
+  "ja": "実際に送るリクエスト",
+  "zh": "实际要发送的请求"
+ },
+ "first_run.access_prompt": {
+  "ko": "비밀번호를 정할까요? [y/N]",
+  "en": "Set a password? [y/N]",
+  "ja": "パスワードを設定しますか? [y/N]",
+  "zh": "要设置密码吗? [y/N]"
+ },
+ "first_run.new_password_prompt": {
+  "ko": "새 AgentOS 비밀번호 (12자 이상, 비우면 건너뜀):",
+  "en": "New AgentOS password (12+ characters, empty to skip):",
+  "ja": "新しい AgentOS パスワード (12 文字以上、空欄でスキップ):",
+  "zh": "新的 AgentOS 密码 (至少 12 个字符，留空跳过):"
+ },
+ "first_run.password_again": {
+  "ko": "한 번 더 입력:",
+  "en": "Type it again:",
+  "ja": "もう一度入力:",
+  "zh": "再输入一次:"
+ },
+ "first_run.password_mismatch": {
+  "ko": "두 비밀번호가 다릅니다. 다시 입력하세요.",
+  "en": "The two passwords differ. Try again.",
+  "ja": "2 つのパスワードが一致しません。もう一度入力してください。",
+  "zh": "两次输入的密码不一致。请重新输入。"
+ },
+ "first_run.cli_missing": {
+  "ko": "{name} 설치가 필요합니다. 브라우저에서 공식 설치 안내를 엽니다:",
+  "en": "{name} needs to be installed. Opening its official install page in the browser:",
+  "ja": "{name} のインストールが必要です。ブラウザで公式のインストール手順を開きます:",
+  "zh": "需要安装 {name}。正在浏览器中打开官方安装说明:"
+ },
+ "first_run.cli_install_wait": {
+  "ko": "설치를 마치면 Enter를 누르세요 (다른 방법을 고르려면 b):",
+  "en": "Press Enter when the installation is done (b to choose another option):",
+  "ja": "インストールが終わったら Enter を押してください (別の方法を選ぶには b):",
+  "zh": "安装完成后按 Enter (选择其他方式请输入 b):"
+ },
+ "first_run.cli_still_missing": {
+  "ko": "아직 설치된 {name} CLI가 보이지 않습니다. 설치가 끝났는지 확인한 뒤 다시 Enter를 누르세요.",
+  "en": "{name} is still not found. Check that the installation finished, then press Enter again.",
+  "ja": "まだ {name} が見つかりません。インストールが終わったか確認して、もう一度 Enter を押してください。",
+  "zh": "仍未找到 {name}。请确认安装已完成，然后再按 Enter。"
+ },
+ "first_run.api_help": {
+  "ko": "API 키는 AI 회사의 개발자용 API에 연결합니다. ChatGPT·Claude 구독과 별개로 쓴 만큼 요금이 나옵니다. Ollama는 이 컴퓨터에서 모델을 실행하므로 키가 필요 없습니다(ollama.com에서 설치).",
+  "en": "An API key connects to an AI company's developer API. It is billed per use, separately from a ChatGPT or Claude subscription. Ollama runs a model on this computer and needs no key (install it from ollama.com).",
+  "ja": "API キーは AI 企業の開発者向け API に接続します。ChatGPT や Claude のサブスクリプションとは別に、使った分だけ料金がかかります。Ollama はこのコンピュータでモデルを動かすのでキーは不要です (ollama.com からインストール)。",
+  "zh": "API 密钥用于连接 AI 公司面向开发者的 API。它与 ChatGPT、Claude 订阅分开，按用量计费。Ollama 在这台电脑上运行模型，不需要密钥 (可从 ollama.com 安装)。"
+ },
+ "first_run.model_prompt_default": {
+  "ko": "모델 이름 [{model}]:",
+  "en": "Model name [{model}]:",
+  "ja": "モデル名 [{model}]:",
+  "zh": "模型名称 [{model}]:"
+ },
+ "first_run.open_key_page": {
+  "ko": "API 키를 만드는 페이지를 열까요? [Y/n]",
+  "en": "Open the page where you create an API key? [Y/n]",
+  "ja": "API キーを作成するページを開きますか? [Y/n]",
+  "zh": "要打开创建 API 密钥的页面吗? [Y/n]"
+ },
+ "first_run.cli_install_command": {
+  "ko": "새 터미널 창에서 공식 설치 명령으로 바로 설치할 수도 있습니다:",
+  "en": "Or install it now with the official command in a new terminal window:",
+  "ja": "新しいターミナルウィンドウで、公式のインストールコマンドからすぐにインストールすることもできます:",
+  "zh": "也可以在新的终端窗口中用官方安装命令直接安装:"
+ },
+ "first_run.telegram_prompt": {
+  "ko": "지금 연결할까요? [y/N]",
+  "en": "Connect it now? [y/N]",
+  "ja": "今接続しますか? [y/N]",
+  "zh": "现在连接吗? [y/N]"
+ },
+ "first_run.telegram_steps_intro": {
+  "ko": "봇은 1분이면 만들 수 있습니다. Telegram에서 BotFather를 엽니다:",
+  "en": "Creating a bot takes a minute. Opening BotFather in Telegram:",
+  "ja": "ボットは 1 分ほどで作れます。Telegram で BotFather を開きます:",
+  "zh": "创建机器人只需一分钟。正在 Telegram 中打开 BotFather:"
+ },
+ "first_run.telegram_step_newbot": {
+  "ko": "1) BotFather에게 /newbot 을 보냅니다.",
+  "en": "1) Send /newbot to BotFather.",
+  "ja": "1) BotFather に /newbot を送ります。",
+  "zh": "1) 向 BotFather 发送 /newbot。"
+ },
+ "first_run.telegram_step_names": {
+  "ko": "2) 표시 이름과, bot으로 끝나는 사용자 이름을 정합니다.",
+  "en": "2) Choose a display name and a username that ends in \"bot\".",
+  "ja": "2) 表示名と、bot で終わるユーザー名を決めます。",
+  "zh": "2) 设置显示名称和以 bot 结尾的用户名。"
+ },
+ "first_run.telegram_step_token": {
+  "ko": "3) BotFather가 보내 준 토큰(123456789:AA... 형태)을 아래에 붙여 넣습니다.",
+  "en": "3) Paste the token BotFather sends (it looks like 123456789:AA...) below.",
+  "ja": "3) BotFather から届いたトークン (123456789:AA... の形式) を下に貼り付けます。",
+  "zh": "3) 将 BotFather 发来的令牌 (形如 123456789:AA...) 粘贴到下方。"
+ },
+ "first_run.telegram_no_app": {
+  "ko": "Telegram이 없다면 telegram.org에서 휴대폰이나 이 컴퓨터에 먼저 설치하세요. 휴대폰에서는 Telegram 검색창에 @BotFather를 입력해도 됩니다.",
+  "en": "No Telegram yet? Install it on your phone or this computer from telegram.org first. On a phone you can also search for @BotFather in Telegram.",
+  "ja": "Telegram がない場合は、先に telegram.org からスマートフォンかこのコンピュータにインストールしてください。スマートフォンでは Telegram の検索欄で @BotFather を探すこともできます。",
+  "zh": "还没有 Telegram? 请先从 telegram.org 安装到手机或这台电脑上。在手机上也可以在 Telegram 中搜索 @BotFather。"
+ },
+ "uninstall.title": {
+  "ko": "AgentOS를 이 컴퓨터에서 제거합니다. 제거할 것:",
+  "en": "This removes AgentOS from this computer:",
+  "ja": "このコンピュータから AgentOS を削除します。削除するもの:",
+  "zh": "将从这台电脑上移除 AgentOS。要移除的内容:"
+ },
+ "uninstall.item_services": {
+  "ko": "백그라운드 서비스 {count}개",
+  "en": "{count} background service(s)",
+  "ja": "バックグラウンドサービス {count} 個",
+  "zh": "{count} 个后台服务"
+ },
+ "uninstall.item_program": {
+  "ko": "AgentOS 프로그램 ({method}로 설치됨)",
+  "en": "The AgentOS program (installed with {method})",
+  "ja": "AgentOS プログラム ({method} でインストール)",
+  "zh": "AgentOS 程序 (通过 {method} 安装)"
+ },
+ "uninstall.item_program_manual": {
+  "ko": "AgentOS 프로그램: 설치 방법을 알 수 없어 마지막에 지우는 방법을 안내합니다",
+  "en": "The AgentOS program: the install method is unknown, so the last step tells you how to remove it",
+  "ja": "AgentOS プログラム: インストール方法が分からないため、最後に削除方法を案内します",
+  "zh": "AgentOS 程序: 无法判断安装方式，最后会说明如何移除"
+ },
+ "uninstall.data_kept": {
+  "ko": "내 데이터(대화, 기억, 자격 증명, 기록)는 지우겠다고 고르지 않는 한 남깁니다:",
+  "en": "Your data (conversations, memory, credentials, logs) stays unless you choose to delete it:",
+  "ja": "データ (会話、記憶、認証情報、記録) は、削除を選ばない限り残ります:",
+  "zh": "你的数据 (对话、记忆、凭据、记录) 会保留，除非你选择删除:"
+ },
+ "uninstall.confirm": {
+  "ko": "계속할까요? [y/N]",
+  "en": "Continue? [y/N]",
+  "ja": "続けますか? [y/N]",
+  "zh": "继续吗? [y/N]"
+ },
+ "uninstall.cancelled": {
+  "ko": "취소했습니다. 아무것도 바뀌지 않았습니다.",
+  "en": "Cancelled. Nothing was changed.",
+  "ja": "キャンセルしました。何も変更していません。",
+  "zh": "已取消。没有做任何更改。"
+ },
+ "uninstall.delete_data_prompt": {
+  "ko": "데이터도 지우려면 delete를 입력하세요. 되돌릴 수 없습니다 (Enter: 남김):",
+  "en": "To delete the data too, type delete. This cannot be undone (Enter keeps it):",
+  "ja": "データも削除するには delete と入力してください。元に戻せません (Enter: 残す):",
+  "zh": "如需同时删除数据，请输入 delete。此操作无法撤销 (按 Enter 保留):"
+ },
+ "uninstall.service_removed": {
+  "ko": "백그라운드 서비스를 해제했습니다: {name}",
+  "en": "Removed the background service: {name}",
+  "ja": "バックグラウンドサービスを解除しました: {name}",
+  "zh": "已移除后台服务: {name}"
+ },
+ "uninstall.service_failed": {
+  "ko": "백그라운드 서비스를 해제하지 못했습니다: {name}. agentos service status로 확인하세요.",
+  "en": "Could not remove the background service: {name}. Check it with agentos service status.",
+  "ja": "バックグラウンドサービスを解除できませんでした: {name}。agentos service status で確認してください。",
+  "zh": "无法移除后台服务: {name}。请用 agentos service status 检查。"
+ },
+ "uninstall.still_running": {
+  "ko": "아직 실행 중인 AgentOS가 있습니다: {path}. 그 터미널에서 Ctrl-C로 멈춘 뒤 다시 실행하세요. 데이터와 프로그램은 그대로 둡니다.",
+  "en": "AgentOS is still running for {path}. Stop it with Ctrl-C in its terminal and run this again; the data and program were left as they are.",
+  "ja": "まだ実行中の AgentOS があります: {path}。そのターミナルで Ctrl-C で止めてから、もう一度実行してください。データとプログラムはそのままです。",
+  "zh": "仍有正在运行的 AgentOS: {path}。请在它的终端中按 Ctrl-C 停止后再运行一次。数据和程序保持不变。"
+ },
+ "uninstall.data_deleted": {
+  "ko": "데이터를 지웠습니다: {path}",
+  "en": "Deleted the data: {path}",
+  "ja": "データを削除しました: {path}",
+  "zh": "已删除数据: {path}"
+ },
+ "uninstall.data_kept_at": {
+  "ko": "데이터는 그대로 있습니다: {path}",
+  "en": "The data stays at: {path}",
+  "ja": "データはそのまま残っています: {path}",
+  "zh": "数据仍保留在: {path}"
+ },
+ "uninstall.program_removed": {
+  "ko": "AgentOS 프로그램을 지웠습니다.",
+  "en": "Removed the AgentOS program.",
+  "ja": "AgentOS プログラムを削除しました。",
+  "zh": "已移除 AgentOS 程序。"
+ },
+ "uninstall.program_failed": {
+  "ko": "프로그램을 지우지 못했습니다. 직접 실행하세요: {command}",
+  "en": "Could not remove the program. Run it yourself: {command}",
+  "ja": "プログラムを削除できませんでした。手動で実行してください: {command}",
+  "zh": "无法移除程序。请自行运行: {command}"
+ },
+ "uninstall.program_manual": {
+  "ko": "프로그램은 설치한 방법으로 지우세요. 예: uv tool uninstall personal-agentos, brew uninstall agentos, pip uninstall personal-agentos",
+  "en": "Remove the program the way you installed it, for example: uv tool uninstall personal-agentos, brew uninstall agentos, pip uninstall personal-agentos",
+  "ja": "プログラムはインストールした方法で削除してください。例: uv tool uninstall personal-agentos、brew uninstall agentos、pip uninstall personal-agentos",
+  "zh": "请按安装时的方式移除程序，例如: uv tool uninstall personal-agentos、brew uninstall agentos、pip uninstall personal-agentos"
+ },
+ "uninstall.outside": {
+  "ko": "AgentOS 밖에 남아 있는 것 (필요하면 직접 정리하세요):",
+  "en": "Left outside AgentOS (clean up yourself if you want):",
+  "ja": "AgentOS の外に残っているもの (必要なら自分で整理してください):",
+  "zh": "AgentOS 之外仍保留的内容 (如有需要请自行清理):"
+ },
+ "uninstall.outside_telegram": {
+  "ko": "Telegram 봇: Telegram의 @BotFather에서 /deletebot",
+  "en": "Telegram bot: /deletebot with @BotFather in Telegram",
+  "ja": "Telegram のボット: Telegram の @BotFather で /deletebot",
+  "zh": "Telegram 机器人: 在 Telegram 中向 @BotFather 发送 /deletebot"
+ },
+ "uninstall.outside_google": {
+  "ko": "Google 연결: https://myaccount.google.com/permissions 에서 AgentOS 접근 해제",
+  "en": "Google connection: remove AgentOS access at https://myaccount.google.com/permissions",
+  "ja": "Google の接続: https://myaccount.google.com/permissions で AgentOS のアクセスを解除",
+  "zh": "Google 连接: 在 https://myaccount.google.com/permissions 移除 AgentOS 的访问权限"
+ },
+ "uninstall.outside_tools": {
+  "ko": "Codex, Claude Code, uv는 따로 설치된 도구라 그대로 둡니다.",
+  "en": "Codex, Claude Code and uv are separate tools and stay installed.",
+  "ja": "Codex、Claude Code、uv は別にインストールされたツールなので、そのまま残します。",
+  "zh": "Codex、Claude Code 和 uv 是单独安装的工具，会保留。"
+ },
+ "uninstall.done": {
+  "ko": "제거를 마쳤습니다.",
+  "en": "Uninstall finished.",
+  "ja": "削除が完了しました。",
+  "zh": "移除完成。"
+ },
+ "uninstall.incomplete": {
+  "ko": "일부 단계를 마치지 못했습니다. 위의 안내를 확인하세요.",
+  "en": "Some steps did not finish. See the lines above.",
+  "ja": "一部の手順が完了しませんでした。上の案内を確認してください。",
+  "zh": "部分步骤未完成。请查看上面的说明。"
+ },
+ "first_run.judgment_active": {
+  "ko": "판단 AI 연결이 확인되었습니다.",
+  "en": "Judgment AI is connected and checked.",
+  "ja": "判断AIの接続を確認しました。",
+  "zh": "判断 AI 已连接并通过检查。"
+ },
+ "first_run.judgment_checking": {
+  "ko": "판단 AI 연결을 확인하는 중입니다. 끝날 때까지 판단이 필요한 기능은 제한됩니다.",
+  "en": "Judgment AI is being checked. Features that need it are limited until the check finishes.",
+  "ja": "判断AIの接続を確認中です。完了するまで判断が必要な機能は制限されます。",
+  "zh": "正在检查判断 AI。检查完成前，需要判断的功能将受限。"
+ },
+ "first_run.judgment_attention": {
+  "ko": "판단 AI를 사용할 수 없습니다. AI 설정에서 확인이 필요합니다.",
+  "en": "Judgment AI is unavailable. Check its status in AI settings.",
+  "ja": "判断AIを利用できません。AI設定で状態を確認してください。",
+  "zh": "判断 AI 不可用。请在 AI 设置中检查其状态。"
+ },
+ "first_run.judgment_off": {
+  "ko": "판단 AI가 꺼져 있습니다. 판단이 필요한 기능은 건너뜁니다.",
+  "en": "Judgment AI is off. Features that need it are skipped.",
+  "ja": "判断AIはオフです。判断が必要な機能はスキップされます。",
+  "zh": "判断 AI 已关闭。需要判断的功能将被跳过。"
+ },
+ "first_run.judgment_fallback": {
+  "ko": "판단 AI가 기본 AI를 따르지 않고 기존 API 경로를 사용 중입니다. AI 설정에서 확인하세요.",
+  "en": "Judgment AI is using the existing API route instead of following Main AI. Check AI settings.",
+  "ja": "判断AIはメインAIではなく既存のAPI経路を使用中です。AI設定を確認してください。",
+  "zh": "判断 AI 正在使用现有 API 路径，而非跟随主 AI。请检查 AI 设置。"
+ },
+ "browser.destination_check_timeout": {
+  "ko": "주소의 공개 네트워크 여부를 시간 안에 확인하지 못해 이번 이동을 중단했습니다. 실제 접근 금지가 확인된 것은 아닙니다.",
+  "en": "The public-network address check timed out, so this navigation was stopped. An access restriction was not established.",
+  "ja": "公開ネットワークのアドレス確認が時間切れになったため、今回の移動を停止しました。アクセス禁止が確認されたわけではありません。",
+  "zh": "公共网络地址检查超时，已停止本次导航。尚未确认存在访问限制。"
+ },
+ "browser.unsupported_navigation": {
+  "ko": "페이지가 브라우저에서 열 수 없는 앱 전용 주소로 이동하려 해 중단했습니다. 웹 화면이 남아 있다면 읽어서 확인하세요.",
+  "en": "The page tried to open an unsupported app address, so the navigation was stopped. Read the web document if it remains available.",
+  "ja": "ページがブラウザで開けないアプリ専用アドレスに移動しようとしたため停止しました。ウェブ画面が残っていれば読み取って確認してください。",
+  "zh": "页面尝试打开浏览器不支持的应用地址，已停止导航。如果网页仍在，请读取并确认。"
+ },
+ "button.reopen_sign_in": {
+  "ko": "로그인 창 다시 열기",
+  "en": "Reopen sign-in",
+  "ja": "ログイン画面をもう一度開く",
+  "zh": "重新打开登录窗口"
+ },
+ "service.sign_in_timed_out_reopen": {
+  "ko": "로그인 창 시간이 지나 닫았어요. 준비되면 아래 버튼으로 다시 열어 주세요. 로그인을 마치면 이 요청을 이어서 처리합니다.",
+  "en": "The sign-in window timed out and was closed. When you are ready, reopen it with the button below; once you sign in I will continue this request.",
+  "ja": "ログイン画面の時間が過ぎたので閉じました。準備ができたら下のボタンでもう一度開いてください。ログインが終わればこの依頼を続けます。",
+  "zh": "登录窗口超时，已关闭。准备好后请用下面的按钮重新打开；登录完成后我会继续处理这个请求。"
+ },
+ "service.reopening_the_sign_in_window": {
+  "ko": "로그인 창을 다시 열고 있어요.",
+  "en": "Reopening the sign-in window.",
+  "ja": "ログイン画面をもう一度開いています。",
+  "zh": "正在重新打开登录窗口。"
+ },
+ "service.could_not_reopen_sign_in": {
+  "ko": "로그인 창을 지금 열지 못했어요. 잠시 뒤 아래 버튼을 다시 눌러 주세요.",
+  "en": "I could not open the sign-in window just now. Please press the button below again in a moment.",
+  "ja": "いまはログイン画面を開けませんでした。少し後でもう一度下のボタンを押してください。",
+  "zh": "暂时无法打开登录窗口。请稍后再按一次下面的按钮。"
+ }
+}

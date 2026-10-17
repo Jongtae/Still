@@ -1,0 +1,94 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>安装与使用指南 — Still</title><link rel="stylesheet" href="assets/site.css"></head><body><header><strong>Still / Still</strong><nav aria-label="站点"><a href="zh-CN.html">首页</a><a href="install.html">连接说明</a><a href="privacy.html">隐私</a><a href="terms.html">条款</a></nav></header><main><h1>安装与使用指南</h1><p>说明如何在这台电脑上安装 Still、连接 AI 和 Telegram 并开始使用。后半部分介绍家庭成员实例的注册、停止和删除。所有命令都在终端中运行。</p><p class="notice">本页只说明安装命令和界面流程。请勿在本网站输入任何 AI 账号或机器人令牌。</p>
+
+<h2>1. 安装</h2>
+<p><strong>macOS 或 Linux。</strong>不需要 Homebrew、Python、Docker 或 git。</p>
+<pre><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh</code></pre>
+<p>安装程序会下载已发布的发行包，并将其 SHA-256 与发行清单核对。若数值不一致，则不会安装任何内容。安装完成后，初始设置会在同一个终端中继续。之后请在新的终端中运行 <code>agentos start</code>。</p>
+<p><strong>macOS（Homebrew）。</strong></p>
+<pre><code>brew install jongtae/agentos/agentos
+agentos start</code></pre>
+<p><strong>Windows。</strong>Still 目前尚不能在 Windows 上原生运行。请打开 WSL2 的 Ubuntu，并运行上面的安装命令。Codex 和 Claude Code 也需要在 Ubuntu 内安装并登录。使用 Still 期间请保持 Ubuntu 窗口打开。如果没有自动打开浏览器，请在 Windows 浏览器中访问 <code>http://127.0.0.1:8787</code>。</p>
+
+<h2>2. 初始设置</h2>
+<p>终端会跟随系统语言显示（韩语、日语、简体中文，其他语言为英语）。每一步都可以按 Enter 跳过。已完成的步骤在按 Ctrl-C 中断后仍会保留。</p>
+<ol>
+  <li><strong>访问密码</strong>（可选，至少 12 个字符）。留空时，只有这台电脑可以打开 Still。</li>
+  <li><strong>AI 连接。</strong>可以选择 ChatGPT（Codex）、Claude（Claude Code）或 API 密钥，也可以稍后在浏览器中连接。</li>
+  <li><strong>Telegram</strong>（可选）。粘贴从 BotFather 获得的机器人令牌，Still 会显示配对链接。</li>
+</ol>
+<p>设置完成后，浏览器会打开 <code>http://127.0.0.1:8787</code>。随时可以运行 <code>agentos start</code>。已完成的设置不会重复进行；中途停止的设置会从第一个未完成的步骤继续。</p>
+
+<h2>3. 连接 AI</h2>
+<ul>
+  <li><strong>ChatGPT 套餐（Codex）。</strong>安装官方 Codex CLI，并运行 <code>codex login</code>。然后在 Still 设置中选择确认 Codex 登录已完成的选项。Still 不会请求、读取或保存你的 Codex 登录信息，只记录你已确认完成。</li>
+  <li><strong>Claude 套餐（Claude Code）。</strong>安装 Claude Code，运行 <code>claude setup-token</code>，然后将生成的令牌粘贴一次到 Still 的 Claude Code 令牌输入框中。令牌保存在这台电脑的私有凭据存储中，只会交给 Claude Code。</li>
+  <li><strong>直接连接模型。</strong>可以使用 Ollama、兼容 OpenAI Chat Completions 的端点，或 OpenAI 或 Anthropic 的 API 密钥。选择提供方、端点和模型名称，运行连接测试，只应用测试成功的配置。API 密钥保存在私有的本地文件中。</li>
+</ul>
+<p class="notice">请求时，对话内容会发送给 OpenAI 或 Anthropic。订阅类引擎只会获得 Still 允许的工具，不会获得你的本地文件、凭据或任意 shell 访问权限。</p>
+
+<h2>4. 连接 Telegram</h2>
+<ol>
+  <li>在 Telegram 中通过 BotFather 创建一个新机器人，并复制它的令牌。请使用未设置 Webhook 的专用机器人。</li>
+  <li>在浏览器中打开 Still 设置，进入外部连接下的 Telegram 连接设置。粘贴令牌并完成连接。</li>
+  <li>打开 Telegram，在你自己的账号中对机器人点击 <strong>Start</strong>，即可完成配对。</li>
+</ol>
+<p>只有已配对的私人账号可以发送请求。Still 使用出站轮询通信，因此无需开放任何公网入站端口。远程请求只在电脑开机且处于唤醒状态时处理。</p>
+
+<h2>5. 试一试</h2>
+<p>在 Telegram 聊天中直接说出你的需求。例如，问“我家猫最近不爱吃东西，我该试什么？”Still 在回答的同时会记下你养猫的事实并告诉你，你也可以撤销。之后再问“帮我找一台 500 美元以下的扫地机器人”，即使你不再提到猫，它也能考虑到掉毛的问题。</p>
+<p>如果想在不调用模型的情况下检查连接，请发送 <code>/note 周五检查发布</code>，然后发送 <code>/notes</code> 查看备忘列表。更改连接和查看任务记录请在浏览器中进行。</p>
+
+<h2>6. 重启、更新与删除</h2>
+<table>
+  <thead><tr><th>用途</th><th>命令</th></tr></thead>
+  <tbody>
+    <tr><td>重启</td><td><code>agentos start</code></td></tr>
+    <tr><td>更新（Homebrew）</td><td>如果正在运行，先按 Ctrl-C 停止，然后运行 <code>brew update</code>、<code>brew upgrade jongtae/agentos/agentos</code> 和 <code>agentos start</code></td></tr>
+    <tr><td>更新（安装脚本）</td><td>再次运行安装命令</td></tr>
+    <tr><td>删除程序（通过 uv 安装）</td><td><code>uv tool uninstall personal-agentos</code></td></tr>
+    <tr><td>查看当前状态</td><td><code>agentos guide</code>（不显示任务内容或凭据）</td></tr>
+  </tbody>
+</table>
+<p>数据保存在 <code>~/.local/share/agentos</code>。删除程序不会删除该文件夹。如需备份，请先停止 Still，再复制整个文件夹。该文件夹包含私人对话和凭据。凭据通过文件权限保护，应用本身不会另行加密。</p>
+
+<h2>7. 后台服务（macOS）</h2>
+<p>可以注册 Still 在登录时自动启动，这样无需一直保持终端打开。</p>
+<pre><code>agentos service install    # 注册并启动
+agentos service status     # 显示 launchd 状态和健康检查结果
+agentos service restart
+agentos service stop       # 停止并持久禁用
+agentos service start      # 重新启用并启动已停止的服务
+agentos service uninstall  # 仅删除注册，数据保留
+agentos service upgrade    # 替换可执行文件后刷新服务定义</code></pre>
+<p class="notice">已注册的服务以 <code>KeepAlive</code> 方式运行，因此进程退出后 launchd 会重新启动它。直接 kill 进程无法停止它，请使用 <code>service stop</code>。自动重启只在用测试替身替换 launchctl 的环境中验证过；重启电脑后的行为需要在你自己的 Mac 上确认。</p>
+
+<h2>8. 家庭成员实例</h2>
+<p>每位家庭成员都可以在这台 Mac 上拥有自己的 Still 实例，拥有独立的记忆、文件夹、审批、工作记录和 Telegram 机器人。与你自己的实例之间不会共享任何内容。</p>
+
+<h3>注册</h3>
+<pre><code>agentos family add spouse --display-name "配偶助手"</code></pre>
+<ul>
+  <li>创建并启动实例，然后使用已安装的 <code>ngrok</code> 生成一个临时的 HTTPS 设置链接（约 30 分钟有效），并通过 Telegram 发送给你。</li>
+  <li>家庭成员打开链接，在自己的 Telegram 中创建机器人。你的机器人、文件夹、记忆和其他连接不会被复制。</li>
+  <li>在你的设置中，只会复制实例所需的 AI 密钥或令牌。之后更改密钥，实例会继续使用旧密钥，直到你重新设置该路由。</li>
+  <li>如需指定端口，请传入 <code>--port 8797</code>。省略时，Still 会从 8797 开始使用下一组空闲端口。</li>
+</ul>
+<p>如果只想注册服务而不使用设置链接，请运行以下命令。名称可以使用小写字母、数字和连字符。端口必须空闲，且不能使用 8787。</p>
+<pre><code>agentos service install --instance spouse --port 8797</code></pre>
+<p>设置页面在 <code>http://127.0.0.1:8797/</code> 打开。设置链接位于该实例的 <code>private/setup-link.txt</code> 中。</p>
+
+<h3>查看、停止、启动与删除</h3>
+<pre><code>agentos service status    --instance spouse   # 查看状态
+agentos service stop      --instance spouse   # 停止并持久禁用
+agentos service start     --instance spouse   # 重新启用并启动已停止的实例
+agentos service uninstall --instance spouse   # 仅删除注册，数据保留</code></pre>
+<p>要完全删除实例，请<strong>先运行 <code>stop</code>，再运行 <code>uninstall</code></strong>。<code>uninstall</code> 只删除注册信息，数据文件夹（<code>~/.local/share/agentos-instances/spouse</code>）会保留。Still 没有删除实例数据的命令。如需删除数据，请先停止实例，然后手动删除该文件夹。此操作无法撤销。</p>
+
+<h2>9. 故障排除</h2>
+<ul>
+  <li><strong>浏览器没有打开。</strong>在完成设置之前，请在这台电脑上打开 <code>~/.local/share/agentos/private/setup-link.txt</code> 中的链接。设置完成前，请勿将此文件发送给任何人。</li>
+  <li><strong>端口冲突。</strong>请使用其他端口启动，例如 <code>agentos start --port 8788</code>。</li>
+  <li><strong>工作被中断。</strong>重启后，进行中的工作会标记为已中断，正在发送的 Telegram 消息会标记为未知。Still 不会静默地重新发送任何一项。请查看网页记录，如有需要请重新发出请求。</li>
+  <li><strong>状态摘要。</strong><code>agentos guide</code> 只显示数量和下一步操作，不显示任务内容或凭据。</li>
+</ul>
+</main><footer><a href="zh-CN.html">首页</a> · <a href="install.html">连接说明</a> · <a href="privacy.html">隐私</a> · <a href="terms.html">条款</a></footer></body></html>

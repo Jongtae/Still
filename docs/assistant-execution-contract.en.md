@@ -1,0 +1,283 @@
+# Goal-directed assistant execution contract
+
+## Current rule index and precedence
+
+This contract defines the **execution loop, effect truth, recovery and acceptance boundary**. It does not select current development work; repository-root [`delivery-plan.yaml`](../delivery-plan.yaml) does that. Dated findings and superseded hardening rules remain below as traceability, not current request-path requirements.
+
+| Concern | Current controlling rule | Superseded/history note |
+| --- | --- | --- |
+| Goal execution | Existing Work + bounded model/native loop observes typed results, repairs recoverable failures, asks/awaits authority when needed, and finalizes against requested obligations/Evidence | Successful worker exit, fluent prose, declaration or fixture alone is not goal completion |
+| Semantic vs deterministic | Semantic interpretation chooses among declared/admissible possibilities; deterministic code enforces schema, current Grant/approval, destinations, budgets, idempotency, cancellation and effect/Evidence truth | Growing phrase/keyword routing catalogues are not the execution architecture |
+| Pilot egress | Current [Secretary Agency Contract](secretary-agency-contract.en.md) pilot posture, including #826, governs request-path private/search composition | The detailed lookup sensitivity judgment, `uncertain` fail-closed path, explicit-`/search` requirement, per-provider gating and removed composition bounds below are historical unless a hardening program explicitly reactivates them |
+| Effects and retry | External effects are not replayed; an uncertain dispatch remains `unknown`; reconcile authoritative external state where allowed, otherwise preserve uncertainty and owner action | Crash/non-response is not proof of failure and never licenses duplicate mutation |
+| Completion truth | Requested obligations + Evidence/effect state determine completion; attempt outcome, goal outcome and external effect are separate | Confidence/prose or an unrelated successful step cannot upgrade missing/unknown evidence |
+| Recovery/resume | Resume/retry/restart/Stop/revoke recheck current authority and preserve possible-effect uncertainty | Recovery cannot revive revoked authority or duplicate a possible effect |
+| Owner-facing result | Useful result + material uncertainty + necessary next action in one assistant voice, with technical receipts inspectable on demand | Raw tool/protocol machinery is not the default owner-facing answer |
+| Verification | #612 reduced policy: focused regression and existing required CI; bounded model/installed checks only where justified; claims remain evidence-class scoped | Earlier blanket three-trial matrices, universal 90% threshold and custom evidence-certification subsystem are historical |
+
+Unchanged safety boundaries remain exact: secrets never enter model prompts, logs or Evidence; approval must cover the consequential action it authorizes; a draft is not an applied effect; provider/model judgment cannot mint authority or change observed effect truth.
+
+## Pilot posture — #653 (2026-09-26)
+
+The [Secretary Agency Contract](secretary-agency-contract.en.md) governs the pilot policy described here; current development selection is not asserted by this document. Its pilot posture removes the per-request lookup sensitivity judgment, the `uncertain` fail-closed path, the `/search` explicit-query requirement and per-provider gating described in the lookup/egress sections below (implemented by SEC-PILOT-01 #654). Deterministic redaction of saved private values, the document-sharing grant and Work/Event/Evidence semantics remain. The text below is preserved for traceability and returns to force only if a hardening program is activated.
+
+## Status and authority
+
+Owner-directed on 2026-09-25; cost/reuse amendment [#612](https://github.com/Jongtae/Still/issues/612) supersedes the blanket verification policy introduced by #602. Integration parent: [#600](https://github.com/Jongtae/Still/issues/600); specification and gate infrastructure: [#601](https://github.com/Jongtae/Still/issues/601). This is the normative execution/acceptance refinement for the finite AGENCY track within PRESENCE-01, not a replacement kernel, second active coordinator or shipped-capability claim. [Delivery and ownership](assistant-execution-delivery.en.md) defines the work breakdown. GitHub owns execution status; repository-root `delivery-plan.yaml` owns selection/dependencies. The retired runtime plan mirror must not be recreated.
+
+Retain the [architecture](personal-agentos-architecture.en.md), [Owner Control Contract](owner-control-contract.en.md), [Presence contract](presence-experience-contract.en.md), [DecisionEngine boundary](decision-layer.en.md) and [usefulness rubric](default-agent-usefulness.en.md). This refinement supersedes interpretations equating a declaration, semantic seam, fixture, fluent copy or successful worker exit with a functioning assistant. Historical evidence and closed scopes are not retroactively enlarged. Publishing this contract does not authorize credentials, live evaluation, deployment, account mutation or another automation.
+
+**Outcome:** in explicitly supported, qualified profiles, the assistant understands an ordinary goal, selects an admissible method, executes it, observes results, repairs recoverable failures, and supplies a useful verified result or accurately scoped blocker. Minimize unnecessary owner work, not truthful disclosure. Refusing everything and fabricating success both fail the product contract.
+
+## Historical source audit
+
+The original source/test audit against baseline `4a0d3e6fba987121298addb7349778a0a1b349bc` is preserved in Assistant Execution source-baseline findings. It explains the 2026-09-25 integration diagnosis but is not current normative execution policy or operating evidence.
+
+## Requirements
+
+The [machine-readable manifest](evals/assistant-execution-v1.json) is development data, never a runtime phrase table. Stable IDs map to one primary implementation owner; an integration dependency is not duplicate ownership.
+
+| ID | Required outcome | Primary owner |
+| --- | --- | --- |
+| AX-01 | Meaning selects declared capability needs; exact protocol stays deterministic | #597 |
+| AX-02 | One capability contract reaches every advertised qualified route | #604 |
+| AX-03 | Discovery/installation/connection/grant/availability/health stay distinct | #604 |
+| AX-04 | Source/destination-authorized public/private composition | #605 |
+| AX-05 | Existing Work/loop supports observe-act-replan | #606 |
+| AX-06 | Typed recoverable results preserve actionable failure distinctions | #607 |
+| AX-07 | Requested obligations and Evidence determine goal completion | #607 |
+| AX-08 | Resume/retry/restart/Stop/revoke preserve current authority and effect truth | #607 |
+| AX-09 | Source-grounded facts and substantive, attributable artifacts | #606 |
+| AX-10 | Shared finite budgets and actual cancellation outside the model | #607 |
+| AX-11 | Exact source/artifact/config/catalog/policy/runtime identity | #603 |
+| AX-12 | Unit-first checks, optional bounded model checks and truthful claims | #608; specification check #601/#612 |
+| AX-13 | Useful, truthful partial/unknown projection in one assistant voice | #598 |
+| AX-14 | Explicit owner-memory instructions generalize without fabricated authority | #597 |
+
+## Architecture decision — Adapt
+
+These are responsibilities at existing seams, not new services or databases:
+
+```text
+owner turn / authenticated continuation
+ -> exact protocol/state handling OR bounded semantic goal interpretation
+ -> existing Work + admissible ContextSnapshot + effective profile
+ -> model/native CLI proposes next step
+ -> AgentOS broker checks schema, revision, owner, grant, egress, effect, budget
+ -> tool/connector/runtime execution
+ -> typed observation + retained Evidence
+ -> continue / repair / ask / await authority / finalize
+ -> goal-obligation and effect checks
+ -> one truth-qualified assistant reply
+```
+
+Start from `run_agent`. A qualified CLI can keep its native planning loop behind the same broker; do not wrap an unbounded CLI in another unbounded planner. DecisionEngine remains an auxiliary provider-neutral semantic worker, not necessarily the decision-maker for every tool turn. Neither every greeting nor an exact local command requires a remote semantic call. Existing local-only processing must not silently become remote classification.
+
+Rules enforce schemas, exact approval, state, budgets, destinations, idempotency and security. They do not form a growing catalogue of Korean/English requests. A lexical prefilter cannot permanently exclude an ordinary-language capability candidate before semantic interpretation. Abstention is not permission to invent a tool or change provider. Work route and auxiliary semantic route remain independently selected and authorized.
+
+### Typed interfaces
+
+Map these conceptual fields to existing Still or selected SDK types first. They are NOT required new classes, services, stores or a second state machine. Add only fields absent from a concrete existing contract.
+
+**CapabilityDescriptor:** stable capability/action ID, revision/schema digest, description, input/output schema, effect class, source/destination restrictions, required grants, profile binding, availability reason, timeout/retry/idempotency/cancellation contract. Implementation, install/enablement, connector state, current authorization, route availability and qualification are independent facts. Discovery does not grant; invocation rechecks current state.
+
+**StepProposal:** Work/goal revision; kind `answer | invoke | discover | clarify | request_authority | stop`; declared candidate ID; normalized proposed inputs/source references; expected goal obligation; inherited deadline/budget. It is not an authorization token. Audit requires observable choices, not hidden reasoning.
+
+**StepResult:** invocation/attempt ID; capability revision; execution state; `effect = none | confirmed | unknown`; stable code; verified Evidence/Artifact references; unavailable portions; retry class; needed input/authority; bounded recovery candidates. Codes include `ok`, `partial`, `input_required`, `connection_required`, `approval_required`, `policy_denied`, `route_unavailable`, `invalid_arguments`, `transient_failure`, `deadline_exceeded`, `cancelled`, `effect_unknown`. Normal tool failures use MCP tool-result errors/structured content; invalid envelopes or unsupported methods remain protocol errors. Redacted diagnostics must retain the information needed for safe recovery.
+
+**GoalResult:** requested obligations, satisfied obligations with evidence, unresolved obligations, outstanding effect uncertainty, final qualifier and result references. Discovery is not a weather lookup; HTTP success is not a grounded answer; zero exit is not completion. An earlier failed attempt stays in the audit even after a valid alternative satisfies the goal. A successful unrelated read cannot erase an unknown consequential effect.
+
+Reject unknown/missing fields where exactness is required, foreign IDs, stale revisions and oversized payloads. External package descriptions, pages, connector content and delegated reports are untrusted data, not authority.
+
+## Capability profiles and discovery
+
+The target full profile is independently tested on `direct-api`, `codex` and `claude-code`. These name transports, not assumed capability or approved versions. Qualification binds exact runtime version, sandbox/configuration and catalog digest. A CLI unable to disable forbidden ambient tools remains unqualified. Never unlock shell, home or broad network access to make parity pass.
+
+| Group | Target supported behavior | Excluded |
+| --- | --- | --- |
+| Public reads | Weather with resolved place/time, search, bounded source-page read and follow-up | Authenticated browsing, cookies, arbitrary JavaScript, CAPTCHA bypass, private hosts |
+| Granted private reads | Existing notes, approved files, supported mailbox metadata, calendar queries | New mailbox/body scope, ambient folders, connected=authorized assumptions |
+| Drafts/artifacts | Exact calendar draft/approval, explicitly requested memory/note/output under existing policy | Auto-approval, unsupported invitations/recurrence, arbitrary original mutation |
+| Discovery | Find/describe existing reviewed declarations, load qualified schema, request needed connection/grant | Automatic download/install/update, account creation or grant expansion |
+| Recovery | Safe alternative/read retry, current-authority resume and actual Stop | Hidden provider switch, duplicate uncertain write, false cancellation |
+
+A deliberately restricted isolation profile can be separately offered with explicit tested scope; it is not a full-profile pass. Removing a profile from a frozen qualification run to improve scores is forbidden. De-scoping requires a reviewed product decision and truthful Settings/README changes, retaining failure history.
+
+Use the existing packages/manifests and broker as the single binding source. Do not revive the retired Settings CapabilityRegistry as a second live connection database. Native, stdio MCP and isolated MCP must derive from the same action contract. Prove description, actual serialization, actual host invocation, Evidence and returned observation on every advertised profile; equal tool-list text is insufficient.
+
+**#604 profile record (owner decision, [#604](https://github.com/Jongtae/Still/issues/604)).** `bounded_execution.CLI_PROFILES` is the single declaration of CLI route profiles.
+
+- **Profiles.** The subscription CLI route is the explicitly named **`trusted-local`** profile. It offers `web_search`, `weather`, `bounded_public_research`, `list_notes` and `save_note` under the unchanged Still guards. The isolated sidecar profile stays restricted to `list_notes`.
+- **Declared limitation.** The `trusted-local` declaration, Settings, provenance and the doctor all state the same limitation, per CLI: "the CLI may read host files outside Still provenance (verified: codex sandbox -P :read-only, codex-cli 0.153.4); Codex exec rules in CODEX_HOME, allow and forbidden, are ignored (--ignore-rules); Claude Code 2.1.280 -p denied the tested store and home reads, a Write and WebFetch and could read its turn directory (observed); managed settings could allow more (documented only)". The Claude Code clause replaced an unobserved "may read outside the working directory" statement ([#623](https://github.com/Jongtae/Still/issues/623)). The Codex exec-rules clause was added by #636.
+- **Exec rules (#636).** The `trusted-local` Codex argv also passes `--ignore-rules` (reusing the #616 finding). Without it, an "always allow" `$CODEX_HOME/rules` exec rule ran `touch` outside the read-only sandbox and wrote into the home directory. That was reproduced with the real `codex exec` 0.153.4, a synthetic `CODEX_HOME` and a loopback scripted model (`tests/test_strict_isolation.py::ProcessLevelQualification::test_codex_trusted_local_*`, opt-in `AGENTOS_CLI_QUALIFICATION=1`). With the flag, the write is blocked. There is no separate `--help` pre-check (a decision recorded on #636): a CLI that lacks the flag rejects it in its own argument parser (0.153.4 exits with code 2 and an "unexpected argument" error), and the turn fails. It is never retried without the flag. A unit test pins this. The trade-off was recorded after review. The flag also drops owner `forbidden` rules. A forbidden rule is a command-prefix match, not a read boundary: without the flag, `forbidden` on `cat` rejected `cat <store file>`, but `head` read the same file under the read-only sandbox (`test_codex_trusted_local_forbidden_prefix_rule_is_not_a_read_boundary`). An allow rule, by contrast, is a complete sandbox escape. Forbidden rules on network or write commands were not tested separately. The read-only sandbox itself blocked network and writes in the #604 observation below, so those rules add no boundary beyond the sandbox. Read restriction is the job of the strict-isolated profile (#616), not of owner exec rules. The accepted read limitation below is unchanged.
+- **Claude Code bridge tools (#623).** The `trusted-local` Claude Code argv passes the official `--allowedTools` rule naming exactly the profile's bridge tools (`mcp__agentos__<action>` for each declared action; no server-wide rule, no wildcard, no built-in tool). The strict profile reuses the same allowlist. Without it, `-p` denied every bridge call ("haven't granted"). No-model process tests of the exact argv on 2.1.280, with a loopback scripted model and a fake store, show three things (`tests/test_strict_isolation.py::ProcessLevelQualification::test_claude_trusted_local_*`, opt-in `AGENTOS_CLI_QUALIFICATION=1`):
+  - Every declared bridge call reaches Still, whose own guards decide the outcome.
+  - A bridge tool left out of the allowlist is still denied.
+  - The built-in tools are unchanged: the store read, the home `cat`, a `Write` and WebFetch are denied, and the turn directory stays readable.
+- **Accepted risk.** The owner explicitly accepts this trusted-local-worker risk. Strict read isolation is [#616](https://github.com/Jongtae/Still/issues/616) AGENCY-ISOLATION-01, ordered after #604 and before #605.
+
+No-model local evidence, recorded 2026-09-26 with a fake store only:
+
+- Codex 0.153.4 `codex sandbox -P :read-only`, the built-in profile behind `exec --sandbox read-only`: it could read the fake store, a home file and the turn directory. Network and writes were blocked.
+- A Codex permissions profile with filesystem `:minimal=read` plus the turn directory only, passed with `-c`: store and home reads were blocked, while the turn directory and the system interpreter remained usable. Whether the Codex MCP server process is confined too, and whether the bridge still works under that profile, has **not** been observed. Observing it needs a `codex exec` run. This is input to #616.
+- Claude Code 2.1.280: there is no local runner for its file tools. Its `--help` states that `--restricted` removes code-running tools and WebFetch and confines file tools to the working directories. Still does not pass that flag on `trusted-local`. The later #623 process tests observed its `-p` permission layer directly (see above).
+
+**#616 strict-isolated profile record ([#616](https://github.com/Jongtae/Still/issues/616), AX-15).** `strict-isolated` is a separate host-CLI profile in `bounded_execution.CLI_PROFILES`. It offers the same actions through the same stdio bridge as `trusted-local`. Only the CLI launch differs:
+
+- **Codex (tested 0.153.4, macOS).** The launch combines four things:
+  - The official permissions profile `agentos-strict-isolated` replaces `--sandbox read-only`. It gives read access to filesystem `:minimal` and the turn directory only, and network is disabled. The two must never be combined: with `--sandbox read-only` also present, Codex applies the legacy policy.
+  - `--ignore-rules`. Without it, an "always allow" `$CODEX_HOME/rules` exec rule ran `cat` outside the sandbox and read the store (independent review P1, reproduced).
+  - The DecisionEngine route's official instruction overrides (`CODEX_DECISION_CONFIG`, #580).
+  - One `--disable` for every listed feature outside the #580 allowlist plus `unified_exec`. That flag cannot be disabled on 0.153.4, but with `shell_tool` disabled no command tool is offered. The plan is computed and re-listed at qualification, the check fails closed, and the plan is stored with the record.
+  
+  The model is then offered no shell, file, image or web tool: only the Still bridge, the MCP resource helpers and `request_user_input`.
+- **Claude Code (tested 2.1.280, macOS).**
+  - `--tools ""` removes every built-in tool.
+  - `--restricted` stops settings files from adding one back.
+  - `--allowedTools` pre-approves only the profile's five Still MCP tools. On trusted-local those tools are unreachable under `-p`. Under strict they are callable, so the CLI's effective egress-capable authority is larger than on trusted-local. It stays governed by `Capabilities.execute` and the provenance taint.
+- **Choice and qualification.** The owner chooses the profile (`/api/subscription-engines/isolation`, Settings › AI 연결). Strict is saved only after a no-model qualification passes:
+  - the tested platform and CLI version;
+  - an engine runtime root that is not under a path the Codex baseline keeps readable (`/tmp`, `/private/tmp`, `/var/tmp`, `/private/var/tmp`);
+  - for Codex, the CLI's own `codex sandbox -P` runner under the same profile must refuse the real store, home, login profile and a sibling turn directory, while a turn-directory listing succeeds;
+  - for Codex, the verified feature plan.
+- **What the record binds.** Platform, version, the resolved launcher path, sha256 and fingerprint, the native executable the launcher runs (for the npm/Homebrew `codex.js` shim, the platform package's `vendor/<triple>/bin/codex`, located the way the shim does) with its own sha256 and fingerprint, and the resolved store, home, runtime root and login-profile paths. A launcher whose native Mach-O/ELF executable cannot be identified (a shell wrapper, an unknown layout or target) fails qualification.
+- **Failure handling.**
+  - A failed qualification keeps the previous profile.
+  - The save is compare-and-set under the service lock, so a concurrent owner choice is not overwritten.
+  - At run time, any version, platform, binary, path or plan mismatch is refused with `isolation-unqualified`, and both sha256 digests are recomputed and compared on every strict turn, so bytes changed under the same path, size and mtime are refused too. Still never falls back to trusted-local.
+  - Only an absent stored choice is the trusted-local default. A stored value that is not an object, lacks `profile` or names an unknown profile fails closed; it is not read as trusted-local.
+- **Where it is shown.** Settings (`subscription_execution`, including `requalify_needed`), turn provenance (`capability_trust`) and the doctor (`routes.trust`, `selected_host_cli_profile`, which reports `unrecognised`, and recorded turns).
+
+Process-level evidence, recorded 2026-09-26: the exact argv drove real CLIs against a loopback scripted model on a fake store and a synthetic, populated `CODEX_HOME` (exec allow-rules, `AGENTS.md` and `AGENTS.override.md`, a skill, a plugin, `hooks.json`, and a `config.toml` that asks for `danger-full-access`). Tests are in `tests/test_strict_isolation.py`, opt-in with `AGENTOS_CLI_QUALIFICATION=1`. No live model, account or owner data was involved.
+
+- **Codex strict.** No host tool was offered. The store, home and skill/plugin canaries never reached the model. `web_search`, `weather` (public network stubbed in the bridge process) and `list_notes` worked. With the shell re-offered test-only, the allow-rule no longer escaped: store and home were denied and the turn directory was readable.
+- **Codex trusted-local.** The store and home were readable, as its label states.
+- **Claude Code strict.** Only the five Still tools were offered. `Read` / `Bash` / `WebSearch` / `Agent` were absent, and the three bridge calls worked.
+- **Claude Code trusted-local (`-p`, default permissions).** Out-of-directory reads were denied by its permission layer, and so was every Still MCP call. This is a pre-existing reachability defect, not changed here.
+- **Residual.**
+  - Under Codex strict, the owner-authored `$CODEX_HOME/AGENTS.override.md` or, when it is absent, `$CODEX_HOME/AGENTS.md` still reaches the model context (the override takes precedence; the process test observed the override canary). Neither `project_doc_max_bytes=0`, `project_doc_fallback_filenames=[]`, `project_root_markers=[]`, `instructions`, `developer_instructions`, `skip_host_skill_discovery` nor the full feature plan stops it. It is untrusted input that Still provenance does not track.
+  - The Codex `:minimal` baseline keeps OS paths, `/tmp` and `/private/var/tmp` readable to a sandboxed command, and an explicit deny does not override it.
+  - Claude Code's confinement is application-level tool removal, not an OS sandbox.
+  - An upgrade requires requalification.
+  - **Follow-up:** the DecisionEngine Codex route record in [DecisionEngine boundary](decision-layer.en.md) states that its overrides keep `AGENTS.md` out of the input. This observation contradicts that for the global `$CODEX_HOME/AGENTS.override.md` / `AGENTS.md`. That record is not changed here; it is tracked by #624 (not activated).
+
+## Public/private information flow
+
+A public lookup is still an external disclosure. Owner-authored text can contain credentials or private material. Permission to send content to one AI provider is not permission to send it to search/weather or another provider. Semantic confidence, sensitivity labels and model-authored sanitization are not Grants.
+
+Preserve current provenance/public-egress guards until the reviewed replacement qualifies. No blanket history-taint removal, weather exemption, label stripping, delegate laundering or LLM-certified declassification.
+
+For a separable public subtask, construct a fresh minimal context **before** private material enters it. Its inputs are an explicitly authorized public goal and admissible source records, never a private parent's free-form summary. The existing broker/Grant/approval binding (conceptually a request ticket, not a new credential or signing scheme) binds owner, Work/goal revision, source IDs/revisions, normalized payload digest, destination/action, grant/policy revision, expiry and budget. Models cannot mint or modify tickets. Revalidate on invocation, restart and revocation.
+
+Weather arguments should refer to an authorized location identity; trusted host code resolves and serializes the necessary coordinates/country/timezone. An arbitrary bounded string is not an information-flow control. Open-ended search also requires admissible source roots and covering destination permission. If private-derived input is necessary or admissibility cannot be established, ask for exact disclosure approval or the genuinely missing input. Do not evade denial through another worker.
+
+Public results may return to a private task as untrusted evidence. Private results cannot flow outward without covering authorization. Summaries, caches, delegated reports and retained memory preserve provenance; unknown historical records remain restrictive. Migration never guesses that old material was public. Tests inspect exact outbound fields and admissible source references, not merely absence of one sentinel. Preserve SSRF/DNS pinning, redirects, size/decompression, encoding and deadline controls.
+
+**#605 record ([#605](https://github.com/Jongtae/Still/issues/605)).** Adapted at existing seams; no new store, credential, signer or policy engine.
+
+**Threat scope (owner decisions, 2026-09-26, [#605](https://github.com/Jongtae/Still/issues/605)).** In scope and deterministic: a saved or withheld value never leaves in any format or split variant — any character with a Unicode digit value (Nd and No, for example `١` `१` `❶` `➀` or Kharoshthi digits) as its ASCII digit, case and width variants, diacritics and combining marks, Hangul spelled below the syllable (jamo), split or re-joined words, separators — on every path (clean, private, no judgment, explicit `/search`, weather, bridge). **Format/split variants are deterministic; deliberate disguises (cross-script homoglyphs such as Cyrillic `і`/`о` or Greek lookalikes, small capitals such as `ᴋɪᴍ`), spelled-out numbers (`一二三`, `일이삼`, Roman numerals) and arithmetic or reversed encodings are judgment-covered or residual.** Accepted residual, bounded and documented below: deliberate covert encoding by a hostile worker in a clean context.
+
+- **Per-Work sources.** Before model use each Work records, in the existing config store (`work_source_provenance`), the sources that entered its context: this turn's spliced/read sources and, as `history:<source>`, the recorded sources of exactly the earlier messages its worker is shown. Records only widen; durable tool events and the file-workspace document-job list are unioned in when read. A reply is labelled with everything its worker saw, so summaries, repetitions, delegation and restart keep the label. A Work with no record is `unrecorded` and restrictive; legacy material is never relabelled public.
+- **Owner conversation.** Owner-typed chat is recorded as `owner-conversation`, not as public. Its window (`owner`) is outside `EGRESS_TAINT_WINDOWS`, so an earlier greeting no longer closes a lookup; tightening that is a change to that one set. Private stores the owner writes to (`/note`, Memory, the context inbox) carry their own store label.
+- **Owner decisions (2026-09-26, [#605 comment](https://github.com/Jongtae/Still/issues/605)).** The current request authorizes only the public lookup needed to perform it, not transmission of the whole message. Earlier conversation stays usable for understanding, but a lookup receives only what it needs. Ordinary searches need no per-search approval. Unnecessary sensitive information is excluded rather than asked about.
+- **Admissible public lookup (every route, every lookup).** Every `web_search`, `weather` and `bounded_public_research` call of a Work with a lookup resolver is composed by Still from the worker's proposal, the first turn included; `public_page_read` is composed when the context holds private material. The composition:
+  - never sends a word this Work wrote to a private store (Memory candidates, notes, calendar-draft fields, and writes proposed in the same tool batch, in either call order). Notes and drafts are found again from the Work's durable records after a restart. Values are compared in one normalised form: NFKD with combining marks removed, then NFKC, stroke letters and ligatures without a decomposition folded by a fixed table (`Ł`→`L`, `Ø`→`O`, `Đ`→`D`, `Ħ`→`H`, `ı`→`i`, `ß`→`ss`, `Æ`→`AE`, `Œ`→`OE`, `Þ`→`TH`, `ŀ`→`l` and similar; `_LETTER_FOLD`), every character with a Unicode digit value (Nd and No) mapped to its ASCII digit, and casefolding (so Arabic-Indic, Devanagari, Bengali, Thai, full-width, circled and dingbat digits, and `kímchulsoo` or a combining-accent spelling of `kimchulsoo`, are the same value), and a word whose digit run is part of a written value's separator-free digit run is withheld when that run is the whole value or at least 4 digits long, so `M1234-5678`, `M1234 5678`, `5678` and case or full-width variants of a saved `M12345678` do not leave while `3일` does; and a split or re-joined value is caught: the final string is also checked for runs of adjacent same-script pieces, joined without separators, that are a substring (2+ characters, not digits only) of a written or withheld word, so `김 철수`, `김-철수` and `KIM철수` do not leave after `김철수` was withheld or saved. Hangul is also compared on a jamo key: syllables are decomposed, compatibility jamo (`ㄱ`) and trailing consonants fold to the leading-consonant form, and cluster finals (`ᆰ`, `ㄺ`) to their component consonants. An outbound run is withheld when its jamo key is part of a written/withheld word's key, or a written/withheld word's key occurs inside it, with at least 5 jamo (`LOOKUP_JAMO_MIN`): `ㄱㅣㅁㅊㅓㄹㅅㅜ`, `ㄱ ㅣ ㅁ ㅊ ㅓ ㄹ ㅅ ㅜ`, `김ㅊㅓㄹㅅㅜ`, `ㄱㅣㅁㅊㅓㄹㅅㅜ님`, `기ㅁ처ㄹ수씨` against `김철수`, and `ㄷㅏㄹㄱㄱㅏㄹㅂㅣ` against `닭갈비집`. Spaced jamo are also recomposed to syllables (NFC) before the syllable check, so a short value without final consonants (`ㅇ ㅣ ㅅ ㅜ` against `이수`, four jamo) is caught by the 2-character syllable rule; the 5-jamo minimum keeps a single syllable such as `김` from matching on its own. A written or withheld value found **inside** an outbound word or run joined without separators — at least 2 Hangul/CJK/kana or 3 other characters — is withheld too (`김철수님`, `김철수에게`, `mrkimchulsoo`, `kimchulsoos`), only the overlapping pieces; across processes this is checked against whole-value digests by hashing every 2/3–32-character substring of the outbound text (`LOOKUP_CONTAIN_MAX`) and every 5–48-jamo window of its jamo key (`LOOKUP_JAMO_CONTAIN_MAX`), so a withheld value longer than 32 characters is found inside another word only through its spans. This over-blocks by design: any outbound word of 2+ characters that occurs inside a written or withheld word of this Work is withheld too (for example `번호` after `여권번호` was saved). Examples of the over-blocking, all within one Work: with `20250315` saved, `2025 세법 개정` sends `세법 개정`; with `여권번호` saved, `여권 번호 재발급 방법` sends `재발급 방법`; with `010-2412-5678` saved, `버스 2412` sends `버스` (a 4+-digit run inside a saved number); a note that mentions `서울` makes a later `서울` weather lookup in the same Work refuse;
+- **Removed lookup-hardening history.** The #605 sensitivity judgment, explicit-`/search` bypass mechanics, private-context word-selection/caps, historical covert-channel bounds, route-specific judgment behavior and restrictive rollback were removed by #654. Their full text is preserved in Assistant Execution removed lookup-hardening history. Current request-path egress follows the [Secretary Agency Contract](secretary-agency-contract.en.md), especially #826; a future hardening program must be separately activated.
+  - in a clean context, a weather place may be the worker's transliteration with an ISO 3166-1 alpha-2 country code (checked against the tz database `iso3166.tab` list, upper-cased; anything else, such as `ZZ`, is omitted), and both pass the same judgment (the judgment removed by #654; the ISO-2 validation remains). In a private context the place and country must be the owner's own wording (F4.1), with the private-context dedupe, order and cap;
+
+  The Work binding is rechecked after the judgment and before the request, so a Work cancelled while the judgment runs sends nothing (judgment removed by #654). A clean context sends the worker's own string (its own knowledge, such as a translation), read after NFKC, with only kept words and admissible separators. **Separator policy:** a separator keeps whitespace (collapsed to one space) and at most 3 characters from the ASCII operator allowlist `. - + # : / " ' ( ) , &`, and at most 12 such characters in the whole value; before the first and after the last word only `" ' (` / `" ' )` may stay; every other character — format, private-use and unassigned characters (for example Unicode TAG or zero-width characters), symbols (including currency signs) and other punctuation — is dropped. Two words are never glued: where a removed word or a dropped separator stood between two kept words, one space separates them. The **final** string is then re-tokenised and re-checked against every written and withheld value, including the digit runs of the whole string with separators removed, and whatever still matches is withheld. The same policy and re-check apply to an explicit `/search` string and to a weather place. So `Python 3.13 release notes`, `"C++20" modules site:cppreference.com` and `node.js -deno` go out unchanged and `₩50,000 이하 이어폰` goes out as `50,000 이하 이어폰`. Keeping a separator only when it also occurs in permitted text was not adopted: operators such as `site:` are the worker's own knowledge in a clean context. The allowlist and caps bound how much punctuation a lookup can carry; they do not stop a hostile worker from using it as a covert channel (see the residual below). In a clean context words are also deduplicated and capped at 12 per lookup (`LOOKUP_CLEAN_WORD_CAP`), a word longer than 24 characters is dropped (`LOOKUP_CLEAN_WORD_MAX`), the query (and a weather place) is cut to at most 120 characters by dropping trailing words (`LOOKUP_CLEAN_QUERY_MAX`), and at most 6 clean-context lookups are made per Work, across processes (`LOOKUP_CLEAN_PER_WORK`). **(Removed by #654: clean-context words are deduplicated only, the query is cut at the provider's 500 characters, `LOOKUP_QUERY_MAX`, and there is no per-Work lookup cap.)** A private context sends the permitted words in Still's order, joined by single spaces, after the same final re-check. When nothing admissible remains, or a place name is not admissible, the worker gets a question to ask and nothing is sent. The checked arguments are exactly the transmitted arguments, recorded as `sent` with a count of withheld words, never the words themselves. The package/revision recheck still applies. Delegated specialists compose the same way, share the parent's written values (judgment cache removed by #654), and never compose from a private context. No per-search approval is involved.
+- **Page reads.** The address is fixed by the owner's approval, so a page read needs only the *current* approved scope, which is read at call time. A page read that starts after revocation in the same Work is refused. An in-flight or completed read is not undone.
+- **Not yet provided, and residuals.** No disclosure-approval flow exists for a genuinely necessary sensitive transmission; such a lookup is refused with a question instead. Pending/resume disclosure approvals must reuse the existing approval target-match and expiry. There is no saved-location registry. Korean place names are sent to the geocoder as the owner wrote them; live geocoding of such names has not been observed. Recorded residuals:
+  - *Truncation.* A word extending a permitted word sends the permitted word; the permitted word itself is text the owner already permitted for this lookup.
+- **Trusted-local CLI (#605 F1).** A trusted-local CLI Work's reply is recorded with `engine-unmediated-read`, so no later Work treats it as permitted lookup context, and the reply taints later Works on either route. The label does not taint the Work itself. Within one CLI Work, content the CLI read from the host outside Still can still be composed into its own lookup whenever those words also appear in permitted text; otherwise the lookup is excluded. OS-level read isolation is #616.
+
+## Goal policy and factual quality
+
+Determine what the owner wants to decide or change. Resolve relevant date/timezone, scope and references from authorized context. Ask only when the answer/action materially depends on missing or ambiguous information. A prior location is neither permanent inferred Memory nor precise nearest-store coordinates; check relevance and disclosure authority.
+
+Weather answers need resolved location, observation/forecast time and data semantics. A model-based forecast is not a claimed rain-gauge reading at the owner's door. Holiday opening needs the specific branch and date; normal weekly hours alone are insufficient. Search snippets are not full-page reads. Stale evidence retains its timestamp/limitation. Source failure permits another authorized source, not invented facts.
+
+Choose fallback from the observed reason, not a universal fixed chain. An equivalent same-authority method, one schema repair, one idempotent transient read retry, an exact authority handoff, a decision-critical question, or useful verified partial output can be appropriate. Auth/policy denial is not a transient retry. The assistant need not exhaust every tool, and casual conversation should not trigger unnecessary external work.
+
+Obligations specify required entities/facts, freshness, artifact fidelity or exact effect. Deterministic checks cover IDs, units, timestamps, hashes and effects; nuanced completeness is primarily part of the existing answer-generation step. A separate semantic judge is not a default or per-answer requirement; use one only for an explicitly justified, bounded need. Neither confidence nor prose upgrades unknown evidence. Attempt outcome, goal outcome and external effect remain separate.
+
+## Durable lifecycle and resource policy
+
+Reuse current Work/pending registries. Do not promise universal exactly-once remote execution. Use durable single-claim/resume, action-specific idempotency where supported and reconciliation when an external request may already have taken effect.
+
+Before consequential dispatch, retain the exact approved payload/idempotency key and attempt state. A crash after dispatch is not proof of failure. Never blindly retry an unknown mutation. Reconcile against authoritative external state through an allowed read where available; otherwise preserve unknown and the proper owner action. Changes to parameters, target, account, grant or connection revision invalidate non-covering approval. A draft is not an applied effect.
+
+Initial bounds preserve nine model turns and twelve total tool attempts, including failures; at most one classified transient read retry and one argument repair. Nested work shares the budget. Enforce a total wall-clock deadline and per-tool/process timeouts outside the model; extensions require existing policy. Measure usage/cost when reported, not from guessed model prices. No new call after Stop/revoke/expiry. Detect repeated no-progress without preventing the explicitly permitted transient retry. A profile unable to enforce a required bound is unqualified until its adapter provides it.
+
+Stop presentation immediately, and stop execution at its real boundary. Observe process-group/descendant death, not a mocked terminate call. A remote in-flight effect may remain unknown. Restart, retry controls, context restoration and rollback cannot revive revoked authority or duplicate possible effects. Settings-based setup and contextual handoff share the same pending claim where resumption is promised.
+
+## Owner experience and diagnostics
+
+Provide the useful result, material uncertainty and necessary next action in one assistant voice; #581 retains Telegram-native responsibility. Do not prohibit words such as unable or failed. Keep safe action parameters/destinations, evidence/effects and limitation reasons inspectable on demand.
+
+A local diagnostic reports source revision, installed artifact digest, entrypoint/module origin, process start, effective route/isolation/CLI version, requested versus observed model, and configuration/catalog/policy digests. It reads existing state without invoking models or reinstalling anything. Exports are redacted before persistence and retention-bounded. A stale installation and missing route binding are different failures.
+
+## Verification policy — unit tests first
+
+The 2026-09-25 #612 owner amendment replaces the earlier all-case/all-profile three-trial matrix, universal 90% threshold and per-child evidence-packet obligation. It also narrows the interpretation of older root-plan qualification prose and the historical U1/U2/U3 numerical proposals: required user outcomes and authority remain; the blanket workload does not. No new evaluation platform or continuous model judge is required.
+
+| Change | Default check | Model calls |
+| --- | --- | --- |
+| Mapping, policy, arguments, errors, state transitions, projection | Focused unit tests using injected transports/fake clock/temp store | None |
+| Changed native/MCP serializer, broker wiring, resume or process boundary | One small relevant integration test; real boundary, fake model/external service | None |
+| Model, prompt or tool-description change; unexplained model-dependent defect | Opt-in sample of affected cases/profiles under explicit budget | Only the selected sample |
+| Installation/UI change or public quality claim | Narrow version check/smoke or claim-specific evaluation | Only if needed and authorized |
+
+For example, a scripted model requests weather, real service/broker/serialization code handles it, a fake weather endpoint returns evidence, and the test checks that the observation reaches the next model input. This proves wiring, not model language competence. Do not replace the very broker/serializer being tested with a fake final answer. Parameterized adapter tests share cases rather than duplicating whole model runs.
+
+A regression test should reproduce its bug where practical. A separate historical run, mutation, trace archive and model evaluation are NOT mandatory for every fix. Target adversarial/mutation checks at sole authority guards, duplicate-effect prevention or an otherwise untested binding. Existing relevant negative tests and required CI are not skipped or weakened. Do not require a fresh review of an unchanged library or unrelated historical code.
+
+Normal CI uses injected models and must not use live credentials/provider calls. #608 owns narrowly scoped integration of a request guard using the existing test seams; it must not block loopback test servers or require a new agent framework. In production the normal tool-observation-answer loop remains; a second model to grade every answer is not the default. Code checks tool results, authorization and effect status without re-asking a model for those facts.
+
+Optional model checks require a stated trigger, selected cases/routes, provider/destination/data authorization, maximum requests or tokens/cost and a time limit. Start with a small representative sample; repeat only to resolve observed variability or support a specific claim. Report all executed attempts, not the best answer. No global default trial count or score is encoded. Provider credentials alone are not authorization. A model-free installation fingerprint check needs no model call.
+
+Keep unit/controlled integration, real-model and owner observations accurately labelled. An unrun optional check is not a failed development test and cannot become a success claim. Conversely a relevant known regression is not optional merely to make CI pass. Before claiming a particular live profile works, observe that scoped path or describe it as unverified. Existing release protection and issue-specific critical operating checks remain; there is no required exhaustive model matrix.
+
+Use existing pytest/unittest reports and GitHub checks. The #612-reduced `verify_assistant_execution.py --check-spec` checks requirement/owner/plan consistency only; the unadopted custom `--evidence` certification path is removed. It cannot grade outcomes, authenticate reports or certify product readiness. Do not replace it with another report platform. Success output is brief; inspect failing test IDs and bounded diagnostics only. Normal local iteration runs focused tests, then the existing required suite once on a stable head.
+
+## Concrete reuse decisions
+
+Reuse the following internal implementation first; upstream APIs are explicit comparison targets, not packages silently installed by this amendment.
+
+| Responsibility | Existing implementation | Upstream comparison / decision | Still-specific remainder |
+| --- | --- | --- | --- |
+| Tool selection and observation loop | `agent_runtime.run_agent`, `providers.ModelAdapter.tool_turn` | Keep/adapt unless a bounded compatibility test justifies an SDK substitution; LangGraph model/tool nodes are a pattern, not a new mandatory runtime | Work linkage, current authority/effect truth, global budgets |
+| Tool definitions and invocation | `Capabilities.definitions/execute`, manifests, `AgentOSMcpTools` | #604 derives native/MCP bindings from these, removing the independently maintained facade list | Per-Work allowed actions and revision checks |
+| MCP wire mechanics | `mcp_types.version`, bridge code and #426 decision | Keep already adopted version types; compare official Python SDK client session/server list/call/result handling only for the changed framing/error seam | Strict unknown-field validation, Work token, allowlist, audit |
+| Approval/deferred execution | Connector/folder pending registry and existing exact preview | Keep existing durable claims; PydanticAI `DeferredToolRequests`/`DeferredToolResults` are a compatibility candidate, not a replacement authority layer | Owner/payload/revision-bound approval and crash-safe claim |
+| Model-free tests | Injected `ModelAdapter` transport, `FixtureDecisionEngine`, existing unittest/pytest helpers | Adopt existing tests; PydanticAI `TestModel`, `FunctionModel`, `Agent.override`, `ALLOW_MODEL_REQUESTS=False` illustrate already-solved test seams | A small request guard only if missing; no external framework just for tests |
+| Result correctness | Existing Evidence/effect/qualifier functions | Reuse structured tool result/error fields; no new GoalResult engine or LLM grader by default | Requested result references and deterministic effect qualification |
+
+Each affected child records a short decision: prior review reused, concrete symbol/API/version inspected, required behavior, glue retained, duplicate code removed/avoided, and actual mismatch if custom Build remains. Do this once per changed boundary, not an independent broad research/review cycle on each patch. A small no-model compatibility test is stronger than a generic framework comparison. Do not rebuild strict protocol framing until checking the adopted types/full SDK at the exact version against the recorded #426 mismatch.
+
+Adding dependencies changes supply-chain/attack surface, but does not itself issue a network Grant. Conversely an SDK approval object is not Still authorization. Before actual adoption, check supported API/version, licence, maintained path and isolation; no blanket framework migration or new dependency is selected here.
+
+## Migration, rollout and risk disposition
+
+Serialize shared seams after #597/#598. New binding/context paths are initially disabled/unqualified behind per-profile flags; restrictive current behavior remains until reviewed qualification. No silent provider fallback. Any read-only shadow comparison stays within existing data/destination/budget authority and never duplicates writes.
+
+Rollout: focused regression → reviewed changed boundary → opt-in profile → targeted model or installed-artifact smoke only where justified → scoped release under existing checks. Rollback preserves Artifacts, Evidence, pending effect uncertainty and revoked grants; it does not replay Work. Pin tested executable/runtime/schema versions and requalify affected profiles after upgrades.
+
+#607 owns relevant #594 retry/atomicity/secret-chain/process/effect/saved-item/resume findings. #608 records applicable retention and owner-local Host-boundary dispositions without starting a broad historical re-audit. Google-connected profile promotion requires #588 disconnect/revoke resolution or explicit narrower product scope. A historical non-blocking label is not evidence of safety. Attention, marketplace acquisition, multi-owner collaboration, new mail-send/body scope and purchases are excluded.
+
+## Existing Solutions Review — Adapt
+
+Internal first: current `run_agent`, Capabilities/manifests, DecisionEngine, Work/Context/Grant/Approval/Evidence, folder/connector handoff, #512 harness, usefulness seed, doctor/provenance and process tests. Adapt integration; no new product framework or dependency is selected.
+
+Primary references verified 2026-09-25:
+
+- [ReAct](https://arxiv.org/abs/2210.03629): observation-driven reasoning/action, not privacy or authority enforcement.
+- [LangGraph workflows/agents](https://docs.langchain.com/oss/python/langgraph/workflows-agents): comparison for loop patterns; wholesale replacement is not selected without migration evidence preserving current state/policy.
+- [Anthropic effective agents](https://www.anthropic.com/engineering/building-effective-agents): workflow/agent tradeoffs and tool interfaces, not an Still benchmark.
+- [PydanticAI testing](https://ai.pydantic.dev/testing/): TestModel/FunctionModel, dependency override and disabling accidental model requests. Pattern reference; not an added dependency.
+- [PydanticAI deferred tools](https://ai.pydantic.dev/deferred-tools/): typed external/approval requests and results; not a substitute for host authorization.
+- [Official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk): client/server protocol implementation considered against the already recorded #426 boundary.
+- [MCP host architecture](https://modelcontextprotocol.io/specification/2025-11-25/architecture): host responsibility for permission/context coordination, not a newly invented Still framework.
+- [Versioned MCP tools specification](https://modelcontextprotocol.io/specification/2025-06-18/server/tools): discovery, structured results and tool-versus-protocol errors. Negotiate the actually supported revision; this historical URL is not a claim about the latest revision.
+
+Python standard-library JSON/path/unittest supports the offline specification check; the custom result-certification subsystem was removed by #612. Reuse existing MCP types only when strict envelopes are preserved. Any new dependency requires exact version, maintenance, AGPL-3.0 compatibility, supply-chain, deployment/isolation and migration review. No framework owns canonical memory, Grants or completion truth.

@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "personal-agentos"
+version = "1.4.2"
+description = "A lightweight self-hosted personal agent with browser setup"
+requires-python = ">=3.12"
+license = {text = "AGPL-3.0-only"}
+# mcp-types: MCP protocol-version registry (REUSE-R2 #426), exact shared
+# candidate closure for UPSTREAM-RUNTIME-01 #1025. MIT; the base/isolated
+# profile retains its local envelope checks.
+# oauthlib: RFC 6749/7636 authorization-request construction (REUSE-R1b #427).
+# BSD-3-Clause, zero mandatory dependencies, imports no HTTP library.
+# pyobjc-framework-WebKit: SEC-BROWSER-02 #680 embedded macOS system WebKit
+# browser (MIT, Ronald Oussoren; 12.2.2 reviewed). macOS only; it pulls
+# pyobjc-core and pyobjc-framework-Cocoa (MIT). No browser download.
+# publicsuffixlist: #716 registrable domain (eTLD+1) of a login host from the
+# bundled Mozilla Public Suffix List (MPL-2.0, ko-zu; 1.0.2.20261002 reviewed).
+# Pure Python, zero mandatory dependencies, never fetches the list at runtime.
+# PyYAML: #961 parses Agent Skills SKILL.md frontmatter with SafeLoader only
+# (MIT, YAML project; 6.0.3 reviewed; #960 decision record section 4).
+# pydantic: #1445 part 3 one declaration of each AI-written draft format, read by
+# the AI as its JSON Schema and used as the validator (MIT, Pydantic; 2.13.5
+# reviewed). Already in the closure through mcp-types; now declared directly.
+# cryptography: #1531 publishes no Intel macOS wheel from 49.0.0, so Intel Macs
+# stay on 48.x (universal2 wheel) instead of compiling it. Its 48.x advisories
+# are PKCS#7 decryption and the X.509 verifier, neither of which AgentOS calls.
+dependencies = ["pypdf>=5.0", "python-docx>=1.1", "openpyxl>=3.1", "mcp-types==2.3.0", "oauthlib>=3.3.1,<4",
+                "cryptography>=42.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+                "cryptography>=42.0,<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+                "pyobjc-framework-WebKit>=12.2,<13; sys_platform == 'darwin'", "publicsuffixlist>=1.0.2,<2", "PyYAML>=6.0.1,<7",
+                "pydantic>=2.11,<3"]
+
+[project.optional-dependencies]
+schema-validation = ["jsonschema[format]>=4.23"]
+# Official stdio transport/dispatcher for host profiles only (#1025). MIT.
+# Keep the HTTP/OAuth/server closure outside the base install.
+# CONNECT-FIND-01: official model-free CLI status API. SDK source is MIT;
+# its bundled CLI has separate vendor terms and is never selected by AgentOS.
+# Setup always requires the owner's explicitly installed CLI.
+mcp-host = ["mcp==2.3.0", "claude-agent-sdk==0.2.165"]
+
+[dependency-groups]
+dev = ["pytest>=9.1,<10"]
+
+[project.scripts]
+agentos = "personal_agent.quickstart:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["personal_agent*"]
+
+[tool.setuptools.package-data]
+personal_agent = ["web/*.html", "web/*.css", "web/*.js", "assets/*.jpg", "messages.json", "bundled_skills/*/SKILL.md", "prompts/*.md", "bundled_skills/*/references/*.md", "skill_references.json", "connector_read_operations.json", "sandbox/package.json", "sandbox/package-lock.json", "sandbox/runner.mjs"]
+
+[tool.uv]
+required-version = ">=0.11.33,<0.13"
+environments = ["sys_platform == 'darwin'", "sys_platform == 'linux'"]
+build-constraint-dependencies = [
+  "setuptools==84.0.0",
+]

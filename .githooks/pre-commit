@@ -1,0 +1,12 @@
+#!/bin/sh
+# Keep work out of protected integration branches. The delivery workflow starts
+# from an issue and a matching branch, then reaches main only through a PR.
+branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+
+case "$branch" in
+  main|master)
+    echo "Direct commits to $branch are blocked." >&2
+    echo "Create the GitHub issue and switch to its matching branch first." >&2
+    exit 1
+    ;;
+esac

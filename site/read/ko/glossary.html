@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>용어 | Still 개념 가이드</title>
+<meta name="description" content="이 안내에 나오는 주요 용어입니다. 대부분 『Personal AgentOS 총람』 부록 A의 용어집과 백서의 정의를 바탕으로 했습니다.">
+<link rel="stylesheet" href="../../assets/read.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+<header class="top">
+  <a class="brand" href="index.html">Still <span>개념 가이드</span></a>
+  <nav class="top-links" aria-label="사이트"><a href="../../ko.html">홈</a><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/README.md">원문</a><a href="https://github.com/Jongtae/Still">GitHub</a></nav>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="개념 가이드 목차">
+    <ol>
+      <li><a href="index.html">시작하기</a></li>
+      <li><a href="memory.html">기억과 개인 상태</a></li>
+      <li><a href="ai.html">AI와 함께 일하기</a></li>
+      <li><a href="authority.html">권한·연결·증거</a></li>
+      <li><a href="limits.html">확인된 범위와 열린 질문</a></li>
+      <li><a href="glossary.html" aria-current="page">용어</a></li>
+    </ol>
+    <p class="side-note">준비 중: 스킬과 전문성, 산업 가설과 반론, 개발 기록</p>
+  </nav>
+  <main id="main" class="doc">
+    <nav class="crumbs" aria-label="현재 위치"><ol><li><a href="index.html">개념 가이드</a></li><li aria-current="page">용어</li></ol></nav>
+    <h1>용어</h1>
+    <p class="summary">이 안내에 나오는 주요 용어입니다. 대부분 『Still 총람』 부록 A의 용어집과 백서의 정의를 바탕으로 했습니다.</p>
+    <p class="meta">원고: 백서 2장, 총람 부록 A. 최종 갱신 2026년 10월 14일.</p>
+
+    <h2 id="terms">주요 용어</h2>
+    <dl class="defs terms">
+      <dt id="개인-에이전트">개인 에이전트</dt><dd>사용자의 목표와 맥락을 기억하면서 여러 도구로 일을 이어 가는 시스템입니다. <a href="index.html#hypothesis">자세히</a> <span class="ref">백서 2장</span></dd>
+      <dt id="AgentOS">Still</dt><dd>개인의 맥락, 맡긴 권한, 진행 중인 일을 이어서 관리하는 운영 환경입니다. 컴퓨터 운영체제를 바꾼다는 뜻은 아닙니다. <a href="index.html#hypothesis">자세히</a> <span class="ref">백서 2장</span></dd>
+      <dt id="소유자-Owner">소유자 (Owner)</dt><dd>Still이 일해 주고 보호하는 단 한 사람입니다. 권한은 패키지나 마켓플레이스로 넘어가지 않습니다. 이 안내는 Still의 규칙을 말할 때 ‘소유자’를, 백서의 산업 논의를 옮길 때 ‘사용자’를 씁니다. <a href="index.html#audience">자세히</a> <span class="ref">총람 5.1절</span></dd>
+      <dt id="에이전트-Agent">에이전트 (Agent)</dt><dd>사용자를 대신해 일을 이어 가는 AI 시스템입니다. 이 안내의 본문은 ‘에이전트’로 쓰고, 백서를 그대로 인용한 곳에서만 ‘Agent’로 씁니다. <a href="index.html#hypothesis">자세히</a> <span class="ref">백서 2장</span></dd>
+      <dt id="운영-맥락">운영 맥락</dt><dd>개인과 에이전트 사이에 쌓이는 정보입니다. 원한 것, 수정한 선호, 허용한 범위, 진행 중인 일, 실제로 바뀐 것이 포함됩니다. <a href="index.html#hypothesis">자세히</a> <span class="ref">백서 2장</span></dd>
+      <dt id="맥락-Context">맥락 (Context)</dt><dd>작업 하나를 위해 주어지는 정보입니다. 쓸 수 있는 범위와 출처가 정해져 있고, 자동으로 기억이 되지 않습니다. <a href="memory.html#context">자세히</a> <span class="ref">총람 5.1·5.3절</span></dd>
+      <dt id="기억-Memory">기억 (Memory)</dt><dd>Still이 관리하는 기준 기억입니다. 제3자가 저장하려는 기억은 승인 전까지 후보(MemoryCandidate)로 남습니다. <a href="memory.html#context">자세히</a> <span class="ref">총람 5.1·7.4절</span></dd>
+      <dt id="정본">정본</dt><dd>여러 사본이나 후보 가운데 기준이 되는 기록입니다. 기억의 정본은 Still이 관리합니다. <a href="memory.html#context">자세히</a> <span class="ref">총람 5.1절</span></dd>
+      <dt id="Portable-Memory">Portable Memory</dt><dd>기록뿐 아니라 의미와 사용의 연속성까지 옮기고, 옮긴 뒤에도 사용자가 맥락을 통제할 수 있게 하는 것입니다. <a href="memory.html#levels">자세히</a> <span class="ref">백서 4장</span></dd>
+      <dt id="권한-Grant">권한 (Grant)</dt><dd>권한을 인정하는 유일한 기록입니다. 누가, 어떤 작업에서, 어디까지, 어디로, 언제까지 할 수 있는지가 정해지며, 모호하면 거부합니다. <a href="authority.html#effects">자세히</a> <span class="ref">총람 5.1절</span></dd>
+      <dt id="위임-Mandate">위임 (Mandate)</dt><dd>소유자가 실제로 맡긴 목표·범위·제약입니다. 그 자체로 권한이 아닙니다. <a href="limits.html#questions">자세히</a> <span class="ref">총람 11.4·13.3절</span></dd>
+      <dt id="작업-Work">작업 (Work)</dt><dd>Still이 시작부터 끝까지 관리하는 일 하나입니다. 일이 끝났는지는 Still만 확정합니다. <a href="authority.html#truthfulness">자세히</a> <span class="ref">총람 5.4절</span></dd>
+      <dt id="증거-Evidence-와-증거-등급">증거 (Evidence)와 증거 등급</dt><dd>Still이 남기는, 나중에 바꿀 수 없는 기록입니다. 어떤 종류의 근거인지 밝히며, 약한 근거로 강한 결론을 내리지 않습니다. 서비스가 발급하는 ‘증빙’과 구분합니다. <a href="index.html#evidence">자세히</a> <span class="ref">총람 5.5절</span></dd>
+      <dt id="판단-모델">판단 모델</dt><dd>요청마다 AI 도구와 모델을 고르고, 지시서를 써서 맡기고, 결과를 평가하는 모델입니다. 직접 일하지 않으며 권한을 만들지도 않습니다. 원고에서는 판단 엔진, 판단 AI, 조율자라고도 씁니다. <a href="ai.html#engine">자세히</a> <span class="ref">총람 6장</span></dd>
+      <dt id="일꾼">일꾼</dt><dd>판단 모델이 일을 맡기는 AI 도구나 모델입니다. 이 안내에서는 주로 ‘일하는 AI’라고 씁니다. <a href="ai.html#engine">자세히</a> <span class="ref">총람 6장</span></dd>
+      <dt id="지시서">지시서</dt><dd>판단 모델이 일하는 AI에게 건네는 목표, 관련 맥락, 완료 기준입니다. <a href="ai.html#engine">자세히</a> <span class="ref">총람 6.2절</span></dd>
+      <dt id="Presence">Presence</dt><dd>대화가 여러 번 오가고, 도구와 AI가 바뀌고, 실패하거나 다시 시작해도 나를 아는 같은 상대와 이어져 있다는 경험입니다. <a href="ai.html#presence">자세히</a> <span class="ref">총람 8.2절</span></dd>
+      <dt id="투영-projection">투영 (projection)</dt><dd>내부 개념이 소유자의 대화와 화면에 그대로 드러나는 것입니다. <a href="ai.html#presence">자세히</a> <span class="ref">총람 8.2절</span></dd>
+      <dt id="파일럿-자세">파일럿 자세</dt><dd>비밀 보호와 결제 승인만 모든 요청에 반드시 적용하는 시범 단계의 원칙입니다. <a href="authority.html#pilot">자세히</a> <span class="ref">총람 10.1절</span></dd>
+      <dt id="정보-사용-감사">정보 사용 감사</dt><dd>작업이 쓴 소유자 정보와 그 행방을 보여 주는 기록입니다. <a href="authority.html#pilot">자세히</a> <span class="ref">총람 10.2절</span></dd>
+      <dt id="처리-증빙">처리 증빙</dt><dd>서비스가 어떤 요청을 어떤 결과로 처리했다고 확인해 발급한 기록입니다. Still이 남기는 ‘증거’와 구분합니다. <a href="authority.html#records">자세히</a> <span class="ref">백서 7.1절</span></dd>
+      <dt id="원장-등록-증명">원장 등록 증명</dt><dd>특정 기록이 검증 가능한 기록 구조에 포함됐다는 증명입니다. 내용의 진실성을 보장하지 않습니다. <a href="authority.html#records">자세히</a> <span class="ref">백서 7.1절</span></dd>
+      <dt id="이동-가능한-실행-증빙">이동 가능한 실행 증빙</dt><dd>에이전트를 바꿀 때 이어받을 업무의 처리 근거를 필요한 범위에서 함께 옮기는 것입니다. <a href="authority.html#portable-proof">자세히</a> <span class="ref">백서 7.5절</span></dd>
+      <dt id="스킬">스킬</dt><dd>소유자의 AI가 필요할 때 골라 읽는, 버전이 매겨진 작업 방법입니다. 권한이 아닙니다. <a href="authority.html#capabilities">자세히</a> <span class="ref">총람 6.5·12장</span></dd>
+      <dt id="페이지-원칙">페이지 원칙</dt><dd>페이지는 결과와 꼭 필요한 입력에만 쓰고, 관리는 대화로 합니다. <a href="ai.html#presence">자세히</a> <span class="ref">총람 8.6절</span></dd>
+    </dl>
+
+    <h2 id="about">이 안내에 대하여</h2>
+    <dl class="defs">
+      <dt>원고</dt><dd>『누구의 에이전트인가』 v0.3.1, 『Still 총람』 v0.1. 원문과 다르면 원문이 맞습니다.</dd>
+      <dt>작성과 검토</dt><dd>프로젝트 소유자의 요청으로 AI 코딩 어시스턴트가 원고를 주제별로 나눠 쉽게 다시 썼습니다. 같은 AI의 자기 검토만 거쳤고, 독립 전문가나 사람의 검토가 아닙니다.</dd>
+      <dt>표의 재수록</dt><dd>‘원표 재수록’은 원고의 표를 그대로 옮긴 것이고, ‘축약·재구성’은 문장을 줄이거나 열을 다시 묶은 것입니다.</dd>
+      <dt>수치</dt><dd>이 안내는 새로운 설문, 성공률, 시장 규모를 만들지 않습니다. 원고의 표, 날짜가 있는 관찰, 출처가 있는 공개 자료만 씁니다.</dd>
+      <dt>의견</dt><dd>반론이나 다른 생각은 <a href="https://github.com/Jongtae/Still/discussions">GitHub Discussions</a>에 남겨 주세요.</dd>
+    </dl>
+
+    <section class="page-sources" aria-labelledby="page-sources-title">
+      <h2 id="page-sources-title">이 페이지의 원문과 출처</h2>
+      <ul>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/whose-agent.ko.md">『누구의 에이전트인가』 v0.3.1</a>: 2장</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/personal-agentos-compendium.ko.md">『Still 총람』 v0.1</a>: 부록 A. 용어집</li>
+      </ul>
+    </section>
+    <nav class="pager" aria-label="이전 다음 페이지"><a class="prev" href="limits.html"><span>이전</span>확인된 범위와 열린 질문</a></nav>
+  </main>
+  <nav class="onpage" aria-labelledby="onpage-title">
+    <h2 id="onpage-title">이 페이지의 내용</h2>
+    <ol>
+      <li><a href="#terms">주요 용어</a></li>
+      <li><a href="#about">이 안내에 대하여</a></li>
+    </ol>
+  </nav>
+</div>
+<footer class="foot">
+  <p>이 안내는 프로젝트 소유자의 요청으로 AI 코딩 어시스턴트가 두 원고를 쉽게 다시 쓴 것입니다. 같은 AI의 자기 검토만 거쳤고, 독립 전문가나 사람의 검토가 아닙니다. 원문과 다르면 원문이 맞습니다. 제품 기능에 대한 약속이 아니며, 지금 되는 것은 <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">제품 현황</a>에 있습니다.</p>
+  <p>Still은 <a href="https://github.com/Jongtae/Still/blob/main/LICENSE">AGPL-3.0-only</a> 라이선스입니다. 이 페이지에는 로그인, 분석 도구, 스크립트가 없습니다. <a href="../../privacy.html">개인정보</a> <a href="../../terms.html">이용 조건</a></p>
+</footer>
+</body>
+</html>

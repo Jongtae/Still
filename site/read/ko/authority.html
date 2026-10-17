@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>권한·연결·증거 | Still 개념 가이드</title>
+<meta name="description" content="이 페이지는 Personal AgentOS가 지금 지키는 보호 규칙, 행동의 종류, 필요한 기능을 찾는 순서, 그리고 “처리했습니다”라는 말과 처리 증빙의 차이를 설명합니다.">
+<link rel="stylesheet" href="../../assets/read.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+<header class="top">
+  <a class="brand" href="index.html">Still <span>개념 가이드</span></a>
+  <nav class="top-links" aria-label="사이트"><a href="../../ko.html">홈</a><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/README.md">원문</a><a href="https://github.com/Jongtae/Still">GitHub</a></nav>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="개념 가이드 목차">
+    <ol>
+      <li><a href="index.html">시작하기</a></li>
+      <li><a href="memory.html">기억과 개인 상태</a></li>
+      <li><a href="ai.html">AI와 함께 일하기</a></li>
+      <li><a href="authority.html" aria-current="page">권한·연결·증거</a></li>
+      <li><a href="limits.html">확인된 범위와 열린 질문</a></li>
+      <li><a href="glossary.html">용어</a></li>
+    </ol>
+    <p class="side-note">준비 중: 스킬과 전문성, 산업 가설과 반론, 개발 기록</p>
+  </nav>
+  <main id="main" class="doc">
+    <nav class="crumbs" aria-label="현재 위치"><ol><li><a href="index.html">개념 가이드</a></li><li aria-current="page">권한·연결·증거</li></ol></nav>
+    <h1>권한·연결·증거</h1>
+    <p class="summary">이 페이지는 Still이 지금 지키는 보호 규칙, 행동의 종류, 필요한 기능을 찾는 순서, 그리고 “처리했습니다”라는 말과 처리 증빙의 차이를 설명합니다.</p>
+    <p class="meta">원고: 백서 7장, 9장, 총람 10–11장. 최종 갱신 2026년 10월 14일.</p>
+
+    <h2 id="pilot">지금 지키는 보호 규칙</h2>
+    <p class="basis"><span>근거</span> 계약·구현. 총람 10.1–10.2절</p>
+    <p>지금은 소유자 한 사람이 자기 컴퓨터에서 자기 계정으로 쓰는 시범 단계입니다. 이 단계에서 모든 요청에 반드시 적용되는 규칙은 두 가지입니다.</p>
+    <ul>
+      <li>비밀은 모델 프롬프트, 로그, 증거에 들어가지 않습니다.</li>
+      <li>결제는 할 때마다 소유자의 승인이 필요합니다.</li>
+    </ul>
+    <p>이 밖에 폴더 접근 권한, 소유자 본인의 데이터만 쓴다는 범위, 비밀 보호, 결제마다 받는 승인, 같은 행동을 다시 실행하지 않는 규칙, 기억에 대한 권한도 그대로 유지됩니다. 반면 요청마다 정보가 민감한지 따지던 판단, 평범한 검색어를 다시 묻던 확인, 공급자별 차단은 빠졌습니다. 이것들은 나중에 따로 시작할 보안 강화 작업으로 미뤄졌습니다.</p>
+    <p>그 대신 작업마다 정보 사용 감사를 남깁니다. 어떤 소유자 정보(프로필, 기억, 일정, 파일, 현재 맥락, 대화)를 썼는지, 어느 AI와 경로, 모델로 전달됐는지, 웹 검색을 했다면 어떤 질의였는지를 보여 줍니다.</p>
+    <div class="caution" role="note"><p><strong>주의</strong> 감사는 무슨 일이 있었는지 알려 줄 뿐 막지는 못합니다. 개인 데이터, 인터넷 접근, 스스로 행동하는 기능이 한데 모일 때 생기는 공격(주입과 유출)을 막자는 제안은 2026년 9월 28일 소유자 결정으로 보류되어 있습니다.</p></div>
+
+    <h2 id="effects">행동의 종류</h2>
+    <p class="basis"><span>근거</span> 계약·구현. 총람 10.3절</p>
+    <p>공개 정보 읽기, 장바구니나 예약 변경, 신원 정보 입력, 예약 확정, 메시지 전송, 결제는 웹사이트가 한 화면에서 이어서 처리하더라도 서로 다른 종류의 행동입니다. 무언가를 알아보라는 요청이 장바구니나 결제 권한까지 주지는 않습니다. 요청 내용이나 권한이 바뀌면, 바뀐 내용을 포함하지 않는 이전 승인은 더 이상 쓸 수 없습니다.</p>
+    <p>결제 보호는 모델의 판단에 기대지 않습니다. 카드 번호, CVC, OTP 입력란에 입력하는 것은 모델이 그 행동을 무엇이라 부르든 항상 소유자 승인이 필요합니다. 모델이 행동에 붙인 분류나 MCP 서버가 알려 주는 ‘읽기 전용’ 표시는 참고로만 씁니다. 이런 표시는 확인 절차를 더할 수는 있어도 뺄 수는 없습니다.</p>
+
+    <h2 id="capabilities">필요한 기능을 찾는 순서</h2>
+    <p class="basis"><span>근거</span> 계약·구현. 총람 11.2절</p>
+    <p>작업에 필요한 기능(역량)이 없을 때, 어떤 서비스를 쓸지 코드가 작업마다 미리 정해 두지 않습니다. 계약은 AI가 어디부터 찾아볼지 순서만 정합니다.</p>
+    <ol>
+      <li>AI 쪽에 이미 있는 기능: 커넥터, MCP, 플러그인, 또는 공식 MCP 목록과 공급자의 기능 목록.</li>
+      <li>서비스 회사의 개발자 문서와 API, 관리가 이어지는 공개 코드.</li>
+      <li>스킬. 공개 스킬을 먼저, Still의 참고 스킬을 다음에 봅니다. 스킬은 ‘어떻게 하는가’를 알려 줄 뿐 권한이 아닙니다.</li>
+      <li>범용 방법: 로그인된 브라우저, 저장된 비밀값으로 하는 API 조회, 격리된 환경에서의 코드 실행.</li>
+      <li>직접 만들기. 기존 방법을 검토한 뒤에도 풀리지 않는 구체적인 요구가 있을 때만.</li>
+    </ol>
+    <p>이 순서는 다른 조건이 같을 때 쓰는 기준입니다. 실제로는 소유자가 설치하고 등록해야 하는 부담, 공식·표준인지와 관리가 이어지는지, 필요한 범위에 맞는지, 비밀을 어떻게 다루는지, 믿을 만한지를 함께 따집니다. 기능을 찾는 단계에서는 정보만 찾을 뿐, 아무것도 설치하거나 연결하거나 로그인하지 않습니다.</p>
+
+    <h2 id="records">말과 증빙</h2>
+    <p class="basis"><span>근거</span> 제안. 백서 7.1절</p>
+    <p>에이전트가 “완료했습니다”라고 했는데 결과가 보이지 않는다면, 요청이 가지 않았을 수도, 서비스가 받고도 반영하지 않았을 수도, 반영된 뒤 다시 바뀌었을 수도 있습니다. 필요한 것은 에이전트가 자신 있게 기억하는 능력이 아니라 요청, 처리, 관찰, 이후 변경을 구분할 수 있는 근거입니다.</p>
+    <div class="table-wrap" role="region" aria-labelledby="r1" tabindex="0">
+    <table>
+      <caption id="r1">표 1. 기록의 종류와 확인 범위</caption>
+      <thead><tr><th scope="col">기록의 종류</th><th scope="col">확인하려는 대상</th><th scope="col">그것만으로 확정할 수 없는 것</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">실행 요청 기록</th><td>어떤 주체가 어떤 요청을 제출했는가</td><td>요청이 실제로 반영됐는지</td></tr>
+        <tr><th scope="row">관찰 기록</th><td>특정 시점에 어떤 화면이나 응답을 관찰했는가</td><td>서비스 내부의 완전한 처리·변경 이력</td></tr>
+        <tr><th scope="row">서비스의 처리 증빙</th><td>서비스가 어떤 요청을 어떤 결과로 처리했다고 확인했는가</td><td>발급자의 오류·거짓 가능성, 이후의 현재 상태</td></tr>
+        <tr><th scope="row">원장 등록 증명</th><td>특정 기록이 검증 가능한 기록 구조에 포함됐는가</td><td>기록 내용의 진실성, 모든 사건의 기록 여부</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="source-line">자료: 『누구의 에이전트인가』 v0.3.1, 7.1절. 원표 재수록.</p>
+    <p class="table-note">이 표는 증거의 강약 순위가 아니라, 서로 다른 질문에 답하는 근거의 구분입니다.</p>
+    <p>전자서명도 이 경계를 없애지 않습니다. W3C Verifiable Credentials 데이터 모델도, 검증할 수 있다고 해서 그 안의 주장이 참이라는 뜻은 아니라고 밝힙니다.</p>
+
+    <h2 id="cart-example">예시: 장바구니 기록</h2>
+    <p class="basis"><span>근거</span> 제안. 백서 7.2절</p>
+    <div class="caution" role="note"><p><strong>주의</strong> 쇼핑몰이 처리 증빙과 변경 이력을 제공한다고 가정한 설계 사례입니다. 특정 쇼핑몰이나 지금의 Still이 이를 지원한다는 뜻이 아닙니다.</p></div>
+    <ol class="steps">
+      <li><strong>오전 10시.</strong> Still이 우유 추가 요청 R1을 제출합니다. 쇼핑몰은 요청 번호와 함께 장바구니가 버전 41에서 42로 바뀌었다는 처리 증빙을 발급합니다.</li>
+      <li><strong>오전 11시.</strong> 같은 계정의 모바일 앱에서 우유 삭제 요청 R2가 제출됩니다. 쇼핑몰은 버전 42에서 43으로 바뀌었다는 별도의 증빙을 남깁니다.</li>
+      <li><strong>오후 1시.</strong> 사용자가 우유가 보이지 않는 이유를 묻습니다. Still은 두 처리 증빙과 조회 시점의 상태를 확인해 답합니다.</li>
+    </ol>
+    <blockquote><p>서비스 기록상 오전 10시의 추가 요청은 반영됐고, 오전 11시에 이 계정의 모바일 앱에서 제출된 삭제 요청이 반영됐습니다. 오후 1시 조회에서는 우유가 없는 상태로 확인됩니다.</p><cite>백서 7.2절의 예시 답변</cite></blockquote>
+    <p>이 설명은 “추가했던 것 같다”는 회상과 다르고, “직접 삭제하셨다”고 단정하지도 않습니다. 기록으로 알 수 있는 것은 어느 계정에서 어떤 경로로 요청했는지이지, 실제로 누가 조작했는지는 아니기 때문입니다.</p>
+    <blockquote><p>과거에 처리가 성공했다는 것과 현재도 그 결과가 유지된다는 것은 다르다. 또한 인증된 계정·클라이언트·위임받은 Agent와 실제 사람을 같은 행위자로 취급해서는 안 된다.</p><cite>백서 7.2절</cite></blockquote>
+
+    <h2 id="ledgers">원장과 서명</h2>
+    <p class="basis"><span>근거</span> 제안. 백서 7.3–7.4절</p>
+    <ul>
+      <li>기록이 고쳐지는 것만큼 빠지는 것도 문제입니다. Still이 자기 요청만 기록하고 사용자의 앱 조작은 기록하지 않으면 무엇이 어떻게 바뀌었는지 설명할 수 없습니다. 같은 대상을 바꾸는 모든 경로가 같은 처리·변경 기록을 남겨야 합니다.</li>
+      <li>그래서 백서는 에이전트가 일한 뒤에 기록을 남기는 방식보다, 상태를 실제로 바꾸는 서비스가 변경과 함께 증빙을 만들도록 책임지는 방식을 제안합니다.</li>
+      <li>블록체인은 증빙을 보존하는 방법 가운데 하나이지, 사실을 만들어 내는 장치가 아닙니다. 원장에 올린다고 내용이 참인지 확인되지는 않습니다.</li>
+      <li>Certificate Transparency(RFC 9162)나 SCITT 아키텍처(RFC 9943) 같은 검증 가능한 기록 구조도 있지만, 등록됐다는 증명이 내용이 참이라거나 모든 일이 기록됐다는 것까지 보장하지는 않습니다.</li>
+    </ul>
+
+    <h2 id="portable-proof">이동 가능한 실행 증빙</h2>
+    <p class="basis"><span>근거</span> 제안. 백서 7.5절</p>
+    <p>에이전트를 바꿀 때 사용자는 선호와 대화뿐 아니라, 이어받을 업무의 처리 근거도 필요한 범위에서 가져갈 수 있어야 합니다. 새 에이전트는 이전 에이전트의 요약을 그대로 믿지 않고, 보존된 원본과 발급자 정보로 다시 확인합니다. 증빙을 옮긴다고 새 실행 권한이 생기지는 않습니다. 검증할 수 있다는 것이 모든 기록을 공개한다는 뜻도 아닙니다.</p>
+    <blockquote><p>신뢰할 수 있는 Agent 생태계는 모든 참여자가 언제나 옳다고 가정하는 생태계가 아니다. 참여자가 틀리거나 기억을 잃거나 교체되더라도, 남아 있는 근거를 대조할 수 있는 생태계다.</p><cite>백서 7.6절</cite></blockquote>
+
+    <h2 id="truthfulness">저장소의 진실성 규칙</h2>
+    <p class="basis"><span>근거</span> 계약·구현·관찰. 총람 10.8절</p>
+    <p>외부 서비스의 협조 없이 Still 안에서 할 수 있는 것은 이미 규칙으로 정해져 있습니다.</p>
+    <ul>
+      <li>진행 상황과 실행 기록은 실제로 관찰된 작업과 도구의 동작으로만 만듭니다. 요청됨, 관찰됨, 실패, 알 수 없음을 구분합니다.</li>
+      <li>바깥 서비스에 한 행동의 결과는 없음, 확인됨, 알 수 없음 가운데 하나로 기록합니다. 결과를 알 수 없는 행동은 그 사실을 밝히고, 같은 행동을 몰래 다시 실행하지 않습니다.</li>
+      <li>걸릴 시간, 도구를 실행했다는 사실, 어떤 모델이 일했는지, 바깥 서비스에서 일이 성공했는지를 지어내지 않습니다.</li>
+      <li>상대 서비스가 받았다는 분명한 확인 없이 “전달됨”이라고 말하지 않습니다.</li>
+    </ul>
+    <p>이 규칙이 잡아낸 결함도 기록되어 있습니다. 2026년 10월 3일 스킬 평가에서 AI는 로그아웃된 쇼핑몰 세션을 보고 장바구니를 건드리지 않은 채 로그인을 요청했고, 아무것도 담지 않았다고 정직하게 답했습니다. 그런데 작업은 로그인을 기다리는 중인데도 성공으로 기록됐습니다. 이 결함은 별도 후속 작업으로 남아 있습니다.</p>
+
+    <h2 id="interop">연결과 독립성</h2>
+    <p class="basis"><span>근거</span> 가설. 백서 9장</p>
+    <p>MCP는 AI 앱이 외부 도구·데이터와 주고받는 방식을, A2A는 서로 다른 시스템에 있는 에이전트끼리 통신하고 협업하는 방식을 다룹니다. 백서는 이 프로토콜을 대체하려는 것이 아닙니다. 백서가 묻는 것은 연결할 대상을 누가 고르고, 그 사이에서 개인의 맥락과 권한을 누가 관리하며, 사용자가 전체 환경을 어떻게 바꿀 수 있는가입니다.</p>
+    <blockquote><p>상호운용성의 제품적 의미는 연결 목록이 길어지는 데에만 있지 않다. 사용자가 관계를 맺고, 조정하고, 끝낼 수 있는 데에 있다.</p><cite>백서 9장</cite></blockquote>
+
+    <section class="page-sources" aria-labelledby="page-sources-title">
+      <h2 id="page-sources-title">이 페이지의 원문과 출처</h2>
+      <ul>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/whose-agent.ko.md">『누구의 에이전트인가』 v0.3.1</a>: 7장, 9장</li>
+        <li><a href="https://github.com/Jongtae/Still/blob/main/docs/whitepapers/personal-agentos-compendium.ko.md">『Still 총람』 v0.1</a>: 10–11장</li>
+        <li><a href="https://www.w3.org/TR/vc-data-model-2.0/">W3C, Verifiable Credentials Data Model v2.0</a></li>
+        <li><a href="https://www.rfc-editor.org/rfc/rfc9162.html">IETF, RFC 9162</a>, <a href="https://www.rfc-editor.org/rfc/rfc9943.html">RFC 9943</a></li>
+        <li><a href="https://modelcontextprotocol.io/docs/2026-07-28/learn/architecture">Model Context Protocol, Architecture overview</a>, <a href="https://a2a-protocol.org/latest/">A2A Protocol</a></li>
+      </ul>
+    </section>
+    <nav class="pager" aria-label="이전 다음 페이지"><a class="prev" href="ai.html"><span>이전</span>AI와 함께 일하기</a><a class="next" href="limits.html"><span>다음</span>확인된 범위와 열린 질문</a></nav>
+  </main>
+  <nav class="onpage" aria-labelledby="onpage-title">
+    <h2 id="onpage-title">이 페이지의 내용</h2>
+    <ol>
+      <li><a href="#pilot">지금 지키는 보호 규칙</a></li>
+      <li><a href="#effects">행동의 종류</a></li>
+      <li><a href="#capabilities">필요한 기능을 찾는 순서</a></li>
+      <li><a href="#records">말과 증빙</a></li>
+      <li><a href="#cart-example">예시: 장바구니 기록</a></li>
+      <li><a href="#ledgers">원장과 서명</a></li>
+      <li><a href="#portable-proof">이동 가능한 실행 증빙</a></li>
+      <li><a href="#truthfulness">저장소의 진실성 규칙</a></li>
+      <li><a href="#interop">연결과 독립성</a></li>
+    </ol>
+  </nav>
+</div>
+<footer class="foot">
+  <p>이 안내는 프로젝트 소유자의 요청으로 AI 코딩 어시스턴트가 두 원고를 쉽게 다시 쓴 것입니다. 같은 AI의 자기 검토만 거쳤고, 독립 전문가나 사람의 검토가 아닙니다. 원문과 다르면 원문이 맞습니다. 제품 기능에 대한 약속이 아니며, 지금 되는 것은 <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">제품 현황</a>에 있습니다.</p>
+  <p>Still은 <a href="https://github.com/Jongtae/Still/blob/main/LICENSE">AGPL-3.0-only</a> 라이선스입니다. 이 페이지에는 로그인, 분석 도구, 스크립트가 없습니다. <a href="../../privacy.html">개인정보</a> <a href="../../terms.html">이용 조건</a></p>
+</footer>
+</body>
+</html>

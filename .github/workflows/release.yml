@@ -1,0 +1,313 @@
+name: release
+
+# #1472: merging a release-preparation PR (branch `release/<issue>-vX.Y.Z`)
+# publishes that version after one owner approval. It runs on the push to
+# main, so the `release` environment can admit main only. `prepare` only reads; the
+# `publish` job runs in the `release` environment, whose required reviewer is
+# the owner and whose RELEASE_TOKEN secret is the only credential that can
+# write the Homebrew tap or open PRs that run required CI. Every step is
+# re-runnable after a partial failure. Code that holds the credential always
+# runs from the approved release commit, never from a newer main. See docs/release.en.md and
+# docs/governance/release-policy.en.md.
+# #1535: every release-preparation PR changes the manifest; a patch release that
+# ships the in-tree placeholder version changes nothing else.
+on:
+  push:
+    branches: [main]
+    paths: [pyproject.toml, docs/release-manifest.json]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      release: ${{ steps.source.outputs.release }}
+      version: ${{ steps.check.outputs.version }}
+      issue: ${{ steps.check.outputs.issue }}
+      milestone_url: ${{ steps.check.outputs.milestone_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: source
+        name: Find the PR this commit merged
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_ref="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+            --jq '[.[] | select(.merged_at != null and .base.ref == "main")][0].head.ref // ""')"
+          if [[ "$head_ref" == release/* ]]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
+          else
+            echo "not a release-preparation merge (${head_ref:-no PR}); nothing to publish"
+          fi
+
+      - uses: actions/setup-python@v7
+        if: steps.source.outputs.release == 'true'
+        with:
+          python-version: '3.12'
+
+      - id: check
+        if: steps.source.outputs.release == 'true'
+        name: Check the version, its manifest entry and its milestone
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ steps.source.outputs.head_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 scripts/dev/release.py check)"
+          issue="$(sed -nE 's#^release/([0-9]+)-v[0-9.]+$#\1#p' <<<"$HEAD_REF")"
+          if [[ -z "$issue" || "$HEAD_REF" != "release/$issue-v$version" ]]; then
+            echo "::error::branch $HEAD_REF must be release/<issue>-v$version"; exit 1
+          fi
+          if [[ -n "$(git tag --list "v$version")" ]]; then
+            echo "::error::tag v$version already exists"; exit 1
+          fi
+          milestone="$(gh api "repos/$GITHUB_REPOSITORY/milestones?state=all&per_page=100" \
+            --jq ".[] | select(.title == \"v$version\") | \"\(.open_issues) \(.html_url)\"")"
+          if [[ -z "$milestone" ]]; then
+            echo "::error::milestone v$version does not exist"; exit 1
+          fi
+          if [[ "${milestone%% *}" != 0 ]]; then
+            echo "::error::milestone v$version still has ${milestone%% *} open issues"; exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "issue=$issue"
+            echo "milestone_url=${milestone#* }"
+          } >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    environment: release
+    permissions:
+      contents: write
+      checks: read
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      ISSUE: ${{ needs.prepare.outputs.issue }}
+      COMMIT: ${{ github.sha }}
+      TAP: Jongtae/homebrew-agentos
+    steps:
+      - name: Require the release environment credential before any change
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "::error::RELEASE_TOKEN is not set on the release environment; nothing was published"
+            exit 1
+          fi
+
+      # The approved release commit, not a newer main: every helper that runs
+      # while the credential is exposed comes from here. Changes to the latest
+      # main are prepared in separate worktrees as data only.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned uv resolver
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: '0.11.33'
+
+      - name: Require the release commit's validate check to pass
+        timeout-minutes: 30
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 55); do
+            result="$(gh api "repos/$GITHUB_REPOSITORY/commits/$COMMIT/check-runs?check_name=validate" \
+              --jq '.check_runs | if length == 0 then "" else (max_by(.started_at) | "\(.status):\(.conclusion)") end')"
+            case "$result" in
+              completed:success) echo "validate passed on $COMMIT"; exit 0 ;;
+              completed:*) echo "::error::validate concluded ${result#completed:} on $COMMIT; nothing was published"; exit 1 ;;
+            esac
+            sleep 30
+          done
+          echo "::error::validate did not finish on $COMMIT; nothing was published"
+          exit 1
+
+      - name: Tag the release commit and create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MILESTONE_URL: ${{ needs.prepare.outputs.milestone_url }}
+        run: |
+          set -eu
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "v$VERSION already released; continuing"
+          else
+            python3 scripts/dev/release.py notes --version "$VERSION" --milestone-url "$MILESTONE_URL" \
+              > "$RUNNER_TEMP/notes.md"
+            gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$COMMIT" \
+              --title "Personal AgentOS v$VERSION" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes
+          fi
+
+      - id: archive
+        name: Measure the served tag archive twice
+        timeout-minutes: 10
+        run: |
+          set -eu
+          url="https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/v$VERSION.tar.gz"
+          curl -L --fail --retry 5 --retry-delay 10 -o "$RUNNER_TEMP/a.tar.gz" "$url"
+          sleep 30
+          curl -L --fail --retry 5 --retry-delay 10 -o "$RUNNER_TEMP/b.tar.gz" "$url"
+          a="$(sha256sum "$RUNNER_TEMP/a.tar.gz" | cut -d' ' -f1)"
+          b="$(sha256sum "$RUNNER_TEMP/b.tar.gz" | cut -d' ' -f1)"
+          if [ "$a" != "$b" ]; then
+            echo "::error::the served archive changed between measurements ($a, $b)"; exit 1
+          fi
+          echo "sha256=$a" >> "$GITHUB_OUTPUT"
+
+      - id: tap
+        name: Update the Homebrew tap and merge it after its install test passes
+        timeout-minutes: 60
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          SHA256: ${{ steps.archive.outputs.sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          branch="agentos-$VERSION"
+          pr="$(gh pr list --repo "$TAP" --head "$branch" --state all --json url --jq '.[0].url // ""')"
+          if [[ -z "$pr" ]]; then
+            gh repo clone "$TAP" "$RUNNER_TEMP/tap" -- --depth 1
+            cd "$RUNNER_TEMP/tap"
+            git checkout -B "$branch"
+            # Refuses a formula whose body drifted from the reviewed template.
+            python3 "$GITHUB_WORKSPACE/scripts/dev/release.py" formula --file Formula/agentos.rb \
+              --repository "$GITHUB_REPOSITORY" --version "$VERSION" --sha256 "$SHA256"
+            git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              commit -am "release: install AgentOS v$VERSION"
+            git push --force -u origin "$branch"
+            pr="$(gh pr create --repo "$TAP" --base main --head "$branch" \
+              --title "release: install AgentOS v$VERSION" \
+              --body "Points the formula at the v$VERSION tag archive (SHA-256 $SHA256, measured twice after publication). Opened by the release workflow after owner approval (Jongtae/agentos#$ISSUE).")"
+          fi
+          case "$(gh pr view "$pr" --repo "$TAP" --json state --jq .state)" in
+            MERGED) echo "$pr already merged" ;;
+            OPEN)
+              sleep 60
+              gh pr checks "$pr" --repo "$TAP" --watch --fail-fast --interval 30
+              gh pr merge "$pr" --repo "$TAP" --squash --delete-branch ;;
+            *) echo "::error::$pr was closed without merging; reopen it or delete $branch and re-run"; exit 1 ;;
+          esac
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+
+      - id: record
+        name: Record the release in the manifest, installer and release-status prose
+        timeout-minutes: 45
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          SHA256: ${{ steps.archive.outputs.sha256 }}
+          TAP_PR: ${{ steps.tap.outputs.pr }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="docs/$ISSUE-record-v$VERSION"
+          tree="$RUNNER_TEMP/record"
+          pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state all --json url --jq '.[0].url // ""')"
+          if [[ -z "$pr" ]]; then
+            git fetch origin main
+            git worktree add -B "$branch" "$tree" origin/main
+            tag_date="$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json createdAt --jq '.createdAt[0:10]')"
+            next="$(python3 scripts/dev/release.py --root "$tree" record --version "$VERSION" --commit "$COMMIT" \
+              --sha256 "$SHA256" --date "$tag_date" --tap-pr "$TAP_PR")"
+            cd "$tree"
+            uv lock
+            git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              commit -am "release: record published v$VERSION and set $next as the next placeholder (#$ISSUE)"
+            git push --force -u origin "$branch"
+            pr="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+              --title "release: record published v$VERSION (#$ISSUE)" --body "$(cat <<EOF
+          ## What changed
+
+          Records the published v$VERSION: manifest \`published\` entry with the served archive SHA-256 \`$SHA256\`, \`scripts/install.sh\` pins, release-status prose, and $next as the next in-tree placeholder. Homebrew tap: $TAP_PR. Opened by the release workflow after owner approval; it merges itself when required CI passes.
+
+          ## Existing solutions review (Adopt / Adapt / Build)
+
+          - decision: N/A
+          - N/A reason: release bookkeeping data written by scripts/dev/release.py; no component, dependency or framework is introduced.
+
+          Refs #$ISSUE
+          EOF
+          )")"
+          fi
+          for _ in $(seq 1 80); do
+            case "$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state --jq .state)" in
+              MERGED) break ;;
+              OPEN) gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --squash --delete-branch >/dev/null \
+                      || echo "::warning::could not enable auto-merge on $pr yet" ;;
+              *) echo "::error::$pr was closed without merging"; exit 1 ;;
+            esac
+            sleep 30
+          done
+          merged="$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state,mergeCommit --jq 'select(.state == "MERGED") | .mergeCommit.oid')"
+          if [[ -z "$merged" ]]; then echo "::error::$pr did not merge within 40 minutes"; exit 1; fi
+          echo "commit=$merged" >> "$GITHUB_OUTPUT"
+
+      - name: Pin the README installer to the commit that installs this release
+        timeout-minutes: 15
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RECORDED: ${{ steps.record.outputs.commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="docs/$ISSUE-pin-installer-v$VERSION"
+          tree="$RUNNER_TEMP/pin"
+          pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state all --json url --jq '.[0].url // ""')"
+          if [[ -z "$pr" ]]; then
+            git fetch origin main
+            git worktree add -B "$branch" "$tree" origin/main
+            python3 scripts/dev/release.py --root "$tree" pin --commit "$RECORDED"
+            cd "$tree"
+            git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              commit -am "docs: pin the one-line installer to the commit that installs v$VERSION (#$ISSUE)"
+            git push --force -u origin "$branch"
+            pr="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+              --title "docs: pin the one-line installer to the commit that installs v$VERSION (#$ISSUE)" --body "$(cat <<EOF
+          ## What changed
+
+          Points the README one-line installer, in all four locales, at $RECORDED, whose \`scripts/install.sh\` installs v$VERSION. Opened by the release workflow; it merges itself when required CI passes. The site picks this up on its next deploy-pages run.
+
+          ## Existing solutions review (Adopt / Adapt / Build)
+
+          - decision: N/A
+          - N/A reason: README pin update written by scripts/dev/release.py; no component, dependency or framework is introduced.
+
+          Refs #$ISSUE
+          EOF
+          )")"
+          fi
+          case "$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state --jq .state)" in
+            MERGED) echo "$pr already merged" ;;
+            OPEN) gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --squash --delete-branch ;;
+            *) echo "::error::$pr was closed without merging; the README still pins the previous release"; exit 1 ;;
+          esac

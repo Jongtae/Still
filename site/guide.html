@@ -1,0 +1,94 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Install and use guide — Still</title><link rel="stylesheet" href="assets/site.css"></head><body><header><strong>Still / Still</strong><nav aria-label="Site"><a href="./">Home</a><a href="install.html">Install and connect</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a></nav></header><main><h1>Install and use guide</h1><p>How to install Still on your computer, connect an AI and Telegram, and use it. Later sections cover registering, stopping and removing family-member instances. Run all commands in a terminal.</p><p class="notice">This page only describes install commands and screens. Do not enter any AI account or bot token on this website.</p>
+
+<h2>1. Install</h2>
+<p><strong>macOS or Linux.</strong> You do not need Homebrew, Python, Docker or git.</p>
+<pre><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh</code></pre>
+<p>The installer downloads the published release archive and checks its SHA-256 against the release manifest. If the values differ, nothing is installed. When it finishes, first-run setup continues in the same terminal. Later, open a new terminal and run <code>agentos start</code>.</p>
+<p><strong>macOS with Homebrew.</strong></p>
+<pre><code>brew install jongtae/agentos/agentos
+agentos start</code></pre>
+<p><strong>Windows.</strong> Still does not run natively on Windows yet. Open the Ubuntu environment in WSL2 and run the install command above. Codex and Claude Code must also be installed and logged in inside Ubuntu. Keep the Ubuntu window open while you use Still. If no browser window opens, open <code>http://127.0.0.1:8787</code> in your Windows browser.</p>
+
+<h2>2. First-run setup</h2>
+<p>The terminal follows your system language (Korean, Japanese, Simplified Chinese, otherwise English). Each step can be skipped with Enter. Steps you finish are kept if you stop with Ctrl-C.</p>
+<ol>
+  <li><strong>Access password</strong> (optional, 12+ characters). If you leave it empty, only this computer can open Still.</li>
+  <li><strong>AI connection.</strong> Choose ChatGPT (Codex), Claude (Claude Code) or an API key, or connect later in the browser.</li>
+  <li><strong>Telegram</strong> (optional). Paste the bot token from BotFather, and Still shows a pairing link.</li>
+</ol>
+<p>When setup finishes, the browser opens at <code>http://127.0.0.1:8787</code>. You can run <code>agentos start</code> at any time. A finished setup is not repeated, and an interrupted one resumes at the first unfinished step.</p>
+
+<h2>3. Connect an AI</h2>
+<ul>
+  <li><strong>ChatGPT plan (Codex).</strong> Install the official Codex CLI and run <code>codex login</code>. Then confirm the Codex login in Still settings. Still does not request, read or store your Codex login. It only records that you confirmed it.</li>
+  <li><strong>Claude plan (Claude Code).</strong> Install Claude Code, run <code>claude setup-token</code>, and paste the token once into the Claude Code token field in Still. The token is kept in this computer's private credential store and is passed only to Claude Code.</li>
+  <li><strong>Direct model connection.</strong> You can use Ollama, an OpenAI-compatible Chat Completions endpoint, or an OpenAI or Anthropic API key. Choose the provider, endpoint and model name, run the connection test, and apply only a successful configuration. API keys are kept in a private local file.</li>
+</ul>
+<p class="notice">Requests send conversation content to OpenAI or Anthropic. A subscription engine receives only the tools Still allows. It does not get your local files, credentials or arbitrary shell access.</p>
+
+<h2>4. Connect Telegram</h2>
+<ol>
+  <li>Create a new bot with BotFather in Telegram and copy its token. Use a dedicated bot that has no webhook set.</li>
+  <li>In the browser, open Settings → External connections → Telegram connection settings. Paste the token and connect.</li>
+  <li>Open Telegram from the link, then press <strong>Start</strong> in your own account to finish pairing.</li>
+</ol>
+<p>Only the paired private account can send requests. Still uses outbound polling, so you do not need to open any public inbound port. Remote requests are processed only while the computer is on and awake.</p>
+
+<h2>5. Try it</h2>
+<p>Ask for what you need in the Telegram chat. For example, “My cat has been off her food lately. What should I try?” While answering, Still notes that you have a cat and tells you so, with an undo option. Later, asking “Find me a robot vacuum under $500” can take cat hair into account without you mentioning the cat again.</p>
+<p>To check the connection without a model, send <code>/note Review the launch on Friday</code>, then <code>/notes</code> to list your notes. Use the browser to change connections and review task records.</p>
+
+<h2>6. Restart, update and remove</h2>
+<table>
+  <thead><tr><th>Task</th><th>Command</th></tr></thead>
+  <tbody>
+    <tr><td>Restart</td><td><code>agentos start</code></td></tr>
+    <tr><td>Update (Homebrew)</td><td>If it is running, stop it with Ctrl-C, then run <code>brew update</code>, <code>brew upgrade jongtae/agentos/agentos</code> and <code>agentos start</code></td></tr>
+    <tr><td>Update (install script)</td><td>Run the install command again</td></tr>
+    <tr><td>Remove the program (uv install)</td><td><code>uv tool uninstall personal-agentos</code></td></tr>
+    <tr><td>Check current state</td><td><code>agentos guide</code> (does not show task content or credentials)</td></tr>
+  </tbody>
+</table>
+<p>Your data stays in <code>~/.local/share/agentos</code>. Removing the program does not delete this folder. To back up, stop Still and copy the whole folder. It contains private conversations and credentials. Credentials are protected by file permissions; the application does not encrypt them separately.</p>
+
+<h2>7. Background service (macOS)</h2>
+<p>You can register Still to start at login so you do not need to keep a terminal open.</p>
+<pre><code>agentos service install    # register and start
+agentos service status     # show launchd state and the health check result
+agentos service restart
+agentos service stop       # stop and disable persistently
+agentos service start      # re-enable and start a stopped service
+agentos service uninstall  # remove the registration only; data is kept
+agentos service upgrade    # refresh the service definition after replacing the executable</code></pre>
+<p class="notice">A registered service runs with <code>KeepAlive</code>, so launchd restarts it when its process exits. Killing the process does not stop it. Use <code>service stop</code>. Automatic restart was tested with launchctl replaced by a test double; behaviour after a reboot must be confirmed on the owner's Mac.</p>
+
+<h2>8. Family-member instances</h2>
+<p>Each family member can have their own Still instance on this Mac, with its own memory, folders, approvals, work history and Telegram bot. Nothing is shared with your own instance.</p>
+
+<h3>Register</h3>
+<pre><code>agentos family add spouse --display-name "Spouse assistant"</code></pre>
+<ul>
+  <li>Creates and starts the instance, then uses your installed <code>ngrok</code> to make a temporary HTTPS setup link (about 30 minutes) and sends it to you in Telegram.</li>
+  <li>The family member opens the link and creates their own bot in Telegram. Your bot, folders, memory and other connections are not copied.</li>
+  <li>From your settings, only the AI keys or tokens that the instance needs are copied. If you change a key later, the instance keeps the old one until you set its route again.</li>
+  <li>To choose the port, pass <code>--port 8797</code>. Without it, Still uses the next free pair starting at 8797.</li>
+</ul>
+<p>To register only the service, without the setup link, run the following. Names may use lowercase letters, digits and hyphens. The port must be free, and 8787 cannot be used.</p>
+<pre><code>agentos service install --instance spouse --port 8797</code></pre>
+<p>The setup page opens at <code>http://127.0.0.1:8797/</code>. The setup link is in that instance's <code>private/setup-link.txt</code>.</p>
+
+<h3>Check, stop, start and remove</h3>
+<pre><code>agentos service status    --instance spouse   # check state
+agentos service stop      --instance spouse   # stop and disable persistently
+agentos service start     --instance spouse   # re-enable and start a stopped instance
+agentos service uninstall --instance spouse   # remove the registration; data is kept</code></pre>
+<p>To remove an instance completely, run <strong><code>stop</code> first, then <code>uninstall</code></strong>. <code>uninstall</code> removes only the registration and keeps the data folder (<code>~/.local/share/agentos-instances/spouse</code>). Still has no command that deletes instance data. To delete it, stop the instance and remove that folder yourself. This cannot be undone.</p>
+
+<h2>9. Troubleshooting</h2>
+<ul>
+  <li><strong>The browser does not open.</strong> Before setup is finished, open the link in <code>~/.local/share/agentos/private/setup-link.txt</code> on this computer. Do not send this file to anyone before setup.</li>
+  <li><strong>Port conflict.</strong> Start on another port, for example <code>agentos start --port 8788</code>.</li>
+  <li><strong>Work was interrupted.</strong> After a restart, work that was in progress is marked interrupted, and a Telegram message that was being sent is marked unknown. Still does not resend either silently. Check the web record and send a new request if needed.</li>
+  <li><strong>Status summary.</strong> <code>agentos guide</code> shows counts and next steps only. It does not show task content or credentials.</li>
+</ul>
+</main><footer><a href="./">Home</a> · <a href="install.html">Install and connect</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a></footer></body></html>

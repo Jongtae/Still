@@ -1,0 +1,2254 @@
+"""Embedded macOS system WebKit browser worker (SEC-BROWSER-02 #680).
+
+Run as ``python -P -m personal_agent.browser_worker --profile <id>``.  The
+worker owns the process's main thread and the Cocoa run loop (AppKit and
+WebKit objects may only be created and used there); a reader thread hands
+every command to the main thread with ``AppHelper.callAfter``.  It speaks JSON
+lines: one request per stdin line, one response per stdout line.
+
+Request:  ``{"id": 7, "op": "navigate", "timeout": 20, ...arguments}``
+Response: ``{"id": 7, "ok": true, ...result}`` or ``{"id": 7, "ok": false, "error": "<code>"}``
+Events:   ``{"event": "ready" | "hidden" | "unavailable"}`` (no ``id``).
+
+Ops: ``navigate``, ``settle``, ``snapshot``, ``click``, ``type``, ``release_submit``,
+``show``, ``hide``, ``state``, ``cookies_export``, ``cookies_import``, ``cookies_delete``,
+``cookies_clear``, ``quit``.  Every op carries a deadline; the worker answers
+``timeout`` when it passes.  Errors are AgentOS codes, never library text,
+and every line is ASCII JSON (a page's lone surrogate cannot break the pipe).
+
+Session material: the web view uses ``WKWebsiteDataStore.nonPersistentDataStore()``
+so WebKit keeps cookies in memory only and never writes a cookie file.  The
+parent exports cookies over the pipe and keeps them in the encrypted jar
+(``browser_jar``); the worker writes nothing to disk.
+
+Page scripts run in ``WKContentWorld.defaultClientWorld()`` (the page cannot replace
+the DOM functions they call).  Input is native and bound to one element:
+``LOCATE`` resolves the element by index, checks the descriptor the payment
+guard classified (tag, type, autocomplete, name, form membership, whether its
+form holds a payment field), hit-tests it and keeps a handle; the native
+press is followed by ``VERIFY_CLICK`` (a capture-phase guard in the same
+world cancels a trusted click that lands elsewhere) or ``INSERT`` (the held
+element must be the focused one and still match, then ``insertText`` runs in
+that same script turn).  The element is never resolved a second time.
+
+Submit guard (#698): for a page's whole life, from document start, a
+capture-phase ``submit`` listener in the client world cancels a submit of any
+form holding a card, CVC, card-expiry, one-time-code or password field,
+whatever triggered it and whenever: a label forwarding a press, a scripted
+click, ``requestSubmit``, a timer or an async-validation callback after the
+step answered.  ``form.submit()`` fires no ``submit`` event, so a page-world
+user script wraps ``HTMLFormElement.prototype.submit`` at document start to
+signal the same listener (see ``PAGE_WRAP_USER_SCRIPT`` for its limits).  A
+native ``submit`` neither sees (saved from another realm, such as a fresh
+iframe's prototype) still starts a main-frame form-submission navigation,
+which is refused while the guard is armed when it targets a payment form's
+action (``FORM_NAVIGATION_SCRIPT``, #700).  The owner's login window turns the
+guard off while shown.
+
+Approvals (#700): a step the parent sends with ``approved`` lets a submit of
+its target's payment form through (``LOCATE_SCRIPT`` names which), during the
+step and for ``SUBMIT_WINDOW_SECONDS`` after it, for that form's own deferred
+submit.  A cancelled submit is recorded with its form (position, method,
+action, page) and the digest of what it would send, and held in the page: a
+step answers ``approval_required``, one cancelled between steps is reported by
+the next snapshot (``cancelled_submit``) or step, and ``release_submit`` makes
+exactly that held submit again once the owner approved that form in that state.
+
+Destinations: every navigation (typed, redirect, form, ``window.open``, frame)
+passes ``decidePolicyForNavigationAction``: only http(s) to public addresses,
+after DNS resolution, reusing ``local_tools``' denied names and its
+private-network table (``local_host``).  Loopback, private, link-local and ``.local`` hosts
+(the AgentOS UI included) are refused.  Tests may allow one exact fixture
+origin with ``--test-allow-origin``, an argument only a test constructor sets.
+
+Reuse: Apple's WebKit (``WKWebView``) through PyObjC (MIT) is the adopted
+engine; ``WKWebsiteDataRecord.displayName`` is WebKit's own per-site
+(registrable domain) grouping.  No site, provider or category is named here.
+"""
+import argparse
+import base64
+import hashlib
+import ipaddress
+import json
+import os
+import platform
+import plistlib
+import socket
+import sys
+import threading
+import time
+import uuid
+from urllib.parse import urlsplit
+
+#: Appended to the user agent.  AgentOS's own HTTP server refuses every
+#: request that carries it, so a page in the embedded browser can never use
+#: the owner's AgentOS UI or API (#680 review P1-2).
+EMBEDDED_UA_TOKEN = 'AgentOS-Embedded/1'
+#: #930: where the worker window waits, ordered in but off every screen.
+PARK_ORIGIN = -30000
+#: #936: the most page dialogs one step records, and how much of each it keeps.
+DIALOG_RECORDS = 5
+DIALOG_TEXT_LIMIT = 200
+
+#: ``index`` is an element's position in ``document.querySelectorAll(SELECTOR)``.
+SELECTOR = ('a[href], button, input, select, textarea, summary, [role="button"], [role="link"], [role="textbox"], '
+            '[role="checkbox"], [role="radio"], [role="combobox"], [role="menuitem"], [role="tab"]')
+
+#: The cancelable event the page-world ``form.submit()`` wrapper dispatches on
+#: the form so the client-world submit guard can refuse it (#698).
+SUBMIT_SIGNAL = 'agentos-guarded-submit'
+#: #1181: set on an element whose press-handler property a page script assigns.  An
+#: attribute, not an event: it is visible from the client world whether or not the
+#: element is connected yet or sits in a shadow tree.
+PRESS_MARK = 'data-agentos-press'
+#: The press handlers ``scripted`` checks (the JS ``PRESS_HANDLERS`` in ``PRELUDE``).
+PRESS_HANDLER_KEYS = ('onclick', 'onmousedown', 'onmouseup', 'onpointerdown', 'onpointerup', 'onauxclick',
+                      'ontouchstart', 'ontouchend', 'onkeydown', 'onkeyup', 'onkeypress', 'onsubmit')
+#: The client-world message handler a cancelled submit is reported through.
+GUARD_HANDLER = 'agentosGuard'
+#: ``autocomplete`` field names of a payment form (with ``password`` inputs).
+#: ``browser_session.PAYMENT_AUTOCOMPLETE`` is this same set.
+PAYMENT_TOKENS = ('cc-csc', 'cc-exp', 'cc-exp-month', 'cc-exp-year', 'cc-number', 'one-time-code')
+#: ``autocomplete`` field names whose values never leave the page, not even
+#: inside a submitted form's state (#700).  ``browser_session.GUARDED_AUTOCOMPLETE``
+#: is this same set.
+SECRET_TOKENS = frozenset({'current-password', 'new-password', 'one-time-code', 'cc-number', 'cc-csc', 'cc-exp',
+                           'cc-exp-month', 'cc-exp-year', 'cc-name'})
+#: #700: how long an approval's allowance outlives its step (or the release of a
+#: held submit), for that same form's own deferred submit (async validation, then
+#: ``form.submit()``).  A later click or type step ends it at once.
+SUBMIT_WINDOW_SECONDS = 15
+#: #700: how long a payment-form submit the guard let through keeps the navigation
+#: it starts (and that navigation's redirects) from being refused.
+VETTED_SECONDS = 30
+#: #700: the longest a form-submission navigation waits for the page to answer
+#: which form it submits; no answer is a refusal.
+FORM_CHECK_SECONDS = 2.0
+
+#: Helpers every page script shares.  Strings leaving the page are well-formed
+#: UTF-16 and cut at code-point boundaries.  ``describe`` mirrors the guard's
+#: classification in ``browser_session`` (the payment tokens are passed in).
+PRELUDE = r"""
+const SELECTOR = %(selector)s;
+const well = (value) => { const s = String(value == null ? '' : value);
+  return typeof s.toWellFormed === 'function' ? s.toWellFormed()
+    : s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '�'); };
+const cut = (value, n) => { let s = well(value); if (s.length <= n) return s; s = s.slice(0, n);
+  return /[\uD800-\uDBFF]$/.test(s) ? s.slice(0, -1) : s; };
+const visible = (el) => {
+  if (el.type === 'hidden') return false;
+  const style = getComputedStyle(el);
+  if (style.visibility === 'hidden' || style.display === 'none') return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 || rect.height > 0;
+};
+const clean = (text) => cut(String(text || '').replace(/\s+/g, ' ').trim(), 160);
+// The element's <label> without touching ``el.labels``: reading a label through
+// that list on password-form pages left WebKit (macOS 26) unable to evaluate any
+// further script in the document.
+const labelOf = (el) => { const wrapping = el.closest('label');
+  if (wrapping) return wrapping.innerText;
+  const id = el.getAttribute('id');
+  const target = id ? document.querySelector('label[for="' + CSS.escape(id) + '"]') : null;
+  return target ? target.innerText : ''; };
+// ``aria-labelledby`` names an element first (accname): the referenced elements' text.
+const labelledBy = (el) => (el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean)
+  .map((id) => { const node = document.getElementById(id); return node ? (node.innerText || node.textContent || '') : ''; })
+  .join(' ').trim();
+const nameOf = (el) => {
+  const tag = el.tagName.toLowerCase();
+  const label = labelledBy(el) || el.getAttribute('aria-label') || labelOf(el) ||
+    el.getAttribute('placeholder') || el.getAttribute('title') || el.getAttribute('alt') ||
+    ((tag === 'input' && (el.type === 'submit' || el.type === 'button')) ? el.value : '') ||
+    el.innerText || el.textContent || (tag === 'input' ? el.name : '') || '';
+  return clean(label);
+};
+const typeOf = (el) => { const tag = el.tagName.toLowerCase();
+  return tag === 'input' ? (el.type || 'text').toLowerCase() : (tag === 'button' ? (el.type || 'submit').toLowerCase() : ''); };
+const autocompleteOf = (el) => (el.getAttribute('autocomplete') || '').toLowerCase().trim();
+const fieldToken = (el) => { const tokens = autocompleteOf(el).split(/\s+/).filter(Boolean);
+  if (tokens.length && tokens[tokens.length - 1] === 'webauthn') tokens.pop(); return tokens.length ? tokens[tokens.length - 1] : ''; };
+const formOf = (el) => el.form || el.closest('form');
+// The control a <label> forwards a press to, for the label ``el`` is or sits in,
+// when that control is another element (#698): HTML's ``label.control`` (the
+// ``for`` target, else the first labelable descendant), resolved without ``el.labels``.
+const LABELABLE = 'button, input:not([type="hidden"]), meter, output, progress, select, textarea';
+const labelControl = (el) => { const label = el.closest('label'); if (!label) return null;
+  const id = label.getAttribute('for');
+  const control = id !== null ? document.getElementById(id) : label.querySelector(LABELABLE);
+  return control && control !== el ? control : null; };
+const paymentField = (el, tokens) => typeOf(el) === 'password' || tokens.includes(fieldToken(el));
+const formHolds = (form, tokens) => !!form &&
+  Array.from(document.querySelectorAll(SELECTOR)).some((other) => formOf(other) === form && visible(other) && paymentField(other, tokens));
+const paymentForm = (el, tokens) => { if (formHolds(formOf(el), tokens)) return true;
+  const control = labelControl(el); return !!control && formHolds(formOf(control), tokens); };
+// #758: the name of the control a label forwards a press to, and whether that
+// control is one a press on which can commit (``browser_session.commit_control``).
+// A control's own text (its content or button value) besides its accessible name:
+// a ``<label for>`` can give a pay button a neutral name.
+// Besides its accessible name: its text, its descendants' image alt, svg title and
+// aria-label, and a button input's value (never another input's value), bounded at
+// 600 characters, not the name's 160.
+const BUTTON_INPUTS = ['submit', 'button', 'image', 'reset'];
+const ownText = (el) => { const tag = el.tagName.toLowerCase(), parts = [el.innerText || ''];
+  if (tag === 'input' && BUTTON_INPUTS.includes(typeOf(el))) parts.push(el.value || '', el.getAttribute('alt') || '');
+  Array.from(el.querySelectorAll('img[alt], svg title, [aria-label]')).slice(0, 12).forEach((node) =>
+    parts.push(node.tagName.toLowerCase() === 'img' ? node.getAttribute('alt') : node.tagName.toLowerCase() === 'title'
+      ? node.textContent : node.getAttribute('aria-label')));
+  return cut(parts.join(' ').replace(/\s+/g, ' ').trim(), 600); };
+// A control a press on which can do something: anything the selector lists but a
+// field that takes a value (text, select, checkbox, radio and the like).
+const VALUE_ROLES = ['textbox', 'searchbox', 'combobox', 'listbox', 'checkbox', 'radio', 'switch', 'slider', 'spinbutton'];
+const buttonish = (el) => { const tag = el.tagName.toLowerCase();
+  const roles = (el.getAttribute('role') || '').toLowerCase().split(/\s+/).filter(Boolean);
+  // The tag decides first: a role attribute never makes a button or a link a field.
+  if (tag === 'button' || tag === 'summary' || (tag === 'a' && el.hasAttribute('href'))) return true;
+  if (tag === 'input') return BUTTON_INPUTS.includes(typeOf(el));
+  if (tag === 'select' || tag === 'textarea') return false;
+  return !roles.some((role) => VALUE_ROLES.includes(role)); };
+// A link that goes somewhere (a styled ``href="#"`` or ``javascript:`` link runs a script instead).
+// #899: only a non-empty http(s) address, no press handler the DOM exposes (any ``on*``
+// attribute, or a handler property set by script), and no ``role=button``: pressing
+// it can only open a page.  A listener added with addEventListener is not visible.
+const PRESS_HANDLERS = ['onclick', 'onmousedown', 'onmouseup', 'onpointerdown', 'onpointerup', 'onauxclick',
+  'ontouchstart', 'ontouchend', 'onkeydown', 'onkeyup', 'onkeypress', 'onsubmit'];
+// #1181: a handler property a page script sets lives in the page world and reads as
+// null here; the page-world wrapper (``PAGE_WRAP_USER_SCRIPT``) marks the element instead.
+const scripted = (el) => el.getAttributeNames().some((name) => /^on/i.test(name) || name === %(mark)s) ||
+  PRESS_HANDLERS.some((key) => typeof el[key] === 'function');
+const navLink = (el) => el.tagName.toLowerCase() === 'a' && el.hasAttribute('href') &&
+  !/^\s*(?:$|#|javascript:)/i.test(el.getAttribute('href') || '') && /^https?:/i.test(el.href || '') &&
+  !(el.getAttribute('role') || '').toLowerCase().split(/\s+/).includes('button') && !scripted(el);
+const commitText = (el) => nameOf(el) + ' | ' + ownText(el);
+const labelName = (el) => { const control = labelControl(el); return control && buttonish(control) ? commitText(control) : ''; };
+// The nearest pressable ancestor a press on ``el`` also activates (a trusted click bubbles).
+const PRESSABLE = 'button, a[href], a[onclick], summary, input[type="submit"], input[type="image"], input[type="button"], ' +
+  '[role~="button"], [role~="link"], [role~="menuitem"], [onclick]';
+// Up to three pressable ancestors (a neutral wrapper can sit between it and a pay
+// control); never ``body`` or ``html``.
+const ancestorText = (el) => { const texts = []; let node = el.parentElement;
+  while (node && texts.length < 3) {
+    const up = node.closest(PRESSABLE);
+    if (!up || up === document.body || up === document.documentElement) break;
+    if (buttonish(up)) texts.push(commitText(up));
+    node = up.parentElement;
+  }
+  return texts.join(' || '); };
+// What is around it (a product and its price), for the owner's approval prompt and binding.
+const contextOf = (el) => { let node = el.parentElement; const own = (el.innerText || '').length;
+  for (let depth = 0; node && depth < 4; depth += 1, node = node.parentElement) {
+    const text = (node.innerText || '').replace(/\s+/g, ' ').trim();
+    if (text.length > own + 12) return cut(text, 300);
+  }
+  return ''; };
+// #899 review P2-2: whether it navigates and is pressable is part of what the guard
+// classified, so a page that rewrites the link or adds a handler after the snapshot
+// is refused (target_changed) rather than pressed.
+const describe = (el, tokens) => ({tag: el.tagName.toLowerCase(), type: typeOf(el), autocomplete: autocompleteOf(el), name: nameOf(el),
+  own_text: ownText(el), label_name: labelName(el), ancestor_text: ancestorText(el), in_form: !!formOf(el),
+  payment_form: paymentForm(el, tokens), nav_link: navLink(el), pressable: buttonish(el),
+  href: el.tagName.toLowerCase() === 'a' ? cut(el.href, 2000) : ''});
+const same = (actual, expect) => !!expect && ['tag', 'type', 'autocomplete', 'name', 'own_text', 'label_name', 'ancestor_text',
+  'in_form', 'payment_form', 'nav_link', 'pressable', 'href']
+  .every((key) => key in expect && actual[key] === expect[key]);
+const state = () => (window.__agentos = window.__agentos || {targets: new Map(), guard: null, listening: false,
+  off: false, allow: null, cancelled: null, held: null, vetted: [], submitListening: false});
+// A form's named controls shadow its own properties (``<input name="action">`` is
+// ``form.action``), so forms are read through the prototype getters (#700).
+const FORM = HTMLFormElement.prototype, own = (proto, key) => Object.getOwnPropertyDescriptor(proto, key);
+const formControls = own(FORM, 'elements').get, formAction = own(FORM, 'action').get, formMethod = own(FORM, 'method').get;
+const documentForms = own(Document.prototype, 'forms').get, textOf = own(HTMLElement.prototype, 'innerText').get;
+const qsa = (node, selector) => Element.prototype.querySelectorAll.call(node, selector);
+const attr = (node, name) => Element.prototype.getAttribute.call(node, name);
+// The submit guard (#698, #700), armed for the page's whole life: a submit of a form
+// holding a payment field (any field, shown or not) is cancelled whatever triggered it
+// and whenever -- a trusted or scripted click, a label, ``requestSubmit``, Enter, a
+// timer, an async callback, or ``form.submit()`` through the page-world signal.  Only
+// an approval's allowance lets one through: ``allow`` names the forms (position,
+// method, action) and lasts until ``until``.  The owner's login window sets ``off``.
+// A cancelled submit is held, so an approval of exactly it can release it.
+const GUARD_TOKENS = %(tokens)s;
+const SECRET_TOKENS = %(secret)s;
+const WINDOW_MS = %(window)d, VETTED_MS = %(vetted)d, ORDINARY_MS = 2000;
+const formFields = (form) => { const seen = new Set(Array.from(formControls.call(form)));
+  qsa(form, SELECTOR).forEach((el) => seen.add(el)); return Array.from(seen); };
+const holdsPayment = (form) => formFields(form).some((field) => paymentField(field, GUARD_TOKENS));
+// Which form: its position among the document's forms, its method and resolved action.
+const formRecord = (form) => ({dom: Array.prototype.indexOf.call(documentForms.call(document), form),
+  method: cut(String(formMethod.call(form) || 'get').toLowerCase(), 16),
+  action: cut(String(formAction.call(form) || location.href), 2000)});
+const sameForm = (a, b) => !!a && !!b && a.dom === b.dom && a.method === b.method && a.action === b.action;
+// What a submit of the form sends (#700): the name and value of every control the
+// submission includes (hidden inputs too, whole values), in order, JSON-encoded so no
+// two payloads read the same, then the form's visible text.  A credential, card or
+// code value is never part of it, only its name.
+const secretField = (el) => typeOf(el) === 'password' || SECRET_TOKENS.includes(fieldToken(el));
+const NOT_SENT = ['submit', 'image', 'reset', 'button'];
+const controlRows = (form, submitter) => { const rows = [];
+  for (const el of Array.from(formControls.call(form))) {
+    const name = attr(el, 'name'), tag = el.tagName.toLowerCase(), type = typeOf(el);
+    if (!name || !['input', 'select', 'textarea', 'button'].includes(tag) || el.matches(':disabled')) continue;
+    if (tag === 'button' || NOT_SENT.includes(type)) {
+      if (el === submitter) rows.push([well(name), well(el.value), 'submitter']);
+      continue;
+    }
+    if ((type === 'checkbox' || type === 'radio') && !el.checked) continue;
+    const value = secretField(el) ? ['<guarded>'] : type === 'file' ? ['<file>']
+      : tag === 'select' ? Array.from(el.selectedOptions).map((option) => well(option.value)) : well(el.value);
+    rows.push([well(name), value, type === 'hidden' ? 'hidden' : 'shown']);
+  }
+  return rows; };
+const formState = (form, submitter) =>
+  JSON.stringify({controls: controlRows(form, submitter), text: cut(textOf.call(form) || '', 6000)});
+// What an approval's allowance holds a form to (#700 review): the values the owner saw
+// (every shown control) and every hidden value that was already set.  A hidden value
+// the page fills in later (a payment token) is not part of it; a changed amount is.
+const approvedState = (form) => { const rows = controlRows(form, null);
+  return {shown: JSON.stringify(rows.filter((row) => row[2] === 'shown')),
+    fixed: rows.filter((row) => row[2] === 'hidden' && row[1] !== '').map((row) => JSON.stringify(row))}; };
+const keeps = (entry, form) => { const now = approvedState(form);
+  return now.shown === entry.state.shown && entry.state.fixed.every((row) => now.fixed.includes(row)); };
+// An allowance names forms, each with the state it is held to, and ends at ``until``
+// or after the first submit of one of them that goes ahead (``spent``).
+const allowFor = (forms, until) => ({forms: forms.map((form) => ({record: formRecord(form), state: approvedState(form)})),
+  until, spent: false});
+const allows = (g, form) => { const a = g.allow; if (!a || a.spent || Date.now() > a.until) return null;
+  const record = formRecord(form);
+  return a.forms.some((entry) => sameForm(entry.record, record) && keeps(entry, form)) ? a : null; };
+// A submit the guard let through (``payment``: of a payment form, by an allowance):
+// the form-submission navigation it starts is not refused.  ``effective`` is where
+// the submit goes: a submitter's ``formaction``/``formmethod`` override the form's.
+const vet = (g, record, payment = true) => { const entry = {...record, payment, t: Date.now()};
+  g.vetted = (g.vetted || []).concat([entry]).slice(-8); return entry; };
+const effective = (form, submitter) => { const record = formRecord(form);
+  if (submitter && submitter.hasAttribute('formaction')) record.action = cut(String(submitter.formAction), 2000);
+  if (submitter && submitter.hasAttribute('formmethod')) record.method = cut(String(submitter.formMethod).toLowerCase(), 16);
+  return record; };
+// A held submit is recorded where it would go (the submitter's overrides included).
+const hold = (g, form, submitter, kind) => {
+  const record = {...effective(form, submitter), id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+    page: cut(location.href, 2000), state: formState(form, submitter)};
+  g.held = {id: record.id, form: new WeakRef(form), submitter: submitter ? new WeakRef(submitter) : null, kind,
+    state: record.state, record: {dom: record.dom, method: record.method, action: record.action}};
+  g.cancelled = record;
+  try { window.webkit.messageHandlers[%(handler)s].postMessage(record); } catch (error) { /* read by the next script */ }
+  return record; };
+const armSubmitGuard = () => { const s = state(); if (s.submitListening) return; s.submitListening = true;
+  const cancel = (event) => { const g = state(); if (g.off) return;
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    try {
+      const submitter = event.submitter || null;
+      if (!holdsPayment(form)) { vet(g, effective(form, submitter), false); return; }
+      const allowance = allows(g, form);
+      if (allowance) {
+        const entry = vet(g, effective(form, submitter));
+        // Spent once the submit goes ahead: at once for ``form.submit()``, after the
+        // event for a ``submit`` event no page handler prevented.  A prevented one
+        // vouches for no navigation either (#758 item 10).
+        if (event.type === %(signal)s) allowance.spent = true;
+        else setTimeout(() => { if (!event.defaultPrevented) allowance.spent = true;
+          else g.vetted = (g.vetted || []).filter((v) => v !== entry); }, 0);
+        return;
+      }
+      event.preventDefault(); event.stopImmediatePropagation();
+      hold(g, form, submitter, event.type === %(signal)s ? 'signal' : 'event');
+    } catch (error) { event.preventDefault(); event.stopImmediatePropagation(); } };   // fail closed
+  window.addEventListener('submit', cancel, true);
+  window.addEventListener(%(signal)s, cancel, true); };
+const takeCancelled = () => { const s = state(), c = s.cancelled; s.cancelled = null; return c; };
+""" % {'selector': json.dumps(SELECTOR), 'signal': json.dumps(SUBMIT_SIGNAL), 'handler': json.dumps(GUARD_HANDLER),
+       'mark': json.dumps(PRESS_MARK),
+       'tokens': json.dumps(list(PAYMENT_TOKENS)), 'secret': json.dumps(sorted(SECRET_TOKENS)),
+       'window': SUBMIT_WINDOW_SECONDS * 1000, 'vetted': VETTED_SECONDS * 1000}
+
+#: The snapshot: elements the model can act on and the fields the guard
+#: reasons about.  Plain data only (no node handles, no HTML).
+SNAPSHOT_SCRIPT = PRELUDE + r"""
+const roleOf = (el) => {
+  const role = el.getAttribute('role');
+  if (role) return role;
+  const tag = el.tagName.toLowerCase();
+  if (tag === 'a') return 'link';
+  if (tag === 'button' || tag === 'summary') return 'button';
+  if (tag === 'select') return 'combobox';
+  if (tag === 'textarea') return 'textbox';
+  if (tag === 'input') {
+    const type = typeOf(el);
+    if (['submit', 'button', 'image', 'reset'].includes(type)) return 'button';
+    if (type === 'checkbox' || type === 'radio') return type;
+    return 'textbox';
+  }
+  return tag;
+};
+const NO_VALUE = ['submit', 'button', 'image', 'reset', 'checkbox', 'radio', 'file', 'password', 'hidden'];
+const forms = new Map();
+const idOf = (f) => { if (!f) return null; if (!forms.has(f)) forms.set(f, forms.size + 1); return forms.get(f); };
+const elements = [];
+Array.from(document.querySelectorAll(SELECTOR)).forEach((el, index) => {
+  if (!visible(el)) return;
+  const tag = el.tagName.toLowerCase();
+  const form = formOf(el);
+  const formId = idOf(form);
+  const control = labelControl(el);
+  const type = typeOf(el);
+  const takesValue = (tag === 'input' && !NO_VALUE.includes(type)) || tag === 'textarea' || tag === 'select';
+  elements.push({index, role: well(roleOf(el)), name: nameOf(el), href: tag === 'a' ? cut(el.href, 2000) : null, tag, type: well(type),
+    autocomplete: well(autocompleteOf(el)), value: takesValue ? cut(el.value || '', 200) : null, form: formId,
+    label_form: idOf(control ? formOf(control) : null), own_text: ownText(el), label_name: labelName(el),
+    ancestor_text: ancestorText(el), pressable: buttonish(el), nav_link: navLink(el), context: contextOf(el),
+    disabled: !!el.disabled});
+});
+return JSON.stringify({url: cut(location.href, 4000), title: cut(document.title, 400),
+  text: cut(document.body ? document.body.innerText : '', 20000), elements: elements.slice(0, 300),
+  forms: Array.from(forms.entries()).map(([form, id]) => ({id, text: cut(textOf.call(form) || '', 6000), ...formRecord(form)})),
+  cancelled: takeCancelled()});
+"""
+
+#: Arguments: index, expect, tokens, nonce, approved, lasts.  Resolve once,
+#: check, hit-test, keep the handle and arm the click guard for it.  An approved
+#: step lets a submit of its target's payment form through (#700): the target's
+#: own form or the form its label forwards to when either holds a payment
+#: field, else the forms with a shown payment field (the ones whose state the
+#: approval's binding covered); for at most ``lasts`` ms, which
+#: ``STEP_END_SCRIPT`` shortens to ``WINDOW_MS``.  Any other step ends an
+#: earlier allowance, and every step forgets earlier let-through submits.
+LOCATE_SCRIPT = PRELUDE + r"""
+const el = document.querySelectorAll(SELECTOR)[index];
+if (!el) return JSON.stringify({error: 'target_missing'});
+if (!same(describe(el, tokens), expect)) return JSON.stringify({error: 'target_changed'});
+el.scrollIntoView({block: 'center', inline: 'center'});
+const rect = el.getBoundingClientRect();
+const top = Math.max(rect.top, 0), bottom = Math.min(rect.bottom, window.innerHeight);
+const left = Math.max(rect.left, 0), right = Math.min(rect.right, window.innerWidth);
+if (right - left < 1 || bottom - top < 1) return JSON.stringify({error: 'target_hidden'});
+const x = (left + right) / 2, y = (top + bottom) / 2;
+const hit = document.elementFromPoint(x, y);
+if (!hit || !(hit === el || el.contains(hit) || hit.control === el)) {
+  // #1395: say what covers it - the outermost ancestor of the hit that does not
+  // hold the target (an overlay or banner) and the listed controls inside it -
+  // so the model can close or move it instead of retrying the same press.
+  let layer = hit;
+  while (layer && layer.parentElement && !layer.parentElement.contains(el)) layer = layer.parentElement;
+  if (layer && layer.contains(el)) layer = null;   // a hit on the target's own ancestor names no cover
+  const controls = [];
+  if (layer) Array.from(document.querySelectorAll(SELECTOR)).forEach((c, i) => {
+    if (controls.length < 8 && layer.contains(c) && visible(c)) controls.push({index: i, name: cut(nameOf(c), 80)});
+  });
+  return JSON.stringify({error: 'target_obscured', cover: {text: layer ? cut(layer.innerText || '', 160) : '', controls}});
+}
+const s = state();
+s.targets.clear();
+s.targets.set(nonce, new WeakRef(el));
+s.guard = {nonce, bad: false};
+if (!s.listening) {
+  // A trusted click that lands anywhere but the held element is cancelled.
+  window.addEventListener('click', (event) => {
+    const g = state().guard; if (!g || !event.isTrusted) return;
+    const ref = state().targets.get(g.nonce), target = ref && ref.deref();
+    if (!target || !(event.target === target || target.contains(event.target) || event.target.control === target)) {
+      g.bad = true; event.preventDefault(); event.stopImmediatePropagation();
+    }
+  }, true);
+  s.listening = true;
+}
+armSubmitGuard();
+s.allow = null;
+s.vetted = [];
+if (approved === true) {
+  const control = labelControl(el);
+  let forms = [formOf(el), control ? formOf(control) : null].filter((form) => form instanceof HTMLFormElement && holdsPayment(form));
+  // Else the forms whose state the approval covered: those of a shown payment field
+  // among the elements a snapshot lists (the first 300 shown, as SNAPSHOT_SCRIPT).
+  if (!forms.length) {
+    const shown = Array.from(document.querySelectorAll(SELECTOR)).filter(visible).slice(0, 300);
+    forms = Array.from(new Set(shown.filter((field) => paymentField(field, GUARD_TOKENS)).map(formOf)))
+      .filter((form) => form instanceof HTMLFormElement);
+  }
+  s.allow = allowFor(forms, Date.now() + lasts);
+}
+const tag = el.tagName.toLowerCase();
+return JSON.stringify({x, y, editable: el.isContentEditable || tag === 'textarea' ||
+  (tag === 'input' && !['submit', 'button', 'image', 'reset', 'checkbox', 'radio', 'file', 'hidden', 'range', 'color'].includes(typeOf(el)))});
+"""
+
+#: Arguments: nonce.  Did the press land on the held element?
+VERIFY_CLICK_SCRIPT = PRELUDE + r"""
+const s = state(), g = s.guard;
+s.guard = null;
+if (!g || g.nonce !== nonce) return JSON.stringify({error: 'target_changed'});
+return JSON.stringify(g.bad ? {error: 'target_changed'} : {ok: true});
+"""
+
+#: The end of a click/type step: an approval's allowance lasts ``WINDOW_MS``
+#: more, for the same form's own deferred submit, then the guard is whole again
+#: (#700); a submit the guard cancelled is reported (#698).
+STEP_END_SCRIPT = PRELUDE + r"""
+const s = state();
+if (s.allow) s.allow.until = Math.min(s.allow.until, Date.now() + WINDOW_MS);
+return JSON.stringify({cancelled: takeCancelled()});
+"""
+
+#: Arguments: off.  The owner's login window turns the guard off, and back on.
+GUARD_SWITCH_SCRIPT = PRELUDE + r"""
+armSubmitGuard();
+const s = state();
+s.off = off === true;
+s.allow = null;
+s.held = null;
+return JSON.stringify({ok: true});
+"""
+
+#: Arguments: id.  #700: the owner approved exactly the held submit ``id`` (its
+#: form and the state it would send).  The same form must still be connected, at
+#: the same position with the same method and action, and would send the same
+#: state; then its allowance is opened for ``WINDOW_MS`` (the same form's own
+#: deferred submit included) and the submit is made again as it was made: a
+#: ``submit`` event (``requestSubmit`` with its submitter, so the page's own
+#: handlers run) or the native ``submit()`` (this world's unwrapped one).
+RELEASE_SCRIPT = PRELUDE + r"""
+armSubmitGuard();
+const s = state(), h = s.held;
+if (s.off || !h || h.id !== id) return JSON.stringify({error: 'submit_changed'});
+const form = h.form.deref(), submitter = h.submitter ? h.submitter.deref() : null;
+if (!form || !form.isConnected) return JSON.stringify({error: 'submit_changed'});
+const use = h.kind === 'event' && submitter && submitter.isConnected && submitter.form === form ? submitter : null;
+if (h.submitter && !use) return JSON.stringify({error: 'submit_changed'});
+if (!sameForm(effective(form, use), h.record) || formState(form, use) !== h.state)
+  return JSON.stringify({error: 'submit_changed'});
+s.held = null;
+s.allow = allowFor([form], Date.now() + WINDOW_MS);
+if (h.kind === 'event') {
+  FORM.requestSubmit.call(form, use || undefined);
+} else {
+  vet(s, effective(form, null));
+  s.allow.spent = true;
+  FORM.submit.call(form);
+}
+return JSON.stringify({ok: true});
+"""
+
+#: Arguments: url, method, frame (true when it goes into a subframe).  #700: a
+#: form-submission navigation (``WKNavigationTypeFormSubmitted``) from or into
+#: the main frame while the guard is armed.  The page's payment forms that
+#: submit to that URL (origin and path) with that method are the candidates;
+#: none, and it proceeds.  It also proceeds when the guard let a submit of one
+#: of them through (``vetted``) or an allowance covers one.  Otherwise the
+#: submit bypassed the ``submit`` event and the wrapped ``form.submit`` (a
+#: native ``submit`` taken from another realm, such as a fresh iframe's
+#: prototype): it is refused, and the candidate aimed where it goes is held.
+FORM_NAVIGATION_SCRIPT = PRELUDE + r"""
+armSubmitGuard();
+const s = state();
+if (s.off) return JSON.stringify({allow: true});
+const bare = (value) => { try { const u = new URL(String(value), location.href); return u.origin + u.pathname; } catch (error) { return ''; } };
+const verb = String(method || 'get').toLowerCase(), target = bare(url);
+const forms = Array.from(documentForms.call(document)).filter((form) => { const record = formRecord(form);
+  return record.method === verb && bare(record.action) === target && holdsPayment(form); });
+if (!forms.length) return JSON.stringify({allow: true});
+const now = Date.now();
+// A submit the guard let through to this place just before: a payment form's (used
+// once), or an ordinary form's.
+const passed = (s.vetted || []).find((v) => v.method === verb && bare(v.action) === target &&
+  now - v.t <= (v.payment ? VETTED_MS : ORDINARY_MS));
+if (passed) {
+  if (passed.payment) s.vetted = s.vetted.filter((v) => v !== passed);
+  return JSON.stringify({allow: true});
+}
+const covered = forms.find((form) => allows(s, form));
+if (covered) { allows(s, covered).spent = true; return JSON.stringify({allow: true}); }
+// Hold the form most likely submitted: one aimed where the navigation goes (a frame or not).
+const aimed = (form) => { const t = String(attr(form, 'target') || '').toLowerCase();
+  const own = !t || ['_self', '_top', '_parent', '_blank'].includes(t); return frame === true ? !own : own; };
+const likely = forms.filter(aimed).concat(forms.filter((form) => !aimed(form)));
+return JSON.stringify({allow: false, cancelled: hold(s, likely[0], null, 'native')});
+"""
+
+
+def client_guard_user_script(off=False):
+    """Client world, at document start of every main-frame page: the guard is
+    registered before any page script can add its own capture listener on
+    ``window``, armed (or off while the owner's login window shows)."""
+    return ('(() => {\n' + PRELUDE + '\nstate().off = ' + ('true' if off else 'false') +
+            ';\narmSubmitGuard();\n})();')
+
+
+#: Page world, at document start of every main-frame page (#698).
+#: ``form.submit()`` fires no ``submit`` event (HTML: the method skips it) and
+#: the client world cannot wrap the page's own prototype, so the page's
+#: ``HTMLFormElement.prototype.submit`` is wrapped before any page script runs:
+#: it dispatches the signal on the form with the ``dispatchEvent``,
+#: ``CustomEvent`` and ``defaultPrevented`` captured at that moment, and the
+#: client-world guard cancels it for a payment form.  The prototype of another
+#: realm (a new iframe's ``HTMLFormElement.prototype.submit`` called on this
+#: page's form) is not wrapped: that submit is refused as a navigation instead
+#: (``FORM_NAVIGATION_SCRIPT``, #700).  A page can detect the wrapper
+#: (``toString``), so it is not installed while the owner's login window shows
+#: (#700); ``fetch``/XHR posts are not form submits at all.
+PAGE_WRAP_USER_SCRIPT = r"""(() => {
+  const proto = HTMLFormElement.prototype, original = proto.submit;
+  if (typeof original !== 'function') return;
+  const dispatch = EventTarget.prototype.dispatchEvent, Signal = CustomEvent, apply = Reflect.apply;
+  const prevented = Object.getOwnPropertyDescriptor(Event.prototype, 'defaultPrevented').get;
+  const submit = function submit() {
+    const event = new Signal(%s, {cancelable: true});
+    apply(dispatch, this, [event]);
+    if (apply(prevented, event, [])) return undefined;
+    return apply(original, this, arguments);
+  };
+  Object.defineProperty(proto, 'submit', {value: submit, writable: true, enumerable: true, configurable: true});
+})();
+(() => {
+  // #1181: a press handler a page assigns as a property (``el.onclick = f``) is only
+  // visible in the page world, so its setter marks the element with an attribute the
+  // client world reads (connected or not, in a shadow tree or not).  This is a best-effort
+  // signal for ordinary pages, not a barrier against a hostile one: such a page can still
+  // hide a handler (``addEventListener``, a saved setter, or removing the mark), which
+  // leaves it where it was before #1181.  Forging a mark only asks for approval more often.
+  const mark = Element.prototype.setAttribute, apply = Reflect.apply;
+  for (const proto of [HTMLElement.prototype, Element.prototype, SVGElement.prototype]) {
+    for (const key of %s) {
+      const desc = Object.getOwnPropertyDescriptor(proto, key);
+      if (!desc || typeof desc.set !== 'function' || !desc.configurable) continue;
+      const set = desc.set;
+      Object.defineProperty(proto, key, {...desc, set: function (value) {
+        apply(set, this, [value]);
+        if (typeof value === 'function') apply(mark, this, [%s, '']);
+      }});
+    }
+  }
+})();""" % (json.dumps(SUBMIT_SIGNAL), json.dumps(list(PRESS_HANDLER_KEYS)), json.dumps(PRESS_MARK))
+
+#: Arguments: nonce, expect, tokens, text.  The held element must be the
+#: focused one and still match the classified descriptor; the text is then
+#: inserted in this same turn (no page script runs in between).
+INSERT_SCRIPT = PRELUDE + r"""
+const s = state(), g = s.guard, ref = s.targets.get(nonce), el = ref && ref.deref();
+s.guard = null;
+if (!g || g.nonce !== nonce || g.bad) return JSON.stringify({error: 'target_changed'});
+if (!el || !el.isConnected || document.activeElement !== el) return JSON.stringify({error: 'target_changed'});
+if (!same(describe(el, tokens), expect)) return JSON.stringify({error: 'target_changed'});
+if (typeof el.select === 'function') { el.select(); }
+else { const range = document.createRange(); range.selectNodeContents(el);
+  const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); }
+const done = text ? document.execCommand('insertText', false, text) : document.execCommand('delete', false);
+if (!done) return JSON.stringify({error: 'not_typable'});
+return JSON.stringify({ok: true});
+"""
+
+#: #709: how much rendered content a page shows now (no text leaves the page).
+RENDER_PROBE_SCRIPT = r"""
+const body = document.body;
+return JSON.stringify({text: body ? (body.innerText || '').length : 0,
+  nodes: document.getElementsByTagName('*').length, ready: document.readyState});
+"""
+
+#: #939: typing from the phone goes into whatever element the page has focused;
+#: ``execCommand`` fires the real ``beforeinput``/``input`` events a framework
+#: listens for.  ``not_focused`` when nothing editable in the main frame has
+#: focus (the worker then tries the native text input path).
+REMOTE_INSERT_SCRIPT = r"""
+const el = document.activeElement;
+if (!el || el === document.body || el === document.documentElement || el.tagName === 'IFRAME') {
+  return JSON.stringify({error: 'not_focused'});
+}
+const done = document.execCommand('insertText', false, text);
+return JSON.stringify(done ? {ok: true} : {error: 'not_typable'});
+"""
+
+#: #939: the phone's view of the login window: a JPEG no wider than this, at this quality.
+FRAME_MAX_WIDTH = 900
+FRAME_JPEG_QUALITY = 0.6
+#: #939: the keys the phone page offers, as macOS virtual key codes with their characters.
+REMOTE_KEYS = {'Enter': ('\r', 36), 'Backspace': ('\x7f', 51), 'Tab': ('\t', 48)}
+REMOTE_NAV_ACTIONS = ('back', 'reload')
+
+#: #1183: every page is loaded as its mobile version: phone-sized, with a mobile Safari
+#: user agent (``mobile_user_agent``).  Mobile pages are usually simpler (fewer hover menus,
+#: overlays and desktop-only widgets), so the owner's AI acts on them more reliably.
+WIDTH, HEIGHT = 390, 844
+SETTLE_QUIET_SECONDS = 0.4
+#: #736: after a click, how long a navigation it may start (a script handler, a
+#: timer, a new-window request loaded into this view) is given to begin, and
+#: the longest the worker waits for a started navigation to commit.
+CLICK_NAVIGATION_GRACE_SECONDS = 1.0
+CLICK_SETTLE_SECONDS = 8.0
+#: #709: a client-rendered page is read once its visible content stops
+#: changing for ``RENDER_QUIET_SECONDS`` (and shows some text), or when
+#: ``RENDER_SETTLE_SECONDS`` have passed, whichever comes first.
+# #899 (live, Work 4a2b6d1c): a search page whose results arrive by a request
+# after load stayed quiet for 0.5 s between its shell and its product list, so the
+# quiet window is longer.  Only rendered state counts as change: background
+# polling or analytics requests must not keep a stable page "unsettled" (#900 review).
+RENDER_QUIET_SECONDS = 1.2
+RENDER_SETTLE_SECONDS = 6.0
+POLL_SECONDS = 0.05
+FOCUS_SECONDS = 0.1
+RESOLVE_SECONDS = 3.0
+
+
+def safari_application_name():
+    """``Version/<n> Safari/605.1.15`` from this Mac's Safari, plus the embedded marker.
+
+    WebKit's default user agent lacks the ``Version/... Safari/...`` part and
+    some sites refuse it.  The version is read from the installed Safari's
+    bundle (a platform fact); without it, the macOS major version (Safari's
+    version follows it from macOS 26) or a conservative default is used.
+    """
+    version = ''
+    try:
+        with open('/Applications/Safari.app/Contents/Info.plist', 'rb') as handle:
+            version = str(plistlib.load(handle).get('CFBundleShortVersionString') or '')
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        version = ''
+    if not version:
+        major = (platform.mac_ver()[0] or '').split('.')[0]
+        version = f'{major}.0' if major.isdigit() and int(major) >= 26 else '17.0'
+    return f'Version/{version} Safari/605.1.15 {EMBEDDED_UA_TOKEN}'
+
+
+#: #955: the phone-sized window (points), the default since #1183.
+MOBILE_SIZE = (float(WIDTH), float(HEIGHT))
+
+
+def mobile_user_agent():
+    """A mobile Safari user agent of this Safari's version, still carrying the embedded marker (#680)."""
+    version = safari_application_name().split()[0].split('/', 1)[-1]
+    major = version.split('.')[0] if version.split('.')[0].isdigit() else '18'
+    return (f'Mozilla/5.0 (iPhone; CPU iPhone OS {major}_0 like Mac OS X) AppleWebKit/605.1.15 '
+            f'(KHTML, like Gecko) Version/{version} Mobile/15E148 Safari/604.1 {EMBEDDED_UA_TOKEN}')
+
+
+def _host(url):
+    try:
+        return (urlsplit(str(url or '')).hostname or '').lower()
+    except ValueError:
+        return ''
+
+
+def origin_key(url):
+    """``host:port`` of an http(s) URL (default ports filled), or ''."""
+    try:
+        parts = urlsplit(str(url or ''))
+        port = parts.port or (443 if parts.scheme == 'https' else 80)
+    except ValueError:
+        return ''
+    host = (parts.hostname or '').lower()
+    return f'{host}:{port}' if host and parts.scheme in ('http', 'https') else ''
+
+
+def local_host(host):
+    """True when ``host`` names this computer or a private network by name or literal address.
+
+    Reuses the public-page guard's tables (``local_tools``): the denied names
+    (localhost, metadata hosts), suffixes (``.localhost``, ``.local``,
+    ``.internal``, ``.home.arpa``) and the private/loopback/link-local/
+    reserved/multicast address check.
+    """
+    from .local_tools import DENIED_PUBLIC_HOST_SUFFIXES, DENIED_PUBLIC_HOSTS, _denied_address
+    host = str(host or '').strip('[]').casefold().rstrip('.')
+    if not host or host in DENIED_PUBLIC_HOSTS or host.endswith(DENIED_PUBLIC_HOST_SUFFIXES):
+        return True
+    try:
+        return _denied_address(ipaddress.ip_address(host.split('%')[0]))
+    except ValueError:
+        return False
+
+
+def local_url(url, allowed_origins=()):
+    """True when an http(s) ``url`` names a local/private host (no DNS); False for anything allowed."""
+    key = origin_key(url)
+    if key and key in set(allowed_origins or ()):
+        return False
+    try:
+        parts = urlsplit(str(url or ''))
+        host = parts.hostname or ''
+    except ValueError:
+        return True
+    return parts.scheme not in ('http', 'https') or local_host(host)
+
+
+#: #932: NSURLErrorCannotFindHost - the name has no DNS record.
+URL_ERROR_CANNOT_FIND_HOST = -1003
+#: #942: the name resolves but no site answers there: timed out, cannot connect,
+#: connection lost, or the secure connection failed (TLS errors -1200..-1206).
+URL_ERRORS_UNREACHABLE = frozenset({-1001, -1004, -1005, -1200, -1201, -1202, -1203, -1204, -1205, -1206})
+
+
+def navigation_error_code(error):
+    """The failed navigation's code: ``host_not_found`` for a name with no DNS record (#932)."""
+    try:
+        if str(error.domain()) == 'NSURLErrorDomain' and int(error.code()) == URL_ERROR_CANNOT_FIND_HOST:
+            return 'host_not_found'
+        if str(error.domain()) == 'NSURLErrorDomain' and int(error.code()) in URL_ERRORS_UNREACHABLE:
+            return 'host_unreachable'
+    except Exception:
+        pass
+    return 'navigation_failed'
+
+
+def destination_refusal(url, allowed_origins=(), resolver=None):
+    """None when ``url`` may be loaded, else ``blocked_destination``.
+
+    Only http(s).  The name or literal is checked with ``local_host``; a name
+    is then resolved and refused when any address it resolves to is local or
+    private (a public name pointing at 127.0.0.1 included).  A resolution
+    error is not a refusal (WebKit cannot load it either).
+    ``allowed_origins`` is a test-only exact ``host:port`` allowance.
+    """
+    from .local_tools import _denied_address
+    key = origin_key(url)
+    if key and key in set(allowed_origins or ()):
+        return None
+    if local_url(url):
+        return 'blocked_destination'
+    parts = urlsplit(str(url))
+    host = (parts.hostname or '').rstrip('.')
+    try:
+        ipaddress.ip_address(host)
+        return None   # a literal was already checked
+    except ValueError:
+        pass
+    resolver = resolver or socket.getaddrinfo
+    try:
+        records = resolver(host, parts.port or (443 if parts.scheme == 'https' else 80), type=socket.SOCK_STREAM)
+    except (OSError, UnicodeError, ValueError):
+        return None
+    for record in records or []:
+        try:
+            address = ipaddress.ip_address(str(record[4][0]).split('%')[0])
+        except (ValueError, IndexError, TypeError):
+            continue
+        if _denied_address(address):
+            return 'blocked_destination'
+    return None
+
+
+def click_settled(elapsed, quiet, loading, started, landed, deciding=False):
+    """Whether a click's effects have landed (#736).  Pure; the worker polls it.
+
+    ``elapsed``: seconds since the press; ``quiet``: seconds the view has not
+    been loading (None while loading); ``started``: a main-frame navigation
+    was allowed since the press; ``landed``: such a navigation committed or
+    failed since then; ``deciding``: a main-frame navigation policy decision
+    is still pending (its destination is being resolved, up to
+    ``RESOLVE_SECONDS``).  A pending decision or a started navigation is
+    waited for until it lands; a click that starts none is given
+    ``CLICK_NAVIGATION_GRACE_SECONDS`` to start one.  ``CLICK_SETTLE_SECONDS``
+    bounds every wait.
+    """
+    if elapsed >= CLICK_SETTLE_SECONDS:
+        return True
+    if deciding or loading or quiet is None or quiet < SETTLE_QUIET_SECONDS:
+        return False
+    if started:
+        return landed
+    return elapsed >= CLICK_NAVIGATION_GRACE_SECONDS
+
+
+def site_of(domain, sites):
+    """The site (registrable domain from WebKit's data records) a cookie domain belongs to."""
+    domain = str(domain or '').lower().lstrip('.')
+    for site in sorted(sites, key=len, reverse=True):
+        if domain == site or domain.endswith('.' + site):
+            return site
+    return domain
+
+
+class Worker:
+    """The main-thread state: one hidden window, one web view, one in-memory store."""
+
+    def __init__(self, profile, emit, allowed_origins=()):
+        import AppKit
+        import Foundation
+        import WebKit
+        from PyObjCTools import AppHelper
+        self.AppKit, self.Foundation, self.WebKit, self.AppHelper = AppKit, Foundation, WebKit, AppHelper
+        self.profile, self.emit = profile, emit
+        self.allowed_origins = frozenset(allowed_origins)
+        self.pending = {}          # op id -> True while the op has not answered
+        self.navigation = None     # (id, WKNavigation) the navigate op waits for
+        self.blocked = 0           # main-frame navigations refused so far
+        self.refused_submits = 0   # form navigations refused with no page form to hold (#700 review)
+        self.step_refused = 0      # ``refused_submits`` when the current step began
+        self.posted_submits = 0    # #899: non-GET form submissions the page started so far
+        self.step_posted = 0       # ``posted_submits`` when the current step began
+        self.reported_refused = 0  # ``refused_submits`` last reported (step answer or snapshot, #758)
+        self.hosts = set()         # hosts of committed main-frame navigations in this worker's life
+        self.popups = []           # #914: (view, window, delegate) of sign-in popups while the owner signs in
+        self.main_navigations = 0  # main-frame navigations allowed so far (#736)
+        self.landed = 0            # main-frame navigations committed or failed so far (#736)
+        self.deciding = 0          # main-frame policy decisions still resolving their destination (#736 review)
+        self.resolved = {}         # url origin -> refusal code or None (this worker's life)
+        self.app = AppKit.NSApplication.sharedApplication()
+        self.app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)   # no Dock icon
+        config = WebKit.WKWebViewConfiguration.alloc().init()
+        # In-memory only: WebKit never writes a cookie or storage file.
+        self.store = WebKit.WKWebsiteDataStore.nonPersistentDataStore()
+        config.setWebsiteDataStore_(self.store)
+        config.setApplicationNameForUserAgent_(safari_application_name())
+        # #930: the parked window counts as shown, so no page plays sound or video on
+        # the owner's Mac on its own; a press in the page can still start it.
+        config.setMediaTypesRequiringUserActionForPlayback_(WebKit.WKAudiovisualMediaTypeAll)
+        # The client world: shares the DOM, not the page's JavaScript globals, so a
+        # page cannot replace the functions these scripts call.  (A named world
+        # stopped answering after repeated password-form pages on macOS 26.)
+        self.world = WebKit.WKContentWorld.defaultClientWorld()
+        # Only the ``form.submit()`` wrapper runs in the page world (#698).
+        self.page_world = WebKit.WKContentWorld.pageWorld()
+        delegate_class = _delegate_class()
+        self.delegate = delegate_class.alloc().init()
+        self.delegate.worker = self
+        # The submit guard (#698): document-start scripts, and the client-world
+        # handler a cancelled submit is reported through (never the page world).
+        self.guard_off = False
+        self.cancelled = None      # the last cancelled submit not yet reported
+        self.reported = []         # ids of cancelled submits already reported
+        self.held = None           # the last reported one: what an approval may release (#700)
+        self.dialog_step = None    # #936: the click/type in progress, for page dialogs
+        self.remote = False        # #939: a phone drives the login window (``op_remote_begin``)
+        self.held_dialog = None    # #939: a page dialog waiting for the phone's (or the Mac's) answer
+        self.controller = config.userContentController()
+        self._install_guard_scripts()
+        self.controller.addScriptMessageHandler_contentWorld_name_(self.delegate, self.world, GUARD_HANDLER)
+        self.view = WebKit.WKWebView.alloc().initWithFrame_configuration_(Foundation.NSMakeRect(0, 0, WIDTH, HEIGHT), config)
+        # #1183: one user agent for the whole session (a site may drop a sign-in when it changes).
+        self.view.setCustomUserAgent_(mobile_user_agent())
+        self.view.setNavigationDelegate_(self.delegate)
+        self.view.setUIDelegate_(self.delegate)
+        style = (AppKit.NSWindowStyleMaskTitled | AppKit.NSWindowStyleMaskClosable |
+                 AppKit.NSWindowStyleMaskMiniaturizable | AppKit.NSWindowStyleMaskResizable)
+        self.window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            Foundation.NSMakeRect(0, 0, WIDTH, HEIGHT), style, AppKit.NSBackingStoreBuffered, False)
+        self.window.setContentView_(self.view)
+        self.window.setReleasedWhenClosed_(False)
+        self.window.setDelegate_(self.delegate)
+        self.window.setTitle_('AgentOS')
+        #: Whether the owner can see the window (the login window, #709); the
+        #: window itself is always ordered in, parked off-screen (#930).
+        self.owner_visible = False
+        try:
+            # #930: WebKit treats a covered or off-screen window as hidden and stops
+            # requestAnimationFrame there, so pages that render with it (React lists
+            # and the like) never draw.  WKWebView SPI, used only when present.
+            self.view._setWindowOcclusionDetectionEnabled_(False)
+        except Exception:
+            pass
+        self.park()
+
+    def js_dialog(self, kind, message):
+        """Answer a page's own alert/confirm/prompt (#936); the confirm's answer, else None.
+
+        WebKit answers ``confirm()`` with false when nothing handles it, so a site's
+        "삭제하시겠습니까?" silently undid the AI's click.  While the owner's login
+        window shows, the owner answers.  During a click/type the AI made, a
+        confirmation is accepted, except one that may commit a purchase or payment
+        without an approved step.  Outside a step nothing is confirmed.
+        """
+        text = ' '.join(str(message or '').split())[:DIALOG_TEXT_LIMIT]
+        if self.owner_visible:
+            return self.ask_owner(kind, text)
+        step = self.dialog_step
+        answer = None
+        if kind == 'confirm':
+            from .browser_session import commit_question
+            if step is None:
+                answer, outcome = False, 'declined'
+            elif step['approved']:
+                # The owner approved this very press (a purchase control); its confirmation is part of it.
+                answer, outcome = True, 'accepted'
+            elif commit_question(text) or not step.get('confirm_ok'):
+                # #937 review: a payment question, or any question on a page that shows a payment field.
+                answer, outcome = False, 'declined_payment'
+            else:
+                answer, outcome = True, 'accepted'
+        else:
+            outcome = 'shown' if kind == 'alert' else 'dismissed'
+        if step is not None and len(step['dialogs']) < DIALOG_RECORDS:
+            step['dialogs'].append({'kind': kind, 'message': text, 'outcome': outcome})
+        return answer
+
+    def ask_owner(self, kind, text):
+        """The owner's own login window: show the page's question to the owner (#936)."""
+        AppKit = self.AppKit
+        alert = AppKit.NSAlert.alloc().init()
+        alert.setMessageText_(text or ' ')
+        alert.addButtonWithTitle_('확인')
+        if kind == 'confirm':
+            alert.addButtonWithTitle_('취소')
+        response = alert.runModal()
+        if self.dialog_step is not None and len(self.dialog_step['dialogs']) < DIALOG_RECORDS:
+            self.dialog_step['dialogs'].append({'kind': kind, 'message': text, 'outcome': 'owner'})
+        return response == AppKit.NSAlertFirstButtonReturn if kind == 'confirm' else None
+
+    # -- a page dialog while the phone drives the window (#939) ----------------------
+    def hold_dialog(self, kind, message, handler):
+        """While a phone drives the login window, hold a page dialog for its answer; True when held.
+
+        The phone's page shows the question (``op_frame`` reports it) and
+        answers it (``op_remote_dialog``); the Mac shows the same question as
+        a sheet on the window, so whoever is there answers first.  Without a
+        phone session the #936 rule (``js_dialog``) applies unchanged.  A
+        second dialog while one is held gets the cancel answer at once.
+        """
+        if not (self.remote and self.owner_visible):
+            return False
+        text = ' '.join(str(message or '').split())[:DIALOG_TEXT_LIMIT]
+        if self.held_dialog is not None:
+            _answer_dialog_handler(kind, handler, False)
+            return True
+        self.held_dialog = {'kind': kind, 'text': text, 'handler': handler, 'sheet': None}
+        try:
+            self.show_dialog_sheet(kind, text)
+        except Exception:
+            pass
+        return True
+
+    def show_dialog_sheet(self, kind, text):
+        """The same question on the Mac, as a sheet on the frontmost login window (never modal: the worker keeps answering)."""
+        AppKit = self.AppKit
+        alert = AppKit.NSAlert.alloc().init()
+        alert.setMessageText_(text or ' ')
+        alert.addButtonWithTitle_('확인')
+        if kind == 'confirm':
+            alert.addButtonWithTitle_('취소')
+        view = self.front_view()
+        window = view.window() if view is not self.view and view.window() is not None else self.window
+        self.held_dialog['sheet'] = (alert, window)
+        alert.beginSheetModalForWindow_completionHandler_(
+            window, lambda response: self.answer_dialog(response == AppKit.NSAlertFirstButtonReturn, from_sheet=True))
+
+    def answer_dialog(self, ok, from_sheet=False):
+        """Answer the held dialog once: ``ok`` is 확인 (a confirm's true); False is 취소.  True when one was held."""
+        held, self.held_dialog = self.held_dialog, None
+        if held is None:
+            return False
+        sheet = held.get('sheet')
+        if sheet is not None and not from_sheet:
+            try:
+                sheet[1].endSheet_(sheet[0].window())
+            except Exception:
+                pass
+        if self.dialog_step is not None and len(self.dialog_step['dialogs']) < DIALOG_RECORDS:
+            self.dialog_step['dialogs'].append({'kind': held['kind'], 'message': held['text'], 'outcome': 'owner'})
+        _answer_dialog_handler(held['kind'], held['handler'], ok)
+        return True
+
+    def end_remote(self):
+        """The phone session ended (or the window hid): a held dialog is cancelled, nothing more is held."""
+        self.remote = False
+        self.last_frame = None   # never shown to a later session
+        self.answer_dialog(False)
+        try:
+            self.leave_mobile()
+        except Exception:
+            pass
+
+    def park(self):
+        """Keep the window ordered in but off every screen and out of the owner's way (#930).
+
+        An ordered-out window is a hidden page to WebKit: no animation frames,
+        so client-rendered content never appears.  Parked, the page renders as
+        if shown while nothing reaches the owner's screen or input.
+        """
+        AppKit, Foundation = self.AppKit, self.Foundation
+        self.window.setIgnoresMouseEvents_(True)
+        self.window.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorTransient |
+                                           AppKit.NSWindowCollectionBehaviorIgnoresCycle)
+        self.window.setExcludedFromWindowsMenu_(True)
+        # #931 review P1: drop keyboard focus first (ordering out resigns key status;
+        # ordering back alone would not), so nothing the owner types reaches the page.
+        self.window.makeFirstResponder_(None)
+        self.window.orderOut_(None)
+        if self.app.isActive():
+            self.app.deactivate()
+        self.window.setFrameOrigin_(Foundation.NSMakePoint(PARK_ORIGIN, PARK_ORIGIN))
+        self.window.orderBack_(None)
+
+    # -- plumbing ------------------------------------------------------------
+    def reply(self, ident, ok=True, **fields):
+        self.pending.pop(ident, None)
+        self.emit({'id': ident, 'ok': ok, **fields})
+
+    def fail(self, ident, code, **fields):
+        self.reply(ident, False, error=code, **fields)
+
+    def deadline(self, ident, seconds, on_timeout=None, observed=None):
+        """Answer ``timeout`` if the op is still pending when its deadline passes.
+
+        ``observed`` (#1496): what the timed-out step is known to have done, added to the answer.
+        """
+        def expire():
+            if ident in self.pending:
+                fields = {}
+                if observed is not None:
+                    try:
+                        fields = observed()
+                    except Exception:
+                        fields = {}
+                if on_timeout is not None:
+                    try:
+                        on_timeout()
+                    except Exception:
+                        pass
+                self.fail(ident, 'timeout', **fields)
+        self.pending[ident] = True
+        self.AppHelper.callLater(max(0.5, float(seconds)), expire)
+
+    def run(self, body, arguments, done, world=None, view=None):
+        """Run ``body`` (returns a JSON string) in the client world (or ``world``); ``done(value_or_None, error_or_None)``.
+
+        ``view``: another web view than the main one (a sign-in popup, #939).
+        """
+        def handler(result, error):
+            if error is not None:
+                done(None, 'script_failed')
+                return
+            try:
+                done(json.loads(str(result)) if result is not None else None, None)
+            except (TypeError, ValueError, UnicodeError):
+                done(None, 'script_failed')
+        (view or self.view).callAsyncJavaScript_arguments_inFrame_inContentWorld_completionHandler_(
+            body, arguments or {}, None, world or self.world, handler)
+
+    def settle_click(self, ident, finish, baseline=None):
+        """After a click: wait, bounded, for any navigation it started to land, then for quiet (#736).
+
+        ``finish(navigated)`` is called once; ``navigated`` is True when a
+        main-frame navigation (a same-view new-window load included) started
+        after the press, or after ``baseline`` (``(main_navigations, landed)``
+        read before the action).
+        """
+        started_at = time.monotonic()
+        navigations, landed = baseline or (self.main_navigations, self.landed)
+        quiet_since = [None]
+
+        def poll():
+            if ident not in self.pending:
+                return
+            now = time.monotonic()
+            loading = bool(self.view.isLoading())
+            if loading:
+                quiet_since[0] = None
+            elif quiet_since[0] is None:
+                quiet_since[0] = now
+            started = self.main_navigations > navigations
+            quiet = None if quiet_since[0] is None else now - quiet_since[0]
+            if click_settled(now - started_at, quiet, loading, started, self.landed > landed, self.deciding > 0):
+                finish(started)
+                return
+            self.AppHelper.callLater(POLL_SECONDS, poll)
+        self.AppHelper.callLater(POLL_SECONDS, poll)
+
+    def settle(self, ident, finish):
+        """Wait until no navigation is loading or being decided for a short quiet period, then ``finish``.
+
+        #899 review P1: a pending policy decision (a form submission being
+        checked) counts as not quiet, as it does for a click (``click_settled``),
+        so a typing step never answers ``posted: False`` while its submit is
+        still being decided.
+        """
+        quiet_since = [None]
+
+        def poll():
+            if ident not in self.pending:
+                return
+            if self.view.isLoading() or self.deciding > 0:
+                quiet_since[0] = None
+            elif quiet_since[0] is None:
+                quiet_since[0] = time.monotonic()
+            elif time.monotonic() - quiet_since[0] >= SETTLE_QUIET_SECONDS:
+                finish()
+                return
+            self.AppHelper.callLater(POLL_SECONDS, poll)
+        self.AppHelper.callLater(POLL_SECONDS, poll)
+
+    # -- the submit guard (#698) ----------------------------------------------
+    def _install_guard_scripts(self):
+        """The document-start scripts: the client-world guard (armed, or off while
+        the owner's login window shows) and, only while armed, the page-world
+        ``form.submit`` wrapper (a page's bot detection must not see it while the
+        owner signs in, #700)."""
+        WebKit = self.WebKit
+        start = WebKit.WKUserScriptInjectionTimeAtDocumentStart
+        self.controller.removeAllUserScripts()
+        scripts = [(client_guard_user_script(self.guard_off), self.world)]
+        if not self.guard_off:
+            scripts.append((PAGE_WRAP_USER_SCRIPT, self.page_world))
+        for source, world in scripts:
+            self.controller.addUserScript_(
+                WebKit.WKUserScript.alloc().initWithSource_injectionTime_forMainFrameOnly_inContentWorld_(
+                    source, start, True, world))
+
+    def set_guard_off(self, off):
+        """The owner's login window: the guard is off while it shows, for this page and the next ones."""
+        self.guard_off = bool(off)
+        self.held = None
+        self._install_guard_scripts()
+        self.run(GUARD_SWITCH_SCRIPT, {'off': self.guard_off}, lambda *_: None)
+
+    def receive_cancelled(self, record):
+        """A cancelled submit, reported by the client-world guard (message handler or a script result)."""
+        record = _form_record(record)
+        if record is not None and record['id'] not in self.reported:
+            self.cancelled = record
+
+    def take_cancelled(self, record=None):
+        """The cancelled submit not yet reported, once; ``record`` is one a script just read."""
+        if record is not None:
+            self.receive_cancelled(record)
+        found, self.cancelled = self.cancelled, None
+        if found is None:
+            return None
+        self.reported = (self.reported + [found['id']])[-64:]
+        self.held = found
+        return {key: found[key] for key in ('dom', 'method', 'action', 'page', 'state')}
+
+    def check_form_navigation(self, url, method, then, into_frame=False):
+        """A form-submission navigation from or into the main frame while the guard is armed (#700).
+
+        ``then(allowed)``; ``into_frame``: it goes into a subframe of the page.
+
+        The page answers which of its payment forms that navigation submits
+        (``FORM_NAVIGATION_SCRIPT``); a refused one is held and reported as a
+        cancelled submit.  No answer in ``FORM_CHECK_SECONDS`` (or a script
+        error) is a refusal with nothing held, answered ``submit_refused``.
+        """
+        answered = []
+        self.deciding += 1   # a click waits for this decision (#736)
+
+        def answer(allowed, record=None):
+            if answered:
+                return
+            answered.append(True)
+            self.deciding -= 1
+            if not allowed:
+                if isinstance(record, dict):
+                    self.receive_cancelled(record)   # held: an approval of it can release it
+                else:
+                    self.refused_submits += 1        # nothing held: a typed refusal, never an approval request
+            then(allowed)
+
+        def done(value, error):
+            if error is None and isinstance(value, dict) and value.get('allow') is True:
+                return answer(True)
+            answer(False, value.get('cancelled') if error is None and isinstance(value, dict) else None)
+        self.run(FORM_NAVIGATION_SCRIPT, {'url': url, 'method': str(method or 'GET'), 'frame': into_frame is True}, done)
+        self.AppHelper.callLater(FORM_CHECK_SECONDS, lambda: answered or answer(False))
+
+    def end_step(self, done=None):
+        """End a click/type step: the approval's allowance ends; ``done(cancelled record or None)``.
+
+        A script error (the page navigated away) reads nothing from the page;
+        a submit that page's guard cancelled still arrived through the handler.
+        """
+        # #937 review P2: a step's dialog rule ends with the step, a timed-out one included.
+        self.dialog_step = None
+        def ended(value, error):
+            record = value.get('cancelled') if error is None and isinstance(value, dict) else None
+            if record is not None:
+                self.receive_cancelled(record)
+            if done is not None:
+                done(self.take_cancelled())
+        self.run(STEP_END_SCRIPT, {}, ended)
+
+    def step_posted_field(self):
+        """#1496: ``posted`` of a click or typing step that timed out, as a finished step answers it.
+
+        Whether the page started a non-GET form submission since the step began; a guard
+        decision still pending counts as one (#899 review P1: unknown is not "none").
+        """
+        return {'posted': self.posted_submits > self.step_posted or self.deciding > 0}
+
+    def finish_input(self, ident, blocked_before=None, error=None, navigated=False, cover=None):
+        """Answer a click/type once its approval's allowance ended.
+
+        A payment-form submit the guard cancelled answers ``approval_required``
+        with its form (#698), before any other error; then ``error``; then a
+        navigation the step caused that was blocked.
+        """
+        def answer(cancelled):
+            if ident not in self.pending:
+                if cancelled is not None and self.held is not None:
+                    # Reported by the next snapshot, under the page's own hold id so
+                    # an approval of it can still be released (#700 review).
+                    self.cancelled = self.held
+                return
+            if cancelled is not None:
+                return self.reply(ident, False, error='approval_required', form=cancelled)
+            if error:
+                return self.fail(ident, error, **({'cover': cover} if cover else {}))
+            if self.refused_submits > self.step_refused:
+                self.reported_refused = self.refused_submits
+                return self.fail(ident, 'submit_refused')
+            if blocked_before is not None and self.blocked > blocked_before:
+                return self.fail(ident, 'blocked_destination')
+            dialogs = (step or {}).get('dialogs') or []
+            # #899: whether the page started a non-GET form submission during this step; a decision
+            # still pending when the step answers counts as one (review P1: unknown is not "none").
+            self.reply(ident, **({'navigated': True} if navigated else {}), **({'dialogs': dialogs} if dialogs else {}),
+                       **self.step_posted_field())
+        step, self.dialog_step = getattr(self, 'dialog_step', None), None
+        self.end_step(answer)
+
+    # -- destinations ----------------------------------------------------------
+    def decide(self, url, main_frame, decision):
+        """Allow or refuse one navigation; ``decision(bool)`` may be called later (after DNS)."""
+        scheme = str(urlsplit(url).scheme or '').lower() if url else ''
+        if scheme == 'about' and url in ('about:blank', 'about:srcdoc'):
+            return decision(True)
+        if scheme in ('data', 'blob') and not main_frame:
+            return decision(True)
+        if scheme not in ('http', 'https'):
+            return decision(False, 'unsupported_navigation')
+        key = origin_key(url)
+        if key in self.resolved:
+            return decision(self.resolved[key] is None, self.resolved[key])
+        answered = []
+        # #736 review: a click waits while a main-frame decision is resolving
+        # its destination, so a slow resolver is never mistaken for "no navigation".
+        if main_frame:
+            self.deciding += 1
+
+        def answer(refusal):
+            if answered:
+                return
+            answered.append(True)
+            if main_frame:
+                self.deciding -= 1
+            # A slow resolver is unknown, not evidence of a private address.
+            # Refuse this navigation but do not poison the origin cache.
+            if refusal != 'destination_check_timeout':
+                self.resolved[key] = refusal
+            decision(refusal is None, refusal)
+
+        def resolve():
+            try:
+                refusal = destination_refusal(url, self.allowed_origins)
+            except Exception:
+                refusal = 'blocked_destination'
+            self.AppHelper.callAfter(answer, refusal)
+        threading.Thread(target=resolve, name='agentos-browser-resolve', daemon=True).start()
+        # A resolver that does not answer in time is a refusal (never a guess).
+        self.AppHelper.callLater(RESOLVE_SECONDS, lambda: answered or answer('destination_check_timeout'))
+
+    def navigation_refused(self, main_frame, reason='blocked_destination'):
+        if not main_frame:
+            return
+        self.blocked += 1
+        if self.navigation is not None:
+            ident, _ = self.navigation
+            self.navigation = None
+            if ident in self.pending:
+                self.fail(ident, reason)
+
+    # -- native input --------------------------------------------------------
+    def press(self, x, y, view=None):
+        """A native left click at viewport point (x, y): trusted, never needs the window shown.
+
+        ``view``: the web view to press in (a sign-in popup, #939); the main one by default.
+        """
+        AppKit, Foundation = self.AppKit, self.Foundation
+        view = view if view is not None else self.view
+        window = view.window() if view is not self.view and view.window() is not None else self.window
+        height = view.frame().size.height
+        point = Foundation.NSMakePoint(float(x), float(height) - float(y))
+        for kind, send in ((AppKit.NSEventTypeLeftMouseDown, view.mouseDown_),
+                           (AppKit.NSEventTypeLeftMouseUp, view.mouseUp_)):
+            event = AppKit.NSEvent.mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure_(
+                kind, point, 0, AppKit.NSProcessInfo.processInfo().systemUptime(), window.windowNumber(), None, 0, 1, 1.0)
+            send(event)
+
+    def key(self, name, view=None):
+        """A native key press (down and up) of one of ``REMOTE_KEYS`` in ``view`` (#939)."""
+        AppKit, Foundation = self.AppKit, self.Foundation
+        view = view if view is not None else self.view
+        window = view.window() if view is not self.view and view.window() is not None else self.window
+        characters, code = REMOTE_KEYS[name]
+        for kind, send in ((AppKit.NSEventTypeKeyDown, view.keyDown_), (AppKit.NSEventTypeKeyUp, view.keyUp_)):
+            event = AppKit.NSEvent.keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode_(
+                kind, Foundation.NSMakePoint(0, 0), 0, AppKit.NSProcessInfo.processInfo().systemUptime(),
+                window.windowNumber(), None, characters, characters, False, code)
+            send(event)
+
+    # -- ops -----------------------------------------------------------------
+    def handle(self, command):
+        ident = command.get('id')
+        op = command.get('op')
+        timeout = command.get('timeout') or 20
+        try:
+            method = getattr(self, 'op_' + str(op), None)
+            if method is None:
+                return self.fail(ident, 'unknown_op')
+            method(ident, command, timeout)
+        except Exception:
+            self.fail(ident, 'worker_error')
+
+    def op_navigate(self, ident, command, timeout):
+        url = str(command.get('url') or '')
+        if urlsplit(url).scheme not in ('http', 'https'):
+            return self.fail(ident, 'bad_url')
+        request = self.Foundation.NSURLRequest.requestWithURL_(self.Foundation.NSURL.URLWithString_(url))
+        self.deadline(ident, timeout, on_timeout=self.view.stopLoading)
+        self.navigation = (ident, None)
+        navigation = self.view.loadRequest_(request)
+        if self.navigation is not None and self.navigation[0] == ident:
+            self.navigation = (ident, navigation)
+
+    def navigation_finished(self, navigation, error=None):
+        """Answer the navigate op only for the navigation it started (P3)."""
+        if self.navigation is None:
+            return
+        ident, expected = self.navigation
+        if expected is None or navigation is None or not (navigation is expected or navigation.isEqual_(expected)):
+            return
+        self.navigation = None
+        if ident not in self.pending:
+            return
+        if error is not None:
+            return self.fail(ident, navigation_error_code(error))
+        self.reply(ident, url=str(self.view.URL().absoluteString()) if self.view.URL() else '')
+
+    def op_snapshot(self, ident, command, timeout):
+        self.deadline(ident, timeout)
+
+        def done(value, error):
+            if ident not in self.pending:
+                return
+            if error or not isinstance(value, dict):
+                return self.fail(ident, error or 'script_failed')
+            # A payment-form submit cancelled since the last report (#698).
+            cancelled = self.take_cancelled(value.pop('cancelled', None))
+            if cancelled is not None:
+                value['cancelled_submit'] = cancelled
+            # A form post refused with nothing to hold since the last report (#758 item 9).
+            if self.refused_submits > self.reported_refused:
+                self.reported_refused = self.refused_submits
+                value['refused_submit'] = True
+            self.reply(ident, page=value)
+        self.run(SNAPSHOT_SCRIPT, {}, done)
+
+    def op_settle(self, ident, command, timeout):
+        """Wait, bounded, until the page's rendered content stops changing (#709).
+
+        Client-rendered pages finish their navigation long before their
+        content exists.  The probe measures only the length of the visible
+        text and the element count; the page is settled once that measure and
+        the loading state stayed unchanged for ``RENDER_QUIET_SECONDS`` with
+        some text shown, and in any case after ``seconds`` (at most
+        ``RENDER_SETTLE_SECONDS``).  Always answers ``ok`` with ``settled``;
+        the snapshot that follows reads whatever the page shows then.
+        """
+        try:
+            cap = float(command.get('seconds') or RENDER_SETTLE_SECONDS)
+        except (TypeError, ValueError):
+            cap = RENDER_SETTLE_SECONDS
+        cap = max(0.0, min(cap, RENDER_SETTLE_SECONDS, float(timeout)))
+        self.deadline(ident, cap + 2)
+        started = time.monotonic()
+        last, since = [None], [started]
+
+        def measured(value, error):
+            if ident not in self.pending:
+                return
+            now = time.monotonic()
+            measure = (value.get('text'), value.get('nodes'), value.get('ready')) \
+                if error is None and isinstance(value, dict) else None
+            if measure != last[0] or self.view.isLoading():
+                last[0], since[0] = measure, now
+            elif now - since[0] >= RENDER_QUIET_SECONDS and measure and isinstance(measure[0], int) and measure[0] > 0:
+                return self.reply(ident, settled=True, waited=round(now - started, 2))
+            if now - started >= cap:
+                return self.reply(ident, settled=False, waited=round(now - started, 2))
+            self.AppHelper.callLater(POLL_SECONDS * 2, lambda: self.run(RENDER_PROBE_SCRIPT, {}, measured))
+        self.run(RENDER_PROBE_SCRIPT, {}, measured)
+
+    def _locate(self, ident, command, then):
+        index = command.get('index')
+        expect = command.get('expect')
+        tokens = [str(token) for token in command.get('tokens') or [] if isinstance(token, str)]
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            return self.fail(ident, 'bad_target')
+        if not isinstance(expect, dict):
+            return self.fail(ident, 'target_changed')   # never press an element nobody classified
+        nonce = uuid.uuid4().hex
+        self.step_refused = self.refused_submits
+        self.step_posted = self.posted_submits
+        # #936: a page's own alert/confirm/prompt during this step is answered by its rule.
+        self.dialog_step = {'approved': command.get('dialog_approved') is True,
+                            'confirm_ok': command.get('confirm_ok') is True, 'dialogs': []}
+        # Only a step the parent consumed an owner approval for may let a
+        # payment-form submit through (#698); its allowance ends by itself even
+        # if the step's end never reaches the page (#700 review).
+        approved = command.get('approved') is True
+        try:
+            lasts = max(1.0, float(command.get('timeout') or 20)) + SUBMIT_WINDOW_SECONDS
+        except (TypeError, ValueError):
+            lasts = 20.0 + SUBMIT_WINDOW_SECONDS
+
+        def located(value, error):
+            if ident not in self.pending:
+                return
+            if error or not isinstance(value, dict):
+                return self.finish_input(ident, error=error or 'script_failed')
+            if value.get('error'):
+                return self.finish_input(ident, error=value['error'], cover=value.get('cover'))
+            then(value, nonce, expect, tokens)
+        self.run(LOCATE_SCRIPT, {'index': index, 'expect': expect, 'tokens': tokens, 'nonce': nonce,
+                                 'approved': approved, 'lasts': int(lasts * 1000)}, located)
+
+    def op_click(self, ident, command, timeout):
+        self.deadline(ident, timeout, on_timeout=self.end_step, observed=self.step_posted_field)
+
+        def click(point, nonce, expect, tokens):
+            blocked_before = self.blocked
+            self.press(point['x'], point['y'])
+
+            def verified(value, error):
+                if ident not in self.pending:
+                    return
+                if error is None and isinstance(value, dict) and value.get('error'):
+                    return self.finish_input(ident, blocked_before, value['error'])
+                # A script error here means the click already navigated away (the
+                # page and its guards are gone), which the guards allowed.  #736:
+                # a navigation the click started (now or a moment later) lands first.
+                self.settle_click(ident, lambda navigated: self.finish_input(ident, blocked_before, navigated=navigated))
+            self.run(VERIFY_CLICK_SCRIPT, {'nonce': nonce}, verified)
+        self._locate(ident, command, click)
+
+    def op_type(self, ident, command, timeout):
+        text = command.get('text')
+        if not isinstance(text, str):
+            return self.fail(ident, 'bad_text')
+        self.deadline(ident, timeout, on_timeout=self.end_step, observed=self.step_posted_field)
+
+        def focus(point, nonce, expect, tokens):
+            if not point.get('editable'):
+                return self.finish_input(ident, error='not_typable')
+            blocked_before = self.blocked
+            self.press(point['x'], point['y'])
+
+            def inserted(value, error):
+                if ident not in self.pending:
+                    return
+                if error or not isinstance(value, dict):
+                    return self.finish_input(ident, blocked_before, error or 'script_failed')
+                if value.get('error'):
+                    return self.finish_input(ident, blocked_before, value['error'])
+                self.settle(ident, lambda: self.finish_input(ident, blocked_before))
+            self.AppHelper.callLater(FOCUS_SECONDS, lambda: self.run(
+                INSERT_SCRIPT, {'nonce': nonce, 'expect': expect, 'tokens': tokens, 'text': text}, inserted))
+        self._locate(ident, command, focus)
+
+    def op_release_submit(self, ident, command, timeout):
+        """Release the held payment-form submit an owner approval covers exactly (#700).
+
+        ``form`` must be the cancelled submit this worker last reported (form
+        position, method, action, page and the digest of what it would send);
+        the page then checks the same form would still send the same state
+        and makes the submit again (``RELEASE_SCRIPT``).  Answers like a
+        click: ``navigated``, or ``approval_required`` for another cancelled
+        submit, or ``submit_changed``.
+        """
+        form = command.get('form') if isinstance(command.get('form'), dict) else {}
+        held = self.held
+        if held is None or any(str(form.get(key)) != str(held.get(key)) for key in ('dom', 'method', 'action', 'page', 'state')):
+            return self.fail(ident, 'submit_changed')
+        self.held = None   # released at most once
+        self.step_refused = self.refused_submits
+        self.step_posted = self.posted_submits
+        # #937 review P2: the owner approved exactly this submit, so its own confirmation may be answered.
+        self.dialog_step = {'approved': True, 'confirm_ok': True, 'dialogs': []}
+        self.deadline(ident, timeout, on_timeout=self.end_step, observed=self.step_posted_field)
+        blocked_before, baseline = self.blocked, (self.main_navigations, self.landed)
+
+        def released(value, error):
+            if ident not in self.pending:
+                return
+            if error is None and isinstance(value, dict) and value.get('error'):
+                return self.finish_input(ident, blocked_before, value['error'])
+            # A script error here means the submit already navigated away.
+            self.settle_click(ident, lambda navigated: self.finish_input(ident, blocked_before, navigated=navigated),
+                              baseline)
+        self.run(RELEASE_SCRIPT, {'id': held['id']}, released)
+
+    def op_show(self, ident, command, timeout):
+        url = command.get('url')
+        # The owner signs in by hand: the guard is off while the window shows (#698).
+        self.set_guard_off(True)
+        self.owner_visible = True
+        self.window.setIgnoresMouseEvents_(False)
+        self.window.setCollectionBehavior_(self.AppKit.NSWindowCollectionBehaviorDefault)
+        self.window.setExcludedFromWindowsMenu_(False)
+        self.window.center()
+        self.window.makeKeyAndOrderFront_(None)
+        self.app.activateIgnoringOtherApps_(True)
+        if url:
+            return self.op_navigate(ident, command, timeout)
+        self.reply(ident)
+
+    def open_popup(self, config):
+        """#914: a popup (``window.open``) in its own window while the owner signs in by hand.
+
+        A social sign-in opens the provider in a popup and hands its result back
+        to the page that opened it (``window.opener``).  Loading the popup in the
+        login window itself destroyed that page, so the provider signed the owner
+        in while the site never did.  The popup is a separate web view built from
+        WebKit's own configuration (same data store, opener kept); its navigations
+        pass the same destination check.  Only while the login window shows.
+        """
+        AppKit, Foundation, WebKit = self.AppKit, self.Foundation, self.WebKit
+        rect = Foundation.NSMakeRect(0, 0, WIDTH, HEIGHT)
+        view = WebKit.WKWebView.alloc().initWithFrame_configuration_(rect, config)
+        delegate = _popup_delegate_class().alloc().init()
+        delegate.worker = self
+        view.setNavigationDelegate_(delegate)
+        view.setUIDelegate_(delegate)
+        try:
+            view.setCustomUserAgent_(mobile_user_agent())   # #955, #1183: the same phone browser as the page
+        except Exception:
+            pass
+        style = (AppKit.NSWindowStyleMaskTitled | AppKit.NSWindowStyleMaskClosable | AppKit.NSWindowStyleMaskResizable)
+        window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(rect, style, AppKit.NSBackingStoreBuffered, False)
+        window.setContentView_(view)
+        window.setReleasedWhenClosed_(False)
+        window.setDelegate_(delegate)
+        window.setTitle_('AgentOS · 로그인')
+        window.center()
+        window.makeKeyAndOrderFront_(None)
+        self.popups.append((view, window, delegate))
+        return view
+
+    def close_popup(self, view=None, window=None):
+        """Close one popup (by its view or window), or every popup when neither is given."""
+        for entry in list(self.popups):
+            if (view is None and window is None) or entry[0] is view or entry[1] is window:
+                entry[1].orderOut_(None)
+                self.popups.remove(entry)
+
+    def op_hide(self, ident, command, timeout):
+        self.end_remote()
+        self.close_popup()
+        self.owner_visible = False
+        self.park()
+        self.set_guard_off(False)
+        self.reply(ident)
+
+    def window_closed_by_owner(self):
+        self.end_remote()
+        self.close_popup()
+        self.owner_visible = False
+        self.park()
+        self.set_guard_off(False)
+        self.emit({'event': 'hidden'})
+
+    # -- the phone's view of the login window (#939) ------------------------------
+    # Allowed only while the owner's login window shows (``op_show``); a parked
+    # window answers ``not_shown``.  Nothing here reads the page: a tap, a key
+    # or text goes in, an image comes out.  The frontmost view is a sign-in
+    # popup when one is open (#914), else the main view.
+
+    def front_view(self):
+        return self.popups[-1][0] if self.popups else self.view
+
+    def _remote_allowed(self, ident):
+        if not self.owner_visible:
+            self.fail(ident, 'not_shown')
+            return False
+        return True
+
+    def op_frame(self, ident, command, timeout):
+        """A JPEG of the frontmost login view (base64) and that view's size in points."""
+        if not self._remote_allowed(ident):
+            return
+        held = self.held_dialog
+        last = getattr(self, 'last_frame', None)
+        if held is not None and last is not None:
+            # A page waiting on its own dialog renders nothing until it is answered, so a
+            # snapshot would never complete: the phone gets the last frame and the question.
+            return self.reply(ident, jpeg=last[0], width=last[1], height=last[2],
+                              dialog={'kind': held['kind'], 'text': held['text']})
+        view = self.front_view()
+        size = view.frame().size
+        width, height = float(size.width), float(size.height)
+        config = self.WebKit.WKSnapshotConfiguration.alloc().init()
+        config.setSnapshotWidth_(min(FRAME_MAX_WIDTH, width))
+        config.setAfterScreenUpdates_(True)
+        self.deadline(ident, timeout)
+
+        def done(image, error):
+            if ident not in self.pending:
+                return
+            data = _jpeg_bytes(self.AppKit, image) if error is None and image is not None else None
+            if data is None:
+                return self.fail(ident, 'frame_failed')
+            held = self.held_dialog
+            dialog = {'kind': held['kind'], 'text': held['text']} if held is not None else None
+            encoded = base64.b64encode(data).decode('ascii')
+            self.last_frame = (encoded, width, height)
+            self.reply(ident, jpeg=encoded, width=width, height=height, dialog=dialog)
+        view.takeSnapshotWithConfiguration_completionHandler_(config, done)
+
+    def op_remote_tap(self, ident, command, timeout):
+        """A native press at ``(x, y)`` in view points of the frontmost view."""
+        if not self._remote_allowed(ident):
+            return
+        view = self.front_view()
+        size = view.frame().size
+        try:
+            x, y = float(command.get('x')), float(command.get('y'))
+        except (TypeError, ValueError):
+            return self.fail(ident, 'bad_point')
+        if not (0 <= x <= float(size.width) and 0 <= y <= float(size.height)):
+            return self.fail(ident, 'bad_point')
+        self.press(x, y, view)
+        self.reply(ident)
+
+    def op_remote_text(self, ident, command, timeout):
+        """Insert ``text`` into the element the page has focused: the ``insertText`` path
+        ``op_type`` uses, then the native text-input path when nothing in the main frame
+        has focus (a field inside a frame).  The text is never kept or echoed."""
+        if not self._remote_allowed(ident):
+            return
+        text = command.get('text')
+        if not isinstance(text, str) or not text:
+            return self.fail(ident, 'bad_text')
+        view = self.front_view()
+        self.deadline(ident, timeout)
+
+        def inserted(value, error):
+            if ident not in self.pending:
+                return
+            if error is None and isinstance(value, dict) and value.get('ok'):
+                return self.reply(ident)
+            try:
+                view.insertText_replacementRange_(text, self.Foundation.NSMakeRange(self.Foundation.NSNotFound, 0))
+            except Exception:
+                return self.fail(ident, (value or {}).get('error') if error is None and isinstance(value, dict) else 'not_typable')
+            self.reply(ident)
+        self.run(REMOTE_INSERT_SCRIPT, {'text': text}, inserted, view=view)
+
+    def op_remote_key(self, ident, command, timeout):
+        if not self._remote_allowed(ident):
+            return
+        name = command.get('key')
+        if name not in REMOTE_KEYS:
+            return self.fail(ident, 'bad_key')
+        self.key(name, self.front_view())
+        self.reply(ident)
+
+    def op_remote_nav(self, ident, command, timeout):
+        if not self._remote_allowed(ident):
+            return
+        action = command.get('action')
+        if action not in REMOTE_NAV_ACTIONS:
+            return self.fail(ident, 'bad_action')
+        view = self.front_view()
+        if action == 'back':
+            view.goBack()
+        else:
+            view.reload()
+        self.reply(ident)
+
+    def op_remote_begin(self, ident, command, timeout):
+        """A phone session starts: page dialogs are held for its answer (``hold_dialog``)."""
+        if not self._remote_allowed(ident):
+            return
+        self.remote = True
+        try:
+            self.enter_mobile()
+        except Exception:
+            pass   # the desktop page still works from the phone, only smaller
+        self.reply(ident)
+
+    def enter_mobile(self):
+        """#955: phone-sized for the phone session.  The page is already the mobile one (#1183):
+        the user agent never changes, so no reload; only a window the owner resized is reset."""
+        if getattr(self, 'mobile_restore', None) is not None:
+            return
+        # #956 review: the whole frame (origin and title bar included) is restored as it was.
+        self.mobile_restore = self.window.frame()
+        self.window.setContentSize_(self.Foundation.NSMakeSize(*MOBILE_SIZE))
+        if self.owner_visible:
+            self.window.center()
+
+    def leave_mobile(self):
+        """The window as it was before the phone session (the user agent stays mobile, #1183)."""
+        restore = getattr(self, 'mobile_restore', None)
+        if restore is None:
+            return
+        self.mobile_restore = None
+        self.window.setFrame_display_(restore, True)
+
+    def op_remote_end(self, ident, command, timeout):
+        self.end_remote()
+        self.reply(ident)
+
+    def op_remote_dialog(self, ident, command, timeout):
+        """The phone's answer to the held page dialog: ``answer`` is ``ok`` or ``cancel``."""
+        if not self._remote_allowed(ident):
+            return
+        answer = command.get('answer')
+        if answer not in ('ok', 'cancel'):
+            return self.fail(ident, 'bad_answer')
+        self.reply(ident, answered=self.answer_dialog(answer == 'ok'))
+
+    def op_state(self, ident, command, timeout):
+        # #765: ``navigations`` is a count of main-frame navigations (never a URL).
+        self.reply(ident, visible=bool(self.owner_visible), navigations=self.landed)
+
+    def _all_types(self):
+        return self.WebKit.WKWebsiteDataStore.allWebsiteDataTypes()
+
+    def _records(self, types, done):
+        self.store.fetchDataRecordsOfTypes_completionHandler_(types, lambda records: done(list(records or [])))
+
+    def op_cookies_export(self, ident, command, timeout):
+        """Every cookie of the in-memory store, grouped by WebKit's per-site record name."""
+        self.deadline(ident, timeout)
+
+        def with_records(records):
+            sites = {str(record.displayName()).lower() for record in records if record.displayName()}
+
+            def with_cookies(cookies):
+                if ident not in self.pending:
+                    return
+                grouped = {}
+                for cookie in cookies or []:
+                    row = _cookie_row(cookie)
+                    grouped.setdefault(site_of(row['domain'], sites), []).append(row)
+                self.reply(ident, sites=grouped, hosts=sorted(self.hosts))
+            self.store.httpCookieStore().getAllCookies_(with_cookies)
+        self._records(self.Foundation.NSSet.setWithObject_(self.WebKit.WKWebsiteDataTypeCookies), with_records)
+
+    def op_cookies_import(self, ident, command, timeout):
+        rows = [row for row in command.get('cookies') or [] if isinstance(row, dict)]
+        self.deadline(ident, timeout)
+        cookies = [cookie for cookie in (_cookie_object(self.Foundation, row) for row in rows) if cookie is not None]
+        if not cookies:
+            return self.reply(ident, imported=0)
+        remaining = [len(cookies)]
+
+        def one_done():
+            remaining[0] -= 1
+            if remaining[0] == 0 and ident in self.pending:
+                self.reply(ident, imported=len(cookies))
+        store = self.store.httpCookieStore()
+        for cookie in cookies:
+            store.setCookie_completionHandler_(cookie, one_done)
+
+    def op_cookies_delete(self, ident, command, timeout):
+        """Remove every kind of website data of one site (WebKit's own per-site records), then any cookie of it."""
+        site = str(command.get('site') or '').lower()
+        if not site:
+            return self.fail(ident, 'bad_site')
+        self.deadline(ident, timeout)
+        types = self._all_types()
+
+        def with_records(records):
+            matched = [record for record in records if str(record.displayName() or '').lower() == site]
+
+            def then_cookies():
+                def with_cookies(cookies):
+                    hits = [cookie for cookie in cookies or [] if site_of(str(cookie.domain()), {site}) == site]
+                    if not hits:
+                        return self.reply(ident, deleted=len(matched))
+                    remaining = [len(hits)]
+
+                    def one_done():
+                        remaining[0] -= 1
+                        if remaining[0] == 0 and ident in self.pending:
+                            self.reply(ident, deleted=len(matched) + len(hits))
+                    for cookie in hits:
+                        self.store.httpCookieStore().deleteCookie_completionHandler_(cookie, one_done)
+                self.store.httpCookieStore().getAllCookies_(with_cookies)
+            if matched:
+                self.store.removeDataOfTypes_forDataRecords_completionHandler_(types, matched, then_cookies)
+            else:
+                then_cookies()
+        self._records(types, with_records)
+
+    def op_cookies_clear(self, ident, command, timeout):
+        self.deadline(ident, timeout)
+        self.store.removeDataOfTypes_modifiedSince_completionHandler_(
+            self._all_types(), self.Foundation.NSDate.distantPast(), lambda: self.reply(ident))
+
+    def op_quit(self, ident, command, timeout):
+        self.reply(ident)
+        self.AppHelper.stopEventLoop()
+
+
+def _answer_dialog_handler(kind, handler, ok):
+    """Call a WebKit dialog completion handler the way its kind expects, once and never raising."""
+    try:
+        if kind == 'confirm':
+            handler(bool(ok))
+        elif kind == 'prompt':
+            handler(None)
+        else:
+            handler()
+    except Exception:
+        pass
+
+
+def _jpeg_bytes(AppKit, image, quality=FRAME_JPEG_QUALITY):
+    """JPEG bytes of an ``NSImage`` snapshot, or None.  The bytes leave the worker once and are never kept (#939)."""
+    try:
+        tiff = image.TIFFRepresentation()
+        rep = AppKit.NSBitmapImageRep.imageRepWithData_(tiff) if tiff is not None else None
+        data = rep.representationUsingType_properties_(AppKit.NSBitmapImageFileTypeJPEG,
+                                                       {AppKit.NSImageCompressionFactor: float(quality)}) if rep is not None else None
+        return bytes(data) if data is not None and len(data) else None
+    except Exception:
+        return None
+
+
+def _form_record(value):
+    """A cancelled submit's form, from page data, or None.
+
+    ``{id, dom, method, action, page, state}`` of bounded plain values.
+    ``state`` is the SHA-256 of what the submit would have sent (#700); the
+    field values themselves stop here, inside the worker.
+    """
+    try:
+        get = value.get if isinstance(value, dict) else value.objectForKey_
+        dom, method, action, ident = get('dom'), get('method'), get('action'), get('id')
+        page, state = get('page'), get('state')
+        return {'id': str(ident or '')[:64] or uuid.uuid4().hex, 'dom': int(dom) if dom is not None else -1,
+                'method': str(method or '')[:16], 'action': str(action or '')[:2000], 'page': str(page or '')[:2000],
+                'state': hashlib.sha256(str(state or '').encode('utf-8', 'replace')).hexdigest()}
+    except Exception:
+        return None
+
+
+def _cookie_row(cookie):
+    expires = cookie.expiresDate()
+    same_site = None
+    try:
+        same_site = cookie.sameSitePolicy()
+    except AttributeError:
+        same_site = None
+    return {'name': str(cookie.name()), 'value': str(cookie.value()), 'domain': str(cookie.domain()),
+            'path': str(cookie.path() or '/'), 'expires': float(expires.timeIntervalSince1970()) if expires is not None else None,
+            'secure': bool(cookie.isSecure()), 'http_only': bool(cookie.isHTTPOnly()),
+            'same_site': str(same_site) if same_site else None}
+
+
+def _cookie_object(Foundation, row):
+    """An ``NSHTTPCookie`` from a jar row, or None when the row is unusable or expired."""
+    try:
+        name, value, domain = str(row['name']), str(row['value']), str(row['domain'])
+    except (KeyError, TypeError):
+        return None
+    expires = row.get('expires')
+    if isinstance(expires, (int, float)) and expires <= time.time():
+        return None
+    properties = {Foundation.NSHTTPCookieName: name, Foundation.NSHTTPCookieValue: value,
+                  Foundation.NSHTTPCookieDomain: domain, Foundation.NSHTTPCookiePath: str(row.get('path') or '/')}
+    if isinstance(expires, (int, float)):
+        properties[Foundation.NSHTTPCookieExpires] = Foundation.NSDate.dateWithTimeIntervalSince1970_(float(expires))
+    if row.get('secure'):
+        properties[Foundation.NSHTTPCookieSecure] = 'TRUE'
+    if row.get('http_only'):
+        properties['HttpOnly'] = 'TRUE'
+    if row.get('same_site') and hasattr(Foundation, 'NSHTTPCookieSameSitePolicy'):
+        properties[Foundation.NSHTTPCookieSameSitePolicy] = str(row['same_site'])
+    return Foundation.NSHTTPCookie.cookieWithProperties_(properties)
+
+
+_DELEGATE = []
+_POPUP_DELEGATE = []
+
+
+def _blank(url):
+    """``window.open('')`` / ``window.open('about:blank')``: a popup reserved before its address is set (#915 review)."""
+    if url is None:
+        return True
+    text = str(url.absoluteString() or '')
+    return text in ('', 'about:blank')
+
+
+def _popup_delegate_class():
+    """#914: the delegate of a sign-in popup window: the same destination check, nothing else."""
+    if _POPUP_DELEGATE:
+        return _POPUP_DELEGATE[0]
+    import Foundation
+    import WebKit
+    import objc
+
+    class AgentOSPopupDelegate(Foundation.NSObject):
+        worker = objc.ivar()
+
+        def webView_decidePolicyForNavigationAction_decisionHandler_(self, view, action, handler):
+            request = action.request()
+            url = str(request.URL().absoluteString()) if request is not None and request.URL() is not None else ''
+            frame = action.targetFrame()
+            top = frame is None or bool(frame.isMainFrame())
+            if top and str(urlsplit(url).scheme or '').lower() in ('data', 'blob'):
+                return handler(WebKit.WKNavigationActionPolicyCancel)
+            # main_frame=False: a popup's navigations never touch the login window's counters.
+            self.worker.decide(url, False, lambda allowed: handler(
+                WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel))
+
+        def webView_runJavaScriptAlertPanelWithMessage_initiatedByFrame_completionHandler_(self, view, message, frame, handler):
+            # #936: answered by the worker's rule; never left to WebKit's silent default.
+            if self.worker.hold_dialog('alert', message, handler):
+                return   # #939: the phone (or the Mac's sheet) answers
+            try:
+                self.worker.js_dialog('alert', message)
+            finally:
+                handler()
+
+        def webView_runJavaScriptConfirmPanelWithMessage_initiatedByFrame_completionHandler_(self, view, message, frame, handler):
+            if self.worker.hold_dialog('confirm', message, handler):
+                return   # #939: the phone (or the Mac's sheet) answers
+            answer = False
+            try:
+                answer = bool(self.worker.js_dialog('confirm', message))
+            finally:
+                handler(answer)
+
+        def webView_runJavaScriptTextInputPanelWithPrompt_defaultText_initiatedByFrame_completionHandler_(
+                self, view, prompt, default, frame, handler):
+            if self.worker.hold_dialog('prompt', prompt, handler):
+                return   # #939: the phone (or the Mac's sheet) answers
+            try:
+                self.worker.js_dialog('prompt', prompt)
+            finally:
+                handler(None)
+
+        def webView_createWebViewWithConfiguration_forNavigationAction_windowFeatures_(self, view, config, action, features):
+            request = action.request()
+            url = request.URL() if request is not None else None
+            scheme = str(url.scheme() or '').lower() if url is not None else ''
+            if self.worker.guard_off and self.worker.owner_visible and (scheme in ('http', 'https') or _blank(url)):
+                return self.worker.open_popup(config)
+            return None
+
+        def webView_didCommitNavigation_(self, view, navigation):
+            url = view.URL()
+            host = _host(url.absoluteString()) if url is not None else ''
+            if host:
+                for entry in self.worker.popups:
+                    if entry[0] is view:
+                        entry[1].setTitle_(f'AgentOS · 로그인 · {host}')
+
+        def webViewDidClose_(self, view):
+            # The page closed its own popup (window.close()), as a finished sign-in does.
+            self.worker.close_popup(view=view)
+
+        def windowShouldClose_(self, window):
+            self.worker.close_popup(window=window)
+            return False
+
+    _POPUP_DELEGATE.append(AgentOSPopupDelegate)
+    return AgentOSPopupDelegate
+
+
+def _delegate_class():
+    """The navigation/UI/window delegate, defined once per process (Objective-C classes are global)."""
+    if _DELEGATE:
+        return _DELEGATE[0]
+    import Foundation
+    import WebKit
+    import objc
+
+    class AgentOSBrowserDelegate(Foundation.NSObject, protocols=[objc.protocolNamed('WKScriptMessageHandler')]):
+        worker = objc.ivar()
+
+        def userContentController_didReceiveScriptMessage_(self, controller, message):
+            # Registered for the client world only: the page world cannot post here (#698).
+            try:
+                self.worker.receive_cancelled(message.body())
+            except Exception:
+                pass
+
+        def webView_decidePolicyForNavigationAction_decisionHandler_(self, view, action, handler):
+            # Every navigation: typed, redirect, form, window.open, frame.
+            worker = self.worker
+            request = action.request()
+            url = str(request.URL().absoluteString()) if request is not None and request.URL() is not None else ''
+            frame = action.targetFrame()
+            main_frame = frame is None or bool(frame.isMainFrame())
+
+            def decision(allowed, reason=None):
+                # Record the typed refusal before cancellation can synchronously
+                # report a generic navigation failure through WebKit's delegate.
+                if not allowed:
+                    worker.navigation_refused(main_frame, reason or 'blocked_destination')
+                elif main_frame:
+                    worker.main_navigations += 1   # a click waits for it to land (#736)
+                handler(WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel)
+            # #700: a form submission from or into the main frame while the guard is
+            # armed is checked against the page's payment forms first (a native
+            # ``submit`` that no ``submit`` event or wrapper saw); a refusal is a
+            # cancelled submit, not a blocked destination.  A resubmitted POST (a
+            # reload or back of one) is never an agent step's: refused.
+            source = action.sourceFrame()
+            source_main = source is not None and bool(source.isMainFrame())
+            kind = action.navigationType()
+            if (main_frame or source_main) and not worker.guard_off and kind in (
+                    WebKit.WKNavigationTypeFormSubmitted, WebKit.WKNavigationTypeFormResubmitted):
+                method = str(request.HTTPMethod() or 'GET') if request is not None else 'GET'
+                if method.upper() != 'GET':
+                    worker.posted_submits += 1   # #899: counted when started, whatever the guard decides
+                if kind == WebKit.WKNavigationTypeFormResubmitted and method.upper() != 'GET':
+                    worker.refused_submits += 1
+                    return handler(WebKit.WKNavigationActionPolicyCancel)
+
+                def checked(allowed):
+                    if allowed:
+                        worker.decide(url, main_frame, decision)
+                    else:
+                        handler(WebKit.WKNavigationActionPolicyCancel)
+                return worker.check_form_navigation(url, method, checked, into_frame=not main_frame)
+            worker.decide(url, main_frame, decision)
+
+        def webView_didCommitNavigation_(self, view, navigation):
+            self.worker.landed += 1
+            url = view.URL()
+            host = _host(url.absoluteString()) if url is not None else ''
+            if host:
+                self.worker.hosts.add(host)
+                # The owner sees which host a login window shows (no address bar).
+                scheme = str(url.scheme() or '')
+                self.worker.window.setTitle_(f'AgentOS · {scheme}://{host}')
+
+        def webView_didFinishNavigation_(self, view, navigation):
+            self.worker.navigation_finished(navigation)
+
+        def webView_didFailNavigation_withError_(self, view, navigation, error):
+            self.worker.navigation_finished(navigation, error)
+
+        def webView_didFailProvisionalNavigation_withError_(self, view, navigation, error):
+            self.worker.landed += 1   # a navigation that never commits has landed too (#736)
+            self.worker.navigation_finished(navigation, error)
+
+        def webView_runJavaScriptAlertPanelWithMessage_initiatedByFrame_completionHandler_(self, view, message, frame, handler):
+            # #936: answered by the worker's rule; never left to WebKit's silent default.
+            if self.worker.hold_dialog('alert', message, handler):
+                return   # #939: the phone (or the Mac's sheet) answers
+            try:
+                self.worker.js_dialog('alert', message)
+            finally:
+                handler()
+
+        def webView_runJavaScriptConfirmPanelWithMessage_initiatedByFrame_completionHandler_(self, view, message, frame, handler):
+            if self.worker.hold_dialog('confirm', message, handler):
+                return   # #939: the phone (or the Mac's sheet) answers
+            answer = False
+            try:
+                answer = bool(self.worker.js_dialog('confirm', message))
+            finally:
+                handler(answer)
+
+        def webView_runJavaScriptTextInputPanelWithPrompt_defaultText_initiatedByFrame_completionHandler_(
+                self, view, prompt, default, frame, handler):
+            if self.worker.hold_dialog('prompt', prompt, handler):
+                return   # #939: the phone (or the Mac's sheet) answers
+            try:
+                self.worker.js_dialog('prompt', prompt)
+            finally:
+                handler(None)
+
+        def webView_createWebViewWithConfiguration_forNavigationAction_windowFeatures_(self, view, config, action, features):
+            # A link that asks for a new window opens in this one: one page, one
+            # session.  The load still passes the navigation policy above; only
+            # http(s) is handed to it at all.  #914: while the owner signs in by
+            # hand (the login window shows), a popup gets its own window so a
+            # social sign-in can hand its result back to the page that opened it.
+            request = action.request()
+            url = request.URL() if request is not None else None
+            scheme = str(url.scheme() or '').lower() if url is not None else ''
+            if self.worker.guard_off and self.worker.owner_visible and (scheme in ('http', 'https') or _blank(url)):
+                # A blank popup (window.open('') / 'about:blank') is a sign-in flow reserving its
+                # window before it sets the address; that later navigation is checked like any other.
+                return self.worker.open_popup(config)
+            if scheme not in ('http', 'https'):
+                return None
+            view.loadRequest_(request)
+            return None
+
+        def windowShouldClose_(self, window):
+            # Closing the login window hides it; the parent then exports the session.
+            self.worker.window_closed_by_owner()
+            return False
+
+    _DELEGATE.append(AgentOSBrowserDelegate)
+    return AgentOSBrowserDelegate
+
+
+def make_emit(stream):
+    """A line writer that can never raise: ASCII JSON, and an encoding failure becomes an error reply."""
+    lock = threading.Lock()
+
+    def emit(message):
+        try:
+            line = json.dumps(message, ensure_ascii=True)
+        except (TypeError, ValueError):
+            line = json.dumps({'id': message.get('id') if isinstance(message, dict) else None, 'ok': False,
+                               'error': 'encode_failed'}) if isinstance(message, dict) and 'id' in message else None
+        if line is None:
+            return
+        with lock:
+            try:
+                stream.write(line + '\n')
+                stream.flush()
+            except (OSError, ValueError):
+                pass
+    return emit
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog='personal_agent.browser_worker')
+    parser.add_argument('--profile', default='default')
+    # Test-only: an exact fixture origin (host:port) the destination policy
+    # allows.  Only a test constructor passes it; no config or environment does.
+    parser.add_argument('--test-allow-origin', action='append', default=[])
+    args = parser.parse_args(argv)
+    emit = make_emit(sys.stdout)
+    if sys.platform != 'darwin':
+        emit({'event': 'unavailable', 'error': 'unsupported_platform'})
+        return 2
+    try:
+        from PyObjCTools import AppHelper
+    except ImportError:
+        emit({'event': 'unavailable', 'error': 'missing_dependency'})
+        return 2
+    state = {}
+
+    def setup():
+        try:
+            state['worker'] = Worker(args.profile, emit, allowed_origins=args.test_allow_origin)
+        except Exception:
+            emit({'event': 'unavailable', 'error': 'webkit_failed'})
+            AppHelper.stopEventLoop()
+            return
+        emit({'event': 'ready', 'profile': args.profile, 'pid': os.getpid()})
+
+    def dispatch(command):
+        worker = state.get('worker')
+        if worker is None:
+            emit({'id': command.get('id'), 'ok': False, 'error': 'not_ready'})
+            return
+        worker.handle(command)
+
+    def reader():
+        for line in sys.stdin:
+            try:
+                command = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(command, dict):
+                AppHelper.callAfter(dispatch, command)   # every WebKit call hops to the main thread
+        # The parent went away: never outlive it.
+        AppHelper.callAfter(AppHelper.stopEventLoop)
+
+    AppHelper.callAfter(setup)
+    threading.Thread(target=reader, name='agentos-browser-worker-reader', daemon=True).start()
+    AppHelper.runEventLoop(installInterrupt=False)
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

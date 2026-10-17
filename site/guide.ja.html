@@ -1,0 +1,94 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>インストールと使い方 — Still</title><link rel="stylesheet" href="assets/site.css"></head><body><header><strong>Still / Still</strong><nav aria-label="サイト"><a href="ja.html">ホーム</a><a href="install.html">接続案内</a><a href="privacy.html">プライバシー</a><a href="terms.html">利用規約</a></nav></header><main><h1>インストールと使い方</h1><p>この Mac に Still をインストールし、AI と Telegram を接続して使うまでの手順です。後半では、家族用インスタンスの登録・停止・削除を説明します。コマンドはすべてターミナルで実行します。</p><p class="notice">このページはインストールコマンドと画面の流れだけを説明します。このウェブサイトに AI アカウントやボットトークンを入力しないでください。</p>
+
+<h2>1. インストール</h2>
+<p><strong>macOS または Linux.</strong> Homebrew、Python、Docker、git は不要です。</p>
+<pre><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh</code></pre>
+<p>インストーラーは公開リリースのアーカイブを取得し、SHA-256 をリリースマニフェストと照合します。値が一致しなければ何もインストールしません。完了すると、同じターミナルで初回設定が続きます。次回からは新しいターミナルで <code>agentos start</code> を実行します。</p>
+<p><strong>macOS（Homebrew）.</strong></p>
+<pre><code>brew install jongtae/agentos/agentos
+agentos start</code></pre>
+<p><strong>Windows.</strong> Still はまだ Windows でネイティブには動作しません。WSL2 の Ubuntu を開き、上のインストールコマンドを実行します。Codex や Claude Code も Ubuntu 内にインストールしてログインする必要があります。Still を使う間は Ubuntu のウィンドウを開いたままにしてください。ブラウザーが開かない場合は、Windows のブラウザーで <code>http://127.0.0.1:8787</code> を開きます。</p>
+
+<h2>2. 初回設定</h2>
+<p>ターミナルはシステムの言語（韓国語、日本語、中国語（簡体字）、それ以外は英語）に従います。各ステップは Enter で飛ばせます。完了したステップは、Ctrl-C で中断しても保存されます。</p>
+<ol>
+  <li><strong>アクセスパスワード</strong>（任意、12文字以上）。空欄のままにすると、このコンピューターからだけ Still を開けます。</li>
+  <li><strong>AI の接続。</strong>ChatGPT（Codex）、Claude（Claude Code）、API キーから選ぶか、後でブラウザーから接続します。</li>
+  <li><strong>Telegram</strong>（任意）。BotFather で受け取ったボットトークンを貼り付けると、Still がペアリングリンクを表示します。</li>
+</ol>
+<p>設定が終わると、ブラウザーで <code>http://127.0.0.1:8787</code> が開きます。<code>agentos start</code> はいつでも実行できます。完了した設定は繰り返されず、途中で止めた場合は未完了の最初のステップから再開します。</p>
+
+<h2>3. AI を接続する</h2>
+<ul>
+  <li><strong>ChatGPT プラン（Codex）。</strong>公式の Codex CLI をインストールし、<code>codex login</code> を実行します。その後、Still の設定で Codex のログイン完了を確認する項目を選びます。Still は Codex のログイン情報を要求・読み取り・保存しません。完了したという確認だけを記録します。</li>
+  <li><strong>Claude プラン（Claude Code）。</strong>Claude Code をインストールし、<code>claude setup-token</code> を実行します。表示されたトークンを、Still の Claude Code トークン欄に一度貼り付けます。トークンはこのコンピューターの非公開の認証情報ストアに保管され、Claude Code にだけ渡されます。</li>
+  <li><strong>直接のモデル接続。</strong>Ollama、OpenAI 互換の Chat Completions エンドポイント、OpenAI または Anthropic の API キーを使えます。プロバイダー、エンドポイント、モデル名を選び、接続テストに成功した設定だけを適用します。API キーは非公開のローカルファイルに保管されます。</li>
+</ul>
+<p class="notice">リクエストの会話内容は OpenAI または Anthropic に送信されます。サブスクリプションのエンジンには、Still が許可したツールだけが渡されます。ローカルファイル、認証情報、任意のシェルには接続されません。</p>
+
+<h2>4. Telegram を接続する</h2>
+<ol>
+  <li>Telegram の BotFather で新しいボットを作成し、トークンをコピーします。Webhook が設定されていない専用のボットを使ってください。</li>
+  <li>ブラウザーで Still の設定を開き、外部接続の Telegram 接続設定を選びます。トークンを貼り付けて接続します。</li>
+  <li>Telegram を開く操作を行い、ご自身のアカウントでボットの <strong>Start</strong> を押すとペアリングが完了します。</li>
+</ol>
+<p>ペアリングされた非公開アカウントだけがリクエストを送れます。Still は送信のポーリングで通信するため、公開の受信ポートを開く必要はありません。リモートからのリクエストは、コンピューターが電源オンで起きている間だけ処理されます。</p>
+
+<h2>5. 試してみる</h2>
+<p>Telegram のチャットで必要なことを頼みます。例えば「うちの猫が最近ごはんを食べないの。何を試したらいい？」と尋ねると、Still は回答しながら猫を飼っていることを覚え、その旨を伝えます（取り消しも可能です）。後で「500ドル以下のロボット掃除機を探して」と頼めば、猫の話をしなくても毛の多さを考慮した回答が得られます。</p>
+<p>モデルを使わずに接続を確認するには、<code>/note 金曜日のリリースを確認</code> を送り、<code>/notes</code> でメモ一覧を表示します。接続の変更や作業記録の確認はブラウザーで行います。</p>
+
+<h2>6. 再起動・更新・削除</h2>
+<table>
+  <thead><tr><th>目的</th><th>コマンド</th></tr></thead>
+  <tbody>
+    <tr><td>再起動</td><td><code>agentos start</code></td></tr>
+    <tr><td>更新（Homebrew）</td><td>実行中であれば Ctrl-C で止めてから、<code>brew update</code>、<code>brew upgrade jongtae/agentos/agentos</code>、<code>agentos start</code> を実行</td></tr>
+    <tr><td>更新（インストールスクリプト）</td><td>インストールコマンドをもう一度実行</td></tr>
+    <tr><td>プログラムの削除（uv でインストールした場合）</td><td><code>uv tool uninstall personal-agentos</code></td></tr>
+    <tr><td>現在の状態の確認</td><td><code>agentos guide</code>（作業内容や認証情報は表示されません）</td></tr>
+  </tbody>
+</table>
+<p>データは <code>~/.local/share/agentos</code> に残ります。プログラムを削除してもこのフォルダーは消えません。バックアップする場合は、Still を止めてからフォルダー全体をコピーしてください。フォルダーには非公開の会話と認証情報が含まれます。認証情報はファイルの権限で保護されており、アプリケーションが別途暗号化するものではありません。</p>
+
+<h2>7. バックグラウンドサービス（macOS）</h2>
+<p>ログイン時に Still が自動的に起動するよう登録できます。ターミナルを開いたままにしておく必要はありません。</p>
+<pre><code>agentos service install    # 登録して起動
+agentos service status     # launchd の状態と健全性チェックの結果を表示
+agentos service restart
+agentos service stop       # 停止し、永続的に無効化
+agentos service start      # 停止中のサービスを再度有効にして起動
+agentos service uninstall  # 登録のみ削除（データは残ります）
+agentos service upgrade    # 実行ファイルを入れ替えた後、サービス定義を更新</code></pre>
+<p class="notice">登録されたサービスは <code>KeepAlive</code> で動作するため、プロセスが終了すると launchd が再起動します。プロセスを kill しても止まりません。<code>service stop</code> を使ってください。自動再起動は launchctl を試験用に置き換えた環境でのみ確認しています。再起動後の動作はオーナーご自身の Mac で確認が必要です。</p>
+
+<h2>8. 家族用インスタンス</h2>
+<p>家族それぞれに、この Mac 上で専用の Still インスタンスを用意できます。インスタンスは独自のメモリ、フォルダー、承認、作業履歴、Telegram ボットを持ちます。ご自身のインスタンスとは何も共有されません。</p>
+
+<h3>登録</h3>
+<pre><code>agentos family add spouse --display-name "配偶者のアシスタント"</code></pre>
+<ul>
+  <li>インスタンスを作成して起動し、インストール済みの <code>ngrok</code> で一時的な HTTPS 設定リンク（約30分有効）を作成して、Telegram で送信します。</li>
+  <li>家族の方はリンクを開き、ご自身の Telegram でボットを作成します。ご自身のボット、フォルダー、メモリ、他の接続はコピーされません。</li>
+  <li>ご自身の設定から、インスタンスに必要な AI のキーやトークンだけをコピーします。後でキーを変更しても、インスタンスは再設定するまで古いキーを使い続けます。</li>
+  <li>ポートを指定するには <code>--port 8797</code> のように渡します。省略すると、8797 から空いているペアを順に使います。</li>
+</ul>
+<p>設定リンクを使わずにサービスだけを登録する場合は、次のコマンドを使います。名前には小文字、数字、ハイフンを使えます。ポートは空いている必要があり、8787 は使えません。</p>
+<pre><code>agentos service install --instance spouse --port 8797</code></pre>
+<p>設定画面は <code>http://127.0.0.1:8797/</code> で開きます。設定リンクは、そのインスタンスの <code>private/setup-link.txt</code> にあります。</p>
+
+<h3>確認・停止・開始・削除</h3>
+<pre><code>agentos service status    --instance spouse   # 状態を確認
+agentos service stop      --instance spouse   # 停止し、永続的に無効化
+agentos service start     --instance spouse   # 停止中のインスタンスを再度有効にして起動
+agentos service uninstall --instance spouse   # 登録のみ削除（データは残ります）</code></pre>
+<p>インスタンスを完全に削除するには、<strong>先に <code>stop</code>、次に <code>uninstall</code></strong> を実行します。<code>uninstall</code> は登録だけを削除し、データフォルダー（<code>~/.local/share/agentos-instances/spouse</code>）は残します。Still にはインスタンスのデータを削除するコマンドはありません。データも削除する場合は、インスタンスを停止してからそのフォルダーを手動で削除してください。この操作は元に戻せません。</p>
+
+<h2>9. トラブルシューティング</h2>
+<ul>
+  <li><strong>ブラウザーが開かない。</strong>設定が終わるまでは、このコンピューター上の <code>~/.local/share/agentos/private/setup-link.txt</code> にあるリンクを開いてください。設定が終わるまでこのファイルを他人に送らないでください。</li>
+  <li><strong>ポートが競合する。</strong><code>agentos start --port 8788</code> のように別のポートで起動します。</li>
+  <li><strong>作業が途中で中断された。</strong>再起動後、実行中だった作業は中断として、送信中だった Telegram メッセージは不明として表示されます。Still はどちらも黙って再送しません。ウェブの記録を確認し、必要であれば新しくリクエストしてください。</li>
+  <li><strong>状態の要約。</strong><code>agentos guide</code> は件数と次の手順だけを表示し、作業内容や認証情報は表示しません。</li>
+</ul>
+</main><footer><a href="ja.html">ホーム</a> · <a href="install.html">接続案内</a> · <a href="privacy.html">プライバシー</a> · <a href="terms.html">利用規約</a></footer></body></html>

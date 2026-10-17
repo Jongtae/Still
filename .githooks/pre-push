@@ -1,0 +1,11 @@
+#!/bin/sh
+# Do not bypass the pull-request lifecycle by pushing a local integration branch.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      echo "Direct pushes to ${remote_ref#refs/heads/} are blocked." >&2
+      echo "Push the matching issue branch and merge it through a pull request." >&2
+      exit 1
+      ;;
+  esac
+done
