@@ -40,7 +40,7 @@ schema-validation = ["jsonschema[format]>=4.23"]
 # CONNECT-FIND-01: official model-free CLI status API. SDK source is MIT;
 # its bundled CLI has separate vendor terms and is never selected by Still.
 # Setup always requires the owner's explicitly installed CLI.
-mcp-host = ["mcp==2.3.0", "claude-agent-sdk==0.2.165"]
+mcp-host = ["mcp==2.3.0", "claude-agent-sdk==0.2.166"]
 
 [dependency-groups]
 dev = ["pytest>=9.1,<10"]
