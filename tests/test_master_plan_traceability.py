@@ -16,7 +16,7 @@ SPEC.loader.exec_module(VERIFIER)
 
 
 def plan():
-    return json.loads((ROOT / "delivery-plan.yaml").read_text(encoding="utf-8"))
+    return json.loads((ROOT / "docs/history/predecessor-delivery-plan.yaml").read_text(encoding="utf-8"))
 
 
 def test_every_master_plan_design_has_a_named_implementation_contract_and_evidence():

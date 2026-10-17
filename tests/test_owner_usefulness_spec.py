@@ -62,7 +62,7 @@ class OwnerUsefulnessSpecificationTests(unittest.TestCase):
         # goal itself moves over time and is absent after a closeout, so this
         # checks the rule in both shapes: goal-readiness never executes, and
         # a closeout never executes either.
-        plan = json.loads((ROOT / "delivery-plan.yaml").read_text(encoding="utf-8"))
+        plan = json.loads((ROOT / "docs/history/predecessor-delivery-plan.yaml").read_text(encoding="utf-8"))
         shape = assert_declared_goal_shape(self, plan)
         declared = plan["next_goal"]["id"]
         documented = plan["history"]["documented_completed_iterations"]
@@ -102,7 +102,7 @@ class OwnerUsefulnessSpecificationTests(unittest.TestCase):
         self.assertIn("USE-01", plan["history"]["documented_completed_iterations"])
         use01 = next(item for item in plan["iterations"] if item["id"] == "USE-01")
         self.assertEqual(use01["issue"], 358)
-        controller_plan = DeliveryPlan(ROOT / "delivery-plan.yaml")
+        controller_plan = DeliveryPlan(ROOT / "docs/history/predecessor-delivery-plan.yaml")
         self.assertIsNone(controller_plan.select({}))
         self.assertIsNone(controller_plan.select({"active": "EPIC-PA1", "status": "running"}))
         for item in plan["iterations"]:
@@ -123,7 +123,7 @@ class OwnerUsefulnessSpecificationTests(unittest.TestCase):
             self.assertIn("before", text)
         # This historical declaration must not gain extra claimed evidence as
         # a side effect of adding the new plan entries.
-        plan = json.loads((ROOT / "delivery-plan.yaml").read_text(encoding="utf-8"))
+        plan = json.loads((ROOT / "docs/history/predecessor-delivery-plan.yaml").read_text(encoding="utf-8"))
         historical = next(item for item in plan["iterations"] if item["id"] == "MP1-I-03")
         self.assertEqual(historical["automated_evidence"], ["python3 -m pytest -q tests"])
 

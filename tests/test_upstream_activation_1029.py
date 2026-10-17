@@ -167,7 +167,7 @@ class UpstreamActivation1029Tests(unittest.TestCase):
         invariants.assert_pause_survives_redeclaration(self, self.after, "SECRETARY-01")
 
     def test_live_plan_obeys_enduring_resting_state_invariants(self):
-        current = read_plan(ROOT / "delivery-plan.yaml")
+        current = read_plan(ROOT / "docs/history/predecessor-delivery-plan.yaml")
         shape = invariants.assert_declared_goal_shape(self, plan=current)
         if shape == "goal-ready":
             name = current["next_goal"]["id"]

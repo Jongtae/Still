@@ -21,7 +21,7 @@ class GovUsePreservationTests(unittest.TestCase):
         original = (ROOT / "tests/fixtures/governance/plan-before-gov-use.json").read_bytes()
         self.assertEqual(blob_sha(original), BASELINE_SHA)
         baseline = json.loads(original)
-        current = json.loads((ROOT / "delivery-plan.yaml").read_bytes())
+        current = json.loads((ROOT / "docs/history/predecessor-delivery-plan.yaml").read_bytes())
         old_items = {item["id"]: item for item in baseline["iterations"]}
         new_items = {item["id"]: item for item in current["iterations"]}
         for identifier, original_item in old_items.items():

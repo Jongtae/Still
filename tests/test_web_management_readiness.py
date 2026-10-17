@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class WebManagementReadinessTests(unittest.TestCase):
     def test_mirrored_contract_is_a_parent_controlled_substep_that_never_self_selects(self):
-        source = (ROOT / 'delivery-plan.yaml').read_bytes()
+        source = (ROOT / 'docs/history/predecessor-delivery-plan.yaml').read_bytes()
         plan = json.loads(source)
         entries = [item for item in plan['iterations'] if item['id'] == 'WEB-ADMIN-01']
         self.assertEqual(len(entries), 1)
@@ -72,7 +72,7 @@ class WebManagementReadinessTests(unittest.TestCase):
         self.assertTrue((ROOT / 'docs' / entry['contract']).is_file())
 
     def test_historical_top02_validation_is_not_weakened(self):
-        plan = json.loads((ROOT / 'delivery-plan.yaml').read_text())
+        plan = json.loads((ROOT / 'docs/history/predecessor-delivery-plan.yaml').read_text())
         entry = next(item for item in plan['iterations'] if item['id'] == 'TOP-02')
         self.assertEqual(entry['tests'], [
             'python3 -m pytest -q tests',

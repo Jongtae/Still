@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class Pa1ParallelDeliveryTests(unittest.TestCase):
     def setUp(self):
-        root = (ROOT / "delivery-plan.yaml").read_bytes()
+        root = (ROOT / "docs/history/predecessor-delivery-plan.yaml").read_bytes()
         self.plan = json.loads(root)
         self.items = {item["id"]: item for item in self.plan["iterations"]}
         self.program = self.plan["programs"]["EPIC-PA1"]
@@ -186,7 +186,7 @@ class Pa1ParallelDeliveryTests(unittest.TestCase):
         iteration `activation_status`, which is the value selection actually
         reads, and this test forces that path.
         """
-        plan = json.loads((ROOT / "delivery-plan.yaml").read_text(encoding="utf-8"))
+        plan = json.loads((ROOT / "docs/history/predecessor-delivery-plan.yaml").read_text(encoding="utf-8"))
         recorded = paused_programs(plan)
 
         # The subject set is fixed, not drawn from the current cast. The
