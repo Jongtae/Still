@@ -105,7 +105,8 @@ def check_spec(root: Path = ROOT) -> dict:
                     'invalid production path')
             require((root / rel).is_file(), f'missing production path: {rel}')
     require((root / manifest['contract']).is_file(), 'missing canonical execution contract')
-    root_plan = bounded_read(root / 'delivery-plan.yaml')
+    # The PRESENCE-01 ownership below is predecessor history (#46).
+    root_plan = bounded_read(root / 'docs/history/predecessor-delivery-plan.yaml')
     require(not (root / 'src/personal_agent/delivery-plan.yaml').exists(), 'retired runtime plan mirror recreated')
     plan = load_json(root_plan)
     items = unique(plan['iterations'], 'id')

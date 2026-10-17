@@ -28,7 +28,7 @@ class DeliveryTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.root=Path(self.temp.name)/'repo'; self.root.mkdir()
-        source=Path(__file__).parents[1]/'delivery-plan.yaml'
+        source=Path(__file__).parents[1]/'docs/history/predecessor-delivery-plan.yaml'
         (self.root/'delivery-plan.yaml').write_text(source.read_text())
         self.state=self.root/'state.json'; self.clock=[1_700_000_000]
 

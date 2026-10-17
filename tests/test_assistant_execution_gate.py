@@ -21,7 +21,7 @@ class SpecificationTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.manifest = json.loads((ROOT / gate.MANIFEST).read_text())
-        self.plan = json.loads((ROOT / 'delivery-plan.yaml').read_text())
+        self.plan = json.loads((ROOT / 'docs/history/predecessor-delivery-plan.yaml').read_text())
         for name in [self.manifest['contract'], *{p for row in self.manifest['requirements'] for p in row['production_paths']}]:
             p = self.root / name
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -31,7 +31,9 @@ class SpecificationTests(unittest.TestCase):
         path = self.root / gate.MANIFEST
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(self.manifest))
-        (self.root / 'delivery-plan.yaml').write_text(json.dumps(self.plan))
+        archived = self.root / 'docs/history/predecessor-delivery-plan.yaml'
+        archived.parent.mkdir(parents=True, exist_ok=True)
+        archived.write_text(json.dumps(self.plan))
         return gate.check_spec(self.root)
 
     def test_unit_first_spec_needs_no_model_results(self):

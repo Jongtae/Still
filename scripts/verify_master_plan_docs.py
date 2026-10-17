@@ -191,7 +191,8 @@ def main():
     mp1_en = (DOCS / TRANSLATION_REFERENCES[0][1]).read_text(encoding="utf-8")
     if phase_table_ids(mp1_en) != PHASE_IDS:
         raise SystemExit(f"MP1 phase table sequence failure: {TRANSLATION_REFERENCES[0][1]}")
-    plan=json.loads((ROOT / "delivery-plan.yaml").read_text(encoding="utf-8"))
+    # MP1/file-workspace traceability is predecessor history (#46).
+    plan=json.loads((ROOT / "docs/history/predecessor-delivery-plan.yaml").read_text(encoding="utf-8"))
     verify_traceability(plan)
     workspace_contract = (DOCS / "file-workspace-first-experience-contract.en.md").read_text(encoding="utf-8")
     if ("FILE-WS-A-01" not in workspace_contract or "FILE-WS-B-01" not in workspace_contract or

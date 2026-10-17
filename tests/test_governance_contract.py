@@ -341,7 +341,9 @@ def test_following_the_bootstrap_selects_nothing_while_no_goal_is_active() -> No
     declared = plan["next_goal"]["id"]
     assert plan["next_goal"]["status"] != "active"
     if declared is None:
-        assert plan["next_goal"]["status"] == "complete"
+        # "complete" after a program closes out; "not-selected" in a fresh
+        # plan that has never selected one (#46).
+        assert plan["next_goal"]["status"] in {"complete", "not-selected"}
     else:
         # A declared goal is goal-ready only: a real program, not recorded
         # complete, awaiting the explicit owner `active` transition.

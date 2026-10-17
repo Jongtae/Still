@@ -159,7 +159,7 @@ class DeliveryRefresh1021Tests(unittest.TestCase):
         # that no external command is issued, not merely a string status.
 
     def test_live_plan_still_obeys_the_shared_resting_state_contract(self):
-        current = read_plan(ROOT / "delivery-plan.yaml")
+        current = read_plan(ROOT / "docs/history/predecessor-delivery-plan.yaml")
         shape = invariants.assert_declared_goal_shape(self, plan=current)
         if shape == "goal-ready":
             name = current["next_goal"]["id"]

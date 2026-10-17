@@ -54,7 +54,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
-PLAN_PATH = ROOT / "delivery-plan.yaml"
+#: The predecessor plan, archived unchanged (#46). These invariants describe
+#: its programs; the fresh root plan is checked in tests/test_fresh_delivery_plan.py.
+PLAN_PATH = ROOT / "docs/history/predecessor-delivery-plan.yaml"
 
 #: Iteration activation states from which `DeliveryPlan.select` can proceed
 #: once `next_goal.status` becomes ``active``.
