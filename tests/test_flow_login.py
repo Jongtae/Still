@@ -1,4 +1,4 @@
-"""SEC-FLOW-01 (#709): AgentOS decides its own bridge tools, in-flow login, bounded render settle, intact links.
+"""SEC-FLOW-01 (#709): Still decides its own bridge tools, in-flow login, bounded render settle, intact links.
 
 Evidence classes, named separately:
 

@@ -1,6 +1,6 @@
 """Sign in to a site from the phone through a one-time link that drives the Mac's login window (BROWSE-07 #939).
 
-An in-flow login (#709) or an explicit login request shows the AgentOS login
+An in-flow login (#709) or an explicit login request shows the Still login
 window on the Mac.  The owner who is not at the Mac gets a temporary HTTPS
 link (ngrok, as the family setup's, #897) to a page that shows that window
 as an image refreshed about twice a second; a tap on the image is pressed at
@@ -61,7 +61,7 @@ LINK_TEXT = ('휴대폰에서 로그인하는 링크예요 ({site}). 이 링크�
              '화면을 누르면 Mac의 로그인 창에서 같은 자리가 눌리고, 입력한 글자는 선택한 칸에 들어가요. '
              '"로그인 상태 유지" 같은 옵션이 있으면 켜 주세요. 다 되면 [완료]를 눌러 주세요.\n{link}')
 NO_NGROK_TEXT = '휴대폰에서 로그인할 임시 링크를 만들 ngrok이 이 Mac에 없어요. Mac의 로그인 창에서 로그인해 주세요.'
-NO_PORT_TEXT = '이 Mac의 AgentOS 주소를 아직 알 수 없어 휴대폰 로그인 링크를 만들지 못했어요. Mac의 로그인 창에서 로그인해 주세요.'
+NO_PORT_TEXT = '이 Mac의 Still 주소를 아직 알 수 없어 휴대폰 로그인 링크를 만들지 못했어요. Mac의 로그인 창에서 로그인해 주세요.'
 BUSY_TEXT = msg('remote_login.a_phone_login_link_is_already')
 #: A link that could not open or be delivered leaves the Mac window and its prompt as they are (review P2-1).
 TUNNEL_FAILED_TEXT = msg('remote_login.i_couldn_t_open_the_phone')

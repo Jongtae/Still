@@ -1,6 +1,6 @@
 """AI-GOOGLE-01 (#1197): Works use the owner's AI-side connections, read-only, by owner opt-in.
 
-Model-free: a scripted CLI speaks to the exact bridge command AgentOS writes,
+Model-free: a scripted CLI speaks to the exact bridge command Still writes,
 through the real service relay; nothing reaches a model or Google.
 """
 import json

@@ -1,6 +1,6 @@
 """Telegram system lines in the owner's language (#1350).
 
-AI answers already follow the owner's language.  AgentOS's own fixed lines
+AI answers already follow the owner's language.  Still's own fixed lines
 (progress, task cards, buttons, terminal and memory notices) are written in
 Korean at their call sites.  This module translates them at the one place
 they leave for Telegram, so no call site changes.

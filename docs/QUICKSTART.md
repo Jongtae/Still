@@ -67,7 +67,7 @@ Still does not run natively on Windows yet ([#1168](https://github.com/Jongtae/a
 Things that differ from macOS:
 
 - A Codex or Claude Code subscription must be installed and logged in inside Ubuntu, not in Windows.
-- Windows folders appear under `/mnt/c/`, for example `/mnt/c/Users/your-name/Documents/AgentOS`.
+- Windows folders appear under `/mnt/c/`, for example `/mnt/c/Users/your-name/Documents/Still`.
 - Keep the Ubuntu window open while you talk. The background login service and the embedded browser tool are macOS only for now ([#682](https://github.com/Jongtae/agentos/issues/682)).
 
 ## First task
@@ -76,8 +76,8 @@ After connecting and testing your model, [pair your Telegram bot](#telegram), th
 
 ## Recommended owner dogfood task
 
-Create two dedicated local folders (for example, `/Users/your-name/AgentOS-dogfood/reference`
-and `/Users/your-name/AgentOS-dogfood/workspace`) and place one small Markdown or text note in the
+Create two dedicated local folders (for example, `/Users/your-name/Still-dogfood/reference`
+and `/Users/your-name/Still-dogfood/workspace`) and place one small Markdown or text note in the
 reference folder. Put the words `Launch review` in that note. In **설정 → 파일 · 저장**
 (Settings → Files · storage), enter the reference folder and workspace folder, then choose a
 direct model-provider connection (OpenAI-compatible, OpenAI, Anthropic, or

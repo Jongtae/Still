@@ -10,7 +10,7 @@ Scenario fields:
 - ``id`` (unique slug), ``title``, ``split`` (``dev`` or ``heldout``);
 - ``turns``: owner turns, each ``{"say": str, "note": str?}``.  ``note`` is a
   simulated clock or current-context note.  It is shown to the judge; it is
-  sent to AgentOS only when the turn sets ``"note_in_message": true``, because
+  sent to Still only when the turn sets ``"note_in_message": true``, because
   the sandbox runs on the real clock and a hidden note must not leak into the
   owner's words;
 - ``rubric``: the rubric dimensions this scenario is judged on;
@@ -32,7 +32,7 @@ from .paths import BUNDLED_SCENARIOS, local_scenario_dirs
 
 #: The secretary rubric (docs/secretary-agency-contract.en.md, issue #821).
 RUBRIC = {
-    'owner_model': 'Uses what AgentOS knows about the owner (stated facts, preferences, places, earlier memory) '
+    'owner_model': 'Uses what Still knows about the owner (stated facts, preferences, places, earlier memory) '
                    'instead of asking again or answering generically.',
     'context_carry': 'Carries the conversation context: a follow-up is read against the earlier turns '
                      '(places, times, items already named).',
@@ -155,7 +155,7 @@ def load(dirs=None, include_local=True, split=None, ids=None, environ=None):
 
 
 def owner_message(turn):
-    """The text actually sent to AgentOS for one turn."""
+    """The text actually sent to Still for one turn."""
     if turn.get('note_in_message') and turn.get('note'):
         return f"({turn['note']}) {turn['say']}"
     return turn['say']

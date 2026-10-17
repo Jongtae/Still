@@ -80,7 +80,7 @@ class ReactionOnTheNotice(_Answering):
         self.assertIsNone(self.react(row['message_id'], user=OTHER))
         self.assertIsNone(self.react(row['message_id'], chat=OTHER))
         self.assertIsNone(self.react(row['message_id'], emoji=None), 'a removed reaction says nothing new')
-        self.assertIsNone(self.react(row['message_id'] + 100), 'not an assistant message AgentOS knows')
+        self.assertIsNone(self.react(row['message_id'] + 100), 'not an assistant message Still knows')
         self.assertEqual(self.asked, [])
         self.assertEqual([m['content'] for m in self.store.memories()], [VALUE])
 

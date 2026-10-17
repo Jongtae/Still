@@ -15,7 +15,7 @@ Sharing passes the owner's current sign-in session for one site to another assis
 ## Report what the result says
 
 - **Delivered:** the receiving assistant has the session now.
-- **Pending (전달 대기):** the receiver did not answer. AgentOS keeps retrying, and the share takes effect when that assistant is running.
+- **Pending (전달 대기):** the receiver did not answer. Still keeps retrying, and the share takes effect when that assistant is running.
 - **Receiver already signed in:** the receiver keeps its own sign-in and nothing was shared.
 - **Stopping:** the share is fully stopped only when the result says so. If the receiver was not reachable, the session is removed when it comes back. Say that instead of claiming it is gone now.
 

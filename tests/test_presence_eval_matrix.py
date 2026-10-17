@@ -812,7 +812,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
 
         No mail cue word appears in these phrasings.  The DecisionEngine's
         capability-need judgment selects the declared ``mail-search``
-        capability; AgentOS then parks the Work for the missing Gmail
+        capability; Still then parks the Work for the missing Gmail
         connection exactly as for a cue-bearing request.  Opposing cases: a
         non-mail question about the same person, an engine that cannot
         answer and a judged unsupported send all stay honest - no handoff is
@@ -1321,7 +1321,7 @@ class H_PartialResult(PresenceEval):
 
         Page A was read and supports "ships for 3,000 KRW"; page B failed.
         With an AI answer the bubble is the answer, then one note (#847); the
-        AgentOS verified portion is not added (the answer replaces it) and
+        Still verified portion is not added (the answer replaces it) and
         the record still keeps it, with the failed portion.  Opposing cases:
         nothing from the unread page, and the outcome stays ``partial``
         everywhere.
@@ -1510,7 +1510,7 @@ class J_MemoryCorrection(LocalHttp, PresenceEval):
 
         None of these phrasings contains the old cue words (기억해/remember/
         저장해/선호).  The DecisionEngine's ``explicit_memory_request``
-        judgment lets AgentOS issue the owner-request approval; the
+        judgment lets Still issue the owner-request approval; the
         deterministic value-coverage check still decides the write.
         """
         cases = (('회의는 오후가 좋다는 거 잊지 마', 'meeting-time', '오후'),
@@ -1596,7 +1596,7 @@ class RouteAndIdentity(LocalHttp, PresenceEval):
         self.assertEqual(len(self.engine.prompts), 2, 'no CLI call after the switch')
         self.assertEqual(self.task(third['id'])['route'], {'kind': 'direct-api', 'model': 'eval-model',
                                                           'status': 'succeeded'})
-        # One identity: the same AgentOS instructions on both workers ...
+        # One identity: the same Still instructions on both workers ...
         self.assertIn(CORE_INSTRUCTIONS, self.engine.prompts[0])
         system = [m['content'] for m in self.model_bodies[0]['messages'] if m['role'] == 'system']
         self.assertTrue(any(CORE_INSTRUCTIONS in text for text in system))

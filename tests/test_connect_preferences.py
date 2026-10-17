@@ -26,7 +26,7 @@ class ConnectionPreferences(Harness):
         return job, current
 
     def test_each_connection_kind_is_canonical_and_reaches_both_workers_and_planner(self):
-        for choice in ('AI-side connection', 'AgentOS-owned connection', 'signed-in browser'):
+        for choice in ('AI-side connection', 'Still-owned connection', 'signed-in browser'):
             with self.subTest(choice=choice):
                 job, row = self.save_choice(choice)
                 self.assertEqual(row['content'], choice)
@@ -49,7 +49,7 @@ class ConnectionPreferences(Harness):
         for name in ('unseen-preferred', 'unseen-alternate'):
             save_slot(self.store, name, ['unseen.example'], 'synthetic-secret-' + name,
                       subject_field='$.account', subject_value='same-synthetic-account', note='Unseen records')
-        _, row = self.save_choice('AgentOS-owned via unseen-preferred; same-synthetic-account only')
+        _, row = self.save_choice('Still-owned via unseen-preferred; same-synthetic-account only')
         return row
 
     def use_slot(self, name, explanation, before_read=None):
@@ -129,12 +129,12 @@ class ConnectionPreferences(Harness):
         self.assertFalse(trust_record.hands(self.store))
 
     def test_correction_exact_undo_and_forget_change_only_canonical_preference(self):
-        _, first = self.save_choice('AgentOS-owned connection')
+        _, first = self.save_choice('Still-owned connection')
         _, changed = self.save_choice('signed-in browser')
         self.assertIn('signed-in browser', self.service.owner_profile_snapshot())
         receipt = self.store.retract_memory('local-owner', changed['id'], changed['content_digest'])
         self.assertTrue(receipt['retracted'])
-        self.assertIn(KEY + ': AgentOS-owned connection', self.service.owner_profile_snapshot())
+        self.assertIn(KEY + ': Still-owned connection', self.service.owner_profile_snapshot())
         self.assertNotIn('signed-in browser', self.service.owner_profile_snapshot())
         from personal_agent.owner_forget import OwnerForget
         from personal_agent.agent_runtime import MEMORY_OWNER
@@ -145,7 +145,7 @@ class ConnectionPreferences(Harness):
     def test_relevant_preference_is_retrieved_before_worker_selection_when_default_profile_is_full(self):
         for index in range(20):
             self.store.save_memory(f'profile.aaa.item{index}', 'Unrelated background ' * 8, owner_id='local-owner')
-        _, row = self.save_choice('AgentOS-owned connection')
+        _, row = self.save_choice('Still-owned connection')
         self.assertNotIn(KEY, self.service.owner_profile_snapshot())
         self.assertIn('omitted', self.service.owner_profile_snapshot())
         self.asked_plans.clear()

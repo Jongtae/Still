@@ -24,7 +24,7 @@ from personal_agent.quickstart_store import QuickStore
 
 
 # A subprocess fixture: replace only effect targets, never the upstream API or
-# AgentOS facade/broker. Profiling observes actual SDK entry execution without
+# Still facade/broker. Profiling observes actual SDK entry execution without
 # wrapping/replacing it or changing its scheduling.
 PEER_SERVER = textwrap.dedent('''\
     import json, logging, sys, time

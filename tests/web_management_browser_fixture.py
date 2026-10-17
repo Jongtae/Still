@@ -140,8 +140,8 @@ class Fixture:
             rows["task-done"]["provenance"] = {"route": "subscription", "engine": "codex", "mode": "bounded-agentos-mcp", "status": "answered",
                 "requested_model": None, "reported_model": None, "context_mode": "shared-context", "context_messages": 4,
                 "instructions_version": "agentos-turn-v1", "instructions_digest": "3f9a1c0e7b2d4a61", "instructions_channel": "prompt",
-                "instructions": "You are AgentOS, the owner's personal assistant. …", "egress_taint": [],
-                "prompt_envelope": "[AgentOS instructions]\n…\n\n[Conversation]\nowner: 서울 도쿄 항공권 비교해줘",
+                "instructions": "You are Still, the owner's personal assistant. …", "egress_taint": [],
+                "prompt_envelope": "[Still instructions]\n…\n\n[Conversation]\nowner: 서울 도쿄 항공권 비교해줘",
                 "argv": ["codex", "exec", "--json", "-c", "mcp_servers.agentos.command=…", "<prompt: 1834 bytes>"],
                 "usage": {"input_tokens": 5120, "cached_input_tokens": 3072, "output_tokens": 412}, "exit_code": 0, "duration_ms": 58300,
                 "tool_calls": [{"type": "mcp_tool_call", "name": "web_search", "status": "completed"}], "agentos_tool_calls": [{"name": "web_search", "status": "succeeded"}], "prompt_bytes": 1834}

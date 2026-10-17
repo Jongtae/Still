@@ -9,7 +9,7 @@ Evidence classes, named separately:
   local prompt-envelope storage and its exclusion from export, Settings'
   per-route agency line;
 * model-free integration through the real stdio MCP bridge subprocess (the
-  exact per-turn command AgentOS writes) and the service-side browser relay,
+  exact per-turn command Still writes) and the service-side browser relay,
   with the fake page driver: mediation, the label-independent payment guard
   and its approvals (web decision and Telegram ``p7w:`` buttons), the repeat
   key, the loopback refusal; strict and isolated routes offer no browser;
@@ -73,7 +73,7 @@ def flat(value):
 def inherited_private(labels):
     """The #605 history labels (without route prefixes) other than clean owner conversation.
 
-    What still closes AgentOS-composed third-party lookups and keeps a turn
+    What still closes Still-composed third-party lookups and keeps a turn
     record to size and digest; since #705 it never turns the CLI's own search off.
     """
     return sorted({base_label(label) for label in labels} - {OWNER_CONVERSATION, ENGINE_UNMEDIATED})
@@ -167,7 +167,7 @@ class LegacyProvenanceBackfill(unittest.TestCase):
         self.assertEqual(legacy_work_sources(self.store, clean, tools, {document}), {OWNER_CONVERSATION})
         self.store.put_turn_provenance(clean, {'egress_taint': ['conversation-history', 'history:personal-space']})
         self.assertIsNone(legacy_work_sources(self.store, clean, tools, {document}))
-        # A rule reply is clean only for the owner-explicit greeting (AgentOS's own parser).
+        # A rule reply is clean only for the owner-explicit greeting (Still's own parser).
         greeting = _legacy_work(self.store, '/start', '안녕하세요', created=9, events=())
         self.assertEqual(legacy_work_sources(self.store, greeting, tools, set()), {OWNER_CONVERSATION})
 
@@ -549,7 +549,7 @@ class HistoryNeverTurnsNativeSearchOff(unittest.TestCase):
                     self.assert_native(engine, record)
                     label = HISTORY_PREFIX + HISTORY_LABEL[kind]
                     # #605 inheritance is unchanged: the label reaches the bridge's own
-                    # (AgentOS-composed) lookups and this Work's source record.
+                    # (Still-composed) lookups and this Work's source record.
                     self.assertIn('--provenance=' + label, self.seen['bridge'])
                     self.assertIn(label, self.store.config(WORK_SOURCES_KEY, {})[later])
                     if HISTORY_LABEL[kind] in ('personal-space', 'owner-browser-session'):

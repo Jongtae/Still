@@ -28,7 +28,7 @@ class MappingOpener:
 def public_dns(host,port,type=None): return [(None,None,None,None,('93.184.216.34',port))]
 
 class ScenarioProvider:
-    """Provider responses are derived from tool results returned by AgentOS."""
+    """Provider responses are derived from tool results returned by Still."""
     def __init__(self,family,case_id,first_url=None,second_url=None): self.family=family;self.case_id=case_id;self.first_url=first_url;self.second_url=second_url;self.calls=0;self.files=[];self.read_paths=set()
     @staticmethod
     def call(name,args,ident): return {'choices':[{'message':{'tool_calls':[{'id':ident,'function':{'name':name,'arguments':json.dumps(args,ensure_ascii=False)}}]}}]}

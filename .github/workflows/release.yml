@@ -165,7 +165,7 @@ jobs:
             python3 scripts/dev/release.py notes --version "$VERSION" --milestone-url "$MILESTONE_URL" \
               > "$RUNNER_TEMP/notes.md"
             gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$COMMIT" \
-              --title "Personal AgentOS v$VERSION" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes
+              --title "Still v$VERSION" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes
           fi
 
       - id: archive
@@ -204,10 +204,10 @@ jobs:
             python3 "$GITHUB_WORKSPACE/scripts/dev/release.py" formula --file Formula/agentos.rb \
               --repository "$GITHUB_REPOSITORY" --version "$VERSION" --sha256 "$SHA256"
             git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
-              commit -am "release: install AgentOS v$VERSION"
+              commit -am "release: install Still v$VERSION"
             git push --force -u origin "$branch"
             pr="$(gh pr create --repo "$TAP" --base main --head "$branch" \
-              --title "release: install AgentOS v$VERSION" \
+              --title "release: install Still v$VERSION" \
               --body "Points the formula at the v$VERSION tag archive (SHA-256 $SHA256, measured twice after publication). Opened by the release workflow after owner approval (Jongtae/agentos#$ISSUE).")"
           fi
           case "$(gh pr view "$pr" --repo "$TAP" --json state --jq .state)" in

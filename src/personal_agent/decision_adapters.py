@@ -1,6 +1,6 @@
 """DecisionEngine route adapters beyond the direct API (DECISION-ROUTE-01 / #580).
 
-Two adapters implement the AgentOS-owned ``DecisionEngine`` contract from
+Two adapters implement the Still-owned ``DecisionEngine`` contract from
 ``decision.py``:
 
 * ``SubscriptionCliDecisionEngine`` - one bounded, tool-less judgment through
@@ -9,7 +9,7 @@ Two adapters implement the AgentOS-owned ``DecisionEngine`` contract from
   per-call directory as HOME, minimal PATH, no inherited environment, the
   owner's Codex user config ignored, Claude Code's own token passed only as
   ``CLAUDE_CODE_OAUTH_TOKEN``) and adds the decision-specific restriction
-  that the CLI gets **no** tools at all: no AgentOS MCP bridge, no shell, no
+  that the CLI gets **no** tools at all: no Still MCP bridge, no shell, no
   plugins/apps.  Model selection uses only the CLI's own documented flag.
 * ``JevDecisionEngine`` - TypeSafe AI's documented System One HTTP API
   (``POST https://api.typesafe.ai/v1/systemone``), reached through the
@@ -71,7 +71,7 @@ CLI_BINARIES = {'codex': 'codex', 'claude-code': 'claude'}
 MODEL_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}$')
 
 # --- Codex tool surface (#580 review F2) ----------------------------------------
-# An allowlist, not a denylist: at capability-check time AgentOS reads the
+# An allowlist, not a denylist: at capability-check time Still reads the
 # CLI's own `codex features list` (a local listing, no model call) and every
 # feature that is enabled by default and not listed here is disabled for
 # decision calls.  After disabling, the listing is read again and activation
@@ -396,7 +396,7 @@ JEV_DESTINATION = 'api.typesafe.ai'
 #: The documented alias.  It moves with new releases, so the response's
 #: versioned ``model`` is what provenance records as observed.
 JEV_DEFAULT_MODEL = 'jev-latest'
-#: Levels used to express a numeric AgentOS scale as a Jev Score rubric
+#: Levels used to express a numeric Still scale as a Jev Score rubric
 #: (the API accepts 2-10 ordered levels).
 JEV_SCORE_LEVELS = 5
 _QUESTION = 'q'
@@ -416,7 +416,7 @@ class JevDecisionEngine(DecisionEngine):
       reported probability is that of the chosen side.
     * ``choose`` -> one ``choice`` whose criteria are the declared candidates
       plus ``none-of-these``; Jev's own ``confidence`` is kept.
-    * ``score`` -> one ``score`` over evenly spaced levels of the AgentOS
+    * ``score`` -> one ``score`` over evenly spaced levels of the Still
       scale; the probability-weighted level is mapped back onto the scale.
     """
 
@@ -531,7 +531,7 @@ class JevDecisionEngine(DecisionEngine):
 
 
 def cli_fingerprint(binary):
-    """A local identity of the CLI binary AgentOS would run (no subprocess).
+    """A local identity of the CLI binary Still would run (no subprocess).
 
     Used to invalidate a qualification when the engine changes: resolved
     path, size and modification time.  ``''`` when the binary is absent.

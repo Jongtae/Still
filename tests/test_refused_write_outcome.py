@@ -363,7 +363,7 @@ class DeferredCalendarWriteTests(RefusedWriteTestCase):
         self.assertIs(event['trace']['evidence']['requires_owner_approval'], True)
 
     def test_a_silent_model_is_not_answered_by_the_host_claiming_success(self):
-        """`fallback_response` asserted completion in AgentOS's own voice.
+        """`fallback_response` asserted completion in Still's own voice.
 
         With no branch for the calendar tools it fell through to
         '요청한 작업을 완료했습니다.' -- not a model hallucination but the host

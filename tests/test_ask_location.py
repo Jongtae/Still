@@ -419,7 +419,7 @@ class Continuation(_LocationCase):
         self.assertIn(self.REQUEST, json.dumps(seen[0], ensure_ascii=False))
         self.assertEqual(self.store.job(row['id'])['status'], 'succeeded')
         # Control: the same words as an ordinary owner turn are judged; #1506: with nothing of
-        # AgentOS's left to withdraw, the owner's message runs as their request.
+        # Still's left to withdraw, the owner's message runs as their request.
         control = self.store.enqueue(self.REQUEST, 'tg-control', f'telegram:{GENERATION}', CHAT)
         self.script = [lambda body: seen.append(body['messages']) or {'content': '취소할 작업은 없어요.'}]
         with mock.patch.object(self.service, 'continuity_relation', return_value=judged_cancel) as relation:
@@ -462,7 +462,7 @@ class Continuation(_LocationCase):
         self.script = [lambda body: seen.append(body['messages']) or {'content': '출발하셨네요.'}]
         self.assertTrue(self.service.run_one())
         latest = [m['content'] for m in seen[0] if m['role'] == 'user'][-1]
-        self.assertNotIn('AgentOS note', latest)
+        self.assertNotIn('Still note', latest)
 
 
 class PreparationContinuation(_LocationCase):

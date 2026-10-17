@@ -80,7 +80,7 @@ class EncryptedDriveSecretStore:
 
 # REUSE-R1b (#427) Existing Solutions Review.  Authorization-request
 # construction below is ``oauthlib`` (Adopt); token handling stays
-# AgentOS-owned (Build), for reasons recorded per mechanic:
+# Still-owned (Build), for reasons recorded per mechanic:
 #
 #   * ``google-auth`` -- rejected.  It has no authorization-code grant at all
 #     (``authorization_code`` appears nowhere in the package) and no PKCE or

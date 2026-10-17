@@ -1,6 +1,6 @@
 """The owner shares one signed-in site with a family assistant (FAMILY-SHARE-01 #934).
 
-A family member's agent is a separate AgentOS instance on the owner's Mac
+A family member's agent is a separate Still instance on the owner's Mac
 (FAMILY-01 #893).  Logging it into the owner's account would hand over the
 owner's password, which the owner could then no longer take back.  Instead
 the owner shares the *session*: the sign-in cookies of one site, from the
@@ -20,7 +20,7 @@ owner's encrypted jar (``browser_jar``) into the family instance's.
   back: an instance never pushes a site it received (``received``).
 * **The link secret.** The owner's instance creates ``private/owner-link.secret``
   (mode 0600, in a 0700 folder) inside the family instance's data directory
-  and sends it in ``X-AgentOS-Owner-Link``.  The family endpoint compares it
+  and sends it in ``X-Still-Owner-Link``.  The family endpoint compares it
   in constant time and answers only a direct loopback request
   (``local_setup``: never a tunnel, never a forwarded request).  Both
   instances run as the same macOS user, so only that user's processes can
@@ -52,7 +52,7 @@ Nothing here logs, returns to a model or records as Evidence a cookie value
 or the link secret: site names and counts only.
 
 **Any instance to any other (FAMILY-SHARE-03 #957).** The giver is whichever
-instance holds the session, and a target is any *other* AgentOS instance on
+instance holds the session, and a target is any *other* Still instance on
 this Mac: the owner's default service (``MAIN_INSTANCE``, ``@main``, an id no
 named instance can have, located the way ``service_control`` does) and the
 launchd-named instances, never the
@@ -107,7 +107,7 @@ GRANTS_KEY = 'family_shared_sites'
 #: The family instance's config row: the sites it holds from the owner.
 SHARED_KEY = 'shared_sites'
 LINK_SECRET_FILE = 'owner-link.secret'
-LINK_HEADER = 'X-AgentOS-Owner-Link'
+LINK_HEADER = 'X-Still-Owner-Link'
 SHARE_PATH = '/api/family/shared-site'
 #: A site's cookie rows are small; a body past this is refused unread.
 MAX_BODY = 512 * 1024
@@ -267,7 +267,7 @@ def _same_dir(left, right):
 
 
 def instances(home=None, locate=locate_instance, own=None, now=None):
-    """The other AgentOS instances on this Mac: ``{instance: {name, state, main}}`` (#957).
+    """The other Still instances on this Mac: ``{instance: {name, state, main}}`` (#957).
 
     The owner's default service and the launchd-named instances, minus the
     one whose data directory is ``own`` (this instance), so an assistant is

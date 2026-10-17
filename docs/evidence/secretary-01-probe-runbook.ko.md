@@ -29,7 +29,7 @@ SEC-EVAL-01 [#660](https://github.com/Jongtae/agentos/issues/660) · 계약: [Se
 
    ```sh
    python3 scripts/prepare_owner_smoke.py record-probe \
-     --data "<AgentOS 데이터 폴더>" --work <작업 ID> --probe A --head "$(git rev-parse HEAD)"
+     --data "<Still 데이터 폴더>" --work <작업 ID> --probe A --head "$(git rev-parse HEAD)"
    ```
 
    - `--data`를 생략하면 `AGENTOS_DATA`, 없으면 `~/.local/share/agentos`를 씁니다.

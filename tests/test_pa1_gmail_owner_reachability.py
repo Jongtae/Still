@@ -4,7 +4,7 @@ The Gmail connector already composed: the route, the contract and the
 exactly-once resume are covered by ``test_quickstart`` and the first-use
 acceptance.  What an owner could not do was *reach* any of it - there was no
 command to create the credential file, no documentation, and no surface that
-ever named ``/google-gmail``.  J3 requires AgentOS to explain the minimum
+ever named ``/google-gmail``.  J3 requires Still to explain the minimum
 connection and resume the original request; J7 requires a contextual next
 action rather than a dead end.  Both need the owner to actually arrive.
 
@@ -367,7 +367,7 @@ class GmailRouteReachabilityTest(unittest.TestCase):
         self.assertTrue(row['connect_path'])
         # Relative on purpose: the session cookie is SameSite=Strict and
         # host-scoped, so an absolute `localhost` form would drop the session
-        # of an owner who opened AgentOS at 127.0.0.1.
+        # of an owner who opened Still at 127.0.0.1.
         self.assertTrue(row['connect_path'].startswith('/'))
         self.assertIsNone(urlsplit(row['connect_path']).netloc or None)
 
@@ -407,7 +407,7 @@ class GmailRouteReachabilityTest(unittest.TestCase):
                       / 'src' / 'personal_agent' / 'quickstart.py').read_text()
         self.assertIn("sys.argv[1]=='gmail-config'", dispatcher)
         self.assertIn(f'http://127.0.0.1:8787{GMAIL_CONNECT_PATH}', quickstart)
-        # The documented host is the one AgentOS advertises for itself, which
+        # The documented host is the one Still advertises for itself, which
         # is the host the owner's session cookie is scoped to.
         service, _base = self.serve()
         self.assertTrue(service.connector_connect_url(GMAIL_CONNECTOR_ID)

@@ -1,4 +1,4 @@
-Personal AgentOS
+Still
 Copyright (C) 2025-2026 Jongtae Lee
 
 SPDX-License-Identifier: AGPL-3.0-only
@@ -12,7 +12,7 @@ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE. See the GNU Affero General Public License in LICENSE for
 more details.
 
-The "Personal AgentOS" name and logo are not covered by the AGPL grant.
+The "Still" name and logo are not covered by the AGPL grant.
 See docs/TRADEMARKS.md.
 
 Third-party dependencies keep their own licences; see pyproject.toml for the

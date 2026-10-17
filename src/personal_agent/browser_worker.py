@@ -13,7 +13,7 @@ Events:   ``{"event": "ready" | "hidden" | "unavailable"}`` (no ``id``).
 Ops: ``navigate``, ``settle``, ``snapshot``, ``click``, ``type``, ``release_submit``,
 ``show``, ``hide``, ``state``, ``cookies_export``, ``cookies_import``, ``cookies_delete``,
 ``cookies_clear``, ``quit``.  Every op carries a deadline; the worker answers
-``timeout`` when it passes.  Errors are AgentOS codes, never library text,
+``timeout`` when it passes.  Errors are Still codes, never library text,
 and every line is ASCII JSON (a page's lone surrogate cannot break the pipe).
 
 Session material: the web view uses ``WKWebsiteDataStore.nonPersistentDataStore()``
@@ -58,7 +58,7 @@ Destinations: every navigation (typed, redirect, form, ``window.open``, frame)
 passes ``decidePolicyForNavigationAction``: only http(s) to public addresses,
 after DNS resolution, reusing ``local_tools``' denied names and its
 private-network table (``local_host``).  Loopback, private, link-local and ``.local`` hosts
-(the AgentOS UI included) are refused.  Tests may allow one exact fixture
+(the Still UI included) are refused.  Tests may allow one exact fixture
 origin with ``--test-allow-origin``, an argument only a test constructor sets.
 
 Reuse: Apple's WebKit (``WKWebView``) through PyObjC (MIT) is the adopted
@@ -80,10 +80,10 @@ import time
 import uuid
 from urllib.parse import urlsplit
 
-#: Appended to the user agent.  AgentOS's own HTTP server refuses every
+#: Appended to the user agent.  Still's own HTTP server refuses every
 #: request that carries it, so a page in the embedded browser can never use
-#: the owner's AgentOS UI or API (#680 review P1-2).
-EMBEDDED_UA_TOKEN = 'AgentOS-Embedded/1'
+#: the owner's Still UI or API (#680 review P1-2).
+EMBEDDED_UA_TOKEN = 'Still-Embedded/1'
 #: #930: where the worker window waits, ordered in but off every screen.
 PARK_ORIGIN = -30000
 #: #936: the most page dialogs one step records, and how much of each it keeps.
@@ -923,7 +923,7 @@ class Worker:
         self.window.setContentView_(self.view)
         self.window.setReleasedWhenClosed_(False)
         self.window.setDelegate_(self.delegate)
-        self.window.setTitle_('AgentOS')
+        self.window.setTitle_('Still')
         #: Whether the owner can see the window (the login window, #709); the
         #: window itself is always ordered in, parked off-screen (#930).
         self.owner_visible = False
@@ -1613,7 +1613,7 @@ class Worker:
         window.setContentView_(view)
         window.setReleasedWhenClosed_(False)
         window.setDelegate_(delegate)
-        window.setTitle_('AgentOS · 로그인')
+        window.setTitle_('Still · 로그인')
         window.center()
         window.makeKeyAndOrderFront_(None)
         self.popups.append((view, window, delegate))
@@ -2031,7 +2031,7 @@ def _popup_delegate_class():
             if host:
                 for entry in self.worker.popups:
                     if entry[0] is view:
-                        entry[1].setTitle_(f'AgentOS · 로그인 · {host}')
+                        entry[1].setTitle_(f'Still · 로그인 · {host}')
 
         def webViewDidClose_(self, view):
             # The page closed its own popup (window.close()), as a finished sign-in does.
@@ -2112,7 +2112,7 @@ def _delegate_class():
                 self.worker.hosts.add(host)
                 # The owner sees which host a login window shows (no address bar).
                 scheme = str(url.scheme() or '')
-                self.worker.window.setTitle_(f'AgentOS · {scheme}://{host}')
+                self.worker.window.setTitle_(f'Still · {scheme}://{host}')
 
         def webView_didFinishNavigation_(self, view, navigation):
             self.worker.navigation_finished(navigation)

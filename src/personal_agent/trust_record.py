@@ -309,7 +309,7 @@ def observe(store, name, operation, outcome, work_id):
 
 
 def is_read(store, name, operation, seed=frozenset()):
-    """Whether a call to ``name``'s ``operation`` is a read AgentOS may run.
+    """Whether a call to ``name``'s ``operation`` is a read Still may run.
 
     The owner's own decision wins; without one, the seed list answers, except
     on a money-capable hand (contract §4: there only an owner-reviewed read is a read).

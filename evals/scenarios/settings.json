@@ -12,7 +12,7 @@
    "specific_sourced",
    "honest_unverified"
   ],
-  "good_secretary": "Reads the actual current time zone and Main AI from AgentOS settings and reports them plainly, without guessing.",
+  "good_secretary": "Reads the actual current time zone and Main AI from Still settings and reports them plainly, without guessing.",
   "tags": [
    "settings"
   ]

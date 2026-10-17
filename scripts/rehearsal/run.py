@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rehearse the generic connection path end to end before the owner (HARDEN-GENERIC-01 #1445).
 
-Runs the real Judgment AI and the owner's real workers on a scratch AgentOS
+Runs the real Judgment AI and the owner's real workers on a scratch Still
 store against synthetic vendors (``vendor.py``). The driver plays the owner
 only where an owner acts: confirming a proposed secret set and entering values
 on the one-time page. Everything else is the product's own path:

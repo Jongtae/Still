@@ -1,6 +1,6 @@
 """Secrets never reach the judge prompt (pilot boundary: no secret in any model prompt).
 
-Adopts AgentOS's own deterministic redaction instead of a new one: the
+Adopts Still's own deterministic redaction instead of a new one: the
 credential shapes of ``personal_agent.bounded_execution.SECRET_PATTERN`` (the
 pattern ``current_context.redact_known_secrets`` applies) plus the literal
 values of every stored secret slot, read at run time from the seed's and the

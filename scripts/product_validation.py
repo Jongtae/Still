@@ -1,4 +1,4 @@
-"""Evidence-first product validation for a Personal AgentOS release."""
+"""Evidence-first product validation for a Still release."""
 from __future__ import annotations
 
 import json
@@ -85,11 +85,11 @@ class ProductValidator:
         quickstart = self.text("src/personal_agent/quickstart.py")
         reachable = "PluginRegistry" in quickstart or "/api/plugins" in quickstart or " plugins " in quickstart
         if "class PluginRegistry" in plugins and reachable:
-            self.add("EXT-001", "Plugin lifecycle is reachable from AgentOS", "v1", "passed", "The manifest registry is reachable through a supported AgentOS surface.")
+            self.add("EXT-001", "Plugin lifecycle is reachable from Still", "v1", "passed", "The manifest registry is reachable through a supported Still surface.")
         elif "class PluginRegistry" in plugins:
-            self.add("EXT-001", "Plugin lifecycle is reachable from AgentOS", "v1", "failed", "The registry has unit coverage but no CLI or authenticated API surface.", "Expose a safe local plugin command or authenticated settings API, then add an end-to-end lifecycle test.")
+            self.add("EXT-001", "Plugin lifecycle is reachable from Still", "v1", "failed", "The registry has unit coverage but no CLI or authenticated API surface.", "Expose a safe local plugin command or authenticated settings API, then add an end-to-end lifecycle test.")
         else:
-            self.add("EXT-001", "Plugin lifecycle is reachable from AgentOS", "v1", "failed", "No plugin lifecycle implementation was found.")
+            self.add("EXT-001", "Plugin lifecycle is reachable from Still", "v1", "failed", "No plugin lifecycle implementation was found.")
 
     def vision_gaps(self):
         self.add("VISION-001", "Native desktop and mobile clients", "future", "gap", "The product vision requires companion apps; v1 intentionally provides a responsive web UI and Telegram only.", "Define device pairing, revocation, notifications, and a first native client milestone.")

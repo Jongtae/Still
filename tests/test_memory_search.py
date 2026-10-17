@@ -149,7 +149,7 @@ class MemorySearchTests(unittest.TestCase):
         self.assertTrue(source['at'] and listed[sourced['id']]['saved_at'])
         self.assertIn('판교', source['text'])
         self.assertEqual(listed[prepared['id']]['source']['kind'], 'agentos_work',
-                         'text AgentOS generated is never presented as what the owner said')
+                         'text Still generated is never presented as what the owner said')
         self.assertEqual((listed[orphan['id']]['source'], listed[orphan['id']]['source_status']), (None, 'not_kept'))
         self.assertTrue(listed[orphan['id']]['saved_at'])
         self.assertEqual(searched[0]['source']['work_id'], job)

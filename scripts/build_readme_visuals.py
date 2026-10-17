@@ -57,13 +57,13 @@ def esc(s: str) -> str:
 
 
 UI = {
-    "en": {"name": "Personal AgentOS", "sub": "on your computer", "restart": "after a restart",
+    "en": {"name": "Still", "sub": "on your computer", "restart": "after a restart",
            "note": "Launch notes.md", "event": "dentist appointment · tomorrow 16:00"},
-    "ko": {"name": "Personal AgentOS", "sub": "내 컴퓨터에서", "restart": "재시작 후",
+    "ko": {"name": "Still", "sub": "내 컴퓨터에서", "restart": "재시작 후",
            "note": "출시 메모.md", "event": "치과 약속 · 내일 16:00"},
-    "ja": {"name": "Personal AgentOS", "sub": "自分のコンピュータで", "restart": "再起動後",
+    "ja": {"name": "Still", "sub": "自分のコンピュータで", "restart": "再起動後",
            "note": "Launch notes.md", "event": "歯医者の予約 · 明日 16:00"},
-    "zh-CN": {"name": "Personal AgentOS", "sub": "在你的电脑上", "restart": "重启之后",
+    "zh-CN": {"name": "Still", "sub": "在你的电脑上", "restart": "重启之后",
               "note": "Launch notes.md", "event": "牙医预约 · 明天 16:00"},
 }
 

@@ -23,14 +23,14 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
-NAME = re.compile(r"personal\s+agentos|jongtae/agentos", re.I)
+NAME = re.compile(r"personal\s+(agentos|still)|jongtae/(agentos|still)", re.I)
 MAX_NEW = 5
 MARKER = "<!-- feedback-source: {url} -->"
 MARKER_RE = re.compile(r"<!-- feedback-source: (\S+) -->")
 USER_AGENT = "agentos-feedback-watch/1.0 (+https://github.com/Jongtae/agentos)"
 ATOM = "{http://www.w3.org/2005/Atom}"
 
-HN_QUERIES = ('"Personal AgentOS"', '"Jongtae/agentos"')
+HN_QUERIES = ('"Personal Still"', '"Jongtae/Still"', '"Personal AgentOS"', '"Jongtae/agentos"')
 REDDIT_FEED = "https://www.reddit.com/search.rss?q=%22Personal+AgentOS%22+OR+%22Jongtae%2Fagentos%22&sort=new"
 GEEKNEWS_FEED = "https://news.hada.io/rss/news"
 

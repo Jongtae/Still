@@ -324,7 +324,7 @@ class OwnerEntryPointTests(unittest.TestCase):
                 self.assertIn('찾지 못했습니다', row['response'])
                 self.assertIn('확인이 필요한 질문: ' + question, row['owner_cause'])
                 self.assertEqual(failed, [])
-                # Re-judgment: the loop saw AgentOS's observation, not a handler payload.
+                # Re-judgment: the loop saw Still's observation, not a handler payload.
                 sent = script.bodies[0]['messages'][-1]['content']
                 self.assertIn('found no matching saved item', sent)
                 self.assertIn('ask the owner', sent)
@@ -759,7 +759,7 @@ class AgencyReportEntryPointTests(unittest.TestCase):
         self.assertNotIn(-1, positions, bubble)
         self.assertEqual(positions, sorted(positions), bubble)
         # The model's own sentence appears only under the label, never as observed:
-        # no AgentOS verified portion is added once the answer is shown.
+        # no Still verified portion is added once the answer is shown.
         self.assertEqual(bubble.count('22°C로 보입니다'), 1, bubble)
         self.assertNotIn(TERMINAL_VERIFIED_LABEL, bubble)
         self.assertNotIn('도시와 국가를 함께 알려 주세요', bubble)
@@ -850,7 +850,7 @@ class CalendarReadHandoffTests(unittest.TestCase):
 
 
 class BridgeCli:
-    """A scripted CLI that drives the REAL AgentOS MCP bridge process.
+    """A scripted CLI that drives the REAL Still MCP bridge process.
 
     The bridge runs unmodified (`python -m personal_agent.mcp_bridge`) and
     records its own tool events; nothing in it reaches the network here.

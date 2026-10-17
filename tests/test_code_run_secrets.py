@@ -146,7 +146,7 @@ class Storage(unittest.TestCase):
         line = api_requests.context_line(self.store)
         self.assertIn('code_run secrets only', line)
         self.assertNotIn('key-value-0001', line)
-        # #1504: a worker reads what AgentOS enforces, never the setup-time note that can go stale.
+        # #1504: a worker reads what Still enforces, never the setup-time note that can go stale.
         self.assertIn('sent once after the owner approves', line)
         self.assertNotIn('Read-only account data', line)
         # #1566: an add-only redraft must repeat the stored money flag, so the worker sees it.
@@ -498,7 +498,7 @@ class InputPage(PhoneInputServiceCase):
 
 
 class ClearSigning(unittest.TestCase):
-    """Owner choice 2026-10-14: the owner reads labelled values AgentOS checked against the exact request."""
+    """Owner choice 2026-10-14: the owner reads labelled values Still checked against the exact request."""
 
     BODY = json.dumps({'ITEM': 'A1', 'QTY': '2', 'NOTE': '', 'ACCOUNT': '12345678', 'EXTRA': 'x'})
 

@@ -1,6 +1,6 @@
 # A family member's assistant
 
-A family assistant is a separate AgentOS on this Mac with its own Telegram bot. It uses the owner's AI subscription and keeps its own memory, conversations and sign-ins.
+A family assistant is a separate Still on this Mac with its own Telegram bot. It uses the owner's AI subscription and keeps its own memory, conversations and sign-ins.
 
 ## Before creating one
 
@@ -10,7 +10,7 @@ A family assistant is a separate AgentOS on this Mac with its own Telegram bot. 
 
 ## Creating
 
-Propose `settings_change` with category `family`, setting `add`, and the new assistant's Telegram name as the value. After the owner confirms, AgentOS prepares the instance and sends the owner a setup link on Telegram to forward. Report this as **requested**, not finished.
+Propose `settings_change` with category `family`, setting `add`, and the new assistant's Telegram name as the value. After the owner confirms, Still prepares the instance and sends the owner a setup link on Telegram to forward. Report this as **requested**, not finished.
 
 ## Keep these states apart
 

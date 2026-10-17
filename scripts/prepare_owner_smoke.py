@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owner smoke helpers; neither starts AgentOS nor calls a provider.
+"""Owner smoke helpers; neither starts Still nor calls a provider.
 
 Default: create NEW synthetic smoke folders and print commands.
 ``record-probe``: print (and save) a redacted evidence record of one Work
@@ -34,7 +34,7 @@ def prepare(root: Path, port: int, environ: dict[str, str]) -> dict:
         key == "AGENTOS_DATA" or key.startswith("AGENTOS_DRIVE_")
         or key in ("AGENTOS_ISOLATED_ENGINE_URL", "AGENTOS_PUBLIC_ACCESS_TOKEN"))]
     if names:
-        raise ValueError("Use a clean shell without inherited AgentOS integration/state settings; no values were read from files.")
+        raise ValueError("Use a clean shell without inherited Still integration/state settings; no values were read from files.")
     root = Path(os.path.abspath(root.expanduser()))
     # No parents=True or exist_ok=True: never reuse/overwrite another installation.
     root.mkdir(mode=0o700)
@@ -71,9 +71,9 @@ def prepare(root: Path, port: int, environ: dict[str, str]) -> dict:
 PROBES = ("A", "B", "C", "D")
 RECORD_SCHEMA = "secretary-01-probe/1"
 EVIDENCE_CLASS = "owner-installation-record"
-STATEMENT = ("Redacted extract of one Work from the owner's local AgentOS store. It shows what AgentOS recorded for "
+STATEMENT = ("Redacted extract of one Work from the owner's local Still store. It shows what Still recorded for "
              "that run: tool events, the completion claim, the goal judgment, the outcome and the owner report. "
-             "External state it cites (a cart page, a reminder, sources) is as observed by AgentOS's own tools on "
+             "External state it cites (a cart page, a reminder, sources) is as observed by Still's own tools on "
              "that run. One run, not a repeated-trial measure; a fixture or this record's shape alone is not "
              "live evidence.")
 #: Detail keys never copied into a record, whatever their value.
@@ -94,7 +94,7 @@ STRUCTURAL_EVIDENCE_KEYS = frozenset({"id", "ref", "state_ref", "draft_id", "age
                                       "provider", "locale", "kind", "predicate", "action", "composed_by", "qualifiers",
                                       "freshness", "reason", "refused_because", "supersedes", "superseded", "model",
                                       "retrieved_at"})
-#: #786: the subscription CLI route.  Its AgentOS tool calls arrive through the
+#: #786: the subscription CLI route.  Its Still tool calls arrive through the
 #: MCP bridge (no ``call_id``: a ``running`` event with the bounded display
 #: ``step``, then the call's ``succeeded``/``failed`` event of the same tool),
 #: and its goal verdict is the orchestrator's ``planned``/``evaluated`` events.
@@ -204,7 +204,7 @@ def _open_store(runtime, data: Path):
     data = Path(os.path.abspath(Path(data).expanduser()))
     # QuickStore creates a missing installation; a record reads an existing one only.
     if not (data / "private" / "quickstart.db").is_file():
-        raise FileNotFoundError("No AgentOS store in the given data folder.")
+        raise FileNotFoundError("No Still store in the given data folder.")
     return runtime["QuickStore"](data)
 
 
@@ -240,7 +240,7 @@ def _redactor(runtime, store, job_id, omit_text):
             return "[redacted]"
         for root in roots:
             if len(root) > 1:
-                value = value.replace(root, "[AgentOS data]")
+                value = value.replace(root, "[Still data]")
         value = runtime["redact_reason"](value) or ""
         if free and omit_text:
             return _omitted(value)
@@ -504,7 +504,7 @@ def record_main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="prepare_owner_smoke.py record-probe",
                                      description="Print and save a redacted evidence record of one Work (#660).")
     parser.add_argument("--data", type=Path, default=Path(os.environ.get("AGENTOS_DATA") or Path.home() / ".local/share/agentos"),
-                        help="AgentOS data folder (default: AGENTOS_DATA, else ~/.local/share/agentos).")
+                        help="Still data folder (default: AGENTOS_DATA, else ~/.local/share/agentos).")
     parser.add_argument("--work", required=True, help="Work id from 작업 현황, or 'latest'.")
     parser.add_argument("--probe", required=True, choices=PROBES)
     parser.add_argument("--head", help="git commit the installation ran (git rev-parse HEAD).")
@@ -542,7 +542,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError) as exc:
         # Never dump the environment, provider config, or raw OS error payload.
         print(json.dumps({"error": type(exc).__name__, "service_started": False,
-                          "next_action": "Use a new root with an existing parent, an unprivileged port, and a clean AgentOS environment."}))
+                          "next_action": "Use a new root with an existing parent, an unprivileged port, and a clean Still environment."}))
         return 2
     print(json.dumps(result, indent=2))
     return 0

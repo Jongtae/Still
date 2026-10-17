@@ -34,7 +34,7 @@ Owner problem statement that motivated the specification (2026-09-26, preserved 
 
 ```mermaid
 flowchart LR
-  subgraph "Personal AgentOS (Secretary)"
+  subgraph "Still (Secretary)"
     direction TB
     UserInput[사용자 요청 (목표)] --> DecisionModel[의사결정 모델]
     PersonalContext[(개인 컨텍스트 / 메모리)]

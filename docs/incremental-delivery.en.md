@@ -1,6 +1,6 @@
 # Incremental Delivery and Merge Handoff
 
-Owner-authorized by DELIVERY-01 #365. This is development workflow, not an Still
+Owner-authorized by DELIVERY-01 #365. This is development workflow, not an AgentOS
 runtime feature, new heartbeat, GitHub policy bypass, or permission to use private data.
 It supplements the [Goal Execution Contract](goal-execution-contract.en.md).
 

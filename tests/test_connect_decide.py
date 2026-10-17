@@ -1,4 +1,4 @@
-"""CONNECT-DECIDE-01 (#1296): one AgentOS decision point for every AI-side tool call.
+"""CONNECT-DECIDE-01 (#1296): one Still decision point for every AI-side tool call.
 
 Model-free: scripted CLIs, the real service relay and the real hook process;
 nothing reaches a model or an external service.

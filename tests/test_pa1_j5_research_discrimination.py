@@ -1,6 +1,6 @@
 """J5's discrimination, asserted against the product instead of the fixture.
 
-`EPIC-PA1` J5 requires that AgentOS *"distinguishes observed facts from
+`EPIC-PA1` J5 requires that Still *"distinguishes observed facts from
 unknown price/inventory/fees"*.  The first-use acceptance appeared to prove
 that and did not: both of its assertions checked strings the fixture itself
 had put in `model_text`, so they would have passed against a product that

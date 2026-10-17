@@ -1,5 +1,5 @@
 #!/bin/sh
-# CI-only install smoke check (#1167, #1176): install AgentOS from a clean
+# CI-only install smoke check (#1167, #1176): install Still from a clean
 # HOME, start it, and require the setup page to answer HTTP 200 and the MCP
 # bridge to import. Used by .github/workflows/install-smoke.yml on every
 # platform job so the check itself is identical everywhere.

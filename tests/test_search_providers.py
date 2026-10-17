@@ -575,7 +575,7 @@ class CapabilitiesPath(unittest.TestCase):
         self.assertEqual((summary['provider'], summary['route'], summary['search_queries']),
                          (AI_NATIVE, 'openai', ['seoul weather tomorrow']))
         self.assertNotIn('MODEL PROSE', json.dumps(summary))
-        # AgentOS's own rendering of the observation lists sources, never the model's answer.
+        # Still's own rendering of the observation lists sources, never the model's answer.
         rendered = verified_text('web_search', result)
         self.assertIn('https://weather.example/seoul', rendered)
         self.assertNotIn('MODEL PROSE', rendered)
@@ -960,7 +960,7 @@ class ServiceIntegration(unittest.TestCase):
                      if event['tool'] == 'web_search' and event['trace'].get('scope') == 'subscription-preflight']
         self.assertEqual([event['status'] for event in preflight], ['running', 'unavailable'])
         self.assertEqual(preflight[1]['trace']['code'], 'native_search_unavailable')
-        self.assertNotIn('AgentOS public search evidence', engine.calls[0]['prompt'])
+        self.assertNotIn('Still public search evidence', engine.calls[0]['prompt'])
 
     def test_a_notes_answer_in_the_shown_history_no_longer_turns_native_search_off(self):
         """#705 (pilot posture): earlier conversation never turns the CLI's own search off."""
@@ -980,7 +980,7 @@ class ServiceIntegration(unittest.TestCase):
         self.assertIn('built-in web search', launched['prompt'])
         self.assertIsNone(store.turn_provenance(second).get('native_search_reason'))
         self.assertEqual(store.turn_provenance(second)['cli_native_tools'], ['web_search'])
-        # #605 inheritance is unchanged for AgentOS-composed lookups and the turn record.
+        # #605 inheritance is unchanged for Still-composed lookups and the turn record.
         self.assertIn('history:personal-space', store.config('work_source_provenance', {}).get(second, []))
         self.assertIn('personal-space', store.turn_provenance(second).get('prompt_withheld') or [])
 

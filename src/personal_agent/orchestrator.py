@@ -1,6 +1,6 @@
 """The decision model orchestrates each Work (ORCH-01 / #710).
 
-Constitution C16: an AI does the work; AgentOS orchestrates.  For each Work
+Constitution C16: an AI does the work; Still orchestrates.  For each Work
 the owner's Judgment AI (the DecisionEngine route, #580/#679) returns one
 typed plan through ``DecisionEngine.structured``:
 
@@ -24,7 +24,7 @@ and the question text is generic.
 
 After the worker finishes, one outcome judgment (``goal_reached``, #657,
 #820: did the reply serve the owner's message, given the conversation and the
-tool results AgentOS recorded) evaluates the attempt; when it did not, the orchestrator is asked
+tool results Still recorded) evaluates the attempt; when it did not, the orchestrator is asked
 for an adjusted brief and/or another worker, at most ``MAX_REDELEGATIONS``
 times, within the Work's shared ``WorkBudget``, and never after an attempt
 that ran an action with an effect (C8: a re-delegation must not repeat one).
@@ -51,7 +51,7 @@ from .prompt_files import prompt
 from .agent_runtime import CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, owner_context_fact
 from .decision import MAX_CONTEXT_CHARS, OUTCOME_DECIDED, OUTCOME_MALFORMED, DecisionContext, DecisionPolicy
 
-#: AgentOS context sections of a turn (``agent_runtime.turn_context``).
+#: Still context sections of a turn (``agent_runtime.turn_context``).
 SECTIONS = ('profile', 'current_context', 'prepared', 'history')
 #: #804, #820: every attempt carries every section - the owner model, the prepared
 #: answers and the recent conversation.  A plan no longer selects or drops any.
@@ -60,7 +60,7 @@ ALWAYS_SECTIONS = SECTIONS
 MAX_REDELEGATIONS = 2
 #: An attempt is started only while the Work's deadline leaves at least this.
 MIN_ATTEMPT_SECONDS = 60
-#: Bounds of the plan text AgentOS keeps and forwards.
+#: Bounds of the plan text Still keeps and forwards.
 MAX_NOTES_CHARS = 1200
 #: #1459: the professional lens a plan names for the worker (Professional Roles and Communication Contract).
 MAX_LENS_CHARS = 400
@@ -962,9 +962,9 @@ class Orchestration:
                 worker.update(available=False, reason='default_model_refused')
 
     def drop_bridge_workers(self):
-        """The shared AgentOS bridge cannot start: no CLI worker is offered again in this Work (#1130).
+        """The shared Still bridge cannot start: no CLI worker is offered again in this Work (#1130).
 
-        Every subscription CLI reaches AgentOS tools through the same per-turn
+        Every subscription CLI reaches Still tools through the same per-turn
         bridge, so another CLI would run without tools too.  API routes run the
         tools in process and stay available.
         """
@@ -1098,7 +1098,7 @@ class Orchestration:
 
         ``goal_reached`` over the owner's message (whole), the recent
         conversation, the worker's reply (model-stated) and the tool results
-        AgentOS recorded for this attempt: did the reply serve the owner's
+        Still recorded for this attempt: did the reply serve the owner's
         message?  A reply that asks the owner for something the message needs
         and the conversation does not give serves it.  Nothing the plan wrote
         is part of the question.  Not asked when the Work's deadline no longer

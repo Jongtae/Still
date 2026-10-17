@@ -138,7 +138,7 @@ class FirstUseOnAFreshStore(_Shop):
 
     @staticmethod
     def counting_judgments(asked):
-        """Every judgment AgentOS asks, of any purpose, is recorded (#977 review: count the verifier path too)."""
+        """Every judgment Still asks, of any purpose, is recorded (#977 review: count the verifier path too)."""
         from personal_agent.conversation_handoff import ConversationJudgments
         from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
 

@@ -1,4 +1,4 @@
-"""Bounded read-only tools executed by the user's AgentOS process."""
+"""Bounded read-only tools executed by the user's Still process."""
 import http.client
 import ipaddress
 import codecs
@@ -302,7 +302,7 @@ class PublicPageReader:
                     conn.sock=socket.create_connection((address,port),self._remaining(deadline))
                 conn.sock.settimeout(self._remaining(deadline))
                 with self._deadline_guard(deadline,conn.close):
-                    conn.request('GET',path,headers={'Host':host_header,'User-Agent':'AgentOS public-page-reader/1.0','Accept':'text/html,text/plain,application/xhtml+xml;q=0.9','Connection':'close'})
+                    conn.request('GET',path,headers={'Host':host_header,'User-Agent':'Still public-page-reader/1.0','Accept':'text/html,text/plain,application/xhtml+xml;q=0.9','Connection':'close'})
                 conn.sock.settimeout(self._remaining(deadline))
                 with self._deadline_guard(deadline,conn.close):
                     response=conn.getresponse()
@@ -425,7 +425,7 @@ class PublicPageReader:
             if approved is not None and current not in approved:
                 raise ValueError('소유자가 승인한 공개 페이지 범위를 벗어난 주소입니다.')
             addresses=self._validate_host(current,deadline)
-            request=Request(current, headers={'User-Agent':'AgentOS public-page-reader/1.0','Accept':'text/html,text/plain,application/xhtml+xml;q=0.9'})
+            request=Request(current, headers={'User-Agent':'Still public-page-reader/1.0','Accept':'text/html,text/plain,application/xhtml+xml;q=0.9'})
             try:
                 response=self.opener.open(request, timeout=self._remaining(deadline)) if self.opener else self._open_pinned(current,addresses,deadline)
                 self._remaining(deadline)
@@ -558,7 +558,7 @@ class LocalTools:
         raise ValueError('지원하지 않는 조회 도구입니다.')
 
 def weather_answer(result):
-    """AgentOS's own rendering of one observed Open-Meteo result.
+    """Still's own rendering of one observed Open-Meteo result.
 
     The current conditions and every returned forecast day, with the
     provider's dates and IANA timezone (#606), so a "tomorrow" question is

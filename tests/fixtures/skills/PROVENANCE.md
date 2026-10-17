@@ -3,7 +3,7 @@
 `internal-comms/` is a byte-for-byte copy of `skills/internal-comms` from
 [anthropics/skills](https://github.com/anthropics/skills) at commit
 `8a1541c4a3ffa5a20a5a91de0dcf3f0bab1d1ef4`. It is licensed under Apache-2.0;
-see its own `LICENSE.txt`. It was not authored for AgentOS.
+see its own `LICENSE.txt`. It was not authored for Still.
 `tests/test_skill_supply.py` checks the files against the pinned sha256 digests
 (SKILL-SUPPLY-02 #961; decision record #960, section 7).
 
@@ -13,7 +13,7 @@ see its own `LICENSE.txt`. It was not authored for AgentOS.
 is a byte-for-byte copy of the two-file `skills/frontend-design` directory at
 [anthropics/skills@2235be7c60b551f5de82ade908fd3816455afcda](https://github.com/anthropics/skills/tree/2235be7c60b551f5de82ade908fd3816455afcda/skills/frontend-design).
 It was fetched from immutable raw GitHub URLs on 2026-10-06, not authored for
-AgentOS. Apache-2.0 applies; the complete upstream `LICENSE.txt` is preserved.
+Still. Apache-2.0 applies; the complete upstream `LICENSE.txt` is preserved.
 No source byte or newline was adapted. The upstream folder contains no separate
 NOTICE; the repository third-party register covers components absent from this
 two-file dependency, as recorded in the licence review below.

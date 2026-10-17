@@ -10,7 +10,7 @@ If the source record is missing or not ready, this invocation is limited to W0 p
 If readiness and explicit activation are already established, use codex/382-web-management-utility, recheck current main and the recorded scope, preserve unrelated work and current merged fixes, and perform only the product increments below. Do not blindly merge or reset the overlapping settings branch.
 
 PRODUCT — ONLY AFTER THE GATE
-The local web is a management utility, not another chat client. Telegram is the current conversation channel; AgentOS owns work/history/memory/results/permissions independently of the channel.
+The local web is a management utility, not another chat client. Telegram is the current conversation channel; Still owns work/history/memory/results/permissions independently of the channel.
 
 W1: Show only one destination: task status, records or settings. Settings contain AI connection, files/output, external connections and privacy/diagnostics. Remove default web composer/Telegram transcript, duplicated navigation, permanent onboarding and project prompts. Projects remain reachable secondary grouping. Navigation replaces panes, with stable draft/search/selection/focus and sensible mobile/back behavior.
 

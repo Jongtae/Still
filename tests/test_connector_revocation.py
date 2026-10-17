@@ -81,7 +81,7 @@ class RevocationTestCase(HandoffTestCase):
         return self.registry.status(OWNER, GMAIL_CONNECTOR_ID).state
 
     def plain_state(self):
-        """Everything AgentOS stores outside the encrypted secret namespaces."""
+        """Everything Still stores outside the encrypted secret namespaces."""
         with self.store.db() as db:
             rows = [tuple(row) for row in db.execute('SELECT * FROM config')]
         return json.dumps(rows, default=str)

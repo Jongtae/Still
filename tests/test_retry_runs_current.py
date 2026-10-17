@@ -110,7 +110,7 @@ class RetryRunsCurrent(projection.ProjectionTestCase):
                                           RETRY_EFFECT_NOTE_TAIL]) + '\n\n' + CURRENT)
         for private in ('PRIVATE-ARGUMENT', 'PRIVATE-QUERY', 'n1', '/item'):
             self.assertNotIn(private, sent)
-        self.assertEqual(second['status'], 'succeeded', 'the AI decides; AgentOS only informed it')
+        self.assertEqual(second['status'], 'succeeded', 'the AI decides; Still only informed it')
 
     def test_no_note_for_a_refusal_without_an_effect(self):
         self.mark_unmediated(self.first['id'])

@@ -1,5 +1,5 @@
 """SESSION-KEEP-01 (#990): a login window writes the jar only when cookies changed, and a site the
-owner signed in to through AgentOS is kept signed in by loading one of its pages, where it is held."""
+owner signed in to through Still is kept signed in by loading one of its pages, where it is held."""
 
 import base64
 import json

@@ -1,7 +1,7 @@
 """CONNECT-CODE-01 (#1380): the owner's AI runs code it wrote, in an isolated sandbox.
 
 C16: the owner's AI reads an API's documentation and writes the code a
-developer would write; AgentOS only removes the blocker that the AI has no safe
+developer would write; Still only removes the blocker that the AI has no safe
 place to run it.  The pinned Anthropic sandbox-runtime (Seatbelt on macOS,
 bubblewrap on Linux) isolates the run: the owner's home is unreadable, only the
 run's own temporary directory is writable, and every outbound HTTP request is
@@ -58,7 +58,7 @@ HOST = re.compile(r'^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0
 NODE_CANDIDATES = ('/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node')
 UNAVAILABLE_TEXT = '이 Mac에 Node.js 18 이상이 없어 코드를 실행할 수 없어요.'
 #: #1456: what the run's code is told when a state-changing request waits for the owner's approval.
-APPROVAL_REQUESTED_TEXT = ('this request changes state, so AgentOS asked the owner to approve exactly this request '
+APPROVAL_REQUESTED_TEXT = ('this request changes state, so Still asked the owner to approve exactly this request '
                            '(method, path, query and body). First check it is the change the owner asked for: if it is a '
                            'lookup or a helper sent with the wrong method (the API documents it as GET), it was a mistake, '
                            'so do not stop here; fix the code and run again, and tell the owner to ignore that approval '
@@ -66,7 +66,7 @@ APPROVAL_REQUESTED_TEXT = ('this request changes state, so AgentOS asked the own
                            'in one or two plain sentences what is waiting for approval (what it does, in their terms); do '
                            'not repeat how to approve, which the approval message itself says, and never call it a '
                            'Telegram message or a request ID; once approved, run the same code again and this exact request is '
-                           'sent once. The approval message AgentOS sends has no button: the owner approves by reacting '
+                           'sent once. The approval message Still sends has no button: the owner approves by reacting '
                            'with a thumbs-up to it or replying that they approve, so never tell them to press a button. '
                            'Only when the API\'s own documentation sends this request as POST (or another non-GET method) '
                            'and it changes nothing (it only issues a token, computes a hash or a signature), it should not '
@@ -74,14 +74,14 @@ APPROVAL_REQUESTED_TEXT = ('this request changes state, so AgentOS asked the own
                            'api_connections connect (the same set JSON with this "METHOD host/path" added to reads, '
                            'continue_work=yes); the owner confirms once and no key is asked for again. A lookup the '
                            'documentation sends as GET is fixed in the code instead, never registered.')
-#: #1456: the longest request body AgentOS shows the owner for approval (the runner's bodyText bound).
+#: #1456: the longest request body Still shows the owner for approval (the runner's bodyText bound).
 APPROVAL_BODY_CHARS = 16 * 1024
 #: #1470: the AI's owner-facing description of a state change, and the line that introduces the exact request.
 APPROVAL_NOTE_CHARS = 300
 APPROVAL_EXACT_LABEL = '보낼 요청:'
 APPROVAL_CONTENT_LABEL = '내용:'
 #: Owner choice 2026-10-14 (clear signing, after ERC-7730): the labelled values the owner reads instead of the
-#: raw request, each checked by AgentOS against the exact field of the request that is approved.
+#: raw request, each checked by Still against the exact field of the request that is approved.
 APPROVAL_FIELDS_LABEL = '확인한 값:'
 APPROVAL_FIELDS_OK = '✅ 위 값은 실제로 보낼 요청과 같아요.'
 APPROVAL_FIELDS_MISMATCH = '⚠️ 설명한 값을 실제 요청에서 찾지 못했어요. 아래 원문을 확인해 주세요.'
@@ -149,7 +149,7 @@ APPROVAL_RUNS_KEY = 'code_run_approval_runs'
 LIBRARY_HINT = prompt('code_run_library_hint')
 #: #1486: the parameter-flow check calls each function with its two examples; what it would send is
 #: recorded, reads go through as in any run, and nothing else is sent or asked of the owner.
-CHECK_TEXT = 'parameter check: AgentOS recorded this request and did not send it'
+CHECK_TEXT = 'parameter check: Still recorded this request and did not send it'
 CHECK_SESSION_SECONDS = 30
 CHECK_TOTAL_SECONDS = 120
 MAX_CHECKED_FUNCTIONS = 8
@@ -187,7 +187,7 @@ def _runtime_digest():
 
 
 def ensure_runtime(store, node, *, run=subprocess.run):
-    """The installed, pinned sandbox runtime directory for this AgentOS revision.
+    """The installed, pinned sandbox runtime directory for this Still revision.
 
     Installed once per lockfile and runner digest with ``npm ci --ignore-scripts``,
     so the lockfile's integrity hashes decide what runs and no install script does.
@@ -225,7 +225,7 @@ def ensure_runtime(store, node, *, run=subprocess.run):
 
 
 def interpreter():
-    """``(python, readable roots)``: this AgentOS's own base interpreter and what it must read."""
+    """``(python, readable roots)``: this Still's own base interpreter and what it must read."""
     executable = os.path.realpath(getattr(sys, '_base_executable', None) or sys.executable)
     roots = {os.path.realpath(sys.base_prefix)}
     if not any(executable.startswith(root + os.sep) for root in roots):
@@ -340,7 +340,7 @@ def request_values(body, query):
 
 
 def approval_field_lines(fields, body, query, redact=str):
-    """The labelled values and AgentOS's check of them against the exact request (clear signing).
+    """The labelled values and Still's check of them against the exact request (clear signing).
 
     A label names a request field ("label=FIELD") or states a value ("label=value"); either is shown
     only when the request carries it.  Owner feedback 2026-10-14 (too many alerts): a stated fact the
@@ -682,7 +682,7 @@ class CodeRunner:
             pair = examples.get(row['name'])
             if not (isinstance(pair, list) and len(pair) == 2 and all(isinstance(value, dict) for value in pair)):
                 # #1489 (rehearsal): a worker invented an unused argument to satisfy this; say the other way out.
-                return (f"give EXAMPLES[{row['name']!r}]: two dicts of arguments that differ, so AgentOS can check that "
+                return (f"give EXAMPLES[{row['name']!r}]: two dicts of arguments that differ, so Still can check that "
                         'the arguments reach the requests. A function whose requests never change needs no arguments '
                         '(read keys and tokens inside it); do not add an argument the request does not need')
             texts = []
@@ -723,7 +723,7 @@ class CodeRunner:
     def _settle(self, outcome, result):
         """#1456: a sent state-changing request is settled ``observed`` once the run ended on its own.
 
-        The sandbox shows AgentOS each request, not its response; the run's code sees the response and
+        The sandbox shows Still each request, not its response; the run's code sees the response and
         its output says what happened.  A run cut off (timeout) leaves the dispatch unknown, so no later
         attempt sends another state change until it is resolved.
         """
@@ -945,7 +945,7 @@ def evidence(result):
         kept['approval_requested'] = result['approval_requested']
     if isinstance(result.get('library'), dict):
         # #1486: what happened to each set's library, never its source.  #1489: and why a proposal was not
-        # kept (AgentOS's own text naming functions and arguments), so the Work's records can show it.
+        # kept (Still's own text naming functions and arguments), so the Work's records can show it.
         kept['library'] = {name: {key: (str(item[key])[:300] if key == 'reason' else item[key])
                                   for key in ('state', 'version', 'functions', 'reason') if item.get(key) is not None}
                            for name, item in result['library'].items() if isinstance(item, dict)}

@@ -17,7 +17,7 @@ class StopOnUsageLimit:
     """Inspect ``EarlyStopping`` manager: once a turn hits a subscription usage limit, start no more samples.
 
     The workers run on the owner's own subscriptions, which the owner's live
-    AgentOS shares (#887).  Past the limit every run fails the same way, so
+    Still shares (#887).  Past the limit every run fails the same way, so
     going on only burns the owner's quota and fills the report with outage
     rows.  The tripping run stops at that turn and is not judged; other
     samples already running finish; the rest are skipped, and the
@@ -79,7 +79,7 @@ def prepare_judgment(client, pool, box, worker, timeout=300, clock=time.monotoni
     A qualification is bound to the store path, so a copied seed starts
     unqualified.  A cached qualification for this slot/worker/seed was
     applied before start; only when it is missing or stale does this ask
-    AgentOS to qualify again (through the owner's own routes) and cache it.
+    Still to qualify again (through the owner's own routes) and cache it.
     """
     status = client.judgment()
     started = clock()

@@ -1,4 +1,4 @@
-/* Still · Personal AgentOS homepage. Tokens follow the Still starter identity kit v1.0 (2026-10-10).
+/* Still · Still homepage. Tokens follow the Still starter identity kit v1.0 (2026-10-10).
    The Still lockup is traced from the owner's mockup (inline SVG); Figtree (SIL OFL, fonts/) for Latin UI text; Korean uses the system Gothic. Rose and Sage are never used for small text. */
 @font-face { font-family: "Figtree"; src: url("fonts/figtree-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 :root {

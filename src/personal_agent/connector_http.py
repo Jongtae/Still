@@ -25,7 +25,7 @@ verbatim to any host, including a scheme downgrade, for up to ten hops.
 Independent review demonstrated an owner Gmail token arriving in cleartext at
 a non-allowlisted host from a single allowlisted first hop.
 
-*Decision*: **Adapt** -- stdlib `urllib` behind a narrow AgentOS-owned
+*Decision*: **Adapt** -- stdlib `urllib` behind a narrow Still-owned
 redirect guard. The guard re-applies the caller's own destination predicate
 to every hop, so containment is a property of the opener rather than of the
 one URL the caller happened to check.

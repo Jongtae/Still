@@ -208,7 +208,7 @@ class FlagsAreNotHidden(Base):
     """Acceptance 2: the AI's answer omits every flag; the owner's report still carries it."""
 
     def flagged(self, fault=None, args=READ, qualifier=None):
-        """The scripted judgment accepts the answer; AgentOS's own disclosure still names the flag."""
+        """The scripted judgment accepts the answer; Still's own disclosure still names the flag."""
         self.api.fault = fault
         result, _script = self.work({'tool_calls': [tool_call('c1', 'api_request', **args)]}, summary_from_tool)
         self.assertNotIn(QUALIFIER_NOTES[qualifier], result.content)

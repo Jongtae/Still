@@ -1,8 +1,8 @@
-"""AgentOS-held connections as read-only ``api_request`` slots (CONN-API).
+"""Still-held connections as read-only ``api_request`` slots (CONN-API).
 
 The owner's AI decides at request time what it needs from a connected
 service - one event in full, a message body, a file's revisions - and calls
-the provider's own API through ``api_request``.  AgentOS keeps what an AI
+the provider's own API through ``api_request``.  Still keeps what an AI
 must not own: the token (resolved, renewed and revision-checked per call by
 the connector's existing machinery, never shown), the provider API host and
 path prefix the token may reach, and read-only methods for a read grant.
@@ -61,7 +61,7 @@ def relayed(names):
 
 
 def names(slots):
-    """The AgentOS-held connection slots among ``slots``, by name only (never a token)."""
+    """The Still-held connection slots among ``slots``, by name only (never a token)."""
     return tuple(sorted(name for name, slot in (slots or {}).items() if isinstance(slot, dict) and slot.get('connection')))
 
 

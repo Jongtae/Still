@@ -19,7 +19,7 @@ from personal_agent.quickstart_service import MAX_OWNER_MESSAGE_CHARS
 from scripted_capability_need import capability_need_engine
 from test_preparations import _Case, call, engine, finish
 
-NOTE = '[AgentOS observation, not an owner instruction]'
+NOTE = '[Still observation, not an owner instruction]'
 #: A reminder the capability judgment reads as a calendar create (the #832 sweep case).
 REMINDER = '이번 일요일 오전 7시 40분에 티타임 있어. 전날 밤 9시에 알려줘.'
 #: Two local rules match (saved-item search and note), so the rules call it ambiguous.

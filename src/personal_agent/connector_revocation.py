@@ -2,7 +2,7 @@
 
 Three different effects, reported separately and never merged into one word:
 
-1. **Local disconnect** -- AgentOS stops using the connection: the connector
+1. **Local disconnect** -- Still stops using the connection: the connector
    row moves to DISCONNECTED with a new revision (Gmail/Calendar) or the Drive
    handoff records ``disconnected``, the stored credential is overwritten, an
    in-progress authorization is consumed, and Work parked for that connection
@@ -34,9 +34,9 @@ can only ever reach the revocation host, across redirects too.
 tokens and is not a dependency (see ``drive_web_oauth`` REUSE-R1b #427);
 ``requests``/``httpx`` would be a new runtime dependency for one POST
 (``connector_http`` records the same decision). ``oauthlib`` does not send
-requests, so the transport and the outcome classification are AgentOS-owned.
+requests, so the transport and the outcome classification are Still-owned.
 
-*Existing AgentOS reuse*: ``ConnectorRegistry.transition`` (new revision on
+*Existing Still reuse*: ``ConnectorRegistry.transition`` (new revision on
 every change, so stale callbacks/retries/in-flight requests are refused by the
 checks every connector already applies), the per-connector encrypted secret
 stores, ``ConnectorHandoff.supersede`` for parked Work. *Build* is limited to
@@ -369,7 +369,7 @@ class GoogleConnectionRevoker:
                 "retained_data": "preserve",
                 "remote_data_deletion": "none",
             },
-            "message": (f"{connection.label} 연결을 해제하면 AgentOS가 즉시 이 연결을 쓰지 않고, "
+            "message": (f"{connection.label} 연결을 해제하면 Still이 즉시 이 연결을 쓰지 않고, "
                         f"이 기기에 저장된 인증 정보를 삭제하며, Google({GOOGLE_REVOKE_HOST})에 "
                         "권한 취소를 요청합니다. 저장된 결과물과 기록은 지우지 않고, Google에 있는 "
                         "데이터도 삭제하지 않습니다."),
@@ -426,7 +426,7 @@ class GoogleConnectionRevoker:
             receipt.update(local_access="incomplete", message=(
                 f"{connection.label} 연결 중 이 기기에서 확인할 수 없는 소유자(예: 이전에 연결했던 Telegram 계정)로 "
                 "남아 있는 연결이 있어 모두 해제하지 못했습니다. 이 연결은 아직 사용될 수 있습니다. "
-                "Google 계정의 타사 앱 액세스에서 AgentOS 권한을 직접 제거해 주세요."))
+                "Google 계정의 타사 앱 액세스에서 Still 권한을 직접 제거해 주세요."))
             self._audit_residual(connection)
         return receipt
 
@@ -476,7 +476,7 @@ class GoogleConnectionRevoker:
 
 
 def _message(label: str, outcome: str) -> str:
-    stopped = f"{label} 연결을 해제했습니다. AgentOS는 더 이상 이 연결을 사용하지 않으며, 저장된 결과물과 기록은 그대로 남아 있습니다. "
+    stopped = f"{label} 연결을 해제했습니다. Still은 더 이상 이 연결을 사용하지 않으며, 저장된 결과물과 기록은 그대로 남아 있습니다. "
     return stopped + {
         REVOKED: "Google에서도 권한 취소를 확인했습니다.",
         ALREADY_INVALID: "Google은 이 인증이 이미 유효하지 않다고 답했습니다(이미 취소되었거나 만료됨).",

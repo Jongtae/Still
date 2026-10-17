@@ -49,7 +49,7 @@ CORPUS = {
     'outcome unknown': (_pair('api_request', {'declared_effect': 'read', 'effect': 'unknown'}, 'failed'),
                         EFFECT_UNKNOWN),
     'web search': (_pair('web_search', {}, 'succeeded'), EFFECT_NONE),
-    # #1484 (live, Work 51cd331b): AgentOS refused a repeated click before it ran.
+    # #1484 (live, Work 51cd331b): Still refused a repeated click before it ran.
     'click refused as a repeated path': (_pair('browser_click', {'declared_effect': 'mutate', 'effect': 'none',
                                                                 'code': 'repeat_path', 'ran': False}, 'failed'), EFFECT_NONE),
     'api request refused by the attempt budget': (_pair('api_request', {'declared_effect': 'mutate', 'code': 'attempt_budget',
@@ -116,7 +116,7 @@ class OneClassifier(unittest.TestCase):
 
 
 class NotRunMark(unittest.TestCase):
-    """#1484: AgentOS marks only its own refusals before a tool ran, and the mark survives the relay."""
+    """#1484: Still marks only its own refusals before a tool ran, and the mark survives the relay."""
 
     def test_the_relay_carries_the_mark_and_never_invents_it(self):
         from personal_agent.bounded_execution import ExecutionError

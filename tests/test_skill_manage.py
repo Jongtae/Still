@@ -1,4 +1,4 @@
-"""SKILL-MANAGE-01 (#962): AgentOS management know-how as a bundled skill over the existing settings services.
+"""SKILL-MANAGE-01 (#962): Still management know-how as a bundled skill over the existing settings services.
 
 Evidence class: focused unit tests and a scripted-model run (no network, model,
 family instance or owner data).  The skill is content over #961's contract.

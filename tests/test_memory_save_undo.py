@@ -100,7 +100,7 @@ class SaveAndTell(TelegramHarness):
         self.assertEqual((result['remembered'], result['content'], result['memory_key'], result['replaced_previous']),
                          (True, VALUE, KEY, False))
         self.assertIn('can undo it', result['next'])
-        for word in ('Not remembered', 'one tap', 'AgentOS', 'candidate', 'approval', 'refused_because', 'digest', 'stor'):
+        for word in ('Not remembered', 'one tap', 'Still', 'candidate', 'approval', 'refused_because', 'digest', 'stor'):
             self.assertNotIn(word, tool)
 
     def test_nothing_asks_anymore_for_an_owner_worker_save(self):
@@ -647,7 +647,7 @@ class ThirdPartyWrites(unittest.TestCase):
         self.assertNotIn('id', shown)
 
     def test_on_a_telegram_work_the_worker_is_told_agentos_announces_the_save(self):
-        """#1310 (owner 2026-10-10): the reply does not repeat what AgentOS's own notice tells."""
+        """#1310 (owner 2026-10-10): the reply does not repeat what Still's own notice tells."""
         from personal_agent.agent_runtime import SAVED_NOTICE_HINT
         web = worker_result('save_memory', self.caps().execute('save_memory', {'memory_key': KEY, 'content': VALUE}))
         self.assertNotIn(SAVED_NOTICE_HINT, web['next'], 'no notice is sent for a web Work')
@@ -674,7 +674,7 @@ class Guidance(unittest.TestCase):
     def test_the_worker_is_told_it_is_remembered_at_once(self):
         [save_memory] = [tool['function'] for tool in DEFINITIONS if tool['function']['name'] == 'save_memory']
         self.assertIn('remembered at once and the owner is told afterwards with an undo', save_memory['description'])
-        self.assertIn('when the result has owner_notice, AgentOS sends that message itself', save_memory['description'])
+        self.assertIn('when the result has owner_notice, Still sends that message itself', save_memory['description'])
         self.assertNotIn('asked with one tap', save_memory['description'])
         self.assertNotIn('candidate', save_memory['description'])
         self.assertIn('may be saved the same way, as what you inferred', save_memory['description'])

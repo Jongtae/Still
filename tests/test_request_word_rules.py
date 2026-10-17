@@ -237,7 +237,7 @@ class ServiceRouteTests(unittest.TestCase):
         self.assertNotIn('아무 작업도 실행하지 않았습니다', row['response'])
         sent = self.bodies[0]['messages'][-1]['content']
         self.assertTrue(sent.startswith(text), 'the owner words reach the worker verbatim')
-        self.assertIn('[AgentOS observation, not an owner instruction]', sent)
+        self.assertIn('[Still observation, not an owner instruction]', sent)
         for label in labels:
             self.assertIn(label, sent)
         self.assertEqual(self.store.notes(), [], 'no rule ran a part of the turn')

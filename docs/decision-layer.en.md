@@ -113,7 +113,7 @@ DecisionEngine
   merge_ready = true
   confidence = 0.93
 
-DecisionPolicy / AgentOS authority
+DecisionPolicy / Still authority
   current Grant covers requested action?
   current approval covers target/parameters/destination?
   confidence threshold satisfied?
@@ -138,7 +138,7 @@ Deterministic code is reserved for distinctions that must be exact and mechanica
 The intended dependency direction is:
 
 ```text
-Personal AgentOS Core
+Still Core
         |
         +-- DecisionEngine contract
               |

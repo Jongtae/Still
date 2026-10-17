@@ -15,7 +15,7 @@
   "excluded_sources": [
     "37: repeated request and login handling omitted from this edit"
   ],
-  "reuse_review": "N/A for AgentOS implementation: media/content editing outside the repository, no new component, abstraction, integration, dependency or framework. Adopt installed FFmpeg/Pillow/browser renderer; adapt existing site/assets/home.css tokens and OFL Figtree font.",
+  "reuse_review": "N/A for Still implementation: media/content editing outside the repository, no new component, abstraction, integration, dependency or framework. Adopt installed FFmpeg/Pillow/browser renderer; adapt existing site/assets/home.css tokens and OFL Figtree font.",
   "sources": {
     "31": {
       "filename": "KakaoTalk_Video_2026-10-11-23-42-31.mp4",

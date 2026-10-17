@@ -1,5 +1,5 @@
 #!/bin/sh
-# Personal AgentOS one-line installer for macOS, Linux and Windows (WSL2) (#1167).
+# Still one-line installer for macOS, Linux and Windows (WSL2) (#1167).
 #
 #   curl -LsSf https://raw.githubusercontent.com/Jongtae/agentos/main/scripts/install.sh | sh
 #
@@ -7,7 +7,7 @@
 # managed Python, so no Homebrew, Xcode tools, system Python or git is needed.
 # This script only pins what it installs, and checks each pin before running
 # it: the uv release installer (which itself carries the checksums of the uv
-# binaries it downloads) and the published AgentOS release, which is the same
+# binaries it downloads) and the published Still release, which is the same
 # GitHub tag archive the Homebrew formula uses, against the SHA-256 recorded
 # in docs/release-manifest.json. A current uv already on PATH is reused as
 # is, with the same trust as any other tool the owner installed; only a uv
@@ -24,13 +24,13 @@ UV_INSTALLER_SHA256="b8e6c43099ee9f9a550984d3ad56948457c689e7a99c090b35377234ac2
 PYTHON_VERSION="3.13"
 
 say() { printf '%s\n' "$*"; }
-fail() { printf 'AgentOS install: %s\n' "$*" >&2; exit 1; }
+fail() { printf 'Still install: %s\n' "$*" >&2; exit 1; }
 
 case "$(uname -s)" in
   Darwin|Linux) ;;
   MINGW*|MSYS*|CYGWIN*)
-    fail "Windows runs AgentOS inside WSL2. In PowerShell run 'wsl --install', restart, open Ubuntu and run this command there. See docs/QUICKSTART.md (Windows)." ;;
-  *) fail "unsupported system $(uname -s); AgentOS supports macOS, Linux and Windows through WSL2." ;;
+    fail "Windows runs Still inside WSL2. In PowerShell run 'wsl --install', restart, open Ubuntu and run this command there. See docs/QUICKSTART.md (Windows)." ;;
+  *) fail "unsupported system $(uname -s); Still supports macOS, Linux and Windows through WSL2." ;;
 esac
 
 download() { # url destination
@@ -51,9 +51,9 @@ sha256_of() { $SHA256 "$1" | cut -d' ' -f1; }
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT INT TERM
 
-# Verify the AgentOS release first, so a bad download changes nothing on this machine.
+# Verify the Still release first, so a bad download changes nothing on this machine.
 archive="$work/agentos-$AGENTOS_VERSION.tar.gz"
-say "Downloading AgentOS $AGENTOS_VERSION..."
+say "Downloading Still $AGENTOS_VERSION..."
 download "https://github.com/Jongtae/agentos/archive/refs/tags/v$AGENTOS_VERSION.tar.gz" "$archive"
 [ "$(sha256_of "$archive")" = "$AGENTOS_ARCHIVE_SHA256" ] \
   || fail "checksum mismatch for v$AGENTOS_VERSION; nothing was installed."
@@ -85,16 +85,16 @@ else
   [ -x "$UV" ] || fail "uv was installed but not found at $UV."
 fi
 
-say "Installing AgentOS $AGENTOS_VERSION..."
+say "Installing Still $AGENTOS_VERSION..."
 "$UV" --no-config tool install --force --quiet --python "$PYTHON_VERSION" "personal-agentos[mcp-host] @ $archive" \
-  || fail "uv could not install AgentOS."
+  || fail "uv could not install Still."
 "$UV" --no-config tool update-shell >/dev/null 2>&1 || true
 bin_dir=$("$UV" --no-config tool dir --bin)
 
 say ""
-say "AgentOS $AGENTOS_VERSION is installed. Next time, open a new terminal and run: agentos start"
+say "Still $AGENTOS_VERSION is installed. Next time, open a new terminal and run: agentos start"
 if [ "${AGENTOS_NO_START:-0}" = "1" ]; then exit 0; fi
-say "Starting AgentOS now (press Ctrl-C to stop)."
+say "Starting Still now (press Ctrl-C to stop)."
 rm -rf "$work"; trap - EXIT INT TERM
 # stdin is this piped script, so first setup reads the terminal itself when one exists.
 if (: </dev/tty) 2>/dev/null; then exec "$bin_dir/agentos" start </dev/tty; fi

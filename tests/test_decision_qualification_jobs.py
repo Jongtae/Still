@@ -302,7 +302,7 @@ class QualificationJobTests(JobFixture):
         self.assertEqual(again.decision_routes.recover_qualification(), [('follow_main:claude-code', JOB_FAILED)])
         job = self.job(again)
         self.assertEqual((job['state'], job['failure']), (JOB_FAILED, 'interrupted'))
-        self.assertIn('AgentOS가 다시 시작되어 중단됨', again.decision_routes.status()['effective']['text'])
+        self.assertIn('Still이 다시 시작되어 중단됨', again.decision_routes.status()['effective']['text'])
         self.assertFalse(again.run_due_qualification())
         self.assertEqual(self.judgments(), [])
 

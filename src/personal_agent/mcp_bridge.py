@@ -1,7 +1,7 @@
-"""Minimal stdio MCP bridge; AgentOS, never the engine, owns tool execution.
+"""Minimal stdio MCP bridge; Still, never the engine, owns tool execution.
 
 The host-only MCP SDK owns stdio framing and JSON-RPC response correlation.
-AgentOS retains handshake negotiation, the supported method/tool profiles,
+Still retains handshake negotiation, the supported method/tool profiles,
 serialized execution and Work/Grant/secret/effect/Event/Evidence callbacks.
 The isolated engine bridge keeps its separate envelope contract.
 """
@@ -49,7 +49,7 @@ def negotiated_protocol_version(offered):
 class _AllInlineMethods(frozenset):
     """Make every request use the dispatcher's documented inline path.
 
-    The public API accepts a frozenset and checks membership.  AgentOS must
+    The public API accepts a frozenset and checks membership.  Still must
     serialize supported and rejected requests alike: otherwise the SDK cancels
     a final unknown-method task as soon as stdin reaches EOF, before its error
     is written.  The exact SDK pin and contract tests cover this small wildcard
@@ -61,7 +61,7 @@ class _AllInlineMethods(frozenset):
 
 
 def _serve_stdio(handle):
-    """Adapt the exact-pinned SDK's public dispatcher to AgentOS callbacks.
+    """Adapt the exact-pinned SDK's public dispatcher to Still callbacks.
 
     Imports stay here so importing the host facade does not require the SDK
     in the isolated engine's base package. No SDK Server/session registration
@@ -84,7 +84,7 @@ def _serve_stdio(handle):
         except Exception:
             # The dispatcher otherwise logs the exception and sends its text,
             # which can contain owner payloads, destinations or credentials.
-            raise MCPError(code=-32602, message='AgentOS MCP request rejected.') from None
+            raise MCPError(code=-32602, message='Still MCP request rejected.') from None
 
     def handle_notification(method, params):
         # The old bridge also executed supported methods without an id.
@@ -130,7 +130,7 @@ def _serve_stdio(handle):
 
 
 def _provenance(labels):
-    """Private-source labels handed over by the AgentOS process for this Work.
+    """Private-source labels handed over by the Still process for this Work.
 
     The bridge runs as a separate process, so the Work's private-source
     provenance (same-turn sources and conversation history) must be passed
@@ -198,8 +198,8 @@ def approved_public_pages(store):
 
 #: The Work this bridge serves has ended; a typed tool error, not a protocol one.
 WORK_NOT_RUNNING = '이 작업은 더 이상 실행 중이 아니어서 도구를 실행하지 않았습니다.'
-#: Returned for an untyped tool failure whose own text is not AgentOS's.
-TOOL_FAILED_TEXT = 'AgentOS 도구가 이 요청을 처리하지 못했습니다. 다른 방법을 고르거나 소유자에게 필요한 정보를 물어보세요.'
+#: Returned for an untyped tool failure whose own text is not Still's.
+TOOL_FAILED_TEXT = 'Still 도구가 이 요청을 처리하지 못했습니다. 다른 방법을 고르거나 소유자에게 필요한 정보를 물어보세요.'
 
 
 class _Rejected(ExecutionError):
@@ -215,12 +215,12 @@ def tool_error_result(exc, action):
     Normal tool failures are tool results (``isError``), not JSON-RPC protocol
     errors, so the CLI can tell a transient read failure from a denial, a
     setup need, the Work's Stop/deadline or an unknown effect.  The text is
-    AgentOS's own: a typed ``ToolError`` or #605 input request verbatim, a fixed
+    Still's own: a typed ``ToolError`` or #605 input request verbatim, a fixed
     text otherwise (an exception's own text may quote a URL or credential).
     """
     code, retry, effect = classify_failure(exc, action)
     if code == 'input_required':
-        # #605 D2: AgentOS's own fixed texts reach the CLI verbatim.
+        # #605 D2: Still's own fixed texts reach the CLI verbatim.
         text = str(exc)
     elif isinstance(exc, ToolError):
         text = str(exc)
@@ -267,7 +267,7 @@ def _permission_text(decision):
 
 def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROFILE, browser_relay=None,
           search_off_reason='', relay_browser=True, skills=(), ai_connections=False, connection_slots=()):
-    """Serve one Work's AgentOS tools over stdio for the route profile the host named (#701).
+    """Serve one Work's Still tools over stdio for the route profile the host named (#701).
 
     ``profile`` is ``trusted-local`` or ``strict-isolated``; anything else
     serves the strict set.  ``browser_relay`` (trusted-local only) is the
@@ -345,7 +345,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
             except Exception:
                 decision = None
             if not isinstance(decision, dict) or decision.get('behavior') not in ('allow', 'deny'):
-                decision = {'behavior': 'deny', 'message': 'AgentOS could not decide this action, so it was not run.'}
+                decision = {'behavior': 'deny', 'message': 'Still could not decide this action, so it was not run.'}
             return _permission_text(decision)
         elif method == 'tools/call':
             params = params or {}; name = params.get('name')
@@ -357,8 +357,8 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
             action = (capabilities.tools.get(listed) or {}).get('host_action') if listed != 'unlisted' else None
             if listed == 'unlisted' or name not in tools._offered():
                 record(listed, 'failed', json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id,'code':'unknown_tool','retry':'permanent',
-                                                     'effect':'none','ran':False,'error':'Unknown AgentOS MCP tool.'}))
-                raise _Rejected(-32602, 'Unknown AgentOS MCP tool.')
+                                                     'effect':'none','ran':False,'error':'Unknown Still MCP tool.'}))
+                raise _Rejected(-32602, 'Unknown Still MCP tool.')
             # #787: a browser call's declared effect, recorded on every event of the call.
             declared = {}
             try:
@@ -382,7 +382,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                 record(listed, 'failed',
                        json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id,'code':'invalid_arguments','retry':'permanent','effect':'none',
                                    **ran_field(exc), 'error':redact_reason(str(exc))}, ensure_ascii=False))
-                raise _Rejected(-32602, 'Invalid AgentOS MCP tool arguments.') from None
+                raise _Rejected(-32602, 'Invalid Still MCP tool arguments.') from None
             except (ValueError, TypeError, OSError, ProviderError) as exc:
                 # #607 AX-06: a normal tool failure is a typed tool result.
                 result, typed = tool_error_result(exc, action)

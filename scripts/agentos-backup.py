@@ -1,4 +1,4 @@
-"""Create a portable, secret-free AgentOS owner-state export."""
+"""Create a portable, secret-free Still owner-state export."""
 import argparse
 from pathlib import Path
 import sys

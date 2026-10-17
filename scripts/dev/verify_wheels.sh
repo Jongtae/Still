@@ -1,6 +1,6 @@
 #!/bin/sh
 # #1531: owners install with no compiler toolchain, so every supported platform
-# must resolve AgentOS's dependencies from published wheels alone. A dependency
+# must resolve Still's dependencies from published wheels alone. A dependency
 # that drops a platform's wheel fails here instead of on an owner's machine.
 set -eu
 cd "$(dirname "$0")/../.."

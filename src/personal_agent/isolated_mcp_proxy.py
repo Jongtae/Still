@@ -167,7 +167,7 @@ class IsolatedMcpProxy:
         except Exception:
             # Facade exception text can contain private data or implementation
             # details.  It must never cross this process boundary.
-            return self._error(ident, -32603, "AgentOS tool failed")
+            return self._error(ident, -32603, "Still tool failed")
         return {
             "jsonrpc": "2.0",
             "id": ident,

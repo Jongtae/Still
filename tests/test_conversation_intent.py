@@ -79,7 +79,7 @@ CALENDAR_PARAPHRASES = ('내일 오후 3시에 팀 회의 일정 잡아줘', '�
                         'add a calendar event for friday')
 
 #: Natural memory phrasing is judged by the DecisionEngine's
-#: ``explicit_memory_request`` (#597), which may let AgentOS issue an approval
+#: ``explicit_memory_request`` (#597), which may let Still issue an approval
 #: and leaves the utterance on the conversation route.  It is a flag, never a
 #: capability selection.
 MEMORY_PARAPHRASES = ('이 선호를 기억해줘', '다음 내용을 저장해',
@@ -155,7 +155,7 @@ class ExplicitFormTests(unittest.TestCase):
 
     def test_an_unrecognised_slash_command_falls_through_instead_of_guessing(self):
         for text in ('/summarize', '/workspace-summary Aurora :: Launch notes',
-                     '/search AgentOS personal assistant verification', '/assistant Drive 검색: 예산',
+                     '/search Still personal assistant verification', '/assistant Drive 검색: 예산',
                      '/recommend specialist-research'):
             with self.subTest(text=text):
                 decision = self.classifier.classify(text)
@@ -292,7 +292,7 @@ class ModelAuthorityTests(unittest.TestCase):
 
     def test_a_suggestion_cannot_select_a_consequential_intent(self):
         # No rule produces a calendar candidate (#672), so a suggestion naming
-        # one is never among AgentOS's options to narrow.
+        # one is never among Still's options to narrow.
         decision = self.classifier.classify('작업공간에 저장한 파일 열어주고 메모해줘',
                                             model_suggestion={'intent': INTENT_CALENDAR_CREATE})
         self.assertEqual(decision.intent, INTENT_AMBIGUOUS)
@@ -317,7 +317,7 @@ class ModelAuthorityTests(unittest.TestCase):
                                             model_suggestion={'intent': INTENT_WORKSPACE_SEARCH})
         self.assertEqual(decision.intent, INTENT_WORKSPACE_SEARCH)
         self.assertEqual(decision.model_suggestion['state'], 'accepted')
-        # Even then the authority is AgentOS's: the rules produced the option
+        # Even then the authority is Still's: the rules produced the option
         # set and the argument, the suggestion only picked one of them.
         self.assertEqual(decision.authority, AUTHORITY_RULE)
         self.assertEqual(decision.argument, self.classifier.classify(

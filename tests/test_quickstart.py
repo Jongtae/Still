@@ -758,7 +758,7 @@ finally:
         self.store.secret('telegram_token','123456:TEST_TOKEN')
         self.store.put('telegram',{'enabled':True,'mode':'owner-token','username':'owner_test_bot','generation':'safe','user_id':42})
         with self.store.db() as db:
-            db.execute("INSERT INTO jobs(id,request_key,message,channel,chat_id,status,response,error,delivery,provider,model,created,workspace_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",('job','telegram-verify:safe','/search AgentOS personal assistant verification','telegram:safe',42,'succeeded','done',None,'sent','subscription','codex',time.time(),None))
+            db.execute("INSERT INTO jobs(id,request_key,message,channel,chat_id,status,response,error,delivery,provider,model,created,workspace_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",('job','telegram-verify:safe','/search Still personal assistant verification','telegram:safe',42,'succeeded','done',None,'sent','subscription','codex',time.time(),None))
             db.execute("INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)",('job','web_search','succeeded','{}',time.time()))
         result=first_work_report(self.store)
         self.assertTrue(result['passed'])
@@ -1067,7 +1067,7 @@ finally:
         self.service.deliver_one()
         sent=[call[1]['text'] for call in self.calls if call[0].endswith('/sendMessage')][-1]
         self.assertEqual(sent[:TELEGRAM_RESULT_PREVIEW_CHARS],original[:TELEGRAM_RESULT_PREVIEW_CHARS])
-        self.assertTrue(sent.endswith('전체 결과는 AgentOS 웹에서 확인하세요.'))
+        self.assertTrue(sent.endswith('전체 결과는 Still 웹에서 확인하세요.'))
         self.assertEqual(self.store.job(job_id)['delivery'],'sent')
 
     def test_telegram_failure_has_one_terminal_answer_without_generic_failure_notice(self):

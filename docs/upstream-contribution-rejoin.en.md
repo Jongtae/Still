@@ -2,7 +2,7 @@
 
 Issue: [#1027](https://github.com/Jongtae/agentos/issues/1027), under
 UPSTREAM-01 #1022. Review and reproduction date: 2026-10-06. This record is
-**prepared** inside Still. It does not report an external issue, comment,
+**prepared** inside AgentOS. It does not report an external issue, comment,
 discussion or pull request as submitted. External posting, an agreement and any
 licence grant still require separate owner approval.
 
@@ -11,10 +11,10 @@ licence grant still require separate owner approval.
 The primary contribution candidate is a packaging mismatch in
 [`publicsuffixlist==1.0.2.20261003`](https://pypi.org/project/publicsuffixlist/1.0.2.20261003/):
 the published universal wheel and source distribution contain different Public
-Suffix List snapshots. The real Still consumer is
+Suffix List snapshots. The real AgentOS consumer is
 [`browser_session.registrable_domain`](../src/personal_agent/browser_session.py),
 which uses the package's bundled data for login-site and destination boundaries.
-Still currently locks the known-good `1.0.2.20261002`; rejected update
+AgentOS currently locks the known-good `1.0.2.20261002`; rejected update
 [PR #1077](https://github.com/Jongtae/agentos/pull/1077) preserved that lock.
 
 The official MCP Python SDK response-drain finding is retained as a secondary
@@ -34,7 +34,7 @@ and SDK tests, and PRs #1077/#1080. Python 3.12 standard-library `urllib`,
 `hashlib`, `zipfile` and `tarfile` are enough to reproduce the packaging result;
 no package installation, new dependency, contribution platform, tracker, runtime
 authority or owner-state store is needed. A factual upstream issue is preferable
-to a speculative local patch because there is no Still code defect to mask.
+to a speculative local patch because there is no AgentOS code defect to mask.
 
 ## Primary candidate: exact artifacts and reproduction
 
@@ -55,7 +55,7 @@ snapshot. Comment-only differences are excluded by normalization.
 ### Executed public reproduction
 
 This standalone script uses only public PyPI data and Python's standard library.
-It contains no Still import, owner material, account, credential, path or
+It contains no AgentOS import, owner material, account, credential, path or
 runtime log. It was executed with Python 3.12.12 on Darwin arm64; the table above
 is its observed result.
 
@@ -146,7 +146,7 @@ sdist only: []
   useful to report to the package maintainer. It does not establish a malicious
   publication, a root cause, an exploitable vulnerability or an error in the
   authoritative Mozilla PSL. Consumer behavior can differ by selected artifact
-  and API usage; Still observed no security incident.
+  and API usage; AgentOS observed no security incident.
 
 ## Duplicate search, channel, policy and licence
 
@@ -171,7 +171,7 @@ The inspected tree has no `CONTRIBUTING`, `CODE_OF_CONDUCT`, `SECURITY`, CLA,
 DCO, issue template or pull-request template. This records an absence in the
 current tree, not permission for a later patch or legal assurance. The repository
 and PyPI identify the package as MPL-2.0; the upstream README also attributes
-the vendored PSL and test data. This factual report copies no package or Still
+the vendored PSL and test data. This factual report copies no package or AgentOS
 code and grants no licence. A later patch must recheck then-current policy and
 preserve applicable MPL/CC0 attribution. No upstream AI-disclosure rule was
 found, so the prepared report discloses AI assistance voluntarily.
@@ -215,14 +215,14 @@ accounts, secrets, sessions, internal paths, private transcripts and production
 logs. It makes no acceptance, release or downstream-adoption claim. Posting it
 remains blocked only by the explicit separate-owner-approval boundary.
 
-## Still disposition and release rejoin condition
+## AgentOS disposition and release rejoin condition
 
-Still has no local source patch for this package. The local difference is the
+AgentOS has no local source patch for this package. The local difference is the
 deliberate `uv.lock` pin at `publicsuffixlist==1.0.2.20261002` after #1077 was
 closed unmerged. The rejected wrapper tag `v1.0.2.20261003-gha` resolved to
 unsigned commit `d08104aa385a809f379f32dff91d0cc820ae8808`; tag or workflow
 identity did not make the mismatched artifacts acceptable. The candidate wheel
-passed focused Still behavior tests, which proves only that the older snapshot
+passed focused AgentOS behavior tests, which proves only that the older snapshot
 remained compatible with current consumers. It cannot establish sdist/wheel
 equivalence.
 
@@ -248,7 +248,7 @@ to hide publisher divergence.
 
 ## MCP duplicate and rejoin disposition
 
-Still adopted `mcp==2.3.0`, tag commit
+AgentOS adopted `mcp==2.3.0`, tag commit
 [`2118f14f8a19bc158d8a1cf90af58d85d187f849`](https://github.com/modelcontextprotocol/python-sdk/releases/tag/v2.3.0),
 through [PR #1080](https://github.com/Jongtae/agentos/pull/1080). Its host bridge
 uses the public `JSONRPCDispatcher` with an all-inline membership adapter to
@@ -263,12 +263,12 @@ transport closes; therefore the desired bounded drain/serial mode is an extensio
 question, not a violated documented promise. The current contribution policy
 requires an issue first, AI disclosure and accountable human review; an external
 PR must be assigned or labelled `help wanted`. The existing issue is neither
-assigned to Still nor labelled `help wanted`.
+assigned to AgentOS nor labelled `help wanted`.
 
 No new MCP report or patch is prepared. A short current-version comment on #2678
 would be useful only if a separately executed raw-dispatcher reproduction adds
 new `inline_methods` evidence rather than repeating the general EOF claim. The
-local adapter remains owned by the Still runtime maintainer and is covered by
+local adapter remains owned by the AgentOS runtime maintainer and is covered by
 `test_batched_same_tool_calls_stay_serialized_and_eof_flushes_all_responses`,
 `test_unsupported_method_as_only_request_before_eof_is_answered`,
 `test_call_notifications_execute_without_response_and_late_cancel_does_not_replay`
@@ -278,7 +278,7 @@ and `test_empty_input_eof_closes_cleanly_without_effects` in
 Remove only the wildcard/EOF compatibility adaptation after a released SDK
 offers a supported replacement that passes those response-completeness,
 arbitrary-method rejection, notification-order, shutdown, redaction and truthful
-cancellation-evidence regressions. Retain Still serialization and policy glue.
+cancellation-evidence regressions. Retain AgentOS serialization and policy glue.
 Resolve the released artifact through normal dependency review; merged upstream
 code alone is not a rejoin event.
 

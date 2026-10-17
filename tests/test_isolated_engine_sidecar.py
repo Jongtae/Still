@@ -27,7 +27,7 @@ class _AgentOSCallback(BaseHTTPRequestHandler):
             {
                 "path": self.path,
                 "authorization": self.headers.get("Authorization"),
-                "task_id": self.headers.get("X-AgentOS-Task-ID"),
+                "task_id": self.headers.get("X-Still-Task-ID"),
                 "content_type": self.headers.get("Content-Type"),
                 "request": request,
             }
@@ -130,7 +130,7 @@ class IsolatedEngineSidecarTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(set(response), {"result"})
         self.assertIn("private note", response["result"])
-        self.assertEqual(len(_AgentOSCallback.calls), 1, "denied mutation must not reach AgentOS")
+        self.assertEqual(len(_AgentOSCallback.calls), 1, "denied mutation must not reach Still")
         call = _AgentOSCallback.calls[0]
         self.assertEqual(call["path"], "/internal/isolated-engine/mcp")
         self.assertEqual(call["authorization"], "Bearer " + token)
@@ -217,7 +217,7 @@ class IsolatedEngineSidecarBoundaryTests(unittest.TestCase):
         sidecar = self._sidecar(body)
         self.assertEqual(json.loads(sidecar.execute(dict(self.PAYLOAD))), [])
 
-    # --- sandbox flag stays an AgentOS decision ------------------------------
+    # --- sandbox flag stays an Still decision ------------------------------
     def test_agentos_sets_the_read_only_sandbox_flags_itself(self):
         body = (
             "import json, sys\n"

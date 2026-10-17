@@ -47,7 +47,7 @@
     },
     {
       "number": 265,
-      "title": "[TOP-01] Complete approved AgentOS specification under one persistent goal",
+      "title": "[TOP-01] Complete approved Still specification under one persistent goal",
       "state": "open",
       "url": "https://github.com/Jongtae/personal-agentos/issues/265",
       "milestone": null
@@ -348,7 +348,7 @@
     },
     {
       "number": 172,
-      "title": "DOC-01: Position AgentOS as a personal AI control plane and define the next proposed Hub v2 phase",
+      "title": "DOC-01: Position Still as a personal AI control plane and define the next proposed Hub v2 phase",
       "state": "closed",
       "url": "https://github.com/Jongtae/personal-agentos/issues/172",
       "milestone": null
@@ -425,7 +425,7 @@
     },
     {
       "number": 149,
-      "title": "Epic: AgentOS UX v1.1 — Personal-agent DM experience",
+      "title": "Epic: Still UX v1.1 — Personal-agent DM experience",
       "state": "open",
       "url": "https://github.com/Jongtae/personal-agentos/issues/149",
       "milestone": 5
@@ -474,7 +474,7 @@
     },
     {
       "number": 135,
-      "title": "EPIC: Personal AgentOS v1 Release",
+      "title": "EPIC: Still v1 Release",
       "state": "closed",
       "url": "https://github.com/Jongtae/personal-agentos/issues/135",
       "milestone": 4
@@ -530,7 +530,7 @@
     },
     {
       "number": 109,
-      "title": "[H1-02] Isolate each personal AgentOS runtime from the Mac host",
+      "title": "[H1-02] Isolate each personal Still runtime from the Mac host",
       "state": "closed",
       "url": "https://github.com/Jongtae/personal-agentos/issues/109",
       "milestone": 3
@@ -558,7 +558,7 @@
     },
     {
       "number": 105,
-      "title": "[H2-01] Run subscription engines through AgentOS-owned tools",
+      "title": "[H2-01] Run subscription engines through Still-owned tools",
       "state": "closed",
       "url": "https://github.com/Jongtae/personal-agentos/issues/105",
       "milestone": 3
@@ -579,7 +579,7 @@
     },
     {
       "number": 102,
-      "title": "EPIC: AgentOS Hub v2 / Subscription-connected personal work hub",
+      "title": "EPIC: Still Hub v2 / Subscription-connected personal work hub",
       "state": "open",
       "url": "https://github.com/Jongtae/personal-agentos/issues/102",
       "milestone": 3
@@ -649,7 +649,7 @@
     },
     {
       "number": 83,
-      "title": "[P3 repair] Pin launchd delivery loop to the selected AgentOS runtime",
+      "title": "[P3 repair] Pin launchd delivery loop to the selected Still runtime",
       "state": "closed",
       "url": "https://github.com/Jongtae/personal-agentos/issues/83",
       "milestone": null
@@ -698,7 +698,7 @@
     },
     {
       "number": 68,
-      "title": "[P6-00e] Bundle the delivery plan with installed AgentOS",
+      "title": "[P6-00e] Bundle the delivery plan with installed Still",
       "state": "closed",
       "url": "https://github.com/Jongtae/personal-agentos/issues/68",
       "milestone": 2
@@ -1521,7 +1521,7 @@
     },
     {
       "number": 173,
-      "title": "docs: position AgentOS as a personal AI control plane",
+      "title": "docs: position Still as a personal AI control plane",
       "state": "closed",
       "merged_at": "2026-09-07T17:06:05Z",
       "merge_commit": "3f4c044eab254a8c166494243c2cbd60801fcff4",
@@ -1631,7 +1631,7 @@
     },
     {
       "number": 156,
-      "title": "Add opt-in AgentOS workspaces",
+      "title": "Add opt-in Still workspaces",
       "state": "closed",
       "merged_at": "2026-09-07T13:31:26Z",
       "merge_commit": "da3945c48cf18452ff6760aa21996efd9b4ff4d2",
@@ -1641,7 +1641,7 @@
     },
     {
       "number": 155,
-      "title": "Make AgentOS home a minimal personal-agent DM",
+      "title": "Make Still home a minimal personal-agent DM",
       "state": "closed",
       "merged_at": "2026-09-07T13:26:04Z",
       "merge_commit": "f7064f401d7602f60816db1364b459442ca96227",
@@ -1711,7 +1711,7 @@
     },
     {
       "number": 141,
-      "title": "docs: define Personal AgentOS v1 release delivery",
+      "title": "docs: define Still v1 release delivery",
       "state": "closed",
       "merged_at": "2026-09-07T11:48:09Z",
       "merge_commit": "d76733ff152f18512c12d3037a4cd128141442e3",
@@ -1831,7 +1831,7 @@
     },
     {
       "number": 118,
-      "title": "[H2-01] Run subscription engines through AgentOS-owned MCP tools and bounded execution adapters.",
+      "title": "[H2-01] Run subscription engines through Still-owned MCP tools and bounded execution adapters.",
       "state": "closed",
       "merged_at": "2026-09-07T09:37:05Z",
       "merge_commit": "86fd9720fdf520221a8c0786531d431c9587d10d",
@@ -1841,7 +1841,7 @@
     },
     {
       "number": 117,
-      "title": "[H1-02] Isolate each owner AgentOS runtime from the Mac host and prepare the Kubernetes hosting boundary.",
+      "title": "[H1-02] Isolate each owner Still runtime from the Mac host and prepare the Kubernetes hosting boundary.",
       "state": "closed",
       "merged_at": "2026-09-07T09:32:02Z",
       "merge_commit": "a2e46f003abbc8422440f4c985cb9933882d3061",
@@ -1891,7 +1891,7 @@
     },
     {
       "number": 110,
-      "title": "docs: rebaseline AgentOS Hub v2 delivery",
+      "title": "docs: rebaseline Still Hub v2 delivery",
       "state": "closed",
       "merged_at": "2026-09-07T09:01:40Z",
       "merge_commit": "f18b4b31bfaf7e80deb4f0b5f3dc8f47a37e2bc2",
@@ -2411,7 +2411,7 @@
     },
     {
       "number": 3,
-      "title": "Establish Personal AgentOS v1 product governance",
+      "title": "Establish Still v1 product governance",
       "state": "closed",
       "merged_at": "2026-09-06T11:19:14Z",
       "merge_commit": "d27e4f462db4578b73772d3e8f85a8d553151a7b",
@@ -2423,35 +2423,35 @@
   "milestones": [
     {
       "number": 1,
-      "title": "Personal AgentOS v1",
+      "title": "Still v1",
       "state": "open",
       "open_issues": 2,
       "closed_issues": 17
     },
     {
       "number": 2,
-      "title": "Personal AgentOS Stage 2",
+      "title": "Still Stage 2",
       "state": "open",
       "open_issues": 0,
       "closed_issues": 11
     },
     {
       "number": 3,
-      "title": "AgentOS Hub v2",
+      "title": "Still Hub v2",
       "state": "open",
       "open_issues": 1,
       "closed_issues": 8
     },
     {
       "number": 4,
-      "title": "Personal AgentOS v1 Release",
+      "title": "Still v1 Release",
       "state": "open",
       "open_issues": 0,
       "closed_issues": 7
     },
     {
       "number": 5,
-      "title": "AgentOS UX v1.1",
+      "title": "Still UX v1.1",
       "state": "open",
       "open_issues": 1,
       "closed_issues": 6

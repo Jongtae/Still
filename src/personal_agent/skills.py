@@ -55,7 +55,7 @@ CATALOGUE_ENTRIES = 32
 CATALOGUE_BYTES = 8 * 1024
 MAX_LOADS = 3
 MAX_RESOURCE_READS = 8
-#: Files whose presence means the skill needs execution AgentOS does not offer.
+#: Files whose presence means the skill needs execution Still does not offer.
 EXECUTABLE_DIRS = frozenset({'scripts', 'hooks', 'bin'})
 EXECUTABLE_SUFFIXES = frozenset({'.py', '.sh', '.bash', '.zsh', '.js', '.mjs', '.cjs', '.ts', '.rb', '.pl', '.ps1',
                                  '.exe', '.bat', '.cmd', '.so', '.dylib', '.dll', '.jar', '.wasm'})
@@ -75,10 +75,10 @@ LICENCE_NAMES = ('LICENSE', 'LICENCE', 'COPYING')
 REPOSITORY_LICENCES = '.repository-licence'
 MAX_REPOSITORY_LICENCES = 4
 MAX_LICENCE_BYTES = 64 * 1024
-#: The reviewed skills shipped with AgentOS, under one reserved package id.
+#: The reviewed skills shipped with Still, under one reserved package id.
 BUNDLED_PACKAGE = 'agentos'
 BUNDLED_ROOT = Path(__file__).with_name('bundled_skills')
-#: #963: the reference skills AgentOS publishes, as data (``[{name, description, address}]``), so the
+#: #963: the reference skills Still publishes, as data (``[{name, description, address}]``), so the
 #: owner can add one by name even while skills are off; no code names a particular skill.
 REFERENCES_FILE = Path(__file__).with_name('skill_references.json')
 #: The owner's switch: ``{"enabled": bool}``; absent means off.
@@ -229,7 +229,7 @@ def inspect_skill(root, repository_licences=None):
     ``repository_licences`` is the folder ``fetch_github`` staged the pinned
     commit's root licence files in; it never changes the digest.
     Never runs or imports anything from the folder.  ``invalid_package`` is
-    raised for a malformed or hostile folder; anything AgentOS could hold but
+    raised for a malformed or hostile folder; anything Still could hold but
     not use is a status in ``status``.
     """
     root = Path(root)
@@ -340,7 +340,7 @@ def parse_source(value, transport=http_get):
 
 
 def reference_skills(path=REFERENCES_FILE):
-    """AgentOS's published reference skills, validated; an unreadable or malformed list is empty."""
+    """Still's published reference skills, validated; an unreadable or malformed list is empty."""
     try:
         rows = json.loads(Path(path).read_text(encoding='utf-8'))
     except (OSError, ValueError):
@@ -404,7 +404,7 @@ def fetch_github(source, dest, transport=http_get):
 # -- library: the owner's installed and bundled skills -------------------------------------
 
 class SkillLibrary:
-    """Skills on this AgentOS: bundled ones plus ``PluginRegistry`` declarations that carry ``skills``.
+    """Skills on this Still: bundled ones plus ``PluginRegistry`` declarations that carry ``skills``.
 
     Content is stored by digest under ``plugins/skills/<digest>/<name>/`` and
     never rewritten, so a Work pinned to a digest reads exactly those bytes.
@@ -446,7 +446,7 @@ class SkillLibrary:
         return rows
 
     def bundled(self):
-        """The reviewed skills shipped with this AgentOS, inspected on every call (a few small files)."""
+        """The reviewed skills shipped with this Still, inspected on every call (a few small files)."""
         entries = []
         if not self.bundled_root.is_dir():
             return entries
@@ -456,8 +456,8 @@ class SkillLibrary:
             except SkillError:
                 continue
             if set(record['status']) <= ENABLE_STATUSES:
-                entries.append(self._entry(BUNDLED_PACKAGE, record, revision='bundled', licence='AGPL-3.0-only (AgentOS)',
-                                           source='AgentOS'))
+                entries.append(self._entry(BUNDLED_PACKAGE, record, revision='bundled', licence='AGPL-3.0-only (Still)',
+                                           source='Still'))
         return entries
 
     @staticmethod
@@ -558,7 +558,7 @@ class SkillLibrary:
                                  'unsupported')
             package_id = record['name']
             if package_id == BUNDLED_PACKAGE or package_id in {entry['name'] for entry in self.bundled()}:
-                raise SkillError('AgentOS 기본 스킬과 이름이 같아 추가하지 않았어요.', 'identity_collision')
+                raise SkillError('Still 기본 스킬과 이름이 같아 추가하지 않았어요.', 'identity_collision')
             existing = self._manifest_path(package_id)
             enabled = True
             if existing.exists():
@@ -609,7 +609,7 @@ class SkillLibrary:
 
     def summary(self):
         """Owner-readable rows of the installed and bundled skills."""
-        rows = [{'skill': entry['skill'], 'digest': entry['digest'], 'source': 'AgentOS 기본', 'enabled': True} for entry in self.bundled()]
+        rows = [{'skill': entry['skill'], 'digest': entry['digest'], 'source': 'Still 기본', 'enabled': True} for entry in self.bundled()]
         for manifest in self.installed():
             source = manifest.get('source') or {}
             rows.append({'skill': f"{manifest['id']}/{manifest['skills'][0]['name']}", 'enabled': manifest.get('enabled') is True,

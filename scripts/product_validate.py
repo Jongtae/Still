@@ -1,4 +1,4 @@
-"""Run the Personal AgentOS product-validation gate."""
+"""Run the Still product-validation gate."""
 import argparse
 import json
 from pathlib import Path

@@ -1,6 +1,6 @@
 """Small model adapters. Agent-engine and model contracts remain separate.
 
-Compatible with the original AgentOS separation of engine health/run and model
+Compatible with the original Still separation of engine health/run and model
 construction; this module has no host CLI, systemd or third-party dependency.
 """
 import json

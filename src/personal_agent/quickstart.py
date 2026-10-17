@@ -93,7 +93,7 @@ def relayed_request(headers):
 def local_oauth_secret_values(store, path_value, required, label):
     """Load owner-local connector credentials without putting them in process args.
 
-    The JSON file is intentionally outside AgentOS's data directory, owned by
+    The JSON file is intentionally outside Still's data directory, owned by
     the current user, a non-symlink regular file, and mode 0600.  It is a
     runtime secret boundary for the Fernet key, the OAuth client secret, and
     any browser-restricted key; none of these values enter settings/status.
@@ -117,7 +117,7 @@ def local_oauth_secret_values(store, path_value, required, label):
             raise ValueError
         value=json.loads(resolved.read_text())
     except (OSError, ValueError, json.JSONDecodeError):
-        raise ValueError(f'{label} secret file must be an owner-only regular JSON file outside AgentOS data.')
+        raise ValueError(f'{label} secret file must be an owner-only regular JSON file outside Still data.')
     if not isinstance(value,dict):
         raise ValueError(f'{label} secret file must contain a JSON object.')
     values={key:value.get(key,'') for key in required}
@@ -127,13 +127,13 @@ def local_oauth_secret_values(store, path_value, required, label):
 
 
 #: DRIVE-CONNECT-01 #1172: the owner's own Google OAuth client.  An owner
-#: who wants AgentOS itself to hold a Google connection (rather than using the
+#: who wants Still itself to hold a Google connection (rather than using the
 #: Google connection their AI already has) supplies one "Desktop app" client:
 #: in Settings (kept in the owner-local secret store) or as a file named by
 #: ``AGENTOS_GOOGLE_CLIENT_FILE``.  A Desktop client's secret is not
 #: confidential by Google's definition for installed apps; PKCE and the
 #: owner-bound signed state bind each authorization.  No client ships with
-#: AgentOS, so nothing here runs under a publisher's Google identity.
+#: Still, so nothing here runs under a publisher's Google identity.
 GOOGLE_CLIENT_SECRET_KEY='google_oauth_client'
 #: Keychain service of the Fernet key that encrypts Google OAuth tokens.
 GOOGLE_OAUTH_KEY_SERVICE='personal-agentos.google-oauth'
@@ -166,7 +166,7 @@ def google_own_client(environ, store=None):
 
     The environment file wins over the Settings value so an operator can pin
     one; a stored value that no longer parses offers nothing rather than
-    stopping AgentOS from starting.
+    stopping Still from starting.
     """
     path=environ.get('AGENTOS_GOOGLE_CLIENT_FILE','')
     if path:
@@ -473,7 +473,7 @@ def configured_service(store, environ=None):
     endpoint=environ.get('AGENTOS_ISOLATED_ENGINE_URL','')
     isolated_engine=IsolatedEngineGateway(endpoint) if endpoint else None
     # The configured sidecar is itself the Codex installation boundary.  Do
-    # not inspect the AgentOS container/host PATH for a CLI that intentionally
+    # not inspect the Still container/host PATH for a CLI that intentionally
     # lives only in the isolated engine service.  The sidecar contract supports
     # Codex only, so other engines remain unavailable in this mode.
     isolated_engines=(SubscriptionEngines(
@@ -619,7 +619,7 @@ def configured_service(store, environ=None):
     # Construction and routes land together, as for Calendar: registering the
     # connectors grants nothing until the owner finishes Google's consent.
     # The same builder runs when the owner adds a client in Settings, so a
-    # client saved there works without restarting AgentOS.
+    # client saved there works without restarting Still.
     google_port=environ.get('AGENTOS_GOOGLE_LOCAL_PORT','8787')
     key_provider=environ.get('AGENTOS_GOOGLE_OAUTH_KEY') or google_oauth_key(store)
     def install_google_client(client):
@@ -749,12 +749,12 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             # #680 review P1-2: the embedded browser marks every request with a
             # user-agent token; no page it shows may use this owner's UI or API.
             if EMBEDDED_UA_TOKEN in self.headers.get('User-Agent',''):
-                self.reply(403,{'error':'AgentOS 내장 브라우저에서는 AgentOS 화면을 열 수 없습니다.'})
+                self.reply(403,{'error':'Still 내장 브라우저에서는 Still 화면을 열 수 없습니다.'})
                 return False
             if self.server.server_address[0] not in ('127.0.0.1', '::1'):return True
             allowed={f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}',f'agentos.localhost:{self.server.server_port}',f'[::1]:{self.server.server_port}'}
             if self.headers.get('Host','').lower() in allowed | public_hosts:return True
-            self.reply(403,{'error':'로컬 주소로 AgentOS를 열어 주세요.'})
+            self.reply(403,{'error':'로컬 주소로 Still을 열어 주세요.'})
             return False
 
         def public_host(self):
@@ -1003,7 +1003,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 # because the callback can only ever return to loopback.
                 if not self.auth():return
                 if self.tunneled():
-                    return self.reply(400,b'Open AgentOS on its local address to connect Gmail.','text/plain; charset=utf-8')
+                    return self.reply(400,b'Open Still on its local address to connect Gmail.','text/plain; charset=utf-8')
                 try:return self.redirect(service.begin_gmail_connection()['authorization_url'])
                 except (AttributeError, ValueError, KeyError):
                     return self.reply(400,b'Gmail connection is unavailable. Check the local Gmail configuration.','text/plain; charset=utf-8')
@@ -1032,7 +1032,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 # deliberately -- there is no path that turns one into both.
                 if not self.auth():return
                 if self.tunneled():
-                    return self.reply(400,b'Open AgentOS on its local address to connect Google Calendar.','text/plain; charset=utf-8')
+                    return self.reply(400,b'Open Still on its local address to connect Google Calendar.','text/plain; charset=utf-8')
                 grant=parse_qs(parts.query).get('grant',['read'])[0]
                 try:return self.redirect(service.begin_calendar_connection(grant)['authorization_url'])
                 except (AttributeError, ValueError, KeyError):
@@ -1045,18 +1045,18 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 # which also carries which of the two grants is completing.
                 # One message for every failure, so a guess learns nothing.
                 if self.tunneled():
-                    return self.reply(400,b'Google Calendar connection could not be completed. Start the connection again from AgentOS.','text/plain; charset=utf-8')
+                    return self.reply(400,b'Google Calendar connection could not be completed. Start the connection again from Still.','text/plain; charset=utf-8')
                 try:
                     callback={key:values[0] for key,values in parse_qs(parts.query).items()}
                     service.complete_calendar_connection(callback)
                 except (AttributeError, ValueError, OSError):
-                    return self.reply(400,b'Google Calendar connection could not be completed. Start the connection again from AgentOS.','text/plain; charset=utf-8')
+                    return self.reply(400,b'Google Calendar connection could not be completed. Start the connection again from Still.','text/plain; charset=utf-8')
                 return self.reply(200,connected_page('Google Calendar'),'text/plain; charset=utf-8')
             if path==DRIVE_CONNECT_PATH:
                 # #1172: owner-authenticated and loopback only, like Calendar.
                 if not self.auth():return
                 if self.tunneled():
-                    return self.reply(400,b'Open AgentOS on its local address to connect Google Drive.','text/plain; charset=utf-8')
+                    return self.reply(400,b'Open Still on its local address to connect Google Drive.','text/plain; charset=utf-8')
                 try:return self.redirect(service.begin_drive_connection()['authorization_url'])
                 except (AttributeError, ValueError, KeyError):
                     return self.reply(400,b'Google Drive connection is unavailable.','text/plain; charset=utf-8')
@@ -1064,12 +1064,12 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 # Unauthenticated by necessity (cross-site redirect from
                 # Google); authority is the owner-bound, signed, single-use state.
                 if self.tunneled():
-                    return self.reply(400,b'Google Drive connection could not be completed. Start the connection again from AgentOS.','text/plain; charset=utf-8')
+                    return self.reply(400,b'Google Drive connection could not be completed. Start the connection again from Still.','text/plain; charset=utf-8')
                 try:
                     callback={key:values[0] for key,values in parse_qs(parts.query).items()}
                     service.complete_drive_connection(callback)
                 except (AttributeError, ValueError, OSError):
-                    return self.reply(400,b'Google Drive connection could not be completed. Start the connection again from AgentOS.','text/plain; charset=utf-8')
+                    return self.reply(400,b'Google Drive connection could not be completed. Start the connection again from Still.','text/plain; charset=utf-8')
                 return self.reply(200,connected_page('Google Drive'),'text/plain; charset=utf-8')
             if path=='/google-drive-picker':
                 grant=parse_qs(parts.query).get('grant',[''])[0]
@@ -1129,7 +1129,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 # server that does. Every other Calendar route already
                 # refuses a tunnel host and this should not be the exception.
                 if self.tunneled():
-                    return self.reply(400,{'error':'Open AgentOS on its local address to review calendar drafts.'})
+                    return self.reply(400,{'error':'Open Still on its local address to review calendar drafts.'})
                 try:return self.reply(200,service.calendar_draft_request({'operation':'list'}))
                 except ValueError as exc:return self.reply(400,{'error':str(exc)})
             if path.startswith('/api/personal-space/items/'):
@@ -1189,7 +1189,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 authorization=self.headers.get('Authorization','')
                 prefix='Bearer '
                 token=authorization[len(prefix):] if authorization.startswith(prefix) else ''
-                task_id=self.headers.get('X-AgentOS-Task-ID','')
+                task_id=self.headers.get('X-Still-Task-ID','')
                 if not token or not task_id:
                     return self.reply(401,{'error':'격리 엔진 인증이 필요합니다.'})
                 try:
@@ -1258,7 +1258,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 if path=='/api/ai-connections':return self.reply(200,service.set_ai_connections(body))
                 # #1172: the owner's own Google client, entered on this computer only.
                 if path=='/api/google/client':
-                    if self.tunneled():return self.reply(400,{'error':'자체 Google client는 이 컴퓨터의 AgentOS 화면에서만 설정할 수 있습니다.'})
+                    if self.tunneled():return self.reply(400,{'error':'자체 Google client는 이 컴퓨터의 Still 화면에서만 설정할 수 있습니다.'})
                     return self.reply(200,service.save_google_client(body))
                 if path=='/api/search-providers/default':return self.reply(200,service.set_search_provider_default(body))
                 if path=='/api/search-providers/bing':return self.reply(200,service.set_search_provider_bing(body))
@@ -1287,7 +1287,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     # Mac.  Declining removes authority, so any owner session may.
                     action=path.rsplit('/',1)[-1]
                     if action!='deny' and not self.owner_local_surface():
-                        return self.reply(403,{'error':'Mac에서 계속: 폴더 선택과 허용은 이 Mac에서 AgentOS를 직접 열어야 할 수 있습니다. 요청은 그대로 기다립니다.'})
+                        return self.reply(403,{'error':'Mac에서 계속: 폴더 선택과 허용은 이 Mac에서 Still을 직접 열어야 할 수 있습니다. 요청은 그대로 기다립니다.'})
                     try:
                         handler={'select':service.select_local_folder,'approve':service.approve_local_folder,'deny':service.deny_local_folder}[action]
                         return self.reply(200,handler(body))
@@ -1325,7 +1325,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     # See the GET above: this one applies a real external
                     # effect, so loopback only.
                     if self.tunneled():
-                        return self.reply(400,{'error':'Open AgentOS on its local address to approve a calendar change.'})
+                        return self.reply(400,{'error':'Open Still on its local address to approve a calendar change.'})
                     try:return self.reply(200,service.calendar_draft_request(body))
                     except ValueError as exc:return self.reply(400,{'error':str(exc)})
                 if path in ('/api/browser/login','/api/browser/approval','/api/browser/sessions/delete','/api/browser/login/decision'):
@@ -1381,7 +1381,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
 
 def plugins_main(argv):
     """Manage declaration-only plugins without loading third-party code."""
-    parser=argparse.ArgumentParser(description='Manage local AgentOS plugin manifests.')
+    parser=argparse.ArgumentParser(description='Manage local Still plugin manifests.')
     parser.add_argument('--data',default=os.environ.get('AGENTOS_DATA',str(Path.home()/'.local/share/agentos')))
     sub=parser.add_subparsers(dest='command',required=True)
     sub.add_parser('list')
@@ -1447,14 +1447,14 @@ def _write_local_oauth_secret_file(parser, target, values, label):
 def browser_login_main(argv):
     """Show the embedded browser's login window for a manual login (#656, #680).
 
-    The window belongs to the owner: AgentOS navigates to the address and
+    The window belongs to the owner: Still navigates to the address and
     types nothing.  The command returns when the owner closes the window; the
     sign-in cookies are then saved to the encrypted jar (key in the macOS
-    Keychain).  While the AgentOS service is running, prefer the same action
+    Keychain).  While the Still service is running, prefer the same action
     in Settings so one process owns the jar.
     """
     from .browser_session import BrowserProfile
-    parser=argparse.ArgumentParser(prog='agentos browser-login',description='Open the AgentOS embedded browser window for manual login.')
+    parser=argparse.ArgumentParser(prog='agentos browser-login',description='Open the Still embedded browser window for manual login.')
     parser.add_argument('--url',required=True,help='The site to log in to (http or https).')
     parser.add_argument('--data',default=os.environ.get('AGENTOS_DATA',str(Path.home()/'.local/share/agentos')))
     args=parser.parse_args(argv)
@@ -1566,7 +1566,7 @@ def service_main(argv):
 
 
 def configure_logging(store):
-    """Send AgentOS operational logs to stderr and a bounded private file.
+    """Send Still operational logs to stderr and a bounded private file.
 
     Callers log only ids, classes, exit codes and redacted reasons; prompt
     text, message bodies and credentials are never passed to these loggers.
@@ -1605,7 +1605,7 @@ def main():
     if len(sys.argv)>1 and sys.argv[1]=='browser-login':
         return browser_login_main(sys.argv[2:])
     if len(sys.argv)>1 and sys.argv[1]=='guide':
-        guide=argparse.ArgumentParser(description='Show credential-free AgentOS onboarding and recovery guidance.')
+        guide=argparse.ArgumentParser(description='Show credential-free Still onboarding and recovery guidance.')
         guide.add_argument('--data',default=os.environ.get('AGENTOS_DATA',str(Path.home()/'.local/share/agentos')))
         args=guide.parse_args(sys.argv[2:])
         print(json.dumps(AgentService(QuickStore(args.data)).onboarding(),ensure_ascii=False,indent=2))
@@ -1624,7 +1624,7 @@ def main():
     store=QuickStore(args.data)
     instance_lock=(store.private/'instance.lock').open('a')
     try:fcntl.flock(instance_lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-    except BlockingIOError:parser.exit(1,'AgentOS is already running for this data folder.\n')
+    except BlockingIOError:parser.exit(1,'Still is already running for this data folder.\n')
     configure_logging(store)
     handoff_port=args.drive_handoff_port or args.port+1
     if handoff_port==args.port:parser.exit(2,'Drive handoff port must differ from the HTTP callback port.\n')
@@ -1665,14 +1665,14 @@ def main():
     threading.Thread(target=service.apply_still_profile,name='still-profile',daemon=True).start()
     if handoff_server:
         threading.Thread(target=handoff_server.serve_forever,daemon=True).start()
-    # One source for the address AgentOS advertises, so the banner, the setup
-    # link, the browser AgentOS opens and any connector connect link that has
+    # One source for the address Still advertises, so the banner, the setup
+    # link, the browser Still opens and any connector connect link that has
     # to land on the owner's existing session can never name different hosts.
     url=f'http://{LOCAL_ADDRESS_HOST}:{server.server_port}/'
     home=url
     if not store.claimed():url+='#setup='+store.bootstrap.read_text()
     store.write_private(store.private/'setup-link.txt',url)
-    print(f'AgentOS: {home}',flush=True)
+    print(f'Still: {home}',flush=True)
     if public_hosts:
         print(f'Mobile pairing URL: https://{public_hosts[0]}/?access={public_token}',flush=True)
     if not store.claimed():print(f'Setup link: {store.private / "setup-link.txt"} (private file)',flush=True)

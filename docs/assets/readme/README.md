@@ -4,7 +4,7 @@ The public READMEs introduce the desired personal-agent relationship, owner cont
 
 ## Header and demo
 
-The READMEs open with a fixed-width character banner (`AgentOS` in the FIGlet *smslant* font, 36 columns so it fits a phone screen, generated with pyfiglet and kept as plain text inside `<pre>`), status badges, and the localized demo GIFs ([`demo/`](demo/README.md)). The badges link to the `validate` and `full-validate` workflows, the latest release, the supported Python version, platforms and licence; their images come from GitHub Actions and shields.io.
+The READMEs open with a fixed-width character banner (`Still` in the FIGlet *smslant* font, 36 columns so it fits a phone screen, generated with pyfiglet and kept as plain text inside `<pre>`), status badges, and the localized demo GIFs ([`demo/`](demo/README.md)). The badges link to the `validate` and `full-validate` workflows, the latest release, the supported Python version, platforms and licence; their images come from GitHub Actions and shields.io.
 
 The demo is edited from real Telegram and browser sessions, with one GIF per README language (localized scene notes beside the recording): a remembered coffee taste, an F1 model search continued on Amazon, a bean recommendation and the chosen beans in the cart after sign-in. Sign-in screens are left out; nothing is blurred. Its sources, segments and evidence class are in [demo/README.md](demo/README.md) and [demo/manifest.json](demo/manifest.json).
 

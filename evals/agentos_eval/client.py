@@ -1,4 +1,4 @@
-"""Black-box client for one AgentOS instance over its local HTTP API.
+"""Black-box client for one Still instance over its local HTTP API.
 
 Only public owner routes are used, exactly as the local web page uses them:
 ``/api/local-login`` (or the first local ``/api/claim`` of a fresh data
@@ -108,7 +108,7 @@ class AgentOSClient:
         return status['mode'] != 'follow_main' or status['main'] == worker
 
     def requalify_judgment(self, worker, status):
-        """Ask AgentOS to (re)qualify the Judgment AI through the owner's own routes."""
+        """Ask Still to (re)qualify the Judgment AI through the owner's own routes."""
         if status['mode'] == 'follow_main':
             return self.post('/api/main-ai/activate', {'route': worker})
         active = status['active']

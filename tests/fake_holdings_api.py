@@ -97,7 +97,7 @@ class FakeHoldingsApi:
         return 404, {'content-type': 'application/json'}, b'{"error":"not found"}'
 
     def raw(self):
-        """What the API returns now, for comparing with what AgentOS handed on."""
+        """What the API returns now, for comparing with what Still handed on."""
         return copy.deepcopy(self.data())
 
 

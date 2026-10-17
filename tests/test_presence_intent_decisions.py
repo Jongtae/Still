@@ -1,7 +1,7 @@
 """PRESENCE-INTENT-01 / #597: capability-need and explicit-remember judgments.
 
 Both are asked of the provider-neutral DecisionEngine instead of a cue table
-or regex.  These tests pin the AgentOS side of that seam: what context is
+or regex.  These tests pin the Still side of that seam: what context is
 sent, which turns are never sent, how policy reduces each answer, and that
 an unavailable or unsure engine produces no handoff and no Memory write.
 

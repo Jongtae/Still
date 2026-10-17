@@ -29,7 +29,7 @@ class _EngineHandler(BaseHTTPRequestHandler):
         connection = HTTPConnection(*type(self).agentos_address, timeout=2)
         connection.request('POST', ISOLATED_MCP_PATH, body=raw_rpc, headers={
             'Authorization': 'Bearer ' + payload['token'],
-            'X-AgentOS-Task-ID': payload['task_id'],
+            'X-Still-Task-ID': payload['task_id'],
             'Content-Type': 'application/json',
         })
         response = connection.getresponse()
@@ -57,7 +57,7 @@ class IsolatedEngineIntegrationTests(unittest.TestCase):
         self.engine_thread.start()
         self.folder = tempfile.TemporaryDirectory()
         self.store = QuickStore(Path(self.folder.name) / 'data')
-        # The AgentOS host/container deliberately has no Codex on PATH.  The
+        # The Still host/container deliberately has no Codex on PATH.  The
         # configured isolated service is the only supported installation.
         self.path_patch = patch.dict('os.environ', {'PATH': ''})
         self.path_patch.start()
@@ -104,7 +104,7 @@ class IsolatedEngineIntegrationTests(unittest.TestCase):
         if token:
             request_headers['Authorization'] = 'Bearer ' + token
         if task_id:
-            request_headers['X-AgentOS-Task-ID'] = task_id
+            request_headers['X-Still-Task-ID'] = task_id
         request_headers.update(headers or {})
         connection = HTTPConnection(*self.agentos.server_address, timeout=2)
         connection.request('POST', ISOLATED_MCP_PATH, body=raw, headers=request_headers)
@@ -144,10 +144,10 @@ class IsolatedEngineIntegrationTests(unittest.TestCase):
         self.assertEqual(payload['task_id'], job_id)
         self.assertEqual(set(payload), {'prompt', 'engine_id', 'token', 'task_id'})
         self.assertEqual(len(__import__('base64').urlsafe_b64decode(payload['token'] + '==')), 32)
-        # The fixed AgentOS instructions may name these words (#1347: "profile.preference.connection",
+        # The fixed Still instructions may name these words (#1347: "profile.preference.connection",
         # "not a connection, credential, grant..."); what must not leak is owner state outside them.
         prompt = payload['prompt']
-        start = prompt.find('# AgentOS instructions')
+        start = prompt.find('# Still instructions')
         end = prompt.find('\n# ', start + 1) if start >= 0 else -1
         context = (prompt[:start] + prompt[end:]) if start >= 0 and end > start else prompt
         outside = json.dumps({**payload, 'prompt': context}).lower()

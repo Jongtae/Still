@@ -2,7 +2,7 @@
   "name": "agentos-code-run",
   "private": true,
   "type": "module",
-  "description": "Pinned sandbox runtime for AgentOS code runs (#1380).",
+  "description": "Pinned sandbox runtime for Still code runs (#1380).",
   "license": "AGPL-3.0-only",
   "dependencies": {
     "@anthropic-ai/sandbox-runtime": "0.0.79"

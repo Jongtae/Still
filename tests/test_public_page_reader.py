@@ -46,7 +46,7 @@ class PublicPageReaderTests(unittest.TestCase):
         self.assertIn('Price: 120 USD', result['content'])
         self.assertNotIn('ignore()', result['content'])
         self.assertEqual(result['url'], 'https://example.com/event')
-        self.assertEqual(opener.requests[0][0].get_header('User-agent'), 'AgentOS public-page-reader/1.0')
+        self.assertEqual(opener.requests[0][0].get_header('User-agent'), 'Still public-page-reader/1.0')
 
     def test_plain_text_preserves_literal_angle_bracket_qualifiers(self):
         body=b'Grand total: USD 100 <before taxes>.'

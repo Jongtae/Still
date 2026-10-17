@@ -1,6 +1,6 @@
 """One-page family setup: from installing Telegram to a working bot (FAMILY-02 #897).
 
-A family member's agent is a separate AgentOS instance on the owner's Mac
+A family member's agent is a separate Still instance on the owner's Mac
 (FAMILY-01 #893).  Its first setup happens before any agent exists to talk
 to, so it is a necessary input surface under the Presence *Pages* rule (#880).
 It is reached through a temporary HTTPS link and runs without stops:
@@ -47,7 +47,7 @@ MAX_ATTEMPTS = 20
 # Loopback calls never go through an HTTP(S)_PROXY from the environment (review P3-1).
 _LOOPBACK = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 PUBLIC_PATHS = frozenset({'/family-setup', '/api/family/status', '/api/family/pair'})
-HANDOFF_HEADER = 'X-AgentOS-Family-Handoff'
+HANDOFF_HEADER = 'X-Still-Family-Handoff'
 PENDING_KEY = 'family_setups'
 TELEGRAM_IOS = 'https://apps.apple.com/app/telegram-messenger/id686449807'
 TELEGRAM_ANDROID = 'https://play.google.com/store/apps/details?id=org.telegram.messenger'
@@ -238,7 +238,7 @@ def _tunnel_command(pid, run=subprocess.run):
 
 
 def _own_tunnel(command, port):
-    """Whether ``command`` is the ``ngrok http 127.0.0.1:<port>`` AgentOS starts for ``port``."""
+    """Whether ``command`` is the ``ngrok http 127.0.0.1:<port>`` Still starts for ``port``."""
     words = str(command or '').split()
     return bool(words) and Path(words[0]).name == 'ngrok' and words[1:3] == ['http', f'127.0.0.1:{port}']
 
@@ -249,7 +249,7 @@ def reclaim_orphan_tunnels(port, *, run=subprocess.run, kill=None):
     A server killed without its shutdown path (a crash, a forced restart) leaves its phone input
     or remote login tunnel running, re-parented to launchd (parent pid 1); a provider that allows
     one tunnel at a time then refuses the next link (#1436).  Only a process whose command line
-    is AgentOS's own tunnel to this port and whose parent is gone is signalled.  Returns how many.
+    is Still's own tunnel to this port and whose parent is gone is signalled.  Returns how many.
     """
     import os
     import signal
@@ -586,7 +586,7 @@ EXPIRED_TEXT = '가족 비서 설정 링크가 만료됐어요. 다시 만들어
 
 
 def family_instances(home=None):
-    """Names of the named AgentOS instances installed on this Mac (#897)."""
+    """Names of the named Still instances installed on this Mac (#897)."""
     from .service_control import LABEL
     folder = Path(home or Path.home()) / 'Library/LaunchAgents'
     return sorted(path.name[len(LABEL) + 1:-len('.plist')] for path in folder.glob(f'{LABEL}.*.plist'))
@@ -664,7 +664,7 @@ def prepare_family_setup(owner_store, name, display_name, *, service_action, env
     cfg = owner_store.config('telegram', {})
     owner_token = owner_store.secret('telegram_token')
     if not (cfg.get('enabled') and cfg.get('username') and owner_token):
-        raise SetupError('먼저 내 AgentOS에 텔레그램 봇을 연결해 주세요. 가족 봇은 내 봇이 관리자로 만들어 줍니다.')
+        raise SetupError('먼저 내 Still에 텔레그램 봇을 연결해 주세요. 가족 봇은 내 봇이 관리자로 만들어 줍니다.')
     me = _telegram_get(owner_token, 'getMe', external)
     if not me.get('can_manage_bots'):
         raise SetupError(f"BotFather 미니앱에서 @{cfg['username']} 봇의 'Bot Management Mode'를 한 번 켜 주세요.")
@@ -674,7 +674,7 @@ def prepare_family_setup(owner_store, name, display_name, *, service_action, env
     port = port or existing.port or choose_port(taken, free=free)
     family_store = QuickStore(ServiceController(instance=name, port=port, environ=environ).data_dir)
     if share_ai_route(owner_store, family_store) is None:
-        raise SetupError('내 AgentOS에 연결된 AI(구독 엔진이나 모델)가 없어 가족 비서를 만들지 않았습니다. 먼저 내 AI를 연결해 주세요.')
+        raise SetupError('내 Still에 연결된 AI(구독 엔진이나 모델)가 없어 가족 비서를 만들지 않았습니다. 먼저 내 AI를 연결해 주세요.')
     record = write_setup(family_store, instance=name, display_name=display_name, owner_bot=cfg['username'])
     register_pending(owner_store, record, port)
     handle = {'name': name, 'display_name': display_name, 'port': port, 'record': record,

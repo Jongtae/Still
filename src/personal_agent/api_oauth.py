@@ -2,7 +2,7 @@
 
 oauthlib owns request construction and token response parsing. This thin adapter
 keeps the owner-confirmed destination/scope, encrypted references, revision and
-cache publication subordinate to AgentOS. No issuer-specific protocol branches.
+cache publication subordinate to Still. No issuer-specific protocol branches.
 """
 import base64
 import json

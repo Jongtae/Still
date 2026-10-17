@@ -1,4 +1,4 @@
-"""Restore a portable AgentOS owner-state export into an empty directory."""
+"""Restore a portable Still owner-state export into an empty directory."""
 import argparse
 from pathlib import Path
 import sys

@@ -1,6 +1,6 @@
 """Capability-scoped client for an isolated subscription-engine worker.
 
-The gateway deliberately knows nothing about AgentOS storage or engine login
+The gateway deliberately knows nothing about Still storage or engine login
 profiles.  A worker receives one prompt, one engine identifier, and one
 single-use capability.  Keeping this boundary small makes it possible to run
 the worker without mounting the owner-state volume.

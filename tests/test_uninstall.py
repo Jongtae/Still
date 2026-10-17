@@ -1,4 +1,4 @@
-"""#1545: `agentos uninstall` removes AgentOS in one place and keeps data unless told otherwise."""
+"""#1545: `agentos uninstall` removes Still in one place and keeps data unless told otherwise."""
 import fcntl
 import tempfile
 import unittest

@@ -1,7 +1,7 @@
 """Still's Telegram profile for the owner's own bot (#1337).
 
-Still is the default face of Personal AgentOS.  When the owner connects their
-own bot, AgentOS gives it Still's name, photo and descriptions so the chat
+Still is the default face of Still.  When the owner connects their
+own bot, Still gives it Still's name, photo and descriptions so the chat
 they open looks like the assistant the homepage introduced.  Everything here
 is best-effort: a refused or failed call changes nothing else and never
 blocks the connection.  It runs once per bot, so a later rename in BotFather
@@ -25,18 +25,18 @@ AVATAR = Path(__file__).with_name('assets') / 'still-avatar.jpg'
 
 #: Wording from the Still starter identity kit; ``None`` is Telegram's default for any other language.
 TEXTS = {
-    None: {'short_description': 'Here with you. A personal AI on your own computer, built with Personal AgentOS.',
+    None: {'short_description': 'Here with you. A personal AI on your own computer, built with Still.',
            'description': "Hi, I'm Still. What would you like a hand with today?\n\n"
-                          'I run on your own computer with Personal AgentOS. Ask in plain words, the way you normally talk.'},
-    'ko': {'short_description': 'Here with you. 대화로 필요한 일을 함께 풀어가는 Personal AgentOS의 개인 AI.',
+                          'I run on your own computer with Still. Ask in plain words, the way you normally talk.'},
+    'ko': {'short_description': 'Here with you. 대화로 필요한 일을 함께 풀어가는 Still의 개인 AI.',
            'description': '안녕하세요, Still이에요. 오늘 필요한 일부터 이야기해 주세요.\n\n'
-                          '내 컴퓨터에서 동작하는 Personal AgentOS의 개인 AI예요. 평소 말투로 편하게 부탁하세요.'},
-    'ja': {'short_description': 'Here with you. 会話で日々のことを一緒に片づける、Personal AgentOS のパーソナル AI。',
+                          '내 컴퓨터에서 동작하는 Still의 개인 AI예요. 평소 말투로 편하게 부탁하세요.'},
+    'ja': {'short_description': 'Here with you. 会話で日々のことを一緒に片づける、Still のパーソナル AI。',
            'description': 'こんにちは、Still です。今日はどんなことから手伝いましょうか。\n\n'
-                          '自分のコンピューターで動く Personal AgentOS のパーソナル AI です。いつもの言葉で気軽に頼んでください。'},
-    'zh': {'short_description': 'Here with you. 通过对话陪你处理日常琐事的 Personal AgentOS 个人 AI。',
+                          '自分のコンピューターで動く Still のパーソナル AI です。いつもの言葉で気軽に頼んでください。'},
+    'zh': {'short_description': 'Here with you. 通过对话陪你处理日常琐事的 Still 个人 AI。',
            'description': '你好，我是 Still。今天先从哪件事开始？\n\n'
-                          '我是运行在你自己电脑上的 Personal AgentOS 个人 AI。用平常的话告诉我你需要什么就好。'},
+                          '我是运行在你自己电脑上的 Still 个人 AI。用平常的话告诉我你需要什么就好。'},
 }
 
 

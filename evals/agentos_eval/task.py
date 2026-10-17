@@ -1,4 +1,4 @@
-"""Inspect AI task: AgentOS as a black-box solver, scored by checks plus a rubric judge.
+"""Inspect AI task: Still as a black-box solver, scored by checks plus a rubric judge.
 
 Run with Inspect directly::
 
@@ -111,7 +111,7 @@ def secretary(judge='grader', budget_path=None, seed=None):
 @task
 def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed='', judge='',
                       turn_timeout=900, judgment_timeout=300, include_local=True, keep_sandboxes=False):
-    """Multi-turn owner scenarios against fresh AgentOS sandboxes, on Codex and/or Claude Code."""
+    """Multi-turn owner scenarios against fresh Still sandboxes, on Codex and/or Claude Code."""
     seed = seed or os.environ.get('AGENTOS_EVAL_SEED', '')
     judge = judge or os.environ.get('AGENTOS_EVAL_JUDGE_MODEL', DEFAULT_JUDGE)
     pool = SandboxPool(size=int(instances), seed=Path(seed).expanduser() if seed else None,

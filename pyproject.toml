@@ -26,7 +26,7 @@ license = {text = "AGPL-3.0-only"}
 # reviewed). Already in the closure through mcp-types; now declared directly.
 # cryptography: #1531 publishes no Intel macOS wheel from 49.0.0, so Intel Macs
 # stay on 48.x (universal2 wheel) instead of compiling it. Its 48.x advisories
-# are PKCS#7 decryption and the X.509 verifier, neither of which AgentOS calls.
+# are PKCS#7 decryption and the X.509 verifier, neither of which Still calls.
 dependencies = ["pypdf>=5.0", "python-docx>=1.1", "openpyxl>=3.1", "mcp-types==2.3.0", "oauthlib>=3.3.1,<4",
                 "cryptography>=42.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
                 "cryptography>=42.0,<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
@@ -38,7 +38,7 @@ schema-validation = ["jsonschema[format]>=4.23"]
 # Official stdio transport/dispatcher for host profiles only (#1025). MIT.
 # Keep the HTTP/OAuth/server closure outside the base install.
 # CONNECT-FIND-01: official model-free CLI status API. SDK source is MIT;
-# its bundled CLI has separate vendor terms and is never selected by AgentOS.
+# its bundled CLI has separate vendor terms and is never selected by Still.
 # Setup always requires the owner's explicitly installed CLI.
 mcp-host = ["mcp==2.3.0", "claude-agent-sdk==0.2.165"]
 
@@ -47,6 +47,7 @@ dev = ["pytest>=9.1,<10"]
 
 [project.scripts]
 agentos = "personal_agent.quickstart:main"
+still = "personal_agent.quickstart:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

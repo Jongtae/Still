@@ -1,6 +1,6 @@
-// AgentOS code-run runner (#1380): thin glue around the pinned sandbox-runtime.
+// Still code-run runner (#1380): thin glue around the pinned sandbox-runtime.
 //
-// The AgentOS host process owns every decision. This file only starts the
+// The Still host process owns every decision. This file only starts the
 // sandbox, asks the host about each outbound HTTP request and reports what
 // ran. Protocol (one JSON object per line):
 //   host -> runner, first line: {workdir, argv, allowedDomains, denyRead, allowRead,
@@ -80,7 +80,7 @@ async function filterRequest (request) {
     bodyText: body.byteLength ? bodyText : '',
     headers
   })
-  return decision.allow ? { action: 'allow' } : { action: 'deny', reason: String(decision.reason || 'denied by AgentOS') }
+  return decision.allow ? { action: 'allow' } : { action: 'deny', reason: String(decision.reason || 'denied by Still') }
 }
 
 async function run () {

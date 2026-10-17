@@ -7,7 +7,7 @@ carried no calendar cue, fell to the model route, and drafted nothing.
 
 The authority split is unchanged and is the point of this file:
 
-* **Interpretation is AgentOS's.**  Title, date, time and duration are read
+* **Interpretation is Still's.**  Title, date, time and duration are read
   by literal rules declared below, in the same reviewable style as
   ``conversation_handoff``'s cue tables.  No model is consulted, and a model
   suggestion still cannot select this intent.

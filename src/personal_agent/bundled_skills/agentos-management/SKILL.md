@@ -1,11 +1,11 @@
 ---
 name: agentos-management
-description: How to manage this AgentOS for the owner through its own settings services - change the Main AI or its model, create a family member's assistant, share or stop sharing a signed-in site with another assistant on this Mac. Use when the owner asks for one of these.
+description: How to manage this Still for the owner through its own settings services - change the Main AI or its model, create a family member's assistant, share or stop sharing a signed-in site with another assistant on this Mac. Use when the owner asks for one of these.
 license: AGPL-3.0-only
 ---
-# Managing AgentOS for the owner
+# Managing Still for the owner
 
-You change AgentOS only through `settings_read` and `settings_change`. These call the services that own each setting. Never edit files, run commands or invent another way. A setting you cannot change there is not yours to change.
+You change Still only through `settings_read` and `settings_change`. These call the services that own each setting. Never edit files, run commands or invent another way. A setting you cannot change there is not yours to change.
 
 ## Every management request
 
@@ -22,7 +22,7 @@ You change AgentOS only through `settings_read` and `settings_change`. These cal
    - `applied` and `requested` mean different things. A requested change is still in progress.
    - A refusal means nothing changed. Relay its reason; do not look for another way around it.
 
-The current AgentOS confirms every settings change with the owner before applying it, including changes the owner asked for in their own words. Never say a change is done until a result says so.
+The current Still confirms every settings change with the owner before applying it, including changes the owner asked for in their own words. Never say a change is done until a result says so.
 
 ## The three operations
 

@@ -4,7 +4,7 @@ PRESENCE-SETTINGS-01 #506 retired the legacy ``CapabilityRegistry`` as a
 Settings control plane.  That registry had no production execution caller:
 pausing or disconnecting ``google-drive-read`` there changed a config row
 while the real connector credential and execution path stayed usable, so the
-owner could be told a capability was stopped while AgentOS could still call it.
+owner could be told a capability was stopped while Still could still call it.
 
 This object therefore reads connection state only from the authoritative
 boundaries the owning service supplies (Telegram pairing, ``ConnectorRegistry``
@@ -153,7 +153,7 @@ APPLY_WAIT_SECONDS = 5
 #: #814 review: a draft left ``applying`` by a restart: its setter may or may not have committed.
 IN_DOUBT_MESSAGE = ("설정 변경이 적용 중에 중단되어 적용됐는지 확인하지 못했어요. 현재 값을 확인해 주세요. "
                     "필요하면 다시 요청하세요: {effect}")
-#: #814 review P1: text confirmation needs a message the owner typed, not one AgentOS ran.
+#: #814 review P1: text confirmation needs a message the owner typed, not one Still ran.
 NOT_OWNER_TYPED_MESSAGE = ("설정 변경은 소유자가 직접 보낸 메시지나 확인 버튼으로만 확인하거나 취소할 수 있습니다. "
                            "아무것도 바꾸지 않았습니다.")
 BUSY_MESSAGE = "다른 설정을 적용하는 중입니다. 끝난 뒤 다시 확인하세요. 아직 아무것도 바꾸지 않았습니다."
@@ -397,7 +397,7 @@ class SettingsOrchestrator:
                                            "지정한 읽기만 읽기로 기록하고, 돈이 오가는 연결의 다른 동작과 결제는 건별 승인이 필요해요. "
                                            "현재 허용된 다른 AI 연결도 함께 사용 가능해져요. 계정·OAuth 동의 범위는 이 경로에서 검증하지 못해요.")),
                 "servers": self._row("servers", "", servers, None, format="AI|서버 이름(쉼표로 여럿, 비우면 모두 끔), 예: codex|notes",
-                                     note=("확인한 서버만 작업에서 켜지고, 그 서버의 도구 호출은 매번 AgentOS가 허용하거나 막아요. "
+                                     note=("확인한 서버만 작업에서 켜지고, 그 서버의 도구 호출은 매번 Still이 허용하거나 막아요. "
                                            "켜진 서버는 이 Mac에서 실행돼요."),
                                      available=available, confirmed=confirmed),
                 "review": self._row("review", "", recorded, None,
@@ -446,14 +446,14 @@ class SettingsOrchestrator:
         rows = status.get("skills") or []
         listed = ", ".join(f"{row['skill']} ({row['source']}{'' if row.get('enabled') else ', 꺼짐'})" for row in rows) or "없음"
         removable = [row["skill"].split("/", 1)[1] for row in rows if not row["skill"].startswith("agentos/")]
-        # #963: AgentOS's published reference skills, listed even while skills are off, addable by name.
+        # #963: Still's published reference skills, listed even while skills are off, addable by name.
         available = [{key: row[key] for key in ("name", "description", "address", "installed")}
                      for row in status.get("available") or ()]
         return {"enabled": self._row("enabled", enabled, VALUE_LABELS[enabled], self._options(("on", "off")),
                                     required_skills=[item['skill']+'@'+item['digest'] for item in rows if item.get('enabled') and item.get('digest')]),
                 "add": self._row("add", "", listed, None,
                                  format="GitHub 스킬 폴더 주소(예: github.com/<owner>/<repo>/tree/<브랜치 또는 커밋>/<폴더>), "
-                                        "또는 available에 있는 AgentOS 참고 스킬 이름",
+                                        "또는 available에 있는 Still 참고 스킬 이름",
                                  note=SKILL_ADD_NOTE, available=available),
                 "remove": self._row("remove", "", ", ".join(removable) or "없음", None, format="설치된 스킬 이름",
                                     installed=removable)}
@@ -1439,7 +1439,7 @@ class SettingsOrchestrator:
         return {"state": "recovery", "target": subject, "action": next_action(row)}
 
     def handle_text(self, owner, channel, text, owner_typed=True, notify=None):
-        """``owner_typed`` (#814 review P1): False for a message AgentOS ran on the owner's
+        """``owner_typed`` (#814 review P1): False for a message Still ran on the owner's
         behalf (a preparation goal, a continuation, a retry); it can never confirm or cancel.
 
         The ``확인 <id>`` / ``취소 <id>`` forms are kept for compatibility only;

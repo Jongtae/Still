@@ -1,6 +1,6 @@
 """#570 PRESENCE-DEVMODE-01: per-Work provenance for developer mode.
 
-Records what AgentOS sent and what the worker reported, redacted before it is
+Records what Still sent and what the worker reported, redacted before it is
 stored, and links DecisionEngine calls to the Work that made them.
 """
 import json
@@ -61,7 +61,7 @@ class AdapterMetadata(unittest.TestCase):
         shown = display_argv(['claude', '-p', 'secret question', '--append-system-prompt', 'rules'], 'secret question', 'rules')
         self.assertNotIn('secret question', ' '.join(shown))
         self.assertIn('<prompt: 15 bytes>', shown)
-        self.assertIn('<AgentOS instructions: 5 bytes>', shown)
+        self.assertIn('<Still instructions: 5 bytes>', shown)
 
     def test_claude_stream_reports_session_model_tool_use_and_denials(self):
         # Record shapes follow `claude -p --output-format stream-json --verbose`
@@ -197,7 +197,7 @@ class ServiceProvenance(unittest.TestCase):
         service.execution_adapter.runtime_root = Path('/srv/runs')
         service.record_turn_provenance('job-paths2', argv=['--data', root, '/srv/runs/turn-1'])
         self.assertNotIn(root, json.dumps(self.store.turn_provenance('job-paths')))
-        self.assertEqual(self.store.turn_provenance('job-paths2')['argv'], ['--data', '[AgentOS data]', '[turn folder]/turn-1'])
+        self.assertEqual(self.store.turn_provenance('job-paths2')['argv'], ['--data', '[Still data]', '[turn folder]/turn-1'])
 
     def test_failure_is_recorded_with_its_class(self):
         service = self._service(_Engine(fail=ExecutionError('x', failure_class='rate-limit', exit_code=1,
@@ -332,7 +332,7 @@ class ServiceProvenance(unittest.TestCase):
         self.assertEqual(record['cli_native_tools'], ['web_search'])
         self.assertEqual(record['capability_profile'], 'trusted-local')
         self.assertEqual(record['capability_trust'], 'trusted-local')
-        self.assertIn('outside AgentOS provenance', record['capability_limitation'])
+        self.assertIn('outside Still provenance', record['capability_limitation'])
         self.assertNotIn('public_page_read', record['unavailable_tools'])
         self.assertIn('list_notes', record['exposed_tools'])
         self.assertEqual(record['build'], build_identity())

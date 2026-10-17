@@ -346,7 +346,7 @@ class SubscriptionCliTests(Temp):
         self.assertIn('web_search="disabled"', overrides)
         self.assertIn('project_doc_max_bytes=0', overrides)
         self.assertTrue(call['start_new_session'], 'the CLI runs in its own process group')
-        self.assertFalse(any('mcp_servers' in part for part in argv), 'no AgentOS MCP bridge or tools for a judgment')
+        self.assertFalse(any('mcp_servers' in part for part in argv), 'no Still MCP bridge or tools for a judgment')
         self.assertNotIn('--model', argv, 'engine_default sends no model flag')
         self.assertNotIn('OPENAI_API_KEY_FIXTURE_LEAK', call['env'])
         self.assertEqual(call['env']['HOME'], str(call['cwd']), 'HOME is the fresh per-call directory')
@@ -1145,7 +1145,7 @@ class JudgmentModelTests(ServiceFixture):
         self.assertNotIn('OWNER-PRIVATE-INSTRUCTION-CANARY', json.dumps(status, ensure_ascii=False))
         stored = [path for path in Path(self.root).rglob('*')
                   if path.is_file() and 'codex-home' not in path.parts and b'OWNER-PRIVATE-INSTRUCTION-CANARY' in path.read_bytes()]
-        self.assertEqual(stored, [], 'the content is never copied into AgentOS state')
+        self.assertEqual(stored, [], 'the content is never copied into Still state')
 
     def test_changing_the_model_runs_the_full_qualification_and_keeps_the_previous_route_on_failure(self):
         service = self.service(runner=CliRunner({None: oracle, 'haiku': oracle, 'sonnet': careless}))

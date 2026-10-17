@@ -190,7 +190,7 @@ class CallbackResponseTests(unittest.TestCase):
         self.assertEqual(len(sink), 1)
         headers = sink[0]["headers"]
         self.assertEqual(headers["Authorization"], "Bearer " + TOKEN)
-        self.assertEqual(headers["X-AgentOS-Task-ID"], TASK)
+        self.assertEqual(headers["X-Still-Task-ID"], TASK)
         self.assertEqual(sink[0]["host"], "127.0.0.1")
         self.assertEqual(sink[0]["port"], 8787)
 

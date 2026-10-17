@@ -1,10 +1,10 @@
 """Provider-neutral decision layer (PRESENCE-DEC-01 / #417).
 
-AgentOS owns this contract; providers only implement it.  A decision is a
+Still owns this contract; providers only implement it.  A decision is a
 bounded *judgment* - "does this turn withdraw the parked request?", "which
 of these declared candidates fits?" - together with an explicit account of
 how sure the provider was.  It is never authority: what may happen next is
-decided by deterministic AgentOS policy (`DecisionPolicy` here, Grants,
+decided by deterministic Still policy (`DecisionPolicy` here, Grants,
 approvals and effect rules elsewhere), which a provider cannot bypass no
 matter how confident it is.
 
@@ -377,9 +377,9 @@ def fixture_confidence(probability=1.0):
 
 # --- deterministic policy ----------------------------------------------------
 class DecisionPolicy:
-    """AgentOS-owned thresholds.  Turns a decision into what policy may act on.
+    """Still-owned thresholds.  Turns a decision into what policy may act on.
 
-    Thresholds live here, in configuration AgentOS controls, never in a
+    Thresholds live here, in configuration Still controls, never in a
     provider adapter.  A missing probability counts as not confident.
     """
 
@@ -457,7 +457,7 @@ class SchemaDecisionEngine(DecisionEngine):
     ``judge``/``choose``/``score`` declare the answer schema and a shape
     check; a subclass's ``_ask`` obtains one structured answer from its
     transport (a model tool call, a subscription CLI's structured output).
-    Every adapter therefore returns the same AgentOS-owned typed envelopes,
+    Every adapter therefore returns the same Still-owned typed envelopes,
     and provider vocabulary stays inside ``_ask``.
     """
 

@@ -1,11 +1,11 @@
 name: Feedback
-description: Tell us what worked, what confused you, or what you expected Personal AgentOS to do
+description: Tell us what worked, what confused you, or what you expected Still to do
 labels: ["feedback"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for trying Personal AgentOS. Short is fine. Please leave out passwords, tokens and other secrets.
+        Thanks for trying Still. Short is fine. Please leave out passwords, tokens and other secrets.
   - type: dropdown
     id: kind
     attributes:

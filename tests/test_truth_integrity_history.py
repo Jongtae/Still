@@ -11,7 +11,7 @@ and there it was unqualified.  These tests drive whole turns through
 * a later model turn reads that outcome in front of the earlier claim;
 * Evidence keeps setup-required/truncated so "none found" is not "not
   fully searched";
-* AgentOS's own fallback never claims completion;
+* Still's own fallback never claims completion;
 * a wholly failed delegation is ``failed``, a partial one ``partial``.
 """
 import json
@@ -197,7 +197,7 @@ class TranscriptQualificationTests(TruthIntegrityTestCase):
                                 (job['id'],)).fetchone()['content']
         self.assertEqual(stored, job['response'])
         self.assertIn(CLAIM, stored)
-        self.assertNotIn('AgentOS record', stored)
+        self.assertNotIn('Still record', stored)
 
     def test_a_succeeded_turn_and_owner_turns_are_not_qualified(self):
         """Opposing pin: qualifying everything would pass the tests above."""
@@ -271,7 +271,7 @@ class ModelContextTests(TruthIntegrityTestCase):
             {'role': 'user', 'content': '됐지?'}])
         context = turn_context([context_message(row) for row in rows], 'cli')
         self.assertEqual(context['conversation'][0]['content'], '잡아줘')
-        self.assertTrue(context['conversation'][1]['content'].startswith('[AgentOS record:'))
+        self.assertTrue(context['conversation'][1]['content'].startswith('[Still record:'))
 
 
 class EvidenceQualifierTests(TruthIntegrityTestCase):
@@ -402,7 +402,7 @@ class IncompleteEvidenceOutcomeTests(TruthIntegrityTestCase):
 
 
 class FallbackTextTests(TruthIntegrityTestCase):
-    """AgentOS's own words when the model returns no text after a tool."""
+    """Still's own words when the model returns no text after a tool."""
 
     def test_an_unhandled_tool_is_not_answered_with_a_completion_claim(self):
         self.plan = [('calendar_query', {'start': '2026-09-25T00:00:00+09:00',
@@ -410,7 +410,7 @@ class FallbackTextTests(TruthIntegrityTestCase):
         self.text = ''
         job, bubble = self.ask('모레 일정 뭐 있어?')
         self.assertEqual(job['response'], FALLBACK_UNDESCRIBED)
-        # #657: nothing claimed completion, so the Work is partial; AgentOS's
+        # #657: nothing claimed completion, so the Work is partial; Still's
         # own truth header is the only "완료" in the bubble.
         self.assertEqual(job['status'], 'partial')
         self.assertTrue(bubble.startswith(job['response']), bubble)

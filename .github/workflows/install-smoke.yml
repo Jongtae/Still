@@ -1,6 +1,6 @@
 name: install-smoke
 
-# INSTALL-XPLAT-01 #1167 / INSTALL-MATRIX-01 #1176: install AgentOS from a
+# INSTALL-XPLAT-01 #1167 / INSTALL-MATRIX-01 #1176: install Still from a
 # clean HOME on the platforms owners use and require the setup page to answer.
 # There is no test team, so this matrix is the platform evidence. It runs when
 # the installer or its pins change, daily (`uv tool install` resolves
@@ -89,7 +89,7 @@ jobs:
           docker run --rm -v "$PWD:/src:ro" -w /src "${{ matrix.image }}"
           sh -c '${{ matrix.bootstrap }} && sh scripts/dev/install_smoke.sh installer'
 
-  # Windows has no native AgentOS yet (#1168); QUICKSTART sends owners to
+  # Windows has no native Still yet (#1168); QUICKSTART sends owners to
   # WSL2. Install inside WSL2, then reach the setup page with Windows
   # curl.exe to check the localhost forwarding QUICKSTART relies on.
   install-wsl2:

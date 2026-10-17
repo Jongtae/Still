@@ -7,7 +7,7 @@ SRC = REPO / 'src'
 BUNDLED_SCENARIOS = REPO / 'evals' / 'scenarios'
 SANDBOX_SITE = Path(__file__).resolve().parent / 'sandbox_site'
 
-#: The owner's live AgentOS data folder and port.  Sandboxes never use either.
+#: The owner's live Still data folder and port.  Sandboxes never use either.
 LIVE_DATA = Path.home() / '.local' / 'share' / 'agentos'
 LIVE_PORTS = frozenset({8787, 8788})
 

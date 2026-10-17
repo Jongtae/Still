@@ -18,7 +18,7 @@ class ReceivingFailureTests(unittest.TestCase):
             AgentService._log_receiving_failure(ProviderError('x', status='timeout'), cause)
         self.assertEqual(len(logs.output), 2)
         self.assertIn('TelegramRejected 409', logs.output[0])
-        self.assertIn('another AgentOS is receiving this bot', logs.output[0])
+        self.assertIn('another Still is receiving this bot', logs.output[0])
         self.assertIn('ProviderError timeout', logs.output[1])
         self.assertNotIn('Conflict', ''.join(logs.output), "Telegram's description text is never logged")
 

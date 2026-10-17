@@ -1,6 +1,6 @@
 """SEC-PROGRESS-01 / #718: the Telegram draft names the observed step in flight.
 
-The model writes the wording (an optional ``status`` on every tool call); AgentOS
+The model writes the wording (an optional ``status`` on every tool call); Still
 validates, bounds and redacts it, records it on the call's own ``running`` event
 and shows it only while that call runs.  Without a status the line is generic,
 keyed on the tool kind plus the host or query of the observed arguments.  The

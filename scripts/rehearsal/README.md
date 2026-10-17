@@ -1,6 +1,6 @@
 # Connection rehearsal (HARDEN-GENERIC-01 #1445, PROC-MEM-01 #1489)
 
-Run the generic connection path end to end before the owner sees a change to it. The rehearsal uses the owner's real Judgment AI and workers, a scratch AgentOS store, and synthetic vendors.
+Run the generic connection path end to end before the owner sees a change to it. The rehearsal uses the owner's real Judgment AI and workers, a scratch Still store, and synthetic vendors.
 
 ```sh
 PYTHONPATH=src python3 scripts/rehearsal/run.py                      # both domains, about 15–30 minutes

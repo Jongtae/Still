@@ -34,7 +34,7 @@ deletes its saved slots once.
 Adopt / Adapt / Build: provider-native search is adopted through each
 provider's official HTTP API over the transport the model adapter already
 uses (``providers.request_json``); Brave and Bing over stdlib ``urllib``.  No
-new dependency.  AgentOS owns only the key slots, the availability list,
+new dependency.  Still owns only the key slots, the availability list,
 result normalization and the typed failures.
 
 Secrets: keys travel only in request headers built here; they never enter a
@@ -87,14 +87,14 @@ NATIVE_TIMEOUT_SECONDS = 45
 #: A recorded availability whose time is this far in the future is not trusted (clock change).
 CLOCK_SKEW_SECONDS = 300
 NATIVE_ANSWER_CHARS = 4000
-USER_AGENT = 'Mozilla/5.0 (compatible; AgentOS/0.1 personal search)'
+USER_AGENT = 'Mozilla/5.0 (compatible; Still/0.1 personal search)'
 #: A BCP 47-shaped tag such as ``ko``, ``ko-KR`` or ``en_US``; nothing longer
 #: may ride along a lookup from a private context.
 LOCALE_PATTERN = re.compile(r'[A-Za-z]{2,3}(?:[-_][A-Za-z]{2})?')
 SEARCH_SCOPE = 'Search snippets only; full pages have not been read.'
 NATIVE_SCOPE = ("Sources cited or consulted by the connected AI's own web search; snippets are source text the "
                 'provider returned (empty when it returned none). The answer field is model-generated text, not an '
-                'observation; AgentOS has not read the pages. A fact that no row snippet shows is not observed: read a '
+                'observation; Still has not read the pages. A fact that no row snippet shows is not observed: read a '
                 'cited page with a page-reading tool you have before relying on it, or finish partial naming the '
                 'cited sources.')
 ANSWER_LABEL = 'model-generated; not an observation'
@@ -848,7 +848,7 @@ class ProviderRegistry:
                 'search_queries': found['search_queries'], 'reported_model': found['reported_model'] or None,
                 # The provider's prose: shown to the model with its label, never
                 # counted as an observation (``agent_runtime`` drops it from
-                # Evidence, the completion judgment and AgentOS's own rendering).
+                # Evidence, the completion judgment and Still's own rendering).
                 'answer': {'text': found['answer'], 'label': ANSWER_LABEL},
                 'scope': NATIVE_SCOPE}
 

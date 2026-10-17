@@ -918,10 +918,10 @@
   "zh": "只完成了部分步骤，请看下面的说明。"
  },
  "main_ai.agentos_isolates_your_personal_codex_settings": {
-  "ko": "AgentOS는 Codex 개인 설정을 격리하므로 ~/.codex/config.toml의 모델은 쓰지 않습니다. 비워 두면 CLI 기본 모델을 씁니다.",
-  "en": "AgentOS isolates your personal Codex settings, so the model in ~/.codex/config.toml is not used. Leave it empty to use the CLI default model.",
-  "ja": "AgentOS は Codex の個人設定を隔離するため、~/.codex/config.toml のモデルは使いません。空欄なら CLI の既定モデルを使います。",
-  "zh": "AgentOS 会隔离 Codex 个人设置，因此不会使用 ~/.codex/config.toml 中的模型。留空则使用 CLI 默认模型。"
+  "ko": "Still은 Codex 개인 설정을 격리하므로 ~/.codex/config.toml의 모델은 쓰지 않습니다. 비워 두면 CLI 기본 모델을 씁니다.",
+  "en": "Still isolates your personal Codex settings, so the model in ~/.codex/config.toml is not used. Leave it empty to use the CLI default model.",
+  "ja": "Still は Codex の個人設定を隔離するため、~/.codex/config.toml のモデルは使いません。空欄なら CLI の既定モデルを使います。",
+  "zh": "Still 会隔离 Codex 个人设置，因此不会使用 ~/.codex/config.toml 中的模型。留空则使用 CLI 默认模型。"
  },
  "main_ai.the_cli_is_not_signed_in": {
   "ko": "CLI가 로그인되어 있지 않아 실행할 수 없습니다",
@@ -1026,10 +1026,10 @@
   "zh": "已撤销"
  },
  "notice.completed": {
-  "ko": "작업이 완료되었습니다. 전체 결과는 AgentOS 웹에서 확인하세요.",
-  "en": "Done. See the full result in the AgentOS web app.",
-  "ja": "完了しました。結果の全体は AgentOS のウェブで確認してください。",
-  "zh": "已完成。完整结果请在 AgentOS 网页上查看。"
+  "ko": "작업이 완료되었습니다. 전체 결과는 Still 웹에서 확인하세요.",
+  "en": "Done. See the full result in the Still web app.",
+  "ja": "完了しました。結果の全体は Still のウェブで確認してください。",
+  "zh": "已完成。完整结果请在 Still 网页上查看。"
  },
  "notice.document_approved": {
   "ko": "문서 공유를 승인했습니다. 같은 요청을 다시 보내 주세요.",
@@ -1044,16 +1044,16 @@
   "zh": "未允许共享文档。"
  },
  "notice.failed": {
-  "ko": "작업을 완료하지 못했습니다. 자세한 내용은 AgentOS 웹에서 확인하세요.",
-  "en": "I couldn't complete it. See the details in the AgentOS web app.",
-  "ja": "完了できませんでした。詳しくは AgentOS のウェブで確認してください。",
-  "zh": "没能完成。详情请在 AgentOS 网页上查看。"
+  "ko": "작업을 완료하지 못했습니다. 자세한 내용은 Still 웹에서 확인하세요.",
+  "en": "I couldn't complete it. See the details in the Still web app.",
+  "ja": "完了できませんでした。詳しくは Still のウェブで確認してください。",
+  "zh": "没能完成。详情请在 Still 网页上查看。"
  },
  "notice.generic": {
-  "ko": "AgentOS 상태 알림",
-  "en": "AgentOS status update",
-  "ja": "AgentOS の状態のお知らせ",
-  "zh": "AgentOS 状态通知"
+  "ko": "Still 상태 알림",
+  "en": "Still status update",
+  "ja": "Still の状態のお知らせ",
+  "zh": "Still 状态通知"
  },
  "notice.location_not_continued": {
   "ko": "대기 중인 작업이 많아 보내 주신 위치로 요청을 이어서 처리하지 못했습니다. 잠시 후 위치를 다시 보내 주세요.",
@@ -1260,16 +1260,16 @@
   "zh": "记录当前情况"
  },
  "projection.see_the_rest_in_the_agentos": {
-  "ko": "… (나머지는 AgentOS 웹 기록에서 확인하세요.)",
-  "en": "… (see the rest in the AgentOS web record.)",
-  "ja": "…(残りは AgentOS のウェブの記録で確認してください。)",
-  "zh": "…（其余内容请在 AgentOS 网页记录中查看。）"
+  "ko": "… (나머지는 Still 웹 기록에서 확인하세요.)",
+  "en": "… (see the rest in the Still web record.)",
+  "ja": "…(残りは Still のウェブの記録で確認してください。)",
+  "zh": "…（其余内容请在 Still 网页记录中查看。）"
  },
  "projection.see_the_run_record_and_next": {
-  "ko": "AgentOS 웹에서 실행 기록과 다음 단계를 확인하세요.",
-  "en": "See the run record and next steps in the AgentOS web app.",
-  "ja": "AgentOS のウェブで実行記録と次の手順を確認してください。",
-  "zh": "请在 AgentOS 网页上查看执行记录和下一步。"
+  "ko": "Still 웹에서 실행 기록과 다음 단계를 확인하세요.",
+  "en": "See the run record and next steps in the Still web app.",
+  "ja": "Still のウェブで実行記録と次の手順を確認してください。",
+  "zh": "请在 Still 网页上查看执行记录和下一步。"
  },
  "projection.settings_change_draft": {
   "ko": "설정 변경 초안",
@@ -1350,10 +1350,10 @@
   "zh": "未完成的部分"
  },
  "projection.you_can_connect_an_ai_in": {
-  "ko": "AI 연결은 이 컴퓨터의 AgentOS 설정에서 할 수 있습니다. AgentOS를 시작할 때 표시된 주소(setup-link.txt)를 브라우저에서 여세요.",
-  "en": "You can connect an AI in AgentOS Settings on this computer. Open the address shown when AgentOS starts (setup-link.txt) in your browser.",
-  "ja": "AIはこのコンピューターのAgentOS設定で接続できます。AgentOSの起動時に表示されたアドレス（setup-link.txt）をブラウザーで開いてください。",
-  "zh": "可以在这台电脑的 AgentOS 设置中连接 AI。请在浏览器中打开 AgentOS 启动时显示的地址（setup-link.txt）。"
+  "ko": "AI 연결은 이 컴퓨터의 Still 설정에서 할 수 있습니다. Still을 시작할 때 표시된 주소(setup-link.txt)를 브라우저에서 여세요.",
+  "en": "You can connect an AI in Still Settings on this computer. Open the address shown when Still starts (setup-link.txt) in your browser.",
+  "ja": "AIはこのコンピューターのStill設定で接続できます。Stillの起動時に表示されたアドレス（setup-link.txt）をブラウザーで開いてください。",
+  "zh": "可以在这台电脑的 Still 设置中连接 AI。请在浏览器中打开 Still 启动时显示的地址（setup-link.txt）。"
  },
  "quickstart.a_sign_in_is_needed": {
   "ko": "로그인이 필요합니다.",
@@ -1386,10 +1386,10 @@
   "zh": "已经请求过重试了。"
  },
  "service.agentos_is_automatically_checking_the_connection": {
-  "ko": "AgentOS가 연결과 공개 검색을 자동으로 확인하고 있습니다.",
-  "en": "AgentOS is automatically checking the connection and public search.",
-  "ja": "AgentOS が接続と公開検索を自動で確認しています。",
-  "zh": "AgentOS 正在自动检查连接和公开搜索。"
+  "ko": "Still이 연결과 공개 검색을 자동으로 확인하고 있습니다.",
+  "en": "Still is automatically checking the connection and public search.",
+  "ja": "Still が接続と公開検索を自動で確認しています。",
+  "zh": "Still 正在自动检查连接和公开搜索。"
  },
  "service.an_output_folder_is_already_connected": {
   "ko": "설정에서 이미 결과 저장 폴더가 연결되어 있어 선택한 폴더로 바꾸지 않았습니다. 기존 결과 저장 폴더로 방금 요청을 이어서 처리합니다.",
@@ -1458,10 +1458,10 @@
   "zh": "已批准此任务的上下文共享，继续处理。"
  },
  "service.continue_on_the_mac_adding_or": {
-  "ko": "Mac에서 계속: 폴더 추가와 변경은 이 Mac에서 AgentOS를 열어 진행합니다. 연결된 폴더를 빼는 것은 여기서도 할 수 있습니다.",
-  "en": "Continue on the Mac: adding or changing a folder happens in AgentOS opened on this Mac. You can still remove a connected folder here.",
-  "ja": "Mac で続ける: フォルダーの追加と変更は、この Mac で AgentOS を開いて行います。接続済みのフォルダーはここでも外せます。",
-  "zh": "在 Mac 上继续：添加和更改文件夹需要在这台 Mac 上打开 AgentOS 进行。已连接的文件夹仍可在这里移除。"
+  "ko": "Mac에서 계속: 폴더 추가와 변경은 이 Mac에서 Still을 열어 진행합니다. 연결된 폴더를 빼는 것은 여기서도 할 수 있습니다.",
+  "en": "Continue on the Mac: adding or changing a folder happens in Still opened on this Mac. You can still remove a connected folder here.",
+  "ja": "Mac で続ける: フォルダーの追加と変更は、この Mac で Still を開いて行います。接続済みのフォルダーはここでも外せます。",
+  "zh": "在 Mac 上继续：添加和更改文件夹需要在这台 Mac 上打开 Still 进行。已连接的文件夹仍可在这里移除。"
  },
  "service.could_not_run": {
   "ko": "실행하지 못했습니다.",
@@ -1590,10 +1590,10 @@
   "zh": "在终端运行 `codex login` 登录。"
  },
  "service.see_the_full_result_in_the": {
-  "ko": "전체 결과는 AgentOS 웹에서 확인하세요.",
-  "en": "See the full result in the AgentOS web app.",
-  "ja": "結果の全体は AgentOS のウェブで確認してください。",
-  "zh": "完整结果请在 AgentOS 网页上查看。"
+  "ko": "전체 결과는 Still 웹에서 확인하세요.",
+  "en": "See the full result in the Still web app.",
+  "ja": "結果の全体は Still のウェブで確認してください。",
+  "zh": "完整结果请在 Still 网页上查看。"
  },
  "service.sign_in_skipped_i_will_finish": {
   "ko": "로그인을 건너뛰었습니다. 요청은 지금까지의 결과로 마칩니다.",
@@ -1638,10 +1638,10 @@
   "zh": "已停止，这个请求没有执行。"
  },
  "service.telegram_delivery_could_not_be_verified": {
-  "ko": "Telegram 전달 여부를 확인할 수 없습니다. 자동으로 다시 보내지 않았습니다. AgentOS 웹 기록을 확인하세요.",
-  "en": "Telegram delivery could not be verified. The message was not resent automatically. Check the AgentOS web history.",
-  "ja": "Telegramへの配信を確認できません。自動では再送していません。AgentOSのウェブ履歴を確認してください。",
-  "zh": "无法确认是否通过 Telegram 送达，没有自动重发。请查看 AgentOS 网页记录。"
+  "ko": "Telegram 전달 여부를 확인할 수 없습니다. 자동으로 다시 보내지 않았습니다. Still 웹 기록을 확인하세요.",
+  "en": "Telegram delivery could not be verified. The message was not resent automatically. Check the Still web history.",
+  "ja": "Telegramへの配信を確認できません。自動では再送していません。Stillのウェブ履歴を確認してください。",
+  "zh": "无法确认是否通过 Telegram 送达，没有自动重发。请查看 Still 网页记录。"
  },
  "service.the_login_session_was_not_saved": {
   "ko": "로그인 세션이 저장되지 않아 요청을 이어서 처리하지 않았습니다.",
@@ -2124,10 +2124,10 @@
   "zh": "没能收到你发来的照片。请稍后再发一次。"
  },
  "first_run.intro": {
-  "ko": "AgentOS 첫 설정을 이 터미널에서 진행합니다. 건너뛰려면 Enter를 누르세요.",
-  "en": "Let's set up AgentOS here in the terminal. Press Enter to skip a step.",
-  "ja": "AgentOS の初期設定をこのターミナルで行います。スキップするには Enter を押してください。",
-  "zh": "将在此终端中完成 AgentOS 的首次设置。按 Enter 可跳过某一步。"
+  "ko": "Still 첫 설정을 이 터미널에서 진행합니다. 건너뛰려면 Enter를 누르세요.",
+  "en": "Let's set up Still here in the terminal. Press Enter to skip a step.",
+  "ja": "Still の初期設定をこのターミナルで行います。スキップするには Enter を押してください。",
+  "zh": "将在此终端中完成 Still 的首次设置。按 Enter 可跳过某一步。"
  },
  "first_run.stopped": {
   "ko": "설정을 멈췄습니다. `agentos start`를 다시 실행하면 남은 단계부터 이어집니다.",
@@ -2142,10 +2142,10 @@
   "zh": "1. 访问密码"
  },
  "first_run.access_help": {
-  "ko": "AgentOS 화면을 열 때 쓸 비밀번호를 따로 정할 수 있습니다. Mac 로그인 암호가 아니라 AgentOS에서만 쓰는 새 비밀번호입니다. 정하지 않으면 이 컴퓨터에서만 열립니다.",
-  "en": "You can set a separate password for opening AgentOS. It is a new password only for AgentOS, not your Mac login password. Without one, AgentOS opens only on this computer.",
-  "ja": "AgentOS を開くときのパスワードを別に設定できます。Mac のログインパスワードではなく、AgentOS だけで使う新しいパスワードです。設定しない場合は、このコンピュータからのみ開けます。",
-  "zh": "可以为打开 AgentOS 单独设置密码。这是只用于 AgentOS 的新密码，不是 Mac 的登录密码。不设置时，只能在这台电脑上打开。"
+  "ko": "Still 화면을 열 때 쓸 비밀번호를 따로 정할 수 있습니다. Mac 로그인 암호가 아니라 Still에서만 쓰는 새 비밀번호입니다. 정하지 않으면 이 컴퓨터에서만 열립니다.",
+  "en": "You can set a separate password for opening Still. It is a new password only for Still, not your Mac login password. Without one, Still opens only on this computer.",
+  "ja": "Still を開くときのパスワードを別に設定できます。Mac のログインパスワードではなく、Still だけで使う新しいパスワードです。設定しない場合は、このコンピュータからのみ開けます。",
+  "zh": "可以为打开 Still 单独设置密码。这是只用于 Still 的新密码，不是 Mac 的登录密码。不设置时，只能在这台电脑上打开。"
  },
  "first_run.password_too_short": {
   "ko": "12자 이상으로 입력하세요.",
@@ -2298,10 +2298,10 @@
   "zh": "3. Telegram (可选)"
  },
  "first_run.telegram_help": {
-  "ko": "휴대폰의 Telegram에서 내 봇으로 AgentOS와 대화할 수 있습니다.",
-  "en": "Talk to AgentOS from your phone through your own Telegram bot.",
-  "ja": "スマートフォンの Telegram から、自分のボットで AgentOS と話せます。",
-  "zh": "可以在手机的 Telegram 中通过自己的机器人与 AgentOS 对话。"
+  "ko": "휴대폰의 Telegram에서 내 봇으로 Still과 대화할 수 있습니다.",
+  "en": "Talk to Still from your phone through your own Telegram bot.",
+  "ja": "スマートフォンの Telegram から、自分のボットで Still と話せます。",
+  "zh": "可以在手机的 Telegram 中通过自己的机器人与 Still 对话。"
  },
  "first_run.bot_token_prompt": {
   "ko": "봇 토큰 (비우면 나중에):",
@@ -2334,10 +2334,10 @@
   "zh": "已选择 {engine} 的官方登录连接。"
  },
  "service.onboarding_engine_login_needed": {
-  "ko": "Codex 또는 Claude Code에서 공식 로그인한 뒤 AgentOS에서 연결하세요.",
-  "en": "Sign in to Codex or Claude Code officially, then connect it in AgentOS.",
-  "ja": "Codex または Claude Code に公式の方法でログインしてから、AgentOS で接続してください。",
-  "zh": "请先通过官方方式登录 Codex 或 Claude Code，然后在 AgentOS 中连接。"
+  "ko": "Codex 또는 Claude Code에서 공식 로그인한 뒤 Still에서 연결하세요.",
+  "en": "Sign in to Codex or Claude Code officially, then connect it in Still.",
+  "ja": "Codex または Claude Code に公式の方法でログインしてから、Still で接続してください。",
+  "zh": "请先通过官方方式登录 Codex 或 Claude Code，然后在 Still 中连接。"
  },
  "service.onboarding_engine_install_needed": {
   "ko": "Codex 또는 Claude Code CLI를 공식 안내로 설치·로그인하거나 모델을 연결하세요.",
@@ -2418,10 +2418,10 @@
   "zh": "要设置密码吗? [y/N]"
  },
  "first_run.new_password_prompt": {
-  "ko": "새 AgentOS 비밀번호 (12자 이상, 비우면 건너뜀):",
-  "en": "New AgentOS password (12+ characters, empty to skip):",
-  "ja": "新しい AgentOS パスワード (12 文字以上、空欄でスキップ):",
-  "zh": "新的 AgentOS 密码 (至少 12 个字符，留空跳过):"
+  "ko": "새 Still 비밀번호 (12자 이상, 비우면 건너뜀):",
+  "en": "New Still password (12+ characters, empty to skip):",
+  "ja": "新しい Still パスワード (12 文字以上、空欄でスキップ):",
+  "zh": "新的 Still 密码 (至少 12 个字符，留空跳过):"
  },
  "first_run.password_again": {
   "ko": "한 번 더 입력:",
@@ -2514,10 +2514,10 @@
   "zh": "还没有 Telegram? 请先从 telegram.org 安装到手机或这台电脑上。在手机上也可以在 Telegram 中搜索 @BotFather。"
  },
  "uninstall.title": {
-  "ko": "AgentOS를 이 컴퓨터에서 제거합니다. 제거할 것:",
-  "en": "This removes AgentOS from this computer:",
-  "ja": "このコンピュータから AgentOS を削除します。削除するもの:",
-  "zh": "将从这台电脑上移除 AgentOS。要移除的内容:"
+  "ko": "Still을 이 컴퓨터에서 제거합니다. 제거할 것:",
+  "en": "This removes Still from this computer:",
+  "ja": "このコンピュータから Still を削除します。削除するもの:",
+  "zh": "将从这台电脑上移除 Still。要移除的内容:"
  },
  "uninstall.item_services": {
   "ko": "백그라운드 서비스 {count}개",
@@ -2526,16 +2526,16 @@
   "zh": "{count} 个后台服务"
  },
  "uninstall.item_program": {
-  "ko": "AgentOS 프로그램 ({method}로 설치됨)",
-  "en": "The AgentOS program (installed with {method})",
-  "ja": "AgentOS プログラム ({method} でインストール)",
-  "zh": "AgentOS 程序 (通过 {method} 安装)"
+  "ko": "Still 프로그램 ({method}로 설치됨)",
+  "en": "The Still program (installed with {method})",
+  "ja": "Still プログラム ({method} でインストール)",
+  "zh": "Still 程序 (通过 {method} 安装)"
  },
  "uninstall.item_program_manual": {
-  "ko": "AgentOS 프로그램: 설치 방법을 알 수 없어 마지막에 지우는 방법을 안내합니다",
-  "en": "The AgentOS program: the install method is unknown, so the last step tells you how to remove it",
-  "ja": "AgentOS プログラム: インストール方法が分からないため、最後に削除方法を案内します",
-  "zh": "AgentOS 程序: 无法判断安装方式，最后会说明如何移除"
+  "ko": "Still 프로그램: 설치 방법을 알 수 없어 마지막에 지우는 방법을 안내합니다",
+  "en": "The Still program: the install method is unknown, so the last step tells you how to remove it",
+  "ja": "Still プログラム: インストール方法が分からないため、最後に削除方法を案内します",
+  "zh": "Still 程序: 无法判断安装方式，最后会说明如何移除"
  },
  "uninstall.data_kept": {
   "ko": "내 데이터(대화, 기억, 자격 증명, 기록)는 지우겠다고 고르지 않는 한 남깁니다:",
@@ -2574,10 +2574,10 @@
   "zh": "无法移除后台服务: {name}。请用 agentos service status 检查。"
  },
  "uninstall.still_running": {
-  "ko": "아직 실행 중인 AgentOS가 있습니다: {path}. 그 터미널에서 Ctrl-C로 멈춘 뒤 다시 실행하세요. 데이터와 프로그램은 그대로 둡니다.",
-  "en": "AgentOS is still running for {path}. Stop it with Ctrl-C in its terminal and run this again; the data and program were left as they are.",
-  "ja": "まだ実行中の AgentOS があります: {path}。そのターミナルで Ctrl-C で止めてから、もう一度実行してください。データとプログラムはそのままです。",
-  "zh": "仍有正在运行的 AgentOS: {path}。请在它的终端中按 Ctrl-C 停止后再运行一次。数据和程序保持不变。"
+  "ko": "아직 실행 중인 Still이 있습니다: {path}. 그 터미널에서 Ctrl-C로 멈춘 뒤 다시 실행하세요. 데이터와 프로그램은 그대로 둡니다.",
+  "en": "Still is still running for {path}. Stop it with Ctrl-C in its terminal and run this again; the data and program were left as they are.",
+  "ja": "まだ実行中の Still があります: {path}。そのターミナルで Ctrl-C で止めてから、もう一度実行してください。データとプログラムはそのままです。",
+  "zh": "仍有正在运行的 Still: {path}。请在它的终端中按 Ctrl-C 停止后再运行一次。数据和程序保持不变。"
  },
  "uninstall.data_deleted": {
   "ko": "데이터를 지웠습니다: {path}",
@@ -2592,10 +2592,10 @@
   "zh": "数据仍保留在: {path}"
  },
  "uninstall.program_removed": {
-  "ko": "AgentOS 프로그램을 지웠습니다.",
-  "en": "Removed the AgentOS program.",
-  "ja": "AgentOS プログラムを削除しました。",
-  "zh": "已移除 AgentOS 程序。"
+  "ko": "Still 프로그램을 지웠습니다.",
+  "en": "Removed the Still program.",
+  "ja": "Still プログラムを削除しました。",
+  "zh": "已移除 Still 程序。"
  },
  "uninstall.program_failed": {
   "ko": "프로그램을 지우지 못했습니다. 직접 실행하세요: {command}",
@@ -2610,10 +2610,10 @@
   "zh": "请按安装时的方式移除程序，例如: uv tool uninstall personal-agentos、brew uninstall agentos、pip uninstall personal-agentos"
  },
  "uninstall.outside": {
-  "ko": "AgentOS 밖에 남아 있는 것 (필요하면 직접 정리하세요):",
-  "en": "Left outside AgentOS (clean up yourself if you want):",
-  "ja": "AgentOS の外に残っているもの (必要なら自分で整理してください):",
-  "zh": "AgentOS 之外仍保留的内容 (如有需要请自行清理):"
+  "ko": "Still 밖에 남아 있는 것 (필요하면 직접 정리하세요):",
+  "en": "Left outside Still (clean up yourself if you want):",
+  "ja": "Still の外に残っているもの (必要なら自分で整理してください):",
+  "zh": "Still 之外仍保留的内容 (如有需要请自行清理):"
  },
  "uninstall.outside_telegram": {
   "ko": "Telegram 봇: Telegram의 @BotFather에서 /deletebot",
@@ -2622,10 +2622,10 @@
   "zh": "Telegram 机器人: 在 Telegram 中向 @BotFather 发送 /deletebot"
  },
  "uninstall.outside_google": {
-  "ko": "Google 연결: https://myaccount.google.com/permissions 에서 AgentOS 접근 해제",
-  "en": "Google connection: remove AgentOS access at https://myaccount.google.com/permissions",
-  "ja": "Google の接続: https://myaccount.google.com/permissions で AgentOS のアクセスを解除",
-  "zh": "Google 连接: 在 https://myaccount.google.com/permissions 移除 AgentOS 的访问权限"
+  "ko": "Google 연결: https://myaccount.google.com/permissions 에서 Still 접근 해제",
+  "en": "Google connection: remove Still access at https://myaccount.google.com/permissions",
+  "ja": "Google の接続: https://myaccount.google.com/permissions で Still のアクセスを解除",
+  "zh": "Google 连接: 在 https://myaccount.google.com/permissions 移除 Still 的访问权限"
  },
  "uninstall.outside_tools": {
   "ko": "Codex, Claude Code, uv는 따로 설치된 도구라 그대로 둡니다.",

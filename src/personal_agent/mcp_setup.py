@@ -66,7 +66,7 @@ def remote_url(url, redact=lambda value: value):
     if not valid:
         raise ValueError('인증 정보 없는 공개 HTTPS 서버 주소를 확인하세요.')
     # Reuse the existing public-destination syntax/literal policy. Resolution
-    # and OAuth redirects remain CLI-owned, not an AgentOS-pinned egress path.
+    # and OAuth redirects remain CLI-owned, not an Still-pinned egress path.
     from .local_tools import normalize_public_url
     normalize_public_url(url)
     host = parts.hostname.rstrip('.')

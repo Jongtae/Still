@@ -1,6 +1,6 @@
-"""AgentOS's own owner-facing words, by id (#1356).
+"""Still's own owner-facing words, by id (#1356).
 
-One catalog (``messages.json``) holds each fixed line AgentOS itself says,
+One catalog (``messages.json``) holds each fixed line Still itself says,
 in Korean (the source) and English, Japanese and Chinese.  Code takes the
 Korean source by id with ``msg``; the Telegram seam (``telegram_locale``)
 shows it in the owner's language.  Changing a line means changing its

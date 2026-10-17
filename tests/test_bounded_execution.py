@@ -303,7 +303,7 @@ class EngineFailureDiagnosticsTests(unittest.TestCase):
         self.assertLessEqual(len(error.reason), bounded_execution.MAX_REASON_CHARS)
 
     def test_multiline_prompt_echo_is_withheld_not_partially_scrubbed(self):
-        prompt = 'Owner request:\n  my private diary entry about tuesday and more\n\nAgentOS public search evidence: {}'
+        prompt = 'Owner request:\n  my private diary entry about tuesday and more\n\nStill public search evidence: {}'
         echoed = json.dumps({'type': 'error', 'message': 'rejected: Owner request: my private diary entry about tuesday'})
         error, logs = self._run(echoed, prompt=prompt)
         for text in (str(error), error.reason, logs):
@@ -553,7 +553,7 @@ class SubscriptionServiceTests(unittest.TestCase):
 
     def test_subscription_lookup_never_derives_private_or_ordinary_prose(self):
         from personal_agent.quickstart_service import subscription_public_lookup_query
-        self.assertEqual(subscription_public_lookup_query('/search AgentOS release'), 'AgentOS release')
+        self.assertEqual(subscription_public_lookup_query('/search Still release'), 'Still release')
         self.assertIsNone(subscription_public_lookup_query('/search my api token is abc'))
         self.assertIsNone(subscription_public_lookup_query('내 메모를 정리해줘'))
         self.assertIsNone(subscription_public_lookup_query('성남시 날씨를 찾아줘'))  # #606 T3
@@ -641,7 +641,7 @@ class BoundedExecutionPreservedBoundaryTests(unittest.TestCase):
             adapter.execute('claude-code', 'hello', AgentOSMcpTools(_Capabilities()))
             self.assertEqual(root.stat().st_mode & 0o777, 0o700)
 
-    # --- sandbox flag stays an AgentOS decision ------------------------------
+    # --- sandbox flag stays an Still decision ------------------------------
     def test_agentos_always_sets_the_sandbox_and_strict_mcp_flags_itself(self):
         seen = {}
 
@@ -828,7 +828,7 @@ class BoundedExecutionPreservedBoundaryTests(unittest.TestCase):
             with self.subTest(tool=name):
                 with self.assertRaises(ExecutionError):
                     tools.call(name, arguments)
-        # Exactly one mediated call reached AgentOS capabilities.
+        # Exactly one mediated call reached Still capabilities.
         self.assertEqual(caps.calls, [('list_notes', {})])
 
     def test_tool_definitions_cannot_be_mutated_by_the_engine_facade(self):

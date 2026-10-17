@@ -1,4 +1,4 @@
-"""Repository-only delivery controller; not part of the installed AgentOS runtime."""
+"""Repository-only delivery controller; not part of the installed Still runtime."""
 import argparse
 import importlib
 import hashlib
@@ -397,7 +397,7 @@ class DeliveryController:
         state['pr']=match.group(0)
         merged=self._gh('pr','merge',state['pr'],'--repo',self.plan.data['repository'],'--squash','--delete-branch')
         if merged.returncode:return self._release_error(item,state,merged,'Could not merge the release PR.')
-        published=self._gh('release','create',tag,'--repo',self.plan.data['repository'],'--target','main','--title',f'Personal AgentOS {tag}','--generate-notes')
+        published=self._gh('release','create',tag,'--repo',self.plan.data['repository'],'--target','main','--title',f'Still {tag}','--generate-notes')
         if published.returncode:return self._release_error(item,state,published,'Could not publish the GitHub Release.')
         release['url']=f'https://github.com/{self.plan.data["repository"]}/releases/tag/{tag}'
         try:sha=self._archive_sha256(tag)
@@ -424,7 +424,7 @@ class DeliveryController:
         if formula_commit.returncode:return self._release_error(item,state,formula_commit,'Could not commit the Formula update.')
         formula_push=self._command(['git','push','-u','origin',formula_branch],cwd=tap,timeout=180)
         if formula_push.returncode:return self._release_error(item,state,formula_push,'Could not push the Formula update.')
-        tap_pr=self._gh('pr','create','--repo',tap_repo,'--base','main','--head',formula_branch,'--title',f'agentos {version}','--body',f'Updates AgentOS to `{tag}` after verified release.')
+        tap_pr=self._gh('pr','create','--repo',tap_repo,'--base','main','--head',formula_branch,'--title',f'agentos {version}','--body',f'Updates Still to `{tag}` after verified release.')
         tap_match=re.search(r'https://github\.com/[^\s]+/pull/\d+',tap_pr.stdout or '')
         if tap_pr.returncode or not tap_match:return self._release_error(item,state,tap_pr,'Could not open the Formula PR.')
         release['tap_pr']=tap_match.group(0)

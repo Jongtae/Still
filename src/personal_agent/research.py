@@ -892,7 +892,7 @@ VERIFIED_EXCERPT_CHARACTERS = 300
 def verified_summary(result):
     """What one research result actually read: quoted source text with its address.
 
-    The verified portion of a partial Work (#598 H1) and AgentOS's fallback
+    The verified portion of a partial Work (#598 H1) and Still's fallback
     wording for this tool.  Only pages that were read are listed (unread
     pages are ``read_failures``, never ``evidence``); the text is the exact
     bounded excerpt, delimited as an untrusted quotation, never a paraphrase

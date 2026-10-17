@@ -1,4 +1,4 @@
-"""Exercise restart and delivery safety with an isolated AgentOS store.
+"""Exercise restart and delivery safety with an isolated Still store.
 
 This is deterministic transport coverage. The separate live Telegram acceptance
 is deliberately left to a paired bot because a fake transport cannot prove a

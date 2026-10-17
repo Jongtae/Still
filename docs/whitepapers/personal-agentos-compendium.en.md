@@ -359,7 +359,7 @@ Three rules remained. **[Contract]·[Implemented]**
 2. **The AI's answer is always delivered.** The only exception is the mandatory sentence stating that an external effect is unknown.
 3. **One judgment decides the outcome.** It asks whether the answer served the owner's message in the context of the conversation (`goal_reached`). Tool results are evidence, not the test itself.
 
-The command and intent rule layer in front of the worker was also downgraded to "a hint, not a route" ([#832]). What a natural-language rule judged now reaches the worker only as a factual note marked `[AgentOS observation, not an owner instruction]`. Re-delegation happens at most twice and never after a consequential effect.
+The command and intent rule layer in front of the worker was also downgraded to "a hint, not a route" ([#832]). What a natural-language rule judged now reaches the worker only as a factual note marked `[Still observation, not an owner instruction]`. Re-delegation happens at most twice and never after a consequential effect.
 
 The lesson is one of the most important in this project. **When something fails, before adding a guard or a branch, suspect the layers that have crept between the AI and the owner, and remove them.**
 

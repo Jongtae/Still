@@ -367,8 +367,8 @@ class TelegramChannel:
 #
 #   * An **owner-explicit** form (a slash command or a legacy `메모:`-style
 #     prefix) is the owner speaking literally.  It is honoured as written.
-#   * An **AgentOS rule** is a literal cue set written in this file and
-#     reviewable here.  AgentOS, not a model, decided it.
+#   * An **Still rule** is a literal cue set written in this file and
+#     reviewable here.  Still, not a model, decided it.
 #   * A **model suggestion** is untrusted input.  It may only *narrow* an
 #     ambiguity that the rules already produced, it may never introduce an
 #     intent the rules did not find, and it may never select a consequential
@@ -376,9 +376,9 @@ class TelegramChannel:
 #     and cannot acquire one.
 #   * Anything the rules do not recognise is asked, as a bounded semantic
 #     question, of the provider-neutral DecisionEngine (PRESENCE-INTENT-01 /
-#     #597): does this turn need one of AgentOS's declared capabilities
+#     #597): does this turn need one of Still's declared capabilities
 #     (``CAPABILITY_NEEDS``)?  The engine may only *select* a declared
-#     candidate; AgentOS policy thresholds the answer, and an unavailable,
+#     candidate; Still policy thresholds the answer, and an unavailable,
 #     abstaining or unsure engine leaves the turn on ``conversation``, the
 #     ordinary model-answered route.  No capability is ever guessed, and the
 #     judgment grants nothing: the chosen capability still passes its own
@@ -464,12 +464,12 @@ UNSUPPORTED_CAPABILITY_TEXT = {
 }
 
 #: The capabilities a cue-free turn may be judged to need (#597).  Keys are
-#: AgentOS intents or declared-unsupported capabilities; values describe them
+#: Still intents or declared-unsupported capabilities; values describe them
 #: to the DecisionEngine.  The engine selects among these keys only, so it
 #: can never mint an intent.  Adding an offered capability here is product
 #: work with its own connector/Grant path, not a phrase list.
 #: A judgment key, not an intent: the turn asks for more than one task and
-#: at least one needs a declared capability (#672 review).  AgentOS then runs
+#: at least one needs a declared capability (#672 review).  Still then runs
 #: nothing and names the parts, so no part is silently dropped.
 SEVERAL_TASKS = 'several-tasks'
 
@@ -539,7 +539,7 @@ _MAIL_CONTENT_KINDS = {
 }
 
 # A note is written when the owner says "write it down", not when the owner
-# says "remember" - whether a turn asks AgentOS to remember something is the
+# says "remember" - whether a turn asks Still to remember something is the
 # DecisionEngine's ``explicit_memory_request`` judgment (#597) and must not
 # be shadowed here.
 _NOTE_CREATE_RE = re.compile(
@@ -610,7 +610,7 @@ def _without_cues(value, cues):
 
 
 def _strip_noise(value):
-    """Reduce an utterance to its subject by removing AgentOS cue filler."""
+    """Reduce an utterance to its subject by removing Still cue filler."""
     for token in _SUBJECT_NOISE_KO:
         value = value.replace(token, ' ')
     for token in _SUBJECT_NOISE_EN:
@@ -624,7 +624,7 @@ def _strip_noise(value):
 # the request that is waiting for a connection?" and "does this mail-shaped
 # request ask for an unsupported action?". They are asked of the provider-neutral DecisionEngine
 # (decision.py, docs/decision-layer.en.md) and reduced to a three-valued
-# result by AgentOS policy.  Anything the engine cannot answer stays
+# result by Still policy.  Anything the engine cannot answer stays
 # ``unavailable`` and policy takes its declared fallback; no cue list or
 # regex decides in its place.
 
@@ -783,7 +783,7 @@ WATCH_NOTIFY_PROPOSITION = ('The owner accepted a standing watch with the goal s
 #: did the reply serve the owner's message, given the conversation?  Step
 #: bookkeeping is evidence for it, never a verdict of its own.
 GOAL_REACHED_PROPOSITION = ('The reply serves the owner\'s message, read in the light of the recent conversation and '
-                            'what AgentOS knows about the owner (owner_context). What the message refers to is read '
+                            'what Still knows about the owner (owner_context). What the message refers to is read '
                             'from the recent conversation and continues (the earlier exchange it follows up) first; '
                             'owner_context settles it only when the conversation does not, and a saved fact that '
                             'merely shares words with the message is not its subject. The reply answers what the message asks, does '
@@ -793,7 +793,7 @@ GOAL_REACHED_PROPOSITION = ('The reply serves the owner\'s message, read in the 
                             'context provides, also serves it. Judge whether it serves the message, not whether it is '
                             'perfect: a useful reply that could be more detailed still serves it. Every statement in the '
                             'reply that something was found, read, saved, added, booked, sent or changed is supported by '
-                            'the observations - results that tools actually returned, as AgentOS recorded them; the '
+                            'the observations - results that tools actually returned, as Still recorded them; the '
                             'reply\'s own claims are not evidence. A statement that something is absent, missing or not '
                             'written (an item has no such detail, nothing matches) is a statement about what was read: '
                             'it is supported only when the observations show that part was read, and a part outside '
@@ -804,7 +804,7 @@ GOAL_REACHED_PROPOSITION = ('The reply serves the owner\'s message, read in the 
                             'itself, not a claim about the specific day, time or case the message asks about, and a reply '
                             'that presents the specific case as settled on such a fact states a changing fact as checked '
                             'when nothing supports it (#1440). A source the reply names counts only when '
-                            'that source appears in the observations. A worker\'s own web search whose results AgentOS '
+                            'that source appears in the observations. A worker\'s own web search whose results Still '
                             'could not see shows that the lookup was made: what the reply presents as found there was '
                             'looked up, not invented, though unverified, and does not by itself make the reply false; a '
                             'claim that something was saved, added, booked, sent or changed still needs the observations. '
@@ -1116,7 +1116,7 @@ class ConversationJudgments:
         """Choose a presentation reaction for one already-redacted running step.
 
         The context contains only the current generic progress line, never the
-        owner request or Work history. AgentOS sends a result only if it is in
+        owner request or Work history. Still sends a result only if it is in
         the curated candidates; unavailable leaves the current reaction alone.
         """
         candidates = tuple(candidates)
@@ -1153,7 +1153,7 @@ class ConversationJudgments:
 
         One ``judge`` call over the owner's message (never cut), the recent
         conversation, the worker's reply (model-stated, not evidence), the
-        tool results AgentOS recorded and the run's failed steps.  Only a
+        tool results Still recorded and the run's failed steps.  Only a
         confident yes lets the Work succeed; no or unavailable leaves it
         short of succeeded, and the reply is delivered either way.  The
         caller bounds and redacts the other facts.  #1451: a no carries its
@@ -1184,9 +1184,9 @@ class ConversationJudgments:
                         source=decision.confidence.provider or decision.outcome, note=note)
 
     def explicit_memory_request(self, utterance):
-        """Does ``utterance`` explicitly ask AgentOS to remember a stated value (#597)?
+        """Does ``utterance`` explicitly ask Still to remember a stated value (#597)?
 
-        Judgment only.  A yes lets AgentOS issue the existing owner-request
+        Judgment only.  A yes lets Still issue the existing owner-request
         memory approval for this Work; the deterministic value-coverage and
         key-replacement checks (``Capabilities.memory_write_refusal``) still
         decide whether a proposed write is canonical or a MemoryCandidate.
@@ -1262,7 +1262,7 @@ class ConversationJudgments:
         proposed fact (#597, #805 review)?
 
         Asked per fact, so one yes never covers another proposal.  A yes lets
-        AgentOS issue the owner-request memory approval for that fact; the
+        Still issue the owner-request memory approval for that fact; the
         value-coverage and key-replacement checks still decide.  The decision
         says whether a call reached the engine's transport (the call budget).
         """
@@ -1278,7 +1278,7 @@ class ConversationJudgments:
         """Is ``utterance`` the owner's own request for ``proposal`` (#659)?
 
         Judgment only, over the owner's message and a one-line summary of the
-        proposed preparation.  A yes lets AgentOS schedule it as accepted by
+        proposed preparation.  A yes lets Still schedule it as accepted by
         the owner's request; no / unavailable keeps it a proposal the owner
         accepts explicitly (Telegram button or Settings).
         """
@@ -1307,7 +1307,7 @@ class ConversationJudgments:
 
 
 class IntentDecision:
-    """One routing decision AgentOS made, with the evidence it used.
+    """One routing decision Still made, with the evidence it used.
 
     ``authority`` records *who* decided.  It is one of ``owner-explicit``,
     ``agentos-rule`` or ``default``; there is deliberately no model value.
@@ -1405,17 +1405,17 @@ class _Candidate:
 
 
 class IntentClassifier:
-    """AgentOS-owned routing for one owner utterance.
+    """Still-owned routing for one owner utterance.
 
-    Explicit forms and the literal cue tables above are read by AgentOS
+    Explicit forms and the literal cue tables above are read by Still
     code; semantic questions such as parked-request withdrawal, unsupported
     mail actions and - for a turn no local rule claimed - which declared
     capability it needs (#597) are asked of the DecisionEngine through
-    ``judge`` and reduced by AgentOS policy (PRESENCE-DEC-01 / #417,
+    ``judge`` and reduced by Still policy (PRESENCE-DEC-01 / #417,
     superseding PA1-CONV-01's "consults no model").  A missing cue word
     therefore no longer excludes a capability.  Every decision records
     which cue or judgment produced it, and a model's answer can only select
-    among candidates AgentOS declared; it never mints an intent, argument or
+    among candidates Still declared; it never mints an intent, argument or
     authority of its own.
 
     ``workspace_search`` is injected rather than imported so that this module
@@ -1540,7 +1540,7 @@ class IntentClassifier:
         """Whether deterministic capability routing already owns this utterance.
 
         Continuity may use a remote DecisionEngine, so a turn that already
-        matches one of AgentOS's concrete local/private capability rules must
+        matches one of Still's concrete local/private capability rules must
         never be sent there merely because it also contains "again", "no",
         or another follow-up hint.  This method performs only the same literal
         candidate checks as :meth:`classify`; it makes no semantic judgment
@@ -1558,7 +1558,7 @@ class IntentClassifier:
 
     # -- decision assembly ---------------------------------------------------
     def classify(self, text, model_suggestion=None, focus=None):
-        """Return the one routing decision AgentOS is prepared to justify."""
+        """Return the one routing decision Still is prepared to justify."""
         if not isinstance(text, str) or not text.strip():
             return self._with_suggestion(IntentDecision(INTENT_CONVERSATION, AUTHORITY_DEFAULT),
                                          (), model_suggestion)
@@ -1708,7 +1708,7 @@ class IntentClassifier:
         calendar draft's follow-up (#672 review): a rule-claimed turn is asked
         too, so a part the rules did not see makes it mixed instead of being
         dropped.  The owner text is redacted by ``ConversationJudgments``
-        before it reaches the engine.  A yes selects an AgentOS-declared
+        before it reaches the engine.  A yes selects an Still-declared
         candidate (``several-tasks`` yields the mixed-turn clarification); the argument is
         the owner's own words (``_judged_mail_query``, or the utterance for a
         calendar draft), never text the engine produced.  Unavailable, unsure
@@ -1775,13 +1775,13 @@ class IntentClassifier:
     # -- the model-suggestion gate ------------------------------------------
     @staticmethod
     def _with_suggestion(decision, candidates, suggestion):
-        """Let an untrusted suggestion narrow an AgentOS ambiguity, nothing more.
+        """Let an untrusted suggestion narrow an Still ambiguity, nothing more.
 
         Every rejection is recorded on the decision so that an owner or a
         reviewer can see that a suggestion arrived and what happened to it.
         The accepted path still returns ``agentos-rule`` authority, because
-        AgentOS produced both the option set and the argument; the suggestion
-        only picked one of AgentOS's own options.
+        Still produced both the option set and the argument; the suggestion
+        only picked one of Still's own options.
         """
         if suggestion is None:
             return decision
@@ -1845,7 +1845,7 @@ from .connector_contract import (ConnectorContractError, ConnectorResult, Connec
 from .gmail import GMAIL_CONNECTOR_ID
 from .google_drive_read import DRIVE_CONNECTOR_ID
 
-#: Which connector one routing decision needs, decided by AgentOS before any
+#: Which connector one routing decision needs, decided by Still before any
 #: capability is touched.  A missing entry means the intent needs no connector.
 #: ``calendar-create`` maps to the *write* connector deliberately: this
 #: repository models the calendar read and write grants as two connectors so a
@@ -2223,7 +2223,7 @@ LOCAL_RESULT_WRITE = 'local-result-write'
 
 #: The one scope each declared local authority carries.  Read and result-write
 #: are distinct authorities: a read grant never implies a write grant, and a
-#: result-write grant only lets AgentOS create *new* result files.
+#: result-write grant only lets Still create *new* result files.
 LOCAL_AUTHORITY_SCOPES = {
     LOCAL_FOLDER_READ: ('folder:read',),
     LOCAL_REFERENCE_READ: ('folder:read',),
@@ -2256,7 +2256,7 @@ LOCAL_AUTHORITY_GUIDANCE = {
     LOCAL_REFERENCE_READ: '이 요청에는 정리할 원본 폴더를 읽는 권한이 필요해 아직 실행하지 않았습니다.',
     LOCAL_RESULT_WRITE: '이 요청은 결과 파일을 저장할 폴더가 필요해 아직 실행하지 않았습니다.',
 }
-LOCAL_AUTHORITY_NEXT_ACTION = (' 지금 필요한 다음 단계는 하나입니다: Mac에서 계속 — Mac에서 AgentOS를 열고 '
+LOCAL_AUTHORITY_NEXT_ACTION = (' 지금 필요한 다음 단계는 하나입니다: Mac에서 계속 — Mac에서 Still을 열고 '
                                '설정 → 파일 · 저장에서 폴더를 선택해 주세요.')
 LOCAL_AUTHORITY_LINK = ' (Mac의 브라우저에서 {url} 주소를 열어도 됩니다.)'
 LOCAL_AUTHORITY_REMOTE = (' 휴대폰이나 다른 기기에서는 Mac 폴더 권한을 줄 수 없으며, 요청은 그대로 기다립니다. '

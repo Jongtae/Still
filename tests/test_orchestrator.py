@@ -697,7 +697,7 @@ class ToolsAndReplan(Harness):
         # #820: the reply is its own fact, labelled model-stated by the proposition; the observations are tools' results.
         self.assertEqual(seen[0]['reply'], 'about forty minutes by car')
         # #1308 (live 2026-10-10): unreported results are said as unseen, never as "0 results" / nothing found.
-        self.assertIn("AgentOS cannot see its results", seen[0]['observations'])
+        self.assertIn("Still cannot see its results", seen[0]['observations'])
         self.assertIn('queries: ["q"]', seen[0]['observations'])
         self.assertNotIn('result_count', seen[0]['observations'])
         self.assertIn('own web searches that reported no source URL: 1', self.asked_plans[1][0].facts['previous_attempts'])
@@ -705,7 +705,7 @@ class ToolsAndReplan(Harness):
     def test_the_goal_judgment_reads_an_unseen_search_as_looked_up_not_as_proof_of_an_action(self):
         """#1308: a hidden native search shows a lookup ran; action claims still need observations."""
         from personal_agent.conversation_handoff import GOAL_REACHED_PROPOSITION
-        self.assertIn('own web search whose results AgentOS could not see', GOAL_REACHED_PROPOSITION)
+        self.assertIn('own web search whose results Still could not see', GOAL_REACHED_PROPOSITION)
         self.assertIn('looked up, not invented, though unverified', GOAL_REACHED_PROPOSITION)
         self.assertIn('still needs the observations', GOAL_REACHED_PROPOSITION)
 
@@ -1949,7 +1949,7 @@ class SignInWaitsForTheOwner(Harness):
 
 
 class SignInRefusedStillWaits(Harness):
-    """#995 review: a sign-in the worker asked for on a site AgentOS may not sign in to (no login row)."""
+    """#995 review: a sign-in the worker asked for on a site Still may not sign in to (no login row)."""
 
     def test_a_refused_sign_in_is_still_not_a_reached_goal(self):
         def work(tools):
@@ -2399,7 +2399,7 @@ class StatedProfileInLookups(unittest.TestCase):
 class UnmediatedEngine(Harness):
     """ORCH-07 (#795): re-delegation honours the unmediated-engine rule ``safe_retry`` applies.
 
-    On trusted-local AgentOS does not confine the CLI's own tools, so an
+    On trusted-local Still does not confine the CLI's own tools, so an
     attempt there is a possible effect unless the CLI's own report shows no
     host action.  A strict-isolated attempt is judged from its tool events only.
     """
@@ -2477,7 +2477,7 @@ class UnmediatedEngine(Harness):
         def read(tools):
             tools.capabilities.record('web_search', 'succeeded',
                                       json.dumps({'host_action': 'web_search', 'evidence': {'sources': ['https://a.test']}}))
-        # AgentOS confined this CLI's own tools, so no CLI report is needed.
+        # Still confined this CLI's own tools, so no CLI report is needed.
         job, row = self.failing_attempt(None, before=read)
         first = self.events(job, 'evaluated')[0][1]
         self.assertEqual((first['outcome'], first['next'], first['stop']), ('worker_failed', 'redelegate', None))

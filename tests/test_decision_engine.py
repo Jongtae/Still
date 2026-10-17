@@ -82,7 +82,7 @@ class ContractTests(unittest.TestCase):
 
 
 class PolicyTests(unittest.TestCase):
-    """Thresholds are AgentOS policy; the provider's confidence is only input."""
+    """Thresholds are Still policy; the provider's confidence is only input."""
 
     def test_binary_needs_a_decided_answer_and_enough_confidence(self):
         policy = DecisionPolicy(binary_threshold=0.75)

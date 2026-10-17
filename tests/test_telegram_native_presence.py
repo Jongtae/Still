@@ -955,7 +955,7 @@ class RestartRecoveryTests(NativePresenceTestCase):
         self.assertEqual(len(replies), 2)
         expected='이 요청은 중단되었습니다. 자동으로 다시 실행하지 않았습니다.\n\n'
         expected+='실행 중 재시작되었습니다. 자동으로 재호출하지 않습니다.\n\n'
-        expected+='AgentOS 웹에서 실행 기록과 다음 단계를 확인하세요.'
+        expected+='Still 웹에서 실행 기록과 다음 단계를 확인하세요.'
         self.assertEqual({reply['reply_parameters']['message_id'] for reply in replies}, {source,deleting_source})
         self.assertTrue(all(reply['text']==expected for reply in replies))
         for reply in replies:

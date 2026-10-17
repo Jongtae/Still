@@ -1,4 +1,4 @@
-"""Isolated AgentOS instances for evaluation.
+"""Isolated Still instances for evaluation.
 
 Two steps:
 
@@ -37,7 +37,7 @@ from pathlib import Path
 
 from .paths import LIVE_DATA, LIVE_PORTS, SANDBOX_SITE, SRC, eval_home
 
-#: Secret slots a sandbox may keep: engine/model credentials and AgentOS's own
+#: Secret slots a sandbox may keep: engine/model credentials and Still's own
 #: local signing keys.  Everything else (Telegram, OAuth tokens) is dropped.
 KEEP_SECRETS = ('claude_code_token', 'model_key', 'lookup_state_key', 'memory_approval_secret', 'browser_step_secret')
 KEEP_SECRET_PREFIXES = ('api_key:', 'decision_', 'search_key:')
@@ -109,7 +109,7 @@ def snapshot_seed(source, target, overwrite=False):
     """Write a sanitized seed of data folder ``source`` into ``target``; returns a summary without values."""
     source, target = Path(source).expanduser().resolve(), Path(target).expanduser().resolve()
     if not (source / 'private' / 'quickstart.db').is_file():
-        raise SandboxError(f'{source} is not an AgentOS data folder (private/quickstart.db missing)')
+        raise SandboxError(f'{source} is not an Still data folder (private/quickstart.db missing)')
     if target == source or source in target.parents:
         raise SandboxError('the seed must live outside the source data folder')
     if target.exists():
@@ -215,7 +215,7 @@ def write_config(data, rows):
 
 
 class Sandbox:
-    """One fresh AgentOS instance on a copy of ``seed`` (or an empty folder when ``seed`` is None).
+    """One fresh Still instance on a copy of ``seed`` (or an empty folder when ``seed`` is None).
 
     With ``slot`` the data folder is ``<root>/slot-<n>`` (a stable path, wiped
     and re-copied for every run); without it a new temporary folder is used.
@@ -249,7 +249,7 @@ class Sandbox:
             self.data.mkdir(mode=0o700)
         resolved = self.data.resolve()
         if resolved == LIVE_DATA.resolve() or LIVE_DATA.resolve() in resolved.parents:
-            raise SandboxError('refusing to run a sandbox inside the live AgentOS data folder')
+            raise SandboxError('refusing to run a sandbox inside the live Still data folder')
         if self.seed:
             if not (self.seed / 'private' / 'quickstart.db').is_file():
                 raise SandboxError(f'seed {self.seed} has no private/quickstart.db; run `snapshot` first')
@@ -262,7 +262,7 @@ class Sandbox:
         if self.port is None:
             self.port = free_port()
         if self.port in LIVE_PORTS:
-            raise SandboxError('refusing to bind the live AgentOS port')
+            raise SandboxError('refusing to bind the live Still port')
         self.prepare()
         if config and (self.data / 'private' / 'quickstart.db').is_file():
             write_config(self.data, config)

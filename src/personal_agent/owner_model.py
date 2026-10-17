@@ -15,7 +15,7 @@ Bounded by docs/secretary-agency-contract.en.md ("Amendment - #805 phase 1"):
   reads the owner's request (owner words), the final answer excerpt
   (model-stated), the profile snapshot and the clock, every fact redacted
   first, and proposes at most ``MAX_PROPOSALS`` durable owner facts.
-* **Validation (AgentOS).** Out-of-enum, oversized, non-``profile.`` and
+* **Validation (Still).** Out-of-enum, oversized, non-``profile.`` and
   duplicate proposals are dropped.  What is kept is saved at once as current
   Memory attributed to the source Work (#918 slice a, owner decision
   2026-09-30: the owner's own AI acts for the owner and the owner is told
@@ -44,7 +44,7 @@ verdicts and the owner's follow-up (or the observation), every fact redacted
 first, and returns at most one **lesson** (how to serve this owner; saved as
 current Memory under ``profile.working.`` by the #918 slice (a) rule, so
 later briefs carry it and the owner is told with an undo) and one
-**blocker** (a cause only AgentOS code can fix; kept as Evidence on the
+**blocker** (a cause only Still code can fix; kept as Evidence on the
 reviewed Work, redacted, and never filed anywhere).  No text rule reads the
 owner's wording; nothing names a site, task or category.
 
@@ -189,7 +189,7 @@ def lesson_key(key):
 
 
 def validate_review(data, known, request=''):
-    """``(lesson, blocker, dropped)``: what AgentOS may keep of one self-review answer (deterministic).
+    """``(lesson, blocker, dropped)``: what Still may keep of one self-review answer (deterministic).
 
     ``lesson`` is ``{'memory_key', 'content'}`` or None; ``blocker`` a short
     text or None.  ``known`` and ``request`` are as in ``validate``: a lesson
@@ -291,7 +291,7 @@ def key_digest(key):
 
 
 def validate(proposals, known, pending, noted_keys=(), request=''):
-    """``(kept, dropped)`` of the proposals AgentOS may apply (deterministic).
+    """``(kept, dropped)`` of the proposals Still may apply (deterministic).
 
     ``known`` is the normalized content of every current ``profile.`` Memory
     value and of everything the source Work already wrote (Memory or

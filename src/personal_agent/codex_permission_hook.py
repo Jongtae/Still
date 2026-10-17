@@ -1,4 +1,4 @@
-"""CONNECT-DECIDE-01 (#1296): Codex's ``PreToolUse`` hook that asks AgentOS about every MCP tool call.
+"""CONNECT-DECIDE-01 (#1296): Codex's ``PreToolUse`` hook that asks Still about every MCP tool call.
 
 Codex runs this once per matching call with the call on stdin (``tool_name``,
 ``tool_input``).  The service decides through the Work's relay, exactly as it
@@ -17,7 +17,7 @@ import sys
 
 from .cli_browser_relay import RelayClient
 
-REFUSED_TEXT = 'AgentOS could not decide this action, so it was not run.'
+REFUSED_TEXT = 'Still could not decide this action, so it was not run.'
 MAX_INPUT_BYTES = 1_000_000
 BRIDGE_PREFIX = 'mcp__agentos__'
 
@@ -26,7 +26,7 @@ def decide(call, relay):
     """``None`` to let the call run, else the refusal reason."""
     if not isinstance(call, dict) or not isinstance(call.get('tool_name'), str):
         return REFUSED_TEXT
-    # AgentOS's own bridge decides its tools itself (#709); the matcher cannot exclude them
+    # Still's own bridge decides its tools itself (#709); the matcher cannot exclude them
     # (Codex hook matchers are Rust regexes, without lookahead).  No owner server may be named
     # ``agentos`` (``owner_mcp.RESERVED``), so this prefix is only ever the bridge.
     if call['tool_name'].startswith(BRIDGE_PREFIX):

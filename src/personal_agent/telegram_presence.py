@@ -146,7 +146,7 @@ def draft_body_text(body):
 # --- attention while waiting (ATTN-WAIT-01 / #839) ------------------------------
 #
 # Owner direction 2026-09-28: the waiting draft is a natural breakpoint, so
-# it may remind the owner of ONE thing AgentOS already prepared for them.
+# it may remind the owner of ONE thing Still already prepared for them.
 # Selection is deterministic from existing state (no model call): a fresh
 # prepared answer the owner has not received, then an accepted reminder due
 # soon, then an ask still waiting for the owner (a proposed preparation, a
@@ -279,10 +279,10 @@ FALLBACK_STEP_LINES = {
 
 
 #: #881: the masking marks redaction leaves in a text (``browser_session.REDACTED``,
-#: ``[가림: N자]``, ``[경로 가림]``, ``[redacted]``, ``[AgentOS data]``, ``[turn folder]``).
+#: ``[가림: N자]``, ``[경로 가림]``, ``[redacted]``, ``[Still data]``, ``[turn folder]``).
 #: They are internal: a step line carrying one is never shown; the next plainer
 #: line for the step is.
-MASK_MARK = re.compile(r'\[(?:가림(?::[^\]]*)?|경로 가림|redacted|AgentOS data|turn folder)\]', re.IGNORECASE)
+MASK_MARK = re.compile(r'\[(?:가림(?::[^\]]*)?|경로 가림|redacted|Still data|turn folder)\]', re.IGNORECASE)
 
 
 def masked(text):
@@ -416,7 +416,7 @@ PRESENCE_REACTIONS = (RECEIVED_REACTION, DONE_REACTION, WROTE_REACTION)
 #
 # Owner direction 2026-09-29: the reaction should vary with the message, and
 # the owner's Judgment AI picks it (model-first; no cue list ever maps words
-# to an emoji here).  AgentOS keeps only the policy: which emoji may be used
+# to an emoji here).  Still keeps only the policy: which emoji may be used
 # at all (documented reactions, curated so that nothing rude, mocking or
 # dismissive can land on the owner's own message), and *when* a closing
 # emoji is allowed (``outcome_reaction``).  Both sets are subsets of
@@ -436,7 +436,7 @@ CLOSING_CANDIDATES = (
     '😁', '🤗', '😇', '🕊', '🤩', '☃', '🎄',
 )
 #: Offered for an observed running step. The Judgment AI selects from these;
-#: no action/tool/category is mapped to a fixed reaction in AgentOS.
+#: no action/tool/category is mapped to a fixed reaction in Still.
 PROGRESS_CANDIDATES = (
     '👀', '🤔', '👍', '🫡', '🤗', '🔥', '🤩', '🤓', '👨\u200d💻', '⚡', '🤝', '🙏', '💯', '🆒',
 )

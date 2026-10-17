@@ -66,7 +66,7 @@ class GoalRouteContract(unittest.TestCase):
         self.assertIn('why you set the others aside', guidance)
         # #1380: no fixed walk through the candidate list.
         self.assertNotIn('Next consider public skills, then', guidance)
-        self.assertNotIn('then public skills, AgentOS reference skills, then', QUESTION)
+        self.assertNotIn('then public skills, Still reference skills, then', QUESTION)
         self.assertIn('not by list position', QUESTION)
         self.assertIn('which candidate routes were found', GOAL_REACHED_PROPOSITION)
         self.assertIn('A name-search miss is not evidence', guidance)

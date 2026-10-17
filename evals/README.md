@@ -1,12 +1,12 @@
-# AgentOS continuous evaluation loop (EVAL-LOOP-01, #821)
+# Still continuous evaluation loop (EVAL-LOOP-01, #821)
 
 > Owner decision 2026-09-28: sweeps run on Codex only by default, because the Claude subscription limit is shared with development work. Pass `--worker claude-code` or `--worker both` explicitly when Claude capacity allows.
 
 > Owner decision 2026-10-01 (#887): the eval is **on-demand triage**, not a scheduled loop and not a pass-rate target. The owner's real use is the primary signal. A sweep reproduces owner-reported failures and checks that a fix generalizes. Run it after a batch of merged fixes, normally only the affected `--scenarios` with `--epochs 1`. Use a full `--epochs 3` sweep only to support an improvement claim. A sweep stops at the first subscription usage limit (see *Capacity*).
 
-Machines, not the owner, should find the failures. This folder runs owner-realistic, multi-turn conversations against **isolated AgentOS sandboxes**. The sandboxes run on the owner's Codex and Claude Code subscriptions. Each run is scored with deterministic checks and a secretary-rubric judge, and every sweep produces a trend report that groups failures by root cause.
+Machines, not the owner, should find the failures. This folder runs owner-realistic, multi-turn conversations against **isolated Still sandboxes**. The sandboxes run on the owner's Codex and Claude Code subscriptions. Each run is scored with deterministic checks and a secretary-rubric judge, and every sweep produces a trend report that groups failures by root cause.
 
-This is development tooling. It is never imported by `src/personal_agent` and never installed into the AgentOS runtime. A sweep result is a **live local observation** of the exact code checkout, seed and subscription workers it ran with. It is not a calibrated quality score (see Limitations).
+This is development tooling. It is never imported by `src/personal_agent` and never installed into the Still runtime. A sweep result is a **live local observation** of the exact code checkout, seed and subscription workers it ran with. It is not a calibrated quality score (see Limitations).
 
 The older `owner-usefulness-*.json` and `use01-fixtures.json` files in this folder are the USE-01 specification seed. They are unchanged.
 
@@ -17,7 +17,7 @@ The older `owner-usefulness-*.json` and `use01-fixtures.json` files in this fold
 | Harness | [Inspect AI](https://inspect.aisi.org.uk/) (MIT, UK AISI), pinned in `requirements.txt` | Runs the dataset, epochs, concurrency and logs, and gives the log viewer (`inspect view`). |
 | Task | `agentos_eval/task.py` | The Inspect task `agentos_secretary`. It is the only module that imports Inspect. |
 | Sandbox | `agentos_eval/sandbox.py` | Makes a sanitized seed snapshot. Each run copies that seed into a fresh slot and starts it on its own port. |
-| Solver | `agentos_eval/runner.py`, `client.py` | Treats AgentOS as a black box over its local HTTP API. |
+| Solver | `agentos_eval/runner.py`, `client.py` | Treats Still as a black box over its local HTTP API. |
 | Scoring | `agentos_eval/scoring.py` | Deterministic checks plus the rubric judge prompt and parser. |
 | Budget | `agentos_eval/budget.py` | Enforces the daily judge spend cap. |
 | Report | `agentos_eval/report.py` | Writes the JSON and markdown trend report with failure clusters. |
@@ -30,7 +30,7 @@ python3 -m venv ~/.local/share/agentos-evals/venv
 ~/.local/share/agentos-evals/venv/bin/pip install -r evals/requirements.txt
 ```
 
-The sandbox servers themselves run with the normal `python3` that already runs AgentOS (override with `AGENTOS_EVAL_SERVER_PYTHON`), using the checkout's own `src/`.
+The sandbox servers themselves run with the normal `python3` that already runs Still (override with `AGENTOS_EVAL_SERVER_PYTHON`), using the checkout's own `src/`.
 
 ### Seed: a sanitized copy of the owner's profile
 
@@ -104,7 +104,7 @@ A direct `inspect eval` run writes only the Inspect log. Build the trend report 
    - PyObjC blocked by `agentos_eval/sandbox_site/sitecustomize.py`, so the embedded browser reports itself unavailable and **no window can open on the owner's screen**.
 3. Log in the way the local web page does (`POST /api/local-login`, or the first local `/api/claim` of a fresh folder), then select the worker (`POST /api/subscription-engines/connect`).
 4. **Judgment AI.** A qualification is bound to the store path, so a copied seed starts unqualified.
-   - If the Judgment AI is not qualified for this worker, the sandbox asks AgentOS to qualify it through the owner's own routes: `POST /api/main-ai/activate` when it follows the Main AI, else `POST /api/decision-route/activate`.
+   - If the Judgment AI is not qualified for this worker, the sandbox asks Still to qualify it through the owner's own routes: `POST /api/main-ai/activate` when it follows the Main AI, else `POST /api/decision-route/activate`.
    - It then waits up to 300 s.
    - It caches the qualified config rows per slot, worker and seed, so later runs in that slot skip the roughly one minute and dozen model calls.
    - A qualification that does not become ready is reported as the `infra:judgment_ai` cluster.
@@ -128,13 +128,13 @@ The deterministic checks are:
 - **`memory`:** each `expect.memory_any` group appears in a new Memory row or MemoryCandidate.
 - **`preparation`:** a new reminder or preparation exists, when `expect.preparation` is set.
 
-Before the judge prompt leaves the machine, it passes through AgentOS's own deterministic redaction. That is the `SECRET_PATTERN` credential shapes plus the literal values of every stored secret in the seed's and the live profile's `connections.json`. No secret reaches the judge provider.
+Before the judge prompt leaves the machine, it passes through Still's own deterministic redaction. That is the `SECRET_PATTERN` credential shapes plus the literal values of every stored secret in the seed's and the live profile's `connections.json`. No secret reaches the judge provider.
 
 The **rubric judge** sees the scenario, the owner turns (with any situation notes), the delivered answers and the recorded owner-state changes. It scores each of the scenario's dimensions 2, 1, 0 or null:
 
 | Dimension | Meaning |
 | --- | --- |
-| `owner_model` | Uses what AgentOS knows about the owner. |
+| `owner_model` | Uses what Still knows about the owner. |
 | `context_carry` | Reads a follow-up against earlier turns. |
 | `specific_sourced` | Gives concrete places, menus, prices and times with their sources. |
 | `honest_unverified` | Invents no facts, bookings or saves, and says what was not checked. |
@@ -176,14 +176,14 @@ The `note` field is for the judge only. The sandbox runs on the real clock, so w
 
 | Measurement | Value |
 | --- | --- |
-| One AgentOS turn (first smoke runs) | 15 s to about 7 minutes; answers that need web lookups take several minutes |
+| One Still turn (first smoke runs) | 15 s to about 7 minutes; answers that need web lookups take several minutes |
 | Scenario average | 2 turns, so roughly 2–6 minutes per scenario run |
 | Per-run overhead | about 10 s start, plus a one-time Judgment AI qualification per slot, worker and seed (60–80 s observed) |
 | Throughput with 3 instances | about 30–90 scenario runs an hour |
 
 A 21-scenario × 2-worker × 3-epoch sweep (126 runs) therefore takes roughly 1.5–4 hours. The real ceiling is the subscriptions' own usage limits, a separate budget from the judge.
 
-The workers run on the owner's own subscriptions, and the owner's live AgentOS shares them. On 2026-09-30 a 3-epoch Codex sweep exhausted the Codex limit part-way through (#842). The owner's live Codex route stayed blocked until the reset. So once any turn fails with `usage-limit`, the sweep starts no further runs. It uses Inspect's `EarlyStopping` hook (`runner.StopOnUsageLimit`). A run that hits the limit sends no further turns and gets no judge call. Other runs already in progress finish. The skipped runs are listed in the log's early-stopping summary. The report is marked as stopped and is never used as a later trend baseline. `sweep` prints `STOPPED: …` and exits with status 2. Do not retry until the limit resets.
+The workers run on the owner's own subscriptions, and the owner's live Still shares them. On 2026-09-30 a 3-epoch Codex sweep exhausted the Codex limit part-way through (#842). The owner's live Codex route stayed blocked until the reset. So once any turn fails with `usage-limit`, the sweep starts no further runs. It uses Inspect's `EarlyStopping` hook (`runner.StopOnUsageLimit`). A run that hits the limit sends no further turns and gets no judge call. Other runs already in progress finish. The skipped runs are listed in the log's early-stopping summary. The report is marked as stopped and is never used as a later trend baseline. `sweep` prints `STOPPED: …` and exits with status 2. Do not retry until the limit resets.
 
 No schedule is installed or suggested (#887). The earlier 400–500 runs a day target is on hold.
 

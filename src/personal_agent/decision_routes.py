@@ -2,7 +2,7 @@
 
 The DecisionEngine route answers bounded semantic questions ("is this a
 retry of the failed Work?").  It is a third role, distinct from the
-Personal AgentOS assistant identity and from the Work-execution route
+Still assistant identity and from the Work-execution route
 (#504, ``subscription_engine`` / ``model`` config).  This module owns only
 the decision route:
 
@@ -140,7 +140,7 @@ API_MODEL_LISTS = {
     'openai': {'url': 'https://api.openai.com/v1/models', 'config': dict(DEFAULT_DECISION_PROVIDER)},
     'anthropic': {'url': 'https://api.anthropic.com/v1/models', 'config': dict(ANTHROPIC_CONFIG)},
     # #609: TypeSafe's own listing for the Jev decision route.  Every listed
-    # name is offered (no AgentOS catalogue); `jev-latest` stays the default.
+    # name is offered (no Still catalogue); `jev-latest` stays the default.
     ROUTE_JEV: {'url': JEV_MODELS_ENDPOINT},
 }
 MODEL_LIST_ROUTES = ('codex', 'claude-code', 'openai', 'anthropic', ROUTE_JEV)
@@ -169,7 +169,7 @@ ENGINE_NAMES = {'codex': 'Codex', 'claude-code': 'Claude Code'}
 #: route switch never hides a destination change.
 CLI_DESTINATIONS = {'codex': msg('decision_routes.openai_codex_subscription_account'), 'claude-code': msg('decision_routes.anthropic_claude_code_subscription_account')}
 
-#: Flags a CLI's own help must declare before AgentOS will run a judgment
+#: Flags a CLI's own help must declare before Still will run a judgment
 #: through it: the isolation/no-tools flags are mandatory, the model flag
 #: decides whether ``explicit`` / ``lowest_qualified`` can be offered.
 REQUIRED_FLAGS = {
@@ -197,7 +197,7 @@ CODEX_INSTRUCTION_FILES_QUALIFIED = frozenset({'0.153.4', '0.162.1'})
 CODEX_INSTRUCTION_FILES = ('AGENTS.override.md', 'AGENTS.md')
 #: Owner-visible limitation for the Codex route (#624, observed on 0.153.4).
 CODEX_INSTRUCTION_FILES_LIMITATION = ('Codex는 로그인 프로필(CODEX_HOME)의 AGENTS.override.md 또는 AGENTS.md를 '
-                                      '판단 요청에 함께 보냅니다. 끌 수 있는 공식 옵션이 없고, AgentOS는 그 내용을 '
+                                      '판단 요청에 함께 보냅니다. 끌 수 있는 공식 옵션이 없고, Still은 그 내용을 '
                                       '읽거나 기록하지 않습니다.')
 
 
@@ -293,7 +293,7 @@ MAX_REQUEUES = 1
 JOB_HISTORY = 5
 #: Owner-visible reason of a job that ended without passing (Settings translates it).
 JOB_FAILURE_TEXT = {
-    'interrupted': 'AgentOS가 다시 시작되어 중단됨', 'cancelled': '취소됨', 'superseded': '다른 선택으로 대체됨',
+    'interrupted': 'Still이 다시 시작되어 중단됨', 'cancelled': '취소됨', 'superseded': '다른 선택으로 대체됨',
     'no-qualified-candidate': '적격 모델 없음', 'not-configured': '설정 필요', 'auth': '로그인 또는 인증 실패',
     'cli-not-found': 'CLI 없음', 'strict-profile-unqualified': '엄격 격리 검증 실패', 'timeout': '시간 초과',
     'usage-limit': '사용량 한도', 'follow-unsupported': '기본 AI를 따라갈 수 없음', 'probe-failed': '확인 실패',
@@ -730,7 +730,7 @@ class DecisionRoutes:
                     row.update(state=JOB_CANCELLED, finished_at=now, recovered_at=now)
                 else:
                     row.update(state=JOB_FAILED, failure='interrupted', finished_at=now, recovered_at=now,
-                               message='판단 AI 확인 중 AgentOS가 다시 시작되어 중단되었습니다. '
+                               message='판단 AI 확인 중 Still이 다시 시작되어 중단되었습니다. '
                                        '현재 대화 해석 경로는 그대로 유지됩니다.')
                 changed.append((option, row['state']))
             if changed:
@@ -820,7 +820,7 @@ class DecisionRoutes:
         (platform, resolved launcher and native binary with their
         fingerprints, home, engine runtime root, owner store, CODEX_HOME), the
         launcher and native sha256 digests, and the version the CLI reports
-        for ``--version`` in the AgentOS environment (one local, model-free
+        for ``--version`` in the Still environment (one local, model-free
         subprocess), which must be a tested version equal to the qualified one.
         """
         from .bounded_execution import CLI_PROFILES, STRICT_PROFILE
@@ -1496,7 +1496,7 @@ class DecisionRoutes:
     def _codex_instruction_files(self):
         """Non-empty global instruction files in CODEX_HOME, by name and size only (#624/#679).
 
-        A ``stat``; AgentOS never opens, reads or records their content.
+        A ``stat``; Still never opens, reads or records their content.
         """
         profile = getattr(self.service.execution_adapter, '_login_profile', None)
         home = Path(profile()) if callable(profile) else None
@@ -1639,7 +1639,7 @@ class DecisionRoutes:
     def _jev_models(self):
         """#609: TypeSafe's ``GET /v1/models`` with the saved Jev key.
 
-        Every provider-listed name is offered as-is (no AgentOS catalogue,
+        Every provider-listed name is offered as-is (no Still catalogue,
         no ranking); description/release date stay secondary technical text.
         A failure raises before anything is stored, so the active route and
         the configured Jev model are untouched.

@@ -124,7 +124,7 @@ class TransientReadRetryTests(unittest.TestCase):
         self.assertEqual((tool, status), ('weather', 'failed'))
         self.assertEqual({k: json.loads(detail)[k] for k in ('code', 'retry', 'effect')},
                          {'code': 'transient_failure', 'retry': 'transient', 'effect': 'none'})
-        self.assertNotIn('연결할 수 없거나', detail, 'the event carries AgentOS text, not the exception')
+        self.assertNotIn('연결할 수 없거나', detail, 'the event carries Still text, not the exception')
 
     def test_only_one_retry_and_none_for_a_permanent_failure_or_an_exhausted_budget(self):
         calls = []

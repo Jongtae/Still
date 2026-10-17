@@ -115,7 +115,7 @@ class EncryptedCalendarSecretStore:
     def __init__(self, store, key, *, namespace: str = _SECRET_NAMESPACE):
         # A second fixed namespace (Drive's) keeps that connector's slots out
         # of reach of Calendar keys for the same reason Calendar is kept apart
-        # from Gmail; it is chosen by AgentOS wiring, never by a caller key.
+        # from Gmail; it is chosen by Still wiring, never by a caller key.
         if namespace not in _SECRET_NAMESPACES:
             raise ValueError("Unknown Google OAuth secret namespace.")
         self._namespace = namespace

@@ -50,7 +50,7 @@ DONE_DELAY_SECONDS = 0.3
 LINK_TEXT = ('휴대폰에서 {label} 설정을 하는 링크예요. 이 링크를 연 휴대폰 한 대만 쓸 수 있고, 약 {minutes}분 뒤에 닫혀요. '
              '중간에 이 화면을 닫았다면 새 링크를 요청해 주세요.\n{link}')
 NO_NGROK_TEXT = '휴대폰 링크를 만들 ngrok이 이 Mac에 없어요. Mac에서 설정해 주세요.'
-NO_PORT_TEXT = '이 Mac의 AgentOS 주소를 아직 알 수 없어 휴대폰 링크를 만들지 못했어요.'
+NO_PORT_TEXT = '이 Mac의 Still 주소를 아직 알 수 없어 휴대폰 링크를 만들지 못했어요.'
 BUSY_TEXT = '이미 휴대폰 링크가 열려 있어요. 그 링크가 닫힌 뒤에 다시 요청해 주세요.'
 NOT_PAIRED_TEXT = '휴대폰 링크는 연결된 Telegram 대화로만 보내요. Telegram을 먼저 연결해 주세요.'
 TUNNEL_FAILED_TEXT = '휴대폰 링크를 열지 못했어요. Mac에서 설정해 주세요.'

@@ -26,7 +26,7 @@ def _portable_db(source, target):
     with sqlite3.connect(source) as original, sqlite3.connect(target) as copy:
         original.backup(copy)
         tables = {row[0] for row in copy.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if not {"auth", "sessions", "config"} <= tables: raise ValueError("AgentOS owner database has an unsupported schema.")
+        if not {"auth", "sessions", "config"} <= tables: raise ValueError("Still owner database has an unsupported schema.")
         copy.execute("DELETE FROM auth");copy.execute("DELETE FROM sessions")
         # #570: developer-mode provenance is owner-local diagnostics, not portable state.
         if 'turn_provenance' in tables:copy.execute("DELETE FROM turn_provenance")
@@ -105,7 +105,7 @@ def _portable_db(source, target):
 def export_owner_state(data, archive):
     data, archive = Path(data).expanduser().resolve(), Path(archive).expanduser().resolve()
     database = data / DB_RELATIVE
-    if not database.is_file(): raise ValueError("AgentOS owner database does not exist.")
+    if not database.is_file(): raise ValueError("Still owner database does not exist.")
     archive = archive if archive.name.endswith(".tar.gz") else archive.with_name(archive.name + ".tar.gz")
     with tempfile.TemporaryDirectory() as temporary:
         staging = Path(temporary) / ROOT;(staging / "private").mkdir(parents=True, mode=0o700)

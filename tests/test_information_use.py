@@ -2,7 +2,7 @@
 
 Owner decision (2026-09-28): owner-private reads and web search may share a
 Work; in exchange every Work shows which owner information it used and where
-it went.  The audit is derived from AgentOS's own records (turn provenance,
+it went.  The audit is derived from Still's own records (turn provenance,
 tool events, decision audit), stores references and short labels, never
 payloads, and passes the stored-secret redaction.
 
@@ -91,7 +91,7 @@ class SectionReferences(unittest.TestCase):
 
 
 class RecordsOnly(unittest.TestCase):
-    """The audit reads only AgentOS's records: an attempted lookup that failed is still listed."""
+    """The audit reads only Still's records: an attempted lookup that failed is still listed."""
 
     def test_a_failed_lookup_is_listed_as_attempted_with_the_query_it_started_with(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -107,7 +107,7 @@ class RecordsOnly(unittest.TestCase):
             [lookup] = audit['sent_to']['lookups']
             self.assertEqual((lookup['status'], lookup['queries']), ('failed', ['병원 [redacted]']))
             self.assertFalse(audit['recorded'], 'no turn record: said, not invented')
-            self.assertIn('웹 조회(AgentOS · 실패): "병원 [redacted]"', information_use.render_korean(audit))
+            self.assertIn('웹 조회(Still · 실패): "병원 [redacted]"', information_use.render_korean(audit))
             self.assertIsNone(information_use.work_information_use(store, 'no-such-work'))
 
     def events(self, store, job, rows):

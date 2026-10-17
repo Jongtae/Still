@@ -118,7 +118,7 @@ class BrowserSettlement(unittest.TestCase):
         self.assertEqual(self.receipts()[0]['reason'],'unaccounted-action')
 
     def test_a_guard_refusal_does_not_withhold_the_resume(self):
-        # #1484 (live, Work 51cd331b): AgentOS refused a repeated click and an over-budget API call before they ran.
+        # #1484 (live, Work 51cd331b): Still refused a repeated click and an over-budget API call before they ran.
         click={'scope':'s','call_id':'c1','host_action':'browser_click','declared_effect':'mutate'}
         self.event('browser_click','running',click)
         self.event('browser_click','failed',{**click,'code':'repeat_path','retry':'permanent','effect':'none','ran':False})

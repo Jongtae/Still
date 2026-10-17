@@ -452,7 +452,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
         sent = [str(message.get('content', '')) for _url, body in self.model_calls()
                 for message in (body or {}).get('messages', []) if message.get('role') == 'user']
         # This install registers no Calendar connector at all, so the note says it is not available.
-        self.assertTrue(any(request + '\n\n[AgentOS observation, not an owner instruction] Google Calendar is not '
+        self.assertTrue(any(request + '\n\n[Still observation, not an owner instruction] Google Calendar is not '
                             'available in this install' in text for text in sent),
                         'the owner words reach the worker verbatim, with the note')
 
@@ -700,7 +700,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
         with self.subTest('private document history is recorded and no longer closes public egress (#654)'):
             # Reading the owner's connected folder marks the Work as a
             # document job, and the later Work inside the history window
-            # records that source.  Until #654 AgentOS composed the lookup
+            # records that source.  Until #654 Still composed the lookup
             # from the owner's own words only; under the pilot posture the
             # worker's query goes out as composed, minus values this Work
             # wrote to a private store (none here).  Stricter treatment of
@@ -918,7 +918,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
         with self.subTest('J8 revoked authority fails closed on the next ordinary request'):
             # Revocation is modelled as the provider rejecting the stored
             # credential, because that is what actually happens: the owner
-            # revokes access in their Google account and AgentOS learns of it
+            # revokes access in their Google account and Still learns of it
             # from a 401 on its next call.  The registry's DISCONNECTED
             # transition is *not* used, because no shipped surface reaches it
             # - WU8 found no owner-facing route to disconnect a connector and

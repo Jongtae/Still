@@ -352,7 +352,7 @@ def semantic_errors(records: list[dict[str, Any]], catalog: dict[str, Any]) -> l
                     for ref in record["validationEvidenceRefs"]:
                         evidence = resolve(ref)
                         if evidence and (evidence["recordType"] != "completionValidation" or evidence["status"] != "sealed" or evidence["outcome"] != "passed" or evidence["workRef"]["id"] != record["id"]):
-                            fail("EVIDENCE-001", record, "completion requires sealed AgentOS validation for this Work")
+                            fail("EVIDENCE-001", record, "completion requires sealed Still validation for this Work")
             else:
                 context = resolve(record["contextRef"])
                 current_context = latest("Context", record["contextRef"]["id"])
@@ -376,7 +376,7 @@ def semantic_errors(records: list[dict[str, Any]], catalog: dict[str, Any]) -> l
         if kind == "Memory":
             decision = resolve(record["decisionRef"])
             if decision and (decision["recordType"] != "memoryDecision" or decision["outcome"] != "approved" or decision["status"] != "sealed"):
-                fail("MEMORY-001", record, "canonical Memory lacks sealed AgentOS/owner decision")
+                fail("MEMORY-001", record, "canonical Memory lacks sealed Still/owner decision")
             candidate = resolve(record["acceptedCandidateRef"])
             if candidate and (candidate["state"] != "accepted" or candidate["resultingMemoryRef"] is None or _key(candidate["resultingMemoryRef"]) != _key(record)):
                 fail("MEMORY-001", record, "Memory candidate disposition is not reciprocal")

@@ -1,7 +1,7 @@
 """Narrow stdio MCP bridge for the isolated Codex sidecar.
 
 Protocol discovery is answered in-process.  The single approved tool call is
-forwarded to AgentOS's internal HTTP callback with the execution-scoped bearer
+forwarded to Still's internal HTTP callback with the execution-scoped bearer
 capability; no owner storage or filesystem path is accepted by this process.
 
 The protocol version comes from the mcp-types registry, but that
@@ -55,7 +55,7 @@ def _callback_parts(callback_url: str):
         parsed = urlsplit(callback_url)
         port = parsed.port
     except (TypeError, ValueError) as exc:
-        raise BridgeError("invalid AgentOS callback") from exc
+        raise BridgeError("invalid Still callback") from exc
     if (
         parsed.scheme != "http"
         or not parsed.hostname
@@ -66,7 +66,7 @@ def _callback_parts(callback_url: str):
         or parsed.query
         or parsed.fragment
     ):
-        raise BridgeError("invalid AgentOS callback")
+        raise BridgeError("invalid Still callback")
     return parsed.hostname, port, parsed.path
 
 
@@ -86,7 +86,7 @@ def _forward(callback_url: str, token: str, task_id: str, request: dict, timeout
             body=body,
             headers={
                 "Authorization": "Bearer " + token,
-                "X-AgentOS-Task-ID": task_id,
+                "X-Still-Task-ID": task_id,
                 "Content-Type": "application/json",
                 "Content-Length": str(len(body)),
             },
@@ -94,21 +94,21 @@ def _forward(callback_url: str, token: str, task_id: str, request: dict, timeout
         response = connection.getresponse()
         raw = response.read(1_048_577)
     except OSError as exc:
-        raise BridgeError("AgentOS callback failed") from exc
+        raise BridgeError("Still callback failed") from exc
     finally:
         connection.close()
     if response.status != 200 or len(raw) > 1_048_576:
-        raise BridgeError("AgentOS callback failed")
+        raise BridgeError("Still callback failed")
     if response.getheader("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
-        raise BridgeError("AgentOS callback returned invalid JSON")
+        raise BridgeError("Still callback returned invalid JSON")
     try:
         value = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise BridgeError("AgentOS callback returned invalid JSON") from exc
+        raise BridgeError("Still callback returned invalid JSON") from exc
     if not isinstance(value, dict) or value.get("jsonrpc") != "2.0" or value.get("id") != request["id"]:
-        raise BridgeError("AgentOS callback returned an invalid MCP response")
+        raise BridgeError("Still callback returned an invalid MCP response")
     if set(value) not in ({"jsonrpc", "id", "result"}, {"jsonrpc", "id", "error"}):
-        raise BridgeError("AgentOS callback returned an invalid MCP response")
+        raise BridgeError("Still callback returned an invalid MCP response")
     return value
 
 
@@ -116,7 +116,7 @@ def _request_error(ident, code: int = -32602) -> dict:
     return {
         "jsonrpc": "2.0",
         "id": ident,
-        "error": {"code": code, "message": "AgentOS MCP request rejected."},
+        "error": {"code": code, "message": "Still MCP request rejected."},
     }
 
 

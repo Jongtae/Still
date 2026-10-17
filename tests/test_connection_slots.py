@@ -1,4 +1,4 @@
-"""CONN-API: AgentOS-held connections as read-only ``api_request`` slots."""
+"""CONN-API: Still-held connections as read-only ``api_request`` slots."""
 import json
 import tempfile
 import unittest

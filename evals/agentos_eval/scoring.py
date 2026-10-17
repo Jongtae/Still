@@ -97,8 +97,8 @@ def deterministic_checks(scenario, run):
 
 # -- judge --------------------------------------------------------------------
 JUDGE_SYSTEM = (
-    'You evaluate a personal AI secretary called AgentOS. You see an owner scenario, the owner turns, '
-    'the answers AgentOS delivered and the owner-state changes it recorded. Judge only what is shown; '
+    'You evaluate a personal AI secretary called Still. You see an owner scenario, the owner turns, '
+    'the answers Still delivered and the owner-state changes it recorded. Judge only what is shown; '
     'do not assume a tool ran, a place exists or a price is right unless the answer shows its source. '
     'Score each listed dimension 2 (meets), 1 (partly) or 0 (fails), or null when the conversation gives '
     'no occasion to show it. Reply with JSON only.')
@@ -116,7 +116,7 @@ def judge_prompt(scenario, run):
         lines.append(f'OWNER {index}: {turn.get("say", "")}')
         answer = (turn.get('answer') or '').strip()
         if turn.get('answer_withheld'):
-            answer = '(answer withheld by AgentOS)'
+            answer = '(answer withheld by Still)'
         if len(answer) > ANSWER_CHARS:
             answer = answer[:ANSWER_CHARS] + ' [...]'
         lines.append(f'AGENTOS {index} (status {turn.get("status")}): {answer or "(no answer delivered)"}')

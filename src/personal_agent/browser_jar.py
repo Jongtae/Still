@@ -1,6 +1,6 @@
 """The encrypted browser sign-in cookie jar (SEC-BROWSER-02 #680).
 
-The embedded WebKit worker keeps cookies in memory only.  AgentOS exports
+The embedded WebKit worker keeps cookies in memory only.  Still exports
 them over the worker pipe when a session stops, hides or the owner closes
 the login window, and keeps them here:
 
@@ -20,7 +20,7 @@ running as the same macOS user: the item's access list trusts
 ``/usr/bin/security``, the tool that created it, so any such process can run
 ``security find-generic-password -w`` and read the key without a prompt.
 Narrowing the access list with ``-T`` to the Python interpreter would not
-change that, because AgentOS itself reads the key through
+change that, because Still itself reads the key through
 ``/usr/bin/security``.  When the login keychain is locked a read fails (or
 macOS prompts); the jar is then reported unreadable and never overwritten.
 
@@ -89,11 +89,11 @@ def latest_token_expiry(rows):
 
 
 class JarError(Exception):
-    """A jar operation failed; the message is an AgentOS code, never a value."""
+    """A jar operation failed; the message is an Still code, never a value."""
 
 
 def store_account(root):
-    """The Keychain account of one AgentOS data directory: a digest of its resolved path."""
+    """The Keychain account of one Still data directory: a digest of its resolved path."""
     return 'store-' + hashlib.sha256(str(Path(root).expanduser().resolve()).encode()).hexdigest()[:24]
 
 

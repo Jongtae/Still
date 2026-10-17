@@ -383,7 +383,7 @@ class TelegramConfirmTests(TelegramHarness):
                      if item.get('role') == 'assistant' and item.get('job_id') == job['id']]
         self.assertTrue(message['content'].endswith(MEMORY_PENDING_WEB_NOTE))
         for text in (MEMORY_PENDING_WEB_NOTE,):
-            for word in ('AgentOS', '후보', '승인', '저장'):
+            for word in ('Still', '후보', '승인', '저장'):
                 self.assertNotIn(word, text)
         self.tap(f"p7m:{row['id']}:1:accept", row['message_id'])
         [served] = [item for item in self.service.owner_jobs(self.store.jobs()) if item['id'] == job['id']]
@@ -622,11 +622,11 @@ class GuidanceTests(unittest.TestCase):
         self.assertIn('you do not rewrite the owner\'s message', QUESTION)
 
     def test_the_worker_reads_a_held_memory_as_a_one_tap_ask_without_machinery(self):
-        """#836: no AgentOS, approval, candidate or storage talk reaches the worker; still truthful."""
+        """#836: no Still, approval, candidate or storage talk reaches the worker; still truthful."""
         held = {'id': 'c1', 'memory_key': KEY, 'content': VALUE, 'content_digest': 'd' * 64, 'state': 'pending',
                 'saved': False, 'requires_owner_approval': True, 'refused_because': 'no-owner-memory-request'}
         shown = json.dumps(worker_result('save_memory', held), ensure_ascii=False)
-        for word in ('AgentOS', '승인', 'candidate', 'approval', 'refused', 'pending', 'stor', 'sav'):
+        for word in ('Still', '승인', 'candidate', 'approval', 'refused', 'pending', 'stor', 'sav'):
             self.assertNotIn(word, shown)
         self.assertIn('one tap', shown)
         self.assertIn('Not remembered yet', shown)
@@ -636,7 +636,7 @@ class GuidanceTests(unittest.TestCase):
         self.assertIs(worker_result('save_note', held), held)
 
     def test_the_worker_speaks_as_the_secretary(self):
-        self.assertIn("Speak as the owner's secretary: never narrate AgentOS, tools, approvals", CORE_INSTRUCTIONS)
+        self.assertIn("Speak as the owner's secretary: never narrate Still, tools, approvals", CORE_INSTRUCTIONS)
         [save_memory] = [tool['function'] for tool in DEFINITIONS if tool['function']['name'] == 'save_memory']
         self.assertNotIn('candidate', save_memory['description'])
         # #918: the owner's worker saves at once; nothing is asked.

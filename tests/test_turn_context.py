@@ -1,4 +1,4 @@
-"""#569 PRESENCE-WORKER-CTX-01: every AI route receives the same AgentOS turn context."""
+"""#569 PRESENCE-WORKER-CTX-01: every AI route receives the same Still turn context."""
 import json
 import tempfile
 import unittest
@@ -37,7 +37,7 @@ class TurnContextBuilder(unittest.TestCase):
         self.assertTrue(cli['instructions'].startswith(CORE_INSTRUCTIONS))
         self.assertTrue(cli['instructions'].endswith(CLI_TOOL_GUIDANCE))
         self.assertEqual(api['instructions'], POLICY, 'the direct-API system text is the shared core plus its tool guidance')
-        self.assertIn('Personal AgentOS', CORE_INSTRUCTIONS)
+        self.assertIn('Still', CORE_INSTRUCTIONS)
 
     def test_every_route_carries_the_warm_style_without_flattery(self):
         # #1272: the conversation style reaches both routes, and warmth is bounded by accuracy.
@@ -104,10 +104,10 @@ class TurnContextBuilder(unittest.TestCase):
         context = turn_context([{'role': 'user', 'content': 'a'}, {'role': 'assistant', 'content': 'b'},
                                 {'role': 'user', 'content': 'c'}], 'cli')
         text = render_turn_prompt(context)
-        self.assertLess(text.index('# AgentOS instructions'), text.index('# Recent conversation'))
+        self.assertLess(text.index('# Still instructions'), text.index('# Recent conversation'))
         self.assertLess(text.index('# Recent conversation'), text.index('# Current request'))
         self.assertIn('not pending tasks', text)
-        self.assertNotIn('# AgentOS instructions', render_turn_prompt(context, include_instructions=False))
+        self.assertNotIn('# Still instructions', render_turn_prompt(context, include_instructions=False))
 
 
 class CliAdapterPlacement(unittest.TestCase):
@@ -138,14 +138,14 @@ class CliAdapterPlacement(unittest.TestCase):
         flag = argv.index('--append-system-prompt')
         self.assertEqual(argv[flag + 1], context['instructions'])
         prompt = argv[argv.index('-p') + 1]
-        self.assertNotIn('# AgentOS instructions', prompt)
+        self.assertNotIn('# Still instructions', prompt)
         self.assertIn('# Recent conversation', prompt)
         self.assertIn('now', prompt)
 
     def test_codex_gets_the_instructions_inside_the_envelope(self):
         argv, context = self._run('codex')
         prompt = argv[-1]
-        self.assertIn('# AgentOS instructions', prompt)
+        self.assertIn('# Still instructions', prompt)
         self.assertIn(CORE_INSTRUCTIONS, prompt)
         self.assertNotIn('--append-system-prompt', argv)
 
@@ -339,7 +339,7 @@ class CrossTurnEgressGuard(unittest.TestCase):
         self._run('/note PRIVATE-XYZ', 'n1')
         self._run('/notes', 'n2')
         # #705: earlier conversation no longer turns the CLI's own search off, so
-        # the AgentOS-composed bridge lookup this test covers runs on a turn whose
+        # the Still-composed bridge lookup this test covers runs on a turn whose
         # search is off for another reason.
         self.service.cli_native_search = lambda *args: (False, 'refused')
         self._run('search the web for today news', 'k3')
@@ -478,7 +478,7 @@ class OversizeRequestKeepsWorking(DestinationScopedHistory):
         self._run('summarize my drive file', 'big')
         call = self.engine.calls[-1]
         self.assertLessEqual(len(call['prompt'].encode()), 48_000)
-        self.assertNotIn('# AgentOS instructions', call['prompt'], 'falls back to the bare request, as before')
+        self.assertNotIn('# Still instructions', call['prompt'], 'falls back to the bare request, as before')
         self.assertIsNone(call['context'])
         job = self.store.jobs()[0]
         self.assertEqual(job['status'], 'succeeded')
@@ -514,7 +514,7 @@ class _PublicNetwork:
 
 
 class _ScriptedCli:
-    """A CLI that uses the AgentOS tool the goal needs when the route offers it."""
+    """A CLI that uses the Still tool the goal needs when the route offers it."""
     def __init__(self):
         self.offered, self.refusals = [], []
 
@@ -651,7 +651,7 @@ class PriorAssistantEgressDecision(_RouteFixture):
     def test_cli_prior_note_listing_closes_public_search(self):
         """Denied control (CLI): a private note listing in history never reaches search.
 
-        Since #605 the owner's own words still do: AgentOS composes the
+        Since #605 the owner's own words still do: Still composes the
         lookup from text permitted for it, so the ordinary query goes out and
         the note does not.
         """
@@ -729,7 +729,7 @@ class PriorAssistantEgressDecision(_RouteFixture):
 class ReferentContext(unittest.TestCase):
     """#997 (REFERENT-01): a worker is told what the owner saw and what the request carries.
 
-    Both are facts AgentOS already holds (the delivered text and channel, the
+    Both are facts Still already holds (the delivered text and channel, the
     Work's attachment data); neither reads the owner's wording.
     """
 
@@ -797,7 +797,7 @@ class ReferentContext(unittest.TestCase):
         rows = qualify_transcript([{'role': 'assistant', 'content': 'x https://a.example/one', 'channel': 'telegram:1',
                                     'work_outcome': 'partial', 'work_delivery': 'sent'}])
         content = context_message(rows[0])['content']
-        self.assertTrue(content.startswith('[AgentOS record:'))
+        self.assertTrue(content.startswith('[Still record:'))
         self.assertIn('[The owner saw this message on Telegram', content.split('\n')[1])
 
     def test_the_store_history_carries_the_delivery_state(self):

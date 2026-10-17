@@ -1,4 +1,4 @@
-"""`agentos uninstall`: remove AgentOS from this computer in one place (#1545).
+"""`agentos uninstall`: remove Still from this computer in one place (#1545).
 
 The steps are the existing ones, run in order: each background service through
 ``ServiceController.uninstall``, the data folders and their Keychain keys only
@@ -40,7 +40,7 @@ def data_folders(home, env):
 
 
 def running(folder):
-    """Whether an AgentOS process holds this data folder (its instance lock)."""
+    """Whether an Still process holds this data folder (its instance lock)."""
     lock = Path(folder) / 'private' / 'instance.lock'
     if not lock.is_file():
         return False
@@ -130,10 +130,10 @@ def run(term, *, home, env, platform, prefix, assume_yes=False, delete_data=Fals
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(prog='agentos uninstall', description='Remove AgentOS from this computer.')
+    parser = argparse.ArgumentParser(prog='agentos uninstall', description='Remove Still from this computer.')
     parser.add_argument('--yes', action='store_true', help='Do not ask; keep the data unless --delete-data is given.')
     parser.add_argument('--delete-data', action='store_true',
-                        help='With --yes, also delete every AgentOS data folder and its Keychain keys. Irreversible.')
+                        help='With --yes, also delete every Still data folder and its Keychain keys. Irreversible.')
     args = parser.parse_args(argv)
     if args.delete_data and not args.yes:
         parser.error('--delete-data needs --yes; without them the command asks in the terminal.')

@@ -1,4 +1,4 @@
-"""One declaration of a format the AI writes and AgentOS validates (HARDEN-GENERIC-01 #1445 part 3).
+"""One declaration of a format the AI writes and Still validates (HARDEN-GENERIC-01 #1445 part 3).
 
 The JSON Schema the AI reads (``settings_read``'s ``format``) and the validator that accepts or
 refuses its draft are the same pydantic model, so a rule cannot live in the validator and be
@@ -70,7 +70,7 @@ class SecretField(BaseModel):
                        description='what the owner enters, shown on the input page; defaults to the name')
     use: Literal[api_requests.FIELD_USES] = Field(
         default='header_or_body',
-        description="header_or_body: masked; AgentOS substitutes it only in headers and bodies sent to the set's hosts. "
+        description="header_or_body: masked; Still substitutes it only in headers and bodies sent to the set's hosts. "
                     'in_code: the real value inside the sandbox, for URL queries or signing; the run may then reach '
                     'only these hosts')
 

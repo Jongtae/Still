@@ -1,7 +1,7 @@
-"""CONNECT-DECIDE-01 (#1296): the owner's own MCP servers in a Work, every call decided by AgentOS.
+"""CONNECT-DECIDE-01 (#1296): the owner's own MCP servers in a Work, every call decided by Still.
 
 Connection and Delegation Contract §3/§4: an AI-side hand is used only where
-AgentOS decides each call.  This module is the thin glue around the CLIs'
+Still decides each call.  This module is the thin glue around the CLIs'
 own facilities; it holds no authority itself.
 
 * **Which servers.** Only servers the owner confirmed for an engine
@@ -9,7 +9,7 @@ own facilities; it holds no authority itself.
   their CLI is never started by a Work (contract §10: a local server runs
   code on the owner's Mac).
 * **No copy.** A definition is read from the owner's CLI configuration at
-  launch time and never stored by AgentOS.  For Codex, values that may be
+  launch time and never stored by Still.  For Codex, values that may be
   secret (server env and HTTP header values) travel only in the CLI process
   environment, named by ``env_vars`` / ``env_http_headers`` and withheld from
   the model's shell; never in arguments, logs or Evidence.
@@ -37,9 +37,9 @@ from pathlib import Path
 CONFIRMED_KEY = 'ai_mcp_servers'
 ENGINES = ('claude-code', 'codex')
 NAME = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
-#: AgentOS's own bridge; never an owner server.
+#: Still's own bridge; never an owner server.
 RESERVED = frozenset({'agentos'})
-#: Environment names AgentOS sets for the CLI itself; an owner server may not replace them.
+#: Environment names Still sets for the CLI itself; an owner server may not replace them.
 RESERVED_ENV = frozenset({'HOME', 'PATH', 'LANG', 'PYTHONPATH', 'USER', 'LOGNAME', 'CODEX_HOME',
                           'CLAUDE_CODE_OAUTH_TOKEN', 'TMPDIR'})
 #: Review P1 on #1296: a server whose name starts like a claude.ai connector would yield the
@@ -116,7 +116,7 @@ def tool_server(tool_name):
 
     ``kind`` is ``ai-connection`` for a claude.ai connector (service name as
     the owner sees it) or ``owner-mcp`` for a server the owner configured.
-    AgentOS's own bridge tools and anything that is not an MCP tool name are None.
+    Still's own bridge tools and anything that is not an MCP tool name are None.
     """
     if not isinstance(tool_name, str) or len(tool_name) > 200 or not tool_name.startswith('mcp__'):
         return None
@@ -214,7 +214,7 @@ def codex_launch(definitions):
             token = transport.get('bearer_token_env_var')
             if isinstance(token, str) and ENV_NAME.match(token):
                 server_args += ['-c', f'{prefix}.bearer_token_env_var={_toml(token)}']
-            # Variables the owner's definition names come from AgentOS's own environment when set there.
+            # Variables the owner's definition names come from Still's own environment when set there.
             for variable in [*named.values(), *([token] if isinstance(token, str) and ENV_NAME.match(token) else [])]:
                 if variable in os.environ:
                     server_env[variable] = os.environ[variable]
@@ -239,7 +239,7 @@ def codex_launch(definitions):
 
 
 def codex_hook_arguments(relay):
-    """The session-flag ``PreToolUse`` hook that sends every MCP tool call to AgentOS, plus the trust flag it needs."""
+    """The session-flag ``PreToolUse`` hook that sends every MCP tool call to Still, plus the trust flag it needs."""
     command = shlex.join((sys.executable, '-m', 'personal_agent.codex_permission_hook', '--relay', str(relay)))
     hook = f'hooks.PreToolUse=[{{matcher={_toml("^mcp__")},hooks=[{{type="command",command={_toml(command)}}}]}}]'
     return [CODEX_HOOK_TRUST_FLAG, '-c', hook]

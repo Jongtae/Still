@@ -1,7 +1,7 @@
 """Browser action capability inside an owner-logged-in profile (SEC-BROWSER-01 #656, SEC-BROWSER-02 #680).
 
 The owner logs in once, by hand, in a window of the embedded macOS system
-WebKit engine that AgentOS opens (no browser install, #680).  The model then
+WebKit engine that Still opens (no browser install, #680).  The model then
 opens, reads, finds, clicks and types on pages in that profile through five
 generic tools.  Two boundaries are enforced here, deterministically and
 independently of anything the model says (pilot posture, #653):
@@ -42,7 +42,7 @@ fallback engine.
 Reuse: Apple's WebKit through PyObjC (MIT) for the commodity browser
 mechanics; ``cryptography`` Fernet (as ``EncryptedCalendarSecretStore``) and
 the macOS Keychain for the jar; ``ToolError``, the Work budget, the lookup
-redactor and the exact-approval binding are the existing AgentOS symbols.  No
+redactor and the exact-approval binding are the existing Still symbols.  No
 site, provider or category is named anywhere in this module.
 """
 from .messages import msg
@@ -100,7 +100,7 @@ REDACTED = '[가림]'
 
 CANCELLED_NOTE = '승인 없이 시도된 결제 양식 제출을 멈췄습니다'
 APPROVAL_TEXT = '결제 단계는 승인이 필요합니다. 소유자가 이 단계를 승인하면 이 요청을 한 번만 이어서 처리합니다.'
-LOGIN_REQUIRED_TEXT = '이 페이지는 로그인이 필요합니다. 설정의 브라우저 로그인 세션에서 "로그인 창 열기"로 먼저 로그인해 주세요. AgentOS는 비밀번호를 입력하지 않습니다.'
+LOGIN_REQUIRED_TEXT = '이 페이지는 로그인이 필요합니다. 설정의 브라우저 로그인 세션에서 "로그인 창 열기"로 먼저 로그인해 주세요. Still은 비밀번호를 입력하지 않습니다.'
 STEP_BUDGET_TEXT = f'이 작업의 브라우저 단계 한도({STEPS_PER_WORK}회)에 도달해 더 실행하지 않았습니다.'
 TIMEOUT_TEXT = '브라우저 동작이 시간 안에 끝나지 않았습니다.'
 DESTINATION_CHECK_TIMEOUT_TEXT = msg('browser.destination_check_timeout')
@@ -123,7 +123,7 @@ BLOCKED_TEXT = ('이 컴퓨터나 내부 네트워크(루프백·사설·링크 
 UNAVAILABLE_TEXT = '이 작업 경로에는 브라우저 기능이 연결되어 있지 않습니다.'
 SUBMIT_REFUSED_TEXT = ('결제 양식일 수 있는 제출을 확인할 수 없어 멈췄습니다. 페이지를 다시 읽고 결제 버튼을 직접 눌러 '
                        '승인을 요청하세요.')
-LOGIN_WINDOW_TEXT = ('로그인 창에서 직접 로그인한 뒤 창을 닫아 주세요. AgentOS는 입력 내용을 보지 않으며, 창을 닫으면 '
+LOGIN_WINDOW_TEXT = ('로그인 창에서 직접 로그인한 뒤 창을 닫아 주세요. Still은 입력 내용을 보지 않으며, 창을 닫으면 '
                      '로그인 세션을 암호화해 저장합니다.')
 LIMITATION_TEXT = ('카드번호·CVC·일회용 코드 입력, 그 양식의 버튼, 한국어·영어·일본어·중국어의 흔한 결제·구매·주문 '
                    '표현이 이름이나 글자에 있는 버튼과 링크는 승인 없이 실행하지 않습니다. 저장된 결제수단으로 결제하는 '
@@ -226,7 +226,7 @@ def step_posted(message):
 
 
 def observe_step(page, answer, approved):
-    """Add what AgentOS observed of one click or typing step to its result (#899).
+    """Add what Still observed of one click or typing step to its result (#899).
 
     ``observed_step`` exists only when the driver reported ``posted``: whether
     the page started a non-GET form submission during the step, and whether the
@@ -996,7 +996,7 @@ class BrowserSession:
     def _guard(self, binding, description, required):
         """Refuse a guarded step unless an exact owner approval is consumed now.
 
-        ``required`` is AgentOS's own classification of the target, or the
+        ``required`` is Still's own classification of the target, or the
         model's ``payment`` label (which can only ADD the requirement).  The
         binding covers the step's arguments and the current page state too, so
         different text or a changed form asks again.  Returns True when an
@@ -1135,7 +1135,7 @@ class BrowserSession:
         if parts.scheme not in ('http', 'https') or not parts.netloc:
             raise ValueError('http 또는 https 주소만 열 수 있습니다.')
         # #680 review P1-2: never this computer or its private network (the
-        # AgentOS UI included).  Name and literal here; the worker checks every
+        # Still UI included).  Name and literal here; the worker checks every
         # navigation again after DNS resolution (redirects, forms, new windows).
         if local_destination(url, self._allowed_origins):
             raise ToolError(BLOCKED_TEXT, 'blocked_destination')
@@ -1324,7 +1324,7 @@ UNAVAILABLE_CODE = 'browser_unavailable_platform'
 PLATFORM_TEXT = ('브라우저 기능은 시범 기간 동안 macOS에서만 제공됩니다. 이 컴퓨터에서는 브라우저가 필요한 단계를 '
                  '실행하지 않습니다.')
 DEPENDENCY_TEXT = ('macOS 시스템 WebKit 연결 구성요소(pyobjc-framework-WebKit)가 없어 브라우저 기능을 사용할 수 '
-                   '없습니다. AgentOS를 다시 설치한 뒤 다시 시작하세요.')
+                   '없습니다. Still을 다시 설치한 뒤 다시 시작하세요.')
 GOOGLE_NOTE = 'Google 로그인은 내장 브라우저에서 지원되지 않습니다.'
 TARGET_TEXT = ('대상 요소가 바뀌었거나 다른 요소에 가려져 있어 실행하지 않았습니다. browser_read로 페이지를 다시 '
                '확인하세요.')
@@ -1432,7 +1432,7 @@ def registrable_domain(host):
 
 
 #: Environment names a worker inherits: nothing else (no provider keys, tokens
-#: or AgentOS settings).  ``PYTHONPATH`` lets a source checkout find the package.
+#: or Still settings).  ``PYTHONPATH`` lets a source checkout find the package.
 WORKER_ENVIRONMENT = ('PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'PYTHONPATH')
 
 
@@ -1462,7 +1462,7 @@ LOGIN_WINDOWS_KEPT = 16
 #: #709: the longest a ``browser_open``/``browser_read`` waits for a
 #: client-rendered page's content to settle (``browser_worker.op_settle``).
 RENDER_SETTLE_SECONDS = 6.0
-#: #990: a site the owner signed in to through AgentOS is kept signed in by loading one of its
+#: #990: a site the owner signed in to through Still is kept signed in by loading one of its
 #: pages in the hidden worker (saving cookies alone extends nothing): at least this often ...
 KEEPALIVE_SECONDS = 3 * 3600
 #: ... and this long before the earliest stored cookie of the site expires,
@@ -1608,7 +1608,7 @@ def unavailable_text(reason):
 
 
 class WorkerError(RuntimeError):
-    """A worker op failed; ``code`` is the worker's AgentOS code, never library or page text."""
+    """A worker op failed; ``code`` is the worker's Still code, never library or page text."""
 
     def __init__(self, code):
         super().__init__(code)
@@ -2368,7 +2368,7 @@ class BrowserProfile:
     def open_for_login(self, url, wait=False, seconds=None, on_closed=None, on_opened=None):
         """Show the worker window at ``url`` for the owner to log in by hand.
 
-        AgentOS navigates to ``url`` and does nothing else: no typing, no
+        Still navigates to ``url`` and does nothing else: no typing, no
         reading.  The window's title shows the host it is on.  Cookies are
         exported into the encrypted jar once its landing settled and when the owner
         closes it (or after ``seconds``, by default ``LOGIN_WINDOW_SECONDS``,
@@ -2436,7 +2436,7 @@ class BrowserProfile:
                 # in the jar before the owner can act, so a later change there is the owner's doing.
                 record['landed_saved'] = bool(self._save(driver))
                 # #765: whether the owner navigated the window after its landing is login evidence
-                # alongside the cookies (a count only; AgentOS never reads or types into the page).
+                # alongside the cookies (a count only; Still never reads or types into the page).
                 record['navigations'] = _navigations(driver)
                 opened.set()
                 if on_opened is not None:

@@ -48,11 +48,11 @@ ANSWER_NOTE_CHARS = 400
 #: Opens the portion that did not complete in a bubble without an answer.
 TERMINAL_UNFINISHED_LABEL = msg('projection.what_i_couldn_t_finish')
 #: Opens the portion of a partial Work that its own typed Evidence supports
-#: (#598 H1).  What follows is AgentOS's rendering of observed tool results,
+#: (#598 H1).  What follows is Still's rendering of observed tool results,
 #: never the model's prose.
 TERMINAL_VERIFIED_LABEL = msg('projection.what_i_confirmed')
 #: Upper bound for the verified portion inside one bubble; the full record
-#: stays in the AgentOS web Task detail.
+#: stays in the Still web Task detail.
 TERMINAL_VERIFIED_CHARS = 1600
 TERMINAL_VERIFIED_MORE = msg('projection.see_the_rest_in_the_agentos')
 
@@ -307,7 +307,7 @@ def tried_statement(steps):
 
 
 def verified_portion(parts):
-    """Join AgentOS-rendered verified parts into one bounded block, or ``None``."""
+    """Join Still-rendered verified parts into one bounded block, or ``None``."""
     text = '\n\n'.join(part.strip() for part in parts or () if isinstance(part, str) and part.strip())
     if not text:
         return None
@@ -344,7 +344,7 @@ def terminal_text(response, error=None, outcome=None, next_action=None, verified
       appears; the steps stay in 상세.  ``error`` is not read here.
     * ``failed`` without an answer - the failure, its cause and the next step.
     * ``partial`` / ``interrupted`` without an answer - the portion the Work's
-      own typed Evidence supports (``verified``, rendered by AgentOS from
+      own typed Evidence supports (``verified``, rendered by Still from
       observed tool results), then the portion that did not complete, and
       the pointer to the record (#598 H1).
     * ``unknown`` - a consequential external effect was attempted and its
@@ -395,7 +395,7 @@ def terminal_text(response, error=None, outcome=None, next_action=None, verified
         text = response or (TERMINAL_FAILED_HEADER + ' ' + (cause or action))
     if len(text) > TELEGRAM_RESULT_PREVIEW_CHARS:
         # #709: a link the preview bound would split stays whole (Telegram's 4096-character limit holds).
-        return clip_keeping_links(text, TELEGRAM_RESULT_PREVIEW_CHARS, keep=TELEGRAM_LINK_KEEP_CHARS) + '\n\n전체 결과는 AgentOS 웹에서 확인하세요.'
+        return clip_keeping_links(text, TELEGRAM_RESULT_PREVIEW_CHARS, keep=TELEGRAM_LINK_KEEP_CHARS) + '\n\n전체 결과는 Still 웹에서 확인하세요.'
     return text
 
 
@@ -404,7 +404,7 @@ class ConversationProjection:
 
     The store keeps only ``{owner: {'kind', 'at'}}``: which blocker this owner
     was last told about, never the utterance.  ``settings_url`` returns the
-    local AgentOS address when the installation can name one, else ''.
+    local Still address when the installation can name one, else ''.
     """
 
     KEY = 'conversation_blocker'
@@ -439,7 +439,7 @@ class ConversationProjection:
     def _where_to_connect(self):
         url = self.settings_url()
         if url:
-            return f'AI 연결은 이 컴퓨터의 AgentOS 설정에서 할 수 있습니다: {url}'
+            return f'AI 연결은 이 컴퓨터의 Still 설정에서 할 수 있습니다: {url}'
         return (msg('projection.you_can_connect_an_ai_in'))
 
     def _no_ai_route(self, repeat):
@@ -477,7 +477,7 @@ TRANSCRIPT_NOTICE = msg('projection.this_is_not_a_verified_result')
 #: What a later model turn reads in front of an unverified earlier reply.  It
 #: names only the typed outcome, so no cause text or tool payload is added to
 #: what the route already receives.
-CONTEXT_QUALIFIER = ('[AgentOS record: the Work behind this earlier assistant reply ended "{outcome}". '
+CONTEXT_QUALIFIER = ('[Still record: the Work behind this earlier assistant reply ended "{outcome}". '
                      'Any result, action or completion it states is unverified and is not an observed fact.]')
 #: #997 (REFERENT-01): what the owner was shown beyond an earlier reply's text.
 #: A reply delivered to Telegram renders a link preview card for the first URL
@@ -504,7 +504,7 @@ def previewed_link(text):
 def shown_note(row):
     """What the owner saw beyond this stored reply's text, or None.
 
-    Derived only from delivery facts AgentOS already holds: the row's channel,
+    Derived only from delivery facts Still already holds: the row's channel,
     its Work's delivery state and the delivered text itself.  Never from the
     wording of a later owner message.
     """

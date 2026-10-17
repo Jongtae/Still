@@ -825,7 +825,7 @@ class _ScriptedModel:
 
 
 _BRIDGE_STUB = '''
-# Test-only (#616): stub the public network of the real AgentOS bridge process.
+# Test-only (#616): stub the public network of the real Still bridge process.
 import sys
 sys.path.insert(0, {src!r})
 try:
@@ -878,7 +878,7 @@ PUBLIC_QUERY = 'public query'
 BRIDGED_EVENTS = [('web_search', 'succeeded'), ('weather', 'succeeded'), ('list_notes', 'succeeded')]
 
 
-#: Tools Codex may still offer under strict: the AgentOS bridge namespace,
+#: Tools Codex may still offer under strict: the Still bridge namespace,
 #: the MCP resource helpers (the bridge serves no resources) and the
 #: non-interactive user-input request.  No shell, file, image or web tool.
 STRICT_CODEX_TOOLS = {'mcp__agentos', 'list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource',
@@ -888,7 +888,7 @@ STRICT_CODEX_TOOLS = {'mcp__agentos', 'list_mcp_resources', 'list_mcp_resource_t
 @unittest.skipUnless(os.environ.get('AGENTOS_CLI_QUALIFICATION') == '1',
                      'opt-in process-level CLI qualification (set AGENTOS_CLI_QUALIFICATION=1)')
 class ProcessLevelQualification(unittest.TestCase):
-    """AX-S19 under the exact argv AgentOS uses; no live model or account."""
+    """AX-S19 under the exact argv Still uses; no live model or account."""
 
     def setUp(self):
         # Fake owner layout under the real home, like a default install
@@ -927,7 +927,7 @@ class ProcessLevelQualification(unittest.TestCase):
             if argv_edit:
                 argv = argv_edit(argv)
             if engine == 'codex':
-                # Only the fake model endpoint is added; the AgentOS argv is otherwise untouched.
+                # Only the fake model endpoint is added; the Still argv is otherwise untouched.
                 at = argv.index('exec') + 1
                 argv[at:at] = ['-c', 'model_provider="fake"', '-c', 'model="fake-model"', '-c',
                                f'model_providers.fake={{name="fake", base_url="http://127.0.0.1:{model.port}/v1", '
@@ -956,7 +956,7 @@ class ProcessLevelQualification(unittest.TestCase):
         facade = StrictIsolatedAgentOSMcpTools(caps, qualification=qualification) if profile == STRICT_PROFILE \
             else AgentOSMcpTools(caps)
         try:
-            adapter.execute(engine, 'AgentOS isolation qualification probe', facade)
+            adapter.execute(engine, 'Still isolation qualification probe', facade)
         finally:
             model.close()
         with self.store.db() as db:
@@ -1047,10 +1047,10 @@ class ProcessLevelQualification(unittest.TestCase):
         self.assertIn('--sandbox', self.argv)
         self.assertIn('fake-store-canary-616', results[0])
         self.assertIn('fake-home-canary-616', results[1])
-        self.assertIn('outside AgentOS provenance', CLI_PROFILES[BOUNDED_PROFILE]['limitation'])
+        self.assertIn('outside Still provenance', CLI_PROFILES[BOUNDED_PROFILE]['limitation'])
 
     def test_codex_trusted_local_keeps_codex_home_skills_out(self):
-        """#961: a skill in CODEX_HOME never reaches a trusted-local Work turn; AgentOS serves the
+        """#961: a skill in CODEX_HOME never reaches a trusted-local Work turn; Still serves the
         Work's pinned skills itself.  Counterexample: without the override the canary skill does."""
         from personal_agent.bounded_execution import CODEX_NO_HOST_SKILLS
         binary = self._codex(tested=False)
@@ -1171,7 +1171,7 @@ class ProcessLevelQualification(unittest.TestCase):
                 {'message': 'qualification finished'}]
 
     def test_claude_trusted_local_allows_exactly_its_bridge_tools(self):
-        """#623: every declared bridge call reaches AgentOS; built-in tools are
+        """#623: every declared bridge call reaches Still; built-in tools are
         not widened (observed on 2.1.280 under -p, no model, fake store)."""
         binary = self._claude()
         model = _ScriptedModel('anthropic', self._claude_trusted_script())
@@ -1187,7 +1187,7 @@ class ProcessLevelQualification(unittest.TestCase):
         self.assertIn("haven't granted", fetch, 'WebFetch stays unapproved')
         self.assertIn("haven't granted", write, 'writes stay unapproved')
         self.assertFalse(any(self.root.rglob('written-623.txt')))
-        # Every bridge call ran in AgentOS (its own guards decide the outcome;
+        # Every bridge call ran in Still (its own guards decide the outcome;
         # #605 withholds unjudged request text from public lookups).
         for bridged in (search, weather, notes):
             self.assertNotIn("haven't granted", bridged)
@@ -1201,7 +1201,7 @@ class ProcessLevelQualification(unittest.TestCase):
 
     def test_claude_trusted_local_denies_a_bridge_tool_outside_the_allowlist(self):
         """Opposing case: the rule is exact, not server-wide - a bridge tool
-        missing from --allowedTools is denied before AgentOS sees it."""
+        missing from --allowedTools is denied before Still sees it."""
         binary = self._claude()
         model = _ScriptedModel('anthropic', [{'tool': 'mcp__agentos__weather', 'input': {'city': 'Daejeon'}},
                                              {'tool': 'mcp__agentos__list_notes', 'input': {}},

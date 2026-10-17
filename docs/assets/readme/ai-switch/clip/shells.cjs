@@ -16,7 +16,7 @@ const esc = s => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').repl
       const bridge = 'bridge' in s, stage = bridge ? 1 : s.stage;
       const steps = copy.steps[lang];
       const nav = `<nav class="story-nav">${steps.map((t, i) => `<span class="${i === stage ? 'active' : ''}">${esc(t)}</span>`).join('')}<span class="story-count">0${stage + 1} / 0${steps.length}</span></nav>`;
-      const head = `<header class="masthead"><div class="brand">Personal AgentOS</div><div class="meta">${copy.meta[lang]}</div></header>`;
+      const head = `<header class="masthead"><div class="brand">Still</div><div class="meta">${copy.meta[lang]}</div></header>`;
       const title = bridge ? copy.bridge[lang][0] : copy.titles[lang][stage];
       const body = bridge ? copy.bridge[lang][1] : copy.captions[s.key][lang];
       const media = bridge ? '' : `<div class="media"><div class="media-label"><span>TELEGRAM · CONVERSATION</span><span>${copy.excerpt[lang]}</span></div><div class="viewport"></div></div>`;

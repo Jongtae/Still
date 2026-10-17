@@ -42,7 +42,7 @@ class ConsolidatedPromptTests(unittest.TestCase):
         for text in (POLICY, QUESTION):
             self.assertEqual(text.count('## Priorities'), 1)
             self.assertIn('the earlier one wins', text)
-        # A CLI prompt nests the worker instructions under "# AgentOS instructions".
+        # A CLI prompt nests the worker instructions under "# Still instructions".
         self.assertNotRegex(POLICY, r'(?m)^# ')
 
     def test_the_removed_and_contradicting_rules_are_gone(self):

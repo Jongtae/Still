@@ -1,6 +1,6 @@
 name: feedback-watch
 
-# Files public mentions of Personal AgentOS as `feedback` issues (#1143, #1165).
+# Files public mentions of Still as `feedback` issues (#1143, #1165).
 # Development infrastructure for the open-source project, not a product feature.
 # scripts/feedback_watch.py filters every source by name and files at most 5 issues per run.
 on:

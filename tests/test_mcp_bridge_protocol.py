@@ -172,7 +172,7 @@ def _doctor():
 
 
 class ExposedToolWireBoundary(unittest.TestCase):
-    """The tool list a CLI actually receives, from the command AgentOS writes for it.
+    """The tool list a CLI actually receives, from the command Still writes for it.
 
     Unit tests of ``AgentOSMcpTools.definitions`` pass, and ``mcp_types.Tool``
     accepts a Python-style ``input_schema`` because it populates by field name.
@@ -200,7 +200,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
 
         def runner(argv, **kwargs):
             # The scripted CLI: it speaks to the exact configured bridge while
-            # AgentOS holds this Work in `running`, as a real CLI would.
+            # Still holds this Work in `running`, as a real CLI would.
             config = json.loads((Path(kwargs["cwd"]) / "agentos-mcp.json").read_text())
             self.server = config["mcpServers"]["agentos"]
             self.env = adapter.environment("codex", "/runtime/codex", Path(kwargs["cwd"]))
@@ -579,7 +579,7 @@ class BoundedProfileHostInvocation(unittest.TestCase):
 
 
 class BridgeErrorMapping(unittest.TestCase):
-    """What the CLI receives when a bridged AgentOS call does not succeed."""
+    """What the CLI receives when a bridged Still call does not succeed."""
 
     def _serve(self, requests, provenance=(), network=None, before=None):
         import contextlib

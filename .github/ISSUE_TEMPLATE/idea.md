@@ -12,7 +12,7 @@ labels: enhancement
 
 ## Existing tools or standards that already do this
 
-<!-- Optional. AgentOS reuses before it builds (see CONTRIBUTING.md). Links help. -->
+<!-- Optional. Still reuses before it builds (see CONTRIBUTING.md). Links help. -->
 
 ## Would you like to help? (optional)
 

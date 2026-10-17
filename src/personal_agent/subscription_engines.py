@@ -1,7 +1,7 @@
 """Subscription-engine discovery and connection records.
 
 This module deliberately does not start an engine or inspect credential files.
-Codex and Claude Code retain their official login sessions; AgentOS only
+Codex and Claude Code retain their official login sessions; Still only
 records an owner's choice for a later bounded adapter.
 """
 import os

@@ -21,7 +21,7 @@ REQUIRED_FIELDS = (
     "licence fit",
     "runtime/deployment/compatibility fit",
     "why rejected candidates are insufficient",
-    "AgentOS-owned policy/authority boundary kept outside the dependency",
+    "Still-owned policy/authority boundary kept outside the dependency",
 )
 PLACEHOLDERS = {"", "-", "todo", "tbd", "fill me", "placeholder"}
 

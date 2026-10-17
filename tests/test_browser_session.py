@@ -1888,7 +1888,7 @@ class FormlessLoginDetection(unittest.TestCase):
 
 
 class ObservedStepTests(unittest.TestCase):
-    """#899: a click or typing step reports what AgentOS observed of it, when the driver reported it."""
+    """#899: a click or typing step reports what Still observed of it, when the driver reported it."""
 
     def test_the_driver_report_becomes_observed_step(self):
         for posted in (False, True):

@@ -19,7 +19,7 @@ evidence. It is outside the product runtime and does not grant tools or authorit
 
 The owner outcome is an attributable, repeatable review of instruction changes
 that might otherwise silently alter coding decisions. The worker AI interprets
-the guidance; Still does not script a design task or introduce a role router.
+the guidance; AgentOS does not script a design task or introduce a role router.
 Disposable loading tests observe byte delivery and existing authority controls.
 They do not demonstrate that an AI made better design decisions.
 
@@ -87,7 +87,7 @@ changed body is behavior-relevant even though both versions parse successfully.
 
 | Changed guidance or assumption | Decision for this consumer | Expected observation / rejected interpretation |
 | --- | --- | --- |
-| Old text told the worker to choose and state a missing subject; new text asks it to confirm an unspecified subject with the client and gives contrasting audience examples. | Accept confirmation only when a material subject is actually missing. Still's product, owner and management purpose are already canonical. | An assistant uses the known brief for a Settings fix; asking the owner to choose the product subject again is rejected. Examples illustrate audience dependence, not new user categories or product routing. |
+| Old text told the worker to choose and state a missing subject; new text asks it to confirm an unspecified subject with the client and gives contrasting audience examples. | Accept confirmation only when a material subject is actually missing. AgentOS's product, owner and management purpose are already canonical. | An assistant uses the known brief for a Settings fix; asking the owner to choose the product subject again is rejected. Examples illustrate audience dependence, not new user categories or product routing. |
 | A prescribed display/body pairing and 2+ type roles become one or two families with explicit roles. | Accept the relaxed family count and intentional hierarchy under current UI constraints. | One existing family can serve headings and body. Fetching fonts, adding branding or changing authority to satisfy the prose is rejected. |
 | New typography-book reference, sub-80-character default, serif spacing caveat and checks for accented words, all-caps and unnecessary labels. | Accept contextual readability and restraint guidance; keep language, accessibility and existing layout requirements controlling. | Review relevant text width and hierarchy. An automatic 80-character validator, forced removal of useful emphasis, or a new typography dependency is rejected. |
 | Hero framing is reworded; structural numbering is clarified; the broad complexity-to-vision instruction is removed. | Retain useful semantic structure. Hero and marketing directions remain inapplicable to the management utility. | Numbered content represents a sequence. A hero, dashboard decoration or elaborate styling unsupported by the selected task is rejected. |
@@ -130,7 +130,7 @@ The source frontmatter points to its packaged `LICENSE.txt`, which contains the
 Apache License 2.0 terms. The two-file selected directory was inspected at all
 four immutable revisions. Both local versions preserve its complete identical
 licence bytes and every original source byte. Attribution is to the externally
-authored `anthropics/skills` dependency; this is not an Still-authored skill.
+authored `anthropics/skills` dependency; this is not an AgentOS-authored skill.
 The upstream selected folder contains no separate NOTICE file. The repository's
 [historical third-party register](https://github.com/anthropics/skills/blob/2235be7c60b551f5de82ade908fd3816455afcda/THIRD_PARTY_NOTICES.md)
 and accepted revision's register were inspected: their notices concern imageio,
@@ -141,7 +141,7 @@ Redistribution follows [Apache-2.0 section 4](https://www.apache.org/licenses/LI
 include the licence and retain applicable notices; changed source files must
 identify modifications and any applicable upstream NOTICE must accompany them.
 Here the copied files are unmodified. The local interpretation record explicitly
-identifies Still's separate adaptation. Apache-2.0 source is retained under its
+identifies AgentOS's separate adaptation. Apache-2.0 source is retained under its
 own terms alongside the repository's AGPL-3.0-only contributions; the copy does
 not relicense upstream content or grant trademark permission. Public access and
 the loader's licence recognizer alone are not redistribution review.
@@ -185,7 +185,7 @@ clone after preserving the review evidence; historical source fixtures stay.
 ## Rejection, rollback and history
 
 A semantic incompatibility is a contributor review disposition recorded with
-immutable target and reason. It is not decided by keyword checks in Still.
+immutable target and reason. It is not decided by keyword checks in AgentOS.
 For example, an interpretation that demands a management-page hero is rejected
 against the existing UI contract while the active reviewed pin stays usable.
 No pending or rejected source can overwrite that pin merely because it parses.

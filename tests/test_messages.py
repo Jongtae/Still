@@ -1,4 +1,4 @@
-"""#1356: AgentOS's own owner-facing words come from one id-keyed catalog."""
+"""#1356: Still's own owner-facing words come from one id-keyed catalog."""
 import json
 import re
 import unittest

@@ -5,7 +5,7 @@ that passes this suite - not the smallest name or cheapest price.  The suite
 exercises the same typed ``DecisionEngine`` contract production uses: the
 conversation cases go through ``ConversationJudgments`` (the production
 caller) and the remaining cases through ``DecisionEngine.choose`` with
-AgentOS ``DecisionPolicy``.  Since ``decision-qualification/2`` one case
+Still ``DecisionPolicy``.  Since ``decision-qualification/2`` one case
 exercises the ``choose_many`` envelope (#605): a route that cannot answer a
 multi-selection (Jev) does not qualify for that role.  It does not benchmark coding or general
 knowledge, and passing it is fixture/probe evidence for this role only.
@@ -14,7 +14,7 @@ Every case context is synthetic: no owner conversation, Memory, file or
 connector content is ever part of qualification.
 
 A case passes only when the engine *decided* (a provider/CLI failure is a
-failure, never a pass) and AgentOS policy reduced the answer to an expected
+failure, never a pass) and Still policy reduced the answer to an expected
 value.  Abstention cases pass on a confident ``none-of-these`` or on a
 decided answer that policy reduces to unknown - never on a guessed target.
 """

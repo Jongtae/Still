@@ -82,7 +82,7 @@ class ScenarioLoaderTest(unittest.TestCase):
 
 
 class FakeServer:
-    """In-memory stand-in for the AgentOS HTTP routes the client uses."""
+    """In-memory stand-in for the Still HTTP routes the client uses."""
 
     def __init__(self, claimed=True, statuses=('running', 'succeeded'), judgment=None, owner_model=None):
         self.claimed = claimed

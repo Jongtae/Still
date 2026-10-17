@@ -18,7 +18,7 @@ VALID_ADAPT = """- problem/boundary: OAuth URL construction
 - runtime/deployment/compatibility fit: pure Python and supported on the current runtime
 - decision: `Adapt`
 - why rejected candidates are insufficient: internal helper lacks PKCE protocol construction
-- AgentOS-owned policy/authority boundary kept outside the dependency: scope and secret policy remain in AgentOS
+- Still-owned policy/authority boundary kept outside the dependency: scope and secret policy remain in Still
 - N/A reason:
 """
 

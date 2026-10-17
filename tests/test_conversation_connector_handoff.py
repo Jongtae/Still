@@ -120,7 +120,7 @@ class HandoffTestCase(unittest.TestCase):
         The fixture judges exactly ``withdrawing`` as withdrawals (with full
         confidence) and every other turn as not; it records every question
         so a test can also prove when nothing was asked.  It stands in for a
-        provider; the cancel, card and notice that follow are AgentOS policy
+        provider; the cancel, card and notice that follow are Still policy
         under test, and that policy code is not touched by the swap.
         """
         asked = []

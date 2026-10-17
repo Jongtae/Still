@@ -1,1 +1,1 @@
-Each item is an answer AgentOS prepared earlier because the owner accepted a preparation. If the owner's request matches one and it is still fresh enough for the question, reuse it and say when it was prepared; otherwise answer or refresh with tools as usual.
+Each item is an answer Still prepared earlier because the owner accepted a preparation. If the owner's request matches one and it is still fresh enough for the question, reuse it and say when it was prepared; otherwise answer or refresh with tools as usual.

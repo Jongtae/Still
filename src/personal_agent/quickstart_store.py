@@ -156,7 +156,7 @@ class QuickStore:
             if 'source_message_key' not in columns: db.execute('ALTER TABLE jobs ADD COLUMN source_message_key TEXT')
             db.execute('CREATE INDEX IF NOT EXISTS jobs_source_message_key ON jobs(source_message_key)')
             # #814: 1 only for a Work whose message the owner typed (web chat, Telegram text);
-            # NULL for everything AgentOS enqueues (preparations, continuations, retries, checks).
+            # NULL for everything Still enqueues (preparations, continuations, retries, checks).
             if 'owner_typed' not in columns: db.execute('ALTER TABLE jobs ADD COLUMN owner_typed INTEGER')
             memory_columns={row['name'] for row in db.execute('PRAGMA table_info(memories)')}
             for name,kind in (('owner_key','TEXT'),('work_key','TEXT'),('content_digest','TEXT'),('candidate_id','TEXT')):

@@ -22,7 +22,7 @@ from telegram_task_card_acceptance import report
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', type=Path, default=Path.home()/'.local/share/agentos',
-                        help='AgentOS data directory; it is read only (default: ~/.local/share/agentos).')
+                        help='Still data directory; it is read only (default: ~/.local/share/agentos).')
     parser.add_argument('--web-confirmed', action='store_true',
                         help='Owner observed the shared Telegram and web history.')
     parser.add_argument('--restart-confirmed', action='store_true',
@@ -31,7 +31,7 @@ def main(argv=None):
     data_dir=args.data_dir.expanduser().resolve()
     database = data_dir / 'private' / 'quickstart.db'
     if not database.is_file():
-        parser.error('AgentOS quickstart database was not found in --data-dir.')
+        parser.error('Still quickstart database was not found in --data-dir.')
     result = report(QuickStore(data_dir), args.web_confirmed or None, args.restart_confirmed or None)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0 if result['passed'] else 1

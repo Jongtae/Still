@@ -605,7 +605,7 @@ class ModelAuthorityTests(unittest.TestCase):
     def test_a_model_suggestion_still_cannot_select_calendar_create(self):
         from personal_agent.conversation_handoff import INTENT_AMBIGUOUS, IntentClassifier
         # No rule produces a calendar candidate any more (#672), so a
-        # suggestion naming it is not among AgentOS's options to narrow.
+        # suggestion naming it is not among Still's options to narrow.
         decision = IntentClassifier().classify('작업공간에 저장한 파일 열어주고 메모해줘',
                                                model_suggestion={'intent': INTENT_CALENDAR_CREATE})
         self.assertEqual(decision.intent, INTENT_AMBIGUOUS)

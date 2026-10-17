@@ -14,11 +14,11 @@ The owner requested that the discussion about reusable agents, system-management
 
 Documentation and issue preparation are authorized. Installing packages, running account mutations, changing AI routes, executing paid evaluations, deploying software and changing `delivery-plan.yaml` are not authorized by this document. Existing GitHub issues/PRs/checks remain execution-status authority; the existing delivery plan remains active-goal authority. No parallel plan engine or status database is introduced.
 
-Sections marked **Baseline** report inspected code. **Owner direction** preserves the discussion. Other requirements are **proposed implementation contracts**, to be reconciled and activated in bounded issues. External documentation establishes published interfaces, not tested Still compatibility. No live model, external cart or family runtime was exercised for this preparation.
+Sections marked **Baseline** report inspected code. **Owner direction** preserves the discussion. Other requirements are **proposed implementation contracts**, to be reconciled and activated in bounded issues. External documentation establishes published interfaces, not tested AgentOS compatibility. No live model, external cart or family runtime was exercised for this preparation.
 
 ## 2. Owner direction: supply first
 
-The product must not require every user to rediscover how a site works through failed attempts. Someone else may have already developed a useful skill; the service provider may distribute one officially. Still should use that supplied expertise before attempting to invent its own.
+The product must not require every user to rediscover how a site works through failed attempts. Someone else may have already developed a useful skill; the service provider may distribute one officially. AgentOS should use that supplied expertise before attempting to invent its own.
 
 **Supply first, adapt second, learn only the missing parts.**
 
@@ -26,7 +26,7 @@ The desired outcomes are:
 
 - Useful first use: an appropriate supplied skill can work without a user-specific history of failures.
 - Reuse: repeated tasks reuse methods instead of reconstructing the same instructions and delegation briefs.
-- Componentization: shopping knowledge, site knowledge and Still management knowledge have explicit reusable boundaries.
+- Componentization: shopping knowledge, site knowledge and AgentOS management knowledge have explicit reusable boundaries.
 - One assistant: the owner talks to the same personal assistant despite different skills and execution models.
 - Portability: changing a supported Main AI route does not discard supplied know-how or the identity of an unfinished task.
 - Trustworthy results: reusable methods do not replace current observations or current authority.
@@ -44,7 +44,7 @@ All source links below are pinned to the inspected baseline. Recheck them at act
 | [`agent_runtime.py`](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/agent_runtime.py) | Module-level `action_definitions`, `Capabilities` and route-neutral guidance expose tools. `delegate_agent` creates a read-only child without browser/settings handlers, shares the Work budget and returns a report. | Prefer same-agent skill loading. Action-capable specialists require separate wiring and authority design; changing a role manifest alone is insufficient. |
 | [`settings_orchestrator.py`](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/settings_orchestrator.py) | Authoritative services expose settings and family operations, including draft/apply/recovery behavior. | Management skills use existing reads/setters. Reconcile later owner-directed behavior rather than reimplementing control state. |
 | [`browser_session.py`](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/browser_session.py) | macOS WebKit sessions, mediated observations, payment checks, limits and stateful browser actions already exist. | Reuse them; supplied skills cannot install another browser or bypass the session broker. |
-| [`family_share.py`](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/family_share.py) | Per-site cookies are pushed between same-Mac instances; receiving Still enforces payment refusal and revocation can remain pending. | Preserve this boundary. It is not a provider-issued cart-only credential and not evidence of cross-vendor A2A support. |
+| [`family_share.py`](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/src/personal_agent/family_share.py) | Per-site cookies are pushed between same-Mac instances; receiving AgentOS enforces payment refusal and revocation can remain pending. | Preserve this boundary. It is not a provider-issued cart-only credential and not evidence of cross-vendor A2A support. |
 | [`shopping.json`](https://github.com/Jongtae/agentos/blob/4e518550b13e13c3cd06cdf05987948ac8169fca/evals/scenarios/shopping.json) | The two scenarios concern comparison and follow-up constraints, not cart mutation or supplied-skill first use. | Keep them and extend the existing evaluation harness with the missing cases. |
 
 The missing connection is between reusable, distributed methods and the current execution/evidence paths. Core tool availability is not the same as supplied-skill execution support.
@@ -57,11 +57,11 @@ The missing connection is between reusable, distributed methods and the current 
 
 ## 4. Existing Solutions Review: Adopt / Adapt before Build
 
-The sources in section 16 were checked on 2026-10-01. These findings concern documented interfaces, not an Still installation test.
+The sources in section 16 were checked on 2026-10-01. These findings concern documented interfaces, not an AgentOS installation test.
 
 | Need | Public option | Preparation decision |
 | --- | --- | --- |
-| Portable method representation | Agent Skills: `SKILL.md` with optional resources; compatibility metadata; experimental `allowed-tools` [E1] | **Adopt** the supported representation. Treat tool declarations as metadata, not grants. Keep Still execution extensions distinct. |
+| Portable method representation | Agent Skills: `SKILL.md` with optional resources; compatibility metadata; experimental `allowed-tools` [E1] | **Adopt** the supported representation. Treat tool declarations as metadata, not grants. Keep AgentOS execution extensions distinct. |
 | Skill loading and resource supply | Microsoft Agent Framework `SkillsProvider`, public source/provider interfaces [E2] | **Evaluate for Adapt** behind current routes; prove independent use and dependency fit before selection. No whole-framework replacement. |
 | Multi-source supply | Hermes Skills Hub and skills.sh [E6, E7] | **Evaluate for Adapt** discovery/source conventions, pinning and lifecycle mechanics rather than build a catalogue network from scratch. |
 | OpenAI, Claude and Google packages | OpenAI plugin packaging, Claude marketplace catalogues, Gemini CLI extensions [E3–E5] | Inspect legally available source and format. Import only a supported subset; never assume platform installations or account grants are portable. |
@@ -70,7 +70,7 @@ The sources in section 16 were checked on 2026-10-01. These findings concern doc
 
 Public market, provider-authored package, compatible package and behaviorally verified package are separate attributes. No official Emart/SSG skill is established by this review. A directory may contain only hosted agents, proprietary packages or unsupported scripts; catalogue presence proves neither download rights nor compatibility.
 
-[#960](https://github.com/Jongtae/agentos/issues/960) must select exact library/source revisions and licences, inspect release/maintenance activity, dependency footprint, execution behavior and redistribution terms, and run a small model-free compatibility spike. There is no selected dependency version in this preparation. Existing stdlib/path/hash/JSON facilities and repository serializers should be reused for the narrow Still glue; choose an established safe frontmatter/schema parser where suitable. Build requires a documented unmet contract, not preference for fewer dependencies.
+[#960](https://github.com/Jongtae/agentos/issues/960) must select exact library/source revisions and licences, inspect release/maintenance activity, dependency footprint, execution behavior and redistribution terms, and run a small model-free compatibility spike. There is no selected dependency version in this preparation. Existing stdlib/path/hash/JSON facilities and repository serializers should be reused for the narrow AgentOS glue; choose an established safe frontmatter/schema parser where suitable. Build requires a documented unmet contract, not preference for fewer dependencies.
 
 ## 5. Vocabulary and proposed composition
 
@@ -149,13 +149,13 @@ existing AgentPackage
   package-specific acceptance fixtures
 ```
 
-This is not accepted input to today's version-1 manifest validator. Exact field mapping/migration belongs to #960/#961. Agent Skills frontmatter remains standard; Still-specific input/output and evidence requirements are explicit extensions, not advertised as part of that standard.
+This is not accepted input to today's version-1 manifest validator. Exact field mapping/migration belongs to #960/#961. Agent Skills frontmatter remains standard; AgentOS-specific input/output and evidence requirements are explicit extensions, not advertised as part of that standard.
 
 ## 8. Loading, execution and lifecycle contract
 
 ### R5 — one content source across routes
 
-Metadata is advertised within a bounded context budget. Load only the selected skill and necessary references. Use the same Still-owned revision through direct API and supported trusted-local Codex/Claude bridge paths. Do not depend solely on a development `.claude` directory or let a CLI silently discover an unreviewed version elsewhere.
+Metadata is advertised within a bounded context budget. Load only the selected skill and necessary references. Use the same AgentOS-owned revision through direct API and supported trusted-local Codex/Claude bridge paths. Do not depend solely on a development `.claude` directory or let a CLI silently discover an unreviewed version elsewhere.
 
 Reuse module-level `action_definitions`, `Capabilities`, existing context construction and broker serialization. Source-specific tool names need an explicit supported mapping; do not silently reinterpret an incompatible browser or shell tool. Strict-isolated paths retain their existing limits. Unsupported routes explain the actual missing capability.
 
@@ -197,7 +197,7 @@ Read-before/write/read-after can help establish a requested change, but does not
 
 Human login/setup/approval is a continuation state, not permission to create duplicate work. Bind continuation to current owner/assistant/account and request version. Changed intent invalidates stale steps; revoked access invalidates continuation. UI drift falls back to bounded exploration with the same constraints, not blind selector replay.
 
-## 10. Reference slice: Still management
+## 10. Reference slice: AgentOS management
 
 [#962](https://github.com/Jongtae/agentos/issues/962) supplies `agentos-management` through the common contract. It calls existing `settings_read`, `settings_change` and authoritative service setters; it is not another control plane or a privileged System Agent.
 
@@ -211,7 +211,7 @@ Use stable internal IDs after resolving human-readable names; duplicate names re
 
 ## 11. Reference slice: shopping and site knowledge
 
-[#963](https://github.com/Jongtae/agentos/issues/963) separates shared shopping semantics from site navigation knowledge. Inspect available public/provider packages first. If no suitable Emart package exists, publish an explicitly Still-authored reference; record the missing supplier rather than invent an official package.
+[#963](https://github.com/Jongtae/agentos/issues/963) separates shared shopping semantics from site navigation knowledge. Inspect available public/provider packages first. If no suitable Emart package exists, publish an explicitly AgentOS-authored reference; record the missing supplier rather than invent an official package.
 
 Shared shopping knowledge covers product identity, variants, brand/pack/unit constraints, quantity meaning, alternatives allowed by the request, target account and outcome evidence. Site content covers entry points and navigation hints, contextual product controls and how to observe the result. Do not embed browser-engine replacement or per-site Python branches in core.
 
@@ -231,14 +231,14 @@ A second site fixture must use the same common contract without core edits. It s
 
 ## 13. Acceptance and measurement
 
-[#964](https://github.com/Jongtae/agentos/issues/964) adapts the current evaluation harness. Freeze A/B conditions before tuning: A is existing Still; B uses supplied skill knowledge with the same supported model/tools; optional future C adds validated learned/replay behavior. A does not receive hidden warm-up knowledge. Reset fixture state so an already-added item is not counted as another completed mutation.
+[#964](https://github.com/Jongtae/agentos/issues/964) adapts the current evaluation harness. Freeze A/B conditions before tuning: A is existing AgentOS; B uses supplied skill knowledge with the same supported model/tools; optional future C adds validated learned/replay behavior. A does not receive hidden warm-up knowledge. Reset fixture state so an already-added item is not counted as another completed mutation.
 
 The matrix below is a coverage inventory, not a mandatory live-model sweep for every child or content revision. Section 18 assigns preservation checks from #961 onward and limits verification to changed contracts. #964 consolidates reusable evidence and fills concrete gaps; it is not the first regression gate.
 
 | ID | Acceptance case | Evidence required |
 | --- | --- | --- |
 | A01 | Fresh user uses supplied expertise without prior failures | Clean-store fixture; supplied package identity and observed result |
-| A02 | External package is actually imported | Non-Still-authored upstream package through real source/loader boundary |
+| A02 | External package is actually imported | Non-AgentOS-authored upstream package through real source/loader boundary |
 | A03 | Repeat reuses methods, not market lookup every time | Source-call trace, pinned version; changing current facts re-observed |
 | A04 | Supported API/CLI parity | Scripted direct/Codex/Claude route inputs, version and tool-binding equivalence |
 | A05 | Unsupported environment stays explicit | No accidental scripts, hooks, browser or isolation expansion |
@@ -277,7 +277,7 @@ No public marketplace launch; no closed-store scraping or bulk auto-install; no 
 
 Before #961 implementation, #960 must decide the pinned loader/parser and dependency versions; initial external supplier; immutable identity and adaptation mapping; exact public-format subset; resource/context/discovery budgets; package acquisition/enable policy; current #918 behavior; and affected API/CLI/profile coverage. These are specific spike outputs, not reasons to invent a large architecture upfront.
 
-For later rollout, choose a staged default package set and rollback behavior with owner feedback. A preinstalled reviewed skill should not burden every user with the same source review. Supplier/provider identity, Still compatibility, tested behavior and current account authority remain separately inspectable.
+For later rollout, choose a staged default package set and rollback behavior with owner feedback. A preinstalled reviewed skill should not burden every user with the same source review. Supplier/provider identity, AgentOS compatibility, tested behavior and current account authority remain separately inspectable.
 
 ## 16. Evidence and public references
 
@@ -295,7 +295,7 @@ Public primary sources checked 2026-10-01; mutable documentation is a research r
 - **E8:** [MCP Registry overview](https://modelcontextprotocol.io/registry/about).
 - **E9:** [Agent Skills reference library README](https://github.com/agentskills/agentskills/tree/main/skills-ref).
 
-Other markets discussed with the owner (Microsoft/Google enterprise agent stores, AWS, Salesforce, ClawHub and additional framework examples) are discovery candidates, not dependencies selected or compatibility tested by this preparation. A product advertised in a marketplace is not evidence that Still may download its implementation or inherit its accounts.
+Other markets discussed with the owner (Microsoft/Google enterprise agent stores, AWS, Salesforce, ClawHub and additional framework examples) are discovery candidates, not dependencies selected or compatibility tested by this preparation. A product advertised in a marketplace is not evidence that AgentOS may download its implementation or inherit its accounts.
 
 ## 17. Preparation completion rule
 
@@ -311,14 +311,14 @@ This preparation is complete when the English specification and Korean companion
 
 Produce one short ADR (an in-document decision record is sufficient) and one behavioral interface table before loader implementation. Map selected patterns to existing symbols and record what will not change. Do not redesign the whole repository to fit a pattern catalogue.
 
-| Pattern / principle | Proposed use in Still | Avoid |
+| Pattern / principle | Proposed use in AgentOS | Avoid |
 | --- | --- | --- |
 | Ports & Adapters | Separate the skill-supply port from existing action ports; reuse `PluginRegistry`, `runtime_packages`, `action_definitions` and `Capabilities` as seams | A new service/class for every conceptual box or a second execution framework |
 | Adapter / Anti-Corruption Layer | Normalize foreign metadata/resources and explicitly map supported tool semantics at acquisition/binding time | Importing foreign account authority, guessing semantic equivalence or a translator LLM on every call |
 | Design by Contract | Define preconditions, postconditions, invariants, side effects and failure/retry semantics at each boundary | Treating matching JSON shapes or a model's success flag as behavioral compatibility |
 | Branch by Abstraction | Add optional knowledge behind a narrow seam; keep the original executor and a reversible rollout switch | Two complete runtimes, a big-bang replacement or running two mutations in parallel |
 
-Pattern references from the discussion: [Cockburn — Hexagonal Architecture](https://alistair.cockburn.us/hexagonal-architecture), [Microsoft — Anti-Corruption Layer](https://learn.microsoft.com/en-us/azure/architecture/patterns/anti-corruption-layer), [Eiffel — Design by Contract](https://www.eiffel.com/values/design-by-contract/introduction/), [Fowler — Branch by Abstraction](https://martinfowler.com/bliki/BranchByAbstraction.html). Their Still mapping above is a proposal, not implemented framework adoption. Design by Contract is a principle, not a GoF pattern. A skill document is not automatically an executable Strategy; do not introduce site inheritance trees or specialist chains just for naming consistency.
+Pattern references from the discussion: [Cockburn — Hexagonal Architecture](https://alistair.cockburn.us/hexagonal-architecture), [Microsoft — Anti-Corruption Layer](https://learn.microsoft.com/en-us/azure/architecture/patterns/anti-corruption-layer), [Eiffel — Design by Contract](https://www.eiffel.com/values/design-by-contract/introduction/), [Fowler — Branch by Abstraction](https://martinfowler.com/bliki/BranchByAbstraction.html). Their AgentOS mapping above is a proposal, not implemented framework adoption. Design by Contract is a principle, not a GoF pattern. A skill document is not automatically an executable Strategy; do not introduce site inheritance trees or specialist chains just for naming consistency.
 
 ### 18.2 Behavioral interface contract
 

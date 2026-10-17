@@ -4,7 +4,7 @@ Owner decision (2026-09-28, #826): owner-private reads and web search may run
 in the same Work.  In exchange, every Work shows which owner information it
 used and where that information went.
 
-The audit is a *view*, derived only from records AgentOS already keeps for
+The audit is a *view*, derived only from records Still already keeps for
 the Work.  It adds no store:
 
 * ``turn_provenance`` (#570): what each attempt sent, to which worker, route
@@ -12,14 +12,14 @@ the Work.  It adds no store:
   recorded at send time as references: profile keys, current-context refs,
   prepared-answer refs, spliced sources) and how many earlier conversation
   turns were included;
-* ``tool_events``: every tool call AgentOS executed or relayed, and every web
+* ``tool_events``: every tool call Still executed or relayed, and every web
   search the CLI reported (``scope: cli-native``), with the redacted Evidence
   summaries ``agent_runtime.evidence_summary`` wrote;
 * ``work_decisions``: the Judgment AI calls linked to the Work (#794).
 
 Vocabulary follows W3C PROV loosely: ``used`` is the owner information the
 Work's activity used, ``sent_to`` the agents and destinations it went to,
-``results`` what came back (``wasGeneratedBy``).  It is AgentOS's own record,
+``results`` what came back (``wasGeneratedBy``).  It is Still's own record,
 never a model's claim.  Only references and short labels are shown - keys,
 refs, paths, titles, counts, queries - never payloads; a secret redactor is
 applied to every label before it leaves this module.
@@ -30,7 +30,7 @@ import json
 from datetime import datetime, timezone
 
 #: Evidence class of every audit this module returns.
-EVIDENCE_CLASS = 'observed AgentOS records (turn_provenance, tool_events, work_decisions); not model claims'
+EVIDENCE_CLASS = 'observed Still records (turn_provenance, tool_events, work_decisions); not model claims'
 #: Bounds of what one audit shows.
 MAX_ITEMS = 20
 LABEL_CHARS = 120
@@ -45,10 +45,10 @@ READ_CATEGORIES = {
     MEMORY_UNDO_ACTION: 'memory',
     # #1197: a read through the owner's AI-side connection (claude.ai connector) the turn's stream showed completing.
     'connector_read': 'ai_connection',
-    # ATTN-WAIT-01 (#839): an item AgentOS reminded the owner of on the waiting draft.
+    # ATTN-WAIT-01 (#839): an item Still reminded the owner of on the waiting draft.
     'attention_surface': 'attention',
 }
-#: Public destinations AgentOS or the CLI sent a lookup to.
+#: Public destinations Still or the CLI sent a lookup to.
 LOOKUP_ACTIONS = frozenset(name for name, tool in HOST_TOOLS.items() if tool.lookup)
 #: Korean names of the categories, in the order the section shows them.
 CATEGORY_NAMES = {
@@ -245,7 +245,7 @@ def _lookup(action, trace, evidence):
     queries = [_text(query, QUERY_CHARS) for query in evidence.get('search_queries') or () if query]
     sent = evidence.get('sent') if isinstance(evidence.get('sent'), dict) else {}
     arguments = trace.get('arguments') if isinstance(trace.get('arguments'), dict) else {}
-    # What AgentOS sent (``sent``, stored secrets already dropped) is the record when there is one;
+    # What Still sent (``sent``, stored secrets already dropped) is the record when there is one;
     # otherwise the call's starting arguments (the subscription /search preflight records its query
     # at the top level of its running event).
     for source in ((sent,) if sent else (arguments, trace)):
@@ -255,7 +255,7 @@ def _lookup(action, trace, evidence):
                 queries.append(_text(value, QUERY_CHARS))
     by = evidence.get('provider') or (arguments.get('provider') if isinstance(arguments.get('provider'), str) else '')
     native = trace.get('scope') == 'cli-native'
-    return {'tool': action, 'by': _text(by or (trace.get('engine') if native else 'AgentOS'), 60),
+    return {'tool': action, 'by': _text(by or (trace.get('engine') if native else 'Still'), 60),
             'cli_own_search': native, 'queries': queries[:5], 'status': 'succeeded',
             'result_count': int(evidence.get('result_count') or 0), 'sources': [_text(url, 200) for url in evidence.get('sources') or ()][:5]}
 
@@ -419,7 +419,7 @@ def render_korean(audit):
     if lookups:
         for lookup in lookups[:8]:
             queries = ' / '.join(f'"{query}"' for query in lookup.get('queries') or ()) or msg('information_use.no_query_reported')
-            who = msg('information_use.cli_s_own_search') if lookup.get('cli_own_search') else lookup.get('by') or 'AgentOS'
+            who = msg('information_use.cli_s_own_search') if lookup.get('cli_own_search') else lookup.get('by') or 'Still'
             failed = ' · 실패' if lookup.get('status') == 'failed' else ''
             lines.append(f"- 웹 조회({who}{failed}): {queries}")
     else:

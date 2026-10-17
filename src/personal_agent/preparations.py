@@ -27,7 +27,7 @@ docs/secretary-agency-contract.en.md ("Attention in this program"):
   after ``until``.  Each run is an ordinary Work under the existing per-Work
   budget, so a watch costs at most ``max_runs`` bounded Works plus one
   judgment each.
-* ``delivery_mode`` ``when_needed`` keeps every run in AgentOS (작업 현황) and
+* ``delivery_mode`` ``when_needed`` keeps every run in Still (작업 현황) and
   asks the DecisionEngine one bounded question per finished run - does this
   result need the owner now, and is it new since the last notification?  The
   typed decision (``notify`` / ``quiet``) and its reason are recorded on the
@@ -336,7 +336,7 @@ def next_window_slot(row, now):
     """The next slot of a watch strictly after ``now``, or None (#719).
 
     None once ``max_runs`` Works have started or the next slot is not
-    before ``window_end``.  Slots missed while AgentOS was down are skipped, as for
+    before ``window_end``.  Slots missed while Still was down are skipped, as for
     the other recurrences.
     """
     every, end = row.get('every_seconds'), row.get('window_end')
@@ -391,7 +391,7 @@ def run_outcome(kind, job):
     """What one run's Work shows: ``delivered``, ``unknown`` or ``failed``.
 
     ``delivered`` means the Work's result reached its channel (Telegram
-    ``sent``) or was kept in AgentOS (no chat, ``none``).  An uncertain
+    ``sent``) or was kept in Still (no chat, ``none``).  An uncertain
     Telegram send is ``unknown``, never re-sent and never called delivered.
     """
     if not job:

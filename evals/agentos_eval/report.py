@@ -140,7 +140,7 @@ def _pct(value):
 
 def render_markdown(report):
     run, totals, trend = report.get('run', {}), report['totals'], report.get('trend') or {}
-    lines = [f"# AgentOS eval sweep {run.get('id', '')}", '',
+    lines = [f"# Still eval sweep {run.get('id', '')}", '',
              f"- runs: {totals['runs']}, passed: {totals['passed']} ({_pct(totals['pass_rate'])})",
              f"- workers: {', '.join(f'{name} {_pct(row['pass_rate'])} of {row['runs']}' for name, row in report['by_worker'].items())}",
              f"- judge: {', '.join(f'{k} {v}' for k, v in sorted(report['judge'].items()))}"]

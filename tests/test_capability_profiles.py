@@ -180,7 +180,7 @@ class DeclaredProfileLimits(unittest.TestCase):
         self.assertEqual(BOUNDED_PROFILE, 'trusted-local')
         self.assertEqual(CLI_PROFILES[BOUNDED_PROFILE]['trust'], 'trusted-local')
         self.assertEqual(CLI_PROFILES[BOUNDED_PROFILE]['limitation'],
-                         'the CLI may read host files outside AgentOS provenance '
+                         'the CLI may read host files outside Still provenance '
                          '(verified: codex sandbox -P :read-only, codex-cli 0.153.4); '
                          'Codex exec rules in CODEX_HOME, allow and forbidden, are ignored (--ignore-rules); '
                          'Claude Code 2.1.280 -p denied the tested store and home reads, a Write and WebFetch and could '
@@ -190,7 +190,7 @@ class DeclaredProfileLimits(unittest.TestCase):
             self.assertNotIn('gate_qualified', profile, 'no dead qualification flag')
         for profile in CLI_PROFILES.values():
             for runtime in profile['runtimes'].values():
-                self.assertIsNone(runtime['live_tested_version'], 'no live AgentOS-mediated run is claimed')
+                self.assertIsNone(runtime['live_tested_version'], 'no live Still-mediated run is claimed')
 
     def test_the_isolated_profile_stays_restricted_to_the_argumentless_read(self):
         """The proxy forwards only ``arguments == {}``; a wider profile must revisit it."""
@@ -472,7 +472,7 @@ class IsolatedRejectionsAfterDiscovery(_Store):
 
 
 class IsolationIsNotUnlockedForParity(unittest.TestCase):
-    """The profile change adds AgentOS-hosted actions only; the CLI's own
+    """The profile change adds Still-hosted actions only; the CLI's own
     sandbox, argv and environment are what they were."""
 
     def _argv(self, engine, folder):

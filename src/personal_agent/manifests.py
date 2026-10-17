@@ -1,4 +1,4 @@
-"""Validated declarations for AgentOS roles and bounded local tools."""
+"""Validated declarations for Still roles and bounded local tools."""
 import json
 import re
 from dataclasses import dataclass
@@ -17,7 +17,7 @@ class HostTool:
     write: bool
     #: Offered on a read-only Work surface.
     read_only_surface: bool
-    #: Runs in the AgentOS service, which holds its owner state; a trusted-local CLI reaches it through the relay.
+    #: Runs in the Still service, which holds its owner state; a trusted-local CLI reaches it through the relay.
     service_held: bool
     #: The information-use category of the owner information it reads, or None.
     reads: str | None
@@ -92,7 +92,7 @@ CONTEXT_GATED_ACTIONS=frozenset({'propose_current_state'})
 ROLE_PERMISSIONS={'read_only','bounded_write'}
 #: Tool ids the agent loop itself owns (#657 `finish`); no package may declare one.
 RESERVED_TOOL_IDS=frozenset({'finish'})
-#: Package ids only AgentOS may use: its tools (#604) and, for skill packages, its bundled skills (#961).
+#: Package ids only Still may use: its tools (#604) and, for skill packages, its bundled skills (#961).
 #: ``agentos`` is reserved only for skill packages, so an existing tool package of that id keeps working.
 RESERVED_PACKAGE_IDS=frozenset({'builtin'})
 RESERVED_SKILL_PACKAGE_IDS=frozenset({'agentos'})
@@ -116,7 +116,7 @@ def validate(manifest):
  tool_ids=set()
  for tool in tools:
   if not isinstance(tool,dict) or not _id(tool.get('id')) or tool['id'] in tool_ids or tool.get('host_action') not in HOST_ACTIONS:raise ValueError('허용하지 않은 도구 매니페스트입니다.')
-  if tool['id'] in RESERVED_TOOL_IDS:raise ValueError(f"도구 id '{tool['id']}'는 AgentOS 실행 루프 전용이라 패키지에서 선언할 수 없습니다.")
+  if tool['id'] in RESERVED_TOOL_IDS:raise ValueError(f"도구 id '{tool['id']}'는 Still 실행 루프 전용이라 패키지에서 선언할 수 없습니다.")
   if tool.get('mode') != ('bounded_write' if tool['host_action'] in WRITE_ACTIONS else 'read_only'):raise ValueError('도구 모드는 host action의 안전 등급과 일치해야 합니다.')
   tool_ids.add(tool['id'])
  role_ids=set()
@@ -148,7 +148,7 @@ def _validate_skills(manifest):
 def validate_package(manifest):
  """Validate a third-party package: the built-in ids are reserved (#604, #961)."""
  manifest=validate(manifest)
- if manifest.get('id') in RESERVED_PACKAGE_IDS or (manifest.get('skills') is not None and manifest.get('id') in RESERVED_SKILL_PACKAGE_IDS):raise ValueError(f"{manifest['id']}은 AgentOS 기본 패키지 전용 id입니다.")
+ if manifest.get('id') in RESERVED_PACKAGE_IDS or (manifest.get('skills') is not None and manifest.get('id') in RESERVED_SKILL_PACKAGE_IDS):raise ValueError(f"{manifest['id']}은 Still 기본 패키지 전용 id입니다.")
  return manifest
 
 def load(path):return validate(json.loads(Path(path).read_text()))

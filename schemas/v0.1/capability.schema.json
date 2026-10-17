@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://personal-agentos.dev/schemas/v0.1/capability.schema.json",
-  "title": "Personal AgentOS v0.1 Capability",
+  "title": "Still v0.1 Capability",
   "type": "object",
   "additionalProperties": false,
   "properties": {

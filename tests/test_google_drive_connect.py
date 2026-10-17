@@ -493,7 +493,7 @@ class CalendarRenewalTest(unittest.TestCase):
 
 
 class OwnClientFromSettingsTest(unittest.TestCase):
-    """The owner adds their own Desktop client in Settings; no client ships with AgentOS (#1172)."""
+    """The owner adds their own Desktop client in Settings; no client ships with Still (#1172)."""
 
     CLIENT = json.dumps({'installed': {'client_id': '123-abcdefgh.apps.googleusercontent.com',
                                        'client_secret': 'GOCSPX-owner-secret'}})

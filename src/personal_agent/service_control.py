@@ -1,4 +1,4 @@
-"""Deterministic macOS launchd lifecycle control for Personal AgentOS.
+"""Deterministic macOS launchd lifecycle control for Still.
 
 Command execution is injectable so tests can inspect the complete lifecycle
 without changing the host's launchd state. The existing ``agentos start``
@@ -102,8 +102,8 @@ def resolve_cli_path(
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return Path(os.path.abspath(candidate))
         raise ServiceControlError(
-            "The selected AgentOS executable is missing or is not executable.",
-            "Reinstall Personal AgentOS, then retry with the executable reported by `command -v agentos`.",
+            "The selected Still executable is missing or is not executable.",
+            "Reinstall Still, then retry with the executable reported by `command -v agentos`.",
         )
     found = which("agentos")
     if found:
@@ -123,7 +123,7 @@ def resolve_cli_path(
             if candidate.is_file() and os.access(candidate, os.X_OK):
                 return Path(os.path.abspath(candidate))
     raise ServiceControlError(
-        "The installed AgentOS executable could not be resolved.",
+        "The installed Still executable could not be resolved.",
         "Run `brew reinstall jongtae/agentos/agentos`, confirm `command -v agentos`, and retry service setup.",
     )
 
@@ -218,7 +218,7 @@ class ServiceController:
         self.service_target = f"{self.domain}/{self.label}"
 
     def _other_definitions(self) -> list[tuple[Path, int]]:
-        """(data directory, port) of every other installed AgentOS job, owner's included (#893)."""
+        """(data directory, port) of every other installed Still job, owner's included (#893)."""
         found = []
         for plist in sorted((self.home / "Library/LaunchAgents").glob(f"{LABEL}*.plist")):
             if plist == self.plist_path or not (plist.name == f"{LABEL}.plist" or plist.name.startswith(f"{LABEL}.")):
@@ -239,20 +239,20 @@ class ServiceController:
         port = self.port
         if port is None or port == DEFAULT_PORT or not 1024 <= port <= 65534:
             raise ServiceControlError(
-                "An AgentOS instance needs its own port.",
+                "An Still instance needs its own port.",
                 "Retry with --port set to a free port from 1024 to 65534 other than 8787; the next port is used for its handoff.",
             )
         others = self._other_definitions()
         if any(data == self.data_dir for data, _port in others):
             raise ServiceControlError(
-                "Another AgentOS service already uses this data directory.",
+                "Another Still service already uses this data directory.",
                 "Choose a data directory of this instance's own; each person's agent keeps separate Memory and approvals.",
             )
         taken = {DEFAULT_PORT, DEFAULT_PORT + 1} | {value for _data, other in others for value in (other, other + 1)}
         if {port, port + 1} & taken:
             raise ServiceControlError(
-                "This port or the handoff port after it is used by another AgentOS service.",
-                "Retry with a port two or more away from every other AgentOS service's port.",
+                "This port or the handoff port after it is used by another Still service.",
+                "Retry with a port two or more away from every other Still service's port.",
             )
 
     def _reported_data_dir(self) -> Path:
@@ -392,7 +392,7 @@ class ServiceController:
         observed = self._observed_status()
         if observed["status"] == "loaded_not_running":
             kicked = self._launchctl("kickstart", "-k", self.service_target)
-            self._require(kicked, "The loaded AgentOS service could not be started", next_action)
+            self._require(kicked, "The loaded Still service could not be started", next_action)
             observed = self._observed_status()
         healthy = False
         saw_running = False
@@ -412,8 +412,8 @@ class ServiceController:
                 self.health_wait(min(0.2, max(0.0, deadline - self.monotonic())))
         if not healthy:
             raise ServiceControlError(
-                ("The AgentOS process was running but its application health check did not pass."
-                 if saw_running else "A running AgentOS background process was not observed."),
+                ("The Still process was running but its application health check did not pass."
+                 if saw_running else "A running Still background process was not observed."),
                 next_action,
             )
         return observed
@@ -429,12 +429,12 @@ class ServiceController:
             orphan = self._observed_status()
             if orphan["status"] != "not_installed":
                 raise ServiceControlError(
-                    "A registered AgentOS service exists without its installed definition.",
+                    "A registered Still service exists without its installed definition.",
                     "Run service uninstall to remove the orphaned job, then retry install; owner data is retained.",
                 )
         if previous is not None and previous != desired and not upgrade:
             raise ServiceControlError(
-                "A different AgentOS service definition is already installed.",
+                "A different Still service definition is already installed.",
                 "Run the explicit service upgrade action to replace it without deleting owner data.",
             )
         prior_status = self._observed_status() if previous is not None else None
@@ -529,20 +529,20 @@ class ServiceController:
 
     def start(self) -> dict[str, object]:
         if not self.plist_path.exists():
-            raise ServiceControlError("The AgentOS background service is not installed.",
+            raise ServiceControlError("The Still background service is not installed.",
                                       "Run the service install action, or use foreground `agentos start`.")
         current = self.status()
         if current["status"] == "running":
             return {**current, "operation": "start", "changed": False}
         if current["status"] == "running_unhealthy":
             raise ServiceControlError(
-                "The AgentOS process is running but its application health check did not pass.",
+                "The Still process is running but its application health check did not pass.",
                 "Run service restart; use foreground `agentos start` to inspect application health.",
             )
         enabled = self._launchctl("enable", self.service_target)
         self._require(
             enabled,
-            "The AgentOS background service could not be enabled",
+            "The Still background service could not be enabled",
             "Run service status, then retry start; no owner data was deleted.",
         )
         if current["status"] == "loaded_not_running":
@@ -556,7 +556,7 @@ class ServiceController:
                     "The service failed to start and its persistent disable state could not be verified.",
                     "Run service stop before the next login, then inspect foreground startup.",
                 )
-        self._require(started, "The AgentOS background service could not start",
+        self._require(started, "The Still background service could not start",
                       "Run service status; use foreground `agentos start` to view a startup error.")
         try:
             observed = self._confirm_running(
@@ -588,7 +588,7 @@ class ServiceController:
         disabled = self._launchctl("disable", self.service_target)
         self._require(
             disabled,
-            "The AgentOS background service could not be persistently disabled",
+            "The Still background service could not be persistently disabled",
             "Run service status and retry stop; no owner data was deleted.",
         )
         if current["status"] == "stopped":
@@ -598,7 +598,7 @@ class ServiceController:
             if self.plist_path.exists()
             else self._launchctl("bootout", self.service_target)
         )
-        self._require(stopped, "The AgentOS background service could not stop",
+        self._require(stopped, "The Still background service could not stop",
                       "Run service status and retry stop; no owner data was deleted.")
         installed = self.plist_path.exists()
         return {"ok": True, "operation": "stop", "changed": True,
@@ -609,17 +609,17 @@ class ServiceController:
 
     def restart(self) -> dict[str, object]:
         if not self.plist_path.exists():
-            raise ServiceControlError("The AgentOS background service is not installed.",
+            raise ServiceControlError("The Still background service is not installed.",
                                       "Run the service install action, or use foreground `agentos start`.")
         current = self._observed_status()
         if current["status"] != "stopped":
             stopped = self._launchctl("bootout", self.domain, str(self.plist_path))
-            self._require(stopped, "The existing AgentOS service could not be stopped for restart",
+            self._require(stopped, "The existing Still service could not be stopped for restart",
                           "Run service status; no owner data was deleted.")
         enabled = self._launchctl("enable", self.service_target)
         self._require(
             enabled,
-            "The AgentOS background service could not be enabled for restart",
+            "The Still background service could not be enabled for restart",
             "Run service status, then retry restart; no owner data was deleted.",
         )
         started = self._launchctl("bootstrap", self.domain, str(self.plist_path))
@@ -630,7 +630,7 @@ class ServiceController:
                     "The service failed to restart and its persistent disable state could not be verified.",
                     "Run service stop before the next login, then inspect foreground startup.",
                 )
-        self._require(started, "The AgentOS background service could not restart",
+        self._require(started, "The Still background service could not restart",
                       "Use foreground `agentos start` to inspect the startup failure, then retry service restart.")
         try:
             observed = self._confirm_running("Use foreground `agentos start` to inspect the startup failure.")
@@ -714,7 +714,7 @@ def service_action(action: str, **controller_options: object) -> dict[str, objec
     except OSError as exc:
         bounded = ServiceControlError(
             f"The service files could not be updated: {type(exc).__name__}",
-            "Check the owner LaunchAgents and AgentOS data-directory permissions and free disk space, then retry; owner data was not deleted.",
+            "Check the owner LaunchAgents and Still data-directory permissions and free disk space, then retry; owner data was not deleted.",
         )
         return failure_receipt(bounded)
 

@@ -1,4 +1,4 @@
-"""Bounded subscription-engine execution owned by AgentOS.
+"""Bounded subscription-engine execution owned by Still.
 
 This module is deliberately independent of the API-key provider path.  An
 engine gets a fresh, empty working directory and a small MCP tool catalogue;
@@ -66,7 +66,7 @@ _STATUS_HINTS = (
 
 # -- Worker-visible capability profiles (#604, AX-02/AX-03) -------------------
 #
-# A profile names *which* AgentOS actions a CLI route may see; it never carries
+# A profile names *which* Still actions a CLI route may see; it never carries
 # a schema.  Every name, description and input schema a CLI receives is derived
 # from the one native action source, ``Capabilities.definitions()`` (i.e.
 # ``agent_runtime.DEFINITIONS`` resolved through the manifest ``tools``), so
@@ -81,7 +81,7 @@ _STATUS_HINTS = (
 # and an undeclared omission is a diagnosable defect (scripts/agentos_doctor.py).
 #
 # No profile here unlocks shell, home or network access for the CLI itself:
-# these are AgentOS-hosted actions executed by this process under AgentOS
+# these are Still-hosted actions executed by this process under Still
 # policy.  The trusted-local sandbox/argv are unchanged (see ``command``);
 # strict-isolated (#616) only narrows what the CLI's own tools can read.
 #: #826: the strict-isolated profile (#616) keeps its qualified, narrower tool set.
@@ -92,7 +92,7 @@ _MEMORY = 'owner-memory-not-bound-to-cli-route'
 _SPECIALISTS = 'specialists-require-direct-api-model'
 _ISOLATED = 'isolation-restricted-profile'
 #: #656/#701: the owner-logged-in browser profile is served on the host's
-#: direct route and, through the AgentOS service (``cli_browser_relay``), on
+#: direct route and, through the Still service (``cli_browser_relay``), on
 #: the trusted-local CLI route.  A CLI worker never holds a handle to that
 #: session; the strict-isolated and isolated profiles never offer it.
 _BROWSER = 'browser-profile-served-on-trusted-local-route-only'
@@ -121,8 +121,8 @@ _SKILLS = 'skills-served-on-trusted-local-route-only'
 _SKILL_ACTIONS = ('skill_load', 'skill_resource')
 
 #: The verified limitation of the trusted-local profile (owner decision on
-#: #604).  The CLI's own built-in tools can read local host files that AgentOS
-#: never mediates, so those reads carry no AgentOS provenance and the public
+#: #604).  The CLI's own built-in tools can read local host files that Still
+#: never mediates, so those reads carry no Still provenance and the public
 #: reads offered here cannot be closed by it.  Observed with a no-model probe of
 #: `codex sandbox -P :read-only` (the policy behind `codex exec --sandbox
 #: read-only`) on codex-cli 0.153.4: a fake owner store, a home file and the
@@ -132,11 +132,11 @@ _SKILL_ACTIONS = ('skill_load', 'skill_resource')
 #: permission layer denied the store read, the home `cat`, a Write and
 #: WebFetch, and allowed reads of the turn directory (only those paths were
 #: probed); only the declared
-#: AgentOS bridge tools are pre-approved.  An allow rule in managed settings
+#: Still bridge tools are pre-approved.  An allow rule in managed settings
 #: (loaded regardless of HOME) could widen that - documented, not observed.
 #: The owner accepts this trusted-local-worker risk; strict read isolation is
 #: #616 AGENCY-ISOLATION-01.
-TRUSTED_LOCAL_LIMITATION = ('the CLI may read host files outside AgentOS provenance '
+TRUSTED_LOCAL_LIMITATION = ('the CLI may read host files outside Still provenance '
                             '(verified: codex sandbox -P :read-only, codex-cli 0.153.4); '
                             'Codex exec rules in CODEX_HOME, allow and forbidden, are ignored (--ignore-rules); '
                             'Claude Code 2.1.280 -p denied the tested store and home reads, a Write and WebFetch and could '
@@ -148,15 +148,15 @@ TRUSTED_LOCAL_LIMITATION = ('the CLI may read host files outside AgentOS provena
 #: and a synthetic, populated CODEX_HOME (tests/test_strict_isolation.py): the
 #: CLI was offered no shell, file or image tool, the permissions profile
 #: denied the store, home and CODEX_HOME even to a command an "always allow"
-#: exec rule would run, and the AgentOS bridge still served its tools.  Not
+#: exec rule would run, and the Still bridge still served its tools.  Not
 #: prevented by any override found on Codex 0.153.4: the owner-authored
 #: `$CODEX_HOME/AGENTS.override.md` (which takes precedence) or
-#: `$CODEX_HOME/AGENTS.md` reaches the model context (untracked by AgentOS
+#: `$CODEX_HOME/AGENTS.md` reaches the model context (untracked by Still
 #: provenance).  Codex's `:minimal` baseline keeps OS paths, /tmp and
 #: /private/var/tmp readable to a sandboxed command.
 STRICT_ISOLATED_LIMITATION = ('the CLI gets no shell, file or image tool and its sandbox denies the owner store and home; '
                               'Codex still loads $CODEX_HOME/AGENTS.override.md or AGENTS.md (owner-authored, not '
-                              'tracked by AgentOS) into '
+                              'tracked by Still) into '
                               'the model context and its sandbox baseline keeps OS paths, /tmp and /private/var/tmp '
                               'readable; qualified only for the tested CLI version, platform and paths')
 
@@ -167,7 +167,7 @@ BASELINE_READABLE_ROOTS = ('/tmp', '/private/tmp', '/var/tmp', '/private/var/tmp
 #: #1197: the bridge tool Claude Code asks before any connector tool runs.
 CONNECTOR_PERMISSION_TOOL = 'mcp__agentos__connector_permission'
 
-#: Name of the Codex permissions profile AgentOS defines on the command line.
+#: Name of the Codex permissions profile Still defines on the command line.
 CODEX_STRICT_PERMISSIONS = 'agentos-strict-isolated'
 #: Codex permissions profile (official `[permissions.<name>]` config): the
 #: platform `:minimal` set and the turn directory (the workspace root) are
@@ -185,8 +185,8 @@ CLI_PROFILES = {
         'trust': 'trusted-local',
         'limitation': TRUSTED_LOCAL_LIMITATION,
         # Public reads, the owner's notes and the explicit note write, all under
-        # the unchanged AgentOS tool checks.
-        # #701: the five browser tools, executed by the AgentOS service's own
+        # the unchanged Still tool checks.
+        # #701: the five browser tools, executed by the Still service's own
         # BrowserSession (mediation, payment guard, approvals, budget) and
         # relayed by the bridge; offered only while the profile is available.
         # #774: the owner-state actions (Memory, calendar, preparations, location request) are
@@ -204,7 +204,7 @@ CLI_PROFILES = {
         'unavailable': {
             'list_agents': _SPECIALISTS, 'delegate_agent': _SPECIALISTS,
         },
-        # No AgentOS-mediated live run of this catalog has been observed.
+        # No Still-mediated live run of this catalog has been observed.
         # Reference versions are the argv shapes recorded from each CLI's own
         # --help (docs/decision-layer.en.md), exercised only by scripted runners.
         'runtimes': {'codex': {'reference_version': '0.153.4', 'live_tested_version': None},
@@ -212,7 +212,7 @@ CLI_PROFILES = {
     },
     'isolated-agentos-mcp': {
         # Deliberately restricted isolation profile (not a full-profile pass):
-        # the sidecar reaches AgentOS only through a single-use, task-bound
+        # the sidecar reaches Still only through a single-use, task-bound
         # bearer capability that serves exactly this read.
         'mode': 'isolated-agentos-mcp',
         'trust': 'isolated-restricted',
@@ -263,7 +263,7 @@ CLI_PROFILES = {
                                      '(verified at qualification), decision-route instruction overrides'},
             'claude-code': {'tested_versions': ('2.1.280',), 'tested_platforms': ('darwin',), 'live_tested_version': None,
                             'enforcement': 'no built-in tools (--tools ""), --restricted, '
-                                           'only the offered AgentOS MCP tools allowed'},
+                                           'only the offered Still MCP tools allowed'},
         },
     },
 }
@@ -309,7 +309,7 @@ def strict_launch_arguments(engine_id, disabled_features=()):
     An empty plan is refused: it was never verified.
     Claude Code: no built-in tool at all (no Read/Bash/WebFetch/WebSearch/
     Agent), ``--restricted`` so no settings file can re-add one, and only the
-    profile's AgentOS MCP tools are pre-approved; without that approval ``-p``
+    profile's Still MCP tools are pre-approved; without that approval ``-p``
     denies every MCP call (observed, 2.1.280).
     """
     if engine_id == 'codex':
@@ -334,7 +334,7 @@ def strict_launch_arguments(engine_id, disabled_features=()):
 #: value at config load: "unknown variant ... expected one of `auto`,
 #: `prompt`, `writes`, `approve`").  ``approve`` resolves Codex's own MCP
 #: approval prompt for these tools as approved, so Codex's Guardian/auto-review
-#: no longer denies an AgentOS bridge call.  The decision stays with AgentOS:
+#: no longer denies an Still bridge call.  The decision stays with Still:
 #: every bridge tool runs through ``Capabilities.execute`` (mediation, the
 #: payment guard, exact per-step owner approvals, the Work budget).  Other MCP
 #: servers do not exist in this turn (``--ignore-user-config``), and shell
@@ -343,7 +343,7 @@ CODEX_BRIDGE_APPROVAL_MODE = 'approve'
 
 
 def codex_bridge_approval_argument():
-    """The one ``-c`` override that lets AgentOS, not Codex's reviewer, decide bridge tool calls (#709)."""
+    """The one ``-c`` override that lets Still, not Codex's reviewer, decide bridge tool calls (#709)."""
     return f'mcp_servers.agentos.default_tools_approval_mode="{CODEX_BRIDGE_APPROVAL_MODE}"'
 
 
@@ -365,7 +365,7 @@ DEFAULT_TOOL_SECONDS = 60
 
 
 def bridge_tool_bound(actions):
-    """The longest own bound, in seconds, of the AgentOS bridge ``actions`` one turn offers (#729).
+    """The longest own bound, in seconds, of the Still bridge ``actions`` one turn offers (#729).
 
     Each figure is the tool's existing timeout, not a new one: a browser step
     is bounded by the relay's call cap, a bounded research call by one search
@@ -425,7 +425,7 @@ def turn_actions(profile, native_search=False):
 
 def claude_bridge_allowlist(profile, native_search=False, read_paths=()):
     """Claude Code's official ``--allowedTools`` rule for exactly the
-    profile's AgentOS bridge tools (#623).
+    profile's Still bridge tools (#623).
 
     Under ``-p`` Claude Code denies every MCP call that no allow rule covers
     (observed, 2.1.280: "haven't granted"). Each bridge name is exact - no
@@ -471,7 +471,7 @@ def profile_status(profile):
 
 
 def connection_slot_names(capabilities):
-    """The AgentOS-held connection slots of this Work, by name (#1325); none when they cannot be read."""
+    """The Still-held connection slots of this Work, by name (#1325); none when they cannot be read."""
     from .connection_slots import names
     try:
         return names(capabilities.api().slots())
@@ -531,12 +531,12 @@ class ExecutionError(ValueError):
 #: #1130: the ``mcp`` SDK release the stdio bridge is written against; equal to
 #: the ``mcp-host`` extra pin in pyproject.toml (a test keeps them together).
 MCP_SDK_VERSION = '2.3.0'
-#: #1130: a Work turn whose AgentOS bridge cannot run.  Every CLI worker shares
+#: #1130: a Work turn whose Still bridge cannot run.  Every CLI worker shares
 #: the same bridge, so this is a host failure, never a worker shortfall.
 BRIDGE_UNAVAILABLE = 'bridge-unavailable'
-BRIDGE_UNAVAILABLE_TEXT = ('AgentOS 도구 연결(MCP 브리지)을 시작할 수 없어 AI가 AgentOS 도구 없이 일하게 되므로 '
+BRIDGE_UNAVAILABLE_TEXT = ('Still 도구 연결(MCP 브리지)을 시작할 수 없어 AI가 Still 도구 없이 일하게 되므로 '
                            '작업을 멈췄어요. 다른 AI로 바꿔도 같은 연결을 쓰기 때문에 다시 맡기지 않았습니다.')
-BRIDGE_DEPENDENCY_HINT = (' AgentOS를 실행하는 Python 환경의 mcp-host 의존성을 맞춘 뒤(작업본은 pip install -e ".[mcp-host]", '
+BRIDGE_DEPENDENCY_HINT = (' Still을 실행하는 Python 환경의 mcp-host 의존성을 맞춘 뒤(작업본은 pip install -e ".[mcp-host]", '
                           '설치본은 재설치) 다시 요청하세요.')
 
 
@@ -773,7 +773,7 @@ def _claude_searches(records):
                     call.update(state='succeeded', results=rows[:MAX_NATIVE_RESULTS])
         for denial in record.get('permission_denials') or []:
             if isinstance(denial, dict) and denial.get('tool_name') == CLAUDE_NATIVE_SEARCH_TOOL:
-                # A permission denial is AgentOS's own setting, not the CLI's availability.
+                # A permission denial is Still's own setting, not the CLI's availability.
                 call_for(str(denial.get('tool_use_id') or 'denied')).update(state='denied', reason='permission denied')
     return [call for call in calls.values() if call['state'] != 'requested']
 
@@ -1008,7 +1008,7 @@ def display_argv(argv, prompt, instructions=''):
         if prompt and part == prompt:
             shown.append(f'<prompt: {len(prompt.encode())} bytes>')
         elif instructions and part == instructions:
-            shown.append(f'<AgentOS instructions: {len(instructions.encode())} bytes>')
+            shown.append(f'<Still instructions: {len(instructions.encode())} bytes>')
         elif prompt and len(part) > 200:
             shown.append(part[:200] + '…')
         else:
@@ -1345,7 +1345,7 @@ class AgentOSMcpTools:
             # #1484: refused before the tool ran, so the record says ``ran: false``.
             raise not_run(exc)
         # #701/#774: in the bridge process a browser or owner-state tool runs in
-        # the AgentOS service (its BrowserSession, Memory approval, calendar
+        # the Still service (its BrowserSession, Memory approval, calendar
         # connector, preparation acceptance, budget and mediation); the bridge
         # only forwards the validated call.
         from .agent_runtime import HOST_RELAYED_ACTIONS
@@ -1360,7 +1360,7 @@ class AgentOSMcpTools:
                 except ValueError as exc:
                     raise not_run(exc)
             return self.relay.call(name, arguments)
-        # Capabilities is AgentOS-owned and applies its normal validation,
+        # Capabilities is Still-owned and applies its normal validation,
         # document boundary, egress, evidence and idempotency rules.
         return self.capabilities.execute(name, arguments)
 
@@ -1370,7 +1370,7 @@ class AgentOSMcpTools:
             raise ExecutionError('MCP 도구 인수는 객체여야 합니다.')
         definition = self._offered().get(name) if isinstance(name, str) else None
         if definition is None:
-            raise ExecutionError('허용하지 않은 AgentOS MCP 도구 또는 인수입니다.')
+            raise ExecutionError('허용하지 않은 Still MCP 도구 또는 인수입니다.')
         from .agent_runtime import check_arguments, split_status
         # #718: the optional status is display text; the bridge records it on
         # the running event and nothing here reads it.
@@ -1379,7 +1379,7 @@ class AgentOSMcpTools:
         try:
             check_arguments(parameters, arguments)
         except ValueError:
-            raise ExecutionError('허용하지 않은 AgentOS MCP 도구 또는 인수입니다.') from None
+            raise ExecutionError('허용하지 않은 Still MCP 도구 또는 인수입니다.') from None
         if any(not arguments[field].strip() for field in parameters['required']):
             raise ExecutionError('MCP 도구의 필수 문자열 인수가 비어 있습니다.')
         return arguments, definition
@@ -1452,7 +1452,7 @@ class BoundedExecutionAdapter:
             return env
         if engine_id != 'codex':
             return env
-        # Codex owns its official session under CODEX_HOME. AgentOS never
+        # Codex owns its official session under CODEX_HOME. Still never
         # reads, copies, logs, exports, or persists that profile; the CLI reads
         # it directly while its working directory remains a fresh sandbox.
         profile = self.codex_home or Path(os.environ.get('CODEX_HOME', Path.home()/'.codex')).expanduser()
@@ -1466,8 +1466,8 @@ class BoundedExecutionAdapter:
 
     def login_status(self, engine_id, binary=None):
         """Ask the official CLI whether it is signed in, under the same
-        environment AgentOS uses to run it (#571). Local and read-only: no
-        model request, no credential file is read by AgentOS.
+        environment Still uses to run it (#571). Local and read-only: no
+        model request, no credential file is read by Still.
 
         Returns {'state': 'signed-in'|'signed-out'|'unknown', 'detail': str}.
         """
@@ -1558,7 +1558,7 @@ class BoundedExecutionAdapter:
             # the #616 review P1 finding); an older CLI rejects the unknown
             # flag and the turn fails instead of running without it.
             # #961: trusted-local also keeps skills Codex would discover in CODEX_HOME out of the turn
-            # (the decision route's verified override); AgentOS serves the Work's pinned skills itself.
+            # (the decision route's verified override); Still serves the Work's pinned skills itself.
             sandbox = (strict_launch_arguments('codex', disabled_features) if strict
                        else ['--sandbox', 'read-only', '--ignore-rules',
                              '-c', 'web_search="live"' if native_search else 'web_search="disabled"',
@@ -1572,7 +1572,7 @@ class BoundedExecutionAdapter:
                     # Live 2026-10-14: Codex starts MCP servers without PYTHONPATH, so the bridge imported
                     # whatever install the interpreter has, not the code this service runs.
                     '-c', f'mcp_servers.agentos.env.PYTHONPATH={json.dumps(str(Path(__file__).resolve().parents[1]))}',
-                    # #709: AgentOS decides its own bridge tools (see CODEX_BRIDGE_APPROVAL_MODE).
+                    # #709: Still decides its own bridge tools (see CODEX_BRIDGE_APPROVAL_MODE).
                     '-c', codex_bridge_approval_argument(),
                     # #729: the agentos server's own tool-call timeout (see CODEX_TOOL_TIMEOUT_KEY).
                     *(['-c', codex_bridge_timeout_argument(tool_timeout)] if tool_timeout else []),
@@ -1591,26 +1591,26 @@ class BoundedExecutionAdapter:
             # session model and each tool_use; its last line is the same result
             # record that `json` prints, so answer parsing is unchanged.
             # #961: no Claude Code skill or slash command of its own ("Disable all skills");
-            # AgentOS serves the Work's pinned skills through the bridge.
+            # Still serves the Work's pinned skills through the bridge.
             argv = [binary, '-p', prompt, '--output-format', 'stream-json', '--verbose',
                     *(() if ai_connections else ('--strict-mcp-config',)), '--mcp-config', str(mcp_config),
                     '--disable-slash-commands', *model_args]
             if ai_connections:
                 # #1197: the owner's AI connectors load beside the bridge; none is
-                # pre-approved, so every connector call asks AgentOS
+                # pre-approved, so every connector call asks Still
                 # (CONNECTOR_PERMISSION_TOOL) and only reads are allowed.
                 # Review on #1197: the regular login would keep each turn's transcript under
-                # ~/.claude/projects, out of reach of AgentOS retention and forget.
+                # ~/.claude/projects, out of reach of Still retention and forget.
                 argv += ['--setting-sources', 'project', '--no-session-persistence',
                          '--permission-prompt-tool', CONNECTOR_PERMISSION_TOOL]
             if instructions:
-                # #569: AgentOS instructions travel as a system-prompt addition,
+                # #569: Still instructions travel as a system-prompt addition,
                 # the conversation and request as the prompt.
                 argv += ['--append-system-prompt', instructions]
             # #623: trusted-local pre-approves only its declared bridge tools;
             # strict also removes every built-in tool.  --allowedTools is variadic,
             # so it must stay the last argument.  #709: nothing else is needed for
-            # AgentOS to decide its own bridge tools here: HOME is the turn's own
+            # Still to decide its own bridge tools here: HOME is the turn's own
             # directory (no owner settings, so no other permission mode), and an
             # exact allow rule is the approval Claude Code's -p mode checks.
             if strict:
@@ -1628,7 +1628,7 @@ class BoundedExecutionAdapter:
         raise ExecutionError('지원하는 구독 엔진을 선택하세요.')
 
     def runtime_version(self, engine_id, binary, run_dir):
-        """The version the CLI itself reports, run in the AgentOS environment.
+        """The version the CLI itself reports, run in the Still environment.
 
         Local and model-free; no credential is passed to this call.
         """
@@ -1752,7 +1752,7 @@ class BoundedExecutionAdapter:
         """Run the CLI's own sandbox runner under the strict permissions profile.
 
         ``/bin/ls`` output is discarded, so no protected content is read into
-        AgentOS.  The runner gets an empty CODEX_HOME so the owner's Codex
+        Still.  The runner gets an empty CODEX_HOME so the owner's Codex
         config cannot change the policy under test (``exec`` ignores it too).
         Returns True when the listing was refused, False when it succeeded.
         """
@@ -1945,7 +1945,7 @@ class BoundedExecutionAdapter:
         binary = self.finder(binaries[engine_id])
         if not binary:
             raise ExecutionError('연결한 구독 엔진 CLI를 격리된 런타임에서 찾지 못했습니다.')
-        # #1130: a bridge that cannot start leaves the CLI without AgentOS tools while
+        # #1130: a bridge that cannot start leaves the CLI without Still tools while
         # the turn still exits 0; refuse before launch instead of letting it look like a worker shortfall.
         problem = self.bridge_check()
         if problem:
@@ -1953,7 +1953,7 @@ class BoundedExecutionAdapter:
             raise ExecutionError(BRIDGE_UNAVAILABLE_TEXT + BRIDGE_DEPENDENCY_HINT,
                                  failure_class=BRIDGE_UNAVAILABLE, reason=problem)
         # Only declarative tool metadata is written here.  Tool calls must be
-        # served by the AgentOS MCP bridge, never by engine-provided commands.
+        # served by the Still MCP bridge, never by engine-provided commands.
         self.runtime_root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.runtime_root.chmod(0o700)
         # A process killed before TemporaryDirectory's finalizer can leave the
@@ -2000,14 +2000,14 @@ class BoundedExecutionAdapter:
             # route and only with the service relay that decides each connector call.
             ai_connections = (bool(getattr(tools, 'ai_connections', False)) and engine_id in owner_mcp.ENGINES
                               and profile == BOUNDED_PROFILE and relay is not None)
-            # #1296: the servers the owner confirmed for this engine; every call to them is decided by AgentOS.
+            # #1296: the servers the owner confirmed for this engine; every call to them is decided by Still.
             confirmed = (list((getattr(tools, 'owner_mcp_servers', None) or {}).get(engine_id) or ())
                          if ai_connections else [])
             owner_servers = owner_mcp.claude_definitions(Path.home(), confirmed) if engine_id == 'claude-code' else {}
             search_off = str(getattr(tools, 'native_search_reason', '') or '') if not native_search else ''
             # Both supported CLIs receive this per-turn bridge configuration.
             # The engine gets no store handle; the bridge alone owns validated
-            # access to the AgentOS tool facade.
+            # access to the Still tool facade.
             # Review P2 on #1296: owner server entries may carry keys, so the file is owner-only.
             os.close(os.open(config, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
             config.write_text(json.dumps({'mcpServers': {**owner_servers, 'agentos': {
@@ -2030,7 +2030,7 @@ class BoundedExecutionAdapter:
                          *(['--ai-connections'] if ai_connections and engine_id == 'claude-code' else []),
                          # #961: the exact skill revisions this Work may load (trusted-local only).
                          *[f'--skill={ref}' for ref in (skill_refs(tools.capabilities) if profile == BOUNDED_PROFILE else ())],
-                         # #1325: the Work's AgentOS-held connections, by name, so the bridge offers
+                         # #1325: the Work's Still-held connections, by name, so the bridge offers
                          # api_request; its calls are relayed and the service holds the tokens.
                          *[f'--connection-slot={name}' for name in (connection_slot_names(tools.capabilities)
                                                                     if relay and profile == BOUNDED_PROFILE else ())]],
@@ -2167,7 +2167,7 @@ class BoundedExecutionAdapter:
                                      meta={**run_meta, **cli_metadata(engine_id, stdout, getattr(tools,'connector_input_digest',None)),
                                            'duration_ms': int(elapsed * 1000),
                                            **({'unsupported_model': refused} if refused else {})})
-            # #1130: the CLI's own record of whether the AgentOS bridge started.
+            # #1130: the CLI's own record of whether the Still bridge started.
             bridge_status = claude_bridge_status(completed.stdout) if engine_id == 'claude-code' else None
             if bridge_status is not None and bridge_status != 'connected':
                 LOG.warning('engine turn had no bridge engine=%s status=%s', engine_id, bridge_status)

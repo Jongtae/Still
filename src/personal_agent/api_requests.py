@@ -1,14 +1,14 @@
 """API-READ-01 (#1216): an authenticated API call by secret-slot reference, with response provenance.
 
 C16: the owner's AI does the work - it picks the call, reads the data and
-writes the answer.  AgentOS removes one blocker (the AI must call an API that
+writes the answer.  Still removes one blocker (the AI must call an API that
 needs a key it may never hold) and keeps the invariants an AI must not own:
 
 * **Slot.** The owner registers a named slot: its secret (stored with
   ``QuickStore.secret`` like every other owner API key, so
   ``current_context.redact_known_secrets`` covers it), the hosts it may be
   sent to, the header it goes in and, optionally, the subject the key belongs
-  to.  The AI passes only the slot name; AgentOS inserts the value.  A
+  to.  The AI passes only the slot name; Still inserts the value.  A
   redirect is never followed, so the credential never leaves a bound host.
 * **Effect.** The declared ``agent_runtime.EFFECT`` is never trusted to be
   lower than the method: anything but GET/HEAD is at least ``mutate``.
@@ -18,7 +18,7 @@ needs a key it may never hold) and keeps the invariants an AI must not own:
   failure). A crash or uncertain response leaves a claim unresolved; changing
   workers or connection revision never licenses replay. Idempotency-Key is
   additional remote assistance, not a universal exactly-once guarantee.
-* **Provenance.** Every result separates the raw response from what AgentOS
+* **Provenance.** Every result separates the raw response from what Still
   computed, and says where it came from, when it was retrieved, what time the
   data is as of (a declared field, ``Last-Modified``, or ``unknown``), whether
   it is fresh, and whether it is complete (``partial``) and self-consistent
@@ -139,7 +139,7 @@ def code_set(value, hosts):
     """
     from .draft_formats import CodeValues, FormatError, validate
     # #1445: a set's values reach code that may call its hosts; a local or private address
-    # would let that code reach services on the owner's Mac (AgentOS itself included).
+    # would let that code reach services on the owner's Mac (Still itself included).
     for host in hosts:
         if not public_host(host):
             raise ApiError(f'호스트 {host}: 내부 주소나 IP 주소는 쓸 수 없어요. 서비스의 공개 도메인을 주세요.',
@@ -400,7 +400,7 @@ def describe(slot):
 
 
 #: The current-context line naming the registered slots (names and hosts only).
-CONTEXT_LINE = 'API slots (api_request; AgentOS inserts the credential, never shown): '
+CONTEXT_LINE = 'API slots (api_request; Still inserts the credential, never shown): '
 
 
 def context_line(store, connections=None):
@@ -421,10 +421,10 @@ def context_line(store, connections=None):
             return text
         # Live 2026-10-14: a worker read a set's setup note ("reads only, orders blocked", written before
         # #1456) as the rule and refused an owner's order.  The note is the AI's description at setup;
-        # what AgentOS enforces is stated next to it.
+        # what Still enforces is stated next to it.
         # #1504 (live again): the worker still believed such a note and told the owner orders were not
-        # supported.  A setup-time description goes stale when what AgentOS enforces changes, so a
-        # worker reads only what AgentOS states; the note stays for the owner.
+        # supported.  A setup-time description goes stale when what Still enforces changes, so a
+        # worker reads only what Still states; the note stays for the owner.
         text = f"{name} ({', '.join(slot['hosts'])})"
         # #1380: a code-run secret set: environment names and owner-reviewed reads, for code_run only.
         env = ', '.join(f"{env_name(name, item['name'])} [{item['use']}]" for item in slot['fields'])
@@ -439,7 +439,7 @@ def context_line(store, connections=None):
 
 
 def effective_effect(method, declared):
-    """The effect AgentOS applies: the declaration, never lower than the method implies."""
+    """The effect Still applies: the declaration, never lower than the method implies."""
     declared = declared if declared in EFFECT_ORDER else 'mutate'
     floor = 'read' if str(method or 'GET').upper() in READ_METHODS else 'mutate'
     return max(declared, floor, key=EFFECT_ORDER.index)
@@ -547,9 +547,9 @@ def _json_list(text, label):
 
 def provenance(data, *, status, headers, retrieved_at, as_of_field=None, max_age_seconds=DEFAULT_MAX_AGE,
                checks=(), required_fields=(), live=False):
-    """Reference time, freshness, completeness and AgentOS-derived values of one response.
+    """Reference time, freshness, completeness and Still-derived values of one response.
 
-    ``derived`` holds only what AgentOS computed from the raw data (an exact
+    ``derived`` holds only what Still computed from the raw data (an exact
     decimal sum compared with a reported total); the raw data is never
     rewritten.  ``live`` (#1329) is a slot that reads the owner's own records
     from the provider's live API: with no reference time asked for or sent,
@@ -661,11 +661,11 @@ class ApiRequests:
         self.store, self.work_id, self.approvals = store, work_id, approvals
         self.transport = transport or http_request
         self.clock, self.sleep = clock, sleep
-        #: CONN-API: ``() -> {name: slot}`` of AgentOS-held connections (``connection_slots.build``).
+        #: CONN-API: ``() -> {name: slot}`` of Still-held connections (``connection_slots.build``).
         self.connections = connections
 
     def slots(self):
-        """Owner-registered slots, plus AgentOS-held connections; an owner slot of the same name wins."""
+        """Owner-registered slots, plus Still-held connections; an owner slot of the same name wins."""
         try:
             held = self.connections() if callable(self.connections) else {}
         except Exception:

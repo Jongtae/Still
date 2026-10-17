@@ -196,7 +196,7 @@ class WorkerProvenanceDeclarationTests(unittest.TestCase):
     def test_subscription_engine_capabilities_inherit_the_turn_provenance(self):
         """`inherited_provenance=turn_provenance` on the subscription branch.
 
-        The engine reaches AgentOS only through `AgentOSMcpTools`, which calls
+        The engine reaches Still only through `AgentOSMcpTools`, which calls
         `Capabilities.execute` directly: `run_agent` is not in this path, so
         the evidence list is empty while the engine holds the owner's notes.
         Since #654 the facade sends the query
@@ -233,7 +233,7 @@ class WorkerProvenanceDeclarationTests(unittest.TestCase):
         self.assertTrue(service.run_one())
         # The notes really were spliced into the engine prompt for this turn.
         self.assertIn(NOTE_SECRET, adapter.prompt or '')
-        # ...the engine's public call through the AgentOS facade went out
+        # ...the engine's public call through the Still facade went out
         # (#654), and the Work carries the notes as its private provenance.
         self.assertTrue(adapter.searched)
         self.assertIsNone(adapter.refusal)

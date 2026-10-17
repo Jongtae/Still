@@ -154,7 +154,7 @@ def cmd_report(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='agentos_eval', description=__doc__.split('\n\n')[0])
     sub = parser.add_subparsers(dest='command', required=True)
-    snap = sub.add_parser('snapshot', help='make a sanitized seed from an AgentOS data folder')
+    snap = sub.add_parser('snapshot', help='make a sanitized seed from an Still data folder')
     snap.add_argument('--from', dest='source', default=str(LIVE_DATA))
     snap.add_argument('--name', default='owner')
     snap.add_argument('--overwrite', action='store_true')

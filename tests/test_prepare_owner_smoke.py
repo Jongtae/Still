@@ -341,7 +341,7 @@ def _synthetic_cli_work(root):
                                                    'error': f'대상 12를 찾지 못했습니다 Bearer {TOKEN}'})
     # A tool the bridge refused before it ran: a result with no running step.
     _event(store, job, 'unlisted', 'failed', {'scope': BRIDGE, 'code': 'unknown_tool', 'retry': 'permanent',
-                                              'effect': 'none', 'error': 'Unknown AgentOS MCP tool.'})
+                                              'effect': 'none', 'error': 'Unknown Still MCP tool.'})
     _event(store, job, 'subscription_engine', 'succeeded', {'engine': 'codex', 'exit_code': 0})
     _event(store, job, 'orchestrator', 'evaluated', {'attempt': 1, 'worker': 'codex', 'model': None, 'brief_digest': 'd1',
                                                      'outcome': 'not_reached', 'next': 'redelegate', 'stop': None,

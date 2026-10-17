@@ -1002,7 +1002,7 @@ class SessionFixtureHandler(FixtureHandler):
             return
         if path == '/open-agentos':
             return self._send('<html><head><title>열기</title></head><body><button type="button" onclick="window.open(\''
-                              + self.server.agentos_origin + '/\')">AgentOS 열기</button>'
+                              + self.server.agentos_origin + '/\')">Still 열기</button>'
                               + '<form action="' + self.server.agentos_origin + '/api/browser/approval" method="post">'
                               + '<button type="submit">승인 보내기</button></form></body></html>')
         if path == '/nav-links':
@@ -1089,7 +1089,7 @@ class WebKitIntegrationTests(unittest.TestCase):
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
         self.origin = f'http://127.0.0.1:{self.server.server_address[1]}'
-        # A stand-in for the owner's AgentOS on another loopback port: it must never be reached.
+        # A stand-in for the owner's Still on another loopback port: it must never be reached.
         self.agentos = ThreadingHTTPServer(('127.0.0.1', 0), SessionFixtureHandler)
         self.agentos.posts, self.agentos.cookie_value, self.agentos.hits = [], 'unused', []
         self.agentos.agentos_origin = ''
@@ -1171,11 +1171,11 @@ class WebKitIntegrationTests(unittest.TestCase):
         try:
             with self.assertRaises(ToolError) as caught:
                 sess.open({'url': self.origin + '/to-agentos', 'effect': 'read'})
-            self.assertEqual(caught.exception.code, 'blocked_destination', 'a redirect to the AgentOS port is refused')
+            self.assertEqual(caught.exception.code, 'blocked_destination', 'a redirect to the Still port is refused')
             sess.open({'url': self.origin + '/open-agentos', 'effect': 'read'})
             with self.assertRaises(ToolError) as caught:
-                sess.click({'target': 'AgentOS 열기', 'effect': 'navigate'})
-            self.assertEqual(caught.exception.code, 'blocked_destination', 'window.open to the AgentOS port is refused')
+                sess.click({'target': 'Still 열기', 'effect': 'navigate'})
+            self.assertEqual(caught.exception.code, 'blocked_destination', 'window.open to the Still port is refused')
             sess.read()
             with self.assertRaises(ToolError) as caught:
                 sess.click({'target': '승인 보내기', 'effect': 'navigate'})
@@ -1184,7 +1184,7 @@ class WebKitIntegrationTests(unittest.TestCase):
             self.assertEqual(page['title'], '열기', 'the page stayed on the fixture site')
         finally:
             sess.close()
-        self.assertEqual(self.agentos.posts, [], 'the stand-in AgentOS received no request')
+        self.assertEqual(self.agentos.posts, [], 'the stand-in Still received no request')
         # Only the exact test origin was allowed; the worker in production has no allowance at all.
         worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name)
         try:

@@ -411,7 +411,7 @@ class SurfaceConsistencyTests(TerminalResultTestCase):
         # bubble is compared because the header itself must not re-make the
         # web-record claim that the trailing line no longer makes.
         self.assertEqual(text, '이 요청은 중단되었습니다. 자동으로 다시 실행하지 않았습니다.'
-                         '\n\n중단됨\n\nAgentOS 웹에서 실행 기록과 다음 단계를 확인하세요.')
+                         '\n\n중단됨\n\nStill 웹에서 실행 기록과 다음 단계를 확인하세요.')
 
     def test_a_partial_turn_with_no_text_points_at_no_web_record_either(self):
         """The same rule one branch over.
@@ -424,7 +424,7 @@ class SurfaceConsistencyTests(TerminalResultTestCase):
             with self.subTest(response=response):
                 text = AgentService.telegram_result_text(response, '원인', 'partial')
                 self.assertEqual(text, '일부 단계만 완료했습니다.\n\n원인'
-                                 '\n\nAgentOS 웹에서 실행 기록과 다음 단계를 확인하세요.')
+                                 '\n\nStill 웹에서 실행 기록과 다음 단계를 확인하세요.')
 
     def test_the_failure_bubble_offers_a_next_action_only_without_an_answer(self):
         """#752: a withheld/absent answer gets the next-action pointer; a shown answer does not."""
@@ -432,7 +432,7 @@ class SurfaceConsistencyTests(TerminalResultTestCase):
             with self.subTest(response=response):
                 text = AgentService.telegram_result_text(response, '원인', 'failed')
                 self.assertEqual(text, '이 요청은 완료하지 못했습니다.\n\n원인'
-                                 '\n\nAgentOS 웹에서 실행 기록과 다음 단계를 확인하세요.')
+                                 '\n\nStill 웹에서 실행 기록과 다음 단계를 확인하세요.')
         self.plan = [('calendar_query', {'start': '2026-09-24T00:00:00+09:00',
                                                     'end': '2026-09-25T00:00:00+09:00',
                                                     'timezone': 'Asia/Seoul'})]

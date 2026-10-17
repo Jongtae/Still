@@ -1,5 +1,5 @@
 [Unit]
-Description=Personal AgentOS
+Description=Still
 After=network-online.target
 [Service]
 Type=simple

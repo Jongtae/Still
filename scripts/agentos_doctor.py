@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Report whether this checkout is safe for an owner to begin local setup.
 
-The doctor is diagnostic only: it never restarts or reinstalls AgentOS,
+The doctor is diagnostic only: it never restarts or reinstalls Still,
 reads credentials, or contacts a provider.
 
 It compares this checkout's source, the
@@ -50,7 +50,7 @@ def _git_head(runner, root, env):
 
 # -- installation / route diagnostics (AX-11, #603) ---------------------------
 #
-# Read-only and model-free.  It never restarts or reinstalls AgentOS, never
+# Read-only and model-free.  It never restarts or reinstalls Still, never
 # writes owner data or configuration, never reads a credential and never makes
 # a provider or model request.  The only processes it starts are one-shot
 # stdio MCP bridges of the inspected build answering ``tools/list`` against a
@@ -248,7 +248,7 @@ def inspect_installation(root=ROOT, interpreter=None, data=None, port=None,
     findings, unknown = [], []
     with tempfile.TemporaryDirectory(prefix="agentos-doctor-install-") as temporary:
         temporary = Path(temporary)
-        # Only what path resolution needs: no inherited AgentOS/provider
+        # Only what path resolution needs: no inherited Still/provider
         # variables (tokens, endpoints, PYTHONPATH) reach a probed process.
         # HOME stays real because a user-site installation resolves from it.
         env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": os.environ.get("HOME", str(temporary)), "LC_ALL": "C"}
@@ -417,7 +417,7 @@ def main(argv=None):
     parser.add_argument("--root", default=ROOT)
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--interpreter", help="python of the installation to inspect (default: the installed agentos entry point)")
-    parser.add_argument("--data", help="AgentOS data folder whose recorded turn provenance to read, read-only")
+    parser.add_argument("--data", help="Still data folder whose recorded turn provenance to read, read-only")
     args = parser.parse_args(argv)
     report = inspect_installation(args.root, args.interpreter or _installed_interpreter(), args.data, args.port)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))

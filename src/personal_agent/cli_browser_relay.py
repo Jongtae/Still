@@ -1,7 +1,7 @@
-"""Browser tools for a trusted-local CLI Work turn, executed by the AgentOS service (#701).
+"""Browser tools for a trusted-local CLI Work turn, executed by the Still service (#701).
 
 The CLI's MCP bridge (``mcp_bridge``) is a separate process started by the
-CLI.  The owner-logged-in browser profile is held by the AgentOS service: one
+CLI.  The owner-logged-in browser profile is held by the Still service: one
 ``BrowserProfile`` with its in-process profile lock, the encrypted cookie jar
 and its Keychain key, Settings' per-site delete that reaches the running
 worker, and the per-step approval surfaces (Telegram ``p7w:`` buttons, web
@@ -11,7 +11,7 @@ the service over this relay, and the service runs it through the same
 ``AgentOSMcpTools.call`` -> ``Capabilities.execute`` -> ``BrowserSession``
 path the direct route uses.  Mediation, the label-independent payment guard,
 approvals, budgets, repeat keys, the loopback refusal and the worker's
-``AgentOS-Embedded`` user agent are therefore the service's, unchanged.
+``Still-Embedded`` user agent are therefore the service's, unchanged.
 
 Transport (Adopt, standard library): ``socketserver.ThreadingUnixStreamServer``
 on a Unix-domain socket inside a fresh ``tempfile.mkdtemp`` directory (mode
@@ -53,8 +53,8 @@ CALL_SECONDS = 300
 #: How long the service waits for a connected caller to send its request line.
 REQUEST_SECONDS = 10
 #: Owner-readable text of a relay that could not be reached; no path, no key.
-RELAY_UNAVAILABLE_TEXT = ('AgentOS 브라우저 연결을 사용할 수 없어 이 단계를 실행하지 않았습니다. '
-                          '작업이 끝났거나 AgentOS가 다시 시작됐을 수 있습니다.')
+RELAY_UNAVAILABLE_TEXT = ('Still 브라우저 연결을 사용할 수 없어 이 단계를 실행하지 않았습니다. '
+                          '작업이 끝났거나 Still이 다시 시작됐을 수 있습니다.')
 
 
 class RelayError(ValueError):
@@ -64,7 +64,7 @@ class RelayError(ValueError):
 def _error_payload(exc):
     """The typed shape of one failure, as the bridge maps it back (``relay_exception``).
 
-    #1484: ``ran: false`` when AgentOS refused the call before the tool ran.
+    #1484: ``ran: false`` when Still refused the call before the tool ran.
     #1496: ``observed_step`` of a click or typing step that timed out after it was observed.
     """
     from .bounded_execution import ExecutionError
@@ -94,7 +94,7 @@ def _relayed_exception(error):
     error = error if isinstance(error, dict) else {}
     kind, message = error.get('kind'), str(error.get('message') or '')
     if kind == 'invalid_arguments':
-        return ExecutionError(message or '허용하지 않은 AgentOS MCP 도구 또는 인수입니다.')
+        return ExecutionError(message or '허용하지 않은 Still MCP 도구 또는 인수입니다.')
     if kind == 'tool' and isinstance(error.get('code'), str) and error['code']:
         requires = error.get('requires') if isinstance(error.get('requires'), str) else None
         return ToolError(message or RELAY_UNAVAILABLE_TEXT, error['code'], requires=requires)

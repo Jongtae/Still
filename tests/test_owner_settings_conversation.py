@@ -575,7 +575,7 @@ class ReviewRemediation(ConversationConfirmation):
         self.assertEqual(self.applies, [])
         self.assertFalse(self.context()['enabled'])
         self.assertEqual(self.store.config('settings_change_drafts')[draft['id']]['state'], 'awaiting-confirmation')
-        # Any other AgentOS-enqueued message (no owner_typed) is refused the same way.
+        # Any other Still-enqueued message (no owner_typed) is refused the same way.
         self.store.enqueue(f"/settings 확인 {draft['id']}", 'agentos-internal')
         self.assertTrue(self.service.run_one())
         self.assertEqual(self.applies, [])

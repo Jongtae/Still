@@ -63,7 +63,7 @@ owner turn / authenticated continuation
  -> exact protocol/state handling OR bounded semantic goal interpretation
  -> existing Work + admissible ContextSnapshot + effective profile
  -> model/native CLI proposes next step
- -> AgentOS broker checks schema, revision, owner, grant, egress, effect, budget
+ -> Still broker checks schema, revision, owner, grant, egress, effect, budget
  -> tool/connector/runtime execution
  -> typed observation + retained Evidence
  -> continue / repair / ask / await authority / finalize
