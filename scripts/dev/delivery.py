@@ -26,10 +26,17 @@ class DeliveryError(RuntimeError):
     pass
 
 
-def default_state_path():
+#: The predecessor's heartbeat kept its state here. Still's plan keeps its own
+#: state per repository, so predecessor completions never carry over (#46).
+PREDECESSOR_REPOSITORY='Jongtae/agentos'
+
+
+def default_state_path(repository=PREDECESSOR_REPOSITORY):
     override=os.environ.get('AGENTOS_DELIVERY_STATE')
     if override:return Path(override).expanduser()
-    return Path.home()/'Library'/'Application Support'/'personal-agentos-delivery'/'state.json'
+    base=Path.home()/'Library'/'Application Support'
+    if repository==PREDECESSOR_REPOSITORY:return base/'personal-agentos-delivery'/'state.json'
+    return base/'still-delivery'/str(repository).replace('/','--')/'state.json'
 
 
 class StateStore:
@@ -153,7 +160,7 @@ class DeliveryController:
         if not configured_plan.is_file():
             raise DeliveryError('delivery-plan.yaml was not found at the repository root.')
         self.plan=DeliveryPlan(configured_plan)
-        self.state_store=StateStore(state_path)
+        self.state_store=StateStore(state_path or default_state_path(self.plan.data.get('repository')))
         self.runner=runner or CommandRunner()
         self.now=now or time.time
 

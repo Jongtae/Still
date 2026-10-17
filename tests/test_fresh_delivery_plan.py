@@ -55,3 +55,18 @@ def test_the_predecessor_goal_cannot_be_reactivated_from_the_root_plan(tmp_path)
     path = tmp_path / "delivery-plan.yaml"
     path.write_text(json.dumps(altered), encoding="utf-8")
     assert DeliveryPlan(path).select({}) is None
+
+
+def test_runtime_state_is_kept_per_repository(monkeypatch, tmp_path):
+    """A machine that ran the predecessor heartbeat must not feed its completions to Still."""
+    from scripts.dev import delivery
+
+    monkeypatch.delenv("AGENTOS_DELIVERY_STATE", raising=False)
+    monkeypatch.setattr(delivery.Path, "home", classmethod(lambda cls: tmp_path))
+    predecessor = delivery.default_state_path()
+    predecessor.parent.mkdir(parents=True)
+    predecessor.write_text(json.dumps({"completed": ["GOV-01"], "active": "V1.4-01"}), encoding="utf-8")
+    controller = delivery.DeliveryController(root=ROOT)
+    assert controller.state_store.path == tmp_path / "Library/Application Support/still-delivery/Jongtae--Still/state.json"
+    assert controller.state_store.read() == {}
+    assert json.loads(predecessor.read_text(encoding="utf-8"))["completed"] == ["GOV-01"]
