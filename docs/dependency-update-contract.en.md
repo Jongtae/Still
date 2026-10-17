@@ -85,8 +85,10 @@ first updater scope.
   build constraint is exact and attributable but is not artifact-hash locked
   by 0.11, which remains an explicit integrity limitation.
 
-The CI bootstrap uses `astral-sh/setup-uv` v10.2.0 at exact commit
-`c18668ad3cf93ea998bef934396af7bb5c839dc7` and requests `uv==0.11.33`.
+The CI bootstrap uses `astral-sh/setup-uv` v10.3.0 at exact commit
+`1c37ad07a6a961277cf70c0d37d6f313000f5884` (Dependabot #1, merged 2026-10-17;
+tag observed to resolve to that commit; v10.3.0 published 2026-10-09 adds a
+`python-arch` input and embedded uv checksums) and requests `uv==0.11.33`.
 `setup-uv` is MIT licensed. `[tool.uv]` rejects writers outside the reviewed
 0.11.33 through 0.12.x compatibility window; contributor and CI commands pin
 0.11.33 exactly. A Dependabot update records the hosted writer observed in
@@ -333,7 +335,14 @@ installation.
 
 ## Selected-server setup status SDK — CONNECT-FIND-01 #1299
 
-The host extra additionally pins `claude-agent-sdk==0.2.165` (2026-10-08).
+The host extra additionally pins `claude-agent-sdk==0.2.166` (uploaded
+2026-10-14; Dependabot #3, merged 2026-10-17; reviewed from 0.2.165,
+2026-10-08). Upstream's 0.2.166 changelog adds typed hook outputs and a
+`SystemInitData` TypedDict, corrects the `SandboxSettings.ignoreViolations`
+type, and bundles Claude CLI 2.1.299; none changes the `ClaudeSDKClient`
+initialization or `get_mcp_status()` surface used here, and the lock diff
+changes only this package's version and artifact hashes. `mcp_setup.SDK_VERSION`
+is the runtime check and moves with this pin.
 Its public `ClaudeSDKClient` initialization and `get_mcp_status()` are adapted
 by `mcp_setup`; no model query or tool call is submitted. The SDK source is
 [MIT](https://github.com/anthropics/claude-agent-sdk-python/blob/main/LICENSE).
@@ -347,8 +356,8 @@ apply to that independently executed program.
 The exact lock adds only that SDK and `sniffio==1.3.1` (MIT OR Apache-2.0,
 2024-02-25, Python >=3.7); existing versions remain unchanged. The SDK's
 required anyio, jsonschema and MCP versions fit the existing host closure.
-The source archive hash is
-`1bfa8e7a6bb36e82de9a12324c9bcfa6eebd4f96ee5890f0c656d50445240ff8`;
+The 0.2.166 source archive hash is
+`6dbd129cf8bdae065e5504f3619176aa23c2d864afffc14464df387c72edde30`;
 platform wheel hashes are in `uv.lock`. SDK import is lazy and version checked.
 A missing/different SDK or unsupported engine yields `unsupported`, never a
 fallback to another runtime or an inferred connection.

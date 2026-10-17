@@ -11,6 +11,7 @@ from personal_agent import bounded_execution
 from personal_agent.bounded_execution import (BRIDGE_UNAVAILABLE, MCP_SDK_VERSION, AgentOSMcpTools,
                                               BoundedExecutionAdapter, ExecutionError, bridge_sdk_problem,
                                               claude_bridge_status)
+from personal_agent.mcp_setup import SDK_VERSION
 from test_bounded_execution import _Capabilities
 from test_orchestrator import NO_TOOL_CALLS, Harness, plan
 
@@ -25,7 +26,7 @@ class SdkCheck(unittest.TestCase):
     def test_the_checked_version_is_the_mcp_host_pin(self):
         with open(ROOT / 'pyproject.toml', 'rb') as handle:
             extras = tomllib.load(handle)['project']['optional-dependencies']
-        self.assertEqual(extras['mcp-host'], [f'mcp=={MCP_SDK_VERSION}', 'claude-agent-sdk==0.2.165'])
+        self.assertEqual(extras['mcp-host'], [f'mcp=={MCP_SDK_VERSION}', f'claude-agent-sdk=={SDK_VERSION}'])
 
     def test_missing_or_other_sdk_is_named_and_the_pin_passes(self):
         def missing(_name):
