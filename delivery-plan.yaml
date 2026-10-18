@@ -11,6 +11,7 @@
     {
       "id": "BROWSER-REL-01",
       "issue": 94,
+      "milestone": "browser-reliability",
       "kind": "implementation",
       "activation_status": "owner-activated-goal-ready",
       "contract": "goal-execution-contract.en.md",
@@ -24,6 +25,7 @@
       "id": "BROWSER-INPUT-01",
       "program": "BROWSER-REL-01",
       "issue": 12,
+      "milestone": "browser-reliability",
       "kind": "implementation",
       "activation_status": "parent-controlled",
       "tests": [
@@ -36,6 +38,7 @@
       "id": "BROWSER-LOADMORE-01",
       "program": "BROWSER-REL-01",
       "issue": 11,
+      "milestone": "browser-reliability",
       "kind": "implementation",
       "activation_status": "parent-controlled",
       "tests": [
@@ -50,6 +53,7 @@
       "id": "BROWSER-PROFILE-01",
       "program": "BROWSER-REL-01",
       "issue": 13,
+      "milestone": "browser-reliability",
       "kind": "implementation",
       "activation_status": "parent-controlled",
       "tests": [
@@ -61,7 +65,11 @@
       ]
     }
   ],
-  "milestones": {},
+  "milestones": {
+    "browser-reliability": {
+      "title": "Browser reliability (BROWSER-REL-01)"
+    }
+  },
   "programs": {
     "BROWSER-REL-01": {
       "status": "owner-activated-goal-ready",

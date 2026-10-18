@@ -72,6 +72,21 @@ def test_the_owner_activated_browser_program_is_goal_ready_and_heartbeat_paused(
         assert DeliveryPlan(PLAN).select(state) is None, state
 
 
+def test_the_controller_can_run_the_program_once_the_owner_makes_it_active(tmp_path):
+    """#100: every controller path reads the selected iteration's milestone."""
+    from scripts.dev.delivery import DeliveryController
+
+    altered = plan()
+    altered["next_goal"] = {"id": "BROWSER-REL-01", "status": "active"}
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "delivery-plan.yaml").write_text(json.dumps(altered), encoding="utf-8")
+    controller = DeliveryController(root, tmp_path / "state.json", invariants.RecordingRunner(), now=lambda: 1_700_000_000)
+    status = controller.status()
+    assert (status["active"], status["milestone"]) == ("BROWSER-REL-01", "browser-reliability")
+    assert controller.plan.milestone_title(controller.plan.items["BROWSER-REL-01"]) == "Browser reliability (BROWSER-REL-01)"
+
+
 def test_the_predecessor_goal_cannot_be_reactivated_from_the_root_plan(tmp_path):
     """Declaring an archived program active selects nothing: it has no iteration here."""
     altered = plan()
