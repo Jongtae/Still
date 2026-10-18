@@ -852,6 +852,21 @@ class MobileUserAgent(unittest.TestCase):
         self.assertEqual(MOBILE_SIZE, (390.0, 844.0))
 
 
+    def test_the_os_token_is_one_a_real_iphone_sends(self):
+        """#13: Safari 26+ on iOS freezes the OS token (Apple Safari 26.0/26.2 release notes; WebKit 298717, 298473)."""
+        from unittest import mock
+        from personal_agent import browser_worker as bw
+        for version, token in (('26.0', '18_6'), ('26.0.1', '18_6'), ('26.1', '18_6_2'), ('26.2', '18_6_2'),
+                               ('26.3.1', '18_6_2'), ('27.0.1', '18_6_2'), ('18.6', '18_6'), ('18.3.1', '18_3'),
+                               ('17', '17_0'), ('', '18_6_2'), ('x.y', '18_6_2')):
+            self.assertEqual(bw.ios_os_token(version), token, version)
+        with mock.patch.object(bw, 'safari_application_name', return_value=f'Version/27.0.1 Safari/605.1.15 {bw.EMBEDDED_UA_TOKEN}'):
+            agent = bw.mobile_user_agent()
+        self.assertIn('CPU iPhone OS 18_6_2 like Mac OS X', agent)
+        self.assertIn('Version/27.0.1 Mobile/15E148', agent, 'the Safari version itself is reported as it is')
+        self.assertNotIn('27_0', agent)
+
+
 class PhonePageAutofill(unittest.TestCase):
     """#1170: the phone page offers iPhone password AutoFill; what it fills goes out as typed text and is cleared."""
 

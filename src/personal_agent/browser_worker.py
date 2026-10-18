@@ -608,6 +608,20 @@ def client_guard_user_script(off=False):
 #: (``FORM_NAVIGATION_SCRIPT``, #700).  A page can detect the wrapper
 #: (``toString``), so it is not installed while the owner's login window shows
 #: (#700); ``fetch``/XHR posts are not form submits at all.
+#: Page world, at document start of every frame, in every guard state (#13, adapted from
+#: the predecessor's #1548): ``navigator.platform`` says ``iPhone`` like the phone user
+#: agent (#1183), not ``MacIntel``.  Device emulation in Playwright and Chrome DevTools
+#: sets the two together for the same reason.  Touch support is deliberately not
+#: claimed (``maxTouchPoints`` stays 0, no ``ontouchstart``): presses are native mouse
+#: events, and a page that believed it had touch could listen for touch events only.
+PHONE_PLATFORM_USER_SCRIPT = r"""(() => {
+  const proto = Navigator.prototype, desc = Object.getOwnPropertyDescriptor(proto, 'platform');
+  if (!desc || !desc.configurable) return;
+  Object.defineProperty(proto, 'platform', {...desc, get: function () { return 'iPhone'; }});
+})();
+"""
+
+
 PAGE_WRAP_USER_SCRIPT = r"""(() => {
   const proto = HTMLFormElement.prototype, original = proto.submit;
   if (typeof original !== 'function') return;
@@ -835,11 +849,36 @@ def safari_application_name():
 MOBILE_SIZE = (float(WIDTH), float(HEIGHT))
 
 
+#: #13: the OS token Safari on iOS 26 and later sends.  Apple's Safari 26.0 and 26.2
+#: release notes: "Safari now reports a frozen OS version in its user agent string on
+#: iOS 26 and iPadOS 26, showing the last version released before iOS 26" (156170132).
+#: Safari 26.0 shipped it as ``18_6`` (WebKit bug 298717, iOS 26.0 23A340); WebKit then
+#: revised it to ``18_6_2``, the last iOS before 26, and called the freeze permanent
+#: (bug 298473, 299765@main).  Later Safari versions keep that value.
+FROZEN_IOS_TOKEN = '18_6_2'
+FROZEN_IOS_TOKEN_SAFARI_26_0 = '18_6'
+
+
+def ios_os_token(version):
+    """The ``CPU iPhone OS <token>`` an iPhone with this Safari version sends (#13).
+
+    Safari before 26 reports the real iOS version, which matches its own
+    ``<major>_<minor>``; from 26 the OS token is frozen (``FROZEN_IOS_TOKEN``).
+    A token no real iPhone sends (``26_0``, ``27_0``) is an easy bot signal.
+    """
+    parts = [int(part) for part in str(version or '').split('.')[:2] if part.isdigit()]
+    if not parts:
+        return FROZEN_IOS_TOKEN
+    major, minor = parts[0], (parts[1] if len(parts) > 1 else 0)
+    if major < 26:
+        return f'{major}_{minor}'
+    return FROZEN_IOS_TOKEN_SAFARI_26_0 if (major, minor) == (26, 0) else FROZEN_IOS_TOKEN
+
+
 def mobile_user_agent():
     """A mobile Safari user agent of this Safari's version, still carrying the embedded marker (#680)."""
     version = safari_application_name().split()[0].split('/', 1)[-1]
-    major = version.split('.')[0] if version.split('.')[0].isdigit() else '18'
-    return (f'Mozilla/5.0 (iPhone; CPU iPhone OS {major}_0 like Mac OS X) AppleWebKit/605.1.15 '
+    return (f'Mozilla/5.0 (iPhone; CPU iPhone OS {ios_os_token(version)} like Mac OS X) AppleWebKit/605.1.15 '
             f'(KHTML, like Gecko) Version/{version} Mobile/15E148 Safari/604.1 {EMBEDDED_UA_TOKEN}')
 
 
@@ -1297,17 +1336,19 @@ class Worker:
         """The document-start scripts: the client-world guard (armed, or off while
         the owner's login window shows) and, only while armed, the page-world
         ``form.submit`` wrapper (a page's bot detection must not see it while the
-        owner signs in, #700)."""
+        owner signs in, #700).  The phone platform holds in every state and every
+        frame, the login window included (#13)."""
         WebKit = self.WebKit
         start = WebKit.WKUserScriptInjectionTimeAtDocumentStart
         self.controller.removeAllUserScripts()
-        scripts = [(client_guard_user_script(self.guard_off), self.world)]
+        scripts = [(client_guard_user_script(self.guard_off), self.world, True)]
         if not self.guard_off:
-            scripts.append((PAGE_WRAP_USER_SCRIPT, self.page_world))
-        for source, world in scripts:
+            scripts.append((PAGE_WRAP_USER_SCRIPT, self.page_world, True))
+        scripts.append((PHONE_PLATFORM_USER_SCRIPT, self.page_world, False))
+        for source, world, main_only in scripts:
             self.controller.addUserScript_(
                 WebKit.WKUserScript.alloc().initWithSource_injectionTime_forMainFrameOnly_inContentWorld_(
-                    source, start, True, world))
+                    source, start, main_only, world))
 
     def set_guard_off(self, off):
         """The owner's login window: the guard is off while it shows, for this page and the next ones."""
