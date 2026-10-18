@@ -15,7 +15,9 @@ Relevant [Development Constitution](../docs/development-constitution.en.md) prin
 
 ## Existing solutions review (Adopt / Adapt / Build)
 
-Required before non-trivial implementation that introduces or replaces a component, abstraction, integration, dependency, framework, or commodity infrastructure. Start with internal repository reuse. For a pure bug fix/data/content change that introduces none of those, set the decision to `N/A` and give a concrete reason.
+Required before non-trivial implementation that introduces or replaces a component, abstraction, integration, dependency, framework, or commodity infrastructure. Start with internal repository reuse. For a pure bug fix/data/content change that introduces none of those, set the decision to `N/A` and give a concrete reason. The issue's own reuse section usually supplies these answers.
+
+`decision:` holds exactly one word, `Adopt`, `Adapt`, `Build` or `N/A`, with no explanation after it; put the reasoning in the other fields. Check the body before opening the PR: `python3 scripts/verify_reuse_review.py body.md`.
 
 - problem/boundary:
 - internal repository candidates:

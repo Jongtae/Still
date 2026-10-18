@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from pathlib import Path
 
 
 HEADING = "## Existing solutions review (Adopt / Adapt / Build)"
@@ -81,8 +82,20 @@ def validate_pr_body(body: str) -> None:
             raise ReuseReviewError("Build requires a concrete unsatisfied-contract rationale")
 
 
-def main() -> int:
-    body = os.environ.get("PR_BODY")
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if len(args) > 1:
+        print("usage: verify_reuse_review.py [BODY_FILE]  (or set PR_BODY)", file=sys.stderr)
+        return 2
+    if args:
+        # Local pre-check of a drafted body before ``gh pr create --body-file``.
+        try:
+            body = Path(args[0]).read_text(encoding="utf-8")
+        except OSError as exc:
+            print(f"cannot read PR body file: {exc}", file=sys.stderr)
+            return 2
+    else:
+        body = os.environ.get("PR_BODY")
     if body is None:
         print("PR_BODY is not set", file=sys.stderr)
         return 2
