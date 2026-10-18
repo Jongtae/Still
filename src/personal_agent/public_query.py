@@ -118,6 +118,25 @@ PUBLIC_CREDENTIAL_TOPICS = frozenset({
     'rotation','scopes','security','to','tutorial','practices','what',
 })
 
+def _value_shaped(token):
+    """Whether a word beside a credential label looks like a secret value rather than a topic word.
+
+    Letters mixed with digits (``hunter2``, ``abc123``), a long digit run
+    (``12345678``), a very long run without a break (counted in UTF-8 bytes,
+    so a six-syllable Hangul compound counts as long), or symbols inside the
+    word.  Ordinary words, short numbers such as an HTTP status (``401``) and
+    short version tags (``oauth2``, ``2fa``) are not.  A tripwire over surface
+    forms: a secret written as plain words still passes.
+    """
+    digits=sum(character.isdigit() for character in token)
+    letters=sum(character.isalpha() for character in token)
+    if digits and letters and (len(token) >= 7 or digits >= 3):
+        return True
+    if token.isdigit():
+        return len(token) >= 6
+    return len(token.encode('utf-8')) >= 16 or any(not (character.isalnum() or character in "-.'") for character in token)
+
+
 def validate_public_query(query, query_source):
     """Reject an outbound public query carrying credential, identity or private-file shapes.
 
@@ -176,7 +195,11 @@ def validate_public_query(query, query_source):
         for raw in re.findall(r'[^\s,;:!?()\[\]{}]+',topic_text):
             token=raw.strip('"\'.-_/@#$%^&*+=\\|<>`~').casefold()
             if token: tokens.append(token)
-        if not tokens or any(token not in PUBLIC_CREDENTIAL_TOPICS for token in tokens): sensitive=True
+        # #23: every web_search passes here, so a help search beside a label
+        # ("how to reset my password", "API key error 401") is public. Only a
+        # value-shaped word beside the label is taken for the credential itself.
+        if not tokens or any(token not in PUBLIC_CREDENTIAL_TOPICS and _value_shaped(token) for token in tokens):
+            sensitive=True
     if sensitive:
         raise ValueError('자격 증명 정보나 개인 파일 내용은 공개 검색어로 전송할 수 없습니다.')
     return public_query

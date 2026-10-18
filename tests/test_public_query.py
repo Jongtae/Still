@@ -132,6 +132,17 @@ class PublicQueryTests(unittest.TestCase):
                       'basic economy fare comparison','basic room rates Seoul'):
             with self.subTest(query=query):
                 self.assertEqual(validate_public_query(query,'owner_public_request'),query)
+        # #23: every web_search passes this check, so help searches beside a label stay public.
+        for query in ('how to reset my password','forgot password gmail','API key error 401',
+                      'reset password link expired','refresh token expired error',
+                      'access token 401 unauthorized','password 2fa reset','oauth2 access token'):
+            with self.subTest(query=query):
+                self.assertEqual(validate_public_query(query,'public_task_input'),query)
+        # ... while a value-shaped word beside the label is still taken for the credential.
+        for query in ('password hunter2','api key abc123','password 12345678','password p@ss!word',
+                      'password abcdefghijklmnopqrst'):
+            with self.subTest(query=query),self.assertRaises(ValueError):
+                validate_public_query(query,'public_task_input')
         for query in ('Secret Garden hotel Seoul','secret beach hotels Bali'):
             with self.subTest(query=query):
                 self.assertEqual(validate_public_query(query,'owner_public_request'),query)
