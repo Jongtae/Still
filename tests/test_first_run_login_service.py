@@ -57,7 +57,7 @@ class LoginServiceOfferTest(unittest.TestCase):
         """What `agentos start` does: run first setup, then hand over on a recorded yes."""
         term = ScriptedTerminal(asks=asks)
         probe = login_service_status(args or start_args(), platform=platform, interactive=interactive,
-                                     action=self.action)
+                                     environ={}, action=self.action)
         finished = first_run.run(FakeService(), self.store, term, login_service=probe)
         released = []
         if finished and first_run.wants_login_service(self.store):
@@ -106,6 +106,21 @@ class LoginServiceOfferTest(unittest.TestCase):
             with self.subTest(**{key: str(value) for key, value in override.items()}):
                 self.assertIsNone(login_service_status(start_args(**override), platform='darwin',
                                                        interactive=True, action=self.action))
+
+    def test_a_start_configured_through_its_environment_never_asks(self):
+        # launchd starts Still with the recorded arguments only, so this configuration would be lost.
+        for name in ('AGENTOS_ISOLATED_ENGINE_URL', 'AGENTOS_GOOGLE_CLIENT_FILE', 'AGENTOS_GMAIL_LOCAL_ONLY'):
+            with self.subTest(name=name):
+                self.assertIsNone(login_service_status(start_args(), platform='darwin', interactive=True,
+                                                       environ={name: '1'}, action=self.action))
+        self.assertEqual(self.action.calls, [])
+
+    def test_the_data_folder_and_installer_switch_do_not_block_the_offer(self):
+        # AGENTOS_DATA is recorded as --data; AGENTOS_NO_START belongs to the installer.
+        probe = login_service_status(start_args(), platform='darwin', interactive=True,
+                                     environ={'AGENTOS_DATA': '/owner/data', 'AGENTOS_NO_START': '0', 'HOME': '/h'},
+                                     action=self.action)
+        self.assertEqual(probe()['status'], 'not_installed')
 
     def test_an_installed_service_is_not_offered_again(self):
         for status in ('running', 'stopped', 'loaded_not_running', 'unknown'):
@@ -185,7 +200,8 @@ class StartHandOverTest(unittest.TestCase):
                 self.closed = True
 
         term = ScriptedTerminal(asks=SKIP_TO_LOGIN + [answer])
-        probe = lambda args: login_service_status(args, platform='darwin', interactive=True, action=action)
+        probe = lambda args: login_service_status(args, platform='darwin', interactive=True, environ={},
+                                                  action=action)
         with patch.dict(os.environ, {}, clear=True), \
              patch.object(sys, 'argv', ['agentos', 'start', '--data', temp.name, '--no-browser']), \
              patch.object(sys.stdin, 'isatty', return_value=True), \

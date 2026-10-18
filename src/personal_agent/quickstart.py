@@ -1578,17 +1578,26 @@ def service_main(argv):
     return 0 if receipt.get('ok') else 1
 
 
-def login_service_status(args, *, platform=None, interactive=None, action=service_action):
+#: Variables the login service reproduces without its environment: the data folder
+#: is recorded as ``--data`` and the installer's own switch never reaches Still.
+SERVICE_REPRODUCED_ENVIRONMENT=frozenset({'AGENTOS_DATA','AGENTOS_NO_START'})
+
+
+def login_service_status(args, *, platform=None, interactive=None, environ=None, action=service_action):
     """Read the login service's status for first setup's offer, or None when this start cannot offer it (#105).
 
     Only an interactive macOS start that the login service would reproduce
-    (loopback, the default ports, no tunnel host) asks; a launchd start has
-    no terminal and never prompts.
+    asks: loopback, the default ports, no tunnel host, and no other
+    ``AGENTOS_*`` configuration, since the service definition records only
+    its arguments and launchd would start Still without that environment.
+    A launchd start has no terminal and never prompts.
     """
     if (platform or sys.platform)!='darwin':return None
     if not (sys.stdin.isatty() if interactive is None else interactive):return None
     if (args.host!='127.0.0.1' or args.port!=SERVICE_PORT or args.drive_handoff_port is not None
             or args.public_tunnel_host):return None
+    env=os.environ if environ is None else environ
+    if any(name.startswith('AGENTOS_') and name not in SERVICE_REPRODUCED_ENVIRONMENT for name in env):return None
     return lambda:action('status',data_dir=args.data)
 
 
