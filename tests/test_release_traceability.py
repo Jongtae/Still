@@ -69,7 +69,9 @@ EXPECTED_FORMULA = '''class Agentos < Formula
     <<~EOS
       Run agentos start to open browser setup.
       Data: ~/.local/share/agentos
-      Keep the process running to receive Telegram requests.
+      To start Still at login and after a restart, without a terminal (macOS):
+        #{opt_bin}/agentos service install --cli-path #{opt_bin}/agentos
+      Otherwise keep agentos start running to receive Telegram requests.
     EOS
   end
 
@@ -164,6 +166,25 @@ class ReleaseTraceabilityTests(unittest.TestCase):
         body = FORMULA.read_text(encoding='utf-8')
         self.assertIn(f'refs/tags/v{release["version"]}.tar.gz"', body)
         self.assertIn(f'sha256 "{release["archive_sha256"]}"', body)
+
+    def test_the_published_formula_matches_the_template(self):
+        """A template change must re-sync ``Formula/agentos.rb`` in the same PR.
+
+        ``scripts/dev/release.py formula`` refuses a formula whose body differs
+        from the template beyond url and sha256, so drift left here would only
+        surface during the next release (#96).
+        """
+        release = newest_release()
+        if release is None:
+            self.skipTest('no Still release yet, so no formula')
+        sys.path.insert(0, str(SCRIPTS / 'dev'))
+        try:
+            import release as release_script
+        finally:
+            sys.path.remove(str(SCRIPTS / 'dev'))
+        rendered = release_script.render_formula(release['version'], release['archive_sha256'])
+        self.assertEqual(release_script._formula_body(FORMULA.read_text(encoding='utf-8')),
+                         release_script._formula_body(rendered))
 
     # -- the template ------------------------------------------------------
 

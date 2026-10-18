@@ -175,7 +175,8 @@ class ServiceControlTests(unittest.TestCase):
         self.assertEqual(ServiceController(home=self.home, cli_path=self.cli, runner=self.runner, uid=501, port=8787).port, 8787)
 
     def test_resolve_cli_uses_path_then_actual_brew_prefix(self):
-        self.assertEqual(resolve_cli_path(which=lambda name: str(self.cli) if name == "agentos" else None), self.cli.absolute())
+        self.assertEqual(resolve_cli_path(which=lambda name: str(self.cli) if name == "agentos" else None, running=""),
+                         self.cli.absolute())
         bin_cli = self.root / "brew-prefix/bin/agentos"
         bin_cli.parent.mkdir(parents=True)
         bin_cli.write_text("#!/bin/sh\n")
@@ -185,8 +186,55 @@ class ServiceControlTests(unittest.TestCase):
             self.assertEqual(command, ["/custom/bin/brew", "--prefix"])
             return CommandResult(0, stdout=str(self.root / "brew-prefix") + "\n")
 
-        resolved = resolve_cli_path(which=lambda name: "/custom/bin/brew" if name == "brew" else None, runner=brew_runner)
+        resolved = resolve_cli_path(which=lambda name: "/custom/bin/brew" if name == "brew" else None, runner=brew_runner,
+                                    running="")
         self.assertEqual(resolved, bin_cli.absolute())
+
+    def _executable(self, relative):
+        path = self.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#!/bin/sh\n")
+        path.chmod(0o755)
+        return path
+
+    def test_resolve_cli_prefers_the_running_agentos_over_an_earlier_path_hit(self):
+        """#96: a pyenv shim ahead of Homebrew on PATH must not be recorded."""
+        shim = self._executable("pyenv/shims/agentos")
+        cellar = self._executable("brew/Cellar/agentos/0.1.0/bin/agentos")
+        opt_bin = self.root / "brew/opt/agentos/bin"
+        opt_bin.parent.mkdir(parents=True)
+        opt_bin.symlink_to(cellar.parent)
+        resolved = resolve_cli_path(which=lambda name: str(shim) if name == "agentos" else None,
+                                    running=str(opt_bin / "agentos"))
+        # The stable opt path is kept, not the versioned Cellar path behind it.
+        self.assertEqual(resolved, opt_bin / "agentos")
+
+    def test_resolve_cli_falls_back_to_path_when_the_running_program_is_not_an_agentos_executable(self):
+        on_path = self._executable("uv/bin/agentos")
+        which = lambda name: str(on_path) if name == "agentos" else None
+        module_start = self._executable("src/personal_agent/quickstart.py")
+        missing = self.root / "gone/bin/agentos"
+        not_executable = self.root / "plain/bin/agentos"
+        not_executable.parent.mkdir(parents=True)
+        not_executable.write_text("")
+        for running in (str(module_start), str(missing), str(not_executable), ""):
+            with self.subTest(running=running):
+                self.assertEqual(resolve_cli_path(which=which, running=running), on_path)
+
+    def test_an_explicit_cli_path_still_wins_over_the_running_program(self):
+        running = self._executable("brew/bin/agentos")
+        self.assertEqual(resolve_cli_path(self.cli, which=lambda _name: None, running=str(running)),
+                         self.cli.absolute())
+
+    def test_install_records_the_running_agentos_executable(self):
+        shim = self._executable("pyenv/shims/agentos")
+        running = self._executable("brew/opt/agentos/bin/agentos")
+        controller = ServiceController(home=self.home, runner=self.runner, uid=501,
+                                       which=lambda name: str(shim) if name == "agentos" else None)
+        with patch("sys.argv", [str(running), "service", "install"]):
+            self.assertEqual(controller.install()["status"], "running")
+        arguments = plistlib.loads(controller.plist_path.read_bytes())["ProgramArguments"]
+        self.assertEqual(arguments[0], str(running))
 
     def test_install_start_stop_status_restart_are_deterministic(self):
         installed = self.controller.install()
