@@ -95,7 +95,11 @@ for line in sys.stdin:
         else:
             emit({'id': ident, 'ok': True})
     elif op == 'type':
-        emit({'id': ident, 'ok': True})
+        if command.get('text') == 'moved':
+            # #12, as the real worker: the press moved the focus to another field, named, not typed into.
+            emit({'id': ident, 'ok': False, 'error': 'focus_moved', 'focused': {'name': 'Search here'}})
+        else:
+            emit({'id': ident, 'ok': True})
     elif op == 'release_submit':
         # As the real worker (#700): only the submit it last reported, once.
         if held is not None and command.get('form') == held:

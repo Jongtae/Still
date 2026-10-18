@@ -988,7 +988,8 @@ class CoveredTargetTests(unittest.TestCase):
     """#1395: a refused press says why, and names what covers its target in the model's own element numbers."""
 
     def test_refusal_text_keeps_the_reason(self):
-        self.assertEqual(bs.target_text('target_changed'), bs.TARGET_TEXT)
+        self.assertEqual(bs.target_text('target_changed'), bs.CHANGED_TEXT)
+        self.assertEqual(bs.target_text('bad_target'), bs.TARGET_TEXT, 'an unlisted reason keeps the general text')
         self.assertEqual(bs.target_text('target_hidden'), bs.HIDDEN_TEXT)
         self.assertTrue(bs.target_text('target_obscured').startswith(bs.OBSCURED_TEXT))
         named = bs.target_text('target_obscured', {'text': '앱으로\n 보기', 'controls': [{'index': 4, 'name': '배너 닫기'},
@@ -1022,6 +1023,45 @@ class CoveredTargetTests(unittest.TestCase):
         self.assertNotIn('목록에 없는 요소', text, 'a control the model was never shown is not named')
         self.assertNotIn('abc123secret', text, 'the cover text is scrubbed like page text')
         self.assertIn('가린 요소를 닫거나 치운 뒤 다시 시도하세요.', text)
+
+
+class InputTargetTests(unittest.TestCase):
+    """#12: a typing step that did not run says which reason held, and never types elsewhere."""
+
+    def test_each_reason_has_its_own_text(self):
+        texts = {code: bs.target_text(code) for code in
+                 ('target_missing', 'target_changed', 'target_hidden', 'not_typable', 'not_focusable')}
+        self.assertEqual(texts, {'target_missing': bs.MISSING_TEXT, 'target_changed': bs.CHANGED_TEXT,
+                                 'target_hidden': bs.HIDDEN_TEXT, 'not_typable': bs.NOT_TYPABLE_TEXT,
+                                 'not_focusable': bs.NOT_FOCUSED_TEXT})
+        self.assertEqual(len(set(texts.values())), len(texts))
+        moved = bs.target_text('focus_moved', {'name': '검색어\n 입력'})
+        self.assertTrue(moved.startswith(bs.FOCUS_MOVED_TEXT))
+        self.assertIn('초점을 받은 요소: “검색어 입력”.', moved)
+        self.assertIn('browser_read', moved)
+        self.assertNotIn('초점을 받은 요소', bs.target_text('focus_moved'), 'an unnamed field names nothing')
+        for code in bs.TARGET_ERRORS:
+            self.assertTrue(bs.target_text(code), code)
+
+    def test_a_moved_focus_names_the_field_scrubbed_and_types_nothing(self):
+        sess, driver = session(steps=40, excluded=lambda: [PASSPORT])
+        sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
+        field = next(row for row in sess.last['_elements'] if row['name'] == '받는 사람')
+        typed = []
+
+        def moved(index, text, timeout, approved=False, confirm_ok=False):
+            typed.append(index)
+            exc = ToolError(bs.target_text('focus_moved'), 'target_unavailable')
+            exc.focused = {'name': '검색 ' + PASSPORT}
+            raise exc
+        driver.type = moved
+        with self.assertRaises(ToolError) as caught:
+            sess.type({'target': str(field['n']), 'text': '우유', 'effect': 'mutate'})
+        text = str(caught.exception)
+        self.assertEqual(caught.exception.code, 'target_unavailable')
+        self.assertIn('초점을 받은 요소: “검색', text)
+        self.assertNotIn(PASSPORT, text, 'the focused name is scrubbed like page text')
+        self.assertEqual(typed, [field['index']], 'one attempt, on the checked field only')
 
 
 class CommitControlTests(unittest.TestCase):

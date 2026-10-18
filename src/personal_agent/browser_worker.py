@@ -92,7 +92,9 @@ DIALOG_TEXT_LIMIT = 200
 
 #: ``index`` is an element's position in ``document.querySelectorAll(SELECTOR)``.
 SELECTOR = ('a[href], button, input, select, textarea, summary, [role="button"], [role="link"], [role="textbox"], '
-            '[role="checkbox"], [role="radio"], [role="combobox"], [role="menuitem"], [role="tab"]')
+            '[role="searchbox"], [role="checkbox"], [role="radio"], [role="combobox"], [role="menuitem"], [role="tab"], '
+            # #12: an editing area or search widget is a field the model can type into.
+            '[contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]')
 
 #: The cancelable event the page-world ``form.submit()`` wrapper dispatches on
 #: the form so the client-world submit guard can refuse it (#698).
@@ -372,7 +374,7 @@ const roleOf = (el) => {
   if (tag === 'a') return 'link';
   if (tag === 'button' || tag === 'summary') return 'button';
   if (tag === 'select') return 'combobox';
-  if (tag === 'textarea') return 'textbox';
+  if (tag === 'textarea' || el.isContentEditable) return 'textbox';
   if (tag === 'input') {
     const type = typeOf(el);
     if (['submit', 'button', 'image', 'reset'].includes(type)) return 'button';
@@ -468,7 +470,11 @@ if (approved === true) {
   s.allow = allowFor(forms, Date.now() + lasts);
 }
 const tag = el.tagName.toLowerCase();
-return JSON.stringify({x, y, editable: el.isContentEditable || tag === 'textarea' ||
+// #12: a text-entry widget (role textbox/searchbox) may become editable only once it
+// has focus, so it is pressed too; INSERT_SCRIPT then types only if it is editable.
+const textRole = !['input', 'textarea', 'select', 'button', 'a', 'summary'].includes(tag) &&
+  (attr(el, 'role') || '').toLowerCase().split(/\s+/).some((role) => role === 'textbox' || role === 'searchbox');
+return JSON.stringify({x, y, editable: el.isContentEditable || tag === 'textarea' || textRole ||
   (tag === 'input' && !['submit', 'button', 'image', 'reset', 'checkbox', 'radio', 'file', 'hidden', 'range', 'color'].includes(typeOf(el)))});
 """
 
@@ -626,7 +632,15 @@ INSERT_SCRIPT = PRELUDE + r"""
 const s = state(), g = s.guard, ref = s.targets.get(nonce), el = ref && ref.deref();
 s.guard = null;
 if (!g || g.nonce !== nonce || g.bad) return JSON.stringify({error: 'target_changed'});
-if (!el || !el.isConnected || document.activeElement !== el) return JSON.stringify({error: 'target_changed'});
+if (!el || !el.isConnected || document.activeElement !== el) {
+  // #12: say where the press left the focus, so the model can target that field in a
+  // new, separately checked step.  Nothing is typed into it here.
+  const now = document.activeElement;
+  if (now && now !== el && now !== document.body && now !== document.documentElement) {
+    return JSON.stringify({error: 'focus_moved', focused: {name: cut(nameOf(now), 80)}});
+  }
+  return JSON.stringify({error: el && el.isConnected ? 'not_focusable' : 'target_missing'});
+}
 if (!same(describe(el, tokens), expect)) return JSON.stringify({error: 'target_changed'});
 if (typeof el.select === 'function') { el.select(); }
 else { const range = document.createRange(); range.selectNodeContents(el);
@@ -1264,7 +1278,7 @@ class Worker:
         """
         return {'posted': self.posted_submits > self.step_posted or self.deciding > 0}
 
-    def finish_input(self, ident, blocked_before=None, error=None, navigated=False, cover=None):
+    def finish_input(self, ident, blocked_before=None, error=None, navigated=False, cover=None, focused=None):
         """Answer a click/type once its approval's allowance ended.
 
         A payment-form submit the guard cancelled answers ``approval_required``
@@ -1281,7 +1295,7 @@ class Worker:
             if cancelled is not None:
                 return self.reply(ident, False, error='approval_required', form=cancelled)
             if error:
-                return self.fail(ident, error, **({'cover': cover} if cover else {}))
+                return self.fail(ident, error, **({'cover': cover} if cover else {}), **({'focused': focused} if focused else {}))
             if self.refused_submits > self.step_refused:
                 self.reported_refused = self.refused_submits
                 return self.fail(ident, 'submit_refused')
@@ -1572,7 +1586,7 @@ class Worker:
                 if error or not isinstance(value, dict):
                     return self.finish_input(ident, blocked_before, error or 'script_failed')
                 if value.get('error'):
-                    return self.finish_input(ident, blocked_before, value['error'])
+                    return self.finish_input(ident, blocked_before, value['error'], focused=value.get('focused'))
                 self.settle(ident, lambda: self.finish_input(ident, blocked_before))
             self.AppHelper.callLater(FOCUS_SECONDS, lambda: self.run(
                 INSERT_SCRIPT, {'nonce': nonce, 'expect': expect, 'tokens': tokens, 'text': text}, inserted))
