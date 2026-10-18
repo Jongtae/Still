@@ -301,14 +301,9 @@ class LoginHarness(unittest.TestCase):
     """One Telegram owner, the direct scripted model route and the fake page driver."""
 
     def setUp(self):
-        # conftest.py's suite guard (#953) is pytest-only; under unittest discovery the prompt would start the
-        # phone login on its own thread and its owner message would land at an arbitrary point of the test.
-        guard = mock.patch.object(AgentService, 'AUTO_PHONE_LOGIN', False)
-        guard.start()
-        self.addCleanup(guard.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        # #953's guard from conftest.py, here too so `python3 -m unittest` has it: a login
+        # #953's guard from conftest.py, here too so `python3 -m unittest` has it (#78, #84): a login
         # prompt never starts a real ngrok tunnel; a test that wants it opts in on its service.
         for name in ('AUTO_PHONE_LOGIN', 'SESSION_KEEPALIVE'):
             guard = mock.patch.object(AgentService, name, False)
