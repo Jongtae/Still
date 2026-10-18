@@ -3662,7 +3662,9 @@ def _evidence_detail(name,result):
   if isinstance(loaded,dict):
    # #11: the load-more operation and its outcome, never the loaded text.
    summary['loaded']={'rounds':loaded.get('rounds'),'stopped':loaded.get('stopped'),'new_content':loaded.get('new_content') is True,
-                      'characters':len(str(loaded.get('text') or ''))}
+                      'characters':len(str(loaded.get('text') or '')),
+                      # A navigation the page tried while loading more, cancelled (#11 review).
+                      'navigation_refused':loaded.get('navigation_refused') is True}
   return summary
  return {'keys':sorted(result)[:10]}
 

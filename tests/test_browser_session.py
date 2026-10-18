@@ -1137,7 +1137,11 @@ class LoadMoreTests(unittest.TestCase):
         result = {'state': 'page', 'url': ORIGIN + '/list', 'title': '목록', 'text': '행 1', 'elements': [],
                   'loaded': {'rounds': 2, 'stopped': 'no_progress', 'new_content': True, 'text': '행 11 비밀 내용'}}
         summary = evidence_summary('browser_read', result)
-        self.assertEqual(summary['loaded'], {'rounds': 2, 'stopped': 'no_progress', 'new_content': True, 'characters': 10})
+        self.assertEqual(summary['loaded'], {'rounds': 2, 'stopped': 'no_progress', 'new_content': True, 'characters': 10,
+                                             'navigation_refused': False})
+        refused = dict(result, loaded=dict(result['loaded'], navigation_refused=True))
+        self.assertTrue(evidence_summary('browser_read', refused)['loaded']['navigation_refused'],
+                        'a refused navigation stays visible in the durable record')
         self.assertNotIn('비밀', json.dumps(summary, ensure_ascii=False))
         self.assertIn('2번 더 불러와', fallback_response([('browser_read', result)], []))
 
