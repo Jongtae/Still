@@ -695,16 +695,19 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     except Exception:
                         notice=None
                         logging.getLogger('personal_agent.quickstart').warning('settings change notice failed path=%s',change[0])
-            self.send_response(status)
-            self.send_header('Content-Type',content_type)
-            self.send_header('Content-Length',str(len(data)))
-            self.send_header('Cache-Control','no-store')
-            self.send_header('X-Content-Type-Options','nosniff')
-            self.send_header('Referrer-Policy','no-referrer')
-            self.send_header('Content-Security-Policy',csp or "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
-            if cookie:self.send_header('Set-Cookie',cookie)
-            self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.send_response(status)
+                self.send_header('Content-Type',content_type)
+                self.send_header('Content-Length',str(len(data)))
+                self.send_header('Cache-Control','no-store')
+                self.send_header('X-Content-Type-Options','nosniff')
+                self.send_header('Referrer-Policy','no-referrer')
+                self.send_header('Content-Security-Policy',csp or "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+                if cookie:self.send_header('Set-Cookie',cookie)
+                self.end_headers()
+                self.wfile.write(data)
+            except (BrokenPipeError,ConnectionResetError):
+                self.client_gone()
             if notice:
                 # Telegram delivery is best effort and after the response.
                 service.deliver_conversation_notice(notice)
@@ -957,12 +960,22 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             return f'agentos_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={max_age}{secure}'
 
         def redirect(self,path,cookie=None):
-            self.send_response(303)
-            self.send_header('Location',path)
-            self.send_header('Cache-Control','no-store')
-            self.send_header('Referrer-Policy','no-referrer')
-            if cookie:self.send_header('Set-Cookie',cookie)
-            self.end_headers()
+            try:
+                self.send_response(303)
+                self.send_header('Location',path)
+                self.send_header('Cache-Control','no-store')
+                self.send_header('Referrer-Policy','no-referrer')
+                if cookie:self.send_header('Set-Cookie',cookie)
+                self.end_headers()
+            except (BrokenPipeError,ConnectionResetError):
+                self.client_gone()
+
+        def client_gone(self):
+            # #6: the browser refreshed or left while the response was being
+            # sent.  The request was already handled once; it is never retried
+            # or replayed, and the connection is closed instead of reused.
+            # Any other I/O error still raises.
+            self.close_connection=True
 
         def do_GET(self):
             if not self.valid_host():return
