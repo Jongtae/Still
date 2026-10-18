@@ -8,18 +8,29 @@
     "are preserved unchanged in docs/history/predecessor-release-manifest.json;",
     "they are not Still releases. See docs/release.en.md."
   ],
-  "published": [],
-  "unpublished": [
+  "published": [
     {
       "version": "0.1.0",
+      "tag": "v0.1.0",
+      "commit": "7999114f8faeafac1b90c72dab42e3b64d805ebd",
+      "archive_sha256": "dabb1c5235651f9a30962bedecc6ef8f0acdf0077e9c0c23a51b120bd5cba257",
+      "state": "published",
+      "carries": "First Still release, restarted at 0.1.0 from the predecessor's in-tree 1.4.2; milestone v0.1.0 (#4, #45, #46, #48, #51). It carries the predecessor source imported on 2026-10-17 and the repository transition: public entry points, installer and development references point at Jongtae/Still, the Homebrew formula lives in this repository (brew tap jongtae/still https://github.com/Jongtae/Still), and the agentos command, data directory and AGENTOS_* variables are kept for compatibility. It also carries the fixes merged before preparation: WebKit process start before the first navigation deadline (#5), closing a disconnected web client without replaying (#6), the procedure-library replacement message (#7), a pinned turn clock in Work regression tests (#9), recovered steps told apart from unresolved failures (#14), the PR-body reuse review guide (#59), an incomplete calendar request handed to the AI worker (#63), no receive failure reported for one Telegram connection reset (#65), and the owner-model upkeep tests kept on their Works' clock (#67).",
+      "tag_date": "2026-10-18",
+      "observed": "Published by the release workflow after owner approval. The served tag archive SHA-256 was measured twice and matched; Homebrew formula PR https://github.com/Jongtae/Still/pull/72 merged after its macOS formula install and brew test passed. The owner's own installed upgrade is not yet recorded.",
+      "not_claimed": "No install of this tag archive was observed before publication; the publish workflow's macOS brew install/brew test and the installer smoke run only after the tag exists, and the owner's own upgrade is not yet recorded. Installs from the predecessor's Jongtae/homebrew-agentos tap are not moved to this tap by this release. Tests and CI do not prove live external integrations, model-dependent behavior or a background service surviving a restart."
+    }
+  ],
+  "unpublished": [
+    {
+      "version": "0.1.1",
       "tag": null,
       "commit": null,
       "why_no_commit": "The future tagged main merge commit does not exist; no earlier source SHA can stand in for it.",
       "archive_sha256": null,
       "state": "unpublished",
-      "why_no_checksum": "No v0.1.0 GitHub tag archive exists; its served SHA-256 must be measured only after publication.",
-      "carries": "First Still release, restarted at 0.1.0 from the predecessor's in-tree 1.4.2; milestone v0.1.0 (#4, #45, #46, #48, #51). It carries the predecessor source imported on 2026-10-17 and the repository transition: public entry points, installer and development references point at Jongtae/Still, the Homebrew formula lives in this repository (brew tap jongtae/still https://github.com/Jongtae/Still), and the agentos command, data directory and AGENTOS_* variables are kept for compatibility. It also carries the fixes merged before preparation: WebKit process start before the first navigation deadline (#5), closing a disconnected web client without replaying (#6), the procedure-library replacement message (#7), a pinned turn clock in Work regression tests (#9), recovered steps told apart from unresolved failures (#14), the PR-body reuse review guide (#59), an incomplete calendar request handed to the AI worker (#63), no receive failure reported for one Telegram connection reset (#65), and the owner-model upkeep tests kept on their Works' clock (#67).",
-      "not_claimed": "No install of this tag archive was observed before publication; the publish workflow's macOS brew install/brew test and the installer smoke run only after the tag exists, and the owner's own upgrade is not yet recorded. Installs from the predecessor's Jongtae/homebrew-agentos tap are not moved to this tap by this release. Tests and CI do not prove live external integrations, model-dependent behavior or a background service surviving a restart."
+      "why_no_checksum": "No v0.1.1 GitHub tag archive exists; its served SHA-256 must be measured only after publication.",
+      "carries": "Next development-source version after v0.1.0. This placeholder does not choose the next release's version or claim a new product capability; the release-preparation PR does."
     }
   ]
 }
