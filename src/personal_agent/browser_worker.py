@@ -685,6 +685,9 @@ RENDER_SETTLE_SECONDS = 6.0
 POLL_SECONDS = 0.05
 FOCUS_SECONDS = 0.1
 RESOLVE_SECONDS = 3.0
+#: #5: the longest a new worker waits for its web view's first (empty) document
+#: before it reports ready; the content process starts then, not in a step's deadline.
+WARM_SECONDS = 10.0
 
 
 def safari_application_name():
@@ -880,6 +883,7 @@ class Worker:
         self.landed = 0            # main-frame navigations committed or failed so far (#736)
         self.deciding = 0          # main-frame policy decisions still resolving their destination (#736 review)
         self.resolved = {}         # url origin -> refusal code or None (this worker's life)
+        self.warming = None        # #5: (WKNavigation, done) of the start-up empty document
         self.app = AppKit.NSApplication.sharedApplication()
         self.app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)   # no Dock icon
         config = WebKit.WKWebViewConfiguration.alloc().init()
@@ -1395,8 +1399,42 @@ class Worker:
         if self.navigation is not None and self.navigation[0] == ident:
             self.navigation = (ident, navigation)
 
+    def warm(self, then, seconds=WARM_SECONDS):
+        """Load an empty document once, then ``then()`` (#5); bounded by ``seconds``.
+
+        WebKit starts a view's content and network processes on its first load.
+        That start counted against the first navigate op's deadline: with a
+        short deadline (a nearly spent Work budget) on a busy Mac the requested
+        page had not committed when the deadline stopped the load, so no
+        document was left to read.  The empty document (``about:blank``, never
+        a web page) and the in-memory store's (empty) record list start both
+        processes before the worker reports ready.
+        """
+        finished = []
+
+        def done():
+            if finished:
+                return
+            finished.append(True)
+            self.warming = None
+            then()
+
+        def loaded():
+            self.warming = None
+            try:
+                self.store.fetchDataRecordsOfTypes_completionHandler_(
+                    self.WebKit.WKWebsiteDataStore.allWebsiteDataTypes(), lambda records: done())
+            except Exception:
+                done()
+        self.warming = (self.view.loadHTMLString_baseURL_('', None), loaded)
+        self.AppHelper.callLater(max(0.5, float(seconds)), done)
+
     def navigation_finished(self, navigation, error=None):
         """Answer the navigate op only for the navigation it started (P3)."""
+        warming = self.warming
+        if warming is not None and navigation is not None and warming[0] is not None and (
+                navigation is warming[0] or navigation.isEqual_(warming[0])):
+            return warming[1]()
         if self.navigation is None:
             return
         ident, expected = self.navigation
@@ -2219,12 +2257,21 @@ def main(argv=None):
 
     def setup():
         try:
-            state['worker'] = Worker(args.profile, emit, allowed_origins=args.test_allow_origin)
+            worker = Worker(args.profile, emit, allowed_origins=args.test_allow_origin)
         except Exception:
             emit({'event': 'unavailable', 'error': 'webkit_failed'})
             AppHelper.stopEventLoop()
             return
-        emit({'event': 'ready', 'profile': args.profile, 'pid': os.getpid()})
+
+        def ready():
+            if 'worker' in state:
+                return
+            state['worker'] = worker
+            emit({'event': 'ready', 'profile': args.profile, 'pid': os.getpid()})
+        try:
+            worker.warm(ready)
+        except Exception:
+            ready()   # an unwarmed view still works; its first load is only slower
 
     def dispatch(command):
         worker = state.get('worker')
