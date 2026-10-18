@@ -185,6 +185,19 @@ class EarlyPlan(unittest.TestCase):
         self.assertEqual(spent.first(early=self.future(early)).fallback, 'budget_short')
 
 
+class Clock:
+    """The current-context clock: fixed unless a test moves it (#9)."""
+
+    #: 2026-10-14 (a Wednesday) 12:00:30 UTC, mid-minute and mid-day.
+    START = 1_791_979_230.0
+
+    def __init__(self):
+        self.now = self.START
+
+    def __call__(self):
+        return self.now
+
+
 class Harness(unittest.TestCase):
     """Two configured workers: Codex (the default Main AI) and a verified OpenAI API route."""
 
@@ -199,6 +212,11 @@ class Harness(unittest.TestCase):
                                     subscription_engines=SubscriptionEngines(finder=lambda _: '/runtime/cli', clock=lambda: 1),
                                     execution_adapter=self.engine,
                                     browser_profile=bs.BrowserProfile(self.tmp / 'browser', available=lambda: False))
+        # #9: the plan reads the clock to the minute (#1308).  On the wall clock a minute
+        # boundary between the #1261 early plan and the Work's own plan call made the Work
+        # ask again, and a one-plan script then answered nothing (``judgment_unavailable``).
+        self.clock = Clock()
+        self.service.context_observations.clock = self.clock
         self.service.use_decision_engine(UnavailableDecisionEngine())
         # The owner connected OpenAI with 확인하고 사용, then made Codex the Main AI.
         self.service.save_main_ai_key({'provider': 'openai', 'key': OPENAI_KEY})
@@ -295,6 +313,28 @@ class RoutingAndBriefs(Harness):
         self.assertEqual(row['status'], 'succeeded')
         self.assertEqual(len(self.asked_plans), 1)
         self.assertTrue(self.events(job, 'planned')[0][1]['early'])
+
+    def test_a_minute_boundary_during_routing_asks_the_plan_again_over_the_new_clock(self):
+        """#9: the early plan was asked over the earlier minute, so the Work asks once more and
+        names the moved input; the second scripted plan, not an empty script, answers it."""
+        import threading
+        self.clock.now = Clock.START - Clock.START % 60 + 59.0
+        snapshot, worker = self.service.current_context_text, threading.current_thread()
+
+        def current_context_text(job):
+            if threading.current_thread() is worker:
+                self.service._early_plan.result()  # the early plan read 12:00
+                self.clock.now += 2  # the Work reads its own sections at 12:01
+            return snapshot(job)
+        self.script([plan('codex', 'Asked at 12:00.'), plan('codex', 'Asked at 12:01.')], goals=[True])
+        with mock.patch.object(self.service, 'current_context_text', current_context_text):
+            job, row = self.run_work('이 두 가지 비교해줘')
+        self.assertEqual(row['status'], 'succeeded')
+        self.assertEqual(len(self.asked_plans), 2)
+        [(_s, planned)] = self.events(job, 'planned')
+        self.assertNotIn('early', planned)
+        self.assertEqual(planned['early_missed'], ['current_context'])
+        self.assertIn('Asked at 12:01.', self.engine.turns[-1]['prompt'])
 
     def test_the_planned_effort_reaches_the_worker_turn_and_its_evidence(self):
         """#1434: the catalogue shows each model's declared efforts; the chosen one reaches the CLI turn."""
