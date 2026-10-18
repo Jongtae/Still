@@ -1744,6 +1744,8 @@ class WebKitWorkerDriver:
         self._ids = itertools.count(1)
         self._visible = False
         self._expect = {}
+        #: #11 review: the page a load_more captured under its navigation hold, for the next snapshot.
+        self._held_page = None
         self.starts = 0
         with self._lock:
             self._start()
@@ -1800,6 +1802,7 @@ class WebKitWorkerDriver:
 
     def _kill(self):
         proc, self._proc = self._proc, None
+        self._held_page = None   # a page of the worker that is gone
         self._visible = False
         if proc is None:
             return
@@ -1896,12 +1899,20 @@ class WebKitWorkerDriver:
         self._request('settle', timeout, seconds=seconds)
 
     def load_more(self, rounds, seconds, timeout):
-        """Scroll to the page's end up to ``rounds`` times within ``seconds`` (#11); the worker's answer."""
+        """Scroll to the page's end up to ``rounds`` times within ``seconds`` (#11); the worker's answer.
+
+        The worker captured the page state before it stopped holding navigation; the
+        next ``snapshot`` returns that page rather than reading again, so the read
+        returns the page it scrolled (#11 review).
+        """
         message = self._request('load_more', timeout, rounds=rounds, seconds=seconds)
+        if isinstance(message.get('page'), dict):
+            self._held_page = message['page']
         return {key: message.get(key) for key in ('rounds', 'stopped', 'added', 'text', 'navigation_refused')}
 
     def snapshot(self):
-        page = self._request('snapshot', ACTION_TIMEOUT_SECONDS).get('page') or {}
+        held, self._held_page = self._held_page, None
+        page = held if held is not None else self._request('snapshot', ACTION_TIMEOUT_SECONDS).get('page') or {}
         elements = [element for element in page.get('elements') or [] if isinstance(element, dict)]
         guarded_forms = payment_forms(elements)
         # The full descriptor the payment guard classified: the worker refuses

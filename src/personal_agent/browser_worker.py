@@ -687,7 +687,8 @@ const more = window.__agentosMore = {added: [], seen: new Set(), total: 0, obser
 // its rows), counts once per collection.
 const note = (node) => {
   const el = node && (node.nodeType === 1 ? node : node.parentElement);
-  if (el && !more.seen.has(el) && more.total < limit) { more.seen.add(el); more.added.push(el); more.total++; }
+  // The bound applies per collection (#11 review): a big round does not blind later ones.
+  if (el && !more.seen.has(el) && more.added.length < limit) { more.seen.add(el); more.added.push(el); more.total++; }
 };
 more.observer = new MutationObserver((records) => {
   for (const record of records) {
@@ -1573,8 +1574,16 @@ class Worker:
         def done(value, error):
             if ident not in self.pending:
                 return
+            if error:
+                return self.fail(ident, error)
+            self.reply(ident, page=value)
+        self._snapshot_page(done)
+
+    def _snapshot_page(self, then):
+        """The page state ``SNAPSHOT_SCRIPT`` reads, with what the guard did since the last report: ``then(page, error)``."""
+        def done(value, error):
             if error or not isinstance(value, dict):
-                return self.fail(ident, error or 'script_failed')
+                return then(None, error or 'script_failed')
             # A payment-form submit cancelled since the last report (#698).
             cancelled = self.take_cancelled(value.pop('cancelled', None))
             if cancelled is not None:
@@ -1583,7 +1592,7 @@ class Worker:
             if self.refused_submits > self.reported_refused:
                 self.reported_refused = self.refused_submits
                 value['refused_submit'] = True
-            self.reply(ident, page=value)
+            then(value, None)
         self.run(SNAPSHOT_SCRIPT, {}, done)
 
     def op_settle(self, ident, command, timeout):
@@ -1631,7 +1640,8 @@ class Worker:
         The request also ends at ``rounds`` (``bound``) or after ``seconds``
         (``time``).  A round whose added elements are all gone or textless once
         the page is quiet (a loading placeholder) is no progress either.
-        Answers the rounds run, why it stopped, how many added or rewritten
+        The page state is captured before the navigation hold ends and rides
+        along (``page``).  Answers the rounds run, why it stopped, how many added or rewritten
         elements were still shown with text, that text (bounded), and how many main-frame navigations the page started
         meanwhile, each cancelled.  No control is pressed and no input is sent:
         only the page's scroll positions change, and the read never leaves the page.
@@ -1672,13 +1682,16 @@ class Worker:
                      collected)
 
         def finish(stopped):
-            def ended():
+            def captured(page, error):
+                # #11 review: the page state is read while navigation is still held, so the read
+                # returns the page it scrolled; the guard ends only after this snapshot.
                 self.reading = False
                 if ident not in self.pending:
                     return
                 self.reply(ident, rounds=state['round'], stopped=stopped, added=state['kept'],
-                           text='\n'.join(state['texts'])[:LOAD_MORE_TEXT_LIMIT], navigation_refused=self.read_navigations)
-            collect(True, ended)
+                           text='\n'.join(state['texts'])[:LOAD_MORE_TEXT_LIMIT], navigation_refused=self.read_navigations,
+                           **({'page': page} if page is not None else {}))
+            collect(True, lambda: self._snapshot_page(captured))
 
         def next_round():
             if ident not in self.pending:

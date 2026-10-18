@@ -541,6 +541,10 @@ class DriverProtocolTests(unittest.TestCase):
                                                        'text': 'row 11\nrow 12', 'navigation_refused': 1})
         self.assertEqual({key: self.commands()[-1][key] for key in ('op', 'rounds', 'seconds', 'timeout')},
                          {'op': 'load_more', 'rounds': 3, 'seconds': 9.0, 'timeout': 12.0})
+        sent = len(self.commands())
+        self.assertEqual(driver.snapshot()['title'], 'held', 'the page captured under the navigation hold is returned')
+        self.assertEqual(len(self.commands()), sent, 'without reading the page again')
+        self.assertNotEqual(driver.snapshot()['title'], 'held', 'once only')
         driver.goto('https://shop.test/intercepted', 4)
         driver.snapshot()
         with self.assertRaises(ToolError) as caught:

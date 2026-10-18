@@ -106,7 +106,8 @@ for line in sys.stdin:
     elif op == 'load_more':
         # #11, as the real worker: rounds run, why it stopped, added nodes and their text.
         emit({'id': ident, 'ok': True, 'rounds': 2, 'stopped': 'no_progress', 'added': 3,
-              'text': 'row 11\nrow 12', 'navigation_refused': 1})
+              'text': 'row 11\nrow 12', 'navigation_refused': 1,
+              'page': {'url': page['url'], 'title': 'held', 'forms': [], 'text': 'held page', 'elements': []}})
     elif op == 'release_submit':
         # As the real worker (#700): only the submit it last reported, once.
         if held is not None and command.get('form') == held:
