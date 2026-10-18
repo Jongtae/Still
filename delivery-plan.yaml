@@ -6,7 +6,10 @@
     "predecessor_repository": "Jongtae/agentos",
     "reason": "Still was imported without history on 2026-10-17. The predecessor plan (version 10) is archived unchanged as an immutable record; its programs, issue numbers and selections belong to Jongtae/agentos and carry no authority here (#46).",
     "documented_completed_iterations": [
-      "BROWSER-REL-01"
+      "BROWSER-REL-01",
+      "BROWSER-INPUT-01",
+      "BROWSER-LOADMORE-01",
+      "BROWSER-PROFILE-01"
     ]
   },
   "iterations": [

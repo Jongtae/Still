@@ -57,6 +57,10 @@ def test_the_browser_program_is_closed_out_with_its_evidence_and_selects_nothing
     assert current["next_goal"]["id"] is None
     assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "terminal"
     assert invariants.closed_out_programs(current) == ["BROWSER-REL-01"]
+    # Each completed child is durable history too, so a later goal may depend on it directly.
+    assert set(current["history"]["documented_completed_iterations"]) == {
+        "BROWSER-REL-01", "BROWSER-INPUT-01", "BROWSER-LOADMORE-01", "BROWSER-PROFILE-01"}
+    invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["BROWSER-REL-01"]
     assert program["activated_by"]["issue"] == 94
     order = ["BROWSER-INPUT-01", "BROWSER-LOADMORE-01", "BROWSER-PROFILE-01"]
