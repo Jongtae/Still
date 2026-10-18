@@ -2009,37 +2009,108 @@ def event_trail(rows, tools=None):
  written (``UNUSABLE_CALL_CODES``), or any call to a code-run-only set, is ``missed``, like an
  unrun page step.
  """
+ entries=trail_steps(rows,tools)
+ trail=[(action,state) for _tool,action,state,_detail,_reason in entries]
+ refusals=[(tool,reason) for tool,_action,state,_detail,reason in entries if state in FAILED_CALL_STATES]
+ return trail,refusals
+
+#: Trail states recorded from a ``failed`` tool event; every other state comes from one that ran.
+FAILED_CALL_STATES=frozenset({'failed','missed','exhausted'})
+
+def trail_steps(rows, tools=None):
+ """``[(tool, host_action, state, detail, reason)]``, one per finished call in a Work's tool events.
+
+ The one reading ``event_trail`` projects (#14): ``state`` is the trail state, ``detail`` the
+ recorded event detail (a dict) and ``reason`` the recorded error of a failed call, the
+ incompleteness note of an incomplete one, else None.  ``detail`` may be a JSON string or a dict.
+ """
  from .api_requests import UNUSABLE_CALL_CODES
- rows=list(rows);trail=[];refusals=[];completed=set()
+ def parsed(detail):
+  if isinstance(detail,dict):return detail
+  try:data=json.loads(detail or '{}')
+  except (TypeError,ValueError):data={}
+  return data if isinstance(data,dict) else {}
+ rows=list(rows);steps=[];completed=set()
  for tool,status,detail in rows:
   if tool=='settings_continuation' and status=='queued':
-   try:ids=json.loads(detail or '{}').get('draft_ids')
-   except (TypeError,ValueError,AttributeError):ids=None
+   ids=parsed(detail).get('draft_ids')
    completed|={item for item in ids if isinstance(item,str)} if isinstance(ids,list) else set()
  for tool,status,detail in rows:
   if tool in ('model','subscription_engine','local_authority','conversation_continuity') or status not in ('succeeded','failed'):continue
-  try:data=json.loads(detail or '{}')
-  except (TypeError,ValueError):data={}
-  data=data if isinstance(data,dict) else {}
+  data=parsed(detail)
   action=data.get('host_action') or (tools or {}).get(tool,{}).get('host_action') or tool
   if status=='failed':
    reason=data.get('error') if isinstance(data.get('error'),str) else None
-   refusals.append((tool,reason))
    # A read-declared API call Still could not make as written missed like an unrun page step (#1276);
    # a code-run-only set refuses every api_request, and its one path (code_run) sends only reads.
    missed=unrun_page_step(action,data) or (action in API_ACTIONS and data.get('code') in UNUSABLE_CALL_CODES
                                            and (data.get('declared_effect') in PAGE_LOAD_EFFECTS or data.get('code')=='api_slot_code_only'))
-   trail.append((action,'exhausted' if data.get('code') in BUDGET_CODES else 'missed' if missed else 'failed'));continue
+   steps.append((tool,action,'exhausted' if data.get('code') in BUDGET_CODES else 'missed' if missed else 'failed',data,reason));continue
   evidence=data.get('evidence') if isinstance(data.get('evidence'),dict) else {}
-  if memory_proposal(action,evidence):trail.append((action,'proposed'))
+  gaps=[label for label in evidence.get('qualifiers') or () if label in INCOMPLETE_QUALIFIERS]
+  if memory_proposal(action,evidence):state='proposed'
   elif evidence.get('refused_because') or (action in CALENDAR_DRAFT_TOOLS and evidence.get('requires_owner_approval') and not evidence.get('applied')) \
      or (action=='settings_change' and evidence.get('requires_owner_confirmation') and not evidence.get('applied')
          and evidence.get('draft_id') not in completed):
-   trail.append((action,'withheld'))
-  elif any(label in INCOMPLETE_QUALIFIERS for label in evidence.get('qualifiers') or ()):
-   trail.append((action,'incomplete'))
-  else:trail.append((action,'succeeded'))
- return trail,refusals
+   state='withheld'
+  elif gaps:state='incomplete'
+  else:state='succeeded'
+  steps.append((tool,action,state,data,' '.join(QUALIFIER_NOTES[label] for label in gaps) if state=='incomplete' else None))
+ return steps
+
+def _state_free_actions():
+ """The actions ``state_change_short`` never holds against a Work: they change no outside state."""
+ return EFFECT_FREE_READS|INTERNAL_STATE_ACTIONS|{'delegate_agent'}
+
+#: #14: how a later call made up for a failed one (``step_recovery``).
+RECOVERED,ROUTED_AROUND='recovered','routed_around'
+
+def step_recovery(steps):
+ """``{index: RECOVERED | ROUTED_AROUND}`` for the failed calls in ``steps`` a later call made up for (#14).
+
+ ``steps`` are ``(tool, host_action, state, detail, reason)`` in order (``trail_steps``, or the
+ direct route's own attempts).  ``RECOVERED``: the same action succeeded later, so the call's own
+ part was done.  ``ROUTED_AROUND``: it changed nothing by its kind (an effect-free read, internal
+ bookkeeping, a delegation, or a step Still never ran - ``missed``) and a later call succeeded on
+ another path; whether that path served the call's purpose is the outcome judgment's to say.
+ Both are exactly failures ``state_change_short`` does not hold against the Work.  A withheld,
+ incomplete or budget-cut call, one whose effect is unknown, and (for ``ROUTED_AROUND``) one that
+ waits for the owner (``requires``) are never marked.  A mark is an observed fact, never a success
+ by itself and never a reason to run anything again.
+ """
+ found={};free=_state_free_actions()
+ for index,(_tool,action,state,detail,_reason) in enumerate(steps):
+  detail=detail if isinstance(detail,dict) else {}
+  if state not in ('failed','missed') or detail.get('state')=='withheld' or unknown_effect(detail):continue
+  later=[(other,result) for _t,other,result,_d,_r in steps[index+1:]]
+  if (action,'succeeded') in later:found[index]=RECOVERED;continue
+  unrun=state=='missed' or unrun_page_step(action,detail)
+  if (unrun or action in free) and not detail.get('requires') \
+     and any(result=='succeeded' and other not in INTERNAL_STATE_ACTIONS for other,result in later):
+   found[index]=ROUTED_AROUND
+ return found
+
+#: #14: what the outcome judgment reads beside a failed call a later call made up for, or whose effect is unknown.
+STEP_FACTS={RECOVERED:'[recovered: the same action succeeded later]',
+            ROUTED_AROUND:'[changed nothing: a later call succeeded on another path]'}
+UNKNOWN_EFFECT_STEP_FACT='[effect unknown: whether this call changed something is not known]'
+
+def failed_steps_text(steps):
+ """The failed steps the one outcome judgment reads (#14), from observed calls only.
+
+ Every call that did not settle - failed, missed, cut off, withheld or incomplete - with its
+ reason, marked from ``step_recovery`` (``STEP_FACTS``) or ``UNKNOWN_EFFECT_STEP_FACT`` when its
+ recorded effect is unknown.  The worker's prose never decides a mark.  Marked calls come last,
+ so a bounded cut drops them before any call that still holds the Work down.
+ """
+ marks=step_recovery(steps);open_steps,made_up=[],[]
+ for index,(tool,_action,state,detail,reason) in enumerate(steps):
+  if state in SETTLED_STATES:continue
+  detail=detail if isinstance(detail,dict) else {}
+  text=f"{tool}: {reason or detail.get('code') or 'failed'}"
+  if index in marks:made_up.append(text+' '+STEP_FACTS[marks[index]])
+  else:open_steps.append(text+' '+UNKNOWN_EFFECT_STEP_FACT if unknown_effect(detail) else text)
+ return '; '.join(open_steps+made_up)
 
 def state_change_short(trail):
  """Whether a state-changing action - anything outside the effect-free reads
@@ -3985,7 +4056,8 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  refs=claim['evidence_refs']
  share=max(300,GOAL_OBSERVATION_CHARS//max(1,len(refs)))
  observed='\n'.join(clean(_observation_text(ref,observations[ref][0],observations[ref][3]))[:share] for ref in refs)[:GOAL_OBSERVATION_CHARS]
- failed=clean('; '.join(f'{tool}: {reason or "failed"}' for tool,reason in failures))[:GOAL_FAILURE_CHARS]
+ # #14: the direct route passes ``failed_steps_text`` (recovered and unknown-effect calls marked); a list is read as before.
+ failed=clean(failures if isinstance(failures,str) else '; '.join(f'{tool}: {reason or "failed"}' for tool,reason in failures))[:GOAL_FAILURE_CHARS]
  reply=clean(claim.get('summary') or '')[:GOAL_REPLY_CHARS]
  recent=clean(conversation or '')[-GOAL_CONVERSATION_CHARS:]
  owner=owner_context_fact(owner_context,clean)
@@ -4066,6 +4138,9 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  # taken; the digest of the page state last returned; the last search input;
  # the alternatives tried; and this run's typed failures as (tool, reason).
  observations={};paths=set();page=None;last_search=None;alternatives=[];failures=[]
+ # #14: (tool, host_action, state, detail, reason) of every validated attempt, as ``trail_steps``
+ # reads recorded events, so the outcome judgment sees which failures a later call made up for.
+ steps=[]
  goal=next((m.get('content') for m in reversed(history) if isinstance(m,dict) and m.get('role')=='user' and isinstance(m.get('content'),str)),'')
  # #820: the recent conversation the one outcome judgment reads (the current request excluded).
  conversation='\n'.join(f"[{'owner' if m['role']=='user' else 'assistant'}] {m['content']}" for m in history[:-1]
@@ -4083,7 +4158,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    # the reply serve the owner's message, given every settled observation?  Whether
    # the model also called ``finish`` is bookkeeping, not the outcome.
    refs=[ref for ref,row in observations.items() if row[2]=='succeeded' and row[1] not in INTERNAL_STATE_ACTIONS]
-   judgment=goal_judgment(capabilities.judgments,goal,{'evidence_refs':refs,'summary':content},observations,failures,
+   judgment=goal_judgment(capabilities.judgments,goal,{'evidence_refs':refs,'summary':content},observations,failed_steps_text(steps),
                           capabilities.job_id,getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                             attachments=attachment_facts(images=len(images)) if images else '')
   if not _external(trail) and not invalid_calls:
@@ -4202,7 +4277,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
     judgment=None
     if reason is None and claim['status']=='done':
      judged+=1
-     judgment=goal_judgment(capabilities.judgments,goal,claim,observations,failures,capabilities.job_id,
+     judgment=goal_judgment(capabilities.judgments,goal,claim,observations,failed_steps_text(steps),capabilities.job_id,
                             getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                             attachments=attachment_facts(images=len(images)) if images else '')
      # A "not shown" answer returns the claim once, so the model can take
@@ -4216,7 +4291,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       # #1451: what the outcome judgment found missing, so the next path aims at it.
       **({'missing':judgment.gap} if reason=='goal_not_observed' and getattr(judgment,'gap','') else {})},ensure_ascii=False)})
     continue
-   name='unknown';validated=False;attempt=0;args={};action=None;ran=False;dispatched=False
+   name='unknown';validated=False;attempt=0;args={};action=None;ran=False;dispatched=False;failed_before=len(failures)
    try:
     name=function.get('name')
     if not isinstance(name,str):
@@ -4319,7 +4394,10 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
     else:invalid_calls.add(name if isinstance(name,str) else 'unknown')
     record(name,'failed',json.dumps({'scope':scope,'call_id':call['id'],'attempt':attempt,**result,
                                      **(declared_effect(action,args) if validated else {})},ensure_ascii=False))
-   if validated:observations[call['id']]=(name,action,trail[-1][1],result)
+   if validated:
+    observations[call['id']]=(name,action,trail[-1][1],result)
+    steps.append((name,action,trail[-1][1],{**result,**declared_effect(action,args)} if isinstance(result,dict) else {},
+                  failures[-1][1] if len(failures)>failed_before else None))
    # #657: a result that ran carries its ref, the id a completion claim cites
    # (a provider that hides tool call ids from the model still shows this).
    ref={'ref':call['id']} if ran else {}

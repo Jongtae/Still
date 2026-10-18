@@ -5209,6 +5209,26 @@ class AgentService:
             if isinstance(evidence,dict) and evidence.get('state')=='login_required':return True
         return False
 
+    def unrecovered_refusals(self, job_id, since, refusals):
+        """``refusals`` without the failed calls whose own action succeeded later (#14).
+
+        Read from this Work's tool events after ``since`` (``agent_runtime.step_recovery``).  A
+        ``(tool, reason)`` pair is dropped only when a ``RECOVERED`` failure names it and no other
+        failure does: a call merely routed around may be why the Work fell short, so it stays named,
+        and so does a refusal that is not a recorded tool failure (a sign-in wait).  Nothing is run
+        again and the failed calls stay in Evidence.
+        """
+        from .agent_runtime import FAILED_CALL_STATES, RECOVERED, step_recovery, trail_steps
+        with self.store.db() as db:
+            rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',
+                            (job_id,since or 0)).fetchall()
+        steps=trail_steps((row['tool'],row['status'],row['detail']) for row in rows if row['tool'] not in self.LOCAL_NON_TOOL_EVENTS)
+        marks=step_recovery(steps)
+        recovered={(tool,reason) for index,(tool,_action,_state,_detail,reason) in enumerate(steps) if marks.get(index)==RECOVERED}
+        held={(tool,reason) for index,(tool,_action,state,_detail,reason) in enumerate(steps)
+              if state in FAILED_CALL_STATES and marks.get(index)!=RECOVERED}
+        return [pair for pair in refusals if pair not in recovered or pair in held]
+
     def cli_work_outcome(self, job_id, tools, since=0):
         """``(outcome, refusals)`` of a CLI Work from its own tool events (#606 T3).
 
@@ -5404,13 +5424,13 @@ class AgentService:
         can be checked against what the page showed.
         """
         if orchestration is None or attempt is None or not orchestration.orchestrated:return None
-        from .agent_runtime import EFFECT_NONE, call_effects
+        from .agent_runtime import EFFECT_NONE, call_effects, failed_steps_text, trail_steps
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',(job_id,since or 0)).fetchall()
         unknown=outcome=='unknown' or self._work_has_unknown_effect(job_id)
         unobserved=unmediated and self.cli_host_actions(engine_meta)!=()
         effect=unknown or unobserved or bool(self.connector_effect_progress(job_id)[0])
-        observed,failures=[],[]
+        observed=[]
         # #729: the factual summary the next plan call reads (names and codes only).
         called,failed_codes,incomplete,sourceless=[],[],[],0
         # #1445 part 2: one effect classifier (``agent_runtime.record_effect``) over each call; any
@@ -5442,10 +5462,11 @@ class AgentService:
                 else:
                     observed.append(f"- {row['tool']}: {json.dumps(evidence,ensure_ascii=False)[:600]}")
             elif row['status']=='failed':
-                failures.append(f"{row['tool']}: {data.get('error') or data.get('code') or 'failed'}")
                 if data.get('code')==TOOL_INCOMPLETE:incomplete.append(row['tool'])
                 else:failed_codes.append(f"{row['tool']} ({data.get('code') or 'failed'})")
-        failed_steps='; '.join(failures)
+        # #14: the judgment reads every unsettled call with what Still observed about it: whether a later
+        # call redid it or routed around it, or whether its effect is unknown.
+        failed_steps=failed_steps_text(trail_steps(tool_rows))
         observations=observations_with_pages(observed,pages,orchestration._redact)
         summary='; '.join(part for part in (
             f"tools called: {', '.join(called) or 'none'}",
@@ -10817,6 +10838,8 @@ class AgentService:
             approval_needed=[False]
             context_approval_needed=[False]
             refusals=[];owner_steps=[]
+            # #14: the last event id before the current attempt (None: the whole Work), for ``unrecovered_refusals``.
+            attempt_start=None
             verified_parts=[]
             #: #657: the direct route's typed requested/observed/failed/unknown/next report.
             agency_report=None
@@ -11872,6 +11895,13 @@ class AgentService:
                         outcome,agency_report=self.cli_shortfall(job['id'],attempt_start,prompt,orchestration.terminal,
                                                                  orchestration.terminal_gap,orchestration.terminal_note)
                         resolved_blocker=False
+                    # #14: a CLI attempt its steps left unfinished that the outcome judgment also found short says why
+                    # in the judgment's words, as the direct route does; a failed step a later call made up for is
+                    # dropped from the refusals below (``unrecovered_refusals``), so it is no longer given as the cause.
+                    if subscription.get('id') and outcome in ('partial','failed') and agency_report is None and orchestration is not None \
+                            and orchestration.terminal in (NOT_REACHED,UNJUDGED,NOT_JUDGED):
+                        agency_report=self.cli_shortfall(job['id'],attempt_start,prompt,orchestration.terminal,
+                                                         orchestration.terminal_gap,orchestration.terminal_note)[1]
                     # Said once when working orchestration fell back to the default Main AI.
                     if orchestration is not None and orchestration.notice:
                         response=response.rstrip()+'\n\n'+orchestration.notice
@@ -11910,6 +11940,8 @@ class AgentService:
                             and not (orchestration is not None and orchestration.terminal==REACHED):
                         outcome='partial';resolved_blocker=False
                         refusals.append(('browser_open',msg('agent_runtime.this_page_needs_a_sign_in')));owner_steps.append(msg('agent_runtime.this_page_needs_a_sign_in'))
+                    # #14: a failed call whose own action succeeded later in the attempt is not named as unfinished.
+                    if outcome in ('failed','partial'):refusals=self.unrecovered_refusals(job['id'],attempt_start,refusals)
                     cause=self._failure_cause(refusals) if outcome in ('failed','partial') else None
                     # #598: the conversation reads the cause in owner words and,
                     # for a partial Work, the portion its typed Evidence supports.
