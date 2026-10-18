@@ -530,6 +530,12 @@ class DriverProtocolTests(unittest.TestCase):
         # #1395: the worker's cover rides along for the session to name in model terms.
         self.assertEqual(caught.exception.cover, {'text': 'Open in app', 'controls': [{'index': 3, 'name': 'Go'}]})
         self.assertEqual(self.commands()[-1]['expect']['payment_form'], True, "the pay button's form holds a card field")
+        with self.assertRaises(ToolError) as caught:
+            driver.type(3, 'moved', 4)   # the fake worker answers focus_moved for it
+        self.assertEqual(caught.exception.code, 'target_unavailable')
+        # #12: the field the page moved the focus to rides along for the session to name.
+        self.assertEqual(caught.exception.focused, {'name': 'Search here'})
+        self.assertEqual(str(caught.exception), bs.target_text('focus_moved'))
         sent = len(self.commands())
         with self.assertRaises(ToolError) as caught:
             driver.type(5, 'x', 4)   # index 5 was never in a snapshot: nothing is sent
@@ -990,6 +996,32 @@ class SessionFixtureHandler(FixtureHandler):
                 c.setAttribute('autocomplete','cc-number');c.setAttribute('aria-label','카드');
                 c.oninput=function(){document.getElementById('leak').textContent='카드 입력됨:'+c.value;};document.body.prepend(c);}"></label>
               </body></html>''')
+        if path == '/input-overlay':
+            # #12: a consent layer covers the search field until it is dismissed.
+            return self._send('''<html><head><title>가림</title></head><body>
+              <input aria-label="검색어" oninput="document.getElementById('r').textContent='입력:'+this.value">
+              <p id="r">대기</p>
+              <div id="layer" style="position:fixed;top:0;left:0;right:0;bottom:0;background:#fff">
+                <p>쿠키 사용에 동의하시겠습니까?</p>
+                <button type="button" onclick="document.getElementById('layer').remove()">동의</button></div>
+              </body></html>''')
+        if path == '/input-rerender':
+            # #12: focusing the search field replaces it with another field and focuses that one.
+            return self._send('''<html><head><title>교체</title></head><body>
+              <div id="box"><input aria-label="검색" onfocus="var n=document.createElement('input');
+                n.setAttribute('aria-label','검색어 입력');
+                n.oninput=function(){document.getElementById('r').textContent='입력:'+n.value;};
+                document.getElementById('box').replaceChildren(n);n.focus();"></div>
+              <p id="r">대기</p></body></html>''')
+        if path == '/input-focus-editable':
+            # #12: a text-entry widget that becomes editable only once it has focus.
+            return self._send('''<html><head><title>편집</title></head><body>
+              <div role="searchbox" aria-label="메모" tabindex="0" style="min-height:2em;border:1px solid"
+                onfocus="this.contentEditable='true'"
+                oninput="document.getElementById('r').textContent='입력:'+this.textContent"></div>
+              <input aria-label="잠긴 입력" readonly onfocus="this.removeAttribute('readonly')"
+                oninput="document.getElementById('r2').textContent='입력2:'+this.value">
+              <p id="r">대기</p><p id="r2">대기</p></body></html>''')
         if path == '/wide':
             # Review P2-1 repro: a surrogate pair at the label cut and a lone surrogate in the title.
             return self._send('<html><head><title>넓은 글자</title></head><body><button type="button" aria-label="'
@@ -1132,6 +1164,53 @@ class WebKitIntegrationTests(unittest.TestCase):
             self.assertIn(values.get('메모'), ('장보기 목록', None), page['elements'])
             if values.get('메모') is None:
                 self.assertNotIn('장보기', flat(page))
+        finally:
+            sess.close()
+
+    def test_a_covered_field_names_its_cover_and_takes_text_once_it_is_dismissed(self):
+        """#12: the refusal says what covers the field and which control closes it."""
+        sess = self.session('work-12-cover')
+        try:
+            page = sess.open({'url': self.origin + '/input-overlay', 'effect': 'navigate'})
+            agree = next(row['n'] for row in page['elements'] if row['name'] == '동의')
+            with self.assertRaises(ToolError) as caught:
+                sess.type({'target': '검색어', 'text': '우유', 'effect': 'mutate'})
+            self.assertEqual(caught.exception.code, 'target_unavailable')
+            self.assertIn(bs.OBSCURED_TEXT, str(caught.exception))
+            self.assertIn(f'그 안의 요소: {agree} 동의.', str(caught.exception))
+            self.assertIn('대기', sess.read()['text'], 'nothing was typed while the field was covered')
+            sess.click({'target': str(agree), 'effect': 'mutate'})
+            self.assertIn('입력:우유', sess.type({'target': '검색어', 'text': '우유', 'effect': 'mutate'})['text'])
+        finally:
+            sess.close()
+
+    def test_a_field_the_page_replaces_on_focus_is_named_and_never_typed_into(self):
+        """#12: the press moved the focus to a new field; the step names it and types nowhere."""
+        sess = self.session('work-12-replace')
+        try:
+            sess.open({'url': self.origin + '/input-rerender', 'effect': 'navigate'})
+            with self.assertRaises(ToolError) as caught:
+                sess.type({'target': '검색', 'text': '우유', 'effect': 'mutate'})
+            self.assertEqual(caught.exception.code, 'target_unavailable')
+            self.assertTrue(str(caught.exception).startswith(bs.FOCUS_MOVED_TEXT), str(caught.exception))
+            self.assertIn('초점을 받은 요소: “검색어 입력”.', str(caught.exception))
+            page = sess.read()
+            self.assertIn('대기', page['text'], 'the unchecked field that took the focus received nothing')
+            self.assertNotIn('우유', flat(page))
+            field = next(row['n'] for row in page['elements'] if row['name'] == '검색어 입력')
+            self.assertIn('입력:우유', sess.type({'target': str(field), 'text': '우유', 'effect': 'mutate'})['text'])
+        finally:
+            sess.close()
+
+    def test_a_widget_that_becomes_editable_on_focus_is_listed_and_takes_text(self):
+        """#12: a search widget editable only once focused, and a field read-only until focused."""
+        sess = self.session('work-12-editable')
+        try:
+            page = sess.open({'url': self.origin + '/input-focus-editable', 'effect': 'navigate'})
+            roles = {row['name']: row['role'] for row in page['elements']}
+            self.assertEqual(roles.get('메모'), 'searchbox', page['elements'])
+            self.assertIn('입력:우유', sess.type({'target': '메모', 'text': '우유', 'effect': 'mutate'})['text'])
+            self.assertIn('입력2:두부', sess.type({'target': '잠긴 입력', 'text': '두부', 'effect': 'mutate'})['text'])
         finally:
             sess.close()
 

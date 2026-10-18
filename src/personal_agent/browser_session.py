@@ -1179,8 +1179,13 @@ class BrowserSession:
         The worker reports the covering layer's text and its controls by raw
         index; the model knows controls by the numbers of the last page state,
         so only controls listed there are named, and the text and names are
-        scrubbed like any page text.
+        scrubbed like any page text.  A typing step whose press moved the focus
+        elsewhere names the field that took it the same way (#12).
         """
+        focused = getattr(exc, 'focused', None)
+        if isinstance(focused, dict):
+            name = scrub(str(focused.get('name') or '')[:NAME_LIMIT], self._excluded())[0]
+            return ToolError(target_text('focus_moved', {'name': name}), exc.code)
         cover = getattr(exc, 'cover', None)
         if not isinstance(cover, dict):
             return exc
@@ -1330,6 +1335,15 @@ TARGET_TEXT = ('대상 요소가 바뀌었거나 다른 요소에 가려져 있�
                '확인하세요.')
 HIDDEN_TEXT = '대상 요소가 화면에 보이지 않아 실행하지 않았습니다. browser_read로 페이지를 다시 확인하세요.'
 OBSCURED_TEXT = '대상 요소가 다른 요소에 가려져 있어 누르지 않았습니다.'
+#: #12: why a press or typing step on a checked element did not run, one reason each.
+MISSING_TEXT = '대상 요소가 페이지에서 사라져 실행하지 않았습니다. browser_read로 페이지를 다시 확인하세요.'
+CHANGED_TEXT = '대상 요소가 마지막으로 확인한 뒤 바뀌어 실행하지 않았습니다. browser_read로 페이지를 다시 확인하세요.'
+NOT_TYPABLE_TEXT = '대상 요소는 글자를 입력할 수 있는 입력란이 아니어서 입력하지 않았습니다. 입력란을 대상으로 다시 시도하세요.'
+NOT_FOCUSED_TEXT = ('대상 입력란을 눌렀지만 입력 초점이 잡히지 않아 입력하지 않았습니다. browser_read로 페이지를 다시 '
+                    '확인하세요.')
+FOCUS_MOVED_TEXT = '입력란을 누르자 페이지가 입력 초점을 다른 요소로 옮겨, 확인하지 않은 그 요소에는 입력하지 않았습니다.'
+TARGET_TEXTS = {'target_missing': MISSING_TEXT, 'target_changed': CHANGED_TEXT, 'target_hidden': HIDDEN_TEXT,
+                'not_typable': NOT_TYPABLE_TEXT, 'not_focusable': NOT_FOCUSED_TEXT}
 
 
 def target_text(code, cover=None):
@@ -1340,10 +1354,13 @@ def target_text(code, cover=None):
     than re-reading and pressing the same element.  The press is refused the
     same way whatever the reason.
     """
-    if code == 'target_hidden':
-        return HIDDEN_TEXT
+    if code == 'focus_moved':
+        # #12: the field that took the focus, named so the model can target it in a new step.
+        name = ' '.join(str((cover or {}).get('name') or '').split())[:80] if isinstance(cover, dict) else ''
+        return FOCUS_MOVED_TEXT + (f' 초점을 받은 요소: “{name}”.' if name else '') + \
+            ' browser_read로 페이지를 다시 확인한 뒤 입력할 입력란을 대상으로 다시 시도하세요.'
     if code != 'target_obscured':
-        return TARGET_TEXT
+        return TARGET_TEXTS.get(code, TARGET_TEXT)
     cover = cover if isinstance(cover, dict) else {}
     text = ' '.join(str(cover.get('text') or '').split())[:160]
     controls = [f"{item['index']} {' '.join(str(item.get('name') or '').split())[:80]}".strip()
@@ -1448,7 +1465,7 @@ def worker_environment(base=None):
 
 #: Worker error codes that mean "the element the guard classified is not what the pointer would hit".
 TARGET_ERRORS = frozenset({'target_missing', 'target_changed', 'target_hidden', 'target_obscured', 'not_typable',
-                           'not_focusable', 'bad_target', 'submit_changed'})
+                           'not_focusable', 'focus_moved', 'bad_target', 'submit_changed'})
 WORKER_START_SECONDS = 30
 WORKER_GRACE_SECONDS = 5
 WORKER_QUIT_SECONDS = 5
@@ -1765,6 +1782,8 @@ class WebKitWorkerDriver:
                 exc = ToolError(target_text(code), 'target_unavailable')
                 # #1395: the session renames the cover in the model's element numbers.
                 exc.cover = message.get('cover') if code == 'target_obscured' else None
+                # #12: the field the page moved the focus to, named by the session the same way.
+                exc.focused = message.get('focused') if code == 'focus_moved' else None
                 raise exc
             if code == 'unsupported_navigation':
                 raise ToolError(UNSUPPORTED_NAVIGATION_TEXT, 'unsupported_navigation')
