@@ -19,6 +19,8 @@ from .subscription_engines import ENGINES
 from .telegram_locale import language, translate
 
 SETUP_KEY = 'console_setup'
+#: The owner's answer to the start-at-login offer (#105), kept in the setup state so it is asked once.
+LOGIN_SERVICE = 'login_service'
 
 # provider, label, endpoint, default model and key page; endpoints and models follow web/app.js.
 API_PROVIDERS = {
@@ -86,8 +88,21 @@ def finished(store):
     return bool(store.config(SETUP_KEY, {}).get('finished'))
 
 
-def run(service, store, term):
-    """Return True when the setup finished; False when the owner stopped early."""
+def wants_login_service(store):
+    """True only after the owner explicitly answered yes to starting Still at login."""
+    return store.config(SETUP_KEY, {}).get(LOGIN_SERVICE) == 'yes'
+
+
+def _record(store, **values):
+    store.put(SETUP_KEY, {**store.config(SETUP_KEY, {}), **values})
+
+
+def run(service, store, term, login_service=None):
+    """Return True when the setup finished; False when the owner stopped early.
+
+    ``login_service`` reads the macOS login service's status when this start
+    could offer to register it (#105); None skips the offer.
+    """
     try:
         term.say(msg('first_run.intro'))
         if not store.claimed():
@@ -97,10 +112,12 @@ def run(service, store, term):
         _judgment(service)
         if not store.config('telegram', {}).get('enabled'):
             _telegram(service, term)
+        if login_service:
+            _login_service(store, term, login_service)
     except (KeyboardInterrupt, EOFError):
         term.say('\n' + msg('first_run.stopped'))
         return False
-    store.put(SETUP_KEY, {'finished': True})
+    _record(store, finished=True)
     _summary(service, term)
     return True
 
@@ -300,6 +317,16 @@ def _telegram(service, term):
         return
     term.say('   ' + msg('first_run.telegram_pairing') + f'\n   {result["url"]}')
     term.open(result['url'])
+
+
+def _login_service(store, term, status):
+    """Ask once whether Still starts at login; only an explicit yes registers it (#105)."""
+    if LOGIN_SERVICE in store.config(SETUP_KEY, {}) or status().get('status') != 'not_installed':
+        return
+    term.say('\n' + msg('first_run.login_title'))
+    term.say('   ' + msg('first_run.login_help'))
+    answer = term.ask('   ' + msg('first_run.login_prompt') + ' ').lower() in ('y', 'yes')
+    _record(store, **{LOGIN_SERVICE: 'yes' if answer else 'no'})
 
 
 def _summary(service, term):
