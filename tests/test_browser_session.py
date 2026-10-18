@@ -1127,6 +1127,28 @@ class LoadMoreTests(unittest.TestCase):
         sess, driver, calls = self.loading()
         self.assertNotIn('navigation_refused', sess.run('browser_read', {'load_more': '1'})['loaded'])
 
+    def test_load_more_stays_inside_the_remaining_work_time(self):
+        """#11 review: the request fits the Work's deadline with the worker's grace, or does not run."""
+        class Budget:
+            def __init__(self, left):
+                self.left = left
+
+            def check(self):
+                pass
+
+            def remaining(self):
+                return self.left
+        sess, driver, calls = self.loading()
+        sess.budget = Budget(9.0)
+        sess.run('browser_read', {'load_more': '2'})
+        (rounds, seconds, timeout), = calls
+        self.assertLessEqual(seconds + bs.LOAD_MORE_RESERVE_SECONDS, 9.0)
+        calls.clear()
+        sess.budget = Budget(2.5)
+        loaded = sess.run('browser_read', {'load_more': '2'})['loaded']
+        self.assertEqual(calls, [], 'too little time left: nothing is scrolled')
+        self.assertEqual(loaded, {'rounds': 0, 'stopped': 'time', 'new_content': False, 'text': ''})
+
     def test_a_driver_that_cannot_load_more_says_so(self):
         sess, driver = session(steps=40)
         sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})

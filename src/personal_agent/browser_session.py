@@ -100,6 +100,9 @@ ACTION_TIMEOUT_SECONDS = 20
 LOAD_MORE_ROUNDS = 5
 LOAD_MORE_SECONDS = 15.0
 LOAD_MORE_STOPS = frozenset({'no_progress', 'bound', 'time'})
+#: The worker's own grace past its cap (``op_load_more``'s deadline), plus a second
+#: for the snapshot after it: the part of the Work's time a load-more cannot use.
+LOAD_MORE_RESERVE_SECONDS = 3.0
 LOAD_MORE_ARGUMENT_TEXT = 'load_more는 1부터 5까지의 횟수입니다.'
 LOAD_MORE_UNAVAILABLE_TEXT = '이 브라우저에서는 페이지를 더 불러올 수 없어 지금 보이는 페이지만 읽었습니다.'
 LOGIN_WINDOW_SECONDS = 1800
@@ -1208,10 +1211,15 @@ class BrowserSession:
         seconds = LOAD_MORE_SECONDS
         if self.budget is not None:
             try:
-                seconds = min(seconds, max(1.0, self.budget.remaining() - 2.0))
+                seconds = min(seconds, self.budget.remaining() - LOAD_MORE_RESERVE_SECONDS)
             except Exception:
                 pass
-        answer = self._call(lambda timeout: load(rounds, min(seconds, max(1.0, timeout - 2.0)), timeout))
+        if seconds < 1.0:
+            # #11 review: the Work's remaining time cannot hold a round and the worker's
+            # grace, so nothing is scrolled rather than running past the Work deadline.
+            return {'rounds': 0, 'stopped': 'time', 'new_content': False, 'text': ''}
+        answer = self._call(lambda timeout: load(rounds, min(seconds, max(1.0, timeout - LOAD_MORE_RESERVE_SECONDS)),
+                                                 timeout))
         answer = answer if isinstance(answer, dict) else {}
         text = scrub(str(answer.get('text') or '')[:TEXT_LIMIT * 2], self._excluded())[0]
         text = re.sub(r'\n{3,}', '\n\n', text).strip()

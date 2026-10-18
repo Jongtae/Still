@@ -2343,6 +2343,11 @@ def _delegate_class():
                 return handler(WebKit.WKNavigationActionPolicyCancel)
 
             def decision(allowed, reason=None):
+                # #11 review: a destination check that finishes after a load-more read
+                # began is held to the read, like a navigation that starts during it.
+                if allowed and main_frame and worker.reading:
+                    worker.read_navigations += 1
+                    return handler(WebKit.WKNavigationActionPolicyCancel)
                 # Record the typed refusal before cancellation can synchronously
                 # report a generic navigation failure through WebKit's delegate.
                 if not allowed:
