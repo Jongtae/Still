@@ -2023,6 +2023,8 @@ def trail_steps(rows, tools=None):
  The one reading ``event_trail`` projects (#14): ``state`` is the trail state, ``detail`` the
  recorded event detail (a dict) and ``reason`` the recorded error of a failed call, the
  incompleteness note of an incomplete one, else None.  ``detail`` may be a JSON string or a dict.
+ A terminal record without ``arguments`` takes the recorded arguments of its call's ``running``
+ record (same ``scope``/``call_id``), so ``same_invocation`` can compare what two calls acted on.
  """
  from .api_requests import UNUSABLE_CALL_CODES
  def parsed(detail):
@@ -2030,14 +2032,19 @@ def trail_steps(rows, tools=None):
   try:data=json.loads(detail or '{}')
   except (TypeError,ValueError):data={}
   return data if isinstance(data,dict) else {}
- rows=list(rows);steps=[];completed=set()
+ rows=list(rows);steps=[];completed=set();arguments={}
  for tool,status,detail in rows:
   if tool=='settings_continuation' and status=='queued':
    ids=parsed(detail).get('draft_ids')
    completed|={item for item in ids if isinstance(item,str)} if isinstance(ids,list) else set()
+  if status=='running':
+   data=parsed(detail)
+   if data.get('call_id') and 'arguments' in data:arguments[(data.get('scope'),data['call_id'])]=data['arguments']
  for tool,status,detail in rows:
   if tool in ('model','subscription_engine','local_authority','conversation_continuity') or status not in ('succeeded','failed'):continue
   data=parsed(detail)
+  key=(data.get('scope'),data.get('call_id'))
+  if 'arguments' not in data and data.get('call_id') and key in arguments:data={**data,'arguments':arguments[key]}
   action=data.get('host_action') or (tools or {}).get(tool,{}).get('host_action') or tool
   if status=='failed':
    reason=data.get('error') if isinstance(data.get('error'),str) else None
@@ -2073,6 +2080,8 @@ def step_recovery(steps):
  part was done.  ``ROUTED_AROUND``: it changed nothing by its kind (an effect-free read, internal
  bookkeeping, a delegation, or a step Still never ran - ``missed``) and a later call succeeded on
  another path; whether that path served the call's purpose is the outcome judgment's to say.
+ "The same action" means the same invocation (``same_invocation``): the same recorded call, or
+ equal recorded arguments - a later call of that action on another target recovers nothing.
  Both are exactly failures ``state_change_short`` does not hold against the Work.  A withheld,
  incomplete or budget-cut call, one whose effect is unknown, and (for ``ROUTED_AROUND``) one that
  waits for the owner (``requires``) are never marked.  A mark is an observed fact, never a success
@@ -2083,34 +2092,61 @@ def step_recovery(steps):
   detail=detail if isinstance(detail,dict) else {}
   if state not in ('failed','missed') or detail.get('state')=='withheld' or unknown_effect(detail):continue
   later=[(other,result) for _t,other,result,_d,_r in steps[index+1:]]
-  if (action,'succeeded') in later:found[index]=RECOVERED;continue
+  if any(other==action and result=='succeeded' and same_invocation(detail,done)
+         for _t,other,result,done,_r in steps[index+1:]):
+   found[index]=RECOVERED;continue
   unrun=state=='missed' or unrun_page_step(action,detail)
   if (unrun or action in free) and not detail.get('requires') \
      and any(result=='succeeded' and other not in INTERNAL_STATE_ACTIONS for other,result in later):
    found[index]=ROUTED_AROUND
  return found
 
+def same_invocation(first, second):
+ """Whether two recorded call details are the same invocation (#14).
+
+ The same recorded call (``scope`` and ``call_id``), or both carry recorded ``arguments`` and
+ they are equal.  Without either there is no evidence they acted on the same thing: False.
+ """
+ first=first if isinstance(first,dict) else {};second=second if isinstance(second,dict) else {}
+ if first.get('call_id') and (first.get('scope'),first.get('call_id'))==(second.get('scope'),second.get('call_id')):return True
+ if first.get('arguments') is None or second.get('arguments') is None:return False
+ return json.dumps(first['arguments'],sort_keys=True,ensure_ascii=False)==json.dumps(second['arguments'],sort_keys=True,ensure_ascii=False)
+
 #: #14: what the outcome judgment reads beside a failed call a later call made up for, or whose effect is unknown.
 STEP_FACTS={RECOVERED:'[recovered: the same action succeeded later]',
             ROUTED_AROUND:'[changed nothing: a later call succeeded on another path]'}
 UNKNOWN_EFFECT_STEP_FACT='[effect unknown: whether this call changed something is not known]'
 
-def failed_steps_text(steps):
+#: #14: ``failed_steps_text`` stays inside the judgment's failure bound (``GOAL_FAILURE_CHARS``,
+#: ``orchestrator.FAILURE_CHARS``) with room for redaction, and bounds each reason.
+FAILED_STEPS_CHARS=520
+FAILED_STEP_REASON_CHARS=160
+FAILED_STEPS_MORE='{count} more failed calls not shown'
+
+def failed_steps_text(steps, limit=FAILED_STEPS_CHARS):
  """The failed steps the one outcome judgment reads (#14), from observed calls only.
 
  Every call that did not settle - failed, missed, cut off, withheld or incomplete - with its
- reason, marked from ``step_recovery`` (``STEP_FACTS``) or ``UNKNOWN_EFFECT_STEP_FACT`` when its
- recorded effect is unknown.  The worker's prose never decides a mark.  Marked calls come last,
- so a bounded cut drops them before any call that still holds the Work down.
+ reason (bounded), marked from ``step_recovery`` (``STEP_FACTS``) or ``UNKNOWN_EFFECT_STEP_FACT``
+ when its recorded effect is unknown.  The worker's prose never decides a mark.  Calls that still
+ hold the Work down come first; entries are kept whole up to ``limit`` and the rest are counted,
+ so no cut ever leaves a call without its mark.
  """
  marks=step_recovery(steps);open_steps,made_up=[],[]
  for index,(tool,_action,state,detail,reason) in enumerate(steps):
   if state in SETTLED_STATES:continue
   detail=detail if isinstance(detail,dict) else {}
-  text=f"{tool}: {reason or detail.get('code') or 'failed'}"
+  text=f"{tool}: {str(reason or detail.get('code') or 'failed')[:FAILED_STEP_REASON_CHARS]}"
   if index in marks:made_up.append(text+' '+STEP_FACTS[marks[index]])
   else:open_steps.append(text+' '+UNKNOWN_EFFECT_STEP_FACT if unknown_effect(detail) else text)
- return '; '.join(open_steps+made_up)
+ entries=open_steps+made_up;kept=[]
+ for position,entry in enumerate(entries):
+  rest=len(entries)-position-1
+  tail=len('; '+FAILED_STEPS_MORE.format(count=rest)) if rest else 0
+  if len('; '.join(kept+[entry]))+tail>limit:break
+  kept.append(entry)
+ if len(kept)<len(entries):kept.append(FAILED_STEPS_MORE.format(count=len(entries)-len(kept)))
+ return '; '.join(kept)
 
 def state_change_short(trail):
  """Whether a state-changing action - anything outside the effect-free reads
@@ -4396,7 +4432,9 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
                                      **(declared_effect(action,args) if validated else {})},ensure_ascii=False))
    if validated:
     observations[call['id']]=(name,action,trail[-1][1],result)
-    steps.append((name,action,trail[-1][1],{**result,**declared_effect(action,args)} if isinstance(result,dict) else {},
+    steps.append((name,action,trail[-1][1],
+                  {**(result if isinstance(result,dict) else {}),**declared_effect(action,args),'scope':scope,'call_id':call['id'],
+                   'arguments':recorded_arguments(action,args,getattr(capabilities,'judgment_text',None))},
                   failures[-1][1] if len(failures)>failed_before else None))
    # #657: a result that ran carries its ref, the id a completion claim cites
    # (a provider that hides tool call ids from the model still shows this).
