@@ -541,6 +541,11 @@ class DriverProtocolTests(unittest.TestCase):
                                                        'text': 'row 11\nrow 12', 'navigation_refused': 1})
         self.assertEqual({key: self.commands()[-1][key] for key in ('op', 'rounds', 'seconds', 'timeout')},
                          {'op': 'load_more', 'rounds': 3, 'seconds': 9.0, 'timeout': 12.0})
+        driver.goto('https://shop.test/intercepted', 4)
+        driver.snapshot()
+        with self.assertRaises(ToolError) as caught:
+            driver.click(3, 4)   # #102: the press landed elsewhere because the target moved
+        self.assertEqual((caught.exception.code, str(caught.exception)), ('target_unavailable', bs.MOVED_TEXT))
         sent = len(self.commands())
         with self.assertRaises(ToolError) as caught:
             driver.type(5, 'x', 4)   # index 5 was never in a snapshot: nothing is sent
@@ -810,6 +815,23 @@ console.log(JSON.stringify({el: el.a || {}, other: other.a || {}, kept: typeof e
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {'el': {bw.PRESS_MARK: ''}, 'other': {}, 'kept': 'function'},
                          'only a function assignment marks the element, and the handler is still set')
+
+    def test_a_cover_found_after_the_press_reaches_the_answer(self):
+        """#102 review: the post-press checks of a click and a typing step pass the cover on."""
+        cover = {'text': '잠시만요', 'controls': [{'index': 2, 'name': '닫기'}]}
+        for op in ('op_click', 'op_type'):
+            bw, worker = self.worker(blocked=0)
+            finished = []
+            worker.deadline = lambda *args, **kwargs: None
+            worker.press = lambda x, y: None
+            worker.AppHelper = type('AppHelper', (), {'callLater': staticmethod(lambda delay, call: call())})
+            worker._locate = lambda ident, command, then: then({'x': 1, 'y': 2, 'editable': True}, 'n', {}, [])
+            worker.finish_input = lambda ident, *args, **kwargs: finished.append((args, kwargs))
+            getattr(worker, op)(7, {'text': 'x'}, 5)
+            worker.pending[7] = True
+            worker.ran[-1][2]({'error': 'target_obscured', 'cover': cover}, None)
+            self.assertEqual(finished, [((0, 'target_obscured'), {'cover': cover, **({'focused': None} if op == 'op_type' else {})})],
+                             op)
 
     def test_the_page_wrapper_is_not_installed_while_the_owner_signs_in(self):
         bw, worker = self.worker()

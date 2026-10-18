@@ -1400,9 +1400,15 @@ CHANGED_TEXT = '대상 요소가 마지막으로 확인한 뒤 바뀌어 실행�
 NOT_TYPABLE_TEXT = '대상 요소는 글자를 입력할 수 있는 입력란이 아니어서 입력하지 않았습니다. 입력란을 대상으로 다시 시도하세요.'
 NOT_FOCUSED_TEXT = ('대상 입력란을 눌렀지만 입력 초점이 잡히지 않아 입력하지 않았습니다. browser_read로 페이지를 다시 '
                     '확인하세요.')
+#: #102: the press reached another element: the target moved off the pressed point, or
+#: (no longer visible which) something covered it or it moved meanwhile.
+MOVED_TEXT = '누르는 사이 대상 요소가 자리를 옮겨 대상이 눌리지 않았습니다. browser_read로 페이지를 다시 확인하세요.'
+MISSED_TEXT = ('누른 곳에 대상이 아닌 다른 요소가 있어 대상이 눌리지 않았습니다. 그 사이 대상이 가려졌거나 움직였을 수 '
+               '있습니다. browser_read로 페이지를 다시 확인하세요.')
 FOCUS_MOVED_TEXT = '입력란을 누르자 페이지가 입력 초점을 다른 요소로 옮겨, 확인하지 않은 그 요소에는 입력하지 않았습니다.'
 TARGET_TEXTS = {'target_missing': MISSING_TEXT, 'target_changed': CHANGED_TEXT, 'target_hidden': HIDDEN_TEXT,
-                'not_typable': NOT_TYPABLE_TEXT, 'not_focusable': NOT_FOCUSED_TEXT}
+                'not_typable': NOT_TYPABLE_TEXT, 'not_focusable': NOT_FOCUSED_TEXT,
+                'target_moved': MOVED_TEXT, 'press_missed': MISSED_TEXT}
 
 
 def target_text(code, cover=None):
@@ -1524,7 +1530,8 @@ def worker_environment(base=None):
 
 #: Worker error codes that mean "the element the guard classified is not what the pointer would hit".
 TARGET_ERRORS = frozenset({'target_missing', 'target_changed', 'target_hidden', 'target_obscured', 'not_typable',
-                           'not_focusable', 'focus_moved', 'bad_target', 'submit_changed'})
+                           'not_focusable', 'focus_moved', 'target_moved', 'press_missed', 'bad_target',
+                           'submit_changed'})
 WORKER_START_SECONDS = 30
 WORKER_GRACE_SECONDS = 5
 WORKER_QUIT_SECONDS = 5
