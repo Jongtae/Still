@@ -48,11 +48,13 @@ FORMULA = "Formula/agentos.rb"
 FORMULA_HEADER = ("# Written by scripts/dev/release.py formula from deploy/homebrew/agentos.rb.template\n"
                   "# for the published tag archive. Change the template, not this file.\n\n")
 READMES = ("README.md", "docs/i18n/README.ko.md", "docs/i18n/README.ja.md", "docs/i18n/README.zh-CN.md")
+QUICKSTART = "docs/QUICKSTART.md"
 #: Prose that names the newest published release. Each file must name it, so
 #: a reworded sentence fails here instead of silently keeping an old version.
 RELEASE_PROSE = READMES + (
     "docs/product-status.en.md",
     "docs/product-status.ko.md",
+    QUICKSTART,
 )
 #: The sentence each file carries before the first Still release, and its
 #: released form. The first ``record`` replaces one with the other.
@@ -60,6 +62,13 @@ FIRST_RELEASE_PROSE = {
     **{name: (README_PRE_RELEASE_BOUNDARIES[name], README_RELEASE_BOUNDARIES[name]) for name in READMES},
     **{name: (STATUS_PRE_RELEASE_SENTENCES[name], STATUS_RELEASE_SENTENCES[name])
        for name in STATUS_PRE_RELEASE_SENTENCES},
+    # #86: the Quickstart's install note under its one-line installer.
+    QUICKSTART: ("No Still release is published yet. Until the first one, `v0.1.0`, this command and the Homebrew "
+                 "commands below stop without installing anything; run Still from a checkout instead "
+                 "([source installation](#remote-host--source-installation)).",
+                 "This command and the Homebrew commands below install the newest published release, "
+                 "`v{version}` ({date}). To run unreleased `main`, use a checkout instead "
+                 "([source installation](#remote-host--source-installation))."),
 }
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 
