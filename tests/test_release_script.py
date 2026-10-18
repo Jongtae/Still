@@ -56,6 +56,24 @@ class ReleaseScriptTests(unittest.TestCase):
                 before, after.format(version=version, date=tag_date)), encoding='utf-8')
         return data['published'][-1]
 
+    def before_first_release(self):
+        """Put the copy in the state before the first Still release (#45), whatever main holds today."""
+        data = release.load_manifest(self.root)
+        newest = release.newest_published(data)
+        if newest is None:
+            return
+        for name in release.RELEASE_PROSE:
+            before, after = release.FIRST_RELEASE_PROSE[name]
+            path, released = self.root / name, after.format(version=newest['version'], date=newest['tag_date'])
+            text = path.read_text(encoding='utf-8')
+            self.assertIn(released, text, name)
+            path.write_text(text.replace(released, before), encoding='utf-8')
+        installer = self.root / release.INSTALLER
+        installer.write_text(re.sub(r'^(AGENTOS_VERSION|AGENTOS_ARCHIVE_SHA256)="[^"]*"$', r'\1=""',
+                                    installer.read_text(encoding='utf-8'), flags=re.M), encoding='utf-8')
+        data['published'] = []
+        release.save_manifest(self.root, data)
+
     def prepare(self, version='9.0.0', not_claimed='No live order was observed.'):
         """What a release-preparation PR does: name the version, state its boundary."""
         pyproject = self.root / release.PYPROJECT
@@ -90,6 +108,7 @@ class ReleaseScriptTests(unittest.TestCase):
             release.check(self.root)
 
     def test_the_first_release_needs_no_earlier_one(self):
+        self.before_first_release()
         self.assertIsNone(release.newest_published(release.load_manifest(self.root)))
         self.prepare(version='0.1.0')
         self.assertEqual(release.check(self.root), '0.1.0')
@@ -133,6 +152,7 @@ class ReleaseScriptTests(unittest.TestCase):
         self.assertIn(f'AGENTOS_ARCHIVE_SHA256="{SHA}"', installer)
 
     def test_the_first_record_replaces_every_no_release_sentence(self):
+        self.before_first_release()
         self.prepare(version='0.1.0')
         release.record(self.root, '0.1.0', COMMIT, SHA, '2026-11-02', 'formula-pr')
         for name in release.RELEASE_PROSE:
@@ -145,6 +165,7 @@ class ReleaseScriptTests(unittest.TestCase):
         self.assertIn('AGENTOS_VERSION="0.1.0"', installer)
 
     def test_the_first_record_refuses_a_reworded_no_release_sentence_and_changes_nothing(self):
+        self.before_first_release()
         self.prepare(version='0.1.0')
         status = self.root / 'docs/product-status.ko.md'
         before, _after = release.FIRST_RELEASE_PROSE['docs/product-status.ko.md']
