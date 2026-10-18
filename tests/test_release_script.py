@@ -151,6 +151,16 @@ class ReleaseScriptTests(unittest.TestCase):
         self.assertIn('AGENTOS_VERSION="9.0.0"', installer)
         self.assertIn(f'AGENTOS_ARCHIVE_SHA256="{SHA}"', installer)
 
+    def test_main_names_the_newest_release_where_the_next_record_looks(self):
+        """#86: the next `record` moves each file's version, so each must name the newest one now."""
+        newest = release.newest_published(release.load_manifest(ROOT))
+        if newest is None:
+            self.skipTest('no Still release is published yet')
+        for name in release.RELEASE_PROSE:
+            with self.subTest(name=name):
+                self.assertRegex((ROOT / name).read_text(encoding='utf-8'),
+                                 re.escape('v' + newest['version']) + r'(?![\d.])')
+
     def test_the_first_record_replaces_every_no_release_sentence(self):
         self.before_first_release()
         self.prepare(version='0.1.0')
