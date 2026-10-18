@@ -1,8 +1,10 @@
 """Navigation failure stays explicit; a later read can observe a loaded document."""
 import json
 import os
+import socket
 import threading
 import time
+import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import sys
 import tempfile
@@ -10,8 +12,11 @@ import unittest
 from pathlib import Path
 
 from personal_agent import browser_session as bs
+from personal_agent import browser_worker as bw
 from personal_agent.agent_runtime import ToolError
 from test_browser_session import FakeDriver, ORIGIN, PASSWORD
+
+WORKER = next(value for value in vars(bw).values() if isinstance(value, type) and hasattr(value, 'warm'))
 
 
 class TimeoutDriver(FakeDriver):
@@ -76,6 +81,21 @@ class TimeoutRecoveryTests(unittest.TestCase):
                 self.assertEqual(caught.exception.code, 'no_page')
                 self.assertIsNone(session.last)
 
+    def test_a_failed_navigation_after_a_page_has_no_page_and_is_not_replayed(self):
+        for error in (ToolError(bs.HOST_UNREACHABLE_TEXT, 'host_unreachable'), bs.WorkerError('navigation_failed')):
+            with self.subTest(error=getattr(error, 'code', None)):
+                driver = FakeDriver()
+                session = bs.BrowserSession(lambda: driver, work_id='w')
+                session.open({'url': ORIGIN + '/product', 'effect': 'read'})
+                driver.goto = lambda *args: (driver.log.append(('goto',) + args), (_ for _ in ()).throw(error))
+                with self.assertRaises(ToolError):
+                    session.open({'url': ORIGIN + '/cart', 'effect': 'read'})
+                with self.assertRaises(ToolError) as caught:
+                    session.read()
+                self.assertEqual(caught.exception.code, 'no_page', 'the earlier page is not passed off as the requested one')
+                self.assertIsNone(session.last)
+                self.assertEqual(len([x for x in driver.log if x[0] == 'goto']), 2)
+
     def test_worker_process_timeout_keeps_the_real_observable_document(self):
         with tempfile.TemporaryDirectory() as folder:
             log = Path(folder) / 'commands'
@@ -90,6 +110,56 @@ class TimeoutRecoveryTests(unittest.TestCase):
                 self.assertEqual(sum(c['op'] == 'navigate' for c in commands), 1)
             finally:
                 session.close()
+
+
+def warming_worker():
+    """A stand-in for the worker's main-thread state: what ``warm`` and ``navigation_finished`` touch."""
+    state = types.SimpleNamespace(navigation=None, warming=None, pending={}, later=[], fetched=[], loaded=[])
+    state.blank = object()
+
+    def load(html, base):
+        state.loaded.append((html, base))
+        return state.blank
+    state.view = types.SimpleNamespace(loadHTMLString_baseURL_=load)
+    state.AppHelper = types.SimpleNamespace(callLater=lambda seconds, call: state.later.append((seconds, call)))
+    state.store = types.SimpleNamespace(
+        fetchDataRecordsOfTypes_completionHandler_=lambda kinds, handler: state.fetched.append(handler))
+    state.WebKit = types.SimpleNamespace(WKWebsiteDataStore=types.SimpleNamespace(allWebsiteDataTypes=lambda: 'all'))
+    state.reply = lambda *args, **fields: state.pending.setdefault('replied', []).append(args)
+    return state
+
+
+class WorkerWarmUpTests(unittest.TestCase):
+    """#5: a new worker starts WebKit's processes on an empty document, not inside a step's deadline."""
+
+    def test_ready_follows_the_empty_document_and_the_store_once(self):
+        state, ready = warming_worker(), []
+        WORKER.warm(state, lambda: ready.append(True))
+        self.assertEqual(state.loaded, [('', None)], 'only an empty document, never a web page')
+        self.assertEqual(ready, [])
+        WORKER.navigation_finished(state, state.blank)
+        self.assertEqual(ready, [])
+        state.fetched[0]([])
+        self.assertEqual(ready, [True])
+        state.later[0][1]()   # the bound passing later does not report ready twice
+        self.assertEqual(ready, [True])
+        self.assertIsNone(state.warming)
+        self.assertNotIn('replied', state.pending, 'the empty document answers no navigate op')
+
+    def test_a_warm_up_that_never_finishes_is_bounded(self):
+        state, ready = warming_worker(), []
+        WORKER.warm(state, lambda: ready.append(True), seconds=3)
+        self.assertEqual(state.later[0][0], 3)
+        state.later[0][1]()
+        self.assertEqual(ready, [True])
+        WORKER.navigation_finished(state, state.blank)   # a late finish changes nothing
+        self.assertEqual((ready, state.fetched), ([True], []))
+
+
+def serve(handler):
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
 
 
 @unittest.skipUnless(os.environ.get('AGENTOS_REAL_BROWSER_TESTS') == '1' and sys.platform == 'darwin',
@@ -138,6 +208,46 @@ class RealWebKitRecoveryTests(unittest.TestCase):
                         self.assertIn('Visible document', page['text'])
             finally:
                 session.close()
+
+    def test_no_document_and_a_failed_navigation_stay_honest_failures(self):
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                time.sleep(4)   # the document itself arrives after the deadline
+                try:
+                    body = b'<html><body><h1>Too late</h1></body></html>'
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/html')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                except OSError:
+                    pass
+
+        server = serve(Handler)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        with socket.socket() as closed:
+            closed.bind(('127.0.0.1', 0))
+            refused_port = closed.getsockname()[1]
+        slow, refused = f'127.0.0.1:{server.server_port}', f'127.0.0.1:{refused_port}'
+        for url, origin, code in (('http://' + slow + '/', slow, 'browser_timeout'),
+                                  ('http://' + refused + '/', refused, 'host_unreachable')):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as folder:
+                driver = bs.WebKitWorkerDriver('honest-fixture', cwd=folder, allowed_origins_for_tests=(origin,))
+                session = bs.BrowserSession(lambda: driver, work_id='fixture', action_seconds=1,
+                                            allowed_origins_for_tests=(origin,))
+                try:
+                    with self.assertRaises(ToolError) as caught:
+                        session.open({'url': url, 'effect': 'read'})
+                    self.assertEqual(caught.exception.code, code)
+                    with self.assertRaises(ToolError) as caught:
+                        session.read()
+                    self.assertEqual(caught.exception.code, 'no_page')
+                finally:
+                    session.close()
 
     def test_slow_address_check_is_typed_and_still_refused(self):
         source = ('import time; from personal_agent import browser_worker as w; '
