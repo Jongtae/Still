@@ -1162,10 +1162,11 @@ class LoadMoreTests(unittest.TestCase):
                   'loaded': {'rounds': 2, 'stopped': 'no_progress', 'new_content': True, 'text': '행 11 비밀 내용'}}
         summary = evidence_summary('browser_read', result)
         self.assertEqual(summary['loaded'], {'rounds': 2, 'stopped': 'no_progress', 'new_content': True, 'characters': 10,
-                                             'navigation_refused': False})
-        refused = dict(result, loaded=dict(result['loaded'], navigation_refused=True))
-        self.assertTrue(evidence_summary('browser_read', refused)['loaded']['navigation_refused'],
-                        'a refused navigation stays visible in the durable record')
+                                             'text_truncated': False, 'navigation_refused': False})
+        marked = dict(result, loaded=dict(result['loaded'], navigation_refused=True, text_truncated=True))
+        recorded = evidence_summary('browser_read', marked)['loaded']
+        self.assertTrue(recorded['navigation_refused'], 'a refused navigation stays visible in the durable record')
+        self.assertTrue(recorded['text_truncated'], 'partial loaded text is not recorded as complete')
         self.assertNotIn('비밀', json.dumps(summary, ensure_ascii=False))
         self.assertIn('2번 더 불러와', fallback_response([('browser_read', result)], []))
 
