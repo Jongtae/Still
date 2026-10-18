@@ -12,7 +12,6 @@ contacted, and none is claimed.
 import json
 import logging
 import tempfile
-import time
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -31,6 +30,10 @@ from personal_agent.quickstart_store import QuickStore
 CHAT, GENERATION = 77, 'gen-1'
 SECRET = 'bot-token-value-1234-abcdef'
 SEOUL = ZoneInfo('Asia/Seoul')
+#: #9: one clock for preparations and the turn's current context, 2026-10-14 21:00:30 Asia/Seoul.
+START = 1_791_979_230.0
+#: 2026-10-15 00:00:00 Asia/Seoul.
+SEOUL_MIDNIGHT = 1_791_990_000.0
 
 
 def call(ident, name, **args):
@@ -66,12 +69,14 @@ class Network:
 
 
 class _Case(unittest.TestCase):
+    START = START
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name) / 'data'
         self.store = QuickStore(self.root)
-        self.now = float(int(time.time()))
+        self.now = self.START
         self.telegram, self.model_calls, self.script = [], [], []
         self.network = Network()
         self.service = self.make_service()
@@ -93,6 +98,7 @@ class _Case(unittest.TestCase):
         service = AgentService(self.store, ModelAdapter(self._model), self._telegram)
         service.local_tools = self.network
         service.preparations.clock = lambda: self.now
+        service.context_observations.clock = lambda: self.now
         if hasattr(self, 'judge'):
             service.use_decision_engine(self.judge)
         return service
@@ -1151,6 +1157,15 @@ class WatchAcceptanceTests(_WatchCase):
         results = [json.loads(message['content']) for message in self.model_calls[-1]['messages']
                    if message['role'] == 'tool']
         self.assertEqual([result['preparation_id'] for result in results if 'preparation_id' in result], [row['id']])
+
+
+class WatchAcceptanceAcrossMidnightTests(WatchAcceptanceTests):
+    """#9: the same watch requests 30 seconds before midnight (Asia/Seoul), so each first slot is tomorrow."""
+    START = SEOUL_MIDNIGHT - 30
+
+    def test_the_first_slot_falls_after_midnight(self):
+        self.assertEqual(self.due_iso(600)[:10], '2026-10-15')
+        self.assertEqual(datetime.fromtimestamp(self.now, SEOUL).date().isoformat(), '2026-10-14')
 
 
 class SurfaceTests(unittest.TestCase):

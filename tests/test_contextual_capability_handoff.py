@@ -38,15 +38,24 @@ MOBILE_HOST = 'mobile.example.test'
 
 
 class Clock:
-    def __init__(self):
-        self.now = 1_000_000.0
+    def __init__(self, now=1_000_000.0):
+        self.now = now
 
     def __call__(self):
         return self.now
 
 
+#: #9: the turn's clock, 2026-10-14 12:00:30 UTC.  The plan reads it to the minute (#1308),
+#: so on the wall clock a minute ticking during routing made a Work ask its plan again.
+CONTEXT_START = 1_791_979_230.0
+#: 2026-10-15 00:00:00 Asia/Seoul.
+SEOUL_MIDNIGHT = 1_791_990_000.0
+
+
 class HandoffTestCase(unittest.TestCase):
     def setUp(self):
+        # Fixed unless a test moves it; ``context_step`` seconds pass before each run.
+        self.context_clock, self.context_step = Clock(CONTEXT_START), 0
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -94,6 +103,13 @@ class HandoffTestCase(unittest.TestCase):
             self.assertTrue(service.test_model()['ok'])
         service.local_server_port = 8765
         service.folder_picker = lambda prompt: self.picked
+        service.context_observations.clock = self.context_clock
+        run_one = service.run_one
+
+        def run_one_later():
+            self.context_clock.now += self.context_step
+            return run_one()
+        service.run_one = run_one_later
         return service
 
     def claim_completion(self):
@@ -443,6 +459,27 @@ class HostedModelDocumentApprovalTests(HandoffTestCase):
         self.assertEqual(self.job(job_id)['status'], 'succeeded', self.job(job_id).get('error'))
         self.assertFalse(self.service.resume_after_document_approval(job_id), 'continues once only')
         self.assertFalse(self.service.run_one())
+
+    def across(self, start, flow):
+        """``flow`` with the Work's runs one second apart from ``start`` on the Asia/Seoul clock (#9)."""
+        self.service.context_observations.set_controls({'timezone': 'Asia/Seoul'})
+        self.context_clock.now, self.context_step = start, 1
+        flow()
+
+    def test_folder_then_document_approval_resume_once_across_midnight(self):
+        """#9: the parked run before midnight (Asia/Seoul), the resumed runs after it."""
+        self.across(SEOUL_MIDNIGHT - 2, self.test_folder_then_document_approval_resume_the_same_work_once)
+        self.assertGreater(self.context_clock.now, SEOUL_MIDNIGHT)
+
+    def test_folder_then_document_approval_resume_once_across_a_minute(self):
+        self.across(CONTEXT_START + 28, self.test_folder_then_document_approval_resume_the_same_work_once)
+
+    def test_settings_approval_resumes_once_across_midnight(self):
+        self.across(SEOUL_MIDNIGHT - 2, self.test_settings_approval_resumes_the_parked_work_once_and_closes_the_prompt)
+        self.assertGreater(self.context_clock.now, SEOUL_MIDNIGHT)
+
+    def test_settings_approval_resumes_once_across_a_minute(self):
+        self.across(CONTEXT_START + 28, self.test_settings_approval_resumes_the_parked_work_once_and_closes_the_prompt)
 
     def stop_at_sharing(self, clock=None, resumed_plan=None):
         if clock is not None:
