@@ -708,8 +708,9 @@ return JSON.stringify({added: more ? more.total : 0, text: body ? (body.innerTex
 
 #: Arguments: limit, end.  The visible text of the elements noted since the last
 #: collection that are still on the page (outermost first, nested ones once),
-#: bounded; a round's rows are collected before a list can reuse them.  ``end``
-#: also stops observing.
+#: bounded, and how many of them showed text (``kept``): only those are
+#: progress, so a loading placeholder that came and went is not.  A round's rows
+#: are collected before a list can reuse them.  ``end`` also stops observing.
 LOAD_MORE_COLLECT_SCRIPT = PRELUDE + r"""
 const more = window.__agentosMore;
 if (!more) return JSON.stringify({added: 0, text: ''});
@@ -726,7 +727,7 @@ for (const node of noted) {
   const text = (node.innerText || '').trim();
   if (text) { parts.push(text); length += text.length + 1; }
 }
-return JSON.stringify({added: more.total, text: cut(parts.join('\n'), limit)});
+return JSON.stringify({added: more.total, kept: parts.length, text: cut(parts.join('\n'), limit)});
 """
 
 #: #939: typing from the phone goes into whatever element the page has focused;
@@ -1608,9 +1609,10 @@ class Worker:
         ``LOAD_MORE_WAIT_SECONDS`` ends the request (``no_progress``); one that
         adds some waits until the page stayed quiet for ``RENDER_QUIET_SECONDS``.
         The request also ends at ``rounds`` (``bound``) or after ``seconds``
-        (``time``).  Answers the rounds run, why it stopped, how many elements
-        were added or had their text added or rewritten, their visible text
-        (bounded), and how many main-frame navigations the page started
+        (``time``).  A round whose added elements are all gone or textless once
+        the page is quiet (a loading placeholder) is no progress either.
+        Answers the rounds run, why it stopped, how many added or rewritten
+        elements were still shown with text, that text (bounded), and how many main-frame navigations the page started
         meanwhile, each cancelled.  No control is pressed and no input is sent:
         only the page's scroll positions change, and the read never leaves the page.
         """
@@ -1631,7 +1633,7 @@ class Worker:
             self.run(LOAD_MORE_COLLECT_SCRIPT, {'limit': 0, 'end': True}, lambda value, error: None)
         self.deadline(ident, cap + 2, on_timeout=expired)
         started = time.monotonic()
-        state = {'round': 0, 'added': 0, 'texts': [], 'length': 0}
+        state = {'round': 0, 'added': 0, 'kept': 0, 'last_kept': 0, 'texts': [], 'length': 0}
         self.reading, self.read_navigations = True, 0
 
         def collect(end, then):
@@ -1643,6 +1645,8 @@ class Worker:
                     state['texts'].append(text)
                     state['length'] += len(text) + 1
                 state['added'] = max(state['added'], int(value.get('added') or 0))
+                state['last_kept'] = int(value.get('kept') or 0)
+                state['kept'] += state['last_kept']
                 then()
             self.run(LOAD_MORE_COLLECT_SCRIPT, {'limit': max(0, LOAD_MORE_TEXT_LIMIT - state['length']), 'end': end},
                      collected)
@@ -1652,7 +1656,7 @@ class Worker:
                 self.reading = False
                 if ident not in self.pending:
                     return
-                self.reply(ident, rounds=state['round'], stopped=stopped, added=state['added'],
+                self.reply(ident, rounds=state['round'], stopped=stopped, added=state['kept'],
                            text='\n'.join(state['texts'])[:LOAD_MORE_TEXT_LIMIT], navigation_refused=self.read_navigations)
             collect(True, ended)
 
@@ -1689,7 +1693,8 @@ class Worker:
                 if added > base:
                     if now - since[0] >= RENDER_QUIET_SECONDS or now - began >= RENDER_SETTLE_SECONDS:
                         state['added'] = added
-                        return collect(False, next_round)
+                        # Progress is rows still shown with text once the page is quiet (#11 review).
+                        return collect(False, lambda: next_round() if state['last_kept'] else finish('no_progress'))
                 elif now - began >= LOAD_MORE_WAIT_SECONDS:
                     return finish('no_progress')
                 self.AppHelper.callLater(POLL_SECONDS * 2, lambda: self.run(LOAD_MORE_PROBE_SCRIPT, {}, probed))

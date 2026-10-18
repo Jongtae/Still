@@ -1066,6 +1066,13 @@ class SessionFixtureHandler(FixtureHandler):
               <div style="height:3000px">긴 내용</div>
               <script>window.addEventListener('scroll',function(){location.assign('/product');});</script>
               </body></html>''')
+        if path == '/lazy-placeholder':
+            # #11 review: reaching the end shows a loading placeholder that goes away with no rows.
+            return self._send('''<html><head><title>빈 로딩</title></head><body><div style="height:2000px">처음 내용</div>
+              <div id="end" style="height:10px"></div>
+              <script>new IntersectionObserver(function(es){if(!es[0].isIntersecting)return;var p=document.createElement('p');
+                p.textContent='불러오는 중';document.body.appendChild(p);setTimeout(function(){p.remove();},300);})
+                .observe(document.getElementById('end'));</script></body></html>''')
         if path == '/wide':
             # Review P2-1 repro: a surrogate pair at the label cut and a lone surrogate in the title.
             return self._send('<html><head><title>넓은 글자</title></head><body><button type="button" aria-label="'
@@ -1335,6 +1342,17 @@ class WebKitIntegrationTests(unittest.TestCase):
             self.assertEqual(page['title'], '머무름', page['url'])
             self.assertTrue(page['loaded']['navigation_refused'], page['loaded'])
             self.assertEqual(sess.read()['title'], '머무름', 'still on the page after the read')
+        finally:
+            sess.close()
+
+    def test_a_placeholder_that_comes_and_goes_is_not_progress(self):
+        """#11 review: an empty load (a placeholder that is removed) stops with no_progress and no content."""
+        sess = self.session('work-11-placeholder')
+        try:
+            sess.open({'url': self.origin + '/lazy-placeholder', 'effect': 'read'})
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertEqual((loaded['rounds'], loaded['stopped'], loaded['new_content'], loaded['text']),
+                             (1, 'no_progress', False, ''), loaded)
         finally:
             sess.close()
 
