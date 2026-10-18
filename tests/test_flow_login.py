@@ -301,6 +301,11 @@ class LoginHarness(unittest.TestCase):
     """One Telegram owner, the direct scripted model route and the fake page driver."""
 
     def setUp(self):
+        # conftest.py's suite guard (#953) is pytest-only; under unittest discovery the prompt would start the
+        # phone login on its own thread and its owner message would land at an arbitrary point of the test.
+        guard = mock.patch.object(AgentService, 'AUTO_PHONE_LOGIN', False)
+        guard.start()
+        self.addCleanup(guard.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.store = QuickStore(Path(self.tmp.name) / 'data')
