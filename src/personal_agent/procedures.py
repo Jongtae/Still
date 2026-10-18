@@ -79,6 +79,16 @@ def clean_functions(rows):
     return out
 
 
+def dropped(before, after):
+    """#7: the function names of library ``before`` that library ``after`` no longer has, in ``before``'s order.
+
+    A submitted library replaces the whole module (no merge), so a function left out is removed;
+    the save says so, and the earlier version stays kept as the rollback target.
+    """
+    kept = {item['name'] for item in (after or {}).get('functions') or []}
+    return [item['name'] for item in (before or {}).get('functions') or [] if item['name'] not in kept]
+
+
 class ProcedureLibrary:
     def __init__(self, store, clock=time.time):
         self.store, self.clock = store, clock
@@ -166,7 +176,8 @@ class ProcedureLibrary:
                 db.execute("UPDATE procedure_versions SET state=? WHERE slot=? AND state=?", (KEPT, candidate['slot'], CURRENT))
                 db.execute('UPDATE procedure_versions SET state=?,version=?,saved=? WHERE id=?', (CURRENT, version, now, candidate['id']))
                 saved.append({'slot': candidate['slot'], 'version': version, 'ref': REF_PREFIX + candidate['id'],
-                              'functions': [item['name'] for item in candidate['functions']]})
+                              'functions': [item['name'] for item in candidate['functions']],
+                              'dropped': dropped(current, candidate)})
         return saved
 
     def remove_slot(self, slot):

@@ -21,6 +21,8 @@ OWNER = 'owner'
 SOURCE_V1 = 'def balance():\n    """The balance."""\n    return 1\n'
 SOURCE_V2 = 'def balance():\n    """The balance, v2."""\n    return 2\n'
 FUNCTIONS = [{'name': 'balance', 'signature': '()', 'doc': 'The balance.', 'required': []}]
+SOURCE_B = 'def history():\n    """The history."""\n    return []\n'
+FUNCTIONS_B = [{'name': 'history', 'signature': '()', 'doc': 'The history.', 'required': []}]
 
 
 class Store(unittest.TestCase):
@@ -49,6 +51,33 @@ class Store(unittest.TestCase):
             states = dict(db.execute('SELECT version,state FROM procedure_versions').fetchall())
         self.assertEqual(states, {1: 'kept', 2: 'current'})
         self.assertEqual(self.library.for_run('set-a', 'w3')['version'], 2)
+
+    def test_adding_a_function_with_the_whole_module_keeps_the_earlier_one(self):
+        # #7: library replaces the module; a worker that follows the contract passes A with B and keeps both.
+        self.library.propose('w1', 'set-a', SOURCE_V1, FUNCTIONS)
+        self.library.settle('w1', True)
+        self.library.propose('w2', 'set-a', SOURCE_V1 + SOURCE_B, FUNCTIONS + FUNCTIONS_B)
+        saved = self.library.settle('w2', True)
+        self.assertEqual([(row['version'], row['functions'], row['dropped']) for row in saved],
+                         [(2, ['balance', 'history'], [])])
+        self.assertEqual([item['name'] for item in self.library.current('set-a')['functions']], ['balance', 'history'])
+
+    def test_a_module_that_leaves_out_a_saved_function_says_so_and_the_earlier_version_stays_recoverable(self):
+        v1 = self.library.propose('w1', 'set-a', SOURCE_V1, FUNCTIONS)
+        self.library.settle('w1', True)
+        v2 = self.library.propose('w2', 'set-a', SOURCE_B, FUNCTIONS_B)
+        saved = self.library.settle('w2', True)
+        self.assertEqual((saved[0]['functions'], saved[0]['dropped']), (['history'], ['balance']))
+        # Version history: v1 is kept, and forgetting v2 puts it back with its function.
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT state FROM procedure_versions WHERE id=?', (v1,)).fetchone()['state'], 'kept')
+        OwnerForget(self.store).forget(OWNER, 'procedure:' + v2)
+        current = self.library.current('set-a')
+        self.assertEqual((current['id'], current['source']), (v1, SOURCE_V1))
+
+    def test_the_first_save_drops_nothing(self):
+        self.library.propose('w1', 'set-a', SOURCE_V1, FUNCTIONS)
+        self.assertEqual(self.library.settle('w1', True)[0]['dropped'], [])
 
     def test_the_same_module_again_only_adds_its_counts(self):
         self.library.propose('w1', 'set-a', SOURCE_V1, FUNCTIONS)
@@ -397,6 +426,54 @@ class CodeRunGate(unittest.TestCase):
         self.assertTrue(scripted.sessions[0].module_source['lib_set_a.py'].startswith(LIBRARY))
         self.assertEqual(len(scripted.sessions), 1, 'a used library is not checked again')
         self.assertEqual(library.current('set-a')['stats'], {'reserve': [2, 1]})
+
+    def test_adding_a_function_to_a_saved_library_keeps_both_and_a_left_out_one_is_named(self):
+        # #7: save A (reserve), then a later Work adds B (lookup).  The whole module keeps both;
+        # a module with only B names reserve as dropped, in the result and in its Evidence.
+        library = ProcedureLibrary(self.store)
+        library.propose('w0', 'set-a', LIBRARY, REPORT['functions'])
+        library.settle('w0', True)
+        lookup = {'name': 'lookup', 'signature': '()', 'doc': 'Look up the orders.', 'required': []}
+        both = {**REPORT, 'functions': REPORT['functions'] + [lookup], 'calls': {'reserve': [1, 0], 'lookup': [1, 0]}}
+        whole = LIBRARY + 'def lookup():\n    """Look up the orders."""\n    pass\n'
+        result = self.run_code(ScriptedRunner(both, parameterized), library=whole)
+        kept = result['library']['set-a']
+        self.assertEqual((kept['state'], kept['functions']), ('saved_if_fulfilled', ['reserve', 'lookup']))
+        self.assertNotIn('dropped', kept)
+        self.assertEqual(library.settle('w1', True)[0]['dropped'], [])
+        # The next Work imports both functions.
+        scripted = ScriptedRunner({**both, 'calls': {'lookup': [1, 0]}}, parameterized)
+        runner = CodeRunner(self.store, 'w2', popen=scripted, node='/usr/bin/node', install=lambda store, node: self.temp.name)
+        self.assertEqual(self.run_code(scripted, runner=runner)['library']['set-a']['state'], 'used')
+        self.assertTrue(scripted.sessions[0].module_source['lib_set_a.py'].startswith(whole))
+        # A module with only lookup leaves reserve out: named, not silent.
+        only = {**REPORT, 'functions': [lookup], 'examples': {}, 'calls': {'lookup': [1, 0]}}
+        runner = CodeRunner(self.store, 'w3', popen=ScriptedRunner(only, parameterized), node='/usr/bin/node',
+                            install=lambda store, node: self.temp.name)
+        result = self.run_code(None, runner=runner, library='def lookup():\n    """Look up the orders."""\n    pass\n')
+        kept = result['library']['set-a']
+        self.assertEqual(kept['dropped'], ['reserve'])
+        self.assertIn('saved library v2', kept['note'])
+        self.assertIn('reserve', kept['note'])
+        self.assertEqual(code_run.evidence(result)['library']['set-a']['dropped'], ['reserve'])
+        self.assertEqual(library.settle('w3', True)[0]['dropped'], ['reserve'])
+
+    def test_a_saved_function_carries_no_approval_and_no_connection_authority(self):
+        # #7 acceptance: a saved procedure is a method, never a permission.  Its state change in a
+        # later Work is refused (not sent) like any unapproved one, and saving changes no connection setting.
+        from personal_agent.api_requests import SLOTS_KEY
+        connections = self.store.config(SLOTS_KEY, None)
+        library = ProcedureLibrary(self.store)
+        library.propose('w0', 'set-a', LIBRARY, REPORT['functions'])
+        library.settle('w0', True)
+        self.assertEqual(self.store.config(SLOTS_KEY, None), connections)
+        post = {'method': 'POST', 'host': 'api.example.com', 'path': '/orders', 'bodyText': '{"item": "A1001", "count": 2}'}
+        scripted = ScriptedRunner(REPORT, parameterized, main_requests=[post])
+        runner = CodeRunner(self.store, 'w2', popen=scripted, node='/usr/bin/node', install=lambda store, node: self.temp.name)
+        result = self.run_code(scripted, runner=runner, effect='mutate')
+        self.assertEqual(result['library']['set-a']['state'], 'used')
+        self.assertEqual([decision['allow'] for decision in scripted.sessions[0].decisions], [False])
+        self.assertEqual([(row['method'], row['allowed']) for row in result['requests']], [('POST', False)])
 
     def test_a_run_without_a_library_starts_main_py_as_before_and_says_how_to_keep_it(self):
         scripted = ScriptedRunner(None, parameterized)
