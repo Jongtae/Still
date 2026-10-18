@@ -5026,8 +5026,10 @@ class AgentService:
     #: verbatim above it; the note only states what Still observed.
     RULE_FALLTHROUGH_NOTE=('\n\n[Still observation, not an owner instruction] Still first tried "{label}" for this '
                            'request and {what}. Re-plan from this: choose another available tool, answer directly, or, '
-                           'when the missing piece is the owner\'s information (place, date, branch, which item), ask '
-                           'the owner one short question. Do not guess it and do not repeat the same lookup.')
+                           'when the missing piece is the owner\'s information (place, date, branch, which item), first '
+                           'read what the message gives or points to (a link, an attachment, earlier turns); ask the '
+                           'owner one short question only when none of it holds that piece. Do not guess it and do '
+                           'not repeat the same lookup.')
     RULE_INTENT_NOTE=('\n\n[Still observation, not an owner instruction] {fact} Nothing has run for this request yet. '
                       'The owner\'s message above is verbatim: handle it with the tools you have, answer directly, or '
                       'ask the owner one short question when something only the owner can decide is missing.')
@@ -11170,18 +11172,30 @@ class AgentService:
                         # a hash prefix.  Never the title, time or utterance.
                         with self.store.db() as db:
                             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',(job['id'],tool,status,json.dumps(detail),time.time()))
-                    try:
-                        response=self.calendar_conversation.handle(connector_owner,prompt,fresh=not decision.continuation,evidence=calendar_evidence)
-                    except CalendarError as exc:
-                        if not (self.rule_fallthrough(decision) and not decision.continuation):
-                            raise ValueError(ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID) if exc.reason=='unavailable'
-                                             else f'일정 초안을 만들지 못했습니다 ({exc.reason}). 아무 일정도 만들지 않았습니다.') from None
-                        # #832: the draft did not start; the worker reads why and nothing was created.
+                    missing=(self.calendar_conversation.missing_detail(prompt)
+                             if not decision.continuation and self.rule_fallthrough(decision) else None)
+                    if missing:
+                        # #832: the words alone leave a detail out, but a link or earlier turn the
+                        # message points to may hold it. The worker reads that and drafts through its
+                        # own calendar_draft_create; the owner is not asked to retype it.
+                        self.calendar_conversation.clear(connector_owner)
                         handled=False;response=''
                         fallthrough_note=self.RULE_FALLTHROUGH_NOTE.format(
                             label=INTENT_LABELS[INTENT_CALENDAR_CREATE],
-                            what=('found Google Calendar unavailable' if exc.reason=='unavailable'
-                                  else f'could not start a calendar draft ({exc.reason}); nothing was created'))
+                            what=f'could not read the event {missing} from the message words alone; nothing was drafted')
+                    else:
+                        try:
+                            response=self.calendar_conversation.handle(connector_owner,prompt,fresh=not decision.continuation,evidence=calendar_evidence)
+                        except CalendarError as exc:
+                            if not (self.rule_fallthrough(decision) and not decision.continuation):
+                                raise ValueError(ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID) if exc.reason=='unavailable'
+                                                 else f'일정 초안을 만들지 못했습니다 ({exc.reason}). 아무 일정도 만들지 않았습니다.') from None
+                            # #832: the draft did not start; the worker reads why and nothing was created.
+                            handled=False;response=''
+                            fallthrough_note=self.RULE_FALLTHROUGH_NOTE.format(
+                                label=INTENT_LABELS[INTENT_CALENDAR_CREATE],
+                                what=('found Google Calendar unavailable' if exc.reason=='unavailable'
+                                      else f'could not start a calendar draft ({exc.reason}); nothing was created'))
                     # #598 I1: an approval whose effect could not be observed is
                     # not a succeeded Work.  The outcome comes from this Work's
                     # own typed Evidence (#593 effect='unknown'), never from the

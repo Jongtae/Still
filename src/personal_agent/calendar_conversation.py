@@ -700,6 +700,26 @@ class CalendarConversation:
         return (slots.start is not None or slots.date is not None or slots.duration is not None) and not slots.residue
 
     # -- the turn -----------------------------------------------------------------
+    def missing_detail(self, text):
+        """What a fresh ``handle(text)`` would ask the owner for, or None when it would draft.
+
+        Reads the words exactly as a fresh request and writes nothing.  The
+        literal rules see only the words: a link, an attachment or an earlier
+        turn the message points to may hold the missing date, and reading
+        that is the Work model loop's job, not the owner's to retype (C16).
+        """
+        tail = _after_last_correction(text) if _has_correction(text) else text
+        slots = self._merge({}, parse_event(tail, self._local_now()))
+        if not slots.get('title'):
+            return 'title'
+        if slots.get('start') is None and slots.get('date') is None:
+            return 'date and time'
+        if slots.get('start') is None:
+            return 'time'
+        if slots.get('date') is None:
+            return 'date'
+        return None
+
     def handle(self, owner_id, text, *, fresh, evidence=None):
         """Answer one calendar turn.  ``fresh`` is a new create request; the
         alternative is a follow-up the classifier routed here while a draft
