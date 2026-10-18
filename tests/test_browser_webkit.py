@@ -1058,6 +1058,13 @@ class SessionFixtureHandler(FixtureHandler):
                               ' navigator.maxTouchPoints + " " + ("ontouchstart" in window) + " 같은UA " +'
                               f' (navigator.userAgent === {json.dumps(agent)});</script>'
                               '</body></html>')
+        if path == '/device-worker':
+            # #13 review: what a Web Worker sees (WebKit's separate WorkerNavigator).
+            return self._send('<html><head><title>워커</title></head><body><p id="r">대기</p><script>'
+                              'var w = new Worker(URL.createObjectURL(new Blob(["postMessage(navigator.platform + \\" \\" +'
+                              ' /iPhone/.test(navigator.userAgent))"], {type: "text/javascript"})));'
+                              'w.onmessage = function (e) { document.getElementById("r").textContent = "워커 " + e.data; };'
+                              '</script></body></html>')
         if path == '/device-frame':
             return self._send('<html><body><p id="f">대기</p><script>document.getElementById("f").textContent ='
                               ' "frame-platform " + navigator.platform; parent.document.title = "기기 " +'
@@ -1465,6 +1472,13 @@ class WebKitIntegrationTests(unittest.TestCase):
             self.assertIn(f'CPU iPhone OS {bw.ios_os_token(version)} like Mac OS X', agent)
             self.assertIn('플랫폼 iPhone 터치 0 false 같은UA true', page['text'])
             self.assertEqual(page['title'], '기기 iPhone', 'a frame sees the iPhone platform too')
+            # Documented limit (#13 review): a Web Worker keeps the phone user agent but WebKit's
+            # WorkerNavigator still reports the Mac platform; no public API injects into workers.
+            sess.open({'url': self.origin + '/device-worker', 'effect': 'read'})
+            deadline = time.monotonic() + 5
+            while '워커 ' not in (text := sess.read()['text']) and time.monotonic() < deadline:
+                time.sleep(0.3)
+            self.assertIn('워커 MacIntel true', text)
             width = int(page['text'].split('폭 ', 1)[1].split()[0])
             self.assertLessEqual(width, 430, page['text'])
         finally:
