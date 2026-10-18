@@ -39,7 +39,7 @@ Still은 *그럴 필요가 없다*는 답을 찾아갑니다. 내가 설치하�
 
 - **이미 구독 중인 AI를 그대로.** ChatGPT 구독은 Codex로, Claude 구독은 Claude Code로 연결해 실제 일을 맡깁니다. 그 밖의 연결 방법은 [QUICKSTART](../../docs/QUICKSTART.md#other-model-connections)에 있습니다.
 - **대화가 바뀌어도 같은 PA.** 기억과 저장한 결과, 진행 중인 일의 상태는 새 대화를 시작하거나 다시 켠 뒤에도 남습니다. 실행이 중간에 끊기면 몰래 다시 돌리지 않고 끊겼다고 알립니다.
-- **경계는 내가 정합니다.** 접근은 내가 연결한 폴더·계정·도구에서 시작합니다. 지원되는 결제 흐름은 결제할 때마다 승인을 받으며, [현재 브라우저의 한계](https://github.com/Jongtae/agentos/issues/758)도 공개합니다. [비밀값](../../.github/SECURITY.md)은 모델 프롬프트·로그·Evidence에 들어가지 않습니다.
+- **경계는 내가 정합니다.** 접근은 내가 연결한 폴더·계정·도구에서 시작합니다. 지원되는 결제 흐름은 결제할 때마다 승인을 받으며, [현재 브라우저의 한계](https://github.com/Jongtae/Still/issues/26)도 공개합니다. [비밀값](../../.github/SECURITY.md)은 모델 프롬프트·로그·Evidence에 들어가지 않습니다.
 - **숨기지 않고 알립니다.** AI가 무언가를 기억하면 그 사실을 알리고, 기억한 내용만 정확히 되돌릴 수 있게 합니다. 맡긴 일마다 내 정보 중 무엇을 썼고 어디로 보냈는지 기록합니다.
 - **늘 쓰는 곳에서 대화.** 휴대폰의 Telegram이나 macOS·Linux 브라우저에서 이야기하면 됩니다. Windows에서는 [WSL2](../../docs/QUICKSTART.md#windows-wsl2)로 동작하며, 아직 제약이 있습니다.
 
@@ -55,7 +55,7 @@ Still은 *그럴 필요가 없다*는 답을 찾아갑니다. 내가 설치하�
 - **Execution:** 대답에 그치지 않고 실제 서비스와 컴퓨터에서 일을 해내는 능력.
 - **Owner Control:** 내 데이터와 권한, 실행 결과를 내가 통제하는 것.
 
-모든 장면이 이미 동작한다는 뜻은 아닙니다. 실제로 확인된 것과 아직 다듬는 중인 것은 [현재 상태](../../docs/product-status.ko.md), 위의 실제 데모, [브라우저의 알려진 한계](https://github.com/Jongtae/agentos/issues/758)에서 구분해 보여 줍니다.
+모든 장면이 이미 동작한다는 뜻은 아닙니다. 실제로 확인된 것과 아직 다듬는 중인 것은 [현재 상태](../../docs/product-status.ko.md), 위의 실제 데모, [브라우저의 알려진 한계](https://github.com/Jongtae/Still/issues/26)에서 구분해 보여 줍니다.
 
 <!-- readme-section:try-today -->
 
@@ -170,7 +170,7 @@ agentos start
 | [문서 지도](../../docs/README.md) | 현재 계약과 가이드 전체 |
 | [참고한 연구와 프로젝트](../../docs/acknowledgements.en.md) | 설계에 영향을 준 연구와 프로젝트 |
 
-**기여하기.** 이슈와 PR을 환영합니다. [CONTRIBUTING](../../.github/CONTRIBUTING.md)부터 읽어 주세요. 개발 흐름은 [AGENTS.md](../../AGENTS.md)에 있습니다. 코드를 처음 보신다면 [기여자 온보딩 안내](../contributor-onboarding.en.md)(영문)에서 코드 구조와 첫 작업 방법을 먼저 확인해 보세요. 써 보셨다면 [피드백 양식](https://github.com/Jongtae/agentos/issues/new?template=feedback.yml)이나 [Discussions](https://github.com/Jongtae/agentos/discussions)에 좋았던 점과 아쉬운 점을 남겨 주세요.
+**기여하기.** 이슈와 PR을 환영합니다. [CONTRIBUTING](../../.github/CONTRIBUTING.md)부터 읽어 주세요. 개발 흐름은 [AGENTS.md](../../AGENTS.md)에 있습니다. 코드를 처음 보신다면 [기여자 온보딩 안내](../contributor-onboarding.en.md)(영문)에서 코드 구조와 첫 작업 방법을 먼저 확인해 보세요. 써 보셨다면 [피드백 양식](https://github.com/Jongtae/Still/issues/new?template=feedback.yml)이나 [Discussions](https://github.com/Jongtae/Still/discussions)에 좋았던 점과 아쉬운 점을 남겨 주세요.
 
 <!-- readme-section:license -->
 

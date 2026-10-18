@@ -39,7 +39,7 @@ Still 探索的答案是：*不必*。在一个由你安装和掌控的开源环
 
 - **用你已订阅的 AI。** ChatGPT 订阅通过 Codex、Claude 订阅通过 Claude Code 接入，完成实际工作。其他接入方式见 [QUICKSTART](../../docs/QUICKSTART.md#other-model-connections)。
 - **换了对话，还是同一个 PA。** 记忆、已保存的结果和未完工作的状态会跨对话、跨重启保留。中断的执行会如实报告，不会悄悄重放。
-- **边界由你决定。** 访问从你连接的文件夹、账户和工具开始。支持的付款流程会要求逐次批准；[当前浏览器限制](https://github.com/Jongtae/agentos/issues/758)已公开说明。[密钥](../../.github/SECURITY.md)不会进入模型提示词、日志或 Evidence。
+- **边界由你决定。** 访问从你连接的文件夹、账户和工具开始。支持的付款流程会要求逐次批准；[当前浏览器限制](https://github.com/Jongtae/Still/issues/26)已公开说明。[密钥](../../.github/SECURITY.md)不会进入模型提示词、日志或 Evidence。
 - **告诉你，而不是瞒着你。** AI 记住某件事时会告诉你，并提供精确的撤销。每项委托工作都会记录用了你的哪些信息、发送到了哪里。
 - **在你常用的地方对话。** 用手机上的 Telegram，或在 macOS、Linux 的浏览器中对话。Windows 可通过[目前仍有限制的 WSL2](../../docs/QUICKSTART.md#windows-wsl2)运行。
 
@@ -55,7 +55,7 @@ Still 探索的答案是：*不必*。在一个由你安装和掌控的开源环
 - **Execution（执行）：** 不只是回答问题，还能在真实服务和计算机上采取行动。
 - **Owner Control（所有者控制）：** 数据、权限和执行结果始终由你掌控。
 
-这些是指导原则，并不表示所有场景今天都已经可用。[产品状态](../../docs/product-status.en.md)、上面的真实演示和[当前浏览器限制](https://github.com/Jongtae/agentos/issues/758)会区分已经观察到的行为与仍在完善的部分。
+这些是指导原则，并不表示所有场景今天都已经可用。[产品状态](../../docs/product-status.en.md)、上面的真实演示和[当前浏览器限制](https://github.com/Jongtae/Still/issues/26)会区分已经观察到的行为与仍在完善的部分。
 
 <!-- readme-section:try-today -->
 
@@ -170,7 +170,7 @@ agentos start
 | [文档地图](../../docs/README.md) | 当前全部契约和指南 |
 | [致谢与参考](../../docs/acknowledgements.en.md) | 影响设计的研究与项目 |
 
-**参与贡献。** 欢迎提交 Issue 和 Pull Request。请先阅读 [CONTRIBUTING](../../.github/CONTRIBUTING.md)；开发流程见 [AGENTS.md](../../AGENTS.md)。初次接触代码的话，可先阅读[贡献者入门指南](../contributor-onboarding.en.md)（英文），了解代码结构和第一次修改的方法。用过之后，欢迎通过[反馈表单](https://github.com/Jongtae/agentos/issues/new?template=feedback.yml)或 [Discussions](https://github.com/Jongtae/agentos/discussions) 告诉我们哪些好用、哪些不好用。
+**参与贡献。** 欢迎提交 Issue 和 Pull Request。请先阅读 [CONTRIBUTING](../../.github/CONTRIBUTING.md)；开发流程见 [AGENTS.md](../../AGENTS.md)。初次接触代码的话，可先阅读[贡献者入门指南](../contributor-onboarding.en.md)（英文），了解代码结构和第一次修改的方法。用过之后，欢迎通过[反馈表单](https://github.com/Jongtae/Still/issues/new?template=feedback.yml)或 [Discussions](https://github.com/Jongtae/Still/discussions) 告诉我们哪些好用、哪些不好用。
 
 <!-- readme-section:license -->
 

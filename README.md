@@ -39,7 +39,7 @@ Still explores an answer: *no*. It is an open-source environment you install and
 
 - **Bring the AI you already subscribe to.** Your ChatGPT plan through Codex, or your Claude plan through Claude Code, does the work. Other connections are listed in [QUICKSTART](docs/QUICKSTART.md#other-model-connections).
 - **One PA across conversations.** Memory, saved results and open-work state persist across conversations and restarts. Interrupted execution is reported rather than silently replayed.
-- **Your boundaries.** Access begins with the folders, accounts and tools you connect. Supported payment flows require per-action approval; [current browser limitations](https://github.com/Jongtae/agentos/issues/758) are documented. [Secrets](.github/SECURITY.md) are excluded from model prompts, logs and Evidence.
+- **Your boundaries.** Access begins with the folders, accounts and tools you connect. Supported payment flows require per-action approval; [current browser limitations](https://github.com/Jongtae/Still/issues/26) are documented. [Secrets](.github/SECURITY.md) are excluded from model prompts, logs and Evidence.
 - **Told, not hidden.** When your AI saves something to memory it says so and offers an exact undo. Each task records which of your information it used and where it went.
 - **Where you already talk.** Chat on Telegram from your phone, or in the browser on macOS or Linux. Windows works through [WSL2 with current limitations](docs/QUICKSTART.md#windows-wsl2).
 
@@ -55,7 +55,7 @@ These are not features of one particular AI model. They are the criteria by whic
 - **Execution:** It doesn't only answer questions; it can act in real services and on computers.
 - **Owner Control:** I retain control over my data, permissions and the outcomes of execution.
 
-These are guiding principles, not a claim that every scenario already works. The [product status](docs/product-status.en.md), real demo above and [known browser limitations](https://github.com/Jongtae/agentos/issues/758) show what has been observed and what still needs work.
+These are guiding principles, not a claim that every scenario already works. The [product status](docs/product-status.en.md), real demo above and [known browser limitations](https://github.com/Jongtae/Still/issues/26) show what has been observed and what still needs work.
 
 <!-- readme-section:try-today -->
 
@@ -170,7 +170,7 @@ A latte you mentioned earlier comes back when you are choosing beans for the cof
 | [Documentation map](docs/README.md) | Every current contract and guide |
 | [Acknowledgements](docs/acknowledgements.en.md) | Research and projects that shaped the design |
 
-**Contributing.** Issues and pull requests are welcome. Start with [CONTRIBUTING](.github/CONTRIBUTING.md); [AGENTS.md](AGENTS.md) describes the development workflow. New to the code? The [contributor onboarding guide](docs/contributor-onboarding.en.md) maps it and suggests a first change. Tried it? Tell us what worked and what didn't through the [feedback form](https://github.com/Jongtae/agentos/issues/new?template=feedback.yml) or [Discussions](https://github.com/Jongtae/agentos/discussions).
+**Contributing.** Issues and pull requests are welcome. Start with [CONTRIBUTING](.github/CONTRIBUTING.md); [AGENTS.md](AGENTS.md) describes the development workflow. New to the code? The [contributor onboarding guide](docs/contributor-onboarding.en.md) maps it and suggests a first change. Tried it? Tell us what worked and what didn't through the [feedback form](https://github.com/Jongtae/Still/issues/new?template=feedback.yml) or [Discussions](https://github.com/Jongtae/Still/discussions).
 
 <!-- readme-section:license -->
 

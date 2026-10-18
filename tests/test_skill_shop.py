@@ -29,7 +29,7 @@ from test_agency_loop import judgments
 from test_browser_session import CFG, ORIGIN, FakeDriver, Script, call
 
 ROOT = Path(__file__).resolve().parents[1]
-REPO, COMMIT = 'Jongtae/agentos', 'a' * 40
+REPO, COMMIT = 'Jongtae/Still', 'a' * 40
 SHOPPING, SITE = 'shopping-cart', 'emart-ssg'
 FIXTURE_SITE = Path(__file__).resolve().parent / 'fixtures' / 'skills' / 'fixture-mart'
 
@@ -42,7 +42,7 @@ def archive(folders):
             for path in sorted(Path(folder).rglob('*')):
                 if path.is_file():
                     data = path.read_bytes()
-                    info = tarfile.TarInfo(f"agentos-{COMMIT}/{prefix}/{path.relative_to(folder).as_posix()}")
+                    info = tarfile.TarInfo(f"Still-{COMMIT}/{prefix}/{path.relative_to(folder).as_posix()}")
                     info.size = len(data)
                     tar.addfile(info, io.BytesIO(data))
     return buffer.getvalue()
