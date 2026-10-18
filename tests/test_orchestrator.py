@@ -39,7 +39,7 @@ from personal_agent.subscription_engines import SubscriptionEngines
 OPENAI_KEY = 'sk-fixture-openai-0710'
 #: A bundled listing without the ranked gpt-6-luna (codex-cli 0.153.4 shape).
 BUNDLED = ('gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5')
-SEARCH_TOOLS = ('bounded_public_research', 'web_search')
+SEARCH_TOOLS = ('web_search',)
 #: #795: what ``cli_metadata`` reports for a complete CLI stream with no tool
 #: call.  A trusted-local attempt is re-delegated only when its CLI reported this much.
 NO_TOOL_CALLS = {'tool_calls': [], 'stream_tail': ['thread.started', 'turn.started', 'turn.completed']}
@@ -674,7 +674,7 @@ class ToolsAndReplan(Harness):
         self.assertEqual(set(schema['required']), {'worker', 'model', 'effort', 'brief', 'reason', 'account_change',
                                                    'owner_situation', 'technical_work'})
         descriptions = context.facts['tool_descriptions']
-        self.assertIn('- bounded_public_research: ', descriptions)
+        self.assertIn('- public_page_read: ', descriptions)
         self.assertIn('- list_notes: ', descriptions)
         self.assertTrue(all(len(line) < 260 for line in descriptions.splitlines()), 'one line per tool')
         self.assertNotIn('tools', self.events(job, 'planned')[0][1])
@@ -682,8 +682,8 @@ class ToolsAndReplan(Harness):
     def test_a_replan_never_repeats_a_failed_combination_and_sees_the_incomplete_call(self):
         def hang(tools):
             # The bridge recorded the call as running; the CLI closed the connection before a result.
-            tools.capabilities.record('bounded_public_research', 'running', json.dumps(
-                {'scope': 'subscription-mcp-bridge', 'host_action': 'bounded_public_research'}))
+            tools.capabilities.record('web_search', 'running', json.dumps(
+                {'scope': 'subscription-mcp-bridge', 'host_action': 'web_search'}))
         self.engine.before = hang
         first = plan('codex', 'Research it.')
         self.script([first, dict(first)], goals=[False])
@@ -692,12 +692,12 @@ class ToolsAndReplan(Harness):
         last = self.events(job, 'evaluated')[-1][1]
         self.assertEqual((last['stop'], last['invalid']), ('replan_failed', 'repeat'))
         replan = self.asked_plans[1][0].facts['previous_attempts']
-        self.assertIn('tools called: bounded_public_research', replan)
-        self.assertIn('never completed (tool_incomplete): bounded_public_research', replan)
+        self.assertIn('tools called: web_search', replan)
+        self.assertIn('never completed (tool_incomplete): web_search', replan)
         self.assertIn('did not show the goal met', replan)
         with self.store.db() as db:
             failed = [json.loads(r['detail']) for r in db.execute(
-                "SELECT detail FROM tool_events WHERE job_id=? AND tool='bounded_public_research' AND status='failed'", (job,))]
+                "SELECT detail FROM tool_events WHERE job_id=? AND tool='web_search' AND status='failed'", (job,))]
         self.assertEqual([(item['code'], item['retry'], item['effect']) for item in failed],
                          [('tool_incomplete', 'transient', 'none')])
         self.assertNotEqual(row['status'], 'succeeded')
@@ -1026,18 +1026,18 @@ class BridgeSurvives(unittest.TestCase):
             job = store.enqueue('요청', 'bridge-survives')
             with store.db() as db:
                 db.execute("UPDATE jobs SET status='running' WHERE id=?", (job,))
-            # The research step raises what a dead resolver child used to raise.
+            # The search step raises what a dead resolver child used to raise.
             launcher = Path(folder) / 'launch.py'
             launcher.write_text(
                 'import runpy\n'
                 'from personal_agent import agent_runtime\n'
-                'def research(self, *args, **kwargs):\n'
+                'def search(self, *args, **kwargs):\n'
                 '    raise EOFError()\n'
-                'agent_runtime.Capabilities._research = research\n'
+                'agent_runtime.Capabilities._read_network = search\n'
                 'runpy.run_module("personal_agent.mcp_bridge", run_name="__main__")\n', encoding='utf-8')
             requests = [{'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}},
                         {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {
-                            'name': 'bounded_public_research', 'arguments': {'mode': 'travel_plan', 'query': 'q'}}},
+                            'name': 'web_search', 'arguments': {'query': 'q'}}},
                         {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/list'}]
             src = str(Path(__file__).resolve().parents[1] / 'src')
             import os
@@ -1054,7 +1054,7 @@ class BridgeSurvives(unittest.TestCase):
                              (True, 'tool_failed', 'none', 'EOFError'))
             with store.db() as db:
                 rows = [(r['status'], json.loads(r['detail'])) for r in db.execute(
-                    "SELECT status,detail FROM tool_events WHERE job_id=? AND tool='bounded_public_research' ORDER BY id", (job,))]
+                    "SELECT status,detail FROM tool_events WHERE job_id=? AND tool='web_search' ORDER BY id", (job,))]
             self.assertEqual([status for status, _detail in rows], ['running', 'failed'], 'a terminal record, not incomplete')
 
 
@@ -1095,9 +1095,9 @@ class BridgeTimeout(unittest.TestCase):
                                                       MAX_TIMEOUT_SECONDS, bridge_tool_bound)
         self.assertEqual(CODEX_TOOL_TIMEOUT_KEY, 'tool_timeout_sec')
         timeouts = [value for value in self.overrides(self.argv()) if CODEX_TOOL_TIMEOUT_KEY in value]
-        research = bridge_tool_bound(['bounded_public_research'])
-        self.assertGreater(research, 60, 'longer than Codex\'s own default')
-        expected = min(MAX_TIMEOUT_SECONDS, research + BRIDGE_TOOL_MARGIN_SECONDS)
+        search = bridge_tool_bound(['web_search'])
+        self.assertGreater(search, 60, 'longer than Codex\'s own default')
+        expected = min(MAX_TIMEOUT_SECONDS, search + BRIDGE_TOOL_MARGIN_SECONDS)
         self.assertEqual(timeouts, [f'mcp_servers.agentos.tool_timeout_sec={expected}'], 'the agentos server only')
 
     def test_the_timeout_is_capped_by_the_remaining_work_budget(self):
@@ -1109,15 +1109,12 @@ class BridgeTimeout(unittest.TestCase):
     def test_a_native_search_bound_covers_every_continuation_request(self):
         """#729 review: an ai-native search may resend after pause_turn; each request has its own timeout."""
         from personal_agent.bounded_execution import bridge_tool_bound
-        from personal_agent.local_tools import MAX_PAGE_SECONDS
-        from personal_agent.research import MAX_RESEARCH_PAGES
         from personal_agent.search_providers import (NATIVE_CONTINUATIONS, NATIVE_MAX_REQUESTS, NATIVE_TIMEOUT_SECONDS,
                                                      SEARCH_TIMEOUT_SECONDS)
         self.assertEqual(NATIVE_MAX_REQUESTS, NATIVE_CONTINUATIONS + 1)
         search = NATIVE_MAX_REQUESTS * NATIVE_TIMEOUT_SECONDS
         self.assertGreater(search, SEARCH_TIMEOUT_SECONDS)
         self.assertEqual(bridge_tool_bound(['web_search']), search)
-        self.assertEqual(bridge_tool_bound(['bounded_public_research']), search + MAX_RESEARCH_PAGES * MAX_PAGE_SECONDS)
 
     def test_the_anthropic_search_sends_at_most_the_bounded_number_of_requests(self):
         from personal_agent.search_providers import NATIVE_MAX_REQUESTS, AiNativeProvider, SearchProviderError
@@ -1147,10 +1144,10 @@ class BridgeTimeout(unittest.TestCase):
         from personal_agent.bounded_execution import incomplete_bridge_calls
         bridge = lambda action: json.dumps({'scope': 'subscription-mcp-bridge', 'host_action': action})  # noqa: E731
         rows = [('web_search', 'running', bridge('web_search')), ('web_search', 'succeeded', bridge('web_search')),
-                ('bounded_public_research', 'running', bridge('bounded_public_research')),
+                ('public_page_read', 'running', bridge('public_page_read')),
                 ('web_search', 'running', bridge('web_search')),
                 ('model', 'running', '{}'), ('weather', 'running', json.dumps({'scope': 'other'}))]
-        self.assertEqual(incomplete_bridge_calls(rows), [('bounded_public_research', 'bounded_public_research'),
+        self.assertEqual(incomplete_bridge_calls(rows), [('public_page_read', 'public_page_read'),
                                                          ('web_search', 'web_search')])
 
 

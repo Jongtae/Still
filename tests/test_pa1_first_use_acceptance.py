@@ -119,30 +119,14 @@ JOURNEY_EVIDENCE = {
           'the exact preview, and spend the same approve/execute pair only '
           'on the owner\'s explicit "승인". No model is consulted on that '
           'path.',
-    'J5': 'covered offline, with the discrimination measured and weak. '
-          '`bounded_public_research` is wired and reachable; '
-          'tests/test_pa1_j5_research_discrimination.py drives page content '
-          'the test controls, with no model in the loop, and asserts the '
-          'classification the product produced - so an echo of the model '
-          'cannot pass. Measured recall on ten realistic vendor pages: fee '
-          '7/10, inventory 1/10, payable_total 0/10. The error runs in the '
-          'safe direction (under-claiming, never asserting stock a page did '
-          'not commit to) but inventory discrimination is mostly \'unknown\', '
-          'and raising recall is tracked separately because each point of '
-          'recall risks reading a hedge as a commitment. Private provenance '
-          'closes the destination; non-2xx pages are refused; robots.txt is '
-          'not consulted and a 200-status soft wall would be read. No '
-          'network was touched. Permission delta, stated exactly: the mode '
-          'allowlist and three-page cap bound how MUCH is read, not WHICH '
-          'page - the query is model-authored and the first three search '
-          'results are read in provider order - and the owner-approved '
-          'public_page_scope is not preserved here. Because '
-          'public_page_boundary returns an empty list until the owner '
-          'approves URLs for the current model fingerprint, on a default '
-          'install public_page_read never succeeds, so this gives the model '
-          'its first model-directed full-page read. The inventory leg of '
-          'the discrimination is one recognised phrasing, not a general '
-          'classifier (#459).',
+    'J5': 'covered offline through the generic tools (#23 retired the '
+          'category tool `bounded_public_research` and its price/fee/'
+          'inventory classifier). The worker searches with web_search and '
+          'reads results with public_page_read, which accepts a result URL '
+          'this Work\'s own search returned or an owner-approved page; the '
+          'reader re-checks that set on every redirect. Which facts a page '
+          'supports is the worker\'s judgment, not Still code, so no '
+          'discrimination is claimed here. No network was touched.',
     'J6': 'covered: prose capture as canonical Memory, correction by '
           'supersession, owner review and durable delete through the shipped '
           'surfaces, an unauthorized model write held as a MemoryCandidate, a '
@@ -571,13 +555,9 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             # kept because the round trip is worth pinning, but they are not
             # J5 evidence and must not be read as such.
             #
-            # J5's "distinguishes observed facts from unknown
-            # price/inventory/fees" is evidenced in
-            # tests/test_pa1_j5_research_discrimination.py, which drives page
-            # content the test controls through the wired
-            # `bounded_public_research` branch with no model in the loop, so
-            # there is nothing for the product to echo.  It also records the
-            # measured recall, which is poor for inventory.
+            # #23 retired the category classifier that used to separate
+            # observed from unknown price/inventory/fees; that judgment is the
+            # worker's now, so no Still-side discrimination is evidenced.
             self.assertIn('관찰됨', job['response'])
             self.assertIn('확인되지 않음', job['response'])
             # This one is real product evidence: `model_text` contains no URL,

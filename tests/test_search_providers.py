@@ -522,13 +522,6 @@ class ToolSchema(unittest.TestCase):
         self.assertIn('call fails', function['description'])
         self.assertIn('public_page_read', function['description'])
 
-    def test_bounded_research_carries_the_same_provider_enum(self):
-        rows = action_definitions(self.tools, {'bounded_public_research', 'web_search'},
-                                  search_providers=registry(main=main_ai(OPENAI), **{BRAVE_TOKEN: BRAVE_KEY}))
-        research, search = (next(r['function'] for r in rows if r['function']['name'] == name)
-                            for name in ('bounded_public_research', 'web_search'))
-        self.assertEqual(research['parameters']['properties']['provider'], search['parameters']['properties']['provider'])
-
 
 class Wire:
     """A fake public transport that records the exact outbound plan."""

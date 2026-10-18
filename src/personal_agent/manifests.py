@@ -31,7 +31,6 @@ class HostTool:
 HOST_TOOLS={
     'web_search': HostTool(False, True, False, None, True, None),
     'public_page_read': HostTool(False, True, False, None, True, None),
-    'bounded_public_research': HostTool(False, True, False, None, True, None),
     'weather': HostTool(False, True, False, None, True, None),
     'calendar_query': HostTool(False, True, True, 'calendar', False, None),
     'calendar_draft_create': HostTool(True, True, True, 'calendar', False, None),

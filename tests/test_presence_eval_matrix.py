@@ -105,6 +105,13 @@ class EvalNet:
                 'content': f"Page {plan['url'][-1]}: Model {plan['url'][-1].upper()} ships for 3,000 KRW."}
 
 
+def research_steps(query):
+    """#23: a comparison through the generic tools: one search, then a read of each result."""
+    return [('tool', 'web_search', {'query': query}),
+            ('tool', 'public_page_read', {'url': 'https://example.com/a'}),
+            ('tool', 'public_page_read', {'url': 'https://example.com/b'})]
+
+
 class CalendarProvider:
     """Fixture Calendar create; records every create reaching the provider."""
 
@@ -558,7 +565,7 @@ class G_LongResearch(PresenceEval):
     def research_turn(self, text, net, reply, think=None):
         self.connect_model()
         self.service.local_tools = net
-        self.script = [('tool', 'bounded_public_research', {'mode': 'product_comparison', 'query': 'headphones'})]
+        self.script = research_steps('headphones')
         self.text = reply
         self.claim = True
         self.during_model = think
@@ -587,9 +594,8 @@ class G_LongResearch(PresenceEval):
         self.assertIsNone(self.store.task_card(job['id']))
         self.assert_no_lifecycle_chatter(self.texts())
         # Claim <-> Evidence: both pages were actually read.
-        research = [e for e in self.events(job['id']) if e['tool'] == 'bounded_public_research'][-1]
-        self.assertEqual(research['status'], 'succeeded')
-        self.assertNotIn('partial', research['trace']['evidence'].get('qualifiers') or [])
+        reads = [e for e in self.events(job['id']) if e['tool'] == 'public_page_read' and e['status'] != 'running']
+        self.assertEqual([e['status'] for e in reads], ['succeeded', 'succeeded'])
 
     def test_stop_during_running_research_is_reconciled_with_real_cancellation_state(self):
         outcomes = []
@@ -1266,7 +1272,7 @@ class H_PartialResult(PresenceEval):
     def partial_research(self):
         self.connect_model()
         self.service.local_tools = EvalNet(unreadable=('b',))
-        self.script = [('tool', 'bounded_public_research', {'mode': 'product_comparison', 'query': 'headphones'})]
+        self.script = research_steps('headphones')
         self.text = '두 제품을 모두 비교했습니다.'
         return self.turn('헤드폰 두 개 비교해줘')
 
@@ -1281,13 +1287,12 @@ class H_PartialResult(PresenceEval):
         self.assertTrue(text.startswith('두 제품을 모두 비교했습니다.'), text)
         self.assertTrue(text.endswith('\n\n한 단계는 끝내지 못했어요.'), text)
         self.assertNotIn(TERMINAL_PARTIAL_HEADER, text)
-        self.assertIn('일부 자료는 읽지 못했습니다', self.store.job(job['id'])['owner_cause'], 'the failed portion is recorded')
+        self.assertIn('공개 페이지 읽기', self.store.job(job['id'])['owner_cause'], 'the failed portion is recorded')
         self.assertFalse((bubble.get('reply_markup') or {}).get('inline_keyboard'), 'a partial answer carries no 상세 button')
         self.assertEqual(bubble['reply_parameters']['message_id'], message_id)
-        # Claim <-> Evidence: the call ran; its evidence is qualified partial.
-        research = [e for e in self.events(job['id']) if e['tool'] == 'bounded_public_research'][-1]
-        self.assertEqual(research['status'], 'succeeded')
-        self.assertEqual(research['trace']['evidence']['qualifiers'], ['partial'])
+        # Claim <-> Evidence: page A was read; page B's read failed and stays recorded.
+        reads = [e for e in self.events(job['id']) if e['tool'] == 'public_page_read' and e['status'] != 'running']
+        self.assertEqual([e['status'] for e in reads], ['succeeded', 'failed'])
         # The preserved text is inspectable but qualified everywhere it is read.
         [row] = self.assistant_rows(job['id'])
         self.assertEqual(row['qualifier']['outcome'], 'partial')
@@ -1301,7 +1306,7 @@ class H_PartialResult(PresenceEval):
         self.script = [('error', ProviderError('모델 서버에 연결할 수 없습니다.'))]
         outcomes['failed'] = self.turn('회의 요약해줘')[0]
         self.service.local_tools = EvalNet(unreadable=('b',))
-        self.script = [('tool', 'bounded_public_research', {'mode': 'product_comparison', 'query': 'kettle'})]
+        self.script = research_steps('kettle')
         outcomes['partial'] = self.turn('전기포트 비교해줘')[0]
         bubbles = self.bubbles()
         self.assertEqual(self.methods(), ['setMessageReaction', 'sendMessage', 'setMessageReaction'] * 3)
@@ -1333,7 +1338,7 @@ class H_PartialResult(PresenceEval):
         self.assertTrue(text.startswith('두 제품을 모두 비교했습니다.'), text)
         self.assertTrue(text.endswith('\n\n한 단계는 끝내지 못했어요.'), text)
         self.assertNotIn(TERMINAL_PARTIAL_HEADER, text)
-        self.assertIn('일부 자료는 읽지 못했습니다', self.store.job(job['id'])['owner_cause'])
+        self.assertIn('공개 페이지 읽기', self.store.job(job['id'])['owner_cause'])
         self.assertNotIn(TERMINAL_VERIFIED_LABEL, text)
         self.assertNotIn('3,000', text)
         # Opposing: nothing from the unread page, no upgrade.
@@ -1349,7 +1354,8 @@ class H_PartialResult(PresenceEval):
         from personal_agent.conversation_projection import TERMINAL_VERIFIED_LABEL
         self.connect_model()
         self.service.local_tools = EvalNet(unreadable=('a', 'b'))
-        self.script = [('tool', 'bounded_public_research', {'mode': 'product_comparison', 'query': 'kettle'})]
+        # #23: a read with no search behind it is refused, so nothing ran and nothing was verified.
+        self.script = [('tool', 'public_page_read', {'url': 'https://example.com/a'})]
         self.text = '두 제품을 모두 비교했습니다.'
         failed, _ = self.turn('전기포트 비교해줘')
         self.assertEqual(failed['status'], 'failed')
@@ -1376,7 +1382,7 @@ class Inspectability(LocalHttp, PresenceEval):
         self.script = [('error', ProviderError('모델 서버에 연결할 수 없습니다.'))]
         failed, _ = self.turn('회의 요약해줘')
         self.service.local_tools = EvalNet(unreadable=('b',))
-        self.script = [('tool', 'bounded_public_research', {'mode': 'product_comparison', 'query': 'kettle'})]
+        self.script = research_steps('kettle')
         self.text = '두 제품을 모두 비교했습니다.'
         partial, _ = self.turn('전기포트 비교해줘')
         for job, outcome in ((failed, 'failed'), (partial, 'partial')):
@@ -1389,7 +1395,7 @@ class Inspectability(LocalHttp, PresenceEval):
             self.assertEqual(task['provenance']['requested_model'], 'eval-model')
         _status, detail, _ = self.http('GET', f"/api/tasks/{partial['id']}")
         tools = [event['tool'] for event in detail['selected']['events']]
-        self.assertIn('bounded_public_research', tools, 'the tool id lives in technical detail')
+        self.assertIn('public_page_read', tools, 'the tool id lives in technical detail')
         # The preserved (unverified) model text is still reachable, qualified.
         rows = [row for row in self.store.history() if row['job_id'] == partial['id'] and row['role'] == 'assistant']
         self.assertIn('두 제품을 모두 비교했습니다.', rows[0]['content'])
@@ -1400,7 +1406,7 @@ class OwnerLanguageFindings(PresenceEval):
         """FINDING X1 (fixed by #598): failed/partial bubbles use owner words for tools.
 
         Observed ids in owner-visible Telegram text were
-        ``bounded_public_research`` (H), ``save_memory`` (J) and
+        ``bounded_public_research`` (H, retired by #23), ``save_memory`` (J) and
         ``find_files`` (#489/#493 capped search).  The bubble now names the
         step in the same owner vocabulary as the web Task detail; the exact
         id stays in the Work's technical cause and Task events (opposing
@@ -1408,22 +1414,22 @@ class OwnerLanguageFindings(PresenceEval):
         """
         self.connect_model()
         self.service.local_tools = EvalNet(unreadable=('b',))
-        self.script = [('tool', 'bounded_public_research', {'mode': 'product_comparison', 'query': 'kettle'})]
+        self.script = research_steps('kettle')
         research, _ = self.turn('전기포트 두 개 비교해줘')
         self.script = [('tool', 'save_memory', {'memory_key': 'x', 'content': 'not what the owner said'})]
         memory, _ = self.turn('내 취향 기억해줘: 녹차')
         texts = self.texts()
         self.assertEqual(len(texts), 2)
         for text in texts:
-            for tool in ('bounded_public_research', 'save_memory', 'find_files'):
+            for tool in ('public_page_read', 'save_memory', 'find_files'):
                 self.assertNotIn(tool, text)
         # #847: with an answer delivered, the bubble counts the step; the owner
         # words for it stay on the record (owner_cause) for 상세.
         self.assertTrue(texts[0].endswith('한 단계는 끝내지 못했어요.'), texts[0])
-        self.assertNotIn('공개 자료 조사', texts[0])
-        self.assertIn('공개 자료 조사', self.store.job(research['id'])['owner_cause'], 'the step is named in owner words')
+        self.assertNotIn('공개 페이지 읽기', texts[0])
+        self.assertIn('공개 페이지 읽기', self.store.job(research['id'])['owner_cause'], 'the step is named in owner words')
         # Technical detail keeps the exact ids.
-        for job, tool in ((research, 'bounded_public_research'), (memory, 'save_memory')):
+        for job, tool in ((research, 'public_page_read'), (memory, 'save_memory')):
             record = self.store.job(job['id'])
             if record['status'] in ('failed', 'partial'):
                 self.assertIn(tool, record['error'])
