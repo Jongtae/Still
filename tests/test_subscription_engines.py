@@ -36,13 +36,34 @@ class SubscriptionEngineTests(unittest.TestCase):
         self.store.secret('model_key','private-api-key')
         self.store.enqueue('sensitive task body','recovery-test')
         with self.store.db() as db:
-            db.execute("UPDATE jobs SET status='interrupted',delivery='unknown'")
+            db.execute("UPDATE jobs SET status='running',delivery='sending'")
+        self.store.recover()
         guide=self.service.onboarding()
         self.assertEqual(guide['recovery'],{'interrupted_jobs':1,'uncertain_deliveries':1,'uncertain_notifications':0})
         self.assertTrue(any(step['id']=='recovery' and step['state']=='attention' for step in guide['steps']))
         rendered=str(guide)
         self.assertNotIn('private-api-key',rendered)
         self.assertNotIn('sensitive task body',rendered)
+
+    def recovery_step(self):
+        return next(step for step in self.service.onboarding()['steps'] if step['id']=='recovery')
+
+    def test_the_recovery_step_names_only_what_the_latest_restart_cut_off(self):
+        """#90: an older interrupted Work stays in the history and its count, but no restart is blamed for it."""
+        self.store.enqueue('earlier task','recovery-old')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='running',delivery='sending'")
+        self.store.recover()
+        self.assertEqual(self.recovery_step()['state'],'attention')
+        self.store.recover()   # the next start finds nothing running
+        self.assertEqual(self.store.last_recovery(),{'interrupted_jobs':0,'uncertain_deliveries':0,'uncertain_notifications':0})
+        self.assertEqual(self.recovery_step()['state'],'ready')
+        self.assertEqual(self.service.onboarding()['recovery'],
+                         {'interrupted_jobs':1,'uncertain_deliveries':1,'uncertain_notifications':0})
+
+    def test_a_store_that_never_restarted_reports_no_recovery_attention(self):
+        self.assertEqual(self.store.last_recovery(),{'interrupted_jobs':0,'uncertain_deliveries':0,'uncertain_notifications':0})
+        self.assertEqual(self.recovery_step()['state'],'ready')
 
     def test_connected_codex_is_an_onboarding_ready_execution_choice(self):
         self.service.connect_subscription_engine({'engine':'codex','officially_authenticated':True})

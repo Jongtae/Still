@@ -1535,10 +1535,18 @@ class QuickStore:
 
     def recover(self):
         with self.db() as db:
-            db.execute("UPDATE jobs SET status='interrupted',error='실행 중 재시작되었습니다. 자동으로 재호출하지 않습니다.' WHERE status='running'")
-            db.execute("UPDATE jobs SET delivery='unknown' WHERE delivery='sending'")
-            db.execute("UPDATE telegram_notifications SET state='unknown' WHERE state='sending'")
+            interrupted=db.execute("UPDATE jobs SET status='interrupted',error='실행 중 재시작되었습니다. 자동으로 재호출하지 않습니다.' WHERE status='running'").rowcount
+            uncertain=db.execute("UPDATE jobs SET delivery='unknown' WHERE delivery='sending'").rowcount
+            notifications=db.execute("UPDATE telegram_notifications SET state='unknown' WHERE state='sending'").rowcount
             db.execute("UPDATE telegram_task_cards SET message_id=-2,state='unknown',created=? WHERE message_id=-1",(time.time(),))
+            # #90: what this restart cut off, apart from older interrupted rows still in the history.
+            self.put('last_recovery',{'interrupted_jobs':interrupted,'uncertain_deliveries':uncertain,
+                                      'uncertain_notifications':notifications},db=db)
+
+    def last_recovery(self):
+        """Counts of what the latest restart cut off; zeros before the first one."""
+        found=self.config('last_recovery',{}) or {}
+        return {key:int(found.get(key) or 0) for key in ('interrupted_jobs','uncertain_deliveries','uncertain_notifications')}
 
     def recovery_summary(self):
         """Return counts only; recovery guidance must never reveal task content."""

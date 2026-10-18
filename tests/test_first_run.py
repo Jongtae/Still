@@ -299,6 +299,24 @@ class FirstRunTest(unittest.TestCase):
         self.assertEqual(service.calls, [])
         service.decision_routes.follow_main_switched.assert_called_once_with('codex')
 
+    def test_an_install_with_nothing_to_ask_skips_the_setup_intro(self):
+        """#90: claimed, an AI route and Telegram already there: no "let's set up", only the summary."""
+        service = FakeService()
+        service.engine = 'codex'
+        self.store.claim(self.store.bootstrap.read_text(), PASSWORD)
+        self.store.put('telegram', {'enabled': True})
+        term = ScriptedTerminal()
+        self.assertTrue(self.run_wizard(service, term))
+        self.assertNotIn(first_run.msg('first_run.intro'), term.text())
+        self.assertIn(first_run.msg('first_run.finished'), term.text())
+        self.assertTrue(first_run.finished(self.store))
+
+    def test_an_install_with_a_step_left_still_shows_the_intro(self):
+        service = FakeService()
+        term = ScriptedTerminal(asks=['', '4', ''])
+        self.assertTrue(self.run_wizard(service, term))
+        self.assertTrue(term.text().startswith(first_run.msg('first_run.intro')))
+
 
 class Done:
     def __init__(self, stdout=''):
