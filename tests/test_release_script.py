@@ -300,11 +300,17 @@ class ReleaseWorkflowShapeTests(unittest.TestCase):
         first_mutation = next(i for i, step in enumerate(steps) if 'gh release create' in step.get('run', ''))
         self.assertGreater(first_mutation, 0)
 
-    def test_the_formula_merges_only_after_its_checks_pass(self):
-        step = next(step for step in self.jobs['publish']['steps'] if step.get('id') == 'formula')['run']
-        self.assertLess(step.index('gh pr checks'), step.index('gh pr merge'))
-        self.assertIn('--fail-fast', step)
-        self.assertIn('--repo "$GITHUB_REPOSITORY"', step)
+    def test_every_workflow_pr_merges_only_after_its_checks_pass(self):
+        """#79: auto-merge needs branch protection on main, so no step relies on it."""
+        steps = [step for step in self.jobs['publish']['steps'] if 'gh pr create' in step.get('run', '')]
+        self.assertEqual(len(steps), 3)
+        for step in steps:
+            run = step['run']
+            with self.subTest(step=step.get('name')):
+                self.assertLess(run.index('gh pr checks'), run.index('gh pr merge'))
+                self.assertIn('--fail-fast', run)
+                self.assertIn('--repo "$GITHUB_REPOSITORY"', run)
+                self.assertNotIn('--auto', run)
 
     def test_no_separate_tap_is_written(self):
         """The formula lives in this repository (#45)."""

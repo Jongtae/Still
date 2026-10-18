@@ -97,7 +97,7 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.release == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 180
     environment: release
     permissions:
       contents: write
@@ -233,7 +233,7 @@ jobs:
 
       - id: record
         name: Record the release in the manifest, installer and release-status prose
-        timeout-minutes: 45
+        timeout-minutes: 60
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           SHA256: ${{ steps.archive.outputs.sha256 }}
@@ -259,7 +259,7 @@ jobs:
               --title "release: record published v$VERSION (#$ISSUE)" --body "$(cat <<EOF
           ## What changed
 
-          Records the published v$VERSION: manifest \`published\` entry with the served archive SHA-256 \`$SHA256\`, \`scripts/install.sh\` pins, release-status prose, and $next as the next in-tree placeholder. Homebrew formula: $FORMULA_PR. Opened by the release workflow after owner approval; it merges itself when required CI passes.
+          Records the published v$VERSION: manifest \`published\` entry with the served archive SHA-256 \`$SHA256\`, \`scripts/install.sh\` pins, release-status prose, and $next as the next in-tree placeholder. Homebrew formula: $FORMULA_PR. Opened by the release workflow after owner approval; it merges after its checks pass.
 
           ## Existing solutions review (Adopt / Adapt / Build)
 
@@ -270,17 +270,18 @@ jobs:
           EOF
           )")"
           fi
-          for _ in $(seq 1 80); do
-            case "$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state --jq .state)" in
-              MERGED) break ;;
-              OPEN) gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --squash --delete-branch >/dev/null \
-                      || echo "::warning::could not enable auto-merge on $pr yet" ;;
-              *) echo "::error::$pr was closed without merging"; exit 1 ;;
-            esac
-            sleep 30
-          done
+          # Merged here once its checks pass, like the formula: auto-merge needs
+          # branch protection on main, which this repository does not set (#79).
+          case "$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state --jq .state)" in
+            MERGED) echo "$pr already merged" ;;
+            OPEN)
+              sleep 60
+              gh pr checks "$pr" --repo "$GITHUB_REPOSITORY" --watch --fail-fast --interval 30
+              gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --squash --delete-branch ;;
+            *) echo "::error::$pr was closed without merging"; exit 1 ;;
+          esac
           merged="$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state,mergeCommit --jq 'select(.state == "MERGED") | .mergeCommit.oid')"
-          if [[ -z "$merged" ]]; then echo "::error::$pr did not merge within 40 minutes"; exit 1; fi
+          if [[ -z "$merged" ]]; then echo "::error::$pr did not merge"; exit 1; fi
           echo "commit=$merged" >> "$GITHUB_OUTPUT"
 
       - name: Pin the README installer to the commit that installs this release
@@ -306,7 +307,7 @@ jobs:
               --title "docs: pin the one-line installer to the commit that installs v$VERSION (#$ISSUE)" --body "$(cat <<EOF
           ## What changed
 
-          Points the README one-line installer, in all four locales, at $RECORDED, whose \`scripts/install.sh\` installs v$VERSION. Opened by the release workflow; it merges itself when required CI passes. The site picks this up on its next deploy-pages run.
+          Points the README one-line installer, in all four locales, at $RECORDED, whose \`scripts/install.sh\` installs v$VERSION. Opened by the release workflow; it merges after its checks pass. The site picks this up on its next deploy-pages run.
 
           ## Existing solutions review (Adopt / Adapt / Build)
 
@@ -319,6 +320,9 @@ jobs:
           fi
           case "$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state --jq .state)" in
             MERGED) echo "$pr already merged" ;;
-            OPEN) gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --squash --delete-branch ;;
+            OPEN)
+              sleep 60
+              gh pr checks "$pr" --repo "$GITHUB_REPOSITORY" --watch --fail-fast --interval 30
+              gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --squash --delete-branch ;;
             *) echo "::error::$pr was closed without merging; the README still pins the previous release"; exit 1 ;;
           esac
