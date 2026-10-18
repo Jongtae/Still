@@ -862,7 +862,7 @@ console.log(JSON.stringify({el: el.a || {}, other: other.a || {}, kept: typeof e
                 return cls()
 
             def initWithSource_injectionTime_forMainFrameOnly_inContentWorld_(self, source, when, main, world):
-                return (source, world)
+                return (source, world, main)
 
         class Controller:
             def removeAllUserScripts(self):
@@ -873,11 +873,37 @@ console.log(JSON.stringify({el: el.a || {}, other: other.a || {}, kept: typeof e
         worker.WebKit = type('WebKit', (), {'WKUserScriptInjectionTimeAtDocumentStart': 0, 'WKUserScript': Script})
         worker.controller, worker.world, worker.page_world = Controller(), 'client', 'page'
         worker._install_guard_scripts()
-        self.assertEqual([world for _, world in added], ['client', 'page'])
+        self.assertEqual([(world, main) for _, world, main in added], [('client', True), ('page', True), ('page', False)])
+        self.assertEqual([source for source, _, _ in added][1:], [bw.PAGE_WRAP_USER_SCRIPT, bw.PHONE_PLATFORM_USER_SCRIPT])
         worker.guard_off = True
         worker._install_guard_scripts()
-        self.assertEqual([world for _, world in added], ['client'], 'no detectable wrapper in the login window')
+        self.assertNotIn(bw.PAGE_WRAP_USER_SCRIPT, [source for source, _, _ in added], 'no detectable wrapper in the login window')
+        self.assertEqual(added[-1], (bw.PHONE_PLATFORM_USER_SCRIPT, 'page', False),
+                         'the phone platform holds in the login window and every frame (#13)')
         self.assertIn('state().off = true', added[0][0])
+
+    def test_the_page_reports_an_iphone_platform_and_no_touch(self):
+        """#13: ``navigator.platform`` agrees with the phone user agent; touch is not claimed; nothing else changes."""
+        import shutil
+        from personal_agent import browser_worker as bw
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('node is not installed')
+        harness = r"""
+class Navigator {}
+Object.defineProperty(Navigator.prototype, 'platform', {get() { return 'MacIntel'; }, enumerable: true, configurable: true});
+Object.defineProperty(Navigator.prototype, 'maxTouchPoints', {get() { return 0; }, enumerable: true, configurable: true});
+globalThis.Navigator = Navigator;
+const nav = new Navigator();
+%s
+const desc = Object.getOwnPropertyDescriptor(Navigator.prototype, 'platform');
+console.log(JSON.stringify({platform: nav.platform, touch: nav.maxTouchPoints, own: Object.keys(nav).length,
+                            enumerable: desc.enumerable, configurable: desc.configurable}));
+""" % bw.PHONE_PLATFORM_USER_SCRIPT
+        result = subprocess.run([node, '-e', harness], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {'platform': 'iPhone', 'touch': 0, 'own': 0,
+                                                     'enumerable': True, 'configurable': True})
 
     def test_a_form_navigation_the_page_does_not_vouch_for_is_refused_and_reported(self):
         bw, worker = self.worker()
@@ -1023,10 +1049,26 @@ class SessionFixtureHandler(FixtureHandler):
         if path == '/device':
             # #1183: what the site sees: the User-Agent header and the layout viewport width.
             agent = (self.headers.get('User-Agent') or '').replace('<', '')
+            # #13: and what the page's script sees, in the page and in a frame.
             return self._send('<html><head><title>기기</title><meta name="viewport" content="width=device-width">'
-                              f'</head><body><p id="ua">{agent}</p><p id="w">폭 측정 중</p>'
-                              '<script>document.getElementById("w").textContent = "폭 " + window.innerWidth;</script>'
+                              f'</head><body><p id="ua">{agent}</p><p id="w">폭 측정 중</p><p id="nav">대기</p>'
+                              '<iframe src="/device-frame" style="height:40px"></iframe>'
+                              '<script>document.getElementById("w").textContent = "폭 " + window.innerWidth;'
+                              'document.getElementById("nav").textContent = "플랫폼 " + navigator.platform + " 터치 " +'
+                              ' navigator.maxTouchPoints + " " + ("ontouchstart" in window) + " 같은UA " +'
+                              f' (navigator.userAgent === {json.dumps(agent)});</script>'
                               '</body></html>')
+        if path == '/device-worker':
+            # #13 review: what a Web Worker sees (WebKit's separate WorkerNavigator).
+            return self._send('<html><head><title>워커</title></head><body><p id="r">대기</p><script>'
+                              'var w = new Worker(URL.createObjectURL(new Blob(["postMessage(navigator.platform + \\" \\" +'
+                              ' /iPhone/.test(navigator.userAgent))"], {type: "text/javascript"})));'
+                              'w.onmessage = function (e) { document.getElementById("r").textContent = "워커 " + e.data; };'
+                              '</script></body></html>')
+        if path == '/device-frame':
+            return self._send('<html><body><p id="f">대기</p><script>document.getElementById("f").textContent ='
+                              ' "frame-platform " + navigator.platform; parent.document.title = "기기 " +'
+                              ' navigator.platform;</script></body></html>')
         if path == '/whoami':
             present = value in (self.headers.get('Cookie') or '')
             return self._send(f'<html><head><title>계정 상태</title></head><body><p>{"세션 있음" if present else "세션 없음"}</p></body></html>')
@@ -1423,6 +1465,20 @@ class WebKitIntegrationTests(unittest.TestCase):
             page = sess.open({'url': self.origin + '/device', 'effect': 'read'})
             self.assertIn('iPhone', page['text'])
             self.assertIn('Mobile/', page['text'])
+            # #13: the OS token is one a real iPhone with this Safari sends, and the page sees the same phone.
+            from personal_agent import browser_worker as bw
+            agent = page['text'].split('\n', 1)[0]
+            version = agent.split('Version/', 1)[1].split()[0]
+            self.assertIn(f'CPU iPhone OS {bw.ios_os_token(version)} like Mac OS X', agent)
+            self.assertIn('플랫폼 iPhone 터치 0 false 같은UA true', page['text'])
+            self.assertEqual(page['title'], '기기 iPhone', 'a frame sees the iPhone platform too')
+            # Documented limit (#13 review): a Web Worker keeps the phone user agent but WebKit's
+            # WorkerNavigator still reports the Mac platform; no public API injects into workers.
+            sess.open({'url': self.origin + '/device-worker', 'effect': 'read'})
+            deadline = time.monotonic() + 5
+            while '워커 ' not in (text := sess.read()['text']) and time.monotonic() < deadline:
+                time.sleep(0.3)
+            self.assertIn('워커 MacIntel true', text)
             width = int(page['text'].split('폭 ', 1)[1].split()[0])
             self.assertLessEqual(width, 430, page['text'])
         finally:
