@@ -253,6 +253,33 @@ const describe = (el, tokens) => ({tag: el.tagName.toLowerCase(), type: typeOf(e
 const same = (actual, expect) => !!expect && ['tag', 'type', 'autocomplete', 'name', 'own_text', 'label_name', 'ancestor_text',
   'in_form', 'payment_form', 'nav_link', 'pressable', 'href']
   .every((key) => key in expect && actual[key] === expect[key]);
+// #1395: what covers ``el`` at the point ``hit`` came from - the outermost ancestor of
+// the hit that does not hold the target (an overlay or banner) and the listed controls
+// inside it - so the model can close or move it instead of retrying the same press.
+const coverOf = (hit, el) => {
+  let layer = hit;
+  while (layer && layer.parentElement && !layer.parentElement.contains(el)) layer = layer.parentElement;
+  if (layer && layer.contains(el)) layer = null;   // a hit on the target's own ancestor names no cover
+  const controls = [];
+  if (layer) Array.from(document.querySelectorAll(SELECTOR)).forEach((c, i) => {
+    if (controls.length < 8 && layer.contains(c) && visible(c)) controls.push({index: i, name: cut(nameOf(c), 80)});
+  });
+  return {text: layer ? cut(layer.innerText || '', 160) : '', controls};
+};
+const holds = (hit, el) => !!hit && (hit === el || el.contains(hit) || hit.control === el);
+// #102: why a trusted press the guard saw land elsewhere missed ``el``, from what is at
+// the press point now: the target gone, something over it (named like a locate-time
+// cover), the target moved off the point, or - when none of that is visible any more,
+// say a layer that already went away - an honest "covered or moved".
+const pressMiss = (g, el) => {
+  if (!el || !el.isConnected) return {error: 'target_missing'};
+  const rect = el.getBoundingClientRect();
+  const over = g.x >= rect.left && g.x <= rect.right && g.y >= rect.top && g.y <= rect.bottom;
+  const hit = document.elementFromPoint(g.x, g.y);
+  if (over && hit && !holds(hit, el)) return {error: 'target_obscured', cover: coverOf(hit, el)};
+  if (!over) return {error: 'target_moved'};
+  return {error: 'press_missed'};
+};
 const state = () => (window.__agentos = window.__agentos || {targets: new Map(), guard: null, listening: false,
   off: false, allow: null, cancelled: null, held: null, vetted: [], submitListening: false});
 // A form's named controls shadow its own properties (``<input name="action">`` is
@@ -426,23 +453,11 @@ const left = Math.max(rect.left, 0), right = Math.min(rect.right, window.innerWi
 if (right - left < 1 || bottom - top < 1) return JSON.stringify({error: 'target_hidden'});
 const x = (left + right) / 2, y = (top + bottom) / 2;
 const hit = document.elementFromPoint(x, y);
-if (!hit || !(hit === el || el.contains(hit) || hit.control === el)) {
-  // #1395: say what covers it - the outermost ancestor of the hit that does not
-  // hold the target (an overlay or banner) and the listed controls inside it -
-  // so the model can close or move it instead of retrying the same press.
-  let layer = hit;
-  while (layer && layer.parentElement && !layer.parentElement.contains(el)) layer = layer.parentElement;
-  if (layer && layer.contains(el)) layer = null;   // a hit on the target's own ancestor names no cover
-  const controls = [];
-  if (layer) Array.from(document.querySelectorAll(SELECTOR)).forEach((c, i) => {
-    if (controls.length < 8 && layer.contains(c) && visible(c)) controls.push({index: i, name: cut(nameOf(c), 80)});
-  });
-  return JSON.stringify({error: 'target_obscured', cover: {text: layer ? cut(layer.innerText || '', 160) : '', controls}});
-}
+if (!holds(hit, el)) return JSON.stringify({error: 'target_obscured', cover: coverOf(hit, el)});
 const s = state();
 s.targets.clear();
 s.targets.set(nonce, new WeakRef(el));
-s.guard = {nonce, bad: false};
+s.guard = {nonce, bad: false, x, y};
 if (!s.listening) {
   // A trusted click that lands anywhere but the held element is cancelled.
   window.addEventListener('click', (event) => {
@@ -483,7 +498,9 @@ VERIFY_CLICK_SCRIPT = PRELUDE + r"""
 const s = state(), g = s.guard;
 s.guard = null;
 if (!g || g.nonce !== nonce) return JSON.stringify({error: 'target_changed'});
-return JSON.stringify(g.bad ? {error: 'target_changed'} : {ok: true});
+if (!g.bad) return JSON.stringify({ok: true});
+const ref = s.targets.get(nonce);
+return JSON.stringify(pressMiss(g, ref && ref.deref()));   // #102: why the press missed
 """
 
 #: The end of a click/type step: an approval's allowance lasts ``WINDOW_MS``
@@ -631,7 +648,8 @@ PAGE_WRAP_USER_SCRIPT = r"""(() => {
 INSERT_SCRIPT = PRELUDE + r"""
 const s = state(), g = s.guard, ref = s.targets.get(nonce), el = ref && ref.deref();
 s.guard = null;
-if (!g || g.nonce !== nonce || g.bad) return JSON.stringify({error: 'target_changed'});
+if (!g || g.nonce !== nonce) return JSON.stringify({error: 'target_changed'});
+if (g.bad) return JSON.stringify(pressMiss(g, el));   // #102: why the focusing press missed
 if (!el || !el.isConnected || document.activeElement !== el) {
   // #12: say where the press left the focus, so the model can target that field in a
   // new, separately checked step.  Nothing is typed into it here.
@@ -1560,7 +1578,7 @@ class Worker:
                 if ident not in self.pending:
                     return
                 if error is None and isinstance(value, dict) and value.get('error'):
-                    return self.finish_input(ident, blocked_before, value['error'])
+                    return self.finish_input(ident, blocked_before, value['error'], cover=value.get('cover'))
                 # A script error here means the click already navigated away (the
                 # page and its guards are gone), which the guards allowed.  #736:
                 # a navigation the click started (now or a moment later) lands first.
@@ -1586,7 +1604,8 @@ class Worker:
                 if error or not isinstance(value, dict):
                     return self.finish_input(ident, blocked_before, error or 'script_failed')
                 if value.get('error'):
-                    return self.finish_input(ident, blocked_before, value['error'], focused=value.get('focused'))
+                    return self.finish_input(ident, blocked_before, value['error'], cover=value.get('cover'),
+                                             focused=value.get('focused'))
                 self.settle(ident, lambda: self.finish_input(ident, blocked_before))
             self.AppHelper.callLater(FOCUS_SECONDS, lambda: self.run(
                 INSERT_SCRIPT, {'nonce': nonce, 'expect': expect, 'tokens': tokens, 'text': text}, inserted))
