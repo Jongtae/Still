@@ -1221,6 +1221,9 @@ class BrowserSession:
                   'new_content': bool(answer.get('added')), 'text': text[:TEXT_LIMIT]}
         if len(text) > TEXT_LIMIT:
             loaded['text_truncated'] = True
+        if answer.get('navigation_refused'):
+            # The page tried to leave while it scrolled; the read stayed on it.
+            loaded['navigation_refused'] = True
         return loaded
 
     def find(self, args):
@@ -1880,7 +1883,7 @@ class WebKitWorkerDriver:
     def load_more(self, rounds, seconds, timeout):
         """Scroll to the page's end up to ``rounds`` times within ``seconds`` (#11); the worker's answer."""
         message = self._request('load_more', timeout, rounds=rounds, seconds=seconds)
-        return {key: message.get(key) for key in ('rounds', 'stopped', 'added', 'text')}
+        return {key: message.get(key) for key in ('rounds', 'stopped', 'added', 'text', 'navigation_refused')}
 
     def snapshot(self):
         page = self._request('snapshot', ACTION_TIMEOUT_SECONDS).get('page') or {}

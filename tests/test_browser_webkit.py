@@ -538,7 +538,7 @@ class DriverProtocolTests(unittest.TestCase):
         self.assertEqual(str(caught.exception), bs.target_text('focus_moved'))
         # #11: a bounded load_more request and the worker's answer.
         self.assertEqual(driver.load_more(3, 9.0, 12), {'rounds': 2, 'stopped': 'no_progress', 'added': 3,
-                                                       'text': 'row 11\nrow 12'})
+                                                       'text': 'row 11\nrow 12', 'navigation_refused': 1})
         self.assertEqual({key: self.commands()[-1][key] for key in ('op', 'rounds', 'seconds', 'timeout')},
                          {'op': 'load_more', 'rounds': 3, 'seconds': 9.0, 'timeout': 12.0})
         sent = len(self.commands())
@@ -1049,6 +1049,23 @@ class SessionFixtureHandler(FixtureHandler):
             return self._send('''<html><head><title>끝없음</title></head><body><div id="feed"></div>
               <script>var n=0;setInterval(function(){n++;var row=document.createElement('p');row.textContent='소식 '+n;
                 document.getElementById('feed').appendChild(row);},150);</script></body></html>''')
+        if path == '/lazy-recycle':
+            # #11 review: a list that reuses its ten rows, rewriting their text for each next page (3 pages).
+            return self._send('''<html><head><title>재사용</title></head><body><ul id="list"></ul>
+              <div id="end" style="height:10px"></div>
+              <script>var list=document.getElementById('list'),page=0;
+              for(var i=1;i<=10;i++){var li=document.createElement('li');li.style.height='100px';
+                li.appendChild(document.createTextNode('줄 '+i));list.appendChild(li);}
+              new IntersectionObserver(function(es){if(!es[0].isIntersecting||page>=2)return;page++;
+                setTimeout(function(){Array.prototype.forEach.call(list.children,function(li,i){
+                  li.firstChild.data='줄 '+(page*10+i+1);});window.scrollTo(0,0);},300);})
+                .observe(document.getElementById('end'));</script></body></html>''')
+        if path == '/lazy-leave':
+            # #11 review: the page's scroll handler navigates away; loading more must not follow.
+            return self._send('''<html><head><title>머무름</title></head><body>
+              <div style="height:3000px">긴 내용</div>
+              <script>window.addEventListener('scroll',function(){location.assign('/product');});</script>
+              </body></html>''')
         if path == '/wide':
             # Review P2-1 repro: a surrogate pair at the label cut and a lone surrogate in the title.
             return self._send('<html><head><title>넓은 글자</title></head><body><button type="button" aria-label="'
@@ -1292,6 +1309,32 @@ class WebKitIntegrationTests(unittest.TestCase):
             loaded = sess.read({'load_more': '5'})['loaded']
             self.assertEqual((loaded['stopped'], loaded['new_content']), ('time', True), loaded)
             self.assertLess(time.monotonic() - started, bs.LOAD_MORE_SECONDS + 10)
+        finally:
+            sess.close()
+
+    def test_a_list_that_reuses_its_rows_reports_the_rewritten_rows(self):
+        """#11 review: rows whose text is rewritten in place count as new content."""
+        sess = self.session('work-11-recycle')
+        try:
+            page = sess.open({'url': self.origin + '/lazy-recycle', 'effect': 'read'})
+            self.assertNotIn('줄 11', page['text'])
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertTrue(loaded['new_content'], loaded)
+            self.assertIn('줄 11', loaded['text'])
+            self.assertIn('줄 30', loaded['text'])
+            self.assertEqual(loaded['stopped'], 'no_progress', 'the third page is the last')
+        finally:
+            sess.close()
+
+    def test_loading_more_never_follows_a_navigation_the_page_starts(self):
+        """#11 review: a scroll handler's navigation is cancelled; the read stays on its page."""
+        sess = self.session('work-11-leave')
+        try:
+            sess.open({'url': self.origin + '/lazy-leave', 'effect': 'read'})
+            page = sess.read({'load_more': '2'})
+            self.assertEqual(page['title'], '머무름', page['url'])
+            self.assertTrue(page['loaded']['navigation_refused'], page['loaded'])
+            self.assertEqual(sess.read()['title'], '머무름', 'still on the page after the read')
         finally:
             sess.close()
 

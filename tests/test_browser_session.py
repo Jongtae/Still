@@ -1117,6 +1117,14 @@ class LoadMoreTests(unittest.TestCase):
         self.assertEqual(len(loaded['text']), bs.TEXT_LIMIT)
         self.assertTrue(loaded['text_truncated'])
 
+    def test_a_navigation_the_page_tried_is_reported(self):
+        sess, driver, calls = self.loading({'rounds': 1, 'stopped': 'no_progress', 'added': 0, 'text': '',
+                                            'navigation_refused': 2})
+        loaded = sess.run('browser_read', {'load_more': '1'})['loaded']
+        self.assertTrue(loaded['navigation_refused'])
+        sess, driver, calls = self.loading()
+        self.assertNotIn('navigation_refused', sess.run('browser_read', {'load_more': '1'})['loaded'])
+
     def test_a_driver_that_cannot_load_more_says_so(self):
         sess, driver = session(steps=40)
         sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
