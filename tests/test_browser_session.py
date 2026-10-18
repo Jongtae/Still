@@ -1031,10 +1031,11 @@ class InputTargetTests(unittest.TestCase):
     def test_each_reason_has_its_own_text(self):
         texts = {code: bs.target_text(code) for code in
                  ('target_missing', 'target_changed', 'target_hidden', 'not_typable', 'not_focusable',
-                  'press_intercepted')}
+                  'target_moved', 'press_missed')}
         self.assertEqual(texts, {'target_missing': bs.MISSING_TEXT, 'target_changed': bs.CHANGED_TEXT,
                                  'target_hidden': bs.HIDDEN_TEXT, 'not_typable': bs.NOT_TYPABLE_TEXT,
-                                 'not_focusable': bs.NOT_FOCUSED_TEXT, 'press_intercepted': bs.INTERCEPTED_TEXT})
+                                 'not_focusable': bs.NOT_FOCUSED_TEXT, 'target_moved': bs.MOVED_TEXT,
+                                 'press_missed': bs.MISSED_TEXT})
         self.assertEqual(len(set(texts.values())), len(texts))
         moved = bs.target_text('focus_moved', {'name': '검색어\n 입력'})
         self.assertTrue(moved.startswith(bs.FOCUS_MOVED_TEXT))

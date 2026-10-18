@@ -78,8 +78,8 @@ for line in sys.stdin:
         # ``/lateresolve``: the navigation's destination check (DNS) takes longer than the
         # click grace; the real worker waits while that policy decision is pending.
         if command.get('index') == 3 and page['url'].endswith('/intercepted'):
-            # #102, as the real worker: the trusted click landed on another element.
-            emit({'id': ident, 'ok': False, 'error': 'press_intercepted'})
+            # #102, as the real worker: the trusted click landed elsewhere, and the target moved off the point.
+            emit({'id': ident, 'ok': False, 'error': 'target_moved'})
         elif command.get('index') == 3 and page['url'].endswith('/refusedpost'):
             # #700: a form post refused with no page form to hold.
             emit({'id': ident, 'ok': False, 'error': 'submit_refused'})
