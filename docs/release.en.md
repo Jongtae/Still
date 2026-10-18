@@ -136,9 +136,11 @@ accepts an existing PR only when it is merged or still open.
     still names it, so recording the release without bumping turns `main` red
     — which is the intended signal that source and shipped build have become
     indistinguishable, not a test defect. The workflow opens steps 9–10 as one
-    PR with auto-merge, waits for it to land, then opens a second auto-merge
-    PR that pins the README one-line installer to that merged commit
-    (`scripts/dev/release.py pin`), because a commit cannot name itself.
+    PR and merges it once its checks pass, then opens a second PR, merged the
+    same way, that pins the README one-line installer to that merged commit
+    (`scripts/dev/release.py pin`), because a commit cannot name itself. Like
+    the formula PR, neither relies on GitHub auto-merge, which needs branch
+    protection on `main`, and a failing check stops the workflow before merge.
 
 After the workflow finishes, the site still shows the previous version until
 the owner runs `deploy-pages`, which stamps the new pin and version into
