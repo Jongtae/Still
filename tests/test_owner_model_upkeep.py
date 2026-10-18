@@ -728,6 +728,8 @@ class Situation(Upkeep):
 
     def setUp(self):
         super().setUp()
+        # The store stamps these Works on the wall clock, so the note is read on it too (#61 pins the Harness clock).
+        self.service.context_observations.clock = time.time
         self.service.context_observations.set_controls({'enabled': True, 'timezone': 'Asia/Seoul'})
 
     def turn(self, text, answer, situation):
@@ -792,6 +794,8 @@ class SituationQueue(Upkeep):
 
     def setUp(self):
         super().setUp()
+        # The store stamps these Works on the wall clock, so the note is read on it too (#61 pins the Harness clock).
+        self.service.context_observations.clock = time.time
         self.service.context_observations.set_controls({'enabled': True, 'timezone': 'Asia/Seoul'})
 
     def test_queued_works_are_folded_into_the_newest_run(self):
