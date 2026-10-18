@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please report vulnerabilities **privately** through GitHub: open the repository's **Security** tab and choose **Report a vulnerability** ([direct link](https://github.com/Jongtae/agentos/security/advisories/new)). Do not open a public issue, pull request or discussion for a suspected vulnerability.
+Please report vulnerabilities **privately** through GitHub: open the repository's **Security** tab and choose **Report a vulnerability** ([direct link](https://github.com/Jongtae/Still/security/advisories/new)). Do not open a public issue, pull request or discussion for a suspected vulnerability.
 
 A useful report includes the affected version or commit, what an attacker can do, and the steps to reproduce it. Still is maintained by one person, so there is no guaranteed response time. Reports are acknowledged and handled as quickly as that allows, and fixes are credited in the advisory unless you ask otherwise.
 
@@ -30,7 +30,7 @@ Still runs on the owner's own machine and keeps their state there. These are sec
 The project is in a single-owner pilot: one owner, on their own machine, with their own accounts. By the owner's decision, some protections are deliberately deferred to a later hardening program rather than missing by accident. [`AGENTS.md`](../AGENTS.md) (*Secretary agency re-plan*) records these decisions. In particular:
 
 - the assistant may use the owner's private material and web search in the same task. Each task instead records which owner information it used and where that information went;
-- a check on private values leaving to new destinations, and further isolation, are deferred ([#828](https://github.com/Jongtae/agentos/issues/828)).
+- a check on private values leaving to new destinations, and further isolation, are deferred ([#28](https://github.com/Jongtae/Still/issues/28)).
 
 Reports about these deferred areas are still welcome, and they inform the hardening program. They are not treated as regressions of an enforced guarantee.
 

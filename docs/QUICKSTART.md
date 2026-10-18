@@ -60,7 +60,7 @@ Still can also use a direct model connection: Ollama (an already running local m
 
 ## Windows (WSL2)
 
-Still does not run natively on Windows yet ([#1168](https://github.com/Jongtae/agentos/issues/1168)). It runs in WSL2, the Linux environment built into Windows 10 and 11:
+Still does not run natively on Windows yet ([#33](https://github.com/Jongtae/Still/issues/33)). It runs in WSL2, the Linux environment built into Windows 10 and 11:
 
 1. In PowerShell, run `wsl --install`, then restart Windows.
 2. Open **Ubuntu** from the Start menu and create your Linux user name and password.
@@ -71,7 +71,7 @@ Things that differ from macOS:
 
 - A Codex or Claude Code subscription must be installed and logged in inside Ubuntu, not in Windows.
 - Windows folders appear under `/mnt/c/`, for example `/mnt/c/Users/your-name/Documents/Still`.
-- Keep the Ubuntu window open while you talk. The background login service and the embedded browser tool are macOS only for now ([#682](https://github.com/Jongtae/agentos/issues/682)).
+- Keep the Ubuntu window open while you talk. The background login service and the embedded browser tool are macOS only for now ([#33](https://github.com/Jongtae/Still/issues/33), [#34](https://github.com/Jongtae/Still/issues/34)).
 
 ## First task
 

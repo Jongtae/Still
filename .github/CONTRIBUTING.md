@@ -13,7 +13,7 @@ Open an issue with the **Bug report** or **Idea** template. For a security probl
 You need macOS or Linux and Python 3.12 or newer.
 
 ```sh
-git clone https://github.com/Jongtae/agentos.git
+git clone https://github.com/Jongtae/Still.git
 cd agentos
 python3 -m venv .tools/uv
 .tools/uv/bin/python -m pip install 'uv==0.11.33'

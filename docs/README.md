@@ -22,7 +22,7 @@ Still keeps current contracts, delivery selection, research, evidence and histor
 - Connections, control levels, delegation and the owner's way: [Connection and Delegation Contract](connection-delegation-contract.en.md).
 - Repository delivery: [Development Constitution](development-constitution.en.md), [Development Governance](development-governance.en.md), [Goal Execution Contract](goal-execution-contract.en.md), [Incremental Delivery](incremental-delivery.en.md).
 
-Core current contracts now lead with a current-rule/precedence section. Superseded amendment chains and dated diagnostic evidence that can be separated safely are kept in the original repository's archive/history/ (not carried into this import)contract-amendments/ rather than requiring readers to replay them inline. Mixed amendments stay canonical when they still contain live rules. This organization does not alter product semantics.
+Core current contracts now lead with a current-rule/precedence section. Superseded amendment chains and dated diagnostic evidence that can be separated safely are kept in the predecessor repository's `archive/history/contract-amendments/` (not carried into this import) rather than requiring readers to replay them inline. Mixed amendments stay canonical when they still contain live rules. This organization does not alter product semantics.
 
 ## Planning and status
 
@@ -36,7 +36,7 @@ Research is intentionally retained. It captures owner thinking, external investi
 
 Validation/evidence records state what was observed at a particular revision and evidence class. They do not become current product behavior merely by remaining under `docs/`.
 
-Finished one-off implementation records and superseded concept documents are kept in the original repository's archive (not carried into this import). Preserve dates, evidence boundaries and links when moving them.
+Finished one-off implementation records and superseded concept documents are kept in the original repository's archive (not carried into this import). Names kept from the predecessor (the `agentos` command, data directory, `AGENTOS_*` variables, service labels) and how predecessor issue links are treated are listed in the [name compatibility map](still-name-compatibility.en.md). Preserve dates, evidence boundaries and links when moving them.
 
 ## Editing rule
 

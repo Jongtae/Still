@@ -21,9 +21,9 @@ Read the current list with `settings_read` category `skills`.
 
 These are reviewed reference skills in the Still repository. They are added like any other skill, pinned to the commit current when the owner confirms, and each can be removed on its own. Offer to add one when the owner's request needs it and it is not installed yet.
 
-- **Shopping cart method:** `https://github.com/Jongtae/agentos/tree/main/skills/shopping-cart`. Changing an online cart safely: exact product, quantity meaning, read-back.
-- **Emart mall on SSG.COM:** `https://github.com/Jongtae/agentos/tree/main/skills/emart-ssg`. Site know-how. Use it with the shopping cart method.
-- **Getting the owner there:** `https://github.com/Jongtae/agentos/tree/main/skills/map-directions`. When an answer sends the owner somewhere: when to leave, how to get there, parking, and a route link in the owner's preferred map service.
+- **Shopping cart method:** `https://github.com/Jongtae/Still/tree/main/skills/shopping-cart`. Changing an online cart safely: exact product, quantity meaning, read-back.
+- **Emart mall on SSG.COM:** `https://github.com/Jongtae/Still/tree/main/skills/emart-ssg`. Site know-how. Use it with the shopping cart method.
+- **Getting the owner there:** `https://github.com/Jongtae/Still/tree/main/skills/map-directions`. When an answer sends the owner somewhere: when to leave, how to get there, parking, and a route link in the owner's preferred map service.
 
 ## What Still refuses
 

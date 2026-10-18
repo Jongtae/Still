@@ -39,7 +39,7 @@ Still は、その必要はないという可能性を探ります。自分で�
 
 - **契約中の AI をそのまま。** ChatGPT のプランは Codex で、Claude のプランは Claude Code で接続し、実際の仕事を任せます。そのほかの接続方法は [QUICKSTART](../../docs/QUICKSTART.md#other-model-connections) にあります。
 - **会話が変わっても同じ PA。** 記憶、保存した結果、未完の仕事の状態は次の会話や再起動後も残ります。中断された実行は黙って再実行せず、中断として報告します。
-- **境界は自分で決める。** アクセスは自分が接続したフォルダー・アカウント・ツールから始まります。対応している支払いフローは行動ごとの承認を求め、[現在のブラウザー上の制限](https://github.com/Jongtae/agentos/issues/758)も公開しています。[秘密情報](../../.github/SECURITY.md)はモデルのプロンプト・ログ・Evidenceに入りません。
+- **境界は自分で決める。** アクセスは自分が接続したフォルダー・アカウント・ツールから始まります。対応している支払いフローは行動ごとの承認を求め、[現在のブラウザー上の制限](https://github.com/Jongtae/Still/issues/26)も公開しています。[秘密情報](../../.github/SECURITY.md)はモデルのプロンプト・ログ・Evidenceに入りません。
 - **隠さずに知らせる。** AI が何かを記憶するとそれを知らせ、正確に取り消せるようにします。任せた仕事ごとに、どの情報を使いどこへ送ったかを記録します。
 - **いつもの場所で会話。** スマートフォンの Telegram、または macOS・Linux のブラウザーで話せます。Windows は[現在制限のある WSL2](../../docs/QUICKSTART.md#windows-wsl2)で動作します。
 
@@ -55,7 +55,7 @@ Still は、その必要はないという可能性を探ります。自分で�
 - **Execution:** 質問に答えるだけでなく、実際のサービスやコンピューター上で行動できること。
 - **Owner Control:** データ、権限、実行結果を自分で管理できること。
 
-これらは指針であり、すべての場面がすでに動くという主張ではありません。[製品の状況](../../docs/product-status.en.md)、上の実際のデモ、[現在のブラウザー上の制限](https://github.com/Jongtae/agentos/issues/758)で、観測済みのことと今後の課題を区別しています。
+これらは指針であり、すべての場面がすでに動くという主張ではありません。[製品の状況](../../docs/product-status.en.md)、上の実際のデモ、[現在のブラウザー上の制限](https://github.com/Jongtae/Still/issues/26)で、観測済みのことと今後の課題を区別しています。
 
 <!-- readme-section:try-today -->
 
@@ -170,7 +170,7 @@ agentos start
 | [ドキュメントマップ](../../docs/README.md) | 現在の契約とガイドの一覧 |
 | [謝辞と参考文献](../../docs/acknowledgements.en.md) | 設計に影響を与えた研究とプロジェクト |
 
-**コントリビュート。** Issue と Pull Request を歓迎します。まず [CONTRIBUTING](../../.github/CONTRIBUTING.md) を、開発の流れは [AGENTS.md](../../AGENTS.md) をご覧ください。コードが初めての方は、[コントリビューター向けオンボーディングガイド](../contributor-onboarding.en.md)（英語）でコードの構成と最初の作業の進め方をご確認ください。試したら、[フィードバックフォーム](https://github.com/Jongtae/agentos/issues/new?template=feedback.yml) か [Discussions](https://github.com/Jongtae/agentos/discussions) で、よかった点と困った点を教えてください。
+**コントリビュート。** Issue と Pull Request を歓迎します。まず [CONTRIBUTING](../../.github/CONTRIBUTING.md) を、開発の流れは [AGENTS.md](../../AGENTS.md) をご覧ください。コードが初めての方は、[コントリビューター向けオンボーディングガイド](../contributor-onboarding.en.md)（英語）でコードの構成と最初の作業の進め方をご確認ください。試したら、[フィードバックフォーム](https://github.com/Jongtae/Still/issues/new?template=feedback.yml) か [Discussions](https://github.com/Jongtae/Still/discussions) で、よかった点と困った点を教えてください。
 
 <!-- readme-section:license -->
 

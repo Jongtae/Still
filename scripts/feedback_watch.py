@@ -27,11 +27,11 @@ NAME = re.compile(r"personal\s+(agentos|still)|jongtae/(agentos|still)", re.I)
 MAX_NEW = 5
 MARKER = "<!-- feedback-source: {url} -->"
 MARKER_RE = re.compile(r"<!-- feedback-source: (\S+) -->")
-USER_AGENT = "agentos-feedback-watch/1.0 (+https://github.com/Jongtae/agentos)"
+USER_AGENT = "agentos-feedback-watch/1.0 (+https://github.com/Jongtae/Still)"
 ATOM = "{http://www.w3.org/2005/Atom}"
 
 HN_QUERIES = ('"Personal Still"', '"Jongtae/Still"', '"Personal AgentOS"', '"Jongtae/agentos"')
-REDDIT_FEED = "https://www.reddit.com/search.rss?q=%22Personal+AgentOS%22+OR+%22Jongtae%2Fagentos%22&sort=new"
+REDDIT_FEED = "https://www.reddit.com/search.rss?q=%22Personal+AgentOS%22+OR+%22Jongtae%2Fagentos%22+OR+%22Jongtae%2FStill%22&sort=new"
 GEEKNEWS_FEED = "https://news.hada.io/rss/news"
 
 Fetch = Callable[[str], bytes]
@@ -193,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     since = int(time.time()) - args.since_hours * 3600
     mentions = collect(http_fetch, since)
-    token, repo = os.environ.get("GITHUB_TOKEN"), os.environ.get("GITHUB_REPOSITORY", "Jongtae/agentos")
+    token, repo = os.environ.get("GITHUB_TOKEN"), os.environ.get("GITHUB_REPOSITORY", "Jongtae/Still")
     github = GitHub(token, repo) if token else None
     known = github.known_sources() if github else set()
     file_new(mentions, github, known, dry_run=args.dry_run or github is None)

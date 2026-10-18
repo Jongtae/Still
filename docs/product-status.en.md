@@ -9,6 +9,7 @@ This is the evidence and boundary page behind the [README](../README.md). It sep
 - **Owner pilot:** selected owner-supplied recordings have their own provenance and visible-observation scope. Revision-specific repeatability and release validation remain separate.
 - **README demo and screens:** the README's demo GIF and everyday-use image are edited from and cut out of real sessions recorded on 2026-10-11 (Korean interface). Neither is release-specific validation.
 - **Product direction:** the README's architecture figure, its "next" coffee example and the example below describe the intended experience, not one observed run or shipped shopping integrations.
+- **Predecessor records:** links to `Jongtae/agentos` issues cite evidence recorded in Still's private predecessor repository before the 2026-10-17 import. They are kept as historical provenance and are not publicly readable; current work is tracked in this repository's issues. See the [name compatibility map](still-name-compatibility.en.md).
 
 <!-- readme-section:demo-recording -->
 ## README demo
