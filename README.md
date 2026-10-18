@@ -70,10 +70,10 @@ These are guiding principles, not a claim that every scenario already works. The
 On macOS, Linux or Windows (through WSL2), one command installs and starts Still. You do not need Homebrew, Python or Docker:
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/8c88eb1d96533ffd25351b6d54b4eac0f78f66cd/scripts/install.sh | sh
 ```
 
-[Inspect the script](https://github.com/Jongtae/Still/blob/main/scripts/install.sh) before running it; it verifies the published Still archive and the uv installer it downloads. Each release pins this URL to the commit that installs that release.
+[Inspect the script](https://github.com/Jongtae/Still/blob/8c88eb1d96533ffd25351b6d54b4eac0f78f66cd/scripts/install.sh) before running it; it verifies the published Still archive and the uv installer it downloads. Each release pins this URL to the commit that installs that release.
 
 On Windows, run `wsl --install` in PowerShell, restart, open Ubuntu and run the first command there. Windows details, what the installer does, running from source and every setting are in [QUICKSTART](docs/QUICKSTART.md). Keep `agentos start` running while you talk.
 

@@ -70,10 +70,10 @@ Still 探索的答案是：*不必*。在一个由你安装和掌控的开源环
 在 macOS、Linux 或 Windows（WSL2）上，一条命令即可安装并启动，无需 Homebrew、Python 或 Docker：
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/8c88eb1d96533ffd25351b6d54b4eac0f78f66cd/scripts/install.sh | sh
 ```
 
-运行前可以[检查脚本](https://github.com/Jongtae/Still/blob/main/scripts/install.sh)；脚本会校验公开的 Still 归档和它下载的 uv 安装程序。每次发布时，此 URL 都会固定到安装该版本的提交。
+运行前可以[检查脚本](https://github.com/Jongtae/Still/blob/8c88eb1d96533ffd25351b6d54b4eac0f78f66cd/scripts/install.sh)；脚本会校验公开的 Still 归档和它下载的 uv 安装程序。每次发布时，此 URL 都会固定到安装该版本的提交。
 
 在 Windows 上，请在 PowerShell 中运行 `wsl --install` 并重启，然后打开 Ubuntu 运行第一条命令。Windows 说明、安装脚本做了什么、从源码运行以及所有设置，请见 [QUICKSTART](../../docs/QUICKSTART.md)。对话期间请保持 `agentos start` 运行。
 

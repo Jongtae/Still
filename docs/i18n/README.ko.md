@@ -70,10 +70,10 @@ Still은 *그럴 필요가 없다*는 답을 찾아갑니다. 내가 설치하�
 macOS, Linux, Windows(WSL2)에서 명령 하나로 설치하고 바로 시작합니다. Homebrew, Python, Docker는 필요 없습니다.
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/8c88eb1d96533ffd25351b6d54b4eac0f78f66cd/scripts/install.sh | sh
 ```
 
-실행 전에 [스크립트를 직접 확인](https://github.com/Jongtae/Still/blob/main/scripts/install.sh)할 수 있으며, 스크립트는 내려받는 Still 공개 아카이브와 uv 설치 프로그램의 체크섬을 검증합니다. 배포할 때마다 이 URL은 그 배포본을 설치하는 커밋으로 고정됩니다.
+실행 전에 [스크립트를 직접 확인](https://github.com/Jongtae/Still/blob/8c88eb1d96533ffd25351b6d54b4eac0f78f66cd/scripts/install.sh)할 수 있으며, 스크립트는 내려받는 Still 공개 아카이브와 uv 설치 프로그램의 체크섬을 검증합니다. 배포할 때마다 이 URL은 그 배포본을 설치하는 커밋으로 고정됩니다.
 
 Windows에서는 PowerShell에서 `wsl --install`을 실행하고 재시작한 뒤, Ubuntu를 열어 첫 번째 명령을 실행하세요. Windows 안내, 설치 스크립트가 하는 일, 소스 실행, 모든 설정은 [QUICKSTART](../../docs/QUICKSTART.md)에 있습니다. 대화하는 동안에는 `agentos start`를 계속 실행해 두세요.
 
