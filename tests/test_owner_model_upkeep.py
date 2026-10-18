@@ -34,6 +34,9 @@ def proposal(key, content, *, kind='stated', category='place', evidence='the own
 class Upkeep(Harness):
     def setUp(self):
         super().setUp()
+        # #9 pinned the Harness's current-context clock for plan reads; upkeep Works are
+        # stored at wall time, so the situation note reads its sources on the same clock.
+        self.service.context_observations.clock = time.time
         self.answers, self.explicit, self.facts, self.judged, self.situations = [], [], [], [], []
 
         def structured(context, question, schema):

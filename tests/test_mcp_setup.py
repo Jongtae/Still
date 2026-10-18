@@ -9,7 +9,7 @@ import types
 import unittest
 from unittest import mock
 
-from personal_agent.mcp_setup import (RemoteMcpSetup, environment, observed_status,
+from personal_agent.mcp_setup import (SDK_VERSION, RemoteMcpSetup, environment, observed_status,
                                       remote_url, sdk_observe, status_result)
 
 
@@ -211,6 +211,9 @@ class Status(unittest.TestCase):
             import claude_agent_sdk
         except ImportError:
             self.skipTest('host optional SDK is not installed')
+        if claude_agent_sdk.__version__ != SDK_VERSION:
+            # sdk_observe refuses an unpinned SDK by design; that is environment drift, not this path.
+            self.skipTest(f'host SDK {claude_agent_sdk.__version__} is not the pinned {SDK_VERSION}; run uv sync')
         with tempfile.TemporaryDirectory() as root:
             binary = Path(root) / 'fixture-cli'
             audit = Path(root) / 'audit.jsonl'

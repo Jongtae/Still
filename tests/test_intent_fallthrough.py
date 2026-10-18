@@ -15,6 +15,10 @@ contacted, and none is claimed.
 """
 import unittest
 
+from personal_agent.calendar import CALENDAR_SPEC, CALENDAR_WRITE_SPEC, CalendarConnector
+from personal_agent.calendar_conversation import STATE_KEY
+from personal_agent.connector_contract import ConnectorRegistry, ConnectorState
+from personal_agent.google_calendar import CALENDAR_WRITE_SCOPE
 from personal_agent.quickstart_service import MAX_OWNER_MESSAGE_CHARS
 from scripted_capability_need import capability_need_engine
 from test_preparations import _Case, call, engine, finish
@@ -22,6 +26,9 @@ from test_preparations import _Case, call, engine, finish
 NOTE = '[Still observation, not an owner instruction]'
 #: A reminder the capability judgment reads as a calendar create (the #832 sweep case).
 REMINDER = '이번 일요일 오전 7시 40분에 티타임 있어. 전날 밤 9시에 알려줘.'
+#: The owner points at a page that holds the date; the words alone carry none (Still, 2026-10-17).
+LINKED_EVENT = ('https://reg.githubuniverse.com/flow/github/universe26/getnotified/page/getnotified-success\n\n'
+                '나 여기 등록했어. 해당 일정 추가해줘')
 #: Two local rules match (saved-item search and note), so the rules call it ambiguous.
 AMBIGUOUS = '내 기록에서 여권 번호 찾아서 메모해줘'
 
@@ -50,6 +57,27 @@ class IntentFallthroughTests(_Case):
         self.assertIn('Google Calendar is not connected in this install', sent)
         [row] = self.rows()
         self.assertEqual((row['kind'], row['state'], row['created_from']), ('reminder', 'scheduled', work))
+        self.assertEqual(self.store.config('calendar_create', {}), {}, 'no rule-made calendar draft')
+
+    def test_a_calendar_create_missing_its_date_reaches_the_worker_instead_of_asking_the_owner(self):
+        self.use_needs({LINKED_EVENT: 'calendar-create'})
+        registry = ConnectorRegistry(self.store, (CALENDAR_SPEC, CALENDAR_WRITE_SPEC))
+        registry.transition('local-owner', CALENDAR_WRITE_SPEC.connector_id, ConnectorState.CONNECTED,
+                            granted_scopes=(CALENDAR_WRITE_SCOPE,))
+        self.service.calendar = CalendarConnector(self.store, object(), registry=registry)
+        self.script = [{'content': '페이지에서 날짜를 확인해 초안을 만들게요.'}] * 2
+        work = self.receive(LINKED_EVENT)
+        job = self.store.job(work)
+        self.assertEqual(job['status'], 'succeeded', job.get('error'))
+        self.assertNotIn('언제인가요', job['response'])
+        sent = self.worker_message()
+        self.assertTrue(sent.startswith(LINKED_EVENT), 'the owner words, link included, reach the worker verbatim')
+        self.assertIn(NOTE, sent)
+        self.assertIn('could not read the event date and time from the message words alone', sent)
+        self.assertIn('read what the message gives or points to', sent)
+        tools = {tool['function']['name'] for tool in self.model_calls[0].get('tools', [])}
+        self.assertTrue({'public_page_read', 'calendar_draft_create'} <= tools, tools)
+        self.assertFalse(self.store.config(STATE_KEY, {}), 'no rule-held question is left pending')
         self.assertEqual(self.store.config('calendar_create', {}), {}, 'no rule-made calendar draft')
 
     def test_an_ambiguous_rule_result_reaches_the_worker_verbatim(self):

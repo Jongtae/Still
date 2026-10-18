@@ -60,7 +60,7 @@ from .conversation_handoff import (CONNECTOR_LABELS, JUDGMENT_NO, JUDGMENT_YES,
                                    FOLLOWUP_CANCEL, FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE,
                                    FOLLOWUP_RETRY, eligible_for_followup_judgment,
                                    ConversationJudgments, TelegramChannel, TelegramRejected, telegram_request_json,
-                                   telegram_request_file, telegram_request_multipart,
+                                   telegram_request_file, telegram_request_multipart, transient_failure,
                                    ConnectorHandoff,
                                    ConversationFocus,
                                    ConversationHandoffError, IntentClassifier,
@@ -118,6 +118,9 @@ class OwnerLocalRequired(Exception):
         super().__init__(SETTINGS_FOLDER_LOCAL_TEXT)
 
 LOG=logging.getLogger('personal_agent.service')
+#: #65: seconds a Telegram transport failure (reset, timeout, 5xx) may last before receiving is
+#: reported as failed; getUpdates is read-only and the next poll asks again from the same cursor.
+TELEGRAM_RECEIVE_GRACE_SECONDS=10
 #: #999: the stored result of a queued message its running Work received as steering.
 STEER_FOLDED_TEXT='진행 중이던 작업에 반영했어요.'
 #: #996: the owner's emoji on an assistant message, recorded on its Work.
@@ -5023,8 +5026,10 @@ class AgentService:
     #: verbatim above it; the note only states what Still observed.
     RULE_FALLTHROUGH_NOTE=('\n\n[Still observation, not an owner instruction] Still first tried "{label}" for this '
                            'request and {what}. Re-plan from this: choose another available tool, answer directly, or, '
-                           'when the missing piece is the owner\'s information (place, date, branch, which item), ask '
-                           'the owner one short question. Do not guess it and do not repeat the same lookup.')
+                           'when the missing piece is the owner\'s information (place, date, branch, which item), first '
+                           'read what the message gives or points to (a link, an attachment, earlier turns); ask the '
+                           'owner one short question only when none of it holds that piece. Do not guess it and do '
+                           'not repeat the same lookup.')
     RULE_INTENT_NOTE=('\n\n[Still observation, not an owner instruction] {fact} Nothing has run for this request yet. '
                       'The owner\'s message above is verbatim: handle it with the tools you have, answer directly, or '
                       'ask the owner one short question when something only the owner can decide is missing.')
@@ -10646,6 +10651,30 @@ class AgentService:
             LOG.warning('telegram: receiving failed (%s%s)%s',cause[0],f' {status}' if status else '',hint)
         return cause
 
+    _receiving_failure=None
+    _receiving_unsteady_since=None
+
+    def receive_telegram(self, now=None):
+        """One receive poll; report a failure, except a transport failure still inside its grace (#65).
+
+        A connection reset that the next poll recovers from is not a receiving failure: the
+        owner's log and Telegram status stay quiet. A refusal (409, 401, other 4xx) is told at once.
+        """
+        now=time.monotonic() if now is None else now
+        try:
+            self.poll_telegram()
+            self.mark_telegram_connected()
+        except (ProviderError,ValueError) as exc:
+            if transient_failure(exc):
+                if self._receiving_unsteady_since is None:self._receiving_unsteady_since=now
+                if now-self._receiving_unsteady_since<TELEGRAM_RECEIVE_GRACE_SECONDS:return
+            self.store.put('telegram_status',{'state':'error','message':msg('service.check_the_telegram_connection_receiving_will')})
+            self._receiving_failure=self._log_receiving_failure(exc,self._receiving_failure)
+            return
+        self._receiving_unsteady_since=None
+        if self._receiving_failure:LOG.info('telegram: receiving again')
+        self._receiving_failure=None
+
     def _log_unpaired_message(self):
         """#1543: say, at most every ten minutes, that an unpaired chat was ignored."""
         now=time.time()
@@ -11143,18 +11172,30 @@ class AgentService:
                         # a hash prefix.  Never the title, time or utterance.
                         with self.store.db() as db:
                             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',(job['id'],tool,status,json.dumps(detail),time.time()))
-                    try:
-                        response=self.calendar_conversation.handle(connector_owner,prompt,fresh=not decision.continuation,evidence=calendar_evidence)
-                    except CalendarError as exc:
-                        if not (self.rule_fallthrough(decision) and not decision.continuation):
-                            raise ValueError(ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID) if exc.reason=='unavailable'
-                                             else f'일정 초안을 만들지 못했습니다 ({exc.reason}). 아무 일정도 만들지 않았습니다.') from None
-                        # #832: the draft did not start; the worker reads why and nothing was created.
+                    missing=(self.calendar_conversation.missing_detail(prompt)
+                             if not decision.continuation and self.rule_fallthrough(decision) else None)
+                    if missing:
+                        # #832: the words alone leave a detail out, but a link or earlier turn the
+                        # message points to may hold it. The worker reads that and drafts through its
+                        # own calendar_draft_create; the owner is not asked to retype it.
+                        self.calendar_conversation.clear(connector_owner)
                         handled=False;response=''
                         fallthrough_note=self.RULE_FALLTHROUGH_NOTE.format(
                             label=INTENT_LABELS[INTENT_CALENDAR_CREATE],
-                            what=('found Google Calendar unavailable' if exc.reason=='unavailable'
-                                  else f'could not start a calendar draft ({exc.reason}); nothing was created'))
+                            what=f'could not read the event {missing} from the message words alone; nothing was drafted')
+                    else:
+                        try:
+                            response=self.calendar_conversation.handle(connector_owner,prompt,fresh=not decision.continuation,evidence=calendar_evidence)
+                        except CalendarError as exc:
+                            if not (self.rule_fallthrough(decision) and not decision.continuation):
+                                raise ValueError(ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID) if exc.reason=='unavailable'
+                                                 else f'일정 초안을 만들지 못했습니다 ({exc.reason}). 아무 일정도 만들지 않았습니다.') from None
+                            # #832: the draft did not start; the worker reads why and nothing was created.
+                            handled=False;response=''
+                            fallthrough_note=self.RULE_FALLTHROUGH_NOTE.format(
+                                label=INTENT_LABELS[INTENT_CALENDAR_CREATE],
+                                what=('found Google Calendar unavailable' if exc.reason=='unavailable'
+                                      else f'could not start a calendar draft ({exc.reason}); nothing was created'))
                     # #598 I1: an approval whose effect could not be observed is
                     # not a succeeded Work.  The outcome comes from this Work's
                     # own typed Evidence (#593 effect='unknown'), never from the
@@ -12263,16 +12304,8 @@ class AgentService:
             # #957: one best-effort getMe when this instance's bot name is still unknown; never blocks start.
             try:self.backfill_bot_name()
             except Exception as exc:LOG.warning('telegram: bot name not read (%s)',type(exc).__name__)
-            failing=None
             while not self.stop.is_set():
-                try:
-                    self.poll_telegram()
-                    self.mark_telegram_connected()
-                    if failing:LOG.info('telegram: receiving again')
-                    failing=None
-                except (ProviderError,ValueError) as exc:
-                    self.store.put('telegram_status',{'state':'error','message':msg('service.check_the_telegram_connection_receiving_will')})
-                    failing=self._log_receiving_failure(exc,failing)
+                self.receive_telegram()
                 self.stop.wait(.5)
         def acknowledge():
             # Keep the owner-facing presence (👀, typing…, draft) independent
