@@ -536,6 +536,11 @@ class DriverProtocolTests(unittest.TestCase):
         # #12: the field the page moved the focus to rides along for the session to name.
         self.assertEqual(caught.exception.focused, {'name': 'Search here'})
         self.assertEqual(str(caught.exception), bs.target_text('focus_moved'))
+        driver.goto('https://shop.test/intercepted', 4)
+        driver.snapshot()
+        with self.assertRaises(ToolError) as caught:
+            driver.click(3, 4)   # #102: the press landed on a layer put over the target after the check
+        self.assertEqual((caught.exception.code, str(caught.exception)), ('target_unavailable', bs.INTERCEPTED_TEXT))
         sent = len(self.commands())
         with self.assertRaises(ToolError) as caught:
             driver.type(5, 'x', 4)   # index 5 was never in a snapshot: nothing is sent

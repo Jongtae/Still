@@ -483,7 +483,9 @@ VERIFY_CLICK_SCRIPT = PRELUDE + r"""
 const s = state(), g = s.guard;
 s.guard = null;
 if (!g || g.nonce !== nonce) return JSON.stringify({error: 'target_changed'});
-return JSON.stringify(g.bad ? {error: 'target_changed'} : {ok: true});
+// #102: the press landed on something else (a layer the page put over the target
+// after the hit-test), not on a changed target.
+return JSON.stringify(g.bad ? {error: 'press_intercepted'} : {ok: true});
 """
 
 #: The end of a click/type step: an approval's allowance lasts ``WINDOW_MS``
@@ -631,7 +633,8 @@ PAGE_WRAP_USER_SCRIPT = r"""(() => {
 INSERT_SCRIPT = PRELUDE + r"""
 const s = state(), g = s.guard, ref = s.targets.get(nonce), el = ref && ref.deref();
 s.guard = null;
-if (!g || g.nonce !== nonce || g.bad) return JSON.stringify({error: 'target_changed'});
+if (!g || g.nonce !== nonce) return JSON.stringify({error: 'target_changed'});
+if (g.bad) return JSON.stringify({error: 'press_intercepted'});   // #102: covered at press time
 if (!el || !el.isConnected || document.activeElement !== el) {
   // #12: say where the press left the focus, so the model can target that field in a
   // new, separately checked step.  Nothing is typed into it here.
