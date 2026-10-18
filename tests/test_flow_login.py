@@ -308,6 +308,12 @@ class LoginHarness(unittest.TestCase):
         self.addCleanup(guard.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        # #953's guard from conftest.py, here too so `python3 -m unittest` has it: a login
+        # prompt never starts a real ngrok tunnel; a test that wants it opts in on its service.
+        for name in ('AUTO_PHONE_LOGIN', 'SESSION_KEEPALIVE'):
+            guard = mock.patch.object(AgentService, name, False)
+            guard.start()
+            self.addCleanup(guard.stop)
         self.store = QuickStore(Path(self.tmp.name) / 'data')
         self.calls, self.scripts, self.driver_log, self.drivers = [], [], [], []
 
