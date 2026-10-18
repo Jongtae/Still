@@ -436,7 +436,9 @@ class ToolSchemaTests(unittest.TestCase):
         self.assertEqual(tools['browser_sign_in']['required'], ['url'])
         self.assertEqual(set(tools['browser_sign_in']['properties']), {'url'})
         self.assertEqual(tools['browser_open']['required'], ['url', 'effect'])
-        self.assertEqual(tools['browser_read']['properties'], {})
+        # #11: an optional count of load-more rounds, nothing required.
+        self.assertEqual(tools['browser_read']['properties'], {'load_more': {'type': 'string'}})
+        self.assertEqual(tools['browser_read']['required'], [])
         self.assertEqual(tools['browser_find']['required'], ['text'])
         self.assertEqual(tools['browser_click']['required'], ['target', 'effect'])
         self.assertEqual(tools['browser_type']['required'], ['target', 'text', 'effect'])
@@ -1062,6 +1064,74 @@ class InputTargetTests(unittest.TestCase):
         self.assertIn('초점을 받은 요소: “검색', text)
         self.assertNotIn(PASSPORT, text, 'the focused name is scrubbed like page text')
         self.assertEqual(typed, [field['index']], 'one attempt, on the checked field only')
+
+
+class LoadMoreTests(unittest.TestCase):
+    """#11: a read may first load rows a list adds only when scrolled, within explicit bounds."""
+
+    def loading(self, answer=None, **kwargs):
+        sess, driver = session(steps=40, excluded=lambda: [PASSPORT], **kwargs)
+        calls = []
+
+        def load_more(rounds, seconds, timeout):
+            calls.append((rounds, seconds, timeout))
+            return answer if answer is not None else {'rounds': 2, 'stopped': 'no_progress', 'added': 4,
+                                                      'text': '행 11\n\n\n\n다음 행 ' + PASSPORT}
+        driver.load_more = load_more
+        sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
+        return sess, driver, calls
+
+    def test_the_argument_is_a_count_from_one_to_five(self):
+        for value, rounds in ((None, 0), ('', 0), ('0', 0), ('3', 3), (5, 5), (' 2 ', 2)):
+            self.assertEqual(bs.load_more_rounds(value), rounds, value)
+        for value in ('6', '-1', 'all', True, '2.5'):
+            with self.assertRaises(ValueError, msg=value):
+                bs.load_more_rounds(value)
+        sess, driver, calls = self.loading()
+        used = sess.steps_used
+        with self.assertRaises(ValueError):
+            sess.run('browser_read', {'load_more': '9'})
+        self.assertEqual((calls, sess.steps_used), ([], used), 'a refused count runs nothing and spends no step')
+
+    def test_a_read_loads_more_and_reports_only_the_mediated_new_text(self):
+        sess, driver, calls = self.loading()
+        used = sess.steps_used
+        page = sess.run('browser_read', {'load_more': '3'})
+        self.assertEqual(sess.steps_used, used + 1, 'one step, however many rounds')
+        (rounds, seconds, timeout), = calls
+        self.assertEqual(rounds, 3)
+        self.assertLessEqual(seconds, bs.LOAD_MORE_SECONDS)
+        self.assertLess(seconds, timeout, 'the worker finishes inside the call timeout')
+        self.assertEqual(page['loaded'], {'rounds': 2, 'stopped': 'no_progress', 'new_content': True,
+                                          'text': '행 11\n\n다음 행 ' + bs.REDACTED})
+        self.assertNotIn(PASSPORT, json.dumps(page, ensure_ascii=False))
+        self.assertEqual([entry[0] for entry in driver.log if entry[0] in ('click', 'type')], [], 'nothing is pressed')
+        plain = sess.run('browser_read', {})
+        self.assertNotIn('loaded', plain)
+        self.assertEqual(len(calls), 1, 'a plain read loads nothing more')
+
+    def test_the_answer_is_bounded_and_an_unknown_stop_is_not_trusted(self):
+        sess, driver, calls = self.loading({'rounds': 99, 'stopped': 'done!', 'added': 0, 'text': 'x' * (bs.TEXT_LIMIT * 3)})
+        loaded = sess.run('browser_read', {'load_more': '2'})['loaded']
+        self.assertEqual((loaded['rounds'], loaded['stopped'], loaded['new_content']), (2, 'unknown', False))
+        self.assertEqual(len(loaded['text']), bs.TEXT_LIMIT)
+        self.assertTrue(loaded['text_truncated'])
+
+    def test_a_driver_that_cannot_load_more_says_so(self):
+        sess, driver = session(steps=40)
+        sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
+        with self.assertRaises(ToolError) as caught:
+            sess.run('browser_read', {'load_more': '1'})
+        self.assertEqual(caught.exception.code, 'load_more_unavailable')
+
+    def test_evidence_records_the_operation_and_outcome_without_the_text(self):
+        from personal_agent.agent_runtime import evidence_summary, fallback_response
+        result = {'state': 'page', 'url': ORIGIN + '/list', 'title': '목록', 'text': '행 1', 'elements': [],
+                  'loaded': {'rounds': 2, 'stopped': 'no_progress', 'new_content': True, 'text': '행 11 비밀 내용'}}
+        summary = evidence_summary('browser_read', result)
+        self.assertEqual(summary['loaded'], {'rounds': 2, 'stopped': 'no_progress', 'new_content': True, 'characters': 10})
+        self.assertNotIn('비밀', json.dumps(summary, ensure_ascii=False))
+        self.assertIn('2번 더 불러와', fallback_response([('browser_read', result)], []))
 
 
 class CommitControlTests(unittest.TestCase):

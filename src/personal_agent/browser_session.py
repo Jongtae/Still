@@ -95,6 +95,13 @@ VALUE_LIMIT = 200
 FIND_LINES = 12
 STEPS_PER_WORK = 40
 ACTION_TIMEOUT_SECONDS = 20
+#: #11: a ``browser_read`` may first scroll the page to its end up to this many
+#: times, within ``LOAD_MORE_SECONDS``, to load rows a list adds only when scrolled.
+LOAD_MORE_ROUNDS = 5
+LOAD_MORE_SECONDS = 15.0
+LOAD_MORE_STOPS = frozenset({'no_progress', 'bound', 'time'})
+LOAD_MORE_ARGUMENT_TEXT = 'load_more는 1부터 5까지의 횟수입니다.'
+LOAD_MORE_UNAVAILABLE_TEXT = '이 브라우저에서는 페이지를 더 불러올 수 없어 지금 보이는 페이지만 읽었습니다.'
 LOGIN_WINDOW_SECONDS = 1800
 REDACTED = '[가림]'
 
@@ -546,6 +553,21 @@ def redact_private_values(text, excluded=()):
                 out.append(token)
         lines.append(''.join(out))
     return '\n'.join(lines), removed
+
+
+def load_more_rounds(value):
+    """``browser_read``'s ``load_more``: 0 when absent, else a count from 1 to ``LOAD_MORE_ROUNDS`` (#11)."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return 0
+    if isinstance(value, bool):
+        raise ValueError(LOAD_MORE_ARGUMENT_TEXT)
+    try:
+        rounds = int(str(value).strip())
+    except ValueError:
+        raise ValueError(LOAD_MORE_ARGUMENT_TEXT) from None
+    if not 0 <= rounds <= LOAD_MORE_ROUNDS:
+        raise ValueError(LOAD_MORE_ARGUMENT_TEXT)
+    return rounds
 
 
 def scrub(text, excluded=()):
@@ -1087,7 +1109,7 @@ class BrowserSession:
         if action == 'browser_open':
             return self.open(args)
         if action == 'browser_read':
-            return self.read()
+            return self.read(args)
         if action == 'browser_find':
             return self.find(args)
         if action == 'browser_click':
@@ -1158,14 +1180,48 @@ class BrowserSession:
         self._settle()
         return self._page_state(requested_url=url)
 
-    def read(self):
+    def read(self, args=None):
+        rounds = load_more_rounds((args or {}).get('load_more'))
         # An interrupted navigation may leave a web document. Observe it only on
         # an explicit read, with normal mediation; never replay navigation.
-        if not (self.driver is not None and self._navigation_error):
+        if rounds or not (self.driver is not None and self._navigation_error):
             self._require_page()
         self._spend_step()
-        self._settle()
-        return self._page_state()
+        loaded = self._load_more(rounds) if rounds else None
+        if loaded is None:
+            self._settle()
+        page = self._page_state()
+        if loaded is not None:
+            page['loaded'] = loaded
+        return page
+
+    def _load_more(self, rounds):
+        """Scroll the page to its end up to ``rounds`` times, bounded, and report what appeared (#11).
+
+        The worker stops early when a round adds nothing; the text the page
+        added is mediated like page text.  Only scroll positions change: no
+        control is pressed, so no effect or approval is involved.
+        """
+        load = getattr(self._driver(), 'load_more', None)
+        if not callable(load):
+            raise ToolError(LOAD_MORE_UNAVAILABLE_TEXT, 'load_more_unavailable')
+        seconds = LOAD_MORE_SECONDS
+        if self.budget is not None:
+            try:
+                seconds = min(seconds, max(1.0, self.budget.remaining() - 2.0))
+            except Exception:
+                pass
+        answer = self._call(lambda timeout: load(rounds, min(seconds, max(1.0, timeout - 2.0)), timeout))
+        answer = answer if isinstance(answer, dict) else {}
+        text = scrub(str(answer.get('text') or '')[:TEXT_LIMIT * 2], self._excluded())[0]
+        text = re.sub(r'\n{3,}', '\n\n', text).strip()
+        stopped = answer.get('stopped')
+        loaded = {'rounds': min(rounds, max(0, int(answer.get('rounds') or 0))),
+                  'stopped': stopped if stopped in LOAD_MORE_STOPS else 'unknown',
+                  'new_content': bool(answer.get('added')), 'text': text[:TEXT_LIMIT]}
+        if len(text) > TEXT_LIMIT:
+            loaded['text_truncated'] = True
+        return loaded
 
     def find(self, args):
         self._require_page()
@@ -1820,6 +1876,11 @@ class WebKitWorkerDriver:
     def settle(self, seconds, timeout):
         """Wait, bounded by ``seconds``, until a client-rendered page's content stops changing (#709)."""
         self._request('settle', timeout, seconds=seconds)
+
+    def load_more(self, rounds, seconds, timeout):
+        """Scroll to the page's end up to ``rounds`` times within ``seconds`` (#11); the worker's answer."""
+        message = self._request('load_more', timeout, rounds=rounds, seconds=seconds)
+        return {key: message.get(key) for key in ('rounds', 'stopped', 'added', 'text')}
 
     def snapshot(self):
         page = self._request('snapshot', ACTION_TIMEOUT_SECONDS).get('page') or {}

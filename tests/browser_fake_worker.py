@@ -100,6 +100,10 @@ for line in sys.stdin:
             emit({'id': ident, 'ok': False, 'error': 'focus_moved', 'focused': {'name': 'Search here'}})
         else:
             emit({'id': ident, 'ok': True})
+    elif op == 'load_more':
+        # #11, as the real worker: rounds run, why it stopped, added nodes and their text.
+        emit({'id': ident, 'ok': True, 'rounds': 2, 'stopped': 'no_progress', 'added': 3,
+              'text': 'row 11\nrow 12', 'seconds_seen': command.get('seconds')})
     elif op == 'release_submit':
         # As the real worker (#700): only the submit it last reported, once.
         if held is not None and command.get('form') == held:

@@ -657,6 +657,68 @@ return JSON.stringify({text: body ? (body.innerText || '').length : 0,
   nodes: document.getElementsByTagName('*').length, ready: document.readyState});
 """
 
+#: #11: loading more of a page whose list adds rows only when scrolled.  The
+#: observer keeps the element nodes the page adds from now on (at most
+#: ``limit``); scrolling is the only thing done to the page: nothing is pressed.
+LOAD_MORE_BEGIN_SCRIPT = r"""
+const old = window.__agentosMore;
+if (old && old.observer) old.observer.disconnect();
+const more = window.__agentosMore = {added: [], observer: null};
+more.observer = new MutationObserver((records) => {
+  for (const record of records) for (const node of record.addedNodes) {
+    if (node.nodeType === 1 && more.added.length < limit) more.added.push(node);
+  }
+});
+more.observer.observe(document.body || document.documentElement, {childList: true, subtree: true});
+return JSON.stringify({ok: true});
+"""
+
+#: Scroll the document and the page's largest scrolling boxes (a list in its own
+#: scroll container) to their end.  Answers how many nodes were added so far.
+LOAD_MORE_SCROLL_SCRIPT = r"""
+const doc = document.scrollingElement || document.documentElement;
+doc.scrollTop = doc.scrollHeight;
+const boxes = [];
+const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_ELEMENT);
+for (let node = walker.nextNode(), seen = 0; node && seen < 5000; node = walker.nextNode(), seen++) {
+  if (node.scrollHeight <= node.clientHeight + 4 || node.clientHeight < 50) continue;
+  const overflow = getComputedStyle(node).overflowY;
+  if (overflow === 'auto' || overflow === 'scroll' || overflow === 'overlay') boxes.push(node);
+}
+boxes.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
+boxes.slice(0, 3).forEach((box) => { box.scrollTop = box.scrollHeight; });
+const more = window.__agentosMore;
+return JSON.stringify({added: more ? more.added.length : 0});
+"""
+
+#: Arguments: none.  The added count and the render measure, polled while a round waits.
+LOAD_MORE_PROBE_SCRIPT = r"""
+const more = window.__agentosMore, body = document.body;
+return JSON.stringify({added: more ? more.added.length : 0, text: body ? (body.innerText || '').length : 0,
+  nodes: document.getElementsByTagName('*').length});
+"""
+
+#: Arguments: limit.  Stop observing and answer the visible text of the added
+#: nodes still on the page (outermost first, nested ones once), bounded.
+LOAD_MORE_END_SCRIPT = PRELUDE + r"""
+const more = window.__agentosMore;
+window.__agentosMore = null;
+if (!more) return JSON.stringify({added: 0, text: ''});
+more.observer.disconnect();
+const added = new Set(more.added), parts = [];
+let length = 0;
+for (const node of more.added) {
+  if (length >= limit) break;
+  if (!node.isConnected || !node.getClientRects().length) continue;
+  let parent = node.parentElement, nested = false;
+  while (parent && !nested) { nested = added.has(parent); parent = parent.parentElement; }
+  if (nested) continue;
+  const text = (node.innerText || '').trim();
+  if (text) { parts.push(text); length += text.length + 1; }
+}
+return JSON.stringify({added: more.added.length, text: cut(parts.join('\n'), limit)});
+"""
+
 #: #939: typing from the phone goes into whatever element the page has focused;
 #: ``execCommand`` fires the real ``beforeinput``/``input`` events a framework
 #: listens for.  ``not_focused`` when nothing editable in the main frame has
@@ -696,6 +758,15 @@ CLICK_SETTLE_SECONDS = 8.0
 # polling or analytics requests must not keep a stable page "unsettled" (#900 review).
 RENDER_QUIET_SECONDS = 1.2
 RENDER_SETTLE_SECONDS = 6.0
+#: #11: one ``load_more`` request scrolls at most ``LOAD_MORE_ROUNDS`` times and
+#: lasts at most ``LOAD_MORE_SECONDS``.  A round that adds nothing within
+#: ``LOAD_MORE_WAIT_SECONDS`` ends the request (no progress); a round that adds
+#: rows waits until the page is quiet again, for at most ``RENDER_SETTLE_SECONDS``.
+LOAD_MORE_ROUNDS = 5
+LOAD_MORE_SECONDS = 15.0
+LOAD_MORE_WAIT_SECONDS = 2.5
+LOAD_MORE_NODE_LIMIT = 2000
+LOAD_MORE_TEXT_LIMIT = 20000
 POLL_SECONDS = 0.05
 FOCUS_SECONDS = 0.1
 RESOLVE_SECONDS = 3.0
@@ -1514,6 +1585,89 @@ class Worker:
                 return self.reply(ident, settled=False, waited=round(now - started, 2))
             self.AppHelper.callLater(POLL_SECONDS * 2, lambda: self.run(RENDER_PROBE_SCRIPT, {}, measured))
         self.run(RENDER_PROBE_SCRIPT, {}, measured)
+
+    def op_load_more(self, ident, command, timeout):
+        """Scroll to the page's end up to ``rounds`` times, bounded, to load rows a list adds when scrolled (#11).
+
+        Each round scrolls the document and its largest scrolling boxes to their
+        end, then waits: a round that adds no element within
+        ``LOAD_MORE_WAIT_SECONDS`` ends the request (``no_progress``); one that
+        adds some waits until the page stayed quiet for ``RENDER_QUIET_SECONDS``.
+        The request also ends at ``rounds`` (``bound``) or after ``seconds``
+        (``time``).  Answers the rounds run, why it stopped, how many element
+        nodes were added and their visible text (bounded).  No control is
+        pressed and no input is sent: only the page's scroll positions change.
+        """
+        try:
+            rounds = int(command.get('rounds'))
+        except (TypeError, ValueError):
+            return self.fail(ident, 'bad_rounds')
+        if not 1 <= rounds <= LOAD_MORE_ROUNDS:
+            return self.fail(ident, 'bad_rounds')
+        try:
+            cap = float(command.get('seconds') or LOAD_MORE_SECONDS)
+        except (TypeError, ValueError):
+            cap = LOAD_MORE_SECONDS
+        cap = max(1.0, min(cap, LOAD_MORE_SECONDS, float(timeout) - 1.0))
+        self.deadline(ident, cap + 2, on_timeout=lambda: self.run(LOAD_MORE_END_SCRIPT, {'limit': 0}, lambda value, error: None))
+        started = time.monotonic()
+        state = {'round': 0, 'added': 0}
+
+        def finish(stopped):
+            def ended(value, error):
+                if ident not in self.pending:
+                    return
+                value = value if error is None and isinstance(value, dict) else {}
+                self.reply(ident, rounds=state['round'], stopped=stopped, added=int(value.get('added') or 0),
+                           text=str(value.get('text') or ''))
+            self.run(LOAD_MORE_END_SCRIPT, {'limit': LOAD_MORE_TEXT_LIMIT}, ended)
+
+        def next_round():
+            if ident not in self.pending:
+                return
+            if state['round'] >= rounds:
+                return finish('bound')
+            if time.monotonic() - started >= cap:
+                return finish('time')
+            state['round'] += 1
+            self.run(LOAD_MORE_SCROLL_SCRIPT, {}, scrolled)
+
+        def scrolled(value, error):
+            if ident not in self.pending:
+                return
+            if error or not isinstance(value, dict):
+                return finish('no_progress')
+            began, base = time.monotonic(), state['added']
+            last, since = [None], [began]
+
+            def probed(value, error):
+                if ident not in self.pending:
+                    return
+                now = time.monotonic()
+                value = value if error is None and isinstance(value, dict) else {}
+                added = int(value.get('added') or 0)
+                measure = (added, value.get('text'), value.get('nodes'))
+                if measure != last[0] or self.view.isLoading():
+                    last[0], since[0] = measure, now
+                if now - started >= cap:
+                    state['added'] = added
+                    return finish('time')
+                if added > base:
+                    if now - since[0] >= RENDER_QUIET_SECONDS or now - began >= RENDER_SETTLE_SECONDS:
+                        state['added'] = added
+                        return next_round()
+                elif now - began >= LOAD_MORE_WAIT_SECONDS:
+                    return finish('no_progress')
+                self.AppHelper.callLater(POLL_SECONDS * 2, lambda: self.run(LOAD_MORE_PROBE_SCRIPT, {}, probed))
+            self.run(LOAD_MORE_PROBE_SCRIPT, {}, probed)
+
+        def begun(value, error):
+            if ident not in self.pending:
+                return
+            if error or not isinstance(value, dict):
+                return self.fail(ident, 'script_failed')
+            next_round()
+        self.run(LOAD_MORE_BEGIN_SCRIPT, {'limit': LOAD_MORE_NODE_LIMIT}, begun)
 
     def _locate(self, ident, command, then):
         index = command.get('index')

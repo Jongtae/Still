@@ -536,6 +536,11 @@ class DriverProtocolTests(unittest.TestCase):
         # #12: the field the page moved the focus to rides along for the session to name.
         self.assertEqual(caught.exception.focused, {'name': 'Search here'})
         self.assertEqual(str(caught.exception), bs.target_text('focus_moved'))
+        # #11: a bounded load_more request and the worker's answer.
+        self.assertEqual(driver.load_more(3, 9.0, 12), {'rounds': 2, 'stopped': 'no_progress', 'added': 3,
+                                                       'text': 'row 11\nrow 12'})
+        self.assertEqual({key: self.commands()[-1][key] for key in ('op', 'rounds', 'seconds', 'timeout')},
+                         {'op': 'load_more', 'rounds': 3, 'seconds': 9.0, 'timeout': 12.0})
         sent = len(self.commands())
         with self.assertRaises(ToolError) as caught:
             driver.type(5, 'x', 4)   # index 5 was never in a snapshot: nothing is sent
@@ -1022,6 +1027,28 @@ class SessionFixtureHandler(FixtureHandler):
               <input aria-label="잠긴 입력" readonly onfocus="this.removeAttribute('readonly')"
                 oninput="document.getElementById('r2').textContent='입력2:'+this.value">
               <p id="r">대기</p><p id="r2">대기</p></body></html>''')
+        if path == '/lazy-list':
+            # #11: rows arrive (after a short fetch) only once the list's end is scrolled into view; 30 at most.
+            return self._send('''<html><head><title>목록</title></head><body>
+              <button type="button" onclick="document.getElementById('pressed').textContent='더 보기 눌림'">더 보기</button>
+              <p id="pressed">안 눌림</p><ul id="list"></ul><div id="end" style="height:10px"></div>
+              <script>var n=0;function add(){for(var i=0;i<10&&n<30;i++){n++;var li=document.createElement('li');
+                li.style.height='100px';li.textContent='행 '+n;document.getElementById('list').appendChild(li);}}
+              add();new IntersectionObserver(function(es){if(es[0].isIntersecting&&n<30)setTimeout(add,300);})
+                .observe(document.getElementById('end'));</script></body></html>''')
+        if path == '/lazy-box':
+            # #11: a list in its own scroll box that adds five rows whenever its end is reached, without end.
+            return self._send('''<html><head><title>상자</title></head><body><h1>상자 목록</h1>
+              <div id="box" style="height:300px;overflow:auto"></div>
+              <script>var box=document.getElementById('box'),n=0;function add(){for(var i=0;i<5;i++){n++;
+                var row=document.createElement('div');row.style.height='80px';row.textContent='항목 '+n;box.appendChild(row);}}
+              add();box.addEventListener('scroll',function(){if(box.scrollTop+box.clientHeight>=box.scrollHeight-5)setTimeout(add,200);});
+              </script></body></html>''')
+        if path == '/lazy-endless':
+            # #11: a page that never stops adding rows, so only the time bound ends a request.
+            return self._send('''<html><head><title>끝없음</title></head><body><div id="feed"></div>
+              <script>var n=0;setInterval(function(){n++;var row=document.createElement('p');row.textContent='소식 '+n;
+                document.getElementById('feed').appendChild(row);},150);</script></body></html>''')
         if path == '/wide':
             # Review P2-1 repro: a surrogate pair at the label cut and a lone surrogate in the title.
             return self._send('<html><head><title>넓은 글자</title></head><body><button type="button" aria-label="'
@@ -1211,6 +1238,60 @@ class WebKitIntegrationTests(unittest.TestCase):
             self.assertEqual(roles.get('메모'), 'searchbox', page['elements'])
             self.assertIn('입력:우유', sess.type({'target': '메모', 'text': '우유', 'effect': 'mutate'})['text'])
             self.assertIn('입력2:두부', sess.type({'target': '잠긴 입력', 'text': '두부', 'effect': 'mutate'})['text'])
+        finally:
+            sess.close()
+
+    def test_a_lazy_list_loads_its_later_rows_and_stops_when_nothing_more_appears(self):
+        """#11: rows added only when scrolled reach the read; nothing is pressed."""
+        sess = self.session('work-11-list')
+        try:
+            page = sess.open({'url': self.origin + '/lazy-list', 'effect': 'read'})
+            self.assertIn('행 10', page['text'])
+            self.assertNotIn('행 11', page['text'])
+            page = sess.read({'load_more': '5'})
+            loaded = page['loaded']
+            self.assertEqual((loaded['stopped'], loaded['new_content']), ('no_progress', True), loaded)
+            self.assertEqual(loaded['rounds'], 3, 'two rounds add rows, the third finds none')
+            self.assertIn('행 11', loaded['text'])
+            self.assertIn('행 30', loaded['text'])
+            self.assertNotIn('행 10\n', loaded['text'] + '\n', 'only what appeared is reported')
+            self.assertIn('행 30', page['text'], 'the page state the read returns shows the loaded rows too')
+            self.assertIn('안 눌림', page['text'], 'loading more never presses a control')
+        finally:
+            sess.close()
+
+    def test_a_list_in_its_own_scroll_box_loads_within_the_round_bound(self):
+        sess = self.session('work-11-box')
+        try:
+            page = sess.open({'url': self.origin + '/lazy-box', 'effect': 'read'})
+            self.assertNotIn('항목 6', page['text'])
+            loaded = sess.read({'load_more': '2'})['loaded']
+            self.assertEqual((loaded['rounds'], loaded['stopped'], loaded['new_content']), (2, 'bound', True), loaded)
+            self.assertIn('항목 6', loaded['text'])
+            self.assertIn('항목 15', loaded['text'])
+            self.assertNotIn('항목 16', loaded['text'], 'no more than the requested rounds ran')
+        finally:
+            sess.close()
+
+    def test_a_page_that_loads_nothing_more_ends_after_one_round(self):
+        sess = self.session('work-11-static')
+        try:
+            sess.open({'url': self.origin + '/product', 'effect': 'read'})
+            started = time.monotonic()
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertEqual(loaded, {'rounds': 1, 'stopped': 'no_progress', 'new_content': False, 'text': ''})
+            self.assertLess(time.monotonic() - started, 10)
+        finally:
+            sess.close()
+
+    def test_a_page_that_never_settles_ends_at_the_time_bound(self):
+        sess = self.session('work-11-endless')
+        try:
+            sess.open({'url': self.origin + '/lazy-endless', 'effect': 'read'})
+            started = time.monotonic()
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertEqual((loaded['stopped'], loaded['new_content']), ('time', True), loaded)
+            self.assertLess(time.monotonic() - started, bs.LOAD_MORE_SECONDS + 10)
         finally:
             sess.close()
 
