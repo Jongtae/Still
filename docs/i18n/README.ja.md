@@ -70,10 +70,10 @@ Still は、その必要はないという可能性を探ります。自分で�
 macOS、Linux、Windows（WSL2）で、コマンド一つでインストールしてそのまま起動します。Homebrew、Python、Docker は不要です。
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/8c88eb1d96533ffd25351b6d54b4eac0f78f66cd/scripts/install.sh | sh
 ```
 
-実行前に[スクリプトを確認](https://github.com/Jongtae/Still/blob/main/scripts/install.sh)でき、スクリプトは公開済み Still アーカイブと、ダウンロードする uv インストーラーのチェックサムを検証します。リリースのたびに、この URL はそのリリースを入れるコミットに固定されます。
+実行前に[スクリプトを確認](https://github.com/Jongtae/Still/blob/8c88eb1d96533ffd25351b6d54b4eac0f78f66cd/scripts/install.sh)でき、スクリプトは公開済み Still アーカイブと、ダウンロードする uv インストーラーのチェックサムを検証します。リリースのたびに、この URL はそのリリースを入れるコミットに固定されます。
 
 Windows では PowerShell で `wsl --install` を実行して再起動し、Ubuntu を開いて最初のコマンドを実行してください。Windows の手順、インストーラーの動作、ソースからの実行、すべての設定は [QUICKSTART](../../docs/QUICKSTART.md) にあります。会話中は `agentos start` を起動したままにしてください。
 
