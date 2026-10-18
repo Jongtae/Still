@@ -735,17 +735,19 @@ if (!more) return JSON.stringify({added: 0, text: ''});
 if (end) { more.observer.disconnect(); window.__agentosMore = null; }
 const noted = more.added, set = new Set(noted), parts = [];
 more.added = []; more.seen = new Set();
-let length = 0;
+let length = 0, kept = 0;
+// Every row still shown with text is progress; only the returned text is bounded (#11 review).
 for (const node of noted) {
-  if (length >= limit) break;
   if (!node.isConnected || !node.getClientRects().length) continue;
   let parent = node.parentElement, nested = false;
   while (parent && !nested) { nested = set.has(parent); parent = parent.parentElement; }
   if (nested) continue;
   const text = (node.innerText || '').trim();
-  if (text) { parts.push(text); length += text.length + 1; }
+  if (!text) continue;
+  kept++;
+  if (length < limit) { parts.push(text); length += text.length + 1; }
 }
-return JSON.stringify({added: more.total, kept: parts.length, text: cut(parts.join('\n'), limit)});
+return JSON.stringify({added: more.total, kept, text: cut(parts.join('\n'), limit)});
 """
 
 #: #939: typing from the phone goes into whatever element the page has focused;

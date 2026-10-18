@@ -1095,6 +1095,14 @@ class SessionFixtureHandler(FixtureHandler):
               <script>new IntersectionObserver(function(es){if(!es[0].isIntersecting)return;var p=document.createElement('p');
                 p.textContent='불러오는 중';document.body.appendChild(p);setTimeout(function(){p.remove();},300);})
                 .observe(document.getElementById('end'));</script></body></html>''')
+        if path == '/lazy-long':
+            # #11 review: the first load adds one row longer than the whole text budget, the next a short one.
+            return self._send('''<html><head><title>긴 행</title></head><body><div style="height:2000px">처음</div>
+              <div id="list"></div><div id="end" style="height:10px"></div>
+              <script>var n=0;new IntersectionObserver(function(es){if(!es[0].isIntersecting||n>=2)return;n++;
+                setTimeout(function(){var p=document.createElement('p');p.style.minHeight='1500px';
+                  p.textContent=n===1?'가'.repeat(21000):'두 번째 행';document.getElementById('list').appendChild(p);},200);})
+                .observe(document.getElementById('end'));</script></body></html>''')
         if path == '/wide':
             # Review P2-1 repro: a surrogate pair at the label cut and a lone surrogate in the title.
             return self._send('<html><head><title>넓은 글자</title></head><body><button type="button" aria-label="'
@@ -1375,6 +1383,17 @@ class WebKitIntegrationTests(unittest.TestCase):
             loaded = sess.read({'load_more': '5'})['loaded']
             self.assertEqual((loaded['rounds'], loaded['stopped'], loaded['new_content'], loaded['text']),
                              (1, 'no_progress', False, ''), loaded)
+        finally:
+            sess.close()
+
+    def test_rows_after_the_text_budget_still_count_as_progress(self):
+        """#11 review: once the returned text is full, later rows still keep the request going."""
+        sess = self.session('work-11-long')
+        try:
+            sess.open({'url': self.origin + '/lazy-long', 'effect': 'read'})
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertEqual((loaded['rounds'], loaded['stopped'], loaded['new_content']), (3, 'no_progress', True), loaded)
+            self.assertTrue(loaded['text_truncated'])
         finally:
             sess.close()
 
