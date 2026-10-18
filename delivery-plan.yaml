@@ -7,13 +7,87 @@
     "reason": "Still was imported without history on 2026-10-17. The predecessor plan (version 10) is archived unchanged as an immutable record; its programs, issue numbers and selections belong to Jongtae/agentos and carry no authority here (#46).",
     "documented_completed_iterations": []
   },
-  "iterations": [],
+  "iterations": [
+    {
+      "id": "BROWSER-REL-01",
+      "issue": 94,
+      "kind": "implementation",
+      "activation_status": "owner-activated-goal-ready",
+      "contract": "goal-execution-contract.en.md",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_browser_session.py tests/test_browser_webkit.py tests/test_browser_limits.py tests/test_browser_timeout_recovery.py tests/test_browser_session_context.py"
+      ],
+      "summary": "Browser reliability program: the owner's AI can type into the field it checked or learn truthfully why not (#12), read rows a list loads only after scrolling within explicit bounds (#11), and use a mobile profile whose declared and page-visible values agree (#13). Ordered substeps share the browser files and run in sequence.",
+      "depends_on": []
+    },
+    {
+      "id": "BROWSER-INPUT-01",
+      "program": "BROWSER-REL-01",
+      "issue": 12,
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_browser_session.py tests/test_browser_webkit.py tests/test_browser_limits.py tests/test_browser_timeout_recovery.py tests/test_browser_session_context.py"
+      ],
+      "summary": "Diagnose and recover from unavailable text-input targets: reach the checked field or return a truthful, bounded recoverable observation; never type into an unchecked field.",
+      "depends_on": []
+    },
+    {
+      "id": "BROWSER-LOADMORE-01",
+      "program": "BROWSER-REL-01",
+      "issue": 11,
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_browser_session.py tests/test_browser_webkit.py tests/test_browser_limits.py tests/test_browser_timeout_recovery.py tests/test_browser_session_context.py"
+      ],
+      "summary": "Give the worker a generic bounded way to load more of the current page (count/time limits, stops on no progress); scrolling is not permission to press a control.",
+      "depends_on": [
+        "BROWSER-INPUT-01"
+      ]
+    },
+    {
+      "id": "BROWSER-PROFILE-01",
+      "program": "BROWSER-REL-01",
+      "issue": 13,
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_browser_session.py tests/test_browser_webkit.py tests/test_browser_limits.py tests/test_browser_timeout_recovery.py tests/test_browser_session_context.py"
+      ],
+      "summary": "Reconcile the declared mobile profile with page-visible values and actual input capabilities, reusing the predecessor patch; real-WebKit observations are reported separately from harness tests.",
+      "depends_on": [
+        "BROWSER-LOADMORE-01"
+      ]
+    }
+  ],
   "milestones": {},
-  "programs": {},
+  "programs": {
+    "BROWSER-REL-01": {
+      "status": "owner-activated-goal-ready",
+      "issue": 94,
+      "activated_by": {
+        "issue": 94,
+        "date": "2026-10-18",
+        "reason": "Owner directed in conversation on 2026-10-18 to register backlog group A (#12 -> #11 -> #13, browser reliability) as the active program and carry it out."
+      },
+      "ordered_substeps": [
+        "BROWSER-INPUT-01",
+        "BROWSER-LOADMORE-01",
+        "BROWSER-PROFILE-01"
+      ],
+      "active_substeps": [],
+      "completed_substeps": {},
+      "allowed_authority": "Browser tool/worker code (browser_session, browser_worker, browser_jar and related agent_runtime seams), their tests and fixtures, browser limitation docs, and this plan. Local evidence: unit/fixture tests and real-WebKit observation on the owner's macOS machine against local fixture pages only. One issue-linked PR per substep with normal squash merge after required CI, then a closeout PR.",
+      "non_goals": "Live accounts, sign-ins or named external websites; the separately authorized fresh-profile live check in #13; site-specific workarounds; a new browser engine or broad JavaScript tool; relaxing credential, payment, local-UI or approval protection; other backlog items; releases, deployment and the delivery heartbeat.",
+      "independent_review": "Not planned. Triggered if a change alters which field may receive text, credential/payment protection, the local Still UI/API refusal or owner-handoff authority.",
+      "completion_rule": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests and required CI, real-WebKit observations named as their own evidence class, then a closeout entry here recording per-substep issue, pull request, merge commit and decision."
+    }
+  },
   "completion_claims": {},
   "next_goal": {
-    "id": null,
-    "status": "not-selected",
-    "action": "No goal is selected. The owner activates one explicitly, for example from the curated backlog (#44); until then nothing is armed, the delivery heartbeat stays paused, and the predecessor selection (V1.4-01 / Jongtae/agentos#1375) does not carry over."
+    "id": "BROWSER-REL-01",
+    "status": "owner-activated-goal-ready",
+    "action": "Owner direction 2026-10-18 (#94) selects BROWSER-REL-01: #12 -> #11 -> #13 in order, session-driven at the owner's request. Scoped PRs and normal merge after required CI are authorized; live accounts, external sites, credentials, releases and deployment are not. The delivery heartbeat stays paused, and no successor is selected on completion."
   }
 }

@@ -2,17 +2,27 @@
 
 Still was imported without history. The predecessor plan is archived unchanged
 under docs/history/, where the historical governance tests read it; the root
-plan starts empty and selects nothing until the owner activates a goal.
+plan started empty and selected nothing until the owner activated a goal
+(BROWSER-REL-01, #94).
 """
+import importlib.util
 import json
 import subprocess
 from pathlib import Path
+from unittest import TestCase
 
 from scripts.dev.delivery import DeliveryPlan
 
 ROOT = Path(__file__).resolve().parents[1]
 PLAN = ROOT / "delivery-plan.yaml"
 ARCHIVE = ROOT / "docs" / "history" / "predecessor-delivery-plan.yaml"
+
+# The shared real-controller assertions, loaded by path so --noconftest runs work.
+_spec = importlib.util.spec_from_file_location(
+    "fresh_plan_invariants", ROOT / "tests" / "delivery_state_invariants.py"
+)
+invariants = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(invariants)
 
 
 def plan():
@@ -34,17 +44,31 @@ def test_the_predecessor_plan_is_archived_and_named():
 
 def test_no_predecessor_program_or_iteration_carries_over():
     current = plan()
-    assert current["iterations"] == []
-    assert current["programs"] == {}
+    archived = json.loads(ARCHIVE.read_text(encoding="utf-8"))
+    inherited = {item["id"] for item in archived["iterations"]} | set(archived["programs"])
+    assert not inherited & {item["id"] for item in current["iterations"]}
+    assert not inherited & set(current["programs"])
     assert current["history"]["documented_completed_iterations"] == []
 
 
-def test_no_goal_is_selected_until_the_owner_activates_one():
-    goal = plan()["next_goal"]
-    assert goal["id"] is None
-    assert goal["status"] == "not-selected"
-    assert "#44" in goal["action"]
-    for state in ({}, {"completed": []}, {"active": "V1.4-01", "status": "running"}):
+def test_the_owner_activated_browser_program_is_goal_ready_and_heartbeat_paused():
+    """#94: the owner selected BROWSER-REL-01; execution stays session-driven."""
+    current = plan()
+    goal = current["next_goal"]
+    assert goal["id"] == "BROWSER-REL-01"
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    invariants.assert_active_substeps_are_legitimate(TestCase(), current, goal["id"])
+    program = current["programs"][goal["id"]]
+    assert program["activated_by"]["issue"] == 94
+    order = ["BROWSER-INPUT-01", "BROWSER-LOADMORE-01", "BROWSER-PROFILE-01"]
+    assert program["ordered_substeps"] == order
+    items = {item["id"]: item for item in current["iterations"]}
+    assert [items[name]["issue"] for name in order] == [12, 11, 13]
+    for previous, name in zip([None] + order, order):
+        assert items[name]["program"] == goal["id"]
+        assert items[name]["activation_status"] == "parent-controlled"
+        assert items[name]["depends_on"] == ([previous] if previous else [])
+    for state in ({}, {"completed": []}, {"active": "BROWSER-REL-01", "status": "running"}):
         assert DeliveryPlan(PLAN).select(state) is None, state
 
 
