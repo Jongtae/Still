@@ -97,7 +97,7 @@ README 데모는 2026-10-11에 녹화한 Telegram과 브라우저 화면 녹화 
 <!-- readme-section:release -->
 ## Homebrew 배포본
 
-**아직 공개된 Still 배포본이 없어서, 첫 배포 전까지 Homebrew 포뮬러와 한 줄 설치 스크립트는 아무것도 설치하지 않습니다.** 배포본마다 포함 소스와 로컬 설치 검증을 [release manifest](release-manifest.json)에 기록합니다. 이 검증은 패키지 설치와 포그라운드 동작까지이며, 실제 Telegram·Google·쇼핑 사용이나 README 데모 장면 전체를 입증하지는 않습니다. README의 일상 사용 화면은 실제 소유자 파일럿 세션에서 발췌한 것으로, 배포본별 검증은 아닙니다.
+**Homebrew 패키지는 태그가 붙은 main 커밋의 최신 공개 배포본 `v0.1.0`(2026-10-18)을 설치합니다.** [release manifest](release-manifest.json)에 포함 소스와 로컬 설치 검증을 기록했습니다. 이 검증은 패키지 설치와 포그라운드 동작까지이며, 실제 Telegram·Google·쇼핑 사용이나 README 데모 장면 전체를 입증하지는 않습니다. README의 일상 사용 화면은 실제 소유자 파일럿 세션에서 발췌한 것으로, 배포본별 검증은 아닙니다.
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still
