@@ -675,6 +675,86 @@ return JSON.stringify({text: body ? (body.innerText || '').length : 0,
   nodes: document.getElementsByTagName('*').length, ready: document.readyState});
 """
 
+#: #11: loading more of a page whose list adds rows only when scrolled.  The
+#: observer keeps the elements the page adds, or whose text it adds or rewrites,
+#: from now on (at most ``limit``); scrolling is the only thing done to the page:
+#: nothing is pressed, and a navigation it starts meanwhile is cancelled.
+LOAD_MORE_BEGIN_SCRIPT = r"""
+const old = window.__agentosMore;
+if (old && old.observer) old.observer.disconnect();
+const more = window.__agentosMore = {added: [], seen: new Set(), total: 0, capped: false, observer: null};
+// An element added, or one whose text the page added or rewrote (a list that reuses
+// its rows), counts once per collection.
+const note = (node) => {
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  // The bound applies per collection (#11 review): a big round does not blind later ones.
+  if (!el || more.seen.has(el)) return;
+  if (more.added.length >= limit) { more.capped = true; return; }   // reported, never silent (#11 review)
+  more.seen.add(el); more.added.push(el); more.total++;
+};
+more.observer = new MutationObserver((records) => {
+  for (const record of records) {
+    if (record.type === 'characterData') note(record.target);
+    else for (const node of record.addedNodes) note(node);
+  }
+});
+more.observer.observe(document.body || document.documentElement, {childList: true, subtree: true, characterData: true});
+return JSON.stringify({ok: true});
+"""
+
+#: Scroll the document and the page's largest scrolling boxes (a list in its own
+#: scroll container) to their end.  Answers how many elements were noted so far.
+LOAD_MORE_SCROLL_SCRIPT = r"""
+const doc = document.scrollingElement || document.documentElement;
+doc.scrollTop = doc.scrollHeight;
+const boxes = [];
+const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_ELEMENT);
+for (let node = walker.nextNode(), seen = 0; node && seen < 5000; node = walker.nextNode(), seen++) {
+  if (node.scrollHeight <= node.clientHeight + 4 || node.clientHeight < 50) continue;
+  const overflow = getComputedStyle(node).overflowY;
+  if (overflow === 'auto' || overflow === 'scroll' || overflow === 'overlay') boxes.push(node);
+}
+boxes.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
+boxes.slice(0, 3).forEach((box) => { box.scrollTop = box.scrollHeight; });
+const more = window.__agentosMore;
+return JSON.stringify({added: more ? more.total : 0});
+"""
+
+#: Arguments: none.  The noted count and the render measure, polled while a round waits.
+LOAD_MORE_PROBE_SCRIPT = r"""
+const more = window.__agentosMore, body = document.body;
+return JSON.stringify({added: more ? more.total : 0, text: body ? (body.innerText || '').length : 0,
+  nodes: document.getElementsByTagName('*').length});
+"""
+
+#: Arguments: limit, end.  The visible text of the elements noted since the last
+#: collection that are still on the page (outermost first, nested ones once),
+#: bounded, and how many of them showed text (``kept``): only those are
+#: progress, so a loading placeholder that came and went is not.  A round's rows
+#: are collected before a list can reuse them.  ``end`` also stops observing.
+LOAD_MORE_COLLECT_SCRIPT = PRELUDE + r"""
+const more = window.__agentosMore;
+if (!more) return JSON.stringify({added: 0, text: ''});
+if (end) { more.observer.disconnect(); window.__agentosMore = null; }
+const noted = more.added, set = new Set(noted), parts = [];
+more.added = []; more.seen = new Set();
+const capped = more.capped;
+more.capped = false;
+let length = 0, kept = 0;
+// Every row still shown with text is progress; only the returned text is bounded (#11 review).
+for (const node of noted) {
+  if (!node.isConnected || !node.getClientRects().length) continue;
+  let parent = node.parentElement, nested = false;
+  while (parent && !nested) { nested = set.has(parent); parent = parent.parentElement; }
+  if (nested) continue;
+  const text = (node.innerText || '').trim();
+  if (!text) continue;
+  kept++;
+  if (length < limit) { parts.push(text); length += text.length + 1; }
+}
+return JSON.stringify({added: more.total, kept, capped, text: cut(parts.join('\n'), limit)});
+"""
+
 #: #939: typing from the phone goes into whatever element the page has focused;
 #: ``execCommand`` fires the real ``beforeinput``/``input`` events a framework
 #: listens for.  ``not_focused`` when nothing editable in the main frame has
@@ -714,6 +794,15 @@ CLICK_SETTLE_SECONDS = 8.0
 # polling or analytics requests must not keep a stable page "unsettled" (#900 review).
 RENDER_QUIET_SECONDS = 1.2
 RENDER_SETTLE_SECONDS = 6.0
+#: #11: one ``load_more`` request scrolls at most ``LOAD_MORE_ROUNDS`` times and
+#: lasts at most ``LOAD_MORE_SECONDS``.  A round that adds nothing within
+#: ``LOAD_MORE_WAIT_SECONDS`` ends the request (no progress); a round that adds
+#: rows waits until the page is quiet again, for at most ``RENDER_SETTLE_SECONDS``.
+LOAD_MORE_ROUNDS = 5
+LOAD_MORE_SECONDS = 15.0
+LOAD_MORE_WAIT_SECONDS = 2.5
+LOAD_MORE_NODE_LIMIT = 2000
+LOAD_MORE_TEXT_LIMIT = 20000
 POLL_SECONDS = 0.05
 FOCUS_SECONDS = 0.1
 RESOLVE_SECONDS = 3.0
@@ -912,6 +1001,10 @@ class Worker:
         self.hosts = set()         # hosts of committed main-frame navigations in this worker's life
         self.popups = []           # #914: (view, window, delegate) of sign-in popups while the owner signs in
         self.main_navigations = 0  # main-frame navigations allowed so far (#736)
+        #: #11: while a ``load_more`` read runs, a main-frame navigation the page starts is
+        #: cancelled and counted here: loading more of a page never leaves it.
+        self.reading = False
+        self.read_navigations = 0
         self.landed = 0            # main-frame navigations committed or failed so far (#736)
         self.deciding = 0          # main-frame policy decisions still resolving their destination (#736 review)
         self.resolved = {}         # url origin -> refusal code or None (this worker's life)
@@ -1483,10 +1576,23 @@ class Worker:
         self.deadline(ident, timeout)
 
         def done(value, error):
+            if error:
+                return self.fail(ident, error)
+            self.reply(ident, page=value)
+        self._snapshot_page(ident, done)
+
+    def _snapshot_page(self, ident, then):
+        """The page state ``SNAPSHOT_SCRIPT`` reads, with what the guard did since the last report: ``then(page, error)``.
+
+        Nothing happens once ``ident`` is no longer pending (its deadline answered):
+        a cancelled submit or refused post stays to be reported by the next snapshot
+        instead of being taken by an answer nobody receives (#11 review).
+        """
+        def done(value, error):
             if ident not in self.pending:
                 return
             if error or not isinstance(value, dict):
-                return self.fail(ident, error or 'script_failed')
+                return then(None, error or 'script_failed')
             # A payment-form submit cancelled since the last report (#698).
             cancelled = self.take_cancelled(value.pop('cancelled', None))
             if cancelled is not None:
@@ -1495,7 +1601,7 @@ class Worker:
             if self.refused_submits > self.reported_refused:
                 self.reported_refused = self.refused_submits
                 value['refused_submit'] = True
-            self.reply(ident, page=value)
+            then(value, None)
         self.run(SNAPSHOT_SCRIPT, {}, done)
 
     def op_settle(self, ident, command, timeout):
@@ -1532,6 +1638,128 @@ class Worker:
                 return self.reply(ident, settled=False, waited=round(now - started, 2))
             self.AppHelper.callLater(POLL_SECONDS * 2, lambda: self.run(RENDER_PROBE_SCRIPT, {}, measured))
         self.run(RENDER_PROBE_SCRIPT, {}, measured)
+
+    def op_load_more(self, ident, command, timeout):
+        """Scroll to the page's end up to ``rounds`` times, bounded, to load rows a list adds when scrolled (#11).
+
+        Each round scrolls the document and its largest scrolling boxes to their
+        end, then waits: a round that adds no element within
+        ``LOAD_MORE_WAIT_SECONDS`` ends the request (``no_progress``); one that
+        adds some waits until the page stayed quiet for ``RENDER_QUIET_SECONDS``.
+        The request also ends at ``rounds`` (``bound``) or after ``seconds``
+        (``time``).  A round whose added elements are all gone or textless once
+        the page is quiet (a loading placeholder) is no progress either.
+        The page state is captured before the navigation hold ends and rides
+        along (``page``).  Answers the rounds run, why it stopped, how many added or rewritten
+        elements were still shown with text, that text (bounded), and how many main-frame navigations the page started
+        meanwhile, each cancelled.  No control is pressed and no input is sent:
+        only the page's scroll positions change, and the read never leaves the page.
+        """
+        try:
+            rounds = int(command.get('rounds'))
+        except (TypeError, ValueError):
+            return self.fail(ident, 'bad_rounds')
+        if not 1 <= rounds <= LOAD_MORE_ROUNDS:
+            return self.fail(ident, 'bad_rounds')
+        try:
+            cap = float(command.get('seconds') or LOAD_MORE_SECONDS)
+        except (TypeError, ValueError):
+            cap = LOAD_MORE_SECONDS
+        cap = max(1.0, min(cap, LOAD_MORE_SECONDS, float(timeout) - 1.0))
+
+        def expired():
+            self.reading = False
+            self.run(LOAD_MORE_COLLECT_SCRIPT, {'limit': 0, 'end': True}, lambda value, error: None)
+        self.deadline(ident, cap + 2, on_timeout=expired)
+        started = time.monotonic()
+        state = {'round': 0, 'added': 0, 'kept': 0, 'last_kept': 0, 'texts': [], 'length': 0, 'capped': False}
+        self.reading, self.read_navigations = True, 0
+
+        def collect(end, then):
+            """Keep the text of the rows noted since the last collection (bounded in total)."""
+            def collected(value, error):
+                value = value if error is None and isinstance(value, dict) else {}
+                text = str(value.get('text') or '')
+                if text and state['length'] < LOAD_MORE_TEXT_LIMIT:
+                    state['texts'].append(text)
+                    state['length'] += len(text) + 1
+                state['added'] = max(state['added'], int(value.get('added') or 0))
+                state['last_kept'] = int(value.get('kept') or 0)
+                state['capped'] = state['capped'] or value.get('capped') is True
+                state['kept'] += state['last_kept']
+                then()
+            self.run(LOAD_MORE_COLLECT_SCRIPT, {'limit': max(0, LOAD_MORE_TEXT_LIMIT - state['length']), 'end': end},
+                     collected)
+
+        def finish(stopped):
+            def captured(page, error):
+                # #11 review: the page state is read while navigation is still held, so the read
+                # returns the page it scrolled; the guard ends only after this snapshot.  Without
+                # that page the read fails rather than reading again after the hold.
+                self.reading = False
+                if error or page is None:
+                    return self.fail(ident, error or 'script_failed')
+                self.reply(ident, rounds=state['round'], stopped=stopped, added=state['kept'],
+                           text='\n'.join(state['texts'])[:LOAD_MORE_TEXT_LIMIT], navigation_refused=self.read_navigations,
+                           capped=state['capped'], page=page)
+
+            def released():
+                # The deadline answered meanwhile: end the hold anyway.
+                if ident not in self.pending:
+                    self.reading = False
+                    return
+                self._snapshot_page(ident, captured)
+            collect(True, released)
+
+        def next_round():
+            if ident not in self.pending:
+                return
+            if state['round'] >= rounds:
+                return finish('bound')
+            if time.monotonic() - started >= cap:
+                return finish('time')
+            state['round'] += 1
+            self.run(LOAD_MORE_SCROLL_SCRIPT, {}, scrolled)
+
+        def scrolled(value, error):
+            if ident not in self.pending:
+                return
+            if error or not isinstance(value, dict):
+                return finish('no_progress')
+            began, base = time.monotonic(), state['added']
+            last, since = [None], [began]
+
+            def probed(value, error):
+                if ident not in self.pending:
+                    return
+                now = time.monotonic()
+                value = value if error is None and isinstance(value, dict) else {}
+                added = int(value.get('added') or 0)
+                measure = (added, value.get('text'), value.get('nodes'))
+                if measure != last[0] or self.view.isLoading():
+                    last[0], since[0] = measure, now
+                if now - started >= cap:
+                    state['added'] = added
+                    return finish('time')
+                if added > base:
+                    if now - since[0] >= RENDER_QUIET_SECONDS or now - began >= RENDER_SETTLE_SECONDS:
+                        state['added'] = added
+                        # Progress is rows still shown with text once the page is quiet (#11 review).
+                        return collect(False, lambda: next_round() if state['last_kept'] else finish('no_progress'))
+                elif now - began >= LOAD_MORE_WAIT_SECONDS:
+                    return finish('no_progress')
+                self.AppHelper.callLater(POLL_SECONDS * 2, lambda: self.run(LOAD_MORE_PROBE_SCRIPT, {}, probed))
+            self.run(LOAD_MORE_PROBE_SCRIPT, {}, probed)
+
+        def begun(value, error):
+            if ident not in self.pending:
+                self.reading = False
+                return
+            if error or not isinstance(value, dict):
+                self.reading = False
+                return self.fail(ident, 'script_failed')
+            next_round()
+        self.run(LOAD_MORE_BEGIN_SCRIPT, {'limit': LOAD_MORE_NODE_LIMIT}, begun)
 
     def _locate(self, ident, command, then):
         index = command.get('index')
@@ -2141,8 +2369,16 @@ def _delegate_class():
             url = str(request.URL().absoluteString()) if request is not None and request.URL() is not None else ''
             frame = action.targetFrame()
             main_frame = frame is None or bool(frame.isMainFrame())
+            if main_frame and worker.reading:
+                worker.read_navigations += 1
+                return handler(WebKit.WKNavigationActionPolicyCancel)
 
             def decision(allowed, reason=None):
+                # #11 review: a destination check that finishes after a load-more read
+                # began is held to the read, like a navigation that starts during it.
+                if allowed and main_frame and worker.reading:
+                    worker.read_navigations += 1
+                    return handler(WebKit.WKNavigationActionPolicyCancel)
                 # Record the typed refusal before cancellation can synchronously
                 # report a generic navigation failure through WebKit's delegate.
                 if not allowed:

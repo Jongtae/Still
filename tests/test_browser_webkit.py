@@ -536,6 +536,15 @@ class DriverProtocolTests(unittest.TestCase):
         # #12: the field the page moved the focus to rides along for the session to name.
         self.assertEqual(caught.exception.focused, {'name': 'Search here'})
         self.assertEqual(str(caught.exception), bs.target_text('focus_moved'))
+        # #11: a bounded load_more request and the worker's answer.
+        self.assertEqual(driver.load_more(3, 9.0, 12), {'rounds': 2, 'stopped': 'no_progress', 'added': 3,
+                                                       'text': 'row 11\nrow 12', 'navigation_refused': 1, 'capped': None})
+        self.assertEqual({key: self.commands()[-1][key] for key in ('op', 'rounds', 'seconds', 'timeout')},
+                         {'op': 'load_more', 'rounds': 3, 'seconds': 9.0, 'timeout': 12.0})
+        sent = len(self.commands())
+        self.assertEqual(driver.snapshot()['title'], 'held', 'the page captured under the navigation hold is returned')
+        self.assertEqual(len(self.commands()), sent, 'without reading the page again')
+        self.assertNotEqual(driver.snapshot()['title'], 'held', 'once only')
         driver.goto('https://shop.test/intercepted', 4)
         driver.snapshot()
         with self.assertRaises(ToolError) as caught:
@@ -811,6 +820,21 @@ console.log(JSON.stringify({el: el.a || {}, other: other.a || {}, kept: typeof e
         self.assertEqual(json.loads(result.stdout), {'el': {bw.PRESS_MARK: ''}, 'other': {}, 'kept': 'function'},
                          'only a function assignment marks the element, and the handler is still set')
 
+    def test_a_late_snapshot_leaves_a_held_submit_for_the_next_report(self):
+        """#11 review: a snapshot that finishes after its deadline answered takes nothing it cannot report."""
+        bw, worker = self.worker(reported_refused=0)
+        taken, answered = [], []
+        worker.take_cancelled = lambda value: taken.append(value)
+        worker._snapshot_page(7, lambda page, error: answered.append((page, error)))
+        late = worker.ran[-1][2]
+        late({'cancelled': {'dom': 0}, 'url': 'u'}, None)   # 7 is not pending: its deadline answered
+        self.assertEqual((taken, answered), ([], []))
+        worker.pending[8] = True
+        worker._snapshot_page(8, lambda page, error: answered.append((page, error)))
+        worker.ran[-1][2]({'cancelled': {'dom': 0}, 'url': 'u'}, None)
+        self.assertEqual(taken, [{'dom': 0}])
+        self.assertEqual(answered, [({'url': 'u'}, None)])
+
     def test_a_cover_found_after_the_press_reaches_the_answer(self):
         """#102 review: the post-press checks of a click and a typing step pass the cover on."""
         cover = {'text': '잠시만요', 'controls': [{'index': 2, 'name': '닫기'}]}
@@ -1044,6 +1068,60 @@ class SessionFixtureHandler(FixtureHandler):
               <input aria-label="잠긴 입력" readonly onfocus="this.removeAttribute('readonly')"
                 oninput="document.getElementById('r2').textContent='입력2:'+this.value">
               <p id="r">대기</p><p id="r2">대기</p></body></html>''')
+        if path == '/lazy-list':
+            # #11: rows arrive (after a short fetch) only once the list's end is scrolled into view; 30 at most.
+            return self._send('''<html><head><title>목록</title></head><body>
+              <button type="button" onclick="document.getElementById('pressed').textContent='더 보기 눌림'">더 보기</button>
+              <p id="pressed">안 눌림</p><ul id="list"></ul><div id="end" style="height:10px"></div>
+              <script>var n=0;function add(){for(var i=0;i<10&&n<30;i++){n++;var li=document.createElement('li');
+                li.style.height='100px';li.textContent='행 '+n;document.getElementById('list').appendChild(li);}}
+              add();new IntersectionObserver(function(es){if(es[0].isIntersecting&&n<30)setTimeout(add,300);})
+                .observe(document.getElementById('end'));</script></body></html>''')
+        if path == '/lazy-box':
+            # #11: a list in its own scroll box that adds five rows whenever its end is reached, without end.
+            return self._send('''<html><head><title>상자</title></head><body><h1>상자 목록</h1>
+              <div id="box" style="height:300px;overflow:auto"></div>
+              <script>var box=document.getElementById('box'),n=0;function add(){for(var i=0;i<5;i++){n++;
+                var row=document.createElement('div');row.style.height='80px';row.textContent='항목 '+n;box.appendChild(row);}}
+              add();box.addEventListener('scroll',function(){if(box.scrollTop+box.clientHeight>=box.scrollHeight-5)setTimeout(add,200);});
+              </script></body></html>''')
+        if path == '/lazy-endless':
+            # #11: a page that never stops adding rows, so only the time bound ends a request.
+            return self._send('''<html><head><title>끝없음</title></head><body><div id="feed"></div>
+              <script>var n=0;setInterval(function(){n++;var row=document.createElement('p');row.textContent='소식 '+n;
+                document.getElementById('feed').appendChild(row);},150);</script></body></html>''')
+        if path == '/lazy-recycle':
+            # #11 review: a list that reuses its ten rows, rewriting their text for each next page (3 pages).
+            return self._send('''<html><head><title>재사용</title></head><body><ul id="list"></ul>
+              <div id="end" style="height:10px"></div>
+              <script>var list=document.getElementById('list'),page=0;
+              for(var i=1;i<=10;i++){var li=document.createElement('li');li.style.height='100px';
+                li.appendChild(document.createTextNode('줄 '+i));list.appendChild(li);}
+              new IntersectionObserver(function(es){if(!es[0].isIntersecting||page>=2)return;page++;
+                setTimeout(function(){Array.prototype.forEach.call(list.children,function(li,i){
+                  li.firstChild.data='줄 '+(page*10+i+1);});window.scrollTo(0,0);},300);})
+                .observe(document.getElementById('end'));</script></body></html>''')
+        if path == '/lazy-leave':
+            # #11 review: the page's scroll handler navigates away; loading more must not follow.
+            return self._send('''<html><head><title>머무름</title></head><body>
+              <div style="height:3000px">긴 내용</div>
+              <script>window.addEventListener('scroll',function(){location.assign('/product');});</script>
+              </body></html>''')
+        if path == '/lazy-placeholder':
+            # #11 review: reaching the end shows a loading placeholder that goes away with no rows.
+            return self._send('''<html><head><title>빈 로딩</title></head><body><div style="height:2000px">처음 내용</div>
+              <div id="end" style="height:10px"></div>
+              <script>new IntersectionObserver(function(es){if(!es[0].isIntersecting)return;var p=document.createElement('p');
+                p.textContent='불러오는 중';document.body.appendChild(p);setTimeout(function(){p.remove();},300);})
+                .observe(document.getElementById('end'));</script></body></html>''')
+        if path == '/lazy-long':
+            # #11 review: the first load adds one row longer than the whole text budget, the next a short one.
+            return self._send('''<html><head><title>긴 행</title></head><body><div style="height:2000px">처음</div>
+              <div id="list"></div><div id="end" style="height:10px"></div>
+              <script>var n=0;new IntersectionObserver(function(es){if(!es[0].isIntersecting||n>=2)return;n++;
+                setTimeout(function(){var p=document.createElement('p');p.style.minHeight='1500px';
+                  p.textContent=n===1?'가'.repeat(21000):'두 번째 행';document.getElementById('list').appendChild(p);},200);})
+                .observe(document.getElementById('end'));</script></body></html>''')
         if path == '/wide':
             # Review P2-1 repro: a surrogate pair at the label cut and a lone surrogate in the title.
             return self._send('<html><head><title>넓은 글자</title></head><body><button type="button" aria-label="'
@@ -1233,6 +1311,108 @@ class WebKitIntegrationTests(unittest.TestCase):
             self.assertEqual(roles.get('메모'), 'searchbox', page['elements'])
             self.assertIn('입력:우유', sess.type({'target': '메모', 'text': '우유', 'effect': 'mutate'})['text'])
             self.assertIn('입력2:두부', sess.type({'target': '잠긴 입력', 'text': '두부', 'effect': 'mutate'})['text'])
+        finally:
+            sess.close()
+
+    def test_a_lazy_list_loads_its_later_rows_and_stops_when_nothing_more_appears(self):
+        """#11: rows added only when scrolled reach the read; nothing is pressed."""
+        sess = self.session('work-11-list')
+        try:
+            page = sess.open({'url': self.origin + '/lazy-list', 'effect': 'read'})
+            self.assertIn('행 10', page['text'])
+            self.assertNotIn('행 11', page['text'])
+            page = sess.read({'load_more': '5'})
+            loaded = page['loaded']
+            self.assertEqual((loaded['stopped'], loaded['new_content']), ('no_progress', True), loaded)
+            self.assertEqual(loaded['rounds'], 3, 'two rounds add rows, the third finds none')
+            self.assertIn('행 11', loaded['text'])
+            self.assertIn('행 30', loaded['text'])
+            self.assertNotIn('행 10\n', loaded['text'] + '\n', 'only what appeared is reported')
+            self.assertIn('행 30', page['text'], 'the page state the read returns shows the loaded rows too')
+            self.assertIn('안 눌림', page['text'], 'loading more never presses a control')
+        finally:
+            sess.close()
+
+    def test_a_list_in_its_own_scroll_box_loads_within_the_round_bound(self):
+        sess = self.session('work-11-box')
+        try:
+            page = sess.open({'url': self.origin + '/lazy-box', 'effect': 'read'})
+            self.assertNotIn('항목 6', page['text'])
+            loaded = sess.read({'load_more': '2'})['loaded']
+            self.assertEqual((loaded['rounds'], loaded['stopped'], loaded['new_content']), (2, 'bound', True), loaded)
+            self.assertIn('항목 6', loaded['text'])
+            self.assertIn('항목 15', loaded['text'])
+            self.assertNotIn('항목 16', loaded['text'], 'no more than the requested rounds ran')
+        finally:
+            sess.close()
+
+    def test_a_page_that_loads_nothing_more_ends_after_one_round(self):
+        sess = self.session('work-11-static')
+        try:
+            sess.open({'url': self.origin + '/product', 'effect': 'read'})
+            started = time.monotonic()
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertEqual(loaded, {'rounds': 1, 'stopped': 'no_progress', 'new_content': False, 'text': ''})
+            self.assertLess(time.monotonic() - started, 10)
+        finally:
+            sess.close()
+
+    def test_a_page_that_never_settles_ends_at_the_time_bound(self):
+        sess = self.session('work-11-endless')
+        try:
+            sess.open({'url': self.origin + '/lazy-endless', 'effect': 'read'})
+            started = time.monotonic()
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertEqual((loaded['stopped'], loaded['new_content']), ('time', True), loaded)
+            self.assertLess(time.monotonic() - started, bs.LOAD_MORE_SECONDS + 10)
+        finally:
+            sess.close()
+
+    def test_a_list_that_reuses_its_rows_reports_the_rewritten_rows(self):
+        """#11 review: rows whose text is rewritten in place count as new content."""
+        sess = self.session('work-11-recycle')
+        try:
+            page = sess.open({'url': self.origin + '/lazy-recycle', 'effect': 'read'})
+            self.assertNotIn('줄 11', page['text'])
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertTrue(loaded['new_content'], loaded)
+            self.assertIn('줄 11', loaded['text'])
+            self.assertIn('줄 30', loaded['text'])
+            self.assertEqual(loaded['stopped'], 'no_progress', 'the third page is the last')
+        finally:
+            sess.close()
+
+    def test_loading_more_never_follows_a_navigation_the_page_starts(self):
+        """#11 review: a scroll handler's navigation is cancelled; the read stays on its page."""
+        sess = self.session('work-11-leave')
+        try:
+            sess.open({'url': self.origin + '/lazy-leave', 'effect': 'read'})
+            page = sess.read({'load_more': '2'})
+            self.assertEqual(page['title'], '머무름', page['url'])
+            self.assertTrue(page['loaded']['navigation_refused'], page['loaded'])
+            self.assertEqual(sess.read()['title'], '머무름', 'still on the page after the read')
+        finally:
+            sess.close()
+
+    def test_a_placeholder_that_comes_and_goes_is_not_progress(self):
+        """#11 review: an empty load (a placeholder that is removed) stops with no_progress and no content."""
+        sess = self.session('work-11-placeholder')
+        try:
+            sess.open({'url': self.origin + '/lazy-placeholder', 'effect': 'read'})
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertEqual((loaded['rounds'], loaded['stopped'], loaded['new_content'], loaded['text']),
+                             (1, 'no_progress', False, ''), loaded)
+        finally:
+            sess.close()
+
+    def test_rows_after_the_text_budget_still_count_as_progress(self):
+        """#11 review: once the returned text is full, later rows still keep the request going."""
+        sess = self.session('work-11-long')
+        try:
+            sess.open({'url': self.origin + '/lazy-long', 'effect': 'read'})
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertEqual((loaded['rounds'], loaded['stopped'], loaded['new_content']), (3, 'no_progress', True), loaded)
+            self.assertTrue(loaded['text_truncated'])
         finally:
             sess.close()
 

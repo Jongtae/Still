@@ -374,7 +374,7 @@ DEFINITIONS=[
  schema('forget_record',FORGET_RECORD_DESCRIPTION,{'action':{'type':'string','enum':['forget','delete','undo','list']},'ref':STRING,'receipt':STRING},['action']),
  schema('list_agents','List available specialist agents and their roles.'),
  schema('browser_open','Open a URL in the owner\'s own logged-in browser profile and return the page state: bounded visible text and a numbered list of interactive elements. Use for sites where the owner is signed in (shopping carts, account pages); public_page_read is enough for anonymous pages. A login_required state means the owner must log in first; never enter credentials.'+BROWSER_SIGN_IN_NOTE+BROWSER_SESSION_NOTE+BROWSER_EFFECT_NOTE,{'url':STRING,'effect':EFFECT},['url','effect']),
- schema('browser_read','Return the current page state of the owner\'s browser session again (visible text and numbered interactive elements), for example after the page changed.'),
+ schema('browser_read','Return the current page state of the owner\'s browser session again (visible text and numbered interactive elements), for example after the page changed. load_more (optional, 1-5): first scroll the page to its end up to that many times, for a list that adds rows only when scrolled; it stops early when nothing new appears and is bounded in time. The result then has loaded: rounds, why it stopped, new_content and the text that appeared (use browser_find to reach controls in the added rows). Scrolling never presses a control.',{'load_more':STRING}),
  schema('browser_find','Find visible text on the current browser page. Returns the matching lines and interactive elements, each element with its number for browser_click and its nearby text (near). It searches the first 300 interactive elements of the page, including those beyond the listed ones (more_elements counts them), by name or nearby text; when the page state says elements_capped, later controls are not searched, so scroll or narrow the page (for example a search or filter) instead of concluding a control is absent. Use it to reach the right control and to confirm the right item or price before acting.',{'text':STRING},['text']),
  schema('browser_click','Click one interactive element of the current browser page. target is the element number from the page state or its exact visible name. Returns the resulting page state.'+BROWSER_EFFECT_NOTE,{'target':STRING,'effect':EFFECT},['target','effect']),
  schema('browser_sign_in',BROWSER_SIGN_IN_DESCRIPTION,{'url':STRING},['url']),
@@ -3655,9 +3655,19 @@ def _evidence_detail(name,result):
  if name in BROWSER_ACTIONS:
   # #656: the mediated page state only, without its text: a URL without
   # query/fragment, the title, the element count and what was redacted.
-  return {'state':result.get('state'),'url':result.get('url'),'title':result.get('title'),
-          'element_count':len(result.get('elements',[])),'characters':len(result.get('text','')),
-          'redacted_values':int(result.get('redacted_values') or 0),'found':result.get('found')}
+  summary={'state':result.get('state'),'url':result.get('url'),'title':result.get('title'),
+           'element_count':len(result.get('elements',[])),'characters':len(result.get('text','')),
+           'redacted_values':int(result.get('redacted_values') or 0),'found':result.get('found')}
+  loaded=result.get('loaded')
+  if isinstance(loaded,dict):
+   # #11: the load-more operation and its outcome, never the loaded text.
+   summary['loaded']={'rounds':loaded.get('rounds'),'stopped':loaded.get('stopped'),'new_content':loaded.get('new_content') is True,
+                      'characters':len(str(loaded.get('text') or '')),
+                      # Partial text (more appeared than the read returns) and a navigation the page
+                      # tried while loading more, cancelled, stay visible to an audit (#11 review).
+                      'text_truncated':loaded.get('text_truncated') is True,
+                      'navigation_refused':loaded.get('navigation_refused') is True}
+  return summary
  return {'keys':sorted(result)[:10]}
 
 #: Still's own words when a tool ran and nothing describes its result.  It
@@ -3735,6 +3745,11 @@ def _fallback_text(name, result, sources):
  if name in BROWSER_ACTIONS and isinstance(result,dict):
   if result.get('state')=='login_required':return str(result.get('next_step') or msg('agent_runtime.this_page_needs_a_sign_in'))
   if name=='browser_find':return '페이지에서 텍스트를 찾았습니다.' if result.get('found') else '페이지에서 해당 텍스트를 찾지 못했습니다.'
+  loaded=result.get('loaded') if name=='browser_read' else None
+  if isinstance(loaded,dict):
+   # #11: the outcome of loading more, never the loaded text itself.
+   found='새 내용을 불러왔습니다' if loaded.get('new_content') else '새 내용은 없었습니다'
+   return f"브라우저 페이지를 {loaded.get('rounds',0)}번 더 불러와 확인했습니다({found}): {result.get('title') or result.get('url') or ''}".rstrip(': ')
   return f"브라우저 페이지를 확인했습니다: {result.get('title') or result.get('url') or ''}".rstrip(': ')
  if name=='list_agents':return '사용 가능한 전문 에이전트를 확인했습니다.'
  if name=='delegate_agent' and isinstance(result,dict):return str(result.get('report') or '전문 에이전트가 보고서를 반환하지 않았습니다.')
