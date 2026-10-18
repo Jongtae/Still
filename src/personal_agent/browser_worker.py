@@ -682,13 +682,15 @@ return JSON.stringify({text: body ? (body.innerText || '').length : 0,
 LOAD_MORE_BEGIN_SCRIPT = r"""
 const old = window.__agentosMore;
 if (old && old.observer) old.observer.disconnect();
-const more = window.__agentosMore = {added: [], seen: new Set(), total: 0, observer: null};
+const more = window.__agentosMore = {added: [], seen: new Set(), total: 0, capped: false, observer: null};
 // An element added, or one whose text the page added or rewrote (a list that reuses
 // its rows), counts once per collection.
 const note = (node) => {
   const el = node && (node.nodeType === 1 ? node : node.parentElement);
   // The bound applies per collection (#11 review): a big round does not blind later ones.
-  if (el && !more.seen.has(el) && more.added.length < limit) { more.seen.add(el); more.added.push(el); more.total++; }
+  if (!el || more.seen.has(el)) return;
+  if (more.added.length >= limit) { more.capped = true; return; }   // reported, never silent (#11 review)
+  more.seen.add(el); more.added.push(el); more.total++;
 };
 more.observer = new MutationObserver((records) => {
   for (const record of records) {
@@ -736,6 +738,8 @@ if (!more) return JSON.stringify({added: 0, text: ''});
 if (end) { more.observer.disconnect(); window.__agentosMore = null; }
 const noted = more.added, set = new Set(noted), parts = [];
 more.added = []; more.seen = new Set();
+const capped = more.capped;
+more.capped = false;
 let length = 0, kept = 0;
 // Every row still shown with text is progress; only the returned text is bounded (#11 review).
 for (const node of noted) {
@@ -748,7 +752,7 @@ for (const node of noted) {
   kept++;
   if (length < limit) { parts.push(text); length += text.length + 1; }
 }
-return JSON.stringify({added: more.total, kept, text: cut(parts.join('\n'), limit)});
+return JSON.stringify({added: more.total, kept, capped, text: cut(parts.join('\n'), limit)});
 """
 
 #: #939: typing from the phone goes into whatever element the page has focused;
@@ -1572,16 +1576,21 @@ class Worker:
         self.deadline(ident, timeout)
 
         def done(value, error):
-            if ident not in self.pending:
-                return
             if error:
                 return self.fail(ident, error)
             self.reply(ident, page=value)
-        self._snapshot_page(done)
+        self._snapshot_page(ident, done)
 
-    def _snapshot_page(self, then):
-        """The page state ``SNAPSHOT_SCRIPT`` reads, with what the guard did since the last report: ``then(page, error)``."""
+    def _snapshot_page(self, ident, then):
+        """The page state ``SNAPSHOT_SCRIPT`` reads, with what the guard did since the last report: ``then(page, error)``.
+
+        Nothing happens once ``ident`` is no longer pending (its deadline answered):
+        a cancelled submit or refused post stays to be reported by the next snapshot
+        instead of being taken by an answer nobody receives (#11 review).
+        """
         def done(value, error):
+            if ident not in self.pending:
+                return
             if error or not isinstance(value, dict):
                 return then(None, error or 'script_failed')
             # A payment-form submit cancelled since the last report (#698).
@@ -1663,7 +1672,7 @@ class Worker:
             self.run(LOAD_MORE_COLLECT_SCRIPT, {'limit': 0, 'end': True}, lambda value, error: None)
         self.deadline(ident, cap + 2, on_timeout=expired)
         started = time.monotonic()
-        state = {'round': 0, 'added': 0, 'kept': 0, 'last_kept': 0, 'texts': [], 'length': 0}
+        state = {'round': 0, 'added': 0, 'kept': 0, 'last_kept': 0, 'texts': [], 'length': 0, 'capped': False}
         self.reading, self.read_navigations = True, 0
 
         def collect(end, then):
@@ -1676,6 +1685,7 @@ class Worker:
                     state['length'] += len(text) + 1
                 state['added'] = max(state['added'], int(value.get('added') or 0))
                 state['last_kept'] = int(value.get('kept') or 0)
+                state['capped'] = state['capped'] or value.get('capped') is True
                 state['kept'] += state['last_kept']
                 then()
             self.run(LOAD_MORE_COLLECT_SCRIPT, {'limit': max(0, LOAD_MORE_TEXT_LIMIT - state['length']), 'end': end},
@@ -1684,14 +1694,22 @@ class Worker:
         def finish(stopped):
             def captured(page, error):
                 # #11 review: the page state is read while navigation is still held, so the read
-                # returns the page it scrolled; the guard ends only after this snapshot.
+                # returns the page it scrolled; the guard ends only after this snapshot.  Without
+                # that page the read fails rather than reading again after the hold.
                 self.reading = False
-                if ident not in self.pending:
-                    return
+                if error or page is None:
+                    return self.fail(ident, error or 'script_failed')
                 self.reply(ident, rounds=state['round'], stopped=stopped, added=state['kept'],
                            text='\n'.join(state['texts'])[:LOAD_MORE_TEXT_LIMIT], navigation_refused=self.read_navigations,
-                           **({'page': page} if page is not None else {}))
-            collect(True, lambda: self._snapshot_page(captured))
+                           capped=state['capped'], page=page)
+
+            def released():
+                # The deadline answered meanwhile: end the hold anyway.
+                if ident not in self.pending:
+                    self.reading = False
+                    return
+                self._snapshot_page(ident, captured)
+            collect(True, released)
 
         def next_round():
             if ident not in self.pending:

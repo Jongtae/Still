@@ -1227,7 +1227,8 @@ class BrowserSession:
         loaded = {'rounds': min(rounds, max(0, int(answer.get('rounds') or 0))),
                   'stopped': stopped if stopped in LOAD_MORE_STOPS else 'unknown',
                   'new_content': bool(answer.get('added')), 'text': text[:TEXT_LIMIT]}
-        if len(text) > TEXT_LIMIT:
+        if len(text) > TEXT_LIMIT or answer.get('capped') is True:
+            # More appeared than the read returns: the text cap, or a round's element cap (#11 review).
             loaded['text_truncated'] = True
         if answer.get('navigation_refused'):
             # The page tried to leave while it scrolled; the read stayed on it.
@@ -1908,7 +1909,7 @@ class WebKitWorkerDriver:
         message = self._request('load_more', timeout, rounds=rounds, seconds=seconds)
         if isinstance(message.get('page'), dict):
             self._held_page = message['page']
-        return {key: message.get(key) for key in ('rounds', 'stopped', 'added', 'text', 'navigation_refused')}
+        return {key: message.get(key) for key in ('rounds', 'stopped', 'added', 'text', 'navigation_refused', 'capped')}
 
     def snapshot(self):
         held, self._held_page = self._held_page, None

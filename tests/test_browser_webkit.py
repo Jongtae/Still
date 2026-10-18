@@ -538,7 +538,7 @@ class DriverProtocolTests(unittest.TestCase):
         self.assertEqual(str(caught.exception), bs.target_text('focus_moved'))
         # #11: a bounded load_more request and the worker's answer.
         self.assertEqual(driver.load_more(3, 9.0, 12), {'rounds': 2, 'stopped': 'no_progress', 'added': 3,
-                                                       'text': 'row 11\nrow 12', 'navigation_refused': 1})
+                                                       'text': 'row 11\nrow 12', 'navigation_refused': 1, 'capped': None})
         self.assertEqual({key: self.commands()[-1][key] for key in ('op', 'rounds', 'seconds', 'timeout')},
                          {'op': 'load_more', 'rounds': 3, 'seconds': 9.0, 'timeout': 12.0})
         sent = len(self.commands())
@@ -819,6 +819,21 @@ console.log(JSON.stringify({el: el.a || {}, other: other.a || {}, kept: typeof e
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {'el': {bw.PRESS_MARK: ''}, 'other': {}, 'kept': 'function'},
                          'only a function assignment marks the element, and the handler is still set')
+
+    def test_a_late_snapshot_leaves_a_held_submit_for_the_next_report(self):
+        """#11 review: a snapshot that finishes after its deadline answered takes nothing it cannot report."""
+        bw, worker = self.worker(reported_refused=0)
+        taken, answered = [], []
+        worker.take_cancelled = lambda value: taken.append(value)
+        worker._snapshot_page(7, lambda page, error: answered.append((page, error)))
+        late = worker.ran[-1][2]
+        late({'cancelled': {'dom': 0}, 'url': 'u'}, None)   # 7 is not pending: its deadline answered
+        self.assertEqual((taken, answered), ([], []))
+        worker.pending[8] = True
+        worker._snapshot_page(8, lambda page, error: answered.append((page, error)))
+        worker.ran[-1][2]({'cancelled': {'dom': 0}, 'url': 'u'}, None)
+        self.assertEqual(taken, [{'dom': 0}])
+        self.assertEqual(answered, [({'url': 'u'}, None)])
 
     def test_a_cover_found_after_the_press_reaches_the_answer(self):
         """#102 review: the post-press checks of a click and a typing step pass the cover on."""

@@ -1149,6 +1149,12 @@ class LoadMoreTests(unittest.TestCase):
         self.assertEqual(calls, [], 'too little time left: nothing is scrolled')
         self.assertEqual(loaded, {'rounds': 0, 'stopped': 'time', 'new_content': False, 'text': ''})
 
+    def test_a_round_over_its_element_cap_is_reported_as_partial(self):
+        sess, driver, calls = self.loading({'rounds': 1, 'stopped': 'bound', 'added': 2000, 'text': '짧은 행',
+                                            'capped': True})
+        self.assertTrue(sess.run('browser_read', {'load_more': '1'})['loaded']['text_truncated'],
+                        'rows the element cap left out make the loaded text partial')
+
     def test_a_driver_that_cannot_load_more_says_so(self):
         sess, driver = session(steps=40)
         sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
