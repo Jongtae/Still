@@ -629,7 +629,7 @@ class CodeRunner:
         """
         if not libraries:
             return {}
-        from .procedures import ProcedureLibrary, clean_functions
+        from .procedures import ProcedureLibrary, clean_functions, dropped
         store = ProcedureLibrary(self.store)
         kept = {}
         for name, item in libraries.items():
@@ -645,10 +645,19 @@ class CodeRunner:
                 continue
             row_id = store.propose(self.work_id, name, item['source'], report['functions'])
             store.record_calls(row_id, calls)
+            functions = clean_functions(report['functions'])
             kept[name] = {'module': item['module'], 'state': 'saved_if_fulfilled',
-                          'functions': [row['name'] for row in clean_functions(report['functions'])],
+                          'functions': [row['name'] for row in functions],
                           'note': ('Kept for this request. It becomes the saved library of this set when the request '
                                    'is judged fulfilled; until then later runs of this request import it too.')}
+            # #7: library replaces the whole module, so a saved function left out of it is removed on save.
+            current = store.current(name)
+            removed = dropped(current, {'functions': functions})
+            if removed:
+                kept[name]['dropped'] = removed
+                kept[name]['note'] += (f" It replaces saved library v{current['version']}, and these saved functions are "
+                                       f"not in it: {', '.join(removed)}. If you still need them, run again with library "
+                                       'set to the whole module including them; the earlier version stays kept.')
         return kept
 
     def _library_problem(self, item, report, outcome, workdir, session):
@@ -947,7 +956,7 @@ def evidence(result):
         # #1486: what happened to each set's library, never its source.  #1489: and why a proposal was not
         # kept (Still's own text naming functions and arguments), so the Work's records can show it.
         kept['library'] = {name: {key: (str(item[key])[:300] if key == 'reason' else item[key])
-                                  for key in ('state', 'version', 'functions', 'reason') if item.get(key) is not None}
+                                  for key in ('state', 'version', 'functions', 'dropped', 'reason') if item.get(key) is not None}
                            for name, item in result['library'].items() if isinstance(item, dict)}
     return kept | {'requests': [{key: row.get(key) for key in ('phase', 'method', 'host', 'path', 'allowed')}
                                               for row in (result.get('requests') or [])[:50]]}
