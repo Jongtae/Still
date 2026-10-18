@@ -14,7 +14,7 @@ You need macOS or Linux and Python 3.12 or newer.
 
 ```sh
 git clone https://github.com/Jongtae/Still.git
-cd agentos
+cd Still
 python3 -m venv .tools/uv
 .tools/uv/bin/python -m pip install 'uv==0.11.33'
 .tools/uv/bin/uv sync --locked --extra schema-validation --group dev --no-python-downloads
