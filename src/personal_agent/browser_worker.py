@@ -1578,7 +1578,7 @@ class Worker:
                 if ident not in self.pending:
                     return
                 if error is None and isinstance(value, dict) and value.get('error'):
-                    return self.finish_input(ident, blocked_before, value['error'])
+                    return self.finish_input(ident, blocked_before, value['error'], cover=value.get('cover'))
                 # A script error here means the click already navigated away (the
                 # page and its guards are gone), which the guards allowed.  #736:
                 # a navigation the click started (now or a moment later) lands first.
@@ -1604,7 +1604,8 @@ class Worker:
                 if error or not isinstance(value, dict):
                     return self.finish_input(ident, blocked_before, error or 'script_failed')
                 if value.get('error'):
-                    return self.finish_input(ident, blocked_before, value['error'], focused=value.get('focused'))
+                    return self.finish_input(ident, blocked_before, value['error'], cover=value.get('cover'),
+                                             focused=value.get('focused'))
                 self.settle(ident, lambda: self.finish_input(ident, blocked_before))
             self.AppHelper.callLater(FOCUS_SECONDS, lambda: self.run(
                 INSERT_SCRIPT, {'nonce': nonce, 'expect': expect, 'tokens': tokens, 'text': text}, inserted))
