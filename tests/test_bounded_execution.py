@@ -35,7 +35,7 @@ class _Capabilities:
 # declared profile action (Capabilities offers it only while context is on).
 # #774: the owner-state tools are relayed to the service on the trusted-local route.
 # #814: so are the owner settings tools.
-BOUNDED_NAMES = ['ask_location', 'bounded_public_research', 'browser_click', 'browser_find', 'browser_open', 'browser_read', 'browser_sign_in', 'browser_type',
+BOUNDED_NAMES = ['ask_location', 'browser_click', 'browser_find', 'browser_open', 'browser_read', 'browser_sign_in', 'browser_type',
                  'calendar_draft_cancel', 'calendar_draft_create', 'calendar_draft_update', 'calendar_query',
                  'capability_search',  # #1299: metadata-only discovery on the owner-state relay.
                  'code_run',  # #1380: sandboxed code runs, decided by the service.
@@ -428,7 +428,7 @@ class SubscriptionServiceTests(unittest.TestCase):
             # is offered beside it.  The browser tools stay (served through the relay).
             # #961: skills are off by default, so no skill tool is offered (the pre-skill surface).
             self.assertEqual(adapter.call[2], [name for name in BOUNDED_NAMES if name not in
-                                               ('propose_current_state', 'web_search', 'bounded_public_research',
+                                               ('propose_current_state', 'web_search',
                                                 # #774: a non-Telegram Work could never be answered.
                                                 'ask_location',
                                                 # #1216: no API slot is registered.

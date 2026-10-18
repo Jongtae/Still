@@ -108,7 +108,7 @@ class OneActionSource(_Store):
     def test_read_only_hint_comes_from_the_manifest_mode(self):
         hints = {tool['name']: tool['annotations']['readOnlyHint'] for tool in AgentOSMcpTools(self.caps()).definitions()}
         # #774: the relayed owner-state tools carry their manifest modes too.
-        self.assertEqual(hints, {'bounded_public_research': True, 'list_notes': True, 'save_note': False,
+        self.assertEqual(hints, {'list_notes': True, 'save_note': False,
                                  # #1380: this slice's code runs only read (GET/HEAD).
                                  'code_run': True,
                                  'weather': True, 'web_search': True, 'calendar_query': True, 'list_memory': True,
@@ -211,8 +211,6 @@ ARGUMENT_CASES = (
     ('weather', {'city': 7}, False),                            # non-string
     ('web_search', {'query': 'today news'}, True),
     ('web_search', {'q': 'today news'}, False),
-    ('bounded_public_research', {'mode': 'travel_plan', 'query': 'q'}, True),
-    ('bounded_public_research', {'mode': 'travel_plan', 'query': 'q', 'approved_urls': 'x'}, False),
     ('list_notes', {}, True),
     ('list_notes', {'filter': 'x'}, False),
     ('save_note', {'content': 'remember this'}, True),
@@ -365,7 +363,7 @@ class SettingsProjection(_Store):
         profile = AgentService(self.store).settings()['subscription_execution']
         self.assertEqual(profile, {'profile': 'trusted-local', 'mode': 'bounded-agentos-mcp', 'trust': 'trusted-local',
                                    'limitation': CLI_PROFILES[BOUNDED_PROFILE]['limitation'],
-                                   'tools': ['bounded_public_research', 'find_files', 'list_notes', 'list_roots',
+                                   'tools': ['find_files', 'list_notes', 'list_roots',
                                              'propose_current_state', 'public_page_read', 'read_file',
                                              'save_note', 'weather', 'web_search', 'browser_open', 'browser_read',
                                              'browser_find', 'browser_click', 'browser_type',

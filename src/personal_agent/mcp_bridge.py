@@ -289,7 +289,9 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
     # read here, within the folder grants (``Capabilities.roots``/``resolve_file``) and
     # the owner's page approval (``approved_public_pages``) the tools check on every call.
     capabilities = Capabilities(store, None, {}, '', job_id, record, network=LocalTools(providers=ProviderRegistry.from_store(store)), document_access=True,
-                                public_page_scope=lambda: approved_public_pages(store),
+                                # #23: strict-isolated reads only this Work's search results, never the owner's page list.
+                                public_page_scope=((lambda: approved_public_pages(store)) if profile == BOUNDED_PROFILE
+                                                   else ()),
                                 # #774: owner-state tools run only in the service; without its relay they are not offered.
                                 allowed_tools=(set(turn_actions(profile, native_search and profile == BOUNDED_PROFILE))
                                                - (set() if relay is not None else set(OWNER_STATE_ACTIONS))),

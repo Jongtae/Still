@@ -369,15 +369,16 @@ class IncompleteEvidenceOutcomeTests(TruthIntegrityTestCase):
         self.assertNotIn(QUALIFIER_NOTES['truncated'], job.get('error') or '')
 
     def test_research_with_unread_pages_and_a_reply_is_partial(self):
+        """#23: generic search and page reads; a result page that could not be read leaves the Work partial."""
         self.service.local_tools = ResearchNet()
-        self.plan = [('bounded_public_research', {'mode': 'product_comparison', 'query': 'headphones'})]
+        self.plan = [('web_search', {'query': 'headphones'}),
+                     ('public_page_read', {'url': 'https://example.com/a'}),
+                     ('public_page_read', {'url': 'https://example.com/b'})]
         self.text = '두 제품을 모두 비교했습니다.'
         job, bubble = self.ask('헤드폰 비교해줘')
-        event = [row for row in self.store.task_events(job['id'])
-                 if row['tool'] == 'bounded_public_research'][-1]
-        self.assertEqual(event['status'], 'succeeded', 'the call itself ran')
-        self.assertEqual(event['trace']['evidence']['qualifiers'], ['partial'])
-        self.assertIn(QUALIFIER_NOTES['partial'], job['error'])
+        reads = [row for row in self.store.task_events(job['id']) if row['tool'] == 'public_page_read'
+                 and row['status'] != 'running']
+        self.assertEqual([row['status'] for row in reads], ['succeeded', 'failed'], 'the unread page stays recorded')
         self.assert_partial_and_qualified(job, bubble, self.text)
 
     def test_a_complete_search_with_a_reply_stays_succeeded(self):

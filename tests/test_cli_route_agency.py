@@ -400,7 +400,7 @@ class NativeSearchOnBackfilledHistory(unittest.TestCase):
         self.assertTrue(seen['native'], record.get('native_search_reason'))
         self.assertEqual(record['cli_native_tools'], ['web_search'])
         self.assertIsNone(record.get('native_search_reason'))
-        self.assertFalse({'web_search', 'bounded_public_research'} & set(seen['names']))
+        self.assertNotIn('web_search', seen['names'])
         self.assertIn('list_notes', seen['names'], '#826: private reads beside the CLI\'s own search')
         self.assertTrue(BROWSER_ACTIONS <= set(seen['names']), 'the browser tools stay on a native-search turn')
         self.assertNotIn('prompt_withheld', record, 'unrecorded/unmediated history no longer withholds the local envelope')
@@ -446,7 +446,7 @@ HISTORY_KINDS = ('notes-work', 'codex-list-notes', 'unrecorded', ENGINE_UNMEDIAT
 HISTORY_LABEL = {'notes-work': 'personal-space', 'codex-list-notes': 'personal-space', 'unrecorded': 'unrecorded',
                  ENGINE_UNMEDIATED: ENGINE_UNMEDIATED, 'owner-browser-session': 'owner-browser-session'}
 #: The bridge's own search tools, which the CLI's own search replaces (#701).
-BRIDGE_SEARCH = {'web_search', 'bounded_public_research'}
+BRIDGE_SEARCH = {'web_search'}
 
 
 class HistoryNeverTurnsNativeSearchOff(unittest.TestCase):
@@ -658,18 +658,17 @@ class NativeSearchTurnArgv(unittest.TestCase):
         self.assertIn('web_search="live"', argv)
         caps = _caps(browser=lambda: None)
         listed = [tool['name'] for tool in AgentOSMcpTools(caps, native_search=True).definitions()]
-        self.assertFalse({'web_search', 'bounded_public_research'} & set(listed))
+        self.assertNotIn('web_search', listed)
         self.assertIn('list_notes', listed, '#826: private reads beside the CLI\'s own search')
         self.assertTrue(BROWSER_ACTIONS <= set(listed))
         off = [tool['name'] for tool in AgentOSMcpTools(caps).definitions()]
-        self.assertTrue({'web_search', 'bounded_public_research', 'list_notes'} <= set(off), 'a search-off turn keeps them')
+        self.assertTrue({'web_search', 'list_notes'} <= set(off), 'a search-off turn keeps them')
 
     def test_claude_code_pre_approves_websearch_and_no_bridge_search(self):
         argv = self.adapter.command('claude-code', '/runtime/claude', 'prompt', self.config, 'instructions', native_search=True)
         allowed = argv[argv.index('--allowedTools') + 1].split(',')
         self.assertIn('WebSearch', allowed)
         self.assertNotIn('mcp__agentos__web_search', allowed)
-        self.assertNotIn('mcp__agentos__bounded_public_research', allowed)
         self.assertIn('mcp__agentos__list_notes', allowed, '#826: private reads beside the CLI\'s own search')
         self.assertIn('mcp__agentos__browser_open', allowed)
         self.assertEqual(argv[argv.index('--tools') + 1], 'WebSearch')
@@ -683,7 +682,7 @@ class NativeSearchTurnArgv(unittest.TestCase):
         tools = AgentOSMcpTools(caps)
         tools.native_search_reason = 'refused'
         described = {tool['name']: tool['description'] for tool in tools.definitions()}
-        for name in ('web_search', 'bounded_public_research'):
+        for name in ('web_search',):
             self.assertIn("The CLI's own web search is off for this turn", described[name])
             self.assertIn('자체 웹 검색을 쓸 수 없다고', described[name], 'the owner-facing reason')
             self.assertIn('bing = Bing web search', described[name])

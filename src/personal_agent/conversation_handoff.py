@@ -1703,7 +1703,7 @@ class IntentClassifier:
         if judged is not None:
             return judged
         # Public web research is the ordinary conversation route: the Work
-        # model loop chooses ``web_search`` / ``bounded_public_research``
+        # model loop chooses ``web_search`` / ``public_page_read``
         # itself, so no word in the request selects it (#672).
         return IntentDecision(INTENT_CONVERSATION, AUTHORITY_DEFAULT)
 

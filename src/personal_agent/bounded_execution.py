@@ -85,7 +85,6 @@ _STATUS_HINTS = (
 # policy.  The trusted-local sandbox/argv are unchanged (see ``command``);
 # strict-isolated (#616) only narrows what the CLI's own tools can read.
 #: #826: the strict-isolated profile (#616) keeps its qualified, narrower tool set.
-_STRICT_PAGES = 'owner-page-read-not-offered-on-strict-isolated-profile'
 _STRICT_FILES = 'owner-files-not-offered-on-strict-isolated-profile'
 _CALENDAR = 'calendar-connector-not-bound-to-cli-route'
 _MEMORY = 'owner-memory-not-bound-to-cli-route'
@@ -198,7 +197,7 @@ CLI_PROFILES = {
         # ``resolve_file``, ``page_scope``); they run in the bridge process.
         # #961: the Work's pinned skills, read in the bridge process from the owner store
         # (the same content and revisions as the direct route; offered only with a binding).
-        'actions': ('bounded_public_research', 'find_files', 'list_notes', 'list_roots', 'propose_current_state',
+        'actions': ('find_files', 'list_notes', 'list_roots', 'propose_current_state',
                     'public_page_read', 'read_file', 'save_note', 'weather', 'web_search',
                     *_BROWSER_ACTIONS, *_OWNER_STATE_RELAYED, *_SKILL_ACTIONS),
         'unavailable': {
@@ -219,7 +218,7 @@ CLI_PROFILES = {
         'limitation': 'only the argumentless list_notes read is offered',
         'actions': ('list_notes',),
         'unavailable': {action: _ISOLATED for action in (
-            'bounded_public_research', 'save_note', 'weather', 'web_search', 'public_page_read',
+            'save_note', 'weather', 'web_search', 'public_page_read',
             'find_files', 'read_file', 'list_roots', 'calendar_query', 'calendar_draft_create',
             'calendar_draft_update', 'calendar_draft_cancel', 'save_memory', 'list_memory', 'search_memory', 'forget_record',
             'list_agents', 'delegate_agent', 'propose_current_state', 'schedule_preparation', 'ask_location',
@@ -237,9 +236,10 @@ CLI_PROFILES = {
         'limitation': STRICT_ISOLATED_LIMITATION,
         # The bridge is told its profile (``--profile``, #701): the trusted-local
         # set without the browser tools, which this profile never offers.
-        'actions': ('bounded_public_research', 'list_notes', 'propose_current_state', 'save_note', 'weather', 'web_search'),
+        # #23: public_page_read reads only this Work's search results here; the owner's
+        # approved page list is owner data and is not offered on this profile.
+        'actions': ('list_notes', 'propose_current_state', 'public_page_read', 'save_note', 'weather', 'web_search'),
         'unavailable': {
-            'public_page_read': _STRICT_PAGES,
             'find_files': _STRICT_FILES, 'read_file': _STRICT_FILES, 'list_roots': _STRICT_FILES,
             'calendar_query': _CALENDAR, 'calendar_draft_create': _CALENDAR,
             'calendar_draft_update': _CALENDAR, 'calendar_draft_cancel': _CALENDAR,
@@ -368,8 +368,7 @@ def bridge_tool_bound(actions):
     """The longest own bound, in seconds, of the Still bridge ``actions`` one turn offers (#729).
 
     Each figure is the tool's existing timeout, not a new one: a browser step
-    is bounded by the relay's call cap, a bounded research call by one search
-    plus its page reads, a search by the slower of a provider search and a
+    is bounded by the relay's call cap, a search by the slower of a provider search and a
     native search, the weather lookup by its two requests.  A native search
     may send ``NATIVE_MAX_REQUESTS`` sequential requests (the first plus each
     ``pause_turn`` continuation), each capped by ``NATIVE_TIMEOUT_SECONDS``
@@ -378,10 +377,9 @@ def bridge_tool_bound(actions):
     from .agent_runtime import BROWSER_ACTIONS
     from .cli_browser_relay import CALL_SECONDS
     from .local_tools import MAX_PAGE_SECONDS
-    from .research import MAX_RESEARCH_PAGES
     from .search_providers import NATIVE_MAX_REQUESTS, NATIVE_TIMEOUT_SECONDS, SEARCH_TIMEOUT_SECONDS
     search = max(SEARCH_TIMEOUT_SECONDS, NATIVE_MAX_REQUESTS * NATIVE_TIMEOUT_SECONDS)
-    own = {'web_search': search, 'bounded_public_research': search + MAX_RESEARCH_PAGES * MAX_PAGE_SECONDS,
+    own = {'web_search': search,
            # local_tools.LocalTools.weather: geocoding (10 s) then the forecast (15 s).
            'weather': 10 + 15, 'public_page_read': MAX_PAGE_SECONDS,
            # #774 review: a relayed write asks the Judgment AI (explicit memory / preparation
@@ -405,7 +403,7 @@ def codex_bridge_timeout_argument(seconds):
 
 #: #701: bridge actions the CLI's own web search replaces on a native-search
 #: turn, so the model searches with Codex's or Claude's own tool instead.
-NATIVE_SEARCH_REPLACED = frozenset({'web_search', 'bounded_public_research'})
+NATIVE_SEARCH_REPLACED = frozenset({'web_search'})
 
 
 def turn_actions(profile, native_search=False):

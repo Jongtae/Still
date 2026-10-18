@@ -138,7 +138,7 @@ class DecisionTable(unittest.TestCase):
         ('approved page in the current scope', ('owner-calendar',), [], (),
          'public_page_read', {'url': URL}, [{'tool': 'public_page_read', 'url': URL, 'approved_urls': [URL]}], None),
         ('page outside the current scope', ('owner-calendar',), [], (),
-         'public_page_read', {'url': URL + '?q=' + PRIVATE}, [], '현재 승인한 공개 페이지'),
+         'public_page_read', {'url': URL + '?q=' + PRIVATE}, [], '소유자가 승인한 공개 페이지가 아니어서'),
     ]
 
     def test_decision_table(self):
@@ -158,12 +158,6 @@ class DecisionTable(unittest.TestCase):
                         self.assertEqual(result['composed_by'], 'agentos-public-task')
                         self.assertEqual({'tool': action, **result['sent']}, outbound[0])
                 self.assertEqual(self.wire.plans, outbound)
-
-    def test_research_query_is_composed_the_same_way(self):
-        caps = self.caps(self.NOTES, ['노트북 비교해줘'], [PRIVATE])
-        with mock.patch.object(Capabilities, '_research', lambda self, mode, query, **selectors: {'query': query, 'mode': mode, 'sources': []}):
-            result = caps.execute('bounded_public_research', {'mode': 'product', 'query': f'노트북 {PRIVATE}'})
-        self.assertEqual(result['sent'], {'query': f'노트북 {PRIVATE}', 'mode': 'product'})
 
     def test_a_stored_secret_never_leaves_in_a_lookup(self):
         """Pilot invariant a (#826 kept it): a stored secret's value is dropped from what is sent and recorded."""
@@ -199,13 +193,13 @@ class DecisionTable(unittest.TestCase):
         caps = self.caps(public_page_scope=lambda: set(scope))
         caps.execute('public_page_read', {'url': URL})
         scope.clear()
-        with self.assertRaisesRegex(ValueError, '승인한 공개 페이지 범위가 없습니다'):
+        with self.assertRaisesRegex(ValueError, '소유자가 승인한 공개 페이지가 아니어서'):
             caps.execute('public_page_read', {'url': URL + '#again'})
         tainted = self.caps(('connected-document',), [], public_page_scope=lambda: set(scope))
-        with self.assertRaisesRegex(ValueError, '승인한 공개 페이지 범위가 없습니다'):
+        with self.assertRaisesRegex(ValueError, '소유자가 승인한 공개 페이지가 아니어서'):
             tainted.execute('public_page_read', {'url': URL})
         clean = self.caps(public_page_scope=lambda: {URL})
-        with self.assertRaisesRegex(ValueError, '현재 승인한 공개 페이지'):
+        with self.assertRaisesRegex(ValueError, '소유자가 승인한 공개 페이지가 아니어서'):
             clean.execute('public_page_read', {'url': URL + '?q=' + PRIVATE})
         self.assertEqual(len(self.wire.plans), 1, 'the read before revocation is not undone, and none follows it')
 

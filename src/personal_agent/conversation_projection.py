@@ -69,6 +69,7 @@ TOOL_LABELS = {
     'delegate_agent': msg('projection.handed_to_another_agent'), 'list_agents': '에이전트 목록 조회',
     'find_files': '파일 찾기', 'read_file': '파일 읽기', 'list_roots': '연결 폴더 확인', 'public_page_read': msg('projection.read_a_public_page'),
     'drive_search': msg('projection.find_drive_files'), 'drive_read': msg('projection.read_drive_file'), 'api_request': '인증 API 호출', 'code_run': '코드 실행',
+    # #23 retired this tool; the label keeps Works recorded before then readable.
     'bounded_public_research': msg('projection.public_research'),
     # SEC-BROWSER-01 (#656): steps in the owner-logged-in browser profile.
     'browser_open': msg('projection.open_browser_page'), 'browser_read': msg('projection.read_browser_page'), 'browser_find': msg('projection.find_on_browser_page'), 'browser_click': msg('projection.click_in_browser'), 'browser_type': msg('projection.type_in_browser'),

@@ -238,7 +238,6 @@ RETRY_STEP_TEXT = msg('step.retry')
 #: #1280: soft everyday wording (해요체), not tool labels; still keyed only on the tool kind.
 FALLBACK_STEP_LINES = {
     'web_search': (msg('step.web.query'), msg('step.web')),
-    'bounded_public_research': (msg('step.web.query'), msg('step.web')),
     'public_page_read': (msg('step.page_open.host'), msg('step.page_open')),
     'browser_open': (msg('step.page_open.host'), msg('step.page_open')),
     'browser_read': (msg('step.page_read.host'), msg('step.page_read')),

@@ -25,11 +25,63 @@ class GeneralRuntimeTests(unittest.TestCase):
    def __init__(self): self.calls=[]
    def execute(self,plan): self.calls.append(plan); return {'tool':'public_page_read','url':plan['url'],'content':'ok','sources':[plan['url']]}
   network=Public(); caps=Capabilities(self.store,None,CFG,'','job',lambda *a:None,network=network)
-  with self.assertRaisesRegex(ValueError,'승인한 공개 페이지 범위'):
+  with self.assertRaisesRegex(ValueError,'소유자가 승인한 공개 페이지가 아니어서'):
    caps.execute('public_page_read',{'url':'https://example.com/event'})
+  self.assertEqual(network.calls,[])
   caps=Capabilities(self.store,None,CFG,'','job',lambda *a:None,network=network,public_page_scope=['https://example.com/event?a=1&b=2'])
   caps.execute('public_page_read',{'url':'https://example.com/event?b=2&a=1'})
   self.assertEqual(network.calls[-1]['approved_urls'],['https://example.com/event?a=1&b=2'])
+
+ def search_network(self,results,redirect_refused=()):
+  class Public:
+   def __init__(self): self.calls=[]
+   def execute(self,plan):
+    self.calls.append(plan)
+    if plan['tool']=='web_search':
+     return {'tool':'web_search','query':plan['query'],'results':[{'title':url,'url':url,'snippet':''} for url in results],'sources':list(results)}
+    if plan['url'] in redirect_refused:raise ValueError('승인한 공개 페이지 범위를 벗어난 주소로 이동했습니다.')
+    return {'tool':'public_page_read','url':plan['url'],'content':'page text','sources':[plan['url']]}
+  return Public()
+
+ def test_public_page_read_reads_a_result_of_this_works_own_search(self):
+  """#23: the retired category research tool's page reads, as a generic scope."""
+  network=self.search_network(['https://shop.example/item?b=2&a=1','https://other.example/page'])
+  caps=Capabilities(self.store,None,CFG,'','job',lambda *a:None,network=network)
+  with self.assertRaises(ValueError):caps.execute('public_page_read',{'url':'https://shop.example/item?a=1&b=2'})
+  caps.execute('web_search',{'query':'compare item prices'})
+  page=caps.execute('public_page_read',{'url':'https://shop.example/item?a=1&b=2'})
+  self.assertEqual(page['content'],'page text')
+  # The reader gets the same set for its redirect checks: the search's results, nothing else.
+  self.assertEqual(network.calls[-1]['approved_urls'],['https://other.example/page','https://shop.example/item?a=1&b=2'])
+  reads=len(network.calls)
+  for url in ('https://unlisted.example/','https://shop.example/item','http://localhost/admin'):
+   with self.subTest(url=url),self.assertRaisesRegex(ValueError,'web_search 결과'):
+    caps.execute('public_page_read',{'url':url})
+  self.assertEqual(len(network.calls),reads,'a page outside the scope is never contacted')
+
+ def test_search_result_scope_belongs_to_one_work(self):
+  network=self.search_network(['https://shop.example/item'])
+  Capabilities(self.store,None,CFG,'','job',lambda *a:None,network=network).execute('web_search',{'query':'item'})
+  other=Capabilities(self.store,None,CFG,'','other-job',lambda *a:None,network=network)
+  with self.assertRaisesRegex(ValueError,'web_search 결과'):
+   other.execute('public_page_read',{'url':'https://shop.example/item'})
+
+ def test_search_result_redirect_refusal_does_not_name_an_owner_approval(self):
+  network=self.search_network(['https://shop.example/item'],redirect_refused={'https://shop.example/item'})
+  caps=Capabilities(self.store,None,CFG,'','job',lambda *a:None,network=network)
+  caps.execute('web_search',{'query':'item'})
+  with self.assertRaisesRegex(ValueError,'소유자 승인 범위와는 무관'):
+   caps.execute('public_page_read',{'url':'https://shop.example/item'})
+
+ def test_web_search_query_passes_the_credential_tripwire_before_the_network(self):
+  network=self.search_network([])
+  caps=Capabilities(self.store,None,CFG,'','job',lambda *a:None,network=network)
+  for query in ('api_key=sk-abcdefghijklmnop','compare https://example.com/?token=supersecret123456789'):
+   with self.subTest(query=query),self.assertRaisesRegex(ValueError,'자격 증명'):
+    caps.execute('web_search',{'query':query})
+  self.assertEqual(network.calls,[])
+  caps.execute('web_search',{'query':'api key security best practices'})
+  self.assertEqual(network.calls[-1]['query'],'api key security best practices')
  def test_notes_idempotent(self):
   self.caps.execute('save_note',{'content':'hello'});self.caps.execute('save_note',{'content':'hello'})
   self.assertEqual(len(self.store.notes()),1)

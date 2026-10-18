@@ -86,9 +86,10 @@ class StrictProfileDeclaration(unittest.TestCase):
 
     def test_strict_offers_what_the_bridge_serves(self):
         """#701/#774/#826: the bridge is told its profile; strict is trusted-local minus every service-relayed
-        tool and minus the connected-folder documents and approved pages #826 added to trusted-local only."""
+        tool and minus the connected-folder documents #826 added to trusted-local only.  #23: strict serves
+        public_page_read for this Work's own search results; the owner's approved page list stays off it."""
         from personal_agent.agent_runtime import BROWSER_ACTIONS, HOST_RELAYED_ACTIONS
-        owner_files = {'find_files', 'read_file', 'list_roots', 'public_page_read',
+        owner_files = {'find_files', 'read_file', 'list_roots',
                        # #961: skills are read from the owner store, so strict never serves them either.
                        'skill_load', 'skill_resource'}
         self.assertEqual(profile_actions(STRICT_PROFILE),
@@ -159,11 +160,11 @@ class StrictLaunchArguments(unittest.TestCase):
     def test_claude_strict_has_no_built_in_tools_and_allows_only_the_offered_bridge_tools(self):
         trusted = self.adapter.command('claude-code', '/runtime/claude', 'prompt', self.config, 'instructions')
         strict = self.adapter.command('claude-code', '/runtime/claude', 'prompt', self.config, 'instructions', profile=STRICT_PROFILE)
-        allow = ['--allowedTools', 'mcp__agentos__bounded_public_research,mcp__agentos__list_notes,'
-                                   'mcp__agentos__propose_current_state,'
+        allow = ['--allowedTools', 'mcp__agentos__list_notes,'
+                                   'mcp__agentos__propose_current_state,mcp__agentos__public_page_read,'
                                    'mcp__agentos__save_note,mcp__agentos__weather,mcp__agentos__web_search']
         # #826: trusted-local also pre-approves the connected-folder documents and approved pages.
-        trusted_allow = ('mcp__agentos__bounded_public_research,mcp__agentos__find_files,mcp__agentos__list_notes,'
+        trusted_allow = ('mcp__agentos__find_files,mcp__agentos__list_notes,'
                          'mcp__agentos__list_roots,mcp__agentos__propose_current_state,mcp__agentos__public_page_read,'
                          'mcp__agentos__read_file,mcp__agentos__save_note,mcp__agentos__weather,mcp__agentos__web_search')
         # #623: both pre-approve exactly their bridge tools; strict also removes
