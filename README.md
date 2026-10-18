@@ -1,13 +1,10 @@
 <div align="center">
 
 <pre>
-          P E R S O N A L           
-                                    
-   ___                __  ____  ____
-  / _ |___ ____ ___  / /_/ __ \/ __/
- / __ / _ `/ -_) _ \/ __/ /_/ /\ \  
-/_/ |_\_, /\__/_//_/\__/\____/___/  
-     /___/                          
+   ________________   __ 
+  / __/_  __/  _/ /  / / 
+ _\ \  / / _/ // /__/ /__
+/___/ /_/ /___/____/____/
 </pre>
 
 **Your personal agent, on your own machine.<br>Change the AI underneath; keep its memory, open work and permissions.**
