@@ -71,30 +71,28 @@ class StillProfileTests(unittest.TestCase):
 
 class MultipartTests(unittest.TestCase):
     def test_multipart_carries_fields_and_file_in_one_request(self):
-        seen = {}
+        import httpx2
+        seen = []
 
-        class Response:
-            def __enter__(self): return self
-            def __exit__(self, *a): return False
-            def read(self, n): return b'{"ok": true, "result": true}'
+        def handler(request):
+            seen.append(request)
+            return httpx2.Response(200, json={'ok': True, 'result': True})
 
-        class Opener:
-            def open(self, req, timeout):
-                seen['req'], seen['timeout'] = req, timeout
-                return Response()
-
-        with mock.patch.object(conversation_handoff, '_build_opener', lambda *a: Opener()):
+        client = httpx2.Client(transport=httpx2.MockTransport(handler))
+        with mock.patch.object(conversation_handoff, '_telegram_http', lambda: client):
             out = conversation_handoff.telegram_request_multipart(
                 'https://api.telegram.org/botT/setMyProfilePhoto', {'photo': '{"type":"static","photo":"attach://still"}'},
                 {'still': ('still.jpg', 'image/jpeg', b'\xff\xd8JPEG')}, timeout=4)
         self.assertEqual(out, {'ok': True, 'result': True})
-        req = seen['req']
-        boundary = req.get_header('Content-type').split('boundary=')[1]
-        body = req.data
+        [req] = seen
+        self.assertEqual(req.method, 'POST')
+        boundary = req.headers['Content-Type'].split('boundary=')[1]
+        body = req.content
         self.assertIn(f'--{boundary}\r\nContent-Disposition: form-data; name="photo"'.encode(), body)
         self.assertIn(b'filename="still.jpg"\r\nContent-Type: image/jpeg\r\n\r\n\xff\xd8JPEG\r\n', body)
         self.assertTrue(body.endswith(f'--{boundary}--\r\n'.encode()))
-        self.assertEqual(seen['timeout'], 4)
+        self.assertEqual(req.extensions['timeout']['read'], 4)
+        self.assertEqual(req.extensions['timeout']['connect'], 4)
 
     def test_channel_upload_raises_on_refusal(self):
         channel = TelegramChannel(lambda: None, lambda: 'T',

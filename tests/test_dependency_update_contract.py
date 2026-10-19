@@ -119,12 +119,16 @@ def test_mcp_sdk_is_exact_and_host_only_in_the_resolved_package_graph() -> None:
     base = _dependency_closure(packages, root["dependencies"])
     host = _dependency_closure(packages, root["optional-dependencies"]["mcp-host"])
     sdk_only = {
-        "claude-agent-sdk", "sniffio", "mcp", "anyio", "click", "h11", "httpcore2", "httpx2",
+        "claude-agent-sdk", "sniffio", "mcp", "click",
         "opentelemetry-api", "pyjwt", "python-multipart", "sse-starlette",
-        "starlette", "truststore", "uvicorn",
+        "starlette", "uvicorn",
     }
+    # #121: the Telegram transport's HTTP client and its closure are base packages.
+    telegram_http = {"httpx2", "httpcore2", "h11", "anyio", "idna", "truststore"}
     assert sdk_only <= host
     assert not sdk_only & base
+    assert telegram_http <= base & host
+    assert {"name": "httpx2", "specifier": ">=2.13.1,<3"} in root["metadata"]["requires-dist"]
     assert "mcp-types" in base & host
     for name in ("mcp", "mcp-types"):
         assert packages[name]["version"] == MCP_VERSION

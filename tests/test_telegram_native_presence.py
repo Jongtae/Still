@@ -28,7 +28,7 @@ from personal_agent.conversation_handoff import (FOLLOWUP_CANCEL, FOLLOWUP_CORRE
                                                  INTENT_CONVERSATION, INTENT_NOTE_CREATE, INTENT_SETTINGS,
                                                  INTENT_UNSUPPORTED, TELEGRAM_POLL_UPDATE_KINDS, ConversationJudgments,
                                                  TelegramChannel,
-                                                 TelegramRejected, telegram_request_json)
+                                                 TelegramRejected, telegram_request_file, telegram_request_json)
 from personal_agent.conversation_projection import TERMINAL_FAILED_HEADER
 from personal_agent.decision import OUTCOME_DECIDED, FixtureDecisionEngine, SelectionDecision, fixture_confidence
 from personal_agent.agent_runtime import WORK_STOPPED
@@ -1564,38 +1564,39 @@ class EntityRejectionTests(NativePresenceTestCase):
                 self.assertEqual(self.store.job(job['id'])['delivery'], 'unknown')
 
 
+def telegram_http_stub(handler):
+    """Replace only the Bot API network seam (#121) with an httpx2 MockTransport over ``handler``."""
+    import httpx2
+    return mock.patch('personal_agent.conversation_handoff._telegram_http',
+                      return_value=httpx2.Client(transport=httpx2.MockTransport(handler)))
+
+
 class TelegramErrorEnvelopeTests(unittest.TestCase):
-    """`telegram_request_json` keeps Telegram's 4xx envelope and makes exactly one request."""
+    """`telegram_request_json` keeps Telegram's 4xx envelope and writes the request once."""
 
-    def opener(self, error=None, body=b'{"ok": true, "result": 1}'):
-        opened = []
+    def stub(self, outcome):
+        import httpx2
+        seen = []
 
-        class Response(io.BytesIO):
-            def __enter__(self):
-                return self
+        def handler(request):
+            seen.append(str(request.url))
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+        self.httpx2 = httpx2
+        return telegram_http_stub(handler), seen
 
-            def __exit__(self, *exc):
-                return False
-
-        class Opener:
-            def open(self, req, timeout=None):
-                opened.append(req.full_url)
-                if error is not None:
-                    raise error
-                return Response(body)
-        return Opener(), opened
-
-    def http_error(self, code, payload):
-        return urllib.error.HTTPError('https://api.telegram.org/botX/sendMessage', code, 'err', {},
-                                      io.BytesIO(payload))
+    def response(self, status, content=b'{"ok": true, "result": 1}', **kwargs):
+        import httpx2
+        return httpx2.Response(status, content=content, **kwargs)
 
     def test_4xx_envelope_is_returned_as_data(self):
-        opener, opened = self.opener(self.http_error(
+        stub, seen = self.stub(self.response(
             400, b'{"ok":false,"error_code":400,"description":"Bad Request: can\'t parse entities"}'))
-        with mock.patch('personal_agent.conversation_handoff._build_opener', return_value=opener):
+        with stub:
             result = telegram_request_json('https://api.telegram.org/botX/sendMessage', {'a': 1})
         self.assertEqual(result, {'ok': False, 'error_code': 400, 'description': "Bad Request: can't parse entities"})
-        self.assertEqual(len(opened), 1)
+        self.assertEqual(len(seen), 1)
         channel = TelegramChannel(lambda: lambda *a, **k: result, lambda: 'X')
         with self.assertRaises(TelegramRejected) as caught:
             channel.send_message(1, 'x')
@@ -1603,21 +1604,31 @@ class TelegramErrorEnvelopeTests(unittest.TestCase):
         self.assertNotIn('parse', str(caught.exception), 'the owner-facing text never carries Telegram detail')
 
     def test_other_errors_raise_owner_safe_provider_errors_once(self):
-        for error in (self.http_error(500, b'{"ok":false}'), self.http_error(400, b'not json'),
-                      urllib.error.URLError(TimeoutError()), TimeoutError()):
-            with self.subTest(error=type(error).__name__):
-                opener, opened = self.opener(error)
-                with mock.patch('personal_agent.conversation_handoff._build_opener', return_value=opener):
-                    with self.assertRaises(ProviderError) as caught:
-                        telegram_request_json('https://api.telegram.org/botX/sendMessage', {'a': 1})
+        import httpx2
+        cases = ((self.response(500, b'{"ok":false}'), 500), (self.response(400, b'not json'), 400),
+                 (self.response(302, b'', headers={'Location': 'https://elsewhere.test/'}), 302),
+                 (httpx2.ReadTimeout('slow'), 'timeout'), (httpx2.ConnectTimeout('slow'), 'timeout'),
+                 (httpx2.ConnectError('reset'), None), (httpx2.ReadError('reset after write'), None))
+        for outcome, status in cases:
+            with self.subTest(outcome=outcome):
+                stub, seen = self.stub(outcome)
+                with stub, self.assertRaises(ProviderError) as caught:
+                    telegram_request_json('https://api.telegram.org/botX/sendMessage', {'a': 1})
                 self.assertNotIsInstance(caught.exception, TelegramRejected)
-                self.assertEqual(len(opened), 1, 'never a second request')
+                self.assertEqual(caught.exception.status, status)
+                self.assertEqual(len(seen), 1, 'never a second request, never a followed redirect')
+
+    def test_an_oversized_body_is_refused(self):
+        stub, _ = self.stub(self.response(200, b'{"ok": true, "result": "' + b'x' * 2_000_001 + b'"}'))
+        with stub, self.assertRaises(ProviderError) as caught:
+            telegram_request_json('https://api.telegram.org/botX/getUpdates', {})
+        self.assertIn('너무 큽니다', str(caught.exception))
 
     def test_the_http_status_not_the_body_error_code_classifies_a_refusal(self):
         """#594 item 3: a body claiming 400 on another 4xx status is not an entity-parse refusal."""
-        opener, _ = self.opener(self.http_error(
+        stub, _ = self.stub(self.response(
             403, b'{"ok":false,"error_code":400,"description":"Bad Request: can\'t parse entities"}'))
-        with mock.patch('personal_agent.conversation_handoff._build_opener', return_value=opener):
+        with stub:
             result = telegram_request_json('https://api.telegram.org/botX/sendMessage', {'a': 1})
         self.assertEqual(result['error_code'], 403)
         channel = TelegramChannel(lambda: lambda *a, **k: result, lambda: 'X')
@@ -1626,29 +1637,47 @@ class TelegramErrorEnvelopeTests(unittest.TestCase):
         self.assertFalse(caught.exception.entity_parse_error)
 
     def test_a_bot_token_in_the_failed_url_never_reaches_a_formatted_traceback(self):
-        """#594 item 4: the HTTPError (whose URL carries the token) is not a shown cause or context."""
+        """#594 item 4: the failed request (whose URL carries the token) is not a shown cause or context."""
+        import httpx2
         token = '123456:SECRET-bot-token'
         url = f'https://api.telegram.org/bot{token}/sendMessage'
-        errors = (urllib.error.HTTPError(url, 500, 'err', {}, io.BytesIO(b'{"ok":false}')),
-                  urllib.error.HTTPError(url, 401, 'err', {}, io.BytesIO(b'not json')),
-                  urllib.error.URLError(f'failed {url}'))
-        for call, seam in ((telegram_request_json, 'personal_agent.conversation_handoff._build_opener'),
-                           (request_json, 'personal_agent.providers.build_opener')):
-            for error in errors:
-                with self.subTest(call=call.__name__, error=type(error).__name__):
-                    opener, _ = self.opener(error)
-                    with mock.patch(seam, return_value=opener), self.assertRaises(ProviderError) as caught:
-                        call(url, {'a': 1})
-                    raised = caught.exception
-                    self.assertIsNone(raised.__cause__)
-                    self.assertTrue(raised.__suppress_context__)
-                    shown = ''.join(traceback.format_exception(type(raised), raised, raised.__traceback__))
-                    self.assertNotIn(token, shown)
-                    self.assertNotIn(token, str(raised))
+        outcomes = (self.response(500, b'{"ok":false}'), self.response(401, b'not json'),
+                    httpx2.ConnectError(f'failed {url}'), httpx2.ReadTimeout(f'slow {url}'))
+        for outcome in outcomes:
+            with self.subTest(outcome=outcome):
+                stub, _ = self.stub(outcome)
+                with stub, self.assertRaises(ProviderError) as caught:
+                    telegram_request_json(url, {'a': 1})
+                self.assertNoToken(caught.exception, token)
+        file_url = f'https://api.telegram.org/file/bot{token}/photos/a.jpg'
+        for outcome in (self.response(404, b''), httpx2.ConnectError(f'failed {file_url}')):
+            with self.subTest(file=outcome):
+                stub, _ = self.stub(outcome)
+                with stub, self.assertRaises(ProviderError) as caught:
+                    telegram_request_file(file_url)
+                self.assertNoToken(caught.exception, token)
+        # providers.request_json is still the urllib transport for model providers.
+        for error in (urllib.error.HTTPError(url, 500, 'err', {}, io.BytesIO(b'{"ok":false}')),
+                      urllib.error.URLError(f'failed {url}')):
+            with self.subTest(provider=type(error).__name__):
+                class Opener:
+                    def open(self, req, timeout=None):
+                        raise error
+                with mock.patch('personal_agent.providers.build_opener', return_value=Opener()), \
+                        self.assertRaises(ProviderError) as caught:
+                    request_json(url, {'a': 1})
+                self.assertNoToken(caught.exception, token)
+
+    def assertNoToken(self, raised, token):
+        self.assertIsNone(raised.__cause__)
+        self.assertTrue(raised.__suppress_context__ or raised.__context__ is None)
+        shown = ''.join(traceback.format_exception(type(raised), raised, raised.__traceback__))
+        self.assertNotIn(token, shown)
+        self.assertNotIn(token, str(raised))
 
     def test_success_body_is_parsed(self):
-        opener, _ = self.opener()
-        with mock.patch('personal_agent.conversation_handoff._build_opener', return_value=opener):
+        stub, _ = self.stub(self.response(200))
+        with stub:
             self.assertEqual(telegram_request_json('https://api.telegram.org/botX/getMe', {}), {'ok': True, 'result': 1})
 
 
@@ -1667,7 +1696,7 @@ class EmphasisAroundSpansWireTests(unittest.TestCase):
     """#581 live discrepancy: emphasis wrapping a link or inline code leaked literal ``**``.
 
     Driven through the real ingest -> worker -> delivery path and the real
-    ``telegram_request_json`` transport; only the HTTP opener (the network
+    ``telegram_request_json`` transport; only the HTTP client (the network
     seam) is fake, so the asserted text is the exact wire body Telegram gets.
     """
 
@@ -1697,21 +1726,14 @@ class EmphasisAroundSpansWireTests(unittest.TestCase):
 
         wire = self.wire
 
-        class Response(io.BytesIO):
-            def __enter__(self):
-                return self
+        def handler(request):
+            import httpx2
+            method = request.url.path.rsplit('/', 1)[-1]
+            wire.append((method, json.loads(request.content.decode())))
+            result = {'message_id': 9000 + len(wire)} if method == 'sendMessage' else True
+            return httpx2.Response(200, json={'ok': True, 'result': result})
 
-            def __exit__(self, *exc):
-                return False
-
-        class Opener:
-            def open(self, req, timeout=None):
-                method = req.full_url.rsplit('/', 1)[-1]
-                wire.append((method, json.loads(req.data.decode())))
-                result = {'message_id': 9000 + len(wire)} if method == 'sendMessage' else True
-                return Response(json.dumps({'ok': True, 'result': result}).encode())
-
-        patcher = mock.patch('personal_agent.conversation_handoff._build_opener', return_value=Opener())
+        patcher = telegram_http_stub(handler)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.service = AgentService(self.store, ModelAdapter(model))  # default telegram_request_json transport

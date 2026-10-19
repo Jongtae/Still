@@ -254,6 +254,49 @@ host adapter semantic tests and Linux exact-head CI are separate evidence;
 this table does not claim live owner operation, Linux container execution or
 production rollback.
 
+## Base Telegram HTTP transport — #121
+
+Owner decision 2026-10-19 (#113, #121) amends the host-only placement above for one
+package family. The Telegram Bot API transport (`conversation_handoff`) uses
+`httpx2` instead of a hand-written `urllib` transport, so `httpx2` is a base
+dependency (`httpx2>=2.13.1,<3`). Reason: about 5% of fresh TLS handshakes to
+`api.telegram.org` from the owner's network are reset, which dropped an
+owner-accepted reminder. A pooled client opens far fewer connections, and its
+connect retry covers exactly the failures that happen before the request is
+written.
+
+- Retry boundary: `httpcore2` `HTTPConnection._connect` retries `ConnectError` /
+  `ConnectTimeout` around both `connect_tcp` and `start_tls`; the sync backend
+  maps a handshake `OSError` to `ConnectError` (checked in the 2.13.1 source).
+  A failure after the request is written is not retried, so `sendMessage` is
+  never sent twice. `urllib3` `Retry(connect=)` was rejected: it classifies a
+  handshake reset as a read error and does not retry POST.
+- New base closure, all already locked for `mcp-host`, so no new resolution:
+
+| Package | Locked version | Licence |
+| --- | --- | --- |
+| httpx2 | 2.13.1 | BSD-3-Clause |
+| httpcore2 | 2.13.1 | BSD-3-Clause |
+| h11 | 0.16.0 | MIT |
+| anyio | 4.15.1 | MIT |
+| idna | 3.20 | BSD-3-Clause |
+| truststore | 0.10.4 | MIT |
+
+- TLS verification uses the OS trust store through `truststore`. Redirects are
+  not followed; Telegram responses stay bounded as before. Environment proxy
+  variables are not applied to this client.
+- Only `conversation_handoff` imports `httpx2` for the base install. Model
+  providers keep `providers.request_json`. Installation grants no runtime
+  network authority; the only destination remains `api.telegram.org`.
+- The other host packages (`mcp`, `claude-agent-sdk`, `sniffio`, `click`,
+  `starlette`, `uvicorn`, `sse-starlette`, `pyjwt`, `python-multipart`,
+  `opentelemetry-api`) remain host-only. `tests/test_dependency_update_contract.py`
+  asserts both sets.
+- Homebrew already installs `[mcp-host]`, so its installed closure is unchanged.
+  A source checkout must re-sync (`uv sync --locked`) or reinstall
+  (`pip install -e .`) before the next start.
+- Supply-chain trust changes, so independent review is required before merge.
+
 ## Dependabot discovery and promotion
 
 `.github/dependabot.yml` checks the root `uv` resolution weekly at 09:00 Asia
