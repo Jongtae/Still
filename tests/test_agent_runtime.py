@@ -292,6 +292,9 @@ class TimeSensitiveRecheckTests(unittest.TestCase):
   for phrase in ('Keep three times apart: when the source says the fact took effect or was last updated, when you retrieved it, and when the owner reported something',
                  'A page fetched just now can still describe an old state',
                  'otherwise say it is unconfirmed and how old the support is',
+                 # Codex review: the source's own live status counts as observed at retrieval.
+                 'A live status the source itself shows now (its own page\'s current price, stock or open status) counts as observed when you retrieved it',
+                 'a copy on another site (a listing, an article, an aggregator), is only as current as that date',
                  'do not repeat it and do not simply take either side. Recheck it once with a lookup aimed at that conflict',
                  'keep the conflict visible','do not guess whether a change is temporary or permanent',
                  'If the recheck cannot be done, say the fact is unconfirmed rather than repeating it',
