@@ -54,7 +54,7 @@ A product price is not a final price when a delivery fee decides the answer, suc
 
 1. Use the product matched in step 3, with the delivery type the owner asked for. If the owner named none, say which one the item uses.
 2. Add only that one item, at the quantity asked (one if none was named), using steps 2, 4 and 5 as above, so the cart is read back before you go on. This is the same reversible cart change as any other here. Change nothing else in the cart or the account.
-3. Read the delivery fee and the total as the cart shows them. Do not open checkout to find them, do not enter an address, payment or card details, and do not press an order or pay control.
+3. Read the delivery fee and the total as the cart shows them for this item. If the baseline cart held other items, the cart's total and fee can cover them too, and a free-delivery threshold can depend on them. Use a fee and total only when the cart shows them for this item on its own; otherwise report them as covering other items and unconfirmed for this item alone. Do not open checkout to find them, do not enter an address, payment or card details, and do not press an order or pay control.
 4. Leave the item in the cart. Report the product price, the delivery fee and the total as separate figures, the exact product and quantity, and that the item is now in that cart so the owner can remove it or pay in the shop's own app or website.
 5. If the fee cannot be read from the cart without entering details, opening checkout or pressing an order control, or the shop shows no fee, report the fee as unconfirmed. Do not state a lowest final price. For a shop the owner is not signed in to, say its fee is unconfirmed.
 
