@@ -23,7 +23,7 @@ from .providers import ProviderError
 from .owner_mcp import valid_name, claude_definitions
 
 TOOL_NAME = re.compile(r'[A-Za-z0-9_.-]{1,60}\Z')
-SDK_VERSION = '0.2.166'
+SDK_VERSION = '0.2.168'
 MAX_TOOLS = 256
 STATES = frozenset({'connected', 'pending', 'failed', 'needs-auth', 'disabled', 'unknown', 'unsupported', 'cancelled'})
 

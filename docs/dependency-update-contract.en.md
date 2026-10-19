@@ -378,14 +378,16 @@ installation.
 
 ## Selected-server setup status SDK — CONNECT-FIND-01 #1299
 
-The host extra additionally pins `claude-agent-sdk==0.2.166` (uploaded
-2026-10-14; Dependabot #3, merged 2026-10-17; reviewed from 0.2.165,
-2026-10-08). Upstream's 0.2.166 changelog adds typed hook outputs and a
-`SystemInitData` TypedDict, corrects the `SandboxSettings.ignoreViolations`
-type, and bundles Claude CLI 2.1.299; none changes the `ClaudeSDKClient`
-initialization or `get_mcp_status()` surface used here, and the lock diff
-changes only this package's version and artifact hashes. `mcp_setup.SDK_VERSION`
-is the runtime check and moves with this pin.
+The host extra additionally pins `claude-agent-sdk==0.2.168` (uploaded
+2026-10-15; Dependabot #110, merged 2026-10-19; runtime check aligned in #129;
+reviewed from 0.2.166, which Dependabot #3 brought in on 2026-10-17 after the
+0.2.165 review of 2026-10-08). Upstream's 0.2.166 changelog adds typed hook
+outputs and a `SystemInitData` TypedDict and corrects the
+`SandboxSettings.ignoreViolations` type; 0.2.167 and 0.2.168 only update the
+bundled Claude CLI (2.1.300, 2.1.301), which Still never selects. None changes
+the `ClaudeSDKClient` initialization or `get_mcp_status()` surface used here,
+and each lock diff changes only this package's version and artifact hashes.
+`mcp_setup.SDK_VERSION` is the runtime check and moves with this pin.
 Its public `ClaudeSDKClient` initialization and `get_mcp_status()` are adapted
 by `mcp_setup`; no model query or tool call is submitted. The SDK source is
 [MIT](https://github.com/anthropics/claude-agent-sdk-python/blob/main/LICENSE).
@@ -399,8 +401,8 @@ apply to that independently executed program.
 The exact lock adds only that SDK and `sniffio==1.3.1` (MIT OR Apache-2.0,
 2024-02-25, Python >=3.7); existing versions remain unchanged. The SDK's
 required anyio, jsonschema and MCP versions fit the existing host closure.
-The 0.2.166 source archive hash is
-`6dbd129cf8bdae065e5504f3619176aa23c2d864afffc14464df387c72edde30`;
+The 0.2.168 source archive hash is
+`80388054a09c137d76fc29caa6e46bc90d2ae2ef09fac5ee1c38fc36d2762fda`;
 platform wheel hashes are in `uv.lock`. SDK import is lazy and version checked.
 A missing/different SDK or unsupported engine yields `unsupported`, never a
 fallback to another runtime or an inferred connection.

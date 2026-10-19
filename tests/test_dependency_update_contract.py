@@ -108,7 +108,7 @@ def _dependency_closure(packages: dict, roots: list[dict]) -> set[str]:
 
 def test_mcp_sdk_is_exact_and_host_only_in_the_resolved_package_graph() -> None:
     project = _toml("pyproject.toml")["project"]
-    assert project["optional-dependencies"]["mcp-host"] == [f"mcp=={MCP_VERSION}", "claude-agent-sdk==0.2.166"]
+    assert project["optional-dependencies"]["mcp-host"] == [f"mcp=={MCP_VERSION}", "claude-agent-sdk==0.2.168"]
     assert f"mcp-types=={MCP_VERSION}" in project["dependencies"]
     assert not any(dependency.split("=")[0] == "mcp" for dependency in project["dependencies"])
 
