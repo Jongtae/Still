@@ -22,13 +22,12 @@ import copy
 import math
 import json as _json
 import secrets as _secrets
+import threading as _threading
 import time as _time
-from urllib.error import HTTPError as _HTTPError, URLError as _URLError
-from urllib.request import Request as _Request, build_opener as _build_opener
 from urllib.parse import quote as _quote
 
 from .conversation_projection import object_particle
-from .providers import NoRedirect, ProviderError
+from .providers import ProviderError
 
 TELEGRAM_API_ROOT = 'https://api.telegram.org'
 TELEGRAM_FILE_ROOT = 'https://api.telegram.org/file'
@@ -54,6 +53,14 @@ TELEGRAM_POLL_UPDATE_KINDS = ('message', 'edited_message', 'callback_query', 'st
 TELEGRAM_PRESENCE_TIMEOUT = 4
 #: Telegram's documented rejection for malformed formatting entities.
 TELEGRAM_ENTITY_REJECTION = "can't parse entities"
+#: #121: extra tries of a Bot API request whose TCP connect or TLS handshake
+#: failed.  httpcore2 retries only before the request is written, so a
+#: sendMessage cannot arrive twice; about 5% of fresh handshakes to
+#: api.telegram.org from the owner's network are reset (#113).
+TELEGRAM_CONNECT_RETRIES = 2
+#: #121: the connect + TLS handshake budget of one try (seconds).
+TELEGRAM_CONNECT_TIMEOUT = 5
+TELEGRAM_UNREACHABLE_TEXT = '연결할 수 없거나 응답 시간이 초과되었습니다. 서버와 네트워크를 확인하세요.'
 
 
 class TelegramRejected(ProviderError):
@@ -75,6 +82,57 @@ class TelegramRejected(ProviderError):
         return self.error_code == 400 and TELEGRAM_ENTITY_REJECTION in self.description.lower()
 
 
+_telegram_client = None
+_telegram_client_lock = _threading.Lock()
+
+
+def telegram_http_client(verify=True):
+    """A pooled Bot API client (#121).
+
+    httpx2 keeps connections alive between calls and retries a failed TCP
+    connect or TLS handshake.  Redirects are never followed; ``verify=True``
+    uses the OS trust store (truststore).
+    """
+    import httpx2
+    return httpx2.Client(transport=httpx2.HTTPTransport(verify=verify, retries=TELEGRAM_CONNECT_RETRIES),
+                         follow_redirects=False)
+
+
+def _telegram_http():
+    """The one process-wide Bot API client, created on first use."""
+    global _telegram_client
+    with _telegram_client_lock:
+        if _telegram_client is None:
+            _telegram_client = telegram_http_client()
+        return _telegram_client
+
+
+class _Unreached(Exception):
+    """No HTTP response was read; ``timed_out`` when a time budget ran out."""
+
+    def __init__(self, timed_out):
+        super().__init__()
+        self.timed_out = timed_out
+
+
+def _telegram_exchange(method, url, timeout, limit, *, content=None, headers=None):
+    """One Bot API exchange: ``(status, body)`` with at most ``limit + 1`` body bytes read."""
+    import httpx2
+    budget = httpx2.Timeout(timeout, connect=min(timeout, TELEGRAM_CONNECT_TIMEOUT))
+    try:
+        with _telegram_http().stream(method, url, content=content, headers=headers, timeout=budget) as response:
+            body = bytearray()
+            for chunk in response.iter_bytes():
+                body += chunk
+                if len(body) > limit:
+                    break
+            return response.status_code, bytes(body)
+    except httpx2.TimeoutException:
+        raise _Unreached(timed_out=True) from None
+    except (httpx2.TransportError, OSError):
+        raise _Unreached(timed_out=False) from None
+
+
 def telegram_request_json(url, body, headers=None, timeout=TELEGRAM_TIMEOUT):
     """``providers.request_json`` for the Bot API, keeping Telegram's error envelope.
 
@@ -83,12 +141,12 @@ def telegram_request_json(url, body, headers=None, timeout=TELEGRAM_TIMEOUT):
     every HTTP error into one opaque failure, which makes a definite refusal
     indistinguishable from a lost response.  A bounded, well-formed 4xx
     envelope is returned as data; every other outcome raises the same
-    owner-safe ``ProviderError`` texts as ``request_json``.  Each call makes
-    exactly one HTTP request.
+    owner-safe ``ProviderError`` texts as ``request_json``.  The request is
+    written at most once; only a failed connect or TLS handshake is tried
+    again (#121).
     """
-    req = _Request(url, data=None if body is None else _json.dumps(body).encode(),
-                   headers={'Content-Type': 'application/json', **(headers or {})})
-    return _telegram_open(req, timeout)
+    data = None if body is None else _json.dumps(body).encode()
+    return _telegram_open(url, data, {'Content-Type': 'application/json', **(headers or {})}, timeout)
 
 
 def telegram_request_multipart(url, fields, files, timeout=TELEGRAM_TIMEOUT):
@@ -96,7 +154,7 @@ def telegram_request_multipart(url, fields, files, timeout=TELEGRAM_TIMEOUT):
 
     ``fields`` maps form names to strings; ``files`` maps attach names to
     ``(filename, content_type, data)``.  Errors are handled exactly as in
-    ``telegram_request_json``.  Each call makes exactly one HTTP request.
+    ``telegram_request_json``.
     """
     boundary = f'agentos-{_secrets.token_hex(12)}'
     parts = []
@@ -106,32 +164,29 @@ def telegram_request_multipart(url, fields, files, timeout=TELEGRAM_TIMEOUT):
         parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'
                      f'Content-Type: {content_type}\r\n\r\n'.encode() + bytes(data) + b'\r\n')
     parts.append(f'--{boundary}--\r\n'.encode())
-    req = _Request(url, data=b''.join(parts), headers={'Content-Type': f'multipart/form-data; boundary={boundary}'})
-    return _telegram_open(req, timeout)
+    return _telegram_open(url, b''.join(parts), {'Content-Type': f'multipart/form-data; boundary={boundary}'}, timeout)
 
 
-def _telegram_open(req, timeout):
-    """Send one prepared Bot API request; keep Telegram's refusal envelope as data."""
+def _telegram_open(url, data, headers, timeout):
+    """Send one Bot API request; keep Telegram's refusal envelope as data."""
     try:
-        with _build_opener(NoRedirect()).open(req, timeout=timeout) as response:
-            raw = response.read(2_000_001)
-    except _HTTPError as exc:
-        if 400 <= exc.code < 500:
+        status, raw = _telegram_exchange('GET' if data is None else 'POST', url, timeout, 2_000_000,
+                                         content=data, headers=headers)
+    except _Unreached as exc:
+        raise ProviderError(TELEGRAM_UNREACHABLE_TEXT, status='timeout' if exc.timed_out else None) from None
+    if not 200 <= status < 300:
+        if 400 <= status < 500:
             try:
-                envelope = _json.loads(exc.read(65_536))
-            except (ValueError, TypeError, OSError):
+                envelope = _json.loads(raw[:65_536])
+            except (ValueError, TypeError):
                 envelope = None
             if isinstance(envelope, dict) and envelope.get('ok') is False:
                 # #594 item 3: the HTTP status is the classification source;
                 # the body's own ``error_code`` is not trusted over it.
-                return {'ok': False, 'error_code': exc.code,
+                return {'ok': False, 'error_code': status,
                         'description': str(envelope.get('description', ''))[:512]}
-        raise ProviderError(f'연결 대상이 HTTP {exc.code} 오류를 반환했습니다. 주소·모델·인증 설정을 확인하세요.',
-                            status=exc.code) from None
-    except (_URLError, TimeoutError, OSError) as exc:
-        timed_out = isinstance(exc, TimeoutError) or isinstance(getattr(exc, 'reason', None), TimeoutError)
-        raise ProviderError('연결할 수 없거나 응답 시간이 초과되었습니다. 서버와 네트워크를 확인하세요.',
-                            status='timeout' if timed_out else None) from None
+        raise ProviderError(f'연결 대상이 HTTP {status} 오류를 반환했습니다. 주소·모델·인증 설정을 확인하세요.',
+                            status=status)
     if len(raw) > 2_000_000:
         raise ProviderError('응답이 너무 큽니다. 요청 범위를 줄여 주세요.')
     try:
@@ -142,17 +197,15 @@ def _telegram_open(req, timeout):
 
 def telegram_request_file(url, timeout=TELEGRAM_TIMEOUT, max_bytes=TELEGRAM_MAX_DOWNLOAD_BYTES):
     """Fetch one Bot API file without redirects and with a hard byte bound."""
-    req = _Request(url, headers={'Accept': 'image/jpeg,image/png,image/webp'})
     try:
-        with _build_opener(NoRedirect()).open(req, timeout=timeout) as response:
-            raw = response.read(max_bytes + 1)
-    except _HTTPError as exc:
-        raise ProviderError('Telegram 사진을 내려받지 못했습니다.', status=exc.code) from None
-    except (_URLError, TimeoutError, OSError) as exc:
-        timed_out = isinstance(exc, TimeoutError) or isinstance(getattr(exc, 'reason', None), TimeoutError)
+        status, raw = _telegram_exchange('GET', url, timeout, max_bytes,
+                                         headers={'Accept': 'image/jpeg,image/png,image/webp'})
+    except _Unreached as exc:
         raise ProviderError('Telegram 사진을 내려받지 못했습니다.',
-                            status='timeout' if timed_out else 'unreachable') from None
-    if not isinstance(raw, bytes) or len(raw) > max_bytes:
+                            status='timeout' if exc.timed_out else 'unreachable') from None
+    if not 200 <= status < 300:
+        raise ProviderError('Telegram 사진을 내려받지 못했습니다.', status=status)
+    if len(raw) > max_bytes:
         raise ProviderError('Telegram 사진이 내려받기 크기 제한을 넘었습니다.', status='too_large')
     return raw
 
