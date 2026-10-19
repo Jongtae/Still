@@ -60,7 +60,8 @@ from .calendar_conversation import (DROPPED_NOTICE as CALENDAR_DROPPED_NOTICE, S
 from .conversation_handoff import (CONNECTOR_LABELS, JUDGMENT_NO, JUDGMENT_YES,
                                    FOLLOWUP_CANCEL, FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE,
                                    FOLLOWUP_RETRY, eligible_for_followup_judgment,
-                                   ConversationJudgments, TelegramChannel, TelegramRejected, telegram_request_json,
+                                   ConversationJudgments, TelegramChannel, TelegramNotSent, TelegramRejected, telegram_request_json,
+                                   TELEGRAM_UNSENT_BACKOFF_FIRST, TELEGRAM_UNSENT_BACKOFF_MAX,
                                    telegram_request_file, telegram_request_multipart, transient_failure,
                                    ConnectorHandoff,
                                    ConversationFocus,
@@ -667,6 +668,8 @@ class AgentService:
         self.drive_read=None
         self.drive_picker_config=None
         self.lock=threading.RLock()
+        #: #123: while Telegram is unreachable, a never-sent reply waits until this monotonic time.
+        self._unsent_retry_at,self._unsent_backoff=0.0,0
         #: #749: the Settings login window's observed outcome (in memory; a restart forgets it).
         self._settings_login=None
         self.worker_lock=threading.Lock()
@@ -12156,6 +12159,8 @@ class AgentService:
 
     def deliver_one(self):
         # Mark before send. A lost response may mean delivered; never auto-resend.
+        # #123: a reply that never reached Telegram waits out its backoff before the next try.
+        if time.monotonic()<self._unsent_retry_at:return
         with self.lock:
             cfg=self.store.config('telegram',{})
             with self.store.db() as db:
@@ -12224,7 +12229,17 @@ class AgentService:
                     result=self.telegram.send_message(job['chat_id'],text,markup or removal,reply_to=anchor)
                 message_id=result.get('message_id') if isinstance(result,dict) else None
                 status='sent'
+                self._unsent_backoff=0
                 if removal:self.store.put(self.LOCATION_KEYBOARD_KEY,{})
+            except TelegramNotSent:
+                # #123: nothing reached Telegram, so the reply stays queued and is sent once it is
+                # reachable; what follows a settled send (notices, outcome) waits for that send.
+                with self.store.db() as db:
+                    db.execute("UPDATE jobs SET delivery='pending' WHERE id=? AND delivery='sending'",(job['id'],))
+                self._unsent_backoff=min(TELEGRAM_UNSENT_BACKOFF_MAX,max(TELEGRAM_UNSENT_BACKOFF_FIRST,self._unsent_backoff*2))
+                self._unsent_retry_at=time.monotonic()+self._unsent_backoff
+                LOG.warning('telegram delivery waiting work=%s retry_in=%ss',job['id'],self._unsent_backoff)
+                return
             except ProviderError as exc:
                 status='unknown'
                 LOG.warning('telegram delivery unknown work=%s kind=%s status=%s',job['id'],type(exc).__name__,exc.status)

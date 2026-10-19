@@ -20,10 +20,10 @@ from zoneinfo import ZoneInfo
 from personal_agent import preparations as prep
 from personal_agent.agent_runtime import (PROFILE_HEADING, Capabilities, ToolError, action_definitions, recorded_arguments,
                                           turn_context, render_turn_prompt)
-from personal_agent.conversation_handoff import ConversationJudgments, PREPARATION_REQUEST_PROPOSITION
+from personal_agent.conversation_handoff import ConversationJudgments, PREPARATION_REQUEST_PROPOSITION, TelegramNotSent
 from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
 from personal_agent.memory_service import MemoryService
-from personal_agent.providers import ModelAdapter
+from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
 
@@ -255,6 +255,60 @@ class ReminderTests(_Case):
         restarted.deliver_one()
         self.tick(restarted)
         self.assertFalse(any('알림:' in text for text in self.texts()))
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], 'unknown')
+
+    def test_a_reminder_due_while_telegram_is_unreachable_waits_and_arrives_once(self):
+        """#123: a send that never reached Telegram stays queued, backs off and is sent once it is reachable."""
+        _work, row = self.reminder_request()
+        self.service.deliver_one()
+        self.now += 3700
+        self.tick()
+        [run] = self.runs(row['id'])
+        outage, attempts, original = [True], [], self.service.telegram_transport
+        def unreachable(url, body=None, headers=None, timeout=60):
+            if url.endswith('/sendMessage'):
+                attempts.append(url)
+                if outage[0]:
+                    raise TelegramNotSent('connect failed after the client retries')
+            return original(url, body, headers, timeout=timeout)
+        self.service.telegram_transport = unreachable
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(run['id'])['delivery'], 'pending')
+        self.assertEqual(self.service._unsent_backoff, 15)
+        self.tick()
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], 'running', 'not settled while waiting')
+        self.service.deliver_one()
+        self.assertEqual(len(attempts), 1, 'nothing is tried during the backoff')
+        self.service._unsent_retry_at = 0
+        self.service.deliver_one()
+        self.assertEqual((len(attempts), self.service._unsent_backoff), (2, 30))
+        outage[0] = False
+        self.service._unsent_retry_at = 0
+        self.service.deliver_one()
+        self.tick()
+        self.assertEqual(sum('알림: 치과 예약 10시' in text for text in self.texts()), 1)
+        self.assertEqual(self.store.job(run['id'])['delivery'], 'sent')
+        self.assertEqual(self.service._unsent_backoff, 0)
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], 'delivered')
+
+    def test_a_send_lost_after_it_was_written_is_unknown_and_never_resent(self):
+        _work, row = self.reminder_request()
+        self.service.deliver_one()
+        self.now += 3700
+        self.tick()
+        [run] = self.runs(row['id'])
+        attempts, original = [], self.service.telegram_transport
+        def lost(url, body=None, headers=None, timeout=60):
+            if url.endswith('/sendMessage'):
+                attempts.append(url)
+                raise ProviderError('reset after the request was written')
+            return original(url, body, headers, timeout=timeout)
+        self.service.telegram_transport = lost
+        for _ in range(3):
+            self.service.deliver_one()
+            self.tick()
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(self.store.job(run['id'])['delivery'], 'unknown')
         self.assertEqual(self.service.preparations.get(row['id'])['state'], 'unknown')
 
     def test_a_late_reminder_says_it_is_late(self):
