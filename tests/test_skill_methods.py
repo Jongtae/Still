@@ -134,6 +134,12 @@ class HeaderReads(_Methods):
         self.assertEqual(evidence_summary('skill_load', result)['part'], 'header')
         self.assertNotIn('header', evidence_summary('skill_load', result), 'the record names the revision, never the text')
 
+    def test_a_body_without_a_section_heading_has_no_header(self):
+        """#32 review: a header read never returns a whole skill that has no section boundary."""
+        self.assertEqual(usage_header('Use this when asked. Step one. Step two.'), ('', True))
+        self.assertEqual(usage_header('Intro only.\n### A minor heading\nMore.'), ('', True))
+        self.assertEqual(usage_header('Use this when asked.\n\n## 1. Steps\nStep one.'), ('Use this when asked.', False))
+
     def test_a_long_opening_is_cut_at_the_byte_bound(self):
         body = 'Use this when ' + '가' * (MAX_HEADER_BYTES) + '\n\n## 1. Steps\nSecret step.'
         header, cut = usage_header(body)

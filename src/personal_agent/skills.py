@@ -158,9 +158,15 @@ def parse_frontmatter(text):
 
 
 def usage_header(body, limit=MAX_HEADER_BYTES):
-    """``(text, cut)``: the part of a skill body before its first ``## `` heading, at most ``limit`` UTF-8 bytes (#32)."""
-    head = re.split(r'(?m)^##\s', str(body or ''), maxsplit=1)[0].strip()
-    data = head.encode()
+    """``(text, cut)``: the part of a skill body before its first ``## `` heading, at most ``limit`` UTF-8 bytes (#32).
+
+    A body with no ``## `` heading has no header: ``('', True)``, so a header read can never
+    return a whole skill without the full load that counts against ``MAX_LOADS`` (#32 review).
+    """
+    parts = re.split(r'(?m)^##\s', str(body or ''), maxsplit=1)
+    if len(parts) < 2:
+        return '', True
+    data = parts[0].strip().encode()
     return data[:limit].decode('utf-8', 'ignore').rstrip(), len(data) > limit
 
 
