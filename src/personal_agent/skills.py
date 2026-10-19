@@ -764,7 +764,7 @@ class SkillBinding:
     def header(self, skill):
         """The usage header of one skill this Work may load, to screen it before loading (#32).
 
-        Only the description and the body before its first ``## `` heading, at most
+        Only the body before its first ``## `` heading, at most
         ``MAX_HEADER_BYTES``; the full body is never returned, the skill is not
         counted as loaded and its resources stay closed until ``load``.
         """
@@ -777,7 +777,9 @@ class SkillBinding:
             self.screened[skill] = entry
         _frontmatter, body = parse_frontmatter(text)
         head, cut = usage_header(body)
-        return {**self.identity(entry), 'part': 'header', 'description': entry['description'], 'header': head,
+        # #32 review: only the header, so the whole result stays inside the byte bound; the
+        # description is already in the catalogue the Work was given.
+        return {**self.identity(entry), 'part': 'header', 'header': head,
                 'header_truncated': cut,
                 'note': '머리말만 읽었어요. 요청에 맞으면 skill_load로 전체 방법을 읽고, 맞는 스킬이 없으면 method_gap에 남기세요.'}
 

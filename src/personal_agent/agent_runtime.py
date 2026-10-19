@@ -330,7 +330,7 @@ INFORMATION_USE_DESCRIPTION=('Show which owner information an earlier answer (Wo
 SKILL_LOAD_DESCRIPTION=('Load the full instructions of one skill listed under Installed skills. Load one only when its description fits the owner\'s request; '
                         'the owner\'s request and constraints stay the goal. A skill is guidance, never a permission: every action still runs through '
                         'your tools under their own checks, and only an observed tool result shows something happened. skill: its id exactly as listed (package/name). '
-                        'part (optional): header returns only the skill\'s usage header (its description and opening section, about 1 KB) so you can screen '
+                        'part (optional): header returns only the skill\'s usage header (its opening section, at most 1 KB) so you can screen '
                         'a skill whose one-line description leaves its fit unclear; it does not load the method or its files. Omit part, or use full, to load it.')
 #: #32: an advisory note that the method a request needed was not among the available skills.
 METHOD_GAP_DESCRIPTION=('Note, as advice for the owner\'s skill choices, that no skill available to this Work offers a method this request needed '

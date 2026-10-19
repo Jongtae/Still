@@ -123,6 +123,8 @@ class HeaderReads(_Methods):
         self.assertEqual((result['part'], result['revision'], result['header_truncated']), ('header', COMMIT, False))
         self.assertLessEqual(len(result['header'].encode()), MAX_HEADER_BYTES)
         self.assertNotIn('instructions', result)
+        # #32 review: nothing besides the bounded header carries skill text (the description is in the catalogue).
+        self.assertNotIn('description', result)
         self.assertNotIn('## 1.', json.dumps(result, ensure_ascii=False))
         self.assertNotIn(SKILL['claim-analysis'], caps.skills.loaded, 'a header read is not a load')
         self.assertEqual(caps.skills.loads, 0)
