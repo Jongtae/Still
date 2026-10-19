@@ -397,7 +397,9 @@ class OneEvolvingItemTests(unittest.TestCase):
   from personal_agent.agent_runtime import CORE_INSTRUCTIONS
   for phrase in ('Say that two records are one item only when the service shows it: a shared identifier, a status that names the other record, or a link between them',
                  'never decide it from similar names, times or amounts alone',
-                 'say which record is current and how the owner can tell in the service',
+                 # Codex review: which record is current needs its own service evidence, not identity alone.
+                 'say which record is current only when the service shows that too (a status, a time or an order between them)',
+                 'otherwise say which one is current is unresolved',
                  'When the records do not settle it, say it is unresolved, and do not promise there is no duplicate',
                  'Keep what you did apart from what you observed about the other records'):
    self.assertIn(phrase,CORE_INSTRUCTIONS)
