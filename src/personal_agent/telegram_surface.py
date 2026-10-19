@@ -521,13 +521,12 @@ class TelegramSurface:
                 with service.store.db() as db:
                     db.execute('BEGIN IMMEDIATE')
                     job=db.execute('SELECT * FROM jobs WHERE id=?',(job_id,)).fetchone()
-                    card=db.execute('SELECT * FROM telegram_task_cards WHERE job_id=?',(job_id,)).fetchone()
+                    card=service.store.telegram.card_row(db,job_id)
                     if (job and card and card['message_id']==-2 and isinstance(message.get('message_id'),int)
                             and card['chat_id']==sender and job['channel']==f"telegram:{generation}"
                             and job['chat_id']==sender and job['status']=='queued'):
-                        db.execute("UPDATE telegram_task_cards SET message_id=?,state='queued',created=? WHERE job_id=? AND message_id=-2",
-                                   (message['message_id'],time.time(),job_id))
-                        card=db.execute('SELECT * FROM telegram_task_cards WHERE job_id=?',(job_id,)).fetchone()
+                        service.store.telegram.confirm_unknown_card(db,job_id,message['message_id'])
+                        card=service.store.telegram.card_row(db,job_id)
                     if (job and card and card['chat_id']==sender and card['message_id']==message.get('message_id')
                             and job['channel']==f"telegram:{generation}" and job['chat_id']==sender and job['status']=='queued'):
                         db.execute("UPDATE jobs SET status='cancelled',error='소유자가 작업 카드를 통해 취소했습니다.',delivery='cancelled' WHERE id=? AND status='queued'",(job_id,))
@@ -632,9 +631,7 @@ class TelegramSurface:
                            and service.reopen_browser_login(notification['job_id'],notification['fingerprint']))
                     if exact:
                         # Only while still the expired prompt: the work loop may already have re-armed it.
-                        with service.store.db() as db:
-                            db.execute("UPDATE telegram_notifications SET state='browser_login_reopened' "
-                                       "WHERE id=? AND state='browser_login_expired'",(notification['id'],))
+                        service.store.telegram.mark_login_reopened(notification['id'])
                         try:service.telegram.edit_message_text(sender,notification['message_id'],BROWSER_LOGIN_REOPENING_TEXT,{'inline_keyboard':[]})
                         except ProviderError:pass
                         changed=True
@@ -896,8 +893,7 @@ class TelegramSurface:
                 if authorized and isinstance(text,str) and 0<len(text)<=MAX_OWNER_MESSAGE_CHARS:
                     album_key=(f'tg-album:{generation}:{sender}:{hashlib.sha256(media_group_id.encode()).hexdigest()}'
                                if isinstance(media_group_id,str) and 1<=len(media_group_id)<=128 else None)
-                    album=(db.execute('SELECT * FROM telegram_photo_albums WHERE generation=? AND chat_id=? AND media_group_id=?',
-                                      (generation,sender,media_group_id)).fetchone() if album_key else None)
+                    album=(service.store.telegram.album(db,generation,sender,media_group_id) if album_key else None)
                     album_created=False
                     if album_key:
                         if album:
@@ -914,11 +910,10 @@ class TelegramSurface:
                             else:
                                 task_id=service.store.enqueue('[사진 첨부]',album_key,f'telegram:{generation}',sender,db=db,owner_typed=True)
                             if album_key:
-                                db.execute('INSERT INTO telegram_photo_albums(job_id,generation,chat_id,media_group_id,last_received,caption) VALUES (?,?,?,?,?,?)',
-                                           (task_id,generation,sender,media_group_id,time.time(),album_caption))
+                                service.store.telegram.add_album(db,task_id,generation,sender,media_group_id,album_caption)
                                 album_created=True
                         if album_key:
-                            current=db.execute('SELECT caption FROM telegram_photo_albums WHERE job_id=?',(task_id,)).fetchone()
+                            current=service.store.telegram.album_caption(db,task_id)
                             captions=[part for part in (current['caption'] or '').split('\n\n') if part]
                             if text!='[사진 첨부]' and text not in captions:captions.append(text)
                             caption='\n\n'.join(captions)[:MAX_OWNER_MESSAGE_CHARS]
@@ -929,8 +924,7 @@ class TelegramSurface:
                             elif guided_context_requested:
                                 db.execute("UPDATE jobs SET status='awaiting_context' WHERE id=? AND status='queued'",(task_id,))
                                 guided_context=True
-                            db.execute('UPDATE telegram_photo_albums SET last_received=?,caption=? WHERE job_id=?',
-                                       (time.time(),caption,task_id))
+                            service.store.telegram.touch_album(db,task_id,caption)
                             db.execute("UPDATE jobs SET message=? WHERE id=? AND status IN ('queued','awaiting_context')",
                                        (caption or '[사진 첨부]',task_id))
                             service.store.attach_telegram_photo(task_id,photo_file_id,db=db)
@@ -1027,9 +1021,7 @@ class TelegramSurface:
             service.steer_spawn(answer)
             return 'step_approval'
         with service.store.db() as db:
-            notice=db.execute('SELECT * FROM telegram_notifications WHERE chat_id=? AND message_id=? AND kind IN (%s) '
-                              'ORDER BY created DESC LIMIT 1'%','.join('?'*len(MEMORY_SAVED_KINDS)),
-                              (user,message_id,*MEMORY_SAVED_KINDS)).fetchone()
+            notice=service.store.telegram.notice_on_message(db,user,message_id,MEMORY_SAVED_KINDS)
             turn=db.execute('SELECT job_id FROM telegram_turns WHERE chat_id=? AND reply_message_id=? ORDER BY created DESC LIMIT 1',
                             (user,message_id)).fetchone()
         target=dict(notice)['job_id'] if notice else (turn['job_id'] if turn else None)
@@ -1122,8 +1114,7 @@ class TelegramSurface:
         """Release persisted album Works after their short update-collection window."""
         service=self.service
         cutoff=(time.time() if now is None else now)-TELEGRAM_PHOTO_ALBUM_SETTLE_SECONDS
-        with service.store.db() as db:
-            db.execute('DELETE FROM telegram_photo_albums WHERE last_received<=?',(cutoff,))
+        service.store.telegram.settle_albums(cutoff)
 
     def deliver_one(self):
         # Mark before send. A lost response may mean delivered; never auto-resend.
