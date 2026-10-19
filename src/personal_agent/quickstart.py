@@ -45,7 +45,7 @@ from . import family_setup
 from . import family_share
 from . import remote_login
 from . import phone_input
-from .service_control import service_action
+from .service_control import DEFAULT_PORT as SERVICE_PORT, service_action
 from .connector_http import contained_opener
 from .gmail import (GMAIL_CONNECTOR, EncryptedGmailSecretStore, GmailConnector,
                     GmailError)
@@ -1578,6 +1578,45 @@ def service_main(argv):
     return 0 if receipt.get('ok') else 1
 
 
+#: Variables the login service reproduces without its environment: the data folder
+#: is recorded as ``--data`` and the installer's own switch never reaches Still.
+SERVICE_REPRODUCED_ENVIRONMENT=frozenset({'AGENTOS_DATA','AGENTOS_NO_START'})
+
+
+def login_service_status(args, *, platform=None, interactive=None, environ=None, action=service_action):
+    """Read the login service's status for first setup's offer, or None when this start cannot offer it (#105).
+
+    Only an interactive macOS start that the login service would reproduce
+    asks: loopback, the default ports, no tunnel host, and no other
+    ``AGENTOS_*`` configuration, since the service definition records only
+    its arguments and launchd would start Still without that environment.
+    A launchd start has no terminal and never prompts.
+    """
+    if (platform or sys.platform)!='darwin':return None
+    if not (sys.stdin.isatty() if interactive is None else interactive):return None
+    if (args.host!='127.0.0.1' or args.port!=SERVICE_PORT or args.drive_handoff_port is not None
+            or args.public_tunnel_host):return None
+    env=os.environ if environ is None else environ
+    if any(name.startswith('AGENTOS_') and name not in SERVICE_REPRODUCED_ENVIRONMENT for name in env):return None
+    return lambda:action('status',data_dir=args.data)
+
+
+def hand_over_to_login_service(data_dir, term, release, action=service_action):
+    """Register the login service and let it serve this data folder; True once it is observed healthy.
+
+    The service's own ``agentos start`` needs the port and the data-folder lock
+    this foreground start holds, so ``release`` frees them before the install
+    and ServiceController's health check confirms the job took over (#105).
+    """
+    release()
+    receipt=action('install',data_dir=data_dir)
+    if receipt.get('ok'):
+        term.say('\n'+msg('first_run.login_started'))
+        return True
+    term.say('\n'+msg('first_run.login_failed',error=receipt.get('error',''),next_action=receipt.get('next_action','')))
+    return False
+
+
 def configure_logging(store):
     """Send Still operational logs to stderr and a bounded private file.
 
@@ -1635,9 +1674,12 @@ def main():
     args=parser.parse_args()
     os.umask(0o077)
     store=QuickStore(args.data)
-    instance_lock=(store.private/'instance.lock').open('a')
-    try:fcntl.flock(instance_lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-    except BlockingIOError:parser.exit(1,'Still is already running for this data folder.\n')
+    def lock():
+        handle=(store.private/'instance.lock').open('a')
+        try:fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:handle.close();parser.exit(1,'Still is already running for this data folder.\n')
+        return handle
+    instance_lock=lock()
     configure_logging(store)
     handoff_port=args.drive_handoff_port or args.port+1
     if handoff_port==args.port:parser.exit(2,'Drive handoff port must differ from the HTTP callback port.\n')
@@ -1654,25 +1696,40 @@ def main():
     public_hosts=args.public_tunnel_host
     public_token=args.public_access_token
     if public_hosts and not public_token:public_token=secrets.token_urlsafe(24)
-    try:server=ThreadingHTTPServer((args.host,args.port),make_handler(service,public_hosts,public_token))
-    except OSError as exc:parser.exit(1,f'Cannot start: {exc}\nChoose another port with --port.\n')
-    service.local_server_port=server.server_port
+    def listen():
+        try:server=ThreadingHTTPServer((args.host,args.port),make_handler(service,public_hosts,public_token))
+        except OSError as exc:parser.exit(1,f'Cannot start: {exc}\nChoose another port with --port.\n')
+        service.local_server_port=server.server_port
+        handoff_server=None
+        if service.drive_web_oauth:
+            try:
+                handoff_server=ThreadingHTTPServer((args.host,handoff_port),make_handler(service))
+                handoff_server.socket=localhost_tls_context(store).wrap_socket(handoff_server.socket,server_side=True)
+            except (OSError, ValueError, ssl.SSLError) as exc:
+                server.server_close()
+                parser.exit(1,f'Google Drive local HTTPS handoff could not start: {exc}\n')
+        return server,handoff_server
+    server,handoff_server=listen()
     # #1445 part 5: a tunnel a killed earlier server left running blocks the next phone link.
     from .family_setup import reclaim_orphan_tunnels
     reclaim_orphan_tunnels(server.server_port)
-    handoff_server=None
-    if service.drive_web_oauth:
-        try:
-            handoff_server=ThreadingHTTPServer((args.host,handoff_port),make_handler(service))
-            handoff_server.socket=localhost_tls_context(store).wrap_socket(handoff_server.socket,server_side=True)
-        except (OSError, ValueError, ssl.SSLError) as exc:
-            server.server_close()
-            parser.exit(1,f'Google Drive local HTTPS handoff could not start: {exc}\n')
+    def close_listeners():
+        server.server_close()
+        if handoff_server:handoff_server.server_close()
     if sys.stdin.isatty() and not first_run.finished(store):
-        if not first_run.run(service,store,first_run.Terminal(first_run.terminal_language())):
-            server.server_close()
-            if handoff_server:handoff_server.server_close()
+        term=first_run.Terminal(first_run.terminal_language())
+        if not first_run.run(service,store,term,login_service=login_service_status(args)):
+            close_listeners()
             return 130
+        if first_run.wants_login_service(store):
+            # #105: hand this port and data folder to the login service instead of serving here.
+            if hand_over_to_login_service(args.data,term,lambda:(close_listeners(),instance_lock.close())):
+                home=f'http://{LOCAL_ADDRESS_HOST}:{SERVICE_PORT}/'
+                print(f'Still: {home}',flush=True)
+                if not args.no_browser:webbrowser.open(home)
+                return 0
+            instance_lock=lock()
+            server,handoff_server=listen()
     service.start()
     # #1541: a bot connected in the terminal gets Still's profile, and a failed photo is retried.
     threading.Thread(target=service.apply_still_profile,name='still-profile',daemon=True).start()

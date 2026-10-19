@@ -44,6 +44,7 @@ The first start is set up in the same terminal, like a first run of Claude Code.
 1. **Access password.** Off unless you answer `y`. It is a new password only for Still (12+ characters, typed twice), not your Mac login password. Without one, only this computer can open Still.
 2. **AI connection.** Choose ChatGPT (Codex), Claude (Claude Code), or an API key. If the chosen CLI is not installed, its official install page opens in the browser and setup continues when you press Enter. Codex then runs its own `codex login`; Claude Code asks for the token from `claude setup-token`. For an API key, Still explains the per-use billing, offers to open the provider's key page and proposes a default model where one exists; keys are typed hidden and stored in the private credential file. Choose *later* to connect in the browser.
 3. **Telegram (optional).** Answer `y` to chat with Still from your phone; Telegram must already be installed on your phone or this computer ([telegram.org](https://telegram.org)). Still opens @BotFather in Telegram and lists the steps (`/newbot`, a display name, a username ending in `bot`); paste the token BotFather sends, and Still opens the pairing link for you to press Start.
+4. **Start at login (macOS, optional).** Off unless you answer `y`. Asked once, only when no Still [login service](#background-service-macos) is registered yet and Still runs on its usual address (`127.0.0.1:8787`, no `--port`, `--host` or tunnel option) with no `AGENTOS_*` settings other than `AGENTOS_DATA`, because the login service starts Still without this terminal's environment. On `y`, this terminal hands Still over to the login service (`agentos service install`): it registers the service, waits until it answers, then opens the browser and exits, so you can close the terminal and Still starts again after a restart. If the service does not come up, setup prints why and Still keeps running in this terminal; turn it off later with `agentos service stop`.
 
 The browser then opens at `http://127.0.0.1:8787` as the final check. Run `agentos start` again at any time; a finished setup is not repeated, and a stopped one resumes at the first unfinished step. Starts without a terminal (for example the background login service) do not prompt.
 
@@ -141,7 +142,8 @@ Deleting local files does not reach other services. Delete the Telegram bot with
 `agentos start` runs in the foreground, and installing Still (Homebrew, the installer or a
 checkout) registers nothing to start at login. On macOS the same executable can instead be
 registered as a per-user launchd login service, so Telegram and web requests are handled
-without an interactive terminal session and Still starts again after a restart:
+without an interactive terminal session and Still starts again after a restart. First setup
+offers this once (step 4 above); the commands below do the same at any time:
 
 ```sh
 agentos service install    # register and start the login service
