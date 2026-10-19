@@ -876,9 +876,11 @@ class BrowserSession:
         """#1496: a click or typing step that timed out after the worker observed it carries ``observed_step``.
 
         The same observation a finished step's result carries (``observe_step``): whether the page
-        started a non-GET form submission, and whether the step spent an owner approval.
+        started a non-GET form submission, and whether the step spent an owner approval.  #103: a
+        press that reached the page with no click on the target carries it too.
         """
-        if isinstance(exc, ToolError) and exc.code == 'browser_timeout' and isinstance(getattr(exc, 'posted', None), bool):
+        if (isinstance(exc, ToolError) and exc.code in ('browser_timeout', PRESS_UNCONFIRMED_CODE)
+                and isinstance(getattr(exc, 'posted', None), bool)):
             exc.observed_step = {'posted': exc.posted, 'approved': bool(approved)}
         return exc
 
@@ -1250,6 +1252,15 @@ class BrowserSession:
         scrubbed like any page text.  A typing step whose press moved the focus
         elsewhere names the field that took it the same way (#12).
         """
+        if getattr(exc, 'code', None) == PRESS_UNCONFIRMED_CODE:
+            # #103: the cover named in model terms; the unknown effect and the observation stay.
+            cover = getattr(exc, 'cover', None)
+            named = self._model_cover(cover, snapshot) if isinstance(cover, dict) else None
+            renamed = ToolError(press_text(named, getattr(exc, 'navigated', False)), exc.code)
+            for key in ('effect', 'observed_step'):
+                if getattr(exc, key, None) is not None:
+                    setattr(renamed, key, getattr(exc, key))
+            return renamed
         focused = getattr(exc, 'focused', None)
         if isinstance(focused, dict):
             name = scrub(str(focused.get('name') or '')[:NAME_LIMIT], self._excluded())[0]
@@ -1257,6 +1268,10 @@ class BrowserSession:
         cover = getattr(exc, 'cover', None)
         if not isinstance(cover, dict):
             return exc
+        return ToolError(target_text('target_obscured', self._model_cover(cover, snapshot)), exc.code)
+
+    def _model_cover(self, cover, snapshot):
+        """A cover the worker reported by raw index, in the model's element numbers, scrubbed (#1395)."""
         numbers = {row.get('index'): row.get('n') for row in snapshot.get('_elements') or () if isinstance(row, dict)}
         excluded = self._excluded()
         controls = []
@@ -1264,8 +1279,7 @@ class BrowserSession:
             n = numbers.get(item.get('index')) if isinstance(item, dict) else None
             if isinstance(n, int):
                 controls.append({'index': n, 'name': scrub(str(item.get('name') or '')[:NAME_LIMIT], excluded)[0]})
-        text = scrub(str(cover.get('text') or '')[:400], excluded)[0]
-        return ToolError(target_text('target_obscured', {'text': text, 'controls': controls}), exc.code)
+        return {'text': scrub(str(cover.get('text') or '')[:400], excluded)[0], 'controls': controls}
 
     def click(self, args):
         effect = self._effect(args)
@@ -1415,9 +1429,46 @@ MOVED_TEXT = '누르는 사이 대상 요소가 자리를 옮겨 대상이 눌�
 MISSED_TEXT = ('누른 곳에 대상이 아닌 다른 요소가 있어 대상이 눌리지 않았습니다. 그 사이 대상이 가려졌거나 움직였을 수 '
                '있습니다. browser_read로 페이지를 다시 확인하세요.')
 FOCUS_MOVED_TEXT = '입력란을 누르자 페이지가 입력 초점을 다른 요소로 옮겨, 확인하지 않은 그 요소에는 입력하지 않았습니다.'
+#: #103: the native press reached the page, but no click on the target confirmed it (a
+#: layer the page put over it during the press, a press never released, or a page that
+#: went away).  Handlers the press did run may have changed something: never replayed.
+PRESS_UNCONFIRMED_CODE = 'press_unconfirmed'
+PRESS_UNCONFIRMED_TEXT = ('대상을 눌렀지만 대상에서 클릭이 확인되지 않았습니다. 누르기는 페이지에 전달됐으므로 그 사이 '
+                          '페이지가 바뀌었을 수 있습니다.')
+PRESS_NAVIGATED_TEXT = '누르는 사이 페이지가 다른 곳으로 이동했습니다.'
+PRESS_CHECK_TEXT = '같은 누르기를 반복하기 전에 browser_read로 페이지를 먼저 확인하세요.'
 TARGET_TEXTS = {'target_missing': MISSING_TEXT, 'target_changed': CHANGED_TEXT, 'target_hidden': HIDDEN_TEXT,
                 'not_typable': NOT_TYPABLE_TEXT, 'not_focusable': NOT_FOCUSED_TEXT,
                 'target_moved': MOVED_TEXT, 'press_missed': MISSED_TEXT}
+
+
+def press_text(cover=None, navigated=False):
+    """#103: what the model reads for a press that reached the page with no click on the target.
+
+    It names what covers the pressed point now, as a covered-target refusal does
+    (#1395), and says to read the page before pressing again: the press may have
+    changed it.
+    """
+    parts = [PRESS_UNCONFIRMED_TEXT]
+    if navigated:
+        parts.append(PRESS_NAVIGATED_TEXT)
+    text, controls = _cover_parts(cover)
+    if text:
+        parts.append(f'누른 자리를 가린 요소: “{text}”.')
+    if controls:
+        parts.append('그 안의 요소: ' + ' · '.join(controls) + '.')
+    parts.append(PRESS_CHECK_TEXT)
+    return ' '.join(parts)
+
+
+def _cover_parts(cover):
+    """A cover's text and its listed controls (``"<n> <name>"``), bounded (#1395)."""
+    cover = cover if isinstance(cover, dict) else {}
+    text = ' '.join(str(cover.get('text') or '').split())[:160]
+    controls = [f"{item['index']} {' '.join(str(item.get('name') or '').split())[:80]}".strip()
+                for item in (cover.get('controls') or [])[:8]
+                if isinstance(item, dict) and isinstance(item.get('index'), int) and not isinstance(item.get('index'), bool)]
+    return text, controls
 
 
 def target_text(code, cover=None):
@@ -1435,11 +1486,7 @@ def target_text(code, cover=None):
             ' browser_read로 페이지를 다시 확인한 뒤 입력할 입력란을 대상으로 다시 시도하세요.'
     if code != 'target_obscured':
         return TARGET_TEXTS.get(code, TARGET_TEXT)
-    cover = cover if isinstance(cover, dict) else {}
-    text = ' '.join(str(cover.get('text') or '').split())[:160]
-    controls = [f"{item['index']} {' '.join(str(item.get('name') or '').split())[:80]}".strip()
-                for item in (cover.get('controls') or [])[:8]
-                if isinstance(item, dict) and isinstance(item.get('index'), int) and not isinstance(item.get('index'), bool)]
+    text, controls = _cover_parts(cover)
     if not text and not controls:
         return OBSCURED_TEXT + ' browser_read로 페이지를 다시 확인하세요.'
     parts = [OBSCURED_TEXT]
@@ -1856,6 +1903,16 @@ class WebKitWorkerDriver:
                 if isinstance(message.get('posted'), bool):
                     timeout.posted = message['posted']
                 raise timeout
+            if message.get('pressed') is True or code in ('press_no_click', PRESS_UNCONFIRMED_CODE):
+                # #103: the press reached the page with no click on the target.
+                navigated = message.get('navigated') is True
+                exc = ToolError(press_text(navigated=navigated), PRESS_UNCONFIRMED_CODE)
+                exc.effect = 'unknown'
+                exc.cover = message.get('cover') if isinstance(message.get('cover'), dict) else None
+                exc.focused, exc.navigated = None, navigated
+                if isinstance(message.get('posted'), bool):
+                    exc.posted = message['posted']   # completed by ``_observed`` (#1496)
+                raise exc
             if code in TARGET_ERRORS:
                 exc = ToolError(target_text(code), 'target_unavailable')
                 # #1395: the session renames the cover in the model's element numbers.

@@ -1027,6 +1027,34 @@ class CoveredTargetTests(unittest.TestCase):
         self.assertIn('가린 요소를 닫거나 치운 뒤 다시 시도하세요.', text)
 
 
+    def test_a_press_that_reached_the_page_without_a_click_is_of_unknown_effect(self):
+        """#103: the cover is named in model numbers; the unknown effect and the observation survive it."""
+        sess, driver = session(steps=40)
+        sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
+        rows = sess.last['_elements']
+        target = next(row for row in rows if row['name'] == '쿠폰 적용')
+        coupon = next(row for row in rows if row['name'] == '받는 사람')
+
+        def unconfirmed(index, timeout, approved=False, confirm_ok=False):
+            exc = ToolError(bs.press_text(), bs.PRESS_UNCONFIRMED_CODE)
+            exc.effect, exc.posted, exc.navigated = 'unknown', False, False
+            exc.cover = {'text': '잠시만요 token=abc123secret', 'controls': [{'index': coupon['index'], 'name': coupon['name']}]}
+            raise exc
+        driver.click = unconfirmed
+        with self.assertRaises(ToolError) as caught:
+            sess.click({'target': str(target['n']), 'effect': 'read'})
+        exc = caught.exception
+        self.assertEqual((exc.code, exc.effect, exc.observed_step),
+                         (bs.PRESS_UNCONFIRMED_CODE, 'unknown', {'posted': False, 'approved': False}))
+        text = str(exc)
+        self.assertTrue(text.startswith(bs.PRESS_UNCONFIRMED_TEXT), text)
+        self.assertIn(f"그 안의 요소: {coupon['n']} 받는 사람.", text)
+        self.assertNotIn('abc123secret', text, 'the cover text is scrubbed like page text')
+        self.assertTrue(text.endswith(bs.PRESS_CHECK_TEXT), 'read the page before pressing again')
+        self.assertIn(bs.PRESS_NAVIGATED_TEXT, bs.press_text(navigated=True))
+        self.assertNotIn(bs.PRESS_NAVIGATED_TEXT, bs.press_text())
+
+
 class InputTargetTests(unittest.TestCase):
     """#12: a typing step that did not run says which reason held, and never types elsewhere."""
 

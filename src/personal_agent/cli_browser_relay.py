@@ -66,13 +66,15 @@ def _error_payload(exc):
 
     #1484: ``ran: false`` when Still refused the call before the tool ran.
     #1496: ``observed_step`` of a click or typing step that timed out after it was observed.
+    #103: ``effect: unknown`` of a step whose outcome is not known (``classify_failure``).
     """
     from .bounded_execution import ExecutionError
     if isinstance(exc, ExecutionError):
         return {'kind': 'invalid_arguments', 'message': str(exc), **ran_field(exc)}
     if isinstance(exc, ToolError):
+        # #103: an unknown effect (a press that reached the page unconfirmed) is never replayed by the bridge either.
         return {'kind': 'tool', 'message': str(exc), 'code': exc.code, 'requires': exc.requires, **ran_field(exc),
-                **observed_field(exc)}
+                **observed_field(exc), **({'effect': 'unknown'} if getattr(exc, 'effect', None) == 'unknown' else {})}
     if isinstance(exc, (TimeoutError, ConnectionError)) or (isinstance(exc, OSError) and not isinstance(exc, FileNotFoundError)):
         return {'kind': 'transient', 'message': ''}
     if isinstance(exc, ValueError):
@@ -86,6 +88,8 @@ def relay_exception(error):
     seen = observed_value(error.get('observed_step')) if isinstance(error, dict) else None
     if seen and isinstance(exc, ToolError):
         exc.observed_step = seen
+    if isinstance(error, dict) and error.get('effect') == 'unknown' and isinstance(exc, ToolError):
+        exc.effect = 'unknown'
     return not_run(exc) if isinstance(error, dict) and error.get('ran') is False else exc
 
 
