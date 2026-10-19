@@ -28,7 +28,7 @@ from personal_agent.conversation_handoff import (FOLLOWUP_CANCEL, FOLLOWUP_CORRE
                                                  INTENT_CONVERSATION, INTENT_NOTE_CREATE, INTENT_SETTINGS,
                                                  INTENT_UNSUPPORTED, TELEGRAM_POLL_UPDATE_KINDS, ConversationJudgments,
                                                  TelegramChannel,
-                                                 TelegramRejected, telegram_request_json)
+                                                 TelegramNotSent, TelegramRejected, telegram_request_json)
 from personal_agent.conversation_projection import TERMINAL_FAILED_HEADER
 from personal_agent.decision import OUTCOME_DECIDED, FixtureDecisionEngine, SelectionDecision, fixture_confidence
 from personal_agent.agent_runtime import WORK_STOPPED
@@ -1612,6 +1612,20 @@ class TelegramErrorEnvelopeTests(unittest.TestCase):
                         telegram_request_json('https://api.telegram.org/botX/sendMessage', {'a': 1})
                 self.assertNotIsInstance(caught.exception, TelegramRejected)
                 self.assertEqual(len(opened), 1, 'never a second request')
+
+    def test_only_a_failure_before_the_request_left_is_marked_not_sent(self):
+        """#113: urllib wraps only request-phase failures in URLError; a response-phase reset stays uncertain."""
+        for error, not_sent in ((urllib.error.URLError(ConnectionResetError(54, 'reset')), True),
+                                (urllib.error.URLError(TimeoutError()), True),
+                                (ConnectionResetError(54, 'reset'), False),
+                                (TimeoutError(), False)):
+            with self.subTest(error=repr(error)):
+                opener, opened = self.opener(error)
+                with mock.patch('personal_agent.conversation_handoff._build_opener', return_value=opener):
+                    with self.assertRaises(ProviderError) as caught:
+                        telegram_request_json('https://api.telegram.org/botX/sendMessage', {'a': 1})
+                self.assertIs(isinstance(caught.exception, TelegramNotSent), not_sent)
+                self.assertEqual(len(opened), 1, 'the transport itself never retries')
 
     def test_the_http_status_not_the_body_error_code_classifies_a_refusal(self):
         """#594 item 3: a body claiming 400 on another 4xx status is not an entity-parse refusal."""

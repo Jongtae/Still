@@ -9,7 +9,7 @@ that the wire shape and failure translation are exact.
 import tempfile
 import unittest
 
-from personal_agent.conversation_handoff import TelegramChannel
+from personal_agent.conversation_handoff import TelegramChannel, TelegramNotSent
 from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
@@ -307,3 +307,48 @@ class PhotoDownloadRetryTests(unittest.TestCase):
                 self.assertEqual(self.slept, [])
                 self.assertNotIn('보내 주신 사진', str(caught.exception))
         self.assertEqual(len(refused.calls), 1)
+
+
+class UnsentSendRetryTests(unittest.TestCase):
+    """#113: a sendMessage that provably never reached Telegram is tried again, bounded."""
+
+    def send(self, failures, result=None):
+        self.slept, calls = [], []
+        def transport(url, body, headers, *, timeout):
+            calls.append(body)
+            if len(calls) <= len(failures):
+                raise failures[len(calls) - 1]
+            return result or {'ok': True, 'result': {'message_id': 5}}
+        channel = TelegramChannel(lambda: transport, lambda: 'TOKEN', sleep=self.slept.append)
+        try:
+            return channel.send_message(1, 'reminder'), calls
+        except ProviderError as exc:
+            exc.calls = calls
+            raise
+
+    def test_a_reset_before_the_request_left_is_sent_again(self):
+        result, calls = self.send([TelegramNotSent('reset'), TelegramNotSent('reset')])
+        self.assertEqual(result, {'message_id': 5})
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(self.slept, [1, 2])
+
+    def test_a_lasting_unsent_failure_stops_after_three_tries(self):
+        with self.assertRaises(TelegramNotSent) as caught:
+            self.send([TelegramNotSent('reset')] * 5)
+        self.assertEqual(len(caught.exception.calls), 3)
+        self.assertEqual(self.slept, [1, 2])
+
+    def test_an_uncertain_failure_a_timeout_and_a_refusal_are_tried_once(self):
+        cases = ((ProviderError('lost after write'), ProviderError),
+                 (TelegramNotSent('connect timed out', status='timeout'), TelegramNotSent))
+        for failure, raised in cases:
+            with self.subTest(failure=failure):
+                with self.assertRaises(raised) as caught:
+                    self.send([failure])
+                self.assertEqual(len(caught.exception.calls), 1, 'never a second request')
+                self.assertEqual(self.slept, [])
+        with self.assertRaises(ProviderError) as caught:
+            self.send([], {'ok': False, 'error_code': 403, 'description': 'Forbidden: bot was blocked by the user'})
+        self.assertEqual(len(caught.exception.calls), 1)
+        self.assertEqual(self.slept, [])
+

@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 from personal_agent import preparations as prep
 from personal_agent.agent_runtime import (PROFILE_HEADING, Capabilities, ToolError, action_definitions, recorded_arguments,
                                           turn_context, render_turn_prompt)
-from personal_agent.conversation_handoff import ConversationJudgments, PREPARATION_REQUEST_PROPOSITION
+from personal_agent.conversation_handoff import ConversationJudgments, PREPARATION_REQUEST_PROPOSITION, TelegramNotSent
 from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
 from personal_agent.memory_service import MemoryService
 from personal_agent.providers import ModelAdapter
@@ -256,6 +256,28 @@ class ReminderTests(_Case):
         self.tick(restarted)
         self.assertFalse(any('알림:' in text for text in self.texts()))
         self.assertEqual(self.service.preparations.get(row['id'])['state'], 'unknown')
+
+    def test_a_reminder_whose_connection_resets_before_sending_still_arrives(self):
+        """#113: a reset before the request left is not a lost response; the reminder is sent once."""
+        _work, row = self.reminder_request()
+        self.service.deliver_one()
+        self.now += 3700
+        self.tick()
+        resets, original = [], self.service.telegram_transport
+        def resetting(url, body=None, headers=None, timeout=60):
+            if url.endswith('/sendMessage') and len(resets) < 2:
+                resets.append(url)
+                raise TelegramNotSent('reset during the TLS handshake')
+            return original(url, body, headers, timeout=timeout)
+        self.service.telegram_transport = resetting
+        self.service.telegram._sleep = lambda seconds: None
+        self.service.deliver_one()
+        self.tick()
+        self.assertEqual(len(resets), 2)
+        self.assertEqual(sum('알림: 치과 예약 10시' in text for text in self.texts()), 1)
+        [run] = self.runs(row['id'])
+        self.assertEqual(self.store.job(run['id'])['delivery'], 'sent')
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], 'delivered')
 
     def test_a_late_reminder_says_it_is_late(self):
         row = self.scheduled(kind='reminder', goal='약 먹기', seconds=60, channel='telegram')

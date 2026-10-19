@@ -35,7 +35,8 @@ TELEGRAM_FILE_ROOT = 'https://api.telegram.org/file'
 TELEGRAM_TIMEOUT = 15
 TELEGRAM_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 #: #1420: tries of a photo's read-only getFile and file GET on a transient
-#: transport failure, and the waits between them (seconds).
+#: transport failure, and the waits between them (seconds).  #113: also the
+#: tries of a sendMessage that provably never reached Telegram.
 TELEGRAM_DOWNLOAD_ATTEMPTS = 3
 TELEGRAM_DOWNLOAD_BACKOFF = (1, 2)
 TELEGRAM_FAILURE_TEXT = 'Telegram 요청이 실패했습니다. 봇 설정을 확인하세요.'
@@ -73,6 +74,15 @@ class TelegramRejected(ProviderError):
     @property
     def entity_parse_error(self):
         return self.error_code == 400 and TELEGRAM_ENTITY_REJECTION in self.description.lower()
+
+
+class TelegramNotSent(ProviderError):
+    """The request failed before it was fully written: Telegram received nothing (#113).
+
+    urllib wraps only a failure of ``HTTPConnection.request`` (connect, TLS
+    handshake, write) in ``URLError``; a failure while reading the response
+    is raised as it is and stays an uncertain outcome.
+    """
 
 
 def telegram_request_json(url, body, headers=None, timeout=TELEGRAM_TIMEOUT):
@@ -130,8 +140,9 @@ def _telegram_open(req, timeout):
                             status=exc.code) from None
     except (_URLError, TimeoutError, OSError) as exc:
         timed_out = isinstance(exc, TimeoutError) or isinstance(getattr(exc, 'reason', None), TimeoutError)
-        raise ProviderError('연결할 수 없거나 응답 시간이 초과되었습니다. 서버와 네트워크를 확인하세요.',
-                            status='timeout' if timed_out else None) from None
+        error = TelegramNotSent if isinstance(exc, _URLError) else ProviderError
+        raise error('연결할 수 없거나 응답 시간이 초과되었습니다. 서버와 네트워크를 확인하세요.',
+                    status='timeout' if timed_out else None) from None
     if len(raw) > 2_000_000:
         raise ProviderError('응답이 너무 큽니다. 요청 범위를 줄여 주세요.')
     try:
@@ -236,7 +247,22 @@ class TelegramChannel:
             body['parse_mode'] = parse_mode
         if isinstance(reply_to, int):
             body['reply_parameters'] = {'message_id': reply_to, 'allow_sending_without_reply': True}
-        return self.call('sendMessage', body)
+        return self._resent_unsent(lambda: self.call('sendMessage', body))
+
+    def _resent_unsent(self, request):
+        """``request()``, tried again while it provably never reached Telegram (#113).
+
+        A reset before the request was written cannot have delivered
+        anything, so another try cannot duplicate a message.  A timeout, a
+        failure after the request was written and a refusal stay one try.
+        """
+        for attempt in range(TELEGRAM_DOWNLOAD_ATTEMPTS):
+            try:
+                return request()
+            except TelegramNotSent as exc:
+                if exc.status == 'timeout' or attempt + 1 >= TELEGRAM_DOWNLOAD_ATTEMPTS:
+                    raise
+            self._sleep(TELEGRAM_DOWNLOAD_BACKOFF[min(attempt, len(TELEGRAM_DOWNLOAD_BACKOFF) - 1)])
 
     def edit_message_text(self, chat_id, message_id, text, reply_markup=None):
         body = {'chat_id': chat_id, 'message_id': message_id, 'text': text}

@@ -12176,8 +12176,9 @@ class AgentService:
                 message_id=result.get('message_id') if isinstance(result,dict) else None
                 status='sent'
                 if removal:self.store.put(self.LOCATION_KEYBOARD_KEY,{})
-            except ProviderError:
+            except ProviderError as exc:
                 status='unknown'
+                LOG.warning('telegram delivery unknown work=%s kind=%s status=%s',job['id'],type(exc).__name__,exc.status)
             with self.store.db() as db:
                 db.execute('UPDATE jobs SET delivery=? WHERE id=?',(status,job['id']))
             # #996: every delivered answer, so an owner reaction on it finds its Work.
