@@ -217,6 +217,12 @@ Research, files, coding, communication and scheduling use the same owner state/G
 
 Repository issues/branches/PR/CI, Constitution, Goal Execution Contract and handoff are **development infrastructure**, not end-user features. Spec Kit/BuilderMethods/Open Still-style patterns may inform development, but are not mandatory runtime dependencies or evidence of live autonomy.
 
+## Local service code boundaries
+
+`AgentService` (`quickstart_service.py`) is the local service's composition root: it builds the store, connectors, orchestrators and channel adapters and owns the queue worker. It is not a dependency-injection or plugin framework. Responsibilities move out of it as named boundaries (#21), following the existing extractions (`orchestrator`, `settings_orchestrator`, `conversation_handoff`, `telegram_presence`):
+
+- **Work execution.** `_run_one` claims one queued Work (`_claim_queued_work`) and runs it through named phases that share one `WorkRun` record (`work_execution.py`): route (`_route_work`), photos (`_load_work_photos`), Still-answered intent (`_run_rule_intent`), worker turn preparation (`_prepare_worker_turn`), orchestrated attempts (`_run_worker_attempts` with `_run_cli_attempt` or `_run_api_attempt`), outcome (`_settle_worker_outcome`), then `_finish_work` or `_fail_work`, and always `_settle_work_judgments` and `_after_work`. The phases call the same service methods as before; authority, approvals, budgets and recovery are unchanged by the split.
+
 ## Current implementation boundary
 
 FILE-WORKSPACE-01 #314 is complete via PR #320 and #324: read-only approved references, managed writes, provenance, rebuildable-index separation and restart reuse with deterministic adapters/temp files. D-AP-01 #334 / PR #350 supplies v0.1 schema/fixture evidence, not a package manager. DOGFOOD-01 #351 / PRs #354–#356 adds documented owner steps and simulated-provider/local-HTTP/file/restart acceptance; it does not establish current live browser/provider quality.
