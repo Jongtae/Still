@@ -1,4 +1,4 @@
-import json,tempfile,unittest
+import json,re,tempfile,unittest
 from pathlib import Path
 from personal_agent.agent_runtime import Capabilities,run_agent
 from personal_agent.quickstart_service import AgentService
@@ -344,3 +344,83 @@ class TimeSensitiveRecheckTests(unittest.TestCase):
   self.assertTrue(network.calls,'the recheck was attempted')
   self.assertIn('error',observed['s']);self.assertEqual(observed['s']['effect'],'none')
   self.assertNotIn(('web_search','succeeded'),[event[:2] for event in self.events],'no lookup is recorded as checked')
+
+
+class OneEvolvingItemTests(unittest.TestCase):
+ """QUALITY-REPORT-01 (#15): several service views of one evolving item.
+
+ Evidence class: worker guidance text plus model-free scripted runs with an
+ injected model transport, a fake signed-in browser and a fixture outcome
+ judgment.  Two generic domains (a scheduled item that went live, a draft
+ that was sent) and an ambiguous pair run through the same path.  The
+ fixtures prove what the worker is told, that the service's own link
+ evidence reaches it and the judgment unchanged, and that the one action
+ stays recorded apart from the views it read; they do not prove how a live
+ model words its report.
+ """
+ CASES={
+  'scheduled-to-live':('start',{'https://service.example/scheduled':'Scheduled: Weekly sync, id ev-41, status: started, now live as ev-41.',
+                                'https://service.example/live':'Live now: Weekly sync, id ev-41, started from scheduled item ev-41.'},'ev-41'),
+  'draft-to-sent':('send',{'https://mail.example/drafts':'Draft d-7: Quarterly note, status: sent as message m-9.',
+                           'https://mail.example/sent':'Sent message m-9: Quarterly note, created from draft d-7.'},'d-7'),
+  'ambiguous':('pay',{'https://billing.example/pending':'Pending: Monthly invoice 120,000, id inv-3.',
+                      'https://billing.example/paid':'Paid: Monthly invoice 120,000, id inv-8.'},None),
+ }
+
+ def setUp(self):
+  self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
+  self.store=QuickStore(Path(self.tmp.name)/'data')
+
+ def run_case(self,target,views):
+  import test_agency_loop as loop
+  class Browser(Capabilities):
+   def __init__(self,*args,**kwargs):super().__init__(*args,browser=lambda:object(),**kwargs)
+   def execute(self,name,args):
+    if name=='browser_open':return {'state':'page','url':args['url'],'text':views[args['url']]}
+    if name=='browser_click':return {'state':'clicked','target':args['target']}
+    return super().execute(name,args)
+  judged=[];events=[]
+  def judge(facts):
+   judged.append(facts);return True
+  urls=list(views)
+  script=loop.Script({'tool_calls':[loop.call('act','browser_click',target=target,effect='mutate')]},
+                     {'tool_calls':[loop.call('v1','browser_open',url=urls[0],effect='read')]},
+                     {'tool_calls':[loop.call('v2','browser_open',url=urls[1],effect='read')]},
+                     loop.finish('f','act','v1','v2',summary='report'))
+  caps=Browser(self.store,ModelAdapter(script),loop.CFG,'','job',lambda *event:events.append(event),
+               network=loop.Network(),judgments=loop.judgments(judge))
+  run_agent(caps.adapter,loop.CFG,'',[{'role':'user','content':f'{target} it'}],'',caps,caps.record)
+  shown={message.get('tool_call_id'):json.loads(message['content']) for message in script.bodies[-1]['messages'] if message['role']=='tool'}
+  return script,shown,judged,events
+
+ def test_the_worker_guidance_names_identity_from_service_evidence_only(self):
+  from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+  for phrase in ('Say that two records are one item only when the service shows it: a shared identifier, a status that names the other record, or a link between them',
+                 'never decide it from similar names, times or amounts alone',
+                 'say which record is current and how the owner can tell in the service',
+                 'When the records do not settle it, say it is unresolved, and do not promise there is no duplicate',
+                 'Keep what you did apart from what you observed about the other records'):
+   self.assertIn(phrase,CORE_INSTRUCTIONS)
+  for domain in ('calendar','meeting','mail','email','invoice','payment'):
+   self.assertNotIn(domain,CORE_INSTRUCTIONS.split('A service can show one item',1)[1].split('\n',1)[0].lower(),'the method names no service domain')
+
+ def test_each_domain_runs_the_same_path_and_the_service_link_reaches_the_worker_and_the_judgment(self):
+  for name,(target,views,link) in self.CASES.items():
+   with self.subTest(case=name):
+    self.setUp()
+    script,shown,judged,events=self.run_case(target,views)
+    self.assertIn('Say that two records are one item only when the service shows it',script.bodies[0]['messages'][0]['content'])
+    # Each view reaches the worker verbatim, with its identifiers and status.
+    self.assertEqual([shown['v1']['text'],shown['v2']['text']],list(views.values()))
+    # The judgment of the report sees the same views, so a claimed relationship is checked against them.
+    [facts]=judged
+    for text in views.values():self.assertIn(text,json.dumps(facts,ensure_ascii=False))
+    if link:
+     self.assertTrue(all(link in text for text in views.values()),'the linked fixture carries the service\'s own link')
+    else:
+     ids=[set(re.findall(r'\binv-\d+\b',text)) for text in views.values()]
+     self.assertFalse(ids[0]&ids[1],'the ambiguous pair shares only a label and an amount, no identifier')
+    # The one action is recorded apart from the views it read.
+    finished=[json.loads(detail) for tool,status,detail in events if status=='succeeded' and tool!='model']
+    self.assertEqual([(row['host_action'],row['declared_effect']) for row in finished],
+                     [('browser_click','mutate'),('browser_open','read'),('browser_open','read')])
