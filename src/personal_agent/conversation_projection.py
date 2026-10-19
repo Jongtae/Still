@@ -85,6 +85,8 @@ TOOL_LABELS = {
     'information_use': msg('projection.check_information_used'),
     # SKILL-SUPPLY-02 (#961): an installed skill's know-how read for this request.
     'skill_load': '스킬 읽기', 'skill_resource': '스킬 자료 읽기',
+    # #32: an advisory note that no available skill had the method a request needed.
+    'method_gap': '맞는 방법 없음 기록',
 }
 #: A tool this catalogue does not name (for example an AgentPackage tool).
 TOOL_LABEL_FALLBACK = '도구 실행'

@@ -117,7 +117,7 @@ _SETTINGS = 'owner-settings-served-on-trusted-local-route-only'
 _INFORMATION_USE = 'work-information-use-served-on-trusted-local-route-only'
 #: #961: skills are read from the owner store; the isolated profiles never read it (#960 section 3).
 _SKILLS = 'skills-served-on-trusted-local-route-only'
-_SKILL_ACTIONS = ('skill_load', 'skill_resource')
+_SKILL_ACTIONS = ('skill_load', 'skill_resource', 'method_gap')
 
 #: The verified limitation of the trusted-local profile (owner decision on
 #: #604).  The CLI's own built-in tools can read local host files that Still

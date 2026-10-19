@@ -7,5 +7,14 @@
    "address": "github.com/Jongtae/Still/tree/main/skills/emart-ssg"},
   {"name": "map-directions",
    "description": "When the owner will go somewhere: when to leave, how to get there (mode, approximate time, parking) and one route link in the owner's preferred map service.",
-   "address": "github.com/Jongtae/Still/tree/main/skills/map-directions"}
+   "address": "github.com/Jongtae/Still/tree/main/skills/map-directions"},
+  {"name": "summary-or-analysis",
+   "description": "Deciding whether the owner asked for a summary, a comparison, an analysis or a recommendation, and what a finished answer of that form contains.",
+   "address": "github.com/Jongtae/Still/tree/main/skills/summary-or-analysis"},
+  {"name": "claim-analysis",
+   "description": "Analysing claims and opinions: support, counter-evidence, disagreement and uncertainty, and only the conclusion the evidence justifies.",
+   "address": "github.com/Jongtae/Still/tree/main/skills/claim-analysis"},
+  {"name": "source-cross-check",
+   "description": "Checking a fact across sources: the original source, independent confirmation, dates and definitions, and agreement, conflict or a single source reported as such.",
+   "address": "github.com/Jongtae/Still/tree/main/skills/source-cross-check"}
 ]

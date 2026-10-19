@@ -71,6 +71,8 @@ HOST_TOOLS={
     # #961: read one pinned skill this Work may load, or one of its packaged text files.
     'skill_load': HostTool(False, True, False, None, False, None),
     'skill_resource': HostTool(False, True, False, None, False, None),
+    # #32: an advisory note in the Work's own record that no available skill had the method it needed.
+    'method_gap': HostTool(False, True, False, None, False, None),
     # #1172: read-only search and read of the owner's connected Google Drive.
     'drive_search': HostTool(False, True, True, 'drive', False, None),
     'drive_read': HostTool(False, True, True, 'drive', False, None),
