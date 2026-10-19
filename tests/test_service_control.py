@@ -209,6 +209,14 @@ class ServiceControlTests(unittest.TestCase):
         # The stable opt path is kept, not the versioned Cellar path behind it.
         self.assertEqual(resolved, opt_bin / "agentos")
 
+    def test_resolve_cli_accepts_the_running_still_entry_point(self):
+        """``still`` is declared beside ``agentos``; running it must be recorded too."""
+        shim = self._executable("pyenv/shims/agentos")
+        running = self._executable("desired/bin/still")
+        resolved = resolve_cli_path(which=lambda name: str(shim) if name == "agentos" else None,
+                                    running=str(running))
+        self.assertEqual(resolved, running)
+
     def test_resolve_cli_falls_back_to_path_when_the_running_program_is_not_an_agentos_executable(self):
         on_path = self._executable("uv/bin/agentos")
         which = lambda name: str(on_path) if name == "agentos" else None
