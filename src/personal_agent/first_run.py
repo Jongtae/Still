@@ -104,7 +104,9 @@ def run(service, store, term, login_service=None):
     could offer to register it (#105); None skips the offer.
     """
     try:
-        term.say(msg('first_run.intro'))
+        # #90: an install set up in the browser or by an earlier version has nothing to ask.
+        if not (store.claimed() and _ai_ready(service) and store.config('telegram', {}).get('enabled')):
+            term.say(msg('first_run.intro'))
         if not store.claimed():
             _access(store, term)
         if not _ai_ready(service):

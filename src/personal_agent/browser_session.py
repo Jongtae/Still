@@ -95,6 +95,16 @@ VALUE_LIMIT = 200
 FIND_LINES = 12
 STEPS_PER_WORK = 40
 ACTION_TIMEOUT_SECONDS = 20
+#: #11: a ``browser_read`` may first scroll the page to its end up to this many
+#: times, within ``LOAD_MORE_SECONDS``, to load rows a list adds only when scrolled.
+LOAD_MORE_ROUNDS = 5
+LOAD_MORE_SECONDS = 15.0
+LOAD_MORE_STOPS = frozenset({'no_progress', 'bound', 'time'})
+#: The worker's own grace past its cap (``op_load_more``'s deadline), plus a second
+#: for the snapshot after it: the part of the Work's time a load-more cannot use.
+LOAD_MORE_RESERVE_SECONDS = 3.0
+LOAD_MORE_ARGUMENT_TEXT = 'load_more는 1부터 5까지의 횟수입니다.'
+LOAD_MORE_UNAVAILABLE_TEXT = '이 브라우저에서는 페이지를 더 불러올 수 없어 지금 보이는 페이지만 읽었습니다.'
 LOGIN_WINDOW_SECONDS = 1800
 REDACTED = '[가림]'
 
@@ -546,6 +556,21 @@ def redact_private_values(text, excluded=()):
                 out.append(token)
         lines.append(''.join(out))
     return '\n'.join(lines), removed
+
+
+def load_more_rounds(value):
+    """``browser_read``'s ``load_more``: 0 when absent, else a count from 1 to ``LOAD_MORE_ROUNDS`` (#11)."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return 0
+    if isinstance(value, bool):
+        raise ValueError(LOAD_MORE_ARGUMENT_TEXT)
+    try:
+        rounds = int(str(value).strip())
+    except ValueError:
+        raise ValueError(LOAD_MORE_ARGUMENT_TEXT) from None
+    if not 0 <= rounds <= LOAD_MORE_ROUNDS:
+        raise ValueError(LOAD_MORE_ARGUMENT_TEXT)
+    return rounds
 
 
 def scrub(text, excluded=()):
@@ -1087,7 +1112,7 @@ class BrowserSession:
         if action == 'browser_open':
             return self.open(args)
         if action == 'browser_read':
-            return self.read()
+            return self.read(args)
         if action == 'browser_find':
             return self.find(args)
         if action == 'browser_click':
@@ -1158,14 +1183,57 @@ class BrowserSession:
         self._settle()
         return self._page_state(requested_url=url)
 
-    def read(self):
+    def read(self, args=None):
+        rounds = load_more_rounds((args or {}).get('load_more'))
         # An interrupted navigation may leave a web document. Observe it only on
         # an explicit read, with normal mediation; never replay navigation.
-        if not (self.driver is not None and self._navigation_error):
+        if rounds or not (self.driver is not None and self._navigation_error):
             self._require_page()
         self._spend_step()
-        self._settle()
-        return self._page_state()
+        loaded = self._load_more(rounds) if rounds else None
+        if loaded is None:
+            self._settle()
+        page = self._page_state()
+        if loaded is not None:
+            page['loaded'] = loaded
+        return page
+
+    def _load_more(self, rounds):
+        """Scroll the page to its end up to ``rounds`` times, bounded, and report what appeared (#11).
+
+        The worker stops early when a round adds nothing; the text the page
+        added is mediated like page text.  Only scroll positions change: no
+        control is pressed, so no effect or approval is involved.
+        """
+        load = getattr(self._driver(), 'load_more', None)
+        if not callable(load):
+            raise ToolError(LOAD_MORE_UNAVAILABLE_TEXT, 'load_more_unavailable')
+        seconds = LOAD_MORE_SECONDS
+        if self.budget is not None:
+            try:
+                seconds = min(seconds, self.budget.remaining() - LOAD_MORE_RESERVE_SECONDS)
+            except Exception:
+                pass
+        if seconds < 1.0:
+            # #11 review: the Work's remaining time cannot hold a round and the worker's
+            # grace, so nothing is scrolled rather than running past the Work deadline.
+            return {'rounds': 0, 'stopped': 'time', 'new_content': False, 'text': ''}
+        answer = self._call(lambda timeout: load(rounds, min(seconds, max(1.0, timeout - LOAD_MORE_RESERVE_SECONDS)),
+                                                 timeout))
+        answer = answer if isinstance(answer, dict) else {}
+        text = scrub(str(answer.get('text') or '')[:TEXT_LIMIT * 2], self._excluded())[0]
+        text = re.sub(r'\n{3,}', '\n\n', text).strip()
+        stopped = answer.get('stopped')
+        loaded = {'rounds': min(rounds, max(0, int(answer.get('rounds') or 0))),
+                  'stopped': stopped if stopped in LOAD_MORE_STOPS else 'unknown',
+                  'new_content': bool(answer.get('added')), 'text': text[:TEXT_LIMIT]}
+        if len(text) > TEXT_LIMIT or answer.get('capped') is True:
+            # More appeared than the read returns: the text cap, or a round's element cap (#11 review).
+            loaded['text_truncated'] = True
+        if answer.get('navigation_refused'):
+            # The page tried to leave while it scrolled; the read stayed on it.
+            loaded['navigation_refused'] = True
+        return loaded
 
     def find(self, args):
         self._require_page()
@@ -1341,9 +1409,15 @@ CHANGED_TEXT = '대상 요소가 마지막으로 확인한 뒤 바뀌어 실행�
 NOT_TYPABLE_TEXT = '대상 요소는 글자를 입력할 수 있는 입력란이 아니어서 입력하지 않았습니다. 입력란을 대상으로 다시 시도하세요.'
 NOT_FOCUSED_TEXT = ('대상 입력란을 눌렀지만 입력 초점이 잡히지 않아 입력하지 않았습니다. browser_read로 페이지를 다시 '
                     '확인하세요.')
+#: #102: the press reached another element: the target moved off the pressed point, or
+#: (no longer visible which) something covered it or it moved meanwhile.
+MOVED_TEXT = '누르는 사이 대상 요소가 자리를 옮겨 대상이 눌리지 않았습니다. browser_read로 페이지를 다시 확인하세요.'
+MISSED_TEXT = ('누른 곳에 대상이 아닌 다른 요소가 있어 대상이 눌리지 않았습니다. 그 사이 대상이 가려졌거나 움직였을 수 '
+               '있습니다. browser_read로 페이지를 다시 확인하세요.')
 FOCUS_MOVED_TEXT = '입력란을 누르자 페이지가 입력 초점을 다른 요소로 옮겨, 확인하지 않은 그 요소에는 입력하지 않았습니다.'
 TARGET_TEXTS = {'target_missing': MISSING_TEXT, 'target_changed': CHANGED_TEXT, 'target_hidden': HIDDEN_TEXT,
-                'not_typable': NOT_TYPABLE_TEXT, 'not_focusable': NOT_FOCUSED_TEXT}
+                'not_typable': NOT_TYPABLE_TEXT, 'not_focusable': NOT_FOCUSED_TEXT,
+                'target_moved': MOVED_TEXT, 'press_missed': MISSED_TEXT}
 
 
 def target_text(code, cover=None):
@@ -1465,7 +1539,8 @@ def worker_environment(base=None):
 
 #: Worker error codes that mean "the element the guard classified is not what the pointer would hit".
 TARGET_ERRORS = frozenset({'target_missing', 'target_changed', 'target_hidden', 'target_obscured', 'not_typable',
-                           'not_focusable', 'focus_moved', 'bad_target', 'submit_changed'})
+                           'not_focusable', 'focus_moved', 'target_moved', 'press_missed', 'bad_target',
+                           'submit_changed'})
 WORKER_START_SECONDS = 30
 WORKER_GRACE_SECONDS = 5
 WORKER_QUIT_SECONDS = 5
@@ -1670,6 +1745,8 @@ class WebKitWorkerDriver:
         self._ids = itertools.count(1)
         self._visible = False
         self._expect = {}
+        #: #11 review: the page a load_more captured under its navigation hold, for the next snapshot.
+        self._held_page = None
         self.starts = 0
         with self._lock:
             self._start()
@@ -1726,6 +1803,7 @@ class WebKitWorkerDriver:
 
     def _kill(self):
         proc, self._proc = self._proc, None
+        self._held_page = None   # a page of the worker that is gone
         self._visible = False
         if proc is None:
             return
@@ -1821,8 +1899,21 @@ class WebKitWorkerDriver:
         """Wait, bounded by ``seconds``, until a client-rendered page's content stops changing (#709)."""
         self._request('settle', timeout, seconds=seconds)
 
+    def load_more(self, rounds, seconds, timeout):
+        """Scroll to the page's end up to ``rounds`` times within ``seconds`` (#11); the worker's answer.
+
+        The worker captured the page state before it stopped holding navigation; the
+        next ``snapshot`` returns that page rather than reading again, so the read
+        returns the page it scrolled (#11 review).
+        """
+        message = self._request('load_more', timeout, rounds=rounds, seconds=seconds)
+        if isinstance(message.get('page'), dict):
+            self._held_page = message['page']
+        return {key: message.get(key) for key in ('rounds', 'stopped', 'added', 'text', 'navigation_refused', 'capped')}
+
     def snapshot(self):
-        page = self._request('snapshot', ACTION_TIMEOUT_SECONDS).get('page') or {}
+        held, self._held_page = self._held_page, None
+        page = held if held is not None else self._request('snapshot', ACTION_TIMEOUT_SECONDS).get('page') or {}
         elements = [element for element in page.get('elements') or [] if isinstance(element, dict)]
         guarded_forms = payment_forms(elements)
         # The full descriptor the payment guard classified: the worker refuses

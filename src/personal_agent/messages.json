@@ -2358,16 +2358,16 @@
   "zh": "请保存所选模型并运行连接检查。"
  },
  "service.onboarding_recovery_attention": {
-  "ko": "재시작 중이던 작업 또는 Telegram 전달은 자동 재시도하지 않았습니다. 웹 기록에서 결과를 확인하고 필요하면 새 요청으로 다시 시작하세요.",
-  "en": "Work or Telegram deliveries cut off by the restart were not retried automatically. Check the results in the web history and start a new request if needed.",
-  "ja": "再起動で中断した作業や Telegram への送信は自動で再試行していません。Web の履歴で結果を確認し、必要なら新しい依頼としてやり直してください。",
-  "zh": "因重启中断的工作或 Telegram 发送没有自动重试。请在网页记录中查看结果，如有需要请重新发起请求。"
+  "ko": "마지막 재시작 때 진행 중이던 작업 또는 Telegram 전달은 자동 재시도하지 않았습니다. 웹 기록에서 결과를 확인하고 필요하면 새 요청으로 다시 시작하세요.",
+  "en": "Work or Telegram deliveries cut off by the last restart were not retried automatically. Check the results in the web history and start a new request if needed.",
+  "ja": "前回の再起動で中断した作業や Telegram への送信は自動で再試行していません。Web の履歴で結果を確認し、必要なら新しい依頼としてやり直してください。",
+  "zh": "因上次重启中断的工作或 Telegram 发送没有自动重试。请在网页记录中查看结果，如有需要请重新发起请求。"
  },
  "service.onboarding_recovery_ready": {
-  "ko": "자동 재시도하지 않은 중단 작업이나 불확실한 전달이 없습니다.",
-  "en": "No interrupted work or uncertain delivery is waiting.",
-  "ja": "中断した作業や不確かな送信は残っていません。",
-  "zh": "没有中断的工作或不确定的发送。"
+  "ko": "마지막 재시작으로 끊긴 작업이나 전달은 없습니다.",
+  "en": "The last restart cut off no work or delivery.",
+  "ja": "前回の再起動で中断した作業や送信はありません。",
+  "zh": "上次重启没有中断任何工作或发送。"
  },
  "service.engine_signed_out": {
   "ko": "{name}에 로그인되어 있지 않아 전환하지 않았습니다. {help}",

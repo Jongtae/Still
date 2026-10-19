@@ -253,6 +253,33 @@ const describe = (el, tokens) => ({tag: el.tagName.toLowerCase(), type: typeOf(e
 const same = (actual, expect) => !!expect && ['tag', 'type', 'autocomplete', 'name', 'own_text', 'label_name', 'ancestor_text',
   'in_form', 'payment_form', 'nav_link', 'pressable', 'href']
   .every((key) => key in expect && actual[key] === expect[key]);
+// #1395: what covers ``el`` at the point ``hit`` came from - the outermost ancestor of
+// the hit that does not hold the target (an overlay or banner) and the listed controls
+// inside it - so the model can close or move it instead of retrying the same press.
+const coverOf = (hit, el) => {
+  let layer = hit;
+  while (layer && layer.parentElement && !layer.parentElement.contains(el)) layer = layer.parentElement;
+  if (layer && layer.contains(el)) layer = null;   // a hit on the target's own ancestor names no cover
+  const controls = [];
+  if (layer) Array.from(document.querySelectorAll(SELECTOR)).forEach((c, i) => {
+    if (controls.length < 8 && layer.contains(c) && visible(c)) controls.push({index: i, name: cut(nameOf(c), 80)});
+  });
+  return {text: layer ? cut(layer.innerText || '', 160) : '', controls};
+};
+const holds = (hit, el) => !!hit && (hit === el || el.contains(hit) || hit.control === el);
+// #102: why a trusted press the guard saw land elsewhere missed ``el``, from what is at
+// the press point now: the target gone, something over it (named like a locate-time
+// cover), the target moved off the point, or - when none of that is visible any more,
+// say a layer that already went away - an honest "covered or moved".
+const pressMiss = (g, el) => {
+  if (!el || !el.isConnected) return {error: 'target_missing'};
+  const rect = el.getBoundingClientRect();
+  const over = g.x >= rect.left && g.x <= rect.right && g.y >= rect.top && g.y <= rect.bottom;
+  const hit = document.elementFromPoint(g.x, g.y);
+  if (over && hit && !holds(hit, el)) return {error: 'target_obscured', cover: coverOf(hit, el)};
+  if (!over) return {error: 'target_moved'};
+  return {error: 'press_missed'};
+};
 const state = () => (window.__agentos = window.__agentos || {targets: new Map(), guard: null, listening: false,
   off: false, allow: null, cancelled: null, held: null, vetted: [], submitListening: false});
 // A form's named controls shadow its own properties (``<input name="action">`` is
@@ -426,23 +453,11 @@ const left = Math.max(rect.left, 0), right = Math.min(rect.right, window.innerWi
 if (right - left < 1 || bottom - top < 1) return JSON.stringify({error: 'target_hidden'});
 const x = (left + right) / 2, y = (top + bottom) / 2;
 const hit = document.elementFromPoint(x, y);
-if (!hit || !(hit === el || el.contains(hit) || hit.control === el)) {
-  // #1395: say what covers it - the outermost ancestor of the hit that does not
-  // hold the target (an overlay or banner) and the listed controls inside it -
-  // so the model can close or move it instead of retrying the same press.
-  let layer = hit;
-  while (layer && layer.parentElement && !layer.parentElement.contains(el)) layer = layer.parentElement;
-  if (layer && layer.contains(el)) layer = null;   // a hit on the target's own ancestor names no cover
-  const controls = [];
-  if (layer) Array.from(document.querySelectorAll(SELECTOR)).forEach((c, i) => {
-    if (controls.length < 8 && layer.contains(c) && visible(c)) controls.push({index: i, name: cut(nameOf(c), 80)});
-  });
-  return JSON.stringify({error: 'target_obscured', cover: {text: layer ? cut(layer.innerText || '', 160) : '', controls}});
-}
+if (!holds(hit, el)) return JSON.stringify({error: 'target_obscured', cover: coverOf(hit, el)});
 const s = state();
 s.targets.clear();
 s.targets.set(nonce, new WeakRef(el));
-s.guard = {nonce, bad: false};
+s.guard = {nonce, bad: false, x, y};
 if (!s.listening) {
   // A trusted click that lands anywhere but the held element is cancelled.
   window.addEventListener('click', (event) => {
@@ -483,7 +498,9 @@ VERIFY_CLICK_SCRIPT = PRELUDE + r"""
 const s = state(), g = s.guard;
 s.guard = null;
 if (!g || g.nonce !== nonce) return JSON.stringify({error: 'target_changed'});
-return JSON.stringify(g.bad ? {error: 'target_changed'} : {ok: true});
+if (!g.bad) return JSON.stringify({ok: true});
+const ref = s.targets.get(nonce);
+return JSON.stringify(pressMiss(g, ref && ref.deref()));   // #102: why the press missed
 """
 
 #: The end of a click/type step: an approval's allowance lasts ``WINDOW_MS``
@@ -591,6 +608,20 @@ def client_guard_user_script(off=False):
 #: (``FORM_NAVIGATION_SCRIPT``, #700).  A page can detect the wrapper
 #: (``toString``), so it is not installed while the owner's login window shows
 #: (#700); ``fetch``/XHR posts are not form submits at all.
+#: Page world, at document start of every frame, in every guard state (#13, adapted from
+#: the predecessor's #1548): ``navigator.platform`` says ``iPhone`` like the phone user
+#: agent (#1183), not ``MacIntel``.  Device emulation in Playwright and Chrome DevTools
+#: sets the two together for the same reason.  Touch support is deliberately not
+#: claimed (``maxTouchPoints`` stays 0, no ``ontouchstart``): presses are native mouse
+#: events, and a page that believed it had touch could listen for touch events only.
+PHONE_PLATFORM_USER_SCRIPT = r"""(() => {
+  const proto = Navigator.prototype, desc = Object.getOwnPropertyDescriptor(proto, 'platform');
+  if (!desc || !desc.configurable) return;
+  Object.defineProperty(proto, 'platform', {...desc, get: function () { return 'iPhone'; }});
+})();
+"""
+
+
 PAGE_WRAP_USER_SCRIPT = r"""(() => {
   const proto = HTMLFormElement.prototype, original = proto.submit;
   if (typeof original !== 'function') return;
@@ -631,7 +662,8 @@ PAGE_WRAP_USER_SCRIPT = r"""(() => {
 INSERT_SCRIPT = PRELUDE + r"""
 const s = state(), g = s.guard, ref = s.targets.get(nonce), el = ref && ref.deref();
 s.guard = null;
-if (!g || g.nonce !== nonce || g.bad) return JSON.stringify({error: 'target_changed'});
+if (!g || g.nonce !== nonce) return JSON.stringify({error: 'target_changed'});
+if (g.bad) return JSON.stringify(pressMiss(g, el));   // #102: why the focusing press missed
 if (!el || !el.isConnected || document.activeElement !== el) {
   // #12: say where the press left the focus, so the model can target that field in a
   // new, separately checked step.  Nothing is typed into it here.
@@ -655,6 +687,86 @@ RENDER_PROBE_SCRIPT = r"""
 const body = document.body;
 return JSON.stringify({text: body ? (body.innerText || '').length : 0,
   nodes: document.getElementsByTagName('*').length, ready: document.readyState});
+"""
+
+#: #11: loading more of a page whose list adds rows only when scrolled.  The
+#: observer keeps the elements the page adds, or whose text it adds or rewrites,
+#: from now on (at most ``limit``); scrolling is the only thing done to the page:
+#: nothing is pressed, and a navigation it starts meanwhile is cancelled.
+LOAD_MORE_BEGIN_SCRIPT = r"""
+const old = window.__agentosMore;
+if (old && old.observer) old.observer.disconnect();
+const more = window.__agentosMore = {added: [], seen: new Set(), total: 0, capped: false, observer: null};
+// An element added, or one whose text the page added or rewrote (a list that reuses
+// its rows), counts once per collection.
+const note = (node) => {
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  // The bound applies per collection (#11 review): a big round does not blind later ones.
+  if (!el || more.seen.has(el)) return;
+  if (more.added.length >= limit) { more.capped = true; return; }   // reported, never silent (#11 review)
+  more.seen.add(el); more.added.push(el); more.total++;
+};
+more.observer = new MutationObserver((records) => {
+  for (const record of records) {
+    if (record.type === 'characterData') note(record.target);
+    else for (const node of record.addedNodes) note(node);
+  }
+});
+more.observer.observe(document.body || document.documentElement, {childList: true, subtree: true, characterData: true});
+return JSON.stringify({ok: true});
+"""
+
+#: Scroll the document and the page's largest scrolling boxes (a list in its own
+#: scroll container) to their end.  Answers how many elements were noted so far.
+LOAD_MORE_SCROLL_SCRIPT = r"""
+const doc = document.scrollingElement || document.documentElement;
+doc.scrollTop = doc.scrollHeight;
+const boxes = [];
+const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_ELEMENT);
+for (let node = walker.nextNode(), seen = 0; node && seen < 5000; node = walker.nextNode(), seen++) {
+  if (node.scrollHeight <= node.clientHeight + 4 || node.clientHeight < 50) continue;
+  const overflow = getComputedStyle(node).overflowY;
+  if (overflow === 'auto' || overflow === 'scroll' || overflow === 'overlay') boxes.push(node);
+}
+boxes.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
+boxes.slice(0, 3).forEach((box) => { box.scrollTop = box.scrollHeight; });
+const more = window.__agentosMore;
+return JSON.stringify({added: more ? more.total : 0});
+"""
+
+#: Arguments: none.  The noted count and the render measure, polled while a round waits.
+LOAD_MORE_PROBE_SCRIPT = r"""
+const more = window.__agentosMore, body = document.body;
+return JSON.stringify({added: more ? more.total : 0, text: body ? (body.innerText || '').length : 0,
+  nodes: document.getElementsByTagName('*').length});
+"""
+
+#: Arguments: limit, end.  The visible text of the elements noted since the last
+#: collection that are still on the page (outermost first, nested ones once),
+#: bounded, and how many of them showed text (``kept``): only those are
+#: progress, so a loading placeholder that came and went is not.  A round's rows
+#: are collected before a list can reuse them.  ``end`` also stops observing.
+LOAD_MORE_COLLECT_SCRIPT = PRELUDE + r"""
+const more = window.__agentosMore;
+if (!more) return JSON.stringify({added: 0, text: ''});
+if (end) { more.observer.disconnect(); window.__agentosMore = null; }
+const noted = more.added, set = new Set(noted), parts = [];
+more.added = []; more.seen = new Set();
+const capped = more.capped;
+more.capped = false;
+let length = 0, kept = 0;
+// Every row still shown with text is progress; only the returned text is bounded (#11 review).
+for (const node of noted) {
+  if (!node.isConnected || !node.getClientRects().length) continue;
+  let parent = node.parentElement, nested = false;
+  while (parent && !nested) { nested = set.has(parent); parent = parent.parentElement; }
+  if (nested) continue;
+  const text = (node.innerText || '').trim();
+  if (!text) continue;
+  kept++;
+  if (length < limit) { parts.push(text); length += text.length + 1; }
+}
+return JSON.stringify({added: more.total, kept, capped, text: cut(parts.join('\n'), limit)});
 """
 
 #: #939: typing from the phone goes into whatever element the page has focused;
@@ -696,6 +808,15 @@ CLICK_SETTLE_SECONDS = 8.0
 # polling or analytics requests must not keep a stable page "unsettled" (#900 review).
 RENDER_QUIET_SECONDS = 1.2
 RENDER_SETTLE_SECONDS = 6.0
+#: #11: one ``load_more`` request scrolls at most ``LOAD_MORE_ROUNDS`` times and
+#: lasts at most ``LOAD_MORE_SECONDS``.  A round that adds nothing within
+#: ``LOAD_MORE_WAIT_SECONDS`` ends the request (no progress); a round that adds
+#: rows waits until the page is quiet again, for at most ``RENDER_SETTLE_SECONDS``.
+LOAD_MORE_ROUNDS = 5
+LOAD_MORE_SECONDS = 15.0
+LOAD_MORE_WAIT_SECONDS = 2.5
+LOAD_MORE_NODE_LIMIT = 2000
+LOAD_MORE_TEXT_LIMIT = 20000
 POLL_SECONDS = 0.05
 FOCUS_SECONDS = 0.1
 RESOLVE_SECONDS = 3.0
@@ -728,11 +849,36 @@ def safari_application_name():
 MOBILE_SIZE = (float(WIDTH), float(HEIGHT))
 
 
+#: #13: the OS token Safari on iOS 26 and later sends.  Apple's Safari 26.0 and 26.2
+#: release notes: "Safari now reports a frozen OS version in its user agent string on
+#: iOS 26 and iPadOS 26, showing the last version released before iOS 26" (156170132).
+#: Safari 26.0 shipped it as ``18_6`` (WebKit bug 298717, iOS 26.0 23A340); WebKit then
+#: revised it to ``18_6_2``, the last iOS before 26, and called the freeze permanent
+#: (bug 298473, 299765@main).  Later Safari versions keep that value.
+FROZEN_IOS_TOKEN = '18_6_2'
+FROZEN_IOS_TOKEN_SAFARI_26_0 = '18_6'
+
+
+def ios_os_token(version):
+    """The ``CPU iPhone OS <token>`` an iPhone with this Safari version sends (#13).
+
+    Safari before 26 reports the real iOS version, which matches its own
+    ``<major>_<minor>``; from 26 the OS token is frozen (``FROZEN_IOS_TOKEN``).
+    A token no real iPhone sends (``26_0``, ``27_0``) is an easy bot signal.
+    """
+    parts = [int(part) for part in str(version or '').split('.')[:2] if part.isdigit()]
+    if not parts:
+        return FROZEN_IOS_TOKEN
+    major, minor = parts[0], (parts[1] if len(parts) > 1 else 0)
+    if major < 26:
+        return f'{major}_{minor}'
+    return FROZEN_IOS_TOKEN_SAFARI_26_0 if (major, minor) == (26, 0) else FROZEN_IOS_TOKEN
+
+
 def mobile_user_agent():
     """A mobile Safari user agent of this Safari's version, still carrying the embedded marker (#680)."""
     version = safari_application_name().split()[0].split('/', 1)[-1]
-    major = version.split('.')[0] if version.split('.')[0].isdigit() else '18'
-    return (f'Mozilla/5.0 (iPhone; CPU iPhone OS {major}_0 like Mac OS X) AppleWebKit/605.1.15 '
+    return (f'Mozilla/5.0 (iPhone; CPU iPhone OS {ios_os_token(version)} like Mac OS X) AppleWebKit/605.1.15 '
             f'(KHTML, like Gecko) Version/{version} Mobile/15E148 Safari/604.1 {EMBEDDED_UA_TOKEN}')
 
 
@@ -894,6 +1040,10 @@ class Worker:
         self.hosts = set()         # hosts of committed main-frame navigations in this worker's life
         self.popups = []           # #914: (view, window, delegate) of sign-in popups while the owner signs in
         self.main_navigations = 0  # main-frame navigations allowed so far (#736)
+        #: #11: while a ``load_more`` read runs, a main-frame navigation the page starts is
+        #: cancelled and counted here: loading more of a page never leaves it.
+        self.reading = False
+        self.read_navigations = 0
         self.landed = 0            # main-frame navigations committed or failed so far (#736)
         self.deciding = 0          # main-frame policy decisions still resolving their destination (#736 review)
         self.resolved = {}         # url origin -> refusal code or None (this worker's life)
@@ -1186,17 +1336,19 @@ class Worker:
         """The document-start scripts: the client-world guard (armed, or off while
         the owner's login window shows) and, only while armed, the page-world
         ``form.submit`` wrapper (a page's bot detection must not see it while the
-        owner signs in, #700)."""
+        owner signs in, #700).  The phone platform holds in every state and every
+        frame, the login window included (#13)."""
         WebKit = self.WebKit
         start = WebKit.WKUserScriptInjectionTimeAtDocumentStart
         self.controller.removeAllUserScripts()
-        scripts = [(client_guard_user_script(self.guard_off), self.world)]
+        scripts = [(client_guard_user_script(self.guard_off), self.world, True)]
         if not self.guard_off:
-            scripts.append((PAGE_WRAP_USER_SCRIPT, self.page_world))
-        for source, world in scripts:
+            scripts.append((PAGE_WRAP_USER_SCRIPT, self.page_world, True))
+        scripts.append((PHONE_PLATFORM_USER_SCRIPT, self.page_world, False))
+        for source, world, main_only in scripts:
             self.controller.addUserScript_(
                 WebKit.WKUserScript.alloc().initWithSource_injectionTime_forMainFrameOnly_inContentWorld_(
-                    source, start, True, world))
+                    source, start, main_only, world))
 
     def set_guard_off(self, off):
         """The owner's login window: the guard is off while it shows, for this page and the next ones."""
@@ -1465,10 +1617,23 @@ class Worker:
         self.deadline(ident, timeout)
 
         def done(value, error):
+            if error:
+                return self.fail(ident, error)
+            self.reply(ident, page=value)
+        self._snapshot_page(ident, done)
+
+    def _snapshot_page(self, ident, then):
+        """The page state ``SNAPSHOT_SCRIPT`` reads, with what the guard did since the last report: ``then(page, error)``.
+
+        Nothing happens once ``ident`` is no longer pending (its deadline answered):
+        a cancelled submit or refused post stays to be reported by the next snapshot
+        instead of being taken by an answer nobody receives (#11 review).
+        """
+        def done(value, error):
             if ident not in self.pending:
                 return
             if error or not isinstance(value, dict):
-                return self.fail(ident, error or 'script_failed')
+                return then(None, error or 'script_failed')
             # A payment-form submit cancelled since the last report (#698).
             cancelled = self.take_cancelled(value.pop('cancelled', None))
             if cancelled is not None:
@@ -1477,7 +1642,7 @@ class Worker:
             if self.refused_submits > self.reported_refused:
                 self.reported_refused = self.refused_submits
                 value['refused_submit'] = True
-            self.reply(ident, page=value)
+            then(value, None)
         self.run(SNAPSHOT_SCRIPT, {}, done)
 
     def op_settle(self, ident, command, timeout):
@@ -1514,6 +1679,128 @@ class Worker:
                 return self.reply(ident, settled=False, waited=round(now - started, 2))
             self.AppHelper.callLater(POLL_SECONDS * 2, lambda: self.run(RENDER_PROBE_SCRIPT, {}, measured))
         self.run(RENDER_PROBE_SCRIPT, {}, measured)
+
+    def op_load_more(self, ident, command, timeout):
+        """Scroll to the page's end up to ``rounds`` times, bounded, to load rows a list adds when scrolled (#11).
+
+        Each round scrolls the document and its largest scrolling boxes to their
+        end, then waits: a round that adds no element within
+        ``LOAD_MORE_WAIT_SECONDS`` ends the request (``no_progress``); one that
+        adds some waits until the page stayed quiet for ``RENDER_QUIET_SECONDS``.
+        The request also ends at ``rounds`` (``bound``) or after ``seconds``
+        (``time``).  A round whose added elements are all gone or textless once
+        the page is quiet (a loading placeholder) is no progress either.
+        The page state is captured before the navigation hold ends and rides
+        along (``page``).  Answers the rounds run, why it stopped, how many added or rewritten
+        elements were still shown with text, that text (bounded), and how many main-frame navigations the page started
+        meanwhile, each cancelled.  No control is pressed and no input is sent:
+        only the page's scroll positions change, and the read never leaves the page.
+        """
+        try:
+            rounds = int(command.get('rounds'))
+        except (TypeError, ValueError):
+            return self.fail(ident, 'bad_rounds')
+        if not 1 <= rounds <= LOAD_MORE_ROUNDS:
+            return self.fail(ident, 'bad_rounds')
+        try:
+            cap = float(command.get('seconds') or LOAD_MORE_SECONDS)
+        except (TypeError, ValueError):
+            cap = LOAD_MORE_SECONDS
+        cap = max(1.0, min(cap, LOAD_MORE_SECONDS, float(timeout) - 1.0))
+
+        def expired():
+            self.reading = False
+            self.run(LOAD_MORE_COLLECT_SCRIPT, {'limit': 0, 'end': True}, lambda value, error: None)
+        self.deadline(ident, cap + 2, on_timeout=expired)
+        started = time.monotonic()
+        state = {'round': 0, 'added': 0, 'kept': 0, 'last_kept': 0, 'texts': [], 'length': 0, 'capped': False}
+        self.reading, self.read_navigations = True, 0
+
+        def collect(end, then):
+            """Keep the text of the rows noted since the last collection (bounded in total)."""
+            def collected(value, error):
+                value = value if error is None and isinstance(value, dict) else {}
+                text = str(value.get('text') or '')
+                if text and state['length'] < LOAD_MORE_TEXT_LIMIT:
+                    state['texts'].append(text)
+                    state['length'] += len(text) + 1
+                state['added'] = max(state['added'], int(value.get('added') or 0))
+                state['last_kept'] = int(value.get('kept') or 0)
+                state['capped'] = state['capped'] or value.get('capped') is True
+                state['kept'] += state['last_kept']
+                then()
+            self.run(LOAD_MORE_COLLECT_SCRIPT, {'limit': max(0, LOAD_MORE_TEXT_LIMIT - state['length']), 'end': end},
+                     collected)
+
+        def finish(stopped):
+            def captured(page, error):
+                # #11 review: the page state is read while navigation is still held, so the read
+                # returns the page it scrolled; the guard ends only after this snapshot.  Without
+                # that page the read fails rather than reading again after the hold.
+                self.reading = False
+                if error or page is None:
+                    return self.fail(ident, error or 'script_failed')
+                self.reply(ident, rounds=state['round'], stopped=stopped, added=state['kept'],
+                           text='\n'.join(state['texts'])[:LOAD_MORE_TEXT_LIMIT], navigation_refused=self.read_navigations,
+                           capped=state['capped'], page=page)
+
+            def released():
+                # The deadline answered meanwhile: end the hold anyway.
+                if ident not in self.pending:
+                    self.reading = False
+                    return
+                self._snapshot_page(ident, captured)
+            collect(True, released)
+
+        def next_round():
+            if ident not in self.pending:
+                return
+            if state['round'] >= rounds:
+                return finish('bound')
+            if time.monotonic() - started >= cap:
+                return finish('time')
+            state['round'] += 1
+            self.run(LOAD_MORE_SCROLL_SCRIPT, {}, scrolled)
+
+        def scrolled(value, error):
+            if ident not in self.pending:
+                return
+            if error or not isinstance(value, dict):
+                return finish('no_progress')
+            began, base = time.monotonic(), state['added']
+            last, since = [None], [began]
+
+            def probed(value, error):
+                if ident not in self.pending:
+                    return
+                now = time.monotonic()
+                value = value if error is None and isinstance(value, dict) else {}
+                added = int(value.get('added') or 0)
+                measure = (added, value.get('text'), value.get('nodes'))
+                if measure != last[0] or self.view.isLoading():
+                    last[0], since[0] = measure, now
+                if now - started >= cap:
+                    state['added'] = added
+                    return finish('time')
+                if added > base:
+                    if now - since[0] >= RENDER_QUIET_SECONDS or now - began >= RENDER_SETTLE_SECONDS:
+                        state['added'] = added
+                        # Progress is rows still shown with text once the page is quiet (#11 review).
+                        return collect(False, lambda: next_round() if state['last_kept'] else finish('no_progress'))
+                elif now - began >= LOAD_MORE_WAIT_SECONDS:
+                    return finish('no_progress')
+                self.AppHelper.callLater(POLL_SECONDS * 2, lambda: self.run(LOAD_MORE_PROBE_SCRIPT, {}, probed))
+            self.run(LOAD_MORE_PROBE_SCRIPT, {}, probed)
+
+        def begun(value, error):
+            if ident not in self.pending:
+                self.reading = False
+                return
+            if error or not isinstance(value, dict):
+                self.reading = False
+                return self.fail(ident, 'script_failed')
+            next_round()
+        self.run(LOAD_MORE_BEGIN_SCRIPT, {'limit': LOAD_MORE_NODE_LIMIT}, begun)
 
     def _locate(self, ident, command, then):
         index = command.get('index')
@@ -1560,7 +1847,7 @@ class Worker:
                 if ident not in self.pending:
                     return
                 if error is None and isinstance(value, dict) and value.get('error'):
-                    return self.finish_input(ident, blocked_before, value['error'])
+                    return self.finish_input(ident, blocked_before, value['error'], cover=value.get('cover'))
                 # A script error here means the click already navigated away (the
                 # page and its guards are gone), which the guards allowed.  #736:
                 # a navigation the click started (now or a moment later) lands first.
@@ -1586,7 +1873,8 @@ class Worker:
                 if error or not isinstance(value, dict):
                     return self.finish_input(ident, blocked_before, error or 'script_failed')
                 if value.get('error'):
-                    return self.finish_input(ident, blocked_before, value['error'], focused=value.get('focused'))
+                    return self.finish_input(ident, blocked_before, value['error'], cover=value.get('cover'),
+                                             focused=value.get('focused'))
                 self.settle(ident, lambda: self.finish_input(ident, blocked_before))
             self.AppHelper.callLater(FOCUS_SECONDS, lambda: self.run(
                 INSERT_SCRIPT, {'nonce': nonce, 'expect': expect, 'tokens': tokens, 'text': text}, inserted))
@@ -2122,8 +2410,16 @@ def _delegate_class():
             url = str(request.URL().absoluteString()) if request is not None and request.URL() is not None else ''
             frame = action.targetFrame()
             main_frame = frame is None or bool(frame.isMainFrame())
+            if main_frame and worker.reading:
+                worker.read_navigations += 1
+                return handler(WebKit.WKNavigationActionPolicyCancel)
 
             def decision(allowed, reason=None):
+                # #11 review: a destination check that finishes after a load-more read
+                # began is held to the read, like a navigation that starts during it.
+                if allowed and main_frame and worker.reading:
+                    worker.read_navigations += 1
+                    return handler(WebKit.WKNavigationActionPolicyCancel)
                 # Record the typed refusal before cancellation can synchronously
                 # report a generic navigation failure through WebKit's delegate.
                 if not allowed:

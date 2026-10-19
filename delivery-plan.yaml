@@ -5,7 +5,12 @@
     "predecessor_plan": "docs/history/predecessor-delivery-plan.yaml",
     "predecessor_repository": "Jongtae/agentos",
     "reason": "Still was imported without history on 2026-10-17. The predecessor plan (version 10) is archived unchanged as an immutable record; its programs, issue numbers and selections belong to Jongtae/agentos and carry no authority here (#46).",
-    "documented_completed_iterations": []
+    "documented_completed_iterations": [
+      "BROWSER-REL-01",
+      "BROWSER-INPUT-01",
+      "BROWSER-LOADMORE-01",
+      "BROWSER-PROFILE-01"
+    ]
   },
   "iterations": [
     {
@@ -13,13 +18,33 @@
       "issue": 94,
       "milestone": "browser-reliability",
       "kind": "implementation",
-      "activation_status": "owner-activated-goal-ready",
+      "activation_status": "complete-on-merge",
       "contract": "goal-execution-contract.en.md",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_browser_session.py tests/test_browser_webkit.py tests/test_browser_limits.py tests/test_browser_timeout_recovery.py tests/test_browser_session_context.py"
       ],
       "summary": "Browser reliability program: the owner's AI can type into the field it checked or learn truthfully why not (#12), read rows a list loads only after scrolling within explicit bounds (#11), and use a mobile profile whose declared and page-visible values agree (#13). Ordered substeps share the browser files and run in sequence.",
-      "depends_on": []
+      "depends_on": [],
+      "completed_substeps": {
+        "BROWSER-INPUT-01": {
+          "issue": 12,
+          "pull_request": 98,
+          "merge_commit": "b0e7108c85e6cfb603687aef1f65a11e9ee426d9",
+          "decision": "Each refusal reason of a typing or press step has its own text; a press that moves the focus names the field that took it and types nothing there; searchbox and editing-area widgets are listed and take text once focused. Follow-up #102 (PR #104): a press that missed is classified from what is at the pressed point."
+        },
+        "BROWSER-LOADMORE-01": {
+          "issue": 11,
+          "pull_request": 99,
+          "merge_commit": "4466e7155ff03f2cdffe15310f1d0a1d31356be0",
+          "decision": "browser_read takes load_more (1-5): scrolls the page and its scroll boxes, stops on no visible progress, at the round bound or within the Work time; only scroll positions change, page-started navigation is held through the returned snapshot, and evidence keeps counts, truncation and refusals, never text."
+        },
+        "BROWSER-PROFILE-01": {
+          "issue": 13,
+          "pull_request": 108,
+          "merge_commit": "169fd20df89cb6512704c5772f90504fa1c42a96",
+          "decision": "The phone user agent sends the frozen iOS token real iPhones send from Safari 26 (18_6 for 26.0, 18_6_2 after; Apple release notes, WebKit 298717/298473) and navigator.platform is iPhone in every frame and the login window; touch is unclaimed and Web Workers keeping MacIntel is a documented limit."
+        }
+      }
     },
     {
       "id": "BROWSER-INPUT-01",
@@ -27,7 +52,7 @@
       "issue": 12,
       "milestone": "browser-reliability",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_browser_session.py tests/test_browser_webkit.py tests/test_browser_limits.py tests/test_browser_timeout_recovery.py tests/test_browser_session_context.py"
       ],
@@ -40,7 +65,7 @@
       "issue": 11,
       "milestone": "browser-reliability",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_browser_session.py tests/test_browser_webkit.py tests/test_browser_limits.py tests/test_browser_timeout_recovery.py tests/test_browser_session_context.py"
       ],
@@ -55,7 +80,7 @@
       "issue": 13,
       "milestone": "browser-reliability",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_browser_session.py tests/test_browser_webkit.py tests/test_browser_limits.py tests/test_browser_timeout_recovery.py tests/test_browser_session_context.py"
       ],
@@ -72,7 +97,7 @@
   },
   "programs": {
     "BROWSER-REL-01": {
-      "status": "owner-activated-goal-ready",
+      "status": "complete",
       "issue": 94,
       "activated_by": {
         "issue": 94,
@@ -85,17 +110,22 @@
         "BROWSER-PROFILE-01"
       ],
       "active_substeps": [],
-      "completed_substeps": {},
+      "completed_substeps": [
+        "BROWSER-INPUT-01",
+        "BROWSER-LOADMORE-01",
+        "BROWSER-PROFILE-01"
+      ],
       "allowed_authority": "Browser tool/worker code (browser_session, browser_worker, browser_jar and related agent_runtime seams), their tests and fixtures, browser limitation docs, and this plan. Local evidence: unit/fixture tests and real-WebKit observation on the owner's macOS machine against local fixture pages only. One issue-linked PR per substep with normal squash merge after required CI, then a closeout PR.",
       "non_goals": "Live accounts, sign-ins or named external websites; the separately authorized fresh-profile live check in #13; site-specific workarounds; a new browser engine or broad JavaScript tool; relaxing credential, payment, local-UI or approval protection; other backlog items; releases, deployment and the delivery heartbeat.",
       "independent_review": "Not planned. Triggered if a change alters which field may receive text, credential/payment protection, the local Still UI/API refusal or owner-handoff authority.",
-      "completion_rule": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests and required CI, real-WebKit observations named as their own evidence class, then a closeout entry here recording per-substep issue, pull request, merge commit and decision."
+      "completion_rule": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests and required CI, real-WebKit observations named as their own evidence class, then a closeout entry here recording per-substep issue, pull request, merge commit and decision.",
+      "closeout": "Closed out 2026-10-19 (#94). Every ordered substep merged on its own PR with its issue acceptance mapped to unit, model-free protocol and local real-WebKit tests (local fixture pages on the owner's Mac; no live site or account). Review remediation merged with the program: #100 (PR #101, plan milestone and selection note) and #102 (PR #104, missed-press classification). Found and left open for a separate owner decision: #103 (a click WebKit never dispatched is reported as a press). No successor is selected; the delivery heartbeat stayed paused throughout."
     }
   },
   "completion_claims": {},
   "next_goal": {
-    "id": "BROWSER-REL-01",
-    "status": "owner-activated-goal-ready",
-    "action": "Owner direction 2026-10-18 (#94) selects BROWSER-REL-01: #12 -> #11 -> #13 in order, session-driven at the owner's request. Scoped PRs and normal merge after required CI are authorized; live accounts, external sites, credentials, releases and deployment are not. The delivery heartbeat stays paused, and no successor is selected on completion."
+    "id": null,
+    "status": "complete",
+    "action": "BROWSER-REL-01 closed out (#94). No goal is selected; the owner activates the next one explicitly, for example from the curated backlog (#44). The delivery heartbeat stays paused."
   }
 }

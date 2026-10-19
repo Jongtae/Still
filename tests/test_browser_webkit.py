@@ -536,6 +536,20 @@ class DriverProtocolTests(unittest.TestCase):
         # #12: the field the page moved the focus to rides along for the session to name.
         self.assertEqual(caught.exception.focused, {'name': 'Search here'})
         self.assertEqual(str(caught.exception), bs.target_text('focus_moved'))
+        # #11: a bounded load_more request and the worker's answer.
+        self.assertEqual(driver.load_more(3, 9.0, 12), {'rounds': 2, 'stopped': 'no_progress', 'added': 3,
+                                                       'text': 'row 11\nrow 12', 'navigation_refused': 1, 'capped': None})
+        self.assertEqual({key: self.commands()[-1][key] for key in ('op', 'rounds', 'seconds', 'timeout')},
+                         {'op': 'load_more', 'rounds': 3, 'seconds': 9.0, 'timeout': 12.0})
+        sent = len(self.commands())
+        self.assertEqual(driver.snapshot()['title'], 'held', 'the page captured under the navigation hold is returned')
+        self.assertEqual(len(self.commands()), sent, 'without reading the page again')
+        self.assertNotEqual(driver.snapshot()['title'], 'held', 'once only')
+        driver.goto('https://shop.test/intercepted', 4)
+        driver.snapshot()
+        with self.assertRaises(ToolError) as caught:
+            driver.click(3, 4)   # #102: the press landed elsewhere because the target moved
+        self.assertEqual((caught.exception.code, str(caught.exception)), ('target_unavailable', bs.MOVED_TEXT))
         sent = len(self.commands())
         with self.assertRaises(ToolError) as caught:
             driver.type(5, 'x', 4)   # index 5 was never in a snapshot: nothing is sent
@@ -806,6 +820,38 @@ console.log(JSON.stringify({el: el.a || {}, other: other.a || {}, kept: typeof e
         self.assertEqual(json.loads(result.stdout), {'el': {bw.PRESS_MARK: ''}, 'other': {}, 'kept': 'function'},
                          'only a function assignment marks the element, and the handler is still set')
 
+    def test_a_late_snapshot_leaves_a_held_submit_for_the_next_report(self):
+        """#11 review: a snapshot that finishes after its deadline answered takes nothing it cannot report."""
+        bw, worker = self.worker(reported_refused=0)
+        taken, answered = [], []
+        worker.take_cancelled = lambda value: taken.append(value)
+        worker._snapshot_page(7, lambda page, error: answered.append((page, error)))
+        late = worker.ran[-1][2]
+        late({'cancelled': {'dom': 0}, 'url': 'u'}, None)   # 7 is not pending: its deadline answered
+        self.assertEqual((taken, answered), ([], []))
+        worker.pending[8] = True
+        worker._snapshot_page(8, lambda page, error: answered.append((page, error)))
+        worker.ran[-1][2]({'cancelled': {'dom': 0}, 'url': 'u'}, None)
+        self.assertEqual(taken, [{'dom': 0}])
+        self.assertEqual(answered, [({'url': 'u'}, None)])
+
+    def test_a_cover_found_after_the_press_reaches_the_answer(self):
+        """#102 review: the post-press checks of a click and a typing step pass the cover on."""
+        cover = {'text': '잠시만요', 'controls': [{'index': 2, 'name': '닫기'}]}
+        for op in ('op_click', 'op_type'):
+            bw, worker = self.worker(blocked=0)
+            finished = []
+            worker.deadline = lambda *args, **kwargs: None
+            worker.press = lambda x, y: None
+            worker.AppHelper = type('AppHelper', (), {'callLater': staticmethod(lambda delay, call: call())})
+            worker._locate = lambda ident, command, then: then({'x': 1, 'y': 2, 'editable': True}, 'n', {}, [])
+            worker.finish_input = lambda ident, *args, **kwargs: finished.append((args, kwargs))
+            getattr(worker, op)(7, {'text': 'x'}, 5)
+            worker.pending[7] = True
+            worker.ran[-1][2]({'error': 'target_obscured', 'cover': cover}, None)
+            self.assertEqual(finished, [((0, 'target_obscured'), {'cover': cover, **({'focused': None} if op == 'op_type' else {})})],
+                             op)
+
     def test_the_page_wrapper_is_not_installed_while_the_owner_signs_in(self):
         bw, worker = self.worker()
         added = []
@@ -816,7 +862,7 @@ console.log(JSON.stringify({el: el.a || {}, other: other.a || {}, kept: typeof e
                 return cls()
 
             def initWithSource_injectionTime_forMainFrameOnly_inContentWorld_(self, source, when, main, world):
-                return (source, world)
+                return (source, world, main)
 
         class Controller:
             def removeAllUserScripts(self):
@@ -827,11 +873,37 @@ console.log(JSON.stringify({el: el.a || {}, other: other.a || {}, kept: typeof e
         worker.WebKit = type('WebKit', (), {'WKUserScriptInjectionTimeAtDocumentStart': 0, 'WKUserScript': Script})
         worker.controller, worker.world, worker.page_world = Controller(), 'client', 'page'
         worker._install_guard_scripts()
-        self.assertEqual([world for _, world in added], ['client', 'page'])
+        self.assertEqual([(world, main) for _, world, main in added], [('client', True), ('page', True), ('page', False)])
+        self.assertEqual([source for source, _, _ in added][1:], [bw.PAGE_WRAP_USER_SCRIPT, bw.PHONE_PLATFORM_USER_SCRIPT])
         worker.guard_off = True
         worker._install_guard_scripts()
-        self.assertEqual([world for _, world in added], ['client'], 'no detectable wrapper in the login window')
+        self.assertNotIn(bw.PAGE_WRAP_USER_SCRIPT, [source for source, _, _ in added], 'no detectable wrapper in the login window')
+        self.assertEqual(added[-1], (bw.PHONE_PLATFORM_USER_SCRIPT, 'page', False),
+                         'the phone platform holds in the login window and every frame (#13)')
         self.assertIn('state().off = true', added[0][0])
+
+    def test_the_page_reports_an_iphone_platform_and_no_touch(self):
+        """#13: ``navigator.platform`` agrees with the phone user agent; touch is not claimed; nothing else changes."""
+        import shutil
+        from personal_agent import browser_worker as bw
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('node is not installed')
+        harness = r"""
+class Navigator {}
+Object.defineProperty(Navigator.prototype, 'platform', {get() { return 'MacIntel'; }, enumerable: true, configurable: true});
+Object.defineProperty(Navigator.prototype, 'maxTouchPoints', {get() { return 0; }, enumerable: true, configurable: true});
+globalThis.Navigator = Navigator;
+const nav = new Navigator();
+%s
+const desc = Object.getOwnPropertyDescriptor(Navigator.prototype, 'platform');
+console.log(JSON.stringify({platform: nav.platform, touch: nav.maxTouchPoints, own: Object.keys(nav).length,
+                            enumerable: desc.enumerable, configurable: desc.configurable}));
+""" % bw.PHONE_PLATFORM_USER_SCRIPT
+        result = subprocess.run([node, '-e', harness], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {'platform': 'iPhone', 'touch': 0, 'own': 0,
+                                                     'enumerable': True, 'configurable': True})
 
     def test_a_form_navigation_the_page_does_not_vouch_for_is_refused_and_reported(self):
         bw, worker = self.worker()
@@ -977,10 +1049,26 @@ class SessionFixtureHandler(FixtureHandler):
         if path == '/device':
             # #1183: what the site sees: the User-Agent header and the layout viewport width.
             agent = (self.headers.get('User-Agent') or '').replace('<', '')
+            # #13: and what the page's script sees, in the page and in a frame.
             return self._send('<html><head><title>기기</title><meta name="viewport" content="width=device-width">'
-                              f'</head><body><p id="ua">{agent}</p><p id="w">폭 측정 중</p>'
-                              '<script>document.getElementById("w").textContent = "폭 " + window.innerWidth;</script>'
+                              f'</head><body><p id="ua">{agent}</p><p id="w">폭 측정 중</p><p id="nav">대기</p>'
+                              '<iframe src="/device-frame" style="height:40px"></iframe>'
+                              '<script>document.getElementById("w").textContent = "폭 " + window.innerWidth;'
+                              'document.getElementById("nav").textContent = "플랫폼 " + navigator.platform + " 터치 " +'
+                              ' navigator.maxTouchPoints + " " + ("ontouchstart" in window) + " 같은UA " +'
+                              f' (navigator.userAgent === {json.dumps(agent)});</script>'
                               '</body></html>')
+        if path == '/device-worker':
+            # #13 review: what a Web Worker sees (WebKit's separate WorkerNavigator).
+            return self._send('<html><head><title>워커</title></head><body><p id="r">대기</p><script>'
+                              'var w = new Worker(URL.createObjectURL(new Blob(["postMessage(navigator.platform + \\" \\" +'
+                              ' /iPhone/.test(navigator.userAgent))"], {type: "text/javascript"})));'
+                              'w.onmessage = function (e) { document.getElementById("r").textContent = "워커 " + e.data; };'
+                              '</script></body></html>')
+        if path == '/device-frame':
+            return self._send('<html><body><p id="f">대기</p><script>document.getElementById("f").textContent ='
+                              ' "frame-platform " + navigator.platform; parent.document.title = "기기 " +'
+                              ' navigator.platform;</script></body></html>')
         if path == '/whoami':
             present = value in (self.headers.get('Cookie') or '')
             return self._send(f'<html><head><title>계정 상태</title></head><body><p>{"세션 있음" if present else "세션 없음"}</p></body></html>')
@@ -1022,6 +1110,60 @@ class SessionFixtureHandler(FixtureHandler):
               <input aria-label="잠긴 입력" readonly onfocus="this.removeAttribute('readonly')"
                 oninput="document.getElementById('r2').textContent='입력2:'+this.value">
               <p id="r">대기</p><p id="r2">대기</p></body></html>''')
+        if path == '/lazy-list':
+            # #11: rows arrive (after a short fetch) only once the list's end is scrolled into view; 30 at most.
+            return self._send('''<html><head><title>목록</title></head><body>
+              <button type="button" onclick="document.getElementById('pressed').textContent='더 보기 눌림'">더 보기</button>
+              <p id="pressed">안 눌림</p><ul id="list"></ul><div id="end" style="height:10px"></div>
+              <script>var n=0;function add(){for(var i=0;i<10&&n<30;i++){n++;var li=document.createElement('li');
+                li.style.height='100px';li.textContent='행 '+n;document.getElementById('list').appendChild(li);}}
+              add();new IntersectionObserver(function(es){if(es[0].isIntersecting&&n<30)setTimeout(add,300);})
+                .observe(document.getElementById('end'));</script></body></html>''')
+        if path == '/lazy-box':
+            # #11: a list in its own scroll box that adds five rows whenever its end is reached, without end.
+            return self._send('''<html><head><title>상자</title></head><body><h1>상자 목록</h1>
+              <div id="box" style="height:300px;overflow:auto"></div>
+              <script>var box=document.getElementById('box'),n=0;function add(){for(var i=0;i<5;i++){n++;
+                var row=document.createElement('div');row.style.height='80px';row.textContent='항목 '+n;box.appendChild(row);}}
+              add();box.addEventListener('scroll',function(){if(box.scrollTop+box.clientHeight>=box.scrollHeight-5)setTimeout(add,200);});
+              </script></body></html>''')
+        if path == '/lazy-endless':
+            # #11: a page that never stops adding rows, so only the time bound ends a request.
+            return self._send('''<html><head><title>끝없음</title></head><body><div id="feed"></div>
+              <script>var n=0;setInterval(function(){n++;var row=document.createElement('p');row.textContent='소식 '+n;
+                document.getElementById('feed').appendChild(row);},150);</script></body></html>''')
+        if path == '/lazy-recycle':
+            # #11 review: a list that reuses its ten rows, rewriting their text for each next page (3 pages).
+            return self._send('''<html><head><title>재사용</title></head><body><ul id="list"></ul>
+              <div id="end" style="height:10px"></div>
+              <script>var list=document.getElementById('list'),page=0;
+              for(var i=1;i<=10;i++){var li=document.createElement('li');li.style.height='100px';
+                li.appendChild(document.createTextNode('줄 '+i));list.appendChild(li);}
+              new IntersectionObserver(function(es){if(!es[0].isIntersecting||page>=2)return;page++;
+                setTimeout(function(){Array.prototype.forEach.call(list.children,function(li,i){
+                  li.firstChild.data='줄 '+(page*10+i+1);});window.scrollTo(0,0);},300);})
+                .observe(document.getElementById('end'));</script></body></html>''')
+        if path == '/lazy-leave':
+            # #11 review: the page's scroll handler navigates away; loading more must not follow.
+            return self._send('''<html><head><title>머무름</title></head><body>
+              <div style="height:3000px">긴 내용</div>
+              <script>window.addEventListener('scroll',function(){location.assign('/product');});</script>
+              </body></html>''')
+        if path == '/lazy-placeholder':
+            # #11 review: reaching the end shows a loading placeholder that goes away with no rows.
+            return self._send('''<html><head><title>빈 로딩</title></head><body><div style="height:2000px">처음 내용</div>
+              <div id="end" style="height:10px"></div>
+              <script>new IntersectionObserver(function(es){if(!es[0].isIntersecting)return;var p=document.createElement('p');
+                p.textContent='불러오는 중';document.body.appendChild(p);setTimeout(function(){p.remove();},300);})
+                .observe(document.getElementById('end'));</script></body></html>''')
+        if path == '/lazy-long':
+            # #11 review: the first load adds one row longer than the whole text budget, the next a short one.
+            return self._send('''<html><head><title>긴 행</title></head><body><div style="height:2000px">처음</div>
+              <div id="list"></div><div id="end" style="height:10px"></div>
+              <script>var n=0;new IntersectionObserver(function(es){if(!es[0].isIntersecting||n>=2)return;n++;
+                setTimeout(function(){var p=document.createElement('p');p.style.minHeight='1500px';
+                  p.textContent=n===1?'가'.repeat(21000):'두 번째 행';document.getElementById('list').appendChild(p);},200);})
+                .observe(document.getElementById('end'));</script></body></html>''')
         if path == '/wide':
             # Review P2-1 repro: a surrogate pair at the label cut and a lone surrogate in the title.
             return self._send('<html><head><title>넓은 글자</title></head><body><button type="button" aria-label="'
@@ -1214,6 +1356,108 @@ class WebKitIntegrationTests(unittest.TestCase):
         finally:
             sess.close()
 
+    def test_a_lazy_list_loads_its_later_rows_and_stops_when_nothing_more_appears(self):
+        """#11: rows added only when scrolled reach the read; nothing is pressed."""
+        sess = self.session('work-11-list')
+        try:
+            page = sess.open({'url': self.origin + '/lazy-list', 'effect': 'read'})
+            self.assertIn('행 10', page['text'])
+            self.assertNotIn('행 11', page['text'])
+            page = sess.read({'load_more': '5'})
+            loaded = page['loaded']
+            self.assertEqual((loaded['stopped'], loaded['new_content']), ('no_progress', True), loaded)
+            self.assertEqual(loaded['rounds'], 3, 'two rounds add rows, the third finds none')
+            self.assertIn('행 11', loaded['text'])
+            self.assertIn('행 30', loaded['text'])
+            self.assertNotIn('행 10\n', loaded['text'] + '\n', 'only what appeared is reported')
+            self.assertIn('행 30', page['text'], 'the page state the read returns shows the loaded rows too')
+            self.assertIn('안 눌림', page['text'], 'loading more never presses a control')
+        finally:
+            sess.close()
+
+    def test_a_list_in_its_own_scroll_box_loads_within_the_round_bound(self):
+        sess = self.session('work-11-box')
+        try:
+            page = sess.open({'url': self.origin + '/lazy-box', 'effect': 'read'})
+            self.assertNotIn('항목 6', page['text'])
+            loaded = sess.read({'load_more': '2'})['loaded']
+            self.assertEqual((loaded['rounds'], loaded['stopped'], loaded['new_content']), (2, 'bound', True), loaded)
+            self.assertIn('항목 6', loaded['text'])
+            self.assertIn('항목 15', loaded['text'])
+            self.assertNotIn('항목 16', loaded['text'], 'no more than the requested rounds ran')
+        finally:
+            sess.close()
+
+    def test_a_page_that_loads_nothing_more_ends_after_one_round(self):
+        sess = self.session('work-11-static')
+        try:
+            sess.open({'url': self.origin + '/product', 'effect': 'read'})
+            started = time.monotonic()
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertEqual(loaded, {'rounds': 1, 'stopped': 'no_progress', 'new_content': False, 'text': ''})
+            self.assertLess(time.monotonic() - started, 10)
+        finally:
+            sess.close()
+
+    def test_a_page_that_never_settles_ends_at_the_time_bound(self):
+        sess = self.session('work-11-endless')
+        try:
+            sess.open({'url': self.origin + '/lazy-endless', 'effect': 'read'})
+            started = time.monotonic()
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertEqual((loaded['stopped'], loaded['new_content']), ('time', True), loaded)
+            self.assertLess(time.monotonic() - started, bs.LOAD_MORE_SECONDS + 10)
+        finally:
+            sess.close()
+
+    def test_a_list_that_reuses_its_rows_reports_the_rewritten_rows(self):
+        """#11 review: rows whose text is rewritten in place count as new content."""
+        sess = self.session('work-11-recycle')
+        try:
+            page = sess.open({'url': self.origin + '/lazy-recycle', 'effect': 'read'})
+            self.assertNotIn('줄 11', page['text'])
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertTrue(loaded['new_content'], loaded)
+            self.assertIn('줄 11', loaded['text'])
+            self.assertIn('줄 30', loaded['text'])
+            self.assertEqual(loaded['stopped'], 'no_progress', 'the third page is the last')
+        finally:
+            sess.close()
+
+    def test_loading_more_never_follows_a_navigation_the_page_starts(self):
+        """#11 review: a scroll handler's navigation is cancelled; the read stays on its page."""
+        sess = self.session('work-11-leave')
+        try:
+            sess.open({'url': self.origin + '/lazy-leave', 'effect': 'read'})
+            page = sess.read({'load_more': '2'})
+            self.assertEqual(page['title'], '머무름', page['url'])
+            self.assertTrue(page['loaded']['navigation_refused'], page['loaded'])
+            self.assertEqual(sess.read()['title'], '머무름', 'still on the page after the read')
+        finally:
+            sess.close()
+
+    def test_a_placeholder_that_comes_and_goes_is_not_progress(self):
+        """#11 review: an empty load (a placeholder that is removed) stops with no_progress and no content."""
+        sess = self.session('work-11-placeholder')
+        try:
+            sess.open({'url': self.origin + '/lazy-placeholder', 'effect': 'read'})
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertEqual((loaded['rounds'], loaded['stopped'], loaded['new_content'], loaded['text']),
+                             (1, 'no_progress', False, ''), loaded)
+        finally:
+            sess.close()
+
+    def test_rows_after_the_text_budget_still_count_as_progress(self):
+        """#11 review: once the returned text is full, later rows still keep the request going."""
+        sess = self.session('work-11-long')
+        try:
+            sess.open({'url': self.origin + '/lazy-long', 'effect': 'read'})
+            loaded = sess.read({'load_more': '5'})['loaded']
+            self.assertEqual((loaded['rounds'], loaded['stopped'], loaded['new_content']), (3, 'no_progress', True), loaded)
+            self.assertTrue(loaded['text_truncated'])
+        finally:
+            sess.close()
+
     def test_every_page_is_loaded_as_its_mobile_version(self):
         """#1183: the site sees a phone browser (header) and a phone-width viewport (layout)."""
         sess = self.session('work-1183')
@@ -1221,6 +1465,20 @@ class WebKitIntegrationTests(unittest.TestCase):
             page = sess.open({'url': self.origin + '/device', 'effect': 'read'})
             self.assertIn('iPhone', page['text'])
             self.assertIn('Mobile/', page['text'])
+            # #13: the OS token is one a real iPhone with this Safari sends, and the page sees the same phone.
+            from personal_agent import browser_worker as bw
+            agent = page['text'].split('\n', 1)[0]
+            version = agent.split('Version/', 1)[1].split()[0]
+            self.assertIn(f'CPU iPhone OS {bw.ios_os_token(version)} like Mac OS X', agent)
+            self.assertIn('플랫폼 iPhone 터치 0 false 같은UA true', page['text'])
+            self.assertEqual(page['title'], '기기 iPhone', 'a frame sees the iPhone platform too')
+            # Documented limit (#13 review): a Web Worker keeps the phone user agent but WebKit's
+            # WorkerNavigator still reports the Mac platform; no public API injects into workers.
+            sess.open({'url': self.origin + '/device-worker', 'effect': 'read'})
+            deadline = time.monotonic() + 5
+            while '워커 ' not in (text := sess.read()['text']) and time.monotonic() < deadline:
+                time.sleep(0.3)
+            self.assertIn('워커 MacIntel true', text)
             width = int(page['text'].split('폭 ', 1)[1].split()[0])
             self.assertLessEqual(width, 430, page['text'])
         finally:

@@ -4287,7 +4287,8 @@ class AgentService:
             steps.append({'id':'model', 'state':'ready', 'message':msg('service.onboarding_model_ready')})
         elif not selected:
             steps.append({'id':'model', 'state':'needed', 'message':msg('service.onboarding_model_needed')})
-        if any(recovery.values()):
+        # #90: the step names the latest restart; older interrupted rows stay counted in 'recovery'.
+        if any(self.store.last_recovery().values()):
             steps.append({'id':'recovery', 'state':'attention', 'message':msg('service.onboarding_recovery_attention')})
         else:
             steps.append({'id':'recovery', 'state':'ready', 'message':msg('service.onboarding_recovery_ready')})

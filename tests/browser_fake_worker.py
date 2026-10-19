@@ -77,7 +77,10 @@ for line in sys.stdin:
         # view) answers only once that navigation has landed, with navigated=true.
         # ``/lateresolve``: the navigation's destination check (DNS) takes longer than the
         # click grace; the real worker waits while that policy decision is pending.
-        if command.get('index') == 3 and page['url'].endswith('/refusedpost'):
+        if command.get('index') == 3 and page['url'].endswith('/intercepted'):
+            # #102, as the real worker: the trusted click landed elsewhere, and the target moved off the point.
+            emit({'id': ident, 'ok': False, 'error': 'target_moved'})
+        elif command.get('index') == 3 and page['url'].endswith('/refusedpost'):
             # #700: a form post refused with no page form to hold.
             emit({'id': ident, 'ok': False, 'error': 'submit_refused'})
         elif command.get('index') == 3 and page['url'].endswith(('/delayed', '/popup', '/lateresolve')):
@@ -100,6 +103,11 @@ for line in sys.stdin:
             emit({'id': ident, 'ok': False, 'error': 'focus_moved', 'focused': {'name': 'Search here'}})
         else:
             emit({'id': ident, 'ok': True})
+    elif op == 'load_more':
+        # #11, as the real worker: rounds run, why it stopped, added nodes and their text.
+        emit({'id': ident, 'ok': True, 'rounds': 2, 'stopped': 'no_progress', 'added': 3,
+              'text': 'row 11\nrow 12', 'navigation_refused': 1,
+              'page': {'url': page['url'], 'title': 'held', 'forms': [], 'text': 'held page', 'elements': []}})
     elif op == 'release_submit':
         # As the real worker (#700): only the submit it last reported, once.
         if held is not None and command.get('form') == held:

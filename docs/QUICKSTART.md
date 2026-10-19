@@ -105,7 +105,7 @@ Create your own bot using Telegram’s BotFather. In `v1.1.0` and later, open **
 
 When you connect your own bot, Still gives it the default assistant's profile once: the name **Still**, its picture, and a short introduction in English, Korean, Japanese and Chinese. If you rename the bot or change its picture in BotFather afterwards, Still leaves your choice alone. Family instances keep their own names. The chat background is a Telegram app setting that a bot cannot change.
 
-The computer must remain running and awake for remote requests to be processed. From a source checkout you can register a background login service instead of holding a terminal open; see [Background service (macOS)](#background-service-macos) for exactly what that does and does not cover. Without that service, keep the terminal open; Ctrl-C stops Still.
+The computer must remain running and awake for remote requests to be processed. Installing Still does not start it at login: on macOS, register the background login service once with `agentos service install` so Still starts again after a restart without a terminal; see [Background service (macOS)](#background-service-macos) for exactly what that does and does not cover. Without that service, keep the terminal open; Ctrl-C stops Still.
 
 ## Restart and update
 
@@ -121,7 +121,7 @@ agentos guide
 
 If Still came from the predecessor's Homebrew tap (`brew install jongtae/agentos/agentos`, versions `v1.0.4`–`v1.4.1`), `brew upgrade` does not move it to this repository's tap. Switch once, after the first Still release: stop Still, run `brew uninstall agentos` and `brew untap jongtae/agentos`, then follow the Homebrew install above. Your data in `~/.local/share/agentos` is kept. The formula's `version_scheme` makes Still's `0.x` versions count as newer than those `1.x` builds.
 
-If you registered the background login service from a source checkout, run `agentos service upgrade` after replacing the executable rather than relying on the foreground command.
+If you registered the background login service, run `agentos service upgrade` after upgrading or replacing the executable rather than relying on the foreground command.
 
 Data persists in `~/.local/share/agentos`; uninstalling keeps it unless you ask to delete it ([Uninstall](#uninstall)). Back up the entire data directory while Still is stopped. This directory contains your private conversations and credentials; credentials have filesystem permissions, not application-level encryption.
 
@@ -139,10 +139,11 @@ Deleting local files does not reach other services. Delete the Telegram bot with
 
 ## Background service (macOS)
 
-`agentos start` runs in the foreground. On macOS the same executable can instead be
+`agentos start` runs in the foreground, and installing Still (Homebrew, the installer or a
+checkout) registers nothing to start at login. On macOS the same executable can instead be
 registered as a per-user launchd login service, so Telegram and web requests are handled
-without an interactive terminal session. First setup offers this once (step 4 above); the
-commands below do the same at any time:
+without an interactive terminal session and Still starts again after a restart. First setup
+offers this once (step 4 above); the commands below do the same at any time:
 
 ```sh
 agentos service install    # register and start the login service
@@ -153,10 +154,19 @@ agentos service uninstall  # remove the registration; owner data is retained
 agentos service upgrade    # replace an existing definition, rolling back on failure
 ```
 
+After a Homebrew install, `brew info jongtae/still/agentos` prints the exact command:
+`$(brew --prefix)/opt/agentos/bin/agentos service install --cli-path $(brew --prefix)/opt/agentos/bin/agentos`.
+The `opt` path stays valid across `brew upgrade`. Still uses its own launchd job
+(`com.personal-agentos`), not `brew services`, so there is one registration with health-checked
+receipts, rollback on `upgrade` and removal by `agentos uninstall`.
+
 From a source checkout the same actions are available as
 `python3 -m personal_agent.quickstart service <action>`. `install` and `upgrade` must record
-an absolute path to the executable launchd will run; they resolve `agentos` from `PATH` and
-then from the Homebrew prefix, so from a source checkout either install the console script
+an absolute path to the executable launchd will run. They record the `agentos` program you
+ran, so another `agentos` earlier on `PATH` (for example a pyenv shim) is not picked up instead;
+`v0.1.0` resolved `PATH` first, which is why the Homebrew command above passes `--cli-path`.
+When started as `python3 -m`, they resolve `agentos` from `PATH` and then from the Homebrew
+prefix, so from a source checkout either install the console script
 (`pip install -e '.[mcp-host]'`) or pass `--cli-path /full/path/to/agentos` explicitly. Use `--data` only
 to override the data directory: with no `--data`, the other actions report the directory
 recorded in the installed service definition.
@@ -171,10 +181,11 @@ loopback and sets `RunAtLoad`/`KeepAlive`, so it is designed to start again at l
 What this does **not** yet cover, stated exactly:
 
 - **macOS only.** The lifecycle is launchd-specific. There is no systemd equivalent here.
-- **Shipped in the predecessor's `v1.1.0` (2026-09-23).** Those releases came from the
-  private predecessor repository and its separate tap, not from Still. A Still release will
-  include `agentos service`; the Homebrew formula then lives in this repository as
-  `Formula/agentos.rb`. See [the release procedure](release.en.md).
+- **Released in Still `v0.1.0`.** `agentos service` first shipped in the predecessor's
+  `v1.1.0` (2026-09-23, its private repository and separate tap). Still's Homebrew formula
+  lives in this repository as `Formula/agentos.rb`; see [the release procedure](release.en.md).
+  Homebrew does not start services at install time, so the registration above stays one
+  explicit command.
 - **Not covered by automated tests of real launchd.** Repository CI runs on Linux and cannot
   execute launchd. The automated evidence for these commands is injected-runner tests that
   substitute `launchctl`. The v1.3.0 Homebrew upgrade and foreground smoke were observed
