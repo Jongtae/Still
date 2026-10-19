@@ -91,7 +91,7 @@ class StrictProfileDeclaration(unittest.TestCase):
         from personal_agent.agent_runtime import BROWSER_ACTIONS, HOST_RELAYED_ACTIONS
         owner_files = {'find_files', 'read_file', 'list_roots',
                        # #961: skills are read from the owner store, so strict never serves them either.
-                       'skill_load', 'skill_resource'}
+                       'skill_load', 'skill_resource', 'method_gap'}
         self.assertEqual(profile_actions(STRICT_PROFILE),
                          tuple(action for action in profile_actions(BOUNDED_PROFILE)
                                if action not in HOST_RELAYED_ACTIONS and action not in owner_files))
@@ -191,7 +191,9 @@ class StrictLaunchArguments(unittest.TestCase):
                        # #1380: sandboxed code runs, relayed the same way.
                        'mcp__agentos__code_run,'
                        # #961: the Work's pinned skills, read in the bridge.
-                       'mcp__agentos__skill_load,mcp__agentos__skill_resource')
+                       'mcp__agentos__skill_load,mcp__agentos__skill_resource,'
+                       # #32: the advisory method-gap note, offered with the skill tools.
+                       'mcp__agentos__method_gap')
         self.assertEqual(trusted[-2:], [allow[0], trusted_allow + browser + owner_state])
         self.assertEqual(strict[-2:], allow, 'the variadic --allowedTools stays last')
         self.assertEqual(strict[:len(trusted) - 2], trusted[:-2])
