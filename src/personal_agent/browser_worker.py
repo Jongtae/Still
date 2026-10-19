@@ -27,9 +27,12 @@ the DOM functions they call).  Input is native and bound to one element:
 guard classified (tag, type, autocomplete, name, form membership, whether its
 form holds a payment field), hit-tests it and keeps a handle; the native
 press is followed by ``VERIFY_CLICK`` (a capture-phase guard in the same
-world cancels a trusted click that lands elsewhere) or ``INSERT`` (the held
-element must be the focused one and still match, then ``insertText`` runs in
-that same script turn).  The element is never resolved a second time.
+world, registered at document start, cancels every trusted press event that
+lands elsewhere; only a click on the held element confirms the press, #103) or
+``INSERT`` (the held element must be the focused one and still match, then
+``insertText`` runs in that same script turn).  The element is never resolved a
+second time.  A press that reached the page without a click on the target is
+reported ``pressed``: its effect is unknown and it is never replayed.
 
 Submit guard (#698): for a page's whole life, from document start, a
 capture-phase ``submit`` listener in the client world cancels a submit of any
@@ -126,6 +129,12 @@ VETTED_SECONDS = 30
 #: #700: the longest a form-submission navigation waits for the page to answer
 #: which form it submits; no answer is a refusal.
 FORM_CHECK_SECONDS = 2.0
+#: #103: the longest a click or typing step waits, after its native press, for the
+#: guard to see the release (and the click that follows it); no release is unknown.
+PRESS_RELEASE_SECONDS = 1
+#: #103: how long the locate step lets a scroll it caused settle (the page's own
+#: ``scroll`` handlers run) before it hit-tests the target.
+SCROLL_SETTLE_MS = 120
 
 #: Helpers every page script shares.  Strings leaving the page are well-formed
 #: UTF-16 and cut at code-point boundaries.  ``describe`` mirrors the guard's
@@ -280,8 +289,63 @@ const pressMiss = (g, el) => {
   if (!over) return {error: 'target_moved'};
   return {error: 'press_missed'};
 };
+// #103: what one native press did, from the press guard's record.  Only a click on the
+// target confirms it.  A press whose first down event the guard cancelled before any
+// page listener (``early``), and that caused no hover or move event (whose handlers
+// would have run, #120 review), ran no page handler: not pressed.  Any other miss
+// reached the page (``pressed``): its effect is unknown, and it is never replayed.
+const pressOutcome = (g, el, early) => {
+  if (g.hit) return {ok: true};
+  const miss = pressMiss(g, el), cover = miss.cover ? {cover: miss.cover} : {};
+  if (!g.released) return {error: 'press_unconfirmed', pressed: true, ...cover};
+  if (early && g.first === false && !g.down && !g.moved) return {...miss, pressed: false};
+  if (g.bad) return {...miss, pressed: true};
+  return {error: 'press_no_click', pressed: true, ...cover};
+};
 const state = () => (window.__agentos = window.__agentos || {targets: new Map(), guard: null, listening: false,
-  off: false, allow: null, cancelled: null, held: null, vetted: [], submitListening: false});
+  early: false, off: false, allow: null, cancelled: null, held: null, vetted: [], submitListening: false});
+// #103: the press guard.  ``client_guard_user_script`` arms it at document start, so no
+// page listener on ``window`` runs before it (``early``); ``LOCATE_SCRIPT`` arms it late
+// only where that script did not run.  While a step holds a target (``s.guard``), it
+// records which trusted press events reached the target and cancels every one that
+// lands elsewhere, so the press runs no page handler off the target (adapted from
+// Playwright's hit-target interception).  ``click`` follows the release in the same
+// task, so the record is whole one task after it (``released``); the press is reported
+// to the worker too, which reads it when the page went away before VERIFY could.
+const PRESS_EVENTS = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+// Events a press can cause before its down (the pointer arriving at the point): not
+// cancelled, but a page handler on them may have run, so the press is not "not pressed".
+const MOVE_EVENTS = ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove'];
+const pressReport = (g) => {
+  try { window.webkit.messageHandlers[%(handler)s].postMessage({press: g.nonce, hit: g.hit}); }
+  catch (error) { /* VERIFY reads the record in the page */ } };
+const armPressGuard = (early) => { const s = state(); if (s.listening) return; s.listening = true; s.early = early === true;
+  const watch = (event) => { const g = state().guard;
+    if (!g || !event.isTrusted || Date.now() > g.until) return;
+    const ref = state().targets.get(g.nonce), target = ref && ref.deref();
+    const type = event.type, down = type === 'pointerdown' || type === 'mousedown';
+    let on = false;
+    // The target, inside it, its label, or - for the click its label forwards - the label's
+    // control (the form the classification and an approval already cover, #698).
+    try { on = !!target && (event.target === target || target.contains(event.target) || event.target.control === target ||
+      (type === 'click' && event.target === labelControl(target))); }
+    catch (error) { on = false; }   // fail closed: cancelled like a stray event
+    if (down && g.first === null) g.first = on;
+    if (down && on) g.down = true;
+    if (type === 'click' && on) g.hit = true;
+    if (!on) { g.bad = true; event.preventDefault(); event.stopImmediatePropagation(); }
+    if ((type === 'pointerup' || type === 'mouseup') && !g.settling) {
+      g.settling = true;
+      setTimeout(() => { g.released = true; pressReport(g); if (g.wake) g.wake(); }, 0);
+    }
+    if (type === 'click') pressReport(g); };
+  PRESS_EVENTS.forEach((type) => window.addEventListener(type, watch, true));
+  const moved = (event) => { const g = state().guard;
+    if (g && event.isTrusted && Date.now() <= g.until) g.moved = true; };
+  MOVE_EVENTS.forEach((type) => window.addEventListener(type, moved, true)); };
+// Wait, bounded, until the guard's press was released (its click, if any, dispatched).
+const pressSettled = (g, ms) => g.released ? Promise.resolve() : new Promise((resolve) => {
+  g.wake = resolve; setTimeout(resolve, ms); });
 // A form's named controls shadow its own properties (``<input name="action">`` is
 // ``form.action``), so forms are read through the prototype getters (#700).
 const FORM = HTMLFormElement.prototype, own = (proto, key) => Object.getOwnPropertyDescriptor(proto, key);
@@ -386,7 +450,9 @@ const armSubmitGuard = () => { const s = state(); if (s.submitListening) return;
   window.addEventListener('submit', cancel, true);
   window.addEventListener(%(signal)s, cancel, true); };
 const takeCancelled = () => { const s = state(), c = s.cancelled; s.cancelled = null; return c; };
+const RELEASE_MS = %(release)d, SCROLL_SETTLE_MS = %(settle)d;
 """ % {'selector': json.dumps(SELECTOR), 'signal': json.dumps(SUBMIT_SIGNAL), 'handler': json.dumps(GUARD_HANDLER),
+       'release': PRESS_RELEASE_SECONDS * 1000, 'settle': SCROLL_SETTLE_MS,
        'mark': json.dumps(PRESS_MARK),
        'tokens': json.dumps(list(PAYMENT_TOKENS)), 'secret': json.dumps(sorted(SECRET_TOKENS)),
        'window': SUBMIT_WINDOW_SECONDS * 1000, 'vetted': VETTED_SECONDS * 1000}
@@ -446,7 +512,17 @@ LOCATE_SCRIPT = PRELUDE + r"""
 const el = document.querySelectorAll(SELECTOR)[index];
 if (!el) return JSON.stringify({error: 'target_missing'});
 if (!same(describe(el, tokens), expect)) return JSON.stringify({error: 'target_changed'});
+const was = el.getBoundingClientRect();
 el.scrollIntoView({block: 'center', inline: 'center'});
+const moved = el.getBoundingClientRect();
+if (moved.top !== was.top || moved.left !== was.left) {
+  // #103: the page's ``scroll`` handlers run (a layer they add is a cover now, before
+  // anything is pressed), then the target is checked again.
+  await new Promise((resolve) => { let done = false; const end = () => { if (!done) { done = true; resolve(); } };
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(end, 0))); setTimeout(end, SCROLL_SETTLE_MS); });
+  if (!el.isConnected) return JSON.stringify({error: 'target_missing'});
+  if (!same(describe(el, tokens), expect)) return JSON.stringify({error: 'target_changed'});
+}
 const rect = el.getBoundingClientRect();
 const top = Math.max(rect.top, 0), bottom = Math.min(rect.bottom, window.innerHeight);
 const left = Math.max(rect.left, 0), right = Math.min(rect.right, window.innerWidth);
@@ -457,18 +533,11 @@ if (!holds(hit, el)) return JSON.stringify({error: 'target_obscured', cover: cov
 const s = state();
 s.targets.clear();
 s.targets.set(nonce, new WeakRef(el));
-s.guard = {nonce, bad: false, x, y};
-if (!s.listening) {
-  // A trusted click that lands anywhere but the held element is cancelled.
-  window.addEventListener('click', (event) => {
-    const g = state().guard; if (!g || !event.isTrusted) return;
-    const ref = state().targets.get(g.nonce), target = ref && ref.deref();
-    if (!target || !(event.target === target || target.contains(event.target) || event.target.control === target)) {
-      g.bad = true; event.preventDefault(); event.stopImmediatePropagation();
-    }
-  }, true);
-  s.listening = true;
-}
+// #103: the press guard's record of this step's press (``armPressGuard``); it holds
+// for at most the step and its allowance window, even if VERIFY never runs.
+s.guard = {nonce, x, y, until: Date.now() + lasts, first: null, down: false, hit: false, bad: false,
+  moved: false, settling: false, released: false, wake: null};
+armPressGuard(false);   // a page the document-start script did not reach: armed late
 armSubmitGuard();
 s.allow = null;
 s.vetted = [];
@@ -493,14 +562,17 @@ return JSON.stringify({x, y, editable: el.isContentEditable || tag === 'textarea
   (tag === 'input' && !['submit', 'button', 'image', 'reset', 'checkbox', 'radio', 'file', 'hidden', 'range', 'color'].includes(typeOf(el)))});
 """
 
-#: Arguments: nonce.  Did the press land on the held element?
+#: Arguments: nonce.  Did the press land on the held element?  #103: only a click on
+#: it says so; the script waits, bounded, for the release first.  ``lost``: this
+#: document never held the press (the press replaced the page).
 VERIFY_CLICK_SCRIPT = PRELUDE + r"""
 const s = state(), g = s.guard;
-s.guard = null;
-if (!g || g.nonce !== nonce) return JSON.stringify({error: 'target_changed'});
-if (!g.bad) return JSON.stringify({ok: true});
+if (!g) return JSON.stringify({lost: true});
+if (g.nonce !== nonce) return JSON.stringify({error: 'target_changed', pressed: true});
+await pressSettled(g, RELEASE_MS);
+if (s.guard === g) s.guard = null;
 const ref = s.targets.get(nonce);
-return JSON.stringify(pressMiss(g, ref && ref.deref()));   // #102: why the press missed
+return JSON.stringify(pressOutcome(g, ref && ref.deref(), s.early));   // #102: why the press missed
 """
 
 #: The end of a click/type step: an approval's allowance lasts ``WINDOW_MS``
@@ -516,6 +588,7 @@ return JSON.stringify({cancelled: takeCancelled()});
 GUARD_SWITCH_SCRIPT = PRELUDE + r"""
 armSubmitGuard();
 const s = state();
+s.guard = null;   // #103: the owner's own presses are never held to a step's target
 s.off = off === true;
 s.allow = null;
 s.held = null;
@@ -589,11 +662,12 @@ return JSON.stringify({allow: false, cancelled: hold(s, likely[0], null, 'native
 
 
 def client_guard_user_script(off=False):
-    """Client world, at document start of every main-frame page: the guard is
+    """Client world, at document start of every main-frame page: the guards are
     registered before any page script can add its own capture listener on
-    ``window``, armed (or off while the owner's login window shows)."""
+    ``window``: the press guard (#103) and the submit guard, armed (or off while
+    the owner's login window shows)."""
     return ('(() => {\n' + PRELUDE + '\nstate().off = ' + ('true' if off else 'false') +
-            ';\narmSubmitGuard();\n})();')
+            ';\narmPressGuard(true);\narmSubmitGuard();\n})();')
 
 
 #: Page world, at document start of every main-frame page (#698).
@@ -656,14 +730,20 @@ PAGE_WRAP_USER_SCRIPT = r"""(() => {
   }
 })();""" % (json.dumps(SUBMIT_SIGNAL), json.dumps(list(PRESS_HANDLER_KEYS)), json.dumps(PRESS_MARK))
 
-#: Arguments: nonce, expect, tokens, text.  The held element must be the
-#: focused one and still match the classified descriptor; the text is then
-#: inserted in this same turn (no page script runs in between).
+#: Arguments: nonce, expect, tokens, text.  Once the focusing press was released
+#: (#103), the held element must be the focused one and still match the classified
+#: descriptor; the text is then inserted in that same turn (no page script runs in
+#: between).
 INSERT_SCRIPT = PRELUDE + r"""
 const s = state(), g = s.guard, ref = s.targets.get(nonce), el = ref && ref.deref();
-s.guard = null;
-if (!g || g.nonce !== nonce) return JSON.stringify({error: 'target_changed'});
-if (g.bad) return JSON.stringify(pressMiss(g, el));   // #102: why the focusing press missed
+if (!g || g.nonce !== nonce) { s.guard = null; return JSON.stringify({error: 'target_changed', pressed: true}); }
+await pressSettled(g, RELEASE_MS);   // #103: the focusing press is released first
+if (s.guard === g) s.guard = null;
+// #102, #103: the focusing press was never released, or its first down event missed the
+// field.  Once the down reached the field, the focus (checked next), not a click, says
+// whether the press took: a release the page moved elsewhere does not matter.
+if (!g.released || g.first === false) { const outcome = pressOutcome(g, el, s.early);
+  if (outcome.error) return JSON.stringify(outcome); }
 if (!el || !el.isConnected || document.activeElement !== el) {
   // #12: say where the press left the focus, so the model can target that field in a
   // new, separately checked step.  Nothing is typed into it here.
@@ -1073,6 +1153,7 @@ class Worker:
         self.cancelled = None      # the last cancelled submit not yet reported
         self.reported = []         # ids of cancelled submits already reported
         self.held = None           # the last reported one: what an approval may release (#700)
+        self.press_seen = None     # #103: the press guard's report of the current step's press
         self.dialog_step = None    # #936: the click/type in progress, for page dialogs
         self.remote = False        # #939: a phone drives the login window (``op_remote_begin``)
         self.held_dialog = None    # #939: a page dialog waiting for the phone's (or the Mac's) answer
@@ -1357,6 +1438,16 @@ class Worker:
         self._install_guard_scripts()
         self.run(GUARD_SWITCH_SCRIPT, {'off': self.guard_off}, lambda *_: None)
 
+    def receive_press(self, record):
+        """#103: the press guard's report of a step's press (client-world message handler).
+
+        Read only when the page went away before ``VERIFY_CLICK_SCRIPT`` could answer:
+        whether a click reached the step's target.
+        """
+        record = _press_record(record)
+        if record is not None:
+            self.press_seen = record
+
     def receive_cancelled(self, record):
         """A cancelled submit, reported by the client-world guard (message handler or a script result)."""
         record = _form_record(record)
@@ -1430,12 +1521,15 @@ class Worker:
         """
         return {'posted': self.posted_submits > self.step_posted or self.deciding > 0}
 
-    def finish_input(self, ident, blocked_before=None, error=None, navigated=False, cover=None, focused=None):
+    def finish_input(self, ident, blocked_before=None, error=None, navigated=False, cover=None, focused=None,
+                     pressed=False):
         """Answer a click/type once its approval's allowance ended.
 
         A payment-form submit the guard cancelled answers ``approval_required``
         with its form (#698), before any other error; then ``error``; then a
-        navigation the step caused that was blocked.
+        navigation the step caused that was blocked.  #103: an ``error`` after the
+        native press reached the page (``pressed``) says so, with ``navigated`` and
+        ``posted`` as a finished step answers them: its effect is unknown.
         """
         def answer(cancelled):
             if ident not in self.pending:
@@ -1447,7 +1541,9 @@ class Worker:
             if cancelled is not None:
                 return self.reply(ident, False, error='approval_required', form=cancelled)
             if error:
-                return self.fail(ident, error, **({'cover': cover} if cover else {}), **({'focused': focused} if focused else {}))
+                seen = {'pressed': True, **({'navigated': True} if navigated else {}), **self.step_posted_field()} if pressed else {}
+                return self.fail(ident, error, **({'cover': cover} if cover else {}), **({'focused': focused} if focused else {}),
+                                 **seen)
             if self.refused_submits > self.step_refused:
                 self.reported_refused = self.refused_submits
                 return self.fail(ident, 'submit_refused')
@@ -1811,6 +1907,7 @@ class Worker:
         if not isinstance(expect, dict):
             return self.fail(ident, 'target_changed')   # never press an element nobody classified
         nonce = uuid.uuid4().hex
+        self.press_seen = None   # #103: what the press guard reports of this step's press
         self.step_refused = self.refused_submits
         self.step_posted = self.posted_submits
         # #936: a page's own alert/confirm/prompt during this step is answered by its rule.
@@ -1847,11 +1944,20 @@ class Worker:
                 if ident not in self.pending:
                     return
                 if error is None and isinstance(value, dict) and value.get('error'):
-                    return self.finish_input(ident, blocked_before, value['error'], cover=value.get('cover'))
-                # A script error here means the click already navigated away (the
-                # page and its guards are gone), which the guards allowed.  #736:
-                # a navigation the click started (now or a moment later) lands first.
-                self.settle_click(ident, lambda navigated: self.finish_input(ident, blocked_before, navigated=navigated))
+                    return self.finish_input(ident, blocked_before, value['error'], cover=value.get('cover'),
+                                             pressed=value.get('pressed') is True)
+                # A script error (or a page that never held the press) means the press
+                # already navigated away: the page and its guards are gone, which the
+                # guards allowed.  #736: a navigation the press started (now or a moment
+                # later) lands first.  #103: it was a click only if the guard reported
+                # one on the target before the page went.
+                confirmed = error is None and isinstance(value, dict) and not value.get('lost')
+                seen = getattr(self, 'press_seen', None) or {}
+                if not confirmed and seen.get('nonce') == nonce:
+                    confirmed = seen['hit']
+                self.settle_click(ident, lambda navigated: self.finish_input(
+                    ident, blocked_before, None if confirmed else 'press_unconfirmed', navigated=navigated,
+                    pressed=not confirmed))
             self.run(VERIFY_CLICK_SCRIPT, {'nonce': nonce}, verified)
         self._locate(ident, command, click)
 
@@ -1871,10 +1977,11 @@ class Worker:
                 if ident not in self.pending:
                     return
                 if error or not isinstance(value, dict):
-                    return self.finish_input(ident, blocked_before, error or 'script_failed')
+                    # #103: after the focusing press, a page that went away is a press of unknown effect.
+                    return self.finish_input(ident, blocked_before, 'press_unconfirmed', pressed=True)
                 if value.get('error'):
                     return self.finish_input(ident, blocked_before, value['error'], cover=value.get('cover'),
-                                             focused=value.get('focused'))
+                                             focused=value.get('focused'), pressed=value.get('pressed') is True)
                 self.settle(ident, lambda: self.finish_input(ident, blocked_before))
             self.AppHelper.callLater(FOCUS_SECONDS, lambda: self.run(
                 INSERT_SCRIPT, {'nonce': nonce, 'expect': expect, 'tokens': tokens, 'text': text}, inserted))
@@ -2243,6 +2350,18 @@ def _jpeg_bytes(AppKit, image, quality=FRAME_JPEG_QUALITY):
         return None
 
 
+def _press_record(value):
+    """#103: the press guard's report ``{press: nonce, hit}``, from page data, or None."""
+    try:
+        get = value.get if isinstance(value, dict) else value.objectForKey_
+        nonce = get('press')
+        if not isinstance(nonce, str) or not nonce:
+            return None
+        return {'nonce': str(nonce)[:64], 'hit': bool(get('hit'))}
+    except Exception:
+        return None
+
+
 def _form_record(value):
     """A cancelled submit's form, from page data, or None.
 
@@ -2399,7 +2518,11 @@ def _delegate_class():
         def userContentController_didReceiveScriptMessage_(self, controller, message):
             # Registered for the client world only: the page world cannot post here (#698).
             try:
-                self.worker.receive_cancelled(message.body())
+                body = message.body()
+                if _press_record(body) is not None:
+                    self.worker.receive_press(body)   # #103: the press guard's report
+                else:
+                    self.worker.receive_cancelled(body)
             except Exception:
                 pass
 

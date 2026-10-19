@@ -549,7 +549,9 @@ class DriverProtocolTests(unittest.TestCase):
         driver.snapshot()
         with self.assertRaises(ToolError) as caught:
             driver.click(3, 4)   # #102: the press landed elsewhere because the target moved
-        self.assertEqual((caught.exception.code, str(caught.exception)), ('target_unavailable', bs.MOVED_TEXT))
+        # #103: after the press reached the page, the miss is a press of unknown effect.
+        self.assertEqual((caught.exception.code, str(caught.exception), caught.exception.effect, caught.exception.posted),
+                         (bs.PRESS_UNCONFIRMED_CODE, bs.press_text(), 'unknown', False))
         sent = len(self.commands())
         with self.assertRaises(ToolError) as caught:
             driver.type(5, 'x', 4)   # index 5 was never in a snapshot: nothing is sent
@@ -839,18 +841,154 @@ console.log(JSON.stringify({el: el.a || {}, other: other.a || {}, kept: typeof e
         """#102 review: the post-press checks of a click and a typing step pass the cover on."""
         cover = {'text': '잠시만요', 'controls': [{'index': 2, 'name': '닫기'}]}
         for op in ('op_click', 'op_type'):
+            for pressed in (False, True):   # #103: whether the press reached the page rides along
+                bw, worker = self.worker(blocked=0)
+                finished = []
+                worker.deadline = lambda *args, **kwargs: None
+                worker.press = lambda x, y: None
+                worker.AppHelper = type('AppHelper', (), {'callLater': staticmethod(lambda delay, call: call())})
+                worker._locate = lambda ident, command, then: then({'x': 1, 'y': 2, 'editable': True}, 'n', {}, [])
+                worker.finish_input = lambda ident, *args, **kwargs: finished.append((args, kwargs))
+                getattr(worker, op)(7, {'text': 'x'}, 5)
+                worker.pending[7] = True
+                worker.ran[-1][2]({'error': 'target_obscured', 'cover': cover, 'pressed': pressed}, None)
+                self.assertEqual(finished, [((0, 'target_obscured'), {'cover': cover, 'pressed': pressed,
+                                                                      **({'focused': None} if op == 'op_type' else {})})],
+                                 op)
+
+    def test_the_press_guard_confirms_only_a_click_on_the_target(self):
+        """#103: the guard's record of one press, and what each record answers, without WebKit."""
+        import shutil
+        from personal_agent import browser_worker as bw
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('node is not installed')
+        # A minimal page: the guard's listeners are called directly with trusted-looking events.
+        harness = r"""
+class Node {}
+class Element extends Node {}
+class HTMLElement extends Element { get innerText() { return ''; } }
+class HTMLFormElement extends HTMLElement { get elements() { return []; } get action() { return ''; } get method() { return 'get'; } }
+class Document { get forms() { return []; } }
+const listeners = {}, posted = [];
+Object.assign(globalThis, {Node, Element, HTMLElement, HTMLFormElement, Document, CSS: {escape: (x) => x},
+  document: {querySelectorAll: () => [], elementFromPoint: () => null, getElementById: (id) => id === 'pay' ? payButton : null},
+  window: {addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); },
+           webkit: {messageHandlers: {%(handler)s: {postMessage: (m) => posted.push(m)}}}}});
+%(prelude)s
+// The target sits in <label for="pay">: a press on it forwards a click to the pay button.
+const payButton = {}, forLabel = {getAttribute: (name) => name === 'for' ? 'pay' : null};
+const target = {isConnected: false, contains: (n) => n === target || n === child, closest: () => forLabel};
+const child = {}, layer = {contains: () => false};
+const label = {control: target, contains: () => false};
+const run = async (early, events, opts = {}) => {
+  delete window.__agentos; for (const key of Object.keys(listeners)) delete listeners[key]; posted.length = 0;
+  armPressGuard(early);
+  const s = state();
+  s.targets.set('n', {deref: () => target});
+  s.guard = {nonce: 'n', x: 1, y: 2, until: Date.now() + (opts.expired ? -1 : 60000), first: null, down: false, hit: false,
+    bad: false, moved: false, settling: false, released: false, wake: null};
+  const cancelled = [];
+  for (const [type, on, trusted] of events) {
+    const event = {type, target: on, isTrusted: trusted !== false,
+      preventDefault() { cancelled.push(type); }, stopImmediatePropagation() {}};
+    for (const fn of listeners[type] || []) fn(event);
+  }
+  await pressSettled(s.guard, 30);
+  return {outcome: pressOutcome(s.guard, target, s.early), cancelled, posted: posted.slice(-1)};
+};
+const press = (down, up, click) => [['pointerdown', down], ['mousedown', down], ['pointerup', up], ['mouseup', up]]
+  .concat(click ? [['click', click]] : []);
+(async () => {
+  console.log(JSON.stringify({
+    ordinary: await run(true, press(target, target, target)),
+    forwarded: await run(true, press(target, target, target).concat([['click', payButton]])),
+    forwardedDown: await run(true, [['pointerdown', payButton]].concat(press(target, target, target))),
+    child: await run(true, press(child, child, child)),
+    label: await run(true, press(label, label, label)),
+    layerDuringPress: await run(true, press(target, layer, null)),
+    releasedNoClick: await run(true, press(target, target, null)),
+    blockedEarly: await run(true, press(layer, layer, layer)),
+    blockedLate: await run(false, press(layer, layer, layer)),
+    blockedAfterHover: await run(true, [['mouseover', target]].concat(press(layer, layer, layer))),
+    neverReleased: await run(true, [['pointerdown', target], ['mousedown', target]]),
+    untrusted: await run(true, [['pointerdown', layer, false], ['click', layer, false]]),
+    expired: await run(true, press(layer, layer, layer), {expired: true}),
+  }));
+})();
+""" % {'handler': json.dumps(bw.GUARD_HANDLER), 'prelude': bw.PRELUDE}
+        result = subprocess.run([node, '-e', harness], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        seen = json.loads(result.stdout)
+        confirmed = {'outcome': {'ok': True}, 'cancelled': [], 'posted': [{'press': 'n', 'hit': True}]}
+        for name in ('ordinary', 'child', 'label', 'forwarded'):
+            self.assertEqual(seen[name], confirmed, name)
+        # Only the click a label forwards reaches its control; a press event aimed there is stray.
+        self.assertEqual(seen['forwardedDown']['cancelled'], ['pointerdown'])
+        # The page put a layer over the target during the press: the release on it is cancelled,
+        # and the press, whose down handlers ran on the target, is not confirmed (effect unknown).
+        self.assertEqual(seen['layerDuringPress'], {'outcome': {'error': 'target_missing', 'pressed': True},
+                                                    'cancelled': ['pointerup', 'mouseup'],
+                                                    'posted': [{'press': 'n', 'hit': False}]})
+        self.assertEqual(seen['releasedNoClick']['outcome'], {'error': 'press_no_click', 'pressed': True})
+        # Every event of a press that first landed off the target is cancelled: with the guard armed at
+        # document start no page press handler ran (not pressed); armed late, one may have (unknown).
+        everything = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']
+        self.assertEqual((seen['blockedEarly']['outcome'], seen['blockedEarly']['cancelled']),
+                         ({'error': 'target_missing', 'pressed': False}, everything))
+        self.assertEqual((seen['blockedLate']['outcome'], seen['blockedLate']['cancelled']),
+                         ({'error': 'target_missing', 'pressed': True}, everything))
+        # #120 review: a hover the press caused ran page handlers (here the one that put up the layer),
+        # so even a fully cancelled press is of unknown effect.
+        self.assertEqual((seen['blockedAfterHover']['outcome'], seen['blockedAfterHover']['cancelled']),
+                         ({'error': 'target_missing', 'pressed': True}, everything))
+        for name in ('neverReleased', 'untrusted', 'expired'):
+            self.assertEqual(seen[name]['outcome'], {'error': 'press_unconfirmed', 'pressed': True}, name)
+            self.assertEqual(seen[name]['cancelled'], [], name)
+        self.assertIn('armPressGuard(true);', bw.client_guard_user_script(), 'armed at document start')
+        self.assertIn('armPressGuard(true);', bw.client_guard_user_script(off=True), 'in the owner window too')
+
+    def test_a_press_whose_page_went_away_is_confirmed_only_by_the_guards_report(self):
+        """#103: VERIFY could not answer (the page navigated); the guard's message says whether a click landed."""
+        for value, error, seen, confirmed in (
+                (None, 'script_failed', {'nonce': 'n', 'hit': True}, True),
+                ({'lost': True}, None, {'nonce': 'n', 'hit': True}, True),
+                (None, 'script_failed', {'nonce': 'n', 'hit': False}, False),
+                (None, 'script_failed', {'nonce': 'older', 'hit': True}, False),
+                ({'lost': True}, None, None, False),
+                ({'ok': True}, None, None, True)):
             bw, worker = self.worker(blocked=0)
             finished = []
             worker.deadline = lambda *args, **kwargs: None
             worker.press = lambda x, y: None
-            worker.AppHelper = type('AppHelper', (), {'callLater': staticmethod(lambda delay, call: call())})
-            worker._locate = lambda ident, command, then: then({'x': 1, 'y': 2, 'editable': True}, 'n', {}, [])
+            worker._locate = lambda ident, command, then: then({'x': 1, 'y': 2}, 'n', {}, [])
+            worker.settle_click = lambda ident, finish: finish(True)
             worker.finish_input = lambda ident, *args, **kwargs: finished.append((args, kwargs))
-            getattr(worker, op)(7, {'text': 'x'}, 5)
+            worker.op_click(7, {}, 5)
             worker.pending[7] = True
-            worker.ran[-1][2]({'error': 'target_obscured', 'cover': cover}, None)
-            self.assertEqual(finished, [((0, 'target_obscured'), {'cover': cover, **({'focused': None} if op == 'op_type' else {})})],
-                             op)
+            worker.press_seen = seen
+            worker.ran[-1][2](value, error)
+            expected = ((0, None), {'navigated': True, 'pressed': False}) if confirmed else \
+                ((0, 'press_unconfirmed'), {'navigated': True, 'pressed': True})
+            self.assertEqual(finished, [expected], (value, error, seen))
+
+    def test_a_pressed_failure_says_so_with_what_the_step_observed(self):
+        """#103: an error after the press reached the page carries ``pressed``, ``navigated`` and ``posted``."""
+        bw, worker = self.worker(blocked=0)
+        failed = []
+        worker.fail = lambda ident, code, **fields: failed.append((ident, code, fields))
+        worker.run = lambda body, arguments, done, world=None: done({'cancelled': None}, None)
+        worker.posted_submits = 1
+        for ident, kwargs in ((1, {'pressed': True, 'navigated': True}), (2, {'pressed': True}), (3, {})):
+            worker.pending[ident] = True
+            worker.finish_input(ident, 0, 'press_no_click', **kwargs)
+        self.assertEqual(failed, [(1, 'press_no_click', {'pressed': True, 'navigated': True, 'posted': True}),
+                                  (2, 'press_no_click', {'pressed': True, 'posted': True}),
+                                  (3, 'press_no_click', {})])
+        self.assertEqual(bw._press_record({'press': 'abc', 'hit': 1}), {'nonce': 'abc', 'hit': True})
+        self.assertIsNone(bw._press_record({'id': 'x1', 'dom': 0}), 'a cancelled submit is not a press report')
+        worker.receive_press({'press': 'abc', 'hit': False})
+        self.assertEqual(worker.press_seen, {'nonce': 'abc', 'hit': False})
 
     def test_the_page_wrapper_is_not_installed_while_the_owner_signs_in(self):
         bw, worker = self.worker()
@@ -1243,6 +1381,42 @@ class SessionFixtureHandler(FixtureHandler):
               <div role="button" onclick="document.getElementById('elsewhere').click()">다른 곳 진행</div>
               <div role="button" onclick="sinkForm.requestSubmit();setTimeout(function(){sinkForm.requestSubmit()},3000)">두 번 진행</div>
               </body></html>''')
+        if path in ('/press-mousedown', '/press-hover', '/press-scroll'):
+            # #103: the page puts a layer over the button during the press (on its mousedown, on its
+            # mouseover) or when the locate step scrolls it into view.  Counters say whose press
+            # handlers ran; the button's click handler writes the result.
+            when = {'/press-mousedown': "button.addEventListener('mousedown', cover)",
+                    '/press-hover': "button.addEventListener('mouseover', cover)",
+                    '/press-scroll': "window.addEventListener('scroll', cover)"}[path]
+            gap = '1600px' if path == '/press-scroll' else '0'
+            return self._send('''<html><head><title>가림</title></head><body>
+              <p id="b">버튼 누름 0</p><p id="l">층 누름 0</p><p id="r">결과 대기</p>
+              <button type="button" id="go" style="margin-top:''' + gap + '''">확인</button>
+              <script>
+                var button = document.getElementById('go'), pressed = 0, layered = 0;
+                ['pointerdown', 'mousedown'].forEach(function (type) { button.addEventListener(type, function () {
+                  pressed += 1; document.getElementById('b').textContent = '버튼 누름 ' + pressed; }); });
+                button.addEventListener('click', function () { document.getElementById('r').textContent = '결과 눌림'; });
+                function cover() {
+                  if (document.getElementById('layer')) return;
+                  var layer = document.createElement('div');
+                  layer.id = 'layer';
+                  layer.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;background:#fff;z-index:9';
+                  layer.innerHTML = '<p>잠시만요</p><button type="button" onclick="this.parentNode.remove()">닫기</button>';
+                  ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (type) {
+                    layer.addEventListener(type, function () { layered += 1;
+                      document.getElementById('l').textContent = '층 누름 ' + layered; }); });
+                  document.body.appendChild(layer);
+                }
+                ''' + when + ''';
+              </script></body></html>''')
+        if path == '/press-capture':
+            # #103: the page's own capture listener on window, registered before any locate step,
+            # swallows every click: the guard (registered at document start) still sees the click land.
+            return self._send('''<html><head><title>가로채기</title><script>
+              window.addEventListener('click', function (event) { event.stopImmediatePropagation();
+                document.getElementById('r').textContent = '페이지가 클릭을 가로챔'; }, true);
+              </script></head><body><button type="button">확인</button><p id="r">결과 대기</p></body></html>''')
         if path == '/trusted':
             return self._send('''<html><head><title>입력</title></head><body>
               <button type="button" onclick="document.getElementById('r').textContent='click trusted='+event.isTrusted">누르기</button>
@@ -1323,6 +1497,59 @@ class WebKitIntegrationTests(unittest.TestCase):
             self.assertIn('대기', sess.read()['text'], 'nothing was typed while the field was covered')
             sess.click({'target': str(agree), 'effect': 'mutate'})
             self.assertIn('입력:우유', sess.type({'target': '검색어', 'text': '우유', 'effect': 'mutate'})['text'])
+        finally:
+            sess.close()
+
+    def _press_covered(self, path):
+        """#103: click the button of a page that covers it during the press; what the step says, and the page after."""
+        sess = self.session('work-103' + path.replace('/', '-'))
+        try:
+            sess.open({'url': self.origin + path, 'effect': 'navigate'})
+            with self.assertRaises(ToolError) as caught:
+                sess.click({'target': '확인', 'effect': 'mutate'})
+            text = sess.read()['text']
+        finally:
+            sess.close()
+        exc = caught.exception
+        # Never a confirmed press: the button's click handler never ran, and the guard cancelled every
+        # press event that reached the layer, so none of the layer's own handlers ran either.
+        self.assertIn('결과 대기', text, path)
+        self.assertIn('층 누름 0', text, path)
+        if exc.code == bs.PRESS_UNCONFIRMED_CODE:
+            self.assertEqual(exc.effect, 'unknown', path)
+            self.assertEqual(exc.observed_step, {'posted': False, 'approved': False}, path)
+            self.assertIn('잠시만요', str(exc), 'the layer over the pressed point is named')
+        else:
+            # Not pressed: nothing of the press reached the button either.
+            self.assertEqual(exc.code, 'target_unavailable', path)
+            self.assertIsNone(getattr(exc, 'effect', None), path)
+            self.assertIn('버튼 누름 0', text, path)
+            self.assertIn('잠시만요', str(exc), 'the layer is named as the cover')
+        return exc.code, text
+
+    def test_a_layer_put_over_the_target_on_its_mousedown_is_a_press_of_unknown_effect(self):
+        """#103 fixture 1: the button's mousedown ran, then the layer took the release; no click landed."""
+        code, text = self._press_covered('/press-mousedown')
+        self.assertEqual(code, bs.PRESS_UNCONFIRMED_CODE)
+        self.assertNotIn('버튼 누름 0', text, 'the press reached the button: that is why its effect is unknown')
+
+    def test_a_layer_put_over_the_target_on_hover_is_never_a_confirmed_press(self):
+        """#103 fixture 2: the layer appears on the button's mouseover, which the press itself causes."""
+        self._press_covered('/press-hover')
+
+    def test_a_layer_put_up_by_the_locate_scroll_is_a_cover_found_before_pressing(self):
+        """#103 fixture 3: the page covers the target when the locate step scrolls it into view."""
+        code, _text = self._press_covered('/press-scroll')
+        self.assertEqual(code, 'target_unavailable', 'the scroll settles before the hit test: nothing is pressed')
+
+    def test_an_ordinary_press_and_a_page_capture_listener_are_still_confirmed(self):
+        """#103: a click on the target confirms the press, even when the page's own window listener swallows it."""
+        sess = self.session('work-103-ordinary')
+        try:
+            sess.open({'url': self.origin + '/trusted', 'effect': 'navigate'})
+            self.assertIn('click trusted=true', sess.click({'target': '누르기', 'effect': 'mutate'})['text'])
+            sess.open({'url': self.origin + '/press-capture', 'effect': 'navigate'})
+            self.assertIn('페이지가 클릭을 가로챔', sess.click({'target': '확인', 'effect': 'mutate'})['text'])
         finally:
             sess.close()
 

@@ -79,7 +79,12 @@ for line in sys.stdin:
         # click grace; the real worker waits while that policy decision is pending.
         if command.get('index') == 3 and page['url'].endswith('/intercepted'):
             # #102, as the real worker: the trusted click landed elsewhere, and the target moved off the point.
-            emit({'id': ident, 'ok': False, 'error': 'target_moved'})
+            # #103: the press reached the page, so it says so with what the step observed.
+            emit({'id': ident, 'ok': False, 'error': 'target_moved', 'pressed': True, 'posted': False})
+        elif command.get('index') == 3 and page['url'].endswith('/no-click'):
+            # #103, as the real worker: the page put a layer over the target during the press; no click landed.
+            emit({'id': ident, 'ok': False, 'error': 'press_no_click', 'pressed': True, 'posted': False,
+                  'cover': {'text': 'Open in app', 'controls': [{'index': 7, 'name': 'Pay'}]}})
         elif command.get('index') == 3 and page['url'].endswith('/refusedpost'):
             # #700: a form post refused with no page form to hold.
             emit({'id': ident, 'ok': False, 'error': 'submit_refused'})

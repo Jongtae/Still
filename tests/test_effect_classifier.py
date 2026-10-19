@@ -49,6 +49,18 @@ CORPUS = {
     'outcome unknown': (_pair('api_request', {'declared_effect': 'read', 'effect': 'unknown'}, 'failed'),
                         EFFECT_UNKNOWN),
     'web search': (_pair('web_search', {}, 'succeeded'), EFFECT_NONE),
+    # #103: a press that reached the page with no click on its target: unknown whatever was declared,
+    # even with no form post observed (which makes a confirmed ``read`` click a no-change).
+    'click the page covered during the press': (_pair('browser_click', {
+        'declared_effect': 'read', 'effect': 'unknown', 'code': 'effect_unknown',
+        'observed_step': {'posted': False, 'approved': False}}, 'failed'), EFFECT_UNKNOWN),
+    # #103: a press the early guard stopped before any page press handler ran is refused like an
+    # unrun target: nothing for a ``read`` step; a ``mutate`` one keeps the conservative class.
+    'click stopped before any handler': (_pair('browser_click', {'declared_effect': 'read', 'effect': 'none',
+                                                                 'code': 'target_unavailable'}, 'failed'), EFFECT_NONE),
+    'mutate click stopped before any handler': (_pair('browser_click', {'declared_effect': 'mutate', 'effect': 'none',
+                                                                        'code': 'target_unavailable'}, 'failed'),
+                                                EFFECT_CHANGED),
     # #1484 (live, Work 51cd331b): Still refused a repeated click before it ran.
     'click refused as a repeated path': (_pair('browser_click', {'declared_effect': 'mutate', 'effect': 'none',
                                                                 'code': 'repeat_path', 'ran': False}, 'failed'), EFFECT_NONE),
@@ -129,6 +141,21 @@ class NotRunMark(unittest.TestCase):
         self.assertNotIn('ran', _error_payload(ToolError('x', 'tool_failed')))
         self.assertIsNone(getattr(relay_exception(_error_payload(ToolError('x', 'tool_failed'))), 'ran', None))
         self.assertIsNone(getattr(relay_exception({'kind': 'transient', 'message': ''}), 'ran', None))
+
+    def test_the_relay_carries_an_unknown_effect_and_never_invents_it(self):
+        # #103: a press of unknown effect stays unknown on the bridge's record, and is not retried.
+        from personal_agent.agent_runtime import _error_observation
+        from personal_agent.cli_browser_relay import _error_payload, relay_exception
+        pressed = ToolError('x', 'press_unconfirmed')
+        pressed.effect, pressed.observed_step = 'unknown', {'posted': False, 'approved': False}
+        back = relay_exception(_error_payload(pressed))
+        self.assertEqual((back.code, back.effect), ('press_unconfirmed', 'unknown'))
+        seen = _error_observation(back, True, 'browser_click')
+        self.assertEqual({key: seen[key] for key in ('code', 'retry', 'effect', 'observed_step')},
+                         {'code': 'effect_unknown', 'retry': 'never', 'effect': 'unknown',
+                          'observed_step': {'posted': False, 'approved': False}})
+        self.assertNotIn('effect', _error_payload(ToolError('x', 'target_unavailable')))
+        self.assertIsNone(getattr(relay_exception(_error_payload(ToolError('x', 'target_unavailable'))), 'effect', None))
 
     def test_the_relay_carries_a_timed_out_steps_observation(self):
         # #1496: what the browser worker saw of a step that timed out reaches the bridge's record.
