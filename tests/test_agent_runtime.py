@@ -296,7 +296,10 @@ class TimeSensitiveRecheckTests(unittest.TestCase):
                  'keep the conflict visible','do not guess whether a change is temporary or permanent',
                  'If the recheck cannot be done, say the fact is unconfirmed rather than repeating it',
                  'is dated evidence, not a permanent truth, and neither is a listing: newer dated evidence can revise either',
-                 "Saving the owner's correction does not by itself settle what is current"):
+                 "Saving the owner's correction does not by itself settle what is current",
+                 # Codex review: a correction about the owner's own situation is acted on, not rechecked.
+                 'When the owner corrects something about themselves or their own situation (where they work, what they are doing today), their word is the source: act on it',
+                 'When the owner says an outside fact you reported'):
    self.assertIn(phrase,CORE_INSTRUCTIONS)
   script,_,_=self.run_script({'content':'ok'})
   self.assertIn('Keep three times apart',script.bodies[0]['messages'][0]['content'],'the guidance reaches the worker model')
