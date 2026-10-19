@@ -233,3 +233,114 @@ class ProviderToolProtocolTests(unittest.TestCase):
   self.assertEqual(trace['attempt'],1)
   self.assertEqual(trace['evidence']['path'],'launch.txt')
   self.assertNotIn('secret Aurora release detail',json.dumps(trace))
+
+
+class TimeSensitiveRecheckTests(unittest.TestCase):
+ """QUALITY-FRESH-01 (#24): time-sensitive claims after conflicting owner feedback.
+
+ Evidence class: worker guidance text plus model-free scripted runs with an
+ injected model transport and a fake public network.  The fixtures prove that
+ the guidance reaches the model and that the evidence it needs (a source's own
+ date, the retrieval time, the owner's dated report, a failed recheck) reaches
+ it as distinct values; they do not prove how a live model answers.
+ """
+ LISTING='https://listing.example/place'
+ NOTICE='https://notice.example/place'
+ PAGES={LISTING:'Hours: 09:00-18:00 daily. Last updated 2024-03-02.',
+        NOTICE:'Notice dated 2026-10-01: closed until further notice.'}
+ RETRIEVED=1792400000.0
+ HISTORY=[{'role':'user','content':'Is the place open today?'},
+          {'role':'assistant','content':'Yes, 09:00-18:00 (listing.example).'},
+          {'role':'user','content':'It closed last month.'}]
+
+ def setUp(self):
+  self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
+  self.store=QuickStore(Path(self.tmp.name)/'data');self.events=[]
+
+ def network(self,offline=False):
+  pages,retrieved=self.PAGES,self.RETRIEVED
+  class Public:
+   def __init__(self):self.calls=[]
+   def execute(self,plan):
+    from personal_agent.providers import ProviderError
+    self.calls.append(plan)
+    if offline:raise ProviderError('offline')
+    if plan['tool']=='web_search':
+     return {'tool':'web_search','query':plan['query'],'results':[{'title':url,'url':url,'snippet':''} for url in pages],
+             'sources':list(pages),'retrieved_at':retrieved}
+    return {'tool':'public_page_read','url':plan['url'],'retrieved_at':retrieved,'content':pages[plan['url']],'sources':[plan['url']]}
+  return Public()
+
+ def run_script(self,*messages,offline=False):
+  from test_agency_loop import Script
+  script=Script(*messages);network=self.network(offline)
+  caps=Capabilities(self.store,ModelAdapter(script),CFG,'','job',lambda *a:self.events.append(a),network=network)
+  run_agent(caps.adapter,CFG,'',list(self.HISTORY),'',caps,lambda *a:self.events.append(a))
+  observed={}
+  for message in script.bodies[-1]['messages']:
+   if message['role']=='tool':
+    observed[message.get('tool_call_id')]=json.loads(message['content'])
+  return script,network,observed
+
+ @staticmethod
+ def step(ident,name,**args):
+  from test_agency_loop import call
+  return {'tool_calls':[call(ident,name,**args)]}
+
+ def test_the_worker_guidance_keeps_the_three_times_apart_and_rechecks_once(self):
+  from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+  for phrase in ('Keep three times apart: when the source says the fact took effect or was last updated, when you retrieved it, and when the owner reported something',
+                 'A page fetched just now can still describe an old state',
+                 'otherwise say it is unconfirmed and how old the support is',
+                 'do not repeat it and do not simply take either side. Recheck it once with a lookup aimed at that conflict',
+                 'keep the conflict visible','do not guess whether a change is temporary or permanent',
+                 'If the recheck cannot be done, say the fact is unconfirmed rather than repeating it',
+                 'is dated evidence, not a permanent truth, and neither is a listing: newer dated evidence can revise either',
+                 "Saving the owner's correction does not by itself settle what is current",
+                 # Codex review: a correction about the owner's own situation is acted on, not rechecked.
+                 'When the owner corrects something about themselves or their own situation (where they work, what they are doing today), their word is the source: act on it',
+                 'When the owner says an outside fact you reported'):
+   self.assertIn(phrase,CORE_INSTRUCTIONS)
+  script,_,_=self.run_script({'content':'ok'})
+  self.assertIn('Keep three times apart',script.bodies[0]['messages'][0]['content'],'the guidance reaches the worker model')
+
+ def test_stale_listing_dated_correction_and_newer_source_reach_the_model_as_dated_evidence(self):
+  from test_agency_loop import finish_observed
+  job=self.store.enqueue('The place closed last month.','k1',owner_typed=True)
+  report=self.store.save_memory('place.status','closed',owner_id='local-owner',work_id=job)
+  _,network,observed=self.run_script(
+   self.step('m','search_memory',query='place'),self.step('s','web_search',query='place notice'),
+   self.step('l','public_page_read',url=self.LISTING),self.step('n','public_page_read',url=self.NOTICE),
+   finish_observed('f',summary='The notice dated 2026-10-01 says closed; the listing was last updated 2024-03-02.'))
+  # The owner's dated report: their own words, when it was saved and that the owner typed it.
+  row=observed['m']['memories'][0]
+  self.assertEqual((row['id'],row['content'],row['source']['kind'],row['source_status']),(report['id'],'closed','owner_request','found'))
+  self.assertTrue(row['saved_at'] and row['source']['at'])
+  self.assertIn('closed last month',row['source']['text'])
+  # The stale listing and the newer source: the page's own date and the retrieval time stay separate values.
+  for ref,dated in (('l','Last updated 2024-03-02'),('n','Notice dated 2026-10-01')):
+   self.assertIn(dated,observed[ref]['content'])
+   self.assertEqual(observed[ref]['retrieved_at'],self.RETRIEVED)
+  # One bounded recheck aimed at the conflict: one search and the two pages it returned.
+  self.assertEqual([call['tool'] for call in network.calls],['web_search','public_page_read','public_page_read'])
+
+ def test_a_stored_observation_is_revised_by_later_evidence_whoever_gave_it(self):
+  job=self.store.enqueue('The place closed last month.','k1',owner_typed=True)
+  report=self.store.save_memory('place.status','closed (owner report)',owner_id='local-owner',work_id=job)
+  caps=Capabilities(self.store,None,CFG,'','job',lambda *a:None,allowed_tools=['save_memory','list_memory'])
+  revised=caps.execute('save_memory',{'memory_key':'place.status','content':'reopened per notice dated 2026-10-15'})
+  self.assertTrue(revised['saved']);self.assertEqual(revised['supersedes'],report['id'])
+  current=[row for row in caps.execute('list_memory',{})['memories'] if row['memory_key']=='place.status']
+  self.assertEqual([row['content'] for row in current],['reopened per notice dated 2026-10-15'])
+  self.assertTrue(current[0]['saved_at'],'the revision keeps its own time')
+  with self.store.db() as db:
+   earlier=db.execute('SELECT content,state FROM memories WHERE id=?',(report['id'],)).fetchone()
+  self.assertEqual((earlier['content'],earlier['state']),('closed (owner report)','superseded'),
+                   'the earlier report is kept as superseded, not erased or marked never-true')
+
+ def test_unavailable_verification_reaches_the_model_as_a_failure_not_a_check(self):
+  _,network,observed=self.run_script(
+   self.step('s','web_search',query='place notice'),{'content':'I could not recheck it, so whether it is open is unconfirmed.'},offline=True)
+  self.assertTrue(network.calls,'the recheck was attempted')
+  self.assertIn('error',observed['s']);self.assertEqual(observed['s']['effect'],'none')
+  self.assertNotIn(('web_search','succeeded'),[event[:2] for event in self.events],'no lookup is recorded as checked')
