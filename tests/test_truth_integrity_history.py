@@ -24,6 +24,7 @@ from pathlib import Path
 from personal_agent.agent_runtime import (DELEGATE_FAILED, FALLBACK_UNDESCRIBED, QUALIFIER_NOTES,
                                           evidence_qualifiers, fallback_response, evidence_summary, turn_context)
 from personal_agent.calendar import CALENDAR_SPEC, CALENDAR_WRITE_SPEC, CalendarConnector
+from personal_agent.calendar_conversation import PREVIEW_HEADER
 from personal_agent.connector_contract import ConnectorRegistry, ConnectorState
 from personal_agent.conversation_projection import (CONTEXT_QUALIFIER, TERMINAL_PARTIAL_HEADER,
                                                     context_message, qualify_transcript)
@@ -164,7 +165,9 @@ class TranscriptQualificationTests(TruthIntegrityTestCase):
         self.assertIn('소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.', row['qualifier']['cause'])
         # #820/#847: the bubble delivers the AI's answer first, then the step's
         # own next step (the approval still pending); nothing reached the calendar.
-        self.assertEqual(bubble, CLAIM + '\n\n소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.')
+        # #22: Still's own exact preview of the draft follows the answer, before that step.
+        self.assertTrue(bubble.startswith(CLAIM + '\n\n' + PREVIEW_HEADER), bubble)
+        self.assertTrue(bubble.endswith('\n\n소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.'), bubble)
         self.assertNotIn(TERMINAL_PARTIAL_HEADER, bubble)
         self.assertEqual(self.calendar_calls, [])
 

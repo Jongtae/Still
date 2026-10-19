@@ -45,6 +45,8 @@ GMAIL_SCOPES = (GMAIL_READONLY_SCOPE,)
 
 MAIL_REQUEST = '메일에서 예산 관련 내용 찾아줘'
 CALENDAR_REQUEST = '내일 오후 3시에 팀 회의 일정 잡아줘'
+#: #22: a calendar request is the worker's; with no AI route configured, this is what the owner is told.
+NO_AI_ROUTE = '설정에서 모델 또는 구독 엔진을 먼저 연결하세요.'
 #: #672: a calendar create is selected by the DecisionEngine's
 #: ``capability-need`` judgment, scripted here for exactly these requests.
 CALENDAR_REQUESTS = (CALENDAR_REQUEST, '내일 오후 3시에 치과 일정 잡아줘')
@@ -593,23 +595,25 @@ class ParkedRequestSurvivesConversationTests(HandoffTestCase):
         self.assertNotIn(SUPERSEDED_WORK_ERROR, [body.get('text') for body in self.sent[before:]])
         self.assertEqual(len(asked), 1, 'only the calendar turn found something parked to ask about')
 
-    def test_a_calendar_draft_edit_does_not_cancel_an_unrelated_parked_request(self):
-        # A fixture provider makes the calendar draft flow reachable; nothing
+    def test_an_answer_to_pending_calendar_drafts_does_not_cancel_an_unrelated_parked_request(self):
+        # #22: the worker's drafts wait for the owner's literal answer; that
+        # answer is addressed to them and never judged as a withdrawal.  Nothing
         # here is approved, so no calendar effect is ever attempted.
-        from test_calendar_conversation import Provider
+        from test_calendar_conversation import DENTIST, Provider
         self.service.calendar = CalendarConnector(self.store, Provider(), registry=self.registry,
                                                   now=lambda: self.clock[0])
         self.service.calendar_conversation.now = lambda: self.clock[0]
         self.connect_calendar_write()
-        asked = self.judge_withdrawal('아니 4시로')
+        asked = self.judge_withdrawal('취소')
         mail = self.park(MAIL_REQUEST)
-        self.say('내일 오후 3시에 치과 일정 잡아줘')
-        self.assertTrue(self.service.calendar_conversation.has_pending(OWNER),
-                        'fixture must leave a calendar draft pending')
-        self.say('아니 4시로')
-        self.assertTrue(self.service.calendar_conversation.has_pending(OWNER),
-                        'the edit must have been claimed by the draft')
-        self.assertNotIn('아니 4시로', [utterance for utterance, _ in asked])
+        draft = self.service.calendar.draft_create(DENTIST, OWNER)['id']
+        self.assertTrue(self.service.calendar_conversation.offer(OWNER, [draft]))
+        self.store.enqueue('취소', f'wu3-{next(self.keys)}', channel=f'telegram:{GENERATION}', chat_id=CHAT,
+                           owner_typed=True)  # only a message the owner typed answers drafts
+        self.assertTrue(self.service.run_one())
+        self.assertFalse(self.service.calendar_conversation.has_pending(OWNER),
+                         'the cancel must have been claimed by the drafts')
+        self.assertNotIn('취소', [utterance for utterance, _ in asked])
         self.assertEqual(self.store.job(mail)['status'], 'awaiting_connection')
         self.assertIsNotNone(self.handoff.record(GMAIL_CONNECTOR_ID))
 
@@ -858,9 +862,11 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
         self.assertEqual(self.registry.status(OWNER, CALENDAR_WRITE_CONNECTOR_ID).state,
                          ConnectorState.DISCONNECTED)
 
-    def test_calendar_resume_produces_the_exact_preview_and_no_effect(self):
+    def test_calendar_resume_reaches_the_worker_and_has_no_effect(self):
         """The resumed Work is the original utterance, so once the write grant
-        exists it reaches the draft branch: an exact preview, nothing sent."""
+        exists it reaches the worker, whose draft tools make proposals only (#22).
+        No AI route is configured here, so the owner is told to connect one and
+        nothing is drafted or sent."""
         calls = []
 
         class Provider:
@@ -869,19 +875,15 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
                 return {'id': 'never', 'version': '"x"'}
 
         self.service.calendar = CalendarConnector(self.store, Provider(), registry=self.registry)
-        self.service.calendar_conversation._timezone = 'Asia/Seoul'
         job_id = self.park(CALENDAR_REQUEST)
         self.connect_calendar_write()
         self.service.resume_connector_work(CALENDAR_WRITE_CONNECTOR_ID, OWNER,
                                            (CALENDAR_WRITE_SCOPE,))
         self.assertEqual(self.drain(), 1)
         job = self.store.job(job_id)
-        self.assertEqual(job['status'], 'succeeded')
-        self.assertIn('아직 캘린더에 만들지 않았습니다', job['response'])
-        self.assertIn('팀 회의', job['response'])
-        self.assertIn('15:00 – 16:00', job['response'])
-        drafts = self.store.config('calendar_create', {})
-        self.assertEqual([row['state'] for row in drafts.values()], ['awaiting-approval'])
+        self.assertEqual(job['status'], 'failed')
+        self.assertIn(NO_AI_ROUTE, job['error'])
+        self.assertEqual(self.store.config('calendar_create', {}), {}, 'Still drafts nothing itself')
         self.assertEqual(calls, [], 'a resumed create request must not reach the provider')
 
     def _resume_after_the_engine_changes(self, engine):
@@ -894,7 +896,6 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
                 return {'id': 'never', 'version': '"x"'}
 
         self.service.calendar = CalendarConnector(self.store, Provider(), registry=self.registry)
-        self.service.calendar_conversation._timezone = 'Asia/Seoul'
         job_id = self.park(CALENDAR_REQUEST)
         self.assertIn(job_id, self.store.config(AgentService.JUDGED_RESUME_KEY, {}))
         self.assertNotIn(CALENDAR_REQUEST, json.dumps(self.store.config(AgentService.JUDGED_RESUME_KEY, {}),
@@ -905,11 +906,10 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
         self.service.resume_connector_work(CALENDAR_WRITE_CONNECTOR_ID, OWNER, (CALENDAR_WRITE_SCOPE,))
         self.assertEqual(self.drain(), 1)
         job = self.store.job(job_id)
-        self.assertEqual(job['status'], 'succeeded')
-        self.assertIn('팀 회의', job['response'])
-        self.assertIn('15:00 – 16:00', job['response'])
-        self.assertEqual([row['state'] for row in self.store.config('calendar_create', {}).values()],
-                         ['awaiting-approval'])
+        # #22: the judged capability resumes on the worker route (no AI route here).
+        self.assertEqual(job['status'], 'failed')
+        self.assertIn(NO_AI_ROUTE, job['error'])
+        self.assertEqual(self.store.config('calendar_create', {}), {})
         self.assertEqual(calls, [])
         self.assertNotIn(job_id, self.store.config(AgentService.JUDGED_RESUME_KEY, {}), 'consumed once')
         return engine
@@ -923,9 +923,10 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
                 OUTCOME_DECIDED, 'none-of-these', candidates, fixture_confidence())))
         self.assertFalse([item for item in engine.asked if item[1].purpose == 'capability-need'])
 
-    def test_calendar_resume_without_a_configured_connector_says_so(self):
-        """With the specs registered but no connector object, the honest next
-        step is the configuration refusal, not a question about the event."""
+    def test_calendar_resume_without_a_configured_connector_drafts_nothing(self):
+        """With the specs registered but no connector object, the resumed Work
+        reaches the worker (#22), whose draft tool would refuse; with no AI route
+        configured here the owner is told to connect one, and nothing is drafted."""
         job_id = self.park(CALENDAR_REQUEST)
         self.connect_calendar_write()
         self.service.resume_connector_work(CALENDAR_WRITE_CONNECTOR_ID, OWNER,
@@ -933,7 +934,7 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
         self.assertEqual(self.drain(), 1)
         job = self.store.job(job_id)
         self.assertEqual(job['status'], 'failed')
-        self.assertIn('구성되어 있지 않습니다', job['error'])
+        self.assertIn(NO_AI_ROUTE, job['error'])
         self.assertEqual(self.store.config('calendar_create', {}), {})
 
     def test_a_connected_row_with_a_narrower_grant_fails_closed_into_reauth(self):
@@ -967,15 +968,15 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
 
     def test_an_installation_with_no_registry_keeps_its_previous_behaviour(self):
         """Injecting no connector registry must change nothing about WU3's handoff:
-        nothing is parked, and with no connector the request refuses by naming
-        the configuration gap rather than asking about the event."""
+        nothing is parked, and the request reaches the worker route (#22), which
+        here has no AI route, rather than a Still-held question about the event."""
         self.service.connector_handoff = None
         self.service.connector_registry = None
         job_id = self.enqueue(CALENDAR_REQUEST)
         self.assertTrue(self.service.run_one())
         job = self.store.job(job_id)
         self.assertEqual(job['status'], 'failed')
-        self.assertIn('구성되어 있지 않습니다', job['error'])
+        self.assertIn(NO_AI_ROUTE, job['error'])
         self.assertEqual(self.index(), {})
         self.assertEqual(self.store.config('calendar_create', {}), {})
 

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from personal_agent.agent_runtime import Capabilities
 from personal_agent.conversation_handoff import (CAPABILITY_JUDGMENT_MAX_CHARS, CAPABILITY_NEEDS,
-                                                 INTENT_CALENDAR_CREATE, INTENT_CONVERSATION,
+                                                 INTENT_CONVERSATION,
                                                  INTENT_MAIL_SEARCH, INTENT_NOTE_CREATE, INTENT_UNSUPPORTED,
                                                  JUDGMENT_NO, JUDGMENT_UNAVAILABLE, JUDGMENT_YES,
                                                  ConversationJudgments, IntentClassifier)
@@ -113,14 +113,13 @@ class CapabilityNeedTests(unittest.TestCase):
             with self.subTest(engine=engine):
                 self.assertEqual(classifier(engine).classify(text).intent, INTENT_CONVERSATION)
 
-    def test_explicit_forms_draft_follow_ups_and_long_texts_are_never_sent_to_the_engine(self):
+    def test_explicit_forms_and_long_texts_are_never_sent_to_the_engine(self):
+        # #22: a pending calendar draft's approve or cancel is answered by the
+        # service before classification, so it is not this classifier's case.
         engine = choosing({})
         judged = classifier(engine)
         self.assertEqual(judged.classify('/notes').intent, 'note-list')
         self.assertEqual(judged.classify('/note 집주인 연락처').intent, INTENT_NOTE_CREATE)
-        # A pending calendar draft claims cue-free follow-ups without a judgment.
-        self.assertEqual(judged.classify('오후 4시', focus={'calendar_pending': True}).intent,
-                         INTENT_CALENDAR_CREATE)
         # A long pasted text is answered by conversation, not sent to the judgment too.
         self.assertEqual(judged.classify('가' * (CAPABILITY_JUDGMENT_MAX_CHARS + 1)).intent, INTENT_CONVERSATION)
         self.assertEqual(capability_asks(engine), [])
