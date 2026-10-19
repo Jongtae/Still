@@ -6,7 +6,7 @@ They are not bundled into Still. The owner adds one in conversation ("add a shop
 
 | Skill | What it is |
 | --- | --- |
-| `shopping-cart` | A method for changing an online cart safely: exact product, quantity meaning, change only what was asked, read the cart back |
+| `shopping-cart` | A method for changing an online cart safely: exact product, quantity meaning, change only what was asked, read the cart back, and keep product price, delivery fee and total apart for a final-price answer |
 | `emart-ssg` | Site know-how for Emart mall on SSG.COM, from redacted Still observations. Use it with `shopping-cart` |
 | `map-directions` | A method for answers that send the owner somewhere: starting point, when to leave, mode, approximate time, parking, and one route link in the owner's preferred map service (reference: KakaoMap) |
 

@@ -77,6 +77,20 @@ class ReferencePackages(unittest.TestCase):
                        '**Set** the total to N', '**Ensure** at least N', 'do not pick a substitute silently',
                        'Do not send a cart link as proof', 'Never start checkout or payment'):
             self.assertIn(phrase, method)
+
+    def test_a_final_price_answer_keeps_the_fee_apart_and_stays_inside_the_cart(self):
+        """#25: product price, delivery fee and total are separate; an unread fee is unconfirmed, with no lowest-final-price claim."""
+        method = (ROOT / 'skills' / SHOPPING / 'SKILL.md').read_text()
+        section = method.split('## 5a.', 1)[1].split('\n## ', 1)[0]
+        for phrase in ('Report the product price, the delivery fee and the total as separate figures',
+                       'the exact product and quantity', 'Leave the item in the cart', 'Add only that one item',
+                       'Change nothing else in the cart or the account', 'report the fee as unconfirmed',
+                       'Do not state a lowest final price', 'Do not open checkout',
+                       'do not enter an address, payment or card details', 'do not press an order or pay control'):
+            self.assertIn(phrase, section)
+        self.assertIn('never press an order or payment control, and never enter an address, payment or card details', method)
+        self.assertIn('delivery fee and total kept apart', method.split('## 7. Report', 1)[1])
+        self.assertNotRegex(section.lower(), r'emart|ssg|coupang|kurly', 'the fee step names no site')
         self.assertNotRegex(method.lower(), r'emart|ssg|coupang|kurly', 'the method names no site')
         site = (ROOT / 'skills' / SITE / 'SKILL.md').read_text()
         self.assertIn('Follow the `shopping-cart` skill for the method', site)
