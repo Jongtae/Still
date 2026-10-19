@@ -2951,7 +2951,14 @@ class Capabilities:
    from .skills import SkillError
    if self.skills is None:raise ToolError('이 작업에서는 스킬을 쓸 수 없어요.','skill_unavailable')
    try:
-    if name=='method_gap':result=self.skills.gap(args['note'])
+    if name=='method_gap':
+     # #32 review: the note is model text; secrets and credential shapes are masked before it is kept.
+     from .bounded_execution import SECRET_PATTERN
+     note=SECRET_PATTERN.sub('[redacted]',str(args.get('note') or ''))
+     if callable(self.secret_redactor):
+      try:note=str(self.secret_redactor(note))
+      except Exception:note=''
+     result=self.skills.gap(note)
     elif name=='skill_resource':result=self.skills.resource(args['skill'],args['path'])
     elif args.get('part')=='header':result=self.skills.header(args['skill'])
     else:result=self.skills.load(args['skill'])

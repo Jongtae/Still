@@ -72,7 +72,8 @@ HOST_TOOLS={
     'skill_load': HostTool(False, True, False, None, False, None),
     'skill_resource': HostTool(False, True, False, None, False, None),
     # #32: an advisory note in the Work's own record that no available skill had the method it needed.
-    'method_gap': HostTool(False, True, False, None, False, None),
+    # Its note is recorded by length only; the bounded, filtered note is the call's evidence (#32 review).
+    'method_gap': HostTool(False, True, False, None, False, 'note'),
     # #1172: read-only search and read of the owner's connected Google Drive.
     'drive_search': HostTool(False, True, True, 'drive', False, None),
     'drive_read': HostTool(False, True, True, 'drive', False, None),

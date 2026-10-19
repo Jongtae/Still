@@ -228,6 +228,21 @@ class MethodGapAndProvenance(_Methods):
             binding.gap('one more')
         self.assertEqual(raised.exception.code, 'skill_limit')
 
+    def test_the_gap_note_argument_is_recorded_by_length_and_its_kept_note_is_masked(self):
+        """#32 review: the model's raw note never reaches the Work record; the kept note is bounded and filtered."""
+        from personal_agent.agent_runtime import recorded_arguments
+        raw = 'a method for my bank login sk-abcdefghijklmnop1234 ' + 'x' * 500
+        recorded = recorded_arguments('method_gap', {'note': raw})
+        self.assertNotIn('sk-abcdefghijklmnop1234', json.dumps(recorded))
+        self.assertNotIn('x' * 300, json.dumps(recorded))
+        _result, events, _script = self.run_script({'tool_calls': [call('g', 'method_gap', note=raw)]}, {'content': 'done'})
+        serialized = json.dumps(events, ensure_ascii=False)
+        self.assertNotIn('sk-abcdefghijklmnop1234', serialized)
+        self.assertNotIn('x' * 300, serialized)
+        [gap] = self.details(events, 'method_gap')
+        self.assertLessEqual(len(gap['evidence']['method_gap']), MAX_GAP_CHARS)
+        self.assertTrue(gap['evidence']['method_gap'].startswith('a method for my bank login'))
+
     def test_each_header_read_and_gap_note_is_one_ordinary_work_attempt(self):
         _result, events, _script = self.run_script(
             {'tool_calls': [call('h', 'skill_load', skill=SKILL['claim-analysis'], part='header')]},
@@ -239,6 +254,26 @@ class MethodGapAndProvenance(_Methods):
 
 class BridgeBoundary(_Methods):
     """A CLI bridge rebuilds the binding from refs and recalls what the Work read from its recorded events."""
+
+    def test_per_work_bounds_hold_across_processes(self):
+        """#32 review: a restarted bridge cannot reset the header-read or gap-note bounds of the same Work."""
+        job = self.store.enqueue('analyse', 'k-bounds')
+        refs = self.library.binding().refs()
+        header = {'skill': SKILL['claim-analysis'], 'digest': self.library.binding().entries[SKILL['claim-analysis']]['digest'],
+                  'part': 'header'}
+        with self.store.db() as db:
+            for _ in range(MAX_HEADER_READS):
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,0)',
+                           (job, 'skill_load', 'succeeded', json.dumps({'evidence': header})))
+            for _ in range(MAX_GAP_NOTES):
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,0)',
+                           (job, 'method_gap', 'succeeded', json.dumps({'evidence': {'method_gap': 'a missing method'}})))
+        restarted = SkillBinding.from_refs(self.library, refs)
+        restarted.recall(self.store, job)
+        for attempt in (lambda: restarted.header(SKILL['claim-analysis']), lambda: restarted.gap('another method')):
+            with self.assertRaises(SkillError) as raised:
+                attempt()
+            self.assertEqual(raised.exception.code, 'skill_limit')
 
     def test_a_recalled_header_read_never_unlocks_resources_and_a_recalled_load_does(self):
         host = self.caps(job=self.store.enqueue('analyse', 'k-bridge'))
@@ -255,6 +290,7 @@ class BridgeBoundary(_Methods):
         with self.assertRaises(SkillError):
             bridge.resource(SKILL['claim-analysis'], 'SKILL.md')
         self.assertEqual(bridge.resource(SKILL['summary-or-analysis'], 'SKILL.md')['path'], 'SKILL.md')
+        self.assertEqual((bridge.loads, bridge.header_reads), (1, 1), 'the per-Work counts come back with the events')
         # A screened method withdrawn later stops the bridge's calls too.
         self.library.remove('claim-analysis')
         with self.assertRaises(SkillError) as raised:

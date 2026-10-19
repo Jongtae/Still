@@ -690,12 +690,16 @@ class SkillBinding:
         """Add the skills this Work loaded in any process, from its recorded tool events (#961 review).
 
         A restarted CLI bridge, or a later attempt on another route, starts with an
-        empty ``loaded`` set while the worker may still hold the earlier text.
+        empty ``loaded`` set while the worker may still hold the earlier text.  #32 review:
+        the per-Work counts (loads, header reads, gap notes) are restored from the same
+        events, so spreading calls across processes never exceeds a per-Work bound.
         """
         try:
             with store.db() as db:
                 rows = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='skill_load' AND status='succeeded'",
                                   (job_id,)).fetchall()
+                gaps = db.execute("SELECT COUNT(*) FROM tool_events WHERE job_id=? AND tool='method_gap' AND status='succeeded'",
+                                  (job_id,)).fetchone()[0]
                 stopped = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND status='failed' AND detail LIKE ?",
                                      (job_id, '%skill_revoked%')).fetchall()
         except Exception:
@@ -706,11 +710,16 @@ class SkillBinding:
                     self.revoked = self.revoked or '이 작업이 읽은 스킬'
             except (TypeError, ValueError, AttributeError):
                 continue
+        headers, loads = 0, set()
         for (detail,) in rows:
             try:
                 evidence = json.loads(detail).get('evidence') or {}
             except (TypeError, ValueError, AttributeError):
                 continue
+            if evidence.get('part') == 'header':
+                headers += 1
+            elif evidence.get('skill'):
+                loads.add(evidence.get('skill'))
             entry = self.entries.get(evidence.get('skill'))
             if entry is not None and entry['digest'] == evidence.get('digest'):
                 # #32: a header read is remembered as screened; it never unlocks resources.
@@ -720,6 +729,10 @@ class SkillBinding:
                 else:
                     self.screened.pop(entry['skill'], None)
                     self.loaded.setdefault(entry['skill'], entry)
+        # The events include this process's own calls, so the larger count is the Work's.
+        self.loads = max(self.loads, len(loads))
+        self.header_reads = max(self.header_reads, headers)
+        self.gap_notes = max(self.gap_notes, int(gaps or 0))
 
     def check_current(self):
         """Refuse when a skill this Work loaded or screened is no longer current (every later tool call), and from then on."""
