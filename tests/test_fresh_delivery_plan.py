@@ -76,11 +76,11 @@ def test_the_browser_program_is_closed_out_with_its_evidence():
 
 
 TRACK_C = ["QUALITY-DELIVERY-01", "QUALITY-FRESH-01", "QUALITY-REPORT-01", "QUALITY-METHODS-01"]
-TRACK_D = ["CORE-CALENDAR-01", "CORE-SERVICE-01", "CORE-PARALLEL-01"]
+TRACK_D = ["CORE-SERVICE-01", "CORE-CALENDAR-01", "CORE-PARALLEL-01"]
 
 
 def test_the_owner_activated_quality_program_is_goal_ready_and_heartbeat_paused():
-    """#115: two tracks in order; the shared agent_runtime.py is taken in turn (#16 after #32)."""
+    """#115: two tracks in order (track D reordered #21 -> #22 by the owner's #22 decision); #16 waits for #32."""
     current = plan()
     assert current["next_goal"]["id"] == "QUALITY-CORE-01"
     assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
@@ -89,14 +89,17 @@ def test_the_owner_activated_quality_program_is_goal_ready_and_heartbeat_paused(
     assert program["ordered_substeps"] == TRACK_C + TRACK_D
     assert program["active_substeps"] == [] and program["completed_substeps"] == {}
     items = {item["id"]: item for item in current["iterations"]}
-    assert [items[name]["issue"] for name in TRACK_C + TRACK_D] == [25, 24, 15, 32, 22, 21, 16]
-    for track in (TRACK_C, TRACK_D):
+    assert [items[name]["issue"] for name in TRACK_C + TRACK_D] == [25, 24, 15, 32, 21, 22, 16]
+    for track in (TRACK_C, TRACK_D[:2]):
         for previous, name in zip([None] + track, track):
             assert items[name]["program"] == "QUALITY-CORE-01"
             assert items[name]["milestone"] == "quality-core"
             assert (previous is None) or previous in items[name]["depends_on"]
+    # #16 needs #21's extraction and #32's agent_runtime.py change, not #22's human review.
     assert items["CORE-PARALLEL-01"]["depends_on"] == ["CORE-SERVICE-01", "QUALITY-METHODS-01"]
-    assert items["QUALITY-DELIVERY-01"]["depends_on"] == items["CORE-CALENDAR-01"]["depends_on"] == []
+    assert items["QUALITY-DELIVERY-01"]["depends_on"] == items["CORE-SERVICE-01"]["depends_on"] == []
+    # #22: the owner chose option A, which changes approval semantics, so a human non-author reviews it.
+    assert "CORE-CALENDAR-01" in program["independent_review"] and program["decisions"][0]["issue"] == 22
     # validate runs only the governance list, so each substep names behavioral tests of its own surface.
     for name in TRACK_C + TRACK_D:
         (command,) = items[name]["tests"]
