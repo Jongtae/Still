@@ -97,6 +97,13 @@ def test_the_owner_activated_quality_program_is_goal_ready_and_heartbeat_paused(
             assert (previous is None) or previous in items[name]["depends_on"]
     assert items["CORE-PARALLEL-01"]["depends_on"] == ["CORE-SERVICE-01", "QUALITY-METHODS-01"]
     assert items["QUALITY-DELIVERY-01"]["depends_on"] == items["CORE-CALENDAR-01"]["depends_on"] == []
+    # validate runs only the governance list, so each substep names behavioral tests of its own surface.
+    for name in TRACK_C + TRACK_D:
+        (command,) = items[name]["tests"]
+        assert "test_fresh_delivery_plan" not in command, name
+        targets = command.split("pytest -q ", 1)[1].split()
+        assert targets and all((ROOT / target).exists() for target in targets), name
+    assert "full-validate" in program["completion_rule"]
     # Goal-ready is not active: the heartbeat selects nothing on its own.
     for state in ({}, {"completed": []}):
         assert DeliveryPlan(PLAN).select(state) is None, state
