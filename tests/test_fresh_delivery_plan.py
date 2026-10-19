@@ -3,7 +3,8 @@
 Still was imported without history. The predecessor plan is archived unchanged
 under docs/history/, where the historical governance tests read it; the root
 plan started empty and selected nothing until the owner activated a goal
-(BROWSER-REL-01, #94, since closed out).
+(BROWSER-REL-01, #94, since closed out). The owner then selected
+QUALITY-CORE-01 (#115).
 """
 import importlib.util
 import json
@@ -51,11 +52,10 @@ def test_no_predecessor_program_or_iteration_carries_over():
     assert not inherited & set(current["history"]["documented_completed_iterations"])
 
 
-def test_the_browser_program_is_closed_out_with_its_evidence_and_selects_nothing():
-    """#94: BROWSER-REL-01 ran #12 -> #11 -> #13 and closed out; no successor is selected."""
+def test_the_browser_program_is_closed_out_with_its_evidence():
+    """#94: BROWSER-REL-01 ran #12 -> #11 -> #13 and closed out; it selected no successor."""
     current = plan()
-    assert current["next_goal"]["id"] is None
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "terminal"
+    assert current["next_goal"]["id"] != "BROWSER-REL-01"
     assert invariants.closed_out_programs(current) == ["BROWSER-REL-01"]
     # Each completed child is durable history too, so a later goal may depend on it directly.
     assert set(current["history"]["documented_completed_iterations"]) == {
@@ -73,6 +73,54 @@ def test_the_browser_program_is_closed_out_with_its_evidence_and_selects_nothing
         assert items[name]["depends_on"] == ([previous] if previous else [])
     for state in ({}, {"completed": []}, {"active": "BROWSER-REL-01", "status": "running"}):
         assert DeliveryPlan(PLAN).select(state) is None, state
+
+
+TRACK_C = ["QUALITY-DELIVERY-01", "QUALITY-FRESH-01", "QUALITY-REPORT-01", "QUALITY-METHODS-01"]
+TRACK_D = ["CORE-CALENDAR-01", "CORE-SERVICE-01", "CORE-PARALLEL-01"]
+
+
+def test_the_owner_activated_quality_program_is_goal_ready_and_heartbeat_paused():
+    """#115: two tracks in order; the shared agent_runtime.py is taken in turn (#16 after #32)."""
+    current = plan()
+    assert current["next_goal"]["id"] == "QUALITY-CORE-01"
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    program = current["programs"]["QUALITY-CORE-01"]
+    assert program["activated_by"]["issue"] == 115
+    assert program["ordered_substeps"] == TRACK_C + TRACK_D
+    assert program["active_substeps"] == [] and program["completed_substeps"] == {}
+    items = {item["id"]: item for item in current["iterations"]}
+    assert [items[name]["issue"] for name in TRACK_C + TRACK_D] == [25, 24, 15, 32, 22, 21, 16]
+    for track in (TRACK_C, TRACK_D):
+        for previous, name in zip([None] + track, track):
+            assert items[name]["program"] == "QUALITY-CORE-01"
+            assert items[name]["milestone"] == "quality-core"
+            assert (previous is None) or previous in items[name]["depends_on"]
+    assert items["CORE-PARALLEL-01"]["depends_on"] == ["CORE-SERVICE-01", "QUALITY-METHODS-01"]
+    assert items["QUALITY-DELIVERY-01"]["depends_on"] == items["CORE-CALENDAR-01"]["depends_on"] == []
+    # validate runs only the governance list, so each substep names behavioral tests of its own surface.
+    for name in TRACK_C + TRACK_D:
+        (command,) = items[name]["tests"]
+        assert "test_fresh_delivery_plan" not in command, name
+        targets = command.split("pytest -q ", 1)[1].split()
+        assert targets and all((ROOT / target).exists() for target in targets), name
+    assert "full-validate" in program["completion_rule"]
+    # Goal-ready is not active: the heartbeat selects nothing on its own.
+    for state in ({}, {"completed": []}):
+        assert DeliveryPlan(PLAN).select(state) is None, state
+
+
+def test_the_controller_can_run_the_quality_program_once_the_owner_makes_it_active(tmp_path):
+    """#100: every controller path reads the selected iteration's milestone."""
+    from scripts.dev.delivery import DeliveryController
+
+    altered = plan()
+    altered["next_goal"] = {"id": "QUALITY-CORE-01", "status": "active"}
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "delivery-plan.yaml").write_text(json.dumps(altered), encoding="utf-8")
+    controller = DeliveryController(root, tmp_path / "state.json", invariants.RecordingRunner(), now=lambda: 1_700_000_000)
+    status = controller.status()
+    assert (status["active"], status["milestone"]) == ("QUALITY-CORE-01", "quality-core")
 
 
 def test_a_closed_program_stays_unselectable_even_if_declared_active(tmp_path):
