@@ -13,6 +13,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from typing import Callable, Mapping, Sequence
@@ -90,13 +91,26 @@ def _probe_healthz(timeout: float = 2, port: int = DEFAULT_PORT) -> bool:
         return False
 
 
+# Console scripts declared in pyproject.toml; both start the same program.
+_CLI_NAMES = frozenset({"agentos", "still"})
+
+
 def resolve_cli_path(
     explicit: str | Path | None = None,
     *,
     which: Which = shutil.which,
     runner: Runner = _run,
+    running: str | None = None,
 ) -> Path:
-    """Resolve the installed CLI without assuming Intel or Apple Silicon paths."""
+    """Resolve the installed CLI without assuming Intel or Apple Silicon paths.
+
+    The ``agentos`` or ``still`` program that is running this command comes
+    first (#96): a ``PATH`` lookup can find a different install, such as a
+    pyenv shim ahead of Homebrew's ``bin``, and launchd would then start that
+    program instead of the one the owner ran. ``running`` defaults to
+    ``sys.argv[0]``; a ``python -m`` start is not named after a console script
+    and falls through to ``PATH`` and then the Homebrew prefix.
+    """
     if explicit is not None:
         candidate = Path(explicit).expanduser()
         if candidate.is_file() and os.access(candidate, os.X_OK):
@@ -105,6 +119,11 @@ def resolve_cli_path(
             "The selected Still executable is missing or is not executable.",
             "Reinstall Still, then retry with the executable reported by `command -v agentos`.",
         )
+    running = sys.argv[0] if running is None else running
+    if running and Path(running).name in _CLI_NAMES:
+        candidate = Path(running).expanduser()
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return Path(os.path.abspath(candidate))
     found = which("agentos")
     if found:
         candidate = Path(found).expanduser()

@@ -30,6 +30,14 @@
 # `jongtae/agentos` still belongs to that tap; QUICKSTART "Restart and update"
 # gives the one-time switch.
 #
+# The caveats name the start-at-login command (#96). Still registers its own
+# launchd job through `agentos service install`, so the formula has no
+# `service do` block: `brew services` would add a second job for the same data
+# directory and port. The command uses `opt_bin`, which survives upgrades, and
+# passes `--cli-path` because v0.1.0 records the first `agentos` on PATH. A
+# change here must be copied into `Formula/agentos.rb` (url and sha256 kept) in
+# the same PR; tests/test_release_traceability.py checks that.
+#
 # See docs/release.en.md for the full procedure.
 
 class Agentos < Formula
@@ -54,7 +62,9 @@ class Agentos < Formula
     <<~EOS
       Run agentos start to open browser setup.
       Data: ~/.local/share/agentos
-      Keep the process running to receive Telegram requests.
+      To start Still at login and after a restart, without a terminal (macOS):
+        #{opt_bin}/agentos service install --cli-path #{opt_bin}/agentos
+      Otherwise keep agentos start running to receive Telegram requests.
     EOS
   end
 

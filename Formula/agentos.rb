@@ -23,7 +23,9 @@ class Agentos < Formula
     <<~EOS
       Run agentos start to open browser setup.
       Data: ~/.local/share/agentos
-      Keep the process running to receive Telegram requests.
+      To start Still at login and after a restart, without a terminal (macOS):
+        #{opt_bin}/agentos service install --cli-path #{opt_bin}/agentos
+      Otherwise keep agentos start running to receive Telegram requests.
     EOS
   end
 
