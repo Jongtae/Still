@@ -291,13 +291,14 @@ const pressMiss = (g, el) => {
 };
 // #103: what one native press did, from the press guard's record.  Only a click on the
 // target confirms it.  A press whose first down event the guard cancelled before any
-// page listener (``early``) ran no page press handler: not pressed.  Any other miss
+// page listener (``early``), and that caused no hover or move event (whose handlers
+// would have run, #120 review), ran no page handler: not pressed.  Any other miss
 // reached the page (``pressed``): its effect is unknown, and it is never replayed.
 const pressOutcome = (g, el, early) => {
   if (g.hit) return {ok: true};
   const miss = pressMiss(g, el), cover = miss.cover ? {cover: miss.cover} : {};
   if (!g.released) return {error: 'press_unconfirmed', pressed: true, ...cover};
-  if (early && g.first === false && !g.down) return {...miss, pressed: false};
+  if (early && g.first === false && !g.down && !g.moved) return {...miss, pressed: false};
   if (g.bad) return {...miss, pressed: true};
   return {error: 'press_no_click', pressed: true, ...cover};
 };
@@ -312,6 +313,9 @@ const state = () => (window.__agentos = window.__agentos || {targets: new Map(),
 // task, so the record is whole one task after it (``released``); the press is reported
 // to the worker too, which reads it when the page went away before VERIFY could.
 const PRESS_EVENTS = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+// Events a press can cause before its down (the pointer arriving at the point): not
+// cancelled, but a page handler on them may have run, so the press is not "not pressed".
+const MOVE_EVENTS = ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove'];
 const pressReport = (g) => {
   try { window.webkit.messageHandlers[%(handler)s].postMessage({press: g.nonce, hit: g.hit}); }
   catch (error) { /* VERIFY reads the record in the page */ } };
@@ -335,7 +339,10 @@ const armPressGuard = (early) => { const s = state(); if (s.listening) return; s
       setTimeout(() => { g.released = true; pressReport(g); if (g.wake) g.wake(); }, 0);
     }
     if (type === 'click') pressReport(g); };
-  PRESS_EVENTS.forEach((type) => window.addEventListener(type, watch, true)); };
+  PRESS_EVENTS.forEach((type) => window.addEventListener(type, watch, true));
+  const moved = (event) => { const g = state().guard;
+    if (g && event.isTrusted && Date.now() <= g.until) g.moved = true; };
+  MOVE_EVENTS.forEach((type) => window.addEventListener(type, moved, true)); };
 // Wait, bounded, until the guard's press was released (its click, if any, dispatched).
 const pressSettled = (g, ms) => g.released ? Promise.resolve() : new Promise((resolve) => {
   g.wake = resolve; setTimeout(resolve, ms); });
@@ -529,7 +536,7 @@ s.targets.set(nonce, new WeakRef(el));
 // #103: the press guard's record of this step's press (``armPressGuard``); it holds
 // for at most the step and its allowance window, even if VERIFY never runs.
 s.guard = {nonce, x, y, until: Date.now() + lasts, first: null, down: false, hit: false, bad: false,
-  settling: false, released: false, wake: null};
+  moved: false, settling: false, released: false, wake: null};
 armPressGuard(false);   // a page the document-start script did not reach: armed late
 armSubmitGuard();
 s.allow = null;

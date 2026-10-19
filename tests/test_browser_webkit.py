@@ -887,7 +887,7 @@ const run = async (early, events, opts = {}) => {
   const s = state();
   s.targets.set('n', {deref: () => target});
   s.guard = {nonce: 'n', x: 1, y: 2, until: Date.now() + (opts.expired ? -1 : 60000), first: null, down: false, hit: false,
-    bad: false, settling: false, released: false, wake: null};
+    bad: false, moved: false, settling: false, released: false, wake: null};
   const cancelled = [];
   for (const [type, on, trusted] of events) {
     const event = {type, target: on, isTrusted: trusted !== false,
@@ -910,6 +910,7 @@ const press = (down, up, click) => [['pointerdown', down], ['mousedown', down], 
     releasedNoClick: await run(true, press(target, target, null)),
     blockedEarly: await run(true, press(layer, layer, layer)),
     blockedLate: await run(false, press(layer, layer, layer)),
+    blockedAfterHover: await run(true, [['mouseover', target]].concat(press(layer, layer, layer))),
     neverReleased: await run(true, [['pointerdown', target], ['mousedown', target]]),
     untrusted: await run(true, [['pointerdown', layer, false], ['click', layer, false]]),
     expired: await run(true, press(layer, layer, layer), {expired: true}),
@@ -936,6 +937,10 @@ const press = (down, up, click) => [['pointerdown', down], ['mousedown', down], 
         self.assertEqual((seen['blockedEarly']['outcome'], seen['blockedEarly']['cancelled']),
                          ({'error': 'target_missing', 'pressed': False}, everything))
         self.assertEqual((seen['blockedLate']['outcome'], seen['blockedLate']['cancelled']),
+                         ({'error': 'target_missing', 'pressed': True}, everything))
+        # #120 review: a hover the press caused ran page handlers (here the one that put up the layer),
+        # so even a fully cancelled press is of unknown effect.
+        self.assertEqual((seen['blockedAfterHover']['outcome'], seen['blockedAfterHover']['cancelled']),
                          ({'error': 'target_missing', 'pressed': True}, everything))
         for name in ('neverReleased', 'untrusted', 'expired'):
             self.assertEqual(seen[name]['outcome'], {'error': 'press_unconfirmed', 'pressed': True}, name)
