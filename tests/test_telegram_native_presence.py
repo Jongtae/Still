@@ -28,7 +28,8 @@ from personal_agent.conversation_handoff import (FOLLOWUP_CANCEL, FOLLOWUP_CORRE
                                                  INTENT_CONVERSATION, INTENT_NOTE_CREATE, INTENT_SETTINGS,
                                                  INTENT_UNSUPPORTED, TELEGRAM_POLL_UPDATE_KINDS, ConversationJudgments,
                                                  TelegramChannel,
-                                                 TelegramRejected, telegram_request_file, telegram_request_json)
+                                                 TelegramNotSent, TelegramRejected, telegram_request_file,
+                                                 telegram_request_json)
 from personal_agent.conversation_projection import TERMINAL_FAILED_HEADER
 from personal_agent.decision import OUTCOME_DECIDED, FixtureDecisionEngine, SelectionDecision, fixture_confidence
 from personal_agent.agent_runtime import WORK_STOPPED
@@ -1617,6 +1618,19 @@ class TelegramErrorEnvelopeTests(unittest.TestCase):
                 self.assertNotIsInstance(caught.exception, TelegramRejected)
                 self.assertEqual(caught.exception.status, status)
                 self.assertEqual(len(seen), 1, 'never a second request, never a followed redirect')
+
+    def test_only_a_connect_phase_failure_is_marked_not_sent(self):
+        """#123: httpx2 raises ConnectError/ConnectTimeout/PoolTimeout before the request is written."""
+        import httpx2
+        for outcome, not_sent in ((httpx2.ConnectError('reset'), True), (httpx2.ConnectTimeout('slow'), True),
+                                  (httpx2.PoolTimeout('busy'), True), (httpx2.ReadError('reset'), False),
+                                  (httpx2.WriteError('reset'), False), (httpx2.ReadTimeout('slow'), False),
+                                  (httpx2.RemoteProtocolError('closed'), False)):
+            with self.subTest(outcome=type(outcome).__name__):
+                stub, _ = self.stub(outcome)
+                with stub, self.assertRaises(ProviderError) as caught:
+                    telegram_request_json('https://api.telegram.org/botX/sendMessage', {'a': 1})
+                self.assertIs(isinstance(caught.exception, TelegramNotSent), not_sent)
 
     def test_an_oversized_body_is_refused(self):
         stub, _ = self.stub(self.response(200, b'{"ok": true, "result": "' + b'x' * 2_000_001 + b'"}'))

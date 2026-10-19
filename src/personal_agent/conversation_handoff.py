@@ -60,6 +60,10 @@ TELEGRAM_ENTITY_REJECTION = "can't parse entities"
 TELEGRAM_CONNECT_RETRIES = 2
 #: #121: the connect + TLS handshake budget of one try (seconds).
 TELEGRAM_CONNECT_TIMEOUT = 5
+#: #123: how long a reply that never reached Telegram waits before the next
+#: delivery attempt (seconds); doubled after each failure up to the maximum.
+TELEGRAM_UNSENT_BACKOFF_FIRST = 15
+TELEGRAM_UNSENT_BACKOFF_MAX = 300
 TELEGRAM_UNREACHABLE_TEXT = '연결할 수 없거나 응답 시간이 초과되었습니다. 서버와 네트워크를 확인하세요.'
 
 
@@ -107,12 +111,22 @@ def _telegram_http():
         return _telegram_client
 
 
-class _Unreached(Exception):
-    """No HTTP response was read; ``timed_out`` when a time budget ran out."""
+class TelegramNotSent(ProviderError):
+    """The request was never written: the connect or TLS handshake failed (#123).
 
-    def __init__(self, timed_out):
+    Unlike a lost response this is definite: Telegram received nothing, so
+    the same message may be sent later without a duplicate.
+    """
+
+
+class _Unreached(Exception):
+    """No HTTP response was read; ``timed_out`` when a time budget ran out,
+    ``written`` False when the request never left (connect phase)."""
+
+    def __init__(self, timed_out, written=True):
         super().__init__()
         self.timed_out = timed_out
+        self.written = written
 
 
 def _telegram_exchange(method, url, timeout, limit, *, content=None, headers=None):
@@ -127,6 +141,10 @@ def _telegram_exchange(method, url, timeout, limit, *, content=None, headers=Non
                 if len(body) > limit:
                     break
             return response.status_code, bytes(body)
+    except (httpx2.ConnectTimeout, httpx2.PoolTimeout):
+        raise _Unreached(timed_out=True, written=False) from None
+    except httpx2.ConnectError:
+        raise _Unreached(timed_out=False, written=False) from None
     except httpx2.TimeoutException:
         raise _Unreached(timed_out=True) from None
     except (httpx2.TransportError, OSError):
@@ -173,7 +191,8 @@ def _telegram_open(url, data, headers, timeout):
         status, raw = _telegram_exchange('GET' if data is None else 'POST', url, timeout, 2_000_000,
                                          content=data, headers=headers)
     except _Unreached as exc:
-        raise ProviderError(TELEGRAM_UNREACHABLE_TEXT, status='timeout' if exc.timed_out else None) from None
+        error = ProviderError if exc.written else TelegramNotSent
+        raise error(TELEGRAM_UNREACHABLE_TEXT, status='timeout' if exc.timed_out else None) from None
     if not 200 <= status < 300:
         if 400 <= status < 500:
             try:
