@@ -99,7 +99,7 @@
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_fresh_delivery_plan.py"
       ],
-      "summary": "Answer quality and core cleanup program in two parallel tracks. Track C (methods as skill content): #25 -> #24 -> #15 -> #32. Track D (core cleanup): #22 -> #21 (slices 1-3) -> #16 (slice 1). The tracks own separate files; agent_runtime.py is shared, so #16 waits for #32.",
+      "summary": "Answer quality and core cleanup program in two parallel tracks. Track C (methods as skill content): #25 -> #24 -> #15 -> #32. Track D (core cleanup): #21 (slices 1-3) -> #22 (owner option A, independent review) -> #16 (slice 1). The tracks own separate files; agent_runtime.py is shared, so #16 waits for #32.",
       "depends_on": []
     },
     {
@@ -161,19 +161,6 @@
       ]
     },
     {
-      "id": "CORE-CALENDAR-01",
-      "program": "QUALITY-CORE-01",
-      "issue": 22,
-      "milestone": "quality-core",
-      "kind": "implementation",
-      "activation_status": "parent-controlled",
-      "tests": [
-        "PYTHONPATH=src python3 -m pytest -q tests/test_calendar_conversation.py tests/test_calendar.py tests/test_pa1_j4_calendar_tools.py tests/test_pa1_j4_calendar_reachability.py tests/test_conversation_intent.py tests/test_intent_fallthrough.py tests/test_no_scenario_code.py"
-      ],
-      "summary": "Route calendar requests through the worker draft tools and remove the literal-parsing conversation; exact preview approval before any calendar write is unchanged.",
-      "depends_on": []
-    },
-    {
       "id": "CORE-SERVICE-01",
       "program": "QUALITY-CORE-01",
       "issue": 21,
@@ -184,8 +171,21 @@
         "PYTHONPATH=src python3 -m pytest -q tests"
       ],
       "summary": "Behavior-preserving extraction from AgentService, slices 1-3: Work execution phases, Telegram ingestion/delivery, Telegram store interface in the same SQLite file.",
+      "depends_on": []
+    },
+    {
+      "id": "CORE-CALENDAR-01",
+      "program": "QUALITY-CORE-01",
+      "issue": 22,
+      "milestone": "quality-core",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_calendar_conversation.py tests/test_calendar.py tests/test_pa1_j4_calendar_tools.py tests/test_pa1_j4_calendar_reachability.py tests/test_conversation_intent.py tests/test_intent_fallthrough.py tests/test_no_scenario_code.py"
+      ],
+      "summary": "Owner decision 2026-10-19 (option A): worker calendar drafts enter the existing approval state of CalendarConversation (literal approve/cancel words, payload-hash and channel binding, Still-rendered exact preview, approve -> execute); only the literal date/title parser and the INTENT_CALENDAR_CREATE branch are removed. Independent review by a human non-author is required before merge.",
       "depends_on": [
-        "CORE-CALENDAR-01"
+        "CORE-SERVICE-01"
       ]
     },
     {
@@ -252,22 +252,29 @@
         "QUALITY-FRESH-01",
         "QUALITY-REPORT-01",
         "QUALITY-METHODS-01",
-        "CORE-CALENDAR-01",
         "CORE-SERVICE-01",
+        "CORE-CALENDAR-01",
         "CORE-PARALLEL-01"
       ],
       "active_substeps": [],
       "completed_substeps": {},
       "allowed_authority": "Track C: skills/**, src/personal_agent/skills.py, worker guidance/method text and their tests. Track D: quickstart_service.py, calendar_conversation.py, modules extracted from AgentService and their tests. agent_runtime.py is shared and taken in turn (CORE-PARALLEL-01 after QUALITY-METHODS-01). Docs describing changed behavior and this plan. Evidence: focused unit tests with injected transports, fake clocks and temporary stores, small model-free integration tests, required CI. One issue-linked PR per substep with normal squash merge after required CI and the automated review of the final head, then a closeout PR.",
       "non_goals": "Live accounts, sign-ins, real carts or calendars, named external websites, live-model sampling, credentials, payments, releases, deployment and the delivery heartbeat; #21 slice 4; #16 slices 2-4 (completion-check and checked_direct trade-offs need measurement and an owner decision); a new skills framework, store or scheduler; site-specific workarounds; other backlog groups, #103 and #107.",
-      "independent_review": "Not planned. Triggered if a change alters the calendar approval boundary (#22: stop and ask first), approval or external-effect guards, skill authority, or owner-state authority.",
-      "completion_rule": "Every ordered substep merged on its own PR with its issue's in-scope acceptance criteria mapped to new or changed tests, its declared focused tests passing locally, and both required validate CI and the full-suite full-validate workflow (dispatched on the PR branch, Linux and macOS) passing on the final head, because validate runs only the governance list. No two tracks' open PRs edit the same file at once. Then a closeout entry here recording per-substep issue, pull request, merge commit and decision, and the out-of-scope slices left open."
+      "independent_review": "Required for CORE-CALENDAR-01 (#22): owner decision 2026-10-19 chose option A, which applies the existing chat approval mechanism to drafts the model wrote (consequential-action approval semantics); its PR merges only after a human reviewer who is not its author reviews the exact head, and waits as integration_pending until then. Otherwise not planned; triggered if a change alters approval or external-effect guards, skill authority, or owner-state authority.",
+      "completion_rule": "Every ordered substep merged on its own PR with its issue's in-scope acceptance criteria mapped to new or changed tests, its declared focused tests passing locally, and both required validate CI and the full-suite full-validate workflow (dispatched on the PR branch, Linux and macOS) passing on the final head, because validate runs only the governance list. No two tracks' open PRs edit the same file at once. Then a closeout entry here recording per-substep issue, pull request, merge commit and decision, and the out-of-scope slices left open.",
+      "decisions": [
+        {
+          "date": "2026-10-19",
+          "issue": 22,
+          "decision": "Option A for worker calendar drafts (see summary of CORE-CALENDAR-01); not B (AI-judged approval wording) or C (approve buttons). Track D order becomes #21 -> #22 -> #16 because #21 is behavior-preserving and both change quickstart_service.py."
+        }
+      ]
     }
   },
   "completion_claims": {},
   "next_goal": {
     "id": "QUALITY-CORE-01",
     "status": "owner-activated-goal-ready",
-    "action": "Owner direction 2026-10-19 (#115) selects QUALITY-CORE-01: track C #25 -> #24 -> #15 -> #32 and track D #22 -> #21 (slices 1-3) -> #16 (slice 1), run in parallel with separate file ownership, session-driven at the owner's request. Scoped PRs and normal merge after required CI are authorized; live accounts, external sites, credentials, releases and deployment are not. The delivery heartbeat stays paused, and no successor is selected on completion."
+    "action": "Owner direction 2026-10-19 (#115) selects QUALITY-CORE-01: track C #25 -> #24 -> #15 -> #32 and track D #21 (slices 1-3) -> #22 (owner option A, independent review before merge) -> #16 (slice 1), run in parallel with separate file ownership, session-driven at the owner's request. Scoped PRs and normal merge after required CI are authorized; live accounts, external sites, credentials, releases and deployment are not. The delivery heartbeat stays paused, and no successor is selected on completion."
   }
 }
