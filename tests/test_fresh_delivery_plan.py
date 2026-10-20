@@ -4,7 +4,7 @@ Still was imported without history. The predecessor plan is archived unchanged
 under docs/history/, where the historical governance tests read it; the root
 plan started empty and selected nothing until the owner activated a goal
 (BROWSER-REL-01, #94, since closed out). The owner then selected
-QUALITY-CORE-01 (#115) and then STEADY-01 (#132), both since closed out.
+QUALITY-CORE-01 (#115) and STEADY-01 (#132), both since closed out, and then CHECKS-01 (#157).
 """
 import importlib.util
 import json
@@ -109,12 +109,11 @@ TRACK_1 = ["STEADY-GOOGLE-01", "STEADY-LOCALE-01"]
 TRACK_2 = ["STEADY-NOTES-01"]
 
 
-def test_the_steady_program_is_closed_out_and_selects_nothing():
-    """#132: #8, #10 and #19 merged; no successor is selected and the heartbeat stays paused."""
+def test_the_steady_program_is_closed_out_with_its_evidence():
+    """#132: #8, #10 and #19 merged; it selected no successor."""
     current = plan()
-    assert current["next_goal"]["id"] is None
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "terminal"
-    assert invariants.closed_out_programs(current) == ["BROWSER-REL-01", "QUALITY-CORE-01", "STEADY-01"]
+    assert current["next_goal"]["id"] != "STEADY-01"
+    assert {"BROWSER-REL-01", "QUALITY-CORE-01", "STEADY-01"} <= set(invariants.closed_out_programs(current))
     assert {"STEADY-01", *TRACK_1, *TRACK_2} <= set(current["history"]["documented_completed_iterations"])
     invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["STEADY-01"]
@@ -135,6 +134,49 @@ def test_the_steady_program_is_closed_out_and_selects_nothing():
     assert "#149" in program["closeout"] and "not waived" in program["closeout"]
     for state in ({}, {"completed": []}, {"active": "STEADY-01", "status": "running"}):
         assert DeliveryPlan(PLAN).select(state) is None, state
+
+
+CHECKS_TRACK_1 = ["CHECKS-FLAKY-01", "CHECKS-SPEED-01"]
+CHECKS_TRACK_2 = ["CHECKS-MEASURE-01"]
+
+
+def test_the_owner_activated_checks_program_is_goal_ready_and_heartbeat_paused():
+    """#157: #142 -> #156 share the suite's timing; #16's measurement runs on its own and changes no behavior."""
+    current = plan()
+    assert current["next_goal"]["id"] == "CHECKS-01"
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    program = current["programs"]["CHECKS-01"]
+    assert program["activated_by"]["issue"] == 157
+    assert program["ordered_substeps"] == CHECKS_TRACK_1 + CHECKS_TRACK_2
+    assert program["active_substeps"] == [] and program["completed_substeps"] == {}
+    items = {item["id"]: item for item in current["iterations"]}
+    assert [items[name]["issue"] for name in CHECKS_TRACK_1 + CHECKS_TRACK_2] == [142, 156, 16]
+    assert items["CHECKS-SPEED-01"]["depends_on"] == ["CHECKS-FLAKY-01"]
+    assert items["CHECKS-FLAKY-01"]["depends_on"] == items["CHECKS-MEASURE-01"]["depends_on"] == []
+    for name in CHECKS_TRACK_1 + CHECKS_TRACK_2:
+        assert items[name]["program"] == "CHECKS-01" and items[name]["milestone"] == "checks"
+        (command,) = items[name]["tests"]
+        targets = command.split("pytest -q ", 1)[1].split()
+        assert targets and all((ROOT / target).exists() for target in targets), name
+    assert "no behavior change" in items["CHECKS-MEASURE-01"]["summary"]
+    assert "sleeps or retries" in program["non_goals"]
+    assert "full-validate" in program["completion_rule"]
+    for state in ({}, {"completed": []}):
+        assert DeliveryPlan(PLAN).select(state) is None, state
+
+
+def test_the_controller_can_run_the_checks_program_once_the_owner_makes_it_active(tmp_path):
+    """#100: every controller path reads the selected iteration's milestone."""
+    from scripts.dev.delivery import DeliveryController
+
+    altered = plan()
+    altered["next_goal"] = {"id": "CHECKS-01", "status": "active"}
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "delivery-plan.yaml").write_text(json.dumps(altered), encoding="utf-8")
+    controller = DeliveryController(root, tmp_path / "state.json", invariants.RecordingRunner(), now=lambda: 1_700_000_000)
+    status = controller.status()
+    assert (status["active"], status["milestone"]) == ("CHECKS-01", "checks")
 
 
 def test_a_closed_program_stays_unselectable_even_if_declared_active(tmp_path):
