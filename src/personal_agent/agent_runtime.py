@@ -4125,7 +4125,8 @@ class ReadOverlap:
    be what admits that page (``search_result_urls``);
  * anything after a ``finish`` claim in the turn, which may end the run;
  * a group the Work budget could not cover in the worst case (one transient
-   retry per read, and a model turn per search for a native search provider),
+   retry per read, and two model turns per search for a native search
+   provider, whose request and retry each spend one),
    or a Work already stopped or past its deadline - that turn runs one by one.
 
  Records stay in the turn's order: a record a read makes while it runs (a
@@ -4188,8 +4189,9 @@ class ReadOverlap:
   budget=getattr(self.capabilities,'budget',None)
   if budget is None or budget.interrupted():return False
   if budget.attempts-budget.attempts_used<2*len(members):return False
+  # A native search provider spends a model turn per request, and its transient retry another.
   searches=sum(1 for _id,_name,_args,action in members if action in SEARCH_BACKED_ACTIONS)
-  return budget.turn_limit()-budget.turns_used>=searches
+  return budget.turn_limit()-budget.turns_used>=2*searches
 
  def start(self,calls,index,attempts,paths):
   """At the walk's ``index``: start the group of reads that begins here, if any."""

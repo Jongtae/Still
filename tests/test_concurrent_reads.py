@@ -18,7 +18,7 @@ import time
 import unittest
 from pathlib import Path
 
-from personal_agent.agent_runtime import Capabilities, WorkBudget, run_agent
+from personal_agent.agent_runtime import Capabilities, ReadOverlap, WorkBudget, run_agent
 from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.quickstart_store import QuickStore
 from test_agency_loop import CFG, Script, call, finish, judgments
@@ -146,6 +146,19 @@ class ConcurrentReadTests(unittest.TestCase):
         self.run_turn([call('1', 'web_search', query='alpha'), call('2', 'web_search', query='beta')], wire, budget=budget)
         self.assertEqual(wire.peak, 1)
         self.assertEqual(budget.attempts_used, 2)
+
+    def test_native_searches_need_room_for_a_retry_turn_each(self):
+        # A native search provider spends a model turn per request and another on a transient
+        # retry; a group runs together only when the turn allowance covers both for every search.
+        caps = Capabilities(self.store, None, CFG, '', 'job', self.record, network=Wire(),
+                            budget=WorkBudget(turns=20, attempts=20))
+        overlap = ReadOverlap(caps, {})
+        searches = [('1', 'web_search', {'query': 'a'}, 'web_search'), ('2', 'web_search', {'query': 'b'}, 'web_search')]
+        left = caps.budget.turn_limit()
+        caps.budget.turns_used = left - 3
+        self.assertFalse(overlap.covered(searches), 'three turns cannot cover two searches and their retries')
+        caps.budget.turns_used = left - 4
+        self.assertTrue(overlap.covered(searches))
 
     def test_a_stopped_work_sends_nothing_and_refuses_in_order(self):
         wire = Wire()
