@@ -4,9 +4,10 @@ A second kind of row on the #805 owner-model upkeep queue: the same tick,
 single flight, pause switch and rolling cap.  Typed markers enqueue it (a
 failed Work a worker AI answered; a Work the continuity judgment linked as
 a correction or retry; an observation another change hands in), the
-Judgment AI reviews the Work from its own redacted records, a kept lesson is
-saved as ``profile.working.`` Memory under the #918 slice (a) rule (told
-with undo), and a blocker stays Evidence on the reviewed Work.
+Judgment AI reviews the Work from its own redacted records, a kept revision
+of the working notes is their next version (#19, told once with an exact
+undo; ``tests/test_working_notes.py`` covers the document itself), and a
+blocker stays Evidence on the reviewed Work.
 
 Evidence class: model-free unit and service tests.  A scripted
 ``FixtureDecisionEngine`` plays the Judgment AI; the real ``AgentService``
@@ -31,8 +32,8 @@ GENERATION = 7
 CHAT = 4242
 
 
-def review(lesson='', key='', blocker=''):
-    return {'lesson_key': key, 'lesson': lesson, 'blocker': blocker}
+def review(notes='', change='', blocker=''):
+    return {'notes': notes, 'change': change, 'blocker': blocker}
 
 
 class SelfReview(Harness):
@@ -99,7 +100,9 @@ class SelfReview(Harness):
         return [item for item in self.fixture.asked if item[0] == 'structured' and item[1].purpose == om.REVIEW_PURPOSE]
 
     def lessons(self):
-        return [(row['memory_key'], row['content']) for row in self.store.memories(MEMORY_OWNER, key_prefix=om.LESSON_PREFIX)]
+        """The current working notes' points ([] when there is no document)."""
+        current = om.WorkingNotes(self.store).current()
+        return current['points'] if current else []
 
 
 class Trigger(SelfReview):
@@ -205,9 +208,10 @@ class Run(SelfReview):
                          'The goal was not reached; the worker asked for a photo.\nNot reached; stopped.')
         self.assertEqual(context.facts['owner_followup'], '사진이 아니라 아까 말한 책 말이야')
         self.assertIn('profile.place.home: 분당', context.facts['owner_profile'])
+        self.assertEqual(context.facts['working_notes'], 'none', 'no document yet')
         self.assertEqual(question, om.REVIEW_QUESTION)
         self.assertEqual(schema, om.REVIEW_SCHEMA)
-        self.assertEqual(sorted(schema['properties']), ['blocker', 'lesson', 'lesson_key'])
+        self.assertEqual(sorted(schema['properties']), ['blocker', 'change', 'notes'])
         self.assertEqual(self.rows()[job]['state'], om.STATE_DONE)
         self.assertFalse(self.service.run_owner_model_upkeep(), 'a done review never runs again')
 
@@ -219,44 +223,44 @@ class Run(SelfReview):
         self.assertEqual((context.facts['review_reason'], context.facts['owner_followup'], context.facts['evaluation']),
                          (om.REVIEW_REACTION, 'the owner reacted: thumbs down', 'none'))
 
-    def test_a_lesson_becomes_working_memory_attributed_to_the_reviewed_work_told_with_undo(self):
+    def test_a_revision_becomes_the_next_notes_version_attributed_to_the_reviewed_work_told_once(self):
+        self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': GENERATION})
         job = self.missed('그거 찾아줘', channel=f'telegram:{GENERATION}', chat_id=CHAT)
-        self.answers = [review('"그거" means the thing the owner named in the previous message, not a photo',
-                               'profile.working.references')]
+        self.answers = [review('- "그거"는 직전 메시지에서 말한 것을 가리켜요, 사진이 아니에요',
+                               '"그거"가 무엇을 가리키는지 적었어요')]
         self.service.run_owner_model_upkeep()
-        self.assertEqual(self.lessons(), [('profile.working.references',
-                                           '"그거" means the thing the owner named in the previous message, not a photo')])
-        [memory] = self.store.memories(MEMORY_OWNER)
+        self.assertEqual(self.lessons(), ['"그거"는 직전 메시지에서 말한 것을 가리켜요, 사진이 아니에요'])
+        self.assertEqual(self.store.memories(MEMORY_OWNER), [], 'no Memory row: a working method is not a fact')
+        current = om.WorkingNotes(self.store).current()
+        self.assertEqual((current['version'], current['work_id']), (1, job), 'provenance links back to the reviewed Work')
         with self.store.db() as db:
-            row = db.execute('SELECT work_key,candidate_id FROM memories WHERE id=?', (memory['id'],)).fetchone()
-            notices = db.execute('SELECT kind,state FROM telegram_notifications WHERE job_id=?', (job,)).fetchall()
-        self.assertEqual(row['work_key'], self.store._work_binding(job), 'provenance links back to the reviewed Work')
-        self.assertIsNone(row['candidate_id'], '#918 slice (a): current Memory, no candidate')
-        self.assertEqual([(n['kind'], n['state']) for n in notices], [('memory_saved', 'held')],
-                         'the owner is told with an undo once the reply is settled, never silently')
+            notices = db.execute('SELECT kind,state,fingerprint FROM telegram_notifications WHERE job_id=?', (job,)).fetchall()
+        self.assertEqual([(n['kind'], n['state']) for n in notices], [('working_notes_saved', 'queued')],
+                         'the owner is told once, never silently')
+        self.assertEqual(json.loads(notices[0]['fingerprint']), {'ref': current['ref'], 'version': 1})
         [(status, detail)] = self.evidence(job)
         self.assertEqual(status, om.EVENT_RECORDED)
-        self.assertEqual(detail['lesson'], {'memory_key': 'profile.working.references', 'content_chars': len(memory['content']),
-                                            'outcome': 'memory', 'memory_id': memory['id'], 'superseded': False,
-                                            'auto_saved': True})
+        self.assertEqual(detail['notes'], {'outcome': om.APPLIED_NOTES, 'version': 1, 'ref': current['ref'],
+                                           'previous_version': None, 'points': 1, 'chars': len(current['text']),
+                                           'auto_saved': True})
         self.assertIsNone(detail['blocker'])
-        # Later briefs carry it as background: it is part of the owner profile snapshot.
-        self.assertIn('profile.working.references:', self.service.owner_profile_snapshot())
-        # It is removable like any Memory, and the undo restores nothing it did not replace.
-        receipt = self.store.retract_memory(MEMORY_OWNER, memory['id'], memory['content_digest'])
-        self.assertIsNone(receipt.get('restored'))
-        self.assertEqual(self.lessons(), [])
+        self.assertNotIn('그거"는', json.dumps(detail, ensure_ascii=False), 'Evidence never keeps the text')
+        # Later briefs carry the whole document as one block of the owner profile section.
+        self.assertIn(f"working_notes v1 (the assistant's own notes on how to work for this owner; ref {current['ref']}",
+                      self.service.owner_profile_snapshot())
+        self.assertIn('- "그거"는 직전', self.service.owner_profile_snapshot())
 
-    def test_a_lesson_under_a_key_it_refines_supersedes_and_keeps_the_previous_value_for_undo(self):
-        kept = self.store.save_memory('profile.working.references', 'old note', work_id='w0')
-        job = self.missed('그거 찾아줘')
-        self.answers = [review('new note', 'profile.working.references')]
+    def test_a_second_revision_keeps_the_first_as_the_rollback_target(self):
+        first = self.missed('그거 찾아줘')
+        self.answers = [review('- 요약은 세 줄로', '요약 길이를 적었어요')]
         self.service.run_owner_model_upkeep()
-        [memory] = self.store.memories(MEMORY_OWNER)
-        self.assertEqual((memory['content'], memory['supersedes']), ('new note', kept['id']))
-        self.assertTrue(self.evidence(job)[0][1]['lesson']['superseded'])
-        receipt = self.store.retract_memory(MEMORY_OWNER, memory['id'], memory['content_digest'])
-        self.assertEqual(receipt['restored']['id'], kept['id'])
+        second = self.missed('다시 해줘')
+        self.answers = [review('- 요약은 세 줄로\n- 링크는 맨 끝에', '링크 위치를 더했어요')]
+        self.service.run_owner_model_upkeep()
+        self.assertEqual(self.lessons(), ['요약은 세 줄로', '링크는 맨 끝에'])
+        self.assertEqual(self.evidence(second)[0][1]['notes']['previous_version'], 1)
+        self.assertEqual(self.facts[1][0].facts['working_notes'], '- 요약은 세 줄로', 'the judgment read the current document')
+        self.assertEqual(self.evidence(first)[0][1]['notes']['version'], 1)
 
     def test_a_blocker_is_evidence_on_the_reviewed_work_redacted_and_filed_nowhere(self):
         self.store.secret('telegram_token', SECRET)
@@ -268,7 +272,7 @@ class Run(SelfReview):
         [(status, detail)] = self.evidence(job)
         self.assertEqual(status, om.EVENT_RECORDED)
         self.assertEqual(detail['blocker'], 'The brief lacked the previous turn\'s message; token [redacted]')
-        self.assertIsNone(detail['lesson'])
+        self.assertIsNone(detail['notes'])
         self.assertEqual(self.lessons(), [])
         self.assertEqual(len(self.transport.bodies), before, 'nothing leaves the machine')
         self.assertEqual(self.store.memory_candidates(MEMORY_OWNER), [])
@@ -277,15 +281,16 @@ class Run(SelfReview):
         for raw in ('brief lacked', SECRET, '그거 찾아줘'):
             self.assertNotIn(raw, line, 'the log line is content-free')
 
-    def test_malformed_oversized_request_and_duplicate_lessons_are_dropped(self):
+    def test_out_of_bounds_request_fact_and_changeless_revisions_are_dropped_whole(self):
         self.store.save_memory('profile.preference.lunch', '김밥', work_id='w0')
-        cases = [(review('note', 'profile.place.work'), 'key'),
-                 (review('note', 'profile.working.'), 'key'),
-                 (review('note', 'profile.working.a b'), 'key'),
-                 (review('x' * 201, 'profile.working.long'), 'content'),
-                 (review('', 'profile.working.empty'), 'content'),
-                 (review('그거 찾아줘', 'profile.working.request'), 'request'),
-                 (review(' 김밥 ', 'profile.working.dup'), 'duplicate'),
+        cases = [(review('\n'.join(f'- point {n}' for n in range(om.NOTES_POINTS + 1)), 'c'), 'points'),
+                 (review('- ' + 'x' * (om.POINT_CHARS + 1), 'c'), 'point-length'),
+                 (review('\n'.join('- ' + str(n) * 190 for n in range(9)), 'c'), 'length'),
+                 (review('- a note'), 'change'),
+                 (review('- a note', 'x' * 201), 'change'),
+                 (review('- 그거 찾아줘', 'c'), 'request'),
+                 (review('-  김밥 ', 'c'), 'profile-fact'),
+                 (review('- a note', 'c', 'the brief lacked the previous turn'), 'blocker'),
                  (review(blocker='x' * 201), 'content')]
         for answer, reason in cases:
             job = self.missed('그거 찾아줘')
@@ -293,23 +298,23 @@ class Run(SelfReview):
             self.service.run_owner_model_upkeep()
             [(_status, detail)] = self.evidence(job)
             self.assertEqual([item['reason'] for item in detail['dropped']], [reason], answer)
-            self.assertIsNone(detail['lesson'])
-            self.assertIsNone(detail['blocker'])
+            self.assertIsNone(detail['notes'])
             text = json.dumps(detail, ensure_ascii=False)
-            self.assertNotIn('profile.working', text, 'a dropped key is kept only as a digest')
+            self.assertNotIn('a note', text, 'a dropped revision is never kept as text')
         self.assertEqual(self.lessons(), [])
         self.assertEqual([row['content'] for row in self.store.memories(MEMORY_OWNER)], ['김밥'])
 
-    def test_a_secret_shaped_lesson_is_never_saved(self):
+    def test_a_secret_shaped_revision_or_change_is_never_saved(self):
         self.store.secret('telegram_token', SECRET)
-        job = self.missed('그거 찾아줘')
-        self.answers = [review(f'use token {SECRET}', 'profile.working.token')]
-        self.service.run_owner_model_upkeep()
-        self.assertEqual(self.lessons(), [])
-        [(_status, detail)] = self.evidence(job)
-        self.assertEqual(detail['dropped'], [{'note': 'lesson', 'key_digest': om.key_digest('profile.working.token'),
-                                              'reason': 'secret-shaped-value'}])
-        self.assertNotIn(SECRET, json.dumps(detail))
+        for answer in (review(f'- use token {SECRET}', 'c'), review('- a plain note', f'added token {SECRET}'),
+                       review('- send it with sk-abcdefghijklmnopqrstuvwx', 'c')):
+            job = self.missed('그거 찾아줘')
+            self.answers = [answer]
+            self.service.run_owner_model_upkeep()
+            self.assertEqual(self.lessons(), [])
+            [(_status, detail)] = self.evidence(job)
+            self.assertEqual(detail['dropped'], [{'note': 'notes', 'reason': 'secret-shaped-value'}])
+            self.assertNotIn(SECRET, json.dumps(detail))
 
     def test_a_stored_secret_never_reaches_the_judgment_facts(self):
         self.store.secret('telegram_token', SECRET)
@@ -337,7 +342,7 @@ class Run(SelfReview):
         self.assertFalse(self.service.run_owner_model_upkeep(), 'the tick waits while a Work runs')
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status='cancelled' WHERE id=?", (job,))
-        self.answers = [review('note', 'profile.working.x')]
+        self.answers = [review('- note', 'c')]
         self.assertTrue(self.service.run_owner_model_upkeep())
         self.assertEqual(self.rows()[job]['state'], om.STATE_GONE)
         self.assertEqual(self.evidence(job), [(om.EVENT_UNAVAILABLE, {'reason': 'work-not-finished'})])
@@ -346,12 +351,12 @@ class Run(SelfReview):
     def test_the_evidence_holds_no_input_text_and_is_not_a_work_step(self):
         job = self.missed('그거 찾아줘', answer='사진이 없습니다')
         self.evaluated(job, 'Not reached.')
-        self.answers = [review('a lesson', 'profile.working.n', 'a blocker')]
+        self.answers = [review('a lesson', 'a change', 'a blocker')]
         self.service.run_owner_model_upkeep()
         [(_status, detail)] = self.evidence(job)
         self.assertEqual(detail['inputs'], {'owner_request_chars': len('그거 찾아줘'), 'answer_chars': len('사진이 없습니다'),
                                             'evaluations': 1, 'followups': 0, 'observation': False, 'profile_chars': 0,
-                                            'clock': True})
+                                            'working_notes_version': None, 'working_notes_chars': 0, 'clock': True})
         text = json.dumps(detail, ensure_ascii=False)
         for raw in ('그거 찾아줘', '사진이 없습니다', 'Not reached', 'a lesson'):
             self.assertNotIn(raw, text)
@@ -369,7 +374,7 @@ class Budget(SelfReview):
         with self.store.db() as db:
             self.service.owner_model.enqueue(db, upkeep)
         reviewed = self.missed('그거 찾아줘')
-        self.upkeep_answers, self.answers = [[]], [review('note', 'profile.working.n')]
+        self.upkeep_answers, self.answers = [[]], [review('- note', 'c')]
         self.assertTrue(self.service.run_owner_model_upkeep())
         self.assertEqual(self.rows()[reviewed]['state'], om.STATE_DONE, 'newest first')
         self.assertEqual(self.rows(om.KIND_UPKEEP)[upkeep]['state'], om.STATE_PENDING, 'the cap holds the next run')
@@ -382,7 +387,7 @@ class Budget(SelfReview):
 
     def test_a_pause_during_the_run_writes_no_lesson(self):
         job = self.missed('그거 찾아줘')
-        self.answers = [review('note', 'profile.working.n')]
+        self.answers = [review('- note', 'c')]
         pause = self.service.owner_model_request
 
         def structured(context, question, schema):
@@ -415,23 +420,37 @@ class Budget(SelfReview):
 
 class Unit(unittest.TestCase):
     def test_validate_review_bounds(self):
-        lesson, blocker, dropped = om.validate_review(review(' a note ', 'profile.working.n', ' fix  this '), set())
-        self.assertEqual((lesson, blocker, dropped), ({'memory_key': 'profile.working.n', 'content': 'a note'}, 'fix this', []))
+        revision, blocker, dropped = om.validate_review(review(' * a  note \n\n- b ', ' added  b ', ' fix  this '))
+        self.assertEqual((revision, blocker, dropped),
+                         (None, 'fix this', [{'note': 'notes', 'reason': 'blocker'}]), 'a blocker is not a preference')
+        # Review P2: a blocker too long to keep as Evidence still marks a software cause.
+        revision, blocker, dropped = om.validate_review(review('- b', 'added b', 'x' * 201), ['a note'])
+        self.assertEqual((revision, blocker, dropped), (None, None, [{'note': 'blocker', 'reason': 'content'},
+                                                                     {'note': 'notes', 'reason': 'blocker'}]))
+        revision, blocker, dropped = om.validate_review(review(' * a  note \n\n- b ', ' added  b '), ['a note'])
+        self.assertEqual((revision, blocker, dropped),
+                         ({'points': ['a note', 'b'], 'text': '- a note\n- b', 'change': 'added b'}, None, []))
         self.assertEqual(om.validate_review(review(), set()), (None, None, []))
         self.assertEqual(om.validate_review('nonsense', set()), (None, None, []))
-        self.assertEqual(om.validate_review(review('note', 'profile.working.n'), {'note'}),
-                         (None, None, [{'note': 'lesson', 'reason': 'duplicate', 'key_digest': om.key_digest('profile.working.n')}]))
+        self.assertEqual(om.validate_review(review('- note', 'c'), (), {'note'}),
+                         (None, None, [{'note': 'notes', 'reason': 'profile-fact'}]))
+        self.assertEqual(om.validate_review(review('- note', 'c'), ['note'], {'note'}),
+                         (None, None, [{'note': 'notes', 'reason': 'unchanged'}]), 'a point already there is not a fact added')
         self.assertTrue(om.review_shape(review()))
-        self.assertFalse(om.review_shape({'lesson_key': 1, 'lesson': '', 'blocker': ''}))
+        self.assertFalse(om.review_shape({'notes': 1, 'change': '', 'blocker': ''}))
 
     def test_the_question_names_no_task(self):
         for word in ('photo', 'book', 'cart', 'calendar', 'lunch', 'map', 'coupang', 'naver', 'direction'):
             self.assertNotIn(word, om.REVIEW_QUESTION.lower(), word)
-        self.assertIn(om.LESSON_PREFIX, om.REVIEW_QUESTION)
         self.assertIn('This judgment writes nothing', om.REVIEW_QUESTION)
-        # #1463: the owner's language, no reworded duplicate, and a software blocker is not a lesson.
-        for rule in ("language of the owner's own words", 'even in other words', 'give the blocker and no lesson'):
+        # #1463 and #19: the owner's language, no reworded duplicate, a software blocker is not a lesson,
+        # the whole document or no change, and the inherited bounds.
+        for rule in ("language of the owner's own words", 'even in other words', 'give the blocker and no notes',
+                     'return the whole revised document', 'keeps the document unchanged',
+                     f'at most {om.NOTES_POINTS} points of at most {om.POINT_CHARS} characters each and at most '
+                     f'{om.NOTES_CHARS} characters in all'):
             self.assertIn(rule, om.REVIEW_QUESTION)
+        self.assertEqual((om.NOTES_CHARS, om.NOTES_POINTS), (1500, 12), 'the inherited design (#19)')
 
     def test_an_old_table_is_rebuilt_once_keyed_by_work_and_kind(self):
         db = sqlite3.connect(':memory:')

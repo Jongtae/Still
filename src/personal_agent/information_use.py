@@ -27,6 +27,7 @@ applied to every label before it leaves this module.
 from .manifests import HOST_TOOLS
 from .messages import msg
 import json
+import re
 from datetime import datetime, timezone
 
 #: Evidence class of every audit this module returns.
@@ -78,10 +79,24 @@ def _json_after_legend(text):
     return data if isinstance(data, dict) else {}
 
 
+#: #19: the header line of the working-notes block (``owner_model.WorkingNotes.block``): its version and ref.
+_WORKING_NOTES = re.compile(r'^working_notes v(\d+) \(.*?\bref (procedure:[A-Za-z0-9-]+)')
+
+
 def profile_keys(text):
-    """The ``profile.*`` keys of a rendered profile snapshot (``key: value (saved ...)`` lines)."""
+    """The ``profile.*`` keys of a rendered profile snapshot (``key: value (saved ...)`` lines).
+
+    #19: the working-notes block counts as one entry, ``working_notes v<n> (procedure:<id>)``,
+    so the audit shows the notes were sent without their points.
+    """
     keys = []
     for line in str(text or '').splitlines():
+        notes = _WORKING_NOTES.match(line)
+        if notes:
+            entry = f'working_notes v{notes.group(1)} ({notes.group(2)})'
+            if entry not in keys:
+                keys.append(entry)
+            continue
         key, sep, _rest = line.partition(':')
         key = key.strip()
         if sep and key and ' ' not in key and key not in keys:

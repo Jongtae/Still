@@ -17,6 +17,13 @@ States: ``candidate`` (one Work's proposal, used only inside that Work),
 ``current`` (at most one per set), ``kept`` (earlier versions, the rollback targets)
 and ``forgotten`` (removed by the owner through ``forget_record``; ``owner_forget``
 owns the undo window and the purge).
+
+STEADY-NOTES-01 (#19): one reserved owner-level slot, ``NOTES_SLOT``, keeps the
+versions of the owner's working-notes document (``owner_model.WorkingNotes``) in
+the same store.  It has no candidate stage: a revision the host accepted is
+saved at once (``commit``), the previous version stays ``kept``, and forgetting
+the current version through ``owner_forget`` puts the previous one back.  No
+secret set can name it (set names never hold ``:``), so no ``code_run`` imports it.
 """
 import hashlib
 import json
@@ -42,6 +49,8 @@ LISTING_CHARS = 900
 #: A candidate whose Work never reached its outcome is dropped after this long.
 CANDIDATE_SECONDS = 7 * 86400
 REF_PREFIX = 'procedure:'
+#: #19: the reserved owner-level slot of the working-notes document (``api_requests.NAME`` never matches it).
+NOTES_SLOT = 'owner:working-notes'
 IDENTIFIER = re.compile(r'^[A-Za-z][A-Za-z0-9_]{0,63}$')
 
 
@@ -118,6 +127,8 @@ class ProcedureLibrary:
 
     def propose(self, work_id, slot, source, functions):
         """Keep ``source`` as this Work's candidate for ``slot`` (replacing an earlier one); returns its id."""
+        if slot == NOTES_SLOT:
+            raise ValueError('reserved procedure slot')
         now = self.clock()
         row_id = str(uuid.uuid4())
         with self.store.db() as db:
@@ -171,14 +182,43 @@ class ProcedureLibrary:
                     db.execute('UPDATE procedure_versions SET stats_json=? WHERE id=?', (json.dumps(stats, sort_keys=True), current['id']))
                     db.execute('DELETE FROM procedure_versions WHERE id=?', (candidate['id'],))
                     continue
-                version = (db.execute('SELECT MAX(version) AS v FROM procedure_versions WHERE slot=?',
-                                      (candidate['slot'],)).fetchone()['v'] or 0) + 1
+                version = self._next_version(db, candidate['slot'])
                 db.execute("UPDATE procedure_versions SET state=? WHERE slot=? AND state=?", (KEPT, candidate['slot'], CURRENT))
                 db.execute('UPDATE procedure_versions SET state=?,version=?,saved=? WHERE id=?', (CURRENT, version, now, candidate['id']))
                 saved.append({'slot': candidate['slot'], 'version': version, 'ref': REF_PREFIX + candidate['id'],
                               'functions': [item['name'] for item in candidate['functions']],
                               'dropped': dropped(current, candidate)})
         return saved
+
+    @staticmethod
+    def _next_version(db, slot):
+        return (db.execute('SELECT MAX(version) AS v FROM procedure_versions WHERE slot=?', (slot,)).fetchone()['v'] or 0) + 1
+
+    def commit(self, slot, source, *, work_id=None, stats=None, db=None):
+        """#19: save ``source`` as ``slot``'s next current version at once; the previous current one is kept.
+
+        For a slot whose revisions the host has already validated (``NOTES_SLOT``): no candidate
+        stage.  ``stats`` is the version's small metadata (for the notes, the one-line change).
+        Inside the caller's transaction when ``db`` is given.  Returns the saved row.
+        """
+        if db is None:
+            with self.store.db() as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                return self.commit(slot, source, work_id=work_id, stats=stats, db=conn)
+        now, row_id = self.clock(), str(uuid.uuid4())
+        version = self._next_version(db, slot)
+        db.execute("UPDATE procedure_versions SET state=? WHERE slot=? AND state=?", (KEPT, slot, CURRENT))
+        db.execute('INSERT INTO procedure_versions(id,slot,version,state,source,digest,functions_json,stats_json,work_id,created,saved) '
+                   'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                   (row_id, slot, version, CURRENT, source, digest(source), '[]', json.dumps(stats or {}, sort_keys=True),
+                    work_id, now, now))
+        return self._row(db.execute('SELECT * FROM procedure_versions WHERE id=?', (row_id,)).fetchone())
+
+    def forgotten_digest(self, slot, value_digest):
+        """Whether a version of ``slot`` with this digest was forgotten and not yet purged (never re-saved by the host)."""
+        with self.store.db() as db:
+            return db.execute('SELECT 1 FROM procedure_versions WHERE slot=? AND digest=? AND state=?',
+                              (slot, value_digest, 'forgotten')).fetchone() is not None
 
     def remove_slot(self, slot):
         """A removed secret set keeps no library."""

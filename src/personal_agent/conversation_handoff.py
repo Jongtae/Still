@@ -1307,16 +1307,18 @@ class ConversationJudgments:
                     else StructuredDecision(OUTCOME_UNAVAILABLE))
         return self.policy.structured(decision), decision
 
-    def self_review(self, request, answer, outcome, evaluation, followup, profile, reason, work_id=None, cancelled=None):
+    def self_review(self, request, answer, outcome, evaluation, followup, profile, reason, work_id=None, cancelled=None,
+                    working_notes=''):
         """``(data, decision)``: one self-review of a Work that fell short (#998).
 
         One ``structured`` call over the owner's request and follow-up (owner
         words, never cut), the final answer excerpt (model-stated), the
         Work's outcome, the orchestrator's verdict texts, the profile
-        snapshot and the typed review reason, each redacted first.  ``data``
-        is the answer only when decided with enough confidence; what may be
-        kept is the caller's deterministic validation.  Judgment only: it
-        writes nothing.
+        snapshot, the typed review reason and the current working notes
+        (#19; bounded by the host, never cut here, so a revision can keep
+        every point), each redacted first.  ``data`` is the answer only when
+        decided with enough confidence; what may be kept is the caller's
+        deterministic validation.  Judgment only: it writes nothing.
         """
         from .decision import OUTCOME_UNAVAILABLE, StructuredDecision
         from .owner_model import (ANSWER_CHARS, EVALUATION_CHARS, FOLLOWUP_CHARS, PROFILE_CHARS, REVIEW_PURPOSE,
@@ -1327,9 +1329,10 @@ class ConversationJudgments:
                  'work_outcome': str(outcome or 'unknown'),
                  'evaluation': self.redact(evaluation)[:EVALUATION_CHARS] or 'none',
                  'owner_followup': self.redact(str(followup or ''))[:FOLLOWUP_CHARS] or 'none',
-                 'owner_profile': self.redact(profile)[:PROFILE_CHARS] or 'none'}
-        context = self._context(REVIEW_PURPOSE, facts, work_id=work_id, uncut=('owner_request', 'owner_followup'),
-                                cancelled=cancelled)
+                 'owner_profile': self.redact(profile)[:PROFILE_CHARS] or 'none',
+                 'working_notes': str(working_notes or '') or 'none'}
+        context = self._context(REVIEW_PURPOSE, facts, work_id=work_id,
+                                uncut=('owner_request', 'owner_followup', 'working_notes'), cancelled=cancelled)
         method = getattr(self.engine, 'structured', None)
         decision = (method(context, REVIEW_QUESTION, REVIEW_SCHEMA, review_shape) if method is not None
                     else StructuredDecision(OUTCOME_UNAVAILABLE))

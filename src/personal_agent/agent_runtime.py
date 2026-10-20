@@ -103,8 +103,8 @@ EFFECT={'type':'string','enum':['read','navigate','mutate','payment']}
 #: #794 phase 3: the owner's exact forget, complete deletion and undo (owner_forget).
 FORGET_RECORD_DESCRIPTION=('Forget, completely delete or restore one item of what Still keeps about the owner, when the owner asks. '
   'ref names the exact item: memory:<id> (an id from list_memory or search_memory), state:<id> or obs:<id> (from the current context), '
-  'or procedure:<id> (a saved function library listed with its secret set in the current context; forgetting it stops its use '
-  'and puts the previous saved version, if any, back in use). '
+  'or procedure:<id> (a saved function library listed with its secret set in the current context, or the working_notes ref in '
+  'the owner profile; forgetting it stops its use and puts the previous saved version, if any, back in use). '
   'action forget removes it from use now and lets the owner undo it for 7 days, after which it is purged; '
   'delete purges it now with no undo (use it only when the owner asks to erase it completely); '
   'undo restores one earlier forget by its receipt; list shows the forgets the owner can still undo, with what each covered. '

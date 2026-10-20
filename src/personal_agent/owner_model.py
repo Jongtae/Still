@@ -41,18 +41,36 @@ linked as a ``correction`` or ``retry``, or an owner reaction another change
 observes (``enqueue_self_review``) - one row per Work.  The Judgment AI reads
 the owner's request, the answer excerpt, the orchestrator's evaluation
 verdicts and the owner's follow-up (or the observation), every fact redacted
-first, and returns at most one **lesson** (how to serve this owner; saved as
-current Memory under ``profile.working.`` by the #918 slice (a) rule, so
-later briefs carry it and the owner is told with an undo) and one
-**blocker** (a cause only Still code can fix; kept as Evidence on the
-reviewed Work, redacted, and never filed anywhere).  No text rule reads the
-owner's wording; nothing names a site, task or category.
+first, and returns at most one **blocker** (a cause only Still code can fix;
+kept as Evidence on the reviewed Work, redacted, and never filed anywhere)
+and, when it learned how to serve this owner better, the **working notes**
+revised as a whole.  No text rule reads the owner's wording; nothing names a
+site, task or category.
+
+**Working notes (STEADY-NOTES-01, #19).**  How to work for this owner lives
+in one bounded document, not in ``profile.`` fact rows: ``WorkingNotes``
+keeps its versions in the reserved slot of the procedural version store
+(``procedures.NOTES_SLOT``).  The judgment reads the current document and
+returns either no change or the full revision with a one-line change.  Still
+enforces the bounds (``NOTES_CHARS``, ``NOTES_POINTS``, ``POINT_CHARS``) and
+refuses a stored secret or credential shape, a revision given with a blocker
+(a software cause is not a preference), one that only rewords the marker,
+spacing, case or order of the current points, one that adds a semantic owner
+fact already in Memory, and one equal to a version the owner forgot.  A kept
+revision is the next version, attributed to the reviewed Work; the owner is
+told once, and forgetting it (``forget_record`` ``procedure:<id>``) puts the
+previous document back, undoable for the existing seven days.  Earlier
+``profile.working.`` Memory rows are moved into the first version once
+(``WorkingNotes.migrate``), each under an undoable ``migrate`` receipt.
+Semantic owner facts stay in Memory.
 
 Nothing here names a site, provider, task or request category.
 """
 import hashlib
 import json
+import re
 import time
+from datetime import datetime, timezone
 
 from .owner_forget import OwnerForget
 from .prompt_files import prompt
@@ -71,8 +89,23 @@ REVIEW_PURPOSE = 'self-review'
 #: Why a self-review was enqueued (typed markers, never text rules).
 REVIEW_FAILED, REVIEW_CORRECTION, REVIEW_RETRY, REVIEW_REACTION = 'failed', 'correction', 'retry', 'reaction'
 REVIEW_REASONS = (REVIEW_FAILED, REVIEW_CORRECTION, REVIEW_RETRY, REVIEW_REACTION)
-#: A lesson is a ``profile.`` fact under its own namespace, so it shows and is removed like other Memory.
+#: The Memory namespace lessons used before #19: its rows move into the working notes once (``WorkingNotes.migrate``),
+#: and upkeep proposes no fact under it (working methods are not semantic facts).
 LESSON_PREFIX = 'profile.working.'
+#: #19, the inherited design: the working notes are about 1,500 characters, at most 12 short points, in the
+#: owner's language.  A revision over a bound is refused whole, never cut.
+NOTES_CHARS = 1500
+NOTES_POINTS = 12
+POINT_CHARS = 200
+CHANGE_CHARS = 200
+#: The config row that records the one-time move of ``profile.working.`` rows (receipts, counts, version).
+MIGRATION_KEY = 'working_notes_migration'
+#: The change line of the version the move creates (the brief reads it; the owner is not sent a notice for it).
+MIGRATION_CHANGE = 'collected the earlier saved working lessons into these notes'
+#: Outcome of a kept revision in the ``self_review`` Evidence.
+APPLIED_NOTES = 'working-notes'
+#: The Telegram notice of one revision, queued with the version (``fingerprint``: its ref and number).
+NOTICE_KIND = 'working_notes_saved'
 #: Bounds of the self-review facts and of a stored observation.
 EVALUATION_CHARS = 1500
 FOLLOWUP_CHARS = 1500
@@ -170,54 +203,66 @@ DROP TABLE owner_model_upkeep_v1;
     return True
 
 
-REVIEW_QUESTION = prompt('owner_model_review').format(lesson_prefix=LESSON_PREFIX)
+REVIEW_QUESTION = prompt('owner_model_review').format(notes_chars=NOTES_CHARS, notes_points=NOTES_POINTS,
+                                                       point_chars=POINT_CHARS)
 
 REVIEW_SCHEMA = {'type': 'object', 'additionalProperties': False,
-                 'properties': {'lesson_key': {'type': 'string'}, 'lesson': {'type': 'string'},
+                 'properties': {'notes': {'type': 'string'}, 'change': {'type': 'string'},
                                 'blocker': {'type': 'string'}},
-                 'required': ['lesson_key', 'lesson', 'blocker']}
+                 'required': ['notes', 'change', 'blocker']}
 
 
 def review_shape(data):
     """Types only; each note's meaning is ``validate_review``'s."""
-    return all(isinstance(data.get(name), str) for name in ('lesson_key', 'lesson', 'blocker'))
+    return all(isinstance(data.get(name), str) for name in ('notes', 'change', 'blocker'))
 
 
 def lesson_key(key):
-    """Whether ``key`` is a well-formed lesson key (a ``profile.working.`` Memory key)."""
+    """Whether ``key`` is a well-formed key of the pre-#19 lesson namespace (a ``profile.working.`` Memory key)."""
     return profile_key(key) and key.startswith(LESSON_PREFIX) and len(key) > len(LESSON_PREFIX)
 
 
-def validate_review(data, known, request=''):
-    """``(lesson, blocker, dropped)``: what Still may keep of one self-review answer (deterministic).
+#: A list marker a line of the document may start with; the stored form is ``- <point>``.
+_MARKER = re.compile(r'^[-*•·]\s+')
 
-    ``lesson`` is ``{'memory_key', 'content'}`` or None; ``blocker`` a short
-    text or None.  ``known`` and ``request`` are as in ``validate``: a lesson
-    that repeats a current ``profile.`` value, or is the request sentence
-    itself, is dropped.  ``dropped`` lists each refused note with its reason
-    (a model-chosen key only as a digest).
+
+def notes_points(text):
+    """The points of a working-notes text: one per non-empty line, whitespace collapsed, list marker removed.
+
+    A point repeated in other spacing, marker or case is kept once (the first), so the
+    document never holds the same point twice.
+    """
+    points, seen = [], set()
+    for line in str(text or '').splitlines():
+        point = _MARKER.sub('', ' '.join(line.split()), count=1).strip()
+        if point and normalized(point) not in seen:
+            seen.add(normalized(point))
+            points.append(point)
+    return points
+
+
+def notes_text(points):
+    """The stored form of the document: one ``- <point>`` line per point."""
+    return '\n'.join('- ' + point for point in points)
+
+
+def validate_review(data, current=(), known=frozenset(), request=''):
+    """``(revision, blocker, dropped)``: what Still may keep of one self-review answer (deterministic).
+
+    ``revision`` is ``{'points', 'text', 'change'}`` or None; ``blocker`` a
+    short text or None.  ``current`` holds the points of the current working
+    notes.  A revision is refused whole - never cut - when it breaks a bound
+    (more than ``NOTES_POINTS`` points, a point over ``POINT_CHARS``, a
+    document over ``NOTES_CHARS``); when it holds the same points as
+    ``current`` (another marker, spacing, case or order is no change); when
+    it comes with a blocker (a software cause is not a preference about the
+    owner); without a one-line change; or when a point it adds is the request
+    sentence or a current ``profile.`` value in ``known`` (semantic facts stay
+    in Memory).  ``dropped`` lists each refused note with its reason, never
+    its text.
     """
     data = data if isinstance(data, dict) else {}
-    dropped, lesson, blocker = [], None, None
-    key, content = data.get('lesson_key'), data.get('lesson')
-    content = content.strip() if isinstance(content, str) else ''
-    key = key.strip() if isinstance(key, str) else ''
-    if content or key:
-        reason = None
-        if not content:
-            reason = 'content'
-        elif len(content) > MAX_TEXT_CHARS:
-            reason = 'content'
-        elif not lesson_key(key):
-            reason = 'key'
-        elif normalized(request) and normalized(content) == normalized(request):
-            reason = 'request'
-        elif normalized(content) in known:
-            reason = 'duplicate'
-        if reason is None:
-            lesson = {'memory_key': key, 'content': content}
-        else:
-            dropped.append({'note': 'lesson', 'reason': reason, **({'key_digest': key_digest(key)} if key else {})})
+    dropped, revision, blocker = [], None, None
     note = data.get('blocker')
     note = ' '.join(note.split()) if isinstance(note, str) else ''
     if note:
@@ -225,7 +270,35 @@ def validate_review(data, known, request=''):
             dropped.append({'note': 'blocker', 'reason': 'content'})
         else:
             blocker = note
-    return lesson, blocker, dropped
+    text, change = data.get('notes'), data.get('change')
+    points = notes_points(text if isinstance(text, str) else '')
+    change = ' '.join(change.split()) if isinstance(change, str) else ''
+    if points:
+        before = {normalized(point) for point in current}
+        added = [normalized(point) for point in points if normalized(point) not in before]
+        reason = None
+        if len(points) > NOTES_POINTS:
+            reason = 'points'
+        elif any(len(point) > POINT_CHARS for point in points):
+            reason = 'point-length'
+        elif len(notes_text(points)) > NOTES_CHARS:
+            reason = 'length'
+        elif not added and len(points) == len(before):
+            reason = 'unchanged'
+        elif note:
+            # Review P2: any blocker the judgment gave, even one too long to keep as Evidence.
+            reason = 'blocker'
+        elif not change or len(change) > CHANGE_CHARS:
+            reason = 'change'
+        elif normalized(request) and normalized(request) in added:
+            reason = 'request'
+        elif any(point in known for point in added):
+            reason = 'profile-fact'
+        if reason is None:
+            revision = {'points': points, 'text': notes_text(points), 'change': change}
+        else:
+            dropped.append({'note': 'notes', 'reason': reason})
+    return revision, blocker, dropped
 
 QUESTION = prompt('owner_model_facts').format(categories=', '.join(CATEGORIES))
 
@@ -272,7 +345,8 @@ def _refusal(item):
         return 'category'
     if item['kind'] not in KINDS:
         return 'kind'
-    if not profile_key(item['memory_key']):
+    if not profile_key(item['memory_key']) or item['memory_key'].startswith(LESSON_PREFIX):
+        # #19: how to work for the owner lives in the working notes, not in a ``profile.`` fact.
         return 'key'
     if not item['content'].strip() or len(item['content'].strip()) > MAX_TEXT_CHARS:
         return 'content'
@@ -640,22 +714,31 @@ class Upkeep:
 
         One ``structured`` judgment (``ConversationJudgments.self_review``)
         over the owner's request, the answer excerpt, the Work's outcome, the
-        orchestrator's verdicts, and the owner's follow-up (or the row's
-        observation), all redacted by ``judgments``.  The kept lesson is
-        saved at once as current ``profile.working.`` Memory attributed to
-        the reviewed Work (#918 slice a: the owner's own AI writes, the owner
-        is told with an undo); the blocker is kept in the event detail,
-        redacted, and nowhere else.  The pause switch is read again before
-        the write; a write is not a call.
+        orchestrator's verdicts, the owner's follow-up (or the row's
+        observation) and the current working notes, all redacted by
+        ``judgments``.  A kept revision of the notes is saved at once as their
+        next version attributed to the reviewed Work (#19; the owner's own AI
+        writes and the owner is told with an exact undo, as #918 slice a); the
+        blocker is kept in the event detail, redacted, and nowhere else.  The
+        pause switch is read again before the write; a write is not a call.
+        ``profile`` is the profile snapshot without the notes block.
         """
         from .agent_runtime import MEMORY_OWNER, SECRET_SHAPED_VALUE, memory_value_has_secret
+        notes = WorkingNotes(self.store, self.clock)
+        try:
+            notes.migrate()
+        except Exception:  # noqa: BLE001 - the move is retried at the next start; the review goes on
+            pass
+        current = notes.current()
+        current_text = current['text'] if current else ''
         request = str(job.get('message') or '')
         reason = row.get('reason') or ''
         followups = self.followups(job['id'])
         followup = '\n'.join(followups) if followups else (row.get('observation') or '')
         evaluation = '\n'.join(self.evaluations(job['id']))
         data, decision = judgments.self_review(request, answer, str(job.get('status') or ''), evaluation, followup,
-                                               profile, reason, work_id=job['id'], cancelled=cancelled)
+                                               profile, reason, work_id=job['id'], cancelled=cancelled,
+                                               working_notes=current_text)
         confidence = decision.confidence
         calls = 1 if call_sent(decision) else 0
         self.count(job['id'], calls, KIND_SELF_REVIEW)
@@ -666,35 +749,180 @@ class Upkeep:
                   'inputs': {'owner_request_chars': len(request), 'answer_chars': len(answer or ''),
                              'evaluations': len(self.evaluations(job['id'])), 'followups': len(followups),
                              'observation': bool(row.get('observation')), 'profile_chars': len(profile or ''),
-                             'clock': bool(clock)}}
+                             'working_notes_version': current['version'] if current else None,
+                             'working_notes_chars': len(current_text), 'clock': bool(clock)}}
         if data is None:
             return STATE_UNAVAILABLE, calls, EVENT_UNAVAILABLE, detail
         known, _pending = self.known_values(MEMORY_OWNER, job['id'])
-        lesson, blocker, dropped = validate_review(data, known, request=request)
-        detail.update(lesson=None, blocker=None, dropped=dropped, stopped=None)
+        revision, blocker, dropped = validate_review(data, current['points'] if current else (), known, request=request)
+        detail.update(notes=None, blocker=None, dropped=dropped, stopped=None)
         if blocker:
             # Evidence on the reviewed Work only: redacted like every fact, never filed anywhere.
             detail['blocker'] = judgments.redact(blocker)[:MAX_TEXT_CHARS]
-        if lesson:
-            key, content = lesson['memory_key'], lesson['content']
+        if revision:
             _left, why = self.allowance(self.clock())
+            refused = None
             if why == STOPPED_PAUSED:
-                detail['stopped'] = STOPPED_PAUSED
-                dropped.append({'note': 'lesson', 'key_digest': key_digest(key), 'reason': STOPPED_PAUSED})
-            elif memory_value_has_secret(self.store, key, content):
-                dropped.append({'note': 'lesson', 'key_digest': key_digest(key), 'reason': SECRET_SHAPED_VALUE})
-            elif OwnerForget(self.store).is_forgotten(MEMORY_OWNER, key, content):
-                dropped.append({'note': 'lesson', 'key_digest': key_digest(key), 'reason': FORGOTTEN_VALUE})
+                detail['stopped'] = refused = STOPPED_PAUSED
+            elif judgments.redact(current_text) != current_text:
+                # The judgment read part of the document withheld: a whole revision would drop it.
+                refused = 'notes-withheld'
+            elif memory_value_has_secret(self.store, revision['text'], revision['change']):
+                refused = SECRET_SHAPED_VALUE
+            elif notes.forgotten(revision['text']):
+                refused = FORGOTTEN_VALUE
             else:
-                try:
-                    memory = self.store.save_memory(key, content, MEMORY_OWNER, work_id=job['id'], notice=True)
-                except ValueError:
-                    dropped.append({'note': 'lesson', 'key_digest': key_digest(key), 'reason': 'store-refused'})
+                saved = notes.save(revision, job['id'], expected=current['id'] if current else None)
+                if saved is None:
+                    # The owner forgot or another revision replaced the document during the call.
+                    refused = 'notes-changed'
                 else:
-                    detail['lesson'] = {'memory_key': key, 'content_chars': len(content), 'outcome': APPLIED_MEMORY,
-                                        'memory_id': memory['id'], 'superseded': bool(memory.get('supersedes')),
-                                        'auto_saved': True}
+                    detail['notes'] = {'outcome': APPLIED_NOTES, 'version': saved['version'], 'ref': saved['ref'],
+                                       'previous_version': current['version'] if current else None,
+                                       'points': len(revision['points']), 'chars': len(revision['text']),
+                                       'auto_saved': True}
+            if refused:
+                dropped.append({'note': 'notes', 'reason': refused})
         return STATE_DONE, calls, EVENT_RECORDED, detail
+
+
+class WorkingNotes:
+    """#19: the owner's one working-notes document, its versions in the reserved procedure slot.
+
+    Read by every brief (``block``) and revised only by the self-review
+    (``Upkeep.run_review``) after Still's deterministic checks.  Forgetting a
+    version and its undo are ``owner_forget``'s (``procedure:<id>``).
+    """
+
+    def __init__(self, store, clock=time.time):
+        from .procedures import ProcedureLibrary
+        self.store, self.clock = store, clock
+        self.library = ProcedureLibrary(store, clock)
+        # Its tables hold the receipts and the forget tombstones this document relies on.
+        self.forget = OwnerForget(store, clock)
+
+    def current(self, db=None):
+        """``{'id', 'ref', 'version', 'text', 'points', 'change', 'saved', 'work_id'}`` of the current version, or None."""
+        from .procedures import NOTES_SLOT, REF_PREFIX
+        row = self.library.current(NOTES_SLOT, db)
+        if row is None:
+            return None
+        return {'id': row['id'], 'ref': REF_PREFIX + row['id'], 'version': row['version'], 'text': row['source'],
+                'points': notes_points(row['source']), 'change': str(row['stats'].get('change') or ''),
+                'saved': row['saved'], 'work_id': row['work_id']}
+
+    def block(self):
+        """The document as one brief block ('' when there is none): a header with its version, ref and last change."""
+        current = self.current()
+        if current is None or not current['points']:
+            return ''
+        try:
+            day = datetime.fromtimestamp(float(current['saved']), timezone.utc).date().isoformat()
+        except (TypeError, ValueError, OverflowError, OSError):
+            day = 'unknown-date'
+        return (f"working_notes v{current['version']} (the assistant's own notes on how to work for this owner; "
+                f"ref {current['ref']}, last change {day}: {current['change'] or 'none'}; when the owner does not "
+                f"want the last change, forget_record forget {current['ref']} puts the previous notes back):\n"
+                + notes_text(current['points']))
+
+    def save(self, revision, work_id, *, expected=None):
+        """Save a validated revision as the next version unless the current one is no longer ``expected``.
+
+        When ``work_id`` is a Telegram Work, its one ``NOTICE_KIND`` notice is queued in the same
+        transaction (review P1, as a direct Memory save holds its notice), so a saved revision is
+        never left untold by a crash.  Returns ``{'id', 'ref', 'version', 'digest'}`` or None when
+        the document changed meanwhile.
+        """
+        import uuid
+        from .procedures import NOTES_SLOT, REF_PREFIX
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current = self.library.current(NOTES_SLOT, db)
+            if (current['id'] if current else None) != expected:
+                return None
+            row = self.library.commit(NOTES_SLOT, revision['text'], work_id=work_id,
+                                      stats={'change': revision['change']}, db=db)
+            saved = {'id': row['id'], 'ref': REF_PREFIX + row['id'], 'version': row['version'], 'digest': row['digest']}
+            job = db.execute('SELECT channel,chat_id FROM jobs WHERE id=?', (work_id,)).fetchone() if work_id else None
+            channel = str(job['channel'] or '') if job else ''
+            if job and channel.startswith('telegram:') and isinstance(job['chat_id'], int):
+                db.execute('INSERT OR IGNORE INTO telegram_notifications VALUES (?,?,?,?,?,?,?,?,?)',
+                           (str(uuid.uuid4()), work_id, job['chat_id'], channel[len('telegram:'):], NOTICE_KIND,
+                            json.dumps({'ref': saved['ref'], 'version': saved['version']}), 'queued', None, self.clock()))
+        return saved
+
+    def forgotten(self, text):
+        """Whether the owner forgot a version with exactly this text: the host does not save it again.
+
+        The forget leaves a content-free digest tombstone (``owner_forget``, review P2) that outlives
+        the seven-day purge of the version itself; undoing the forget removes it.
+        """
+        from .agent_runtime import MEMORY_OWNER
+        from .procedures import NOTES_SLOT, digest
+        value = digest(text)
+        with self.store.db() as db:
+            tombstone = db.execute('SELECT 1 FROM forgotten_values WHERE owner_key=? AND digest=?',
+                                   (self.store._memory_binding(MEMORY_OWNER), value)).fetchone()
+        return tombstone is not None or self.library.forgotten_digest(NOTES_SLOT, value)
+
+    def migrate(self):
+        """Move the current ``profile.working.`` Memory rows into the first version, once; returns the record or None.
+
+        Newest first, a row joins while the bounds hold (a row repeating a
+        point joins that point); a row with a stored secret or credential
+        shape, an over-long value or one past the bounds stays in Memory
+        untouched.  Each moved row leaves current use under its own undoable
+        ``migrate`` receipt (``owner_forget``), in the same transaction as the
+        version and the config record, so the move is all or nothing; an
+        undo puts the row back in Memory.  Runs once: the record stays even
+        when there was nothing to move.
+        """
+        from .agent_runtime import MEMORY_OWNER, memory_value_has_secret
+        from .owner_forget import MEMORY_PREFIX, MIGRATE
+        from .procedures import NOTES_SLOT
+        if self.store.config(MIGRATION_KEY):
+            return None
+        forget = self.forget
+        owner_key = self.store._memory_binding(MEMORY_OWNER)
+        select = ("SELECT id,memory_key,content FROM memories WHERE owner_key=? AND state='current' "
+                  'AND substr(memory_key,1,?)=? ORDER BY created DESC,id DESC')
+        args = (owner_key, len(LESSON_PREFIX), LESSON_PREFIX)
+        with self.store.db() as db:
+            rows = [dict(row) for row in db.execute(select, args)]
+        points, seen, moved, left = [], set(), [], 0
+        for row in rows:
+            point = ' '.join(str(row['content'] or '').split())
+            if (not lesson_key(row['memory_key']) or not point or len(point) > POINT_CHARS
+                    or memory_value_has_secret(self.store, row['memory_key'], row['content'])):
+                left += 1
+                continue
+            if normalized(point) not in seen:
+                if len(points) >= NOTES_POINTS or len(notes_text([*points, point])) > NOTES_CHARS:
+                    left += 1
+                    continue
+                seen.add(normalized(point))
+                points.append(point)
+            moved.append(row)
+        points.reverse()
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if self.store.config(MIGRATION_KEY, db=db):
+                return None
+            if [dict(row) for row in db.execute(select, args)] != rows:
+                # A row changed since the plan: nothing is moved now; the next start plans again.
+                return None
+            version = None
+            if points and self.library.current(NOTES_SLOT, db) is None:
+                version = self.library.commit(NOTES_SLOT, notes_text(points), stats={'change': MIGRATION_CHANGE}, db=db)
+            elif points:
+                moved, left = [], len(rows)
+            receipts = [forget.forget_in(db, MEMORY_OWNER, MEMORY_PREFIX + row['id'], operation=MIGRATE)['receipt']
+                        for row in moved]
+            record = {'at': self.clock(), 'moved': len(moved), 'left': left, 'points': len(points) if version else 0,
+                      'version': version['version'] if version else None, 'receipts': receipts}
+            db.execute('INSERT INTO config(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+                       (MIGRATION_KEY, json.dumps(record)))
+        return record
 
 
 def enqueue_self_review(store, work_id, reason, observation=None, *, db=None, now=None, clock=time.time):
