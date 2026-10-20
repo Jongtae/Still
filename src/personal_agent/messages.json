@@ -206,8 +206,8 @@
  "calendar_conversation.reply_approve_to_apply_it_as": {
   "ko": "\"승인\"이라고 답하면 이 내용 그대로 캘린더에 반영합니다. 바꾸려면 바꿀 내용을 말해 주세요. 그만두려면 \"취소\"라고 답해 주세요.",
   "en": "Reply \"Approve\" to apply it to the calendar exactly as shown. To change it, say what to change. To stop, reply \"Cancel\".",
-  "ja": "「承認」と返信すると、この内容のままカレンダーに反映します。変更する場合は変更内容を伝えてください。やめる場合は「キャンセル」と返信してください。",
-  "zh": "回复“批准”就会按此内容写入日历。要修改，请说明要改什么。要停止，请回复“取消”。"
+  "ja": "「approve」と返信すると、この内容のままカレンダーに反映します。変更する場合は変更内容を伝えてください。やめる場合は「cancel」と返信してください。",
+  "zh": "回复“approve”就会按此内容写入日历。要修改，请说明要改什么。要停止，请回复“cancel”。"
  },
  "calendar_conversation.the_event_draft_was_canceled_no": {
   "ko": "일정 초안을 취소했습니다. 아무 일정도 만들지 않았습니다.",
@@ -2972,8 +2972,8 @@
  "calendar_conversation.draft_from_other_channel": {
   "ko": "이 일정 초안은 다른 채널에서 만든 것이라 여기서 승인하지 않았습니다. 초안을 만든 채널에서 \"승인\"이라고 답해 주세요.",
   "en": "This event draft was made in another channel, so I didn't approve it here. Reply \"Approve\" in the channel where the draft was made.",
-  "ja": "この予定の下書きは別のチャネルで作成されたため、ここでは承認していません。下書きを作成したチャネルで「承認」と返信してください。",
-  "zh": "此日程草稿是在其他渠道创建的，所以没有在这里批准。请在创建草稿的渠道回复“批准”。"
+  "ja": "この予定の下書きは別のチャネルで作成されたため、ここでは承認していません。下書きを作成したチャネルで「approve」と返信してください。",
+  "zh": "此日程草稿是在其他渠道创建的，所以没有在这里批准。请在创建草稿的渠道回复“approve”。"
  },
  "calendar_conversation.draft_changed": {
   "ko": "초안 내용이 확인한 미리보기와 달라 캘린더에 아무것도 반영하지 않았습니다. 다시 요청해 주세요.",

@@ -149,6 +149,20 @@ class OtherFlowsTest(unittest.TestCase):
         self.assertEqual(translate(reply, 'zh'), msg('calendar_conversation.not_applied_retry', 'zh') + '\n'
                          + msg('calendar_conversation.rest_not_applied', 'zh'))
 
+    def test_the_reply_words_each_language_is_told_to_send_are_accepted(self):
+        """Codex review on #146: an instructed word the parser refuses would drop the pending draft."""
+        import re
+        quoted = re.compile(r'"([^"]+)"|「([^」]+)」|“([^”]+)”')
+        for message_id, kinds in (('calendar_conversation.reply_approve_to_apply_it_as', ('approve', 'cancel')),
+                                  ('calendar_conversation.draft_from_other_channel', ('approve',))):
+            for lang in ('ko', *LANGS):
+                words = [next(group for group in match.groups() if group) for match in quoted.finditer(msg(message_id, lang))]
+                with self.subTest(message_id=message_id, lang=lang):
+                    self.assertEqual(len(words), len(kinds))
+                    for word, kind in zip(words, kinds):
+                        check = calendar_conversation.is_approval if kind == 'approve' else calendar_conversation.is_cancel
+                        self.assertTrue(check(word), word)
+
     def test_sign_in_handoff_and_family_lines(self):
         self.assertEqual(translate(remote_login.NO_NGROK_TEXT, 'en'), msg('remote_login.no_ngrok', 'en'))
         self.assertEqual(translate(remote_login.NO_PORT_TEXT, 'ja'), msg('remote_login.no_local_address', 'ja'))
