@@ -65,6 +65,8 @@ from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.quickstart import configured_service, make_handler
 from personal_agent.quickstart_store import QuickStore
 
+from test_first_run_login_service import join_still_profile
+
 #: Owner turns the fixture DecisionEngine judges as explicit remember requests (#597).
 OWNER_MEMORY_REQUESTS = frozenset({'내 회의 시간 선호를 기억해 줘: 오전이 좋아', '아니 오후가 좋아. 회의 시간 선호를 저장해 줘'})
 #: The calendar create requests the fixture DecisionEngine judges to need
@@ -362,6 +364,8 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             server.shutdown()
             thread.join()
             server.server_close()
+            # #142: the /api/telegram route gives the bot Still's profile on its own thread.
+            join_still_profile(self)
 
         self.addCleanup(shutdown)
         return 'http://127.0.0.1:' + str(server.server_port)

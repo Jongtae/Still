@@ -44,7 +44,7 @@ class QuickStore:
         self.secret_lock_path = self.private/'connections.lock'
         self.secret_lock = _SECRET_STATE_LOCK
         self.memory_search_available = False
-        with self.db() as db:
+        with self._schema_transaction() as db:
             db.executescript('''
             CREATE TABLE IF NOT EXISTS auth(id INTEGER PRIMARY KEY CHECK(id=1), salt TEXT, password TEXT);
             CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, expires REAL);
@@ -185,6 +185,29 @@ class QuickStore:
         self.path.chmod(0o600)
         if not self.claimed() and not self.bootstrap.exists():
             self.write_private(self.bootstrap, secrets.token_urlsafe(32))
+
+    @contextmanager
+    def _schema_transaction(self):
+        """The schema setup and migrations as one ``BEGIN IMMEDIATE`` transaction.
+
+        #142: two processes opening the same store (the service and an MCP
+        bridge, #605 R9) ran these statements interleaved, so one opener's
+        ``CREATE TRIGGER`` met the other's and failed with "already exists"
+        (an ``ALTER TABLE ADD COLUMN`` on upgrade can race the same way).
+        Holding the write lock for the whole setup serializes openers; the
+        later one sees the finished schema.  ``autocommit=True`` keeps
+        ``executescript`` from committing midway.
+        """
+        with self.db() as db:
+            db.autocommit = True
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                yield db
+            except BaseException:
+                if db.in_transaction:
+                    db.execute('ROLLBACK')
+                raise
+            db.execute('COMMIT')
 
     @contextmanager
     def db(self):
