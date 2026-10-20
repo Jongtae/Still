@@ -253,6 +253,22 @@ class CalendarConnector:
                     ):
                         self.registry.transition(owner, connector_id, ConnectorState.REAUTH_REQUIRED)
 
+    def _prepare_provider(self, *, write: bool) -> None:
+        """Let a credential-owning transport fetch its local key before a dispatch lock (#8).
+
+        Fetching the key may wait on the operating-system key store, which
+        must not happen while connector locks are held.  A key that cannot be
+        obtained fails here, before anything is sent.
+        """
+        prepare = getattr(getattr(self.provider, "transport", None), "prepare_key", None)
+        if not callable(prepare):
+            return
+        try:
+            prepare(write=write)
+        except ValueError as exc:
+            reason = str(getattr(exc, "reason", "") or "provider-error").replace("_", "-")
+            raise CalendarError(reason, effect="none") from None
+
     @staticmethod
     def _provider_error(error: GoogleCalendarError) -> CalendarError:
         recovery = "inspect-calendar-before-retry" if error.effect == "unknown" else (
@@ -273,6 +289,7 @@ class CalendarConnector:
         timezone = _timezone(timezone)
         if isinstance(max_results, bool) or not isinstance(max_results, int) or not 1 <= max_results <= 100:
             raise CalendarError("invalid-limit")
+        self._prepare_provider(write=False)
         if self.registry is not None:
             dispatch_guard = self.registry._dispatch_guard(
                 owner,
@@ -695,6 +712,19 @@ class CalendarConnector:
         return value
 
     def execute(self, ident: str, approval: str, owner: str) -> dict:
+        try:
+            with _LOCK:
+                row = self._owned(self._rows(), ident, owner)
+                dispatchable = (row.get("state") == "approved"
+                                and _constant_text_equal(row.get("approval"), approval)
+                                and self._now() < row.get("expires", 0))
+        except CalendarError:
+            dispatchable = False  # the leased path below raises the same refusal
+        if dispatchable:
+            # Only a change that can still be sent prepares a credential: a
+            # completed repeat, a missing or wrong approval, an expired one or
+            # an unknown outcome is answered locally below without the key.
+            self._prepare_provider(write=True)
         dispatch_guard = (
             self.registry._dispatch_guard(owner, (CALENDAR_WRITE_CONNECTOR_ID,))
             if self.registry is not None else nullcontext()

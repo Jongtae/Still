@@ -68,25 +68,35 @@ def names(slots):
 def _oauth_token(oauth, owner_id, grant, exchange):
     """``(access_token, finish)`` for one ``CalendarOAuth`` grant, as ``calendar_transport``/``drive_transport`` do it.
 
-    The token is renewed first when expired.  ``finish(status)`` runs after the
-    provider answered: a 401 moves the connection to REAUTH_REQUIRED for the
-    revision that saw it; otherwise the connection must still be the one the
-    token came from, or the response is not used (review P2).
+    The token is renewed first when expired or about to expire (#8).
+    ``finish(status)`` runs after the provider answered: a 401 gets one
+    renewal attempt for the revision that saw it, and moves the connection to
+    REAUTH_REQUIRED only when that cannot renew (#8); Still does not resend the
+    call, the AI decides whether to.  Otherwise the connection must still be the
+    one the token came from, or the response is not used (review P2).
     """
-    from .calendar_oauth import (CalendarOAuthError, _assert_current_request, _authorization_context,
+    from .calendar_oauth import (CalendarRenewalUnavailable, _assert_current_request, _authorization_context,
                                  _mark_reauthentication_required)
 
+    def renewed_after_rejection(revision):
+        if not callable(exchange):
+            return False
+        try:
+            return oauth.renew_after_rejection(owner_id, exchange, grant=grant, expected_revision=revision)
+        except CalendarRenewalUnavailable:
+            # No answer from Google: keep the stored credential; the 401 is reported as it is.
+            return True
+
     def token():
-        if not oauth.credential_current(owner_id, grant=grant):
-            try:
-                oauth.refresh(owner_id, exchange, grant=grant)
-            except CalendarOAuthError:
-                pass
+        if callable(exchange):
+            oauth.renew_if_due(owner_id, exchange, grant=grant)
         access_token, revision = _authorization_context(oauth.store, oauth.registry, owner_id, grant, oauth.now)
 
         def finish(status):
             if status == 401:
-                _mark_reauthentication_required(oauth.store, oauth.registry, owner_id, grant, expected_revision=revision)
+                if not renewed_after_rejection(revision):
+                    _mark_reauthentication_required(oauth.store, oauth.registry, owner_id, grant,
+                                                    expected_revision=revision)
                 return
             _assert_current_request(oauth.store, oauth.registry, owner_id, grant, revision, access_token)
         return access_token, finish

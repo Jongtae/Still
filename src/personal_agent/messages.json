@@ -1391,6 +1391,36 @@
   "ja": "独自の Google client",
   "zh": "自有 Google client"
  },
+ "quickstart.google_client_disconnect_before_removing": {
+  "ko": "자체 Google client로 연결된 Google 서비스가 있습니다. 서비스마다 연결을 해제한 뒤 client를 지워 주세요.",
+  "en": "A Google service is still connected through your own Google client. Disconnect each service first, then remove the client.",
+  "ja": "独自の Google client で接続中の Google サービスがあります。サービスごとに接続を解除してから client を削除してください。",
+  "zh": "仍有 Google 服务通过自有 Google client 连接。请先逐个断开这些服务，再删除 client。"
+ },
+ "quickstart.google_client_revocation_pending": {
+  "ko": "Google 쪽 권한 취소가 아직 확인되지 않은 연결이 있습니다. 외부 연결에서 Google에 다시 요청해 확인된 뒤 client를 지워 주세요.",
+  "en": "Google hasn't yet confirmed revoking access for a disconnected service. Ask Google again under External connections, then remove the client once it's confirmed.",
+  "ja": "接続を解除したサービスで、Google 側の権限取り消しがまだ確認されていません。外部接続から Google に再度依頼し、確認できてから client を削除してください。",
+  "zh": "有已断开的服务尚未得到 Google 确认撤销权限。请在外部连接中再次向 Google 请求，确认后再删除 client。"
+ },
+ "quickstart.google_client_nothing_to_remove": {
+  "ko": "지울 자체 Google client가 저장돼 있지 않습니다.",
+  "en": "No saved Google client to remove.",
+  "ja": "削除する独自の Google client は保存されていません。",
+  "zh": "没有可删除的已保存 Google client。"
+ },
+ "quickstart.google_client_environment_not_removable": {
+  "ko": "자체 Google client가 AGENTOS_GOOGLE_CLIENT_FILE로 지정돼 있어 설정에서 지울 수 없습니다. 그 설정을 빼고 Still을 다시 시작해 주세요.",
+  "en": "Your own Google client is set by AGENTOS_GOOGLE_CLIENT_FILE, so it can't be removed in Settings. Remove that setting and restart Still.",
+  "ja": "独自の Google client は AGENTOS_GOOGLE_CLIENT_FILE で指定されているため、設定から削除できません。その設定を外して Still を再起動してください。",
+  "zh": "自有 Google client 由 AGENTOS_GOOGLE_CLIENT_FILE 指定，无法在设置中删除。请去掉该设置后重新启动 Still。"
+ },
+ "quickstart.google_oauth_key_invalid": {
+  "ko": "AGENTOS_GOOGLE_OAUTH_KEY 값이 올바른 암호화 키가 아닙니다. URL-safe base64로 인코딩한 32바이트 Fernet 키를 넣거나, 이 설정을 빼서 macOS 키체인의 키를 쓰게 한 뒤 Still을 다시 시작해 주세요.",
+  "en": "AGENTOS_GOOGLE_OAUTH_KEY is not a valid encryption key. Set a Fernet key (32 bytes, URL-safe base64), or remove the setting to use the macOS Keychain key, then restart Still.",
+  "ja": "AGENTOS_GOOGLE_OAUTH_KEY の値は有効な暗号鍵ではありません。URL-safe base64 でエンコードした 32 バイトの Fernet 鍵を設定するか、この設定を外して macOS キーチェーンの鍵を使うようにしてから Still を再起動してください。",
+  "zh": "AGENTOS_GOOGLE_OAUTH_KEY 的值不是有效的加密密钥。请设置 URL-safe base64 编码的 32 字节 Fernet 密钥，或去掉该设置以使用 macOS 钥匙串中的密钥，然后重新启动 Still。"
+ },
  "remote_login.a_phone_login_link_is_already": {
   "ko": "이미 휴대폰 로그인 링크가 열려 있어요. 그 링크가 닫힌 뒤에 다시 요청해 주세요.",
   "en": "A phone login link is already open. Please request another after it closes.",

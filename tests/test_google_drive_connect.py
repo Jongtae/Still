@@ -9,6 +9,7 @@ import pathlib
 import tempfile
 import unittest
 from personal_agent.calendar import CALENDAR_SPEC
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 
 from cryptography.fernet import Fernet
@@ -226,17 +227,18 @@ class DriveTransportTest(DriveOAuthCase):
         self.assertEqual(self.requests, [(DRIVE_API + '/files?q=x', 'Bearer renewed')])
         self.assertEqual(self.oauth.status(OWNER)['state'], 'connected')
 
-    def test_a_failed_renewal_requires_reauthentication(self):
+    def test_a_refused_renewal_requires_reauthentication(self):
         self.connect()
         self.clock[0] += 7200
 
-        def broken(payload):
-            raise OSError('network down')
+        def refused(payload):
+            raise HTTPError('https://oauth2.googleapis.com/token', 400, 'Bad Request', {}, None)
 
-        transport = drive_transport(self.oauth, OWNER, broken, opener=lambda url, headers: b'{}')
+        transport = drive_transport(self.oauth, OWNER, refused, opener=lambda url, headers: b'{}')
         with self.assertRaises(CalendarReauthenticationRequired):
             transport(DRIVE_API + '/files?q=x')
         self.assertEqual(self.registry.status(OWNER, DRIVE_CONNECTOR_ID).state, ConnectorState.REAUTH_REQUIRED)
+        self.assertFalse(self.oauth.credential_renewable(OWNER))
 
     def test_401_moves_the_connection_to_reauth_required(self):
         self.connect()
@@ -594,7 +596,7 @@ class CalendarRenewalLockOrderTest(unittest.TestCase):
                                        opener=lambda method, url, body, headers: {'items': []})
         calendar = CalendarConnector(raw, GoogleCalendar(transport), registry=registry)
         inside = threading.Event()
-        original = oauth.credential_current
+        original = oauth.renewal_due
 
         def slow(*args, **kwargs):
             result = original(*args, **kwargs)
@@ -603,7 +605,7 @@ class CalendarRenewalLockOrderTest(unittest.TestCase):
                 time.sleep(0.3)
             return result
 
-        oauth.credential_current = slow
+        oauth.renewal_due = slow
 
         def query():
             try:

@@ -10,7 +10,7 @@ import sys
 import threading
 from pathlib import Path
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 import hashlib
 from urllib.parse import urlsplit
@@ -8805,15 +8805,92 @@ class AgentService:
         return self.drive_reader_factory(self.connector_owner_id(job))
 
     GOOGLE_CLIENT_SECRET_KEY='google_oauth_client'
+    #: #8: one save or removal of the owner's own Google client at a time, so two
+    #: concurrent first saves cannot each install connectors for a different client.
+    _GOOGLE_CLIENT_LOCK=threading.RLock()
+
+    def _own_client_holders(self):
+        """``{name: holder}`` of the connectors the owner's own client installed and that still run.
+
+        By installation, not by client id: a separately configured Gmail or
+        Calendar client may carry the same id and is not this client's.
+        """
+        holders={'gmail':self.gmail,'calendar':self.calendar_oauth,'drive':self.drive_oauth}
+        installed=getattr(self,'own_client_installed',None) or {}
+        return {name:holder for name,holder in holders.items()
+                if holder is not None and installed.get(name) is holder}
+
+    def google_key_problem(self):
+        """Why the Google token key could not be used at its last fetch, or None (#8).
+
+        Read from what the encrypted stores recorded, so a status surface
+        never waits on the macOS Keychain itself.
+        """
+        from .connector_http import LOCAL_KEY_INVALID,LOCAL_KEY_UNAVAILABLE
+        problems={getattr(getattr(holder,'store',None),'key_problem',None) for holder in self._own_client_holders().values()}
+        return ('invalid' if LOCAL_KEY_INVALID in problems else 'unavailable' if LOCAL_KEY_UNAVAILABLE in problems else None)
+
+    def _own_client_in_use(self):
+        own=self._own_client_connector_ids()
+        return bool(own) and any(row.get('connector_id') in own and row.get('state') in ('connected','reauth_required')
+                                 for row in self.google_connection_rows())
+
+    def _own_client_revocation_pending(self):
+        """Whether a disconnected own-client service still waits for Google to confirm revocation (#8).
+
+        Its retry runs through the connector built for this client, so the
+        client must stay until Google confirms.  Unknown counts as pending.
+        """
+        own=self._own_client_connector_ids()
+        if not own:
+            return False
+        try:
+            pending=self.google_revocations()['pending_provider_revocations']
+        except Exception:
+            return True
+        return any(row.get('connector_id') in own for row in pending)
+
+    def _own_client_connector_ids(self):
+        ids={'gmail':(GMAIL_CONNECTOR_ID,),'calendar':(CALENDAR_CONNECTOR_ID,CALENDAR_WRITE_CONNECTOR_ID),
+             'drive':(DRIVE_CONNECTOR_ID,)}
+        return {cid for name in self._own_client_holders() for cid in ids[name]}
+
+    def _own_client_rows_held(self):
+        """Registry state only (no stored credential is read): does an own-client row hold a connection?"""
+        own=self._own_client_connector_ids()
+        return any(row.get('connector_id') in own and row.get('state') in ('connected','reauth_required')
+                   for row in self.connector_connections())
+
+    def _own_client_removal_refusal(self):
+        """The catalog id of why the saved client cannot be removed now, or None (#8)."""
+        if self._own_client_in_use():
+            return 'quickstart.google_client_disconnect_before_removing'
+        if self._own_client_revocation_pending():
+            return 'quickstart.google_client_revocation_pending'
+        return None
+
+    def _saved_google_client_id(self):
+        stored=self.store.secret(self.GOOGLE_CLIENT_SECRET_KEY)
+        installed=stored.get('installed') if isinstance(stored,dict) else None
+        return installed.get('client_id') if isinstance(installed,dict) else None
 
     def google_client_status(self):
         """The owner's own Google client as Settings shows it: never the secret, only a short id hint."""
         stored=bool(self.store.secret(self.GOOGLE_CLIENT_SECRET_KEY))
         client_id=self.google_client_id or ''
         return {'configured':bool(self.google_client_source),'source':self.google_client_source,
-                'saved':stored,'restart_required':stored and not self.google_client_source,
+                'saved':stored,
+                # #8: also when the saved client is not the one running (a replacement, or a
+                # concurrent save that lost the race), which applies after a restart.
+                'restart_required':stored and (not self.google_client_source or (
+                    self.google_client_source=='settings' and self._saved_google_client_id()!=self.google_client_id)),
                 'client_hint':('…'+client_id.split('.apps.googleusercontent.com')[0][-6:]) if client_id else '',
-                'available':callable(self.google_client_installer)}
+                'available':callable(self.google_client_installer),
+                # #8: removable once no service runs on it or waits for Google's revocation;
+                # never an environment-pinned client.
+                'removable':(stored and self.google_client_source!='environment'
+                             and self._own_client_removal_refusal() is None),
+                'key_problem':self.google_key_problem()}
 
     def save_google_client(self, body):
         """Save the owner's own Google "Desktop app" client and offer Gmail, Calendar and Drive (#1172).
@@ -8831,18 +8908,78 @@ class AgentService:
         if not isinstance(raw,str) or not raw.strip() or len(raw)>20_000:
             raise ValueError('Google Cloud에서 내려받은 Desktop app client JSON을 붙여 넣어 주세요.')
         client=google_client_from_json(raw.strip())
-        if self.google_client_source=='environment':
-            raise ValueError('자체 Google client가 AGENTOS_GOOGLE_CLIENT_FILE로 지정돼 있어 설정에서 바꿀 수 없습니다.')
-        # Grants were issued to the client in use: replacing it under a live
-        # connection would keep rows "connected" on tokens the new client can
-        # neither renew nor reconnect over.  Disconnect first.
-        if self.google_client_id and client[0]!=self.google_client_id and any(
-                row.get('source')=='own-client' and row.get('state') in ('connected','reauth_required')
-                for row in self.google_connection_rows()):
-            raise ValueError('지금 client로 연결된 Google 서비스가 있습니다. 서비스마다 연결을 해제한 뒤 client를 바꿔 주세요.')
-        self.store.secret(self.GOOGLE_CLIENT_SECRET_KEY,{'installed':{'client_id':client[0],'client_secret':client[1]}})
-        if not self.google_client_source:
-            self.google_client_installer((*client,'settings'))
+        # Read before the lock: it may read stored credentials, whose key can
+        # wait on the macOS Keychain (#8).
+        running=self.google_client_id
+        in_use=self._own_client_in_use()
+        # #8: the checks, the save and the install are one step, so a second
+        # concurrent first save sees the first one's client as the one in use.
+        with self._GOOGLE_CLIENT_LOCK:
+            if self.google_client_id!=running:
+                # Another save installed a client meanwhile: check against that one.
+                in_use=self._own_client_in_use()
+            if self.google_client_source=='environment':
+                raise ValueError('자체 Google client가 AGENTOS_GOOGLE_CLIENT_FILE로 지정돼 있어 설정에서 바꿀 수 없습니다.')
+            # Grants were issued to the client in use: replacing it under a live
+            # connection would keep rows "connected" on tokens the new client can
+            # neither renew nor reconnect over.  Disconnect first.
+            if self.google_client_id and client[0]!=self.google_client_id and in_use:
+                raise ValueError('지금 client로 연결된 Google 서비스가 있습니다. 서비스마다 연결을 해제한 뒤 client를 바꿔 주세요.')
+            self.store.secret(self.GOOGLE_CLIENT_SECRET_KEY,{'installed':{'client_id':client[0],'client_secret':client[1]}})
+            if not self.google_client_source:
+                self.google_client_installer((*client,'settings'))
+        return self.google_client_status()
+
+    def remove_google_client(self):
+        """Remove the owner's saved Google client once its services are disconnected (#8).
+
+        Only a client saved in Settings; one named by
+        ``AGENTOS_GOOGLE_CLIENT_FILE`` is the operator's.  While a service
+        still holds a connection issued to it, removal is refused: the owner
+        disconnects those first, through the same Settings rows.  Removal
+        deletes the saved client and stops offering connections through it
+        at once.  It touches no Google account and no other connection.
+        """
+        if not callable(self.google_client_installer):
+            raise ValueError('이 실행 방식에서는 자체 Google client를 설정할 수 없습니다.')
+        # The full check reads stored credentials, so it runs before any lock
+        # (their key may wait on the macOS Keychain).  Under the connectors'
+        # OAuth locks, which every authorization completion holds through its
+        # commit, it is repeated from registry state and the revocation slots
+        # only, so a connection committed in between is seen.
+        refusal=self._own_client_removal_refusal()
+        with self._GOOGLE_CLIENT_LOCK, ExitStack() as held:
+            for lock in {id(lock):lock for lock in (getattr(holder,'oauth_lock',None)
+                                                    for holder in self._own_client_holders().values())
+                         if lock is not None}.values():
+                held.enter_context(lock)
+            if self.google_client_source=='environment':
+                raise ValueError(msg('quickstart.google_client_environment_not_removable'))
+            if not self.store.secret(self.GOOGLE_CLIENT_SECRET_KEY):
+                raise ValueError(msg('quickstart.google_client_nothing_to_remove'))
+            if not refusal and self._own_client_rows_held():
+                refusal='quickstart.google_client_disconnect_before_removing'
+            if not refusal and self._own_client_revocation_pending():
+                refusal='quickstart.google_client_revocation_pending'
+            if refusal:
+                raise ValueError(msg(refusal))
+            self.store.remove_secret(self.GOOGLE_CLIENT_SECRET_KEY)
+            holders=self._own_client_holders()
+            if 'gmail' in holders:
+                self.gmail=None
+                self.gmail_token_exchange=None
+            if 'calendar' in holders:
+                self.calendar_oauth=None
+                self.calendar_factory=None
+                self.calendar_token_exchange=None
+            if 'drive' in holders:
+                self.drive_oauth=None
+                self.drive_reader_factory=None
+                self.drive_read_token_exchange=None
+            self.own_client_installed={}
+            if self.google_client_source=='settings':
+                self.google_client_source=None
+                self.google_client_id=None
         return self.google_client_status()
 
     def begin_drive_connection(self):
