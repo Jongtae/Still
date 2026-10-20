@@ -76,6 +76,8 @@ class WorkRun:
         self.continued = None
         self.continuity = None
         self.settings_answer = None
+        #: #22: the owner's literal approve/cancel of the calendar drafts this channel was shown.
+        self.calendar_answer = None
         self.memory_note = None
         self.owner_memory_request = None
         self.decision = None

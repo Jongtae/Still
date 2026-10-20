@@ -340,11 +340,15 @@ class MixedJudgmentTests(unittest.TestCase):
             candidates, fixture_confidence()))
         self.assertEqual(classifier(engine).classify(text).intent, 'mail-search')
 
-    def test_a_pending_draft_follow_up_is_never_judged(self):
-        engine = capability_need_engine({'오후 4시 메모해줘': INTENT_CALENDAR_CREATE})
-        decision = classifier(engine).classify('오후 4시 메모해줘', focus={'calendar_pending': True})
-        self.assertEqual(decision.intent, INTENT_NOTE_CREATE)
-        self.assertEqual(capability_asks(engine), [])
+    def test_pending_calendar_drafts_no_longer_steer_the_classifier(self):
+        # #22: the service answers a pending draft's approve or cancel before
+        # classification; no draft state changes how a turn is classified.
+        text = '오후 4시 메모해줘'
+        with_flag = classifier(capability_need_engine({text: INTENT_CALENDAR_CREATE})).classify(
+            text, focus={'calendar_pending': True})
+        without = classifier(capability_need_engine({text: INTENT_CALENDAR_CREATE})).classify(text)
+        self.assertEqual((with_flag.intent, with_flag.alternatives), (without.intent, without.alternatives))
+        self.assertFalse(with_flag.continuation)
 
     def test_a_mixed_turn_cannot_be_narrowed_by_a_suggestion(self):
         text = '내일 오후 3시 팀 회의 일정 잡고 회의 안건 메모해줘'

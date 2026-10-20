@@ -170,17 +170,44 @@ def zone(name):
         return None
 
 
+#: The owner's calendar time zone setting (relocated from ``calendar_conversation``, #22).
+TIMEZONE_CONFIG_KEY = 'calendar_timezone'
+
+
+def resolve_local_timezone(store=None, environ=None):
+    """The IANA zone events are drafted in: owner config, then TZ, then the host."""
+    environ = os.environ if environ is None else environ
+    candidates = []
+    if store is not None:
+        candidates.append(store.config(TIMEZONE_CONFIG_KEY, None))
+    candidates.append(environ.get('TZ'))
+    try:
+        real = os.path.realpath('/etc/localtime')
+        if 'zoneinfo/' in real:
+            candidates.append(real.split('zoneinfo/', 1)[1])
+    except OSError:
+        pass
+    for name in candidates:
+        if not isinstance(name, str) or not name or name.startswith((':', '/')):
+            continue
+        try:
+            ZoneInfo(name)
+        except (ValueError, ZoneInfoNotFoundError):
+            continue
+        return name
+    return 'UTC'
+
+
 def host_zone(store=None, environ=None):
     """``(name, tzinfo)`` of the host's local zone, for the turn's clock only (#804).
 
-    The calendar's resolver (``resolve_local_timezone``: the owner's calendar
+    ``resolve_local_timezone`` (the owner's calendar
     zone, ``TZ``, then the host's ``/etc/localtime``); a host offset with no
     IANA name is labelled ``host-local``.  A bare UTC that nothing set - no
     owner zone, no ``TZ``, a zero offset: a container's default - is not the
     owner's clock, so it raises ``LookupError`` and the zone stays unknown
     (#804 review).  Never used for a hypothesis interval.
     """
-    from .calendar_conversation import TIMEZONE_CONFIG_KEY, resolve_local_timezone
     environ = os.environ if environ is None else environ
     name = resolve_local_timezone(store, environ)
     local = datetime.now().astimezone().tzinfo

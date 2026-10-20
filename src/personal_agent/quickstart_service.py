@@ -56,8 +56,9 @@ from .connector_revocation import (GoogleConnectionRevoker, RevocationError, dri
                                    google_revoke_transport, registry_connection)
 from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID, CalendarError
 from .google_drive_read import DRIVE_CONNECTOR_ID
-from .calendar_conversation import (DROPPED_NOTICE as CALENDAR_DROPPED_NOTICE, STATE_COLLECTING as CALENDAR_COLLECTING,
-                                    CalendarConversation)
+from .calendar_conversation import (DROPPED_NOTICE as CALENDAR_DROPPED_NOTICE, EFFECT_TOOLS as CALENDAR_EFFECT_TOOL_NAMES,
+                                    FAILED as CALENDAR_APPLY_FAILED, CalendarConversation, work_draft_ids)
+CALENDAR_EFFECT_TOOLS=frozenset(CALENDAR_EFFECT_TOOL_NAMES.values())
 from .conversation_handoff import (CONNECTOR_LABELS, JUDGMENT_NO, JUDGMENT_YES,
                                    FOLLOWUP_CANCEL, FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE,
                                    FOLLOWUP_RETRY, eligible_for_followup_judgment,
@@ -3152,7 +3153,7 @@ class AgentService:
         except Exception as exc:
             LOG.info('response timing not recorded: %s',type(exc).__name__)
 
-    def classify_intent(self, prompt, model_suggestion=None, calendar_pending=None, owner_id=None):
+    def classify_intent(self, prompt, model_suggestion=None):
         """Decide where one owner utterance goes, before anything is invoked.
 
         The decision is Still's.  Since PRESENCE-DEC-01 / #417 bounded
@@ -3165,14 +3166,11 @@ class AgentService:
         free-form model opinion could narrow an ambiguity Still already
         found.  No call site in this service supplies one.
 
-        ``calendar_pending`` is content free: only *that* a calendar draft is
-        waiting reaches the classifier, never what it says.
+        A pending calendar draft is answered before this (``calendar_answer`` in
+        ``_route_work``, #22), so no draft state reaches the classifier.
         """
-        if calendar_pending is None:
-            calendar_pending=(self.calendar_conversation.should_route(owner_id)
-                              if owner_id else self.calendar_conversation.has_pending())
-        focus={**self.conversation_focus.current(),'calendar_pending':bool(calendar_pending)}
-        return self.intent_classifier.classify(prompt, model_suggestion=model_suggestion, focus=focus)
+        return self.intent_classifier.classify(prompt, model_suggestion=model_suggestion,
+                                               focus=self.conversation_focus.current())
 
     def continuity_relation(self, prompt, connector_owner=None, current_work_id=None):
         """Resolve a short follow-up against the one focused Work, if any.
@@ -3213,16 +3211,29 @@ class AgentService:
         return {'relation':judged.value,'previous':previous,'source':judged.source}
 
     def calendar_dropped_notice(self, owner_id):
-        """Drop the pending calendar turn; the notice only when a draft had been shown (#1519).
-
-        A turn still asking for a title or time made nothing, so saying a draft was
-        cancelled only confuses the reply to another request; the question stays in the
-        conversation and a later answer reaches it through ``open_question_link``.
-        """
+        """Drop the pending calendar drafts and say so; '' when none were pending."""
         dropped=self.calendar_conversation.clear(owner_id)
-        if not dropped or dropped.get('state')==CALENDAR_COLLECTING:
+        if not dropped:
             return ''
         return CALENDAR_DROPPED_NOTICE+'\n\n'
+
+    def offer_calendar_drafts(self, job, capabilities=None):
+        """#22: the calendar drafts this Work's worker made, offered for the owner's approval.
+
+        Read from this Work's durable tool events; Still renders the exact
+        preview from the connector (``CalendarConversation.offer``).  Returns
+        the preview text to follow the answer, or ''.
+        """
+        with self.store.db() as db:
+            # A draft is recorded as a withheld step (status ``failed``, state ``withheld``):
+            # its effect waits for the owner.  Only an event carrying the draft id counts.
+            events=db.execute("SELECT tool,detail FROM tool_events WHERE job_id=? AND status IN ('succeeded','failed') ORDER BY id",
+                              (job['id'],)).fetchall()
+        ids=work_draft_ids([(row['tool'],row['detail']) for row in events])
+        if not ids:return ''
+        # The target of an update or cancellation, as this Work's own calendar read returned it.
+        targets=getattr(capabilities,'calendar_seen',None) or {}
+        return self.calendar_conversation.offer(self.connector_owner_id(job),ids,targets=targets)
 
     def open_question_link(self, prompt, focused, current_work_id):
         """A reference to the Work just before ``focused`` when ``prompt`` answers what its reply asked (#1519).
@@ -5087,14 +5098,12 @@ class AgentService:
 
         A natural-language rule decision is a hint, not a route: the AI worker
         receives the owner's verbatim message and this note.  Kept (None):
-        explicit forms, a Work resumed after its connection, a pending
-        calendar draft's follow-up, no usable AI route, and a read or connector
+        explicit forms, a Work resumed after its connection, no usable AI
+        route, and a read or connector
         action no worker tool can do whose connector is ready (it runs; an
         executed result is the answer, an empty one falls through with a note).
         """
         if resumed or not self.rule_fallthrough(decision):
-            return None
-        if decision.intent==INTENT_CALENDAR_CREATE and decision.continuation:
             return None
         label=INTENT_LABELS.get(decision.intent,decision.intent)
         if not decision.executes:
@@ -9887,25 +9896,32 @@ class AgentService:
         # #1389: an explicit command (/ai, /notes, ...) is routed literally and answered
         # with no model, so no pre-route judgment below can apply to it; none is asked.
         owner_command=not replayed and self.intent_classifier.explicit(owner_prompt) is not None
+        # #22: the calendar drafts this channel was shown are answered by the owner's literal
+        # approve or cancel word (``CalendarConversation.claims``) in a message the owner typed;
+        # a replayed, photo or scheduled turn never is.
+        calendar_claim=(not replayed and not owner_command and not run.photo_file_ids and job.get('owner_typed')==1
+                        and self.calendar_conversation.claims(run.connector_owner,owner_prompt))
         # #855: a settings draft pending in this conversation is answered by the owner's
         # next typed message (a plain yes applies, a plain no cancels, judged by the
         # DecisionEngine); anything else leaves it pending and this turn proceeds as usual.
         # Review P1: judged before the generic continuity cancel (a typed no is this
         # draft's decline, not a cancel of the finished proposal Work) and never while
         # the pending calendar draft claims the message (its approval stays its own).
-        run.settings_answer=(None if replayed or owner_command or job.get('owner_typed')!=1
-                         or self.calendar_conversation.claims(run.connector_owner,owner_prompt)
+        run.settings_answer=(None if replayed or owner_command or job.get('owner_typed')!=1 or calendar_claim
                          else self.settings_draft_answer(job,owner_prompt))
         # #1472: the owner's first typed message after an approval prompt may answer it ("승인", "응",
         # "취소"); a plain answer settles exactly that request and this turn says what happened.
-        step_answer=(None if replayed or owner_command or run.settings_answer or job.get('owner_typed')!=1
+        # #22 review: a reply the pending calendar drafts claim answers them only; it never also
+        # settles another approval prompt (as for settings above), which stays pending.
+        step_answer=(None if replayed or owner_command or run.settings_answer or calendar_claim or job.get('owner_typed')!=1
                      else self.step_approval_by_reply(job,owner_prompt))
         if step_answer:
             self.present_turn(job)
             return self.complete_continuity_turn(job,step_answer)
         # #996: the owner's first typed message after a saved-memory notice may withdraw it.
-        run.memory_note=(None if replayed or owner_command or run.settings_answer or job.get('owner_typed')!=1
+        run.memory_note=(None if replayed or owner_command or run.settings_answer or calendar_claim or job.get('owner_typed')!=1
                      else self.withdraw_memory_by_reply(job,owner_prompt))
+        run.calendar_answer=owner_prompt if calendar_claim else None
         # #969 (PERF-START-01): the routing judgment (`classify_intent`, which may
         # ask capability-need) and the follow-up judgment below both read only
         # the owner's message and prior state, and the state between here and
@@ -9914,11 +9930,10 @@ class AgentService:
         # a judged retry still classifies the replayed message afresh, and a
         # judged cancel still answers without one.  Same decisions, same
         # records; only the wall clock overlaps.
-        run.early_intent=(None if resumed or located or run.settings_answer else
-                      self.start_early_judgment(job['id'],self.classify_intent,owner_prompt,
-                                                calendar_pending=False if replayed else None,
-                                                owner_id=run.connector_owner))
-        run.continuity=None if replayed or run.settings_answer else self.continuity_relation(owner_prompt,run.connector_owner,current_work_id=job['id'])
+        run.early_intent=(None if resumed or located or run.settings_answer or run.calendar_answer is not None else
+                      self.start_early_judgment(job['id'],self.classify_intent,owner_prompt))
+        run.continuity=(None if replayed or run.settings_answer or run.calendar_answer is not None
+                        else self.continuity_relation(owner_prompt,run.connector_owner,current_work_id=job['id']))
         if run.continuity:
             relation,previous=run.continuity['relation'],run.continuity['previous']
             self.present_turn(job)
@@ -9973,7 +9988,8 @@ class AgentService:
                 # the authority for any actual change.
                 self.record_continuity(job['id'],previous['id'],relation,executed=False)
         # Planning shares the allowance already used by routing.
-        self._early_plan=(None if replayed or owner_command or run.settings_answer else
+        # #22 review: the answer to pending calendar drafts is settled without any model.
+        self._early_plan=(None if replayed or owner_command or run.settings_answer or run.calendar_answer is not None else
                           self.start_early_judgment(job['id'],self.early_work_plan,job,run.prompt,run.work_budget))
         if run.continued and run.retry_note is None:
             # #774 (C8): the continuation runs the asking Work's message again.
@@ -9996,6 +10012,9 @@ class AgentService:
         # candidates (#417) and reaches no other branch here.
         if run.settings_answer:
             run.decision=IntentDecision(INTENT_SETTINGS,AUTHORITY_OWNER,argument=run.prompt)
+        elif run.calendar_answer is not None:
+            # The owner's literal answer to the drafts shown; ``_run_rule_intent`` settles it.
+            run.decision=IntentDecision(INTENT_CONVERSATION,AUTHORITY_OWNER,argument=run.prompt)
         elif resumed_decision:
             run.decision=resumed_decision
         elif located is not None:
@@ -10005,26 +10024,12 @@ class AgentService:
         else:
             # A judged retry replays another Work's message: that is what is routed.
             self.settle_early_judgment(run.early_intent)
-            run.decision=self.classify_intent(run.prompt,calendar_pending=False if replayed else None,
-                                          owner_id=run.connector_owner)
-        # A pending calendar draft claims cue-free follow-ups ("치과",
-        # "오후 4시", "승인").  Anything it does not recognise as its
-        # own - and any other intent - drops the draft, says so, and
-        # is routed exactly as if no draft had been pending.  The
-        # dropped draft can never execute: its approval was never
-        # minted.
-        # #774: a continuation's replayed words neither answer nor drop a draft.
-        if replayed:
-            pass
-        elif run.decision.intent==INTENT_CALENDAR_CREATE and run.decision.continuation \
-                and not self.calendar_conversation.claims(run.connector_owner,run.prompt):
-            run.decision=self.classify_intent(run.prompt,calendar_pending=False,owner_id=run.connector_owner)
-            # A new create request judged for this turn replaces the
-            # draft itself (``handle(fresh=True)`` says so); anything
-            # else drops it here.
-            if run.decision.intent!=INTENT_CALENDAR_CREATE:
-                run.calendar_notice+=self.calendar_dropped_notice(run.connector_owner)
-        elif run.decision.intent not in (INTENT_CALENDAR_CREATE,INTENT_AMBIGUOUS) and self.calendar_conversation.has_pending(run.connector_owner):
+            run.decision=self.classify_intent(run.prompt)
+        # #22: any other message drops the pending calendar drafts, says so, and runs as
+        # an ordinary Work.  The dropped drafts can never execute from here: their
+        # approval was never minted.  #774: a continuation's replayed words neither
+        # answer nor drop them.
+        if not replayed and run.calendar_answer is None and self.calendar_conversation.has_pending(run.connector_owner):
             run.calendar_notice+=self.calendar_dropped_notice(run.connector_owner)
         # A typed confirmation belongs to its offered Work. Keep that
         # focus through slow setup/recovery so another owner reply can
@@ -10042,14 +10047,14 @@ class AgentService:
         # (#521 → #417); policy acts only on a judged "yes" and keeps
         # the request on "no" or "unavailable". Independent requests
         # sharing a connector remain independently resumable.
-        # Three turns are never asked: a follow-up the pending calendar
-        # draft claimed ("아니 4시로" is addressed to the draft), a
+        # Three turns are never asked: the owner's answer to the pending
+        # calendar drafts ("승인" is addressed to them), a
         # resumed Work re-reading its own words, which were judged
         # the first time it ran, and an explicit command (#1389).
         focused_waits=(self.resume_index.records(owner_id=run.connector_owner,work_id=previous_focus)
                        if self.resume_index and previous_focus else ())
         parked=tuple(dict.fromkeys(row['connector_id'] for row in focused_waits))
-        if parked and not (run.decision.intent==INTENT_CALENDAR_CREATE and run.decision.continuation) \
+        if parked and run.calendar_answer is None \
                 and not replayed and not owner_command and not self._answered_before(job['id']) \
                 and self.decision_judge.parked_work_withdrawn(run.prompt,parked).outcome==JUDGMENT_YES:
             dropped=self.resume_index.supersede(owner_id=run.connector_owner,work_id=previous_focus)
@@ -10111,6 +10116,33 @@ class AgentService:
             # intent handlers answer while ignoring the attached pixels.
             run.handled=False
             run.fallthrough_note='사진 자료를 포함한 요청을 선택된 AI 작업자에게 전달합니다.'
+        elif run.calendar_answer is not None:
+            # #22: the owner's literal approve or cancel of the calendar drafts this
+            # channel was shown.  Only an approval of the exact preview executes.
+            run.work_sources.add('owner-calendar')
+            def calendar_evidence(tool,status,detail):
+                # Content-free lifecycle evidence: draft and event ids, error and effect.
+                # Never the title, time or utterance.
+                with self.store.db() as db:
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',(job['id'],tool,status,json.dumps(detail),time.time()))
+            try:
+                run.response=self.calendar_conversation.handle(run.connector_owner,run.calendar_answer,evidence=calendar_evidence)
+            except CalendarError as exc:
+                raise ValueError(ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID) if exc.reason=='unavailable'
+                                 else f'일정 초안을 승인하지 못했습니다 ({exc.reason}). 캘린더에 아무것도 반영하지 않았습니다.') from None
+            # #598 I1: an approval whose effect could not be observed is
+            # not a succeeded Work, and one the calendar refused is not either.
+            # The outcome comes from this Work's own typed Evidence (#593
+            # effect='unknown'; the calendar effect events), never from the reply wording.
+            if self._work_has_unknown_effect(job['id']):
+                run.outcome='unknown'
+                run.unknown_statement=run.response
+            else:
+                effects=[event for event in self.store.task_events(job['id']) if event['tool'] in CALENDAR_EFFECT_TOOLS]
+                refused=[event for event in effects if event['status']=='failed']
+                if refused:
+                    run.outcome='partial' if any(event['status']=='succeeded' for event in effects) else 'failed'
+                    run.refusals.extend((event['tool'],CALENDAR_APPLY_FAILED) for event in refused)
         elif run.rule_note is not None:
             run.handled=False;run.fallthrough_note=run.rule_note
         elif not run.decision.executes:
@@ -10145,46 +10177,6 @@ class AgentService:
                                                           owner_typed=job.get('owner_typed')==1,
                                                           notify=lambda text,job=job:self.settings_followup(job,text))
             run.response=self.settings_response(run.result)
-        elif run.decision.intent==INTENT_CALENDAR_CREATE:
-            run.work_sources.add('owner-calendar')
-            if self.calendar_for_owner(run.connector_owner) is None:
-                raise ValueError(ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID))
-            def calendar_evidence(tool,status,detail):
-                # Content-free lifecycle evidence: draft id, state and
-                # a hash prefix.  Never the title, time or utterance.
-                with self.store.db() as db:
-                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',(job['id'],tool,status,json.dumps(detail),time.time()))
-            missing=(self.calendar_conversation.missing_detail(run.prompt)
-                     if not run.decision.continuation and self.rule_fallthrough(run.decision) else None)
-            if missing:
-                # #832: the words alone leave a detail out, but a link or earlier turn the
-                # message points to may hold it. The worker reads that and drafts through its
-                # own calendar_draft_create; the owner is not asked to retype it.
-                self.calendar_conversation.clear(run.connector_owner)
-                run.handled=False;run.response=''
-                run.fallthrough_note=self.RULE_FALLTHROUGH_NOTE.format(
-                    label=INTENT_LABELS[INTENT_CALENDAR_CREATE],
-                    what=f'could not read the event {missing} from the message words alone; nothing was drafted')
-            else:
-                try:
-                    run.response=self.calendar_conversation.handle(run.connector_owner,run.prompt,fresh=not run.decision.continuation,evidence=calendar_evidence)
-                except CalendarError as exc:
-                    if not (self.rule_fallthrough(run.decision) and not run.decision.continuation):
-                        raise ValueError(ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID) if exc.reason=='unavailable'
-                                         else f'일정 초안을 만들지 못했습니다 ({exc.reason}). 아무 일정도 만들지 않았습니다.') from None
-                    # #832: the draft did not start; the worker reads why and nothing was created.
-                    run.handled=False;run.response=''
-                    run.fallthrough_note=self.RULE_FALLTHROUGH_NOTE.format(
-                        label=INTENT_LABELS[INTENT_CALENDAR_CREATE],
-                        what=('found Google Calendar unavailable' if exc.reason=='unavailable'
-                              else f'could not start a calendar draft ({exc.reason}); nothing was created'))
-            # #598 I1: an approval whose effect could not be observed is
-            # not a succeeded Work.  The outcome comes from this Work's
-            # own typed Evidence (#593 effect='unknown'), never from the
-            # reply wording; the calendar state machine is unchanged.
-            if run.handled and self._work_has_unknown_effect(job['id']):
-                run.outcome='unknown'
-                run.unknown_statement=run.response
         elif run.decision.intent==INTENT_MAIL_SEARCH:
             if self.gmail is None:
                 raise ValueError(ConnectorHandoff.unavailable(GMAIL_CONNECTOR_ID))
@@ -10973,6 +10965,11 @@ class AgentService:
     def _finish_work(self, run):
         """Phase 7: the answer, its disclosures and the Work row, written once."""
         job=run.job
+        # #22: the calendar drafts this Work's worker made wait for the owner's approval of
+        # Still's own exact preview, shown after the answer; the model's prose never stands in for it.
+        calendar_preview=self.offer_calendar_drafts(job,run.work_capabilities[0])
+        if calendar_preview:
+            run.response=run.response.rstrip()+'\n\n'+calendar_preview if run.response.strip() else calendar_preview
         run.response=run.calendar_notice+run.response
         # #659: a preparation's answer is kept and replayed into later
         # turns, so it is scrubbed before it is persisted anywhere.

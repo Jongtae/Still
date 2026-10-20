@@ -59,7 +59,10 @@ class IntentFallthroughTests(_Case):
         self.assertEqual((row['kind'], row['state'], row['created_from']), ('reminder', 'scheduled', work))
         self.assertEqual(self.store.config('calendar_create', {}), {}, 'no rule-made calendar draft')
 
-    def test_a_calendar_create_missing_its_date_reaches_the_worker_instead_of_asking_the_owner(self):
+    def test_a_calendar_create_reaches_the_worker_with_the_owner_words_only(self):
+        # #22: no kernel rule reads the date from the words any more, so there is
+        # neither a Still-held question nor a parse note; the worker reads the
+        # message and what it points to, and drafts through calendar_draft_create.
         self.use_needs({LINKED_EVENT: 'calendar-create'})
         registry = ConnectorRegistry(self.store, (CALENDAR_SPEC, CALENDAR_WRITE_SPEC))
         registry.transition('local-owner', CALENDAR_WRITE_SPEC.connector_id, ConnectorState.CONNECTED,
@@ -72,9 +75,8 @@ class IntentFallthroughTests(_Case):
         self.assertNotIn('언제인가요', job['response'])
         sent = self.worker_message()
         self.assertTrue(sent.startswith(LINKED_EVENT), 'the owner words, link included, reach the worker verbatim')
-        self.assertIn(NOTE, sent)
-        self.assertIn('could not read the event date and time from the message words alone', sent)
-        self.assertIn('read what the message gives or points to', sent)
+        self.assertNotIn('could not read the event', sent)
+        self.assertNotIn(NOTE, sent, 'a connected calendar needs no note')
         tools = {tool['function']['name'] for tool in self.model_calls[0].get('tools', [])}
         self.assertTrue({'public_page_read', 'calendar_draft_create'} <= tools, tools)
         self.assertFalse(self.store.config(STATE_KEY, {}), 'no rule-held question is left pending')

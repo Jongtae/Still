@@ -1703,11 +1703,11 @@ class IntentClassifier:
                                clarification=UNSUPPORTED_JUDGMENT_UNAVAILABLE),
                 candidates, model_suggestion)
 
-        # #672 review: a local rule no longer hides the rest of the turn.  Unless
-        # a pending calendar draft owns follow-ups, a turn a rule claimed is
-        # still asked which declared capability it needs; one the rules did
-        # not find makes the turn mixed, and a mixed turn runs nothing.
-        if candidates and not (focus or {}).get('calendar_pending'):
+        # #672 review: a local rule no longer hides the rest of the turn.  A
+        # turn a rule claimed is still asked which declared capability it
+        # needs; one the rules did not find makes the turn mixed, and a mixed
+        # turn runs nothing.
+        if candidates:
             judged = self._judged_capability(text)
             if judged is not None and (judged.intent == INTENT_AMBIGUOUS
                                        or judged.intent not in {item.intent for item in candidates}):
@@ -1719,8 +1719,7 @@ class IntentClassifier:
         elif candidates:
             decision = self._ambiguous(candidates)
         else:
-            decision = self._fallback(text, lowered, focus_intent, bool(correction),
-                                      calendar_pending=bool((focus or {}).get('calendar_pending')))
+            decision = self._fallback(text, lowered, focus_intent, bool(correction))
 
         if focus_intent and (correction or focus_intent != decision.intent) and decision.intent != INTENT_AMBIGUOUS:
             decision.supersedes_previous = True
@@ -1755,19 +1754,12 @@ class IntentClassifier:
                               cues=(*(cue for item in candidates for cue in item.cues), *judged.cues),
                               clarification=MIXED_TASKS_PREFIX + labels + MIXED_TASKS_SUFFIX)
 
-    def _fallback(self, text, lowered, focus_intent, correction, calendar_pending=False):
+    def _fallback(self, text, lowered, focus_intent, correction):
         """No capability rule fired: stay on the ordinary conversation route.
 
-        The one exception is a pending calendar draft.  Its follow-ups - a
-        title, a time, "승인", "취소", "아니 4시로" - carry no calendar cue, so
-        while the service reports a draft pending they are handed back to it
-        as a continuation.  The service then asks ``CalendarConversation``
-        whether the utterance really belongs to the draft, and re-routes an
-        unrelated one here with the draft dropped.
+        A pending calendar draft's approve or cancel reply never reaches this
+        classifier: the service answers it first (#22).
         """
-        if calendar_pending:
-            return IntentDecision(INTENT_CALENDAR_CREATE, AUTHORITY_RULE, argument=text,
-                                  cues=('calendar-draft-pending',), continuation=True)
         continuation = _cue_hits(text, lowered, _CONTINUATION_CUES)
         if continuation and not correction and focus_intent in CONTINUABLE_INTENTS:
             return IntentDecision(focus_intent, AUTHORITY_RULE, cues=continuation, continuation=True)
@@ -1782,8 +1774,8 @@ class IntentClassifier:
     def _judged_capability(self, text):
         """Ask the DecisionEngine whether a turn needs a declared capability.
 
-        Asked for every turn that is not an explicit form or a pending
-        calendar draft's follow-up (#672 review): a rule-claimed turn is asked
+        Asked for every turn that is not an explicit form (#672 review; a
+        pending calendar draft's answer never reaches here, #22): a rule-claimed turn is asked
         too, so a part the rules did not see makes it mixed instead of being
         dropped.  The owner text is redacted by ``ConversationJudgments``
         before it reaches the engine.  A yes selects an Still-declared

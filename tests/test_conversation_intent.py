@@ -214,19 +214,18 @@ class ConsequentialEffectTests(unittest.TestCase):
                 self.assertTrue(decision.executes)
                 self.assertEqual(decision.argument, text)
 
-    def test_a_pending_draft_claims_cue_free_follow_ups_only_while_it_is_pending(self):
+    def test_a_pending_draft_no_longer_claims_cue_free_follow_ups_in_the_classifier(self):
+        # #22: the service answers a pending draft's literal approve or cancel
+        # before classification (``CalendarConversation.claims``); the
+        # classifier never turns cue-free words into a calendar continuation.
         pending = {'intent': INTENT_CALENDAR_CREATE, 'calendar_pending': True}
-        for text in ('치과', '오후 4시', '승인', 'approve', '취소', '아니 4시로'):
+        for text in ('치과', '오후 4시', '아니 4시로'):
             with self.subTest(text=text):
                 decision = self.classifier.classify(text, focus=pending)
-                self.assertEqual(decision.intent, INTENT_CALENDAR_CREATE)
-                self.assertTrue(decision.continuation)
-                self.assertEqual(decision.argument, text)
-        # Same focus intent, no pending draft: an ordinary utterance stays on
-        # the conversation route exactly as before.
+                self.assertFalse(decision.intent == INTENT_CALENDAR_CREATE and decision.continuation)
         stale = {'intent': INTENT_CALENDAR_CREATE}
         self.assertEqual(self.classifier.classify('치과', focus=stale).intent, INTENT_CONVERSATION)
-        # A rule that fires still wins over the pending draft.
+        # A rule that fires still wins.
         self.assertEqual(self.classifier.classify('메모 목록', focus=pending).intent, INTENT_NOTE_LIST)
         self.assertEqual(self.classifier.classify('/notes', focus=pending).intent, INTENT_NOTE_LIST)
 
@@ -493,16 +492,17 @@ class ServiceRoutingTests(unittest.TestCase):
         self.assertEqual(self.store.config('personal_assistant_evidence', []), [])
         self.assertEqual(self.store.config('settings_change_drafts', {}), {})
 
-    def test_a_natural_calendar_request_without_a_connector_refuses_and_creates_nothing(self):
-        # This service has no Calendar connector at all.  The refusal names
-        # the reason; it neither asks about the event nor drafts anything.
+    def test_a_natural_calendar_request_without_a_connector_drafts_and_creates_nothing(self):
+        # This service has no Calendar connector and no AI route.  #22: the
+        # request is the worker's, so the owner is told to connect an AI; Still
+        # neither asks about the event nor drafts anything itself.
         self.service.use_decision_engine(capability_need_engine(
             {text: INTENT_CALENDAR_CREATE for text in CALENDAR_PARAPHRASES}))
         for text in CALENDAR_PARAPHRASES:
             with self.subTest(text=text):
                 job = self.run_one(text)
                 self.assertEqual(job['status'], 'failed')
-                self.assertIn('구성되어 있지 않습니다', job['error'])
+                self.assertIn('설정에서 모델 또는 구독 엔진을 먼저 연결하세요', job['error'])
         self.assertEqual(self.store.config('personal_assistant_evidence', []), [])
         self.assertEqual(self.store.config('calendar_create', {}), {})
         self.assertEqual(self.store.config('calendar_conversation', {}), {})

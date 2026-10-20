@@ -1045,7 +1045,6 @@ class CalendarEval(PresenceEval):
         self.calendar = CalendarConnector(self.store, self.provider, registry=self.registry, now=lambda: self.clock[0])
         self.service = self.make_service(connector_registry=self.registry, calendar=self.calendar)
         self.service.calendar_conversation.now = lambda: self.clock[0]
-        self.service.calendar_conversation._timezone = ZONE
         self.connect_write()
         self.connect_model()
 
@@ -1062,22 +1061,37 @@ class CalendarEval(PresenceEval):
     def states(self):
         return sorted(row['state'] for row in self.drafts().values())
 
+    def drafting(self, summary, start, end):
+        """#22: the worker reads the request and calls its own draft tool; Still renders the preview."""
+        self.script = [('tool', 'calendar_draft_create', {'summary': summary, 'start': start, 'end': end, 'timezone': ZONE})]
+        self.plain_reply_served = True
+
+    def draft_dentist(self):
+        self.drafting('치과', '2026-09-23T15:00:00+09:00', '2026-09-23T16:00:00+09:00')
+        return self.turn('내일 오후 3시에 치과 일정 잡아줘')
+
 
 class F_CalendarApproval(CalendarEval):
-    CASES = (('내일 오후 3시에 치과 일정 잡아줘', '제목: 치과', '2026-09-23 (수) 15:00 – 16:00 (Asia/Seoul)'),
-             ('book a dentist appointment tomorrow at 3pm for 30 minutes', '제목: dentist appointment', '15:00 – 15:30'),
-             ('금요일 오전 9시 스탠드업 30분 일정 등록해줘', '제목: 스탠드업', '2026-09-25 (금) 09:00 – 09:30'))
+    CASES = (('내일 오후 3시에 치과 일정 잡아줘', ('치과', '2026-09-23T15:00:00+09:00', '2026-09-23T16:00:00+09:00'),
+              '제목: 치과', '2026-09-23 (수) 15:00 – 16:00 (Asia/Seoul)'),
+             ('book a dentist appointment tomorrow at 3pm for 30 minutes',
+              ('dentist appointment', '2026-09-23T15:00:00+09:00', '2026-09-23T15:30:00+09:00'),
+              '제목: dentist appointment', '15:00 – 15:30'),
+             ('금요일 오전 9시 스탠드업 30분 일정 등록해줘', ('스탠드업', '2026-09-25T09:00:00+09:00', '2026-09-25T09:30:00+09:00'),
+              '제목: 스탠드업', '2026-09-25 (금) 09:00 – 09:30'))
 
     def test_each_phrasing_gets_an_exact_preview_then_one_effect_only_after_approval(self):
-        for index, (phrase, title, when) in enumerate(self.CASES):
+        for index, (phrase, draft, title, when) in enumerate(self.CASES):
             with self.subTest(phrase=phrase):
                 start, calls = len(self.wire), len(self.provider.calls)
+                self.drafting(*draft)
                 job, _ = self.turn(phrase)
                 # #835: 👀, the preview, then no done reaction while the effect awaits approval.
                 self.assertEqual(self.methods(start), ['setMessageReaction', 'sendMessage', 'setMessageReaction'])
                 self.assertEqual(self.reactions(start), [RECEIVED_REACTION, CLEAR_REACTION])
                 [preview] = self.texts(start)
-                self.assertTrue(preview.startswith(PREVIEW_HEADER))
+                # #22: the worker's answer, then Still's own exact preview.
+                self.assertIn(PREVIEW_HEADER, preview)
                 self.assertIn(title, preview)
                 self.assertIn(when, preview)
                 self.assertIn('"승인"', preview)
@@ -1101,15 +1115,17 @@ class F_CalendarApproval(CalendarEval):
                                      'evidence is content-free')
 
     def test_an_expired_preview_cannot_be_approved(self):
-        self.turn(self.CASES[0][0])
+        self.draft_dentist()
         self.clock[0] += 901
         self.turn('승인')
         self.assertEqual(self.provider.calls, [])
         self.assertEqual(self.states(), ['awaiting-approval'])
 
     def test_a_correction_redrafts_and_only_the_corrected_preview_executes(self):
-        self.turn(self.CASES[0][0])
+        self.draft_dentist()
         start = len(self.wire)
+        # #22: the correction is the worker's to read; it drafts again, and the first draft is dropped.
+        self.drafting('치과', '2026-09-23T16:00:00+09:00', '2026-09-23T17:00:00+09:00')
         self.turn('아니 4시로')
         [redraft] = self.texts(start)
         self.assertIn('16:00 – 17:00', redraft)
@@ -1118,7 +1134,7 @@ class F_CalendarApproval(CalendarEval):
         self.assertEqual(payload['start'], '2026-09-23T16:00:00+09:00')
 
     def test_another_identity_cannot_approve_and_cancel_creates_nothing(self):
-        self.turn(self.CASES[0][0])
+        self.draft_dentist()
         web = self.store.enqueue('승인', 'web-approve', channel='web')
         self.service.run_one()
         self.assertEqual(self.provider.calls, [], 'a web turn cannot spend the Telegram preview')
@@ -1174,7 +1190,7 @@ class I_UnknownExternalEffect(CalendarEval):
         return GoogleCalendar(self.transport)
 
     def approve_into_unknown(self):
-        self.turn('내일 오후 3시에 치과 일정 잡아줘')
+        self.draft_dentist()
         start = len(self.wire)
         job, message_id = self.turn('승인')
         return job, message_id, start
@@ -1240,7 +1256,7 @@ class I1_ObservedEffectOpposing(CalendarEval):
     """Opposing case for I1: an observed create stays a plain succeeded Work."""
 
     def test_finding_i1_an_observed_create_stays_succeeded_without_a_qualifier(self):
-        self.turn('내일 오후 3시에 치과 일정 잡아줘')
+        self.draft_dentist()
         start = len(self.wire)
         job, _ = self.turn('승인')
         [bubble] = self.bubbles(start)

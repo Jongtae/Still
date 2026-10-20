@@ -25,6 +25,7 @@ from pathlib import Path
 from personal_agent.agent_runtime import CALENDAR_DRAFT_TOOLS, withheld_effect
 from personal_agent.calendar import (CALENDAR_SPEC, CALENDAR_WRITE_SPEC,
                                      CalendarConnector)
+from personal_agent.calendar_conversation import PREVIEW_HEADER
 from personal_agent.connector_contract import ConnectorRegistry, ConnectorState
 from personal_agent.conversation_projection import TERMINAL_FAILED_NOTE
 from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
@@ -310,7 +311,10 @@ class DeferredCalendarWriteTests(RefusedWriteTestCase):
         # renderer could substitute without anyone noticing.
         self.assertIn('소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.', bubble)
         # #820/#847: the answer is delivered first; the step's own next step closes the bubble.
-        self.assertEqual(bubble, self.text + '\n\n소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.')
+        # #22: Still's own exact preview of the draft follows the answer, before that step.
+        self.assertTrue(bubble.startswith(self.text + '\n\n' + PREVIEW_HEADER), bubble)
+        self.assertIn('제목: 병원 예약', bubble)
+        self.assertTrue(bubble.endswith('\n\n소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.'), bubble)
         self.assertNotIn('일정 초안', bubble, 'no tool name after the answer')
 
     def test_every_draft_tool_is_covered_not_only_create(self):
