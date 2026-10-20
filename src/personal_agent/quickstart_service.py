@@ -3217,7 +3217,7 @@ class AgentService:
             return ''
         return CALENDAR_DROPPED_NOTICE+'\n\n'
 
-    def offer_calendar_drafts(self, job):
+    def offer_calendar_drafts(self, job, capabilities=None):
         """#22: the calendar drafts this Work's worker made, offered for the owner's approval.
 
         Read from this Work's durable tool events; Still renders the exact
@@ -3231,7 +3231,9 @@ class AgentService:
                               (job['id'],)).fetchall()
         ids=work_draft_ids([(row['tool'],row['detail']) for row in events])
         if not ids:return ''
-        return self.calendar_conversation.offer(self.connector_owner_id(job),ids)
+        # The target of an update or cancellation, as this Work's own calendar read returned it.
+        targets=getattr(capabilities,'calendar_seen',None) or {}
+        return self.calendar_conversation.offer(self.connector_owner_id(job),ids,targets=targets)
 
     def open_question_link(self, prompt, focused, current_work_id):
         """A reference to the Work just before ``focused`` when ``prompt`` answers what its reply asked (#1519).
@@ -9986,7 +9988,8 @@ class AgentService:
                 # the authority for any actual change.
                 self.record_continuity(job['id'],previous['id'],relation,executed=False)
         # Planning shares the allowance already used by routing.
-        self._early_plan=(None if replayed or owner_command or run.settings_answer else
+        # #22 review: the answer to pending calendar drafts is settled without any model.
+        self._early_plan=(None if replayed or owner_command or run.settings_answer or run.calendar_answer is not None else
                           self.start_early_judgment(job['id'],self.early_work_plan,job,run.prompt,run.work_budget))
         if run.continued and run.retry_note is None:
             # #774 (C8): the continuation runs the asking Work's message again.
@@ -10964,7 +10967,7 @@ class AgentService:
         job=run.job
         # #22: the calendar drafts this Work's worker made wait for the owner's approval of
         # Still's own exact preview, shown after the answer; the model's prose never stands in for it.
-        calendar_preview=self.offer_calendar_drafts(job)
+        calendar_preview=self.offer_calendar_drafts(job,run.work_capabilities[0])
         if calendar_preview:
             run.response=run.response.rstrip()+'\n\n'+calendar_preview if run.response.strip() else calendar_preview
         run.response=run.calendar_notice+run.response

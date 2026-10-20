@@ -21,7 +21,7 @@ from personal_agent.calendar import CALENDAR_SPEC, CALENDAR_WRITE_SPEC, Calendar
 from personal_agent.calendar_conversation import (CANCELLED, CHANGED_UNDER_US, CREATED, CANCELLED_EVENT, DROPPED_NOTICE,
                                                   FAILED, NOT_APPLIED_REST, OTHER_CHANNEL, OUTCOME_UNKNOWN,
                                                   PREVIEW_FOOTER, PREVIEW_HEADER, REPLACED_NOTICE, STATE_KEY, UPDATED,
-                                                  UPDATE_UNKNOWN,
+                                                  UPDATE_UNKNOWN, UNVERIFIED_TARGET,
                                                   is_approval, is_cancel, preview_lines, work_draft_ids)
 from personal_agent.connector_contract import ConnectorRegistry, ConnectorState, _owner_key
 from personal_agent.current_context import TIMEZONE_CONFIG_KEY, resolve_local_timezone
@@ -34,6 +34,7 @@ DENTIST = {'summary': '치과', 'start': '2026-10-15T15:00:00+09:00', 'end': '20
            'timezone': ZONE}
 VENDOR = {'summary': 'Vendor meeting', 'start': '2026-10-15T15:00:00+09:00', 'end': '2026-10-15T16:00:00+09:00',
           'timezone': ZONE}
+WEEK = {'start': '2026-10-15T00:00:00+09:00', 'end': '2026-10-22T00:00:00+09:00', 'timezone': ZONE}
 GYM = {'summary': '운동', 'start': '2026-10-17T09:00:00+09:00', 'end': '2026-10-17T10:00:00+09:00',
        'timezone': ZONE}
 
@@ -55,6 +56,15 @@ class Provider:
     def create(self, payload, key):
         return self._call('create', payload)
 
+    #: What a calendar read returns: the owner's existing events.
+    events = [{'id': 'event-1', 'etag': '"v1"', 'summary': '치과', 'start': '2026-10-16T15:00:00+09:00',
+               'end': '2026-10-16T16:00:00+09:00', 'location': '', 'status': 'confirmed'},
+              {'id': 'event-2', 'etag': '"v2"', 'summary': '운동', 'start': '2026-10-17T09:00:00+09:00',
+               'end': '2026-10-17T10:00:00+09:00', 'location': '체육관', 'status': 'confirmed'}]
+
+    def query(self, start, end, timezone, max_results):
+        return [dict(event) for event in self.events]
+
     def update(self, event_id, event_version, payload):
         return self._call('update', event_id, event_version, payload)
 
@@ -69,6 +79,8 @@ class CalendarDraftApprovalCase(_Case):
         for owner in (OWNER, 'local-owner'):
             self.registry.transition(owner, CALENDAR_WRITE_SPEC.connector_id, ConnectorState.CONNECTED,
                                      granted_scopes=(CALENDAR_WRITE_SCOPE,))
+            self.registry.transition(owner, CALENDAR_SPEC.connector_id, ConnectorState.CONNECTED,
+                                     granted_scopes=CALENDAR_SPEC.required_scopes)
         self.provider = Provider()
         self.calendar = CalendarConnector(self.store, self.provider, registry=self.registry, now=lambda: self.now)
         self.service.calendar = self.calendar
@@ -165,6 +177,15 @@ class ApprovalTests(CalendarDraftApprovalCase):
         job = self.job(self.receive('승인'))
         self.assertEqual(job['status'], 'succeeded', job.get('error'))
         self.assertEqual(len(self.model_calls), calls_before, 'the approval runs no model')
+
+    def test_the_approval_turn_asks_no_planner_either(self):
+        # #22 review: no speculative orchestration plan is started for the owner's answer.
+        self.drafting(('calendar_draft_create', DENTIST))
+        self.receive('치과 일정 잡아줘')
+        with mock.patch.object(self.service, 'early_work_plan') as plan:
+            job = self.job(self.receive('승인'))
+        plan.assert_not_called()
+        self.assertIn(CREATED, job['response'])
         self.assertIn(CREATED, job['response'])
         self.assertIn('제목: 치과', job['response'])
         self.assertEqual(self.provider.calls, [('create', DENTIST)], 'exactly the payload shown')
@@ -316,20 +337,41 @@ class InterleavingTests(CalendarDraftApprovalCase):
 
 class UpdateCancelAndSeveralDraftsTests(CalendarDraftApprovalCase):
     def test_update_and_cancel_drafts_show_their_target_and_apply_only_on_approval(self):
-        self.drafting(('calendar_draft_update', {'event_id': 'event-1', 'event_version': '"v1"', 'summary': '치과 검진'}),
+        self.drafting(('calendar_query', WEEK),
+                      ('calendar_draft_update', {'event_id': 'event-1', 'event_version': '"v1"', 'summary': '치과 검진'}),
                       ('calendar_draft_cancel', {'event_id': 'event-2', 'event_version': '"v2"'}))
         job = self.job(self.receive('치과 일정 제목 바꾸고 운동 일정은 취소해줘'))
         self.assertIn('1. 일정 변경', job['response'])
-        self.assertIn('대상 일정 ID: event-1', job['response'])
+        # #22 review: the target is shown as this Work's own calendar read returned it, not only by id.
+        self.assertIn('대상 일정: 치과\n대상 일시: 2026-10-16 (금) 15:00 – 16:00\n대상 일정 ID: event-1', job['response'])
         self.assertIn('제목: 치과 검진', job['response'])
         self.assertIn('2. 일정 취소', job['response'])
-        self.assertIn('대상 일정 ID: event-2', job['response'])
+        self.assertIn('대상 일정: 운동\n대상 일시: 2026-10-17 (토) 09:00 – 10:00\n대상 장소: 체육관\n대상 일정 ID: event-2',
+                      job['response'])
         self.assertEqual(self.provider.calls, [])
         job = self.job(self.receive('승인'))
         self.assertEqual(self.provider.calls, [('update', 'event-1', '"v1"', {'summary': '치과 검진'}),
                                                ('cancel', 'event-2', '"v2"')])
         self.assertIn(UPDATED, job['response'])
         self.assertIn(CANCELLED_EVENT, job['response'])
+
+    def test_a_change_to_an_event_this_work_did_not_read_is_not_offered(self):
+        # Without the target event from this Work's own read, the owner could not see which
+        # event the approval changes, so the draft cannot be approved here.
+        self.drafting(('calendar_draft_cancel', {'event_id': 'event-2', 'event_version': '"v2"'}))
+        job = self.job(self.receive('운동 일정 취소해줘'))
+        self.assertNotIn(PREVIEW_HEADER, job['response'])
+        self.assertIn(UNVERIFIED_TARGET.format(count=1), job['response'])
+        self.assertEqual(self.pending(), {})
+        self.receive('승인')
+        self.assertEqual(self.provider.calls, [])
+
+    def test_a_changed_version_is_not_the_event_that_was_read(self):
+        self.drafting(('calendar_query', WEEK),
+                      ('calendar_draft_cancel', {'event_id': 'event-2', 'event_version': '"v9"'}))
+        job = self.job(self.receive('운동 일정 취소해줘'))
+        self.assertIn(UNVERIFIED_TARGET.format(count=1), job['response'])
+        self.assertEqual(self.pending(), {})
 
     def test_several_drafts_in_one_work_are_shown_together_and_approved_together(self):
         self.drafting(('calendar_draft_create', DENTIST), ('calendar_draft_create', GYM))
@@ -382,7 +424,8 @@ class UpdateCancelAndSeveralDraftsTests(CalendarDraftApprovalCase):
         self.assertEqual(self.states(), ['completed', 'failed'])
 
     def test_an_unconfirmed_change_is_reported_as_a_change(self):
-        self.drafting(('calendar_draft_update', {'event_id': 'event-1', 'event_version': '"v1"', 'summary': '치과 검진'}))
+        self.drafting(('calendar_query', WEEK),
+                      ('calendar_draft_update', {'event_id': 'event-1', 'event_version': '"v1"', 'summary': '치과 검진'}))
         self.receive('치과 일정 제목 바꿔줘')
         self.provider.fail = GoogleCalendarError('provider-timeout', 'unknown')
         job = self.job(self.receive('승인'))

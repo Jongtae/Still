@@ -2199,6 +2199,9 @@ class Capabilities:
   self.public_page_scope=public_page_scope if public_page_scope is None or callable(public_page_scope) else frozenset(public_page_scope)
   # #23: normalized result URLs this Work's own searches returned; `public_page_read` may read them.
   self.search_result_urls=set()
+  #: #22 review: the events this Work's own calendar reads returned, by (event id, version):
+  #: what an update or cancellation draft's approval preview shows as its target.
+  self.calendar_seen={}
   self.memory_approval=memory_approval
   # #597: a zero-argument resolver that asks, once and only when a write is
   # proposed, whether the owner explicitly requested a memory in this Work;
@@ -2881,6 +2884,9 @@ class Capabilities:
      # reconnect) is the same setup-required read as no calendar at all.
      if getattr(exc,'recovery',None)!='reconnect':raise
      return {'needs_setup':True,'requires':CALENDAR_CONNECTOR_ID,'events':[],'next_step':CALENDAR_UNCONFIGURED}
+    for event in events.get('events',()) if isinstance(events,dict) else ():
+     if isinstance(event,dict) and isinstance(event.get('id'),str) and event.get('etag'):
+      self.calendar_seen[(event['id'],event['etag'])]={key:event.get(key,'') for key in ('summary','start','end','location')}
     return self._from_private('owner-calendar',self._shortcut_read(name,events,'events'))
    # Refuse an unsupported field rather than filtering it out. The tool
    # schema already sets additionalProperties:false, but a filter here would

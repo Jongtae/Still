@@ -73,6 +73,9 @@ UPDATE_UNKNOWN = msg('calendar_conversation.i_cannot_confirm_whether_the_change'
 CANCEL_UNKNOWN = msg('calendar_conversation.i_cannot_confirm_whether_the_cancellation')
 FAILED = '캘린더에 반영하지 못했습니다. 이 초안은 반영되지 않았습니다.'
 NOT_APPLIED_REST = '나머지 초안은 반영하지 않았습니다.'
+#: An update or cancellation whose target this Work's own calendar read did not show.
+UNVERIFIED_TARGET = ('이 작업에서 조회한 일정과 맞춰 볼 수 없는 일정 변경·취소 초안 {count}개는 대상 일정을 보여 드릴 수 없어 '
+                     '여기서 승인할 수 없습니다. 아무것도 반영하지 않았습니다.')
 RECONNECT_HINT = ' 캘린더를 다시 연결한 뒤 새로 요청해 주세요.'
 RETRY_HINT = ' 새로 요청해 주세요.'
 ACTION_LABELS = {'create': '새 일정', 'update': '일정 변경', 'cancel': '일정 취소'}
@@ -139,11 +142,32 @@ def describe_span(start, end, zone):
     return f"{day} {first:%H:%M} – {last:%Y-%m-%d} ({_WEEKDAYS_KO[last.weekday()]}) {last:%H:%M} ({shown_value(zone)})"
 
 
-def preview_lines(preview):
-    """Every field one draft would send, in Still's words.  Nothing is omitted or summarised."""
+def target_lines(target):
+    """The event an update or cancellation acts on, as this Work's own calendar read returned it."""
+    lines = [f"대상 일정: {shown_value(target.get('summary') or '(제목 없음)')}"]
+    start, end = target.get('start'), target.get('end')
+    if isinstance(start, str) and isinstance(end, str):
+        try:
+            lines.append(f"대상 일시: {describe_span(start, end, '')}".replace(' ()', ''))
+        except ValueError:
+            lines.append(f"대상 일시: {shown_value(start)} – {shown_value(end)}")
+    if target.get('location'):
+        lines.append(f"대상 장소: {shown_value(target['location'])}")
+    return lines
+
+
+def preview_lines(preview, target=None):
+    """Every field one draft would send, in Still's words.  Nothing is omitted or summarised.
+
+    An update or cancellation also shows its target event as this Work's own
+    calendar read returned it (``target``), so the owner can see which event
+    the approval changes, not only its id.
+    """
     payload = preview.get('payload') or {}
     lines = []
     if preview.get('action') in ('update', 'cancel'):
+        if target:
+            lines.extend(target_lines(target))
         lines.append(f"대상 일정 ID: {shown_value(preview.get('event_id', ''))}")
     if 'summary' in payload:
         lines.append(f"제목: {shown_value(payload['summary'])}")
@@ -285,33 +309,45 @@ class CalendarConversation:
         return row
 
     # -- the Work's drafts --------------------------------------------------------
-    def offer(self, owner_id, draft_ids):
+    def offer(self, owner_id, draft_ids, targets=None):
         """Make a finished Work's drafts the ones this identity may approve; Still's preview text, or ''.
 
         Each draft is read back from the connector, so the preview shows what
         the connector holds, not what a tool result or the model said.  A draft
         this owner cannot see, or one no longer awaiting approval, is not shown
-        and cannot be approved here.  Earlier pending drafts are replaced.
+        and cannot be approved here.  An update or cancellation is offered only
+        when ``targets`` - this Work's own calendar reads, by (event id,
+        version) - show its target event, so the owner sees which event it
+        changes.  Earlier pending drafts are replaced.
         """
+        targets = targets or {}
         if not draft_ids:
             return ''
         connector = self.connector_for(owner_id)
         if connector is None:
             return ''
-        shown = []
+        shown, unverified = [], 0
         for ident in draft_ids:
             try:
                 preview = connector.preview(ident, owner_id)
             except ValueError:
                 continue
-            if preview.get('state') == STATE_AWAITING_APPROVAL:
-                shown.append(preview)
+            if preview.get('state') != STATE_AWAITING_APPROVAL:
+                continue
+            if preview.get('action') in ('update', 'cancel'):
+                target = targets.get((preview.get('event_id'), preview.get('event_version')))
+                if not target:
+                    unverified += 1
+                    continue
+                preview = {**preview, 'target': target}
+            shown.append(preview)
+        refused = UNVERIFIED_TARGET.format(count=unverified) if unverified else ''
         if not shown:
-            return ''
+            return refused
         notice = REPLACED_NOTICE + '\n\n' if self.pending(owner_id) else ''
         self._save(owner_id, [{'draft_id': preview['id'], 'payload_hash': preview['payload_hash'],
                                'action': preview.get('action')} for preview in shown])
-        return notice + self._preview_text(shown)
+        return notice + self._preview_text(shown) + ('\n\n' + refused if refused else '')
 
     @staticmethod
     def _preview_text(previews):
@@ -319,7 +355,7 @@ class CalendarConversation:
         for index, preview in enumerate(previews, 1):
             label = ACTION_LABELS.get(preview.get('action'), shown_value(preview.get('action')))
             lines.append(f"{index}. {label}" if len(previews) > 1 else label)
-            lines.extend(preview_lines(preview))
+            lines.extend(preview_lines(preview, preview.get('target')))
         lines.append(CALENDAR_LINE)
         lines.append(PREVIEW_FOOTER)
         return '\n'.join(lines)
