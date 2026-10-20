@@ -9,7 +9,15 @@
       "BROWSER-REL-01",
       "BROWSER-INPUT-01",
       "BROWSER-LOADMORE-01",
-      "BROWSER-PROFILE-01"
+      "BROWSER-PROFILE-01",
+      "QUALITY-CORE-01",
+      "QUALITY-DELIVERY-01",
+      "QUALITY-FRESH-01",
+      "QUALITY-REPORT-01",
+      "QUALITY-METHODS-01",
+      "CORE-SERVICE-01",
+      "CORE-CALENDAR-01",
+      "CORE-PARALLEL-01"
     ]
   },
   "iterations": [
@@ -94,13 +102,57 @@
       "issue": 115,
       "milestone": "quality-core",
       "kind": "implementation",
-      "activation_status": "owner-activated-goal-ready",
+      "activation_status": "complete-on-merge",
       "contract": "goal-execution-contract.en.md",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_fresh_delivery_plan.py"
       ],
       "summary": "Answer quality and core cleanup program in two parallel tracks. Track C (methods as skill content): #25 -> #24 -> #15 -> #32. Track D (core cleanup): #21 (slices 1-3) -> #22 (owner option A, independent review) -> #16 (slice 1). The tracks own separate files; agent_runtime.py is shared, so #16 waits for #32.",
-      "depends_on": []
+      "depends_on": [],
+      "completed_substeps": {
+        "QUALITY-DELIVERY-01": {
+          "issue": 25,
+          "pull_request": 117,
+          "merge_commit": "56626e92d6eecf0ea041ae5e4c09b45236f79ba1",
+          "decision": "shopping-cart step 5a: one matched item, product price, delivery fee and total reported apart from the cart's own figures for that item alone; an unreadable fee is unconfirmed and no lowest final price is claimed; never checkout, address, card or order."
+        },
+        "QUALITY-FRESH-01": {
+          "issue": 24,
+          "pull_request": 124,
+          "merge_commit": "18e4a5835e43546b5da45dfdf627932cec7d78ab",
+          "decision": "Worker guidance keeps source effective time, retrieval time and the owner's dated report apart and rechecks once on a contradicted outside fact; follow-up PR #127 (9f36f5ec) counts a source's own live status as observed at retrieval."
+        },
+        "QUALITY-REPORT-01": {
+          "issue": 15,
+          "pull_request": 128,
+          "merge_commit": "37031c10aa7bbc950177377efee989db52fc7a7d",
+          "decision": "Records are one evolving item only on the service's own evidence (identifier, status naming the other record, link); which one is current only when the service shows it; the action performed is reported apart from read views."
+        },
+        "QUALITY-METHODS-01": {
+          "issue": 32,
+          "pull_request": 131,
+          "merge_commit": "4c967a976648d0387904fd0ae6a54f66af81c069",
+          "decision": "Three owner-installable reference method skills (summary-or-analysis, claim-analysis, source-cross-check); skill_load part=header reads at most 1 KB before the first section; advisory method_gap note (length-only in the record, counts restored after restart)."
+        },
+        "CORE-SERVICE-01": {
+          "issue": 21,
+          "pull_request": 119,
+          "merge_commit": "0a9b38d9bf79a9add39be57e036c8c8705e075de",
+          "decision": "Slices 1-3, behavior-preserving: _run_one is a coordinator over named phases (work_execution.py, PR #119); Telegram ingestion, callbacks and delivery in telegram_surface.py (PR #133, d7991afb); TelegramStore over the five Telegram tables in the same SQLite file (PR #134, a905f1d9). Slice 4 left open on #21."
+        },
+        "CORE-CALENDAR-01": {
+          "issue": 22,
+          "pull_request": 139,
+          "merge_commit": "047fe1b0a4618fc83942c47454d71f3f327944f6",
+          "decision": "Option A: the literal parser and INTENT_CALENDAR_CREATE branch are gone; worker drafts get a Still-rendered exact preview and execute only on the owner's typed approve word on the shown channel before expiry with every draft hash unchanged. Merged by the owner on 2026-10-20; the independent review set on 2026-10-19 was not performed before merge, and Codex did not re-review the last two fixes (b9eac1a)."
+        },
+        "CORE-PARALLEL-01": {
+          "issue": 16,
+          "pull_request": 140,
+          "merge_commit": "e3f96aa61f09c32e3ca9bf7a36854df111a01f1d",
+          "decision": "Slice 1: consecutive public network reads in one model turn start together (at most 4 threads) while admission, recording and judgment stay in turn order; effects, private reads, dependent reads and budget-uncovered groups stay sequential. Slices 2-4 left open on #16."
+        }
+      }
     },
     {
       "id": "QUALITY-DELIVERY-01",
@@ -108,7 +160,7 @@
       "issue": 25,
       "milestone": "quality-core",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_skill_shop.py tests/test_skill_supply.py tests/test_skill_manage.py tests/test_no_scenario_code.py"
       ],
@@ -121,7 +173,7 @@
       "issue": 24,
       "milestone": "quality-core",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_agent_runtime.py tests/test_skill_supply.py tests/test_no_scenario_code.py"
       ],
@@ -136,7 +188,7 @@
       "issue": 15,
       "milestone": "quality-core",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_agent_runtime.py tests/test_recovered_steps.py tests/test_no_scenario_code.py"
       ],
@@ -151,7 +203,7 @@
       "issue": 32,
       "milestone": "quality-core",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_skill_manage.py tests/test_skill_supply.py tests/test_skill_shop.py tests/test_connect_skill_continuation.py tests/test_bounded_execution.py tests/test_no_scenario_code.py"
       ],
@@ -166,7 +218,7 @@
       "issue": 21,
       "milestone": "quality-core",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests"
       ],
@@ -179,7 +231,7 @@
       "issue": 22,
       "milestone": "quality-core",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_calendar_conversation.py tests/test_calendar.py tests/test_pa1_j4_calendar_tools.py tests/test_pa1_j4_calendar_reachability.py tests/test_conversation_intent.py tests/test_intent_fallthrough.py tests/test_no_scenario_code.py"
       ],
@@ -194,7 +246,7 @@
       "issue": 16,
       "milestone": "quality-core",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_agent_runtime.py tests/test_agency_loop.py tests/test_recovered_steps.py tests/test_bounded_execution.py"
       ],
@@ -203,6 +255,60 @@
         "CORE-SERVICE-01",
         "QUALITY-METHODS-01"
       ]
+    },
+    {
+      "id": "STEADY-01",
+      "issue": 132,
+      "milestone": "steady-use",
+      "kind": "implementation",
+      "activation_status": "owner-activated-goal-ready",
+      "contract": "goal-execution-contract.en.md",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_fresh_delivery_plan.py"
+      ],
+      "summary": "Steady everyday use: Google connections survive transient renewal failures (#8), system messages come out in the owner's language (#10), and working lessons live in one bounded notes document (#19). Track 1: #8 -> #10 (both edit messages.json); track 2: #19.",
+      "depends_on": []
+    },
+    {
+      "id": "STEADY-GOOGLE-01",
+      "program": "STEADY-01",
+      "issue": 8,
+      "milestone": "steady-use",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_drive_web_oauth.py tests/test_calendar_oauth.py tests/test_gmail.py tests/test_gmail_http_transport.py tests/test_google_calendar.py tests/test_google_drive.py tests/test_google_drive_connect.py tests/test_google_disconnect_ui.py"
+      ],
+      "summary": "Google renewal keeps a usable refresh credential through transient failures: retryable vs definitive failure, early-renewal margin, at most one safe renewal, no OS credential-store call under OAuth/authority/provider locks, serialized first save of a custom client, removal after disconnect; scopes unchanged.",
+      "depends_on": []
+    },
+    {
+      "id": "STEADY-LOCALE-01",
+      "program": "STEADY-01",
+      "issue": 10,
+      "milestone": "steady-use",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_telegram_locale.py tests/test_messages.py"
+      ],
+      "summary": "Remaining fixed system messages and ProviderError strings move into the shared messages.json catalog; Korean unchanged; AI answers never translated as templates.",
+      "depends_on": [
+        "STEADY-GOOGLE-01"
+      ]
+    },
+    {
+      "id": "STEADY-NOTES-01",
+      "program": "STEADY-01",
+      "issue": 19,
+      "milestone": "steady-use",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_owner_model_upkeep.py tests/test_procedures.py tests/test_owner_forget.py tests/test_owner_profile.py"
+      ],
+      "summary": "One bounded owner-level working-notes document in the procedural version store: full revision or no change from self-review, bounds, secret exclusion, versioned exact undo, migration of profile.working.* rows with receipts; semantic facts stay in Memory.",
+      "depends_on": []
     }
   ],
   "milestones": {
@@ -211,6 +317,9 @@
     },
     "quality-core": {
       "title": "Answer quality and core cleanup (QUALITY-CORE-01)"
+    },
+    "steady-use": {
+      "title": "Steady everyday use (STEADY-01)"
     }
   },
   "programs": {
@@ -240,7 +349,7 @@
       "closeout": "Closed out 2026-10-19 (#94). Every ordered substep merged on its own PR with its issue acceptance mapped to unit, model-free protocol and local real-WebKit tests (local fixture pages on the owner's Mac; no live site or account). Review remediation merged with the program: #100 (PR #101, plan milestone and selection note) and #102 (PR #104, missed-press classification). Found and left open for a separate owner decision: #103 (a click WebKit never dispatched is reported as a press). No successor is selected; the delivery heartbeat stayed paused throughout."
     },
     "QUALITY-CORE-01": {
-      "status": "owner-activated-goal-ready",
+      "status": "complete",
       "issue": 115,
       "activated_by": {
         "issue": 115,
@@ -257,7 +366,15 @@
         "CORE-PARALLEL-01"
       ],
       "active_substeps": [],
-      "completed_substeps": {},
+      "completed_substeps": [
+        "QUALITY-DELIVERY-01",
+        "QUALITY-FRESH-01",
+        "QUALITY-REPORT-01",
+        "QUALITY-METHODS-01",
+        "CORE-SERVICE-01",
+        "CORE-CALENDAR-01",
+        "CORE-PARALLEL-01"
+      ],
       "allowed_authority": "Track C: skills/**, src/personal_agent/skills.py, worker guidance/method text and their tests. Track D: quickstart_service.py, calendar_conversation.py, modules extracted from AgentService and their tests. agent_runtime.py is shared and taken in turn (CORE-PARALLEL-01 after QUALITY-METHODS-01). Docs describing changed behavior and this plan. Evidence: focused unit tests with injected transports, fake clocks and temporary stores, small model-free integration tests, required CI. One issue-linked PR per substep with normal squash merge after required CI and the automated review of the final head, then a closeout PR.",
       "non_goals": "Live accounts, sign-ins, real carts or calendars, named external websites, live-model sampling, credentials, payments, releases, deployment and the delivery heartbeat; #21 slice 4; #16 slices 2-4 (completion-check and checked_direct trade-offs need measurement and an owner decision); a new skills framework, store or scheduler; site-specific workarounds; other backlog groups, #103 and #107.",
       "independent_review": "Required for CORE-CALENDAR-01 (#22): owner decision 2026-10-19 chose option A, which applies the existing chat approval mechanism to drafts the model wrote (consequential-action approval semantics); its PR merges only after a human reviewer who is not its author reviews the exact head, and waits as integration_pending until then. Otherwise not planned; triggered if a change alters approval or external-effect guards, skill authority, or owner-state authority.",
@@ -268,13 +385,44 @@
           "issue": 22,
           "decision": "Option A for worker calendar drafts (see summary of CORE-CALENDAR-01); not B (AI-judged approval wording) or C (approve buttons). Track D order becomes #21 -> #22 -> #16 because #21 is behavior-preserving and both change quickstart_service.py."
         }
+      ],
+      "closeout": "Closed out 2026-10-20 (#115). All seven ordered substeps merged on their own PRs with issue acceptance mapped to unit and model-free fixture tests, required validate and the full suite (full-validate) on the final head; evidence is fixture/unit only, with no live model, account or calendar observation. Track C: #25 (PR #117), #24 (PRs #124, #127), #15 (PR #128), #32 (PR #131). Track D: #21 slices 1-3 (PRs #119, #133, #134), #22 (PR #139), #16 slice 1 (PR #140). #22: owner decision 2026-10-19 chose option A and required a human non-author review; the owner merged PR #139 on 2026-10-20 without that review; the review stays owed on #143 (pending_reviews) and is not waived by this closeout. Process gaps recorded: #124 and #119 merged before their full-validate finished; #131 and #139 had final fixes Codex did not re-review. Supporting fixes outside the program: #130 (SDK pin check, #129/#122) and #137 (parallel full suite, #135). Left open: #21 slice 4, #16 slices 2-4. No successor is selected by this closeout; the delivery heartbeat stayed paused throughout.",
+      "pending_reviews": [
+        {
+          "substep": "CORE-CALENDAR-01",
+          "issue": 22,
+          "pull_request": 139,
+          "merge_commit": "047fe1b0a4618fc83942c47454d71f3f327944f6",
+          "tracking_issue": 143,
+          "reason": "Consequential-action approval semantics changed; the human non-author review required by the 2026-10-19 decision did not happen before the owner merged. It stays owed on #143 and is not waived by this closeout."
+        }
       ]
+    },
+    "STEADY-01": {
+      "status": "owner-activated-goal-ready",
+      "issue": 132,
+      "activated_by": {
+        "issue": 132,
+        "date": "2026-10-20",
+        "reason": "Owner selected #8 + #19 + #10 as the program after QUALITY-CORE-01 (\"추천대로 갈게\", recorded on #132) and asked to continue once #22 was merged."
+      },
+      "ordered_substeps": [
+        "STEADY-GOOGLE-01",
+        "STEADY-LOCALE-01",
+        "STEADY-NOTES-01"
+      ],
+      "active_substeps": [],
+      "completed_substeps": {},
+      "allowed_authority": "Track 1 (#8 then #10): drive_transport, calendar_transport, gmail, the OAuth setup and Settings removal path, messages.json, telegram_locale, providers.py and conversation_handoff.py message strings, and their tests. Track 2 (#19): owner_model, procedures, owner_forget and the profile snapshot, and their tests. quickstart_service.py is shared and taken in turn. Docs describing changed behavior and this plan. Evidence: focused unit tests with fake transports, clocks and temporary stores; required validate and full-validate on each final head; one issue-linked PR per substep, normal squash merge, then a closeout PR.",
+      "non_goals": "New OAuth library or broader scopes; real Google accounts or credentials; a new memory service, fact namespace or localization framework; translating AI-generated answers; live-model sampling; releases, deployment and the delivery heartbeat; other backlog items.",
+      "independent_review": "Triggered for #8 if a change materially alters credential protection (credential-store calls, local encryption-key handling); under the owner's 2026-10-20 choice such a PR waits for a human non-author review. Otherwise not planned.",
+      "completion_rule": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests, its declared focused tests passing, and required validate plus full-validate passing on the final head (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision."
     }
   },
   "completion_claims": {},
   "next_goal": {
-    "id": "QUALITY-CORE-01",
+    "id": "STEADY-01",
     "status": "owner-activated-goal-ready",
-    "action": "Owner direction 2026-10-19 (#115) selects QUALITY-CORE-01: track C #25 -> #24 -> #15 -> #32 and track D #21 (slices 1-3) -> #22 (owner option A, independent review before merge) -> #16 (slice 1), run in parallel with separate file ownership, session-driven at the owner's request. Scoped PRs and normal merge after required CI are authorized; live accounts, external sites, credentials, releases and deployment are not. The delivery heartbeat stays paused, and no successor is selected on completion."
+    "action": "QUALITY-CORE-01 closed out (#115). Owner selection (#132) makes STEADY-01 goal-ready: track 1 #8 -> #10, track 2 #19, session-driven at the owner's request. Scoped PRs and normal merge after required checks are authorized; real accounts, credentials, releases and deployment are not. The delivery heartbeat stays paused, and no successor is selected on completion."
   }
 }

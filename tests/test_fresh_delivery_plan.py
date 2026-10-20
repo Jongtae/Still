@@ -4,7 +4,7 @@ Still was imported without history. The predecessor plan is archived unchanged
 under docs/history/, where the historical governance tests read it; the root
 plan started empty and selected nothing until the owner activated a goal
 (BROWSER-REL-01, #94, since closed out). The owner then selected
-QUALITY-CORE-01 (#115).
+QUALITY-CORE-01 (#115, since closed out) and then STEADY-01 (#132).
 """
 import importlib.util
 import json
@@ -56,10 +56,10 @@ def test_the_browser_program_is_closed_out_with_its_evidence():
     """#94: BROWSER-REL-01 ran #12 -> #11 -> #13 and closed out; it selected no successor."""
     current = plan()
     assert current["next_goal"]["id"] != "BROWSER-REL-01"
-    assert invariants.closed_out_programs(current) == ["BROWSER-REL-01"]
+    assert "BROWSER-REL-01" in invariants.closed_out_programs(current)
     # Each completed child is durable history too, so a later goal may depend on it directly.
-    assert set(current["history"]["documented_completed_iterations"]) == {
-        "BROWSER-REL-01", "BROWSER-INPUT-01", "BROWSER-LOADMORE-01", "BROWSER-PROFILE-01"}
+    assert {"BROWSER-REL-01", "BROWSER-INPUT-01", "BROWSER-LOADMORE-01", "BROWSER-PROFILE-01"} <= set(
+        current["history"]["documented_completed_iterations"])
     invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["BROWSER-REL-01"]
     assert program["activated_by"]["issue"] == 94
@@ -79,51 +79,71 @@ TRACK_C = ["QUALITY-DELIVERY-01", "QUALITY-FRESH-01", "QUALITY-REPORT-01", "QUAL
 TRACK_D = ["CORE-SERVICE-01", "CORE-CALENDAR-01", "CORE-PARALLEL-01"]
 
 
-def test_the_owner_activated_quality_program_is_goal_ready_and_heartbeat_paused():
-    """#115: two tracks in order (track D reordered #21 -> #22 by the owner's #22 decision); #16 waits for #32."""
+def test_the_quality_program_is_closed_out_with_its_evidence():
+    """#115: both tracks merged; each substep's issue, PR and merge commit are recorded."""
     current = plan()
-    assert current["next_goal"]["id"] == "QUALITY-CORE-01"
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    assert current["next_goal"]["id"] != "QUALITY-CORE-01"
+    assert invariants.closed_out_programs(current) == ["BROWSER-REL-01", "QUALITY-CORE-01"]
+    assert {"QUALITY-CORE-01", *TRACK_C, *TRACK_D} <= set(current["history"]["documented_completed_iterations"])
+    invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["QUALITY-CORE-01"]
-    assert program["activated_by"]["issue"] == 115
-    assert program["ordered_substeps"] == TRACK_C + TRACK_D
+    assert program["ordered_substeps"] == program["completed_substeps"] == TRACK_C + TRACK_D
+    items = {item["id"]: item for item in current["iterations"]}
+    evidence = items["QUALITY-CORE-01"]["completed_substeps"]
+    assert [(evidence[name]["issue"], evidence[name]["pull_request"]) for name in TRACK_C + TRACK_D] == [
+        (25, 117), (24, 124), (15, 128), (32, 131), (21, 119), (22, 139), (16, 140)]
+    assert all(len(evidence[name]["merge_commit"]) == 40 for name in evidence)
+    # The record says what was not done rather than implying it.
+    assert "without that review" in program["closeout"]
+    # #143: closing the program does not waive the owed review of the merged calendar change.
+    (owed,) = program["pending_reviews"]
+    assert (owed["substep"], owed["pull_request"], owed["tracking_issue"]) == ("CORE-CALENDAR-01", 139, 143)
+    assert owed["merge_commit"] == evidence["CORE-CALENDAR-01"]["merge_commit"]
+    assert "#143" in program["closeout"] and "not waived" in program["closeout"]
+    assert "#21 slice 4" in program["closeout"] and "#16 slices 2-4" in program["closeout"]
+    for state in ({}, {"completed": []}, {"active": "QUALITY-CORE-01", "status": "running"}):
+        assert DeliveryPlan(PLAN).select(state) is None, state
+
+
+TRACK_1 = ["STEADY-GOOGLE-01", "STEADY-LOCALE-01"]
+TRACK_2 = ["STEADY-NOTES-01"]
+
+
+def test_the_owner_activated_steady_program_is_goal_ready_and_heartbeat_paused():
+    """#132: #8 -> #10 share messages.json; #19 runs on its own."""
+    current = plan()
+    assert current["next_goal"]["id"] == "STEADY-01"
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    program = current["programs"]["STEADY-01"]
+    assert program["activated_by"]["issue"] == 132
+    assert program["ordered_substeps"] == TRACK_1 + TRACK_2
     assert program["active_substeps"] == [] and program["completed_substeps"] == {}
     items = {item["id"]: item for item in current["iterations"]}
-    assert [items[name]["issue"] for name in TRACK_C + TRACK_D] == [25, 24, 15, 32, 21, 22, 16]
-    for track in (TRACK_C, TRACK_D[:2]):
-        for previous, name in zip([None] + track, track):
-            assert items[name]["program"] == "QUALITY-CORE-01"
-            assert items[name]["milestone"] == "quality-core"
-            assert (previous is None) or previous in items[name]["depends_on"]
-    # #16 needs #21's extraction and #32's agent_runtime.py change, not #22's human review.
-    assert items["CORE-PARALLEL-01"]["depends_on"] == ["CORE-SERVICE-01", "QUALITY-METHODS-01"]
-    assert items["QUALITY-DELIVERY-01"]["depends_on"] == items["CORE-SERVICE-01"]["depends_on"] == []
-    # #22: the owner chose option A, which changes approval semantics, so a human non-author reviews it.
-    assert "CORE-CALENDAR-01" in program["independent_review"] and program["decisions"][0]["issue"] == 22
-    # validate runs only the governance list, so each substep names behavioral tests of its own surface.
-    for name in TRACK_C + TRACK_D:
+    assert [items[name]["issue"] for name in TRACK_1 + TRACK_2] == [8, 10, 19]
+    assert items["STEADY-GOOGLE-01"]["depends_on"] == items["STEADY-NOTES-01"]["depends_on"] == []
+    assert items["STEADY-LOCALE-01"]["depends_on"] == ["STEADY-GOOGLE-01"]
+    for name in TRACK_1 + TRACK_2:
+        assert items[name]["program"] == "STEADY-01" and items[name]["milestone"] == "steady-use"
         (command,) = items[name]["tests"]
-        assert "test_fresh_delivery_plan" not in command, name
         targets = command.split("pytest -q ", 1)[1].split()
         assert targets and all((ROOT / target).exists() for target in targets), name
     assert "full-validate" in program["completion_rule"]
-    # Goal-ready is not active: the heartbeat selects nothing on its own.
     for state in ({}, {"completed": []}):
         assert DeliveryPlan(PLAN).select(state) is None, state
 
 
-def test_the_controller_can_run_the_quality_program_once_the_owner_makes_it_active(tmp_path):
+def test_the_controller_can_run_the_steady_program_once_the_owner_makes_it_active(tmp_path):
     """#100: every controller path reads the selected iteration's milestone."""
     from scripts.dev.delivery import DeliveryController
 
     altered = plan()
-    altered["next_goal"] = {"id": "QUALITY-CORE-01", "status": "active"}
+    altered["next_goal"] = {"id": "STEADY-01", "status": "active"}
     root = tmp_path / "repo"
     root.mkdir()
     (root / "delivery-plan.yaml").write_text(json.dumps(altered), encoding="utf-8")
     controller = DeliveryController(root, tmp_path / "state.json", invariants.RecordingRunner(), now=lambda: 1_700_000_000)
     status = controller.status()
-    assert (status["active"], status["milestone"]) == ("QUALITY-CORE-01", "quality-core")
+    assert (status["active"], status["milestone"]) == ("STEADY-01", "steady-use")
 
 
 def test_a_closed_program_stays_unselectable_even_if_declared_active(tmp_path):
