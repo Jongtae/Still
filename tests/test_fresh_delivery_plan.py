@@ -126,6 +126,11 @@ def test_the_steady_program_is_closed_out_and_selects_nothing():
         (8, 145), (10, 146), (19, 144)]
     assert all(len(evidence[name]["merge_commit"]) == 40 for name in evidence)
     assert "#147" in program["closeout"] and "FV_RESULT" not in program["closeout"]
+    # The owed review of the merged credential change is kept, not waived.
+    (owed,) = program["pending_reviews"]
+    assert (owed["substep"], owed["pull_request"], owed["tracking_issue"]) == ("STEADY-GOOGLE-01", 145, 149)
+    assert owed["merge_commit"] == evidence["STEADY-GOOGLE-01"]["merge_commit"]
+    assert "#149" in program["closeout"] and "not waived" in program["closeout"]
     for state in ({}, {"completed": []}, {"active": "STEADY-01", "status": "running"}):
         assert DeliveryPlan(PLAN).select(state) is None, state
 
