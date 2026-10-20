@@ -459,8 +459,8 @@ MEMORY_SAVED_KIND='memory_saved'
 #: The notice for facts upkeep saved once the Work's own notice was already settled or lost.
 MEMORY_SAVED_UPKEEP_KIND='memory_saved_upkeep'
 MEMORY_SAVED_KINDS=(MEMORY_SAVED_KIND,MEMORY_SAVED_UPKEEP_KIND)
-#: #19: the one notice of a working-notes revision, bound to that version (``fingerprint``: its ref and number).
-WORKING_NOTES_KIND='working_notes_saved'
+#: #19: the one notice of a working-notes revision, queued with the version itself (``WorkingNotes.save``).
+WORKING_NOTES_KIND=om.NOTICE_KIND
 #: #1455: a reservation message's binding: the ids it confirmed, in its notification fingerprint.
 PREPARED_IDS_PREFIX='ids:'
 
@@ -1817,8 +1817,7 @@ class AgentService:
                 upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
                 LOG.info('self-review work=%s reason=%s state=%s calls=%s notes=%s blocker=%s',work_id,detail.get('reason'),
                          state,calls,(detail.get('notes') or {}).get('version'),bool(detail.get('blocker')))
-                if (detail.get('notes') or {}).get('version'):
-                    self.queue_working_notes_notice(job,detail['notes'])
+                # A kept revision's one notice was queued with the version (``WorkingNotes.save``).
                 return
             # SITUATION-01 (#1004): the same judgment rewrites the running note of the owner's day,
             # only while current context is on; the Work's saved private values never enter it.
@@ -2654,13 +2653,6 @@ class AgentService:
                 block=''
             if block:text += ('\n' if text else '') + block
         return self._redact_known_secrets(text)
-
-    def queue_working_notes_notice(self, job, saved):
-        """#19: the one notice of a working-notes revision, bound to that version (Telegram Works only)."""
-        try:
-            self.queue_notification(job,WORKING_NOTES_KIND,fingerprint=json.dumps({'ref':saved['ref'],'version':saved['version']}))
-        except Exception as exc:
-            LOG.warning('working notes notice not queued (%s)',type(exc).__name__)
 
     def working_notes_notice_text(self, notification):
         """The notice of one revision while it is still the current document, or None (then it is not sent).

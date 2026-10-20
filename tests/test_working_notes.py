@@ -105,7 +105,27 @@ class Document(unittest.TestCase):
         self.assertEqual(refused.exception.code, 'settled')
         with self.store.db() as db:
             self.assertIsNone(db.execute('SELECT 1 FROM procedure_versions WHERE id=?', (second['id'],)).fetchone())
+            tombstones = [dict(row) for row in db.execute('SELECT * FROM forgotten_values')]
         self.assertEqual(self.notes.current()['id'], first['id'])
+        # Review P2: the purge removes the text, but a content-free tombstone keeps the forget authoritative.
+        self.assertTrue(self.notes.forgotten(om.notes_text(['a', 'b'])))
+        self.assertNotIn('a\\n- b', json.dumps(tombstones))
+        self.assertEqual({row['receipt_id'] for row in tombstones}, {again['receipt']})
+
+    def test_the_notice_is_queued_with_the_version_for_a_telegram_work_only(self):
+        work = self.store.enqueue('그거 찾아줘', 'wn-tg', channel='telegram:g9', chat_id=4040)
+        web = self.store.enqueue('그거 찾아줘', 'wn-web')
+        saved = self.notes.save(revision('a'), work)
+        self.notes.save(revision('a', 'b'), web, expected=saved['id'])
+        with self.store.db() as db:
+            rows = [dict(row) for row in db.execute('SELECT job_id,chat_id,generation,kind,fingerprint,state '
+                                                    'FROM telegram_notifications')]
+        self.assertEqual(rows, [{'job_id': work, 'chat_id': 4040, 'generation': 'g9', 'kind': om.NOTICE_KIND,
+                                 'fingerprint': json.dumps({'ref': saved['ref'], 'version': 1}), 'state': 'queued'}],
+                         'review P1: durable with the version itself, never left untold by a crash')
+        self.assertIsNone(self.save('a', 'c'), 'a refused save queues nothing either')
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM telegram_notifications').fetchone()[0], 1)
 
     def test_a_later_revision_wins_over_an_undo(self):
         first = self.save('a')

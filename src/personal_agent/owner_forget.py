@@ -253,12 +253,16 @@ class OwnerForget:
 
     def _exclude_procedure(self, db, owner_key, version_id, receipt_id, now):
         """#1486: one saved library version leaves use; forgetting the current one puts the newest kept one back."""
-        from .procedures import CURRENT, KEPT
-        row = db.execute('SELECT id,slot,version,state FROM procedure_versions WHERE id=? AND state IN (?,?)',
+        from .procedures import CURRENT, KEPT, NOTES_SLOT
+        row = db.execute('SELECT id,slot,version,state,digest FROM procedure_versions WHERE id=? AND state IN (?,?)',
                          (version_id, CURRENT, KEPT)).fetchone()
         if row is None:
             raise _refuse('stale')
         db.execute('UPDATE procedure_versions SET state=? WHERE id=?', (FORGOTTEN, row['id']))
+        if row['slot'] == NOTES_SLOT:
+            # #19 review P2: a content-free tombstone that outlives the purge, so the self-review never
+            # saves the exact document the owner forgot again; the undo removes it with the receipt.
+            db.execute('INSERT OR IGNORE INTO forgotten_values VALUES (?,?,?,?)', (owner_key, row['digest'], receipt_id, now))
         restored = None
         if row['state'] == CURRENT:
             restored = db.execute('SELECT id,version FROM procedure_versions WHERE slot=? AND state=? ORDER BY version DESC LIMIT 1',

@@ -423,6 +423,10 @@ class Unit(unittest.TestCase):
         revision, blocker, dropped = om.validate_review(review(' * a  note \n\n- b ', ' added  b ', ' fix  this '))
         self.assertEqual((revision, blocker, dropped),
                          (None, 'fix this', [{'note': 'notes', 'reason': 'blocker'}]), 'a blocker is not a preference')
+        # Review P2: a blocker too long to keep as Evidence still marks a software cause.
+        revision, blocker, dropped = om.validate_review(review('- b', 'added b', 'x' * 201), ['a note'])
+        self.assertEqual((revision, blocker, dropped), (None, None, [{'note': 'blocker', 'reason': 'content'},
+                                                                     {'note': 'notes', 'reason': 'blocker'}]))
         revision, blocker, dropped = om.validate_review(review(' * a  note \n\n- b ', ' added  b '), ['a note'])
         self.assertEqual((revision, blocker, dropped),
                          ({'points': ['a note', 'b'], 'text': '- a note\n- b', 'change': 'added b'}, None, []))

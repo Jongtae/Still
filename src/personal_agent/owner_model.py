@@ -104,6 +104,8 @@ MIGRATION_KEY = 'working_notes_migration'
 MIGRATION_CHANGE = 'collected the earlier saved working lessons into these notes'
 #: Outcome of a kept revision in the ``self_review`` Evidence.
 APPLIED_NOTES = 'working-notes'
+#: The Telegram notice of one revision, queued with the version (``fingerprint``: its ref and number).
+NOTICE_KIND = 'working_notes_saved'
 #: Bounds of the self-review facts and of a stored observation.
 EVALUATION_CHARS = 1500
 FOLLOWUP_CHARS = 1500
@@ -283,7 +285,8 @@ def validate_review(data, current=(), known=frozenset(), request=''):
             reason = 'length'
         elif not added and len(points) == len(before):
             reason = 'unchanged'
-        elif blocker:
+        elif note:
+            # Review P2: any blocker the judgment gave, even one too long to keep as Evidence.
             reason = 'blocker'
         elif not change or len(change) > CHANGE_CHARS:
             reason = 'change'
@@ -795,6 +798,8 @@ class WorkingNotes:
         from .procedures import ProcedureLibrary
         self.store, self.clock = store, clock
         self.library = ProcedureLibrary(store, clock)
+        # Its tables hold the receipts and the forget tombstones this document relies on.
+        self.forget = OwnerForget(store, clock)
 
     def current(self, db=None):
         """``{'id', 'ref', 'version', 'text', 'points', 'change', 'saved', 'work_id'}`` of the current version, or None."""
@@ -823,8 +828,12 @@ class WorkingNotes:
     def save(self, revision, work_id, *, expected=None):
         """Save a validated revision as the next version unless the current one is no longer ``expected``.
 
-        Returns ``{'id', 'ref', 'version', 'digest'}`` or None when the document changed meanwhile.
+        When ``work_id`` is a Telegram Work, its one ``NOTICE_KIND`` notice is queued in the same
+        transaction (review P1, as a direct Memory save holds its notice), so a saved revision is
+        never left untold by a crash.  Returns ``{'id', 'ref', 'version', 'digest'}`` or None when
+        the document changed meanwhile.
         """
+        import uuid
         from .procedures import NOTES_SLOT, REF_PREFIX
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -833,12 +842,28 @@ class WorkingNotes:
                 return None
             row = self.library.commit(NOTES_SLOT, revision['text'], work_id=work_id,
                                       stats={'change': revision['change']}, db=db)
-        return {'id': row['id'], 'ref': REF_PREFIX + row['id'], 'version': row['version'], 'digest': row['digest']}
+            saved = {'id': row['id'], 'ref': REF_PREFIX + row['id'], 'version': row['version'], 'digest': row['digest']}
+            job = db.execute('SELECT channel,chat_id FROM jobs WHERE id=?', (work_id,)).fetchone() if work_id else None
+            channel = str(job['channel'] or '') if job else ''
+            if job and channel.startswith('telegram:') and isinstance(job['chat_id'], int):
+                db.execute('INSERT OR IGNORE INTO telegram_notifications VALUES (?,?,?,?,?,?,?,?,?)',
+                           (str(uuid.uuid4()), work_id, job['chat_id'], channel[len('telegram:'):], NOTICE_KIND,
+                            json.dumps({'ref': saved['ref'], 'version': saved['version']}), 'queued', None, self.clock()))
+        return saved
 
     def forgotten(self, text):
-        """Whether the owner forgot a version with exactly this text (not yet purged): the host does not save it again."""
+        """Whether the owner forgot a version with exactly this text: the host does not save it again.
+
+        The forget leaves a content-free digest tombstone (``owner_forget``, review P2) that outlives
+        the seven-day purge of the version itself; undoing the forget removes it.
+        """
+        from .agent_runtime import MEMORY_OWNER
         from .procedures import NOTES_SLOT, digest
-        return self.library.forgotten_digest(NOTES_SLOT, digest(text))
+        value = digest(text)
+        with self.store.db() as db:
+            tombstone = db.execute('SELECT 1 FROM forgotten_values WHERE owner_key=? AND digest=?',
+                                   (self.store._memory_binding(MEMORY_OWNER), value)).fetchone()
+        return tombstone is not None or self.library.forgotten_digest(NOTES_SLOT, value)
 
     def migrate(self):
         """Move the current ``profile.working.`` Memory rows into the first version, once; returns the record or None.
@@ -853,11 +878,11 @@ class WorkingNotes:
         when there was nothing to move.
         """
         from .agent_runtime import MEMORY_OWNER, memory_value_has_secret
-        from .owner_forget import MEMORY_PREFIX, MIGRATE, OwnerForget
+        from .owner_forget import MEMORY_PREFIX, MIGRATE
         from .procedures import NOTES_SLOT
         if self.store.config(MIGRATION_KEY):
             return None
-        forget = OwnerForget(self.store, self.clock)
+        forget = self.forget
         owner_key = self.store._memory_binding(MEMORY_OWNER)
         select = ("SELECT id,memory_key,content FROM memories WHERE owner_key=? AND state='current' "
                   'AND substr(memory_key,1,?)=? ORDER BY created DESC,id DESC')
