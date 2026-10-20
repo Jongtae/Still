@@ -97,6 +97,26 @@ class ConnectionFailureFixtures(unittest.TestCase):
                              msg('conversation_handoff.telegram_photo_download_failed', lang))
         self.assertEqual(conversation_handoff.TELEGRAM_FAILURE_TEXT, msg('conversation_handoff.telegram_request_failed'))
 
+    def test_the_main_ai_check_failure_is_one_line_with_the_provider_error_inside(self):
+        """Codex review on #146: the browser's 'check and use' failure wraps the provider error."""
+        from cryptography.fernet import Fernet
+        from personal_agent.quickstart import configured_service
+        from personal_agent.quickstart_store import QuickStore
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        service = configured_service(QuickStore(str(pathlib.Path(temp.name) / 'data')),
+                                     {'AGENTOS_GOOGLE_OAUTH_KEY': Fernet.generate_key().decode()})
+        service.save_main_ai_key({'provider': 'openai', 'key': 'sk-made-up-0001'})
+        failure = str(provider_error(HTTPError('u', 401, 'x', {}, io.BytesIO(b'{}'))))
+        with mock.patch.object(service, 'probe_model', return_value={'ok': False, 'error': failure}):
+            with self.assertRaises(ValueError) as caught:
+                service.activate_main_ai({'route': 'openai'})
+        text = str(caught.exception)
+        self.assertEqual(text, msg('main_ai.api_check_failed', name='OpenAI', error=failure))
+        for lang in LANGS:
+            self.assertEqual(translate(text, lang), msg('main_ai.api_check_failed', lang, name='OpenAI',
+                                                        error=msg('providers.http_error', lang, status=401)))
+
     def test_model_setup_validation(self):
         for config, message_id in (({'provider': 'x'}, 'providers.choose_connection_method'),
                                    ({'provider': 'openai', 'endpoint': 'https://other.test/v1'},

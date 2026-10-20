@@ -366,8 +366,10 @@ class MainAiRoutes:
         record = self.service.probe_model(config, key)
         if not record['ok']:
             self._record_check(route_id, {'state': 'failed', 'failure': record.get('error', '')[:300]})
-            raise MainAiError(f'{preset["name"]} 확인에 실패했습니다: {record.get("error") or "응답 없음"} '
-                              '현재 기본 AI와 판단 AI는 그대로입니다.')
+            # #10: one catalog template, so the browser, Telegram and terminal
+            # seams translate it with the catalogued provider error inside.
+            raise MainAiError(msg('main_ai.api_check_failed', name=preset['name'],
+                                  error=record.get('error') or msg('main_ai.no_response')))
         with self.service.lock:
             self.store.put('model', config)
             self.store.secret('model_key', key)

@@ -2801,6 +2801,18 @@
   "ja": "いまはログイン画面を開けませんでした。少し後でもう一度下のボタンを押してください。",
   "zh": "暂时无法打开登录窗口。请稍后再按一次下面的按钮。"
  },
+ "main_ai.api_check_failed": {
+  "ko": "{name} 확인에 실패했습니다: {error} 현재 기본 AI와 판단 AI는 그대로입니다.",
+  "en": "The {name} check failed: {error} Your main AI and judgment AI are unchanged.",
+  "ja": "{name} の確認に失敗しました: {error} 現在の基本 AI と判断 AI はそのままです。",
+  "zh": "{name} 检查失败：{error} 当前的基本 AI 和判断 AI 保持不变。"
+ },
+ "main_ai.no_response": {
+  "ko": "응답 없음",
+  "en": "No response",
+  "ja": "応答なし",
+  "zh": "无响应"
+ },
  "providers.response_too_large": {
   "ko": "응답이 너무 큽니다. 요청 범위를 줄여 주세요.",
   "en": "The response is too large. Please narrow the request.",
