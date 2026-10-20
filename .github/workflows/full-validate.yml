@@ -30,7 +30,8 @@ jobs:
       - run: .venv/bin/python scripts/verify_src_layout.py
       - run: .venv/bin/python -c "import json,pathlib; [json.loads(line) for line in pathlib.Path('docs/issue-branch-ledger.jsonl').read_text(encoding='utf-8').splitlines()]"
       - run: .venv/bin/python scripts/verify_agentpackage_v01.py
-      - run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q tests
+      # #135: one worker per core; --dist loadfile keeps each file on one worker.
+      - run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile tests
 
   # MACOS-CI-01 #1178: the same suite on macOS, where the embedded system
   # WebKit browser, Keychain-backed sessions and launchd paths actually run.
@@ -45,6 +46,14 @@ jobs:
     timeout-minutes: 60
     env:
       AGENTOS_REAL_BROWSER_TESTS: '1'
+      # Every file that reads AGENTOS_REAL_BROWSER_TESTS
+      # (tests/test_governance_contract.py keeps this list complete).
+      REAL_BROWSER_FILES: >-
+        tests/test_browser_limits.py
+        tests/test_browser_timeout_recovery.py
+        tests/test_browser_webkit.py
+        tests/test_cli_route_agency.py
+        tests/test_flow_login.py
     steps:
       - uses: actions/checkout@v7
         with:
@@ -59,4 +68,13 @@ jobs:
           version: '0.11.33'
           enable-cache: true
       - run: uv sync --locked --extra mcp-host --extra schema-validation --group dev --no-python-downloads
-      - run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q tests
+      # #135: everything except the real-WebKit files runs in parallel; those
+      # files open real browser windows, so they run serially afterwards.
+      - name: Suite without real-WebKit files (parallel)
+        run: |
+          ignores=""
+          for f in $REAL_BROWSER_FILES; do ignores="$ignores --ignore=$f"; done
+          PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile $ignores tests
+      - name: Real-WebKit files (serial)
+        if: ${{ !cancelled() }}
+        run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q $REAL_BROWSER_FILES

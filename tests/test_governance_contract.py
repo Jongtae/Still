@@ -166,7 +166,25 @@ def test_required_ci_runs_focused_guards_with_a_separate_full_suite_backstop() -
                 "scripts/verify_assistant_execution.py --check-spec",
                 "scripts/verify_reuse_review.py", "scripts/verify_readme_localization.py --check-git-diff")
     assert not re.search(r"python3 -m pytest\b[^\n]* -q tests/?\s*(?:$|\n)", workflow)
-    _assert_all(full, "workflow_dispatch", "python3 -m pytest -q tests")
+    _assert_all(full, "workflow_dispatch", "python3 -m pytest -q -n auto --dist loadfile tests")
+
+
+def test_the_full_suite_runs_in_parallel_and_real_browser_files_run_serially() -> None:
+    """#135: Linux runs every test in parallel; macOS runs the real-WebKit files serially after the rest."""
+    full = _read(".github/workflows/full-validate.yml")
+    linux, mac = full.split("full-validate-macos:", 1)
+    assert "python3 -m pytest -q -n auto --dist loadfile tests\n" in linux
+    assert "--ignore" not in linux
+    listed = re.search(r"REAL_BROWSER_FILES: >-\n((?:\s+tests/\S+\.py\n)+)", mac)
+    assert listed, "macOS job names its real-WebKit files"
+    files = set(listed.group(1).split())
+    readers = {f"tests/{path.name}" for path in (ROOT / "tests").glob("test_*.py")
+               if re.search(r"environ\.get\(['\"]AGENTOS_REAL_BROWSER_TESTS['\"]\)|REAL_BROWSER_TESTS\b",
+                             path.read_text(encoding="utf-8")) and path.name != Path(__file__).name}
+    assert files == readers
+    assert "python3 -m pytest -q -n auto --dist loadfile $ignores tests" in mac
+    assert "python3 -m pytest -q $REAL_BROWSER_FILES" in mac
+    assert "if: ${{ !cancelled() }}" in mac
 
 
 def test_verification_budget_requires_stable_heads_and_batched_remediation() -> None:

@@ -297,6 +297,29 @@ written.
   (`pip install -e .`) before the next start.
 - Supply-chain trust changes, so independent review is required before merge.
 
+## Parallel test runner — #135
+
+The `dev` group adds `pytest-xdist>=3.8,<4` so `full-validate` runs the suite on
+every core of its runner (`-n auto --dist loadfile`). The serial suite took
+about 21 min on Linux and 26–32 min per macOS runner; a local 8-worker run on
+macOS arm64 took 4 min 15 s with the same outcome. `--dist loadfile` keeps each
+file on one worker. On macOS the files that read `AGENTOS_REAL_BROWSER_TESTS`
+run serially in a separate step, so real browser windows never overlap.
+
+| Package | Locked version | Uploaded | Licence | sdist sha256 |
+| --- | --- | --- | --- | --- |
+| pytest-xdist | 3.8.0 | 2025-07-01 | MIT | `7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1` |
+| execnet | 2.1.2 | 2025-11-12 | MIT | `63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd` |
+
+- Both are maintained by the pytest-dev organisation. The lock was written with
+  `uv==0.11.33` and adds only these two packages.
+- `dev` only: the base install, `mcp-host`, `schema-validation` and the
+  Homebrew formula are unchanged, and no runtime code imports either package.
+- `execnet` starts local worker processes for the test session; it opens no
+  network connection in this configuration.
+- Contributors may run `PYTHONPATH=src .venv/bin/python -m pytest -q -n auto --dist loadfile tests`;
+  the serial command below stays valid.
+
 ## Dependabot discovery and promotion
 
 `.github/dependabot.yml` checks the root `uv` resolution weekly at 09:00 Asia
