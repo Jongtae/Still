@@ -1,3 +1,4 @@
+import ast
 import re
 from pathlib import Path
 
@@ -166,24 +167,34 @@ def test_required_ci_runs_focused_guards_with_a_separate_full_suite_backstop() -
                 "scripts/verify_assistant_execution.py --check-spec",
                 "scripts/verify_reuse_review.py", "scripts/verify_readme_localization.py --check-git-diff")
     assert not re.search(r"python3 -m pytest\b[^\n]* -q tests/?\s*(?:$|\n)", workflow)
-    _assert_all(full, "workflow_dispatch", "python3 -m pytest -q -n auto --dist loadfile tests")
+    _assert_all(full, "workflow_dispatch", "python3 -m pytest -q -n auto --dist worksteal --durations=25 tests")
 
 
-def test_the_full_suite_runs_in_parallel_and_real_browser_files_run_serially() -> None:
-    """#135: Linux runs every test in parallel; macOS runs the real-WebKit files serially after the rest."""
+def test_the_full_suite_runs_in_parallel_and_real_browser_classes_run_serially() -> None:
+    """#135, #156: every test runs in parallel with per-test distribution; on macOS the classes that
+    open real WebKit windows or Keychain items skip there and run serially afterwards."""
     full = _read(".github/workflows/full-validate.yml")
     linux, mac = full.split("full-validate-macos:", 1)
-    assert "python3 -m pytest -q -n auto --dist loadfile tests\n" in linux
-    assert "--ignore" not in linux
-    listed = re.search(r"REAL_BROWSER_FILES: >-\n((?:\s+tests/\S+\.py\n)+)", mac)
-    assert listed, "macOS job names its real-WebKit files"
-    files = set(listed.group(1).split())
-    readers = {f"tests/{path.name}" for path in (ROOT / "tests").glob("test_*.py")
-               if re.search(r"environ\.get\(['\"]AGENTOS_REAL_BROWSER_TESTS['\"]\)|REAL_BROWSER_TESTS\b",
-                             path.read_text(encoding="utf-8")) and path.name != Path(__file__).name}
-    assert files == readers
-    assert "python3 -m pytest -q -n auto --dist loadfile $ignores tests" in mac
-    assert "python3 -m pytest -q $REAL_BROWSER_FILES" in mac
+    assert "python3 -m pytest -q -n auto --dist worksteal --durations=25 tests\n" in linux
+    assert "--ignore" not in full and "loadfile" not in full
+    listed = re.search(r"REAL_BROWSER_TESTS: >-\n((?:\s+tests/\S+\.py::\w+\n)+)", mac)
+    assert listed, "macOS job names its real-WebKit classes"
+    gated = set()
+    for path in sorted((ROOT / "tests").glob("test_*.py")):
+        source = path.read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and any(
+                    re.search(r"_webkit_ready\(\)|AGENTOS_REAL_BROWSER_TESTS|REAL_BROWSER_TESTS\b",
+                              ast.get_source_segment(source, decorator) or "")
+                    for decorator in node.decorator_list):
+                assert isinstance(node, ast.ClassDef), f"{path.name}::{node.name}: gate whole classes"
+                gated.add(f"tests/{path.name}::{node.name}")
+    assert set(listed.group(1).split()) == gated
+    # The parallel step never sets the opt-in, so the gated classes skip there; only the serial step sets it.
+    assert "AGENTOS_REAL_BROWSER_TESTS: '1'" in mac.split("Real-WebKit classes (serial)", 1)[1]
+    assert mac.count("AGENTOS_REAL_BROWSER_TESTS: '1'") == 1
+    assert "python3 -m pytest -q -n auto --dist worksteal --durations=25 tests\n" in mac
+    assert "python3 -m pytest -q --durations=25 $REAL_BROWSER_TESTS" in mac
     assert "if: ${{ !cancelled() }}" in mac
 
 

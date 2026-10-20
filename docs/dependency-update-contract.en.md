@@ -302,9 +302,13 @@ written.
 The `dev` group adds `pytest-xdist>=3.8,<4` so `full-validate` runs the suite on
 every core of its runner (`-n auto --dist loadfile`). The serial suite took
 about 21 min on Linux and 26–32 min per macOS runner; a local 8-worker run on
-macOS arm64 took 4 min 15 s with the same outcome. `--dist loadfile` keeps each
-file on one worker. On macOS the files that read `AGENTOS_REAL_BROWSER_TESTS`
-run serially in a separate step, so real browser windows never overlap.
+macOS arm64 took 4 min 15 s with the same outcome. Since #156 it uses
+`--dist worksteal`: tests are handed out one at a time and an idle worker takes
+queued tests from a busy one, so one large file no longer keeps a single worker
+busy at the end. On macOS the parallel step runs without
+`AGENTOS_REAL_BROWSER_TESTS`, so the test classes gated on it skip there; a
+separate serial step runs only those classes with it set, so real browser
+windows never overlap.
 
 | Package | Locked version | Uploaded | Licence | sdist sha256 |
 | --- | --- | --- | --- | --- |
@@ -317,7 +321,7 @@ run serially in a separate step, so real browser windows never overlap.
   Homebrew formula are unchanged, and no runtime code imports either package.
 - `execnet` starts local worker processes for the test session; it opens no
   network connection in this configuration.
-- Contributors may run `PYTHONPATH=src .venv/bin/python -m pytest -q -n auto --dist loadfile tests`;
+- Contributors may run `PYTHONPATH=src .venv/bin/python -m pytest -q -n auto --dist worksteal tests`;
   the serial command below stays valid.
 
 ## Dependabot discovery and promotion
