@@ -15,6 +15,7 @@ ingress, ``run_one``), ``run_agent``, ``Capabilities`` and
 Calendar is contacted, and none is claimed.
 """
 import unittest
+from unittest import mock
 
 from personal_agent.calendar import CALENDAR_SPEC, CALENDAR_WRITE_SPEC, CalendarConnector
 from personal_agent.calendar_conversation import (CANCELLED, CHANGED_UNDER_US, CREATED, CANCELLED_EVENT, DROPPED_NOTICE,
@@ -234,6 +235,21 @@ class ApprovalTests(CalendarDraftApprovalCase):
         self.assertEqual(self.states(), ['outcome-unknown'])
         self.receive('승인')
         self.assertEqual(len(self.provider.calls), 1, 'an unknown outcome must not be retried')
+
+    def test_a_claimed_reply_never_also_answers_another_approval_prompt(self):
+        # #22 review: with a browser-step prompt or a saved-memory notice also open, the literal
+        # answer the calendar drafts claim settles them only; the other prompt stays pending.
+        self.drafting(('calendar_draft_create', DENTIST))
+        self.receive('치과 일정 잡아줘')
+        with mock.patch.object(self.service, 'step_approval_by_reply', return_value='step approved') as step, \
+                mock.patch.object(self.service, 'withdraw_memory_by_reply', return_value=None) as memory:
+            job = self.job(self.receive('승인'))
+        step.assert_not_called()
+        memory.assert_not_called()
+        self.assertIn(CREATED, job['response'])
+        with mock.patch.object(self.service, 'step_approval_by_reply', return_value=None) as step:
+            self.receive('승인')  # nothing pending now: an ordinary reply, which may answer a prompt
+        step.assert_called_once()
 
     def test_only_a_message_the_owner_typed_answers_the_drafts(self):
         self.drafting(('calendar_draft_create', DENTIST))

@@ -9909,13 +9909,15 @@ class AgentService:
                          else self.settings_draft_answer(job,owner_prompt))
         # #1472: the owner's first typed message after an approval prompt may answer it ("승인", "응",
         # "취소"); a plain answer settles exactly that request and this turn says what happened.
-        step_answer=(None if replayed or owner_command or run.settings_answer or job.get('owner_typed')!=1
+        # #22 review: a reply the pending calendar drafts claim answers them only; it never also
+        # settles another approval prompt (as for settings above), which stays pending.
+        step_answer=(None if replayed or owner_command or run.settings_answer or calendar_claim or job.get('owner_typed')!=1
                      else self.step_approval_by_reply(job,owner_prompt))
         if step_answer:
             self.present_turn(job)
             return self.complete_continuity_turn(job,step_answer)
         # #996: the owner's first typed message after a saved-memory notice may withdraw it.
-        run.memory_note=(None if replayed or owner_command or run.settings_answer or job.get('owner_typed')!=1
+        run.memory_note=(None if replayed or owner_command or run.settings_answer or calendar_claim or job.get('owner_typed')!=1
                      else self.withdraw_memory_by_reply(job,owner_prompt))
         run.calendar_answer=owner_prompt if calendar_claim else None
         # #969 (PERF-START-01): the routing judgment (`classify_intent`, which may
