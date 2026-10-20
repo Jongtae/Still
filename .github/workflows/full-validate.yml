@@ -30,8 +30,10 @@ jobs:
       - run: .venv/bin/python scripts/verify_src_layout.py
       - run: .venv/bin/python -c "import json,pathlib; [json.loads(line) for line in pathlib.Path('docs/issue-branch-ledger.jsonl').read_text(encoding='utf-8').splitlines()]"
       - run: .venv/bin/python scripts/verify_agentpackage_v01.py
-      # #135: one worker per core; --dist loadfile keeps each file on one worker.
-      - run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile tests
+      # #135: one worker per core; --dist loadfile keeps each file on one worker.  #156: on
+      # one runner, --dist worksteal measured no faster (the workers already finish together),
+      # so loadfile stays.  --durations lists the slowest tests for the next look.
+      - run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 tests
 
   # MACOS-CI-01 #1178: the same suite on macOS, where the embedded system
   # WebKit browser, Keychain-backed sessions and launchd paths actually run.
@@ -45,15 +47,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
-      AGENTOS_REAL_BROWSER_TESTS: '1'
-      # Every file that reads AGENTOS_REAL_BROWSER_TESTS
+      # #156: every test class gated on AGENTOS_REAL_BROWSER_TESTS
       # (tests/test_governance_contract.py keeps this list complete).
-      REAL_BROWSER_FILES: >-
-        tests/test_browser_limits.py
-        tests/test_browser_timeout_recovery.py
-        tests/test_browser_webkit.py
-        tests/test_cli_route_agency.py
-        tests/test_flow_login.py
+      REAL_BROWSER_TESTS: >-
+        tests/test_browser_timeout_recovery.py::RealWebKitRecoveryTests
+        tests/test_browser_webkit.py::KeychainIntegrationTests
+        tests/test_browser_webkit.py::WebKitIntegrationTests
+        tests/test_cli_route_agency.py::RealWorkerThroughTheBridge
+        tests/test_flow_login.py::RealWorkerRenderSettle
+        tests/test_flow_login.py::RealWorkerInFlowLogin
     steps:
       - uses: actions/checkout@v7
         with:
@@ -68,13 +70,13 @@ jobs:
           version: '0.11.33'
           enable-cache: true
       - run: uv sync --locked --extra mcp-host --extra schema-validation --group dev --no-python-downloads
-      # #135: everything except the real-WebKit files runs in parallel; those
-      # files open real browser windows, so they run serially afterwards.
-      - name: Suite without real-WebKit files (parallel)
-        run: |
-          ignores=""
-          for f in $REAL_BROWSER_FILES; do ignores="$ignores --ignore=$f"; done
-          PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile $ignores tests
-      - name: Real-WebKit files (serial)
+      # #135, #156: the whole suite in parallel.  AGENTOS_REAL_BROWSER_TESTS is not set
+      # here, so the real-WebKit classes skip; the rest of their files runs with the suite.
+      - name: Suite (parallel; real-WebKit classes skip)
+        run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 tests
+      # Those classes open real browser windows, so they run one at a time afterwards.
+      - name: Real-WebKit classes (serial)
         if: ${{ !cancelled() }}
-        run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q $REAL_BROWSER_FILES
+        env:
+          AGENTOS_REAL_BROWSER_TESTS: '1'
+        run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q --durations=25 $REAL_BROWSER_TESTS

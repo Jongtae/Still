@@ -24,6 +24,29 @@ def _no_automatic_phone_login(monkeypatch):
     monkeypatch.setattr(quickstart_service.AgentService, 'SESSION_KEEPALIVE', False)
 
 
+@pytest.fixture(autouse=True, scope='session')
+def _fixture_servers_skip_the_reverse_lookup():
+    """#156: a fixture HTTP server binds without a reverse DNS lookup of its own address.
+
+    ``http.server.HTTPServer.server_bind`` sets ``server_name`` from
+    ``socket.getfqdn(host)``.  On the macOS CI runners that lookup of
+    127.0.0.1 took about 0.55 s per server (35 s of the real-WebKit step alone,
+    and the suite starts about 280 servers).  No test reads ``server_name``;
+    the bound socket and ``server_port`` are unchanged.
+    """
+    import http.server
+    import socketserver
+    original = http.server.HTTPServer.server_bind
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+    http.server.HTTPServer.server_bind = server_bind
+    yield
+    http.server.HTTPServer.server_bind = original
+
+
 @pytest.fixture(autouse=True)
 def _service_threads_end_before_the_test_cleans_up(request, monkeypatch):
     """#142: a service's background judgment ends before its test removes the data folder.

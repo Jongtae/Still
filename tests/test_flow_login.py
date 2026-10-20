@@ -245,6 +245,9 @@ def close_login_windows(test, drivers, profile):
     #142: ``on_closed`` runs after the window's ``done`` event, so the thread itself is what ends last."""
     for driver in drivers:
         driver.closed = True
+    # #156: a window still starting has no driver in ``drivers`` yet; its own stop flag closes it too.
+    for record in list(profile._login_windows.values()):
+        record['stop'].set()
     for record in list(profile._login_windows.values()):
         record['done'].wait(5)
     thread = profile._login_thread

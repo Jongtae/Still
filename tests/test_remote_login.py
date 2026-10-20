@@ -275,6 +275,10 @@ class RemoteLoginSurface(unittest.TestCase):
             session.finish('closed')
         for driver in self.drivers:
             driver.open = False
+        # #156: a window still starting has no driver in ``self.drivers`` yet; its own stop flag
+        # closes it too (before, cleanup waited out both 5 s bounds and the window outlived the test).
+        for record in list(self.profile._login_windows.values()):
+            record['stop'].set()
         for record in list(self.profile._login_windows.values()):
             record['done'].wait(5)
         thread = self.profile._login_thread

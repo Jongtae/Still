@@ -303,8 +303,11 @@ The `dev` group adds `pytest-xdist>=3.8,<4` so `full-validate` runs the suite on
 every core of its runner (`-n auto --dist loadfile`). The serial suite took
 about 21 min on Linux and 26–32 min per macOS runner; a local 8-worker run on
 macOS arm64 took 4 min 15 s with the same outcome. `--dist loadfile` keeps each
-file on one worker. On macOS the files that read `AGENTOS_REAL_BROWSER_TESTS`
-run serially in a separate step, so real browser windows never overlap.
+file on one worker; #156 measured `--dist worksteal` on the same runner and it
+was no faster, because the workers already finish together. On macOS the
+parallel step runs without `AGENTOS_REAL_BROWSER_TESTS`, so the test classes
+gated on it skip there; a separate serial step runs only those classes with it
+set, so real browser windows never overlap.
 
 | Package | Locked version | Uploaded | Licence | sdist sha256 |
 | --- | --- | --- | --- | --- |
