@@ -429,3 +429,52 @@ class OneEvolvingItemTests(unittest.TestCase):
     finished=[json.loads(detail) for tool,status,detail in events if status=='succeeded' and tool!='model']
     self.assertEqual([(row['host_action'],row['declared_effect']) for row in finished],
                      [('browser_click','mutate'),('browser_open','read'),('browser_open','read')])
+
+
+class EveryMatchTests(unittest.TestCase):
+ """#136: one request about the owner's own records that matches several.
+
+ Evidence class: worker guidance text plus a model-free scripted run with an
+ injected model transport and a fake signed-in browser.  One lookup returns
+ two records that both fit the request; the fixture proves both reach the
+ worker and the outcome judgment unchanged.  It does not prove how a live
+ model words its report.
+ """
+ MATCHES='2 results: [r-1] Sign-up confirmed, 17:58, welcome and how to sign in. [r-2] Sign-up, 18:30, account created, member number 0000.'
+
+ def test_the_worker_guidance_checks_every_match_and_names_no_domain(self):
+  from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+  for phrase in ('Look at every match the lookup returned before answering, not only the first or the most likely one',
+                 'report each with what tells them apart',
+                 'instead of picking one',
+                 'widen it or say so; never imply you found everything'):
+   self.assertIn(phrase,CORE_INSTRUCTIONS)
+  line=CORE_INSTRUCTIONS.split('What the owner asks for from their own records',1)[1].split('\n',1)[0].lower()
+  for domain in ('mail','email','calendar','event','order','file','drive'):
+   self.assertNotIn(domain,line,'the method names no service domain')
+  # #15 still decides whether several matches are one item.
+  self.assertLess(CORE_INSTRUCTIONS.index('What the owner asks for from their own records'),
+                  CORE_INSTRUCTIONS.index('A service can show one item in more than one place'))
+
+ def test_every_returned_match_reaches_the_worker_and_the_judgment(self):
+  import test_agency_loop as loop
+  store=QuickStore(Path(self.enterContext(tempfile.TemporaryDirectory()))/'data')
+  matches=self.MATCHES
+  class Browser(Capabilities):
+   def __init__(self,*args,**kwargs):super().__init__(*args,browser=lambda:object(),**kwargs)
+   def execute(self,name,args):
+    if name=='browser_open':return {'state':'page','url':args['url'],'text':matches}
+    return super().execute(name,args)
+  judged=[]
+  def judge(facts):
+   judged.append(facts);return True
+  script=loop.Script({'tool_calls':[loop.call('q','browser_open',url='https://records.example/search?q=sign-up',effect='read')]},
+                     loop.finish('f','q',summary='two matches'))
+  caps=Browser(store,ModelAdapter(script),loop.CFG,'','job',lambda *event:None,
+               network=loop.Network(),judgments=loop.judgments(judge))
+  run_agent(caps.adapter,loop.CFG,'',[{'role':'user','content':'find the sign-up notice'}],'',caps,caps.record)
+  self.assertIn('Look at every match the lookup returned',script.bodies[0]['messages'][0]['content'])
+  shown={message.get('tool_call_id'):json.loads(message['content']) for message in script.bodies[-1]['messages'] if message['role']=='tool'}
+  self.assertEqual(shown['q']['text'],matches)
+  [facts]=judged
+  for ref in ('[r-1]','[r-2]'):self.assertIn(ref,json.dumps(facts,ensure_ascii=False))
