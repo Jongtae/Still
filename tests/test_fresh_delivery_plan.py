@@ -140,12 +140,11 @@ CHECKS_TRACK_1 = ["CHECKS-FLAKY-01", "CHECKS-SPEED-01"]
 CHECKS_TRACK_2 = ["CHECKS-MEASURE-01"]
 
 
-def test_the_checks_program_is_closed_out_and_selects_nothing():
-    """#157: #142, #156 and the #16 measurement merged; no successor is selected."""
+def test_the_checks_program_is_closed_out_with_its_evidence():
+    """#157: #142, #156 and the #16 measurement merged; it selected no successor."""
     current = plan()
-    assert current["next_goal"]["id"] is None
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "terminal"
-    assert set(invariants.closed_out_programs(current)) == {"BROWSER-REL-01", "QUALITY-CORE-01", "STEADY-01", "CHECKS-01"}
+    assert current["next_goal"]["id"] != "CHECKS-01"
+    assert {"BROWSER-REL-01", "QUALITY-CORE-01", "STEADY-01", "CHECKS-01"} <= set(invariants.closed_out_programs(current))
     invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["CHECKS-01"]
     assert program["ordered_substeps"] == program["completed_substeps"] == CHECKS_TRACK_1 + CHECKS_TRACK_2
@@ -156,6 +155,37 @@ def test_the_checks_program_is_closed_out_and_selects_nothing():
     assert all(len(evidence[name]["merge_commit"]) == 40 for name in evidence)
     assert "#164" in program["closeout"] and "owner decision on #16" in program["closeout"]
     for state in ({}, {"completed": []}, {"active": "CHECKS-01", "status": "running"}):
+        assert DeliveryPlan(PLAN).select(state) is None, state
+
+
+def test_the_owed_reviews_are_resolved_by_the_owner_check_not_claimed_as_independent():
+    """#143, #149: the owner checked the merged behaviour; the record does not call it an independent review."""
+    current = plan()
+    for program, issue in (("QUALITY-CORE-01", 143), ("STEADY-01", 149)):
+        (owed,) = current["programs"][program]["pending_reviews"]
+        assert owed["tracking_issue"] == issue
+        assert owed["resolution"]["date"] == "2026-10-21"
+        assert owed["resolution"]["independent_review"] == "not performed by a non-author"
+
+
+def test_the_owner_activated_browse_audit_program_is_goal_ready_and_heartbeat_paused():
+    """#168: #164 and #167 run in parallel; #167 detects and shows, never blocks."""
+    current = plan()
+    assert current["next_goal"]["id"] == "BROWSE-AUDIT-01"
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    program = current["programs"]["BROWSE-AUDIT-01"]
+    assert program["activated_by"]["issue"] == 168
+    assert program["ordered_substeps"] == ["BROWSE-CLOSE-01", "AUDIT-OUTBOUND-01"]
+    items = {item["id"]: item for item in current["iterations"]}
+    assert [items[name]["issue"] for name in program["ordered_substeps"]] == [164, 167]
+    for name in program["ordered_substeps"]:
+        assert items[name]["depends_on"] == [] and items[name]["milestone"] == "browse-audit"
+        (command,) = items[name]["tests"]
+        targets = command.split("pytest -q ", 1)[1].split()
+        assert targets and all((ROOT / target).exists() for target in targets), name
+    assert "never block" in items["AUDIT-OUTBOUND-01"]["summary"]
+    assert "storing more personal text" in program["non_goals"]
+    for state in ({}, {"completed": []}):
         assert DeliveryPlan(PLAN).select(state) is None, state
 
 
