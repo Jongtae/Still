@@ -209,6 +209,9 @@ class ServiceProvenance(unittest.TestCase):
 
     def test_decisions_are_linked_to_their_work_only(self):
         service = self._service(_Engine())
+        # #142: the two early judgments (#969) run on their own threads and record in whichever
+        # order they finish; in line, the order below is the order they are asked in.
+        service.early_judgment_spawn = lambda target: target()
         service.record_decision({'kind': 'decision', 'purpose': 'outside', 'outcome': 'ok'})
         self.store.enqueue('hello', 'k1')
         real_run = service.execution_adapter.execute
