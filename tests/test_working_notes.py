@@ -324,6 +324,25 @@ class Told(TelegramHarness):
         self.assertEqual(detail['dropped'], [{'note': 'notes', 'reason': om.FORGOTTEN_VALUE}])
         self.assertEqual(om.WorkingNotes(self.store).current()['version'], 1)
 
+    def test_a_notice_lost_in_sending_is_told_again_once(self):
+        job = self.reviewed({'notes': '- 요약은 세 줄로', 'change': '요약 길이', 'blocker': ''})
+        [row] = self.notification(job, WORKING_NOTES_KIND)
+        # A crash while the notice was being sent leaves 'sending'; recover() marks it 'unknown' (#581).
+        self.store.update_notification(row['id'], 'sending')
+        self.store.recover()
+        self.assertEqual(self.notices(job), ['unknown'])
+        self.service._memory_saved_release_sweep = 0
+        self.service.release_memory_saved_notices()
+        self.assertTrue(self.service.deliver_notification())
+        self.assertEqual(self.sends()[-1]['text'], msg('working_notes.saved', change='요약 길이'))
+        [again] = self.notification(job, WORKING_NOTES_KIND)
+        self.assertEqual((again['state'], json.loads(again['fingerprint'])['retells']), ('sent', 1))
+        # Review P1: told again at most once, like a saved-memory notice.
+        self.store.update_notification(again['id'], 'unknown')
+        self.service._memory_saved_release_sweep = 0
+        self.service.release_memory_saved_notices()
+        self.assertEqual(self.notices(job), ['unknown'])
+
     def test_a_secret_never_enters_the_notes_or_the_notice(self):
         self.store.secret('telegram_token', SECRET)
         job = self.reviewed({'notes': f'- 토큰은 {SECRET}', 'change': 'c', 'blocker': ''})

@@ -2349,6 +2349,16 @@ class AgentService:
                 self.store.update_notification(row['id'],'queued',fingerprint=json.dumps(
                     {'items':items,'more':int(binding.get('more') or 0),'retells':retells+1}))
                 LOG.info('memory saved notice told again work=%s kind=%s',row['job_id'],row['kind'])
+            # #19 review P1: a working-notes notice whose send came back unknown is told again on the same
+            # bounded terms; it is sent only while its revision is still current (``working_notes_notice_text``).
+            for row in self.store.telegram.notifications_in_state((WORKING_NOTES_KIND,),'unknown'):
+                try:bound=json.loads(row.get('fingerprint') or '')
+                except (TypeError,ValueError):continue
+                if not isinstance(bound,dict):continue
+                retells=int(bound.get('retells') or 0)
+                if retells>=self.MEMORY_SAVED_RETELLS or now-float(row['created'])>MEMORY_SAVED_TTL_SECONDS:continue
+                self.store.update_notification(row['id'],'queued',fingerprint=json.dumps({**bound,'retells':retells+1}))
+                LOG.info('working notes notice told again work=%s',row['job_id'])
 
     def queue_upkeep_memory_saved(self, work_id):
         """After #805 upkeep saved facts: they join the Work's one notice, or get their own (#918).
