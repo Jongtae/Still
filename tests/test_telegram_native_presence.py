@@ -1132,18 +1132,25 @@ class StartLatencyTests(NativePresenceTestCase):
 
     JUDGED = ('conversation-followup', 'capability-need')
 
-    def install_judgments(self, choices, delay=0.0, block=None):
+    def install_judgments(self, choices, block=None):
         """A fixture engine that logs ``(purpose, start, end, linked Work, facts)`` per judgment.
 
-        ``delay`` is a fake model round trip for the two message-only judgments;
-        ``block`` is an Event the turn-reaction judgment waits for.
+        ``self.meet``, when set, is a Barrier the two message-only judgments each wait at
+        before answering: they pass it only while both are in flight (``self.met`` lists
+        the ones that did); ``block`` is an Event the turn-reaction judgment waits for.
         """
         self.judgment_log = []
+        self.meet, self.met = None, []
 
         def choose(context, candidates, question):
             start = time.monotonic()
-            if context.purpose in self.JUDGED and delay:
-                time.sleep(delay)
+            meet = self.meet
+            if context.purpose in self.JUDGED and meet is not None:
+                try:
+                    meet.wait(10)
+                    self.met.append(context.purpose)
+                except threading.BrokenBarrierError:
+                    pass
             if context.purpose == 'turn-reaction' and block is not None:
                 block.wait(5)
             self.judgment_log.append((context.purpose, start, time.monotonic(),
@@ -1246,35 +1253,36 @@ class StartLatencyTests(NativePresenceTestCase):
 
     # -- message-only judgments overlap ----------------------------------------
 
-    def followup_turn(self, delay=0.0):
+    def followup_turn(self, meet=None):
         """A focused Work, then a short follow-up: both message-only judgments are asked."""
         self.connect_model()
-        self.install_judgments({'conversation-followup': FOLLOWUP_REFERENCE, 'closing-reaction': '🎉'}, delay=delay)
+        self.install_judgments({'conversation-followup': FOLLOWUP_REFERENCE, 'closing-reaction': '🎉'})
         self.turn('오늘 저녁 메뉴 추천해줘')
         self.calls.clear()
         self.judgment_log.clear()
-        started = time.monotonic()
+        self.meet = meet   # the follow-up asks both judgments; the first turn asks one alone
         job, _ = self.turn('아니 국물 말고')
-        return job, time.monotonic() - started
+        return job
 
     def test_followup_and_capability_need_overlap(self):
-        delay = 0.3
-        job, elapsed = self.followup_turn(delay=delay)
+        # #142: the overlap is shown by an event, not by wall-clock bounds a loaded runner can miss: each
+        # judgment waits at a barrier for the other, which only two judgments in flight at once can pass.
+        # Asked one after the other, the first would wait there alone until the barrier gave up.
+        job = self.followup_turn(meet=threading.Barrier(2))
         self.assertEqual(job['status'], 'succeeded')
         self.assertEqual(job['relation_kind'], FOLLOWUP_REFERENCE)
         timed = {entry[0]: entry for entry in self.judgment_log if entry[0] in self.JUDGED}
         self.assertEqual(set(timed), set(self.JUDGED), 'both judgments are still asked, once each')
+        self.assertEqual(sorted(self.met), sorted(self.JUDGED), 'each judgment was in flight while the other was')
         starts = [entry[1] for entry in timed.values()]
         ends = [entry[2] for entry in timed.values()]
         self.assertLess(max(starts), min(ends), 'the second judgment starts before the first ends')
-        self.assertLess(max(ends) - min(starts), 2 * delay * 0.9, 'their window is about the longer one, not the sum')
-        self.assertLess(elapsed, 2 * delay + 0.5)
         self.assertTrue(all(entry[3] == job['id'] for entry in timed.values()),
                         'each judgment is linked to this Work on whichever thread asks it (#826)')
 
     def test_overlapped_results_match_the_sequential_path(self):
         def observe():
-            job, _ = self.followup_turn()
+            job = self.followup_turn()
             calls = sorted((entry[0], entry[3] == job['id'], json.dumps(entry[4], sort_keys=True, ensure_ascii=False))
                            for entry in self.judgment_log)
             return (calls, job['status'], job['relation_kind'], job['related_job_id'] is not None, job['response'],

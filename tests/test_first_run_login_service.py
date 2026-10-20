@@ -4,6 +4,7 @@ import io
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -174,6 +175,15 @@ class StopServing(Exception):
     pass
 
 
+def join_still_profile(test):
+    """#142: ``main()`` gives the bot Still's profile on its own ``still-profile`` thread, which reads the
+    data folder; it ends before the test removes that folder ("Directory not empty" under a loaded run)."""
+    for thread in threading.enumerate():
+        if thread.name == 'still-profile':
+            thread.join(30)
+            test.assertFalse(thread.is_alive(), 'the still-profile thread finished')
+
+
 class StartHandOverTest(unittest.TestCase):
     """`agentos start` itself: the port and data-folder lock go to the service, or stay here."""
 
@@ -218,6 +228,7 @@ class StartHandOverTest(unittest.TestCase):
                 code = quickstart.main()
             except StopServing:
                 code = 'serving'
+        join_still_profile(self)
         return code, servers, started, Path(temp.name)
 
     @staticmethod

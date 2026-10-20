@@ -573,6 +573,22 @@ class Redaction(unittest.TestCase):
             thread.join()
         self.assertEqual(len(self.store.config('decision_audit')), 50)
 
+    def test_r9_a_store_opener_sets_up_the_schema_in_one_transaction(self):
+        # #142: the appends above went missing when the second opener's schema
+        # setup interleaved with the first ("trigger ... already exists") and
+        # that writer never started.  One transaction for the whole setup
+        # serializes openers: a setup that stops midway leaves nothing behind.
+        import sqlite3
+        fresh = Path(self.path).parent / 'fresh'
+        with mock.patch('personal_agent.quickstart_store.owner_model_migrate', side_effect=RuntimeError('stop')):
+            with self.assertRaisesRegex(RuntimeError, 'stop'):
+                QuickStore(fresh)
+        db = sqlite3.connect(fresh / 'private' / 'quickstart.db')
+        self.addCleanup(db.close)
+        self.assertEqual(db.execute("SELECT name FROM sqlite_master WHERE name IN "
+                                    "('config', 'preparations', 'telegram_photo_terminal_cleanup')").fetchall(), [])
+        self.assertEqual(len(QuickStore(fresh).config('decision_audit', [])), 0)
+
     # -- explicit /search: a convenience, not a requirement
     def test_the_typed_search_string_is_sent_as_typed_every_time(self):
         typed = '이혼소송 강남 변호사 "상담 비용"'

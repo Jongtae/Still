@@ -27,6 +27,8 @@ from personal_agent import quickstart, service_control
 from personal_agent.quickstart_service import AgentService
 from personal_agent.service_control import CommandResult, LABEL
 
+from test_first_run_login_service import join_still_profile
+
 
 ACTIONS = ("install", "upgrade", "start", "stop", "restart", "status", "uninstall")
 
@@ -315,6 +317,7 @@ class ForegroundRecoveryAddressTests(unittest.TestCase):
                  patch('sys.stdout',io.StringIO()):
                 with self.assertRaises(StopServing):
                     quickstart.main()
+            join_still_profile(self)
 
             self.assertEqual(len(services),1)
             # #893: the Calendar callback is served by this listener, so its

@@ -239,6 +239,20 @@ def memory_jar(directory):
     return CookieJar(Path(directory) / JAR_NAME, MemoryKey())
 
 
+def close_login_windows(test, drivers, profile):
+    """Close every window and wait for its thread: its final save and ``on_opened``/``on_closed`` write under
+    the data directory (``browser_step_secret``, sign-in records), which the temporary directory removes next.
+    #142: ``on_closed`` runs after the window's ``done`` event, so the thread itself is what ends last."""
+    for driver in drivers:
+        driver.closed = True
+    for record in list(profile._login_windows.values()):
+        record['done'].wait(5)
+    thread = profile._login_thread
+    if thread is not None:
+        thread.join(30)
+        test.assertFalse(thread.is_alive(), 'the login window thread finished')
+
+
 def wait_until(condition, seconds=5.0):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
@@ -357,15 +371,7 @@ class LoginHarness(unittest.TestCase):
         self.addCleanup(self.close_windows)
 
     def close_windows(self):
-        """Close every window and wait for its thread: its final save and ``on_opened``/``on_closed`` write under
-        the data directory (``browser_step_secret``, sign-in records), which the temporary directory removes next."""
-        for driver in self.drivers:
-            driver.closed = True
-        for record in list(self.profile._login_windows.values()):
-            record['done'].wait(5)
-        thread = self.profile._login_thread
-        if thread is not None:
-            thread.join(5)
+        close_login_windows(self, self.drivers, self.profile)
 
     def receive(self, text):
         self.update_id += 1
@@ -418,15 +424,17 @@ class LoginHarness(unittest.TestCase):
         """One work-loop pass, then the window's own thread settling the login (nothing waits for it)."""
         self.service.process_browser_logins(now=now)
         self.assertTrue(wait_until(lambda: self.state(job_id) not in ('offered', 'closing', 'resuming')), self.state(job_id))
-        self.assertTrue(wait_until(lambda: self.notice_done(job_id)), 'the window thread finished telling the owner')
+        self.window_thread_done()
         return self.state(job_id)
 
-    def notice_done(self, job_id):
-        """The settle's owner message is out: the login prompt left 'sent'/'queued' (edited or cancelled)."""
-        with self.store.db() as db:
-            rows = db.execute("SELECT state FROM telegram_notifications WHERE job_id=? AND kind='browser_login_needed'",
-                              (job_id,)).fetchall()
-        return all(row['state'] not in ('sent', 'queued') for row in rows)
+    def window_thread_done(self):
+        """The window's own thread has finished: its ``on_closed`` settle is the last thing it runs, and that
+        settle edits or cancels the owner's prompt after it records the outcome.  #142: waiting for the
+        prompt's recorded state alone let a test read the edit before the thread sent it."""
+        thread = self.profile._login_thread
+        if thread is not None:
+            thread.join(30)
+            self.assertFalse(thread.is_alive(), 'the window thread finished telling the owner')
 
     def owner_closes(self, job_id, logged_in=True):
         """The owner (after signing in, unless ``logged_in`` is False) closes the login window (the worker's close event)."""
@@ -434,7 +442,7 @@ class LoginHarness(unittest.TestCase):
             self.window().login()
         self.window().closed = True
         self.assertTrue(wait_until(lambda: self.state(job_id) not in ('offered', 'closing', 'resuming')), self.state(job_id))
-        self.assertTrue(wait_until(lambda: self.notice_done(job_id)), 'the window thread finished telling the owner')
+        self.window_thread_done()
 
     def failed_errors(self, job_id):
         with self.store.db() as db:
@@ -1408,7 +1416,7 @@ class LoginThroughTheCliBridge(_BridgeHarness):
     def test_a_cli_turn_that_meets_a_login_page_is_partial_and_resumes_once(self):
         replies = self.wire(_call(2, 'browser_open', url=ORIGIN + '/login', effect='navigate'),
                             text='계정 페이지 확인해줘', telegram=True)
-        self.addCleanup(lambda: [setattr(driver, 'closed', True) for driver in self.drivers])
+        self.addCleanup(close_login_windows, self, self.drivers, self.profile)
         result = _value(replies[2])
         self.assertEqual((result['state'], result['next_step']), ('login_required', BROWSER_LOGIN_PAGE_OFFERED_TEXT))
         # #1269: the sign-in page's mediated view comes along, so another account's button is visible.
@@ -1439,7 +1447,7 @@ class LoginThroughTheCliBridge(_BridgeHarness):
     def test_a_cli_sign_in_request_lists_the_tool_and_offers_the_login(self):
         """#953: ``mcp__agentos__browser_sign_in`` is listed by the bridge and relayed to the service's in-flow login."""
         replies = self.wire(LIST, _call(3, 'browser_sign_in', url=ORIGIN + '/account'), text='계정 페이지 확인해줘', telegram=True)
-        self.addCleanup(lambda: [setattr(driver, 'closed', True) for driver in self.drivers])
+        self.addCleanup(close_login_windows, self, self.drivers, self.profile)
         self.assertIn('browser_sign_in', [tool['name'] for tool in replies[2]['result']['tools']])
         result = _value(replies[3])
         self.assertEqual((result['state'], result['next_step']), ('login_required', BROWSER_LOGIN_OFFERED_TEXT))
