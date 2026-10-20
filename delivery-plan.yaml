@@ -333,6 +333,60 @@
       ],
       "summary": "One bounded owner-level working-notes document in the procedural version store: full revision or no change from self-review, bounds, secret exclusion, versioned exact undo, migration of profile.working.* rows with receipts; semantic facts stay in Memory.",
       "depends_on": []
+    },
+    {
+      "id": "CHECKS-01",
+      "issue": 157,
+      "milestone": "checks",
+      "kind": "implementation",
+      "activation_status": "owner-activated-goal-ready",
+      "contract": "goal-execution-contract.en.md",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_fresh_delivery_plan.py"
+      ],
+      "summary": "Reliable and faster checks: fix the intermittent parallel-suite failures (#142), then shorten full-validate (#156); in parallel, measure what Still's completion checks cost (#16 slices 2-3, measurement only).",
+      "depends_on": []
+    },
+    {
+      "id": "CHECKS-FLAKY-01",
+      "program": "CHECKS-01",
+      "issue": 142,
+      "milestone": "checks",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_flow_login.py tests/test_public_private_composition.py tests/test_presence_eval_matrix.py tests/test_first_run_login_service.py tests/test_telegram_native_presence.py"
+      ],
+      "summary": "Fix the intermittent parallel-suite failures at their cause: wait on the event or process a test depends on, never add sleeps or retries; if the two-process audit append loses records, fix the writer and keep the test.",
+      "depends_on": []
+    },
+    {
+      "id": "CHECKS-SPEED-01",
+      "program": "CHECKS-01",
+      "issue": 156,
+      "milestone": "checks",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_governance_contract.py tests/test_dependency_update_contract.py"
+      ],
+      "summary": "Shorten full-validate: per-test distribution where safe and a faster real-WebKit step, with before/after CI timings on the same commit; same test count, real browser windows never overlap.",
+      "depends_on": [
+        "CHECKS-FLAKY-01"
+      ]
+    },
+    {
+      "id": "CHECKS-MEASURE-01",
+      "program": "CHECKS-01",
+      "issue": 16,
+      "milestone": "checks",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_agent_runtime.py tests/test_concurrent_reads.py tests/test_recovered_steps.py"
+      ],
+      "summary": "Measurement only (#16 slices 2-3): model calls and stages added by the completion turn, goal judgment and checked_direct per request shape, with fixture transports, reported on #16; no behavior change.",
+      "depends_on": []
     }
   ],
   "milestones": {
@@ -344,6 +398,9 @@
     },
     "steady-use": {
       "title": "Steady everyday use (STEADY-01)"
+    },
+    "checks": {
+      "title": "Reliable and faster checks (CHECKS-01)"
     }
   },
   "programs": {
@@ -456,12 +513,32 @@
           "reason": "The change touches the declared credential-protection triggers (credential-store call order, local encryption-key handling, what a renewal failure deletes); the implementing session judged it not material and merged without the human non-author review. The review stays owed on #149 and is not waived by this closeout."
         }
       ]
+    },
+    "CHECKS-01": {
+      "status": "owner-activated-goal-ready",
+      "issue": 157,
+      "activated_by": {
+        "issue": 157,
+        "date": "2026-10-21",
+        "reason": "After STEADY-01 closed out, the owner accepted the recommended next program (#142 + test speed + #16 measurement): \"계속 진행\"."
+      },
+      "ordered_substeps": [
+        "CHECKS-FLAKY-01",
+        "CHECKS-SPEED-01",
+        "CHECKS-MEASURE-01"
+      ],
+      "active_substeps": [],
+      "completed_substeps": {},
+      "allowed_authority": "Track 1: test files and fixtures, the code under test when a defect is confirmed (for the audit append, the existing writer), .github/workflows/full-validate.yml, pytest settings in pyproject.toml, and docs describing them. Track 2: tests, a model-free measurement test or script, and the report on #16; no agent_runtime behavior change. One issue-linked PR per substep, merged after validate and full-validate pass on the final head (not cancelled, not still running) and the automatic Codex review is handled; then a closeout PR.",
+      "non_goals": "Live models, accounts, external sites, credentials, releases, deployment and the delivery heartbeat; weakening an assertion, adding sleeps or retries to pass a test; changing the #16 completion guards (an owner decision after the measurement); #16 slice 4 prompt caching; other backlog items.",
+      "independent_review": "Not planned. Triggered if a fix changes audit/Evidence durability semantics beyond restoring the guarantee the test asserts, or any authority boundary.",
+      "completion_rule": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests, its declared focused tests passing, and required validate plus full-validate passing on the final head (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision."
     }
   },
   "completion_claims": {},
   "next_goal": {
-    "id": null,
-    "status": "complete",
-    "action": "STEADY-01 closed out (#132). No goal is selected; the owner activates the next one explicitly, for example from the curated backlog (#44). The delivery heartbeat stays paused."
+    "id": "CHECKS-01",
+    "status": "owner-activated-goal-ready",
+    "action": "Owner direction 2026-10-21 (#157) selects CHECKS-01: track 1 #142 -> #156, track 2 #16 slices 2-3 measurement only, session-driven at the owner's request. Scoped PRs and normal merge after required checks are authorized; live models, accounts, releases and deployment are not. The delivery heartbeat stays paused, and no successor is selected on completion."
   }
 }
