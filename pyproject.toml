@@ -47,7 +47,7 @@ schema-validation = ["jsonschema[format]>=4.23"]
 mcp-host = ["mcp==2.3.0", "claude-agent-sdk==0.2.168"]
 
 [dependency-groups]
-dev = ["pytest>=9.1,<10"]
+dev = ["pytest>=9.1,<10", "pytest-xdist>=3.8,<4"]
 
 [project.scripts]
 agentos = "personal_agent.quickstart:main"
