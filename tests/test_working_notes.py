@@ -337,6 +337,16 @@ class Told(TelegramHarness):
         self.assertIn('working_notes v1', self.service.owner_profile_snapshot())
         self.assertNotIn('profile.working.summary', self.service.owner_profile_snapshot())
 
+    def test_the_information_use_audit_names_the_notes_sent_never_their_points(self):
+        from personal_agent import information_use
+        self.store.save_memory('profile.place.home', '분당', MEMORY_OWNER, work_id='w0')
+        self.reviewed({'notes': '- 요약은: 세 줄로\n- 링크는 맨 끝에', 'change': '요약 길이', 'blocker': ''})
+        ref = om.WorkingNotes(self.store).current()['ref']
+        refs = self.service.owner_information_refs({'profile': self.service.owner_profile_snapshot()})
+        self.assertEqual(refs['profile_keys'], ['profile.place.home', f'working_notes v1 ({ref})'],
+                         'review P1: the notes are recorded as used, as one reference')
+        self.assertNotIn('세 줄', json.dumps(refs, ensure_ascii=False))
+
 
 if __name__ == '__main__':
     unittest.main()
