@@ -386,7 +386,17 @@
           "decision": "Option A for worker calendar drafts (see summary of CORE-CALENDAR-01); not B (AI-judged approval wording) or C (approve buttons). Track D order becomes #21 -> #22 -> #16 because #21 is behavior-preserving and both change quickstart_service.py."
         }
       ],
-      "closeout": "Closed out 2026-10-20 (#115). All seven ordered substeps merged on their own PRs with issue acceptance mapped to unit and model-free fixture tests, required validate and the full suite (full-validate) on the final head; evidence is fixture/unit only, with no live model, account or calendar observation. Track C: #25 (PR #117), #24 (PRs #124, #127), #15 (PR #128), #32 (PR #131). Track D: #21 slices 1-3 (PRs #119, #133, #134), #22 (PR #139), #16 slice 1 (PR #140). #22: owner decision 2026-10-19 chose option A and required a human non-author review; the owner merged PR #139 on 2026-10-20 without that review. Process gaps recorded: #124 and #119 merged before their full-validate finished; #131 and #139 had final fixes Codex did not re-review. Supporting fixes outside the program: #130 (SDK pin check, #129/#122) and #137 (parallel full suite, #135). Left open: #21 slice 4, #16 slices 2-4. No successor is selected by this closeout; the delivery heartbeat stayed paused throughout."
+      "closeout": "Closed out 2026-10-20 (#115). All seven ordered substeps merged on their own PRs with issue acceptance mapped to unit and model-free fixture tests, required validate and the full suite (full-validate) on the final head; evidence is fixture/unit only, with no live model, account or calendar observation. Track C: #25 (PR #117), #24 (PRs #124, #127), #15 (PR #128), #32 (PR #131). Track D: #21 slices 1-3 (PRs #119, #133, #134), #22 (PR #139), #16 slice 1 (PR #140). #22: owner decision 2026-10-19 chose option A and required a human non-author review; the owner merged PR #139 on 2026-10-20 without that review; the review stays owed on #143 (pending_reviews) and is not waived by this closeout. Process gaps recorded: #124 and #119 merged before their full-validate finished; #131 and #139 had final fixes Codex did not re-review. Supporting fixes outside the program: #130 (SDK pin check, #129/#122) and #137 (parallel full suite, #135). Left open: #21 slice 4, #16 slices 2-4. No successor is selected by this closeout; the delivery heartbeat stayed paused throughout.",
+      "pending_reviews": [
+        {
+          "substep": "CORE-CALENDAR-01",
+          "issue": 22,
+          "pull_request": 139,
+          "merge_commit": "047fe1b0a4618fc83942c47454d71f3f327944f6",
+          "tracking_issue": 143,
+          "reason": "Consequential-action approval semantics changed; the human non-author review required by the 2026-10-19 decision did not happen before the owner merged. It stays owed on #143 and is not waived by this closeout."
+        }
+      ]
     },
     "STEADY-01": {
       "status": "owner-activated-goal-ready",

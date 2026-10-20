@@ -95,6 +95,11 @@ def test_the_quality_program_is_closed_out_with_its_evidence():
     assert all(len(evidence[name]["merge_commit"]) == 40 for name in evidence)
     # The record says what was not done rather than implying it.
     assert "without that review" in program["closeout"]
+    # #143: closing the program does not waive the owed review of the merged calendar change.
+    (owed,) = program["pending_reviews"]
+    assert (owed["substep"], owed["pull_request"], owed["tracking_issue"]) == ("CORE-CALENDAR-01", 139, 143)
+    assert owed["merge_commit"] == evidence["CORE-CALENDAR-01"]["merge_commit"]
+    assert "#143" in program["closeout"] and "not waived" in program["closeout"]
     assert "#21 slice 4" in program["closeout"] and "#16 slices 2-4" in program["closeout"]
     for state in ({}, {"completed": []}, {"active": "QUALITY-CORE-01", "status": "running"}):
         assert DeliveryPlan(PLAN).select(state) is None, state
