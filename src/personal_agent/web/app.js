@@ -413,7 +413,7 @@ if(bootstrap)history.replaceState(null,'',location.pathname+location.search);
 const OFFLINE_MESSAGE='Still에 연결할 수 없습니다. 이 컴퓨터에서 Still이 실행 중인지 확인하세요. 화면은 자동으로 다시 확인합니다.';
 async function api(path,body,method){
  let response;
- try{response=await fetch(path,{method:method||(body===undefined?'GET':'POST'),headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});}
+ try{response=await fetch(path,{method:method||(body===undefined?'GET':'POST'),headers:body===undefined?{'X-Still-Language':currentLanguage}:{'Content-Type':'application/json','X-Still-Language':currentLanguage},body:body===undefined?undefined:JSON.stringify(body)});}
  catch(_error){const offline=new Error(t(OFFLINE_MESSAGE));offline.offline=true;throw offline;}
  let data={};try{data=await response.json();}catch(_error){data={};}
  if(!response.ok){const failure=new Error(data.error||t('요청을 처리할 수 없습니다. 잠시 후 다시 시도하세요.'));if(typeof data.reason==='string')failure.reason=data.reason;throw failure;}

@@ -114,19 +114,18 @@ MAX_BODY = 512 * 1024
 PUSH_TIMEOUT = 20
 #: How often the owner's service retries a pending push or revocation.
 RETRY_SECONDS = 30
-PAYMENT_REFUSED_TEXT = '결제는 계정 주인이 해 주세요. 공유받은 로그인으로는 결제 단계를 진행하지 않습니다.'
+PAYMENT_REFUSED_TEXT = msg('family_share.payment_refused')
 #: #940: a received site never gets a login window on this instance (explicit, in-flow or from the phone, #939).
-LOGIN_REFUSED_TEXT = '이 사이트는 공유받은 로그인이라 여기서 다시 로그인할 수 없어요'
+LOGIN_REFUSED_TEXT = msg('family_share.login_refused')
 NO_SESSION_TEXT = ('{site}에 저장된 내 로그인 세션이 없어 공유하지 않았어요. 먼저 로그인 창에서 그 사이트에 로그인해 주세요.'
                    '{stored}')
-NOT_INSTALLED_TEXT = "'{instance}' 비서가 이 Mac에 설치되어 있지 않아요."
-NOT_YOURS_TEXT = '{site} 로그인은 계정 주인에게 받은 것이라 다른 비서에게 공유할 수 없어요. 아무것도 바꾸지 않았어요.'
-SELF_TEXT = '이 비서 자신에게는 공유할 수 없어요. 아무것도 바꾸지 않았어요.'
+NOT_INSTALLED_TEXT = msg('family_share.not_installed')
+NOT_YOURS_TEXT = msg('family_share.not_yours')
+SELF_TEXT = msg('family_share.not_to_self')
 #: #966 review P1-1: the receiving instance already holds its own session for the site.
 RECEIVER_SIGNED_IN = 'receiver_signed_in'
-RECEIVER_SIGNED_IN_TEXT = '이 비서는 그 사이트에 자기 계정으로 이미 로그인되어 있어 공유받지 않았어요.'
-RECEIVER_SIGNED_IN_RECEIPT = ("'{label}' 비서는 {site}에 이미 자기 계정으로 로그인되어 있어 공유하지 않았어요. 그 비서의 로그인은 그대로예요. "
-                              '그 비서가 그 사이트에서 로그아웃하면 다시 공유할 수 있어요.')
+RECEIVER_SIGNED_IN_TEXT = msg('family_share.receiver_signed_in')
+RECEIVER_SIGNED_IN_RECEIPT = msg('family_share.receiver_signed_in_receipt')
 #: Refusals the receiver decided; retried only when the giver's rows change or at start, not every tick.
 REFUSALS = frozenset({RECEIVER_SIGNED_IN})
 #: #957: the owner's default service as a share target.  ``@`` has never been allowed in an instance name
@@ -152,7 +151,7 @@ def store_lock(store):
     key = str(getattr(store, 'root', id(store)))
     with _LOCKS_GUARD:
         return _LOCKS.setdefault(key, threading.RLock())
-JAR_UNREADABLE_TEXT = '저장된 로그인 세션을 읽지 못해 공유하지 않았어요. 설정의 브라우저 로그인 세션 상태를 확인해 주세요.'
+JAR_UNREADABLE_TEXT = msg('family_share.sessions_unreadable')
 
 
 class Refused(ValueError):
@@ -174,10 +173,10 @@ def normalize_site(value):
         text = urlsplit('https://' + text).hostname or ''
     text = text.strip().strip('.').lower()
     if not text or any(ch.isspace() for ch in text) or '|' in text:
-        raise ValueError('공유할 사이트 주소를 주세요(예: example.com). 아무것도 바꾸지 않았어요.')
+        raise ValueError(msg('family_share.site_needed'))
     site = registrable_domain(text)
     if not site or '.' not in site:
-        raise ValueError('공유할 사이트 주소를 주세요(예: example.com). 아무것도 바꾸지 않았어요.')
+        raise ValueError(msg('family_share.site_needed'))
     return site
 
 
@@ -306,7 +305,7 @@ def resolve_instance(value, rows):
     labels = names(rows)
     wanted = ' '.join(str(value or '').split()).lower()
     if not wanted:
-        raise ValueError('어느 비서인지 이름을 주세요. 아무것도 바꾸지 않았어요.')
+        raise ValueError(msg('family_share.assistant_name_needed'))
     # Review P2-1: an instance id is exact and wins; a display name (chosen by whoever made that bot) must
     # name exactly one instance, or the candidates are listed with their ids.
     for name in labels:

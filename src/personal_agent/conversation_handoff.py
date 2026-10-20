@@ -37,7 +37,7 @@ TELEGRAM_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 #: transport failure, and the waits between them (seconds).
 TELEGRAM_DOWNLOAD_ATTEMPTS = 3
 TELEGRAM_DOWNLOAD_BACKOFF = (1, 2)
-TELEGRAM_FAILURE_TEXT = 'Telegram 요청이 실패했습니다. 봇 설정을 확인하세요.'
+TELEGRAM_FAILURE_TEXT = msg('conversation_handoff.telegram_request_failed')
 #: ``stopped_message_generation`` carries the owner's Stop on a draft (#581).
 # #626: edited_message carries live-location updates and owner text edits;
 # an edit is recorded as a source revision, never replayed as a request.
@@ -64,7 +64,7 @@ TELEGRAM_CONNECT_TIMEOUT = 5
 #: delivery attempt (seconds); doubled after each failure up to the maximum.
 TELEGRAM_UNSENT_BACKOFF_FIRST = 15
 TELEGRAM_UNSENT_BACKOFF_MAX = 300
-TELEGRAM_UNREACHABLE_TEXT = '연결할 수 없거나 응답 시간이 초과되었습니다. 서버와 네트워크를 확인하세요.'
+TELEGRAM_UNREACHABLE_TEXT = msg('providers.unreachable')
 
 
 class TelegramRejected(ProviderError):
@@ -204,14 +204,14 @@ def _telegram_open(url, data, headers, timeout):
                 # the body's own ``error_code`` is not trusted over it.
                 return {'ok': False, 'error_code': status,
                         'description': str(envelope.get('description', ''))[:512]}
-        raise ProviderError(f'연결 대상이 HTTP {status} 오류를 반환했습니다. 주소·모델·인증 설정을 확인하세요.',
+        raise ProviderError(msg('providers.http_error', status=status),
                             status=status)
     if len(raw) > 2_000_000:
-        raise ProviderError('응답이 너무 큽니다. 요청 범위를 줄여 주세요.')
+        raise ProviderError(msg('providers.response_too_large'))
     try:
         return _json.loads(raw)
     except (ValueError, TypeError):
-        raise ProviderError('연결 대상이 올바른 JSON 응답을 반환하지 않았습니다.') from None
+        raise ProviderError(msg('providers.invalid_json')) from None
 
 
 def telegram_request_file(url, timeout=TELEGRAM_TIMEOUT, max_bytes=TELEGRAM_MAX_DOWNLOAD_BYTES):
@@ -220,12 +220,12 @@ def telegram_request_file(url, timeout=TELEGRAM_TIMEOUT, max_bytes=TELEGRAM_MAX_
         status, raw = _telegram_exchange('GET', url, timeout, max_bytes,
                                          headers={'Accept': 'image/jpeg,image/png,image/webp'})
     except _Unreached as exc:
-        raise ProviderError('Telegram 사진을 내려받지 못했습니다.',
+        raise ProviderError(msg('conversation_handoff.telegram_photo_download_failed'),
                             status='timeout' if exc.timed_out else 'unreachable') from None
     if not 200 <= status < 300:
-        raise ProviderError('Telegram 사진을 내려받지 못했습니다.', status=status)
+        raise ProviderError(msg('conversation_handoff.telegram_photo_download_failed'), status=status)
     if len(raw) > max_bytes:
-        raise ProviderError('Telegram 사진이 내려받기 크기 제한을 넘었습니다.', status='too_large')
+        raise ProviderError(msg('conversation_handoff.telegram_photo_too_large'), status='too_large')
     return raw
 
 
@@ -377,25 +377,25 @@ class TelegramChannel:
     def download_photo(self, file_id, max_bytes=TELEGRAM_MAX_DOWNLOAD_BYTES):
         """Download a Telegram photo via getFile, returning bounded bytes and MIME type."""
         if not isinstance(file_id, str) or not file_id or len(file_id) > 512:
-            raise ProviderError('Telegram 사진 식별자가 올바르지 않습니다.')
+            raise ProviderError(msg('conversation_handoff.telegram_photo_id_invalid'))
         if not isinstance(max_bytes,int) or isinstance(max_bytes,bool) or not 1<=max_bytes<=TELEGRAM_MAX_DOWNLOAD_BYTES:
-            raise ProviderError('Telegram 사진 다운로드 한도를 확인하세요.')
+            raise ProviderError(msg('conversation_handoff.telegram_photo_limit'))
         result = self._retried(lambda: self.call('getFile', {'file_id': file_id}))
         path = result.get('file_path') if isinstance(result, dict) else None
         size = result.get('file_size') if isinstance(result, dict) else None
         if isinstance(size, int) and not isinstance(size, bool) and size > max_bytes:
-            raise ProviderError('Telegram 사진이 내려받기 크기 제한을 넘었습니다.')
+            raise ProviderError(msg('conversation_handoff.telegram_photo_too_large'))
         if not isinstance(path, str) or not path or len(path) > 1024 or path.startswith('/'):
-            raise ProviderError('Telegram 사진 경로를 확인할 수 없습니다.')
+            raise ProviderError(msg('conversation_handoff.telegram_photo_path_unknown'))
         pieces = path.split('/')
         if any(piece in ('', '.', '..') for piece in pieces):
-            raise ProviderError('Telegram 사진 경로를 확인할 수 없습니다.')
+            raise ProviderError(msg('conversation_handoff.telegram_photo_path_unknown'))
         token = self._token_source()
         url = f'{TELEGRAM_FILE_ROOT}/bot{token}/' + '/'.join(_quote(piece, safe='') for piece in pieces)
         data = self._retried(lambda: self._file_transport_source()(url, timeout=TELEGRAM_TIMEOUT,
                                                                    max_bytes=max_bytes))
         if not isinstance(data, bytes) or len(data) > max_bytes:
-            raise ProviderError('Telegram 사진이 내려받기 크기 제한을 넘었습니다.')
+            raise ProviderError(msg('conversation_handoff.telegram_photo_too_large'))
         if data.startswith(b'\xff\xd8\xff'):
             mime = 'image/jpeg'
         elif data.startswith(b'\x89PNG\r\n\x1a\n'):
@@ -403,7 +403,7 @@ class TelegramChannel:
         elif len(data) >= 12 and data[:4] == b'RIFF' and data[8:12] == b'WEBP':
             mime = 'image/webp'
         else:
-            raise ProviderError('Telegram에서 지원하지 않는 사진 형식을 받았습니다.')
+            raise ProviderError(msg('conversation_handoff.telegram_photo_format_unsupported'))
         return {'data': data, 'mime_type': mime}
 
     def _retried(self, request):

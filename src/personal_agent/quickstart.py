@@ -692,6 +692,13 @@ def make_handler(service, public_hosts=(), public_access_token=''):
         def log_message(self,*args):pass
 
         def reply(self,status,body,content_type='application/json; charset=utf-8',cookie=None,csp=None):
+            if status>=400 and isinstance(body,dict) and isinstance(body.get('error'),str):
+                # #10: an error line Still itself wrote is shown in the language
+                # the browser screen uses, from the same catalog as Telegram and
+                # the terminal; any other text (and Korean) passes unchanged.
+                from .telegram_locale import language,translate
+                lang=language(self.headers.get('X-Still-Language') if self.headers else None)
+                if lang:body={**body,'error':translate(body['error'],lang)}
             data=json.dumps(body,ensure_ascii=False).encode() if content_type.startswith('application/json') else body
             # #1211: a Settings-web change is recorded in the conversation
             # before the success is exposed, so a dropped response or an

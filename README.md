@@ -86,7 +86,7 @@ agentos start
 ```
 
 1. Setup runs in this terminal, like Claude Code's first start: a password, your AI (Codex, Claude Code or an API key) and a Telegram bot token, each skippable.
-2. [http://127.0.0.1:8787](http://127.0.0.1:8787/) then opens for a final check. The screens are in English by default; switch to Korean, Simplified Chinese or Japanese at the bottom left. Some fixed Telegram status/progress lines and certain connection validation errors are still Korean. [Other connections](docs/QUICKSTART.md#other-model-connections).
+2. [http://127.0.0.1:8787](http://127.0.0.1:8787/) then opens for a final check. The screens are in English by default; switch to Korean, Simplified Chinese or Japanese at the bottom left. Connection errors and Still's catalogued system lines follow your language in Telegram, the terminal and the browser; some less frequent fixed lines (parts of conversational Settings, family sharing, the phone sign-in page and calendar draft field labels) are still Korean. [Other connections](docs/QUICKSTART.md#other-model-connections).
 3. Telegram: paste the @BotFather token in the terminal, open the pairing link it prints and press Start.
 4. Ask for what you need: **“My cat has been off her food lately. What should I try?”** A few days later, just ask **“Find me a robot vacuum under $500.”** Your PA remembers the cat and takes it into account without being reminded.
 
