@@ -256,6 +256,10 @@ def install_google_connectors(service, built):
     service.drive_read_token_exchange=built['exchange']
     service.google_client_source=built['source']
     service.google_client_id=built['client_id']
+    # #8: which connectors this client installed, by object, so removal never
+    # touches a separately configured connector that shares its client id.
+    service.own_client_installed={name:built[key] for name,key in
+                                  (('gmail','gmail'),('calendar','calendar_oauth'),('drive','drive_oauth')) if key in built}
 
 
 def google_oauth_key(store):

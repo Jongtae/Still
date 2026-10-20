@@ -8810,10 +8810,15 @@ class AgentService:
     _GOOGLE_CLIENT_LOCK=threading.RLock()
 
     def _own_client_holders(self):
-        """``{name: holder}`` of the connectors running on the owner's own client."""
+        """``{name: holder}`` of the connectors the owner's own client installed and that still run.
+
+        By installation, not by client id: a separately configured Gmail or
+        Calendar client may carry the same id and is not this client's.
+        """
         holders={'gmail':self.gmail,'calendar':self.calendar_oauth,'drive':self.drive_oauth}
+        installed=getattr(self,'own_client_installed',None) or {}
         return {name:holder for name,holder in holders.items()
-                if self.google_client_id and holder is not None and getattr(holder,'client_id',None)==self.google_client_id}
+                if holder is not None and installed.get(name) is holder}
 
     def google_key_problem(self):
         """Why the Google token key could not be used at its last fetch, or None (#8).
@@ -8826,8 +8831,9 @@ class AgentService:
         return ('invalid' if LOCAL_KEY_INVALID in problems else 'unavailable' if LOCAL_KEY_UNAVAILABLE in problems else None)
 
     def _own_client_in_use(self):
-        return any(row.get('source')=='own-client' and row.get('state') in ('connected','reauth_required')
-                   for row in self.google_connection_rows())
+        own=self._own_client_connector_ids()
+        return bool(own) and any(row.get('connector_id') in own and row.get('state') in ('connected','reauth_required')
+                                 for row in self.google_connection_rows())
 
     def _own_client_revocation_pending(self):
         """Whether a disconnected own-client service still waits for Google to confirm revocation (#8).
@@ -8970,6 +8976,7 @@ class AgentService:
                 self.drive_oauth=None
                 self.drive_reader_factory=None
                 self.drive_read_token_exchange=None
+            self.own_client_installed={}
             if self.google_client_source=='settings':
                 self.google_client_source=None
                 self.google_client_id=None

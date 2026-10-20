@@ -351,6 +351,10 @@ class CalendarConnectorKeyTest(unittest.TestCase):
         self.assertEqual(provider.calls, ['create'])
         # A change not yet sent fails before dispatch with the key reason and sends nothing.
         other = calendar.draft_create({**event, 'summary': 'second'}, 'owner')
+        # Purely local refusals are answered without asking for the key.
+        with self.assertRaises(CalendarError) as caught:
+            calendar.create(other['id'], 'not-the-approval-token', 'owner')
+        self.assertEqual(caught.exception.reason, 'exact-approval-required')
         other_approval = calendar.approve(other['id'], 'owner')['approval_id']
         with self.assertRaises(CalendarError) as caught:
             calendar.create(other['id'], other_approval, 'owner')
@@ -688,6 +692,23 @@ class OwnClientSettingsTest(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertIsInstance(results[0], str)
         self.assertIsNotNone(service.drive_oauth)
+
+    def test_removal_leaves_a_separately_configured_connector_with_the_same_client_id(self):
+        env = {**self.env, 'AGENTOS_GMAIL_LOCAL_ONLY': '1', 'AGENTOS_GMAIL_CLIENT_ID': '123-abcdefgh.apps.googleusercontent.com',
+               'AGENTOS_GMAIL_ENCRYPTION_KEY': Fernet.generate_key().decode(), 'AGENTOS_GMAIL_CLIENT_SECRET': 'made-up'}
+        service = configured_service(self.store, env)
+        separate = service.gmail
+        service.save_google_client({'client_json': self.CLIENT})
+        self.assertIs(service.gmail, separate)
+        offer = separate.begin_oauth(service.connector_callback_owner(GMAIL_CONNECTOR_ID))
+        separate.complete_oauth(service.connector_callback_owner(GMAIL_CONNECTOR_ID),
+                                {'state': state_of(offer), 'code': 'c'}, Exchange(GMAIL_READONLY_SCOPE))
+        # The separate Gmail connection neither blocks removal nor is removed with the client.
+        self.assertTrue(service.google_client_status()['removable'])
+        service.remove_google_client()
+        self.assertIs(service.gmail, separate)
+        self.assertEqual(separate.status(service.connector_callback_owner(GMAIL_CONNECTOR_ID))['state'], 'connected')
+        self.assertIsNone(service.drive_oauth)
 
     def test_a_saved_client_that_is_not_the_running_one_says_restart(self):
         service = configured_service(self.store, self.env)
