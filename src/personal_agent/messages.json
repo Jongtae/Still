@@ -1397,6 +1397,12 @@
   "ja": "独自の Google client で接続中の Google サービスがあります。サービスごとに接続を解除してから client を削除してください。",
   "zh": "仍有 Google 服务通过自有 Google client 连接。请先逐个断开这些服务，再删除 client。"
  },
+ "quickstart.google_client_revocation_pending": {
+  "ko": "Google 쪽 권한 취소가 아직 확인되지 않은 연결이 있습니다. 외부 연결에서 Google에 다시 요청해 확인된 뒤 client를 지워 주세요.",
+  "en": "Google hasn't yet confirmed revoking access for a disconnected service. Ask Google again under External connections, then remove the client once it's confirmed.",
+  "ja": "接続を解除したサービスで、Google 側の権限取り消しがまだ確認されていません。外部接続から Google に再度依頼し、確認できてから client を削除してください。",
+  "zh": "有已断开的服务尚未得到 Google 确认撤销权限。请在外部连接中再次向 Google 请求，确认后再删除 client。"
+ },
  "quickstart.google_client_nothing_to_remove": {
   "ko": "지울 자체 Google client가 저장돼 있지 않습니다.",
   "en": "No saved Google client to remove.",

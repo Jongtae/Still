@@ -524,6 +524,9 @@ class OwnClientSettingsTest(unittest.TestCase):
         self.assertEqual(service.google_client_id, installed)
         for holder in (service.gmail, service.calendar_oauth, service.drive_oauth):
             self.assertEqual(holder.client_id, installed)
+        # Whichever save landed last is what a restart uses, and Settings says so truthfully.
+        saved = json.loads(json.dumps(self.store.secret('google_oauth_client')))['installed']['client_id']
+        self.assertEqual(service.google_client_status()['restart_required'], saved != installed)
 
     def test_an_invalid_configured_key_is_named_clearly(self):
         service = configured_service(self.store, {**self.env, 'AGENTOS_GOOGLE_OAUTH_KEY': 'not-a-key'})
@@ -562,6 +565,40 @@ class OwnClientSettingsTest(unittest.TestCase):
         restarted = configured_service(self.store, self.env)
         self.assertIsNone(restarted.drive_oauth)
         self.assertTrue(restarted.save_google_client({'client_json': self.CLIENT})['configured'])
+
+    def test_removal_waits_for_an_unconfirmed_google_revocation(self):
+        service = configured_service(self.store, self.env)
+        service.save_google_client({'client_json': self.CLIENT})
+        self.connect_drive(service)
+        answers = [OSError('no answer')]
+
+        def google(url, body, headers):
+            answer = answers.pop(0) if answers else (200, b'')
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        service.google_revoke_transport = google
+        preview = service.google_disconnect_preview({'connector_id': DRIVE_CONNECTOR_ID}, 'owner-session')
+        service.google_disconnect({'connector_id': DRIVE_CONNECTOR_ID, 'confirmation': preview['confirmation']},
+                                  'owner-session')
+        self.assertTrue(service.google_revocations()['pending_provider_revocations'])
+        self.assertFalse(service.google_client_status()['removable'])
+        with self.assertRaises(ValueError) as caught:
+            service.remove_google_client()
+        self.assertIn('권한 취소', str(caught.exception))
+        self.assertIsNotNone(service.drive_oauth)
+        # Google confirms on retry; then the client can go.
+        service.retry_google_revocation({'connector_id': DRIVE_CONNECTOR_ID})
+        self.assertEqual(service.google_revocations()['pending_provider_revocations'], [])
+        self.assertFalse(service.remove_google_client()['saved'])
+
+    def test_a_saved_client_that_is_not_the_running_one_says_restart(self):
+        service = configured_service(self.store, self.env)
+        self.assertFalse(service.save_google_client({'client_json': self.CLIENT})['restart_required'])
+        status = service.save_google_client({'client_json': self.OTHER})
+        self.assertTrue(status['restart_required'])
+        self.assertEqual(status['client_hint'], '…cdefgh')
 
     def test_removal_is_refused_with_a_reason_when_not_applicable(self):
         service = configured_service(self.store, self.env)
