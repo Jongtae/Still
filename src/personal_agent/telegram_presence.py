@@ -274,6 +274,7 @@ FALLBACK_STEP_LINES = {
     'capability_search': (None, msg('step.capability_search')),
     'skill_load': (None, msg('step.skill')),
     'skill_resource': (None, msg('step.skill')),
+    'method_gap': (None, msg('step.skill')),
 }
 
 

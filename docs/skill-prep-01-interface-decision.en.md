@@ -268,3 +268,15 @@ No live site, account or model was used. Whether a model follows the method well
 ## 15. Evidence consolidation (#964)
 
 [SKILL-EVAL-01 coverage](skill-eval-01-coverage.en.md) maps the #964 inventory to the evidence gathered in #961–#963 and #974. It adds three model-free gap checks: a repeat makes no supplier call, a rollback restores only content, and supplied knowledge adds no hidden model call. It also fixes the A / A-off / B protocol and adds one rubric-judged eval scenario. The live, model-dependent questions (method adherence on the real site, drift and concurrency handling, transcript quality) remain pending. Its section 4 holds a capped, cleanup-defined live sample that only the owner can approve.
+
+## 16. Method discovery (Still #32, QUALITY-METHODS-01)
+
+[Jongtae/Still#32](https://github.com/Jongtae/Still/issues/32) extends sections 1–6 without a new framework, store or authority. Sections 12–15 stay the record of their own scope.
+
+| Addition | As implemented | Where |
+| --- | --- | --- |
+| Reusable analysis methods | `summary-or-analysis` (which answer form was asked for and when it is finished), `claim-analysis` and `source-cross-check` are Still reference skills, like `shopping-cart`. They are not bundled: the owner adds each by name through `settings_change` and can remove each on its own (C16 amendment #974). Nothing enables them automatically. | `skills/`, `skill_references.json`, `bundled_skills/agentos-skills` |
+| Bounded usage-header read | `skill_load` with `part` `header` returns only the body before the first `## ` heading, at most 1 KB (`MAX_HEADER_BYTES`; the description is already in the catalogue), up to 8 per Work. A body without a `## ` heading has no header, so a header read never returns a whole skill. It is not a load: it does not count against `MAX_LOADS` and does not open `skill_resource`. A screened skill is checked for currency like a loaded one, because its header reached the model. The recorded evidence carries `part: header`, so a restarted bridge recalls it as screened, not loaded. | `skills.SkillBinding.header`, `agent_runtime.check_skills` |
+| Advisory method gap | `method_gap` is a third skill action, offered with the other two only when the Work has a skill binding. It records one bounded line (at most 200 characters, 3 per Work) in the Work's tool events. It is not a failure and does not change the outcome. | `skills.SkillBinding.gap`, `manifests.HOST_TOOLS` |
+
+Evidence: `tests/test_skill_methods.py` (content checks, unit tests and model-free scripted runs, including the bridge recall). No live model was used; whether a model applies the methods well is not claimed.

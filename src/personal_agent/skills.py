@@ -55,6 +55,13 @@ CATALOGUE_ENTRIES = 32
 CATALOGUE_BYTES = 8 * 1024
 MAX_LOADS = 3
 MAX_RESOURCE_READS = 8
+#: #32: a usage-header read screens a skill before loading it: the body before its first
+#: ``## `` heading, at most this many UTF-8 bytes; it never unlocks resources or counts as a load.
+MAX_HEADER_BYTES = 1024
+MAX_HEADER_READS = 8
+#: #32: an advisory note that no available skill offered the method a request needed.
+MAX_GAP_CHARS = 200
+MAX_GAP_NOTES = 3
 #: Files whose presence means the skill needs execution Still does not offer.
 EXECUTABLE_DIRS = frozenset({'scripts', 'hooks', 'bin'})
 EXECUTABLE_SUFFIXES = frozenset({'.py', '.sh', '.bash', '.zsh', '.js', '.mjs', '.cjs', '.ts', '.rb', '.pl', '.ps1',
@@ -148,6 +155,19 @@ def parse_frontmatter(text):
     if not isinstance(data, dict):
         raise SkillError('SKILL.md 머리말이 키-값 목록이 아니에요.', 'invalid_package')
     return data, body[1:]
+
+
+def usage_header(body, limit=MAX_HEADER_BYTES):
+    """``(text, cut)``: the part of a skill body before its first ``## `` heading, at most ``limit`` UTF-8 bytes (#32).
+
+    A body with no ``## `` heading has no header: ``('', True)``, so a header read can never
+    return a whole skill without the full load that counts against ``MAX_LOADS`` (#32 review).
+    """
+    parts = re.split(r'(?m)^##\s', str(body or ''), maxsplit=1)
+    if len(parts) < 2:
+        return '', True
+    data = parts[0].strip().encode()
+    return data[:limit].decode('utf-8', 'ignore').rstrip(), len(data) > limit
 
 
 def tree_digest(files):
@@ -634,6 +654,11 @@ class SkillBinding:
         self.revoked = None
         self.loads = 0
         self.resource_reads = 0
+        #: #32: skills whose usage header this Work read (and not their full body).  Their
+        #: text reached the Work too, so they stay checked for currency like a load.
+        self.screened = {}
+        self.header_reads = 0
+        self.gap_notes = 0
 
     def refs(self):
         return [f"{skill}@{entry['digest']}" for skill, entry in sorted(self.entries.items())]
@@ -671,12 +696,16 @@ class SkillBinding:
         """Add the skills this Work loaded in any process, from its recorded tool events (#961 review).
 
         A restarted CLI bridge, or a later attempt on another route, starts with an
-        empty ``loaded`` set while the worker may still hold the earlier text.
+        empty ``loaded`` set while the worker may still hold the earlier text.  #32 review:
+        the per-Work counts (loads, header reads, gap notes) are restored from the same
+        events, so spreading calls across processes never exceeds a per-Work bound.
         """
         try:
             with store.db() as db:
                 rows = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='skill_load' AND status='succeeded'",
                                   (job_id,)).fetchall()
+                gaps = db.execute("SELECT COUNT(*) FROM tool_events WHERE job_id=? AND tool='method_gap' AND status='succeeded'",
+                                  (job_id,)).fetchone()[0]
                 stopped = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND status='failed' AND detail LIKE ?",
                                      (job_id, '%skill_revoked%')).fetchall()
         except Exception:
@@ -687,20 +716,35 @@ class SkillBinding:
                     self.revoked = self.revoked or '이 작업이 읽은 스킬'
             except (TypeError, ValueError, AttributeError):
                 continue
+        headers, loads = 0, set()
         for (detail,) in rows:
             try:
                 evidence = json.loads(detail).get('evidence') or {}
             except (TypeError, ValueError, AttributeError):
                 continue
+            if evidence.get('part') == 'header':
+                headers += 1
+            elif evidence.get('skill'):
+                loads.add(evidence.get('skill'))
             entry = self.entries.get(evidence.get('skill'))
             if entry is not None and entry['digest'] == evidence.get('digest'):
-                self.loaded.setdefault(entry['skill'], entry)
+                # #32: a header read is remembered as screened; it never unlocks resources.
+                if evidence.get('part') == 'header':
+                    if entry['skill'] not in self.loaded:
+                        self.screened.setdefault(entry['skill'], entry)
+                else:
+                    self.screened.pop(entry['skill'], None)
+                    self.loaded.setdefault(entry['skill'], entry)
+        # The events include this process's own calls, so the larger count is the Work's.
+        self.loads = max(self.loads, len(loads))
+        self.header_reads = max(self.header_reads, headers)
+        self.gap_notes = max(self.gap_notes, int(gaps or 0))
 
     def check_current(self):
-        """Refuse when a skill this Work loaded is no longer current (every later tool call), and from then on."""
+        """Refuse when a skill this Work loaded or screened is no longer current (every later tool call), and from then on."""
         if self.revoked:
             raise SkillError(REVOKED_TEXT.format(skill=self.revoked), 'skill_revoked')
-        for skill, entry in sorted(self.loaded.items()):
+        for skill, entry in sorted({**self.screened, **self.loaded}.items()):
             if not self.library.current(entry):
                 self.revoked = skill
                 raise SkillError(REVOKED_TEXT.format(skill=skill), 'skill_revoked')
@@ -717,10 +761,48 @@ class SkillBinding:
         if skill not in self.loaded:
             self.loads += 1
         self.loaded[skill] = entry
+        self.screened.pop(skill, None)
         _frontmatter, body = parse_frontmatter(text)
         return {**self.identity(entry), 'instructions': body.strip()[:MAX_BODY_BYTES],
                 'resources': [path for path in files if path != 'SKILL.md' and Path(path).suffix.lower() in TEXT_SUFFIXES][:40],
                 'note': '스킬은 방법 안내일 뿐 권한이 아니에요. 요청과 지금 관찰한 결과가 기준이에요.'}
+
+    def header(self, skill):
+        """The usage header of one skill this Work may load, to screen it before loading (#32).
+
+        Only the body before its first ``## `` heading, at most
+        ``MAX_HEADER_BYTES``; the full body is never returned, the skill is not
+        counted as loaded and its resources stay closed until ``load``.
+        """
+        entry = self._entry(skill)
+        if self.header_reads >= MAX_HEADER_READS:
+            raise SkillError(f'한 작업에서 스킬 머리말은 {MAX_HEADER_READS}개까지 읽어요.', 'skill_limit')
+        text, _cut, _files = self.library.read(entry, 'SKILL.md', MAX_FILE_BYTES)
+        self.header_reads += 1
+        if skill not in self.loaded:
+            self.screened[skill] = entry
+        _frontmatter, body = parse_frontmatter(text)
+        head, cut = usage_header(body)
+        # #32 review: only the header, so the whole result stays inside the byte bound; the
+        # description is already in the catalogue the Work was given.
+        return {**self.identity(entry), 'part': 'header', 'header': head,
+                'header_truncated': cut,
+                'note': '머리말만 읽었어요. 요청에 맞으면 skill_load로 전체 방법을 읽고, 맞는 스킬이 없으면 method_gap에 남기세요.'}
+
+    def gap(self, note):
+        """An advisory note that no skill this Work could use offered the method it needed (#32).
+
+        Bounded, never a failure and never a block: the Work goes on answering
+        without a skill.  The note is the method that was missing, not the request.
+        """
+        text = ' '.join(str(note or '').split())
+        if not text:
+            raise SkillError('어떤 방법이 없었는지 한 줄로 적어 주세요.', 'invalid_call')
+        if self.gap_notes >= MAX_GAP_NOTES:
+            raise SkillError(f'한 작업에서 방법 공백은 {MAX_GAP_NOTES}개까지 남겨요.', 'skill_limit')
+        self.gap_notes += 1
+        return {'method_gap': text[:MAX_GAP_CHARS], 'advisory': True,
+                'note': '기록만 했어요. 실패가 아니니 스킬 없이 요청에 계속 답하세요.'}
 
     def resource(self, skill, path):
         entry = self._entry(skill)

@@ -47,7 +47,7 @@ BOUNDED_NAMES = ['ask_location', 'browser_click', 'browser_find', 'browser_open'
                  # #1216: authenticated API calls by slot, relayed to the service.
                  'api_request']
 # #961: the skill tools join only when the Work has a skill binding (skills on, one installed).
-SKILL_NAMES = ['skill_load', 'skill_resource']
+SKILL_NAMES = ['skill_load', 'skill_resource', 'method_gap']  # #32: the advisory method-gap note joins them
 #: #1380: whether this host can start the code-run sandbox, which gates ``code_run``.
 NODE_AVAILABLE = find_node() is not None
 #: The ungated fixture below lists every declared profile action.

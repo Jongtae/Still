@@ -24,6 +24,9 @@ These are reviewed reference skills in the Still repository. They are added like
 - **Shopping cart method:** `https://github.com/Jongtae/Still/tree/main/skills/shopping-cart`. Changing an online cart safely: exact product, quantity meaning, read-back, and product price, delivery fee and total kept apart for a final-price answer.
 - **Emart mall on SSG.COM:** `https://github.com/Jongtae/Still/tree/main/skills/emart-ssg`. Site know-how. Use it with the shopping cart method.
 - **Getting the owner there:** `https://github.com/Jongtae/Still/tree/main/skills/map-directions`. When an answer sends the owner somewhere: when to leave, how to get there, parking, and a route link in the owner's preferred map service.
+- **Summary or analysis:** `https://github.com/Jongtae/Still/tree/main/skills/summary-or-analysis`. Which answer the owner asked for (summary, comparison, analysis, recommendation) and when an answer of that form is finished.
+- **Analysing claims and opinions:** `https://github.com/Jongtae/Still/tree/main/skills/claim-analysis`. Support, counter-evidence, disagreement, uncertainty and a justified conclusion.
+- **Cross-checking a source:** `https://github.com/Jongtae/Still/tree/main/skills/source-cross-check`. The original source, independent confirmation, dates and definitions, and an honest report of agreement or conflict.
 
 ## What Still refuses
 
@@ -36,6 +39,8 @@ Tell the owner the reason Still gives. Do not look for a workaround.
 
 ## Using a skill in a Work
 
-Load a skill with `skill_load` only when its description fits the request. The owner's request and constraints remain the goal. Read a packaged file with `skill_resource` only when the skill points to it.
+Load a skill with `skill_load` only when its description fits the request. The owner's request and constraints remain the goal. When a one-line description leaves the fit unclear, read only its usage header first (`skill_load` with `part` `header`); that does not load the method. Read a packaged file with `skill_resource` only when the skill points to it.
+
+When the request needs a method (a way to analyse, compare or check something) that no installed skill offers, record that once with `method_gap`, naming the missing method in one line, and answer as well as you can without a skill. It is advice for the owner, not a failure. If a reference skill above would fit, you may offer to add it; adding is the owner's choice.
 
 A skill that is switched off, removed or updated while a Work runs stops that Work's further tool calls. Say so, and do not repeat an action whose result you have not observed.

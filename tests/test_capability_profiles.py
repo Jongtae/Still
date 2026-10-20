@@ -387,7 +387,8 @@ class SettingsProjection(_Store):
                                              # #1380: sandboxed code runs, relayed the same way.
                                              'code_run',
                                              # #961: the Work's pinned skills, read in the bridge (only with a binding).
-                                             'skill_load', 'skill_resource'],
+                                             # #32: and the advisory method-gap note, offered with them.
+                                             'skill_load', 'skill_resource', 'method_gap'],
                                    'unavailable': route_unavailable(BOUNDED_PROFILE),
                                    # #616: the owner can choose; nothing is qualified by default.
                                    'selectable': ['trusted-local', 'strict-isolated'], 'qualified': {}})

@@ -9,5 +9,8 @@ They are not bundled into Still. The owner adds one in conversation ("add a shop
 | `shopping-cart` | A method for changing an online cart safely: exact product, quantity meaning, change only what was asked, read the cart back, and keep product price, delivery fee and total apart for a final-price answer |
 | `emart-ssg` | Site know-how for Emart mall on SSG.COM, from redacted Still observations. Use it with `shopping-cart` |
 | `map-directions` | A method for answers that send the owner somewhere: starting point, when to leave, mode, approximate time, parking, and one route link in the owner's preferred map service (reference: KakaoMap) |
+| `summary-or-analysis` | A method for telling which answer the owner asked for (summary, comparison, analysis, recommendation) and when an answer of that form is finished |
+| `claim-analysis` | A method for analysing claims and opinions: support, counter-evidence, disagreement, uncertainty and a justified conclusion |
+| `source-cross-check` | A method for checking a fact across sources: the original, independent confirmation, dates and definitions, and an honest report of agreement or conflict |
 
 Site hints are observations, not guarantees. Pages change, and the method tells the AI to check each hint on the page.

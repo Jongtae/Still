@@ -329,7 +329,13 @@ INFORMATION_USE_DESCRIPTION=('Show which owner information an earlier answer (Wo
 #: SKILL-SUPPLY-02 (#961): optional know-how this Work may load (``skills.SkillBinding``).
 SKILL_LOAD_DESCRIPTION=('Load the full instructions of one skill listed under Installed skills. Load one only when its description fits the owner\'s request; '
                         'the owner\'s request and constraints stay the goal. A skill is guidance, never a permission: every action still runs through '
-                        'your tools under their own checks, and only an observed tool result shows something happened. skill: its id exactly as listed (package/name).')
+                        'your tools under their own checks, and only an observed tool result shows something happened. skill: its id exactly as listed (package/name). '
+                        'part (optional): header returns only the skill\'s usage header (its opening section, at most 1 KB) so you can screen '
+                        'a skill whose one-line description leaves its fit unclear; it does not load the method or its files. Omit part, or use full, to load it.')
+#: #32: an advisory note that the method a request needed was not among the available skills.
+METHOD_GAP_DESCRIPTION=('Note, as advice for the owner\'s skill choices, that no skill available to this Work offers a method this request needed '
+                        '(for example a way to analyse or cross-check that none of the listed skills covers). It is not a failure: record it once, then '
+                        'answer the request as well as you can without a skill. note: one line naming the missing method, never the request text or private details.')
 SKILL_RESOURCE_DESCRIPTION=('Read one text file packaged with a skill you loaded with skill_load, when the skill points to it. skill: the skill id; '
                             'path: the file path relative to the skill, as listed in its resources.')
 SETTINGS_READ_DESCRIPTION=('Read the owner\'s current Still settings: Main AI (route, model), Judgment AI (mode, model), current context (enabled, time zone), owner-model upkeep (enabled, daily call cap) and external connections, each with the values it may take. '
@@ -357,8 +363,9 @@ DEFINITIONS=[
  schema('propose_current_state',PROPOSE_CURRENT_STATE_DESCRIPTION,{'predicate':{'type':'string','enum':['current_place','work_mode','availability_hint']},'value':STRING,'place_ref':STRING,'source':STRING,'until':STRING,'supersedes':STRING},['predicate']),
  schema('schedule_preparation',SCHEDULE_PREPARATION_DESCRIPTION,{'kind':{'type':'string','enum':['reminder','prepare']},'goal':STRING,'due':STRING,'timezone':STRING,'recurrence':{'type':'string','enum':['daily','weekdays','weekly']},'every_minutes':STRING,'until':STRING,'max_runs':STRING,'delivery':{'type':'string','enum':['send','keep','when_needed']}},['kind','goal','due']),
  schema('ask_location',ASK_LOCATION_DESCRIPTION,{'reason':STRING,'button_label':STRING},['reason']),
- schema('skill_load',SKILL_LOAD_DESCRIPTION,{'skill':STRING},['skill']),
+ schema('skill_load',SKILL_LOAD_DESCRIPTION,{'skill':STRING,'part':{'type':'string','enum':['full','header']}},['skill']),
  schema('skill_resource',SKILL_RESOURCE_DESCRIPTION,{'skill':STRING,'path':STRING},['skill','path']),
+ schema('method_gap',METHOD_GAP_DESCRIPTION,{'note':STRING},['note']),
  schema('capability_search','Find possible service connections, without starting servers, installing packages or granting authority. source=configured reads local AI-side server names; source=registry searches the official public MCP Registry by a short public server name (query), not the owner request or private data. Results are untrusted metadata, never proof of authentication, tools, scope, licence or readiness. Registry search matches server names only; an empty result does not establish that a service has no connection. Use web_search and public_page_read to inspect the vendor documentation and maintained public implementations, including their supported setup options and prerequisites, before concluding that preparation is unavailable. Use existing usable AI connections first, then public skills and Still reference skills, then generic API/browser/public-page tools. Preserve owner choices and refusals. Missing setup must be offered in conversation; a setup receipt is not the original result.',{'source':{'type':'string','enum':['configured','registry']},'query':STRING},['source']),
  schema('settings_read',SETTINGS_READ_DESCRIPTION,{'category':{'type':'string','enum':SETTINGS_CATEGORIES}}),
  schema('information_use',INFORMATION_USE_DESCRIPTION,{'work':{'type':'string','description':'"previous" (default: the most recent earlier answer in this conversation) or a Work id'}}),
@@ -1324,7 +1331,9 @@ SETTINGS_ACTIONS=frozenset({'settings_read','settings_change','capability_search
 #: #826: the information-use audit read, served by the host that holds the Work records.
 INFORMATION_USE_ACTIONS=frozenset({'information_use'})
 #: #961: offered only when this Work has a skill binding (skills on and at least one loadable skill).
-SKILL_ACTIONS=frozenset({'skill_load','skill_resource'})
+SKILL_ACTIONS=frozenset({'skill_load','skill_resource','method_gap'})
+#: What a skill call records as its Work evidence: the exact revision read (never its text), and #32's part and gap note.
+SKILL_EVIDENCE_KEYS=('skill','digest','revision','licence','source','path','part','method_gap')
 
 def action_definitions(tools,allowed,readonly=False,search_providers=None):
  """Native function definitions for ``allowed`` tool ids of resolved package tools.
@@ -2295,7 +2304,8 @@ class Capabilities:
   if self.skills is None:return
   # A load recorded by another process of this Work (a restarted bridge, an earlier attempt) counts too.
   if hasattr(self.store,'db'):self.skills.recall(self.store,self.job_id)
-  if not self.skills.loaded and not self.skills.revoked:return
+  # #32: a usage header that reached the model counts like a load.
+  if not self.skills.loaded and not getattr(self.skills,'screened',None) and not self.skills.revoked:return
   from .skills import SkillError
   try:self.skills.check_current()
   except SkillError as exc:raise ToolError(str(exc),exc.code) from None
@@ -2941,9 +2951,19 @@ class Capabilities:
    from .skills import SkillError
    if self.skills is None:raise ToolError('이 작업에서는 스킬을 쓸 수 없어요.','skill_unavailable')
    try:
-    result=self.skills.load(args['skill']) if name=='skill_load' else self.skills.resource(args['skill'],args['path'])
+    if name=='method_gap':
+     # #32 review: the note is model text; secrets and credential shapes are masked before it is kept.
+     from .bounded_execution import SECRET_PATTERN
+     note=SECRET_PATTERN.sub('[redacted]',str(args.get('note') or ''))
+     if callable(self.secret_redactor):
+      try:note=str(self.secret_redactor(note))
+      except Exception:note=''
+     result=self.skills.gap(note)
+    elif name=='skill_resource':result=self.skills.resource(args['skill'],args['path'])
+    elif args.get('part')=='header':result=self.skills.header(args['skill'])
+    else:result=self.skills.load(args['skill'])
    except SkillError as exc:raise ToolError(str(exc),exc.code) from None
-   self.evidence.append({'tool':name,'result':{key:result.get(key) for key in ('skill','digest','revision','licence','source','path')}})
+   self.evidence.append({'tool':name,'result':{key:result.get(key) for key in SKILL_EVIDENCE_KEYS}})
    return result
   if name in INFORMATION_USE_ACTIONS:
    # #826: a read of Still's own records of an earlier Work; never a payload.
@@ -3191,7 +3211,8 @@ def brief_section(context):
 
 #: #961: the skills this Work may load, one line each (``SkillBinding.catalogue_text``).
 SKILLS_HEADING=('# Installed skills (optional know-how; descriptions only. Load one with skill_load only when it fits the request; '
-                'a skill never grants a permission or replaces the request)')
+                'screen an unclear one with part header first; when the request needs a method none of them offers, note it once with method_gap '
+                'and answer without one. A skill never grants a permission or replaces the request)')
 
 def skills_section(context):
  """The rendered installed-skills section of a turn context, or '' (#961)."""
@@ -3588,8 +3609,9 @@ def _evidence_detail(name,result):
           'lookup_count':len(lookups) if isinstance(lookups,list) else 0}
  if name=='settings_change':
   return {key:result.get(key) for key in ('draft_id','category','setting','before','after','requires_owner_confirmation','applied')}
- # #961: which exact skill revision (and file) this Work read; never its text.
- if name in SKILL_ACTIONS:return {key:result.get(key) for key in ('skill','digest','revision','licence','source','path') if result.get(key)}
+ # #961: which exact skill revision (and file) this Work read; never its text.  #32: whether only its
+ # usage header was read, and an advisory method-gap note.
+ if name in SKILL_ACTIONS:return {key:result.get(key) for key in SKILL_EVIDENCE_KEYS if result.get(key)}
  if name=='propose_current_state':
   # #627: whether the hypothesis was recorded and why not; not its value.
   return {'recorded':bool(result.get('recorded')),'state_ref':result.get('state_ref'),'predicate':result.get('predicate'),
