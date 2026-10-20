@@ -31,7 +31,7 @@ jobs:
       - run: .venv/bin/python -c "import json,pathlib; [json.loads(line) for line in pathlib.Path('docs/issue-branch-ledger.jsonl').read_text(encoding='utf-8').splitlines()]"
       - run: .venv/bin/python scripts/verify_agentpackage_v01.py
       # #135: one worker per core; --dist loadfile keeps each file on one worker.
-      - run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile tests
+      - run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=40 tests
 
   # MACOS-CI-01 #1178: the same suite on macOS, where the embedded system
   # WebKit browser, Keychain-backed sessions and launchd paths actually run.
@@ -74,7 +74,7 @@ jobs:
         run: |
           ignores=""
           for f in $REAL_BROWSER_FILES; do ignores="$ignores --ignore=$f"; done
-          PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile $ignores tests
+          PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=40 $ignores tests
       - name: Real-WebKit files (serial)
         if: ${{ !cancelled() }}
-        run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q $REAL_BROWSER_FILES
+        run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q --durations=0 $REAL_BROWSER_FILES
