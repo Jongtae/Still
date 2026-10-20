@@ -69,12 +69,16 @@ CREATED = msg('calendar_conversation.the_event_was_added_to_the')
 UPDATED = msg('calendar_conversation.the_event_was_changed')
 CANCELLED_EVENT = msg('calendar_conversation.the_event_was_cancelled')
 OUTCOME_UNKNOWN = msg('calendar_conversation.i_cannot_confirm_whether_the_event')
+UPDATE_UNKNOWN = msg('calendar_conversation.i_cannot_confirm_whether_the_change')
+CANCEL_UNKNOWN = msg('calendar_conversation.i_cannot_confirm_whether_the_cancellation')
 FAILED = '캘린더에 반영하지 못했습니다. 이 초안은 반영되지 않았습니다.'
 NOT_APPLIED_REST = '나머지 초안은 반영하지 않았습니다.'
 RECONNECT_HINT = ' 캘린더를 다시 연결한 뒤 새로 요청해 주세요.'
 RETRY_HINT = ' 새로 요청해 주세요.'
 ACTION_LABELS = {'create': '새 일정', 'update': '일정 변경', 'cancel': '일정 취소'}
 DONE_TEXT = {'create': CREATED, 'update': UPDATED, 'cancel': CANCELLED_EVENT}
+#: What an unconfirmed outcome tells the owner to check, by action.
+UNKNOWN_TEXT = {'create': OUTCOME_UNKNOWN, 'update': UPDATE_UNKNOWN, 'cancel': CANCEL_UNKNOWN}
 #: The evidence tool name of an applied draft, by action.
 EFFECT_TOOLS = {'create': 'calendar_create', 'update': 'calendar_update', 'cancel': 'calendar_cancel'}
 
@@ -383,7 +387,7 @@ class CalendarConversation:
                     evidence(tool, 'failed', {'draft_id': preview['id'], 'error': error.reason,
                                               'effect': error.effect, 'recovery': error.recovery})
                 if error.effect == 'unknown':
-                    replies.append(OUTCOME_UNKNOWN)
+                    replies.append(UNKNOWN_TEXT.get(action, OUTCOME_UNKNOWN))
                 else:
                     hint = RECONNECT_HINT if 'reconnect' in (error.recovery or '') else RETRY_HINT
                     replies.append(FAILED + hint)

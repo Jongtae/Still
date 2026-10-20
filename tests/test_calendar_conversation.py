@@ -20,6 +20,7 @@ from personal_agent.calendar import CALENDAR_SPEC, CALENDAR_WRITE_SPEC, Calendar
 from personal_agent.calendar_conversation import (CANCELLED, CHANGED_UNDER_US, CREATED, CANCELLED_EVENT, DROPPED_NOTICE,
                                                   FAILED, NOT_APPLIED_REST, OTHER_CHANNEL, OUTCOME_UNKNOWN,
                                                   PREVIEW_FOOTER, PREVIEW_HEADER, REPLACED_NOTICE, STATE_KEY, UPDATED,
+                                                  UPDATE_UNKNOWN,
                                                   is_approval, is_cancel, preview_lines, work_draft_ids)
 from personal_agent.connector_contract import ConnectorRegistry, ConnectorState, _owner_key
 from personal_agent.current_context import TIMEZONE_CONFIG_KEY, resolve_local_timezone
@@ -42,10 +43,11 @@ class Provider:
     def __init__(self):
         self.calls = []
         self.fail = None
+        self.fail_from = 1  # the first call (1-based) that fails while ``fail`` is set
 
     def _call(self, kind, *args):
         self.calls.append((kind, *args))
-        if self.fail is not None:
+        if self.fail is not None and len(self.calls) >= self.fail_from:
             raise self.fail
         return {'id': f'ev{len(self.calls)}', 'version': '"etag"'}
 
@@ -340,8 +342,37 @@ class UpdateCancelAndSeveralDraftsTests(CalendarDraftApprovalCase):
         job = self.job(self.receive('승인'))
         self.assertIn(FAILED, job['response'])
         self.assertIn(NOT_APPLIED_REST, job['response'])
+        self.assertEqual(job['status'], 'failed', 'nothing was applied')
         self.assertEqual(len(self.provider.calls), 1, 'the second draft is never sent')
         self.assertEqual(self.states(), ['awaiting-approval', 'failed'])
+
+    def test_a_refused_single_approval_is_a_failed_work(self):
+        self.drafting(('calendar_draft_create', DENTIST))
+        self.receive('치과 일정 잡아줘')
+        self.provider.fail = GoogleCalendarError('provider-rejected', 'none')
+        job = self.job(self.receive('승인'))
+        self.assertEqual(job['status'], 'failed')
+        self.assertTrue(job['response'].startswith(FAILED))
+        self.assertNotIn(CREATED, job['response'])
+
+    def test_a_batch_that_applied_only_part_is_partial(self):
+        self.drafting(('calendar_draft_create', DENTIST), ('calendar_draft_create', GYM))
+        self.receive('치과랑 운동 일정 잡아줘')
+        self.provider.fail, self.provider.fail_from = GoogleCalendarError('provider-rejected', 'none'), 2
+        job = self.job(self.receive('승인'))
+        self.assertEqual(job['status'], 'partial')
+        self.assertIn(CREATED, job['response'])
+        self.assertIn(FAILED, job['response'])
+        self.assertEqual(self.states(), ['completed', 'failed'])
+
+    def test_an_unconfirmed_change_is_reported_as_a_change(self):
+        self.drafting(('calendar_draft_update', {'event_id': 'event-1', 'event_version': '"v1"', 'summary': '치과 검진'}))
+        self.receive('치과 일정 제목 바꿔줘')
+        self.provider.fail = GoogleCalendarError('provider-timeout', 'unknown')
+        job = self.job(self.receive('승인'))
+        self.assertEqual(job['status'], 'unknown')
+        self.assertEqual(job['response'], UPDATE_UNKNOWN)
+        self.assertNotEqual(job['response'], OUTCOME_UNKNOWN, 'not the "was it created" text')
 
 
 class HelperTests(unittest.TestCase):

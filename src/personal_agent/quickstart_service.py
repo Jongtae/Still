@@ -56,7 +56,9 @@ from .connector_revocation import (GoogleConnectionRevoker, RevocationError, dri
                                    google_revoke_transport, registry_connection)
 from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID, CalendarError
 from .google_drive_read import DRIVE_CONNECTOR_ID
-from .calendar_conversation import DROPPED_NOTICE as CALENDAR_DROPPED_NOTICE, CalendarConversation, work_draft_ids
+from .calendar_conversation import (DROPPED_NOTICE as CALENDAR_DROPPED_NOTICE, EFFECT_TOOLS as CALENDAR_EFFECT_TOOL_NAMES,
+                                    FAILED as CALENDAR_APPLY_FAILED, CalendarConversation, work_draft_ids)
+CALENDAR_EFFECT_TOOLS=frozenset(CALENDAR_EFFECT_TOOL_NAMES.values())
 from .conversation_handoff import (CONNECTOR_LABELS, JUDGMENT_NO, JUDGMENT_YES,
                                    FOLLOWUP_CANCEL, FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE,
                                    FOLLOWUP_RETRY, eligible_for_followup_judgment,
@@ -10124,12 +10126,18 @@ class AgentService:
                 raise ValueError(ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID) if exc.reason=='unavailable'
                                  else f'일정 초안을 승인하지 못했습니다 ({exc.reason}). 캘린더에 아무것도 반영하지 않았습니다.') from None
             # #598 I1: an approval whose effect could not be observed is
-            # not a succeeded Work.  The outcome comes from this Work's
-            # own typed Evidence (#593 effect='unknown'), never from the
-            # reply wording.
+            # not a succeeded Work, and one the calendar refused is not either.
+            # The outcome comes from this Work's own typed Evidence (#593
+            # effect='unknown'; the calendar effect events), never from the reply wording.
             if self._work_has_unknown_effect(job['id']):
                 run.outcome='unknown'
                 run.unknown_statement=run.response
+            else:
+                effects=[event for event in self.store.task_events(job['id']) if event['tool'] in CALENDAR_EFFECT_TOOLS]
+                refused=[event for event in effects if event['status']=='failed']
+                if refused:
+                    run.outcome='partial' if any(event['status']=='succeeded' for event in effects) else 'failed'
+                    run.refusals.extend((event['tool'],CALENDAR_APPLY_FAILED) for event in refused)
         elif run.rule_note is not None:
             run.handled=False;run.fallthrough_note=run.rule_note
         elif not run.decision.executes:

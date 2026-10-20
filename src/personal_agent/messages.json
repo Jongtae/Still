@@ -185,6 +185,18 @@
   "ja": "予定が作成されたか確認できません。カレンダーを直接確認し、なければ再度依頼してください。自動では再試行していません。",
   "zh": "无法确认是否已创建日程。请直接查看日历，如果没有，请重新请求。没有自动重试。"
  },
+ "calendar_conversation.i_cannot_confirm_whether_the_cancellation": {
+  "ko": "일정 취소가 반영됐는지 확인할 수 없습니다. 캘린더를 직접 확인하고, 일정이 그대로 있으면 다시 요청해 주세요. 자동으로 다시 시도하지 않았습니다.",
+  "en": "I cannot confirm whether the event was cancelled. Please check the calendar and make a new request if the event is still there. I did not retry automatically.",
+  "ja": "予定の取り消しが反映されたか確認できません。カレンダーを直接確認し、予定が残っていれば再度依頼してください。自動では再試行していません。",
+  "zh": "无法确认日程是否已取消。请直接查看日历，如果日程仍在，请重新请求。没有自动重试。"
+ },
+ "calendar_conversation.i_cannot_confirm_whether_the_change": {
+  "ko": "일정 변경이 반영됐는지 확인할 수 없습니다. 캘린더를 직접 확인하고, 바뀌지 않았으면 다시 요청해 주세요. 자동으로 다시 시도하지 않았습니다.",
+  "en": "I cannot confirm whether the event was changed. Please check the calendar and make a new request if it was not changed. I did not retry automatically.",
+  "ja": "予定の変更が反映されたか確認できません。カレンダーを直接確認し、変わっていなければ再度依頼してください。自動では再試行していません。",
+  "zh": "无法确认日程是否已修改。请直接查看日历，如果没有改变，请重新请求。没有自动重试。"
+ },
  "calendar_conversation.reply_approve_to_apply_it_as": {
   "ko": "\"승인\"이라고 답하면 이 내용 그대로 캘린더에 반영합니다. 바꾸려면 바꿀 내용을 말해 주세요. 그만두려면 \"취소\"라고 답해 주세요.",
   "en": "Reply \"Approve\" to apply it to the calendar exactly as shown. To change it, say what to change. To stop, reply \"Cancel\".",
