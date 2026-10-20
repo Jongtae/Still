@@ -16,11 +16,12 @@ import hashlib
 from urllib.parse import urlsplit
 from .messages import msg
 from .local_tools import LocalTools, normalize_public_url
+from functools import cached_property
 from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import (Capabilities, ToolError, run_agent, AGENTS, STEER_EVENT, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
                             MEMORY_OWNER, context_sections, ENGINE_UNMEDIATED, OWNER_CONVERSATION, lookup_sources, work_written_values, WORK_SOURCES_KEY, WORK_SOURCES_LIMIT, base_label,
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
-                            WORK_STOP_KEY, WORK_STOP_KEEP, WORK_STOPPED, work_stop_requested, WorkLedger, goal_summary, work_source_records,
+                            WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, goal_summary, work_source_records,
                             backfill_work_sources, recorded_private_sources, NOTES_SUMMARY_COMMANDS, WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_BACKFILL_VERSION,
                             progress_step)
 from .plugins import PluginRegistry
@@ -60,9 +61,8 @@ from .calendar_conversation import (DROPPED_NOTICE as CALENDAR_DROPPED_NOTICE, S
 from .conversation_handoff import (CONNECTOR_LABELS, JUDGMENT_NO, JUDGMENT_YES,
                                    FOLLOWUP_CANCEL, FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE,
                                    FOLLOWUP_RETRY, eligible_for_followup_judgment,
-                                   ConversationJudgments, TelegramChannel, TelegramNotSent, TelegramRejected, telegram_request_json,
-                                   TELEGRAM_UNSENT_BACKOFF_FIRST, TELEGRAM_UNSENT_BACKOFF_MAX,
-                                   telegram_request_file, telegram_request_multipart, transient_failure,
+                                   ConversationJudgments, TelegramChannel, telegram_request_json,
+                                   telegram_request_file, telegram_request_multipart,
                                    ConnectorHandoff,
                                    ConversationFocus,
                                    ConversationHandoffError, IntentClassifier,
@@ -100,7 +100,7 @@ from .telegram_presence import (ATTENTION_ACTION, ATTENTION_ASK, ATTENTION_COOLD
                                 RECEIVED_REACTION, WAIT_CHAT_ACTION, WAIT_DRAFT, WROTE_REACTION, PresenceTiming, TelegramTurnAddressing,
                                 WaitState, draft_frame, draft_id_for, draft_step, outcome_reaction, pick_attention,
                                 draft_step_details, rich_draft_blocks, with_note,
-                                render_telegram_html, reply_controls_markup, without_consumed)
+                                without_consumed)
 LOCAL_RESUMED_KEY='local_authority_resumed_jobs'
 LOCAL_DOCUMENT_RESUME_KEY='local_authority_document_resume_jobs'
 LOCAL_DOCUMENT_APPROVAL_TEXT=msg('service.to_continue_the_request_for_which')
@@ -4881,6 +4881,17 @@ class AgentService:
                 'response':response,'error':record.get('error',''),'model':record['model'],
                 'test_proof':proof}
 
+    @cached_property
+    def telegram_surface(self):
+        """Telegram ingestion, callbacks and delivery (``telegram_surface``, #21 slice 2).
+
+        Imported here, not at module load, because that module reads the
+        constants it shares with this service from this module.  Not to be
+        confused with ``self.telegram``, the Bot API client.
+        """
+        from .telegram_surface import TelegramSurface
+        return TelegramSurface(self)
+
     def telegram_call(self,token,method,body):
         """Thin delegation to the transport seam for an unstored bot token."""
         return self.telegram.call_with_token(token,method,body)
@@ -6623,48 +6634,7 @@ class AgentService:
     STOP_RUNNING_TEXT=msg('service.got_your_stop_a_step_already')
 
     def ingest_stop(self, stopped, generation):
-        """Reconcile Telegram's Stop on a draft with real Work state.
-
-        Stop ends further drafts at once.  Whether anything was *cancelled*
-        is decided by the existing `cancel_focused_work` state machine: queued
-        Work is cancelled and that is said; running Work is not cancellable
-        mid-turn, so the owner is told it continues - never that it stopped.
-        Finished Work gets nothing, because its one reply is the answer.
-        """
-        with self.lock:
-            cfg=self.store.config('telegram',{})
-            chat=stopped.get('chat',{}) if isinstance(stopped,dict) else {}
-            draft_id=stopped.get('draft_id') if isinstance(stopped,dict) else None
-            if not (cfg.get('enabled') and cfg.get('generation')==generation and isinstance(chat,dict)
-                    and chat.get('type')=='private' and isinstance(chat.get('id'),int)
-                    and chat.get('id')==cfg.get('user_id') and isinstance(draft_id,int)):
-                return None
-            with self.store.db() as db:
-                rows=db.execute("SELECT * FROM jobs WHERE channel=? AND chat_id=? AND status IN ('queued','running')",
-                                (f"telegram:{generation}",chat['id'])).fetchall()
-            job=next((dict(row) for row in rows if draft_id_for(row['id'])==draft_id),None)
-            if not job:return 'finished'
-            state=self.presence.setdefault(job['id'],WaitState())
-            # A repeated Stop update (double tap, redelivery) says nothing twice.
-            if state.stopped:return 'duplicate'
-            state.stopped=True
-            cancelled,_reason=self.cancel_focused_work(job,self.connector_owner_id(job))
-            current=self.store.job(job['id'])
-            if cancelled:
-                self.presence.pop(job['id'],None)
-                text=self.STOP_CANCELLED_TEXT
-            elif current and current['status']=='running':
-                # #606 T1: durable, so the CLI's separate MCP bridge process
-                # refuses its next call too, not only this process's loop.
-                self.store.append_config_list(WORK_STOP_KEY,job['id'],WORK_STOP_KEEP)
-                # #774: a stopped Work's location request continues nothing.
-                if self.context_observations.cancel_work_requests(job['id']):self.store.remove_telegram_photo(job['id'])
-                text=self.STOP_RUNNING_TEXT
-            else:
-                return 'finished'
-            try:self.telegram.send_message(job['chat_id'],text,reply_to=self.telegram_turns.source(job['id']))
-            except ProviderError:pass
-            return 'cancelled' if cancelled else 'running'
+        return self.telegram_surface.ingest_stop(stopped, generation)
 
     def reply_anchor(self, job):
         """The owner message to anchor this reply to, when it clarifies anything.
@@ -6934,11 +6904,7 @@ class AgentService:
                        ('assistant',text,channel,time.time()))
 
     def deliver_conversation_notice(self, text):
-        """The best-effort half: the same text to the paired Telegram chat."""
-        cfg,paired,_channel=self._notice_channel()
-        if paired:
-            try:self.telegram.send_message(int(cfg['user_id']),text)
-            except (ProviderError,TypeError,ValueError):LOG.warning('conversation notice not delivered')
+        return self.telegram_surface.deliver_conversation_notice(text)
 
     def _conversation_notice(self, text):
         """One assistant row in the owner's conversation, and Telegram when paired (best effort)."""
@@ -9413,174 +9379,10 @@ class AgentService:
                 'location_not_continued':LOCATION_NOT_CONTINUED_TEXT}.get(kind,msg('notice.generic'))
 
     def queue_notification(self, job, kind, fingerprint=None):
-        cfg=self.store.config('telegram',{})
-        if not (cfg.get('enabled') and job.get('channel')==f"telegram:{cfg.get('generation')}" and job.get('chat_id')==cfg.get('user_id')):return
-        fingerprint=self.document_fingerprint() if kind=='approval_needed' else fingerprint
-        self.store.queue_notification(job['id'],job['chat_id'],cfg['generation'],kind,fingerprint)
+        return self.telegram_surface.queue_notification(job, kind, fingerprint)
 
     def deliver_notification(self):
-        # Persist the send intent first. An uncertain Telegram response is never
-        # replayed after a restart because it might already have been delivered.
-        notification=self.store.next_notification()
-        if not notification:return False
-        with self.lock:
-            cfg=self.store.config('telegram',{})
-            allowed=(cfg.get('enabled') and notification['generation']==cfg.get('generation')
-                     and notification['chat_id']==cfg.get('user_id'))
-            self.store.update_notification(notification['id'],'sending' if allowed else 'cancelled')
-            if not allowed:return True
-            reply_markup=None
-            if notification['kind']=='approval_needed':
-                # #594 item 11: sharing was approved (e.g. in Settings) after
-                # this prompt was queued; its buttons could only be inert.
-                if not self.document_boundary()['requires_approval']:
-                    self.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup={'inline_keyboard':[[
-                    {'text':APPROVE_BUTTON,'callback_data':f"p7a:{notification['id']}:approve"},
-                    {'text':DENY_BUTTON,'callback_data':f"p7a:{notification['id']}:deny"},
-                ]]}
-            elif notification['kind']=='context_approval_needed':
-                reply_markup={'inline_keyboard':[[
-                    {'text':APPROVE_BUTTON,'callback_data':f"v1c:{notification['id']}:approve"},
-                    {'text':DENY_BUTTON,'callback_data':f"v1c:{notification['id']}:deny"},
-                ]]}
-            elif notification['kind']=='browser_approval_needed':
-                pending=self._browser_request(notification.get('job_id'))
-                if not pending or pending.get('state')!='requested' or pending.get('offer_digest')!=notification.get('fingerprint'):
-                    self.store.update_notification(notification['id'],'cancelled')
-                    return True
-                # #1472 (owner choice 2026-10-13): no buttons; the owner answers the prompt with a reaction
-                # or a reply (``answer_step_approval``).  Prompts already sent keep their p7w buttons working.
-                reply_markup=None
-            elif notification['kind']=='browser_login_needed':
-                # #709: only while this Work's login is still offered with this nonce.
-                row=self._browser_login(notification.get('job_id'))
-                if not row or row.get('state')!='offered' or row.get('nonce')!=notification.get('fingerprint'):
-                    self.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup={'inline_keyboard':[[
-                    {'text':msg('button.signed_in'),'callback_data':f"p7l:{notification['id']}:done"},
-                    {'text':BROWSER_LOGIN_SKIP_LABEL,'callback_data':f"p7l:{notification['id']}:skip"},
-                ],[
-                    # #939: the same login window, driven from the phone through a one-time link.
-                    {'text':BROWSER_LOGIN_PHONE_LABEL,'callback_data':f"p7l:{notification['id']}:phone"},
-                ]]}
-            elif notification['kind']=='preparation_scheduled':
-                scheduled_text=self.scheduled_notice_text(prepared_ids(notification))
-                if scheduled_text is None:
-                    self.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup=self.preparation_cancel_markup(notification['id'])
-            elif notification['kind']=='preparation_proposed':
-                # #659: the exact proposals of one Work; changed since -> not offered.
-                proposals,remaining=self.offered_proposals(notification)
-                if not proposals:
-                    self.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup={'inline_keyboard':[[
-                    {'text':msg('button.accept'),'callback_data':f"p7p:{notification['id']}:accept"},
-                    {'text':msg('button.decline_schedule'),'callback_data':f"p7p:{notification['id']}:deny"},
-                ]]}
-            elif notification['kind'] in MEMORY_PROMPT_KINDS:
-                # #818: bound now to the queued candidates still pending; none left -> not offered.
-                memory_prompt=self.bind_memory_prompt(notification,time.time())
-                if not memory_prompt:
-                    self.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup=self.memory_prompt_markup(notification['id'],memory_prompt)
-            elif notification['kind'] in MEMORY_SAVED_KINDS:
-                # #918: bound now to the Work's current saved facts; none left -> nothing to tell.
-                memory_saved=self.bind_memory_saved(notification,time.time())
-                if not memory_saved:
-                    self.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup=self.memory_saved_markup(notification['id'],memory_saved)
-            elif notification['kind']=='settings_change_proposed':
-                # #814: the exact drafts of one Work; changed or expired since -> not offered.
-                settings_drafts=self.offered_settings_drafts(notification)
-                if not settings_drafts:
-                    self.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup={'inline_keyboard':[[
-                    {'text':msg('button.apply'),'callback_data':f"p7s:{notification['id']}:confirm"},
-                    {'text':msg('button.keep'),'callback_data':f"p7s:{notification['id']}:cancel"},
-                ]]}
-            elif notification['kind']==prep.NOTIFY_KIND:
-                # #719: one watch run the owner needs; the watch can be stopped from here.
-                watch_text=self.watch_notification_text(notification)
-                if watch_text is None:
-                    self.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup={'inline_keyboard':[[
-                    {'text':msg('button.stop_watching'),'callback_data':f"p7q:{notification['id']}:stop"},
-                ]]}
-            try:
-                text=(prep.proposal_text(proposals,remaining) if notification['kind']=='preparation_proposed' else
-                      scheduled_text if notification['kind']=='preparation_scheduled' else
-                      self.memory_prompt_text(notification['job_id'],memory_prompt) if notification['kind'] in MEMORY_PROMPT_KINDS else
-                      self.memory_saved_text(memory_saved) if notification['kind'] in MEMORY_SAVED_KINDS else
-                      self.settings_orchestrator.confirmation_text(settings_drafts) if notification['kind']=='settings_change_proposed' else
-                      watch_text if notification['kind']==prep.NOTIFY_KIND else
-                      LOCAL_DOCUMENT_APPROVAL_TEXT if notification['kind']=='approval_needed'
-                      and self.document_resume_eligible(notification.get('job_id'))
-                      else self.browser_step_prompt(notification.get('job_id')) if notification['kind']=='browser_approval_needed'
-                      else self.browser_login_prompt(notification.get('job_id')) if notification['kind']=='browser_login_needed'
-                      else self.notification_text(notification['kind']))
-                if notification['kind']==prep.NOTIFY_KIND:
-                    # #719: a result bubble, rendered like deliver_one's (#581); a parse refusal is a definite non-delivery.
-                    try:
-                        result=self.telegram.send_message(notification['chat_id'],render_telegram_html(text),reply_markup,parse_mode='HTML')
-                    except TelegramRejected as exc:
-                        if not exc.entity_parse_error:raise
-                        result=self.telegram.send_message(notification['chat_id'],text,reply_markup)
-                else:
-                    # #1472: a request prompt reads its description first; the exact request is folded.
-                    folded=(self.browser_step_prompt_html(notification.get('job_id'))
-                            if notification['kind']=='browser_approval_needed' else None)
-                    if folded and len(folded)<=3800:
-                        try:
-                            result=self.telegram.send_message(notification['chat_id'],folded,reply_markup,parse_mode='HTML')
-                        except TelegramRejected as exc:
-                            if not exc.entity_parse_error:raise
-                            folded=None
-                    else:
-                        folded=None
-                    if not folded:
-                        if notification['kind'] in ('browser_approval_needed','settings_change_proposed') and len(text)>1900:
-                            # Preserve every parameter. Only the last part carries
-                            # approval controls, after earlier parts were delivered.
-                            parts=[text[offset:offset+1900] for offset in range(0,len(text),1900)]
-                            for index,part in enumerate(parts[:-1],1):
-                                self.telegram.send_message(notification['chat_id'],f'승인 내용 ({index}/{len(parts)})\n{part}')
-                            text=f'승인 내용 ({len(parts)}/{len(parts)})\n{parts[-1]}\n위에 나누어 보낸 전체 실행 내용을 확인한 뒤 승인하세요.'
-                        result=self.telegram.send_message(notification['chat_id'],text,reply_markup)
-                message_id=result.get('message_id') if isinstance(result,dict) else None
-                # #818 review: a memory prompt with nothing tappable is only a list ('memory_listed').
-                listed=notification['kind'] in MEMORY_PROMPT_KINDS and not self.memory_open(memory_prompt)
-                self.store.update_notification(notification['id'],'memory_listed' if listed else 'sent',
-                                               message_id if isinstance(message_id,int) else None,
-                                               json.dumps(memory_prompt) if notification['kind'] in MEMORY_PROMPT_KINDS else
-                                               json.dumps(memory_saved) if notification['kind'] in MEMORY_SAVED_KINDS else None)
-                if notification['kind']=='browser_login_needed' and self.AUTO_PHONE_LOGIN:
-                    # #953 (owner 2026-10-01): the person on Telegram is on their phone; the one-time
-                    # link follows the prompt at once instead of waiting for 휴대폰에서 로그인.
-                    try:
-                        self._start_remote_login_for_work(notification.get('job_id'),notification.get('fingerprint'),
-                                                          notification['chat_id'])
-                    except Exception as exc:
-                        LOG.warning('remote login auto start skipped (%s)',type(exc).__name__)
-                if notification['kind']==prep.NOTIFY_KIND:
-                    # #719: only a confirmed send is what the owner was last told.
-                    try:
-                        job=self.store.job(notification['job_id'])
-                        self.preparations.record_notified(notification['job_id'],notification['fingerprint'],
-                                                          self.scrub_prepared_answer(job) if job else '',self.preparations.clock())
-                    except Exception as exc:
-                        LOG.warning('watch notification record failed work=%s kind=%s',notification['job_id'],type(exc).__name__)
-            except ProviderError:
-                self.store.update_notification(notification['id'],'unknown')
-        return True
+        return self.telegram_surface.deliver_notification()
 
     @staticmethod
     def task_card_markup(job_id, state):
@@ -9594,65 +9396,10 @@ class AgentService:
         return {'inline_keyboard':[buttons]}
 
     def task_progress_text(self, job_id):
-        """Return safe operational evidence without request or tool payloads.
-
-        A card is also the owner-facing recovery surface.  In particular, do
-        not let a restart or a lost Telegram response look like work that is
-        still running or a result that was certainly delivered.
-        """
-        labels={'queued':'대기 중','running':'진행 중','succeeded':'완료','partial':'일부 완료',
-                'failed':'완료하지 못함','cancelled':'취소됨','interrupted':'중단됨','unknown':'외부 결과 불확실',
-                'awaiting_connection':'연결 대기'}
-        with self.store.db() as db:
-            job=db.execute('SELECT status,delivery FROM jobs WHERE id=?',(job_id,)).fetchone()
-            rows=db.execute('SELECT tool,status FROM tool_events WHERE job_id=? AND tool!=? ORDER BY id LIMIT 12',(job_id,'model')).fetchall()
-        if not job:return msg('service.i_can_t_find_this_task')
-        lines=[f"작업 상태: {labels.get(job['status'],job['status'])}"]
-        if rows:
-            lines.append(f'필요한 단계를 {len(rows)}개 처리했습니다.')
-        elif job['status']=='queued':
-            lines.append(msg('service.waiting_to_run'))
-        elif job['status']=='running':
-            lines.append('에이전트가 작업을 처리하고 있습니다.')
-        elif job['status']=='interrupted':
-            lines.append(msg('service.the_task_was_interrupted_by_a'))
-        elif job['status']=='awaiting_connection':
-            lines.append('필요한 연결을 기다리고 있습니다. 아직 아무 작업도 실행하지 않았습니다.')
-        else:
-            lines.append(msg('service.see_the_full_result_in_the'))
-        if job['delivery']=='unknown':
-            lines.append(msg('service.telegram_delivery_could_not_be_verified'))
-        elif job['delivery']=='cancelled':
-            lines.append('Telegram 전달은 취소되었습니다.')
-        return '\n'.join(lines)
+        return self.telegram_surface.task_progress_text(job_id)
 
     def update_task_card(self, job, state):
-        """Reconcile a task card that still exists for this Work.
-
-        Nothing sends a new card since #958 (queued Work shows only the 👀;
-        running Work the draft with Stop).  Cards sent before that change may
-        still sit in the owner's chat, so a state change keeps editing them
-        (and `running` deletes them) exactly as before; a Work without a card
-        is a no-op here.
-        """
-        card=self.store.task_card(job['id'])
-        if not card or card['message_id']<1 or card['state']==state:return
-        if state=='running':
-            if not self.store.mark_task_card_deleting(job['id'],card['message_id']):return
-            try:
-                deleted=self.telegram.delete_message(card['chat_id'],card['message_id'])
-            except ProviderError:
-                return
-            if deleted is True:
-                self.store.delete_task_card(job['id'],card['message_id'])
-            return
-        markup=self.task_card_markup(job['id'],state)
-        try:
-            self.telegram.edit_message_text(card['chat_id'],card['message_id'],
-                                            self.task_card_text(job['message'],state),markup)
-            self.store.save_task_card(job['id'],card['chat_id'],card['message_id'],state)
-        except ProviderError:
-            pass
+        return self.telegram_surface.update_task_card(job, state)
 
     @staticmethod
     def _callback_authorized(cfg, generation, sender, chat):
@@ -9661,490 +9408,13 @@ class AgentService:
                     and sender==cfg.get('user_id') and chat.get('type')=='private' and chat.get('id')==sender)
 
     def ingest_settings_callback(self, callback, generation):
-        """#814: the owner's apply/cancel for one Work's settings drafts.
-
-        Exact: this notification, sent, this chat and message, the Work from
-        this chat and generation, and the drafts still exactly the set the
-        message offered (ids and digests).  The notification is consumed under
-        the lock; the drafts are applied after it through the orchestrator's
-        confirm (its own exactly-once state machine), so a slow Main/Judgment
-        AI check does not hold the service lock.
-        """
-        message=callback.get('message',{}) if isinstance(callback.get('message'),dict) else {}
-        sender=callback.get('from',{}).get('id') if isinstance(callback.get('from'),dict) else None
-        callback_id=callback.get('id')
-        parts=str(callback.get('data') or '').split(':')
-        rows,job,notification,renew_failure=[],None,None,None
-        with self.lock:
-            cfg=self.store.config('telegram',{})
-            authorized=self._callback_authorized(cfg,generation,sender,message.get('chat',{}) if isinstance(message.get('chat'),dict) else {})
-            if authorized and len(parts)==3 and parts[2] in ('confirm','cancel'):
-                notification=self.store.notification(parts[1])
-                job=self.store.job(notification['job_id']) if notification else None
-                exact=(notification and notification['kind']=='settings_change_proposed' and notification['state']=='sent'
-                       and notification['generation']==generation and notification['chat_id']==sender
-                       and notification['message_id']==message.get('message_id') and job
-                       and job['channel']==f"telegram:{generation}" and job['chat_id']==sender)
-                rows=self.offered_settings_drafts(notification) if exact else []
-                if exact and not rows and parts[2]=='confirm':
-                    # The tap approves the exact effects the message showed; a timeout alone is not a dead end.
-                    try:rows=self.settings_orchestrator.renew_expired(self.settings_owner(job),job['channel'],job['id'],notification.get('fingerprint'))
-                    except ValueError as exc:rows,renew_failure=[],str(exc)
-                if rows:self.store.update_notification(notification['id'],'settings_'+parts[2]+'ing')
-                elif exact and parts[2]=='cancel':
-                    # Nothing left to cancel (timed out or already settled): the owner's answer is still "no change".
-                    self.store.update_notification(notification['id'],'settings_canceled')
-                    rows=[{'_nothing_left':True}]
-        if not authorized:return
-        if rows and rows[0].get('_nothing_left'):
-            if isinstance(callback_id,str):
-                try:self.telegram.answer_callback_query(callback_id,msg('service.nothing_was_changed'),show_alert=False)
-                except ProviderError:pass
-            try:self.telegram.edit_message_text(sender,notification['message_id'],msg('service.nothing_was_changed'),{'inline_keyboard':[]})
-            except ProviderError:pass
-            return
-        # #814 review P2-3: the tap is answered first; a slow setter then runs off this poll thread.
-        if isinstance(callback_id,str):
-            text=(msg('service.started_applying_the_change') if rows and parts[2]=='confirm' else msg('service.done') if rows else '')
-            try:self.telegram.answer_callback_query(callback_id,text,show_alert=False)
-            except ProviderError:pass
-        if not rows:
-            # Nothing to act on: the message shows what became of it instead of leaving dead buttons.
-            this_message=(notification and notification['kind']=='settings_change_proposed' and notification['chat_id']==sender
-                          and notification['message_id']==message.get('message_id'))
-            if this_message:
-                done=renew_failure or {'settings_confirmed':msg('service.i_ve_already_applied_it'),'settings_canceled':msg('service.i_didn_t_change_it')}.get(notification['state'])
-                try:
-                    if done:self.telegram.edit_message_text(sender,notification['message_id'],done,{'inline_keyboard':[]})
-                    else:self.telegram.edit_message_reply_markup(sender,notification['message_id'],{'inline_keyboard':[]})
-                except ProviderError:pass
-            elif message.get('message_id'):
-                try:self.telegram.edit_message_reply_markup(sender,message['message_id'],{'inline_keyboard':[]})
-                except ProviderError:pass
-            return
-        lines=[]
-        owner,channel=self.settings_owner(job),job['channel']
-        for row in rows:
-            try:
-                result=(self.settings_orchestrator.confirm(owner,channel,row['id'],row['digest'],
-                                                           notify=lambda text,job=job:self.settings_followup(job,text))
-                        if parts[2]=='confirm' else self.settings_orchestrator.cancel(owner,channel,row['id']))
-                lines.append(result.get('response') or msg('service.done'))
-            except ValueError as exc:
-                lines.append(f"{row['effect']}: {exc}")
-        LOG.info('settings drafts %s by owner button work=%s count=%s',parts[2],job['id'],len(rows))
-        self.store.update_notification(notification['id'],'settings_confirmed' if parts[2]=='confirm' else 'settings_canceled')
-        try:self.telegram.edit_message_text(sender,notification['message_id'],'\n'.join(lines),{'inline_keyboard':[]})
-        except ProviderError:pass
+        return self.telegram_surface.ingest_settings_callback(callback, generation)
 
     def ingest_engine_recovery_callback(self, callback, generation):
-        """Select an existing alternate route from this exact usage-limit reply."""
-        message=callback.get('message',{}) if isinstance(callback.get('message'),dict) else {}
-        chat=message.get('chat',{}) if isinstance(message.get('chat'),dict) else {}
-        sender=callback.get('from',{}).get('id') if isinstance(callback.get('from'),dict) else None
-        callback_id=callback.get('id')
-        parts=str(callback.get('data') or '').split(':')
-        selected_name=None
-        selected_engine=None
-        reason=''
-        job=None
-        with self.lock:
-            cfg=self.store.config('telegram',{})
-            authorized=self._callback_authorized(cfg,generation,sender,chat)
-            if authorized and len(parts)==3 and parts[0]=='p7e':
-                job=self.store.job(parts[1])
-                turn=self.telegram_turns.get(parts[1])
-                provenance=self.store.turn_provenance(parts[1]) or {}
-                engine_id=provenance.get('engine')
-                exact=(job and job.get('status')=='failed' and job.get('channel')==f'telegram:{generation}'
-                       and job.get('chat_id')==sender and provenance.get('route')=='subscription'
-                       and provenance.get('failure_class')=='usage-limit' and not provenance.get('usage_limit_recovery_selected')
-                       and turn and turn.get('chat_id')==sender and turn.get('reply_message_id')==message.get('message_id'))
-                options=self.usage_limit_route_options(job) if exact else []
-                option=next((item for item in options if item['id']==parts[2]),None)
-                if option and engine_id:
-                    selected_name=option['name']
-                    selected_engine=parts[2]
-        if selected_engine and job and engine_id:
-            try:
-                self.connect_subscription_engine({'engine':selected_engine,'officially_authenticated':True,
-                                                  'recovery_work_id':job['id'],'expected_current':engine_id})
-            except ValueError as exc:
-                reason=str(exc)
-                selected_name=None
-            except Exception as exc:
-                LOG.warning('usage-limit route change failed work=%s kind=%s',job['id'],type(exc).__name__)
-                reason='AI 연결을 확인하지 못했어요. AI 설정에서 상태를 확인하세요.'
-        if selected_name:
-            # Keep the existing retry/details controls, but consume every route
-            # choice on this one failed reply. The failed Work is never queued.
-            try:
-                controls=self.reply_controls(job,False)
-                self.telegram.edit_message_reply_markup(sender,message.get('message_id'),
-                                                        reply_controls_markup(job['id'],controls))
-            except ProviderError:pass
-            reason=f'{selected_name}로 전환했습니다. 실패한 요청은 자동으로 다시 실행하지 않았어요. 같은 요청을 다시 보내 주세요.'
-        if isinstance(callback_id,str):
-            try:self.telegram.answer_callback_query(callback_id,reason,show_alert=not bool(selected_name))
-            except ProviderError:pass
+        return self.telegram_surface.ingest_engine_recovery_callback(callback, generation)
 
     def ingest_callback(self, callback, generation):
-        """Accept only paired-owner, exact-message task and approval callbacks."""
-        if isinstance(callback.get('data'),str) and callback['data'].startswith('p7e:'):
-            return self.ingest_engine_recovery_callback(callback,generation)
-        if isinstance(callback.get('data'),str) and callback['data'].startswith('p7s:'):
-            return self.ingest_settings_callback(callback,generation)
-        with self.lock:
-            cfg=self.store.config('telegram',{})
-            sender=callback.get('from',{}).get('id')
-            message=callback.get('message',{})
-            chat=message.get('chat',{}) if isinstance(message,dict) else {}
-            callback_id=callback.get('id')
-            data=callback.get('data','')
-            authorized=self._callback_authorized(cfg,generation,sender,chat)
-            changed=False
-            #: (text, show_alert) for this tap's answerCallbackQuery.  Detail is
-            #: shown as the tap's own alert (#581) instead of a new bubble.
-            alert=None
-            if authorized and isinstance(data,str) and data[:4] in ('p7v:','p7d:'):
-                job_id=data[4:]
-                job=self.store.job(job_id)
-                card=self.store.task_card(job_id) if data.startswith('p7v:') else None
-                turn=self.telegram_turns.get(job_id) if data.startswith('p7d:') else None
-                exact_surface=((card and card['chat_id']==sender and card['message_id']==message.get('message_id'))
-                               or (turn and turn['chat_id']==sender and turn['reply_message_id']==message.get('message_id')))
-                if (job and exact_surface and job['channel']==f"telegram:{generation}" and job['chat_id']==sender):
-                    progress=self.task_progress_text(job_id)
-                    if len(progress)<=200:
-                        alert=(progress,True)
-                    else:
-                        # An alert holds 200 characters; never truncate a
-                        # truth line (unknown delivery) - send it instead.
-                        try:self.telegram.send_message(sender,progress)
-                        except ProviderError:pass
-                    changed=True
-            elif authorized and isinstance(data,str) and data.startswith('p7r:'):
-                job_id=data[4:]
-                job=self.store.job(job_id)
-                turn=self.telegram_turns.get(job_id)
-                if (job and turn and turn['chat_id']==sender and turn['reply_message_id']==message.get('message_id')
-                        and job['channel']==f"telegram:{generation}" and job['chat_id']==sender):
-                    retry_id,reason=self.retry_from_control(job,generation,sender)
-                    if retry_id:
-                        alert=(msg('service.i_ll_try_again'),False)
-                        changed=True
-                        self._consume_control(sender,message.get('message_id'),
-                                              reply_controls_markup(job_id,(CONTROL_RETRY,),consumed=(CONTROL_RETRY,)))
-                    else:
-                        alert=(reason,True)
-            elif authorized and isinstance(data,str) and data.startswith('p7c:'):
-                job_id=data[4:]
-                with self.store.db() as db:
-                    db.execute('BEGIN IMMEDIATE')
-                    job=db.execute('SELECT * FROM jobs WHERE id=?',(job_id,)).fetchone()
-                    card=db.execute('SELECT * FROM telegram_task_cards WHERE job_id=?',(job_id,)).fetchone()
-                    if (job and card and card['message_id']==-2 and isinstance(message.get('message_id'),int)
-                            and card['chat_id']==sender and job['channel']==f"telegram:{generation}"
-                            and job['chat_id']==sender and job['status']=='queued'):
-                        db.execute("UPDATE telegram_task_cards SET message_id=?,state='queued',created=? WHERE job_id=? AND message_id=-2",
-                                   (message['message_id'],time.time(),job_id))
-                        card=db.execute('SELECT * FROM telegram_task_cards WHERE job_id=?',(job_id,)).fetchone()
-                    if (job and card and card['chat_id']==sender and card['message_id']==message.get('message_id')
-                            and job['channel']==f"telegram:{generation}" and job['chat_id']==sender and job['status']=='queued'):
-                        db.execute("UPDATE jobs SET status='cancelled',error='소유자가 작업 카드를 통해 취소했습니다.',delivery='cancelled' WHERE id=? AND status='queued'",(job_id,))
-                        changed=db.total_changes==1
-                        job=dict(job)
-                if changed:
-                    if self.context_observations.cancel_work_requests(job_id):self.store.remove_telegram_photo(job_id)
-                    self.update_task_card(job,'cancelled')
-                    self._clear_queued_presence(job)
-            elif authorized and isinstance(data,str) and data.startswith('p7x:'):
-                choice=self.store.telegram_context_choice(data[4:])
-                exact=(choice and choice['state']=='offered' and choice['generation']==generation
-                       and choice['chat_id']==sender and choice['message_id']==message.get('message_id'))
-                if exact:
-                    selected=self.store.select_telegram_context_choice(choice['token'])
-                    with self.store.db() as db:
-                        db.execute('BEGIN IMMEDIATE')
-                        job=db.execute('SELECT * FROM jobs WHERE id=?',(selected['job_id'],)).fetchone()
-                        if job and job['status']=='awaiting_context' and job['channel']==f"telegram:{generation}" and job['chat_id']==sender:
-                            self.store.attach_context(selected['job_id'],[selected['event_id']],self.context_assistant_id(),db)
-                            db.execute("UPDATE jobs SET status='queued',error=NULL WHERE id=?",(selected['job_id'],))
-                            job=dict(job)
-                        else: job=None
-                    if job:
-                        try:self.telegram.edit_message_text(sender,message.get('message_id'),msg('service.i_ve_attached_the_selected_context'),{'inline_keyboard':[]})
-                        except ProviderError:pass
-                        changed=True
-            elif authorized and isinstance(data,str) and data.startswith('p7n:'):
-                job_id=data[4:]
-                choice=self.store.telegram_context_choice_for_job(job_id)
-                exact=(choice and choice['generation']==generation and choice['chat_id']==sender and choice['message_id']==message.get('message_id'))
-                with self.store.db() as db:
-                    db.execute('BEGIN IMMEDIATE')
-                    job=db.execute('SELECT * FROM jobs WHERE id=?',(job_id,)).fetchone()
-                    if exact and job and job['status']=='awaiting_context' and job['channel']==f"telegram:{generation}" and job['chat_id']==sender:
-                        db.execute("UPDATE jobs SET status='queued',error=NULL WHERE id=?",(job_id,))
-                        job=dict(job)
-                    else:job=None
-                if job:
-                    try:self.telegram.edit_message_text(sender,message.get('message_id'),'컨텍스트 없이 이 요청을 시작할게요.',{'inline_keyboard':[]})
-                    except ProviderError:pass
-                    changed=True
-            elif authorized and isinstance(data,str) and data.startswith('p7a:'):
-                parts=data.split(':')
-                if len(parts)==3 and parts[2] in ('approve','deny'):
-                    notification=self.store.notification(parts[1])
-                    current=self.document_boundary()
-                    exact=(notification and notification['kind']=='approval_needed' and notification['state']=='sent'
-                           and notification['generation']==generation and notification['chat_id']==sender
-                           and notification['message_id']==message.get('message_id')
-                           and notification['fingerprint']==self.document_fingerprint()
-                           and current['requires_approval'])
-                    if exact:
-                        resumed=False
-                        if parts[2]=='approve':
-                            self.set_document_approval({'approved':True})
-                            # #505: the folder-resumed Work continues once.
-                            resumed=self.resume_after_document_approval(notification.get('job_id'))
-                            result_kind='approved'
-                        else:
-                            self.store.put('document_sharing',{})
-                            self.drop_document_resume(work_id=notification.get('job_id'))
-                            result_kind='denied'
-                        self.store.update_notification(notification['id'],result_kind)
-                        try:self.telegram.edit_message_text(sender,notification['message_id'],
-                            LOCAL_DOCUMENT_RESUMED_TEXT if resumed else self.notification_text(result_kind),{'inline_keyboard':[]})
-                        except ProviderError:pass
-                        changed=True
-            elif authorized and isinstance(data,str) and data.startswith('p7w:'):
-                # #656: one guarded browser step of one Work.  Exact: this
-                # notification, sent, this chat and message, and the request
-                # it names is still the pending one (fingerprint).
-                parts=data.split(':')
-                if len(parts)==3 and parts[2] in ('approve','deny'):
-                    notification=self.store.notification(parts[1])
-                    pending=self._browser_request(notification['job_id']) if notification else None
-                    exact=(notification and notification['kind']=='browser_approval_needed' and notification['state']=='sent'
-                           and notification['generation']==generation and notification['chat_id']==sender
-                           and notification['message_id']==message.get('message_id') and pending
-                           and pending.get('state')=='requested' and notification['fingerprint']==pending.get('offer_digest'))
-                    if exact:
-                        decision=self._decide_browser_step(notification['job_id'],parts[2]=='approve',notification['fingerprint'])
-                        result_kind='browser_approved' if decision.get('approved') else 'browser_denied'
-                        self.store.update_notification(notification['id'],result_kind)
-                        # #1472: say what really happened (approved but not continued, or stale), never "continuing".
-                        said=self.step_approval_result_text(notification['job_id'],decision,parts[2]=='approve')
-                        try:self.telegram.edit_message_text(sender,notification['message_id'],said,{'inline_keyboard':[]})
-                        except ProviderError:pass
-                        changed=True
-            elif authorized and isinstance(data,str) and data.startswith('p7l:'):
-                # #709: the owner's answer to one Work's in-flow login.  Exact:
-                # this notification, sent, this chat and message, and the login
-                # it names is still the offered one (nonce as fingerprint).
-                parts=data.split(':')
-                if len(parts)==3 and parts[2]=='reopen':
-                    # #1573: the expired prompt's one button; exact as below, for the expired login it named.
-                    notification=self.store.notification(parts[1])
-                    exact=(notification and notification['kind']=='browser_login_needed'
-                           and notification['state']=='browser_login_expired'
-                           and notification['generation']==generation and notification['chat_id']==sender
-                           and notification['message_id']==message.get('message_id')
-                           and self.reopen_browser_login(notification['job_id'],notification['fingerprint']))
-                    if exact:
-                        # Only while still the expired prompt: the work loop may already have re-armed it.
-                        with self.store.db() as db:
-                            db.execute("UPDATE telegram_notifications SET state='browser_login_reopened' "
-                                       "WHERE id=? AND state='browser_login_expired'",(notification['id'],))
-                        try:self.telegram.edit_message_text(sender,notification['message_id'],BROWSER_LOGIN_REOPENING_TEXT,{'inline_keyboard':[]})
-                        except ProviderError:pass
-                        changed=True
-                elif len(parts)==3 and parts[2] in ('done','skip','phone'):
-                    notification=self.store.notification(parts[1])
-                    row=self._browser_login(notification['job_id']) if notification else None
-                    exact=(notification and notification['kind']=='browser_login_needed' and notification['state']=='sent'
-                           and notification['generation']==generation and notification['chat_id']==sender
-                           and notification['message_id']==message.get('message_id') and row
-                           and row.get('state')=='offered' and notification['fingerprint']==row.get('nonce'))
-                    if exact and parts[2]=='phone':
-                        # #939: the same window from the phone; the link goes to this (paired owner) chat only,
-                        # from its own thread (the tunnel takes seconds to open).
-                        started=self._start_remote_login_for_work(notification['job_id'],row['nonce'],sender)
-                        alert=(BROWSER_LOGIN_PHONE_ALERT if started else remote_login.BUSY_TEXT,not started)
-                        changed=started
-                    elif exact:
-                        # The work loop closes the window and settles it (never this poll thread).
-                        decided=self._request_login_decision(notification['job_id'],row['nonce'],'resume' if parts[2]=='done' else 'skip')
-                        changed=decided.get('state') is not None
-            elif authorized and isinstance(data,str) and data.startswith('p7p:'):
-                # #659: the owner's explicit yes/no for one Work's proposed
-                # preparations.  Exact: this notification, sent, this chat
-                # and message, and the proposals are still exactly the set
-                # the message offered (fingerprint).
-                parts=data.split(':')
-                if len(parts)==3 and parts[2]=='cancel':
-                    # #1455: cancel exactly the reservations this message confirmed (accepted here, or
-                    # scheduled by the owner's own request); this chat and message only.
-                    notification=self.store.notification(parts[1])
-                    exact=(notification and notification['generation']==generation and notification['chat_id']==sender
-                           and notification['message_id']==message.get('message_id')
-                           and (notification['kind'],notification['state']) in (('preparation_proposed','preparation_accepted'),
-                                                                                ('preparation_scheduled','sent')))
-                    if exact:
-                        cancelled=0
-                        for preparation_id in prepared_ids(notification):
-                            try:cancelled+=bool(self.cancel_preparation(preparation_id).get('changed'))
-                            except prep.PreparationRefusal:continue
-                        result_kind='preparation_cancelled' if cancelled else 'preparation_already_settled'
-                        LOG.info('preparation cancel by owner button work=%s count=%s',notification['job_id'],cancelled)
-                        self.store.update_notification(notification['id'],result_kind)
-                        try:self.telegram.edit_message_text(sender,notification['message_id'],self.notification_text(result_kind),{'inline_keyboard':[]})
-                        except ProviderError:pass
-                        changed=True
-                elif len(parts)==3 and parts[2] in ('accept','deny'):
-                    notification=self.store.notification(parts[1])
-                    # Only the rows this message rendered (digest of the shown page).
-                    proposals=self.offered_proposals(notification)[0] if notification else []
-                    exact=(notification and notification['kind']=='preparation_proposed' and notification['state']=='sent'
-                           and notification['generation']==generation and notification['chat_id']==sender
-                           and notification['message_id']==message.get('message_id') and proposals)
-                    if exact:
-                        for row in proposals:
-                            if parts[2]=='accept':self.preparations.accept(row['id'],prep.ACCEPTED_OWNER_BUTTON)
-                            else:self.cancel_preparation(row['id'])
-                        result_kind='preparation_accepted' if parts[2]=='accept' else 'preparation_denied'
-                        LOG.info('preparation %s by owner button work=%s count=%s',parts[2],notification['job_id'],len(proposals))
-                        # #1455: an accepted message keeps a cancel button bound to exactly what it accepted.
-                        self.store.update_notification(notification['id'],result_kind,fingerprint=(
-                            PREPARED_IDS_PREFIX+','.join(row['id'] for row in proposals) if parts[2]=='accept' else None))
-                        markup=self.preparation_cancel_markup(notification['id']) if parts[2]=='accept' else {'inline_keyboard':[]}
-                        try:self.telegram.edit_message_text(sender,notification['message_id'],self.notification_text(result_kind),markup)
-                        except ProviderError:pass
-                        changed=True
-            elif authorized and isinstance(data,str) and data.startswith('p7m:'):
-                # #818: the owner's yes/no for one candidate (or all open ones) of a
-                # memory prompt.  Exact: this notification, sent, this chat and
-                # message, within its TTL, and a candidate not yet decided here;
-                # each is then re-validated against what the message showed.
-                parts=data.split(':')
-                if len(parts)==4 and parts[3] in ('accept','reject'):
-                    notification=self.store.notification(parts[1])
-                    binding=self.memory_binding(notification) if notification and notification['kind'] in MEMORY_PROMPT_KINDS else None
-                    # #818 review: only a candidate the message showed complete is tappable.
-                    open_=self.memory_open(binding) if binding and 'sent' in binding else []
-                    targets=(open_ if parts[2]=='a' else
-                             [int(parts[2])] if parts[2].isdigit() and int(parts[2]) in open_ else [])
-                    exact=(targets and notification['state']=='sent'
-                           and notification['generation']==generation and notification['chat_id']==sender
-                           and notification['message_id']==message.get('message_id'))
-                    if exact and time.time()-float(binding['sent'])>MEMORY_CANDIDATES_TTL_SECONDS:
-                        self.expire_memory_prompt(notification,binding)
-                        alert=(MEMORY_CANDIDATES_EXPIRED_TEXT,True)
-                    elif exact:
-                        decided=self.decide_memory_prompt(notification['job_id'],binding,targets,parts[3]=='accept')
-                        finished=not self.memory_open(binding)
-                        self.store.update_notification(notification['id'],'memory_decided' if finished else 'sent',
-                                                       fingerprint=json.dumps(binding))
-                        outdated=any(binding['done'][item]=='outdated' for item in decided)
-                        LOG.info('memory candidates %s by owner button work=%s decided=%s outdated=%s',parts[3],notification['job_id'],len(decided),outdated)
-                        footer=MEMORY_CANDIDATES_OUTDATED_TEXT if outdated else None
-                        try:self.telegram.edit_message_text(sender,notification['message_id'],
-                                                            self.memory_prompt_text(notification['job_id'],binding,footer),
-                                                            self.memory_prompt_markup(notification['id'],binding))
-                        except ProviderError:pass
-                        if outdated:alert=(MEMORY_CANDIDATES_OUTDATED_TEXT,True)
-                        changed=True
-            elif authorized and isinstance(data,str) and data.startswith('p7u:'):
-                # #918: the owner's undo of one saved fact (or all still open) of a
-                # saved notice.  Exact: this notification, sent, this chat and
-                # message, within its 7-day window, and a fact not yet decided
-                # here; each is then re-validated against the bound Memory row
-                # and content digest (``retract_memory`` fails closed).
-                parts=data.split(':')
-                if len(parts)==3:
-                    notification=self.store.notification(parts[1])
-                    binding=self.memory_saved_binding(notification) if notification and notification['kind'] in MEMORY_SAVED_KINDS else None
-                    open_=self.memory_saved_open(binding) if binding and 'sent' in binding else []
-                    targets=(open_ if parts[2]=='a' else
-                             [int(parts[2])] if parts[2].isdigit() and int(parts[2]) in open_ else [])
-                    exact=(targets and notification['state']=='sent'
-                           and notification['generation']==generation and notification['chat_id']==sender
-                           and notification['message_id']==message.get('message_id'))
-                    if exact and time.time()-float(binding['sent'])>MEMORY_SAVED_TTL_SECONDS:
-                        self.expire_memory_saved(notification,binding)
-                    elif exact:
-                        decided=self.undo_memory_saved(notification['job_id'],binding,targets)
-                        finished=not self.memory_saved_open(binding)
-                        self.store.update_notification(notification['id'],'memory_undone' if finished else 'sent',
-                                                       fingerprint=json.dumps(binding))
-                        outdated=any(binding['done'][item]=='outdated' for item in decided)
-                        LOG.info('memory undo by owner button work=%s decided=%s outdated=%s',notification['job_id'],len(decided),outdated)
-                        footer=MEMORY_SAVED_OUTDATED_TEXT if outdated else None
-                        try:self.telegram.edit_message_text(sender,notification['message_id'],
-                                                            self.memory_saved_text(binding,footer),
-                                                            self.legacy_memory_saved_markup(notification['id'],binding))
-                        except ProviderError:pass
-                        changed=True
-            elif authorized and isinstance(data,str) and data.startswith('p7q:'):
-                # #719: stop one watch from its own notification.  Exact: this
-                # notification, sent, this chat and message; the same cancel
-                # as Settings, so a running Work finishes as its own Work.
-                parts=data.split(':')
-                if len(parts)==3 and parts[2]=='stop':
-                    notification=self.store.notification(parts[1])
-                    job=self.store.job(notification['job_id']) if notification else None
-                    preparation_id=prep.preparation_of((job or {}).get('request_key'))
-                    exact=(notification and notification['kind']==prep.NOTIFY_KIND and notification['state']=='sent'
-                           and notification['generation']==generation and notification['chat_id']==sender
-                           and notification['message_id']==message.get('message_id') and preparation_id)
-                    if exact:
-                        try:
-                            stopped=self.cancel_preparation(preparation_id)
-                        except prep.PreparationRefusal:
-                            stopped=None
-                        if stopped is not None:
-                            LOG.info('preparation cancel by owner button id=%s changed=%s',preparation_id,stopped['changed'])
-                            alert=(msg('service.watching_has_stopped_no_more_updates') if stopped['changed'] else '이미 멈춘 지켜보기입니다.',False)
-                            try:self.telegram.edit_message_reply_markup(sender,notification['message_id'],{'inline_keyboard':[]})
-                            except ProviderError:pass
-                            changed=True
-            elif authorized and isinstance(data,str) and data.startswith('v1c:'):
-                parts=data.split(':')
-                if len(parts)==3 and parts[2] in ('approve','deny'):
-                    notification=self.store.notification(parts[1])
-                    attachment=self.store.context_attachment(notification['job_id']) if notification else None
-                    current_model=self.store.config('model',{})
-                    exact=(notification and notification['kind']=='context_approval_needed' and notification['state']=='sent'
-                           and notification['generation']==generation and notification['chat_id']==sender
-                           and notification['message_id']==message.get('message_id') and attachment
-                           and attachment['assistant_id']==self.context_assistant_id(current_model)
-                           and not attachment['approved'] and self.external_model(current_model))
-                    if exact:
-                        if parts[2]=='approve':
-                            self.store.approve_context_attachment(notification['job_id'])
-                            # This job did not run a model turn; returning it to
-                            # the durable queue is a continuation of this exact
-                            # owner-approved request, not a replay after failure.
-                            with self.store.db() as db:
-                                db.execute("UPDATE jobs SET status='queued',error=NULL,delivery='none' WHERE id=? AND status='failed'",(notification['job_id'],))
-                            result_kind='approved'
-                        else:
-                            result_kind='denied'
-                            self.store.remove_telegram_photo(notification['job_id'])
-                        self.store.update_notification(notification['id'],result_kind)
-                        try:self.telegram.edit_message_text(sender,notification['message_id'],
-                            (msg('service.context_sharing_for_this_task_is') if parts[2]=='approve' else '이 작업의 컨텍스트 공유를 허용하지 않았습니다.'),
-                            {'inline_keyboard':[]})
-                        except ProviderError:pass
-                        changed=True
-            if authorized and isinstance(callback_id,str):
-                text,show=alert or (msg('service.done') if changed else '',False)
-                try:self.telegram.answer_callback_query(callback_id,text,show_alert=show)
-                except ProviderError:pass
-            if authorized and not changed and not alert and message.get('message_id'):
-                # A tap that can no longer act removes its dead buttons rather than leaving them to be pressed again.
-                try:self.telegram.edit_message_reply_markup(sender,message['message_id'],{'inline_keyboard':[]})
-                except ProviderError:pass
+        return self.telegram_surface.ingest_callback(callback, generation)
 
     def set_current_context(self, body):
         """Owner privacy control for current context (#626): use/timezone/clear only."""
@@ -10309,226 +9579,10 @@ class AgentService:
         return task_id
 
     def ingest_update(self, update, generation):
-        with self.lock:
-            cfg=self.store.config('telegram',{})
-            if not cfg.get('enabled') or cfg.get('generation')!=generation: return
-            update_id=update.get('update_id')
-            if not isinstance(update_id,int) or update_id<cfg.get('cursor',0): return
-            # #626: an edit is a source revision of an earlier message, never
-            # a new request or a pairing attempt, so its text is not a turn.
-            edited=not isinstance(update.get('message'),dict) and isinstance(update.get('edited_message'),dict)
-            message=update['edited_message'] if edited else update.get('message',{})
-            sender=message.get('from',{}).get('id')
-            chat=message.get('chat',{})
-            photo=message.get('photo') if not edited else None
-            has_photo=isinstance(photo,list) and bool(photo)
-            media_group_id=message.get('media_group_id') if has_photo else None
-            text='' if edited else (message.get('text') or message.get('caption',''))
-            photo_file_id=None
-            if has_photo:
-                candidates=[item for item in photo if isinstance(item,dict) and isinstance(item.get('file_id'),str)
-                            and item.get('file_id')]
-                def photo_rank(item):
-                    width=item.get('width');height=item.get('height');size=item.get('file_size')
-                    pixels=(width*height if isinstance(width,int) and not isinstance(width,bool)
-                            and isinstance(height,int) and not isinstance(height,bool) else 0)
-                    return pixels,size if isinstance(size,int) and not isinstance(size,bool) else 0
-                chosen=max(candidates,key=photo_rank) if candidates else {}
-                photo_file_id=chosen.get('file_id') or 'invalid-telegram-file-id'
-                if not isinstance(text,str) or not text.strip():text='[사진 첨부]'
-            private=chat.get('type')=='private' and isinstance(sender,int) and chat.get('id')==sender
-            authorized=private and sender==cfg.get('user_id')
-            paired=False
-            # #897: a family bot pairs only with the Telegram user who created it.
-            creator=cfg.get('pair_user_id')
-            creator_bound=isinstance(creator,int) and not isinstance(creator,bool)
-            if private and creator_bound and sender==creator and not isinstance(cfg.get('user_id'),int) \
-                    and isinstance(text,str) and text:
-                # #927: Telegram attests the creator, so their first message pairs the
-                # bot; Telegram's own bot-creation screen sends a plain /start.
-                cfg.update(user_id=sender,pair_code='',pair_expires=0)
-                authorized=True
-                paired=True
-                if text.split(' ',1)[0]=='/start':text='/start'
-            elif private and isinstance(text,str) and text.startswith('/start ') and cfg.get('pair_code') and time.time()<cfg.get('pair_expires',0) \
-                    and (not creator_bound or sender==creator):
-                if hmac.compare_digest(text[7:].strip().encode(),cfg['pair_code'].encode()):
-                    cfg.update(user_id=sender,pair_code='',pair_expires=0)
-                    authorized=True
-                    paired=True
-                    text='/start'
-            if private and not authorized and isinstance(text,str) and text:
-                self._log_unpaired_message()
-            if paired:
-                # #1344: Still welcomes the owner in their Telegram language.
-                lang=message.get('from',{}).get('language_code')
-                if isinstance(lang,str) and 0<len(lang)<=16:cfg['owner_language']=lang
-            if authorized and isinstance(text,str) and len(text)>MAX_OWNER_MESSAGE_CHARS:
-                # #832 (B14): an over-long message reaches the worker truncated,
-                # with a note that says so, instead of being dropped silently.
-                text=truncated_owner_message(text)
-            guided_context_requested=(authorized and isinstance(text,str) and self.requests_guided_context(text)
-                                      and bool(self.context_inbox().list()))
-            unqueued=[]
-            # #1305: the chat whose location just continued a request; its keyboard goes at once.
-            located_chat=None
-            with self.store.db() as db:
-                db.execute('BEGIN IMMEDIATE')
-                guided_context=False
-                if authorized and isinstance(text,str) and 0<len(text)<=MAX_OWNER_MESSAGE_CHARS:
-                    album_key=(f'tg-album:{generation}:{sender}:{hashlib.sha256(media_group_id.encode()).hexdigest()}'
-                               if isinstance(media_group_id,str) and 1<=len(media_group_id)<=128 else None)
-                    album=(db.execute('SELECT * FROM telegram_photo_albums WHERE generation=? AND chat_id=? AND media_group_id=?',
-                                      (generation,sender,media_group_id)).fetchone() if album_key else None)
-                    album_created=False
-                    if album_key:
-                        if album:
-                            task_id=album['job_id']
-                        else:
-                            existing=db.execute('SELECT id,status,message FROM jobs WHERE request_key=?',(album_key,)).fetchone()
-                            album_caption=''
-                            if existing and existing['status']=='queued':
-                                task_id=existing['id']
-                                album_caption=existing['message'] if existing['message']!='[사진 첨부]' else ''
-                            elif existing:
-                                # A protocol-late album member must not mutate a Work already in flight.
-                                album_key=None
-                            else:
-                                task_id=self.store.enqueue('[사진 첨부]',album_key,f'telegram:{generation}',sender,db=db,owner_typed=True)
-                            if album_key:
-                                db.execute('INSERT INTO telegram_photo_albums(job_id,generation,chat_id,media_group_id,last_received,caption) VALUES (?,?,?,?,?,?)',
-                                           (task_id,generation,sender,media_group_id,time.time(),album_caption))
-                                album_created=True
-                        if album_key:
-                            current=db.execute('SELECT caption FROM telegram_photo_albums WHERE job_id=?',(task_id,)).fetchone()
-                            captions=[part for part in (current['caption'] or '').split('\n\n') if part]
-                            if text!='[사진 첨부]' and text not in captions:captions.append(text)
-                            caption='\n\n'.join(captions)[:MAX_OWNER_MESSAGE_CHARS]
-                            parsed_album_context=self.parse_context_request(caption)
-                            if parsed_album_context:
-                                event_ids,caption=parsed_album_context
-                                self.store.attach_context(task_id,event_ids,self.context_assistant_id(),db)
-                            elif guided_context_requested:
-                                db.execute("UPDATE jobs SET status='awaiting_context' WHERE id=? AND status='queued'",(task_id,))
-                                guided_context=True
-                            db.execute('UPDATE telegram_photo_albums SET last_received=?,caption=? WHERE job_id=?',
-                                       (time.time(),caption,task_id))
-                            db.execute("UPDATE jobs SET message=? WHERE id=? AND status IN ('queued','awaiting_context')",
-                                       (caption or '[사진 첨부]',task_id))
-                            self.store.attach_telegram_photo(task_id,photo_file_id,db=db)
-                            self.store.mark_telegram_photo_attached(task_id,db=db)
-                            if album_created:
-                                self.telegram_turns.record_source(task_id,sender,message.get('message_id'),db=db)
-                                self.context_observations.note_text_source(db,task_id,message,generation)
-                            text=caption or '[사진 첨부]'
-                        else:
-                            album_key=None
-                    if not album_key:
-                        parsed=self.parse_context_request(text)
-                        if parsed:
-                            event_ids,text=parsed
-                            task_id=self.store.enqueue(text,f'tg:{generation}:{update_id}',f'telegram:{generation}',sender,db=db,owner_typed=True)
-                            self.store.attach_context(task_id,event_ids,self.context_assistant_id(),db)
-                        else:
-                            task_id=self.store.enqueue(text,f'tg:{generation}:{update_id}',f'telegram:{generation}',sender,db=db,owner_typed=True)
-                            if guided_context_requested:
-                                db.execute("UPDATE jobs SET status='awaiting_context' WHERE id=?",(task_id,))
-                                guided_context=True
-                        if photo_file_id:
-                            self.store.attach_telegram_photo(task_id,photo_file_id,db=db)
-                            self.store.mark_telegram_photo_attached(task_id,db=db)
-                        # #581: the owner's own message is the reaction target and reply anchor.
-                        self.telegram_turns.record_source(task_id,sender,message.get('message_id'),db=db)
-                        self.context_observations.note_text_source(db,task_id,message,generation)
-                else:
-                    task_id=None
-                if authorized and not paired:
-                    # #626: a location or an edit is recorded (or refused) in
-                    # this same transaction as the cursor; it never becomes
-                    # a Work, a model call or a reply - except (#774) a
-                    # location answering a pending request, which continues
-                    # the asking Work once.
-                    answered=[]
-                    self.context_observations.ingest_telegram(db,update,generation,sender,answered)
-                    for answer in answered:
-                        continued=self.continue_located_work(db,answer,message,generation,sender)
-                        if continued is False:
-                            unqueued.append(answer['job_id'])
-                        elif continued:
-                            located_chat=sender
-                cfg['cursor']=update_id+1
-                db.execute('INSERT INTO config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',('telegram',json.dumps(cfg)))
-            for job_id in unqueued:
-                # #774 review: told once per asking Work, after the commit; the worker sends it.
-                job=self.store.job(job_id)
-                if job:self.queue_notification(job,'location_not_continued')
-            if paired:
-                # #1344: the /start reply (Still's welcome) is the connection proof; no automatic search.
-                self.store.put('telegram_status',{'state':'connected','message':msg('service.your_account_is_connected_still_sent')})
-            if authorized and self.is_natural_language(text) and task_id:
-                if guided_context:
-                    self.offer_telegram_context_choices(task_id,sender,generation)
-                # An ordinary request gets no card: short Work answers in one
-                # bubble; queued Work shows only the 👀 on the owner's message
-                # and running Work gets native typing/draft presence
-                # (`acknowledge_long_work`, #510/#581/#958).
-            if authorized and task_id and not paired and not guided_context and not has_photo \
-                    and self.is_natural_language(text):
-                self.consider_steer(task_id,text)
-        if located_chat is not None:
-            self.withdraw_location_keyboard(located_chat)
+        return self.telegram_surface.ingest_update(update, generation)
 
     def ingest_reaction(self, reaction, generation):
-        """The owner's emoji on an assistant message (#996): an observation, judged by the Judgment AI.
-
-        On a saved-memory notice, the Judgment AI decides whether it asks not
-        to keep those facts (the same exact undo the old button made).  On an
-        answer, it is recorded on that Work for later turns and self-review.
-        No emoji is mapped to a meaning in code.  Returns what it was applied to.
-        """
-        cfg=self.store.config('telegram',{})
-        chat=reaction.get('chat') if isinstance(reaction.get('chat'),dict) else {}
-        user=(reaction.get('user') or {}).get('id') if isinstance(reaction.get('user'),dict) else None
-        message_id=reaction.get('message_id')
-        if not (cfg.get('enabled') and cfg.get('generation')==generation and chat.get('type')=='private'
-                and isinstance(user,int) and user==cfg.get('user_id') and chat.get('id')==user and isinstance(message_id,int)):
-            return None
-        emoji=[item.get('emoji') for item in reaction.get('new_reaction') or ()
-               if isinstance(item,dict) and isinstance(item.get('emoji'),str)][:3]
-        if not emoji:return None
-        # #1472: a reaction on an approval prompt is the owner's answer to it, judged like a reply.
-        pending=self.pending_step_notification(user,message_id)
-        if pending:
-            notification,request=pending
-            def answer():
-                text=self.answer_step_approval(notification,request,'reaction: '+' '.join(emoji))
-                if text:
-                    try:self.telegram.send_message(user,text)
-                    except ProviderError:pass
-            self.steer_spawn(answer)
-            return 'step_approval'
-        with self.store.db() as db:
-            notice=db.execute('SELECT * FROM telegram_notifications WHERE chat_id=? AND message_id=? AND kind IN (%s) '
-                              'ORDER BY created DESC LIMIT 1'%','.join('?'*len(MEMORY_SAVED_KINDS)),
-                              (user,message_id,*MEMORY_SAVED_KINDS)).fetchone()
-            turn=db.execute('SELECT job_id FROM telegram_turns WHERE chat_id=? AND reply_message_id=? ORDER BY created DESC LIMIT 1',
-                            (user,message_id)).fetchone()
-        target=dict(notice)['job_id'] if notice else (turn['job_id'] if turn else None)
-        if not target:return None
-        with self.store.db() as db:
-            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                       (target,REACTION_EVENT,'observed',
-                        json.dumps({'emoji':emoji,'on':'memory_notice' if notice else 'answer'},ensure_ascii=False),time.time()))
-        LOG.info('owner reaction work=%s on=%s',target,'memory_notice' if notice else 'answer')
-        if notice:
-            notification=dict(notice)
-            self.steer_spawn(lambda:self.withdraw_memory_notice(notification,'reaction: '+' '.join(emoji)))
-            return 'memory_notice'
-        # #998: the answer the owner reacted to gets one self-review in the idle tick, under the
-        # shared cap and pause; the Judgment AI decides whether there is anything to learn.
-        try:om.enqueue_self_review(self.store,target,om.REVIEW_REACTION,'owner reaction on the answer: '+' '.join(emoji))
-        except ValueError as exc:LOG.info('reaction self-review not queued (%s)',type(exc).__name__)
-        return 'answer'
+        return self.telegram_surface.ingest_reaction(reaction, generation)
 
     def open_memory_notice(self, notification):
         """A saved notice whose facts can still be withdrawn: (notification, binding) or None (#996)."""
@@ -10660,70 +9714,13 @@ class AgentService:
     _receiving_unsteady_since=None
 
     def receive_telegram(self, now=None):
-        """One receive poll; report a failure, except a transport failure still inside its grace (#65).
-
-        A connection reset that the next poll recovers from is not a receiving failure: the
-        owner's log and Telegram status stay quiet. A refusal (409, 401, other 4xx) is told at once.
-        """
-        now=time.monotonic() if now is None else now
-        try:
-            self.poll_telegram()
-            self.mark_telegram_connected()
-        except (ProviderError,ValueError) as exc:
-            if transient_failure(exc):
-                if self._receiving_unsteady_since is None:self._receiving_unsteady_since=now
-                if now-self._receiving_unsteady_since<TELEGRAM_RECEIVE_GRACE_SECONDS:return
-            self.store.put('telegram_status',{'state':'error','message':msg('service.check_the_telegram_connection_receiving_will')})
-            self._receiving_failure=self._log_receiving_failure(exc,self._receiving_failure)
-            return
-        self._receiving_unsteady_since=None
-        if self._receiving_failure:LOG.info('telegram: receiving again')
-        self._receiving_failure=None
+        return self.telegram_surface.receive_telegram(now)
 
     def _log_unpaired_message(self):
-        """#1543: say, at most every ten minutes, that an unpaired chat was ignored."""
-        now=time.time()
-        if now-getattr(self,'_unpaired_logged_at',0)<600:return
-        self._unpaired_logged_at=now
-        LOG.info('telegram: a message from a chat that is not paired with this Still was ignored; '
-                 'open the pairing link from setup on this computer and press Start')
+        return self.telegram_surface._log_unpaired_message()
 
     def poll_telegram(self):
-        with self.lock:
-            cfg=self.store.config('telegram',{})
-            token=self.store.secret('telegram_token')
-        if not cfg.get('enabled') or not token:
-            # With no active update stream this is the explicit release path;
-            # a failed enabled poll below must keep the marker until a later
-            # successful poll confirms the album's quiet window.
-            self.settle_expired_telegram_photo_albums()
-            return
-        updates=self.telegram.get_updates(cfg.get('cursor',0), timeout=1)
-        for update in sorted(updates,key=lambda u:u.get('update_id',0)):
-            control=None
-            if isinstance(update.get('callback_query'),dict):
-                control=lambda:self.ingest_callback(update['callback_query'],cfg['generation'])
-            elif isinstance(update.get('stopped_message_generation'),dict):
-                # #581: the owner pressed Stop on a draft.
-                control=lambda:self.ingest_stop(update['stopped_message_generation'],cfg['generation'])
-            elif isinstance(update.get('managed_bot'),dict):
-                # #897: a family member created their bot through this bot's Managed Bots link.
-                control=lambda:self.ingest_managed_bot(update['managed_bot'])
-            elif isinstance(update.get('message_reaction'),dict):
-                # #996: the owner's emoji on an assistant message.
-                control=lambda:self.ingest_reaction(update['message_reaction'],cfg['generation'])
-            if control:
-                control()
-                # Callback updates must advance the durable cursor too, or
-                # Telegram will resend them after every restart.
-                with self.lock:
-                    current=self.store.config('telegram',{})
-                    if current.get('generation')==cfg['generation'] and isinstance(update.get('update_id'),int) and update['update_id']>=current.get('cursor',0):
-                        current['cursor']=update['update_id']+1
-                        self.store.put('telegram',current)
-            else:self.ingest_update(update,cfg['generation'])
-        self.retry_family_handovers()
-        self.settle_expired_telegram_photo_albums()
+        return self.telegram_surface.poll_telegram()
 
     def start_family_setup(self, display_name, name=None, notify=None):
         """Create a family member's agent after the owner confirmed it in conversation (#912).
@@ -10809,10 +9806,7 @@ class AgentService:
             return 0
 
     def settle_expired_telegram_photo_albums(self, now=None):
-        """Release persisted album Works after their short update-collection window."""
-        cutoff=(time.time() if now is None else now)-TELEGRAM_PHOTO_ALBUM_SETTLE_SECONDS
-        with self.store.db() as db:
-            db.execute('DELETE FROM telegram_photo_albums WHERE last_received<=?',(cutoff,))
+        return self.telegram_surface.settle_expired_telegram_photo_albums(now)
 
     def run_one(self):
         self.settle_native_handoffs()
@@ -12158,114 +11152,7 @@ class AgentService:
         return terminal_text(response,error,outcome,verified=verified,note=note,waiting=waiting)
 
     def deliver_one(self):
-        # Mark before send. A lost response may mean delivered; never auto-resend.
-        # #123: a reply that never reached Telegram waits out its backoff before the next try.
-        if time.monotonic()<self._unsent_retry_at:return
-        with self.lock:
-            cfg=self.store.config('telegram',{})
-            with self.store.db() as db:
-                db.execute('BEGIN IMMEDIATE')
-                row=db.execute("SELECT * FROM jobs WHERE delivery='pending' ORDER BY created LIMIT 1").fetchone()
-                if not row:return
-                job=dict(row)
-                allowed=cfg.get('enabled') and job['channel']==f"telegram:{cfg.get('generation')}" and job['chat_id']==cfg.get('user_id')
-                db.execute('UPDATE jobs SET delivery=? WHERE id=?',('sending' if allowed else 'cancelled',job['id']))
-            if not allowed:return
-            blocked=self.store.blocked_delivery_reply(job['id'])
-            # The owner-language cause when one was recorded (#598 X1); the
-            # technical ``error`` remains the Task-detail record.
-            text=blocked or self.telegram_result_text(job['response'],
-                                                      job.get('owner_cause') or job['error'],job.get('status'),
-                                                      verified=job.get('owner_verified'),note=job.get('owner_note'),
-                                                      # #1470: a Work waiting for the owner's approval is not "unconfirmed".
-                                                      waiting=self.step_approval_pending(job['id']))
-            # #659: a prepared answer arrives without an owner turn; say what it is for.
-            text=self.preparation_reply_prefix(job)+text
-            try:route_options=self.usage_limit_route_options(job)
-            except Exception as exc:
-                LOG.debug('usage-limit route recovery unavailable kind=%s',type(exc).__name__)
-                route_options=[]
-            provenance=self.store.turn_provenance(job['id']) or {}
-            if (not blocked and provenance.get('failure_class')=='usage-limit' and not route_options):
-                text+='\n다른 AI 연결은 Still 웹의 AI 설정에서 선택할 수 있어요.'
-            # #818: whether this Work left pending memory candidates; its one ask
-            # follows the reply (#836: the ask is the ask, no line is appended).
-            try:memory_pending=not blocked and bool(self.pending_memory_candidates(job['id'])[0])
-            except Exception as exc:
-                LOG.warning('memory candidate read failed work=%s kind=%s',job['id'],type(exc).__name__)
-                memory_pending=False
-            # #918: whether this Work saved facts at once; its one notice (with undo) follows the reply.
-            try:memory_saved=not blocked and bool(self.work_saved_memories(job['id'])[0])
-            except Exception as exc:
-                LOG.warning('saved memory read failed work=%s kind=%s',job['id'],type(exc).__name__)
-                memory_saved=False
-            # #581: one durable reply, valid Telegram HTML (no leaked `**`),
-            # anchored to the owner turn only when that clarifies it, with
-            # bounded recovery controls only when the turn did not succeed.
-            # Presentation choices are computed before the send; none of them
-            # can turn a delivered reply into a second send.
-            try:
-                anchor=self.reply_anchor(job)
-                controls=self.reply_controls(job,bool(blocked))
-            except Exception as exc:  # presentation must never block the reply
-                LOG.debug('telegram reply presentation failed: %s',type(exc).__name__)
-                anchor,controls=None,()
-            markup=reply_controls_markup(job['id'],controls,route_options=route_options)
-            # #992: a reply without inline controls takes away a location keyboard whose request ended.
-            removal=None
-            if not markup:
-                try:removal=self.location_keyboard_removal(job['chat_id'])
-                except Exception:removal=None
-            message_id=None
-            try:
-                try:
-                    result=self.telegram.send_message(job['chat_id'],render_telegram_html(text),markup or removal,
-                                                      parse_mode='HTML',reply_to=anchor)
-                except TelegramRejected as exc:
-                    # Telegram answered that it could not parse the entities:
-                    # a definite non-delivery, so one plain-text send cannot
-                    # duplicate anything.  Every other failure stays unknown.
-                    if not exc.entity_parse_error:raise
-                    result=self.telegram.send_message(job['chat_id'],text,markup or removal,reply_to=anchor)
-                message_id=result.get('message_id') if isinstance(result,dict) else None
-                status='sent'
-                self._unsent_backoff=0
-                if removal:self.store.put(self.LOCATION_KEYBOARD_KEY,{})
-            except TelegramNotSent:
-                # #123: nothing reached Telegram, so the reply stays queued and is sent once it is
-                # reachable; what follows a settled send (notices, outcome) waits for that send.
-                with self.store.db() as db:
-                    db.execute("UPDATE jobs SET delivery='pending' WHERE id=? AND delivery='sending'",(job['id'],))
-                self._unsent_backoff=min(TELEGRAM_UNSENT_BACKOFF_MAX,max(TELEGRAM_UNSENT_BACKOFF_FIRST,self._unsent_backoff*2))
-                self._unsent_retry_at=time.monotonic()+self._unsent_backoff
-                LOG.warning('telegram delivery waiting work=%s retry_in=%ss',job['id'],self._unsent_backoff)
-                return
-            except ProviderError as exc:
-                status='unknown'
-                LOG.warning('telegram delivery unknown work=%s kind=%s status=%s',job['id'],type(exc).__name__,exc.status)
-            with self.store.db() as db:
-                db.execute('UPDATE jobs SET delivery=? WHERE id=?',(status,job['id']))
-            # #996: every delivered answer, so an owner reaction on it finds its Work.
-            if isinstance(message_id,int):
-                self.telegram_turns.record_reply(job['id'],job['chat_id'],message_id)
-            # #818/#836: after a reply confirmed sent (never 'unknown'), the Work's
-            # one ask about its pending memory proposals.
-            try:
-                if memory_pending and status=='sent':self.queue_memory_candidates(job)
-            except Exception as exc:
-                LOG.warning('memory candidate offer failed work=%s kind=%s',job['id'],type(exc).__name__)
-            # #918: after the reply - delivered ``sent`` or ``unknown`` (review: a save is never untold; the
-            # notice cannot duplicate the reply and each undo is exact to its own message) - release the Work's
-            # one notice of what it remembered, with undo.  A crash before this line is covered by the sweep.
-            try:
-                if memory_saved:self.release_memory_saved(job)
-            except Exception as exc:
-                LOG.warning('memory saved notice failed work=%s kind=%s',job['id'],type(exc).__name__)
-        # #835/#858: delivery is durable before the truth-gated outcome
-        # presentation. This optional remote Judgment call runs outside the
-        # service lock, so it cannot stall polling, Stop updates or work.
-        self._present_outcome(job,delivered=status=='sent',blocked=bool(blocked),awaiting_owner=memory_pending)
-        self.presence.pop(job['id'],None)
+        return self.telegram_surface.deliver_one()
 
     def mark_telegram_connected(self):
         cfg=self.store.config('telegram',{})
