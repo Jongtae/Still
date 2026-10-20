@@ -6,7 +6,9 @@ import json
 import math
 import os
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 import unicodedata
 from collections import namedtuple
 from pathlib import Path
@@ -1637,6 +1639,8 @@ class WorkBudget:
  """
  def __init__(self,*,turns=WORK_MODEL_TURNS,attempts=WORK_TOOL_ATTEMPTS,seconds=WORK_DEADLINE_SECONDS,clock=time.monotonic,stop=None,ledger=None,nudges=WORK_ALTERNATIVE_NUDGES):
   self.turns,self.attempts,self.clock,self.stop,self.ledger=turns,attempts,clock,stop,ledger
+  # #16: reads of one model turn may spend from several threads; each spend is one step.
+  self._spending=threading.RLock()
   self.deadline=clock()+seconds;self.turns_used=0;self.attempts_used=0
   self.nudges,self.nudges_used=nudges,0
   if ledger is not None:
@@ -1672,20 +1676,23 @@ class WorkBudget:
   return self.turns-min(WORK_JUDGMENT_RESERVE,max(0,self.turns-1))
  def spend_turn(self,reserve=False):
   self.check()
-  limit=self.turn_limit(reserve)
-  if self.turns_used>=limit or self.ledger is not None and not self.ledger.spend(limit,'turns'):
-   raise ToolError(WORK_TURNS_EXHAUSTED,'turn_budget')
-  self.turns_used+=1
+  with self._spending:
+   limit=self.turn_limit(reserve)
+   if self.turns_used>=limit or self.ledger is not None and not self.ledger.spend(limit,'turns'):
+    raise ToolError(WORK_TURNS_EXHAUSTED,'turn_budget')
+   self.turns_used+=1
  def spend_attempt(self):
   self.check()
-  if self.attempts_used>=self.attempts:raise ToolError(WORK_ATTEMPTS_EXHAUSTED,'attempt_budget')
-  if self.ledger is not None and not self.ledger.spend(self.attempts):
-   raise ToolError(WORK_ATTEMPTS_EXHAUSTED,'attempt_budget')
-  self.attempts_used+=1
+  with self._spending:
+   if self.attempts_used>=self.attempts:raise ToolError(WORK_ATTEMPTS_EXHAUSTED,'attempt_budget')
+   if self.ledger is not None and not self.ledger.spend(self.attempts):
+    raise ToolError(WORK_ATTEMPTS_EXHAUSTED,'attempt_budget')
+   self.attempts_used+=1
  def spend_nudge(self):
   """Whether one more "try a different path" turn is allowed (#657); never raises."""
-  if self.nudges_used>=self.nudges or self.ledger is not None and not self.ledger.spend(self.nudges,'nudges'):return False
-  self.nudges_used+=1;return True
+  with self._spending:
+   if self.nudges_used>=self.nudges or self.ledger is not None and not self.ledger.spend(self.nudges,'nudges'):return False
+   self.nudges_used+=1;return True
 
 class PresentationBudget(WorkBudget):
  """A Work's optional reaction judgments (#1418): its Stop, deadline and run, its own counter.
@@ -4095,6 +4102,142 @@ def _external(trail):
  # #818: a memory proposal concludes like internal bookkeeping too.
  return [row for row in trail if row[0] not in INTERNAL_STATE_ACTIONS and row[1]!='proposed']
 
+
+#: #16 slice 1: at most this many public reads of one model turn run at the same time.
+CONCURRENT_READ_LIMIT=4
+
+class ReadOverlap:
+ """The independent public reads of one model turn, run at the same time (#16 slice 1).
+
+ ``run_agent`` still walks a turn's calls one by one and records, judges and
+ answers each in that order.  What changes is when a read's network request is
+ made: when the walk reaches the first of two or more consecutive calls that
+ are public network reads (``NETWORK_READS``) the loop would admit and send,
+ their requests start together and each call then takes its own result in its
+ place.  Admission is predicted with the loop's own checks (argument schema,
+ ``duplicate_call``, ``repeat_path``, the memo) on copies of its state, so a
+ call the loop would refuse is never sent.  Not overlapped:
+
+ * anything that is not a public network read (effects, private reads, browser
+   steps, owner-state actions) - it closes the group, so nothing after it starts
+   before it has run;
+ * a page read after a search in the same group, since the search's results may
+   be what admits that page (``search_result_urls``);
+ * anything after a ``finish`` claim in the turn, which may end the run;
+ * a group the Work budget could not cover in the worst case (one transient
+   retry per read, and a model turn per search for a native search provider),
+   or a Work already stopped or past its deadline - that turn runs one by one.
+
+ Records stay in the turn's order: a record a read makes while it runs (a
+ transient-retry failure) is held and written when the walk reaches that call,
+ between its ``running`` and result records, exactly as when calls ran one by
+ one.  The budget, Stop and deadline are checked by each read as before
+ (``Capabilities.execute``); a Stop that arrives while the group runs refuses
+ every later model turn and tool call, and lets reads already sent finish, as a
+ step already under way always did.
+ """
+ def __init__(self,capabilities,specs):
+  self.capabilities,self.specs=capabilities,specs
+  self.started={};self.reached=set();self.sink=None;self.local=threading.local()
+
+ def admitted(self,call,attempts,paths):
+  """``(name, args)`` when the loop would send this call as a public read, else None.
+
+  The same checks, in the same order, as ``run_agent``; ``attempts`` and
+  ``paths`` are copies the prediction advances as the loop would.
+  """
+  function=call.get('function') if isinstance(call,dict) and isinstance(call.get('function'),dict) else {}
+  name=function.get('name')
+  if not isinstance(name,str) or name==FINISH_ACTION:return None
+  try:args=json.loads(function.get('arguments','{}'))
+  except (TypeError,ValueError):return None
+  args,_status=split_status(args)
+  spec=self.specs.get(name)
+  if not spec:return None
+  try:check_arguments(spec,args)
+  except (ValueError,TypeError,AttributeError):return None
+  tool=self.capabilities.tools.get(name) or {}
+  action=tool.get('host_action')
+  if action not in NETWORK_READS:return None
+  capabilities=self.capabilities
+  revision=capabilities.source_revision(action,args) if hasattr(capabilities,'source_revision') else None
+  cache_key=json.dumps([name,args] if revision is None else [name,args,revision],sort_keys=True)
+  attempts[cache_key]=attempts.get(cache_key,0)+1
+  if attempts[cache_key]>1 or cache_key in capabilities.memo:return None
+  keyed=canonical_search_args(args,capabilities.default_search_provider()) if action in SEARCH_BACKED_ACTIONS else args
+  path=path_key(action,keyed,None)
+  if path is not None:
+   if path in paths:return None
+   paths.add(path)
+  return name,args,action
+
+ def group(self,calls,index,attempts,paths):
+  """The consecutive public reads from ``index`` the loop would send, as ``(call_id, name, args)``."""
+  attempts,paths=dict(attempts),set(paths);members=[];searched=False
+  for call in calls[index:]:
+   plan=self.admitted(call,attempts,paths)
+   if plan is None:break
+   name,args,action=plan
+   if action=='public_page_read' and searched:break
+   searched=searched or action in SEARCH_BACKED_ACTIONS
+   members.append((call['id'],name,args,action))
+  return members
+
+ def covered(self,members):
+  """Whether the Work budget covers this group even if every read retries once."""
+  budget=getattr(self.capabilities,'budget',None)
+  if budget is None or budget.interrupted():return False
+  if budget.attempts-budget.attempts_used<2*len(members):return False
+  searches=sum(1 for _id,_name,_args,action in members if action in SEARCH_BACKED_ACTIONS)
+  return budget.turn_limit()-budget.turns_used>=searches
+
+ def start(self,calls,index,attempts,paths):
+  """At the walk's ``index``: start the group of reads that begins here, if any."""
+  if index in self.reached:return
+  members=self.group(calls,index,attempts,paths)
+  self.reached.update(range(index,index+max(1,len(members))))
+  if len(members)<2 or not self.covered(members):return
+  if self.sink is None:
+   self.sink=self.capabilities.record
+   local,sink=self.local,self.sink
+   def routed(*args,**kwargs):
+    held=getattr(local,'held',None)
+    if held is None:return sink(*args,**kwargs)
+    held.append((args,kwargs))
+   self.capabilities.record=routed
+  def run(name,args,held):
+   self.local.held=held
+   try:return self.capabilities.execute(name,args)
+   finally:self.local.held=None
+  pool=ThreadPoolExecutor(max_workers=min(len(members),CONCURRENT_READ_LIMIT),thread_name_prefix='still-read')
+  try:
+   for call_id,name,args,_action in members:
+    held=[]
+    self.started[call_id]=(pool.submit(run,name,args,held),held,name,args)
+  finally:pool.shutdown(wait=False)
+
+ def result(self,call_id,name,args):
+  """This call's read: its overlapped result when one was started for exactly it, else run now."""
+  started=self.started.pop(call_id,None)
+  if started is None or (started[2],started[3])!=(name,args):
+   if started is not None:self._discard(started)
+   return self.capabilities.execute(name,args)
+  future,held,_name,_args=started
+  try:return future.result()
+  finally:
+   for args_,kwargs in held:self.sink(*args_,**kwargs)
+
+ def _discard(self,started):
+  try:started[0].exception()
+  except Exception:pass
+
+ def settle(self):
+  """End of the turn: wait for any read the walk never reached, and restore the record sink."""
+  for started in list(self.started.values()):self._discard(started)
+  self.started.clear()
+  if self.sink is not None:
+   self.capabilities.record=self.sink;self.sink=None
+
 def run_agent(adapter,config,key,history,system,capabilities,record,scope='main',owner_context=None,images=None):
  """The direct-API tool loop.  ``owner_context`` (#833) is the turn context whose
  ``profile`` / ``current_context`` sections ``system`` already carries, so the outcome
@@ -4244,153 +4387,160 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   capabilities.written_labels.update(_batch_write_labels(calls,capabilities.tools))
   # #657: a typed failure in this batch earns one "try a different path" turn.
   path_failed=False
-  for call in calls:
-   function=call.get('function') if isinstance(call.get('function'),dict) else {}
-   if finish_offered and function.get('name')==FINISH_ACTION:
-    # #657: the completion claim.  Deterministic checks first (refs exist
-    # and did not fail), then one DecisionEngine judgment for a done claim.
-    try:claim_args=json.loads(function.get('arguments') or '{}')
-    except (TypeError,ValueError):claim_args=None
-    claim,reason=check_claim(claim_args,observations)
-    if reason is None and claim['status']=='done':
-     # #627: internal current-state bookkeeping is not evidence of the goal.
-     # #818: nor is a memory proposal.
-     claim['evidence_refs']=[ref for ref in claim['evidence_refs'] if observations[ref][1] not in INTERNAL_STATE_ACTIONS
-                             and observations[ref][2]!='proposed']
-     if not claim['evidence_refs']:reason='no_evidence'
-    judgment=None
-    if reason is None and claim['status']=='done':
-     judged+=1
-     judgment=goal_judgment(capabilities.judgments,goal,claim,observations,failed_steps_text(steps),capabilities.job_id,
-                            getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
-                            attachments=attachment_facts(images=len(images)) if images else '')
-     # A "not shown" answer returns the claim once, so the model can take
-     # another path; a second one, or no engine, ends the run below.
-     if judgment=='no' and judged<GOAL_JUDGMENTS:reason='goal_not_observed'
-    if reason is None:return conclude(claim['summary'],claim,judgment)
-    record('model','claim_rejected',json.dumps({'scope':scope,'call_id':call['id'],'code':reason,
-                                                 'evidence_refs':(claim or {}).get('evidence_refs')},ensure_ascii=False))
-    messages.append({'role':'tool','tool_call_id':call['id'],'content':json.dumps(
-     {'error':CLAIM_REJECTIONS[reason],'code':reason,'retry':'permanent','effect':'none',
-      # #1451: what the outcome judgment found missing, so the next path aims at it.
-      **({'missing':judgment.gap} if reason=='goal_not_observed' and getattr(judgment,'gap','') else {})},ensure_ascii=False)})
-    continue
-   name='unknown';validated=False;attempt=0;args={};action=None;ran=False;dispatched=False;failed_before=len(failures)
-   try:
-    name=function.get('name')
-    if not isinstance(name,str):
-     name='unknown';raise ValueError('도구 이름은 문자열이어야 합니다.')
-    args=json.loads(function.get('arguments','{}'))
-    # #718: the status is display text only; it never reaches validation,
-    # the repeat/duplicate keys or the tool itself.
-    args,status=split_status(args)
-    spec=specs.get(name)
-    if not spec:raise ValueError('허용하지 않은 도구 또는 인수입니다.')
-    check_arguments(spec,args)
-    validated=True
-    action=capabilities.tools[name]['host_action']
-    # #627: a weather(location_ref) repeat is keyed on the resolved source
-    # revision, so the same ref after a new live point is a new path.
-    revision=capabilities.source_revision(action,args) if hasattr(capabilities,'source_revision') else None
-    cache_key=json.dumps([name,args] if revision is None else [name,args,revision],sort_keys=True)
-    attempts[cache_key]=attempts.get(cache_key,0)+1;attempt=attempts[cache_key]
-    # #657: the same path with the same input is refused, not re-run.  A
-    # browser step is keyed on the page digest it acts on, so the same target
-    # on a changed page is a new path; its input is keyed as a digest only.
-    # #657: omitted search selectors are the owner's current default.
-    keyed=canonical_search_args(args,capabilities.default_search_provider()) if action in SEARCH_BACKED_ACTIONS else args
-    path=path_key(action,keyed,page)
-    if path is not None:
-     if path in paths:raise ToolError(REPEAT_PATH_TEXT,'repeat_path')
-     paths.add(path)
-    # #656: a browser call reads or changes page state, so the same call may run again.
-    stateful=action in BROWSER_ACTIONS
-    if attempt>1 and not stateful:raise ToolError('같은 도구 요청은 현재 작업에서 한 번만 실행합니다. 결과를 사용하거나 새 요청을 보내 주세요.','duplicate_call')
-    kind=alternative_kind(action,keyed,last_search,bool(trail) and trail[-1][1] in ('failed','incomplete'))
-    if action in SEARCH_BACKED_ACTIONS:last_search=keyed
-    # #656: typed browser text is replaced before this (or any) record.
-    running={'scope':scope,'call_id':call['id'],'attempt':attempt,'host_action':action,'arguments':recorded_arguments(action,args,getattr(capabilities,'judgment_text',None)),
-             'step':progress_step(action,args,status,getattr(capabilities,'judgment_text',None)),
-             # #787: the declared effect of a browser call, on every event of the call.
-             **declared_effect(action,args)}
-    if kind:
-     alternatives.append({'kind':kind,'action':action});running['alternative']=kind
-    record(name,'running',json.dumps(running,ensure_ascii=False))
-    dispatched=True
-    if stateful:result=capabilities.execute(name,args)
-    else:
-     if cache_key not in capabilities.memo:capabilities.memo[cache_key]=capabilities.execute(name,args)
-     result=capabilities.memo[cache_key]
-    ran=True
-    executions.append((name,result))
-    if name in ('find_files','read_file','list_notes','list_memory','search_memory','save_memory','calendar_query','drive_search','drive_read')+CALENDAR_DRAFT_TOOLS:capabilities.evidence.append({'tool':name,'result':result})
-    invalid_calls.discard(name)
-    sources.extend(result.get('sources',[]))
-    # #657: a page state the call returned is the page the next step acts on.
-    page=result_page_digest(result) or page
-    # A tool that declined or deferred returned normally, so this loop used to
-    # count it as a fully successful call and the turn reported success (#488).
-    # #818: a save_memory held as a pending candidate is a recorded proposal.
-    proposed=memory_proposal(action,result)
-    withheld=None if proposed else withheld_effect(name,result)
-    trace={'scope':scope,'call_id':call['id'],'attempt':attempt,'host_action':action,'evidence':evidence_summary(name,result),
-           **declared_effect(action,args)}
-    if withheld:
-     failed=True;trail.append((action,'withheld'));failures.append((name,withheld.reason))
-     if withheld.advanced:successful+=1
-     # 'error' is the field the owner-visible cause is built from; without it
-     # the turn would report a failure it could not explain.
-     record(name,'failed',json.dumps({**trace,'state':'withheld','error':withheld.reason},ensure_ascii=False))
-    elif proposed:
-     proposals+=1;trail.append((action,'proposed'))
-     observed=verified_text(name,result)
-     if observed and observed not in verified:verified.append(observed)
-     record(name,'succeeded',json.dumps(trace,ensure_ascii=False))
-    else:
-     successful+=1
-     # A call that ran but whose typed Evidence says it is incomplete (a
-     # capped search) advanced the Work without
-     # completing it.  That is `partial` whether or not the model then
-     # writes text, so the one qualifier projection applies to the reply
-     # too (#494).  Setup-required keeps its current outcome semantics.
-     gaps=[label for label in evidence_qualifiers(result) if label in INCOMPLETE_QUALIFIERS]
-     observed=verified_text(name,result)
-     if observed and observed not in verified:verified.append(observed)
-     if gaps:
-      note=' '.join(QUALIFIER_NOTES[label] for label in gaps)
-      failed=True;trail.append((action,'incomplete'))
-      incomplete.append((name,note));failures.append((name,note))
-     else:trail.append((action,'succeeded'))
-     record(name,'succeeded',json.dumps(trace,ensure_ascii=False))
-   except (ValueError,TypeError,AttributeError,OSError,ProviderError) as exc:
-    # #1484: refused before the call reached the tool (invalid call, repeat path, duplicate).
-    if not dispatched:not_run(exc)
-    action=(capabilities.tools.get(name) or {}).get('host_action',name) if validated else None
-    result=_error_observation(exc,validated,action)
+  # #16 slice 1: consecutive independent public reads of this turn run at the same time.
+  overlap=ReadOverlap(capabilities,specs)
+  try:
+   for index,call in enumerate(calls):
+    function=call.get('function') if isinstance(call.get('function'),dict) else {}
+    if finish_offered and function.get('name')==FINISH_ACTION:
+     # #657: the completion claim.  Deterministic checks first (refs exist
+     # and did not fail), then one DecisionEngine judgment for a done claim.
+     try:claim_args=json.loads(function.get('arguments') or '{}')
+     except (TypeError,ValueError):claim_args=None
+     claim,reason=check_claim(claim_args,observations)
+     if reason is None and claim['status']=='done':
+      # #627: internal current-state bookkeeping is not evidence of the goal.
+      # #818: nor is a memory proposal.
+      claim['evidence_refs']=[ref for ref in claim['evidence_refs'] if observations[ref][1] not in INTERNAL_STATE_ACTIONS
+                              and observations[ref][2]!='proposed']
+      if not claim['evidence_refs']:reason='no_evidence'
+     judgment=None
+     if reason is None and claim['status']=='done':
+      judged+=1
+      judgment=goal_judgment(capabilities.judgments,goal,claim,observations,failed_steps_text(steps),capabilities.job_id,
+                             getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
+                             attachments=attachment_facts(images=len(images)) if images else '')
+      # A "not shown" answer returns the claim once, so the model can take
+      # another path; a second one, or no engine, ends the run below.
+      if judgment=='no' and judged<GOAL_JUDGMENTS:reason='goal_not_observed'
+     if reason is None:return conclude(claim['summary'],claim,judgment)
+     record('model','claim_rejected',json.dumps({'scope':scope,'call_id':call['id'],'code':reason,
+                                                  'evidence_refs':(claim or {}).get('evidence_refs')},ensure_ascii=False))
+     messages.append({'role':'tool','tool_call_id':call['id'],'content':json.dumps(
+      {'error':CLAIM_REJECTIONS[reason],'code':reason,'retry':'permanent','effect':'none',
+       # #1451: what the outcome judgment found missing, so the next path aims at it.
+       **({'missing':judgment.gap} if reason=='goal_not_observed' and getattr(judgment,'gap','') else {})},ensure_ascii=False)})
+     continue
+    # #16: the consecutive public reads that begin here are sent together; each is still
+    # admitted, recorded and judged below, in this order.
+    overlap.start(calls,index,attempts,paths)
+    name='unknown';validated=False;attempt=0;args={};action=None;ran=False;dispatched=False;failed_before=len(failures)
+    try:
+     name=function.get('name')
+     if not isinstance(name,str):
+      name='unknown';raise ValueError('도구 이름은 문자열이어야 합니다.')
+     args=json.loads(function.get('arguments','{}'))
+     # #718: the status is display text only; it never reaches validation,
+     # the repeat/duplicate keys or the tool itself.
+     args,status=split_status(args)
+     spec=specs.get(name)
+     if not spec:raise ValueError('허용하지 않은 도구 또는 인수입니다.')
+     check_arguments(spec,args)
+     validated=True
+     action=capabilities.tools[name]['host_action']
+     # #627: a weather(location_ref) repeat is keyed on the resolved source
+     # revision, so the same ref after a new live point is a new path.
+     revision=capabilities.source_revision(action,args) if hasattr(capabilities,'source_revision') else None
+     cache_key=json.dumps([name,args] if revision is None else [name,args,revision],sort_keys=True)
+     attempts[cache_key]=attempts.get(cache_key,0)+1;attempt=attempts[cache_key]
+     # #657: the same path with the same input is refused, not re-run.  A
+     # browser step is keyed on the page digest it acts on, so the same target
+     # on a changed page is a new path; its input is keyed as a digest only.
+     # #657: omitted search selectors are the owner's current default.
+     keyed=canonical_search_args(args,capabilities.default_search_provider()) if action in SEARCH_BACKED_ACTIONS else args
+     path=path_key(action,keyed,page)
+     if path is not None:
+      if path in paths:raise ToolError(REPEAT_PATH_TEXT,'repeat_path')
+      paths.add(path)
+     # #656: a browser call reads or changes page state, so the same call may run again.
+     stateful=action in BROWSER_ACTIONS
+     if attempt>1 and not stateful:raise ToolError('같은 도구 요청은 현재 작업에서 한 번만 실행합니다. 결과를 사용하거나 새 요청을 보내 주세요.','duplicate_call')
+     kind=alternative_kind(action,keyed,last_search,bool(trail) and trail[-1][1] in ('failed','incomplete'))
+     if action in SEARCH_BACKED_ACTIONS:last_search=keyed
+     # #656: typed browser text is replaced before this (or any) record.
+     running={'scope':scope,'call_id':call['id'],'attempt':attempt,'host_action':action,'arguments':recorded_arguments(action,args,getattr(capabilities,'judgment_text',None)),
+              'step':progress_step(action,args,status,getattr(capabilities,'judgment_text',None)),
+              # #787: the declared effect of a browser call, on every event of the call.
+              **declared_effect(action,args)}
+     if kind:
+      alternatives.append({'kind':kind,'action':action});running['alternative']=kind
+     record(name,'running',json.dumps(running,ensure_ascii=False))
+     dispatched=True
+     if stateful:result=capabilities.execute(name,args)
+     else:
+      if cache_key not in capabilities.memo:capabilities.memo[cache_key]=overlap.result(call['id'],name,args)
+      result=capabilities.memo[cache_key]
+     ran=True
+     executions.append((name,result))
+     if name in ('find_files','read_file','list_notes','list_memory','search_memory','save_memory','calendar_query','drive_search','drive_read')+CALENDAR_DRAFT_TOOLS:capabilities.evidence.append({'tool':name,'result':result})
+     invalid_calls.discard(name)
+     sources.extend(result.get('sources',[]))
+     # #657: a page state the call returned is the page the next step acts on.
+     page=result_page_digest(result) or page
+     # A tool that declined or deferred returned normally, so this loop used to
+     # count it as a fully successful call and the turn reported success (#488).
+     # #818: a save_memory held as a pending candidate is a recorded proposal.
+     proposed=memory_proposal(action,result)
+     withheld=None if proposed else withheld_effect(name,result)
+     trace={'scope':scope,'call_id':call['id'],'attempt':attempt,'host_action':action,'evidence':evidence_summary(name,result),
+            **declared_effect(action,args)}
+     if withheld:
+      failed=True;trail.append((action,'withheld'));failures.append((name,withheld.reason))
+      if withheld.advanced:successful+=1
+      # 'error' is the field the owner-visible cause is built from; without it
+      # the turn would report a failure it could not explain.
+      record(name,'failed',json.dumps({**trace,'state':'withheld','error':withheld.reason},ensure_ascii=False))
+     elif proposed:
+      proposals+=1;trail.append((action,'proposed'))
+      observed=verified_text(name,result)
+      if observed and observed not in verified:verified.append(observed)
+      record(name,'succeeded',json.dumps(trace,ensure_ascii=False))
+     else:
+      successful+=1
+      # A call that ran but whose typed Evidence says it is incomplete (a
+      # capped search) advanced the Work without
+      # completing it.  That is `partial` whether or not the model then
+      # writes text, so the one qualifier projection applies to the reply
+      # too (#494).  Setup-required keeps its current outcome semantics.
+      gaps=[label for label in evidence_qualifiers(result) if label in INCOMPLETE_QUALIFIERS]
+      observed=verified_text(name,result)
+      if observed and observed not in verified:verified.append(observed)
+      if gaps:
+       note=' '.join(QUALIFIER_NOTES[label] for label in gaps)
+       failed=True;trail.append((action,'incomplete'))
+       incomplete.append((name,note));failures.append((name,note))
+      else:trail.append((action,'succeeded'))
+      record(name,'succeeded',json.dumps(trace,ensure_ascii=False))
+    except (ValueError,TypeError,AttributeError,OSError,ProviderError) as exc:
+     # #1484: refused before the call reached the tool (invalid call, repeat path, duplicate).
+     if not dispatched:not_run(exc)
+     action=(capabilities.tools.get(name) or {}).get('host_action',name) if validated else None
+     result=_error_observation(exc,validated,action)
+     if validated:
+      failed=True
+      # Failed attempts stay in the durable tool events and the trail (#606 T2).
+      trail.append((action,'exhausted' if result['code'] in BUDGET_CODES else 'failed'))
+      failures.append((name,result['error']))
+      # A path that failed on its own terms (not the budget, not a missing
+      # connection, login or approval) is where a different path helps.
+      if result['retry'] in ('permanent','transient') and not result.get('requires'):path_failed=True
+     else:invalid_calls.add(name if isinstance(name,str) else 'unknown')
+     record(name,'failed',json.dumps({'scope':scope,'call_id':call['id'],'attempt':attempt,**result,
+                                      **(declared_effect(action,args) if validated else {})},ensure_ascii=False))
     if validated:
-     failed=True
-     # Failed attempts stay in the durable tool events and the trail (#606 T2).
-     trail.append((action,'exhausted' if result['code'] in BUDGET_CODES else 'failed'))
-     failures.append((name,result['error']))
-     # A path that failed on its own terms (not the budget, not a missing
-     # connection, login or approval) is where a different path helps.
-     if result['retry'] in ('permanent','transient') and not result.get('requires'):path_failed=True
-    else:invalid_calls.add(name if isinstance(name,str) else 'unknown')
-    record(name,'failed',json.dumps({'scope':scope,'call_id':call['id'],'attempt':attempt,**result,
-                                     **(declared_effect(action,args) if validated else {})},ensure_ascii=False))
-   if validated:
-    observations[call['id']]=(name,action,trail[-1][1],result)
-    steps.append((name,action,trail[-1][1],
-                  {**(result if isinstance(result,dict) else {}),**declared_effect(action,args),'scope':scope,'call_id':call['id'],
-                   'arguments':recorded_arguments(action,args,getattr(capabilities,'judgment_text',None))},
-                  failures[-1][1] if len(failures)>failed_before else None))
-   # #657: a result that ran carries its ref, the id a completion claim cites
-   # (a provider that hides tool call ids from the model still shows this).
-   ref={'ref':call['id']} if ran else {}
-   shown=worker_result(action,result) if ran else result
-   encoded=json.dumps({**ref,**shown} if ran and isinstance(shown,dict) else shown,ensure_ascii=False)
-   if len(encoded)>24000:encoded=json.dumps({**ref,'truncated':True,'preview':encoded[:22000]},ensure_ascii=False)
-   messages.append({'role':'tool','tool_call_id':call['id'],'content':encoded})
+     observations[call['id']]=(name,action,trail[-1][1],result)
+     steps.append((name,action,trail[-1][1],
+                   {**(result if isinstance(result,dict) else {}),**declared_effect(action,args),'scope':scope,'call_id':call['id'],
+                    'arguments':recorded_arguments(action,args,getattr(capabilities,'judgment_text',None))},
+                   failures[-1][1] if len(failures)>failed_before else None))
+    # #657: a result that ran carries its ref, the id a completion claim cites
+    # (a provider that hides tool call ids from the model still shows this).
+    ref={'ref':call['id']} if ran else {}
+    shown=worker_result(action,result) if ran else result
+    encoded=json.dumps({**ref,**shown} if ran and isinstance(shown,dict) else shown,ensure_ascii=False)
+    if len(encoded)>24000:encoded=json.dumps({**ref,'truncated':True,'preview':encoded[:22000]},ensure_ascii=False)
+    messages.append({'role':'tool','tool_call_id':call['id'],'content':encoded})
+  finally:overlap.settle()
   steer=claim_owner_steers(capabilities.store,capabilities.job_id,record)
   if steer:messages.append({'role':'user','content':steer})
   if path_failed and budget.spend_nudge():
