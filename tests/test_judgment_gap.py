@@ -72,6 +72,20 @@ class EngineContract(unittest.TestCase):
         yes = ScriptedSchemaEngine({'answer': True, 'gap': '', 'note': 'stray', 'confidence': 0.9})
         self.assertIsNone(yes.judge_explained(DecisionContext('p', {}), 'q').note)
 
+    def test_the_note_never_asks_again_for_a_step_the_owner_took(self):
+        """#155: the owner typed the approval; the closing line asked for it again in a formal register."""
+        engine = ScriptedSchemaEngine({'answer': False, 'gap': GAP, 'note': '', 'confidence': 0.9})
+        engine.judge_explained(DecisionContext('goal-reached', {'reply': 'r'}), 'The reply serves it.')
+        question = engine.asked[0][1]
+        for rule in ('Never ask the owner again for a step their request already took',
+                     'say plainly that it did not go through and what happens next, without putting it on the owner'):
+            self.assertIn(rule, question)
+        # #1459's rules stay, in their order.
+        self.assertLess(question.index('no internal terms'), question.index('Never ask the owner again'))
+        self.assertLess(question.index('Never ask the owner again'), question.index('An empty string when the reply already'))
+        for domain in ('calendar', 'schedule', 'event', 'mail', 'order', 'payment'):
+            self.assertNotIn(domain, question.lower(), domain)
+
     def test_a_true_verdict_carries_no_gap_and_a_missing_gap_is_malformed(self):
         yes = ScriptedSchemaEngine({'answer': True, 'gap': 'stray', 'confidence': 0.9})
         self.assertEqual(yes.judge_explained(DecisionContext('p', {}), 'q').gap, '')

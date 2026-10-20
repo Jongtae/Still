@@ -51,7 +51,11 @@ GAP_INSTRUCTION = ('gap: when the proposition is false, one short sentence, in t
                    'open, in one or two sentences addressed to the owner, in the language and register of the owner\'s '
                    'words, as the professional the request calls for would say it (for example a personal assistant, '
                    'an investment adviser or a researcher): plain and natural, with no internal terms such as '
-                   'observation, evidence, judgment, attempt or proposition. An empty string when the reply already '
+                   'observation, evidence, judgment, attempt or proposition. '
+                   # #155: the owner typed the approval and was asked for it again.
+                   'Never ask the owner again for a step their request already took (an approval, an answer, a value '
+                   'they gave); when they did their part and it still did not happen, say plainly that it did not go '
+                   'through and what happens next, without putting it on the owner. An empty string when the reply already '
                    'tells the owner this, and when the proposition is true.')
 
 #: ``DecisionConfidence.engine`` of a route that cannot answer ``choose_many``
