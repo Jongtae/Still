@@ -4,7 +4,7 @@ Still was imported without history. The predecessor plan is archived unchanged
 under docs/history/, where the historical governance tests read it; the root
 plan started empty and selected nothing until the owner activated a goal
 (BROWSER-REL-01, #94, since closed out). The owner then selected
-QUALITY-CORE-01 (#115, since closed out) and then STEADY-01 (#132).
+QUALITY-CORE-01 (#115) and then STEADY-01 (#132), both since closed out.
 """
 import importlib.util
 import json
@@ -83,7 +83,7 @@ def test_the_quality_program_is_closed_out_with_its_evidence():
     """#115: both tracks merged; each substep's issue, PR and merge commit are recorded."""
     current = plan()
     assert current["next_goal"]["id"] != "QUALITY-CORE-01"
-    assert invariants.closed_out_programs(current) == ["BROWSER-REL-01", "QUALITY-CORE-01"]
+    assert {"BROWSER-REL-01", "QUALITY-CORE-01"} <= set(invariants.closed_out_programs(current))
     assert {"QUALITY-CORE-01", *TRACK_C, *TRACK_D} <= set(current["history"]["documented_completed_iterations"])
     invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["QUALITY-CORE-01"]
@@ -109,41 +109,32 @@ TRACK_1 = ["STEADY-GOOGLE-01", "STEADY-LOCALE-01"]
 TRACK_2 = ["STEADY-NOTES-01"]
 
 
-def test_the_owner_activated_steady_program_is_goal_ready_and_heartbeat_paused():
-    """#132: #8 -> #10 share messages.json; #19 runs on its own."""
+def test_the_steady_program_is_closed_out_and_selects_nothing():
+    """#132: #8, #10 and #19 merged; no successor is selected and the heartbeat stays paused."""
     current = plan()
-    assert current["next_goal"]["id"] == "STEADY-01"
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    assert current["next_goal"]["id"] is None
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "terminal"
+    assert invariants.closed_out_programs(current) == ["BROWSER-REL-01", "QUALITY-CORE-01", "STEADY-01"]
+    assert {"STEADY-01", *TRACK_1, *TRACK_2} <= set(current["history"]["documented_completed_iterations"])
+    invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["STEADY-01"]
     assert program["activated_by"]["issue"] == 132
-    assert program["ordered_substeps"] == TRACK_1 + TRACK_2
-    assert program["active_substeps"] == [] and program["completed_substeps"] == {}
+    assert program["ordered_substeps"] == program["completed_substeps"] == TRACK_1 + TRACK_2
     items = {item["id"]: item for item in current["iterations"]}
-    assert [items[name]["issue"] for name in TRACK_1 + TRACK_2] == [8, 10, 19]
-    assert items["STEADY-GOOGLE-01"]["depends_on"] == items["STEADY-NOTES-01"]["depends_on"] == []
-    assert items["STEADY-LOCALE-01"]["depends_on"] == ["STEADY-GOOGLE-01"]
-    for name in TRACK_1 + TRACK_2:
-        assert items[name]["program"] == "STEADY-01" and items[name]["milestone"] == "steady-use"
-        (command,) = items[name]["tests"]
-        targets = command.split("pytest -q ", 1)[1].split()
-        assert targets and all((ROOT / target).exists() for target in targets), name
-    assert "full-validate" in program["completion_rule"]
-    for state in ({}, {"completed": []}):
+    evidence = items["STEADY-01"]["completed_substeps"]
+    assert [(evidence[name]["issue"], evidence[name]["pull_request"]) for name in TRACK_1 + TRACK_2] == [
+        (8, 145), (10, 146), (19, 144)]
+    assert all(len(evidence[name]["merge_commit"]) == 40 for name in evidence)
+    assert "#147" in program["closeout"] and "FV_RESULT" not in program["closeout"]
+    # #146/#147 merged before their full-validate finished; the exact-head runs that followed are recorded.
+    assert all(run in program["closeout"] for run in ("b68acf3", "39432663328", "4b369b0", "39432668620"))
+    # The owed review of the merged credential change is kept, not waived.
+    (owed,) = program["pending_reviews"]
+    assert (owed["substep"], owed["pull_request"], owed["tracking_issue"]) == ("STEADY-GOOGLE-01", 145, 149)
+    assert owed["merge_commit"] == evidence["STEADY-GOOGLE-01"]["merge_commit"]
+    assert "#149" in program["closeout"] and "not waived" in program["closeout"]
+    for state in ({}, {"completed": []}, {"active": "STEADY-01", "status": "running"}):
         assert DeliveryPlan(PLAN).select(state) is None, state
-
-
-def test_the_controller_can_run_the_steady_program_once_the_owner_makes_it_active(tmp_path):
-    """#100: every controller path reads the selected iteration's milestone."""
-    from scripts.dev.delivery import DeliveryController
-
-    altered = plan()
-    altered["next_goal"] = {"id": "STEADY-01", "status": "active"}
-    root = tmp_path / "repo"
-    root.mkdir()
-    (root / "delivery-plan.yaml").write_text(json.dumps(altered), encoding="utf-8")
-    controller = DeliveryController(root, tmp_path / "state.json", invariants.RecordingRunner(), now=lambda: 1_700_000_000)
-    status = controller.status()
-    assert (status["active"], status["milestone"]) == ("STEADY-01", "steady-use")
 
 
 def test_a_closed_program_stays_unselectable_even_if_declared_active(tmp_path):

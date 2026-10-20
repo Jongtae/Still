@@ -17,7 +17,11 @@
       "QUALITY-METHODS-01",
       "CORE-SERVICE-01",
       "CORE-CALENDAR-01",
-      "CORE-PARALLEL-01"
+      "CORE-PARALLEL-01",
+      "STEADY-01",
+      "STEADY-GOOGLE-01",
+      "STEADY-LOCALE-01",
+      "STEADY-NOTES-01"
     ]
   },
   "iterations": [
@@ -261,13 +265,33 @@
       "issue": 132,
       "milestone": "steady-use",
       "kind": "implementation",
-      "activation_status": "owner-activated-goal-ready",
+      "activation_status": "complete-on-merge",
       "contract": "goal-execution-contract.en.md",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_fresh_delivery_plan.py"
       ],
       "summary": "Steady everyday use: Google connections survive transient renewal failures (#8), system messages come out in the owner's language (#10), and working lessons live in one bounded notes document (#19). Track 1: #8 -> #10 (both edit messages.json); track 2: #19.",
-      "depends_on": []
+      "depends_on": [],
+      "completed_substeps": {
+        "STEADY-GOOGLE-01": {
+          "issue": 8,
+          "pull_request": 145,
+          "merge_commit": "875ced207f19483bc549f0883c7be3a2946ec9bc",
+          "decision": "A transient renewal failure keeps the encrypted refresh token; only a 400/401 refusal from the token endpoint is definitive; renewal 120 s early and at most once after a 401, re-sending only reads; Keychain key fetched before the OAuth/authority/connector locks; serialized own-client save; Settings removal of an unused own client. Merged without the human review the program declared for credential-protection changes; that review is owed on #149."
+        },
+        "STEADY-LOCALE-01": {
+          "issue": 10,
+          "pull_request": 146,
+          "merge_commit": "09bc3d71832c9a86e369b3c02cd8671a6427f0ac",
+          "decision": "45 catalog ids for ProviderError lines, model-setup validation, Telegram request/photo failures and calendar/phone/family notices; the browser sends its language and Still's own error replies use the same translate path. Follow-up PR #147 (92a61eb5) makes the ja/zh calendar instructions name the reply words the parser accepts."
+        },
+        "STEADY-NOTES-01": {
+          "issue": 19,
+          "pull_request": 144,
+          "merge_commit": "52f7cb18f11ff778cc7433adfb5a983eda25ef65",
+          "decision": "Working lessons live in one bounded notes document (reserved procedure_versions slot, at most 12 points / 1,500 characters) revised whole by self-review, with one notice per change and exact undo through forget; profile.working.* rows migrated once with receipts; lessons no longer appear among Memory records."
+        }
+      }
     },
     {
       "id": "STEADY-GOOGLE-01",
@@ -275,7 +299,7 @@
       "issue": 8,
       "milestone": "steady-use",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_drive_web_oauth.py tests/test_calendar_oauth.py tests/test_gmail.py tests/test_gmail_http_transport.py tests/test_google_calendar.py tests/test_google_drive.py tests/test_google_drive_connect.py tests/test_google_disconnect_ui.py"
       ],
@@ -288,7 +312,7 @@
       "issue": 10,
       "milestone": "steady-use",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_telegram_locale.py tests/test_messages.py"
       ],
@@ -303,7 +327,7 @@
       "issue": 19,
       "milestone": "steady-use",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_owner_model_upkeep.py tests/test_procedures.py tests/test_owner_forget.py tests/test_owner_profile.py"
       ],
@@ -399,7 +423,7 @@
       ]
     },
     "STEADY-01": {
-      "status": "owner-activated-goal-ready",
+      "status": "complete",
       "issue": 132,
       "activated_by": {
         "issue": 132,
@@ -412,17 +436,32 @@
         "STEADY-NOTES-01"
       ],
       "active_substeps": [],
-      "completed_substeps": {},
+      "completed_substeps": [
+        "STEADY-GOOGLE-01",
+        "STEADY-LOCALE-01",
+        "STEADY-NOTES-01"
+      ],
       "allowed_authority": "Track 1 (#8 then #10): drive_transport, calendar_transport, gmail, the OAuth setup and Settings removal path, messages.json, telegram_locale, providers.py and conversation_handoff.py message strings, and their tests. Track 2 (#19): owner_model, procedures, owner_forget and the profile snapshot, and their tests. quickstart_service.py is shared and taken in turn. Docs describing changed behavior and this plan. Evidence: focused unit tests with fake transports, clocks and temporary stores; required validate and full-validate on each final head; one issue-linked PR per substep, normal squash merge, then a closeout PR.",
       "non_goals": "New OAuth library or broader scopes; real Google accounts or credentials; a new memory service, fact namespace or localization framework; translating AI-generated answers; live-model sampling; releases, deployment and the delivery heartbeat; other backlog items.",
       "independent_review": "Triggered for #8 if a change materially alters credential protection (credential-store calls, local encryption-key handling); under the owner's 2026-10-20 choice such a PR waits for a human non-author review. Otherwise not planned.",
-      "completion_rule": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests, its declared focused tests passing, and required validate plus full-validate passing on the final head (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision."
+      "completion_rule": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests, its declared focused tests passing, and required validate plus full-validate passing on the final head (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision.",
+      "closeout": "Closed out 2026-10-20 (#132). All three substeps merged on their own PRs with issue acceptance mapped to unit and model-free fixture tests; evidence is fixture/unit only, with no live Google account or live-model observation. #8 PR #145 (track 1 merged it after judging no material credential-protection change; the human review of that change stays owed on #149 (pending_reviews) and is not waived by this closeout); #19 PR #144 (merged by the owner after the track session's merge was refused by the permission system); #10 PR #146 plus follow-up #147 (both merged by the owner). Process gaps recorded: #146 merged with its macOS full-validate jobs cancelled and a Codex finding fixed afterwards in #147; #147 merged before its full-validate ran; the final fixes of #144 and #145 were not re-reviewed by Codex. The missing exact-head evidence was then produced after merge: full-validate passed on #146's final head b68acf3 (run 39432663328) and #147's final head 4b369b0 (run 39432668620), each on Linux, macOS 15 and macOS 26, and on main at 92a61eb (run 39428469897). No successor is selected; the delivery heartbeat stayed paused throughout.",
+      "pending_reviews": [
+        {
+          "substep": "STEADY-GOOGLE-01",
+          "issue": 8,
+          "pull_request": 145,
+          "merge_commit": "875ced207f19483bc549f0883c7be3a2946ec9bc",
+          "tracking_issue": 149,
+          "reason": "The change touches the declared credential-protection triggers (credential-store call order, local encryption-key handling, what a renewal failure deletes); the implementing session judged it not material and merged without the human non-author review. The review stays owed on #149 and is not waived by this closeout."
+        }
+      ]
     }
   },
   "completion_claims": {},
   "next_goal": {
-    "id": "STEADY-01",
-    "status": "owner-activated-goal-ready",
-    "action": "QUALITY-CORE-01 closed out (#115). Owner selection (#132) makes STEADY-01 goal-ready: track 1 #8 -> #10, track 2 #19, session-driven at the owner's request. Scoped PRs and normal merge after required checks are authorized; real accounts, credentials, releases and deployment are not. The delivery heartbeat stays paused, and no successor is selected on completion."
+    "id": null,
+    "status": "complete",
+    "action": "STEADY-01 closed out (#132). No goal is selected; the owner activates the next one explicitly, for example from the curated backlog (#44). The delivery heartbeat stays paused."
   }
 }
