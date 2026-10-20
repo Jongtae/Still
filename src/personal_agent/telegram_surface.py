@@ -39,7 +39,7 @@ from .quickstart_service import (APPROVE_BUTTON, BROWSER_LOGIN_PHONE_ALERT, BROW
                                  DENY_BUTTON, LOCAL_DOCUMENT_APPROVAL_TEXT, LOCAL_DOCUMENT_RESUMED_TEXT, LOG, MAX_OWNER_MESSAGE_CHARS,
                                  MEMORY_CANDIDATES_EXPIRED_TEXT, MEMORY_CANDIDATES_OUTDATED_TEXT, MEMORY_CANDIDATES_TTL_SECONDS, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS,
                                  MEMORY_SAVED_OUTDATED_TEXT, MEMORY_SAVED_TTL_SECONDS, PREPARED_IDS_PREFIX, REACTION_EVENT, TELEGRAM_PHOTO_ALBUM_SETTLE_SECONDS,
-                                 TELEGRAM_RECEIVE_GRACE_SECONDS, prepared_ids, truncated_owner_message)
+                                 TELEGRAM_RECEIVE_GRACE_SECONDS, WORKING_NOTES_KIND, prepared_ids, truncated_owner_message)
 
 
 class TelegramSurface:
@@ -187,6 +187,12 @@ class TelegramSurface:
                     service.store.update_notification(notification['id'],'cancelled')
                     return True
                 reply_markup=service.memory_saved_markup(notification['id'],memory_saved)
+            elif notification['kind']==WORKING_NOTES_KIND:
+                # #19: told only while its revision is still the current notes; no buttons (#996).
+                notes_text=service.working_notes_notice_text(notification)
+                if notes_text is None:
+                    service.store.update_notification(notification['id'],'cancelled')
+                    return True
             elif notification['kind']=='settings_change_proposed':
                 # #814: the exact drafts of one Work; changed or expired since -> not offered.
                 settings_drafts=service.offered_settings_drafts(notification)
@@ -211,6 +217,7 @@ class TelegramSurface:
                       scheduled_text if notification['kind']=='preparation_scheduled' else
                       service.memory_prompt_text(notification['job_id'],memory_prompt) if notification['kind'] in MEMORY_PROMPT_KINDS else
                       service.memory_saved_text(memory_saved) if notification['kind'] in MEMORY_SAVED_KINDS else
+                      notes_text if notification['kind']==WORKING_NOTES_KIND else
                       service.settings_orchestrator.confirmation_text(settings_drafts) if notification['kind']=='settings_change_proposed' else
                       watch_text if notification['kind']==prep.NOTIFY_KIND else
                       LOCAL_DOCUMENT_APPROVAL_TEXT if notification['kind']=='approval_needed'

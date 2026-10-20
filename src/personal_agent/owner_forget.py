@@ -16,6 +16,11 @@ content-free receipt; it recognises no phrase, site or task (C16).
   exists (a later correction is never overwritten), the window ended, or the
   receipt belongs to another owner.
 
+* ``migrate`` (#19): Still itself moves a Memory row into the working-notes
+  document (``owner_model.WorkingNotes.migrate``).  The row leaves current use
+  exactly like a forget, under a receipt of its own operation, and stays
+  undoable for the same ``UNDO_SECONDS`` before the purge.
+
 Receipts keep operation, kind, item ids, time, state and counts - never content.
 Forgetting a Memory value also records its digest so owner-model upkeep never
 re-saves it from a source Work (``is_forgotten``); the owner stating it again
@@ -35,6 +40,9 @@ MEMORY_PREFIX, CLAIM_PREFIX, OBSERVATION_PREFIX = 'memory:', 'state:', 'obs:'
 KINDS = {MEMORY_PREFIX: 'memory', CLAIM_PREFIX: 'claim', OBSERVATION_PREFIX: 'observation', 'trust:': 'trust',
          'procedure:': 'procedure'}
 FORGOTTEN = 'forgotten'
+#: #19: the receipt operation of a Memory row Still moved into the working notes (undone like a forget).
+MIGRATE = 'migrate'
+UNDOABLE_OPERATIONS = ('forget', MIGRATE)
 #: What a result says about copies outside this store (never claimed erased).
 OUTSIDE_SCOPE = 'copies already sent to an AI provider, exports and backups are not affected'
 
@@ -91,24 +99,31 @@ class OwnerForget:
     def forget(self, owner_id, ref, *, delete=False, work_id=None, expected_revision=None):
         """Exclude one item from current use now; ``delete`` also purges it now (no undo)."""
         kind, item_id = self.parse(ref)
-        owner_key = self.store._memory_binding(owner_id)
-        now = self.clock()
-        receipt_id = str(uuid.uuid4())
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             if kind == 'trust' and expected_revision is not None:
                 _data, current = self._trust_row(db, item_id)
                 if current.get('revision', '') != expected_revision:
                     raise _refuse('later_value')
-            items = getattr(self, f'_exclude_{kind}')(db, owner_key, item_id, receipt_id, now)
-            db.execute('INSERT INTO owner_state_receipts(id,owner_key,operation,kind,items_json,state,created,undo_until,work_id) '
-                       'VALUES (?,?,?,?,?,?,?,?,?)',
-                       (receipt_id, owner_key, 'delete' if delete else 'forget', kind, json.dumps(items), FORGOTTEN, now,
-                        None if delete else now + UNDO_SECONDS, work_id if isinstance(work_id, str) else None))
-            if delete:
-                self._purge(db, receipt_id, now, final='deleted')
-            row = db.execute('SELECT * FROM owner_state_receipts WHERE id=?', (receipt_id,)).fetchone()
-        return self._receipt(row)
+            return self.forget_in(db, owner_id, ref, operation='delete' if delete else 'forget', work_id=work_id)
+
+    def forget_in(self, db, owner_id, ref, *, operation='forget', work_id=None):
+        """``forget`` inside the caller's open transaction; ``operation`` is ``forget``, ``delete`` or ``migrate``."""
+        if operation not in ('forget', 'delete', MIGRATE):
+            raise ValueError('forget operation')
+        kind, item_id = self.parse(ref)
+        owner_key = self.store._memory_binding(owner_id)
+        now = self.clock()
+        receipt_id = str(uuid.uuid4())
+        delete = operation == 'delete'
+        items = getattr(self, f'_exclude_{kind}')(db, owner_key, item_id, receipt_id, now)
+        db.execute('INSERT INTO owner_state_receipts(id,owner_key,operation,kind,items_json,state,created,undo_until,work_id) '
+                   'VALUES (?,?,?,?,?,?,?,?,?)',
+                   (receipt_id, owner_key, operation, kind, json.dumps(items), FORGOTTEN, now,
+                    None if delete else now + UNDO_SECONDS, work_id if isinstance(work_id, str) else None))
+        if delete:
+            self._purge(db, receipt_id, now, final='deleted')
+        return self._receipt(db.execute('SELECT * FROM owner_state_receipts WHERE id=?', (receipt_id,)).fetchone())
 
     def _exclude_memory(self, db, owner_key, memory_id, receipt_id, now):
         current = db.execute("SELECT * FROM memories WHERE id=? AND owner_key=? AND state='current'",
@@ -263,7 +278,7 @@ class OwnerForget:
             db.execute('BEGIN IMMEDIATE')
             receipt = db.execute('SELECT * FROM owner_state_receipts WHERE id=? AND owner_key=?',
                                  (str(receipt_id or ''), owner_key)).fetchone()
-            if receipt is None or receipt['operation'] != 'forget':
+            if receipt is None or receipt['operation'] not in UNDOABLE_OPERATIONS:
                 raise _refuse('no_receipt')
             if receipt['kind'] == 'trust' and not confirmed_authority:
                 raise _refuse('authority_confirmation')
@@ -397,8 +412,10 @@ class OwnerForget:
                     if found:
                         entry['item'] = {'predicate': found['predicate'], 'value': json.loads(found['value_json']).get('value', '')}
                 elif receipt['kind'] == 'procedure':
+                    from .procedures import NOTES_SLOT
                     items = json.loads(receipt['items_json'])
-                    entry['item'] = {'set': items.get('slot'), 'version': items.get('version')}
+                    entry['item'] = ({'working_notes_version': items.get('version')} if items.get('slot') == NOTES_SLOT
+                                     else {'set': items.get('slot'), 'version': items.get('version')})
                 elif receipt['kind'] == 'trust' and head.get('id'):
                     items = json.loads(receipt['items_json'])
                     try:

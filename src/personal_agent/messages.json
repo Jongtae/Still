@@ -11,6 +11,12 @@
   "ja": "今回うまくいった方法（{count}件）を保存しました。次に同じ接続で依頼されたときは、より早く処理します。不要ならお知らせください。",
   "zh": "已保存这次成功的方法（{count}项）。下次通过同一连接提出请求时会更快处理。如果不需要，请告诉我。"
  },
+ "working_notes.saved": {
+  "ko": "일하는 방식 메모를 고쳤어요: {change}\n원하지 않으시면 말씀해 주세요. 이전 메모로 되돌릴게요.",
+  "en": "I updated my notes on how to work for you: {change}\nTell me if you don't want that, and I'll go back to the previous notes.",
+  "ja": "仕事の進め方のメモを更新しました: {change}\n不要ならお知らせください。前のメモに戻します。",
+  "zh": "我更新了关于如何为您做事的笔记：{change}\n如果不需要，请告诉我，我会恢复到之前的笔记。"
+ },
  "agent_runtime.remembered": {
   "ko": "기억했어요.",
   "en": "Remembered.",
