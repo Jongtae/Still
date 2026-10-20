@@ -1,5 +1,6 @@
 """Private, single-owner persistence for the quickstart."""
 from contextlib import contextmanager
+from functools import cached_property
 import fcntl
 import hashlib
 import hmac
@@ -14,6 +15,7 @@ import unicodedata
 import uuid
 
 from .conversation_projection import qualify_transcript, turn_qualifier
+from .telegram_store import TelegramStore
 from .preparations import TABLE_SQL as PREPARATIONS_TABLE_SQL, migrate as migrate_preparations
 from .owner_model import TABLE_SQL as OWNER_MODEL_TABLE_SQL, migrate as owner_model_migrate
 
@@ -25,6 +27,11 @@ REQUEST_APPROVAL_ACTIONS = frozenset({'api_request', 'connector_call', 'code_run
 
 
 class QuickStore:
+    @cached_property
+    def telegram(self):
+        """The Telegram tables' interface (``telegram_store``, #21 slice 3): same file, same connections."""
+        return TelegramStore(self)
+
     def __init__(self, root):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -528,11 +535,7 @@ class QuickStore:
             return row
 
     def held_notifications(self, kind):
-        """Held notices of ``kind`` with their Work's delivery state, oldest first (#918 review: release sweep)."""
-        with self.db() as db:
-            rows=db.execute('SELECT n.*, j.delivery AS job_delivery FROM telegram_notifications n LEFT JOIN jobs j ON j.id=n.job_id '
-                            'WHERE n.kind=? AND n.state=? ORDER BY n.created',(kind,self.NOTICE_HELD)).fetchall()
-            return [dict(row) for row in rows]
+        return self.telegram.held_notifications(kind)
 
     def save_memory_candidate(self, job_id, memory_key, content, owner_id='local-owner', work_id=None):
         memory_key,content=self._memory_value(memory_key,content)
@@ -1185,21 +1188,7 @@ class QuickStore:
         return dict(row) if row else None
 
     def attach_telegram_photo(self, job_id, file_id, db=None):
-        """Keep Telegram fetch handles until this Work attempts its image read(s)."""
-        if not isinstance(job_id, str) or not job_id or not isinstance(file_id, str) or not 1 <= len(file_id) <= 512:
-            raise ValueError('Telegram 사진 정보를 확인하세요.')
-        if db is None:
-            with self.db() as conn:
-                conn.execute('BEGIN IMMEDIATE')
-                return self.attach_telegram_photo(job_id,file_id,conn)
-        row=db.execute('SELECT file_id FROM telegram_photo_attachments WHERE job_id=?',(job_id,)).fetchone()
-        try:values=json.loads(row['file_id']) if row and row['file_id'].startswith('[') else ([row['file_id']] if row else [])
-        except (TypeError,ValueError):values=[row['file_id']] if row else []
-        values=[value for value in values if isinstance(value,str) and value]
-        if file_id not in values:values.append(file_id)
-        if len(values)>10:raise ValueError('Telegram 사진은 한 번에 최대 10장까지 처리할 수 있습니다.')
-        db.execute('INSERT INTO telegram_photo_attachments VALUES (?,?,?) ON CONFLICT(job_id) DO UPDATE SET file_id=excluded.file_id,created=excluded.created',
-                   (job_id,json.dumps(values),time.time()))
+        return self.telegram.attach_telegram_photo(job_id, file_id, db)
 
     def mark_telegram_photo_attached(self, job_id, db=None):
         """Persist that the owner's request had an image before any worker can start or crash."""
@@ -1216,39 +1205,16 @@ class QuickStore:
                    (job_id,json.dumps(record,ensure_ascii=False),time.time()))
 
     def telegram_photo_file_id(self, job_id):
-        values=self.telegram_photo_file_ids(job_id)
-        return values[0] if values else None
+        return self.telegram.telegram_photo_file_id(job_id)
 
     def telegram_photo_file_ids(self, job_id):
-        """Return all Telegram photo handles for this Work, including legacy single-photo rows."""
-        with self.db() as db:
-            row = db.execute('SELECT file_id FROM telegram_photo_attachments WHERE job_id=?', (job_id,)).fetchone()
-        if not row:return []
-        value=row['file_id']
-        try:values=json.loads(value) if value.startswith('[') else [value]
-        except (TypeError,ValueError):values=[value]
-        return [item for item in values if isinstance(item,str) and item][:10] if isinstance(values,list) else [value]
+        return self.telegram.telegram_photo_file_ids(job_id)
 
     def remove_telegram_photo(self, job_id):
-        with self.db() as db:
-            db.execute('DELETE FROM telegram_photo_attachments WHERE job_id=?', (job_id,))
+        return self.telegram.remove_telegram_photo(job_id)
 
     def transfer_telegram_photo(self, source_job_id, target_job_id, db=None):
-        """Move an owner-supplied Telegram photo handle to its one continuation Work."""
-        if not isinstance(source_job_id,str) or not isinstance(target_job_id,str) or source_job_id==target_job_id:
-            return False
-        if db is None:
-            with self.db() as conn:
-                conn.execute('BEGIN IMMEDIATE')
-                return self.transfer_telegram_photo(source_job_id,target_job_id,conn)
-        row=db.execute('SELECT file_id,created FROM telegram_photo_attachments WHERE job_id=?',(source_job_id,)).fetchone()
-        if not row:return False
-        db.execute('INSERT INTO telegram_photo_attachments(job_id,file_id,created) VALUES (?,?,?) '
-                   'ON CONFLICT(job_id) DO UPDATE SET file_id=excluded.file_id,created=excluded.created',
-                   (target_job_id,row['file_id'],row['created']))
-        self.mark_telegram_photo_attached(target_job_id,db=db)
-        db.execute('DELETE FROM telegram_photo_attachments WHERE job_id=?',(source_job_id,))
-        return True
+        return self.telegram.transfer_telegram_photo(source_job_id, target_job_id, db)
 
     def create_workspace(self, title, purpose=''):
         if not isinstance(title,str) or not 1<=len(title.strip())<=120:raise ValueError('작업공간 이름은 1~120자로 입력하세요.')
@@ -1308,32 +1274,19 @@ class QuickStore:
                    (job_id,encoded,assistant_id,0,time.time()))
 
     def create_telegram_context_choice(self, job_id, event_id, chat_id, generation):
-        token=secrets.token_urlsafe(9)
-        with self.db() as db:
-            db.execute('INSERT INTO telegram_context_choices VALUES (?,?,?,?,?,?,?,?)',(token,job_id,event_id,chat_id,generation,None,'offered',time.time()))
-        return token
+        return self.telegram.create_telegram_context_choice(job_id, event_id, chat_id, generation)
 
     def save_telegram_context_choice_message(self, tokens, message_id):
-        if not isinstance(message_id,int):return
-        with self.db() as db:
-            marks=','.join('?' for _ in tokens)
-            if marks:db.execute(f"UPDATE telegram_context_choices SET message_id=? WHERE token IN ({marks})",(message_id,*tokens))
+        return self.telegram.save_telegram_context_choice_message(tokens, message_id)
 
     def telegram_context_choice(self, token):
-        with self.db() as db:
-            row=db.execute('SELECT * FROM telegram_context_choices WHERE token=?',(token,)).fetchone()
-        return dict(row) if row else None
+        return self.telegram.telegram_context_choice(token)
 
     def telegram_context_choice_for_job(self, job_id):
-        with self.db() as db:
-            row=db.execute("SELECT * FROM telegram_context_choices WHERE job_id=? AND state='offered' ORDER BY created LIMIT 1",(job_id,)).fetchone()
-        return dict(row) if row else None
+        return self.telegram.telegram_context_choice_for_job(job_id)
 
     def select_telegram_context_choice(self, token):
-        with self.db() as db:
-            db.execute("UPDATE telegram_context_choices SET state='selected' WHERE token=? AND state='offered'",(token,))
-            row=db.execute('SELECT * FROM telegram_context_choices WHERE token=?',(token,)).fetchone()
-        return dict(row) if row else None
+        return self.telegram.select_telegram_context_choice(token)
 
     def context_attachment(self, job_id):
         with self.db() as db:
@@ -1428,8 +1381,7 @@ class QuickStore:
         return artifacts
 
     def task_notifications(self, job_id):
-        with self.db() as db:
-            return [dict(row) for row in db.execute('SELECT kind,state,created FROM telegram_notifications WHERE job_id=? ORDER BY created',(job_id,))]
+        return self.telegram.task_notifications(job_id)
 
     def evidence_summary(self, job_id):
         """Return categories and counts only; never expose tool payloads."""
@@ -1467,71 +1419,34 @@ class QuickStore:
                                'failed':'완료되지 않은 단계 있음'}
 
     def task_card(self, job_id):
-        with self.db() as db:
-            row=db.execute('SELECT * FROM telegram_task_cards WHERE job_id=?',(job_id,)).fetchone()
-            return dict(row) if row else None
+        return self.telegram.task_card(job_id)
 
     def save_task_card(self, job_id, chat_id, message_id, state):
-        with self.db() as db:
-            db.execute('INSERT INTO telegram_task_cards VALUES (?,?,?,?,?) ON CONFLICT(job_id) DO UPDATE SET chat_id=excluded.chat_id,message_id=excluded.message_id,state=excluded.state,created=CASE WHEN telegram_task_cards.message_id=-1 THEN excluded.created ELSE telegram_task_cards.created END',
-                       (job_id,chat_id,message_id,state,time.time()))
+        return self.telegram.save_task_card(job_id, chat_id, message_id, state)
 
     def mark_task_card_deleting(self, job_id, message_id):
-        """Persist deletion intent before the Telegram side effect can race restart."""
-        with self.db() as db:
-            return db.execute("UPDATE telegram_task_cards SET state='deleting' WHERE job_id=? AND message_id=?",
-                              (job_id,message_id)).rowcount == 1
+        return self.telegram.mark_task_card_deleting(job_id, message_id)
 
     def delete_task_card(self, job_id, message_id):
-        """Forget only the Telegram card whose deletion was confirmed."""
-        with self.db() as db:
-            return db.execute('DELETE FROM telegram_task_cards WHERE job_id=? AND message_id=?',
-                              (job_id,message_id)).rowcount == 1
+        return self.telegram.delete_task_card(job_id, message_id)
 
     def notification_of(self, job_id, kind):
-        """The one notification of ``kind`` on ``job_id`` (``UNIQUE(job_id, kind)``), or None."""
-        with self.db() as db:
-            row=db.execute('SELECT * FROM telegram_notifications WHERE job_id=? AND kind=?',(job_id,kind)).fetchone()
-            return dict(row) if row else None
+        return self.telegram.notification_of(job_id, kind)
 
     def rebind_notification(self, job_id, kind, fingerprint):
-        """Point a Work's one notification of ``kind`` at a new binding and send it again (#1468).
-
-        ``UNIQUE(job_id, kind)`` keeps one row per Work, so a replaced request would otherwise
-        leave the row bound to the old fingerprint, cancelled as stale and never sent.  A row
-        being sent right now is left alone.  Returns whether a row was rebound.
-        """
-        with self.db() as db:
-            return db.execute("UPDATE telegram_notifications SET fingerprint=?,state='queued',message_id=NULL "
-                              "WHERE job_id=? AND kind=? AND state!='sending'", (fingerprint, job_id, kind)).rowcount == 1
+        return self.telegram.rebind_notification(job_id, kind, fingerprint)
 
     def notification(self, notification_id):
-        with self.db() as db:
-            row=db.execute('SELECT * FROM telegram_notifications WHERE id=?',(notification_id,)).fetchone()
-            return dict(row) if row else None
+        return self.telegram.notification(notification_id)
 
     def queue_notification(self, job_id, chat_id, generation, kind, fingerprint=None):
-        notification_id=str(uuid.uuid4())
-        with self.db() as db:
-            db.execute('INSERT OR IGNORE INTO telegram_notifications VALUES (?,?,?,?,?,?,?,?,?)',
-                       (notification_id,job_id,chat_id,generation,kind,fingerprint,'queued',None,time.time()))
-            row=db.execute('SELECT * FROM telegram_notifications WHERE job_id=? AND kind=?',(job_id,kind)).fetchone()
-            return dict(row)
+        return self.telegram.queue_notification(job_id, chat_id, generation, kind, fingerprint)
 
     def next_notification(self):
-        with self.db() as db:
-            row=db.execute("SELECT * FROM telegram_notifications WHERE state='queued' ORDER BY created LIMIT 1").fetchone()
-            return dict(row) if row else None
+        return self.telegram.next_notification()
 
     def update_notification(self, notification_id, state, message_id=None, fingerprint=None):
-        with self.db() as db:
-            if fingerprint is not None:
-                # #818: a memory prompt's binding is recorded with what the send showed.
-                db.execute('UPDATE telegram_notifications SET fingerprint=? WHERE id=?',(fingerprint,notification_id))
-            if message_id is None:
-                db.execute('UPDATE telegram_notifications SET state=? WHERE id=?',(state,notification_id))
-            else:
-                db.execute('UPDATE telegram_notifications SET state=?,message_id=? WHERE id=?',(state,message_id,notification_id))
+        return self.telegram.update_notification(notification_id, state, message_id, fingerprint)
 
     def recover(self):
         with self.db() as db:

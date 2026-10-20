@@ -1995,9 +1995,7 @@ class AgentService:
         with self.lock:
             job=self.store.job(work_id)
             if not job or job.get('delivery')!='sent':return
-            with self.store.db() as db:
-                row=db.execute('SELECT * FROM telegram_notifications WHERE job_id=? AND kind=?',(work_id,MEMORY_CANDIDATES_KIND)).fetchone()
-            row=dict(row) if row else None
+            row=self.store.notification_of(work_id,MEMORY_CANDIDATES_KIND)
             if row is None:
                 self.queue_memory_candidates(job)
                 return
@@ -2262,9 +2260,7 @@ class AgentService:
         now=time.time() if now is None else now
         if now-getattr(self,'_memory_prompt_sweep',0)<MEMORY_CANDIDATES_SWEEP_SECONDS:return
         self._memory_prompt_sweep=now
-        with self.store.db() as db:
-            rows=[dict(row) for row in db.execute("SELECT * FROM telegram_notifications WHERE kind IN (?,?,?,?) AND state='sent'",
-                                                  MEMORY_PROMPT_KINDS+MEMORY_SAVED_KINDS)]
+        rows=self.store.telegram.notifications_in_state(MEMORY_PROMPT_KINDS+MEMORY_SAVED_KINDS,'sent')
         for row in rows:
             if row['kind'] in MEMORY_SAVED_KINDS:
                 binding=self.memory_saved_binding(row)
@@ -2340,9 +2336,7 @@ class AgentService:
                 if row.get('job_delivery') not in self.DELIVERY_SETTLED:continue
                 job=self.store.job(row['job_id'])
                 if job:self.release_memory_saved(job)
-            with self.store.db() as db:
-                lost=[dict(row) for row in db.execute("SELECT * FROM telegram_notifications WHERE kind IN (?,?) AND state='unknown'",
-                                                      MEMORY_SAVED_KINDS)]
+            lost=self.store.telegram.notifications_in_state(MEMORY_SAVED_KINDS,'unknown')
             for row in lost:
                 binding=self.memory_saved_binding(row) or {}
                 retells=int(binding.get('retells') or 0)
@@ -2372,9 +2366,7 @@ class AgentService:
             self.release_memory_saved(job)
 
     def _saved_notice_rows(self, work_id):
-        with self.store.db() as db:
-            return {row['kind']:dict(row) for row in db.execute('SELECT * FROM telegram_notifications WHERE job_id=? AND kind IN (?,?)',
-                                                                (work_id,*MEMORY_SAVED_KINDS))}
+        return {row['kind']:row for row in self.store.telegram.notifications_of_kinds(work_id,MEMORY_SAVED_KINDS)}
 
     def _queue_separate_saved_notice(self, job, rows):
         """A notice of its own for the saved facts no notice of this Work showed (#918)."""
@@ -4495,10 +4487,7 @@ class AgentService:
             if not boundary.get('approved'):return boundary
             for work_id in list(self._document_resume_rows()):
                 if not self.resume_after_document_approval(work_id):continue
-                with self.store.db() as db:
-                    prompts=[dict(row) for row in db.execute(
-                        "SELECT id,state,chat_id,message_id FROM telegram_notifications WHERE job_id=? AND kind='approval_needed' AND state IN ('queued','sent')",
-                        (work_id,))]
+                prompts=self.store.telegram.open_prompts(work_id,'approval_needed')
                 for prompt in prompts:
                     self.store.update_notification(prompt['id'],'approved')
                     if prompt['state']=='sent' and prompt.get('message_id'):
@@ -6513,9 +6502,7 @@ class AgentService:
                 "SELECT id,kind,goal_text,due_at,timezone,recurrence,every_seconds,window_end,max_runs,delivery_mode,created_at "
                 "FROM preparations WHERE state=? AND created_from IS NOT ? ORDER BY created_at",
                 (prep.STATE_PROPOSED,job['id'])).fetchall()]
-            asks=[dict(row) for row in db.execute(
-                "SELECT job_id,kind,fingerprint,created FROM telegram_notifications WHERE kind IN (?,?) AND state='sent' AND job_id IS NOT ? "
-                "ORDER BY created",(*MEMORY_PROMPT_KINDS,job['id'])).fetchall()]
+            asks=self.store.telegram.sent_asks(db,MEMORY_PROMPT_KINDS,job['id'])
         for row in prepared:
             items.append({'ref':'prep:'+row['id'],'kind':ATTENTION_PREPARED,'text':row['goal_text'],'at':row['prepared_at']})
         for row in reminders:
@@ -7423,10 +7410,7 @@ class AgentService:
 
         The prompt on ``message_id`` when given (a reaction names its message), else the latest sent one.
         """
-        with self.store.db() as db:
-            row=db.execute("SELECT * FROM telegram_notifications WHERE chat_id=? AND kind='browser_approval_needed' AND state='sent'"
-                           +(' AND message_id=?' if message_id is not None else '')+' ORDER BY created DESC LIMIT 1',
-                           (chat_id,message_id) if message_id is not None else (chat_id,)).fetchone()
+        row=self.store.telegram.latest_sent(chat_id,'browser_approval_needed',message_id)
         if not row:return None
         notification=dict(row)
         request=self._browser_request(notification['job_id']) or {}
@@ -7903,10 +7887,7 @@ class AgentService:
     def _arm_login_notification(self, job, nonce):
         """Queue the optional Telegram prompt for this login (a Work asked again re-arms its row)."""
         self.queue_notification(job,'browser_login_needed',fingerprint=nonce)
-        with self.store.db() as db:
-            db.execute("UPDATE telegram_notifications SET fingerprint=?,state='queued',message_id=NULL,created=? "
-                       "WHERE job_id=? AND kind='browser_login_needed' AND fingerprint!=? AND state NOT IN ('queued','sending')",
-                       (nonce,time.time(),job['id'],nonce))
+        self.store.telegram.rearm(job['id'],'browser_login_needed',nonce)
 
     def browser_login_prompt(self, work_id):
         """The owner's login prompt: the site first, the full host when longer, and a note when no
@@ -8067,9 +8048,7 @@ class AgentService:
     def _finish_login_notification(self, work_id, shown):
         """Tell the owner the outcome once: edit the Telegram prompt, cancel an unsent one, or (for a
         login that expired unanswered with no prompt shown) leave one line in the conversation."""
-        with self.store.db() as db:
-            note=db.execute("SELECT * FROM telegram_notifications WHERE job_id=? AND kind='browser_login_needed'",(work_id,)).fetchone()
-        note=dict(note) if note else None
+        note=self.store.notification_of(work_id,'browser_login_needed')
         if note and not self._telegram_work(self.store.job(work_id)):
             if note['state'] in ('sent','queued'):self.store.update_notification(note['id'],'cancelled')
             return
@@ -8135,11 +8114,7 @@ class AgentService:
             row=self._browser_login(work_id)
             if not row or row.get('nonce')!=nonce or row.get('state') not in ('requested','unavailable'):return
             self._put_browser_login(work_id,{**row,'state':'expired','cause':'expired','closed_at':now})
-        with self.store.db() as db:
-            note=db.execute("SELECT * FROM telegram_notifications WHERE job_id=? AND kind='browser_login_needed' "
-                            "AND state='browser_login_reopened'",(work_id,)).fetchone()
-            if note:db.execute("UPDATE telegram_notifications SET state='browser_login_expired',fingerprint=? WHERE id=?",
-                               (nonce,note['id']))
+        note=self.store.telegram.expire_reopened_login(work_id,nonce)
         if not note or not isinstance(note['message_id'],int) or note['message_id']<=0:return
         reopen=self._login_reopenable(work_id)
         markup={'inline_keyboard':[[{'text':BROWSER_LOGIN_REOPEN_LABEL,'callback_data':f"p7l:{note['id']}:reopen"}]]
@@ -9553,13 +9528,13 @@ class AgentService:
         if work['status']=='cancelled' or self._stopped_in(db,work['id']):
             # The position stays recorded for the asking Work; nothing runs again.
             LOG.info('location continuation skipped work=%s reason=stopped',work['id'])
-            db.execute('DELETE FROM telegram_photo_attachments WHERE job_id=?',(work['id'],))
+            self.store.telegram.drop_photo(db,work['id'])
             return None
         refusal=self.preparations.run_refusal(db,work['id'],self.preparations.clock())
         if refusal:
             self.preparations.refuse_run(db,work['id'],self.preparations.clock(),refusal)
             LOG.info('location continuation skipped work=%s reason=%s',work['id'],refusal)
-            db.execute('DELETE FROM telegram_photo_attachments WHERE job_id=?',(work['id'],))
+            self.store.telegram.drop_photo(db,work['id'])
             return None
         try:
             task_id=self.store.enqueue(work['message'],continuation_key(answer['request_id'],work['request_key']),
@@ -9626,10 +9601,7 @@ class AgentService:
         worker reads first, or None.
         """
         if not job.get('chat_id') or not isinstance(prompt,str):return None
-        with self.store.db() as db:
-            row=db.execute("SELECT * FROM telegram_notifications WHERE chat_id=? AND state='sent' AND kind IN (%s) "
-                           "ORDER BY created DESC LIMIT 1"%','.join('?'*len(MEMORY_SAVED_KINDS)),
-                           (job['chat_id'],*MEMORY_SAVED_KINDS)).fetchone()
+        row=self.store.telegram.latest_sent_of_kinds(job['chat_id'],MEMORY_SAVED_KINDS)
         current=self.open_memory_notice(dict(row) if row else None)
         if not current:return None
         notification,binding=current
@@ -9875,8 +9847,8 @@ class AgentService:
             if refusal:
                 self.preparations.refuse_run(db,job['id'],self.preparations.clock(),refusal)
                 return True
-            if db.execute('SELECT 1 FROM telegram_photo_albums WHERE job_id=?',(job['id'],)).fetchone():return False
-            card=db.execute('SELECT message_id,created FROM telegram_task_cards WHERE job_id=?',(job['id'],)).fetchone()
+            if self.store.telegram.album_open(db,job['id']):return False
+            card=self.store.telegram.card_row(db,job['id'])
             if card and (card['message_id']==-1 or card['created']>time.time()-TELEGRAM_CARD_GRACE_SECONDS):return False
             db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))
             db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',('user',job['message'],job['channel'],time.time(),job.get('workspace_id'),job['id']))
