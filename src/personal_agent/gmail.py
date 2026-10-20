@@ -1537,3 +1537,52 @@ class GmailConnector:
         mime_types = {item[0] for item in candidates}
         result_mime = candidates[0][0] if len(mime_types) == 1 else _bounded_text(payload.get("mimeType"), 160)
         return "\n\n".join(decoded_parts), result_mime
+
+
+#: #150: as ``google_drive_read.MAX_CONTENT_CHARS``, the text one ``mail_read`` returns.
+MAIL_CONTENT_CHARS = 24_000
+
+
+class GmailWorkerReader:
+    """The worker's ``mail_search`` / ``mail_read`` for one owner (#150).
+
+    Gmail returns a body base64url-encoded inside the message's MIME parts, so
+    a raw API read reached the AI as text it could not read.  This adapts the
+    connector's own reviewed search and body decoding; it keeps no mail data.
+    """
+
+    def __init__(self, connector: GmailConnector, owner_id: str):
+        self.connector = connector
+        self.owner_id = owner_id
+
+    def search(self, query: str, limit: int = _MAX_RESULTS) -> dict:
+        rows = self.connector.search(self.owner_id, query, max_results=limit)
+        return {
+            "messages": [
+                {key: row.as_dict()[key] for key in ("message_id", "thread_id", "subject", "sender", "date")}
+                for row in rows
+            ],
+            # Gmail may hold more matches than one page returned.
+            "truncated": len(rows) >= limit,
+        }
+
+    def read(self, message_id: str) -> dict:
+        revision = self.connector.status(self.owner_id).get("connection_revision")
+        message = self.connector.read_message(self.owner_id, message_id, expected_connection_revision=revision)
+        text = message.body
+        if message.mime_type == "text/html":
+            from .local_tools import _PageText
+
+            parser = _PageText()
+            parser.feed(text)
+            parser.close()
+            text = "\n".join(parser.parts)
+        content = text[:MAIL_CONTENT_CHARS]
+        return {
+            "message_id": message.message_id,
+            "thread_id": message.thread_id,
+            "mime_type": message.mime_type,
+            "content": content,
+            "truncated": len(text) > len(content),
+            "sources": [f"Gmail message {message.message_id}"],
+        }
