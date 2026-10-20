@@ -10,7 +10,7 @@ import sys
 import threading
 from pathlib import Path
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 import hashlib
 from urllib.parse import urlsplit
@@ -8835,9 +8835,7 @@ class AgentService:
         Its retry runs through the connector built for this client, so the
         client must stay until Google confirms.  Unknown counts as pending.
         """
-        ids={'gmail':(GMAIL_CONNECTOR_ID,),'calendar':(CALENDAR_CONNECTOR_ID,CALENDAR_WRITE_CONNECTOR_ID),
-             'drive':(DRIVE_CONNECTOR_ID,)}
-        own={cid for name in self._own_client_holders() for cid in ids[name]}
+        own=self._own_client_connector_ids()
         if not own:
             return False
         try:
@@ -8845,6 +8843,17 @@ class AgentService:
         except Exception:
             return True
         return any(row.get('connector_id') in own for row in pending)
+
+    def _own_client_connector_ids(self):
+        ids={'gmail':(GMAIL_CONNECTOR_ID,),'calendar':(CALENDAR_CONNECTOR_ID,CALENDAR_WRITE_CONNECTOR_ID),
+             'drive':(DRIVE_CONNECTOR_ID,)}
+        return {cid for name in self._own_client_holders() for cid in ids[name]}
+
+    def _own_client_rows_held(self):
+        """Registry state only (no stored credential is read): does an own-client row hold a connection?"""
+        own=self._own_client_connector_ids()
+        return any(row.get('connector_id') in own and row.get('state') in ('connected','reauth_required')
+                   for row in self.connector_connections())
 
     def _own_client_removal_refusal(self):
         """The catalog id of why the saved client cannot be removed now, or None (#8)."""
@@ -8927,12 +8936,25 @@ class AgentService:
         """
         if not callable(self.google_client_installer):
             raise ValueError('이 실행 방식에서는 자체 Google client를 설정할 수 없습니다.')
+        # The full check reads stored credentials, so it runs before any lock
+        # (their key may wait on the macOS Keychain).  Under the connectors'
+        # OAuth locks, which every authorization completion holds through its
+        # commit, it is repeated from registry state and the revocation slots
+        # only, so a connection committed in between is seen.
         refusal=self._own_client_removal_refusal()
-        with self._GOOGLE_CLIENT_LOCK:
+        with self._GOOGLE_CLIENT_LOCK, ExitStack() as held:
+            for lock in {id(lock):lock for lock in (getattr(holder,'oauth_lock',None)
+                                                    for holder in self._own_client_holders().values())
+                         if lock is not None}.values():
+                held.enter_context(lock)
             if self.google_client_source=='environment':
                 raise ValueError(msg('quickstart.google_client_environment_not_removable'))
             if not self.store.secret(self.GOOGLE_CLIENT_SECRET_KEY):
                 raise ValueError(msg('quickstart.google_client_nothing_to_remove'))
+            if not refusal and self._own_client_rows_held():
+                refusal='quickstart.google_client_disconnect_before_removing'
+            if not refusal and self._own_client_revocation_pending():
+                refusal='quickstart.google_client_revocation_pending'
             if refusal:
                 raise ValueError(msg(refusal))
             self.store.remove_secret(self.GOOGLE_CLIENT_SECRET_KEY)

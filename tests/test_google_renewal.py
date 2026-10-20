@@ -309,6 +309,55 @@ class CalendarTransportRenewalTest(unittest.TestCase):
         self.assertTrue(self.oauth.credential_renewable(OWNER))
 
 
+class CalendarConnectorKeyTest(unittest.TestCase):
+    """The connector asks its transport for the key before dispatch, never for a completed change."""
+
+    def test_a_completed_change_is_returned_even_when_the_key_is_unavailable(self):
+        from personal_agent.calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID, CalendarError
+        from personal_agent.google_calendar import CALENDAR_WRITE_SCOPE
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        store = QuickStore(temp.name)
+        key = {'problem': None}
+
+        def prepare_key(*, write=False):
+            if key['problem']:
+                raise CalendarOAuthError(key['problem'])
+
+        class Provider:
+            def __init__(self):
+                self.transport = lambda *args: None
+                self.transport.prepare_key = prepare_key
+                self.calls = []
+
+            def create(self, payload, idempotency):
+                self.calls.append('create')
+                return {'id': 'new-event', 'etag': '"v1"'}
+
+        provider = Provider()
+        registry = ConnectorRegistry(store, (CALENDAR_SPEC, CALENDAR_WRITE_SPEC))
+        registry.transition('owner', CALENDAR_CONNECTOR_ID, ConnectorState.CONNECTED,
+                            granted_scopes=CALENDAR_SPEC.required_scopes)
+        registry.transition('owner', CALENDAR_WRITE_CONNECTOR_ID, ConnectorState.CONNECTED,
+                            granted_scopes=(CALENDAR_WRITE_SCOPE,))
+        calendar = CalendarConnector(store, provider, registry=registry)
+        event = {'summary': 'review', 'start': '2026-09-22T10:00:00+09:00', 'end': '2026-09-22T11:00:00+09:00',
+                 'timezone': 'Asia/Seoul'}
+        draft = calendar.draft_create(event, 'owner')
+        approval = calendar.approve(draft['id'], 'owner')['approval_id']
+        created = calendar.create(draft['id'], approval, 'owner')
+        key['problem'] = 'local_key_unavailable'
+        self.assertEqual(calendar.create(draft['id'], approval, 'owner'), created)
+        self.assertEqual(provider.calls, ['create'])
+        # A change not yet sent fails before dispatch with the key reason and sends nothing.
+        other = calendar.draft_create({**event, 'summary': 'second'}, 'owner')
+        other_approval = calendar.approve(other['id'], 'owner')['approval_id']
+        with self.assertRaises(CalendarError) as caught:
+            calendar.create(other['id'], other_approval, 'owner')
+        self.assertEqual((caught.exception.reason, caught.exception.effect), ('local-key-unavailable', 'none'))
+        self.assertEqual(provider.calls, ['create'])
+
+
 class GmailRenewalTest(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -592,6 +641,53 @@ class OwnClientSettingsTest(unittest.TestCase):
         service.retry_google_revocation({'connector_id': DRIVE_CONNECTOR_ID})
         self.assertEqual(service.google_revocations()['pending_provider_revocations'], [])
         self.assertFalse(service.remove_google_client()['saved'])
+
+    def test_removal_rechecks_under_the_oauth_lock_a_connection_committed_meanwhile(self):
+        service = configured_service(self.store, self.env)
+        service.save_google_client({'client_json': self.CLIENT})
+        original = service._own_client_removal_refusal
+
+        def connect_in_between():
+            # The full check passed; an authorization completes before removal locks in.
+            refusal = original()
+            self.connect_drive(service)
+            return refusal
+
+        service._own_client_removal_refusal = connect_in_between
+        with self.assertRaises(ValueError) as caught:
+            service.remove_google_client()
+        self.assertIn('연결을 해제', str(caught.exception))
+        self.assertIsNotNone(service.drive_oauth)
+        self.assertTrue(self.store.secret('google_oauth_client'))
+
+    def test_removal_waits_for_an_authorization_completing_under_the_oauth_lock(self):
+        service = configured_service(self.store, self.env)
+        service.save_google_client({'client_json': self.CLIENT})
+        entered = threading.Event()
+        results = []
+        lock = service.drive_oauth.oauth_lock
+
+        def completing():
+            with lock:
+                entered.set()
+                time.sleep(0.3)
+                self.connect_drive(service)
+
+        def removing():
+            entered.wait(5)
+            try:
+                results.append(service.remove_google_client())
+            except ValueError as exc:
+                results.append(str(exc))
+
+        threads = [threading.Thread(target=completing), threading.Thread(target=removing)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(5)
+        self.assertEqual(len(results), 1)
+        self.assertIsInstance(results[0], str)
+        self.assertIsNotNone(service.drive_oauth)
 
     def test_a_saved_client_that_is_not_the_running_one_says_restart(self):
         service = configured_service(self.store, self.env)

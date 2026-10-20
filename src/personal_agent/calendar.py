@@ -712,7 +712,16 @@ class CalendarConnector:
         return value
 
     def execute(self, ident: str, approval: str, owner: str) -> dict:
-        self._prepare_provider(write=True)
+        try:
+            with _LOCK:
+                row = self._owned(self._rows(), ident, owner)
+                completed = row.get("state") == "completed" and _constant_text_equal(row.get("approval"), approval)
+        except CalendarError:
+            completed = False  # the leased path below raises the same refusal
+        if not completed:
+            # A repeat of a completed change returns its stored result below
+            # and needs no credential, so only a real dispatch prepares one.
+            self._prepare_provider(write=True)
         dispatch_guard = (
             self.registry._dispatch_guard(owner, (CALENDAR_WRITE_CONNECTOR_ID,))
             if self.registry is not None else nullcontext()
