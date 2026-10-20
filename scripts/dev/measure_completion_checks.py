@@ -24,6 +24,11 @@ reply that triggered it:
 * ``base`` - everything else, i.e. the requests the shape needs without these
   checks.
 
+Every Work event the loop records is attributed the same way: to the check in
+force when it was recorded (a rejection's ``claim_rejected`` opens the goal
+judgment's path).  The run's ``concluded`` summary counts as added only when
+the path without the check ran no tool, since otherwise it is recorded anyway.
+
 Evidence class: model-free fixture measurement.  Call and event counts are
 exact for these scripts.  Request sizes are character counts of the fixture
 requests (the real policy prompt and tool definitions, fixture history), an
@@ -67,12 +72,15 @@ def decide(answer, gap=''):
 class Transport:
     """A compatible-API transport answering from a list of scripted messages; keeps every request body."""
 
-    def __init__(self, *messages):
+    def __init__(self, *messages, sent=None):
         self.messages = list(messages)
         self.bodies = []
+        self.sent = sent
 
     def __call__(self, url, body, headers=None, timeout=60):
         self.bodies.append(json.loads(json.dumps(body)))  # the loop mutates its message list
+        if self.sent is not None:
+            self.sent(self.bodies[-1])
         if not self.messages:
             raise AssertionError('the shape asked for more model requests than it scripted')
         return {'choices': [{'message': self.messages.pop(0)}]}
@@ -163,12 +171,27 @@ SHAPES = {
 def measure_shape(name, root):
     """Run one shape; return its counts per category and its outcome."""
     _about, worker_script, judge_script, failing = SHAPES[name]
-    worker = Transport(*worker_script)
+    # The check in force: set by the first worker request that follows a check, or
+    # by the judgment's first rejection, which is recorded before the next request.
+    phase = ['base']
+
+    def sent(body):
+        if phase[0] == 'base':
+            phase[0] = attribute(body)
+
+    worker = Transport(*worker_script, sent=sent)
     judge = Transport(*(judge_script or []))
     events, audit = [], []
 
     def record(tool, status, detail):
-        events.append((tool, status))
+        if (tool, status) == ('model', 'claim_rejected') and phase[0] == 'base':
+            phase[0] = 'goal_judgment'
+        category = phase[0]
+        # The run's ``concluded`` summary is recorded for any run in which a tool ran; it
+        # is added by a check only when the path without that check ran no tool.
+        if (tool, status) == ('model', 'concluded') and any(row[0] != 'model' for row in events if row[2] == 'base'):
+            category = 'base'
+        events.append((tool, status, category))
 
     route = (lambda: (dict(CFG), '')) if judge_script is not None else (lambda: None)
     engine = ModelDecisionEngine(ModelAdapter(judge), route, audit=audit.append)
@@ -187,22 +210,23 @@ def measure_shape(name, root):
         worker_calls[category] += 1
         request_chars[category] += len(json.dumps(body, ensure_ascii=False))
     judge_chars = sum(len(json.dumps(body, ensure_ascii=False)) for body in judge.bodies)
-    rejected = sum(1 for tool, status in events if (tool, status) == ('model', 'claim_rejected'))
+    recorded = {category: [f'{tool}/{status}' for tool, status, at in events if at == category] for category in CATEGORIES}
     added = {
         'checked_direct': {'worker_calls': worker_calls['checked_direct'], 'judgment_calls': 0,
-                           'events': worker_calls['checked_direct'], 'request_chars': request_chars['checked_direct']},
+                           'events': recorded['checked_direct'], 'request_chars': request_chars['checked_direct']},
         'completion_turn': {'worker_calls': worker_calls['completion_turn'], 'judgment_calls': 0,
-                            'events': worker_calls['completion_turn'], 'request_chars': request_chars['completion_turn']},
-        # A judgment adds its request, its decision-audit record, and per rejection one
-        # claim_rejected event plus the worker request that follows it (with its responded event).
+                            'events': recorded['completion_turn'], 'request_chars': request_chars['completion_turn']},
+        # A judgment adds its request and its decision-audit record; a rejection also adds
+        # every Work event recorded on the path it reopened.
         'goal_judgment': {'worker_calls': worker_calls['goal_judgment'], 'judgment_calls': len(judge.bodies),
-                          'events': rejected + worker_calls['goal_judgment'], 'audit_records': len(audit),
+                          'events': recorded['goal_judgment'], 'audit_records': len(audit),
                           'request_chars': request_chars['goal_judgment'] + judge_chars},
     }
-    tools = [tool for tool, status in events if tool != 'model' and status == 'succeeded']
+    tools = [tool for tool, status, _at in events if tool != 'model' and status == 'succeeded']
     return {
         'shape': name,
         'base_worker_calls': worker_calls['base'],
+        'base_events': recorded['base'],
         'base_request_chars': request_chars['base'],
         'worker_calls': len(worker.bodies),
         'judgment_calls': len(judge.bodies),
@@ -211,7 +235,7 @@ def measure_shape(name, root):
         'outcome': result.outcome,
         'judgment': None if result.judgment is None else str(result.judgment),
         'succeeded_tools': tools,
-        'model_events': [status for tool, status in events if tool == 'model'],
+        'model_events': [status for tool, status, _at in events if tool == 'model'],
     }
 
 
@@ -222,15 +246,18 @@ def measure():
 
 def table(rows):
     lines = ['| shape | base worker calls | +checked_direct | +completion turn | +goal judgment (worker + judgment) '
-             '| total model requests | chars sent by added requests | outcome |',
-             '|---|---|---|---|---|---|---|---|']
+             '| total model requests | chars sent by added requests | added Work events | outcome |',
+             '|---|---|---|---|---|---|---|---|---|']
     for row in rows:
         added = row['added']
+        extra = [event for part in added.values() for event in part['events']]
+        audits = added['goal_judgment']['audit_records']
+        recorded = ', '.join(extra + ([f'{audits} decision audit'] if audits else [])) or '-'
         lines.append(f"| `{row['shape']}` | {row['base_worker_calls']} | {added['checked_direct']['worker_calls']} "
                      f"| {added['completion_turn']['worker_calls']} "
                      f"| {added['goal_judgment']['worker_calls']} + {added['goal_judgment']['judgment_calls']} "
                      f"| {row['worker_calls'] + row['judgment_calls']} "
-                     f"| {sum(part['request_chars'] for part in added.values()):,} | {row['outcome']} |")
+                     f"| {sum(part['request_chars'] for part in added.values()):,} | {recorded} | {row['outcome']} |")
     return '\n'.join(lines)
 
 

@@ -43,6 +43,21 @@ EVENTS = {
 }
 
 
+#: shape -> {check: Work events recorded on the path that check added} (empty checks left out).
+ADDED_EVENTS = {
+    'plain_reply': {'checked_direct': ['model/responded']},
+    'plain_draft_then_tool': {'checked_direct': ['model/responded', 'save_note/running', 'save_note/succeeded',
+                                                 'model/responded', 'model/concluded']},
+    'tool_then_finish': {},
+    'tool_then_plain_reply': {'completion_turn': ['model/responded']},
+    'tool_then_plain_reply_twice': {'completion_turn': ['model/responded']},
+    'failed_step_then_reply': {},
+    'judgment_rejects_once': {'goal_judgment': ['model/claim_rejected', 'model/responded', 'web_search/running',
+                                                'web_search/succeeded', 'model/responded']},
+    'tool_then_finish_no_judgment_route': {},
+}
+
+
 class CompletionCheckCostTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -69,12 +84,21 @@ class CompletionCheckCostTests(unittest.TestCase):
             with self.subTest(shape=shape):
                 self.assertEqual(self.rows[shape]['model_events'], expected)
 
-    def test_attribution_accounts_for_every_request(self):
+    def test_work_events_each_check_added(self):
+        for shape, expected in ADDED_EVENTS.items():
+            with self.subTest(shape=shape):
+                added = {check: part['events'] for check, part in self.rows[shape]['added'].items() if part['events']}
+                self.assertEqual(added, expected)
+
+    def test_attribution_accounts_for_every_request_and_event(self):
         for shape, row in self.rows.items():
             with self.subTest(shape=shape):
                 added = row['added']
                 self.assertEqual(row['base_worker_calls'] + sum(part['worker_calls'] for part in added.values()),
                                  row['worker_calls'])
+                model = [event for event in row['base_events'] + [e for part in added.values() for e in part['events']]
+                         if event.startswith('model/')]
+                self.assertEqual(sorted(model), sorted(f'model/{status}' for status in row['model_events']))
                 self.assertEqual(added['goal_judgment']['judgment_calls'], row['judgment_calls'])
                 responded = row['model_events'].count('responded')
                 self.assertEqual(responded, row['worker_calls'], 'one responded event per worker request')
