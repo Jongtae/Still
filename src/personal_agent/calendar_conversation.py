@@ -58,26 +58,25 @@ _WEEKDAYS_KO = '월화수목금토일'
 PREVIEW_HEADER = msg('calendar_conversation.here_is_the_calendar_draft')
 PREVIEW_FOOTER = msg('calendar_conversation.reply_approve_to_apply_it_as')
 CALENDAR_LINE = msg('calendar_conversation.calendar_google_primary_calendar')
-REPLACED_NOTICE = '이전 일정 초안은 취소했습니다.'
-DROPPED_NOTICE = '대기 중이던 일정 초안은 실행하지 않고 취소했습니다.'
+REPLACED_NOTICE = msg('calendar_conversation.previous_draft_cancelled')
+DROPPED_NOTICE = msg('calendar_conversation.pending_draft_dropped')
 CANCELLED = msg('calendar_conversation.the_event_draft_was_canceled_no')
-NOTHING_PENDING = '승인할 일정 초안이 없어 아무 일정도 만들지 않았습니다. 새로 요청해 주세요.'
-OTHER_CHANNEL = ('이 일정 초안은 다른 채널에서 만든 것이라 여기서 승인하지 않았습니다. '
-                 '초안을 만든 채널에서 "승인"이라고 답해 주세요.')
-CHANGED_UNDER_US = '초안 내용이 확인한 미리보기와 달라 캘린더에 아무것도 반영하지 않았습니다. 다시 요청해 주세요.'
+NOTHING_PENDING = msg('calendar_conversation.nothing_to_approve')
+OTHER_CHANNEL = msg('calendar_conversation.draft_from_other_channel')
+CHANGED_UNDER_US = msg('calendar_conversation.draft_changed')
 CREATED = msg('calendar_conversation.the_event_was_added_to_the')
 UPDATED = msg('calendar_conversation.the_event_was_changed')
 CANCELLED_EVENT = msg('calendar_conversation.the_event_was_cancelled')
 OUTCOME_UNKNOWN = msg('calendar_conversation.i_cannot_confirm_whether_the_event')
 UPDATE_UNKNOWN = msg('calendar_conversation.i_cannot_confirm_whether_the_change')
 CANCEL_UNKNOWN = msg('calendar_conversation.i_cannot_confirm_whether_the_cancellation')
-FAILED = '캘린더에 반영하지 못했습니다. 이 초안은 반영되지 않았습니다.'
-NOT_APPLIED_REST = '나머지 초안은 반영하지 않았습니다.'
+FAILED = msg('calendar_conversation.not_applied')
+NOT_APPLIED_REST = msg('calendar_conversation.rest_not_applied')
 #: An update or cancellation whose target this Work's own calendar read did not show.
-UNVERIFIED_TARGET = ('이 작업에서 조회한 일정과 맞춰 볼 수 없는 일정 변경·취소 초안 {count}개는 대상 일정을 보여 드릴 수 없어 '
-                     '여기서 승인할 수 없습니다. 아무것도 반영하지 않았습니다.')
-RECONNECT_HINT = ' 캘린더를 다시 연결한 뒤 새로 요청해 주세요.'
-RETRY_HINT = ' 새로 요청해 주세요.'
+UNVERIFIED_TARGET = msg('calendar_conversation.unverified_target')
+#: A failed draft, whole lines, so each is one catalog line in every language.
+FAILED_RECONNECT = msg('calendar_conversation.not_applied_reconnect')
+FAILED_RETRY = msg('calendar_conversation.not_applied_retry')
 ACTION_LABELS = {'create': '새 일정', 'update': '일정 변경', 'cancel': '일정 취소'}
 DONE_TEXT = {'create': CREATED, 'update': UPDATED, 'cancel': CANCELLED_EVENT}
 #: What an unconfirmed outcome tells the owner to check, by action.
@@ -425,8 +424,7 @@ class CalendarConversation:
                 if error.effect == 'unknown':
                     replies.append(UNKNOWN_TEXT.get(action, OUTCOME_UNKNOWN))
                 else:
-                    hint = RECONNECT_HINT if 'reconnect' in (error.recovery or '') else RETRY_HINT
-                    replies.append(FAILED + hint)
+                    replies.append(FAILED_RECONNECT if 'reconnect' in (error.recovery or '') else FAILED_RETRY)
                 # Nothing after an unconfirmed or failed step is sent.
                 if index + 1 < len(previews):
                     replies.append(NOT_APPLIED_REST)

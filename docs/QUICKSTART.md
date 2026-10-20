@@ -1,6 +1,6 @@
 # Still — install, configure, talk
 
-Still is a self-hosted personal agent preview. One local process serves browser setup and task records; conversations take place in your paired Telegram chat. The browser screens are in English by default, with Korean, Simplified Chinese and Japanese selectable; some fixed Telegram status/progress lines and certain connection validation errors are still Korean. Docker and Kubernetes are not required. Homebrew installs Python automatically; model runtimes and model weights are separate.
+Still is a self-hosted personal agent preview. One local process serves browser setup and task records; conversations take place in your paired Telegram chat. The browser screens are in English by default, with Korean, Simplified Chinese and Japanese selectable; connection errors and Still's catalogued system lines follow your language in Telegram, the terminal and the browser, while some less frequent fixed lines (parts of conversational Settings, family sharing, the phone sign-in page and calendar draft field labels) are still Korean. Docker and Kubernetes are not required. Homebrew installs Python automatically; model runtimes and model weights are separate.
 
 ## Current use versus planned work
 

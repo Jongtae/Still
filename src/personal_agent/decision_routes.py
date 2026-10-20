@@ -1587,7 +1587,7 @@ class DecisionRoutes:
         if policy == POLICY_EXPLICIT:
             model = body.get('model')
             if not valid_model_id(model):
-                raise DecisionRouteError('사용할 모델 이름을 입력하세요.')
+                raise DecisionRouteError(msg('providers.enter_model_name'))
             if requested_effort and not effort_omitted and effort_for(model) != requested_effort:
                 raise DecisionRouteError(f'모델 {model}은(는) 추론 강도 {requested_effort}를 지원한다고 확인되지 않았습니다.')
             candidates = [model]
