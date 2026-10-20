@@ -50,6 +50,13 @@ from .connector_contract import (
     ConnectorSpec,
     ConnectorState,
 )
+from .connector_http import (
+    LOCAL_KEY_INVALID,
+    LOCAL_KEY_REASONS,
+    LOCAL_KEY_UNAVAILABLE,
+    RENEWAL_MARGIN_SECONDS,
+    token_endpoint_refused,
+)
 from .google_calendar import CALENDAR_API, GoogleCalendarHTTPError
 from .google_drive_read import DRIVE_API, DRIVE_SPEC, DriveHTTPError
 
@@ -102,6 +109,18 @@ class CalendarReauthenticationRequired(CalendarOAuthError):
     pass
 
 
+class CalendarRenewalUnavailable(CalendarOAuthError):
+    """#8: renewal did not get a definitive answer; every stored credential is kept.
+
+    Raised only when the access token cannot be used without the renewal
+    that just failed retryably (network, timeout, throttled or failing token
+    endpoint).  The connection stays CONNECTED; a later request renews it.
+    """
+
+    def __init__(self, reason: str = "renewal_unavailable"):
+        super().__init__(reason)
+
+
 class EncryptedCalendarSecretStore:
     """Encrypt Calendar-only OAuth secrets using a caller-owned local key.
 
@@ -122,6 +141,9 @@ class EncryptedCalendarSecretStore:
         self._store = store
         self._cipher = None
         self._key_provider = None
+        #: #8: why the last key fetch failed (``LOCAL_KEY_REASONS``), or None.
+        #: Status surfaces read it instead of touching the key store.
+        self.key_problem = None
         if callable(key):
             # #1172: a key held elsewhere (the macOS Keychain) is fetched on
             # the first read or write of an actual secret, so wiring the
@@ -142,10 +164,33 @@ class EncryptedCalendarSecretStore:
     def _active_cipher(self):
         if self._cipher is None:
             try:
-                self._cipher = self._make_cipher(self._key_provider())
+                key = self._key_provider()
             except Exception:
-                raise CalendarOAuthError("unreadable_secret") from None
+                self.key_problem = LOCAL_KEY_UNAVAILABLE
+                raise CalendarOAuthError(LOCAL_KEY_UNAVAILABLE) from None
+            try:
+                self._cipher = self._make_cipher(key)
+            except ValueError:
+                self.key_problem = LOCAL_KEY_INVALID
+                raise CalendarOAuthError(LOCAL_KEY_INVALID) from None
+            self.key_problem = None
         return self._cipher
+
+    def prepare_key(self, *keys: str, writing: bool = False) -> None:
+        """Fetch the local key now, before the caller takes any lock (#8).
+
+        Fetching it may wait on the operating-system key store (a macOS
+        Keychain prompt), which must not happen while the OAuth, dispatch or
+        authority locks are held.  It is fetched exactly when the call that
+        follows would fetch it: when one of ``keys`` holds a secret, or
+        ``writing`` (the call writes a secret).  So wiring and empty reads
+        still never touch the key store.
+        """
+        if self._cipher is not None:
+            return
+        if not writing and not any(self._store.secret(self._namespace + key) for key in keys):
+            return
+        self._active_cipher()
 
     def secret(self, key: str, value=None):
         namespaced = self._namespace + key
@@ -173,6 +218,13 @@ def _owner_key(owner_id: str) -> str:
     if not isinstance(owner_id, str) or not owner_id.strip() or len(owner_id) > 200:
         raise CalendarOAuthError("invalid_owner")
     return hashlib.sha256(owner_id.encode()).hexdigest()
+
+
+def _prepare_key(store, *slots: str, writing: bool = False) -> None:
+    """Fetch ``store``'s local key before a lock is taken (#8); see ``prepare_key``."""
+    prepare = getattr(store, "prepare_key", None)
+    if callable(prepare):
+        prepare(*slots, writing=writing)
 
 
 def _grant_label(write: object) -> str:
@@ -253,6 +305,7 @@ def _mark_reauthentication_required(
     grant the owner authorized separately, and the reverse.
     """
     connector_id = _spec(grant).connector_id
+    _prepare_key(store, writing=True)
     with _lifecycle_guard(registry, owner_id, connector_id):
         current = registry.status(owner_id, connector_id)
         if expected_revision is not None and current.connection_revision != expected_revision:
@@ -263,11 +316,15 @@ def _mark_reauthentication_required(
         return registry.status(owner_id, connector_id).as_dict()
 
 
-def _stored_credential_usable(tokens, owner_id: str, grant: str, now: Callable[[], float]) -> bool:
+def _stored_credential_usable(
+    tokens, owner_id: str, grant: str, now: Callable[[], float], *, margin: float = 0.0
+) -> bool:
     """Whether one stored grant credential passes every local request check.
 
     Pure: local owner, grant, scope and expiry only.  No refresh, network
     request or lifecycle transition, so read-only status surfaces can use it.
+    ``margin`` asks whether it is still usable that many seconds from now
+    (the early-renewal check, #8).
     """
     spec = _spec(grant)
     access_token = tokens.get("access_token") if isinstance(tokens, dict) else None
@@ -282,7 +339,7 @@ def _stored_credential_usable(tokens, owner_id: str, grant: str, now: Callable[[
         or isinstance(expires_at, bool)
         or not isinstance(expires_at, (int, float))
         or not math.isfinite(expires_at)
-        or _finite_now(now) >= expires_at
+        or _finite_now(now) + margin >= expires_at
     )
 
 
@@ -301,6 +358,8 @@ def _authorization_context(
     transition, and would keep reporting that stale authority as usable.
     """
     spec = _spec(grant)
+    token_slot = _secret_slot(TOKEN_SECRET_KEY, grant, owner_id)
+    _prepare_key(store, token_slot)
     with _lifecycle_guard(registry, owner_id, spec.connector_id):
         try:
             status = registry.require_connected(owner_id, spec.connector_id, spec.required_scopes)
@@ -308,22 +367,29 @@ def _authorization_context(
             if exc.reason == ConnectorState.REAUTH_REQUIRED.value:
                 raise CalendarReauthenticationRequired("reauth_required") from None
             raise CalendarOAuthError("connection_required") from None
-        token_slot = _secret_slot(TOKEN_SECRET_KEY, grant, owner_id)
         try:
             tokens = store.secret(token_slot)
-        except CalendarOAuthError:
-            # The key or ciphertext is no longer usable. Revoke connector
-            # authority before offering recovery; never report structurally
-            # connected metadata as usable authority.
-            _mark_reauthentication_required(store, registry, owner_id, grant)
-            raise CalendarReauthenticationRequired("reauth_required") from None
+        except CalendarOAuthError as exc:
+            if exc.reason in LOCAL_KEY_REASONS:
+                # The local key, not the grant, is the problem (#8): the
+                # stored credential stays and the owner is told about the key.
+                raise
+            # The ciphertext is no longer usable. Revoke connector authority
+            # before offering recovery; never report structurally connected
+            # metadata as usable authority.
+            tokens = None
         if (
-            not _stored_credential_usable(tokens, owner_id, grant, now)
-            or not isinstance(status.connection_revision, str)
+            tokens is not None
+            and _stored_credential_usable(tokens, owner_id, grant, now)
+            and isinstance(status.connection_revision, str)
         ):
-            _mark_reauthentication_required(store, registry, owner_id, grant)
-            raise CalendarReauthenticationRequired("reauth_required")
-        return tokens["access_token"], status.connection_revision
+            return tokens["access_token"], status.connection_revision
+    # Outside the guard, so writing the cleared slot never fetches the key
+    # under the lifecycle locks (#8); pinned to the revision just refused.
+    _mark_reauthentication_required(
+        store, registry, owner_id, grant, expected_revision=status.connection_revision
+    )
+    raise CalendarReauthenticationRequired("reauth_required")
 
 
 def _assert_current_request(
@@ -350,6 +416,64 @@ def _assert_current_request(
             or tokens.get("access_token") != access_token
         ):
             raise CalendarOAuthError("superseded_connection")
+
+
+def _authorized_call(
+    store,
+    registry: ConnectorRegistry,
+    owner_id: str,
+    grant: str,
+    now: Callable[[], float],
+    send: Callable[[str], object],
+    *,
+    oauth: "CalendarOAuth | None" = None,
+    exchange: Callable[[dict], dict] | None = None,
+    serialize: bool = True,
+    replay: bool = False,
+):
+    """Send one request with the grant's current access token (#8).
+
+    ``send(access_token)`` performs the HTTP call and raises an error whose
+    ``status`` is 401 when Google refused the token.  With ``oauth`` and
+    ``exchange``, a token that is expired or about to expire is renewed
+    first.  After a 401 there is at most one renewal attempt, and only a
+    request the caller marks ``replay`` (a read: no external effect) is sent
+    once more with the renewed token; a write is never replayed and requires
+    reauthentication as before.  Without a renewal, a 401 requires
+    reauthentication for the revision that saw it.
+    """
+    renewing = oauth is not None and exchange is not None
+    if renewing:
+        oauth.renew_if_due(owner_id, exchange, grant=grant, serialize=serialize)
+    renewed = False
+    while True:
+        access_token, connection_revision = _authorization_context(store, registry, owner_id, grant, now)
+        try:
+            response = send(access_token)
+        except (GoogleCalendarHTTPError, DriveHTTPError) as error:
+            if error.status == 401:
+                if (
+                    replay
+                    and renewing
+                    and not renewed
+                    and oauth.renew_after_rejection(
+                        owner_id,
+                        exchange,
+                        grant=grant,
+                        expected_revision=connection_revision,
+                        serialize=serialize,
+                    )
+                ):
+                    renewed = True
+                    continue
+                # Revoke the exact revision this call used, then re-raise so
+                # the provider client still classifies it as expired.
+                _mark_reauthentication_required(
+                    store, registry, owner_id, grant, expected_revision=connection_revision
+                )
+            raise
+        _assert_current_request(store, registry, owner_id, grant, connection_revision, access_token)
+        return response
 
 
 def _assert_calendar_url(url: object) -> str:
@@ -440,6 +564,9 @@ def calendar_transport(
     #1172: given ``oauth`` and ``exchange``, an expired access token for the
     grant in use is first renewed (``CalendarOAuth.refresh``), as the Drive
     transport does; without them an expired token requires reconnecting.
+    #8: renewal starts ``RENEWAL_MARGIN_SECONDS`` before expiry, a retryable
+    renewal failure keeps the stored credential, and a read refused with 401
+    is renewed and sent once more (see ``_authorized_call``).
     """
     if not getattr(secret_store, "encrypted_secrets", False):
         raise ValueError("Calendar OAuth requires an encrypted owner-local secret store.")
@@ -467,40 +594,38 @@ def calendar_transport(
         # `_authorization_context` checks scope-set equality against the
         # named grant's spec.
         grant = READ_GRANT if reading else WRITE_GRANT
-        if oauth is not None and not oauth.credential_current(owner_id, grant=grant):
-            try:
-                # The caller (``CalendarConnector``) may hold the dispatch lock.
-                oauth.refresh(owner_id, exchange, grant=grant, serialize=False)
-            except CalendarOAuthError:
-                pass
-        access_token, connection_revision = _authorization_context(
-            secret_store, registry, owner_id, grant, now
-        )
-        request_headers = {
-            **(headers or {}),
-            # Ours wins over any caller-supplied Authorization header.
-            "Authorization": "Bearer " + access_token,
-            "Accept": "application/json",
-        }
-        try:
-            response = opener(method, url, body if not reading else None, request_headers)
-        except GoogleCalendarHTTPError as error:
-            if error.status == 401:
-                # Revoke the exact revision this call used, then re-raise so
-                # ``GoogleCalendar`` still classifies it as ``scope-expired``.
-                _mark_reauthentication_required(
-                    secret_store,
-                    registry,
-                    owner_id,
-                    grant,
-                    expected_revision=connection_revision,
-                )
-            raise
-        _assert_current_request(
-            secret_store, registry, owner_id, grant, connection_revision, access_token
-        )
-        return response
 
+        def send(access_token):
+            request_headers = {
+                **(headers or {}),
+                # Ours wins over any caller-supplied Authorization header.
+                "Authorization": "Bearer " + access_token,
+                "Accept": "application/json",
+            }
+            return opener(method, url, body if not reading else None, request_headers)
+
+        # The caller (``CalendarConnector``) may hold the dispatch lock, so a
+        # renewal here does not take the OAuth lock (``serialize=False``).
+        return _authorized_call(
+            secret_store,
+            registry,
+            owner_id,
+            grant,
+            now,
+            send,
+            oauth=oauth,
+            exchange=exchange,
+            serialize=False,
+            replay=reading,
+        )
+
+    def prepare_key(*, write: bool = False) -> None:
+        # #8: ``CalendarConnector`` calls this before its dispatch lock, so a
+        # first key fetch never waits on the key store under that lock.
+        grant = WRITE_GRANT if write else READ_GRANT
+        _prepare_key(secret_store, _secret_slot(TOKEN_SECRET_KEY, grant, owner_id))
+
+    transport.prepare_key = prepare_key
     return transport
 
 
@@ -563,9 +688,11 @@ def drive_transport(
     expired access token is first renewed with the stored refresh token
     (``CalendarOAuth.refresh``: revision-pinned, never widening), so a
     connection keeps working past the one-hour token lifetime without the
-    owner reconnecting.  A failed renewal leaves the expired credential for
-    ``_authorization_context`` to refuse, which moves the row to
-    REAUTH_REQUIRED.  A 401 does the same for the revision that saw it.
+    owner reconnecting.  A definitive renewal failure (Google refused the
+    grant) leaves the expired credential for ``_authorization_context`` to
+    refuse, which moves the row to REAUTH_REQUIRED; a retryable one (#8)
+    keeps it and raises ``CalendarRenewalUnavailable``.  A 401 gets one
+    renewal and one more attempt before it does the same.
     """
     if not isinstance(oauth, CalendarOAuth) or DRIVE_GRANT not in oauth.grants:
         raise ValueError("A Drive OAuth instance is required for a Drive transport.")
@@ -581,26 +708,17 @@ def drive_transport(
 
     def transport(url):
         url = _assert_drive_url(url)
-        if not oauth.credential_current(owner_id, grant=DRIVE_GRANT):
-            try:
-                oauth.refresh(owner_id, exchange, grant=DRIVE_GRANT)
-            except CalendarOAuthError:
-                pass
-        access_token, connection_revision = _authorization_context(
-            oauth.store, oauth.registry, owner_id, DRIVE_GRANT, oauth.now
+        return _authorized_call(
+            oauth.store,
+            oauth.registry,
+            owner_id,
+            DRIVE_GRANT,
+            oauth.now,
+            lambda access_token: opener(url, {"Authorization": "Bearer " + access_token}),
+            oauth=oauth,
+            exchange=exchange,
+            replay=True,
         )
-        try:
-            response = opener(url, {"Authorization": "Bearer " + access_token})
-        except DriveHTTPError as error:
-            if error.status == 401:
-                _mark_reauthentication_required(
-                    oauth.store, oauth.registry, owner_id, DRIVE_GRANT, expected_revision=connection_revision
-                )
-            raise
-        _assert_current_request(
-            oauth.store, oauth.registry, owner_id, DRIVE_GRANT, connection_revision, access_token
-        )
-        return response
 
     transport.destination_guard = _assert_drive_url
     return transport
@@ -733,6 +851,85 @@ class CalendarOAuth:
             and refresh_token
         )
 
+    def renewal_due(self, owner_id: str, *, write: bool = False, grant: str | None = None) -> bool:
+        """Read-only: is the stored access token expired or about to expire? (#8)
+
+        True within ``RENEWAL_MARGIN_SECONDS`` of the recorded expiry, so a
+        request renews first instead of sending a token that may expire in
+        flight.  No refresh, transition or network request.
+        """
+        grant = self._grant(write, grant)
+        try:
+            tokens = self.store.secret(_secret_slot(TOKEN_SECRET_KEY, grant, owner_id))
+        except CalendarOAuthError:
+            return True
+        return not _stored_credential_usable(
+            tokens, owner_id, grant, self.now, margin=RENEWAL_MARGIN_SECONDS
+        )
+
+    def renew_if_due(
+        self,
+        owner_id: str,
+        exchange: Callable[[dict], dict],
+        *,
+        write: bool = False,
+        grant: str | None = None,
+        serialize: bool = True,
+    ) -> None:
+        """Renew before a request when ``renewal_due`` (#8).
+
+        A retryable failure keeps every stored credential: a still-valid
+        access token is then used as it is, otherwise
+        ``CalendarRenewalUnavailable`` is raised and the connection stays
+        CONNECTED.  A definitive failure (Google refused the grant, an
+        unacceptable response) or nothing to renew with leaves the credential
+        for ``_authorization_context``, which requires reauthentication once
+        the access token has expired, as before.
+        """
+        grant = self._grant(write, grant)
+        if not self.renewal_due(owner_id, grant=grant):
+            return
+        try:
+            self.refresh(owner_id, exchange, grant=grant, serialize=serialize)
+        except CalendarRenewalUnavailable:
+            if not self.credential_current(owner_id, grant=grant):
+                raise
+        except CalendarOAuthError as exc:
+            if exc.reason in LOCAL_KEY_REASONS:
+                raise
+
+    def renew_after_rejection(
+        self,
+        owner_id: str,
+        exchange: Callable[[dict], dict],
+        *,
+        expected_revision: str,
+        write: bool = False,
+        grant: str | None = None,
+        serialize: bool = True,
+    ) -> bool:
+        """One renewal after Google refused the access token with 401 (#8).
+
+        True when a renewed token is stored for the same connection revision,
+        so the caller may send a request without external effect once more.
+        False when it cannot be renewed (Google refused the grant, nothing to
+        renew with, the connection changed): the caller then requires
+        reauthentication as before.  A retryable failure raises
+        ``CalendarRenewalUnavailable`` and keeps every stored credential.
+        """
+        grant = self._grant(write, grant)
+        try:
+            self.refresh(
+                owner_id, exchange, grant=grant, serialize=serialize, expected_revision=expected_revision
+            )
+        except CalendarRenewalUnavailable:
+            raise
+        except CalendarOAuthError as exc:
+            if exc.reason in LOCAL_KEY_REASONS:
+                raise
+            return False
+        return True
+
     def connection_required(self, owner_id: str, *, write: bool = False, grant: str | None = None) -> dict:
         grant = self._grant(write, grant)
         try:
@@ -759,6 +956,7 @@ class CalendarOAuth:
         # state therefore addresses the other grant's slot, where its signature
         # does not verify - the label is a routing hint, never the authority.
         state = f"{grant}.{nonce}.{signature}"
+        _prepare_key(self.store, writing=True)
         with _OAUTH_LOCK:
             with _lifecycle_guard(self.registry, owner_id, spec.connector_id):
                 current = self.registry.status(owner_id, spec.connector_id)
@@ -832,6 +1030,8 @@ class CalendarOAuth:
         no state, token, signing key or verifier leaves this boundary.
         """
         failures = []
+        candidates = tuple(candidates)
+        self._prepare_pending_key(candidates)
         with _OAUTH_LOCK:
             for owner_id in dict.fromkeys(candidates):
                 try:
@@ -849,6 +1049,7 @@ class CalendarOAuth:
         """Complete whichever grant the signed callback state identifies."""
         if not isinstance(callback, dict) or not callable(exchange):
             raise CalendarOAuthError("invalid_callback")
+        self._prepare_pending_key((owner_id,))
         with _OAUTH_LOCK:
             grant, pending = self._pending(owner_id, callback.get("state"))
             spec = _spec(grant)
@@ -902,6 +1103,7 @@ class CalendarOAuth:
         write: bool = False,
         grant: str | None = None,
         serialize: bool = True,
+        expected_revision: str | None = None,
     ) -> dict:
         """Replace one grant's access token without changing its authority.
 
@@ -916,14 +1118,21 @@ class CalendarOAuth:
         revocation use, deadlocking against them.  Without it the renewal is
         still safe: the two revision-pinned guarded sections below refuse to
         commit over a connection that changed in between.
+
+        #8: a token-endpoint failure that is not Google refusing the grant
+        (network, timeout, 429/5xx, unreadable answer) raises
+        ``CalendarRenewalUnavailable`` and changes nothing stored.  With
+        ``expected_revision`` the renewal is for that connection revision
+        only.
         """
         if not callable(exchange):
             raise CalendarOAuthError("invalid_callback")
         grant = self._grant(write, grant)
         spec = _spec(grant)
         owner = _owner_key(owner_id)
+        token_slot = _secret_slot(TOKEN_SECRET_KEY, grant, owner_id)
+        _prepare_key(self.store, token_slot)
         with _OAUTH_LOCK if serialize else nullcontext():
-            token_slot = _secret_slot(TOKEN_SECRET_KEY, grant, owner_id)
             with _lifecycle_guard(self.registry, owner_id, spec.connector_id):
                 try:
                     status = self.registry.require_connected(
@@ -931,6 +1140,8 @@ class CalendarOAuth:
                     )
                 except ConnectorContractError:
                     raise CalendarReauthenticationRequired("reauth_required") from None
+                if expected_revision is not None and status.connection_revision != expected_revision:
+                    raise CalendarOAuthError("superseded_connection")
                 tokens = self.store.secret(token_slot)
                 refresh_token = tokens.get("refresh_token") if isinstance(tokens, dict) else None
                 if (
@@ -950,8 +1161,12 @@ class CalendarOAuth:
                         "grant_type": "refresh_token",
                     }
                 )
-            except Exception:
-                raise CalendarOAuthError("token_refresh_failed") from None
+            except Exception as error:
+                # Never let the exchange's text (it holds the client secret)
+                # escape; keep only whether Google refused the grant.
+                if token_endpoint_refused(error):
+                    raise CalendarOAuthError("token_refresh_failed") from None
+                raise CalendarRenewalUnavailable() from None
             renewed = self._validated_tokens(
                 response, owner, grant, carry_refresh=refresh_token, scope_optional=True
             )
@@ -994,6 +1209,7 @@ class CalendarOAuth:
         """
         grant = self._grant(write, grant)
         spec = _spec(grant)
+        _prepare_key(self.store, writing=True)
         with _OAUTH_LOCK:
             with _lifecycle_guard(self.registry, owner_id, spec.connector_id):
                 current = self.registry.status(owner_id, spec.connector_id)
@@ -1008,6 +1224,16 @@ class CalendarOAuth:
                 if current.state not in (ConnectorState.DISCONNECTED, ConnectorState.BLOCKED):
                     self.registry.transition(owner_id, spec.connector_id, ConnectorState.DISCONNECTED)
         return self.status(owner_id, grant=grant)
+
+    def _prepare_pending_key(self, owner_ids) -> None:
+        """Fetch the key before the OAuth lock when a pending authorization is stored (#8)."""
+        slots = []
+        for owner_id in dict.fromkeys(owner_ids):
+            try:
+                slots.extend(_secret_slot(PENDING_SECRET_KEY, grant, owner_id) for grant in self.grants)
+            except CalendarOAuthError:
+                continue
+        _prepare_key(self.store, *slots)
 
     def _assert_unchanged_authority(self, owner_id: str, spec: ConnectorSpec, pending: dict) -> None:
         with _lifecycle_guard(self.registry, owner_id, spec.connector_id):

@@ -277,7 +277,11 @@ app. Choose *Advanced → continue*. You are its only user, so Google's verifica
 After connecting Drive, your AI can search your Drive and read a file. Google Docs, Sheets
 and Slides come back as text; PDF, DOCX, XLSX, TXT and MD are extracted on this computer.
 The connections keep working after the one-hour Google access token expires, because
-Still renews it with the stored refresh token.
+Still renews it with the stored refresh token, a couple of minutes before it expires.
+If Google cannot be reached during a renewal (no network, a timeout, a Google-side error),
+the stored connection is kept and the next request renews it; you are asked to connect
+again only when Google refuses the grant itself (for example after you removed Still's
+access in your Google account).
 
 What this does and does not do:
 
@@ -289,6 +293,9 @@ What this does and does not do:
   `AGENTOS_GOOGLE_OAUTH_KEY` to a Fernet key you keep outside the data folder.
 - **Replacing the client** applies after Still restarts, and each service must then be
   connected again.
+- **Removing the client**: once every service that used it is disconnected, **client 지우기**
+  in the same section deletes the saved client and stops offering those connections. A client
+  set by `AGENTOS_GOOGLE_CLIENT_FILE` is removed by removing that setting.
 - **A per-service client still wins.** If you configured Gmail or Calendar with a separate
   client (sections below), that configuration is used for that service.
 

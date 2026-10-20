@@ -202,6 +202,13 @@ def build_google_connectors(store, client, port, key_provider, registry, *, gmai
     client_id,client_secret=client[:2]
     if not str(port).isdigit() or not 1<=int(port)<=65535:
         raise ValueError('Local Google callback port must be a valid TCP port.')
+    if not callable(key_provider):
+        # #8: a key configured as text (``AGENTOS_GOOGLE_OAUTH_KEY``) that is
+        # not a Fernet key is named as such, not as a Gmail/Calendar failure.
+        try:
+            Fernet(key_provider.encode() if isinstance(key_provider,str) else key_provider)
+        except (TypeError,ValueError):
+            raise ValueError(msg('quickstart.google_oauth_key_invalid')) from None
     base=f'http://{LOCAL_ADDRESS_HOST}:{port}'
     def exchange(payload):
         # The client secret is added here only; it never reaches a connector,
@@ -653,6 +660,7 @@ SETTINGS_WEB_CHANGES={
     '/api/openrouter/connect':('OpenRouter 연결','저장했습니다'),
     '/api/search-providers/key':('웹 검색 키','저장했습니다'),'/api/search-providers/default':('기본 웹 검색 제공자','저장했습니다'),
     '/api/search-providers/bing':('Bing 검색 설정','저장했습니다'),'/api/google/client':(msg('quickstart.own_google_client'),'저장했습니다'),
+    '/api/google/client/remove':(msg('quickstart.own_google_client'),'지웠습니다'),
     '/api/files/roots':('연결 폴더 설정','저장했습니다'),'/api/context-inbox/config':('임시 자료 수집 설정','저장했습니다'),
     '/api/context-inbox/telegram-policy':('임시 자료 Telegram 공유 설정','저장했습니다'),
     '/api/context-inbox/share-policy':('임시 자료 공유 설정','저장했습니다'),
@@ -1273,6 +1281,10 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 if path=='/api/google/client':
                     if self.tunneled():return self.reply(400,{'error':'자체 Google client는 이 컴퓨터의 Still 화면에서만 설정할 수 있습니다.'})
                     return self.reply(200,service.save_google_client(body))
+                # #8: remove the saved client once its services are disconnected.
+                if path=='/api/google/client/remove':
+                    if self.tunneled():return self.reply(400,{'error':'자체 Google client는 이 컴퓨터의 Still 화면에서만 설정할 수 있습니다.'})
+                    return self.reply(200,service.remove_google_client())
                 if path=='/api/search-providers/default':return self.reply(200,service.set_search_provider_default(body))
                 if path=='/api/search-providers/bing':return self.reply(200,service.set_search_provider_bing(body))
                 if path=='/api/search-providers/native/recheck':return self.reply(200,service.recheck_native_search(body))

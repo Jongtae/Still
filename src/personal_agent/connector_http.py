@@ -57,3 +57,37 @@ def contained_opener(is_permitted):
     # a contained one from every test that injected its own.
     built.agentos_destination_guard = is_permitted
     return built
+
+
+# -- OAuth renewal policy shared by the Google connectors (#8) ---------------
+#: An access token this close to its recorded expiry is renewed before a
+#: request, so it does not expire while the request is in flight.  Acceptance
+#: of a stored token still uses the exact recorded expiry.
+RENEWAL_MARGIN_SECONDS = 120.0
+#: The local encryption key could not be obtained (the key store refused or is
+#: locked) or is not a usable key.  Neither says anything about the stored
+#: grant, so neither requires reauthentication or clears a credential.
+LOCAL_KEY_UNAVAILABLE = 'local_key_unavailable'
+LOCAL_KEY_INVALID = 'local_key_invalid'
+LOCAL_KEY_REASONS = frozenset({LOCAL_KEY_UNAVAILABLE, LOCAL_KEY_INVALID})
+
+
+def token_endpoint_refused(error) -> bool:
+    """Whether a failed OAuth token-endpoint call says the stored grant itself is unusable (#8).
+
+    RFC 6749 section 5.2: the token endpoint answers a request it refuses -- a
+    revoked or expired refresh token (``invalid_grant``), a deleted or
+    disabled client (``invalid_client``) -- with HTTP 400, or 401 for client
+    authentication.  Only that answer is definitive.  No answer at all (a
+    network failure or timeout), a throttled or failing endpoint (429, 5xx)
+    or an unreadable body says nothing about the grant, so a caller keeps the
+    stored credential and a later request renews it.
+
+    ``error`` is whatever the injected token exchange raised; urllib's
+    ``HTTPError`` carries the status as ``code``.
+    """
+    for name in ('code', 'status'):
+        status = getattr(error, name, None)
+        if isinstance(status, int) and not isinstance(status, bool):
+            return status in (400, 401)
+    return False
