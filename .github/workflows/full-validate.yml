@@ -33,7 +33,24 @@ jobs:
       # #135: one worker per core.  #156: --dist worksteal hands out single tests and an
       # idle worker takes queued ones from a busy one, so a large file no longer keeps one
       # worker running alone at the end.  --durations lists the slowest tests.
-      - run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist worksteal --durations=25 tests
+      # #156 measurement only (reverted before merge): the same suite, same runner, each distribution in turn.
+      - name: Measure distributions
+        if: ${{ !cancelled() }}
+        run: |
+          for dist in loadfile worksteal loadfile worksteal; do
+            start=$(date +%s)
+            PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -p no:cacheprovider -n auto --dist $dist --junitxml=junit-$dist.xml tests > out-$dist.txt 2>&1 || true
+            echo "MEASURE $dist wall=$(( $(date +%s) - start ))s $(tail -1 out-$dist.txt)"
+            PATH="$PWD/.venv/bin:$PATH" python3 - "junit-$dist.xml" <<'PY'
+          import collections, sys, xml.etree.ElementTree as ET
+          files = collections.Counter()
+          for case in ET.parse(sys.argv[1]).getroot().iter('testcase'):
+              parts = case.get('classname', '').split('.')
+              files[next((part for part in parts if part.startswith('test_')), parts[0])] += float(case.get('time') or 0)
+          print('MEASURE top files:', ', '.join(f'{name} {seconds:.0f}s' for name, seconds in files.most_common(8)),
+                f'| sum {sum(files.values()):.0f}s')
+          PY
+          done
 
   # MACOS-CI-01 #1178: the same suite on macOS, where the embedded system
   # WebKit browser, Keychain-backed sessions and launchd paths actually run.
@@ -70,13 +87,36 @@ jobs:
           version: '0.11.33'
           enable-cache: true
       - run: uv sync --locked --extra mcp-host --extra schema-validation --group dev --no-python-downloads
-      # #135, #156: the whole suite in parallel.  AGENTOS_REAL_BROWSER_TESTS is not set
-      # here, so the real-WebKit classes skip; the rest of their files runs with the suite.
-      - name: Suite (parallel; real-WebKit classes skip)
-        run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist worksteal --durations=25 tests
-      # Those classes open real browser windows, so they run one at a time afterwards.
-      - name: Real-WebKit classes (serial)
+      # #156 measurement only (reverted before merge): where the real-WebKit classes spend wall time.
+      - name: Profile real-WebKit classes (serial)
         if: ${{ !cancelled() }}
         env:
           AGENTOS_REAL_BROWSER_TESTS: '1'
-        run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q --durations=25 $REAL_BROWSER_TESTS
+        run: |
+          PATH="$PWD/.venv/bin:$PATH" python3 -m cProfile -o real.prof -m pytest -q --durations=40 $REAL_BROWSER_TESTS || true
+          PATH="$PWD/.venv/bin:$PATH" python3 - <<'PY'
+          import pstats
+          stats = pstats.Stats('real.prof')
+          stats.sort_stats('cumulative')
+          stats.print_stats(r'personal_agent|tests/', 60)
+          stats.sort_stats('tottime')
+          stats.print_stats(25)
+          PY
+      # #156 measurement only (reverted before merge): the same suite, same runner, each distribution in turn.
+      - name: Measure distributions
+        if: ${{ !cancelled() }}
+        run: |
+          for dist in loadfile worksteal; do
+            start=$(date +%s)
+            PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -p no:cacheprovider -n auto --dist $dist --junitxml=junit-$dist.xml tests > out-$dist.txt 2>&1 || true
+            echo "MEASURE $dist wall=$(( $(date +%s) - start ))s $(tail -1 out-$dist.txt)"
+            PATH="$PWD/.venv/bin:$PATH" python3 - "junit-$dist.xml" <<'PY'
+          import collections, sys, xml.etree.ElementTree as ET
+          files = collections.Counter()
+          for case in ET.parse(sys.argv[1]).getroot().iter('testcase'):
+              parts = case.get('classname', '').split('.')
+              files[next((part for part in parts if part.startswith('test_')), parts[0])] += float(case.get('time') or 0)
+          print('MEASURE top files:', ', '.join(f'{name} {seconds:.0f}s' for name, seconds in files.most_common(8)),
+                f'| sum {sum(files.values()):.0f}s')
+          PY
+          done
