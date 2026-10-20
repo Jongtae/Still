@@ -53,7 +53,7 @@ READ_CATEGORIES = {
 LOOKUP_ACTIONS = frozenset(name for name, tool in HOST_TOOLS.items() if tool.lookup)
 #: Korean names of the categories, in the order the section shows them.
 CATEGORY_NAMES = {
-    'profile': '프로필', 'memory': '기억', 'calendar': '캘린더', 'files': '파일', 'ai_connection': 'AI에 연결된 서비스', 'drive': 'Google Drive', 'api': '인증 API',
+    'profile': '프로필', 'memory': '기억', 'calendar': '캘린더', 'files': '파일', 'ai_connection': 'AI에 연결된 서비스', 'drive': 'Google Drive', 'mail': 'Gmail', 'api': '인증 API',
     'current_context': '현재 상황', 'notes': '메모', 'browser': msg('information_use.signed_in_browser_pages'),
     'settings': '설정', 'spliced': msg('information_use.material_attached_to_the_request'), 'prepared': msg('information_use.prepared_answers'),
     'records': msg('information_use.an_earlier_answer_s_information_use'), 'attention': '기다리는 동안 알린 것',
@@ -220,6 +220,11 @@ def _event_items(action, evidence):
         return files or [f"일치하는 Drive 파일 {int(evidence.get('file_count') or 0)}개"]
     if action == 'drive_read':
         return [_text(evidence.get('name'))]
+    if action == 'mail_search':
+        # #150: subjects and senders are private mail metadata; the audit counts the matches.
+        return [f"일치하는 메일 {int(evidence.get('message_count') or 0)}개"]
+    if action == 'mail_read':
+        return [f"메일 {_text(evidence.get('message_id'), 40)}"]
     if action == 'api_request':
         source = evidence.get('source') if isinstance(evidence.get('source'), dict) else {}
         basis = _text(evidence.get('as_of') or '기준 시각 모름', 40)

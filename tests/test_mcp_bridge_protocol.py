@@ -257,7 +257,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
         # #826: and the connected-folder documents, approved pages and the information-use audit.
         self.assertEqual(names, ["calendar_draft_cancel", "calendar_draft_create",
                                  "calendar_draft_update", "calendar_query", "capability_search", *CODE_RUN, "drive_read", "drive_search", "find_files", "forget_record", "information_use",
-                                 "list_memory", "list_notes", "list_roots", "public_page_read", "read_file", "save_memory",
+                                 "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_page_read", "read_file", "save_memory",
                                  "save_note", "schedule_preparation", "search_memory", "settings_change", "settings_read", "weather",
                                  "web_search"])
         replies = self._wire(
@@ -284,7 +284,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
         self.assertIn("--native-search", self.server["args"])
         self.assertEqual([tool["name"] for tool in replies[2]["result"]["tools"]],
                          ["calendar_draft_cancel", "calendar_draft_create", "calendar_draft_update", "calendar_query",
-                          "capability_search", *CODE_RUN, "drive_read", "drive_search", "find_files", "forget_record", "information_use", "list_memory", "list_notes", "list_roots", "public_page_read",
+                          "capability_search", *CODE_RUN, "drive_read", "drive_search", "find_files", "forget_record", "information_use", "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_page_read",
                           "read_file", "save_memory", "save_note", "schedule_preparation", "search_memory", "settings_change",
                           "settings_read", "weather"])
         self.assertFalse(_refused(replies[3]))

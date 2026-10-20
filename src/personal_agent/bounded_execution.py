@@ -107,6 +107,8 @@ _PREPARATIONS = 'owner-preparations-not-bound-to-cli-route'
 _OWNER_STATE_RELAYED = tuple(name for name, tool in HOST_TOOLS.items() if tool.service_held)
 #: #1172: the owner's Drive connection is held by the service, reached only through its relay.
 _DRIVE = 'owner-drive-connection-served-on-trusted-local-route-only'
+#: #150: the owner's Gmail connection is held by the service, reached only through its relay.
+_MAIL = 'owner-mail-connection-served-on-trusted-local-route-only'
 #: #1216: the owner's API slot secrets are held by the service, reached only through its relay.
 _API = 'owner-api-slots-served-on-trusted-local-route-only'
 #: #774: the owner's paired Telegram chat is held by the service, reached only through its relay.
@@ -222,7 +224,7 @@ CLI_PROFILES = {
             'find_files', 'read_file', 'list_roots', 'calendar_query', 'calendar_draft_create',
             'calendar_draft_update', 'calendar_draft_cancel', 'save_memory', 'list_memory', 'search_memory', 'forget_record',
             'list_agents', 'delegate_agent', 'propose_current_state', 'schedule_preparation', 'ask_location',
-            'settings_read', 'settings_change', 'capability_search', 'information_use', 'drive_search', 'drive_read', 'api_request', 'code_run',
+            'settings_read', 'settings_change', 'capability_search', 'information_use', 'drive_search', 'drive_read', 'mail_search', 'mail_read', 'api_request', 'code_run',
             *_BROWSER_ACTIONS, *_SKILL_ACTIONS)},
                 'runtimes': {'codex': {'pinned_version': '0.153.4', 'live_tested_version': None}},
     },
@@ -244,6 +246,7 @@ CLI_PROFILES = {
             'calendar_query': _CALENDAR, 'calendar_draft_create': _CALENDAR,
             'calendar_draft_update': _CALENDAR, 'calendar_draft_cancel': _CALENDAR,
             'drive_search': _DRIVE, 'drive_read': _DRIVE,
+            'mail_search': _MAIL, 'mail_read': _MAIL,
             'api_request': _API, 'code_run': _API,
             'save_memory': _MEMORY, 'list_memory': _MEMORY, 'search_memory': _MEMORY, 'forget_record': _MEMORY,
             'list_agents': _SPECIALISTS, 'delegate_agent': _SPECIALISTS,

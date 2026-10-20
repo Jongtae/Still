@@ -77,6 +77,9 @@ HOST_TOOLS={
     # #1172: read-only search and read of the owner's connected Google Drive.
     'drive_search': HostTool(False, True, True, 'drive', False, None),
     'drive_read': HostTool(False, True, True, 'drive', False, None),
+    # #150: read-only search and decoded body read of the owner's connected Gmail.
+    'mail_search': HostTool(False, True, True, 'mail', False, None),
+    'mail_read': HostTool(False, True, True, 'mail', False, None),
     # #1216: an authenticated API call by secret-slot reference (non-read needs approval).
     'api_request': HostTool(True, False, True, 'api', False, 'body'),
     # #1380: Python the AI wrote, run in an isolated sandbox. It sends only GET/HEAD and owner-reviewed

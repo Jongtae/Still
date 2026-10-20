@@ -5022,9 +5022,9 @@ class AgentService:
         # never invented and never names a port this process did not bind.
         return self.connector_handoff.guidance(result,self.connector_connect_url(connector_id))
 
-    #: Connectors a model-chosen read may be parked for (#606 T5).  Mail is
-    #: not a loop tool (owner Q3), so only the calendar read is listed.
-    PARKABLE_READ_CONNECTORS=frozenset({CALENDAR_CONNECTOR_ID,DRIVE_CONNECTOR_ID})
+    #: Connectors a model-chosen read may be parked for (#606 T5).  Mail became
+    #: a loop read through the Gmail API slot (CONN-API) and ``mail_read`` (#150).
+    PARKABLE_READ_CONNECTORS=frozenset({CALENDAR_CONNECTOR_ID,DRIVE_CONNECTOR_ID,GMAIL_CONNECTOR_ID})
 
     def connector_read_need(self, capabilities, job_id):
         """The declared connector a read-only turn found missing, or None.
@@ -8844,6 +8844,13 @@ class AgentService:
             return None
         return self.drive_reader_factory(self.connector_owner_id(job))
 
+    def mail_for(self, job):
+        """The worker's Gmail reader bound to this Work's owner, or None (#150)."""
+        if self.gmail is None:
+            return None
+        from .gmail import GmailWorkerReader
+        return GmailWorkerReader(self.gmail,self.connector_owner_id(job))
+
     GOOGLE_CLIENT_SECRET_KEY='google_oauth_client'
     #: #8: one save or removal of the owner's own Google client at a time, so two
     #: concurrent first saves cannot each install connectors for a different client.
@@ -10665,7 +10672,7 @@ class AgentService:
                                   # the paired Telegram chat for ask_location.
                                   **({'memory_request':run.owner_memory_request,'calendar':self.calendar_for(job),
                                       'calendar_owner':self.connector_owner_id(job),
-                                      'drive':self.drive_for(job),
+                                      'drive':self.drive_for(job),'mail':self.mail_for(job),
                                       # CONN-API: Still-held connections through api_request.
                                       'connections':lambda job=job:self.connection_slots(job),
                                       'preparations':self.preparation_scheduler(job,run.prompt),
@@ -10982,7 +10989,7 @@ class AgentService:
                                   # #605 F4: read on every use, so a page approval revoked
                                   # during this Work refuses a read that starts afterwards.
                                   public_page_scope=lambda:self.public_page_boundary(run.config)['urls'],
-                                  memory_request=run.owner_memory_request,inherited_provenance=set(run.turn_provenance)|shown_sources|run.work_private,calendar=self.calendar_for(job),calendar_owner=self.connector_owner_id(job),drive=self.drive_for(job),connections=lambda job=job:self.connection_slots(job),current_packages=self.runtime_packages,
+                                  memory_request=run.owner_memory_request,inherited_provenance=set(run.turn_provenance)|shown_sources|run.work_private,calendar=self.calendar_for(job),calendar_owner=self.connector_owner_id(job),drive=self.drive_for(job),mail=self.mail_for(job),connections=lambda job=job:self.connection_slots(job),current_packages=self.runtime_packages,
                                   budget=run.work_budget,
                                   # #656: the owner-logged-in browser profile and its per-step approvals.
                                   browser=self.browser_profile.driver_factory(job['id']),browser_approvals=self.browser_approvals_for(job),

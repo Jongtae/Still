@@ -186,6 +186,8 @@ class StrictLaunchArguments(unittest.TestCase):
                        'mcp__agentos__information_use,'
                        # #1172: the owner's Drive reads, relayed the same way.
                        'mcp__agentos__drive_search,mcp__agentos__drive_read,'
+                       # #150: the owner's Gmail reads, relayed the same way.
+                       'mcp__agentos__mail_search,mcp__agentos__mail_read,'
                        # #1216: authenticated API calls by slot, relayed the same way.
                        'mcp__agentos__api_request,'
                        # #1380: sandboxed code runs, relayed the same way.

@@ -68,7 +68,8 @@ TOOL_LABELS = {
     'calendar_draft_cancel': '일정 초안', 'weather': '날씨 조회', 'ask_location': '위치 확인',
     'delegate_agent': msg('projection.handed_to_another_agent'), 'list_agents': '에이전트 목록 조회',
     'find_files': '파일 찾기', 'read_file': '파일 읽기', 'list_roots': '연결 폴더 확인', 'public_page_read': msg('projection.read_a_public_page'),
-    'drive_search': msg('projection.find_drive_files'), 'drive_read': msg('projection.read_drive_file'), 'api_request': '인증 API 호출', 'code_run': '코드 실행',
+    'drive_search': msg('projection.find_drive_files'), 'drive_read': msg('projection.read_drive_file'),
+    'mail_search': msg('projection.find_mail'), 'mail_read': msg('projection.read_mail'), 'api_request': '인증 API 호출', 'code_run': '코드 실행',
     # #23 retired this tool; the label keeps Works recorded before then readable.
     'bounded_public_research': msg('projection.public_research'),
     # SEC-BROWSER-01 (#656): steps in the owner-logged-in browser profile.

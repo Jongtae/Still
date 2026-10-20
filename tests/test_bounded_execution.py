@@ -41,7 +41,9 @@ BOUNDED_NAMES = ['ask_location', 'browser_click', 'browser_find', 'browser_open'
                  'code_run',  # #1380: sandboxed code runs, decided by the service.
                  # #1172: the owner's Drive reads, relayed to the service.
                  'drive_read', 'drive_search', 'find_files',
-                 'forget_record', 'information_use', 'list_memory', 'list_notes', 'list_roots', 'propose_current_state', 'public_page_read',
+                 'forget_record', 'information_use', 'list_memory', 'list_notes', 'list_roots',
+                 'mail_read', 'mail_search',  # #150: the owner's Gmail reads, relayed to the service.
+                 'propose_current_state', 'public_page_read',
                  'read_file', 'save_memory', 'save_note', 'schedule_preparation',
                  'search_memory', 'settings_change', 'settings_read', 'weather', 'web_search',
                  # #1216: authenticated API calls by slot, relayed to the service.

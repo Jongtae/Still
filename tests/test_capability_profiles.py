@@ -120,7 +120,9 @@ class OneActionSource(_Store):
                                  # #826: the connected-folder documents and approved pages.
                                  'find_files': True, 'list_roots': True, 'read_file': True, 'public_page_read': True,
                                  # #1172: the owner's Drive reads.
-                                 'drive_search': True, 'drive_read': True})
+                                 'drive_search': True, 'drive_read': True,
+                                 # #150: the owner's Gmail reads.
+                                 'mail_search': True, 'mail_read': True})
 
     def test_no_route_keeps_its_own_schema_list(self):
         """The removed three-tool fork and the two list_notes copies stay gone."""
@@ -382,6 +384,8 @@ class SettingsProjection(_Store):
                                              'information_use',
                                              # #1172: the owner's Drive reads, relayed the same way.
                                              'drive_search', 'drive_read',
+                                             # #150: the owner's Gmail reads, relayed the same way.
+                                             'mail_search', 'mail_read',
                                              # #1216: authenticated API calls by slot, relayed the same way.
                                              'api_request',
                                              # #1380: sandboxed code runs, relayed the same way.

@@ -26,7 +26,8 @@ SLOT_SPECS = {
                      'note': "the owner's Google Drive, read-only (Drive API v3)",
                      'shortcuts': ('drive_search',)},
     'gmail': {'hosts': ('gmail.googleapis.com',), 'paths': ('/gmail/v1/users/me/',),
-              'note': "the owner's Gmail, read-only (Gmail API v1, users/me)",
+              'note': "the owner's Gmail, read-only (Gmail API v1, users/me); message bodies come "
+                      "base64url-encoded, so read one with mail_read to get its text",
               'shortcuts': ()},
 }
 

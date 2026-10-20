@@ -1283,6 +1283,18 @@
   "ja": "Drive ファイルを読む",
   "zh": "读取 Drive 文件"
  },
+ "projection.find_mail": {
+  "ko": "메일 찾기",
+  "en": "Find mail",
+  "ja": "メールを検索",
+  "zh": "查找邮件"
+ },
+ "projection.read_mail": {
+  "ko": "메일 읽기",
+  "en": "Read mail",
+  "ja": "メールを読む",
+  "zh": "读取邮件"
+ },
  "projection.record_current_situation": {
   "ko": "현재 상황 기록",
   "en": "Record current situation",
@@ -1990,6 +2002,18 @@
   "en": "Searching your Drive",
   "ja": "Drive を探しています",
   "zh": "正在 Drive 中查找"
+ },
+ "step.mail_read": {
+  "ko": "메일 읽어 보고 있어요",
+  "en": "Reading your mail",
+  "ja": "メールを読んでいます",
+  "zh": "正在读取邮件"
+ },
+ "step.mail_search": {
+  "ko": "메일에서 찾아보고 있어요",
+  "en": "Searching your mail",
+  "ja": "メールを探しています",
+  "zh": "正在邮件中查找"
  },
  "step.find_files": {
   "ko": "파일 찾아보고 있어요",
