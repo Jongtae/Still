@@ -478,3 +478,38 @@ class EveryMatchTests(unittest.TestCase):
   self.assertEqual(shown['q']['text'],matches)
   [facts]=judged
   for ref in ('[r-1]','[r-2]'):self.assertIn(ref,json.dumps(facts,ensure_ascii=False))
+
+
+class CorrectedScopeTests(unittest.TestCase):
+ """#153: a correction that changes what an earlier lookup was about.
+
+ Evidence class: worker guidance text plus a model-free scripted run with an
+ injected model transport.  The fixture proves the rule reaches the worker
+ brief of a correction turn; it does not prove that a live model looks again.
+ """
+ def test_the_worker_guidance_looks_again_and_names_no_domain(self):
+  from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+  for phrase in ('When a correction changes what an earlier lookup was about',
+                 'the earlier results answer a different question',
+                 'looking it up again with the corrected scope and answering from that',
+                 'never present earlier results under the corrected label'):
+   self.assertIn(phrase,CORE_INSTRUCTIONS)
+  line=CORE_INSTRUCTIONS.split('When a correction changes what an earlier lookup was about',1)[1].split('\n',1)[0].lower()
+  for domain in ('mail','email','calendar','event','schedule','order','file','drive','tomorrow','today'):
+   self.assertNotIn(domain,line,'the method names no service domain')
+  # #24: the owner's own word and the outside-fact recheck come first, in their order.
+  self.assertLess(CORE_INSTRUCTIONS.index('When the owner corrects something about themselves'),
+                  CORE_INSTRUCTIONS.index('When the owner says an outside fact you reported'))
+  self.assertLess(CORE_INSTRUCTIONS.index('When the owner says an outside fact you reported'),
+                  CORE_INSTRUCTIONS.index('When a correction changes what an earlier lookup was about'))
+
+ def test_the_rule_reaches_the_worker_of_a_correction_turn(self):
+  import test_agency_loop as loop
+  store=QuickStore(Path(self.enterContext(tempfile.TemporaryDirectory()))/'data')
+  script=loop.Script({'content':'ok'})
+  caps=Capabilities(store,ModelAdapter(script),loop.CFG,'','job',lambda *event:None,network=loop.Network())
+  history=[{'role':'user','content':'what is on for the next day?'},
+           {'role':'assistant','content':'For 22 October: A at 10:00, B at 14:00.'},
+           {'role':'user','content':'it is already past midnight, so I meant today'}]
+  run_agent(caps.adapter,loop.CFG,'',history,'',caps,caps.record)
+  self.assertIn('never present earlier results under the corrected label',script.bodies[0]['messages'][0]['content'])
