@@ -2279,6 +2279,57 @@ def failed_steps_text(steps, limit=FAILED_STEPS_CHARS):
  if len(kept)<len(entries):kept.append(FAILED_STEPS_MORE.format(count=len(entries)-len(kept)))
  return '; '.join(kept)
 
+#: #151: the outcome judgment's ``read_state`` line - which items this attempt listed, opened and read through.
+READ_STATE_CHARS=600
+READ_STATE_IDS=6
+
+def _item_ref(item):
+ """One item's identity in Still's evidence vocabulary (#151): a message or file id, or a folder path."""
+ if not isinstance(item,dict):return str(item)[:200] if isinstance(item,str) and item else ''
+ for key in ('message_id','file_id'):
+  if isinstance(item.get(key),str) and item[key]:return item[key][:200]
+ if item.get('root_id') and isinstance(item.get('path'),str) and item['path']:return f"{item['root_id']}:{item['path']}"[:200]
+ return ''
+
+def read_state_text(calls, limit=READ_STATE_CHARS):
+ """What the attempt's reads covered (#151), from Still's recorded evidence only, or ''.
+
+ ``calls`` are ``(tool, evidence)`` of the attempt's succeeded calls (``evidence_summary``).  A
+ listing names items (``message_ids``, ``files``); an opened item is a read of one named item whose
+ evidence counts the ``characters`` it returned (a page or tool without an item id is not counted).  The line says which listed items no read opened, which opened
+ items were returned only in part (``truncated``) or with no text, and which listings were cut
+ short - or, when there is none of that, that every listed item was opened and read through.  It is
+ a structural fact for the one outcome judgment (an answer that says the asked value was not found
+ while material stayed unread does not serve the message); the reply's wording never decides it,
+ and nothing here names a request, service or value.
+ """
+ listed,opened,partial,empty,cut=[],[],[],[],[]
+ for tool,evidence in calls or ():
+  if not isinstance(evidence,dict):continue
+  items=[*(evidence.get('message_ids') or ()),*(evidence.get('files') or ())]
+  for item in items:
+   ref=_item_ref(item)
+   if ref and ref not in listed:listed.append(ref)
+  if items and evidence.get('truncated') and 'characters' not in evidence and tool not in cut:cut.append(str(tool)[:60])
+  ref=_item_ref(evidence) if 'characters' in evidence else ''
+  if not ref:continue
+  if ref not in opened:opened.append(ref)
+  if not evidence.get('characters'):empty.append(ref)
+  elif evidence.get('truncated') or evidence.get('text_truncated'):partial.append(ref)
+ if not (listed or opened):return ''
+ unopened=[ref for ref in listed if ref not in opened]
+ def ids(refs):
+  shown=', '.join(refs[:READ_STATE_IDS])
+  return shown+(f' and {len(refs)-READ_STATE_IDS} more' if len(refs)>READ_STATE_IDS else '')
+ parts=[]
+ if unopened:parts.append(f'listed but never opened: {len(unopened)} of {len(listed)} listed ({ids(unopened)})')
+ if partial:parts.append(f'opened but returned only in part (truncated): {ids(partial)}')
+ if empty:parts.append(f'opened but returned no readable text: {ids(empty)}')
+ if cut:parts.append(f'listing cut short, more items matched than were listed: {", ".join(cut)}')
+ if not parts:parts.append(f'every listed item was opened and read through ({len(opened)} opened)' if listed
+                           else f'every opened item was read through ({len(opened)} opened)')
+ return ('read_state (Still\'s record of which items this attempt opened and read through): '+'; '.join(parts))[:limit]
+
 def state_change_short(trail):
  """Whether a state-changing action - anything outside the effect-free reads
  and internal-state actions - failed, was withheld or left incomplete without
@@ -4224,7 +4275,12 @@ def goal_verdict(outcome,gap='',note=None):
  verdict.note=note if outcome=='no' and isinstance(note,str) else None
  return verdict
 
-def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments=''):
+def steps_read_state(steps):
+ """#151: ``read_state_text`` over the direct route's settled steps (their recorded evidence shape)."""
+ return read_state_text([(tool,evidence_summary(action,detail)) for tool,action,state,detail,_reason in steps or ()
+                         if state=='succeeded' and isinstance(detail,dict)])
+
+def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state=''):
  """``yes`` / ``no`` / ``unavailable``: did the reply serve the owner's message ``goal``?
 
  The one outcome judgment (#657, #820): one ``ConversationJudgments.goal_reached``
@@ -4232,7 +4288,8 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  (``claim['summary']``, model-stated, never evidence), the referenced
  observed results, the Work's failed steps and (#833) the owner context the
  worker was given - ``owner_context`` is the turn context's ``profile`` /
- ``current_context`` sections, rendered by ``owner_context_fact``.  No judgments, an engine error or a non-answer is
+ ``current_context`` sections, rendered by ``owner_context_fact``.  #151: ``read_state``
+ (``steps_read_state``) says which listed items the run opened and read through.  No judgments, an engine error or a non-answer is
  ``unavailable``, which never yields ``succeeded``.  ``redact(text,
  private)`` (``Capabilities.judgment_text``) runs on every fact before it is
  bounded, so a cut can never leave part of a secret; the owner's request is
@@ -4244,7 +4301,10 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  clean=(lambda text,private=False:redact(text,private=False)) if redact else (lambda text,private=False:str(text or ''))
  refs=claim['evidence_refs']
  share=max(300,GOAL_OBSERVATION_CHARS//max(1,len(refs)))
- observed='\n'.join(clean(_observation_text(ref,observations[ref][0],observations[ref][3]))[:share] for ref in refs)[:GOAL_OBSERVATION_CHARS]
+ observed='\n'.join(clean(_observation_text(ref,observations[ref][0],observations[ref][3]))[:share] for ref in refs)
+ # #151: which listed items were opened and read through comes first, so no cut drops it.
+ observed=((read_state+'\n') if read_state else '')+observed
+ observed=observed[:GOAL_OBSERVATION_CHARS]
  # #14: the direct route passes ``failed_steps_text`` (recovered and unknown-effect calls marked); a list is read as before.
  failed=clean(failures if isinstance(failures,str) else '; '.join(f'{tool}: {reason or "failed"}' for tool,reason in failures))[:GOAL_FAILURE_CHARS]
  reply=clean(claim.get('summary') or '')[:GOAL_REPLY_CHARS]
@@ -4487,7 +4547,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    refs=[ref for ref,row in observations.items() if row[2]=='succeeded' and row[1] not in INTERNAL_STATE_ACTIONS]
    judgment=goal_judgment(capabilities.judgments,goal,{'evidence_refs':refs,'summary':content},observations,failed_steps_text(steps),
                           capabilities.job_id,getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
-                            attachments=attachment_facts(images=len(images)) if images else '')
+                            attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps))
   if not _external(trail) and not invalid_calls:
    # Ordinary conversation: no tool ran (or only internal current-state
    # bookkeeping, #627), so there is nothing to observe.
@@ -4609,7 +4669,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       judged+=1
       judgment=goal_judgment(capabilities.judgments,goal,claim,observations,failed_steps_text(steps),capabilities.job_id,
                              getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
-                             attachments=attachment_facts(images=len(images)) if images else '')
+                             attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps))
       # A "not shown" answer returns the claim once, so the model can take
       # another path; a second one, or no engine, ends the run below.
       if judgment=='no' and judged<GOAL_JUDGMENTS:reason='goal_not_observed'
