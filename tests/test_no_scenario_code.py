@@ -16,25 +16,40 @@ control flow:
 - ``dispatch-key``: a key of a dict literal that is subscripted or ``get``-ed,
   directly or through the name it is bound to;
 - ``match-table``: an element of a string collection (or ``re.compile``
-  pattern) bound to a name in any scope - module, class or function - that
-  the module reads, or iterated inline by a ``for``/comprehension: the shape
-  of a cue list consumed by a matcher.
+  pattern, or a dict of such collections) bound to a name in any scope -
+  module, class or function - that the module reads, iterated inline by a
+  ``for``/comprehension, or handed inline to a helper call: the shape of a cue
+  list consumed by a matcher.  A record that also holds a dict, number or
+  ``None`` (a ``(template, params)`` pair) is a value, not a table.
+
+Two rules apply to a literal in those positions:
+
+- it names a site, provider or request category (``SITE_TOKENS``,
+  ``CATEGORY_TOKENS``); such a literal is classified one by one;
+- GUARD-NL-01 (#171): it is natural language - Hangul or CJK, or a
+  multi-word English phrase (a regex's ``\\s`` reads as a space).  Such a cue
+  may be classified one by one or as its whole table.
 
 Message text is excluded by construction: an owner-facing Korean or English
-sentence passed to a reply, a tool description or an error is not in any of
-those positions, so it is never read.  ``test_guard_catches_a_planted_scenario_branch``
-proves both directions on a planted module.
+sentence passed to a reply, a tool description or an error, a dict value or a
+``get`` default is not in any of those positions, so it is never read.
+``test_guard_catches_a_planted_scenario_branch`` and
+``test_guard_catches_a_planted_natural_language_cue_table`` prove both
+directions on planted modules.
 
 The registry and adapter modules that must name providers are allowlisted
 as whole modules (``ALLOWED_MODULES``); the provider-id enum offered to the
 model is built at run time from that registry, so it has no literal here.
 
 Anything else the scan finds must be listed in ``CLASSIFIED``, keyed by
-``(module, literal)`` with its classification and reason, so every exception
-is reviewable in one place.  A new hit fails; a listed entry that no longer
-exists fails too, so the list cannot go stale.  ``open-finding`` entries are
-pre-existing branches reported by #660 and deliberately left unfixed here;
-#672 resolved the three it reported, so none is listed now.
+``(module, literal)``, or (natural-language cues only) in ``CLASSIFIED_TABLES``,
+keyed by ``(module, table or function name)``, with its classification and
+reason, so every exception is reviewable in one place.  A new hit fails; a
+listed entry that no longer occurs fails too, so the list cannot go stale.
+#672 resolved the three open findings #660 reported.  The ``open-finding``
+entries now listed are the cue tables GUARD-NL-01 (#171) found; each names
+the issue that removes it, so the remaining work is tracked here and cannot
+grow silently.
 """
 import ast
 import re
@@ -58,13 +73,24 @@ SCANNED_MODULES = ('agent_runtime.py', 'conversation_handoff.py', 'current_conte
                    # API-READ-01 (#1216): the authenticated API call and its response provenance.
                    'api_requests.py',
                    # PROC-MEM-01 (#1486): the sandboxed code run and the per-connection function library.
-                   'code_run.py', 'procedures.py')
+                   'code_run.py', 'procedures.py',
+                   # GUARD-NL-01 (#171): modules that read owner or page text.
+                   'calendar_conversation.py', 'settings_orchestrator.py', 'telegram_presence.py',
+                   'information_use.py')
 
 #: Modules whose job is to name providers.  Not scanned.
 ALLOWED_MODULES = {
     'search_providers.py': 'provider registry and adapters (#655, #678): implements the connected AI\'s native search '
                            '(per owner-configured API route), Brave and the Bing RSS opt-in by name; the model-facing '
                            'provider enum is built from this registry at run time',
+    # GUARD-NL-01 (#171): scanned first; they name their provider's connector id, OAuth scope and file
+    # types, and hold no natural-language cue table (test_provider_adapters_are_allowlisted_with_a_reason).
+    'calendar.py': 'Google Calendar provider adapter: its connector ids name the provider it calls',
+    'connection_slots.py': "provider API slots (CONN-API): each slot names its connector id and the provider's "
+                           'API host and path prefix the token may reach',
+    'gmail.py': "Gmail provider adapter: compares the granted OAuth scope with Gmail's read-only scope URL",
+    'google_drive_read.py': "Google Drive provider adapter: Drive's own Google Docs/Sheets/Slides MIME types "
+                            'and its files.list query syntax',
 }
 
 #: Sites and providers from the probes and common Korean commerce/search hosts.
@@ -85,26 +111,168 @@ MATCH_CALLS = frozenset({'startswith', 'endswith', 'find', 'rfind', 'index', 'ri
                          'fullmatch', 'findall', 'finditer', 'compile', 'fnmatch', 'get', '__contains__'})
 _COLLECTION_CALLS = frozenset({'frozenset', 'set', 'tuple', 'list'})
 
-#: Every scan hit outside the allowed modules, reviewed once.
-#: ``allowed``: not a scenario branch.  ``open-finding``: a pre-existing
-#: request-category rule reported by #660 for an owner decision; not fixed here.
+#: Every scan hit outside the allowed modules, reviewed once.  A hit is classified
+#: by its literal here, or else as a whole table (or the function an inline table
+#: sits in) in ``CLASSIFIED_TABLES``.
+#:
+#: - ``enforcement``: code that keeps an invariant (payment floor, secret names,
+#:   redaction, licence, SSRF); a match can only add a refusal or an approval
+#:   requirement, never route a request.
+#: - ``adapter``: a provider's or tool's own fixed format (an API error, CLI
+#:   output, SQL, a connector registry id), not owner or page language.
+#: - ``own-text``: Still matches text Still itself wrote (its own message,
+#:   error, sentinel or rendered line), never owner or page language.
+#: - ``open-finding``: owner, worker or page text interpreted by a fixed rule,
+#:   left in place here and tracked by the issue that removes it.
+#:   Interpretation is never ``enforcement``.
+CLASSIFICATIONS = frozenset({'enforcement', 'adapter', 'own-text', 'open-finding'})
 CLASSIFIED = {
     ('local_tools.py', 'metadata.google.internal'): (
-        'allowed', 'SSRF denylist of cloud metadata hosts (DENIED_PUBLIC_HOSTS); a security boundary that refuses '
-                   'every request to that host, not a site the model may choose'),
+        'enforcement', 'SSRF denylist of cloud metadata hosts (DENIED_PUBLIC_HOSTS); a security boundary that '
+                       'refuses every request to that host, not a site the model may choose'),
     ('quickstart_service.py', 'google-drive-read'): (
-        'allowed', 'connector registry identity of the owner-connected Drive capability (read grant/handoff); '
+        'adapter', 'connector registry identity of the owner-connected Drive capability (read grant/handoff); '
                    'capability dispatch by connector id, not a site or provider chosen for a request'),
     ('quickstart_service.py', 'google-gmail-read'): (
-        'allowed', 'connector registry identity of the owner-connected Gmail capability'),
+        'adapter', 'connector registry identity of the owner-connected Gmail capability'),
     ('quickstart_service.py', 'google-calendar'): (
-        'allowed', 'connector registry identity of the owner-connected Calendar capability'),
+        'adapter', 'connector registry identity of the owner-connected Calendar capability'),
     ('quickstart_service.py', 'google-calendar-write'): (
-        'allowed', 'connector registry identity of the owner-connected Calendar write grant'),
+        'adapter', 'connector registry identity of the owner-connected Calendar write grant'),
+    ('decision_qualification.py', 'google-gmail-read'): (
+        'adapter', "connector registry identity given as the parked Work's connector in a qualification case; "
+                   'the judgment under test, not this literal, decides the outcome'),
     # #672 removed the three open findings #660 listed here ("book" in
     # _CALENDAR_VERBS, "google it" in _RESEARCH_CUES, "google drive" in
     # AgentService.requests_drive_access); calendar create and Drive read are
     # now the DecisionEngine's capability-need judgment, research the loop's.
+    ('agent_runtime.py', 'HANGUL JONGSEONG '): (
+        'adapter', 'a Unicode character-database name prefix (unicodedata.name) used to build the jamo table; '
+                   'a platform format, not owner language'),
+    ('agent_runtime.py', '승인한 공개 페이지 범위를 벗어난'): (
+        'own-text', "part of the shared network reader's own redirect refusal, matched to replace it with the "
+                    "search-result wording; Still's message, not owner or page text"),
+    # SettingsOrchestrator.handle_text's id-bearing compatibility forms; the
+    # rest of that function is listed in CLASSIFIED_TABLES.
+    ('settings_orchestrator.py', r'(?:confirm|확인)\s+([A-Za-z0-9_-]+)'): (
+        'open-finding', "#172: the word 확인/confirm before a draft id is read as the owner's approval act; "
+                        'OWNER-ACT-01 replaces the settings confirm/decline pair with one judgment'),
+    ('settings_orchestrator.py', r'(?:cancel|취소)\s+([A-Za-z0-9_-]+)'): (
+        'open-finding', "#172: the word 취소/cancel before a draft id is read as the owner's decline act; "
+                        'OWNER-ACT-01 replaces the settings confirm/decline pair with one judgment'),
+}
+
+#: GUARD-NL-01 (#171): whole tables, keyed ``(module, name)``.  ``name`` is the
+#: constant or table a literal was read through, or else the function an inline
+#: table sits in.  A new table or function has a new name, so its cue literals
+#: fail until listed here; an entry that no hit uses any more fails as stale.
+CLASSIFIED_TABLES = {
+    # --- enforcement ---------------------------------------------------------
+    **{('browser_session.py', name): (
+        'enforcement', '#758/#899/#936 payment floor: a control label or a site confirm question that may commit '
+                       "a purchase or payment needs the owner's approval; over-inclusive by design, a match only "
+                       'adds that requirement (#174 keeps these as the floor; its judgment can only add to them)')
+       for name in ('COMMIT_PHRASES', 'COMMIT_VERBS', 'COMMIT_NOUN_END', 'COMMIT_NOUN_ALONE', 'COMMIT_NOUN_PRICE',
+                    'COMMIT_QUESTION')},
+    ('browser_session.py', 'action_input_safe.sensitive_name'): (
+        'enforcement', 'secret field names (비밀번호, 인증번호, 토큰, 키): a value typed into such a field is never '
+                       'approved silently; a match only refuses'),
+    ('quickstart_service.py', '_SUBSCRIPTION_SECRET'): (
+        'enforcement', 'secret names: a /search query that names a secret is not sent in the subscription CLI '
+                       'preflight; a match only withholds'),
+    ('agent_runtime.py', 'NOTES_SUMMARY_COMMANDS'): (
+        'enforcement', 'source backfill: a past Work whose message was the notes-summary command may have spliced '
+                       'every note, so it is never marked clean; a match only keeps a Work private'),
+    ('telegram_presence.py', 'MASK_MARK'): (
+        'enforcement', "redaction: the masking marks Still's own redaction writes; a step line carrying one is "
+                       'never shown (#881)'),
+    ('quickstart_service.py', 'AgentService._redact_provenance'): (
+        'enforcement', 'redaction: the labels the path mask writes in place of the data and turn folders; '
+                       'substituted for a path, not matched against owner text'),
+    ('quickstart_service.py', 'AgentService._request_browser_login'): (
+        'enforcement', "redaction: a URL carrying Still's [가림] mark is never opened as is, only its origin"),
+    ('quickstart_service.py', 'AgentService.failed_preparation_watch_goals'): (
+        'enforcement', 'redaction: a goal Still masked ([가림: ...]) is never reused as a goal'),
+    ('skills.py', 'LICENCE_TEXTS'): (
+        'enforcement', 'licence gate (#960/#1219): an external skill is enabled only under a recognised licence, '
+                       'read from the fixed opening words of standard licence files'),
+    # --- adapter -------------------------------------------------------------
+    ('conversation_handoff.py', 'TELEGRAM_ENTITY_REJECTION'): (
+        'adapter', "the Telegram Bot API's own error description for rejected message entities"),
+    ('decision_adapters.py', 'CODEX_FEATURE_STAGES'): (
+        'adapter', "the stage column of the Codex CLI's `features list` output"),
+    ('decision_adapters.py', '_FEATURE_LINE'): (
+        'adapter', "one line of the Codex CLI's `features list` output"),
+    ('quickstart_service.py', 'AgentService._run_cli_attempt'): (
+        'adapter', "the subscription CLI's own stdin diagnostic, read to record whether a photo was sent"),
+    ('preparations.py', 'COLUMN_MIGRATIONS'): (
+        'adapter', 'SQL column definitions of the preparations store migration'),
+    # --- own-text ------------------------------------------------------------
+    ('agent_runtime.py', 'PUBLIC_TASK_UNRESOLVED'): (
+        'own-text', "Still's own refusal message, matched on the error it raised to pick the input_required code"),
+    ('agent_runtime.py', 'lines'): (
+        'own-text', 'deduplicates status lines Still itself wrote'),
+    ('quickstart_service.py', 'lines'): (
+        'own-text', 'deduplicates footer and status lines Still itself wrote'),
+    ('quickstart_service.py', 'UNKNOWN_EFFECT_RETRY_REFUSAL'): (
+        'own-text', "Still's own retry refusal, matched on the reason Still returned"),
+    ('decision_routes.py', 'DecisionRoutes._first_qualified'): (
+        'own-text', 'the "not reported" sentinel Still writes when a model does not report its identity'),
+    ('information_use.py', 'BROWSER_SIGNINS_PREFIX'): (
+        'own-text', "the browser sign-ins line Still's current context renders (quickstart BROWSER_SIGNINS_LINE)"),
+    ('information_use.py', 'browser_signin_claims'): (
+        'own-text', 'the "shared with you" note Still writes on a shared sign-in in that rendered line'),
+    ('information_use.py', '_WORKING_NOTES'): (
+        'own-text', 'the header line owner_model.WorkingNotes.block writes'),
+    # --- open findings, each removed by the named issue ----------------------
+    **{('calendar_conversation.py', name): (
+        'open-finding', '#172: approval or cancellation of a calendar draft is read from a literal word list; '
+                        'OWNER-ACT-01 replaces it with one judgment of the owner act against everything pending')
+       for name in ('APPROVE_WORDS', 'CANCEL_WORDS', '_CANCEL_FILLER', 'vocab')},
+    **{('conversation_handoff.py', name): (
+        'open-finding', '#173: a keyword cue table decides where an owner message goes (knowledge, settings, '
+                        'workspace or mail rule); RULES-OUT-01 removes the rules in favour of the worker')
+       for name in ('_KNOWLEDGE_CUES', '_SETTINGS_READ_CUES', '_SETTINGS_ACTIONS', '_SETTINGS_TARGETS',
+                    '_WORKSPACE_CUES', '_WORKSPACE_VERBS', '_MAIL_OBJECTS', '_MAIL_VERBS', '_MAIL_CONTENT_KINDS')},
+    ('conversation_handoff.py', 'IntentClassifier.classify'): (
+        'open-finding', '#173: the inline reply/send verb table that decides whether a mail-shaped message goes '
+                        'to the boundary judgment; goes with the mail cue tables'),
+    **{('conversation_handoff.py', name): (
+        'open-finding', '#173: words stripped from an owner message to build the query the knowledge and mail '
+                        'rules answer from; goes with those rules')
+       for name in ('_SUBJECT_NOISE_KO', '_SUBJECT_PARTICLES', '_TERM_ENDINGS')},
+    **{('conversation_handoff.py', name): (
+        'open-finding', '#173: the note rule reads "write this down" and its text from a literal phrase table; '
+                        'not named in the #173 list, covered by its "no kernel cue table decides intent"')
+       for name in ('_NOTE_CREATE_RE', '_NOTE_PRONOUNS', '_NOTE_TRAIL_KO')},
+    **{('conversation_handoff.py', name): (
+        'open-finding', '#173: a correction of, or continuation of, the focused Work is read from a literal cue '
+                        'table; not named in the #173 list, covered by its "no kernel cue table decides intent"')
+       for name in ('_CORRECTION_CUES', '_CONTINUATION_CUES')},
+    ('conversation_handoff.py', 'IntentClassifier.explicit'): (
+        'open-finding', '#173: natural-language strings (무엇이 연결되어 있어?, 메모 목록, 메모:) parsed as owner '
+                        'commands; the slash commands stay'),
+    ('settings_orchestrator.py', 'SettingsOrchestrator.handle_text'): (
+        'open-finding', "#173: re-keywords the judgment's output (상태 보여, 어떻게 복구) into a read; the decision "
+                        'is to carry a structured read or draft intent instead'),
+    **{('quickstart_service.py', name): (
+        'open-finding', '#173: a keyword rule turns a message into a workspace summary or search that is answered '
+                        'without the worker')
+       for name in ('workspace_summary_request', 'workspace_search_request')},
+    **{('quickstart_service.py', name): (
+        'open-finding', '#173: lexical skip of the follow-up judgment (a message that looks like a memory or file '
+                        'save is never judged as a follow-up)')
+       for name in ('AgentService.continuity_relation', 'AgentService.memory_followup_prefilter')},
+    ('quickstart_service.py', 'AgentService.requests_guided_context'): (
+        'open-finding', '#173: a keyword rule (컨텍스트/저장한 기록 with 함께/참고/사용/포함) opens the saved-context '
+                        'choice; not named in the #173 list, covered by its "no kernel cue table decides intent"'),
+    ('quickstart_service.py', 'AgentService._settle_worker_outcome'): (
+        'open-finding', "#173: a fixed 컨텍스트 출처 footer is appended to the AI's answer unless that answer "
+                        'already contains 컨텍스트:, a fixed text appended to the AI\'s answer'),
+    **{('preparations.py', name): (
+        'open-finding', '#173: same_goal decides whether two worker-written preparation goals are the same intent '
+                        'by stripping a literal particle and filler-word table; the judgment should decide it')
+       for name in ('_GOAL_PARTICLES', '_GOAL_FILLER')},
 }
 
 
@@ -113,22 +281,68 @@ def scenario_tokens(text):
     return sorted({match.group(0) for match in TOKEN_PATTERN.finditer(str(text).casefold())})
 
 
-def _strings(node, constants=None):
-    """String literals a node denotes: a constant, a literal collection, a
-    ``frozenset(...)``/``re.compile(...)`` over one, or a constant it names."""
+#: Hangul (syllables and jamo), kana and CJK ideographs.  CJK punctuation alone is not language.
+_CJK = re.compile('[ᄀ-ᇿ぀-ヿ㄰-㆏㐀-䶿一-鿿가-힯]')
+#: A regex's ``\s``/``\b`` escapes read as a space, so ``express\s+checkout`` is a phrase too.
+_REGEX_SPACE = re.compile(r'\\[sb][*+?]?')
+#: Two English words separated by spaces; regex group brackets may sit between them
+#: (``(?:order|buy)\s+now``, ``place\s+(?:your``).
+_PHRASE = re.compile(r'[A-Za-z]{2,}\)*\??[ ]+\(*(?:\?[:!=])?[A-Za-z]{2,}')
+
+
+#: A regex character range such as ``[가-힣]`` names an alphabet, not a word.
+_CJK_RANGE = re.compile(f'{_CJK.pattern}-{_CJK.pattern}')
+
+
+def natural_language(text):
+    """#171: a literal is natural language when it holds Hangul or CJK, or a multi-word English phrase."""
+    text = _CJK_RANGE.sub('', str(text))
+    return bool(_CJK.search(text) or _PHRASE.search(_REGEX_SPACE.sub(' ', text)))
+
+
+def _table(node, strict=False):
+    """Whether ``node`` is a string table: a literal collection of strings, nested string tables or
+    (unless ``strict``) computed entries such as ``msg(...)``, with at least one string, or
+    ``frozenset``/``re.compile``/a union over one.  A record that also holds a dict, a number or
+    ``None``, such as a ``(template, params)`` pair, is a value, not a table."""
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        def entry(element):
+            if isinstance(element, ast.Constant):
+                return isinstance(element.value, str)
+            return _table(element, strict) or (not strict and isinstance(
+                element, (ast.Call, ast.Name, ast.Attribute, ast.Starred)))
+        return (all(entry(element) for element in node.elts)
+                and any(isinstance(element, ast.Constant) or _table(element) for element in node.elts))
+    if isinstance(node, ast.BinOp):
+        return _table(node.left, strict) or _table(node.right, strict)
+    if isinstance(node, ast.Call) and node.args:
+        name = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, 'id', None)
+        return (name in _COLLECTION_CALLS and _table(node.args[0], strict)) or (
+            name == 'compile' and isinstance(node.args[0], ast.Constant))
+    return False
+
+
+def _strings(node, constants=None, owner=None):
+    """``(literal, name)`` pairs a node denotes: a constant, a literal collection
+    (or a set union / tuple concatenation of them), a ``frozenset(...)``/``re.compile(...)``
+    over one, or a constant it names.  ``name`` is the constant or table the literal was
+    read through, else ``owner``."""
     constants = constants or {}
     if isinstance(node, ast.Constant):
-        return [node.value] if isinstance(node.value, str) else []
+        return [(node.value, owner)] if isinstance(node.value, str) else []
     if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
-        return [value for element in node.elts for value in _strings(element, constants)]
+        return [pair for element in node.elts for pair in _strings(element, constants, owner)]
+    if isinstance(node, ast.BinOp) and (isinstance(node.op, ast.BitOr) or (
+            isinstance(node.op, ast.Add) and isinstance(node.left, (ast.Tuple, ast.List)))):
+        return _strings(node.left, constants, owner) + _strings(node.right, constants, owner)
     if isinstance(node, ast.Call) and node.args:
         name = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, 'id', None)
         if name in _COLLECTION_CALLS or name == 'compile':
-            return _strings(node.args[0], constants)
+            return _strings(node.args[0], constants, owner)
     if isinstance(node, ast.Name):
-        return constants.get(node.id, [])
+        return [(value, node.id) for value in constants.get(node.id, [])]
     if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in ('self', 'cls'):
-        return constants.get(node.attr, [])
+        return [(value, node.attr) for value in constants.get(node.attr, [])]
     return []
 
 
@@ -140,17 +354,48 @@ def _bound_names(target):
     return []
 
 
+def _scopes(tree):
+    """``id(node) -> qualified name`` of the function or class each node sits in (``<module>`` at top level)."""
+    scopes = {}
+
+    def visit(node, name):
+        for child in ast.iter_child_nodes(node):
+            inner = name
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                inner = f'{name}.{child.name}' if name != '<module>' else child.name
+            scopes[id(child)] = inner
+            visit(child, inner)
+    visit(tree, '<module>')
+    return scopes
+
+
 def scan_source(source, module):
-    """``[(module, line, kind, literal, tokens)]`` for one module's source."""
+    """``[(module, line, kind, literal, rules, name)]`` for one module's source.
+
+    ``rules`` are the scenario tokens the literal names plus ``natural-language``
+    (#171); ``name`` is the table or constant it was read through, or else the
+    function it sits in, so a whole cue table can be classified once.
+    """
     tree = ast.parse(source)
+    scopes = _scopes(tree)
+    top_level = {id(statement) for scope in [tree, *[node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]]
+                 for statement in scope.body}
+    # What a module or class constant's expression holds belongs to that name:
+    # `CUES = tuple(re.compile(p) for p in (...))` is the table `CUES`.
+    for statement in ast.walk(tree):
+        if (id(statement) in top_level and isinstance(statement, (ast.Assign, ast.AnnAssign))
+                and statement.value is not None):
+            targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+            names = [name for target in targets for name in _bound_names(target)]
+            if names:
+                for node in ast.walk(statement.value):
+                    scopes[id(node)] = names[0]
     # String collections and patterns are collected from every scope (module,
     # class and function bodies, #660 review); a name bound more than once
     # keeps every literal it was bound to, so the guard over-reports rather
     # than misses a shadowed cue list.  A single string is resolved only from
     # module/class constants: a local variable assigned one value and compared
     # to another (`provider = 'x'` then `provider == y`) is a value, not a table.
-    top_level = {id(statement) for scope in [tree, *[node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]]
-                 for statement in scope.body}
     constants = {}      # bound name -> string literals it holds
     collections = {}    # bound name -> [(line, literals)] of a string collection or pattern
     dicts = {}          # any bound name -> [(line, key)] of a dict literal's string keys
@@ -161,8 +406,12 @@ def scan_source(source, module):
             targets, value = [statement.target], statement.value
         else:
             continue
-        literals = _strings(value)
         single = isinstance(value, ast.Constant)
+        if isinstance(value, ast.Dict):
+            # A dict of cue lists (`{'body': ('본문', ...)}`) holds tables in its values.
+            literals = [literal for item in value.values if _table(item) for literal, _name in _strings(item)]
+        else:
+            literals = [literal for literal, _name in _strings(value)] if single or _table(value) else []
         if not literals or (single and id(statement) not in top_level):
             continue
         for target in targets:
@@ -181,58 +430,67 @@ def scan_source(source, module):
 
     hits = []
 
-    def add(line, kind, values):
-        for value in values:
-            tokens = scenario_tokens(value)
-            if tokens:
-                hits.append((module, line, kind, value, tokens))
+    def add(line, kind, pairs, owner, language=True):
+        # ``language=False``: a position whose literal is a value, not a pattern (a ``get`` default).
+        for value, name in pairs:
+            rules = scenario_tokens(value) + (['natural-language'] if language and natural_language(value) else [])
+            if rules:
+                hits.append((module, line, kind, value, rules, name or owner))
 
     loaded = set()
     dispatched = set()
     for node in ast.walk(tree):
+        owner = scopes.get(id(node), '<module>')
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
             loaded.add(node.id)
         elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
             loaded.add(node.attr)
         if isinstance(node, ast.Compare):
             for operand in (node.left, *node.comparators):
-                add(node.lineno, 'comparison', _strings(operand, constants))
+                add(node.lineno, 'comparison', _strings(operand, constants), owner)
         elif isinstance(node, ast.Call) and isinstance(node.func, (ast.Attribute, ast.Name)):
             name = node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id
             if name in MATCH_CALLS:
+                for index, argument in enumerate((*node.args, *(keyword.value for keyword in node.keywords))):
+                    add(node.lineno, 'match-call', _strings(argument, constants), owner,
+                        language=not (name == 'get' and index > 0))
+            elif name not in _COLLECTION_CALLS:
+                # A cue list handed to a helper that matches it: `_cue_hits(text, lowered, ('답장', 'reply'))`.
                 for argument in (*node.args, *(keyword.value for keyword in node.keywords)):
-                    add(node.lineno, 'match-call', _strings(argument, constants))
-                if isinstance(node.func, ast.Attribute):
-                    add(node.lineno, 'match-call', _strings(node.func.value, constants))
-                    if name == 'get':
-                        receiver = node.func.value
-                        if isinstance(receiver, ast.Dict):
-                            add(node.lineno, 'dispatch-key', _strings(ast.Tuple(elts=[k for k in receiver.keys if k], ctx=ast.Load())))
-                        dispatched.update(_bound_names(receiver))
+                    if _table(argument, strict=True):
+                        add(node.lineno, 'match-table', _strings(argument), owner)
+            if name in MATCH_CALLS and isinstance(node.func, ast.Attribute):
+                add(node.lineno, 'match-call', _strings(node.func.value, constants), owner)
+                if name == 'get':
+                    receiver = node.func.value
+                    if isinstance(receiver, ast.Dict):
+                        add(node.lineno, 'dispatch-key',
+                            _strings(ast.Tuple(elts=[k for k in receiver.keys if k], ctx=ast.Load())), owner)
+                    dispatched.update(_bound_names(receiver))
         elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
             if isinstance(node.value, ast.Dict):
-                add(node.lineno, 'dispatch-key', [key.value for key in node.value.keys
-                                                  if isinstance(key, ast.Constant) and isinstance(key.value, str)])
+                add(node.lineno, 'dispatch-key', [(key.value, None) for key in node.value.keys
+                                                  if isinstance(key, ast.Constant) and isinstance(key.value, str)],
+                    owner)
             dispatched.update(_bound_names(node.value))
-        elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)) and isinstance(
-                node.iter, (ast.Tuple, ast.List, ast.Set, ast.Call)):
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)) and _table(node.iter):
             # An inline cue list iterated by a matcher: `any(c in text for c in ('a', 'b'))`.
-            add(getattr(node, 'lineno', None) or node.iter.lineno, 'match-table', _strings(node.iter))
+            add(getattr(node, 'lineno', None) or node.iter.lineno, 'match-table', _strings(node.iter), owner)
         elif isinstance(node, ast.Match):
             for case in node.cases:
                 for pattern in ast.walk(case.pattern):
                     if isinstance(pattern, ast.MatchValue):
-                        add(pattern.lineno, 'match', _strings(pattern.value))
+                        add(pattern.lineno, 'match', _strings(pattern.value), owner)
                     elif isinstance(pattern, ast.MatchMapping):
                         for key in pattern.keys:
-                            add(pattern.lineno, 'match', _strings(key))
+                            add(pattern.lineno, 'match', _strings(key), owner)
     for name in dispatched & set(dicts):
         for line, key in dicts[name]:
-            add(line, 'dispatch-key', [key])
+            add(line, 'dispatch-key', [(key, name)], name)
     for name, bindings in collections.items():
         if name in loaded:
             for line, literals in bindings:
-                add(line, 'match-table', literals)
+                add(line, 'match-table', [(literal, name) for literal in literals], name)
     return hits
 
 
@@ -248,30 +506,74 @@ def scan(paths):
     return hits
 
 
+def classified_by(hit):
+    """The ``CLASSIFIED`` or ``CLASSIFIED_TABLES`` key that covers one hit, or None.
+
+    A literal naming a site, provider or category must be listed by itself; only a
+    natural-language cue (#171) may be covered by its table's entry, so adding a site
+    to a listed cue table still fails.
+    """
+    module, _line, _kind, literal, rules, name = hit
+    if (module, literal) in CLASSIFIED:
+        return ('literal', module, literal)
+    if rules == ['natural-language'] and (module, name) in CLASSIFIED_TABLES:
+        return ('table', module, name)
+    return None
+
+
 class NoScenarioCodeTests(unittest.TestCase):
     def test_decision_and_runtime_code_names_no_site_provider_or_category(self):
         hits = scan(scanned_paths())
-        found = {(module, literal) for module, _line, _kind, literal, _tokens in hits}
-        unclassified = sorted({(module, line, kind, literal) for module, line, kind, literal, _tokens in hits
-                               if (module, literal) not in CLASSIFIED})
+        unclassified = sorted({(module, line, kind, literal, name) for module, line, kind, literal, _rules, name
+                               in hits if classified_by((module, line, kind, literal, _rules, name)) is None})
         self.assertEqual(unclassified, [], 'decision/runtime code branches on a named site, provider or request '
-                                           'category; make the model choose instead, or classify the literal in '
-                                           'CLASSIFIED with a reviewable reason')
-        stale = sorted(set(CLASSIFIED) - found)
-        self.assertEqual(stale, [], 'a CLASSIFIED entry no longer occurs; remove it')
+                                           'category, or matches owner or page text against a natural-language '
+                                           'cue table (#171); make the model judge instead, or classify the '
+                                           'literal in CLASSIFIED (or its table in CLASSIFIED_TABLES) with a '
+                                           'reviewable reason')
+        used = {classified_by(hit) for hit in hits}
+        stale = sorted({('literal', *key) for key in CLASSIFIED} - used)
+        stale += sorted({('table', *key) for key in CLASSIFIED_TABLES} - used)
+        self.assertEqual(stale, [], 'a CLASSIFIED or CLASSIFIED_TABLES entry no longer occurs; remove it')
+
+    def test_every_classification_is_known_and_an_open_finding_names_its_issue(self):
+        for key, (classification, reason) in (*CLASSIFIED.items(), *CLASSIFIED_TABLES.items()):
+            self.assertIn(classification, CLASSIFICATIONS, key)
+            self.assertTrue(reason.strip(), key)
+            if classification == 'open-finding':
+                self.assertRegex(reason, r'^#\d+: ', key)
+
+    def test_provider_adapters_are_allowlisted_with_a_reason(self):
+        for module in ('calendar.py', 'connection_slots.py', 'gmail.py', 'google_drive_read.py'):
+            self.assertIn(module, ALLOWED_MODULES)
+            self.assertTrue(ALLOWED_MODULES[module].strip(), module)
+        # GUARD-NL-01 (#171) checked them first: they name their provider, and hold no
+        # natural-language cue table.
+        hits = scan([SRC / module for module in ('calendar.py', 'connection_slots.py', 'gmail.py',
+                                                 'google_drive_read.py')])
+        self.assertEqual([hit for hit in hits if 'natural-language' in hit[4]], [])
+
+    def test_natural_language_is_hangul_cjk_or_an_english_phrase(self):
+        for text in ('승인', '注文する', '購入', 'go ahead', 'never mind', r'\bexpress\s+checkout\b',
+                     r'\b(?:order|buy)\s+now\b', r'\bplace\s+(?:your\s+)?order\b'):
+            self.assertTrue(natural_language(text), text)
+        for text in ('ok', 'cancel', '/settings', 'google-calendar', 'text/html', r'[a-z]+|[가-힣]+',
+                     r'^[\w.-]+$', '。！', 'x y'):
+            self.assertFalse(natural_language(text), text)
 
     def test_scope_is_the_decision_and_runtime_modules(self):
         names = {path.name for path in scanned_paths()}
         for required in ('agent_runtime.py', 'conversation_handoff.py', 'current_context.py', 'browser_session.py',
                          'browser_worker.py', 'browser_jar.py',
                          'local_tools.py', 'quickstart_service.py', 'decision.py', 'decision_adapters.py',
-                         'decision_routes.py', 'orchestrator.py'):
+                         'decision_routes.py', 'orchestrator.py',
+                         # GUARD-NL-01 (#171): the modules that read owner or page text.
+                         'calendar_conversation.py', 'settings_orchestrator.py', 'telegram_presence.py',
+                         'information_use.py'):
             self.assertIn(required, names)
         self.assertFalse(names & set(ALLOWED_MODULES))
         for module in ALLOWED_MODULES:
             self.assertTrue((SRC / module).is_file(), module)
-        self.assertLessEqual({classification for classification, _reason in CLASSIFIED.values()},
-                             {'allowed', 'open-finding'})
 
     def test_tokens_start_words(self):
         self.assertEqual(scenario_tokens('https://www.kyobobook.co.kr/cart'), ['cart', 'kyobo'])
@@ -324,7 +626,7 @@ class NoScenarioCodeTests(unittest.TestCase):
             path.write_text(planted, encoding='utf-8')
             hits = scan([path])
         by_literal = {}
-        for _module, _line, kind, literal, _tokens in hits:
+        for _module, _line, kind, literal, _rules, _name in hits:
             by_literal.setdefault(literal, set()).add(kind)
         self.assertIn('comparison', by_literal['kyobobook'])
         self.assertIn('comparison', by_literal['naver'])
@@ -348,6 +650,81 @@ class NoScenarioCodeTests(unittest.TestCase):
         self.assertNotIn('brave', by_literal)
         # A planted branch is unclassified, so the main assertion would fail on it.
         self.assertTrue(all((path.name, literal) not in CLASSIFIED for literal in by_literal))
+
+    def test_guard_catches_a_planted_natural_language_cue_table(self):
+        """#171: a natural-language cue table in a steering position is caught; reply text is not."""
+        planted = textwrap.dedent('''
+            import re
+            YES_WORDS = frozenset({'승인', '넵', 'go ahead', 'ok'})
+            _KINDS = {'body': ('본문', 'full message')}
+            _DONE_RE = re.compile(r'\\b(?:that\\s+is\\s+all|끝났어)\\b')
+            READY = '준비됐어요. 확인해 주세요.'
+            LABELS = {'create': '새 일정을 만들까요?'}
+
+            def route(text, reply, cue_hits):
+                if text.strip() in YES_WORDS:
+                    reply(READY)
+                    return 'approve'
+                if text == '어떻게 복구':
+                    return 'recover'
+                if text.startswith(('메모:', 'note this')):
+                    return 'note'
+                if any(word in text for word in ('취소', 'never mind')):
+                    return 'cancel'
+                if cue_hits(text, ('답장', 'reply to')):
+                    return 'mail'
+                if any(cue_hits(text, cues) for cues in _KINDS.values()) or _DONE_RE.search(text):
+                    return 'done'
+                # Owner-facing message text is not a condition and is never read.
+                reply('일정을 만들었어요. 다른 것도 도와드릴까요?')
+                reply(LABELS.get('create', '알 수 없는 요청이에요. 다시 말씀해 주세요.'))
+                reason = ('기본 AI({main})를 아직 확인하지 않았습니다.', {'main': 'x'})
+                return reason
+        ''')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'calendar_conversation.py'
+            path.write_text(planted, encoding='utf-8')
+            hits = scan([path])
+        by_literal = {}
+        for _module, _line, kind, literal, rules, name in hits:
+            self.assertEqual(rules, ['natural-language'], literal)
+            by_literal.setdefault(literal, set()).add((kind, name))
+        # Cue tables and cue literals, read through their table name or their function.
+        self.assertIn(('match-table', 'YES_WORDS'), by_literal['승인'])
+        self.assertIn(('comparison', 'YES_WORDS'), by_literal['넵'])
+        self.assertIn(('match-table', 'YES_WORDS'), by_literal['go ahead'])
+        self.assertIn(('comparison', 'route'), by_literal['어떻게 복구'])
+        self.assertIn(('match-call', 'route'), by_literal['메모:'])
+        self.assertIn(('match-call', 'route'), by_literal['note this'])
+        self.assertIn(('match-table', 'route'), by_literal['취소'])
+        self.assertIn(('match-table', 'route'), by_literal['never mind'])
+        self.assertIn(('match-table', 'route'), by_literal['답장'])
+        self.assertIn(('match-table', 'route'), by_literal['reply to'])
+        self.assertIn(('match-table', '_KINDS'), by_literal['본문'])
+        self.assertIn(('match-table', '_KINDS'), by_literal['full message'])
+        self.assertIn('\\b(?:that\\s+is\\s+all|끝났어)\\b', by_literal)
+        # A single English word is not natural language by itself; its table is caught by its phrases.
+        self.assertNotIn('ok', by_literal)
+        # Owner-facing message text is ignored: a reply argument, a constant passed to a reply,
+        # a dict value or a ``get`` default, and a (template, params) record.
+        for message in ('준비됐어요. 확인해 주세요.', '일정을 만들었어요. 다른 것도 도와드릴까요?',
+                        '새 일정을 만들까요?', '알 수 없는 요청이에요. 다시 말씀해 주세요.',
+                        '기본 AI({main})를 아직 확인하지 않았습니다.'):
+            self.assertNotIn(message, by_literal)
+        # None of them is classified, even in a module that has classified tables:
+        # a new cue table, or a new cue function, fails the main assertion.
+        self.assertTrue(hits)
+        self.assertEqual([hit for hit in hits if classified_by(hit) is not None], [])
+
+    def test_a_site_added_to_a_classified_cue_table_still_fails(self):
+        planted = "APPROVE_WORDS = frozenset({'승인', 'coupang'})\n\ndef ok(text):\n    return text in APPROVE_WORDS\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'calendar_conversation.py'
+            path.write_text(planted, encoding='utf-8')
+            hits = scan([path])
+        covered = {hit[3]: classified_by(hit) for hit in hits}
+        self.assertEqual(covered['승인'], ('table', 'calendar_conversation.py', 'APPROVE_WORDS'))
+        self.assertIsNone(covered['coupang'])
 
 
 
