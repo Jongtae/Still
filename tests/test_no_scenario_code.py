@@ -270,9 +270,8 @@ CLASSIFIED_TABLES = {
         'open-finding', "#173: a fixed 컨텍스트 출처 footer is appended to the AI's answer unless that answer "
                         'already contains 컨텍스트:, a fixed text appended to the AI\'s answer'),
     **{('preparations.py', name): (
-        'open-finding', '#175: same_goal decides whether two worker-written preparation goals are the same intent '
-                        'by stripping a literal particle and filler-word table; no IN-CONTEXT-01 substep names it '
-                        'yet')
+        'open-finding', '#173: same_goal decides whether two worker-written preparation goals are the same intent '
+                        'by stripping a literal particle and filler-word table; the judgment should decide it')
        for name in ('_GOAL_PARTICLES', '_GOAL_FILLER')},
 }
 
