@@ -638,6 +638,7 @@
         "reason": "After CHECKS-01 closed out, the owner accepted the recommended next program (#164 + #28 option A): \"응 바로해\"."
       },
       "ordered_substeps": [
+        "BROWSE-CLOSE-01",
         "AUDIT-OUTBOUND-01"
       ],
       "active_substeps": [],
@@ -648,10 +649,6 @@
       "non_goals": "Blocking, rewriting or confirming outbound data (#28 options B-D); storing more personal text than today; the CLI's own web search; live accounts, external sites, live models, releases, deployment and the delivery heartbeat; other backlog items.",
       "independent_review": "Not planned. Triggered if #164 changes the cookie-save or process-lifetime guarantees, or #167 stores more personal text or changes what is sent.",
       "completion_rule": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests, its declared focused tests passing, and required validate plus full-validate passing on the final head (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision.",
-      "activated_substeps": [
-        "BROWSE-CLOSE-01",
-        "AUDIT-OUTBOUND-01"
-      ],
       "unexecuted_substeps": {
         "BROWSE-CLOSE-01": {
           "disposition": "no-change-needed",

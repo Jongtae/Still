@@ -535,6 +535,10 @@ def assert_closed_out_record(case, plan, name):
     for substep, record in unexecuted.items():
         case.assertTrue(record.get("reason"), f"{name}: {substep} is unexecuted with no reason")
         if record.get("disposition") == NO_CHANGE_NEEDED:
+            # Only an activated substep can be closed this way; anything else
+            # would let a renamed record stand in for one that disappeared.
+            case.assertIn(substep, program.get("ordered_substeps", []),
+                          f"{name}: {substep} is not one of the program's ordered substeps")
             case.assertTrue(_is_issue_number(record.get("evidence_issue")),
                             f"{name}: {substep} needs no change but names no evidence issue")
             case.assertNotIn("successor_issue", record,
@@ -598,6 +602,11 @@ def assert_substep_evidence_is_complete(case, name, program, done, detail):
     unexecuted = program.get("unexecuted_substeps", {})
     for substep in program.get("ordered_substeps", []):
         if substep in done:
+            continue
+        # #168: an activated substep investigated and found to need no work is
+        # accounted for by that terminal disposition (validated in
+        # assert_closed_out_record), not by evidence of a merged change.
+        if unexecuted.get(substep, {}).get("disposition") == NO_CHANGE_NEEDED:
             continue
         declared = children.get(substep)
         case.assertTrue(

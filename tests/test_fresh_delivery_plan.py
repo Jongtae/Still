@@ -176,8 +176,8 @@ def test_the_browse_audit_program_is_closed_out_and_selects_nothing():
     assert "BROWSE-AUDIT-01" in invariants.closed_out_programs(current)
     invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["BROWSE-AUDIT-01"]
-    assert program["activated_substeps"] == ["BROWSE-CLOSE-01", "AUDIT-OUTBOUND-01"]
-    assert program["ordered_substeps"] == program["completed_substeps"] == ["AUDIT-OUTBOUND-01"]
+    assert program["ordered_substeps"] == ["BROWSE-CLOSE-01", "AUDIT-OUTBOUND-01"]
+    assert program["completed_substeps"] == ["AUDIT-OUTBOUND-01"]
     no_change = program["unexecuted_substeps"]["BROWSE-CLOSE-01"]
     assert (no_change["disposition"], no_change["evidence_issue"]) == ("no-change-needed", 164)
     assert "successor_issue" not in no_change
@@ -207,14 +207,25 @@ def test_an_unexecuted_substep_needs_a_successor_or_a_no_change_disposition_with
 
     reason = base["programs"]["BROWSE-AUDIT-01"]["unexecuted_substeps"]["BROWSE-CLOSE-01"]["reason"]
     assert not closeout_fails({"disposition": "no-change-needed", "evidence_issue": 164, "reason": reason})
-    assert not closeout_fails({"successor_issue": 999, "reason": reason})
+    # A successor record accounts only for a declared split child, never for an
+    # ordered substep on its own: unfinished work cannot close the program.
+    assert closeout_fails({"successor_issue": 999, "reason": reason})
     assert closeout_fails({"disposition": "no-change-needed", "reason": reason})
     assert closeout_fails({"disposition": "no-change-needed", "evidence_issue": 164, "successor_issue": 164, "reason": reason})
     assert closeout_fails({"disposition": "something-else", "successor_issue": 999, "reason": reason})
     assert closeout_fails({"reason": reason})
+    # A no-change record must name an activated substep, so renaming it cannot hide one.
+    renamed = copy.deepcopy(base)
+    program = renamed["programs"]["BROWSE-AUDIT-01"]
+    program["unexecuted_substeps"] = {"SOMETHING-ELSE": program["unexecuted_substeps"]["BROWSE-CLOSE-01"]}
+    try:
+        invariants.assert_closed_out_record(TestCase(), renamed, "BROWSE-AUDIT-01")
+        hidden = False
+    except AssertionError:
+        hidden = True
+    assert hidden
     for bad in (False, True, 0, -164, "164"):
         assert closeout_fails({"disposition": "no-change-needed", "evidence_issue": bad, "reason": reason}), bad
-        assert closeout_fails({"successor_issue": bad, "reason": reason}), bad
 
 
 def test_a_closed_program_stays_unselectable_even_if_declared_active(tmp_path):
