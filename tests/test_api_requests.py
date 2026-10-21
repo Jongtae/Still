@@ -487,7 +487,7 @@ class ReviewFixes(Base):
     def test_a_reaction_or_reply_answers_an_approval_and_unclear_leaves_it_waiting(self):
         """#1472 (owner choice): no buttons; the Judgment AI reads the owner's reaction or reply."""
         from personal_agent.browser_session import step_binding
-        from personal_agent.decision import BinaryDecision, FixtureDecisionEngine, OUTCOME_DECIDED, fixture_confidence
+        from personal_agent.decision import FixtureDecisionEngine
         from personal_agent.quickstart_service import AgentService
         service = AgentService(self.store)
         self.store.put('telegram', {'enabled': True, 'generation': 'g1', 'user_id': 5})
@@ -498,21 +498,29 @@ class ReviewFixes(Base):
         approvals.request(binding, '1주 25,900원 예약매수\n\n보낼 요청: POST /order {"qty":1}')
         prompt = self.store.notification_of(self.job_id, 'browser_approval_needed')
         self.store.update_notification(prompt['id'], 'sent', message_id=77)
-        seen = []
+        from unittest import mock
+        from owner_act_script import with_owner_acts
+        seen, said = [], []
+        # #172: the one owner-act judgment, scripted; a 👍 is its plain yes, a 🤔 is unrelated.
+        service.use_decision_engine(with_owner_acts(FixtureDecisionEngine(), asked=seen))
+        service.steer_spawn = lambda target: target()
 
-        def judge(context, proposition):
-            seen.append(context.facts['owner_response'])
-            yes = 'plainly approves' in proposition and context.facts['owner_response'] == 'reaction: 👍'
-            return BinaryDecision(OUTCOME_DECIDED, yes, fixture_confidence())
-        service.use_decision_engine(FixtureDecisionEngine(judge=judge))
-        self.assertIsNone(service.answer_step_approval(*service.pending_step_notification(5, 77), 'reaction: 🤔'))
-        self.assertEqual(service._browser_request(self.job_id)['state'], 'requested', 'unclear leaves it waiting')
-        self.assertIsNone(service.pending_step_notification(5, 78), 'only the prompt the reaction is on')
-        said = service.answer_step_approval(*service.pending_step_notification(5, 77), 'reaction: 👍')
+        def react(message_id, emoji):
+            return service.ingest_reaction({'chat': {'id': 5, 'type': 'private'}, 'user': {'id': 5},
+                                            'message_id': message_id,
+                                            'new_reaction': [{'type': 'emoji', 'emoji': emoji}]}, 'g1')
+        with mock.patch.object(service.telegram, 'send_message', side_effect=lambda chat, text, *a, **k: said.append(text)):
+            self.assertEqual(react(77, '🤔'), 'owner_act')
+            self.assertEqual(service._browser_request(self.job_id)['state'], 'requested', 'unclear leaves it waiting')
+            self.assertIsNone(react(78, '👍'), 'only the prompt the reaction is on')
+            self.assertEqual(service._browser_request(self.job_id)['state'], 'requested')
+            self.assertEqual(react(77, '👍'), 'owner_act')
         self.assertEqual(service._browser_request(self.job_id)['state'], 'issued')
-        self.assertTrue(said.startswith('승인'))
-        self.assertNotIn('이어서 처리합니다', said)
-        self.assertEqual(seen[-1], 'reaction: 👍')
+        self.assertTrue(said[-1].startswith('승인'))
+        self.assertNotIn('이어서 처리합니다', said[-1])
+        self.assertEqual(seen[-1][0], 'reaction: 👍')
+        self.assertEqual([item['kind'] for item in seen[-1][1]], ['action-approval'])
+        self.assertIn('a reaction on', seen[-1][2])
 
     def test_the_service_issues_and_spends_an_api_step_approval_once(self):
         from personal_agent.browser_session import step_binding

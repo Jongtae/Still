@@ -3,8 +3,9 @@
 ``AgentService._run_one`` claims one queued Work and runs it through named
 phases, each an ``AgentService`` method that reads and writes this object:
 
-1. ``_route_work``: the owner-turn judgments (settings answer, step approval,
-   continuity, retry/cancel) and the routing decision, before any capability.
+1. ``_route_work``: the owner-turn judgments (the owner's answer to an open
+   item, #172; continuity, retry/cancel) and the routing decision, before any
+   capability.
 2. ``_load_work_photos``: the Telegram photos the Work carries.
 3. ``_run_rule_intent``: an intent Still answers itself; anything else is left
    to the worker (``handled`` stays false).
@@ -75,10 +76,14 @@ class WorkRun:
         self.image_inputs = None
         self.continued = None
         self.continuity = None
-        self.settings_answer = None
-        #: #22: the owner's literal approve/cancel of the calendar drafts this channel was shown.
-        self.calendar_answer = None
-        self.memory_note = None
+        #: #172: the owner's judged answer to one open item (``owner_acts.read``), or None.
+        self.owner_act = None
+        #: What that settlement tells the owner when it was the whole turn; None when the turn goes on.
+        self.act_reply = None
+        #: The Work a settled settings answer keeps in focus.
+        self.act_focus = None
+        #: What the worker reads first about what Still already settled from this message.
+        self.act_note = None
         self.owner_memory_request = None
         self.decision = None
         self.rule_note = None

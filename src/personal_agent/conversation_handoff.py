@@ -732,44 +732,35 @@ OPEN_QUESTION_PROPOSITION = ('Earlier in the conversation the owner said somethi
                              'it or gives that information, read the way the owner would mean it. It is false when '
                              'the earlier reply asked nothing, when the latest message is about something else or '
                              'is a new request, or when it is unclear. This judgment does not authorize any action.')
-#: #996: the owner's answer to "기억했어요: ..." - a typed message or an emoji reaction on that notice.
-MEMORY_WITHDRAWN_PROPOSITION = ('The assistant has just told the owner that it remembered the facts given. The owner\'s '
-                                'response (given: a typed message, or an emoji reaction on that notice) tells the '
-                                'assistant not to keep them - a no, "don\'t remember that", "that\'s wrong", a '
-                                'dismayed, embarrassed or disapproving reaction, or an equivalent in any language. It is '
-                                'false when the response agrees, likes or thanks, is about something else, or is unclear. '
-                                'This judgment does not delete anything.')
 WITHDRAWAL_PROPOSITION = ('The owner\'s latest message withdraws or cancels the request that is waiting for '
                           'the listed connection (rather than acknowledging it, changing topic, or asking '
                           'something unrelated).')
-#: #855: a pending settings draft is confirmed or declined by the owner's next typed
-#: message; two propositions, each judged over the draft summary and the message.
-SETTINGS_CONFIRM_PROPOSITION = ('A settings change is waiting for the owner\'s confirmation (the pending change '
-                                'is given). The owner\'s latest message plainly tells the assistant to go ahead and '
-                                'apply that change - a yes, an agreement, "do it", "change it that way" or an '
-                                'equivalent in any language. It is false when the message declines, asks for a '
-                                'different value, asks a question, changes the topic, or when it is unclear. '
-                                'This judgment does not apply anything.')
-SETTINGS_DECLINE_PROPOSITION = ('A settings change is waiting for the owner\'s confirmation (the pending change '
-                                'is given). The owner\'s latest message plainly declines it - a no, "leave it", '
-                                '"don\'t change it", "cancel" or an equivalent in any language. It is false when '
-                                'the message agrees, asks a question, asks for a different value, changes the '
-                                'topic, or when it is unclear. This judgment does not cancel anything.')
-#: #1472 (owner choice 2026-10-13): an action waiting for the owner's approval is answered with a reaction
-#: or a reply, not a button.  Only a plain yes approves; anything unclear leaves it waiting.
-STEP_APPROVE_PROPOSITION = ('An action is waiting for the owner\'s approval (the pending action is given, with what '
-                            'exactly would be sent). The owner\'s response - a reaction on that message or their '
-                            'reply - plainly approves carrying out exactly that action now: a yes, "approve", "go '
-                            'ahead", a thumbs-up or an equivalent in any language. It is false when the response '
-                            'declines, asks a question, changes the action (another amount, price or target), asks '
-                            'for something else, or is unclear. It is also false when the response only repeats or '
-                            'restates the original request (asking for the same thing again is a new message, not an '
-                            'answer to this approval). This judgment does not carry out anything.')
-STEP_DECLINE_PROPOSITION = ('An action is waiting for the owner\'s approval (the pending action is given). The '
-                            'owner\'s response - a reaction on that message or their reply - plainly declines it: a '
-                            'no, "cancel", "don\'t", a thumbs-down or an equivalent in any language. It is false '
-                            'when the response approves, asks a question, changes the action, or is unclear. This '
-                            'judgment does not cancel anything.')
+#: OWNER-ACT-01 (#172, owner decision 2026-10-21, revising #22 option A): one judgment reads each owner
+#: act - a typed message or a reaction, and the message it replies to or reacts on - against every
+#: item still waiting for the owner.  It replaces the literal approve/cancel words and the separate
+#: settings, approval and saved-memory judgments (#855, #1472, #996).  Generic: it names no service,
+#: site or kind of request.  Only a plain approve of one named item ever executes, and code still
+#: enforces everything that item's own path enforces.
+OWNER_ACT_ANSWERS = ('approve', 'decline', 'change', 'unrelated')
+OWNER_ACT_NONE = 'none'
+OWNER_ACT_QUESTION = (
+    'Still is waiting for the owner\'s answer on the open items listed. Each item has an id, a kind, when it was '
+    'shown, when it expires, what an approve or a decline does to it, and the exact text the owner was shown. '
+    'The owner\'s act is given: a typed message, or a reaction on a message, and the message it replies to or '
+    'reacts on when there is one. Decide which one item, if any, this act answers, and how, read the way the owner '
+    'would mean it. '
+    'item: the id of that one item, or none. '
+    'answer: approve when the act plainly says yes to that item exactly as shown (a yes, an agreement, a go-ahead, '
+    'a positive reaction, in any language); decline when it plainly says no to that item or withdraws it; change '
+    'when it answers that item but asks for something different from what was shown; unrelated when the act is '
+    'about something else, a new request, or when you cannot tell which item it answers. '
+    'A hesitation, a filler sound, a question about the item or an unclear act is not approval: answer unrelated. '
+    'When several items are open, a plain yes answers only the item it clearly addresses (the message it replies '
+    'to or reacts on, or the one it names or plainly follows); when that is not clear, answer unrelated. '
+    'Repeating or restating an earlier request is a new message, not an answer to an item. '
+    'rest: when a typed message also asks for something else besides its answer, that remaining request in the '
+    'owner\'s own words; otherwise an empty string. '
+    'This judgment does not carry out, cancel or change anything.')
 UNSUPPORTED_QUESTION = ('Is the owner asking the assistant to do one of these things it does not offer: '
                         + '; '.join(f'{key} = {label}' for key, label in UNSUPPORTED_CAPABILITIES.items())
                         + '? Choose that capability. If the request is anything else (searching mail by '
@@ -978,8 +969,8 @@ class ConversationJudgments:
     #: Facts that are the owner's own words.
     #: #836: ``already_noted`` is what the owner's own message already gave the Work
     #: (its saved values, #831), so it is treated like the owner's words.
-    OWNER_FACTS = frozenset({'owner_message', 'owner_request', 'owner_followup', 'earlier_owner_message', 'terms', 'owner_context', 'already_noted',
-                             'pending_change'})
+    OWNER_FACTS = frozenset({'owner_message', 'owner_request', 'owner_followup', 'earlier_owner_message', 'terms', 'owner_context',
+                             'already_noted'})
 
     def __init__(self, engine=None, policy=None, redactor=None):
         self.engine = engine or UnavailableDecisionEngine()
@@ -1049,18 +1040,47 @@ class ConversationJudgments:
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
                         source=decision.confidence.provider or decision.outcome)
 
-    def memory_withdrawn(self, remembered, response):
-        """Does the owner's ``response`` to a saved-memory notice ask not to keep ``remembered`` (#996)?
+    def owner_act_answer(self, act, items, target='', work_id=None):
+        """``{item, answer, rest}``: which open item one owner act answers, and how (#172), or None.
 
-        ``response`` is the owner's typed message or a description of their
-        reaction.  Unavailable or unknown keeps the facts.
+        ``act`` is the owner's typed text or ``reaction: <emoji>``; ``target``
+        says which message it replies to or reacts on ('' when none).  ``items``
+        are the open items, each ``{kind, id, shown_text, shown_at, expires_at,
+        answers}`` with ``shown_text`` already bounded by the caller.  One
+        ``structured`` call, as ``self_review``.  None when the engine is
+        unavailable or not confident enough; an ``approve`` or ``decline`` needs
+        the binary threshold, as the per-type judgments it replaces did.  An
+        ``item`` is always one of the given ids or ``none``.  Judgment only: it
+        settles nothing.
         """
-        context = self._context('memory-withdrawal', {'remembered': remembered, 'owner_response': response},
-                                uncut='owner_response')
-        decision = self.engine.judge(context, MEMORY_WITHDRAWN_PROPOSITION)
-        verdict = self.policy.binary(decision)
-        return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
-                        source=decision.confidence.provider or decision.outcome)
+        from .decision import OUTCOME_UNAVAILABLE, StructuredDecision
+        ids = [str(item['id']) for item in items]
+        if not ids:
+            return None
+        listed = '\n\n'.join(
+            f"id: {item['id']}\nkind: {item['kind']}\nshown: {item['shown_at']}\nexpires: {item['expires_at']}\n"
+            f"answers: {item['answers']}\nshown text:\n{item['shown_text']}" for item in items)
+        context = self._context('owner-act', {'owner_message': act, 'act_target': target or 'none',
+                                              'open_items': listed},
+                                work_id=work_id, uncut=('owner_message', 'open_items'))
+        schema = {'type': 'object', 'additionalProperties': False,
+                  'properties': {'item': {'type': 'string', 'enum': [*ids, OWNER_ACT_NONE]},
+                                 'answer': {'type': 'string', 'enum': list(OWNER_ACT_ANSWERS)},
+                                 'rest': {'type': 'string'}},
+                  'required': ['item', 'answer', 'rest']}
+
+        def shape(data):
+            return (data.get('item') in (*ids, OWNER_ACT_NONE) and data.get('answer') in OWNER_ACT_ANSWERS
+                    and isinstance(data.get('rest'), str))
+        method = getattr(self.engine, 'structured', None)
+        decision = (method(context, OWNER_ACT_QUESTION, schema, shape) if method is not None
+                    else StructuredDecision(OUTCOME_UNAVAILABLE))
+        data = self.policy.structured(decision)
+        if data is None or not shape(data):
+            return None
+        if data['answer'] in ('approve', 'decline') and not self.policy.confident_binary(decision):
+            return None
+        return {'item': data['item'], 'answer': data['answer'], 'rest': data['rest'].strip()}
 
     def connector_effect(self, tool_name, argument_names, owner_request, work_id=None):
         """Classify an unknown operation from minimized metadata, never argument values.
@@ -1078,37 +1098,6 @@ class ConversationJudgments:
             'payment moves money or makes a financial commitment. Choose none if the metadata does not establish the effect. '
             'This classification does not grant permission or weaken owner decisions.')
         return self.policy.selection(decision)
-
-    def settings_draft_confirmed(self, pending_change, utterance):
-        """Does ``utterance`` plainly confirm applying ``pending_change`` (#855)?  Unavailable applies nothing."""
-        context = self._context('settings-draft-confirmation',
-                                {'pending_change': pending_change, 'owner_message': utterance})
-        decision = self.engine.judge(context, SETTINGS_CONFIRM_PROPOSITION)
-        verdict = self.policy.binary(decision)
-        return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
-                        source=decision.confidence.provider or decision.outcome)
-
-    def settings_draft_declined(self, pending_change, utterance):
-        """Does ``utterance`` plainly decline ``pending_change`` (#855)?  Unavailable keeps it pending."""
-        context = self._context('settings-draft-decline',
-                                {'pending_change': pending_change, 'owner_message': utterance})
-        decision = self.engine.judge(context, SETTINGS_DECLINE_PROPOSITION)
-        verdict = self.policy.binary(decision)
-        return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
-                        source=decision.confidence.provider or decision.outcome)
-
-    def step_approval_answer(self, pending_action, response):
-        """``approve``, ``decline`` or None: the owner's reaction or reply to a pending approval (#1472).
-
-        Two binary judgments, approve first; unavailable or neither leaves the action waiting.
-        """
-        for proposition, answer in ((STEP_APPROVE_PROPOSITION, 'approve'), (STEP_DECLINE_PROPOSITION, 'decline')):
-            context = self._context('step-approval-answer', {'pending_action': pending_action, 'owner_response': response},
-                                    uncut='pending_action')
-            decision = self.engine.judge(context, proposition)
-            if self.policy.binary(decision) == 'yes':
-                return answer
-        return None
 
     def unsupported_capability(self, utterance):
         """Does ``utterance`` ask for a declared-but-unavailable capability?

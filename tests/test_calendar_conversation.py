@@ -18,14 +18,15 @@ import unittest
 from unittest import mock
 
 from personal_agent.calendar import CALENDAR_SPEC, CALENDAR_WRITE_SPEC, CalendarConnector
-from personal_agent.calendar_conversation import (CANCELLED, CHANGED_UNDER_US, CREATED, CANCELLED_EVENT, DROPPED_NOTICE,
-                                                  FAILED, NOT_APPLIED_REST, OTHER_CHANNEL, OUTCOME_UNKNOWN,
+from personal_agent.calendar_conversation import (CANCELLED, CHANGED_UNDER_US, CREATED, CANCELLED_EVENT,
+                                                  FAILED, NOT_APPLIED_REST, OUTCOME_UNKNOWN,
                                                   PREVIEW_FOOTER, PREVIEW_HEADER, REPLACED_NOTICE, STATE_KEY, UPDATED,
                                                   UPDATE_UNKNOWN, UNVERIFIED_TARGET,
-                                                  is_approval, is_cancel, preview_lines, work_draft_ids)
+                                                  preview_lines, work_draft_ids)
 from personal_agent.connector_contract import ConnectorRegistry, ConnectorState, _owner_key
 from personal_agent.current_context import TIMEZONE_CONFIG_KEY, resolve_local_timezone
 from personal_agent.google_calendar import CALENDAR_WRITE_SCOPE, GoogleCalendarError
+from owner_act_script import with_owner_acts
 from test_preparations import CHAT, GENERATION, _Case, call, finish
 
 OWNER = f'telegram:{CHAT}'
@@ -85,6 +86,9 @@ class CalendarDraftApprovalCase(_Case):
         self.calendar = CalendarConnector(self.store, self.provider, registry=self.registry, now=lambda: self.now)
         self.service.calendar = self.calendar
         self.service.calendar_conversation.now = lambda: self.now
+        # #172: the owner-act judgment is scripted (``owner_act_script.literal``); Still reads no word list.
+        self.acts = []
+        with_owner_acts(self.judge, asked=self.acts)
 
     def drafting(self, *calls, summary='초안을 만들었어요.'):
         """The worker's turn: these draft calls, then finish citing them."""
@@ -195,9 +199,7 @@ class ApprovalTests(CalendarDraftApprovalCase):
         self.receive('승인')
         self.assertEqual(len(self.provider.calls), 1)
 
-    def test_english_approval_and_cancel_words(self):
-        self.assertTrue(is_approval('approve') and is_approval('승인') and not is_approval('승인하지 마'))
-        self.assertTrue(is_cancel('cancel') and is_cancel('그거 취소') and not is_cancel('취소된 회의 알려줘'))
+    def test_an_english_approval_judged_approve_executes(self):
         self.drafting(('calendar_draft_create', VENDOR))
         self.receive('schedule a meeting with the vendor tomorrow at 3pm')
         job = self.job(self.receive('approve'))
@@ -215,10 +217,10 @@ class ApprovalTests(CalendarDraftApprovalCase):
     def test_the_approval_must_come_from_the_channel_that_was_shown_the_preview(self):
         self.drafting(('calendar_draft_create', DENTIST))
         self.receive('치과 일정 잡아줘')
-        job = self.job(self.typed_on_web('승인'))
-        self.assertEqual(job['response'], OTHER_CHANNEL)
-        job = self.job(self.typed_on_web('취소'))
-        self.assertEqual(job['response'], OTHER_CHANNEL, 'nor may it cancel them')
+        # #172: the other identity's drafts are never collected for this one, so nothing is judged here.
+        self.typed_on_web('승인')
+        self.typed_on_web('취소')
+        self.assertEqual(self.acts, [], 'the web conversation had nothing open to answer')
         self.assertEqual(self.provider.calls, [])
         self.assertTrue(self.pending(), 'the Telegram drafts are untouched')
         job = self.job(self.receive('승인'))
@@ -257,20 +259,16 @@ class ApprovalTests(CalendarDraftApprovalCase):
         self.receive('승인')
         self.assertEqual(len(self.provider.calls), 1, 'an unknown outcome must not be retried')
 
-    def test_a_claimed_reply_never_also_answers_another_approval_prompt(self):
-        # #22 review: with a browser-step prompt or a saved-memory notice also open, the literal
-        # answer the calendar drafts claim settles them only; the other prompt stays pending.
+    def test_the_judgment_reads_the_act_against_the_preview_that_was_shown(self):
+        # #172: one judgment over the act and the open item, with the exact preview text it was shown.
         self.drafting(('calendar_draft_create', DENTIST))
         self.receive('치과 일정 잡아줘')
-        with mock.patch.object(self.service, 'step_approval_by_reply', return_value='step approved') as step, \
-                mock.patch.object(self.service, 'withdraw_memory_by_reply', return_value=None) as memory:
-            job = self.job(self.receive('승인'))
-        step.assert_not_called()
-        memory.assert_not_called()
+        job = self.job(self.receive('승인'))
         self.assertIn(CREATED, job['response'])
-        with mock.patch.object(self.service, 'step_approval_by_reply', return_value=None) as step:
-            self.receive('승인')  # nothing pending now: an ordinary reply, which may answer a prompt
-        step.assert_called_once()
+        act, items, _target = self.acts[-1]
+        self.assertEqual(act, '승인')
+        self.assertEqual([item['kind'] for item in items], ['calendar-drafts'])
+        self.assertIn('제목: 치과', items[0]['text'])
 
     def test_only_a_message_the_owner_typed_answers_the_drafts(self):
         self.drafting(('calendar_draft_create', DENTIST))
@@ -292,19 +290,22 @@ class ApprovalTests(CalendarDraftApprovalCase):
 
 
 class InterleavingTests(CalendarDraftApprovalCase):
-    def test_an_interleaved_request_runs_as_a_normal_work_and_never_touches_the_draft(self):
+    def test_an_interleaved_request_runs_as_a_normal_work_and_leaves_the_draft_pending(self):
+        # #172: a message the judgment reads as unrelated settles nothing and deletes nothing.
         self.drafting(('calendar_draft_create', DENTIST))
         self.receive('치과 일정 잡아줘')
         before = dict(self.drafts())
+        shown = self.pending()
         turn = len(self.model_calls)
         job = self.job(self.receive('오늘 날씨 어때?'))
         self.assertEqual(job['status'], 'succeeded', job.get('error'))
         self.assertTrue(self.worker_message(turn).endswith('오늘 날씨 어때?'), 'the message runs on the worker as usual')
-        self.assertTrue(job['response'].startswith(DROPPED_NOTICE), 'the owner is told the draft was dropped')
         self.assertEqual(self.drafts(), before, 'the draft is neither changed nor applied')
-        self.assertEqual(self.pending(), {})
-        self.receive('승인')
+        self.assertEqual(self.pending(), shown, 'the drafts stay pending')
         self.assertEqual(self.provider.calls, [])
+        job = self.job(self.receive('승인'))
+        self.assertIn(CREATED, job['response'], 'still answerable until it expires')
+        self.assertEqual(self.provider.calls, [('create', DENTIST)])
 
     def test_a_cue_free_detail_is_not_parsed_into_the_draft(self):
         self.drafting(('calendar_draft_create', DENTIST))

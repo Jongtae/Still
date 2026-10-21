@@ -440,7 +440,7 @@ class CodexWireTests(unittest.TestCase):
             if check_replayed_input:
                 with self.store.db() as db:
                     db.execute('UPDATE jobs SET owner_typed=1 WHERE id=?', (job['id'],))
-                with mock.patch.object(self.service, 'settings_draft_answer', side_effect=AssertionError('replayed input is not new owner text')):
+                with mock.patch.object(self.service.owner_acts, 'read', side_effect=AssertionError('replayed input is not new owner text')):
                     self.assertTrue(self.service.run_one())
             else:
                 self.assertTrue(self.service.run_one())

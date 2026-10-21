@@ -77,7 +77,7 @@ Time thresholds can govern ambient feedback, **not** fabricate semantic progress
 ## Decision Model ↔ Presence contract
 The two directions already exist as separate judgments; this contract binds them. Inventory at 2026-10-10 (static reading of `conversation_handoff.py`, `quickstart_service.py`, `orchestrator.py`, `agent_runtime.py`, `mcp_bridge.py`):
 
-- **Person → decision:** `steers_running_work` (#999: does a message sent mid-Work steer it; a yes reaches the worker with its next tool result on the direct route and the MCP bridge), `followup_relation` (retry, correction or new request), `parked_work_withdrawn`, `settings_draft_confirmed`/`declined`, `memory_withdrawn`.
+- **Person → decision:** `steers_running_work` (#999: does a message sent mid-Work steer it; a yes reaches the worker with its next tool result on the direct route and the MCP bridge), `followup_relation` (retry, correction or new request), `parked_work_withdrawn`, and (since OWNER-ACT-01 [#172](https://github.com/Jongtae/Still/issues/172), replacing `settings_draft_confirmed`/`declined`, `memory_withdrawn`, the step-approval answer and the literal calendar words) one `owner_act_answer` over the owner's act and every item waiting for the owner.
 - **Decision → person:** `owner_input_needed` (#740: ask), `goal_reached` (succeeded, partial, failed, unknown), `watch_notification_needed` (#719: notify or stay quiet, the only existing *should this be reported* judgment), and the ambient `turn_reaction`/`progress_reaction`/`closing_reaction`.
 
 Gaps found:

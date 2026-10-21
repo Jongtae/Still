@@ -76,7 +76,9 @@ SCANNED_MODULES = ('agent_runtime.py', 'conversation_handoff.py', 'current_conte
                    'code_run.py', 'procedures.py',
                    # GUARD-NL-01 (#171): modules that read owner or page text.
                    'calendar_conversation.py', 'settings_orchestrator.py', 'telegram_presence.py',
-                   'information_use.py')
+                   'information_use.py',
+                   # OWNER-ACT-01 (#172): the one judgment over owner acts and the open items it settles.
+                   'owner_acts.py')
 
 #: Modules whose job is to name providers.  Not scanned.
 ALLOWED_MODULES = {

@@ -300,19 +300,12 @@ class TelegramStore:
             "SELECT job_id,kind,fingerprint,created FROM telegram_notifications WHERE kind IN (%s) AND state='sent' AND job_id IS NOT ? "
             "ORDER BY created"%','.join('?'*len(kinds)),(*kinds,except_job_id)).fetchall()]
 
-    def latest_sent(self, chat_id, kind, message_id=None):
-        """The newest sent ``kind`` prompt in this chat (on ``message_id`` when given), or None."""
+    def sent_of_kinds(self, chat_id, kinds, limit=10):
+        """The sent notifications of ``kinds`` in this chat, newest first, at most ``limit`` (#172)."""
         with self.store.db() as db:
-            return db.execute("SELECT * FROM telegram_notifications WHERE chat_id=? AND kind=? AND state='sent'"
-                              +(' AND message_id=?' if message_id is not None else '')+' ORDER BY created DESC LIMIT 1',
-                              (chat_id,kind,message_id) if message_id is not None else (chat_id,kind)).fetchone()
-
-    def latest_sent_of_kinds(self, chat_id, kinds):
-        """The newest sent notification of one of ``kinds`` in this chat, or None."""
-        with self.store.db() as db:
-            return db.execute("SELECT * FROM telegram_notifications WHERE chat_id=? AND state='sent' AND kind IN (%s) "
-                              "ORDER BY created DESC LIMIT 1"%','.join('?'*len(kinds)),
-                              (chat_id,*kinds)).fetchone()
+            return [dict(row) for row in db.execute(
+                "SELECT * FROM telegram_notifications WHERE chat_id=? AND state='sent' AND kind IN (%s) "
+                "ORDER BY created DESC LIMIT ?"%','.join('?'*len(kinds)),(chat_id,*kinds,int(limit)))]
 
     def rearm(self, job_id, kind, fingerprint):
         """Re-queue this Work's ``kind`` prompt for a new binding unless it is already queued or sending."""

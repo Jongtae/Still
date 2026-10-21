@@ -57,7 +57,7 @@ from .connector_revocation import (GoogleConnectionRevoker, RevocationError, dri
                                    google_revoke_transport, registry_connection)
 from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID, CalendarError
 from .google_drive_read import DRIVE_CONNECTOR_ID
-from .calendar_conversation import (DROPPED_NOTICE as CALENDAR_DROPPED_NOTICE, EFFECT_TOOLS as CALENDAR_EFFECT_TOOL_NAMES,
+from .calendar_conversation import (EFFECT_TOOLS as CALENDAR_EFFECT_TOOL_NAMES,
                                     FAILED as CALENDAR_APPLY_FAILED, CalendarConversation, work_draft_ids)
 CALENDAR_EFFECT_TOOLS=frozenset(CALENDAR_EFFECT_TOOL_NAMES.values())
 from .conversation_handoff import (CONNECTOR_LABELS, JUDGMENT_NO, JUDGMENT_YES,
@@ -132,6 +132,11 @@ REACTION_EVENT='owner_reaction'
 #: #996: what the worker reads first when the owner's message just withdrew remembered facts.
 MEMORY_WITHDRAWN_NOTE=('Before this turn, at the owner\'s word, Still removed what you had just said you remembered:\n'
                        '{facts}\nAcknowledge it briefly if the owner\'s message is only about that; do not save it again.')
+#: #172: what the worker reads first when the owner's message also answered an item waiting for them.
+OWNER_ACT_SETTLED_NOTE=('[Still observation, not an owner instruction] Part of the owner\'s message answered an item that '
+                        'was waiting for them, and Still already settled it; the owner is shown this result above your '
+                        'reply:\n{settled}\nDo not act on that part again. The rest of the message is the request for '
+                        'you: {rest}')
 
 #: The one owner-authenticated address that starts a Gmail authorization.
 #: It is defined here rather than only inside the HTTP layer so the link the
@@ -852,31 +857,6 @@ class AgentService:
                 and job.get('chat_id')==cfg.get('user_id')):
             try:self.telegram.send_message(job['chat_id'],text)
             except ProviderError:LOG.warning('settings follow-up not delivered work=%s',job.get('id'))
-
-    def settings_draft_answer(self, job, prompt):
-        """The exact judged draft set and confirm/cancel action, or None (#855, #1297).
-
-        Two DecisionEngine binary judgments over the drafts' summary and the
-        message (confirm first, then decline); unavailable or neither leaves
-        the drafts pending and the message is handled as a normal turn.  The
-        caller has already required ``owner_typed`` (#814 review P1).
-        """
-        rows=self.settings_orchestrator.pending_or_renewable(self.settings_owner(job),job['channel'])
-        if not rows or not isinstance(prompt,str):return None
-        groups={row.get('work_id') or row['id'] for row in rows}
-        focused=self.conversation_focus.current().get('work_id')
-        if len(groups)>1:
-            rows=[row for row in rows if focused and row.get('work_id')==focused]
-            if not rows:return None
-        elif focused and all(row.get('work_id') and row['work_id']!=focused for row in rows):
-            return None
-        pending='\n'.join(row['effect']+(f" ({row['note']})" if row.get('note') else '')
-                          +(' · 등록·로그인을 반복하지 않고 현재 준비 상태만 확인' if row.get('state')=='unknown' else '') for row in rows)
-        if self.decision_judge.settings_draft_confirmed(pending,prompt).outcome==JUDGMENT_YES:
-            return {'action':'confirm','drafts':rows}
-        if self.decision_judge.settings_draft_declined(pending,prompt).outcome==JUDGMENT_YES:
-            return {'action':'cancel','drafts':rows}
-        return None
 
     def settings_work_continued(self, work_id):
         """A queued original message is not newly typed owner approval after a settings wait."""
@@ -2281,6 +2261,31 @@ class AgentService:
         LOG.info('memory candidates joined the ask work=%s settled_by_answer=%s added=%s edited=%s',
                  job_id,len(settled),len(opened) if edited else 0,edited)
 
+    def answer_memory_prompt(self, notification, binding, targets, accept, by='button'):
+        """The owner's yes or no to the open ``targets`` of one sent memory prompt (#818; #172 judged answers).
+
+        The button's path, shared with a judged reply or reaction: past its TTL
+        the prompt expires and nothing is decided; otherwise each target is
+        decided against what the message showed, the binding is stored and the
+        message is edited.  Returns ``{'expired', 'outdated', 'text'}``.
+        """
+        if time.time()-float(binding['sent'])>MEMORY_CANDIDATES_TTL_SECONDS:
+            self.expire_memory_prompt(notification,binding)
+            return {'expired':True,'outdated':False,'text':MEMORY_CANDIDATES_EXPIRED_TEXT}
+        decided=self.decide_memory_prompt(notification['job_id'],binding,targets,accept)
+        finished=not self.memory_open(binding)
+        self.store.update_notification(notification['id'],'memory_decided' if finished else 'sent',
+                                       fingerprint=json.dumps(binding))
+        outdated=any(binding['done'][item]=='outdated' for item in decided)
+        LOG.info('memory candidates %s by owner %s work=%s decided=%s outdated=%s','accept' if accept else 'reject',
+                 by,notification['job_id'],len(decided),outdated)
+        text=self.memory_prompt_text(notification['job_id'],binding,MEMORY_CANDIDATES_OUTDATED_TEXT if outdated else None)
+        if isinstance(notification.get('message_id'),int):
+            try:self.telegram.edit_message_text(notification['chat_id'],notification['message_id'],text,
+                                                self.memory_prompt_markup(notification['id'],binding))
+            except ProviderError:pass
+        return {'expired':False,'outdated':outdated,'text':text}
+
     def expire_memory_prompt(self, notification, binding):
         """Refuse further taps on one memory prompt and remove its buttons (#818)."""
         self.store.update_notification(notification['id'],'expired')
@@ -2607,6 +2612,28 @@ class AgentService:
         shown,remaining=prep.proposal_page(self.preparations.proposed_from(notification['job_id']))
         if not shown or prep.digest(shown)!=notification['fingerprint']:return [],0
         return shown,remaining
+
+    def answer_preparation_proposal(self, notification, proposals, accept, by='button'):
+        """The owner's yes or no to exactly the ``proposals`` one sent message offered (#659; #172 judged answers).
+
+        The button's path, shared with a judged reply or reaction.  An accepted
+        message keeps a cancel button bound to exactly what it accepted (#1455).
+        Returns what the message now says.
+        """
+        for row in proposals:
+            if accept:self.preparations.accept(row['id'],prep.ACCEPTED_OWNER_BUTTON if by=='button' else prep.ACCEPTED_OWNER_ANSWER)
+            else:self.cancel_preparation(row['id'])
+        result_kind='preparation_accepted' if accept else 'preparation_denied'
+        LOG.info('preparation %s by owner %s work=%s count=%s','accept' if accept else 'deny',by,
+                 notification['job_id'],len(proposals))
+        self.store.update_notification(notification['id'],result_kind,fingerprint=(
+            PREPARED_IDS_PREFIX+','.join(row['id'] for row in proposals) if accept else None))
+        markup=self.preparation_cancel_markup(notification['id']) if accept else {'inline_keyboard':[]}
+        text=self.notification_text(result_kind)
+        if isinstance(notification.get('message_id'),int):
+            try:self.telegram.edit_message_text(notification['chat_id'],notification['message_id'],text,markup)
+            except ProviderError:pass
+        return text
 
     @staticmethod
     def preparation_reply_prefix(job):
@@ -3239,8 +3266,8 @@ class AgentService:
         free-form model opinion could narrow an ambiguity Still already
         found.  No call site in this service supplies one.
 
-        A pending calendar draft is answered before this (``calendar_answer`` in
-        ``_route_work``, #22), so no draft state reaches the classifier.
+        An owner's answer to an open item is settled before this (``owner_acts``
+        in ``_route_work``, #172), so no pending-item state reaches the classifier.
         """
         return self.intent_classifier.classify(prompt, model_suggestion=model_suggestion,
                                                focus=self.conversation_focus.current())
@@ -3283,13 +3310,6 @@ class AgentService:
             return None
         return {'relation':judged.value,'previous':previous,'source':judged.source}
 
-    def calendar_dropped_notice(self, owner_id):
-        """Drop the pending calendar drafts and say so; '' when none were pending."""
-        dropped=self.calendar_conversation.clear(owner_id)
-        if not dropped:
-            return ''
-        return CALENDAR_DROPPED_NOTICE+'\n\n'
-
     def offer_calendar_drafts(self, job, capabilities=None):
         """#22: the calendar drafts this Work's worker made, offered for the owner's approval.
 
@@ -3306,7 +3326,7 @@ class AgentService:
         if not ids:return ''
         # The target of an update or cancellation, as this Work's own calendar read returned it.
         targets=getattr(capabilities,'calendar_seen',None) or {}
-        return self.calendar_conversation.offer(self.connector_owner_id(job),ids,targets=targets)
+        return self.calendar_conversation.offer(self.connector_owner_id(job),ids,targets=targets,work_id=job['id'])
 
     def open_question_link(self, prompt, focused, current_work_id):
         """A reference to the Work just before ``focused`` when ``prompt`` answers what its reply asked (#1519).
@@ -4964,6 +4984,12 @@ class AgentService:
         """
         from .telegram_surface import TelegramSurface
         return TelegramSurface(self)
+
+    @cached_property
+    def owner_acts(self):
+        """The open items waiting for the owner, the one judgment over an owner act, and its settlement (#172)."""
+        from .owner_acts import OwnerActs
+        return OwnerActs(self)
 
     def telegram_call(self,token,method,body):
         """Thin delegation to the transport seam for an unstored bot token."""
@@ -7498,37 +7524,30 @@ class AgentService:
             raise ValueError('지금 표시된 실행 내용을 다시 확인하세요. 이전 확인으로 다른 동작을 승인하지 않았습니다.')
         return self._decide_browser_step(body['work_id'],body['decision']=='approve',body['digest'])
 
-    def pending_step_notification(self, chat_id, message_id=None):
-        """``(notification, request)`` of the approval prompt in this chat whose request still waits, or None (#1472).
+    def open_step_notification(self, notification):
+        """``(notification, request)`` when this sent approval prompt's request still waits for it, else None (#1472).
 
-        The prompt on ``message_id`` when given (a reaction names its message), else the latest sent one.
+        Exact: the request is still ``requested``, offered with this prompt's digest, and not expired.
         """
-        row=self.store.telegram.latest_sent(chat_id,'browser_approval_needed',message_id)
-        if not row:return None
-        notification=dict(row)
+        if not notification or notification.get('kind')!='browser_approval_needed' or notification.get('state')!='sent':
+            return None
+        notification=dict(notification)
         request=self._browser_request(notification['job_id']) or {}
         if (request.get('state')!='requested' or request.get('offer_digest')!=notification.get('fingerprint')
                 or time.time()>float(request.get('requested_at',0))+600):return None
         return notification,request
 
-    def answer_step_approval(self, notification, request, response):
-        """The owner's reaction or reply to an approval prompt, judged; a plain yes or no settles it (#1472).
+    def answer_step_approval(self, notification, approve):
+        """The owner's judged answer to an approval prompt settles exactly that request (#1472, #172).
 
-        Owner choice 2026-10-13: approvals are answered like a person would, not with a button.  Only
-        the Judgment AI's plain yes approves exactly the offered request; anything unclear leaves it
-        waiting.  Returns what the owner is told, or None when nothing was decided.
+        Owner choice 2026-10-13: approvals are answered like a person would, not with a button.  Which
+        prompt an act answers, and whether plainly yes or no, is the one owner-act judgment (#172);
+        this settles only what it named, through the exact offer digest.  Returns what the owner is told.
         """
-        try:
-            answer=self.decision_judge.step_approval_answer(request.get('label') or '',response)
-        except Exception as exc:
-            LOG.warning('step approval judgment failed (%s)',type(exc).__name__)
-            return None
-        if answer is None:return None
-        approve=answer=='approve'
         decision=self._decide_browser_step(notification['job_id'],approve,notification.get('fingerprint'))
         self.store.update_notification(notification['id'],'browser_approved' if decision.get('approved') else 'browser_denied')
-        LOG.info('step approval by owner response work=%s answer=%s approved=%s resumed=%s',notification['job_id'],
-                 answer,bool(decision.get('approved')),bool(decision.get('resumed')))
+        LOG.info('step approval by owner answer work=%s approve=%s approved=%s resumed=%s',notification['job_id'],
+                 approve,bool(decision.get('approved')),bool(decision.get('resumed')))
         return self.step_approval_result_text(notification['job_id'],decision,approve)
 
     def step_approval_result_text(self, work_id, decision, approve):
@@ -7539,21 +7558,6 @@ class AgentService:
             cause=((self.store.job(work_id) or {}).get('owner_cause') or '').strip()
             return msg('notice.step_approved_not_resumed')+(f' {cause}' if cause else '')
         return msg('notice.step_approval_stale')
-
-    def step_approval_by_reply(self, job, prompt):
-        """The owner's first typed message after an approval prompt may answer it (#1472), as for a settings draft."""
-        if not job.get('chat_id') or not isinstance(prompt,str):return None
-        pending=self.pending_step_notification(job['chat_id'])
-        if not pending:return None
-        notification,request=pending
-        # A message the owner sent before the prompt, or not the first one since, does not answer it.
-        sent_at=float(request.get('requested_at') or 0)
-        if float(job.get('source_at') or job.get('created') or 0)<=sent_at:return None
-        with self.store.db() as db:
-            later=db.execute('SELECT count(*) FROM jobs WHERE chat_id=? AND owner_typed=1 AND created>? AND created<? AND id!=?',
-                             (job['chat_id'],sent_at,float(job.get('created') or time.time()),job['id'])).fetchone()[0]
-        if later:return None
-        return self.answer_step_approval(notification,request,prompt)
 
     def _decide_browser_step(self, work_id, approve, expected_digest=None):
         """Settle exactly the offered action; duplicate callbacks never erase an issued token."""
@@ -9804,8 +9808,8 @@ class AgentService:
         if time.time()-float(binding['sent'])>MEMORY_SAVED_TTL_SECONDS:return None
         return notification,binding
 
-    def withdraw_memory_notice(self, notification, response):
-        """Ask the Judgment AI whether ``response`` withdraws a saved notice; undo it when yes (#996).
+    def withdraw_memory_notice(self, notification):
+        """Undo a saved notice the owner's judged answer declined (#996, #172).
 
         Returns the withdrawn facts as text, or None.  The undo is the exact
         #918 path: each fact re-validated against its bound row and digest.
@@ -9816,7 +9820,6 @@ class AgentService:
             notification,binding=current
             open_=self.memory_saved_open(binding)
             remembered=self.memory_saved_text(binding)
-            if self.decision_judge.memory_withdrawn(remembered,response).outcome!=JUDGMENT_YES:return None
             decided=self.undo_memory_saved(notification['job_id'],binding,open_)
             finished=not self.memory_saved_open(binding)
             self.store.update_notification(notification['id'],'memory_undone' if finished else 'sent',fingerprint=json.dumps(binding))
@@ -9827,30 +9830,8 @@ class AgentService:
                 except ProviderError:pass
             return remembered
         except Exception as exc:
-            LOG.warning('memory withdrawal judgment failed (%s)',type(exc).__name__)
+            LOG.warning('memory withdrawal failed (%s)',type(exc).__name__)
             return None
-
-    def withdraw_memory_by_reply(self, job, prompt):
-        """The owner's next typed message after a saved notice may withdraw it (#996).
-
-        Only the latest open notice in this chat, and only when this is the
-        first owner message since it was sent.  Returns the note this Work's
-        worker reads first, or None.
-        """
-        if not job.get('chat_id') or not isinstance(prompt,str):return None
-        row=self.store.telegram.latest_sent_of_kinds(job['chat_id'],MEMORY_SAVED_KINDS)
-        current=self.open_memory_notice(dict(row) if row else None)
-        if not current:return None
-        notification,binding=current
-        # Review P1: a message the owner sent before the notice existed cannot answer it.
-        sent_at=float(job.get('source_at') or job.get('created') or 0)
-        if sent_at<=float(binding['sent']):return None
-        with self.store.db() as db:
-            later=db.execute('SELECT count(*) FROM jobs WHERE chat_id=? AND owner_typed=1 AND created>? AND created<? AND id!=?',
-                             (job['chat_id'],float(binding['sent']),float(job.get('created') or time.time()),job['id'])).fetchone()[0]
-        if later:return None
-        withdrawn=self.withdraw_memory_notice(notification,prompt)
-        return MEMORY_WITHDRAWN_NOTE.format(facts=withdrawn) if withdrawn else None
 
     def consider_steer(self, task_id, text):
         """Ask, off the poll thread, whether a message queued behind a running Work steers it (#999).
@@ -10124,32 +10105,19 @@ class AgentService:
         # #1389: an explicit command (/ai, /notes, ...) is routed literally and answered
         # with no model, so no pre-route judgment below can apply to it; none is asked.
         owner_command=not replayed and self.intent_classifier.explicit(owner_prompt) is not None
-        # #22: the calendar drafts this channel was shown are answered by the owner's literal
-        # approve or cancel word (``CalendarConversation.claims``) in a message the owner typed;
-        # a replayed, photo or scheduled turn never is.
-        calendar_claim=(not replayed and not owner_command and not run.photo_file_ids and job.get('owner_typed')==1
-                        and self.calendar_conversation.claims(run.connector_owner,owner_prompt))
-        # #855: a settings draft pending in this conversation is answered by the owner's
-        # next typed message (a plain yes applies, a plain no cancels, judged by the
-        # DecisionEngine); anything else leaves it pending and this turn proceeds as usual.
-        # Review P1: judged before the generic continuity cancel (a typed no is this
-        # draft's decline, not a cancel of the finished proposal Work) and never while
-        # the pending calendar draft claims the message (its approval stays its own).
-        run.settings_answer=(None if replayed or owner_command or job.get('owner_typed')!=1 or calendar_claim
-                         else self.settings_draft_answer(job,owner_prompt))
-        # #1472: the owner's first typed message after an approval prompt may answer it ("승인", "응",
-        # "취소"); a plain answer settles exactly that request and this turn says what happened.
-        # #22 review: a reply the pending calendar drafts claim answers them only; it never also
-        # settles another approval prompt (as for settings above), which stays pending.
-        step_answer=(None if replayed or owner_command or run.settings_answer or calendar_claim or job.get('owner_typed')!=1
-                     else self.step_approval_by_reply(job,owner_prompt))
-        if step_answer:
-            self.present_turn(job)
-            return self.complete_continuity_turn(job,step_answer)
-        # #996: the owner's first typed message after a saved-memory notice may withdraw it.
-        run.memory_note=(None if replayed or owner_command or run.settings_answer or calendar_claim or job.get('owner_typed')!=1
-                     else self.withdraw_memory_by_reply(job,owner_prompt))
-        run.calendar_answer=owner_prompt if calendar_claim else None
+        # #172 (OWNER-ACT-01, owner decision 2026-10-21, revising #22 option A): one judgment
+        # reads this owner act against every item still waiting for the owner in this
+        # conversation (calendar drafts, settings drafts, approval prompts, the saved-memory
+        # notice, memory and preparation proposals); a Telegram reply-to binds it to what that
+        # message showed.  Only a judged plain approve or decline of one named item settles,
+        # through that item's own path; anything else settles nothing, deletes nothing, and the
+        # message runs as an ordinary turn.  Only a message the owner typed answers; a replayed,
+        # command, photo or scheduled turn never does.
+        if not replayed and not owner_command and not run.photo_file_ids and job.get('owner_typed')==1:
+            run.owner_act=self.owner_acts.read(job,owner_prompt,target=self.telegram_turns.reply_to(job['id']),
+                                               before=job.get('source_at') or job.get('created'))
+        if run.owner_act:
+            self._settle_owner_act(run)
         # #969 (PERF-START-01): the routing judgment (`classify_intent`, which may
         # ask capability-need) and the follow-up judgment below both read only
         # the owner's message and prior state, and the state between here and
@@ -10158,10 +10126,12 @@ class AgentService:
         # a judged retry still classifies the replayed message afresh, and a
         # judged cancel still answers without one.  Same decisions, same
         # records; only the wall clock overlaps.
-        run.early_intent=(None if resumed or located or run.settings_answer or run.calendar_answer is not None else
-                      self.start_early_judgment(job['id'],self.classify_intent,owner_prompt))
-        run.continuity=(None if replayed or run.settings_answer or run.calendar_answer is not None
-                        else self.continuity_relation(owner_prompt,run.connector_owner,current_work_id=job['id']))
+        answered=run.act_reply is not None
+        early_prompt=run.prompt
+        run.early_intent=(None if resumed or located or answered else
+                      self.start_early_judgment(job['id'],self.classify_intent,early_prompt))
+        run.continuity=(None if replayed or answered
+                        else self.continuity_relation(run.prompt,run.connector_owner,current_work_id=job['id']))
         if run.continuity:
             relation,previous=run.continuity['relation'],run.continuity['previous']
             self.present_turn(job)
@@ -10216,8 +10186,8 @@ class AgentService:
                 # the authority for any actual change.
                 self.record_continuity(job['id'],previous['id'],relation,executed=False)
         # Planning shares the allowance already used by routing.
-        # #22 review: the answer to pending calendar drafts is settled without any model.
-        self._early_plan=(None if replayed or owner_command or run.settings_answer or run.calendar_answer is not None else
+        # #22 review, #172: a turn that only answered an open item asks for no plan.
+        self._early_plan=(None if replayed or owner_command or answered else
                           self.start_early_judgment(job['id'],self.early_work_plan,job,run.prompt,run.work_budget))
         if run.continued and run.retry_note is None:
             # #774 (C8): the continuation runs the asking Work's message again.
@@ -10232,38 +10202,31 @@ class AgentService:
         # never revives it.
         if not replayed and not self._answered_before(job['id']):
             self.drop_document_resume(owner_id=run.connector_owner,except_work_id=job['id'])
-        run.owner_memory_request=None if replayed else self.owner_memory_approval(job,run.prompt)
+        run.owner_memory_request=None if replayed or answered else self.owner_memory_approval(job,run.prompt)
         # Routing decision, made by Still before any capability is
         # touched.  `decision.authority` records whether the owner
         # said it literally or an Still rule derived it; a
         # DecisionEngine answer can only pick among Still-declared
         # candidates (#417) and reaches no other branch here.
-        if run.settings_answer:
-            run.decision=IntentDecision(INTENT_SETTINGS,AUTHORITY_OWNER,argument=run.prompt)
-        elif run.calendar_answer is not None:
-            # The owner's literal answer to the drafts shown; ``_run_rule_intent`` settles it.
+        if answered:
+            # #172: the owner's answer to an open item, already settled; ``_run_rule_intent`` reports it.
             run.decision=IntentDecision(INTENT_CONVERSATION,AUTHORITY_OWNER,argument=run.prompt)
         elif resumed_decision:
             run.decision=resumed_decision
         elif located is not None:
             run.decision=located
-        elif run.early_intent is not None and run.prompt==owner_prompt:
+        elif run.early_intent is not None and run.prompt==early_prompt:
             run.decision=run.early_intent.result()
         else:
             # A judged retry replays another Work's message: that is what is routed.
             self.settle_early_judgment(run.early_intent)
             run.decision=self.classify_intent(run.prompt)
-        # #22: any other message drops the pending calendar drafts, says so, and runs as
-        # an ordinary Work.  The dropped drafts can never execute from here: their
-        # approval was never minted.  #774: a continuation's replayed words neither
-        # answer nor drop them.
-        if not replayed and run.calendar_answer is None and self.calendar_conversation.has_pending(run.connector_owner):
-            run.calendar_notice+=self.calendar_dropped_notice(run.connector_owner)
+        # #172: a message that answers no pending item leaves every one of them pending; they end
+        # by their own expiry or an explicit judged decline, never by a miss.
         # A typed confirmation belongs to its offered Work. Keep that
         # focus through slow setup/recovery so another owner reply can
         # answer the same wait; unrelated turns still move focus normally.
-        offered={row.get('work_id') for row in run.settings_answer['drafts']} if run.settings_answer else set()
-        focus_work=next(iter(offered)) if len(offered)==1 and None not in offered else job['id']
+        focus_work=run.act_focus or job['id']
         previous_focus=self.conversation_focus.current().get('work_id')
         self.conversation_focus.record(run.decision,focus_work)
         self.record_stage(job['id'],'routed',run.claimed_at)
@@ -10275,14 +10238,14 @@ class AgentService:
         # (#521 → #417); policy acts only on a judged "yes" and keeps
         # the request on "no" or "unavailable". Independent requests
         # sharing a connector remain independently resumable.
-        # Three turns are never asked: the owner's answer to the pending
-        # calendar drafts ("승인" is addressed to them), a
+        # Three turns are never asked: the owner's answer to an open
+        # item (#172: it is addressed to that item), a
         # resumed Work re-reading its own words, which were judged
         # the first time it ran, and an explicit command (#1389).
         focused_waits=(self.resume_index.records(owner_id=run.connector_owner,work_id=previous_focus)
                        if self.resume_index and previous_focus else ())
         parked=tuple(dict.fromkeys(row['connector_id'] for row in focused_waits))
-        if parked and run.calendar_answer is None \
+        if parked and not answered \
                 and not replayed and not owner_command and not self._answered_before(job['id']) \
                 and self.decision_judge.parked_work_withdrawn(run.prompt,parked).outcome==JUDGMENT_YES:
             dropped=self.resume_index.supersede(owner_id=run.connector_owner,work_id=previous_focus)
@@ -10306,6 +10269,39 @@ class AgentService:
             self.update_task_card(job,'awaiting_connection')
             return True
         return PROCEED
+
+    def _settle_owner_act(self, run):
+        """Settle the one open item this turn's judged answer named (#172), through its own path.
+
+        With nothing else in the message the settlement is the turn's whole
+        reply (``act_reply``); a remaining request (``rest``) runs as this
+        turn's request, the owner's words kept verbatim for the worker, with
+        what Still settled said first.  A calendar effect's Evidence is this
+        Work's own, content-free.
+        """
+        job,answer=run.job,run.owner_act
+        def evidence(tool,status,detail):
+            # Content-free lifecycle evidence: draft and event ids, error and effect.  Never the title, time or utterance.
+            with self.store.db() as db:
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job['id'],tool,status,json.dumps(detail),time.time()))
+        try:
+            settled=self.owner_acts.settle(answer,job,evidence=evidence)
+        except CalendarError as exc:
+            raise ValueError(ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID) if exc.reason=='unavailable'
+                             else f'일정 초안을 승인하지 못했습니다 ({exc.reason}). 캘린더에 아무것도 반영하지 않았습니다.') from None
+        if settled['source']:run.work_sources.add(settled['source'])
+        run.act_focus=settled['focus']
+        if settled['note'] is not None:
+            # A withdrawn saved notice: the worker acknowledges it (#996), with the rest of the message if any.
+            run.act_note=settled['note']
+            if answer['rest']:run.prompt=answer['rest']
+        elif answer['rest']:
+            run.prompt=answer['rest']
+            if settled['text']:run.calendar_notice+=settled['text']+'\n\n'
+            run.act_note=OWNER_ACT_SETTLED_NOTE.format(settled=settled['text'] or '-',rest=answer['rest'])
+        elif settled['text']:
+            run.act_reply=settled['text']
 
     def _load_work_photos(self, run):
         """Phase 2: the Telegram photos this Work carries, read within the album size limits."""
@@ -10344,20 +10340,10 @@ class AgentService:
             # intent handlers answer while ignoring the attached pixels.
             run.handled=False
             run.fallthrough_note='사진 자료를 포함한 요청을 선택된 AI 작업자에게 전달합니다.'
-        elif run.calendar_answer is not None:
-            # #22: the owner's literal approve or cancel of the calendar drafts this
-            # channel was shown.  Only an approval of the exact preview executes.
-            run.work_sources.add('owner-calendar')
-            def calendar_evidence(tool,status,detail):
-                # Content-free lifecycle evidence: draft and event ids, error and effect.
-                # Never the title, time or utterance.
-                with self.store.db() as db:
-                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',(job['id'],tool,status,json.dumps(detail),time.time()))
-            try:
-                run.response=self.calendar_conversation.handle(run.connector_owner,run.calendar_answer,evidence=calendar_evidence)
-            except CalendarError as exc:
-                raise ValueError(ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID) if exc.reason=='unavailable'
-                                 else f'일정 초안을 승인하지 못했습니다 ({exc.reason}). 캘린더에 아무것도 반영하지 않았습니다.') from None
+        elif run.act_reply is not None:
+            # #172: this turn was the owner's judged answer to one open item, settled in
+            # ``_route_work`` through that item's own path; its reply says what happened.
+            run.response=run.act_reply
             # #598 I1: an approval whose effect could not be observed is
             # not a succeeded Work, and one the calendar refused is not either.
             # The outcome comes from this Work's own typed Evidence (#593
@@ -10392,18 +10378,12 @@ class AgentService:
                     label=INTENT_LABELS[INTENT_KNOWLEDGE],what='found no matching saved item')
         elif run.decision.intent==INTENT_SETTINGS:
             run.work_sources.add('owner-settings')
-            # #814 review P1: only a message the owner typed confirms or cancels a draft.
-            if run.settings_answer:
-                # #855: the owner's typed yes/no to the pending draft, the same path as the buttons.
-                run.result=self.settings_orchestrator.settle_pending(
-                    run.owner,job['channel'],run.settings_answer['drafts'],
-                    run.settings_answer['action']=='confirm',notify=lambda text,job=job:self.settings_followup(job,text))
-                LOG.info('settings drafts %s by owner reply work=%s',run.settings_answer['action'],job['id'])
-            else:
-                run.result=self.conversation_settings_request({'operation':'text','text':run.decision.argument},
-                                                          owner_id=run.owner, channel=job['channel'],
-                                                          owner_typed=job.get('owner_typed')==1,
-                                                          notify=lambda text,job=job:self.settings_followup(job,text))
+            # #814 review P1: only a message the owner typed confirms or cancels a draft
+            # (#172: a typed answer to a pending draft is settled in ``_route_work``).
+            run.result=self.conversation_settings_request({'operation':'text','text':run.decision.argument},
+                                                      owner_id=run.owner, channel=job['channel'],
+                                                      owner_typed=job.get('owner_typed')==1,
+                                                      notify=lambda text,job=job:self.settings_followup(job,text))
             run.response=self.settings_response(run.result)
         elif run.decision.intent==INTENT_MAIL_SEARCH:
             if self.gmail is None:
@@ -10498,7 +10478,9 @@ class AgentService:
             run.history[-1]={'role':'user','content':run.prompt}
         if run.fallthrough_note and run.history:
             run.history[-1]={'role':'user','content':run.history[-1]['content']+run.fallthrough_note}
-        if run.memory_note:run.retry_note=run.memory_note+('\n\n'+run.retry_note if run.retry_note else '')
+        # #172: what Still already settled from this message (an answer to an open item) is read first;
+        # the owner's words stay verbatim.
+        if run.act_note:run.retry_note=run.act_note+('\n\n'+run.retry_note if run.retry_note else '')
         if run.retry_note and run.history:
             run.history[-1]={'role':'user','content':run.retry_note+'\n\n'+run.history[-1]['content']}
         # Provenance for material this turn splices straight into

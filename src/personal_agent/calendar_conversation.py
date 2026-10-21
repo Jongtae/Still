@@ -4,35 +4,38 @@
 calendar request through its ordinary tools: ``calendar_query`` to read, and
 ``calendar_draft_create`` / ``calendar_draft_update`` / ``calendar_draft_cancel``
 to propose.  A draft has no external effect.  What this module keeps is the
-approval half of the earlier scripted conversation, unchanged in its authority:
+approval half, unchanged in its authority:
 
 * **Still renders the preview.**  When a Work ends, the drafts it made are
   read back from the connector (``CalendarConnector.preview``) and shown in
   Still's own words: every field that would be sent, with any line break or
   control character in a value shown escaped, so a value cannot add a line to
   the preview.  The model's prose never stands in for the preview.
-* **Only the owner's explicit approval of that preview executes.**  The
-  owner's next typed reply on the channel that was shown the preview,
-  matched against the literal ``APPROVE_WORDS`` / ``CANCEL_WORDS`` below,
-  approves or cancels the drafts shown.  Approval checks every draft's state
-  and payload hash against what was shown before anything is sent, then
-  spends ``CalendarConnector.approve`` -> ``execute`` for each, which binds a
-  one-time token to this owner, this draft, this payload hash and the write
-  connector's revision.
-* **Anything else leaves the drafts inert.**  Another message drops the
-  pending drafts (and says so) and runs as an ordinary Work; a newer Work's
-  drafts replace them; they expire after ``PENDING_TTL_SECONDS``; the other
-  channel cannot approve or cancel them.
+* **Only the owner's judged approval of that preview executes.**  OWNER-ACT-01
+  (#172, owner decision 2026-10-21, revising option A): which open item an
+  owner act answers, and how, is one judgment over everything pending
+  (``owner_acts``); no word list is read here.  ``approve`` runs only for the
+  drafts that judgment named, and only while they are still exactly the
+  pending set (compare-and-clear under a lock).  It checks every draft's state
+  and payload hash against what was shown before anything is sent, then spends
+  ``CalendarConnector.approve`` -> ``execute`` for each, which binds a one-time
+  token to this owner, this draft, this payload hash and the write connector's
+  revision.
+* **Nothing else touches the drafts.**  A message that does not answer them
+  leaves them pending.  They end by a judged decline (``decline``), by a newer
+  Work's drafts replacing them, or by expiry after ``PENDING_TTL_SECONDS``.
+  The other channel's drafts are never collected for this one.
 
 No owner wording is parsed into a date, time or title here.  Durable state is
 one ``calendar_conversation`` row per connector identity: the hashed owner,
-the draft ids and payload hashes shown, and an expiry.  It holds no utterance
-text and no secret.
+the offering Work's id, the draft ids and payload hashes shown, and an expiry.
+It holds no utterance text and no secret.
 """
 from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from datetime import datetime
 
@@ -59,10 +62,7 @@ PREVIEW_HEADER = msg('calendar_conversation.here_is_the_calendar_draft')
 PREVIEW_FOOTER = msg('calendar_conversation.reply_approve_to_apply_it_as')
 CALENDAR_LINE = msg('calendar_conversation.calendar_google_primary_calendar')
 REPLACED_NOTICE = msg('calendar_conversation.previous_draft_cancelled')
-DROPPED_NOTICE = msg('calendar_conversation.pending_draft_dropped')
 CANCELLED = msg('calendar_conversation.the_event_draft_was_canceled_no')
-NOTHING_PENDING = msg('calendar_conversation.nothing_to_approve')
-OTHER_CHANNEL = msg('calendar_conversation.draft_from_other_channel')
 CHANGED_UNDER_US = msg('calendar_conversation.draft_changed')
 CREATED = msg('calendar_conversation.the_event_was_added_to_the')
 UPDATED = msg('calendar_conversation.the_event_was_changed')
@@ -83,47 +83,6 @@ DONE_TEXT = {'create': CREATED, 'update': UPDATED, 'cancel': CANCELLED_EVENT}
 UNKNOWN_TEXT = {'create': OUTCOME_UNKNOWN, 'update': UPDATE_UNKNOWN, 'cancel': CANCEL_UNKNOWN}
 #: The evidence tool name of an applied draft, by action.
 EFFECT_TOOLS = {'create': 'calendar_create', 'update': 'calendar_update', 'cancel': 'calendar_cancel'}
-
-# --- vocabularies ------------------------------------------------------------
-# Every entry is a literal an owner can read and a reviewer can audit.
-APPROVE_WORDS = frozenset({
-    '승인', '승인해', '승인해줘', '승인해 줘', '승인할게', '승인합니다', '승인이요', '확인', '확인했어', '확인했어요',
-    '네', '예', '응', '어', '좋아', '좋아요', '그래', '그래요', '맞아', '맞아요', '진행해', '진행해줘', '진행해 줘',
-    '만들어', '만들어줘', '만들어 줘', '등록해줘', '등록해 줘', '그렇게 해줘', '그렇게 해', '해줘',
-    'ok', 'okay', 'yes', 'y', 'yep', 'yeah', 'approve', 'approved', 'confirm', 'confirmed', 'go ahead',
-    'do it', 'create it', 'looks good', 'lgtm', 'sure', 'go',
-})
-CANCEL_WORDS = frozenset({
-    '취소', '취소해', '취소해줘', '취소해 줘', '아니', '아니요', '아니오', '아냐', '됐어', '됐어요', '그만', '그만해',
-    '하지 마', '하지마', '하지 마세요', '없던 걸로', '없던걸로', '잊어', '잊어줘', '관둬', '말아', '말고',
-    'no', 'nope', 'cancel', 'never mind', 'nevermind', 'forget it', 'stop', "don't", 'dont', 'scratch that',
-    'not now', 'abort',
-})
-#: Tokens that may accompany a bare cancel without changing its meaning.
-_CANCEL_FILLER = frozenset({'그거', '그건', '이거', '이건', '일정', '초안', '그냥', '전부', '다', '좀', 'it', 'that',
-                            'this', 'the', 'draft', 'event', 'please', 'just', 'all'})
-
-
-def _tokens(text):
-    return [token for token in re.split(r'[\s,.!。！]+', text.strip().casefold()) if token]
-
-
-def is_approval(text):
-    value = re.sub(r'[\s.!。！~]+$', '', text.strip().casefold())
-    value = value.strip(' \t"“”\'‘’')
-    return value in APPROVE_WORDS
-
-
-def is_cancel(text):
-    value = re.sub(r'[.!。！~]+$', '', text.strip().casefold()).strip(' \t"“”\'‘’')
-    if value in CANCEL_WORDS:
-        return True
-    tokens = _tokens(value)
-    if not tokens:
-        return False
-    vocab = CANCEL_WORDS | _CANCEL_FILLER | {'그게', '아니라', '아니고'}
-    return all(token in vocab for token in tokens) and any(token in CANCEL_WORDS for token in tokens)
-
 
 def shown_value(value):
     """A value exactly as it would be sent, on one line: escaped when it carries a break or control character."""
@@ -232,6 +191,8 @@ class CalendarConversation:
         self.connector_for = connector_for
         self.now = now
         self.ttl_seconds = ttl_seconds
+        #: One answer settles a pending row at most once, whichever thread reads it (a reply or a reaction).
+        self._lock = threading.Lock()
 
     # -- state ----------------------------------------------------------------
     def _rows(self):
@@ -259,6 +220,10 @@ class CalendarConversation:
             return [{'draft_id': row['draft_id'], 'payload_hash': row.get('payload_hash', '')}]
         return []
 
+    def shown_drafts(self, row):
+        """The drafts a pending row showed (what an answer to it must still find)."""
+        return self._drafts(row)
+
     def pending(self, owner_id=None):
         rows = self._rows()
         if owner_id is None:
@@ -279,16 +244,6 @@ class CalendarConversation:
     def has_pending(self, owner_id=None):
         return self.pending(owner_id) is not None
 
-    def pending_elsewhere(self, owner_id):
-        """Another identity holds live drafts.
-
-        Used only to answer "that one is on your other channel"; it never reads
-        or touches the other row beyond its existence.
-        """
-        key = _owner_key(owner_id)
-        return any(other != key and self._live(row) and row.get('state') == STATE_AWAITING_APPROVAL
-                   for other, row in self._rows().items())
-
     def clear(self, owner_id=None):
         rows = self._rows()
         if owner_id is None:
@@ -299,16 +254,19 @@ class CalendarConversation:
         self.store.put(STATE_KEY, rows)
         return previous if isinstance(previous, dict) and previous.get('state') else None
 
-    def _save(self, owner_id, drafts):
+    def _save(self, owner_id, drafts, work_id=None):
         row = {'owner': _owner_key(owner_id), 'state': STATE_AWAITING_APPROVAL, 'drafts': drafts,
                'at': float(self.now()), 'expires': float(self.now()) + self.ttl_seconds}
+        if isinstance(work_id, str) and work_id:
+            # The Work whose reply showed the preview: a reaction or reply-to on it is bound to it (#172).
+            row['work_id'] = work_id
         rows = self._rows()
         rows[_owner_key(owner_id)] = row
         self.store.put(STATE_KEY, rows)
         return row
 
     # -- the Work's drafts --------------------------------------------------------
-    def offer(self, owner_id, draft_ids, targets=None):
+    def offer(self, owner_id, draft_ids, targets=None, work_id=None):
         """Make a finished Work's drafts the ones this identity may approve; Still's preview text, or ''.
 
         Each draft is read back from the connector, so the preview shows what
@@ -317,7 +275,8 @@ class CalendarConversation:
         and cannot be approved here.  An update or cancellation is offered only
         when ``targets`` - this Work's own calendar reads, by (event id,
         version) - show its target event, so the owner sees which event it
-        changes.  Earlier pending drafts are replaced.
+        changes.  Earlier pending drafts are replaced.  ``work_id`` is the
+        offering Work, whose reply carries the preview.
         """
         targets = targets or {}
         if not draft_ids:
@@ -345,7 +304,7 @@ class CalendarConversation:
             return refused
         notice = REPLACED_NOTICE + '\n\n' if self.pending(owner_id) else ''
         self._save(owner_id, [{'draft_id': preview['id'], 'payload_hash': preview['payload_hash'],
-                               'action': preview.get('action')} for preview in shown])
+                               'action': preview.get('action')} for preview in shown], work_id)
         return notice + self._preview_text(shown) + ('\n\n' + refused if refused else '')
 
     @staticmethod
@@ -360,56 +319,66 @@ class CalendarConversation:
         return '\n'.join(lines)
 
     # -- the owner's answer ------------------------------------------------------
-    def claims(self, owner_id, text):
-        """Whether the owner's message answers this identity's pending drafts.
+    def shown_text(self, owner_id, row):
+        """The preview of a pending row as the connector holds it now, in Still's words, or ''.
 
-        Only the literal approve and cancel words do.  An approval or cancel
-        aimed at the other channel's drafts is claimed too, so the answer can
-        say where they are.
+        Read for the owner-act judgment (#172) only; nothing here approves.
         """
-        if not isinstance(text, str) or not (is_approval(text) or is_cancel(text)):
-            return False
-        return self.has_pending(owner_id) or self.pending_elsewhere(owner_id)
-
-    def handle(self, owner_id, text, *, evidence=None):
-        """Answer one approve or cancel reply that ``claims`` accepted."""
-        row = self.pending(owner_id)
-        if row is None:
-            if (is_approval(text) or is_cancel(text)) and self.pending_elsewhere(owner_id):
-                # Named, not touched: the other channel's drafts are neither
-                # approved nor destroyed from here.
-                return OTHER_CHANNEL
-            return NOTHING_PENDING
-        if row.get('owner') != _owner_key(owner_id):
-            return OTHER_CHANNEL
-        if is_cancel(text):
-            self.clear(owner_id)
-            return CANCELLED
-        if is_approval(text):
-            return self._approve(owner_id, row, evidence)
-        return NOTHING_PENDING
-
-    def _approve(self, owner_id, row, evidence):
         connector = self.connector_for(owner_id)
         if connector is None:
+            return ''
+        previews = []
+        for shown in self._drafts(row):
+            try:
+                previews.append(connector.preview(shown['draft_id'], owner_id))
+            except (ValueError, CalendarError):
+                return ''
+        return self._preview_text(previews) if previews else ''
+
+    def _take(self, owner_id, drafts):
+        """The pending row when it still shows exactly ``drafts``, cleared in the same step; else None.
+
+        Compare-and-clear (#172): of two answers to the same preview only the
+        first gets the row, and a row replaced since the answer was judged is
+        not the one the owner answered.
+        """
+        with self._lock:
+            row = self.pending(owner_id)
+            if row is None or row.get('owner') != _owner_key(owner_id) or self._drafts(row) != drafts:
+                return None
             self.clear(owner_id)
+            return row
+
+    def approve(self, owner_id, drafts, *, evidence=None):
+        """Execute exactly the pending ``drafts`` the owner's judged approval named; the reply, or None.
+
+        None when they are no longer the pending set (expired, replaced or
+        already answered): nothing is sent.
+        """
+        row = self._take(owner_id, drafts)
+        return None if row is None else self._approve(owner_id, row, evidence)
+
+    def decline(self, owner_id, drafts):
+        """Drop exactly the pending ``drafts`` the owner's judged decline named; the reply, or None."""
+        return None if self._take(owner_id, drafts) is None else CANCELLED
+
+    def _approve(self, owner_id, row, evidence):
+        # The pending record was dropped before anything below (``_take``), so a
+        # second answer finds nothing; the connector's own approved/executing/
+        # completed states are the further barriers.
+        connector = self.connector_for(owner_id)
+        if connector is None:
             raise CalendarError('unavailable')
         previews = []
         for shown in self._drafts(row):
             try:
                 preview = connector.preview(shown['draft_id'], owner_id)
             except ValueError:
-                self.clear(owner_id)
                 return CHANGED_UNDER_US
             if preview['state'] != STATE_AWAITING_APPROVAL or preview['payload_hash'] != shown.get('payload_hash'):
-                self.clear(owner_id)
                 return CHANGED_UNDER_US
             previews.append(preview)
-        # Every draft matched what was shown before anything is sent.  The
-        # pending record is dropped *before* dispatch: the worker is serialised,
-        # so a second "승인" finds nothing, and the connector's own
-        # approved/executing/completed states are the further barriers.
-        self.clear(owner_id)
+        # Every draft matched what was shown before anything is sent.
         replies = []
         for index, preview in enumerate(previews):
             action = preview.get('action')

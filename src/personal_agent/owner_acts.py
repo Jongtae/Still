@@ -1,0 +1,325 @@
+"""OWNER-ACT-01 (#172): one judgment reads each owner act against everything pending.
+
+Owner decision 2026-10-21, revising #22 option A: approval is no longer a
+literal word list, a fixed precedence chain or a first-message-only rule.  An
+owner act - a typed message, a reaction, and the message it replies to or
+reacts on - is read by one judgment (``ConversationJudgments.owner_act_answer``)
+together with every item still waiting for the owner in this conversation.
+Buttons stay exact acts and are not read here.
+
+This module is the thin glue around that judgment:
+
+* ``open_items`` collects the open items for one conversation and identity,
+  each ``{kind, id, shown_text, shown_at, message_id, expires_at}`` plus the
+  reference its own settle path needs.  Every source and every check is the
+  existing one: the pending calendar drafts (``CalendarConversation``), the
+  pending settings drafts (``SettingsOrchestrator.pending_or_renewable``),
+  every open step-approval prompt, the open saved-memory notice, open memory
+  proposals and preparation proposals (their sent Telegram messages, bound as
+  their buttons are).
+* ``read`` narrows the candidates to the item(s) shown on the message a reply
+  or reaction names (a hard binding, in code), asks the one judgment, and
+  returns an answer only when it is a judged ``approve`` or ``decline`` of one
+  item that is still open.  Unclear, unavailable, low-confidence, ``change``
+  and ``unrelated`` settle nothing and the act is an ordinary turn.
+* ``settle`` runs the chosen item's existing path, unchanged in authority:
+  calendar compare-and-clear then the connector's digest-bound approve ->
+  execute; settings ``settle_pending``; ``_decide_browser_step`` with the
+  offer digest; the saved-memory undo; the memory-proposal and preparation
+  button paths.  Nothing pending is deleted on a miss.
+
+What stays code (enforcement): which conversation and identity an item
+belongs to, the paired private chat and current bot generation, that an act
+cannot answer an item shown after it, expiry, digests, compare-and-set,
+``owner_typed``, and that replayed and photo turns never answer (the caller).
+No owner wording is matched here.  Evidence class of the tests: model-free,
+with a scripted judgment; no live model was asked.
+"""
+import json
+import logging
+import time
+
+from .calendar import CALENDAR_WRITE_CONNECTOR_ID, CalendarError
+from .calendar_conversation import CHANGED_UNDER_US
+from .conversation_handoff import ConnectorHandoff
+from .messages import msg
+from . import preparations as prep
+
+LOG = logging.getLogger('personal_agent.service')
+
+#: The most items one judgment is asked about (newest first).
+ITEM_LIMIT = 6
+#: How much of each item's shown text the judgment reads.
+SHOWN_CHARS = 700
+
+KIND_CALENDAR = 'calendar-drafts'
+KIND_SETTINGS = 'settings-drafts'
+KIND_STEP = 'action-approval'
+KIND_MEMORY_SAVED = 'memory-saved'
+KIND_MEMORY_PROPOSAL = 'memory-proposal'
+KIND_PREPARATION = 'preparation-proposal'
+
+#: What an answer does to an item of each kind, told to the judgment in generic words.
+ANSWERS = {
+    KIND_CALENDAR: 'approve applies the calendar changes exactly as shown; decline drops them',
+    KIND_SETTINGS: 'approve applies the settings change as shown; decline keeps the current setting',
+    KIND_STEP: 'approve lets the waiting action run once, exactly as shown; decline stops it',
+    KIND_MEMORY_SAVED: 'decline removes what the assistant said it remembered; approve keeps it',
+    KIND_MEMORY_PROPOSAL: 'approve remembers the facts shown; decline does not remember them',
+    KIND_PREPARATION: 'approve schedules what was proposed; decline does not',
+}
+
+
+def _bounded(text):
+    text = str(text or '')
+    return text if len(text) <= SHOWN_CHARS else text[:SHOWN_CHARS - 1] + '…'
+
+
+def _ago(now, moment):
+    if not moment:
+        return 'unknown'
+    minutes = max(0, int((now - float(moment)) // 60))
+    return 'just now' if minutes < 1 else f'{minutes} minutes ago'
+
+
+def _until(now, moment):
+    if not moment:
+        return 'no expiry'
+    minutes = int((float(moment) - now) // 60)
+    return 'expired' if minutes < 0 else f'in {minutes} minutes'
+
+
+class OwnerActs:
+    """The open owner-decision items of one conversation, the one judgment over an act, and its settlement."""
+
+    def __init__(self, service):
+        self.service = service
+
+    # -- collect -------------------------------------------------------------------
+    def _telegram(self, job):
+        """The paired private chat and current generation of this conversation, or None."""
+        cfg = self.service.store.config('telegram', {})
+        chat = job.get('chat_id')
+        if (cfg.get('enabled') and isinstance(chat, int) and chat == cfg.get('user_id')
+                and job.get('channel') == f"telegram:{cfg.get('generation')}"):
+            return chat, cfg.get('generation')
+        return None
+
+    def open_items(self, job, before=None):
+        """Every item still waiting for the owner in ``job``'s conversation and identity, newest first.
+
+        ``before``: an act made at that time cannot answer an item shown at or after it.
+        """
+        service = self.service
+        now = time.time()
+        telegram = self._telegram(job)
+        items = []
+        connector_owner = service.connector_owner_id(job)
+        conversation = service.calendar_conversation
+        row = conversation.pending(connector_owner)
+        if row:
+            work_id = row.get('work_id')
+            turn = service.telegram_turns.get(work_id) if telegram and isinstance(work_id, str) else None
+            items.append({'kind': KIND_CALENDAR, 'shown_text': conversation.shown_text(connector_owner, row),
+                          'shown_at': float(row.get('at') or 0), 'expires_at': float(row.get('expires') or 0),
+                          'message_id': turn['reply_message_id'] if turn and turn['chat_id'] == telegram[0] else None,
+                          'ref': {'owner': connector_owner, 'drafts': conversation.shown_drafts(row),
+                                  'work_id': work_id}})
+        settings = service.settings_orchestrator
+        owner, channel = service.settings_owner(job), job.get('channel')
+        groups = {}
+        for draft in settings.pending_or_renewable(owner, channel):
+            groups.setdefault(draft.get('work_id') or draft['id'], []).append(draft)
+        for work_id, rows in groups.items():
+            deadline = max(float(draft.get('expires_at') or 0) for draft in rows)
+            if deadline <= now:
+                deadline += settings.RENEW_GRACE_SECONDS
+            notice = service.store.notification_of(work_id, 'settings_change_proposed') if telegram else None
+            bound = (notice and notice['chat_id'] == telegram[0] and notice['generation'] == telegram[1]
+                     and isinstance(notice.get('message_id'), int))
+            items.append({'kind': KIND_SETTINGS, 'shown_text': settings.confirmation_text(rows),
+                          'shown_at': min(float(draft.get('created_at') or 0) for draft in rows),
+                          'expires_at': deadline, 'message_id': notice['message_id'] if bound else None,
+                          'ref': {'owner': owner, 'channel': channel, 'rows': rows,
+                                  'work_id': work_id if any(draft.get('work_id') for draft in rows) else None}})
+        if telegram:
+            items.extend(self._notification_items(*telegram, now))
+        if before is not None:
+            # Telegram dates an owner message in whole seconds, so an item shown later within that same
+            # second is not treated as unseen; one shown in a later second is.
+            items = [item for item in items if item['shown_at'] and int(item['shown_at']) <= int(float(before))]
+        items.sort(key=lambda item: item['shown_at'], reverse=True)
+        items = items[:ITEM_LIMIT]
+        for index, item in enumerate(items, 1):
+            item['id'] = f'item-{index}'
+        return items
+
+    def _notification_items(self, chat, generation, now):
+        """The open prompts and notices sent to this chat in this bot generation (#1472, #996, #818, #659)."""
+        from .quickstart_service import (MEMORY_CANDIDATES_TTL_SECONDS, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS,
+                                         MEMORY_SAVED_TTL_SECONDS)
+        service = self.service
+        kinds = ('browser_approval_needed', 'preparation_proposed', *MEMORY_SAVED_KINDS, *MEMORY_PROMPT_KINDS)
+        items = []
+        for notification in service.store.telegram.sent_of_kinds(chat, kinds, limit=ITEM_LIMIT * 3):
+            if notification['generation'] != generation:
+                continue
+            kind, base = notification['kind'], {'message_id': notification.get('message_id'),
+                                                'ref': {'notification_id': notification['id'],
+                                                        'work_id': notification['job_id']}}
+            if kind == 'browser_approval_needed':
+                current = service.open_step_notification(notification)
+                if not current:
+                    continue
+                requested = float(current[1].get('requested_at') or 0)
+                items.append({**base, 'kind': KIND_STEP, 'shown_text': service.browser_step_prompt(notification['job_id']),
+                              'shown_at': requested, 'expires_at': requested + 600})
+            elif kind in MEMORY_SAVED_KINDS:
+                current = service.open_memory_notice(notification)
+                if not current:
+                    continue
+                sent = float(current[1]['sent'])
+                items.append({**base, 'kind': KIND_MEMORY_SAVED, 'shown_text': service.memory_saved_text(current[1]),
+                              'shown_at': sent, 'expires_at': sent + MEMORY_SAVED_TTL_SECONDS})
+            elif kind in MEMORY_PROMPT_KINDS:
+                binding = service.memory_binding(notification)
+                if not binding or 'sent' not in binding or not service.memory_open(binding):
+                    continue
+                sent = float(binding['sent'])
+                if now - sent > MEMORY_CANDIDATES_TTL_SECONDS:
+                    continue
+                items.append({**base, 'kind': KIND_MEMORY_PROPOSAL,
+                              'shown_text': service.memory_prompt_text(notification['job_id'], binding),
+                              'shown_at': sent, 'expires_at': sent + MEMORY_CANDIDATES_TTL_SECONDS})
+            else:
+                proposals, remaining = service.offered_proposals(notification)
+                if not proposals:
+                    continue
+                items.append({**base, 'kind': KIND_PREPARATION, 'shown_text': prep.proposal_text(proposals, remaining),
+                              'shown_at': float(notification['created']), 'expires_at': None})
+        return items
+
+    # -- judge ---------------------------------------------------------------------
+    def read(self, job, act, *, target=None, before=None, reaction=False):
+        """The owner's judged answer that settles one open item, or None.
+
+        ``act`` is the typed text or ``reaction: <emoji>``; ``target`` the
+        message it replies to or reacts on (``reaction``).  A target binds the
+        act to the item(s) shown on that message before anything is judged; a
+        target that showed nothing open settles nothing.  Returns
+        ``{item, approve, rest}``; a reaction has no rest.
+        """
+        service = self.service
+        items = self.open_items(job, before=before)
+        if target is not None:
+            items = [item for item in items if item['message_id'] == target]
+        if not items:
+            return None
+        now = time.time()
+        shown = [{'id': item['id'], 'kind': item['kind'], 'shown_text': _bounded(item['shown_text']),
+                  'shown_at': _ago(now, item['shown_at']), 'expires_at': _until(now, item['expires_at']),
+                  'answers': ANSWERS[item['kind']]} for item in items]
+        how = 'a reaction on' if reaction else 'a reply to'
+        described = f'{how} the message that showed {", ".join(item["id"] for item in items)}' if target is not None else ''
+        try:
+            answer = service.decision_judge.owner_act_answer(act, shown, described, work_id=job.get('id'))
+        except Exception as exc:  # an outage settles nothing
+            LOG.warning('owner act judgment failed (%s)', type(exc).__name__)
+            return None
+        if not answer:
+            LOG.info('owner act judged work=%s items=%s answer=none', job.get('id'), len(items))
+            return None
+        item = next((item for item in items if item['id'] == answer['item']), None)
+        LOG.info('owner act judged work=%s items=%s answer=%s kind=%s', job.get('id'), len(items),
+                         answer['answer'], item['kind'] if item else None)
+        if item is None or answer['answer'] not in ('approve', 'decline'):
+            return None
+        if item['kind'] == KIND_MEMORY_SAVED and answer['answer'] == 'approve':
+            return None  # keeping what was remembered needs nothing settled
+        return {'item': item, 'approve': answer['answer'] == 'approve', 'rest': '' if reaction else answer['rest']}
+
+    # -- settle --------------------------------------------------------------------
+    def settle(self, answer, job, *, evidence=None):
+        """Settle the one item a judged answer named, through its own path.
+
+        Returns ``{'text', 'note', 'source', 'focus'}``: what the owner is told
+        (''), what the worker reads first when the turn goes on (None), the
+        Work source it read, and the Work a settings answer keeps in focus.
+        Raises ``CalendarError('unavailable')`` when the calendar connector is
+        gone.
+        """
+        service = self.service
+        item, approve, ref = answer['item'], answer['approve'], answer['item']['ref']
+        kind = item['kind']
+        result = {'text': '', 'note': None, 'source': None, 'focus': None}
+        if kind == KIND_CALENDAR:
+            conversation = service.calendar_conversation
+            text = (conversation.approve(ref['owner'], ref['drafts'], evidence=evidence) if approve
+                    else conversation.decline(ref['owner'], ref['drafts']))
+            result.update(text=text or CHANGED_UNDER_US, source='owner-calendar')
+        elif kind == KIND_SETTINGS:
+            notify_job = job if job.get('id') else (service.store.job(ref['work_id']) if ref['work_id'] else None)
+            outcome = service.settings_orchestrator.settle_pending(
+                ref['owner'], ref['channel'], ref['rows'], approve,
+                notify=(lambda text, notify_job=notify_job: service.settings_followup(notify_job, text)) if notify_job else None)
+            LOG.info('settings drafts %s by owner answer work=%s', 'confirm' if approve else 'cancel', job.get('id'))
+            result.update(text=service.settings_response(outcome), source='owner-settings', focus=ref['work_id'])
+        elif kind == KIND_STEP:
+            current = service.open_step_notification(service.store.notification(ref['notification_id']))
+            result['text'] = (service.answer_step_approval(current[0], approve) if current
+                              else msg('notice.step_approval_stale'))
+        elif kind == KIND_MEMORY_SAVED:
+            withdrawn = service.withdraw_memory_notice({'id': ref['notification_id']})
+            if withdrawn:
+                from .quickstart_service import MEMORY_WITHDRAWN_NOTE
+                result['note'] = MEMORY_WITHDRAWN_NOTE.format(facts=withdrawn)
+        elif kind == KIND_MEMORY_PROPOSAL:
+            with service.lock:
+                notification = service.store.notification(ref['notification_id'])
+                binding = service.memory_binding(notification) if notification and notification['state'] == 'sent' else None
+                open_ = service.memory_open(binding) if binding and 'sent' in binding else []
+                if open_:
+                    result['text'] = service.answer_memory_prompt(notification, binding, open_, approve, by='answer')['text']
+        elif kind == KIND_PREPARATION:
+            with service.lock:
+                notification = service.store.notification(ref['notification_id'])
+                proposals = (service.offered_proposals(notification)[0]
+                             if notification and notification['state'] == 'sent' else [])
+                if proposals:
+                    result['text'] = service.answer_preparation_proposal(notification, proposals, approve, by='answer')
+        return result
+
+    # -- a reaction ----------------------------------------------------------------
+    def bound_to(self, chat, generation, message_id):
+        """Whether a message in this chat showed an item still waiting for the owner."""
+        job = {'id': None, 'channel': f'telegram:{generation}', 'chat_id': chat}
+        return any(item['message_id'] == message_id for item in self.open_items(job))
+
+    def answer_reaction(self, chat, generation, message_id, emoji):
+        """The owner's reaction on a message that showed an open item: judged, and settled when it answers it.
+
+        Runs off the poll thread.  What the owner is told is sent to the chat;
+        the calendar effect's Evidence goes to the Work that offered the drafts.
+        """
+        service = self.service
+        job = {'id': None, 'channel': f'telegram:{generation}', 'chat_id': chat}
+        answer = self.read(job, 'reaction: ' + ' '.join(emoji), target=message_id, reaction=True)
+        if not answer:
+            return None
+        work_id = answer['item']['ref'].get('work_id')
+
+        def evidence(tool, status, detail):
+            if isinstance(work_id, str):
+                with service.store.db() as db:
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (work_id, tool, status, json.dumps(detail), time.time()))
+        try:
+            settled = self.settle(answer, job, evidence=evidence)
+        except CalendarError:
+            settled = {'text': ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID)}
+        if settled.get('text'):
+            try:
+                service.telegram.send_message(chat, settled['text'])
+            except Exception as exc:
+                LOG.warning('owner act reply not delivered (%s)', type(exc).__name__)
+        return answer['item']['kind']
