@@ -132,6 +132,13 @@ PAGES = {
       <label for="buyBtn"><span role="button">빠른 진행</span></label>
       <a href="/reviews">구매후기</a>
       </body></html>''',
+    # #174: one-press controls whose labels the fixed payment floor does not name, and plain ones.
+    '/one-press': '''<html><head><title>한 번에</title></head><body><h1>객실 1박</h1><p>129,000원</p>
+      <button type="button">예약하기</button> <button type="button">Book now</button>
+      <button type="button">Reserve</button> <button type="button">Comprar</button>
+      <button type="button">Zahlungspflichtig bestellen</button> <button type="button">메모 저장</button>
+      <button type="button">Buy now</button>
+      </body></html>''',
     '/order': '<html><head><title>주문 완료</title></head><body><h1>주문 완료</h1></body></html>',
     '/add': '<html><head><title>담음</title></head><body><h1>담았습니다</h1></body></html>',
     '/reviews': '<html><head><title>후기</title></head><body><h1>후기</h1></body></html>',
@@ -323,7 +330,7 @@ class FakeDriver:
             if target is not None:
                 self.values.setdefault(self.url, {})[target['index']] = value
 
-    def click(self, index, timeout, approved=False, confirm_ok=False):
+    def click(self, index, timeout, approved=False, confirm_ok=False, effect=None):
         """As the worker: a submit of a payment form is cancelled and held unless an approved
         step's allowance names that form (its own or its label's payment form, else any, #700)."""
         self.log.append(('click', index, timeout))
@@ -370,7 +377,7 @@ class FakeDriver:
         self._post(form, timeout)
         return {'navigated': True}
 
-    def type(self, index, text, timeout, approved=False, confirm_ok=False):
+    def type(self, index, text, timeout, approved=False, confirm_ok=False, effect=None):
         self.log.append(('type', index, text, timeout))
         self.approved.append(approved)
         self.values.setdefault(self.url, {})[index] = text
@@ -1010,7 +1017,7 @@ class CoveredTargetTests(unittest.TestCase):
         target = next(row for row in rows if row['name'] == '쿠폰 적용')   # an ordinary button: no approval
         coupon = next(row for row in rows if row['name'] == '받는 사람')    # stands in for the cover's close control
 
-        def covered(index, timeout, approved=False, confirm_ok=False):
+        def covered(index, timeout, approved=False, confirm_ok=False, effect=None):
             driver.log.append(('click-refused', index))
             exc = ToolError(bs.target_text('target_obscured'), 'target_unavailable')
             exc.cover = {'text': '앱에서 더 편하게 token=abc123secret', 'controls': [
@@ -1035,7 +1042,7 @@ class CoveredTargetTests(unittest.TestCase):
         target = next(row for row in rows if row['name'] == '쿠폰 적용')
         coupon = next(row for row in rows if row['name'] == '받는 사람')
 
-        def unconfirmed(index, timeout, approved=False, confirm_ok=False):
+        def unconfirmed(index, timeout, approved=False, confirm_ok=False, effect=None):
             exc = ToolError(bs.press_text(), bs.PRESS_UNCONFIRMED_CODE)
             exc.effect, exc.posted, exc.navigated = 'unknown', False, False
             exc.cover = {'text': '잠시만요 token=abc123secret', 'controls': [{'index': coupon['index'], 'name': coupon['name']}]}
@@ -1081,7 +1088,7 @@ class InputTargetTests(unittest.TestCase):
         field = next(row for row in sess.last['_elements'] if row['name'] == '받는 사람')
         typed = []
 
-        def moved(index, text, timeout, approved=False, confirm_ok=False):
+        def moved(index, text, timeout, approved=False, confirm_ok=False, effect=None):
             typed.append(index)
             exc = ToolError(bs.target_text('focus_moved'), 'target_unavailable')
             exc.focused = {'name': '검색 ' + PASSPORT}
@@ -2075,7 +2082,7 @@ class ObservedStepTests(unittest.TestCase):
         for posted in (False, True):
             with self.subTest(posted=posted):
                 class Reporting(FakeDriver):
-                    def click(inner, index, timeout, approved=False, confirm_ok=False):
+                    def click(inner, index, timeout, approved=False, confirm_ok=False, effect=None):
                         FakeDriver.click(inner, index, timeout, approved, confirm_ok)
                         return {'navigated': False, 'posted': posted}
                 browser, driver = session(Reporting())
@@ -2093,7 +2100,7 @@ class ObservedStepTests(unittest.TestCase):
         for posted in (False, True, None):
             with self.subTest(posted=posted):
                 class TimingOut(FakeDriver):
-                    def click(inner, index, timeout, approved=False, confirm_ok=False):
+                    def click(inner, index, timeout, approved=False, confirm_ok=False, effect=None):
                         exc = TimeoutError('browser timeout')
                         if posted is not None:
                             exc.posted = posted

@@ -1422,6 +1422,12 @@ class SessionFixtureHandler(FixtureHandler):
               <button type="button" onclick="document.getElementById('r').textContent='click trusted='+event.isTrusted">누르기</button>
               <input aria-label="메모" oninput="document.getElementById('r2').textContent='input trusted='+event.isTrusted">
               <p id="r">대기</p><p id="r2">대기</p></body></html>''')
+        if path == '/confirm':
+            # #174: the page's own confirmation questions; the result line shows how each was answered.
+            return self._send('''<html><head><title>확인 질문</title></head><body>
+              <button type="button" onclick="document.getElementById('r').textContent = confirm('정말 탈퇴하시겠습니까?') ? '탈퇴 확인됨' : '탈퇴 취소됨'">탈퇴</button>
+              <button type="button" onclick="document.getElementById('r').textContent = confirm('12,900원을 결제하시겠습니까?') ? '결제 확인됨' : '결제 취소됨'">진행</button>
+              <p id="r">대기</p></body></html>''')
         return super().do_GET()
 
 
@@ -1462,6 +1468,42 @@ class WebKitIntegrationTests(unittest.TestCase):
     def session(self, work_id):
         return bs.BrowserSession(self.profile.driver_factory(work_id), work_id=work_id, approvals=Approvals(), steps=40,
                                  excluded=lambda: [PASSPORT], allowed_origins_for_tests=(self.fixture,))
+
+    def test_a_page_confirm_is_answered_by_the_steps_own_declared_effect(self):
+        """#174: after a step declared navigate the question is declined and reported; after mutate it is accepted."""
+        sess = self.session('work-174-effect')
+        try:
+            sess.open({'url': self.origin + '/confirm', 'effect': 'navigate'})
+            page = sess.click({'target': '탈퇴', 'effect': 'navigate'})
+            self.assertIn('탈퇴 취소됨', page['text'])
+            self.assertEqual(page['dialogs'], [{'kind': 'confirm', 'message': '정말 탈퇴하시겠습니까?',
+                                                'answer': bs.DIALOG_OUTCOMES['declined_effect']}],
+                             'the worker AI reads the question and why it was declined')
+            page = sess.click({'target': '탈퇴', 'effect': 'mutate'})
+            self.assertIn('탈퇴 확인됨', page['text'])
+            self.assertEqual(page['dialogs'], [{'kind': 'confirm', 'message': '정말 탈퇴하시겠습니까?',
+                                                'answer': bs.DIALOG_OUTCOMES['accepted']}])
+        finally:
+            sess.close()
+
+    def test_a_payment_confirm_is_declined_unless_the_owner_approved_that_press(self):
+        """#174: a payment question is declined after a mutate step; the owner's approval of the press confirms it."""
+        sess = self.session('work-174-payment')
+        try:
+            sess.open({'url': self.origin + '/confirm', 'effect': 'navigate'})
+            page = sess.click({'target': '진행', 'effect': 'mutate'})
+            self.assertIn('결제 취소됨', page['text'])
+            self.assertEqual([row['answer'] for row in page['dialogs']], [bs.DIALOG_OUTCOMES['declined_payment']])
+            with self.assertRaises(ToolError) as caught:
+                sess.click({'target': '진행', 'effect': 'payment'})
+            self.assertEqual(caught.exception.code, 'approval_required')
+            self.assertIn('결제 취소됨', sess.read()['text'], 'nothing was pressed while it waited for the owner')
+            sess.approvals.issue(sess.approvals.requests[-1][0])
+            page = sess.click({'target': '진행', 'effect': 'payment'})
+            self.assertIn('결제 확인됨', page['text'])
+            self.assertEqual([row['answer'] for row in page['dialogs']], [bs.DIALOG_OUTCOMES['accepted']])
+        finally:
+            sess.close()
 
     def test_typing_never_lands_in_a_field_the_page_inserts_on_focus(self):
         sess = self.session('work-trap')

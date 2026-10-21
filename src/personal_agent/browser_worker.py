@@ -92,6 +92,8 @@ PARK_ORIGIN = -30000
 #: #936: the most page dialogs one step records, and how much of each it keeps.
 DIALOG_RECORDS = 5
 DIALOG_TEXT_LIMIT = 200
+#: #174: the declared step effects under which a page's own non-payment confirmation is accepted.
+CONFIRMING_EFFECTS = ('mutate', 'payment')
 
 #: ``index`` is an element's position in ``document.querySelectorAll(SELECTOR)``.
 SELECTOR = ('a[href], button, input, select, textarea, summary, [role="button"], [role="link"], [role="textbox"], '
@@ -1191,8 +1193,13 @@ class Worker:
         WebKit answers ``confirm()`` with false when nothing handles it, so a site's
         "삭제하시겠습니까?" silently undid the AI's click.  While the owner's login
         window shows, the owner answers.  During a click/type the AI made, a
-        confirmation is accepted, except one that may commit a purchase or payment
-        without an approved step.  Outside a step nothing is confirmed.
+        confirmation is accepted when the owner approved this very press, or when
+        the step itself was declared to change state (``mutate``; a ``payment``
+        step only runs with the owner's approval) and the question is not a
+        purchase or payment question on a page without a payment field (#174).
+        Any other confirmation is declined and recorded on the step: the AI reads
+        the question in its step result and may issue the step again declared
+        with the effect it really has.  Outside a step nothing is confirmed.
         """
         text = ' '.join(str(message or '').split())[:DIALOG_TEXT_LIMIT]
         if self.owner_visible:
@@ -1209,6 +1216,9 @@ class Worker:
             elif commit_question(text) or not step.get('confirm_ok'):
                 # #937 review: a payment question, or any question on a page that shows a payment field.
                 answer, outcome = False, 'declined_payment'
+            elif step.get('effect') not in CONFIRMING_EFFECTS:
+                # #174: a step declared to only read or move between pages confirms nothing it did not declare.
+                answer, outcome = False, 'declined_effect'
             else:
                 answer, outcome = True, 'accepted'
         else:
@@ -1911,8 +1921,11 @@ class Worker:
         self.step_refused = self.refused_submits
         self.step_posted = self.posted_submits
         # #936: a page's own alert/confirm/prompt during this step is answered by its rule.
+        # #174: with the step's own declared effect (absent or unknown confirms nothing).
+        effect = command.get('effect')
         self.dialog_step = {'approved': command.get('dialog_approved') is True,
-                            'confirm_ok': command.get('confirm_ok') is True, 'dialogs': []}
+                            'confirm_ok': command.get('confirm_ok') is True,
+                            'effect': effect if effect in CONFIRMING_EFFECTS else None, 'dialogs': []}
         # Only a step the parent consumed an owner approval for may let a
         # payment-form submit through (#698); its allowance ends by itself even
         # if the step's end never reaches the page (#700 review).
