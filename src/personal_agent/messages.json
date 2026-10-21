@@ -521,11 +521,23 @@
   "ja": "- {where}: 記憶「{key}」の値と重なる内容が含まれていました",
   "zh": "- {where}: 包含与记忆“{key}”的值重合的内容"
  },
+ "information_use.matched_memory_attempt": {
+  "ko": "- {where}: 실패한 시도에 기억 '{key}'의 값과 겹치는 내용이 들어 있었습니다(상대에게 닿았는지는 알 수 없습니다)",
+  "en": "- {where}: a failed attempt carried content matching the value of Memory '{key}' (unknown whether it reached the destination)",
+  "ja": "- {where}: 失敗した試みに記憶「{key}」の値と重なる内容が含まれていました（相手に届いたかは不明です）",
+  "zh": "- {where}: 一次失败的尝试包含与记忆“{key}”的值重合的内容（不确定是否送达）"
+ },
  "information_use.matched_work_write": {
   "ko": "- {where}: 이 작업에서 저장한 값과 겹치는 내용이 들어 있었습니다",
   "en": "- {where}: carried content matching a value this Work saved",
   "ja": "- {where}: この作業で保存した値と重なる内容が含まれていました",
   "zh": "- {where}: 包含与此工作保存的值重合的内容"
+ },
+ "information_use.matched_work_write_attempt": {
+  "ko": "- {where}: 실패한 시도에 이 작업에서 저장한 값과 겹치는 내용이 들어 있었습니다(상대에게 닿았는지는 알 수 없습니다)",
+  "en": "- {where}: a failed attempt carried content matching a value this Work saved (unknown whether it reached the destination)",
+  "ja": "- {where}: 失敗した試みにこの作業で保存した値と重なる内容が含まれていました（相手に届いたかは不明です）",
+  "zh": "- {where}: 一次失败的尝试包含与此工作保存的值重合的内容（不确定是否送达）"
  },
  "information_use.material_attached_to_the_request": {
   "ko": "요청에 붙인 자료",

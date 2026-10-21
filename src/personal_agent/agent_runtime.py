@@ -1357,9 +1357,10 @@ def outbound_texts(action,args,result):
   source=sent or args
   if action=='web_search':destination=str(result.get('provider') or args.get('provider') or '')
   else:
-   sources=result.get('sources') if isinstance(result.get('sources'),list) else []
-   destination=_url_parts(sources[0])[1] if sources else ''
-  out.extend((source[key],destination) for key in ('query','city') if isinstance(source.get(key),str))
+   # A city (and country code) goes to the geocoding search; coordinates carry no text.
+   from .local_tools import GEOCODING_SEARCH
+   destination=_url_parts(GEOCODING_SEARCH)[1]
+  out.extend((source[key],destination) for key in ('query','city','country') if isinstance(source.get(key),str))
  elif action in ('public_page_read','browser_open'):
   out.append(_url_parts(args.get('url')))
  elif action=='browser_type':
@@ -1406,7 +1407,9 @@ def outbound_evidence(capabilities,action,args,result):
  """What a call's Evidence adds for #167: ``outbound_matches`` labels, and a ``browser_open`` destination.
 
  Display only: it runs after the call and can neither stop nor change it; a
- failure in it leaves the Evidence as before.
+ failure in it leaves the Evidence as before.  A call that failed after it was
+ dispatched is compared from its arguments (``result`` empty): what it carried
+ may have left before the failure.
  """
  if action not in OUTBOUND_MATCH_ACTIONS:return {}
  out={}
@@ -4714,8 +4717,11 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       # connection, login or approval) is where a different path helps.
       if result['retry'] in ('permanent','transient') and not result.get('requires'):path_failed=True
      else:invalid_calls.add(name if isinstance(name,str) else 'unknown')
+     # #167: a call that failed after dispatch may still have carried a held value out.
+     attempted=outbound_evidence(capabilities,action,args,{}).get('outbound_matches') if dispatched and validated and not ran_field(exc) else None
      record(name,'failed',json.dumps({'scope':scope,'call_id':call['id'],'attempt':attempt,**result,
-                                      **(declared_effect(action,args) if validated else {})},ensure_ascii=False))
+                                      **(declared_effect(action,args) if validated else {}),
+                                      **({'outbound_matches':attempted} if attempted else {})},ensure_ascii=False))
     if validated:
      observations[call['id']]=(name,action,trail[-1][1],result)
      steps.append((name,action,trail[-1][1],

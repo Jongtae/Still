@@ -76,8 +76,9 @@ class OutboundTexts(unittest.TestCase):
         cases = {
             'web_search': ({'query': 'raw words'}, {'sent': {'query': '보낸 검색어'}, 'provider': 'brave'},
                            [('보낸 검색어', 'brave')]),
-            'weather': ({'city': '성남'}, {'sent': {'city': '성남'}, 'sources': ['https://api.weather.example/v1?x=1']},
-                        [('성남', 'api.weather.example')]),
+            'weather': ({'city': '성남', 'country': 'kr'}, {'sent': {'city': '성남', 'country': 'KR'},
+                                                         'sources': ['https://api.open-meteo.com/v1/forecast?x=1']},
+                        [('성남', 'geocoding-api.open-meteo.com'), ('KR', 'geocoding-api.open-meteo.com')]),
             'public_page_read': ({'url': 'https://news.example/a/b?q=%ED%95%A9%EC%A0%95#M1234-5678'}, {},
                                  [('/a/b q=합정', 'news.example')]),
             'browser_open': ({'url': 'https://shop.example/', 'effect': 'read'}, {}, []),
@@ -200,7 +201,8 @@ class BrowserRoute(unittest.TestCase):
         audit = information_use.work_information_use(self.store, self.job)
         self.assertEqual(audit['sent_to']['browser_destinations'], ['fixture.test'])
         self.assertEqual(audit['sent_to']['held_value_matches'], [
-            {'source': 'memory', 'key': 'member-number', 'tool': 'browser_type', 'destination': 'fixture.test'}])
+            {'source': 'memory', 'key': 'member-number', 'tool': 'browser_type', 'destination': 'fixture.test',
+             'status': 'succeeded'}])
         text = information_use.render_korean(audit)
         self.assertIn("- browser_type → fixture.test: 기억 'member-number'의 값과 겹치는 내용이 들어 있었습니다", text)
         self.assertIn('- 브라우저로 연 곳: fixture.test', text)
@@ -241,7 +243,7 @@ class ApiRoute(_ServiceBase):
                          'detection only: both lookups went out as written')
         audit = service.work_information_use(job)
         self.assertEqual(audit['sent_to']['held_value_matches'], [
-            {'source': 'memory', 'key': 'member-number', 'tool': 'web_search', 'destination': 'brave'}])
+            {'source': 'memory', 'key': 'member-number', 'tool': 'web_search', 'destination': 'brave', 'status': 'succeeded'}])
         text = information_use.render_korean(audit)
         self.assertIn("- web_search → brave: 기억 'member-number'의 값과 겹치는 내용이 들어 있었습니다", text)
         self.assertEqual(text.count('선택한 AI 제공자가 처리합니다'), 1, 'said once')
@@ -253,6 +255,36 @@ class ApiRoute(_ServiceBase):
         self.assertEqual(matches, [[{'source': 'memory', 'key': 'member-number', 'destination': 'brave', 'tool': 'web_search'}],
                                    None])
         self.assertNotIn('1234', json.dumps(matches), 'the match record holds no value')
+
+
+class FailedAfterDispatch(ApiRoute):
+    """A lookup that failed after it was dispatched may have carried a held value out: shown as an attempt."""
+
+    class FailingWire(Wire):
+        def execute(self, plan):
+            self.plans.append(dict(plan))
+            raise ValueError('response rejected after the request was sent')
+
+    def test_a_failed_lookup_carrying_memory_is_shown_as_an_attempt(self):
+        self.wire = Wire()
+        service = self.service(steps([('save_memory', {'memory_key': 'member-number', 'content': MEMBER})]))
+        self.turn(service, f'내 회원번호는 {MEMBER}야. 기억해')
+        self.wire = self.FailingWire()
+        service = self.service(steps([('web_search', {'query': 'm1234 5678 회원 혜택'})]))
+        job = self.turn(service, '회원 혜택 찾아줘')
+        self.assertTrue(self.wire.plans, 'the lookup was dispatched')
+        audit = service.work_information_use(job)
+        self.assertEqual(audit['sent_to']['held_value_matches'], [
+            {'source': 'memory', 'key': 'member-number', 'tool': 'web_search', 'destination': '', 'status': 'failed'}])
+        self.assertIn("- web_search: 실패한 시도에 기억 'member-number'의 값과 겹치는 내용이 들어 있었습니다(상대에게 닿았는지는 알 수 없습니다)",
+                      information_use.render_korean(audit))
+        with self.store.db() as db:
+            details = [row['detail'] for row in db.execute("SELECT detail FROM tool_events WHERE job_id=? AND status='failed'", (job,))]
+        recorded = [json.loads(detail).get('outbound_matches') for detail in details]
+        self.assertIn([{'source': 'memory', 'key': 'member-number', 'destination': '', 'tool': 'web_search'}], recorded)
+        self.assertNotIn('1234', json.dumps(recorded), 'the match record holds no value')
+
+    test_an_earlier_works_memory_in_a_later_search_is_shown_and_the_search_still_goes_out = None
 
 
 class BridgeRoute(unittest.TestCase):
@@ -282,7 +314,7 @@ class BridgeRoute(unittest.TestCase):
             self.assertEqual([plan.get('query') for plan in sent], ['01098765432 누구'], out.getvalue())
             audit = information_use.work_information_use(store, job)
             self.assertEqual(audit['sent_to']['held_value_matches'], [
-                {'source': 'memory', 'key': 'phone', 'tool': 'web_search', 'destination': 'brave'}])
+                {'source': 'memory', 'key': 'phone', 'tool': 'web_search', 'destination': 'brave', 'status': 'succeeded'}])
 
 
 class CodeRunnerMemory(unittest.TestCase):
@@ -312,6 +344,8 @@ class ProviderNotes(unittest.TestCase):
         self.assertIn('AI CLI가 스스로 하는 웹 검색은 Still을 거치지 않습니다', text(True))
         self.assertNotIn('AI CLI가 스스로 하는 웹 검색', text(False), 'a CLI without its own search has no such blind spot')
         self.assertEqual(text(False).count('선택한 AI 제공자가 처리합니다'), 1)
+        unrecorded = information_use.render_korean({'recorded': False, 'used': [], 'sent_to': {'workers': []}})
+        self.assertNotIn('선택한 AI 제공자가 처리합니다', unrecorded, 'no recorded worker: no provider claim')
 
 
 class WebView(unittest.TestCase):

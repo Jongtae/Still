@@ -362,7 +362,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                                                      'effect':'none','ran':False,'error':'Unknown Still MCP tool.'}))
                 raise _Rejected(-32602, 'Unknown Still MCP tool.')
             # #787: a browser call's declared effect, recorded on every event of the call.
-            declared = {}
+            declared, arguments = {}, {}
             try:
                 if not _work_running(store, job_id):
                     raise ToolError(WORK_NOT_RUNNING, 'stopped', ran=False)
@@ -388,9 +388,13 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
             except (ValueError, TypeError, OSError, ProviderError) as exc:
                 # #607 AX-06: a normal tool failure is a typed tool result.
                 result, typed = tool_error_result(exc, action)
+                # #167: a call that failed after dispatch may still have carried a held value out.
+                attempted = (outbound_evidence(capabilities, action, arguments, {}).get('outbound_matches')
+                             if action and not ran_field(exc) else None)
                 record(listed, 'failed',
                        json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id, **({'host_action':action} if action else {}), **typed,
-                                   'error':redact_reason(str(exc)), **declared}, ensure_ascii=False))
+                                   'error':redact_reason(str(exc)), **declared,
+                                   **({'outbound_matches':attempted} if attempted else {})}, ensure_ascii=False))
                 _with_steer(result, store, job_id, record)
                 return result
             except Exception as exc:
@@ -400,9 +404,12 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                 # process: the CLI saw its MCP connection close mid-call and
                 # the Work recorded only a call that never completed.
                 result, typed = unexpected_error_result(exc, action)
+                attempted = (outbound_evidence(capabilities, action, arguments, {}).get('outbound_matches')
+                             if action and not ran_field(exc) else None)
                 record(listed, 'failed',
                        json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id, **({'host_action':action} if action else {}), **typed,
-                                   'error':redact_reason(TOOL_FAILED_TEXT), **declared}, ensure_ascii=False))
+                                   'error':redact_reason(TOOL_FAILED_TEXT), **declared,
+                                   **({'outbound_matches':attempted} if attempted else {})}, ensure_ascii=False))
                 _with_steer(result, store, job_id, record)
                 return result
             # The same redacted Evidence the direct route records

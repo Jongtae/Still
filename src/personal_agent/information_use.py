@@ -356,14 +356,18 @@ def work_information_use(store, job_id, redact=None):
                 'destination': label(evidence.get('host'), 200), 'state': evidence_state,
                 'remote_receipt': label(str(evidence.get('response_status') or ''), 20)}
             continue
+        # A failed call that was dispatched records its matches at the top level: it may have carried them out.
+        found = (evidence.get('outbound_matches') if status == 'succeeded'
+                 else trace.get('outbound_matches') if status == 'failed' else None)
+        for row in found if isinstance(found, list) else ():
+            if not isinstance(row, dict) or row.get('source') not in MATCH_SOURCES:
+                continue
+            match = {'source': row['source'], 'key': label(row.get('key'), 80) if row['source'] == 'memory' else '',
+                     'tool': label(row.get('tool') or action, 60), 'destination': label(row.get('destination'), 120),
+                     'status': status}
+            if match not in matches and len(matches) < MAX_ITEMS:
+                matches.append(match)
         if status == 'succeeded':
-            for row in evidence.get('outbound_matches') or ():
-                if not isinstance(row, dict) or row.get('source') not in MATCH_SOURCES:
-                    continue
-                match = {'source': row['source'], 'key': label(row.get('key'), 80) if row['source'] == 'memory' else '',
-                         'tool': label(row.get('tool') or action, 60), 'destination': label(row.get('destination'), 120)}
-                if match not in matches and len(matches) < MAX_ITEMS:
-                    matches.append(match)
             if action == 'browser_open':
                 host = label(evidence.get('destination') or _host(evidence.get('url')), 120)
                 if host and host not in opened and len(opened) < MAX_ITEMS:
@@ -434,9 +438,10 @@ def _host(url):
 def _match_line(match):
     """One plain line for one held-value match (#167): which kept item, by which tool, to which host."""
     where = f"{match.get('tool')} → {match['destination']}" if match.get('destination') else str(match.get('tool') or '')
+    failed = '_attempt' if match.get('status') == 'failed' else ''
     if match.get('source') == 'memory':
-        return msg('information_use.matched_memory', where=where, key=match.get('key') or '?')
-    return msg('information_use.matched_work_write', where=where)
+        return msg(f'information_use.matched_memory{failed}', where=where, key=match.get('key') or '?')
+    return msg(f'information_use.matched_work_write{failed}', where=where)
 
 
 def _cli_search(workers):
@@ -468,8 +473,9 @@ def render_korean(audit):
     workers = sent.get('workers') or ()
     lines.append('보낸 곳')
     lines.append('- 작업 AI: ' + ('; '.join(_worker_text(row) for row in workers) if workers else '기록 없음'))
-    # #167: said once; remote processing of the conversation is not new and is not a Still-mediated call.
-    lines.append(msg('information_use.provider_processes_the_conversation'))
+    # #167: said once, for a recorded worker; remote processing of the conversation is not new.
+    if workers:
+        lines.append(msg('information_use.provider_processes_the_conversation'))
     for photo in sent.get('attachments') or ():
         destination=photo.get('engine') or photo.get('provider') or photo.get('route') or '경로 기록 없음'
         state={'included-in-request':msg('information_use.included_in_request'),'staged':'전달 대기','not-sent':msg('information_use.not_sent'),
