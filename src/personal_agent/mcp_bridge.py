@@ -15,7 +15,7 @@ from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS, LATEST_HANDSHAKE_VERS
 
 from .agent_runtime import (ENGINE_UNMEDIATED, OWNER_STATE_ACTIONS, TRANSIENT_FAILURE_TEXT,
                             Capabilities, ToolError, WorkBudget, WorkLedger, classify_failure, declared_effect,
-                            claim_owner_steers, evidence_summary, lookup_sources, observed_field, progress_step, ran_field, worker_result,
+                            claim_owner_steers, evidence_summary, lookup_sources, outbound_evidence, observed_field, progress_step, ran_field, worker_result,
                             recorded_private_sources, split_status, work_source_records,
                             work_stop_requested)
 from .current_context import redact_known_secrets
@@ -409,7 +409,10 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
             # (sources, attempted/failed URLs, counts), never the payload.
             host_action = capabilities.tools[name]['host_action']
             record(name, 'succeeded', json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id,'host_action':host_action,
-                                                   'evidence':evidence_summary(host_action, value), **declared},
+                                                   # #167: held-value match labels (display only).
+                                                   'evidence':{**evidence_summary(host_action, value),
+                                                               **outbound_evidence(capabilities, host_action, arguments, value)},
+                                                   **declared},
                                                   ensure_ascii=False))
             # #836: the worker reads a held memory write as the owner's one-tap ask, nothing more.
             result = {'content':[{'type':'text','text':json.dumps(worker_result(host_action, value), ensure_ascii=False)}]}

@@ -1305,6 +1305,121 @@ def lookup_sources(store, job_id, tools=None):
   raise ValueError('이 작업은 더 이상 실행 중이 아니어서 공개 조회를 실행하지 않았습니다.')
  return {'current':job.get('message') or '','excluded':work_written_values(store,job_id,tools)}
 
+# --- AUDIT-OUTBOUND-01 (#167, #28 option A): held values seen in outbound text --
+#
+# Detect and show only.  After an outbound call Still mediates has run, its
+# outbound text is compared with the values Still holds for the owner, using
+# the #605 matcher (``lookup_text_violations``).  A match is recorded on the
+# call's Evidence as labels only - where the value is kept (a Memory key, or
+# "this Work's own writes"), the tool and the destination host.  Neither the
+# value nor the outbound text is stored, and nothing is blocked or rewritten:
+# the comparison runs on the recording path, after the call has gone out.
+
+#: The outbound calls whose text is compared.  ``capability_search`` already
+#: refuses a query carrying a held value, so it is not listed.
+OUTBOUND_MATCH_ACTIONS=frozenset({'web_search','public_page_read','weather','browser_open','browser_type','api_request','code_run'})
+#: Bounds: match labels kept per call, Memory rows compared, and characters of one outbound text compared
+#: (the matcher's cost grows with text length times held words: about a second for 1,000 characters
+#: against 500 Memory rows, on the recording path after the call).
+OUTBOUND_MATCHES_MAX=12
+HELD_MEMORY_MAX=500
+OUTBOUND_TEXT_MAX=1000
+#: The source label of a value this Work wrote to a private store (the #605 set) that is not current Memory.
+WRITTEN_SOURCE='work_write'
+
+def _url_parts(url):
+ """``(data text, host)`` of one URL: its path, query and fragment percent-decoded, and its host (#167).
+
+ The host is the destination, shown on its own, so it is not part of the compared text.
+ """
+ from urllib.parse import unquote_plus, urlsplit
+ try:parts=urlsplit(str(url or '').strip())
+ except ValueError:return '',''
+ text=' '.join(unquote_plus(part) for part in (parts.path,parts.query,parts.fragment) if part and part!='/')
+ return text,(parts.hostname or '')
+
+def outbound_texts(action,args,result):
+ """``[(text, destination)]``: what one mediated outbound call carried, and where (#167).
+
+ Read for the held-value comparison only and never stored.  A lookup's text
+ is what Still sent (``sent``) when it composed the call, else the call's
+ arguments; a URL contributes its path and query; typed browser text goes to
+ the page it was typed into; an API request carries its URL and body; a code
+ run, the paths of the requests its sandbox let out.
+ """
+ args=args if isinstance(args,dict) else {}
+ result=result if isinstance(result,dict) else {}
+ out=[]
+ if action in ('web_search','weather'):
+  sent=result.get('sent') if isinstance(result.get('sent'),dict) else None
+  source=sent or args
+  if action=='web_search':destination=str(result.get('provider') or args.get('provider') or '')
+  else:
+   sources=result.get('sources') if isinstance(result.get('sources'),list) else []
+   destination=_url_parts(sources[0])[1] if sources else ''
+  out.extend((source[key],destination) for key in ('query','city') if isinstance(source.get(key),str))
+ elif action in ('public_page_read','browser_open'):
+  out.append(_url_parts(args.get('url')))
+ elif action=='browser_type':
+  out.append((args.get('text'),_url_parts(result.get('url'))[1]))
+ elif action=='api_request':
+  text,host=_url_parts(args.get('url'))
+  body=args.get('body')
+  if body is not None and not isinstance(body,str):body=json.dumps(body,ensure_ascii=False,default=str)
+  out.append((' '.join(part for part in (text,body) if part),host))
+ elif action=='code_run':
+  for row in result.get('requests') or ():
+   if isinstance(row,dict) and row.get('allowed'):
+    out.append((_url_parts('http://h'+str(row.get('path') or ''))[0],str(row.get('host') or '')))
+ return [(str(text),str(destination)[:253]) for text,destination in out if isinstance(text,str) and text.strip()]
+
+def held_value_matches(texts,held):
+ """The held values ``texts`` carry, as labels: ``[{'source', 'key', 'destination'}]`` (#167).
+
+ ``held`` is ``[(source, key, value)]``.  A value matches when the #605
+ matcher (``lookup_text_violations``) finds it in a text in any spelling it
+ covers (spacing, digit runs, jamo).  The matcher over-matches by design (a
+ shared 2+ character span counts), so a match means the text carried
+ something that overlaps the value.  The result holds no value and no text.
+ """
+ matches=[]
+ for text,destination in texts:
+  text=text[:OUTBOUND_TEXT_MAX]
+  # Every rule of the matcher is "any excluded value", so a group that does not match holds no
+  # matching value: halving finds the few that do without comparing each value on its own.
+  groups=[list(held)] if held else []
+  while groups:
+   rows=groups.pop()
+   bad,digits=lookup_text_violations(text,[value for _source,_key,value in rows])
+   if not bad and not digits:continue
+   if len(rows)>1:
+    groups.extend((rows[len(rows)//2:],rows[:len(rows)//2]));continue
+   source,key,_value=rows[0]
+   row={'source':source,'key':key,'destination':destination}
+   if row not in matches:matches.append(row)
+   if len(matches)>=OUTBOUND_MATCHES_MAX:return matches
+ return matches
+
+def outbound_evidence(capabilities,action,args,result):
+ """What a call's Evidence adds for #167: ``outbound_matches`` labels, and a ``browser_open`` destination.
+
+ Display only: it runs after the call and can neither stop nor change it; a
+ failure in it leaves the Evidence as before.
+ """
+ if action not in OUTBOUND_MATCH_ACTIONS:return {}
+ out={}
+ try:
+  texts=outbound_texts(action,args,result)
+  if action=='browser_open':
+   host=_url_parts((args or {}).get('url'))[1]
+   if host:out['destination']=host[:253]
+  held=capabilities.held_values() if texts and callable(getattr(capabilities,'held_values',None)) else []
+  matches=held_value_matches(texts,held) if held else []
+  if matches:out['outbound_matches']=[{**row,'tool':action} for row in matches]
+ except Exception:
+  return {}
+ return out
+
 class EvidenceLog(list):
  """Tool evidence that records the provenance of everything put into it.
 
@@ -2427,6 +2542,30 @@ class Capabilities:
    try:excluded=[*self.lookup_sources()['excluded'],*excluded]
    except Exception:pass
   return excluded
+ def held_values(self):
+  """``[(source, key, value)]`` the owner's values Still holds, for the outbound comparison (#167).
+
+  The owner's current Memory, whichever Work saved it (``memory``, by key),
+  then the values this Work wrote to a private store that are not current
+  Memory (the #605 set: candidates, notes, calendar drafts; ``work_write``).
+  Read when a call is recorded and never stored.
+  """
+  held=[];seen=set()
+  if hasattr(self.store,'memories'):
+   offset=0
+   while offset<HELD_MEMORY_MAX:
+    try:rows=self.store.memories(MEMORY_OWNER,limit=100,offset=offset)
+    except Exception:break
+    for row in rows:
+     value=str(row.get('content') or '')
+     if value.strip() and value not in seen:
+      seen.add(value);held.append(('memory',str(row.get('memory_key') or '')[:80],value))
+    if len(rows)<100:break
+    offset+=100
+  for value in self._browser_excluded():
+   if isinstance(value,str) and value.strip() and value not in seen:
+    seen.add(value);held.append((WRITTEN_SOURCE,'',value))
+  return held
  def _page_excluded(self):
   """The snapshot redaction set for pages this Work reads: ``_browser_excluded`` less the request's own words (#889)."""
   excluded=self._browser_excluded()
@@ -4522,7 +4661,9 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      # #818: a save_memory held as a pending candidate is a recorded proposal.
      proposed=memory_proposal(action,result)
      withheld=None if proposed else withheld_effect(name,result)
-     trace={'scope':scope,'call_id':call['id'],'attempt':attempt,'host_action':action,'evidence':evidence_summary(name,result),
+     # #167: labels of held values the call carried (display only), never the value or the text.
+     trace={'scope':scope,'call_id':call['id'],'attempt':attempt,'host_action':action,
+            'evidence':{**evidence_summary(name,result),**outbound_evidence(capabilities,action,args,result)},
             **declared_effect(action,args)}
      if withheld:
       failed=True;trail.append((action,'withheld'));failures.append((name,withheld.reason))

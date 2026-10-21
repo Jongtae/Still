@@ -70,6 +70,16 @@ EGRESS-OPEN-01 records an owner decision: "giving this information makes a big d
   - #597 Memory authority;
   - folder-grant scope, with no write, delete, move or send implied by a read grant.
 - **Information-use audit.** Every Work shows which owner information it used, where it went and what came back (`information_use.py`). It covers profile keys, Memory rows, calendar entries, files, current-context claims and the number of conversation turns included. It also covers the worker, route and model, the Judgment AI calls, whether web search ran and the queries, and the tool results. It is derived from `turn_provenance` (new fields `owner_information` and `workers`), `tool_events` and `decision_audit`. It holds references and short labels only, passed through the stored-secret redaction. It appears on the web task detail (이 답변에 쓴 정보), at `GET /api/tasks/<id>/information-use`, and in conversation through the read-only `information_use` tool; no keyword route decides it.
+- **Held values in outbound text (#167, #28 option A, 2026-10-21).** Detection and display only; nothing is blocked, rewritten or delayed, and what is sent does not change.
+  - After an outbound call Still mediates has run, its outbound text is compared with the values Still holds for the owner, using the #605 matcher (`lookup_text_violations`). The calls are `web_search`, `weather`, `public_page_read`, `browser_open`, `browser_type`, `api_request` and the requests a `code_run` sandbox let out.
+  - The held values are the owner's current Memory, whichever Work saved it, plus this Work's own private writes (the #605 set).
+  - The text is the composed query, a URL's path and query, typed browser text, an API request's URL and body, or a code-run request path. The first 1,000 characters of each text are compared.
+  - Each match is recorded on the call's Evidence as `outbound_matches`, with labels only: the source (`memory` with its key, or `work_write`), the tool and the destination host or search provider. The value and the outbound text are never stored; `browser_type` text and `api_request` bodies stay length-only.
+  - A `browser_open` call also records its destination host, and the audit lists those hosts as places data was sent.
+  - The view says once that the Work's conversation is processed by the chosen AI provider. When a CLI worker could search on its own, it also says that this search does not go through Still and is not compared.
+  - The matcher over-matches by design (a shared span of two or more characters counts), so a line says the outbound text carried content that *matches* the value.
+  - Mail, file, Drive and calendar contents read during the Work are not compared. Under this matcher their ordinary words and dates would match almost any query.
+  - Blocking (option B) remains a separate owner decision under #28.
 
 ## Historical amendment pointer — #818
 
