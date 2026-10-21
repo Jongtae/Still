@@ -229,36 +229,21 @@ CLASSIFIED_TABLES = {
         'own-text', 'the header line owner_model.WorkingNotes.block writes'),
     # --- open findings, each removed by the named issue ----------------------
     # OWNER-ACT-01 (#172) removed the calendar approve/cancel word tables listed here.
-    **{('conversation_handoff.py', name): (
-        'open-finding', '#173: a keyword cue table decides where an owner message goes (knowledge, settings, '
-                        'workspace or mail rule); RULES-OUT-01 removes the rules in favour of the worker')
-       for name in ('_KNOWLEDGE_CUES', '_SETTINGS_READ_CUES', '_SETTINGS_ACTIONS', '_SETTINGS_TARGETS',
-                    '_WORKSPACE_CUES', '_WORKSPACE_VERBS', '_MAIL_OBJECTS', '_MAIL_VERBS', '_MAIL_CONTENT_KINDS')},
-    ('conversation_handoff.py', 'IntentClassifier.classify'): (
-        'open-finding', '#173: the inline reply/send verb table that decides whether a mail-shaped message goes '
-                        'to the boundary judgment; goes with the mail cue tables'),
-    **{('conversation_handoff.py', name): (
-        'open-finding', '#173: words stripped from an owner message to build the query the knowledge and mail '
-                        'rules answer from; goes with those rules')
-       for name in ('_SUBJECT_NOISE_KO', '_SUBJECT_PARTICLES', '_TERM_ENDINGS')},
-    **{('conversation_handoff.py', name): (
-        'open-finding', '#173: the note rule reads "write this down" and its text from a literal phrase table; '
-                        'not named in the #173 list, covered by its "no kernel cue table decides intent"')
-       for name in ('_NOTE_CREATE_RE', '_NOTE_PRONOUNS', '_NOTE_TRAIL_KO')},
+    # RULES-OUT-01 (#173, slice A) removed the knowledge, settings, workspace, mail and note
+    # cue tables, the query-stripping tables, the inline reply/send verbs, the natural-language
+    # owner "commands" in IntentClassifier.explicit and SettingsOrchestrator.handle_text's phrases:
+    # those requests reach the worker.  It narrowed the workspace rules below to the owner's quoted
+    # words and made a found saved result evidence for the worker, never the answer.  The
+    # connection pause/disconnect a settings phrase once drafted has no worker tool yet: #183.
+    **{('quickstart_service.py', name): (
+        'open-finding', '#182: the owner-quoted workspace summary/search forms still read summary, save and '
+                        'search words; kept (a #173 blocker), as evidence for the worker and never the answer, '
+                        'until #182 gives the worker a tool that reads and writes the file workspace')
+       for name in ('workspace_summary_request', 'workspace_search_request')},
     **{('conversation_handoff.py', name): (
         'open-finding', '#173: a correction of, or continuation of, the focused Work is read from a literal cue '
                         'table; not named in the #173 list, covered by its "no kernel cue table decides intent"')
        for name in ('_CORRECTION_CUES', '_CONTINUATION_CUES')},
-    ('conversation_handoff.py', 'IntentClassifier.explicit'): (
-        'open-finding', '#173: natural-language strings (무엇이 연결되어 있어?, 메모 목록, 메모:) parsed as owner '
-                        'commands; the slash commands stay'),
-    ('settings_orchestrator.py', 'SettingsOrchestrator.handle_text'): (
-        'open-finding', "#173: re-keywords the judgment's output (상태 보여, 어떻게 복구) into a read; the decision "
-                        'is to carry a structured read or draft intent instead'),
-    **{('quickstart_service.py', name): (
-        'open-finding', '#173: a keyword rule turns a message into a workspace summary or search that is answered '
-                        'without the worker')
-       for name in ('workspace_summary_request', 'workspace_search_request')},
     **{('quickstart_service.py', name): (
         'open-finding', '#173: lexical skip of the follow-up judgment (a message that looks like a memory or file '
                         'save is never judged as a follow-up)')

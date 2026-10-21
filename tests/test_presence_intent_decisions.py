@@ -20,20 +20,12 @@ from personal_agent.conversation_handoff import (CAPABILITY_JUDGMENT_MAX_CHARS, 
                                                  ConversationJudgments, IntentClassifier)
 from personal_agent.decision import (OUTCOME_DECIDED, OUTCOME_TIMEOUT, BinaryDecision, FixtureDecisionEngine,
                                      SelectionDecision, UnavailableDecisionEngine, fixture_confidence)
-from personal_agent.quickstart_service import workspace_search_request
 from personal_agent.quickstart_store import QuickStore
 
 
-def choosing(answers, probability=1.0, subjects=()):
-    """A fixture engine answering the capability-need question from a table.
-
-    ``subjects`` are the words it picks as the mail query term, by label.
-    """
+def choosing(answers, probability=1.0):
+    """A fixture engine answering the capability-need question from a table."""
     def choose(context, candidates, question):
-        if context.purpose == 'mail-query-term':
-            terms = dict(item.split(' = ', 1) for item in context.facts['terms'].split('; '))
-            pick = next((label for label, term in terms.items() if term in subjects), 'none-of-these')
-            return SelectionDecision(OUTCOME_DECIDED, pick, candidates, fixture_confidence())
         if context.purpose != 'capability-need':
             return None
         return SelectionDecision(OUTCOME_DECIDED, answers.get(context.facts['owner_message'], 'none-of-these'),
@@ -42,7 +34,7 @@ def choosing(answers, probability=1.0, subjects=()):
 
 
 def classifier(engine):
-    return IntentClassifier(workspace_search=workspace_search_request, judge=ConversationJudgments(engine))
+    return IntentClassifier(judge=ConversationJudgments(engine))
 
 
 def capability_asks(engine):
@@ -54,36 +46,23 @@ def capability_messages(engine):
 
 
 class CapabilityNeedTests(unittest.TestCase):
-    def test_a_cue_free_mail_read_is_routed_by_the_judgment_with_one_of_the_owners_words(self):
-        engine = choosing({'집주인한테 답장 왔어?': INTENT_MAIL_SEARCH,
-                           'did the landlord write back to me?': INTENT_MAIL_SEARCH},
-                          subjects=('집주인', 'landlord'))
-        for text, query in (('집주인한테 답장 왔어?', '집주인'), ('did the landlord write back to me?', 'landlord')):
+    def test_a_cue_free_mail_read_is_routed_by_the_judgment_with_no_extracted_query(self):
+        # #173: the worker reads the owner's words and searches mail with its own
+        # tools, so Still extracts no query term and asks no term judgment.
+        texts = ('집주인한테 답장 왔어?', 'did the landlord write back to me?', 'did "Acme invoice" arrive?')
+        engine = choosing({text: INTENT_MAIL_SEARCH for text in texts})
+        for text in texts:
             with self.subTest(text=text):
                 decision = classifier(engine).classify(text)
                 self.assertEqual(decision.intent, INTENT_MAIL_SEARCH)
                 self.assertTrue(decision.executes)
+                self.assertIsNone(decision.clarification)
                 self.assertEqual(decision.cues, ('judgment:capability-need',))
-                # A bounded query: one owner word, never the whole question or engine text.
-                self.assertEqual(decision.argument, query)
-        [first, second] = capability_asks(engine)
-        self.assertEqual(first.facts, {'owner_message': '집주인한테 답장 왔어?'})
-        self.assertEqual(second.facts, {'owner_message': 'did the landlord write back to me?'})
-        # The term judgment is content-free: index labels only.
-        terms = [item for item in engine.asked if item[0] == 'choose' and item[1].purpose == 'mail-query-term']
-        self.assertEqual(terms[0][2], ('term-1', 'term-2', 'term-3'))
-        self.assertIn('term-1 = 집주인', terms[0][1].facts['terms'])
-
-    def test_no_selected_term_asks_instead_of_searching_the_whole_question(self):
-        text = 'did the landlord write back to me?'
-        decision = classifier(choosing({text: INTENT_MAIL_SEARCH})).classify(text)
-        self.assertEqual(decision.intent, INTENT_MAIL_SEARCH)
-        self.assertFalse(decision.executes)
-        self.assertIsNone(decision.argument)
-        self.assertIsNotNone(decision.clarification)
-        quoted = classifier(choosing({'did "Acme invoice" arrive?': INTENT_MAIL_SEARCH})).classify(
-            'did "Acme invoice" arrive?')
-        self.assertEqual(quoted.argument, 'Acme invoice')
+                self.assertIsNone(decision.argument)
+        self.assertEqual([context.facts for context in capability_asks(engine)],
+                         [{'owner_message': text} for text in texts])
+        self.assertEqual([item for item in engine.asked if item[1].purpose != 'capability-need'], [],
+                         'no other judgment is asked')
 
     def test_the_engine_selects_only_declared_candidates(self):
         engine = choosing({})
@@ -124,11 +103,11 @@ class CapabilityNeedTests(unittest.TestCase):
         self.assertEqual(judged.classify('가' * (CAPABILITY_JUDGMENT_MAX_CHARS + 1)).intent, INTENT_CONVERSATION)
         self.assertEqual(capability_asks(engine), [])
 
-    def test_a_rule_claimed_turn_is_asked_too_so_another_part_is_not_hidden(self):
-        # #672 review: a note rule claims the turn, but the judgment is still
-        # asked; none-of-these leaves the rule's decision unchanged.
+    def test_a_former_rule_turn_is_asked_once_and_otherwise_reaches_the_worker(self):
+        # #173: no note rule claims the turn; the judgment is asked, and
+        # none-of-these leaves it on the ordinary conversation route.
         engine = choosing({})
-        self.assertEqual(classifier(engine).classify('집주인 연락처 메모해줘').intent, INTENT_NOTE_CREATE)
+        self.assertEqual(classifier(engine).classify('집주인 연락처 메모해줘').intent, INTENT_CONVERSATION)
         self.assertEqual(capability_messages(engine), ['집주인 연락처 메모해줘'])
 
 

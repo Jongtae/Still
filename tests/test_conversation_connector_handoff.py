@@ -33,7 +33,7 @@ from personal_agent.decision import (OUTCOME_DECIDED, BinaryDecision, FixtureDec
 from personal_agent.gmail import (GMAIL_CONNECTOR, GMAIL_CONNECTOR_ID, GMAIL_READONLY_SCOPE,
                                   EncryptedGmailSecretStore, GmailConnector)
 from personal_agent.providers import ModelAdapter
-from personal_agent.quickstart_service import AgentService, workspace_search_request
+from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
 
 GENERATION = 'gen-one'
@@ -54,6 +54,40 @@ CALENDAR_REQUESTS = (CALENDAR_REQUEST, '내일 오후 3시에 치과 일정 잡�
 #: A request may itself contain a secret.  This one is used to prove the
 #: pending resume reference never becomes a second place it is stored.
 SECRET_MAIL_REQUEST = '메일에서 sk-live-SHOULD-NEVER-PERSIST 관련 내용 찾아줘'
+
+#: #173: a mailbox read is selected by the DecisionEngine's ``capability-need``
+#: judgment, never by mail words; the fixture judges exactly these requests.
+#: The judgment reads the secret request redacted, as ``ConversationJudgments`` sends it.
+MAIL_REQUESTS = (MAIL_REQUEST, SECRET_MAIL_REQUEST, '메일에서 [redacted] 관련 내용 찾아줘',
+                 '메일에서 계약서 관련 내용 찾아줘',
+                 '메일에서 영수증 관련 내용 찾아줘', '메일에서 숙소 예약 확인 메일 찾아줘',
+                 '아니 그거 말고 메일에서 숙소 예약 확인 메일 찾아줘')
+#: The scripted worker's model endpoint (a fixture; nothing is contacted).
+MODEL_ENDPOINT = 'https://model.example.test/v1'
+
+
+def scripted_mail_worker(body):
+    """A test double for the owner's AI on the compatible-API route (#173).
+
+    For a mail request it calls its own ``mail_search`` once and answers with
+    what the tool returned; anything else gets a short answer.  It stands in
+    for a provider; the parking, resume and exactly-once policy under test is
+    Still's and is not touched.
+    """
+    names = [tool.get('function', {}).get('name') for tool in body.get('tools', [])]
+    if 'agentos_connection_probe' in names:
+        return {'choices': [{'message': {'tool_calls': [{'id': 'p', 'type': 'function', 'function': {
+            'name': 'agentos_connection_probe', 'arguments': '{}'}}]}}]}
+    messages = body.get('messages', [])
+    results = [str(message.get('content') or '') for message in messages if message.get('role') == 'tool']
+    if results:
+        return {'choices': [{'message': {'content': '\n'.join(results)}}]}
+    users = [message.get('content') for message in messages if message.get('role') == 'user']
+    latest = users[-1] if users and isinstance(users[-1], str) else ''
+    if 'mail_search' in names and any(request in latest for request in MAIL_REQUESTS):
+        return {'choices': [{'message': {'content': None, 'tool_calls': [{'id': 'm', 'type': 'function', 'function': {
+            'name': 'mail_search', 'arguments': json.dumps({'query': '예산'})}}]}}]}
+    return {'choices': [{'message': {'content': '답변입니다.'}}]}
 
 
 class HandoffTestCase(unittest.TestCase):
@@ -95,9 +129,14 @@ class HandoffTestCase(unittest.TestCase):
                                     'https://connect.example.test/gmail/callback',
                                     registry=self.registry, transport=gmail_transport,
                                     now=lambda: self.clock[0])
-        self.service = AgentService(self.store, ModelAdapter(telegram), telegram,
+        def model(url, body, headers=None, timeout=60):
+            if url.startswith(MODEL_ENDPOINT):
+                return scripted_mail_worker(body)
+            return telegram(url, body, headers, timeout)
+
+        self.service = AgentService(self.store, ModelAdapter(model), telegram,
                                     connector_registry=self.registry, gmail=self.gmail)
-        self.service.use_decision_engine(FixtureDecisionEngine(choose=self.none_unsupported))
+        self.service.use_decision_engine(FixtureDecisionEngine(judge=self.reached, choose=self.none_unsupported))
         # Replace the default-clock handoff the service builds so expiry can be
         # driven deterministically.  The store and registry are the same ones.
         self.service.connector_handoff = ConnectorHandoff(self.store, self.registry,
@@ -108,12 +147,22 @@ class HandoffTestCase(unittest.TestCase):
 
     # -- fixtures ----------------------------------------------------------
     @staticmethod
+    def reached(context, proposition):
+        """#173: the scripted worker's answer serves the request; nothing else is judged here."""
+        if context.purpose == 'goal-reached':
+            return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+        return None
+
+    @staticmethod
     def none_unsupported(context, candidates, question):
         if context.purpose == 'unsupported-capability':
             return SelectionDecision(OUTCOME_DECIDED, 'none-of-these', candidates,
                                      fixture_confidence())
         if context.purpose == 'capability-need' and context.facts.get('owner_message') in CALENDAR_REQUESTS:
             return SelectionDecision(OUTCOME_DECIDED, INTENT_CALENDAR_CREATE, candidates,
+                                     fixture_confidence())
+        if context.purpose == 'capability-need' and context.facts.get('owner_message') in MAIL_REQUESTS:
+            return SelectionDecision(OUTCOME_DECIDED, INTENT_MAIL_SEARCH, candidates,
                                      fixture_confidence())
 
     def judge_withdrawal(self, *withdrawing):
@@ -128,6 +177,9 @@ class HandoffTestCase(unittest.TestCase):
         asked = []
 
         def judge(context, proposition):
+            if context.purpose == 'goal-reached':
+                # #173: the scripted worker's answer to a resumed mail request.
+                return self.reached(context, proposition)
             # (utterance, parked connector ids) is what the tests read.
             asked.append((context.facts.get('owner_message'), self.handoff.parked_for(OWNER)))
             return BinaryDecision(OUTCOME_DECIDED, context.facts.get('owner_message') in withdrawing,
@@ -149,8 +201,23 @@ class HandoffTestCase(unittest.TestCase):
         self.assertEqual(job['status'], 'awaiting_connection')
         return job_id
 
+    def enable_worker(self):
+        """Give the resumed request a worker (#173): the scripted AI on a compatible-API route."""
+        if self.store.config('model', {}).get('endpoint') == MODEL_ENDPOINT:
+            return
+        self.service.save_model({'provider': 'compatible', 'endpoint': MODEL_ENDPOINT,
+                                 'model': 'test-model', 'api_key': 'k'})
+        self.assertTrue(self.service.test_model()['ok'])
+
     def connect_gmail(self, owner=OWNER):
-        """Complete a *fixture* OAuth exchange; no live Google call is made."""
+        """Complete a *fixture* OAuth exchange; no live Google call is made.
+
+        #173: a mail request the connection resumes is the worker's, which
+        searches mail with its own tool, so connecting Gmail also gives this
+        fixture its scripted worker.  A calendar request parked before then
+        stays parked; one parked after it would reach the worker instead.
+        """
+        self.enable_worker()
         self.gmail.begin_oauth(owner)
         pending = self.encrypted.secret(
             'gmail_oauth_pending:' + hashlib.sha256(owner.encode()).hexdigest())
@@ -166,7 +233,15 @@ class HandoffTestCase(unittest.TestCase):
                                         granted_scopes=(CALENDAR_WRITE_SCOPE,))
 
     def drain(self, limit=5):
-        """Run the worker until nothing is queued; returns how many Work ran."""
+        """Run the worker until nothing is queued; returns how many Work ran.
+
+        A resumed mail request is the worker's (#173), so one in the queue gets
+        the scripted worker; a resumed calendar request keeps this fixture's
+        no-AI-route answer, which its tests read.
+        """
+        if any(job.get('status') == 'queued' and job.get('message') in MAIL_REQUESTS
+               for job in self.store.jobs()):
+            self.enable_worker()
         ran = 0
         while ran < limit and self.service.run_one():
             ran += 1
@@ -984,36 +1059,51 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
 
 
 class MailIntentTests(unittest.TestCase):
-    """The mail route is a read, and it is not reachable from a send request."""
+    """The mail route is a read, chosen by judgment; no mail word routes it (#173)."""
 
-    def setUp(self):
-        judge = ConversationJudgments(FixtureDecisionEngine(choose=lambda context,candidates,question:
-            SelectionDecision(OUTCOME_DECIDED,'none-of-these',candidates,fixture_confidence())
-            if context.purpose == 'unsupported-capability' else None))
-        self.classifier = IntentClassifier(workspace_search=workspace_search_request, judge=judge)
+    MAIL_TEXTS = ('메일에서 예산 관련 내용 찾아줘', '받은편지함에서 계약서 확인해줘',
+                  'search my email for the budget', 'check my inbox for the contract')
 
-    def test_ordinary_mail_requests_reach_the_mail_route_in_both_languages(self):
-        for text, query in (('메일에서 예산 관련 내용 찾아줘', '예산'),
-                            ('받은편지함에서 계약서 확인해줘', '계약서'),
-                            ('search my email for the budget', 'budget'),
-                            ('check my inbox for the contract', 'contract')):
+    def classifier(self, needs=None):
+        needs = needs or {}
+
+        def choose(context, candidates, question):
+            if context.purpose == 'capability-need':
+                return SelectionDecision(OUTCOME_DECIDED, needs.get(context.facts.get('owner_message'), 'none-of-these'),
+                                         candidates, fixture_confidence())
+            return None
+        return IntentClassifier(judge=ConversationJudgments(FixtureDecisionEngine(choose=choose)))
+
+    def test_mail_words_alone_reach_the_worker_route(self):
+        # #173: the worker reads the owner's words and searches mail with its own tools.
+        classifier = self.classifier()
+        for text in self.MAIL_TEXTS:
             with self.subTest(text=text):
-                decision = self.classifier.classify(text)
+                decision = classifier.classify(text)
+                self.assertEqual(decision.intent, 'conversation')
+                self.assertIsNone(decision.argument)
+                self.assertIsNone(decision.clarification)
+
+    def test_a_judged_mail_need_reaches_the_mail_route_with_no_extracted_query(self):
+        classifier = self.classifier({text: INTENT_MAIL_SEARCH for text in self.MAIL_TEXTS})
+        for text in self.MAIL_TEXTS:
+            with self.subTest(text=text):
+                decision = classifier.classify(text)
                 self.assertEqual(decision.intent, INTENT_MAIL_SEARCH)
-                self.assertEqual(decision.argument, query)
+                self.assertIsNone(decision.argument, 'Still extracts no query from the owner message')
                 self.assertTrue(decision.executes)
 
     def test_a_request_to_send_mail_never_becomes_a_mailbox_read(self):
+        classifier = self.classifier()
         for text in ('메일 보내줘', '거래처에 이메일 답장해줘',
                      'send an email to the vendor', 'reply to that mail'):
             with self.subTest(text=text):
-                self.assertNotEqual(self.classifier.classify(text).intent, INTENT_MAIL_SEARCH)
+                self.assertNotEqual(classifier.classify(text).intent, INTENT_MAIL_SEARCH)
 
-    def test_a_mail_request_with_no_subject_asks_instead_of_guessing(self):
-        decision = self.classifier.classify('메일 좀 찾아줘')
-        self.assertEqual(decision.intent, INTENT_MAIL_SEARCH)
-        self.assertFalse(decision.executes)
-        self.assertIn('두 글자 이상', decision.clarification)
+    def test_a_mail_request_with_no_subject_is_not_answered_by_a_rule(self):
+        decision = self.classifier().classify('메일 좀 찾아줘')
+        self.assertEqual(decision.intent, 'conversation')
+        self.assertIsNone(decision.clarification, 'the worker, not a rule, asks what to look for')
 
 
 if __name__ == '__main__':  # pragma: no cover

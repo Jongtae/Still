@@ -1443,7 +1443,14 @@ class SettingsOrchestrator:
         behalf (a preparation goal, a continuation, a retry); it can never confirm or cancel.
 
         The ``확인 <id>`` / ``취소 <id>`` forms are kept for compatibility only;
-        they are never shown to the owner (#855)."""
+        they are never shown to the owner (#855).
+
+        RULES-OUT-01 (#173): this is the explicit ``/settings`` command, and its
+        free text is never re-read for a phrase.  Anything but an id form is the
+        read: every connection row already carries its one truthful next action.
+        A settings request in the owner's own words reaches the worker, whose
+        ``settings_read`` / ``settings_change`` tools read or draft it.  Pausing or
+        disconnecting a connection has no worker tool yet (#183)."""
         if not isinstance(text, str): raise SettingsError("설정 요청을 확인하세요.")
         value = text.strip()
         match = re.fullmatch(r"(?:confirm|확인)\s+([A-Za-z0-9_-]+)", value, re.I)
@@ -1455,11 +1462,5 @@ class SettingsOrchestrator:
         if match:
             if owner_typed is not True: raise SettingsError(NOT_OWNER_TYPED_MESSAGE)
             return self.cancel(owner, channel, match.group(1))
-        if value.lower() in ("settings", "/settings", "무엇이 연결되어 있어?", "무엇을 바꿀 수 있어?") or "상태 보여" in value:
-            return self.read(owner)
-        if "어떻게 복구" in value:
-            # Every row already carries its one truthful next action; no
-            # keyword table guesses which service the owner meant.
-            return self.read(owner)
-        return self.draft(owner, channel, value)
+        return self.read(owner)
 

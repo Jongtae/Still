@@ -20,7 +20,7 @@ class ReadyNativeRecovery(NativeCase):
         self.store=QuickStore(self.temp.name)
         self.service=AgentService(self.store,old.adapter,old.telegram_transport,
                                   connector_registry=self.registry,gmail=self.gmail)
-        self.service.use_decision_engine(FixtureDecisionEngine(choose=self.none_unsupported))
+        self.service.use_decision_engine(FixtureDecisionEngine(judge=self.reached, choose=self.none_unsupported))
         self.handoff=ConnectorHandoff(self.store,self.registry,now=lambda:self.clock[0])
         self.service.connector_handoff=self.handoff
 
@@ -142,7 +142,10 @@ class ReadyNativeRecovery(NativeCase):
         self.restart()
         self.assertEqual(self.drain(),1)
         after=WorkLedger(self.store,work,existing_only=True)
-        self.assertEqual(after.used(),before)
+        # #173: the resumed request is the worker's; its one mail_search attempt
+        # counts on top of the original attempts, never from zero.
+        self.assertEqual(after.used(),before+1)
+        self.assertEqual(self.searches(),1)
         self.assertEqual(self.store.job(work)['status'],'succeeded')
 
     def test_exhausted_active_time_cannot_reach_a_legacy_direct_read(self):

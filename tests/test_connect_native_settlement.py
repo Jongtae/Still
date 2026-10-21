@@ -17,7 +17,7 @@ class NativeSettlement(NativeCase):
         self.store=QuickStore(self.temp.name)
         self.service=AgentService(self.store,previous.adapter,previous.telegram_transport,
                                   connector_registry=self.registry,gmail=self.gmail)
-        self.service.use_decision_engine(FixtureDecisionEngine(choose=self.none_unsupported))
+        self.service.use_decision_engine(FixtureDecisionEngine(judge=self.reached, choose=self.none_unsupported))
         self.handoff=ConnectorHandoff(self.store,self.registry,now=lambda:self.clock[0])
         self.service.connector_handoff=self.handoff
 

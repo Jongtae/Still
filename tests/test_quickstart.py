@@ -20,12 +20,14 @@ from personal_agent.quickstart import make_handler, configured_service, local_dr
 from personal_agent.drive_web_oauth import DriveWebOAuthHandoff, EncryptedDriveSecretStore
 from personal_agent.connector_contract import CONNECTOR_STATE_KEY, PENDING_WORK_KEY, ConnectorState
 from personal_agent.conversation_handoff import CONVERSATION_RESUME_KEY, INTENT_CALENDAR_CREATE, INTENT_DRIVE_READ
-from personal_agent.decision import OUTCOME_DECIDED, FixtureDecisionEngine, SelectionDecision, fixture_confidence
+from personal_agent.decision import (OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, SelectionDecision,
+                                     fixture_confidence)
 from personal_agent.gmail import GMAIL_CONNECTOR_ID, GMAIL_READONLY_SCOPE, GmailError
 from cryptography.fernet import Fernet
 from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.file_workspace import FileWorkspace
 from scripted_capability_need import capability_need_engine
+from test_conversation_connector_handoff import MODEL_ENDPOINT, scripted_mail_worker
 
 
 VALIDATION = Path(__file__).resolve().parents[1] / 'scripts' / 'validation'
@@ -528,7 +530,7 @@ def post(path,body):
  with client.open(request,timeout=3) as response:return json.load(response)
 try:
  post('/api/login',{'password':'long-password-test'})
- job_id=post('/api/chat',{'message':'저장된 작업공간에서 “Compatible” 찾아줘','request_key':'workspace-search-after-restart'})['id']
+ job_id=post('/api/chat',{'message':'/workspace-search Compatible','request_key':'workspace-search-after-restart'})['id']
  service.run_one();job=store.job(job_id)
  print(json.dumps({'status':job['status'],'response':job['response']}))
 finally:
@@ -601,8 +603,12 @@ finally:
                 'request_key':'owner-dogfood-reuse'})
             reused=wait_for(client,base,queued['id'])
             self.assertEqual(reused['status'],'succeeded')
-            self.assertIn('Launch notes',reused['response'])
-            self.assertIn('launch.md',reused['response'])
+            # #173: the worker answers; the saved result reached it as evidence.
+            evidence=next(message['content'] for url,body,_headers in self.calls if url.endswith('/chat/completions')
+                          for message in body['messages'] if message.get('role')=='user'
+                          and str(message.get('content')).startswith('저장된 작업공간에서 “Launch notes” 찾아줘'))
+            self.assertIn('[Saved result: Launch notes.md]',evidence)
+            self.assertIn('launch.md',evidence)
             self.assertEqual(request(client,base,'/api/home')['state'],'ready')
         finally:
             restarted.stop.set()
@@ -698,8 +704,15 @@ finally:
         self.assertEqual(self.store.job(summary)['status'],'succeeded');self.assertTrue((workspace/'Launch notes.md').is_file())
         self.assertIn(summary,self.store.config('file_workspace_document_jobs',[]))
         files=FileWorkspace(self.store);source=files.read(state['references'][0]['id'],'source.txt');files.save('history-document','Stored','PRIVATE-DOCUMENT-TEXT',[source])
+        # #173: the saved result the owner named is evidence for the worker, never the answer.
+        before=len(self.calls)
         searched=self.store.enqueue('저장된 작업공간에서 “PRIVATE-DOCUMENT-TEXT” 찾아줘','natural-search');self.service.run_one()
-        self.assertIn('PRIVATE-DOCUMENT-TEXT',self.store.job(searched)['response'])
+        self.assertEqual(self.store.job(searched)['response'],'Compatible response')
+        worker=[message['content'] for url,body,_headers in self.calls[before:] if url.endswith('/chat/completions')
+                for message in body['messages'] if message.get('role')=='user'
+                and str(message.get('content')).startswith('저장된 작업공간에서 “PRIVATE-DOCUMENT-TEXT” 찾아줘')]
+        self.assertIn('PRIVATE-DOCUMENT-TEXT',worker[0].split('[Still observation',1)[1])
+        self.assertIn(searched,self.store.config('file_workspace_document_jobs',[]))
         self.model('compatible','https://example.test/v1','test-key');self.assertTrue(self.service.test_model()['ok']);before=len(self.calls)
         ordinary=self.store.enqueue('일반적인 다음 질문입니다.','ordinary-after-document');self.service.run_one()
         self.assertEqual(self.store.job(ordinary)['status'],'succeeded')
@@ -1343,17 +1356,33 @@ class GmailConnectorWiringTests(unittest.TestCase):
     def configured(self,env=None):
         """One service built exactly the way the shipped entry point builds it."""
         service=configured_service(self.store,self.env if env is None else env)
-        # These connector wiring cases exercise an intentionally recognized
-        # mail search. Model the semantic boundary judgment as a confident
-        # none-of-these fixture instead of relying on an unavailable provider.
-        service.use_decision_engine(FixtureDecisionEngine(choose=lambda context,candidates,question:
-            SelectionDecision(OUTCOME_DECIDED,'none-of-these',candidates,fixture_confidence())))
+        # #173: these connector wiring cases exercise a judged mail search; the
+        # fixture judgment selects it for exactly the mail request.
+        service.use_decision_engine(self.mail_engine())
         service.telegram_transport=self.telegram
-        service.adapter=ModelAdapter(self.telegram)
+        def model(url,body,headers=None,timeout=60):
+            if url.startswith(MODEL_ENDPOINT):return scripted_mail_worker(body)
+            return self.telegram(url,body,headers,timeout)
+        service.adapter=ModelAdapter(model)
         if service.gmail is not None:
             service.gmail.transport=self.gmail_transport
             service.gmail_token_exchange=self.exchange
         return service
+
+    def mail_engine(self):
+        """A capability-need judgment for exactly the mail request; the worker's answer serves it."""
+        return FixtureDecisionEngine(
+            judge=lambda context,proposition:BinaryDecision(OUTCOME_DECIDED,True,fixture_confidence())
+            if context.purpose=='goal-reached' else None,
+            choose=lambda context,candidates,question:SelectionDecision(
+                OUTCOME_DECIDED,'mail-search' if context.purpose=='capability-need'
+                and context.facts.get('owner_message')==self.MAIL_REQUEST else 'none-of-these',
+                candidates,fixture_confidence()))
+
+    def enable_worker(self,service):
+        """#173: a resumed mail request is the worker's; it reads mail with its own tool."""
+        service.save_model({'provider':'compatible','endpoint':MODEL_ENDPOINT,'model':'test-model','api_key':'k'})
+        self.assertTrue(service.test_model()['ok'])
 
     def serve(self,service,public_hosts=()):
         server=ThreadingHTTPServer(('127.0.0.1',0),make_handler(service,public_hosts,'pairing-token'))
@@ -1528,6 +1557,7 @@ class GmailConnectorWiringTests(unittest.TestCase):
         self.assertEqual(status.granted_scopes,(GMAIL_READONLY_SCOPE,))
         # The Work the owner parked from Telegram is re-queued and then runs.
         self.assertEqual(self.store.job(job_id)['status'],'queued')
+        self.enable_worker(service)
         self.assertTrue(service.run_one())
         self.assertEqual(self.store.job(job_id)['status'],'succeeded')
         self.assertIn('예산 승인 안내',self.store.job(job_id)['response'])
@@ -1627,8 +1657,7 @@ class GmailConnectorWiringTests(unittest.TestCase):
     # -- the unconfigured installation ------------------------------------
     def test_an_installation_without_gmail_configuration_is_unchanged(self):
         service=configured_service(self.store,{})
-        service.use_decision_engine(FixtureDecisionEngine(choose=lambda context,candidates,question:
-            SelectionDecision(OUTCOME_DECIDED,'none-of-these',candidates,fixture_confidence())))
+        service.use_decision_engine(self.mail_engine())
         service.telegram_transport=self.telegram
         self.assertIsNone(service.gmail)
         self.assertIsNone(service.connector_registry)

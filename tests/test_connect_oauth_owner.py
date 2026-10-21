@@ -119,7 +119,7 @@ class GmailCallbackOwner(NativeCase):
         self.store=QuickStore(self.temp.name)
         self.service=AgentService(self.store,old.adapter,old.telegram_transport,
                                   connector_registry=self.registry,gmail=self.gmail)
-        self.service.use_decision_engine(FixtureDecisionEngine(choose=self.none_unsupported))
+        self.service.use_decision_engine(FixtureDecisionEngine(judge=self.reached, choose=self.none_unsupported))
         self.service.gmail_token_exchange=old.gmail_token_exchange
         self.service.connector_handoff=ConnectorHandoff(self.store,self.registry,now=lambda:self.clock[0])
         self.assertEqual(self.complete(state)['work_id'],first)

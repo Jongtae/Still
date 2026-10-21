@@ -373,17 +373,27 @@ class ContinuityTests(ProjectionTestCase):
 
 
 class UnsupportedCapabilityTests(ProjectionTestCase):
-    """#478: a request for something not offered is understood, not searched."""
+    """#478: a request for something not offered is understood, not searched.
+
+    RULES-OUT-01 (#173): no mail cue table gates a separate boundary judgment
+    over a cue summary any more.  The one capability-need judgment, which
+    already reads every non-explicit turn (secret-redacted, #672 review),
+    selects a declared-unsupported capability itself; anything it does not
+    select reaches the worker.
+    """
 
     def judged(self, mapping):
         engine = FixtureDecisionEngine(choose=lambda context, candidates, question: SelectionDecision(
             OUTCOME_DECIDED, mapping.get(context.facts.get('owner_message'), 'none-of-these'),
-            candidates, fixture_confidence()) if context.purpose == 'unsupported-capability' else None)
+            candidates, fixture_confidence()) if context.purpose == 'capability-need' else None)
         self.service.use_decision_engine(engine)
         return engine
 
+    def purposes(self, engine):
+        return [item[1].purpose for item in engine.asked]
+
     def test_reply_and_read_body_requests_get_the_truthful_boundary_and_run_nothing(self):
-        engine = self.judged({'메일 확인 답장 보내': 'mail-send', '메일 보여 mail-body': 'mail-read-body'})
+        engine = self.judged({'예약 확인 메일에 답장 보내줘': 'mail-send', '그 메일 내용 좀 보여줘': 'mail-read-body'})
         for text, key in (('예약 확인 메일에 답장 보내줘', 'mail-send'), ('그 메일 내용 좀 보여줘', 'mail-read-body')):
             with self.subTest(text=text):
                 decision = self.service.classify_intent(text)
@@ -393,67 +403,62 @@ class UnsupportedCapabilityTests(ProjectionTestCase):
                 self.assertEqual(job['status'], 'succeeded', 'a truthful boundary answer is a completed turn')
                 self.assertEqual(bubbles, [('send', UNSUPPORTED_CAPABILITY_TEXT[key])])
         self.assertTrue(all(item[0] == 'choose' for item in engine.asked))
+        self.assertNotIn('unsupported-capability', self.purposes(engine), 'no cue-summary boundary judgment')
 
-    def test_mail_boundary_judgment_receives_cues_without_private_search_terms(self):
+    def test_no_cue_summary_boundary_judgment_is_asked_for_a_mail_request(self):
         engine = self.judged({})
         request = '내 메일에서 HIV 검사 결과 찾아줘'
-        self.service.classify_intent(request)
-        # The unsupported-action boundary is asked over cues only.  (#672
-        # review: the capability-need judgment now sees rule-claimed turns
-        # too, secret-redacted, so a second part is never hidden.)
-        [facts] = [item[1].facts for item in engine.asked if item[1].purpose == 'unsupported-capability']
-        self.assertIn('메일', facts['owner_message'])
-        self.assertNotIn('HIV', facts['owner_message'])
-        self.assertNotIn('검사', facts['owner_message'])
+        decision = self.service.classify_intent(request)
+        self.assertEqual(decision.intent, 'conversation')
+        # Only the capability-need judgment, which reads every non-explicit turn.
+        self.assertEqual(self.purposes(engine), ['capability-need'])
 
     def test_local_note_with_mail_words_never_sends_its_private_text_to_judgment(self):
         engine = self.judged({})
         request = '내 메일로 보낼 PIN 4832를 메모해 둬'
         self.service.classify_intent(request)
-        # #672 review: the local note never reaches the mail boundary judgment;
-        # only the capability-need judgment is asked (secret-redacted).
-        self.assertEqual([item[1].purpose for item in engine.asked], ['capability-need'],
-                         'local note with mail/action words must not reach the mail boundary judgment')
+        # #672 review: only the capability-need judgment is asked (secret-redacted).
+        self.assertEqual(self.purposes(engine), ['capability-need'],
+                         'local note with mail/action words must not reach a mail boundary judgment')
 
-    def test_mail_action_followup_uses_content_free_recent_mail_focus(self):
-        engine = self.judged({'최근 메일 검색 reply': 'mail-send'})
+    def test_a_mail_action_followup_reaches_the_worker_with_its_history(self):
+        # #173: no recent-mail focus rewrites "reply to it" into a cue summary; the
+        # worker reads it with the conversation and says what it can and cannot do.
+        engine = self.judged({'메일에서 숙소 예약 확인 메일 찾아줘': 'mail-search'})
         first = self.service.classify_intent('메일에서 숙소 예약 확인 메일 찾아줘')
         self.assertEqual(first.intent, 'mail-search')
         self.service.conversation_focus.record(first)
         followup = self.service.classify_intent('reply to it')
-        self.assertEqual(followup.intent, INTENT_UNSUPPORTED)
-        self.assertEqual(followup.argument, 'mail-send')
-        context = engine.asked[-1][1]
-        self.assertEqual(context.facts['owner_message'], '최근 메일 검색 reply')
+        self.assertEqual(followup.intent, 'conversation')
+        self.assertEqual(engine.asked[-1][1].facts['owner_message'], 'reply to it')
 
-    def test_minimized_judgment_preserves_body_vs_metadata_request_kind(self):
-        engine = self.judged({'메일 읽어 mail-body': 'mail-read-body',
-                              '메일 읽어 mail-metadata': 'none-of-these'})
+    def test_body_and_metadata_requests_are_told_apart_by_the_judgment(self):
+        engine = self.judged({'메일 본문 읽어줘': 'mail-read-body', '메일 제목 읽어줘': 'mail-search'})
         body = self.service.classify_intent('메일 본문 읽어줘')
         metadata = self.service.classify_intent('메일 제목 읽어줘')
         self.assertEqual(body.intent, INTENT_UNSUPPORTED)
         self.assertEqual(metadata.intent, 'mail-search')
-        boundary = [item[1] for item in engine.asked if item[1].purpose == 'unsupported-capability']
-        self.assertIn('mail-body', boundary[-2].facts['owner_message'])
-        self.assertIn('mail-metadata', boundary[-1].facts['owner_message'])
+        self.assertEqual([item[1].facts['owner_message'] for item in engine.asked],
+                         ['메일 본문 읽어줘', '메일 제목 읽어줘'])
 
     def test_mixed_calendar_and_unsupported_mail_action_executes_neither(self):
-        # #672: no calendar word rule competes any more; the mail-send part is
-        # the unsupported-capability judgment's, over the minimized cue summary,
-        # and the truthful boundary answer executes nothing - no draft either.
-        engine = self.judged({'메일 이메일 보내': 'mail-send'})
-        decision = self.service.classify_intent('내일 오후 3시 회의를 예약하고 참석자에게 이메일 보내줘')
+        # #672: no calendar word rule competes; the mail-send part is the
+        # capability-need judgment's, and the truthful boundary answer executes
+        # nothing - no draft either.
+        text = '내일 오후 3시 회의를 예약하고 참석자에게 이메일 보내줘'
+        engine = self.judged({text: 'mail-send'})
+        decision = self.service.classify_intent(text)
         self.assertEqual(decision.intent, INTENT_UNSUPPORTED)
         self.assertFalse(decision.executes)
         self.assertEqual(decision.clarification, UNSUPPORTED_CAPABILITY_TEXT['mail-send'])
-        self.assertEqual([item[1].facts for item in engine.asked], [{'owner_message': '메일 이메일 보내'}])
+        self.assertEqual([item[1].facts for item in engine.asked], [{'owner_message': text}])
         self.assertEqual(self.store.config('calendar_create', {}), {})
 
-
-    def test_a_none_of_these_judgment_leaves_the_cues_to_decide(self):
+    def test_a_none_of_these_judgment_leaves_the_turn_to_the_worker(self):
         self.judged({})
         decision = self.service.classify_intent('메일에서 예산 관련 내용 찾아줘')
-        self.assertEqual(decision.intent, 'mail-search')
+        self.assertEqual(decision.intent, 'conversation')
+        self.assertIsNone(decision.argument)
 
     def test_local_note_turn_is_not_sent_to_decision_engine(self):
         engine = self.judged({})
@@ -461,17 +466,15 @@ class UnsupportedCapabilityTests(ProjectionTestCase):
         self.assertEqual(decision.intent, 'note-create')
         self.assertEqual(engine.asked, [])
 
-    def test_unavailable_judgment_does_not_fall_through_to_mail_search_cues(self):
+    def test_an_unavailable_judgment_runs_no_mail_search_and_leaves_the_turn_to_the_worker(self):
         self.service.use_decision_engine(UnavailableDecisionEngine())
         request = '예약 확인 메일에 답장 보내줘'
         decision = self.service.classify_intent(request)
-        self.assertEqual(decision.intent, 'ambiguous')
-        self.assertFalse(decision.executes)
-        self.assertIn('판단 기능을 사용할 수 없어', decision.clarification)
-        self.assertIn('메일을 검색하거나 다른 처리를 하지 않았습니다', decision.clarification)
-        job, bubbles = self.turn(request)
-        self.assertEqual(job['status'], 'succeeded')
-        self.assertEqual(bubbles, [('send', decision.clarification)])
+        self.assertEqual(decision.intent, 'conversation')
+        self.assertIsNone(decision.clarification)
+        job, _bubbles = self.turn(request)
+        # No AI route is connected here, so the worker route says so; no rule searched mail.
+        self.assertEqual(job['status'], 'failed')
         with self.store.db() as db:
             # #1237: #1232's stage timings are clock readings, not tool calls.
             self.assertEqual(db.execute("SELECT COUNT(*) FROM tool_events WHERE job_id=? AND tool!='response_timing'",
@@ -711,19 +714,23 @@ class ConversationContinuityTests(ProjectionTestCase):
         self.assertEqual(event['trace']['relation'], 'retry-refused-ran-current')
         self.assertFalse(event['trace']['executed'])
 
-    def test_local_note_correction_never_reaches_the_remote_followup_judge(self):
+    def test_a_note_correction_is_judged_like_any_short_turn_with_its_secret_redacted(self):
+        # #173: no note rule keeps this turn local any more.  The follow-up
+        # judgment reads it like any other short turn - the capability-need
+        # judgment already read every non-explicit turn (#672 review) - with
+        # credential shapes redacted, and no rule writes a note.
         first, _ = self.turn('이전 요청')
         self.assertEqual(first['status'], 'failed')
-        engine = self.relation_engine({'아니, sk-live-secret을 메모해줘': FOLLOWUP_REFERENCE})
+        engine = self.relation_engine({})
         self.service.use_decision_engine(engine)
 
-        note, _ = self.turn('아니, sk-live-secret을 메모해줘')
-        self.assertEqual(note['status'], 'succeeded')
-        self.assertIn('sk-live-secret', [row['content'] for row in self.store.notes()])
-        self.assertFalse(any(
-            item[0] == 'choose' and item[1].purpose == 'conversation-followup'
-            for item in engine.asked
-        ))
+        self.turn('아니, sk-live-secret을 메모해줘')
+        self.assertEqual(self.store.notes(), [], 'no rule writes the note; the worker would')
+        judged = [item[1].facts['owner_message'] for item in engine.asked
+                  if item[0] == 'choose' and item[1].purpose in ('conversation-followup', 'capability-need')]
+        self.assertTrue(judged)
+        for message in judged:
+            self.assertNotIn('sk-live-secret', message)
 
     def test_generic_memory_save_followup_stays_out_of_remote_judgment(self):
         first, _ = self.turn('이전 요청')

@@ -37,15 +37,17 @@ from urllib.request import Request, build_opener, HTTPCookieProcessor, HTTPRedir
 from cryptography.fernet import Fernet
 
 from personal_agent.connector_contract import CONNECTOR_STATE_KEY, ConnectorState
-from personal_agent.decision import OUTCOME_DECIDED, FixtureDecisionEngine, SelectionDecision, fixture_confidence
+from personal_agent.decision import (OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, SelectionDecision,
+                                     fixture_confidence)
 from personal_agent.gmail import GMAIL_CONNECTOR_ID, GMAIL_READONLY_SCOPE
 from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart import (configured_service, drive_config_main, gmail_config_main,
                                        make_handler)
 from personal_agent.quickstart_service import GMAIL_CONNECT_PATH
 from personal_agent.quickstart_store import QuickStore
+from test_conversation_connector_handoff import MODEL_ENDPOINT, scripted_mail_worker
 
-WEB = Path(__file__).resolve().parents[1] / 'src' / 'personal_agent' / 'web'
+WEB =Path(__file__).resolve().parents[1] / 'src' / 'personal_agent' / 'web'
 
 #: Any absolute http(s) address in owner-facing text.  The tests below use
 #: this instead of building the expected URL, so a message that names no
@@ -318,11 +320,23 @@ class GmailRouteReachabilityTest(unittest.TestCase):
                    'AGENTOS_GMAIL_LOCAL_PORT': str(port),
                    'AGENTOS_GMAIL_ENCRYPTION_KEY': Fernet.generate_key().decode()}
         service = configured_service(self.store, env)
-        service.use_decision_engine(FixtureDecisionEngine(choose=lambda context,candidates,question:
-            SelectionDecision(OUTCOME_DECIDED,'none-of-these',candidates,fixture_confidence())
-            if context.purpose == 'unsupported-capability' else None))
+        # #173: a mailbox read is the capability-need judgment's, never a mail word's;
+        # the resumed request is the worker's (the scripted AI below).
+        service.use_decision_engine(FixtureDecisionEngine(
+            judge=lambda context, proposition: BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+            if context.purpose == 'goal-reached' else None,
+            choose=lambda context,candidates,question:
+            SelectionDecision(OUTCOME_DECIDED,
+                              'mail-search' if context.facts.get('owner_message') == self.MAIL_REQUEST else 'none-of-these',
+                              candidates,fixture_confidence())
+            if context.purpose == 'capability-need' else None))
         service.telegram_transport = self.telegram
-        service.adapter = ModelAdapter(self.telegram)
+
+        def model(url, body, headers=None, timeout=60):
+            if url.startswith(MODEL_ENDPOINT):
+                return scripted_mail_worker(body)
+            return self.telegram(url, body, headers, timeout)
+        service.adapter = ModelAdapter(model)
         if service.gmail is not None:
             service.gmail.transport = self.gmail_transport
             service.gmail_token_exchange = self.exchange
@@ -461,6 +475,10 @@ class GmailRouteReachabilityTest(unittest.TestCase):
         with build_opener().open(callback, timeout=3) as response:
             self.assertEqual(response.status, 200)
         self.assertEqual(self.store.job(job_id)['status'], 'queued')
+        # #173: the resumed request is the worker's, which reads mail with its own tool.
+        service.save_model({'provider': 'compatible', 'endpoint': MODEL_ENDPOINT,
+                            'model': 'test-model', 'api_key': 'k'})
+        self.assertTrue(service.test_model()['ok'])
         self.assertTrue(service.run_one())
         self.assertEqual(self.store.job(job_id)['status'], 'succeeded')
         self.assertIn('예산 승인 안내', self.store.job(job_id)['response'])
