@@ -596,15 +596,17 @@ class ParkedRequestSurvivesConversationTests(HandoffTestCase):
         self.assertEqual(len(asked), 1, 'only the calendar turn found something parked to ask about')
 
     def test_an_answer_to_pending_calendar_drafts_does_not_cancel_an_unrelated_parked_request(self):
-        # #22: the worker's drafts wait for the owner's literal answer; that
-        # answer is addressed to them and never judged as a withdrawal.  Nothing
+        # #22, #172: the worker's drafts wait for the owner's answer; an act judged to
+        # answer them is addressed to them and never judged as a withdrawal.  Nothing
         # here is approved, so no calendar effect is ever attempted.
+        from owner_act_script import with_owner_acts
         from test_calendar_conversation import DENTIST, Provider
         self.service.calendar = CalendarConnector(self.store, Provider(), registry=self.registry,
                                                   now=lambda: self.clock[0])
         self.service.calendar_conversation.now = lambda: self.clock[0]
         self.connect_calendar_write()
         asked = self.judge_withdrawal('취소')
+        with_owner_acts(self.service.decision_engine)
         mail = self.park(MAIL_REQUEST)
         draft = self.service.calendar.draft_create(DENTIST, OWNER)['id']
         self.assertTrue(self.service.calendar_conversation.offer(OWNER, [draft]))
@@ -612,7 +614,7 @@ class ParkedRequestSurvivesConversationTests(HandoffTestCase):
                            owner_typed=True)  # only a message the owner typed answers drafts
         self.assertTrue(self.service.run_one())
         self.assertFalse(self.service.calendar_conversation.has_pending(OWNER),
-                         'the cancel must have been claimed by the drafts')
+                         'the cancel was judged a decline of the drafts')
         self.assertNotIn('취소', [utterance for utterance, _ in asked])
         self.assertEqual(self.store.job(mail)['status'], 'awaiting_connection')
         self.assertIsNotNone(self.handoff.record(GMAIL_CONNECTOR_ID))

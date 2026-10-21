@@ -19,7 +19,6 @@ from unittest import mock
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 from personal_agent.agent_runtime import SETTINGS_ACTIONS, Capabilities, recorded_arguments
-from personal_agent.conversation_handoff import JUDGMENT_NO, JUDGMENT_UNAVAILABLE, JUDGMENT_YES, Judgment
 from personal_agent.bounded_execution import (BOUNDED_PROFILE, ISOLATED_PROFILE, STRICT_PROFILE, profile_actions,
                                               route_unavailable)
 from personal_agent.providers import ModelAdapter
@@ -893,19 +892,24 @@ if __name__ == '__main__':
 
 
 class TypedConfirmation(ReviewRemediation):
-    """OWNER-SETTINGS-02 (#855): the owner's next typed message answers the pending draft; no command is shown.
+    """OWNER-SETTINGS-02 (#855), OWNER-ACT-01 (#172): a typed message answers the pending draft; no command is shown.
 
-    The DecisionEngine's two binary judgments are replaced by fixed verdicts
-    (``judge``); everything else - the store, ``run_one``, the orchestrator's
-    confirm path with digest/TTL/audit, the web route - runs unchanged.
+    The one owner-act judgment is replaced by a fixed answer (``judge``);
+    everything else - the open-item collector, the store, ``run_one``, the
+    orchestrator's confirm path with digest/TTL/audit, the web route - runs
+    unchanged.
     """
 
-    def judge(self, confirmed, declined=JUDGMENT_NO):
-        patches = [mock.patch.object(self.service.decision_judge, 'settings_draft_confirmed',
-                                     return_value=Judgment(confirmed)),
-                   mock.patch.object(self.service.decision_judge, 'settings_draft_declined',
-                                     return_value=Judgment(declined))]
-        return [self.enterContext(patch) for patch in patches]
+    def judge(self, answer='approve', pick=lambda items: items[0]['id'], during=None):
+        """Patch the owner-act judgment: ``answer`` for the item ``pick`` names (None: unavailable)."""
+        def owner_act(act, items, target='', work_id=None):
+            if during:
+                during()
+            if answer is None:
+                return None
+            return {'item': pick(items) if answer in ('approve', 'decline') else 'none', 'answer': answer, 'rest': ''}
+        return self.enterContext(mock.patch.object(self.service.decision_judge, 'owner_act_answer',
+                                                   side_effect=owner_act))
 
     def owner_turn(self, text, owner_typed=True, reply='알겠습니다.'):
         self.script = [{'content': reply}] * 4
@@ -915,16 +919,16 @@ class TypedConfirmation(ReviewRemediation):
 
     def test_a_typed_yes_applies_through_the_confirm_path(self):
         work, draft = self.web_draft()
-        confirmed, declined = self.judge(JUDGMENT_YES)
+        judged = self.judge('approve')
         job = self.owner_turn('응, 그렇게 바꿔')
         self.assertEqual(self.applies, [{'enabled': True}])
         self.assertTrue(self.context()['enabled'])
         self.assertIn('바꿨습니다', job['response'])
         self.assertEqual(self.store.config('settings_change_drafts')[draft['id']]['state'], 'applied')
-        [(pending, message)] = [call.args for call in confirmed.call_args_list]
-        self.assertIn('현재 맥락 사용', pending)
+        [(message, items, *_rest)] = [call.args for call in judged.call_args_list]
         self.assertEqual(message, '응, 그렇게 바꿔')
-        declined.assert_not_called()
+        self.assertEqual([item['kind'] for item in items], ['settings-drafts'])
+        self.assertIn('현재 맥락 사용', items[0]['shown_text'])
         self.assertEqual(self.store.config('settings_audit')[-1]['terminal'], 'applied')
 
     def second_pending_work(self):
@@ -936,34 +940,33 @@ class TypedConfirmation(ReviewRemediation):
                                       'timezone', 'Asia/Tokyo', work_id=work)
         return work, draft
 
-    def test_typed_yes_covers_only_the_focused_work(self):
+    def test_typed_yes_settles_only_the_item_the_judgment_names(self):
+        # #172: each Work's drafts are one item; a yes settles the one named, never every wait at once.
         work, first = self.web_draft()
         _other, second = self.second_pending_work()
-        self.judge(JUDGMENT_YES)
+        judged = self.judge('approve', pick=lambda items: next(item['id'] for item in items
+                                                                if '현재 맥락 사용' in item['shown_text']))
         self.owner_turn('응, 그렇게 바꿔')
+        self.assertEqual(len(judged.call_args.args[1]), 2, 'both waits were shown to the one judgment')
         self.assertEqual(self.settings._drafts()[first['id']]['state'], 'applied')
         self.assertEqual(self.settings._drafts()[second['draft_id']]['state'], 'awaiting-confirmation')
 
-    def test_ambiguous_waits_without_focus_are_not_bulk_approved(self):
+    def test_an_act_judged_to_answer_no_one_item_settles_nothing(self):
         _work, first = self.web_draft()
         _other, second = self.second_pending_work()
-        self.service.conversation_focus.clear()
-        confirmed, declined = self.judge(JUDGMENT_YES)
-        self.owner_turn('응')
-        confirmed.assert_not_called()
-        declined.assert_not_called()
-        self.assertEqual(self.settings._drafts()[first['id']]['state'], 'awaiting-confirmation')
-        self.assertEqual(self.settings._drafts()[second['draft_id']]['state'], 'awaiting-confirmation')
+        for answer in ('unrelated', 'change', None):
+            with self.subTest(answer=answer):
+                self.judge(answer)
+                self.owner_turn('응')
+                self.assertEqual(self.settings._drafts()[first['id']]['state'], 'awaiting-confirmation')
+                self.assertEqual(self.settings._drafts()[second['draft_id']]['state'], 'awaiting-confirmation')
+        self.assertEqual(self.applies, [])
 
-    def test_reply_to_unrelated_focus_does_not_confirm_an_older_wait(self):
+    def test_an_approve_naming_an_item_that_is_not_open_settles_nothing(self):
         _work, first = self.web_draft()
-        unrelated = self.store.enqueue('다른 대화', 'unrelated')
-        with self.store.db() as db:
-            db.execute("UPDATE jobs SET status='succeeded' WHERE id=?", (unrelated,))
-        self.service.conversation_focus.record(mock.Mock(intent='greeting'), unrelated)
-        confirmed, _declined = self.judge(JUDGMENT_YES)
+        self.judge('approve', pick=lambda items: 'item-9')
         self.owner_turn('응')
-        confirmed.assert_not_called()
+        self.assertEqual(self.applies, [])
         self.assertEqual(self.settings._drafts()[first['id']]['state'], 'awaiting-confirmation')
 
     def test_pending_changes_are_available_as_owner_scoped_context(self):
@@ -1002,36 +1005,30 @@ class TypedConfirmation(ReviewRemediation):
         work, first = self.web_draft()
         owner = self.service.settings_owner(self.store.job(work))
         self.clock[0] += self.settings.TTL_SECONDS + 1
-        def confirm(*args):
-            self.settings.cancel(owner, 'web', first['id'])
-            return Judgment(JUDGMENT_YES)
-        with mock.patch.object(self.service.decision_judge, 'settings_draft_confirmed', side_effect=confirm):
-            self.owner_turn('응')
+        self.judge('approve', during=lambda: self.settings.cancel(owner, 'web', first['id']))
+        self.owner_turn('응')
         self.assertEqual(self.applies, [])
         self.assertEqual(self.settings._drafts()[first['id']]['state'], 'canceled')
 
     def test_a_draft_added_during_judgment_is_not_implicitly_approved(self):
         _work, first = self.web_draft()
         inserted = []
-        def confirm(*args):
-            inserted.append(self.second_pending_work()[1])
-            return Judgment(JUDGMENT_YES)
-        with mock.patch.object(self.service.decision_judge, 'settings_draft_confirmed', side_effect=confirm):
-            self.owner_turn('응')
+        self.judge('approve', during=lambda: inserted.append(self.second_pending_work()[1]))
+        self.owner_turn('응')
         self.assertEqual(self.settings._drafts()[first['id']]['state'], 'applied')
         self.assertEqual(self.settings._drafts()[inserted[0]['draft_id']]['state'], 'awaiting-confirmation')
 
     def test_a_message_agentos_ran_never_confirms_even_when_judged_a_yes(self):
         work, draft = self.web_draft()
-        confirmed, _declined = self.judge(JUDGMENT_YES)
+        judged = self.judge('approve')
         self.owner_turn('응, 그렇게 바꿔', owner_typed=False)
-        confirmed.assert_not_called()
+        judged.assert_not_called()
         self.assertEqual(self.applies, [])
         self.assertEqual(self.store.config('settings_change_drafts')[draft['id']]['state'], 'awaiting-confirmation')
 
     def test_a_typed_no_cancels(self):
         work, draft = self.web_draft()
-        self.judge(JUDGMENT_NO, JUDGMENT_YES)
+        self.judge('decline')
         job = self.owner_turn('아니')
         self.assertEqual(self.applies, [])
         self.assertEqual(self.store.config('settings_change_drafts')[draft['id']]['state'], 'canceled')
@@ -1039,28 +1036,22 @@ class TypedConfirmation(ReviewRemediation):
 
     def test_an_unrelated_or_unjudged_message_leaves_the_draft_pending_and_is_a_normal_turn(self):
         work, draft = self.web_draft()
-        for verdicts in ((JUDGMENT_NO, JUDGMENT_NO), (JUDGMENT_UNAVAILABLE, JUDGMENT_UNAVAILABLE)):
-            with self.subTest(verdicts=verdicts):
-                self.judge(*verdicts)
+        for answer in ('unrelated', None):
+            with self.subTest(answer=answer):
+                self.judge(answer)
                 job = self.owner_turn('오늘 저녁 뭐 먹을까', reply='김치찌개 어떠세요.')
                 self.assertEqual(job['status'], 'succeeded')
                 self.assertIn('김치찌개', job['response'])
         self.assertEqual(self.applies, [])
         self.assertEqual(self.store.config('settings_change_drafts')[draft['id']]['state'], 'awaiting-confirmation')
         self.assertEqual(self.settings.pending_for_work(work), [dict(self.settings.pending_for_work(work)[0])])
-        # #1297: after unrelated conversation, a bare yes cannot confirm the old draft, expired or not.
-        self.clock[0] += self.settings.TTL_SECONDS + 1
-        confirmed, _ = self.judge(JUDGMENT_YES)
-        self.owner_turn('응')
-        confirmed.assert_not_called()
-        self.assertEqual(self.applies, [])
 
     def test_a_still_focused_expired_draft_can_be_confirmed_once(self):
         _work, draft = self.web_draft()
         self.clock[0] += self.settings.TTL_SECONDS + 1
-        confirmed, _ = self.judge(JUDGMENT_YES)
+        judged = self.judge('approve')
         job = self.owner_turn('응')
-        confirmed.assert_called()
+        judged.assert_called()
         self.assertEqual(self.applies, [{'enabled': True}])
         self.assertNotIn('만료', job['response'])
         self.assertEqual(self.settings._drafts()[draft['id']]['state'], 'renewed')
@@ -1118,7 +1109,7 @@ class TypedConfirmation(ReviewRemediation):
 
     def test_review_p1_a_typed_no_is_the_drafts_decline_not_a_continuity_cancel(self):
         work, draft = self.web_draft()
-        self.judge(JUDGMENT_NO, JUDGMENT_YES)
+        self.judge('decline')
         with mock.patch.object(self.service, 'continuity_relation') as continuity, \
                 mock.patch.object(self.service, 'cancel_focused_work') as cancel_work:
             job = self.owner_turn('아니')
@@ -1126,16 +1117,6 @@ class TypedConfirmation(ReviewRemediation):
         cancel_work.assert_not_called()
         self.assertEqual(self.store.config('settings_change_drafts')[draft['id']]['state'], 'canceled')
         self.assertIn('취소했습니다', job['response'])
-
-    def test_review_p1_a_pending_calendar_draft_keeps_its_own_approval(self):
-        work, draft = self.web_draft()
-        confirmed, _declined = self.judge(JUDGMENT_YES)
-        with mock.patch.object(self.service.calendar_conversation, 'claims', return_value=True) as claims:
-            self.owner_turn('응')
-        claims.assert_called()
-        confirmed.assert_not_called()
-        self.assertEqual(self.applies, [])
-        self.assertEqual(self.store.config('settings_change_drafts')[draft['id']]['state'], 'awaiting-confirmation')
 
     def test_review_p2_the_web_receipt_outlives_the_buttons(self):
         work, draft = self.web_draft()

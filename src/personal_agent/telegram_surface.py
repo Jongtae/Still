@@ -37,8 +37,8 @@ from . import preparations as prep
 from . import remote_login
 from .quickstart_service import (APPROVE_BUTTON, BROWSER_LOGIN_PHONE_ALERT, BROWSER_LOGIN_PHONE_LABEL, BROWSER_LOGIN_REOPENING_TEXT, BROWSER_LOGIN_SKIP_LABEL,
                                  DENY_BUTTON, LOCAL_DOCUMENT_APPROVAL_TEXT, LOCAL_DOCUMENT_RESUMED_TEXT, LOG, MAX_OWNER_MESSAGE_CHARS,
-                                 MEMORY_CANDIDATES_EXPIRED_TEXT, MEMORY_CANDIDATES_OUTDATED_TEXT, MEMORY_CANDIDATES_TTL_SECONDS, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS,
-                                 MEMORY_SAVED_OUTDATED_TEXT, MEMORY_SAVED_TTL_SECONDS, PREPARED_IDS_PREFIX, REACTION_EVENT, TELEGRAM_PHOTO_ALBUM_SETTLE_SECONDS,
+                                 MEMORY_CANDIDATES_EXPIRED_TEXT, MEMORY_CANDIDATES_OUTDATED_TEXT, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS,
+                                 MEMORY_SAVED_OUTDATED_TEXT, MEMORY_SAVED_TTL_SECONDS, REACTION_EVENT, TELEGRAM_PHOTO_ALBUM_SETTLE_SECONDS,
                                  TELEGRAM_RECEIVE_GRACE_SECONDS, WORKING_NOTES_KIND, prepared_ids, truncated_owner_message)
 
 
@@ -692,17 +692,7 @@ class TelegramSurface:
                            and notification['generation']==generation and notification['chat_id']==sender
                            and notification['message_id']==message.get('message_id') and proposals)
                     if exact:
-                        for row in proposals:
-                            if parts[2]=='accept':service.preparations.accept(row['id'],prep.ACCEPTED_OWNER_BUTTON)
-                            else:service.cancel_preparation(row['id'])
-                        result_kind='preparation_accepted' if parts[2]=='accept' else 'preparation_denied'
-                        LOG.info('preparation %s by owner button work=%s count=%s',parts[2],notification['job_id'],len(proposals))
-                        # #1455: an accepted message keeps a cancel button bound to exactly what it accepted.
-                        service.store.update_notification(notification['id'],result_kind,fingerprint=(
-                            PREPARED_IDS_PREFIX+','.join(row['id'] for row in proposals) if parts[2]=='accept' else None))
-                        markup=service.preparation_cancel_markup(notification['id']) if parts[2]=='accept' else {'inline_keyboard':[]}
-                        try:service.telegram.edit_message_text(sender,notification['message_id'],service.notification_text(result_kind),markup)
-                        except ProviderError:pass
+                        service.answer_preparation_proposal(notification,proposals,parts[2]=='accept')
                         changed=True
             elif authorized and isinstance(data,str) and data.startswith('p7m:'):
                 # #818: the owner's yes/no for one candidate (or all open ones) of a
@@ -720,23 +710,13 @@ class TelegramSurface:
                     exact=(targets and notification['state']=='sent'
                            and notification['generation']==generation and notification['chat_id']==sender
                            and notification['message_id']==message.get('message_id'))
-                    if exact and time.time()-float(binding['sent'])>MEMORY_CANDIDATES_TTL_SECONDS:
-                        service.expire_memory_prompt(notification,binding)
-                        alert=(MEMORY_CANDIDATES_EXPIRED_TEXT,True)
-                    elif exact:
-                        decided=service.decide_memory_prompt(notification['job_id'],binding,targets,parts[3]=='accept')
-                        finished=not service.memory_open(binding)
-                        service.store.update_notification(notification['id'],'memory_decided' if finished else 'sent',
-                                                       fingerprint=json.dumps(binding))
-                        outdated=any(binding['done'][item]=='outdated' for item in decided)
-                        LOG.info('memory candidates %s by owner button work=%s decided=%s outdated=%s',parts[3],notification['job_id'],len(decided),outdated)
-                        footer=MEMORY_CANDIDATES_OUTDATED_TEXT if outdated else None
-                        try:service.telegram.edit_message_text(sender,notification['message_id'],
-                                                            service.memory_prompt_text(notification['job_id'],binding,footer),
-                                                            service.memory_prompt_markup(notification['id'],binding))
-                        except ProviderError:pass
-                        if outdated:alert=(MEMORY_CANDIDATES_OUTDATED_TEXT,True)
-                        changed=True
+                    if exact:
+                        answered=service.answer_memory_prompt(notification,binding,targets,parts[3]=='accept')
+                        if answered['expired']:
+                            alert=(MEMORY_CANDIDATES_EXPIRED_TEXT,True)
+                        else:
+                            if answered['outdated']:alert=(MEMORY_CANDIDATES_OUTDATED_TEXT,True)
+                            changed=True
             elif authorized and isinstance(data,str) and data.startswith('p7u:'):
                 # #918: the owner's undo of one saved fact (or all still open) of a
                 # saved notice.  Exact: this notification, sent, this chat and
@@ -846,6 +826,8 @@ class TelegramSurface:
             has_photo=isinstance(photo,list) and bool(photo)
             media_group_id=message.get('media_group_id') if has_photo else None
             text='' if edited else (message.get('text') or message.get('caption',''))
+            replied=message.get('reply_to_message') if isinstance(message.get('reply_to_message'),dict) else {}
+            replied_to=replied.get('message_id') if isinstance(replied.get('message_id'),int) else None
             photo_file_id=None
             if has_photo:
                 candidates=[item for item in photo if isinstance(item,dict) and isinstance(item.get('file_id'),str)
@@ -957,7 +939,9 @@ class TelegramSurface:
                             service.store.attach_telegram_photo(task_id,photo_file_id,db=db)
                             service.store.mark_telegram_photo_attached(task_id,db=db)
                         # #581: the owner's own message is the reaction target and reply anchor.
-                        service.telegram_turns.record_source(task_id,sender,message.get('message_id'),db=db)
+                        # #172: the message it replies to, if any, binds the owner's answer to what it showed.
+                        service.telegram_turns.record_source(task_id,sender,message.get('message_id'),db=db,
+                                                             reply_to=replied_to)
                         service.context_observations.note_text_source(db,task_id,message,generation)
                 else:
                     task_id=None
@@ -1000,10 +984,14 @@ class TelegramSurface:
     def ingest_reaction(self, reaction, generation):
         """The owner's emoji on an assistant message (#996): an observation, judged by the Judgment AI.
 
-        On a saved-memory notice, the Judgment AI decides whether it asks not
-        to keep those facts (the same exact undo the old button made).  On an
-        answer, it is recorded on that Work for later turns and self-review.
-        No emoji is mapped to a meaning in code.  Returns what it was applied to.
+        #172: on a message that showed an item still waiting for the owner (a
+        calendar preview, an approval prompt, a settings or memory or
+        preparation proposal, a saved-memory notice), the reaction is the
+        owner's act on it, read by the one owner-act judgment over the item(s)
+        shown on that message; only a judged plain approve or decline settles
+        one, through its own path.  Only on a message that showed nothing open
+        does an answer's reaction go to self-review.  No emoji is mapped to a
+        meaning in code.  Returns what it was applied to.
         """
         service=self.service
         cfg=service.store.config('telegram',{})
@@ -1016,32 +1004,23 @@ class TelegramSurface:
         emoji=[item.get('emoji') for item in reaction.get('new_reaction') or ()
                if isinstance(item,dict) and isinstance(item.get('emoji'),str)][:3]
         if not emoji:return None
-        # #1472: a reaction on an approval prompt is the owner's answer to it, judged like a reply.
-        pending=service.pending_step_notification(user,message_id)
-        if pending:
-            notification,request=pending
-            def answer():
-                text=service.answer_step_approval(notification,request,'reaction: '+' '.join(emoji))
-                if text:
-                    try:service.telegram.send_message(user,text)
-                    except ProviderError:pass
-            service.steer_spawn(answer)
-            return 'step_approval'
         with service.store.db() as db:
             notice=service.store.telegram.notice_on_message(db,user,message_id,MEMORY_SAVED_KINDS)
             turn=db.execute('SELECT job_id FROM telegram_turns WHERE chat_id=? AND reply_message_id=? ORDER BY created DESC LIMIT 1',
                             (user,message_id)).fetchone()
         target=dict(notice)['job_id'] if notice else (turn['job_id'] if turn else None)
-        if not target:return None
-        with service.store.db() as db:
-            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                       (target,REACTION_EVENT,'observed',
-                        json.dumps({'emoji':emoji,'on':'memory_notice' if notice else 'answer'},ensure_ascii=False),time.time()))
-        LOG.info('owner reaction work=%s on=%s',target,'memory_notice' if notice else 'answer')
-        if notice:
-            notification=dict(notice)
-            service.steer_spawn(lambda:service.withdraw_memory_notice(notification,'reaction: '+' '.join(emoji)))
-            return 'memory_notice'
+        if target:
+            with service.store.db() as db:
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (target,REACTION_EVENT,'observed',
+                            json.dumps({'emoji':emoji,'on':'memory_notice' if notice else 'answer'},ensure_ascii=False),time.time()))
+            LOG.info('owner reaction work=%s on=%s',target,'memory_notice' if notice else 'answer')
+        # #172: a reaction on a message that showed an open item is the owner's act on that item,
+        # judged off the poll thread; nothing is settled unless the judgment names it.
+        if service.owner_acts.bound_to(user,generation,message_id):
+            service.steer_spawn(lambda:service.owner_acts.answer_reaction(user,generation,message_id,emoji))
+            return 'owner_act'
+        if not target or notice:return None
         # #998: the answer the owner reacted to gets one self-review in the idle tick, under the
         # shared cap and pause; the Judgment AI decides whether there is anything to learn.
         try:om.enqueue_self_review(service.store,target,om.REVIEW_REACTION,'owner reaction on the answer: '+' '.join(emoji))

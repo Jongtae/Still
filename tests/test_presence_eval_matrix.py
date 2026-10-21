@@ -46,7 +46,7 @@ from cryptography.fernet import Fernet
 from personal_agent.agent_runtime import CORE_INSTRUCTIONS
 from personal_agent.bounded_execution import ExecutionError, ExecutionResult
 from personal_agent.calendar import CALENDAR_SPEC, CALENDAR_WRITE_SPEC, CalendarConnector
-from personal_agent.calendar_conversation import CREATED, OUTCOME_UNKNOWN, PREVIEW_HEADER
+from personal_agent.calendar_conversation import CREATED, OUTCOME_UNKNOWN, PREVIEW_FOOTER, PREVIEW_HEADER
 from personal_agent.connector_contract import ConnectorRegistry, ConnectorState
 from personal_agent.conversation_handoff import ConnectorHandoff, FOLLOWUP_RETRY, LOCAL_AUTHORITY_PREVIEWS, LOCAL_FOLDER_READ
 from personal_agent.conversation_projection import TERMINAL_FAILED_HEADER, TERMINAL_PARTIAL_HEADER, TERMINAL_UNCONFIRMED_NOTE
@@ -1045,6 +1045,9 @@ class CalendarEval(PresenceEval):
         self.calendar = CalendarConnector(self.store, self.provider, registry=self.registry, now=lambda: self.clock[0])
         self.service = self.make_service(connector_registry=self.registry, calendar=self.calendar)
         self.service.calendar_conversation.now = lambda: self.clock[0]
+        # #172: the one owner-act judgment, scripted; Still reads no approval word list.
+        from owner_act_script import with_owner_acts
+        with_owner_acts(self.service.decision_engine)
         self.connect_write()
         self.connect_model()
 
@@ -1094,7 +1097,7 @@ class F_CalendarApproval(CalendarEval):
                 self.assertIn(PREVIEW_HEADER, preview)
                 self.assertIn(title, preview)
                 self.assertIn(when, preview)
-                self.assertIn('"승인"', preview)
+                self.assertIn(PREVIEW_FOOTER, preview)
                 self.assertEqual(len(self.provider.calls), calls, 'nothing reaches the provider before approval')
                 self.assertIn('awaiting-approval', self.states())
                 approval = ('승인', 'approve', 'yes')[index]

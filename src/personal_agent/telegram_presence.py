@@ -64,6 +64,7 @@ from .messages import msg
 import hashlib
 import html
 import re
+import sqlite3
 import time
 from dataclasses import dataclass, field
 
@@ -843,7 +844,9 @@ class TelegramTurnAddressing:
 
     ``source_message_id`` is the owner's message (reaction target and reply
     anchor); ``reply_message_id`` is the durable reply carrying controls, so
-    a control tap is honoured only from that exact message.  This is not a
+    a control tap is honoured only from that exact message.  ``reply_to_message_id``
+    is the message the owner's own message replied to (Telegram reply-to, #172),
+    so the owner's answer binds to what that message showed.  This is not a
     conversation store: no text, no outcome and no Evidence is kept here;
     Work state stays in ``jobs``.
     """
@@ -852,18 +855,36 @@ class TelegramTurnAddressing:
         self.store = store
         with store.db() as db:
             db.execute('CREATE TABLE IF NOT EXISTS telegram_turns(job_id TEXT PRIMARY KEY, chat_id INTEGER NOT NULL, '
-                       'source_message_id INTEGER, reply_message_id INTEGER, created REAL NOT NULL)')
+                       'source_message_id INTEGER, reply_message_id INTEGER, created REAL NOT NULL, '
+                       'reply_to_message_id INTEGER)')
+            if 'reply_to_message_id' not in self._columns(db):
+                try:
+                    db.execute('ALTER TABLE telegram_turns ADD COLUMN reply_to_message_id INTEGER')
+                except sqlite3.OperationalError:
+                    # Another process may have added it between the read and the ALTER.
+                    if 'reply_to_message_id' not in self._columns(db):
+                        raise
 
-    def record_source(self, job_id, chat_id, message_id, db=None):
+    @staticmethod
+    def _columns(db):
+        return {row[1] for row in db.execute('PRAGMA table_info(telegram_turns)')}
+
+    def record_source(self, job_id, chat_id, message_id, db=None, reply_to=None):
         if not isinstance(message_id, int) or not isinstance(chat_id, int):
             return
-        statement = ('INSERT INTO telegram_turns(job_id,chat_id,source_message_id,created) VALUES (?,?,?,?) '
-                     'ON CONFLICT(job_id) DO NOTHING')
+        reply_to = reply_to if isinstance(reply_to, int) and not isinstance(reply_to, bool) else None
+        statement = ('INSERT INTO telegram_turns(job_id,chat_id,source_message_id,created,reply_to_message_id) '
+                     'VALUES (?,?,?,?,?) ON CONFLICT(job_id) DO NOTHING')
         if db is not None:
-            db.execute(statement, (job_id, chat_id, message_id, time.time()))
+            db.execute(statement, (job_id, chat_id, message_id, time.time(), reply_to))
             return
         with self.store.db() as conn:
-            conn.execute(statement, (job_id, chat_id, message_id, time.time()))
+            conn.execute(statement, (job_id, chat_id, message_id, time.time(), reply_to))
+
+    def reply_to(self, job_id):
+        """The message the owner's message for this Work replied to, or None (#172)."""
+        row = self.get(job_id)
+        return row.get('reply_to_message_id') if row else None
 
     def record_reply(self, job_id, chat_id, message_id):
         if not isinstance(message_id, int):

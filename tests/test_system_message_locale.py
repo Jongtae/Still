@@ -133,7 +133,7 @@ class OtherFlowsTest(unittest.TestCase):
 
     def test_calendar_conversation_lines(self):
         lines = {
-            calendar_conversation.OTHER_CHANNEL: 'calendar_conversation.draft_from_other_channel',
+            calendar_conversation.PREVIEW_FOOTER: 'calendar_conversation.reply_approve_to_apply_it_as',
             calendar_conversation.FAILED_RECONNECT: 'calendar_conversation.not_applied_reconnect',
             calendar_conversation.FAILED_RETRY: 'calendar_conversation.not_applied_retry',
             calendar_conversation.NOT_APPLIED_REST: 'calendar_conversation.rest_not_applied',
@@ -149,19 +149,13 @@ class OtherFlowsTest(unittest.TestCase):
         self.assertEqual(translate(reply, 'zh'), msg('calendar_conversation.not_applied_retry', 'zh') + '\n'
                          + msg('calendar_conversation.rest_not_applied', 'zh'))
 
-    def test_the_reply_words_each_language_is_told_to_send_are_accepted(self):
-        """Codex review on #146: an instructed word the parser refuses would drop the pending draft."""
+    def test_the_preview_footer_asks_for_no_exact_word(self):
+        """#172: approval is judged, not matched, so no language is told to send one exact word."""
         import re
         quoted = re.compile(r'"([^"]+)"|「([^」]+)」|“([^”]+)”')
-        for message_id, kinds in (('calendar_conversation.reply_approve_to_apply_it_as', ('approve', 'cancel')),
-                                  ('calendar_conversation.draft_from_other_channel', ('approve',))):
-            for lang in ('ko', *LANGS):
-                words = [next(group for group in match.groups() if group) for match in quoted.finditer(msg(message_id, lang))]
-                with self.subTest(message_id=message_id, lang=lang):
-                    self.assertEqual(len(words), len(kinds))
-                    for word, kind in zip(words, kinds):
-                        check = calendar_conversation.is_approval if kind == 'approve' else calendar_conversation.is_cancel
-                        self.assertTrue(check(word), word)
+        for lang in ('ko', *LANGS):
+            with self.subTest(lang=lang):
+                self.assertEqual(quoted.findall(msg('calendar_conversation.reply_approve_to_apply_it_as', lang)), [])
 
     def test_sign_in_handoff_and_family_lines(self):
         self.assertEqual(translate(remote_login.NO_NGROK_TEXT, 'en'), msg('remote_login.no_ngrok', 'en'))

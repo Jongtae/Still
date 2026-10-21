@@ -86,6 +86,8 @@ ACTIVE_STATES = (STATE_PROPOSED, STATE_SCHEDULED, STATE_RUNNING)
 
 #: ``accepted_by`` values: who turned a proposal into a schedule.
 ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_SETTINGS = 'owner-request', 'owner-button', 'owner-settings'
+#: #172: the owner's reply or reaction to the proposal message, judged a plain yes to it.
+ACCEPTED_OWNER_ANSWER = 'owner-answer'
 
 GOAL_MAX_CHARS = 500
 MAX_ACTIVE = 50

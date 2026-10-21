@@ -231,7 +231,7 @@ class OriginalBrowserResult(LoginHarness):
         self.scripts=[Script({'tool_calls':[call('read','browser_open',url=ORIGIN+'/product',effect='read')]},
                              finish('done','read',summary=summary))]
         self.service.use_decision_engine(goal_engine(True))
-        with patch.object(self.service,'settings_draft_answer',side_effect=AssertionError('replay is not owner approval')):
+        with patch.object(self.service.owner_acts,'read',side_effect=AssertionError('replay is not owner approval')):
             self.assertTrue(self.service.run_one())
         job=self.store.job(work)
         self.assertEqual(job['status'],'succeeded',job)

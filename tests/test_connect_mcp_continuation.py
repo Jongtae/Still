@@ -148,10 +148,12 @@ class McpContinuation(_Case):
         self.run_original_results([self.job],['The requested record has two incomplete items.'])
 
     def typed_recovery_sequence(self, states):
-        from personal_agent.conversation_handoff import Judgment, JUDGMENT_YES
         self.propose()
         self.service.conversation_focus.record(mock.Mock(intent='settings'),self.job['id'])
-        with mock.patch.object(self.service.decision_judge,'settings_draft_confirmed',return_value=Judgment(JUDGMENT_YES)):
+        # #172: the one owner-act judgment, scripted to read each reply as a plain yes to the open settings item.
+        def owner_act(act,items,target='',work_id=None):
+            return {'item':next(item['id'] for item in items if item['kind']=='settings-drafts'),'answer':'approve','rest':''}
+        with mock.patch.object(self.service.decision_judge,'owner_act_answer',side_effect=owner_act):
             for index,state in enumerate(states):
                 self.observations=[{'state':state,'tools':['get_record']}]
                 self.script=[{'content':'확인했습니다.'}]*4

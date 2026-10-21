@@ -5,9 +5,10 @@ thumbs up or a heart as "good", silence as "unclear", and a dismayed face, a
 thumbs down or "don't remember that" as "don't keep it".
 
 * A saved notice carries no buttons.
-* An owner reaction on a saved notice, or the owner's first typed message
-  after it, goes to the Judgment AI (``memory_withdrawn``).  On yes, the exact
-  #918 undo runs; otherwise the facts stay.  No emoji is mapped in code.
+* An owner reaction on a saved notice, or any typed message while it is open,
+  goes to the one owner-act judgment (#172, ``owner_act_answer``).  On a
+  judged decline of the notice, the exact #918 undo runs; otherwise the facts
+  stay.  No emoji is mapped in code.
 * A reaction on an answer is recorded on that Work (``owner_reaction``).
 * The bot asks Telegram for ``message_reaction`` updates.
 
@@ -23,6 +24,7 @@ from personal_agent.conversation_handoff import TELEGRAM_POLL_UPDATE_KINDS
 from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
 from personal_agent.quickstart_service import MEMORY_SAVED_KIND, REACTION_EVENT
 
+from owner_act_script import with_owner_acts
 from test_memory_candidate_confirm import CHAT, GENERATION, OTHER, VALUE
 from test_memory_save_undo import SaveAndTell
 
@@ -37,13 +39,16 @@ class _Answering(SaveAndTell):
         def judge(context, proposition):
             if context.purpose == 'goal-reached':
                 return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
-            if context.purpose == 'memory-withdrawal':
-                self.asked.append(dict(context.facts))
-                if self.WITHDRAW is None:
-                    return None
-                return BinaryDecision(OUTCOME_DECIDED, self.WITHDRAW, fixture_confidence())
             return None
-        self.claim_completion(FixtureDecisionEngine(judge=judge))
+
+        def act(response, items):
+            # #172: the one owner-act judgment, scripted: WITHDRAW reads the act as a decline of the notice.
+            notices = [item for item in items if item['kind'] == 'memory-saved']
+            self.asked.append({'owner_response': response, 'remembered': notices[0]['text'] if notices else ''})
+            if self.WITHDRAW is None:
+                return None
+            return (notices[0]['id'], 'decline', '') if self.WITHDRAW and notices else ('none', 'unrelated', '')
+        self.claim_completion(with_owner_acts(FixtureDecisionEngine(judge=judge), rule=act))
         self.service.steer_spawn = lambda target: target()
 
     def react(self, message_id, emoji='😳', user=CHAT, chat=None):
@@ -65,7 +70,7 @@ class ReactionOnTheNotice(_Answering):
 
     def test_a_reaction_the_judgment_reads_as_no_undoes_the_facts(self):
         job, _notice, row = self.told()
-        self.assertEqual(self.react(row['message_id'], '😳'), 'memory_notice')
+        self.assertEqual(self.react(row['message_id'], '😳'), 'owner_act')
         self.assertEqual([(m['content'], m['state']) for m in self.store.memories()], [],
                          'the saved fact is no longer current')
         self.assertEqual(self.asked[-1]['owner_response'], 'reaction: 😳')
@@ -136,7 +141,8 @@ class WordsAfterTheNotice(_Answering):
         self.assertTrue(any('removed what you had just said you remembered' in str(m.get('content')) and VALUE in str(m.get('content'))
                             for m in users), 'the worker knows the facts were already removed')
 
-    def test_only_the_first_owner_message_after_the_notice_is_read_that_way(self):
+    def test_once_the_owner_has_spoken_an_unbound_message_is_not_judged_against_the_notice(self):
+        # #172 cost bound: a long-lived item joins an unbound typed act only until the owner speaks again.
         self.WITHDRAW = False
         _job, _notice, _row = self.told()
         self.plan = []
@@ -146,7 +152,50 @@ class WordsAfterTheNotice(_Answering):
                 db.execute('UPDATE jobs SET owner_typed=1 WHERE id=?', (job_id,))
             self.service.run_one()
         self.assertEqual([a['owner_response'] for a in self.asked], ['점심 뭐 먹지'])
-        self.assertEqual([m['content'] for m in self.store.memories()], [VALUE])
+        self.assertEqual([m['content'] for m in self.store.memories()], [VALUE], 'nothing judged a decline')
+
+
+class CostBound(_Answering):
+    """#172 review: an unbound typed act is not judged against a long-lived item the owner has spoken past."""
+    WITHDRAW = False
+
+    def two_days_old(self):
+        """A saved notice shown two days ago, with one owner message since; returns its notification row."""
+        _job, _notice, row = self.told()
+        binding = self.binding(row)
+        binding['sent'] = float(binding['sent']) - 2 * 86400
+        self.store.update_notification(row['id'], 'sent', fingerprint=json.dumps(binding))
+        spoke = self.store.enqueue('어제 얘기', 'cost-spoke', channel=f'telegram:{GENERATION}', chat_id=CHAT)
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET owner_typed=1, status='succeeded', created=? WHERE id=?",
+                       (binding['sent'] + 3600, spoke))
+        self.plan = []
+        return row
+
+    def typed(self, text, reply_to=None):
+        job_id = self.store.enqueue(text, 'cost-' + text, channel=f'telegram:{GENERATION}', chat_id=CHAT)
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET owner_typed=1 WHERE id=?', (job_id,))
+        if reply_to is not None:
+            self.service.telegram_turns.record_source(job_id, CHAT, 4242, reply_to=reply_to)
+        self.service.run_one()
+        return job_id
+
+    def test_a_typed_message_while_only_an_old_notice_is_open_makes_no_judgment_call(self):
+        self.two_days_old()
+        self.typed('점심 뭐 먹지')
+        self.assertEqual(self.asked, [], 'no owner-act judgment call')
+
+    def test_a_reply_to_the_old_notice_is_judged(self):
+        row = self.two_days_old()
+        self.typed('그건 기억하지 마', reply_to=row['message_id'])
+        self.assertEqual([a['owner_response'] for a in self.asked], ['그건 기억하지 마'])
+
+    def test_a_typed_message_right_after_the_notice_is_judged(self):
+        self.told()
+        self.plan = []
+        self.typed('점심 뭐 먹지')
+        self.assertEqual([a['owner_response'] for a in self.asked], ['점심 뭐 먹지'])
 
 
 class CommandAfterTheNotice(_Answering):
