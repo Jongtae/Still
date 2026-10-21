@@ -497,6 +497,9 @@ class PublicPageReader:
                     'sources':[current]}
         raise ProviderError('공개 페이지를 읽지 못했습니다.')
 
+#: Where ``weather`` sends a city (and country code) to find its coordinates (#167: named in the information-use audit).
+GEOCODING_SEARCH='https://geocoding-api.open-meteo.com/v1/search'
+
 class LocalTools:
     def __init__(self, page_reader=None, providers=None):
         self.page_reader=page_reader or PublicPageReader()
@@ -522,7 +525,7 @@ class LocalTools:
         if not isinstance(city,str) or not 1<=len(city.strip())<=100:raise ValueError('날씨를 조회할 도시를 알려 주세요.')
         args={'name':city,'count':20,'language':'en','format':'json'}
         if isinstance(country,str) and re.fullmatch('[A-Za-z]{2}',country):args['countryCode']=country.upper()
-        places=request_json('https://geocoding-api.open-meteo.com/v1/search?'+urlencode(args),None,timeout=10).get('results',[])
+        places=request_json(GEOCODING_SEARCH+'?'+urlencode(args),None,timeout=10).get('results',[])
         if not places:raise ValueError('도시를 찾지 못했습니다. 도시와 국가를 함께 알려 주세요.')
         populated=sorted([p for p in places if p.get('population',0)>=100000],key=lambda p:p['population'],reverse=True)
         if len(populated)==1:places=populated

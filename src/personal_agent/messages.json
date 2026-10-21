@@ -479,11 +479,29 @@
   "ja": "以前の回答の情報利用記録",
   "zh": "之前回答的信息使用记录"
  },
+ "information_use.browser_destinations": {
+  "ko": "- 브라우저로 연 곳: {hosts}",
+  "en": "- Opened in the browser: {hosts}",
+  "ja": "- ブラウザで開いた先: {hosts}",
+  "zh": "- 在浏览器中打开的地方: {hosts}"
+ },
+ "information_use.cli_search_is_not_compared": {
+  "ko": "- AI CLI가 스스로 하는 웹 검색은 Still을 거치지 않습니다. 그 검색어는 CLI가 알려 준 만큼만 보이고, 보관한 값과 비교하지 않습니다.",
+  "en": "- The AI CLI's own web search does not go through Still. Its queries show only as far as the CLI reports them and are not compared with held values.",
+  "ja": "- AI CLI が自分で行うウェブ検索は Still を経由しません。その検索語は CLI が知らせた分だけ表示され、保管している値とは照合しません。",
+  "zh": "- AI CLI 自己进行的网页搜索不经过 Still。其搜索词只显示 CLI 报告的部分，也不会与保存的值进行比对。"
+ },
  "information_use.cli_s_own_search": {
   "ko": "CLI 자체 검색",
   "en": "CLI's own search",
   "ja": "CLI 自身の検索",
   "zh": "CLI 自带搜索"
+ },
+ "information_use.held_values_that_went_out": {
+  "ko": "밖으로 나간 내용에 들어 있던 보관 정보",
+  "en": "Held information found in what went out",
+  "ja": "外に出た内容に含まれていた保管情報",
+  "zh": "发出的内容中包含的已保存信息"
  },
  "information_use.included_in_request": {
   "ko": "요청에 포함",
@@ -496,6 +514,30 @@
   "en": "Information this answer used",
   "ja": "この回答に使った情報",
   "zh": "此回答使用的信息"
+ },
+ "information_use.matched_memory": {
+  "ko": "- {where}: 기억 '{key}'의 값과 겹치는 내용이 들어 있었습니다",
+  "en": "- {where}: carried content matching the value of Memory '{key}'",
+  "ja": "- {where}: 記憶「{key}」の値と重なる内容が含まれていました",
+  "zh": "- {where}: 包含与记忆“{key}”的值重合的内容"
+ },
+ "information_use.matched_memory_attempt": {
+  "ko": "- {where}: 실패한 시도에 기억 '{key}'의 값과 겹치는 내용이 들어 있었습니다(상대에게 닿았는지는 알 수 없습니다)",
+  "en": "- {where}: a failed attempt carried content matching the value of Memory '{key}' (unknown whether it reached the destination)",
+  "ja": "- {where}: 失敗した試みに記憶「{key}」の値と重なる内容が含まれていました（相手に届いたかは不明です）",
+  "zh": "- {where}: 一次失败的尝试包含与记忆“{key}”的值重合的内容（不确定是否送达）"
+ },
+ "information_use.matched_work_write": {
+  "ko": "- {where}: 이 작업에서 저장한 값과 겹치는 내용이 들어 있었습니다",
+  "en": "- {where}: carried content matching a value this Work saved",
+  "ja": "- {where}: この作業で保存した値と重なる内容が含まれていました",
+  "zh": "- {where}: 包含与此工作保存的值重合的内容"
+ },
+ "information_use.matched_work_write_attempt": {
+  "ko": "- {where}: 실패한 시도에 이 작업에서 저장한 값과 겹치는 내용이 들어 있었습니다(상대에게 닿았는지는 알 수 없습니다)",
+  "en": "- {where}: a failed attempt carried content matching a value this Work saved (unknown whether it reached the destination)",
+  "ja": "- {where}: 失敗した試みにこの作業で保存した値と重なる内容が含まれていました（相手に届いたかは不明です）",
+  "zh": "- {where}: 一次失败的尝试包含与此工作保存的值重合的内容（不确定是否送达）"
  },
  "information_use.material_attached_to_the_request": {
   "ko": "요청에 붙인 자료",
@@ -520,6 +562,12 @@
   "en": "Prepared answers",
   "ja": "準備しておいた回答",
   "zh": "预先准备的回答"
+ },
+ "information_use.provider_processes_the_conversation": {
+  "ko": "- 이 작업의 대화는 선택한 AI 제공자가 처리합니다.",
+  "en": "- This Work's conversation is processed by the AI provider you chose.",
+  "ja": "- この作業の会話は、選んだ AI 提供元が処理します。",
+  "zh": "- 此工作的对话由您选择的 AI 提供方处理。"
  },
  "information_use.results_returned": {
   "ko": "돌아온 결과",

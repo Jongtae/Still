@@ -23,6 +23,11 @@ Work's activity used, ``sent_to`` the agents and destinations it went to,
 never a model's claim.  Only references and short labels are shown - keys,
 refs, paths, titles, counts, queries - never payloads; a secret redactor is
 applied to every label before it leaves this module.
+
+#167 (#28 option A): ``sent_to`` also lists the hosts the signed-in browser
+opened and the held values outbound calls carried, as the labels
+``agent_runtime.outbound_evidence`` recorded (where the value is kept, the
+tool, the destination), never the value or the outbound text.
 """
 from .manifests import HOST_TOOLS
 from .messages import msg
@@ -60,6 +65,8 @@ CATEGORY_NAMES = {
 }
 #: Turn-provenance events that are not tools the worker called.
 _NOT_TOOLS = frozenset({'model', 'subscription_engine', 'orchestrator'})
+#: #167: where a held value an outbound call carried is kept (``agent_runtime.held_values``).
+MATCH_SOURCES = frozenset({'memory', 'work_write'})
 
 
 def _text(value, limit=LABEL_CHARS):
@@ -328,6 +335,8 @@ def work_information_use(store, job_id, redact=None):
         except (TypeError,ValueError):photo_count=1
         add('spliced', [f'Telegram 사진 {photo_count}개'])
     lookups, results, started, connections = [], [], {}, {}
+    # #167 (#28 option A): labels of held values outbound calls carried, and the hosts the browser opened.
+    matches, opened = [], []
     for event in store.task_events(job_id):
         tool, status, trace = event.get('tool'), event.get('status'), event.get('trace') or {}
         if tool in _NOT_TOOLS or not isinstance(trace, dict):
@@ -347,6 +356,24 @@ def work_information_use(store, job_id, redact=None):
                 'destination': label(evidence.get('host'), 200), 'state': evidence_state,
                 'remote_receipt': label(str(evidence.get('response_status') or ''), 20)}
             continue
+        # A failed call that was dispatched records its matches at the top level, and a call the runtime
+        # withheld after it returned keeps them in its Evidence: either may have carried them out.
+        withheld = status == 'failed' and trace.get('state') == 'withheld'
+        found = (evidence.get('outbound_matches') if status == 'succeeded' or withheld
+                 else trace.get('outbound_matches') if status == 'failed' else None)
+        for row in found if isinstance(found, list) else ():
+            if not isinstance(row, dict) or row.get('source') not in MATCH_SOURCES:
+                continue
+            match = {'source': row['source'], 'key': label(row.get('key'), 80) if row['source'] == 'memory' else '',
+                     'tool': label(row.get('tool') or action, 60), 'destination': label(row.get('destination'), 120),
+                     'status': status}
+            if match not in matches and len(matches) < MAX_ITEMS:
+                matches.append(match)
+        if (status == 'succeeded' or withheld) and action == 'browser_open':
+            for value in (evidence.get('destination') or _host(evidence.get('url')), evidence.get('landed')):
+                host = label(value, 120)
+                if host and host not in opened and len(opened) < MAX_ITEMS:
+                    opened.append(host)
         if action in LOOKUP_ACTIONS and status == 'running':
             # The arguments a lookup started with, for a call that then failed.
             started[(tool, trace.get('call_id'))] = trace
@@ -390,6 +417,9 @@ def work_information_use(store, job_id, redact=None):
     sent_to={'workers': workers,
              'judgment_ai': {'calls': len(judgments), 'models': judgment_models},
              'web_search_ran': bool(lookups), 'lookups': lookups[:MAX_ITEMS]}
+    # #167: places the signed-in browser opened (a URL carries data to its host), and held-value matches.
+    sent_to['browser_destinations'] = opened
+    sent_to['held_value_matches'] = matches
     if connections:sent_to['connections']=list(connections.values())[-MAX_ITEMS:]
     if photo_inputs:sent_to['attachments']=photo_inputs
     return {'work_id': job_id, 'recorded': bool(record), 'evidence_class': EVIDENCE_CLASS,
@@ -397,6 +427,28 @@ def work_information_use(store, job_id, redact=None):
             'conversation_turns': int(record.get('context_messages') or 0),
             'sent_to': sent_to,
             'results': results[-MAX_ITEMS:]}
+
+
+def _host(url):
+    from urllib.parse import urlsplit
+    try:
+        return urlsplit(str(url or '')).hostname or ''
+    except ValueError:
+        return ''
+
+
+def _match_line(match):
+    """One plain line for one held-value match (#167): which kept item, by which tool, to which host."""
+    where = f"{match.get('tool')} → {match['destination']}" if match.get('destination') else str(match.get('tool') or '')
+    failed = '_attempt' if match.get('status') == 'failed' else ''
+    if match.get('source') == 'memory':
+        return msg(f'information_use.matched_memory{failed}', where=where, key=match.get('key') or '?')
+    return msg(f'information_use.matched_work_write{failed}', where=where)
+
+
+def _cli_search(workers):
+    """Whether a worker of the Work ran with its own web search on, which Still does not mediate."""
+    return any(row.get('own_web_search') for row in workers)
 
 
 def _worker_text(row):
@@ -423,6 +475,9 @@ def render_korean(audit):
     workers = sent.get('workers') or ()
     lines.append('보낸 곳')
     lines.append('- 작업 AI: ' + ('; '.join(_worker_text(row) for row in workers) if workers else '기록 없음'))
+    # #167: said once, for a recorded worker; remote processing of the conversation is not new.
+    if workers:
+        lines.append(msg('information_use.provider_processes_the_conversation'))
     for photo in sent.get('attachments') or ():
         destination=photo.get('engine') or photo.get('provider') or photo.get('route') or '경로 기록 없음'
         state={'included-in-request':msg('information_use.included_in_request'),'staged':'전달 대기','not-sent':msg('information_use.not_sent'),
@@ -444,6 +499,14 @@ def render_korean(audit):
             lines.append(f"- 웹 조회({who}{failed}): {queries}")
     else:
         lines.append('- 웹 검색: 실행하지 않음')
+    if sent.get('browser_destinations'):
+        lines.append(msg('information_use.browser_destinations', hosts=', '.join(sent['browser_destinations'])))
+    matches = sent.get('held_value_matches') or ()
+    if matches:
+        lines.append(msg('information_use.held_values_that_went_out'))
+        lines.extend(_match_line(match) for match in matches)
+    if _cli_search(workers):
+        lines.append(msg('information_use.cli_search_is_not_compared'))
     results = [row for row in audit.get('results') or () if row.get('status') == 'succeeded']
     if results:
         lines.append(msg('information_use.results_returned'))

@@ -440,6 +440,9 @@ class CodeRunner:
         #: #1489: the sets this Work's runs were already told how to keep their steps for.
         self._hinted = set()
         self._fields, self._note = [], ''
+        #: #167: ``[(text, host)]`` of the requests the last run let out (path, query, body, header values),
+        #: held in memory for the information-use comparison only; never returned or recorded.
+        self.sent = []
 
     def node(self):
         if self._node is None:
@@ -507,6 +510,7 @@ class CodeRunner:
         self._fields = parse_approval_fields(fields)
         if seconds is not None:
             timeout = max(1, min(timeout, int(seconds)))
+        self.sent = []
         node = self.node()
         if node is None:
             raise CodeRunError(UNAVAILABLE_TEXT, 'code_run_unavailable')
@@ -902,6 +906,12 @@ class CodeRunner:
                                                      if isinstance(pair, list) and len(pair) == 2)[:APPROVAL_BODY_CHARS]
                         recorded.append(entry)
                     allow, reason = self._decide(message, policy, check=recorded is not None)
+                    if allow and len(self.sent) < MAX_CHECKED_REQUESTS:
+                        pairs = message.get('headers') if isinstance(message.get('headers'), list) else []
+                        parts = [message.get('path'), message.get('query'), message.get('bodyText'),
+                                 *(pair[1] for pair in pairs[:64] if isinstance(pair, list) and len(pair) == 2)]
+                        self.sent.append(('\n'.join(str(part) for part in parts if part)[:APPROVAL_BODY_CHARS],
+                                          _host(message.get('host'))[:253]))
                     requests.append({'phase': phase, 'method': str(message.get('method') or '')[:10],
                                      'host': _host(message.get('host'))[:253], 'path': str(message.get('path') or '/')[:300],
                                      'allowed': allow})
