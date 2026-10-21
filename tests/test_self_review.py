@@ -452,6 +452,18 @@ class Unit(unittest.TestCase):
             self.assertIn(rule, om.REVIEW_QUESTION)
         self.assertEqual((om.NOTES_CHARS, om.NOTES_POINTS), (1500, 12), 'the inherited design (#19)')
 
+    def test_a_step_the_owner_already_took_that_still_failed_is_a_blocker(self):
+        # #154: the owner approved and nothing was applied; three lessons recorded the dead end as
+        # an owner preference, one of them asking to skip the approval.
+        question = om.REVIEW_QUESTION
+        for rule in ('the owner already did their part - approved, answered, connected or gave the value',
+                     "the cause is the software, not the owner's habit: give the blocker and no notes",
+                     'A note never asks to skip, assume or relax an approval or confirmation the software requires'):
+            self.assertIn(rule, question)
+        # After the missing-capability rule (#1463) it refines, and before the bounds that close the question.
+        self.assertLess(question.index('missing tool or capability'), question.index('already did their part'))
+        self.assertLess(question.index('A note never asks to skip'), question.index('The blocker is at most'))
+
     def test_an_old_table_is_rebuilt_once_keyed_by_work_and_kind(self):
         db = sqlite3.connect(':memory:')
         db.row_factory = sqlite3.Row
