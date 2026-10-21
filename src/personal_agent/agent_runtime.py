@@ -2244,6 +2244,8 @@ def same_invocation(first, second):
 STEP_FACTS={RECOVERED:'[recovered: the same action succeeded later]',
             ROUTED_AROUND:'[changed nothing: a later call succeeded on another path]'}
 UNKNOWN_EFFECT_STEP_FACT='[effect unknown: whether this call changed something is not known]'
+#: #170: a withheld step prepared something that now waits for the owner's own decision; it did not fail.
+AWAITING_OWNER_STEP_FACT='awaiting the owner: prepared and shown for the owner\'s own approval; nothing applied yet'
 
 #: #14: ``failed_steps_text`` stays inside the judgment's failure bound (``GOAL_FAILURE_CHARS``,
 #: ``orchestrator.FAILURE_CHARS``) with room for redaction, and bounds each reason.
@@ -2264,7 +2266,8 @@ def failed_steps_text(steps, limit=FAILED_STEPS_CHARS):
  for index,(tool,_action,state,detail,reason) in enumerate(steps):
   if state in SETTLED_STATES:continue
   detail=detail if isinstance(detail,dict) else {}
-  text=f"{tool}: {str(reason or detail.get('code') or 'failed')[:FAILED_STEP_REASON_CHARS]}"
+  default=AWAITING_OWNER_STEP_FACT if state=='withheld' else (detail.get('code') or 'failed')
+  text=f"{tool}: {str(reason or default)[:FAILED_STEP_REASON_CHARS]}"
   if index in marks:made_up.append(text+' '+STEP_FACTS[marks[index]])
   else:open_steps.append(text+' '+UNKNOWN_EFFECT_STEP_FACT if unknown_effect(detail) else text)
  entries=open_steps+made_up;kept=[]

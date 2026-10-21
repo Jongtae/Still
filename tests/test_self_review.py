@@ -355,7 +355,7 @@ class Run(SelfReview):
         self.service.run_owner_model_upkeep()
         [(_status, detail)] = self.evidence(job)
         self.assertEqual(detail['inputs'], {'owner_request_chars': len('그거 찾아줘'), 'answer_chars': len('사진이 없습니다'),
-                                            'evaluations': 1, 'followups': 0, 'observation': False, 'profile_chars': 0,
+                                            'evaluations': 1, 'followups': 0, 'observation': False, 'profile_chars': 0, 'awaiting_owner': False,
                                             'working_notes_version': None, 'working_notes_chars': 0, 'clock': True})
         text = json.dumps(detail, ensure_ascii=False)
         for raw in ('그거 찾아줘', '사진이 없습니다', 'Not reached', 'a lesson'):

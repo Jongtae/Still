@@ -901,12 +901,17 @@ GOAL_REACHED_PROPOSITION = ('The reply serves the owner\'s message, read in the 
                             'Assess whether a route the owner did not name usefully serves the desired outcome while '
                             'preserving the stated constraints, required method, identity, preferences and corrections. '
                             'Novelty is not required; an alternative never authorizes an effect or replaces the request. '
+                            'Each recent_conversation row is an earlier Work, marked with its time: an approval, lookup or '
+                            'change there belongs to that Work, never to this reply; only observations and failed_steps are '
+                            'this Work\'s own events (#170). '
                             'failed_steps are calls that did not work, as Still recorded them (#14). One marked recovered '
                             'was done by a later call of the same action; one marked changed nothing changed no outside '
                             'state and a later call succeeded on another path. Neither is by itself a part the reply left '
                             'unserved: the reply is judged on what the observations show. An unmarked failed step, or one '
                             'marked effect unknown, still counts against a reply that states or depends on what that call '
-                            'was for. '
+                            'was for. A step marked awaiting the owner prepared something Still now shows the owner for '
+                            'their own decision (an approval it requires); that wait is by design, not a failure, and a reply '
+                            'that says plainly what was prepared and that it waits for the owner serves that part (#170). '
                             'A reply that asks the owner to type or paste a password, key, token or other credential into '
                             'the conversation never serves the request: such values go only through a secure input. '
                             'A bare limitation is insufficient when the observations show a supported authorized route '
@@ -1308,7 +1313,7 @@ class ConversationJudgments:
         return self.policy.structured(decision), decision
 
     def self_review(self, request, answer, outcome, evaluation, followup, profile, reason, work_id=None, cancelled=None,
-                    working_notes=''):
+                    working_notes='', awaiting_owner=''):
         """``(data, decision)``: one self-review of a Work that fell short (#998).
 
         One ``structured`` call over the owner's request and follow-up (owner
@@ -1330,7 +1335,9 @@ class ConversationJudgments:
                  'evaluation': self.redact(evaluation)[:EVALUATION_CHARS] or 'none',
                  'owner_followup': self.redact(str(followup or ''))[:FOLLOWUP_CHARS] or 'none',
                  'owner_profile': self.redact(profile)[:PROFILE_CHARS] or 'none',
-                 'working_notes': str(working_notes or '') or 'none'}
+                 'working_notes': str(working_notes or '') or 'none',
+                 # #170: what the Work left waiting for the owner's own decision, and what became of it.
+                 'awaiting_owner': str(awaiting_owner or '') or 'none'}
         context = self._context(REVIEW_PURPOSE, facts, work_id=work_id,
                                 uncut=('owner_request', 'owner_followup', 'working_notes'), cancelled=cancelled)
         method = getattr(self.engine, 'structured', None)
