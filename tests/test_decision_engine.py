@@ -257,7 +257,7 @@ class ConversationJudgmentTests(unittest.TestCase):
                          JUDGMENT_UNAVAILABLE, 'not confident enough is unknown, not a confident no')
         self.assertEqual(ConversationJudgments().unsupported_capability('메일 보내기').outcome,
                          JUDGMENT_UNAVAILABLE)
-        self.assertEqual(pick.asked[0][2], ('mail-read-body', 'mail-send'))
+        self.assertEqual(pick.asked[0][2], ('mail-send',))
 
 
 class ServiceRouteTests(unittest.TestCase):

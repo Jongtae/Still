@@ -44,6 +44,7 @@ from zoneinfo import ZoneInfo
 from cryptography.fernet import Fernet
 
 from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+from personal_agent.messages import msg
 from personal_agent.bounded_execution import ExecutionError, ExecutionResult
 from personal_agent.calendar import CALENDAR_SPEC, CALENDAR_WRITE_SPEC, CalendarConnector
 from personal_agent.calendar_conversation import CREATED, OUTCOME_UNKNOWN, PREVIEW_FOOTER, PREVIEW_HEADER
@@ -433,10 +434,11 @@ class B_FailedRuntime(PresenceEval):
         [reply] = self.bubbles()
         self.assertNotIn('reply_markup', reply)
         self.assertIn('AI가 연결되지 않아', reply['text'])
-        self.assertIn('지금 바로 되는 일', reply['text'], 'a safe next action in conversation')
+        # #173 slice C: what needs the AI and where saved records are, without promising prose work.
+        self.assertIn(msg('projection.no_ai_route_what_needs_it'), reply['text'], 'a safe next action in conversation')
         # A repeat of the same blocker is a one-line reminder, not the same explanation again.
         self.turn('다른 거 물어봐도 돼?')
-        self.assertNotIn('지금 바로 되는 일', self.texts()[-1])
+        self.assertNotIn(msg('projection.no_ai_route_what_needs_it'), self.texts()[-1])
 
 
 # =============================================================================
@@ -1317,7 +1319,7 @@ class H_PartialResult(PresenceEval):
         text = bubble['text']
         # #847: the AI's answer is delivered first; one note says a step was not confirmed.
         self.assertTrue(text.startswith('두 제품을 모두 비교했습니다.'), text)
-        self.assertTrue(text.endswith('\n\n한 단계는 끝내지 못했어요.'), text)
+        self.assertTrue(text.endswith('\n\n일부 단계는 끝내지 못했어요.'), text)
         self.assertNotIn(TERMINAL_PARTIAL_HEADER, text)
         self.assertIn('공개 페이지 읽기', self.store.job(job['id'])['owner_cause'], 'the failed portion is recorded')
         self.assertFalse((bubble.get('reply_markup') or {}).get('inline_keyboard'), 'a partial answer carries no 상세 button')
@@ -1348,7 +1350,7 @@ class H_PartialResult(PresenceEval):
         heads = [body['text'].split('\n')[0] for body in bubbles]
         # #847: the failed turn has no answer (header); the partial one leads with its answer.
         self.assertEqual(heads[1:], [TERMINAL_FAILED_HEADER, '확인된 답입니다.'])
-        self.assertTrue(bubbles[2]['text'].endswith('한 단계는 끝내지 못했어요.'), bubbles[2]['text'])
+        self.assertTrue(bubbles[2]['text'].endswith('일부 단계는 끝내지 못했어요.'), bubbles[2]['text'])
         self.assertEqual(bubbles[0]['text'], '확인된 답입니다.')
         controls = [[b['text'] for b in body.get('reply_markup', {}).get('inline_keyboard', [[]])[0]] for body in bubbles]
         self.assertEqual(controls, [[], ['다시 시도'], []])
@@ -1368,7 +1370,7 @@ class H_PartialResult(PresenceEval):
         [bubble] = self.bubbles()
         text = bubble['text']
         self.assertTrue(text.startswith('두 제품을 모두 비교했습니다.'), text)
-        self.assertTrue(text.endswith('\n\n한 단계는 끝내지 못했어요.'), text)
+        self.assertTrue(text.endswith('\n\n일부 단계는 끝내지 못했어요.'), text)
         self.assertNotIn(TERMINAL_PARTIAL_HEADER, text)
         self.assertIn('공개 페이지 읽기', self.store.job(job['id'])['owner_cause'])
         self.assertNotIn(TERMINAL_VERIFIED_LABEL, text)
@@ -1457,7 +1459,7 @@ class OwnerLanguageFindings(PresenceEval):
                 self.assertNotIn(tool, text)
         # #847: with an answer delivered, the bubble counts the step; the owner
         # words for it stay on the record (owner_cause) for 상세.
-        self.assertTrue(texts[0].endswith('한 단계는 끝내지 못했어요.'), texts[0])
+        self.assertTrue(texts[0].endswith('일부 단계는 끝내지 못했어요.'), texts[0])
         self.assertNotIn('공개 페이지 읽기', texts[0])
         self.assertIn('공개 페이지 읽기', self.store.job(research['id'])['owner_cause'], 'the step is named in owner words')
         # Technical detail keeps the exact ids.

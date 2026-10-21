@@ -526,12 +526,12 @@ INTENT_LABELS = {
 #: not offer.  They are declared so the DecisionEngine can *choose* one and
 #: the reply can state the actual boundary instead of running the nearest
 #: search.  Adding an offered capability is product work, not a new entry.
+#: #173 slice C: ``mail-read-body`` is gone - the worker reads a mail's body
+#: with ``mail_read`` (#150), so saying Still cannot was false.
 UNSUPPORTED_CAPABILITIES = {
-    'mail-read-body': 'read the body/contents of a found mail',
     'mail-send': 'send a mail or reply to one',
 }
 UNSUPPORTED_CAPABILITY_TEXT = {
-    'mail-read-body': (msg('handoff.i_can_t_read_the_body')),
     'mail-send': msg('handoff.i_can_t_send_or_reply'),
 }
 

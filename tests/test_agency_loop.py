@@ -752,7 +752,7 @@ class AgencyReportEntryPointTests(unittest.TestCase):
         # then one note - the step counted, the next step as a sentence.
         from personal_agent.conversation_projection import TERMINAL_VERIFIED_LABEL
         parts = ['내일 성남은 22°C로 보입니다.', 'https://weather.example/seongnam',
-                 '한 단계는 끝내지 못했어요. 날씨 예보 페이지를 열어 강수 확률을 확인하기']
+                 '일부 단계는 끝내지 못했어요. 날씨 예보 페이지를 열어 강수 확률을 확인하기']
         for machinery in ('일부 단계만', '날씨 조회', '확인하지 못한 부분:', '다음 단계 제안:'):
             self.assertNotIn(machinery, bubble)
         positions = [bubble.find(part) for part in parts]

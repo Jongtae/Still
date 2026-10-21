@@ -19,7 +19,7 @@ from .messages import msg
 from .local_tools import LocalTools, normalize_public_url
 from functools import cached_property
 from .work_execution import PROCEED, REDELEGATED, WorkRun
-from .agent_runtime import (Capabilities, ToolError, run_agent, AGENTS, STEER_EVENT, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
+from .agent_runtime import (Capabilities, ToolError, CALENDAR_DRAFT_TOOLS, run_agent, AGENTS, STEER_EVENT, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
                             MEMORY_OWNER, context_sections, ENGINE_UNMEDIATED, OWNER_CONVERSATION, lookup_sources, work_written_values, WORK_SOURCES_KEY, WORK_SOURCES_LIMIT, base_label,
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
                             WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, goal_summary, work_source_records,
@@ -11248,8 +11248,11 @@ class AgentService:
             # history so its answer is filtered from later turns
             # routed to a subscription CLI or needing approval (#574).
             self.record_file_workspace_document_job(job['id'])
-        if run.context_sources and '컨텍스트:' not in run.response:
-            run.response+='\n\n컨텍스트 출처:\n'+'\n'.join(run.context_sources)
+        if run.context_sources:
+            # #173 slice C: the owner-selected context this Work was given, from Still's own
+            # typed record (``run.context_sources``), shown like looked-up sources; what the
+            # answer itself says no longer suppresses or changes it.
+            run.response+='\n\n'+msg('service.context_sources')+'\n'+'\n'.join(dict.fromkeys(run.context_sources))
 
     def _finish_work(self, run):
         """Phase 7: the answer, its disclosures and the Work row, written once."""
@@ -11287,8 +11290,12 @@ class AgentService:
             # #752 review: scrubbed before owner_cause cuts each reason, so no cut splits a value.
             spoken=owner_cause([(tool,scrub(self._redact_reason(reason))) for tool,reason in run.refusals]) if run.outcome in ('failed','partial') else None
             # #847: what follows the answer when there is one - no tool names or errors.
-            note=answer_note([(tool,scrub(self._redact_reason(reason))) for tool,reason in run.refusals],run.outcome,
-                             kept={scrub(self._redact_reason(reason)) for reason in run.owner_steps},
+            # #173 slice C: a draft's pending line is not said again after the answer next to Still's
+            # own exact preview or confirmation, which already says nothing is applied before the
+            # owner's yes; the cause and the record keep it.
+            note_steps,note_kept=self._unshown_steps(run,job,calendar_preview)
+            note=answer_note([(tool,scrub(self._redact_reason(reason))) for tool,reason in note_steps],run.outcome,
+                             kept={scrub(self._redact_reason(reason)) for reason in note_kept},
                              report=run.agency_report) if run.outcome in ('failed','partial') else None
             # #657: what stayed unverified and the proposed next step follow the failed steps.
             statement=report_statement(run.agency_report) if run.outcome in ('failed','partial') else None
@@ -11403,6 +11410,31 @@ class AgentService:
         # #814: settings changes this Work drafted wait for the owner's confirm.
         self.queue_settings_confirmation(job)
 
+
+    def _unshown_steps(self, run, job, calendar_preview):
+        """``(refusals, owner_steps)`` for the closing note, without what Still's own prompt already says (#173 slice C).
+
+        The calendar preview follows the answer in the same bubble; a settings
+        draft of a paired Telegram Work gets Still's confirmation message.  Each
+        says that nothing is applied before the owner's yes, so the drafting
+        tool's pending line would only repeat it.  Every other line stays, and
+        the Work's cause and record keep them all.
+        """
+        covered=set(CALENDAR_DRAFT_TOOLS) if calendar_preview else set()
+        cfg=self.store.config('telegram',{})
+        if (cfg.get('enabled') and job.get('channel')==f"telegram:{cfg.get('generation')}"
+                and job.get('chat_id')==cfg.get('user_id') and self.settings_orchestrator.pending_for_work(job['id'])):
+            covered.add('settings_change')
+        if not covered:return run.refusals,run.owner_steps
+        shown={reason for tool,reason in run.refusals if tool in covered}
+        return ([(tool,reason) for tool,reason in run.refusals if tool not in covered],
+                [reason for reason in run.owner_steps if reason not in shown])
+
+    def work_awaits_owner_preview(self, job):
+        """Whether this Work's own drafts wait on the preview or confirmation Still showed (#173 slice C)."""
+        row=self.calendar_conversation.pending(self.connector_owner_id(job))
+        if row and row.get('work_id')==job.get('id'):return True
+        return bool(self.settings_orchestrator.pending_for_work(job['id']))
 
     @staticmethod
     def telegram_result_text(response, error=None, outcome=None, verified=None, note=None, waiting=False):

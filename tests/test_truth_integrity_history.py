@@ -163,11 +163,11 @@ class TranscriptQualificationTests(TruthIntegrityTestCase):
         self.assertIs(row['qualifier']['verified'], False)
         self.assertEqual(row['qualifier']['label'], '일부 완료')
         self.assertIn('소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.', row['qualifier']['cause'])
-        # #820/#847: the bubble delivers the AI's answer first, then the step's
-        # own next step (the approval still pending); nothing reached the calendar.
-        # #22: Still's own exact preview of the draft follows the answer, before that step.
+        # #820/#847: the bubble delivers the AI's answer first; nothing reached the calendar.
+        # #22: Still's own exact preview of the draft follows the answer and says nothing is applied
+        # before the owner's yes; #173 slice C: the step's pending line is not repeated after it.
         self.assertTrue(bubble.startswith(CLAIM + '\n\n' + PREVIEW_HEADER), bubble)
-        self.assertTrue(bubble.endswith('\n\n소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.'), bubble)
+        self.assertNotIn('소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.', bubble)
         self.assertNotIn(TERMINAL_PARTIAL_HEADER, bubble)
         self.assertEqual(self.calendar_calls, [])
 
