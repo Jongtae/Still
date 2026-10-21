@@ -27,7 +27,9 @@
       "CHECKS-SPEED-01",
       "CHECKS-MEASURE-01",
       "BROWSE-AUDIT-01",
-      "AUDIT-OUTBOUND-01"
+      "AUDIT-OUTBOUND-01",
+      "JUDGE-CONTEXT-01",
+      "GUARD-NL-01"
     ]
   },
   "iterations": [
@@ -460,6 +462,98 @@
       ],
       "summary": "#28 option A: labelled matches of held private values (including earlier-Work Memory) in outbound tool text, with tool and destination host, shown in the information-use view; detect and show only, never block, never store the value or the outbound text.",
       "depends_on": []
+    },
+    {
+      "id": "IN-CONTEXT-01",
+      "issue": 175,
+      "milestone": "in-context",
+      "kind": "implementation",
+      "activation_status": "owner-activated-goal-ready",
+      "contract": "goal-execution-contract.en.md",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_fresh_delivery_plan.py"
+      ],
+      "summary": "Owner acts and situations are judged in context; kernel code keeps only enforcement. Five ordered substeps from the 2026-10-21 audit (F1-F7).",
+      "depends_on": [],
+      "completed_substeps": {
+        "JUDGE-CONTEXT-01": {
+          "issue": 170,
+          "pull_request": 177,
+          "merge_commit": "f4ed3c6c96e54a86e4849c1ea7fedded29799bee",
+          "decision": "Earlier history rows are labelled as earlier Works with their time; a withheld step reads as awaiting the owner; an attempt that leaves a typed owner decision stops for the owner without a goal judgment; the self-review gets an awaiting_owner fact. Drafts keep their effect class (resumption unchanged)."
+        },
+        "GUARD-NL-01": {
+          "issue": 171,
+          "pull_request": 176,
+          "merge_commit": "834e19f7b24f90ebc243bcb4489074fae1a8f3a5",
+          "decision": "The no-scenario-code guard also requires natural-language cue tables in steering positions to be classified (enforcement, adapter, own-text or open-finding with its issue); four more modules are scanned."
+        }
+      }
+    },
+    {
+      "id": "JUDGE-CONTEXT-01",
+      "program": "IN-CONTEXT-01",
+      "issue": 170,
+      "milestone": "in-context",
+      "kind": "implementation",
+      "activation_status": "complete-on-merge",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_judgment_context.py"
+      ],
+      "summary": "Judgments read this Work's own events and what it awaits; earlier Works are labelled.",
+      "depends_on": []
+    },
+    {
+      "id": "GUARD-NL-01",
+      "program": "IN-CONTEXT-01",
+      "issue": 171,
+      "milestone": "in-context",
+      "kind": "implementation",
+      "activation_status": "complete-on-merge",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_no_scenario_code.py"
+      ],
+      "summary": "The no-scenario-code guard catches natural-language cue tables.",
+      "depends_on": []
+    },
+    {
+      "id": "OWNER-ACT-01",
+      "program": "IN-CONTEXT-01",
+      "issue": 172,
+      "milestone": "in-context",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_owner_acts.py tests/test_calendar_conversation.py tests/test_owner_reaction.py"
+      ],
+      "summary": "One judgment reads each owner reply or reaction against everything pending; code keeps the enforcement (revises #22 option A).",
+      "depends_on": []
+    },
+    {
+      "id": "RULES-OUT-01",
+      "program": "IN-CONTEXT-01",
+      "issue": 173,
+      "milestone": "in-context",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_rules_out.py tests/test_conversation_intent.py"
+      ],
+      "summary": "Retire keyword intent rules, lexical relation rules and fixed answer texts; the worker answers and the judgments relate (three slices).",
+      "depends_on": []
+    },
+    {
+      "id": "BROWSER-DIALOG-01",
+      "program": "IN-CONTEXT-01",
+      "issue": 174,
+      "milestone": "in-context",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_browser_session.py tests/test_browser_webkit.py"
+      ],
+      "summary": "The worker sees a page's confirm question; the payment floor stays and a judgment can only add to it.",
+      "depends_on": []
     }
   ],
   "milestones": {
@@ -477,6 +571,9 @@
     },
     "browse-audit": {
       "title": "Browser close and outbound visibility (BROWSE-AUDIT-01)"
+    },
+    "in-context": {
+      "title": "Judged in context (IN-CONTEXT-01)"
     }
   },
   "programs": {
@@ -663,12 +760,47 @@
         "reason": "#168 activated BROWSE-CLOSE-01 as 'measure; if the delay is real, let the worker exit promptly ...', so a measurement that finds no real delay completes that scope without a code change. The original rule text required a merged PR for every ordered substep and did not state this case; the amendment makes the activated scope explicit rather than letting the verifier permit the gap silently.",
         "original": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests, its declared focused tests passing, and required validate plus full-validate passing on the final head (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision."
       }
+    },
+    "IN-CONTEXT-01": {
+      "status": "owner-activated-goal-ready",
+      "issue": 175,
+      "activated_by": {
+        "issue": 175,
+        "date": "2026-10-21",
+        "reason": "After the 2026-10-21 audit of static owner-act handling, the owner chose to register the program and start at once (\"프로그램으로 등록\"; \"등록만 하고 바로 착수\"), recorded here when BROWSE-AUDIT-01 closed out."
+      },
+      "ordered_substeps": [
+        "JUDGE-CONTEXT-01",
+        "GUARD-NL-01",
+        "OWNER-ACT-01",
+        "RULES-OUT-01",
+        "BROWSER-DIALOG-01"
+      ],
+      "active_substeps": [
+        "OWNER-ACT-01",
+        "RULES-OUT-01"
+      ],
+      "completed_substeps": [
+        "JUDGE-CONTEXT-01",
+        "GUARD-NL-01"
+      ],
+      "decisions": {
+        "owner-act-approval": {
+          "issue": 172,
+          "date": "2026-10-21",
+          "decision": "Revise #22 option A: approval is read by one judgment against everything pending, not a literal word list; buttons stay exact acts and replies or reactions to button prompts are judged too."
+        }
+      },
+      "allowed_authority": "Kernel routing, judgment and projection code (quickstart_service.py, conversation_handoff.py, calendar_conversation.py, settings_orchestrator.py, telegram_surface.py, telegram_store.py, owner_acts.py, owner_model.py, agent_runtime.py outside the outbound recording, preparations.py, work_execution.py, decision.py, prompts), browser_session.py and browser_worker.py for #174 only, messages.json entries they use, tests, the no-scenario-code guard, and docs describing the changed behaviour. Model-free tests with scripted judgments; required validate on each final head and full-validate before closeout; one issue-linked PR per substep or slice (#173 in three stacked slices), normal squash merge, then a closeout PR.",
+      "non_goals": "New capabilities (worker file-workspace and connection-control tools are follow-ups #182 and #183); widening approval authority beyond what the owner approves; storing more personal text; live accounts, external sites, live models, releases, deployment and the delivery heartbeat; other backlog items.",
+      "independent_review": "Required for OWNER-ACT-01 (#172, approval semantics for consequential effects) and BROWSER-DIALOG-01 (#174, consequential-action approval in the browser) by a human non-author; another model run by the author is self-review. Triggered for other substeps only if they change an authority boundary.",
+      "completion_rule": "Every ordered substep merged on its own PR (RULES-OUT-01: all three slices) with its issue's acceptance criteria mapped to tests and its declared focused tests passing, required validate passing on each final head, the required independent reviews recorded, and full-validate passing on main after the last merge (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision."
     }
   },
   "completion_claims": {},
   "next_goal": {
-    "id": null,
-    "status": "complete",
-    "action": "BROWSE-AUDIT-01 closed out (#168). No goal is selected; the owner activates the next one explicitly, for example from the curated backlog (#44). The delivery heartbeat stays paused."
+    "id": "IN-CONTEXT-01",
+    "status": "owner-activated-goal-ready",
+    "action": "Owner direction 2026-10-21 (#175) selects IN-CONTEXT-01: owner acts and situations are judged in context, code keeps only enforcement. Session-driven at the owner's request; JUDGE-CONTEXT-01 and GUARD-NL-01 already merged. Scoped PRs and normal merge after required checks are authorized; #172 and #174 merge only after a human non-author review. Live accounts, external sites, releases and deployment are not authorized. The delivery heartbeat stays paused, and no successor is selected on completion."
   }
 }

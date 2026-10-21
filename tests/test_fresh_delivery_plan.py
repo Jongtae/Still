@@ -169,11 +169,10 @@ def test_the_owed_reviews_are_resolved_by_the_owner_check_not_claimed_as_indepen
         assert owed["resolution"]["independent_review"] == "not performed by a non-author"
 
 
-def test_the_browse_audit_program_is_closed_out_and_selects_nothing():
+def test_the_browse_audit_program_is_closed_out_with_its_evidence():
     """#168: #167 merged; #164 was measured and needed no change, which is recorded, not hidden."""
     current = plan()
-    assert current["next_goal"]["id"] is None
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "terminal"
+    assert current["next_goal"]["id"] != "BROWSE-AUDIT-01"
     assert "BROWSE-AUDIT-01" in invariants.closed_out_programs(current)
     invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["BROWSE-AUDIT-01"]
@@ -279,3 +278,23 @@ def test_runtime_state_is_kept_per_repository(monkeypatch, tmp_path):
     assert controller.state_store.path == tmp_path / "Library/Application Support/still-delivery/Jongtae--Still/state.json"
     assert controller.state_store.read() == {}
     assert json.loads(predecessor.read_text(encoding="utf-8"))["completed"] == ["GOV-01"]
+
+
+def test_the_owner_activated_in_context_program_is_goal_ready_and_heartbeat_paused():
+    """#175: selected by the owner on 2026-10-21; two substeps already merged, the approval change owes a human review."""
+    current = plan()
+    assert current["next_goal"]["id"] == "IN-CONTEXT-01"
+    assert current["next_goal"]["status"] == "owner-activated-goal-ready"
+    assert "heartbeat stays paused" in current["next_goal"]["action"]
+    program = current["programs"]["IN-CONTEXT-01"]
+    assert program["ordered_substeps"] == ["JUDGE-CONTEXT-01", "GUARD-NL-01", "OWNER-ACT-01", "RULES-OUT-01",
+                                           "BROWSER-DIALOG-01"]
+    assert program["completed_substeps"] == ["JUDGE-CONTEXT-01", "GUARD-NL-01"]
+    assert "human non-author" in program["independent_review"]
+    items = {item["id"]: item for item in current["iterations"]}
+    evidence = items["IN-CONTEXT-01"]["completed_substeps"]
+    assert (evidence["JUDGE-CONTEXT-01"]["issue"], evidence["JUDGE-CONTEXT-01"]["pull_request"]) == (170, 177)
+    assert (evidence["GUARD-NL-01"]["issue"], evidence["GUARD-NL-01"]["pull_request"]) == (171, 176)
+    # Session-driven: the heartbeat never selects it on its own.
+    for state in ({}, {"completed": []}):
+        assert DeliveryPlan(PLAN).select(state) is None, state
