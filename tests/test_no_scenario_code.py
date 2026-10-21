@@ -157,11 +157,12 @@ CLASSIFIED = {
     # SettingsOrchestrator.handle_text's id-bearing compatibility forms; the
     # rest of that function is listed in CLASSIFIED_TABLES.
     ('settings_orchestrator.py', r'(?:confirm|확인)\s+([A-Za-z0-9_-]+)'): (
-        'open-finding', "#172: the word 확인/confirm before a draft id is read as the owner's approval act; "
-                        'OWNER-ACT-01 replaces the settings confirm/decline pair with one judgment'),
+        'enforcement', 'the explicit `/settings 확인 <id>` command naming one draft id (never shown), an exact act '
+                       'like a button; OWNER-ACT-01 (#172) kept it while the typed confirm/decline pair became one '
+                       'judgment, and the draft still passes its digest, TTL and owner_typed checks'),
     ('settings_orchestrator.py', r'(?:cancel|취소)\s+([A-Za-z0-9_-]+)'): (
-        'open-finding', "#172: the word 취소/cancel before a draft id is read as the owner's decline act; "
-                        'OWNER-ACT-01 replaces the settings confirm/decline pair with one judgment'),
+        'enforcement', 'the explicit `/settings 취소 <id>` command naming one draft id (never shown), an exact act '
+                       'like a button; OWNER-ACT-01 (#172) kept it, and it cancels only that owned draft'),
 }
 
 #: GUARD-NL-01 (#171): whole tables, keyed ``(module, name)``.  ``name`` is the
@@ -227,10 +228,7 @@ CLASSIFIED_TABLES = {
     ('information_use.py', '_WORKING_NOTES'): (
         'own-text', 'the header line owner_model.WorkingNotes.block writes'),
     # --- open findings, each removed by the named issue ----------------------
-    **{('calendar_conversation.py', name): (
-        'open-finding', '#172: approval or cancellation of a calendar draft is read from a literal word list; '
-                        'OWNER-ACT-01 replaces it with one judgment of the owner act against everything pending')
-       for name in ('APPROVE_WORDS', 'CANCEL_WORDS', '_CANCEL_FILLER', 'vocab')},
+    # OWNER-ACT-01 (#172) removed the calendar approve/cancel word tables listed here.
     **{('conversation_handoff.py', name): (
         'open-finding', '#173: a keyword cue table decides where an owner message goes (knowledge, settings, '
                         'workspace or mail rule); RULES-OUT-01 removes the rules in favour of the worker')
@@ -719,13 +717,13 @@ class NoScenarioCodeTests(unittest.TestCase):
         self.assertEqual([hit for hit in hits if classified_by(hit) is not None], [])
 
     def test_a_site_added_to_a_classified_cue_table_still_fails(self):
-        planted = "APPROVE_WORDS = frozenset({'승인', 'coupang'})\n\ndef ok(text):\n    return text in APPROVE_WORDS\n"
+        planted = "COMMIT_PHRASES = frozenset({'결제하기', 'coupang'})\n\ndef ok(text):\n    return text in COMMIT_PHRASES\n"
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / 'calendar_conversation.py'
+            path = Path(tmp) / 'browser_session.py'
             path.write_text(planted, encoding='utf-8')
             hits = scan([path])
         covered = {hit[3]: classified_by(hit) for hit in hits}
-        self.assertEqual(covered['승인'], ('table', 'calendar_conversation.py', 'APPROVE_WORDS'))
+        self.assertEqual(covered['결제하기'], ('table', 'browser_session.py', 'COMMIT_PHRASES'))
         self.assertIsNone(covered['coupang'])
 
 

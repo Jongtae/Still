@@ -857,14 +857,17 @@ class TelegramTurnAddressing:
             db.execute('CREATE TABLE IF NOT EXISTS telegram_turns(job_id TEXT PRIMARY KEY, chat_id INTEGER NOT NULL, '
                        'source_message_id INTEGER, reply_message_id INTEGER, created REAL NOT NULL, '
                        'reply_to_message_id INTEGER)')
-            columns = {row[1] for row in db.execute('PRAGMA table_info(telegram_turns)')}
-            if 'reply_to_message_id' not in columns:
+            if 'reply_to_message_id' not in self._columns(db):
                 try:
                     db.execute('ALTER TABLE telegram_turns ADD COLUMN reply_to_message_id INTEGER')
-                except sqlite3.OperationalError as exc:
-                    # Another process added it between the read and the ALTER.
-                    if 'duplicate column' not in str(exc):
+                except sqlite3.OperationalError:
+                    # Another process may have added it between the read and the ALTER.
+                    if 'reply_to_message_id' not in self._columns(db):
                         raise
+
+    @staticmethod
+    def _columns(db):
+        return {row[1] for row in db.execute('PRAGMA table_info(telegram_turns)')}
 
     def record_source(self, job_id, chat_id, message_id, db=None, reply_to=None):
         if not isinstance(message_id, int) or not isinstance(chat_id, int):
