@@ -354,7 +354,7 @@ class MixedJudgmentTests(unittest.TestCase):
             text, focus={'calendar_pending': True})
         without = classifier(capability_need_engine({text: INTENT_CALENDAR_CREATE})).classify(text)
         self.assertEqual((with_flag.intent, with_flag.alternatives), (without.intent, without.alternatives))
-        self.assertFalse(with_flag.continuation)
+        self.assertEqual(with_flag.supersedes_previous, without.supersedes_previous)
 
     def test_a_mixed_turn_cannot_be_narrowed_by_a_suggestion(self):
         # #173: a mixed turn is the judgment's several-tasks answer, not two rule hits.

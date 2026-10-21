@@ -108,14 +108,13 @@ class ParaphraseTests(unittest.TestCase):
 
     def test_no_regex_decides_a_memory_request_any_more(self):
         # #597: with no DecisionEngine answer nothing is judged a memory
-        # request, however literal the phrasing; the lexical prefilter only
-        # keeps such turns away from the remote follow-up judge.
+        # request, however literal the phrasing.  #173 slice B: no lexical
+        # prefilter keeps such turns away from the follow-up judgment either.
         judge = ConversationJudgments()
         for text in (*MEMORY_PARAPHRASES, '기억하지 마세요', 'do not save this'):
             with self.subTest(text=text):
                 self.assertEqual(judge.explicit_memory_request(text).outcome, JUDGMENT_UNAVAILABLE)
-        self.assertFalse(AgentService.memory_followup_prefilter('기억하지 마세요'))
-        self.assertFalse(AgentService.memory_followup_prefilter('do not save this'))
+        self.assertFalse(hasattr(AgentService, 'memory_followup_prefilter'))
         self.assertFalse(hasattr(AgentService, 'explicit_memory_request'))
 
     def test_a_judged_mail_need_carries_no_query_taken_from_the_message(self):
@@ -228,7 +227,7 @@ class ConsequentialEffectTests(unittest.TestCase):
         for text in ('치과', '오후 4시', '아니 4시로'):
             with self.subTest(text=text):
                 decision = self.classifier.classify(text, focus=pending)
-                self.assertFalse(decision.intent == INTENT_CALENDAR_CREATE and decision.continuation)
+                self.assertNotEqual(decision.intent, INTENT_CALENDAR_CREATE)
         stale = {'intent': INTENT_CALENDAR_CREATE}
         self.assertEqual(self.classifier.classify('치과', focus=stale).intent, INTENT_CONVERSATION)
         # An explicit form still wins.
@@ -301,46 +300,41 @@ class ModelAuthorityTests(unittest.TestCase):
 
 
 class CorrectionAndTopicChangeTests(unittest.TestCase):
-    """A second utterance that changes the subject is not a continuation."""
+    """The route says only whether it changed; how a message relates to earlier Work is judged.
+
+    RULES-OUT-01 (#173 slice B): no correction or continuation word list reads
+    the message here.  ``supersedes_previous`` is structural (the route differs
+    from the focused one); a correction, retry, reference or cancel is the
+    ``followup_relation`` judgment's (``AgentService.continuity_relation``).
+    """
 
     def setUp(self):
         self.classifier = classifier()
 
-    def test_a_changed_subject_supersedes_the_previous_focus(self):
+    def test_a_changed_route_supersedes_the_previous_focus(self):
         first = self.classifier.classify('/workspace-search aurora')
         self.assertEqual(first.intent, INTENT_WORKSPACE_SEARCH)
         focus = {'intent': first.intent}
         second = self.classifier.classify('/settings', focus=focus)
         self.assertEqual(second.intent, INTENT_SETTINGS)
-        self.assertFalse(second.continuation)
         self.assertTrue(second.supersedes_previous)
         third = self.classifier.classify('연결 상태 알려줘', focus=focus)
         self.assertEqual(third.intent, INTENT_CONVERSATION)
         self.assertTrue(third.supersedes_previous)
 
-    def test_a_correction_marker_supersedes_even_when_the_route_repeats(self):
+    def test_cue_words_no_longer_change_the_route_decision(self):
+        # "아니"/"말고"/"계속" decided correction and continuation before #173 slice B.
         focus = {'intent': INTENT_CONVERSATION}
-        decision = self.classifier.classify('아니, 그거 말고 오로라 예산 확정 적어둬', focus=focus)
-        self.assertEqual(decision.intent, INTENT_CONVERSATION)
-        self.assertIsNone(decision.argument)
-        self.assertTrue(decision.supersedes_previous)
-        self.assertFalse(decision.continuation)
-
-    def test_a_correction_marker_blocks_continuation_resolution(self):
-        focus = {'intent': INTENT_RESEARCH}
-        decision = self.classifier.classify('아니, 계속하지 말고 다른 얘기 하자', focus=focus)
-        self.assertFalse(decision.continuation)
-        self.assertTrue(decision.supersedes_previous)
-
-    def test_a_genuine_continuation_stays_on_the_same_route(self):
-        focus = {'intent': INTENT_CONVERSATION}
-        for text in ('continue', 'keep going', '계속해줘', '이어서 말해줘'):
+        for text in ('아니, 그거 말고 오로라 예산 확정 적어둬', '아니, 계속하지 말고 다른 얘기 하자',
+                     'continue', 'keep going', '계속해줘', '이어서 말해줘', '아니 4시로'):
             with self.subTest(text=text):
                 decision = self.classifier.classify(text, focus=focus)
                 self.assertEqual(decision.intent, INTENT_CONVERSATION)
+                self.assertEqual((decision.authority, decision.cues), (AUTHORITY_DEFAULT, ()))
                 self.assertFalse(decision.supersedes_previous)
+                self.assertFalse(hasattr(decision, 'continuation'))
 
-    def test_continuation_never_replays_an_intent_that_needs_its_own_content(self):
+    def test_keep_going_never_replays_an_intent_that_needs_its_own_content(self):
         # "keep going" must not re-run a note write or a search with whatever
         # the previous turn happened to contain.
         for previous in (INTENT_NOTE_CREATE, INTENT_WORKSPACE_SEARCH, INTENT_KNOWLEDGE,

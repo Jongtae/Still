@@ -871,8 +871,11 @@ class TelegramSurface:
                 # #832 (B14): an over-long message reaches the worker truncated,
                 # with a note that says so, instead of being dropped silently.
                 text=truncated_owner_message(text)
-            guided_context_requested=(authorized and isinstance(text,str) and service.requests_guided_context(text)
-                                      and bool(service.context_inbox().list()))
+            # #173 slice B: the saved-context choice opens on the owner's explicit
+            # ``/context <request>`` command, never on keywords; the Work runs the request.
+            guided_request=service.guided_context_request(text) if authorized else None
+            if guided_request is not None:text=guided_request
+            guided_context_requested=guided_request is not None and bool(service.context_inbox().list())
             unqueued=[]
             # #1305: the chat whose location just continued a request; its keyboard goes at once.
             located_chat=None

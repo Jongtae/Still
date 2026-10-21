@@ -776,11 +776,19 @@ class PreparationScopeTests(_Case):
 
 # --- SEC-ATTN-02 (#719): watching until a deadline, telling only when needed ---
 
-def watch_engine(verdicts, preparation=False):
-    """Scripted ``watch-notification`` verdicts (True/False/None=unavailable), in order."""
+def watch_engine(verdicts, preparation=False, same_goals=None):
+    """Scripted ``watch-notification`` verdicts (True/False/None=unavailable), in order.
+
+    ``same_goals`` maps a proposed preparation goal to the ``same-preparation-goal``
+    verdict (#173 slice B); a goal it does not name is unavailable.
+    """
     verdicts = list(verdicts)
+    same_goals = dict(same_goals or {})
 
     def judge(context, proposition):
+        if context.purpose == 'same-preparation-goal':
+            verdict = same_goals.get(context.facts.get('proposed_goal'))
+            return None if verdict is None else BinaryDecision(OUTCOME_DECIDED, verdict, fixture_confidence())
         if context.purpose == 'goal-reached':
             return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
         if context.purpose == 'explicit-preparation-request':
@@ -1126,9 +1134,10 @@ class WatchAcceptanceTests(_WatchCase):
 
     def test_rejected_watch_cannot_fan_out_into_same_goal_daily_preparations(self):
         """#860: correct one rejected watch; never replace it with dated one-shot rows."""
-        self.judge = watch_engine([], preparation=False)
-        self.service.use_decision_engine(self.judge)
         goal = '같은 목표의 변동을 확인하고 달라질 때 알리기'
+        # #173 slice B: the judgment, not a word table, reads the dated rewordings as the refused goal.
+        self.judge = watch_engine([], preparation=False, same_goals={f'10월 4일까지 {goal} 알려 주세요': True})
+        self.service.use_decision_engine(self.judge)
         self.script = [{'content': None, 'tool_calls': [
             call('window-bad', 'schedule_preparation', kind='prepare', goal=goal, due=self.due_iso(600),
                  every_minutes='1', until=self.due_iso(600 + 7200), delivery='when_needed')]}]
@@ -1185,13 +1194,46 @@ class WatchAcceptanceTests(_WatchCase):
         self.assertEqual(caught.exception.code,'window_retry_required')
         self.assertEqual(self.rows(),[])
 
-    def test_related_goal_comparison_leaves_separate_topics_independent(self):
-        self.assertTrue(prep.same_goal('가격 변동 확인', '10월 4일까지 가격 변동을 알려 주세요'))
-        self.assertFalse(prep.same_goal('가격 변동 확인', '다른 약속 알림'))
+    def refused_watch(self, job_id, goal):
+        with self.store.db() as db:
+            for status, detail in (('running', {'call_id': 'bad-window', 'host_action': 'schedule_preparation',
+                                                'arguments': {'goal': goal}}),
+                                   ('failed', {'call_id': 'bad-window', 'code': 'invalid_window'})):
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job_id, 'schedule_preparation', status, json.dumps(detail, ensure_ascii=False), self.now))
+
+    def test_whether_a_goal_repeats_a_refused_watch_is_judged_not_word_matched(self):
+        """#173 slice B: no particle/filler table decides it; the judgment does, in context."""
+        self.refused_watch('work-1', '가격 변동 확인')
+        reworded, shared_words = '10월 4일까지 가격이 바뀌는지 알려 주세요', '주가 변동 확인'
+        self.judge = watch_engine([], same_goals={reworded: True, shared_words: False})
+        self.service.use_decision_engine(self.judge)
+        # The same goal in different wording (no shared word with the refused goal) is the same.
+        self.assertTrue(self.service.repeats_refused_watch('work-1', reworded))
+        # A different goal sharing the words "변동 확인" is not.
+        self.assertFalse(self.service.repeats_refused_watch('work-1', shared_words))
+        asked = [item for item in self.judge.asked if item[1].purpose == 'same-preparation-goal']
+        self.assertEqual([item[1].facts for item in asked],
+                         [{'proposed_goal': reworded, 'refused_goals': '가격 변동 확인'},
+                          {'proposed_goal': shared_words, 'refused_goals': '가격 변동 확인'}])
+
+    def test_the_refused_goal_itself_needs_no_judgment_and_nothing_refused_asks_nothing(self):
+        self.refused_watch('work-1', '가격 변동 확인')
+        self.judge = watch_engine([])
+        self.service.use_decision_engine(self.judge)
+        self.assertTrue(self.service.repeats_refused_watch('work-1', '가격 변동 확인'))
+        self.assertFalse(self.service.repeats_refused_watch('work-2', '가격 변동 확인'))
+        self.assertEqual([item for item in self.judge.asked if item[1].purpose == 'same-preparation-goal'], [])
+
+    def test_an_unavailable_judgment_keeps_the_retry_guard_closed(self):
+        self.refused_watch('work-1', '가격 변동 확인')
+        self.judge = watch_engine([])
+        self.service.use_decision_engine(self.judge)
+        self.assertTrue(self.service.repeats_refused_watch('work-1', '다른 약속 알림'))
 
     def test_failed_watch_retry_guard_does_not_block_a_different_explicit_goal(self):
         """#860: the guard is scoped to the rejected watch goal, not the whole Work."""
-        self.judge = watch_engine([], preparation=False)
+        self.judge = watch_engine([], preparation=False, same_goals={'다른 약속 알림': False})
         self.service.use_decision_engine(self.judge)
         self.script = [
             {'content': None, 'tool_calls': [

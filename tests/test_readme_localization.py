@@ -724,7 +724,8 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
                     if want == "workspace-summary":
                         self.assertIsNotNone(service.workspace_summary_request(text))
                     elif want == "memory":
-                        self.assertTrue(service.AgentService.memory_followup_prefilter(text))
+                        # #597/#173: the worker saves it; no rule or prefilter reads the words.
+                        self.assertEqual("conversation", classifier.classify(text).intent)
                     elif want == "saved-result-evidence":
                         self.assertEqual("conversation", classifier.classify(text).intent)
                         self.assertIsNotNone(service.workspace_search_request(text))

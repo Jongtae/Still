@@ -235,29 +235,17 @@ CLASSIFIED_TABLES = {
     # those requests reach the worker.  It narrowed the workspace rules below to the owner's quoted
     # words and made a found saved result evidence for the worker, never the answer.  The
     # connection pause/disconnect a settings phrase once drafted has no worker tool yet: #183.
+    # RULES-OUT-01 (#173, slice B) removed the correction/continuation cue tables, the lexical
+    # skips of the follow-up judgment, the saved-context keyword trigger (now the explicit
+    # `/context <request>` command) and preparations.same_goal's particle/filler tables.
     **{('quickstart_service.py', name): (
         'open-finding', '#182: the owner-quoted workspace summary/search forms still read summary, save and '
                         'search words; kept (a #173 blocker), as evidence for the worker and never the answer, '
                         'until #182 gives the worker a tool that reads and writes the file workspace')
        for name in ('workspace_summary_request', 'workspace_search_request')},
-    **{('conversation_handoff.py', name): (
-        'open-finding', '#173: a correction of, or continuation of, the focused Work is read from a literal cue '
-                        'table; not named in the #173 list, covered by its "no kernel cue table decides intent"')
-       for name in ('_CORRECTION_CUES', '_CONTINUATION_CUES')},
-    **{('quickstart_service.py', name): (
-        'open-finding', '#173: lexical skip of the follow-up judgment (a message that looks like a memory or file '
-                        'save is never judged as a follow-up)')
-       for name in ('AgentService.continuity_relation', 'AgentService.memory_followup_prefilter')},
-    ('quickstart_service.py', 'AgentService.requests_guided_context'): (
-        'open-finding', '#173: a keyword rule (컨텍스트/저장한 기록 with 함께/참고/사용/포함) opens the saved-context '
-                        'choice; not named in the #173 list, covered by its "no kernel cue table decides intent"'),
     ('quickstart_service.py', 'AgentService._settle_worker_outcome'): (
         'open-finding', "#173: a fixed 컨텍스트 출처 footer is appended to the AI's answer unless that answer "
                         'already contains 컨텍스트:, a fixed text appended to the AI\'s answer'),
-    **{('preparations.py', name): (
-        'open-finding', '#173: same_goal decides whether two worker-written preparation goals are the same intent '
-                        'by stripping a literal particle and filler-word table; the judgment should decide it')
-       for name in ('_GOAL_PARTICLES', '_GOAL_FILLER')},
 }
 
 

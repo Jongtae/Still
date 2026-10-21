@@ -1579,6 +1579,24 @@ class AgentService:
                 if goal:failed.append(goal)
         return failed
 
+    def repeats_refused_watch(self, job_id, goal):
+        """Whether ``goal`` repeats a watch this Work was refused for lacking a window (#860, #173 slice B).
+
+        The guard keeps a refused repeated check from fanning out into dated
+        one-time preparations.  The same stored goal text is the exact identity;
+        any other wording is the Judgment AI's ``same_preparation_goal`` call
+        (asked only here, never per turn) instead of a particle/filler table.
+        Unavailable keeps the guard closed: the worker's correction, a window,
+        is always open to it.
+        """
+        refused=self.failed_preparation_watch_goals(job_id)
+        if not refused:
+            return False
+        if goal in refused:
+            return True
+        judged=self.decision_judge.same_preparation_goal(goal,refused,work_id=job_id)
+        return judged.outcome!=JUDGMENT_NO
+
     def prepared_text(self, job):
         """The bounded "Prepared for you" section for this Work, or None (#659).
 
@@ -1605,15 +1623,12 @@ class AgentService:
         def schedule(args):
             now=self.preparations.clock()
             has_window=args.get('every_minutes') not in (None,'') or args.get('until') not in (None,'')
-            request_key=None
             try:
                 kind=args.get('kind')
                 if kind not in prep.KINDS:raise prep.PreparationRefusal('invalid_kind')
                 # Pilot boundary 1: a stored secret never becomes goal text.
                 goal=prep.normalize_goal(self._redact_known_secrets(args.get('goal')))
-                request_key=goal
-                if not has_window and any(prep.same_goal(request_key,failed_goal)
-                                          for failed_goal in self.failed_preparation_watch_goals(job['id'])):
+                if not has_window and self.repeats_refused_watch(job['id'],goal):
                     raise prep.PreparationRefusal('window_retry_required')
                 zone_name=self.context_observations.settings().get('timezone') or ''
                 due_at,timezone=prep.parse_due(args.get('due'),args.get('timezone') or '',zone_name,now)
@@ -3282,21 +3297,16 @@ class AgentService:
     def continuity_relation(self, prompt, connector_owner=None, current_work_id=None):
         """Resolve a short follow-up against the one focused Work, if any.
 
-        The semantic judge sees the short current utterance plus prior
-        intent/status, never the previous request/result. Explicit commands and
-        pending Calendar drafts keep their own dedicated state machines.
+        RULES-OUT-01 (#173 slice B): no lexical skip decides whether a message
+        is a follow-up (the memory-save and file-save word checks are gone);
+        the follow-up judgment reads it with the focused Work's request and
+        reply, their times and what still waits for the owner
+        (``followup_context``).  Explicit commands and pending Calendar drafts
+        keep their own dedicated state machines.
         """
         if not eligible_for_followup_judgment(prompt):
             return None
-        # Never send a locally/deterministically handled capability request
-        # (especially notes or private searches) to a remote decision model
-        # merely because it also contains a follow-up word.
-        artifact_save=bool(re.search(
-            r'(?:파일|file|document|artifact).{0,20}(?:저장|save|write)|'
-            r'(?:저장|save|write).{0,20}(?:파일|file|document|artifact)',
-            prompt,re.I))
-        if self.intent_classifier.has_local_candidate(prompt) \
-                or (self.memory_followup_prefilter(prompt) and not artifact_save):
+        if self.intent_classifier.has_local_candidate(prompt):
             return None
         if connector_owner and self.calendar_conversation.has_pending(connector_owner):
             return None
@@ -3307,7 +3317,8 @@ class AgentService:
         previous=self.store.job(previous_id) if isinstance(previous_id,str) else None
         if not previous:
             return None
-        judged=self.decision_judge.followup_relation(prompt,focus.get('intent'),previous.get('status'))
+        judged=self.decision_judge.followup_relation(prompt,focus.get('intent'),previous.get('status'),
+                                                     **self.followup_context(previous,current_work_id))
         if judged.outcome==JUDGMENT_NO:
             # #1519: not about the last Work; it may answer what the one before asked.
             return self.open_question_link(prompt,previous,current_work_id)
@@ -3334,6 +3345,43 @@ class AgentService:
         # The target of an update or cancellation, as this Work's own calendar read returned it.
         targets=getattr(capabilities,'calendar_seen',None) or {}
         return self.calendar_conversation.offer(self.connector_owner_id(job),ids,targets=targets,work_id=job['id'])
+
+    @staticmethod
+    def _minutes_ago(now, moment):
+        """A time as the follow-up judgment reads it: relative, never a raw timestamp."""
+        try:
+            minutes=max(0,int((now-float(moment))//60))
+        except (TypeError,ValueError):
+            return 'unknown'
+        return 'just now' if minutes<1 else f'{minutes} minutes ago'
+
+    def followup_context(self, previous, current_work_id):
+        """What the follow-up judgment reads besides the message (#173 slice B).
+
+        The focused Work's request and its last reply (the judgment bounds and
+        redacts both), when each was made, and the kinds of the items still
+        waiting for the owner in this conversation (``owner_acts.open_items``;
+        kinds only, no content).  Read from stores; a failure leaves a fact out.
+        """
+        now=time.time()
+        context={'previous_request':previous.get('message') or '',
+                 'previous_request_at':self._minutes_ago(now,previous.get('created'))}
+        try:
+            with self.store.db() as db:
+                reply=db.execute("SELECT content,created FROM messages WHERE job_id=? AND role='assistant' ORDER BY id DESC LIMIT 1",
+                                 (previous['id'],)).fetchone()
+            if reply:
+                context.update(previous_reply=reply['content'] or '',
+                               previous_reply_at=self._minutes_ago(now,reply['created']))
+        except Exception:
+            LOG.info('follow-up reply unavailable job=%s',previous.get('id'))
+        current=self.store.job(current_work_id) if isinstance(current_work_id,str) else None
+        if current:
+            try:
+                context['awaiting_owner']=tuple(item['kind'] for item in self.owner_acts.open_items(current))
+            except Exception:
+                LOG.info('open items unavailable job=%s',current_work_id)
+        return context
 
     def open_question_link(self, prompt, focused, current_work_id):
         """A reference to the Work just before ``focused`` when ``prompt`` answers what its reply asked (#1519).
@@ -4284,6 +4332,8 @@ class AgentService:
         being selected implicitly from a natural-language Telegram message.
         """
         if not isinstance(text,str) or not text.startswith('/context '):return None
+        # ``/context <request>`` with no ids is the guided choice (``guided_context_request``).
+        if ' -- ' not in text:return None
         match=re.fullmatch(r'/context\s+([0-9a-fA-F-]{1,36}(?:\s*,\s*[0-9a-fA-F-]{1,36}){0,19})\s+--\s+(.+)',text.strip(),re.S)
         if not match:raise ValueError('컨텍스트 요청은 /context 항목ID[,항목ID] -- 요청 형식으로 보내세요.')
         event_ids=[item.strip() for item in match.group(1).split(',')]
@@ -4293,15 +4343,18 @@ class AgentService:
         return event_ids,request
 
     @staticmethod
-    def requests_guided_context(text):
-        """Recognize an explicit natural-language request to use saved context.
+    def guided_context_request(text):
+        """The request of the owner's explicit ``/context <request>`` command, or None.
 
-        The trigger never attaches anything by itself. It only opens an
-        owner-only choice message whose labels contain no captured content.
+        RULES-OUT-01 (#173 slice B): the keyword trigger (컨텍스트/저장한 기록
+        with 함께/참고/사용/포함) is gone; the choice is opened by this exact
+        command, as ``/context <ids> -- <request>`` attaches chosen items.  It
+        never attaches anything by itself: it only opens an owner-only choice
+        message whose labels contain no captured content.
         """
-        if not isinstance(text,str) or text.startswith('/'):return False
-        lowered=text.lower()
-        return ('컨텍스트' in lowered or '저장한 기록' in lowered or '저장된 기록' in lowered) and any(word in lowered for word in ('함께','참고','사용','포함'))
+        if not isinstance(text,str) or not text.startswith('/context ') or ' -- ' in text:return None
+        request=text[len('/context '):].strip()
+        return request or None
 
     def offer_telegram_context_choices(self, job_id, chat_id, generation):
         items=self.context_inbox().list()[:6]
@@ -4627,20 +4680,6 @@ class AgentService:
         if not model: raise ValueError('먼저 모델을 연결하세요.')
         self.store.put('public_page_sharing',{'approved':True,'fingerprint':self.model_fingerprint(model),'urls':normalized,'approved_at':time.time()})
         return self.public_page_boundary(model)
-
-    @staticmethod
-    def memory_followup_prefilter(prompt):
-        """Egress-minimizing lexical prefilter for the continuity judge only.
-
-        A turn that *looks* like a memory save is kept away from the remote
-        follow-up judge (#557).  It grants nothing: whether the owner asked
-        Still to remember a value is the DecisionEngine's
-        ``explicit_memory_request`` judgment (#597), and a miss here only
-        means the follow-up judge is asked as for any other short turn.
-        """
-        if not isinstance(prompt,str): return False
-        if re.search(r'\b(?:do not|don\'t|never)\s+(?:save|remember)|기억하지\s*마|저장하지\s*마',prompt,re.I): return False
-        return bool(re.search(r'\b(?:remember|save\s+(?:this|that|it)|memory|preference)\b|기억해|기억하|저장해|선호',prompt,re.I))
 
     def owner_memory_approval(self, job, prompt):
         """A lazy resolver for this Work's owner-request memory approval (#597).

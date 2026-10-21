@@ -980,16 +980,24 @@ finally:
         self.service.ingest_callback({'id':'approve','from':{'id':42},'message':callback_message,'data':f"p7a:{approval_row['id']}:approve"},generation)
         self.assertFalse(self.service.document_boundary()['requires_approval'])
 
-    def test_telegram_guides_explicit_context_choice_without_exposing_content(self):
+    def test_telegram_context_command_guides_the_choice_without_exposing_content(self):
         generation=self.pair()
         self.service.run_one();self.service.deliver_one()
         inbox=self.service.context_inbox()
         inbox.configure({'sources':{'text':True}})
         item=inbox.capture({'source_kind':'text','content':'private roadmap detail'})
-        request={'update_id':11,'message':{'from':{'id':42},'chat':{'id':42,'type':'private'},'text':'저장한 컨텍스트를 함께 참고해서 계획을 만들어 줘'}}
+        # #173 slice B: keywords no longer hold a Work behind the choice; it runs as an ordinary request.
+        keyword={'update_id':11,'message':{'from':{'id':42},'chat':{'id':42,'type':'private'},'text':'저장한 컨텍스트를 함께 참고해서 계획을 만들어 줘'}}
+        self.service.ingest_update(keyword,generation)
+        [plain]=[row for row in self.store.jobs() if row['message']==keyword['message']['text']]
+        self.assertEqual(plain['status'],'queued')
+        self.assertFalse(any(call[1].get('text','').startswith('이번 요청에 참고할') for call in self.calls if call[0].endswith('/sendMessage')))
+        # The owner's explicit command opens the choice; the Work runs the request itself.
+        request={'update_id':12,'message':{'from':{'id':42},'chat':{'id':42,'type':'private'},'text':'/context 계획을 만들어 줘'}}
         self.service.ingest_update(request,generation)
         job=self.store.jobs()[0]
         self.assertEqual(job['status'],'awaiting_context')
+        self.assertEqual(job['message'],'계획을 만들어 줘')
         offer=[call[1] for call in self.calls if call[0].endswith('/sendMessage') and call[1].get('text','').startswith('이번 요청에 참고할')][-1]
         self.assertNotIn('private roadmap detail',json.dumps(offer))
         callback=offer['reply_markup']['inline_keyboard'][0][0]['callback_data']
