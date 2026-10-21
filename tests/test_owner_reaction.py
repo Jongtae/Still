@@ -141,8 +141,8 @@ class WordsAfterTheNotice(_Answering):
         self.assertTrue(any('removed what you had just said you remembered' in str(m.get('content')) and VALUE in str(m.get('content'))
                             for m in users), 'the worker knows the facts were already removed')
 
-    def test_every_owner_message_while_the_notice_is_open_is_read_against_it(self):
-        # #172: no first-message-only rule; the judgment reads each act against what is still open.
+    def test_once_the_owner_has_spoken_an_unbound_message_is_not_judged_against_the_notice(self):
+        # #172 cost bound: a long-lived item joins an unbound typed act only until the owner speaks again.
         self.WITHDRAW = False
         _job, _notice, _row = self.told()
         self.plan = []
@@ -151,8 +151,51 @@ class WordsAfterTheNotice(_Answering):
             with self.store.db() as db:
                 db.execute('UPDATE jobs SET owner_typed=1 WHERE id=?', (job_id,))
             self.service.run_one()
-        self.assertEqual([a['owner_response'] for a in self.asked], ['점심 뭐 먹지', '그건 기억하지 마'])
+        self.assertEqual([a['owner_response'] for a in self.asked], ['점심 뭐 먹지'])
         self.assertEqual([m['content'] for m in self.store.memories()], [VALUE], 'nothing judged a decline')
+
+
+class CostBound(_Answering):
+    """#172 review: an unbound typed act is not judged against a long-lived item the owner has spoken past."""
+    WITHDRAW = False
+
+    def two_days_old(self):
+        """A saved notice shown two days ago, with one owner message since; returns its notification row."""
+        _job, _notice, row = self.told()
+        binding = self.binding(row)
+        binding['sent'] = float(binding['sent']) - 2 * 86400
+        self.store.update_notification(row['id'], 'sent', fingerprint=json.dumps(binding))
+        spoke = self.store.enqueue('어제 얘기', 'cost-spoke', channel=f'telegram:{GENERATION}', chat_id=CHAT)
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET owner_typed=1, status='succeeded', created=? WHERE id=?",
+                       (binding['sent'] + 3600, spoke))
+        self.plan = []
+        return row
+
+    def typed(self, text, reply_to=None):
+        job_id = self.store.enqueue(text, 'cost-' + text, channel=f'telegram:{GENERATION}', chat_id=CHAT)
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET owner_typed=1 WHERE id=?', (job_id,))
+        if reply_to is not None:
+            self.service.telegram_turns.record_source(job_id, CHAT, 4242, reply_to=reply_to)
+        self.service.run_one()
+        return job_id
+
+    def test_a_typed_message_while_only_an_old_notice_is_open_makes_no_judgment_call(self):
+        self.two_days_old()
+        self.typed('점심 뭐 먹지')
+        self.assertEqual(self.asked, [], 'no owner-act judgment call')
+
+    def test_a_reply_to_the_old_notice_is_judged(self):
+        row = self.two_days_old()
+        self.typed('그건 기억하지 마', reply_to=row['message_id'])
+        self.assertEqual([a['owner_response'] for a in self.asked], ['그건 기억하지 마'])
+
+    def test_a_typed_message_right_after_the_notice_is_judged(self):
+        self.told()
+        self.plan = []
+        self.typed('점심 뭐 먹지')
+        self.assertEqual([a['owner_response'] for a in self.asked], ['점심 뭐 먹지'])
 
 
 class CommandAfterTheNotice(_Answering):

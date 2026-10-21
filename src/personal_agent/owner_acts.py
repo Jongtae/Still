@@ -59,6 +59,9 @@ KIND_MEMORY_SAVED = 'memory-saved'
 KIND_MEMORY_PROPOSAL = 'memory-proposal'
 KIND_PREPARATION = 'preparation-proposal'
 
+#: Items that stay open for many turns (days, or until answered); see ``OwnerActs._within_cost_bound``.
+LONG_LIVED = frozenset({KIND_MEMORY_SAVED, KIND_MEMORY_PROPOSAL, KIND_PREPARATION})
+
 #: What an answer does to an item of each kind, told to the judgment in generic words.
 ANSWERS = {
     KIND_CALENDAR: 'approve applies the calendar changes exactly as shown; decline drops them',
@@ -199,6 +202,30 @@ class OwnerActs:
                               'shown_at': float(notification['created']), 'expires_at': None})
         return items
 
+    def _within_cost_bound(self, job, items):
+        """The items an unbound typed act is judged against: a cost bound, not an interpretation rule.
+
+        A saved-memory notice stays open for days and a proposal for a day or
+        more, so one is almost always open; judging every typed message against
+        it would add a Judgment AI call to nearly every turn.  An unbound typed
+        act (no reply-to) therefore includes such a long-lived item only when it
+        was shown after the owner's previous typed message in this conversation
+        - the owner has not spoken since.  Short-lived items (calendar drafts,
+        step approvals, settings drafts) are always included while open.  A
+        long-lived item left out stays open and answerable by a reaction, a
+        reply-to its message or its button.
+        """
+        if not any(item['kind'] in LONG_LIVED for item in items):
+            return items
+        with self.service.store.db() as db:
+            row = db.execute('SELECT created FROM jobs WHERE channel=? AND chat_id IS ? AND owner_typed=1 '
+                             'AND id IS NOT ? AND created<? ORDER BY created DESC LIMIT 1',
+                             (job.get('channel'), job.get('chat_id'), job.get('id'),
+                              float(job.get('created') or time.time()))).fetchone()
+        spoke = float(row['created']) if row else None
+        return [item for item in items
+                if item['kind'] not in LONG_LIVED or spoke is None or float(item['shown_at'] or 0) > spoke]
+
     # -- judge ---------------------------------------------------------------------
     def read(self, job, act, *, target=None, before=None, reaction=False):
         """The owner's judged answer that settles one open item, or None.
@@ -213,6 +240,8 @@ class OwnerActs:
         items = self.open_items(job, before=before)
         if target is not None:
             items = [item for item in items if item['message_id'] == target]
+        elif not reaction:
+            items = self._within_cost_bound(job, items)
         if not items:
             return None
         now = time.time()
