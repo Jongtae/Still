@@ -477,6 +477,9 @@ INTENT_MAIL_SEARCH = 'mail-search'
 #: Read the owner's Picker-selected Google Drive files into this turn, or
 #: hand off the Drive connection first (#672: judged, not matched on words).
 INTENT_DRIVE_READ = 'drive-read'
+#: #173 slice B: the owner wants to use their own saved context items for this
+#: request; Still offers the existing owner-only choice (judged, not keyword-matched).
+INTENT_SAVED_CONTEXT = 'saved-context'
 #: No longer produced by routing (#672: the Work model loop chooses web
 #: search itself).  Kept so a conversation focus or decision recorded before
 #: that change still reads as a continuable conversation-route intent.
@@ -513,6 +516,7 @@ INTENT_LABELS = {
     INTENT_CALENDAR_CREATE: msg('handoff.create_event'),
     INTENT_MAIL_SEARCH: '메일 찾기',
     INTENT_DRIVE_READ: 'Google Drive 파일 읽기',
+    INTENT_SAVED_CONTEXT: '저장한 컨텍스트 선택',
     INTENT_RESEARCH: '웹 조사',
     INTENT_CONVERSATION: '대화로 답하기',
     INTENT_UNSUPPORTED: '제공하지 않는 기능',
@@ -550,6 +554,8 @@ CAPABILITY_NEEDS = {
                              "assistant only drafts it and the owner approves the exact preview"),
     INTENT_DRIVE_READ: ("read, search or summarize files in the owner's own Google Drive, or connect "
                         "Google Drive to do that"),
+    INTENT_SAVED_CONTEXT: ("use the owner's own saved context items (texts or links they captured earlier for "
+                           "the assistant) in this request; the owner picks which item from a list"),
     SEVERAL_TASKS: ("more than one task in this one message where at least one of them needs one of the "
                     "other listed capabilities, for example creating a calendar event and also saving a note"),
     **UNSUPPORTED_CAPABILITIES,
@@ -1476,6 +1482,9 @@ class IntentClassifier:
             return IntentDecision(INTENT_CALENDAR_CREATE, AUTHORITY_RULE, argument=text, cues=cues)
         if need.value == INTENT_DRIVE_READ:
             return IntentDecision(INTENT_DRIVE_READ, AUTHORITY_RULE, cues=cues)
+        if need.value == INTENT_SAVED_CONTEXT:
+            # #173 slice B: replaces the 컨텍스트/저장한 기록 + 함께/참고/사용/포함 keyword trigger.
+            return IntentDecision(INTENT_SAVED_CONTEXT, AUTHORITY_RULE, cues=cues)
         if need.value == SEVERAL_TASKS:
             return IntentDecision(INTENT_AMBIGUOUS, AUTHORITY_RULE, cues=cues, clarification=MIXED_TASKS_CLARIFICATION)
         if need.value in UNSUPPORTED_CAPABILITY_TEXT:

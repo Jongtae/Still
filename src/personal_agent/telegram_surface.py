@@ -871,8 +871,9 @@ class TelegramSurface:
                 # #832 (B14): an over-long message reaches the worker truncated,
                 # with a note that says so, instead of being dropped silently.
                 text=truncated_owner_message(text)
-            # #173 slice B: the saved-context choice opens on the owner's explicit
-            # ``/context <request>`` command, never on keywords; the Work runs the request.
+            # #173 slice B: never on keywords.  The owner's explicit ``/context <request>``
+            # opens the saved-context choice here; a request in prose opens it when the
+            # capability-need judgment selects ``saved-context`` (``hold_for_saved_context``).
             guided_request=service.guided_context_request(text) if authorized else None
             if guided_request is not None:text=guided_request
             guided_context_requested=guided_request is not None and bool(service.context_inbox().list())

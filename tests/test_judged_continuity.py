@@ -19,7 +19,7 @@ from personal_agent.conversation_handoff import FOLLOWUP_CORRECTION, FOLLOWUP_RE
 from personal_agent.decision import (OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, SelectionDecision,
                                      fixture_confidence)
 from personal_agent.owner_acts import OwnerActs
-from test_preparations import _Case
+from test_preparations import CHAT, GENERATION, _Case
 
 EARLIER = '내일 오후 3시에 팀 회의 잡아야 하는데 어떤 시간이 좋을까?'
 EARLIER_REPLY = '오후 3시는 비어 있어요. 그 시간으로 정리해 둘까요?'
@@ -121,6 +121,94 @@ class JudgedContinuityTests(_Case):
         self.assertEqual(job['status'], 'succeeded', job.get('error'))
         self.assertEqual((job['relation_kind'], job['related_job_id']), (FOLLOWUP_CORRECTION, earlier))
         self.assertEqual(self.model_calls[before]['messages'][-1]['content'], '4시로 해 줘')
+
+
+SAVED_CONTEXT_REQUEST = '저장한 기록 참고해서 회의 준비해줘'
+
+
+class JudgedSavedContextTests(_Case):
+    """The saved-context choice opens when the per-turn capability-need judgment selects it (#173 slice B).
+
+    It replaces the 컨텍스트/저장한 기록 + 함께/참고/사용/포함 keyword trigger: no word
+    list, no new judgment call, the same owner-only keyboard and callbacks.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # A local route, so the chosen item may reach the worker once the owner picks it.
+        self.service.save_model({'provider': 'compatible', 'endpoint': 'http://127.0.0.1:11434/v1',
+                                 'model': 'test-model', 'api_key': ''})
+        self.assertTrue(self.service.test_model()['ok'])
+        self.service.set_context_telegram_policy({'approved': True})
+        inbox = self.service.context_inbox()
+        inbox.configure({'sources': {'text': True}})
+        self.item = inbox.capture({'source_kind': 'text', 'content': 'PRIVATE-ROADMAP 회의 안건 세 가지'})
+        self.model_calls.clear()
+
+    def needs(self, mapping):
+        def choose(context, candidates, question):
+            if context.purpose == 'capability-need':
+                return SelectionDecision(OUTCOME_DECIDED, mapping.get(context.facts['owner_message'], 'none-of-these'),
+                                         candidates, fixture_confidence())
+            return None
+
+        def judge(context, proposition):
+            if context.purpose == 'goal-reached':
+                return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+            return None
+        self.judge = FixtureDecisionEngine(judge=judge, choose=choose)
+        self.service.use_decision_engine(self.judge)
+
+    def asked(self, purpose):
+        return [item for item in self.judge.asked if item[1].purpose == purpose]
+
+    def choice_keyboards(self):
+        return [body for body in self.sends()
+                if any(str(button.get('callback_data', '')).startswith('p7x:')
+                       for row in (body.get('reply_markup') or {}).get('inline_keyboard', []) for button in row)]
+
+    def test_a_judged_saved_context_need_opens_the_choice_and_resumes_once(self):
+        self.needs({SAVED_CONTEXT_REQUEST: 'saved-context'})
+        work = self.receive(SAVED_CONTEXT_REQUEST)
+        self.assertEqual(self.store.job(work)['status'], 'awaiting_context')
+        self.assertEqual(self.model_calls, [], 'the worker waits for the owner\'s choice')
+        [offer] = self.choice_keyboards()
+        self.assertNotIn('PRIVATE-ROADMAP', str(offer), 'the labels hold no captured content')
+        token = offer['reply_markup']['inline_keyboard'][0][0]['callback_data']
+        choice = self.store.telegram_context_choice(token[4:])
+        self.tap(token, choice['message_id'])
+        self.assertEqual(self.store.job(work)['status'], 'queued')
+        self.assertEqual(self.store.context_attachment(work)['event_ids'], [self.item['id']])
+        self.script = [{'content': '회의 준비를 정리했어요.'}] * 2
+        self.assertTrue(self.service.run_one())
+        job = self.store.job(work)
+        self.assertEqual(job['status'], 'succeeded', job.get('error'))
+        sent = self.model_calls[0]['messages'][-1]['content']
+        self.assertTrue(sent.startswith(SAVED_CONTEXT_REQUEST))
+        self.assertIn('PRIVATE-ROADMAP', sent, 'the owner-chosen item reached the worker')
+        self.assertEqual(len(self.choice_keyboards()), 1, 'the resumed Work is not offered the choice again')
+        # No judgment call is added: one capability-need for the whole Work, as for any turn.
+        self.assertEqual(len(self.asked('capability-need')), 1)
+
+    def test_an_unrelated_request_the_judgment_does_not_select_opens_nothing(self):
+        self.needs({SAVED_CONTEXT_REQUEST: 'saved-context'})
+        self.script = [{'content': '좋아요.'}] * 2
+        work = self.receive('컨텍스트라는 단어를 함께 쓰는 문장 예시 알려줘')
+        job = self.store.job(work)
+        self.assertEqual(job['status'], 'succeeded', job.get('error'))
+        self.assertEqual(self.choice_keyboards(), [])
+        self.assertIsNone(self.store.context_attachment(work))
+        self.assertEqual(len(self.asked('capability-need')), 1, 'one capability-need call per turn, as before')
+
+    def test_the_explicit_context_command_still_opens_the_choice(self):
+        self.needs({})
+        self.update_id += 1
+        self.service.ingest_update({'update_id': self.update_id, 'message': {
+            'message_id': 777, 'from': {'id': CHAT}, 'chat': {'id': CHAT, 'type': 'private'},
+            'text': '/context 회의 준비해줘', 'date': int(self.now)}}, GENERATION)
+        job = self.store.jobs()[0]
+        self.assertEqual((job['status'], job['message']), ('awaiting_context', '회의 준비해줘'))
+        self.assertEqual(len(self.choice_keyboards()), 1)
 
 
 if __name__ == '__main__':

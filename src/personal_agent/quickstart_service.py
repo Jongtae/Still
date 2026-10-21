@@ -73,7 +73,7 @@ from .conversation_handoff import (CONNECTOR_LABELS, JUDGMENT_NO, JUDGMENT_YES,
                                    IntentDecision,
                                    INTENT_GREETING, INTENT_KNOWLEDGE,
                                    INTENT_MAIL_SEARCH, INTENT_MAIN_AI, INTENT_NOTE_CREATE, INTENT_NOTE_LIST, INTENT_DRIVE_READ,
-                                   INTENT_SETTINGS,
+                                   INTENT_SETTINGS, INTENT_SAVED_CONTEXT,
                                    INTENT_UNSUPPORTED, INTENT_WORKSPACE_SEARCH, SUPERSEDED_WORK_ERROR)
 # PRESENCE-CAP-01 / #505: contextual local authority handoff.
 from .conversation_handoff import LINKABLE_KINDS
@@ -4347,14 +4347,41 @@ class AgentService:
         """The request of the owner's explicit ``/context <request>`` command, or None.
 
         RULES-OUT-01 (#173 slice B): the keyword trigger (컨텍스트/저장한 기록
-        with 함께/참고/사용/포함) is gone; the choice is opened by this exact
-        command, as ``/context <ids> -- <request>`` attaches chosen items.  It
+        with 함께/참고/사용/포함) is gone.  A request in the owner's own words
+        opens the choice when the per-turn ``capability-need`` judgment selects
+        ``saved-context`` (``hold_for_saved_context``); this exact command opens
+        it too, as ``/context <ids> -- <request>`` attaches chosen items.  It
         never attaches anything by itself: it only opens an owner-only choice
         message whose labels contain no captured content.
         """
         if not isinstance(text,str) or not text.startswith('/context ') or ' -- ' in text:return None
         request=text[len('/context '):].strip()
         return request or None
+
+    def hold_for_saved_context(self, job):
+        """Hold a Telegram Work behind the saved-context choice; True when held (#173 slice B).
+
+        The judged ``saved-context`` need opens exactly the choice the keyword
+        trigger used to: an owner-only keyboard whose labels hold no captured
+        content, answered by the unchanged ``p7x``/``p7n`` callbacks, which
+        re-queue this Work.  Not held (the worker runs it as asked) outside a
+        Telegram conversation, with nothing saved, or once a choice was offered.
+        """
+        channel=str(job.get('channel') or '')
+        if not channel.startswith('telegram:') or not isinstance(job.get('chat_id'),int):
+            return False
+        if self.store.telegram_context_choice_for_job(job['id']) or self.store.context_attachment(job['id']):
+            return False
+        if not self.context_inbox().list():
+            return False
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='awaiting_context',response=NULL,error=NULL,delivery='none' WHERE id=?",
+                       (job['id'],))
+        if self.offer_telegram_context_choices(job['id'],job['chat_id'],channel.split(':',1)[1]):
+            return True
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='running' WHERE id=? AND status='awaiting_context'",(job['id'],))
+        return False
 
     def offer_telegram_context_choices(self, job_id, chat_id, generation):
         items=self.context_inbox().list()[:6]
@@ -9256,8 +9283,8 @@ class AgentService:
     #: (#672 review).  Only the capability id, the Work whose message is the
     #: utterance, and a digest of that utterance are kept - never its text.
     JUDGED_RESUME_KEY='judged_resume_intents'
-    RESUMABLE_JUDGED_INTENTS=frozenset({INTENT_CALENDAR_CREATE,INTENT_DRIVE_READ})
-    PARKED_STATUSES=('awaiting_connection','awaiting_drive','queued','running')
+    RESUMABLE_JUDGED_INTENTS=frozenset({INTENT_CALENDAR_CREATE,INTENT_DRIVE_READ,INTENT_SAVED_CONTEXT})
+    PARKED_STATUSES=('awaiting_connection','awaiting_drive','awaiting_context','queued','running')
 
     @staticmethod
     def _utterance_digest(text):
@@ -10462,6 +10489,15 @@ class AgentService:
             # The selected files are read into this turn below and the
             # model loop answers; a missing connection parks the Work.
             if self.drive_read_prerequisite(job):
+                self.remember_judged_intent(job['id'],run.decision,run.prompt_work_id,run.prompt)
+                self.record_work_sources(job['id'],run.work_sources)
+                return True
+            run.handled=False
+        elif run.decision.intent==INTENT_SAVED_CONTEXT:
+            # #173 slice B: the judged need opens the owner-only choice the keyword
+            # trigger used to; the chosen item (or none) resumes this Work once, with
+            # its judgment kept so it is neither re-judged nor offered again.
+            if self.hold_for_saved_context(job):
                 self.remember_judged_intent(job['id'],run.decision,run.prompt_work_id,run.prompt)
                 self.record_work_sources(job['id'],run.work_sources)
                 return True
