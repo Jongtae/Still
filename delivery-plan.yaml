@@ -648,7 +648,7 @@
       "allowed_authority": "Track 1 (#164): browser_session.py, browser_worker.py and their tests. Track 2 (#167): information_use.py, the outbound recording in agent_runtime.py, the information-use web view, messages.json entries for it, and their tests; browser_session.py only after track 1's PR on it merges. Docs describing the changed behaviour and this plan. Focused unit and model-free tests, real-WebKit on local fixture pages only, required validate and full-validate on each final head; one issue-linked PR per substep, normal squash merge, then a closeout PR.",
       "non_goals": "Blocking, rewriting or confirming outbound data (#28 options B-D); storing more personal text than today; the CLI's own web search; live accounts, external sites, live models, releases, deployment and the delivery heartbeat; other backlog items.",
       "independent_review": "Not planned. Triggered if #164 changes the cookie-save or process-lifetime guarantees, or #167 stores more personal text or changes what is sent.",
-      "completion_rule": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests, its declared focused tests passing, and required validate plus full-validate passing on the final head (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision.",
+      "completion_rule": "Every ordered substep either merged on its own PR with its issue's acceptance criteria mapped to tests, its declared focused tests passing, and required validate plus full-validate passing on the final head (not cancelled, not still running), or, where the activated scope made the change conditional on a measurement, closed with a recorded no-change-needed disposition naming the issue that holds the measurement; then a closeout entry recording per-substep issue, pull request, merge commit and decision, and any no-change disposition.",
       "unexecuted_substeps": {
         "BROWSE-CLOSE-01": {
           "disposition": "no-change-needed",
@@ -656,7 +656,13 @@
           "reason": "Measured, not a defect: on real WebKit with local fixture pages the worker exits 8-9 ms after replying to quit and 43 closes took 0.65 s in total; the 7 s per close came from Python 3.12 cProfile attributing background-thread time to main-thread frames. No code change; #164 closed as not planned with the evidence, and no follow-up work is owed."
         }
       },
-      "closeout": "Closed out 2026-10-21 (#168). AUDIT-OUTBOUND-01 (#167) merged on PR #178 after validate and full-validate (Linux, macOS 15, macOS 26) passed on its final head 213494f; Codex reviewed three heads and all eight findings were fixed, the last fixes (213494f) not re-reviewed. BROWSE-CLOSE-01 (#164) was measured and needed no change (unexecuted_substeps; the 7 s figure was a cProfile artifact). Evidence is fixture/unit, local real-WebKit and CI only; no live account or site. Left open: #28 option B (blocking owner-marked values) and comparing mail/file/Drive/calendar contents remain owner decisions. No successor is selected; the delivery heartbeat stayed paused throughout."
+      "closeout": "Closed out 2026-10-21 (#168). AUDIT-OUTBOUND-01 (#167) merged on PR #178 after validate and full-validate (Linux, macOS 15, macOS 26) passed on its final head 213494f; Codex reviewed three heads and all eight findings were fixed, the last fixes (213494f) not re-reviewed. BROWSE-CLOSE-01 (#164) was measured and needed no change (unexecuted_substeps; the 7 s figure was a cProfile artifact). Evidence is fixture/unit, local real-WebKit and CI only; no live account or site. Left open: #28 option B (blocking owner-marked values) and comparing mail/file/Drive/calendar contents remain owner decisions. No successor is selected; the delivery heartbeat stayed paused throughout.",
+      "completion_rule_amendment": {
+        "date": "2026-10-21",
+        "issue": 168,
+        "reason": "#168 activated BROWSE-CLOSE-01 as 'measure; if the delay is real, let the worker exit promptly ...', so a measurement that finds no real delay completes that scope without a code change. The original rule text required a merged PR for every ordered substep and did not state this case; the amendment makes the activated scope explicit rather than letting the verifier permit the gap silently.",
+        "original": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests, its declared focused tests passing, and required validate plus full-validate passing on the final head (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision."
+      }
     }
   },
   "completion_claims": {},

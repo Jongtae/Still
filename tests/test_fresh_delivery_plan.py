@@ -7,6 +7,7 @@ plan started empty and selected nothing until the owner activated a goal
 QUALITY-CORE-01 (#115), STEADY-01 (#132) and CHECKS-01 (#157), all since closed out.
 """
 import importlib.util
+import copy
 import json
 import subprocess
 from pathlib import Path
@@ -182,6 +183,18 @@ def test_the_browse_audit_program_is_closed_out_and_selects_nothing():
     assert (no_change["disposition"], no_change["evidence_issue"]) == ("no-change-needed", 164)
     assert "successor_issue" not in no_change
     assert "cProfile" in program["unexecuted_substeps"]["BROWSE-CLOSE-01"]["reason"]
+    # The completion rule admits the measured no-change outcome, and the amendment says why.
+    assert "no-change-needed" in program["completion_rule"]
+    assert program["completion_rule_amendment"]["issue"] == 168
+    assert "merged on its own PR" in program["completion_rule_amendment"]["original"]
+    rule_without = copy.deepcopy(current)
+    rule_without["programs"]["BROWSE-AUDIT-01"]["completion_rule"] = program["completion_rule_amendment"]["original"]
+    try:
+        invariants.assert_closed_out_record(TestCase(), rule_without, "BROWSE-AUDIT-01")
+        contradicts = False
+    except AssertionError:
+        contradicts = True
+    assert contradicts
     items = {item["id"]: item for item in current["iterations"]}
     evidence = items["BROWSE-AUDIT-01"]["completed_substeps"]
     assert (evidence["AUDIT-OUTBOUND-01"]["issue"], evidence["AUDIT-OUTBOUND-01"]["pull_request"]) == (167, 178)

@@ -544,6 +544,10 @@ def assert_closed_out_record(case, plan, name):
             case.assertNotIn("successor_issue", record,
                              f"{name}: {substep} needs no change, so it has no successor to name")
             case.assertGreaterEqual(len(record["reason"]), MIN_REASON_CHARS, f"{name}: {substep}")
+            # The program's own completion rule must admit this outcome, or the
+            # plan would contradict its completion gate (#168 review).
+            case.assertIn(NO_CHANGE_NEEDED, program.get("completion_rule", ""),
+                          f"{name}: {substep} closed as no-change but the completion rule does not allow it")
             continue
         case.assertNotIn("disposition", record, f"{name}: {substep} has an unknown disposition")
         case.assertTrue(_is_issue_number(record.get("successor_issue")),
