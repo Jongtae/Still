@@ -29,7 +29,11 @@
       "BROWSE-AUDIT-01",
       "AUDIT-OUTBOUND-01",
       "JUDGE-CONTEXT-01",
-      "GUARD-NL-01"
+      "GUARD-NL-01",
+      "IN-CONTEXT-01",
+      "OWNER-ACT-01",
+      "RULES-OUT-01",
+      "BROWSER-DIALOG-01"
     ]
   },
   "iterations": [
@@ -468,7 +472,7 @@
       "issue": 175,
       "milestone": "in-context",
       "kind": "implementation",
-      "activation_status": "owner-activated-goal-ready",
+      "activation_status": "complete-on-merge",
       "contract": "goal-execution-contract.en.md",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_fresh_delivery_plan.py"
@@ -487,6 +491,38 @@
           "pull_request": 176,
           "merge_commit": "834e19f7b24f90ebc243bcb4489074fae1a8f3a5",
           "decision": "The no-scenario-code guard also requires natural-language cue tables in steering positions to be classified (enforcement, adapter, own-text or open-finding with its issue); four more modules are scanned."
+        },
+        "OWNER-ACT-01": {
+          "issue": 172,
+          "pull_request": 179,
+          "merge_commit": "1acb1667f325c561f93dc111810b6eebbd38ac47",
+          "decision": "One judgment reads each owner reply, reaction or reply-to against every open item (calendar and settings drafts, step approvals, memory notices and proposals, preparation proposals); only a judged approve or decline of one open item settles, through that item's own digest-, expiry- and channel-bound path; nothing is deleted on a miss; long-lived items join an unbound typed act only when shown after the owner's previous message (cost bound). The literal approval word list and the fixed precedence chain are removed (revises #22 option A); buttons stay exact acts."
+        },
+        "RULES-OUT-01": {
+          "issue": 173,
+          "pull_request": 187,
+          "merge_commit": "d59abeadbff21edf7aedd0dbd13aae5486bd4d4a",
+          "slices": [
+            {
+              "pull_request": 181,
+              "merge_commit": "00feca1e2157fa8e890d14ec038d4d2acc43e8ff"
+            },
+            {
+              "pull_request": 185,
+              "merge_commit": "b14a6f146149c4f1bdc2e8abf4f55fbaeee21a2e"
+            },
+            {
+              "pull_request": 187,
+              "merge_commit": "d59abeadbff21edf7aedd0dbd13aae5486bd4d4a"
+            }
+          ],
+          "decision": "Slice A: keyword intent cue tables and verbatim rule answers retired; the worker answers (two file-workspace forms narrowed pending #182; connection control pending #183). Slice B: correction/continuation cues and lexical skips retired; the follow-up judgment reads the earlier request, reply, times and open-item kinds; saved-context and preparation-goal matching are judged. Slice C: the judgment's line closes a short answer; fixed lines remain only as catalog truth floors; the context-source footer comes from typed provenance."
+        },
+        "BROWSER-DIALOG-01": {
+          "issue": 174,
+          "pull_request": 186,
+          "merge_commit": "d22ec4cf266d00f9810dd597502ee0665b485f75",
+          "decision": "A page confirm during a step is accepted only after a step declared mutate or payment (or an owner-approved press) and never for a payment question; a declined question reaches the worker. The payment regex floor stays; a judgment asked only for an unflagged mutate press can add the owner's approval and never removes it."
         }
       }
     },
@@ -522,7 +558,7 @@
       "issue": 172,
       "milestone": "in-context",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_owner_acts.py tests/test_calendar_conversation.py tests/test_owner_reaction.py"
       ],
@@ -535,7 +571,7 @@
       "issue": 173,
       "milestone": "in-context",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_rules_out.py tests/test_conversation_intent.py"
       ],
@@ -548,7 +584,7 @@
       "issue": 174,
       "milestone": "in-context",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_browser_session.py tests/test_browser_webkit.py"
       ],
@@ -762,7 +798,7 @@
       }
     },
     "IN-CONTEXT-01": {
-      "status": "owner-activated-goal-ready",
+      "status": "complete",
       "issue": 175,
       "activated_by": {
         "issue": 175,
@@ -776,13 +812,13 @@
         "RULES-OUT-01",
         "BROWSER-DIALOG-01"
       ],
-      "active_substeps": [
-        "OWNER-ACT-01",
-        "RULES-OUT-01"
-      ],
+      "active_substeps": [],
       "completed_substeps": [
         "JUDGE-CONTEXT-01",
-        "GUARD-NL-01"
+        "GUARD-NL-01",
+        "OWNER-ACT-01",
+        "RULES-OUT-01",
+        "BROWSER-DIALOG-01"
       ],
       "decisions": {
         "owner-act-approval": {
@@ -794,13 +830,32 @@
       "allowed_authority": "Kernel routing, judgment and projection code (quickstart_service.py, conversation_handoff.py, calendar_conversation.py, settings_orchestrator.py, telegram_surface.py, telegram_store.py, owner_acts.py, owner_model.py, agent_runtime.py outside the outbound recording, preparations.py, work_execution.py, decision.py, prompts), browser_session.py and browser_worker.py for #174 only, messages.json entries they use, tests, the no-scenario-code guard, and docs describing the changed behaviour. Model-free tests with scripted judgments; required validate on each final head and full-validate before closeout; one issue-linked PR per substep or slice (#173 in three stacked slices), normal squash merge, then a closeout PR.",
       "non_goals": "New capabilities (worker file-workspace and connection-control tools are follow-ups #182 and #183); widening approval authority beyond what the owner approves; storing more personal text; live accounts, external sites, live models, releases, deployment and the delivery heartbeat; other backlog items.",
       "independent_review": "Required for OWNER-ACT-01 (#172, approval semantics for consequential effects) and BROWSER-DIALOG-01 (#174, consequential-action approval in the browser) by a human non-author; another model run by the author is self-review. Triggered for other substeps only if they change an authority boundary.",
-      "completion_rule": "Every ordered substep merged on its own PR (RULES-OUT-01: all three slices) with its issue's acceptance criteria mapped to tests and its declared focused tests passing, required validate passing on each final head, the required independent reviews recorded, and full-validate passing on main after the last merge (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision."
+      "completion_rule": "Every ordered substep merged on its own PR (RULES-OUT-01: all three slices) with its issue's acceptance criteria mapped to tests and its declared focused tests passing, required validate passing on each final head, the required independent reviews recorded, and full-validate passing on main after the last merge (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision.",
+      "pending_reviews": [
+        {
+          "substep": "OWNER-ACT-01",
+          "issue": 172,
+          "pull_request": 179,
+          "merge_commit": "1acb1667f325c561f93dc111810b6eebbd38ac47",
+          "tracking_issue": 188,
+          "reason": "Consequential-action approval semantics changed; the owner directed the merge on 2026-10-22 (\"머지해줘\") before the required human non-author review. It stays owed on #188 and is not waived by this closeout."
+        },
+        {
+          "substep": "BROWSER-DIALOG-01",
+          "issue": 174,
+          "pull_request": 186,
+          "merge_commit": "d22ec4cf266d00f9810dd597502ee0665b485f75",
+          "tracking_issue": 188,
+          "reason": "Browser confirm and payment approval semantics changed; merged on the same owner direction before the required human non-author review. It stays owed on #188 and is not waived by this closeout."
+        }
+      ],
+      "closeout": "Closed out 2026-10-22 (#175). All five ordered substeps merged on their own PRs (RULES-OUT-01 in three stacked slices) with issue acceptance mapped to model-free fixture tests (real-WebKit fixtures for #174) and required validate passing on each final head; the full suite passed on the last rebased head (5196 passed, 61 skipped) and full-validate passed on main at the last merge d22ec4c (run 39691913598: Linux, macOS 15, macOS 26). JUDGE-CONTEXT-01 #170 (PR #177), GUARD-NL-01 #171 (PR #176), OWNER-ACT-01 #172 (PR #179), RULES-OUT-01 #173 (PRs #181, #185, #187), BROWSER-DIALOG-01 #174 (PR #186). Evidence is fixture/unit only; no live model, account or site observed. The owner directed the merge of #179 and #186 before the required human non-author review; it stays owed on #188 (pending_reviews). Supporting guidance fixes outside the substeps: #153 (PR #158), #154 (PR #160), #155 (PR #161). Left open as follow-ups: #182 (worker file-workspace tool; two narrowed rule forms remain as guard open findings), #183 (connection pause/disconnect as an approvable draft). No successor is selected by this closeout; the delivery heartbeat stayed paused throughout."
     }
   },
   "completion_claims": {},
   "next_goal": {
-    "id": "IN-CONTEXT-01",
-    "status": "owner-activated-goal-ready",
-    "action": "Owner direction 2026-10-21 (#175) selects IN-CONTEXT-01: owner acts and situations are judged in context, code keeps only enforcement. Session-driven at the owner's request; JUDGE-CONTEXT-01 and GUARD-NL-01 already merged. Scoped PRs and normal merge after required checks are authorized; #172 and #174 merge only after a human non-author review. Live accounts, external sites, releases and deployment are not authorized. The delivery heartbeat stays paused, and no successor is selected on completion."
+    "id": null,
+    "status": "complete",
+    "action": "IN-CONTEXT-01 closed out (#175). No goal is selected; the owner activates the next one explicitly, for example from the curated backlog (#44). The delivery heartbeat stays paused."
   }
 }
