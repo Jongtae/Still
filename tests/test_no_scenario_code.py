@@ -238,14 +238,13 @@ CLASSIFIED_TABLES = {
     # RULES-OUT-01 (#173, slice B) removed the correction/continuation cue tables, the lexical
     # skips of the follow-up judgment, the saved-context keyword trigger (now the explicit
     # `/context <request>` command) and preparations.same_goal's particle/filler tables.
+    # RULES-OUT-01 (#173, slice C) removed the 컨텍스트: match on the AI's answer that hid the context
+    # sources footer; the footer now comes from the typed record, always.
     **{('quickstart_service.py', name): (
         'open-finding', '#182: the owner-quoted workspace summary/search forms still read summary, save and '
                         'search words; kept (a #173 blocker), as evidence for the worker and never the answer, '
                         'until #182 gives the worker a tool that reads and writes the file workspace')
        for name in ('workspace_summary_request', 'workspace_search_request')},
-    ('quickstart_service.py', 'AgentService._settle_worker_outcome'): (
-        'open-finding', "#173: a fixed 컨텍스트 출처 footer is appended to the AI's answer unless that answer "
-                        'already contains 컨텍스트:, a fixed text appended to the AI\'s answer'),
 }
 
 

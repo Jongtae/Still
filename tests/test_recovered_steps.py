@@ -272,7 +272,7 @@ class DirectRouteServiceTests(unittest.TestCase):
                 self.assertEqual(row['status'], 'partial')
                 self.assertTrue(seen and all(ROUTED_AROUND_STEP_FACT in item for item in seen))
                 # Another path may not have served the failed read's purpose: the owner still hears of it.
-                self.assertIn('한 단계는 끝내지 못했어요', row['owner_note'])
+                self.assertIn('일부 단계는 끝내지 못했어요', row['owner_note'])
                 self.assertIn(GOAL_NOT_SHOWN, row['owner_cause'])
                 self.assertEqual([event['tool'] for event in failed], ['weather'], 'the failed attempt stays in Evidence')
 
@@ -316,7 +316,7 @@ class CliRouteOutcomeTests(orch.Harness):
         self.script([orch.plan('codex', 'Fill it in.')], goals=[False])
         job, row = self.run_work('이름 칸에 Kim 넣고 제출해줘')
         self.assertEqual(row['status'], 'partial')
-        # Before #14 the note counted the recovered step ('한 단계는 끝내지 못했어요') and the cause named it.
+        # Before #14 the note counted the recovered step ('일부 단계는 끝내지 못했어요') and the cause named it.
         self.assertIsNone(row['owner_note'])
         self.assertIsNone(row['error'])
         self.assertIn(GOAL_NOT_SHOWN, row['owner_cause'])
@@ -331,7 +331,7 @@ class CliRouteOutcomeTests(orch.Harness):
         [goal] = self.asked_goals
         self.assertEqual(goal.facts['failed_steps'], 'browser_type: browser_type target_not_found')
         # The step stays named, and the judgment's reason now follows it on the CLI route too.
-        self.assertIn('한 단계는 끝내지 못했어요', row['owner_note'])
+        self.assertIn('일부 단계는 끝내지 못했어요', row['owner_note'])
         self.assertIn(GOAL_NOT_SHOWN, row['owner_cause'])
 
     def test_an_unrecovered_state_change_keeps_the_work_partial_and_named(self):
@@ -340,7 +340,7 @@ class CliRouteOutcomeTests(orch.Harness):
         job, row = self.run_work('이름 칸에 Kim 넣어줘')
         # #752: a reached verdict never outranks a state change that did not happen.
         self.assertEqual(row['status'], 'partial')
-        self.assertIn('한 단계는 끝내지 못했어요', row['owner_note'])
+        self.assertIn('일부 단계는 끝내지 못했어요', row['owner_note'])
         self.assertIn('target_not_found', row['error'])
         [goal] = self.asked_goals
         self.assertNotIn(RECOVERED_STEP_FACT, goal.facts['failed_steps'])

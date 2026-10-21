@@ -1128,7 +1128,10 @@ class TelegramSurface:
                                                       job.get('owner_cause') or job['error'],job.get('status'),
                                                       verified=job.get('owner_verified'),note=job.get('owner_note'),
                                                       # #1470: a Work waiting for the owner's approval is not "unconfirmed".
-                                                      waiting=service.step_approval_pending(job['id']))
+                                                      # #173 slice C: nor is one whose drafts wait on Still's own preview,
+                                                      # unless something else is left to say.
+                                                      waiting=service.step_approval_pending(job['id'])
+                                                      or (not job.get('owner_note') and service.work_awaits_owner_preview(job)))
             # #659: a prepared answer arrives without an owner turn; say what it is for.
             text=service.preparation_reply_prefix(job)+text
             try:route_options=service.usage_limit_route_options(job)

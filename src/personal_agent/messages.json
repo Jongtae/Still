@@ -275,12 +275,6 @@
   "ja": "ところで、{text}",
   "zh": "对了，{text}"
  },
- "compose.i_couldn_t_check_count_of": {
-  "ko": "{count} 단계는 끝내지 못했어요.",
-  "en": "I couldn't finish {count} of the steps.",
-  "ja": "{count}つの手順は終えられませんでした。",
-  "zh": "有 {count} 个步骤没能完成。"
- },
  "compose.i_couldn_t_complete_this_request": {
   "ko": "이 요청은 완료하지 못했습니다: {reason}",
   "en": "I couldn't complete this request: {reason}",
@@ -382,12 +376,6 @@
   "en": "Folder access was not allowed, so the request did not run. No folder access was added.",
   "ja": "フォルダー権限が許可されなかったため、依頼は実行していません。フォルダー権限は追加していません。",
   "zh": "未允许文件夹权限，请求没有执行，也没有添加文件夹权限。"
- },
- "handoff.i_can_t_read_the_body": {
-  "ko": "찾은 메일의 본문을 읽는 기능은 아직 제공하지 않습니다. 제목, 보낸 사람, 날짜로 찾는 것까지만 할 수 있어요.",
-  "en": "I can't read the body of found mail yet. I can only find mail by subject, sender and date.",
-  "ja": "見つけたメールの本文を読む機能はまだありません。件名・差出人・日付で探すところまでです。",
-  "zh": "还不能读取找到的邮件正文，只能按主题、发件人和日期查找。"
  },
  "handoff.i_can_t_send_or_reply": {
   "ko": "메일 보내기나 답장은 제공하지 않습니다. 아무것도 보내지 않았습니다. 메일 찾기는 도울 수 있어요.",
@@ -3130,5 +3118,41 @@
   "en": "Tell me which assistant, by name. Nothing was changed.",
   "ja": "どのアシスタントか名前を教えてください。何も変更していません。",
   "zh": "请告诉我是哪个助理的名字。没有做任何更改。"
+ },
+ "projection.some_steps_unfinished": {
+  "ko": "일부 단계는 끝내지 못했어요.",
+  "en": "Some steps didn't finish.",
+  "ja": "一部の手順は終えられませんでした。",
+  "zh": "有些步骤没能完成。"
+ },
+ "projection.no_ai_route": {
+  "ko": "아직 AI가 연결되지 않아 이 요청은 처리하지 못했습니다.",
+  "en": "No AI is connected yet, so I couldn't handle this request.",
+  "ja": "まだAIが接続されていないため、この依頼は処理できませんでした。",
+  "zh": "还没有连接 AI，所以无法处理这个请求。"
+ },
+ "projection.no_ai_route_what_needs_it": {
+  "ko": "메모와 일정, 메일을 포함해 대화로 맡기는 일은 AI를 연결한 뒤에 할 수 있습니다. 저장한 메모와 기록은 내 기록에서 볼 수 있어요.",
+  "en": "Anything you ask in chat, including notes, calendar and mail, works once an AI is connected. You can see your saved notes and records in My records.",
+  "ja": "メモや予定、メールを含め、会話で頼むことはAIを接続すると使えます。保存したメモや記録は「マイ記録」で見られます。",
+  "zh": "包括笔记、日程和邮件在内，在对话中交给我的事情要连接 AI 后才能处理。保存的笔记和记录可以在“我的记录”中查看。"
+ },
+ "agent_runtime.goal_not_shown": {
+  "ko": "관찰된 결과만으로는 요청이 완료됐다고 확인되지 않았습니다.",
+  "en": "The observed results alone do not confirm that the request was completed.",
+  "ja": "観察された結果だけでは、依頼が完了したとは確認できませんでした。",
+  "zh": "仅凭观察到的结果，无法确认请求已完成。"
+ },
+ "agent_runtime.goal_unjudged": {
+  "ko": "완료 여부를 판단할 기능을 사용할 수 없어 요청이 끝났는지 확인하지 못했습니다.",
+  "en": "The completion check was unavailable, so I couldn't confirm whether the request was finished.",
+  "ja": "完了を判断する機能が使えず、依頼が終わったか確認できませんでした。",
+  "zh": "无法使用完成判断功能，所以没能确认请求是否完成。"
+ },
+ "service.context_sources": {
+  "ko": "컨텍스트 출처:",
+  "en": "Context sources:",
+  "ja": "コンテキストの出典:",
+  "zh": "上下文来源："
  }
 }

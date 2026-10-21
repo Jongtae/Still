@@ -37,7 +37,10 @@ TERMINAL_UNKNOWN_EFFECT = (msg('projection.the_external_result_could_not_be'))
 #: A count of steps replaces any tool name or tool error (those stay in 상세).
 TERMINAL_FAILED_NOTE = msg('projection.i_couldn_t_finish_what_you')
 TERMINAL_INTERRUPTED_NOTE = msg('projection.it_stopped_partway_so_i_could')
-TERMINAL_PARTIAL_NOTE = '{count} 단계는 끝내지 못했어요.'
+#: #173 slice C: the truth floor of a partial answer some of whose steps did not finish, said only
+#: when the outcome judgment gave no owner line of its own.  From the catalog: no count word, which
+#: was Korean grammar inside every language's line.
+TERMINAL_PARTIAL_NOTE = msg('projection.some_steps_unfinished')
 #: #1451: the closing line of a partial answer when no step failed and no gap was stated.
 TERMINAL_UNCONFIRMED_NOTE = msg('projection.answer_not_confirmed')
 #: One reason string in the owner's bubble: its first sentence, bounded.
@@ -150,24 +153,25 @@ def owner_cause(steps):
     return (TERMINAL_UNFINISHED_LABEL + ' — ' + ' · '.join(entries[:3]))[:400]
 
 
-def step_count_word(count):
-    """``한``/``두``/``세`` for one to three steps, ``몇`` beyond (no digits in the bubble)."""
-    return {1: '한', 2: '두', 3: '세'}.get(count, '몇')
-
-
 def answer_note(steps, outcome, kept=(), report=None):
     """The one closing note after a failed/partial answer, or ``None`` (#847).
 
     ``steps`` are the same ``(tool_id, reason)`` pairs ``owner_cause`` reads.
     A reason in ``kept`` is a step's own owner-facing next step (a withheld
     effect: an approval, a login, a confirmation) and is spoken as written;
-    every other step is only counted, so no tool name, host action or tool
-    error follows the answer.  A ``failed`` Work states that the request was
-    not finished instead of a count.  From the worker's typed report only
-    the question it asks the owner and its proposed next step follow, as
+    every other step is only noted, so no tool name, host action or tool
+    error follows the answer.  From the worker's typed report only the
+    question it asks the owner and its proposed next step follow, as
     sentences, never as labelled lines; what stayed unknown is already the
     answer's own business and stays in 상세.  #1451: the outcome judgment's
     ``gap`` (what the reply left unserved) is said first among them.
+
+    RULES-OUT-01 (#173 slice C): the outcome judgment's own line to the owner
+    (``note``, #1459, or its ``gap`` when it gave no note) is the closing
+    line.  A fixed catalog line - ``failed``: the request was not finished;
+    ``partial`` with unfinished steps: some steps did not finish - is said
+    only as the truth floor, when the judgment said nothing, so a failed or
+    partial Work never reads as success (C6).
     """
     spoken, counted = [], []
     for tool, reason in steps:
@@ -177,20 +181,21 @@ def answer_note(steps, outcome, kept=(), report=None):
                 spoken.append(text)
         elif (tool, text) not in counted:
             counted.append((tool, text))
+    report = report if isinstance(report, dict) else {}
+    judged = any(' '.join(str(report.get(key) or '').split()) for key in ('note', 'gap'))
     parts = []
-    if outcome == 'failed':
+    if not judged and outcome == 'failed':
         parts.append(TERMINAL_FAILED_NOTE)
-    elif counted:
-        parts.append(TERMINAL_PARTIAL_NOTE.format(count=step_count_word(len(counted))))
+    elif not judged and counted:
+        parts.append(TERMINAL_PARTIAL_NOTE)
     parts.extend(spoken[:3])
-    if isinstance(report, dict):
-        # #1459: the judgment's line to the owner; its internal gap only where no note was given.
-        for key in ('note', 'gap', 'question', 'next'):
-            if key == 'gap' and 'note' in report:
-                continue
-            text = ' '.join(str(report.get(key) or '').split())
-            if text and text not in parts:
-                parts.append(text)
+    # #1459: the judgment's line to the owner; its internal gap only where no note was given.
+    for key in ('note', 'gap', 'question', 'next'):
+        if key == 'gap' and 'note' in report:
+            continue
+        text = ' '.join(str(report.get(key) or '').split())
+        if text and text not in parts:
+            parts.append(text)
     return clip_keeping_links(' '.join(parts), ANSWER_NOTE_CHARS) if parts else None
 
 
@@ -449,9 +454,8 @@ class ConversationProjection:
     def _no_ai_route(self, repeat):
         if repeat:
             return 'AI가 아직 연결되지 않아 이 요청은 처리하지 못했습니다. ' + self._where_to_connect()
-        return ('아직 AI가 연결되지 않아 이 요청은 처리하지 못했습니다.\n\n'
-                '지금 바로 되는 일: 메모 남기기와 메모 목록 보기, 저장한 파일 찾기. '
-                '캘린더는 연결하면 쓸 수 있습니다. 메일 검색에는 Gmail 연결과 판단 기능 설정이 모두 필요합니다.\n\n'
+        # #173 slice C: since #173 every request in chat is the AI's; nothing is promised without one.
+        return (msg('projection.no_ai_route') + '\n\n' + msg('projection.no_ai_route_what_needs_it') + '\n\n'
                 + self._where_to_connect())
 
     def _model_unverified(self, repeat):

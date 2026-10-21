@@ -25,7 +25,7 @@ from pathlib import Path
 from personal_agent.agent_runtime import CALENDAR_DRAFT_TOOLS, withheld_effect
 from personal_agent.calendar import (CALENDAR_SPEC, CALENDAR_WRITE_SPEC,
                                      CalendarConnector)
-from personal_agent.calendar_conversation import PREVIEW_HEADER
+from personal_agent.calendar_conversation import PREVIEW_FOOTER, PREVIEW_HEADER
 from personal_agent.connector_contract import ConnectorRegistry, ConnectorState
 from personal_agent.conversation_projection import TERMINAL_FAILED_NOTE
 from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
@@ -307,14 +307,16 @@ class DeferredCalendarWriteTests(RefusedWriteTestCase):
         # `result_available` true so the preview stays reachable from the card.
         self.assertEqual(job['status'], 'partial',
                          'nothing reached the calendar, yet the turn succeeded')
-        # The tool's own next step, verbatim -- not a generic stand-in the
-        # renderer could substitute without anyone noticing.
-        self.assertIn('소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.', bubble)
-        # #820/#847: the answer is delivered first; the step's own next step closes the bubble.
-        # #22: Still's own exact preview of the draft follows the answer, before that step.
+        # #820/#847: the answer is delivered first.  #22: Still's own exact preview of the
+        # draft follows it and is the one statement that nothing is applied yet.
         self.assertTrue(bubble.startswith(self.text + '\n\n' + PREVIEW_HEADER), bubble)
         self.assertIn('제목: 병원 예약', bubble)
-        self.assertTrue(bubble.endswith('\n\n소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.'), bubble)
+        # #173 slice C: the tool's pending line would repeat the preview, so it is not said again;
+        # the Work waits on the preview's own approval prompt, so no "unconfirmed" floor follows.
+        self.assertNotIn('소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.', bubble)
+        self.assertTrue(bubble.endswith(PREVIEW_FOOTER), bubble)
+        self.assertIn('소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.', job['owner_cause'] or job['error'] or '',
+                      'the record keeps the step')
         self.assertNotIn('일정 초안', bubble, 'no tool name after the answer')
 
     def test_every_draft_tool_is_covered_not_only_create(self):
@@ -340,7 +342,10 @@ class DeferredCalendarWriteTests(RefusedWriteTestCase):
                 job, bubble = case.ask('내일 팀 회의 좀 바꿔줘')
                 self.assertEqual(job['status'], 'partial')
                 self.assertTrue(bubble.startswith(case.text), bubble)
-                self.assertTrue(bubble.endswith('\n\n소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.'), bubble)
+                # #173 slice C: Still's own preview (or its "cannot approve here" notice for an
+                # unverified target) says nothing was applied; the pending line is not repeated.
+                self.assertIn('반영하지 않', bubble)
+                self.assertNotIn('소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.', bubble)
                 self.assertEqual([call[0] for call in case.calendar_calls], [])
 
     def test_nothing_reached_the_calendar_provider(self):

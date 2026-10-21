@@ -4064,8 +4064,9 @@ COMPLETION_CHECK=('Completion check: tools have run for this request but no comp
                   'with what failed, what is unknown and the next step. If a different path could still reach the goal, take it first.')
 #: What Still states when completion could not be established.
 GOAL_NOT_CLAIMED='완료를 뒷받침하는 관찰 결과가 제시되지 않아 요청이 끝났는지 확인하지 못했습니다.'
-GOAL_NOT_SHOWN='관찰된 결과만으로는 요청이 완료됐다고 확인되지 않았습니다.'
-GOAL_UNJUDGED='완료 여부를 판단할 기능을 사용할 수 없어 요청이 끝났는지 확인하지 못했습니다.'
+#: #173 slice C: truth floors, said only when the outcome judgment gave no gap of its own.
+GOAL_NOT_SHOWN=msg('agent_runtime.goal_not_shown')
+GOAL_UNJUDGED=msg('agent_runtime.goal_unjudged')
 #: Completion judgments per run: one, plus one after a "not shown" answer.
 GOAL_JUDGMENTS=2
 #: Bounds of the facts one completion judgment is asked over besides the

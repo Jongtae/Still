@@ -191,7 +191,7 @@ class FailedTurnTests(TerminalResultTestCase):
         job, bubble = self.ask('노이즈캔슬링 헤드폰 비교해줘')
         self.assertEqual(job['status'], 'partial', job.get('error'))
         self.assertAnswerFirst(bubble, job, '관찰됨')
-        self.assertEqual(job['owner_note'], '한 단계는 끝내지 못했어요.')
+        self.assertEqual(job['owner_note'], '일부 단계는 끝내지 못했어요.')
 
 
 class PartialTurnTests(TerminalResultTestCase):
@@ -218,7 +218,7 @@ class PartialTurnTests(TerminalResultTestCase):
         self.assertNotIn('처리가 끝났습니다', bubble)
         # #847: the answer first, then the one note; the old header is gone.
         self.assertNotIn('일부 단계만 완료했습니다', bubble)
-        self.assertTrue(bubble.endswith('\n\n한 단계는 끝내지 못했어요.'), bubble)
+        self.assertTrue(bubble.endswith('\n\n일부 단계는 끝내지 못했어요.'), bubble)
 
     def test_a_partial_turn_delivers_a_claim_of_an_action_that_did_not_run_after_the_truth(self):
         """#476 case 2 / #820: the draft action did nothing; the answer is still delivered.
@@ -245,7 +245,7 @@ class PartialTurnTests(TerminalResultTestCase):
         self.assertNotIn('calendar_draft_cancel', bubble)
         self.assertNotIn('Google Calendar가 로컬에 구성되어 있지 않습니다', bubble)
         self.assertNotIn(job['owner_cause'], bubble)
-        self.assertEqual(job['owner_note'], '한 단계는 끝내지 못했어요.')
+        self.assertEqual(job['owner_note'], '일부 단계는 끝내지 못했어요.')
         self.assertTrue(bubble.endswith('\n\n' + job['owner_note']), bubble)
 
 
@@ -476,14 +476,14 @@ class UnsupportedTextNeverTerminalTests(TerminalResultTestCase):
                 # #1451: no step is said to have failed when none did.
                 self.assertAnswerThenNote(text, '이 답이 요청을 다 채웠는지는 확인하지 못했어요.')
                 self.assertNotIn(TERMINAL_VERIFIED_LABEL, text)
-        text = AgentService.telegram_result_text(self.CLAIM, None, 'partial', note='한 단계는 끝내지 못했어요.')
-        self.assertAnswerThenNote(text, '한 단계는 끝내지 못했어요.')
+        text = AgentService.telegram_result_text(self.CLAIM, None, 'partial', note='일부 단계는 끝내지 못했어요.')
+        self.assertAnswerThenNote(text, '일부 단계는 끝내지 못했어요.')
 
     def test_a_withheld_answer_never_renders_the_model_text(self):
         """A withheld answer reaches the renderer as ``None``; nothing of it appears."""
         for outcome in ('failed', 'partial'):
             with self.subTest(outcome=outcome):
-                text = AgentService.telegram_result_text(None, '원인', outcome, note='한 단계는 끝내지 못했어요.')
+                text = AgentService.telegram_result_text(None, '원인', outcome, note='일부 단계는 끝내지 못했어요.')
                 self.assertNotIn('확인하지 못했어요', text)
                 self.assertIn('원인', text)
                 self.assertTrue(text.endswith(TERMINAL_NEXT_ACTION), text)

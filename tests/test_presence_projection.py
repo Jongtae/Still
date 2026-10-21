@@ -265,7 +265,9 @@ class BlockedTurnTests(ProjectionTestCase):
         self.assertIn('메모', first)
         self.assertIn('Still 설정', first)
         self.assertNotIn('구독 엔진', first)
-        self.assertIn('Gmail 연결과 판단 기능 설정이 모두 필요', first)
+        # #173 slice C: nothing done in chat is promised without an AI; saved records stay reachable.
+        self.assertIn('AI를 연결한 뒤에', first)
+        self.assertIn('내 기록', first)
         self.assertNotIn('/note', first)
         self.assertNotIn(TERMINAL_FAILED_HEADER, first, 'the projected reply is the whole bubble')
         self.assertNotIn('Still 웹에서 실행 기록', first, 'the web console is not the default next action')
@@ -307,7 +309,7 @@ class BlockedTurnTests(ProjectionTestCase):
         text = self.outbound[before][1]
         self.assertEqual(text, projected)
         self.assertNotIn(TERMINAL_FAILED_HEADER, text)
-        self.assertIn('지금 바로 되는 일', text)
+        self.assertIn('AI를 연결한 뒤에', text)
         self.assertIn('모델 또는 구독 엔진', self.store.job(job_id)['error'])
 
 
@@ -398,9 +400,9 @@ class UnsupportedCapabilityTests(ProjectionTestCase):
     def purposes(self, engine):
         return [item[1].purpose for item in engine.asked]
 
-    def test_reply_and_read_body_requests_get_the_truthful_boundary_and_run_nothing(self):
-        engine = self.judged({'예약 확인 메일에 답장 보내줘': 'mail-send', '그 메일 내용 좀 보여줘': 'mail-read-body'})
-        for text, key in (('예약 확인 메일에 답장 보내줘', 'mail-send'), ('그 메일 내용 좀 보여줘', 'mail-read-body')):
+    def test_a_reply_request_gets_the_truthful_boundary_and_runs_nothing(self):
+        engine = self.judged({'예약 확인 메일에 답장 보내줘': 'mail-send'})
+        for text, key in (('예약 확인 메일에 답장 보내줘', 'mail-send'),):
             with self.subTest(text=text):
                 decision = self.service.classify_intent(text)
                 self.assertEqual(decision.intent, INTENT_UNSUPPORTED)
@@ -438,14 +440,14 @@ class UnsupportedCapabilityTests(ProjectionTestCase):
         self.assertEqual(followup.intent, 'conversation')
         self.assertEqual(engine.asked[-1][1].facts['owner_message'], 'reply to it')
 
-    def test_body_and_metadata_requests_are_told_apart_by_the_judgment(self):
-        engine = self.judged({'메일 본문 읽어줘': 'mail-read-body', '메일 제목 읽어줘': 'mail-search'})
-        body = self.service.classify_intent('메일 본문 읽어줘')
-        metadata = self.service.classify_intent('메일 제목 읽어줘')
-        self.assertEqual(body.intent, INTENT_UNSUPPORTED)
-        self.assertEqual(metadata.intent, 'mail-search')
-        self.assertEqual([item[1].facts['owner_message'] for item in engine.asked],
-                         ['메일 본문 읽어줘', '메일 제목 읽어줘'])
+    def test_reading_a_mail_body_is_no_longer_declared_unsupported(self):
+        # #173 slice C: the worker reads a body with mail_read (#150), so Still does not
+        # offer the judgment a "cannot read the body" boundary any more.
+        engine = self.judged({'메일 본문 읽어줘': 'mail-search'})
+        self.assertNotIn('mail-read-body', UNSUPPORTED_CAPABILITY_TEXT)
+        self.assertEqual(self.service.classify_intent('메일 본문 읽어줘').intent, 'mail-search')
+        [asked] = engine.asked
+        self.assertNotIn('mail-read-body', asked[2])
 
     def test_mixed_calendar_and_unsupported_mail_action_executes_neither(self):
         # #672: no calendar word rule competes; the mail-send part is the
@@ -520,8 +522,8 @@ class TerminalTextTests(unittest.TestCase):
         from personal_agent.conversation_projection import TERMINAL_NEXT_ACTION
         text = terminal_text('모델이 쓴 문장', '캘린더 조회 거부', 'partial')
         self.assertEqual(text, '모델이 쓴 문장\n\n이 답이 요청을 다 채웠는지는 확인하지 못했어요.')
-        text = terminal_text('모델이 쓴 문장', '캘린더 조회 거부', 'partial', note='한 단계는 끝내지 못했어요.')
-        self.assertEqual(text, '모델이 쓴 문장\n\n한 단계는 끝내지 못했어요.')
+        text = terminal_text('모델이 쓴 문장', '캘린더 조회 거부', 'partial', note='일부 단계는 끝내지 못했어요.')
+        self.assertEqual(text, '모델이 쓴 문장\n\n일부 단계는 끝내지 못했어요.')
         self.assertNotIn(TERMINAL_NEXT_ACTION, text)
         self.assertNotIn(TERMINAL_PARTIAL_HEADER, text)
         self.assertEqual(terminal_text('답', None, 'failed'), '답\n\n요청하신 작업은 끝내지 못했어요.')
@@ -590,17 +592,17 @@ class TruthfulRepliesTests(unittest.TestCase):
                  ('calendar_draft_create', '소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.')]
         kept = {'소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.'}
         self.assertEqual(answer_note(steps, 'partial', kept=kept),
-                         '한 단계는 끝내지 못했어요. 소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.')
+                         '일부 단계는 끝내지 못했어요. 소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.')
         self.assertEqual(answer_note(steps, 'failed', kept=kept),
                          '요청하신 작업은 끝내지 못했어요. 소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.')
-        self.assertEqual(answer_note(steps[:1], 'partial'), '한 단계는 끝내지 못했어요.')
-        self.assertEqual(answer_note([('a', 'x'), ('b', 'y'), ('c', 'z'), ('d', 'w')], 'partial'), '몇 단계는 끝내지 못했어요.')
+        self.assertEqual(answer_note(steps[:1], 'partial'), '일부 단계는 끝내지 못했어요.')
+        self.assertEqual(answer_note([('a', 'x'), ('b', 'y'), ('c', 'z'), ('d', 'w')], 'partial'), '일부 단계는 끝내지 못했어요.')
         self.assertIsNone(answer_note([], 'partial'))
         self.assertEqual(answer_note([], 'failed'), '요청하신 작업은 끝내지 못했어요.')
         # The worker's own question and next step follow as sentences, never as labelled lines.
         note = answer_note(steps[:1], 'partial', report={'unknown': ['재고'], 'question': '어느 날짜로 할까요?',
                                                          'next': '예보 페이지를 열어 확인하기'})
-        self.assertEqual(note, '한 단계는 끝내지 못했어요. 어느 날짜로 할까요? 예보 페이지를 열어 확인하기')
+        self.assertEqual(note, '일부 단계는 끝내지 못했어요. 어느 날짜로 할까요? 예보 페이지를 열어 확인하기')
         self.assertNotIn('재고', note)
         for word in ('브라우저', '일치하는 요소', 'browser_click', '확인하지 못한 부분:', '다음 단계 제안:'):
             self.assertNotIn(word, answer_note(steps, 'partial', kept=kept, report={'next': '예보 페이지를 열어 확인하기'}))
