@@ -56,6 +56,16 @@ class ReadState(unittest.TestCase):
                                           ('browser_open', {'characters': 0})]), '',
                          'a search or a page without an item id carries no read state')
 
+    def test_items_a_long_listing_kept_no_id_for_never_count_as_read_through(self):
+        files = [{'root_id': 'r', 'path': f'{n}.txt'} for n in range(15)]
+        listing = evidence_summary('find_files', {'files': files, 'truncated': True})
+        self.assertEqual((listing['file_count'], len(listing['files']), listing['truncated']), (15, 12, True))
+        reads = [('read_file', {'root_id': 'r', 'path': f'{n}.txt', 'characters': 10, 'truncated': False}) for n in range(12)]
+        text = read_state_text([('find_files', listing), *reads])
+        self.assertIn('listed without an id in the record, so not known to be opened: 3 of 15 listed', text)
+        self.assertIn('listing cut short, more items matched than were listed: find_files', text)
+        self.assertNotIn('read through (', text)
+
     def test_the_direct_route_reads_the_same_fact_from_its_steps(self):
         steps = [('mail_search', 'mail_search', 'succeeded', {'messages': [{'message_id': 'm1'}, {'message_id': 'm2'}]}, None),
                  ('mail_read', 'mail_read', 'succeeded', {'message_id': 'm1', 'content': 'hello'}, None),
@@ -66,9 +76,11 @@ class ReadState(unittest.TestCase):
         judgments = SimpleNamespace(goal_reached=lambda goal, observed, failed, **kw: seen.update(observed=observed)
                                     or SimpleNamespace(outcome='no', value='m2 was not read', note=None))
         verdict = goal_judgment(judgments, 'my member number?', {'evidence_refs': [], 'summary': 'not confirmed'}, {},
-                                '', read_state=steps_read_state(steps))
-        self.assertEqual((verdict, verdict.gap), ('no', 'm2 was not read'))
+                                '', redact=lambda text, private=False: str(text).replace('m2', '[redacted]'),
+                                read_state=steps_read_state(steps))
+        self.assertEqual((verdict, verdict.gap), ('no', '[redacted] was not read'))
         self.assertTrue(seen['observed'].startswith('read_state'), seen['observed'])
+        self.assertNotIn('m2', seen['observed'], 'the line passes the same secrets-only redaction as every fact')
 
 
 class TheJudgmentReadsIt(unittest.TestCase):
@@ -85,7 +97,8 @@ class TheJudgmentReadsIt(unittest.TestCase):
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (self.job['id'], tool, 'succeeded',
                             json.dumps({'scope': 'subscription-mcp-bridge', 'host_action': tool, 'evidence': evidence}), 0.0))
-        orchestration = SimpleNamespace(orchestrated=True, _redact=lambda text, **_: text, next=Mock(return_value=None),
+        orchestration = SimpleNamespace(orchestrated=True, _redact=lambda text, **_: text.replace('SECRET', '[redacted]'),
+                                        next=Mock(return_value=None),
                                         evaluate_answer=Mock(return_value='not_reached'), may_judge=lambda: True,
                                         budget_allows=lambda **_: True, budget=None)
         self.service.orchestration_step(orchestration, object(), self.job['id'], 0,
@@ -96,6 +109,10 @@ class TheJudgmentReadsIt(unittest.TestCase):
         observations = self.step(('mail_search', LISTED), ('mail_read', read('m1')))
         self.assertTrue(observations.splitlines()[-1].startswith('- read_state'), observations)
         self.assertIn('never opened: 1 of 2 listed (m2)', observations)
+
+    def test_the_cli_read_state_passes_the_secrets_only_redaction(self):
+        observations = self.step(('mail_search', {**LISTED, 'message_ids': ['m1', 'SECRET']}))
+        self.assertIn('(m1, [redacted])', observations.splitlines()[-1])
 
     def test_the_proposition_says_what_the_fact_means(self):
         for rule in ('A read_state line in the observations is Still\'s own record',

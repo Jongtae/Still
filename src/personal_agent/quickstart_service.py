@@ -5664,7 +5664,7 @@ class AgentService:
         # #151: which listed items this attempt opened and read through, from the recorded evidence;
         # last, so the step lines' own bound (the oldest are cut first) never drops it.
         read_state=read_state_text([(tool,data.get('evidence')) for tool,status,data in tool_rows if status=='succeeded'])
-        if read_state:observed.append('- '+read_state)
+        if read_state:observed.append('- '+str(orchestration._redact(read_state,private=False) or ''))
         observations=observations_with_pages(observed,pages,orchestration._redact)
         summary='; '.join(part for part in (
             f"tools called: {', '.join(called) or 'none'}",

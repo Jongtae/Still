@@ -2303,13 +2303,16 @@ def read_state_text(calls, limit=READ_STATE_CHARS):
  while material stayed unread does not serve the message); the reply's wording never decides it,
  and nothing here names a request, service or value.
  """
- listed,opened,partial,empty,cut=[],[],[],[],[]
+ listed,opened,partial,empty,cut=[],[],[],[],[];unnamed=0
  for tool,evidence in calls or ():
   if not isinstance(evidence,dict):continue
   items=[*(evidence.get('message_ids') or ()),*(evidence.get('files') or ())]
   for item in items:
    ref=_item_ref(item)
    if ref and ref not in listed:listed.append(ref)
+  # Codex review: the evidence keeps the first few ids of a longer listing; the rest were listed too.
+  counts=[evidence.get(key) for key in ('message_count','file_count') if isinstance(evidence.get(key),int)]
+  if items and counts:unnamed+=max(0,sum(counts)-len(items))
   if items and evidence.get('truncated') and 'characters' not in evidence and tool not in cut:cut.append(str(tool)[:60])
   ref=_item_ref(evidence) if 'characters' in evidence else ''
   if not ref:continue
@@ -2318,11 +2321,13 @@ def read_state_text(calls, limit=READ_STATE_CHARS):
   elif evidence.get('truncated') or evidence.get('text_truncated'):partial.append(ref)
  if not (listed or opened):return ''
  unopened=[ref for ref in listed if ref not in opened]
+ total=len(listed)+unnamed
  def ids(refs):
   shown=', '.join(refs[:READ_STATE_IDS])
   return shown+(f' and {len(refs)-READ_STATE_IDS} more' if len(refs)>READ_STATE_IDS else '')
  parts=[]
- if unopened:parts.append(f'listed but never opened: {len(unopened)} of {len(listed)} listed ({ids(unopened)})')
+ if unopened:parts.append(f'listed but never opened: {len(unopened)} of {total} listed ({ids(unopened)})')
+ if unnamed:parts.append(f'listed without an id in the record, so not known to be opened: {unnamed} of {total} listed')
  if partial:parts.append(f'opened but returned only in part (truncated): {ids(partial)}')
  if empty:parts.append(f'opened but returned no readable text: {ids(empty)}')
  if cut:parts.append(f'listing cut short, more items matched than were listed: {", ".join(cut)}')
@@ -3865,7 +3870,9 @@ def _evidence_detail(name,result):
   return {'recorded':bool(result.get('recorded')),'state_ref':result.get('state_ref'),'predicate':result.get('predicate'),
           'kind':result.get('kind'),'reason':result.get('reason'),'superseded':result.get('superseded')}
  if name=='find_files':
-  return {'file_count':len(result.get('files',[])),'files':[{'root_id':f.get('root_id'),'path':f.get('path')} for f in result.get('files',[])[:12] if isinstance(f,dict)]}
+  return {'file_count':len(result.get('files',[])),'files':[{'root_id':f.get('root_id'),'path':f.get('path')} for f in result.get('files',[])[:12] if isinstance(f,dict)],
+          # #151: whether the search stopped before every match was listed.
+          'truncated':bool(result.get('truncated'))}
  if name=='drive_search':
   return {**_read_fields(result),'file_count':len(result.get('files',[])),'files':[{'file_id':str(f.get('file_id') or '')[:200],'name':str(f.get('name') or '')[:120]} for f in result.get('files',[])[:12] if isinstance(f,dict)],
           'needs_setup':bool(result.get('needs_setup'))}
@@ -4303,7 +4310,7 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  share=max(300,GOAL_OBSERVATION_CHARS//max(1,len(refs)))
  observed='\n'.join(clean(_observation_text(ref,observations[ref][0],observations[ref][3]))[:share] for ref in refs)
  # #151: which listed items were opened and read through comes first, so no cut drops it.
- observed=((read_state+'\n') if read_state else '')+observed
+ observed=((clean(read_state)+'\n') if read_state else '')+observed
  observed=observed[:GOAL_OBSERVATION_CHARS]
  # #14: the direct route passes ``failed_steps_text`` (recovered and unknown-effect calls marked); a list is read as before.
  failed=clean(failures if isinstance(failures,str) else '; '.join(f'{tool}: {reason or "failed"}' for tool,reason in failures))[:GOAL_FAILURE_CHARS]
