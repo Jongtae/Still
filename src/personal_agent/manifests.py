@@ -41,6 +41,8 @@ HOST_TOOLS={
     'read_file': HostTool(False, True, False, 'files', False, None),
     'list_notes': HostTool(False, True, False, 'notes', False, None),
     'save_note': HostTool(True, False, False, 'notes', False, None),
+    # #182: a new result file in the file workspace's result folder; its text is recorded by length only.
+    'save_result': HostTool(True, False, False, 'files', False, 'content'),
     'list_memory': HostTool(False, True, True, 'memory', False, None),
     'search_memory': HostTool(False, True, True, 'memory', False, None),
     'save_memory': HostTool(True, False, True, 'memory', False, None),

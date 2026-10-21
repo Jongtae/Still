@@ -688,6 +688,13 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             # the local model answers it without an external boundary.
             self.assertFalse(self.service.document_boundary()['requires_approval'])
 
+            # #182: the worker finds and reads the reference itself, then saves its summary.
+            from personal_agent.agent_runtime import WORKSPACE_REFERENCE_PREFIX
+            reference_root = WORKSPACE_REFERENCE_PREFIX + configured['references'][0]['id']
+            self.model_plan = [('find_files', '{"query": "출장 계획"}'),
+                               ('read_file', json.dumps({'root_id': reference_root, 'path': 'trip.md'})),
+                               ('save_result', json.dumps({'title': '9월 출장 정리', 'content': MODEL_ANSWER},
+                                                          ensure_ascii=False))]
             summary = self.says(18, '“출장 계획” 자료를 요약해 “9월 출장 정리”로 저장해줘')
             self.drain()
             job = self.store.job(summary)
@@ -702,12 +709,18 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             artifacts = self.card(summary)['artifacts']
             self.assertEqual([item['path'] for item in artifacts], ['9월 출장 정리.md'])
 
-            # #173: the saved result the owner names is evidence for the worker, never the answer.
+            # #182: the worker finds and reads the saved result the owner names; no rule attaches it.
+            self.model_plan = [('find_files', json.dumps({'query': '9월 출장 정리'}, ensure_ascii=False)),
+                               ('read_file', json.dumps({'root_id': 'saved-results', 'path': '9월 출장 정리.md'},
+                                                        ensure_ascii=False))]
             reuse = self.says(19, '저장한 결과에서 “9월 출장 정리” 찾아줘')
             self.drain()
+            self.model_plan = []
             self.assertEqual(self.store.job(reuse)['status'], 'succeeded')
-            self.assertIn('[Saved result: 9월 출장 정리.md]',
-                          self.worker_message('저장한 결과에서 “9월 출장 정리” 찾아줘'))
+            self.assertNotIn('[Saved result:', self.worker_message('저장한 결과에서 “9월 출장 정리” 찾아줘'))
+            [read] = [event['trace']['evidence'] for event in self.store.task_events(reuse)
+                      if event['tool'] == 'read_file' and event['status'] == 'succeeded']
+            self.assertEqual((read['root_id'], read['path']), ('saved-results', '9월 출장 정리.md'))
 
         with self.subTest('private document history is recorded and no longer closes public egress (#654)'):
             # Reading the owner's connected folder marks the Work as a
@@ -837,15 +850,21 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
         with self.subTest('negative: an unapproved external model gets no owner document'):
             self.connect_model('https://example.test/v1', 'external-model-key')
             self.assertTrue(self.service.document_boundary()['requires_approval'])
-            before = len(self.model_calls())
             outbound = len(self.calls)
+            # #182: the request reaches the worker; its document read is refused before any
+            # document text is read, so none reaches the external model and nothing is saved.
+            self.model_plan = [('find_files', '{"query": "출장 계획"}'),
+                               ('save_result', json.dumps({'title': '외부 전송 시도', 'content': MODEL_ANSWER},
+                                                          ensure_ascii=False))]
             blocked = self.says(25, '“출장 계획” 자료를 요약해 “외부 전송 시도”로 저장해줘')
             self.drain()
-            job = self.store.job(blocked)
-            self.assertEqual(job['status'], 'failed')
-            self.assertIn('문서 공유 승인', job['error'])
-            # Refused before the send, not after: no model call, no file.
-            self.assertEqual(len(self.model_calls()), before)
+            self.model_plan = []
+            # The worker's document search was refused naming the approval, and the owner was asked for it.
+            refused = [event['trace'] for event in self.store.task_events(blocked)
+                       if event['tool'] == 'find_files' and event['status'] == 'failed']
+            self.assertIn('문서 공유를 승인', refused[0]['error'])
+            self.assertEqual([row['kind'] for row in self.store.task_notifications(blocked)], ['approval_needed'])
+            self.assertEqual(self.store.task_artifacts(blocked), [])
             self.assertNotIn('출장 계획 초안',
                              json.dumps(self.calls[outbound:], ensure_ascii=False))
             self.assertEqual(sorted(path.name for path in self.workspace.glob('*.md')),

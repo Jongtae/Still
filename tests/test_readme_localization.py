@@ -694,7 +694,6 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
         if str(src) not in sys.path:
             sys.path.insert(0, str(src))
         from personal_agent import conversation_handoff as handoff
-        from personal_agent import quickstart_service as service
         from personal_agent.decision import OUTCOME_DECIDED, FixtureDecisionEngine, SelectionDecision, fixture_confidence
 
         calendar_scenes = {visuals.SCENES[locale][2][0].replace("\n", " ") for locale in ("en", "ko")}
@@ -712,23 +711,18 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
             judge=handoff.ConversationJudgments(FixtureDecisionEngine(choose=choose)),
         )
         # #173: the mail scene is the capability-need judgment's, never a mail
-        # word's; the saved-result scene reaches the worker, with the result the
-        # owner quoted attached as evidence (never the answer).
-        expected = ("workspace-summary", "mail-search", "calendar-create",
-                    "memory", "conversation", "saved-result-evidence")
+        # word's.  #182: the file scenes (summarize and save, find a saved result)
+        # reach the worker whole; it reads and saves the file workspace with its own tools.
+        expected = ("conversation", "mail-search", "calendar-create",
+                    "memory", "conversation", "conversation")
         for locale in ("en", "ko"):
             for index, (ask, _reply, _chip) in enumerate(visuals.SCENES[locale]):
                 text = ask.replace("\n", " ")
                 with self.subTest(locale=locale, ask=text):
                     want = expected[index]
-                    if want == "workspace-summary":
-                        self.assertIsNotNone(service.workspace_summary_request(text))
-                    elif want == "memory":
+                    if want == "memory":
                         # #597/#173: the worker saves it; no rule or prefilter reads the words.
                         self.assertEqual("conversation", classifier.classify(text).intent)
-                    elif want == "saved-result-evidence":
-                        self.assertEqual("conversation", classifier.classify(text).intent)
-                        self.assertIsNotNone(service.workspace_search_request(text))
                     else:
                         self.assertEqual(want, classifier.classify(text).intent)
 

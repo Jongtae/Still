@@ -233,18 +233,14 @@ CLASSIFIED_TABLES = {
     # cue tables, the query-stripping tables, the inline reply/send verbs, the natural-language
     # owner "commands" in IntentClassifier.explicit and SettingsOrchestrator.handle_text's phrases:
     # those requests reach the worker.  It narrowed the workspace rules below to the owner's quoted
-    # words and made a found saved result evidence for the worker, never the answer.  The
+    # words and made a found saved result evidence for the worker, never the answer; #182 removed
+    # those two forms once the worker could read the file workspace and save a result itself.  The
     # connection pause/disconnect a settings phrase once drafted has no worker tool yet: #183.
     # RULES-OUT-01 (#173, slice B) removed the correction/continuation cue tables, the lexical
     # skips of the follow-up judgment, the saved-context keyword trigger (now the explicit
     # `/context <request>` command) and preparations.same_goal's particle/filler tables.
     # RULES-OUT-01 (#173, slice C) removed the 컨텍스트: match on the AI's answer that hid the context
     # sources footer; the footer now comes from the typed record, always.
-    **{('quickstart_service.py', name): (
-        'open-finding', '#182: the owner-quoted workspace summary/search forms still read summary, save and '
-                        'search words; kept (a #173 blocker), as evidence for the worker and never the answer, '
-                        'until #182 gives the worker a tool that reads and writes the file workspace')
-       for name in ('workspace_summary_request', 'workspace_search_request')},
 }
 
 

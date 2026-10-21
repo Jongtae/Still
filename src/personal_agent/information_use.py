@@ -248,6 +248,10 @@ def _event_items(action, evidence):
         return [f"메모 {int(evidence.get('note_count') or 0)}개"]
     if action == 'save_note':
         return ['메모 저장']
+    if action == 'save_result':
+        # #182: the new result file and the reference files it cites; never its text.
+        cited = ', '.join(_text(path, 60) for path in evidence.get('cited') or ())
+        return [f"결과 저장: {_text(evidence.get('path'))}" + (f" (원본: {cited})" if cited else '')]
     if action == 'propose_current_state':
         return [f"상태 제안: {_text(evidence.get('predicate'), 60)}"]
     if action == 'capability_search':

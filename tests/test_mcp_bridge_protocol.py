@@ -258,7 +258,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
         self.assertEqual(names, ["calendar_draft_cancel", "calendar_draft_create",
                                  "calendar_draft_update", "calendar_query", "capability_search", *CODE_RUN, "drive_read", "drive_search", "find_files", "forget_record", "information_use",
                                  "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_page_read", "read_file", "save_memory",
-                                 "save_note", "schedule_preparation", "search_memory", "settings_change", "settings_read", "weather",
+                                 "save_note", "save_result", "schedule_preparation", "search_memory", "settings_change", "settings_read", "weather",
                                  "web_search"])
         replies = self._wire(
             {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
@@ -285,7 +285,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
         self.assertEqual([tool["name"] for tool in replies[2]["result"]["tools"]],
                          ["calendar_draft_cancel", "calendar_draft_create", "calendar_draft_update", "calendar_query",
                           "capability_search", *CODE_RUN, "drive_read", "drive_search", "find_files", "forget_record", "information_use", "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_page_read",
-                          "read_file", "save_memory", "save_note", "schedule_preparation", "search_memory", "settings_change",
+                          "read_file", "save_memory", "save_note", "save_result", "schedule_preparation", "search_memory", "settings_change",
                           "settings_read", "weather"])
         self.assertFalse(_refused(replies[3]))
         self.assertIn("notes", json.loads(replies[3]["result"]["content"][0]["text"]))

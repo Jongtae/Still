@@ -73,6 +73,44 @@ class QuickstartTests(unittest.TestCase):
         self.transport=transport
         self.service=AgentService(self.store,ModelAdapter(transport),transport)
 
+    def script_worker(self,*plan,service=None):
+        """#182: a direct-API worker that calls ``plan``'s ``(tool, arguments)`` in order, then answers.
+
+        ``arguments`` may be a callable, read when the step is due (a root id known only then).
+        Every other call (the probe, judgments) is answered by ``self.transport``.
+        """
+        def scripted(url,body,headers=None,timeout=60):
+            names={tool.get('function',{}).get('name') or tool.get('name') for tool in body.get('tools',[])}
+            done=sum(1 for message in body.get('messages',[]) if message.get('role')=='tool')
+            if url.endswith('/chat/completions') and 'save_result' in names and done<len(plan):
+                self.calls.append((url,body,headers))
+                name,arguments=plan[done]
+                arguments=arguments() if callable(arguments) else arguments
+                return {'choices':[{'message':{'tool_calls':[{'id':f'step-{done}','function':{
+                    'name':name,'arguments':json.dumps(arguments,ensure_ascii=False)}}]}}]}
+            if url.endswith('/chat/completions') and 'save_result' in names:
+                # #657: after its tools the worker claims completion once, citing every result it was shown.
+                refs=[json.loads(m['content']).get('ref') for m in body['messages']
+                      if m.get('role')=='tool' and str(m.get('content','')).startswith('{')]
+                claimed=any((call.get('function') or {}).get('name')=='finish'
+                            for m in body['messages'] for call in (m.get('tool_calls') or []))
+                if any(refs) and not claimed:
+                    self.calls.append((url,body,headers))
+                    return {'choices':[{'message':{'tool_calls':[{'id':'finish','function':{'name':'finish','arguments':json.dumps(
+                        {'status':'done','evidence_refs':[ref for ref in refs if ref],'summary':'Compatible response'})}}]}}]}
+            return self.transport(url,body,headers,timeout)
+        (service or self.service).adapter=ModelAdapter(scripted)
+        # #657: the cited observations are judged to satisfy the request.
+        (service or self.service).use_decision_engine(FixtureDecisionEngine(
+            judge=lambda context,proposition:BinaryDecision(OUTCOME_DECIDED,True,fixture_confidence())
+            if context.purpose=='goal-reached' else None))
+        return scripted
+
+    def reference_root(self):
+        """The worker's root id of the one connected file-workspace reference folder (#182)."""
+        from personal_agent.agent_runtime import WORKSPACE_REFERENCE_PREFIX
+        return WORKSPACE_REFERENCE_PREFIX+FileWorkspace(self.store).status()['references'][0]['id']
+
     def tearDown(self):self.temp.cleanup()
 
     def model(self,provider='ollama',endpoint='http://127.0.0.1:11434',key=''):
@@ -502,6 +540,10 @@ class QuickstartTests(unittest.TestCase):
             with self.assertRaises(HTTPError):post('/api/file-workspace',{'references':['/'],'workspace':str(workspace)})
             state=post('/api/file-workspace',{'references':[str(reference)],'workspace':str(workspace)})
             self.model('compatible','http://127.0.0.1:11434/v1');self.assertTrue(self.service.test_model()['ok'])
+            # #182: the worker finds and reads the reference, then saves its summary.
+            self.script_worker(('find_files',{'query':'Aurora launch'}),
+                               ('read_file',lambda:{'root_id':self.reference_root(),'path':'meeting.txt'}),
+                               ('save_result',{'title':'Launch notes','content':'Compatible response: ship October 12.'}))
             request=post('/api/chat',{'message':'“Aurora launch” 자료를 요약해 “Launch notes”로 저장해줘','request_key':'workspace-summary'})['id']
             self.assertTrue(self.service.run_one())
         finally:
@@ -579,6 +621,9 @@ finally:
             self.assertTrue(request(client,base,'/api/model/test',{})['ok'])
             request(client,base,'/api/file-workspace',{'references':[str(reference)],'workspace':str(workspace)})
             request(client,base,'/api/documents/approval',{'approved':True})
+            self.script_worker(('find_files',{'query':'Launch review'}),
+                               ('read_file',lambda:{'root_id':self.reference_root(),'path':'launch.md'}),
+                               ('save_result',{'title':'Launch notes','content':'Launch review summary: ship October 12.'}))
             queued=request(client,base,'/api/chat',{
                 'message':'“Launch review” 자료를 요약해 “Launch notes”로 저장해줘',
                 'request_key':'owner-dogfood-summary'})
@@ -595,6 +640,9 @@ finally:
             server.shutdown();thread.join();server.server_close()
 
         restarted=AgentService(QuickStore(self.temp.name),ModelAdapter(self.transport),self.transport)
+        # #182: after the restart the worker finds the saved result and reads it.
+        self.script_worker(('find_files',{'query':'Launch notes'}),('read_file',{'root_id':'saved-results','path':'Launch notes.md'}),
+                           service=restarted)
         server,thread,client,base=start_server(restarted)
         try:
             request(client,base,'/api/login',{'password':password})
@@ -603,12 +651,13 @@ finally:
                 'request_key':'owner-dogfood-reuse'})
             reused=wait_for(client,base,queued['id'])
             self.assertEqual(reused['status'],'succeeded')
-            # #173: the worker answers; the saved result reached it as evidence.
-            evidence=next(message['content'] for url,body,_headers in self.calls if url.endswith('/chat/completions')
-                          for message in body['messages'] if message.get('role')=='user'
-                          and str(message.get('content')).startswith('저장된 작업공간에서 “Launch notes” 찾아줘'))
-            self.assertIn('[Saved result: Launch notes.md]',evidence)
-            self.assertIn('launch.md',evidence)
+            # #182: the worker read the saved result itself, with the source it cites.
+            read=[event['trace']['evidence'] for event in restarted.store.task_events(queued['id'])
+                  if event['tool']=='read_file' and event['status']=='succeeded']
+            self.assertEqual([(item['root_id'],item['path']) for item in read],[('saved-results','Launch notes.md')])
+            tool_text=[message['content'] for url,body,_headers in self.calls if url.endswith('/chat/completions')
+                       for message in body['messages'] if message.get('role')=='tool']
+            self.assertTrue(any('launch.md' in str(text) and 'Launch review summary' in str(text) for text in tool_text))
             self.assertEqual(request(client,base,'/api/home')['state'],'ready')
         finally:
             restarted.stop.set()
@@ -700,19 +749,24 @@ finally:
         (reference/'source.txt').write_text('Aurora private source',encoding='utf-8')
         state=self.service.configure_file_workspace({'references':[str(reference)],'workspace':str(workspace)})
         self.model('compatible','http://127.0.0.1:11434/v1');self.assertTrue(self.service.test_model()['ok'])
+        self.script_worker(('find_files',{'query':'Aurora'}),('read_file',lambda:{'root_id':self.reference_root(),'path':'source.txt'}),
+                           ('save_result',{'title':'Launch notes','content':'Aurora summary'}))
         summary=self.store.enqueue('“Aurora” 자료를 요약해 “Launch notes”로 저장해줘','natural-summary');self.service.run_one()
         self.assertEqual(self.store.job(summary)['status'],'succeeded');self.assertTrue((workspace/'Launch notes.md').is_file())
         self.assertIn(summary,self.store.config('file_workspace_document_jobs',[]))
         files=FileWorkspace(self.store);source=files.read(state['references'][0]['id'],'source.txt');files.save('history-document','Stored','PRIVATE-DOCUMENT-TEXT',[source])
-        # #173: the saved result the owner named is evidence for the worker, never the answer.
+        # #182: the worker finds and reads the saved result itself; no rule attaches it.
         before=len(self.calls)
+        self.script_worker(('find_files',{'query':'PRIVATE-DOCUMENT-TEXT'}),('read_file',{'root_id':'saved-results','path':'Stored.md'}))
         searched=self.store.enqueue('저장된 작업공간에서 “PRIVATE-DOCUMENT-TEXT” 찾아줘','natural-search');self.service.run_one()
-        self.assertEqual(self.store.job(searched)['response'],'Compatible response')
-        worker=[message['content'] for url,body,_headers in self.calls[before:] if url.endswith('/chat/completions')
-                for message in body['messages'] if message.get('role')=='user'
-                and str(message.get('content')).startswith('저장된 작업공간에서 “PRIVATE-DOCUMENT-TEXT” 찾아줘')]
-        self.assertIn('PRIVATE-DOCUMENT-TEXT',worker[0].split('[Still observation',1)[1])
+        # The answer is the worker's; the source it read is named from Still's record.
+        self.assertEqual(self.store.job(searched)['response'],'Compatible response\n\n조회 출처:\n저장된 결과: Stored.md')
+        worker=[message for url,body,_headers in self.calls[before:] if url.endswith('/chat/completions')
+                for message in body['messages']]
+        self.assertFalse(any('[Still observation' in str(message.get('content')) for message in worker if message.get('role')=='user'))
+        self.assertTrue(any('PRIVATE-DOCUMENT-TEXT' in str(message.get('content')) for message in worker if message.get('role')=='tool'))
         self.assertIn(searched,self.store.config('file_workspace_document_jobs',[]))
+        self.service.adapter=ModelAdapter(self.transport)
         self.model('compatible','https://example.test/v1','test-key');self.assertTrue(self.service.test_model()['ok']);before=len(self.calls)
         ordinary=self.store.enqueue('일반적인 다음 질문입니다.','ordinary-after-document');self.service.run_one()
         self.assertEqual(self.store.job(ordinary)['status'],'succeeded')
@@ -726,16 +780,23 @@ finally:
         self.store.put('subscription_engine',{'id':'codex','connected_at':0})
         # A scripted CLI: no real engine process runs in this test.
         from personal_agent.bounded_execution import ExecutionResult
-        seen=[]
+        seen=[];root=self.reference_root()
         class Cli:
+            # #182: the CLI worker reads the reference and saves its summary through Still's tools.
             def execute(self,engine,prompt,tools,**kwargs):
-                seen.append(prompt);return ExecutionResult('Aurora 요약',engine,0)
+                found=tools.call('find_files',{'query':'Aurora'})
+                read=tools.call('read_file',{'root_id':root,'path':'source.txt'})
+                seen.append((found,read))
+                tools.call('save_result',{'title':'Subscription','content':'Aurora 요약'})
+                return ExecutionResult('Aurora 요약',engine,0)
         self.service.execution_adapter=Cli()
         job_id=self.store.enqueue('“Aurora” 자료를 요약해 “Subscription”으로 저장해줘','subscription-workspace')
         self.service.run_one();job=self.store.job(job_id)
-        self.assertEqual(job['status'],'succeeded',job.get('error'));self.assertEqual(len(list(workspace.glob('*.md'))),1)
-        self.assertIn('Aurora subscription boundary',seen[0],'the approved reference excerpt reached the CLI worker')
-        self.assertIn('connected-document',self.store.turn_provenance(job_id)['prompt_withheld'])
+        self.assertEqual(job['status'],'succeeded',job.get('error'));self.assertEqual([path.name for path in workspace.glob('*.md')],['Subscription.md'])
+        self.assertIn('source.txt',(workspace/'Subscription.md').read_text(encoding='utf-8'))
+        self.assertIn('Aurora subscription boundary',json.dumps(seen[0],ensure_ascii=False),'the reference reached the CLI worker')
+        self.assertEqual((reference/'source.txt').read_text(encoding='utf-8'),'Aurora subscription boundary')
+        self.assertIn('저장됨: Subscription.md',job['response'])
 
     def test_idempotent_requests_and_interrupted_recovery(self):
         task=self.store.enqueue('hello','same')

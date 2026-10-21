@@ -241,11 +241,14 @@ class FileWorkspace:
         try:return bool(sources) and all((current:=self.read(source['reference_id'],source['path']))['version']==source['version'] and current['source_id']==source['source_id'] for source in sources)
         except (KeyError,ValueError,OSError,UnicodeError): return False
 
-    def search(self, query):
-        latest=isinstance(query,str) and query.strip() in ('*','__latest__')
-        if not latest and (not isinstance(query,str) or not 2<=len(query.strip())<=160): raise ValueError('두 글자 이상의 결과 검색어를 입력하세요.')
+    def current_results(self, needle=None, latest=False):
+        """Fresh saved results, newest first: each one's sources still match the originals.
+
+        A result whose workspace changed is marked ``detached``, one whose
+        sources changed ``stale``; neither is returned.  ``needle`` (casefolded)
+        keeps only results whose name or content contains it.
+        """
         self.recover()
-        needle=query.casefold().strip()
         with self.store.db() as db:
             self._ensure_results_table(db); records=[dict(row) for row in db.execute('SELECT * FROM file_workspace_results ORDER BY created DESC LIMIT 100')]
         results=[]
@@ -258,6 +261,22 @@ class FileWorkspace:
             if not fresh: continue
             try: content=self._result_path(record['path']).read_text(encoding='utf-8')
             except (OSError,UnicodeError,ValueError): continue
-            if latest or needle in (record['path']+'\n'+content).casefold(): results.append({'id':record['id'],'path':record['path'],'content':content,'sources':json.loads(record['sources'])})
+            if latest or needle is None or needle in (record['path']+'\n'+content).casefold(): results.append({'id':record['id'],'path':record['path'],'content':content,'sources':json.loads(record['sources'])})
             if latest and results: break
         return results
+
+    def search(self, query):
+        latest=isinstance(query,str) and query.strip() in ('*','__latest__')
+        if not latest and (not isinstance(query,str) or not 2<=len(query.strip())<=160): raise ValueError('두 글자 이상의 결과 검색어를 입력하세요.')
+        return self.current_results(query.casefold().strip(),latest)
+
+    def project_results(self):
+        """Answers the owner saved into a project (the older ``workspace_results``), newest first.
+
+        Still's own records, read-only: ``{id, title, content, created}``.
+        """
+        with self.store.db() as db:
+            tables={row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if not {'workspace_results','workspaces'}<=tables: return []
+            return [dict(row) for row in db.execute('SELECT r.id,w.title,r.content,r.created FROM workspace_results r '
+                                                    'JOIN workspaces w ON w.id=r.workspace_id ORDER BY r.created DESC LIMIT 100')]
