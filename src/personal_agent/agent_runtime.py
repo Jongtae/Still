@@ -1344,7 +1344,8 @@ def outbound_texts(action,args,result):
 
  Read for the held-value comparison only and never stored.  A lookup's text
  is what Still sent (``sent``) when it composed the call, else the call's
- arguments; a URL contributes its path and query; typed browser text goes to
+ arguments; a URL contributes its path and query (and the landed URL after a
+ redirect to another host); typed browser text goes to
  the page it was typed into; an API request carries its URL and body; a code
  run, the paths of the requests its sandbox let out (``outbound_evidence``
  compares their query, body and header values too, from the runner's memory).
@@ -1363,6 +1364,9 @@ def outbound_texts(action,args,result):
   out.extend((source[key],destination) for key in ('query','city','country') if isinstance(source.get(key),str))
  elif action in ('public_page_read','browser_open'):
   out.append(_url_parts(args.get('url')))
+  # A redirect to another host sends the landed request there too: its own path and query, as returned.
+  landed=_url_parts(result.get('url'))
+  if landed[1] and landed[1]!=out[-1][1]:out.append(landed)
  elif action=='browser_type':
   out.append((args.get('text'),_url_parts(result.get('url'))[1]))
  elif action=='api_request':
@@ -1422,8 +1426,9 @@ def outbound_evidence(capabilities,action,args,result):
    from urllib.parse import unquote_plus
    texts=[(unquote_plus(str(text)),str(host)[:253]) for text,host in runner.sent if str(text).strip()]
   if action=='browser_open':
-   host=_url_parts((args or {}).get('url'))[1]
-   if host:out['destination']=host[:253]
+   hosts=list(dict.fromkeys(host for host in (_url_parts((args or {}).get('url'))[1],_url_parts((result or {}).get('url'))[1]) if host))
+   if hosts:out['destination']=hosts[0][:253]
+   if len(hosts)>1:out['landed']=hosts[1][:253]
   held=capabilities.held_values() if texts and callable(getattr(capabilities,'held_values',None)) else []
   matches=held_value_matches(texts,held) if held else []
   if matches:out['outbound_matches']=[{**row,'tool':action} for row in matches]

@@ -119,6 +119,29 @@ class Recording(unittest.TestCase):
         self.assertEqual(outbound_evidence(caps, 'browser_open', {'url': 'https://shop.example/'}, {}),
                          {'destination': 'shop.example'})
 
+    def test_a_redirect_to_another_host_is_compared_and_named_too(self):
+        caps = self.Caps(held(('member-number', MEMBER)))
+        added = outbound_evidence(caps, 'browser_open', {'url': 'http://shop.example/find?no=M1234-5678'},
+                                  {'url': 'https://www.shop-cdn.example/find?no=M1234-5678'})
+        self.assertEqual((added['destination'], added['landed']), ('shop.example', 'www.shop-cdn.example'))
+        self.assertEqual([row['destination'] for row in added['outbound_matches']], ['shop.example', 'www.shop-cdn.example'])
+
+    def test_a_withheld_browser_open_still_shows_its_match_and_host_as_an_attempt(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = QuickStore(Path(folder) / 'state')
+            job = store.enqueue('열어줘', 'withheld')
+            detail = {'call_id': 'c1', 'host_action': 'browser_open', 'state': 'withheld', 'error': 'login required',
+                      'evidence': {'state': 'login_required', 'url': 'https://shop.example/login', 'destination': 'shop.example',
+                                   'outbound_matches': [{'source': 'memory', 'key': 'member-number',
+                                                         'destination': 'shop.example', 'tool': 'browser_open'}]}}
+            with store.db() as db:
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job, 'browser_open', 'failed', json.dumps(detail), 1))
+            audit = information_use.work_information_use(store, job)
+            self.assertEqual(audit['sent_to']['browser_destinations'], ['shop.example'])
+            self.assertEqual(audit['sent_to']['held_value_matches'], [{'source': 'memory', 'key': 'member-number',
+                             'tool': 'browser_open', 'destination': 'shop.example', 'status': 'failed'}])
+
     def test_a_url_fragment_is_not_compared_because_it_is_not_sent(self):
         caps = self.Caps(held(('member-number', MEMBER)))
         self.assertEqual(outbound_evidence(caps, 'browser_open', {'url': 'https://shop.example/page#M1234-5678'}, {}),

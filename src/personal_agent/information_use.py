@@ -356,8 +356,10 @@ def work_information_use(store, job_id, redact=None):
                 'destination': label(evidence.get('host'), 200), 'state': evidence_state,
                 'remote_receipt': label(str(evidence.get('response_status') or ''), 20)}
             continue
-        # A failed call that was dispatched records its matches at the top level: it may have carried them out.
-        found = (evidence.get('outbound_matches') if status == 'succeeded'
+        # A failed call that was dispatched records its matches at the top level, and a call the runtime
+        # withheld after it returned keeps them in its Evidence: either may have carried them out.
+        withheld = status == 'failed' and trace.get('state') == 'withheld'
+        found = (evidence.get('outbound_matches') if status == 'succeeded' or withheld
                  else trace.get('outbound_matches') if status == 'failed' else None)
         for row in found if isinstance(found, list) else ():
             if not isinstance(row, dict) or row.get('source') not in MATCH_SOURCES:
@@ -367,9 +369,9 @@ def work_information_use(store, job_id, redact=None):
                      'status': status}
             if match not in matches and len(matches) < MAX_ITEMS:
                 matches.append(match)
-        if status == 'succeeded':
-            if action == 'browser_open':
-                host = label(evidence.get('destination') or _host(evidence.get('url')), 120)
+        if (status == 'succeeded' or withheld) and action == 'browser_open':
+            for value in (evidence.get('destination') or _host(evidence.get('url')), evidence.get('landed')):
+                host = label(value, 120)
                 if host and host not in opened and len(opened) < MAX_ITEMS:
                     opened.append(host)
         if action in LOOKUP_ACTIONS and status == 'running':
