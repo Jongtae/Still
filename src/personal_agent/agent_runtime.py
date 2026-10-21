@@ -297,7 +297,7 @@ BROWSER_SIGN_IN_DESCRIPTION=('When the request needs the owner\'s own account on
                              'result says signing in there is not possible; then say that. It changes nothing on the site and never '
                              'types a password. Never tell the person to sign in in a browser yourself, and never call it for a '
                              'site where you are already signed in.')
-BROWSER_EFFECT_NOTE=' Declare effect: read (only looking), navigate (moving between pages), mutate (changes account state such as a cart or a form), payment (pays or enters card data; always needs owner approval). Still refuses card/one-time-code/password fields and their form buttons without the owner\'s approval whatever the label says.'
+BROWSER_EFFECT_NOTE=' Declare effect: read (only looking), navigate (moving between pages), mutate (changes account state such as a cart or a form), payment (pays or enters card data; always needs owner approval). Still refuses card/one-time-code/password fields and their form buttons without the owner\'s approval whatever the label says. A confirmation question the page asks during the step is answered yes only when the step is declared mutate and the question is not about paying; otherwise it is declined and returned in dialogs.'
 #: #655: actions whose one public search takes the model's provider/locale.
 SEARCH_BACKED_ACTIONS=frozenset({'web_search'})
 #: #655: the model chooses the provider per call from the owner's configured
@@ -2522,8 +2522,9 @@ class Capabilities:
   """This Work's browser session, created on first use (#656)."""
   if self._browser_session is None:
    from .browser_session import BrowserSession
+   # #174: the Work's judgments, asked only whether a mutate press the payment floor missed could charge.
    self._browser_session=BrowserSession(self.browser,work_id=self.job_id,budget=self.budget,excluded=self._page_excluded,
-                                        approvals=self.browser_approvals)
+                                        approvals=self.browser_approvals,judgments=self.judgments)
   return self._browser_session
  def _keep_browser_page(self,result):
   """Remember a browser result's mediated page text for this attempt's goal judgment (#1282); memory only."""

@@ -29,7 +29,15 @@ independently of anything the model says (pilot posture, #653):
   briefly past the step for that form's deferred submit.  A cancelled submit
   is asked of the owner bound to that form and the digest of what it would
   send (hidden amounts included); once exactly that is approved, the worker
-  releases the held submit (``release_submit``).
+  releases the held submit (``release_submit``).  A press whose label or
+  nearby text commits a purchase (the fixed ``COMMIT_*`` floor) needs approval
+  too; a press declared ``mutate`` that the floor did not flag is judged once
+  (``ConversationJudgments.press_commits_payment``), and a confident yes only
+  adds the requirement (#174).
+* **Page confirmations.**  A page's own ``confirm()`` during a step is
+  accepted only for a press the owner approved, or a step declared to change
+  state whose question is not a payment question on a page without a payment
+  field; any other is declined and returned in the step's ``dialogs`` (#174).
 
 Engine (#680): ``WebKitWorkerDriver`` drives ``personal_agent.browser_worker``,
 a subprocess that owns the Cocoa run loop and a ``WKWebView`` with an
@@ -287,10 +295,18 @@ DIALOG_OUTCOMES = {
     'shown': '알림을 닫았습니다',
     'declined': '취소했습니다',
     'declined_payment': '결제·주문 확인이라 주인 승인 없이 확인하지 않았습니다',
+    # #174: the step's own declared effect does not cover a confirmation; the AI weighs the question.
+    'declined_effect': ('이 단계의 effect가 mutate가 아니어서 확인하지 않고 취소했습니다. 이 질문에 확인하는 것이 '
+                        '요청에 맞으면 effect를 mutate로 선언해 이 단계를 다시 실행하세요'),
     'dismissed': '입력 창을 닫았습니다',
     'owner': '이 기기에서 주인이 답했습니다',
 }
 DIALOG_TEXT_LIMIT = 200
+
+
+def _declared(effect):
+    """A step's declared effect as it crosses to the worker (#174); anything else is None (confirms nothing)."""
+    return effect if effect in EFFECTS else None
 
 
 def page_shows_payment(snapshot):
@@ -802,10 +818,13 @@ class BrowserSession:
     ``driver_factory`` returns the driver on first use (the engine is started
     only when a browser tool actually runs); ``budget`` is the Work's shared
     ``WorkBudget``; ``excluded`` returns the private values to redact;
-    ``approvals`` has ``consume(binding)`` and ``request(binding, text)``.
+    ``approvals`` has ``consume(binding)`` and ``request(binding, text)``;
+    ``judgments`` is the Work's ``ConversationJudgments`` (or None), asked
+    only whether a ``mutate`` press the payment floor did not flag could
+    commit a charge (#174).
     """
 
-    def __init__(self, driver_factory, *, work_id, budget=None, excluded=None, approvals=None,
+    def __init__(self, driver_factory, *, work_id, budget=None, excluded=None, approvals=None, judgments=None,
                  steps=STEPS_PER_WORK, action_seconds=ACTION_TIMEOUT_SECONDS, allowed_origins_for_tests=()):
         self._factory = driver_factory
         # Test-only exact ``host:port`` allowance for a local fixture site; only
@@ -828,6 +847,9 @@ class BrowserSession:
         # #934 (review P2-1): once this Work landed on a site whose sign-in was received from the
         # owner, the reason it may not approve anything; it then holds for the rest of the Work.
         self._refusal = None
+        self.judgments = judgments
+        # #174: the press judgment's answer per approval binding, so one press is judged at most once.
+        self._press_judged = {}
 
     # -- plumbing --
     def _driver(self):
@@ -1281,6 +1303,45 @@ class BrowserSession:
                 controls.append({'index': n, 'name': scrub(str(item.get('name') or '')[:NAME_LIMIT], excluded)[0]})
         return {'text': scrub(str(cover.get('text') or '')[:400], excluded)[0], 'controls': controls}
 
+    @staticmethod
+    def _row(snapshot, element):
+        """``element``'s numbered row: its label and nearby text, already scrubbed and bounded."""
+        return next((row for row in snapshot.get('_rows') or () if row.get('n') == element.get('n')), None) or {}
+
+    def _press_may_pay(self, binding, row, snapshot):
+        """Whether the Work's judgment says, confidently, that this press could commit a charge (#174).
+
+        Asked only for a press declared ``mutate`` that the payment floor did
+        not flag, at most once per approval binding (the same press on the
+        same page state is never asked again in this session).  The facts are
+        the control's mediated label, its mediated nearby text and the page
+        title, all bounded and scrubbed of the Work's private values, and
+        redacted again by the judgments.  It is one model turn of the Work's
+        budget.  Only a confident yes is True: no, low confidence, an
+        unavailable engine or an exhausted budget leave the floor's answer.
+        """
+        ask = getattr(self.judgments, 'press_commits_payment', None)
+        if not callable(ask):
+            return False
+        cache = binding_digest(binding)
+        if cache in self._press_judged:
+            return self._press_judged[cache]
+        self._press_judged[cache] = False
+        try:
+            # As the outcome judgment: the routed engine spends the Work's turn itself, else it is spent here.
+            if self.budget is not None and getattr(getattr(self.judgments, 'engine', None), 'work_budget', None) is not self.budget:
+                self.budget.spend_turn()
+        except Exception:
+            return False
+        control = f"{row.get('role') or 'element'}: {row.get('name') or ''}"[:NAME_LIMIT]
+        near = str(row.get('_near') or '')[:NEAR_LIMIT]
+        try:
+            judged = ask(control, near, str(snapshot.get('title') or '')[:NAME_LIMIT], work_id=self.work_id)
+        except Exception:
+            return False
+        self._press_judged[cache] = getattr(judged, 'outcome', None) == 'yes'
+        return self._press_judged[cache]
+
     def click(self, args):
         effect = self._effect(args)
         self._require_page()
@@ -1307,12 +1368,21 @@ class BrowserSession:
         self._note_refusal(self._destinations(snapshot, element))
         # #758: a control whose name commits a purchase needs approval whatever form it
         # is in (a stored payment method or a fetch charge leaves no card field to see).
-        approved = self._guard(binding, description, element['submit_guarded'] or element['commit'] or effect == 'payment')
+        required = bool(element['submit_guarded'] or element['commit'] or effect == 'payment')
+        if not required and effect == 'mutate':
+            # #174: the floor above is fixed language; a press it did not flag is judged once, and
+            # a confident yes only adds the owner's approval.  No or unavailable leaves it as it was.
+            row = self._row(snapshot, element)
+            if self._press_may_pay(binding, row, snapshot):
+                required = True
+                name, near = str(row.get('name') or row.get('role') or ''), str(row.get('_near') or '')
+                description = f"결제 가능성 · '{name[:40]}' 버튼 누르기" + (f' · {near[:80]}' if near else '')
+        approved = self._guard(binding, description, required)
         before = page_reference(snapshot.get('url'))
         confirm_ok = not page_shows_payment(snapshot)
         try:
             answer = self._input(lambda timeout: self._driver().click(element['index'], timeout, approved=approved,
-                                                                      confirm_ok=confirm_ok),
+                                                                      confirm_ok=confirm_ok, effect=effect),
                                  description)
         except ToolError as exc:
             raise self._named_cover(self._observed(exc, approved), snapshot) from None
@@ -1355,7 +1425,7 @@ class BrowserSession:
         confirm_ok = not page_shows_payment(snapshot)
         try:
             answer = self._input(lambda timeout: self._driver().type(element['index'], text, timeout, approved=approved,
-                                                                     confirm_ok=confirm_ok),
+                                                                     confirm_ok=confirm_ok, effect=effect),
                                  description)
         except ToolError as exc:
             raise self._named_cover(self._observed(exc, approved), snapshot) from None
@@ -2000,7 +2070,7 @@ class WebKitWorkerDriver:
             raise ToolError(TARGET_TEXT, 'target_unavailable')   # never an element nobody classified
         return {'index': index, 'expect': expect, 'tokens': sorted(PAYMENT_AUTOCOMPLETE)}
 
-    def click(self, index, timeout, approved=False, confirm_ok=False):
+    def click(self, index, timeout, approved=False, confirm_ok=False, effect=None):
         """``approved``: the session consumed an owner approval for this step.
 
         Only then does the worker let a submit of the target's payment form
@@ -2009,17 +2079,19 @@ class WebKitWorkerDriver:
         Returns ``{'navigated': bool}``: whether the click started a main-frame
         navigation (a same-view new-window load included) that the worker
         waited for (#736).  No URL crosses here; the next snapshot is mediated.
+        ``effect`` is the step's own declared effect: a page's confirmation is
+        accepted only under one that changes state (#174).
         """
         # #937 review: a page's confirmation counts as approved only when the approval was for
         # this press; ``confirm_ok`` is False on a page that shows a payment field.
         message = self._request('click', timeout, approved=approved is True, dialog_approved=approved is True,
-                                confirm_ok=confirm_ok is True, **self._target(index))
+                                confirm_ok=confirm_ok is True, effect=_declared(effect), **self._target(index))
         return {'navigated': bool(message.get('navigated')), 'dialogs': step_dialogs(message), **step_posted(message)}
 
-    def type(self, index, text, timeout, approved=False, confirm_ok=False):
+    def type(self, index, text, timeout, approved=False, confirm_ok=False, effect=None):
         # #937 review: an approval to type into a field never confirms a payment question.
         message = self._request('type', timeout, text=text, approved=approved is True, dialog_approved=False,
-                                confirm_ok=confirm_ok is True, **self._target(index))
+                                confirm_ok=confirm_ok is True, effect=_declared(effect), **self._target(index))
         return {'dialogs': step_dialogs(message), **step_posted(message)}
 
     def release_submit(self, record, timeout):
