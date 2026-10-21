@@ -440,8 +440,8 @@ def _match_line(match):
 
 
 def _cli_search(workers):
-    """Whether a worker of the Work could run its own web search, which Still does not mediate."""
-    return any(row.get('own_web_search') or row.get('route') == 'subscription' for row in workers)
+    """Whether a worker of the Work ran with its own web search on, which Still does not mediate."""
+    return any(row.get('own_web_search') for row in workers)
 
 
 def _worker_text(row):

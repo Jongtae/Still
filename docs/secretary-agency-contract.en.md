@@ -73,10 +73,10 @@ EGRESS-OPEN-01 records an owner decision: "giving this information makes a big d
 - **Held values in outbound text (#167, #28 option A, 2026-10-21).** Detection and display only; nothing is blocked, rewritten or delayed, and what is sent does not change.
   - After an outbound call Still mediates has run, its outbound text is compared with the values Still holds for the owner, using the #605 matcher (`lookup_text_violations`). The calls are `web_search`, `weather`, `public_page_read`, `browser_open`, `browser_type`, `api_request` and the requests a `code_run` sandbox let out.
   - The held values are the owner's current Memory, whichever Work saved it, plus this Work's own private writes (the #605 set).
-  - The text is the composed query, a URL's path and query, typed browser text, an API request's URL and body, or a code-run request path. The first 1,000 characters of each text are compared.
+  - The text is the composed query, a URL's path and query (not its fragment, which is not sent), typed browser text, an API request's URL and body, or a code-run request's path, query, body and header values (held only in the runner's memory). The first 1,000 characters of each text are compared.
   - Each match is recorded on the call's Evidence as `outbound_matches`, with labels only: the source (`memory` with its key, or `work_write`), the tool and the destination host or search provider. The value and the outbound text are never stored; `browser_type` text and `api_request` bodies stay length-only.
   - A `browser_open` call also records its destination host, and the audit lists those hosts as places data was sent.
-  - The view says once that the Work's conversation is processed by the chosen AI provider. When a CLI worker could search on its own, it also says that this search does not go through Still and is not compared.
+  - The view says once that the Work's conversation is processed by the chosen AI provider. When a CLI worker ran with its own web search on, it also says that this search does not go through Still and is not compared.
   - The matcher over-matches by design (a shared span of two or more characters counts), so a line says the outbound text carried content that *matches* the value.
   - Mail, file, Drive and calendar contents read during the Work are not compared. Under this matcher their ordinary words and dates would match almost any query.
   - Blocking (option B) remains a separate owner decision under #28.

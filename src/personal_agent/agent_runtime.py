@@ -1328,14 +1328,15 @@ OUTBOUND_TEXT_MAX=1000
 WRITTEN_SOURCE='work_write'
 
 def _url_parts(url):
- """``(data text, host)`` of one URL: its path, query and fragment percent-decoded, and its host (#167).
+ """``(data text, host)`` of one URL: its path and query percent-decoded, and its host (#167).
 
- The host is the destination, shown on its own, so it is not part of the compared text.
+ The host is the destination, shown on its own, so it is not part of the compared text.  The
+ fragment is not sent in the request, so it is not compared either.
  """
  from urllib.parse import unquote_plus, urlsplit
  try:parts=urlsplit(str(url or '').strip())
  except ValueError:return '',''
- text=' '.join(unquote_plus(part) for part in (parts.path,parts.query,parts.fragment) if part and part!='/')
+ text=' '.join(unquote_plus(part) for part in (parts.path,parts.query) if part and part!='/')
  return text,(parts.hostname or '')
 
 def outbound_texts(action,args,result):
@@ -1345,7 +1346,8 @@ def outbound_texts(action,args,result):
  is what Still sent (``sent``) when it composed the call, else the call's
  arguments; a URL contributes its path and query; typed browser text goes to
  the page it was typed into; an API request carries its URL and body; a code
- run, the paths of the requests its sandbox let out.
+ run, the paths of the requests its sandbox let out (``outbound_evidence``
+ compares their query, body and header values too, from the runner's memory).
  """
  args=args if isinstance(args,dict) else {}
  result=result if isinstance(result,dict) else {}
@@ -1410,6 +1412,12 @@ def outbound_evidence(capabilities,action,args,result):
  out={}
  try:
   texts=outbound_texts(action,args,result)
+  runner=getattr(capabilities,'_code_runner',None) if action=='code_run' else None
+  if isinstance(getattr(runner,'sent',None),list):
+   # The requests the run let out with their query, body and header values, held only in the
+   # runner's memory (``CodeRunner.sent``); the recorded request rows keep method, host and path.
+   from urllib.parse import unquote_plus
+   texts=[(unquote_plus(str(text)),str(host)[:253]) for text,host in runner.sent if str(text).strip()]
   if action=='browser_open':
    host=_url_parts((args or {}).get('url'))[1]
    if host:out['destination']=host[:253]

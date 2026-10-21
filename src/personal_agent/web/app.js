@@ -382,7 +382,7 @@ function informationUseView(task,box){const audit=task.information_use;if(!audit
  const matches=Array.isArray(sent.held_value_matches)?sent.held_value_matches:[];if(matches.length)fact(t('밖으로 나간 내용에 들어 있던 보관 정보'),matches.map(row=>`${toolName(row.tool)}${row.destination?' → '+row.destination:''}: ${row.source==='memory'?t('기억 {key}의 값과 겹치는 내용',{key:`'${row.key||'?'}'`}):t('이 작업에서 저장한 값과 겹치는 내용')}`).join('\n'));
  const results=(audit.results||[]).filter(row=>row.status==='succeeded');if(results.length)fact(t('돌아온 결과'),results.map(row=>`${toolName(row.tool)}: ${row.label}`).join('\n'));
  box.append(devNode('p',t('이 작업의 대화는 선택한 AI 제공자가 처리합니다.'),'empty'));
- if((sent.workers||[]).some(row=>row.own_web_search||row.route==='subscription'))box.append(devNode('p',t('AI CLI가 스스로 하는 웹 검색은 Still을 거치지 않습니다. 그 검색어는 CLI가 알려 준 만큼만 보이고, 보관한 값과 비교하지 않습니다.'),'empty'));
+ if((sent.workers||[]).some(row=>row.own_web_search))box.append(devNode('p',t('AI CLI가 스스로 하는 웹 검색은 Still을 거치지 않습니다. 그 검색어는 CLI가 알려 준 만큼만 보이고, 보관한 값과 비교하지 않습니다.'),'empty'));
  if(!audit.recorded)box.append(devNode('p',t('이 작업에는 보낸 내용 기록이 없습니다. 기록은 이 기능이 추가된 뒤의 작업부터 남습니다.'),'empty'));}
 Object.assign(I18N["en"],{"답변을 쓰고 있습니다":"Writing a reply"});
 Object.assign(I18N["en"],{"적용을 누르거나 그렇게 하라고 답하기 전에는 아무것도 바뀌지 않습니다.":"Nothing changes until you press Apply or reply that you want it.","적용":"Apply","바꾸지 않음":"Keep as is","처리했습니다.":"Done."});

@@ -78,7 +78,7 @@ class OutboundTexts(unittest.TestCase):
                            [('보낸 검색어', 'brave')]),
             'weather': ({'city': '성남'}, {'sent': {'city': '성남'}, 'sources': ['https://api.weather.example/v1?x=1']},
                         [('성남', 'api.weather.example')]),
-            'public_page_read': ({'url': 'https://news.example/a/b?q=%ED%95%A9%EC%A0%95'}, {},
+            'public_page_read': ({'url': 'https://news.example/a/b?q=%ED%95%A9%EC%A0%95#M1234-5678'}, {},
                                  [('/a/b q=합정', 'news.example')]),
             'browser_open': ({'url': 'https://shop.example/', 'effect': 'read'}, {}, []),
             'browser_type': ({'target': '3', 'text': 'M1234-5678', 'effect': 'mutate'}, {'url': 'https://shop.example/form'},
@@ -117,6 +117,22 @@ class Recording(unittest.TestCase):
             {'source': 'memory', 'key': 'member-number', 'destination': 'shop.example', 'tool': 'browser_open'}]})
         self.assertEqual(outbound_evidence(caps, 'browser_open', {'url': 'https://shop.example/'}, {}),
                          {'destination': 'shop.example'})
+
+    def test_a_url_fragment_is_not_compared_because_it_is_not_sent(self):
+        caps = self.Caps(held(('member-number', MEMBER)))
+        self.assertEqual(outbound_evidence(caps, 'browser_open', {'url': 'https://shop.example/page#M1234-5678'}, {}),
+                         {'destination': 'shop.example'})
+
+    def test_a_code_run_compares_the_query_body_and_headers_its_runner_held(self):
+        caps = self.Caps(held(('member-number', MEMBER), ('phone', PHONE)))
+        caps._code_runner = type('Runner', (), {'sent': [('/v1/find\nno=M1234-5678', 'data.example'),
+                                                         ('/v1/x\n{"tel": "010 9876 5432"}', 'other.example')]})()
+        result = {'requests': [{'phase': 'run', 'method': 'GET', 'host': 'data.example', 'path': '/v1/find', 'allowed': True}]}
+        added = outbound_evidence(caps, 'code_run', {'code': 'x'}, result)
+        self.assertEqual(added['outbound_matches'], [
+            {'source': 'memory', 'key': 'member-number', 'destination': 'data.example', 'tool': 'code_run'},
+            {'source': 'memory', 'key': 'phone', 'destination': 'other.example', 'tool': 'code_run'}])
+        self.assertNotIn('5678', json.dumps({**evidence_summary('code_run', result), **added}))
 
     def test_a_failing_comparison_leaves_the_evidence_as_before(self):
         caps = self.Caps(error=RuntimeError('store gone'))
@@ -267,6 +283,35 @@ class BridgeRoute(unittest.TestCase):
             audit = information_use.work_information_use(store, job)
             self.assertEqual(audit['sent_to']['held_value_matches'], [
                 {'source': 'memory', 'key': 'phone', 'tool': 'web_search', 'destination': 'brave'}])
+
+
+class CodeRunnerMemory(unittest.TestCase):
+    """``CodeRunner.sent`` holds what the allowed requests carried, in memory only; the result keeps no more than before."""
+
+    def test_allowed_requests_are_held_in_memory_and_not_returned(self):
+        from test_code_run import FakeProcess, runner
+        process = FakeProcess(requests=[
+            {'method': 'GET', 'host': 'api.example.com', 'path': '/v1/find', 'query': 'no=M1234-5678',
+             'headers': [['X-Member', 'm12345678']]},
+            {'method': 'GET', 'host': 'other.example.net', 'path': '/', 'query': 'tel=01098765432'}],
+            result={'stdout': 'ok', 'stderr': ''})
+        with mock.patch('personal_agent.current_context.redact_known_secrets', lambda store, text: text):
+            run = runner(process)
+            result = run.run({'code': 'print(1)', 'hosts': 'api.example.com'})
+        self.assertEqual(run.sent, [('/v1/find\nno=M1234-5678\nm12345678', 'api.example.com')],
+                         'only the request the sandbox let out')
+        self.assertNotIn('M1234', json.dumps(result))
+        self.assertNotIn('M1234', json.dumps(evidence_summary('code_run', result)))
+
+
+class ProviderNotes(unittest.TestCase):
+    def test_the_cli_search_note_follows_the_recorded_own_search_state(self):
+        def text(own):
+            return information_use.render_korean({'recorded': True, 'used': [], 'sent_to': {'workers': [
+                {'route': 'subscription', 'engine': 'codex', 'own_web_search': own}]}})
+        self.assertIn('AI CLI가 스스로 하는 웹 검색은 Still을 거치지 않습니다', text(True))
+        self.assertNotIn('AI CLI가 스스로 하는 웹 검색', text(False), 'a CLI without its own search has no such blind spot')
+        self.assertEqual(text(False).count('선택한 AI 제공자가 처리합니다'), 1)
 
 
 class WebView(unittest.TestCase):
