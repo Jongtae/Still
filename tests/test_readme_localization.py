@@ -683,12 +683,11 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
                     )
 
     def test_scene_panel_requests_route_deterministically(self):
-        """Every mail scene routes only after the fixture clears its declared
-        unsupported-capability boundary.  The calendar scene reaches
+        """The mail and calendar scenes reach ``mail-search`` and
         ``calendar-create`` only through the scripted ``capability-need``
-        judgment and the research scene stays on the ordinary conversation
-        route, where the Work loop chooses web search (#672): no request word
-        and no free model guess supplies an intent."""
+        judgment (#672, #173), and the research scene stays on the ordinary
+        conversation route, where the Work loop chooses web search: no request
+        word and no free model guess supplies an intent."""
         import build_readme_visuals as visuals
 
         src = ROOT / "src"
@@ -699,21 +698,24 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
         from personal_agent.decision import OUTCOME_DECIDED, FixtureDecisionEngine, SelectionDecision, fixture_confidence
 
         calendar_scenes = {visuals.SCENES[locale][2][0].replace("\n", " ") for locale in ("en", "ko")}
+        mail_scenes = {visuals.SCENES[locale][1][0].replace("\n", " ") for locale in ("en", "ko")}
 
         def choose(context, candidates, question):
-            if context.purpose == 'unsupported-capability':
-                return SelectionDecision(OUTCOME_DECIDED, 'none-of-these', candidates, fixture_confidence())
             if context.purpose == 'capability-need':
-                answer = 'calendar-create' if context.facts['owner_message'] in calendar_scenes else 'none-of-these'
+                message = context.facts['owner_message']
+                answer = ('calendar-create' if message in calendar_scenes
+                          else 'mail-search' if message in mail_scenes else 'none-of-these')
                 return SelectionDecision(OUTCOME_DECIDED, answer, candidates, fixture_confidence())
             return None
 
         classifier = handoff.IntentClassifier(
-            workspace_search=service.workspace_search_request,
             judge=handoff.ConversationJudgments(FixtureDecisionEngine(choose=choose)),
         )
+        # #173: the mail scene is the capability-need judgment's, never a mail
+        # word's; the saved-result scene reaches the worker, with the result the
+        # owner quoted attached as evidence (never the answer).
         expected = ("workspace-summary", "mail-search", "calendar-create",
-                    "memory", "conversation", "workspace-search")
+                    "memory", "conversation", "saved-result-evidence")
         for locale in ("en", "ko"):
             for index, (ask, _reply, _chip) in enumerate(visuals.SCENES[locale]):
                 text = ask.replace("\n", " ")
@@ -723,6 +725,9 @@ class ReadmeLocalizationParityTests(unittest.TestCase):
                         self.assertIsNotNone(service.workspace_summary_request(text))
                     elif want == "memory":
                         self.assertTrue(service.AgentService.memory_followup_prefilter(text))
+                    elif want == "saved-result-evidence":
+                        self.assertEqual("conversation", classifier.classify(text).intent)
+                        self.assertIsNotNone(service.workspace_search_request(text))
                     else:
                         self.assertEqual(want, classifier.classify(text).intent)
 

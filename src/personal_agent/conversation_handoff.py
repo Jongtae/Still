@@ -437,28 +437,29 @@ class TelegramChannel:
 # ---------------------------------------------------------------------------
 # Where authority sits, stated once:
 #
-#   * An **owner-explicit** form (a slash command or a legacy `메모:`-style
-#     prefix) is the owner speaking literally.  It is honoured as written.
-#   * An **Still rule** is a literal cue set written in this file and
-#     reviewable here.  Still, not a model, decided it.
-#   * A **model suggestion** is untrusted input.  It may only *narrow* an
-#     ambiguity that the rules already produced, it may never introduce an
-#     intent the rules did not find, and it may never select a consequential
-#     intent.  ``IntentDecision.authority`` therefore has no ``model`` value
-#     and cannot acquire one.
-#   * Anything the rules do not recognise is asked, as a bounded semantic
-#     question, of the provider-neutral DecisionEngine (PRESENCE-INTENT-01 /
-#     #597): does this turn need one of Still's declared capabilities
-#     (``CAPABILITY_NEEDS``)?  The engine may only *select* a declared
-#     candidate; Still policy thresholds the answer, and an unavailable,
-#     abstaining or unsure engine leaves the turn on ``conversation``, the
-#     ordinary model-answered route.  No capability is ever guessed, and the
-#     judgment grants nothing: the chosen capability still passes its own
-#     connection/Grant/approval gates.
-#
-# The model-suggestion seam below is separate: it can only narrow a rule
-# ambiguity, and no call site supplies a suggestion today (an evidence-class
-# statement, not a capability claim).
+#   * An **owner-explicit** form (a slash command) is the owner speaking
+#     literally.  It is honoured as written.
+#   * No keyword rule reads an owner message for its intent (RULES-OUT-01,
+#     #173): a message has context a cue table cannot see.  Personal-space,
+#     settings, saved-result, note and mail requests reach the owner's chosen
+#     AI (the worker) with the owner's words verbatim, and the worker uses its
+#     own tools (``search_memory``, ``list_notes``, ``find_files``,
+#     ``settings_read`` / ``settings_change``, ``save_note``,
+#     ``mail_search`` / ``mail_read``).
+#   * A turn is asked, as a bounded semantic question, of the
+#     provider-neutral DecisionEngine (PRESENCE-INTENT-01 / #597): does it
+#     need one of Still's declared capabilities (``CAPABILITY_NEEDS``), so a
+#     missing connection can be offered first or a calendar draft previewed?
+#     The engine may only *select* a declared candidate; Still policy
+#     thresholds the answer, and an unavailable, abstaining or unsure engine
+#     leaves the turn on ``conversation``, the ordinary model-answered route.
+#     No capability is ever guessed, and the judgment grants nothing: the
+#     chosen capability still passes its own connection/Grant/approval gates.
+#   * A **model suggestion** is untrusted input.  ``IntentDecision.authority``
+#     has no ``model`` value and cannot acquire one; with no rule ambiguity
+#     left to narrow, every suggestion is recorded and rejected, and no call
+#     site supplies one today (an evidence-class statement, not a capability
+#     claim).
 import re
 import time
 
@@ -561,68 +562,11 @@ CAPABILITY_NEEDS = {
 
 
 # --- Cue vocabularies ------------------------------------------------------
-# Every cue below is a literal an owner can read and an independent reviewer
-# can audit.  Korean cues match as substrings; ASCII cues match on word
-# boundaries so that "note" does not fire inside "notebook".
-
-_KNOWLEDGE_CUES = ('개인 공간', '내 지식', '내가 저장해 둔', '내가 적어둔', '내 기록에서',
-                   'personal space', 'my knowledge', 'knowledge base', 'what do i know about')
-_SUBJECT_NOISE_KO = ('에 대해서', '에 대해', '에 대한', '에서', '관련된', '관련', '내용을', '내용',
-                       '자료를', '자료', '찾아줘', '찾아 줘', '찾아봐', '찾아', '검색해줘', '검색해',
-                       '알려줘', '알려 줘', '보여줘', '보여 줘', '좀',
-                      '다시 한번', '다시', '한번', '또')
-#: Single-syllable Korean particles are stripped only where they really are
-#: particles - at the end of a token - never as a substring, which would
-#: corrupt a word such as ``가을``.
-_SUBJECT_PARTICLES = ('에서', '에게', '으로', '이랑', '하고', '의', '을', '를', '은', '는', '이', '가')
-_SUBJECT_NOISE_EN = ('about', 'find', 'search', 'show', 'tell', 'me', 'the', 'anything',
-                       'everything', 'on', 'for', 'please', 'my', 'in', 'from', 'look', 'up')
-
-_SETTINGS_READ_CUES = ('무엇이 연결되어 있어', '무엇을 바꿀 수 있어', '상태 보여', '연결 상태', '어떤 연결',
-                       '연결된 것', '연결 목록',
-                       "what's connected", 'what is connected', 'show my connections',
-                       'connection status', 'what can i change', 'list my connections')
-# Mirrors SettingsOrchestrator._intent: an action alone or a target alone is
-# never a settings change request.
-_SETTINGS_ACTIONS = ('pause', 'disconnect', 'resume', '일시 정지', '연결 해제', '다시 시작', '재개')
-_SETTINGS_TARGETS = ('drive', '드라이브', 'calendar', '캘린더', '일정', 'mcp')
-
-_WORKSPACE_CUES = ('작업공간', '워크스페이스', '저장한 결과', msg('handoff.saved_result'), '저장한 파일', '저장된 파일',
-                   '저장해 둔 파일', '내가 저장한',
-                   'workspace', 'saved result', 'saved results', 'saved file', 'saved files',
-                   'file i saved', 'files i saved')
-_WORKSPACE_VERBS = ('찾아', '찾을', '검색', '열어', '보여', '가져와', '불러와', '다시 써', '재사용',
-                    'open', 'show', 'find', 'search', 'pull up', 'reuse', 'get')
-
-# Mail is a read.  The object cues below never pair with a send/reply verb,
-# so "메일 보내줘" cannot become a mailbox read: it matches no rule and stays
-# on the ordinary conversation route.  Sending mail is not a capability this
-# conversation offers at all.
-_MAIL_OBJECTS = ('메일', '이메일', '받은편지함', '메일함', 'email', 'emails', 'mail', 'inbox', 'gmail')
-# The polite ``-해/-해줘`` forms are listed as cues in their own right, not
-# stripped afterwards: ``_without_cues`` removes the longest match first, so
-# listing them keeps "확인해줘" from leaving "해줘" behind in the query.
-_MAIL_VERBS = ('찾아', '찾을', '찾아줘', '검색해줘', '검색해', '검색', '읽어', '확인해줘', '확인해',
-               '확인', '보여', '알려', '왔', '열어', '열어줘',
-               'search', 'find', 'look', 'check', 'show', 'read', 'open', 'any')
-_MAIL_CONTENT_KINDS = {
-    'body': ('본문', '내용', '전체 내용', '원문', 'body', 'content', 'full message'),
-    'metadata': ('제목', '보낸 사람', '발신자', '날짜', 'subject', 'sender', 'date'),
-}
-
-# A note is written when the owner says "write it down", not when the owner
-# says "remember" - whether a turn asks Still to remember something is the
-# DecisionEngine's ``explicit_memory_request`` judgment (#597) and must not
-# be shadowed here.
-_NOTE_CREATE_RE = re.compile(
-    r'(?:메모|기록)\s*(?::|해\s*줘|해\s*둬|해\s*두|해\s*놔|해\s*놓|로\s*남겨|남겨\s*줘|남겨)'
-    r'|적어\s*(?:둬|줘|놔|두)'
-    r'|\b(?:note (?:this|that|it)(?: down)?|take a note|make a note|jot (?:this|that|it) down'
-    r'|write (?:this|that|it) down|add a note)\b',
-    re.I)
-_NOTE_PRONOUNS = ('이거', '이것', '그거', '그것', '저거', 'this', 'that', 'it')
-_NOTE_LEAD_EN = ('of', 'that', 'about', 'to', 'saying', ':', '-')
-_NOTE_TRAIL_KO = ('을', '를', '은', '는', '이', '가', '다음 내용', '내용', '이것', '이거')
+# RULES-OUT-01 (#173) removed the knowledge, settings, workspace, mail and
+# note cue tables and the words stripped from a message to build their
+# queries: those requests reach the worker verbatim.  The two tables below
+# are tracked by the guard as open findings for a later #173 slice.
+# Korean cues match as substrings; ASCII cues match on word boundaries.
 
 # A correction or topic change is the owner overriding what came before.  It
 # must never be read as "keep doing the previous thing".
@@ -665,36 +609,10 @@ def eligible_for_capability_judgment(text):
     return isinstance(text, str) and 0 < len(text.strip()) <= CAPABILITY_JUDGMENT_MAX_CHARS
 
 
-def _trim_particle(token):
-    """Drop one trailing Korean particle from a token, never a syllable."""
-    for particle in _SUBJECT_PARTICLES:
-        if token.endswith(particle) and len(token) > len(particle) + 1:
-            return token[:-len(particle)]
-    return token
-
-
-def _without_cues(value, cues):
-    """Remove matched cues longest first, so a short cue cannot strand the
-    tail of a longer one it overlaps (``my knowledge`` vs ``knowledge base``)."""
-    for cue in sorted(cues, key=len, reverse=True):
-        value = re.sub(re.escape(cue), ' ', value, flags=re.I)
-    return value
-
-
-def _strip_noise(value):
-    """Reduce an utterance to its subject by removing Still cue filler."""
-    for token in _SUBJECT_NOISE_KO:
-        value = value.replace(token, ' ')
-    for token in _SUBJECT_NOISE_EN:
-        value = re.sub(rf'(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])', ' ', value, flags=re.I)
-    value = ' '.join(_trim_particle(token) for token in value.split())
-    return re.sub(r'\s+', ' ', value.strip(' \t?!.,;:·"“”‘’')).strip()
-
-
 # --- Semantic judgments (PRESENCE-DEC-01 / #417) ----------------------------
 # Some routing questions are semantic, not lexical: "does this turn withdraw
-# the request that is waiting for a connection?" and "does this mail-shaped
-# request ask for an unsupported action?". They are asked of the provider-neutral DecisionEngine
+# the request that is waiting for a connection?" and "does this turn need a
+# declared capability?". They are asked of the provider-neutral DecisionEngine
 # (decision.py, docs/decision-layer.en.md) and reduced to a three-valued
 # result by Still policy.  Anything the engine cannot answer stays
 # ``unavailable`` and policy takes its declared fallback; no cue list or
@@ -776,12 +694,6 @@ CAPABILITY_NEED_QUESTION = ('Does answering the owner\'s message require one of 
                             'of what the owner is doing, attending or did - telling or logging their day rather '
                             'than asking for something - is something they only mention (#1517). This '
                             'judgment does not authorize any action.')
-MAIL_QUERY_TERM_QUESTION = ('The owner is asking about their own mail. Which one of the listed terms, all taken from '
-                            'the owner\'s message, best identifies the mail to look for - its sender, organisation '
-                            'or subject? Choose none-of-these if no listed term identifies it. This judgment does '
-                            'not authorize any action.')
-#: At most this many of the owner's own words are offered as query terms.
-MAIL_QUERY_MAX_TERMS = 12
 # #858: the reaction emoji on the owner's Telegram message, chosen by the
 # Judgment AI.  The candidates come from the caller (``telegram_presence``
 # keeps the curated, documented set); the questions here only frame the choice.
@@ -801,10 +713,6 @@ PROGRESS_REACTION_QUESTION = ('The assistant is partway through the current step
                               'reaction emoji that best acknowledges this progress without implying the whole request '
                               'is finished. Vary it across different steps when a different emoji fits. Choose '
                               'none-of-these if no listed emoji fits. This judgment is presentation only.')
-#: Recipient/source endings trimmed from a query-term candidate so a Gmail
-#: search gets the bare name ("집주인한테" -> "집주인").  Query formatting only;
-#: which term is used is the DecisionEngine's selection.
-_TERM_ENDINGS = ('한테서', '에게서', '한테', '께서', '께')
 MEMORY_REQUEST_PROPOSITION = ('The owner\'s latest message explicitly instructs the assistant to remember, keep '
                               'in mind or not forget a specific fact, value or preference that the owner states in '
                               'that same message, for later conversations. It is also true when the owner asserts, '
@@ -929,9 +837,6 @@ GOAL_REACHED_PROPOSITION = ('The reply serves the owner\'s message, read in the 
 #: #1451: the outcome judgment's gap sentence, as kept.
 GOAL_GAP_CHARS = 300
 
-UNSUPPORTED_JUDGMENT_UNAVAILABLE = (msg('handoff.i_couldn_t_safely_tell_what'))
-MIXED_MAIL_ACTION_CLARIFICATION = ('지원하지 않는 메일 발송 요청과 다른 작업이 함께 있어 아무 작업도 실행하지 않았습니다. '
-                                   '메일은 보내지 않으며, 나머지 작업만 따로 요청해 주세요.')
 
 class Judgment:
     """One bounded judgment reduced by policy.  It informs routing; it never authorizes."""
@@ -1102,8 +1007,9 @@ class ConversationJudgments:
     def unsupported_capability(self, utterance):
         """Does ``utterance`` ask for a declared-but-unavailable capability?
         ``value`` is its key on yes; a confident none-of-these is no."""
-        # `utterance` is a minimized cue summary assembled by IntentClassifier,
-        # never the owner's raw mail query or surrounding private text.
+        # #173: routing no longer asks this (the capability-need judgment
+        # carries the declared-unsupported keys); the decision qualification
+        # suite still exercises it on a short minimized summary.
         context = self._context('unsupported-capability', {'owner_message': utterance})
         decision = self.engine.choose(context, tuple(UNSUPPORTED_CAPABILITIES), UNSUPPORTED_QUESTION)
         choice = self.policy.selection(decision)
@@ -1197,27 +1103,6 @@ class ConversationJudgments:
         context = self._context('progress-reaction', {'current_step': step_description})
         decision = self.engine.choose(context, candidates, PROGRESS_REACTION_QUESTION)
         return self.policy.selection(decision)
-
-    def mail_query_term(self, utterance, terms):
-        """Which of ``terms`` (the owner's own words) identifies the mail sought?
-
-        Candidates are index labels (``term-1`` ...) so the decision and its
-        audit row stay content-free; the caller maps the label back to the
-        owner's word.  ``value`` is the index on yes.
-        """
-        labels = tuple(f'term-{index}' for index in range(1, len(terms) + 1))
-        context = self._context('mail-query-term', {
-            'owner_message': utterance,
-            'terms': '; '.join(f'{label} = {term}' for label, term in zip(labels, terms)),
-        })
-        decision = self.engine.choose(context, labels, MAIL_QUERY_TERM_QUESTION)
-        choice = self.policy.selection(decision)
-        if choice is not None:
-            return Judgment(JUDGMENT_YES, value=labels.index(choice),
-                            source=decision.confidence.provider or decision.outcome)
-        if self.policy.confident_selection(decision):
-            return Judgment(JUDGMENT_NO, source=decision.confidence.provider or decision.outcome)
-        return Judgment(JUDGMENT_UNAVAILABLE, source=decision.outcome)
 
     def goal_reached(self, request, observations, failed_steps='', work_id=None, answer='', conversation='',
                      owner_context='', continues='', attachments=''):
@@ -1454,59 +1339,35 @@ class ConversationFocus:
         self.store.put(self.KEY, {})
 
 
-_QUOTED = re.compile(r'["“]([^"”]{2,160})["”]')
-
-AMBIGUOUS_PREFIX = '이 요청이 '
-AMBIGUOUS_SUFFIX = (' 중 무엇인지 확실하지 않아 아무 작업도 실행하지 않았습니다. '
-                    '하나만 골라 다시 말씀해 주세요.')
-SETTINGS_READ_FORM = '/settings'
-KNOWLEDGE_CLARIFICATION = '개인 공간에서 무엇을 찾을지 두 글자 이상으로 알려 주세요.'
-NOTE_CLARIFICATION = '무엇을 기록할지 내용을 함께 적어 주세요.'
-MAIL_CLARIFICATION = '메일에서 무엇을 찾을지 두 글자 이상으로 알려 주세요.'
 #: A turn that asks for several tasks at once (#672 review): nothing runs, so
 #: no part is done while another is silently dropped.
-MIXED_TASKS_PREFIX = '이 요청에 여러 작업이 함께 들어 있습니다: '
-MIXED_TASKS_SUFFIX = ('. 일부만 처리하고 나머지를 빠뜨리지 않도록 아무 작업도 실행하지 않았습니다. '
-                      '한 번에 하나씩 다시 말씀해 주세요.')
 MIXED_TASKS_CLARIFICATION = ('이 요청에 여러 작업이 함께 들어 있습니다. 일부만 처리하고 나머지를 빠뜨리지 않도록 '
                              '아무 작업도 실행하지 않았습니다. 한 번에 하나씩 다시 말씀해 주세요.')
-
-
-class _Candidate:
-    """One rule match, before ambiguity and consequence policy is applied."""
-
-    __slots__ = ('intent', 'argument', 'cues', 'clarification')
-
-    def __init__(self, intent, argument, cues, clarification=None):
-        self.intent, self.argument, self.cues, self.clarification = intent, argument, tuple(cues), clarification
 
 
 class IntentClassifier:
     """Still-owned routing for one owner utterance.
 
-    Explicit forms and the literal cue tables above are read by Still
-    code; semantic questions such as parked-request withdrawal, unsupported
-    mail actions and - for a turn no local rule claimed - which declared
-    capability it needs (#597) are asked of the DecisionEngine through
-    ``judge`` and reduced by Still policy (PRESENCE-DEC-01 / #417,
-    superseding PA1-CONV-01's "consults no model").  A missing cue word
-    therefore no longer excludes a capability.  Every decision records
-    which cue or judgment produced it, and a model's answer can only select
-    among candidates Still declared; it never mints an intent, argument or
-    authority of its own.
-
-    ``workspace_search`` is injected rather than imported so that this module
-    stays free of any dependency on the service that uses it.
+    Only owner-explicit forms are read by Still code.  RULES-OUT-01 (#173)
+    removed the keyword rules that read a message for its intent: a message
+    has context, so personal-space, settings, saved-result, note and mail
+    requests reach the worker with the owner's words verbatim.  Which declared
+    capability a turn needs (#597) is asked of the DecisionEngine through
+    ``judge`` and reduced by Still policy (PRESENCE-DEC-01 / #417).  Every
+    decision records which form or judgment produced it, and a model's answer
+    can only select among candidates Still declared; it never mints an
+    intent, argument or authority of its own.
     """
 
-    def __init__(self, workspace_search=None, judge=None):
-        self._workspace_search = workspace_search
+    def __init__(self, judge=None):
         self._judge = judge or ConversationJudgments()
 
     # -- owner-explicit forms ------------------------------------------------
-    # Supported slash commands and the legacy Korean colon forms are no longer
-    # the *required* entry path, but they remain owner-authoritative. Retired
-    # compatibility commands deliberately fall through to ordinary routing.
+    # Supported slash commands are exact owner commands and stay
+    # owner-authoritative.  #173: natural-language strings ("무엇이 연결되어
+    # 있어?", "메모 목록", a "메모:" prefix) are not commands; they reach the
+    # worker like any other message.  Retired compatibility commands
+    # deliberately fall through to ordinary routing.
     def explicit(self, text):
         if text in ('/start', '/help'):
             return IntentDecision(INTENT_GREETING, AUTHORITY_OWNER)
@@ -1514,131 +1375,34 @@ class IntentClassifier:
             return IntentDecision(INTENT_KNOWLEDGE, AUTHORITY_OWNER, argument=text[len('/knowledge '):].strip())
         if text.startswith('/settings '):
             return IntentDecision(INTENT_SETTINGS, AUTHORITY_OWNER, argument=text[len('/settings '):])
-        if text in ('/settings', '무엇이 연결되어 있어?', '무엇을 바꿀 수 있어?'):
+        if text == '/settings':
             return IntentDecision(INTENT_SETTINGS, AUTHORITY_OWNER, argument=text)
         if text == '/ai' or text.startswith('/ai '):
             return IntentDecision(INTENT_MAIN_AI, AUTHORITY_OWNER, argument=text[len('/ai'):].strip())
-        if text in ('/notes', '메모 목록'):
+        if text == '/notes':
             return IntentDecision(INTENT_NOTE_LIST, AUTHORITY_OWNER)
         if text.startswith('/note '):
             return IntentDecision(INTENT_NOTE_CREATE, AUTHORITY_OWNER, argument=text[len('/note '):])
-        if text.startswith(('메모:', '기록:')):
-            return IntentDecision(INTENT_NOTE_CREATE, AUTHORITY_OWNER, argument=text.split(':', 1)[1].strip())
+        if text.startswith('/workspace-search '):
+            return IntentDecision(INTENT_WORKSPACE_SEARCH, AUTHORITY_OWNER,
+                                  argument=text[len('/workspace-search '):])
         return None
-
-    # -- natural-language rules ---------------------------------------------
-    def _rule_knowledge(self, text, lowered):
-        cues = _cue_hits(text, lowered, _KNOWLEDGE_CUES)
-        if not cues:
-            return None
-        residue = _without_cues(text, cues)
-        query = _strip_noise(residue)
-        if len(query) < 2:
-            return _Candidate(INTENT_KNOWLEDGE, None, cues, KNOWLEDGE_CLARIFICATION)
-        return _Candidate(INTENT_KNOWLEDGE, query, cues)
-
-    def _rule_settings(self, text, lowered):
-        read = _cue_hits(text, lowered, _SETTINGS_READ_CUES)
-        if read:
-            # SettingsOrchestrator.handle_text reads its own small literal
-            # vocabulary.  Normalising to that literal keeps every paraphrase
-            # on the read path instead of falling into `draft`, which would
-            # reject the utterance.
-            return _Candidate(INTENT_SETTINGS, SETTINGS_READ_FORM, read)
-        actions = _cue_hits(text, lowered, _SETTINGS_ACTIONS)
-        targets = _cue_hits(text, lowered, _SETTINGS_TARGETS)
-        if actions and targets:
-            return _Candidate(INTENT_SETTINGS, text, (*actions, *targets))
-        return None
-
-    def _rule_workspace(self, text, lowered):
-        legacy = self._workspace_search(text) if self._workspace_search else None
-        if legacy:
-            return _Candidate(INTENT_WORKSPACE_SEARCH, legacy, ('workspace_search_request',))
-        cues = _cue_hits(text, lowered, _WORKSPACE_CUES)
-        verbs = _cue_hits(text, lowered, _WORKSPACE_VERBS)
-        if not (cues and verbs):
-            return None
-        quoted = _QUOTED.findall(text)
-        if quoted:
-            return _Candidate(INTENT_WORKSPACE_SEARCH, quoted[0], (*cues, *verbs))
-        residue = _without_cues(text, (*cues, *verbs))
-        # What survives cue removal is often only stranded particles.  Emit
-        # the owner's most recent saved result rather than a junk query.
-        subject = ' '.join(token for token in _strip_noise(residue).split() if len(token) > 1)
-        return _Candidate(INTENT_WORKSPACE_SEARCH, subject or '__latest__', (*cues, *verbs))
-
-    def _rule_note(self, text, lowered):
-        match = _NOTE_CREATE_RE.search(text)
-        if not match:
-            return None
-        content = self._note_content(text, match)
-        cues = (match.group(0).strip(),)
-        if not content:
-            return _Candidate(INTENT_NOTE_CREATE, None, cues, NOTE_CLARIFICATION)
-        return _Candidate(INTENT_NOTE_CREATE, content, cues)
-
-    @staticmethod
-    def _note_content(text, match):
-        """Take what follows the cue, or what preceded it in Korean order."""
-        tail = text[match.end():].lstrip(' \t:,-–—')
-        tail = re.sub(r'^(?:of|that|about|to|saying)\b\s*', '', tail, flags=re.I).strip()
-        if tail and tail.casefold() not in _NOTE_PRONOUNS:
-            return tail
-        head = text[:match.start()].strip(' \t,')
-        # A correction preamble is the owner discarding the previous turn, not
-        # something to write down.
-        lowered = head.casefold()
-        for cue in _CORRECTION_CUES:
-            if cue in lowered:
-                head = head[lowered.rindex(cue) + len(cue):].strip(' \t,')
-                lowered = head.casefold()
-        for token in _NOTE_TRAIL_KO:
-            if head.endswith(token):
-                head = head[:-len(token)].strip()
-                break
-        if head and head.casefold() not in _NOTE_PRONOUNS:
-            return head
-        return None
-
-    def _rule_mail(self, text, lowered):
-        """Recognise a mailbox *read*; the query is never persisted anywhere."""
-        objects = _cue_hits(text, lowered, _MAIL_OBJECTS)
-        verbs = _cue_hits(text, lowered, _MAIL_VERBS)
-        if not (objects and verbs):
-            return None
-        quoted = _QUOTED.findall(text)
-        query = quoted[0] if quoted else _strip_noise(_without_cues(text, (*objects, *verbs)))
-        if len(query) < 2:
-            return _Candidate(INTENT_MAIL_SEARCH, None, (*objects, *verbs), MAIL_CLARIFICATION)
-        return _Candidate(INTENT_MAIL_SEARCH, query, (*objects, *verbs))
 
     def has_local_candidate(self, text):
-        """Whether deterministic capability routing already owns this utterance.
+        """Whether an owner-explicit form already owns this utterance.
 
-        Continuity may use a remote DecisionEngine, so a turn that already
-        matches one of Still's concrete local/private capability rules must
-        never be sent there merely because it also contains "again", "no",
-        or another follow-up hint.  This method performs only the same literal
-        candidate checks as :meth:`classify`; it makes no semantic judgment
-        and authorizes nothing.
+        Continuity may use a remote DecisionEngine, so an explicit command is
+        never sent there merely because it also contains "again" or "no".
+        Since #173 no keyword rule claims a natural-language turn.  This
+        makes no semantic judgment and authorizes nothing.
         """
-        if not isinstance(text,str) or not text.strip():
-            return False
-        value=text.strip();lowered=value.casefold()
-        if self.explicit(value) is not None:
-            return True
-        return any(rule(value,lowered) is not None for rule in (
-            self._rule_knowledge,self._rule_settings,self._rule_workspace,
-            self._rule_note,self._rule_mail,
-        ))
+        return isinstance(text, str) and bool(text.strip()) and self.explicit(text.strip()) is not None
 
     # -- decision assembly ---------------------------------------------------
     def classify(self, text, model_suggestion=None, focus=None):
         """Return the one routing decision Still is prepared to justify."""
         if not isinstance(text, str) or not text.strip():
-            return self._with_suggestion(IntentDecision(INTENT_CONVERSATION, AUTHORITY_DEFAULT),
-                                         (), model_suggestion)
+            return self._with_suggestion(IntentDecision(INTENT_CONVERSATION, AUTHORITY_DEFAULT), model_suggestion)
         text = text.strip()
         lowered = text.casefold()
         focus_intent = (focus or {}).get('intent')
@@ -1646,115 +1410,16 @@ class IntentClassifier:
         explicit = self.explicit(text)
         if explicit is not None:
             explicit.supersedes_previous = bool(focus_intent) and focus_intent != explicit.intent
-            return self._with_suggestion(explicit, (), model_suggestion)
+            return self._with_suggestion(explicit, model_suggestion)
 
         correction = _cue_hits(text, lowered, _CORRECTION_CUES)
-        candidates = []
-        for rule in (self._rule_knowledge, self._rule_settings,
-                     self._rule_workspace, self._rule_note, self._rule_mail):
-            found = rule(text, lowered)
-            if found is not None:
-                candidates.append(found)
-
-        # Restrict semantic boundary judgment to mail-shaped requests that
-        # are not already recognized as local work. The DecisionEngine may be
-        # remote, so local-only turns (notes, settings, ordinary conversation)
-        # must never be sent to it. A reply/send verb still qualifies even
-        # when it is not a supported mailbox-read cue.
-        mail_objects = _cue_hits(text, lowered, _MAIL_OBJECTS)
-        mail_verbs = _cue_hits(text, lowered, _MAIL_VERBS)
-        mail_action = _cue_hits(text, lowered, ('답장', '회신', '보내', '전송', 'reply', 'send'))
-        content_kind = tuple(f'mail-{kind}' for kind, cues in _MAIL_CONTENT_KINDS.items()
-                             if _cue_hits(text, lowered, cues))
-        has_mail_focus = focus_intent == INTENT_MAIL_SEARCH
-        cue_summary = ' '.join(dict.fromkeys((*(('최근 메일 검색',) if has_mail_focus and not mail_objects else ()),
-                                               *mail_objects, *mail_verbs, *mail_action, *content_kind)))
-        local_only = bool(candidates) and all(candidate.intent != INTENT_MAIL_SEARCH for candidate in candidates)
-        mixed_mail_action = (bool(mail_objects and mail_action)
-                             and any(candidate.intent not in (INTENT_MAIL_SEARCH, INTENT_NOTE_CREATE,
-                                                              INTENT_SETTINGS, INTENT_WORKSPACE_SEARCH)
-                                     for candidate in candidates))
-        if mixed_mail_action:
-            return self._with_suggestion(
-                IntentDecision(INTENT_AMBIGUOUS, AUTHORITY_RULE,
-                               cues=('mixed-mail-action',), clarification=MIXED_MAIL_ACTION_CLARIFICATION),
-                candidates, model_suggestion)
-        mail_boundary_eligible = ((mail_objects and (mail_verbs or mail_action))
-                                  or (has_mail_focus and mail_action))
-        unsupported = (self._judge.unsupported_capability(cue_summary)
-                       if mail_boundary_eligible and not local_only
-                       else Judgment(JUDGMENT_NO, source='local-prefilter'))
-        if unsupported.outcome == JUDGMENT_YES:
-            return self._with_suggestion(
-                IntentDecision(INTENT_UNSUPPORTED, AUTHORITY_RULE, argument=unsupported.value,
-                               cues=('judgment:unsupported-capability',),
-                               clarification=UNSUPPORTED_CAPABILITY_TEXT[unsupported.value]),
-                (), model_suggestion)
-
-        # Mail search reads private metadata. If the semantic boundary check
-        # could not distinguish a search from an unsupported read/send request,
-        # fail closed instead of letting lexical cues trigger the connector.
-        if (unsupported.outcome == JUDGMENT_UNAVAILABLE and mail_boundary_eligible
-                and (has_mail_focus or any(candidate.intent == INTENT_MAIL_SEARCH for candidate in candidates))):
-            return self._with_suggestion(
-                IntentDecision(INTENT_AMBIGUOUS, AUTHORITY_RULE,
-                               cues=('judgment:unsupported-capability-unavailable',),
-                               clarification=UNSUPPORTED_JUDGMENT_UNAVAILABLE),
-                candidates, model_suggestion)
-
-        # #672 review: a local rule no longer hides the rest of the turn.  A
-        # turn a rule claimed is still asked which declared capability it
-        # needs; one the rules did not find makes the turn mixed, and a mixed
-        # turn runs nothing.
-        if candidates:
-            judged = self._judged_capability(text)
-            if judged is not None and (judged.intent == INTENT_AMBIGUOUS
-                                       or judged.intent not in {item.intent for item in candidates}):
-                # No suggestion may narrow a mixed turn to one of its parts.
-                return self._with_suggestion(self._mixed(candidates, judged), (), model_suggestion)
-
-        if len(candidates) == 1:
-            decision = self._single(candidates[0])
-        elif candidates:
-            decision = self._ambiguous(candidates)
-        else:
-            decision = self._fallback(text, lowered, focus_intent, bool(correction))
-
+        decision = self._fallback(text, lowered, focus_intent, bool(correction))
         if focus_intent and (correction or focus_intent != decision.intent) and decision.intent != INTENT_AMBIGUOUS:
             decision.supersedes_previous = True
-        return self._with_suggestion(decision, candidates, model_suggestion)
-
-    @staticmethod
-    def _single(candidate):
-        if candidate.clarification:
-            return IntentDecision(candidate.intent, AUTHORITY_RULE, cues=candidate.cues,
-                                  clarification=candidate.clarification)
-        # A consequential candidate executes only as far as a draft and an
-        # exact preview; ``decision.consequential`` tells the worker so, and
-        # the effect itself waits for the owner's explicit approval.
-        return IntentDecision(candidate.intent, AUTHORITY_RULE, argument=candidate.argument,
-                              cues=candidate.cues)
-
-    @staticmethod
-    def _ambiguous(candidates):
-        options = tuple(dict.fromkeys(item.intent for item in candidates))
-        labels = ', '.join(INTENT_LABELS.get(option, option) for option in options)
-        return IntentDecision(INTENT_AMBIGUOUS, AUTHORITY_RULE, alternatives=options,
-                              cues=tuple(cue for item in candidates for cue in item.cues),
-                              clarification=AMBIGUOUS_PREFIX + labels + AMBIGUOUS_SUFFIX)
-
-    @staticmethod
-    def _mixed(candidates, judged):
-        """The rules' candidates plus a judged capability they did not find."""
-        options = tuple(dict.fromkeys([*(item.intent for item in candidates),
-                                       *(() if judged.intent == INTENT_AMBIGUOUS else (judged.intent,))]))
-        labels = ', '.join(INTENT_LABELS.get(option, option) for option in options)
-        return IntentDecision(INTENT_AMBIGUOUS, AUTHORITY_RULE, alternatives=options,
-                              cues=(*(cue for item in candidates for cue in item.cues), *judged.cues),
-                              clarification=MIXED_TASKS_PREFIX + labels + MIXED_TASKS_SUFFIX)
+        return self._with_suggestion(decision, model_suggestion)
 
     def _fallback(self, text, lowered, focus_intent, correction):
-        """No capability rule fired: stay on the ordinary conversation route.
+        """Not an explicit form: a judged capability, else the ordinary conversation route.
 
         A pending calendar draft's approve or cancel reply never reaches this
         classifier: the service answers it first (#22).
@@ -1774,14 +1439,15 @@ class IntentClassifier:
         """Ask the DecisionEngine whether a turn needs a declared capability.
 
         Asked for every turn that is not an explicit form (#672 review; a
-        pending calendar draft's answer never reaches here, #22): a rule-claimed turn is asked
-        too, so a part the rules did not see makes it mixed instead of being
-        dropped.  The owner text is redacted by ``ConversationJudgments``
-        before it reaches the engine.  A yes selects an Still-declared
-        candidate (``several-tasks`` yields the mixed-turn clarification); the argument is
-        the owner's own words (``_judged_mail_query``, or the utterance for a
-        calendar draft), never text the engine produced.  Unavailable, unsure
-        or none-of-these returns ``None`` and the turn stays on conversation,
+        pending calendar draft's answer never reaches here, #22).  The owner
+        text is redacted by ``ConversationJudgments`` before it reaches the
+        engine.  A yes selects an Still-declared candidate (``several-tasks``
+        yields the mixed-turn clarification); the only argument is the
+        utterance itself for a calendar draft, never text the engine produced.
+        A judged mail need carries no query (#173): its connection is offered
+        first when missing, and the worker reads the owner's words and
+        searches mail with its own tools.  Unavailable, unsure or
+        none-of-these returns ``None`` and the turn stays on conversation,
         where the Work model loop chooses its own tools; no word list stands
         in for the judgment (#672).
         """
@@ -1792,13 +1458,7 @@ class IntentClassifier:
             return None
         cues = ('judgment:capability-need',)
         if need.value == INTENT_MAIL_SEARCH:
-            query = self._judged_mail_query(text)
-            if query is None:
-                # Still a mail request: a missing connection is handed off
-                # first, and the owner is asked what to look for instead of
-                # the whole question being sent to Gmail as a query.
-                return IntentDecision(INTENT_MAIL_SEARCH, AUTHORITY_RULE, cues=cues, clarification=MAIL_CLARIFICATION)
-            return IntentDecision(INTENT_MAIL_SEARCH, AUTHORITY_RULE, argument=query, cues=cues)
+            return IntentDecision(INTENT_MAIL_SEARCH, AUTHORITY_RULE, cues=cues)
         if need.value == INTENT_CALENDAR_CREATE:
             # The utterance is the argument, as it always was: title, date
             # and time are read by ``CalendarConversation``, which ends in a
@@ -1813,69 +1473,22 @@ class IntentClassifier:
                                   clarification=UNSUPPORTED_CAPABILITY_TEXT[need.value])
         return None
 
-    def _judged_mail_query(self, text):
-        """A bounded Gmail query for a cue-free mail request, or None.
-
-        A quoted phrase is the owner's literal query.  Otherwise the
-        DecisionEngine selects one of the owner's own words (sender,
-        organisation or subject); a single candidate needs no judgment.  No
-        selection means no query - never the whole question.
-        """
-        quoted = _QUOTED.findall(text)
-        if quoted:
-            return quoted[0]
-        terms = []
-        for token in _strip_noise(text).split():
-            token = _trim_particle(token.strip('?!.,;:·"“”‘’()'))
-            for ending in _TERM_ENDINGS:
-                if token.endswith(ending) and len(token) > len(ending) + 1:
-                    token = token[:-len(ending)]
-                    break
-            if len(token) >= 2 and token not in terms:
-                terms.append(token)
-        terms = terms[:MAIL_QUERY_MAX_TERMS]
-        if len(terms) == 1:
-            return terms[0]
-        if not terms:
-            return None
-        judged = self._judge.mail_query_term(text, terms)
-        return terms[judged.value] if judged.outcome == JUDGMENT_YES else None
-
     # -- the model-suggestion gate ------------------------------------------
     @staticmethod
-    def _with_suggestion(decision, candidates, suggestion):
-        """Let an untrusted suggestion narrow an Still ambiguity, nothing more.
+    def _with_suggestion(decision, suggestion):
+        """Record an untrusted suggestion on the decision and reject it.
 
-        Every rejection is recorded on the decision so that an owner or a
-        reviewer can see that a suggestion arrived and what happened to it.
-        The accepted path still returns ``agentos-rule`` authority, because
-        Still produced both the option set and the argument; the suggestion
-        only picked one of Still's own options.
+        A suggestion could only ever narrow an ambiguity among Still's own
+        rule candidates.  With no keyword rule left (#173) there is no such
+        ambiguity, so every suggestion is recorded, for an owner or a
+        reviewer to see that one arrived, and rejected.
         """
         if suggestion is None:
             return decision
         proposed = suggestion.get('intent') if isinstance(suggestion, dict) else None
-        record = {'received': proposed, 'state': 'rejected', 'reason': 'no-ambiguity-to-resolve'}
-        if decision.intent != INTENT_AMBIGUOUS:
-            decision.model_suggestion = record
-            return decision
-        by_intent = {item.intent: item for item in candidates}
-        if proposed not in by_intent:
-            record['reason'] = 'not-a-deterministic-candidate'
-        elif proposed in CONSEQUENTIAL_INTENTS:
-            record['reason'] = 'consequential-intent'
-        elif by_intent[proposed].clarification:
-            record['reason'] = 'candidate-needs-owner-detail'
-        else:
-            chosen = by_intent[proposed]
-            return IntentDecision(chosen.intent, AUTHORITY_RULE, argument=chosen.argument,
-                                  cues=chosen.cues, alternatives=decision.alternatives,
-                                  supersedes_previous=decision.supersedes_previous,
-                                  model_suggestion={'received': proposed, 'state': 'accepted',
-                                                    'reason': 'narrowed-an-agentos-candidate'})
-        decision.model_suggestion = record
+        reason = 'not-a-deterministic-candidate' if decision.intent == INTENT_AMBIGUOUS else 'no-ambiguity-to-resolve'
+        decision.model_suggestion = {'received': proposed, 'state': 'rejected', 'reason': reason}
         return decision
-
 
 # ---------------------------------------------------------------------------
 # Connector prerequisites, connection handoff and exactly-once resume

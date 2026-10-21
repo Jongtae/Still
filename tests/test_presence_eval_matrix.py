@@ -702,9 +702,21 @@ class D_MissingGmail(LocalHttp, PresenceEval):
             return {'access_token': 'fixture-access', 'refresh_token': 'fixture-refresh',
                     'expires_in': 7200, 'scope': GMAIL_READONLY_SCOPE}
         self.service.gmail_token_exchange = exchange
+        # #173: a mailbox read is the capability-need judgment's, never a mail word's.
+        self.capability_needs.update({phrase: 'mail-search' for phrase in self.PHRASES})
 
     def searches(self):
         return len([call for call in self.gmail_calls if call[1].endswith('/messages')])
+
+    def worker_reads_mail(self, query='예약 확인'):
+        """#173: the resumed request is the worker's; it calls its own mail_search once and finishes."""
+        self.script.append(('tool', 'mail_search', {'query': query}))
+        self.claim = True
+
+    def worker_saw(self, text):
+        """Whether the worker's last model request held ``text`` in a tool result."""
+        return any(text in str(message.get('content'))
+                   for message in self.model_bodies[-1]['messages'] if message.get('role') == 'tool')
 
     def start_connection(self):
         status, _body, location = self.http('GET', '/google-gmail')
@@ -740,6 +752,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
                 self.assertEqual(self.store.job(job['id'])['status'], 'queued')
                 # The ORIGINAL Work resumes once and answers once in the same conversation.
                 resumed_at = len(self.wire)
+                self.worker_reads_mail()
                 self.assertTrue(self.service.run_one())
                 self.service.deliver_one()
                 self.assertFalse(self.service.run_one(), 'exactly once')
@@ -749,8 +762,9 @@ class D_MissingGmail(LocalHttp, PresenceEval):
                 self.assertEqual(self.methods(resumed_at), ['sendMessage', 'setMessageReaction'],
                                  'a resumed Work is not re-acknowledged; its 👀 becomes the outcome reaction')
                 self.assertEqual(self.reactions(resumed_at), [DONE_REACTION])
-                [answer] = self.texts(resumed_at)
-                self.assertIn('예약 확인 안내', answer)
+                # #173: the worker read the mail with its own tool and wrote the answer.
+                self.assertTrue(self.worker_saw('예약 확인 안내'))
+                self.assertEqual(self.texts(resumed_at), [self.text])
 
     def test_a_replayed_callback_never_resumes_twice(self):
         self.turn(self.PHRASES[0])
@@ -759,6 +773,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
         replay = self.http('GET', f'/oauth/gmail/callback?state={state}&code=a', session=False)
         self.assertEqual(replay[0], 400)
         self.assertEqual(len(self.exchanges), 1, 'the single-use state is consumed before the code')
+        self.worker_reads_mail()
         self.assertTrue(self.service.run_one())
         self.assertFalse(self.service.run_one())
         self.assertEqual(self.searches(), 1)
@@ -780,6 +795,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
             self.turn(phrase)
         self.assertEqual(self.store.job(job['id'])['status'], 'awaiting_connection')
         self.connect_through_the_browser()
+        self.worker_reads_mail()
         self.assertTrue(self.service.run_one())
         self.assertFalse(self.service.run_one(), 'the original request resumes once')
         self.assertEqual(self.searches(), 1)
@@ -792,21 +808,18 @@ class D_MissingGmail(LocalHttp, PresenceEval):
         self.assertEqual(self.store.job(focused['id'])['status'], 'cancelled')
         self.assertEqual(self.store.job(earlier['id'])['status'], 'awaiting_connection')
         self.connect_through_the_browser()
+        self.worker_reads_mail()
         self.assertTrue(self.service.run_one(), 'the independent earlier request still resumes')
         self.assertFalse(self.service.run_one(), 'a withdrawn request never runs after connecting')
         self.assertEqual(self.store.job(earlier['id'])['status'], 'succeeded')
         self.assertEqual(self.store.job(focused['id'])['status'], 'cancelled')
         self.assertEqual(self.searches(), 1)
 
-    def capability_engine(self, needs, subjects=()):
-        """The shared fixture engine plus scripted capability-need / query-term answers (#597)."""
+    def capability_engine(self, needs):
+        """The shared fixture engine plus scripted capability-need answers (#597)."""
         base = self.decision_engine()
 
         def choose(context, candidates, question):
-            if context.purpose == 'mail-query-term':
-                terms = dict(item.split(' = ', 1) for item in context.facts['terms'].split('; '))
-                pick = next((label for label, term in terms.items() if term in subjects), 'none-of-these')
-                return SelectionDecision(OUTCOME_DECIDED, pick, candidates, fixture_confidence())
             if context.purpose == 'capability-need':
                 return SelectionDecision(OUTCOME_DECIDED, needs.get(context.facts.get('owner_message'), 'none-of-these'),
                                          candidates, fixture_confidence())
@@ -827,8 +840,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
         mail = ('집주인한테 답장 왔어?', 'did the landlord write back to me?', '관리사무소에서 뭐 온 거 있나?',
                 'has the bank gotten back to me yet?')
         engine = self.capability_engine({**{phrase: 'mail-search' for phrase in mail},
-                                         'tell the landlord I agree': 'mail-send'},
-                                        subjects=('집주인', 'landlord', '관리사무소', 'bank'))
+                                         'tell the landlord I agree': 'mail-send'})
         self.service.use_decision_engine(engine)
         queries = []
         search = self.gmail.search
@@ -874,6 +886,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
         # Each original request resumes exactly once after the owner connects.
         self.connect_through_the_browser()
         for _ in mail:
+            self.worker_reads_mail('newer_than:7d')
             self.assertTrue(self.service.run_one())
             self.service.deliver_one()
         self.assertFalse(self.service.run_one(), 'exactly once')
@@ -881,8 +894,8 @@ class D_MissingGmail(LocalHttp, PresenceEval):
             resumed = self.store.job(job['id'])
             self.assertEqual((resumed['status'], resumed['message']), ('succeeded', phrase))
         self.assertEqual(self.searches(), len(mail))
-        # A bounded query - the owner's word the judgment selected, not the whole question.
-        self.assertCountEqual(queries, ['집주인', 'landlord', '관리사무소', 'bank'])
+        # #173: the query is the worker's own; Still extracts no term from the question.
+        self.assertEqual(queries, ['newer_than:7d'] * len(mail))
 
     def test_finding_d1_an_unavailable_engine_invents_no_handoff(self):
         """With no DecisionEngine answer a cue-free turn stays ordinary conversation."""

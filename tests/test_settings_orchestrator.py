@@ -94,12 +94,14 @@ class SettingsOrchestratorTests(unittest.TestCase):
         self.assertEqual(self.store.config('capability_registry'), self.history)
         with self.assertRaises(SettingsError): self.settings.read('owner', 'runtime')
 
-    def test_lifecycle_requests_are_refused_without_any_authority_change(self):
+    def test_lifecycle_requests_change_no_authority(self):
+        # #173: the command's free text is never re-read for a phrase; it is the
+        # read, and a free-text lifecycle draft stays retired.
         for text in ('Drive pause', '드라이브 연결 해제해줘', 'pause the calendar connection', 'mcp resume'):
             with self.subTest(text=text):
                 result = self.settings.handle_text('owner', 'http', text)
-                self.assertEqual(result['state'], 'unsupported')
-                self.assertEqual(result['response'], RETIRED_CONTROL_MESSAGE)
+                self.assertEqual(result['state'], 'read')
+                self.assertEqual(self.settings.draft('owner', 'http', text)['response'], RETIRED_CONTROL_MESSAGE)
         self.assertEqual(self.store.config('settings_change_drafts', {}), {})
         self.assertEqual(self.store.config('capability_registry'), self.history)
 
@@ -189,13 +191,14 @@ class ServiceSettingsProjectionTests(unittest.TestCase):
         self.assertEqual([row['id'] for row in service.conversation_settings_request({'operation': 'read'})['connections']],
                          ['telegram'])
 
-    def test_queued_telegram_settings_commands_refuse_the_retired_control(self):
+    def test_queued_telegram_settings_commands_read_and_change_nothing(self):
+        # #173: the explicit command's free text is never re-read for a phrase; it reads.
         CapabilityRegistry(self.store).transition('google-drive-read', 'enabled', ('read',))
         history = copy.deepcopy(self.store.config('capability_registry'))
         service = AgentService(self.store)
         job = self.store.enqueue('/settings Drive pause', 'settings-telegram-draft', channel='telegram', chat_id=42)
         self.assertTrue(service.run_one())
-        self.assertEqual(self.store.job(job)['response'], RETIRED_CONTROL_MESSAGE)
+        self.assertIn('Telegram · ', self.store.job(job)['response'])
         self.assertEqual(self.store.config('settings_change_drafts', {}), {})
         self.assertEqual(self.store.config('capability_registry'), history)
 

@@ -1,13 +1,11 @@
 """Natural intent classification for the one personal conversation.
 
-These tests cover WU2 of PA1-CONV-01: ordinary Korean and English utterances
-reach the right capability without a magic command prefix, supported slash commands keep
-working, an ambiguous utterance never triggers a consequential effect, and a
+These tests cover WU2 of PA1-CONV-01 as RULES-OUT-01 (#173) revised it:
+ordinary Korean and English utterances are no longer read by keyword rules;
+they reach the worker (the owner's chosen AI) on the ordinary conversation
+route with the owner's words verbatim, supported slash commands keep working,
+a judged several-tasks turn never triggers a consequential effect, and a
 model's opinion cannot by itself authorise anything.
-
-The whole pre-existing suite is the evidence that the prefix chain was
-replaced without changing what any previously supported utterance does; these
-tests are the evidence for what is new.
 """
 import itertools
 import tempfile
@@ -21,49 +19,41 @@ from personal_agent.conversation_handoff import (AUTHORITY_DEFAULT, AUTHORITY_OW
                                                  INTENT_KNOWLEDGE, INTENT_NOTE_CREATE,
                                                  INTENT_NOTE_LIST,
                                                  INTENT_RESEARCH, INTENT_SETTINGS,
-                                                 INTENT_WORKSPACE_SEARCH,
+                                                 INTENT_WORKSPACE_SEARCH, SEVERAL_TASKS,
                                                  JUDGMENT_UNAVAILABLE, ConversationFocus,
                                                  ConversationJudgments, IntentClassifier)
 from personal_agent.providers import ModelAdapter
-from personal_agent.quickstart_service import AgentService, workspace_search_request
+from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
 from scripted_capability_need import capability_need_engine
 
 
 def classifier():
     """The classifier exactly as the service builds it."""
-    return IntentClassifier(workspace_search=workspace_search_request)
+    return IntentClassifier()
 
 
-#: Two Korean and two English paraphrases for every intent an ordinary
-#: utterance is allowed to reach.  The criterion asks for *representative*
-#: paraphrases, so no intent is carried by a single phrasing.
-PARAPHRASES = {
-    INTENT_KNOWLEDGE: (
-        ('개인 공간에서 오로라 관련 자료 찾아줘', '오로라'),
-        ('내 지식에서 예산 검토 알려줘', '예산 검토'),
-        ('what do i know about aurora?', 'aurora'),
-        ('search my knowledge base for the budget review', 'budget review'),
-    ),
-    INTENT_NOTE_CREATE: (
-        ('금요일 3시 출시 검토 메모해줘', '금요일 3시 출시 검토'),
-        ('오로라 예산 확정 적어둬', '오로라 예산 확정'),
-        ('take a note: aurora budget approved', 'aurora budget approved'),
-        ('make a note of the vendor call tomorrow', 'the vendor call tomorrow'),
-    ),
-    INTENT_WORKSPACE_SEARCH: (
-        ('작업공간에 저장한 파일 열어줘', '__latest__'),
-        ('내 워크스페이스에서 회의 브리프 보여줘', '회의 브리프'),
-        ('open the saved file about aurora', 'aurora'),
-        ('pull up the saved result about aurora', 'aurora'),
-    ),
-    INTENT_SETTINGS: (
-        ('연결 상태 알려줘', '/settings'),
-        ('드라이브 연결 해제해줘', '드라이브 연결 해제해줘'),
-        ("what's connected?", '/settings'),
-        ('pause the calendar connection', 'pause the calendar connection'),
-    ),
-}
+#: Paraphrases the retired keyword rules once read as personal-space,
+#: note, saved-result or settings requests (#173).  They are owner messages
+#: like any other now: the ordinary conversation route, where the worker reads
+#: them verbatim and chooses its own tools.
+WORKER_PARAPHRASES = (
+    '개인 공간에서 오로라 관련 자료 찾아줘', '내 지식에서 예산 검토 알려줘',
+    'what do i know about aurora?', 'search my knowledge base for the budget review',
+    '금요일 3시 출시 검토 메모해줘', '오로라 예산 확정 적어둬',
+    'take a note: aurora budget approved', 'make a note of the vendor call tomorrow',
+    '작업공간에 저장한 파일 열어줘', '내 워크스페이스에서 회의 브리프 보여줘',
+    'open the saved file about aurora', 'pull up the saved result about aurora',
+    '연결 상태 알려줘', '드라이브 연결 해제해줘', "what's connected?", 'pause the calendar connection',
+    '메일에서 예산 관련 내용 찾아줘', 'check my inbox for the invoice',
+    # The four #173 examples.
+    '아까 결과 다시 해줘', '내 기록에서 지난달 지출 합계 알려줘',
+    '회의 내용 정리해서 노트로 저장해줘', 'Gmail 연결 상태 보여주고 끊어줘',
+)
+
+#: Natural-language strings once parsed as owner "commands" (#173); the slash forms stay.
+RETIRED_NATURAL_COMMANDS = ('무엇이 연결되어 있어?', '무엇을 바꿀 수 있어?', '메모 목록',
+                            '메모: 오로라 예산', '기록: 오로라 예산')
 
 #: Public web research has no routing rule (#672): these stay on the ordinary
 #: conversation route, where the Work model loop chooses its search tools.
@@ -85,27 +75,30 @@ CALENDAR_PARAPHRASES = ('내일 오후 3시에 팀 회의 일정 잡아줘', '�
 MEMORY_PARAPHRASES = ('이 선호를 기억해줘', '다음 내용을 저장해',
                       'remember this preference', 'save this for later')
 
+#: A turn the scripted judgment reads as several tasks (#672 review).
+SEVERAL = '일정 잡고 메모도 남겨줘'
+
+
+def several_tasks_classifier():
+    return IntentClassifier(judge=ConversationJudgments(capability_need_engine({SEVERAL: SEVERAL_TASKS})))
+
 
 class ParaphraseTests(unittest.TestCase):
-    """Two Korean and two English paraphrases reach each intent."""
+    """No keyword rule reads an owner message for its intent (#173)."""
 
     def setUp(self):
         self.classifier = classifier()
 
-    def test_every_intent_is_reachable_from_two_korean_and_two_english_paraphrases(self):
-        for intent, rows in PARAPHRASES.items():
-            korean = [text for text, _ in rows if not text.isascii()]
-            english = [text for text, _ in rows if text.isascii()]
-            self.assertGreaterEqual(len(korean), 2, intent)
-            self.assertGreaterEqual(len(english), 2, intent)
-            for text, argument in rows:
-                with self.subTest(intent=intent, text=text):
-                    decision = self.classifier.classify(text)
-                    self.assertEqual(decision.intent, intent)
-                    self.assertEqual(decision.authority, AUTHORITY_RULE)
-                    self.assertTrue(decision.executes)
-                    self.assertEqual(decision.argument, argument)
-                    self.assertTrue(decision.cues, 'a rule decision must record the cues it used')
+    def test_every_former_rule_paraphrase_reaches_the_worker_route_verbatim(self):
+        for text in (*WORKER_PARAPHRASES, *RETIRED_NATURAL_COMMANDS):
+            with self.subTest(text=text):
+                decision = self.classifier.classify(text)
+                self.assertEqual(decision.intent, INTENT_CONVERSATION)
+                self.assertEqual(decision.authority, AUTHORITY_DEFAULT)
+                self.assertIsNone(decision.argument, 'no rule extracts a query or a note from the message')
+                self.assertEqual(decision.cues, ())
+                self.assertIsNone(decision.clarification, 'no rule answers the owner')
+                self.assertTrue(decision.executes)
 
     def test_memory_phrasing_stays_on_the_conversation_route_as_an_approval_flag(self):
         for text in MEMORY_PARAPHRASES:
@@ -125,6 +118,17 @@ class ParaphraseTests(unittest.TestCase):
         self.assertFalse(AgentService.memory_followup_prefilter('do not save this'))
         self.assertFalse(hasattr(AgentService, 'explicit_memory_request'))
 
+    def test_a_judged_mail_need_carries_no_query_taken_from_the_message(self):
+        # #173: the worker searches mail with its own tools; Still extracts no query.
+        text = '집주인한테 답장 왔는지 메일 확인해줘'
+        judged = IntentClassifier(judge=ConversationJudgments(capability_need_engine({text: 'mail-search'})))
+        decision = judged.classify(text)
+        self.assertEqual(decision.intent, 'mail-search')
+        self.assertEqual(decision.cues, ('judgment:capability-need',))
+        self.assertIsNone(decision.argument)
+        self.assertIsNone(decision.clarification)
+        self.assertTrue(decision.executes)
+
 
 class ExplicitFormTests(unittest.TestCase):
     """Supported slash commands remain authoritative; retired ones fall through."""
@@ -132,19 +136,16 @@ class ExplicitFormTests(unittest.TestCase):
     def setUp(self):
         self.classifier = classifier()
 
-    def test_every_slash_and_legacy_form_keeps_its_route_and_its_argument(self):
+    def test_every_slash_form_keeps_its_route_and_its_argument(self):
         cases = (
             ('/start', INTENT_GREETING, None),
             ('/help', INTENT_GREETING, None),
             ('/knowledge aurora', INTENT_KNOWLEDGE, 'aurora'),
             ('/settings Drive pause', INTENT_SETTINGS, 'Drive pause'),
             ('/settings', INTENT_SETTINGS, '/settings'),
-            ('무엇이 연결되어 있어?', INTENT_SETTINGS, '무엇이 연결되어 있어?'),
             ('/note 회의: 금요일 출시 검토', INTENT_NOTE_CREATE, '회의: 금요일 출시 검토'),
-            ('메모: 오로라 예산', INTENT_NOTE_CREATE, '오로라 예산'),
-            ('기록: 오로라 예산', INTENT_NOTE_CREATE, '오로라 예산'),
             ('/notes', INTENT_NOTE_LIST, None),
-            ('메모 목록', INTENT_NOTE_LIST, None),
+            ('/workspace-search aurora', INTENT_WORKSPACE_SEARCH, 'aurora'),
         )
         for text, intent, argument in cases:
             with self.subTest(text=text):
@@ -153,14 +154,19 @@ class ExplicitFormTests(unittest.TestCase):
                 self.assertEqual(decision.authority, AUTHORITY_OWNER)
                 self.assertEqual(decision.argument, argument)
 
+    def test_natural_language_strings_are_no_longer_owner_commands(self):
+        for text in RETIRED_NATURAL_COMMANDS:
+            with self.subTest(text=text):
+                self.assertIsNone(self.classifier.explicit(text))
+                self.assertFalse(self.classifier.has_local_candidate(text))
+
     def test_an_unrecognised_slash_command_falls_through_instead_of_guessing(self):
         for text in ('/summarize', '/workspace-summary Aurora :: Launch notes',
                      '/search Still personal assistant verification', '/assistant Drive 검색: 예산',
                      '/recommend specialist-research'):
             with self.subTest(text=text):
                 decision = self.classifier.classify(text)
-                self.assertIn(decision.intent, (INTENT_CONVERSATION, INTENT_RESEARCH,
-                                                INTENT_WORKSPACE_SEARCH))
+                self.assertIn(decision.intent, (INTENT_CONVERSATION, INTENT_RESEARCH))
                 self.assertNotIn(decision.intent, CONSEQUENTIAL_INTENTS)
 
 
@@ -200,7 +206,7 @@ class ConsequentialEffectTests(unittest.TestCase):
         self.classifier = classifier()
 
     def test_a_recognised_calendar_request_is_consequential_and_carries_the_utterance(self):
-        judged = IntentClassifier(workspace_search=workspace_search_request, judge=ConversationJudgments(
+        judged = IntentClassifier(judge=ConversationJudgments(
             capability_need_engine({text: INTENT_CALENDAR_CREATE for text in CALENDAR_PARAPHRASES})))
         for text in CALENDAR_PARAPHRASES:
             with self.subTest(text=text):
@@ -225,50 +231,30 @@ class ConsequentialEffectTests(unittest.TestCase):
                 self.assertFalse(decision.intent == INTENT_CALENDAR_CREATE and decision.continuation)
         stale = {'intent': INTENT_CALENDAR_CREATE}
         self.assertEqual(self.classifier.classify('치과', focus=stale).intent, INTENT_CONVERSATION)
-        # A rule that fires still wins.
-        self.assertEqual(self.classifier.classify('메모 목록', focus=pending).intent, INTENT_NOTE_LIST)
+        # An explicit form still wins.
         self.assertEqual(self.classifier.classify('/notes', focus=pending).intent, INTENT_NOTE_LIST)
 
-    def test_non_consequential_intents_execute_from_prose(self):
-        for intent, rows in PARAPHRASES.items():
-            self.assertNotIn(intent, CONSEQUENTIAL_INTENTS)
-            for text, _argument in rows:
-                with self.subTest(text=text):
-                    self.assertTrue(self.classifier.classify(text).executes)
-
-    def test_an_ambiguous_utterance_resolves_to_a_clarification_and_no_action(self):
-        cases = (
-            ('작업공간에 저장한 파일 열어주고 메모해줘',
-             (INTENT_WORKSPACE_SEARCH, INTENT_NOTE_CREATE)),
-            ('개인 공간의 저장한 파일 찾아줘',
-             (INTENT_KNOWLEDGE, INTENT_WORKSPACE_SEARCH)),
-        )
-        for text, options in cases:
+    def test_former_rule_paraphrases_are_never_consequential(self):
+        for text in WORKER_PARAPHRASES:
             with self.subTest(text=text):
                 decision = self.classifier.classify(text)
-                self.assertEqual(decision.intent, INTENT_AMBIGUOUS)
-                self.assertEqual(set(decision.alternatives), set(options))
-                self.assertFalse(decision.executes)
-                self.assertIn('아무 작업도 실행하지 않았습니다', decision.clarification)
+                self.assertNotIn(decision.intent, CONSEQUENTIAL_INTENTS)
+                self.assertTrue(decision.executes)
 
-    def test_a_recognised_intent_missing_its_subject_asks_instead_of_guessing(self):
-        for text, intent in (('이거 메모해줘', INTENT_NOTE_CREATE),
-                             ('개인 공간 보여줘', INTENT_KNOWLEDGE)):
-            with self.subTest(text=text):
-                decision = self.classifier.classify(text)
-                self.assertEqual(decision.intent, intent)
-                self.assertFalse(decision.executes)
-                self.assertTrue(decision.clarification)
+    def test_a_judged_several_tasks_turn_resolves_to_a_clarification_and_no_action(self):
+        decision = several_tasks_classifier().classify(SEVERAL)
+        self.assertEqual(decision.intent, INTENT_AMBIGUOUS)
+        self.assertFalse(decision.executes)
+        self.assertIn('아무 작업도 실행하지 않았습니다', decision.clarification)
 
 
 class ModelAuthorityTests(unittest.TestCase):
     """A model suggestion is input, never authority."""
 
     def setUp(self):
-        self.classifier = classifier()
-        self.ambiguous = '개인 공간의 저장한 파일 찾아줘'
+        self.classifier = several_tasks_classifier()
 
-    def test_a_suggestion_cannot_introduce_an_intent_the_rules_did_not_find(self):
+    def test_a_suggestion_cannot_introduce_an_intent(self):
         decision = self.classifier.classify('오늘 뭐 하면 좋을까?',
                                             model_suggestion={'intent': INTENT_KNOWLEDGE,
                                                               'confidence': 0.99})
@@ -276,10 +262,11 @@ class ModelAuthorityTests(unittest.TestCase):
         self.assertEqual(decision.model_suggestion['state'], 'rejected')
         self.assertEqual(decision.model_suggestion['reason'], 'no-ambiguity-to-resolve')
 
-    def test_a_suggestion_cannot_override_a_decision_the_rules_already_made(self):
-        decision = self.classifier.classify('what do i know about aurora?',
-                                            model_suggestion={'intent': INTENT_CALENDAR_CREATE})
-        self.assertEqual(decision.intent, INTENT_KNOWLEDGE)
+    def test_a_suggestion_cannot_override_a_judged_decision(self):
+        judged = IntentClassifier(judge=ConversationJudgments(
+            capability_need_engine({CALENDAR_PARAPHRASES[0]: INTENT_CALENDAR_CREATE})))
+        decision = judged.classify(CALENDAR_PARAPHRASES[0], model_suggestion={'intent': INTENT_KNOWLEDGE})
+        self.assertEqual(decision.intent, INTENT_CALENDAR_CREATE)
         self.assertEqual(decision.model_suggestion['state'], 'rejected')
 
     def test_a_suggestion_cannot_override_an_owner_explicit_form(self):
@@ -289,48 +276,28 @@ class ModelAuthorityTests(unittest.TestCase):
         self.assertEqual(decision.authority, AUTHORITY_OWNER)
         self.assertEqual(decision.model_suggestion['state'], 'rejected')
 
-    def test_a_suggestion_cannot_select_a_consequential_intent(self):
-        # No rule produces a calendar candidate (#672), so a suggestion naming
-        # one is never among Still's options to narrow.
-        decision = self.classifier.classify('작업공간에 저장한 파일 열어주고 메모해줘',
-                                            model_suggestion={'intent': INTENT_CALENDAR_CREATE})
-        self.assertEqual(decision.intent, INTENT_AMBIGUOUS)
-        self.assertEqual(decision.model_suggestion['state'], 'rejected')
-        self.assertEqual(decision.model_suggestion['reason'], 'not-a-deterministic-candidate')
-
-    def test_a_suggestion_naming_a_non_candidate_is_recorded_and_rejected(self):
-        decision = self.classifier.classify(self.ambiguous,
-                                            model_suggestion={'intent': INTENT_SETTINGS})
-        self.assertEqual(decision.intent, INTENT_AMBIGUOUS)
-        self.assertEqual(decision.model_suggestion['reason'], 'not-a-deterministic-candidate')
-
-    def test_a_malformed_suggestion_is_rejected_rather_than_trusted(self):
-        for suggestion in ({}, {'intent': None}, {'intent': 'rm -rf'}, 'personal-knowledge', 42):
+    def test_no_suggestion_narrows_a_judged_several_tasks_turn(self):
+        # #173: with no keyword rule there are no deterministic candidates, so
+        # nothing - consequential or not, well-formed or not - is accepted.
+        for suggestion in ({'intent': INTENT_CALENDAR_CREATE}, {'intent': INTENT_NOTE_CREATE},
+                           {'intent': INTENT_SETTINGS}, {}, {'intent': None}, {'intent': 'rm -rf'},
+                           'personal-knowledge', 42):
             with self.subTest(suggestion=suggestion):
-                decision = self.classifier.classify(self.ambiguous, model_suggestion=suggestion)
+                decision = self.classifier.classify(SEVERAL, model_suggestion=suggestion)
                 self.assertEqual(decision.intent, INTENT_AMBIGUOUS)
+                self.assertFalse(decision.executes)
                 self.assertEqual(decision.model_suggestion['state'], 'rejected')
-
-    def test_the_only_accepted_suggestion_narrows_an_agentos_candidate(self):
-        decision = self.classifier.classify(self.ambiguous,
-                                            model_suggestion={'intent': INTENT_WORKSPACE_SEARCH})
-        self.assertEqual(decision.intent, INTENT_WORKSPACE_SEARCH)
-        self.assertEqual(decision.model_suggestion['state'], 'accepted')
-        # Even then the authority is Still's: the rules produced the option
-        # set and the argument, the suggestion only picked one of them.
-        self.assertEqual(decision.authority, AUTHORITY_RULE)
-        self.assertEqual(decision.argument, self.classifier.classify(
-            '개인 공간의 저장한 파일 찾아줘', model_suggestion={'intent': INTENT_WORKSPACE_SEARCH}).argument)
+                self.assertEqual(decision.model_suggestion['reason'], 'not-a-deterministic-candidate')
 
     def test_no_decision_can_ever_carry_model_authority(self):
-        texts = ['/notes', 'hello', self.ambiguous, *CALENDAR_PARAPHRASES]
-        texts += [text for rows in PARAPHRASES.values() for text, _ in rows]
+        texts = ['/notes', 'hello', SEVERAL, *CALENDAR_PARAPHRASES, *WORKER_PARAPHRASES]
         for text in texts:
             for suggestion in (None, {'intent': INTENT_CALENDAR_CREATE}, {'intent': INTENT_KNOWLEDGE}):
                 with self.subTest(text=text, suggestion=suggestion):
                     decision = self.classifier.classify(text, model_suggestion=suggestion)
                     self.assertIn(decision.authority,
                                   (AUTHORITY_OWNER, AUTHORITY_RULE, AUTHORITY_DEFAULT))
+                    self.assertNotEqual((decision.model_suggestion or {}).get('state'), 'accepted')
 
 
 class CorrectionAndTopicChangeTests(unittest.TestCase):
@@ -340,19 +307,22 @@ class CorrectionAndTopicChangeTests(unittest.TestCase):
         self.classifier = classifier()
 
     def test_a_changed_subject_supersedes_the_previous_focus(self):
-        first = self.classifier.classify('작업공간에 저장한 파일 열어줘')
+        first = self.classifier.classify('/workspace-search aurora')
         self.assertEqual(first.intent, INTENT_WORKSPACE_SEARCH)
         focus = {'intent': first.intent}
-        second = self.classifier.classify('연결 상태 알려줘', focus=focus)
+        second = self.classifier.classify('/settings', focus=focus)
         self.assertEqual(second.intent, INTENT_SETTINGS)
         self.assertFalse(second.continuation)
         self.assertTrue(second.supersedes_previous)
+        third = self.classifier.classify('연결 상태 알려줘', focus=focus)
+        self.assertEqual(third.intent, INTENT_CONVERSATION)
+        self.assertTrue(third.supersedes_previous)
 
-    def test_a_correction_marker_supersedes_even_when_the_intent_repeats(self):
-        focus = {'intent': INTENT_NOTE_CREATE}
+    def test_a_correction_marker_supersedes_even_when_the_route_repeats(self):
+        focus = {'intent': INTENT_CONVERSATION}
         decision = self.classifier.classify('아니, 그거 말고 오로라 예산 확정 적어둬', focus=focus)
-        self.assertEqual(decision.intent, INTENT_NOTE_CREATE)
-        self.assertEqual(decision.argument, '오로라 예산 확정')
+        self.assertEqual(decision.intent, INTENT_CONVERSATION)
+        self.assertIsNone(decision.argument)
         self.assertTrue(decision.supersedes_previous)
         self.assertFalse(decision.continuation)
 
@@ -385,7 +355,7 @@ class CorrectionAndTopicChangeTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         store = QuickStore(temp.name)
         focus = ConversationFocus(store)
-        decision = self.classifier.classify('개인 공간에서 오로라 관련 자료 찾아줘')
+        decision = self.classifier.classify('/knowledge 오로라')
         focus.record(decision)
         saved = focus.current()
         self.assertEqual(set(saved), {'intent', 'at'})
@@ -397,8 +367,8 @@ class CorrectionAndTopicChangeTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         store = QuickStore(temp.name)
         focus = ConversationFocus(store)
-        focus.record(self.classifier.classify('what do i know about aurora?'))
-        focus.record(self.classifier.classify('개인 공간의 저장한 파일 찾아줘'))
+        focus.record(self.classifier.classify('/knowledge aurora'))
+        focus.record(several_tasks_classifier().classify(SEVERAL))
         self.assertEqual(focus.current()['intent'], INTENT_KNOWLEDGE)
 
 
@@ -434,50 +404,31 @@ class ServiceRoutingTests(unittest.TestCase):
         self.assertIn("Hi, I'm Still", self.run_one('/start')['response'])
         self.assertIn('메모를 저장했습니다', self.run_one('/note 금요일 출시 검토')['response'])
         self.assertIn('금요일 출시 검토', self.run_one('/notes')['response'])
-        self.assertIn('금요일 출시 검토', self.run_one('메모 목록')['response'])
-        self.assertIn('메모를 저장했습니다', self.run_one('기록: 오로라 예산')['response'])
-        self.assertIn('오로라 예산', [row['content'] for row in self.store.notes()])
+        self.assertEqual(self.run_one('/workspace-search aurora')['response'],
+                         '현재 원본과 일치하는 저장 결과를 찾지 못했습니다.')
 
-    def test_the_explicit_settings_command_reaches_settings_but_drafts_no_retired_change(self):
+    def test_the_explicit_settings_command_reads_and_drafts_no_retired_change(self):
+        # #173: the command's free text is never re-read for a phrase; it reads.
         self.registry.transition('google-drive-read', 'enabled', ('read',))
         before = self.store.config('capability_registry')
-        self.assertIn('대화에서 제공하지 않습니다', self.run_one('/settings Drive pause')['response'])
+        self.assertIn('Telegram · 연결 안 됨', self.run_one('/settings Drive pause')['response'])
+        self.assertIn('Telegram · 연결 안 됨', self.run_one('/settings')['response'])
         self.assertEqual(self.store.config('capability_registry'), before)
         self.assertEqual(self.store.config('settings_change_drafts', {}), {})
 
-    # -- the same capabilities, reached naturally ---------------------------
-    def test_knowledge_paraphrases_reach_the_personal_space_orchestrator(self):
-        for text, _query in PARAPHRASES[INTENT_KNOWLEDGE]:
-            with self.subTest(text=text):
-                before = len(self.store.config('personal_knowledge_audit', []))
-                job = self.run_one(text, channel='telegram:fixture', chat_id=7)
-                self.assertEqual(job['status'], 'succeeded')
-                self.assertEqual(len(self.store.config('personal_knowledge_audit', [])), before + 1)
-
-    def test_note_paraphrases_store_the_extracted_content(self):
-        for text, content in PARAPHRASES[INTENT_NOTE_CREATE]:
-            with self.subTest(text=text):
-                job = self.run_one(text)
-                self.assertIn('메모를 저장했습니다', job['response'])
-                self.assertIn(content, [row['content'] for row in self.store.notes()])
-
-    def test_workspace_paraphrases_reach_the_file_workspace_not_the_model(self):
-        for text, _query in PARAPHRASES[INTENT_WORKSPACE_SEARCH]:
-            with self.subTest(text=text):
-                job = self.run_one(text)
-                self.assertEqual(job['status'], 'succeeded')
-                self.assertEqual(job['response'], '현재 원본과 일치하는 저장 결과를 찾지 못했습니다.')
-
-    def test_settings_paraphrases_reach_the_settings_orchestrator(self):
+    # -- the former rule paraphrases reach the worker ------------------------
+    def test_former_rule_paraphrases_reach_the_worker_and_no_rule_answers(self):
+        # No AI route is configured here, so the worker route fails with its own
+        # setup reason: no rule ran a search, wrote a note or read the settings.
         self.registry.transition('google-drive-read', 'enabled', ('read',))
-        self.registry.transition('google-calendar-create', 'enabled', ('calendar.events',))
-        # #506: reads report authoritative connection state by owner name;
-        # the retired registry lifecycle is refused rather than drafted.
-        self.assertIn('Telegram · 연결 안 됨', self.run_one('연결 상태 알려줘')['response'])
-        self.assertNotIn('google-drive-read', self.run_one("what's connected?")['response'])
-        self.assertIn('대화에서 제공하지 않습니다', self.run_one('드라이브 연결 해제해줘')['response'])
-        self.assertIn('대화에서 제공하지 않습니다', self.run_one('pause the calendar connection')['response'])
+        before = self.store.config('capability_registry')
+        for text in (*WORKER_PARAPHRASES, *RETIRED_NATURAL_COMMANDS):
+            with self.subTest(text=text):
+                self.assertConversationRoute(self.run_one(text, channel='telegram:fixture', chat_id=7))
+        self.assertEqual(self.store.config('personal_knowledge_audit', []), [])
+        self.assertEqual(self.store.notes(), [])
         self.assertEqual(self.store.config('settings_change_drafts', {}), {})
+        self.assertEqual(self.store.config('capability_registry'), before)
 
     def test_research_paraphrases_stay_on_the_conversation_route(self):
         for text in RESEARCH_PARAPHRASES:
@@ -485,8 +436,9 @@ class ServiceRoutingTests(unittest.TestCase):
                 self.assertConversationRoute(self.run_one(text))
 
     # -- safety -------------------------------------------------------------
-    def test_an_ambiguous_utterance_triggers_no_consequential_action(self):
-        job = self.run_one('작업공간에 저장한 파일 열어주고 메모해줘')
+    def test_a_judged_several_tasks_turn_triggers_no_consequential_action(self):
+        self.service.use_decision_engine(capability_need_engine({SEVERAL: SEVERAL_TASKS}))
+        job = self.run_one(SEVERAL)
         self.assertEqual(job['status'], 'succeeded')
         self.assertIn('아무 작업도 실행하지 않았습니다', job['response'])
         self.assertEqual(self.store.config('personal_assistant_evidence', []), [])
@@ -536,11 +488,11 @@ class ServiceRoutingTests(unittest.TestCase):
         self.assertEqual(seen, [None])
 
     def test_topic_change_is_visible_to_the_worker_across_two_turns(self):
-        self.run_one('작업공간에 저장한 파일 열어줘')
+        self.run_one('/workspace-search aurora')
         self.assertEqual(self.service.conversation_focus.current()['intent'],
                          INTENT_WORKSPACE_SEARCH)
         decision = self.service.classify_intent('연결 상태 알려줘')
-        self.assertEqual(decision.intent, INTENT_SETTINGS)
+        self.assertEqual(decision.intent, INTENT_CONVERSATION)
         self.assertTrue(decision.supersedes_previous)
 
 

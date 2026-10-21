@@ -312,7 +312,7 @@ class OwnerEntryPointTests(unittest.TestCase):
         ready[0] = True
         return service, store
 
-    def test_a_empty_rule_read_is_rejudged_by_the_loop(self):
+    def test_a_personal_record_request_reaches_the_loop_verbatim(self):
         for route in self.CHANNELS:
             with self.subTest(route=route[0]):
                 question = '저장된 기록에서 여권 번호를 찾지 못했습니다. 어디에 적어 두셨는지 알려 주시겠어요?'
@@ -324,12 +324,11 @@ class OwnerEntryPointTests(unittest.TestCase):
                 self.assertIn('찾지 못했습니다', row['response'])
                 self.assertIn('확인이 필요한 질문: ' + question, row['owner_cause'])
                 self.assertEqual(failed, [])
-                # Re-judgment: the loop saw Still's observation, not a handler payload.
-                sent = script.bodies[0]['messages'][-1]['content']
-                self.assertIn('found no matching saved item', sent)
-                self.assertIn('ask the owner', sent)
+                # #173: no knowledge rule ran first; the loop read the owner's words
+                # alone and searched with its own tool.
+                self.assertEqual(script.bodies[0]['messages'][-1]['content'], '내 기록에서 여권 번호 찾아줘')
 
-    def test_b_rule_clarification_is_asked_by_the_loop(self):
+    def test_b_a_request_without_its_subject_is_asked_by_the_loop(self):
         for route in self.CHANNELS:
             with self.subTest(route=route[0]):
                 question = '개인 공간에서 어떤 내용을 찾을까요?'
@@ -338,7 +337,8 @@ class OwnerEntryPointTests(unittest.TestCase):
                 self.assertEqual(row['status'], 'succeeded')
                 self.assertEqual(row['response'], question)
                 self.assertEqual(failed, [])
-                self.assertIn('could not tell what to look for', script.bodies[0]['messages'][-1]['content'])
+                # #173: no rule clarification; the loop reads the owner's words and asks.
+                self.assertEqual(script.bodies[0]['messages'][-1]['content'], '개인 공간에서 찾아줘')
 
     def test_c_recovery_that_fully_satisfies_the_request_succeeds(self):
         for route in self.CHANNELS:

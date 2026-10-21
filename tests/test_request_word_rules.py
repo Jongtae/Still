@@ -26,7 +26,7 @@ from personal_agent.conversation_handoff import (AUTHORITY_DEFAULT, AUTHORITY_RU
 from personal_agent.decision import (OUTCOME_DECIDED, FixtureDecisionEngine, SelectionDecision,
                                      UnavailableDecisionEngine, fixture_confidence)
 from personal_agent.providers import ModelAdapter
-from personal_agent.quickstart_service import AgentService, workspace_search_request
+from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
 from scripted_capability_need import capability_need_engine
 
@@ -41,7 +41,7 @@ DRIVE_REQUEST = '구글 드라이브에서 회의 자료 요약해줘'
 
 
 def classifier(engine):
-    return IntentClassifier(workspace_search=workspace_search_request, judge=ConversationJudgments(engine))
+    return IntentClassifier(judge=ConversationJudgments(engine))
 
 
 def capability_asks(engine):
@@ -251,18 +251,24 @@ class ServiceRouteTests(unittest.TestCase):
         self.assertMixed(row, text)
         self.assertNotEqual(row['response'], MIXED_TASKS_CLARIFICATION)
 
-    def test_a_calendar_part_next_to_a_note_rule_is_not_dropped(self):
+    def test_a_calendar_part_next_to_a_note_part_is_not_dropped(self):
+        # #173: no note rule reads the second part; the worker reads the whole
+        # message verbatim, with the judged calendar's connection fact.
         text = '내일 오후 3시 팀 회의 일정 잡고 회의 안건 메모해줘'
         self.script += [{'content': '일정 초안과 메모를 준비할게요.'}] * 2
         row = self.run_turn(text, {text: INTENT_CALENDAR_CREATE})
-        self.assertMixed(row, text, '메모 기록', '일정 만들기')
+        self.assertMixed(row, text, 'Google Calendar is not connected')
 
-    def test_a_drive_part_next_to_a_note_rule_is_not_dropped(self):
+    def test_a_drive_part_next_to_a_note_part_parks_the_whole_message(self):
+        # #173: the judged Drive read parks the Work for its connection; the
+        # resumed Work runs the owner's whole message, and no rule wrote a note.
         text = '구글 드라이브 파일 요약해서 메모해줘'
-        self.script += [{'content': '어떤 파일인지 알려 주세요.'}] * 2
         row = self.run_turn(text, {text: INTENT_DRIVE_READ})
-        self.assertMixed(row, text, '메모 기록', 'Google Drive 파일 읽기')
-        self.assertEqual(self.drive.begun, [])
+        self.assertEqual(row['status'], 'awaiting_drive')
+        self.assertEqual(row['message'], text)
+        self.assertEqual(self.drive.begun, [(42, row['id'])])
+        self.assertEqual(self.store.notes(), [], 'no rule ran a part of the turn')
+        self.assertEqual(self.bodies, [], 'no model turn runs before the connection')
 
     def test_summarize_my_drive_file_and_save_the_result_reaches_the_loop_with_both_parts(self):
         # No local rule claims it; the judged Drive read routes the whole turn to
@@ -351,11 +357,12 @@ class MixedJudgmentTests(unittest.TestCase):
         self.assertFalse(with_flag.continuation)
 
     def test_a_mixed_turn_cannot_be_narrowed_by_a_suggestion(self):
+        # #173: a mixed turn is the judgment's several-tasks answer, not two rule hits.
         text = '내일 오후 3시 팀 회의 일정 잡고 회의 안건 메모해줘'
-        decision = classifier(capability_need_engine({text: INTENT_CALENDAR_CREATE})).classify(
+        decision = classifier(capability_need_engine({text: SEVERAL_TASKS})).classify(
             text, model_suggestion={'intent': INTENT_NOTE_CREATE})
         self.assertEqual(decision.intent, INTENT_AMBIGUOUS)
-        self.assertEqual(set(decision.alternatives), {INTENT_NOTE_CREATE, INTENT_CALENDAR_CREATE})
+        self.assertFalse(decision.executes)
         self.assertEqual(decision.model_suggestion['state'], 'rejected')
 
 

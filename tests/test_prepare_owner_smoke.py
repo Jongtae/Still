@@ -475,7 +475,7 @@ class ProbeRecordLoopIntegrationTests(unittest.TestCase):
 
     def test_record_of_a_real_loop_run(self):
         import test_agency_loop as loop
-        harness = loop.OwnerEntryPointTests('test_a_empty_rule_read_is_rejudged_by_the_loop')
+        harness = loop.OwnerEntryPointTests('test_a_personal_record_request_reaches_the_loop_verbatim')
         harness.addCleanup = self.addCleanup
         network = loop.ProviderNetwork({'default': loop.UNRELATED, 'other': loop.MATCHING})
         script = loop.Script({'tool_calls': [loop.call('1', 'web_search', query='When Leaders Make the Difference')]},

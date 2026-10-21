@@ -395,12 +395,6 @@
   "ja": "メールの送信や返信はできません。何も送っていません。メールを探すことはお手伝いできます。",
   "zh": "不能发送或回复邮件，没有发送任何内容。可以帮你找邮件。"
  },
- "handoff.i_couldn_t_safely_tell_what": {
-  "ko": "요청을 안전하게 구분할 판단 기능을 사용할 수 없어 메일을 검색하거나 다른 처리를 하지 않았습니다. 메일을 찾으려는 요청이라면 검색할 내용을 다시 구체적으로 적어 주세요.",
-  "en": "I couldn't safely tell what this request is, so I didn't search mail or do anything else. If you want to find mail, tell me more specifically what to look for.",
-  "ja": "依頼の内容を安全に判断できなかったため、メールの検索も他の処理もしていません。メールを探したい場合は、探す内容をもう少し具体的に書いてください。",
-  "zh": "无法安全判断这个请求，所以没有搜索邮件，也没有做其他处理。如果是要找邮件，请更具体地写出要找的内容。"
- },
  "handoff.reading_the_chosen_folder_is_allowed": {
   "ko": "선택한 폴더를 읽기로 허용했습니다. 방금 요청을 이어서 처리합니다.",
   "en": "Reading the chosen folder is allowed. Continuing your request.",

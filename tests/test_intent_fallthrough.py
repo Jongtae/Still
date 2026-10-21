@@ -29,8 +29,10 @@ REMINDER = '이번 일요일 오전 7시 40분에 티타임 있어. 전날 밤 9
 #: The owner points at a page that holds the date; the words alone carry none (Still, 2026-10-17).
 LINKED_EVENT = ('https://reg.githubuniverse.com/flow/github/universe26/getnotified/page/getnotified-success\n\n'
                 '나 여기 등록했어. 해당 일정 추가해줘')
-#: Two local rules match (saved-item search and note), so the rules call it ambiguous.
+#: Two retired keyword rules (saved-item search and note) once called this ambiguous (#173).
 AMBIGUOUS = '내 기록에서 여권 번호 찾아서 메모해줘'
+#: A turn the scripted capability judgment reads as several tasks (#672 review).
+SEVERAL = '내일 회의 일정 잡고 메모도 남겨줘'
 
 
 class IntentFallthroughTests(_Case):
@@ -82,17 +84,29 @@ class IntentFallthroughTests(_Case):
         self.assertFalse(self.store.config(STATE_KEY, {}), 'no rule-held question is left pending')
         self.assertEqual(self.store.config('calendar_create', {}), {}, 'no rule-made calendar draft')
 
-    def test_an_ambiguous_rule_result_reaches_the_worker_verbatim(self):
+    def test_a_former_two_rule_turn_reaches_the_worker_verbatim_with_no_rule_note(self):
+        # #173: no keyword rule reads this turn any more, so nothing is ambiguous
+        # and no rule note is added: the worker reads the owner's words alone.
         self.use_needs({})
         self.script = [{'content': '여권 번호를 찾아서 메모로 남길게요.'}] * 2
         work = self.receive(AMBIGUOUS)
         job = self.store.job(work)
         self.assertEqual(job['status'], 'succeeded', job.get('error'))
         self.assertNotIn('아무 작업도 실행하지 않았습니다', job['response'])
+        self.assertEqual(self.worker_message(), AMBIGUOUS)
+        self.assertEqual(self.store.notes(), [], 'no rule ran one part of the turn')
+
+    def test_a_judged_several_tasks_turn_reaches_the_worker_verbatim_with_a_note(self):
+        self.use_needs({SEVERAL: 'several-tasks'})
+        self.script = [{'content': '일정과 메모를 차례로 처리할게요.'}] * 2
+        work = self.receive(SEVERAL)
+        job = self.store.job(work)
+        self.assertEqual(job['status'], 'succeeded', job.get('error'))
+        self.assertNotIn('아무 작업도 실행하지 않았습니다', job['response'])
         sent = self.worker_message()
-        self.assertTrue(sent.startswith(AMBIGUOUS))
+        self.assertTrue(sent.startswith(SEVERAL))
         self.assertIn(NOTE, sent)
-        self.assertIn('matched more than one capability', sent)
+        self.assertIn('more than one task', sent)
         self.assertEqual(self.store.notes(), [], 'no rule ran one part of the turn')
 
     def test_a_long_telegram_message_reaches_the_worker_truncated_with_a_note(self):
@@ -107,11 +121,11 @@ class IntentFallthroughTests(_Case):
         self.assertTrue(sent.startswith('회의록 요약해줘. 가가가'))
         self.assertIn(f'This message had {len(text)} characters', sent)
 
-    def test_without_an_ai_route_the_rule_keeps_its_own_truthful_answer(self):
+    def test_without_an_ai_route_the_judged_clarification_keeps_its_own_truthful_answer(self):
         # Nothing could answer instead: the canned reply stays (no setup blocker is invented).
-        self.use_needs({})
+        self.use_needs({SEVERAL: 'several-tasks'})
         self.store.put('model', {})
-        work = self.receive(AMBIGUOUS)
+        work = self.receive(SEVERAL)
         job = self.store.job(work)
         self.assertIn('아무 작업도 실행하지 않았습니다', job['response'])
         self.assertEqual(self.model_calls, [])
