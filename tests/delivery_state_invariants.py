@@ -492,6 +492,11 @@ def assert_completed_work_is_unselectable(case, plan=None, path=PLAN_PATH):
             assert_completion_survives_redeclaration(case, plan, name)
 
 
+def _is_issue_number(value):
+    """A usable issue reference: a positive int, not a bool (``True == 1``)."""
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 def assert_closed_out_record(case, plan, name):
     """Full closeout requirements for one program recorded complete.
 
@@ -530,15 +535,15 @@ def assert_closed_out_record(case, plan, name):
     for substep, record in unexecuted.items():
         case.assertTrue(record.get("reason"), f"{name}: {substep} is unexecuted with no reason")
         if record.get("disposition") == NO_CHANGE_NEEDED:
-            case.assertIsInstance(record.get("evidence_issue"), int,
-                                  f"{name}: {substep} needs no change but names no evidence issue")
+            case.assertTrue(_is_issue_number(record.get("evidence_issue")),
+                            f"{name}: {substep} needs no change but names no evidence issue")
             case.assertNotIn("successor_issue", record,
                              f"{name}: {substep} needs no change, so it has no successor to name")
             case.assertGreaterEqual(len(record["reason"]), MIN_REASON_CHARS, f"{name}: {substep}")
             continue
         case.assertNotIn("disposition", record, f"{name}: {substep} has an unknown disposition")
-        case.assertIsInstance(record.get("successor_issue"), int,
-                              f"{name}: {substep} is unexecuted with no successor issue")
+        case.assertTrue(_is_issue_number(record.get("successor_issue")),
+                        f"{name}: {substep} is unexecuted with no successor issue")
 
 
 class RecordingRunner:

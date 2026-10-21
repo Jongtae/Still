@@ -212,6 +212,9 @@ def test_an_unexecuted_substep_needs_a_successor_or_a_no_change_disposition_with
     assert closeout_fails({"disposition": "no-change-needed", "evidence_issue": 164, "successor_issue": 164, "reason": reason})
     assert closeout_fails({"disposition": "something-else", "successor_issue": 999, "reason": reason})
     assert closeout_fails({"reason": reason})
+    for bad in (False, True, 0, -164, "164"):
+        assert closeout_fails({"disposition": "no-change-needed", "evidence_issue": bad, "reason": reason}), bad
+        assert closeout_fails({"successor_issue": bad, "reason": reason}), bad
 
 
 def test_a_closed_program_stays_unselectable_even_if_declared_active(tmp_path):
