@@ -233,11 +233,12 @@ CLASSIFIED_TABLES = {
     # cue tables, the query-stripping tables, the inline reply/send verbs, the natural-language
     # owner "commands" in IntentClassifier.explicit and SettingsOrchestrator.handle_text's phrases:
     # those requests reach the worker.  It narrowed the workspace rules below to the owner's quoted
-    # words and made a found saved result evidence for the worker, never the answer.
+    # words and made a found saved result evidence for the worker, never the answer.  The
+    # connection pause/disconnect a settings phrase once drafted has no worker tool yet: #183.
     **{('quickstart_service.py', name): (
-        'open-finding', '#173: (blocker) the owner-quoted workspace summary/search forms still read summary, '
-                        'save and search words; kept, as evidence for the worker and never the answer, until '
-                        'a worker tool reads and writes the file workspace')
+        'open-finding', '#182: the owner-quoted workspace summary/search forms still read summary, save and '
+                        'search words; kept (a #173 blocker), as evidence for the worker and never the answer, '
+                        'until #182 gives the worker a tool that reads and writes the file workspace')
        for name in ('workspace_summary_request', 'workspace_search_request')},
     **{('conversation_handoff.py', name): (
         'open-finding', '#173: a correction of, or continuation of, the focused Work is read from a literal cue '

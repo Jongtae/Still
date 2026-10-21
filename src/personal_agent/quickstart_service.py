@@ -266,7 +266,7 @@ def workspace_summary_request(prompt):
     RULES-OUT-01 (#173): the topic table that guessed a query and invented a
     title ("회의 결과 브리프") is gone; the quoted form stays only because no
     worker tool reads the file workspace's reference folders or saves a result
-    there yet (a blocker the guard tracks).  The worker writes the summary.
+    there yet (blocker #182, tracked by the guard).  The worker writes the summary.
     """
     if prompt.startswith('/workspace-summary '):
         request=prompt[len('/workspace-summary '):]
@@ -283,7 +283,7 @@ def workspace_search_request(prompt):
 
     RULES-OUT-01 (#173): never the answer.  Matching saved results are attached
     for the worker as evidence, because no worker tool reads the file workspace's
-    saved results yet (a blocker the guard tracks); the explicit
+    saved results yet (blocker #182, tracked by the guard); the explicit
     ``/workspace-search <query>`` command is the classifier's.  The unquoted
     "아까/다시/결과" guess that returned the latest saved file is gone.
     """
@@ -10514,7 +10514,7 @@ class AgentService:
                                 for source in sources)
         elif (named:=workspace_search_request(run.prompt)) and run.history:
             # #173: saved results the owner named in quotes are evidence for the
-            # worker, never the answer; no worker tool reads them yet (blocker).
+            # worker, never the answer; no worker tool reads them yet (blocker #182).
             try:
                 results=FileWorkspace(self.store).search(named)
             except ValueError:

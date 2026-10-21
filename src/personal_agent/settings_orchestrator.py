@@ -1449,7 +1449,8 @@ class SettingsOrchestrator:
         free text is never re-read for a phrase.  Anything but an id form is the
         read: every connection row already carries its one truthful next action.
         A settings request in the owner's own words reaches the worker, whose
-        ``settings_read`` / ``settings_change`` tools read or draft it."""
+        ``settings_read`` / ``settings_change`` tools read or draft it.  Pausing or
+        disconnecting a connection has no worker tool yet (#183)."""
         if not isinstance(text, str): raise SettingsError("설정 요청을 확인하세요.")
         value = text.strip()
         match = re.fullmatch(r"(?:confirm|확인)\s+([A-Za-z0-9_-]+)", value, re.I)
