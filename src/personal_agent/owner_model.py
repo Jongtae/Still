@@ -571,6 +571,44 @@ class Upkeep:
                               'ORDER BY created LIMIT ?', (job_id, REVIEW_CORRECTION, REVIEW_RETRY, job_id, limit)).fetchall()
         return [str(row['message'] or '') for row in rows if row['message']]
 
+    def awaiting(self, job_id):
+        """What ``job_id`` left waiting for the owner's own decision, and what became of it (#170); '' when nothing.
+
+        Read from recorded tool events only: each item a tool result marked as waiting for the owner
+        (``telegram_presence.OWNER_DECISION_FLAGS``, not applied, not a refused write) and, by its
+        ``draft_id``, whether a later recorded event settled it.  Names and counts only, no content.
+        """
+        from .telegram_presence import OWNER_DECISION_FLAGS
+        with self.store.db() as db:
+            rows = db.execute('SELECT tool,detail FROM tool_events WHERE job_id=? AND status IN (?,?) ORDER BY id',
+                              (job_id, 'succeeded', 'failed')).fetchall()
+            waiting = {}
+            for row in rows:
+                try:
+                    detail = json.loads(row['detail'] or '{}')
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(detail, dict):
+                    continue
+                evidence = detail.get('evidence') if isinstance(detail.get('evidence'), dict) else {}
+                record = evidence if any(evidence.get(flag) for flag in OWNER_DECISION_FLAGS) else detail
+                if (record.get('refused_because') or record.get('applied') is True
+                        or not any(record.get(flag) for flag in OWNER_DECISION_FLAGS)):
+                    continue
+                action = detail.get('host_action') or row['tool']
+                ident = record.get('draft_id')
+                settled = False
+                if isinstance(ident, str) and ident:
+                    settled = db.execute("SELECT 1 FROM tool_events WHERE job_id!=? AND status='succeeded' AND detail LIKE ? LIMIT 1",
+                                         (job_id, '%' + json.dumps(ident)[1:-1] + '%')).fetchone() is not None
+                counts = waiting.setdefault(action, [0, 0])
+                counts[0] += 1
+                counts[1] += 1 if settled else 0
+        if not waiting:
+            return ''
+        return '; '.join(f'{action}: {total} shown for the owner\'s own approval, {done} later settled by the owner'
+                         for action, (total, done) in waiting.items())
+
     def evaluations(self, job_id, limit=6):
         """The orchestrator's recorded verdict texts on ``job_id``'s attempts, oldest first (#710 Evidence)."""
         with self.store.db() as db:
@@ -736,9 +774,10 @@ class Upkeep:
         followups = self.followups(job['id'])
         followup = '\n'.join(followups) if followups else (row.get('observation') or '')
         evaluation = '\n'.join(self.evaluations(job['id']))
+        awaiting = self.awaiting(job['id'])
         data, decision = judgments.self_review(request, answer, str(job.get('status') or ''), evaluation, followup,
                                                profile, reason, work_id=job['id'], cancelled=cancelled,
-                                               working_notes=current_text)
+                                               working_notes=current_text, awaiting_owner=awaiting)
         confidence = decision.confidence
         calls = 1 if call_sent(decision) else 0
         self.count(job['id'], calls, KIND_SELF_REVIEW)
@@ -749,6 +788,7 @@ class Upkeep:
                   'inputs': {'owner_request_chars': len(request), 'answer_chars': len(answer or ''),
                              'evaluations': len(self.evaluations(job['id'])), 'followups': len(followups),
                              'observation': bool(row.get('observation')), 'profile_chars': len(profile or ''),
+                             'awaiting_owner': bool(awaiting),
                              'working_notes_version': current['version'] if current else None,
                              'working_notes_chars': len(current_text), 'clock': bool(clock)}}
         if data is None:

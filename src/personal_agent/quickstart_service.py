@@ -1,4 +1,5 @@
 """One personal conversation shared by web and an explicitly paired Telegram user."""
+from datetime import datetime
 import concurrent.futures
 import hmac
 import json
@@ -265,6 +266,38 @@ def workspace_summary_request(prompt):
                 query={'회의':'회의||meeting','meeting':'meeting||회의','프로젝트':'프로젝트||project','project':'project||프로젝트','cost':'cost','비용':'비용'}.get(topic,topic)
                 return query, ('회의 결과 브리프' if topic in ('meeting','회의') else 'project brief' if topic in ('project','프로젝트') else '자료 요약')
     return None
+
+
+def awaiting_owner_rows(rows):
+    """Whether recorded ``(tool, status, detail)`` rows leave an item waiting for the owner's decision (#170).
+
+    The typed flags a tool result carries while its effect waits for the owner, unless ``applied``
+    (``telegram_presence.OWNER_DECISION_FLAGS``); never the reply's wording.  A write the policy
+    refused and kept as a candidate (``refused_because``, a third-party memory write) is not a
+    wait this Work's answer stops for.
+    """
+    from .telegram_presence import OWNER_DECISION_FLAGS
+    for _tool,status,detail in rows:
+        if status not in ('succeeded','failed') or not isinstance(detail,dict):continue
+        evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
+        for record in (detail,evidence):
+            if record.get('refused_because'):continue
+            if record.get('applied') is not True and any(record.get(flag) for flag in OWNER_DECISION_FLAGS):return True
+    return False
+
+
+def earlier_turn_line(row, message, tz=None):
+    """One earlier stored turn as the plan call and the outcome judgment read it (#170).
+
+    Labelled as an earlier Work with its local time when known, so what happened there is never
+    read as the current Work's own event.
+    """
+    who='owner' if message.get('role')=='user' else 'assistant'
+    when=''
+    if tz is not None:
+        try:when=' '+datetime.fromtimestamp(float(row.get('created')),tz).strftime('%Y-%m-%d %H:%M')
+        except (TypeError,ValueError,OverflowError,OSError):pass
+    return f"[{who}, earlier Work{when}] {message.get('content') or ''}"
 
 
 def workspace_search_request(prompt):
@@ -5366,9 +5399,16 @@ class AgentService:
             LOG.warning('worker catalogue unavailable job=%s',job.get('id'))
             return None
         if not catalogue.default:return None
-        earlier=[context_message(row) for row in self.planner_history(rows,document_jobs)][-4:]
-        conversation='\n'.join(f"[{'owner' if message['role']=='user' else 'assistant'}] {message.get('content') or ''}"
-                               for message in earlier)
+        earlier_rows=self.planner_history(rows,document_jobs)[-4:]
+        # #170: each row is marked as an earlier Work, with its local time, so the plan and the
+        # outcome judgment never read an earlier approval, lookup or effect as this Work's own.
+        try:
+            from .current_context import host_zone
+            _zone,tz=host_zone(self.store)
+        except Exception:
+            tz=None
+        conversation='\n'.join(earlier_turn_line(row,context_message(row),tz) for row in earlier_rows)
+        earlier=earlier_rows
         def event(status,detail):
             with self.store.db() as db:
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
@@ -5502,6 +5542,10 @@ class AgentService:
             except (TypeError,ValueError):data={}
             tool_rows.append((row['tool'],row['status'],data if isinstance(data,dict) else {}))
         if any(effect_class!=EFFECT_NONE for _action,effect_class,_status in call_effects(tool_rows)):effect=True
+        # #170: an attempt that left something waiting for the owner's own decision (a calendar or
+        # settings draft, a proposal) stops for the owner, as a pending step approval does (#1468):
+        # no outcome judgment reads that by-design wait as a shortfall, and nothing is re-delegated.
+        if awaiting_owner_rows(tool_rows):owner_needed=True
         for row in rows:
             if row['tool'] in self.LOCAL_NON_TOOL_EVENTS|{'subscription_engine'} or row['status'] not in ('running','succeeded','failed'):
                 continue
