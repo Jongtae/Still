@@ -7,6 +7,7 @@ plan started empty and selected nothing until the owner activated a goal
 QUALITY-CORE-01 (#115), STEADY-01 (#132) and CHECKS-01 (#157), all since closed out.
 """
 import importlib.util
+import copy
 import json
 import subprocess
 from pathlib import Path
@@ -168,25 +169,76 @@ def test_the_owed_reviews_are_resolved_by_the_owner_check_not_claimed_as_indepen
         assert owed["resolution"]["independent_review"] == "not performed by a non-author"
 
 
-def test_the_owner_activated_browse_audit_program_is_goal_ready_and_heartbeat_paused():
-    """#168: #164 and #167 run in parallel; #167 detects and shows, never blocks."""
+def test_the_browse_audit_program_is_closed_out_and_selects_nothing():
+    """#168: #167 merged; #164 was measured and needed no change, which is recorded, not hidden."""
     current = plan()
-    assert current["next_goal"]["id"] == "BROWSE-AUDIT-01"
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    assert current["next_goal"]["id"] is None
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "terminal"
+    assert "BROWSE-AUDIT-01" in invariants.closed_out_programs(current)
+    invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["BROWSE-AUDIT-01"]
-    assert program["activated_by"]["issue"] == 168
     assert program["ordered_substeps"] == ["BROWSE-CLOSE-01", "AUDIT-OUTBOUND-01"]
+    assert program["completed_substeps"] == ["AUDIT-OUTBOUND-01"]
+    no_change = program["unexecuted_substeps"]["BROWSE-CLOSE-01"]
+    assert (no_change["disposition"], no_change["evidence_issue"]) == ("no-change-needed", 164)
+    assert "successor_issue" not in no_change
+    assert "cProfile" in program["unexecuted_substeps"]["BROWSE-CLOSE-01"]["reason"]
+    # The completion rule admits the measured no-change outcome, and the amendment says why.
+    assert "no-change-needed" in program["completion_rule"]
+    assert program["completion_rule_amendment"]["issue"] == 168
+    assert "merged on its own PR" in program["completion_rule_amendment"]["original"]
+    rule_without = copy.deepcopy(current)
+    rule_without["programs"]["BROWSE-AUDIT-01"]["completion_rule"] = program["completion_rule_amendment"]["original"]
+    try:
+        invariants.assert_closed_out_record(TestCase(), rule_without, "BROWSE-AUDIT-01")
+        contradicts = False
+    except AssertionError:
+        contradicts = True
+    assert contradicts
     items = {item["id"]: item for item in current["iterations"]}
-    assert [items[name]["issue"] for name in program["ordered_substeps"]] == [164, 167]
-    for name in program["ordered_substeps"]:
-        assert items[name]["depends_on"] == [] and items[name]["milestone"] == "browse-audit"
-        (command,) = items[name]["tests"]
-        targets = command.split("pytest -q ", 1)[1].split()
-        assert targets and all((ROOT / target).exists() for target in targets), name
-    assert "never block" in items["AUDIT-OUTBOUND-01"]["summary"]
-    assert "storing more personal text" in program["non_goals"]
-    for state in ({}, {"completed": []}):
+    evidence = items["BROWSE-AUDIT-01"]["completed_substeps"]
+    assert (evidence["AUDIT-OUTBOUND-01"]["issue"], evidence["AUDIT-OUTBOUND-01"]["pull_request"]) == (167, 178)
+    assert items["BROWSE-CLOSE-01"]["activation_status"] == "not-executed"
+    assert "BROWSE-CLOSE-01" not in current["history"]["documented_completed_iterations"]
+    for state in ({}, {"completed": []}, {"active": "BROWSE-AUDIT-01", "status": "running"}):
         assert DeliveryPlan(PLAN).select(state) is None, state
+
+
+def test_an_unexecuted_substep_needs_a_successor_or_a_no_change_disposition_with_evidence():
+    """#168 review: a no-work disposition is its own kind, not a successor pointing back at a closed issue."""
+    import copy
+    base = plan()
+
+    def closeout_fails(record):
+        altered = copy.deepcopy(base)
+        altered["programs"]["BROWSE-AUDIT-01"]["unexecuted_substeps"]["BROWSE-CLOSE-01"] = record
+        try:
+            invariants.assert_closed_out_record(TestCase(), altered, "BROWSE-AUDIT-01")
+        except AssertionError:
+            return True
+        return False
+
+    reason = base["programs"]["BROWSE-AUDIT-01"]["unexecuted_substeps"]["BROWSE-CLOSE-01"]["reason"]
+    assert not closeout_fails({"disposition": "no-change-needed", "evidence_issue": 164, "reason": reason})
+    # A successor record accounts only for a declared split child, never for an
+    # ordered substep on its own: unfinished work cannot close the program.
+    assert closeout_fails({"successor_issue": 999, "reason": reason})
+    assert closeout_fails({"disposition": "no-change-needed", "reason": reason})
+    assert closeout_fails({"disposition": "no-change-needed", "evidence_issue": 164, "successor_issue": 164, "reason": reason})
+    assert closeout_fails({"disposition": "something-else", "successor_issue": 999, "reason": reason})
+    assert closeout_fails({"reason": reason})
+    # A no-change record must name an activated substep, so renaming it cannot hide one.
+    renamed = copy.deepcopy(base)
+    program = renamed["programs"]["BROWSE-AUDIT-01"]
+    program["unexecuted_substeps"] = {"SOMETHING-ELSE": program["unexecuted_substeps"]["BROWSE-CLOSE-01"]}
+    try:
+        invariants.assert_closed_out_record(TestCase(), renamed, "BROWSE-AUDIT-01")
+        hidden = False
+    except AssertionError:
+        hidden = True
+    assert hidden
+    for bad in (False, True, 0, -164, "164"):
+        assert closeout_fails({"disposition": "no-change-needed", "evidence_issue": bad, "reason": reason}), bad
 
 
 def test_a_closed_program_stays_unselectable_even_if_declared_active(tmp_path):

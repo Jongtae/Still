@@ -67,6 +67,7 @@ GOAL_READY = "owner-activated-goal-ready"
 CLOSED_OUT = "complete"
 PAUSED = "owner-paused"
 CLOSED_ON_MERGE = "complete-on-merge"
+NO_CHANGE_NEEDED = "no-change-needed"
 
 
 def load_plan(path=PLAN_PATH):
@@ -491,6 +492,11 @@ def assert_completed_work_is_unselectable(case, plan=None, path=PLAN_PATH):
             assert_completion_survives_redeclaration(case, plan, name)
 
 
+def _is_issue_number(value):
+    """A usable issue reference: a positive int, not a bool (``True == 1``)."""
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 def assert_closed_out_record(case, plan, name):
     """Full closeout requirements for one program recorded complete.
 
@@ -521,13 +527,31 @@ def assert_closed_out_record(case, plan, name):
     deferred = program.get("deferred_substeps", {}).get("substeps", [])
     case.assertFalse(set(deferred) & set(done), name)
     # Nor may an unexecuted one. Each must name a successor issue, so an
-    # unfinished substep cannot be dropped silently.
+    # unfinished substep cannot be dropped silently -- unless it was
+    # investigated and found to need no work (#168): that terminal disposition
+    # names the issue holding the evidence, and must not also claim a successor.
     unexecuted = program.get("unexecuted_substeps", {})
     case.assertFalse(set(unexecuted) & set(done), name)
     for substep, record in unexecuted.items():
-        case.assertIsInstance(record.get("successor_issue"), int,
-                              f"{name}: {substep} is unexecuted with no successor issue")
         case.assertTrue(record.get("reason"), f"{name}: {substep} is unexecuted with no reason")
+        if record.get("disposition") == NO_CHANGE_NEEDED:
+            # Only an activated substep can be closed this way; anything else
+            # would let a renamed record stand in for one that disappeared.
+            case.assertIn(substep, program.get("ordered_substeps", []),
+                          f"{name}: {substep} is not one of the program's ordered substeps")
+            case.assertTrue(_is_issue_number(record.get("evidence_issue")),
+                            f"{name}: {substep} needs no change but names no evidence issue")
+            case.assertNotIn("successor_issue", record,
+                             f"{name}: {substep} needs no change, so it has no successor to name")
+            case.assertGreaterEqual(len(record["reason"]), MIN_REASON_CHARS, f"{name}: {substep}")
+            # The program's own completion rule must admit this outcome, or the
+            # plan would contradict its completion gate (#168 review).
+            case.assertIn(NO_CHANGE_NEEDED, program.get("completion_rule", ""),
+                          f"{name}: {substep} closed as no-change but the completion rule does not allow it")
+            continue
+        case.assertNotIn("disposition", record, f"{name}: {substep} has an unknown disposition")
+        case.assertTrue(_is_issue_number(record.get("successor_issue")),
+                        f"{name}: {substep} is unexecuted with no successor issue")
 
 
 class RecordingRunner:
@@ -582,6 +606,11 @@ def assert_substep_evidence_is_complete(case, name, program, done, detail):
     unexecuted = program.get("unexecuted_substeps", {})
     for substep in program.get("ordered_substeps", []):
         if substep in done:
+            continue
+        # #168: an activated substep investigated and found to need no work is
+        # accounted for by that terminal disposition (validated in
+        # assert_closed_out_record), not by evidence of a merged change.
+        if unexecuted.get(substep, {}).get("disposition") == NO_CHANGE_NEEDED:
             continue
         declared = children.get(substep)
         case.assertTrue(
