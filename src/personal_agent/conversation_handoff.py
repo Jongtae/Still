@@ -460,7 +460,6 @@ class TelegramChannel:
 #     left to narrow, every suggestion is recorded and rejected, and no call
 #     site supplies one today (an evidence-class statement, not a capability
 #     claim).
-import re
 import time
 
 from .decision import MAX_CONTEXT_CHARS, DecisionContext, DecisionPolicy, UnavailableDecisionEngine
@@ -478,6 +477,9 @@ INTENT_MAIL_SEARCH = 'mail-search'
 #: Read the owner's Picker-selected Google Drive files into this turn, or
 #: hand off the Drive connection first (#672: judged, not matched on words).
 INTENT_DRIVE_READ = 'drive-read'
+#: #173 slice B: the owner wants to use their own saved context items for this
+#: request; Still offers the existing owner-only choice (judged, not keyword-matched).
+INTENT_SAVED_CONTEXT = 'saved-context'
 #: No longer produced by routing (#672: the Work model loop chooses web
 #: search itself).  Kept so a conversation focus or decision recorded before
 #: that change still reads as a continuable conversation-route intent.
@@ -503,10 +505,6 @@ CONSEQUENTIAL_INTENTS = frozenset({INTENT_CALENDAR_CREATE})
 #: compete for ambiguity, because losing one costs the owner nothing.
 DEFAULT_ROUTE_INTENTS = frozenset({INTENT_CONVERSATION, INTENT_RESEARCH})
 
-#: Intents a bare "keep going" may resolve to.  Every other intent needs its
-#: own content, and reusing stale content is exactly the failure mode the
-#: correction/topic-change requirement exists to prevent.
-CONTINUABLE_INTENTS = frozenset({INTENT_CONVERSATION, INTENT_RESEARCH})
 
 INTENT_LABELS = {
     INTENT_KNOWLEDGE: '개인 공간 검색',
@@ -518,6 +516,7 @@ INTENT_LABELS = {
     INTENT_CALENDAR_CREATE: msg('handoff.create_event'),
     INTENT_MAIL_SEARCH: '메일 찾기',
     INTENT_DRIVE_READ: 'Google Drive 파일 읽기',
+    INTENT_SAVED_CONTEXT: '저장한 컨텍스트 선택',
     INTENT_RESEARCH: '웹 조사',
     INTENT_CONVERSATION: '대화로 답하기',
     INTENT_UNSUPPORTED: '제공하지 않는 기능',
@@ -555,6 +554,8 @@ CAPABILITY_NEEDS = {
                              "assistant only drafts it and the owner approves the exact preview"),
     INTENT_DRIVE_READ: ("read, search or summarize files in the owner's own Google Drive, or connect "
                         "Google Drive to do that"),
+    INTENT_SAVED_CONTEXT: ("use the owner's own saved context items (texts or links they captured earlier for "
+                           "the assistant) in this request; the owner picks which item from a list"),
     SEVERAL_TASKS: ("more than one task in this one message where at least one of them needs one of the "
                     "other listed capabilities, for example creating a calendar event and also saving a note"),
     **UNSUPPORTED_CAPABILITIES,
@@ -562,30 +563,10 @@ CAPABILITY_NEEDS = {
 
 
 # --- Cue vocabularies ------------------------------------------------------
-# RULES-OUT-01 (#173) removed the knowledge, settings, workspace, mail and
-# note cue tables and the words stripped from a message to build their
-# queries: those requests reach the worker verbatim.  The two tables below
-# are tracked by the guard as open findings for a later #173 slice.
-# Korean cues match as substrings; ASCII cues match on word boundaries.
-
-# A correction or topic change is the owner overriding what came before.  It
-# must never be read as "keep doing the previous thing".
-_CORRECTION_CUES = ('아니', '아니라', '그게 아니라', '말고', '대신', '취소', '됐고', '잊어',
-                    'no,', 'not that', 'instead', 'forget that', 'never mind', 'nevermind',
-                    'scratch that', 'actually no')
-_CONTINUATION_CUES = ('계속', '이어서', '계속해', '더 해줘', '그대로',
-                      'continue', 'go on', 'keep going', 'same thing', 'carry on')
-
-def _cue_hits(text, lowered, cues):
-    """Return the literal cues present in one utterance, in table order."""
-    hits = []
-    for cue in cues:
-        if cue.isascii():
-            if re.search(rf'(?<![a-z0-9]){re.escape(cue)}(?![a-z0-9])', lowered):
-                hits.append(cue)
-        elif cue in text:
-            hits.append(cue)
-    return hits
+# RULES-OUT-01 (#173) removed every cue table that read an owner message for
+# its intent (slice A) or for how it relates to earlier Work (slice B: the
+# correction and continuation tables).  Whether a message retries, refers to,
+# cancels or corrects the focused Work is the ``followup_relation`` judgment's.
 
 
 def eligible_for_followup_judgment(text):
@@ -629,14 +610,29 @@ FOLLOWUP_CORRECTION = 'correction'
 FOLLOWUP_RELATIONS = (FOLLOWUP_RETRY, FOLLOWUP_REFERENCE, FOLLOWUP_CANCEL, FOLLOWUP_CORRECTION)
 FOLLOWUP_QUESTION = (
     'Classify only how the owner latest message relates to the immediately previous Work. '
+    'You are given that Work\'s request (previous_owner_message) and the assistant\'s reply (previous_reply), '
+    'when each was made, and what, if anything, is still waiting for the owner\'s answer (awaiting_owner); read '
+    'the latest message the way the owner would mean it in that conversation, not by its words alone. '
     'Choose retry only when they ask to run that previous request again; reference when they '
     'refer to its result/context without repeating it; cancel when they ask the assistant to stop or withdraw '
     'that previous Work itself (a request to cancel something in an account or service - an order, a booking, '
-    'a subscription - is work for the assistant to do, not cancel); correction when they replace or correct its parameters. Choose '
-    'none-of-these for a new topic, an unrelated request, or when the relation is unclear. '
-    'This judgment does not authorize any action.'
+    'a subscription - is work for the assistant to do, not cancel); correction when they replace or correct its '
+    'parameters, even with no word such as "no" or "instead" (for example a new time for what was just asked). '
+    'Choose none-of-these for a new topic, an unrelated request, a fact to remember or something to save that '
+    'is not about that Work, or when the relation is unclear; a word such as "no", "instead" or "again" alone '
+    'does not make a relation. This judgment does not authorize any action.'
 )
+#: The bound on each earlier text the follow-up judgment reads (#173 slice B).
+FOLLOWUP_EARLIER_CHARS = 600
 
+#: #173 slice B: replaces the particle/filler-stripping ``preparations.same_goal``.
+SAME_PREPARATION_GOAL_PROPOSITION = (
+    'Earlier in this Work the assistant tried to set up a repeated check for one of the goals in refused_goals '
+    'and was refused because it had no time window. The new preparation goal (proposed_goal) asks for the same '
+    'thing as one of those goals - the same subject and purpose, even if reworded or with a date added - so it '
+    'would replace that refused repeated check with separate one-time preparations. It is false when the new '
+    'goal is a different preparation, even if it shares words with a refused goal. This judgment does not '
+    'authorize any action.')
 #: #999: a message that arrives while an earlier request is still being worked on.
 STEER_PROPOSITION = ('The assistant is still working on the owner\'s earlier request (given). The owner\'s latest '
                      'message is meant for that running task: a remark, preference, constraint, choice or correction '
@@ -875,7 +871,7 @@ class ConversationJudgments:
     #: #836: ``already_noted`` is what the owner's own message already gave the Work
     #: (its saved values, #831), so it is treated like the owner's words.
     OWNER_FACTS = frozenset({'owner_message', 'owner_request', 'owner_followup', 'earlier_owner_message', 'terms', 'owner_context',
-                             'already_noted'})
+                             'already_noted', 'previous_owner_message'})
 
     def __init__(self, engine=None, policy=None, redactor=None):
         self.engine = engine or UnavailableDecisionEngine()
@@ -1019,17 +1015,30 @@ class ConversationJudgments:
             return Judgment(JUDGMENT_NO, source=decision.confidence.provider or decision.outcome)
         return Judgment(JUDGMENT_UNAVAILABLE, source=decision.outcome)
 
-    def followup_relation(self, utterance, previous_intent, previous_status):
-        """Classify one short anaphoric turn against one focused Work.
+    def followup_relation(self, utterance, previous_intent, previous_status, *, previous_request='',
+                          previous_reply='', previous_request_at='', previous_reply_at='', awaiting_owner=()):
+        """Classify one short turn against one focused Work, read in its context.
 
-        Previous request/result content is deliberately absent. The engine
-        sees only the current short utterance plus prior intent/status; the
-        selected relation still passes deterministic execution gates later.
+        RULES-OUT-01 (#173 slice B): no correction or continuation word list
+        decides this any more, so the judgment is given what the owner would
+        have in mind: the focused Work's request and reply (each bounded to
+        ``FOLLOWUP_EARLIER_CHARS`` and redacted like every fact: secrets
+        removed, and the reply's saved private values too), when each was
+        made, and the kinds of what still waits for the owner (no content).
+        The selected relation still passes deterministic execution gates later.
         """
+        def bounded(text):
+            text = str(text or '')
+            return text if len(text) <= FOLLOWUP_EARLIER_CHARS else text[:FOLLOWUP_EARLIER_CHARS - 1] + '…'
         context = self._context('conversation-followup', {
             'owner_message': utterance,
             'previous_intent': previous_intent or '',
             'previous_status': previous_status or '',
+            'previous_owner_message': bounded(previous_request),
+            'previous_reply': bounded(previous_reply),
+            'previous_request_at': previous_request_at or 'unknown',
+            'previous_reply_at': previous_reply_at or 'unknown',
+            'awaiting_owner': ', '.join(sorted(set(awaiting_owner))) or 'nothing',
         })
         decision = self.engine.choose(context, FOLLOWUP_RELATIONS, FOLLOWUP_QUESTION)
         choice = self.policy.selection(decision)
@@ -1039,6 +1048,22 @@ class ConversationJudgments:
         if self.policy.confident_selection(decision):
             return Judgment(JUDGMENT_NO, source=decision.confidence.provider or decision.outcome)
         return Judgment(JUDGMENT_UNAVAILABLE, source=decision.outcome)
+
+    def same_preparation_goal(self, proposed_goal, refused_goals, work_id=None):
+        """Does ``proposed_goal`` repeat one of this Work's refused watch goals (#173 slice B)?
+
+        Asked only when the worker schedules a preparation without a window
+        after a watch of this Work was refused for lacking one, so no turn
+        gains a call.  Both texts are worker-written goals, redacted.
+        """
+        context = self._context('same-preparation-goal', {
+            'proposed_goal': proposed_goal,
+            'refused_goals': '; '.join(refused_goals),
+        }, work_id=work_id)
+        decision = self.engine.judge(context, SAME_PREPARATION_GOAL_PROPOSITION)
+        verdict = self.policy.binary(decision)
+        return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
+                        source=decision.confidence.provider or decision.outcome)
 
     def capability_need(self, utterance):
         """Which declared capability, if any, does ``utterance`` need (#597)?
@@ -1277,11 +1302,10 @@ class IntentDecision:
 
     __slots__ = ('intent', 'authority', 'argument', 'cues', 'alternatives',
                  'clarification', 'consequential', 'supersedes_previous',
-                 'continuation', 'model_suggestion')
+                 'model_suggestion')
 
     def __init__(self, intent, authority, *, argument=None, cues=(), alternatives=(),
-                 clarification=None, supersedes_previous=False, continuation=False,
-                 model_suggestion=None):
+                 clarification=None, supersedes_previous=False, model_suggestion=None):
         self.intent = intent
         self.authority = authority
         self.argument = argument
@@ -1290,7 +1314,6 @@ class IntentDecision:
         self.clarification = clarification
         self.consequential = intent in CONSEQUENTIAL_INTENTS
         self.supersedes_previous = supersedes_previous
-        self.continuation = continuation
         self.model_suggestion = model_suggestion
 
     @property
@@ -1404,29 +1427,22 @@ class IntentClassifier:
         if not isinstance(text, str) or not text.strip():
             return self._with_suggestion(IntentDecision(INTENT_CONVERSATION, AUTHORITY_DEFAULT), model_suggestion)
         text = text.strip()
-        lowered = text.casefold()
         focus_intent = (focus or {}).get('intent')
 
         explicit = self.explicit(text)
-        if explicit is not None:
-            explicit.supersedes_previous = bool(focus_intent) and focus_intent != explicit.intent
-            return self._with_suggestion(explicit, model_suggestion)
-
-        correction = _cue_hits(text, lowered, _CORRECTION_CUES)
-        decision = self._fallback(text, lowered, focus_intent, bool(correction))
-        if focus_intent and (correction or focus_intent != decision.intent) and decision.intent != INTENT_AMBIGUOUS:
-            decision.supersedes_previous = True
+        decision = explicit if explicit is not None else self._fallback(text)
+        # Structural only (#173 slice B): the route changed from the focused one.  Whether
+        # the message corrects or continues that Work is the follow-up judgment's.
+        decision.supersedes_previous = (bool(focus_intent) and focus_intent != decision.intent
+                                        and decision.intent != INTENT_AMBIGUOUS)
         return self._with_suggestion(decision, model_suggestion)
 
-    def _fallback(self, text, lowered, focus_intent, correction):
+    def _fallback(self, text):
         """Not an explicit form: a judged capability, else the ordinary conversation route.
 
         A pending calendar draft's approve or cancel reply never reaches this
         classifier: the service answers it first (#22).
         """
-        continuation = _cue_hits(text, lowered, _CONTINUATION_CUES)
-        if continuation and not correction and focus_intent in CONTINUABLE_INTENTS:
-            return IntentDecision(focus_intent, AUTHORITY_RULE, cues=continuation, continuation=True)
         judged = self._judged_capability(text)
         if judged is not None:
             return judged
@@ -1466,6 +1482,9 @@ class IntentClassifier:
             return IntentDecision(INTENT_CALENDAR_CREATE, AUTHORITY_RULE, argument=text, cues=cues)
         if need.value == INTENT_DRIVE_READ:
             return IntentDecision(INTENT_DRIVE_READ, AUTHORITY_RULE, cues=cues)
+        if need.value == INTENT_SAVED_CONTEXT:
+            # #173 slice B: replaces the 컨텍스트/저장한 기록 + 함께/참고/사용/포함 keyword trigger.
+            return IntentDecision(INTENT_SAVED_CONTEXT, AUTHORITY_RULE, cues=cues)
         if need.value == SEVERAL_TASKS:
             return IntentDecision(INTENT_AMBIGUOUS, AUTHORITY_RULE, cues=cues, clarification=MIXED_TASKS_CLARIFICATION)
         if need.value in UNSUPPORTED_CAPABILITY_TEXT:

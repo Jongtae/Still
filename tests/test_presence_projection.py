@@ -337,8 +337,14 @@ class ContinuityTests(ProjectionTestCase):
         self.assertEqual(bubbles, [('send', self.text)])
         followup = [asked for asked in engine.asked if asked[1].purpose == 'conversation-followup']
         self.assertEqual(len(followup), 1)
-        self.assertEqual(followup[0][1].facts['owner_message'], '자 다시 되니?')
-        self.assertNotIn('원래 요청을 처리해줘', repr(followup[0][1].facts))
+        facts = followup[0][1].facts
+        self.assertEqual(facts['owner_message'], '자 다시 되니?')
+        # #173 slice B: the judgment reads the focused Work in context - its request and
+        # reply, when each was made, and the kinds of what waits for the owner.
+        self.assertEqual(facts['previous_owner_message'], '원래 요청을 처리해줘')
+        self.assertTrue(facts['previous_reply'])
+        self.assertIn(facts['previous_request_at'], ('just now', '1 minutes ago'))
+        self.assertEqual(facts['awaiting_owner'], 'nothing')
         event = next(item for item in self.store.task_events(retried['id'])
                      if item['tool'] == 'conversation_continuity')
         self.assertTrue(event['trace']['executed'])
@@ -732,16 +738,16 @@ class ConversationContinuityTests(ProjectionTestCase):
         for message in judged:
             self.assertNotIn('sk-live-secret', message)
 
-    def test_generic_memory_save_followup_stays_out_of_remote_judgment(self):
+    def test_a_memory_save_followup_is_judged_not_prefiltered(self):
+        # #173 slice B: no "저장/기억" word check keeps this turn from the judgment.
         first, _ = self.turn('이전 요청')
         engine = self.relation_engine({'아니 이걸 저장해줘': FOLLOWUP_REFERENCE})
         self.service.use_decision_engine(engine)
-        self.assertIsNone(self.service.continuity_relation(
-            '아니 이걸 저장해줘', current_work_id='different-work'))
-        self.assertFalse(any(
-            item[0] == 'choose' and item[1].purpose == 'conversation-followup'
-            for item in engine.asked
-        ))
+        related = self.service.continuity_relation('아니 이걸 저장해줘', current_work_id='different-work')
+        self.assertEqual((related['relation'], related['previous']['id']), (FOLLOWUP_REFERENCE, first['id']))
+        [asked] = [item for item in engine.asked
+                   if item[0] == 'choose' and item[1].purpose == 'conversation-followup']
+        self.assertEqual(asked[1].facts['previous_owner_message'], '이전 요청')
 
     def test_package_write_alias_blocks_retry_by_recorded_host_action(self):
         first, _ = self.turn('원래 요청')
