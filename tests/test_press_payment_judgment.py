@@ -9,9 +9,10 @@ import types
 import unittest
 
 from personal_agent import browser_session as bs
-from personal_agent.agent_runtime import Capabilities, ToolError
+from personal_agent.agent_runtime import WORK_MODEL_TURNS, Capabilities, ToolError, WorkBudget
 from personal_agent.conversation_handoff import ConversationJudgments
-from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, DecisionConfidence, UnavailableDecisionEngine
+from personal_agent.decision import (OUTCOME_DECIDED, BinaryDecision, DecisionConfidence, FixtureDecisionEngine,
+                                     RoutedDecisionEngine, UnavailableDecisionEngine, fixture_confidence)
 from personal_agent.quickstart_store import QuickStore
 
 from test_browser_session import ORIGIN, Approvals, FakeDriver, session
@@ -123,32 +124,37 @@ class PressJudgmentTests(unittest.TestCase):
         browser.type({'target': '검색어', 'text': '세제', 'effect': 'mutate'})
         self.assertEqual(judgments.asked, [])
 
-    def test_the_judgment_spends_one_turn_of_the_work_budget_or_is_not_asked(self):
-        class Budget:
-            def __init__(self, refuse=False):
-                self.refuse, self.turns = refuse, 0
+    def test_the_judgment_spends_one_turn_of_the_work_budget_or_leaves_the_floor(self):
+        """The routed engine admits the judgment against the Work's turns, as every Work judgment."""
+        asked = []
 
-            def check(self):
-                pass
+        def judge(context, proposition):
+            asked.append(context.purpose)
+            return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
 
-            def remaining(self):
-                return 60.0
+        for turns, expected in ((WORK_MODEL_TURNS, 'approval_required'), (0, None)):
+            with self.subTest(turns=turns):
+                asked.clear()
+                budget = WorkBudget(turns=turns)
+                engine = RoutedDecisionEngine(lambda: FixtureDecisionEngine(judge=judge), budget=lambda: budget)
+                browser, driver = opened(ConversationJudgments(engine), budget=budget)
+                if expected:
+                    with self.assertRaises(ToolError) as caught:
+                        browser.click({'target': 'Reserve', 'effect': 'mutate'})
+                    self.assertEqual(caught.exception.code, expected)
+                    self.assertEqual((asked, budget.turns_used), (['browser-press-payment'], 1))
+                else:
+                    browser.click({'target': 'Reserve', 'effect': 'mutate'})
+                    self.assertEqual(asked, [], 'no turn left: the engine is not contacted, the floor answers')
+                    self.assertEqual(driver.approved, [False])
 
-            def spend_turn(self, reserve=False):
-                if self.refuse:
-                    raise ToolError('budget', 'turn_budget')
-                self.turns += 1
-
-        budget, judgments = Budget(), ScriptedJudgments('yes')
-        browser, _driver = opened(judgments, budget=budget)
-        with self.assertRaises(ToolError):
-            browser.click({'target': 'Reserve', 'effect': 'mutate'})
-        self.assertEqual(budget.turns, 1)
-        exhausted, judgments = Budget(refuse=True), ScriptedJudgments('yes')
-        browser, driver = opened(judgments, budget=exhausted)
+    def test_an_engine_that_cannot_answer_costs_no_turn(self):
+        budget = WorkBudget()
+        engine = RoutedDecisionEngine(UnavailableDecisionEngine, budget=lambda: budget)
+        browser, driver = opened(ConversationJudgments(engine), budget=budget)
         browser.click({'target': 'Reserve', 'effect': 'mutate'})
-        self.assertEqual(judgments.asked, [], 'no turn left: not asked, the floor answers')
-        self.assertEqual(driver.approved, [False])
+        self.assertEqual(driver.approved, [False], 'no decision provider: the floor answers')
+        self.assertEqual(budget.turns_used, 0)
 
     def test_the_work_hands_its_judgments_to_the_browser_session(self):
         judgments = ScriptedJudgments()

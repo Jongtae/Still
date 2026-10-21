@@ -1316,8 +1316,10 @@ class BrowserSession:
         same page state is never asked again in this session).  The facts are
         the control's mediated label, its mediated nearby text and the page
         title, all bounded and scrubbed of the Work's private values, and
-        redacted again by the judgments.  It is one model turn of the Work's
-        budget.  Only a confident yes is True: no, low confidence, an
+        redacted again by the judgments.  Like the Work's other judgments, the
+        engine admits it against the Work's turns when it contacts a provider
+        (``RoutedDecisionEngine``), so an engine that cannot answer costs no
+        turn.  Only a confident yes is True: no, low confidence, an
         unavailable engine or an exhausted budget leave the floor's answer.
         """
         ask = getattr(self.judgments, 'press_commits_payment', None)
@@ -1327,12 +1329,6 @@ class BrowserSession:
         if cache in self._press_judged:
             return self._press_judged[cache]
         self._press_judged[cache] = False
-        try:
-            # As the outcome judgment: the routed engine spends the Work's turn itself, else it is spent here.
-            if self.budget is not None and getattr(getattr(self.judgments, 'engine', None), 'work_budget', None) is not self.budget:
-                self.budget.spend_turn()
-        except Exception:
-            return False
         control = f"{row.get('role') or 'element'}: {row.get('name') or ''}"[:NAME_LIMIT]
         near = str(row.get('_near') or '')[:NEAR_LIMIT]
         try:
