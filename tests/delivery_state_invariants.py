@@ -67,6 +67,7 @@ GOAL_READY = "owner-activated-goal-ready"
 CLOSED_OUT = "complete"
 PAUSED = "owner-paused"
 CLOSED_ON_MERGE = "complete-on-merge"
+NO_CHANGE_NEEDED = "no-change-needed"
 
 
 def load_plan(path=PLAN_PATH):
@@ -521,13 +522,23 @@ def assert_closed_out_record(case, plan, name):
     deferred = program.get("deferred_substeps", {}).get("substeps", [])
     case.assertFalse(set(deferred) & set(done), name)
     # Nor may an unexecuted one. Each must name a successor issue, so an
-    # unfinished substep cannot be dropped silently.
+    # unfinished substep cannot be dropped silently -- unless it was
+    # investigated and found to need no work (#168): that terminal disposition
+    # names the issue holding the evidence, and must not also claim a successor.
     unexecuted = program.get("unexecuted_substeps", {})
     case.assertFalse(set(unexecuted) & set(done), name)
     for substep, record in unexecuted.items():
+        case.assertTrue(record.get("reason"), f"{name}: {substep} is unexecuted with no reason")
+        if record.get("disposition") == NO_CHANGE_NEEDED:
+            case.assertIsInstance(record.get("evidence_issue"), int,
+                                  f"{name}: {substep} needs no change but names no evidence issue")
+            case.assertNotIn("successor_issue", record,
+                             f"{name}: {substep} needs no change, so it has no successor to name")
+            case.assertGreaterEqual(len(record["reason"]), MIN_REASON_CHARS, f"{name}: {substep}")
+            continue
+        case.assertNotIn("disposition", record, f"{name}: {substep} has an unknown disposition")
         case.assertIsInstance(record.get("successor_issue"), int,
                               f"{name}: {substep} is unexecuted with no successor issue")
-        case.assertTrue(record.get("reason"), f"{name}: {substep} is unexecuted with no reason")
 
 
 class RecordingRunner:

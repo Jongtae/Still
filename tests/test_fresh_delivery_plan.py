@@ -178,7 +178,9 @@ def test_the_browse_audit_program_is_closed_out_and_selects_nothing():
     program = current["programs"]["BROWSE-AUDIT-01"]
     assert program["activated_substeps"] == ["BROWSE-CLOSE-01", "AUDIT-OUTBOUND-01"]
     assert program["ordered_substeps"] == program["completed_substeps"] == ["AUDIT-OUTBOUND-01"]
-    assert program["unexecuted_substeps"]["BROWSE-CLOSE-01"]["successor_issue"] == 164
+    no_change = program["unexecuted_substeps"]["BROWSE-CLOSE-01"]
+    assert (no_change["disposition"], no_change["evidence_issue"]) == ("no-change-needed", 164)
+    assert "successor_issue" not in no_change
     assert "cProfile" in program["unexecuted_substeps"]["BROWSE-CLOSE-01"]["reason"]
     items = {item["id"]: item for item in current["iterations"]}
     evidence = items["BROWSE-AUDIT-01"]["completed_substeps"]
@@ -187,6 +189,29 @@ def test_the_browse_audit_program_is_closed_out_and_selects_nothing():
     assert "BROWSE-CLOSE-01" not in current["history"]["documented_completed_iterations"]
     for state in ({}, {"completed": []}, {"active": "BROWSE-AUDIT-01", "status": "running"}):
         assert DeliveryPlan(PLAN).select(state) is None, state
+
+
+def test_an_unexecuted_substep_needs_a_successor_or_a_no_change_disposition_with_evidence():
+    """#168 review: a no-work disposition is its own kind, not a successor pointing back at a closed issue."""
+    import copy
+    base = plan()
+
+    def closeout_fails(record):
+        altered = copy.deepcopy(base)
+        altered["programs"]["BROWSE-AUDIT-01"]["unexecuted_substeps"]["BROWSE-CLOSE-01"] = record
+        try:
+            invariants.assert_closed_out_record(TestCase(), altered, "BROWSE-AUDIT-01")
+        except AssertionError:
+            return True
+        return False
+
+    reason = base["programs"]["BROWSE-AUDIT-01"]["unexecuted_substeps"]["BROWSE-CLOSE-01"]["reason"]
+    assert not closeout_fails({"disposition": "no-change-needed", "evidence_issue": 164, "reason": reason})
+    assert not closeout_fails({"successor_issue": 999, "reason": reason})
+    assert closeout_fails({"disposition": "no-change-needed", "reason": reason})
+    assert closeout_fails({"disposition": "no-change-needed", "evidence_issue": 164, "successor_issue": 164, "reason": reason})
+    assert closeout_fails({"disposition": "something-else", "successor_issue": 999, "reason": reason})
+    assert closeout_fails({"reason": reason})
 
 
 def test_a_closed_program_stays_unselectable_even_if_declared_active(tmp_path):
