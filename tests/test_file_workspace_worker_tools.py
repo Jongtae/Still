@@ -474,6 +474,25 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         with self.store.db() as db:
             self.assertEqual(db.execute("SELECT state FROM file_workspace_results WHERE id='p2'").fetchone()[0], 'pending')
 
+    def test_a_published_but_pending_result_is_found(self):
+        from unittest.mock import patch
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        with patch.object(FileWorkspace, '_mark_current', lambda self, record: None):
+            caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        found = self.caps('job-later').execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertEqual([item['path'] for item in found['files']], ['Notes.md'])
+
+    def test_a_source_read_at_two_versions_is_cited_at_both(self):
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        self.trip.write_text('changed during the Work', encoding='utf-8')
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        saved = caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        self.assertEqual(saved['cited'], ['trip.md', 'trip.md'])
+        # One cited version is gone, so the result is not offered as current.
+        self.assertEqual(self.caps('job-later').execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})['files'], [])
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})

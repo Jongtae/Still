@@ -2726,7 +2726,9 @@ class Capabilities:
   if not any(root['id']==root_id for root in self.workspace_references()):raise ValueError('허용된 참고 폴더가 아닙니다.')
   source=FileWorkspace(self.store).read(reference_id,path)
   # The read itself is what a saved result cites (``save_result``): its exact version, not a model's claim.
-  if cite:self.workspace_reads[(reference_id,source['path'])]={key:source[key] for key in ('reference_id','source_id','path','version')}
+  # #182 review: keyed by version too, so a file read again after it changed is cited at both versions
+  # (and the result is then not fresh), never only at the later one.
+  if cite:self.workspace_reads[(reference_id,source['path'],source['version'])]={key:source[key] for key in ('reference_id','source_id','path','version')}
   text=source['content'];content=text[:24000]
   locations=re.findall(r'^\[([^\]\n]{1,80})\] ',content,flags=re.M)[:100]
   return {'root_id':root_id,'path':source['path'],'kind':Path(source['path']).suffix.lower().lstrip('.'),'content':content,
@@ -2823,7 +2825,7 @@ class Capabilities:
    citation=evidence.get('citation') if isinstance(evidence,dict) else None
    if (parsed.get('host_action')=='read_file' and isinstance(citation,dict)
        and all(isinstance(citation.get(key),str) for key in ('reference_id','source_id','path','version'))):
-    reads[(citation['reference_id'],citation['path'])]={key:citation[key] for key in ('reference_id','source_id','path','version')}
+    reads[(citation['reference_id'],citation['path'],citation['version'])]={key:citation[key] for key in ('reference_id','source_id','path','version')}
   return reads
  def save_result(self,title,content):
   """#182: save this Work's result as a new file in the file workspace's result folder.

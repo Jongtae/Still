@@ -351,7 +351,11 @@ class FileWorkspace:
             return bool(db.execute("SELECT 1 FROM file_workspace_results WHERE state='current' LIMIT 1").fetchone())
 
     def has_results(self):
-        """Whether any saved result record exists, checking no file (``list_roots``)."""
+        """Whether any saved result record exists, checking no result file (``list_roots``).
+
+        An interrupted save is settled first (bounded), so a published result left ``pending`` counts (#182 review).
+        """
+        self.recover(time.monotonic()+2)
         with self.store.db() as db:
             self._ensure_results_table(db)
             if db.execute("SELECT 1 FROM file_workspace_results WHERE state='current' LIMIT 1").fetchone(): return True
