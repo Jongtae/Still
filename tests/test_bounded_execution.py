@@ -44,7 +44,9 @@ BOUNDED_NAMES = ['ask_location', 'browser_click', 'browser_find', 'browser_open'
                  'forget_record', 'information_use', 'list_memory', 'list_notes', 'list_roots',
                  'mail_read', 'mail_search',  # #150: the owner's Gmail reads, relayed to the service.
                  'propose_current_state', 'public_page_read',
-                 'read_file', 'save_memory', 'save_note', 'schedule_preparation',
+                 'read_file', 'save_memory', 'save_note',
+                 'save_result',  # #182: a new result file in the file workspace, in the bridge process.
+                 'schedule_preparation',
                  'search_memory', 'settings_change', 'settings_read', 'weather', 'web_search',
                  # #1216: authenticated API calls by slot, relayed to the service.
                  'api_request']

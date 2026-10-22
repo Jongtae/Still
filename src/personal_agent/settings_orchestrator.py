@@ -57,9 +57,13 @@ STATE_LABELS = {
 UNKNOWN_STATE_LABEL = "확인 필요"
 
 RETIRED_CONTROL_MESSAGE = (
-    "연결을 일시 정지하거나 해제하는 기능은 대화에서 제공하지 않습니다. "
+    "연결을 일시 정지하거나 다시 시작하는 기능은 아직 없습니다. 대화에서는 Google 연결 해제만 확인 후 적용할 수 있어요. "
     "설정 > 외부 연결에서 서비스별 현재 상태와 실제로 가능한 작업을 확인하세요."
 )
+#: #183: what disconnecting a Google connection does, and what it leaves alone.  The same effects
+#: ``GoogleConnectionRevoker.preview`` states; forgetting or deleting records is a separate request.
+DISCONNECT_NOTE = ("해제하면 Still이 즉시 이 연결을 쓰지 않고, 이 기기에 저장된 인증 정보를 지우며, Google에 권한 취소를 요청합니다. "
+                   "저장된 결과물과 기록, Google에 있는 데이터는 지우지 않아요. 다시 쓰려면 다시 연결해야 합니다.")
 
 
 def state_label(state):
@@ -112,12 +116,14 @@ SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", 
             "preparations": ("cancel", "accept"),
             # #1197: Works may use the owner's AI-side connections (claude.ai connectors), read-only.
             # #1297: which of the owner's MCP servers load, and the owner's trust record per connection.
-            "ai_connections": ("enabled", "connect", "servers", "review", "money", "rung", "undo", "forget", "restore")}
+            "ai_connections": ("enabled", "connect", "servers", "review", "money", "rung", "undo", "forget", "restore"),
+            # #183: disconnect one Google connection (``GoogleConnectionRevoker``), confirmed like any draft.
+            "connections": ("disconnect",)}
 SETTING_LABELS = {"enabled": "사용", "timezone": "시간대", "mode": "방식", "model": "모델", "route": "경로",
                   "daily_calls": "하루 판단 횟수", "add": "새로 만들기", "share_site": "로그인 공유", "unshare_site": "공유 그만",
                   "remove": "빼기", "send": "보내기", "servers": "MCP 서버", "review": "동작 검토", "money": "돈이 오가는 연결",
                   "connect": "새 MCP 연결", "rung": "신뢰 단계", "undo": "정확히 되돌리기", "forget": "신뢰 기록 잊기", "restore": "잊은 신뢰 기록 복원",
-                  "cancel": "취소", "accept": "수락"}
+                  "cancel": "취소", "accept": "수락", "disconnect": "연결 해제"}
 #: #1297: trust values include "<engine>|<kind>|<stable identity>|..." so a
 #: decision cannot cross engines or connection kinds.
 TRUST_SETTINGS = frozenset({("ai_connections", "servers"), ("ai_connections", "review"), ("ai_connections", "money"),
@@ -143,7 +149,9 @@ SLOW_SETTINGS = frozenset({("judgment_ai", "model"), ("main_ai", "route"), ("mai
                            # #961: adding a skill downloads and inspects one pinned GitHub folder.
                            ("skills", "add"), ("ai_connections", "connect"), ('api_connections', 'connect'),
                            # #1213: opening a phone link starts an ngrok tunnel (up to ~30 seconds).
-                           ("phone_link", "send")})
+                           ("phone_link", "send"),
+                           # #183: a disconnect asks Google to revoke the credential (one network call).
+                           ("connections", "disconnect")})
 #: #961: what adding a skill does, shown with the draft.
 SKILL_ADD_NOTE = ("확인하면 고정된 커밋에서 그 폴더만 받아 라이선스와 내용을 확인한 뒤 추가해요(브랜치 이름은 이 초안을 만들 때 "
                   "GitHub에 물어 커밋으로 고정했어요). 스크립트·훅은 실행하지 않고, 라이선스를 확인할 수 없거나 실행 파일이 "
@@ -189,7 +197,7 @@ class SettingsOrchestrator:
         # path for the owner settings below; None offers only ``connections``.
         self.service = service
         if service is not None:
-            self._CATEGORIES = ("connections", *SETTINGS)
+            self._CATEGORIES = tuple(dict.fromkeys(("connections", *SETTINGS)))
         # One confirmation moves a draft out of awaiting at a time (exactly once);
         # every read-modify-write of the draft rows holds it (re-entrant).
         self._confirming = threading.RLock()
@@ -229,6 +237,9 @@ class SettingsOrchestrator:
                     "state": str(row.get("state") or "unknown")}
             item["state_label"] = state_label(item["state"])
             item["next_action"] = next_action(row)
+            # #183: settings_change connections disconnect takes this id.
+            if row.get("disconnectable"):
+                item["disconnectable"] = True
             rows.append(item)
         return rows
 
@@ -280,7 +291,8 @@ class SettingsOrchestrator:
         if self.service is None:
             return result
         # #814: the owner settings, redacted: values, labels and allowed choices only.
-        settings = {name: self._snapshot(name) for name in SETTINGS if category in (None, name)}
+        # #183: connections keep their own rows (and line) below; their disconnect draft needs no snapshot here.
+        settings = {name: self._snapshot(name) for name in SETTINGS if category in (None, name) and name != "connections"}
         lines = [self._category_line(name, row) for name, row in settings.items()]
         lines += [IN_DOUBT_MESSAGE.format(effect=row["effect"]) for row in self.in_doubt()
                   if category in (None, row.get("category"))]
@@ -439,6 +451,14 @@ class SettingsOrchestrator:
                 "accept": self._row("accept", "", ", ".join(labels[item] for item in proposed) or "없음",
                                     self._options(tuple(proposed), labels), format="수락할 예약의 id")}
 
+    def _connections(self):
+        """#183: the Google connections that can be disconnected now, by connector id."""
+        labels = {row["id"]: f"{row['label']} ({state_label(row['state'])})"
+                  for row in self.service.connection_disconnect_options()}
+        return {"disconnect": self._row("disconnect", "", ", ".join(labels.values()) or "없음",
+                                        self._options(tuple(labels), labels), format="해제할 연결의 id",
+                                        note=DISCONNECT_NOTE)}
+
     def _skills(self):
         """#961: the switch, and the installed skills for ``add`` / ``remove`` (names and pinned sources only)."""
         status = self.service.skills_status()
@@ -558,7 +578,7 @@ class SettingsOrchestrator:
         """The canonical allowed value, or a fail-closed ``SettingsError`` (#814)."""
         if not isinstance(category, str) or not isinstance(setting, str):
             raise SettingsError(UNKNOWN_SETTING_MESSAGE)
-        if category == "connections":
+        if category == "connections" and setting != "disconnect":
             raise SettingsError(RETIRED_CONTROL_MESSAGE)
         if category not in SETTINGS or setting not in SETTINGS[category] or self.service is None:
             raise SettingsError(UNKNOWN_SETTING_MESSAGE)
@@ -724,6 +744,9 @@ class SettingsOrchestrator:
             return before(self.store, value)
         if (category, setting) == ("ai_connections", "connect"):
             return self.service.mcp_setup_before(value)
+        if category == "connections":
+            # #183: bound to the connection's state and revision, so a reconnect or disconnect since makes it stale.
+            return self.service.connection_disconnect_before(value)
         if category == "preparations":
             # #1455: bound to the reservation's state, so a run, a cancel or an accept since the draft makes it stale.
             current = self.service.preparations.get(value) or {}
@@ -792,6 +815,8 @@ class SettingsOrchestrator:
 
         elif (category, setting) == ("skills", "remove"):
             summary = f"스킬 '{after}'를 뺍니다"
+        elif category == "connections":
+            summary = f"{self._describe(category, setting, after, row)} 연결을 해제합니다"
         elif category == "preparations":
             summary = (f"예약을 취소합니다: {self._describe(category, setting, after, row)}" if setting == "cancel"
                        else f"예약을 수락합니다: {self._describe(category, setting, after, row)}")
@@ -918,6 +943,10 @@ class SettingsOrchestrator:
         elif category == "phone_link":
             # #1213: the link goes to the paired Telegram chat; its text is the answer.
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = self.service.start_phone_input(after)
+        elif category == "connections":
+            # #183: the same disconnect as Settings (local stop, credential delete, Google revocation request).
+            receipt = self.service.apply_connection_disconnect(row)
+            self.__dict__.setdefault("_apply_text", {})[row["id"]] = (receipt or {}).get("message")
         elif category == "preparations":
             # #1455: the same operations as the Settings list (#659), confirmed by the owner in the conversation.
             self.service.preparation_request({"operation": setting, "id": after})
@@ -1449,8 +1478,8 @@ class SettingsOrchestrator:
         free text is never re-read for a phrase.  Anything but an id form is the
         read: every connection row already carries its one truthful next action.
         A settings request in the owner's own words reaches the worker, whose
-        ``settings_read`` / ``settings_change`` tools read or draft it.  Pausing or
-        disconnecting a connection has no worker tool yet (#183)."""
+        ``settings_read`` / ``settings_change`` tools read or draft it, including a
+        connection disconnect (#183); pausing a connection does not exist."""
         if not isinstance(text, str): raise SettingsError("설정 요청을 확인하세요.")
         value = text.strip()
         match = re.fullmatch(r"(?:confirm|확인)\s+([A-Za-z0-9_-]+)", value, re.I)

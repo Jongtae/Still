@@ -1331,6 +1331,12 @@
   "ja": "現在の状況を記録",
   "zh": "记录当前情况"
  },
+ "projection.save_result": {
+  "ko": "결과 저장",
+  "en": "Save the result",
+  "ja": "結果を保存",
+  "zh": "保存结果"
+ },
  "projection.see_the_rest_in_the_agentos": {
   "ko": "… (나머지는 Still 웹 기록에서 확인하세요.)",
   "en": "… (see the rest in the Still web record.)",
@@ -2164,6 +2170,12 @@
   "en": "Noting this down",
   "ja": "覚えておいています",
   "zh": "正在记下来"
+ },
+ "step.save_result": {
+  "ko": "결과 저장하고 있어요",
+  "en": "Saving the result",
+  "ja": "結果を保存しています",
+  "zh": "正在保存结果"
  },
  "step.save_note": {
   "ko": "메모 남기고 있어요",

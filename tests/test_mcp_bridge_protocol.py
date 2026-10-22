@@ -258,7 +258,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
         self.assertEqual(names, ["calendar_draft_cancel", "calendar_draft_create",
                                  "calendar_draft_update", "calendar_query", "capability_search", *CODE_RUN, "drive_read", "drive_search", "find_files", "forget_record", "information_use",
                                  "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_page_read", "read_file", "save_memory",
-                                 "save_note", "schedule_preparation", "search_memory", "settings_change", "settings_read", "weather",
+                                 "save_note", "save_result", "schedule_preparation", "search_memory", "settings_change", "settings_read", "weather",
                                  "web_search"])
         replies = self._wire(
             {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
@@ -273,6 +273,28 @@ class ExposedToolWireBoundary(unittest.TestCase):
         result = json.loads(replies[2]["result"]["content"][0]["text"])
         self.assertEqual([row['id'] for row in result['memories']], [expected['id']])
 
+    def test_a_bridge_save_without_folders_parks_a_resumable_work_for_the_folder(self):
+        """#182 review: save_result runs in the bridge; its setup-required event parks the Work (#505).
+
+        Only a Work safe to resume parks (``settings_resume_safe``: every action of the CLI turn
+        observed and changing nothing).  This scripted CLI reports no tool observations, so the
+        test states that disposition; without it the Work ends and the worker relays the tool's
+        own next step.
+        """
+        call = {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "save_result", "arguments": {"title": "Notes", "content": "summary"}}}
+        replies = self._wire(call)
+        result = json.loads(replies[2]["result"]["content"][0]["text"])
+        self.assertEqual((result["saved"], result["requires"]), (False, "local-reference-read"))
+        [unsafe] = self.store.jobs()
+        self.assertEqual(unsafe["status"], "succeeded", "an unobserved CLI turn is never resumed")
+        self.service.settings_resume_safe = lambda work_id: True
+        self._wire(call)
+        parked = next(job for job in self.store.jobs() if job["id"] != unsafe["id"])
+        self.assertEqual(parked["status"], "awaiting_connection")
+        [request] = [event for event in self.store.task_events(parked["id"]) if event["tool"] == "local_authority"]
+        self.assertEqual(request["trace"]["scopes"], ["folder:read"])
+
     def test_a_native_search_turn_gets_the_private_reads_over_the_real_bridge(self):
         """#826 (owner decision): the exact bridge command of a native-search turn lists and serves list_notes.
 
@@ -285,7 +307,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
         self.assertEqual([tool["name"] for tool in replies[2]["result"]["tools"]],
                          ["calendar_draft_cancel", "calendar_draft_create", "calendar_draft_update", "calendar_query",
                           "capability_search", *CODE_RUN, "drive_read", "drive_search", "find_files", "forget_record", "information_use", "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_page_read",
-                          "read_file", "save_memory", "save_note", "schedule_preparation", "search_memory", "settings_change",
+                          "read_file", "save_memory", "save_note", "save_result", "schedule_preparation", "search_memory", "settings_change",
                           "settings_read", "weather"])
         self.assertFalse(_refused(replies[3]))
         self.assertIn("notes", json.loads(replies[3]["result"]["content"][0]["text"]))

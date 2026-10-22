@@ -90,6 +90,8 @@ class StrictProfileDeclaration(unittest.TestCase):
         public_page_read for this Work's own search results; the owner's approved page list stays off it."""
         from personal_agent.agent_runtime import BROWSER_ACTIONS, HOST_RELAYED_ACTIONS
         owner_files = {'find_files', 'read_file', 'list_roots',
+                       # #182: the file workspace's result file is written from the owner store's folders.
+                       'save_result',
                        # #961: skills are read from the owner store, so strict never serves them either.
                        'skill_load', 'skill_resource', 'method_gap'}
         self.assertEqual(profile_actions(STRICT_PROFILE),
@@ -166,7 +168,8 @@ class StrictLaunchArguments(unittest.TestCase):
         # #826: trusted-local also pre-approves the connected-folder documents and approved pages.
         trusted_allow = ('mcp__agentos__find_files,mcp__agentos__list_notes,'
                          'mcp__agentos__list_roots,mcp__agentos__propose_current_state,mcp__agentos__public_page_read,'
-                         'mcp__agentos__read_file,mcp__agentos__save_note,mcp__agentos__weather,mcp__agentos__web_search')
+                         'mcp__agentos__read_file,mcp__agentos__save_note,mcp__agentos__save_result,'
+                         'mcp__agentos__weather,mcp__agentos__web_search')
         # #623: both pre-approve exactly their bridge tools; strict also removes
         # every built-in tool.  #701: trusted-local adds the browser tools.
         browser = ',mcp__agentos__browser_open,mcp__agentos__browser_read,mcp__agentos__browser_find,' \

@@ -371,7 +371,7 @@ class OrchestratorCategories(_Case):
                 ('main_ai', 'model', OPENAI_KEY, CREDENTIAL_VALUE_MESSAGE),
                 ('current_context', 'timezone', TELEGRAM_SECRET, CREDENTIAL_VALUE_MESSAGE),
                 ('current_context', 'enabled', 'maybe', '다음 중 하나'),
-                ('connections', 'telegram', 'off', '대화에서 제공하지 않습니다')):
+                ('connections', 'telegram', 'off', '일시 정지하거나 다시 시작하는 기능은 아직 없습니다')):
             with self.subTest(setting=setting, value=value[:12]):
                 with self.assertRaises(SettingsError) as caught:
                     self.draft(category, setting, value)

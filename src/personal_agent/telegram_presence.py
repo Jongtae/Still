@@ -262,6 +262,7 @@ FALLBACK_STEP_LINES = {
     'code_run': (None, msg('step.code_run')),
     'list_notes': (None, msg('step.list_notes')),
     'save_note': (None, msg('step.save_note')),
+    'save_result': (None, msg('step.save_result')),
     'list_memory': (None, msg('step.list_memory')),
     'search_memory': (None, msg('step.list_memory')),
     'save_memory': (None, msg('step.save_memory')),

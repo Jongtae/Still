@@ -1,7 +1,7 @@
 """Scoped local file workspace: references stay read-only; results are new files."""
 from pathlib import Path
-import hashlib, json, os, re, time, uuid
-from .document_reader import read as read_document, supported as supported_document
+import hashlib, json, os, re, sqlite3, time, uuid
+from .document_reader import MAX_FILE_BYTES, read as read_document, supported as supported_document
 from . import folder_grants
 
 
@@ -111,6 +111,8 @@ class FileWorkspace:
         if any(part.is_symlink() for part in (base, *candidate.parents) if part.exists()): raise ValueError('심볼릭 링크를 통한 참고 자료 접근은 허용하지 않습니다.')
         resolved=candidate.resolve()
         if (not resolved.is_relative_to(base) or resolved.suffix.lower() not in ('.txt','.md','.pdf','.docx','.xlsx') or not resolved.is_file() or candidate.is_symlink()): raise ValueError('참고 폴더 밖 또는 지원하지 않는 파일입니다.')
+        # #182 review: bounded like a connected-folder read, before any byte is read.
+        if resolved.stat().st_size>MAX_FILE_BYTES: raise ValueError('10MB 이하 지원 문서만 읽을 수 있습니다.')
         return resolved
 
     def read(self, ref_id, relative):
@@ -178,18 +180,27 @@ class FileWorkspace:
         if candidate.is_symlink() or not candidate.resolve().is_relative_to(root): raise ValueError('관리 작업공간 밖의 결과에는 접근할 수 없습니다.')
         return candidate
 
-    def recover(self):
-        """Finalize only a verified publication, and discard unpublised reservations."""
+    def recover(self, deadline=None):
+        """Finalize only a verified publication, and discard unpublised reservations.
+
+        ``deadline`` (``time.monotonic``) stops before the next reservation once passed, leaving the rest
+        pending for a later call; a candidate file larger than any result Still writes is not read (#182 review).
+        """
         with self.store.db() as db:
             self._ensure_results_table(db)
             pending=[dict(row) for row in db.execute("SELECT * FROM file_workspace_results WHERE state='pending'")]
+        # #182 review: with no usable result folder now, nothing can be verified: reservations stay pending.
+        active_id=self.active().get('workspace_id')
+        if not pending or not active_id: return
         for record in pending:
-            if record.get('workspace_id')!=self._workspace_id():
+            if deadline is not None and time.monotonic()>deadline: break
+            if record.get('workspace_id')!=active_id:
                 with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
                 continue
             try:
                 published=self._result_path(record['path'])
-                complete=published.is_file() and hashlib.sha256(published.read_bytes()).hexdigest()==record['content_hash']
+                complete=(published.is_file() and published.stat().st_size<=MAX_FILE_BYTES
+                          and hashlib.sha256(published.read_bytes()).hexdigest()==record['content_hash'])
             except (OSError,ValueError): complete=False
             with self.store.db() as db:
                 if complete: db.execute("UPDATE file_workspace_results SET state='current' WHERE id=? AND state='pending'",(record['id'],))
@@ -228,36 +239,188 @@ class FileWorkspace:
                     with self.store.db() as db: db.execute("DELETE FROM file_workspace_results WHERE id=? AND state='pending'",(record['id'],))
                     return self.save(request_id,title,content,sources)
             self._mark_current(record)
-            return {**record,'state':'current'}
+            # ``inserted``: this call published the result (a concurrent same-request save returns the row it lost to).
+            return {**record,'state':'current','inserted':True}
         except Exception:
             temporary.unlink(missing_ok=True)
             if published: target.unlink(missing_ok=True)
             with self.store.db() as db: db.execute("DELETE FROM file_workspace_results WHERE id=? AND state='pending'",(record['id'],))
             raise
 
-    def _fresh(self, record):
+    #: ``_fresh``'s answer when its deadline passed before every source was checked (#182 review).
+    UNCHECKED=None
+
+    #: ``_fresh``'s answer when a cited reference folder is not usable now (removed from the grant, blocked,
+    #: an unmounted drive): nothing was observed to differ, so the record keeps its state (#182 review).
+    UNAVAILABLE='unavailable'
+
+    def _fresh(self, record, deadline=None):
+        """Whether every cited source is unchanged; ``UNCHECKED`` when ``deadline`` passed between sources,
+        ``UNAVAILABLE`` when a cited reference folder cannot be read now."""
         try: sources=json.loads(record['sources'])
         except (TypeError,json.JSONDecodeError): return False
-        try:return bool(sources) and all((current:=self.read(source['reference_id'],source['path']))['version']==source['version'] and current['source_id']==source['source_id'] for source in sources)
+        try:
+            if not sources: return False
+            usable={ref.get('id'):ref.get('path') for ref in self.active().get('references') or () if isinstance(ref,dict)}
+            for source in sources:
+                if deadline is not None and time.monotonic()>deadline: return self.UNCHECKED
+                folder=usable.get(source.get('reference_id'))
+                if not folder or not Path(folder).is_dir(): return self.UNAVAILABLE
+                current=self.read(source['reference_id'],source['path'])
+                if current['version']!=source['version'] or current['source_id']!=source['source_id']: return False
+            return True
         except (KeyError,ValueError,OSError,UnicodeError): return False
+
+    def current_results(self, needle=None, latest=False, path=None, deadline=None, terms=None):
+        """Fresh saved results, newest first: each one's sources still match the originals.
+
+        A result whose workspace changed is marked ``detached``, one whose
+        sources changed ``stale``; neither is returned.  ``needle`` (casefolded)
+        keeps only results whose name or content contains it; ``path`` checks
+        only the one result of that name.  ``deadline`` (``time.monotonic``)
+        stops checking once passed, so one call stays bounded (#182 review).
+        ``terms``: results whose name holds one of them are checked first, beyond the
+        newest-100 window, so an older result is found by its name (#182 review).
+        """
+        self.recover(deadline)
+        # Results exist but no result folder is usable: the caller's setup case, never an empty answer.
+        if self.has_file_results(): self._workspace_id()
+        with self.store.db() as db:
+            self._ensure_results_table(db)
+            records=[dict(row) for row in (db.execute('SELECT * FROM file_workspace_results WHERE path=?',(path,)) if path is not None
+                                           else db.execute("SELECT * FROM file_workspace_results WHERE state IN ('current','stale') ORDER BY created DESC LIMIT 101"))]
+            terms=[term.lower() for term in (terms or ()) if isinstance(term,str) and term] if path is None else []
+            named=[dict(row) for row in db.execute(
+                "SELECT * FROM file_workspace_results WHERE state IN ('current','stale') AND ("+' OR '.join(['instr(lower(path),?)>0']*len(terms))+')'
+                +' ORDER BY created DESC LIMIT 100',terms)] if terms else []
+        results=[]
+        # Whether the deadline, or the 100-record cap, stopped the checks before every record was seen (#182 review).
+        self.stopped_early=len(records)>100
+        seen=set()
+        records=[record for record in named+records[:100] if not (record['id'] in seen or seen.add(record['id']))]
+        for record in records:
+            if deadline is not None and time.monotonic()>deadline:
+                self.stopped_early=True; break
+            if record.get('workspace_id')!=self._workspace_id():
+                with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
+                continue
+            fresh=self._fresh(record,deadline)
+            if fresh is self.UNCHECKED:
+                # Cut short: neither current nor stale, and the search says it is incomplete.
+                self.stopped_early=True; break
+            if fresh==self.UNAVAILABLE:
+                # A cited reference folder is unusable now: left as it is, and the search is incomplete.
+                self.stopped_early=True; continue
+            with self.store.db() as db: db.execute('UPDATE file_workspace_results SET state=? WHERE id=?',('current' if fresh else 'stale',record['id']))
+            if not fresh: continue
+            try:
+                published=self._result_path(record['path'])
+                # #182 review: bounded before it is read, and only the exact text Still published counts:
+                # a result file edited (or replaced) since is not this result any more.
+                if published.stat().st_size>MAX_FILE_BYTES: raise ValueError('oversized result file')
+                raw=published.read_bytes()
+                if hashlib.sha256(raw).hexdigest()!=record.get('content_hash'): raise ValueError('edited result file')
+                content=raw.decode('utf-8')
+            except (OSError,UnicodeError,ValueError):
+                # #182 review: deleted, unreadable, oversized or edited: not a current result any more.
+                with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
+                continue
+            if latest or needle is None or needle in (record['path']+'\n'+content).casefold(): results.append({'id':record['id'],'path':record['path'],'content':content,'sources':json.loads(record['sources'])})
+            if latest and results: break
+        return results
 
     def search(self, query):
         latest=isinstance(query,str) and query.strip() in ('*','__latest__')
         if not latest and (not isinstance(query,str) or not 2<=len(query.strip())<=160): raise ValueError('두 글자 이상의 결과 검색어를 입력하세요.')
-        self.recover()
-        needle=query.casefold().strip()
+        return self.current_results(query.casefold().strip(),latest)
+
+    #: ``intact``'s answer when it could not tell: the result folder is unusable now, or the source check
+    #: ran out of time.  The record keeps its state (#182 review).
+    UNKNOWN=None
+
+    def intact(self, record):
+        """Whether a current record is still a current result: its file exactly what Still published and its
+        cited sources unchanged (#182 review).  ``False`` marks it stale; ``UNKNOWN`` changes nothing."""
+        if record.get('workspace_id')!=self.active().get('workspace_id') or not self.active().get('workspace_id'):
+            return self.UNKNOWN
+        try:
+            published=self._result_path(record['path'])
+            ok=(published.stat().st_size<=MAX_FILE_BYTES
+                and hashlib.sha256(published.read_bytes()).hexdigest()==record.get('content_hash'))
+        except (OSError,ValueError): ok=False
+        if ok:
+            fresh=self._fresh(record,time.monotonic()+5)
+            if fresh is self.UNCHECKED or fresh==self.UNAVAILABLE: return self.UNKNOWN
+            ok=fresh is True
+        if not ok:
+            with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
+        return ok
+
+    def result_for(self, request_id):
+        """The result record one request (Work) already saved, or None.
+
+        A record of a result folder other than the active one is marked ``detached`` first (#182 review),
+        as ``current_results`` would, so it never reads as this folder's result.
+        """
         with self.store.db() as db:
-            self._ensure_results_table(db); records=[dict(row) for row in db.execute('SELECT * FROM file_workspace_results ORDER BY created DESC LIMIT 100')]
-        results=[]
-        for record in records:
-            if record.get('workspace_id')!=self._workspace_id():
-                with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
-                continue
-            fresh=self._fresh(record)
-            with self.store.db() as db: db.execute('UPDATE file_workspace_results SET state=? WHERE id=?',('current' if fresh else 'stale',record['id']))
-            if not fresh: continue
-            try: content=self._result_path(record['path']).read_text(encoding='utf-8')
-            except (OSError,UnicodeError,ValueError): continue
-            if latest or needle in (record['path']+'\n'+content).casefold(): results.append({'id':record['id'],'path':record['path'],'content':content,'sources':json.loads(record['sources'])})
-            if latest and results: break
-        return results
+            self._ensure_results_table(db)
+            row=db.execute('SELECT * FROM file_workspace_results WHERE request_id=?',(request_id,)).fetchone()
+        record=dict(row) if row else None
+        active_id=self.active().get('workspace_id')
+        # Only a usable, different result folder detaches it; an unavailable one (an unmounted drive) leaves it.
+        if record and record.get('state')=='current' and active_id and record.get('workspace_id')!=active_id:
+            with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
+            record['state']='detached'
+        return record
+
+    def has_file_results(self):
+        """Whether a published result-file record exists (the result folder may be unavailable)."""
+        with self.store.db() as db:
+            self._ensure_results_table(db)
+            return bool(db.execute("SELECT 1 FROM file_workspace_results WHERE state IN ('current','pending') LIMIT 1").fetchone())
+
+    def has_results(self):
+        """Whether any saved result record exists, checking no result file (``list_roots``).
+
+        An interrupted save is settled first (bounded), so a published result left ``pending`` counts (#182 review).
+        """
+        self.recover(time.monotonic()+2)
+        with self.store.db() as db:
+            self._ensure_results_table(db)
+            if db.execute("SELECT 1 FROM file_workspace_results WHERE state IN ('current','pending') LIMIT 1").fetchone(): return True
+            tables={row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            return 'workspace_results' in tables and bool(db.execute('SELECT 1 FROM workspace_results LIMIT 1').fetchone())
+
+    def project_results(self, item_id=None, terms=None, deadline=None):
+        """Answers the owner saved into a project (the older ``workspace_results``), newest first.
+
+        Still's own records, read-only: ``{id, title, content, created}``.  ``item_id`` reads that one
+        directly; otherwise the newest 100, with ``project_capped`` set when more exist (#182 review).
+        ``deadline`` (``time.monotonic``) interrupts the query once passed (``project_capped`` then too).
+        """
+        self.project_capped=False
+        with self.store.db() as db:
+            tables={row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if not {'workspace_results','workspaces'}<=tables: return []
+            query='SELECT r.id,w.title,r.content,r.created FROM workspace_results r JOIN workspaces w ON w.id=r.workspace_id'
+            if item_id is not None:
+                return [dict(row) for row in db.execute(query+' WHERE r.id=?',(item_id,))]
+            # #182 review: a search filters before the cap, so an older matching answer is reachable.
+            terms=[term for term in (terms or ()) if isinstance(term,str) and term]
+            where=(' WHERE '+' OR '.join(["instr(lower(w.title||' '||r.content),?)>0"]*len(terms))) if terms else ''
+            # #182 review: a full-text scan of a long history is interrupted at the caller's deadline.
+            if deadline is not None:
+                if time.monotonic()>deadline:
+                    self.project_capped=True
+                    return []
+                db.set_progress_handler(lambda: 1 if time.monotonic()>deadline else 0, 200)
+            try:
+                rows=[dict(row) for row in db.execute(query+where+' ORDER BY r.created DESC LIMIT 101',[term.lower() for term in terms])]
+            except sqlite3.OperationalError:
+                if deadline is None or time.monotonic()<=deadline: raise
+                self.project_capped=True
+                return []
+            finally:
+                if deadline is not None: db.set_progress_handler(None, 0)
+        self.project_capped=len(rows)>100
+        return rows[:100]

@@ -108,7 +108,7 @@ class OneActionSource(_Store):
     def test_read_only_hint_comes_from_the_manifest_mode(self):
         hints = {tool['name']: tool['annotations']['readOnlyHint'] for tool in AgentOSMcpTools(self.caps()).definitions()}
         # #774: the relayed owner-state tools carry their manifest modes too.
-        self.assertEqual(hints, {'list_notes': True, 'save_note': False,
+        self.assertEqual(hints, {'list_notes': True, 'save_note': False, 'save_result': False,
                                  # #1380: this slice's code runs only read (GET/HEAD).
                                  'code_run': True,
                                  'weather': True, 'web_search': True, 'calendar_query': True, 'list_memory': True,
@@ -367,7 +367,7 @@ class SettingsProjection(_Store):
                                    'limitation': CLI_PROFILES[BOUNDED_PROFILE]['limitation'],
                                    'tools': ['find_files', 'list_notes', 'list_roots',
                                              'propose_current_state', 'public_page_read', 'read_file',
-                                             'save_note', 'weather', 'web_search', 'browser_open', 'browser_read',
+                                             'save_note', 'save_result', 'weather', 'web_search', 'browser_open', 'browser_read',
                                              'browser_find', 'browser_click', 'browser_type',
                                              # #953: the sign-in request, served the same way.
                                              'browser_sign_in',

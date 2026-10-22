@@ -65,7 +65,7 @@ TERMINAL_VERIFIED_MORE = msg('projection.see_the_rest_in_the_agentos')
 #: 상세/기술 정보; conversation says what kind of step it was.
 TOOL_LABELS = {
     'subscription_engine': msg('projection.subscription_cli_run'), 'model': 'AI 응답', 'web_search': '웹 검색',
-    'list_notes': '메모 조회', 'save_note': '메모 저장', 'save_memory': '기억 저장', 'memory_undo': msg('projection.undo_memory'), 'forget_record': '기억 잊기',
+    'list_notes': '메모 조회', 'save_note': '메모 저장', 'save_result': msg('projection.save_result'), 'save_memory': '기억 저장', 'memory_undo': msg('projection.undo_memory'), 'forget_record': '기억 잊기',
     'list_memory': '기억 조회', 'search_memory': '기억 검색', 'local_authority': '폴더 권한', 'calendar_create': msg('handoff.create_event'),
     'calendar_query': '일정 조회', 'calendar_draft_create': '일정 초안', 'calendar_draft_update': '일정 초안',
     'calendar_draft_cancel': '일정 초안', 'weather': '날씨 조회', 'ask_location': '위치 확인',
