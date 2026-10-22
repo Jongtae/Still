@@ -285,6 +285,7 @@ Observed decision points (#1296):
   - a `deny` holds: the server never received the call;
   - empty output lets the call run; `allow` is unsupported and blocks the call;
   - without `--dangerously-bypass-hook-trust` the hook is skipped and the call runs, so Still passes that flag whenever it loads an owner server.
+  - a hook process that fails runs the call: any exit but 0 or 2, a timeout, a signal or invalid JSON (read in the codex `rust-v0.153.4` source, not observed live; #222). Only exit 2 with a reason on stderr blocks. So the command Still gives Codex turns every failure of the decision process into exit 2 with a reason, and its `timeout` (330 s) sits above the relay's 300 s call bound. A decision process that hangs before the relay answers still reaches Codex's timeout and runs the call; the after-the-fact switch-off below covers that case.
 - **Fail closed after the fact.** A call the worker's own stream shows completing without an Still `allowed` decision is recorded, and the owner's servers are switched off for every engine until the owner confirms them again.
 - **Which servers.** Only servers the owner confirmed for an engine load into a Work (empty by default). Their definitions are read from the owner's CLI at launch and never stored by Still. For Codex, values that may be secret travel only in the CLI's environment and are withheld from the model's shell.
 

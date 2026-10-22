@@ -60,6 +60,8 @@ MAX_SERVERS = 8
 AI_CONNECTION_PREFIX = 'mcp__claude_ai_'
 #: The codex-cli flag without which a session-flag hook is skipped (observed, 0.153.4).
 CODEX_HOOK_TRUST_FLAG = '--dangerously-bypass-hook-trust'
+#: #222: Codex's per-hook timeout, above the relay's ``CALL_SECONDS`` (300) so the relay answers first.
+CODEX_HOOK_TIMEOUT_SECONDS = 330
 CODEX_MCP_GET_SECONDS = 10
 
 
@@ -238,10 +240,30 @@ def codex_launch(definitions):
     return args, env, sorted(set(secret))
 
 
+def codex_hook_command(relay):
+    """The shell command Codex runs for each MCP tool call (#222).
+
+    codex-cli 0.153.4 lets the call run when a hook process fails (a missing
+    interpreter, an import error, a signal, any exit but 0 or 2); it blocks
+    only on exit 2 with a reason on stderr.  The ``||`` turns every failed run
+    of the decision process into exactly that.  A success (exit 0) keeps its
+    stdout: empty lets the call run, a deny JSON blocks it.
+    """
+    from .codex_permission_hook import BLOCK_EXIT, REFUSED_TEXT
+    decide = shlex.join((sys.executable, '-m', 'personal_agent.codex_permission_hook', '--relay', str(relay)))
+    return f'{decide} || {{ printf %s {shlex.quote(REFUSED_TEXT)} >&2; exit {BLOCK_EXIT}; }}'
+
+
 def codex_hook_arguments(relay):
-    """The session-flag ``PreToolUse`` hook that sends every MCP tool call to Still, plus the trust flag it needs."""
-    command = shlex.join((sys.executable, '-m', 'personal_agent.codex_permission_hook', '--relay', str(relay)))
-    hook = f'hooks.PreToolUse=[{{matcher={_toml("^mcp__")},hooks=[{{type="command",command={_toml(command)}}}]}}]'
+    """The session-flag ``PreToolUse`` hook that sends every MCP tool call to Still, plus the trust flag it needs.
+
+    #222: its ``timeout`` is just above the relay's own call bound, so a slow
+    decision ends as the relay's deny before Codex's timeout (which runs the
+    call) is reached.
+    """
+    command = codex_hook_command(relay)
+    hook = (f'hooks.PreToolUse=[{{matcher={_toml("^mcp__")},'
+            f'hooks=[{{type="command",command={_toml(command)},timeout={CODEX_HOOK_TIMEOUT_SECONDS}}}]}}]')
     return [CODEX_HOOK_TRUST_FLAG, '-c', hook]
 
 
