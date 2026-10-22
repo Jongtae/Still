@@ -212,8 +212,20 @@ class MemoryService:
     SHORT_ID_CHARS = 8
 
     def _today(self):
-        """The owner's local date, for ``valid_until`` (the last day a fact holds)."""
-        return datetime.fromtimestamp(float(self.now())).date().isoformat()
+        """The owner's date, for ``valid_until`` (the last day a fact holds): in the owner's calendar zone (Codex review)."""
+        from zoneinfo import ZoneInfo
+        from .current_context import resolve_local_timezone
+        return datetime.fromtimestamp(float(self.now()), ZoneInfo(resolve_local_timezone(self.store))).date().isoformat()
+
+    def holds(self, row, today=None):
+        """Whether a current row still holds today (#220): no ``valid_until``, or not before today."""
+        until = row.get('valid_until') if isinstance(row, dict) else None
+        return not until or str(until) >= (today or self._today())
+
+    def holding(self, rows):
+        """``rows`` without the ones past their last day - what a model may read (#220, Codex review)."""
+        today = self._today()
+        return [row for row in rows if self.holds(row, today)]
 
     def profile_snapshot(self, owner_id, *, limit_chars=PROFILE_SNAPSHOT_CHARS, line_chars=PROFILE_LINE_CHARS, query=None,
                          limit_bytes=PROFILE_SNAPSHOT_BYTES, ids=False):
@@ -246,13 +258,10 @@ class MemoryService:
             raise MemoryServiceError('profile snapshot line size is invalid')
         if isinstance(limit_bytes, bool) or not isinstance(limit_bytes, int) or limit_bytes < 1:
             raise MemoryServiceError('profile snapshot byte size is invalid')
-        today = self._today()
-        def holds(row):
-            return not row.get('valid_until') or str(row['valid_until']) >= today
-        rows = [row for row in self._profile_rows(owner_id) if holds(row)]
+        rows = self.holding(self._profile_rows(owner_id))
         if query is not None:
             matched = [row for row in self.search_memories(owner_id, query, limit=20, key_prefix=PROFILE_PREFIX)['memories']
-                       if self.is_profile_key(row.get('memory_key')) and holds(row)]
+                       if self.is_profile_key(row.get('memory_key'))]
             found = {row['id'] for row in matched}
             rows = matched + [row for row in rows if row['id'] not in found]
         lines, entries, used, used_bytes = [], [], 0, 0
@@ -329,7 +338,8 @@ class MemoryService:
         searched = self.store.search_memories(owner_id, terms, limit=limit + 1, include_mode=True, key_prefix=key_prefix) if terms else {
             'memories': [], 'search_mode': 'fts5' if getattr(self.store, 'memory_search_available', False) else 'bounded-like',
         }
-        rows = searched['memories']
+        # #220: a model reads search results, so facts past their last day are left out here too.
+        rows = self.holding(searched['memories'])
         page = rows[:limit]
         return self._private_read("memory_service.search_memories", {
             "state": "current", "memories": page, "query_terms": terms,

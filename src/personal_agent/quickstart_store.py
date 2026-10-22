@@ -1075,9 +1075,16 @@ class QuickStore:
             # #220: the rows this save ended become current again, exactly those still ended by it.
             ended=[r['id'] for r in db.execute("SELECT id FROM memories WHERE owner_key=? AND invalidated_by=? AND state='superseded'",
                                                (owner_key,memory_id))]
+            restorable=[]
             for ended_id in ended:
+                # Codex review on #226: a key that has a newer current value since keeps it; the ended row stays ended.
+                key=db.execute('SELECT memory_key FROM memories WHERE id=?',(ended_id,)).fetchone()['memory_key']
+                if db.execute("SELECT 1 FROM memories WHERE owner_key=? AND memory_key=? AND state='current' AND id<>?",
+                              (owner_key,key,memory_id)).fetchone():continue
                 db.execute("""UPDATE memories SET state='current',invalidated_by=NULL,invalidation_reason=NULL,invalidated_at=NULL
                               WHERE id=? AND owner_key=?""",(ended_id,owner_key))
+                restorable.append(ended_id)
+            ended=restorable
             db.execute("""UPDATE memory_approvals SET state='revoked',memory_key=''
                           WHERE owner_key=? AND memory_key=? AND state='issued'""",(owner_key,row['memory_key']))
             if row['candidate_id']:

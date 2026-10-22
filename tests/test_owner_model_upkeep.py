@@ -436,6 +436,33 @@ class Invalidate(Upkeep):
             self.assertEqual((row['state'], row['invalidated_by'], row['invalidation_reason']), ('current', None, None))
         self.assertEqual(self.row(new['id'])['state'], 'retracted')
 
+    def test_undo_keeps_a_newer_value_under_an_ended_key(self):
+        """Codex review on #226: undo never puts two current rows under one key."""
+        first = self.saved('profile.place.workplace', '판교 사무실')
+        new = self.saved('profile.place.work', '강남', invalidates=[(first['id'], 'moved')])
+        later = self.saved('profile.place.workplace', '여의도 사무실')
+        receipt = self.store.retract_memory(MEMORY_OWNER, new['id'], new['content_digest'])
+        self.assertEqual(receipt['restored_ended'], [])
+        self.assertEqual(self.row(first['id'])['state'], 'superseded')
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER) if row['memory_key'] == 'profile.place.workplace'],
+                         [later['id']])
+
+    def test_ended_facts_are_not_read_by_the_models_memory_tools_and_use_the_owner_zone(self):
+        from datetime import datetime, timezone
+        from personal_agent.memory_service import MemoryService
+        self.store.put('calendar_timezone', 'Asia/Seoul')
+        # 2026-10-23 16:00 UTC is already 2026-10-24 in Seoul.
+        now = datetime(2026, 10, 23, 16, 0, tzinfo=timezone.utc).timestamp()
+        self.saved('profile.schedule.trip', '제주 여행 중', valid_until='2026-10-23')
+        self.saved('profile.schedule.cast', '깁스 중', valid_until='2026-10-24')
+        memory = MemoryService(self.store, now=lambda: now, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        found = [row['content'] for row in memory.search_memories(MEMORY_OWNER, '제주 여행 깁스')['memories']]
+        self.assertEqual(found, ['깁스 중'], 'search, the worker\'s memory tool, leaves the ended fact out')
+        self.assertEqual([row['content'] for row in memory.holding(self.store.memories(MEMORY_OWNER))], ['깁스 중'])
+        text = memory.profile_snapshot(MEMORY_OWNER)['text']
+        self.assertNotIn('제주', text)
+        self.assertIn('깁스 중', text)
+
     def test_an_id_that_names_no_current_profile_row_writes_nothing(self):
         notes = self.saved('profile.working.style', '짧게 답한다')
         gone = self.saved('profile.place.home', '분당')
