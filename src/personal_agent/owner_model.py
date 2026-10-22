@@ -423,7 +423,10 @@ def validate(proposals, known, pending, noted_keys=(), request=''):
             elif (key in keys or content in contents or (key, content) in pending
                     # Codex review on #226: a key the Work already wrote may still get a last day (the worker's
                     # save_memory cannot give one); any other proposal under it stays one ask per message (#836).
-                    or (key in noted_keys and not (content in known and (item.get('valid_until') or item.get('invalidates'))))
+                    # An explicit same-key replacement with an empty last day clears an inherited one.
+                    or (key in noted_keys and not (content in known and (
+                        item.get('valid_until') or item.get('invalidates')
+                        or (item.get('supersedes_key') or '').strip() == key)))
                     or (content in known and not item.get('valid_until') and not item.get('invalidates')
                         and (item.get('supersedes_key') or '').strip() != key)):
                 # Codex review on #226: the same words with a new last day or ending other rows are a lifecycle

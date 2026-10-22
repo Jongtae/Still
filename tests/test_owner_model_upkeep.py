@@ -539,6 +539,17 @@ class Invalidate(Upkeep):
         [(_status, detail)] = self.evidence(job)
         self.assertEqual([item['reason'] for item in detail['dropped']], ['duplicate'], 'one ask per message otherwise')
 
+    def test_the_upkeep_can_clear_a_last_day_the_workers_save_inherited(self):
+        """Codex review on #226: corrected and made lasting in one request."""
+        self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')
+        job = self.finished('왼팔 깁스는 이제 계속 해야 해')
+        inherited = self.store.save_memory('profile.schedule.cast', '왼팔 깁스 중', MEMORY_OWNER, work_id=job)
+        self.assertEqual(inherited['valid_until'], '2099-01-02')
+        self.answers = [[proposal('profile.schedule.cast', '왼팔 깁스 중', supersedes='profile.schedule.cast')]]
+        self.service.run_owner_model_upkeep()
+        [row] = [row for row in self.store.memories(MEMORY_OWNER) if row['memory_key'] == 'profile.schedule.cast']
+        self.assertEqual((row['content'], row['valid_until']), ('왼팔 깁스 중', None))
+
     def test_an_elapsed_last_day_is_not_carried_onto_a_restated_fact(self):
         self.saved('profile.place.now', '제주에 있음', valid_until='2000-01-01')
         self.assertIsNone(self.saved('profile.place.now', '제주에 있음')['valid_until'])
