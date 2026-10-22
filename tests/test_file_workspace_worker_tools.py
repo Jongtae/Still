@@ -271,6 +271,27 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         self.assertTrue(service.read_file_workspace('job-1'))
         self.assertFalse(service.read_file_workspace('job-2'))
 
+    def test_an_interrupted_save_is_settled_before_a_retry_counts_as_a_replay(self):
+        from unittest.mock import patch
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        with patch('personal_agent.file_workspace.os.link', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'pending')
+        retried = caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        self.assertEqual((retried['saved'], retried['path']), (True, 'Notes.md'))
+        self.assertTrue((self.workspace / 'Notes.md').is_file())
+
+    def test_a_setup_only_read_is_not_document_history(self):
+        service = AgentService(self.store)
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       ('job-1', 'read_file', 'succeeded', json.dumps({'host_action': 'read_file', 'evidence': {
+                           'root_id': SAVED_RESULTS_ROOT, 'path': 'Notes.md', 'qualifiers': ['setup-required']}}), time.time()))
+        self.assertFalse(service.read_file_workspace('job-1'))
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})

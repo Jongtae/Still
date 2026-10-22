@@ -4890,6 +4890,8 @@ class AgentService:
         for event in self.store.task_events(job_id):
             evidence=(event.get('trace') or {}).get('evidence') if isinstance(event.get('trace'),dict) else None
             root=evidence.get('root_id') if isinstance(evidence,dict) else None
+            # #182 review: a setup-only answer read no document.
+            if isinstance(evidence,dict) and 'setup-required' in (evidence.get('qualifiers') or ()):continue
             # #182 review: by the recorded host action, so a package alias of read_file counts too.
             action=(event.get('trace') or {}).get('host_action') if isinstance(event.get('trace'),dict) else None
             if ((action or event.get('tool'))=='read_file' and event.get('status')=='succeeded' and isinstance(root,str)
