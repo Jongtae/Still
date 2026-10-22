@@ -2282,13 +2282,16 @@ def failed_steps_text(steps, limit=FAILED_STEPS_CHARS):
 #: #151: the outcome judgment's ``read_state`` line - which items this attempt listed, opened and read through.
 READ_STATE_CHARS=600
 READ_STATE_IDS=6
+READ_STATE_REF_CHARS=120
 
 def _item_ref(item):
- """One item's identity in Still's evidence vocabulary (#151): a message or file id, or a folder path."""
- if not isinstance(item,dict):return str(item)[:200] if isinstance(item,str) and item else ''
+ """One item's whole identity in Still's evidence vocabulary (#151): a message or file id, or a folder path.
+
+ Compared whole (Codex review: two long paths sharing a prefix stay two items); only its shown form is bounded."""
+ if not isinstance(item,dict):return item if isinstance(item,str) else ''
  for key in ('message_id','file_id'):
-  if isinstance(item.get(key),str) and item[key]:return item[key][:200]
- if item.get('root_id') and isinstance(item.get('path'),str) and item['path']:return f"{item['root_id']}:{item['path']}"[:200]
+  if isinstance(item.get(key),str) and item[key]:return item[key]
+ if item.get('root_id') and isinstance(item.get('path'),str) and item['path']:return f"{item['root_id']}:{item['path']}"
  return ''
 
 def read_state_text(calls, limit=READ_STATE_CHARS):
@@ -2323,7 +2326,7 @@ def read_state_text(calls, limit=READ_STATE_CHARS):
  unopened=[ref for ref in listed if ref not in opened]
  total=len(listed)+unnamed
  def ids(refs):
-  shown=', '.join(refs[:READ_STATE_IDS])
+  shown=', '.join(ref[:READ_STATE_REF_CHARS] for ref in refs[:READ_STATE_IDS])
   return shown+(f' and {len(refs)-READ_STATE_IDS} more' if len(refs)>READ_STATE_IDS else '')
  parts=[]
  if unopened:parts.append(f'listed but never opened: {len(unopened)} of {total} listed ({ids(unopened)})')
@@ -4283,9 +4286,12 @@ def goal_verdict(outcome,gap='',note=None):
  return verdict
 
 def steps_read_state(steps):
- """#151: ``read_state_text`` over the direct route's settled steps (their recorded evidence shape)."""
+ """#151: ``read_state_text`` over the direct route's observed steps (their recorded evidence shape).
+
+ A step left ``incomplete`` (a truncated listing or read) ran and returned results, so it counts
+ (Codex review); failed and unrun calls returned nothing and do not."""
  return read_state_text([(tool,evidence_summary(action,detail)) for tool,action,state,detail,_reason in steps or ()
-                         if state=='succeeded' and isinstance(detail,dict)])
+                         if state in ('succeeded','incomplete') and isinstance(detail,dict)])
 
 def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state=''):
  """``yes`` / ``no`` / ``unavailable``: did the reply serve the owner's message ``goal``?

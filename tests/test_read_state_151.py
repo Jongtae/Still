@@ -66,6 +66,20 @@ class ReadState(unittest.TestCase):
         self.assertIn('listing cut short, more items matched than were listed: find_files', text)
         self.assertNotIn('read through (', text)
 
+    def test_long_identities_are_compared_whole(self):
+        long = 'd/' + 'x' * 300
+        files = {'file_count': 2, 'files': [{'root_id': 'r', 'path': long + 'a'}, {'root_id': 'r', 'path': long + 'b'}]}
+        text = read_state_text([('find_files', files), ('read_file', {'root_id': 'r', 'path': long + 'a', 'characters': 9})])
+        self.assertIn('listed but never opened: 1 of 2 listed', text)
+        self.assertLess(len(text), 600)
+
+    def test_the_direct_route_counts_incomplete_reads(self):
+        steps = [('mail_search', 'mail_search', 'incomplete', {'messages': [{'message_id': 'm1'}], 'truncated': True}, None),
+                 ('mail_read', 'mail_read', 'incomplete', {'message_id': 'm1', 'content': 'he', 'truncated': True}, None)]
+        text = steps_read_state(steps)
+        self.assertIn('opened but returned only in part (truncated): m1', text)
+        self.assertIn('listing cut short, more items matched than were listed: mail_search', text)
+
     def test_the_direct_route_reads_the_same_fact_from_its_steps(self):
         steps = [('mail_search', 'mail_search', 'succeeded', {'messages': [{'message_id': 'm1'}, {'message_id': 'm2'}]}, None),
                  ('mail_read', 'mail_read', 'succeeded', {'message_id': 'm1', 'content': 'hello'}, None),
