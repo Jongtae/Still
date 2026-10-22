@@ -237,10 +237,20 @@ class FileWorkspace:
             with self.store.db() as db: db.execute("DELETE FROM file_workspace_results WHERE id=? AND state='pending'",(record['id'],))
             raise
 
-    def _fresh(self, record):
+    #: ``_fresh``'s answer when its deadline passed before every source was checked (#182 review).
+    UNCHECKED=None
+
+    def _fresh(self, record, deadline=None):
+        """Whether every cited source is unchanged; ``UNCHECKED`` when ``deadline`` passed between sources."""
         try: sources=json.loads(record['sources'])
         except (TypeError,json.JSONDecodeError): return False
-        try:return bool(sources) and all((current:=self.read(source['reference_id'],source['path']))['version']==source['version'] and current['source_id']==source['source_id'] for source in sources)
+        try:
+            if not sources: return False
+            for source in sources:
+                if deadline is not None and time.monotonic()>deadline: return self.UNCHECKED
+                current=self.read(source['reference_id'],source['path'])
+                if current['version']!=source['version'] or current['source_id']!=source['source_id']: return False
+            return True
         except (KeyError,ValueError,OSError,UnicodeError): return False
 
     def current_results(self, needle=None, latest=False, path=None, deadline=None):
@@ -266,7 +276,10 @@ class FileWorkspace:
             if record.get('workspace_id')!=self._workspace_id():
                 with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
                 continue
-            fresh=self._fresh(record)
+            fresh=self._fresh(record,deadline)
+            if fresh is self.UNCHECKED:
+                # Cut short: neither current nor stale, and the search says it is incomplete.
+                self.stopped_early=True; break
             with self.store.db() as db: db.execute('UPDATE file_workspace_results SET state=? WHERE id=?',('current' if fresh else 'stale',record['id']))
             if not fresh: continue
             try: content=self._result_path(record['path']).read_text(encoding='utf-8')
@@ -279,6 +292,13 @@ class FileWorkspace:
         latest=isinstance(query,str) and query.strip() in ('*','__latest__')
         if not latest and (not isinstance(query,str) or not 2<=len(query.strip())<=160): raise ValueError('두 글자 이상의 결과 검색어를 입력하세요.')
         return self.current_results(query.casefold().strip(),latest)
+
+    def result_for(self, request_id):
+        """The result record one request (Work) already saved, or None."""
+        with self.store.db() as db:
+            self._ensure_results_table(db)
+            row=db.execute('SELECT * FROM file_workspace_results WHERE request_id=?',(request_id,)).fetchone()
+        return dict(row) if row else None
 
     def has_results(self):
         """Whether any saved result record exists, checking no file (``list_roots``)."""

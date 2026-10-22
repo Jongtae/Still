@@ -2803,6 +2803,11 @@ class Capabilities:
    return {'saved':False,'needs_setup':True,'requires':'local-result-write','message':'결과를 저장할 폴더를 먼저 연결해 주세요.'}
   if not self.workspace_reads:
    raise ValueError('저장할 결과의 원본을 먼저 find_files와 read_file로 참고 폴더에서 읽어 주세요.')
+  earlier=workspace.result_for(self.job_id)
+  if earlier:
+   # #182 review: one Work saves one result; a second save writes nothing and says so (the first stays).
+   return {'saved':False,'already_saved':True,'id':earlier['id'],'path':earlier['path'],
+           'message':f"이 작업은 이미 결과를 저장했습니다: {earlier['path']}. 한 작업은 결과 하나만 저장하며, 이번 내용은 저장하지 않았습니다."}
   saved=workspace.save(self.job_id,title.strip(),content,list(self.workspace_reads.values()))
   # #182 review: like save_note, the text this Work wrote to a private store stays in its private-write
   # set, so a later outbound lookup or browser step carrying it is attributed (``held_values``).

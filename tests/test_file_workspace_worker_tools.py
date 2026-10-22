@@ -157,7 +157,7 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         later = self.caps('job-later')
         checked = []
         original = FileWorkspace._fresh
-        with patch.object(FileWorkspace, '_fresh', lambda self, record: checked.append(record['path']) or original(self, record)):
+        with patch.object(FileWorkspace, '_fresh', lambda self, record, deadline=None: checked.append(record['path']) or original(self, record, deadline)):
             later.execute('list_roots', {})
             self.assertEqual(checked, [], 'listing roots checks no saved result')
             later.execute('read_file', {'root_id': SAVED_RESULTS_ROOT, 'path': 'Result 1.md'})
@@ -209,6 +209,21 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
             stopped = later.execute('find_files', {'query': '출장 계획', 'root_id': SAVED_RESULTS_ROOT})
         self.assertEqual((stopped['files'], stopped['truncated']), ([], True))
 
+    def test_the_deadline_also_bounds_one_results_source_checks(self):
+        from unittest.mock import patch
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('read_file', {'root_id': self.root, 'path': 'budget.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        workspace = FileWorkspace(self.store)
+        ticks = iter([0.0, 0.0, 10.0])  # the record starts in time; the second source is past the deadline
+        with patch('personal_agent.file_workspace.time.monotonic', side_effect=lambda: next(ticks, 10.0)):
+            self.assertEqual(workspace.current_results(deadline=5.0), [])
+        self.assertTrue(workspace.stopped_early)
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'current',
+                             'a cut-short check never marks the result stale')
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
@@ -248,7 +263,9 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         self.assertEqual(owner_file.read_text(encoding='utf-8'), 'owner content')
         # One Work saves one result: a second save returns the first and writes nothing.
         again = caps.execute('save_result', {'title': 'trip', 'content': 'other summary'})
-        self.assertEqual(again['id'], saved['id'])
+        self.assertEqual((again['saved'], again['already_saved'], again['id'], again['path']),
+                         (False, True, saved['id'], saved['path']))
+        self.assertNotIn('other summary', caps.written_private)
         self.assertEqual(sorted(path.name for path in self.workspace.iterdir()), ['9월 출장 정리-2.md', '9월 출장 정리.md'])
         # A title cannot name a path outside the result folder.
         traversal = self.caps('job-3')
