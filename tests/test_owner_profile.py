@@ -28,10 +28,11 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from personal_agent import owner_model as om
 from personal_agent.agent_runtime import API_TOOL_GUIDANCE, DEFINITIONS
 from personal_agent.conversation_handoff import MEMORY_REQUEST_PROPOSITION
 from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
-from personal_agent.memory_service import PROFILE_KEY_GUIDANCE, MemoryService
+from personal_agent.memory_service import PROFILE_KEY_GUIDANCE, PROFILE_SNAPSHOT_CHARS, MemoryService
 from test_pa1_memory_candidate_owner_path import _OwnerSurface
 
 WEB = Path(__file__).resolve().parents[1] / 'src' / 'personal_agent' / 'web'
@@ -165,6 +166,81 @@ class ProfileFactsInConversation(_OwnerSurface):
         self.assertEqual(self.store.memories(), [])
 
 
+def _facts(count=40):
+    """A profile of ``count`` facts the size of the 2026-10 live one (~3.7k chars at 40)."""
+    return {f'profile.preference.fact{index:02d}': f'선호 {index:02d}: ' + ('평소에 쓰는 가게와 방식 ' * 3).strip()
+            for index in range(count)}
+
+
+class ProfileSupplyToEveryReader(_OwnerSurface):
+    """#217: the worker, the plan, the outcome judgment and the memory upkeep read one
+    selection of the owner profile, whole at today's size, and the worker's copy does not
+    depend on the plan call."""
+
+    def save(self, facts):
+        for key, content in facts.items():
+            self.store.save_memory(key, content, owner_id='local-owner')
+
+    def readers(self, section):
+        """What each reader's own bound leaves of the profile section the worker was given."""
+        from personal_agent.agent_runtime import owner_context_fact
+        from personal_agent.conversation_handoff import ConversationJudgments
+        from personal_agent.decision import FixtureDecisionEngine
+        from personal_agent.orchestrator import Orchestration
+        from test_orchestrator import OrchestrationUnit
+        seen = []
+        engine = FixtureDecisionEngine(structured=lambda context, question, schema: seen.append(context))
+        Orchestration(ConversationJudgments(engine), OrchestrationUnit.catalogue(None), request='다시',
+                      sections={'profile': section, 'current_context': ''}).first()
+        ConversationJudgments(engine).owner_model_proposals('다시', '답', section, '2026-10-23 09:00')
+        plan, upkeep = seen
+        judgment = owner_context_fact({'profile': section}, lambda text: text)
+        self.assertFalse(plan.too_large())
+        self.assertFalse(upkeep.too_large(), 'the upkeep is not turned away by its context bound')
+        return {'plan': plan.facts['owner_profile'], 'upkeep': upkeep.facts['owner_profile'],
+                'judgment': judgment.split('\ncurrent_context: ')[0][len('owner_profile: '):]}
+
+    def test_every_reader_gets_the_whole_profile_at_todays_size(self):
+        facts = _facts()
+        self.save(facts)
+        for request in (None, '다시', '그것도 담아줘'):
+            section = self.service.owner_profile_snapshot(request)
+            self.assertNotIn('omitted', section, request)
+            for key, content in facts.items():
+                self.assertIn(f'{key}: {content}', section, (request, key))
+        section = self.service.owner_profile_snapshot('다시')
+        for name, text in self.readers(section).items():
+            self.assertEqual(text, section, f'{name} reads exactly what the worker was given')
+
+    def test_a_profile_over_the_bound_is_cut_once_query_first_and_marked(self):
+        from personal_agent.memory_service import PROFILE_SECTION_CHARS
+        facts = _facts(PROFILE_SNAPSHOT_CHARS // 60)
+        facts['profile.zzz.last_in_key_order'] = '산책은 저녁에 한강 쪽으로'
+        self.save(facts)
+        points = [f'{index:02d} ' + '가' * (om.POINT_CHARS - 6) for index in range(om.NOTES_POINTS)]
+        while len(om.notes_text(points)) > om.NOTES_CHARS:
+            points.pop()
+        self.assertIsNotNone(om.WorkingNotes(self.store).save(
+            {'points': points, 'text': om.notes_text(points), 'change': '나' * om.CHANGE_CHARS}, None))
+        section = self.service.owner_profile_snapshot('한강 산책')
+        self.assertTrue(section.startswith('profile.zzz.last_in_key_order: 산책은 저녁에 한강 쪽으로'), section[:80])
+        self.assertIn('saved profile facts omitted by the context limit', section)
+        self.assertIn('working_notes v1', section)
+        self.assertLessEqual(len(section), PROFILE_SECTION_CHARS, 'the section fits every reader bound')
+        for name, text in self.readers(section).items():
+            self.assertEqual(text, section, f'{name} gets the same selection, not a second cut')
+
+    def test_the_worker_gets_the_profile_without_a_plan_call(self):
+        """Memory supply is common start context: no decision engine, no plan, still the whole profile."""
+        facts = _facts()
+        self.save(facts)
+        self.ask('다시')
+        prompt = json.dumps([body for url, body in self.calls if url.endswith('/chat/completions')][-1],
+                            ensure_ascii=False)
+        for key, content in facts.items():
+            self.assertIn(f'{key}: {content}', prompt, key)
+
+
 class ProfileFactsInSettings(_OwnerSurface):
     def remember(self, key, content):
         return self.web('/api/personal-space/profile/request',
@@ -237,7 +313,7 @@ class ProfileFactsInSettings(_OwnerSurface):
         self.assertRegex(snapshot, r'^profile\.wifi\.[^\n]*\[redacted\] \(saved ')
 
     def test_owner_profile_prompt_reports_omitted_rows(self):
-        for index in range(20):
+        for index in range(PROFILE_SNAPSHOT_CHARS // 60):
             self.remember(f'profile.preference.item{index}', ('기억 내용 ' * 8) + str(index))
         text = self.service.owner_profile_snapshot()
         self.assertIn('saved profile facts omitted by the context limit; use search_memory if relevant', text)

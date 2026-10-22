@@ -60,7 +60,15 @@ PROFILE_PREFIX = 'profile.'
 _PROFILE_KEY = re.compile(r'profile\.[^\s.]+(?:\.[^\s.]+)*')
 #: Default byte-agnostic character budget for a prompt snapshot; one line per
 #: current row, longest content clipped so one fact cannot crowd out the rest.
-PROFILE_SNAPSHOT_CHARS = 1200
+#: #217: sized to the real profile with headroom (about 40 facts, ~3.7k chars
+#: in 2026-10), so every reader gets the whole current profile; a larger
+#: profile is cut and marked, never silently.
+PROFILE_SNAPSHOT_CHARS = 12000
+#: #217: what a profile prompt section may carry after the snapshot lines - the
+#: omission line and the working-notes block - so a reader's own bound
+#: (``PROFILE_SECTION_CHARS``) never cuts what the worker was given.
+PROFILE_SECTION_EXTRA_CHARS = 2000
+PROFILE_SECTION_CHARS = PROFILE_SNAPSHOT_CHARS + PROFILE_SECTION_EXTRA_CHARS
 PROFILE_LINE_CHARS = 200
 #: Hard cap on rows a snapshot will ever read, whatever the char budget.
 _PROFILE_ROWS_CAP = 500

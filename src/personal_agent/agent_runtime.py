@@ -19,7 +19,7 @@ from .document_reader import read as read_document, supported as supported_docum
 from . import folder_grants
 from .file_workspace import FileWorkspace
 from .manifests import BUILTIN_MANIFEST, CONTEXT_GATED_ACTIONS, HOST_TOOLS, runtime_packages
-from .memory_service import PROFILE_KEY_GUIDANCE, CONNECTION_PREFERENCE_GUIDANCE
+from .memory_service import PROFILE_KEY_GUIDANCE, CONNECTION_PREFERENCE_GUIDANCE, PROFILE_SECTION_CHARS
 from .prompt_files import prompt
 from .preparations import PREPARED_HEADING
 from .conversation_projection import clip_keeping_links
@@ -4316,7 +4316,8 @@ GOAL_REPLY_CHARS=24000
 GOAL_CONVERSATION_CHARS=1500
 #: #804/#829/#833: the owner model the plan call and the outcome judgment read (redacted, then cut):
 #: the profile and current-context sections the worker was given in this run.
-PROFILE_FACT_CHARS=1200
+#: #217: the profile bound is the section's own, so the plan and the judgment never see less than the worker.
+PROFILE_FACT_CHARS=PROFILE_SECTION_CHARS
 CURRENT_CONTEXT_FACT_CHARS=1200
 REPORT_ITEM_CHARS=200
 REPORT_ITEMS=3

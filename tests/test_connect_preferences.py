@@ -9,7 +9,7 @@ from unittest import mock
 
 from personal_agent import owner_mcp, trust_record
 from personal_agent.api_requests import save_slot, remove_slot, slots
-from personal_agent.memory_service import CONNECTION_PREFERENCE_GUIDANCE
+from personal_agent.memory_service import CONNECTION_PREFERENCE_GUIDANCE, PROFILE_SNAPSHOT_CHARS
 from test_orchestrator import Harness, plan
 
 KEY = 'profile.preference.connection.unseen'
@@ -143,7 +143,8 @@ class ConnectionPreferences(Harness):
         self.assertFalse(trust_record.hands(self.store))
 
     def test_relevant_preference_is_retrieved_before_worker_selection_when_default_profile_is_full(self):
-        for index in range(20):
+        # #217: enough rows to overflow the default snapshot bound.
+        for index in range(PROFILE_SNAPSHOT_CHARS // 150):
             self.store.save_memory(f'profile.aaa.item{index}', 'Unrelated background ' * 8, owner_id='local-owner')
         _, row = self.save_choice('Still-owned connection')
         self.assertNotIn(KEY, self.service.owner_profile_snapshot())
