@@ -227,6 +227,11 @@ class MainAiRoutes:
             if host_profile != BOUNDED_PROFILE:
                 return {'search': row(False, 'strict_profile', NATIVE_REASONS['strict_profile']),
                         'browser': row(False, 'strict_profile', STRICT_BROWSER_TEXT)}
+            # #211: a cloud provider turn uses Still's own search (Bedrock has no WebSearch).
+            clouds = getattr(self.service, 'cloud_engines', None)
+            if clouds is not None and clouds.provider(route_id) != 'subscription':
+                return {'search': row(False, 'cloud_provider', NATIVE_REASONS['cloud_provider']),
+                        'browser': row(browser_reason is None, browser_reason or '', browser_text)}
             recorded = registry.recorded_native(route_id, route_id) or {}
             refused = recorded.get('state') == 'unavailable'
             search = row(not refused, recorded.get('reason') or 'refused',
@@ -256,10 +261,15 @@ class MainAiRoutes:
         for route_id in CHOOSER_ORDER:
             check = checks.get(route_id)
             if route_id in SUBSCRIPTION_ROUTES:
-                engine = engines.get(route_id) or {}
+                engine = engine_row = engines.get(route_id) or {}
                 login = engine.get('login') or {'state': 'unchecked'}
+                # #211: the engine's cloud provider profile; its destination replaces the subscription account's.
+                clouds = getattr(self.service, 'cloud_engines', None)
+                cloud = clouds.status(route_id) if clouds is not None else None
+                destination = (cloud.get('destination') or cloud['provider']) if cloud and cloud['provider'] != 'subscription' \
+                    else ENGINE_DESTINATIONS[route_id]
                 routes.append({'id': route_id, 'kind': 'subscription', 'name': ENGINE_NAMES[route_id],
-                               'destination': ENGINE_DESTINATIONS[route_id], 'installed': bool(engine.get('installed')),
+                               'destination': destination, 'cloud': cloud, 'installed': bool(engine_row.get('installed')),
                                'login': login, 'credential': bool(engine.get('credential')), 'check': check,
                                # #679: '' means the CLI's own default.
                                # Shown even when isolated, so a refused Work names it;

@@ -197,7 +197,7 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                                         else None)
         self.last_failure = ''
 
-    def argv(self, binary, prompt, schema_path, schema):
+    def argv(self, binary, prompt, schema_path, schema, cloud=None):
         if self.engine_id == 'codex':
             # #679: a judgment runs under the #616 strict-isolated launch
             # arguments, reused as-is: the Codex permissions profile (the
@@ -218,6 +218,11 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                 argv += ['-c', f'model_reasoning_effort="{self.effort}"']
             if self.model:
                 argv += ['--model', self.model]
+            if cloud is not None:
+                # #211: the owner's cloud provider (documented model_providers keys) and its key withheld from
+                # any shell command (the strict profile offers none; the exclusion is the second layer).
+                from .owner_mcp import shell_exclusion
+                argv += [*cloud.codex_arguments(), *shell_exclusion(cloud.withheld())]
             return argv + [prompt]
         argv = [binary, '-p', prompt, '--output-format', 'json', '--json-schema', json.dumps(schema),
                 # --restricted (listed by 2.1.280 --help): no code-running tools or
@@ -268,18 +273,31 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
             run_dir = Path(folder)
             schema_path = run_dir / 'decision-schema.json'
             schema_path.write_text(json.dumps(schema), encoding='utf-8')
+            # #211: the Judgment AI runs on the engine's current cloud provider profile too.
+            resolve = getattr(self.execution, 'cloud_profile', None)
             try:
-                env = self.execution.environment(self.engine_id, binary, run_dir)
+                cloud = resolve(self.engine_id) if callable(resolve) else None
+            except ExecutionError as exc:
+                return done(OUTCOME_UNAVAILABLE, failure=exc.failure_class or 'cloud-not-configured')
+            try:
+                env = (self.execution.environment(self.engine_id, binary, run_dir, cloud=cloud) if cloud is not None
+                       else self.execution.environment(self.engine_id, binary, run_dir))
             except ExecutionError:
                 return done(OUTCOME_UNAVAILABLE, failure='auth')
             if self.engine_id == 'claude-code':
                 env = {**env, **CLAUDE_DECISION_ENV}
             try:
-                argv = self.argv(binary, prompt, schema_path, schema)
+                argv = self.argv(binary, prompt, schema_path, schema, cloud=cloud)
             except ExecutionError:
                 # The strict launch refused the stored feature plan.
                 return done(OUTCOME_UNAVAILABLE, failure='capability-unchecked')
             if not context.admit():return done(OUTCOME_CANCELLED)
+            if cloud is not None:
+                # The daily cap is checked last: a spent cap launches nothing and falls back nowhere.
+                try:
+                    self.execution.admit_cloud(cloud)
+                except ExecutionError as exc:
+                    return done(OUTCOME_UNAVAILABLE, failure=exc.failure_class or 'cloud-budget')
             try:
                 completed = bounded_run(self.execution.runner, argv, cwd=run_dir, env=env, timeout=self.timeout)
             except subprocess.TimeoutExpired:
@@ -331,9 +349,17 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
         text with ``redact_reason``, which withholds any echo of the prompt
         and masks secret-shaped strings.
         """
-        secret = (env or {}).get('CLAUDE_CODE_OAUTH_TOKEN') or ''
-        scrub = ((lambda text: (text or '').replace(secret, '[redacted]')) if len(secret) >= 8
-                 else (lambda text: text or ''))
+        # #211: and every cloud provider credential the call carried (by its documented name).
+        from .cloud_engines import PROVIDERS
+        names = {'CLAUDE_CODE_OAUTH_TOKEN', *(name for provider in PROVIDERS.values() for name in provider.secrets)}
+        values = [value for name, value in (env or {}).items()
+                  if name in names and isinstance(value, str) and len(value) >= 8]
+
+        def scrub(text):
+            text = text or ''
+            for value in values:
+                text = text.replace(value, '[redacted]')
+            return text
         stdout, stderr = scrub(stdout), scrub(stderr)
         _, reason = failure_details(self.engine_id, stdout, stderr, prompt)
         source = ('provider-error' if failure_details(self.engine_id, stdout, '')[1]

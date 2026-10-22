@@ -297,6 +297,8 @@ JOB_FAILURE_TEXT = {
     'no-qualified-candidate': '적격 모델 없음', 'not-configured': '설정 필요', 'auth': '로그인 또는 인증 실패',
     'cli-not-found': 'CLI 없음', 'strict-profile-unqualified': '엄격 격리 검증 실패', 'timeout': '시간 초과',
     'usage-limit': '사용량 한도', 'follow-unsupported': '기본 AI를 따라갈 수 없음', 'probe-failed': '확인 실패',
+    # #211: the engine's cloud provider profile refused the call before launch.
+    'cloud-budget': '클라우드 하루 호출 한도', 'cloud-not-configured': '클라우드 제공자 설정 필요',
 }
 
 

@@ -1417,7 +1417,8 @@ class BoundedExecutionAdapter:
     configuration parameters.  Expanding those is a security design change,
     not an engine prompt option.
     """
-    def __init__(self, finder=None, runner=subprocess.run, runtime_root=None, codex_home=None, credentials=None):
+    def __init__(self, finder=None, runner=subprocess.run, runtime_root=None, codex_home=None, credentials=None,
+                 cloud=None):
         from .subscription_engines import find_cli as which
         self.finder = finder or which
         self.runner = runner
@@ -1430,10 +1431,50 @@ class BoundedExecutionAdapter:
         # an engine or ''. Only Claude Code uses it, as its documented
         # CLAUDE_CODE_OAUTH_TOKEN; HOME stays the empty per-turn directory.
         self.credentials = credentials or (lambda engine_id: '')
+        # #211: the owner's cloud provider profiles (``cloud_engines.CloudEngines``); None: subscription only.
+        self.cloud = cloud
 
-    def environment(self, engine_id, binary, run_dir, ai_connections=False):
+    def cloud_profile(self, engine_id, tools=None):
+        """#211: the engine's cloud profile for one launch, or None on the subscription.
+
+        A Work turn passes its facade: the profile the Work resolved when it
+        started (``cloud_profile``, None for the subscription) is used, so a
+        Settings change applies from the next Work.  Otherwise the current
+        profile.  A half-configured profile raises ``ExecutionError`` before
+        anything is launched and never falls back to the subscription.
+        """
+        from .cloud_engines import CloudLaunchError
+        if tools is not None and hasattr(tools, 'cloud_profile'):
+            return tools.cloud_profile
+        if self.cloud is None:
+            return None
+        try:
+            return self.cloud.launch(engine_id)
+        except CloudLaunchError as exc:
+            LOG.warning('engine launch refused engine=%s class=%s', engine_id, exc.failure_class)
+            raise ExecutionError(str(exc), failure_class=exc.failure_class) from None
+
+    def admit_cloud(self, launch):
+        """Count one model launch against the cloud profile's daily cap, or refuse it before it starts (#211).
+
+        Past the cap nothing is launched and nothing falls back to another route.
+        """
+        if launch is None:
+            return
+        from .cloud_engines import CloudLaunchError
+        if self.cloud is None:
+            raise ExecutionError('클라우드 제공자 설정을 확인할 수 없어 실행하지 않았습니다.', failure_class='cloud-not-configured')
+        try:
+            self.cloud.admit(launch)
+        except CloudLaunchError as exc:
+            LOG.warning('engine launch refused engine=%s class=%s', launch.engine, exc.failure_class)
+            raise ExecutionError(str(exc), failure_class=exc.failure_class) from None
+
+    def environment(self, engine_id, binary, run_dir, ai_connections=False, cloud=None):
         env = {'HOME': str(run_dir), 'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}
         env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1])
+        if cloud is not None:
+            return self._cloud_environment(engine_id, binary, run_dir, env, cloud)
         if engine_id == 'claude-code' and ai_connections:
             # #1197 (owner opt-in, owner instance only): the Mac's regular
             # Claude Code login, whose claude.ai connectors (Google Drive)
@@ -1465,6 +1506,39 @@ class BoundedExecutionAdapter:
             env['PATH'] = str(binary_path.parent) + ':' + env['PATH']
         return env
 
+    def _cloud_environment(self, engine_id, binary, run_dir, env, cloud):
+        """#211: the CLI environment under a cloud profile: the documented provider names only.
+
+        The subscription credential is never added beside it (a cloud turn
+        cannot bill or reach the owner's personal account).  Claude Code also
+        gets its documented ``CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`` (env-vars
+        docs, "What the subprocess environment scrub removes"; full table from
+        v2.1.251, 2.1.287 installed): the CLI keeps the credentials for its own
+        API calls and strips them from the Bash, hook and stdio MCP server
+        environments.  The model also has no Bash tool on a cloud turn
+        (``command``), so the scrub is the second layer, not the only one.
+        Codex withholds the key from shell commands with
+        ``shell_environment_policy.exclude`` (``command``).
+        """
+        if cloud.engine != engine_id:
+            raise ExecutionError('클라우드 제공자 설정이 이 AI와 맞지 않습니다.', failure_class='cloud-not-configured')
+        env.update(cloud.environment())
+        if engine_id == 'claude-code':
+            env['CLAUDE_CODE_SUBPROCESS_ENV_SCRUB'] = '1'
+            return env
+        # Codex keeps the owner's official profile directory for its own state
+        # when there is one (no login from it is used: the provider's env_key
+        # authenticates); otherwise a fresh directory inside this turn's folder.
+        profile = self.codex_home or Path(os.environ.get('CODEX_HOME', Path.home()/'.codex')).expanduser()
+        if not profile.is_dir():
+            profile = Path(run_dir) / '.codex-cloud'
+            profile.mkdir(exist_ok=True, mode=0o700)
+        env['CODEX_HOME'] = str(profile)
+        binary_path = Path(binary)
+        if binary_path.is_absolute():
+            env['PATH'] = str(binary_path.parent) + ':' + env['PATH']
+        return env
+
     def login_status(self, engine_id, binary=None):
         """Ask the official CLI whether it is signed in, under the same
         environment Still uses to run it (#571). Local and read-only: no
@@ -1478,11 +1552,25 @@ class BoundedExecutionAdapter:
         binary = binary or self.finder(binaries[engine_id])
         if not binary:
             return {'state': 'signed-out', 'detail': 'CLI not found'}
+        # #211: on a cloud provider profile the personal login is not what runs.  An
+        # unfinished profile cannot run; Codex has no model-free check of a provider
+        # key, so a finished profile is "saved, confirmed by the next run"; Claude Code
+        # reports its own view under the profile's environment (observed on 2.1.287:
+        # loggedIn with authMethod "third_party", which validates nothing).
+        cloud = None
+        if self.cloud is not None:
+            from .cloud_engines import CloudLaunchError
+            try:
+                cloud = self.cloud.launch(engine_id)
+            except CloudLaunchError:
+                return {'state': 'signed-out', 'detail': 'cloud profile incomplete'}
+        if cloud is not None and engine_id == 'codex':
+            return {'state': 'token-saved', 'detail': 'cloud:' + cloud.provider}
         argv = [binary, 'auth', 'status', '--json'] if engine_id == 'claude-code' else [binary, 'login', 'status']
         self.runtime_root.mkdir(parents=True, exist_ok=True, mode=0o700)
         with tempfile.TemporaryDirectory(dir=self.runtime_root, prefix='login-') as folder:
             try:
-                env = self.environment(engine_id, binary, Path(folder))
+                env = self.environment(engine_id, binary, Path(folder), cloud=cloud)
             except ExecutionError:
                 return {'state': 'signed-out', 'detail': 'login profile not found'}
             try:
@@ -1500,8 +1588,8 @@ class BoundedExecutionAdapter:
                 # `claude auth status` only sees that a token is present; it
                 # does not validate it. Report that honestly until a real run
                 # confirms or rejects the token.
-                if data['loggedIn'] and data.get('authMethod') == 'oauth_token':
-                    return {'state': 'token-saved', 'detail': 'oauth_token'}
+                if data['loggedIn'] and data.get('authMethod') in ('oauth_token', 'third_party'):
+                    return {'state': 'token-saved', 'detail': str(data['authMethod'])}
                 return {'state': 'signed-in' if data['loggedIn'] else 'signed-out',
                         'detail': str(data.get('authMethod') or '')[:40]}
             return {'state': 'signed-out' if is_not_signed_in(out) else 'unknown', 'detail': 'unparsed status'}
@@ -1517,7 +1605,7 @@ class BoundedExecutionAdapter:
 
     def command(self, engine_id, binary, prompt, mcp_config, instructions='', profile=BOUNDED_PROFILE,
                 disabled_features=(), model=None, native_search=False, tool_timeout=None, image_paths=(),
-                ai_connections=False, owner_mcp_args=(), effort=None):
+                ai_connections=False, owner_mcp_args=(), effort=None, cloud=None):
         """The argv of one Work turn.
 
         ``native_search`` (#678) lets the trusted-local turn use the CLI's own
@@ -1528,6 +1616,12 @@ class BoundedExecutionAdapter:
         unchanged.  The strict-isolated profile never enables it: its qualified
         feature plan keeps every non-allowlisted feature off.  Judgment calls
         (``decision_adapters``) are a separate argv and keep search disabled.
+
+        ``cloud`` (#211): a cloud provider turn.  Codex gets the documented
+        ``model_providers`` overrides and its provider key in the one shell
+        exclusion; Claude Code gets no built-in tool besides the Read of an
+        attached photo (``--tools``), so its model has no Bash to run, and no
+        native search (Bedrock has none; the caller turns it off).
         """
         if profile not in HOST_CLI_PROFILES:
             raise ExecutionError('지원하지 않는 구독 엔진 실행 프로필입니다.')
@@ -1546,7 +1640,10 @@ class BoundedExecutionAdapter:
             model_args += (['-c', f'model_reasoning_effort="{effort}"'] if engine_id == 'codex'
                            else ['--effort', effort] if engine_id == 'claude-code' else [])
         strict = profile == STRICT_PROFILE
-        native_search = bool(native_search) and not strict
+        native_search = bool(native_search) and not strict and cloud is None
+        if engine_id == 'codex' and cloud is not None:
+            owner_mcp_args = (*cloud.codex_arguments(),
+                              *owner_mcp.merge_shell_exclusion(owner_mcp_args, cloud.withheld()))
         if engine_id == 'codex':
             # `exec` is non-interactive and JSON output is required so prose
             # around an answer cannot be mistaken for execution evidence.
@@ -1616,6 +1713,10 @@ class BoundedExecutionAdapter:
             # exact allow rule is the approval Claude Code's -p mode checks.
             if strict:
                 argv += strict_launch_arguments('claude-code')
+            elif cloud is not None:
+                # #211: no Bash (or any other built-in) on a cloud turn; Read only for an attached photo.
+                argv += ['--tools', *(['Read'] if image_paths else ['']),
+                         *claude_bridge_allowlist(BOUNDED_PROFILE, read_paths=[Path(path).name for path in image_paths])]
             elif native_search:
                 # Only WebSearch among the built-in tools, pre-approved by its exact name,
                 # beside every offered bridge tool (#826: private reads included).
@@ -1993,14 +2094,18 @@ class BoundedExecutionAdapter:
                 raise ExecutionError('사진을 포함한 요청이 48KB 텍스트 제한을 넘었습니다.')
             config = run_dir / 'agentos-mcp.json'
             profile = getattr(tools, 'PROFILE', BOUNDED_PROFILE)
+            # #211: the Work's cloud provider profile (None: the subscription).
+            cloud = self.cloud_profile(engine_id, tools)
             # #678: a native-search turn's bridge lets the CLI's own search replace its search tools.
-            native_search = bool(getattr(tools, 'native_search', False)) and profile == BOUNDED_PROFILE
+            native_search = bool(getattr(tools, 'native_search', False)) and profile == BOUNDED_PROFILE and cloud is None
             # #701: only the trusted-local route is ever given the service's browser relay.
             relay = getattr(tools, 'browser_relay', None) if profile == BOUNDED_PROFILE else None
             # #1197: the owner's AI connections, only for Claude Code on the trusted-local
             # route and only with the service relay that decides each connector call.
+            # #211: not on a Claude Code cloud turn; those connectors come with the claude.ai login.
             ai_connections = (bool(getattr(tools, 'ai_connections', False)) and engine_id in owner_mcp.ENGINES
-                              and profile == BOUNDED_PROFILE and relay is not None)
+                              and profile == BOUNDED_PROFILE and relay is not None
+                              and not (cloud is not None and engine_id == 'claude-code'))
             # #1296: the servers the owner confirmed for this engine; every call to them is decided by Still.
             confirmed = (list((getattr(tools, 'owner_mcp_servers', None) or {}).get(engine_id) or ())
                          if ai_connections else [])
@@ -2013,8 +2118,9 @@ class BoundedExecutionAdapter:
             os.close(os.open(config, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
             config.write_text(json.dumps({'mcpServers': {**owner_servers, 'agentos': {
                 'command': sys.executable,
-                # The bridge never needs the CLI's own credential.
-                **({'env': {'CLAUDE_CODE_OAUTH_TOKEN': ''}} if engine_id == 'claude-code' else {}),
+                # The bridge never needs the CLI's own credential (#211: nor a cloud provider's).
+                **({'env': {'CLAUDE_CODE_OAUTH_TOKEN': '', **{name: '' for name in (cloud.withheld() if cloud else ())}}}
+                   if engine_id == 'claude-code' else {}),
                 'args': ['-m', 'personal_agent.mcp_bridge', '--data', str(tools.capabilities.store.root), '--job', tools.capabilities.job_id,
                          # The bridge is a separate process: hand it this Work's
                          # private-source provenance so its records carry the same
@@ -2036,7 +2142,7 @@ class BoundedExecutionAdapter:
                          *[f'--connection-slot={name}' for name in (connection_slot_names(tools.capabilities)
                                                                     if relay and profile == BOUNDED_PROFILE else ())]],
             }}}, ensure_ascii=False), encoding='utf-8')
-            env = self.environment(engine_id, binary, run_dir, ai_connections=ai_connections)
+            env = self.environment(engine_id, binary, run_dir, ai_connections=ai_connections, cloud=cloud)
             owner_args = ()
             definitions=owner_servers
             server_env={}
@@ -2095,9 +2201,12 @@ class BoundedExecutionAdapter:
             argv = self.command(engine_id, binary, prompt, config, instructions, profile=profile, disabled_features=disabled,
                                 model=model or None, effort=effort or None, native_search=native_search,
                                 tool_timeout=bridge_tool_timeout(offered, timeout), image_paths=image_paths,
-                                ai_connections=ai_connections and engine_id == 'claude-code', owner_mcp_args=owner_args)
+                                ai_connections=ai_connections and engine_id == 'claude-code', owner_mcp_args=owner_args,
+                                cloud=cloud)
             run_meta = {'argv': display_argv(argv, prompt, instructions), 'requested_model': model or None,
-                        'requested_effort': effort or None}
+                        'requested_effort': effort or None, **(cloud.record() if cloud else {})}
+            # #211: the last check before launch; a spent daily cap launches nothing.
+            self.admit_cloud(cloud)
             launch['started'] = True
             try:
                 if self.runner is subprocess.run:
@@ -2135,8 +2244,15 @@ class BoundedExecutionAdapter:
             if completed.returncode != 0:
                 # Remove the stored credential's literal value before any
                 # output is parsed, logged or shown, whatever its format.
-                secret = self.credentials(engine_id) if engine_id == 'claude-code' else ''
-                scrub = (lambda text: (text or '').replace(secret, '[redacted]')) if isinstance(secret, str) and len(secret) >= 8 else (lambda text: text or '')
+                secret = self.credentials(engine_id) if engine_id == 'claude-code' and cloud is None else ''
+                values = [value for value in [secret, *(cloud.secret_values.values() if cloud else ())]
+                          if isinstance(value, str) and len(value) >= 8]
+
+                def scrub(text):
+                    text = text or ''
+                    for value in values:
+                        text = text.replace(value, '[redacted]')
+                    return text
                 stdout, stderr = scrub(completed.stdout), scrub(getattr(completed, 'stderr', ''))
                 status, reason = failure_details(engine_id, stdout, stderr, prompt)
                 failure_class, hint = 'engine-failed', ''
@@ -2152,6 +2268,10 @@ class BoundedExecutionAdapter:
                 elif failure_class == 'engine-failed' and is_usage_limited(evidence):
                     # #873: the CLI reports its usage limit without a status.
                     failure_class, hint = 'usage-limit', usage_limit_hint(engine_id, evidence)
+                if cloud is not None and failure_class == 'auth':
+                    # #211: the cloud credentials, not a CLI login, were refused.
+                    from .messages import msg
+                    hint = msg('cloud_engines.auth_failed', provider=cloud.definition.name)
                 LOG.warning('engine turn failed engine=%s exit_code=%s class=%s status=%s duration=%.1fs reason=%s',
                             engine_id, completed.returncode, failure_class, status, elapsed, reason or '-')
                 # The conversation receives an owner sentence, not process

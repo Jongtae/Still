@@ -138,6 +138,8 @@ NATIVE_REASONS = {
     'rejected': '제공자가 이 모델에서는 웹 검색 도구를 지원하지 않는다고 답했습니다',
     'refused': 'CLI가 자체 웹 검색을 쓸 수 없다고 답했습니다',
     'strict_profile': '엄격 격리 실행 프로필에서는 CLI 자체 웹 검색을 켜지 않습니다',
+    # #211: Claude Code on Amazon Bedrock has no WebSearch (vendor docs); every cloud turn uses Still's search.
+    'cloud_provider': '클라우드 제공자로 실행하는 CLI에서는 자체 웹 검색을 켜지 않습니다',
 }
 #: Per-call billing the owner should know about, per API route (Settings).
 NATIVE_COSTS = {

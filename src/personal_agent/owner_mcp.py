@@ -170,6 +170,49 @@ def _toml(value):
     return json.dumps(value, ensure_ascii=False)
 
 
+SHELL_EXCLUDE_KEY = 'shell_environment_policy.exclude'
+#: The Codex feature whose snapshot of the CLI's own environment is restored in
+#: every ``exec_command`` shell, after ``shell_environment_policy`` has run.
+#: Observed on codex-cli 0.153.4 (#211, local fixture model server, no provider
+#: contacted): with ``shell_snapshot`` on, a variable named in the exclusion
+#: (and under ``filters`` or ``inherit = "none"/"core"`` alike) is still printed
+#: by a model-requested ``env``; with ``--disable shell_snapshot`` the same
+#: exclusion holds and the variable is absent.
+SHELL_SNAPSHOT_FEATURE = 'shell_snapshot'
+
+
+def shell_exclusion(names):
+    """The arguments that keep ``names`` out of every Codex shell command's environment.
+
+    ``shell_environment_policy.exclude`` (Codex config docs, "Shell
+    environment policy"; codex-cli 0.153.4) plus ``--disable shell_snapshot``,
+    without which the snapshot puts the excluded values back (see
+    ``SHELL_SNAPSHOT_FEATURE``).  One override per turn: a later ``-c`` of the
+    same key would replace an earlier one, so every withheld name of a turn goes
+    into this single list.
+    """
+    if not names:
+        return []
+    return ['-c', f'{SHELL_EXCLUDE_KEY}={_toml(sorted(set(names)))}', '--disable', SHELL_SNAPSHOT_FEATURE]
+
+
+def merge_shell_exclusion(args, names):
+    """``args`` with ``names`` joined into its one shell exclusion (#211), added when it had none."""
+    args, merged, kept = list(args), set(names), []
+    index = 0
+    while index < len(args):
+        if args[index] == '-c' and index + 1 < len(args) and str(args[index + 1]).startswith(SHELL_EXCLUDE_KEY + '='):
+            merged |= set(json.loads(args[index + 1][len(SHELL_EXCLUDE_KEY) + 1:]))
+            index += 2
+            continue
+        if args[index] == '--disable' and index + 1 < len(args) and args[index + 1] == SHELL_SNAPSHOT_FEATURE:
+            index += 2
+            continue
+        kept.append(args[index])
+        index += 1
+    return [*kept, *shell_exclusion(merged)]
+
+
 def codex_launch(definitions):
     """``(config args, env values, secret env names)`` that load confirmed servers into one Codex turn.
 
@@ -234,7 +277,7 @@ def codex_launch(definitions):
         secret += sorted(server_env)
     if secret:
         # The model's shell commands never inherit these values.
-        args += ['-c', f'shell_environment_policy.exclude={_toml(sorted(set(secret)))}']
+        args += shell_exclusion(secret)
     return args, env, sorted(set(secret))
 
 

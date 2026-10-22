@@ -661,6 +661,8 @@ SETTINGS_WEB_CHANGES={
     '/api/main-ai/key':('기본 AI 키','저장했습니다'),'/api/decision-route/credential':('판단 AI 키','저장했습니다'),
     '/api/subscription-engines/credential':('구독 AI 인증 정보','저장했습니다'),
     '/api/subscription-engines/isolation':('구독 AI 격리 방식','저장했습니다'),
+    # #211: the read model cannot show a credential; the notice states the action only.
+    '/api/cloud-engines/profile':('클라우드 AI 제공자','저장했습니다'),'/api/cloud-engines/credential':('클라우드 AI 인증 정보','저장했습니다'),
     '/api/openrouter/connect':('OpenRouter 연결','저장했습니다'),
     '/api/search-providers/key':('웹 검색 키','저장했습니다'),'/api/search-providers/default':('기본 웹 검색 제공자','저장했습니다'),
     '/api/search-providers/bing':('Bing 검색 설정','저장했습니다'),'/api/google/client':(msg('quickstart.own_google_client'),'저장했습니다'),
@@ -1279,6 +1281,11 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 if path=='/api/subscription-engines/connect':return self.reply(200,service.connect_subscription_engine(body))
                 if path=='/api/subscription-engines/login-status':return self.reply(200,service.check_engine_login(body.get('engine','') if isinstance(body,dict) else ''))
                 if path=='/api/subscription-engines/credential':return self.reply(200,service.save_engine_credential(body))
+                # #211: an engine's cloud provider profile and its credentials, on this computer only.
+                if path in ('/api/cloud-engines/profile','/api/cloud-engines/credential'):
+                    if self.tunneled():return self.reply(400,{'error':msg('cloud_engines.local_only')})
+                    if path=='/api/cloud-engines/profile':return self.reply(200,service.save_cloud_profile(body))
+                    return self.reply(200,service.save_cloud_secret(body))
                 if path=='/api/ai-route':return self.reply(200,service.select_ai_route(body))
                 # #619: Main AI chooser - probe-and-switch, re-check, per-provider keys.
                 if path=='/api/main-ai/activate':return self.reply(200,service.activate_main_ai(body))
