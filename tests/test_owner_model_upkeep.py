@@ -554,6 +554,15 @@ class Invalidate(Upkeep):
         self.assertEqual(receipt['restored']['id'], a['id'])
         self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [a['id']])
 
+    def test_undos_through_a_longer_chain_still_end_at_the_original_fact(self):
+        a = self.saved('profile.place.workplace', '판교 사무실')
+        b = self.saved('profile.place.work', '강남', invalidates=[(a['id'], 'moved')])
+        d = self.saved('profile.place.workplace', '여의도 사무실')
+        c = self.saved('profile.place.workplace', '광화문 사무실')
+        for row in (b, c, d):
+            self.store.retract_memory(MEMORY_OWNER, row['id'], row['content_digest'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [a['id']])
+
     def test_a_settings_edit_keeps_the_last_day(self):
         from personal_agent.memory_service import MemoryService
         self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')
