@@ -2325,6 +2325,9 @@ def read_state_text(calls, limit=READ_STATE_CHARS):
  if not (listed or opened):return ''
  unopened=[ref for ref in listed if ref not in opened]
  total=len(listed)+unnamed
+ # Codex review: an opened item no recorded id names may be one of a listing's unnamed items, so
+ # reads beyond the named ones settle those first; only the remainder stays not known to be opened.
+ unnamed=max(0,unnamed-len([ref for ref in opened if ref not in listed]))
  def ids(refs):
   shown=', '.join(ref[:READ_STATE_REF_CHARS] for ref in refs[:READ_STATE_IDS])
   return shown+(f' and {len(refs)-READ_STATE_IDS} more' if len(refs)>READ_STATE_IDS else '')

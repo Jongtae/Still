@@ -65,6 +65,9 @@ class ReadState(unittest.TestCase):
         self.assertIn('listed without an id in the record, so not known to be opened: 3 of 15 listed', text)
         self.assertIn('listing cut short, more items matched than were listed: find_files', text)
         self.assertNotIn('read through (', text)
+        every = [('read_file', {'root_id': 'r', 'path': f'{n}.txt', 'characters': 10, 'truncated': False}) for n in range(15)]
+        text = read_state_text([('find_files', {**listing, 'truncated': False}), *every])
+        self.assertTrue(text.endswith('every listed item was opened and read through (15 opened)'), text)
 
     def test_long_identities_are_compared_whole(self):
         long = 'd/' + 'x' * 300
