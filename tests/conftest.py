@@ -9,7 +9,6 @@ import pytest
 SERVICE_SPAWNS = {
     'owner_model_spawn': 'agentos-owner-model',
     'steer_spawn': 'agentos-steer-judgment',
-    'progress_reaction_spawn': 'agentos-telegram-progress-reaction',
     'turn_reaction_spawn': 'agentos-telegram-turn-reaction',
     'early_judgment_spawn': 'agentos-early-judgment',
 }

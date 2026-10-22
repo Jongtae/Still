@@ -439,11 +439,6 @@ CLOSING_CANDIDATES = (
     '👌', '✍', '👍', '🎉', '🏆', '💯', '🔥', '🤝', '🫡', '🙏', '😎', '🤓', '🍾', '⚡', '🆒', '❤', '🥰',
     '😁', '🤗', '😇', '🕊', '🤩', '☃', '🎄',
 )
-#: Offered for an observed running step. The Judgment AI selects from these;
-#: no action/tool/category is mapped to a fixed reaction in Still.
-PROGRESS_CANDIDATES = (
-    '👀', '🤔', '👍', '🫡', '🤗', '🔥', '🤩', '🤓', '👨\u200d💻', '⚡', '🤝', '🙏', '💯', '🆒',
-)
 #: The deterministic closing emoji, the only ones that let the AI be asked.
 DONE_REACTIONS = (DONE_REACTION, WROTE_REACTION)
 
@@ -572,8 +567,6 @@ class WaitState:
     #: this run), and whether the Judgment AI was already asked for it.
     reaction: str = None
     reaction_asked: bool = False
-    #: Identity of the last observed progress step considered for a reaction.
-    progress_reaction_step: object = None
     chat_action_at: float = None
     draft_at: float = None
     draft_failed: bool = False

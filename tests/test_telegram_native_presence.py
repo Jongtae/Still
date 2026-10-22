@@ -38,7 +38,7 @@ from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
 from personal_agent.telegram_presence import (CLEAR_REACTION, CLOSING_CANDIDATES, DONE_REACTION, DOTS_FRAMES,
                                               PRESENCE_REACTIONS, RECEIVED_CANDIDATES, RECEIVED_REACTION,
-                                              PROGRESS_CANDIDATES, TELEGRAM_REACTION_EMOJI, WROTE_REACTION, WAIT_CHAT_ACTION, WAIT_DRAFT,
+                                              TELEGRAM_REACTION_EMOJI, WROTE_REACTION, WAIT_CHAT_ACTION, WAIT_DRAFT,
                                               WAIT_NONE, PresenceTiming, draft_body_text, draft_frame, draft_id_for,
                                               outcome_reaction, render_telegram_html, rich_draft_blocks)
 
@@ -91,7 +91,7 @@ class NativePresenceTestCase(unittest.TestCase):
 
         self.service = AgentService(self.store, ModelAdapter(model), transport)
         # #969: the chosen start emoji is judged off the worker.  Tests that read the
-        # emoji sequence run that judgment in line (as they do the progress one);
+        # emoji sequence run that judgment in line;
         # ``StartLatencyTests`` exercises the seam itself.
         self.service.turn_reaction_spawn = lambda target: target()
         self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': GENERATION, 'cursor': 0})
@@ -247,94 +247,31 @@ class JudgmentReactionTests(NativePresenceTestCase):
                          'both Judgment AI calls are linked to this Work for the #826 information-use audit')
         self.assertTrue(all(body['message_id'] == message_id for body in self.reactions()))
 
-    def test_a_distinct_observed_progress_step_gets_one_redacted_judgment_reaction(self):
+    def test_observed_progress_steps_ask_no_judgment_and_keep_the_reaction(self):
+        """#219 (#205 0a): a running step is shown by the draft line; no per-step emoji judgment
+        is asked, the start reaction stays until the outcome replaces it."""
         self.connect_model()
-        self.store.secret('decision_model_key', 'owner-private-sentinel')
-        self.install_reaction_judgment({'turn-reaction': '🤗', 'progress-reaction': '🤓', 'closing-reaction': '🎉'})
-        pending_judgments = []
-        self.service.progress_reaction_spawn = pending_judgments.append
+        self.install_reaction_judgment({'turn-reaction': '🤗', 'closing-reaction': '🎉'})
 
         def show_progress(job):
-            with self.store.db() as db:
-                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                           (job['id'], 'web_search', 'running',
-                            json.dumps({'call_id': 'step-1', 'step': {'action': 'web_search',
-                                                                      'status': 'owner-private-sentinel 검색 중'}}),
-                            job['created'] + 5))
-            self.service.acknowledge_long_work(now=job['created'] + 6)
+            for index in range(3):
+                with self.store.db() as db:
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (job['id'], 'web_search', 'running',
+                                json.dumps({'call_id': f'step-{index}', 'step': {'action': 'web_search',
+                                                                                 'status': f'step {index}'}}),
+                                job['created'] + 5 + index))
+                self.service.acknowledge_long_work(now=job['created'] + 6 + index)
             self.assertTrue(any(method == 'sendRichMessageDraft' for method in self.methods()),
-                            'the acknowledgement loop refreshes the wait surface before the judgment completes')
-            self.assertNotIn('🤓', self.emojis(), 'the optional judgment is still pending')
-            self.assertEqual(len(pending_judgments), 1)
-            pending_judgments.pop()()
-            # A wait refresh with no new event must not ask or react again.
-            self.service.acknowledge_long_work(now=job['created'] + 7)
+                            'the draft still names the observed step')
 
         self.during_model = show_progress
         job, message_id = self.turn('자료를 조사해줘')
 
         self.assertEqual(job['status'], 'succeeded')
-        self.assertEqual(self.emojis(), [RECEIVED_REACTION, '🤗', '🤓', '🎉'])
-        progress_calls = [call for call in self.judgment_calls if call[0].purpose == 'progress-reaction']
-        self.assertEqual(len(progress_calls), 1)
-        self.assertEqual(progress_calls[0][0].facts, {'current_step': '[redacted] 검색 중'})
-        self.assertEqual(progress_calls[0][1], PROGRESS_CANDIDATES)
-        self.assertEqual(progress_calls[0][3], job['id'])
+        self.assertEqual(self.emojis(), [RECEIVED_REACTION, '🤗', '🎉'])
+        self.assertEqual([call[0].purpose for call in self.judgment_calls], ['turn-reaction', 'closing-reaction'])
         self.assertTrue(all(body['message_id'] == message_id for body in self.reactions()))
-
-    def test_approval_step_does_not_get_a_progress_judgment(self):
-        self.connect_model()
-        self.install_reaction_judgment({'turn-reaction': '🤗', 'progress-reaction': '🤓', 'closing-reaction': '🎉'})
-
-        def show_approval(job):
-            with self.store.db() as db:
-                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                           (job['id'], 'browser_click', 'running',
-                            json.dumps({'call_id': 'payment-1', 'step': {'action': 'browser_click', 'approval': True}}),
-                            job['created'] + 5))
-            self.service.acknowledge_long_work(now=job['created'] + 6)
-
-        self.during_model = show_approval
-        self.turn('결제를 진행해줘')
-        self.assertNotIn('progress-reaction', [call[0].purpose for call in self.judgment_calls])
-
-    def test_a_step_reaction_is_discarded_if_a_newer_step_arrives_during_judgment(self):
-        self.connect_model()
-        self.store.secret('decision_model_key', 'owner-private-sentinel')
-        self.judgment_calls = []
-        work_id = {'value': None}
-
-        def choose(context, candidates, question):
-            self.judgment_calls.append((context, tuple(candidates), question, self.service.current_work_id))
-            if context.purpose == 'progress-reaction':
-                with self.store.db() as db:
-                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                               (work_id['value'], 'web_search', 'running',
-                                json.dumps({'call_id': 'step-2', 'step': {'action': 'web_search',
-                                                                          'status': 'next step'}}),
-                                time.time()))
-                return SelectionDecision(OUTCOME_DECIDED, '🤓', candidates, fixture_confidence())
-            return SelectionDecision(OUTCOME_DECIDED,
-                                     '🤗' if context.purpose == 'turn-reaction' else '🎉',
-                                     candidates, fixture_confidence())
-
-        self.service.decision_judge = ConversationJudgments(FixtureDecisionEngine(choose=choose),
-                                                            redactor=self.service.redact_judgment_text)
-        self.service.progress_reaction_spawn = lambda target: target()
-
-        def show_progress(job):
-            work_id['value'] = job['id']
-            with self.store.db() as db:
-                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                           (job['id'], 'web_search', 'running',
-                            json.dumps({'call_id': 'step-1', 'step': {'action': 'web_search',
-                                                                      'status': 'first step'}}),
-                            job['created'] + 5))
-            self.service.acknowledge_long_work(now=job['created'] + 6)
-
-        self.during_model = show_progress
-        self.turn('자료를 조사해줘')
-        self.assertNotIn('🤓', self.emojis(), 'the judgment for a superseded step is stale')
 
     def test_none_of_these_keeps_deterministic_reactions_without_repeating_them(self):
         self.connect_model()
@@ -998,10 +935,10 @@ class OutcomeReactionTests(unittest.TestCase):
         self.assertEqual(PRESENCE_REACTIONS, (RECEIVED_REACTION, DONE_REACTION, WROTE_REACTION))
         for emoji in PRESENCE_REACTIONS:
             self.assertIn(emoji, TELEGRAM_REACTION_EMOJI)
-        for emoji in (*RECEIVED_CANDIDATES, *CLOSING_CANDIDATES, *PROGRESS_CANDIDATES):
+        for emoji in (*RECEIVED_CANDIDATES, *CLOSING_CANDIDATES):
             self.assertIn(emoji, TELEGRAM_REACTION_EMOJI)
         self.assertFalse({'👎', '🤬', '💩', '🤡', '🖕', '😈', '🤮'} &
-                         set(RECEIVED_CANDIDATES + CLOSING_CANDIDATES + PROGRESS_CANDIDATES))
+                         set(RECEIVED_CANDIDATES + CLOSING_CANDIDATES))
         self.assertEqual((RECEIVED_REACTION, DONE_REACTION, WROTE_REACTION), ('👀', '👌', '✍'))
 
     def test_succeeded_is_done_and_an_observed_note_or_memory_write_is_writing(self):

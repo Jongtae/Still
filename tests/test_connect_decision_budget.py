@@ -400,7 +400,6 @@ class PresenceDecisionBudget(unittest.TestCase):
         self.state = WaitState()
         self.pending = []
         self.service.turn_reaction_spawn = self.pending.append
-        self.service.progress_reaction_spawn = self.pending.append
 
     def dispatch(self):
         from concurrent.futures import ThreadPoolExecutor
@@ -411,7 +410,7 @@ class PresenceDecisionBudget(unittest.TestCase):
 
     def reactions(self):
         self.service._spawn_turn_reaction(self.job, self.state)
-        self.service._react_progress_choice(self.job, self.state, ('observed-step', 'Looking at a result'))
+        self.service._spawn_turn_reaction(self.job, type(self.state)())
 
     def test_reactions_spend_their_own_bounded_counter_never_the_work_turns(self):
         from personal_agent.agent_runtime import WORK_PRESENTATION_TURNS
@@ -431,8 +430,6 @@ class PresenceDecisionBudget(unittest.TestCase):
         self.assertEqual(len(self.engine.asked), 3, 'the reaction counter keeps the request-level bound')
         self.assertEqual(budget.ledger.used('presentation'), WORK_PRESENTATION_TURNS)
         self.assertIsNone(self.service.current_decision_budget(), 'poll thread must not acquire a foreground scope')
-        self.assertTrue(self.service.progress_reaction_flight.acquire(blocking=False))
-        self.service.progress_reaction_flight.release()
 
     def test_missing_budget_never_creates_an_optional_reaction_allowance(self):
         self.reactions()
