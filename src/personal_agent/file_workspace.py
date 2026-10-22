@@ -189,9 +189,12 @@ class FileWorkspace:
         with self.store.db() as db:
             self._ensure_results_table(db)
             pending=[dict(row) for row in db.execute("SELECT * FROM file_workspace_results WHERE state='pending'")]
+        # #182 review: with no usable result folder now, nothing can be verified: reservations stay pending.
+        active_id=self.active().get('workspace_id')
+        if not pending or not active_id: return
         for record in pending:
             if deadline is not None and time.monotonic()>deadline: break
-            if record.get('workspace_id')!=self._workspace_id():
+            if record.get('workspace_id')!=active_id:
                 with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
                 continue
             try:
@@ -348,7 +351,7 @@ class FileWorkspace:
         """Whether a published result-file record exists (the result folder may be unavailable)."""
         with self.store.db() as db:
             self._ensure_results_table(db)
-            return bool(db.execute("SELECT 1 FROM file_workspace_results WHERE state='current' LIMIT 1").fetchone())
+            return bool(db.execute("SELECT 1 FROM file_workspace_results WHERE state IN ('current','pending') LIMIT 1").fetchone())
 
     def has_results(self):
         """Whether any saved result record exists, checking no result file (``list_roots``).
@@ -358,7 +361,7 @@ class FileWorkspace:
         self.recover(time.monotonic()+2)
         with self.store.db() as db:
             self._ensure_results_table(db)
-            if db.execute("SELECT 1 FROM file_workspace_results WHERE state='current' LIMIT 1").fetchone(): return True
+            if db.execute("SELECT 1 FROM file_workspace_results WHERE state IN ('current','pending') LIMIT 1").fetchone(): return True
             tables={row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             return 'workspace_results' in tables and bool(db.execute('SELECT 1 FROM workspace_results LIMIT 1').fetchone())
 

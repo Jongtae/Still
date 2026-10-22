@@ -493,6 +493,21 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         # One cited version is gone, so the result is not offered as current.
         self.assertEqual(self.caps('job-later').execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})['files'], [])
 
+    def test_a_pending_save_without_a_result_folder_breaks_nothing(self):
+        from unittest.mock import patch
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        with patch.object(FileWorkspace, '_mark_current', lambda self, record: None):
+            caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        self.store.put('file_workspace', {**FileWorkspace(self.store).status(), 'workspace': None, 'workspace_id': None})
+        later = self.caps('job-later')
+        # The roots still list; the saved result waits for its folder, which is asked for.
+        self.assertEqual([root['id'] for root in later.execute('list_roots', {})['roots']], [self.root, SAVED_RESULTS_ROOT])
+        found = later.execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertEqual((found['needs_setup'], found['requires']), (True, 'local-result-write'))
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'pending')
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
