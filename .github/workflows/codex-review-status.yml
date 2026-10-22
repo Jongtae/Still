@@ -1,0 +1,53 @@
+name: codex-review-status
+
+# #207: a green `codex-review` commit status once Codex has reviewed the PR's
+# exact head and every Codex finding has a reply. Informational only: it never
+# approves or merges, and it runs no code from the PR.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  statuses: write
+
+concurrency:
+  group: codex-review-status-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  status:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request && contains(github.event.comment.body, 'codex-review-state'))
+    runs-on: ubuntu-latest
+    steps:
+      # The script always comes from main, never from the PR under review.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          sparse-checkout: scripts/ci
+      - name: Post codex-review status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+        run: |
+          if [ -f scripts/ci/codex_review_status.py ]; then
+            python3 scripts/ci/codex_review_status.py --repo "$GITHUB_REPOSITORY" --pr "$PR"
+          else
+            echo "scripts/ci/codex_review_status.py is not on main yet; skipping"
+          fi
