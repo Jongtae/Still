@@ -5614,7 +5614,7 @@ class AgentService:
         can be checked against what the page showed.
         """
         if orchestration is None or attempt is None or not orchestration.orchestrated:return None
-        from .agent_runtime import EFFECT_NONE, call_effects, failed_steps_text, trail_steps
+        from .agent_runtime import EFFECT_NONE, call_effects, failed_steps_text, read_state_text, trail_steps
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',(job_id,since or 0)).fetchall()
         unknown=outcome=='unknown' or self._work_has_unknown_effect(job_id)
@@ -5661,7 +5661,11 @@ class AgentService:
         # #14: the judgment reads every unsettled call with what Still observed about it: whether a later
         # call redid it or routed around it, or whether its effect is unknown.
         failed_steps=failed_steps_text(trail_steps(tool_rows))
-        observations=observations_with_pages(observed,pages,orchestration._redact)
+        # #151: which listed items this attempt opened and read through, from the recorded evidence;
+        # kept whole at the end of the bounded observations, so no number of step lines drops it.
+        read_state=read_state_text([(tool,data.get('evidence')) for tool,status,data in tool_rows if status=='succeeded'])
+        read_state=('- '+str(orchestration._redact(read_state,private=False) or '')) if read_state else ''
+        observations=observations_with_pages(observed,pages,orchestration._redact,last=read_state)
         summary='; '.join(part for part in (
             f"tools called: {', '.join(called) or 'none'}",
             f"failed: {', '.join(failed_codes)}" if failed_codes else '',
