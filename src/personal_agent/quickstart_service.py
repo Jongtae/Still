@@ -7277,6 +7277,10 @@ class AgentService:
             # #183 review: the approved-revision check and the disconnect are one operation under the
             # revoker lock and then the connector's own lifecycle lock (the order ``retry`` uses), so no
             # OAuth completion can commit a new credential between the check and the disconnect.
+            # #183 review: fetch the connector's local key before any lock (#8): a cold key may wait on a
+            # macOS Keychain prompt, which must never stall OAuth callbacks or other revocations.
+            prepare=getattr(connection.secret_store,'prepare_key',None)
+            if callable(prepare):prepare(writing=True)
             with connector_revocation._LOCK, connection.lifecycle():
                 preview=revoker.preview(session,row['after'])
                 if self.connection_disconnect_before(row['after'])!=row['before']:

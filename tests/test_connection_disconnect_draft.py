@@ -28,6 +28,21 @@ class ConnectionDisconnectDraftTests(RevocationTestCase):
         return self.tools('settings_change', {'category': 'connections', 'setting': setting, 'value': value,
                                               'reason': '소유자가 Gmail 연결을 끊어 달라고 했습니다.'})
 
+    @staticmethod
+    def lock_free(lock):
+        """Whether another thread can take ``lock`` now (it takes and releases it itself)."""
+        import threading
+        probe = []
+
+        def attempt():
+            got = lock.acquire(timeout=0)
+            probe.append(got)
+            if got:
+                lock.release()
+        thread = threading.Thread(target=attempt)
+        thread.start(); thread.join()
+        return probe[0]
+
     def draft_row(self, draft_id):
         return self.store.config('settings_change_drafts')[draft_id]
 
@@ -153,12 +168,7 @@ class ConnectionDisconnectDraftTests(RevocationTestCase):
             disconnect = revoker.disconnect
 
             def observed(*args):
-                probe = []
-                thread = threading.Thread(target=lambda: probe.append(self.gmail.oauth_lock.acquire(timeout=0)))
-                thread.start(); thread.join()
-                if probe[0]:
-                    self.gmail.oauth_lock.release()
-                held.append(not probe[0])
+                held.append(not self.lock_free(self.gmail.oauth_lock))
                 return disconnect(*args)
             revoker.disconnect = observed
             return revoker
@@ -169,6 +179,29 @@ class ConnectionDisconnectDraftTests(RevocationTestCase):
         finally:
             self.service.google_revocation = build
         self.assertEqual(held, [True], 'an OAuth completion is held off while the disconnect runs')
+
+    def test_the_connector_key_is_fetched_before_any_lock(self):
+        import threading
+        self.connect_gmail()
+        row = self.draft_row(self.propose()['draft_id'])
+        store = self.gmail.store
+        calls = []
+        original = getattr(store, 'prepare_key', None)
+
+        def prepare_key(*slots, writing=False):
+            calls.append(self.lock_free(self.gmail.oauth_lock))
+            if callable(original):
+                original(*slots, writing=writing)
+        store.prepare_key = prepare_key
+        try:
+            self.assertEqual(self.settings.confirm(OWNER, CHANNEL, row['id'], row['digest'])['state'], 'applied')
+        finally:
+            if callable(original):
+                store.prepare_key = original
+            else:
+                del store.prepare_key
+        self.assertTrue(calls)
+        self.assertTrue(calls[0], 'the first key fetch happens with no lifecycle lock held')
 
     def test_disconnect_keeps_records_and_is_not_forget(self):
         self.connect_gmail()
