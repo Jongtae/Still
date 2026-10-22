@@ -54,6 +54,8 @@ to mirror GitHub. Keep a checkpoint parent open when remaining criteria or expli
    The escalated review is the automatic Codex review of that exact head; fix or answer
    every finding and record it as a Codex review. Every later push gets a Codex review of
    its new head before merge, so the merged SHA is always one Codex reviewed.
+   The informational `codex-review` commit status (#207) turns green when Codex's own review
+   state names the exact head and every Codex finding has a reply; it never approves or merges.
    Resolve only addressed or explicitly triaged threads with evidence. Never impersonate
    another reviewer or treat self-review as independence.
 4. When any risk-triggered review and GitHub requirements are satisfied, attempt one normal
