@@ -70,9 +70,14 @@ PROFILE_SNAPSHOT_CHARS = 12000
 #: The live profile was 5.5 KB (42 facts) in 2026-10.
 PROFILE_SNAPSHOT_BYTES = 12000
 #: #217: what a profile prompt section may carry after the snapshot lines - the
-#: omission line and the working-notes block - so a reader's own bound
-#: (``PROFILE_SECTION_CHARS``) never cuts what the worker was given.
-PROFILE_SECTION_EXTRA_CHARS = 2000
+#: omission line, the working-notes block and (#221) the owner's earlier words -
+#: so a reader's own bound (``PROFILE_SECTION_CHARS``) never cuts what the worker was given.
+PROFILE_SECTION_EXTRA_CHARS = 5500
+#: #221: the owner's earlier words block: at most this many UTF-8 bytes, lines of at most this many characters.
+OWNER_WORDS_BYTES = 3000
+OWNER_WORDS_LINE_CHARS = 300
+OWNER_WORDS_HEADING = ("owner_said (the owner's own earlier messages that share words with this request, each with the "
+                       "day it was said; what the owner said then, not necessarily true now):")
 PROFILE_SECTION_CHARS = PROFILE_SNAPSHOT_CHARS + PROFILE_SECTION_EXTRA_CHARS
 PROFILE_LINE_CHARS = 200
 #: Hard cap on rows a snapshot will ever read, whatever the char budget.

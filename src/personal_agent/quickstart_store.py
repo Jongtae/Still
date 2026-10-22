@@ -133,6 +133,28 @@ class QuickStore:
                 self.memory_search_available = True
             except sqlite3.OperationalError:
                 self.memory_search_available = False
+            # #221: the same rebuildable FTS5 pattern over the transcript, so a request can recall
+            # the owner's own earlier words; ``messages`` stays the only source of truth.
+            try:
+                fts_existed = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='messages_search'").fetchone()
+                db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS messages_search USING fts5(content, content='messages', content_rowid='id', tokenize='unicode61')")
+                db.executescript('''
+                    CREATE TRIGGER IF NOT EXISTS messages_search_ai AFTER INSERT ON messages BEGIN
+                      INSERT INTO messages_search(rowid,content) VALUES(new.id,new.content);
+                    END;
+                    CREATE TRIGGER IF NOT EXISTS messages_search_ad AFTER DELETE ON messages BEGIN
+                      INSERT INTO messages_search(messages_search,rowid,content) VALUES('delete',old.id,old.content);
+                    END;
+                    CREATE TRIGGER IF NOT EXISTS messages_search_au AFTER UPDATE OF content ON messages BEGIN
+                      INSERT INTO messages_search(messages_search,rowid,content) VALUES('delete',old.id,old.content);
+                      INSERT INTO messages_search(rowid,content) VALUES(new.id,new.content);
+                    END;
+                ''')
+                if not fts_existed:
+                    db.execute("INSERT INTO messages_search(messages_search) VALUES('rebuild')")
+                self.messages_search_available = True
+            except sqlite3.OperationalError:
+                self.messages_search_available = False
             # SEC-ATTN-01 (#659): owner-accepted preparations, one indexed tick query.
             db.executescript(PREPARATIONS_TABLE_SQL)
             # #719: the watch window and silent-unless-needed columns, among others.
@@ -1140,6 +1162,26 @@ class QuickStore:
             rows=db.execute("SELECT * FROM memories WHERE owner_key=? AND invalidated_by=? AND state='superseded' ORDER BY created,id",
                             (self._memory_binding(owner_id),memory_id)).fetchall()
             return [self._memory_row(row) for row in rows]
+
+    def owner_words(self, text, *, skip_recent=16, limit=8):
+        """The owner's own earlier messages that share words with ``text``, oldest first (#221).
+
+        SQLite FTS5 (``unicode61``, BM25) over ``role='user'`` transcript rows,
+        leaving out the newest ``skip_recent`` messages (the recent window every
+        reader already sees, and the current request).  ``[]`` without FTS5 or
+        without searchable words.  Rows are ``{'id', 'content', 'created'}``.
+        """
+        if not getattr(self,'messages_search_available',False):return []
+        terms=[term for term in re.findall(r'\w+',str(text or '')) if len(term)>1][:20]
+        if not terms:return []
+        query=' OR '.join('"'+term.replace('"','')+'"' for term in terms)
+        with self.db() as db:
+            newest=db.execute('SELECT id FROM messages ORDER BY id DESC LIMIT 1 OFFSET ?',(max(0,int(skip_recent)-1),)).fetchone()
+            if newest is None:return []
+            rows=db.execute('''SELECT m.id,m.content,m.created FROM messages_search JOIN messages m ON m.id=messages_search.rowid
+                               WHERE messages_search MATCH ? AND m.role='user' AND m.id<?
+                               ORDER BY bm25(messages_search) LIMIT ?''',(query,newest['id'],int(limit))).fetchall()
+        return sorted(({'id':row['id'],'content':row['content'],'created':row['created']} for row in rows),key=lambda row:row['id'])
 
     def work_memories(self, owner_id, work_id, limit=101):
         """The current Memory rows one Work wrote, oldest first (#918: what its notice shows)."""

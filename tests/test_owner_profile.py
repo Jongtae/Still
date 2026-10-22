@@ -245,7 +245,8 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         # (Korean, 3 bytes a character) still leaves the conversation budget room.
         notes = '가' * om.NOTES_CHARS + 'x' * 600
         instructions = CORE_INSTRUCTIONS + CLI_TOOL_GUIDANCE + CLI_NATIVE_SEARCH_GUIDANCE
-        fixed = len(instructions.encode()) + PROFILE_SNAPSHOT_BYTES + len(notes.encode())
+        from personal_agent.memory_service import OWNER_WORDS_BYTES
+        fixed = len(instructions.encode()) + PROFILE_SNAPSHOT_BYTES + len(notes.encode()) + OWNER_WORDS_BYTES
         self.assertLess(fixed, CONTEXT_BUDGET_BYTES - 4000)
 
     def test_cut_to_fit_cuts_whole_lines_in_order_and_marks_each_cut(self):
@@ -262,6 +263,43 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.assertTrue(out['profile'].startswith('p0\np1\n') and out['profile'].endswith(CUT_TO_FIT_MARKER))
         freed = sum(len(str(sections[name] or '').encode()) - len(str(out[name] or '').encode()) for name in sections)
         self.assertGreaterEqual(freed, 200)
+
+    def said(self, *messages, role='user', days_ago=10):
+        import time as clock
+        with self.store.db() as db:
+            for text in messages:
+                db.execute('INSERT INTO messages(role,content,channel,created) VALUES (?,?,?,?)',
+                           (role, text, 'web', clock.time() - days_ago * 86400))
+
+    def test_the_owners_earlier_words_join_the_section_dated_and_outside_the_recent_window(self):
+        """#221: the owner's own earlier words that share words with the request, for every reader."""
+        from personal_agent.memory_service import OWNER_WORDS_HEADING
+        secret = 'sk-fixture-provider-key-0123456789'
+        self.store.secret('api_key:openai', secret)
+        self.said('건전지는 늘 동네 마트 앱 장바구니에 담아줘', f'마트 앱 키는 {secret}')
+        self.said('마트 앱 장바구니 확인했어요', role='assistant')
+        self.said(*[f'오늘 할 일 {index}' for index in range(15)], days_ago=0)
+        self.said('마트 앱 장바구니 다시 담아줘', days_ago=0)  # the current request, newest
+        section = self.service.owner_profile_snapshot('마트 앱 장바구니 다시 담아줘')
+        block = section[section.index(OWNER_WORDS_HEADING):]
+        self.assertRegex(block, r'\[said \d{4}-\d{2}-\d{2}\] 건전지는 늘 동네 마트 앱 장바구니에 담아줘')
+        self.assertNotIn(secret, section)
+        self.assertNotIn('확인했어요', block, 'the assistant\'s words are not the owner\'s')
+        self.assertNotIn('다시 담아줘', block, 'the request and the recent window are left out')
+        for name, text in self.readers(section).items():
+            self.assertEqual(text, section, name)
+        self.assertNotIn(OWNER_WORDS_HEADING, self.service.owner_profile_snapshot('마트 앱', notes=False),
+                         'the upkeep reads the profile without it')
+        self.assertNotIn(OWNER_WORDS_HEADING, self.service.owner_profile_snapshot('전혀 다른 질문'))
+
+    def test_the_owners_earlier_words_are_bounded_in_bytes(self):
+        from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
+        self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        section = self.service.owner_profile_snapshot('마트 장바구니')
+        block = section[section.index(OWNER_WORDS_HEADING):]
+        self.assertLessEqual(len(block.encode()), OWNER_WORDS_BYTES)
+        self.assertTrue(all(len(line) <= 320 for line in block.splitlines()[1:]))
 
     def test_the_worker_gets_the_profile_without_a_plan_call(self):
         """Memory supply is common start context: no decision engine, no plan, still the whole profile."""

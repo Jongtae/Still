@@ -2739,7 +2739,28 @@ class AgentService:
                 LOG.warning('working notes unavailable for the brief (%s)',type(exc).__name__)
                 block=''
             if block:text += ('\n' if text else '') + block
+            # #221: the owner's own earlier words that share words with the request, in the same
+            # section, so the worker, the plan and the outcome judgment read one selection.
+            said=self.owner_words_block(query)
+            if said:text += ('\n' if text else '') + said
         return self._redact_known_secrets(text)
+
+    def owner_words_block(self, request):
+        """The ``owner_said`` block for ``request`` ('' when none): dated lines, bounded in bytes (#221)."""
+        from .memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING, OWNER_WORDS_LINE_CHARS
+        if not request:return ''
+        try:
+            rows=self.store.owner_words(request)
+        except Exception as exc:  # a recall that fails leaves the brief as it was
+            LOG.warning('owner words unavailable for the brief (%s)',type(exc).__name__)
+            return ''
+        lines,used=[],len(OWNER_WORDS_HEADING.encode())
+        for row in rows:
+            day=datetime.fromtimestamp(float(row['created'])).date().isoformat()
+            line=f"[said {day}] {' '.join(str(row['content'] or '').split())[:OWNER_WORDS_LINE_CHARS]}"
+            if used+len(line.encode())+1>OWNER_WORDS_BYTES:break
+            used+=len(line.encode())+1;lines.append(line)
+        return '\n'.join([OWNER_WORDS_HEADING,*lines]) if lines else ''
 
     def working_notes_notice_text(self, notification):
         """The notice of one revision while it is still the current document, or None (then it is not sent).
