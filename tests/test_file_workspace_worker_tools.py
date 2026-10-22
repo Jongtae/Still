@@ -204,8 +204,8 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         # Freshness checks cut short by the deadline: the search says it is incomplete.
         original = FileWorkspace.current_results
         with patch.object(FileWorkspace, 'current_results',
-                          lambda self, needle=None, latest=False, path=None, deadline=None:
-                          original(self, needle, latest, path, 0)):
+                          lambda self, needle=None, latest=False, path=None, deadline=None, terms=None:
+                          original(self, needle, latest, path, 0, terms)):
             stopped = later.execute('find_files', {'query': '출장 계획', 'root_id': SAVED_RESULTS_ROOT})
         self.assertEqual((stopped['files'], stopped['truncated']), ([], True))
 
@@ -431,6 +431,19 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
                            (f'p{index}', workspace_id, f'job-{index}', f'answer {index}', '', 1000.0 + index))
         found = self.caps().execute('find_files', {'query': 'RARE-NEEDLE', 'root_id': SAVED_RESULTS_ROOT})
         self.assertEqual([item['path'] for item in found['files']], ['project/old'])
+
+    def test_an_older_result_is_found_by_its_name_past_the_cap(self):
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'RARE-NAME notes', 'content': 'summary'})
+        with self.store.db() as db:
+            [record] = [dict(row) for row in db.execute('SELECT * FROM file_workspace_results')]
+            for index in range(110):
+                db.execute('INSERT INTO file_workspace_results(id,request_id,path,content_hash,sources,created,workspace_id,state) '
+                           'VALUES (?,?,?,?,?,?,?,?)', (f'r{index}', f'q{index}', f'other-{index}.md', 'x', record['sources'],
+                                                       record['created'] + 1 + index, record['workspace_id'], 'current'))
+        found = self.caps('job-later').execute('find_files', {'query': 'RARE-NAME', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertEqual([item['path'] for item in found['files']], ['RARE-NAME notes.md'])
 
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()

@@ -254,7 +254,7 @@ class FileWorkspace:
             return True
         except (KeyError,ValueError,OSError,UnicodeError): return False
 
-    def current_results(self, needle=None, latest=False, path=None, deadline=None):
+    def current_results(self, needle=None, latest=False, path=None, deadline=None, terms=None):
         """Fresh saved results, newest first: each one's sources still match the originals.
 
         A result whose workspace changed is marked ``detached``, one whose
@@ -262,16 +262,23 @@ class FileWorkspace:
         keeps only results whose name or content contains it; ``path`` checks
         only the one result of that name.  ``deadline`` (``time.monotonic``)
         stops checking once passed, so one call stays bounded (#182 review).
+        ``terms``: results whose name holds one of them are checked first, beyond the
+        newest-100 window, so an older result is found by its name (#182 review).
         """
         self.recover()
         with self.store.db() as db:
             self._ensure_results_table(db)
             records=[dict(row) for row in (db.execute('SELECT * FROM file_workspace_results WHERE path=?',(path,)) if path is not None
                                            else db.execute('SELECT * FROM file_workspace_results ORDER BY created DESC LIMIT 101'))]
+            terms=[term.lower() for term in (terms or ()) if isinstance(term,str) and term] if path is None else []
+            named=[dict(row) for row in db.execute(
+                'SELECT * FROM file_workspace_results WHERE '+' OR '.join(['instr(lower(path),?)>0']*len(terms))
+                +' ORDER BY created DESC LIMIT 100',terms)] if terms else []
         results=[]
         # Whether the deadline, or the 100-record cap, stopped the checks before every record was seen (#182 review).
         self.stopped_early=len(records)>100
-        records=records[:100]
+        seen=set()
+        records=[record for record in named+records[:100] if not (record['id'] in seen or seen.add(record['id']))]
         for record in records:
             if deadline is not None and time.monotonic()>deadline:
                 self.stopped_early=True; break

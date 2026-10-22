@@ -2682,7 +2682,7 @@ class Capabilities:
   self.saved_results_unavailable=False
   if path is None or not path.startswith(PROJECT_RESULT_PREFIX):
    try:rows=[{'path':item['path'],'content':item['content'],'title':item['path']}
-             for item in workspace.current_results(path=path,deadline=deadline)]
+             for item in workspace.current_results(path=path,deadline=deadline,terms=terms)]
    except (OSError,ValueError):
     rows=[]  # no usable result folder
     self.saved_results_unavailable=workspace.has_file_results()
