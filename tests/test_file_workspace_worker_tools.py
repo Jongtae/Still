@@ -314,6 +314,22 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         self.record_like_the_bridge('job-later', 'read_file', read)
         self.assertEqual(recorded_private_sources(self.store, 'job-later'), set())
 
+    def test_an_empty_saved_results_search_asks_for_no_folder(self):
+        self.store.put('file_workspace', {'references': [], 'workspace': None})
+        caps = self.caps()
+        self.assertEqual(caps.execute('find_files', {'query': 'notes', 'root_id': SAVED_RESULTS_ROOT}),
+                         {'files': [], 'truncated': False})
+
+    def test_a_setup_only_search_labels_no_document_use(self):
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'RESULT-ONLY-TEXT'})
+        self.store.put('file_workspace', {**FileWorkspace(self.store).status(), 'workspace': None, 'workspace_id': None})
+        later = self.caps('job-later')
+        found = later.execute('find_files', {'query': 'RESULT-ONLY-TEXT'})
+        self.assertTrue(found['needs_setup'])
+        self.assertNotIn('connected-document', later.private_provenance)
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})

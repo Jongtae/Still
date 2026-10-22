@@ -2763,6 +2763,9 @@ class Capabilities:
   if only and only!=SAVED_RESULTS_ROOT:
    roots=[root for root in roots if root['id']==only]
    if not roots:raise ValueError('그 root_id의 폴더를 찾지 못했습니다. list_roots로 확인해 주세요.')
+  if only==SAVED_RESULTS_ROOT and not workspace.has_results():
+   # #182 review: no folder grant creates a saved result; an empty saved-results search is complete.
+   return {'files':[],'truncated':False}
   if not roots and not workspace.has_results():
    return {'files':[],'needs_setup':True,'requires':'local-folder-read','message':'연결 설정에서 접근할 폴더를 먼저 연결해 주세요.'}
   if not self.document_access:raise ValueError('연결 문서 검색 결과를 외부 AI에 전달하려면 설정에서 문서 공유를 승인하세요.')
@@ -3380,7 +3383,10 @@ class Capabilities:
   # the evidence list stays empty while the engine holds the owner's notes.
   # `list_memory`/`save_memory` below go through `self.evidence`, which labels
   # them in `EvidenceLog.append`; both layers write the same one set.
-  if name=='find_files':return self._from_private('connected-document',self.find_files(**args))
+  if name=='find_files':
+   result=self.find_files(**args)
+   # #182 review: a setup-only search read no document, so it labels nothing.
+   return result if result.get('needs_setup') is True else self._from_private('connected-document',result)
   if name=='read_file':
    result=self.read_file(**args)
    # #182 review: a setup-only answer read no document, so it labels nothing.
