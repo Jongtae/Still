@@ -527,6 +527,33 @@ class Invalidate(Upkeep):
         text = memory.profile_snapshot(MEMORY_OWNER, ids=True)['text']
         self.assertLessEqual(len(text), om.PROFILE_CHARS)
 
+    def test_the_upkeep_can_date_what_the_worker_saved_in_the_same_work(self):
+        """Codex review on #226: the worker's save_memory gives no last day; the upkeep may add it."""
+        job = self.finished('금요일까지 제주에 있어')
+        self.store.save_memory('profile.place.now', '제주에 있음', MEMORY_OWNER, work_id=job)
+        self.answers = [[proposal('profile.place.now', '제주에 있음', valid_until='2099-01-02'),
+                         proposal('profile.place.now', '서울에 있음')]]
+        self.service.run_owner_model_upkeep()
+        [row] = [row for row in self.store.memories(MEMORY_OWNER) if row['memory_key'] == 'profile.place.now']
+        self.assertEqual((row['content'], row['valid_until']), ('제주에 있음', '2099-01-02'))
+        [(_status, detail)] = self.evidence(job)
+        self.assertEqual([item['reason'] for item in detail['dropped']], ['duplicate'], 'one ask per message otherwise')
+
+    def test_an_elapsed_last_day_is_not_carried_onto_a_restated_fact(self):
+        self.saved('profile.place.now', '제주에 있음', valid_until='2000-01-01')
+        self.assertIsNone(self.saved('profile.place.now', '제주에 있음')['valid_until'])
+
+    def test_out_of_order_undos_still_end_at_the_original_fact(self):
+        """Codex review on #226: A ended by B, C under A's key; undo B, then undo C: A is current again."""
+        a = self.saved('profile.place.workplace', '판교 사무실')
+        b = self.saved('profile.place.work', '강남', invalidates=[(a['id'], 'moved')])
+        c = self.saved('profile.place.workplace', '여의도 사무실')
+        self.store.retract_memory(MEMORY_OWNER, b['id'], b['content_digest'])
+        self.assertEqual(self.row(a['id'])['state'], 'superseded')
+        receipt = self.store.retract_memory(MEMORY_OWNER, c['id'], c['content_digest'])
+        self.assertEqual(receipt['restored']['id'], a['id'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [a['id']])
+
     def test_a_settings_edit_keeps_the_last_day(self):
         from personal_agent.memory_service import MemoryService
         self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')

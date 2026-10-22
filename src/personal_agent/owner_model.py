@@ -420,7 +420,10 @@ def validate(proposals, known, pending, noted_keys=(), request=''):
             content = normalized(item['content'])
             if request_text and content == request_text:
                 reason = 'request'
-            elif (key in keys or key in noted_keys or content in contents or (key, content) in pending
+            elif (key in keys or content in contents or (key, content) in pending
+                    # Codex review on #226: a key the Work already wrote may still get a last day (the worker's
+                    # save_memory cannot give one); any other proposal under it stays one ask per message (#836).
+                    or (key in noted_keys and not (content in known and (item.get('valid_until') or item.get('invalidates'))))
                     or (content in known and not item.get('valid_until') and not item.get('invalidates')
                         and (item.get('supersedes_key') or '').strip() != key)):
                 # Codex review on #226: the same words with a new last day or ending other rows are a lifecycle

@@ -542,9 +542,11 @@ class QuickStore:
         keep_last_day=valid_until is None
         invalidates,valid_until=self.memory_end_terms(invalidates,valid_until)
         previous=db.execute("SELECT id,valid_until FROM memories WHERE owner_key=? AND memory_key=? AND state='current' ORDER BY created DESC LIMIT 1",(owner_key,memory_key)).fetchone()
-        if valid_until is None and keep_last_day and previous:
-            # #220 (Codex review): a same-key save that says nothing about the last day keeps it.
-            valid_until=previous['valid_until']
+        if valid_until is None and keep_last_day and previous and previous['valid_until']:
+            # #220 (Codex review): a same-key save that says nothing about the last day keeps it while it
+            # still holds; an elapsed one is not carried onto a fact the owner states again.
+            from .current_context import owner_today
+            if str(previous['valid_until'])>=owner_today(self):valid_until=previous['valid_until']
         ended=[]
         for ended_id,reason in invalidates:
             # #220: a save may end earlier current profile rows under any key, each named by id with a reason.
@@ -1090,8 +1092,16 @@ class QuickStore:
             for ended_id in ended:
                 # Codex review on #226: a key that has a newer current value since keeps it; the ended row stays ended.
                 key=db.execute('SELECT memory_key FROM memories WHERE id=?',(ended_id,)).fetchone()['memory_key']
-                if db.execute("SELECT 1 FROM memories WHERE owner_key=? AND memory_key=? AND state='current' AND id<>?",
-                              (owner_key,key,memory_id)).fetchone():continue
+                newer=db.execute("SELECT id,supersedes FROM memories WHERE owner_key=? AND memory_key=? AND state='current' AND id<>?",
+                                 (owner_key,key,memory_id)).fetchone()
+                if newer:
+                    # Codex review: the newer value now stands in front of the ended row, so undoing it later
+                    # brings that row back (out-of-order undos still end at the original fact).
+                    if newer['supersedes'] is None:
+                        db.execute('UPDATE memories SET supersedes=? WHERE id=? AND owner_key=?',(ended_id,newer['id'],owner_key))
+                        db.execute("""UPDATE memories SET invalidated_by=NULL,invalidation_reason=NULL,invalidated_at=NULL
+                                      WHERE id=? AND owner_key=?""",(ended_id,owner_key))
+                    continue
                 db.execute("""UPDATE memories SET state='current',invalidated_by=NULL,invalidation_reason=NULL,invalidated_at=NULL
                               WHERE id=? AND owner_key=?""",(ended_id,owner_key))
                 restorable.append(ended_id)
