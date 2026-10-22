@@ -2841,7 +2841,8 @@ class Capabilities:
    return {'saved':False,'needs_setup':True,'requires':'local-reference-read','message':'정리할 원본 폴더를 먼저 연결해 주세요.'}
   if not active.get('workspace'):
    return {'saved':False,'needs_setup':True,'requires':'local-result-write','message':'결과를 저장할 폴더를 먼저 연결해 주세요.'}
-  if not self.workspace_reads:self.workspace_reads=self._recorded_workspace_reads()
+  # #182 review: every read this Work recorded (an earlier or restarted bridge too), with this process's own.
+  self.workspace_reads={**self._recorded_workspace_reads(),**self.workspace_reads}
   if not self.workspace_reads:
    raise ValueError('저장할 결과의 원본을 먼저 find_files와 read_file로 참고 폴더에서 읽어 주세요.')
   # #182 review: settle an interrupted save first (finalize a published file, drop an unpublished

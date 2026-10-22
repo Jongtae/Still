@@ -238,6 +238,13 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         restarted = self.caps('job-1')  # a new bridge process of the same Work
         saved = restarted.execute('save_result', {'title': 'Notes', 'content': 'summary'})
         self.assertEqual((saved['saved'], saved['cited']), (True, ['trip.md']))
+        # A read before the restart and one after it are both cited.
+        again = self.caps('job-3')
+        self.record_like_the_bridge('job-3', 'read_file', again.execute('read_file', {'root_id': self.root, 'path': 'trip.md'}))
+        after = self.caps('job-3')
+        after.execute('read_file', {'root_id': self.root, 'path': 'budget.md'})
+        self.assertEqual(sorted(after.execute('save_result', {'title': 'Both', 'content': 'summary'})['cited']),
+                         ['budget.md', 'trip.md'])
         # Another Work's reads are never cited.
         with self.assertRaises(ValueError):
             self.caps('job-2').execute('save_result', {'title': 'Other', 'content': 'summary'})
