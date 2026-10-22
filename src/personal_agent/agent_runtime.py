@@ -2690,7 +2690,7 @@ class Capabilities:
    self.saved_results_stopped=bool(getattr(workspace,'stopped_early',False))
   if path is None or path.startswith(PROJECT_RESULT_PREFIX):
    rows+=[{'path':PROJECT_RESULT_PREFIX+item['id'],'content':item['content'] or '','title':item['title']}
-          for item in workspace.project_results(None if path is None else path[len(PROJECT_RESULT_PREFIX):],terms=terms)]
+          for item in workspace.project_results(None if path is None else path[len(PROJECT_RESULT_PREFIX):],terms=terms,deadline=deadline)]
    # #182 review: more project answers than one listing holds: a search over them is incomplete.
    self.saved_results_stopped=self.saved_results_stopped or bool(getattr(workspace,'project_capped',False))
   return rows

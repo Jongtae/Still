@@ -1,6 +1,6 @@
 """Scoped local file workspace: references stay read-only; results are new files."""
 from pathlib import Path
-import hashlib, json, os, re, time, uuid
+import hashlib, json, os, re, sqlite3, time, uuid
 from .document_reader import MAX_FILE_BYTES, read as read_document, supported as supported_document
 from . import folder_grants
 
@@ -367,11 +367,12 @@ class FileWorkspace:
             tables={row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             return 'workspace_results' in tables and bool(db.execute('SELECT 1 FROM workspace_results LIMIT 1').fetchone())
 
-    def project_results(self, item_id=None, terms=None):
+    def project_results(self, item_id=None, terms=None, deadline=None):
         """Answers the owner saved into a project (the older ``workspace_results``), newest first.
 
         Still's own records, read-only: ``{id, title, content, created}``.  ``item_id`` reads that one
         directly; otherwise the newest 100, with ``project_capped`` set when more exist (#182 review).
+        ``deadline`` (``time.monotonic``) interrupts the query once passed (``project_capped`` then too).
         """
         self.project_capped=False
         with self.store.db() as db:
@@ -383,6 +384,19 @@ class FileWorkspace:
             # #182 review: a search filters before the cap, so an older matching answer is reachable.
             terms=[term for term in (terms or ()) if isinstance(term,str) and term]
             where=(' WHERE '+' OR '.join(["instr(lower(w.title||' '||r.content),?)>0"]*len(terms))) if terms else ''
-            rows=[dict(row) for row in db.execute(query+where+' ORDER BY r.created DESC LIMIT 101',[term.lower() for term in terms])]
+            # #182 review: a full-text scan of a long history is interrupted at the caller's deadline.
+            if deadline is not None:
+                if time.monotonic()>deadline:
+                    self.project_capped=True
+                    return []
+                db.set_progress_handler(lambda: 1 if time.monotonic()>deadline else 0, 200)
+            try:
+                rows=[dict(row) for row in db.execute(query+where+' ORDER BY r.created DESC LIMIT 101',[term.lower() for term in terms])]
+            except sqlite3.OperationalError:
+                if deadline is None or time.monotonic()<=deadline: raise
+                self.project_capped=True
+                return []
+            finally:
+                if deadline is not None: db.set_progress_handler(None, 0)
         self.project_capped=len(rows)>100
         return rows[:100]

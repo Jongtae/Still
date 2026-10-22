@@ -527,6 +527,23 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         replay = {'host_action': 'save_result', 'evidence': {'saved': False, 'already_saved': True}}
         self.assertEqual(record_effect('save_result', replay, 'succeeded'), EFFECT_NONE)
 
+    def test_a_project_answer_search_stops_at_the_deadline(self):
+        workspace_id = self.store.create_workspace('출장')['id']
+        with self.store.db() as db:
+            for index in range(50):
+                db.execute('INSERT INTO workspace_results VALUES (?,?,?,?,?,?)',
+                           (f'p{index}', workspace_id, f'job-{index}', 'answer ' * 200, '', 1000.0 + index))
+        workspace = FileWorkspace(self.store)
+        self.assertEqual(workspace.project_results(terms=['needle'], deadline=0), [])
+        self.assertTrue(workspace.project_capped)
+        # A deadline that passes during the scan interrupts the query itself.
+        from unittest.mock import patch
+        ticks = iter([0.0])
+        with patch('personal_agent.file_workspace.time.monotonic', side_effect=lambda: next(ticks, 10.0)):
+            self.assertEqual(workspace.project_results(terms=['needle'], deadline=5.0), [])
+        self.assertTrue(workspace.project_capped)
+        self.assertEqual(len(workspace.project_results(terms=['answer'])), 50)
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
