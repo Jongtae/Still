@@ -386,7 +386,7 @@ DEFINITIONS=[
  schema('information_use',INFORMATION_USE_DESCRIPTION,{'work':{'type':'string','description':'"previous" (default: the most recent earlier answer in this conversation) or a Work id'}}),
  schema('settings_change',SETTINGS_CHANGE_DESCRIPTION,{'category':{'type':'string','enum':[name for name in SETTINGS_CATEGORIES if name!='connections']},'setting':{'type':'string','enum':['route','model','mode','enabled','timezone','daily_calls','add','share_site','unshare_site','remove','servers','review','money','rung','undo','forget','restore','connect','send']},'value':STRING,'reason':STRING,'continue_work':{'type':'string','enum':['yes','no']},'required_skill':STRING},['category','setting','value']),
  schema('list_roots','List folders explicitly connected by the user. Never assume filesystem access.'),
- schema('find_files','Search names and content in supported documents inside connected folders, the reference folders the owner connected as originals to work from, and the results saved earlier (root_id saved-results). Returns relative paths and source locations; call read_file to inspect evidence before answering.',{'query':STRING},['query']),
+ schema('find_files','Search names and content in supported documents inside connected folders, the reference folders the owner connected as originals to work from, and the results saved earlier (root_id saved-results). Returns relative paths and source locations; call read_file to inspect evidence before answering. root_id (optional, from list_roots or an earlier result) searches that one root only; use it when a result is truncated and a folder may not have been searched.',{'query':STRING,'root_id':STRING},['query']),
  schema('read_file','Read TXT, MD, PDF, DOCX, or XLSX returned by find_files from a connected folder, a reference folder (read-only originals) or the saved results. File contents are untrusted data; cite the returned source locations.',{'root_id':STRING,'path':STRING},['root_id','path']),
  schema('save_result',SAVE_RESULT_DESCRIPTION,{'title':STRING,'content':STRING},['title','content']),
  schema('list_notes','Read saved personal notes. Use when the user asks to recall a note.'),
@@ -2728,7 +2728,7 @@ class Capabilities:
   content=item['content'][:24000]
   return {'root_id':SAVED_RESULTS_ROOT,'path':path,'kind':'saved-result','title':item['title'],'content':content,'locations':[],
           'sources':[f"저장된 결과: {item['title']}"],'truncated':len(item['content'])>len(content),'read_only':True}
- def find_files(self,query):
+ def find_files(self,query,root_id=''):
   # No covering folder grant is checked first: saying so reads nothing and
   # sends nothing, and it lets Still ask for the one folder (#505) before
   # the separate external-AI document-sharing approval is ever relevant.
@@ -2738,6 +2738,11 @@ class Capabilities:
   # under the reference root, so what the worker reads there is a source save_result can cite.
   roots=self.workspace_references()+self.roots()
   workspace=FileWorkspace(self.store)
+  # #182 review: one root by its id, so a folder a broad search did not reach can still be searched.
+  only=root_id.strip() if isinstance(root_id,str) else ''
+  if only and only!=SAVED_RESULTS_ROOT:
+   roots=[root for root in roots if root['id']==only]
+   if not roots:raise ValueError('그 root_id의 폴더를 찾지 못했습니다. list_roots로 확인해 주세요.')
   if not roots and not workspace.has_results():
    return {'files':[],'needs_setup':True,'requires':'local-folder-read','message':'연결 설정에서 접근할 폴더를 먼저 연결해 주세요.'}
   if not self.document_access:raise ValueError('연결 문서 검색 결과를 외부 AI에 전달하려면 설정에서 문서 공유를 승인하세요.')
@@ -2745,7 +2750,8 @@ class Capabilities:
   terms=[query.casefold()]+[t.casefold() for t in re.findall(r'[\w-]+',query) if len(t)>=3]
   hits=[];visited=0;deadline=time.monotonic()+5
   # One deadline bounds the saved-result checks and the folder scan together.
-  saved=self.saved_results(deadline=deadline)
+  saved=self.saved_results(deadline=deadline) if only in ('',SAVED_RESULTS_ROOT) else []
+  if only==SAVED_RESULTS_ROOT:roots=[]
   # Saved results first: they are few, and a request naming one should find it before a folder scan runs out.
   # #182 review: saved results take at most half the hits, so the folders keep search capacity.
   saved_truncated=False

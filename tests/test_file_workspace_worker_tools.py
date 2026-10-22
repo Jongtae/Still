@@ -178,6 +178,20 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         self.assertEqual(sorted(item['path'] for item in found['files'] if item['root_id'] == self.root),
                          ['budget.md', 'trip.md'])
 
+    def test_one_root_can_be_searched_by_its_id(self):
+        other = self.base / 'docs'
+        other.mkdir()
+        (other / 'plan.md').write_text('출장 계획 별도 문서', encoding='utf-8')
+        self.store.put('file_roots', [{'id': 'bbbbbbbbbbbb', 'path': str(other)}])
+        caps = self.caps()
+        self.assertEqual([(item['root_id'], item['path'])
+                          for item in caps.execute('find_files', {'query': '출장 계획', 'root_id': 'bbbbbbbbbbbb'})['files']],
+                         [('bbbbbbbbbbbb', 'plan.md')])
+        self.assertEqual({item['root_id'] for item in caps.execute('find_files', {'query': '출장 계획', 'root_id': self.root})['files']},
+                         {self.root})
+        with self.assertRaises(ValueError):
+            caps.execute('find_files', {'query': '출장 계획', 'root_id': 'not-a-root'})
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
