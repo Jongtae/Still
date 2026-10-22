@@ -94,8 +94,8 @@ Requested / accepted / observed model settings and exclusive file ownership when
 - escalated review required: `yes / no`
 - Codex review of the exact final head and each finding's disposition (fixed / answered), if required:
 - negative tests that hold the triggering boundary, if required:
-- post-review remediation changed the triggering boundary or introduced a new trigger: `yes / no / N/A`
-- re-review required: `yes / no / N/A`
+- Codex reviewed every head pushed after its first review, including the final head: `yes / N/A`
+- post-review remediation changed the triggering boundary or introduced a new trigger (decides only an additional human or specialist re-review): `yes / no / N/A`
 
 Do not mark review required solely for final closeout, ordinary recovery that preserves authority semantics, UI/conversation/Settings work, non-authority bug fixes/refactors/docs, or tracker/ledger reconciliation. When review is required, it is the Codex review of the exact final head (Development Constitution, *Escalated review*); record it as a Codex review, not as independent review. Note a human non-author review here if one also happened.
 

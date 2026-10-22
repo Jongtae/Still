@@ -48,15 +48,17 @@ to mirror GitHub. Keep a checkpoint parent open when remaining criteria or expli
    Exit zero means a diagnostic was produced, NOT a passing CI gate or approval.
    It does not evaluate code, enumerate every protection rule, resolve conversations,
    poll, merge, or mutate repository settings. Unknown and skipped results need inspection.
-3. Fix actual failures/conflicts. Request an escalated review once for a stable head and
+3. Fix actual failures/conflicts. Request an escalated review for a stable head and
    scope only when the Development Constitution's material security/authority escalation
    criteria apply; otherwise proceed with required CI and evidence without a review gate.
    The escalated review is the automatic Codex review of that exact head; fix or answer
-   every finding and record it as a Codex review.
+   every finding and record it as a Codex review. Every later push gets a Codex review of
+   its new head before merge, so the merged SHA is always one Codex reviewed.
    Resolve only addressed or explicitly triaged threads with evidence. Never impersonate
    another reviewer or treat self-review as independence.
 4. When any risk-triggered review and GitHub requirements are satisfied, attempt one normal
-   merge pinned to the validated full head SHA. No `--admin`, force push, false check, approval dismissal,
+   merge pinned to the validated full head SHA (for an escalated review, the head the latest
+   Codex review covered; the owner merges it). No `--admin`, force push, false check, approval dismissal,
    protection removal, or settings mutation to work around refusal.
 5. Native auto-merge is optional. When already enabled and this exact PR is authorized,
    it may be used under all normal gates. When disabled, skip it: ordinary merge still

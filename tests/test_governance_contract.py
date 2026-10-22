@@ -233,8 +233,8 @@ def test_verification_budget_requires_stable_heads_and_batched_remediation() -> 
         "unknown root cause",
         "do not run the full suite after every narrow mechanical edit",
         "never skip, weaken, relabel, or bypass",
-        "re-review only when the remediation changes the boundary that triggered review",
-        "mechanical or non-boundary remediation does not automatically reopen escalated review",
+        "is repeated only when the remediation changes the boundary that triggered review",
+        "mechanical or non-boundary remediation does not automatically reopen that additional review",
         "consolidated final remediation head",
     )
     _assert_all(
@@ -284,8 +284,9 @@ def test_escalated_review_is_risk_based_not_default_completion_gate() -> None:
         goal,
         "Ordinary recovery, final completion",
         "do not trigger review by themselves",
-        "Re-review only when the remediation changes the boundary that triggered review",
-        "mechanical or non-boundary remediation does not automatically reopen escalated review",
+        "The Codex review is re-run on every remediation head",
+        "An additional human or specialist review is repeated only when the remediation changes the boundary that triggered review",
+        "mechanical or non-boundary remediation does not automatically reopen that additional review",
     )
     _assert_all(
         incremental,
