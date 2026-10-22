@@ -763,6 +763,44 @@ class ReadmeFileJourneyThroughTheWorker(unittest.TestCase):
             service.run_one()
         self.assertNotIn('저장됨', store.job(job_id)['response'] or '')
 
+    def test_a_result_removed_before_the_answer_gets_no_receipt(self):
+        from unittest.mock import patch
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        base = Path(temp.name).resolve()
+        store = QuickStore(str(base / 'data'))
+        (base / 'reference').mkdir()
+        (base / 'workspace').mkdir()
+        (base / 'reference' / 'trip.md').write_text('trip', encoding='utf-8')
+        plan = []
+
+        def transport(url, body, headers=None, timeout=60):
+            names = {tool.get('function', {}).get('name') for tool in body.get('tools', [])}
+            if 'agentos_connection_probe' in names:
+                return {'choices': [{'message': {'tool_calls': [
+                    {'id': 'probe', 'function': {'name': 'agentos_connection_probe', 'arguments': '{}'}}]}}]}
+            done = sum(1 for m in body.get('messages', []) if m.get('role') == 'tool')
+            if 'save_result' in names and done < len(plan):
+                name, arguments = plan[done]
+                return {'choices': [{'message': {'tool_calls': [{'id': f'c{done}', 'function': {
+                    'name': name, 'arguments': json.dumps(arguments)}}]}}]}
+            if 'save_result' in names:
+                # The owner removes the file before the Work settles.
+                for path in (base / 'workspace').glob('*.md'):
+                    path.unlink()
+            return {'choices': [{'message': {'content': 'Done.'}}]}
+
+        service = AgentService(store, ModelAdapter(transport), transport)
+        service.save_model({'provider': 'compatible', 'endpoint': 'http://127.0.0.1:11434/v1', 'model': 'm', 'api_key': ''})
+        self.assertTrue(service.test_model()['ok'])
+        service.configure_file_workspace({'references': [str(base / 'reference')], 'workspace': str(base / 'workspace')})
+        root = WORKSPACE_REFERENCE_PREFIX + FileWorkspace(store).status()['references'][0]['id']
+        plan[:] = [('read_file', {'root_id': root, 'path': 'trip.md'}),
+                   ('save_result', {'title': 'Notes', 'content': 'summary'})]
+        job_id = store.enqueue('save a summary of trip', 'removed')
+        service.run_one()
+        self.assertNotIn('저장됨', store.job(job_id)['response'] or '')
+
     def test_english_scenes(self):
         self.run_scene('en', 'Launch review.md', 'Launch review: ship October 12.', 'Launch notes')
 
