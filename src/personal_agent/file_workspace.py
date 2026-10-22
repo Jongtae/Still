@@ -300,6 +300,12 @@ class FileWorkspace:
             row=db.execute('SELECT * FROM file_workspace_results WHERE request_id=?',(request_id,)).fetchone()
         return dict(row) if row else None
 
+    def has_file_results(self):
+        """Whether a published result-file record exists (the result folder may be unavailable)."""
+        with self.store.db() as db:
+            self._ensure_results_table(db)
+            return bool(db.execute("SELECT 1 FROM file_workspace_results WHERE state='current' LIMIT 1").fetchone())
+
     def has_results(self):
         """Whether any saved result record exists, checking no file (``list_roots``)."""
         with self.store.db() as db:

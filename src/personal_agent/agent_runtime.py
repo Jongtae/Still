@@ -2676,10 +2676,14 @@ class Capabilities:
   rows=[]
   # #182 review: whether the deadline left saved results unchecked, so a search can say it is truncated.
   self.saved_results_stopped=False
+  # #182 review: result files exist but their folder is not usable now (removed, blocked): setup, not "none".
+  self.saved_results_unavailable=False
   if path is None or not path.startswith(PROJECT_RESULT_PREFIX):
    try:rows=[{'path':item['path'],'content':item['content'],'title':item['path']}
              for item in workspace.current_results(path=path,deadline=deadline)]
-   except (OSError,ValueError):rows=[]  # no usable result folder
+   except (OSError,ValueError):
+    rows=[]  # no usable result folder
+    self.saved_results_unavailable=workspace.has_file_results()
    self.saved_results_stopped=bool(getattr(workspace,'stopped_early',False))
   if path is None or path.startswith(PROJECT_RESULT_PREFIX):
    rows+=[{'path':PROJECT_RESULT_PREFIX+item['id'],'content':item['content'] or '','title':item['title']}
@@ -2723,10 +2727,21 @@ class Capabilities:
   locations=re.findall(r'^\[([^\]\n]{1,80})\] ',content,flags=re.M)[:100]
   return {'root_id':root_id,'path':source['path'],'kind':Path(source['path']).suffix.lower().lstrip('.'),'content':content,
           'locations':locations,'sources':[f"참고 자료: {source['path']} @ {source['version'][:12]}"],'truncated':len(text)>len(content),
-          'read_only':True}
+          'read_only':True,
+          # #182 review: the read's identity and content version (no content), kept in the durable event so a
+          # bridge restarted within the Work can still cite it (``save_result``).
+          **({'citation':{key:source[key] for key in ('reference_id','source_id','path','version')}} if cite else {})}
  def _read_saved_result(self,path):
   """#182: one saved result by the path ``find_files`` returned (a result file name or ``project/<id>``)."""
-  item=next((row for row in self.saved_results(path=path) if row['path']==path),None) if isinstance(path,str) else None
+  if not isinstance(path,str):raise ValueError('저장된 결과를 찾지 못했습니다. find_files로 다시 찾아 주세요.')
+  # #182 review: the source checks are bounded like a search; cut short, nothing is returned as checked.
+  rows=self.saved_results(path=path,deadline=time.monotonic()+5)
+  if self.saved_results_unavailable:
+   return {'root_id':SAVED_RESULTS_ROOT,'path':path,'content':'','needs_setup':True,'requires':'local-result-write',
+           'message':'저장된 결과가 있는 폴더를 지금 쓸 수 없습니다. 결과 저장 폴더를 다시 연결해 주세요.'}
+  if self.saved_results_stopped:
+   raise ValueError('저장된 결과의 원본 확인이 제한 시간 안에 끝나지 않아 읽지 않았습니다. 잠시 후 다시 시도해 주세요.')
+  item=next((row for row in rows if row['path']==path),None)
   if item is None:raise ValueError('저장된 결과를 찾지 못했습니다. find_files로 다시 찾아 주세요.')
   content=item['content'][:24000]
   return {'root_id':SAVED_RESULTS_ROOT,'path':path,'kind':'saved-result','title':item['title'],'content':content,'locations':[],
@@ -2753,7 +2768,7 @@ class Capabilities:
   terms=[query.casefold()]+[t.casefold() for t in re.findall(r'[\w-]+',query) if len(t)>=3]
   hits=[];visited=0;deadline=time.monotonic()+5
   # One deadline bounds the saved-result checks and the folder scan together.
-  self.saved_results_stopped=False
+  self.saved_results_stopped=False;self.saved_results_unavailable=False
   saved=self.saved_results(deadline=deadline) if only in ('',SAVED_RESULTS_ROOT) else []
   if only==SAVED_RESULTS_ROOT:roots=[]
   # Saved results first: they are few, and a request naming one should find it before a folder scan runs out.
@@ -2784,7 +2799,25 @@ class Capabilities:
       location=next((location for location in result['locations'] if any(t in location.casefold() for t in terms)),result['locations'][0] if result['locations'] else '')
       hits.append({'root_id':root['id'],'path':path,'kind':result['kind'],'location':location,'match':'filename' if query.casefold() in name.casefold() else 'content'})
      if len(hits)>=20:return {'files':hits,'truncated':True}
-  return {'files':hits,'truncated':saved_truncated or self.saved_results_stopped}
+  if self.saved_results_unavailable and not hits:
+   return {'files':[],'needs_setup':True,'requires':'local-result-write',
+           'message':'저장된 결과가 있는 폴더를 지금 쓸 수 없습니다. 결과 저장 폴더를 다시 연결해 주세요.'}
+  return {'files':hits,'truncated':saved_truncated or self.saved_results_stopped or self.saved_results_unavailable}
+ def _recorded_workspace_reads(self):
+  """#182 review: the reference reads this Work's durable ``read_file`` events cite (another bridge process
+  of the same Work, or one that restarted), as ``{(reference_id, path): citation}``."""
+  with self.store.db() as db:
+   rows=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND status='succeeded'",(self.job_id,)).fetchall()
+  reads={}
+  for (detail,) in rows:
+   try:parsed=json.loads(detail or '{}')
+   except ValueError:continue
+   evidence=parsed.get('evidence') if isinstance(parsed,dict) else None
+   citation=evidence.get('citation') if isinstance(evidence,dict) else None
+   if (parsed.get('host_action')=='read_file' and isinstance(citation,dict)
+       and all(isinstance(citation.get(key),str) for key in ('reference_id','source_id','path','version'))):
+    reads[(citation['reference_id'],citation['path'])]={key:citation[key] for key in ('reference_id','source_id','path','version')}
+  return reads
  def save_result(self,title,content):
   """#182: save this Work's result as a new file in the file workspace's result folder.
 
@@ -2801,6 +2834,7 @@ class Capabilities:
    return {'saved':False,'needs_setup':True,'requires':'local-reference-read','message':'정리할 원본 폴더를 먼저 연결해 주세요.'}
   if not active.get('workspace'):
    return {'saved':False,'needs_setup':True,'requires':'local-result-write','message':'결과를 저장할 폴더를 먼저 연결해 주세요.'}
+  if not self.workspace_reads:self.workspace_reads=self._recorded_workspace_reads()
   if not self.workspace_reads:
    raise ValueError('저장할 결과의 원본을 먼저 find_files와 read_file로 참고 폴더에서 읽어 주세요.')
   earlier=workspace.result_for(self.job_id)
@@ -3979,7 +4013,9 @@ def _evidence_detail(name,result):
   return {'message_id':str(result.get('message_id') or '')[:64],'mime_type':str(result.get('mime_type') or '')[:80],
           'characters':len(result.get('content','')),'truncated':bool(result.get('truncated')),'needs_setup':bool(result.get('needs_setup'))}
  if name=='read_file':
-  return {'root_id':result.get('root_id'),'path':result.get('path'),'kind':result.get('kind'),'locations':result.get('locations',[])[:12],'characters':len(result.get('content','')),'truncated':bool(result.get('truncated'))}
+  return {'root_id':result.get('root_id'),'path':result.get('path'),'kind':result.get('kind'),'locations':result.get('locations',[])[:12],'characters':len(result.get('content','')),'truncated':bool(result.get('truncated')),
+          # #182: a reference read's identity and content version (no content), for a later save's sources.
+          **({'citation':result['citation']} if isinstance(result.get('citation'),dict) else {})}
  if name in CALENDAR_DRAFT_TOOLS:
   # The default branch emits sorted key *names*, so 'applied' appeared in
   # the tool event while the fact that it is False did not.

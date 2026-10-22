@@ -224,6 +224,53 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'current',
                              'a cut-short check never marks the result stale')
 
+    def record_like_the_bridge(self, job, name, result):
+        from personal_agent.agent_runtime import evidence_summary
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job, name, 'succeeded', json.dumps({'host_action': name, 'evidence': evidence_summary(name, result)}),
+                        time.time()))
+
+    def test_a_restarted_bridge_still_cites_what_the_work_read(self):
+        first = self.caps('job-1')
+        read = first.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        self.record_like_the_bridge('job-1', 'read_file', read)
+        restarted = self.caps('job-1')  # a new bridge process of the same Work
+        saved = restarted.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        self.assertEqual((saved['saved'], saved['cited']), (True, ['trip.md']))
+        # Another Work's reads are never cited.
+        with self.assertRaises(ValueError):
+            self.caps('job-2').execute('save_result', {'title': 'Other', 'content': 'summary'})
+
+    def test_an_unavailable_result_folder_is_setup_required(self):
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'RESULT-ONLY-TEXT'})
+        self.store.put('file_workspace', {**FileWorkspace(self.store).status(), 'workspace': None, 'workspace_id': None})
+        later = self.caps('job-later')
+        found = later.execute('find_files', {'query': 'RESULT-ONLY-TEXT'})
+        self.assertEqual((found['files'], found['needs_setup'], found['requires']), ([], True, 'local-result-write'))
+        read = later.execute('read_file', {'root_id': SAVED_RESULTS_ROOT, 'path': 'Notes.md'})
+        self.assertEqual((read['needs_setup'], read['requires'], read['content']), (True, 'local-result-write', ''))
+
+    def test_reading_one_saved_result_is_bounded_too(self):
+        from unittest.mock import patch
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        with patch.object(FileWorkspace, '_fresh', lambda self, record, deadline=None: FileWorkspace.UNCHECKED):
+            with self.assertRaises(ValueError):
+                self.caps('job-later').execute('read_file', {'root_id': SAVED_RESULTS_ROOT, 'path': 'Notes.md'})
+
+    def test_a_package_alias_of_read_file_marks_the_work_as_document_history(self):
+        service = AgentService(self.store)
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       ('job-1', 'pkg_reader', 'succeeded',
+                        json.dumps({'host_action': 'read_file', 'evidence': {'root_id': self.root, 'path': 'trip.md'}}), time.time()))
+        self.assertTrue(service.read_file_workspace('job-1'))
+        self.assertFalse(service.read_file_workspace('job-2'))
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
