@@ -445,6 +445,28 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         found = self.caps('job-later').execute('find_files', {'query': 'RARE-NAME', 'root_id': SAVED_RESULTS_ROOT})
         self.assertEqual([item['path'] for item in found['files']], ['RARE-NAME notes.md'])
 
+    def test_recovery_is_bounded_by_the_read_deadline(self):
+        from unittest.mock import patch
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        with self.store.db() as db:
+            [record] = [dict(row) for row in db.execute('SELECT * FROM file_workspace_results')]
+            db.execute('INSERT INTO file_workspace_results(id,request_id,path,content_hash,sources,created,workspace_id,state) '
+                       'VALUES (?,?,?,?,?,?,?,?)', ('p1', 'other', 'big.md', 'x', record['sources'], 1.0,
+                                                   record['workspace_id'], 'pending'))
+        (self.workspace / 'big.md').write_bytes(b'x' * 64)
+        with patch('personal_agent.file_workspace.MAX_FILE_BYTES', 32), \
+                patch('personal_agent.file_workspace.Path.read_bytes', side_effect=AssertionError('read')):
+            FileWorkspace(self.store).recover()   # an oversized candidate is not read
+        workspace = FileWorkspace(self.store)
+        with self.store.db() as db:
+            db.execute("INSERT INTO file_workspace_results(id,request_id,path,content_hash,sources,created,workspace_id,state) "
+                       "VALUES ('p2','other2','late.md','x',?,2.0,?,'pending')", (record['sources'], record['workspace_id']))
+        workspace.recover(deadline=0)             # a passed deadline leaves it for later
+        with self.store.db() as db:
+            self.assertEqual(db.execute("SELECT state FROM file_workspace_results WHERE id='p2'").fetchone()[0], 'pending')
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})

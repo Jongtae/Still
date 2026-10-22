@@ -180,18 +180,24 @@ class FileWorkspace:
         if candidate.is_symlink() or not candidate.resolve().is_relative_to(root): raise ValueError('관리 작업공간 밖의 결과에는 접근할 수 없습니다.')
         return candidate
 
-    def recover(self):
-        """Finalize only a verified publication, and discard unpublised reservations."""
+    def recover(self, deadline=None):
+        """Finalize only a verified publication, and discard unpublised reservations.
+
+        ``deadline`` (``time.monotonic``) stops before the next reservation once passed, leaving the rest
+        pending for a later call; a candidate file larger than any result Still writes is not read (#182 review).
+        """
         with self.store.db() as db:
             self._ensure_results_table(db)
             pending=[dict(row) for row in db.execute("SELECT * FROM file_workspace_results WHERE state='pending'")]
         for record in pending:
+            if deadline is not None and time.monotonic()>deadline: break
             if record.get('workspace_id')!=self._workspace_id():
                 with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
                 continue
             try:
                 published=self._result_path(record['path'])
-                complete=published.is_file() and hashlib.sha256(published.read_bytes()).hexdigest()==record['content_hash']
+                complete=(published.is_file() and published.stat().st_size<=MAX_FILE_BYTES
+                          and hashlib.sha256(published.read_bytes()).hexdigest()==record['content_hash'])
             except (OSError,ValueError): complete=False
             with self.store.db() as db:
                 if complete: db.execute("UPDATE file_workspace_results SET state='current' WHERE id=? AND state='pending'",(record['id'],))
@@ -265,7 +271,7 @@ class FileWorkspace:
         ``terms``: results whose name holds one of them are checked first, beyond the
         newest-100 window, so an older result is found by its name (#182 review).
         """
-        self.recover()
+        self.recover(deadline)
         with self.store.db() as db:
             self._ensure_results_table(db)
             records=[dict(row) for row in (db.execute('SELECT * FROM file_workspace_results WHERE path=?',(path,)) if path is not None
