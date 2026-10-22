@@ -283,13 +283,15 @@ class FileWorkspace:
         newest-100 window, so an older result is found by its name (#182 review).
         """
         self.recover(deadline)
+        # Results exist but no result folder is usable: the caller's setup case, never an empty answer.
+        if self.has_file_results(): self._workspace_id()
         with self.store.db() as db:
             self._ensure_results_table(db)
             records=[dict(row) for row in (db.execute('SELECT * FROM file_workspace_results WHERE path=?',(path,)) if path is not None
-                                           else db.execute('SELECT * FROM file_workspace_results ORDER BY created DESC LIMIT 101'))]
+                                           else db.execute("SELECT * FROM file_workspace_results WHERE state IN ('current','stale') ORDER BY created DESC LIMIT 101"))]
             terms=[term.lower() for term in (terms or ()) if isinstance(term,str) and term] if path is None else []
             named=[dict(row) for row in db.execute(
-                'SELECT * FROM file_workspace_results WHERE '+' OR '.join(['instr(lower(path),?)>0']*len(terms))
+                "SELECT * FROM file_workspace_results WHERE state IN ('current','stale') AND ("+' OR '.join(['instr(lower(path),?)>0']*len(terms))+')'
                 +' ORDER BY created DESC LIMIT 100',terms)] if terms else []
         results=[]
         # Whether the deadline, or the 100-record cap, stopped the checks before every record was seen (#182 review).

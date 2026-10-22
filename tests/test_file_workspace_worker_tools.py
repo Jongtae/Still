@@ -586,6 +586,33 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         jobs = self.store.config('file_workspace_document_jobs')
         self.assertEqual((len(jobs), jobs[-1], 'old-0' in jobs), (100, 'newest', False))
 
+    def test_a_workspace_search_alone_is_document_history(self):
+        service = AgentService(self.store)
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       ('job-1', 'find_files', 'succeeded', json.dumps({'host_action': 'find_files', 'evidence': {
+                           'file_count': 1, 'files': [{'root_id': self.root, 'path': 'trip.md'}]}}), time.time()))
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       ('job-2', 'find_files', 'succeeded', json.dumps({'host_action': 'find_files', 'evidence': {
+                           'file_count': 0, 'files': []}}), time.time()))
+        self.assertTrue(service.read_file_workspace('job-1'))
+        self.assertFalse(service.read_file_workspace('job-2'))
+
+    def test_detached_rows_do_not_pin_the_window(self):
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        with self.store.db() as db:
+            [record] = [dict(row) for row in db.execute('SELECT * FROM file_workspace_results')]
+            for index in range(120):
+                db.execute('INSERT INTO file_workspace_results(id,request_id,path,content_hash,sources,created,workspace_id,state) '
+                           'VALUES (?,?,?,?,?,?,?,?)', (f'r{index}', f'q{index}', f'old-{index}.md', 'x', record['sources'],
+                                                       record['created'] + 1 + index, 'old-folder', 'current'))
+        later = self.caps('job-later')
+        later.execute('find_files', {'query': 'summary', 'root_id': SAVED_RESULTS_ROOT})  # detaches the newest 100
+        found = later.execute('find_files', {'query': 'summary', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertEqual([item['path'] for item in found['files']], ['Notes.md'])
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})

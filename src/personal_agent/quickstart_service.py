@@ -4894,8 +4894,14 @@ class AgentService:
             if isinstance(evidence,dict) and 'setup-required' in (evidence.get('qualifiers') or ()):continue
             # #182 review: by the recorded host action, so a package alias of read_file counts too.
             action=(event.get('trace') or {}).get('host_action') if isinstance(event.get('trace'),dict) else None
-            if ((action or event.get('tool'))=='read_file' and event.get('status')=='succeeded' and isinstance(root,str)
-                    and (root==SAVED_RESULTS_ROOT or root.startswith(WORKSPACE_REFERENCE_PREFIX))):
+            def workspace_root(value):
+                return isinstance(value,str) and (value==SAVED_RESULTS_ROOT or value.startswith(WORKSPACE_REFERENCE_PREFIX))
+            if event.get('status')!='succeeded':continue
+            if (action or event.get('tool'))=='read_file' and workspace_root(root):
+                return True
+            # #182 review: a search that listed file-workspace hits already put their names in the answer's reach.
+            if (action or event.get('tool'))=='find_files' and isinstance(evidence,dict) and any(
+                    isinstance(item,dict) and workspace_root(item.get('root_id')) for item in evidence.get('files') or ()):
                 return True
         return False
 
