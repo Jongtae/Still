@@ -140,6 +140,36 @@ class ConnectionDisconnectDraftTests(RevocationTestCase):
         self.assertEqual(self.draft_row(row['id'])['state'], 'failed')
         self.assertEqual(raced, [True])
 
+    def test_no_oauth_completion_can_commit_between_the_check_and_the_disconnect(self):
+        # Review P1: the revision check and the disconnect hold the connector's lifecycle lock together.
+        import threading
+        self.connect_gmail()
+        row = self.draft_row(self.propose()['draft_id'])
+        build = self.service.google_revocation
+        held = []
+
+        def revocation():
+            revoker = build()
+            disconnect = revoker.disconnect
+
+            def observed(*args):
+                probe = []
+                thread = threading.Thread(target=lambda: probe.append(self.gmail.oauth_lock.acquire(timeout=0)))
+                thread.start(); thread.join()
+                if probe[0]:
+                    self.gmail.oauth_lock.release()
+                held.append(not probe[0])
+                return disconnect(*args)
+            revoker.disconnect = observed
+            return revoker
+
+        self.service.google_revocation = revocation
+        try:
+            self.assertEqual(self.settings.confirm(OWNER, CHANNEL, row['id'], row['digest'])['state'], 'applied')
+        finally:
+            self.service.google_revocation = build
+        self.assertEqual(held, [True], 'an OAuth completion is held off while the disconnect runs')
+
     def test_disconnect_keeps_records_and_is_not_forget(self):
         self.connect_gmail()
         note = self.store.save_memory('profile.mail.label', '예산 메일은 재무 라벨', work_id='source-work')
