@@ -322,12 +322,14 @@ class FileWorkspace:
         return self.current_results(query.casefold().strip(),latest)
 
     def intact(self, record):
-        """Whether a current record's file is still exactly what Still published; else it is marked stale."""
+        """Whether a current record is still a current result: its file exactly what Still published and its
+        cited sources unchanged (#182 review); else it is marked stale."""
         try:
             published=self._result_path(record['path'])
             ok=(published.stat().st_size<=MAX_FILE_BYTES
                 and hashlib.sha256(published.read_bytes()).hexdigest()==record.get('content_hash'))
         except (OSError,ValueError): ok=False
+        ok=ok and self._fresh(record,time.monotonic()+5) is True
         if not ok:
             with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
         return ok

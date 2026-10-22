@@ -408,6 +408,16 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         oldest = caps.execute('read_file', {'root_id': SAVED_RESULTS_ROOT, 'path': 'project/p0'})
         self.assertEqual(oldest['content'], 'answer 0')
 
+    def test_a_result_whose_source_changed_is_no_replay(self):
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        self.trip.write_text('changed', encoding='utf-8')
+        again = caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        self.assertEqual((again['saved'], again['already_saved']), (False, False))
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'stale')
+
     def test_a_deleted_result_is_no_replay(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})

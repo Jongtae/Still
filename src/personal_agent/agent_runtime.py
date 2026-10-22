@@ -2861,7 +2861,7 @@ class Capabilities:
   if earlier and not workspace.intact(earlier):
    # #182 review: the earlier file was deleted, edited or replaced: no receipt for what is not there.
    return {'saved':False,'already_saved':False,'id':earlier['id'],'path':earlier['path'],
-           'message':'이 작업이 저장한 결과 파일이 지워졌거나 바뀌어 있어 새로 저장하지 않았습니다. 새 요청으로 다시 저장해 주세요.'}
+           'message':'이 작업이 저장한 결과 파일이나 그 원본이 지워졌거나 바뀌어 있어 새로 저장하지 않았습니다. 새 요청으로 다시 저장해 주세요.'}
   if earlier:
    # #182 review: one Work saves one result; a second save writes nothing and says so (the first stays).
    return {'saved':False,'already_saved':True,'id':earlier['id'],'path':earlier['path'],
