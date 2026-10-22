@@ -108,10 +108,13 @@ class OwnerActs:
             return chat, cfg.get('generation')
         return None
 
-    def open_items(self, job, before=None):
+    def open_items(self, job, before=None, target=None):
         """Every item still waiting for the owner in ``job``'s conversation and identity, newest first.
 
         ``before``: an act made at that time cannot answer an item shown at or after it.
+        ``target``: only the item(s) shown on that message, chosen before the
+        ``ITEM_LIMIT`` cost cap, so a reply or reaction on an older message
+        still reaches what it names (#188).
         """
         service = self.service
         now = time.time()
@@ -146,44 +149,53 @@ class OwnerActs:
                           'ref': {'owner': owner, 'channel': channel, 'rows': rows,
                                   'work_id': work_id if any(draft.get('work_id') for draft in rows) else None}})
         if telegram:
-            items.extend(self._notification_items(*telegram, now))
+            items.extend(self._notification_items(*telegram, now, target=target))
         if before is not None:
             # Telegram dates an owner message in whole seconds, so an item shown later within that same
             # second is not treated as unseen; one shown in a later second is.
             items = [item for item in items if item['shown_at'] and int(item['shown_at']) <= int(float(before))]
+        if target is not None:
+            items = [item for item in items if item['message_id'] == target]
         items.sort(key=lambda item: item['shown_at'], reverse=True)
         items = items[:ITEM_LIMIT]
         for index, item in enumerate(items, 1):
             item['id'] = f'item-{index}'
         return items
 
-    def _notification_items(self, chat, generation, now):
-        """The open prompts and notices sent to this chat in this bot generation (#1472, #996, #818, #659)."""
+    def _notification_items(self, chat, generation, now, target=None):
+        """The open prompts and notices sent to this chat in this bot generation (#1472, #996, #818, #659).
+
+        With ``target``, only those sent as that message, however many newer ones were sent since (#188).
+        """
         from .quickstart_service import (MEMORY_CANDIDATES_TTL_SECONDS, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS,
                                          MEMORY_SAVED_TTL_SECONDS)
         service = self.service
         kinds = ('browser_approval_needed', 'preparation_proposed', *MEMORY_SAVED_KINDS, *MEMORY_PROMPT_KINDS)
         items = []
-        for notification in service.store.telegram.sent_of_kinds(chat, kinds, limit=ITEM_LIMIT * 3):
+        for notification in service.store.telegram.sent_of_kinds(chat, kinds, limit=ITEM_LIMIT * 3, message_id=target):
             if notification['generation'] != generation:
                 continue
             kind, base = notification['kind'], {'message_id': notification.get('message_id'),
                                                 'ref': {'notification_id': notification['id'],
                                                         'work_id': notification['job_id']}}
+            # #188: an item is shown when its send completed, not when it was requested, bound or
+            # queued; a slow send or a prompt queued across a restart reaches the owner later.  A
+            # prompt sent before ``sent_at`` existed keeps its earlier time.
+            sent_at = notification.get('sent_at')
             if kind == 'browser_approval_needed':
                 current = service.open_step_notification(notification)
                 if not current:
                     continue
                 requested = float(current[1].get('requested_at') or 0)
                 items.append({**base, 'kind': KIND_STEP, 'shown_text': service.browser_step_prompt(notification['job_id']),
-                              'shown_at': requested, 'expires_at': requested + 600})
+                              'shown_at': max(requested, float(sent_at or 0)), 'expires_at': requested + 600})
             elif kind in MEMORY_SAVED_KINDS:
                 current = service.open_memory_notice(notification)
                 if not current:
                     continue
                 sent = float(current[1]['sent'])
                 items.append({**base, 'kind': KIND_MEMORY_SAVED, 'shown_text': service.memory_saved_text(current[1]),
-                              'shown_at': sent, 'expires_at': sent + MEMORY_SAVED_TTL_SECONDS})
+                              'shown_at': max(sent, float(sent_at or 0)), 'expires_at': sent + MEMORY_SAVED_TTL_SECONDS})
             elif kind in MEMORY_PROMPT_KINDS:
                 binding = service.memory_binding(notification)
                 if not binding or 'sent' not in binding or not service.memory_open(binding):
@@ -193,13 +205,13 @@ class OwnerActs:
                     continue
                 items.append({**base, 'kind': KIND_MEMORY_PROPOSAL,
                               'shown_text': service.memory_prompt_text(notification['job_id'], binding),
-                              'shown_at': sent, 'expires_at': sent + MEMORY_CANDIDATES_TTL_SECONDS})
+                              'shown_at': max(sent, float(sent_at or 0)), 'expires_at': sent + MEMORY_CANDIDATES_TTL_SECONDS})
             else:
                 proposals, remaining = service.offered_proposals(notification)
                 if not proposals:
                     continue
                 items.append({**base, 'kind': KIND_PREPARATION, 'shown_text': prep.proposal_text(proposals, remaining),
-                              'shown_at': float(notification['created']), 'expires_at': None})
+                              'shown_at': max(float(notification['created']), float(sent_at or 0)), 'expires_at': None})
         return items
 
     def _within_cost_bound(self, job, items):
@@ -237,10 +249,8 @@ class OwnerActs:
         ``{item, approve, rest}``; a reaction has no rest.
         """
         service = self.service
-        items = self.open_items(job, before=before)
-        if target is not None:
-            items = [item for item in items if item['message_id'] == target]
-        elif not reaction:
+        items = self.open_items(job, before=before, target=target)
+        if target is None and not reaction:
             items = self._within_cost_bound(job, items)
         if not items:
             return None
@@ -322,7 +332,7 @@ class OwnerActs:
     def bound_to(self, chat, generation, message_id):
         """Whether a message in this chat showed an item still waiting for the owner."""
         job = {'id': None, 'channel': f'telegram:{generation}', 'chat_id': chat}
-        return any(item['message_id'] == message_id for item in self.open_items(job))
+        return bool(self.open_items(job, target=message_id))
 
     def answer_reaction(self, chat, generation, message_id, emoji):
         """The owner's reaction on a message that showed an open item: judged, and settled when it answers it.

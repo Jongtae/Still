@@ -259,7 +259,8 @@ class TelegramSurface:
                 service.store.update_notification(notification['id'],'memory_listed' if listed else 'sent',
                                                message_id if isinstance(message_id,int) else None,
                                                json.dumps(memory_prompt) if notification['kind'] in MEMORY_PROMPT_KINDS else
-                                               json.dumps(memory_saved) if notification['kind'] in MEMORY_SAVED_KINDS else None)
+                                               json.dumps(memory_saved) if notification['kind'] in MEMORY_SAVED_KINDS else None,
+                                               delivered=True)
                 if notification['kind']=='browser_login_needed' and service.AUTO_PHONE_LOGIN:
                     # #953 (owner 2026-10-01): the person on Telegram is on their phone; the one-time
                     # link follows the prompt at once instead of waiting for 휴대폰에서 로그인.

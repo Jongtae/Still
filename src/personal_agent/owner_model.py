@@ -886,7 +886,7 @@ class WorkingNotes:
             job = db.execute('SELECT channel,chat_id FROM jobs WHERE id=?', (work_id,)).fetchone() if work_id else None
             channel = str(job['channel'] or '') if job else ''
             if job and channel.startswith('telegram:') and isinstance(job['chat_id'], int):
-                db.execute('INSERT OR IGNORE INTO telegram_notifications VALUES (?,?,?,?,?,?,?,?,?)',
+                db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created) VALUES (?,?,?,?,?,?,?,?,?)',
                            (str(uuid.uuid4()), work_id, job['chat_id'], channel[len('telegram:'):], NOTICE_KIND,
                             json.dumps({'ref': saved['ref'], 'version': saved['version']}), 'queued', None, self.clock()))
         return saved

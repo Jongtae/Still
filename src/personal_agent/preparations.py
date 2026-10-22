@@ -767,7 +767,7 @@ class Preparations:
                     # Queued here; the "last notified" fields advance only once
                     # Telegram confirms the send (``record_notified``).
                     chat_id, generation = notify_to
-                    db.execute('INSERT OR IGNORE INTO telegram_notifications VALUES (?,?,?,?,?,?,?,?,?)',
+                    db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created) VALUES (?,?,?,?,?,?,?,?,?)',
                                (str(uuid.uuid4()), job['id'], chat_id, generation, NOTIFY_KIND, text_digest(answer),
                                 'queued', None, now))
                     notified = True

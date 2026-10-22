@@ -20,6 +20,7 @@ an injected Telegram transport.
 """
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -473,6 +474,35 @@ class TelegramConfirmTests(TelegramHarness):
         self.assertEqual(sorted(m['content'] for m in self.store.memories()), sorted([VALUE, '지하철']))
         self.assertEqual(self.edits()[-1]['text'], f'기억해 둘게요.\n• {VALUE}\n• 지하철')
         self.assertEqual(self.edits()[-1]['reply_markup'], {'inline_keyboard': []})
+
+    def test_a_confirmed_edit_that_adds_a_candidate_is_a_new_showing(self):
+        """#188 (Codex on #200): an owner message dated between the send and the edit cannot answer what it added."""
+        job, _prompt, row = self.offered()
+        sent = time.time() - 120
+        with self.store.db() as db:
+            db.execute('UPDATE telegram_notifications SET sent_at=? WHERE id=?', (sent, row['id']))
+        self.upkeep_adds(job['id'])
+        edited_at = self.store.notification(row['id'])['sent_at']
+        self.assertGreater(edited_at, sent + 60)
+        typed = {'id': 'later', 'channel': f'telegram:{GENERATION}', 'chat_id': CHAT}
+        self.assertEqual(self.service.owner_acts.open_items(typed, before=sent + 30), [],
+                         'a message from before the edit never answers the joined ask')
+        self.assertEqual([item['kind'] for item in self.service.owner_acts.open_items(typed, before=edited_at + 1)],
+                         ['memory-proposal'])
+
+    def test_a_refused_edit_keeps_the_shown_time(self):
+        job, _prompt, row = self.offered()
+        sent = time.time() - 120
+        with self.store.db() as db:
+            db.execute('UPDATE telegram_notifications SET sent_at=? WHERE id=?', (sent, row['id']))
+        real = self.service.telegram.edit_message_text
+
+        def refuse(*_args, **_kwargs):
+            raise ProviderError('Telegram timed out')
+        self.service.telegram.edit_message_text = refuse
+        self.upkeep_adds(job['id'])
+        self.service.telegram.edit_message_text = real
+        self.assertEqual(self.store.notification(row['id'])['sent_at'], sent, 'nothing new was shown')
 
     def test_a_candidate_is_bound_only_when_the_edit_showing_it_was_confirmed(self):
         job, _prompt, row = self.offered()
