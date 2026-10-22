@@ -11,8 +11,8 @@ crs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(crs)
 
 HEAD = "a" * 40
-CODEX = {"login": "chatgpt-codex-connector[bot]"}
-OWNER = {"login": "Jongtae"}
+CODEX = {"login": "chatgpt-codex-connector[bot]", "type": "Bot"}
+OWNER = {"login": "Jongtae", "type": "User"}
 
 
 def summary(sha=HEAD, status="completed", findings=False, user=CODEX):
@@ -63,6 +63,14 @@ def test_only_codex_can_post_the_review_state():
     assert crs.decide(HEAD, [summary(), summary(sha="b" * 40, user=OWNER)], [])[0] == "success"
 
 
+def test_a_lookalike_account_cannot_post_the_review_state():
+    """Codex finding 4349836823: only the exact Codex App identity counts."""
+    for user in ({"login": "chatgpt-codex-connector-reviewer", "type": "User"},
+                 {"login": "chatgpt-codex-connector[bot]", "type": "User"},
+                 {"login": "chatgpt-codex-connector", "type": "Bot"}):
+        assert crs.decide(HEAD, [summary(user=user)], [])[0] == "pending", user
+
+
 def test_the_latest_codex_summary_wins():
     assert crs.decide(HEAD, [summary(), summary(sha="b" * 40)], [])[0] == "pending"
 
@@ -73,3 +81,5 @@ def test_the_workflow_runs_the_script_from_main_with_status_permission_only():
     assert "statuses: write" in workflow
     assert "contents: write" not in workflow and "pull-requests: write" not in workflow
     assert "contains(github.event.comment.body, 'codex-review-state')" in workflow
+    # Codex finding 4349836836: a deleted reply recomputes the status.
+    assert "types: [created, deleted]" in workflow
