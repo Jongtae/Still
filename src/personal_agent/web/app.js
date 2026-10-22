@@ -559,7 +559,9 @@ function mainAiView(settings){
  if(!current)return {title:t('선택된 AI 없음'),description:t('작업에 사용할 AI를 선택하면 시작할 수 있습니다.'),state:t('설정 필요'),kind:'neutral',checkable:false};
  if(current==='other'){const other=main.other||{};return {title:directRouteName(other),model:other.model,destination:other.destination,description:t('이 연결은 변경 목록에 없습니다. 상태를 확인하거나 다른 AI를 선택하세요.'),state:t('확인 필요'),kind:'attention',checkable:true};}
  if(!route)return {title:current,description:t('선택된 연결을 이 컴퓨터에서 확인할 수 없습니다. 자동 전환하지 않습니다.'),state:t('확인 필요'),kind:'attention',checkable:false};
- const view={title:t(route.kind==='subscription'?'{name} · 구독 계정':'{name} · API',{name:route.name}),model:route.model||t(route.kind==='subscription'?'CLI 기본값':'모델 확인 안 됨'),destination:t(route.destination||''),description:'',state:t('확인 필요'),kind:'neutral',checkable:true};
+ // #211: a cloud provider profile replaces the subscription account as the destination; the title names it.
+ const cloudName=route.kind==='subscription'&&route.cloud&&route.cloud.provider!=='subscription'?((route.cloud.providers||[]).find(item=>item.id===route.cloud.provider)?.name||route.cloud.provider):'';
+ const view={title:cloudName?`${route.name} · ${cloudName}`:t(route.kind==='subscription'?'{name} · 구독 계정':'{name} · API',{name:route.name}),model:route.model||t(route.kind==='subscription'?'CLI 기본값':'모델 확인 안 됨'),destination:t(route.destination||''),description:'',state:t('확인 필요'),kind:'neutral',checkable:true};
  if(route.kind==='subscription'){
   const login=route.login?.state||'unchecked',failed=route.check?.state==='failed'&&!loginSupersedesCheck(route);
   if(!route.installed)return {...view,description:t('선택한 CLI를 찾지 못했습니다. 다른 AI로 자동 전환하지 않습니다.'),state:t('설치 확인 필요'),kind:'attention',checkable:false};
@@ -599,13 +601,16 @@ async function cancelJudgmentCheck(button){return busy(button,async()=>{aiFeedba
 // UI sessions keep late request completions separate from a newly opened draft.
 let aiChooserSession=0,aiPending=false,aiAccountPanel='',aiAccountNode=null,aiModelNode=null,aiInitialChoice='',aiInitialModels={},aiDiscardAction=null;
 function chooserSecretDirty(){return [...(aiAccountNode?.querySelectorAll('input[type="password"]')||[])].some(input=>Boolean(input.value));}
-function chooserDraftDirty(){return aiChoice!==aiInitialChoice||Object.entries(aiModelDraft).some(([id,value])=>value!==(aiInitialModels[id]||''))||chooserSecretDirty();}
+// #211: an unsaved cloud provider choice, limit or setting is a draft like a typed secret.
+function chooserCloudDirty(){return [...(aiAccountNode?.querySelectorAll('form.cloud-profile')||[])].some(form=>typeof form.cloudSnapshot==='function'&&form.cloudSnapshot()!==form.dataset.initial);}
+function chooserAccountDirty(){return chooserSecretDirty()||chooserCloudDirty();}
+function chooserDraftDirty(){return aiChoice!==aiInitialChoice||Object.entries(aiModelDraft).some(([id,value])=>value!==(aiInitialModels[id]||''))||chooserAccountDirty();}
 function chooserDiscard(next,dirty=chooserDraftDirty()){
  if(!dirty){next();return;}
  aiDiscardAction=next;const box=$('ai-chooser-discard');box.hidden=false;box.querySelector('button')?.focus();
 }
 function chooserClearDiscard(){aiDiscardAction=null;$('ai-chooser-discard').hidden=true;}
-function chooserDismiss(){chooserDiscard(()=>$('ai-chooser').close(),aiPending?chooserSecretDirty():chooserDraftDirty());}
+function chooserDismiss(){chooserDiscard(()=>$('ai-chooser').close(),aiPending?chooserAccountDirty():chooserDraftDirty());}
 function chooserPanel(id){if(aiPending)return;chooserDiscard(()=>{aiAccountPanel=id;aiAccountNode=null;aiKeyEditing='';aiKeyRemoving='';renderAiChooser();(aiAccountNode?.querySelector('input')||aiAccountNode?.querySelector('button')||$('ai-chooser-list').querySelector('input[name="main-ai"]:checked'))?.focus();},chooserSecretDirty());}
 function openAiChooser(opener){
  const dialog=$('ai-chooser'),main=aiSettings?.main_ai||{};aiChooserSession++;aiChoice=(main.order||[]).includes(main.current)?main.current:'';aiInitialChoice=aiChoice;aiInitialModels={};for(const route of main.routes||[])aiInitialModels[route.id]=route.model||'';
@@ -657,7 +662,7 @@ function chooserRow(route,main){
  const name=element('span',route.name,'chooser-name');if(route.id===main.current)name.append(element('span',t('현재'),'chooser-current'));copy.append(name,element('span',status,'chooser-status'));label.append(radio,copy);
  const action=settingsAction(t(route.kind==='subscription'?'로그인 설정':route.key?.saved||route.id==='openrouter'?'계정 설정':'키 입력'),()=>chooserPanel(aiAccountPanel===route.id?'':route.id));action.setAttribute('aria-expanded',String(aiAccountPanel===route.id));row.append(label,action);
  if(failed&&route.check.failure)row.append(element('p',t('마지막 확인 실패: {reason}',{reason:t(DECISION_FAILURE_TEXT[route.check.failure]||route.check.failure)}),'field-hint chooser-failure'));
- if(aiAccountPanel===route.id){const fingerprint=JSON.stringify([route.key,route.credential,route.login,route.installed,route.cloud]);if(!aiAccountNode||(aiAccountNode.dataset.state!==fingerprint&&!chooserSecretDirty())){aiAccountNode=chooserAccount(route);aiAccountNode.dataset.state=fingerprint;}row.append(aiAccountNode);}return row;
+ if(aiAccountPanel===route.id){const fingerprint=JSON.stringify([route.key,route.credential,route.login,route.installed,route.cloud]);if(!aiAccountNode||(aiAccountNode.dataset.state!==fingerprint&&!chooserAccountDirty())){aiAccountNode=chooserAccount(route);aiAccountNode.dataset.state=fingerprint;}row.append(aiAccountNode);}return row;
 }
 function chooserModel(chosen){
  const field=element('label',undefined,'chooser-model');field.dataset.route=chosen.id;
@@ -727,13 +732,14 @@ function cloudProviderForm(route){const cloud=route.cloud,box=element('fieldset'
  if(cloud.problem)box.append(element('p',cloud.problem,'field-hint error'));
  box.append(element('p',t('회사에서 받은 값을 공식 문서의 변수 이름 그대로 넣으세요. 인증 정보는 이 컴퓨터에만 저장되고 AI의 셸 명령에는 전달되지 않습니다.'),'field-hint'));
  const form=element('form',undefined,'cloud-profile'),select=element('select');select.name='cloud-provider-'+route.id;select.setAttribute('aria-label',t('클라우드 제공자'));
- for(const [id,name] of [['subscription',t('구독 (기본)')],...(cloud.providers||[]).map(item=>[item.id,item.name])]){const option=element('option',name);option.value=id;option.selected=id===cloud.provider;select.append(option);}
+ for(const [id,name] of [['subscription',t('구독 (기본)')],...(cloud.providers||[]).map(item=>[item.id,item.name])]){const option=element('option',name);option.value=id;option.selected=id===cloud.provider;select.append(option);}select.value=cloud.provider||'subscription';
  const fields=element('div',undefined,'cloud-fields'),cap=element('input');cap.type='number';cap.min='1';cap.max='10000';cap.name='cloud-daily-calls';cap.value=cloud.daily_calls||'';cap.setAttribute('aria-label',t('하루 호출 한도'));
  const draw=()=>{fields.replaceChildren();const chosen=(cloud.providers||[]).find(item=>item.id===select.value);if(!chosen)return;
   for(const name of chosen.settings){const label=element('label',undefined,'cloud-field'),input=element('input');input.type='text';input.name=name;input.autocomplete='off';input.spellcheck=false;input.translate=false;input.maxLength=400;input.value=(chosen.values||{})[name]||'';label.append(element('code',name),input);fields.append(label);}
   const limit=element('label',undefined,'cloud-field');limit.append(element('span',t('하루 호출 한도')),cap);fields.append(limit);
   fields.append(element('span',t('작업과 판단 AI 호출을 함께 셉니다. 한도에 닿으면 실행하지 않고 다른 AI로 넘기지도 않습니다.'),'field-hint'));};
  select.onchange=draw;draw();const save=element('button',t('제공자 저장'),'small');save.type='submit';form.append(select,fields,save);
+ form.cloudSnapshot=()=>JSON.stringify([select.value,cap.value,...[...fields.querySelectorAll('input')].map(input=>[input.name,input.value])]);form.dataset.initial=form.cloudSnapshot();
  form.onsubmit=event=>{event.preventDefault();const chosen=(cloud.providers||[]).find(item=>item.id===select.value),settings={};if(chosen)for(const name of chosen.settings){const value=fields.querySelector(`input[name="${name}"]`)?.value.trim();if(value)settings[name]=value;}
   return chooserAction(save,async()=>{await api('/api/cloud-engines/profile',{engine:route.id,provider:select.value,settings,daily_calls:chosen?Number(cap.value):undefined});return {resetPanel:true,message:t('클라우드 제공자 설정을 저장했습니다. 다음 작업부터 적용됩니다.')};});};
  box.append(form);

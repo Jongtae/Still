@@ -519,6 +519,24 @@ class ServiceWork(unittest.TestCase):
         self.assertIn('호출 한도', reply['content'])
         self.assertIn('다른 AI로 자동 전환하지 않았어요', reply['content'])
 
+    def test_a_refused_cloud_credential_stops_the_work_and_is_not_redelegated(self):
+        meta = {'launched': True, 'cloud_provider': 'bedrock', 'cloud_destination': 'Amazon Bedrock (us-east-1)'}
+        engine = _Engine(fail=ExecutionError(cloud_engines.msg('cloud_engines.auth_failed', provider='Amazon Bedrock'),
+                                             failure_class='auth', meta=meta))
+        service = self.service(engine)
+        self.configure(service)
+        redelegations, logins = [], []
+        service.orchestration_step = lambda *args, **kwargs: redelegations.append(args)
+        service._remember_engine_login = lambda *args: logins.append(args)
+        self.store.enqueue('hello', 'k1')
+        self.assertTrue(service.run_one())
+        self.assertEqual(redelegations, [], 'a refused cloud credential is never handed to another worker')
+        self.assertEqual(logins, [], 'the CLI login is not marked signed out by a cloud refusal')
+        self.assertEqual(len(engine.launches), 1)
+        with self.store.db() as db:
+            job = db.execute('SELECT status FROM jobs ORDER BY id DESC LIMIT 1').fetchone()
+        self.assertEqual(job['status'], 'failed')
+
     def test_an_unfinished_profile_stops_the_work_before_any_launch(self):
         engine = _Engine()
         service = self.service(engine)

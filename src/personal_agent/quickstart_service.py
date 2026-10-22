@@ -11048,16 +11048,20 @@ class AgentService:
             continuation_accounted=self._connector_turn_accounted(job['id'],run.subscription['id'],getattr(exc,'meta',None),allow_effects=True)
             # A run that the CLI rejected as signed out is the
             # strongest login evidence we have; show it (#571).
-            if not isolated and diagnostics.get('failure_class')=='auth':
+            # #211: a cloud provider that refused its credentials says nothing about the CLI login.
+            cloud_launch=bool((getattr(exc,'meta',None) or {}).get('cloud_provider'))
+            if not isolated and diagnostics.get('failure_class')=='auth' and not cloud_launch:
                 self._remember_engine_login(run.subscription['id'],'signed-out','run')
             run.record('subscription_engine','failed',json.dumps({'engine':run.subscription['id'],'error':str(exc),**diagnostics,'continuation_read_only':continuation_read_only,'continuation_accounted':continuation_accounted},ensure_ascii=False))
             # #710: a failed worker may be re-delegated within the Work's bounds.
             # #1130: not to another CLI when the shared Still bridge failed; it would run without tools too.
             if diagnostics.get('failure_class')==BRIDGE_UNAVAILABLE and run.orchestration is not None:
                 run.orchestration.drop_bridge_workers()
-            # #211: a cloud profile that refused the launch (spent daily cap, unfinished) ends the Work
-            # with its reason; nothing is re-delegated to another route.
-            if diagnostics.get('failure_class') in (CLOUD_BUDGET_EXCEEDED,CLOUD_NOT_CONFIGURED):
+            # #211: a cloud profile that refused the launch (spent daily cap, unfinished) or whose
+            # provider refused its credentials ends the Work with its reason; nothing is re-delegated
+            # to another route or destination.
+            if (diagnostics.get('failure_class') in (CLOUD_BUDGET_EXCEEDED,CLOUD_NOT_CONFIGURED)
+                    or (cloud_launch and diagnostics.get('failure_class')=='auth')):
                 raise BlockedTurn(BLOCKER_CLOUD_PROFILE,str(exc)) from exc
             following=self.orchestration_step(run.orchestration,run.attempt,job['id'],run.attempt_start,failed=str(exc),
                                               unmediated=run.unmediated_turn,engine_meta=getattr(exc,'meta',None),

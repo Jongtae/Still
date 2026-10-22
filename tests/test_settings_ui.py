@@ -115,6 +115,17 @@ projected=savedApi();projected.main_ai.last_check={state:'failed',error:'synthet
 assert.equal(ctx.mainAiView(projected).kind,'attention');assert(ctx.mainAiView(projected).description.includes('synthetic refusal'));
 projected=savedApi();projected.main_ai.last_check={state:'unchecked'};
 assert.equal(ctx.mainAiView(projected).state,'키 저장됨 · 연결 확인 전');
+// #211: a cloud provider profile is named in the active title, and its unsaved fields are a chooser draft.
+const cloudStatus={provider:'bedrock',destination:'Amazon Bedrock (us-east-1)',daily_calls:5,used_today:0,providers:[{id:'bedrock',name:'Amazon Bedrock',settings:['AWS_REGION'],secrets:['AWS_BEARER_TOKEN_BEDROCK'],saved_secrets:[],values:{AWS_REGION:'us-east-1'},docs:[],missing:[]}]};
+assert.equal(ctx.mainAiView(settingsFor('claude-code',{'claude-code':sub('claude-code',{cloud:cloudStatus})})).title,'Claude Code · Amazon Bedrock');
+assert.equal(ctx.mainAiView(settingsFor('claude-code',{'claude-code':sub('claude-code',{cloud:{...cloudStatus,provider:'subscription',providers:cloudStatus.providers}})})).title,'Claude Code · 구독 계정');
+{const holder=new Element('div');holder.append(ctx.cloudProviderForm(sub('claude-code',{cloud:cloudStatus})));ctx.__cloudHolder=holder;vm.runInContext('aiAccountNode=__cloudHolder',ctx);
+ assert.equal(ctx.chooserCloudDirty(),false,'an untouched cloud form is not a draft');
+ holder.querySelectorAll('input').find(node=>node.name==='AWS_REGION').value='eu-west-1';
+ assert.equal(ctx.chooserCloudDirty(),true,'an edited cloud setting is an unsaved draft');assert.equal(ctx.chooserAccountDirty(),true);
+ holder.querySelectorAll('input').find(node=>node.name==='AWS_REGION').value='us-east-1';
+ holder.querySelectorAll('select')[0].value='subscription';assert.equal(ctx.chooserCloudDirty(),true,'a changed provider is an unsaved draft');
+ vm.runInContext('aiAccountNode=null',ctx);}
 const technical=descendants($('active-ai')).find(node=>node.tag==='details');technical.open=true;
 settings.main_ai.last_check.checked_at++;ctx.renderExecutionConnection(settings);
 assert(descendants($('active-ai')).find(node=>node.dataset.disclosure==='technical').open,'polling preserves expanded technical disclosure');
