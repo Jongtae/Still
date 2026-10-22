@@ -148,6 +148,30 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
             self.assertEqual(caps.execute('find_files', {'query': '출장 계획'})['files'], [])
         self.assertEqual(caps.workspace_reads, {})
 
+    def test_saved_result_checks_are_bounded(self):
+        from unittest.mock import patch
+        for index in range(3):
+            caps = self.caps(f'job-{index}')
+            caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+            caps.execute('save_result', {'title': f'Result {index}', 'content': f'summary {index}'})
+        later = self.caps('job-later')
+        checked = []
+        original = FileWorkspace._fresh
+        with patch.object(FileWorkspace, '_fresh', lambda self, record: checked.append(record['path']) or original(self, record)):
+            later.execute('list_roots', {})
+            self.assertEqual(checked, [], 'listing roots checks no saved result')
+            later.execute('read_file', {'root_id': SAVED_RESULTS_ROOT, 'path': 'Result 1.md'})
+            self.assertEqual(checked, ['Result 1.md'], 'reading one result checks only that one')
+            checked.clear()
+            self.assertEqual(later.saved_results(deadline=0), [])  # find_files passes its scan deadline
+            self.assertEqual(checked, [], 'a passed deadline stops the checks')
+
+    def test_saved_text_stays_in_the_private_write_set(self):
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'RESULT-TEXT-123'})
+        self.assertIn('RESULT-TEXT-123', caps.written_private)
+
     def test_a_removed_reference_is_no_longer_read(self):
         caps = self.caps()
         other = self.base / 'other'

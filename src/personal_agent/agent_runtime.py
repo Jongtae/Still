@@ -353,7 +353,9 @@ SETTINGS_CHANGE_DESCRIPTION=('Propose one change to an owner setting that the ow
 #: #182: what ``save_result`` tells the worker.
 SAVE_RESULT_DESCRIPTION=('Save a result you wrote (a summary, a brief) as a new file in the owner\'s result folder, when '
  'the owner asks for it to be saved or kept as a file. Read the reference material with find_files and read_file '
- 'first: the saved file cites exactly the reference files this Work read, with their versions. It only creates a new '
+ 'first: the saved file cites exactly the reference files this Work read, with their versions; a connected folder found '
+ 'by find_files is not a reference folder, so when no reference folder is connected call save_result first and it asks the '
+ 'owner for one (and for the result folder). It only creates a new '
  'file; it never changes, overwrites or deletes an original or an earlier result, and one Work saves one result. '
  'title becomes the file name; content is the full text to save.')
 DEFINITIONS=[
@@ -2656,16 +2658,22 @@ class Capabilities:
   except (OSError,ValueError):return []
   return [{'id':WORKSPACE_REFERENCE_PREFIX+ref['id'],'path':ref['path']} for ref in references
           if isinstance(ref,dict) and isinstance(ref.get('id'),str) and ref['id']]
- def saved_results(self):
+ def saved_results(self,path=None,deadline=None):
   """#182: the saved results the worker may read, newest first: ``[{path, content, title}]``.
 
   Fresh results in the file workspace's result folder (``FileWorkspace.current_results``; one whose
-  sources changed is not returned), then the answers the owner saved into a project.
+  sources changed is not returned), then the answers the owner saved into a project.  ``path``
+  checks only that one result; ``deadline`` bounds the freshness checks (#182 review).
   """
   workspace=FileWorkspace(self.store)
-  try:rows=[{'path':item['path'],'content':item['content'],'title':item['path']} for item in workspace.current_results()]
-  except (OSError,ValueError):rows=[]  # no usable result folder
-  rows+=[{'path':PROJECT_RESULT_PREFIX+item['id'],'content':item['content'] or '','title':item['title']} for item in workspace.project_results()]
+  rows=[]
+  if path is None or not path.startswith(PROJECT_RESULT_PREFIX):
+   try:rows=[{'path':item['path'],'content':item['content'],'title':item['path']}
+             for item in workspace.current_results(path=path,deadline=deadline)]
+   except (OSError,ValueError):rows=[]  # no usable result folder
+  if path is None or path.startswith(PROJECT_RESULT_PREFIX):
+   rows+=[{'path':PROJECT_RESULT_PREFIX+item['id'],'content':item['content'] or '','title':item['title']}
+          for item in workspace.project_results() if path is None or PROJECT_RESULT_PREFIX+item['id']==path]
   return rows
  def resolve_file(self,root_id,path):
   # Search/list operations may inspect many files under a root. Revalidate only
@@ -2708,7 +2716,7 @@ class Capabilities:
           'read_only':True}
  def _read_saved_result(self,path):
   """#182: one saved result by the path ``find_files`` returned (a result file name or ``project/<id>``)."""
-  item=next((row for row in self.saved_results() if row['path']==path),None)
+  item=next((row for row in self.saved_results(path=path) if row['path']==path),None) if isinstance(path,str) else None
   if item is None:raise ValueError('저장된 결과를 찾지 못했습니다. find_files로 다시 찾아 주세요.')
   content=item['content'][:24000]
   return {'root_id':SAVED_RESULTS_ROOT,'path':path,'kind':'saved-result','title':item['title'],'content':content,'locations':[],
@@ -2720,12 +2728,15 @@ class Capabilities:
   # `requires` names the declared local authority; it grants nothing.
   # #182: the file workspace's reference folders and saved results are searched too.
   roots=self.roots()+self.workspace_references()
-  saved=self.saved_results() if self.document_access else []
-  if not roots and not saved:return {'files':[],'needs_setup':True,'requires':'local-folder-read','message':'연결 설정에서 접근할 폴더를 먼저 연결해 주세요.'}
+  workspace=FileWorkspace(self.store)
+  if not roots and not workspace.has_results():
+   return {'files':[],'needs_setup':True,'requires':'local-folder-read','message':'연결 설정에서 접근할 폴더를 먼저 연결해 주세요.'}
   if not self.document_access:raise ValueError('연결 문서 검색 결과를 외부 AI에 전달하려면 설정에서 문서 공유를 승인하세요.')
   if not query.strip() or len(query)>200:raise ValueError('검색어는 1~200자로 입력하세요.')
   terms=[query.casefold()]+[t.casefold() for t in re.findall(r'[\w-]+',query) if len(t)>=3]
   hits=[];visited=0;deadline=time.monotonic()+5
+  # One deadline bounds the saved-result checks and the folder scan together.
+  saved=self.saved_results(deadline=deadline)
   # Saved results first: they are few, and a request naming one should find it before a folder scan runs out.
   for item in saved:
    if any(t in (item['title']+' '+item['content']).casefold() for t in terms):
@@ -2768,6 +2779,9 @@ class Capabilities:
   if not self.workspace_reads:
    raise ValueError('저장할 결과의 원본을 먼저 find_files와 read_file로 참고 폴더에서 읽어 주세요.')
   saved=workspace.save(self.job_id,title.strip(),content,list(self.workspace_reads.values()))
+  # #182 review: like save_note, the text this Work wrote to a private store stays in its private-write
+  # set, so a later outbound lookup or browser step carrying it is attributed (``held_values``).
+  self.written_private.append(content);self.written_labels.add('connected-document');self.private_provenance.add('connected-document')
   # ``cited``, not ``sources``: the loop lists a result's ``sources`` as looked-up sources of the answer.
   return {'saved':True,'id':saved['id'],'path':saved['path'],'title':title.strip(),
           'cited':[source['path'] for source in json.loads(saved['sources'])] if isinstance(saved.get('sources'),str) else []}
@@ -3283,7 +3297,7 @@ class Capabilities:
    # #182: the file workspace's reference folders are listed read-only, and its saved results as one root.
    roots=([{'id':r['id'],'name':Path(r['path']).name} for r in self.roots()]
           +[{'id':r['id'],'name':Path(r['path']).name,'read_only':True} for r in self.workspace_references()]
-          +([{'id':SAVED_RESULTS_ROOT,'name':'saved results','read_only':True}] if self.saved_results() else []))
+          +([{'id':SAVED_RESULTS_ROOT,'name':'saved results','read_only':True}] if FileWorkspace(self.store).has_results() else []))
    return self._from_private('owner-folder-names',{'roots':roots}) if roots else {'roots':roots}
   # Provenance is taken here, on success, rather than left to `run_agent`'s
   # `capabilities.evidence.append`.  `AgentOSMcpTools`/`ReadOnlyAgentOSMcpTools`

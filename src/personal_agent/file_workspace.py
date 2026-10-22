@@ -243,18 +243,23 @@ class FileWorkspace:
         try:return bool(sources) and all((current:=self.read(source['reference_id'],source['path']))['version']==source['version'] and current['source_id']==source['source_id'] for source in sources)
         except (KeyError,ValueError,OSError,UnicodeError): return False
 
-    def current_results(self, needle=None, latest=False):
+    def current_results(self, needle=None, latest=False, path=None, deadline=None):
         """Fresh saved results, newest first: each one's sources still match the originals.
 
         A result whose workspace changed is marked ``detached``, one whose
         sources changed ``stale``; neither is returned.  ``needle`` (casefolded)
-        keeps only results whose name or content contains it.
+        keeps only results whose name or content contains it; ``path`` checks
+        only the one result of that name.  ``deadline`` (``time.monotonic``)
+        stops checking once passed, so one call stays bounded (#182 review).
         """
         self.recover()
         with self.store.db() as db:
-            self._ensure_results_table(db); records=[dict(row) for row in db.execute('SELECT * FROM file_workspace_results ORDER BY created DESC LIMIT 100')]
+            self._ensure_results_table(db)
+            records=[dict(row) for row in (db.execute('SELECT * FROM file_workspace_results WHERE path=?',(path,)) if path is not None
+                                           else db.execute('SELECT * FROM file_workspace_results ORDER BY created DESC LIMIT 100'))]
         results=[]
         for record in records:
+            if deadline is not None and time.monotonic()>deadline: break
             if record.get('workspace_id')!=self._workspace_id():
                 with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
                 continue
@@ -271,6 +276,14 @@ class FileWorkspace:
         latest=isinstance(query,str) and query.strip() in ('*','__latest__')
         if not latest and (not isinstance(query,str) or not 2<=len(query.strip())<=160): raise ValueError('두 글자 이상의 결과 검색어를 입력하세요.')
         return self.current_results(query.casefold().strip(),latest)
+
+    def has_results(self):
+        """Whether any saved result record exists, checking no file (``list_roots``)."""
+        with self.store.db() as db:
+            self._ensure_results_table(db)
+            if db.execute("SELECT 1 FROM file_workspace_results WHERE state='current' LIMIT 1").fetchone(): return True
+            tables={row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            return 'workspace_results' in tables and bool(db.execute('SELECT 1 FROM workspace_results LIMIT 1').fetchone())
 
     def project_results(self):
         """Answers the owner saved into a project (the older ``workspace_results``), newest first.
