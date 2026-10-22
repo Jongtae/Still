@@ -13,12 +13,12 @@ Contributors own their AI accounts and costs. AI capability/availability profile
 
 ## Decision rights
 - Everyone may propose, question, implement and comment under the project code of conduct.
-- Reviewers may recommend changes, approval or rejection with cited findings. The author's own AI reviews do not satisfy an independent-review requirement.
+- Reviewers may recommend changes, approval or rejection with cited findings. The author's own AI reviews are self-review, not independent review. A Constitution-triggered escalated review is the Codex review of the exact final head (#195), recorded as a Codex review; the owner then merges.
 - An authorized maintainer decides merge only after applicable current-head checks and findings are resolved or explicitly accepted under policy. AI majority votes or persuasive prose are insufficient.
 - Material constitutional/owner-authority changes require the existing dedicated owner governance decision; security/authority escalations follow the Development Constitution.
 - Only an authorized release maintainer may approve stable release publication; merging `main` never publishes a release automatically.
 
 ## Disagreement and conflicts
-Record the competing claims, affected contract, reproducer/evidence, residual risk and explicit decision. One substantive response and one focused re-review is the normal bounded loop; unresolved policy questions escalate to a human maintainer instead of endless AI debate. An author or material co-author cannot supply independent review of the same PR, regardless of using different AI models. Disclose relevant authorship or conflicts. A reviewer may be a contributor elsewhere in the project.
+Record the competing claims, affected contract, reproducer/evidence, residual risk and explicit decision. One substantive response and one focused re-review is the normal bounded loop; unresolved policy questions escalate to a human maintainer instead of endless AI debate. An author or material co-author cannot supply independent review of the same PR, regardless of using different AI models; that is why the escalated review is recorded as a Codex review. Disclose relevant authorship or conflicts. A reviewer may be a contributor elsewhere in the project.
 
 See [AI review protocol](docs/governance/ai-contribution-review.en.md), [release policy](docs/governance/release-policy.en.md), [CONTRIBUTING.md](.github/CONTRIBUTING.md), and [Development Constitution](docs/development-constitution.en.md). GitHub native reviews, permissions, CI and branch rules are authoritative for enforcement; documentation alone does not configure protection.

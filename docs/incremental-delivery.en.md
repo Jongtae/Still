@@ -48,9 +48,11 @@ to mirror GitHub. Keep a checkpoint parent open when remaining criteria or expli
    Exit zero means a diagnostic was produced, NOT a passing CI gate or approval.
    It does not evaluate code, enumerate every protection rule, resolve conversations,
    poll, merge, or mutate repository settings. Unknown and skipped results need inspection.
-3. Fix actual failures/conflicts. Request an independent review once for a stable head and
+3. Fix actual failures/conflicts. Request an escalated review once for a stable head and
    scope only when the Development Constitution's material security/authority escalation
    criteria apply; otherwise proceed with required CI and evidence without a review gate.
+   The escalated review is the automatic Codex review of that exact head; fix or answer
+   every finding and record it as a Codex review.
    Resolve only addressed or explicitly triaged threads with evidence. Never impersonate
    another reviewer or treat self-review as independence.
 4. When any risk-triggered review and GitHub requirements are satisfied, attempt one normal

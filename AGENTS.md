@@ -74,7 +74,7 @@ Follow [Owner Control Contract](docs/owner-control-contract.en.md) and [Default 
 - A public read, cart/hold mutation, identity entry, reservation, send and payment are different effects. Default research does not authorize checkout/cart actions. Parameter or authority changes invalidate non-covering approval.
 - Private-document transmission/search guards were removed for the pilot by owner decision on 2026-09-28 (#826) and replaced by each Work's information-use audit. Folder grants and owner scope still bound every read. Review precise data/egress semantics before widening any other boundary; utility is not authority to remove a safety boundary.
 - Local install is not local-only processing. Remote connectors do not place remote services under local control. Disconnect, revoke, remove and forget/delete have different scopes.
-- Independent review is a risk-based escalation mechanism, not a default product-change gate. Require it when a change materially alters owner authority, security/privacy boundaries, consequential-action approval semantics, sandbox/isolation, private-data egress, package/supply-chain trust, canonical owner-state ownership, or weakens a declared safety invariant. Routine product-facing changes use the normal acceptance/evidence audit and required CI. Existing historical areas need re-audit only when a concrete dependency or contradiction requires it.
+- Escalated review is a risk-based escalation mechanism, not a default product-change gate. Require it when a change materially alters owner authority, security/privacy boundaries, consequential-action approval semantics, sandbox/isolation, private-data egress, package/supply-chain trust, canonical owner-state ownership, or weakens a declared safety invariant. Routine product-facing changes use the normal acceptance/evidence audit and required CI. Existing historical areas need re-audit only when a concrete dependency or contradiction requires it.
 
 ## Development constitution
 
@@ -91,7 +91,7 @@ The repository adapts useful ideas from spec-driven development and explicit aut
 - **Tasks**: create bounded issue-linked work units and dependencies.
 - **Implement**: modify only the explicitly activated bounded goal.
 - **Verify**: map acceptance criteria to current positive and negative evidence.
-- **Converge**: reconcile code, docs, trackers, findings and current GitHub state before closeout; add independent review only when the risk-based escalation criteria below apply.
+- **Converge**: reconcile code, docs, trackers, findings and current GitHub state before closeout; add escalated review only when the risk-based escalation criteria below apply.
 
 This process borrows the Constitution/Specify/Plan/Tasks/Implement/Converge discipline associated with GitHub Spec Kit, relevant standards/context injection ideas associated with BuilderMethods Agent OS, and explicit role/state/authority/receipt patterns seen in Open Still-style governance. Those are development patterns only. Ruflo remains a possible product Runtime Adapter, not the repository governance system or Still kernel.
 
@@ -171,7 +171,7 @@ The repository-level invariants contributors need before editing are:
 - use one worktree per concurrent session; never mutate the owner's main working copy from a session worktree;
 - GitHub Issues/PRs/Checks own execution status; root `delivery-plan.yaml` owns current goal selection/order/scope/dependencies/authority;
 - do not mirror GitHub status into roadmap/ledger/planning files unless their own plan/decision/evidence meaning changes;
-- required CI/exact-head validation always applies; independent review applies only for the Constitution's material security/authority escalation boundaries;
+- required CI/exact-head validation always applies; escalated review applies only for the Constitution's material security/authority escalation boundaries;
 - English internal development documents are canonical; public README locale parity remains required;
 - after merge, remove only your own worktree/branch and leave other sessions' worktrees alone.
 
@@ -204,7 +204,7 @@ Use the dedicated issue templates when available.
 
 The detailed lifecycle, delegation, terminal-state discipline, requirement-to-evidence audit and stable-head verification budget are canonical in the [Goal Execution Contract](docs/goal-execution-contract.en.md). Merge/integration waiting and handoff receipts are canonical in [Incremental Delivery](docs/incremental-delivery.en.md).
 
-An owner may delegate only an explicitly activated goal-ready unit/program. No substep completion selects an unlisted successor or widens authority. Independent review is risk-triggered by material security/authority boundary changes, not by ordinary completion. Required CI, exact-head validation and truthful evidence remain mandatory; do not weaken gates to save time.
+An owner may delegate only an explicitly activated goal-ready unit/program. No substep completion selects an unlisted successor or widens authority. Escalated review is risk-triggered by material security/authority boundary changes, not by ordinary completion. Required CI, exact-head validation and truthful evidence remain mandatory; do not weaken gates to save time.
 
 ## Truthfulness and safety
 
@@ -222,7 +222,7 @@ The canonical process is [development governance](docs/development-governance.en
 
 ## Pull request closeout
 
-Use the structured PR closeout required by [Development Governance](docs/development-governance.en.md) and the handoff receipt in [Incremental Delivery](docs/incremental-delivery.en.md). Every PR states what changed, why, validation evidence, known limitations, data/security impact and the Issue it closes. Package/runtime/distribution changes additionally state authority/egress, provenance/revision and rollback impact. Squash merge only after required validation and any genuinely triggered independent review.
+Use the structured PR closeout required by [Development Governance](docs/development-governance.en.md) and the handoff receipt in [Incremental Delivery](docs/incremental-delivery.en.md). Every PR states what changed, why, validation evidence, known limitations, data/security impact and the Issue it closes. Package/runtime/distribution changes additionally state authority/egress, provenance/revision and rollback impact. Squash merge only after required validation and any genuinely triggered escalated review.
 
 ## Cross-role product semantics and Presence (2026-10-10)
 
@@ -230,4 +230,4 @@ Read [Professional Roles and Communication Contract](docs/professional-roles-and
 
 ## Human + AI contributors, review and releases (GOV-CONTRIB-01 / #1267)
 
-Contributors may use any AI or none; one person may operate several AI roles on different issues/PRs. The human contributor remains accountable. Read [CONTRIBUTING.md](.github/CONTRIBUTING.md), [GOVERNANCE.md](GOVERNANCE.md), and [AI contribution and review](docs/governance/ai-contribution-review.en.md) for role assignments, handoffs, evidence-grounded findings, independence and merge decision briefs. Different AI models reviewing the same author's PR count as **self-review**, not independent review. AI roles never grant GitHub merge/release permissions. [Release policy](docs/governance/release-policy.en.md) separates merge from stable publication; [release procedure](docs/release.en.md) retains exact tag/Homebrew mechanics. Optional AI resource profiles are coordination aids, not admission requirements. This documentation does not select a goal, change delivery-plan, relax C15/C16, or authorize publishing.
+Contributors may use any AI or none; one person may operate several AI roles on different issues/PRs. The human contributor remains accountable. Read [CONTRIBUTING.md](.github/CONTRIBUTING.md), [GOVERNANCE.md](GOVERNANCE.md), and [AI contribution and review](docs/governance/ai-contribution-review.en.md) for role assignments, handoffs, evidence-grounded findings, independence and merge decision briefs. Different AI models reviewing the same author's PR count as **self-review**, not independent review. A Constitution-triggered escalated review is the Codex review of the exact final head (owner direction 2026-10-22, #195) and is recorded as a Codex review, never as independent review. AI roles never grant GitHub merge/release permissions; the owner merges a PR whose escalated review was triggered. [Release policy](docs/governance/release-policy.en.md) separates merge from stable publication; [release procedure](docs/release.en.md) retains exact tag/Homebrew mechanics. Optional AI resource profiles are coordination aids, not admission requirements. This documentation does not select a goal, change delivery-plan, relax C15/C16, or authorize publishing.

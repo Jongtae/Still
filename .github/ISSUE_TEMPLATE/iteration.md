@@ -51,9 +51,9 @@ Required when this issue proposes a new design, contract, architecture element, 
 
 Map each acceptance criterion to automated fixtures/checks, any risk-triggered review artifacts, required CI, and the merged PR/closeout evidence. A closed issue or local test alone is insufficient.
 
-## Delegation and independent review
+## Delegation and escalated review
 
-Record exclusive files and requested/accepted/observed model and reasoning settings when delegation is used. Then state whether the work materially changes a security/authority boundary under the Development Constitution. If yes, name the trigger and independent-review plan. Final closeout or ordinary recovery alone is not a review trigger.
+Record exclusive files and requested/accepted/observed model and reasoning settings when delegation is used. Then state whether the work materially changes a security/authority boundary under the Development Constitution. If yes, name the trigger and escalated-review plan. Final closeout or ordinary recovery alone is not a review trigger.
 
 ## Blocked / restart rule
 
