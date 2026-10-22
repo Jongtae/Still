@@ -72,7 +72,7 @@ The goal lifecycle preserves required evidence while avoiding validation churn t
 3. When the work is review-ready, push a stable head and run the declared complete validation set required by the source plan.
 4. If the work meets the material security/authority escalation criteria above, request escalated review only on that stable head. Otherwise continue without an escalated-review gate.
 5. If review occurred, collect all known compatible findings from the review pass and remediate them together. Use focused tests while fixing them.
-6. If review findings require remediation, keep using focused tests while fixing them, then run the required exact-head validation on the consolidated final remediation head. Re-review only when the remediation changes the boundary that triggered review or introduces another review-triggering boundary change; mechanical or non-boundary remediation does not automatically reopen escalated review.
+6. If review findings require remediation, keep using focused tests while fixing them, then run the required exact-head validation on the consolidated final remediation head. Re-review only when the remediation changes the boundary that triggered review or introduces another review-triggering boundary change; mechanical or non-boundary remediation does not automatically reopen escalated review. That boundary rule applies to an additional human or specialist review; the Codex review itself is re-run on the consolidated final remediation head (Constitution *Escalated review*, step 2).
 
 ### Soft verification budget
 

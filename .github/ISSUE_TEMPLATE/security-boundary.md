@@ -77,9 +77,9 @@ List deterministic attacks/violations that must fail closed and the observable e
 
 ## Non-goals
 
-## Evidence / independent review
+## Evidence / escalated review
 
-Required static/schema/fixture/local/live evidence classes and claims explicitly not proven by this work. State whether the implementation materially changes a security/authority boundary under the Development Constitution; when it does, record the independent reviewer role and reviewed head:
+Required static/schema/fixture/local/live evidence classes and claims explicitly not proven by this work. State whether the implementation materially changes a security/authority boundary under the Development Constitution; when it does, record the Codex review of the exact final head (Constitution *Escalated review*) and the negative tests that hold the boundary:
 
 ## Branch
 

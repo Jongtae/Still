@@ -142,13 +142,13 @@ A work item does not require escalated review merely because it is final closeou
 Owner direction 2026-10-22 (#195): Still has one maintainer, who is the accountable author of every change, so a human non-author reviewer does not exist. The escalated review is therefore the **Codex review**:
 
 1. The PR records the boundary that triggered the review, its authority/threat model (data, Grants, destinations, abuse and failure paths) and the negative tests that hold it.
-2. The automatic Codex review (`chatgpt-codex-connector`) reviews the exact final head. Every finding is fixed or answered on its thread with a reason. A remediation push is re-reviewed by Codex under the re-review rule below.
+2. The automatic Codex review (`chatgpt-codex-connector`) reviews the exact final head. Every finding is fixed or answered on its thread with a reason. Every push after the Codex review is reviewed by Codex again, so the review always covers the exact final head.
 3. Required `validate` and `full-validate` pass on that same head, including the negative tests.
 4. The owner then merges the PR. An AI session never merges a PR whose escalated review was triggered.
 
 Records call this a **Codex review**, never an independent review: a different AI model reviewing the author's change is still not independence. When another person contributes, the owner reviews that person's PR as a non-author; a human non-author review is welcome whenever one is available, and is recorded as such. A review owed under the earlier human non-author rule is resolved by the Codex review of that PR's final head, recorded as a Codex review.
 
-When an escalated review was required, a later remediation commit requires re-review only if that remediation changes the boundary that triggered the review or introduces another review-triggering boundary change. Required CI, exact-head validation, acceptance-to-evidence audit and truthful evidence remain mandatory regardless of review escalation.
+Codex re-reviews every remediation head (step 2). Any additional human or specialist review is repeated after a later remediation commit only if that remediation changes the boundary that triggered the review or introduces another review-triggering boundary change. Required CI, exact-head validation, acceptance-to-evidence audit and truthful evidence remain mandatory regardless of review escalation.
 
 ## AgentPackage-specific review checklist
 
