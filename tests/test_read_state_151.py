@@ -41,7 +41,7 @@ class ReadState(unittest.TestCase):
                                 ('mail_read', read('m2', characters=0))])
         self.assertIn('opened but returned only in part (truncated): m1', text)
         self.assertIn('opened but returned no readable text: m2', text)
-        self.assertIn('listing cut short, more items matched than were listed: mail_search', text)
+        self.assertIn('search stopped before it had checked or listed everything, so more items may exist: mail_search', text)
         self.assertNotIn('never opened', text)
 
     def test_every_listed_item_read_through_is_said_plainly(self):
@@ -63,7 +63,7 @@ class ReadState(unittest.TestCase):
         reads = [('read_file', {'root_id': 'r', 'path': f'{n}.txt', 'characters': 10, 'truncated': False}) for n in range(12)]
         text = read_state_text([('find_files', listing), *reads])
         self.assertIn('listed but never opened: 3 of 15 listed', text, 'the listing\'s digests name the other three')
-        self.assertIn('listing cut short, more items matched than were listed: find_files', text)
+        self.assertIn('search stopped before it had checked or listed everything, so more items may exist: find_files', text)
         self.assertNotIn('read through (', text)
         self.assertNotIn('3.txt', json.dumps(listing['item_digests']), 'digests, not paths, are kept')
         undigested = {key: value for key, value in listing.items() if key != 'item_digests'}
@@ -86,7 +86,7 @@ class ReadState(unittest.TestCase):
     def test_a_search_that_stopped_before_any_match_is_still_cut_short(self):
         listing = evidence_summary('find_files', {'files': [], 'truncated': True})
         text = read_state_text([('find_files', listing)])
-        self.assertIn('listing cut short, more items matched than were listed: find_files', text)
+        self.assertIn('search stopped before it had checked or listed everything, so more items may exist: find_files', text)
         self.assertEqual(read_state_text([('find_files', evidence_summary('find_files', {'files': [], 'truncated': False}))]), '')
 
     def test_the_direct_route_read_state_takes_its_own_room(self):
@@ -104,6 +104,19 @@ class ReadState(unittest.TestCase):
         goal_judgment(judgments, 'q', {'evidence_refs': ['r1'], 'summary': 'a'}, big, '')
         self.assertEqual(len(seen['observed']), len(without['observed']), 'the observations get what the fact leaves; the total bound is unchanged')
 
+    def test_a_complete_reread_clears_an_earlier_partial_or_empty_read(self):
+        text = read_state_text([('mail_search', LISTED), ('mail_read', read('m1', truncated=True)), ('mail_read', read('m1')),
+                                ('mail_read', read('m2', characters=0)), ('mail_read', read('m2'))])
+        self.assertTrue(text.endswith('every listed item was opened and read through (2 opened)'), text)
+        later = read_state_text([('mail_search', LISTED), ('mail_read', read('m1')), ('mail_read', read('m1', truncated=True)),
+                                 ('mail_read', read('m2'))])
+        self.assertNotIn('only in part', later, 'the best read of an item counts')
+
+    def test_a_capped_drive_search_is_reported(self):
+        listing = evidence_summary('drive_search', {'files': [{'file_id': 'f1', 'name': 'a'}], 'truncated': True})
+        text = read_state_text([('drive_search', listing), ('drive_read', {'file_id': 'f1', 'characters': 5, 'truncated': False})])
+        self.assertIn('search stopped before it had checked or listed everything', text)
+
     def test_long_identities_are_compared_whole(self):
         long = 'd/' + 'x' * 300
         files = {'file_count': 2, 'files': [{'root_id': 'r', 'path': long + 'a'}, {'root_id': 'r', 'path': long + 'b'}]}
@@ -116,7 +129,7 @@ class ReadState(unittest.TestCase):
                  ('mail_read', 'mail_read', 'incomplete', {'message_id': 'm1', 'content': 'he', 'truncated': True}, None)]
         text = steps_read_state(steps)
         self.assertIn('opened but returned only in part (truncated): m1', text)
-        self.assertIn('listing cut short, more items matched than were listed: mail_search', text)
+        self.assertIn('search stopped before it had checked or listed everything, so more items may exist: mail_search', text)
 
     def test_the_direct_route_reads_the_same_fact_from_its_steps(self):
         steps = [('mail_search', 'mail_search', 'succeeded', {'messages': [{'message_id': 'm1'}, {'message_id': 'm2'}]}, None),

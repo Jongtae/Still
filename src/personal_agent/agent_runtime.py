@@ -2317,7 +2317,7 @@ def read_state_text(calls, limit=READ_STATE_CHARS):
  while material stayed unread does not serve the message); the reply's wording never decides it,
  and nothing here names a request, service or value.
  """
- listed,opened,partial,empty,cut=[],[],[],[],[];unnamed=0;hidden=set()
+ listed,opened,cut=[],[],[];unnamed=0;hidden=set();best={}
  for tool,evidence in calls or ():
   if not isinstance(evidence,dict):continue
   items=[*(evidence.get('message_ids') or ()),*(evidence.get('files') or ())]
@@ -2337,8 +2337,10 @@ def read_state_text(calls, limit=READ_STATE_CHARS):
   ref=_item_ref(evidence) if 'characters' in evidence else ''
   if not ref:continue
   if ref not in opened:opened.append(ref)
-  if not evidence.get('characters'):empty.append(ref)
-  elif evidence.get('truncated') or evidence.get('text_truncated'):partial.append(ref)
+  # Codex review: each item keeps its best read, so a complete reread clears an earlier partial one.
+  rank=0 if not evidence.get('characters') else 1 if (evidence.get('truncated') or evidence.get('text_truncated')) else 2
+  best[ref]=max(best.get(ref,0),rank)
+ partial=[ref for ref in opened if best[ref]==1];empty=[ref for ref in opened if best[ref]==0]
  if not (listed or opened or cut):return ''
  unopened=[ref for ref in listed if ref not in opened]
  # Listed items the record names only by digest: a read settles one only when it is that very item
@@ -2355,7 +2357,7 @@ def read_state_text(calls, limit=READ_STATE_CHARS):
  if unnamed:parts.append(f'listed without an id in the record, so not known to be opened: {unnamed} of {total} listed')
  if partial:parts.append(f'opened but returned only in part (truncated): {ids(partial)}')
  if empty:parts.append(f'opened but returned no readable text: {ids(empty)}')
- if cut:parts.append(f'listing cut short, more items matched than were listed: {", ".join(cut)}')
+ if cut:parts.append(f'search stopped before it had checked or listed everything, so more items may exist: {", ".join(cut)}')
  if not parts:parts.append(f'every listed item was opened and read through ({len(opened)} opened)' if listed
                            else f'every opened item was read through ({len(opened)} opened)')
  return ('read_state (Still\'s record of which items this attempt opened and read through): '+'; '.join(parts))[:limit]
@@ -3902,7 +3904,7 @@ def _evidence_detail(name,result):
  if name=='drive_search':
   return {**_read_fields(result),'file_count':len(result.get('files',[])),'files':[{'file_id':str(f.get('file_id') or '')[:200],'name':str(f.get('name') or '')[:120]} for f in result.get('files',[])[:12] if isinstance(f,dict)],
           'item_digests':listed_digests({'file_id':str(f.get('file_id') or '')[:200]} for f in result.get('files',[]) if isinstance(f,dict)),
-          'needs_setup':bool(result.get('needs_setup'))}
+          'truncated':bool(result.get('truncated')),'needs_setup':bool(result.get('needs_setup'))}
  if name=='drive_read':
   return {'file_id':str(result.get('file_id') or '')[:200],'name':str(result.get('name') or '')[:120],'kind':result.get('kind'),
           'characters':len(result.get('content','')),'truncated':bool(result.get('truncated')),'needs_setup':bool(result.get('needs_setup'))}
