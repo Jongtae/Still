@@ -538,8 +538,13 @@ class QuickStore:
     def _save_memory(self, db, memory_key, content, owner_key, work_key=None, candidate_id=None,
                      preserve_correction_token=None, corrected=False, invalidates=(), valid_until=None):
         memory_id=str(uuid.uuid4());digest=self.memory_digest(memory_key,content)
+        # ``valid_until`` None keeps the replaced row's last day; '' says the fact has none.
+        keep_last_day=valid_until is None
         invalidates,valid_until=self.memory_end_terms(invalidates,valid_until)
-        previous=db.execute("SELECT id FROM memories WHERE owner_key=? AND memory_key=? AND state='current' ORDER BY created DESC LIMIT 1",(owner_key,memory_key)).fetchone()
+        previous=db.execute("SELECT id,valid_until FROM memories WHERE owner_key=? AND memory_key=? AND state='current' ORDER BY created DESC LIMIT 1",(owner_key,memory_key)).fetchone()
+        if valid_until is None and keep_last_day and previous:
+            # #220 (Codex review): a same-key save that says nothing about the last day keeps it.
+            valid_until=previous['valid_until']
         ended=[]
         for ended_id,reason in invalidates:
             # #220: a save may end earlier current profile rows under any key, each named by id with a reason.

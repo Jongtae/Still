@@ -504,6 +504,29 @@ class Invalidate(Upkeep):
         with unittest.mock.patch.object(memory_service, '_PROFILE_ROWS_CAP', 3):
             self.assertEqual([entry['id'] for entry in memory.profile_snapshot(MEMORY_OWNER)['entries']], [holding['id']])
 
+    def test_a_same_key_save_keeps_the_last_day_unless_it_clears_it(self):
+        """Codex review on #226: a worker's correction without a last day keeps it; '' says there is none."""
+        self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')
+        self.assertEqual(self.saved('profile.schedule.cast', '왼팔 깁스 중')['valid_until'], '2099-01-02')
+        self.assertIsNone(self.saved('profile.schedule.cast', '왼팔 깁스 중', valid_until='')['valid_until'])
+
+    def test_an_ended_place_leaves_the_current_context_anchors(self):
+        from personal_agent.current_context import ContextObservations, CurrentContext, PROFILE_OWNER
+        self.saved('profile.place.home', '합정')
+        self.saved('profile.place.hotel', '제주 호텔', valid_until='2000-01-01')
+        context = CurrentContext(self.store, ContextObservations(self.store))
+        self.assertEqual([anchor['label'] for anchor in context.anchors()], ['합정'])
+        self.assertIsNone(context._place_anchor('profile.place.hotel'))
+        self.assertEqual(PROFILE_OWNER, MEMORY_OWNER)
+
+    def test_the_id_marked_snapshot_fits_the_upkeep_bound(self):
+        from personal_agent.memory_service import MemoryService
+        for index in range(324):
+            self.saved(f'profile.p.k{index:03d}', 'v')
+        memory = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        text = memory.profile_snapshot(MEMORY_OWNER, ids=True)['text']
+        self.assertLessEqual(len(text), om.PROFILE_CHARS)
+
     def test_a_settings_edit_keeps_the_last_day(self):
         from personal_agent.memory_service import MemoryService
         self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')

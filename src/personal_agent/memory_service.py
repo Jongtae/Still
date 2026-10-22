@@ -226,9 +226,8 @@ class MemoryService:
 
     def _today(self):
         """The owner's date, for ``valid_until`` (the last day a fact holds): in the owner's calendar zone (Codex review)."""
-        from zoneinfo import ZoneInfo
-        from .current_context import resolve_local_timezone
-        return datetime.fromtimestamp(float(self.now()), ZoneInfo(resolve_local_timezone(self.store))).date().isoformat()
+        from .current_context import owner_today
+        return owner_today(self.store, self.now())
 
     def holds(self, row, today=None):
         """Whether a current row still holds today (#220): no ``valid_until``, or not before today."""

@@ -72,7 +72,7 @@ import re
 import time
 from datetime import datetime, timezone
 
-from .memory_service import PROFILE_SECTION_CHARS
+from .memory_service import _PROFILE_ROWS_CAP, PROFILE_SECTION_CHARS, MemoryService
 from .owner_forget import OwnerForget
 from .prompt_files import prompt
 
@@ -142,7 +142,8 @@ MAX_KEY_CHARS = 160
 #: Bounds of the facts one judgment reads (the owner's request is never cut).
 ANSWER_CHARS = 1500
 #: #217: the whole profile the worker reads, so upkeep sees a fact before it proposes a new key.
-PROFILE_CHARS = PROFILE_SECTION_CHARS
+#: #220 (Codex review): plus room for the short id the upkeep's snapshot puts on each row (``[12345678] ``).
+PROFILE_CHARS = PROFILE_SECTION_CHARS + _PROFILE_ROWS_CAP * (MemoryService.SHORT_ID_CHARS + 3)
 #: What was already noted from the same request (the earlier bound of the profile fact).
 NOTED_CHARS = 1200
 CLOCK_CHARS = 300
@@ -803,7 +804,8 @@ class Upkeep:
                 memory = self.store.save_memory(key, content, MEMORY_OWNER, work_id=job['id'], notice=True,
                                                 invalidates=[(full, end['reason'])
                                                              for full, end in zip(ends, item['invalidates'])],
-                                                valid_until=item['valid_until'] or None)
+                                                # '' is the AI saying the fact has no last day.
+                                                valid_until=item['valid_until'])
             except ValueError:
                 dropped.append({'key_digest': key_digest(key), 'reason': 'store-refused'})
                 continue
