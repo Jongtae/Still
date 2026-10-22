@@ -3603,7 +3603,7 @@ class Capabilities:
   if name=='list_memory':
    # #918 review P1: stored rows pass the same secret filter as a search result before the model reads them.
    from .memory_service import MemoryService
-   holding=MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD).holding(self.store.memories())
+   holding=self.store.memories(holding_on=MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD)._today())
    # #220 (Codex review): facts past their last day are not listed to a model; Settings still shows them.
    result={'memories':self._redact_memory_rows(self.with_memory_sources(holding))}
    self.evidence.append({'tool':name,'result':result}); return result

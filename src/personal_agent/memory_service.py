@@ -148,10 +148,10 @@ class MemoryService:
             armed = True
         return PrivateMemoryRead(payload, egress_guard_armed=armed)
 
-    def remember(self, owner_id, work_id, memory_key, content):
+    def remember(self, owner_id, work_id, memory_key, content, valid_until=None):
         """Persist one fact only through this explicit owner operation."""
         owner_id, work_id = self._request(owner_id, work_id)
-        return self.store.save_memory(memory_key, content, owner_id=owner_id, work_id=work_id)
+        return self.store.save_memory(memory_key, content, owner_id=owner_id, work_id=work_id, valid_until=valid_until)
 
     # -- owner profile facts (SEC-PROFILE-01 #658) ---------------------------
     #
@@ -178,8 +178,14 @@ class MemoryService:
         return memory_key.strip()
 
     def remember_profile(self, owner_id, work_id, memory_key, content):
-        """Explicit owner write of one profile fact; the same key supersedes."""
-        return self.remember(owner_id, work_id, self.profile_key(memory_key), content)
+        """Explicit owner write of one profile fact; the same key supersedes.
+
+        #220 (Codex review): editing a fact's words keeps the last day the current row has.
+        """
+        key = self.profile_key(memory_key)
+        self._identity(owner_id, 'owner')
+        current = self.store.current_memory(key, owner_id) or {}
+        return self.remember(owner_id, work_id, key, content, valid_until=current.get('valid_until'))
 
     def _profile_rows(self, owner_id):
         """Every current ``profile.*`` row of this owner, ordered by key then value."""
@@ -196,7 +202,9 @@ class MemoryService:
     def profile_memories(self, owner_id):
         """The owner's current profile rows, ordered by key; a private read."""
         self._identity(owner_id, 'owner')
-        rows = self._profile_rows(owner_id)
+        today = self._today()
+        # #220: ``ended`` is decided here in the owner's zone, so Settings labels a fact as the models read it.
+        rows = [{**row, 'ended': not self.holds(row, today)} for row in self._profile_rows(owner_id)]
         return self._private_read('memory_service.profile_memories', {
             'state': 'current', 'memories': rows, 'memory_count': len(rows),
         }, len(rows))
@@ -271,15 +279,14 @@ class MemoryService:
                 content = content[:line_chars - 6] + ' [...]'
             until = f", until {row['valid_until']}" if row.get('valid_until') else ''
             line = f"{row['memory_key']}: {content} (saved {self._saved_date(row.get('created'))}{until})"
-            if ids:
-                line = f"[{str(row['id'])[:self.SHORT_ID_CHARS]}] {line}"
             size = len(line) + (1 if lines else 0)
             size_bytes = len(line.encode('utf-8')) + (1 if lines else 0)
             if used + size > limit_chars or used_bytes + size_bytes > limit_bytes:
                 break
             used += size
             used_bytes += size_bytes
-            lines.append(line)
+            # Codex review on #226: the id is added after the bounds, so the upkeep selects exactly the worker's rows.
+            lines.append(f"[{str(row['id'])[:self.SHORT_ID_CHARS]}] {line}" if ids else line)
             entries.append({'id': row['id'], 'memory_key': row['memory_key'], 'content': row['content'],
                             'created': row.get('created')})
         omitted = len(rows) - len(entries)
@@ -335,11 +342,12 @@ class MemoryService:
         # unicode61 indexes them as words; semantic alternatives are selected
         # by the worker and passed as additional words in the query.
         terms = list(dict.fromkeys(re.findall(r"[^\W_]+", query.casefold(), flags=re.UNICODE)))[:12]
-        searched = self.store.search_memories(owner_id, terms, limit=limit + 1, include_mode=True, key_prefix=key_prefix) if terms else {
+        searched = self.store.search_memories(owner_id, terms, limit=limit + 1, include_mode=True, key_prefix=key_prefix,
+                                              holding_on=self._today()) if terms else {
             'memories': [], 'search_mode': 'fts5' if getattr(self.store, 'memory_search_available', False) else 'bounded-like',
         }
-        # #220: a model reads search results, so facts past their last day are left out here too.
-        rows = self.holding(searched['memories'])
+        # #220: a model reads search results, so facts past their last day are left out (in the query, before the limit).
+        rows = searched['memories']
         page = rows[:limit]
         return self._private_read("memory_service.search_memories", {
             "state": "current", "memories": page, "query_terms": terms,

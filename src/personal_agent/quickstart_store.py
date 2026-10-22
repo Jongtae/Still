@@ -688,7 +688,7 @@ class QuickStore:
         with self.db() as db:
             return self._memory_row(db.execute(query,(memory_id,self._memory_binding(owner_id))).fetchone())
 
-    def memories(self, owner_id=None, limit=50, offset=0, key_prefix=None):
+    def memories(self, owner_id=None, limit=50, offset=0, key_prefix=None, holding_on=None):
         if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=101:raise ValueError('기억 조회 범위를 확인하세요.')
         if isinstance(offset,bool) or not isinstance(offset,int) or offset<0:raise ValueError('기억 조회 위치를 확인하세요.')
         where="state='current'";parameters=[]
@@ -699,6 +699,9 @@ class QuickStore:
             if not isinstance(key_prefix,str) or not key_prefix.strip():raise ValueError('기억 조회 범위를 확인하세요.')
             escaped=key_prefix.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
             where+=" AND memory_key LIKE ? ESCAPE '\\'";parameters.append(escaped+'%')
+        if holding_on is not None:
+            # #220: what a model may read leaves out rows past their last day, before the limit.
+            where+=' AND (valid_until IS NULL OR valid_until>=?)';parameters.append(str(holding_on))
         with self.db() as db:
             return [self._memory_row(r) for r in db.execute('SELECT * FROM memories WHERE '+where+' ORDER BY created DESC,id DESC LIMIT ? OFFSET ?',(*parameters,limit,offset))]
 
@@ -742,7 +745,7 @@ class QuickStore:
                                     'text':row['message'] or '','owner_typed':bool(row['owner_typed'])}
         return sources
 
-    def search_memories(self, owner_id, terms, *, limit=10, include_mode=False, key_prefix=None):
+    def search_memories(self, owner_id, terms, *, limit=10, include_mode=False, key_prefix=None, holding_on=None):
         """Search current owner Memory with a rebuildable FTS index or safe LIKE fallback.
 
         ``terms`` are already normalized literal tokens, never raw FTS syntax.
@@ -759,6 +762,9 @@ class QuickStore:
             escaped=key_prefix.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
             prefix_clause=" AND m.memory_key LIKE ? ESCAPE '\\'"
             prefix_parameters.append(escaped+'%')
+        if holding_on is not None:
+            # #220: rows past their last day are left out before the limit, so they cannot crowd out a holding match.
+            prefix_clause+=' AND (m.valid_until IS NULL OR m.valid_until>=?)';prefix_parameters.append(str(holding_on))
         owner_key=self._memory_binding(owner_id)
         terms=list(dict.fromkeys(terms))[:12]
         def result_rows(rows, mode):

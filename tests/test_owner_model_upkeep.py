@@ -463,6 +463,56 @@ class Invalidate(Upkeep):
         self.assertNotIn('제주', text)
         self.assertIn('깁스 중', text)
 
+    def test_a_new_last_day_for_the_same_words_is_a_lifecycle_update(self):
+        """Codex review on #226: an expiry for an existing fact is applied to that key's row, never copied."""
+        cast = self.saved('profile.schedule.cast', '깁스 중')
+        job = self.finished('깁스는 금요일까지야')
+        self.answers = [[proposal('profile.schedule.cast', '깁스 중', valid_until='2099-01-02'),
+                         proposal('profile.schedule.other', '깁스 중', valid_until='2099-01-02')]]
+        self.service.run_owner_model_upkeep()
+        [current] = [row for row in self.store.memories(MEMORY_OWNER) if row['content'] == '깁스 중']
+        self.assertEqual((current['memory_key'], current['valid_until'], current['supersedes']),
+                         ('profile.schedule.cast', '2099-01-02', cast['id']))
+        [(_status, detail)] = self.evidence(job)
+        self.assertEqual([item['reason'] for item in detail['dropped']], ['duplicate'])
+
+    def test_a_settings_edit_keeps_the_last_day(self):
+        from personal_agent.memory_service import MemoryService
+        self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')
+        memory = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        row = memory.remember_profile(MEMORY_OWNER, 'settings-profile', 'profile.schedule.cast', '왼팔 깁스 중')
+        self.assertEqual((row['content'], row['valid_until']), ('왼팔 깁스 중', '2099-01-02'))
+
+    def test_ids_do_not_change_which_rows_the_upkeep_sees(self):
+        from personal_agent.memory_service import MemoryService
+        for index in range(80):
+            self.saved(f'profile.preference.fact{index:02d}', '가' * 150)
+        memory = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        plain, marked = memory.profile_snapshot(MEMORY_OWNER), memory.profile_snapshot(MEMORY_OWNER, ids=True)
+        self.assertTrue(plain['truncated'])
+        self.assertEqual([entry['id'] for entry in plain['entries']], [entry['id'] for entry in marked['entries']])
+
+    def test_ended_rows_cannot_crowd_a_holding_match_out_of_search_or_list(self):
+        from personal_agent.memory_service import MemoryService
+        holding = self.saved('profile.note.old', 'needle 지금도 맞음')
+        for index in range(12):
+            self.saved(f'profile.note.n{index:02d}', f'needle 지난 일 {index}', valid_until='2000-01-01')
+        memory = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        self.assertEqual([row['id'] for row in memory.search_memories(MEMORY_OWNER, 'needle', limit=10)['memories']],
+                         [holding['id']])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER, limit=5, holding_on='2026-10-23')],
+                         [holding['id']])
+
+    def test_settings_marks_ended_in_the_owner_zone(self):
+        from datetime import datetime, timezone
+        from personal_agent.memory_service import MemoryService
+        self.store.put('calendar_timezone', 'Asia/Seoul')
+        now = datetime(2026, 10, 23, 16, 0, tzinfo=timezone.utc).timestamp()
+        self.saved('profile.schedule.trip', '제주 여행 중', valid_until='2026-10-23')
+        memory = MemoryService(self.store, now=lambda: now, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        [row] = memory.profile_memories(MEMORY_OWNER)['memories']
+        self.assertTrue(row['ended'])
+
     def test_an_id_that_names_no_current_profile_row_writes_nothing(self):
         notes = self.saved('profile.working.style', '짧게 답한다')
         gone = self.saved('profile.place.home', '분당')

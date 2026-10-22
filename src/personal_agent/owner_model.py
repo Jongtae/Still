@@ -419,8 +419,10 @@ def validate(proposals, known, pending, noted_keys=(), request=''):
             content = normalized(item['content'])
             if request_text and content == request_text:
                 reason = 'request'
-            elif (key in keys or key in noted_keys or content in contents or content in known
-                    or (key, content) in pending):
+            elif (key in keys or key in noted_keys or content in contents or (key, content) in pending
+                    or (content in known and not item.get('valid_until') and not item.get('invalidates'))):
+                # Codex review on #226: the same words with a new last day or ending other rows are a lifecycle
+                # update, not a duplicate.
                 reason = 'duplicate'
         if reason is not None:
             dropped.append({'key_digest': key_digest(key), 'reason': reason} if key else {'reason': reason})
@@ -431,7 +433,9 @@ def validate(proposals, known, pending, noted_keys=(), request=''):
                      'content': item['content'].strip(), 'supersedes_key': (item.get('supersedes_key') or '').strip(),
                      'invalidates': [{'id': end['id'].strip(), 'reason': ' '.join(end['reason'].split())}
                                      for end in item.get('invalidates') or ()],
-                     'valid_until': (item.get('valid_until') or '').strip()})
+                     'valid_until': (item.get('valid_until') or '').strip(),
+                     # Same words as a current value: kept only as a lifecycle update (see ``Upkeep.run``).
+                     'lifecycle': content in known})
     return kept, dropped
 
 
@@ -773,6 +777,12 @@ class Upkeep:
             row = {'memory_key': key, 'category': item['category'], 'kind': item['kind'],
                    'content_chars': len(content), 'supersedes_key': item['supersedes_key'] or None,
                    'valid_until': item['valid_until'] or None}
+            if item.get('lifecycle') and not item['invalidates']:
+                # A new last day for words already current applies to that key's own row, never a second copy.
+                same = self.store.current_memory(key, MEMORY_OWNER)
+                if not same or normalized(same['content']) != normalized(content):
+                    dropped.append({'key_digest': key_digest(key), 'reason': 'duplicate'})
+                    continue
             ends = self.current_rows_by_short_id(MEMORY_OWNER, [end['id'] for end in item['invalidates']])
             if ends is None:
                 # #220: an id that names no current profile row, or more than one, writes nothing.
