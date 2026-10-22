@@ -1472,8 +1472,8 @@ class QuickStore:
     def next_notification(self):
         return self.telegram.next_notification()
 
-    def update_notification(self, notification_id, state, message_id=None, fingerprint=None):
-        return self.telegram.update_notification(notification_id, state, message_id, fingerprint)
+    def update_notification(self, notification_id, state, message_id=None, fingerprint=None, delivered=False):
+        return self.telegram.update_notification(notification_id, state, message_id, fingerprint, delivered=delivered)
 
     def recover(self):
         with self.db() as db:

@@ -1308,7 +1308,13 @@ class BrowserSession:
         """``element``'s numbered row: its label and nearby text, already scrubbed and bounded."""
         return next((row for row in snapshot.get('_rows') or () if row.get('n') == element.get('n')), None) or {}
 
-    def _press_may_pay(self, binding, row, snapshot):
+    @staticmethod
+    def _press_facts(row, snapshot):
+        """What the payment judgment reads about a press: its label, nearby text and the page title, bounded."""
+        return (f"{row.get('role') or 'element'}: {row.get('name') or ''}"[:NAME_LIMIT],
+                str(row.get('_near') or '')[:NEAR_LIMIT], str(snapshot.get('title') or '')[:NAME_LIMIT])
+
+    def _press_may_pay(self, binding, facts):
         """Whether the Work's judgment says, confidently, that this press could commit a charge (#174).
 
         Asked for every press the payment floor did not flag, whatever effect
@@ -1321,6 +1327,8 @@ class BrowserSession:
         (``RoutedDecisionEngine``), so an engine that cannot answer costs no
         turn.  Only a confident yes is True: no, low confidence, an
         unavailable engine or an exhausted budget leave the floor's answer.
+        ``binding`` already covers ``facts`` (#188), so a changed price, nearby
+        text or title is judged again and needs its own approval.
         """
         ask = getattr(self.judgments, 'press_commits_payment', None)
         if not callable(ask):
@@ -1329,10 +1337,9 @@ class BrowserSession:
         if cache in self._press_judged:
             return self._press_judged[cache]
         self._press_judged[cache] = False
-        control = f"{row.get('role') or 'element'}: {row.get('name') or ''}"[:NAME_LIMIT]
-        near = str(row.get('_near') or '')[:NEAR_LIMIT]
+        control, near, title = facts
         try:
-            judged = ask(control, near, str(snapshot.get('title') or '')[:NAME_LIMIT], work_id=self.work_id)
+            judged = ask(control, near, title, work_id=self.work_id)
         except Exception:
             return False
         self._press_judged[cache] = getattr(judged, 'outcome', None) == 'yes'
@@ -1360,18 +1367,24 @@ class BrowserSession:
                 description = f"결제 신호 '{matched[:50]}' · " + description
             if context:
                 description += f' · {context[:80]}'
-        binding = step_binding(self.work_id, 'browser_click', snapshot['_page'], key, key, state)
-        self._note_refusal(self._destinations(snapshot, element))
         # #758: a control whose name commits a purchase needs approval whatever form it
         # is in (a stored payment method or a fetch charge leaves no card field to see).
         required = bool(element['submit_guarded'] or element['commit'] or effect == 'payment')
+        row = facts = None
+        if not required:
+            # #188 (Codex on #186's diff): every fact the payment judgment reads is bound too, so a
+            # judged answer and the owner's approval both cover exactly that label, text and title.
+            row = self._row(snapshot, element)
+            facts = self._press_facts(row, snapshot)
+            state += '\n\x1ejudged ' + '\n'.join(facts)
+        binding = step_binding(self.work_id, 'browser_click', snapshot['_page'], key, key, state)
+        self._note_refusal(self._destinations(snapshot, element))
         if not required:
             # #174: the floor above is fixed language; a press it did not flag is judged once, and
             # a confident yes only adds the owner's approval.  No or unavailable leaves it as it was.
             # #188: whatever effect the worker declared - a press it calls ``read`` or ``navigate``
             # is the same press, so the declared effect cannot skip the payment check.
-            row = self._row(snapshot, element)
-            if self._press_may_pay(binding, row, snapshot):
+            if self._press_may_pay(binding, facts):
                 required = True
                 name, near = str(row.get('name') or row.get('role') or ''), str(row.get('_near') or '')
                 description = f"결제 가능성 · '{name[:40]}' 버튼 누르기" + (f' · {near[:80]}' if near else '')

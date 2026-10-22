@@ -210,7 +210,12 @@ class TelegramStore:
             row=db.execute("SELECT * FROM telegram_notifications WHERE state='queued' ORDER BY created LIMIT 1").fetchone()
             return dict(row) if row else None
 
-    def update_notification(self, notification_id, state, message_id=None, fingerprint=None):
+    def update_notification(self, notification_id, state, message_id=None, fingerprint=None, delivered=False):
+        """``delivered``: this call records a completed Telegram send, so its time becomes ``sent_at`` (#188).
+
+        Every other call - a memory notice kept ``sent`` after a partial decision, withdrawal,
+        join or edit - leaves ``sent_at`` as the real delivery recorded it.
+        """
         store=self.store
         with store.db() as db:
             if fingerprint is not None:
@@ -220,7 +225,7 @@ class TelegramStore:
                 db.execute('UPDATE telegram_notifications SET state=? WHERE id=?',(state,notification_id))
             else:
                 db.execute('UPDATE telegram_notifications SET state=?,message_id=? WHERE id=?',(state,message_id,notification_id))
-            if state=='sent':
+            if delivered:
                 # #188: recorded once the send returned; an owner act dated before it never answers it.
                 db.execute('UPDATE telegram_notifications SET sent_at=? WHERE id=?',(time.time(),notification_id))
 

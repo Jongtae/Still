@@ -45,17 +45,26 @@ class PromptShownWhenSent(Base):
         self.prompt = self.store.notification_of(self.job_id, 'browser_approval_needed')
 
     def sent(self, at):
-        self.store.update_notification(self.prompt['id'], 'sent', message_id=77)
+        self.store.update_notification(self.prompt['id'], 'sent', message_id=77, delivered=True)
         with self.store.db() as db:
             db.execute('UPDATE telegram_notifications SET sent_at=? WHERE id=?', (at, self.prompt['id']))
 
-    def test_a_send_records_when_it_completed_and_a_rebind_clears_it(self):
+    def test_the_real_send_records_when_it_completed_and_a_rebind_clears_it(self):
         before = time.time()
-        self.store.update_notification(self.prompt['id'], 'sent', message_id=77)
-        sent_at = self.store.notification(self.prompt['id'])['sent_at']
-        self.assertGreaterEqual(sent_at, before)
+        with mock.patch.object(self.service.telegram, 'send_message', return_value={'message_id': 77}):
+            self.assertTrue(self.service.deliver_notification())
+        row = self.store.notification(self.prompt['id'])
+        self.assertEqual((row['state'], row['message_id']), ('sent', 77))
+        self.assertGreaterEqual(row['sent_at'], before)
         self.store.telegram.rebind_notification(self.job_id, 'browser_approval_needed', 'another-digest')
         self.assertIsNone(self.store.notification(self.prompt['id'])['sent_at'])
+
+    def test_a_later_update_that_sends_nothing_keeps_the_delivery_time(self):
+        """Codex on #200: a notice kept ``sent`` after a partial decision, withdrawal or edit sent nothing new."""
+        self.sent(self.requested + 30)
+        self.store.update_notification(self.prompt['id'], 'sent', fingerprint='{"items": []}')
+        self.store.update_notification(self.prompt['id'], 'sent', message_id=77)
+        self.assertEqual(self.store.notification(self.prompt['id'])['sent_at'], self.requested + 30)
 
     def test_a_message_dated_after_the_request_but_before_the_send_never_answers_it(self):
         self.sent(self.requested + 30)

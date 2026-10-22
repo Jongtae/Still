@@ -15,7 +15,7 @@ from personal_agent.decision import (OUTCOME_DECIDED, BinaryDecision, DecisionCo
                                      RoutedDecisionEngine, UnavailableDecisionEngine, fixture_confidence)
 from personal_agent.quickstart_store import QuickStore
 
-from test_browser_session import ORIGIN, Approvals, FakeDriver, session
+from test_browser_session import ORIGIN, PAGES, Approvals, FakeDriver, session
 
 #: One-press labels the fixed floor does not name (#174 audit F5).
 MISSED = ('예약하기', 'Book now', 'Reserve', 'Comprar', 'Zahlungspflichtig bestellen')
@@ -33,6 +33,18 @@ class ScriptedJudgments:
         if self.raises:
             raise RuntimeError('engine down')
         return types.SimpleNamespace(outcome=self.outcome)
+
+
+class NearDriver(FakeDriver):
+    """The fixture driver, with the page's ``near`` text reported for each control as the page script does."""
+
+    near = '129,000원'
+
+    def snapshot(self):
+        page = super().snapshot()
+        for element in page.get('elements') or ():
+            element['context'] = self.near
+        return page
 
 
 def opened(judgments, approvals=None, **kwargs):
@@ -116,6 +128,47 @@ class PressJudgmentTests(unittest.TestCase):
                 browser, driver = opened(judgments, approvals)
                 browser.click({'target': '예약하기', 'effect': effect})
                 self.assertEqual((driver.approved, approvals.requests, len(judgments.asked)), ([False], [], 1))
+
+    def in_form(self, judgments, approvals=None):
+        """A one-press control inside a form whose price and title sit outside that form."""
+        pages = dict(PAGES)
+        pages['/in-form'] = ('<html><head><title>객실 1박</title></head><body><p>129,000원</p>'
+                             '<form action="/order" method="post"><button type="button">예약하기</button></form>'
+                             '</body></html>')
+        driver = NearDriver(pages)
+        browser, driver = session(driver, judgments=judgments, approvals=approvals or Approvals())
+        browser.open({'url': ORIGIN + '/in-form', 'effect': 'navigate'})
+        return browser, driver
+
+    def test_a_changed_price_or_title_is_judged_again_after_a_no(self):
+        """#188 (Codex on #186's diff): the judged facts are in the binding, so a cached no cannot cover new ones."""
+        judgments = ScriptedJudgments('no')
+        browser, driver = self.in_form(judgments)
+        browser.click({'target': '예약하기', 'effect': 'mutate'})
+        browser.click({'target': '예약하기', 'effect': 'mutate'})
+        self.assertEqual(len(judgments.asked), 1, 'the same facts are judged once')
+        driver.near = '1,290,000원'  # the sibling price changed; the form's own state did not
+        judgments.outcome = 'yes'
+        with self.assertRaises(ToolError) as caught:
+            browser.click({'target': '예약하기', 'effect': 'mutate'})
+        self.assertEqual(caught.exception.code, 'approval_required')
+        self.assertEqual(len(judgments.asked), 2)
+        self.assertIn('1,290,000원', judgments.asked[-1]['nearby_text'])
+        self.assertEqual(driver.approved, [False, False], 'the changed press did not run')
+
+    def test_an_approval_for_the_old_facts_is_not_spent_on_new_ones(self):
+        judgments, approvals = ScriptedJudgments('yes'), Approvals()
+        browser, driver = self.in_form(judgments, approvals)
+        with self.assertRaises(ToolError):
+            browser.click({'target': '예약하기', 'effect': 'mutate'})
+        approvals.issue(approvals.requests[0][0])
+        driver.pages['/in-form'] = driver.pages['/in-form'].replace('<title>객실 1박</title>', '<title>객실 7박</title>')
+        with self.assertRaises(ToolError) as caught:
+            browser.click({'target': '예약하기', 'effect': 'mutate'})
+        self.assertEqual(caught.exception.code, 'approval_required')
+        self.assertEqual(len(approvals.requests), 2, 'the new facts ask the owner again')
+        self.assertNotEqual(approvals.requests[0][0]['state_digest'], approvals.requests[1][0]['state_digest'])
+        self.assertFalse([entry for entry in driver.log if entry[0] == 'click'], 'nothing was pressed')
 
     def test_a_press_the_floor_already_flags_is_never_judged_and_the_judgment_cannot_clear_it(self):
         for effect in ('mutate', 'navigate', 'read'):
