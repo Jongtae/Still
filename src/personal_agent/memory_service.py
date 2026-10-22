@@ -64,6 +64,11 @@ _PROFILE_KEY = re.compile(r'profile\.[^\s.]+(?:\.[^\s.]+)*')
 #: in 2026-10), so every reader gets the whole current profile; a larger
 #: profile is cut and marked, never silently.
 PROFILE_SNAPSHOT_CHARS = 12000
+#: #217 review: the same snapshot in UTF-8 bytes, a quarter of the subscription CLI's
+#: 48 KB prompt (``bounded_execution.MAX_PROMPT_BYTES``), so a Korean/CJK profile
+#: (about 3 bytes a character) cannot push the brief into its request-only fallback.
+#: The live profile was 5.5 KB (42 facts) in 2026-10.
+PROFILE_SNAPSHOT_BYTES = 12000
 #: #217: what a profile prompt section may carry after the snapshot lines - the
 #: omission line and the working-notes block - so a reader's own bound
 #: (``PROFILE_SECTION_CHARS``) never cuts what the worker was given.
@@ -203,12 +208,14 @@ class MemoryService:
         except (TypeError, ValueError, OverflowError, OSError):
             return 'unknown-date'
 
-    def profile_snapshot(self, owner_id, *, limit_chars=PROFILE_SNAPSHOT_CHARS, line_chars=PROFILE_LINE_CHARS, query=None):
+    def profile_snapshot(self, owner_id, *, limit_chars=PROFILE_SNAPSHOT_CHARS, line_chars=PROFILE_LINE_CHARS, query=None,
+                         limit_bytes=PROFILE_SNAPSHOT_BYTES):
         """A bounded, attributable snapshot of ``profile.*`` rows for a turn prompt.
 
         ``text`` is one line per row - ``key: value (saved YYYY-MM-DD)`` - in
         key order, with current profile matches from an optional bounded literal
-        query first, never longer than ``limit_chars``; a value longer than
+        query first, never longer than ``limit_chars`` characters nor
+        ``limit_bytes`` UTF-8 bytes; a value longer than
         ``line_chars`` is clipped with a marker rather than dropped.  Rows
         that did not fit are counted in ``omitted_count`` so the caller can
         say the snapshot is partial instead of pretending it is complete.
@@ -224,22 +231,26 @@ class MemoryService:
             raise MemoryServiceError('profile snapshot size is invalid')
         if isinstance(line_chars, bool) or not isinstance(line_chars, int) or line_chars < 8:
             raise MemoryServiceError('profile snapshot line size is invalid')
+        if isinstance(limit_bytes, bool) or not isinstance(limit_bytes, int) or limit_bytes < 1:
+            raise MemoryServiceError('profile snapshot byte size is invalid')
         rows = self._profile_rows(owner_id)
         if query is not None:
             matched = [row for row in self.search_memories(owner_id, query, limit=20, key_prefix=PROFILE_PREFIX)['memories']
                        if self.is_profile_key(row.get('memory_key'))]
             found = {row['id'] for row in matched}
             rows = matched + [row for row in rows if row['id'] not in found]
-        lines, entries, used = [], [], 0
+        lines, entries, used, used_bytes = [], [], 0, 0
         for row in rows:
             content = ' '.join(str(row.get('content') or '').split())
             if len(content) > line_chars:
                 content = content[:line_chars - 6] + ' [...]'
             line = f"{row['memory_key']}: {content} (saved {self._saved_date(row.get('created'))})"
             size = len(line) + (1 if lines else 0)
-            if used + size > limit_chars:
+            size_bytes = len(line.encode('utf-8')) + (1 if lines else 0)
+            if used + size > limit_chars or used_bytes + size_bytes > limit_bytes:
                 break
             used += size
+            used_bytes += size_bytes
             lines.append(line)
             entries.append({'id': row['id'], 'memory_key': row['memory_key'], 'content': row['content'],
                             'created': row.get('created')})
@@ -247,7 +258,7 @@ class MemoryService:
         return self._private_read('memory_service.profile_snapshot', {
             'state': 'current', 'text': '\n'.join(lines), 'entries': entries,
             'total_count': len(rows), 'omitted_count': omitted, 'truncated': omitted > 0,
-            'limit_chars': limit_chars,
+            'limit_chars': limit_chars, 'limit_bytes': limit_bytes,
         }, len(entries))
 
     def write(self, owner_id, work_id, memory_key, content, *, origin, explicit_owner_request=False):

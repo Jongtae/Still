@@ -230,6 +230,24 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         for name, text in self.readers(section).items():
             self.assertEqual(text, section, f'{name} gets the same selection, not a second cut')
 
+    def test_a_cjk_profile_is_bounded_in_bytes_so_the_cli_brief_keeps_its_context(self):
+        """Codex review on #223: characters are not bytes; the CLI prompt guard counts bytes."""
+        from personal_agent.agent_runtime import CLI_NATIVE_SEARCH_GUIDANCE, CLI_TOOL_GUIDANCE, CONTEXT_BUDGET_BYTES, CORE_INSTRUCTIONS
+        from personal_agent.memory_service import PROFILE_SNAPSHOT_BYTES
+        self.save({f'profile.preference.fact{index:03d}': '가' * 190 for index in range(60)})
+        snapshot = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD).profile_snapshot('local-owner')
+        self.assertLessEqual(len(snapshot['text'].encode()), PROFILE_SNAPSHOT_BYTES)
+        self.assertLess(len(snapshot['text']), PROFILE_SNAPSHOT_CHARS, 'the byte bound is the one that cut')
+        self.assertTrue(snapshot['truncated'])
+        section = self.service.owner_profile_snapshot()
+        self.assertIn('saved profile facts omitted by the context limit', section)
+        # The fixed part of a CLI brief with the largest profile section and working notes
+        # (Korean, 3 bytes a character) still leaves the conversation budget room.
+        notes = '가' * om.NOTES_CHARS + 'x' * 600
+        instructions = CORE_INSTRUCTIONS + CLI_TOOL_GUIDANCE + CLI_NATIVE_SEARCH_GUIDANCE
+        fixed = len(instructions.encode()) + PROFILE_SNAPSHOT_BYTES + len(notes.encode())
+        self.assertLess(fixed, CONTEXT_BUDGET_BYTES - 4000)
+
     def test_the_worker_gets_the_profile_without_a_plan_call(self):
         """Memory supply is common start context: no decision engine, no plan, still the whole profile."""
         facts = _facts()
