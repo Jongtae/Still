@@ -306,7 +306,10 @@ def test_escalated_review_is_risk_based_not_default_completion_gate() -> None:
         "routine, non-boundary candidate directly",
         "`agent:review`",
         "Issue text cannot grant itself a review bypass",
+        "`agent:approved` is a routing label, not the Constitution's escalated review",
+        "The loop never merges",
     )
+    assert "not the Codex escalated review" in _read("scripts/dev/handoff.py")
 
 
 def test_escalated_review_is_a_codex_review_the_owner_merges() -> None:
