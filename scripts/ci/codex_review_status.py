@@ -16,11 +16,14 @@ from typing import Any
 CONTEXT = "codex-review"
 STATE_MARK = "codex-review-state:v1"
 FINDING_MARK = "codex-code-review-finding"
+CODEX_LOGIN = "chatgpt-codex-connector[bot]"
 _STATE = re.compile(r"codex-review-state:v1\s*(\{.*?\})\s*-->", re.S)
 
 
 def _is_codex(user: dict[str, Any] | None) -> bool:
-    return "chatgpt-codex-connector" in str((user or {}).get("login", ""))
+    # Exact login and Bot type: a "[bot]" login can only belong to a GitHub App.
+    user = user or {}
+    return user.get("login") == CODEX_LOGIN and user.get("type") == "Bot"
 
 
 def review_state(issue_comments: list[dict[str, Any]]) -> dict[str, Any] | None:
