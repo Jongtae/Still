@@ -283,8 +283,7 @@ def test_runtime_state_is_kept_per_repository(monkeypatch, tmp_path):
 def test_the_in_context_program_is_closed_out_and_the_owed_reviews_stay_owed():
     """#175: all five substeps merged; #179 and #186 merged before their human non-author review, which stays owed on #188."""
     current = plan()
-    assert current["next_goal"]["id"] is None
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "terminal"
+    assert current["next_goal"]["id"] != "IN-CONTEXT-01"
     assert "IN-CONTEXT-01" in invariants.closed_out_programs(current)
     invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["IN-CONTEXT-01"]
@@ -300,4 +299,26 @@ def test_the_in_context_program_is_closed_out_and_the_owed_reviews_stay_owed():
     assert [slice_["pull_request"] for slice_ in evidence["RULES-OUT-01"]["slices"]] == [181, 185, 187]
     assert (evidence["OWNER-ACT-01"]["pull_request"], evidence["BROWSER-DIALOG-01"]["pull_request"]) == (179, 186)
     for state in ({}, {"completed": []}, {"active": "IN-CONTEXT-01", "status": "running"}):
+        assert DeliveryPlan(PLAN).select(state) is None, state
+
+
+def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_paused():
+    """#206: selected by the owner on 2026-10-23; cloud AI and the surface refactor start first."""
+    current = plan()
+    assert current["next_goal"]["id"] == "WORKPLACE-01"
+    assert current["next_goal"]["status"] == "owner-activated-goal-ready"
+    assert "heartbeat stays paused" in current["next_goal"]["action"]
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    program = current["programs"]["WORKPLACE-01"]
+    assert program["ordered_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01", "WORK-MODE-01", "INTRANET-DEST-01",
+                                           "OWNER-MCP-WORK-01", "MATTERMOST-01", "SLACK-01"]
+    assert program["active_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01"]
+    assert program["completed_substeps"] == []
+    assert "Codex review of the exact final head" in program["escalated_review"]
+    items = {item["id"]: item for item in current["iterations"]}
+    assert {items[name]["issue"] for name in program["ordered_substeps"]} == {208, 209, 210, 211, 212, 213, 214}
+    assert items["OWNER-MCP-WORK-01"]["depends_on"] == ["INTRANET-DEST-01"]
+    assert items["MATTERMOST-01"]["depends_on"] == items["SLACK-01"]["depends_on"] == ["SURFACE-SEAM-01"]
+    # Session-driven: the heartbeat never selects it on its own.
+    for state in ({}, {"completed": []}):
         assert DeliveryPlan(PLAN).select(state) is None, state
