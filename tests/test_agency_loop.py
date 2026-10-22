@@ -639,7 +639,7 @@ class AlternativesAndCompletionTests(unittest.TestCase):
         from personal_agent.agent_runtime import CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, owner_context_fact
         secret = 'stored-fixture-secret-9f8e7d6c'
         seen = []
-        turn = {'profile': f'- 이름: 홍길동 (mail key {secret})\n' + '- 취향: 조용한 카페\n' * 200,
+        turn = {'profile': f'- 이름: 홍길동 (mail key {secret})\n' + '- 취향: 조용한 카페\n' * (PROFILE_FACT_CHARS // 10),
                 'current_context': f'- 시각: 2026-09-29 09:00 KST (clock)\n- 위치: 서울 (key {secret})\n' + '- 날씨: 맑음\n' * 200}
         script = Script({'tool_calls': [call('1', 'list_notes')]}, finish('f', '1', summary='메모를 찾았습니다.'))
         caps = Capabilities(self.store, ModelAdapter(script), CFG, '', 'job', self.record, network=Network(),

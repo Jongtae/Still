@@ -2390,7 +2390,7 @@ class OwnerModelUnit(unittest.TestCase):
         engine = FixtureDecisionEngine(structured=lambda context, question, schema: seen.append(context))
         catalogue = OrchestrationUnit.catalogue(None)
         orchestration = Orchestration(ConversationJudgments(engine), catalogue, request='요청', conversation='x' * 9000,
-                                      sections={'profile': '가' * 5000, 'current_context': '나' * 5000})
+                                      sections={'profile': '가' * (PROFILE_FACT_CHARS + 500), 'current_context': '나' * 5000})
         orchestration.first()
         [context] = seen
         self.assertEqual(len(context.facts['owner_profile']), PROFILE_FACT_CHARS)

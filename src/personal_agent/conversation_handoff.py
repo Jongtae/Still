@@ -1207,18 +1207,20 @@ class ConversationJudgments:
         deterministic validation.  Judgment only: it writes nothing.
         """
         from .decision import OUTCOME_UNAVAILABLE, StructuredDecision
-        from .owner_model import (ANSWER_CHARS, CLOCK_CHARS, PROFILE_CHARS, PURPOSE, QUESTION, SCHEMA, SITUATION_CHARS,
-                                  SITUATION_TURNS_CHARS, shape)
+        from .owner_model import (ANSWER_CHARS, CLOCK_CHARS, NOTED_CHARS, PROFILE_CHARS, PURPOSE, QUESTION, SCHEMA,
+                                  SITUATION_CHARS, SITUATION_TURNS_CHARS, shape)
         # Redacted before they are cut, so a cut never leaves part of a secret.
         facts = {'owner_request': str(request or ''),
                  'final_answer_excerpt': self.redact(answer)[:ANSWER_CHARS] or 'none',
                  'owner_profile': self.redact(profile)[:PROFILE_CHARS] or 'none',
                  'clock': self.redact(clock)[:CLOCK_CHARS] or 'unknown',
                  'already_noted': self.redact('\n'.join(str(item) for item in noted or ()),
-                                              private=False)[:PROFILE_CHARS] or 'none',
+                                              private=False)[:NOTED_CHARS] or 'none',
                  'current_situation': self.redact(situation or '')[:SITUATION_CHARS] or 'none',
                  'turns_since_situation': self.redact(situation_turns or '')[-SITUATION_TURNS_CHARS:] or 'none'}
-        context = self._context(PURPOSE, facts, work_id=work_id, uncut='owner_request', cancelled=cancelled)
+        # #217: the profile is bounded by the caller (``PROFILE_CHARS``), so it widens the bound, never overflows it.
+        context = self._context(PURPOSE, facts, work_id=work_id, uncut=('owner_request', 'owner_profile'),
+                                cancelled=cancelled)
         method = getattr(self.engine, 'structured', None)
         decision = (method(context, QUESTION, SCHEMA, shape) if method is not None
                     else StructuredDecision(OUTCOME_UNAVAILABLE))
@@ -1251,7 +1253,8 @@ class ConversationJudgments:
                  # #170: what the Work left waiting for the owner's own decision, and what became of it.
                  'awaiting_owner': str(awaiting_owner or '') or 'none'}
         context = self._context(REVIEW_PURPOSE, facts, work_id=work_id,
-                                uncut=('owner_request', 'owner_followup', 'working_notes'), cancelled=cancelled)
+                                uncut=('owner_request', 'owner_followup', 'working_notes', 'owner_profile'),
+                                cancelled=cancelled)
         method = getattr(self.engine, 'structured', None)
         decision = (method(context, REVIEW_QUESTION, REVIEW_SCHEMA, review_shape) if method is not None
                     else StructuredDecision(OUTCOME_UNAVAILABLE))

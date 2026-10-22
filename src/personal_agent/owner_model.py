@@ -72,6 +72,7 @@ import re
 import time
 from datetime import datetime, timezone
 
+from .memory_service import PROFILE_SECTION_CHARS
 from .owner_forget import OwnerForget
 from .prompt_files import prompt
 
@@ -136,7 +137,10 @@ MAX_TEXT_CHARS = 200
 MAX_KEY_CHARS = 160
 #: Bounds of the facts one judgment reads (the owner's request is never cut).
 ANSWER_CHARS = 1500
-PROFILE_CHARS = 1200
+#: #217: the whole profile the worker reads, so upkeep sees a fact before it proposes a new key.
+PROFILE_CHARS = PROFILE_SECTION_CHARS
+#: What was already noted from the same request (the earlier bound of the profile fact).
+NOTED_CHARS = 1200
 CLOCK_CHARS = 300
 #: SITUATION-01 (#1004): the running note of the owner's day the same judgment returns
 #: (``current_context.SITUATION_CHARS`` bounds what is stored).
