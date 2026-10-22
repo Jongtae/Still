@@ -1166,10 +1166,13 @@ class QuickStore:
     def owner_words(self, text, *, skip_recent=16, limit=8):
         """The owner's own earlier messages that share words with ``text``, oldest first (#221).
 
-        SQLite FTS5 (``unicode61``, BM25) over ``role='user'`` transcript rows,
-        leaving out the newest ``skip_recent`` messages (the recent window every
-        reader already sees, and the current request).  ``[]`` without FTS5 or
-        without searchable words.  Rows are ``{'id', 'content', 'created'}``.
+        SQLite FTS5 (``unicode61``, BM25) over transcript rows of Works the owner
+        typed (``jobs.owner_typed``, #814; a ``user`` row Still enqueued, such
+        as a preparation's goal, is not the owner's words), leaving out the
+        newest ``skip_recent`` messages (the recent window every reader already
+        sees, and the current request).  ``[]`` without FTS5 or without
+        searchable words.  Rows are ``{'id', 'content', 'created'}``; ``created``
+        is when the owner sent it (``source_at``) when known.
         """
         if not getattr(self,'messages_search_available',False):return []
         terms=[term for term in re.findall(r'\w+',str(text or '')) if len(term)>1][:20]
@@ -1178,8 +1181,9 @@ class QuickStore:
         with self.db() as db:
             newest=db.execute('SELECT id FROM messages ORDER BY id DESC LIMIT 1 OFFSET ?',(max(0,int(skip_recent)-1),)).fetchone()
             if newest is None:return []
-            rows=db.execute('''SELECT m.id,m.content,m.created FROM messages_search JOIN messages m ON m.id=messages_search.rowid
-                               WHERE messages_search MATCH ? AND m.role='user' AND m.id<?
+            rows=db.execute('''SELECT m.id,m.content,COALESCE(j.source_at,m.created) AS created FROM messages_search
+                               JOIN messages m ON m.id=messages_search.rowid JOIN jobs j ON j.id=m.job_id
+                               WHERE messages_search MATCH ? AND m.role='user' AND j.owner_typed=1 AND m.id<?
                                ORDER BY bm25(messages_search) LIMIT ?''',(query,newest['id'],int(limit))).fetchall()
         return sorted(({'id':row['id'],'content':row['content'],'created':row['created']} for row in rows),key=lambda row:row['id'])
 

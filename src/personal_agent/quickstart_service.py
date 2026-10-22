@@ -2704,7 +2704,7 @@ class AgentService:
         LOG.info('preparation %s id=%s by owner settings',operation,preparation_id)
         return self.preparations_status()
 
-    def owner_profile_snapshot(self, request=None, notes=True, ids=False):
+    def owner_profile_snapshot(self, request=None, notes=True, ids=False, recall=True):
         """The bounded ``profile.*`` snapshot text every turn context carries (#658).
 
         #19: with ``notes`` the owner's working-notes document follows as one
@@ -2741,7 +2741,8 @@ class AgentService:
             if block:text += ('\n' if text else '') + block
             # #221: the owner's own earlier words that share words with the request, in the same
             # section, so the worker, the plan and the outcome judgment read one selection.
-            said=self.owner_words_block(query)
+            # Codex review on #227: a preparation's Work sees only its origin (``preparation_history``), so no recall.
+            said=self.owner_words_block(query) if recall else ''
             if said:text += ('\n' if text else '') + said
         return self._redact_known_secrets(text)
 
@@ -2754,9 +2755,13 @@ class AgentService:
         except Exception as exc:  # a recall that fails leaves the brief as it was
             LOG.warning('owner words unavailable for the brief (%s)',type(exc).__name__)
             return ''
+        from zoneinfo import ZoneInfo
+        from .current_context import resolve_local_timezone
+        zone=ZoneInfo(resolve_local_timezone(self.store))
         lines,used=[],len(OWNER_WORDS_HEADING.encode())
         for row in rows:
-            day=datetime.fromtimestamp(float(row['created'])).date().isoformat()
+            # Codex review on #227: the day the owner sent it, in the owner's zone.
+            day=datetime.fromtimestamp(float(row['created']),zone).date().isoformat()
             line=f"[said {day}] {' '.join(str(row['content'] or '').split())[:OWNER_WORDS_LINE_CHARS]}"
             if used+len(line.encode())+1>OWNER_WORDS_BYTES:break
             used+=len(line.encode())+1;lines.append(line)
@@ -5598,7 +5603,7 @@ class AgentService:
         stored=(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
                 else self.store.history()[-16:])
         document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
-        sections={'profile':self.owner_profile_snapshot(job.get('message')),'current_context':self.current_context_text(job),
+        sections={'profile':self.owner_profile_snapshot(job.get('message'),recall=not prep.preparation_of(job.get('request_key'))),'current_context':self.current_context_text(job),
                   'prepared':self.prepared_text(job)}
         own_budget=budget is None
         budget=self.work_budget(job['id']) if own_budget else budget
@@ -10734,7 +10739,7 @@ class AgentService:
         # the tool subset; deterministic code only validates the plan.  Without a
         # usable plan the default Main AI runs the raw request exactly as before,
         # and why is recorded once.  One budget spans every attempt of the Work.
-        run.section_values={'profile':self.owner_profile_snapshot(job.get('message')),'current_context':self.current_context_text(job),
+        run.section_values={'profile':self.owner_profile_snapshot(job.get('message'),recall=not prep.preparation_of(job.get('request_key'))),'current_context':self.current_context_text(job),
                         'prepared':self.prepared_text(job)}
         # #961: the skill revisions this Work may load, captured once for every attempt;
         # None (skills off or none installed) is the unchanged pre-skill path.

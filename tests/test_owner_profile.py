@@ -264,12 +264,15 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         freed = sum(len(str(sections[name] or '').encode()) - len(str(out[name] or '').encode()) for name in sections)
         self.assertGreaterEqual(freed, 200)
 
-    def said(self, *messages, role='user', days_ago=10):
+    def said(self, *messages, role='user', days_ago=10, owner_typed=True):
+        """Transcript rows of their own Works, as the shipped paths leave them (#814 ``owner_typed``)."""
         import time as clock
-        with self.store.db() as db:
-            for text in messages:
-                db.execute('INSERT INTO messages(role,content,channel,created) VALUES (?,?,?,?)',
-                           (role, text, 'web', clock.time() - days_ago * 86400))
+        import uuid
+        for text in messages:
+            job = self.store.enqueue(text, f'said-{uuid.uuid4()}', owner_typed=owner_typed)
+            with self.store.db() as db:
+                db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                           (role, text, 'web', clock.time() - days_ago * 86400, job))
 
     def test_the_owners_earlier_words_join_the_section_dated_and_outside_the_recent_window(self):
         """#221: the owner's own earlier words that share words with the request, for every reader."""
@@ -291,6 +294,30 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.assertNotIn(OWNER_WORDS_HEADING, self.service.owner_profile_snapshot('마트 앱', notes=False),
                          'the upkeep reads the profile without it')
         self.assertNotIn(OWNER_WORDS_HEADING, self.service.owner_profile_snapshot('전혀 다른 질문'))
+
+    def test_only_owner_typed_words_are_recalled_and_never_into_a_preparation(self):
+        """Codex review on #227: Still-enqueued goals are not the owner's words; a preparation sees only its origin."""
+        from personal_agent.memory_service import OWNER_WORDS_HEADING
+        self.said('매주 마트 장바구니 가격을 확인해 둔다', owner_typed=False)  # a preparation's generated goal
+        self.said('마트 장바구니는 동네 마트 앱으로')
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        section = self.service.owner_profile_snapshot('마트 장바구니')
+        self.assertIn('동네 마트 앱으로', section)
+        self.assertNotIn('가격을 확인해 둔다', section)
+        self.assertNotIn(OWNER_WORDS_HEADING, self.service.owner_profile_snapshot('마트 장바구니', recall=False))
+
+    def test_recalled_words_are_audited_and_dated_in_the_owner_zone(self):
+        from datetime import datetime, timezone
+        from personal_agent import information_use
+        self.store.put('calendar_timezone', 'Asia/Seoul')
+        self.said('마트 장바구니는 동네 마트 앱으로', '마트 앱 쿠폰도 챙겨')
+        sent = datetime(2026, 10, 1, 16, 30, tzinfo=timezone.utc).timestamp()  # 2026-10-02 01:30 in Seoul
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET source_at=? WHERE message='마트 장바구니는 동네 마트 앱으로'", (sent,))
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        section = self.service.owner_profile_snapshot('마트 장바구니 쿠폰')
+        self.assertIn('[said 2026-10-02] 마트 장바구니는 동네 마트 앱으로', section)
+        self.assertIn('owner_said (2 earlier owner messages)', information_use.profile_keys(section))
 
     def test_the_owners_earlier_words_are_bounded_in_bytes(self):
         from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING

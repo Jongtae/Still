@@ -90,14 +90,25 @@ def _json_after_legend(text):
 _WORKING_NOTES = re.compile(r'^working_notes v(\d+) \(.*?\bref (procedure:[A-Za-z0-9-]+)')
 
 
+#: #221: how the owner's recalled earlier words start in the profile section (``memory_service.OWNER_WORDS_HEADING``).
+OWNER_SAID_PREFIX = 'owner_said ('
+
+
 def profile_keys(text):
     """The ``profile.*`` keys of a rendered profile snapshot (``key: value (saved ...)`` lines).
 
     #19: the working-notes block counts as one entry, ``working_notes v<n> (procedure:<id>)``,
     so the audit shows the notes were sent without their points.
     """
-    keys = []
+    keys, said = [], 0
     for line in str(text or '').splitlines():
+        # #221: the owner's recalled earlier words count as one entry with how many lines were sent.
+        if line.startswith(OWNER_SAID_PREFIX):
+            said = -1
+            continue
+        if said and line.startswith('[said '):
+            said = 1 if said < 0 else said + 1
+            continue
         notes = _WORKING_NOTES.match(line)
         if notes:
             entry = f'working_notes v{notes.group(1)} ({notes.group(2)})'
@@ -108,6 +119,8 @@ def profile_keys(text):
         key = key.strip()
         if sep and key and ' ' not in key and key not in keys:
             keys.append(key[:80])
+    if said > 0:
+        keys.append(f'owner_said ({said} earlier owner message{"s" if said != 1 else ""})')
     return keys[:40]
 
 
