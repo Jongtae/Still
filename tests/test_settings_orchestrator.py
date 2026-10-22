@@ -108,7 +108,7 @@ class SettingsOrchestratorTests(unittest.TestCase):
     def test_a_legacy_draft_never_applies_and_fails_terminally(self):
         self.store.put('settings_change_drafts', {'legacy-draft': legacy_draft()})
         with self.assertRaises(SettingsError): self.settings.confirm('other', 'http', 'legacy-draft', 'legacy-digest')
-        with self.assertRaisesRegex(SettingsError, '대화에서 제공하지 않습니다'):
+        with self.assertRaisesRegex(SettingsError, '일시 정지하거나 다시 시작하는 기능은 아직 없습니다'):
             self.settings.confirm('owner', 'http', 'legacy-draft', 'legacy-digest')
         self.assertEqual(self.store.config('settings_change_drafts')['legacy-draft']['state'], 'failed')
         audit = self.store.config('settings_audit')

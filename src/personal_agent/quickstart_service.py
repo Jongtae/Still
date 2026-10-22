@@ -7136,13 +7136,17 @@ class AgentService:
             rows.append({'id':'telegram','service':'Telegram','state':'connected' if tg.get('user_id') else 'pending'})
         else:
             rows.append({'id':'telegram','service':'Telegram','state':'disconnected'})
+        try:disconnectable={row['id'] for row in self.connection_disconnect_options()}
+        except Exception:disconnectable=set()
         for row in self.google_connection_rows():
             ident=row.get('connector_id')
             # #1207: the absolute loopback start address, so the conversation
             # can hand the owner the link; naming it grants nothing.
             rows.append({'id':ident,'service':self.CONNECTION_NAMES.get(ident,row.get('label') or ident),'state':row.get('state'),
                          'connectable':bool(row.get('connect_path')),'connect_hint':row.get('connect_hint',''),
-                         'connect_url':self.connector_connect_url(ident) if row.get('connect_path') else ''})
+                         'connect_url':self.connector_connect_url(ident) if row.get('connect_path') else '',
+                         # #183: a conversation disconnect draft can name it.
+                         'disconnectable':ident in disconnectable})
         # #1204: the owner's own Google client as setup state, never as a
         # connection: saving a client grants nothing.  The steps for making
         # one stay on the Settings page; this only says where to go.
@@ -7234,6 +7238,39 @@ class AgentService:
             return fn()
         except RevocationError as exc:
             raise ValueError(str(exc)) from None
+
+    # -- #183: a disconnect the worker drafts and the owner confirms in conversation --
+    def connection_disconnect_options(self):
+        """The Google connections the owner may disconnect now: ``[{id, label, state}]``.
+
+        A connection already disconnected (even with a revocation still to retry) is not offered;
+        retrying a revocation stays a Settings action.
+        """
+        rows=[]
+        for connector_id,connection in self.google_revocation().connections.items():
+            state=connection.state()
+            if state!='disconnected':
+                rows.append({'id':connector_id,'label':self.CONNECTION_NAMES.get(connector_id,connection.label),'state':state})
+        return rows
+
+    def connection_disconnect_before(self, connector_id):
+        """The exact state a disconnect draft is bound to: the connection's state and revision marker."""
+        connection=self.google_revocation().connections.get(connector_id)
+        if connection is None:return f'{connector_id}:unknown'
+        return f'{connector_id}:{connection.state()}:{connection.marker()}'
+
+    def apply_connection_disconnect(self, row):
+        """Disconnect one Google connection for a confirmed settings draft: the Settings path, exactly.
+
+        ``GoogleConnectionRevoker``'s single-use confirmation is minted and spent here under a
+        session bound to this one draft, so the draft's own exact-preview approval is the owner's act.
+        """
+        session='settings-draft:'+str(row['id'])
+        def disconnect():
+            revoker=self.google_revocation()
+            preview=revoker.preview(session,row['after'])
+            return revoker.disconnect(session,row['after'],preview['confirmation'])
+        return self._revocation_call(disconnect)
 
     def google_disconnect_preview(self, body, session):
         body=body if isinstance(body,dict) else {}

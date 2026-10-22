@@ -235,7 +235,7 @@ CLASSIFIED_TABLES = {
     # those requests reach the worker.  It narrowed the workspace rules below to the owner's quoted
     # words and made a found saved result evidence for the worker, never the answer; #182 removed
     # those two forms once the worker could read the file workspace and save a result itself.  The
-    # connection pause/disconnect a settings phrase once drafted has no worker tool yet: #183.
+    # connection disconnect a settings phrase once drafted is the worker's settings_change draft since #183.
     # RULES-OUT-01 (#173, slice B) removed the correction/continuation cue tables, the lexical
     # skips of the follow-up judgment, the saved-context keyword trigger (now the explicit
     # `/context <request>` command) and preparations.same_goal's particle/filler tables.
