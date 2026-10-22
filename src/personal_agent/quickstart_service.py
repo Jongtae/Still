@@ -133,10 +133,11 @@ REACTION_EVENT='owner_reaction'
 MEMORY_WITHDRAWN_NOTE=('Before this turn, at the owner\'s word, Still removed what you had just said you remembered:\n'
                        '{facts}\nAcknowledge it briefly if the owner\'s message is only about that; do not save it again.')
 #: #172: what the worker reads first when the owner's message also answered an item waiting for them.
+#: #188: the request stays the owner's own message, never a judgment's restatement of its rest.
 OWNER_ACT_SETTLED_NOTE=('[Still observation, not an owner instruction] Part of the owner\'s message answered an item that '
                         'was waiting for them, and Still already settled it; the owner is shown this result above your '
-                        'reply:\n{settled}\nDo not act on that part again. The rest of the message is the request for '
-                        'you: {rest}')
+                        'reply:\n{settled}\nDo not act on that part again. Answer only the rest of the owner\'s own '
+                        'message.')
 
 #: The one owner-authenticated address that starts a Gmail authorization.
 #: It is defined here rather than only inside the HTTP layer so the link the
@@ -10339,9 +10340,10 @@ class AgentService:
         """Settle the one open item this turn's judged answer named (#172), through its own path.
 
         With nothing else in the message the settlement is the turn's whole
-        reply (``act_reply``); a remaining request (``rest``) runs as this
-        turn's request, the owner's words kept verbatim for the worker, with
-        what Still settled said first.  A calendar effect's Evidence is this
+        reply (``act_reply``).  When the judgment says something remains
+        (``rest``), the turn goes on over the owner's own message, verbatim,
+        with what Still settled said first.  ``rest`` is model text: it only
+        says whether anything remains and never becomes the request (#188).  A calendar effect's Evidence is this
         Work's own, content-free.
         """
         job,answer=run.job,run.owner_act
@@ -10360,11 +10362,9 @@ class AgentService:
         if settled['note'] is not None:
             # A withdrawn saved notice: the worker acknowledges it (#996), with the rest of the message if any.
             run.act_note=settled['note']
-            if answer['rest']:run.prompt=answer['rest']
         elif answer['rest']:
-            run.prompt=answer['rest']
             if settled['text']:run.calendar_notice+=settled['text']+'\n\n'
-            run.act_note=OWNER_ACT_SETTLED_NOTE.format(settled=settled['text'] or '-',rest=answer['rest'])
+            run.act_note=OWNER_ACT_SETTLED_NOTE.format(settled=settled['text'] or '-')
         elif settled['text']:
             run.act_reply=settled['text']
 

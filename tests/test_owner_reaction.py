@@ -169,6 +169,8 @@ class CostBound(_Answering):
         with self.store.db() as db:
             db.execute("UPDATE jobs SET owner_typed=1, status='succeeded', created=? WHERE id=?",
                        (binding['sent'] + 3600, spoke))
+            # The send completed two days ago too (#188: ``sent_at`` is when the owner could first see it).
+            db.execute('UPDATE telegram_notifications SET sent_at=? WHERE id=?', (binding['sent'], row['id']))
         self.plan = []
         return row
 

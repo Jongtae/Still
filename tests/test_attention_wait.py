@@ -64,7 +64,7 @@ class AttentionWaitTests(NativePresenceTestCase):
         row = self.store.memory_candidate(candidate['id'], work_id=work)
         binding = {'candidates': [self.service.memory_prompt_item(row)], 'more': 0, 'sent': time.time() - 200, 'done': {}}
         with self.store.db() as db:
-            db.execute('INSERT INTO telegram_notifications VALUES (?,?,?,?,?,?,?,?,?)',
+            db.execute('INSERT INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created) VALUES (?,?,?,?,?,?,?,?,?)',
                        ('n-' + work, work, CHAT, GENERATION, MEMORY_CANDIDATES_KIND, json.dumps(binding), 'sent', 777,
                         time.time() - 200))
         return candidate
@@ -183,7 +183,7 @@ class AttentionWaitTests(NativePresenceTestCase):
         row = self.store.memory_candidate(candidate['id'], work_id=job_id)
         binding = {'candidates': [self.service.memory_prompt_item(row)], 'more': 0, 'sent': time.time(), 'done': {}}
         with self.store.db() as db:
-            db.execute('INSERT INTO telegram_notifications VALUES (?,?,?,?,?,?,?,?,?)',
+            db.execute('INSERT INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created) VALUES (?,?,?,?,?,?,?,?,?)',
                        ('n-own', job_id, CHAT, GENERATION, MEMORY_CANDIDATES_KIND, json.dumps(binding), 'sent', 778, time.time()))
         self.service.run_one()
         self.service.deliver_one()
@@ -218,7 +218,7 @@ class AttentionWaitTests(NativePresenceTestCase):
         self.prepared()
         job_id, _ = self.receive('질문')
         with self.store.db() as db:
-            db.execute('INSERT INTO telegram_notifications VALUES (?,?,?,?,?,?,?,?,?)',
+            db.execute('INSERT INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created) VALUES (?,?,?,?,?,?,?,?,?)',
                        ('n-approval', job_id, CHAT, GENERATION, 'approval_needed', None, 'queued', None, time.time()))
         self.service.run_one()
         self.assertEqual(self.draft_methods(), [])

@@ -1003,8 +1003,8 @@ class ConversationJudgments:
     def press_commits_payment(self, control, nearby_text, page_title='', work_id=None):
         """Could pressing this browser control commit money (#174)?
 
-        Asked by ``browser_session`` only for a press the worker declared
-        ``mutate`` that the fixed payment floor did not flag, over the
+        Asked by ``browser_session`` for a press the fixed payment floor did
+        not flag, whatever effect the worker declared (#188), over the
         control's mediated label, its nearby page text and the page title.
         A confident yes adds the owner's per-action approval; no or
         unavailable leaves the floor's answer.  It never removes a requirement.

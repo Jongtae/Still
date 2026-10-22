@@ -138,6 +138,10 @@ class QuickStore:
             # #805: the durable post-Work owner-model upkeep queue; #998: keyed by (Work, kind).
             owner_model_migrate(db)
             db.executescript(OWNER_MODEL_TABLE_SQL)
+            # #188: when a prompt's send completed, the time the owner could first have seen it.
+            # Nullable and never backfilled: a prompt sent before this column existed has none.
+            columns={row['name'] for row in db.execute('PRAGMA table_info(telegram_notifications)')}
+            if 'sent_at' not in columns: db.execute('ALTER TABLE telegram_notifications ADD COLUMN sent_at REAL')
             columns={row['name'] for row in db.execute('PRAGMA table_info(messages)')}
             if 'workspace_id' not in columns: db.execute('ALTER TABLE messages ADD COLUMN workspace_id TEXT')
             if 'job_id' not in columns: db.execute('ALTER TABLE messages ADD COLUMN job_id TEXT')
@@ -552,7 +556,7 @@ class QuickStore:
                 job=db.execute('SELECT channel,chat_id FROM jobs WHERE id=?',(work_id,)).fetchone()
                 channel=str(job['channel'] or '') if job else ''
                 if job and channel.startswith('telegram:') and isinstance(job['chat_id'],int):
-                    db.execute('INSERT OR IGNORE INTO telegram_notifications VALUES (?,?,?,?,?,?,?,?,?)',
+                    db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created) VALUES (?,?,?,?,?,?,?,?,?)',
                                (str(uuid.uuid4()),work_id,job['chat_id'],channel[len('telegram:'):],self.MEMORY_SAVED_NOTICE_KIND,
                                 json.dumps({'items':[[row['id'],row['content_digest']]],'more':0}),self.NOTICE_HELD,None,time.time()))
             return row

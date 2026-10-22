@@ -31,9 +31,9 @@ independently of anything the model says (pilot posture, #653):
   send (hidden amounts included); once exactly that is approved, the worker
   releases the held submit (``release_submit``).  A press whose label or
   nearby text commits a purchase (the fixed ``COMMIT_*`` floor) needs approval
-  too; a press declared ``mutate`` that the floor did not flag is judged once
+  too; any other press, whatever effect the worker declared, is judged once
   (``ConversationJudgments.press_commits_payment``), and a confident yes only
-  adds the requirement (#174).
+  adds the requirement (#174, #188).
 * **Page confirmations.**  A page's own ``confirm()`` during a step is
   accepted only for a press the owner approved, or a step declared to change
   state whose question is not a payment question on a page without a payment
@@ -1311,8 +1311,8 @@ class BrowserSession:
     def _press_may_pay(self, binding, row, snapshot):
         """Whether the Work's judgment says, confidently, that this press could commit a charge (#174).
 
-        Asked only for a press declared ``mutate`` that the payment floor did
-        not flag, at most once per approval binding (the same press on the
+        Asked for every press the payment floor did not flag, whatever effect
+        the worker declared (#188), at most once per approval binding (the same press on the
         same page state is never asked again in this session).  The facts are
         the control's mediated label, its mediated nearby text and the page
         title, all bounded and scrubbed of the Work's private values, and
@@ -1365,9 +1365,11 @@ class BrowserSession:
         # #758: a control whose name commits a purchase needs approval whatever form it
         # is in (a stored payment method or a fetch charge leaves no card field to see).
         required = bool(element['submit_guarded'] or element['commit'] or effect == 'payment')
-        if not required and effect == 'mutate':
+        if not required:
             # #174: the floor above is fixed language; a press it did not flag is judged once, and
             # a confident yes only adds the owner's approval.  No or unavailable leaves it as it was.
+            # #188: whatever effect the worker declared - a press it calls ``read`` or ``navigate``
+            # is the same press, so the declared effect cannot skip the payment check.
             row = self._row(snapshot, element)
             if self._press_may_pay(binding, row, snapshot):
                 required = True

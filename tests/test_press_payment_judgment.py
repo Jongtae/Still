@@ -1,8 +1,8 @@
 """BROWSER-DIALOG-01 (#174): the fixed payment floor plus a judgment that can only add the owner's approval.
 
 Evidence class: unit tests over the fake page driver and a scripted judgment (no model, no network).
-The fixed ``COMMIT_*`` floor is unchanged; a press the worker declared ``mutate`` that the floor did
-not flag is judged once, and only a confident yes adds the approval requirement.
+The fixed ``COMMIT_*`` floor is unchanged; a press the floor did not flag is judged once, whatever
+effect the worker declared (#188), and only a confident yes adds the approval requirement.
 """
 import tempfile
 import types
@@ -92,14 +92,30 @@ class PressJudgmentTests(unittest.TestCase):
         browser.click({'target': '예약하기', 'effect': 'mutate'})
         self.assertEqual(driver.approved, [False])
 
-    def test_read_and_navigate_presses_are_never_judged(self):
+    def test_the_declared_effect_cannot_skip_the_payment_judgment(self):
+        """#188 (Codex on PR #186): a press declared read or navigate is the same press, so it is judged too."""
         for effect in ('read', 'navigate'):
             with self.subTest(effect=effect):
-                judgments = ScriptedJudgments('yes')
-                browser, driver = opened(judgments)
+                judgments, approvals = ScriptedJudgments('yes'), Approvals()
+                browser, driver = opened(judgments, approvals)
+                with self.assertRaises(ToolError) as caught:
+                    browser.click({'target': '예약하기', 'effect': effect})
+                self.assertEqual((caught.exception.code, caught.exception.requires),
+                                 ('approval_required', 'browser-step-approval'))
+                self.assertFalse([entry for entry in driver.log if entry[0] == 'click'], 'nothing was pressed')
+                self.assertEqual(len(judgments.asked), 1)
+                self.assertEqual(len(approvals.requests), 1)
+                approvals.issue(approvals.requests[0][0])
                 browser.click({'target': '예약하기', 'effect': effect})
-                self.assertEqual(judgments.asked, [])
-                self.assertEqual(driver.approved, [False])
+                self.assertEqual(driver.approved, [True], 'only the approved press goes through')
+
+    def test_a_read_or_navigate_press_judged_no_goes_through_unapproved(self):
+        for effect in ('read', 'navigate'):
+            with self.subTest(effect=effect):
+                judgments, approvals = ScriptedJudgments('no'), Approvals()
+                browser, driver = opened(judgments, approvals)
+                browser.click({'target': '예약하기', 'effect': effect})
+                self.assertEqual((driver.approved, approvals.requests, len(judgments.asked)), ([False], [], 1))
 
     def test_a_press_the_floor_already_flags_is_never_judged_and_the_judgment_cannot_clear_it(self):
         for effect in ('mutate', 'navigate', 'read'):
