@@ -58,7 +58,7 @@ Use the `owns` list on the #794 iteration in the root plan. Only touch the owner
 
 Preserve #972's owner-worker versus third-party Memory boundary, existing folder/owner Grants, secrets exclusion, payment approval, idempotency and truthful unknown-effect handling. Do not add a new management UI, hard-coded site behavior, new collection sources, external destinations, a runtime plan mirror or a scheduler. **#918 slice (b), settings/family auto-apply, is not selected by this task.**
 
-The subsequent implementation changes owner-state semantics and **requires independent review** under the existing risk rule. This governance refresh changes planning only; it neither supplies nor fabricates that implementation review.
+The subsequent implementation changes owner-state semantics and **requires escalated review** under the existing risk rule (now the Codex review of the exact final head, Constitution *Escalated review*, #195). This governance refresh changes planning only; it neither supplies nor fabricates that implementation review.
 
 ## 6. Bounded verification
 
@@ -70,7 +70,7 @@ No broad live-model sweep, new evaluator or repeated-trial quota is required. Re
 
 ## 7. Completion and handoff
 
-Close #794 only after its remaining acceptance is mapped to merged implementation, relevant regression evidence, required CI and the required independent review. Reuse phases 1/2 as evidence; do not close #794 merely because a plan or an undo button exists. Preserve GitHub-native execution status rather than copying every PR transition into trackers.
+Close #794 only after its remaining acceptance is mapped to merged implementation, relevant regression evidence, required CI and the required escalated (Codex) review. Reuse phases 1/2 as evidence; do not close #794 merely because a plan or an undo button exists. Preserve GitHub-native execution status rather than copying every PR transition into trackers.
 
 Then #660 remains necessary: run its owner-authorized, budgeted probes and audit, including the native Telegram concerns consolidated from #581. Recheck account/session/profile prerequisites at operating time; the 2026-09-28 observations are not proof of the owner's current configuration. Held-out D must not become a development fixture. Missing owner-live authorization blocks an operating claim, not safe phase-3 coding.
 

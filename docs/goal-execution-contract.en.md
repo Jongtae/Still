@@ -79,7 +79,7 @@ The goal lifecycle preserves required evidence while avoiding validation churn t
 For a normal review-ready work unit, the expected broad cycle budget is:
 
 - **cycle 1:** stable-head full validation, plus one escalated review only when the security/authority escalation criteria apply;
-- **cycle 2:** one consolidated full validation when findings require changes; add re-review only if that remediation changes the triggering boundary or introduces a new review-triggering change.
+- **cycle 2:** one consolidated full validation when findings require changes; the Codex review is re-run on that consolidated head; an additional human or specialist re-review is added only if that remediation changes the triggering boundary or introduces a new review-triggering change.
 
 A third or later full-suite/re-review cycle is permitted when correctness requires it; it is not a bypassable hard limit. Before triggering that cycle, record why another broad pass is necessary, such as a newly discovered security/authority defect, changed shared contract, flaky or unknown root cause, or material cross-worktree conflict. Repeated broad cycles without a new reason are a signal to stop micro-fixing, establish the root cause, and batch remediation.
 
@@ -88,7 +88,7 @@ A third or later full-suite/re-review cycle is permitted when correctness requir
 - Do not request review again for an unchanged head.
 - Do not request duplicate review while the current review is running.
 - Do not repeatedly poll CI/review when no decision depends on a new state transition.
-- Do not run the full suite after every narrow mechanical edit solely for reassurance; run focused tests and batch compatible changes. If those edits occur after escalated review, re-review the consolidated final head only when the edits changed the triggering security/authority boundary or introduced a new review-triggering change.
+- Do not run the full suite after every narrow mechanical edit solely for reassurance; run focused tests and batch compatible changes. If those edits occur after escalated review, Codex reviews the consolidated final head; an additional human or specialist re-review is needed only when the edits changed the triggering security/authority boundary or introduced a new review-triggering change.
 - The required PR-head `validate` check is authoritative merge evidence. Under the owner amendment of 2026-10-08 it runs fast integrity checks and focused README/governance tests, without a blanket non-document → full-suite trigger. Changed-contract focused tests remain part of the PR evidence. The separate scheduled/manual `full-validate` workflow provides the broad regression backstop, and an active scope may explicitly require a risk-driven full run. Pushes to `main` use the same fast required checks; cancelling a run does not establish success.
 - Never skip, weaken, relabel, or bypass the tests applicable to the changed surface, branch protection, exact-head validation, or a genuinely risk-triggered escalated review to save context/compute. CI scope is a declared owner evidence policy, not a per-PR discretionary bypass.
 
