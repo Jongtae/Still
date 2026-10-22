@@ -14,6 +14,13 @@ holds what used to live inside ``AgentService``:
   ``task_progress_text`` the task card, ``deliver_conversation_notice`` one
   conversation notice.
 
+#212: ``TelegramSurface`` is the first implementation of the channel-neutral
+``conversation_surface.ConversationSurface``: its pairing (``pairing``,
+``owns``), its declared capabilities and the presence primitives the core
+Presence code calls through the boundary (``source_message``, ``present``,
+``show_draft``) live here, so that code branches on capabilities rather than
+on Telegram.
+
 ``AgentService`` stays the composition root.  It keeps one entry point per
 moved method (each forwards here through ``AgentService.telegram_surface``), so
 callers and tests see the same service methods.  The channel holds no state of
@@ -27,9 +34,11 @@ import hmac
 import json
 import time
 
-from .telegram_presence import CONTROL_RETRY, WaitState, draft_id_for, render_telegram_html, reply_controls_markup
+from .telegram_presence import (CONTROL_RETRY, WaitState, draft_frame, draft_id_for, render_telegram_html, reply_controls_markup,
+                                rich_draft_blocks, with_note, without_consumed)
 from .providers import ProviderError
 from .conversation_handoff import TELEGRAM_UNSENT_BACKOFF_FIRST, TELEGRAM_UNSENT_BACKOFF_MAX, TelegramNotSent, TelegramRejected, transient_failure
+from .conversation_surface import PRESENCE_REACT, PRESENCE_TYPING, ConversationSurface, SurfaceCapabilities, SurfacePairing
 from .agent_runtime import WORK_STOP_KEEP, WORK_STOP_KEY
 from .messages import msg
 from . import owner_model as om
@@ -43,11 +52,100 @@ from .quickstart_service import (APPROVE_BUTTON, BROWSER_LOGIN_PHONE_ALERT, BROW
                                  TELEGRAM_RECEIVE_GRACE_SECONDS, WORKING_NOTES_KIND, prepared_ids, truncated_owner_message)
 
 
-class TelegramSurface:
+class TelegramSurface(ConversationSurface):
     """Telegram ingestion, callbacks and delivery for one ``AgentService``."""
+
+    name = 'telegram'
+    #: Telegram shows every optional presence: a reaction on the owner's message, ``typing…``, the
+    #: thinking draft (``sendRichMessageDraft`` / ``sendMessageDraft``) with its Stop, and inline buttons.
+    capabilities = SurfaceCapabilities(reactions=True, typing=True, live_drafts=True, buttons=True, native_stop=True)
+
+    #: The Bot API client method behind each presence action.
+    PRESENCE_METHODS = {PRESENCE_REACT: 'set_message_reaction', PRESENCE_TYPING: 'send_chat_action'}
 
     def __init__(self, service):
         self.service = service
+
+    # -- the ConversationSurface boundary (#212) ------------------------------------
+    def pairing(self):
+        """The paired private chat of the current bot generation, or None while unpaired."""
+        cfg=self.service.store.config('telegram',{})
+        if not (cfg.get('enabled') and isinstance(cfg.get('user_id'),int)):return None
+        return SurfacePairing(f"telegram:{cfg.get('generation')}",cfg['user_id'])
+
+    def owns(self, job):
+        """Whether ``job`` came from the paired chat in the current bot generation."""
+        cfg=self.service.store.config('telegram',{})
+        return bool(job and cfg.get('enabled') and job.get('channel')==f"telegram:{cfg.get('generation')}"
+                    and isinstance(job.get('chat_id'),int) and job.get('chat_id')==cfg.get('user_id'))
+
+    def receive(self, now=None):
+        return self.service.receive_telegram(now)
+
+    def deliver_reply(self):
+        return self.service.deliver_one()
+
+    def source_message(self, work_id):
+        """The owner's Telegram message this Work answers (#581), or None."""
+        source=self.service.telegram_turns.source(work_id)
+        return source if isinstance(source,int) else None
+
+    def present(self, action, *args):
+        """One best-effort reaction (``chat, message_id, emoji``) or ``typing…`` (``chat``)."""
+        if action==PRESENCE_TYPING:args=(*args,'typing')
+        return self._attempt(self.PRESENCE_METHODS[action],*args)
+
+    def _attempt(self, method, *args, **kwargs):
+        """``(sent, refused)``: ``refused`` only when Telegram answered ``ok: false`` (``TelegramRejected``).
+
+        A timeout or a lost connection is not a refusal (#908).  Presentation
+        only: a failure is swallowed here and never changes Work status,
+        delivery or Evidence, and nothing is retried in a way that could send
+        a second durable bubble.
+        """
+        try:
+            getattr(self.service.telegram,method)(*args,**kwargs)
+            return True,False
+        except Exception as exc:  # presentation only
+            # INFO, so the owner-private log can tell a Telegram refusal of a
+            # reaction/typing/draft apart from code that never sent it (#581
+            # live discrepancy).  Only the method, error class and Telegram
+            # status code are logged - never the description, text or token.
+            LOG.info('telegram presence %s failed: %s status=%s',method,type(exc).__name__,getattr(exc,'status',None))
+            # Only Telegram's own ok:false answer is a refusal; the transport's timeout
+            # (status='timeout') or a lost connection is not (#909 review).
+            return False,isinstance(exc,TelegramRejected)
+
+    def show_draft(self, job, state, text, note=None):
+        """One Stop-able draft edit: the dots after any step line (#718/#835/#858).
+
+        First Telegram's animated thinking block (`sendRichMessageDraft`,
+        `rich_draft_blocks`: the thinking block holds `text`, the #839
+        attention `note` follows as a paragraph).  Once that is refused for
+        this Work (`state.rich_draft_failed`) the plain `sendMessageDraft`
+        carries the same text; a refusal there too is the caller's fallback
+        to typing.  The text is never empty (an empty draft is a blank bubble
+        on the owner's iOS client, #581).  The same `draft_id` maps Stop back
+        to the Work either way (``ingest_stop``, the ``native_stop`` capability).
+        """
+        text=text or draft_frame('',0)
+        draft_id=draft_id_for(job['id'])
+        can_stop=self.capabilities.native_stop
+        if not state.rich_draft_failed:
+            sent,refused=self._attempt('send_rich_message_draft',job['chat_id'],draft_id,rich_draft_blocks(text,note),can_stop=can_stop)
+            state.rich_draft_retry=not sent and not refused
+            if sent:
+                return True
+            # #908 (live 2026-09-30 22:58): the first draft after a restart timed out and the
+            # whole Work fell back to the plain draft.  Only Telegram refusing the rich draft
+            # retires it for this Work; a timeout falls back this once and the next edit retries.
+            if refused:state.rich_draft_failed=True
+        return self._attempt('send_message_draft',job['chat_id'],draft_id,with_note(text,note),can_stop=can_stop)[0]
+
+    def consume_control(self, chat_id, message_id, markup):
+        """Make a used inline control visibly inert; fall back to removing it."""
+        if self._attempt('edit_message_reply_markup',chat_id,message_id,markup)[0]:return
+        self._attempt('edit_message_reply_markup',chat_id,message_id,without_consumed(markup))
 
     def ingest_stop(self, stopped, generation):
         """Reconcile Telegram's Stop on a draft with real Work state.
@@ -521,7 +619,7 @@ class TelegramSurface:
                     if retry_id:
                         alert=(msg('service.i_ll_try_again'),False)
                         changed=True
-                        service._consume_control(sender,message.get('message_id'),
+                        self.consume_control(sender,message.get('message_id'),
                                               reply_controls_markup(job_id,(CONTROL_RETRY,),consumed=(CONTROL_RETRY,)))
                     else:
                         alert=(reason,True)
