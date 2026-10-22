@@ -192,6 +192,23 @@ class ConnectionDisconnectDraftTests(RevocationTestCase):
         self.assertEqual(self.settings.pending_for_conversation(OWNER, CHANNEL), [])
         self.assertIs(self.gmail_state(), ConnectorState.CONNECTED)
 
+    def test_a_blocked_connection_is_not_offered(self):
+        self.connect_gmail()
+        build = self.service.google_revocation
+
+        def blocked():
+            revoker = build()
+            revoker.connections[GMAIL_CONNECTOR_ID].state = lambda: 'blocked'
+            return revoker
+        self.service.google_revocation = blocked
+        try:
+            self.assertNotIn(GMAIL_CONNECTOR_ID, [row['id'] for row in self.service.connection_disconnect_options()])
+            with self.assertRaises(SettingsError):
+                self.propose()
+        finally:
+            self.service.google_revocation = build
+        self.assertEqual(self.google.requests, [])
+
     def test_an_already_disconnected_connection_is_not_offered(self):
         with self.assertRaises(SettingsError):
             self.propose()

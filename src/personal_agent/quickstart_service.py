@@ -7243,13 +7243,15 @@ class AgentService:
     def connection_disconnect_options(self):
         """The Google connections the owner may disconnect now: ``[{id, label, state}]``.
 
-        A connection already disconnected (even with a revocation still to retry) is not offered;
-        retrying a revocation stays a Settings action.
+        Only ``connected`` and ``reauth_required`` are offered.  A connection already disconnected (even
+        with a revocation still to retry) or blocked is not; retrying a revocation stays a Settings action.
         """
         rows=[]
         for connector_id,connection in self.google_revocation().connections.items():
             state=connection.state()
-            if state!='disconnected':
+            # #183 review: only an active connection, as the Settings page offers; a blocked row stays
+            # blocked after a disconnect, so offering it would repeat a disconnect that changes nothing.
+            if state in ('connected','reauth_required'):
                 rows.append({'id':connector_id,'label':self.CONNECTION_NAMES.get(connector_id,connection.label),'state':state})
         return rows
 
