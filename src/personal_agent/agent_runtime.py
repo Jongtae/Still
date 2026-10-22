@@ -2128,7 +2128,8 @@ def record_effect(action,detail,status):
  # #182: a result save that found a folder grant missing wrote nothing; the Work may park for that grant.
  if action=='save_result' and status=='succeeded':
   evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
-  if evidence.get('saved') is False and evidence.get('needs_setup'):return EFFECT_NONE
+  # Any save that reports saved: false (setup needed, a replay, a detached or missing earlier result) wrote no file.
+  if evidence.get('saved') is False:return EFFECT_NONE
  if action=='settings_change' and status in ('succeeded','failed'):
   # The direct route records a draft that stops for the owner as a failed step; the CLI route as succeeded.
   evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
@@ -2834,8 +2835,9 @@ class Capabilities:
   overwrite, one per Work.  Its sources are the reference originals this Work's ``read_file``
   actually read, with their exact versions; nothing else is written and no original changes.
   """
-  if not isinstance(title,str) or not 1<=len(title.strip())<=120:raise ValueError('결과 제목은 1~120자로 입력하세요.')
-  if not isinstance(content,str) or not content.strip() or len(content)>60000:raise ValueError('결과 내용은 1~60000자로 입력하세요.')
+  # #182 review: refusals before anything is written are marked ``ran: false`` (no effect), so another attempt can read and save.
+  if not isinstance(title,str) or not 1<=len(title.strip())<=120:raise not_run(ValueError('결과 제목은 1~120자로 입력하세요.'))
+  if not isinstance(content,str) or not content.strip() or len(content)>60000:raise not_run(ValueError('결과 내용은 1~60000자로 입력하세요.'))
   workspace=FileWorkspace(self.store)
   active=workspace.active()
   # #505: the missing folder is a declared local authority the owner grants once; nothing is written.
@@ -2846,7 +2848,7 @@ class Capabilities:
   # #182 review: every read this Work recorded (an earlier or restarted bridge too), with this process's own.
   self.workspace_reads={**self._recorded_workspace_reads(),**self.workspace_reads}
   if not self.workspace_reads:
-   raise ValueError('저장할 결과의 원본을 먼저 find_files와 read_file로 참고 폴더에서 읽어 주세요.')
+   raise not_run(ValueError('저장할 결과의 원본을 먼저 find_files와 read_file로 참고 폴더에서 읽어 주세요.'))
   # #182 review: settle an interrupted save first (finalize a published file, drop an unpublished
   # reservation), so only a real earlier result counts as one.
   workspace.recover()

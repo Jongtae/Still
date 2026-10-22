@@ -508,6 +508,15 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         with self.store.db() as db:
             self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'pending')
 
+    def test_a_save_refused_before_writing_is_effect_free(self):
+        caps = self.caps()
+        with self.assertRaises(ValueError) as refused:
+            caps.execute('save_result', {'title': 'Notes', 'content': 'nothing read yet'})
+        self.assertIs(getattr(refused.exception, 'ran', None), False)
+        self.assertEqual(record_effect('save_result', {'ran': False}, 'failed'), EFFECT_NONE)
+        replay = {'host_action': 'save_result', 'evidence': {'saved': False, 'already_saved': True}}
+        self.assertEqual(record_effect('save_result', replay, 'succeeded'), EFFECT_NONE)
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
