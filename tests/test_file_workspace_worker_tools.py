@@ -209,6 +209,8 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         result = caps.execute('save_result', {'title': 'x', 'content': 'y'})
         self.assertEqual((result['saved'], result['needs_setup'], result['requires']), (False, True, 'local-reference-read'))
         detail = {'host_action': 'save_result', 'evidence': _evidence_detail('save_result', result)}
+        from personal_agent.information_use import _event_items
+        self.assertEqual(_event_items('save_result', detail['evidence']), ['결과 저장 안 함: 폴더 연결 필요'])
         self.assertEqual(record_effect('save_result', detail, 'succeeded'), EFFECT_NONE)
         self.assertEqual(caps.execute('find_files', {'query': 'trip'})['requires'], 'local-folder-read')
 
