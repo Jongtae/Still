@@ -176,7 +176,7 @@ MAX_LOCATION_BUTTON_CHARS = 40
 PURPOSE = 'work-orchestration'
 
 
-def observations_with_pages(lines, pages, redact=None):
+def observations_with_pages(lines, pages, redact=None, last=''):
     """The outcome judgment's observations of a CLI attempt (#1282), at most ``OBSERVATION_CHARS``.
 
     ``lines`` are the recorded step lines (names, URLs, titles, counts);
@@ -187,7 +187,18 @@ def observations_with_pages(lines, pages, redact=None):
     takes what the step lines leave and at least ``PAGE_TEXT_FLOOR_CHARS``
     (the oldest step lines are cut first); each page passes ``redact(text,
     private=False)``, the secrets-only pass both routes use (#826).
+    #151: ``last`` is one line kept whole at the end inside the same bound (the read state), so
+    neither many step lines nor page text can push it out.
     """
+    text = _observations_with_pages(lines, pages, redact)
+    if not last:
+        return text
+    last = str(last)[:OBSERVATION_CHARS // 4]
+    room = OBSERVATION_CHARS - len(last) - 1
+    return (text[:room] + '\n' + last) if text else last
+
+
+def _observations_with_pages(lines, pages, redact=None):
     meta = '\n'.join(str(line) for line in lines or ())
     clean = (lambda text: redact(text, private=False)) if redact else (lambda text: str(text or ''))
     room = max(PAGE_TEXT_FLOOR_CHARS, OBSERVATION_CHARS - len(meta) - 1) - len(PAGE_TEXT_HEADER) - 1

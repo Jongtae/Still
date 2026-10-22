@@ -2294,6 +2294,9 @@ def _item_ref(item):
  if item.get('root_id') and isinstance(item.get('path'),str) and item['path']:return f"{item['root_id']}:{item['path']}"
  return ''
 
+#: #151 (Codex review): a mail id is kept whole - the Gmail reader accepts ids up to 128 characters
+#: (``gmail._MESSAGE_ID``) - so two ids sharing a prefix stay two items.
+MAIL_ID_CHARS=128
 #: #151: a listing keeps a short digest of up to this many listed identities, so a later read is
 #: matched to the listing it belongs to without persisting every private id or path.
 READ_STATE_DIGESTS=200
@@ -3910,11 +3913,11 @@ def _evidence_detail(name,result):
           'characters':len(result.get('content','')),'truncated':bool(result.get('truncated')),'needs_setup':bool(result.get('needs_setup'))}
  if name=='mail_search':
   # #150: ids and a count only; subject, sender and date are private mail metadata.
-  return {'message_count':len(result.get('messages',[])),'message_ids':[str(m.get('message_id') or '')[:64] for m in result.get('messages',[])[:20] if isinstance(m,dict)],
-          'item_digests':listed_digests(str(m.get('message_id') or '')[:64] for m in result.get('messages',[]) if isinstance(m,dict)),
+  return {'message_count':len(result.get('messages',[])),'message_ids':[str(m.get('message_id') or '')[:MAIL_ID_CHARS] for m in result.get('messages',[])[:20] if isinstance(m,dict)],
+          'item_digests':listed_digests(str(m.get('message_id') or '')[:MAIL_ID_CHARS] for m in result.get('messages',[]) if isinstance(m,dict)),
           'truncated':bool(result.get('truncated')),'needs_setup':bool(result.get('needs_setup'))}
  if name=='mail_read':
-  return {'message_id':str(result.get('message_id') or '')[:64],'mime_type':str(result.get('mime_type') or '')[:80],
+  return {'message_id':str(result.get('message_id') or '')[:MAIL_ID_CHARS],'mime_type':str(result.get('mime_type') or '')[:80],
           'characters':len(result.get('content','')),'truncated':bool(result.get('truncated')),'needs_setup':bool(result.get('needs_setup'))}
  if name=='read_file':
   return {'root_id':result.get('root_id'),'path':result.get('path'),'kind':result.get('kind'),'locations':result.get('locations',[])[:12],'characters':len(result.get('content','')),'truncated':bool(result.get('truncated'))}

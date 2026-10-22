@@ -179,6 +179,22 @@ class TheJudgmentReadsIt(unittest.TestCase):
         observations = self.step(('mail_search', {**LISTED, 'message_ids': ['m1', 'SECRET']}))
         self.assertIn('(m1, [redacted])', observations.splitlines()[-1])
 
+    def test_many_step_lines_never_push_the_read_state_out(self):
+        from personal_agent.orchestrator import OBSERVATION_CHARS, observations_with_pages
+        lines = [f'- web_search: {"x" * 590}'] * 40
+        for pages in ((), [('https://s.test', 'S', 'y' * 20000)]):
+            with self.subTest(pages=bool(pages)):
+                text = observations_with_pages(lines, pages, last='- read_state: z')
+                self.assertTrue(text.endswith('\n- read_state: z'))
+                self.assertLessEqual(len(text), OBSERVATION_CHARS)
+        self.assertEqual(observations_with_pages(['- a'], []), '- a')
+
+    def test_long_mail_ids_sharing_a_prefix_stay_two_items(self):
+        first, second = 'a' * 100 + '1', 'a' * 100 + '2'
+        listing = evidence_summary('mail_search', {'messages': [{'message_id': first}, {'message_id': second}]})
+        opened = evidence_summary('mail_read', {'message_id': first, 'content': 'hi'})
+        self.assertIn('never opened: 1 of 2 listed', read_state_text([('mail_search', listing), ('mail_read', opened)]))
+
     def test_the_proposition_says_what_the_fact_means(self):
         for rule in ('A read_state line in the observations is Still\'s own record',
                      'could not be confirmed does not serve the message: that material was not read',

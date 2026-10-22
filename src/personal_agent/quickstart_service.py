@@ -5662,10 +5662,10 @@ class AgentService:
         # call redid it or routed around it, or whether its effect is unknown.
         failed_steps=failed_steps_text(trail_steps(tool_rows))
         # #151: which listed items this attempt opened and read through, from the recorded evidence;
-        # last, so the step lines' own bound (the oldest are cut first) never drops it.
+        # kept whole at the end of the bounded observations, so no number of step lines drops it.
         read_state=read_state_text([(tool,data.get('evidence')) for tool,status,data in tool_rows if status=='succeeded'])
-        if read_state:observed.append('- '+str(orchestration._redact(read_state,private=False) or ''))
-        observations=observations_with_pages(observed,pages,orchestration._redact)
+        read_state=('- '+str(orchestration._redact(read_state,private=False) or '')) if read_state else ''
+        observations=observations_with_pages(observed,pages,orchestration._redact,last=read_state)
         summary='; '.join(part for part in (
             f"tools called: {', '.join(called) or 'none'}",
             f"failed: {', '.join(failed_codes)}" if failed_codes else '',
