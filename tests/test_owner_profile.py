@@ -332,6 +332,18 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.assertIn('마트 장바구니 ' + '가' * 10, section)
         self.assertNotIn('quieth', section)
 
+    def test_a_queued_web_message_is_dated_by_its_receipt(self):
+        """Codex review on #227: without ``source_at``, the Work's receipt, not when the transcript row was written."""
+        from datetime import datetime, timezone
+        self.store.put('calendar_timezone', 'Asia/Seoul')
+        self.said('마트 장바구니는 동네 마트 앱으로')
+        received = datetime(2026, 10, 1, 14, 50, tzinfo=timezone.utc).timestamp()  # 23:50 in Seoul
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET created=?, source_at=NULL WHERE message='마트 장바구니는 동네 마트 앱으로'", (received,))
+            db.execute("UPDATE messages SET created=? WHERE content='마트 장바구니는 동네 마트 앱으로'", (received + 1800,))
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        self.assertIn('[said 2026-10-01] 마트 장바구니는', self.service.owner_profile_snapshot('마트 장바구니'))
+
     def test_the_owners_earlier_words_are_bounded_in_bytes(self):
         from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
         self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])

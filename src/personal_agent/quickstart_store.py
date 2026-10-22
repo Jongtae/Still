@@ -1172,7 +1172,7 @@ class QuickStore:
         newest ``skip_recent`` messages (the recent window every reader already
         sees, and the current request).  ``[]`` without FTS5 or without
         searchable words.  Rows are ``{'id', 'content', 'created'}``; ``created``
-        is when the owner sent it (``source_at``) when known.
+        is when the owner sent it (``source_at``), else when Still received it (the Work's ``created``).
         """
         if not getattr(self,'messages_search_available',False):return []
         terms=[term for term in re.findall(r'\w+',str(text or '')) if len(term)>1][:20]
@@ -1181,7 +1181,7 @@ class QuickStore:
         with self.db() as db:
             newest=db.execute('SELECT id FROM messages ORDER BY id DESC LIMIT 1 OFFSET ?',(max(0,int(skip_recent)-1),)).fetchone()
             if newest is None:return []
-            rows=db.execute('''SELECT m.id,m.content,COALESCE(j.source_at,m.created) AS created FROM messages_search
+            rows=db.execute('''SELECT m.id,m.content,COALESCE(j.source_at,j.created,m.created) AS created FROM messages_search
                                JOIN messages m ON m.id=messages_search.rowid JOIN jobs j ON j.id=m.job_id
                                WHERE messages_search MATCH ? AND m.role='user' AND j.owner_typed=1 AND m.id<?
                                ORDER BY bm25(messages_search) LIMIT ?''',(query,newest['id'],int(limit))).fetchall()
