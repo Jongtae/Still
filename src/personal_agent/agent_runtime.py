@@ -2878,7 +2878,9 @@ class Capabilities:
            'message':f"이 작업은 이미 결과를 저장했습니다: {saved['path']}. 한 작업은 결과 하나만 저장하며, 이번 내용은 저장하지 않았습니다."}
   # #182 review: like save_note, the text this Work wrote to a private store stays in its private-write
   # set, so a later outbound lookup or browser step carrying it is attributed (``held_values``).
-  self.written_private.append(content);self.written_labels.add('connected-document');self.private_provenance.add('connected-document')
+  # The title (and file name it became) were written too, and may be derived from a private reference.
+  self.written_private.extend(value for value in (content,title.strip(),saved.get('path')) if isinstance(value,str) and value)
+  self.written_labels.add('connected-document');self.private_provenance.add('connected-document')
   # ``cited``, not ``sources``: the loop lists a result's ``sources`` as looked-up sources of the answer.
   return {'saved':True,'id':saved['id'],'path':saved['path'],'title':title.strip(),
           'cited':[source['path'] for source in json.loads(saved['sources'])] if isinstance(saved.get('sources'),str) else []}

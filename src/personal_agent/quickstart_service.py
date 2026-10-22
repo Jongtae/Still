@@ -4902,7 +4902,8 @@ class AgentService:
     def record_file_workspace_document_job(self, job_id):
         rows=self.store.config('file_workspace_document_jobs',[])
         rows=rows if isinstance(rows,list) else []
-        self.store.put('file_workspace_document_jobs',[*{*rows,job_id}][-100:])
+        # #182 review: insertion order kept and this Work appended last, so pruning drops the oldest, never it.
+        self.store.put('file_workspace_document_jobs',[row for row in rows if row!=job_id][-99:]+[job_id])
 
     def save_model(self, body, strict=False):
         config=validate_model(body)

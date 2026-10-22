@@ -564,11 +564,35 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'current')
         self.assertIs(workspace.intact(record), True)
 
+    def test_an_unavailable_reference_folder_leaves_the_result_current(self):
+        import shutil
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        moved = self.base / 'unmounted'
+        shutil.move(str(self.reference), str(moved))  # the drive is gone
+        found = self.caps('job-later').execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertEqual((found['files'], found['truncated']), ([], True))
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'current')
+        shutil.move(str(moved), str(self.reference))  # and back
+        found = self.caps('job-later').execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertEqual([item['path'] for item in found['files']], ['Notes.md'])
+
+    def test_the_newest_document_work_survives_pruning(self):
+        service = AgentService(self.store)
+        self.store.put('file_workspace_document_jobs', [f'old-{index}' for index in range(100)])
+        service.record_file_workspace_document_job('newest')
+        jobs = self.store.config('file_workspace_document_jobs')
+        self.assertEqual((len(jobs), jobs[-1], 'old-0' in jobs), (100, 'newest', False))
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
         caps.execute('save_result', {'title': 'Notes', 'content': 'RESULT-TEXT-123'})
         self.assertIn('RESULT-TEXT-123', caps.written_private)
+        self.assertIn('Notes', caps.written_private)
+        self.assertIn('Notes.md', caps.written_private)
 
     def test_a_reference_also_granted_as_a_connected_folder_is_found_as_the_reference(self):
         # Review: overlapping grants.  The reference folder is also a generic connected folder.

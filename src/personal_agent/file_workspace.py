@@ -250,14 +250,22 @@ class FileWorkspace:
     #: ``_fresh``'s answer when its deadline passed before every source was checked (#182 review).
     UNCHECKED=None
 
+    #: ``_fresh``'s answer when a cited reference folder is not usable now (removed from the grant, blocked,
+    #: an unmounted drive): nothing was observed to differ, so the record keeps its state (#182 review).
+    UNAVAILABLE='unavailable'
+
     def _fresh(self, record, deadline=None):
-        """Whether every cited source is unchanged; ``UNCHECKED`` when ``deadline`` passed between sources."""
+        """Whether every cited source is unchanged; ``UNCHECKED`` when ``deadline`` passed between sources,
+        ``UNAVAILABLE`` when a cited reference folder cannot be read now."""
         try: sources=json.loads(record['sources'])
         except (TypeError,json.JSONDecodeError): return False
         try:
             if not sources: return False
+            usable={ref.get('id'):ref.get('path') for ref in self.active().get('references') or () if isinstance(ref,dict)}
             for source in sources:
                 if deadline is not None and time.monotonic()>deadline: return self.UNCHECKED
+                folder=usable.get(source.get('reference_id'))
+                if not folder or not Path(folder).is_dir(): return self.UNAVAILABLE
                 current=self.read(source['reference_id'],source['path'])
                 if current['version']!=source['version'] or current['source_id']!=source['source_id']: return False
             return True
@@ -298,6 +306,9 @@ class FileWorkspace:
             if fresh is self.UNCHECKED:
                 # Cut short: neither current nor stale, and the search says it is incomplete.
                 self.stopped_early=True; break
+            if fresh==self.UNAVAILABLE:
+                # A cited reference folder is unusable now: left as it is, and the search is incomplete.
+                self.stopped_early=True; continue
             with self.store.db() as db: db.execute('UPDATE file_workspace_results SET state=? WHERE id=?',('current' if fresh else 'stale',record['id']))
             if not fresh: continue
             try:
@@ -337,7 +348,7 @@ class FileWorkspace:
         except (OSError,ValueError): ok=False
         if ok:
             fresh=self._fresh(record,time.monotonic()+5)
-            if fresh is self.UNCHECKED: return self.UNKNOWN
+            if fresh is self.UNCHECKED or fresh==self.UNAVAILABLE: return self.UNKNOWN
             ok=fresh is True
         if not ok:
             with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
