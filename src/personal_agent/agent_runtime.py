@@ -654,6 +654,8 @@ def memory_key_name(memory_key):
 #: answer the owner saved into a project has the path ``project/<result id>`` there.
 WORKSPACE_REFERENCE_PREFIX='workspace-'
 SAVED_RESULTS_ROOT='saved-results'
+#: At most this many of find_files' 20 hits are saved results (#182 review).
+SAVED_RESULT_HITS=10
 PROJECT_RESULT_PREFIX='project/'
 PRIVATE_PROVENANCE={'find_files':'connected-document','read_file':'connected-document',
                     'list_notes':'personal-space','list_memory':'owner-memory',
@@ -2745,11 +2747,13 @@ class Capabilities:
   # One deadline bounds the saved-result checks and the folder scan together.
   saved=self.saved_results(deadline=deadline)
   # Saved results first: they are few, and a request naming one should find it before a folder scan runs out.
+  # #182 review: saved results take at most half the hits, so the folders keep search capacity.
+  saved_truncated=False
   for item in saved:
    if any(t in (item['title']+' '+item['content']).casefold() for t in terms):
+    if len(hits)>=SAVED_RESULT_HITS:saved_truncated=True;break
     hits.append({'root_id':SAVED_RESULTS_ROOT,'path':item['path'],'kind':'saved-result','title':item['title'],'location':'',
                  'match':'filename' if query.casefold() in item['title'].casefold() else 'content'})
-    if len(hits)>=20:return {'files':hits,'truncated':True}
   seen=set()
   for root in roots:
    base=Path(root['path']).resolve()
@@ -2769,7 +2773,7 @@ class Capabilities:
       location=next((location for location in result['locations'] if any(t in location.casefold() for t in terms)),result['locations'][0] if result['locations'] else '')
       hits.append({'root_id':root['id'],'path':path,'kind':result['kind'],'location':location,'match':'filename' if query.casefold() in name.casefold() else 'content'})
      if len(hits)>=20:return {'files':hits,'truncated':True}
-  return {'files':hits,'truncated':False}
+  return {'files':hits,'truncated':saved_truncated}
  def save_result(self,title,content):
   """#182: save this Work's result as a new file in the file workspace's result folder.
 

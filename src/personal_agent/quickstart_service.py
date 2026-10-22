@@ -11224,7 +11224,9 @@ class AgentService:
         # ``save_result``, is named from Still's own record of it, never from the answer's words.
         # The file name is owner language; the result id is an internal identifier that stays in
         # Task/Artifact detail, where #562's exact-item link resolves it from typed Work data (#598 E1).
-        saved_files=[item['path'] for item in self.store.task_artifacts(job['id']) if item.get('path')]
+        # #182 review: only a published result (``current``); an interrupted save's reservation is not one.
+        saved_files=[item['path'] for item in self.store.task_artifacts(job['id'])
+                     if item.get('path') and item.get('state','current')=='current']
         if saved_files:
             run.response+=''.join(f"\n\n저장됨: {path}" for path in saved_files)
         if saved_files or self.read_file_workspace(job['id']):
