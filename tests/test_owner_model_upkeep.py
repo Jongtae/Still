@@ -574,6 +574,19 @@ class Invalidate(Upkeep):
             self.store.retract_memory(MEMORY_OWNER, row['id'], row['content_digest'])
         self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [a['id']])
 
+    def test_undos_keep_a_newer_value_that_was_itself_ended(self):
+        """Codex review on #226: A ended by B; C under A's key ended by D; undo B, then D: C is current, not A."""
+        a = self.saved('profile.place.workplace', '판교 사무실')
+        b = self.saved('profile.place.work', '강남', invalidates=[(a['id'], 'moved')])
+        c = self.saved('profile.place.workplace', '여의도 사무실')
+        d = self.saved('profile.place.office', '광화문', invalidates=[(c['id'], 'moved')])
+        self.store.retract_memory(MEMORY_OWNER, b['id'], b['content_digest'])
+        self.assertEqual(self.row(a['id'])['state'], 'superseded')
+        self.store.retract_memory(MEMORY_OWNER, d['id'], d['content_digest'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [c['id']])
+        self.store.retract_memory(MEMORY_OWNER, c['id'], c['content_digest'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [a['id']])
+
     def test_a_settings_edit_keeps_the_last_day(self):
         from personal_agent.memory_service import MemoryService
         self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')

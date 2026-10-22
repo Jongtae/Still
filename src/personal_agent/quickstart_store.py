@@ -1091,9 +1091,13 @@ class QuickStore:
             restorable=[]
             for ended_id in ended:
                 # Codex review on #226: a key that has a newer current value since keeps it; the ended row stays ended.
-                key=db.execute('SELECT memory_key FROM memories WHERE id=?',(ended_id,)).fetchone()['memory_key']
-                newer=db.execute("SELECT id,supersedes FROM memories WHERE owner_key=? AND memory_key=? AND state='current' AND id<>?",
-                                 (owner_key,key,memory_id)).fetchone()
+                ended_row=db.execute('SELECT memory_key,created FROM memories WHERE id=?',(ended_id,)).fetchone()
+                # A newer value under the key - current, or itself ended by another save that may be undone
+                # too (Codex review) - stands in front of this row.
+                newer=db.execute("""SELECT id,supersedes FROM memories WHERE owner_key=? AND memory_key=? AND id<>? AND id<>?
+                                      AND created>=? AND (state='current' OR (state='superseded' AND invalidated_by IS NOT NULL))
+                                      ORDER BY created DESC,id DESC LIMIT 1""",
+                                 (owner_key,ended_row['memory_key'],memory_id,ended_id,ended_row['created'])).fetchone()
                 if newer:
                     # Codex review: the newer value now stands in front of the ended row, so undoing it later
                     # brings that row back (out-of-order undos still end at the original fact).
