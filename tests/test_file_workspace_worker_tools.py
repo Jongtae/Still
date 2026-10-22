@@ -192,6 +192,23 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             caps.execute('find_files', {'query': '출장 계획', 'root_id': 'not-a-root'})
 
+    def test_a_saved_results_search_uses_the_whole_budget_and_says_when_it_stopped(self):
+        from unittest.mock import patch
+        for index in range(12):
+            caps = self.caps(f'job-{index}')
+            caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+            caps.execute('save_result', {'title': f'출장 계획 {index}', 'content': 'summary'})
+        later = self.caps('job-later')
+        found = later.execute('find_files', {'query': '출장 계획', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertEqual((len(found['files']), found['truncated']), (12, False))
+        # Freshness checks cut short by the deadline: the search says it is incomplete.
+        original = FileWorkspace.current_results
+        with patch.object(FileWorkspace, 'current_results',
+                          lambda self, needle=None, latest=False, path=None, deadline=None:
+                          original(self, needle, latest, path, 0)):
+            stopped = later.execute('find_files', {'query': '출장 계획', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertEqual((stopped['files'], stopped['truncated']), ([], True))
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})

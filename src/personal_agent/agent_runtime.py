@@ -2674,10 +2674,13 @@ class Capabilities:
   """
   workspace=FileWorkspace(self.store)
   rows=[]
+  # #182 review: whether the deadline left saved results unchecked, so a search can say it is truncated.
+  self.saved_results_stopped=False
   if path is None or not path.startswith(PROJECT_RESULT_PREFIX):
    try:rows=[{'path':item['path'],'content':item['content'],'title':item['path']}
              for item in workspace.current_results(path=path,deadline=deadline)]
    except (OSError,ValueError):rows=[]  # no usable result folder
+   self.saved_results_stopped=bool(getattr(workspace,'stopped_early',False))
   if path is None or path.startswith(PROJECT_RESULT_PREFIX):
    rows+=[{'path':PROJECT_RESULT_PREFIX+item['id'],'content':item['content'] or '','title':item['title']}
           for item in workspace.project_results() if path is None or PROJECT_RESULT_PREFIX+item['id']==path]
@@ -2750,6 +2753,7 @@ class Capabilities:
   terms=[query.casefold()]+[t.casefold() for t in re.findall(r'[\w-]+',query) if len(t)>=3]
   hits=[];visited=0;deadline=time.monotonic()+5
   # One deadline bounds the saved-result checks and the folder scan together.
+  self.saved_results_stopped=False
   saved=self.saved_results(deadline=deadline) if only in ('',SAVED_RESULTS_ROOT) else []
   if only==SAVED_RESULTS_ROOT:roots=[]
   # Saved results first: they are few, and a request naming one should find it before a folder scan runs out.
@@ -2757,7 +2761,8 @@ class Capabilities:
   saved_truncated=False
   for item in saved:
    if any(t in (item['title']+' '+item['content']).casefold() for t in terms):
-    if len(hits)>=SAVED_RESULT_HITS:saved_truncated=True;break
+    # The half-budget cap applies only when folders are searched too; a saved-results-only search gets all 20.
+    if len(hits)>=(20 if only==SAVED_RESULTS_ROOT else SAVED_RESULT_HITS):saved_truncated=True;break
     hits.append({'root_id':SAVED_RESULTS_ROOT,'path':item['path'],'kind':'saved-result','title':item['title'],'location':'',
                  'match':'filename' if query.casefold() in item['title'].casefold() else 'content'})
   seen=set()
@@ -2779,7 +2784,7 @@ class Capabilities:
       location=next((location for location in result['locations'] if any(t in location.casefold() for t in terms)),result['locations'][0] if result['locations'] else '')
       hits.append({'root_id':root['id'],'path':path,'kind':result['kind'],'location':location,'match':'filename' if query.casefold() in name.casefold() else 'content'})
      if len(hits)>=20:return {'files':hits,'truncated':True}
-  return {'files':hits,'truncated':saved_truncated}
+  return {'files':hits,'truncated':saved_truncated or self.saved_results_stopped}
  def save_result(self,title,content):
   """#182: save this Work's result as a new file in the file workspace's result folder.
 

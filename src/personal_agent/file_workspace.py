@@ -258,8 +258,11 @@ class FileWorkspace:
             records=[dict(row) for row in (db.execute('SELECT * FROM file_workspace_results WHERE path=?',(path,)) if path is not None
                                            else db.execute('SELECT * FROM file_workspace_results ORDER BY created DESC LIMIT 100'))]
         results=[]
+        # Whether the deadline stopped the checks before every record was seen (#182 review).
+        self.stopped_early=False
         for record in records:
-            if deadline is not None and time.monotonic()>deadline: break
+            if deadline is not None and time.monotonic()>deadline:
+                self.stopped_early=True; break
             if record.get('workspace_id')!=self._workspace_id():
                 with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
                 continue
