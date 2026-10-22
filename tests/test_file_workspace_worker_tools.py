@@ -544,6 +544,26 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         self.assertTrue(workspace.project_capped)
         self.assertEqual(len(workspace.project_results(terms=['answer'])), 50)
 
+    def test_an_uncheckable_result_keeps_its_state(self):
+        from unittest.mock import patch
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        workspace = FileWorkspace(self.store)
+        record = workspace.result_for('job-1')
+        with patch.object(FileWorkspace, '_fresh', lambda self, record, deadline=None: FileWorkspace.UNCHECKED):
+            self.assertIs(workspace.intact(record), FileWorkspace.UNKNOWN)
+        status = FileWorkspace(self.store).status()
+        self.store.put('file_workspace', {**status, 'workspace': None, 'workspace_id': None})  # an unmounted drive
+        self.assertEqual(workspace.result_for('job-1')['state'], 'current')
+        self.assertIs(workspace.intact(record), FileWorkspace.UNKNOWN)
+        again = caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        self.assertEqual((again['saved'], again['requires']), (False, 'local-result-write'))
+        self.store.put('file_workspace', status)  # it comes back
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'current')
+        self.assertIs(workspace.intact(record), True)
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})

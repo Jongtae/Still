@@ -321,15 +321,24 @@ class FileWorkspace:
         if not latest and (not isinstance(query,str) or not 2<=len(query.strip())<=160): raise ValueError('두 글자 이상의 결과 검색어를 입력하세요.')
         return self.current_results(query.casefold().strip(),latest)
 
+    #: ``intact``'s answer when it could not tell: the result folder is unusable now, or the source check
+    #: ran out of time.  The record keeps its state (#182 review).
+    UNKNOWN=None
+
     def intact(self, record):
         """Whether a current record is still a current result: its file exactly what Still published and its
-        cited sources unchanged (#182 review); else it is marked stale."""
+        cited sources unchanged (#182 review).  ``False`` marks it stale; ``UNKNOWN`` changes nothing."""
+        if record.get('workspace_id')!=self.active().get('workspace_id') or not self.active().get('workspace_id'):
+            return self.UNKNOWN
         try:
             published=self._result_path(record['path'])
             ok=(published.stat().st_size<=MAX_FILE_BYTES
                 and hashlib.sha256(published.read_bytes()).hexdigest()==record.get('content_hash'))
         except (OSError,ValueError): ok=False
-        ok=ok and self._fresh(record,time.monotonic()+5) is True
+        if ok:
+            fresh=self._fresh(record,time.monotonic()+5)
+            if fresh is self.UNCHECKED: return self.UNKNOWN
+            ok=fresh is True
         if not ok:
             with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
         return ok
@@ -344,7 +353,9 @@ class FileWorkspace:
             self._ensure_results_table(db)
             row=db.execute('SELECT * FROM file_workspace_results WHERE request_id=?',(request_id,)).fetchone()
         record=dict(row) if row else None
-        if record and record.get('state')=='current' and record.get('workspace_id')!=self.active().get('workspace_id'):
+        active_id=self.active().get('workspace_id')
+        # Only a usable, different result folder detaches it; an unavailable one (an unmounted drive) leaves it.
+        if record and record.get('state')=='current' and active_id and record.get('workspace_id')!=active_id:
             with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
             record['state']='detached'
         return record

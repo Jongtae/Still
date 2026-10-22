@@ -11232,7 +11232,7 @@ class AgentService:
         # #182 review: revalidated now (its file still exactly what was published, its sources unchanged).
         files=FileWorkspace(self.store)
         saved=files.result_for(job['id'])
-        saved_files=[saved['path']] if saved and saved.get('state')=='current' and files.intact(saved) else []
+        saved_files=[saved['path']] if saved and saved.get('state')=='current' and files.intact(saved) is True else []
         if saved_files:
             run.response+=''.join(f"\n\n저장됨: {path}" for path in saved_files)
         if saved_files or self.read_file_workspace(job['id']):

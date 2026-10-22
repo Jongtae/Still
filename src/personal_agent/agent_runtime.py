@@ -2858,7 +2858,12 @@ class Capabilities:
    # changed (``stale``): this Work cannot save another result, and says so instead of a receipt.
    return {'saved':False,'already_saved':False,'id':earlier['id'],'path':earlier['path'],
            'message':'이 작업의 이전 결과 저장이 다른 결과 폴더에 묶여 있어 새로 저장하지 않았습니다. 새 요청으로 다시 저장해 주세요.'}
-  if earlier and not workspace.intact(earlier):
+  check=workspace.intact(earlier) if earlier else None
+  if earlier and check is workspace.UNKNOWN:
+   # The earlier result could not be checked now (its folder unusable, or the check ran out of time): no new save.
+   return {'saved':False,'already_saved':False,'id':earlier['id'],'path':earlier['path'],
+           'message':'이 작업이 저장한 결과를 지금 확인하지 못해 새로 저장하지 않았습니다. 잠시 후 다시 시도해 주세요.'}
+  if earlier and check is False:
    # #182 review: the earlier file was deleted, edited or replaced: no receipt for what is not there.
    return {'saved':False,'already_saved':False,'id':earlier['id'],'path':earlier['path'],
            'message':'이 작업이 저장한 결과 파일이나 그 원본이 지워졌거나 바뀌어 있어 새로 저장하지 않았습니다. 새 요청으로 다시 저장해 주세요.'}
