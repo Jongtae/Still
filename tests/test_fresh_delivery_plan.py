@@ -303,7 +303,7 @@ def test_the_in_context_program_is_closed_out_and_the_owed_reviews_stay_owed():
 
 
 def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_paused():
-    """#206: selected by the owner on 2026-10-23; cloud AI and the surface refactor start first."""
+    """#206: selected by the owner on 2026-10-23; cloud AI first, then the surface refactor."""
     current = plan()
     assert current["next_goal"]["id"] == "WORKPLACE-01"
     assert current["next_goal"]["status"] == "owner-activated-goal-ready"
@@ -312,7 +312,9 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     program = current["programs"]["WORKPLACE-01"]
     assert program["ordered_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01", "WORK-MODE-01", "INTRANET-DEST-01",
                                            "OWNER-MCP-WORK-01", "MATTERMOST-01", "SLACK-01"]
-    assert program["active_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01"]
+    # One substep in flight at a time (#211 and #212 both edit quickstart_service.py).
+    assert program["active_substeps"] == ["CLOUD-AI-01"]
+    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "WORKPLACE-01") == "CLOUD-AI-01"
     assert program["completed_substeps"] == []
     assert "Codex review of the exact final head" in program["escalated_review"]
     items = {item["id"]: item for item in current["iterations"]}

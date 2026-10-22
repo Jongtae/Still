@@ -982,8 +982,7 @@
         "SLACK-01"
       ],
       "active_substeps": [
-        "CLOUD-AI-01",
-        "SURFACE-SEAM-01"
+        "CLOUD-AI-01"
       ],
       "completed_substeps": [],
       "decisions": {
@@ -1008,6 +1007,6 @@
   "next_goal": {
     "id": "WORKPLACE-01",
     "status": "owner-activated-goal-ready",
-    "action": "Owner direction 2026-10-22/23 (#206) selects WORKPLACE-01: work mode, intranet destinations, company tools through the owner's own MCP servers, cloud AI engines and Mattermost/Slack surfaces (#208-#214), starting with CLOUD-AI-01 (#211) and SURFACE-SEAM-01 (#212). Session-driven at the owner's request. Scoped PRs are authorized; a PR whose escalated review is triggered merges only after the Codex review of its exact final head, and the owner merges it. Live accounts, company networks, live models, releases and deployment are not authorized. The delivery heartbeat stays paused, and no successor is selected on completion."
+    "action": "Owner direction 2026-10-22/23 (#206) selects WORKPLACE-01: work mode, intranet destinations, company tools through the owner's own MCP servers, cloud AI engines and Mattermost/Slack surfaces (#208-#214), starting with CLOUD-AI-01 (#211); SURFACE-SEAM-01 (#212) follows. Its PR #229 was prepared in parallel and is rebased once #211 merges, because both edit quickstart_service.py and one substep is in flight at a time. Session-driven at the owner's request. Scoped PRs are authorized; a PR whose escalated review is triggered merges only after the Codex review of its exact final head, and the owner merges it. Live accounts, company networks, live models, releases and deployment are not authorized. The delivery heartbeat stays paused, and no successor is selected on completion."
   }
 }
