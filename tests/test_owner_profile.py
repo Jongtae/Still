@@ -319,6 +319,16 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.assertIn('[said 2026-10-02] 마트 장바구니는 동네 마트 앱으로', section)
         self.assertIn('owner_said (2 earlier owner messages)', information_use.profile_keys(section))
 
+    def test_a_secret_straddling_the_clip_is_redacted_before_it(self):
+        """Codex review on #227: clipping first would keep a prefix the stored-value redaction no longer matches."""
+        password = 'quietharbor-river-tulip'
+        self.store.secret('api_key:openai', password)
+        self.said('마트 장바구니 ' + '가' * 285 + ' ' + password)
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        section = self.service.owner_profile_snapshot('마트 장바구니')
+        self.assertIn('마트 장바구니 ' + '가' * 10, section)
+        self.assertNotIn('quieth', section)
+
     def test_the_owners_earlier_words_are_bounded_in_bytes(self):
         from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
         self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])

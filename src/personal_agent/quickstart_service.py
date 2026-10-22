@@ -2762,7 +2762,9 @@ class AgentService:
         for row in rows:
             # Codex review on #227: the day the owner sent it, in the owner's zone.
             day=datetime.fromtimestamp(float(row['created']),zone).date().isoformat()
-            line=f"[said {day}] {' '.join(str(row['content'] or '').split())[:OWNER_WORDS_LINE_CHARS]}"
+            # Codex review on #227: redacted before it is clipped, so a cut can never keep part of a stored secret.
+            words=' '.join(str(self._redact_known_secrets(row['content'] or '')).split())
+            line=f"[said {day}] {words[:OWNER_WORDS_LINE_CHARS]}"
             if used+len(line.encode())+1>OWNER_WORDS_BYTES:break
             used+=len(line.encode())+1;lines.append(line)
         return '\n'.join([OWNER_WORDS_HEADING,*lines]) if lines else ''
