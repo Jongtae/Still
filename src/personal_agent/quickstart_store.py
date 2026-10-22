@@ -1,11 +1,13 @@
 """Private, single-owner persistence for the quickstart."""
 from contextlib import contextmanager
 from functools import cached_property
+import datetime
 import fcntl
 import hashlib
 import hmac
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import sqlite3
@@ -170,7 +172,10 @@ class QuickStore:
             # NULL for everything Still enqueues (preparations, continuations, retries, checks).
             if 'owner_typed' not in columns: db.execute('ALTER TABLE jobs ADD COLUMN owner_typed INTEGER')
             memory_columns={row['name'] for row in db.execute('PRAGMA table_info(memories)')}
-            for name,kind in (('owner_key','TEXT'),('work_key','TEXT'),('content_digest','TEXT'),('candidate_id','TEXT')):
+            # #220: append + invalidate: which save ended a row, why and when; and the last day a fact holds.
+            for name,kind in (('owner_key','TEXT'),('work_key','TEXT'),('content_digest','TEXT'),('candidate_id','TEXT'),
+                              ('invalidated_by','TEXT'),('invalidation_reason','TEXT'),('invalidated_at','REAL'),
+                              ('valid_until','TEXT')):
                 if name not in memory_columns: db.execute(f'ALTER TABLE memories ADD COLUMN {name} {kind}')
             candidate_columns={row['name'] for row in db.execute('PRAGMA table_info(memory_candidates)')}
             for name,kind in (('owner_key','TEXT'),('work_key','TEXT'),('content_digest','TEXT'),('decided','REAL'),('resulting_memory_id','TEXT')):
@@ -502,12 +507,48 @@ class QuickStore:
     def _memory_row(row):
         if not row:return None
         value=dict(row)
-        return {key:value[key] for key in ('id','memory_key','content','created','supersedes','state','content_digest','candidate_id') if key in value}
+        return {key:value[key] for key in ('id','memory_key','content','created','supersedes','state','content_digest','candidate_id',
+                                           'valid_until','invalidated_by','invalidation_reason','invalidated_at') if key in value}
+
+    #: #220: at most this many earlier rows one save may end.
+    MAX_INVALIDATES=3
+    INVALIDATION_REASON_CHARS=200
+    _VALID_UNTIL=re.compile(r'\d{4}-\d{2}-\d{2}')
+
+    @classmethod
+    def memory_end_terms(cls, invalidates=(), valid_until=None):
+        """``(pairs, valid_until)`` checked (#220): ``(id, reason)`` pairs and an ISO date or None; ValueError otherwise."""
+        pairs=[]
+        for item in invalidates or ():
+            if not (isinstance(item,(list,tuple)) and len(item)==2):raise ValueError('끝낼 기억을 확인하세요.')
+            memory_id,reason=item
+            reason=' '.join(str(reason or '').split())
+            if not isinstance(memory_id,str) or not memory_id or not reason or len(reason)>cls.INVALIDATION_REASON_CHARS:
+                raise ValueError('끝낼 기억을 확인하세요.')
+            if memory_id not in {pair[0] for pair in pairs}:pairs.append((memory_id,reason))
+        if len(pairs)>cls.MAX_INVALIDATES:raise ValueError('끝낼 기억이 너무 많습니다.')
+        if valid_until in (None,''):return pairs,None
+        try:
+            if not (isinstance(valid_until,str) and cls._VALID_UNTIL.fullmatch(valid_until)):raise ValueError
+            datetime.date.fromisoformat(valid_until)
+        except ValueError:
+            raise ValueError('기억이 끝나는 날짜를 확인하세요.') from None
+        return pairs,valid_until
 
     def _save_memory(self, db, memory_key, content, owner_key, work_key=None, candidate_id=None,
-                     preserve_correction_token=None, corrected=False):
+                     preserve_correction_token=None, corrected=False, invalidates=(), valid_until=None):
         memory_id=str(uuid.uuid4());digest=self.memory_digest(memory_key,content)
+        invalidates,valid_until=self.memory_end_terms(invalidates,valid_until)
         previous=db.execute("SELECT id FROM memories WHERE owner_key=? AND memory_key=? AND state='current' ORDER BY created DESC LIMIT 1",(owner_key,memory_key)).fetchone()
+        ended=[]
+        for ended_id,reason in invalidates:
+            # #220: a save may end earlier current profile rows under any key, each named by id with a reason.
+            # Only this owner's current ``profile.`` rows; anything else refuses the whole save.
+            row=db.execute("SELECT id,memory_key FROM memories WHERE id=? AND owner_key=? AND state='current'",(ended_id,owner_key)).fetchone()
+            if not row or not str(row['memory_key']).startswith('profile.') or str(row['memory_key']).startswith('profile.working.'):
+                raise ValueError('끝낼 기억을 다시 확인하세요.')
+            if previous and row['id']==previous['id']:continue  # the same key is superseded below anyway
+            ended.append((row,reason))
         if previous:
             # #794 phase 3: a value that was wrong is ``corrected``; one that became outdated is ``superseded``.
             db.execute("UPDATE memories SET state=? WHERE id=? AND owner_key=?",('corrected' if corrected else 'superseded',previous['id'],owner_key))
@@ -529,8 +570,14 @@ class QuickStore:
                       WHERE owner_key=? AND memory_key=? AND state='issued'
                         AND (? IS NULL OR token_hash<>?)""",
                    (owner_key,memory_key,preserve_correction_token,preserve_correction_token))
-        db.execute('INSERT INTO memories(id,memory_key,content,created,supersedes,state,owner_key,work_key,content_digest,candidate_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                   (memory_id,memory_key,content,time.time(),previous['id'] if previous else None,'current',owner_key,work_key,digest,candidate_id))
+        now=time.time()
+        for row,reason in ended:
+            db.execute("""UPDATE memories SET state='superseded',invalidated_by=?,invalidation_reason=?,invalidated_at=?
+                          WHERE id=? AND owner_key=?""",(memory_id,reason,now,row['id'],owner_key))
+            db.execute("""UPDATE memory_approvals SET state='revoked',memory_key=''
+                          WHERE owner_key=? AND memory_key=? AND state='issued'""",(owner_key,row['memory_key']))
+        db.execute('INSERT INTO memories(id,memory_key,content,created,supersedes,state,owner_key,work_key,content_digest,candidate_id,valid_until) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                   (memory_id,memory_key,content,now,previous['id'] if previous else None,'current',owner_key,work_key,digest,candidate_id,valid_until))
         return self._memory_row(db.execute('SELECT * FROM memories WHERE id=?',(memory_id,)).fetchone())
 
     #: #918 review: the Telegram notice kind a direct save holds in its own transaction.
@@ -538,7 +585,8 @@ class QuickStore:
     #: The notice's state while it waits for the Work's reply to be delivered.
     NOTICE_HELD='held'
 
-    def save_memory(self, memory_key, content, owner_id='local-owner', work_id=None, notice=False, corrected=False):
+    def save_memory(self, memory_key, content, owner_id='local-owner', work_id=None, notice=False, corrected=False,
+                    invalidates=(), valid_until=None):
         """Write one current Memory row; with ``notice``, hold its owner notice durably in the same transaction (#918).
 
         A direct save by the owner's own AI must never end without the owner
@@ -551,7 +599,8 @@ class QuickStore:
         work_key=self._work_binding(work_id) if work_id is not None else None
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            row=self._save_memory(db,memory_key,content,owner_key,work_key,corrected=corrected is True)
+            row=self._save_memory(db,memory_key,content,owner_key,work_key,corrected=corrected is True,
+                                  invalidates=invalidates,valid_until=valid_until)
             if notice and isinstance(work_id,str):
                 job=db.execute('SELECT channel,chat_id FROM jobs WHERE id=?',(work_id,)).fetchone()
                 channel=str(job['channel'] or '') if job else ''
@@ -1023,6 +1072,12 @@ class QuickStore:
                 if previous:
                     db.execute("UPDATE memories SET state='current' WHERE id=? AND owner_key=?",(previous['id'],owner_key))
                     restored=self._memory_row(db.execute('SELECT * FROM memories WHERE id=?',(previous['id'],)).fetchone())
+            # #220: the rows this save ended become current again, exactly those still ended by it.
+            ended=[r['id'] for r in db.execute("SELECT id FROM memories WHERE owner_key=? AND invalidated_by=? AND state='superseded'",
+                                               (owner_key,memory_id))]
+            for ended_id in ended:
+                db.execute("""UPDATE memories SET state='current',invalidated_by=NULL,invalidation_reason=NULL,invalidated_at=NULL
+                              WHERE id=? AND owner_key=?""",(ended_id,owner_key))
             db.execute("""UPDATE memory_approvals SET state='revoked',memory_key=''
                           WHERE owner_key=? AND memory_key=? AND state='issued'""",(owner_key,row['memory_key']))
             if row['candidate_id']:
@@ -1036,7 +1091,14 @@ class QuickStore:
                            (record['job_id'],record['tool'],record['status'],json.dumps(detail,ensure_ascii=False),
                             time.time() if now is None else float(now)))
         return {'retracted':True,'id':memory_id,'memory_key':row['memory_key'],'content':row['content'],
-                'content_digest':row['content_digest'],'restored':restored}
+                'content_digest':row['content_digest'],'restored':restored,'restored_ended':ended}
+
+    def ended_by(self, owner_id, memory_id):
+        """The rows one save ended under other keys and that are still ended by it, oldest first (#220)."""
+        with self.db() as db:
+            rows=db.execute("SELECT * FROM memories WHERE owner_key=? AND invalidated_by=? AND state='superseded' ORDER BY created,id",
+                            (self._memory_binding(owner_id),memory_id)).fetchall()
+            return [self._memory_row(row) for row in rows]
 
     def work_memories(self, owner_id, work_id, limit=101):
         """The current Memory rows one Work wrote, oldest first (#918: what its notice shows)."""

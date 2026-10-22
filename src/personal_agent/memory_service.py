@@ -208,8 +208,15 @@ class MemoryService:
         except (TypeError, ValueError, OverflowError, OSError):
             return 'unknown-date'
 
+    #: #220: how many leading characters of a Memory id name its row in an ``ids`` snapshot.
+    SHORT_ID_CHARS = 8
+
+    def _today(self):
+        """The owner's local date, for ``valid_until`` (the last day a fact holds)."""
+        return datetime.fromtimestamp(float(self.now())).date().isoformat()
+
     def profile_snapshot(self, owner_id, *, limit_chars=PROFILE_SNAPSHOT_CHARS, line_chars=PROFILE_LINE_CHARS, query=None,
-                         limit_bytes=PROFILE_SNAPSHOT_BYTES):
+                         limit_bytes=PROFILE_SNAPSHOT_BYTES, ids=False):
         """A bounded, attributable snapshot of ``profile.*`` rows for a turn prompt.
 
         ``text`` is one line per row - ``key: value (saved YYYY-MM-DD)`` - in
@@ -222,6 +229,12 @@ class MemoryService:
         ``entries`` carries the same rows with their Memory ids and saved
         times, so every line in the prompt is attributable to one row.
 
+        #220: a row whose ``valid_until`` is before today has ended and is left
+        out (it stays in the store and the owner's view); a row that ends
+        later says ``until YYYY-MM-DD``.  With ``ids`` each line starts with
+        ``[<first 8 characters of its id>]`` so the memory upkeep can name the
+        rows a new fact ends.
+
         This is a private read like ``list_memories``: it arms the caller's
         turn-scoped egress sink unless the service was built with
         ``NO_EGRESS_GUARD``.
@@ -233,10 +246,13 @@ class MemoryService:
             raise MemoryServiceError('profile snapshot line size is invalid')
         if isinstance(limit_bytes, bool) or not isinstance(limit_bytes, int) or limit_bytes < 1:
             raise MemoryServiceError('profile snapshot byte size is invalid')
-        rows = self._profile_rows(owner_id)
+        today = self._today()
+        def holds(row):
+            return not row.get('valid_until') or str(row['valid_until']) >= today
+        rows = [row for row in self._profile_rows(owner_id) if holds(row)]
         if query is not None:
             matched = [row for row in self.search_memories(owner_id, query, limit=20, key_prefix=PROFILE_PREFIX)['memories']
-                       if self.is_profile_key(row.get('memory_key'))]
+                       if self.is_profile_key(row.get('memory_key')) and holds(row)]
             found = {row['id'] for row in matched}
             rows = matched + [row for row in rows if row['id'] not in found]
         lines, entries, used, used_bytes = [], [], 0, 0
@@ -244,7 +260,10 @@ class MemoryService:
             content = ' '.join(str(row.get('content') or '').split())
             if len(content) > line_chars:
                 content = content[:line_chars - 6] + ' [...]'
-            line = f"{row['memory_key']}: {content} (saved {self._saved_date(row.get('created'))})"
+            until = f", until {row['valid_until']}" if row.get('valid_until') else ''
+            line = f"{row['memory_key']}: {content} (saved {self._saved_date(row.get('created'))}{until})"
+            if ids:
+                line = f"[{str(row['id'])[:self.SHORT_ID_CHARS]}] {line}"
             size = len(line) + (1 if lines else 0)
             size_bytes = len(line.encode('utf-8')) + (1 if lines else 0)
             if used + size > limit_chars or used_bytes + size_bytes > limit_bytes:

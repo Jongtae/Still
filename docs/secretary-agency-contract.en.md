@@ -9,13 +9,26 @@ This contract contains dated amendments because they are durable decision eviden
 | Secretary self-review | #998 SELF-REVIEW-01 triggers and budget, with the lesson disposition superseded by #19 STEADY-NOTES-01: what it learns revises one bounded working-notes document (versioned, told once, exact undo); blocker remains Evidence | #805 is reused as the upkeep execution seam, not a separate self-review loop; #998's lesson-as-`profile.working.`-Memory rule |
 | Owner AI Memory writes | #918 slice (a): the owner's own AI saves current Memory directly, tells the owner, and offers exact bounded undo; secret-shaped values are refused | #818/#836 ask flow and #597 request-path write gate for the owner's own AI |
 | Third-party/delegated Memory writes | #918 keeps C5: third-party/delegated writers create pending MemoryCandidate; #836/#818 define the one-ask/approval presentation | Owner-AI auto-save does not widen third-party authority |
-| Owner-model upkeep | #805 trigger/budget/evidence mechanics, with Memory disposition superseded by #918 slice (a) | #805 candidate/per-fact judgment disposition and #836 owner-AI ask behavior |
+| Owner-model upkeep | #805 trigger/budget/evidence mechanics, with Memory disposition superseded by #918 slice (a) and the write structure by #220 (append + invalidate) | #805 candidate/per-fact judgment disposition, #836 owner-AI ask behavior, and #805's rule that an upkeep never ends another key's row |
 | Private context + web search / egress | #826 EGRESS-OPEN-01: private reads and web search may share a turn; public lookups may carry owner values; information-use audit is required | #678 separation and the conflicting #774/#701/#705 native-search/private-read restrictions |
 | Browser/search platform | #677 as subsequently integrated by #701/#826: connected AI native search by default; macOS system WebKit browser; payment approval and browser mediation remain | Naver and separate Playwright-browser direction |
 | Main/Judgment orchestration | #710 plus the current [Decision Layer](decision-layer.en.md): Judgment plans and evaluates; deterministic code enforces authority/effect boundaries | Any older wording that treats deterministic routing rules as the semantic planner |
 | Preparations/watch | #719 on top of #659: bounded accepted watch windows, when-needed notification judgment, owner cancellation | No general background scheduler or unbounded monitoring is implied |
 
 Cross-cutting invariants remain: secrets never enter model prompts, logs or Evidence; payment is per-action approved; external effects are not replayed and `unknown` remains explicit; folder grants bound file authority; owner-visible claims remain Evidence-qualified. The [Presence Experience Contract](presence-experience-contract.en.md) controls owner-facing projection where it adds presentation rules without changing these authority boundaries.
+
+## Amendment — #220 (2026-10-23): append + invalidate
+
+Owner direction: memory is not overwritten or erased. A new fact is added, and the facts it replaces are invalidated. The #205 memory experiment measured this structure (M5) against key rows with a full view (M3). M5 delivered 54% of needed facts against 35%, with 11 stale facts shown as current against 19.
+
+- **What the upkeep reads.** The profile snapshot it reads shows each row's first 8 id characters in brackets. Every reader gets the same selection (#217); only the upkeep sees ids.
+- **Ending earlier facts.** A proposal may name up to 3 earlier facts, under any key, in `invalidates` (id plus a short reason). Still resolves each short id to exactly one current `profile.` row of the owner, excluding working notes.
+  - Any id that matches no such row, or more than one, drops the whole proposal, and nothing is written.
+  - The named rows become `superseded`, with `invalidated_by` (the new row), `invalidation_reason` and `invalidated_at`. They are kept, never deleted.
+  - `supersedes_key` still names only the proposal's own key. #805's rule that the upkeep never retires another key's row is superseded by this explicit, id-named, bounded form.
+- **Facts that end on their own.** A proposal may carry `valid_until`, the last day the fact holds. After that day the row leaves every model snapshot, including literal query matches. It stays current in the store, and the owner's Settings list shows it as ended. A row that ends later reads `until YYYY-MM-DD` in the snapshot.
+- **Notice and undo.** The saved notice names the ended facts after "전에는", as it names a same-key replacement. Undoing the save restores every row it ended (`retract_memory`, exact to the row and its digest).
+- **Unchanged.** Owner "forget" remains deletion with its receipt and undo window. Turning it into invalidation would change retention, and needs a separate owner decision. Third-party writers still create candidates (C5). No key-name, synonym or category rule decides what ends (C16): the AI names ids, and Still checks and applies them.
 
 ## Amendment — #19 STEADY-NOTES-01 (2026-10-20): one bounded, revisable working-notes document
 

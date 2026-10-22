@@ -1844,8 +1844,9 @@ class AgentService:
             except Exception:
                 situation=note_situation=None
                 turns=''
+            # #220: the upkeep sees each row's short id, so a new fact can end earlier ones by id.
             state,calls,status,detail=upkeep.run(job,judgments,answer=job.get('response') or '',
-                                                 profile=self.owner_profile_snapshot(notes=False),clock=clock,
+                                                 profile=self.owner_profile_snapshot(notes=False,ids=True),clock=clock,
                                                  cancelled=cancelled,situation=situation,
                                                  note_situation=note_situation,situation_turns=turns)
             upkeep.finish(work_id,state,calls,status,detail,upkeep.clock())
@@ -2442,7 +2443,9 @@ class AgentService:
         """One saved fact as the notice binds it: id, content digest, key and what it superseded (#918)."""
         previous=self.store.memory(row['supersedes'],MEMORY_OWNER,current_only=False) if row.get('supersedes') else None
         return {'id':row['id'],'digest':row['content_digest'],'key':row['memory_key'],
-                'previous':[previous['id'],previous['content_digest']] if previous else None}
+                'previous':[previous['id'],previous['content_digest']] if previous else None,
+                # #220: the earlier facts this save ended under other keys, so the notice names them too.
+                'ended':[[item['id'],item['content_digest']] for item in self.store.ended_by(MEMORY_OWNER,row['id'])]}
 
     def bind_memory_saved(self, notification, now):
         """What a saved notice shows, bound at send time; None when the Work has nothing current (#918).
@@ -2486,7 +2489,9 @@ class AgentService:
                 back=fact_of(restored.get(item['id'])) if restored.get(item['id']) else ''
                 return text+(f' (다시 {back})' if back else '')
             if status=='outdated':return text
-            before=fact_of(item['previous'][0]) if item.get('previous') else ''
+            earlier=[item['previous']] if item.get('previous') else []
+            earlier+=[pair for pair in item.get('ended') or () if isinstance(pair,list) and pair]
+            before=', '.join(fact for fact in (fact_of(pair[0]) for pair in earlier) if fact)
             return text+(f' (전에는 {before})' if before else '')
         single=len(items)==1
         all_done=bool(done) and not self.memory_saved_open(binding)
@@ -2684,7 +2689,7 @@ class AgentService:
         LOG.info('preparation %s id=%s by owner settings',operation,preparation_id)
         return self.preparations_status()
 
-    def owner_profile_snapshot(self, request=None, notes=True):
+    def owner_profile_snapshot(self, request=None, notes=True, ids=False):
         """The bounded ``profile.*`` snapshot text every turn context carries (#658).
 
         #19: with ``notes`` the owner's working-notes document follows as one
@@ -2708,7 +2713,7 @@ class AgentService:
         """
         memory=MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD)
         query=self._redact_known_secrets(request)[:500] if isinstance(request,str) and request.strip() else None
-        snapshot=memory.profile_snapshot(MEMORY_OWNER,query=query)
+        snapshot=memory.profile_snapshot(MEMORY_OWNER,query=query,ids=ids)
         text=snapshot['text']
         if snapshot.get('omitted_count'):
             text += ('\n' if text else '') + f"{snapshot['omitted_count']} saved profile facts omitted by the context limit; use search_memory if relevant."

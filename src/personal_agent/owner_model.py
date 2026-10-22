@@ -133,6 +133,10 @@ KIND_STATED, KIND_INFERRED = 'stated', 'inferred'
 KINDS = (KIND_STATED, KIND_INFERRED)
 PROFILE_PREFIX = 'profile.'
 MAX_PROPOSALS = 5
+#: #220: earlier facts one proposal may end, each named by the short id owner_profile shows.
+MAX_INVALIDATES = 3
+_SHORT_ID = re.compile(r'[0-9a-f]{8}')
+_DATE = re.compile(r'\d{4}-\d{2}-\d{2}')
 MAX_TEXT_CHARS = 200
 MAX_KEY_CHARS = 160
 #: Bounds of the facts one judgment reads (the owner's request is never cut).
@@ -314,8 +318,15 @@ SCHEMA = {'type': 'object', 'additionalProperties': False,
                              'memory_key': {'type': 'string'},
                              'content': {'type': 'string'},
                              'evidence': {'type': 'string'},
-                             'supersedes_key': {'type': 'string'}},
-              'required': ['category', 'kind', 'memory_key', 'content', 'evidence', 'supersedes_key']}},
+                             'supersedes_key': {'type': 'string'},
+                             # #220: earlier facts (by the id owner_profile shows) this fact ends, and its last day.
+                             'invalidates': {'type': 'array', 'items': {
+                                 'type': 'object', 'additionalProperties': False,
+                                 'properties': {'id': {'type': 'string'}, 'reason': {'type': 'string'}},
+                                 'required': ['id', 'reason']}},
+                             'valid_until': {'type': 'string'}},
+              'required': ['category', 'kind', 'memory_key', 'content', 'evidence', 'supersedes_key', 'invalidates',
+                           'valid_until']}},
                          'situation': {'type': 'string'}},
           'required': ['proposals', 'situation']}
 
@@ -357,9 +368,26 @@ def _refusal(item):
     if not item['evidence'].strip() or len(item['evidence'].strip()) > MAX_TEXT_CHARS:
         return 'evidence'
     supersedes = item.get('supersedes_key') or ''
-    # #805 review: a proposal may supersede only its own key (a different key is never retired here).
+    # #805 review: ``supersedes_key`` names only the proposal's own key; another key's row is ended
+    # through ``invalidates`` by its id (#220), never through a key name.
     if not isinstance(supersedes, str) or (supersedes.strip() and supersedes.strip() != item['memory_key']):
         return 'supersedes'
+    ends = item.get('invalidates', [])
+    if not isinstance(ends, list) or len(ends) > MAX_INVALIDATES or any(
+            not isinstance(end, dict) or not isinstance(end.get('id'), str) or not _SHORT_ID.fullmatch(end['id'].strip())
+            or not isinstance(end.get('reason'), str) or not end['reason'].strip()
+            or len(end['reason'].strip()) > MAX_TEXT_CHARS for end in ends):
+        return 'invalidates'
+    until = item.get('valid_until', '')
+    if not isinstance(until, str):
+        return 'valid_until'
+    if until.strip():
+        try:
+            if not _DATE.fullmatch(until.strip()):
+                raise ValueError
+            datetime.fromisoformat(until.strip())
+        except ValueError:
+            return 'valid_until'
     return None
 
 
@@ -400,7 +428,10 @@ def validate(proposals, known, pending, noted_keys=(), request=''):
         keys.add(key)
         contents.add(content)
         kept.append({'category': item['category'], 'kind': item['kind'], 'memory_key': key,
-                     'content': item['content'].strip(), 'supersedes_key': (item.get('supersedes_key') or '').strip()})
+                     'content': item['content'].strip(), 'supersedes_key': (item.get('supersedes_key') or '').strip(),
+                     'invalidates': [{'id': end['id'].strip(), 'reason': ' '.join(end['reason'].split())}
+                                     for end in item.get('invalidates') or ()],
+                     'valid_until': (item.get('valid_until') or '').strip()})
     return kept, dropped
 
 
@@ -649,6 +680,22 @@ class Upkeep:
                 "SELECT memory_key,content FROM memory_candidates WHERE state='pending' AND memory_key LIKE 'profile.%'")}
         return known, pending
 
+    def current_rows_by_short_id(self, owner_id, short_ids):
+        """The full ids of the current ``profile.`` rows the short ids name, in order; None if any names none or several (#220)."""
+        if not short_ids:
+            return []
+        owner_key = self.store._memory_binding(owner_id)
+        found = []
+        with self.store.db() as db:
+            for short in short_ids:
+                rows = db.execute("SELECT id FROM memories WHERE owner_key=? AND state='current' AND memory_key LIKE 'profile.%' "
+                                  "AND memory_key NOT LIKE ? AND substr(id,1,?)=?",
+                                  (owner_key, LESSON_PREFIX + '%', len(short), short)).fetchall()
+                if len(rows) != 1:
+                    return None
+                found.append(rows[0]['id'])
+        return found if len(set(found)) == len(found) else None
+
     def work_noted(self, job_id):
         """``(keys, contents)`` the source Work already wrote or proposed, any state (#836).
 
@@ -724,19 +771,28 @@ class Upkeep:
                 dropped.append({'key_digest': key_digest(key), 'reason': FORGOTTEN_VALUE})
                 continue
             row = {'memory_key': key, 'category': item['category'], 'kind': item['kind'],
-                   'content_chars': len(content), 'supersedes_key': item['supersedes_key'] or None}
+                   'content_chars': len(content), 'supersedes_key': item['supersedes_key'] or None,
+                   'valid_until': item['valid_until'] or None}
+            ends = self.current_rows_by_short_id(MEMORY_OWNER, [end['id'] for end in item['invalidates']])
+            if ends is None:
+                # #220: an id that names no current profile row, or more than one, writes nothing.
+                dropped.append({'key_digest': key_digest(key), 'reason': 'invalidates'})
+                continue
             # #918 slice (a), owner decision 2026-09-30: the owner's own Judgment AI saves at once as
             # current Memory, attributed to the source Work (#794); the owner is told afterwards with
             # an undo (the Work's memory_saved notice) instead of a per-fact #597 judgment and an ask.
             # A write is not a model call, so the cap and the deadline do not stop it; the pause does.
             try:
                 # Review: the owner notice is held in the same transaction as the row, so a save is never untold.
-                memory = self.store.save_memory(key, content, MEMORY_OWNER, work_id=job['id'], notice=True)
+                memory = self.store.save_memory(key, content, MEMORY_OWNER, work_id=job['id'], notice=True,
+                                                invalidates=[(full, end['reason'])
+                                                             for full, end in zip(ends, item['invalidates'])],
+                                                valid_until=item['valid_until'] or None)
             except ValueError:
                 dropped.append({'key_digest': key_digest(key), 'reason': 'store-refused'})
                 continue
             row.update(outcome=APPLIED_MEMORY, memory_id=memory['id'], superseded=bool(memory.get('supersedes')),
-                       auto_saved=True)
+                       invalidated=len(ends), auto_saved=True)
             applied.append(row)
         detail.update(proposed=len(data.get('proposals') or []), applied=applied, dropped=dropped, stopped=stopped)
         note = data.get('situation')

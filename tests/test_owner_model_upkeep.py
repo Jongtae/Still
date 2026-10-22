@@ -26,9 +26,11 @@ from test_orchestrator import Harness
 SECRET = 'plain-stored-secret-805'
 
 
-def proposal(key, content, *, kind='stated', category='place', evidence='the owner said so', supersedes=''):
+def proposal(key, content, *, kind='stated', category='place', evidence='the owner said so', supersedes='',
+             invalidates=(), valid_until=''):
     return {'category': category, 'kind': kind, 'memory_key': key, 'content': content, 'evidence': evidence,
-            'supersedes_key': supersedes}
+            'supersedes_key': supersedes, 'invalidates': [{'id': i, 'reason': r} for i, r in invalidates],
+            'valid_until': valid_until}
 
 
 class Upkeep(Harness):
@@ -388,6 +390,100 @@ class Apply(Upkeep):
         receipt = self.store.retract_memory(MEMORY_OWNER, memory['id'], memory['content_digest'])
         self.assertEqual(receipt['restored']['id'], kept['id'])
         self.assertEqual([row['content'] for row in self.store.memories(MEMORY_OWNER)], ['서울역'])
+
+
+class Invalidate(Upkeep):
+    """#220: append + invalidate. A new fact ends earlier rows under any key, named by id with a reason;
+    nothing is overwritten or erased, a dated fact ends on its own, and the undo is exact."""
+
+    def saved(self, key, content, **terms):
+        return self.store.save_memory(key, content, MEMORY_OWNER, **terms)
+
+    def row(self, memory_id):
+        return self.store.memory(memory_id, MEMORY_OWNER, current_only=False)
+
+    def test_a_fact_ends_an_earlier_one_under_another_key_by_id(self):
+        old = self.saved('profile.place.workplace', '판교 사무실')
+        job = self.finished('이제 강남 사무실로 출근해')
+        self.answers = [[proposal('profile.place.work', '강남 사무실', invalidates=[(old['id'][:8], '사무실을 옮김')])]]
+        self.service.run_owner_model_upkeep()
+        [(context, _question, _schema)] = self.facts
+        self.assertIn(f"[{old['id'][:8]}] profile.place.workplace: 판교 사무실", context.facts['owner_profile'])
+        ended = self.row(old['id'])
+        [new] = self.store.memories(MEMORY_OWNER, key_prefix='profile.')
+        self.assertEqual((new['memory_key'], new['content']), ('profile.place.work', '강남 사무실'))
+        self.assertEqual((ended['state'], ended['invalidated_by'], ended['invalidation_reason']),
+                         ('superseded', new['id'], '사무실을 옮김'), 'kept, not erased')
+        snapshot = self.service.owner_profile_snapshot()
+        self.assertIn('강남 사무실', snapshot)
+        self.assertNotIn('판교', snapshot)
+        [(_status, detail)] = self.evidence(job)
+        self.assertEqual([item['invalidated'] for item in detail['applied']], [1])
+        # The notice names what ended, as it names a same-key replacement.
+        item = self.service.memory_saved_item(new)
+        self.assertEqual(item['ended'], [[old['id'], old['content_digest']]])
+        self.assertIn('강남 사무실 (전에는 판교 사무실)',
+                      self.service.memory_saved_text({'items': [item], 'done': {}, 'restored': {}}))
+
+    def test_undo_restores_every_row_the_save_ended(self):
+        first = self.saved('profile.place.workplace', '판교 사무실')
+        second = self.saved('profile.place.office', '판교')
+        new = self.saved('profile.place.work', '강남', invalidates=[(first['id'], 'moved'), (second['id'], 'moved')])
+        self.assertEqual({row['id'] for row in self.store.ended_by(MEMORY_OWNER, new['id'])}, {first['id'], second['id']})
+        receipt = self.store.retract_memory(MEMORY_OWNER, new['id'], new['content_digest'])
+        self.assertEqual(set(receipt['restored_ended']), {first['id'], second['id']})
+        for row in (self.row(first['id']), self.row(second['id'])):
+            self.assertEqual((row['state'], row['invalidated_by'], row['invalidation_reason']), ('current', None, None))
+        self.assertEqual(self.row(new['id'])['state'], 'retracted')
+
+    def test_an_id_that_names_no_current_profile_row_writes_nothing(self):
+        notes = self.saved('profile.working.style', '짧게 답한다')
+        gone = self.saved('profile.place.home', '분당')
+        self.saved('profile.place.home', '수지')  # ``gone`` is superseded now
+        other = self.store.save_memory('profile.place.home', '다른 사람', 'other-owner')
+        cases = {'unknown': '00000000', 'working notes': notes['id'][:8], 'not current': gone['id'][:8],
+                 'another owner': other['id'][:8]}
+        for name, short in cases.items():
+            with self.subTest(name):
+                before = [row['id'] for row in self.store.memories(MEMORY_OWNER)]
+                job = self.finished(f'{name} 테스트')
+                self.answers = [[proposal('profile.place.work', f'강남 {name}', invalidates=[(short, 'x')])]]
+                self.service.run_owner_model_upkeep()
+                self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], before, 'nothing written')
+                [(_status, detail)] = self.evidence(job)
+                self.assertEqual([item['reason'] for item in detail['dropped']], ['invalidates'])
+
+    def test_malformed_terms_are_dropped_and_the_store_refuses_them_too(self):
+        rows = [self.saved(f'profile.place.p{index}', f'장소 {index}') for index in range(4)]
+        job = self.finished('여러 곳')
+        self.answers = [[proposal('profile.place.a', '새 장소', invalidates=[(row['id'][:8], 'x') for row in rows]),
+                         proposal('profile.place.b', '새 장소 2', valid_until='2026-13-01'),
+                         proposal('profile.place.c', '새 장소 3', invalidates=[('ZZZZZZZZ', 'x')])]]
+        self.service.run_owner_model_upkeep()
+        [(_status, detail)] = self.evidence(job)
+        self.assertEqual([item['reason'] for item in detail['dropped']], ['invalidates', 'valid_until', 'invalidates'])
+        self.assertEqual(len(self.store.memories(MEMORY_OWNER)), 4)
+        for terms in ({'invalidates': [(row['id'], 'x') for row in rows]}, {'valid_until': 'tomorrow'},
+                      {'invalidates': [(rows[0]['id'], '')]}, {'invalidates': [('not-an-id', 'x')]}):
+            with self.subTest(terms=terms), self.assertRaises(ValueError):
+                self.saved('profile.place.z', '거부', **terms)
+        self.assertEqual(len(self.store.memories(MEMORY_OWNER)), 4, 'a refused save leaves every row as it was')
+
+    def test_a_dated_fact_leaves_every_snapshot_after_its_last_day_and_stays_listed(self):
+        from datetime import date, timedelta
+        today = date.fromtimestamp(time.time())
+        past = self.saved('profile.schedule.trip', '제주 여행 중', valid_until=(today - timedelta(days=1)).isoformat())
+        coming = self.saved('profile.schedule.cast', '깁스 중', valid_until=(today + timedelta(days=3)).isoformat())
+        snapshot = self.service.owner_profile_snapshot()
+        self.assertNotIn('제주 여행 중', snapshot)
+        self.assertNotIn('제주 여행 중', self.service.owner_profile_snapshot('제주 여행'), 'a literal match does not bring it back')
+        self.assertRegex(snapshot, r'profile\.schedule\.cast: 깁스 중 \(saved \d{4}-\d{2}-\d{2}, until '
+                         + coming['valid_until'] + r'\)')
+        from personal_agent.memory_service import MemoryService
+        # What the Settings profile list reads: the ended fact is still there, with its last day.
+        listed = {row['id']: row for row in MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+                  .profile_memories(MEMORY_OWNER)['memories']}
+        self.assertEqual(listed[past['id']]['valid_until'], past['valid_until'], 'the owner still sees it, as ended')
 
 
 class Budget(Upkeep):
