@@ -211,10 +211,11 @@ class TelegramStore:
             return dict(row) if row else None
 
     def update_notification(self, notification_id, state, message_id=None, fingerprint=None, delivered=False):
-        """``delivered``: this call records a completed Telegram send, so its time becomes ``sent_at`` (#188).
+        """``delivered``: this call records a completed Telegram send, or a confirmed edit that
+        added something the owner can answer, so its time becomes ``sent_at`` (#188).
 
         Every other call - a memory notice kept ``sent`` after a partial decision, withdrawal,
-        join or edit - leaves ``sent_at`` as the real delivery recorded it.
+        a refused edit or one that only removed items - leaves ``sent_at`` as it was.
         """
         store=self.store
         with store.db() as db:

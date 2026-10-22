@@ -2280,7 +2280,10 @@ class AgentService:
                 pass
         final=shown if edited else binding
         state=('sent' if self.memory_open(final) else 'memory_decided' if final['done'] else 'memory_listed')
-        self.store.update_notification(notification['id'],state,fingerprint=json.dumps(final))
+        # #188 (Codex on #200): a confirmed edit that shows new open candidates is a new showing; an owner
+        # message dated before it cannot answer what it added.
+        self.store.update_notification(notification['id'],state,fingerprint=json.dumps(final),
+                                       delivered=edited and bool(opened))
         LOG.info('memory candidates joined the ask work=%s settled_by_answer=%s added=%s edited=%s',
                  job_id,len(settled),len(opened) if edited else 0,edited)
 
@@ -2611,8 +2614,9 @@ class AgentService:
             except ProviderError:
                 pass
         final=shown if edited else binding
+        # #188 (Codex on #200): a confirmed edit that added facts is a new showing of the notice.
         self.store.update_notification(notification['id'],'sent' if self.memory_saved_open(final) else 'memory_undone',
-                                       fingerprint=json.dumps(final))
+                                       fingerprint=json.dumps(final),delivered=edited and bool(added))
         LOG.info('memory saved notice joined work=%s added=%s edited=%s',job_id,len(added) if edited else 0,edited)
         if not edited:
             job=self.store.job(job_id)
