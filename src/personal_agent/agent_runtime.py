@@ -724,8 +724,13 @@ def recorded_private_sources(store, job_id, tools=None):
   rows=db.execute("SELECT tool, detail FROM tool_events WHERE job_id=? AND status='succeeded'",(job_id,)).fetchall()
  labels=set()
  for tool,detail in rows:
-  try:recorded=json.loads(detail or '{}').get('host_action')
-  except (ValueError,AttributeError):recorded=None
+  try:parsed=json.loads(detail or '{}')
+  except ValueError:parsed=None
+  parsed=parsed if isinstance(parsed,dict) else {}
+  recorded=parsed.get('host_action')
+  # #182 review: a result save that found a folder grant missing wrote and read nothing.
+  evidence=parsed.get('evidence') if isinstance(parsed.get('evidence'),dict) else {}
+  if 'save_result' in (recorded,tool) and evidence.get('saved') is False:continue
   # Union, not precedence: any reading that names a private read taints.
   for action in (recorded,(tools or {}).get(tool,{}).get('host_action'),tool):
    if not isinstance(action,str):continue
