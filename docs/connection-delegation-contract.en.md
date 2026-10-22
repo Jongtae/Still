@@ -682,7 +682,7 @@ The #1297 read-review path binds the exact engine, connection kind, stable ident
 The existing Work budget row retains tool attempts, host-visible model-call
 attempts and recovery nudges across same-Work resumptions. The foreground host
 opens it before semantic routing and carries that exact execution scope into
-joined early judgments. Optional start/progress reaction threads capture an
+joined early judgments. Optional start reaction threads capture an
 existing-only ledger bridge before dispatch, retaining the run epoch. A late,
 paused, stopped or missing run cannot create or reopen an allowance; delivered
 completion keeps its deterministic truth-gated reaction when no active budget
