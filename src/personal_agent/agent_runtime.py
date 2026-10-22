@@ -733,6 +733,8 @@ def recorded_private_sources(store, job_id, tools=None):
   # #182 review: a result save that found a folder grant missing wrote and read nothing.
   evidence=parsed.get('evidence') if isinstance(parsed.get('evidence'),dict) else {}
   if 'save_result' in (recorded,tool) and evidence.get('saved') is False:continue
+  # A setup-required file read or search read nothing either.
+  if {'read_file','find_files'}&{recorded,tool} and 'setup-required' in (evidence.get('qualifiers') or ()):continue
   # Union, not precedence: any reading that names a private read taints.
   for action in (recorded,(tools or {}).get(tool,{}).get('host_action'),tool):
    if not isinstance(action,str):continue
@@ -2841,7 +2843,12 @@ class Capabilities:
   # reservation), so only a real earlier result counts as one.
   workspace.recover()
   earlier=workspace.result_for(self.job_id)
-  if earlier and earlier.get('state')=='current':
+  if earlier and earlier.get('state')!='current':
+   # Its reservation belongs to a result folder that has since changed (``detached``) or a source that
+   # changed (``stale``): this Work cannot save another result, and says so instead of a receipt.
+   return {'saved':False,'already_saved':False,'id':earlier['id'],'path':earlier['path'],
+           'message':'이 작업의 이전 결과 저장이 다른 결과 폴더에 묶여 있어 새로 저장하지 않았습니다. 새 요청으로 다시 저장해 주세요.'}
+  if earlier:
    # #182 review: one Work saves one result; a second save writes nothing and says so (the first stays).
    return {'saved':False,'already_saved':True,'id':earlier['id'],'path':earlier['path'],
            'message':f"이 작업은 이미 결과를 저장했습니다: {earlier['path']}. 한 작업은 결과 하나만 저장하며, 이번 내용은 저장하지 않았습니다."}
@@ -3374,7 +3381,10 @@ class Capabilities:
   # `list_memory`/`save_memory` below go through `self.evidence`, which labels
   # them in `EvidenceLog.append`; both layers write the same one set.
   if name=='find_files':return self._from_private('connected-document',self.find_files(**args))
-  if name=='read_file':return self._from_private('connected-document',self.read_file(**args))
+  if name=='read_file':
+   result=self.read_file(**args)
+   # #182 review: a setup-only answer read no document, so it labels nothing.
+   return result if result.get('needs_setup') is True else self._from_private('connected-document',result)
   if name=='save_result':return self.save_result(**args)
   if name=='list_notes':return self._from_private('personal-space',{'notes':self.store.notes()})
   if name=='save_note':

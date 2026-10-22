@@ -292,6 +292,28 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
                            'root_id': SAVED_RESULTS_ROOT, 'path': 'Notes.md', 'qualifiers': ['setup-required']}}), time.time()))
         self.assertFalse(service.read_file_workspace('job-1'))
 
+    def test_a_detached_reservation_is_not_reported_as_saved(self):
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        with self.store.db() as db:
+            db.execute("UPDATE file_workspace_results SET state='detached'")
+        again = caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        self.assertEqual((again['saved'], again['already_saved']), (False, False))
+
+    def test_a_setup_only_read_labels_no_document_use(self):
+        from personal_agent.agent_runtime import recorded_private_sources
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        self.store.put('file_workspace', {**FileWorkspace(self.store).status(), 'workspace': None, 'workspace_id': None})
+        later = self.caps('job-later')
+        read = later.execute('read_file', {'root_id': SAVED_RESULTS_ROOT, 'path': 'Notes.md'})
+        self.assertTrue(read['needs_setup'])
+        self.assertNotIn('connected-document', later.private_provenance)
+        self.record_like_the_bridge('job-later', 'read_file', read)
+        self.assertEqual(recorded_private_sources(self.store, 'job-later'), set())
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
