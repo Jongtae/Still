@@ -283,7 +283,16 @@ class FileWorkspace:
                 self.stopped_early=True; break
             with self.store.db() as db: db.execute('UPDATE file_workspace_results SET state=? WHERE id=?',('current' if fresh else 'stale',record['id']))
             if not fresh: continue
-            try: content=self._result_path(record['path']).read_text(encoding='utf-8')
+            try:
+                published=self._result_path(record['path'])
+                # #182 review: bounded before it is read, and only the exact text Still published counts:
+                # a result file edited (or replaced) since is not this result any more.
+                if published.stat().st_size>MAX_FILE_BYTES: continue
+                raw=published.read_bytes()
+                if hashlib.sha256(raw).hexdigest()!=record.get('content_hash'):
+                    with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
+                    continue
+                content=raw.decode('utf-8')
             except (OSError,UnicodeError,ValueError): continue
             if latest or needle is None or needle in (record['path']+'\n'+content).casefold(): results.append({'id':record['id'],'path':record['path'],'content':content,'sources':json.loads(record['sources'])})
             if latest and results: break

@@ -355,6 +355,27 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         found = self.caps('job-later').execute('find_files', {'query': 'summary', 'root_id': SAVED_RESULTS_ROOT})
         self.assertEqual((found['files'], found['truncated']), ([], True))
 
+    def test_an_edited_or_oversized_result_file_is_not_returned(self):
+        from unittest.mock import patch
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        later = self.caps('job-later')
+        # A limit the source fits under and the result file does not.
+        limit = self.trip.stat().st_size + 1
+        self.assertGreater((self.workspace / 'Notes.md').stat().st_size, limit)
+        with patch('personal_agent.file_workspace.MAX_FILE_BYTES', limit), \
+                patch('personal_agent.file_workspace.Path.read_bytes', side_effect=AssertionError('read')):
+            with self.assertRaises(ValueError):
+                later.execute('read_file', {'root_id': SAVED_RESULTS_ROOT, 'path': 'Notes.md'})
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'current')
+        (self.workspace / 'Notes.md').write_text('EDITED TEXT', encoding='utf-8')
+        with self.assertRaises(ValueError):
+            later.execute('read_file', {'root_id': SAVED_RESULTS_ROOT, 'path': 'Notes.md'})
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'stale')
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
