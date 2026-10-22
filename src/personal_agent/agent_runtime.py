@@ -2732,7 +2732,9 @@ class Capabilities:
   # the separate external-AI document-sharing approval is ever relevant.
   # `requires` names the declared local authority; it grants nothing.
   # #182: the file workspace's reference folders and saved results are searched too.
-  roots=self.roots()+self.workspace_references()
+  # #182 review: reference roots first, and a file reached through two overlapping grants is listed once,
+  # under the reference root, so what the worker reads there is a source save_result can cite.
+  roots=self.workspace_references()+self.roots()
   workspace=FileWorkspace(self.store)
   if not roots and not workspace.has_results():
    return {'files':[],'needs_setup':True,'requires':'local-folder-read','message':'연결 설정에서 접근할 폴더를 먼저 연결해 주세요.'}
@@ -2748,6 +2750,7 @@ class Capabilities:
     hits.append({'root_id':SAVED_RESULTS_ROOT,'path':item['path'],'kind':'saved-result','title':item['title'],'location':'',
                  'match':'filename' if query.casefold() in item['title'].casefold() else 'content'})
     if len(hits)>=20:return {'files':hits,'truncated':True}
+  seen=set()
   for root in roots:
    base=Path(root['path']).resolve()
    for parent,dirs,files in os.walk(base,followlinks=False):
@@ -2758,6 +2761,8 @@ class Capabilities:
      if name.startswith('.'):continue
      path=str((Path(parent)/name).relative_to(base))
      if not supported_document(Path(path)):continue
+     if (Path(parent)/name).resolve() in seen:continue
+     seen.add((Path(parent)/name).resolve())
      try:result=self.read_file(root['id'],path,cite=False)
      except (OSError,UnicodeError,ValueError):continue
      if any(t in (name+' '+result['content']).casefold() for t in terms):

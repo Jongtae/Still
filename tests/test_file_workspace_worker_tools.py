@@ -172,6 +172,18 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         caps.execute('save_result', {'title': 'Notes', 'content': 'RESULT-TEXT-123'})
         self.assertIn('RESULT-TEXT-123', caps.written_private)
 
+    def test_a_reference_also_granted_as_a_connected_folder_is_found_as_the_reference(self):
+        # Review: overlapping grants.  The reference folder is also a generic connected folder.
+        self.store.put('file_roots', [{'id': 'aaaaaaaaaaaa', 'path': str(self.reference)}])
+        caps = self.caps()
+        self.assertEqual(len(caps.roots()), 1, 'the generic grant is usable here')
+        found = caps.execute('find_files', {'query': '출장 계획'})['files']
+        trip = [item for item in found if item['path'].endswith('trip.md')]
+        self.assertEqual([(item['root_id'], item['path']) for item in trip], [(self.root, 'trip.md')],
+                         'found once, under the reference root, before the hit limit')
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        self.assertTrue(caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})['saved'])
+
     def test_a_removed_reference_is_no_longer_read(self):
         caps = self.caps()
         other = self.base / 'other'
