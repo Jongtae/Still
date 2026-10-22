@@ -157,6 +157,26 @@ class ConnectionPreferences(Harness):
         self.assertIn(KEY + ': ' + row['content'], self.engine.turns[-1]['prompt'])
         self.assertIn('omitted', self.asked_plans[0][0].facts['owner_profile'])
 
+    def test_an_over_limit_cli_brief_cuts_optional_tails_and_keeps_the_profile_head(self):
+        """Codex review on #223: fixed sections past the CLI byte limit are cut, least needed first,
+        instead of the request-only fallback dropping the profile, the context and the instructions."""
+        from personal_agent import quickstart_service
+        from personal_agent.agent_runtime import CUT_TO_FIT_MARKER
+        for index in range(40):
+            self.store.save_memory(f'profile.aaa.item{index:02d}', '평소에 쓰는 가게와 방식 ' * 4, owner_id='local-owner')
+        _, row = self.save_choice('Still-owned connection')
+        self.script([plan('codex', 'Use the connection choice in the owner context.')], goals=[True])
+        limit = 17000
+        with mock.patch.object(quickstart_service, 'MAX_PROMPT_BYTES', limit):
+            job, result = self.run_work('Read the Unseen record.', key='over-limit')
+        self.assertEqual(result['status'], 'succeeded')
+        prompt = self.engine.turns[-1]['prompt']
+        self.assertLessEqual(len(prompt.encode()), limit)
+        self.assertIn('# Still instructions', prompt, 'not the bare-request fallback')
+        self.assertIn(KEY + ': ' + row['content'], prompt, 'the query match heads the profile and survives')
+        self.assertIn(CUT_TO_FIT_MARKER, prompt)
+        self.assertNotIn('profile.aaa.item39', prompt, 'the profile tail was cut')
+
     def test_early_plan_and_regular_plan_use_same_retrieved_profile(self):
         for index in range(20):
             self.store.save_memory(f'profile.aaa.item{index}', 'Unrelated background ' * 8, owner_id='local-owner')

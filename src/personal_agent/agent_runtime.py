@@ -3763,6 +3763,32 @@ def turn_context(history,route,current_context=None,profile=None,prepared=None,n
  if surface in SURFACE_NOTES:context['surface']=surface
  return context
 
+#: #217 review: the optional brief sections a CLI prompt cuts, in this order, before it would fall back to the bare
+#: request; the owner profile goes last, and the instructions, attachments, surface and request are never cut.
+CUT_TO_FIT_ORDER=('skills','prepared','brief','current_context','profile')
+CUT_TO_FIT_MARKER='[cut here to fit the prompt limit]'
+
+def cut_to_fit(sections,overflow):
+ """``(sections, cut)``: ``sections`` with at least ``overflow`` UTF-8 bytes removed from the optional sections.
+
+ Sections are cut in ``CUT_TO_FIT_ORDER``, whole lines from the end, each
+ cut one ending in ``CUT_TO_FIT_MARKER`` (or emptied when nothing of it
+ fits), so a long fixed brief loses its least needed tail instead of every
+ section at once (the bare-request fallback).  ``cut`` names the sections
+ cut, for the turn record.
+ """
+ sections=dict(sections);cut=[]
+ for name in CUT_TO_FIT_ORDER:
+  if overflow<=0:break
+  text=str(sections.get(name) or '')
+  if not text:continue
+  size=len(text.encode());keep=size-overflow-len(CUT_TO_FIT_MARKER.encode())-1
+  lines=text.split('\n')
+  while lines and len('\n'.join(lines).encode())>keep:lines.pop()
+  shorter='\n'.join(lines+[CUT_TO_FIT_MARKER]) if lines else ''
+  overflow-=size-len(shorter.encode());sections[name]=shorter;cut.append(name)
+ return sections,cut
+
 def render_turn_prompt(context,*,include_instructions=True):
  """Delimited plain-text envelope for a CLI prompt."""
  parts=[]

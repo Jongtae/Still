@@ -19,7 +19,7 @@ from .messages import msg
 from .local_tools import LocalTools, normalize_public_url
 from functools import cached_property
 from .work_execution import PROCEED, REDELEGATED, WorkRun
-from .agent_runtime import (Capabilities, ToolError, CALENDAR_DRAFT_TOOLS, run_agent, AGENTS, STEER_EVENT, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
+from .agent_runtime import (Capabilities, ToolError, CALENDAR_DRAFT_TOOLS, cut_to_fit, run_agent, AGENTS, STEER_EVENT, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
                             MEMORY_OWNER, context_sections, ENGINE_UNMEDIATED, OWNER_CONVERSATION, lookup_sources, work_written_values, WORK_SOURCES_KEY, WORK_SOURCES_LIMIT, base_label,
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
                             WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, goal_summary, work_source_records,
@@ -10866,20 +10866,28 @@ class AgentService:
         def cli_context(native):
             # #804, #820: every attempt carries the conversation, the profile, the current
             # context and the prepared answers; the plan's notes (``brief``) only add to them.
-            context=turn_context([*run.history[:-1],{'role':'user','content':current_request}],'cli',
-                                 current_context=run.section_values['current_context'],
-                                 profile=run.section_values['profile'],
-                                 prepared=run.section_values['prepared'],native_search=native,brief=run.brief,
-                                 skills=cli_skills.catalogue_text() if cli_skills is not None else None,
-                                 # #997: what this request carries besides its words, as a fact.
-                                 attachments=attachment_facts(images=len(run.image_inputs)),
-                                 # #1380: where the owner is writing from, as a fact.
-                                 surface='telegram' if isinstance(job.get('chat_id'),int) else None)
+            sections={'current_context':run.section_values['current_context'],'profile':run.section_values['profile'],
+                      'prepared':run.section_values['prepared'],'brief':run.brief,
+                      'skills':cli_skills.catalogue_text() if cli_skills is not None else None}
+            def build(sections):
+                context=turn_context([*run.history[:-1],{'role':'user','content':current_request}],'cli',
+                                     native_search=native,**sections,
+                                     # #997: what this request carries besides its words, as a fact.
+                                     attachments=attachment_facts(images=len(run.image_inputs)),
+                                     # #1380: where the owner is writing from, as a fact.
+                                     surface='telegram' if isinstance(job.get('chat_id'),int) else None)
+                # Bounded Claude Code gets the instructions as a separate
+                # argv element, so only conversation + request count
+                # against the prompt limit there.
+                return context,render_turn_prompt(context,include_instructions=not (run.subscription['id']=='claude-code' and not isolated))
+            context,sent_text=build(sections)
+            if len(sent_text.encode())>MAX_PROMPT_BYTES:
+                # #217 review: the fixed sections alone can pass the limit; cut the least needed
+                # tails first (the profile last) rather than drop them all below.
+                sections,cut=cut_to_fit(sections,len(sent_text.encode())-MAX_PROMPT_BYTES)
+                context,sent_text=build(sections)
+                context['cut_to_fit']=cut
             prompt_text,adapter=render_turn_prompt(context),context
-            # Bounded Claude Code gets the instructions as a separate
-            # argv element, so only conversation + request count
-            # against the prompt limit there.
-            sent_text=render_turn_prompt(context,include_instructions=not (run.subscription['id']=='claude-code' and not isolated))
             if len(sent_text.encode())>MAX_PROMPT_BYTES:
                 # The shared envelope cannot fit next to a request this
                 # large. Send the request exactly as before rather than

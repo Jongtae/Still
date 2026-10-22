@@ -248,6 +248,21 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         fixed = len(instructions.encode()) + PROFILE_SNAPSHOT_BYTES + len(notes.encode())
         self.assertLess(fixed, CONTEXT_BUDGET_BYTES - 4000)
 
+    def test_cut_to_fit_cuts_whole_lines_in_order_and_marks_each_cut(self):
+        from personal_agent.agent_runtime import CUT_TO_FIT_MARKER, cut_to_fit
+        sections = {'profile': '\n'.join(f'p{index}' for index in range(100)), 'skills': 's' * 50 + '\n' + 's' * 50,
+                    'prepared': None, 'current_context': 'c\n' * 10, 'brief': 'b'}
+        out, cut = cut_to_fit(sections, 10)
+        self.assertEqual(cut, ['skills'])
+        self.assertEqual(out['skills'], 's' * 50 + '\n' + CUT_TO_FIT_MARKER)
+        self.assertEqual(out['profile'], sections['profile'])
+        out, cut = cut_to_fit(sections, 200)
+        self.assertEqual(cut, ['skills', 'brief', 'current_context', 'profile'])
+        self.assertEqual((out['skills'], out['brief'], out['current_context']), ('', '', ''))
+        self.assertTrue(out['profile'].startswith('p0\np1\n') and out['profile'].endswith(CUT_TO_FIT_MARKER))
+        freed = sum(len(str(sections[name] or '').encode()) - len(str(out[name] or '').encode()) for name in sections)
+        self.assertGreaterEqual(freed, 200)
+
     def test_the_worker_gets_the_profile_without_a_plan_call(self):
         """Memory supply is common start context: no decision engine, no plan, still the whole profile."""
         facts = _facts()
