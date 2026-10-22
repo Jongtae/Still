@@ -115,6 +115,31 @@ class ConnectionDisconnectDraftTests(RevocationTestCase):
         self.assertEqual(len(self.google.requests), 1, 'only the Settings disconnect reached Google')
         self.assertEqual(self.draft_row(stale['id'])['state'], 'failed')
 
+    def test_a_reconnect_during_the_apply_is_never_disconnected_by_the_old_draft(self):
+        # Review P1: the revoker's confirmation is minted at apply time; a reconnect between the stale
+        # check and that mint must not let the draft disconnect the new credential.
+        self.connect_gmail()
+        row = self.draft_row(self.propose()['draft_id'])
+        apply = self.service.apply_connection_disconnect
+        raced = []
+
+        def racing_apply(draft):
+            # After the stale check passed and before the revoker's preview: reconnect.
+            raced.append(True)
+            self.disconnect()       # the Settings page, in between
+            self.connect_gmail()    # and a fresh connection: a new revision
+            return apply(draft)
+
+        self.service.apply_connection_disconnect = racing_apply
+        with self.assertRaises(SettingsError):
+            self.settings.confirm(OWNER, CHANNEL, row['id'], row['digest'])
+        self.service.apply_connection_disconnect = apply
+        self.assertIs(self.gmail_state(), ConnectorState.CONNECTED, 'the new connection stays')
+        self.assertTrue(self.gmail.search(OWNER, 'budget'))
+        self.assertEqual(len(self.google.requests), 1, 'only the Settings disconnect reached Google')
+        self.assertEqual(self.draft_row(row['id'])['state'], 'failed')
+        self.assertEqual(raced, [True])
+
     def test_disconnect_keeps_records_and_is_not_forget(self):
         self.connect_gmail()
         note = self.store.save_memory('profile.mail.label', '예산 메일은 재무 라벨', work_id='source-work')

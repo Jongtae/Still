@@ -7269,6 +7269,12 @@ class AgentService:
         def disconnect():
             revoker=self.google_revocation()
             preview=revoker.preview(session,row['after'])
+            # #183 review: the confirmation is bound to the revision ``preview`` saw.  That revision must be
+            # the one the owner approved: checked after minting, so a reconnect (or disconnect) before the
+            # check is refused here, and one after it changes the marker ``disconnect`` compares (random
+            # revisions cannot recur), so the approved draft never acts on a different credential.
+            if self.connection_disconnect_before(row['after'])!=row['before']:
+                raise ValueError('초안을 만든 뒤 연결이 바뀌어 해제하지 않았습니다. 다시 요청하세요.')
             return revoker.disconnect(session,row['after'],preview['confirmation'])
         return self._revocation_call(disconnect)
 
