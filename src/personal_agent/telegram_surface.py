@@ -35,7 +35,8 @@ from .messages import msg
 from . import owner_model as om
 from . import preparations as prep
 from . import remote_login
-from .quickstart_service import (APPROVE_BUTTON, BROWSER_LOGIN_PHONE_ALERT, BROWSER_LOGIN_PHONE_LABEL, BROWSER_LOGIN_REOPENING_TEXT, BROWSER_LOGIN_SKIP_LABEL,
+from .quickstart_service import (APPROVE_BUTTON, BROWSER_LOGIN_PHONE_ALERT, BROWSER_LOGIN_PHONE_LABEL, BROWSER_LOGIN_REOPENED_TEXT,
+                                 BROWSER_LOGIN_REOPENING_TEXT, BROWSER_LOGIN_SKIP_LABEL,
                                  DENY_BUTTON, LOCAL_DOCUMENT_APPROVAL_TEXT, LOCAL_DOCUMENT_RESUMED_TEXT, LOG, MAX_OWNER_MESSAGE_CHARS,
                                  MEMORY_CANDIDATES_EXPIRED_TEXT, MEMORY_CANDIDATES_OUTDATED_TEXT, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS,
                                  MEMORY_SAVED_OUTDATED_TEXT, MEMORY_SAVED_TTL_SECONDS, REACTION_EVENT, TELEGRAM_PHOTO_ALBUM_SETTLE_SECONDS,
@@ -637,10 +638,18 @@ class TelegramSurface:
                            and notification['message_id']==message.get('message_id')
                            and service.reopen_browser_login(notification['job_id'],notification['fingerprint']))
                     if exact:
-                        # Only while still the expired prompt: the work loop may already have re-armed it.
-                        service.store.telegram.mark_login_reopened(notification['id'])
-                        try:service.telegram.edit_message_text(sender,notification['message_id'],BROWSER_LOGIN_REOPENING_TEXT,{'inline_keyboard':[]})
+                        # #192: the old prompt sits far up the chat; it only loses its button, and the reopening
+                        # is said at the bottom, where the owner is reading.
+                        try:service.telegram.edit_message_text(sender,notification['message_id'],BROWSER_LOGIN_REOPENED_TEXT,{'inline_keyboard':[]})
                         except ProviderError:pass
+                        # Only while still the expired prompt: the work loop may already have re-armed it, and
+                        # then its new prompt is the bottom line.
+                        if service.store.telegram.mark_login_reopened(notification['id']):
+                            try:sent=service.telegram.send_message(sender,BROWSER_LOGIN_REOPENING_TEXT)
+                            except ProviderError:sent=None
+                            # A window that cannot open is then said on this bottom line (``_reopen_failed``).
+                            if isinstance(sent,dict) and isinstance(sent.get('message_id'),int):
+                                service.store.telegram.move_reopened_login(notification['id'],sent['message_id'])
                         changed=True
                 elif len(parts)==3 and parts[2] in ('done','skip','phone'):
                     notification=service.store.notification(parts[1])

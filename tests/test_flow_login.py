@@ -47,7 +47,7 @@ from personal_agent.quickstart_service import (AgentService, BROWSER_LOGIN_CLOSE
                                                BROWSER_LOGIN_NO_SESSION_LINE, BROWSER_LOGIN_OFFERED_TEXT, BROWSER_LOGIN_OTHER_PENDING_TEXT,
                                                BROWSER_LOGIN_PAGE_OFFERED_TEXT,
                                                BROWSER_LOGIN_PHONE_LABEL, BROWSER_LOGIN_RESULT_TEXT, BROWSER_LOGIN_SECONDS,
-                                               BROWSER_LOGIN_REOPEN_TEXT, BROWSER_LOGIN_REOPENING_TEXT, BROWSER_LOGIN_REOPENS,
+                                               BROWSER_LOGIN_REOPEN_TEXT, BROWSER_LOGIN_REOPENED_TEXT, BROWSER_LOGIN_REOPENING_TEXT, BROWSER_LOGIN_REOPENS,
                                                BROWSER_LOGIN_REOPEN_FAILED_TEXT,
                                                BROWSER_LOGIN_SKIP_LABEL, BROWSER_OWNER_SIGNINS_KEY)
 from personal_agent.quickstart_store import QuickStore
@@ -658,9 +658,17 @@ class InFlowLogin(LoginHarness):
         self.assertEqual(self.state(job_id), 'expired')
         self.tap(f"p7l:{notification['id']}:reopen", notification['message_id'])
         self.assertEqual(self.state(job_id), 'requested')
-        self.assertEqual(self.edits()[-1]['text'], BROWSER_LOGIN_REOPENING_TEXT)
+        # #192 (live 2026-10-22): the old prompt is far up the chat.  It only loses its button; the
+        # reopening is a new message at the bottom, where the owner is reading.
+        self.assertEqual(self.edits()[-1]['message_id'], notification['message_id'])
+        self.assertEqual(self.edits()[-1]['text'], BROWSER_LOGIN_REOPENED_TEXT)
+        self.assertEqual(self.edits()[-1]['reply_markup'], {'inline_keyboard': []})
+        sends = lambda: [body for method, body in self.calls if method == 'sendMessage']
+        self.assertEqual(sends()[-1]['text'], BROWSER_LOGIN_REOPENING_TEXT)
         self.assertNotEqual(self.service._browser_login(job_id)['nonce'], first_nonce)
+        sent = len(sends())
         self.tap(f"p7l:{notification['id']}:reopen", notification['message_id'])  # a second tap: nothing more
+        self.assertEqual(len(sends()), sent)
         self.assertEqual(self.service._browser_login(job_id)['reopens'], 1)
         # The work loop opens the window again and re-arms the same Work's prompt.
         self.service.process_browser_logins()
@@ -675,12 +683,18 @@ class InFlowLogin(LoginHarness):
         job_id, _prompt, _buttons, notification = self.login_work()
         self.assertEqual(self.settle(job_id, now=time.time() + BROWSER_LOGIN_SECONDS + 1), 'expired')
         self.tap(f"p7l:{notification['id']}:reopen", notification['message_id'])
+        bottom = self.store.notification(notification['id'])['message_id']
+        self.assertNotEqual(bottom, notification['message_id'], 'bound to the reopening line at the bottom')
         with mock.patch.object(self.profile, 'open_for_login', return_value={'state': 'busy'}):
             self.service.process_browser_logins()
         self.assertEqual(self.state(job_id), 'expired')
+        # #192: said on the bottom line, which carries the button again; the old prompt's is gone.
+        self.assertEqual(self.edits()[-1]['message_id'], bottom)
         self.assertEqual(self.edits()[-1]['text'], BROWSER_LOGIN_REOPEN_FAILED_TEXT)
         self.assertIn(f"p7l:{notification['id']}:reopen", flat(self.edits()[-1]['reply_markup']))
         self.tap(f"p7l:{notification['id']}:reopen", notification['message_id'])
+        self.assertEqual(self.state(job_id), 'expired', 'the old prompt no longer binds')
+        self.tap(f"p7l:{notification['id']}:reopen", bottom)
         self.assertEqual(self.state(job_id), 'requested')
         self.assertEqual(self.service._browser_login(job_id)['reopens'], 2)
 

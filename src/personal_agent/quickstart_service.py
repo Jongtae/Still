@@ -464,6 +464,8 @@ BROWSER_LOGIN_PHONE_ALERT=msg('service.i_ll_send_you_a_link')
 #: #1573: an expired prompt's one button and its texts.
 BROWSER_LOGIN_REOPEN_LABEL=msg('button.reopen_sign_in')
 BROWSER_LOGIN_REOPEN_TEXT=msg('service.sign_in_timed_out_reopen')
+#: #192: what the expired prompt keeps once its button was used; the reopening is said below it.
+BROWSER_LOGIN_REOPENED_TEXT=msg('service.sign_in_window_timed_out')
 BROWSER_LOGIN_REOPENING_TEXT=msg('service.reopening_the_sign_in_window')
 BROWSER_LOGIN_REOPEN_FAILED_TEXT=msg('service.could_not_reopen_sign_in')
 #: #818/#836: one Telegram ask per owner message (Work) lists that Work's pending
