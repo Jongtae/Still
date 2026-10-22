@@ -187,11 +187,16 @@ class MemoryService:
         current = self.store.current_memory(key, owner_id) or {}
         return self.remember(owner_id, work_id, key, content, valid_until=current.get('valid_until'))
 
-    def _profile_rows(self, owner_id):
-        """Every current ``profile.*`` row of this owner, ordered by key then value."""
+    def _profile_rows(self, owner_id, holding_on=None):
+        """Every current ``profile.*`` row of this owner, ordered by key then value.
+
+        #220 (Codex review): with ``holding_on`` (a date) rows past their last day are
+        left out in the query, so ended history cannot use up the row cap.
+        """
         rows, offset = [], 0
         while len(rows) < _PROFILE_ROWS_CAP:
-            page = self.store.memories(owner_id, limit=101, offset=offset, key_prefix=PROFILE_PREFIX)
+            page = self.store.memories(owner_id, limit=101, offset=offset, key_prefix=PROFILE_PREFIX,
+                                       holding_on=holding_on)
             rows.extend(row for row in page if self.is_profile_key(row.get('memory_key')))
             if len(page) < 101:
                 break
@@ -266,7 +271,7 @@ class MemoryService:
             raise MemoryServiceError('profile snapshot line size is invalid')
         if isinstance(limit_bytes, bool) or not isinstance(limit_bytes, int) or limit_bytes < 1:
             raise MemoryServiceError('profile snapshot byte size is invalid')
-        rows = self.holding(self._profile_rows(owner_id))
+        rows = self._profile_rows(owner_id, holding_on=self._today())
         if query is not None:
             matched = [row for row in self.search_memories(owner_id, query, limit=20, key_prefix=PROFILE_PREFIX)['memories']
                        if self.is_profile_key(row.get('memory_key'))]

@@ -14,6 +14,7 @@ import json
 import threading
 import time
 import unittest
+import unittest.mock
 
 from personal_agent import owner_model as om
 from personal_agent.agent_runtime import MEMORY_OWNER
@@ -475,6 +476,33 @@ class Invalidate(Upkeep):
                          ('profile.schedule.cast', '2099-01-02', cast['id']))
         [(_status, detail)] = self.evidence(job)
         self.assertEqual([item['reason'] for item in detail['dropped']], ['duplicate'])
+
+    def test_a_dated_fact_can_become_lasting_and_an_ended_fact_be_said_again(self):
+        """Codex review on #226: clearing a last day is a lifecycle update; an ended fact is not a duplicate."""
+        cast = self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')
+        trip = self.saved('profile.schedule.trip', '제주에 있음', valid_until='2000-01-01')
+        job = self.finished('깁스는 계속 해야 한대, 그리고 다시 제주에 왔어')
+        self.answers = [[proposal('profile.schedule.cast', '깁스 중', supersedes='profile.schedule.cast'),
+                         proposal('profile.schedule.trip', '제주에 있음', supersedes='profile.schedule.trip'),
+                         proposal('profile.schedule.cast', '깁스 중', supersedes='profile.schedule.cast')]]
+        self.service.run_owner_model_upkeep()
+        current = {row['memory_key']: row for row in self.store.memories(MEMORY_OWNER)}
+        self.assertEqual((current['profile.schedule.cast']['valid_until'], current['profile.schedule.cast']['supersedes']),
+                         (None, cast['id']))
+        self.assertEqual((current['profile.schedule.trip']['valid_until'], current['profile.schedule.trip']['supersedes']),
+                         (None, trip['id']))
+        [(_status, detail)] = self.evidence(job)
+        self.assertEqual([item['reason'] for item in detail['dropped']], ['duplicate'], 'the repeat in one answer')
+
+    def test_ended_history_does_not_use_up_the_snapshot_row_cap(self):
+        from personal_agent import memory_service
+        from personal_agent.memory_service import MemoryService
+        for index in range(6):
+            self.saved(f'profile.aaa.ended{index}', '지난 일', valid_until='2000-01-01')
+        holding = self.saved('profile.zzz.now', '지금 맞음')
+        memory = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        with unittest.mock.patch.object(memory_service, '_PROFILE_ROWS_CAP', 3):
+            self.assertEqual([entry['id'] for entry in memory.profile_snapshot(MEMORY_OWNER)['entries']], [holding['id']])
 
     def test_a_settings_edit_keeps_the_last_day(self):
         from personal_agent.memory_service import MemoryService
