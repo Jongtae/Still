@@ -2667,7 +2667,7 @@ class Capabilities:
   except (OSError,ValueError):return []
   return [{'id':WORKSPACE_REFERENCE_PREFIX+ref['id'],'path':ref['path']} for ref in references
           if isinstance(ref,dict) and isinstance(ref.get('id'),str) and ref['id']]
- def saved_results(self,path=None,deadline=None):
+ def saved_results(self,path=None,deadline=None,terms=None):
   """#182: the saved results the worker may read, newest first: ``[{path, content, title}]``.
 
   Fresh results in the file workspace's result folder (``FileWorkspace.current_results``; one whose
@@ -2689,7 +2689,7 @@ class Capabilities:
    self.saved_results_stopped=bool(getattr(workspace,'stopped_early',False))
   if path is None or path.startswith(PROJECT_RESULT_PREFIX):
    rows+=[{'path':PROJECT_RESULT_PREFIX+item['id'],'content':item['content'] or '','title':item['title']}
-          for item in workspace.project_results(None if path is None else path[len(PROJECT_RESULT_PREFIX):])]
+          for item in workspace.project_results(None if path is None else path[len(PROJECT_RESULT_PREFIX):],terms=terms)]
    # #182 review: more project answers than one listing holds: a search over them is incomplete.
    self.saved_results_stopped=self.saved_results_stopped or bool(getattr(workspace,'project_capped',False))
   return rows
@@ -2776,7 +2776,7 @@ class Capabilities:
   hits=[];visited=0;deadline=time.monotonic()+5
   # One deadline bounds the saved-result checks and the folder scan together.
   self.saved_results_stopped=False;self.saved_results_unavailable=False
-  saved=self.saved_results(deadline=deadline) if only in ('',SAVED_RESULTS_ROOT) else []
+  saved=self.saved_results(deadline=deadline,terms=terms) if only in ('',SAVED_RESULTS_ROOT) else []
   if only==SAVED_RESULTS_ROOT:roots=[]
   # Saved results first: they are few, and a request naming one should find it before a folder scan runs out.
   # #182 review: saved results take at most half the hits, so the folders keep search capacity.
@@ -2853,11 +2853,19 @@ class Capabilities:
    # changed (``stale``): this Work cannot save another result, and says so instead of a receipt.
    return {'saved':False,'already_saved':False,'id':earlier['id'],'path':earlier['path'],
            'message':'이 작업의 이전 결과 저장이 다른 결과 폴더에 묶여 있어 새로 저장하지 않았습니다. 새 요청으로 다시 저장해 주세요.'}
+  if earlier and not workspace.intact(earlier):
+   # #182 review: the earlier file was deleted, edited or replaced: no receipt for what is not there.
+   return {'saved':False,'already_saved':False,'id':earlier['id'],'path':earlier['path'],
+           'message':'이 작업이 저장한 결과 파일이 지워졌거나 바뀌어 있어 새로 저장하지 않았습니다. 새 요청으로 다시 저장해 주세요.'}
   if earlier:
    # #182 review: one Work saves one result; a second save writes nothing and says so (the first stays).
    return {'saved':False,'already_saved':True,'id':earlier['id'],'path':earlier['path'],
            'message':f"이 작업은 이미 결과를 저장했습니다: {earlier['path']}. 한 작업은 결과 하나만 저장하며, 이번 내용은 저장하지 않았습니다."}
   saved=workspace.save(self.job_id,title.strip(),content,list(self.workspace_reads.values()))
+  if not saved.get('inserted'):
+   # #182 review: a concurrent save of the same Work won the atomic insert; this content was not published.
+   return {'saved':False,'already_saved':True,'id':saved['id'],'path':saved['path'],
+           'message':f"이 작업은 이미 결과를 저장했습니다: {saved['path']}. 한 작업은 결과 하나만 저장하며, 이번 내용은 저장하지 않았습니다."}
   # #182 review: like save_note, the text this Work wrote to a private store stays in its private-write
   # set, so a later outbound lookup or browser step carrying it is attributed (``held_values``).
   self.written_private.append(content);self.written_labels.add('connected-document');self.private_provenance.add('connected-document')

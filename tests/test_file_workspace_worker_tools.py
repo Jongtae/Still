@@ -401,6 +401,37 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         oldest = caps.execute('read_file', {'root_id': SAVED_RESULTS_ROOT, 'path': 'project/p0'})
         self.assertEqual(oldest['content'], 'answer 0')
 
+    def test_a_deleted_result_is_no_replay(self):
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        (self.workspace / 'Notes.md').unlink()
+        again = caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        self.assertEqual((again['saved'], again['already_saved']), (False, False))
+
+    def test_a_save_that_lost_the_race_is_not_reported_as_saved(self):
+        from unittest.mock import patch
+        first, second = self.caps('job-1'), self.caps('job-1')
+        for caps in (first, second):
+            caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        # Both pass the replay check before either commits.
+        with patch.object(FileWorkspace, 'result_for', lambda self, request_id: None):
+            won = first.execute('save_result', {'title': 'Winner', 'content': 'WINNER-TEXT'})
+            lost = second.execute('save_result', {'title': 'Loser', 'content': 'LOSER-TEXT'})
+        self.assertTrue(won['saved'])
+        self.assertEqual((lost['saved'], lost['already_saved'], lost['path']), (False, True, won['path']))
+        self.assertNotIn('LOSER-TEXT', second.written_private)
+
+    def test_an_older_project_answer_is_searchable_past_the_cap(self):
+        workspace_id = self.store.create_workspace('출장')['id']
+        with self.store.db() as db:
+            db.execute('INSERT INTO workspace_results VALUES (?,?,?,?,?,?)', ('old', workspace_id, 'job-old', 'RARE-NEEDLE answer', '', 1.0))
+            for index in range(120):
+                db.execute('INSERT INTO workspace_results VALUES (?,?,?,?,?,?)',
+                           (f'p{index}', workspace_id, f'job-{index}', f'answer {index}', '', 1000.0 + index))
+        found = self.caps().execute('find_files', {'query': 'RARE-NEEDLE', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertEqual([item['path'] for item in found['files']], ['project/old'])
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})

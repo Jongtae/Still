@@ -230,7 +230,8 @@ class FileWorkspace:
                     with self.store.db() as db: db.execute("DELETE FROM file_workspace_results WHERE id=? AND state='pending'",(record['id'],))
                     return self.save(request_id,title,content,sources)
             self._mark_current(record)
-            return {**record,'state':'current'}
+            # ``inserted``: this call published the result (a concurrent same-request save returns the row it lost to).
+            return {**record,'state':'current','inserted':True}
         except Exception:
             temporary.unlink(missing_ok=True)
             if published: target.unlink(missing_ok=True)
@@ -304,6 +305,17 @@ class FileWorkspace:
         if not latest and (not isinstance(query,str) or not 2<=len(query.strip())<=160): raise ValueError('두 글자 이상의 결과 검색어를 입력하세요.')
         return self.current_results(query.casefold().strip(),latest)
 
+    def intact(self, record):
+        """Whether a current record's file is still exactly what Still published; else it is marked stale."""
+        try:
+            published=self._result_path(record['path'])
+            ok=(published.stat().st_size<=MAX_FILE_BYTES
+                and hashlib.sha256(published.read_bytes()).hexdigest()==record.get('content_hash'))
+        except (OSError,ValueError): ok=False
+        if not ok:
+            with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
+        return ok
+
     def result_for(self, request_id):
         """The result record one request (Work) already saved, or None.
 
@@ -333,7 +345,7 @@ class FileWorkspace:
             tables={row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             return 'workspace_results' in tables and bool(db.execute('SELECT 1 FROM workspace_results LIMIT 1').fetchone())
 
-    def project_results(self, item_id=None):
+    def project_results(self, item_id=None, terms=None):
         """Answers the owner saved into a project (the older ``workspace_results``), newest first.
 
         Still's own records, read-only: ``{id, title, content, created}``.  ``item_id`` reads that one
@@ -346,6 +358,9 @@ class FileWorkspace:
             query='SELECT r.id,w.title,r.content,r.created FROM workspace_results r JOIN workspaces w ON w.id=r.workspace_id'
             if item_id is not None:
                 return [dict(row) for row in db.execute(query+' WHERE r.id=?',(item_id,))]
-            rows=[dict(row) for row in db.execute(query+' ORDER BY r.created DESC LIMIT 101')]
+            # #182 review: a search filters before the cap, so an older matching answer is reachable.
+            terms=[term for term in (terms or ()) if isinstance(term,str) and term]
+            where=(' WHERE '+' OR '.join(["instr(lower(w.title||' '||r.content),?)>0"]*len(terms))) if terms else ''
+            rows=[dict(row) for row in db.execute(query+where+' ORDER BY r.created DESC LIMIT 101',[term.lower() for term in terms])]
         self.project_capped=len(rows)>100
         return rows[:100]
