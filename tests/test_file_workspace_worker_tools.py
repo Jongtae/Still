@@ -330,6 +330,31 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         self.assertTrue(found['needs_setup'])
         self.assertNotIn('connected-document', later.private_provenance)
 
+    def test_a_result_in_a_replaced_result_folder_is_no_replay(self):
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        other = self.base / 'other-workspace'
+        other.mkdir()
+        FileWorkspace(self.store).configure([str(self.reference)], str(other))
+        again = caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        self.assertEqual((again['saved'], again['already_saved']), (False, False))
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'detached')
+
+    def test_more_saved_results_than_the_cap_is_reported_as_truncated(self):
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        with self.store.db() as db:
+            [record] = [dict(row) for row in db.execute('SELECT * FROM file_workspace_results')]
+            for index in range(100):
+                db.execute('INSERT INTO file_workspace_results(id,request_id,path,content_hash,sources,created,workspace_id,state) '
+                           'VALUES (?,?,?,?,?,?,?,?)', (f'r{index}', f'q{index}', f'missing-{index}.md', 'x', record['sources'],
+                                                       record['created'] + 1 + index, record['workspace_id'], 'current'))
+        found = self.caps('job-later').execute('find_files', {'query': 'summary', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertEqual((found['files'], found['truncated']), ([], True))
+
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})

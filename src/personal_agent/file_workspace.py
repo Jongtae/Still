@@ -266,10 +266,11 @@ class FileWorkspace:
         with self.store.db() as db:
             self._ensure_results_table(db)
             records=[dict(row) for row in (db.execute('SELECT * FROM file_workspace_results WHERE path=?',(path,)) if path is not None
-                                           else db.execute('SELECT * FROM file_workspace_results ORDER BY created DESC LIMIT 100'))]
+                                           else db.execute('SELECT * FROM file_workspace_results ORDER BY created DESC LIMIT 101'))]
         results=[]
-        # Whether the deadline stopped the checks before every record was seen (#182 review).
-        self.stopped_early=False
+        # Whether the deadline, or the 100-record cap, stopped the checks before every record was seen (#182 review).
+        self.stopped_early=len(records)>100
+        records=records[:100]
         for record in records:
             if deadline is not None and time.monotonic()>deadline:
                 self.stopped_early=True; break
@@ -294,11 +295,19 @@ class FileWorkspace:
         return self.current_results(query.casefold().strip(),latest)
 
     def result_for(self, request_id):
-        """The result record one request (Work) already saved, or None."""
+        """The result record one request (Work) already saved, or None.
+
+        A record of a result folder other than the active one is marked ``detached`` first (#182 review),
+        as ``current_results`` would, so it never reads as this folder's result.
+        """
         with self.store.db() as db:
             self._ensure_results_table(db)
             row=db.execute('SELECT * FROM file_workspace_results WHERE request_id=?',(request_id,)).fetchone()
-        return dict(row) if row else None
+        record=dict(row) if row else None
+        if record and record.get('state')=='current' and record.get('workspace_id')!=self.active().get('workspace_id'):
+            with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='detached' WHERE id=?",(record['id'],))
+            record['state']='detached'
+        return record
 
     def has_file_results(self):
         """Whether a published result-file record exists (the result folder may be unavailable)."""
