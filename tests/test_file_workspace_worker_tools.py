@@ -369,12 +369,37 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 later.execute('read_file', {'root_id': SAVED_RESULTS_ROOT, 'path': 'Notes.md'})
         with self.store.db() as db:
-            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'current')
+            # Still never publishes a result that large: it is no longer the published result.
+            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'stale')
+            db.execute("UPDATE file_workspace_results SET state='current'")
         (self.workspace / 'Notes.md').write_text('EDITED TEXT', encoding='utf-8')
         with self.assertRaises(ValueError):
             later.execute('read_file', {'root_id': SAVED_RESULTS_ROOT, 'path': 'Notes.md'})
         with self.store.db() as db:
             self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'stale')
+
+    def test_a_deleted_result_file_is_no_longer_current(self):
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        (self.workspace / 'Notes.md').unlink()
+        with self.assertRaises(ValueError):
+            self.caps('job-later').execute('read_file', {'root_id': SAVED_RESULTS_ROOT, 'path': 'Notes.md'})
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'stale')
+        self.assertFalse(FileWorkspace(self.store).has_file_results())
+
+    def test_project_answers_past_the_cap_are_reachable_and_reported(self):
+        workspace_id = self.store.create_workspace('출장')['id']
+        with self.store.db() as db:
+            for index in range(101):
+                db.execute('INSERT INTO workspace_results VALUES (?,?,?,?,?,?)',
+                           (f'p{index}', workspace_id, f'job-{index}', f'answer {index}', '', 1000.0 + index))
+        caps = self.caps()
+        found = caps.execute('find_files', {'query': 'answer', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertTrue(found['truncated'])
+        oldest = caps.execute('read_file', {'root_id': SAVED_RESULTS_ROOT, 'path': 'project/p0'})
+        self.assertEqual(oldest['content'], 'answer 0')
 
     def test_saved_text_stays_in_the_private_write_set(self):
         caps = self.caps()

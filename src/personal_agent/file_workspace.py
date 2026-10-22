@@ -287,13 +287,14 @@ class FileWorkspace:
                 published=self._result_path(record['path'])
                 # #182 review: bounded before it is read, and only the exact text Still published counts:
                 # a result file edited (or replaced) since is not this result any more.
-                if published.stat().st_size>MAX_FILE_BYTES: continue
+                if published.stat().st_size>MAX_FILE_BYTES: raise ValueError('oversized result file')
                 raw=published.read_bytes()
-                if hashlib.sha256(raw).hexdigest()!=record.get('content_hash'):
-                    with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
-                    continue
+                if hashlib.sha256(raw).hexdigest()!=record.get('content_hash'): raise ValueError('edited result file')
                 content=raw.decode('utf-8')
-            except (OSError,UnicodeError,ValueError): continue
+            except (OSError,UnicodeError,ValueError):
+                # #182 review: deleted, unreadable, oversized or edited: not a current result any more.
+                with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
+                continue
             if latest or needle is None or needle in (record['path']+'\n'+content).casefold(): results.append({'id':record['id'],'path':record['path'],'content':content,'sources':json.loads(record['sources'])})
             if latest and results: break
         return results
@@ -332,13 +333,19 @@ class FileWorkspace:
             tables={row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             return 'workspace_results' in tables and bool(db.execute('SELECT 1 FROM workspace_results LIMIT 1').fetchone())
 
-    def project_results(self):
+    def project_results(self, item_id=None):
         """Answers the owner saved into a project (the older ``workspace_results``), newest first.
 
-        Still's own records, read-only: ``{id, title, content, created}``.
+        Still's own records, read-only: ``{id, title, content, created}``.  ``item_id`` reads that one
+        directly; otherwise the newest 100, with ``project_capped`` set when more exist (#182 review).
         """
+        self.project_capped=False
         with self.store.db() as db:
             tables={row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if not {'workspace_results','workspaces'}<=tables: return []
-            return [dict(row) for row in db.execute('SELECT r.id,w.title,r.content,r.created FROM workspace_results r '
-                                                    'JOIN workspaces w ON w.id=r.workspace_id ORDER BY r.created DESC LIMIT 100')]
+            query='SELECT r.id,w.title,r.content,r.created FROM workspace_results r JOIN workspaces w ON w.id=r.workspace_id'
+            if item_id is not None:
+                return [dict(row) for row in db.execute(query+' WHERE r.id=?',(item_id,))]
+            rows=[dict(row) for row in db.execute(query+' ORDER BY r.created DESC LIMIT 101')]
+        self.project_capped=len(rows)>100
+        return rows[:100]
