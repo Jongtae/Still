@@ -25,6 +25,12 @@ requires a non-draft candidate, known required checks, exact-head reconciliation
 and leaves the owner merge decision untouched. Issue text cannot grant itself a
 review bypass.
 
+`agent:approved` is a routing label, not the Constitution's escalated review. When
+`independent_review_required` is `true`, the escalated review is the Codex review
+of the exact final head (Constitution *Escalated review*, #195): the review receipt
+says it does not satisfy that gate, and the owner merges only a head whose Codex
+review is recorded with every finding handled. The loop never merges.
+
 Receipts are owner-authored GitHub comments marked `agentos-handoff:*`:
 one implementation receipt records PR/head/CI, and one review receipt records
 either bounded findings or `agent:approved`. The local state file holds only

@@ -245,7 +245,7 @@ class StateHandoffLoop:
         return self._receipt(
             issue.number, "agent:working", "agent:approved", "implementation", candidate.key(),
             f"Implementation receipt: PR #{candidate.pr}, head `{candidate.head}`, CI `{candidate.ci}`. "
-            "Independent review is not required by the owner-maintained risk classification; owner merge decision remains.",
+            "Escalated review is not required by the owner-maintained risk classification; owner merge decision remains.",
             state, candidate,
         )
 
@@ -273,7 +273,7 @@ class StateHandoffLoop:
             return self._receipt(issue.number, "agent:review", "agent:rework", "review", candidate.key() + ":" + digest,
                                  f"Review receipt: PR #{candidate.pr}, head `{candidate.head}`, repair required — " + "; ".join(findings), state, candidate)
         return self._receipt(issue.number, "agent:review", "agent:approved", "review", candidate.key(),
-                             f"Review receipt: PR #{candidate.pr}, head `{candidate.head}` satisfies current fixture evidence; owner merge decision remains.", state, candidate)
+                             f"Review receipt: PR #{candidate.pr}, head `{candidate.head}` satisfies current fixture evidence; this receipt is not the Codex escalated review, which the owner checks on the exact final head before merging.", state, candidate)
 
     def tick(self, role):
         if role not in {"implementer", "reviewer"}: raise HandoffError("role must be implementer or reviewer")

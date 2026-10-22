@@ -225,8 +225,8 @@ commands. Exercise actual host caller -> SDK -> broker -> synthetic target
 tests, including denial, stale/revoked Work, malformed input, redaction,
 timeout/cancellation, typed and unknown-effect failures, EOF/Stop/shutdown.
 Repeat the base exclusion check and the unchanged isolated bridge's protocol
-regressions; a passing import is insufficient. Require exact-head CI and
-independent review for the changed supply-chain/protocol/authority boundary.
+regressions; a passing import is insufficient. Require exact-head CI and the
+escalated (Codex) review for the changed supply-chain/protocol/authority boundary.
 
 Recovery restores the saved manifest, lock **and matching adapter code** to a
 fresh disposable environment, syncs the same profile, verifies exact installed
@@ -295,7 +295,7 @@ written.
 - Homebrew already installs `[mcp-host]`, so its installed closure is unchanged.
   A source checkout must re-sync (`uv sync --locked`) or reinstall
   (`pip install -e .`) before the next start.
-- Supply-chain trust changes, so independent review is required before merge.
+- Supply-chain trust changes, so the escalated (Codex) review is required before the owner merges.
 
 ## Parallel test runner — #135
 

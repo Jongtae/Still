@@ -31,7 +31,7 @@ Before each child, inspect main, PRs, issue scope and required checks; use the e
 
 Default: changed-function unit tests with injected model/tool transports; a small model-free integration test only for a changed wire/broker/process/state boundary. Retain useful-positive and authority-negative cases. A fake model is valid for wiring tests, not proof of language competence. Do not mock away the boundary being tested.
 
-Normal closeout is issue/changed behavior, focused tests, existing required CI and known limits. No per-child mandatory historical baseline run, mutation, content-addressed JUnit/trace packet, whole-project re-audit or live model trial. Mutations/counterexamples and independent review are reserved for actual risk, especially sole authority checks, idempotency and reachability. A relevant failing regression remains unresolved; optional unrun model checks are not development blockers.
+Normal closeout is issue/changed behavior, focused tests, existing required CI and known limits. No per-child mandatory historical baseline run, mutation, content-addressed JUnit/trace packet, whole-project re-audit or live model trial. Mutations/counterexamples and the escalated (Codex) review are reserved for actual risk, especially sole authority checks, idempotency and reachability. A relevant failing regression remains unresolved; optional unrun model checks are not development blockers.
 
 Model checks are opt-in for affected model/prompt/tool-description changes, unexplained model-dependent behavior or a scoped public claim, with explicit data/destination/provider and request/token/cost/time budget. No all-case/all-route three-trial quota, universal 90% threshold or production per-answer judge. Repetition follows observed uncertainty. Installation identity can be checked without a model. Preserve the specific #581 reported client discrepancy and critical release conditions without adding unrelated model runs.
 
@@ -58,7 +58,7 @@ The first command is an offline manifest/ownership check, not a task-quality gra
 
 Repository-root `delivery-plan.yaml` is the only current plan. Its packaged copy was already retired at the audited baseline; older two-copy instructions must not restore repository governance into the product. The spec gate and src-layout gate reject that regression.
 
-The root plan enumerates this finite track inside the existing Presence program. #600 is the integration/evidence parent, not a second active coordinator. Implementation proceeds through dependency-satisfied children after governance adoption, with independent security review for changed authority/egress/effect boundaries. It does not turn on new authority on an owner installation.
+The root plan enumerates this finite track inside the existing Presence program. #600 is the integration/evidence parent, not a second active coordinator. Implementation proceeds through dependency-satisfied children after governance adoption, with the escalated (Codex) review for changed authority/egress/effect boundaries. It does not turn on new authority on an owner installation.
 
 Before real-model evaluation, record provider/account, synthetic or selected data, destinations, requests/tokens or monetary ceiling, duration and retention. Before deployment/account mutation, use explicit owner operating authorization. New paths retain existing safe rollout controls; verify the changed profile with no-model tests and only the scoped authorized smoke that its claim needs. No new scheduled automation is created or activated here.
 

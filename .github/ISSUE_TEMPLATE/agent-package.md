@@ -74,7 +74,7 @@ Required when this issue proposes a new design, contract, architecture element, 
 
 ## Validation / evidence plan
 
-Positive cases, fail-closed negative cases, restart/recovery/idempotency, current CI, exact evidence class, and independent review only when the Development Constitution's material security/authority escalation criteria apply:
+Positive cases, fail-closed negative cases, restart/recovery/idempotency, current CI, exact evidence class, and the escalated (Codex) review only when the Development Constitution's material security/authority escalation criteria apply:
 
 ## Historical authority / migration
 

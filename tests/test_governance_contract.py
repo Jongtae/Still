@@ -62,7 +62,7 @@ def test_english_goal_contract_is_canonical_and_korean_reference_links_to_it() -
 
     _assert_all(
         english,
-        "## Delegation and independent review",
+        "## Delegation and escalated review",
         "requested, accepted, and observed",
         "already enumerated, dependency-satisfied substep",
         "top-level goal",
@@ -147,7 +147,7 @@ def test_iteration_issue_template_collects_the_execution_contract() -> None:
         "## Goal-ready activation",
         "## Allowed authority",
         "## Evidence and completion audit",
-        "## Delegation and independent review",
+        "## Delegation and escalated review",
         "## Blocked / restart rule",
         "## Top-level goal / substep",
         "## Non-goals",
@@ -208,7 +208,7 @@ def test_verification_budget_requires_stable_heads_and_batched_remediation() -> 
         "stable-head verification budget",
         "Goal Execution Contract",
         "Required CI, exact-head validation",
-        "Independent review is risk-triggered",
+        "Escalated review is risk-triggered",
     )
     _assert_all(
         goal,
@@ -221,7 +221,7 @@ def test_verification_budget_requires_stable_heads_and_batched_remediation() -> 
         "duplicate review",
         "poll",
         "exact-head",
-        "independent review",
+        "escalated review",
     )
 
     _assert_all(
@@ -233,8 +233,8 @@ def test_verification_budget_requires_stable_heads_and_batched_remediation() -> 
         "unknown root cause",
         "do not run the full suite after every narrow mechanical edit",
         "never skip, weaken, relabel, or bypass",
-        "re-review only when the remediation changes the boundary that triggered review",
-        "mechanical or non-boundary remediation does not automatically reopen independent review",
+        "is repeated only when the remediation changes the boundary that triggered review",
+        "mechanical or non-boundary remediation does not automatically reopen that additional review",
         "consolidated final remediation head",
     )
     _assert_all(
@@ -253,7 +253,7 @@ def test_verification_budget_requires_stable_heads_and_batched_remediation() -> 
 
 
 
-def test_independent_review_is_risk_based_not_default_completion_gate() -> None:
+def test_escalated_review_is_risk_based_not_default_completion_gate() -> None:
     agents = _read("AGENTS.md")
     constitution = _read("docs/development-constitution.en.md")
     goal = _read("docs/goal-execution-contract.en.md")
@@ -264,27 +264,29 @@ def test_independent_review_is_risk_based_not_default_completion_gate() -> None:
     _assert_all(
         agents,
         "Goal Execution Contract",
-        "Independent review is risk-triggered by material security/authority boundary changes",
+        "Escalated review is risk-triggered by material security/authority boundary changes",
         "not by ordinary completion",
-        "genuinely triggered independent review",
+        "genuinely triggered escalated review",
     )
     _assert_all(
         constitution,
-        "Independent review is a risk-based escalation control",
+        "Escalated review is a risk-based escalation control",
         "OAuth scopes or credential boundaries",
         "sandbox, isolation or privilege boundaries",
         "private-data egress or external-recipient boundaries",
         "package/dependency supply-chain trust or install/update authority",
         "safety invariant",
-        "does not require independent review merely because it is final closeout, recovery work",
-        "requires re-review only if that remediation changes the boundary that triggered the review",
+        "does not require escalated review merely because it is final closeout, recovery work",
+        "Codex re-reviews every remediation head",
+        "is repeated after a later remediation commit only if that remediation changes the boundary that triggered the review",
     )
     _assert_all(
         goal,
         "Ordinary recovery, final completion",
         "do not trigger review by themselves",
-        "Re-review only when the remediation changes the boundary that triggered review",
-        "mechanical or non-boundary remediation does not automatically reopen independent review",
+        "The Codex review is re-run on every remediation head",
+        "An additional human or specialist review is repeated only when the remediation changes the boundary that triggered review",
+        "mechanical or non-boundary remediation does not automatically reopen that additional review",
     )
     _assert_all(
         incremental,
@@ -295,7 +297,7 @@ def test_independent_review_is_risk_based_not_default_completion_gate() -> None:
     )
     _assert_all(
         usefulness,
-        "required CI and any independent review triggered by the Development Constitution's material security/authority escalation criteria",
+        "required CI and any escalated review triggered by the Development Constitution's material security/authority escalation criteria",
     )
     _assert_all(
         handoff,
@@ -304,7 +306,37 @@ def test_independent_review_is_risk_based_not_default_completion_gate() -> None:
         "routine, non-boundary candidate directly",
         "`agent:review`",
         "Issue text cannot grant itself a review bypass",
+        "`agent:approved` is a routing label, not the Constitution's escalated review",
+        "The loop never merges",
     )
+    assert "not the Codex escalated review" in _read("scripts/dev/handoff.py")
+
+
+def test_escalated_review_is_a_codex_review_the_owner_merges() -> None:
+    """#195: one maintainer, so the triggered review is the Codex review; it never claims independence."""
+    constitution = _read("docs/development-constitution.en.md")
+    _assert_all(
+        constitution,
+        "### How the escalated review is done",
+        "The escalated review is therefore the **Codex review**",
+        "negative tests that hold it",
+        "exact final head",
+        "Every push after the Codex review is reviewed by Codex again",
+        "The owner then merges the PR. An AI session never merges a PR whose escalated review was triggered.",
+        "never an independent review",
+    )
+    _assert_all(_read("docs/governance/ai-contribution-review.en.md"), "| Codex reviewer |", "does not claim independence")
+    _assert_all(_read(".github/pull_request_template.md"), "## Escalated review (Codex)", "not independent review")
+    for path in ("AGENTS.md", "GOVERNANCE.md", ".github/CONTRIBUTING.md", "docs/development-governance.en.md"):
+        text = _read(path)
+        assert "recorded as a Codex review" in text or "Codex review" in text, path
+    # A Codex review is never relabelled as independence.
+    for path in ("AGENTS.md", "docs/development-constitution.en.md", "docs/governance/ai-contribution-review.en.md",
+                 "GOVERNANCE.md", ".github/CONTRIBUTING.md", ".github/pull_request_template.md"):
+        lowered = _read(path).lower()
+        for phrase in ("codex review is an independent review", "codex review counts as independent",
+                       "independent codex review", "an independent review by codex"):
+            assert phrase not in lowered, (path, phrase)
 
 
 def test_claude_bootstrap_points_at_no_completed_program() -> None:

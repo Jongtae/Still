@@ -19,7 +19,7 @@ Every material product change should progress through:
 - **Tasks**: create bounded issue-linked work units with dependencies and explicit stopping rules.
 - **Implement**: change only the activated bounded goal, preserving existing state/evidence. Per C16, implementation removes blockers or improves orchestration of the owner's AI; it never scripts a specific owner request.
 - **Verify**: map every acceptance criterion to current automated/operating evidence, including negative tests where authority/security is involved.
-- **Converge**: reconcile contradictions, stale docs/plans, open findings and current GitHub state before merge/closeout; use independent review only when the risk-based escalation policy below applies.
+- **Converge**: reconcile contradictions, stale docs/plans, open findings and current GitHub state before merge/closeout; use escalated review only when the risk-based escalation policy below applies.
 
 Issue creation, planning documents, or passing local tests alone do not activate or complete a goal.
 
@@ -120,9 +120,9 @@ Owner direction 2026-09-27 (#712). An AI is always the engine. The owner's chose
 
 Every proposal and PR answers: *Which AI does the work here, and is this change removing a blocker or orchestrating — or is it scripting the task?* Scripting the task is rejected.
 
-## Independent review escalation
+## Escalated review
 
-Independent review is a risk-based escalation control, not a default merge or completion gate.
+Escalated review is a risk-based escalation control, not a default merge or completion gate.
 
 It is required when a change materially changes one or more of these boundaries:
 
@@ -135,9 +135,20 @@ It is required when a change materially changes one or more of these boundaries:
 - ownership of canonical owner state or durable authority; or
 - a declared safety invariant that is being weakened or removed.
 
-A work item does not require independent review merely because it is final closeout, recovery work, UI/conversation/Settings work, a bug fix, refactor, documentation change, or tracker/ledger reconciliation. Recovery requires independent review only when it changes one of the material boundaries above.
+A work item does not require escalated review merely because it is final closeout, recovery work, UI/conversation/Settings work, a bug fix, refactor, documentation change, or tracker/ledger reconciliation. Recovery requires escalated review only when it changes one of the material boundaries above.
 
-When an independent review was required, a later remediation commit requires re-review only if that remediation changes the boundary that triggered the review or introduces another review-triggering boundary change. Required CI, exact-head validation, acceptance-to-evidence audit and truthful evidence remain mandatory regardless of review escalation.
+### How the escalated review is done
+
+Owner direction 2026-10-22 (#195): Still has one maintainer, who is the accountable author of every change, so a human non-author reviewer does not exist. The escalated review is therefore the **Codex review**:
+
+1. The PR records the boundary that triggered the review, its authority/threat model (data, Grants, destinations, abuse and failure paths) and the negative tests that hold it.
+2. The automatic Codex review (`chatgpt-codex-connector`) reviews the exact final head. Every finding is fixed or answered on its thread with a reason. Every push after the Codex review is reviewed by Codex again, so the review always covers the exact final head.
+3. Required `validate` and `full-validate` pass on that same head, including the negative tests.
+4. The owner then merges the PR. An AI session never merges a PR whose escalated review was triggered.
+
+Records call this a **Codex review**, never an independent review: a different AI model reviewing the author's change is still not independence. When another person contributes, the owner reviews that person's PR as a non-author; a human non-author review is welcome whenever one is available, and is recorded as such. A review owed under the earlier human non-author rule is resolved by the Codex review of that PR's final head, recorded as a Codex review.
+
+Codex re-reviews every remediation head (step 2). Any additional human or specialist review is repeated after a later remediation commit only if that remediation changes the boundary that triggered the review or introduces another review-triggering boundary change. Required CI, exact-head validation, acceptance-to-evidence audit and truthful evidence remain mandatory regardless of review escalation.
 
 ## AgentPackage-specific review checklist
 
@@ -161,7 +172,7 @@ A material change to these constitutional principles requires:
 
 - a dedicated issue stating why an existing principle is insufficient or wrong;
 - impact analysis across architecture, security, existing contracts and historical evidence;
-- independent review when the change meets the Independent review escalation criteria above;
+- escalated review when the change meets the Escalated review criteria above;
 - repository-required CI;
 - explicit owner approval before merge when the change expands durable authority or weakens an existing safety invariant.
 
