@@ -120,7 +120,8 @@ def profile_keys(text):
         if sep and key and ' ' not in key and key not in keys:
             keys.append(key[:80])
     if said > 0:
-        keys.append(f'owner_said ({said} earlier owner message{"s" if said != 1 else ""})')
+        # Codex review on #227: first, so neither cap (40 here, the audit's own item cap) can drop it.
+        keys.insert(0, f'owner_said ({said} earlier owner message{"s" if said != 1 else ""})')
     return keys[:40]
 
 

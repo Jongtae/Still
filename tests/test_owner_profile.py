@@ -317,7 +317,10 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
         section = self.service.owner_profile_snapshot('마트 장바구니 쿠폰')
         self.assertIn('[said 2026-10-02] 마트 장바구니는 동네 마트 앱으로', section)
-        self.assertIn('owner_said (2 earlier owner messages)', information_use.profile_keys(section))
+        self.assertEqual(information_use.profile_keys(section)[0], 'owner_said (2 earlier owner messages)')
+        crowded = '\n'.join(f'profile.k{index}: v (saved 2026-10-01)' for index in range(60)) + '\n' + section
+        self.assertEqual(information_use.profile_keys(crowded)[0], 'owner_said (2 earlier owner messages)',
+                         'kept ahead of the caps')
 
     def test_a_secret_straddling_the_clip_is_redacted_before_it(self):
         """Codex review on #227: clipping first would keep a prefix the stored-value redaction no longer matches."""
