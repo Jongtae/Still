@@ -2331,13 +2331,15 @@ def read_state_text(calls, limit=READ_STATE_CHARS):
   counts=[evidence.get(key) for key in ('message_count','file_count') if isinstance(evidence.get(key),int)]
   known=len(items)+len([digest for digest in evidence.get('item_digests') or () if digest not in named])
   if items and counts:unnamed+=max(0,sum(counts)-known)
-  if items and evidence.get('truncated') and 'characters' not in evidence and tool not in cut:cut.append(str(tool)[:60])
+  # Codex review: a listing that stopped early is cut short even when it found nothing yet.
+  listing='message_ids' in evidence or 'files' in evidence
+  if listing and evidence.get('truncated') and 'characters' not in evidence and tool not in cut:cut.append(str(tool)[:60])
   ref=_item_ref(evidence) if 'characters' in evidence else ''
   if not ref:continue
   if ref not in opened:opened.append(ref)
   if not evidence.get('characters'):empty.append(ref)
   elif evidence.get('truncated') or evidence.get('text_truncated'):partial.append(ref)
- if not (listed or opened):return ''
+ if not (listed or opened or cut):return ''
  unopened=[ref for ref in listed if ref not in opened]
  # Listed items the record names only by digest: a read settles one only when it is that very item
  # (Codex review: an unrelated read never stands in for a listed one).
@@ -4336,11 +4338,12 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  if judgments is None or not hasattr(judgments,'goal_reached'):return 'unavailable'
  clean=(lambda text,private=False:redact(text,private=False)) if redact else (lambda text,private=False:str(text or ''))
  refs=claim['evidence_refs']
- share=max(300,GOAL_OBSERVATION_CHARS//max(1,len(refs)))
- observed='\n'.join(clean(_observation_text(ref,observations[ref][0],observations[ref][3]))[:share] for ref in refs)
- # #151: which listed items were opened and read through comes first, so no cut drops it.
- observed=((clean(read_state)+'\n') if read_state else '')+observed
- observed=observed[:GOAL_OBSERVATION_CHARS]
+ # #151: which listed items were opened and read through comes first, in room of its own, so it
+ # neither is cut nor cuts the referenced observations (Codex review: their share is what is left).
+ state=(str(clean(read_state) or '')[:READ_STATE_CHARS]+'\n') if read_state else ''
+ room=GOAL_OBSERVATION_CHARS-len(state)
+ share=max(300,room//max(1,len(refs)))
+ observed=state+'\n'.join(clean(_observation_text(ref,observations[ref][0],observations[ref][3]))[:share] for ref in refs)[:room]
  # #14: the direct route passes ``failed_steps_text`` (recovered and unknown-effect calls marked); a list is read as before.
  failed=clean(failures if isinstance(failures,str) else '; '.join(f'{tool}: {reason or "failed"}' for tool,reason in failures))[:GOAL_FAILURE_CHARS]
  reply=clean(claim.get('summary') or '')[:GOAL_REPLY_CHARS]

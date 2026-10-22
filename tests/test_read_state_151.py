@@ -83,6 +83,27 @@ class ReadState(unittest.TestCase):
         self.assertIn('listed but never opened: 3 of 15 listed', text)
         self.assertNotIn('read through (', text)
 
+    def test_a_search_that_stopped_before_any_match_is_still_cut_short(self):
+        listing = evidence_summary('find_files', {'files': [], 'truncated': True})
+        text = read_state_text([('find_files', listing)])
+        self.assertIn('listing cut short, more items matched than were listed: find_files', text)
+        self.assertEqual(read_state_text([('find_files', evidence_summary('find_files', {'files': [], 'truncated': False}))]), '')
+
+    def test_the_direct_route_read_state_takes_its_own_room(self):
+        from personal_agent.agent_runtime import GOAL_OBSERVATION_CHARS
+        seen = {}
+        judgments = SimpleNamespace(goal_reached=lambda goal, observed, failed, **kw: seen.update(observed=observed)
+                                    or SimpleNamespace(outcome='yes', value=None, note=None))
+        big = {'r1': ('read_file', 'read_file', 'succeeded', {'content': 'x' * 40000 + 'TAIL'})}
+        goal_judgment(judgments, 'q', {'evidence_refs': ['r1'], 'summary': 'a'}, big, '', read_state='read_state: s')
+        self.assertTrue(seen['observed'].startswith('read_state: s\n'))
+        self.assertLessEqual(len(seen['observed']), GOAL_OBSERVATION_CHARS)
+        without = {}
+        judgments.goal_reached = lambda goal, observed, failed, **kw: without.update(observed=observed) \
+            or SimpleNamespace(outcome='yes', value=None, note=None)
+        goal_judgment(judgments, 'q', {'evidence_refs': ['r1'], 'summary': 'a'}, big, '')
+        self.assertEqual(len(seen['observed']), len(without['observed']), 'the observations get what the fact leaves; the total bound is unchanged')
+
     def test_long_identities_are_compared_whole(self):
         long = 'd/' + 'x' * 300
         files = {'file_count': 2, 'files': [{'root_id': 'r', 'path': long + 'a'}, {'root_id': 'r', 'path': long + 'b'}]}
