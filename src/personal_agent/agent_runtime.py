@@ -2294,6 +2294,17 @@ def _item_ref(item):
  if item.get('root_id') and isinstance(item.get('path'),str) and item['path']:return f"{item['root_id']}:{item['path']}"
  return ''
 
+#: #151: a listing keeps a short digest of up to this many listed identities, so a later read is
+#: matched to the listing it belongs to without persisting every private id or path.
+READ_STATE_DIGESTS=200
+
+def _ref_digest(ref):
+ return hashlib.sha256(ref.encode('utf-8','replace')).hexdigest()[:16]
+
+def listed_digests(items):
+ """Digests of every listed item's identity, in its evidence shape (#151, Codex review)."""
+ return [_ref_digest(ref) for ref in (_item_ref(item) for item in list(items or ())[:READ_STATE_DIGESTS]) if ref]
+
 def read_state_text(calls, limit=READ_STATE_CHARS):
  """What the attempt's reads covered (#151), from Still's recorded evidence only, or ''.
 
@@ -2306,7 +2317,7 @@ def read_state_text(calls, limit=READ_STATE_CHARS):
  while material stayed unread does not serve the message); the reply's wording never decides it,
  and nothing here names a request, service or value.
  """
- listed,opened,partial,empty,cut=[],[],[],[],[];unnamed=0
+ listed,opened,partial,empty,cut=[],[],[],[],[];unnamed=0;hidden=set()
  for tool,evidence in calls or ():
   if not isinstance(evidence,dict):continue
   items=[*(evidence.get('message_ids') or ()),*(evidence.get('files') or ())]
@@ -2314,8 +2325,12 @@ def read_state_text(calls, limit=READ_STATE_CHARS):
    ref=_item_ref(item)
    if ref and ref not in listed:listed.append(ref)
   # Codex review: the evidence keeps the first few ids of a longer listing; the rest were listed too.
+  # Its digests of every listed identity name the rest; only beyond them is an item truly unnamed.
+  named={_ref_digest(ref) for ref in (_item_ref(item) for item in items) if ref}
+  hidden.update(digest for digest in evidence.get('item_digests') or () if isinstance(digest,str) and digest not in named)
   counts=[evidence.get(key) for key in ('message_count','file_count') if isinstance(evidence.get(key),int)]
-  if items and counts:unnamed+=max(0,sum(counts)-len(items))
+  known=len(items)+len([digest for digest in evidence.get('item_digests') or () if digest not in named])
+  if items and counts:unnamed+=max(0,sum(counts)-known)
   if items and evidence.get('truncated') and 'characters' not in evidence and tool not in cut:cut.append(str(tool)[:60])
   ref=_item_ref(evidence) if 'characters' in evidence else ''
   if not ref:continue
@@ -2324,15 +2339,17 @@ def read_state_text(calls, limit=READ_STATE_CHARS):
   elif evidence.get('truncated') or evidence.get('text_truncated'):partial.append(ref)
  if not (listed or opened):return ''
  unopened=[ref for ref in listed if ref not in opened]
- total=len(listed)+unnamed
- # Codex review: an opened item no recorded id names may be one of a listing's unnamed items, so
- # reads beyond the named ones settle those first; only the remainder stays not known to be opened.
- unnamed=max(0,unnamed-len([ref for ref in opened if ref not in listed]))
+ # Listed items the record names only by digest: a read settles one only when it is that very item
+ # (Codex review: an unrelated read never stands in for a listed one).
+ unseen=hidden-{_ref_digest(ref) for ref in opened}
+ total=len(listed)+len(hidden)+unnamed
  def ids(refs):
   shown=', '.join(ref[:READ_STATE_REF_CHARS] for ref in refs[:READ_STATE_IDS])
   return shown+(f' and {len(refs)-READ_STATE_IDS} more' if len(refs)>READ_STATE_IDS else '')
  parts=[]
- if unopened:parts.append(f'listed but never opened: {len(unopened)} of {total} listed ({ids(unopened)})')
+ if unopened or unseen:
+  shown=f' ({ids(unopened)}' + (f' and {len(unseen)} not named in the record)' if unseen and unopened else ')') if unopened else ''
+  parts.append(f'listed but never opened: {len(unopened)+len(unseen)} of {total} listed{shown}')
  if unnamed:parts.append(f'listed without an id in the record, so not known to be opened: {unnamed} of {total} listed')
  if partial:parts.append(f'opened but returned only in part (truncated): {ids(partial)}')
  if empty:parts.append(f'opened but returned no readable text: {ids(empty)}')
@@ -3877,10 +3894,12 @@ def _evidence_detail(name,result):
           'kind':result.get('kind'),'reason':result.get('reason'),'superseded':result.get('superseded')}
  if name=='find_files':
   return {'file_count':len(result.get('files',[])),'files':[{'root_id':f.get('root_id'),'path':f.get('path')} for f in result.get('files',[])[:12] if isinstance(f,dict)],
-          # #151: whether the search stopped before every match was listed.
-          'truncated':bool(result.get('truncated'))}
+          # #151: whether the search stopped before every match was listed, and which items it listed.
+          'truncated':bool(result.get('truncated')),
+          'item_digests':listed_digests({'root_id':f.get('root_id'),'path':f.get('path')} for f in result.get('files',[]) if isinstance(f,dict))}
  if name=='drive_search':
   return {**_read_fields(result),'file_count':len(result.get('files',[])),'files':[{'file_id':str(f.get('file_id') or '')[:200],'name':str(f.get('name') or '')[:120]} for f in result.get('files',[])[:12] if isinstance(f,dict)],
+          'item_digests':listed_digests({'file_id':str(f.get('file_id') or '')[:200]} for f in result.get('files',[]) if isinstance(f,dict)),
           'needs_setup':bool(result.get('needs_setup'))}
  if name=='drive_read':
   return {'file_id':str(result.get('file_id') or '')[:200],'name':str(result.get('name') or '')[:120],'kind':result.get('kind'),
@@ -3888,6 +3907,7 @@ def _evidence_detail(name,result):
  if name=='mail_search':
   # #150: ids and a count only; subject, sender and date are private mail metadata.
   return {'message_count':len(result.get('messages',[])),'message_ids':[str(m.get('message_id') or '')[:64] for m in result.get('messages',[])[:20] if isinstance(m,dict)],
+          'item_digests':listed_digests(str(m.get('message_id') or '')[:64] for m in result.get('messages',[]) if isinstance(m,dict)),
           'truncated':bool(result.get('truncated')),'needs_setup':bool(result.get('needs_setup'))}
  if name=='mail_read':
   return {'message_id':str(result.get('message_id') or '')[:64],'mime_type':str(result.get('mime_type') or '')[:80],

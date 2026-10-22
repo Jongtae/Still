@@ -62,12 +62,26 @@ class ReadState(unittest.TestCase):
         self.assertEqual((listing['file_count'], len(listing['files']), listing['truncated']), (15, 12, True))
         reads = [('read_file', {'root_id': 'r', 'path': f'{n}.txt', 'characters': 10, 'truncated': False}) for n in range(12)]
         text = read_state_text([('find_files', listing), *reads])
-        self.assertIn('listed without an id in the record, so not known to be opened: 3 of 15 listed', text)
+        self.assertIn('listed but never opened: 3 of 15 listed', text, 'the listing\'s digests name the other three')
         self.assertIn('listing cut short, more items matched than were listed: find_files', text)
         self.assertNotIn('read through (', text)
+        self.assertNotIn('3.txt', json.dumps(listing['item_digests']), 'digests, not paths, are kept')
+        undigested = {key: value for key, value in listing.items() if key != 'item_digests'}
+        text = read_state_text([('find_files', undigested), *reads])
+        self.assertIn('listed without an id in the record, so not known to be opened: 3 of 15 listed', text)
         every = [('read_file', {'root_id': 'r', 'path': f'{n}.txt', 'characters': 10, 'truncated': False}) for n in range(15)]
         text = read_state_text([('find_files', {**listing, 'truncated': False}), *every])
         self.assertTrue(text.endswith('every listed item was opened and read through (15 opened)'), text)
+
+    def test_unrelated_reads_never_settle_a_listings_unnamed_items(self):
+        files = [{'root_id': 'r', 'path': f'{n}.txt'} for n in range(15)]
+        listing = evidence_summary('find_files', {'files': files, 'truncated': False})
+        named = [('read_file', {'root_id': 'r', 'path': f'{n}.txt', 'characters': 10, 'truncated': False}) for n in range(12)]
+        unrelated = [('read_file', {'root_id': 'r', 'path': f'other-{n}.txt', 'characters': 10, 'truncated': False})
+                     for n in range(3)]
+        text = read_state_text([('find_files', listing), *named, *unrelated])
+        self.assertIn('listed but never opened: 3 of 15 listed', text)
+        self.assertNotIn('read through (', text)
 
     def test_long_identities_are_compared_whole(self):
         long = 'd/' + 'x' * 300
