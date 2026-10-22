@@ -138,6 +138,16 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
                          'neither the symlink target nor an unrecorded result-folder file is searched')
         self.assertEqual(caps.workspace_reads, {})
 
+    def test_an_oversized_reference_is_refused_before_it_is_read(self):
+        from unittest.mock import patch
+        caps = self.caps()
+        with patch('personal_agent.file_workspace.MAX_FILE_BYTES', 20), \
+                patch('personal_agent.file_workspace.Path.read_text', side_effect=AssertionError('read')):
+            with self.assertRaises(ValueError):
+                caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+            self.assertEqual(caps.execute('find_files', {'query': '출장 계획'})['files'], [])
+        self.assertEqual(caps.workspace_reads, {})
+
     def test_a_removed_reference_is_no_longer_read(self):
         caps = self.caps()
         other = self.base / 'other'
@@ -267,6 +277,31 @@ class ReadmeFileJourneyThroughTheWorker(unittest.TestCase):
         [read] = [event['trace']['evidence'] for event in store.task_events(found)
                   if event['tool'] == 'read_file' and event['status'] == 'succeeded']
         self.assertEqual((read['root_id'], read['path']), (SAVED_RESULTS_ROOT, result_title + '.md'))
+
+    def test_a_save_without_folders_parks_the_work_for_the_folder(self):
+        """The direct route: the worker's setup-required save parks the Work for one folder grant (#505)."""
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        store = QuickStore(str(Path(temp.name) / 'data'))
+
+        def transport(url, body, headers=None, timeout=60):
+            names = {tool.get('function', {}).get('name') for tool in body.get('tools', [])}
+            if 'agentos_connection_probe' in names:
+                return {'choices': [{'message': {'tool_calls': [
+                    {'id': 'probe', 'function': {'name': 'agentos_connection_probe', 'arguments': '{}'}}]}}]}
+            if 'save_result' in names and not any(m.get('role') == 'tool' for m in body['messages']):
+                return {'choices': [{'message': {'tool_calls': [{'id': 'save', 'function': {
+                    'name': 'save_result', 'arguments': json.dumps({'title': 'Notes', 'content': 'summary'})}}]}}]}
+            return {'choices': [{'message': {'content': 'A folder is needed.'}}]}
+
+        service = AgentService(store, ModelAdapter(transport), transport)
+        service.save_model({'provider': 'compatible', 'endpoint': 'http://127.0.0.1:11434/v1', 'model': 'm', 'api_key': ''})
+        self.assertTrue(service.test_model()['ok'])
+        job_id = store.enqueue('Summarize “Launch review” and save it as “Launch notes”.', 'no-folder')
+        service.run_one()
+        self.assertEqual(store.job(job_id)['status'], 'awaiting_connection')
+        [request] = [event for event in store.task_events(job_id) if event['tool'] == 'local_authority']
+        self.assertEqual(request['trace']['scopes'], ['folder:read'])
 
     def test_english_scenes(self):
         self.run_scene('en', 'Launch review.md', 'Launch review: ship October 12.', 'Launch notes')

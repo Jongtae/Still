@@ -273,6 +273,28 @@ class ExposedToolWireBoundary(unittest.TestCase):
         result = json.loads(replies[2]["result"]["content"][0]["text"])
         self.assertEqual([row['id'] for row in result['memories']], [expected['id']])
 
+    def test_a_bridge_save_without_folders_parks_a_resumable_work_for_the_folder(self):
+        """#182 review: save_result runs in the bridge; its setup-required event parks the Work (#505).
+
+        Only a Work safe to resume parks (``settings_resume_safe``: every action of the CLI turn
+        observed and changing nothing).  This scripted CLI reports no tool observations, so the
+        test states that disposition; without it the Work ends and the worker relays the tool's
+        own next step.
+        """
+        call = {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "save_result", "arguments": {"title": "Notes", "content": "summary"}}}
+        replies = self._wire(call)
+        result = json.loads(replies[2]["result"]["content"][0]["text"])
+        self.assertEqual((result["saved"], result["requires"]), (False, "local-reference-read"))
+        [unsafe] = self.store.jobs()
+        self.assertEqual(unsafe["status"], "succeeded", "an unobserved CLI turn is never resumed")
+        self.service.settings_resume_safe = lambda work_id: True
+        self._wire(call)
+        parked = next(job for job in self.store.jobs() if job["id"] != unsafe["id"])
+        self.assertEqual(parked["status"], "awaiting_connection")
+        [request] = [event for event in self.store.task_events(parked["id"]) if event["tool"] == "local_authority"]
+        self.assertEqual(request["trace"]["scopes"], ["folder:read"])
+
     def test_a_native_search_turn_gets_the_private_reads_over_the_real_bridge(self):
         """#826 (owner decision): the exact bridge command of a native-search turn lists and serves list_notes.
 

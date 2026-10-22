@@ -3842,6 +3842,10 @@ def evidence_summary(name,result):
  """
  if not isinstance(result,dict):return {'kind':'invalid-result'}
  summary=_evidence_detail(name,result)
+ # #182 review: the declared authority a setup-required result names (it grants nothing), so a
+ # call the bridge ran can park its Work as the direct route does (``recorded_local_authority_need``).
+ if isinstance(summary,dict) and result.get('needs_setup') is True and isinstance(result.get('requires'),str):
+  summary={**summary,'requires':result['requires'][:80]}
  # #899: what Still observed of a click or typing step (no payload).
  seen=result.get('observed_step') if name in OBSERVED_INPUT_ACTIONS else None
  if isinstance(seen,dict):summary={**summary,'observed_step':{'posted':seen.get('posted') is True,'approved':seen.get('approved') is True}}

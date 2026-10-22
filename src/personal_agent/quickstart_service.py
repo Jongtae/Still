@@ -5949,6 +5949,28 @@ class AgentService:
                 need=need or result['requires']
         return need
 
+    def recorded_local_authority_need(self, job_id, since=None):
+        """The declared local authority a call another process ran found missing, or None (#182 review).
+
+        A trusted-local CLI's folder reads and result saves run in the bridge, so their results never
+        reach this process's ``memo``; their durable events carry the typed ``requires``.  Guarded
+        like a settings continuation (``settings_resume_safe``): only a Work whose every prior action,
+        the CLI turn included, has an observed disposition that changed nothing parks and resumes.
+        """
+        if not (self.attempted_only_reads(job_id) or self.settings_resume_safe(job_id)):return None
+        with self.store.db() as db:
+            # ``since``: the attempt's first event id (``last_event_id``), so an earlier attempt's need is not reused.
+            rows=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND status='succeeded' AND id>? ORDER BY id",
+                            (job_id,since or 0)).fetchall()
+        for row in rows:
+            try:detail=json.loads(row['detail'] or '{}')
+            except (TypeError,ValueError):continue
+            evidence=detail.get('evidence') if isinstance(detail,dict) else None
+            if (isinstance(evidence,dict) and evidence.get('requires') in LOCAL_AUTHORITY_SCOPES
+                    and 'setup-required' in (evidence.get('qualifiers') or ())):
+                return evidence['requires']
+        return None
+
     #: Records that are Still's own bookkeeping, not tool attempts.
     #: #710: ``orchestrator`` events record the plan and its evaluation, never a tool attempt.
     LOCAL_NON_TOOL_EVENTS=frozenset({'model','local_authority','conversation_continuity',ORCHESTRATION_EVENT,om.EVENT_TOOL,
@@ -11009,6 +11031,13 @@ class AgentService:
             self.record_turn_provenance(job['id'],status='setup-required')
             if self.park_for_connector_read(job,connector_need,run.calendar_notice):
                 return True
+        # #182 review: a folder read or result save the bridge ran found its folder grant missing;
+        # park for that one local authority, as the direct route does (#505).
+        local_need=self.recorded_local_authority_need(job['id'],since=run.attempt_start)
+        if local_need:
+            self.record_work_sources(job['id'],run.work_sources|run.capabilities.private_provenance)
+            self.record_turn_provenance(job['id'],status='setup-required')
+            return self.park_for_local_authority(job,local_need,run.calendar_notice)
         if self._work_has_unknown_effect(job['id']):
             run.outcome='unknown';run.unknown_statement=run.response
         run.resolved_blocker=run.result.exit_code==0 and run.outcome=='succeeded'
