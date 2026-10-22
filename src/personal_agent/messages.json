@@ -2855,6 +2855,12 @@
   "ja": "ログイン画面の時間が過ぎたので閉じました。準備ができたら下のボタンでもう一度開いてください。ログインが終わればこの依頼を続けます。",
   "zh": "登录窗口超时，已关闭。准备好后请用下面的按钮重新打开；登录完成后我会继续处理这个请求。"
  },
+ "service.sign_in_window_timed_out": {
+  "ko": "로그인 창 시간이 지나 닫았어요.",
+  "en": "The sign-in window timed out and was closed.",
+  "ja": "ログイン画面の時間が過ぎたので閉じました。",
+  "zh": "登录窗口超时，已关闭。"
+ },
  "service.reopening_the_sign_in_window": {
   "ko": "로그인 창을 다시 열고 있어요.",
   "en": "Reopening the sign-in window.",

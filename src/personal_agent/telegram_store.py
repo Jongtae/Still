@@ -244,10 +244,16 @@ class TelegramStore:
                    (message_id,time.time(),job_id))
 
     def mark_login_reopened(self, notification_id):
-        """Only while still the expired prompt: the work loop may already have re-armed it."""
+        """Only while still the expired prompt: the work loop may already have re-armed it.  Returns whether it was marked."""
         with self.store.db() as db:
-            db.execute("UPDATE telegram_notifications SET state='browser_login_reopened' "
-                       "WHERE id=? AND state='browser_login_expired'",(notification_id,))
+            return db.execute("UPDATE telegram_notifications SET state='browser_login_reopened' "
+                              "WHERE id=? AND state='browser_login_expired'",(notification_id,)).rowcount>0
+
+    def move_reopened_login(self, notification_id, message_id):
+        """Bind a reopened login prompt to the message that said so (#192), while it is still the reopened one."""
+        with self.store.db() as db:
+            db.execute("UPDATE telegram_notifications SET message_id=? WHERE id=? AND state='browser_login_reopened'",
+                       (message_id,notification_id))
 
     @staticmethod
     def album(db, generation, chat_id, media_group_id):
