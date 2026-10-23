@@ -56,6 +56,7 @@ from .connector_http import (
     LOCAL_KEY_UNAVAILABLE,
     RENEWAL_MARGIN_SECONDS,
     token_endpoint_refused,
+    token_response_unusable,
 )
 from .google_calendar import CALENDAR_API, GoogleCalendarHTTPError
 from .google_drive_read import DRIVE_API, DRIVE_SPEC, DriveHTTPError
@@ -1143,7 +1144,8 @@ class CalendarOAuth:
         commit over a connection that changed in between.
 
         #8: a token-endpoint failure that is not Google refusing the grant
-        (network, timeout, 429/5xx, unreadable answer) raises
+        (network, timeout, 429/5xx, unreadable answer, or an HTTP 200 answer
+        carrying no usable token, #246) raises
         ``CalendarRenewalUnavailable`` and changes nothing stored.  With
         ``expected_revision`` the renewal is for that connection revision
         only.
@@ -1189,6 +1191,9 @@ class CalendarOAuth:
                 # escape; keep only whether Google refused the grant.
                 if token_endpoint_refused(error):
                     raise CalendarOAuthError("token_refresh_failed") from None
+                raise CalendarRenewalUnavailable() from None
+            if token_response_unusable(response):
+                # #246: an answer with no usable token says nothing about the grant.
                 raise CalendarRenewalUnavailable() from None
             renewed = self._validated_tokens(
                 response, owner, grant, carry_refresh=refresh_token, scope_optional=True

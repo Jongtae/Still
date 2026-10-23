@@ -31,6 +31,7 @@ to every hop, so containment is a property of the opener rather than of the
 one URL the caller happened to check.
 """
 import json
+import math
 from urllib.request import HTTPRedirectHandler, build_opener
 
 
@@ -139,3 +140,32 @@ def token_endpoint_refused(error) -> bool:
     if code is None:
         return status == 401
     return code in GRANT_REFUSED_ERRORS
+
+
+def token_response_unusable(response) -> bool:
+    """Whether a token-endpoint answer that did not fail carries no usable token (#246).
+
+    An HTTP 200 whose body is not an object, or lacks a usable
+    ``access_token``, ``expires_in`` or (when present) ``refresh_token``, is
+    an answer Still cannot read -- it says nothing about whether Google
+    revoked the grant, so a renewal keeps the stored credential exactly as for
+    an unreadable error.  A readable answer that does not match the grant
+    (for example a widened scope) is not covered here: the connector's own
+    validation still refuses it.
+    """
+    if not isinstance(response, dict):
+        return True
+    access_token = response.get('access_token')
+    expires_in = response.get('expires_in')
+    refresh_token = response.get('refresh_token')
+    return (
+        not isinstance(access_token, str)
+        or not access_token
+        or len(access_token) > 16_384
+        or isinstance(expires_in, bool)
+        or not isinstance(expires_in, (int, float))
+        or not math.isfinite(expires_in)
+        or not 0 < expires_in <= 86_400
+        or (refresh_token is not None
+            and (not isinstance(refresh_token, str) or not refresh_token or len(refresh_token) > 16_384))
+    )

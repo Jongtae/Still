@@ -86,6 +86,14 @@ DEFINITIVE = (lambda: oauth_error(400, 'invalid_grant'), lambda: oauth_error(401
               lambda: oauth_error(400, 'invalid_client'), lambda: http_error(401))
 
 
+#: #246: HTTP 200 answers that carry no usable access token.  They say nothing
+#: about the grant either, so they keep the credential as a failure would.
+UNUSABLE = (lambda: {}, lambda: {'expires_in': 3600}, lambda: {'access_token': '', 'expires_in': 3600},
+            lambda: {'access_token': 7, 'expires_in': 3600}, lambda: {'access_token': 'x'},
+            lambda: {'access_token': 'x', 'expires_in': 'soon'}, lambda: ['not', 'an', 'object'],
+            lambda: {'access_token': 'x', 'expires_in': 3600, 'refresh_token': 9})
+
+
 class TokenEndpointClassificationTest(unittest.TestCase):
     def test_only_a_refusal_from_the_token_endpoint_is_definitive(self):
         for make in DEFINITIVE:
@@ -113,7 +121,10 @@ class Exchange:
         self.calls.append(payload['grant_type'])
         if payload['grant_type'] == 'refresh_token':
             if self.renewal is not None:
-                raise self.renewal()
+                answer = self.renewal()
+                if isinstance(answer, BaseException):
+                    raise answer
+                return answer  # an HTTP 200 answer, usable or not (#246)
             return {'access_token': f'renewed-{len(self.calls)}', 'expires_in': 3600, 'scope': self.scope}
         return {'access_token': 'first', 'expires_in': 3600, 'refresh_token': 'refresh-1', 'scope': self.scope}
 
@@ -198,6 +209,34 @@ class DriveRenewalTest(DriveCase):
         self.assertEqual(self.exchange.renewals(), 1)
         self.assertEqual(self.requests, ['Bearer renewed-2'])
 
+    def test_an_unusable_renewal_answer_keeps_the_credential(self):
+        for make in UNUSABLE:
+            with self.subTest(index=UNUSABLE.index(make)):
+                self.clock[0] += 7200
+                ciphertext = self.stored_ciphertext()
+                self.exchange.renewal = make
+                with self.assertRaises(CalendarRenewalUnavailable):
+                    self.transport()(DRIVE_API + '/files?q=x')
+                self.assertEqual(self.requests, [])
+                self.assertIs(self.state(), ConnectorState.CONNECTED)
+                self.assertEqual(self.stored_ciphertext(), ciphertext)
+                self.exchange.renewal = None
+                self.transport()(DRIVE_API + '/files?q=x')
+                self.assertIs(self.state(), ConnectorState.CONNECTED)
+                self.requests.clear()
+
+    def test_a_401_whose_renewal_answer_is_unusable_keeps_the_credential(self):
+        for make in UNUSABLE:
+            with self.subTest(index=UNUSABLE.index(make)):
+                self.requests.clear()
+                self.replies = [DriveHTTPError(401)]
+                self.exchange.renewal = make
+                with self.assertRaises(CalendarRenewalUnavailable):
+                    self.transport()(DRIVE_API + '/files?q=x')
+                self.assertEqual(len(self.requests), 1)
+                self.assertIs(self.state(), ConnectorState.CONNECTED)
+                self.assertTrue(self.oauth.credential_renewable(OWNER))
+
     def test_a_token_well_before_expiry_is_not_renewed(self):
         self.clock[0] += 3600 - RENEWAL_MARGIN_SECONDS * 4
         self.transport()(DRIVE_API + '/files?q=x')
@@ -272,7 +311,7 @@ class ConnectionSlotRenewalTest(DriveCase):
 
     def test_a_401_whose_renewal_gets_no_answer_keeps_the_credential(self):
         for make in (RETRYABLE[0], lambda: http_error(503), lambda: oauth_error(400, 'invalid_request'),
-                     lambda: http_error(400, b'not json')):
+                     lambda: http_error(400, b'not json')) + UNUSABLE:
             with self.subTest(index=make):
                 ciphertext = self.stored_ciphertext()
                 self.exchange.renewal = make
@@ -388,8 +427,8 @@ class CalendarTransportRenewalTest(unittest.TestCase):
         self.assertEqual(self.oauth.status(OWNER)['state'], 'connected')
 
     def test_a_write_401_whose_renewal_gets_no_answer_keeps_the_credential(self):
-        for make in (RETRYABLE[0], lambda: oauth_error(400, 'invalid_request')):
-            with self.subTest(failure=type(make()).__name__):
+        for make in (RETRYABLE[0], lambda: oauth_error(400, 'invalid_request')) + UNUSABLE:
+            with self.subTest(failure=repr(make())):
                 self.sent.clear()
                 self.replies = [GoogleCalendarHTTPError(401)]
                 self.exchange.renewal = make
@@ -427,6 +466,17 @@ class CalendarTransportRenewalTest(unittest.TestCase):
             calendar.create(draft['id'], approval, OWNER)
         self.assertEqual((caught.exception.reason, caught.exception.effect), ('scope-expired', 'none'))
         self.assertEqual(self.oauth.status(OWNER, write=True)['state'], 'reauth_required')
+
+    def test_an_unusable_renewal_answer_keeps_the_calendar_connected(self):
+        self.clock[0] += 7200
+        for make in UNUSABLE:
+            with self.subTest(index=UNUSABLE.index(make)):
+                self.exchange.renewal = make
+                with self.assertRaises(CalendarRenewalUnavailable):
+                    self.transport()('GET', CALENDAR_API + '/calendars/primary/events', None, {})
+                self.assertEqual(self.sent, [])
+                self.assertEqual(self.oauth.status(OWNER)['state'], 'connected')
+                self.assertTrue(self.oauth.credential_renewable(OWNER))
 
     def test_a_transient_renewal_failure_keeps_the_calendar_connected(self):
         self.clock[0] += 7200
@@ -548,6 +598,27 @@ class GmailRenewalTest(unittest.TestCase):
         self.assertEqual(self.gmail.search(OWNER, 'from:me'), ())
         self.assertEqual(self.calls, ['Bearer first', 'Bearer renewed-2'])
         self.assertEqual((self.exchange.renewals(), self.state()), (1, 'connected'))
+
+    def test_an_unusable_renewal_answer_keeps_the_credential(self):
+        self.clock[0] += 7200
+        for make in UNUSABLE:
+            with self.subTest(index=UNUSABLE.index(make)):
+                self.exchange.renewal = make
+                with self.assertRaises(GmailRenewalUnavailable):
+                    self.gmail.search(OWNER, 'from:me')
+                self.assertEqual((self.calls, self.state()), ([], 'connected'))
+                self.assertTrue(self.gmail.credential_renewable(OWNER))
+
+    def test_a_401_whose_renewal_answer_is_unusable_keeps_the_credential(self):
+        for make in UNUSABLE:
+            with self.subTest(index=UNUSABLE.index(make)):
+                self.calls.clear()
+                self.replies = [{'status_code': 401}]
+                self.exchange.renewal = make
+                with self.assertRaises(GmailRenewalUnavailable):
+                    self.gmail.search(OWNER, 'from:me')
+                self.assertEqual((len(self.calls), self.state()), (1, 'connected'))
+                self.assertTrue(self.gmail.credential_renewable(OWNER))
 
     def test_a_second_401_requires_reauthentication_without_a_loop(self):
         self.replies = [{'status_code': 401}, {'status_code': 401}, {'status_code': 401}]
