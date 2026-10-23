@@ -1,12 +1,20 @@
 """Scoped local file workspace: references stay read-only; results are new files."""
 from pathlib import Path
-import hashlib, json, os, re, sqlite3, time, uuid
+import hashlib, json, os, re, sqlite3, stat, time, unicodedata, uuid
 from .document_reader import MAX_FILE_BYTES, read as read_document, supported as supported_document
 from . import folder_grants
 
 
+def search_key(text):
+    """The Python side of the store's ``unicode_search_key`` SQL function: NFKC, then casefold."""
+    return unicodedata.normalize('NFKC',text).casefold()
+
+
 class FileWorkspace:
     """Owner-granted TXT/MD references and a separately writable workspace."""
+
+    #: #203: the key saved-result searches match by, also for callers outside this module.
+    search_key=staticmethod(search_key)
 
     def __init__(self, store): self.store=store
 
@@ -110,9 +118,14 @@ class FileWorkspace:
         base=Path(root['path']); path=self._safe_relative(relative); candidate=base/path
         if any(part.is_symlink() for part in (base, *candidate.parents) if part.exists()): raise ValueError('심볼릭 링크를 통한 참고 자료 접근은 허용하지 않습니다.')
         resolved=candidate.resolve()
-        if (not resolved.is_relative_to(base) or resolved.suffix.lower() not in ('.txt','.md','.pdf','.docx','.xlsx') or not resolved.is_file() or candidate.is_symlink()): raise ValueError('참고 폴더 밖 또는 지원하지 않는 파일입니다.')
+        # #203 review: ``is_file()`` would hide a transient lookup error (EIO, EACCES) as a missing file;
+        # only a missing one is, and any other error stays the ValueError's cause.
+        try: info=resolved.stat()
+        except (FileNotFoundError,NotADirectoryError): info=None
+        except OSError as exc: raise ValueError('참고 자료를 지금 읽을 수 없습니다.') from exc
+        if (not resolved.is_relative_to(base) or resolved.suffix.lower() not in ('.txt','.md','.pdf','.docx','.xlsx') or info is None or not stat.S_ISREG(info.st_mode) or candidate.is_symlink()): raise ValueError('참고 폴더 밖 또는 지원하지 않는 파일입니다.')
         # #182 review: bounded like a connected-folder read, before any byte is read.
-        if resolved.stat().st_size>MAX_FILE_BYTES: raise ValueError('10MB 이하 지원 문서만 읽을 수 있습니다.')
+        if info.st_size>MAX_FILE_BYTES: raise ValueError('10MB 이하 지원 문서만 읽을 수 있습니다.')
         return resolved
 
     def read(self, ref_id, relative):
@@ -269,7 +282,16 @@ class FileWorkspace:
                 current=self.read(source['reference_id'],source['path'])
                 if current['version']!=source['version'] or current['source_id']!=source['source_id']: return False
             return True
-        except (KeyError,ValueError,OSError,UnicodeError): return False
+        except ValueError as exc:
+            # The document reader wraps an I/O failure as ValueError (``document_reader``); its cause decides (#203 review).
+            return self._read_failure(exc.__cause__) if isinstance(exc.__cause__,OSError) else False
+        # A source gone, outside the folder now, or no longer text: it differs (#203).
+        except (KeyError,FileNotFoundError,UnicodeError): return False
+        except OSError as exc: return self._read_failure(exc)
+
+    def _read_failure(self, error):
+        """A missing source differs; any other read error (permission, I/O) observed no difference (#203)."""
+        return False if isinstance(error,FileNotFoundError) else self.UNAVAILABLE
 
     def current_results(self, needle=None, latest=False, path=None, deadline=None, terms=None):
         """Fresh saved results, newest first: each one's sources still match the originals.
@@ -289,9 +311,9 @@ class FileWorkspace:
             self._ensure_results_table(db)
             records=[dict(row) for row in (db.execute('SELECT * FROM file_workspace_results WHERE path=?',(path,)) if path is not None
                                            else db.execute("SELECT * FROM file_workspace_results WHERE state IN ('current','stale') ORDER BY created DESC LIMIT 101"))]
-            terms=[term.lower() for term in (terms or ()) if isinstance(term,str) and term] if path is None else []
+            terms=[search_key(term) for term in (terms or ()) if isinstance(term,str) and term] if path is None else []
             named=[dict(row) for row in db.execute(
-                "SELECT * FROM file_workspace_results WHERE state IN ('current','stale') AND ("+' OR '.join(['instr(lower(path),?)>0']*len(terms))+')'
+                "SELECT * FROM file_workspace_results WHERE state IN ('current','stale') AND ("+' OR '.join(['instr(unicode_search_key(path),?)>0']*len(terms))+')'
                 +' ORDER BY created DESC LIMIT 100',terms)] if terms else []
         results=[]
         # Whether the deadline, or the 100-record cap, stopped the checks before every record was seen (#182 review).
@@ -325,14 +347,14 @@ class FileWorkspace:
                 # #182 review: deleted, unreadable, oversized or edited: not a current result any more.
                 with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
                 continue
-            if latest or needle is None or needle in (record['path']+'\n'+content).casefold(): results.append({'id':record['id'],'path':record['path'],'content':content,'sources':json.loads(record['sources'])})
+            if latest or needle is None or needle in search_key(record['path']+'\n'+content): results.append({'id':record['id'],'path':record['path'],'content':content,'sources':json.loads(record['sources'])})
             if latest and results: break
         return results
 
     def search(self, query):
         latest=isinstance(query,str) and query.strip() in ('*','__latest__')
         if not latest and (not isinstance(query,str) or not 2<=len(query.strip())<=160): raise ValueError('두 글자 이상의 결과 검색어를 입력하세요.')
-        return self.current_results(query.casefold().strip(),latest)
+        return self.current_results(search_key(query.strip()),latest)
 
     #: ``intact``'s answer when it could not tell: the result folder is unusable now, or the source check
     #: ran out of time.  The record keeps its state (#182 review).
@@ -406,8 +428,9 @@ class FileWorkspace:
             if item_id is not None:
                 return [dict(row) for row in db.execute(query+' WHERE r.id=?',(item_id,))]
             # #182 review: a search filters before the cap, so an older matching answer is reachable.
-            terms=[term for term in (terms or ()) if isinstance(term,str) and term]
-            where=(' WHERE '+' OR '.join(["instr(lower(w.title||' '||r.content),?)>0"]*len(terms))) if terms else ''
+            # #203: Unicode case folding (the store's ``unicode_search_key``), not SQLite's ASCII-only ``lower()``.
+            terms=[search_key(term) for term in (terms or ()) if isinstance(term,str) and term]
+            where=(' WHERE '+' OR '.join(["instr(unicode_search_key(w.title||' '||r.content),?)>0"]*len(terms))) if terms else ''
             # #182 review: a full-text scan of a long history is interrupted at the caller's deadline.
             if deadline is not None:
                 if time.monotonic()>deadline:
@@ -415,7 +438,7 @@ class FileWorkspace:
                     return []
                 db.set_progress_handler(lambda: 1 if time.monotonic()>deadline else 0, 200)
             try:
-                rows=[dict(row) for row in db.execute(query+where+' ORDER BY r.created DESC LIMIT 101',[term.lower() for term in terms])]
+                rows=[dict(row) for row in db.execute(query+where+' ORDER BY r.created DESC LIMIT 101',terms)]
             except sqlite3.OperationalError:
                 if deadline is None or time.monotonic()<=deadline: raise
                 self.project_capped=True
