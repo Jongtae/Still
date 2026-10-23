@@ -101,6 +101,8 @@ POINT_CHARS = 200
 CHANGE_CHARS = 200
 #: The config row that records the one-time move of ``profile.working.`` rows (receipts, counts, version).
 MIGRATION_KEY = 'working_notes_migration'
+#: #233: how many times a self-review plans the move again when the rows changed under its plan.
+MIGRATION_ATTEMPTS = 3
 #: The change line of the version the move creates (the brief reads it; the owner is not sent a notice for it).
 MIGRATION_CHANGE = 'collected the earlier saved working lessons into these notes'
 #: Outcome of a kept revision in the ``self_review`` Evidence.
@@ -165,6 +167,8 @@ REFUSED_BUDGET = 'no-call-budget'
 REFUSED_DEADLINE = 'deadline'
 #: Why a run stopped before its last proposal (recorded as ``stopped``).
 STOPPED_PAUSED, STOPPED_CAP, STOPPED_DEADLINE = 'paused', 'cap', 'deadline'
+#: #233: a self-review that asked nothing because the one-time move of the earlier lessons is not done yet.
+STOPPED_MIGRATION = 'notes-migration-pending'
 
 
 def call_sent(decision):
@@ -851,18 +855,22 @@ class Upkeep:
         writes and the owner is told with an exact undo, as #918 slice a); the
         blocker is kept in the event detail, redacted, and nowhere else.  The
         pause switch is read again before the write; a write is not a call.
-        ``profile`` is the profile snapshot without the notes block.
+        ``profile`` is the profile snapshot without the notes block.  While the
+        one-time move of the earlier lessons is not done (``WorkingNotes.migrated``)
+        nothing is asked and the run is ``unavailable`` (#233).
         """
         from .agent_runtime import MEMORY_OWNER, SECRET_SHAPED_VALUE, memory_value_has_secret
         notes = WorkingNotes(self.store, self.clock)
-        try:
-            notes.migrate()
-        except Exception:  # noqa: BLE001 - the move is retried at the next start; the review goes on
-            pass
+        reason = row.get('reason') or ''
+        if not notes.migrated():
+            # #233 (Codex review): a version saved before the one-time move would make the move's retry
+            # leave every earlier lesson in Memory, so no revision is asked for until the move is done.
+            # Nothing was sent and nothing is written; the move is retried here and at the next start.
+            return STATE_UNAVAILABLE, 0, EVENT_UNAVAILABLE, {'reason': reason, 'sent': False,
+                                                             'stopped': STOPPED_MIGRATION}
         current = notes.current()
         current_text = current['text'] if current else ''
         request = str(job.get('message') or '')
-        reason = row.get('reason') or ''
         followups = self.followups(job['id'])
         followup = '\n'.join(followups) if followups else (row.get('observation') or '')
         evaluation = '\n'.join(self.evaluations(job['id']))
@@ -960,10 +968,12 @@ class WorkingNotes:
     def save(self, revision, work_id, *, expected=None):
         """Save a validated revision as the next version unless the current one is no longer ``expected``.
 
-        When ``work_id`` is a Telegram Work, its one ``NOTICE_KIND`` notice is queued in the same
+        When ``work_id`` is a Telegram Work, its one ``NOTICE_KIND`` notice is inserted in the same
         transaction (review P1, as a direct Memory save holds its notice), so a saved revision is
-        never left untold by a crash.  Returns ``{'id', 'ref', 'version', 'digest'}`` or None when
-        the document changed meanwhile.
+        never left untold by a crash.  #233 (Codex review): it is ``queued`` only once the Work's
+        reply is settled (``DELIVERY_SETTLED``); before that it is held, and the reply's delivery
+        (or the release sweep) queues it, so the notice never overtakes the answer it is about.
+        Returns ``{'id', 'ref', 'version', 'digest'}`` or None when the document changed meanwhile.
         """
         import uuid
         from .procedures import NOTES_SLOT, REF_PREFIX
@@ -975,12 +985,14 @@ class WorkingNotes:
             row = self.library.commit(NOTES_SLOT, revision['text'], work_id=work_id,
                                       stats={'change': revision['change']}, db=db)
             saved = {'id': row['id'], 'ref': REF_PREFIX + row['id'], 'version': row['version'], 'digest': row['digest']}
-            job = db.execute('SELECT channel,chat_id FROM jobs WHERE id=?', (work_id,)).fetchone() if work_id else None
+            job = (db.execute('SELECT channel,chat_id,delivery FROM jobs WHERE id=?', (work_id,)).fetchone()
+                   if work_id else None)
             channel = str(job['channel'] or '') if job else ''
             if job and channel.startswith('telegram:') and isinstance(job['chat_id'], int):
+                state = 'queued' if job['delivery'] in self.store.DELIVERY_SETTLED else self.store.NOTICE_HELD
                 db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created) VALUES (?,?,?,?,?,?,?,?,?)',
                            (str(uuid.uuid4()), work_id, job['chat_id'], channel[len('telegram:'):], NOTICE_KIND,
-                            json.dumps({'ref': saved['ref'], 'version': saved['version']}), 'queued', None, self.clock()))
+                            json.dumps({'ref': saved['ref'], 'version': saved['version']}), state, None, self.clock()))
         return saved
 
     def forgotten(self, text):
@@ -996,6 +1008,22 @@ class WorkingNotes:
             tombstone = db.execute('SELECT 1 FROM forgotten_values WHERE owner_key=? AND digest=?',
                                    (self.store._memory_binding(MEMORY_OWNER), value)).fetchone()
         return tombstone is not None or self.library.forgotten_digest(NOTES_SLOT, value)
+
+    def migrated(self):
+        """Whether the one-time move is done, trying it now (at most ``MIGRATION_ATTEMPTS`` plans) when it is not.
+
+        ``migrate`` returns without moving anything when a planned row changed before its
+        commit; it is then planned again at once.  A move that keeps failing is left to the
+        next review and the next start, and the caller saves no version meanwhile (#233).
+        """
+        for _attempt in range(MIGRATION_ATTEMPTS):
+            if self.store.config(MIGRATION_KEY):
+                return True
+            try:
+                self.migrate()
+            except Exception:  # noqa: BLE001 - retried by the next review and at the next start
+                break
+        return bool(self.store.config(MIGRATION_KEY))
 
     def migrate(self):
         """Move the current ``profile.working.`` Memory rows into the first version, once; returns the record or None.

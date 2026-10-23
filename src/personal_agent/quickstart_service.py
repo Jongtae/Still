@@ -26,6 +26,7 @@ from .agent_runtime import (Capabilities, ToolError, CALENDAR_DRAFT_TOOLS, cut_t
                             backfill_work_sources, recorded_private_sources, NOTES_SUMMARY_COMMANDS, WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_BACKFILL_VERSION,
                             progress_step)
 from .plugins import PluginRegistry
+from .quickstart_store import QuickStore
 from .providers import NOT_REPORTED, ModelAdapter, ProviderError, request_json, validate_model
 from .decision import DEFAULT_DECISION_PROVIDER, RoutedDecisionEngine
 from .decision_routes import DecisionRoutes
@@ -2329,7 +2330,7 @@ class AgentService:
             {'items':[[row['id'],row['content_digest']] for row in shown],'more':more}))
 
     #: Delivery states after which a Work's reply is no longer awaited: its saved-notice may go out.
-    DELIVERY_SETTLED=('sent','unknown','cancelled')
+    DELIVERY_SETTLED=QuickStore.DELIVERY_SETTLED
     #: A lost saved-notice (delivery ``unknown``) is told again at most this many times.
     MEMORY_SAVED_RETELLS=1
 
@@ -2361,6 +2362,16 @@ class AgentService:
             self.join_memory_saved(row,binding);return
         self._queue_separate_saved_notice(job,rows)
 
+    def release_working_notes(self, work_id):
+        """Queue this Work's held working-notes notice once its reply is settled (#233 Codex review).
+
+        ``WorkingNotes.save`` holds the notice while the reply is still awaited, so "I updated my
+        notes" never goes out before the answer it refers to.  Nothing else changes here; the send
+        still checks that the revision is current (``working_notes_notice_text``).
+        """
+        for row in self.store.telegram.notifications_of_kinds(work_id,(WORKING_NOTES_KIND,)):
+            if row['state']==self.store.NOTICE_HELD:self.store.update_notification(row['id'],'queued')
+
     def release_memory_saved_notices(self, now=None):
         """Release saved-notices a crash or an unknown send left behind (#918 review); at most once a minute.
 
@@ -2380,6 +2391,9 @@ class AgentService:
                 if row.get('job_delivery') not in self.DELIVERY_SETTLED:continue
                 job=self.store.job(row['job_id'])
                 if job:self.release_memory_saved(job)
+            # #233: a working-notes notice held behind a reply that has since settled.
+            for row in self.store.held_notifications(WORKING_NOTES_KIND):
+                if row.get('job_delivery') in self.DELIVERY_SETTLED:self.release_working_notes(row['job_id'])
             lost=self.store.telegram.notifications_in_state(MEMORY_SAVED_KINDS,'unknown')
             for row in lost:
                 binding=self.memory_saved_binding(row) or {}

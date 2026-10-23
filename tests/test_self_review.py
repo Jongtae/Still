@@ -226,6 +226,9 @@ class Run(SelfReview):
     def test_a_revision_becomes_the_next_notes_version_attributed_to_the_reviewed_work_told_once(self):
         self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': GENERATION})
         job = self.missed('그거 찾아줘', channel=f'telegram:{GENERATION}', chat_id=CHAT)
+        with self.store.db() as db:
+            # The reply was delivered, so the notice is queued at once (#233: before that it is held).
+            db.execute("UPDATE jobs SET delivery='sent' WHERE id=?", (job,))
         self.answers = [review('- "그거"는 직전 메시지에서 말한 것을 가리켜요, 사진이 아니에요',
                                '"그거"가 무엇을 가리키는지 적었어요')]
         self.service.run_owner_model_upkeep()
@@ -365,6 +368,52 @@ class Run(SelfReview):
             rows = db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=?', (job,)).fetchall()
         self.assertEqual(event_trail([(r['tool'], r['status'], r['detail']) for r in rows])[0], [])
         self.assertIn(om.REVIEW_EVENT_TOOL, AgentService.LOCAL_NON_TOOL_EVENTS)
+
+    def test_no_revision_is_asked_or_saved_while_the_lessons_move_is_still_retrying(self):
+        """#233 (Codex review): a version saved first would make the move's retry leave the lessons in Memory."""
+        self.store.save_memory('profile.working.summary', '요약은 세 줄로', MEMORY_OWNER, work_id='w0')
+        planned = []
+        original = om.WorkingNotes.migrate
+
+        def changed_under_the_plan(notes):
+            # What ``migrate`` does when a planned row changed before its commit: nothing moved, no record.
+            planned.append(1)
+            return None
+        om.WorkingNotes.migrate = changed_under_the_plan
+        self.addCleanup(setattr, om.WorkingNotes, 'migrate', original)
+        job = self.missed('그거 찾아줘')
+        self.answers = [review('- 링크는 맨 끝에', '링크 위치')]
+        self.service.run_owner_model_upkeep()
+        self.assertEqual(len(planned), om.MIGRATION_ATTEMPTS, 'planned again at once, a bounded number of times')
+        self.assertEqual(self.review_calls(), [], 'nothing is asked while the move is not done')
+        self.assertIsNone(om.WorkingNotes(self.store).current(), 'no version is saved before the move')
+        [(status, detail)] = self.evidence(job)
+        self.assertEqual((status, detail['stopped'], detail['sent']), (om.EVENT_UNAVAILABLE, om.STOPPED_MIGRATION, False))
+        self.assertEqual((self.rows()[job]['state'], self.rows()[job]['calls']), (om.STATE_UNAVAILABLE, 0))
+        # The move's retry (the next start) still consolidates the earlier lesson into the first version.
+        om.WorkingNotes.migrate = original
+        record = om.WorkingNotes(self.store).migrate()
+        self.assertEqual((record['moved'], record['version']), (1, 1))
+        self.assertEqual(self.lessons(), ['요약은 세 줄로'])
+        self.assertEqual(self.store.memories(MEMORY_OWNER), [])
+        # Once it is done, the next review revises the moved notes as before.
+        later = self.missed('저거 찾아줘')
+        self.answers = [review('- 요약은 세 줄로\n- 링크는 맨 끝에', '링크 위치')]
+        self.service.run_owner_model_upkeep()
+        self.assertEqual(self.lessons(), ['요약은 세 줄로', '링크는 맨 끝에'])
+        self.assertEqual(self.evidence(later)[0][1]['notes']['previous_version'], 1)
+
+    def test_a_move_that_raises_is_not_planned_again_by_the_same_review(self):
+        def broken(notes):
+            raise RuntimeError('disk')
+        original = om.WorkingNotes.migrate
+        om.WorkingNotes.migrate = broken
+        self.addCleanup(setattr, om.WorkingNotes, 'migrate', original)
+        job = self.missed('그거 찾아줘')
+        self.answers = [review('- 링크는 맨 끝에', '링크 위치')]
+        self.service.run_owner_model_upkeep()
+        self.assertEqual(self.review_calls(), [])
+        self.assertEqual(self.evidence(job)[0][1]['stopped'], om.STOPPED_MIGRATION)
 
 
 class Budget(SelfReview):

@@ -114,18 +114,27 @@ class Document(unittest.TestCase):
 
     def test_the_notice_is_queued_with_the_version_for_a_telegram_work_only(self):
         work = self.store.enqueue('그거 찾아줘', 'wn-tg', channel='telegram:g9', chat_id=4040)
+        waiting = self.store.enqueue('저거 찾아줘', 'wn-tg-waiting', channel='telegram:g9', chat_id=4040)
         web = self.store.enqueue('그거 찾아줘', 'wn-web')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET delivery='sent' WHERE id=?", (work,))
+            db.execute("UPDATE jobs SET delivery='pending' WHERE id=?", (waiting,))
         saved = self.notes.save(revision('a'), work)
-        self.notes.save(revision('a', 'b'), web, expected=saved['id'])
+        second = self.notes.save(revision('a', 'b'), waiting, expected=saved['id'])
+        self.notes.save(revision('a', 'b', 'c'), web, expected=second['id'])
         with self.store.db() as db:
             rows = [dict(row) for row in db.execute('SELECT job_id,chat_id,generation,kind,fingerprint,state '
-                                                    'FROM telegram_notifications')]
+                                                    'FROM telegram_notifications ORDER BY created,rowid')]
         self.assertEqual(rows, [{'job_id': work, 'chat_id': 4040, 'generation': 'g9', 'kind': om.NOTICE_KIND,
-                                 'fingerprint': json.dumps({'ref': saved['ref'], 'version': 1}), 'state': 'queued'}],
-                         'review P1: durable with the version itself, never left untold by a crash')
+                                 'fingerprint': json.dumps({'ref': saved['ref'], 'version': 1}), 'state': 'queued'},
+                                {'job_id': waiting, 'chat_id': 4040, 'generation': 'g9', 'kind': om.NOTICE_KIND,
+                                 'fingerprint': json.dumps({'ref': second['ref'], 'version': 2}),
+                                 'state': self.store.NOTICE_HELD}],
+                         'review P1: durable with the version itself, never left untold by a crash; '
+                         '#233: held while the reply it follows is still awaited')
         self.assertIsNone(self.save('a', 'c'), 'a refused save queues nothing either')
         with self.store.db() as db:
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM telegram_notifications').fetchone()[0], 1)
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM telegram_notifications').fetchone()[0], 2)
 
     def test_a_later_revision_wins_over_an_undo(self):
         first = self.save('a')
@@ -272,11 +281,11 @@ class Told(TelegramHarness):
         self.service.use_decision_engine(FixtureDecisionEngine(structured=structured))
         self.service.owner_model_spawn = lambda target: target()
 
-    def reviewed(self, answer, text='그거 찾아줘'):
+    def reviewed(self, answer, text='그거 찾아줘', delivery='sent'):
         job = self.store.enqueue(text, f'wn-{time.time()}-{text}', channel=f'telegram:{GENERATION}', chat_id=CHAT)
         with self.store.db() as db:
-            db.execute("UPDATE jobs SET status='failed',response='못 찾았어요',provider='subscription',delivery='sent' WHERE id=?",
-                       (job,))
+            db.execute("UPDATE jobs SET status='failed',response='못 찾았어요',provider='subscription',delivery=? WHERE id=?",
+                       (delivery, job))
         self.assertTrue(om.enqueue_self_review(self.store, job, om.REVIEW_FAILED))
         self.answers = [answer]
         self.assertTrue(self.service.run_owner_model_upkeep())
@@ -342,6 +351,49 @@ class Told(TelegramHarness):
         self.service._memory_saved_release_sweep = 0
         self.service.release_memory_saved_notices()
         self.assertEqual(self.notices(job), ['unknown'])
+
+    def test_a_notice_saved_before_the_reply_was_sent_follows_the_reply(self):
+        """#233 (Codex review): "I updated my notes" never overtakes the answer it is about."""
+        from personal_agent.conversation_handoff import TelegramNotSent
+        change = '요약 길이를 적었어요'
+        job = self.reviewed({'notes': '- 요약은 세 줄로', 'change': change, 'blocker': ''}, delivery='pending')
+        self.assertEqual(self.notices(job), [self.store.NOTICE_HELD], 'held while the reply is awaited')
+        outage, original = [True], self.service.telegram_transport
+
+        def unreachable(url, body=None, headers=None, timeout=60):
+            if url.endswith('/sendMessage') and outage[0]:
+                self.calls.append(('sendMessage-not-sent', body))
+                raise TelegramNotSent('connect failed after the client retries')
+            return original(url, body, headers, timeout=timeout)
+        self.service.telegram_transport = unreachable
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(job)['delivery'], 'pending', 'the reply waits out its backoff')
+        self.assertFalse(self.service.deliver_notification(), 'the work loop sends no notice ahead of it')
+        self.service._memory_saved_release_sweep = 0
+        self.service.release_memory_saved_notices()
+        self.assertEqual(self.notices(job), [self.store.NOTICE_HELD], 'the sweep keeps it held too')
+        self.assertEqual(self.sends(), [])
+        outage[0] = False
+        self.service._unsent_retry_at = 0
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(job)['delivery'], 'sent')
+        self.assertEqual(self.notices(job), ['queued'], 'released by the delivered reply')
+        self.assertTrue(self.service.deliver_notification())
+        reply, notice = self.sends()
+        self.assertEqual(notice['text'], msg('working_notes.saved', change=change))
+        self.assertNotEqual(reply['text'], notice['text'], 'the answer first, then the notice')
+
+    def test_a_held_notice_is_released_by_the_sweep_once_the_reply_settled(self):
+        """A crash between the reply's delivery and the release, or a cancelled reply, leaves it to the sweep."""
+        job = self.reviewed({'notes': '- 요약은 세 줄로', 'change': '요약 길이', 'blocker': ''}, delivery='pending')
+        self.service._memory_saved_release_sweep = 0
+        self.service.release_memory_saved_notices()
+        self.assertEqual(self.notices(job), [self.store.NOTICE_HELD])
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET delivery='cancelled' WHERE id=?", (job,))
+        self.service._memory_saved_release_sweep = 0
+        self.service.release_memory_saved_notices()
+        self.assertEqual(self.notices(job), ['queued'])
 
     def test_a_secret_never_enters_the_notes_or_the_notice(self):
         self.store.secret('telegram_token', SECRET)

@@ -1322,6 +1322,10 @@ class TelegramSurface(ConversationSurface):
                 if memory_saved:service.release_memory_saved(job)
             except Exception as exc:
                 LOG.warning('memory saved notice failed work=%s kind=%s',job['id'],type(exc).__name__)
+            # #233: a working-notes notice a self-review saved before this reply settled follows it now.
+            try:service.release_working_notes(job['id'])
+            except Exception as exc:
+                LOG.warning('working notes notice release failed work=%s kind=%s',job['id'],type(exc).__name__)
         # #835/#858: delivery is durable before the truth-gated outcome
         # presentation. This optional remote Judgment call runs outside the
         # service lock, so it cannot stall polling, Stop updates or work.
