@@ -230,6 +230,43 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         for name, text in self.readers(section).items():
             self.assertEqual(text, section, f'{name} gets the same selection, not a second cut')
 
+    def test_the_upkeep_and_self_review_get_the_selection_the_worker_got(self):
+        """#241: over the bound, the production upkeep and self-review calls select by the Work's request."""
+        import re
+        facts = _facts(PROFILE_SNAPSHOT_CHARS // 60)
+        facts['profile.zzz.last_in_key_order'] = '산책은 저녁에 한강 쪽으로'
+        self.save(facts)
+        self.model_plan = []
+        work = self.ask('한강 산책 코스 추천해줘')
+        prompts = [json.dumps(body, ensure_ascii=False) for url, body in self.calls if url.endswith('/chat/completions')]
+        seen = {}
+
+        class Upkeep:
+            @staticmethod
+            def clock():
+                return 0.0
+
+            def run(self, job, judgments, *, profile, **kwargs):
+                seen['upkeep'] = profile
+                return om.STATE_DONE, 0, om.EVENT_RECORDED, {}
+
+            def run_review(self, job, row, judgments, *, profile, **kwargs):
+                seen['self-review'] = profile
+                return om.STATE_DONE, 0, om.EVENT_RECORDED, {}
+
+            def finish(self, *args, **kwargs):
+                pass
+        self.service.owner_model = Upkeep()
+        for kind in (om.KIND_UPKEEP, om.KIND_SELF_REVIEW):
+            self.service._owner_model_run({'job_id': work, 'kind': kind, 'expired': False}, 0.0)
+        upkeep = '\n'.join(re.sub(r'^\[[0-9a-f]{8}\] ', '', line) for line in seen['upkeep'].splitlines())
+        self.assertEqual(upkeep, seen['self-review'], 'the upkeep and the self-review read one selection')
+        self.assertTrue(seen['self-review'].startswith('profile.zzz.last_in_key_order: 산책은 저녁에 한강 쪽으로'),
+                        'query matches first, not the key-ordered head')
+        self.assertIn('saved profile facts omitted by the context limit', seen['self-review'], 'marked partial')
+        self.assertTrue(any(json.dumps(seen['self-review'], ensure_ascii=False)[1:-1] in prompt for prompt in prompts),
+                        'the same lines the worker was given')
+
     def test_a_cjk_profile_is_bounded_in_bytes_so_the_cli_brief_keeps_its_context(self):
         """Codex review on #223: characters are not bytes; the CLI prompt guard counts bytes."""
         from personal_agent.agent_runtime import CLI_NATIVE_SEARCH_GUIDANCE, CLI_TOOL_GUIDANCE, CONTEXT_BUDGET_BYTES, CORE_INSTRUCTIONS
