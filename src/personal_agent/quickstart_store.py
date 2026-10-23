@@ -429,6 +429,11 @@ class QuickStore:
                 fcntl.flock(lock_fd,fcntl.LOCK_UN)
                 os.close(lock_fd)
 
+    def retired_secret_ledger(self):
+        """The retired-secret digests (or None), for redacting spans of values no longer stored (#258)."""
+        with self.secret_lock:
+            return self._read_retired()
+
     def secret_redaction_material(self):
         """``(values, ledger)`` for a secret-free export (#258): every value the runtime redaction knows -
         decrypted API credentials and cloud credentials included - and the retired digests.  Raises

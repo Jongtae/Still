@@ -130,10 +130,9 @@ class ApiCredentials:
         # older message holding it is still kept from a model after the credential is gone.
         token = self.store.secret_items(reference).get(reference)
         if token:
-            try:
-                self.store.retire_secret_values(self.values({reference: token}))
-            except Exception:
-                pass
+            # Codex review on #259: the ciphertext stays until its plaintext is retired; an unreadable
+            # credential (owner-held key unavailable) is not removed, so redaction never loses it.
+            self.store.retire_secret_values(self.values({reference: token}))
         self.store.remove_secret(reference)
 
     def values(self, records):

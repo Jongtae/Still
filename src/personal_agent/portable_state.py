@@ -106,19 +106,31 @@ def _portable_db(source, target, redaction=((), None)):
         copy.commit();copy.execute("VACUUM")
 
 def _redact_transcript(copy, tables, redaction):
+    """Every text column of every exported table, with known and retired secret values replaced.
+
+    Codex review on #259: owner content outside the transcript (notes, Memory, candidates, ...) can hold
+    a value too.  FTS tables are skipped: their triggers follow the content rows they index.
+    """
     from .quickstart_store import QuickStore
     values, ledger = redaction
     if not values and not ledger:
         return
-    for table, columns in (("messages", ("content",)), ("jobs", ("message", "response"))):
-        if table not in tables:
+    virtual = {row[0] for row in copy.execute("SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE 'CREATE VIRTUAL TABLE%'")}
+    shadow = {name for name in tables for base in virtual if name.startswith(base + "_")}
+    for table in sorted(tables - virtual - shadow):
+        if table.startswith("sqlite_"):
             continue
-        present = {row[1] for row in copy.execute(f"PRAGMA table_info({table})")}
-        for column in (name for name in columns if name in present):
-            for rowid, text in copy.execute(f"SELECT rowid, {column} FROM {table} WHERE {column} IS NOT NULL").fetchall():
+        columns = [row[1] for row in copy.execute(f'PRAGMA table_info("{table}")')
+                   if (row[2] or "").upper() in ("", "TEXT") or "CHAR" in (row[2] or "").upper()]
+        for column in columns:
+            try:
+                rows = copy.execute(f'SELECT rowid, "{column}" FROM "{table}" WHERE typeof("{column}")=\'text\'').fetchall()
+            except sqlite3.OperationalError:
+                continue  # a WITHOUT ROWID table: none in the owner schema today
+            for rowid, text in rows:
                 clean = QuickStore.redact_secret_spans(text, values, ledger)
                 if clean != text:
-                    copy.execute(f"UPDATE {table} SET {column}=? WHERE rowid=?", (clean, rowid))
+                    copy.execute(f'UPDATE "{table}" SET "{column}"=? WHERE rowid=?', (clean, rowid))
 
 def export_owner_state(data, archive):
     data, archive = Path(data).expanduser().resolve(), Path(archive).expanduser().resolve()
@@ -129,11 +141,24 @@ def export_owner_state(data, archive):
         staging = Path(temporary) / ROOT;(staging / "private").mkdir(parents=True, mode=0o700)
         from .quickstart_store import QuickStore
         # The same decryption-aware source the runtime redaction uses; an unreadable value stops the export.
-        try:
-            redaction = QuickStore(data).secret_redaction_material()
-        except Exception as exc:
-            raise ValueError("Still could not read the secrets it must remove from the export; nothing was exported.") from exc
-        portable_db = staging / DB_RELATIVE;_portable_db(database, portable_db, redaction);portable_db.chmod(0o600)
+        # Codex review on #259: the material is read before and after the snapshot; a secret rotated
+        # meanwhile repeats the snapshot with the newer material (bounded), else nothing is exported.
+        portable_db = staging / DB_RELATIVE
+        def material():
+            try:
+                return QuickStore(data).secret_redaction_material()
+            except Exception as exc:
+                raise ValueError("Still could not read the secrets it must remove from the export; nothing was exported.") from exc
+        redaction = material()
+        for _attempt in range(3):
+            if portable_db.exists(): portable_db.unlink()
+            _portable_db(database, portable_db, redaction)
+            after = material()
+            if after == redaction: break
+            redaction = after
+        else:
+            raise ValueError("Secrets kept changing during the export; nothing was exported.")
+        portable_db.chmod(0o600)
         files = {DB_RELATIVE: _sha256(portable_db)}
         plugins = data / "plugins"
         if plugins.is_dir():

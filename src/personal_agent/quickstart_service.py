@@ -2761,6 +2761,20 @@ class AgentService:
             if said:text += ('\n' if text else '') + said
         return self._redact_known_secrets(text)
 
+    def history_for_models(self, rows):
+        """The recent transcript rows a plan or worker reads, with retired secret values replaced (#258).
+
+        The current values are redacted downstream; a value that was since replaced or removed is no
+        longer known there, so its spans (matched by their retired digests) go here.
+        """
+        try:
+            ledger=self.store.retired_secret_ledger()
+        except Exception:
+            ledger=None
+        if not ledger:return rows
+        return [{**row,'content':self.store.redact_secret_spans(row.get('content'),(),ledger)}
+                if isinstance(row.get('content'),str) else row for row in rows]
+
     def owner_words_block(self, request):
         """The ``owner_said`` block for ``request`` ('' when none): dated lines, bounded in bytes (#221)."""
         from .memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING, OWNER_WORDS_LINE_CHARS
@@ -5620,8 +5634,8 @@ class AgentService:
         ordinary path builds for a new request (``Orchestration.early_plan``); None when the
         Work would not be orchestrated. The host supplies the same durable budget
         used by its worker. A standalone caller opens and pauses its own lease."""
-        stored=(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
-                else self.store.history()[-16:])
+        stored=self.history_for_models(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
+                                       else self.store.history()[-16:])
         document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
         sections={'profile':self.owner_profile_snapshot(job.get('message'),recall=not prep.preparation_of(job.get('request_key'))),'current_context':self.current_context_text(job),
                   'prepared':self.prepared_text(job)}
@@ -10628,8 +10642,8 @@ class AgentService:
             run.key=self.store.secret('model_key')
             run.route_snapshot=self.store.config('subscription_engine',{})
         # #659: a preparation's Work sees its own origin and goal only.
-        run.stored_history=(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
-                        else self.store.history()[-16:])
+        run.stored_history=self.history_for_models(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
+                                                   else self.store.history()[-16:])
         run.document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
         run.document_history=any(message.get('job_id') in run.document_jobs for message in run.stored_history)
         # Earlier replies of failed/partial/interrupted Work carry

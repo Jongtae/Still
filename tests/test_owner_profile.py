@@ -430,6 +430,56 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
                 export_owner_state(self.data, self.root / 'b.tar.gz')
         self.assertFalse((self.root / 'b.tar.gz').exists(), 'nothing exported')
 
+    def test_recent_history_for_models_has_retired_values_replaced(self):
+        """Codex review on #259: the 16 recent messages, not only recall."""
+        self.store.secret('api_key:openai', 'quietharbor-river-tulip')
+        self.said('비번은 quietharbor-river-tulip 이야', days_ago=0)
+        self.store.secret('api_key:openai', 'brand-new-value-12345')
+        rows = self.service.history_for_models(self.store.history()[-16:])
+        text = ' '.join(str(row.get('content')) for row in rows)
+        self.assertIn('비번은 [redacted] 이야', text)
+        self.assertNotIn('quietharbor', text)
+
+    def test_an_unreadable_encrypted_credential_is_not_removed(self):
+        """Codex review on #259: the ciphertext stays until its plaintext is retired."""
+        from unittest import mock
+        from personal_agent.api_credentials import ApiCredentials, CredentialError
+        reference = 'api_credential:' + 'a' * 48
+        self.store.secret(reference, 'ciphertext-blob')
+        with mock.patch.object(ApiCredentials, 'values', side_effect=CredentialError()):
+            with self.assertRaises(CredentialError):
+                ApiCredentials(self.store).discard(reference)
+        self.assertEqual(self.store.secret_items(reference), {reference: 'ciphertext-blob'})
+
+    def test_the_export_redacts_every_owner_content_table_and_retries_a_moving_snapshot(self):
+        """Codex review on #259: notes and Memory too; secrets rotated mid-export repeat the snapshot."""
+        import sqlite3, tarfile
+        from unittest import mock
+        from personal_agent.portable_state import DB_RELATIVE, ROOT, export_owner_state
+        from personal_agent.quickstart_store import QuickStore
+        value = 'current-mart-password-42'
+        self.store.secret('api_key:openai', value)
+        with self.store.db() as db:
+            db.execute("INSERT INTO memories(id,memory_key,content,created,state,owner_key) VALUES (?,?,?,?,?,?)",
+                       ('m-secret', 'profile.note.key', f'키는 {value}', 1.0, 'current', self.store._memory_binding('local-owner')))
+        export_owner_state(self.data, self.root / 'c.tar.gz')
+        with tarfile.open(self.root / 'c.tar.gz') as bundle:
+            bundle.extractall(self.root / 'c', filter='data')
+        with sqlite3.connect(self.root / 'c' / ROOT / DB_RELATIVE) as db:
+            dump = '\n'.join(db.iterdump())
+        self.assertNotIn(value, dump)
+        self.assertIn('키는 [redacted]', dump)
+        calls = []
+        real = QuickStore.secret_redaction_material
+        def moving(store):
+            calls.append(1)
+            return ([f'rotating-{len(calls)}-value'], None)
+        with mock.patch.object(QuickStore, 'secret_redaction_material', moving):
+            with self.assertRaises(ValueError):
+                export_owner_state(self.data, self.root / 'd.tar.gz')
+        self.assertFalse((self.root / 'd.tar.gz').exists())
+        self.assertEqual(len(calls), 4, 'read, then once after each of three snapshots')
+
     def test_the_owners_earlier_words_are_bounded_in_bytes(self):
         from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
         self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])
