@@ -5,7 +5,7 @@ from .document_reader import MAX_FILE_BYTES, read as read_document, supported as
 from . import folder_grants
 
 
-def _search_key(text):
+def search_key(text):
     """The Python side of the store's ``unicode_search_key`` SQL function: NFKC, then casefold."""
     return unicodedata.normalize('NFKC',text).casefold()
 
@@ -297,7 +297,7 @@ class FileWorkspace:
             self._ensure_results_table(db)
             records=[dict(row) for row in (db.execute('SELECT * FROM file_workspace_results WHERE path=?',(path,)) if path is not None
                                            else db.execute("SELECT * FROM file_workspace_results WHERE state IN ('current','stale') ORDER BY created DESC LIMIT 101"))]
-            terms=[_search_key(term) for term in (terms or ()) if isinstance(term,str) and term] if path is None else []
+            terms=[search_key(term) for term in (terms or ()) if isinstance(term,str) and term] if path is None else []
             named=[dict(row) for row in db.execute(
                 "SELECT * FROM file_workspace_results WHERE state IN ('current','stale') AND ("+' OR '.join(['instr(unicode_search_key(path),?)>0']*len(terms))+')'
                 +' ORDER BY created DESC LIMIT 100',terms)] if terms else []
@@ -333,14 +333,14 @@ class FileWorkspace:
                 # #182 review: deleted, unreadable, oversized or edited: not a current result any more.
                 with self.store.db() as db: db.execute("UPDATE file_workspace_results SET state='stale' WHERE id=?",(record['id'],))
                 continue
-            if latest or needle is None or needle in (record['path']+'\n'+content).casefold(): results.append({'id':record['id'],'path':record['path'],'content':content,'sources':json.loads(record['sources'])})
+            if latest or needle is None or needle in search_key(record['path']+'\n'+content): results.append({'id':record['id'],'path':record['path'],'content':content,'sources':json.loads(record['sources'])})
             if latest and results: break
         return results
 
     def search(self, query):
         latest=isinstance(query,str) and query.strip() in ('*','__latest__')
         if not latest and (not isinstance(query,str) or not 2<=len(query.strip())<=160): raise ValueError('두 글자 이상의 결과 검색어를 입력하세요.')
-        return self.current_results(query.casefold().strip(),latest)
+        return self.current_results(search_key(query.strip()),latest)
 
     #: ``intact``'s answer when it could not tell: the result folder is unusable now, or the source check
     #: ran out of time.  The record keeps its state (#182 review).
@@ -415,7 +415,7 @@ class FileWorkspace:
                 return [dict(row) for row in db.execute(query+' WHERE r.id=?',(item_id,))]
             # #182 review: a search filters before the cap, so an older matching answer is reachable.
             # #203: Unicode case folding (the store's ``unicode_search_key``), not SQLite's ASCII-only ``lower()``.
-            terms=[_search_key(term) for term in (terms or ()) if isinstance(term,str) and term]
+            terms=[search_key(term) for term in (terms or ()) if isinstance(term,str) and term]
             where=(' WHERE '+' OR '.join(["instr(unicode_search_key(w.title||' '||r.content),?)>0"]*len(terms))) if terms else ''
             # #182 review: a full-text scan of a long history is interrupted at the caller's deadline.
             if deadline is not None:

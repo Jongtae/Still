@@ -611,9 +611,14 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
                            (f'p{index}', workspace_id, f'job-{index}', f'answer {index}', '', 1000.0 + index))
         found = self.caps().execute('find_files', {'query': 'été', 'root_id': SAVED_RESULTS_ROOT})
         self.assertEqual([item['path'] for item in found['files']], ['project/old'])
+        # #203 review: a decomposed accent or a full-width letter matches through the final comparison too.
+        for query in ('e\u0301te\u0301', 'ＰＬＡＮ'):
+            found = self.caps().execute('find_files', {'query': query, 'root_id': SAVED_RESULTS_ROOT})
+            self.assertEqual([item['path'] for item in found['files']], ['project/old'], query)
         caps = self.caps()
         caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
         caps.execute('save_result', {'title': 'ÄRENDE notes', 'content': 'summary'})
+        self.assertEqual([item['path'] for item in FileWorkspace(self.store).search('a\u0308rende')], ['ÄRENDE notes.md'])
         with self.store.db() as db:
             [record] = [dict(row) for row in db.execute('SELECT * FROM file_workspace_results')]
             for index in range(110):
