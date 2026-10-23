@@ -1824,8 +1824,9 @@ class AgentService:
                 # #998: the secretary reviews its own miss from its records; #19: what it learned revises
                 # the working notes (told once, with an exact undo), the blocker stays Evidence on this Work.
                 # The log line carries no text.
+                # #241: the Work's own request selects the profile, as it did for its worker.
                 state,calls,status,detail=upkeep.run_review(job,row,judgments,answer=job.get('response') or '',
-                                                            profile=self.owner_profile_snapshot(notes=False),clock=clock,
+                                                            profile=self.owner_profile_snapshot(job.get('message'),notes=False),clock=clock,
                                                             cancelled=cancelled)
                 upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
                 LOG.info('self-review work=%s reason=%s state=%s calls=%s notes=%s blocker=%s',work_id,detail.get('reason'),
@@ -1852,8 +1853,9 @@ class AgentService:
                 situation=note_situation=None
                 turns=''
             # #220: the upkeep sees each row's short id, so a new fact can end earlier ones by id.
+            # #241: the same query-first selection the Work's worker read, not the key-ordered head.
             state,calls,status,detail=upkeep.run(job,judgments,answer=job.get('response') or '',
-                                                 profile=self.owner_profile_snapshot(notes=False,ids=True),clock=clock,
+                                                 profile=self.owner_profile_snapshot(job.get('message'),notes=False,ids=True),clock=clock,
                                                  cancelled=cancelled,situation=situation,
                                                  note_situation=note_situation,situation_turns=turns)
             upkeep.finish(work_id,state,calls,status,detail,upkeep.clock())
