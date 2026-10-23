@@ -17,6 +17,7 @@ from .local_tools import LocalTools
 from .search_providers import ISO_COUNTRY_CODES, NATIVE_REASONS, describe_options, search_arguments
 from .document_reader import read as read_document, supported as supported_document, MAX_FILE_BYTES
 from . import folder_grants
+from . import work_mode
 from .file_workspace import FileWorkspace
 from .manifests import BUILTIN_MANIFEST, CONTEXT_GATED_ACTIONS, HOST_TOOLS, runtime_packages
 from .memory_service import PROFILE_KEY_GUIDANCE, CONNECTION_PREFERENCE_GUIDANCE, PROFILE_SECTION_CHARS
@@ -3274,6 +3275,10 @@ class Capabilities:
   # #1484: a refusal here comes before the tool runs, so its record says ``ran: false``.
   try:
    if not tool or name not in self.allowed_tools:raise ValueError('활성 패키지에 선언되지 않은 도구입니다.')
+   # #208: while work mode is on, a tool that would leave this Mac is refused here, on every
+   # route, before it runs; the switch is read per call, so it applies from the next call.
+   refused=work_mode.tool_refusal(self.store,tool['host_action'])
+   if refused is not None:raise refused
    # #606 T1: every route's attempt, Stop and deadline check happens here.
    self.budget.spend_attempt()
    # #961: a skill this Work loaded that was since switched off, removed or changed stops the Work's calls.

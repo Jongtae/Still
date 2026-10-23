@@ -561,6 +561,11 @@ class SkillLibrary:
     # Acquisition (an owner-confirmed settings change; never automatic).
     def install(self, value):
         """Fetch, stage, inspect and install one external skill; returns its declaration."""
+        # #208: nothing is fetched from GitHub while work mode is on.
+        from . import work_mode
+        refused = work_mode.refusal(self.store, 'skill_acquisition')
+        if refused:
+            raise SkillError(refused, 'work_mode')
         source = parse_source(value, self.transport)
         name = source['path'].rstrip('/').split('/')[-1]
         # Installs run one at a time (the settings category lock); anything left in

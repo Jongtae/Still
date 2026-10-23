@@ -140,6 +140,8 @@ NATIVE_REASONS = {
     'strict_profile': '엄격 격리 실행 프로필에서는 CLI 자체 웹 검색을 켜지 않습니다',
     # #211: Claude Code on Amazon Bedrock has no WebSearch (vendor docs); every cloud turn uses Still's search.
     'cloud_provider': '클라우드 제공자로 실행하는 CLI에서는 자체 웹 검색을 켜지 않습니다',
+    # #208: no search leaves this Mac while work mode is on.
+    'work_mode': '회사 모드에서는 웹 검색을 하지 않습니다',
 }
 #: Per-call billing the owner should know about, per API route (Settings).
 NATIVE_COSTS = {
@@ -163,7 +165,8 @@ class SearchProviderError(ProviderError):
     named a provider the owner has not configured),
     ``native_search_unavailable`` (the connected AI's own search cannot run
     on this route; ``reason`` names why) and ``native_search_empty`` (it ran
-    and returned no source).  ``classify_failure`` treats a coded error as
+    and returned no source), ``work_mode`` (#208: work mode is on).
+    ``classify_failure`` treats a coded error as
     permanent for this call: re-plan (another provider, the site's own search
     or another query), never the same call again.
     """
@@ -623,8 +626,10 @@ class ProviderRegistry:
     tool listing without a restart.
     """
     def __init__(self, secret, default=None, opener=None, *, bing=False, native=None, transport=None,
-                 status_store=None, clock=time.time):
+                 status_store=None, clock=time.time, refusal=None):
         self._secret = secret
+        #: #208: ``() -> str | None``, the owner-facing reason no search may leave this Mac now.
+        self._refusal = refusal or (lambda: None)
         self._default = default if callable(default) else (lambda: default or '')
         self._bing = bing if callable(bing) else (lambda: bool(bing))
         self._native = native if callable(native) else (lambda: native or {'route': '', 'reason': 'no_main_ai'})
@@ -680,9 +685,11 @@ class ProviderRegistry:
         def read_status():
             value = store.config(NATIVE_STATUS_KEY, {}) or {}
             return value if isinstance(value, dict) else {}
+        from . import work_mode
         return cls(lambda name: str(store.secret(name) or ''), lambda: str(row().get('default') or ''), opener,
                    bing=lambda: bool(row().get('bing_enabled')), native=route, transport=transport,
-                   status_store=(read_status, lambda value: store.put(NATIVE_STATUS_KEY, value)), clock=clock)
+                   status_store=(read_status, lambda value: store.put(NATIVE_STATUS_KEY, value)), clock=clock,
+                   refusal=lambda: work_mode.refusal(store, 'web_search'))
 
     # -- the connected AI's native search -----------------------------------
     @staticmethod
@@ -826,6 +833,10 @@ class ProviderRegistry:
         raise SearchProviderError(PROVIDER_UNAVAILABLE_TEXT, 'provider_unavailable')
 
     def search(self, query, *, provider=None, kind=None, locale=None, limit=RESULT_LIMIT, budget=None):
+        # #208: work mode refuses every search, the service's own lookup preflight included.
+        refused = self._refusal()
+        if refused:
+            raise SearchProviderError(refused, 'work_mode')
         chosen, chosen_kind = self.resolve(provider, kind)
         native = isinstance(chosen, AiNativeProvider)
         if native:

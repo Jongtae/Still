@@ -389,8 +389,12 @@ def retry_pending(owner_store, telegram_call, deliver=deliver_token, now=None):
 
 # -- the temporary HTTPS link (ngrok, already installed on the owner's Mac) --
 
-def start_tunnel(port, popen=subprocess.Popen, timeout=30):
+def start_tunnel(port, popen=subprocess.Popen, timeout=30, *, store):
     """Start ``ngrok http`` for one loopback port; returns ``(process, https_url)``.
+
+    #208: the one place a public tunnel is started.  ``store`` is the owner
+    store whose work mode is read first; while it is on this raises
+    ``work_mode.WorkModeRefused`` and nothing is spawned.
 
     ``--host-header=rewrite`` makes the instance see ``localhost:<port>``.
     ngrok still adds forwarding headers, so every tunneled request is
@@ -399,7 +403,9 @@ def start_tunnel(port, popen=subprocess.Popen, timeout=30):
     daemon thread for the tunnel's life, so a full pipe never stalls it, and
     the address is awaited with a real deadline (review P2-4).
     """
+    from . import work_mode
     from .subscription_engines import find_cli
+    work_mode.refuse(store, 'tunnel')
     # #932: under launchd PATH lacks Homebrew; the real launcher runs the found binary.
     binary = (find_cli('ngrok') or 'ngrok') if popen is subprocess.Popen else 'ngrok'
     process = popen([binary, 'http', f'127.0.0.1:{int(port)}', '--host-header=rewrite', '--inspect=false',
@@ -647,10 +653,15 @@ def prepare_family_setup(owner_store, name, display_name, *, service_action, env
     caller then runs ``watch_family_setup`` and closes everything.
     """
     import os
+    from . import work_mode
     from .quickstart_store import QuickStore
     from .service_control import DEFAULT_PORT, ServiceController, service_label
     environ = os.environ if environ is None else environ
     external = opener or urllib.request.urlopen
+    # #208: family setup needs a public link and the owner's Telegram; neither is used in work mode.
+    refused = work_mode.refusal(owner_store, 'tunnel')
+    if refused:
+        raise SetupError(refused)
     try:
         service_label(name)
     except ValueError as exc:
@@ -686,7 +697,7 @@ def prepare_family_setup(owner_store, name, display_name, *, service_action, env
             if not receipt.get('ok'):
                 raise SetupError('가족 비서를 이 Mac에서 시작하지 못했습니다. ' + str(receipt.get('next_action') or receipt.get('error') or ''))
         try:
-            process, public = start_tunnel(port, popen=popen)
+            process, public = start_tunnel(port, popen=popen, store=owner_store)
         except (OSError, RuntimeError) as exc:
             raise SetupError('가족에게 보낼 임시 링크를 열지 못했습니다. ' + str(exc)) from None
         handle['process'] = process

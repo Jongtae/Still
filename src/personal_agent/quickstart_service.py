@@ -54,6 +54,7 @@ from .personal_knowledge import PersonalKnowledgeOrchestrator
 from .memory_service import MemoryService
 from .file_workspace import FileWorkspace
 from . import folder_grants
+from . import work_mode
 from .connector_contract import ConnectorContractError, ConnectorResultKind, _owner_key
 from .gmail import GMAIL_CONNECTOR_ID, GmailError
 from .connector_revocation import (GoogleConnectionRevoker, RevocationError, drive_connection,
@@ -578,7 +579,9 @@ class AgentService:
                                       lambda:self.store.secret('telegram_token'),
                                       lambda:self.telegram_file_transport,
                                       lambda:self.telegram_upload_transport,
-                                      lambda:self.store.config('telegram',{}).get('owner_language'))
+                                      lambda:self.store.config('telegram',{}).get('owner_language'),
+                                      # #208: no Bot API or file request leaves this Mac in work mode.
+                                      guard=lambda:work_mode.refuse(self.store,'telegram'))
         # #581: which Telegram messages belong to a Work (reaction target,
         # reply anchor, control message) and the in-memory wait surface of
         # running Work.  Neither is a truth source.
@@ -2972,6 +2975,8 @@ class AgentService:
         """
         if isolated:return False,'strict_profile'
         if profile!=BOUNDED_PROFILE:return False,'strict_profile'
+        # #208: the CLI's own web search stays off while work mode is on.
+        if work_mode.active(self.store):return False,'work_mode'
         status=ProviderRegistry.from_store(self.store).native_status()
         if status.get('route')==engine and status.get('state')=='unavailable':return False,status.get('reason') or 'refused'
         return True,''
@@ -4048,7 +4053,7 @@ class AgentService:
                     'subscription_engines':self.subscription_engine_status(),
                     'subscription_execution':self.subscription_execution_profile(),
                     'telegram':{'enabled':tg.get('enabled',False),'mode':tg.get('mode','owner-token'),'username':tg.get('username',''),'paired':bool(tg.get('user_id')),'user_id':tg.get('user_id')},
-                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':self.google_connection_rows(),'google_client':self.google_client_status(),'ai_connections':self.ai_connections_status(),'current_context':self.current_state.status(),'browser':self.browser_status()}
+                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':self.google_connection_rows(),'google_client':self.google_client_status(),'ai_connections':self.ai_connections_status(),'current_context':self.current_state.status(),'browser':self.browser_status(),'work_mode':self.work_mode_status()}
 
     def home(self):
         """Return the minimal, credential-free read model for the owner home."""
@@ -7087,6 +7092,9 @@ class AgentService:
         for row in read.get('connections') or ():
             if isinstance(row,dict) and row.get('id'):
                 snapshot[f"connection.{row['id']}"]=(str(row.get('service') or row['id']),str(row.get('state_label') or row.get('state')))
+        # #208: a Settings switch of work mode is told in the conversation like any other change.
+        work=read.get('work_mode')
+        if isinstance(work,dict):snapshot['work_mode']=(str(work.get('label')),str(work.get('value_label')))
         return snapshot
 
     def settings_web_change_notice(self, label, verb, before):
@@ -8057,6 +8065,8 @@ class AgentService:
         ``start_session_keepalive`` while no Work is queued or running.
         """
         now=time.time() if now is None else now
+        # #208: the keep-alive request goes to a site off this Mac; none is sent in work mode.
+        if work_mode.active(self.store):return None
         signins=self.store.config(BROWSER_OWNER_SIGNINS_KEY,{})
         if not isinstance(signins,dict) or not signins or not self.browser_profile.available():return None
         with self.store.db() as db:
@@ -8881,7 +8891,7 @@ class AgentService:
             if popen is subprocess.Popen and not find_cli('ngrok'):raise ValueError(phone_input.NO_NGROK_TEXT)
             port=self.local_server_port
             if not isinstance(port,int):raise ValueError(phone_input.NO_PORT_TEXT)
-            session=phone_input.PhoneInput(kind,kinds[kind],popen=popen)
+            session=phone_input.PhoneInput(kind,kinds[kind],store=self.store,popen=popen)
             self._phone_input=session
             self._phone_input_started=True
         try:
@@ -8937,7 +8947,7 @@ class AgentService:
             if popen is subprocess.Popen and not find_cli('ngrok'):raise remote_login.RemoteLoginError(remote_login.NO_NGROK_TEXT)
             port=self.local_server_port
             if not isinstance(port,int):raise remote_login.RemoteLoginError(remote_login.NO_PORT_TEXT)
-            session=remote_login.RemoteLogin(self.browser_profile,window,site,close,popen=popen)
+            session=remote_login.RemoteLogin(self.browser_profile,window,site,close,store=self.store,popen=popen)
             self._remote_login=session
             self._remote_login_started=True
         try:
@@ -9663,7 +9673,8 @@ class AgentService:
         photo_only=marker.get('username')==username
         if photo_only and (marker.get('steps') or {}).get('photo')!=False:return None
         pinned=TelegramChannel(lambda:self.telegram_transport,lambda:token,
-                               lambda:self.telegram_file_transport,lambda:self.telegram_upload_transport)
+                               lambda:self.telegram_file_transport,lambda:self.telegram_upload_transport,
+                               guard=lambda:work_mode.refuse(self.store,'telegram'))
         still=__import__('personal_agent.still_profile',fromlist=['apply'])
         if photo_only:
             photo=still.apply_photo(pinned)
@@ -9686,6 +9697,8 @@ class AgentService:
         return done
 
     def pair_telegram(self):
+        # #208: pairing completes through the receive loop, which work mode stops.
+        work_mode.refuse(self.store,'telegram')
         with self.lock:
             cfg=self.store.config('telegram',{})
             if not cfg.get('enabled'): raise ValueError('먼저 봇 토큰을 연결하세요.')
@@ -9800,6 +9813,32 @@ class AgentService:
 
     def ingest_callback(self, callback, generation):
         return self.telegram_surface.ingest_callback(callback, generation)
+
+    def work_mode_status(self):
+        """Work mode for Settings (#208): on or off and its last recorded change."""
+        return work_mode.status(self.store)
+
+    def set_work_mode(self, body):
+        """The owner's Settings switch for work mode (#208); the local endpoint is its only caller.
+
+        Turning it on also ends what is already open to the outside: a live
+        phone input or remote login tunnel and a family setup's tunnel.  Turning
+        it off restores personal mode; nothing refused while it was on is run
+        again, and the Telegram status it paused is cleared for the next poll to set.
+        """
+        body=body if isinstance(body,dict) else {}
+        current=work_mode.set_enabled(self.store,body.get('enabled'),surface='settings')
+        if current['enabled']:
+            self.end_tunnel_sessions('work_mode')
+            from . import family_setup
+            for row in self.store.config(family_setup.PENDING_KEY,[]) or []:
+                if isinstance(row,dict):
+                    try:family_setup.stop_stale_tunnel(row)
+                    except Exception as exc:LOG.warning('family setup tunnel not stopped (%s)',type(exc).__name__)
+        elif (self.store.config('telegram_status') or {}).get('state')=='paused':
+            self.store.put('telegram_status',None)
+        LOG.info('work mode %s',('on' if current['enabled'] else 'off'))
+        return self.work_mode_status()
 
     def set_current_context(self, body):
         """Owner privacy control for current context (#626): use/timezone/clear only."""

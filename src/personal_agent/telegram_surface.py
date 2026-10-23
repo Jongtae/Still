@@ -44,6 +44,7 @@ from .messages import msg
 from . import owner_model as om
 from . import preparations as prep
 from . import remote_login
+from . import work_mode
 from .quickstart_service import (APPROVE_BUTTON, BROWSER_LOGIN_PHONE_ALERT, BROWSER_LOGIN_PHONE_LABEL, BROWSER_LOGIN_REOPENED_TEXT,
                                  BROWSER_LOGIN_REOPENING_TEXT, BROWSER_LOGIN_SKIP_LABEL,
                                  DENY_BUTTON, LOCAL_DOCUMENT_APPROVAL_TEXT, LOCAL_DOCUMENT_RESUMED_TEXT, LOG, MAX_OWNER_MESSAGE_CHARS,
@@ -68,7 +69,11 @@ class TelegramSurface(ConversationSurface):
 
     # -- the ConversationSurface boundary (#212) ------------------------------------
     def pairing(self):
-        """The paired private chat of the current bot generation, or None while unpaired."""
+        """The paired private chat of the current bot generation, or None while unpaired.
+
+        #208: None while work mode is on, so presence (👀, typing, drafts) is not attempted.
+        """
+        if work_mode.active(self.service.store):return None
         cfg=self.service.store.config('telegram',{})
         if not (cfg.get('enabled') and isinstance(cfg.get('user_id'),int)):return None
         return SurfacePairing(f"telegram:{cfg.get('generation')}",cfg['user_id'])
@@ -216,7 +221,7 @@ class TelegramSurface(ConversationSurface):
         with service.lock:
             cfg=service.store.config('telegram',{})
             allowed=(cfg.get('enabled') and notification['generation']==cfg.get('generation')
-                     and notification['chat_id']==cfg.get('user_id'))
+                     and notification['chat_id']==cfg.get('user_id') and not work_mode.active(service.store))
             service.store.update_notification(notification['id'],'sending' if allowed else 'cancelled')
             if not allowed:return True
             reply_markup=None
@@ -1147,6 +1152,11 @@ class TelegramSurface(ConversationSurface):
         """
         service=self.service
         now=time.monotonic() if now is None else now
+        # #208: an enabled bot stands down while work mode is on: no poll, and Settings says why.
+        if work_mode.active(service.store):
+            paused={'state':'paused','message':msg('work_mode.refused.telegram')}
+            if service.store.config('telegram_status')!=paused:service.store.put('telegram_status',paused)
+            return
         try:
             service.poll_telegram()
             service.mark_telegram_connected()
@@ -1226,7 +1236,9 @@ class TelegramSurface(ConversationSurface):
                 row=db.execute("SELECT * FROM jobs WHERE delivery='pending' ORDER BY created LIMIT 1").fetchone()
                 if not row:return
                 job=dict(row)
-                allowed=cfg.get('enabled') and job['channel']==f"telegram:{cfg.get('generation')}" and job['chat_id']==cfg.get('user_id')
+                # #208: in work mode a Telegram reply is not sent (cancelled, never sent later); the Work keeps it.
+                allowed=(cfg.get('enabled') and job['channel']==f"telegram:{cfg.get('generation')}" and job['chat_id']==cfg.get('user_id')
+                         and not work_mode.active(service.store))
                 db.execute('UPDATE jobs SET delivery=? WHERE id=?',('sending' if allowed else 'cancelled',job['id']))
             if not allowed:return
             blocked=service.store.blocked_delivery_reply(job['id'])

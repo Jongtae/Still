@@ -8,7 +8,7 @@ import json
 import threading
 import time
 
-from . import api_requests, phone_input
+from . import api_requests, phone_input, work_mode
 from .api_requests import ApiError
 from .current_context import redact_known_secrets
 from .mcp_setup import remote_url, SECRET_PATTERN, SENSITIVE
@@ -185,7 +185,7 @@ def start(service, draft):
     with service.lock:
         if service.phone_input_session() is not None:
             raise ValueError(phone_input.BUSY_TEXT)
-        session = phone_input.PhoneInput(phone_input.API_SLOT, data['name'] + ' API 연결', on_end=ended,
+        session = phone_input.PhoneInput(phone_input.API_SLOT, data['name'] + ' API 연결', store=service.store, on_end=ended,
                                         popen=service.phone_input_popen or phone_input.subprocess.Popen)
         session.api_draft = dict(draft)
         session.api_kept = kept_fields(service.store, data)
@@ -193,7 +193,8 @@ def start(service, draft):
         service._phone_input = session
         service._phone_input_started = True
     try:
-        if isinstance(service.store.job(draft['work_id']).get('chat_id'), int):
+        # #208: in work mode the one-time page opens on this Mac only, never through a tunnel or Telegram.
+        if isinstance(service.store.job(draft['work_id']).get('chat_id'), int) and not work_mode.active(service.store):
             cfg = service.store.config('telegram', {})
             job = service.store.job(draft['work_id'])
             if not cfg.get('enabled') or cfg.get('user_id') != job.get('chat_id'):

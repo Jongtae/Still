@@ -29,6 +29,7 @@ judged by the DecisionEngine - OWNER-SETTINGS-02 #855 - or the HTTP
 key, token or endpoint is never accepted (those stay in Settings).
 """
 from .messages import msg
+from . import work_mode
 import hashlib
 import hmac
 import json
@@ -298,6 +299,13 @@ class SettingsOrchestrator:
                   if category in (None, row.get("category"))]
         if category in (None, "connections"):
             lines.append(f"{CATEGORY_LABELS['connections']}:\n{result['response']}" if category is None else result["response"])
+        if category is None:
+            # #208: shown, never offered as a change; only Settings on the Mac switches it.
+            on = work_mode.state(self.store)["enabled"]
+            work = {"enabled": on, "label": msg('work_mode.label'),
+                    "value_label": msg('label.on' if on else 'label.off'), "changeable": False}
+            lines.append(msg('work_mode.read_line', state=work["value_label"]))
+            return {**result, "settings": settings, "work_mode": work, "response": "\n".join(lines)}
         return {**result, "settings": settings, "response": "\n".join(lines)}
 
     # -- #814 owner settings ------------------------------------------------------
@@ -580,6 +588,9 @@ class SettingsOrchestrator:
             raise SettingsError(UNKNOWN_SETTING_MESSAGE)
         if category == "connections" and setting != "disconnect":
             raise SettingsError(RETIRED_CONTROL_MESSAGE)
+        # #208: work mode is switched only by the owner in Settings on the Mac, never by a proposal.
+        if category == "work_mode":
+            raise SettingsError(msg('work_mode.local_only'))
         if category not in SETTINGS or setting not in SETTINGS[category] or self.service is None:
             raise SettingsError(UNKNOWN_SETTING_MESSAGE)
         if isinstance(value, bool) and setting == "enabled":
