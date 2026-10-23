@@ -339,6 +339,10 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     # #256 review: the completed substep names the focused tests that hold its contract.
     focused = items_of(current)["CLOUD-AI-01"]["tests"][0]
     assert all(name in focused for name in ("test_cloud_engines.py", "test_decision_routes.py", "test_settings_ui.py"))
+    # #256 review: the merged first slice of the in-flight substep is recorded, not left implicit.
+    progress = items_of(current)["WORKPLACE-01"]["substep_progress"]["SURFACE-SEAM-01"]
+    assert [(entry["slice"], entry["pull_request"]) for entry in progress["slices"]] == [("A", 229)]
+    assert "Slice B" in progress["remaining"]
     # #256 review: the files #230 changed outside the activated list are an explicit, auditable amendment.
     amendment = program["allowed_authority_amendment"]
     assert (amendment["substep"], amendment["pull_request"]) == ("CLOUD-AI-01", 230)
