@@ -96,6 +96,13 @@ def redact_known_secrets(store, text):
     text = str(text or '')
     for value in stored_secret_values(store):
         text = text.replace(value, '[redacted]')
+    # #258 (Codex review): a value since replaced or removed is no longer stored; its spans are found by
+    # their retired digests, at this one boundary every model-bound text already passes.
+    ledger = getattr(store, 'retired_secret_ledger', None)
+    ledger = ledger() if callable(ledger) else None
+    if ledger:
+        from .quickstart_store import QuickStore
+        text = QuickStore.redact_secret_spans(text, (), ledger)
     return SECRET_PATTERN.sub('[redacted]', text)
 
 

@@ -193,6 +193,7 @@ class ConnectionPreferences(Harness):
         self.assertIn('owner_said', self.asked_plans[-1][0].facts['owner_profile'])
         refs = self.store.turn_provenance(ident)['owner_information']
         self.assertIn('owner_said (1 earlier owner message)', json.dumps(refs))
+        self.assertEqual(refs.get('prepared'), [], 'the plan context carries no prepared answer itself')
 
     def test_an_early_plan_that_never_asks_records_nothing(self):
         """Codex review on #259: the audit records the sections only once the plan call goes out."""

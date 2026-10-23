@@ -456,7 +456,7 @@ class QuickStore:
         for length in sorted(by_length,reverse=True):
             digests,start,out=by_length[length],0,[]
             while start<=len(text)-length:
-                if hmac.new(key,text[start:start+length].encode(),hashlib.sha256).hexdigest() in digests:
+                if hmac.digest(key,text[start:start+length].encode(),'sha256').hex() in digests:
                     out.append(text[:start]+'[redacted]');text=text[start+length:];start=0
                     continue
                 start+=1
@@ -474,7 +474,7 @@ class QuickStore:
         for length,digest in ledger['marks']:by_length.setdefault(int(length),set()).add(digest)
         for length,digests in by_length.items():
             for start in range(0,len(text)-length+1):
-                if hmac.new(key,text[start:start+length].encode(),hashlib.sha256).hexdigest() in digests:return True
+                if hmac.digest(key,text[start:start+length].encode(),'sha256').hex() in digests:return True
         return False
 
     def secret_items(self, prefix):

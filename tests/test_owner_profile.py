@@ -480,6 +480,16 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.assertFalse((self.root / 'd.tar.gz').exists())
         self.assertEqual(len(calls), 4, 'read, then once after each of three snapshots')
 
+    def test_every_model_bound_text_has_retired_values_replaced(self):
+        """Codex review on #259: a profile row or any judgment text, not only the transcript."""
+        old = 'quietharbor-river-tulip'
+        self.store.secret('api_key:openai', old)
+        self.store.save_memory('profile.preference.note', f'예전 키 메모 {old}', owner_id='local-owner')
+        self.store.secret('api_key:openai', 'brand-new-value-12345')
+        self.assertNotIn(old, self.service.owner_profile_snapshot())
+        self.assertIn('예전 키 메모 [redacted]', self.service.owner_profile_snapshot())
+        self.assertNotIn(old, self.service.redact_judgment_text(f'linked reply said {old}'))
+
     def test_the_owners_earlier_words_are_bounded_in_bytes(self):
         from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
         self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])

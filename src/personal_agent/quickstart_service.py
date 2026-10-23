@@ -5649,7 +5649,10 @@ class AgentService:
                     and not (self.store.turn_provenance(job['id']) or {}).get('owner_information')):
                 # Codex review on #227/#259: the early plan sent these sections even when the Work is parked
                 # before its worker turn records them; recorded only once the plan call actually went out.
-                self.record_turn_provenance(job['id'],owner_information=self.owner_information_refs(sections))
+                # Only what the plan's context carries (profile and current context; prepared answers are a
+                # count there), so the audit names nothing the Judgment AI did not receive.
+                self.record_turn_provenance(job['id'],owner_information=self.owner_information_refs(
+                    {name:sections.get(name) for name in ('profile','current_context')}))
             return early
         finally:
             if own_budget and budget.ledger is not None:budget.ledger.pause()
