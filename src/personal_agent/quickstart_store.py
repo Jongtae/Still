@@ -28,6 +28,32 @@ _SECRET_STATE_LOCK = threading.RLock()
 REQUEST_APPROVAL_ACTIONS = frozenset({'api_request', 'connector_call', 'code_run'})
 
 
+#: #262: how often one statement is prepared again after a concurrent schema change hid it.
+VTABLE_RECONNECT_ATTEMPTS = 5
+
+
+class _StoreConnection(sqlite3.Connection):
+    """A store connection that prepares a statement again when a concurrent schema change interrupted it (#262).
+
+    Preparing a statement that reaches an FTS5 table (``messages_search``, ``memories_search``,
+    directly or through their triggers) connects the virtual table, which reads its own
+    ``%_config`` table.  When another connection changed the schema in between (a module
+    creating its table on first use, or another process opening the store), that nested read
+    meets ``SQLITE_SCHEMA``.  SQLite prepares a statement again on ``SQLITE_SCHEMA`` by itself,
+    but FTS5 reports this one as "vtable constructor failed", so the retry never happens.  The
+    statement failed before it ran, so preparing it again is what SQLite would have done.
+    """
+
+    def execute(self, sql, parameters=(), /):
+        for attempt in range(VTABLE_RECONNECT_ATTEMPTS):
+            try:
+                return super().execute(sql, parameters)
+            except sqlite3.OperationalError as error:
+                if not str(error).startswith('vtable constructor failed') or attempt+1==VTABLE_RECONNECT_ATTEMPTS:
+                    raise
+                time.sleep(0.005*(attempt+1))
+
+
 class QuickStore:
     @cached_property
     def telegram(self):
@@ -242,7 +268,7 @@ class QuickStore:
 
     @contextmanager
     def db(self):
-        conn = sqlite3.connect(self.path, timeout=10)
+        conn = sqlite3.connect(self.path, timeout=10, factory=_StoreConnection)
         conn.row_factory = sqlite3.Row
         conn.create_function(
             'unicode_search_key', 1,
