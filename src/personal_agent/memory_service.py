@@ -182,10 +182,8 @@ class MemoryService:
 
         #220 (Codex review): editing a fact's words keeps the last day the current row has.
         """
-        key = self.profile_key(memory_key)
-        self._identity(owner_id, 'owner')
-        current = self.store.current_memory(key, owner_id) or {}
-        return self.remember(owner_id, work_id, key, content, valid_until=current.get('valid_until'))
+        # The store keeps the replaced row's last day while it still holds (Codex review: never an elapsed one).
+        return self.remember(owner_id, work_id, self.profile_key(memory_key), content)
 
     def _profile_rows(self, owner_id, holding_on=None):
         """Every current ``profile.*`` row of this owner, ordered by key then value.

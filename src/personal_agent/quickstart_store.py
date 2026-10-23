@@ -1054,6 +1054,36 @@ class QuickStore:
             db.execute("UPDATE memory_approvals SET state='consumed',result_id=? WHERE token_hash=? AND state='issued'",(result['id'],approval['token_hash']))
             return result
 
+    def _settle_memory_key(self, db, owner_key, memory_key, predecessor=None):
+        """Make the newest live candidate under ``memory_key`` current; returns it when it became current (#220).
+
+        Candidates: rows already current, ``predecessor`` (the undone row's own previous value), and
+        rows ended by a save that has been undone (``invalidated_by`` a ``retracted`` row).  When the
+        newest of them is ended by a save that still stands, nothing older comes back in front of it.
+        Other history (forgotten, retracted, or older values no undo reaches) is never brought back.
+        """
+        rows=db.execute('''SELECT m.*,(m.state='superseded' AND ender.id IS NOT NULL AND ender.state<>'retracted') AS held
+                             FROM memories m LEFT JOIN memories ender ON ender.id=m.invalidated_by
+                             WHERE m.owner_key=? AND m.memory_key=? AND (m.state='current'
+                               OR (m.id=? AND m.state IN ('superseded','corrected'))
+                               OR (m.state='superseded' AND ender.id IS NOT NULL))
+                             ORDER BY m.created DESC,m.id DESC''',(owner_key,memory_key,predecessor)).fetchall()
+        if not rows:return None
+        winner=rows[0]
+        if winner['held']:
+            # The newest value is ended by a save that still stands: nothing older comes back in front of it.
+            for loser in rows[1:]:
+                if loser['state']=='current':
+                    db.execute("UPDATE memories SET state='superseded' WHERE id=? AND owner_key=?",(loser['id'],owner_key))
+            return None
+        for loser in rows[1:]:
+            if loser['state']=='current':
+                db.execute("UPDATE memories SET state='superseded' WHERE id=? AND owner_key=?",(loser['id'],owner_key))
+        if winner['state']=='current':return None
+        db.execute('''UPDATE memories SET state='current',invalidated_by=NULL,invalidation_reason=NULL,invalidated_at=NULL
+                      WHERE id=? AND owner_key=?''',(winner['id'],owner_key))
+        return dict(winner)
+
     def retract_memory(self, owner_id, memory_id, content_digest, now=None, record=None):
         """Undo one direct save (#918 slice a): retract exactly that current row, restore what it superseded.
 
@@ -1079,49 +1109,16 @@ class QuickStore:
             row=db.execute("SELECT * FROM memories WHERE id=? AND owner_key=? AND state='current'",(memory_id,owner_key)).fetchone()
             if not row or not hmac.compare_digest(str(row['content_digest']),content_digest):raise ValueError('되돌릴 기억을 다시 확인하세요.')
             db.execute("UPDATE memories SET state='retracted' WHERE id=? AND owner_key=?",(memory_id,owner_key))
-            restored=None
-            if row['supersedes']:
-                previous=db.execute("SELECT * FROM memories WHERE id=? AND owner_key=? AND state IN ('superseded','corrected')",(row['supersedes'],owner_key)).fetchone()
-                if previous:
-                    db.execute("UPDATE memories SET state='current' WHERE id=? AND owner_key=?",(previous['id'],owner_key))
-                    restored=self._memory_row(db.execute('SELECT * FROM memories WHERE id=?',(previous['id'],)).fetchone())
-            # #220: the rows this save ended become current again, exactly those still ended by it.
-            ended=[r['id'] for r in db.execute("SELECT id FROM memories WHERE owner_key=? AND invalidated_by=? AND state='superseded'",
-                                               (owner_key,memory_id))]
-            restorable=[]
-            for ended_id in ended:
-                # Codex review on #226: a key that has a newer current value since keeps it; the ended row stays ended.
-                ended_row=db.execute('SELECT memory_key,created FROM memories WHERE id=?',(ended_id,)).fetchone()
-                # A newer value under the key - current, or itself ended by another save that may be undone
-                # too (Codex review) - stands in front of this row.
-                newer=db.execute("""SELECT id,supersedes FROM memories WHERE owner_key=? AND memory_key=? AND id<>? AND id<>?
-                                      AND created>=? AND (state='current' OR (state='superseded' AND invalidated_by IS NOT NULL))
-                                      ORDER BY created DESC,id DESC LIMIT 1""",
-                                 (owner_key,ended_row['memory_key'],memory_id,ended_id,ended_row['created'])).fetchone()
-                if newer:
-                    # Codex review: the newer value now stands in front of the ended row, so undoing it later
-                    # brings that row back (out-of-order undos still end at the original fact).
-                    # It goes into the chain in creation order (Codex review): behind the oldest row newer than
-                    # it, so undoing the newer values one by one walks back through history in order.
-                    after,seen=newer,set()
-                    while after['supersedes'] is not None and after['id'] not in seen and len(seen)<1000:
-                        seen.add(after['id'])
-                        previous_row=db.execute('SELECT id,supersedes,created FROM memories WHERE id=? AND owner_key=?',
-                                                (after['supersedes'],owner_key)).fetchone()
-                        if previous_row is None or previous_row['created']<ended_row['created']:break
-                        after=previous_row
-                    if after['id']!=ended_id and after['supersedes']!=ended_id:
-                        if after['supersedes'] is not None:
-                            db.execute('UPDATE memories SET supersedes=? WHERE id=? AND owner_key=? AND supersedes IS NULL',
-                                       (after['supersedes'],ended_id,owner_key))
-                        db.execute('UPDATE memories SET supersedes=? WHERE id=? AND owner_key=?',(ended_id,after['id'],owner_key))
-                        db.execute("""UPDATE memories SET invalidated_by=NULL,invalidation_reason=NULL,invalidated_at=NULL
-                                      WHERE id=? AND owner_key=?""",(ended_id,owner_key))
-                    continue
-                db.execute("""UPDATE memories SET state='current',invalidated_by=NULL,invalidation_reason=NULL,invalidated_at=NULL
-                              WHERE id=? AND owner_key=?""",(ended_id,owner_key))
-                restorable.append(ended_id)
-            ended=restorable
+            # #220 (Codex review): each key this undo touches is settled again instead of patching links:
+            # its newest live candidate becomes current - a row already current, the undone row's own
+            # predecessor, or a row a now-undone save had ended.  A row ended by a save that still stands
+            # is never a candidate, so undos in any order end at the right historical value.
+            restored=self._settle_memory_key(db,owner_key,row['memory_key'],predecessor=row['supersedes'])
+            other_keys=[r['memory_key'] for r in db.execute(
+                "SELECT DISTINCT memory_key FROM memories WHERE owner_key=? AND invalidated_by=? AND memory_key<>?",
+                (owner_key,memory_id,row['memory_key']))]
+            ended=[winner['id'] for winner in (self._settle_memory_key(db,owner_key,key) for key in other_keys) if winner]
+            if restored:restored=self._memory_row(db.execute('SELECT * FROM memories WHERE id=?',(restored['id'],)).fetchone())
             db.execute("""UPDATE memory_approvals SET state='revoked',memory_key=''
                           WHERE owner_key=? AND memory_key=? AND state='issued'""",(owner_key,row['memory_key']))
             if row['candidate_id']:

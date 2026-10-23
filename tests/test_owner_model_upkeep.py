@@ -610,6 +610,68 @@ class Invalidate(Upkeep):
         self.service.undo_memory_saved('job', binding, [1])
         self.assertIn('강남 사무실 (다시 판교 사무실)', self.service.memory_saved_text(binding))
 
+    def test_any_undo_order_keeps_one_current_value_and_ends_where_it_began(self):
+        """Codex reviews on #226: every order of undos over saves that end rows under other keys."""
+        import itertools
+        import random
+        keys = ('profile.place.a', 'profile.place.b')
+        for seed in range(40):
+            with self.subTest(seed=seed):
+                with self.store.db() as db:
+                    db.execute('DELETE FROM memories')
+                rng = random.Random(seed)
+                base = {key: self.saved(key, f'{key} 처음') for key in keys}
+                saves = []
+                for step in range(4):
+                    key = rng.choice(keys)
+                    current = [row for row in self.store.memories(MEMORY_OWNER) if row['memory_key'] != key]
+                    ends = [(row['id'], 'x') for row in current[:rng.randint(0, 1)]]
+                    saves.append(self.saved(key, f'{key} 값 {step}', invalidates=ends))
+                for order in itertools.islice(itertools.permutations(saves), 0, None, 7):
+                    with self.store.db() as db:
+                        snapshot = [dict(row) for row in db.execute('SELECT * FROM memories')]
+                    left = list(order)
+                    while left:
+                        undone = []
+                        for row in left:
+                            try:
+                                self.store.retract_memory(MEMORY_OWNER, row['id'], row['content_digest'])
+                                undone.append(row)
+                            except ValueError:
+                                pass  # not current right now (ended or superseded): tried again next round
+                            current = self.store.memories(MEMORY_OWNER)
+                            self.assertLessEqual(max([sum(r['memory_key'] == key for r in current) for key in keys]), 1)
+                        if not undone:
+                            break
+                        left = [row for row in left if row not in undone]
+                    self.assertEqual(left, [], 'every save could be undone')
+                    self.assertEqual(sorted(row['id'] for row in self.store.memories(MEMORY_OWNER)),
+                                     sorted(row['id'] for row in base.values()), 'all undone: where it began')
+                    with self.store.db() as db:
+                        db.execute('DELETE FROM memories')
+                        for row in snapshot:
+                            db.execute(f"INSERT INTO memories({','.join(row)}) VALUES ({','.join('?' * len(row))})",
+                                       tuple(row.values()))
+
+    def test_a_settings_edit_does_not_carry_an_elapsed_last_day(self):
+        from personal_agent.memory_service import MemoryService
+        self.saved('profile.schedule.trip', '제주 여행 중', valid_until='2000-01-01')
+        memory = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        row = memory.remember_profile(MEMORY_OWNER, 'settings-profile', 'profile.schedule.trip', '제주 여행 중')
+        self.assertIsNone(row['valid_until'])
+
+    def test_undo_order_b_e_d_keeps_one_value(self):
+        a = self.saved('profile.place.workplace', '판교 사무실')
+        b = self.saved('profile.place.work', '강남', invalidates=[(a['id'], 'moved')])
+        c = self.saved('profile.place.workplace', '여의도 사무실')
+        d = self.saved('profile.place.office', '광화문', invalidates=[(c['id'], 'moved')])
+        e = self.saved('profile.place.workplace', '종로 사무실')
+        for row in (b, e, d):
+            self.store.retract_memory(MEMORY_OWNER, row['id'], row['content_digest'])
+            workplace = [r['id'] for r in self.store.memories(MEMORY_OWNER) if r['memory_key'] == 'profile.place.workplace']
+            self.assertLessEqual(len(workplace), 1)
+        self.assertEqual(workplace, [c['id']])
+
     def test_a_settings_edit_keeps_the_last_day(self):
         from personal_agent.memory_service import MemoryService
         self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')
