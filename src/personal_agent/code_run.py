@@ -869,8 +869,6 @@ class CodeRunner:
                   'env': {**(plain or {}), 'PATH': '/usr/bin:/bin', 'HOME': workdir, 'LANG': 'en_US.UTF-8',
                           'PYTHONIOENCODING': 'utf-8', 'PYTHONDONTWRITEBYTECODE': '1'},
                   'masked': list(masked), 'timeoutMs': timeout * 1000, 'outputBytes': OUTPUT_BYTES}
-        from .agent_runtime import handed_off
-        handed_off()   # #233: the code runs, and may send requests, from here
         process = self.popen([node, str(Path(runtime) / 'runner.mjs')], cwd=str(runtime), stdin=subprocess.PIPE,
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
                              env={'PATH': f'{Path(node).parent}:/usr/bin:/bin', 'HOME': workdir})
@@ -884,6 +882,11 @@ class CodeRunner:
         deadline = self.clock() + timeout + RUNNER_GRACE
         try:
             process.stdin.write(json.dumps(config) + '\n')
+            # #233: the runner process exists and has its configuration, so the code may run and send from
+            # here; a failure to start it (``popen``) or to hand it the configuration let nothing out.  The
+            # line is complete once written (line buffered), so the mark comes before the flush.
+            from .agent_runtime import handed_off
+            handed_off()
             process.stdin.flush()
             while True:
                 if self.interrupted is not None and self.interrupted():

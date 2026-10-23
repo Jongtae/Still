@@ -467,6 +467,50 @@ class HandOff(unittest.TestCase):
             {'source': 'memory', 'key': 'member-number', 'tool': 'browser_open', 'destination': 'fixture.test',
              'status': 'failed'}])
 
+    def test_a_browser_that_could_not_start_received_nothing(self):
+        def broken():
+            raise RuntimeError('profile locked')
+        args = {'url': 'https://shop.example/find?no=M1234-5678', 'effect': 'read'}
+        for label, factory in (('factory raised', broken), ('no driver', lambda: None)):
+            with self.subTest(label):
+                caps = Capabilities(self.store, None, BROWSER_CFG, '', self.job, self.record, browser=factory)
+                with self.assertRaises(ValueError) as caught:
+                    caps.execute('browser_open', args)
+                self.assertEqual(agent_runtime.ran_field(caught.exception), {'ran': False})
+                self.assertEqual(agent_runtime.attempted_outbound(caps, 'browser_open', args, caught.exception), {})
+
+    def code_runner_caps(self, process=None, popen=None):
+        from test_code_run import runner
+        caps = Capabilities(self.store, None, {}, '', self.job, self.record)
+        caps._code_runner = runner(process)
+        if popen is not None:
+            caps._code_runner.popen = popen
+        return caps
+
+    def test_a_sandbox_that_could_not_start_received_nothing(self):
+        def failing_popen(*args, **kwargs):
+            raise OSError('cannot start the runner')
+        args = {'code': 'print("M1234-5678")', 'hosts': 'api.example.com'}
+        caps = self.code_runner_caps(popen=failing_popen)
+        with mock.patch('personal_agent.current_context.redact_known_secrets', lambda store, text: text):
+            with self.assertRaises(OSError) as caught:
+                caps.execute('code_run', args)
+        self.assertEqual(agent_runtime.ran_field(caught.exception), {'ran': False})
+        self.assertEqual(agent_runtime.attempted_outbound(caps, 'code_run', args, caught.exception), {})
+
+    def test_a_run_that_failed_after_its_sandbox_started_is_still_an_attempt(self):
+        from test_code_run import FakeProcess
+        process = FakeProcess(requests=[{'method': 'GET', 'host': 'api.example.com', 'path': '/v1/find',
+                                         'query': 'no=M1234-5678'}], error='runner crashed')
+        args = {'code': 'print(1)', 'hosts': 'api.example.com'}
+        caps = self.code_runner_caps(process)
+        with mock.patch('personal_agent.current_context.redact_known_secrets', lambda store, text: text):
+            with self.assertRaises(ValueError) as caught:
+                caps.execute('code_run', args)
+        self.assertEqual(agent_runtime.ran_field(caught.exception), {}, 'the code ran: not a local refusal')
+        self.assertEqual(agent_runtime.attempted_outbound(caps, 'code_run', args, caught.exception)['outbound_matches'],
+                         [{'source': 'memory', 'key': 'member-number', 'destination': 'api.example.com', 'tool': 'code_run'}])
+
     def test_a_code_run_refused_after_a_sending_run_reports_nothing_stale(self):
         from test_code_run import FakeProcess, runner
         from personal_agent.code_run import CodeRunError
