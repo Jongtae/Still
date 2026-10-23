@@ -54,11 +54,17 @@ class GoogleCalendarError(ValueError):
 
 
 class GoogleCalendarHTTPError(Exception):
-    """Transport-neutral HTTP failure used by injected provider transports."""
+    """Transport-neutral HTTP failure used by injected provider transports.
 
-    def __init__(self, status: int):
+    ``reauthentication_required`` is False on a 401 after which a
+    credential-owning transport kept a usable credential (#246): the request
+    was refused before Google acted on it, and the connection stays connected.
+    """
+
+    def __init__(self, status: int, *, reauthentication_required: bool = True):
         super().__init__(f"Google Calendar HTTP status {status}")
         self.status = status
+        self.reauthentication_required = reauthentication_required
 
 
 def _event_body(payload: dict, *, partial: bool = False) -> dict:
@@ -96,6 +102,10 @@ class GoogleCalendar:
             return self.transport(method, url, body, self._headers(headers))
         except GoogleCalendarHTTPError as error:
             if error.status == 401:
+                if not getattr(error, "reauthentication_required", True):
+                    # Refused before Google acted on it; the transport kept a
+                    # usable credential, so this is not an expired connection.
+                    raise GoogleCalendarError("token-rejected") from None
                 raise GoogleCalendarError("scope-expired") from None
             if error.status == 403:
                 raise GoogleCalendarError("provider-rejected") from None

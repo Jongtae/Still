@@ -56,6 +56,7 @@ from .connector_http import (
     LOCAL_KEY_UNAVAILABLE,
     RENEWAL_MARGIN_SECONDS,
     token_endpoint_refused,
+    token_response_unusable,
 )
 from .google_calendar import CALENDAR_API, GoogleCalendarHTTPError
 from .google_drive_read import DRIVE_API, DRIVE_SPEC, DriveHTTPError
@@ -436,11 +437,15 @@ def _authorized_call(
     ``send(access_token)`` performs the HTTP call and raises an error whose
     ``status`` is 401 when Google refused the token.  With ``oauth`` and
     ``exchange``, a token that is expired or about to expire is renewed
-    first.  After a 401 there is at most one renewal attempt, and only a
-    request the caller marks ``replay`` (a read: no external effect) is sent
-    once more with the renewed token; a write is never replayed and requires
-    reauthentication as before.  Without a renewal, a 401 requires
-    reauthentication for the revision that saw it.
+    first.  After a 401 there is at most one renewal attempt, pinned to the
+    revision that saw the 401.  Only a request the caller marks ``replay`` (a
+    read: no external effect) is sent once more with the renewed token.  A
+    write is never resent (#246): Google refused it before executing it, so
+    the 401 is re-raised as not done, and unless the renewal was definitively
+    refused it carries ``reauthentication_required = False`` -- the stored
+    credential was renewed, or kept because the renewal got no answer.  Only
+    a renewal Google refused, or no way to renew, requires reauthentication
+    for the revision that saw the 401.
     """
     renewing = oauth is not None and exchange is not None
     if renewing:
@@ -452,7 +457,25 @@ def _authorized_call(
             response = send(access_token)
         except (GoogleCalendarHTTPError, DriveHTTPError) as error:
             if error.status == 401:
-                if (
+                if renewing and not renewed and not replay:
+                    # A write: one renewal for the revision that saw the 401,
+                    # and the write is reported as not done, never resent.
+                    try:
+                        kept = oauth.renew_after_rejection(
+                            owner_id,
+                            exchange,
+                            grant=grant,
+                            expected_revision=connection_revision,
+                            serialize=serialize,
+                        )
+                    except CalendarOAuthError:
+                        # No answer from Google, or the local key is not
+                        # available: nothing was said about the grant.
+                        kept = True
+                    if kept:
+                        error.reauthentication_required = False
+                        raise
+                elif (
                     replay
                     and renewing
                     and not renewed
@@ -566,7 +589,8 @@ def calendar_transport(
     transport does; without them an expired token requires reconnecting.
     #8: renewal starts ``RENEWAL_MARGIN_SECONDS`` before expiry, a retryable
     renewal failure keeps the stored credential, and a read refused with 401
-    is renewed and sent once more (see ``_authorized_call``).
+    is renewed and sent once more (see ``_authorized_call``); a write refused
+    with 401 is renewed too but never resent (#246).
     """
     if not getattr(secret_store, "encrypted_secrets", False):
         raise ValueError("Calendar OAuth requires an encrypted owner-local secret store.")
@@ -1120,7 +1144,8 @@ class CalendarOAuth:
         commit over a connection that changed in between.
 
         #8: a token-endpoint failure that is not Google refusing the grant
-        (network, timeout, 429/5xx, unreadable answer) raises
+        (network, timeout, 429/5xx, unreadable answer, or an HTTP 200 answer
+        carrying no usable token, #246) raises
         ``CalendarRenewalUnavailable`` and changes nothing stored.  With
         ``expected_revision`` the renewal is for that connection revision
         only.
@@ -1166,6 +1191,9 @@ class CalendarOAuth:
                 # escape; keep only whether Google refused the grant.
                 if token_endpoint_refused(error):
                     raise CalendarOAuthError("token_refresh_failed") from None
+                raise CalendarRenewalUnavailable() from None
+            if token_response_unusable(response):
+                # #246: an answer with no usable token says nothing about the grant.
                 raise CalendarRenewalUnavailable() from None
             renewed = self._validated_tokens(
                 response, owner, grant, carry_refresh=refresh_token, scope_optional=True

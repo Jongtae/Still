@@ -4,6 +4,7 @@ Every token exchange, HTTP call, clock and key store is injected; nothing here
 reaches Google or the macOS Keychain, and every credential is a made-up string.
 """
 
+import io
 import json
 import pathlib
 import tempfile
@@ -53,8 +54,15 @@ OWNER = 'local-owner'
 TOKEN_URL = 'https://oauth2.googleapis.com/token'
 
 
-def http_error(status):
-    return HTTPError(TOKEN_URL, status, 'error', {}, None)
+def http_error(status, body=None):
+    """A token-endpoint HTTPError; ``body`` is the JSON (or raw bytes) Google answered with."""
+    if isinstance(body, dict):
+        body = json.dumps(body).encode()
+    return HTTPError(TOKEN_URL, status, 'error', {}, None if body is None else io.BytesIO(body))
+
+
+def oauth_error(status, code):
+    return http_error(status, {'error': code, 'error_description': 'made-up description'})
 
 
 def state_of(offer):
@@ -62,11 +70,28 @@ def state_of(offer):
 
 
 #: Failures that say nothing about the grant: kept, retried by a later request.
+#: #246: a 400 that names another OAuth error, or whose body cannot be read, may
+#: be a fault in the request Still sent and says nothing about the grant either.
 RETRYABLE = (lambda: URLError('offline'), lambda: TimeoutError('slow'), lambda: OSError('reset'),
              lambda: http_error(503), lambda: http_error(500), lambda: http_error(429),
-             lambda: ValueError('captive portal page, not JSON'))
-#: Google refused the grant (RFC 6749 5.2): reauthentication.
-DEFINITIVE = (lambda: http_error(400), lambda: http_error(401))
+             lambda: ValueError('captive portal page, not JSON'),
+             lambda: oauth_error(400, 'invalid_request'), lambda: oauth_error(400, 'unsupported_grant_type'),
+             lambda: oauth_error(400, 'invalid_scope'), lambda: oauth_error(400, 'unauthorized_client'),
+             lambda: http_error(400, b'<html>Bad Request</html>'), lambda: http_error(400),
+             lambda: http_error(400, b'{"error": 7}'),
+             lambda: http_error(400, b'{"error": "invalid_grant"' + b' ' * 9000 + b'}'))
+#: Google refused the grant (RFC 6749 5.2): reauthentication.  A 401 without a
+#: readable code is client authentication failing, which 5.2 reserves for invalid_client.
+DEFINITIVE = (lambda: oauth_error(400, 'invalid_grant'), lambda: oauth_error(401, 'invalid_client'),
+              lambda: oauth_error(400, 'invalid_client'), lambda: http_error(401))
+
+
+#: #246: HTTP 200 answers that carry no usable access token.  They say nothing
+#: about the grant either, so they keep the credential as a failure would.
+UNUSABLE = (lambda: {}, lambda: {'expires_in': 3600}, lambda: {'access_token': '', 'expires_in': 3600},
+            lambda: {'access_token': 7, 'expires_in': 3600}, lambda: {'access_token': 'x'},
+            lambda: {'access_token': 'x', 'expires_in': 'soon'}, lambda: ['not', 'an', 'object'],
+            lambda: {'access_token': 'x', 'expires_in': 3600, 'refresh_token': 9})
 
 
 class TokenEndpointClassificationTest(unittest.TestCase):
@@ -75,6 +100,13 @@ class TokenEndpointClassificationTest(unittest.TestCase):
             self.assertTrue(token_endpoint_refused(make()))
         for make in RETRYABLE:
             self.assertFalse(token_endpoint_refused(make()))
+
+    def test_only_an_unusable_grant_or_client_is_definitive_not_any_400(self):
+        # #246: RFC 6749 5.2 answers every refused request with 400; the error code says why.
+        self.assertTrue(token_endpoint_refused(oauth_error(400, 'invalid_grant')))
+        self.assertFalse(token_endpoint_refused(oauth_error(400, 'invalid_request')))
+        self.assertFalse(token_endpoint_refused(http_error(400, b'not json')))
+        self.assertFalse(token_endpoint_refused(oauth_error(401, 'invalid_request')))
 
 
 class Exchange:
@@ -89,7 +121,10 @@ class Exchange:
         self.calls.append(payload['grant_type'])
         if payload['grant_type'] == 'refresh_token':
             if self.renewal is not None:
-                raise self.renewal()
+                answer = self.renewal()
+                if isinstance(answer, BaseException):
+                    raise answer
+                return answer  # an HTTP 200 answer, usable or not (#246)
             return {'access_token': f'renewed-{len(self.calls)}', 'expires_in': 3600, 'scope': self.scope}
         return {'access_token': 'first', 'expires_in': 3600, 'refresh_token': 'refresh-1', 'scope': self.scope}
 
@@ -139,7 +174,7 @@ class DriveCase(unittest.TestCase):
 class DriveRenewalTest(DriveCase):
     def test_a_transient_renewal_failure_keeps_the_credential_and_a_later_request_recovers(self):
         for make in RETRYABLE:
-            with self.subTest(failure=type(make()).__name__):
+            with self.subTest(index=RETRYABLE.index(make)):
                 self.clock[0] += 7200
                 self.exchange.renewal = make
                 before = self.exchange.renewals()
@@ -158,7 +193,7 @@ class DriveRenewalTest(DriveCase):
 
     def test_a_definitive_refusal_requires_reauthentication(self):
         for make in DEFINITIVE:
-            with self.subTest(status=make().code):
+            with self.subTest(index=DEFINITIVE.index(make)):
                 self.setUp()
                 self.clock[0] += 7200
                 self.exchange.renewal = make
@@ -173,6 +208,34 @@ class DriveRenewalTest(DriveCase):
         self.transport()(DRIVE_API + '/files?q=x')
         self.assertEqual(self.exchange.renewals(), 1)
         self.assertEqual(self.requests, ['Bearer renewed-2'])
+
+    def test_an_unusable_renewal_answer_keeps_the_credential(self):
+        for make in UNUSABLE:
+            with self.subTest(index=UNUSABLE.index(make)):
+                self.clock[0] += 7200
+                ciphertext = self.stored_ciphertext()
+                self.exchange.renewal = make
+                with self.assertRaises(CalendarRenewalUnavailable):
+                    self.transport()(DRIVE_API + '/files?q=x')
+                self.assertEqual(self.requests, [])
+                self.assertIs(self.state(), ConnectorState.CONNECTED)
+                self.assertEqual(self.stored_ciphertext(), ciphertext)
+                self.exchange.renewal = None
+                self.transport()(DRIVE_API + '/files?q=x')
+                self.assertIs(self.state(), ConnectorState.CONNECTED)
+                self.requests.clear()
+
+    def test_a_401_whose_renewal_answer_is_unusable_keeps_the_credential(self):
+        for make in UNUSABLE:
+            with self.subTest(index=UNUSABLE.index(make)):
+                self.requests.clear()
+                self.replies = [DriveHTTPError(401)]
+                self.exchange.renewal = make
+                with self.assertRaises(CalendarRenewalUnavailable):
+                    self.transport()(DRIVE_API + '/files?q=x')
+                self.assertEqual(len(self.requests), 1)
+                self.assertIs(self.state(), ConnectorState.CONNECTED)
+                self.assertTrue(self.oauth.credential_renewable(OWNER))
 
     def test_a_token_well_before_expiry_is_not_renewed(self):
         self.clock[0] += 3600 - RENEWAL_MARGIN_SECONDS * 4
@@ -228,6 +291,47 @@ class DriveRenewalTest(DriveCase):
         self.exchange.scope = DRIVE_READONLY_SCOPE + ' https://www.googleapis.com/auth/drive'
         with self.assertRaises(CalendarReauthenticationRequired):
             self.transport()(DRIVE_API + '/files?q=x')
+        self.assertIs(self.state(), ConnectorState.REAUTH_REQUIRED)
+
+
+class ConnectionSlotRenewalTest(DriveCase):
+    """CONN-API slots: a 401 gets one renewal, the call is not resent, as a Calendar write (#8, #246)."""
+
+    def slot_token(self, exchange=None):
+        from personal_agent.connection_slots import _oauth_token
+        return _oauth_token(self.oauth, OWNER, DRIVE_GRANT, self.exchange if exchange is None else exchange)
+
+    def test_a_401_renews_the_credential_and_the_connection_stays_connected(self):
+        access_token, finish = self.slot_token()()
+        self.assertEqual(access_token, 'first')
+        finish(401)
+        self.assertEqual(self.exchange.renewals(), 1)
+        self.assertIs(self.state(), ConnectorState.CONNECTED)
+        self.assertEqual(self.slot_token()()[0], 'renewed-2')
+
+    def test_a_401_whose_renewal_gets_no_answer_keeps_the_credential(self):
+        for make in (RETRYABLE[0], lambda: http_error(503), lambda: oauth_error(400, 'invalid_request'),
+                     lambda: http_error(400, b'not json')) + UNUSABLE:
+            with self.subTest(index=make):
+                ciphertext = self.stored_ciphertext()
+                self.exchange.renewal = make
+                _token, finish = self.slot_token()()
+                finish(401)
+                self.assertIs(self.state(), ConnectorState.CONNECTED)
+                self.assertEqual(self.stored_ciphertext(), ciphertext)
+                self.assertTrue(self.oauth.credential_renewable(OWNER))
+
+    def test_a_401_whose_renewal_is_refused_requires_reauthentication(self):
+        self.exchange.renewal = DEFINITIVE[0]
+        _token, finish = self.slot_token()()
+        finish(401)
+        self.assertEqual(self.exchange.renewals(), 1)
+        self.assertIs(self.state(), ConnectorState.REAUTH_REQUIRED)
+
+    def test_without_an_exchange_a_401_requires_reauthentication(self):
+        _token, finish = self.slot_token(exchange=False)()
+        finish(401)
+        self.assertEqual(self.exchange.renewals(), 0)
         self.assertIs(self.state(), ConnectorState.REAUTH_REQUIRED)
 
 
@@ -290,14 +394,89 @@ class CalendarTransportRenewalTest(unittest.TestCase):
         self.assertEqual(self.exchange.renewals(), 1)
         self.assertTrue(self.oauth.credential_current(OWNER))
 
-    def test_a_write_refused_with_401_is_never_replayed(self):
+    def write(self):
+        return self.transport()('POST', CALENDAR_API + '/calendars/primary/events', {'summary': 'x'}, {})
+
+    def test_a_write_refused_with_401_renews_the_credential_and_is_never_replayed(self):
+        # #246: Google refused the write before executing it, so the credential is
+        # renewed once and the write is reported as not done -- never resent.
+        self.exchange.scope = ' '.join(CALENDAR_WRITE_SPEC.required_scopes)
         self.replies = [GoogleCalendarHTTPError(401)]
-        with self.assertRaises(GoogleCalendarHTTPError):
-            self.transport()('POST', CALENDAR_API + '/calendars/primary/events', {'summary': 'x'}, {})
+        with self.assertRaises(GoogleCalendarHTTPError) as caught:
+            self.write()
+        self.assertFalse(caught.exception.reauthentication_required)
         self.assertEqual(self.sent, [('POST', 'Bearer first')])
-        self.assertEqual(self.oauth.status(OWNER, write=True)['state'], 'reauth_required')
+        self.assertEqual(self.exchange.renewals(), 1)
+        self.assertEqual(self.oauth.status(OWNER, write=True)['state'], 'connected')
+        self.assertTrue(self.oauth.credential_current(OWNER, write=True))
         # The separately authorized read grant is untouched.
         self.assertEqual(self.oauth.status(OWNER)['state'], 'connected')
+        # The next write the AI chooses to send uses the renewed token.
+        self.write()
+        self.assertEqual(self.sent[-1], ('POST', 'Bearer renewed-2'))
+
+    def test_a_write_401_whose_renewal_is_refused_requires_reauthentication(self):
+        self.replies = [GoogleCalendarHTTPError(401)]
+        self.exchange.renewal = DEFINITIVE[0]
+        with self.assertRaises(GoogleCalendarHTTPError) as caught:
+            self.write()
+        self.assertTrue(caught.exception.reauthentication_required)
+        self.assertEqual(self.sent, [('POST', 'Bearer first')])
+        self.assertEqual(self.exchange.renewals(), 1)
+        self.assertEqual(self.oauth.status(OWNER, write=True)['state'], 'reauth_required')
+        self.assertEqual(self.oauth.status(OWNER)['state'], 'connected')
+
+    def test_a_write_401_whose_renewal_gets_no_answer_keeps_the_credential(self):
+        for make in (RETRYABLE[0], lambda: oauth_error(400, 'invalid_request')) + UNUSABLE:
+            with self.subTest(failure=repr(make())):
+                self.sent.clear()
+                self.replies = [GoogleCalendarHTTPError(401)]
+                self.exchange.renewal = make
+                with self.assertRaises(GoogleCalendarHTTPError) as caught:
+                    self.write()
+                self.assertFalse(caught.exception.reauthentication_required)
+                self.assertEqual(self.sent, [('POST', 'Bearer first')])
+                self.assertEqual(self.oauth.status(OWNER, write=True)['state'], 'connected')
+                self.assertTrue(self.oauth.credential_renewable(OWNER, write=True))
+
+    def test_the_connector_reports_a_write_401_with_a_kept_credential_as_not_done(self):
+        # End to end: the connector must not turn the 401 into an expired connection.
+        from personal_agent.calendar import CalendarError
+        self.exchange.scope = ' '.join(CALENDAR_WRITE_SPEC.required_scopes)
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        calendar = CalendarConnector(QuickStore(temp.name), GoogleCalendar(self.transport()), registry=self.registry)
+        event = {'summary': 'review', 'start': '2026-09-22T10:00:00+09:00', 'end': '2026-09-22T11:00:00+09:00',
+                 'timezone': 'Asia/Seoul'}
+        draft = calendar.draft_create(event, OWNER)
+        approval = calendar.approve(draft['id'], OWNER)['approval_id']
+        self.replies = [GoogleCalendarHTTPError(401)]
+        with self.assertRaises(CalendarError) as caught:
+            calendar.create(draft['id'], approval, OWNER)
+        self.assertEqual((caught.exception.reason, caught.exception.effect), ('token-rejected', 'none'))
+        self.assertEqual([method for method, _ in self.sent], ['POST'])
+        self.assertEqual(self.oauth.status(OWNER, write=True)['state'], 'connected')
+        self.assertEqual(self.oauth.status(OWNER)['state'], 'connected')
+        # A refused renewal still ends in an expired connection, as before.
+        draft = calendar.draft_create({**event, 'summary': 'second'}, OWNER)
+        approval = calendar.approve(draft['id'], OWNER)['approval_id']
+        self.replies = [GoogleCalendarHTTPError(401)]
+        self.exchange.renewal = DEFINITIVE[0]
+        with self.assertRaises(CalendarError) as caught:
+            calendar.create(draft['id'], approval, OWNER)
+        self.assertEqual((caught.exception.reason, caught.exception.effect), ('scope-expired', 'none'))
+        self.assertEqual(self.oauth.status(OWNER, write=True)['state'], 'reauth_required')
+
+    def test_an_unusable_renewal_answer_keeps_the_calendar_connected(self):
+        self.clock[0] += 7200
+        for make in UNUSABLE:
+            with self.subTest(index=UNUSABLE.index(make)):
+                self.exchange.renewal = make
+                with self.assertRaises(CalendarRenewalUnavailable):
+                    self.transport()('GET', CALENDAR_API + '/calendars/primary/events', None, {})
+                self.assertEqual(self.sent, [])
+                self.assertEqual(self.oauth.status(OWNER)['state'], 'connected')
+                self.assertTrue(self.oauth.credential_renewable(OWNER))
 
     def test_a_transient_renewal_failure_keeps_the_calendar_connected(self):
         self.clock[0] += 7200
@@ -419,6 +598,27 @@ class GmailRenewalTest(unittest.TestCase):
         self.assertEqual(self.gmail.search(OWNER, 'from:me'), ())
         self.assertEqual(self.calls, ['Bearer first', 'Bearer renewed-2'])
         self.assertEqual((self.exchange.renewals(), self.state()), (1, 'connected'))
+
+    def test_an_unusable_renewal_answer_keeps_the_credential(self):
+        self.clock[0] += 7200
+        for make in UNUSABLE:
+            with self.subTest(index=UNUSABLE.index(make)):
+                self.exchange.renewal = make
+                with self.assertRaises(GmailRenewalUnavailable):
+                    self.gmail.search(OWNER, 'from:me')
+                self.assertEqual((self.calls, self.state()), ([], 'connected'))
+                self.assertTrue(self.gmail.credential_renewable(OWNER))
+
+    def test_a_401_whose_renewal_answer_is_unusable_keeps_the_credential(self):
+        for make in UNUSABLE:
+            with self.subTest(index=UNUSABLE.index(make)):
+                self.calls.clear()
+                self.replies = [{'status_code': 401}]
+                self.exchange.renewal = make
+                with self.assertRaises(GmailRenewalUnavailable):
+                    self.gmail.search(OWNER, 'from:me')
+                self.assertEqual((len(self.calls), self.state()), (1, 'connected'))
+                self.assertTrue(self.gmail.credential_renewable(OWNER))
 
     def test_a_second_401_requires_reauthentication_without_a_loop(self):
         self.replies = [{'status_code': 401}, {'status_code': 401}, {'status_code': 401}]

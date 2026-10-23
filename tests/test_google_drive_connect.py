@@ -4,6 +4,7 @@ Every provider and HTTP interaction is injected; nothing here reaches Google
 or the macOS Keychain.
 """
 
+import io
 import json
 import pathlib
 import tempfile
@@ -232,7 +233,9 @@ class DriveTransportTest(DriveOAuthCase):
         self.clock[0] += 7200
 
         def refused(payload):
-            raise HTTPError('https://oauth2.googleapis.com/token', 400, 'Bad Request', {}, None)
+            # #246: only a named grant refusal is definitive, not any 400.
+            raise HTTPError('https://oauth2.googleapis.com/token', 400, 'Bad Request', {},
+                            io.BytesIO(b'{"error": "invalid_grant"}'))
 
         transport = drive_transport(self.oauth, OWNER, refused, opener=lambda url, headers: b'{}')
         with self.assertRaises(CalendarReauthenticationRequired):

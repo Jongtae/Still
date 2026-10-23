@@ -36,6 +36,7 @@ from .connector_http import (
     LOCAL_KEY_UNAVAILABLE,
     RENEWAL_MARGIN_SECONDS,
     token_endpoint_refused,
+    token_response_unusable,
 )
 from .connector_contract import (
     ConnectorContractError,
@@ -856,6 +857,9 @@ class GmailConnector:
                 # escape; keep only whether Google refused the grant.
                 if token_endpoint_refused(error):
                     raise GmailError("token_refresh_failed") from None
+                raise GmailRenewalUnavailable() from None
+            if token_response_unusable(response):
+                # #246: an answer with no usable token says nothing about the grant.
                 raise GmailRenewalUnavailable() from None
             if isinstance(response, dict) and response.get("scope") is None:
                 response = {**response, "scope": GMAIL_READONLY_SCOPE}
