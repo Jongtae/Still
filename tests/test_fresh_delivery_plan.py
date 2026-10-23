@@ -336,6 +336,12 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     evidence = items_of(current)["WORKPLACE-01"]["completed_substeps"]["CLOUD-AI-01"]
     assert (evidence["issue"], evidence["pull_request"]) == (211, 230)
     assert evidence["merge_commit"].startswith("4c49a2f")
+    # #256 review: the files #230 changed outside the activated list are an explicit, auditable amendment.
+    amendment = program["allowed_authority_amendment"]
+    assert (amendment["substep"], amendment["pull_request"]) == ("CLOUD-AI-01", 230)
+    assert amendment["original"] != program["allowed_authority"]
+    assert all(name in program["allowed_authority"] for name in amendment["files"])
+    assert "cloud_engines.py" not in amendment["original"]
     assert "Codex review of the exact final head" in program["escalated_review"]
     items = {item["id"]: item for item in current["iterations"]}
     assert {items[name]["issue"] for name in program["ordered_substeps"]} == {208, 209, 210, 211, 212, 213, 214}
