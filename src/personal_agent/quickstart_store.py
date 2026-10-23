@@ -394,7 +394,8 @@ class QuickStore:
         except FileNotFoundError:
             return None
         ledger=json.loads(text)
-        if not isinstance(ledger,dict) or not isinstance(ledger.get('key'),str) or not isinstance(ledger.get('marks'),list):
+        if (not isinstance(ledger,dict) or not isinstance(ledger.get('key'),str) or not isinstance(ledger.get('marks'),list)
+                or any(not isinstance(mark,list) or len(mark)!=3 for mark in ledger['marks'])):
             raise ValueError('the retired-secret ledger is unreadable')
         bytes.fromhex(ledger['key'])
         return ledger
@@ -412,17 +413,47 @@ class QuickStore:
         """Record one retired secret value as ``[length, hmac]`` (caller holds the secrets lock)."""
         if self._redacted_secret_key(key):self._retire_values_locked([old])
 
+    #: Characters of a retired value whose digest locates candidate spans (every retired value is longer).
+    RETIRED_PREFIX_CHARS=8
+
     def _retire_values_locked(self, olds):
-        olds=[old for old in olds or () if isinstance(old,str) and len(old)>=8]
+        """Record each retired value as ``[length, digest, prefix digest]`` (caller holds the secrets lock).
+
+        The prefix digest lets a scan locate candidates with one HMAC per position, however many values
+        and lengths are retired (Codex review on #259); the full digest confirms a match.
+        """
+        olds=[old for old in olds or () if isinstance(old,str) and len(old)>=self.RETIRED_PREFIX_CHARS]
         if not olds:return
         ledger=self._read_retired() or {'key':secrets.token_hex(32),'marks':[]}
-        marks=[item for item in ledger.get('marks') or () if isinstance(item,list) and len(item)==2]
+        key=bytes.fromhex(ledger['key'])
+        marks=[item for item in ledger.get('marks') or () if isinstance(item,list) and len(item)==3]
         for old in olds:
-            mark=[len(old),hmac.new(bytes.fromhex(ledger['key']),old.encode(),hashlib.sha256).hexdigest()]
-            marks=[item for item in marks if item!=mark]+[mark]
+            mark=[len(old),hmac.digest(key,old.encode(),'sha256').hex(),
+                  hmac.digest(key,old[:self.RETIRED_PREFIX_CHARS].encode(),'sha256').hex()]
+            marks=[item for item in marks if item[1]!=mark[1]]+[mark]
         # Kept for as long as a message can be recalled (Codex review on #259): never evicted.
         ledger['marks']=marks
         self.write_private(self.retired_secrets_path,json.dumps(ledger))
+
+    @classmethod
+    def _retired_spans(cls, text, ledger):
+        """``[(start, end)]`` of non-overlapping retired values in ``text``, longest first at each position."""
+        if not ledger or not ledger.get('marks'):return []
+        key=bytes.fromhex(ledger['key'])
+        by_prefix={}
+        for length,digest,prefix in ledger['marks']:by_prefix.setdefault(prefix,[]).append((int(length),digest))
+        for candidates in by_prefix.values():candidates.sort(reverse=True)
+        spans,start,width=[],0,cls.RETIRED_PREFIX_CHARS
+        while start<=len(text)-width:
+            candidates=by_prefix.get(hmac.digest(key,text[start:start+width].encode(),'sha256').hex())
+            matched=next((length for length,digest in candidates or ()
+                          if start+length<=len(text)
+                          and hmac.digest(key,text[start:start+length].encode(),'sha256').hex()==digest),None)
+            if matched:
+                spans.append((start,start+matched));start+=matched
+            else:
+                start+=1
+        return spans
 
     def swap_secret(self, key, value, retire):
         """Replace (or with ``value`` None remove) one secret, retiring ``retire(old)``'s plaintexts first,
@@ -472,38 +503,21 @@ class QuickStore:
             ledger=self._read_retired()
         return values,ledger
 
-    @staticmethod
-    def redact_secret_spans(text, values, ledger):
+    @classmethod
+    def redact_secret_spans(cls, text, values, ledger):
         """``text`` with every current value and every span matching a retired digest replaced by ``[redacted]``."""
         text=str(text or '')
         for value in values:text=text.replace(value,'[redacted]')
-        if not ledger or not ledger.get('marks'):return text
-        key=bytes.fromhex(ledger['key'])
-        by_length={}
-        for length,digest in ledger['marks']:by_length.setdefault(int(length),set()).add(digest)
-        for length in sorted(by_length,reverse=True):
-            digests,start,out=by_length[length],0,[]
-            while start<=len(text)-length:
-                if hmac.digest(key,text[start:start+length].encode(),'sha256').hex() in digests:
-                    out.append(text[:start]+'[redacted]');text=text[start+length:];start=0
-                    continue
-                start+=1
-            text=''.join(out)+text
-        return text
+        out,last=[],0
+        for start,end in cls._retired_spans(text,ledger):
+            out.append(text[last:start]+'[redacted]');last=end
+        return ''.join(out)+text[last:]
 
     def holds_retired_secret(self, text):
         """Whether ``text`` contains any retired secret value, by its keyed digest (#221)."""
-        text=str(text or '')
         with self.secret_lock:
             ledger=self._read_retired()
-        if not ledger or not ledger.get('marks'):return False
-        key=bytes.fromhex(ledger['key'])
-        by_length={}
-        for length,digest in ledger['marks']:by_length.setdefault(int(length),set()).add(digest)
-        for length,digests in by_length.items():
-            for start in range(0,len(text)-length+1):
-                if hmac.digest(key,text[start:start+length].encode(),'sha256').hex() in digests:return True
-        return False
+        return bool(self._retired_spans(str(text or ''),ledger))
 
     def secret_items(self, prefix):
         """Host-only snapshot for namespaced secret redaction, never a model tool."""

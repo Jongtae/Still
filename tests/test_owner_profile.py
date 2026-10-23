@@ -522,6 +522,16 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         record = self.store.turn_provenance(job)
         self.assertEqual({key: record[key] for key in record if key.startswith('field')}, {f'field{i}': i for i in range(8)})
 
+    def test_the_retired_scan_costs_one_digest_per_position_whatever_the_ledger(self):
+        """Codex review on #259: 300 retired values of 300 lengths stay cheap on a 12,000-character text."""
+        import time
+        self.store.retire_secret_values([f'retired-{"x" * (8 + index)}' for index in range(300)])
+        text = '가나다라 ' * 2400 + ' retired-' + 'x' * 120 + ' tail'
+        started = time.perf_counter()
+        clean = self.store.redact_secret_spans(text, (), self.store.retired_secret_ledger())
+        self.assertLess(time.perf_counter() - started, 1.0)
+        self.assertTrue(clean.endswith(' [redacted] tail'))
+
     def test_the_owners_earlier_words_are_bounded_in_bytes(self):
         from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
         self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])
