@@ -515,6 +515,11 @@ class PublicPageReader:
                     'sources':[current]}
         raise ProviderError('공개 페이지를 읽지 못했습니다.')
 
+def _check_coordinates(latitude, longitude):
+    for value,limit in ((latitude,90),(longitude,180)):
+        if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or not -limit<=value<=limit:
+            raise ValueError('날씨를 조회할 위치가 올바르지 않습니다.')
+
 #: Where ``weather`` sends a city (and country code) to find its coordinates (#167: named in the information-use audit).
 GEOCODING_SEARCH='https://geocoding-api.open-meteo.com/v1/search'
 
@@ -554,15 +559,25 @@ class LocalTools:
         place=places[0]
         if len({(p.get('country_code'),p.get('admin1')) for p in places})>1:
             raise ValueError('같은 이름의 지역이 여러 곳입니다. 국가와 지역을 더 구체적으로 알려 주세요: '+', '.join(str(p.get('name'))+' '+str(p.get('admin1',''))+' '+str(p.get('country','')) for p in places[:3]))
-        return self.forecast(place['latitude'],place['longitude'],{k:place.get(k) for k in ('name','country','admin1','latitude','longitude')})
+        # #233: the city already went to the geocoding host, so a refusal of its coordinates is not "not sent".
+        return self._forecast(place['latitude'],place['longitude'],{k:place.get(k) for k in ('name','country','admin1','latitude','longitude')})
 
     def forecast(self, latitude, longitude, location=None):
+        """The forecast for a caller's own coordinates (a resolved location ref, #627).
+
+        Coordinates that are not valid are refused before any request, so the
+        refusal says ``ran: false`` (#233).
+        """
+        try:_check_coordinates(latitude,longitude)
+        except ValueError as exc:raise _not_sent(exc)
+        return self._forecast(latitude,longitude,location)
+
+    def _forecast(self, latitude, longitude, location=None):
         """The Open-Meteo forecast request and serialization shared by the city
         path and a resolved location ref (#627): same endpoint, parameters,
-        timeout, timestamps and model-derived scope."""
-        for value,limit in ((latitude,90),(longitude,180)):
-            if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or not -limit<=value<=limit:
-                raise _not_sent(ValueError('날씨를 조회할 위치가 올바르지 않습니다.'))
+        timeout, timestamps and model-derived scope.  On the city path it
+        follows the geocoding request, so its refusal is never marked."""
+        _check_coordinates(latitude,longitude)
         args={'latitude':latitude,'longitude':longitude,'current':'temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m','daily':'temperature_2m_max,temperature_2m_min,precipitation_probability_max','forecast_days':3,'timezone':'auto'}
         url='https://api.open-meteo.com/v1/forecast?'+urlencode(args)
         data=request_json(url,None,timeout=15)

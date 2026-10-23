@@ -613,6 +613,47 @@ class NetworkLocalRefusals(HandOff):
                 self.assertEqual(agent_runtime.ran_field(exc), {})
                 self.assertTrue(attempted.get('outbound_matches'))
 
+    def test_a_city_weather_whose_geocoding_answer_is_refused_is_an_attempt(self):
+        from personal_agent.local_tools import LocalTools
+        caps = Capabilities(self.store, None, {}, '', self.job, self.record, network=LocalTools())
+        sent = []
+
+        def geocoding(url, body, timeout=None):
+            sent.append(url)
+            return {'results': [{'name': MEMBER, 'latitude': 999, 'longitude': 0, 'population': 1}]}
+        with mock.patch('personal_agent.local_tools.request_json', geocoding):
+            exc, attempted = self.execute(caps, 'weather', {'city': MEMBER})
+        self.assertEqual(len(sent), 1, 'the city went to the geocoding host')
+        self.assertEqual(agent_runtime.ran_field(exc), {}, 'refused after a request of this call')
+        self.assertEqual(attempted['outbound_matches'], [{'source': 'memory', 'key': 'member-number',
+                                                          'destination': 'geocoding-api.open-meteo.com', 'tool': 'weather'}])
+
+    def test_a_forecast_for_bad_coordinates_of_the_callers_own_is_refused_before_sending(self):
+        from personal_agent.local_tools import LocalTools
+        with mock.patch('personal_agent.local_tools.request_json', side_effect=AssertionError('never sent')):
+            for call_it in (lambda tools: tools.forecast(999, 0),
+                            lambda tools: tools.execute({'tool': 'weather', 'latitude': 0, 'longitude': float('nan')})):
+                with self.assertRaises(ValueError) as caught:
+                    call_it(LocalTools())
+                self.assertEqual(agent_runtime.ran_field(caught.exception), {'ran': False})
+
+    def test_a_retry_refused_before_its_own_request_follows_a_sent_attempt(self):
+        addresses = iter(['93.184.216.34', '10.0.0.5'])
+
+        def resolver(host, port, type=None, timeout=None):
+            return [(None, None, None, None, (next(addresses), port))]
+
+        class Opener:
+            def open(self, request, timeout=None):
+                raise OSError('connection reset after the request was written')
+        from personal_agent.local_tools import LocalTools, PublicPageReader
+        network = LocalTools(page_reader=PublicPageReader(opener=Opener(), resolver=resolver))
+        caps = Capabilities(self.store, None, {}, '', self.job, self.record, network=network, public_page_scope=[self.PAGE])
+        exc, attempted = self.execute(caps, 'public_page_read', {'url': self.PAGE})
+        self.assertIn('개인 네트워크', str(exc), 'the retry was refused before its own request')
+        self.assertEqual(agent_runtime.ran_field(exc), {}, 'the first attempt was sent')
+        self.assertTrue(attempted.get('outbound_matches'))
+
     # The inherited cases already ran in ``HandOff``.
     test_out_of_scope_page_reads_carrying_memory_record_no_attempt = None
     test_the_same_read_failing_after_it_was_sent_is_still_shown_as_an_attempt = None

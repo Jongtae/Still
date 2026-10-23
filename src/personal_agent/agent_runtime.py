@@ -3225,7 +3225,12 @@ class Capabilities:
    self.record(plan['tool'],'failed',json.dumps({'scope':'transient-retry','host_action':plan['tool'],'code':code,
                                                  'retry':retry,'effect':'none','error':TRANSIENT_READ_TEXT},ensure_ascii=False))
    self.budget.spend_attempt()
-   result=self.network.execute(plan,**extra)
+   try:result=self.network.execute(plan,**extra)
+   except BaseException as again:
+    # #233: the first attempt was sent (it was not refused before sending), so a retry the network
+    # refuses before its own request still follows a request this call made: it stays an attempt.
+    if getattr(exc,'ran',None) is not False:again.__dict__.pop('ran',None)
+    raise
   if plan.get('tool')=='web_search':self._keep_search_results(result)
   return result
  def _keep_search_results(self,result):
