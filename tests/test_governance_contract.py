@@ -186,6 +186,56 @@ def test_required_validate_runs_the_whole_linux_suite() -> None:
     assert suite in workflow and suite in linux
     assert "--ignore" not in workflow and "--deselect" not in workflow
     assert "AGENTOS_REAL_BROWSER_TESTS" not in workflow
+    # #260: only a text-only pull request may skip it; a missing or unknown scope runs it.
+    full_step = workflow.split("- name: Run the full test suite (parallel)", 1)[1].split("- name:", 1)[0]
+    assert "if: steps.scope.outputs.suite != 'text'" in full_step
+    scope_step = workflow.split("- name: Decide test scope", 1)[1].split("- name:", 1)[0]
+    assert 'git show "$BASE_SHA:scripts/ci/test_scope.py"' in scope_step, "the scope script comes from the base"
+    assert 'echo "suite=full"' in scope_step, "a push to main runs everything"
+
+
+def test_the_test_scope_is_full_unless_every_changed_path_is_text(tmp_path) -> None:
+    """#260: code, dependency, workflow or unknown paths run the whole suite; text runs the text readers."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("test_scope", ROOT / "scripts/ci/test_scope.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    for paths in (["src/personal_agent/x.py"], ["tests/test_x.py"], ["scripts/ci/test_scope.py"], ["uv.lock"],
+                  ["pyproject.toml"], [".github/workflows/validate.yml"], ["docs/a.en.md", "src/x.py"],
+                  ["install.sh"], [".gitignore"], [], [""]):
+        assert module.scope(paths) == "full", paths
+    for paths in (["docs/a.en.md"], ["README.md", "docs/i18n/README.ko.md"], ["delivery-plan.yaml"],
+                  [".github/ISSUE_TEMPLATE/bug.md"], ["AGENTS.md", "LICENSE"]):
+        assert module.scope(paths) == "text", paths
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/test_reads_docs.py").write_text("PATH = 'docs/x.en.md'\n")
+    (tmp_path / "tests/test_names_plan.py").write_text("open('roadmap.yaml')\n")
+    (tmp_path / "tests/test_pure.py").write_text("assert 1 + 1 == 2\n")
+    assert module.text_tests(["roadmap.yaml"], tmp_path) == ["tests/test_names_plan.py", "tests/test_reads_docs.py"]
+    # Codex review on #261: a test that reads text only through a local helper (directly or via another helper).
+    (tmp_path / "tests/plan_helpers.py").write_text("def load():\n    return open('delivery-plan.yaml').read()\n")
+    (tmp_path / "tests/more_helpers.py").write_text("from plan_helpers import load\n")
+    (tmp_path / "tests/test_via_helper.py").write_text("from more_helpers import load\n\ndef test_x():\n    load()\n")
+    assert "tests/test_via_helper.py" in module.text_tests(["docs/a.en.md"], tmp_path)
+    assert "tests/test_pure.py" not in module.text_tests(["docs/a.en.md"], tmp_path)
+    assert "tests/test_fu1_program_governance.py" in module.text_tests(["docs/history/predecessor-delivery-plan.yaml"])
+    selected = set(module.text_tests(["docs/a.en.md"]))
+    readers = {f"tests/{path.name}" for path in (ROOT / "tests").glob("test_*.py")
+               if any(marker in path.read_text(encoding="utf-8") for marker in module.TEXT_MARKERS)}
+    assert readers <= selected and "tests/test_governance_contract.py" in selected
+    # Codex review on #261: renaming code into a text path still reports the code path.
+    import subprocess
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src/foo.py").write_text("x = 1\n" * 20)
+    git = lambda *args: subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout
+    git("init", "-q"); git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "root")
+    git("add", "."); git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "base")
+    base = git("rev-parse", "HEAD").strip()
+    (repo / "docs").mkdir()
+    git("mv", "src/foo.py", "docs/foo.md"); git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "move")
+    paths = module.changed(base, "HEAD", repo)
+    assert "src/foo.py" in paths and module.scope(paths) == "full"
 
 
 def test_the_full_suite_runs_in_parallel_and_real_browser_classes_run_serially() -> None:

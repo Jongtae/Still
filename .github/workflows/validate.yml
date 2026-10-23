@@ -83,8 +83,36 @@ jobs:
             tests/test_verify_src_layout.py \
             tests/test_release_script.py
 
-      # #234: the whole test suite on every PR, with full-validate's Linux invocation (#135).
-      # The real-WebKit classes skip on Linux; they run in the nightly/dispatched
-      # full-validate on macOS.
+      # #260: a pull request whose every changed path is repository text runs the tests that read
+      # text; anything else, and every push to main, runs the whole suite. The scope script comes
+      # from the protected base revision, so a pull request cannot loosen its own scope.
+      - name: Decide test scope
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ]; then echo "suite=full" >> "$GITHUB_OUTPUT"; exit 0; fi
+          trusted_scope="$RUNNER_TEMP/test_scope.py"
+          if git cat-file -e "$BASE_SHA:scripts/ci/test_scope.py" 2>/dev/null; then
+            git show "$BASE_SHA:scripts/ci/test_scope.py" > "$trusted_scope"
+          else
+            # Bootstrap on the PR that introduces the script; later PRs use the base revision.
+            cp scripts/ci/test_scope.py "$trusted_scope"
+          fi
+          python3 "$trusted_scope" --base "$BASE_SHA" --head "$HEAD_SHA" --root "$GITHUB_WORKSPACE" | tee -a "$GITHUB_OUTPUT"
+
+      # #234: the whole test suite, with full-validate's Linux invocation (#135). The real-WebKit
+      # classes skip on Linux; they run in the nightly/dispatched full-validate on macOS.
       - name: Run the full test suite (parallel)
+        if: steps.scope.outputs.suite != 'text'
         run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 tests
+
+      - name: Run the tests that read repository text (parallel)
+        if: steps.scope.outputs.suite == 'text'
+        env:
+          TEXT_TESTS: ${{ steps.scope.outputs.tests }}
+        run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 $TEXT_TESTS
