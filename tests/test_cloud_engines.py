@@ -668,6 +668,25 @@ class ServiceWork(unittest.TestCase):
                          ('bedrock', 'Amazon Bedrock (us-east-1)'))
         self.assertNotIn(BEDROCK_TOKEN, json.dumps(Peek.seen))
 
+    def test_a_call_that_never_launched_is_given_back(self):
+        """#211 review: a local preflight failure after admission does not spend the cloud limit."""
+        engine = _Engine(fail=ExecutionError('CLI를 찾지 못했습니다.', failure_class='cli-not-found', meta={'launched': False}))
+        service = self.service(engine)
+        self.configure(service, cap=5)
+        self.store.enqueue('hello', 'k1')
+        self.assertTrue(service.run_one())
+        self.assertGreaterEqual(len(engine.launches), 1)
+        self.assertEqual(service.cloud_engines.used_today('claude-code', 'bedrock'), 0)
+
+    def test_a_call_that_launched_and_failed_still_counts(self):
+        engine = _Engine(fail=ExecutionError('엔진이 실패했습니다.', failure_class='engine-failed',
+                                             meta={'launched': True, 'cloud_provider': 'bedrock'}))
+        service = self.service(engine)
+        self.configure(service, cap=5)
+        self.store.enqueue('hello', 'k1')
+        self.assertTrue(service.run_one())
+        self.assertEqual(service.cloud_engines.used_today('claude-code', 'bedrock'), len(engine.launches))
+
     def test_an_admitted_work_turn_counts_once(self):
         engine = _Engine()
         service = self.service(engine)

@@ -334,6 +334,22 @@ class CloudEngines:
         calls = entry.get('calls')
         return calls if isinstance(calls, int) and not isinstance(calls, bool) else 0
 
+    def release(self, launch):
+        """Give back one admitted call that never launched (a local preflight failed first), today only."""
+        key, day = f'{launch.engine}:{launch.provider}', self._day()
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT value FROM config WHERE key=?', (USAGE_KEY,)).fetchone()
+            try:
+                usage = json.loads(row['value']) if row else {}
+            except (TypeError, ValueError):
+                return
+            entry = usage.get(key) if isinstance(usage, dict) and isinstance(usage.get(key), dict) else None
+            if not entry or entry.get('day') != day or not isinstance(entry.get('calls'), int) or entry['calls'] < 1:
+                return
+            usage[key] = {'day': day, 'calls': entry['calls'] - 1}
+            db.execute('UPDATE config SET value=? WHERE key=?', (json.dumps(usage), USAGE_KEY))
+
     def admit(self, launch):
         """Count one model launch against the profile's daily cap, or refuse it before anything starts."""
         key, day = f'{launch.engine}:{launch.provider}', self._day()

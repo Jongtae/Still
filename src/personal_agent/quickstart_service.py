@@ -11029,6 +11029,11 @@ class AgentService:
                     # The Work's browser session ends with the run (as on the direct route).
                     run.capabilities.close_browser()
         except (ExecutionError,EngineGatewayError) as exc:
+            # #211: an admitted cloud call whose CLI never launched (a local preflight failed first)
+            # is given back, so local failures never spend the owner's cloud limit.
+            if cloud is not None and (getattr(exc,'meta',None) or {}).get('launched') is False:
+                try:self.cloud_engines.release(cloud)
+                except Exception:LOG.warning('cloud call reservation not released job=%s',job['id'])
             diagnostics=exc.diagnostics() if isinstance(exc,ExecutionError) else {}
             if run.image_inputs and diagnostics.get('failure_class')=='unsupported-image-input':
                 self.record_photo_attempt(job['id'],attempt_id=photo_attempt_id,status='unsupported',
