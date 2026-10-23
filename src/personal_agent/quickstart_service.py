@@ -9822,13 +9822,15 @@ class AgentService:
         """The owner's Settings switch for work mode (#208); the local endpoint is its only caller.
 
         Turning it on also ends what is already open to the outside: a live
-        phone input or remote login tunnel and a family setup's tunnel.  Turning
+        phone input or remote login tunnel, a family setup's tunnel and every
+        queued Telegram reply and notification (cancelled, never sent).  Turning
         it off restores personal mode; nothing refused while it was on is run
         again, and the Telegram status it paused is cleared for the next poll to set.
         """
         body=body if isinstance(body,dict) else {}
         current=work_mode.set_enabled(self.store,body.get('enabled'),surface='settings')
         if current['enabled']:
+            self.telegram_surface.cancel_pending_deliveries()
             self.end_tunnel_sessions('work_mode')
             from . import family_setup
             for row in self.store.config(family_setup.PENDING_KEY,[]) or []:

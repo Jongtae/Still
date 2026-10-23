@@ -1193,6 +1193,9 @@ class TelegramSurface(ConversationSurface):
             return
         updates=service.telegram.get_updates(cfg.get('cursor',0), timeout=1)
         for update in sorted(updates,key=lambda u:u.get('update_id',0)):
+            # #208 review: work mode switched on while this poll was in flight: nothing more is
+            # ingested and the cursor stays, so Telegram keeps these for after work mode.
+            if work_mode.active(service.store):return
             control=None
             if isinstance(update.get('callback_query'),dict):
                 control=lambda:service.ingest_callback(update['callback_query'],cfg['generation'])
@@ -1217,6 +1220,19 @@ class TelegramSurface(ConversationSurface):
             else:service.ingest_update(update,cfg['generation'])
         service.retry_family_handovers()
         service.settle_expired_telegram_photo_albums()
+
+    def cancel_pending_deliveries(self):
+        """#208 review: cancel every queued Telegram reply and notification as work mode goes on.
+
+        Done at the switch, not left to the next delivery tick, so turning work
+        mode off again before that tick cannot send them.  Returns the counts.
+        """
+        service=self.service
+        with service.lock,service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            replies=db.execute("UPDATE jobs SET delivery='cancelled' WHERE delivery='pending' AND channel LIKE 'telegram:%'").rowcount
+            notices=db.execute("UPDATE telegram_notifications SET state='cancelled' WHERE state='queued'").rowcount
+        return replies,notices
 
     def settle_expired_telegram_photo_albums(self, now=None):
         """Release persisted album Works after their short update-collection window."""

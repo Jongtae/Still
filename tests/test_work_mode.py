@@ -478,6 +478,31 @@ class Telegram(WorkModeCase):
         self.assertEqual(self.calls, [])
         self.assertEqual(self.store.job(job_id)['delivery'], 'cancelled', 'never sent later either')
 
+    def test_switching_on_cancels_queued_deliveries_even_if_it_is_switched_off_before_the_next_tick(self):
+        job_id = self.store.enqueue('질문', 'work-mode-queued', f'telegram:{GENERATION}', CHAT)
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded',response='company answer',delivery='pending' WHERE id=?",
+                       (job_id,))
+        self.store.queue_notification(job_id, CHAT, GENERATION, 'preparation_scheduled')
+        self.service.set_work_mode({'enabled': True})
+        self.service.set_work_mode({'enabled': False})
+        self.service.deliver_one()
+        self.service.deliver_notification()
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.store.job(job_id)['delivery'], 'cancelled')
+        self.assertIsNone(self.store.next_notification())
+
+    def test_updates_from_a_poll_in_flight_at_the_switch_are_not_ingested(self):
+        def transport(url, body, headers=None, timeout=None):
+            self.calls.append(url.rsplit('/', 1)[-1])
+            self.on()  # the switch lands while getUpdates is still open
+            return {'ok': True, 'result': [{'update_id': 7, 'message': {
+                'message_id': 1, 'from': {'id': CHAT}, 'chat': {'id': CHAT, 'type': 'private'}, 'text': '이거 해줘'}}]}
+        self.service.telegram_transport = transport
+        self.service.poll_telegram()
+        self.assertEqual(self.store.jobs(), [], 'no Work was created')
+        self.assertEqual(self.store.config('telegram')['cursor'], 0, 'Telegram keeps the update for later')
+
     def test_telegram_cannot_be_enabled(self):
         self.store.put('telegram', {})
         self.on()
