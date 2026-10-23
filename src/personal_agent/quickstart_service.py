@@ -2775,6 +2775,9 @@ class AgentService:
         zone=ZoneInfo(resolve_local_timezone(self.store))
         lines,used=[],len(OWNER_WORDS_HEADING.encode())
         for row in rows:
+            # Codex review on #227: a message holding a secret that was since replaced or removed is never
+            # recalled - the current redaction no longer knows that value.
+            if self.store.holds_retired_secret(row['content']):continue
             # Codex review on #227: the day the owner sent it, in the owner's zone.
             day=datetime.fromtimestamp(float(row['created']),zone).date().isoformat()
             # Codex review on #227: redacted before it is clipped, so a cut can never keep part of a stored secret.
@@ -5627,6 +5630,10 @@ class AgentService:
         try:
             orchestration=self.work_orchestration(job,prompt,list(stored),sections,budget,document_jobs=document_jobs,
                                                   can_ask_location=self.location_requester(job) is not None)
+            if orchestration and not (self.store.turn_provenance(job['id']) or {}).get('owner_information'):
+                # Codex review on #227: the early plan reads these sections even when the Work is parked
+                # before its worker turn records them, so the information-use audit records them now.
+                self.record_turn_provenance(job['id'],owner_information=self.owner_information_refs(sections))
             return orchestration.early_plan() if orchestration else None
         finally:
             if own_budget and budget.ledger is not None:budget.ledger.pause()

@@ -352,6 +352,7 @@ class QuickStore:
                 fcntl.flock(lock_fd,fcntl.LOCK_EX)
                 values=json.loads(self.secret_path.read_text()) if self.secret_path.exists() else {}
                 if value is not None:
+                    if values.get(key)!=value:self._retire_locked(values,values.get(key))
                     values[key]=value
                     self.write_private(self.secret_path,json.dumps(values))
                 elif create is not None and not values.get(key):
@@ -370,12 +371,68 @@ class QuickStore:
                 fcntl.flock(lock_fd,fcntl.LOCK_EX)
                 values=json.loads(self.secret_path.read_text()) if self.secret_path.exists() else {}
                 if key not in values:return False
-                values.pop(key)
+                self._retire_locked(values,values.pop(key))
                 self.write_private(self.secret_path,json.dumps(values))
                 return True
             finally:
                 fcntl.flock(lock_fd,fcntl.LOCK_UN)
                 os.close(lock_fd)
+
+    #: #221 (Codex review): a replaced or removed secret leaves only a keyed digest of its value and its
+    #: length, never the value, so recall can still keep an old message that holds it away from a model.
+    #: Kept in its own owner-only file next to the secrets, so the secrets file itself is unchanged.
+    RETIRED_SECRETS_KEPT=200
+
+    @property
+    def retired_secrets_path(self):
+        return self.secret_path.with_name('retired-secret-marks.json')
+
+    def _read_retired(self):
+        try:
+            ledger=json.loads(self.retired_secrets_path.read_text())
+        except (OSError,ValueError):
+            return None
+        return ledger if isinstance(ledger,dict) and isinstance(ledger.get('key'),str) else None
+
+    def _retire_locked(self, values, old):
+        """Record one retired secret value as ``[length, hmac]`` (caller holds the secrets lock)."""
+        self._retire_values_locked([old])
+
+    def _retire_values_locked(self, olds):
+        olds=[old for old in olds or () if isinstance(old,str) and len(old)>=8]
+        if not olds:return
+        ledger=self._read_retired() or {'key':secrets.token_hex(32),'marks':[]}
+        marks=[item for item in ledger.get('marks') or () if isinstance(item,list) and len(item)==2]
+        for old in olds:
+            mark=[len(old),hmac.new(bytes.fromhex(ledger['key']),old.encode(),hashlib.sha256).hexdigest()]
+            marks=[item for item in marks if item!=mark]+[mark]
+        ledger['marks']=marks[-self.RETIRED_SECRETS_KEPT:]
+        self.write_private(self.retired_secrets_path,json.dumps(ledger))
+
+    def retire_secret_values(self, olds):
+        """Record retired plaintext values another layer decrypted (encrypted API credentials)."""
+        with self.secret_lock:
+            lock_fd=os.open(self.secret_lock_path,os.O_RDWR|os.O_CREAT,0o600)
+            try:
+                fcntl.flock(lock_fd,fcntl.LOCK_EX)
+                self._retire_values_locked(olds)
+            finally:
+                fcntl.flock(lock_fd,fcntl.LOCK_UN)
+                os.close(lock_fd)
+
+    def holds_retired_secret(self, text):
+        """Whether ``text`` contains any retired secret value, by its keyed digest (#221)."""
+        text=str(text or '')
+        with self.secret_lock:
+            ledger=self._read_retired()
+        if not ledger or not ledger.get('marks'):return False
+        key=bytes.fromhex(ledger['key'])
+        by_length={}
+        for length,digest in ledger['marks']:by_length.setdefault(int(length),set()).add(digest)
+        for length,digests in by_length.items():
+            for start in range(0,len(text)-length+1):
+                if hmac.new(key,text[start:start+length].encode(),hashlib.sha256).hexdigest() in digests:return True
+        return False
 
     def secret_items(self, prefix):
         """Host-only snapshot for namespaced secret redaction, never a model tool."""
