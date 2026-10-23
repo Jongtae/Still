@@ -9,6 +9,10 @@ The lines come from the id-keyed catalog (``messages.json``, #1356).  Only
 a whole line that exactly matches a catalog line or template is
 translated.  An AI answer never matches and passes through unchanged, and a
 line the table does not know stays Korean.  Korean owners see no change.
+
+A catalog entry may span several lines (#235).  It is matched as one block,
+as the whole message or as consecutive lines inside a longer one, before the
+remaining lines are matched one by one.
 """
 from __future__ import annotations
 
@@ -42,12 +46,37 @@ def _table():
             names = _PLACEHOLDER.findall(source)
             parts = _PLACEHOLDER.split(source)
             pattern = ''.join(re.escape(part) if i % 2 == 0 else f'(?P<{part}>.+?)' for i, part in enumerate(parts))
-            templates.append((re.compile(f'^{pattern}$', re.S), names, targets))
+            templates.append((re.compile(f'^{pattern}$', re.S), names, targets, source.count('\n') + 1))
         else:
             exact[source] = targets
     # Longer templates first, so the most specific one wins.
     templates.sort(key=lambda row: -len(row[0].pattern))
     return exact, templates
+
+
+@lru_cache(maxsize=1)
+def _blocks():
+    """#235: the catalog entries that span several lines, as (line count, exact, templates); most lines first."""
+    exact, templates = _table()
+    sizes = {source.count('\n') + 1 for source in exact} | {row[3] for row in templates}
+    rows = []
+    for size in sorted((size for size in sizes if size > 1), reverse=True):
+        rows.append((size, {source: targets for source, targets in exact.items() if source.count('\n') + 1 == size},
+                     [row for row in templates if row[3] == size]))
+    return rows
+
+
+def _match(body, lang, exact, templates):
+    """``body`` translated when it is exactly one catalog line or template; else None."""
+    hit = exact.get(body)
+    if hit and hit.get(lang):
+        return hit[lang]
+    for pattern, names, targets, _size in templates:
+        found = pattern.match(body)
+        if found and targets.get(lang):
+            values = {name: translate(found.group(name), lang) for name in names}
+            return targets[lang].format(**values)
+    return None
 
 
 def _line(line, lang):
@@ -60,26 +89,36 @@ def _line(line, lang):
     match = _TRAILER.search(body)
     if match and match.start() > 0:
         trailer, body = body[match.start():], body[:match.start()]
-    hit = exact.get(body)
-    if hit and hit.get(lang):
-        return lead + hit[lang] + trailer
-    for pattern, names, targets in templates:
-        found = pattern.match(body)
-        if found and targets.get(lang):
-            values = {name: translate(found.group(name), lang) for name in names}
-            return lead + targets[lang].format(**values) + trailer
-    return line
+    hit = _match(body, lang, exact, [row for row in templates if row[3] == 1])
+    return line if hit is None else lead + hit + trailer
 
 
 def translate(text, lang):
     """``text`` with every known fixed line translated into ``lang``; unchanged for Korean or None."""
     if not lang or not isinstance(text, str) or not text:
         return text
-    exact, _ = _table()
-    whole = exact.get(text.strip())
-    if whole and whole.get(lang):
-        return whole[lang]
-    return '\n'.join(_line(line, lang) for line in text.split('\n'))
+    exact, templates = _table()
+    # The whole message as one entry: a single line, or a multi-line entry
+    # whose placeholder value may itself span lines (#235).
+    whole = _match(text.strip(), lang, exact, [row for row in templates if row[3] > 1])
+    if whole is not None:
+        return whole
+    lines = text.split('\n')
+    out, index = [], 0
+    while index < len(lines):
+        for size, block_exact, block_templates in _blocks():
+            if index + size > len(lines) or not lines[index].strip():
+                continue
+            chunk = '\n'.join(lines[index:index + size])
+            hit = _match(chunk.strip(), lang, block_exact, block_templates)
+            if hit is not None:
+                out.append(lines[index][:len(lines[index]) - len(lines[index].lstrip())] + hit)
+                index += size
+                break
+        else:
+            out.append(_line(lines[index], lang))
+            index += 1
+    return '\n'.join(out)
 
 
 def localize_body(method, body, lang):

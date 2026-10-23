@@ -8,6 +8,7 @@ no change.  No network: every HTTP exchange is injected.
 import io
 import json
 import pathlib
+import re
 import tempfile
 import threading
 import unittest
@@ -170,6 +171,48 @@ class OtherFlowsTest(unittest.TestCase):
     def test_telegram_buttons_and_bodies_use_the_same_lines(self):
         body = {'chat_id': 1, 'text': msg('providers.unreachable')}
         self.assertEqual(localize_body('sendMessage', body, 'en')['text'], msg('providers.unreachable', 'en'))
+
+
+class MultiLineEntriesTest(unittest.TestCase):
+    """#235: a catalog entry that spans several lines is translated as one block."""
+
+    @staticmethod
+    def rendered(message_id, lang='ko'):
+        from personal_agent.messages import catalog
+        names = re.findall(r'\{([a-z_]+)\}', catalog()[message_id]['ko'])
+        return msg(message_id, lang, **{name: f'sample-{name}' for name in names})
+
+    def multi_line_ids(self):
+        from personal_agent.messages import catalog
+        ids = [key for key, entry in catalog().items() if '\n' in entry['ko']]
+        self.assertIn('working_notes.saved', ids)
+        return ids
+
+    def test_every_multi_line_entry_reaches_every_language(self):
+        from personal_agent.messages import catalog
+        for message_id in self.multi_line_ids():
+            source = self.rendered(message_id)
+            for lang in LANGS:
+                if not catalog()[message_id].get(lang):
+                    continue
+                with self.subTest(message_id=message_id, lang=lang):
+                    expected = self.rendered(message_id, lang)
+                    self.assertEqual(translate(source, lang), expected)
+                    self.assertEqual(localize_body('sendMessage', {'chat_id': 1, 'text': source}, lang)['text'], expected)
+                    # Inside a longer message, between a catalog line and a model-written line.
+                    self.assertEqual(translate(f"{msg('providers.unreachable')}\n{source}\nAn AI-written line.", lang),
+                                     f"{msg('providers.unreachable', lang)}\n{expected}\nAn AI-written line.")
+                    self.assertEqual(translate(source, None), source, 'Korean owners see no change')
+
+    def test_a_placeholder_value_may_span_lines(self):
+        text = msg('working_notes.saved', change='first line\nsecond line')
+        self.assertEqual(translate(text, 'en'), msg('working_notes.saved', 'en', change='first line\nsecond line'))
+
+    def test_only_part_of_a_multi_line_entry_is_not_translated(self):
+        first, second = msg('working_notes.saved', change='x').split('\n')
+        for text in (first, second, f'{first}\nAn AI-written second line.'):
+            for lang in LANGS:
+                self.assertEqual(translate(text, lang), text)
 
 
 class NotTranslatedTest(unittest.TestCase):
