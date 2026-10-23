@@ -2370,14 +2370,18 @@ READ_STATE_CHARS=600
 READ_STATE_IDS=6
 READ_STATE_REF_CHARS=120
 
+#: #204: each identity is prefixed with its kind, so a mail id equal to a Drive file id stays two items.
+ITEM_REF_KINDS=(('message_id','message:'),('file_id','file:'))
+
 def _item_ref(item):
  """One item's whole identity in Still's evidence vocabulary (#151): a message or file id, or a folder path.
 
- Compared whole (Codex review: two long paths sharing a prefix stay two items); only its shown form is bounded."""
- if not isinstance(item,dict):return item if isinstance(item,str) else ''
- for key in ('message_id','file_id'):
-  if isinstance(item.get(key),str) and item[key]:return item[key]
- if item.get('root_id') and isinstance(item.get('path'),str) and item['path']:return f"{item['root_id']}:{item['path']}"
+ Compared whole (Codex review: two long paths sharing a prefix stay two items); only its shown form is bounded.
+ A bare string is a listed mail id (``mail_search`` evidence)."""
+ if not isinstance(item,dict):return 'message:'+item if isinstance(item,str) and item else ''
+ for key,kind in ITEM_REF_KINDS:
+  if isinstance(item.get(key),str) and item[key]:return kind+item[key]
+ if item.get('root_id') and isinstance(item.get('path'),str) and item['path']:return f"path:{item['root_id']}:{item['path']}"
  return ''
 
 #: #151 (Codex review): a mail id is kept whole - the Gmail reader accepts ids up to 128 characters
@@ -2437,7 +2441,8 @@ def read_state_text(calls, limit=READ_STATE_CHARS):
  unseen=hidden-{_ref_digest(ref) for ref in opened}
  total=len(listed)+len(hidden)+unnamed
  def ids(refs):
-  shown=', '.join(ref[:READ_STATE_REF_CHARS] for ref in refs[:READ_STATE_IDS])
+  # #204: the kind prefix keeps identities apart; the line shows the id or path itself.
+  shown=', '.join(ref.split(':',1)[1][:READ_STATE_REF_CHARS] for ref in refs[:READ_STATE_IDS])
   return shown+(f' and {len(refs)-READ_STATE_IDS} more' if len(refs)>READ_STATE_IDS else '')
  parts=[]
  if unopened or unseen:
