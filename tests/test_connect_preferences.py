@@ -177,6 +177,23 @@ class ConnectionPreferences(Harness):
         self.assertIn(CUT_TO_FIT_MARKER, prompt)
         self.assertNotIn('profile.aaa.item39', prompt, 'the profile tail was cut')
 
+    def test_the_early_plan_records_the_recalled_words_it_read(self):
+        """Codex review on #227: a Work parked after its early plan still shows what that plan read."""
+        import time as clock
+        old = self.store.enqueue('Unseen records live in the archive app', 'said-early', owner_typed=True)
+        with self.store.db() as db:
+            db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                       ('user', 'Unseen records live in the archive app', 'web', clock.time() - 864000, old))
+            for index in range(16):
+                db.execute('INSERT INTO messages(role,content,channel,created) VALUES (?,?,?,?)',
+                           ('assistant', f'filler {index}', 'web', clock.time()))
+        self.script([plan('codex', 'Read it.')], goals=[True])
+        ident = self.store.enqueue('Read the Unseen record.', 'early-audit')
+        self.assertIsNotNone(self.service.early_work_plan(self.store.job(ident), 'Read the Unseen record.'))
+        self.assertIn('owner_said', self.asked_plans[-1][0].facts['owner_profile'])
+        refs = self.store.turn_provenance(ident)['owner_information']
+        self.assertIn('owner_said (1 earlier owner message)', json.dumps(refs))
+
     def test_early_plan_and_regular_plan_use_same_retrieved_profile(self):
         for index in range(20):
             self.store.save_memory(f'profile.aaa.item{index}', 'Unrelated background ' * 8, owner_id='local-owner')

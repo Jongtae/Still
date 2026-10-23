@@ -344,6 +344,25 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
         self.assertIn('[said 2026-10-01] 마트 장바구니는', self.service.owner_profile_snapshot('마트 장바구니'))
 
+    def test_a_message_holding_a_replaced_or_removed_secret_is_never_recalled(self):
+        """Codex review on #227: after rotation the current redaction no longer knows the old value."""
+        old, gone = 'quietharbor-river-tulip', 'amber-lantern-orchid'
+        self.store.secret('api_key:openai', old)
+        self.store.secret('api_key:anthropic', gone)
+        self.said(f'마트 앱 비번은 {old}', f'마트 앱 예전 키 {gone}', '마트 앱 장바구니는 동네 마트로')
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        self.store.secret('api_key:openai', 'brand-new-value-12345')
+        self.store.remove_secret('api_key:anthropic')
+        section = self.service.owner_profile_snapshot('마트 앱 장바구니')
+        self.assertIn('동네 마트로', section)
+        self.assertNotIn('quietharbor', section)
+        self.assertNotIn('amber-lantern', section)
+        stored = self.store.secret_path.read_text()
+        self.assertNotIn(old, stored, 'only a keyed digest of the retired value is kept')
+        self.assertNotIn(gone, stored)
+        self.store.retire_secret_values(['decrypted-api-credential-1'])
+        self.assertTrue(self.store.holds_retired_secret('x decrypted-api-credential-1 y'))
+
     def test_the_owners_earlier_words_are_bounded_in_bytes(self):
         from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
         self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])
