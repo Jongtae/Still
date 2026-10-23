@@ -500,6 +500,22 @@ class Telegram(WorkModeCase):
             self.service.telegram.download_photo('file-id')
         self.assertEqual(self.calls, [])
 
+    def test_a_photo_retry_after_the_switch_is_not_sent(self):
+        from personal_agent.providers import ProviderError
+        self.service.telegram_transport = lambda url, body, headers=None, timeout=None: {
+            'ok': True, 'result': {'file_path': 'photos/a.jpg', 'file_size': 10}}
+        fetched = []
+
+        def file_transport(url, timeout=None, max_bytes=None):
+            fetched.append(url)
+            self.on()  # the switch lands during the retry back-off
+            raise ProviderError('reset', status='unreachable')
+        self.service.telegram_file_transport = file_transport
+        self.service.telegram._sleep = lambda seconds: None
+        with self.assertRaises(work_mode.WorkModeRefused):
+            self.service.telegram.download_photo('file-id')
+        self.assertEqual(len(fetched), 1, 'the retry was refused unsent')
+
     def test_an_enabled_bot_stops_polling_and_says_why(self):
         self.service.receive_telegram()
         self.assertEqual(self.calls, ['getUpdates'])
@@ -623,6 +639,42 @@ class TransportRecheck(WorkModeCase):
             api.transport('GET', 'https://api.fixture.test/b', {}, None, 5)
         self.assertEqual(caught.exception.code, 'work_mode')
         self.assertEqual(len(sent), 1)
+
+    def test_a_state_changing_call_refused_at_the_switch_leaves_no_reservation(self):
+        """A mutating API call: refused before or right after its effect reservation, nothing stays reserved."""
+        from personal_agent.api_requests import ApiError, ApiRequests, save_slot
+        service = AgentService(self.store)
+        work = self.store.enqueue('Apply the change', 'work-mode-effect')
+        save_slot(self.store, 'synthetic', ['synthetic.example'], 'synthetic-private-credential')
+        sent = []
+        call = {'slot': 'synthetic', 'url': 'https://synthetic.example/change', 'method': 'POST', 'effect': 'mutate',
+                'body': '{"value":"x"}'}
+
+        def client():
+            return ApiRequests(self.store, work, transport=lambda *a: sent.append(a) or (200, {}, b'{"ok":true}'),
+                               approvals=service.browser_approvals_for(self.store.job(work)))
+
+        def dispatch_rows():
+            with self.store.db() as db:
+                return db.execute("SELECT status FROM tool_events WHERE tool='api_dispatch'").fetchall()
+        self.on()
+        with self.assertRaises(ApiError) as caught:
+            client().call(call)
+        self.assertEqual((caught.exception.code, sent, dispatch_rows()), ('work_mode', [], []))
+        self.off()
+        api = client()
+        reserve = api._effect_guard
+
+        def reserve_then_switch(*args, **kwargs):
+            claim = reserve(*args, **kwargs)
+            if claim is not None:
+                self.on()  # the switch lands after the reservation committed (not after the preflight)
+            return claim
+        api._effect_guard = reserve_then_switch
+        with self.assertRaises(ApiError) as caught:
+            api.call(call)
+        self.assertEqual((caught.exception.code, sent, dispatch_rows()), ('work_mode', [], []))
+        self.assertEqual(service.connector_effect_progress(work)[1], [], 'no unknown effect blocks a later retry')
 
     def test_a_code_run_request_is_refused_unsent(self):
         from personal_agent.code_run import CodeRunner

@@ -416,10 +416,12 @@ class TelegramChannel:
 
         Only the read-only photo requests use this; every other call stays
         one HTTP request.  A transport failure that outlasts the tries is
-        told plainly; a refusal or limit keeps its own text.
+        told plainly; a refusal or limit keeps its own text.  #208 review: the
+        guard runs before every try, so a retry after the switch is refused.
         """
         for attempt in range(TELEGRAM_DOWNLOAD_ATTEMPTS):
             try:
+                self._guard()
                 return request()
             except ProviderError as exc:
                 if not transient_failure(exc):
