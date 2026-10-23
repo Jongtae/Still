@@ -189,6 +189,29 @@ class TheJudgmentReadsIt(unittest.TestCase):
                 self.assertLessEqual(len(text), OBSERVATION_CHARS)
         self.assertEqual(observations_with_pages(['- a'], []), '- a')
 
+    def test_the_last_page_keeps_its_tail_when_the_read_state_is_reserved(self):
+        """#204: the read state's room is set aside before page text is placed, so the page ends whole."""
+        from personal_agent.orchestrator import OBSERVATION_CHARS, observations_with_pages
+        last = '- read_state: ' + 'z' * 580
+        text = observations_with_pages(['- browser_read: https://s.test'], [('https://s.test', 'S', 'y' * 20000)], last=last)
+        self.assertLessEqual(len(text), OBSERVATION_CHARS)
+        body, tail = text.rsplit('\n', 1)
+        self.assertEqual(tail, last)
+        self.assertTrue(body.endswith('y…'), 'the page keeps its own ellipsis, not a cut made afterwards')
+
+    def test_a_mail_id_equal_to_a_drive_file_id_is_another_item(self):
+        """#204: identities are namespaced by kind; reading a message never settles a listed Drive file."""
+        listing = evidence_summary('drive_search', {'files': [{'file_id': 'same-id', 'name': 'Plan'}]})
+        opened = evidence_summary('mail_read', {'message_id': 'same-id', 'content': 'hi'})
+        text = read_state_text([('drive_search', listing), ('mail_read', opened)])
+        self.assertIn('listed but never opened: 1 of 1 listed (same-id)', text)
+        hidden = {**listing, 'files': []}   # a listing that keeps only the digest of the file
+        text = read_state_text([('drive_search', hidden), ('mail_read', opened)])
+        self.assertIn('listed but never opened: 1 of 1 listed', text)
+        same = evidence_summary('drive_read', {'file_id': 'same-id', 'content': 'hi'})
+        self.assertNotIn('never opened', read_state_text([('drive_search', hidden), ('drive_read', same)]),
+                         'the file itself settles its digest')
+
     def test_long_mail_ids_sharing_a_prefix_stay_two_items(self):
         first, second = 'a' * 100 + '1', 'a' * 100 + '2'
         listing = evidence_summary('mail_search', {'messages': [{'message_id': first}, {'message_id': second}]})

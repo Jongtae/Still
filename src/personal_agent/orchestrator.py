@@ -190,18 +190,20 @@ def observations_with_pages(lines, pages, redact=None, last=''):
     #151: ``last`` is one line kept whole at the end inside the same bound (the read state), so
     neither many step lines nor page text can push it out.
     """
-    text = _observations_with_pages(lines, pages, redact)
     if not last:
-        return text
+        return _observations_with_pages(lines, pages, redact)
     last = str(last)[:OBSERVATION_CHARS // 4]
+    # #204: the read state's room is reserved before page text is placed, so no page loses its tail
+    # (or its ellipsis) to a cut made afterwards.
     room = OBSERVATION_CHARS - len(last) - 1
+    text = _observations_with_pages(lines, pages, redact, room)
     return (text[:room] + '\n' + last) if text else last
 
 
-def _observations_with_pages(lines, pages, redact=None):
+def _observations_with_pages(lines, pages, redact=None, bound=OBSERVATION_CHARS):
     meta = '\n'.join(str(line) for line in lines or ())
     clean = (lambda text: redact(text, private=False)) if redact else (lambda text: str(text or ''))
-    room = max(PAGE_TEXT_FLOOR_CHARS, OBSERVATION_CHARS - len(meta) - 1) - len(PAGE_TEXT_HEADER) - 1
+    room = min(bound, max(PAGE_TEXT_FLOOR_CHARS, bound - len(meta) - 1)) - len(PAGE_TEXT_HEADER) - 1
     block = []
     for url, title, text in pages or ():
         head = f'- {title or url} ({url}):\n' if title else f'- {url}:\n'
@@ -215,7 +217,7 @@ def _observations_with_pages(lines, pages, redact=None):
     if not block:
         return meta
     pages_text = PAGE_TEXT_HEADER + '\n' + '\n'.join(block)
-    meta_room = OBSERVATION_CHARS - len(pages_text) - 1
+    meta_room = bound - len(pages_text) - 1
     if len(meta) > meta_room:
         meta = ('…' + meta[-(meta_room - 1):]) if meta_room > 1 else ''
     return (meta + '\n' + pages_text) if meta else pages_text
