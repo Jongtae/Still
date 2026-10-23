@@ -31,7 +31,9 @@ from .decision import DEFAULT_DECISION_PROVIDER, RoutedDecisionEngine
 from .decision_routes import DecisionRoutes
 from .main_ai import MainAiRoutes
 from .search_providers import (SEARCH_FAILED_TEXT, ProviderRegistry, SearchProviderSettings, public_http_url)
-from .conversation_projection import (BLOCKER_DOCUMENT_APPROVAL, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE,
+from .cloud_engines import (BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIGURED as CLOUD_NOT_CONFIGURED,
+                            CloudEngines, CloudLaunchError)
+from .conversation_projection import (BLOCKER_CLOUD_PROFILE, BLOCKER_DOCUMENT_APPROVAL, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE,
                                       TELEGRAM_RESULT_PREVIEW_CHARS, TERMINAL_FAILED_HEADER,
                                       TERMINAL_INTERRUPTED_HEADER, TERMINAL_NEXT_ACTION, TERMINAL_PARTIAL_HEADER,
                                       BlockedTurn, ConversationProjection, context_message,
@@ -608,8 +610,11 @@ class AgentService:
         self.subscription_engines=subscription_engines or SubscriptionEngines()
         # The Claude Code token is read from the secret store per run and
         # handed to that CLI only as CLAUDE_CODE_OAUTH_TOKEN (#571).
+        # #211: the owner's cloud provider profiles per engine (Settings on this computer only).
+        self.cloud_engines=CloudEngines(self.store)
         self.execution_adapter=execution_adapter or BoundedExecutionAdapter(
-            credentials=lambda engine_id:self.store.secret('claude_code_token') if engine_id=='claude-code' else '')
+            credentials=lambda engine_id:self.store.secret('claude_code_token') if engine_id=='claude-code' else '',
+            cloud=self.cloud_engines)
         self.isolated_engine_adapter=isolated_engine_adapter
         self.isolated_mcp_registry=isolated_mcp_registry or TaskCapabilityRegistry()
         self.isolated_mcp_proxy=IsolatedMcpProxy(self.isolated_mcp_registry)
@@ -2854,6 +2859,44 @@ class AgentService:
     def recheck_native_search(self, _body=None):
         # #678: forget a remembered "unavailable"; the next use checks again.
         return self.search_settings.recheck_native(_body)
+
+    def work_cloud_profile(self, run, engine_id, isolated):
+        """The engine's cloud provider profile for this Work, resolved at its first attempt on that engine (#211).
+
+        None is the subscription.  The resolved profile stays with the Work, so
+        a Settings change mid-Work applies from the next Work.  An unfinished
+        profile, or one the isolated deployment cannot run, stops the Work with
+        its reason and never runs on the subscription instead.
+        """
+        pinned=getattr(run,'cloud_profiles',None)
+        if pinned is None:pinned=run.cloud_profiles={}
+        if engine_id in pinned:return pinned[engine_id]
+        cloud=getattr(self,'cloud_engines',None)
+        if cloud is None:return None
+        try:
+            launch=cloud.launch(engine_id)
+        except CloudLaunchError as exc:
+            raise BlockedTurn(BLOCKER_CLOUD_PROFILE,str(exc)) from None
+        if launch is not None and isolated:
+            raise BlockedTurn(BLOCKER_CLOUD_PROFILE,msg('cloud_engines.isolated_unsupported'))
+        pinned[engine_id]=launch
+        return launch
+
+    def cloud_engine_status(self):
+        """Each engine's cloud provider profile for Settings: names, saved-or-not, cap and today's count (#211)."""
+        return {engine_id:self.cloud_engines.status(engine_id) for engine_id in ('claude-code','codex')}
+
+    def save_cloud_profile(self, body):
+        """Select an engine's provider (``subscription`` clears it) with its documented settings and daily cap (#211)."""
+        body=body if isinstance(body,dict) else {}
+        self.cloud_engines.save_profile(body.get('engine'),body.get('provider'),body.get('settings'),body.get('daily_calls'))
+        return self.cloud_engine_status()
+
+    def save_cloud_secret(self, body):
+        """Store or (with ``''``) remove one documented cloud credential; the value is never returned (#211)."""
+        body=body if isinstance(body,dict) else {}
+        self.cloud_engines.save_secret(body.get('engine'),body.get('provider'),body.get('name'),body.get('value'))
+        return self.cloud_engine_status()
 
     def cli_native_search(self, engine, profile, isolated):
         """``(enabled, reason)`` for the CLI's own web search in one Work turn (#678, #705, #826).
@@ -10729,6 +10772,9 @@ class AgentService:
         # The selected CLI runs only through the narrow MCP
         # facade; it never gets this store, model key, or roots.
         isolated=bool(self.isolated_engine_adapter)
+        # #211: the engine's cloud provider profile, resolved once per Work, so a
+        # Settings change applies from the next Work; an unfinished profile stops here.
+        cloud=self.work_cloud_profile(run,run.subscription['id'],isolated)
         # Public lookup preflight remains Still-owned.  The
         # isolated bearer facade below still exposes only its
         # restricted profile and rejects direct web_search calls.
@@ -10843,6 +10889,8 @@ class AgentService:
         # prompt is built, from the profile and a remembered refusal only;
         # owner-private material in the turn never turns it off.
         native_search,native_reason=self.cli_native_search(run.subscription['id'],facade.PROFILE,isolated)
+        # #211: a cloud provider turn uses the bridge's search (Bedrock has no WebSearch).
+        if cloud is not None and native_search:native_search,native_reason=False,'cloud_provider'
         engine_context,engine_prompt,adapter_context,sent,shown_sources=cli_context(native_search)
         run.capabilities.private_provenance.update(shown_sources)
         run.work_sources|=run.capabilities.private_provenance
@@ -10865,6 +10913,11 @@ class AgentService:
         # One host-visible CLI invocation, not its opaque
         # internal model calls. Refuse before recording sent.
         run.work_budget.spend_turn()
+        # #211: the cloud profile's daily cap is admitted here, before the turn is recorded as
+        # sent, so a refused launch leaves no sent envelope or egress record behind.
+        if cloud is not None:
+            try:self.cloud_engines.admit(cloud)
+            except CloudLaunchError as exc:raise BlockedTurn(BLOCKER_CLOUD_PROFILE,str(exc)) from exc
         photo_attempt_id=(self.record_photo_attempt(job['id'],status='staged',count=len(run.image_inputs),
                                                     route='subscription',engine=run.subscription['id'])
                           if run.image_inputs else None)
@@ -10889,7 +10942,9 @@ class AgentService:
             # #678: the CLI's own tools offered besides the bridge.
             cli_native_tools=['web_search'] if native_search else [],native_search_reason=native_reason or None,
             # #826: what the owner-model sections and splices referred to.
-            owner_information=run.owner_information)
+            owner_information=run.owner_information,
+            # #211: the cloud provider and destination are durable before the CLI starts.
+            **(cloud.record() if cloud is not None else {}))
         self.record_turn_worker(job['id'],{'attempt':run.attempt.number if run.attempt is not None else 1,'route':'subscription',
                                            'engine':run.subscription['id'],
                                            'model':(run.attempt.model if run.attempt is not None and run.attempt.model else None) or self.main_ai.subscription_model(run.subscription['id']) or None,
@@ -10928,6 +10983,9 @@ class AgentService:
                 work_model=(run.attempt.model if run.attempt is not None and run.attempt.model
                             else self.main_ai.subscription_model(run.subscription['id']))
                 served=facade(run.capabilities,**facade_options)
+                # #211: the profile this Work resolved, not a later Settings change; already admitted above.
+                served.cloud_profile=cloud
+                served.cloud_admitted=cloud is not None
                 served.native_search=native_search
                 served.native_search_reason=native_reason or ''
                 # #718: the CLI's own search items update the draft while this attempt runs.
@@ -10971,6 +11029,11 @@ class AgentService:
                     # The Work's browser session ends with the run (as on the direct route).
                     run.capabilities.close_browser()
         except (ExecutionError,EngineGatewayError) as exc:
+            # #211: an admitted cloud call whose CLI never launched (a local preflight failed first)
+            # is given back, so local failures never spend the owner's cloud limit.
+            if cloud is not None and (getattr(exc,'meta',None) or {}).get('launched') is False:
+                try:self.cloud_engines.release(cloud)
+                except Exception:LOG.warning('cloud call reservation not released job=%s',job['id'])
             diagnostics=exc.diagnostics() if isinstance(exc,ExecutionError) else {}
             if run.image_inputs and diagnostics.get('failure_class')=='unsupported-image-input':
                 self.record_photo_attempt(job['id'],attempt_id=photo_attempt_id,status='unsupported',
@@ -10998,13 +11061,21 @@ class AgentService:
             continuation_accounted=self._connector_turn_accounted(job['id'],run.subscription['id'],getattr(exc,'meta',None),allow_effects=True)
             # A run that the CLI rejected as signed out is the
             # strongest login evidence we have; show it (#571).
-            if not isolated and diagnostics.get('failure_class')=='auth':
+            # #211: a cloud provider that refused its credentials says nothing about the CLI login.
+            cloud_launch=bool((getattr(exc,'meta',None) or {}).get('cloud_provider'))
+            if not isolated and diagnostics.get('failure_class')=='auth' and not cloud_launch:
                 self._remember_engine_login(run.subscription['id'],'signed-out','run')
             run.record('subscription_engine','failed',json.dumps({'engine':run.subscription['id'],'error':str(exc),**diagnostics,'continuation_read_only':continuation_read_only,'continuation_accounted':continuation_accounted},ensure_ascii=False))
             # #710: a failed worker may be re-delegated within the Work's bounds.
             # #1130: not to another CLI when the shared Still bridge failed; it would run without tools too.
             if diagnostics.get('failure_class')==BRIDGE_UNAVAILABLE and run.orchestration is not None:
                 run.orchestration.drop_bridge_workers()
+            # #211: a cloud profile that refused the launch (spent daily cap, unfinished) or whose
+            # provider refused its credentials ends the Work with its reason; nothing is re-delegated
+            # to another route or destination.
+            if (diagnostics.get('failure_class') in (CLOUD_BUDGET_EXCEEDED,CLOUD_NOT_CONFIGURED)
+                    or (cloud_launch and diagnostics.get('failure_class')=='auth')):
+                raise BlockedTurn(BLOCKER_CLOUD_PROFILE,str(exc)) from exc
             following=self.orchestration_step(run.orchestration,run.attempt,job['id'],run.attempt_start,failed=str(exc),
                                               unmediated=run.unmediated_turn,engine_meta=getattr(exc,'meta',None),
                                               pages=run.capabilities.take_browser_pages())

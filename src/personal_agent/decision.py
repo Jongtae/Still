@@ -131,11 +131,14 @@ class DecisionConfidence:
     """
 
     __slots__ = ('probability', 'provider', 'model', 'observed_model', 'elapsed_seconds',
-                 'route', 'engine', 'model_policy', 'sent')
+                 'route', 'engine', 'model_policy', 'sent', 'destination', 'cloud_profile')
 
     def __init__(self, probability=None, *, provider='', model='', observed_model='', elapsed_seconds=None,
-                 route='', engine='', model_policy='', sent=None):
+                 route='', engine='', model_policy='', sent=None, destination='', cloud_profile=''):
         self.probability = probability
+        #: #211: a CLI judgment on a cloud provider profile names where it went and which
+        #: profile revision; empty on the subscription and for other routes.
+        self.destination, self.cloud_profile = destination, cloud_profile
         self.provider, self.model, self.observed_model = provider, model, observed_model
         self.elapsed_seconds = elapsed_seconds
         self.route, self.engine, self.model_policy = route, engine, model_policy
@@ -604,6 +607,11 @@ def audit_record(context, kind, outcome, data, confidence, at, failure='', diagn
               'elapsed_seconds': confidence.elapsed_seconds,
               'route': confidence.route, 'engine': confidence.engine,
               'model_policy': confidence.model_policy, 'requested_model': confidence.model or ''}
+    # #211: the cloud provider destination and profile revision of a CLI judgment, never a credential.
+    if getattr(confidence, 'destination', ''):
+        record['destination'] = confidence.destination
+    if getattr(confidence, 'cloud_profile', ''):
+        record['cloud_profile'] = confidence.cloud_profile
     if failure:
         record['failure'] = failure
     for name in AUDIT_DIAGNOSTIC_FIELDS:

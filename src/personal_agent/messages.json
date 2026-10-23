@@ -3172,5 +3172,65 @@
   "en": "Context sources:",
   "ja": "コンテキストの出典:",
   "zh": "上下文来源："
+ },
+ "cloud_engines.not_configured": {
+  "ko": "{provider} 설정이 아직 끝나지 않아 실행하지 않았어요. 설정 > AI에서 다음 값을 채워 주세요: {names}. 다른 AI로 자동 전환하지 않았어요.",
+  "en": "The {provider} setup isn't finished, so nothing ran. Fill in these values in Settings > AI: {names}. I didn't switch to another AI.",
+  "ja": "{provider} の設定がまだ完了していないため、実行しませんでした。設定 > AI で次の値を入力してください: {names}。別の AI には自動で切り替えていません。",
+  "zh": "{provider} 的设置尚未完成，因此没有运行。请在“设置 > AI”中填写以下值：{names}。没有自动切换到其他 AI。"
+ },
+ "cloud_engines.budget_exceeded": {
+  "ko": "오늘 {provider} 호출 한도({cap}회)에 도달해 이 요청은 실행하지 않았어요. 다른 AI로 자동 전환하지 않았어요. 한도는 설정 > AI에서 바꿀 수 있어요.",
+  "en": "Today's {provider} call limit ({cap}) has been reached, so this request didn't run. I didn't switch to another AI. You can change the limit in Settings > AI.",
+  "ja": "本日の {provider} 呼び出し上限（{cap}回）に達したため、このリクエストは実行しませんでした。別の AI には自動で切り替えていません。上限は 設定 > AI で変更できます。",
+  "zh": "今天的 {provider} 调用上限（{cap} 次）已用完，因此这个请求没有运行。没有自动切换到其他 AI。可以在“设置 > AI”中更改上限。"
+ },
+ "cloud_engines.unsupported_engine": {
+  "ko": "클라우드 제공자는 Claude Code와 Codex에만 설정할 수 있어요.",
+  "en": "A cloud provider can be set only for Claude Code and Codex.",
+  "ja": "クラウドプロバイダーは Claude Code と Codex にのみ設定できます。",
+  "zh": "云服务提供方只能为 Claude Code 和 Codex 设置。"
+ },
+ "cloud_engines.unsupported_provider": {
+  "ko": "이 AI에서 지원하는 클라우드 제공자를 선택하세요.",
+  "en": "Choose a cloud provider this AI supports.",
+  "ja": "この AI が対応しているクラウドプロバイダーを選んでください。",
+  "zh": "请选择此 AI 支持的云服务提供方。"
+ },
+ "cloud_engines.undocumented_name": {
+  "ko": "공식 문서에 없는 설정 이름이라 저장하지 않았어요: {names}",
+  "en": "These setting names aren't in the vendor's documentation, so nothing was saved: {names}",
+  "ja": "公式ドキュメントにない設定名のため保存しませんでした: {names}",
+  "zh": "这些设置名称不在官方文档中，因此没有保存：{names}"
+ },
+ "cloud_engines.invalid_value": {
+  "ko": "{name} 값의 형식을 확인하세요. 아무것도 바꾸지 않았어요.",
+  "en": "Check the format of {name}. Nothing was changed.",
+  "ja": "{name} の値の形式を確認してください。何も変更していません。",
+  "zh": "请检查 {name} 的值格式。没有做任何更改。"
+ },
+ "cloud_engines.invalid_daily_calls": {
+  "ko": "클라우드 제공자에는 하루 호출 한도(1~{max}회)를 정해야 해요.",
+  "en": "A cloud provider needs a daily call limit (1 to {max}).",
+  "ja": "クラウドプロバイダーには 1 日の呼び出し上限（1〜{max}回）が必要です。",
+  "zh": "云服务提供方需要设置每日调用上限（1 到 {max} 次）。"
+ },
+ "cloud_engines.local_only": {
+  "ko": "클라우드 AI 제공자와 인증 정보는 이 컴퓨터의 Still 설정 화면에서만 바꿀 수 있어요.",
+  "en": "Cloud AI providers and their credentials can be changed only in Still's Settings on this computer.",
+  "ja": "クラウド AI プロバイダーと認証情報は、このコンピューターの Still 設定画面でのみ変更できます。",
+  "zh": "云 AI 提供方及其凭据只能在这台电脑上的 Still 设置界面中更改。"
+ },
+ "cloud_engines.isolated_unsupported": {
+  "ko": "격리 런타임 배포는 클라우드 AI 제공자를 지원하지 않아 실행하지 않았어요. 설정 > AI에서 구독으로 바꾸거나 격리 없이 실행하세요.",
+  "en": "The isolated runtime deployment doesn't support a cloud AI provider, so nothing ran. Switch to the subscription in Settings > AI or run without isolation.",
+  "ja": "分離ランタイムの配備はクラウド AI プロバイダーに対応していないため、実行しませんでした。設定 > AI でサブスクリプションに切り替えるか、分離なしで実行してください。",
+  "zh": "隔离运行时部署不支持云 AI 提供方，因此没有运行。请在“设置 > AI”中切换为订阅，或在不隔离的情况下运行。"
+ },
+ "cloud_engines.auth_failed": {
+  "ko": "{provider}가 인증 정보를 받아들이지 않았어요. 설정 > AI에서 회사에서 받은 인증 정보와 권한을 확인해 주세요. 다른 AI로 자동 전환하지 않았어요.",
+  "en": "{provider} didn't accept the credentials. Check the credentials and permissions your company gave you in Settings > AI. I didn't switch to another AI.",
+  "ja": "{provider} が認証情報を受け付けませんでした。設定 > AI で会社から受け取った認証情報と権限を確認してください。別の AI には自動で切り替えていません。",
+  "zh": "{provider} 没有接受凭据。请在“设置 > AI”中检查公司提供的凭据和权限。没有自动切换到其他 AI。"
  }
 }

@@ -55,9 +55,18 @@ Connect the AI subscription you already have:
 
 A connected subscription engine receives only the bounded Still tools, not your local files, credentials, or arbitrary shell access. Requests send conversation content to OpenAI or Anthropic. No paid subscription is included with Still.
 
+### Company cloud AI (Amazon Bedrock, Microsoft Foundry, Azure OpenAI)
+
+When your AI comes through your company's cloud rather than a personal plan, open the AI chooser's account settings for the CLI and pick a **클라우드 제공자** (#211): Claude Code → Amazon Bedrock or Microsoft Foundry; Codex → Azure OpenAI. Enter the values your company gave you under the variable names the vendor documents ([Claude Code on Amazon Bedrock](https://code.claude.com/docs/en/amazon-bedrock), [Claude Code on Microsoft Foundry](https://code.claude.com/docs/en/microsoft-foundry), [Codex `model_providers`](https://learn.chatgpt.com/docs/config-file/config-advanced)) and a daily call limit. Only those names reach the CLI; any other name is refused.
+
+- Credentials are entered in Settings on this computer only, stored in the private credential file, passed to the CLI process alone and never to the AI's shell commands, prompts, logs or Work records.
+- Work and the Judgment AI both run through the selected provider, and both count against the daily call limit. At the limit nothing runs and nothing switches to another AI.
+- A change applies from the next request; a request already running keeps the provider it started with.
+- A Work turn runs the CLI with an empty home folder, so for Bedrock either save a Bedrock API key or access keys, or point `AWS_PROFILE` at your profile together with `AWS_CONFIG_FILE` / `AWS_SHARED_CREDENTIALS_FILE`. An SSO login cache (`aws sso login`) is looked up under the home folder and has not been verified here. For Foundry, an API key or an Entra bearer token; `az login` is not used.
+
 ### Other model connections
 
-Still can also use a direct model connection: Ollama (an already running local model server), OpenAI-compatible Chat Completions endpoints, or OpenAI and Anthropic API keys. Choose a provider, endpoint and model name, test the settings, and apply the successful configuration. API keys stay in a private local file. Results depend heavily on how well the chosen model uses tools, so start with a subscription if you can.
+Still can also use a direct model connection: Ollama (an already running local model server), OpenAI-compatible Chat Completions endpoints, or OpenAI and Anthropic API keys. Choose a provider, endpoint and model name, test the settings, and apply the successful configuration. API keys stay in a private local file. Results depend heavily on how well the chosen model uses tools, so start with a subscription if you can. A company gateway that speaks OpenAI-compatible Chat Completions (for example LiteLLM in front of Bedrock or Azure) uses the OpenAI-compatible connection; its request shape is covered by a local fixture test (#211), not by an observation of a real gateway.
 
 ## Windows (WSL2)
 

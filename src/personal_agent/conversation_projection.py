@@ -328,6 +328,8 @@ def verified_portion(parts):
 BLOCKER_NO_AI_ROUTE = 'no-ai-route'
 BLOCKER_MODEL_UNVERIFIED = 'model-unverified'
 BLOCKER_DOCUMENT_APPROVAL = 'document-approval'
+#: #211: the engine's cloud provider profile is unfinished, unsupported here or past its daily cap.
+BLOCKER_CLOUD_PROFILE = 'cloud-profile'
 
 
 class BlockedTurn(ValueError):

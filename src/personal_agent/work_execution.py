@@ -92,6 +92,8 @@ class WorkRun:
         self.fallthrough_note = None
         self.orchestration = None
         self.result = None
+        #: #211: each engine's cloud provider profile, resolved once per Work (None: the subscription).
+        self.cloud_profiles = {}
         # Set by ``_prepare_worker_turn``.
         self.config = None
         self.key = None

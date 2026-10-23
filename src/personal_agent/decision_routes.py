@@ -297,6 +297,8 @@ JOB_FAILURE_TEXT = {
     'no-qualified-candidate': '적격 모델 없음', 'not-configured': '설정 필요', 'auth': '로그인 또는 인증 실패',
     'cli-not-found': 'CLI 없음', 'strict-profile-unqualified': '엄격 격리 검증 실패', 'timeout': '시간 초과',
     'usage-limit': '사용량 한도', 'follow-unsupported': '기본 AI를 따라갈 수 없음', 'probe-failed': '확인 실패',
+    # #211: the engine's cloud provider profile refused the call before launch.
+    'cloud-budget': '클라우드 하루 호출 한도', 'cloud-not-configured': '클라우드 제공자 설정 필요',
 }
 
 
@@ -373,10 +375,12 @@ class DecisionRoutes:
         return JevDecisionEngine(lambda: self.store.secret('decision_jev_key') or '', model=model,
                                  audit=audit, **kwargs)
 
-    def _cli_engine(self, engine_id, model, policy, audit, guard=None, codex_disabled_features=None, effort=None):
+    def _cli_engine(self, engine_id, model, policy, audit, guard=None, codex_disabled_features=None, effort=None,
+                    expected_cloud=None):
         return SubscriptionCliDecisionEngine(self.service.execution_adapter, engine_id, model=model,
                                              model_policy=policy, audit=audit, guard=guard,
-                                             codex_disabled_features=codex_disabled_features, effort=effort)
+                                             codex_disabled_features=codex_disabled_features, effort=effort,
+                                             expected_cloud=expected_cloud)
 
     def engine(self):
         """The engine for the next judgment, from the active route only."""
@@ -408,6 +412,9 @@ class DecisionRoutes:
                 return 'isolated-deployment'
             if fingerprint != cli_fingerprint(self.service.execution_adapter.finder(CLI_BINARIES[engine_id])):
                 return 'requalification-needed'
+            # #211: the qualification also belongs to the engine's cloud provider profile.
+            if (route.get('cloud_profile') or 'subscription') != self._cloud_identity(engine_id):
+                return 'requalification-needed'
             if engine_id == 'codex' and not self._codex_instructions_qualified(route):
                 return 'instruction-files-unqualified'
             if engine_id == 'codex' and not self._codex_strict_recorded(route):
@@ -421,7 +428,8 @@ class DecisionRoutes:
 
         effort = route.get('effort') if valid_effort(route.get('effort')) else None
         return self._cli_engine(engine_id, model, policy, audit, guard,
-                                route.get('codex_disabled_features') if engine_id == 'codex' else None, effort)
+                                route.get('codex_disabled_features') if engine_id == 'codex' else None, effort,
+                                expected_cloud=route.get('cloud_profile') or 'subscription')
 
     def _main_key(self, main_id):
         """The Main AI's own probed Work key (``model_key``), only while ``main_id`` is it.
@@ -471,7 +479,7 @@ class DecisionRoutes:
         candidates = self._ranked(candidate['engine'])
         return {'main': main_id, 'available': True, 'transport': ROUTE_SUBSCRIPTION_CLI,
                 'model': candidates[0] if candidates else '', 'candidates': candidates,
-                'model_policy': candidate['model_policy'], 'destination': CLI_DESTINATIONS[candidate['engine']]}
+                'model_policy': candidate['model_policy'], 'destination': self._cli_destination(candidate['engine'])}
 
     def _ranked(self, engine_id, capability=None):
         """The ranked candidates for one CLI, filtered by what the installed binary bundles.
@@ -890,8 +898,20 @@ class DecisionRoutes:
         # every policy: the checked isolation/tool surface belongs to the
         # binary it was checked against.
         return (route.get('engine') in CLI_BINARIES
-                and (route.get('fingerprint') or '') != cli_fingerprint(
-                    self.service.execution_adapter.finder(CLI_BINARIES[route['engine']])))
+                and ((route.get('fingerprint') or '') != cli_fingerprint(
+                    self.service.execution_adapter.finder(CLI_BINARIES[route['engine']]))
+                     or (route.get('cloud_profile') or 'subscription') != self._cloud_identity(route['engine'])))
+
+    def _cli_destination(self, engine_id):
+        """#211: where a CLI judgment is sent: the engine's cloud profile when one is selected, else its subscription account."""
+        clouds = getattr(self.service, 'cloud_engines', None)
+        cloud = clouds.destination(engine_id) if clouds is not None and engine_id in CLI_DESTINATIONS else None
+        return cloud or CLI_DESTINATIONS.get(engine_id, '')
+
+    def _cloud_identity(self, engine_id):
+        """#211: the engine's cloud provider profile a qualification is bound to (``subscription`` when none)."""
+        clouds = getattr(self.service, 'cloud_engines', None)
+        return clouds.identity(engine_id) if clouds is not None else 'subscription'
 
     def _cli_active(self, route, engines, stale=False):
         engine = next((e for e in engines if e['id'] == route.get('engine')), None)
@@ -907,7 +927,7 @@ class DecisionRoutes:
         strict = route.get('strict_profile')
         shown = ({key: strict.get(key) for key in ('version', 'platform', 'checked_at', 'checks')}
                  if isinstance(strict, dict) else strict)
-        return dict(destination=CLI_DESTINATIONS.get(route.get('engine'), ''), strict_profile=shown,
+        return dict(destination=self._cli_destination(route.get('engine')), strict_profile=shown,
                     requalification_needed=requalify, instruction_files_unqualified=unqualified,
                     strict_profile_unqualified=strict_missing,
                     available=bool(engine and engine['installed'] and engine['login'] != 'signed-out'
@@ -956,7 +976,7 @@ class DecisionRoutes:
                             # A refused tool surface is shown with its reason.
                             'tool_surface': capability.get('tool_surface'),
                             'tool_surface_detail': capability.get('tool_surface_detail') or '',
-                            'destination': CLI_DESTINATIONS[engine_id],
+                            'destination': self._cli_destination(engine_id),
                             'instruction_files': CODEX_INSTRUCTION_FILES_LIMITATION if engine_id == 'codex' else '',
                             # #679: cheapest-first defaults and the efforts each supports.
                             'ranked_models': ranked,
@@ -1558,6 +1578,7 @@ class DecisionRoutes:
                            'instruction_files_present': self._codex_instruction_files()}
         base = {'transport': ROUTE_SUBSCRIPTION_CLI, 'engine': engine_id, 'model_policy': policy,
                 'fingerprint': capability['fingerprint'], 'cli_version': capability['version'],
+                'cloud_profile': self._cloud_identity(engine_id),
                 **codex_extra, **(extra or {})}
         warning = {'instruction_files_present': codex_extra['instruction_files_present']} if codex_extra else {}
         # Claude Code gets `--effort` only when its own --help declares it

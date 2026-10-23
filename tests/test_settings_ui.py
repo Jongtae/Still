@@ -115,6 +115,56 @@ projected=savedApi();projected.main_ai.last_check={state:'failed',error:'synthet
 assert.equal(ctx.mainAiView(projected).kind,'attention');assert(ctx.mainAiView(projected).description.includes('synthetic refusal'));
 projected=savedApi();projected.main_ai.last_check={state:'unchecked'};
 assert.equal(ctx.mainAiView(projected).state,'키 저장됨 · 연결 확인 전');
+// #211: a cloud provider profile is named in the active title, and its unsaved fields are a chooser draft.
+const cloudStatus={provider:'bedrock',destination:'Amazon Bedrock (us-east-1)',daily_calls:5,used_today:0,providers:[{id:'bedrock',name:'Amazon Bedrock',settings:['AWS_REGION'],secrets:['AWS_BEARER_TOKEN_BEDROCK'],saved_secrets:[],values:{AWS_REGION:'us-east-1'},docs:[],missing:[]}]};
+assert.equal(ctx.mainAiView(settingsFor('claude-code',{'claude-code':sub('claude-code',{cloud:cloudStatus})})).title,'Claude Code · Amazon Bedrock');
+assert.equal(ctx.mainAiView(settingsFor('claude-code',{'claude-code':sub('claude-code',{cloud:{...cloudStatus,provider:'subscription',providers:cloudStatus.providers}})})).title,'Claude Code · 구독 계정');
+{const holder=new Element('div');holder.append(ctx.cloudProviderForm(sub('claude-code',{cloud:cloudStatus})));ctx.__cloudHolder=holder;vm.runInContext('aiAccountNode=__cloudHolder',ctx);
+ assert.equal(ctx.chooserCloudDirty(),false,'an untouched cloud form is not a draft');
+ holder.querySelectorAll('input').find(node=>node.name==='AWS_REGION').value='eu-west-1';
+ assert.equal(ctx.chooserCloudDirty(),true,'an edited cloud setting is an unsaved draft');assert.equal(ctx.chooserAccountDirty(),true);
+ holder.querySelectorAll('input').find(node=>node.name==='AWS_REGION').value='us-east-1';
+ holder.querySelectorAll('select')[0].value='subscription';assert.equal(ctx.chooserCloudDirty(),true,'a changed provider is an unsaved draft');
+ vm.runInContext("aiAccountPanel='claude-code';aiPending=false",ctx);$('ai-chooser-discard').hidden=true;ctx.chooserPanel('codex');
+ assert.equal(vm.runInContext('aiAccountPanel',ctx),'claude-code','switching panels with a cloud draft asks first');assert.equal($('ai-chooser-discard').hidden,false);
+ ctx.chooserClearDiscard();vm.runInContext("aiAccountPanel=''",ctx);
+ vm.runInContext('aiAccountNode=null',ctx);}
+// #211 review: drafts survive a provider switch; removal is confirmed in place; a credential save asks before dropping profile edits.
+{const twoProviders={...cloudStatus,providers:[{...cloudStatus.providers[0],saved_secrets:['AWS_BEARER_TOKEN_BEDROCK']},{id:'foundry',name:'Microsoft Foundry',settings:['ANTHROPIC_FOUNDRY_RESOURCE'],secrets:['ANTHROPIC_FOUNDRY_API_KEY'],saved_secrets:[],values:{},docs:[],missing:[]}]};
+ const holder=new Element('div');holder.append(ctx.cloudProviderForm(sub('claude-code',{cloud:twoProviders})));ctx.__cloudHolder=holder;vm.runInContext('aiAccountNode=__cloudHolder',ctx);
+ const region=()=>holder.querySelectorAll('input').find(node=>node.name==='AWS_REGION'),select=holder.querySelectorAll('select')[0];
+ region().value='eu-west-1';select.value='foundry';select.onchange();assert.equal(region(),undefined);
+ select.value='bedrock';select.onchange();assert.equal(region().value,'eu-west-1','an edit survives switching providers and back');
+ // #211 review: a draft hidden behind another provider still counts as unsaved; a plain round trip does not.
+ region().value='us-east-1';select.value='foundry';select.onchange();select.value='bedrock';select.onchange();
+ assert.equal(ctx.chooserCloudDirty(),false,'switching back and forth without edits is not a draft');
+ select.value='foundry';select.onchange();holder.querySelectorAll('input').find(node=>node.name==='ANTHROPIC_FOUNDRY_RESOURCE').value='corp-ai';
+ select.value='bedrock';select.onchange();assert.equal(ctx.chooserCloudDirty(),true,'an edit left on the other provider is still unsaved');
+ region().value='eu-west-1';
+ const before=calls.length,buttons=()=>holder.querySelectorAll('button');
+ buttons().find(node=>node.textContent==='지우기').onclick();
+ assert.equal(calls.length,before,'one click on 지우기 deletes nothing');
+ assert(buttons().some(node=>node.textContent==='지우기 확인'&&!node.parentNode.hidden),'the removal asks for confirmation');
+ $('ai-chooser-discard').hidden=true;buttons().find(node=>node.textContent==='지우기 확인').onclick();
+ assert.equal($('ai-chooser-discard').hidden,false,'confirming removal with unsaved profile edits asks before discarding them');assert.equal(calls.length,before);
+ ctx.chooserClearDiscard();vm.runInContext('aiAccountNode=null',ctx);}
+// #211 review: an unfinished cloud profile outranks a cached signed-in login in the active status.
+{const unfinished={...cloudStatus,problem:'Amazon Bedrock 설정에 필요한 값이 없습니다: AWS_REGION'};
+ const view=ctx.mainAiView(settingsFor('claude-code',{'claude-code':sub('claude-code',{cloud:unfinished,login:{state:'signed-in',checked_at:1700000000}})}));
+ assert.equal(view.state,'클라우드 제공자 설정 필요');assert.equal(view.kind,'attention');assert(view.description.includes('AWS_REGION'));}
+// #211 review: credentials saved for a provider that is no longer selected stay removable, with confirmation.
+{const dormant={...cloudStatus,provider:'subscription',destination:'',providers:[{...cloudStatus.providers[0],saved_secrets:['AWS_BEARER_TOKEN_BEDROCK']}]};
+ const holder=new Element('div');holder.append(ctx.cloudProviderForm(sub('claude-code',{cloud:dormant})));
+ const remove=holder.querySelectorAll('button').find(node=>node.textContent==='지우기');assert(remove,'a dormant saved credential offers removal');
+ const before=calls.length;remove.onclick();assert.equal(calls.length,before);
+ assert(holder.querySelectorAll('button').some(node=>node.textContent==='지우기 확인'&&!node.parentNode.hidden));}
+{const holder=new Element('div');holder.append(ctx.cloudProviderForm(sub('claude-code',{cloud:cloudStatus})));ctx.__cloudHolder=holder;vm.runInContext('aiAccountNode=__cloudHolder',ctx);
+ holder.querySelectorAll('input').find(node=>node.name==='AWS_REGION').value='eu-west-1';
+ const secretRow=holder.querySelectorAll('form.cloud-secret')[0];secretRow.querySelectorAll('input')[0].value='fixture-secret-value';
+ const before=calls.length;$('ai-chooser-discard').hidden=true;secretRow.onsubmit({preventDefault(){}});
+ assert.equal($('ai-chooser-discard').hidden,false,'saving a credential with unsaved profile edits asks first');assert.equal(calls.length,before);
+ ctx.chooserClearDiscard();
+ vm.runInContext('aiAccountNode=null',ctx);}
 const technical=descendants($('active-ai')).find(node=>node.tag==='details');technical.open=true;
 settings.main_ai.last_check.checked_at++;ctx.renderExecutionConnection(settings);
 assert(descendants($('active-ai')).find(node=>node.dataset.disclosure==='technical').open,'polling preserves expanded technical disclosure');

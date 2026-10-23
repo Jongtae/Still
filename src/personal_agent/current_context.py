@@ -119,6 +119,9 @@ def stored_secret_values(store):
     # #1380: a short code-run value (an account product code such as "01") identifies nothing
     # alone and would garble every number it occurs in; the same 8-character floor as above.
     values.extend(value for value in encrypted_secret_values(store) if len(value) >= 8)
+    # #211: the owner's cloud provider credentials.
+    from .cloud_engines import CloudEngines
+    values.extend(CloudEngines(store).secret_values())
     return values
 
 

@@ -182,7 +182,7 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
 
     def __init__(self, execution, engine_id, *, model=None, model_policy='engine_default',
                  timeout=CLI_DECISION_TIMEOUT_SECONDS, audit=None, now=time.time, guard=None,
-                 codex_disabled_features=None, effort=None):
+                 codex_disabled_features=None, effort=None, expected_cloud=None):
         super().__init__(audit=audit, now=now)
         if engine_id not in CLI_BINARIES:
             raise ValueError('지원하는 구독 엔진을 선택하세요.')
@@ -192,12 +192,15 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
             raise ValueError('추론 강도를 확인하세요.')
         self.execution, self.engine_id, self.model, self.effort = execution, engine_id, model, effort
         self.model_policy, self.timeout, self.guard = model_policy, timeout, guard
+        # #211: the cloud profile identity the route was qualified on (``subscription`` or
+        # ``<provider>:<revision>``); None for a qualification probe, which binds what it observes.
+        self.expected_cloud = expected_cloud
         # Codex fails closed without the disable plan from a capability check.
         self.codex_disabled_features = (tuple(codex_disabled_features) if codex_disabled_features is not None
                                         else None)
         self.last_failure = ''
 
-    def argv(self, binary, prompt, schema_path, schema):
+    def argv(self, binary, prompt, schema_path, schema, cloud=None):
         if self.engine_id == 'codex':
             # #679: a judgment runs under the #616 strict-isolated launch
             # arguments, reused as-is: the Codex permissions profile (the
@@ -218,6 +221,11 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                 argv += ['-c', f'model_reasoning_effort="{self.effort}"']
             if self.model:
                 argv += ['--model', self.model]
+            if cloud is not None:
+                # #211: the owner's cloud provider (documented model_providers keys) and its key withheld from
+                # any shell command (the strict profile offers none; the exclusion is the second layer).
+                from .owner_mcp import shell_exclusion
+                argv += [*cloud.codex_arguments(), *shell_exclusion(cloud.withheld())]
             return argv + [prompt]
         argv = [binary, '-p', prompt, '--output-format', 'json', '--json-schema', json.dumps(schema),
                 # --restricted (listed by 2.1.280 --help): no code-running tools or
@@ -268,18 +276,44 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
             run_dir = Path(folder)
             schema_path = run_dir / 'decision-schema.json'
             schema_path.write_text(json.dumps(schema), encoding='utf-8')
+            # #211: the Judgment AI runs on the engine's current cloud provider profile too.
+            resolve = getattr(self.execution, 'cloud_profile', None)
             try:
-                env = self.execution.environment(self.engine_id, binary, run_dir)
+                cloud = resolve(self.engine_id) if callable(resolve) else None
+            except ExecutionError as exc:
+                return done(OUTCOME_UNAVAILABLE, failure=exc.failure_class or 'cloud-not-configured')
+            # The exact snapshot that launches must be the one the route was qualified on; a save
+            # racing the guard above cannot let an earlier qualification authorize another account.
+            if self.expected_cloud is not None and (cloud.identity() if cloud is not None else 'subscription') != self.expected_cloud:
+                return done(OUTCOME_UNAVAILABLE, failure='requalification-needed')
+            if cloud is not None:
+                # The audit names the cloud provider, destination and profile revision (no values).
+                identity.update(provider=cloud.provider, destination=cloud.destination(), cloud_profile=cloud.identity())
+            try:
+                env = (self.execution.environment(self.engine_id, binary, run_dir, cloud=cloud) if cloud is not None
+                       else self.execution.environment(self.engine_id, binary, run_dir))
             except ExecutionError:
                 return done(OUTCOME_UNAVAILABLE, failure='auth')
             if self.engine_id == 'claude-code':
                 env = {**env, **CLAUDE_DECISION_ENV}
             try:
-                argv = self.argv(binary, prompt, schema_path, schema)
+                argv = self.argv(binary, prompt, schema_path, schema, cloud=cloud)
             except ExecutionError:
                 # The strict launch refused the stored feature plan.
                 return done(OUTCOME_UNAVAILABLE, failure='capability-unchecked')
-            if not context.admit():return done(OUTCOME_CANCELLED)
+            if cloud is not None:
+                # The cloud cap is admitted before the Work's turn allowance, so a spent cap costs the
+                # Work nothing; a spent cap launches nothing and falls back nowhere.
+                try:
+                    self.execution.admit_cloud(cloud)
+                except ExecutionError as exc:
+                    return done(OUTCOME_UNAVAILABLE, failure=exc.failure_class or 'cloud-budget')
+            if not context.admit():
+                # The Work refused the turn (cancelled or out of turns): the cloud call is given back.
+                if cloud is not None:
+                    try:self.execution.release_cloud(cloud)
+                    except Exception:pass
+                return done(OUTCOME_CANCELLED)
             try:
                 completed = bounded_run(self.execution.runner, argv, cwd=run_dir, env=env, timeout=self.timeout)
             except subprocess.TimeoutExpired:
@@ -331,9 +365,17 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
         text with ``redact_reason``, which withholds any echo of the prompt
         and masks secret-shaped strings.
         """
-        secret = (env or {}).get('CLAUDE_CODE_OAUTH_TOKEN') or ''
-        scrub = ((lambda text: (text or '').replace(secret, '[redacted]')) if len(secret) >= 8
-                 else (lambda text: text or ''))
+        # #211: and every cloud provider credential the call carried (by its documented name).
+        from .cloud_engines import PROVIDERS
+        names = {'CLAUDE_CODE_OAUTH_TOKEN', *(name for provider in PROVIDERS.values() for name in provider.secrets)}
+        values = [value for name, value in (env or {}).items()
+                  if name in names and isinstance(value, str) and len(value) >= 8]
+
+        def scrub(text):
+            text = text or ''
+            for value in values:
+                text = text.replace(value, '[redacted]')
+            return text
         stdout, stderr = scrub(stdout), scrub(stderr)
         _, reason = failure_details(self.engine_id, stdout, stderr, prompt)
         source = ('provider-error' if failure_details(self.engine_id, stdout, '')[1]
