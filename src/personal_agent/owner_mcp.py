@@ -213,14 +213,18 @@ def merge_shell_exclusion(args, names):
     return [*kept, *shell_exclusion(merged)]
 
 
-def codex_launch(definitions):
+def codex_launch(definitions, reserved=()):
     """``(config args, env values, secret env names)`` that load confirmed servers into one Codex turn.
 
     ``definitions`` maps server name to its transport.  A server whose
     definition cannot be expressed without putting a value in an argument is
-    skipped, never half-loaded.
+    skipped, never half-loaded.  ``reserved`` names (#211: the turn's cloud
+    provider credentials) are the CLI's own: a server that would set, forward
+    or send one as a header or bearer token is skipped, so a provider key never
+    reaches an MCP server and a server value never replaces it.
     """
     args, env, secret = [], {}, []
+    reserved = frozenset(reserved)
     for index, (name, transport) in enumerate(sorted(definitions.items())):
         if not valid_name(name) or not isinstance(transport, dict):
             continue
@@ -234,8 +238,8 @@ def codex_launch(definitions):
             if isinstance(transport.get('cwd'), str) and transport['cwd']:
                 server_args += ['-c', f'{prefix}.cwd={_toml(transport["cwd"])}']
             values = transport.get('env') if isinstance(transport.get('env'), dict) else {}
-            if not all(isinstance(k, str) and ENV_NAME.match(k) and k not in RESERVED_ENV and isinstance(v, str)
-                       for k, v in values.items()):
+            if not all(isinstance(k, str) and ENV_NAME.match(k) and k not in RESERVED_ENV and k not in reserved
+                       and isinstance(v, str) for k, v in values.items()):
                 continue
             server_env.update(values)
             forwarded = sorted(values)
@@ -244,7 +248,8 @@ def codex_launch(definitions):
             literal = transport.get('http_headers') if isinstance(transport.get('http_headers'), dict) else {}
             named = transport.get('env_http_headers') if isinstance(transport.get('env_http_headers'), dict) else {}
             if not all(isinstance(h, str) and isinstance(v, str) for h, v in literal.items()) \
-                    or not all(isinstance(h, str) and isinstance(v, str) and ENV_NAME.match(v) for h, v in named.items()):
+                    or not all(isinstance(h, str) and isinstance(v, str) and ENV_NAME.match(v) and v not in reserved
+                               for h, v in named.items()):
                 continue
             # A literal header value (often a key) becomes an environment value Codex reads by name.
             headers = dict(named)
@@ -255,6 +260,8 @@ def codex_launch(definitions):
             if headers:
                 server_args += ['-c', f'{prefix}.env_http_headers={_toml(headers)}']
             token = transport.get('bearer_token_env_var')
+            if isinstance(token, str) and token in reserved:
+                continue
             if isinstance(token, str) and ENV_NAME.match(token):
                 server_args += ['-c', f'{prefix}.bearer_token_env_var={_toml(token)}']
             # Variables the owner's definition names come from Still's own environment when set there.

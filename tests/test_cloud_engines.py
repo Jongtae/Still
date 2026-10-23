@@ -154,6 +154,29 @@ class Profiles(StoreCase):
         self.assertNotIn('NODE_OPTIONS', env)
         self.assertLessEqual(set(env), DOCUMENTED['bedrock'])
 
+    def test_a_launch_never_pairs_one_revision_with_another_credential(self):
+        """#211 review: a credential saved while a launch resolves makes it resolve again."""
+        self.bedrock()
+        resolve, raced = self.cloud._resolve, []
+
+        def racing(engine_id):
+            launch = resolve(engine_id)
+            if not raced:
+                raced.append(True)
+                self.cloud.save_secret('claude-code', 'bedrock', 'AWS_BEARER_TOKEN_BEDROCK', 'fixture-bedrock-token-0002')
+            return launch
+        self.cloud._resolve = racing
+        launch = self.cloud.launch('claude-code')
+        self.assertEqual(launch.identity(), self.cloud.identity('claude-code'))
+        self.assertEqual(launch.secret_values['AWS_BEARER_TOKEN_BEDROCK'], 'fixture-bedrock-token-0002')
+
+    def test_a_credential_change_moves_the_identity_before_the_value(self):
+        self.bedrock()
+        before = self.cloud.identity('claude-code')
+        self.cloud.save_secret('claude-code', 'bedrock', 'AWS_BEARER_TOKEN_BEDROCK', 'fixture-bedrock-token-0003')
+        self.assertNotEqual(self.cloud.identity('claude-code'), before)
+        self.assertEqual(self.cloud.launch('claude-code').identity(), self.cloud.identity('claude-code'))
+
     def test_status_names_what_is_saved_and_never_a_value(self):
         self.bedrock()
         status = self.cloud.status('claude-code')
@@ -203,6 +226,24 @@ class Profiles(StoreCase):
                          ['-c', 'shell_environment_policy.exclude=["AZURE_OPENAI_API_KEY"]', '--disable', 'shell_snapshot'])
         self.assertEqual(owner_mcp.merge_shell_exclusion(owner_mcp.shell_exclusion(['A']), ['B']),
                          owner_mcp.shell_exclusion(['A', 'B']), 'one exclusion and one snapshot switch, never two')
+
+    def test_an_owner_mcp_server_never_gets_or_replaces_a_cloud_credential(self):
+        """#211 review: provider credential names are the CLI's own, not an owner MCP server's."""
+        reserved = ('AZURE_OPENAI_API_KEY',)
+        cases = {
+            'stdio env': {'type': 'stdio', 'command': '/bin/srv', 'env': {'AZURE_OPENAI_API_KEY': 'x' * 12}},
+            'named header': {'type': 'streamable_http', 'url': 'https://mcp.example/mcp',
+                             'env_http_headers': {'Authorization': 'AZURE_OPENAI_API_KEY'}},
+            'bearer token': {'type': 'streamable_http', 'url': 'https://mcp.example/mcp',
+                             'bearer_token_env_var': 'AZURE_OPENAI_API_KEY'},
+        }
+        for label, transport in cases.items():
+            with self.subTest(label):
+                self.assertEqual(owner_mcp.codex_launch({'srv': transport}, reserved=reserved), ([], {}, []))
+                self.assertNotEqual(owner_mcp.codex_launch({'srv': transport})[0], [], 'loads when nothing is reserved')
+        args, env, _secret = owner_mcp.codex_launch(
+            {'srv': {'type': 'stdio', 'command': '/bin/srv', 'env': {'OTHER_TOKEN': 'y' * 12}}}, reserved=reserved)
+        self.assertEqual(env, {'OTHER_TOKEN': 'y' * 12}, 'an unrelated server still loads')
 
     def test_the_snapshot_that_restores_excluded_values_is_off_whenever_a_value_is_withheld(self):
         # Observed on codex-cli 0.153.4 (local fixture model, #211): with shell_snapshot on, an
@@ -390,6 +431,17 @@ class JudgmentCalls(StoreCase):
         self.assertIn('Purpose: x', argv[-1], 'the prompt stays the last argument')
         self.assertNotIn(AZURE_KEY, json.dumps(argv))
         self.assertEqual(env['AZURE_OPENAI_API_KEY'], AZURE_KEY)
+
+    def test_the_launch_snapshot_must_be_the_qualified_one(self):
+        """#211 review: the exact snapshot that launches is compared with the route's qualified identity."""
+        self.bedrock()
+        calls = []
+        stale = self.engine('claude-code', self.runner(calls), expected_cloud='subscription')
+        decision = stale.judge(DecisionContext('x', {'owner_message': 'a'}), 'p?')
+        self.assertEqual((decision.outcome, stale.last_failure), (OUTCOME_UNAVAILABLE, 'requalification-needed'))
+        self.assertEqual(calls, [], 'no call to a destination the route was not qualified on')
+        bound = self.engine('claude-code', self.runner(calls), expected_cloud=self.cloud.identity('claude-code'))
+        self.assertEqual(bound.judge(DecisionContext('x', {'owner_message': 'a'}), 'p?').outcome, OUTCOME_DECIDED)
 
     def test_a_spent_cap_makes_the_judgment_unavailable_without_a_call(self):
         self.bedrock(cap=1)

@@ -375,10 +375,12 @@ class DecisionRoutes:
         return JevDecisionEngine(lambda: self.store.secret('decision_jev_key') or '', model=model,
                                  audit=audit, **kwargs)
 
-    def _cli_engine(self, engine_id, model, policy, audit, guard=None, codex_disabled_features=None, effort=None):
+    def _cli_engine(self, engine_id, model, policy, audit, guard=None, codex_disabled_features=None, effort=None,
+                    expected_cloud=None):
         return SubscriptionCliDecisionEngine(self.service.execution_adapter, engine_id, model=model,
                                              model_policy=policy, audit=audit, guard=guard,
-                                             codex_disabled_features=codex_disabled_features, effort=effort)
+                                             codex_disabled_features=codex_disabled_features, effort=effort,
+                                             expected_cloud=expected_cloud)
 
     def engine(self):
         """The engine for the next judgment, from the active route only."""
@@ -426,7 +428,8 @@ class DecisionRoutes:
 
         effort = route.get('effort') if valid_effort(route.get('effort')) else None
         return self._cli_engine(engine_id, model, policy, audit, guard,
-                                route.get('codex_disabled_features') if engine_id == 'codex' else None, effort)
+                                route.get('codex_disabled_features') if engine_id == 'codex' else None, effort,
+                                expected_cloud=route.get('cloud_profile') or 'subscription')
 
     def _main_key(self, main_id):
         """The Main AI's own probed Work key (``model_key``), only while ``main_id`` is it.

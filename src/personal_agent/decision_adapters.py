@@ -182,7 +182,7 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
 
     def __init__(self, execution, engine_id, *, model=None, model_policy='engine_default',
                  timeout=CLI_DECISION_TIMEOUT_SECONDS, audit=None, now=time.time, guard=None,
-                 codex_disabled_features=None, effort=None):
+                 codex_disabled_features=None, effort=None, expected_cloud=None):
         super().__init__(audit=audit, now=now)
         if engine_id not in CLI_BINARIES:
             raise ValueError('지원하는 구독 엔진을 선택하세요.')
@@ -192,6 +192,9 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
             raise ValueError('추론 강도를 확인하세요.')
         self.execution, self.engine_id, self.model, self.effort = execution, engine_id, model, effort
         self.model_policy, self.timeout, self.guard = model_policy, timeout, guard
+        # #211: the cloud profile identity the route was qualified on (``subscription`` or
+        # ``<provider>:<revision>``); None for a qualification probe, which binds what it observes.
+        self.expected_cloud = expected_cloud
         # Codex fails closed without the disable plan from a capability check.
         self.codex_disabled_features = (tuple(codex_disabled_features) if codex_disabled_features is not None
                                         else None)
@@ -279,6 +282,10 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                 cloud = resolve(self.engine_id) if callable(resolve) else None
             except ExecutionError as exc:
                 return done(OUTCOME_UNAVAILABLE, failure=exc.failure_class or 'cloud-not-configured')
+            # The exact snapshot that launches must be the one the route was qualified on; a save
+            # racing the guard above cannot let an earlier qualification authorize another account.
+            if self.expected_cloud is not None and (cloud.identity() if cloud is not None else 'subscription') != self.expected_cloud:
+                return done(OUTCOME_UNAVAILABLE, failure='requalification-needed')
             try:
                 env = (self.execution.environment(self.engine_id, binary, run_dir, cloud=cloud) if cloud is not None
                        else self.execution.environment(self.engine_id, binary, run_dir))

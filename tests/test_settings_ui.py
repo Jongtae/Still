@@ -125,6 +125,9 @@ assert.equal(ctx.mainAiView(settingsFor('claude-code',{'claude-code':sub('claude
  assert.equal(ctx.chooserCloudDirty(),true,'an edited cloud setting is an unsaved draft');assert.equal(ctx.chooserAccountDirty(),true);
  holder.querySelectorAll('input').find(node=>node.name==='AWS_REGION').value='us-east-1';
  holder.querySelectorAll('select')[0].value='subscription';assert.equal(ctx.chooserCloudDirty(),true,'a changed provider is an unsaved draft');
+ vm.runInContext("aiAccountPanel='claude-code';aiPending=false",ctx);$('ai-chooser-discard').hidden=true;ctx.chooserPanel('codex');
+ assert.equal(vm.runInContext('aiAccountPanel',ctx),'claude-code','switching panels with a cloud draft asks first');assert.equal($('ai-chooser-discard').hidden,false);
+ ctx.chooserClearDiscard();vm.runInContext("aiAccountPanel=''",ctx);
  vm.runInContext('aiAccountNode=null',ctx);}
 const technical=descendants($('active-ai')).find(node=>node.tag==='details');technical.open=true;
 settings.main_ai.last_check.checked_at++;ctx.renderExecutionConnection(settings);

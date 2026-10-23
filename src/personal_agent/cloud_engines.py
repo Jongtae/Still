@@ -221,6 +221,10 @@ class CloudLaunch:
             return f'{name} ({where})'
         return f'{name} ({urlsplit(settings.get("base_url", "")).hostname or ""})'
 
+    def identity(self):
+        """The profile snapshot this launch was resolved from (``<provider>:<revision>``)."""
+        return f'{self.provider}:{self.revision}'
+
     def record(self):
         """What a Work's turn record keeps about this launch: names and destination, never values."""
         return {'cloud_provider': self.provider, 'cloud_destination': self.destination(),
@@ -283,6 +287,19 @@ class CloudEngines:
         value: a half-configured cloud profile never runs, and never silently
         runs on the subscription instead.
         """
+        # One consistent snapshot: the revision is read before and after the
+        # values, and a save in between (which bumps the revision before it
+        # writes a credential) makes this resolve again, so a launch never pairs
+        # one revision with another revision's credential (#211 review).
+        for _attempt in range(3):
+            before = self._row(engine_id).get('revision')
+            launch = self._resolve(engine_id)
+            if self._row(engine_id).get('revision') == before:
+                return launch
+        raise CloudLaunchError(msg('cloud_engines.not_configured', provider=self.provider(engine_id), names='revision'),
+                               NOT_CONFIGURED)
+
+    def _resolve(self, engine_id):
         provider_id = self.provider(engine_id)
         if provider_id == SUBSCRIPTION:
             return None
@@ -414,15 +431,18 @@ class CloudEngines:
             raise ValueError(msg('cloud_engines.invalid_value', name=name))
         value = value.strip()
         slot = secret_slot(engine_id, provider_id, name)
+        if value and not _SECRET_VALUE.match(value):
+            raise ValueError(msg('cloud_engines.invalid_value', name=name))
+        # A changed credential may be another account: the revision moves first, so a
+        # qualification bound to the old revision (the Judgment AI's, ``identity``)
+        # never authorizes a launch that already carries the new value.
+        self._bump_revision(engine_id, provider_id)
         if not value:
             self.store.remove_secret(slot)
         elif not _SECRET_VALUE.match(value):
             raise ValueError(msg('cloud_engines.invalid_value', name=name))
         else:
             self.store.secret(slot, value)
-        # A changed credential may be another account: a qualification bound to the
-        # profile (the Judgment AI's, ``identity``) must not carry over to it.
-        self._bump_revision(engine_id, provider_id)
         return self.status(engine_id)
 
     def _bump_revision(self, engine_id, provider_id):

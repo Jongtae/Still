@@ -611,7 +611,7 @@ function chooserDiscard(next,dirty=chooserDraftDirty()){
 }
 function chooserClearDiscard(){aiDiscardAction=null;$('ai-chooser-discard').hidden=true;}
 function chooserDismiss(){chooserDiscard(()=>$('ai-chooser').close(),aiPending?chooserAccountDirty():chooserDraftDirty());}
-function chooserPanel(id){if(aiPending)return;chooserDiscard(()=>{aiAccountPanel=id;aiAccountNode=null;aiKeyEditing='';aiKeyRemoving='';renderAiChooser();(aiAccountNode?.querySelector('input')||aiAccountNode?.querySelector('button')||$('ai-chooser-list').querySelector('input[name="main-ai"]:checked'))?.focus();},chooserSecretDirty());}
+function chooserPanel(id){if(aiPending)return;chooserDiscard(()=>{aiAccountPanel=id;aiAccountNode=null;aiKeyEditing='';aiKeyRemoving='';renderAiChooser();(aiAccountNode?.querySelector('input')||aiAccountNode?.querySelector('button')||$('ai-chooser-list').querySelector('input[name="main-ai"]:checked'))?.focus();},chooserAccountDirty());}
 function openAiChooser(opener){
  const dialog=$('ai-chooser'),main=aiSettings?.main_ai||{};aiChooserSession++;aiChoice=(main.order||[]).includes(main.current)?main.current:'';aiInitialChoice=aiChoice;aiInitialModels={};for(const route of main.routes||[])aiInitialModels[route.id]=route.model||'';
  for(const id of Object.keys(aiModelDraft))delete aiModelDraft[id];aiKeyEditing='';aiKeyRemoving='';aiAccountPanel='';aiAccountNode=null;aiModelNode=null;aiDiscardAction=null;$('ai-chooser-discard').hidden=true;
@@ -692,7 +692,7 @@ function renderAiChooser(){
  if(active?.isConnected){active.focus({preventScroll:true});if(caret)active.setSelectionRange(...caret);}
 }
 async function applyAiChoice(button,discarded=false){
- if(aiPending)return;if(chooserSecretDirty()&&!discarded){chooserDiscard(()=>{const input=aiAccountNode?.querySelector('input[type="password"]');if(input)input.value='';void applyAiChoice(button,true);},true);return;}const chosen=mainAiRoutes(aiSettings)[aiChoice];if(!chosen)return;
+ if(aiPending)return;if(chooserAccountDirty()&&!discarded){chooserDiscard(()=>{const input=aiAccountNode?.querySelector('input[type="password"]');if(input)input.value='';void applyAiChoice(button,true);},true);return;}const chosen=mainAiRoutes(aiSettings)[aiChoice];if(!chosen)return;
  const session=aiChooserSession,body={route:chosen.id},model=aiModelDraft[chosen.id];let completion=null;
  if(chosen.kind==='api'&&typeof model==='string'&&model.trim())body.model=model.trim();if(chosen.kind==='subscription'&&typeof model==='string'&&chosen.model_selectable!==false)body.model=model.trim();if(chosen.kind==='subscription'&&chosen.model_selectable===false&&chosen.model)body.model='';
  chooserClearDiscard();aiPending=true;renderAiChooser();chooserFeedback(t('{name}에 확인 요청을 보내는 중… 통과한 경우에만 바뀝니다.',{name:chosen.name})+' '+t('창을 닫아도 요청은 계속됩니다.'));

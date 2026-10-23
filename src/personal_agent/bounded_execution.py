@@ -2151,7 +2151,8 @@ class BoundedExecutionAdapter:
                 # may be secret travel only in the CLI's environment.  No server loads without the hook.
                 definitions = {name: owner_mcp.codex_definition(binary, name, env, runner=self.runner) for name in confirmed}
                 launch_args, server_env, _secret = owner_mcp.codex_launch(
-                    {name: value for name, value in definitions.items() if value})
+                    {name: value for name, value in definitions.items() if value},
+                    reserved=(*cloud.definition.secrets, *cloud.environment()) if cloud is not None else ())
                 if launch_args:
                     env.update(server_env)
                     owner_args = (*owner_mcp.codex_hook_arguments(relay), *launch_args)
