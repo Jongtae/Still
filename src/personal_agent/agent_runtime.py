@@ -1597,6 +1597,55 @@ def ran_field(exc):
  """``{'ran': False}`` for a failure marked by ``not_run``, else nothing."""
  return {'ran':False} if getattr(exc,'ran',None) is False else {}
 
+#: #233: whether the tool call running on this thread has handed what it carries to a transport.
+_HANDOFF=threading.local()
+
+def handed_off():
+ """Mark that the call running on this thread handed what it carries to a transport (#233).
+
+ Called where a request leaves Still's own checks, at each outbound transport:
+ a public read's network request (``Capabilities._read_network``), a browser
+ navigation or input step (``BrowserSession``), an API request
+ (``ApiRequests``) and a code run's sandbox (``CodeRunner``).  A call of an
+ outbound action (``OUTBOUND_MATCH_ACTIONS``) that fails before any hand-off
+ was refused by Still itself, so ``Capabilities.execute`` marks it
+ ``not_run``: its record says ``ran: false`` and nothing it would have carried
+ is listed as an attempt.  Outside a call the mark is ignored.
+ """
+ _HANDOFF.reached=True
+
+def refused_before_hand_off(execute):
+ """``Capabilities.execute``, marking an outbound call refused before its transport ``not_run`` (#233).
+
+ Entering ``execute`` is not dispatch: a call of an outbound action
+ (``OUTBOUND_MATCH_ACTIONS``) that fails before it was handed to a transport
+ (``handed_off``) - a page outside the Work's scope, no browser, a weather
+ call without a place, an API call refused before sending, a code run that
+ never started - was refused by Still, so its record says ``ran: false``.
+ """
+ def run(self,name,args):
+  outbound=(self.tools.get(name) or {}).get('host_action') in OUTBOUND_MATCH_ACTIONS
+  previous=getattr(_HANDOFF,'reached',None);_HANDOFF.reached=False
+  try:return execute(self,name,args)
+  except Exception as exc:
+   if outbound and not _HANDOFF.reached:not_run(exc)
+   raise
+  finally:_HANDOFF.reached=previous
+ run.__name__,run.__qualname__,run.__doc__=execute.__name__,execute.__qualname__,execute.__doc__ or run.__doc__
+ return run
+
+def attempted_outbound(capabilities,action,args,exc):
+ """What a failed call's record adds for #167: held values it may have carried out, and where.
+
+ A call that failed once it was handed to a transport may have carried them
+ out before the failure; a ``browser_open`` also keeps the host it was sent
+ to (#233), since the browser may have contacted it.  Nothing for a call Still
+ refused before anything left (``ran: false``).
+ """
+ if not action or ran_field(exc):return {}
+ found=outbound_evidence(capabilities,action,args,{})
+ return {key:found[key] for key in ('destination','landed','outbound_matches') if found.get(key)}
+
 def observed_field(exc):
  """``{'observed_step': ...}`` of a click or typing step that failed after Still observed it (#1496), else nothing.
 
@@ -3161,6 +3210,7 @@ class Capabilities:
    # route; it is a late warning over surface forms, not provenance.
    from .public_query import validate_public_query
    plan={**plan,'query':validate_public_query(plan.get('query'),'public_task_input')}
+  handed_off()
   try:result=self.network.execute(plan,**extra)
   except (ValueError,TypeError,OSError,ProviderError) as exc:
    code,retry,_effect=classify_failure(exc,plan.get('tool'))
@@ -3218,6 +3268,7 @@ class Capabilities:
    row['source_status']='found' if source else ('unknown' if failed else 'not_kept')
   return rows
 
+ @refused_before_hand_off
  def execute(self,name,args):
   tool=self.tools.get(name)
   # #1484: a refusal here comes before the tool runs, so its record says ``ran: false``.
@@ -5095,11 +5146,10 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       # connection, login or approval) is where a different path helps.
       if result['retry'] in ('permanent','transient') and not result.get('requires'):path_failed=True
      else:invalid_calls.add(name if isinstance(name,str) else 'unknown')
-     # #167: a call that failed after dispatch may still have carried a held value out.
-     attempted=outbound_evidence(capabilities,action,args,{}).get('outbound_matches') if dispatched and validated and not ran_field(exc) else None
+     # #167: a call that failed after it was handed to a transport may still have carried a held value out.
      record(name,'failed',json.dumps({'scope':scope,'call_id':call['id'],'attempt':attempt,**result,
                                       **(declared_effect(action,args) if validated else {}),
-                                      **({'outbound_matches':attempted} if attempted else {})},ensure_ascii=False))
+                                      **(attempted_outbound(capabilities,action,args,exc) if dispatched and validated else {})},ensure_ascii=False))
     if validated:
      observations[call['id']]=(name,action,trail[-1][1],result)
      steps.append((name,action,trail[-1][1],

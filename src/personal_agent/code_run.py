@@ -492,6 +492,8 @@ class CodeRunner:
         return masked, plain, set_hosts
 
     def run(self, args, *, seconds=None):
+        # #233: first, so a run refused below never reports an earlier run's requests as its own.
+        self.sent = []
         # Live 2026-10-14: a resumed Work rewrote the code that asked for approval, so the request no
         # longer matched the approval.  ``rerun: approved`` runs exactly the run that asked.
         if isinstance(args, dict) and str(args.get('rerun') or '').strip().lower() == 'approved':
@@ -510,7 +512,6 @@ class CodeRunner:
         self._fields = parse_approval_fields(fields)
         if seconds is not None:
             timeout = max(1, min(timeout, int(seconds)))
-        self.sent = []
         node = self.node()
         if node is None:
             raise CodeRunError(UNAVAILABLE_TEXT, 'code_run_unavailable')
@@ -881,6 +882,11 @@ class CodeRunner:
         deadline = self.clock() + timeout + RUNNER_GRACE
         try:
             process.stdin.write(json.dumps(config) + '\n')
+            # #233: the runner process exists and has its configuration, so the code may run and send from
+            # here; a failure to start it (``popen``) or to hand it the configuration let nothing out.  The
+            # line is complete once written (line buffered), so the mark comes before the flush.
+            from .agent_runtime import handed_off
+            handed_off()
             process.stdin.flush()
             while True:
                 if self.interrupted is not None and self.interrupted():

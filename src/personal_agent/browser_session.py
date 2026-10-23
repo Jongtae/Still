@@ -1117,6 +1117,10 @@ class BrowserSession:
         any other one is cancelled and handled by ``_cancelled_submit`` (#700).
         """
         self._last_input = description
+        # #233: the driver first (as for a navigation); the step's input goes to the page from the mark on.
+        self._driver()
+        from .agent_runtime import handed_off
+        handed_off()
         try:
             return self._call(operation)
         except ToolError as exc:
@@ -1199,8 +1203,13 @@ class BrowserSession:
         # A failed navigation must not leave old element numbers actionable.
         self.last = None
         self._navigation_error = None
+        # #233: a browser that could not be started (the factory raised or gave none) received nothing,
+        # so the driver is obtained before the address is handed to it.
+        driver = self._driver()
+        from .agent_runtime import handed_off
+        handed_off()   # the address goes to the browser from here
         try:
-            self._call(lambda timeout: self._driver().goto(url, timeout))
+            self._call(lambda timeout: driver.goto(url, timeout))
         except ToolError as exc:
             self._navigation_error = exc.code if exc.code in ('browser_timeout', 'unsupported_navigation') else None
             raise

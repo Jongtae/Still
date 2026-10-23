@@ -917,6 +917,8 @@ class ApiRequests:
             if identity:
                 claim = self._effect_guard(slot, identity, method=method, effect=effect, destination=named)
             attempts += 1
+            from .agent_runtime import handed_off
+            handed_off()   # #233: the request leaves Still's own checks here
             try:
                 status, response_headers, raw = self.transport(method, url, headers, body.encode() if body else None, TIMEOUT)
             except Exception as exc:

@@ -359,6 +359,175 @@ class CodeRunnerMemory(unittest.TestCase):
         self.assertNotIn('M1234', json.dumps(evidence_summary('code_run', result)))
 
 
+class HandOff(unittest.TestCase):
+    """#233: only a call handed to a transport can have carried a held value out; a local refusal carried nothing."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.store = QuickStore(Path(tmp.name) / 'state')
+        earlier = self.store.enqueue('회원번호 기억해', 'earlier')
+        self.store.save_memory('member-number', MEMBER, work_id=earlier)
+        self.job = self.store.enqueue('회원 혜택 찾아줘', 'later')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='running' WHERE id=?", (self.job,))
+
+    def record(self, tool, status, detail):
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (self.job, tool, status, detail, time.time()))
+
+    def failed(self, tool):
+        with self.store.db() as db:
+            return [json.loads(row['detail']) for row in db.execute(
+                "SELECT detail FROM tool_events WHERE job_id=? AND tool=? AND status='failed'", (self.job, tool))]
+
+    class Network:
+        def __init__(self, error=None):
+            self.plans, self.error = [], error
+
+        def execute(self, plan, budget=None):
+            self.plans.append(dict(plan))
+            if self.error:
+                raise self.error
+            return {'tool': plan['tool'], 'url': plan.get('url'), 'text': 'page', 'sources': [], 'retrieved_at': 1}
+
+    def test_out_of_scope_page_reads_carrying_memory_record_no_attempt(self):
+        # Two consecutive reads start together (#16), so each refusal is marked on its own thread.
+        script = Script({'tool_calls': [call('1', 'public_page_read', url='https://shop.example/find?no=M1234-5678'),
+                                        call('2', 'public_page_read', url='https://other.example/q?m=m1234%205678')]},
+                        {'content': '읽지 못했습니다.'})
+        network = self.Network()
+        caps = Capabilities(self.store, ModelAdapter(script), BROWSER_CFG, '', self.job, self.record, network=network)
+        run_agent(caps.adapter, BROWSER_CFG, '', [{'role': 'user', 'content': '회원 혜택 찾아줘'}], '', caps, self.record)
+        self.assertEqual(network.plans, [], 'nothing was sent')
+        failed = self.failed('public_page_read')
+        self.assertEqual(len(failed), 2)
+        for detail in failed:
+            self.assertIs(detail.get('ran'), False)
+            self.assertNotIn('outbound_matches', detail)
+        self.assertEqual(information_use.work_information_use(self.store, self.job)['sent_to']['held_value_matches'], [])
+
+    def test_the_same_read_failing_after_it_was_sent_is_still_shown_as_an_attempt(self):
+        url = 'https://shop.example/find?no=M1234-5678'
+        script = Script({'tool_calls': [call('1', 'public_page_read', url=url)]}, {'content': '읽지 못했습니다.'})
+        network = self.Network(error=ValueError('response rejected after the request was sent'))
+        caps = Capabilities(self.store, ModelAdapter(script), BROWSER_CFG, '', self.job, self.record, network=network,
+                            public_page_scope=[url])
+        run_agent(caps.adapter, BROWSER_CFG, '', [{'role': 'user', 'content': '회원 혜택 찾아줘'}], '', caps, self.record)
+        self.assertEqual(len(network.plans), 1, 'the read was sent')
+        [detail] = self.failed('public_page_read')
+        self.assertNotIn('ran', detail)
+        self.assertEqual(detail['outbound_matches'], [{'source': 'memory', 'key': 'member-number',
+                                                       'destination': 'shop.example', 'tool': 'public_page_read'}])
+
+    def test_local_refusals_of_each_outbound_tool_are_marked_not_run_and_carry_nothing(self):
+        caps = Capabilities(self.store, None, {}, '', self.job, self.record, network=self.Network())
+        cases = (('browser_open', {'url': 'https://shop.example/find?no=M1234-5678', 'effect': 'read'}),   # no browser
+                 ('weather', {}),                                                                         # no place
+                 ('api_request', {'slot': 'none', 'url': 'https://api.example/v1?no=M1234-5678'}),         # no such slot
+                 ('code_run', {'code': 'print("M1234-5678")', 'hosts': 'not a host!'}))                   # invalid run
+        for name, args in cases:
+            with self.subTest(name=name):
+                with self.assertRaises((ValueError, TypeError)) as caught:
+                    caps.execute(name, args)
+                self.assertEqual(agent_runtime.ran_field(caught.exception), {'ran': False})
+                self.assertEqual(agent_runtime.attempted_outbound(caps, name, args, caught.exception), {})
+        self.assertEqual(caps.network.plans, [])
+
+    def test_a_bridge_page_read_refused_locally_records_no_attempt(self):
+        requests = [{'jsonrpc': '2.0', 'id': 0, 'method': 'initialize', 'params': {}},
+                    {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+                     'params': {'name': 'public_page_read', 'arguments': {'url': 'https://shop.example/find?no=M1234-5678'}}}]
+        sent = []
+        out = io.StringIO()
+        with mock.patch('personal_agent.local_tools.LocalTools.execute', lambda self, plan, budget=None: sent.append(plan)), \
+                mock.patch.object(sys, 'stdin', io.StringIO(''.join(json.dumps(r) + '\n' for r in requests))), \
+                contextlib.redirect_stdout(out):
+            mcp_bridge.serve(str(self.store.root), self.job)
+        self.assertEqual(sent, [])
+        [detail] = self.failed('public_page_read')
+        self.assertIs(detail.get('ran'), False, out.getvalue())
+        self.assertNotIn('outbound_matches', detail)
+
+    def test_a_failed_browser_open_still_lists_the_host_it_was_sent_to(self):
+        script = Script({'tool_calls': [call('1', 'browser_open', url=ORIGIN + '/missing?no=m1234%205678', effect='read')]},
+                        {'content': '열지 못했습니다.'})
+        driver = FakeDriver()
+        caps = Capabilities(self.store, ModelAdapter(script), BROWSER_CFG, '', self.job, self.record, browser=lambda: driver)
+        run_agent(caps.adapter, BROWSER_CFG, '', [{'role': 'user', 'content': '회원 혜택 찾아줘'}], '', caps, self.record)
+        caps.close_browser()
+        self.assertTrue(any(entry[0] == 'goto' for entry in driver.log), 'the browser was sent to the address')
+        [detail] = self.failed('browser_open')
+        self.assertNotIn('ran', detail, 'a failure after the hand-off is not a local refusal')
+        self.assertEqual(detail['destination'], 'fixture.test')
+        audit = information_use.work_information_use(self.store, self.job)
+        self.assertEqual(audit['sent_to']['browser_destinations'], ['fixture.test'])
+        self.assertEqual(audit['sent_to']['held_value_matches'], [
+            {'source': 'memory', 'key': 'member-number', 'tool': 'browser_open', 'destination': 'fixture.test',
+             'status': 'failed'}])
+
+    def test_a_browser_that_could_not_start_received_nothing(self):
+        def broken():
+            raise RuntimeError('profile locked')
+        args = {'url': 'https://shop.example/find?no=M1234-5678', 'effect': 'read'}
+        for label, factory in (('factory raised', broken), ('no driver', lambda: None)):
+            with self.subTest(label):
+                caps = Capabilities(self.store, None, BROWSER_CFG, '', self.job, self.record, browser=factory)
+                with self.assertRaises(ValueError) as caught:
+                    caps.execute('browser_open', args)
+                self.assertEqual(agent_runtime.ran_field(caught.exception), {'ran': False})
+                self.assertEqual(agent_runtime.attempted_outbound(caps, 'browser_open', args, caught.exception), {})
+
+    def code_runner_caps(self, process=None, popen=None):
+        from test_code_run import runner
+        caps = Capabilities(self.store, None, {}, '', self.job, self.record)
+        caps._code_runner = runner(process)
+        if popen is not None:
+            caps._code_runner.popen = popen
+        return caps
+
+    def test_a_sandbox_that_could_not_start_received_nothing(self):
+        def failing_popen(*args, **kwargs):
+            raise OSError('cannot start the runner')
+        args = {'code': 'print("M1234-5678")', 'hosts': 'api.example.com'}
+        caps = self.code_runner_caps(popen=failing_popen)
+        with mock.patch('personal_agent.current_context.redact_known_secrets', lambda store, text: text):
+            with self.assertRaises(OSError) as caught:
+                caps.execute('code_run', args)
+        self.assertEqual(agent_runtime.ran_field(caught.exception), {'ran': False})
+        self.assertEqual(agent_runtime.attempted_outbound(caps, 'code_run', args, caught.exception), {})
+
+    def test_a_run_that_failed_after_its_sandbox_started_is_still_an_attempt(self):
+        from test_code_run import FakeProcess
+        process = FakeProcess(requests=[{'method': 'GET', 'host': 'api.example.com', 'path': '/v1/find',
+                                         'query': 'no=M1234-5678'}], error='runner crashed')
+        args = {'code': 'print(1)', 'hosts': 'api.example.com'}
+        caps = self.code_runner_caps(process)
+        with mock.patch('personal_agent.current_context.redact_known_secrets', lambda store, text: text):
+            with self.assertRaises(ValueError) as caught:
+                caps.execute('code_run', args)
+        self.assertEqual(agent_runtime.ran_field(caught.exception), {}, 'the code ran: not a local refusal')
+        self.assertEqual(agent_runtime.attempted_outbound(caps, 'code_run', args, caught.exception)['outbound_matches'],
+                         [{'source': 'memory', 'key': 'member-number', 'destination': 'api.example.com', 'tool': 'code_run'}])
+
+    def test_a_code_run_refused_after_a_sending_run_reports_nothing_stale(self):
+        from test_code_run import FakeProcess, runner
+        from personal_agent.code_run import CodeRunError
+        process = FakeProcess(requests=[{'method': 'GET', 'host': 'api.example.com', 'path': '/v1/find',
+                                         'query': 'no=M1234-5678'}], result={'stdout': 'ok', 'stderr': ''})
+        with mock.patch('personal_agent.current_context.redact_known_secrets', lambda store, text: text):
+            run = runner(process)
+            run.run({'code': 'print(1)', 'hosts': 'api.example.com'})
+        self.assertTrue(run.sent, 'the first run sent the value')
+        caps = Recording.Caps(held(('member-number', MEMBER)))
+        caps._code_runner = run
+        with self.assertRaises(CodeRunError):
+            run.run({'code': 'print(1)', 'hosts': 'not a host!'})
+        self.assertEqual(run.sent, [])
+        self.assertEqual(outbound_evidence(caps, 'code_run', {'code': 'print(1)'}, {}), {})
+
+
 class ProviderNotes(unittest.TestCase):
     def test_the_cli_search_note_follows_the_recorded_own_search_state(self):
         def text(own):
