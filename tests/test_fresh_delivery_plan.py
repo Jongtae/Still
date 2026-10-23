@@ -240,6 +240,23 @@ def test_an_unexecuted_substep_needs_a_successor_or_a_no_change_disposition_with
         assert closeout_fails({"disposition": "no-change-needed", "evidence_issue": bad, "reason": reason}), bad
 
 
+def test_the_current_plan_holds_the_shared_invariants_whatever_record_is_newest():
+    """#231: every plan record passes the shared checks, not only those its own test calls."""
+    current = plan()
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) in {"goal-ready", "terminal"}
+    invariants.assert_completed_work_is_unselectable(TestCase(), current)
+
+
+def test_a_program_with_two_substeps_in_flight_fails_the_shared_check():
+    """#231: #218's first head declared two WORKPLACE-01 substeps active and still passed CI."""
+    altered = plan()
+    program = next(program for program in altered["programs"].values()
+                   if len(program.get("ordered_substeps", [])) >= 2)
+    program["active_substeps"] = program["ordered_substeps"][:2]
+    with TestCase().assertRaisesRegex(AssertionError, "more than one substep in flight"):
+        invariants.assert_declared_goal_shape(TestCase(), plan=altered)
+
+
 def test_a_closed_program_stays_unselectable_even_if_declared_active(tmp_path):
     """#100: the controller reads the milestone on every path; #94: a closed program never runs again."""
     from scripts.dev.delivery import DeliveryController
