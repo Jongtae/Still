@@ -216,6 +216,19 @@ def test_the_test_scope_is_full_unless_every_changed_path_is_text(tmp_path) -> N
     readers = {f"tests/{path.name}" for path in (ROOT / "tests").glob("test_*.py")
                if any(marker in path.read_text(encoding="utf-8") for marker in module.TEXT_MARKERS)}
     assert readers <= selected and "tests/test_governance_contract.py" in selected
+    # Codex review on #261: renaming code into a text path still reports the code path.
+    import subprocess
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src/foo.py").write_text("x = 1\n" * 20)
+    git = lambda *args: subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout
+    git("init", "-q"); git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "root")
+    git("add", "."); git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "base")
+    base = git("rev-parse", "HEAD").strip()
+    (repo / "docs").mkdir()
+    git("mv", "src/foo.py", "docs/foo.md"); git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "move")
+    paths = module.changed(base, "HEAD", repo)
+    assert "src/foo.py" in paths and module.scope(paths) == "full"
 
 
 def test_the_full_suite_runs_in_parallel_and_real_browser_classes_run_serially() -> None:

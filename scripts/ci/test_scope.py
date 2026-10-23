@@ -52,7 +52,9 @@ def text_tests(paths, root=ROOT):
 
 
 def changed(base, head, root=ROOT):
-    out = subprocess.run(['git', 'diff', '--name-only', f'{base}...{head}'], cwd=root, capture_output=True,
+    # ``--no-renames``: a rename is a deletion plus an addition, so a code path moved into ``docs/``
+    # still counts as code (Codex review on #261).
+    out = subprocess.run(['git', 'diff', '--name-only', '--no-renames', f'{base}...{head}'], cwd=root, capture_output=True,
                          text=True, check=True).stdout
     return [line.strip() for line in out.splitlines() if line.strip()]
 
