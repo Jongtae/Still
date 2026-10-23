@@ -231,3 +231,14 @@ Read [Professional Roles and Communication Contract](docs/professional-roles-and
 ## Human + AI contributors, review and releases (GOV-CONTRIB-01 / #1267)
 
 Contributors may use any AI or none; one person may operate several AI roles on different issues/PRs. The human contributor remains accountable. Read [CONTRIBUTING.md](.github/CONTRIBUTING.md), [GOVERNANCE.md](GOVERNANCE.md), and [AI contribution and review](docs/governance/ai-contribution-review.en.md) for role assignments, handoffs, evidence-grounded findings, independence and merge decision briefs. Different AI models reviewing the same author's PR count as **self-review**, not independent review. A Constitution-triggered escalated review is the Codex review of the exact final head (owner direction 2026-10-22, #195) and is recorded as a Codex review, never as independent review. AI roles never grant GitHub merge/release permissions; the owner merges a PR whose escalated review was triggered. [Release policy](docs/governance/release-policy.en.md) separates merge from stable publication; [release procedure](docs/release.en.md) retains exact tag/Homebrew mechanics. Optional AI resource profiles are coordination aids, not admission requirements. This documentation does not select a goal, change delivery-plan, relax C15/C16, or authorize publishing.
+
+## Review guidelines
+
+This section is what the automatic Codex review reads (#264). Outside an escalated review that review is advisory, so spend findings only where they change the product's behavior or its safety.
+
+- Flag defects in the product's behavior first: wrong results, lost or corrupted owner data, broken recovery or idempotency, crashes, races and regressions in the changed code path.
+- Treat as P0/P1 any change that lets a secret reach a model prompt, log or Evidence; spends money without per-action owner approval; widens a Grant, folder scope, network destination or credential boundary; or leaves an owner-facing record (approval preview, information-use audit, receipt) different from what actually ran.
+- Flag C16 violations: Still code that branches on a named site, provider, category or task, or scripts one owner request.
+- Flag a test that cannot fail for the claimed behavior (it pins a phrase, mocks away the boundary under test, or feeds the expected value back in).
+- Do not flag wording, tone, length or structure of governance documents, `delivery-plan.yaml` record shape, PR-body checklists, issue references or commit-message style. Do not ask for more documentation, more process or more records.
+- For a documentation-only or plan-only change, comment only if it contradicts the code or the Constitution's invariants.

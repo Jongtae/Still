@@ -10,7 +10,7 @@ Applies to human contributors using any AI tool, or none. Complements [AGENTS.md
 | Implementer | Smallest generalizable code change, focused tests, known limits | PR and evidence | Does not claim self-review is independent |
 | Self-reviewer | Challenge own work, find regressions and counterexamples | Self-review notes | Never counts as independent review |
 | Independent reviewer | Review another person's change from exact head and contracts | Findings and verdict | No automatic merge authority |
-| Codex reviewer | The automatic Codex review of the exact final head; the escalated review when the Constitution's criteria trigger | Findings on the PR | Recorded as a Codex review, never as independent review; no merge authority |
+| Codex reviewer | Advisory automatic review of a PR; the escalated review of the exact final head when the Constitution's criteria trigger (#264) | Findings on the PR | Recorded as a Codex review, never as independent review; no merge authority |
 | Maintainer decision assistant | Compare evidence, unresolved findings and risk | Decision brief | Advice, not approval or merge |
 | Release preparation assistant | Assemble release scope, compatibility and verification evidence | Release candidate brief | No tag, tap, deploy or publish permission |
 

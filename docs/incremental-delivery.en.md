@@ -52,10 +52,13 @@ to mirror GitHub. Keep a checkpoint parent open when remaining criteria or expli
    scope only when the Development Constitution's material security/authority escalation
    criteria apply; otherwise proceed with required CI and evidence without a review gate.
    The escalated review is the automatic Codex review of that exact head; fix or answer
-   every finding and record it as a Codex review. Every later push gets a Codex review of
-   its new head before merge, so the merged SHA is always one Codex reviewed.
+   every finding and record it as a Codex review. After remediation, ask Codex once
+   (`@codex review`) for the consolidated final head, so the merged SHA is always one Codex
+   reviewed. Outside an escalated review the Codex review is advisory: do not wait for it or
+   reply to its findings before merging; turn a real product defect it finds into a follow-up fix.
    The informational `codex-review` commit status (#207) turns green when Codex's own review
-   state names the exact head and every Codex finding has a reply; it never approves or merges.
+   state names the exact head and every Codex finding has a reply; it never approves or merges,
+   and it matters only for an escalated review.
    Resolve only addressed or explicitly triaged threads with evidence. Never impersonate
    another reviewer or treat self-review as independence.
 4. When any risk-triggered review and GitHub requirements are satisfied, attempt one normal
