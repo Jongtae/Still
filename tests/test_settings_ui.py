@@ -129,6 +129,26 @@ assert.equal(ctx.mainAiView(settingsFor('claude-code',{'claude-code':sub('claude
  assert.equal(vm.runInContext('aiAccountPanel',ctx),'claude-code','switching panels with a cloud draft asks first');assert.equal($('ai-chooser-discard').hidden,false);
  ctx.chooserClearDiscard();vm.runInContext("aiAccountPanel=''",ctx);
  vm.runInContext('aiAccountNode=null',ctx);}
+// #211 review: drafts survive a provider switch; removal is confirmed in place; a credential save asks before dropping profile edits.
+{const twoProviders={...cloudStatus,providers:[{...cloudStatus.providers[0],saved_secrets:['AWS_BEARER_TOKEN_BEDROCK']},{id:'foundry',name:'Microsoft Foundry',settings:['ANTHROPIC_FOUNDRY_RESOURCE'],secrets:['ANTHROPIC_FOUNDRY_API_KEY'],saved_secrets:[],values:{},docs:[],missing:[]}]};
+ const holder=new Element('div');holder.append(ctx.cloudProviderForm(sub('claude-code',{cloud:twoProviders})));ctx.__cloudHolder=holder;vm.runInContext('aiAccountNode=__cloudHolder',ctx);
+ const region=()=>holder.querySelectorAll('input').find(node=>node.name==='AWS_REGION'),select=holder.querySelectorAll('select')[0];
+ region().value='eu-west-1';select.value='foundry';select.onchange();assert.equal(region(),undefined);
+ select.value='bedrock';select.onchange();assert.equal(region().value,'eu-west-1','an edit survives switching providers and back');
+ const before=calls.length,buttons=()=>holder.querySelectorAll('button');
+ buttons().find(node=>node.textContent==='지우기').onclick();
+ assert.equal(calls.length,before,'one click on 지우기 deletes nothing');
+ assert(buttons().some(node=>node.textContent==='지우기 확인'&&!node.parentNode.hidden),'the removal asks for confirmation');
+ $('ai-chooser-discard').hidden=true;buttons().find(node=>node.textContent==='지우기 확인').onclick();
+ assert.equal($('ai-chooser-discard').hidden,false,'confirming removal with unsaved profile edits asks before discarding them');assert.equal(calls.length,before);
+ ctx.chooserClearDiscard();vm.runInContext('aiAccountNode=null',ctx);}
+{const holder=new Element('div');holder.append(ctx.cloudProviderForm(sub('claude-code',{cloud:cloudStatus})));ctx.__cloudHolder=holder;vm.runInContext('aiAccountNode=__cloudHolder',ctx);
+ holder.querySelectorAll('input').find(node=>node.name==='AWS_REGION').value='eu-west-1';
+ const secretRow=holder.querySelectorAll('form.cloud-secret')[0];secretRow.querySelectorAll('input')[0].value='fixture-secret-value';
+ const before=calls.length;$('ai-chooser-discard').hidden=true;secretRow.onsubmit({preventDefault(){}});
+ assert.equal($('ai-chooser-discard').hidden,false,'saving a credential with unsaved profile edits asks first');assert.equal(calls.length,before);
+ ctx.chooserClearDiscard();
+ vm.runInContext('aiAccountNode=null',ctx);}
 const technical=descendants($('active-ai')).find(node=>node.tag==='details');technical.open=true;
 settings.main_ai.last_check.checked_at++;ctx.renderExecutionConnection(settings);
 assert(descendants($('active-ai')).find(node=>node.dataset.disclosure==='technical').open,'polling preserves expanded technical disclosure');

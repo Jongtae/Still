@@ -734,8 +734,11 @@ function cloudProviderForm(route){const cloud=route.cloud,box=element('fieldset'
  const form=element('form',undefined,'cloud-profile'),select=element('select');select.name='cloud-provider-'+route.id;select.setAttribute('aria-label',t('클라우드 제공자'));
  for(const [id,name] of [['subscription',t('구독 (기본)')],...(cloud.providers||[]).map(item=>[item.id,item.name])]){const option=element('option',name);option.value=id;option.selected=id===cloud.provider;select.append(option);}select.value=cloud.provider||'subscription';
  const fields=element('div',undefined,'cloud-fields'),cap=element('input');cap.type='number';cap.min='1';cap.max='10000';cap.name='cloud-daily-calls';cap.value=cloud.daily_calls||'';cap.setAttribute('aria-label',t('하루 호출 한도'));
- const draw=()=>{fields.replaceChildren();const chosen=(cloud.providers||[]).find(item=>item.id===select.value);if(!chosen)return;
-  for(const name of chosen.settings){const label=element('label',undefined,'cloud-field'),input=element('input');input.type='text';input.name=name;input.autocomplete='off';input.spellcheck=false;input.translate=false;input.maxLength=400;input.value=(chosen.values||{})[name]||'';label.append(element('code',name),input);fields.append(label);}
+ // Unsaved values typed for one provider survive switching to another and back (#211 review).
+ const drafts={};let shown=null;
+ const draw=()=>{if(shown!==null)drafts[shown]=Object.fromEntries([...fields.querySelectorAll('input')].filter(input=>input!==cap).map(input=>[input.name,input.value]));shown=select.value;
+  fields.replaceChildren();const chosen=(cloud.providers||[]).find(item=>item.id===select.value);if(!chosen)return;
+  for(const name of chosen.settings){const label=element('label',undefined,'cloud-field'),input=element('input');input.type='text';input.name=name;input.autocomplete='off';input.spellcheck=false;input.translate=false;input.maxLength=400;input.value=(drafts[chosen.id]||{})[name]??((chosen.values||{})[name]||'');label.append(element('code',name),input);fields.append(label);}
   const limit=element('label',undefined,'cloud-field');limit.append(element('span',t('하루 호출 한도')),cap);fields.append(limit);
   fields.append(element('span',t('작업과 판단 AI 호출을 함께 셉니다. 한도에 닿으면 실행하지 않고 다른 AI로 넘기지도 않습니다.'),'field-hint'));};
  select.onchange=draw;draw();const save=element('button',t('제공자 저장'),'small');save.type='submit';form.append(select,fields,save);
@@ -744,9 +747,16 @@ function cloudProviderForm(route){const cloud=route.cloud,box=element('fieldset'
   return chooserAction(save,async()=>{await api('/api/cloud-engines/profile',{engine:route.id,provider:select.value,settings,daily_calls:chosen?Number(cap.value):undefined});return {resetPanel:true,message:t('클라우드 제공자 설정을 저장했습니다. 다음 작업부터 적용됩니다.')};});};
  box.append(form);
  if(current){for(const name of current.secrets){const row=element('form',undefined,'cloud-secret');row.append(element('code',name));
-   if((current.saved_secrets||[]).includes(name)){row.append(element('span',t('저장됨 · 값은 다시 표시하지 않습니다'),'settings-technical-line'),settingsAction(t('지우기'),event=>chooserAction(event.currentTarget,async()=>{await api('/api/cloud-engines/credential',{engine:route.id,provider:current.id,name,value:''});return {resetPanel:true,message:t('{name} 값을 지웠습니다.',{name})};}),'destructive'));}
+   if((current.saved_secrets||[]).includes(name)){
+    // Removal is confirmed in place (no re-render, so unsaved profile edits stay), like the API key and token removal.
+    const confirmLine=element('span',undefined,'cloud-secret-confirm');confirmLine.hidden=true;
+    const remove=settingsAction(t('지우기'),()=>{remove.hidden=true;confirmLine.hidden=false;confirmButton.focus();},'destructive');
+    const confirmButton=settingsAction(t('지우기 확인'),()=>chooserDiscard(()=>chooserAction(confirmButton,async()=>{await api('/api/cloud-engines/credential',{engine:route.id,provider:current.id,name,value:''});return {resetPanel:true,message:t('{name} 값을 지웠습니다.',{name})};}),chooserCloudDirty()),'destructive');
+    confirmLine.append(element('span',t('다시 누르면 {name} 키를 지웁니다.',{name}),'field-hint'),confirmButton,settingsAction(t('취소'),()=>{confirmLine.hidden=true;remove.hidden=false;remove.focus();}));
+    row.append(element('span',t('저장됨 · 값은 다시 표시하지 않습니다'),'settings-technical-line'),remove,confirmLine);}
    else{const input=element('input');input.type='password';input.name='cloud-secret-'+name;input.autocomplete='off';input.spellcheck=false;input.maxLength=8192;input.setAttribute('aria-label',name);const store=element('button',t('저장'),'small');store.type='submit';row.append(input,store);
-    row.onsubmit=event=>{event.preventDefault();if(!input.value.trim()){chooserFeedback(t('값을 붙여 넣은 뒤 저장하세요.'),true);input.focus();return;}return chooserAction(store,async()=>{await api('/api/cloud-engines/credential',{engine:route.id,provider:current.id,name,value:input.value});input.value='';return {resetPanel:true,message:t('{name} 값을 저장했습니다.',{name})};});};}
+    // Saving a credential re-renders the panel from saved state, so unsaved profile edits are confirmed first (#211 review).
+    row.onsubmit=event=>{event.preventDefault();if(!input.value.trim()){chooserFeedback(t('값을 붙여 넣은 뒤 저장하세요.'),true);input.focus();return;}chooserDiscard(()=>chooserAction(store,async()=>{await api('/api/cloud-engines/credential',{engine:route.id,provider:current.id,name,value:input.value});input.value='';return {resetPanel:true,message:t('{name} 값을 저장했습니다.',{name})};}),chooserCloudDirty());};}
    box.append(row);}
   if((current.missing||[]).length)box.append(element('p',t('아직 필요한 값: {names}',{names:current.missing.join(', ')}),'field-hint'));
   const docs=element('details');docs.append(element('summary',t('공식 문서')));for(const url of current.docs||[]){const line=element('p'),link=element('a',url);link.href=url;link.rel='noopener noreferrer';link.target='_blank';line.append(link);docs.append(line);}box.append(docs);}
