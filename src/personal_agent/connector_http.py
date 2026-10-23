@@ -30,6 +30,7 @@ redirect guard. The guard re-applies the caller's own destination predicate
 to every hop, so containment is a property of the opener rather than of the
 one URL the caller happened to check.
 """
+import json
 from urllib.request import HTTPRedirectHandler, build_opener
 
 
@@ -72,22 +73,69 @@ LOCAL_KEY_INVALID = 'local_key_invalid'
 LOCAL_KEY_REASONS = frozenset({LOCAL_KEY_UNAVAILABLE, LOCAL_KEY_INVALID})
 
 
-def token_endpoint_refused(error) -> bool:
-    """Whether a failed OAuth token-endpoint call says the stored grant itself is unusable (#8).
+#: OAuth error codes (RFC 6749 section 5.2) that say the stored grant or the
+#: client it belongs to is unusable.  Every other code -- ``invalid_request``,
+#: ``unsupported_grant_type``, ``invalid_scope``, ``unauthorized_client`` --
+#: can be a fault in the request Still sent, so it says nothing about the grant.
+GRANT_REFUSED_ERRORS = frozenset({'invalid_grant', 'invalid_client'})
+#: The most of a refusal body read to find its ``error`` code.  A real one is
+#: a few hundred bytes of JSON.
+_REFUSAL_BODY_LIMIT = 8192
 
-    RFC 6749 section 5.2: the token endpoint answers a request it refuses -- a
-    revoked or expired refresh token (``invalid_grant``), a deleted or
-    disabled client (``invalid_client``) -- with HTTP 400, or 401 for client
-    authentication.  Only that answer is definitive.  No answer at all (a
-    network failure or timeout), a throttled or failing endpoint (429, 5xx)
-    or an unreadable body says nothing about the grant, so a caller keeps the
-    stored credential and a later request renews it.
+
+def _oauth_error_code(error):
+    """The ``error`` code of a token-endpoint refusal, or None when it cannot be read.
+
+    The body is read once and bounded; it is parsed here and never logged or
+    kept, so nothing of it reaches a status surface.
+    """
+    read = getattr(error, 'read', None)
+    if not callable(read):
+        return None
+    try:
+        raw = read(_REFUSAL_BODY_LIMIT + 1)
+    except Exception:
+        return None
+    if not isinstance(raw, (bytes, bytearray)) or not raw or len(raw) > _REFUSAL_BODY_LIMIT:
+        return None
+    try:
+        body = json.loads(bytes(raw).decode('utf-8'))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    code = body.get('error') if isinstance(body, dict) else None
+    return code if isinstance(code, str) and code else None
+
+
+def token_endpoint_refused(error) -> bool:
+    """Whether a failed OAuth token-endpoint call says the stored grant itself is unusable (#8, #246).
+
+    RFC 6749 section 5.2: the token endpoint answers a request it refuses with
+    HTTP 400, or 401 when client authentication failed, and names the reason
+    in the body's ``error`` code.  Only ``invalid_grant`` (a revoked or
+    expired refresh token) and ``invalid_client`` (a deleted or disabled
+    client) say the stored grant cannot be used again, so only those are
+    definitive.  A 401 whose body carries no readable code is still client
+    authentication failing, which section 5.2 reserves for
+    ``invalid_client``, so it is definitive too.
+
+    Everything else keeps the stored credential so a later request renews it:
+    another error code (it may be a fault in the request Still sent), a 400
+    whose body cannot be read, no answer at all (a network failure or
+    timeout), and a throttled or failing endpoint (429, 5xx).
 
     ``error`` is whatever the injected token exchange raised; urllib's
-    ``HTTPError`` carries the status as ``code``.
+    ``HTTPError`` carries the status as ``code`` and the body behind
+    ``read()``, which this consumes.
     """
+    status = None
     for name in ('code', 'status'):
-        status = getattr(error, name, None)
-        if isinstance(status, int) and not isinstance(status, bool):
-            return status in (400, 401)
-    return False
+        value = getattr(error, name, None)
+        if isinstance(value, int) and not isinstance(value, bool):
+            status = value
+            break
+    if status not in (400, 401):
+        return False
+    code = _oauth_error_code(error)
+    if code is None:
+        return status == 401
+    return code in GRANT_REFUSED_ERRORS
