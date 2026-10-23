@@ -166,8 +166,26 @@ def test_required_ci_runs_focused_guards_with_a_separate_full_suite_backstop() -
                 "tests/test_governance_contract.py", "tests/test_readme_localization.py",
                 "scripts/verify_assistant_execution.py --check-spec",
                 "scripts/verify_reuse_review.py", "scripts/verify_readme_localization.py --check-git-diff")
-    assert not re.search(r"python3 -m pytest\b[^\n]* -q tests/?\s*(?:$|\n)", workflow)
     _assert_all(full, "workflow_dispatch", "python3 -m pytest -q -n auto --dist loadfile --durations=25 tests")
+
+
+def test_required_validate_runs_the_whole_linux_suite() -> None:
+    """#234: the required `validate` check runs every test on Linux, with full-validate's
+    Linux invocation; only the macOS real-WebKit classes are left to full-validate."""
+    workflow = _read(".github/workflows/validate.yml")
+    linux = _read(".github/workflows/full-validate.yml").split("full-validate-macos:", 1)[0]
+    # The ruleset requires the context `validate`: the job id, with no other `name:`.
+    jobs = workflow.split("\njobs:\n", 1)[1]
+    assert re.findall(r"^  (\S+):$", jobs, re.M) == ["validate"]
+    assert not re.search(r"^    name:", jobs, re.M)
+    assert "runs-on: ubuntu-latest" in jobs
+    # Same locked environment and the same parallel invocation of the whole `tests` directory.
+    sync = "uv sync --locked --extra mcp-host --extra schema-validation --group dev --no-python-downloads"
+    assert sync in workflow and sync in linux
+    suite = 'PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 tests\n'
+    assert suite in workflow and suite in linux
+    assert "--ignore" not in workflow and "--deselect" not in workflow
+    assert "AGENTOS_REAL_BROWSER_TESTS" not in workflow
 
 
 def test_the_full_suite_runs_in_parallel_and_real_browser_classes_run_serially() -> None:
