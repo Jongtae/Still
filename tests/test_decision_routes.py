@@ -1004,9 +1004,15 @@ class ServiceRouteSelectionTests(ServiceFixture):
         service.save_cloud_secret({'engine': 'claude-code', 'provider': 'bedrock',
                                    'name': 'AWS_BEARER_TOKEN_BEDROCK', 'value': 'fixture-bedrock-token-0001'})
         self.assertNotEqual(service.cloud_engines.identity('claude-code'), identity, 'another credential may be another account')
+        # Settings names the cloud destination for the CLI judgment route, not the subscription account.
+        status = service.settings()['decision_route']
+        self.assertIn('Amazon Bedrock', status['active']['destination'])
+        claude = next(entry for entry in status['subscription_cli'] if entry['id'] == 'claude-code')
+        self.assertIn('Amazon Bedrock', json.dumps(claude, ensure_ascii=False))
         # Back on the subscription, the original qualification applies again.
         service.save_cloud_profile({'engine': 'claude-code', 'provider': 'subscription'})
         self.assertEqual(self.judge(service).value, 'retry')
+        self.assertNotIn('Amazon Bedrock', service.settings()['decision_route']['active']['destination'])
 
     def test_a_signed_out_cli_is_refused_and_the_route_is_off_by_choice_only(self):
         service = self.service(runner=CliRunner(logged_in=False))

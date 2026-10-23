@@ -438,17 +438,29 @@ class CloudEngines:
         slot = secret_slot(engine_id, provider_id, name)
         if value and not _SECRET_VALUE.match(value):
             raise ValueError(msg('cloud_engines.invalid_value', name=name))
-        # A changed credential may be another account: the revision moves first, so a
-        # qualification bound to the old revision (the Judgment AI's, ``identity``)
-        # never authorizes a launch that already carries the new value.
+        # A changed credential may be another account.  The revision moves before the
+        # value is written and again after it: a snapshot (or a qualification) taken in
+        # between carries the middle revision, which is never current once the save
+        # completes, and the final revision is only ever paired with the new value
+        # (``launch`` reads the revision around the values).  So no qualification of the
+        # old credential, or of the gap, authorizes the new one (#211 review).
         self._bump_revision(engine_id, provider_id)
         if not value:
             self.store.remove_secret(slot)
-        elif not _SECRET_VALUE.match(value):
-            raise ValueError(msg('cloud_engines.invalid_value', name=name))
         else:
             self.store.secret(slot, value)
+        self._bump_revision(engine_id, provider_id)
         return self.status(engine_id)
+
+    def destination(self, engine_id):
+        """The model destination of this engine's selected cloud profile for Settings, or None on the subscription."""
+        provider_id = self.provider(engine_id)
+        if provider_id == SUBSCRIPTION:
+            return None
+        try:
+            return self.launch(engine_id).destination()
+        except CloudLaunchError:
+            return PROVIDERS[provider_id].name
 
     def _bump_revision(self, engine_id, provider_id):
         with self.store.db() as db:

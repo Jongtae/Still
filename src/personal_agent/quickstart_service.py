@@ -10942,7 +10942,9 @@ class AgentService:
             # #678: the CLI's own tools offered besides the bridge.
             cli_native_tools=['web_search'] if native_search else [],native_search_reason=native_reason or None,
             # #826: what the owner-model sections and splices referred to.
-            owner_information=run.owner_information)
+            owner_information=run.owner_information,
+            # #211: the cloud provider and destination are durable before the CLI starts.
+            **(cloud.record() if cloud is not None else {}))
         self.record_turn_worker(job['id'],{'attempt':run.attempt.number if run.attempt is not None else 1,'route':'subscription',
                                            'engine':run.subscription['id'],
                                            'model':(run.attempt.model if run.attempt is not None and run.attempt.model else None) or self.main_ai.subscription_model(run.subscription['id']) or None,

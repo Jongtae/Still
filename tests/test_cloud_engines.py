@@ -181,6 +181,25 @@ class Profiles(StoreCase):
         self.assertEqual(launch.identity(), self.cloud.identity('claude-code'))
         self.assertEqual(launch.secret_values['AWS_BEARER_TOKEN_BEDROCK'], 'fixture-bedrock-token-0002')
 
+    def test_no_revision_seen_during_a_credential_save_survives_it(self):
+        """#211 review: a qualification taken between the revision bump and the value write is never current afterwards."""
+        self.bedrock()
+        initial, gap = self.cloud.identity('claude-code'), []
+        write = self.store.secret
+
+        def observed(slot, *value):
+            if value:
+                gap.append(self.cloud.identity('claude-code'))
+            return write(slot, *value)
+        self.store.secret = observed
+        self.cloud.save_secret('claude-code', 'bedrock', 'AWS_BEARER_TOKEN_BEDROCK', 'fixture-bedrock-token-0004')
+        self.store.secret = write
+        final = self.cloud.identity('claude-code')
+        self.assertEqual(len(gap), 1)
+        self.assertNotIn(final, (initial, gap[0]), 'neither the old nor the in-between revision is current after the save')
+        launch = self.cloud.launch('claude-code')
+        self.assertEqual((launch.identity(), launch.secret_values['AWS_BEARER_TOKEN_BEDROCK']), (final, 'fixture-bedrock-token-0004'))
+
     def test_a_credential_change_moves_the_identity_before_the_value(self):
         self.bedrock()
         before = self.cloud.identity('claude-code')
@@ -613,6 +632,25 @@ class ServiceWork(unittest.TestCase):
         self.assertNotIn('prompt_envelope', record)
         self.assertNotEqual(record.get('status'), 'sent')
         self.assertEqual(service.cloud_engines.used_today('claude-code', 'bedrock'), 1, 'not counted twice')
+
+    def test_the_sent_record_names_the_cloud_destination_before_launch(self):
+        """#211 review: recovery after a crash mid-turn still knows the turn went to the cloud provider."""
+        store = self.store
+
+        class Peek(_Engine):
+            seen = None
+
+            def execute(self, engine, prompt, tools, **kwargs):
+                Peek.seen = dict(store.turn_provenance(tools.capabilities.job_id) or {})
+                return super().execute(engine, prompt, tools, **kwargs)
+        service = self.service(Peek())
+        self.configure(service)
+        self.store.enqueue('hello', 'k1')
+        self.assertTrue(service.run_one())
+        self.assertEqual(Peek.seen.get('status'), 'sent')
+        self.assertEqual((Peek.seen.get('cloud_provider'), Peek.seen.get('cloud_destination')),
+                         ('bedrock', 'Amazon Bedrock (us-east-1)'))
+        self.assertNotIn(BEDROCK_TOKEN, json.dumps(Peek.seen))
 
     def test_an_admitted_work_turn_counts_once(self):
         engine = _Engine()

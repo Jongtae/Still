@@ -479,7 +479,7 @@ class DecisionRoutes:
         candidates = self._ranked(candidate['engine'])
         return {'main': main_id, 'available': True, 'transport': ROUTE_SUBSCRIPTION_CLI,
                 'model': candidates[0] if candidates else '', 'candidates': candidates,
-                'model_policy': candidate['model_policy'], 'destination': CLI_DESTINATIONS[candidate['engine']]}
+                'model_policy': candidate['model_policy'], 'destination': self._cli_destination(candidate['engine'])}
 
     def _ranked(self, engine_id, capability=None):
         """The ranked candidates for one CLI, filtered by what the installed binary bundles.
@@ -902,6 +902,12 @@ class DecisionRoutes:
                     self.service.execution_adapter.finder(CLI_BINARIES[route['engine']]))
                      or (route.get('cloud_profile') or 'subscription') != self._cloud_identity(route['engine'])))
 
+    def _cli_destination(self, engine_id):
+        """#211: where a CLI judgment is sent: the engine's cloud profile when one is selected, else its subscription account."""
+        clouds = getattr(self.service, 'cloud_engines', None)
+        cloud = clouds.destination(engine_id) if clouds is not None and engine_id in CLI_DESTINATIONS else None
+        return cloud or CLI_DESTINATIONS.get(engine_id, '')
+
     def _cloud_identity(self, engine_id):
         """#211: the engine's cloud provider profile a qualification is bound to (``subscription`` when none)."""
         clouds = getattr(self.service, 'cloud_engines', None)
@@ -921,7 +927,7 @@ class DecisionRoutes:
         strict = route.get('strict_profile')
         shown = ({key: strict.get(key) for key in ('version', 'platform', 'checked_at', 'checks')}
                  if isinstance(strict, dict) else strict)
-        return dict(destination=CLI_DESTINATIONS.get(route.get('engine'), ''), strict_profile=shown,
+        return dict(destination=self._cli_destination(route.get('engine')), strict_profile=shown,
                     requalification_needed=requalify, instruction_files_unqualified=unqualified,
                     strict_profile_unqualified=strict_missing,
                     available=bool(engine and engine['installed'] and engine['login'] != 'signed-out'
@@ -970,7 +976,7 @@ class DecisionRoutes:
                             # A refused tool surface is shown with its reason.
                             'tool_surface': capability.get('tool_surface'),
                             'tool_surface_detail': capability.get('tool_surface_detail') or '',
-                            'destination': CLI_DESTINATIONS[engine_id],
+                            'destination': self._cli_destination(engine_id),
                             'instruction_files': CODEX_INSTRUCTION_FILES_LIMITATION if engine_id == 'codex' else '',
                             # #679: cheapest-first defaults and the efforts each supports.
                             'ranked_models': ranked,
