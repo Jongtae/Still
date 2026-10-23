@@ -5,7 +5,6 @@ nothing reaches a model or an external service.
 """
 import io
 import json
-import shlex
 import subprocess
 import tempfile
 import unittest
@@ -151,6 +150,98 @@ class HookTests(unittest.TestCase):
         self.assertEqual(self.run_hook({'tool_name': 'mcp__agentos__file_read'}, error=AssertionError('not asked')), '')
 
 
+class HookFailsClosedTests(unittest.TestCase):
+    """#222: codex-cli 0.153.4 runs the call on any hook failure except exit 2 with a stderr
+    reason, so every failure of the decision process must end exactly there."""
+
+    def run_main(self, argv=('--relay', '/r'), call=None, relay=None, stdout=None):
+        out, err = stdout or io.StringIO(), io.StringIO()
+        with mock.patch.object(codex_permission_hook, 'RelayClient', relay or (lambda directory: None)):
+            status = codex_permission_hook.main(list(argv), stdin=io.StringIO(json.dumps(call or {'tool_name': SAVE})),
+                                                stdout=out, stderr=err)
+        return status, out.getvalue(), err.getvalue()
+
+    def assert_blocked(self, status, stderr):
+        self.assertEqual(status, codex_permission_hook.BLOCK_EXIT)
+        self.assertEqual(stderr.strip(), codex_permission_hook.REFUSED_TEXT)
+
+    def test_a_failure_inside_main_exits_2_with_a_reason(self):
+        def broken(directory):
+            raise RuntimeError('constructor failed')
+        status, out, err = self.run_main(relay=broken)
+        self.assertEqual(out, '')
+        self.assert_blocked(status, err)
+        status, _, err = self.run_main(argv=())
+        self.assert_blocked(status, err)  # argparse exits; still the one reason
+
+        class Unwritable(io.StringIO):
+            def write(self, text):
+                raise BrokenPipeError()
+
+        class Deny:
+            def __init__(self, directory):
+                pass
+
+            def call(self, name, arguments):
+                return {'behavior': 'deny', 'message': 'no'}
+        status, _, err = self.run_main(relay=Deny, stdout=Unwritable())
+        self.assert_blocked(status, err)
+
+    def test_the_allow_and_deny_answers_are_unchanged(self):
+        class Answer:
+            behavior = 'allow'
+
+            def __init__(self, directory):
+                pass
+
+            def call(self, name, arguments):
+                return {'behavior': self.behavior, 'message': 'no'}
+        self.assertEqual(self.run_main(relay=Answer), (0, '', ''))
+        Answer.behavior = 'deny'
+        status, out, err = self.run_main(relay=Answer)
+        self.assertEqual((status, err), (0, ''))
+        self.assertEqual(json.loads(out)['hookSpecificOutput']['permissionDecision'], 'deny')
+
+    def shell(self, script, shell='/bin/sh'):
+        """Run the generated hook command with the decision process replaced by ``script``."""
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        fake = Path(temp.name) / 'python'
+        fake.write_text('#!/bin/sh\n' + script + '\n')
+        fake.chmod(0o755)
+        with mock.patch.object(owner_mcp.sys, 'executable', str(fake)):
+            command = owner_mcp.codex_hook_command('/relay/dir')
+        return subprocess.run([shell, '-c', command], input='{}', capture_output=True, text=True, timeout=30)
+
+    def test_every_process_failure_ends_as_exit_2_with_a_reason_in_each_shell(self):
+        shells = [shell for shell in ('/bin/sh', '/bin/bash', '/bin/zsh') if Path(shell).exists()]
+        failures = {'non-zero exit': 'exit 1', 'uncaught exception status': 'echo Traceback >&2; exit 1',
+                    'killed by a signal': 'kill -9 $$', 'exit 2 without a reason': 'exit 2',
+                    'interpreter missing': 'exec /nonexistent/python3 "$@"'}
+        for shell in shells:
+            for name, script in failures.items():
+                with self.subTest(shell=shell, failure=name):
+                    result = self.shell(script, shell)
+                    self.assertEqual(result.returncode, codex_permission_hook.BLOCK_EXIT)
+                    self.assertIn(codex_permission_hook.REFUSED_TEXT, result.stderr)
+            with self.subTest(shell=shell, failure='none'):
+                allowed = self.shell('exit 0', shell)
+                self.assertEqual((allowed.returncode, allowed.stdout, allowed.stderr), (0, '', ''), 'an allow still runs')
+                denied = self.shell("printf '%s' '{\"hookSpecificOutput\":{}}'", shell)
+                self.assertEqual((denied.returncode, denied.stdout), (0, '{"hookSpecificOutput":{}}'))
+
+    def test_the_hook_config_carries_the_command_and_a_timeout_above_the_relay_bound(self):
+        import tomllib
+        from personal_agent.cli_browser_relay import CALL_SECONDS
+        args = owner_mcp.codex_hook_arguments('/relay/dir')
+        [group] = tomllib.loads(args[2])['hooks']['PreToolUse']
+        [handler] = group['hooks']
+        self.assertEqual(group['matcher'], '^mcp__')
+        self.assertEqual(handler['command'], owner_mcp.codex_hook_command('/relay/dir'))
+        self.assertEqual(handler['timeout'], owner_mcp.CODEX_HOOK_TIMEOUT_SECONDS)
+        self.assertGreater(owner_mcp.CODEX_HOOK_TIMEOUT_SECONDS, CALL_SECONDS)
+
+
 class ServiceDecisionTests(unittest.TestCase):
     def setUp(self):
         from personal_agent.quickstart_service import AgentService
@@ -267,10 +358,11 @@ class CodexWireTests(unittest.TestCase):
             self.config_mode = (Path(kwargs['cwd']) / 'agentos-mcp.json').stat().st_mode & 0o777
             hook = next((a for a in argv if a.startswith('hooks.PreToolUse=')), None)
             if hook:
-                command = hook.split('command=', 1)[1].rsplit('}]}]', 1)[0]
-                command = json.loads(command)
+                import tomllib
+                # As Codex does: the TOML handler's command, run through a shell (#222).
+                command = tomllib.loads(hook)['hooks']['PreToolUse'][0]['hooks'][0]['command']
                 for tool in getattr(self, 'hook_tools', (LIST, SAVE, 'mcp__agentos__file_read')):
-                    done = subprocess.run(shlex.split(command), input=json.dumps({'tool_name': tool, 'tool_input': {'q': 1}}),
+                    done = subprocess.run(['/bin/sh', '-c', command], input=json.dumps({'tool_name': tool, 'tool_input': {'q': 1}}),
                                           capture_output=True, text=True, timeout=30, env=kwargs['env'])
                     self.hook_outputs[tool] = done.stdout
             if hasattr(self, 'after_hook'):

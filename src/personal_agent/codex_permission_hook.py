@@ -8,6 +8,13 @@ Output follows what codex-cli 0.153.4 accepts (observed): nothing on stdout
 lets the call run; ``permissionDecision: deny`` with a non-empty reason
 blocks it; ``allow`` is unsupported there.  Anything unexpected — no relay,
 a malformed call, an exception — denies.
+
+#222: codex-cli 0.153.4 runs the call when the hook process itself fails
+(any exit other than 0 or 2, no status, a timeout, invalid JSON); only exit 2
+with a non-empty stderr reason blocks it.  So ``main`` turns any failure of
+its own into exit 2 with ``REFUSED_TEXT`` on stderr, and the command Codex
+runs (``owner_mcp.codex_hook_arguments``) does the same for a failure before
+``main`` (a missing interpreter, an import error, a signal).
 """
 from __future__ import annotations
 
@@ -42,22 +49,34 @@ def decide(call, relay):
     return message if isinstance(message, str) and message.strip() else REFUSED_TEXT
 
 
-def main(argv=None, stdin=None, stdout=None):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--relay', required=True)
-    args = parser.parse_args(argv)
-    stdin, stdout = stdin or sys.stdin, stdout or sys.stdout
+#: The exit status codex-cli blocks on when stderr carries the reason (#222).
+BLOCK_EXIT = 2
+
+
+def main(argv=None, stdin=None, stdout=None, stderr=None):
+    stdin, stdout, stderr = stdin or sys.stdin, stdout or sys.stdout, stderr or sys.stderr
     try:
-        raw = stdin.read(MAX_INPUT_BYTES + 1)
-        call = json.loads(raw) if len(raw) <= MAX_INPUT_BYTES else None
-    except (ValueError, OSError):
-        call = None
-    reason = decide(call, RelayClient(args.relay))
-    if reason is not None:
-        stdout.write(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
-                                                         'permissionDecisionReason': reason[:500]}}, ensure_ascii=False))
-    stdout.flush()
-    return 0
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--relay', required=True)
+        args = parser.parse_args(argv)
+        try:
+            raw = stdin.read(MAX_INPUT_BYTES + 1)
+            call = json.loads(raw) if len(raw) <= MAX_INPUT_BYTES else None
+        except (ValueError, OSError):
+            call = None
+        reason = decide(call, RelayClient(args.relay))
+        if reason is not None:
+            stdout.write(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
+                                                             'permissionDecisionReason': reason[:500]}}, ensure_ascii=False))
+        stdout.flush()
+        return 0
+    except BaseException:  # #222: whatever failed, the call must not run
+        try:
+            stderr.write(REFUSED_TEXT)
+            stderr.flush()
+        except BaseException:
+            pass
+        return BLOCK_EXIT
 
 
 if __name__ == '__main__':
