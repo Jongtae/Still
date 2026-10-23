@@ -420,4 +420,33 @@ class CloudEngines:
             raise ValueError(msg('cloud_engines.invalid_value', name=name))
         else:
             self.store.secret(slot, value)
+        # A changed credential may be another account: a qualification bound to the
+        # profile (the Judgment AI's, ``identity``) must not carry over to it.
+        self._bump_revision(engine_id, provider_id)
         return self.status(engine_id)
+
+    def _bump_revision(self, engine_id, provider_id):
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            found = db.execute('SELECT value FROM config WHERE key=?', (PROFILE_KEY,)).fetchone()
+            try:
+                rows = json.loads(found['value']) if found else {}
+            except (TypeError, ValueError):
+                return
+            row = rows.get(engine_id) if isinstance(rows, dict) else None
+            if not isinstance(row, dict) or row.get('provider') != provider_id:
+                return
+            row['revision'] = _secrets.token_hex(8)
+            db.execute('UPDATE config SET value=? WHERE key=?', (json.dumps(rows), PROFILE_KEY))
+
+    def identity(self, engine_id):
+        """What a qualification of this engine is bound to: ``subscription`` or ``<provider>:<revision>``.
+
+        The revision changes whenever the profile or one of its credentials is saved,
+        so a Judgment AI qualified on the subscription or on an earlier cloud account
+        is never reused for a different model destination (#211 review).
+        """
+        provider_id = self.provider(engine_id)
+        if provider_id == SUBSCRIPTION:
+            return SUBSCRIPTION
+        return f"{provider_id}:{self._row(engine_id).get('revision') or ''}"

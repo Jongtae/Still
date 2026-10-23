@@ -410,6 +410,9 @@ class DecisionRoutes:
                 return 'isolated-deployment'
             if fingerprint != cli_fingerprint(self.service.execution_adapter.finder(CLI_BINARIES[engine_id])):
                 return 'requalification-needed'
+            # #211: the qualification also belongs to the engine's cloud provider profile.
+            if (route.get('cloud_profile') or 'subscription') != self._cloud_identity(engine_id):
+                return 'requalification-needed'
             if engine_id == 'codex' and not self._codex_instructions_qualified(route):
                 return 'instruction-files-unqualified'
             if engine_id == 'codex' and not self._codex_strict_recorded(route):
@@ -892,8 +895,14 @@ class DecisionRoutes:
         # every policy: the checked isolation/tool surface belongs to the
         # binary it was checked against.
         return (route.get('engine') in CLI_BINARIES
-                and (route.get('fingerprint') or '') != cli_fingerprint(
-                    self.service.execution_adapter.finder(CLI_BINARIES[route['engine']])))
+                and ((route.get('fingerprint') or '') != cli_fingerprint(
+                    self.service.execution_adapter.finder(CLI_BINARIES[route['engine']]))
+                     or (route.get('cloud_profile') or 'subscription') != self._cloud_identity(route['engine'])))
+
+    def _cloud_identity(self, engine_id):
+        """#211: the engine's cloud provider profile a qualification is bound to (``subscription`` when none)."""
+        clouds = getattr(self.service, 'cloud_engines', None)
+        return clouds.identity(engine_id) if clouds is not None else 'subscription'
 
     def _cli_active(self, route, engines, stale=False):
         engine = next((e for e in engines if e['id'] == route.get('engine')), None)
@@ -1560,6 +1569,7 @@ class DecisionRoutes:
                            'instruction_files_present': self._codex_instruction_files()}
         base = {'transport': ROUTE_SUBSCRIPTION_CLI, 'engine': engine_id, 'model_policy': policy,
                 'fingerprint': capability['fingerprint'], 'cli_version': capability['version'],
+                'cloud_profile': self._cloud_identity(engine_id),
                 **codex_extra, **(extra or {})}
         warning = {'instruction_files_present': codex_extra['instruction_files_present']} if codex_extra else {}
         # Claude Code gets `--effort` only when its own --help declares it

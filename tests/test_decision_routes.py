@@ -985,6 +985,29 @@ class ServiceRouteSelectionTests(ServiceFixture):
         self.assertEqual(len(self.runner.calls), calls)
         self.assertTrue(service.settings()['decision_route']['active']['requalification_needed'])
 
+    def test_a_changed_cloud_profile_requires_requalification(self):
+        """#211 review: a judgment qualified on the subscription or an earlier cloud account is not reused."""
+        service = self.service()
+        service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'claude-code'})
+        self.assertEqual(self.judge(service).value, 'retry')
+        self.assertEqual(self.store.config('decision_route')['cloud_profile'], 'subscription')
+        service.save_cloud_profile({'engine': 'claude-code', 'provider': 'bedrock',
+                                    'settings': {'AWS_REGION': 'us-east-1'}, 'daily_calls': 5})
+        calls = len(self.runner.calls)
+        self.assertEqual(self.judge(service).outcome, 'unavailable')
+        self.assertEqual(len(self.runner.calls), calls, 'no call to the new destination before requalification')
+        self.assertEqual(self.store.config('decision_audit')[-1]['failure'], 'requalification-needed')
+        self.assertTrue(service.settings()['decision_route']['active']['requalification_needed'])
+        # A requalification on the cloud profile binds to it; a later credential change unbinds it again.
+        identity = service.cloud_engines.identity('claude-code')
+        self.assertTrue(identity.startswith('bedrock:'))
+        service.save_cloud_secret({'engine': 'claude-code', 'provider': 'bedrock',
+                                   'name': 'AWS_BEARER_TOKEN_BEDROCK', 'value': 'fixture-bedrock-token-0001'})
+        self.assertNotEqual(service.cloud_engines.identity('claude-code'), identity, 'another credential may be another account')
+        # Back on the subscription, the original qualification applies again.
+        service.save_cloud_profile({'engine': 'claude-code', 'provider': 'subscription'})
+        self.assertEqual(self.judge(service).value, 'retry')
+
     def test_a_signed_out_cli_is_refused_and_the_route_is_off_by_choice_only(self):
         service = self.service(runner=CliRunner(logged_in=False))
         with self.assertRaises(DecisionRouteError):
