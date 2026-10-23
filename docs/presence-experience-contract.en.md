@@ -107,6 +107,27 @@ The model never owns truth or authority. Grants, approvals, effect classificatio
 | Task / Evidence detail | exact Work timeline, worker/tool IDs, sources, errors, approvals, partial/unknown details | the primary path for every ordinary result or failure |
 | Internal kernel | Work/Event/Evidence/Context/Memory/Grant/effect state/idempotency/routing | the user-visible personality |
 
+## Conversation surfaces: shared and per-surface rules (#212)
+
+A remote conversation surface is where the owner talks to Still away from the local web page. Telegram is the only one today; Mattermost (#213) and Slack (#214) are planned. The code boundary is `conversation_surface.ConversationSurface` (see the architecture document's *Local service code boundaries*). This section records current behavior; it adds no rule.
+
+**Shared by every surface.**
+
+- **One owner per surface.** A surface is paired to exactly one owner identity. A message, reaction or tap from any other identity, or from anything but the owner's private conversation, starts no Work and gets no answer.
+- **One durable reply.** Each Work gets one terminal reply. The send intent is recorded before the send. A send whose outcome is uncertain is never replayed; a send that certainly did not reach the surface waits out a backoff and is sent once it can be (#123).
+- **Presence is presentation only.** Reactions, typing and drafts are best-effort. A failed or refused call never fails, duplicates or changes Work, delivery or Evidence. Presence calls and the final reply are serialized under one lock, so nothing follows the answer. While an approval prompt is pending it is the only surface, and approval or payment steps get no draft line and no progress reaction.
+- **Truth before presentation.** The outcome reaction follows the deterministic truth gate in *Telegram presence* below; the Judgment AI only chooses among the emoji that gate allows.
+- **Owner acts.** A typed reply or a reaction on a message that showed an item still waiting for the owner is read by the one OWNER-ACT-01 judgment (#172) and settles at most that item through its own path. A button is an exact act bound to its message and is not judged.
+- **Degrading by capability.** Optional presentation is declared per surface as `reactions`, `typing`, `live_drafts`, `buttons` and `native_stop`, and the core shows only what the surface declares, never branching on the surface's name. Without `reactions` no received, progress or closing emoji is set. Without `live_drafts` the wait shows `typing…` only. Without `typing` and drafts nothing is shown while waiting. The terminal reply is delivered in every case.
+
+**Telegram-specific.**
+
+- **Capabilities.** Telegram declares all five: reactions on the owner's message, `typing…`, the thinking draft, inline buttons and the draft's native Stop.
+- **Pairing.** The bot pairs with the owner's private chat through the one-time `/start` code, or with the creator of a family bot (#897, #927). A Work's `jobs.channel` is `telegram:<bot generation>` and its `chat_id` is the paired Telegram user id; reconnecting the bot starts a new generation, and Work, prompts and buttons of an earlier generation are not answered.
+- **Presence.** Emoji come from the set Telegram documents for bot reactions, one regular reaction per message. The draft is `sendRichMessageDraft`, then `sendMessageDraft`, then `typing…` only, as described in *Telegram presence* below. Stop on the draft reaches Still and is reconciled with real Work state (queued Work is cancelled; running Work is told it continues).
+- **Buttons.** Approval, login, preparation, memory, settings, retry and watch prompts carry inline buttons bound to the exact notification and message they were sent as. Browser step approvals carry none and are answered by a reaction or a reply (#1472).
+- **Formatting and media.** Replies are rendered as Telegram HTML (tables as lines, #848), with one plain-text resend only when Telegram refuses the entities. Photos and albums, the location keyboard and the task cards of earlier versions exist only on Telegram today.
+
 ## Conversation projection rules
 
 ### Short work
