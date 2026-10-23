@@ -273,6 +273,40 @@ class Skills(WorkModeCase):
         self.assertEqual(fetched, [])
 
 
+class StaleChecks(WorkModeCase):
+    """#208 review: a flow that passed its first check asks again right before each request."""
+
+    def test_each_skill_download_asks_again(self):
+        fetched = []
+        library = SkillLibrary(self.store, transport=lambda url, *a, **k: fetched.append(url) or b'')
+        library.transport('https://api.github.com/repos/example/skills/commits/main')
+        self.on()
+        with self.assertRaises(SkillError) as caught:
+            library.transport('https://codeload.github.com/example/skills/tar.gz/abc')
+        self.assertEqual((caught.exception.code, len(fetched)), ('work_mode', 1))
+
+    def test_family_setup_direct_telegram_requests_ask_again(self):
+        opened = []
+        self.on()
+        with self.assertRaises(family_setup.SetupError):
+            family_setup._telegram_get('123:token', 'getMe', lambda *a, **k: opened.append(a), store=self.store)
+        self.assertEqual(opened, [])
+
+    def test_the_keep_alive_request_asks_again_after_the_scan(self):
+        from personal_agent.quickstart_service import BROWSER_OWNER_SIGNINS_KEY
+        service = AgentService(self.store, ModelAdapter(lambda *a, **k: {}))
+        self.store.put(BROWSER_OWNER_SIGNINS_KEY, {'fixture.test': {'at': 1, 'host': 'fixture.test'}})
+        refreshed = []
+
+        def marks(host):
+            self.on()  # the switch lands while the scan runs
+            return [('session', 1, 0, 2)], 10 ** 10
+        service.browser_profile = mock.Mock(available=lambda: True, site_cookie_marks=marks,
+                                            refresh_session_http=lambda url: refreshed.append(url) or {'state': 'ok'})
+        self.assertIsNone(service.keep_sessions_alive())
+        self.assertEqual(refreshed, [])
+
+
 class Tunnels(WorkModeCase):
     def test_no_tunnel_process_is_ever_started(self):
         tunnel = FakeTunnel()
@@ -491,6 +525,20 @@ class Telegram(WorkModeCase):
         self.assertEqual(self.calls, [])
         self.assertEqual(self.store.job(job_id)['delivery'], 'cancelled')
         self.assertIsNone(self.store.next_notification())
+
+    def test_a_notification_read_before_the_switch_is_not_reclaimed(self):
+        job_id = self.store.enqueue('질문', 'work-mode-stale', f'telegram:{GENERATION}', CHAT)
+        # A kind that is sent whenever it is claimed (no other state can cancel it first).
+        self.store.queue_notification(job_id, CHAT, GENERATION, 'context_approval_needed')
+        stale = self.store.next_notification()
+        self.service.set_work_mode({'enabled': True})   # cancels it
+        self.service.set_work_mode({'enabled': False})
+        with mock.patch.object(self.store, 'next_notification', lambda: stale):
+            self.service.deliver_notification()
+        self.assertEqual(self.calls, [])
+        with self.store.db() as db:
+            state = db.execute('SELECT state FROM telegram_notifications WHERE id=?', (stale['id'],)).fetchone()
+        self.assertEqual(state['state'], 'cancelled')
 
     def test_updates_from_a_poll_in_flight_at_the_switch_are_not_ingested(self):
         def transport(url, body, headers=None, timeout=None):

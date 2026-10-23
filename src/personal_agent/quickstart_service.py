@@ -8090,6 +8090,8 @@ class AgentService:
             if keepalive_due_at(expiries,last,jar_now,keepalive_interval(site,last))>jar_now:continue
             # #1015/#1041: one HTTP request with the stored cookies, never the browser.  A site that
             # refuses it is paused: pushing past a bot check puts the owner's account at risk.
+            # #208 review: asked again right before the request, so a switch during the scan sends nothing.
+            if work_mode.active(self.store):return None
             result=self.browser_profile.refresh_session_http(f'https://{host}/')
             if result.get('state')=='busy':return None   # tried again at the next check
             stop=result.get('state') in ('blocked','unchanged')

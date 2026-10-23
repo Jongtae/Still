@@ -494,8 +494,15 @@ def page_csp(nonce):
 
 # -- the owner's one command: `agentos family add NAME` ---------------------
 
-def _telegram_get(token, method, opener=urllib.request.urlopen, body=None):
-    """One Bot API call with the owner's token; the token is never printed."""
+def _telegram_get(token, method, opener=urllib.request.urlopen, body=None, *, store):
+    """One Bot API call with the owner's token; the token is never printed.
+
+    #208 review: ``store`` is the owner store; while its work mode is on nothing is sent.
+    """
+    from . import work_mode
+    refused = work_mode.refusal(store, 'telegram')
+    if refused:
+        raise SetupError(refused)
     data = json.dumps(body).encode() if body is not None else None
     request = urllib.request.Request(f'https://api.telegram.org/bot{token}/{method}', data=data,
                                      headers={'Content-Type': 'application/json'} if data else {})
@@ -676,7 +683,7 @@ def prepare_family_setup(owner_store, name, display_name, *, service_action, env
     owner_token = owner_store.secret('telegram_token')
     if not (cfg.get('enabled') and cfg.get('username') and owner_token):
         raise SetupError('먼저 내 Still에 텔레그램 봇을 연결해 주세요. 가족 봇은 내 봇이 관리자로 만들어 줍니다.')
-    me = _telegram_get(owner_token, 'getMe', external)
+    me = _telegram_get(owner_token, 'getMe', external, store=owner_store)
     if not me.get('can_manage_bots'):
         raise SetupError(f"BotFather 미니앱에서 @{cfg['username']} 봇의 'Bot Management Mode'를 한 번 켜 주세요.")
     # An instance already installed keeps the port recorded in its own definition.
@@ -776,7 +783,8 @@ def family_main(argv, *, service_action, owner_data=None, environ=None, opener=N
     if isinstance(cfg.get('user_id'), int):
         try:
             _telegram_get(owner_store.secret('telegram_token'), 'sendMessage', opener or urllib.request.urlopen,
-                          {'chat_id': cfg['user_id'], 'text': f"{handle['display_name']} 설정 링크입니다. 가족에게 보내 주세요.\n{handle['link']}"})
+                          {'chat_id': cfg['user_id'], 'text': f"{handle['display_name']} 설정 링크입니다. 가족에게 보내 주세요.\n{handle['link']}"},
+                          store=owner_store)
         except Exception:
             pass
     paired = watch_family_setup(handle, owner_store, on_state=lambda state: out(STATE_TEXT.get(state, EXPIRED_TEXT)),

@@ -435,7 +435,17 @@ class SkillLibrary:
         self.root = Path(store.root) / 'plugins'
         self.content = self.root / 'skills'
         self.bundled_root = Path(bundled_root)
-        self.transport = transport
+        self.transport = self._work_mode_guarded(transport)
+
+    def _work_mode_guarded(self, transport):
+        """#208 review: every GitHub request (ref resolution, tarball) asks work mode first."""
+        def get(url, *args, **kwargs):
+            from . import work_mode
+            refused = work_mode.refusal(self.store, 'skill_acquisition')
+            if refused:
+                raise SkillError(refused, 'work_mode')
+            return transport(url, *args, **kwargs)
+        return get
 
     # The owner's switch.
     def enabled(self):
