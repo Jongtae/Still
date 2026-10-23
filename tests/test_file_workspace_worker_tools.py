@@ -588,10 +588,15 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         workspace = FileWorkspace(self.store)
         record = workspace.result_for('job-1')
         def denied(self, reference_id, path): raise PermissionError('denied')
-        with patch.object(FileWorkspace, 'read', denied):
-            found = self.caps('job-later').execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})
-            self.assertEqual((found['files'], found['truncated']), ([], True))
-            self.assertIs(workspace.intact(record), FileWorkspace.UNKNOWN)
+
+        def wrapped(self, reference_id, path):
+            # As ``document_reader`` reports it: the I/O failure is the ValueError's cause (#203 review).
+            raise ValueError('PDF를 읽을 수 없습니다.') from PermissionError('denied')
+        for failing in (denied, wrapped):
+            with patch.object(FileWorkspace, 'read', failing):
+                found = self.caps('job-later').execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})
+                self.assertEqual((found['files'], found['truncated']), ([], True), failing.__name__)
+                self.assertIs(workspace.intact(record), FileWorkspace.UNKNOWN, failing.__name__)
         with self.store.db() as db:
             self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'current')
         found = self.caps('job-later').execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})

@@ -277,10 +277,16 @@ class FileWorkspace:
                 current=self.read(source['reference_id'],source['path'])
                 if current['version']!=source['version'] or current['source_id']!=source['source_id']: return False
             return True
+        except ValueError as exc:
+            # The document reader wraps an I/O failure as ValueError (``document_reader``); its cause decides (#203 review).
+            return self._read_failure(exc.__cause__) if isinstance(exc.__cause__,OSError) else False
         # A source gone, outside the folder now, or no longer text: it differs (#203).
-        except (KeyError,ValueError,FileNotFoundError,UnicodeError): return False
-        # Any other read error (permission, I/O) observed no difference: the record keeps its state (#203).
-        except OSError: return self.UNAVAILABLE
+        except (KeyError,FileNotFoundError,UnicodeError): return False
+        except OSError as exc: return self._read_failure(exc)
+
+    def _read_failure(self, error):
+        """A missing source differs; any other read error (permission, I/O) observed no difference (#203)."""
+        return False if isinstance(error,FileNotFoundError) else self.UNAVAILABLE
 
     def current_results(self, needle=None, latest=False, path=None, deadline=None, terms=None):
         """Fresh saved results, newest first: each one's sources still match the originals.
