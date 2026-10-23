@@ -142,6 +142,16 @@ assert.equal(ctx.mainAiView(settingsFor('claude-code',{'claude-code':sub('claude
  $('ai-chooser-discard').hidden=true;buttons().find(node=>node.textContent==='지우기 확인').onclick();
  assert.equal($('ai-chooser-discard').hidden,false,'confirming removal with unsaved profile edits asks before discarding them');assert.equal(calls.length,before);
  ctx.chooserClearDiscard();vm.runInContext('aiAccountNode=null',ctx);}
+// #211 review: an unfinished cloud profile outranks a cached signed-in login in the active status.
+{const unfinished={...cloudStatus,problem:'Amazon Bedrock 설정에 필요한 값이 없습니다: AWS_REGION'};
+ const view=ctx.mainAiView(settingsFor('claude-code',{'claude-code':sub('claude-code',{cloud:unfinished,login:{state:'signed-in',checked_at:1700000000}})}));
+ assert.equal(view.state,'클라우드 제공자 설정 필요');assert.equal(view.kind,'attention');assert(view.description.includes('AWS_REGION'));}
+// #211 review: credentials saved for a provider that is no longer selected stay removable, with confirmation.
+{const dormant={...cloudStatus,provider:'subscription',destination:'',providers:[{...cloudStatus.providers[0],saved_secrets:['AWS_BEARER_TOKEN_BEDROCK']}]};
+ const holder=new Element('div');holder.append(ctx.cloudProviderForm(sub('claude-code',{cloud:dormant})));
+ const remove=holder.querySelectorAll('button').find(node=>node.textContent==='지우기');assert(remove,'a dormant saved credential offers removal');
+ const before=calls.length;remove.onclick();assert.equal(calls.length,before);
+ assert(holder.querySelectorAll('button').some(node=>node.textContent==='지우기 확인'&&!node.parentNode.hidden));}
 {const holder=new Element('div');holder.append(ctx.cloudProviderForm(sub('claude-code',{cloud:cloudStatus})));ctx.__cloudHolder=holder;vm.runInContext('aiAccountNode=__cloudHolder',ctx);
  holder.querySelectorAll('input').find(node=>node.name==='AWS_REGION').value='eu-west-1';
  const secretRow=holder.querySelectorAll('form.cloud-secret')[0];secretRow.querySelectorAll('input')[0].value='fixture-secret-value';

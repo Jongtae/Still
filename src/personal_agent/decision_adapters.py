@@ -286,6 +286,9 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
             # racing the guard above cannot let an earlier qualification authorize another account.
             if self.expected_cloud is not None and (cloud.identity() if cloud is not None else 'subscription') != self.expected_cloud:
                 return done(OUTCOME_UNAVAILABLE, failure='requalification-needed')
+            if cloud is not None:
+                # The audit names the cloud provider, destination and profile revision (no values).
+                identity.update(provider=cloud.provider, destination=cloud.destination(), cloud_profile=cloud.identity())
             try:
                 env = (self.execution.environment(self.engine_id, binary, run_dir, cloud=cloud) if cloud is not None
                        else self.execution.environment(self.engine_id, binary, run_dir))

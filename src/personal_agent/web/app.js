@@ -565,6 +565,8 @@ function mainAiView(settings){
  if(route.kind==='subscription'){
   const login=route.login?.state||'unchecked',failed=route.check?.state==='failed'&&!loginSupersedesCheck(route);
   if(!route.installed)return {...view,description:t('선택한 CLI를 찾지 못했습니다. 다른 AI로 자동 전환하지 않습니다.'),state:t('설치 확인 필요'),kind:'attention',checkable:false};
+  // #211: an unfinished cloud profile cannot launch, whatever the cached subscription login says.
+  if(cloudName&&route.cloud.problem)return {...view,description:route.cloud.problem,state:t('클라우드 제공자 설정 필요'),kind:'attention',checkable:false};
   const states={'signed-in':'로그인 확인됨','signed-out':'로그인 필요',unchecked:'로그인 확인 전',unknown:'로그인 상태 확인 필요','token-saved':'토큰 저장됨 · 로그인 확인 전',sidecar:'실행 환경에서 인증 관리'};
   return {...view,state:t(states[login]||'로그인 상태 확인 필요'),kind:['signed-out','unknown'].includes(login)?'attention':'neutral',checkable:login!=='sidecar',description:login==='signed-out'?t('변경에서 로그인 방법을 확인하세요.'):failed?t('마지막 확인 실패: {reason}',{reason:t(DECISION_FAILURE_TEXT[route.check.failure]||route.check.failure||'확인 실패')}):'',...(failed?{kind:'attention'}:{})};
  }
@@ -760,6 +762,15 @@ function cloudProviderForm(route){const cloud=route.cloud,box=element('fieldset'
    box.append(row);}
   if((current.missing||[]).length)box.append(element('p',t('아직 필요한 값: {names}',{names:current.missing.join(', ')}),'field-hint'));
   const docs=element('details');docs.append(element('summary',t('공식 문서')));for(const url of current.docs||[]){const line=element('p'),link=element('a',url);link.href=url;link.rel='noopener noreferrer';link.target='_blank';line.append(link);docs.append(line);}box.append(docs);}
+ // #211 review: credentials saved for a provider that is not selected now stay visible and removable.
+ for(const other of (cloud.providers||[]).filter(item=>item.id!==cloud.provider&&(item.saved_secrets||[]).length)){const group=element('fieldset',undefined,'cloud-dormant');group.append(element('legend',other.name));
+  for(const name of other.saved_secrets){const row=element('div',undefined,'cloud-secret');row.append(element('code',name));
+   const confirmLine=element('span',undefined,'cloud-secret-confirm');confirmLine.hidden=true;
+   const remove=settingsAction(t('지우기'),()=>{remove.hidden=true;confirmLine.hidden=false;confirmButton.focus();},'destructive');
+   const confirmButton=settingsAction(t('지우기 확인'),()=>chooserDiscard(()=>chooserAction(confirmButton,async()=>{await api('/api/cloud-engines/credential',{engine:route.id,provider:other.id,name,value:''});return {resetPanel:true,message:t('{name} 값을 지웠습니다.',{name})};}),chooserCloudDirty()),'destructive');
+   confirmLine.append(element('span',t('다시 누르면 {name} 키를 지웁니다.',{name}),'field-hint'),confirmButton,settingsAction(t('취소'),()=>{confirmLine.hidden=true;remove.hidden=false;remove.focus();}));
+   row.append(element('span',t('저장됨 · 값은 다시 표시하지 않습니다'),'settings-technical-line'),remove,confirmLine);group.append(row);}
+  box.append(group);}
  return box;}
 // Routes are listed once in #active-ai; the former separate list stays empty.
 function renderSubscriptionEngines(subscription){const box=$('subscription-engines');if(!box)return;box.hidden=true;box.replaceChildren();}

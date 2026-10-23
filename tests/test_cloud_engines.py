@@ -473,6 +473,22 @@ class JudgmentCalls(StoreCase):
         bound = self.engine('claude-code', self.runner(calls), expected_cloud=self.cloud.identity('claude-code'))
         self.assertEqual(bound.judge(DecisionContext('x', {'owner_message': 'a'}), 'p?').outcome, OUTCOME_DECIDED)
 
+    def test_a_cloud_judgment_audit_names_its_destination_without_values(self):
+        """#211 review: a cloud judgment is distinguishable from a subscription one in the durable audit."""
+        self.bedrock()
+        calls, records = [], []
+        profile = Path(self.tmp.name) / 'codex-home'
+        profile.mkdir(exist_ok=True)
+        execution = BoundedExecutionAdapter(finder=lambda name: '/fixture/bin/' + name, runner=self.runner(calls),
+                                            runtime_root=Path(self.tmp.name) / 'runs', codex_home=profile,
+                                            credentials=lambda engine: OAUTH if engine == 'claude-code' else '', cloud=self.cloud)
+        engine = SubscriptionCliDecisionEngine(execution, 'claude-code', audit=records.append)
+        self.assertEqual(engine.judge(DecisionContext('x', {'owner_message': 'a'}), 'p?').outcome, OUTCOME_DECIDED)
+        record = records[-1]
+        self.assertEqual((record['provider'], record['destination']), ('bedrock', 'Amazon Bedrock (us-east-1)'))
+        self.assertEqual(record['cloud_profile'], self.cloud.identity('claude-code'))
+        self.assertNotIn(BEDROCK_TOKEN, json.dumps(records))
+
     def test_a_spent_cap_makes_the_judgment_unavailable_without_a_call(self):
         self.bedrock(cap=1)
         calls = []
