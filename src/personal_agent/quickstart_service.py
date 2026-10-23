@@ -2767,10 +2767,7 @@ class AgentService:
         The current values are redacted downstream; a value that was since replaced or removed is no
         longer known there, so its spans (matched by their retired digests) go here.
         """
-        try:
-            ledger=self.store.retired_secret_ledger()
-        except Exception:
-            ledger=None
+        ledger=self.store.retired_secret_ledger()  # an unreadable ledger raises: nothing goes to a model
         if not ledger:return rows
         return [{**row,'content':self.store.redact_secret_spans(row.get('content'),(),ledger)}
                 if isinstance(row.get('content'),str) else row for row in rows]
@@ -2790,8 +2787,13 @@ class AgentService:
         lines,used=[],len(OWNER_WORDS_HEADING.encode())
         for row in rows:
             # Codex review on #227: a message holding a secret that was since replaced or removed is never
-            # recalled - the current redaction no longer knows that value.
-            if self.store.holds_retired_secret(row['content']):continue
+            # recalled - the current redaction no longer knows that value.  An unreadable ledger (#259)
+            # withholds the whole block.
+            try:
+                if self.store.holds_retired_secret(row['content']):continue
+            except Exception:
+                LOG.warning('retired-secret ledger unreadable; no earlier words recalled')
+                return ''
             # Codex review on #227: the day the owner sent it, in the owner's zone.
             day=datetime.fromtimestamp(float(row['created']),zone).date().isoformat()
             # Codex review on #227: redacted before it is clipped, so a cut can never keep part of a stored secret.
@@ -5651,8 +5653,9 @@ class AgentService:
                 # before its worker turn records them; recorded only once the plan call actually went out.
                 # Only what the plan's context carries (profile and current context; prepared answers are a
                 # count there), so the audit names nothing the Judgment AI did not receive.
-                self.record_turn_provenance(job['id'],owner_information=self.owner_information_refs(
-                    {name:sections.get(name) for name in ('profile','current_context')}))
+                # Codex review on #259: from the exact (bounded) facts the plan sent, not the whole sections.
+                sent=getattr(orchestration,'sent_sections',None) or {}
+                self.record_turn_provenance(job['id'],owner_information=self.owner_information_refs(sent))
             return early
         finally:
             if own_budget and budget.ledger is not None:budget.ledger.pause()

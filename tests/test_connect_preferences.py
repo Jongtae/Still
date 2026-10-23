@@ -203,6 +203,20 @@ class ConnectionPreferences(Harness):
             self.service.early_work_plan(self.store.job(ident), 'Read the Unseen record.')
         self.assertNotIn('owner_information', self.store.turn_provenance(ident) or {})
 
+    def test_the_early_plan_audit_uses_the_bounded_facts_it_sent(self):
+        """Codex review on #259: a section longer than the plan's bound is audited as sent, not whole."""
+        from personal_agent.orchestrator import CURRENT_CONTEXT_FACT_CHARS
+        seen = []
+        ident = self.store.enqueue('Read the Unseen record.', 'early-bounded')
+        self.script([plan('codex', 'Read it.')], goals=[True])
+        with mock.patch.object(type(self.service), 'current_context_text', lambda service, job: 'x' * 5000), \
+                mock.patch.object(type(self.service), 'owner_information_refs',
+                                  lambda service, sections, spliced=(): seen.append(dict(sections)) or {}):
+            self.service.early_work_plan(self.store.job(ident), 'Read the Unseen record.')
+        [sent] = seen
+        self.assertLessEqual(len(sent['current_context']), CURRENT_CONTEXT_FACT_CHARS)
+        self.assertEqual(set(sent), {'profile', 'current_context'})
+
     def test_early_plan_and_regular_plan_use_same_retrieved_profile(self):
         for index in range(20):
             self.store.save_memory(f'profile.aaa.item{index}', 'Unrelated background ' * 8, owner_id='local-owner')

@@ -387,11 +387,17 @@ class QuickStore:
         return self.secret_path.with_name('retired-secret-marks.json')
 
     def _read_retired(self):
+        """The retirement ledger, None when none was ever written; raises when it exists but cannot be read
+        (Codex review on #259: an unreadable ledger must withhold model-bound text, not pass as empty)."""
         try:
-            ledger=json.loads(self.retired_secrets_path.read_text())
-        except (OSError,ValueError):
+            text=self.retired_secrets_path.read_text()
+        except FileNotFoundError:
             return None
-        return ledger if isinstance(ledger,dict) and isinstance(ledger.get('key'),str) else None
+        ledger=json.loads(text)
+        if not isinstance(ledger,dict) or not isinstance(ledger.get('key'),str) or not isinstance(ledger.get('marks'),list):
+            raise ValueError('the retired-secret ledger is unreadable')
+        bytes.fromhex(ledger['key'])
+        return ledger
 
     @staticmethod
     def _redacted_secret_key(key):
@@ -417,6 +423,28 @@ class QuickStore:
         # Kept for as long as a message can be recalled (Codex review on #259): never evicted.
         ledger['marks']=marks
         self.write_private(self.retired_secrets_path,json.dumps(ledger))
+
+    def swap_secret(self, key, value, retire):
+        """Replace (or with ``value`` None remove) one secret, retiring ``retire(old)``'s plaintexts first,
+        all under the cross-process secrets lock (Codex review on #259: concurrent writers cannot slip a
+        value past retirement).  ``retire`` raising leaves the secret unchanged."""
+        with self.secret_lock:
+            lock_fd=os.open(self.secret_lock_path,os.O_RDWR|os.O_CREAT,0o600)
+            try:
+                fcntl.flock(lock_fd,fcntl.LOCK_EX)
+                values=json.loads(self.secret_path.read_text()) if self.secret_path.exists() else {}
+                old=values.get(key)
+                if old:self._retire_values_locked(retire(old))
+                if value is None:
+                    if key not in values:return False
+                    values.pop(key)
+                else:
+                    values[key]=value
+                self.write_private(self.secret_path,json.dumps(values))
+                return True
+            finally:
+                fcntl.flock(lock_fd,fcntl.LOCK_UN)
+                os.close(lock_fd)
 
     def retire_secret_values(self, olds):
         """Record retired plaintext values another layer decrypted (encrypted API credentials)."""

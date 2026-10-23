@@ -199,19 +199,12 @@ class ApiCredentials:
                 values.append(item)
         return values
 
-    def retire_state(self, name):
-        """Retire the plaintext values of the set's saved run state before it is replaced or removed (#258).
+    def discard_state(self, name):
+        """Remove the set's run state after retiring its values, in one locked step (#258).
 
         Raises when the saved state cannot be read, so its ciphertext is never dropped unretired.
         """
-        token = self.store.secret_items(STATE_PREFIX + name).get(STATE_PREFIX + name)
-        if token:
-            self.store.retire_secret_values(self._state_strings(token))
-
-    def discard_state(self, name):
-        """Remove the set's run state after retiring its values (#258)."""
-        self.retire_state(name)
-        return self.store.remove_secret(STATE_PREFIX + name)
+        return self.store.swap_secret(STATE_PREFIX + name, None, self._state_strings)
 
     def write_state(self, name, slot, text):
         """Save the run state (a JSON object of at most ``MAX_STATE_BYTES``); False when refused."""
@@ -225,10 +218,11 @@ class ApiCredentials:
             if len(text.encode()) > MAX_STATE_BYTES or not isinstance(json.loads(text), dict):
                 return False
             self.assert_current(name, slot)
-            self.retire_state(name)
             payload = {'version': 1, 'binding': fingerprint(name, slot), 'state': text}
             encoded = json.dumps(payload, separators=(',', ':')).encode()
-            self.store.secret(STATE_PREFIX + name, self._cipher(create=True).encrypt(encoded).decode())
+            # The old state's values are retired and the new state written under one lock (Codex review).
+            self.store.swap_secret(STATE_PREFIX + name, self._cipher(create=True).encrypt(encoded).decode(),
+                                   self._state_strings)
         except Exception:
             return False
         return True

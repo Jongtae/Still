@@ -490,6 +490,27 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.assertIn('예전 키 메모 [redacted]', self.service.owner_profile_snapshot())
         self.assertNotIn(old, self.service.redact_judgment_text(f'linked reply said {old}'))
 
+    def test_swap_retires_and_replaces_under_one_lock_and_an_unreadable_ledger_withholds(self):
+        """Codex review on #259: retire-then-replace is one step; a corrupt ledger never reads as empty."""
+        from personal_agent.current_context import redact_known_secrets
+        self.store.secret('api_credential_state:set', 'cipher-a')
+        self.store.swap_secret('api_credential_state:set', 'cipher-b', lambda old: [f'plain-of-{old}-token'])
+        self.assertEqual(self.store.secret_items('api_credential_state:set'), {'api_credential_state:set': 'cipher-b'})
+        self.assertTrue(self.store.holds_retired_secret('x plain-of-cipher-a-token y'))
+        def unreadable(old):
+            raise RuntimeError('key unavailable')
+        with self.assertRaises(RuntimeError):
+            self.store.swap_secret('api_credential_state:set', None, unreadable)
+        self.assertEqual(self.store.secret_items('api_credential_state:set'), {'api_credential_state:set': 'cipher-b'})
+        self.said('마트 장바구니 메모')
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        self.store.retired_secrets_path.write_text('{not json')
+        with self.assertRaises(ValueError):
+            redact_known_secrets(self.store, 'anything')
+        with self.assertRaises(ValueError):
+            self.service.history_for_models(self.store.history()[-16:])
+        self.assertNotIn('owner_said', self.service.owner_words_block('마트 장바구니'))
+
     def test_the_owners_earlier_words_are_bounded_in_bytes(self):
         from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
         self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])
