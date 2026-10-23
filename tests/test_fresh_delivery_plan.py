@@ -324,3 +324,22 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     # Session-driven: the heartbeat never selects it on its own.
     for state in ({}, {"completed": []}):
         assert DeliveryPlan(PLAN).select(state) is None, state
+
+
+def test_the_post_closeout_audit_notes_correct_without_rewriting_the_closeouts():
+    """#250: the 2026-10-23 audit adds dated corrections beside each closeout (C12), never in place of it."""
+    current = plan()
+    archived = json.loads(subprocess.check_output(
+        ["git", "show", "06fefcd:delivery-plan.yaml"], cwd=ROOT, text=True))
+    expected = {"QUALITY-CORE-01": {233, 236, 248}, "STEADY-01": {233, 235, 237, 238, 246},
+                "BROWSE-AUDIT-01": {233, 239, 245}, "IN-CONTEXT-01": {240, 247}}
+    for name, follow_ups in expected.items():
+        program = current["programs"][name]
+        note = program["post_closeout_audit"]
+        assert note["date"] == "2026-10-23" and note["issue"] == 250
+        assert note["corrections"] and all(isinstance(line, str) and line for line in note["corrections"])
+        assert follow_ups <= set(note["follow_ups"]), name
+        # The original closeout and its owed reviews stay exactly as recorded.
+        assert program["closeout"] == archived["programs"][name]["closeout"], name
+        assert program.get("pending_reviews") == archived["programs"][name].get("pending_reviews"), name
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"

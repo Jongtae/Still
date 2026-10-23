@@ -806,7 +806,23 @@
             "issue_state": "closed by the maintainer on that basis"
           }
         }
-      ]
+      ],
+      "post_closeout_audit": {
+        "date": "2026-10-23",
+        "issue": 250,
+        "corrections": [
+          "The closeout's 'full-validate on the final head' does not hold for three PRs: #117 (run 39252538792 failed on 87a82c0; merged 13:32Z), #119 (run 39257713378 failed on 6492ede after its merge) and #124 (every full-validate run on 5a54669 was cancelled, so its final head has no full-suite result). The failures were the two SDK-pin tests that also failed on main after #110 and were fixed by #130; the PRs' own tests passed.",
+          "The CORE-CALENDAR-01 decision (approval by the typed approve word, not AI-judged wording) was superseded by OWNER-ACT-01 #172 (PR #179): one judgment now reads the owner's act, reactions included. The approval-token and payload-hash guard in calendar.py is unchanged, so no calendar change is sent before the exact draft is approved.",
+          "#143 was closed on the owner's operating check. Under #195 the owed review is the Codex review of PR #139's final diff: #233 (review PR #236).",
+          "#15 and #24 shipped as worker guidance; their tests pin phrases or are circular (#248). #21 and #16 stay open as recorded."
+        ],
+        "follow_ups": [
+          233,
+          236,
+          247,
+          248
+        ]
+      }
     },
     "STEADY-01": {
       "status": "complete",
@@ -848,7 +864,26 @@
             "issue_state": "closed by the maintainer on that basis"
           }
         }
-      ]
+      ],
+      "post_closeout_audit": {
+        "date": "2026-10-23",
+        "issue": 250,
+        "corrections": [
+          "#149 was closed on the owner's operating check, recorded as not a non-author review. Under #195 the owed review is the Codex review of the final diffs of PR #145 and PR #144: #233 (review PRs #238 and #237).",
+          "#8 (PR #145): a Calendar write refused with 401 forces reauthentication without the one safe renewal its scope asked for, and any HTTP 400 from the token endpoint is treated as a refused grant. Fixed under #246.",
+          "#19 (PR #144) and #10 (PRs #146, #147): the two-line working-notes notice is never translated, so en/ja/zh owners get it in Korean (#235). Connector handoff, resume refusals and folder-permission lines remain Korean only while README says connection errors follow the owner's language (#242).",
+          "The substeps' focused-test lists omit the test files the PRs added (tests/test_google_renewal.py, tests/test_system_message_locale.py, tests/test_working_notes.py)."
+        ],
+        "follow_ups": [
+          233,
+          235,
+          237,
+          238,
+          242,
+          246,
+          248
+        ]
+      }
     },
     "CHECKS-01": {
       "status": "complete",
@@ -908,6 +943,20 @@
         "issue": 168,
         "reason": "#168 activated BROWSE-CLOSE-01 as 'measure; if the delay is real, let the worker exit promptly ...', so a measurement that finds no real delay completes that scope without a code change. The original rule text required a merged PR for every ordered substep and did not state this case; the amendment makes the activated scope explicit rather than letting the verifier permit the gap silently.",
         "original": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests, its declared focused tests passing, and required validate plus full-validate passing on the final head (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision."
+      },
+      "post_closeout_audit": {
+        "date": "2026-10-23",
+        "issue": 250,
+        "corrections": [
+          "PR #178's final head 213494f was never reviewed by Codex; its final diff is under #233 (review PR #239).",
+          "#167's owner outcome named mail, notes and other private reads; only Memory and this Work's own writes are compared, the comparison stops silently at 500 Memory rows and 1,000 outbound characters, and the matcher over-matches (#245, #247). The AUDIT-OUTBOUND-01 focused-test list omits tests/test_outbound_held_values.py."
+        ],
+        "follow_ups": [
+          233,
+          239,
+          245,
+          247
+        ]
       }
     },
     "IN-CONTEXT-01": {
@@ -962,7 +1011,20 @@
           "reason": "Browser confirm and payment approval semantics changed; merged on the same owner direction before the required human non-author review. It stays owed on #188 and is not waived by this closeout."
         }
       ],
-      "closeout": "Closed out 2026-10-22 (#175). All five ordered substeps merged on their own PRs (RULES-OUT-01 in three stacked slices) with issue acceptance mapped to model-free fixture tests (real-WebKit fixtures for #174) and required validate passing on each final head; the full suite passed on the last rebased head (5196 passed, 61 skipped) and full-validate passed on main at the last merge d22ec4c (run 39691913598: Linux, macOS 15, macOS 26). JUDGE-CONTEXT-01 #170 (PR #177), GUARD-NL-01 #171 (PR #176), OWNER-ACT-01 #172 (PR #179), RULES-OUT-01 #173 (PRs #181, #185, #187), BROWSER-DIALOG-01 #174 (PR #186). Evidence is fixture/unit only; no live model, account or site observed. The owner directed the merge of #179 and #186 before the required human non-author review; it stays owed on #188 (pending_reviews). Supporting guidance fixes outside the substeps: #153 (PR #158), #154 (PR #160), #155 (PR #161). Left open as follow-ups: #182 (worker file-workspace tool; two narrowed rule forms remain as guard open findings), #183 (connection pause/disconnect as an approvable draft). No successor is selected by this closeout; the delivery heartbeat stayed paused throughout."
+      "closeout": "Closed out 2026-10-22 (#175). All five ordered substeps merged on their own PRs (RULES-OUT-01 in three stacked slices) with issue acceptance mapped to model-free fixture tests (real-WebKit fixtures for #174) and required validate passing on each final head; the full suite passed on the last rebased head (5196 passed, 61 skipped) and full-validate passed on main at the last merge d22ec4c (run 39691913598: Linux, macOS 15, macOS 26). JUDGE-CONTEXT-01 #170 (PR #177), GUARD-NL-01 #171 (PR #176), OWNER-ACT-01 #172 (PR #179), RULES-OUT-01 #173 (PRs #181, #185, #187), BROWSER-DIALOG-01 #174 (PR #186). Evidence is fixture/unit only; no live model, account or site observed. The owner directed the merge of #179 and #186 before the required human non-author review; it stays owed on #188 (pending_reviews). Supporting guidance fixes outside the substeps: #153 (PR #158), #154 (PR #160), #155 (PR #161). Left open as follow-ups: #182 (worker file-workspace tool; two narrowed rule forms remain as guard open findings), #183 (connection pause/disconnect as an approvable draft). No successor is selected by this closeout; the delivery heartbeat stayed paused throughout.",
+      "post_closeout_audit": {
+        "date": "2026-10-23",
+        "issue": 250,
+        "corrections": [
+          "Since this closeout, #182 removed the two narrowed workspace rule forms and their guard open findings (fa98d7b, PR #194, which carried PR #191's head 4c9c6bd).",
+          "#170 was closed with three items undelivered: direct-route history rows reach the goal judgment unlabelled while its proposition says each row is a dated earlier Work; calendar drafts keep write=True rather than a draft effect class; and a Work waiting on the owner has no typed waiting state (#240).",
+          "#172's edited-message acts and #188's creation-time 'shown' time for calendar and settings drafts are untracked scope (#247). pending_reviews is unchanged by this note."
+        ],
+        "follow_ups": [
+          240,
+          247
+        ]
+      }
     },
     "WORKPLACE-01": {
       "status": "owner-activated-goal-ready",
