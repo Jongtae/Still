@@ -38,6 +38,7 @@ import re
 import threading
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .calendar import CalendarError
 from .connector_contract import _owner_key
@@ -90,14 +91,48 @@ def shown_value(value):
     return json.dumps(text, ensure_ascii=False) if _UNSAFE.search(text) else text
 
 
+def _zone(name):
+    """The named IANA zone, or None when there is none to compare an offset against."""
+    try:
+        return ZoneInfo(name) if isinstance(name, str) and name else None
+    except (ValueError, ZoneInfoNotFoundError):
+        return None
+
+
+def _shown_time(moment, zone):
+    """A wall-clock time exactly as sent: seconds and fractions when present, the offset unless ``zone`` already says it.
+
+    #233: the value is sent to Google unchanged, so the preview must not round
+    ``15:00:59`` to ``15:00`` or drop a ``Z`` / ``+00:00`` offset that places
+    the event at another instant than the zone shown beside it.  An offset is
+    left out only when the value carries none (Google reads it in the zone) or
+    when it is the zone's own offset at that instant.
+    """
+    text = f"{moment:%H:%M}"
+    if moment.second or moment.microsecond:
+        text += f":{moment:%S}"
+    if moment.microsecond:
+        text += '.' + f"{moment.microsecond:06d}".rstrip('0')
+    offset = moment.utcoffset()
+    if offset is None:
+        return text
+    if zone is not None and moment.astimezone(zone).replace(tzinfo=None) == moment.replace(tzinfo=None):
+        return text
+    sign = '-' if offset.days < 0 else '+'
+    minutes = abs(int(offset.total_seconds())) // 60
+    return f"{text} UTC{sign}{minutes // 60:02d}:{minutes % 60:02d}"
+
+
 def describe_span(start, end, zone):
-    """``2026-09-23 (수) 15:00 – 16:00 (Asia/Seoul)`` from the RFC3339 times as sent."""
+    """``2026-09-23 (수) 15:00 – 16:00 (Asia/Seoul)`` from the RFC3339 times as sent, with nothing they say left out."""
     first = datetime.fromisoformat(start)
     last = datetime.fromisoformat(end)
+    tz = _zone(zone)
     day = f"{first:%Y-%m-%d} ({_WEEKDAYS_KO[first.weekday()]})"
     if last.date() == first.date():
-        return f"{day} {first:%H:%M} – {last:%H:%M} ({shown_value(zone)})"
-    return f"{day} {first:%H:%M} – {last:%Y-%m-%d} ({_WEEKDAYS_KO[last.weekday()]}) {last:%H:%M} ({shown_value(zone)})"
+        return f"{day} {_shown_time(first, tz)} – {_shown_time(last, tz)} ({shown_value(zone)})"
+    return (f"{day} {_shown_time(first, tz)} – {last:%Y-%m-%d} ({_WEEKDAYS_KO[last.weekday()]}) "
+            f"{_shown_time(last, tz)} ({shown_value(zone)})")
 
 
 def target_lines(target):

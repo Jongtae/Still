@@ -14,8 +14,11 @@ ingress, ``run_one``), ``run_agent``, ``Capabilities`` and
 ``CalendarConnector`` run unchanged.  No live model, Telegram or Google
 Calendar is contacted, and none is claimed.
 """
+import re
 import unittest
+from datetime import datetime
 from unittest import mock
+from zoneinfo import ZoneInfo
 
 from personal_agent.calendar import CALENDAR_SPEC, CALENDAR_WRITE_SPEC, CalendarConnector
 from personal_agent.calendar_conversation import (CANCELLED, CHANGED_UNDER_US, CREATED, CANCELLED_EVENT,
@@ -171,6 +174,53 @@ class WorkerDraftTests(CalendarDraftApprovalCase):
         job = self.job(self.receive('치과 일정 잡아줘'))
         self.assertIn('장소: 강남역', job['response'])
         self.assertIn('설명: 검진', job['response'])
+
+
+def shown_instants(line):
+    """The two instants an ``일시:`` preview line states, read back from its own words (#233)."""
+    match = re.fullmatch(r'일시: (\d{4}-\d{2}-\d{2}) \(.\) (\S+)(?: UTC([+-]\d{2}:\d{2}))? – '
+                         r'(?:(\d{4}-\d{2}-\d{2}) \(.\) )?(\S+)(?: UTC([+-]\d{2}:\d{2}))? \((.+)\)', line)
+    first_day, first, first_offset, last_day, last, last_offset, zone = match.groups()
+
+    def instant(day, clock, offset):
+        moment = datetime.fromisoformat(f'{day}T{clock}{offset or ""}')
+        return moment if offset else moment.replace(tzinfo=ZoneInfo(zone))
+    return instant(first_day, first, first_offset), instant(last_day or first_day, last, last_offset)
+
+
+class ExactTimePreviewTests(CalendarDraftApprovalCase):
+    """#233: what the owner approves is the instant Google receives, to the second and offset."""
+
+    def approved_span(self, payload):
+        self.drafting(('calendar_draft_create', payload))
+        job = self.job(self.receive('치과 일정 잡아줘'))
+        line, = [line for line in job['response'].splitlines() if line.startswith('일시:')]
+        self.job(self.receive('승인'))
+        (kind, sent), = self.provider.calls
+        self.assertEqual(kind, 'create')
+        self.assertEqual(sent, payload, 'the payload is sent unchanged')
+        zone = ZoneInfo(sent['timezone'])
+        sent_instants = tuple(datetime.fromisoformat(sent[key]) for key in ('start', 'end'))
+        sent_instants = tuple(moment if moment.tzinfo else moment.replace(tzinfo=zone) for moment in sent_instants)
+        self.assertEqual(shown_instants(line), sent_instants, 'the preview states exactly the instants that were sent')
+        return line
+
+    def test_seconds_are_shown_not_rounded_away(self):
+        line = self.approved_span({**DENTIST, 'start': '2026-10-15T15:00:59+09:00'})
+        self.assertEqual(line, '일시: 2026-10-15 (목) 15:00:59 – 16:00 (Asia/Seoul)')
+
+    def test_an_offset_other_than_the_zones_is_shown(self):
+        line = self.approved_span({**DENTIST, 'timezone': 'America/New_York'})
+        self.assertEqual(line, '일시: 2026-10-15 (목) 15:00 UTC+09:00 – 16:00 UTC+09:00 (America/New_York)')
+
+    def test_a_utc_value_is_not_shown_as_the_zones_wall_clock(self):
+        line = self.approved_span({**DENTIST, 'start': '2026-10-15T06:00:00Z', 'end': '2026-10-15T07:00:00.25Z'})
+        self.assertEqual(line, '일시: 2026-10-15 (목) 06:00 UTC+00:00 – 07:00:00.25 UTC+00:00 (Asia/Seoul)')
+        self.assertNotIn('06:00 – ', line, 'a bare wall clock would read as Seoul time')
+
+    def test_a_value_without_an_offset_is_read_in_its_zone(self):
+        line = self.approved_span({**DENTIST, 'start': '2026-10-15T15:00', 'end': '2026-10-15T16:00:30'})
+        self.assertEqual(line, '일시: 2026-10-15 (목) 15:00 – 16:00:30 (Asia/Seoul)')
 
 
 class ApprovalTests(CalendarDraftApprovalCase):
@@ -344,10 +394,10 @@ class UpdateCancelAndSeveralDraftsTests(CalendarDraftApprovalCase):
         job = self.job(self.receive('치과 일정 제목 바꾸고 운동 일정은 취소해줘'))
         self.assertIn('1. 일정 변경', job['response'])
         # #22 review: the target is shown as this Work's own calendar read returned it, not only by id.
-        self.assertIn('대상 일정: 치과\n대상 일시: 2026-10-16 (금) 15:00 – 16:00\n대상 일정 ID: event-1', job['response'])
+        self.assertIn('대상 일정: 치과\n대상 일시: 2026-10-16 (금) 15:00 UTC+09:00 – 16:00 UTC+09:00\n대상 일정 ID: event-1', job['response'])
         self.assertIn('제목: 치과 검진', job['response'])
         self.assertIn('2. 일정 취소', job['response'])
-        self.assertIn('대상 일정: 운동\n대상 일시: 2026-10-17 (토) 09:00 – 10:00\n대상 장소: 체육관\n대상 일정 ID: event-2',
+        self.assertIn('대상 일정: 운동\n대상 일시: 2026-10-17 (토) 09:00 UTC+09:00 – 10:00 UTC+09:00\n대상 장소: 체육관\n대상 일정 ID: event-2',
                       job['response'])
         self.assertEqual(self.provider.calls, [])
         job = self.job(self.receive('승인'))
