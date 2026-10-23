@@ -21,12 +21,15 @@ def _sha256(path):
         for chunk in iter(lambda: source.read(1024 * 1024), b""): digest.update(chunk)
     return digest.hexdigest()
 
-def _portable_db(source, target):
+def _portable_db(source, target, redaction=((), None)):
     """Snapshot SQLite then remove data which can authenticate or target a host."""
     with sqlite3.connect(source) as original, sqlite3.connect(target) as copy:
         original.backup(copy)
         tables = {row[0] for row in copy.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if not {"auth", "sessions", "config"} <= tables: raise ValueError("Still owner database has an unsupported schema.")
+        # #258 (Codex review): the export carries no secrets, so a secret the owner typed into a
+        # conversation - current, or since replaced or removed - leaves the transcript here.
+        _redact_transcript(copy, tables, redaction)
         copy.execute("DELETE FROM auth");copy.execute("DELETE FROM sessions")
         # #570: developer-mode provenance is owner-local diagnostics, not portable state.
         if 'turn_provenance' in tables:copy.execute("DELETE FROM turn_provenance")
@@ -102,6 +105,21 @@ def _portable_db(source, target):
                 copy.execute("UPDATE config SET value=? WHERE key='personal_knowledge_audit'", (json.dumps(safe, sort_keys=True),))
         copy.commit();copy.execute("VACUUM")
 
+def _redact_transcript(copy, tables, redaction):
+    from .quickstart_store import QuickStore
+    values, ledger = redaction
+    if not values and not ledger:
+        return
+    for table, columns in (("messages", ("content",)), ("jobs", ("message", "response"))):
+        if table not in tables:
+            continue
+        present = {row[1] for row in copy.execute(f"PRAGMA table_info({table})")}
+        for column in (name for name in columns if name in present):
+            for rowid, text in copy.execute(f"SELECT rowid, {column} FROM {table} WHERE {column} IS NOT NULL").fetchall():
+                clean = QuickStore.redact_secret_spans(text, values, ledger)
+                if clean != text:
+                    copy.execute(f"UPDATE {table} SET {column}=? WHERE rowid=?", (clean, rowid))
+
 def export_owner_state(data, archive):
     data, archive = Path(data).expanduser().resolve(), Path(archive).expanduser().resolve()
     database = data / DB_RELATIVE
@@ -109,7 +127,9 @@ def export_owner_state(data, archive):
     archive = archive if archive.name.endswith(".tar.gz") else archive.with_name(archive.name + ".tar.gz")
     with tempfile.TemporaryDirectory() as temporary:
         staging = Path(temporary) / ROOT;(staging / "private").mkdir(parents=True, mode=0o700)
-        portable_db = staging / DB_RELATIVE;_portable_db(database, portable_db);portable_db.chmod(0o600)
+        from .quickstart_store import QuickStore
+        redaction = QuickStore.secret_redaction_material(database.parent)
+        portable_db = staging / DB_RELATIVE;_portable_db(database, portable_db, redaction);portable_db.chmod(0o600)
         files = {DB_RELATIVE: _sha256(portable_db)}
         plugins = data / "plugins"
         if plugins.is_dir():

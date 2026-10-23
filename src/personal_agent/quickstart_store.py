@@ -429,6 +429,45 @@ class QuickStore:
                 fcntl.flock(lock_fd,fcntl.LOCK_UN)
                 os.close(lock_fd)
 
+    @classmethod
+    def secret_redaction_material(cls, private_dir):
+        """``(values, ledger)`` read from a store's private directory without opening the store (#258 export).
+
+        ``values`` are the current values the redaction knows (8 characters or more); ``ledger`` is the
+        retired-secret digests, or None.
+        """
+        private_dir=Path(private_dir)
+        try:
+            stored=json.loads((private_dir/'connections.json').read_text())
+        except (OSError,ValueError):
+            stored={}
+        values=sorted({value for key,value in (stored.items() if isinstance(stored,dict) else ())
+                       if cls._redacted_secret_key(key) and isinstance(value,str) and len(value)>=8},key=len,reverse=True)
+        try:
+            ledger=json.loads((private_dir/'retired-secret-marks.json').read_text())
+        except (OSError,ValueError):
+            ledger=None
+        return values,(ledger if isinstance(ledger,dict) and isinstance(ledger.get('key'),str) else None)
+
+    @staticmethod
+    def redact_secret_spans(text, values, ledger):
+        """``text`` with every current value and every span matching a retired digest replaced by ``[redacted]``."""
+        text=str(text or '')
+        for value in values:text=text.replace(value,'[redacted]')
+        if not ledger or not ledger.get('marks'):return text
+        key=bytes.fromhex(ledger['key'])
+        by_length={}
+        for length,digest in ledger['marks']:by_length.setdefault(int(length),set()).add(digest)
+        for length in sorted(by_length,reverse=True):
+            digests,start,out=by_length[length],0,[]
+            while start<=len(text)-length:
+                if hmac.new(key,text[start:start+length].encode(),hashlib.sha256).hexdigest() in digests:
+                    out.append(text[:start]+'[redacted]');text=text[start+length:];start=0
+                    continue
+                start+=1
+            text=''.join(out)+text
+        return text
+
     def holds_retired_secret(self, text):
         """Whether ``text`` contains any retired secret value, by its keyed digest (#221)."""
         text=str(text or '')

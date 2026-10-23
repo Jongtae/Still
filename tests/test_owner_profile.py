@@ -375,6 +375,29 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
             self.store.secret('google_calendar_oauth', f'oauth-token-rotation-{index:04d}')
         self.assertEqual(self.store.retired_secrets_path.read_text(), before)
 
+    def test_a_portable_export_carries_no_secret_typed_into_the_conversation(self):
+        """Codex review on #259: the export is secret-free, so current and retired values leave the transcript."""
+        import sqlite3
+        import tarfile
+        from personal_agent.portable_state import DB_RELATIVE, ROOT, export_owner_state
+        current, retired = 'current-mart-password-42', 'quietharbor-river-tulip'
+        self.store.secret('api_key:openai', retired)
+        self.store.secret('api_key:openai', current)
+        self.said(f'마트 앱 예전 비번 {retired} 이고 지금은 {current} 야', '그냥 메모')
+        archive = self.root / 'export.tar.gz'
+        export_owner_state(self.data, archive)
+        out = self.root / 'unpacked'
+        with tarfile.open(archive) as bundle:
+            bundle.extractall(out, filter='data')
+        with sqlite3.connect(out / ROOT / DB_RELATIVE) as db:
+            text = ' '.join(str(row[0]) for row in db.execute('SELECT content FROM messages')) + ' '.join(
+                str(row[0]) for row in db.execute('SELECT message FROM jobs'))
+        self.assertNotIn(current, text)
+        self.assertNotIn(retired, text)
+        self.assertIn('마트 앱 예전 비번 [redacted] 이고 지금은 [redacted] 야', text)
+        self.assertIn('그냥 메모', text)
+        self.assertNotIn('retired-secret-marks', ' '.join(tarfile.open(archive).getnames()))
+
     def test_the_owners_earlier_words_are_bounded_in_bytes(self):
         from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
         self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])
