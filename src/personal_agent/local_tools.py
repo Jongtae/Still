@@ -182,6 +182,16 @@ class _PageCharset(HTMLParser):
         if match: self.declarations.append(match.group(1).strip('"\''))
 
 
+def _not_sent(exc):
+    """``exc`` marked refused before any request of this read was sent (#233: ``ran: false``).
+
+    Only this module's own checks before the first request use it; a network
+    implementation that marks nothing is an attempt (``agent_runtime.handed_off``).
+    """
+    from .agent_runtime import not_run
+    return not_run(exc)
+
+
 class PublicPageReader:
     """Small, anonymous, read-only page reader with an explicit egress boundary."""
     def __init__(self, opener=None, resolver=None, clock=None):
@@ -418,13 +428,21 @@ class PublicPageReader:
         return canonical
 
     def read(self, url, approved_urls=None):
-        current=self._safe_url(url); started=self.clock();deadline=started+MAX_PAGE_SECONDS
-        approved={normalize_public_url(item) for item in approved_urls} if approved_urls is not None else None
+        try:
+            current=self._safe_url(url); started=self.clock();deadline=started+MAX_PAGE_SECONDS
+            approved={normalize_public_url(item) for item in approved_urls} if approved_urls is not None else None
+        except ValueError as exc:
+            raise _not_sent(exc)
         for redirect in range(MAX_PAGE_REDIRECTS+1):
-            self._remaining(deadline)
-            if approved is not None and current not in approved:
-                raise ValueError('소유자가 승인한 공개 페이지 범위를 벗어난 주소입니다.')
-            addresses=self._validate_host(current,deadline)
+            try:
+                self._remaining(deadline)
+                if approved is not None and current not in approved:
+                    raise ValueError('소유자가 승인한 공개 페이지 범위를 벗어난 주소입니다.')
+                addresses=self._validate_host(current,deadline)
+            except (ValueError, ProviderError) as exc:
+                # #233: before the first request no page was asked for (at most its host name was
+                # resolved); after it, a refused redirect follows a request that was sent.
+                raise _not_sent(exc) if redirect == 0 else exc
             request=Request(current, headers={'User-Agent':'Still public-page-reader/1.0','Accept':'text/html,text/plain,application/xhtml+xml;q=0.9'})
             try:
                 response=self.opener.open(request, timeout=self._remaining(deadline)) if self.opener else self._open_pinned(current,addresses,deadline)
@@ -514,15 +532,17 @@ class LocalTools:
         absent means the owner's configured default.  No provider is chosen here from the
         query's language, script or subject.
         """
-        if not isinstance(query,str) or not 1<=len(query.strip())<=500:raise ValueError('검색어는 1~500자로 입력하세요.')
-        if provider is not None and not isinstance(provider,str):raise ValueError('검색 제공자 이름은 문자열이어야 합니다.')
-        if kind is not None and not isinstance(kind,str):raise ValueError('검색 종류는 문자열이어야 합니다.')
+        if not isinstance(query,str) or not 1<=len(query.strip())<=500:raise _not_sent(ValueError('검색어는 1~500자로 입력하세요.'))
+        if provider is not None and not isinstance(provider,str):raise _not_sent(ValueError('검색 제공자 이름은 문자열이어야 합니다.'))
+        if kind is not None and not isinstance(kind,str):raise _not_sent(ValueError('검색 종류는 문자열이어야 합니다.'))
+        try:locale=validate_locale(locale)
+        except ValueError as exc:raise _not_sent(exc)
         # #678: the Work budget reaches a native search, whose sub-call is a model turn.
-        return self.providers.search(query.strip(),provider=provider or None,kind=kind or None,locale=validate_locale(locale),
+        return self.providers.search(query.strip(),provider=provider or None,kind=kind or None,locale=locale,
                                      **({'budget':budget} if budget is not None else {}))
 
     def weather(self, city, country=''):
-        if not isinstance(city,str) or not 1<=len(city.strip())<=100:raise ValueError('날씨를 조회할 도시를 알려 주세요.')
+        if not isinstance(city,str) or not 1<=len(city.strip())<=100:raise _not_sent(ValueError('날씨를 조회할 도시를 알려 주세요.'))
         args={'name':city,'count':20,'language':'en','format':'json'}
         if isinstance(country,str) and re.fullmatch('[A-Za-z]{2}',country):args['countryCode']=country.upper()
         places=request_json(GEOCODING_SEARCH+'?'+urlencode(args),None,timeout=10).get('results',[])
@@ -542,7 +562,7 @@ class LocalTools:
         timeout, timestamps and model-derived scope."""
         for value,limit in ((latitude,90),(longitude,180)):
             if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or not -limit<=value<=limit:
-                raise ValueError('날씨를 조회할 위치가 올바르지 않습니다.')
+                raise _not_sent(ValueError('날씨를 조회할 위치가 올바르지 않습니다.'))
         args={'latitude':latitude,'longitude':longitude,'current':'temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m','daily':'temperature_2m_max,temperature_2m_min,precipitation_probability_max','forecast_days':3,'timezone':'auto'}
         url='https://api.open-meteo.com/v1/forecast?'+urlencode(args)
         data=request_json(url,None,timeout=15)
@@ -558,7 +578,7 @@ class LocalTools:
         if plan.get('tool')=='public_page_read':return self.page_reader.read(plan.get('url'),plan.get('approved_urls'))
         if plan.get('tool')=='weather' and 'latitude' in plan:return self.forecast(plan.get('latitude'),plan.get('longitude'))
         if plan.get('tool')=='weather':return self.weather(plan.get('city'),plan.get('country',''))
-        raise ValueError('지원하지 않는 조회 도구입니다.')
+        raise _not_sent(ValueError('지원하지 않는 조회 도구입니다.'))
 
 def weather_answer(result):
     """Still's own rendering of one observed Open-Meteo result.

@@ -528,6 +528,103 @@ class HandOff(unittest.TestCase):
         self.assertEqual(outbound_evidence(caps, 'code_run', {'code': 'print(1)'}, {}), {})
 
 
+class NetworkLocalRefusals(HandOff):
+    """#233 (review of PR #257): a network's own checks before it sends are refusals; anything after is an attempt."""
+
+    PAGE = 'https://shop.example/find?no=M1234-5678'
+
+    @staticmethod
+    def resolver(address):
+        return lambda host, port, type=None, timeout=None: [(None, None, None, None, (address, port))]
+
+    def reader_caps(self, address, opener=None):
+        from personal_agent.local_tools import LocalTools, PublicPageReader
+        network = LocalTools(page_reader=PublicPageReader(opener=opener, resolver=self.resolver(address)))
+        return Capabilities(self.store, None, {}, '', self.job, self.record, network=network, public_page_scope=[self.PAGE])
+
+    def execute(self, caps, name, args):
+        from personal_agent.providers import ProviderError
+        with self.assertRaises((ValueError, TypeError, OSError, ProviderError)) as caught:
+            caps.execute(name, args)
+        return caught.exception, agent_runtime.attempted_outbound(caps, name, args, caught.exception)
+
+    def test_an_unavailable_search_provider_received_nothing(self):
+        from personal_agent.local_tools import LocalTools
+        from personal_agent.search_providers import ProviderRegistry
+        caps = Capabilities(self.store, None, {}, '', self.job, self.record,
+                            network=LocalTools(providers=ProviderRegistry.from_config({})))
+        for args in ({'query': 'm1234 5678 회원 혜택'}, {'query': 'm1234 5678 회원 혜택', 'provider': 'brave'}):
+            with self.subTest(args=args):
+                exc, attempted = self.execute(caps, 'web_search', args)
+                self.assertEqual(getattr(exc, 'code', None) in ('provider_unavailable', 'native_search_unavailable'), True)
+                self.assertEqual(agent_runtime.ran_field(exc), {'ran': False})
+                self.assertEqual(attempted, {})
+
+    def test_a_page_host_resolving_to_a_private_address_received_nothing(self):
+        class Opener:
+            opened = []
+
+            def open(self, request, timeout=None):
+                self.opened.append(request.full_url)
+                raise AssertionError('never reached')
+        opener = Opener()
+        exc, attempted = self.execute(self.reader_caps('10.0.0.5', opener), 'public_page_read', {'url': self.PAGE})
+        self.assertIn('개인 네트워크', str(exc))
+        self.assertEqual(opener.opened, [])
+        self.assertEqual(agent_runtime.ran_field(exc), {'ran': False})
+        self.assertEqual(attempted, {})
+
+    def test_a_page_read_failing_once_the_http_client_was_called_is_an_attempt(self):
+        class Opener:
+            def open(self, request, timeout=None):
+                raise OSError('connection reset after the request was written')
+        exc, attempted = self.execute(self.reader_caps('93.184.216.34', Opener()), 'public_page_read', {'url': self.PAGE})
+        self.assertEqual(agent_runtime.ran_field(exc), {})
+        self.assertEqual(attempted['outbound_matches'], [{'source': 'memory', 'key': 'member-number',
+                                                          'destination': 'shop.example', 'tool': 'public_page_read'}])
+
+    def test_a_redirect_refused_after_the_first_request_is_an_attempt(self):
+        class Response:
+            status, url = 302, None
+            headers = {'Location': 'http://10.0.0.1/next'}
+
+            def read(self, size=-1):
+                return b''
+
+            def close(self):
+                pass
+
+        class Opener:
+            def open(self, request, timeout=None):
+                return Response()
+        exc, attempted = self.execute(self.reader_caps('93.184.216.34', Opener()), 'public_page_read', {'url': self.PAGE})
+        self.assertIn('개인 네트워크', str(exc))
+        self.assertEqual(agent_runtime.ran_field(exc), {}, 'the first request was sent')
+        self.assertTrue(attempted.get('outbound_matches'))
+
+    def test_a_network_implementation_that_marks_nothing_is_an_attempt(self):
+        url = self.PAGE
+        for error in (ValueError('refused inside an unknown implementation'), OSError('socket closed')):
+            with self.subTest(error=type(error).__name__):
+                network = self.Network(error=error)
+                caps = Capabilities(self.store, None, {}, '', self.job, self.record, network=network, public_page_scope=[url])
+                exc, attempted = self.execute(caps, 'public_page_read', {'url': url})
+                self.assertTrue(network.plans, 'handed to the network (a transient failure is retried once)')
+                self.assertEqual(agent_runtime.ran_field(exc), {})
+                self.assertTrue(attempted.get('outbound_matches'))
+
+    # The inherited cases already ran in ``HandOff``.
+    test_out_of_scope_page_reads_carrying_memory_record_no_attempt = None
+    test_the_same_read_failing_after_it_was_sent_is_still_shown_as_an_attempt = None
+    test_local_refusals_of_each_outbound_tool_are_marked_not_run_and_carry_nothing = None
+    test_a_bridge_page_read_refused_locally_records_no_attempt = None
+    test_a_failed_browser_open_still_lists_the_host_it_was_sent_to = None
+    test_a_browser_that_could_not_start_received_nothing = None
+    test_a_sandbox_that_could_not_start_received_nothing = None
+    test_a_run_that_failed_after_its_sandbox_started_is_still_an_attempt = None
+    test_a_code_run_refused_after_a_sending_run_reports_nothing_stale = None
+
+
 class ProviderNotes(unittest.TestCase):
     def test_the_cli_search_note_follows_the_recorded_own_search_state(self):
         def text(own):

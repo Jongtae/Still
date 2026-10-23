@@ -1611,6 +1611,12 @@ def handed_off():
  was refused by Still itself, so ``Capabilities.execute`` marks it
  ``not_run``: its record says ``ran: false`` and nothing it would have carried
  is listed as an attempt.  Outside a call the mark is ignored.
+
+ The mark is the safe default: anything a transport raises after it counts
+ as a possible send, including from an implementation that marks nothing.
+ Checks a transport makes before it sends mark their own refusals ``not_run``
+ where they raise (an unavailable search provider, the public page reader's
+ checks before its first request, the lookup arguments ``LocalTools`` refuses).
  """
  _HANDOFF.reached=True
 
@@ -3210,6 +3216,7 @@ class Capabilities:
    # route; it is a late warning over surface forms, not provenance.
    from .public_query import validate_public_query
    plan={**plan,'query':validate_public_query(plan.get('query'),'public_task_input')}
+  # #233: the network's own pre-send refusals carry ``ran: false`` themselves; anything else it raises is an attempt.
   handed_off()
   try:result=self.network.execute(plan,**extra)
   except (ValueError,TypeError,OSError,ProviderError) as exc:
