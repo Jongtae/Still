@@ -343,6 +343,20 @@ def finish_slot_cleanup(store, name, reference, revision):
 
 
 def remove_slot(store, name):
+    # #258 (Codex review on #259): the slot's credential and run-state plaintexts are retired before its
+    # metadata goes, so an unreadable credential (owner-held key unavailable) stops here with the slot - and
+    # its credential reference - intact for a later retry.
+    from .api_credentials import ApiCredentials, STATE_PREFIX
+    previous_slot = slots(store).get(name)
+    credentials = ApiCredentials(store)
+    if isinstance(previous_slot, dict) and previous_slot.get('credential_ref'):
+        reference = previous_slot['credential_ref']
+        token = store.secret_items(reference).get(reference)
+        if token:
+            store.retire_secret_values(credentials.values({reference: token}))
+    state = store.secret_items(STATE_PREFIX + name).get(STATE_PREFIX + name)
+    if state:
+        store.retire_secret_values(credentials._state_strings(state))
     with store.db() as db:
         db.execute('BEGIN IMMEDIATE')
         found = db.execute('SELECT value FROM config WHERE key=?', (SLOTS_KEY,)).fetchone()

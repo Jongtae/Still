@@ -511,6 +511,17 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
             self.service.history_for_models(self.store.history()[-16:])
         self.assertNotIn('owner_said', self.service.owner_words_block('마트 장바구니'))
 
+    def test_turn_provenance_fields_merge_in_one_transaction(self):
+        """Codex review on #259: the early plan's thread and the worker turn never drop each other's fields."""
+        import threading
+        job = self.store.enqueue('x', 'merge-provenance')
+        writers = [threading.Thread(target=self.service.record_turn_provenance, args=(job,), kwargs={f'field{index}': index})
+                   for index in range(8)]
+        for writer in writers:writer.start()
+        for writer in writers:writer.join()
+        record = self.store.turn_provenance(job)
+        self.assertEqual({key: record[key] for key in record if key.startswith('field')}, {f'field{i}': i for i in range(8)})
+
     def test_the_owners_earlier_words_are_bounded_in_bytes(self):
         from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
         self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])

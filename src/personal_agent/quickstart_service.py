@@ -3102,7 +3102,6 @@ class AgentService:
             except Exception:
                 LOG.warning('connector reads not recorded job=%s',job_id)
         try:
-            current=self.store.turn_provenance(job_id) or {}
             for key in ('prompt_envelope','instructions'):
                 if key in fields:fields[key]=self._redact_provenance(fields[key])
             if isinstance(fields.get('argv'),list):fields['argv']=[self._redact_provenance(part)[:300] for part in fields['argv']]
@@ -3117,7 +3116,8 @@ class AgentService:
                 request=(self.store.job(job_id) or {}).get('message') or None
                 fields['stream_errors']=[self.scrub_work_text(job_id,self._redact_provenance(redact_reason(str(text),request)))[:300]
                                          for text in fields['stream_errors'][:3]]
-            self.store.put_turn_provenance(job_id,{**current,**{k:v for k,v in fields.items() if v is not None},'recorded_at':time.time()})
+            # One transaction merges the fields into the stored record, so concurrent writers keep each other's.
+            self.store.merge_turn_provenance(job_id,{**{k:v for k,v in fields.items() if v is not None},'recorded_at':time.time()})
         except Exception:
             LOG.warning('turn provenance could not be recorded job=%s',job_id)
 

@@ -253,6 +253,17 @@ class Storage(unittest.TestCase):
         api_requests.remove_slot(self.store, 'example-broker')
         self.assertEqual(redact_known_secrets(self.store, f'later {new}'), 'later [redacted]')
 
+    def test_an_unreadable_credential_keeps_the_slot_for_a_later_removal(self):
+        """Codex review on #259: retirement runs before the slot's metadata goes, so a retry still finds it."""
+        from personal_agent.api_credentials import ApiCredentials, CredentialError
+        self.save()
+        with mock.patch.object(ApiCredentials, 'values', side_effect=CredentialError()):
+            with self.assertRaises(CredentialError):
+                api_requests.remove_slot(self.store, 'example-broker')
+        self.assertIn('example-broker', api_requests.slots(self.store))
+        self.assertTrue(api_requests.remove_slot(self.store, 'example-broker'))
+        self.assertNotIn('example-broker', api_requests.slots(self.store))
+
     def test_run_state_persists_encrypted_and_its_token_is_redacted(self):
         # #1380 live: each run requested a new token and the vendor refused the second within a minute.
         self.save()
