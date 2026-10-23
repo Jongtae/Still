@@ -2486,7 +2486,9 @@ class AgentService:
             text=fact_of(item['id'])
             # Review P3: a previous or restored row deleted from 내 기록 since has no text; nothing empty is shown.
             if status=='retracted':
-                back=fact_of(restored.get(item['id'])) if restored.get(item['id']) else ''
+                again=[restored.get(item['id'])] if restored.get(item['id']) else []
+                again+=list((binding.get('restored_ended') or {}).get(item['id']) or ())
+                back=', '.join(fact for fact in (fact_of(memory_id) for memory_id in again) if fact)
                 return text+(f' (다시 {back})' if back else '')
             if status=='outdated':return text
             earlier=[item['previous']] if item.get('previous') else []
@@ -2548,17 +2550,19 @@ class AgentService:
             receipt=self.store.retract_memory(MEMORY_OWNER,item['id'],item['digest'],record=record)
         except ValueError as exc:
             LOG.info('memory undo refused work=%s kind=%s',job_id,type(exc).__name__)
-            return 'outdated',None
-        return 'retracted',(receipt.get('restored') or {}).get('id')
+            return 'outdated',None,[]
+        # #220 (Codex review): also the rows under other keys the save had ended and the undo made current again.
+        return 'retracted',(receipt.get('restored') or {}).get('id'),list(receipt.get('restored_ended') or ())
 
     def undo_memory_saved(self, job_id, binding, targets):
         """Apply one tap to the open ``targets`` (1-based) of a bound notice; returns the ids it decided (#918)."""
         decided=[]
         for index in targets:
             item=binding['items'][index-1]
-            status,restored=self.undo_memory_item(job_id,item)
+            status,restored,ended=self.undo_memory_item(job_id,item)
             binding['done'][item['id']]=status
             if restored:binding.setdefault('restored',{})[item['id']]=restored
+            if ended:binding.setdefault('restored_ended',{})[item['id']]=ended
             decided.append(item['id'])
         return decided
 

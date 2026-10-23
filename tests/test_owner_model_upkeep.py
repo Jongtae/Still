@@ -587,6 +587,29 @@ class Invalidate(Upkeep):
         self.store.retract_memory(MEMORY_OWNER, c['id'], c['content_digest'])
         self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [a['id']])
 
+    def test_deferred_restores_go_into_the_chain_in_creation_order(self):
+        """Codex review on #226: A ended by B; C ended by D; E; undo B, D, then E, C: C, then A."""
+        a = self.saved('profile.place.workplace', '판교 사무실')
+        b = self.saved('profile.place.work', '강남', invalidates=[(a['id'], 'moved')])
+        c = self.saved('profile.place.workplace', '여의도 사무실')
+        d = self.saved('profile.place.office', '광화문', invalidates=[(c['id'], 'moved')])
+        e = self.saved('profile.place.workplace', '종로 사무실')
+        for row in (b, d):
+            self.store.retract_memory(MEMORY_OWNER, row['id'], row['content_digest'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [e['id']])
+        self.store.retract_memory(MEMORY_OWNER, e['id'], e['content_digest'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [c['id']])
+        self.store.retract_memory(MEMORY_OWNER, c['id'], c['content_digest'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [a['id']])
+
+    def test_the_undone_notice_names_the_facts_that_came_back(self):
+        """Codex review on #226: an undo that brings back facts under other keys says so."""
+        old = self.saved('profile.place.workplace', '판교 사무실')
+        new = self.saved('profile.place.work', '강남 사무실', invalidates=[(old['id'], 'moved')])
+        binding = {'items': [self.service.memory_saved_item(new)], 'done': {}, 'restored': {}}
+        self.service.undo_memory_saved('job', binding, [1])
+        self.assertIn('강남 사무실 (다시 판교 사무실)', self.service.memory_saved_text(binding))
+
     def test_a_settings_edit_keeps_the_last_day(self):
         from personal_agent.memory_service import MemoryService
         self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')

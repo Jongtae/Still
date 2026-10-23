@@ -1101,14 +1101,20 @@ class QuickStore:
                 if newer:
                     # Codex review: the newer value now stands in front of the ended row, so undoing it later
                     # brings that row back (out-of-order undos still end at the original fact).
-                    # The chain's tail (the oldest row with no predecessor) takes it, however many values came since.
-                    tail,seen=newer,set()
-                    while tail['supersedes'] is not None and tail['id'] not in seen and len(seen)<1000:
-                        seen.add(tail['id'])
-                        tail=db.execute('SELECT id,supersedes FROM memories WHERE id=? AND owner_key=?',(tail['supersedes'],owner_key)).fetchone()
-                        if tail is None:break
-                    if tail is not None and tail['supersedes'] is None and tail['id']!=ended_id:
-                        db.execute('UPDATE memories SET supersedes=? WHERE id=? AND owner_key=?',(ended_id,tail['id'],owner_key))
+                    # It goes into the chain in creation order (Codex review): behind the oldest row newer than
+                    # it, so undoing the newer values one by one walks back through history in order.
+                    after,seen=newer,set()
+                    while after['supersedes'] is not None and after['id'] not in seen and len(seen)<1000:
+                        seen.add(after['id'])
+                        previous_row=db.execute('SELECT id,supersedes,created FROM memories WHERE id=? AND owner_key=?',
+                                                (after['supersedes'],owner_key)).fetchone()
+                        if previous_row is None or previous_row['created']<ended_row['created']:break
+                        after=previous_row
+                    if after['id']!=ended_id and after['supersedes']!=ended_id:
+                        if after['supersedes'] is not None:
+                            db.execute('UPDATE memories SET supersedes=? WHERE id=? AND owner_key=? AND supersedes IS NULL',
+                                       (after['supersedes'],ended_id,owner_key))
+                        db.execute('UPDATE memories SET supersedes=? WHERE id=? AND owner_key=?',(ended_id,after['id'],owner_key))
                         db.execute("""UPDATE memories SET invalidated_by=NULL,invalidation_reason=NULL,invalidated_at=NULL
                                       WHERE id=? AND owner_key=?""",(ended_id,owner_key))
                     continue
