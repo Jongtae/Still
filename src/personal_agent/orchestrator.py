@@ -874,6 +874,8 @@ class Orchestration:
                 self.budget.spend_turn()
         except Exception:
             return None, FALLBACK_BUDGET
+        # #258: the plan's context now goes to the Judgment AI (what the information-use audit records).
+        self.context_sent = True
         try:
             decision = method(context, self._question(), self._schema(candidates), plan_shape)
         except Exception:

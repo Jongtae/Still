@@ -363,6 +363,18 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.store.retire_secret_values(['decrypted-api-credential-1'])
         self.assertTrue(self.store.holds_retired_secret('x decrypted-api-credential-1 y'))
 
+    def test_retired_marks_are_never_evicted_and_rotating_tokens_are_not_tracked(self):
+        """Codex review on #259: a password retired long ago stays excluded; token rotation adds nothing."""
+        first = 'first-retired-password-001'
+        self.store.secret('api_key:openai', first)
+        for index in range(300):
+            self.store.secret('api_key:openai', f'rotated-value-{index:04d}-xx')
+        self.assertTrue(self.store.holds_retired_secret(f'old note {first} here'))
+        before = self.store.retired_secrets_path.read_text()
+        for index in range(5):
+            self.store.secret('google_calendar_oauth', f'oauth-token-rotation-{index:04d}')
+        self.assertEqual(self.store.retired_secrets_path.read_text(), before)
+
     def test_the_owners_earlier_words_are_bounded_in_bytes(self):
         from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
         self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])

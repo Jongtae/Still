@@ -194,6 +194,14 @@ class ConnectionPreferences(Harness):
         refs = self.store.turn_provenance(ident)['owner_information']
         self.assertIn('owner_said (1 earlier owner message)', json.dumps(refs))
 
+    def test_an_early_plan_that_never_asks_records_nothing(self):
+        """Codex review on #259: the audit records the sections only once the plan call goes out."""
+        from personal_agent.orchestrator import Orchestration
+        ident = self.store.enqueue('Read the Unseen record.', 'early-no-call')
+        with mock.patch.object(Orchestration, 'budget_allows', return_value=False):
+            self.service.early_work_plan(self.store.job(ident), 'Read the Unseen record.')
+        self.assertNotIn('owner_information', self.store.turn_provenance(ident) or {})
+
     def test_early_plan_and_regular_plan_use_same_retrieved_profile(self):
         for index in range(20):
             self.store.save_memory(f'profile.aaa.item{index}', 'Unrelated background ' * 8, owner_id='local-owner')

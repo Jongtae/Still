@@ -352,7 +352,7 @@ class QuickStore:
                 fcntl.flock(lock_fd,fcntl.LOCK_EX)
                 values=json.loads(self.secret_path.read_text()) if self.secret_path.exists() else {}
                 if value is not None:
-                    if values.get(key)!=value:self._retire_locked(values,values.get(key))
+                    if values.get(key)!=value:self._retire_locked(values,values.get(key),key)
                     values[key]=value
                     self.write_private(self.secret_path,json.dumps(values))
                 elif create is not None and not values.get(key):
@@ -371,7 +371,7 @@ class QuickStore:
                 fcntl.flock(lock_fd,fcntl.LOCK_EX)
                 values=json.loads(self.secret_path.read_text()) if self.secret_path.exists() else {}
                 if key not in values:return False
-                self._retire_locked(values,values.pop(key))
+                self._retire_locked(values,values.pop(key),key)
                 self.write_private(self.secret_path,json.dumps(values))
                 return True
             finally:
@@ -381,7 +381,6 @@ class QuickStore:
     #: #221 (Codex review): a replaced or removed secret leaves only a keyed digest of its value and its
     #: length, never the value, so recall can still keep an old message that holds it away from a model.
     #: Kept in its own owner-only file next to the secrets, so the secrets file itself is unchanged.
-    RETIRED_SECRETS_KEPT=200
 
     @property
     def retired_secrets_path(self):
@@ -394,9 +393,18 @@ class QuickStore:
             return None
         return ledger if isinstance(ledger,dict) and isinstance(ledger.get('key'),str) else None
 
-    def _retire_locked(self, values, old):
+    @staticmethod
+    def _redacted_secret_key(key):
+        """Whether the redaction knows values under ``key`` (``stored_secret_values``): only those are retired.
+
+        Rotating tokens (OAuth, run state) are not owner-typed and are not tracked (Codex review on #259).
+        """
+        from .current_context import KNOWN_SECRET_NAMES
+        return isinstance(key,str) and (key in KNOWN_SECRET_NAMES or key.startswith('api_slot:'))
+
+    def _retire_locked(self, values, old, key=None):
         """Record one retired secret value as ``[length, hmac]`` (caller holds the secrets lock)."""
-        self._retire_values_locked([old])
+        if self._redacted_secret_key(key):self._retire_values_locked([old])
 
     def _retire_values_locked(self, olds):
         olds=[old for old in olds or () if isinstance(old,str) and len(old)>=8]
@@ -406,7 +414,8 @@ class QuickStore:
         for old in olds:
             mark=[len(old),hmac.new(bytes.fromhex(ledger['key']),old.encode(),hashlib.sha256).hexdigest()]
             marks=[item for item in marks if item!=mark]+[mark]
-        ledger['marks']=marks[-self.RETIRED_SECRETS_KEPT:]
+        # Kept for as long as a message can be recalled (Codex review on #259): never evicted.
+        ledger['marks']=marks
         self.write_private(self.retired_secrets_path,json.dumps(ledger))
 
     def retire_secret_values(self, olds):

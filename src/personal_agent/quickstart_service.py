@@ -5630,11 +5630,13 @@ class AgentService:
         try:
             orchestration=self.work_orchestration(job,prompt,list(stored),sections,budget,document_jobs=document_jobs,
                                                   can_ask_location=self.location_requester(job) is not None)
-            if orchestration and not (self.store.turn_provenance(job['id']) or {}).get('owner_information'):
-                # Codex review on #227: the early plan reads these sections even when the Work is parked
-                # before its worker turn records them, so the information-use audit records them now.
+            early=orchestration.early_plan() if orchestration else None
+            if (orchestration and getattr(orchestration,'context_sent',False)
+                    and not (self.store.turn_provenance(job['id']) or {}).get('owner_information')):
+                # Codex review on #227/#259: the early plan sent these sections even when the Work is parked
+                # before its worker turn records them; recorded only once the plan call actually went out.
                 self.record_turn_provenance(job['id'],owner_information=self.owner_information_refs(sections))
-            return orchestration.early_plan() if orchestration else None
+            return early
         finally:
             if own_budget and budget.ledger is not None:budget.ledger.pause()
 
