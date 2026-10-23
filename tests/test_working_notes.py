@@ -12,6 +12,7 @@ with a fake clock, a scripted Judgment AI (``FixtureDecisionEngine``) and an
 injected Telegram transport.  No live model, no live Telegram.
 """
 import json
+import re
 import tempfile
 import time
 import unittest
@@ -298,6 +299,16 @@ class Told(TelegramHarness):
         self.assertEqual(self.notices(again), [], 'a reworded existing lesson: no version, no notice')
         self.assertEqual(om.WorkingNotes(self.store).current()['version'], 1)
         self.assertEqual(self.store.memories(MEMORY_OWNER), [], 'no fact row either')
+
+    def test_an_english_owner_is_told_in_english(self):
+        # #235: the two-line notice was sent in Korean to every en/ja/zh owner.
+        self.store.put('telegram', {**self.store.config('telegram', {}), 'owner_language': 'en'})
+        change = 'I now keep summaries to three lines'
+        self.reviewed({'notes': '- Summaries stay at three lines', 'change': change, 'blocker': ''})
+        self.assertTrue(self.service.deliver_notification())
+        sent = self.sends()[-1]['text']
+        self.assertEqual(sent, msg('working_notes.saved', 'en', change=change))
+        self.assertIsNone(re.search('[가-힣]', sent), sent)
 
     def test_a_revision_forgotten_before_the_send_is_not_told_and_the_brief_shows_the_previous_notes(self):
         self.reviewed({'notes': '- 요약은 세 줄로', 'change': '요약 길이', 'blocker': ''})
