@@ -469,6 +469,17 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
             dump = '\n'.join(db.iterdump())
         self.assertNotIn(value, dump)
         self.assertIn('키는 [redacted]', dump)
+        # Structural columns are never rewritten, even when a secret equals a status word (Codex review on #259).
+        self.store.secret('api_key:anthropic', 'succeeded')
+        job = self.store.enqueue('결과는 succeeded 였어', 'structural')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded' WHERE id=?", (job,))
+        export_owner_state(self.data, self.root / 'e.tar.gz')
+        with tarfile.open(self.root / 'e.tar.gz') as bundle:
+            bundle.extractall(self.root / 'e', filter='data')
+        with sqlite3.connect(self.root / 'e' / ROOT / DB_RELATIVE) as db:
+            status, message = db.execute('SELECT status, message FROM jobs WHERE id=?', (job,)).fetchone()
+        self.assertEqual((status, message), ('succeeded', '결과는 [redacted] 였어'))
         calls = []
         real = QuickStore.secret_redaction_material
         def moving(store):

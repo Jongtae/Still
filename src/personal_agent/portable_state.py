@@ -105,6 +105,18 @@ def _portable_db(source, target, redaction=((), None)):
                 copy.execute("UPDATE config SET value=? WHERE key='personal_knowledge_audit'", (json.dumps(safe, sort_keys=True),))
         copy.commit();copy.execute("VACUUM")
 
+#: Columns that hold identifiers, states and keys rather than owner content: never rewritten (Codex review on
+#: #259 - a secret that equals a status word must not turn ``jobs.status`` into ``[redacted]``).
+_STRUCTURAL_COLUMNS = frozenset({"id", "key", "status", "state", "role", "channel", "kind", "type", "delivery",
+                                 "provider", "model", "generation", "fingerprint", "action", "tool", "mode"})
+_STRUCTURAL_SUFFIXES = ("_id", "_key", "_ref", "_digest", "_hash", "_state", "_status", "_kind")
+
+
+def _owner_content_column(name):
+    name = str(name).lower()
+    return name not in _STRUCTURAL_COLUMNS and not name.endswith(_STRUCTURAL_SUFFIXES)
+
+
 def _redact_transcript(copy, tables, redaction):
     """Every text column of every exported table, with known and retired secret values replaced.
 
@@ -121,7 +133,8 @@ def _redact_transcript(copy, tables, redaction):
         if table.startswith("sqlite_"):
             continue
         columns = [row[1] for row in copy.execute(f'PRAGMA table_info("{table}")')
-                   if (row[2] or "").upper() in ("", "TEXT") or "CHAR" in (row[2] or "").upper()]
+                   if ((row[2] or "").upper() in ("", "TEXT") or "CHAR" in (row[2] or "").upper())
+                   and _owner_content_column(row[1])]
         for column in columns:
             try:
                 rows = copy.execute(f'SELECT rowid, "{column}" FROM "{table}" WHERE typeof("{column}")=\'text\'').fetchall()
