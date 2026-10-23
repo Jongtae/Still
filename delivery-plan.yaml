@@ -590,6 +590,116 @@
       ],
       "summary": "The worker sees a page's confirm question; the payment floor stays and a judgment can only add to it.",
       "depends_on": []
+    },
+    {
+      "id": "WORKPLACE-01",
+      "issue": 206,
+      "milestone": "workplace",
+      "kind": "implementation",
+      "activation_status": "owner-activated-goal-ready",
+      "contract": "goal-execution-contract.en.md",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_fresh_delivery_plan.py"
+      ],
+      "summary": "Workplace use: an owner-switched work mode with no external exposure, owner-declared intranet destinations, company tools through the owner's own MCP servers, cloud AI engines (Bedrock, Microsoft Foundry, Azure OpenAI), and Mattermost and Slack conversation surfaces.",
+      "depends_on": []
+    },
+    {
+      "id": "CLOUD-AI-01",
+      "program": "WORKPLACE-01",
+      "issue": 211,
+      "milestone": "workplace",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_bounded_execution.py tests/test_subscription_engines.py tests/test_decision_engine.py"
+      ],
+      "summary": "Claude Code and Codex (Work execution and the Judgment AI) run through the CLIs' own documented Amazon Bedrock, Microsoft Foundry or Azure OpenAI configuration; credentials reach the CLI process only, never the model's shell; an owner-set budget for cloud profiles.",
+      "depends_on": []
+    },
+    {
+      "id": "SURFACE-SEAM-01",
+      "program": "WORKPLACE-01",
+      "issue": 212,
+      "milestone": "workplace",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_telegram_conversation_channel.py tests/test_telegram_native_presence.py tests/test_telegram_silent_failures.py tests/test_presence_projection.py"
+      ],
+      "summary": "Behavior-preserving extraction of a channel-neutral conversation surface from TelegramSurface (#21 follow-up); Presence degrades by declared surface capability, not by surface name.",
+      "depends_on": []
+    },
+    {
+      "id": "WORK-MODE-01",
+      "program": "WORKPLACE-01",
+      "issue": 208,
+      "milestone": "workplace",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_limited_egress_proxy.py tests/test_local_tools.py tests/test_remote_login.py tests/test_phone_input.py tests/test_family_setup.py tests/test_search_providers.py"
+      ],
+      "summary": "Owner-switched work mode: no tunnel, no Telegram, no egress to undeclared destinations; personal mode unchanged.",
+      "depends_on": []
+    },
+    {
+      "id": "INTRANET-DEST-01",
+      "program": "WORKPLACE-01",
+      "issue": 209,
+      "milestone": "workplace",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_api_requests.py tests/test_mcp_setup.py tests/test_local_tools.py tests/test_code_run.py"
+      ],
+      "summary": "Owner-declared exact intranet hosts admitted by the existing private-address guards; loopback, link-local and metadata addresses stay refused.",
+      "depends_on": []
+    },
+    {
+      "id": "OWNER-MCP-WORK-01",
+      "program": "WORKPLACE-01",
+      "issue": 210,
+      "milestone": "workplace",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_connect_decide.py tests/test_bounded_execution.py"
+      ],
+      "summary": "Company tools through the owner's own MCP servers (#1296): verify with company-style credential acquisition and remove launch-environment blockers; no per-service code.",
+      "depends_on": [
+        "INTRANET-DEST-01"
+      ]
+    },
+    {
+      "id": "MATTERMOST-01",
+      "program": "WORKPLACE-01",
+      "issue": 213,
+      "milestone": "workplace",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_telegram_conversation_channel.py"
+      ],
+      "summary": "Mattermost DM as an owner conversation surface, outbound-only; approvals by judged replies and reactions.",
+      "depends_on": [
+        "SURFACE-SEAM-01"
+      ]
+    },
+    {
+      "id": "SLACK-01",
+      "program": "WORKPLACE-01",
+      "issue": 214,
+      "milestone": "workplace",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_telegram_conversation_channel.py"
+      ],
+      "summary": "Slack DM as an owner conversation surface over Socket Mode with the official Slack SDK.",
+      "depends_on": [
+        "SURFACE-SEAM-01"
+      ]
     }
   ],
   "milestones": {
@@ -610,6 +720,9 @@
     },
     "in-context": {
       "title": "Judged in context (IN-CONTEXT-01)"
+    },
+    "workplace": {
+      "title": "Workplace use (WORKPLACE-01)"
     }
   },
   "programs": {
@@ -850,12 +963,50 @@
         }
       ],
       "closeout": "Closed out 2026-10-22 (#175). All five ordered substeps merged on their own PRs (RULES-OUT-01 in three stacked slices) with issue acceptance mapped to model-free fixture tests (real-WebKit fixtures for #174) and required validate passing on each final head; the full suite passed on the last rebased head (5196 passed, 61 skipped) and full-validate passed on main at the last merge d22ec4c (run 39691913598: Linux, macOS 15, macOS 26). JUDGE-CONTEXT-01 #170 (PR #177), GUARD-NL-01 #171 (PR #176), OWNER-ACT-01 #172 (PR #179), RULES-OUT-01 #173 (PRs #181, #185, #187), BROWSER-DIALOG-01 #174 (PR #186). Evidence is fixture/unit only; no live model, account or site observed. The owner directed the merge of #179 and #186 before the required human non-author review; it stays owed on #188 (pending_reviews). Supporting guidance fixes outside the substeps: #153 (PR #158), #154 (PR #160), #155 (PR #161). Left open as follow-ups: #182 (worker file-workspace tool; two narrowed rule forms remain as guard open findings), #183 (connection pause/disconnect as an approvable draft). No successor is selected by this closeout; the delivery heartbeat stayed paused throughout."
+    },
+    "WORKPLACE-01": {
+      "status": "owner-activated-goal-ready",
+      "issue": 206,
+      "activated_by": {
+        "issue": 206,
+        "date": "2026-10-23",
+        "reason": "In conversation on 2026-10-22 the owner asked for a company work mode, cloud AI through Bedrock-style providers, and more communication tools regardless of work mode, had them registered as #206 and #208-#214, then directed activation (\"활성화 해줘\") after being offered the whole program with #211 and #212 first."
+      },
+      "ordered_substeps": [
+        "CLOUD-AI-01",
+        "SURFACE-SEAM-01",
+        "WORK-MODE-01",
+        "INTRANET-DEST-01",
+        "OWNER-MCP-WORK-01",
+        "MATTERMOST-01",
+        "SLACK-01"
+      ],
+      "active_substeps": [
+        "CLOUD-AI-01"
+      ],
+      "completed_substeps": [],
+      "decisions": {
+        "work-mode-egress": {
+          "issue": 208,
+          "date": "2026-10-22",
+          "decision": "Work mode reinstates an egress boundary only while it is on: no tunnel, no consumer messenger relay, no undeclared destination. The personal pilot posture (#826 information-use audit instead of transmission guards) is unchanged when it is off."
+        },
+        "chat-surfaces-independent": {
+          "issue": 206,
+          "date": "2026-10-22",
+          "decision": "Mattermost and Slack surfaces are wanted regardless of work mode; in work mode a surface is allowed only when the owner marks it company-approved."
+        }
+      },
+      "allowed_authority": "Engine launch environment and provider profiles (bounded_execution.py, subscription_engines.py, decision_routes.py, decision_adapters.py, providers.py for the recorded API-route decision only), destination guards (api_requests.py, local_tools.py, mcp_setup.py, code_run.py, browser_worker.py, limited_egress_proxy.py), tunnel starters (family_setup.py, remote_login.py, phone_input.py), search_providers.py and skills.py acquisition for work mode, owner_mcp.py launch environment, the conversation surface (telegram_surface.py, telegram_store.py, telegram_presence.py, conversation_handoff.py, conversation_projection.py, owner_acts.py, quickstart_service.py, quickstart_store.py, settings_orchestrator.py and Settings UI), new Mattermost and Slack surface modules, messages.json entries they use, tests, docs describing the changed behaviour, and new dependencies only with their recorded reuse review (Slack SDK; a WebSocket client if Plan selects it). Model-free tests with injected runners, transports and fixture servers; required validate on each final head and full-validate before closeout; one issue-linked PR per substep, normal squash merge, then a closeout PR.",
+      "non_goals": "Per-service code for Jira, wiki, GitLab or Google (C16); implementing Bedrock or Azure model clients in Still; tunnels or inbound callbacks; company DLP or MDM integration; multi-user or team deployment; changing the personal-mode #826 semantics; live accounts, company networks, live models, releases, deployment and the delivery heartbeat; other backlog items.",
+      "escalated_review": "Constitution escalated review (#195): a Codex review of the exact final head, required validate and full-validate on that head, and the owner merges. Required for WORK-MODE-01 (#208, egress), INTRANET-DEST-01 (#209, network destinations), CLOUD-AI-01 (#211, credentials), MATTERMOST-01 (#213) and SLACK-01 (#214, approval surface, credentials, new dependency); for OWNER-MCP-WORK-01 (#210) only if it changes env or secret forwarding; not for SURFACE-SEAM-01 (#212, behavior-preserving). An AI session never merges a PR whose escalated review was triggered.",
+      "completion_rule": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests and its declared focused tests passing, required validate passing on each final head, the triggered Codex reviews recorded, and full-validate passing on main after the last merge (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision."
     }
   },
   "completion_claims": {},
   "next_goal": {
-    "id": null,
-    "status": "complete",
-    "action": "IN-CONTEXT-01 closed out (#175). No goal is selected; the owner activates the next one explicitly, for example from the curated backlog (#44). The delivery heartbeat stays paused."
+    "id": "WORKPLACE-01",
+    "status": "owner-activated-goal-ready",
+    "action": "Owner direction 2026-10-22/23 (#206) selects WORKPLACE-01: work mode, intranet destinations, company tools through the owner's own MCP servers, cloud AI engines and Mattermost/Slack surfaces (#208-#214), starting with CLOUD-AI-01 (#211); SURFACE-SEAM-01 (#212) follows. Its PR #229 was prepared in parallel and is rebased once #211 merges, because both edit quickstart_service.py and one substep is in flight at a time. Session-driven at the owner's request. Scoped PRs are authorized; a PR whose escalated review is triggered merges only after the Codex review of its exact final head, and the owner merges it. Live accounts, company networks, live models, releases and deployment are not authorized. The delivery heartbeat stays paused, and no successor is selected on completion."
   }
 }
