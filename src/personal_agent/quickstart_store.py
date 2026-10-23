@@ -613,6 +613,8 @@ class QuickStore:
     MEMORY_SAVED_NOTICE_KIND='memory_saved'
     #: The notice's state while it waits for the Work's reply to be delivered.
     NOTICE_HELD='held'
+    #: Delivery states after which a Work's reply is no longer awaited: a held notice may go out.
+    DELIVERY_SETTLED=('sent','unknown','cancelled')
 
     def save_memory(self, memory_key, content, owner_id='local-owner', work_id=None, notice=False, corrected=False,
                     invalidates=(), valid_until=None):
