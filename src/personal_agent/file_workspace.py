@@ -13,6 +13,9 @@ def search_key(text):
 class FileWorkspace:
     """Owner-granted TXT/MD references and a separately writable workspace."""
 
+    #: #203: the key saved-result searches match by, also for callers outside this module.
+    search_key=staticmethod(search_key)
+
     def __init__(self, store): self.store=store
 
     def configure(self, references, workspace, keep_blocked_workspace=False):

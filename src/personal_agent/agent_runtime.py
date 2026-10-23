@@ -17,7 +17,7 @@ from .local_tools import LocalTools
 from .search_providers import ISO_COUNTRY_CODES, NATIVE_REASONS, describe_options, search_arguments
 from .document_reader import read as read_document, supported as supported_document, MAX_FILE_BYTES
 from . import folder_grants
-from .file_workspace import FileWorkspace, search_key
+from .file_workspace import FileWorkspace
 from .manifests import BUILTIN_MANIFEST, CONTEXT_GATED_ACTIONS, HOST_TOOLS, runtime_packages
 from .memory_service import PROFILE_KEY_GUIDANCE, CONNECTION_PREFERENCE_GUIDANCE, PROFILE_SECTION_CHARS
 from .prompt_files import prompt
@@ -2927,13 +2927,13 @@ class Capabilities:
   # #182 review: saved results take at most half the hits, so the folders keep search capacity.
   saved_truncated=False
   # #203 review: saved results are matched by the same NFKC + casefold key their SQL prefilter used.
-  saved_terms=[search_key(t) for t in terms]
+  saved_terms=[FileWorkspace.search_key(t) for t in terms]
   for item in saved:
-   if any(t in search_key(item['title']+' '+item['content']) for t in saved_terms):
+   if any(t in FileWorkspace.search_key(item['title']+' '+item['content']) for t in saved_terms):
     # The half-budget cap applies only when folders are searched too; a saved-results-only search gets all 20.
     if len(hits)>=(20 if only==SAVED_RESULTS_ROOT else SAVED_RESULT_HITS):saved_truncated=True;break
     hits.append({'root_id':SAVED_RESULTS_ROOT,'path':item['path'],'kind':'saved-result','title':item['title'],'location':'',
-                 'match':'filename' if search_key(query) in search_key(item['title']) else 'content'})
+                 'match':'filename' if FileWorkspace.search_key(query) in FileWorkspace.search_key(item['title']) else 'content'})
   seen=set()
   for root in roots:
    base=Path(root['path']).resolve()
