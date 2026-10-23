@@ -33,7 +33,8 @@
       "IN-CONTEXT-01",
       "OWNER-ACT-01",
       "RULES-OUT-01",
-      "BROWSER-DIALOG-01"
+      "BROWSER-DIALOG-01",
+      "CLOUD-AI-01"
     ]
   },
   "iterations": [
@@ -602,7 +603,15 @@
         "PYTHONPATH=src python3 -m pytest -q tests/test_fresh_delivery_plan.py"
       ],
       "summary": "Workplace use: an owner-switched work mode with no external exposure, owner-declared intranet destinations, company tools through the owner's own MCP servers, cloud AI engines (Bedrock, Microsoft Foundry, Azure OpenAI), and Mattermost and Slack conversation surfaces.",
-      "depends_on": []
+      "depends_on": [],
+      "completed_substeps": {
+        "CLOUD-AI-01": {
+          "issue": 211,
+          "pull_request": 230,
+          "merge_commit": "4c49a2f1313f5aa08f681dfe30e3624344a9d823",
+          "decision": "Per-engine cloud provider profiles (Claude Code: Amazon Bedrock, Microsoft Foundry; Codex: Azure OpenAI) forward only the vendors' documented names; credentials reach the CLI process only, are withheld from the model's shell and from owner MCP servers, and a daily cap is admitted before a turn is recorded as sent. A Judgment AI qualification is bound to the profile snapshot. Also fixed #228 (Codex shell_snapshot restored excluded owner-MCP secrets). Codex review of the final head 17abef7 found no major issues after 21 findings were fixed; full-validate passed on that head (run 39883571361). Evidence is unit/fixture only; no real Bedrock, Foundry or Azure call."
+        }
+      }
     },
     {
       "id": "CLOUD-AI-01",
@@ -610,9 +619,9 @@
       "issue": 211,
       "milestone": "workplace",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
-        "PYTHONPATH=src python3 -m pytest -q tests/test_bounded_execution.py tests/test_subscription_engines.py tests/test_decision_engine.py"
+        "PYTHONPATH=src python3 -m pytest -q tests/test_cloud_engines.py tests/test_decision_routes.py tests/test_settings_ui.py tests/test_bounded_execution.py tests/test_subscription_engines.py tests/test_decision_engine.py tests/test_connect_decide.py"
       ],
       "summary": "Claude Code and Codex (Work execution and the Judgment AI) run through the CLIs' own documented Amazon Bedrock, Microsoft Foundry or Azure OpenAI configuration; credentials reach the CLI process only, never the model's shell; an owner-set budget for cloud profiles.",
       "depends_on": []
@@ -1044,9 +1053,11 @@
         "SLACK-01"
       ],
       "active_substeps": [
+        "SURFACE-SEAM-01"
+      ],
+      "completed_substeps": [
         "CLOUD-AI-01"
       ],
-      "completed_substeps": [],
       "decisions": {
         "work-mode-egress": {
           "issue": 208,
@@ -1059,16 +1070,33 @@
           "decision": "Mattermost and Slack surfaces are wanted regardless of work mode; in work mode a surface is allowed only when the owner marks it company-approved."
         }
       },
-      "allowed_authority": "Engine launch environment and provider profiles (bounded_execution.py, subscription_engines.py, decision_routes.py, decision_adapters.py, providers.py for the recorded API-route decision only), destination guards (api_requests.py, local_tools.py, mcp_setup.py, code_run.py, browser_worker.py, limited_egress_proxy.py), tunnel starters (family_setup.py, remote_login.py, phone_input.py), search_providers.py and skills.py acquisition for work mode, owner_mcp.py launch environment, the conversation surface (telegram_surface.py, telegram_store.py, telegram_presence.py, conversation_handoff.py, conversation_projection.py, owner_acts.py, quickstart_service.py, quickstart_store.py, settings_orchestrator.py and Settings UI), new Mattermost and Slack surface modules, messages.json entries they use, tests, docs describing the changed behaviour, and new dependencies only with their recorded reuse review (Slack SDK; a WebSocket client if Plan selects it). Model-free tests with injected runners, transports and fixture servers; required validate on each final head and full-validate before closeout; one issue-linked PR per substep, normal squash merge, then a closeout PR.",
+      "allowed_authority": "Engine launch environment and provider profiles (bounded_execution.py, subscription_engines.py, decision_routes.py, decision_adapters.py, decision.py for the judgment audit fields, the new cloud_engines.py, main_ai.py route status, quickstart.py local-only Settings endpoints, current_context.py secret redaction, work_execution.py per-Work profile pinning, search_providers.py native-search availability, providers.py for the recorded API-route decision only), destination guards (api_requests.py, local_tools.py, mcp_setup.py, code_run.py, browser_worker.py, limited_egress_proxy.py), tunnel starters (family_setup.py, remote_login.py, phone_input.py), search_providers.py and skills.py acquisition for work mode, owner_mcp.py launch environment, the conversation surface (telegram_surface.py, telegram_store.py, telegram_presence.py, conversation_handoff.py, conversation_projection.py, owner_acts.py, quickstart_service.py, quickstart_store.py, settings_orchestrator.py and Settings UI), new Mattermost and Slack surface modules, messages.json entries they use, tests, docs describing the changed behaviour, and new dependencies only with their recorded reuse review (Slack SDK; a WebSocket client if Plan selects it). Model-free tests with injected runners, transports and fixture servers; required validate on each final head and full-validate before closeout; one issue-linked PR per substep, normal squash merge, then a closeout PR.",
       "non_goals": "Per-service code for Jira, wiki, GitLab or Google (C16); implementing Bedrock or Azure model clients in Still; tunnels or inbound callbacks; company DLP or MDM integration; multi-user or team deployment; changing the personal-mode #826 semantics; live accounts, company networks, live models, releases, deployment and the delivery heartbeat; other backlog items.",
       "escalated_review": "Constitution escalated review (#195): a Codex review of the exact final head, required validate and full-validate on that head, and the owner merges. Required for WORK-MODE-01 (#208, egress), INTRANET-DEST-01 (#209, network destinations), CLOUD-AI-01 (#211, credentials), MATTERMOST-01 (#213) and SLACK-01 (#214, approval surface, credentials, new dependency); for OWNER-MCP-WORK-01 (#210) only if it changes env or secret forwarding; not for SURFACE-SEAM-01 (#212, behavior-preserving). An AI session never merges a PR whose escalated review was triggered.",
-      "completion_rule": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests and its declared focused tests passing, required validate passing on each final head, the triggered Codex reviews recorded, and full-validate passing on main after the last merge (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision."
+      "completion_rule": "Every ordered substep merged on its own PR with its issue's acceptance criteria mapped to tests and its declared focused tests passing, required validate passing on each final head, the triggered Codex reviews recorded, and full-validate passing on main after the last merge (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision.",
+      "allowed_authority_amendment": {
+        "issue": 206,
+        "date": "2026-10-23",
+        "substep": "CLOUD-AI-01",
+        "pull_request": 230,
+        "files": [
+          "cloud_engines.py",
+          "decision.py",
+          "main_ai.py",
+          "quickstart.py",
+          "current_context.py",
+          "work_execution.py",
+          "search_providers.py"
+        ],
+        "reason": "PR #230 changed six files not named in the activated list, and search_providers.py beyond its listed work-mode purpose. Each is wiring of the same cloud provider profile and changes no other behaviour: cloud_engines.py is the new module holding the profiles, credential custody and the daily cap; decision.py adds the destination and profile-revision audit fields a Codex finding asked for; main_ai.py reports the cloud destination in the route status; quickstart.py adds the two local-only Settings endpoints; current_context.py adds the cloud credentials to the known-secret redaction; work_execution.py pins each Work's profile; search_providers.py reports that a cloud turn has no CLI-native search. All were inside the PR's escalated Codex review (final head 17abef7: no major issues) and full-validate, and the owner merged it. Recorded here as an auditable scope amendment (Codex finding on #256) rather than left implicit; it takes effect when the owner merges this record.",
+        "original": "Engine launch environment and provider profiles (bounded_execution.py, subscription_engines.py, decision_routes.py, decision_adapters.py, providers.py for the recorded API-route decision only), destination guards (api_requests.py, local_tools.py, mcp_setup.py, code_run.py, browser_worker.py, limited_egress_proxy.py), tunnel starters (family_setup.py, remote_login.py, phone_input.py), search_providers.py and skills.py acquisition for work mode, owner_mcp.py launch environment, the conversation surface (telegram_surface.py, telegram_store.py, telegram_presence.py, conversation_handoff.py, conversation_projection.py, owner_acts.py, quickstart_service.py, quickstart_store.py, settings_orchestrator.py and Settings UI), new Mattermost and Slack surface modules, messages.json entries they use, tests, docs describing the changed behaviour, and new dependencies only with their recorded reuse review (Slack SDK; a WebSocket client if Plan selects it). Model-free tests with injected runners, transports and fixture servers; required validate on each final head and full-validate before closeout; one issue-linked PR per substep, normal squash merge, then a closeout PR."
+      }
     }
   },
   "completion_claims": {},
   "next_goal": {
     "id": "WORKPLACE-01",
     "status": "owner-activated-goal-ready",
-    "action": "Owner direction 2026-10-22/23 (#206) selects WORKPLACE-01: work mode, intranet destinations, company tools through the owner's own MCP servers, cloud AI engines and Mattermost/Slack surfaces (#208-#214), starting with CLOUD-AI-01 (#211); SURFACE-SEAM-01 (#212) follows. Its PR #229 was prepared in parallel and is rebased once #211 merges, because both edit quickstart_service.py and one substep is in flight at a time. Session-driven at the owner's request. Scoped PRs are authorized; a PR whose escalated review is triggered merges only after the Codex review of its exact final head, and the owner merges it. Live accounts, company networks, live models, releases and deployment are not authorized. The delivery heartbeat stays paused, and no successor is selected on completion."
+    "action": "Owner direction 2026-10-22/23 (#206) selects WORKPLACE-01: work mode, intranet destinations, company tools through the owner's own MCP servers, cloud AI engines and Mattermost/Slack surfaces (#208-#214). CLOUD-AI-01 (#211) merged in PR #230; SURFACE-SEAM-01 (#212, PR #229) is in flight, one substep at a time. Session-driven at the owner's request. Scoped PRs are authorized; a PR whose escalated review is triggered merges only after the Codex review of its exact final head, and the owner merges it. Live accounts, company networks, live models, releases and deployment are not authorized. The delivery heartbeat stays paused, and no successor is selected on completion."
   }
 }

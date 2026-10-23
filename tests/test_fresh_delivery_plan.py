@@ -320,7 +320,7 @@ def test_the_in_context_program_is_closed_out_and_the_owed_reviews_stay_owed():
 
 
 def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_paused():
-    """#206: selected by the owner on 2026-10-23; cloud AI first, then the surface refactor."""
+    """#206: selected by the owner on 2026-10-23; cloud AI merged, the surface refactor in flight."""
     current = plan()
     assert current["next_goal"]["id"] == "WORKPLACE-01"
     assert current["next_goal"]["status"] == "owner-activated-goal-ready"
@@ -329,10 +329,22 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     program = current["programs"]["WORKPLACE-01"]
     assert program["ordered_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01", "WORK-MODE-01", "INTRANET-DEST-01",
                                            "OWNER-MCP-WORK-01", "MATTERMOST-01", "SLACK-01"]
-    # One substep in flight at a time (#211 and #212 both edit quickstart_service.py).
-    assert program["active_substeps"] == ["CLOUD-AI-01"]
-    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "WORKPLACE-01") == "CLOUD-AI-01"
-    assert program["completed_substeps"] == []
+    # One substep in flight at a time: CLOUD-AI-01 merged (#230), SURFACE-SEAM-01 follows.
+    assert program["completed_substeps"] == ["CLOUD-AI-01"]
+    assert program["active_substeps"] == ["SURFACE-SEAM-01"]
+    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "WORKPLACE-01") == "SURFACE-SEAM-01"
+    evidence = items_of(current)["WORKPLACE-01"]["completed_substeps"]["CLOUD-AI-01"]
+    assert (evidence["issue"], evidence["pull_request"]) == (211, 230)
+    assert evidence["merge_commit"].startswith("4c49a2f")
+    # #256 review: the completed substep names the focused tests that hold its contract.
+    focused = items_of(current)["CLOUD-AI-01"]["tests"][0]
+    assert all(name in focused for name in ("test_cloud_engines.py", "test_decision_routes.py", "test_settings_ui.py"))
+    # #256 review: the files #230 changed outside the activated list are an explicit, auditable amendment.
+    amendment = program["allowed_authority_amendment"]
+    assert (amendment["substep"], amendment["pull_request"]) == ("CLOUD-AI-01", 230)
+    assert amendment["original"] != program["allowed_authority"]
+    assert all(name in program["allowed_authority"] for name in amendment["files"])
+    assert "cloud_engines.py" not in amendment["original"]
     assert "Codex review of the exact final head" in program["escalated_review"]
     items = {item["id"]: item for item in current["iterations"]}
     assert {items[name]["issue"] for name in program["ordered_substeps"]} == {208, 209, 210, 211, 212, 213, 214}
@@ -360,3 +372,7 @@ def test_the_post_closeout_audit_notes_correct_without_rewriting_the_closeouts()
         assert program["closeout"] == archived["programs"][name]["closeout"], name
         assert program.get("pending_reviews") == archived["programs"][name].get("pending_reviews"), name
     assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+
+
+def items_of(current):
+    return {item["id"]: item for item in current["iterations"]}
