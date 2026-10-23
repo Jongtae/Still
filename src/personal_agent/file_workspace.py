@@ -1,6 +1,6 @@
 """Scoped local file workspace: references stay read-only; results are new files."""
 from pathlib import Path
-import hashlib, json, os, re, sqlite3, time, unicodedata, uuid
+import hashlib, json, os, re, sqlite3, stat, time, unicodedata, uuid
 from .document_reader import MAX_FILE_BYTES, read as read_document, supported as supported_document
 from . import folder_grants
 
@@ -118,9 +118,14 @@ class FileWorkspace:
         base=Path(root['path']); path=self._safe_relative(relative); candidate=base/path
         if any(part.is_symlink() for part in (base, *candidate.parents) if part.exists()): raise ValueError('심볼릭 링크를 통한 참고 자료 접근은 허용하지 않습니다.')
         resolved=candidate.resolve()
-        if (not resolved.is_relative_to(base) or resolved.suffix.lower() not in ('.txt','.md','.pdf','.docx','.xlsx') or not resolved.is_file() or candidate.is_symlink()): raise ValueError('참고 폴더 밖 또는 지원하지 않는 파일입니다.')
+        # #203 review: ``is_file()`` would hide a transient lookup error (EIO, EACCES) as a missing file;
+        # only a missing one is, and any other error stays the ValueError's cause.
+        try: info=resolved.stat()
+        except (FileNotFoundError,NotADirectoryError): info=None
+        except OSError as exc: raise ValueError('참고 자료를 지금 읽을 수 없습니다.') from exc
+        if (not resolved.is_relative_to(base) or resolved.suffix.lower() not in ('.txt','.md','.pdf','.docx','.xlsx') or info is None or not stat.S_ISREG(info.st_mode) or candidate.is_symlink()): raise ValueError('참고 폴더 밖 또는 지원하지 않는 파일입니다.')
         # #182 review: bounded like a connected-folder read, before any byte is read.
-        if resolved.stat().st_size>MAX_FILE_BYTES: raise ValueError('10MB 이하 지원 문서만 읽을 수 있습니다.')
+        if info.st_size>MAX_FILE_BYTES: raise ValueError('10MB 이하 지원 문서만 읽을 수 있습니다.')
         return resolved
 
     def read(self, ref_id, relative):

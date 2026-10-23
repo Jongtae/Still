@@ -597,6 +597,23 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
                 found = self.caps('job-later').execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})
                 self.assertEqual((found['files'], found['truncated']), ([], True), failing.__name__)
                 self.assertIs(workspace.intact(record), FileWorkspace.UNKNOWN, failing.__name__)
+        # #203 review: the real lookup before the read; a transient EIO on the cited file is not a missing file.
+        # ``is_file`` answers False for it as Python 3.14's ``os.path.isfile`` does (3.12 still raises).
+        import errno
+        original_stat, original_is_file = Path.stat, Path.is_file
+
+        def lookup(path, *args, **kwargs):
+            if path.name == 'trip.md' and kwargs.get('follow_symlinks', True):
+                raise OSError(errno.EIO, 'I/O error')
+            return original_stat(path, *args, **kwargs)
+
+        def is_file(path, *args, **kwargs):
+            try:
+                return original_is_file(path, *args, **kwargs)
+            except OSError:
+                return False
+        with patch.object(Path, 'stat', lookup), patch.object(Path, 'is_file', is_file):
+            self.assertIs(workspace.intact(record), FileWorkspace.UNKNOWN)
         with self.store.db() as db:
             self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'current')
         found = self.caps('job-later').execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})
