@@ -336,6 +336,9 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     evidence = items_of(current)["WORKPLACE-01"]["completed_substeps"]["CLOUD-AI-01"]
     assert (evidence["issue"], evidence["pull_request"]) == (211, 230)
     assert evidence["merge_commit"].startswith("4c49a2f")
+    # #256 review: the completed substep names the focused tests that hold its contract.
+    focused = items_of(current)["CLOUD-AI-01"]["tests"][0]
+    assert all(name in focused for name in ("test_cloud_engines.py", "test_decision_routes.py", "test_settings_ui.py"))
     # #256 review: the files #230 changed outside the activated list are an explicit, auditable amendment.
     amendment = program["allowed_authority_amendment"]
     assert (amendment["substep"], amendment["pull_request"]) == ("CLOUD-AI-01", 230)

@@ -621,7 +621,7 @@
       "kind": "implementation",
       "activation_status": "complete-on-merge",
       "tests": [
-        "PYTHONPATH=src python3 -m pytest -q tests/test_bounded_execution.py tests/test_subscription_engines.py tests/test_decision_engine.py"
+        "PYTHONPATH=src python3 -m pytest -q tests/test_cloud_engines.py tests/test_decision_routes.py tests/test_settings_ui.py tests/test_bounded_execution.py tests/test_subscription_engines.py tests/test_decision_engine.py tests/test_connect_decide.py"
       ],
       "summary": "Claude Code and Codex (Work execution and the Judgment AI) run through the CLIs' own documented Amazon Bedrock, Microsoft Foundry or Azure OpenAI configuration; credentials reach the CLI process only, never the model's shell; an owner-set budget for cloud profiles.",
       "depends_on": []
