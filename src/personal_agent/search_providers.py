@@ -818,12 +818,14 @@ class ProviderRegistry:
             for candidate_kind in candidate.kinds:
                 if option_id(candidate.id, candidate_kind) == wanted:
                     return candidate, candidate_kind
+        # #233: refused before any provider was contacted, so the call says ``ran: false``.
+        from .agent_runtime import not_run
         if not wanted or wanted == AI_NATIVE:
             reason = self.unavailable_reason() or 'rejected'
             alternatives = [row['id'] for row in options if row['id'] != AI_NATIVE]
-            raise SearchProviderError(native_unavailable_text(reason, alternatives), 'native_search_unavailable',
-                                      reason=reason)
-        raise SearchProviderError(PROVIDER_UNAVAILABLE_TEXT, 'provider_unavailable')
+            raise not_run(SearchProviderError(native_unavailable_text(reason, alternatives), 'native_search_unavailable',
+                                              reason=reason))
+        raise not_run(SearchProviderError(PROVIDER_UNAVAILABLE_TEXT, 'provider_unavailable'))
 
     def search(self, query, *, provider=None, kind=None, locale=None, limit=RESULT_LIMIT, budget=None):
         chosen, chosen_kind = self.resolve(provider, kind)
