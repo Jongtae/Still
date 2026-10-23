@@ -356,8 +356,8 @@ def remove_slot(store, name):
         ApiCredentials(store).discard(previous['credential_ref'])
         if previous.get('token_cache'):
             ApiCredentials(store).discard(previous['token_cache']['reference'])
-    from .api_credentials import STATE_PREFIX
-    store.remove_secret(STATE_PREFIX + name)  # #1380: a removed set keeps no run state
+    from .api_credentials import ApiCredentials
+    ApiCredentials(store).discard_state(name)  # #1380: a removed set keeps no run state; #258: its values retired
     from .procedures import ProcedureLibrary
     ProcedureLibrary(store).remove_slot(name)  # #1486: nor its function library
     return store.remove_secret(SECRET_PREFIX + name) or previous is not None

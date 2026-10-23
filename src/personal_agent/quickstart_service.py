@@ -10742,6 +10742,9 @@ class AgentService:
         # current Work was not yet added to document_jobs, so it
         # survives that filter and can safely receive this exact
         # prepared payload again afterward.
+        # #258 (Codex review): the latest item may have been replaced by an earlier request (a retry) or
+        # extended with read material; retired secret values leave the final list the worker reads.
+        run.history=self.history_for_models(run.history)
         run.prepared_latest=run.history[-1] if run.history else None
         run.work_sources|=run.turn_provenance
         def record(tool,status,detail):

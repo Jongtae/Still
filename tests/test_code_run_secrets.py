@@ -239,6 +239,20 @@ class Storage(unittest.TestCase):
         self.assertIn('POST api.example.com/oauth2/token', process.decisions[2]['reason'])
         self.assertIn('api.example.com', process.decisions[3]['reason'])
 
+    def test_a_replaced_or_removed_run_state_token_stays_redacted(self):
+        """Codex review on #259: a rotated access token in saved run state is retired, not forgotten."""
+        from personal_agent.api_credentials import ApiCredentials
+        from personal_agent.current_context import redact_known_secrets
+        self.save()
+        slot = api_requests.slots(self.store)['example-broker']
+        old, new = 'old-access-token-' + 'a' * 20, 'new-access-token-' + 'b' * 20
+        credentials = ApiCredentials(self.store)
+        self.assertTrue(credentials.write_state('example-broker', slot, json.dumps({'access_token': old})))
+        self.assertTrue(credentials.write_state('example-broker', slot, json.dumps({'access_token': new})))
+        self.assertEqual(redact_known_secrets(self.store, f'token {old} then {new}'), 'token [redacted] then [redacted]')
+        api_requests.remove_slot(self.store, 'example-broker')
+        self.assertEqual(redact_known_secrets(self.store, f'later {new}'), 'later [redacted]')
+
     def test_run_state_persists_encrypted_and_its_token_is_redacted(self):
         # #1380 live: each run requested a new token and the vendor refused the second within a minute.
         self.save()
