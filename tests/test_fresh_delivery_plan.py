@@ -320,7 +320,7 @@ def test_the_in_context_program_is_closed_out_and_the_owed_reviews_stay_owed():
 
 
 def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_paused():
-    """#206: selected by the owner on 2026-10-23; cloud AI merged, the surface refactor in flight."""
+    """#206: selected by the owner on 2026-10-23; cloud AI and the surface refactor merged, none in flight."""
     current = plan()
     assert current["next_goal"]["id"] == "WORKPLACE-01"
     assert current["next_goal"]["status"] == "owner-activated-goal-ready"
@@ -329,13 +329,17 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     program = current["programs"]["WORKPLACE-01"]
     assert program["ordered_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01", "WORK-MODE-01", "INTRANET-DEST-01",
                                            "OWNER-MCP-WORK-01", "MATTERMOST-01", "SLACK-01"]
-    # One substep in flight at a time: CLOUD-AI-01 merged (#230), SURFACE-SEAM-01 follows.
-    assert program["completed_substeps"] == ["CLOUD-AI-01"]
-    assert program["active_substeps"] == ["SURFACE-SEAM-01"]
-    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "WORKPLACE-01") == "SURFACE-SEAM-01"
+    # One substep in flight at a time: CLOUD-AI-01 (#230) and SURFACE-SEAM-01 (#229) merged; none is running.
+    assert program["completed_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01"]
+    assert program["active_substeps"] == []
+    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "WORKPLACE-01") is None
     evidence = items_of(current)["WORKPLACE-01"]["completed_substeps"]["CLOUD-AI-01"]
     assert (evidence["issue"], evidence["pull_request"]) == (211, 230)
     assert evidence["merge_commit"].startswith("4c49a2f")
+    seam = items_of(current)["WORKPLACE-01"]["completed_substeps"]["SURFACE-SEAM-01"]
+    assert (seam["issue"], seam["pull_request"]) == (212, 229)
+    assert seam["merge_commit"].startswith("746d2c8")
+    assert items_of(current)["SURFACE-SEAM-01"]["activation_status"] == "complete-on-merge"
     # #256 review: the completed substep names the focused tests that hold its contract.
     focused = items_of(current)["CLOUD-AI-01"]["tests"][0]
     assert all(name in focused for name in ("test_cloud_engines.py", "test_decision_routes.py", "test_settings_ui.py"))
