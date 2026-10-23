@@ -344,6 +344,205 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
         self.assertIn('[said 2026-10-01] 마트 장바구니는', self.service.owner_profile_snapshot('마트 장바구니'))
 
+    def test_a_message_holding_a_replaced_or_removed_secret_is_never_recalled(self):
+        """Codex review on #227: after rotation the current redaction no longer knows the old value."""
+        old, gone = 'quietharbor-river-tulip', 'amber-lantern-orchid'
+        self.store.secret('api_key:openai', old)
+        self.store.secret('api_key:anthropic', gone)
+        self.said(f'마트 앱 비번은 {old}', f'마트 앱 예전 키 {gone}', '마트 앱 장바구니는 동네 마트로')
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        self.store.secret('api_key:openai', 'brand-new-value-12345')
+        self.store.remove_secret('api_key:anthropic')
+        section = self.service.owner_profile_snapshot('마트 앱 장바구니')
+        self.assertIn('동네 마트로', section)
+        self.assertNotIn('quietharbor', section)
+        self.assertNotIn('amber-lantern', section)
+        stored = self.store.secret_path.read_text()
+        self.assertNotIn(old, stored, 'only a keyed digest of the retired value is kept')
+        self.assertNotIn(gone, stored)
+        self.store.retire_secret_values(['decrypted-api-credential-1'])
+        self.assertTrue(self.store.holds_retired_secret('x decrypted-api-credential-1 y'))
+
+    def test_retired_marks_are_never_evicted_and_rotating_tokens_are_not_tracked(self):
+        """Codex review on #259: a password retired long ago stays excluded; token rotation adds nothing."""
+        first = 'first-retired-password-001'
+        self.store.secret('api_key:openai', first)
+        for index in range(300):
+            self.store.secret('api_key:openai', f'rotated-value-{index:04d}-xx')
+        self.assertTrue(self.store.holds_retired_secret(f'old note {first} here'))
+        before = self.store.retired_secrets_path.read_text()
+        for index in range(5):
+            self.store.secret('google_calendar_oauth', f'oauth-token-rotation-{index:04d}')
+        self.assertEqual(self.store.retired_secrets_path.read_text(), before)
+
+    def test_a_portable_export_carries_no_secret_typed_into_the_conversation(self):
+        """Codex review on #259: the export is secret-free, so current and retired values leave the transcript."""
+        import sqlite3
+        import tarfile
+        from personal_agent.portable_state import DB_RELATIVE, ROOT, export_owner_state
+        current, retired = 'current-mart-password-42', 'quietharbor-river-tulip'
+        self.store.secret('api_key:openai', retired)
+        self.store.secret('api_key:openai', current)
+        self.said(f'마트 앱 예전 비번 {retired} 이고 지금은 {current} 야', '그냥 메모')
+        archive = self.root / 'export.tar.gz'
+        export_owner_state(self.data, archive)
+        out = self.root / 'unpacked'
+        with tarfile.open(archive) as bundle:
+            bundle.extractall(out, filter='data')
+        with sqlite3.connect(out / ROOT / DB_RELATIVE) as db:
+            text = ' '.join(str(row[0]) for row in db.execute('SELECT content FROM messages')) + ' '.join(
+                str(row[0]) for row in db.execute('SELECT message FROM jobs'))
+        self.assertNotIn(current, text)
+        self.assertNotIn(retired, text)
+        self.assertIn('마트 앱 예전 비번 [redacted] 이고 지금은 [redacted] 야', text)
+        self.assertIn('그냥 메모', text)
+        self.assertNotIn('retired-secret-marks', ' '.join(tarfile.open(archive).getnames()))
+
+    def test_every_redacted_namespace_is_retired_and_exports_use_the_runtime_redaction(self):
+        """Codex review on #259: cloud credentials are retired; the export redacts what the runtime redacts,
+        decrypted values included, and stops when a value cannot be read."""
+        from unittest import mock
+        from personal_agent import api_requests, cloud_engines, current_context
+        from personal_agent.portable_state import export_owner_state
+        for key in (*current_context.KNOWN_SECRET_NAMES, api_requests.SECRET_PREFIX + 'x',
+                    cloud_engines.SECRET_PREFIX + 'codex:bedrock:AWS_SECRET_ACCESS_KEY'):
+            self.assertTrue(current_context.is_redacted_secret_key(key), key)
+        cloud = cloud_engines.SECRET_PREFIX + 'codex:bedrock:AWS_SECRET_ACCESS_KEY'
+        self.store.secret(cloud, 'old-aws-secret-value-123')
+        self.store.remove_secret(cloud)
+        self.assertTrue(self.store.holds_retired_secret('x old-aws-secret-value-123 y'))
+        self.said('클라우드 키는 decrypted-api-password-9 야')
+        real = current_context.stored_secret_values
+        with mock.patch.object(current_context, 'stored_secret_values',
+                               lambda store: [*real(store), 'decrypted-api-password-9']):
+            export_owner_state(self.data, self.root / 'a.tar.gz')
+        import sqlite3, tarfile
+        from personal_agent.portable_state import DB_RELATIVE, ROOT
+        with tarfile.open(self.root / 'a.tar.gz') as bundle:
+            bundle.extractall(self.root / 'a', filter='data')
+        with sqlite3.connect(self.root / 'a' / ROOT / DB_RELATIVE) as db:
+            text = ' '.join(str(row[0]) for row in db.execute('SELECT content FROM messages'))
+        self.assertIn('클라우드 키는 [redacted] 야', text)
+        def unreadable(store):
+            raise RuntimeError('owner-held key unavailable')
+        with mock.patch.object(current_context, 'stored_secret_values', unreadable):
+            with self.assertRaises(ValueError):
+                export_owner_state(self.data, self.root / 'b.tar.gz')
+        self.assertFalse((self.root / 'b.tar.gz').exists(), 'nothing exported')
+
+    def test_recent_history_for_models_has_retired_values_replaced(self):
+        """Codex review on #259: the 16 recent messages, not only recall."""
+        self.store.secret('api_key:openai', 'quietharbor-river-tulip')
+        self.said('비번은 quietharbor-river-tulip 이야', days_ago=0)
+        self.store.secret('api_key:openai', 'brand-new-value-12345')
+        rows = self.service.history_for_models(self.store.history()[-16:])
+        text = ' '.join(str(row.get('content')) for row in rows)
+        self.assertIn('비번은 [redacted] 이야', text)
+        self.assertNotIn('quietharbor', text)
+
+    def test_an_unreadable_encrypted_credential_is_not_removed(self):
+        """Codex review on #259: the ciphertext stays until its plaintext is retired."""
+        from unittest import mock
+        from personal_agent.api_credentials import ApiCredentials, CredentialError
+        reference = 'api_credential:' + 'a' * 48
+        self.store.secret(reference, 'ciphertext-blob')
+        with mock.patch.object(ApiCredentials, 'values', side_effect=CredentialError()):
+            with self.assertRaises(CredentialError):
+                ApiCredentials(self.store).discard(reference)
+        self.assertEqual(self.store.secret_items(reference), {reference: 'ciphertext-blob'})
+
+    def test_the_export_redacts_every_owner_content_table_and_retries_a_moving_snapshot(self):
+        """Codex review on #259: notes and Memory too; secrets rotated mid-export repeat the snapshot."""
+        import sqlite3, tarfile
+        from unittest import mock
+        from personal_agent.portable_state import DB_RELATIVE, ROOT, export_owner_state
+        from personal_agent.quickstart_store import QuickStore
+        value = 'current-mart-password-42'
+        self.store.secret('api_key:openai', value)
+        with self.store.db() as db:
+            db.execute("INSERT INTO memories(id,memory_key,content,created,state,owner_key) VALUES (?,?,?,?,?,?)",
+                       ('m-secret', 'profile.note.key', f'키는 {value}', 1.0, 'current', self.store._memory_binding('local-owner')))
+        export_owner_state(self.data, self.root / 'c.tar.gz')
+        with tarfile.open(self.root / 'c.tar.gz') as bundle:
+            bundle.extractall(self.root / 'c', filter='data')
+        with sqlite3.connect(self.root / 'c' / ROOT / DB_RELATIVE) as db:
+            dump = '\n'.join(db.iterdump())
+        self.assertNotIn(value, dump)
+        self.assertIn('키는 [redacted]', dump)
+        # Structural columns are never rewritten, even when a secret equals a status word (Codex review on #259).
+        self.store.secret('api_key:anthropic', 'succeeded')
+        job = self.store.enqueue('결과는 succeeded 였어', 'structural')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded' WHERE id=?", (job,))
+        export_owner_state(self.data, self.root / 'e.tar.gz')
+        with tarfile.open(self.root / 'e.tar.gz') as bundle:
+            bundle.extractall(self.root / 'e', filter='data')
+        with sqlite3.connect(self.root / 'e' / ROOT / DB_RELATIVE) as db:
+            status, message = db.execute('SELECT status, message FROM jobs WHERE id=?', (job,)).fetchone()
+        self.assertEqual((status, message), ('succeeded', '결과는 [redacted] 였어'))
+        calls = []
+        real = QuickStore.secret_redaction_material
+        def moving(store):
+            calls.append(1)
+            return ([f'rotating-{len(calls)}-value'], None)
+        with mock.patch.object(QuickStore, 'secret_redaction_material', moving):
+            with self.assertRaises(ValueError):
+                export_owner_state(self.data, self.root / 'd.tar.gz')
+        self.assertFalse((self.root / 'd.tar.gz').exists())
+        self.assertEqual(len(calls), 4, 'read, then once after each of three snapshots')
+
+    def test_every_model_bound_text_has_retired_values_replaced(self):
+        """Codex review on #259: a profile row or any judgment text, not only the transcript."""
+        old = 'quietharbor-river-tulip'
+        self.store.secret('api_key:openai', old)
+        self.store.save_memory('profile.preference.note', f'예전 키 메모 {old}', owner_id='local-owner')
+        self.store.secret('api_key:openai', 'brand-new-value-12345')
+        self.assertNotIn(old, self.service.owner_profile_snapshot())
+        self.assertIn('예전 키 메모 [redacted]', self.service.owner_profile_snapshot())
+        self.assertNotIn(old, self.service.redact_judgment_text(f'linked reply said {old}'))
+
+    def test_swap_retires_and_replaces_under_one_lock_and_an_unreadable_ledger_withholds(self):
+        """Codex review on #259: retire-then-replace is one step; a corrupt ledger never reads as empty."""
+        from personal_agent.current_context import redact_known_secrets
+        self.store.secret('api_credential_state:set', 'cipher-a')
+        self.store.swap_secret('api_credential_state:set', 'cipher-b', lambda old: [f'plain-of-{old}-token'])
+        self.assertEqual(self.store.secret_items('api_credential_state:set'), {'api_credential_state:set': 'cipher-b'})
+        self.assertTrue(self.store.holds_retired_secret('x plain-of-cipher-a-token y'))
+        def unreadable(old):
+            raise RuntimeError('key unavailable')
+        with self.assertRaises(RuntimeError):
+            self.store.swap_secret('api_credential_state:set', None, unreadable)
+        self.assertEqual(self.store.secret_items('api_credential_state:set'), {'api_credential_state:set': 'cipher-b'})
+        self.said('마트 장바구니 메모')
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        self.store.retired_secrets_path.write_text('{not json')
+        with self.assertRaises(ValueError):
+            redact_known_secrets(self.store, 'anything')
+        with self.assertRaises(ValueError):
+            self.service.history_for_models(self.store.history()[-16:])
+        self.assertNotIn('owner_said', self.service.owner_words_block('마트 장바구니'))
+
+    def test_turn_provenance_fields_merge_in_one_transaction(self):
+        """Codex review on #259: the early plan's thread and the worker turn never drop each other's fields."""
+        import threading
+        job = self.store.enqueue('x', 'merge-provenance')
+        writers = [threading.Thread(target=self.service.record_turn_provenance, args=(job,), kwargs={f'field{index}': index})
+                   for index in range(8)]
+        for writer in writers:writer.start()
+        for writer in writers:writer.join()
+        record = self.store.turn_provenance(job)
+        self.assertEqual({key: record[key] for key in record if key.startswith('field')}, {f'field{i}': i for i in range(8)})
+
+    def test_the_retired_scan_costs_one_digest_per_position_whatever_the_ledger(self):
+        """Codex review on #259: 300 retired values of 300 lengths stay cheap on a 12,000-character text."""
+        import time
+        self.store.retire_secret_values([f'retired-{"x" * (8 + index)}' for index in range(300)])
+        text = '가나다라 ' * 2400 + ' retired-' + 'x' * 120 + ' tail'
+        started = time.perf_counter()
+        clean = self.store.redact_secret_spans(text, (), self.store.retired_secret_ledger())
+        self.assertLess(time.perf_counter() - started, 1.0)
+        self.assertTrue(clean.endswith(' [redacted] tail'))
+
     def test_the_owners_earlier_words_are_bounded_in_bytes(self):
         from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
         self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])

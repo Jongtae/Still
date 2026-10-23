@@ -352,6 +352,7 @@ class QuickStore:
                 fcntl.flock(lock_fd,fcntl.LOCK_EX)
                 values=json.loads(self.secret_path.read_text()) if self.secret_path.exists() else {}
                 if value is not None:
+                    if values.get(key)!=value:self._retire_locked(values,values.get(key),key)
                     values[key]=value
                     self.write_private(self.secret_path,json.dumps(values))
                 elif create is not None and not values.get(key):
@@ -370,12 +371,153 @@ class QuickStore:
                 fcntl.flock(lock_fd,fcntl.LOCK_EX)
                 values=json.loads(self.secret_path.read_text()) if self.secret_path.exists() else {}
                 if key not in values:return False
-                values.pop(key)
+                self._retire_locked(values,values.pop(key),key)
                 self.write_private(self.secret_path,json.dumps(values))
                 return True
             finally:
                 fcntl.flock(lock_fd,fcntl.LOCK_UN)
                 os.close(lock_fd)
+
+    #: #221 (Codex review): a replaced or removed secret leaves only a keyed digest of its value and its
+    #: length, never the value, so recall can still keep an old message that holds it away from a model.
+    #: Kept in its own owner-only file next to the secrets, so the secrets file itself is unchanged.
+
+    @property
+    def retired_secrets_path(self):
+        return self.secret_path.with_name('retired-secret-marks.json')
+
+    def _read_retired(self):
+        """The retirement ledger, None when none was ever written; raises when it exists but cannot be read
+        (Codex review on #259: an unreadable ledger must withhold model-bound text, not pass as empty)."""
+        try:
+            text=self.retired_secrets_path.read_text()
+        except FileNotFoundError:
+            return None
+        ledger=json.loads(text)
+        if (not isinstance(ledger,dict) or not isinstance(ledger.get('key'),str) or not isinstance(ledger.get('marks'),list)
+                or any(not isinstance(mark,list) or len(mark)!=3 for mark in ledger['marks'])):
+            raise ValueError('the retired-secret ledger is unreadable')
+        bytes.fromhex(ledger['key'])
+        return ledger
+
+    @staticmethod
+    def _redacted_secret_key(key):
+        """Whether the redaction knows values under ``key`` (``stored_secret_values``): only those are retired.
+
+        Rotating tokens (OAuth, run state) are not owner-typed and are not tracked (Codex review on #259).
+        """
+        from .current_context import is_redacted_secret_key
+        return is_redacted_secret_key(key)
+
+    def _retire_locked(self, values, old, key=None):
+        """Record one retired secret value as ``[length, hmac]`` (caller holds the secrets lock)."""
+        if self._redacted_secret_key(key):self._retire_values_locked([old])
+
+    #: Characters of a retired value whose digest locates candidate spans (every retired value is longer).
+    RETIRED_PREFIX_CHARS=8
+
+    def _retire_values_locked(self, olds):
+        """Record each retired value as ``[length, digest, prefix digest]`` (caller holds the secrets lock).
+
+        The prefix digest lets a scan locate candidates with one HMAC per position, however many values
+        and lengths are retired (Codex review on #259); the full digest confirms a match.
+        """
+        olds=[old for old in olds or () if isinstance(old,str) and len(old)>=self.RETIRED_PREFIX_CHARS]
+        if not olds:return
+        ledger=self._read_retired() or {'key':secrets.token_hex(32),'marks':[]}
+        key=bytes.fromhex(ledger['key'])
+        marks=[item for item in ledger.get('marks') or () if isinstance(item,list) and len(item)==3]
+        for old in olds:
+            mark=[len(old),hmac.digest(key,old.encode(),'sha256').hex(),
+                  hmac.digest(key,old[:self.RETIRED_PREFIX_CHARS].encode(),'sha256').hex()]
+            marks=[item for item in marks if item[1]!=mark[1]]+[mark]
+        # Kept for as long as a message can be recalled (Codex review on #259): never evicted.
+        ledger['marks']=marks
+        self.write_private(self.retired_secrets_path,json.dumps(ledger))
+
+    @classmethod
+    def _retired_spans(cls, text, ledger):
+        """``[(start, end)]`` of non-overlapping retired values in ``text``, longest first at each position."""
+        if not ledger or not ledger.get('marks'):return []
+        key=bytes.fromhex(ledger['key'])
+        by_prefix={}
+        for length,digest,prefix in ledger['marks']:by_prefix.setdefault(prefix,[]).append((int(length),digest))
+        for candidates in by_prefix.values():candidates.sort(reverse=True)
+        spans,start,width=[],0,cls.RETIRED_PREFIX_CHARS
+        while start<=len(text)-width:
+            candidates=by_prefix.get(hmac.digest(key,text[start:start+width].encode(),'sha256').hex())
+            matched=next((length for length,digest in candidates or ()
+                          if start+length<=len(text)
+                          and hmac.digest(key,text[start:start+length].encode(),'sha256').hex()==digest),None)
+            if matched:
+                spans.append((start,start+matched));start+=matched
+            else:
+                start+=1
+        return spans
+
+    def swap_secret(self, key, value, retire):
+        """Replace (or with ``value`` None remove) one secret, retiring ``retire(old)``'s plaintexts first,
+        all under the cross-process secrets lock (Codex review on #259: concurrent writers cannot slip a
+        value past retirement).  ``retire`` raising leaves the secret unchanged."""
+        with self.secret_lock:
+            lock_fd=os.open(self.secret_lock_path,os.O_RDWR|os.O_CREAT,0o600)
+            try:
+                fcntl.flock(lock_fd,fcntl.LOCK_EX)
+                values=json.loads(self.secret_path.read_text()) if self.secret_path.exists() else {}
+                old=values.get(key)
+                if old:self._retire_values_locked(retire(old))
+                if value is None:
+                    if key not in values:return False
+                    values.pop(key)
+                else:
+                    values[key]=value
+                self.write_private(self.secret_path,json.dumps(values))
+                return True
+            finally:
+                fcntl.flock(lock_fd,fcntl.LOCK_UN)
+                os.close(lock_fd)
+
+    def retire_secret_values(self, olds):
+        """Record retired plaintext values another layer decrypted (encrypted API credentials)."""
+        with self.secret_lock:
+            lock_fd=os.open(self.secret_lock_path,os.O_RDWR|os.O_CREAT,0o600)
+            try:
+                fcntl.flock(lock_fd,fcntl.LOCK_EX)
+                self._retire_values_locked(olds)
+            finally:
+                fcntl.flock(lock_fd,fcntl.LOCK_UN)
+                os.close(lock_fd)
+
+    def retired_secret_ledger(self):
+        """The retired-secret digests (or None), for redacting spans of values no longer stored (#258)."""
+        with self.secret_lock:
+            return self._read_retired()
+
+    def secret_redaction_material(self):
+        """``(values, ledger)`` for a secret-free export (#258): every value the runtime redaction knows -
+        decrypted API credentials and cloud credentials included - and the retired digests.  Raises
+        when a value cannot be read, so an export fails closed rather than keep a secret."""
+        from .current_context import stored_secret_values
+        values=sorted(set(stored_secret_values(self)),key=len,reverse=True)
+        with self.secret_lock:
+            ledger=self._read_retired()
+        return values,ledger
+
+    @classmethod
+    def redact_secret_spans(cls, text, values, ledger):
+        """``text`` with every current value and every span matching a retired digest replaced by ``[redacted]``."""
+        text=str(text or '')
+        for value in values:text=text.replace(value,'[redacted]')
+        out,last=[],0
+        for start,end in cls._retired_spans(text,ledger):
+            out.append(text[last:start]+'[redacted]');last=end
+        return ''.join(out)+text[last:]
+
+    def holds_retired_secret(self, text):
+        """Whether ``text`` contains any retired secret value, by its keyed digest (#221)."""
+        with self.secret_lock:
+            ledger=self._read_retired()
+        return bool(self._retired_spans(str(text or ''),ledger))
 
     def secret_items(self, prefix):
         """Host-only snapshot for namespaced secret redaction, never a model tool."""
@@ -1498,6 +1640,19 @@ class QuickStore:
                        (job_id,json.dumps(record,ensure_ascii=False),time.time()))
             db.execute('DELETE FROM turn_provenance WHERE job_id NOT IN (SELECT job_id FROM turn_provenance ORDER BY created DESC LIMIT ?)',
                        (self.TURN_PROVENANCE_KEEP,))
+
+    def merge_turn_provenance(self, job_id, fields):
+        """Merge ``fields`` into one Work's record in a single transaction (Codex review on #259: two writers
+        - the early plan's thread and the worker turn - never drop each other's fields)."""
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT record FROM turn_provenance WHERE job_id=?',(job_id,)).fetchone()
+            record={**(json.loads(row['record']) if row else {}),**fields}
+            db.execute('INSERT INTO turn_provenance VALUES (?,?,?) ON CONFLICT(job_id) DO UPDATE SET record=excluded.record,created=excluded.created',
+                       (job_id,json.dumps(record,ensure_ascii=False),time.time()))
+            db.execute('DELETE FROM turn_provenance WHERE job_id NOT IN (SELECT job_id FROM turn_provenance ORDER BY created DESC LIMIT ?)',
+                       (self.TURN_PROVENANCE_KEEP,))
+        return record
 
     def turn_provenance(self, job_id):
         with self.db() as db:

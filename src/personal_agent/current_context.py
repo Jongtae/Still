@@ -96,7 +96,24 @@ def redact_known_secrets(store, text):
     text = str(text or '')
     for value in stored_secret_values(store):
         text = text.replace(value, '[redacted]')
+    # #258 (Codex review): a value since replaced or removed is no longer stored; its spans are found by
+    # their retired digests, at this one boundary every model-bound text already passes.
+    ledger = getattr(store, 'retired_secret_ledger', None)
+    ledger = ledger() if callable(ledger) else None
+    if ledger:
+        from .quickstart_store import QuickStore
+        text = QuickStore.redact_secret_spans(text, (), ledger)
     return SECRET_PATTERN.sub('[redacted]', text)
+
+
+#: #258: the plaintext secret namespaces ``stored_secret_values`` reads besides ``KNOWN_SECRET_NAMES``
+#: (API slots, cloud engine credentials); encrypted API credentials are retired by ``ApiCredentials.discard``.
+REDACTED_SECRET_PREFIXES = ('api_slot:', 'cloud_engine:')
+
+
+def is_redacted_secret_key(key):
+    """Whether ``stored_secret_values`` reads the plaintext under this secret key (#258)."""
+    return isinstance(key, str) and (key in KNOWN_SECRET_NAMES or key.startswith(REDACTED_SECRET_PREFIXES))
 
 
 def stored_secret_values(store):

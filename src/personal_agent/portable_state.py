@@ -21,12 +21,15 @@ def _sha256(path):
         for chunk in iter(lambda: source.read(1024 * 1024), b""): digest.update(chunk)
     return digest.hexdigest()
 
-def _portable_db(source, target):
+def _portable_db(source, target, redaction=((), None)):
     """Snapshot SQLite then remove data which can authenticate or target a host."""
     with sqlite3.connect(source) as original, sqlite3.connect(target) as copy:
         original.backup(copy)
         tables = {row[0] for row in copy.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if not {"auth", "sessions", "config"} <= tables: raise ValueError("Still owner database has an unsupported schema.")
+        # #258 (Codex review): the export carries no secrets, so a secret the owner typed into a
+        # conversation - current, or since replaced or removed - leaves the transcript here.
+        _redact_transcript(copy, tables, redaction)
         copy.execute("DELETE FROM auth");copy.execute("DELETE FROM sessions")
         # #570: developer-mode provenance is owner-local diagnostics, not portable state.
         if 'turn_provenance' in tables:copy.execute("DELETE FROM turn_provenance")
@@ -102,6 +105,46 @@ def _portable_db(source, target):
                 copy.execute("UPDATE config SET value=? WHERE key='personal_knowledge_audit'", (json.dumps(safe, sort_keys=True),))
         copy.commit();copy.execute("VACUUM")
 
+#: Columns that hold identifiers, states and keys rather than owner content: never rewritten (Codex review on
+#: #259 - a secret that equals a status word must not turn ``jobs.status`` into ``[redacted]``).
+_STRUCTURAL_COLUMNS = frozenset({"id", "key", "status", "state", "role", "channel", "kind", "type", "delivery",
+                                 "provider", "model", "generation", "fingerprint", "action", "tool", "mode"})
+_STRUCTURAL_SUFFIXES = ("_id", "_key", "_ref", "_digest", "_hash", "_state", "_status", "_kind")
+
+
+def _owner_content_column(name):
+    name = str(name).lower()
+    return name not in _STRUCTURAL_COLUMNS and not name.endswith(_STRUCTURAL_SUFFIXES)
+
+
+def _redact_transcript(copy, tables, redaction):
+    """Every text column of every exported table, with known and retired secret values replaced.
+
+    Codex review on #259: owner content outside the transcript (notes, Memory, candidates, ...) can hold
+    a value too.  FTS tables are skipped: their triggers follow the content rows they index.
+    """
+    from .quickstart_store import QuickStore
+    values, ledger = redaction
+    if not values and not ledger:
+        return
+    virtual = {row[0] for row in copy.execute("SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE 'CREATE VIRTUAL TABLE%'")}
+    shadow = {name for name in tables for base in virtual if name.startswith(base + "_")}
+    for table in sorted(tables - virtual - shadow):
+        if table.startswith("sqlite_"):
+            continue
+        columns = [row[1] for row in copy.execute(f'PRAGMA table_info("{table}")')
+                   if ((row[2] or "").upper() in ("", "TEXT") or "CHAR" in (row[2] or "").upper())
+                   and _owner_content_column(row[1])]
+        for column in columns:
+            try:
+                rows = copy.execute(f'SELECT rowid, "{column}" FROM "{table}" WHERE typeof("{column}")=\'text\'').fetchall()
+            except sqlite3.OperationalError:
+                continue  # a WITHOUT ROWID table: none in the owner schema today
+            for rowid, text in rows:
+                clean = QuickStore.redact_secret_spans(text, values, ledger)
+                if clean != text:
+                    copy.execute(f'UPDATE "{table}" SET "{column}"=? WHERE rowid=?', (clean, rowid))
+
 def export_owner_state(data, archive):
     data, archive = Path(data).expanduser().resolve(), Path(archive).expanduser().resolve()
     database = data / DB_RELATIVE
@@ -109,7 +152,26 @@ def export_owner_state(data, archive):
     archive = archive if archive.name.endswith(".tar.gz") else archive.with_name(archive.name + ".tar.gz")
     with tempfile.TemporaryDirectory() as temporary:
         staging = Path(temporary) / ROOT;(staging / "private").mkdir(parents=True, mode=0o700)
-        portable_db = staging / DB_RELATIVE;_portable_db(database, portable_db);portable_db.chmod(0o600)
+        from .quickstart_store import QuickStore
+        # The same decryption-aware source the runtime redaction uses; an unreadable value stops the export.
+        # Codex review on #259: the material is read before and after the snapshot; a secret rotated
+        # meanwhile repeats the snapshot with the newer material (bounded), else nothing is exported.
+        portable_db = staging / DB_RELATIVE
+        def material():
+            try:
+                return QuickStore(data).secret_redaction_material()
+            except Exception as exc:
+                raise ValueError("Still could not read the secrets it must remove from the export; nothing was exported.") from exc
+        redaction = material()
+        for _attempt in range(3):
+            if portable_db.exists(): portable_db.unlink()
+            _portable_db(database, portable_db, redaction)
+            after = material()
+            if after == redaction: break
+            redaction = after
+        else:
+            raise ValueError("Secrets kept changing during the export; nothing was exported.")
+        portable_db.chmod(0o600)
         files = {DB_RELATIVE: _sha256(portable_db)}
         plugins = data / "plugins"
         if plugins.is_dir():

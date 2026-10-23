@@ -126,6 +126,13 @@ class ApiCredentials:
     def discard(self, reference):
         if not isinstance(reference, str) or not REFERENCE.fullmatch(reference):
             raise CredentialError()
+        # #221 (Codex review): the plaintext this removes is remembered only as a keyed digest, so an
+        # older message holding it is still kept from a model after the credential is gone.
+        token = self.store.secret_items(reference).get(reference)
+        if token:
+            # Codex review on #259: the ciphertext stays until its plaintext is retired; an unreadable
+            # credential (owner-held key unavailable) is not removed, so redaction never loses it.
+            self.store.retire_secret_values(self.values({reference: token}))
         self.store.remove_secret(reference)
 
     def values(self, records):
@@ -178,10 +185,34 @@ class ApiCredentials:
         state = payload.get('state')
         return state if isinstance(state, str) else ''
 
+    def _state_strings(self, token):
+        """The redacted string values of one saved run-state ciphertext (``state_values``' rule)."""
+        state = json.loads(json.loads(self._cipher().decrypt(token.encode())).get('state') or '{}')
+        values, stack = [], [state]
+        while stack:
+            item = stack.pop()
+            if isinstance(item, dict):
+                stack.extend(item.values())
+            elif isinstance(item, list):
+                stack.extend(item)
+            elif isinstance(item, str) and len(item) >= STATE_REDACT_CHARS:
+                values.append(item)
+        return values
+
+    def discard_state(self, name):
+        """Remove the set's run state after retiring its values, in one locked step (#258).
+
+        Raises when the saved state cannot be read, so its ciphertext is never dropped unretired.
+        """
+        return self.store.swap_secret(STATE_PREFIX + name, None, self._state_strings)
+
     def write_state(self, name, slot, text):
         """Save the run state (a JSON object of at most ``MAX_STATE_BYTES``); False when refused."""
         if not isinstance(text, str) or not text.strip():
-            self.store.remove_secret(STATE_PREFIX + name)
+            try:
+                self.discard_state(name)
+            except Exception:
+                return False  # Codex review on #259: an unreadable state is kept, never dropped unretired
             return True
         try:
             if len(text.encode()) > MAX_STATE_BYTES or not isinstance(json.loads(text), dict):
@@ -189,7 +220,9 @@ class ApiCredentials:
             self.assert_current(name, slot)
             payload = {'version': 1, 'binding': fingerprint(name, slot), 'state': text}
             encoded = json.dumps(payload, separators=(',', ':')).encode()
-            self.store.secret(STATE_PREFIX + name, self._cipher(create=True).encrypt(encoded).decode())
+            # The old state's values are retired and the new state written under one lock (Codex review).
+            self.store.swap_secret(STATE_PREFIX + name, self._cipher(create=True).encrypt(encoded).decode(),
+                                   self._state_strings)
         except Exception:
             return False
         return True
@@ -200,19 +233,9 @@ class ApiCredentials:
         records = self.store.secret_items(STATE_PREFIX) if callable(getattr(self.store, 'secret_items', None)) else {}
         if not records:
             return ()
-        cipher = self._cipher()
         for token in records.values():
             try:
-                state = json.loads(json.loads(cipher.decrypt(token.encode())).get('state') or '{}')
+                values.extend(self._state_strings(token))
             except Exception:
                 continue
-            stack = [state]
-            while stack:
-                item = stack.pop()
-                if isinstance(item, dict):
-                    stack.extend(item.values())
-                elif isinstance(item, list):
-                    stack.extend(item)
-                elif isinstance(item, str) and len(item) >= STATE_REDACT_CHARS:
-                    values.append(item)
         return tuple(values)

@@ -2761,6 +2761,17 @@ class AgentService:
             if said:text += ('\n' if text else '') + said
         return self._redact_known_secrets(text)
 
+    def history_for_models(self, rows):
+        """The recent transcript rows a plan or worker reads, with retired secret values replaced (#258).
+
+        The current values are redacted downstream; a value that was since replaced or removed is no
+        longer known there, so its spans (matched by their retired digests) go here.
+        """
+        ledger=self.store.retired_secret_ledger()  # an unreadable ledger raises: nothing goes to a model
+        if not ledger:return rows
+        return [{**row,'content':self.store.redact_secret_spans(row.get('content'),(),ledger)}
+                if isinstance(row.get('content'),str) else row for row in rows]
+
     def owner_words_block(self, request):
         """The ``owner_said`` block for ``request`` ('' when none): dated lines, bounded in bytes (#221)."""
         from .memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING, OWNER_WORDS_LINE_CHARS
@@ -2775,6 +2786,14 @@ class AgentService:
         zone=ZoneInfo(resolve_local_timezone(self.store))
         lines,used=[],len(OWNER_WORDS_HEADING.encode())
         for row in rows:
+            # Codex review on #227: a message holding a secret that was since replaced or removed is never
+            # recalled - the current redaction no longer knows that value.  An unreadable ledger (#259)
+            # withholds the whole block.
+            try:
+                if self.store.holds_retired_secret(row['content']):continue
+            except Exception:
+                LOG.warning('retired-secret ledger unreadable; no earlier words recalled')
+                return ''
             # Codex review on #227: the day the owner sent it, in the owner's zone.
             day=datetime.fromtimestamp(float(row['created']),zone).date().isoformat()
             # Codex review on #227: redacted before it is clipped, so a cut can never keep part of a stored secret.
@@ -3083,7 +3102,6 @@ class AgentService:
             except Exception:
                 LOG.warning('connector reads not recorded job=%s',job_id)
         try:
-            current=self.store.turn_provenance(job_id) or {}
             for key in ('prompt_envelope','instructions'):
                 if key in fields:fields[key]=self._redact_provenance(fields[key])
             if isinstance(fields.get('argv'),list):fields['argv']=[self._redact_provenance(part)[:300] for part in fields['argv']]
@@ -3098,7 +3116,8 @@ class AgentService:
                 request=(self.store.job(job_id) or {}).get('message') or None
                 fields['stream_errors']=[self.scrub_work_text(job_id,self._redact_provenance(redact_reason(str(text),request)))[:300]
                                          for text in fields['stream_errors'][:3]]
-            self.store.put_turn_provenance(job_id,{**current,**{k:v for k,v in fields.items() if v is not None},'recorded_at':time.time()})
+            # One transaction merges the fields into the stored record, so concurrent writers keep each other's.
+            self.store.merge_turn_provenance(job_id,{**{k:v for k,v in fields.items() if v is not None},'recorded_at':time.time()})
         except Exception:
             LOG.warning('turn provenance could not be recorded job=%s',job_id)
 
@@ -5617,8 +5636,8 @@ class AgentService:
         ordinary path builds for a new request (``Orchestration.early_plan``); None when the
         Work would not be orchestrated. The host supplies the same durable budget
         used by its worker. A standalone caller opens and pauses its own lease."""
-        stored=(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
-                else self.store.history()[-16:])
+        stored=self.history_for_models(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
+                                       else self.store.history()[-16:])
         document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
         sections={'profile':self.owner_profile_snapshot(job.get('message'),recall=not prep.preparation_of(job.get('request_key'))),'current_context':self.current_context_text(job),
                   'prepared':self.prepared_text(job)}
@@ -5627,7 +5646,17 @@ class AgentService:
         try:
             orchestration=self.work_orchestration(job,prompt,list(stored),sections,budget,document_jobs=document_jobs,
                                                   can_ask_location=self.location_requester(job) is not None)
-            return orchestration.early_plan() if orchestration else None
+            early=orchestration.early_plan() if orchestration else None
+            if (orchestration and getattr(orchestration,'context_sent',False)
+                    and not (self.store.turn_provenance(job['id']) or {}).get('owner_information')):
+                # Codex review on #227/#259: the early plan sent these sections even when the Work is parked
+                # before its worker turn records them; recorded only once the plan call actually went out.
+                # Only what the plan's context carries (profile and current context; prepared answers are a
+                # count there), so the audit names nothing the Judgment AI did not receive.
+                # Codex review on #259: from the exact (bounded) facts the plan sent, not the whole sections.
+                sent=getattr(orchestration,'sent_sections',None) or {}
+                self.record_turn_provenance(job['id'],owner_information=self.owner_information_refs(sent))
+            return early
         finally:
             if own_budget and budget.ledger is not None:budget.ledger.pause()
 
@@ -10619,8 +10648,8 @@ class AgentService:
             run.key=self.store.secret('model_key')
             run.route_snapshot=self.store.config('subscription_engine',{})
         # #659: a preparation's Work sees its own origin and goal only.
-        run.stored_history=(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
-                        else self.store.history()[-16:])
+        run.stored_history=self.history_for_models(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
+                                                   else self.store.history()[-16:])
         run.document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
         run.document_history=any(message.get('job_id') in run.document_jobs for message in run.stored_history)
         # Earlier replies of failed/partial/interrupted Work carry
@@ -10716,6 +10745,9 @@ class AgentService:
         # current Work was not yet added to document_jobs, so it
         # survives that filter and can safely receive this exact
         # prepared payload again afterward.
+        # #258 (Codex review): the latest item may have been replaced by an earlier request (a retry) or
+        # extended with read material; retired secret values leave the final list the worker reads.
+        run.history=self.history_for_models(run.history)
         run.prepared_latest=run.history[-1] if run.history else None
         run.work_sources|=run.turn_provenance
         def record(tool,status,detail):

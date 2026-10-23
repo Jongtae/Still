@@ -239,6 +239,45 @@ class Storage(unittest.TestCase):
         self.assertIn('POST api.example.com/oauth2/token', process.decisions[2]['reason'])
         self.assertIn('api.example.com', process.decisions[3]['reason'])
 
+    def test_a_replaced_or_removed_run_state_token_stays_redacted(self):
+        """Codex review on #259: a rotated access token in saved run state is retired, not forgotten."""
+        from personal_agent.api_credentials import ApiCredentials
+        from personal_agent.current_context import redact_known_secrets
+        self.save()
+        slot = api_requests.slots(self.store)['example-broker']
+        old, new = 'old-access-token-' + 'a' * 20, 'new-access-token-' + 'b' * 20
+        credentials = ApiCredentials(self.store)
+        self.assertTrue(credentials.write_state('example-broker', slot, json.dumps({'access_token': old})))
+        self.assertTrue(credentials.write_state('example-broker', slot, json.dumps({'access_token': new})))
+        self.assertEqual(redact_known_secrets(self.store, f'token {old} then {new}'), 'token [redacted] then [redacted]')
+        api_requests.remove_slot(self.store, 'example-broker')
+        self.assertEqual(redact_known_secrets(self.store, f'later {new}'), 'later [redacted]')
+
+    def test_an_unreadable_credential_keeps_the_slot_for_a_later_removal(self):
+        """Codex review on #259: retirement runs before the slot's metadata goes, so a retry still finds it."""
+        from personal_agent.api_credentials import ApiCredentials, CredentialError
+        self.save()
+        with mock.patch.object(ApiCredentials, 'values', side_effect=CredentialError()):
+            with self.assertRaises(CredentialError):
+                api_requests.remove_slot(self.store, 'example-broker')
+        self.assertIn('example-broker', api_requests.slots(self.store))
+        # An unreadable OAuth token cache stops the removal the same way (Codex review on #259).
+        slot = dict(api_requests.slots(self.store)['example-broker'])
+        cache = 'api_credential:' + 'c' * 48
+        self.store.secret(cache, 'cache-ciphertext')
+        real = ApiCredentials.values
+        def cache_unreadable(credentials, records):
+            if cache in records:
+                raise CredentialError()
+            return real(credentials, records)
+        with mock.patch.object(api_requests, 'slots', lambda store: {'example-broker': {**slot, 'token_cache': {'reference': cache}}}), \
+                mock.patch.object(ApiCredentials, 'values', cache_unreadable):
+            with self.assertRaises(CredentialError):
+                api_requests.remove_slot(self.store, 'example-broker')
+        self.assertIn('example-broker', api_requests.slots(self.store))
+        self.assertTrue(api_requests.remove_slot(self.store, 'example-broker'))
+        self.assertNotIn('example-broker', api_requests.slots(self.store))
+
     def test_run_state_persists_encrypted_and_its_token_is_redacted(self):
         # #1380 live: each run requested a new token and the vendor refused the second within a minute.
         self.save()

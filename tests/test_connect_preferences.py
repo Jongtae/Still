@@ -177,6 +177,46 @@ class ConnectionPreferences(Harness):
         self.assertIn(CUT_TO_FIT_MARKER, prompt)
         self.assertNotIn('profile.aaa.item39', prompt, 'the profile tail was cut')
 
+    def test_the_early_plan_records_the_recalled_words_it_read(self):
+        """Codex review on #227: a Work parked after its early plan still shows what that plan read."""
+        import time as clock
+        old = self.store.enqueue('Unseen records live in the archive app', 'said-early', owner_typed=True)
+        with self.store.db() as db:
+            db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                       ('user', 'Unseen records live in the archive app', 'web', clock.time() - 864000, old))
+            for index in range(16):
+                db.execute('INSERT INTO messages(role,content,channel,created) VALUES (?,?,?,?)',
+                           ('assistant', f'filler {index}', 'web', clock.time()))
+        self.script([plan('codex', 'Read it.')], goals=[True])
+        ident = self.store.enqueue('Read the Unseen record.', 'early-audit')
+        self.assertIsNotNone(self.service.early_work_plan(self.store.job(ident), 'Read the Unseen record.'))
+        self.assertIn('owner_said', self.asked_plans[-1][0].facts['owner_profile'])
+        refs = self.store.turn_provenance(ident)['owner_information']
+        self.assertIn('owner_said (1 earlier owner message)', json.dumps(refs))
+        self.assertEqual(refs.get('prepared'), [], 'the plan context carries no prepared answer itself')
+
+    def test_an_early_plan_that_never_asks_records_nothing(self):
+        """Codex review on #259: the audit records the sections only once the plan call goes out."""
+        from personal_agent.orchestrator import Orchestration
+        ident = self.store.enqueue('Read the Unseen record.', 'early-no-call')
+        with mock.patch.object(Orchestration, 'budget_allows', return_value=False):
+            self.service.early_work_plan(self.store.job(ident), 'Read the Unseen record.')
+        self.assertNotIn('owner_information', self.store.turn_provenance(ident) or {})
+
+    def test_the_early_plan_audit_uses_the_bounded_facts_it_sent(self):
+        """Codex review on #259: a section longer than the plan's bound is audited as sent, not whole."""
+        from personal_agent.orchestrator import CURRENT_CONTEXT_FACT_CHARS
+        seen = []
+        ident = self.store.enqueue('Read the Unseen record.', 'early-bounded')
+        self.script([plan('codex', 'Read it.')], goals=[True])
+        with mock.patch.object(type(self.service), 'current_context_text', lambda service, job: 'x' * 5000), \
+                mock.patch.object(type(self.service), 'owner_information_refs',
+                                  lambda service, sections, spliced=(): seen.append(dict(sections)) or {}):
+            self.service.early_work_plan(self.store.job(ident), 'Read the Unseen record.')
+        [sent] = seen
+        self.assertLessEqual(len(sent['current_context']), CURRENT_CONTEXT_FACT_CHARS)
+        self.assertEqual(set(sent), {'profile', 'current_context'})
+
     def test_early_plan_and_regular_plan_use_same_retrieved_profile(self):
         for index in range(20):
             self.store.save_memory(f'profile.aaa.item{index}', 'Unrelated background ' * 8, owner_id='local-owner')
