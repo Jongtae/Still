@@ -108,6 +108,17 @@ for line in sys.stdin:
             emit({'id': ident, 'ok': False, 'error': 'focus_moved', 'focused': {'name': 'Search here'}})
         else:
             emit({'id': ident, 'ok': True})
+    elif op == 'load_more' and command.get('rounds') == 4:
+        # #244, as the real worker: this request keeps scrolling until a load_more_stop names it,
+        # then answers ``stopped`` with what it had loaded.
+        for stop_line in sys.stdin:
+            stop = json.loads(stop_line)
+            log(stop)
+            if stop.get('op') == 'load_more_stop' and stop.get('target') == ident:
+                emit({'id': stop['id'], 'ok': True})
+                break
+        emit({'id': ident, 'ok': True, 'rounds': 1, 'stopped': 'stopped', 'added': 1, 'text': 'row 11',
+              'page': {'url': page['url'], 'title': 'held', 'forms': [], 'text': 'held page', 'elements': []}})
     elif op == 'load_more':
         # #11, as the real worker: rounds run, why it stopped, added nodes and their text.
         emit({'id': ident, 'ok': True, 'rounds': 2, 'stopped': 'no_progress', 'added': 3,

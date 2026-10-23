@@ -1110,7 +1110,7 @@ class LoadMoreTests(unittest.TestCase):
         sess, driver = session(steps=40, excluded=lambda: [PASSPORT], **kwargs)
         calls = []
 
-        def load_more(rounds, seconds, timeout):
+        def load_more(rounds, seconds, timeout, stop=None):
             calls.append((rounds, seconds, timeout))
             return answer if answer is not None else {'rounds': 2, 'stopped': 'no_progress', 'added': 4,
                                                       'text': '행 11\n\n\n\n다음 행 ' + PASSPORT}
@@ -1183,6 +1183,28 @@ class LoadMoreTests(unittest.TestCase):
         loaded = sess.run('browser_read', {'load_more': '2'})['loaded']
         self.assertEqual(calls, [], 'too little time left: nothing is scrolled')
         self.assertEqual(loaded, {'rounds': 0, 'stopped': 'time', 'new_content': False, 'text': ''})
+
+    def test_the_owners_stop_during_a_load_more_ends_the_read_as_stopped(self):
+        """#244: the session hands the driver the owner's Stop; a stopped read returns no page text."""
+        stopped = [False]
+        sess, driver, calls = self.loading()
+        sess.budget = WorkBudget(seconds=300, stop=lambda: stopped[0])
+        polled = []
+
+        def load_more(rounds, seconds, timeout, stop=None):
+            polled.append(stop())
+            stopped[0] = True   # the owner presses Stop while the worker scrolls
+            polled.append(stop())
+            return {'rounds': 1, 'stopped': 'stopped', 'added': 3, 'text': '행 11 ' + PASSPORT}
+        driver.load_more = load_more
+        snapshots = len([entry for entry in driver.log if entry[0] == 'snapshot'])
+        with self.assertRaises(ToolError) as caught:
+            sess.run('browser_read', {'load_more': '5'})
+        self.assertEqual(caught.exception.code, 'stopped')
+        self.assertEqual(polled, [False, True], 'the driver can ask while it scrolls')
+        self.assertNotIn('행 11', str(caught.exception))
+        self.assertEqual(len([entry for entry in driver.log if entry[0] == 'snapshot']), snapshots,
+                         'no page is read after the Stop')
 
     def test_a_round_over_its_element_cap_is_reported_as_partial(self):
         sess, driver, calls = self.loading({'rounds': 1, 'stopped': 'bound', 'added': 2000, 'text': '짧은 행',

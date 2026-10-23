@@ -1126,6 +1126,8 @@ class Worker:
         #: cancelled and counted here: loading more of a page never leaves it.
         self.reading = False
         self.read_navigations = 0
+        #: #244: the ``load_more`` requests the owner's Stop asked to end (``op_load_more_stop``).
+        self.stopping = set()
         self.landed = 0            # main-frame navigations committed or failed so far (#736)
         self.deciding = 0          # main-frame policy decisions still resolving their destination (#736 review)
         self.resolved = {}         # url origin -> refusal code or None (this worker's life)
@@ -1801,6 +1803,7 @@ class Worker:
         elements were still shown with text, that text (bounded), and how many main-frame navigations the page started
         meanwhile, each cancelled.  No control is pressed and no input is sent:
         only the page's scroll positions change, and the read never leaves the page.
+        A ``load_more_stop`` for this request ends it at its next probe (``stopped``, #244).
         """
         try:
             rounds = int(command.get('rounds'))
@@ -1838,7 +1841,12 @@ class Worker:
             self.run(LOAD_MORE_COLLECT_SCRIPT, {'limit': max(0, LOAD_MORE_TEXT_LIMIT - state['length']), 'end': end},
                      collected)
 
+        def halted():
+            return ident in self.stopping
+
         def finish(stopped):
+            self.stopping.discard(ident)
+
             def captured(page, error):
                 # #11 review: the page state is read while navigation is still held, so the read
                 # returns the page it scrolled; the guard ends only after this snapshot.  Without
@@ -1861,6 +1869,8 @@ class Worker:
         def next_round():
             if ident not in self.pending:
                 return
+            if halted():
+                return finish('stopped')
             if state['round'] >= rounds:
                 return finish('bound')
             if time.monotonic() - started >= cap:
@@ -1871,6 +1881,8 @@ class Worker:
         def scrolled(value, error):
             if ident not in self.pending:
                 return
+            if halted():
+                return finish('stopped')
             if error or not isinstance(value, dict):
                 return finish('no_progress')
             began, base = time.monotonic(), state['added']
@@ -1879,6 +1891,8 @@ class Worker:
             def probed(value, error):
                 if ident not in self.pending:
                     return
+                if halted():
+                    return finish('stopped')
                 now = time.monotonic()
                 value = value if error is None and isinstance(value, dict) else {}
                 added = int(value.get('added') or 0)
@@ -1907,6 +1921,13 @@ class Worker:
                 return self.fail(ident, 'script_failed')
             next_round()
         self.run(LOAD_MORE_BEGIN_SCRIPT, {'limit': LOAD_MORE_NODE_LIMIT}, begun)
+
+    def op_load_more_stop(self, ident, command, timeout):
+        """End the running ``load_more`` request ``target`` at its next probe: the owner stopped the Work (#244)."""
+        target = command.get('target')
+        if target in self.pending:
+            self.stopping.add(target)
+        self.reply(ident)
 
     def _locate(self, ident, command, then):
         index = command.get('index')
