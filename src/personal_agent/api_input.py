@@ -8,7 +8,7 @@ import json
 import threading
 import time
 
-from . import api_requests, phone_input
+from . import api_requests, phone_input, work_mode
 from .api_requests import ApiError
 from .current_context import redact_known_secrets
 from .mcp_setup import remote_url, SECRET_PATTERN, SENSITIVE
@@ -70,6 +70,17 @@ def value(store, text):
 def code_draft(data):
     """Whether a canonical draft is a code-run secret set (#1380)."""
     return 'fields' in data
+
+
+def refuse_probe_in_work_mode(service, data):
+    """#208 review: a non-code input is verified by a request to its API, which work mode refuses.
+
+    A code-run set only stores the values (its probe is the Work's own code run, refused there
+    too), so its page still opens on this Mac.
+    """
+    refused = work_mode.refusal(service.store, 'api_request')
+    if refused and not code_draft(data):
+        raise ValueError(refused)
 
 
 def kept_fields(store, data):
@@ -170,6 +181,7 @@ def reads_update(service, draft):
 def start(service, draft):
     current(service, draft)
     data = json.loads(draft['after'])
+    refuse_probe_in_work_mode(service, data)
     orchestrator = service.settings_orchestrator
     attempts = [row for row in orchestrator._drafts().values() if isinstance(row, dict)
                 and row.get('work_id') == draft['work_id'] and row.get('category') == 'api_connections'
@@ -185,7 +197,7 @@ def start(service, draft):
     with service.lock:
         if service.phone_input_session() is not None:
             raise ValueError(phone_input.BUSY_TEXT)
-        session = phone_input.PhoneInput(phone_input.API_SLOT, data['name'] + ' API 연결', on_end=ended,
+        session = phone_input.PhoneInput(phone_input.API_SLOT, data['name'] + ' API 연결', store=service.store, on_end=ended,
                                         popen=service.phone_input_popen or phone_input.subprocess.Popen)
         session.api_draft = dict(draft)
         session.api_kept = kept_fields(service.store, data)
@@ -193,7 +205,8 @@ def start(service, draft):
         service._phone_input = session
         service._phone_input_started = True
     try:
-        if isinstance(service.store.job(draft['work_id']).get('chat_id'), int):
+        # #208: in work mode the one-time page opens on this Mac only, never through a tunnel or Telegram.
+        if isinstance(service.store.job(draft['work_id']).get('chat_id'), int) and not work_mode.active(service.store):
             cfg = service.store.config('telegram', {})
             job = service.store.job(draft['work_id'])
             if not cfg.get('enabled') or cfg.get('user_id') != job.get('chat_id'):
@@ -275,6 +288,7 @@ def submit(service, session, body):
                 else {'client_id', 'client_secret'} if data.get('oauth') else {'secret'})
     if set(body) != expected:
         raise ValueError('이 링크의 인증 정보 입력을 확인하세요.')
+    refuse_probe_in_work_mode(service, data)
     if not session.submit_lock.acquire(blocking=False):
         raise ValueError('입력을 확인하고 있어요. 잠시 기다려 주세요.')
     orchestrator = service.settings_orchestrator

@@ -435,7 +435,17 @@ class SkillLibrary:
         self.root = Path(store.root) / 'plugins'
         self.content = self.root / 'skills'
         self.bundled_root = Path(bundled_root)
-        self.transport = transport
+        self.transport = self._work_mode_guarded(transport)
+
+    def _work_mode_guarded(self, transport):
+        """#208 review: every GitHub request (ref resolution, tarball) asks work mode first."""
+        def get(url, *args, **kwargs):
+            from . import work_mode
+            refused = work_mode.refusal(self.store, 'skill_acquisition')
+            if refused:
+                raise SkillError(refused, 'work_mode')
+            return transport(url, *args, **kwargs)
+        return get
 
     # The owner's switch.
     def enabled(self):
@@ -561,6 +571,11 @@ class SkillLibrary:
     # Acquisition (an owner-confirmed settings change; never automatic).
     def install(self, value):
         """Fetch, stage, inspect and install one external skill; returns its declaration."""
+        # #208: nothing is fetched from GitHub while work mode is on.
+        from . import work_mode
+        refused = work_mode.refusal(self.store, 'skill_acquisition')
+        if refused:
+            raise SkillError(refused, 'work_mode')
         source = parse_source(value, self.transport)
         name = source['path'].rstrip('/').split('/')[-1]
         # Installs run one at a time (the settings category lock); anything left in

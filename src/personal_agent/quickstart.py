@@ -656,6 +656,8 @@ SETTINGS_WEB_CHANGES={
     # (a key, a folder, a policy), so the notice states the action taken.
     '/api/ai-route':('기본 AI 경로',None),'/api/main-ai/activate':('기본 AI',None),'/api/model':('AI 모델',None),
     '/api/decision-route/activate':('판단 AI',None),'/api/current-context':('현재 맥락',None),
+    # #208: the read model shows on/off; the notice states which.
+    '/api/work-mode':('회사 모드',None),
     '/api/subscription-engines/connect':('구독 AI 연결',None),'/api/connections/google/disconnect':('Google 연결',None),
     '/api/telegram':('Telegram 봇',None),'/api/telegram/disconnect':('Telegram 연결',None),
     '/api/main-ai/key':('기본 AI 키','저장했습니다'),'/api/decision-route/credential':('판단 AI 키','저장했습니다'),
@@ -1386,6 +1388,10 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 if path=='/api/context-inbox/telegram-policy':return self.reply(200,service.set_context_telegram_policy(body))
                 # #626: current-context privacy control (use/timezone/clear only).
                 if path=='/api/current-context':return self.reply(200,service.set_current_context(body))
+                # #208: work mode is switched in Settings on this computer only, never through a tunnel.
+                if path=='/api/work-mode':
+                    if self.tunneled():return self.reply(400,{'error':msg('work_mode.local_only')})
+                    return self.reply(200,service.set_work_mode(body))
                 if path=='/api/owner-model/request':return self.reply(200,service.owner_model_request(body))
                 if path=='/api/documents/approval':return self.reply(200,service.approve_document_sharing_from_settings(body))
                 if path=='/api/public-pages/approval':return self.reply(200,service.set_public_page_approval(body))

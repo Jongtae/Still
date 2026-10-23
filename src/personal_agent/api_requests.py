@@ -672,13 +672,29 @@ def _transient(exc):
         (isinstance(exc, OSError) and not isinstance(exc, FileNotFoundError))
 
 
+def refuse_in_work_mode(store):
+    """#208 review: ``ApiError('work_mode')`` while work mode is on; nothing has been sent."""
+    from . import work_mode
+    refused = work_mode.refusal(store, 'api_request')
+    if refused:
+        raise ApiError(refused, 'work_mode')
+
+
+def _work_mode_guarded(store, transport):
+    """``transport`` that asks work mode first, so every request (OAuth token, probe, call) is refused unsent."""
+    def send(*args, **kwargs):
+        refuse_in_work_mode(store)
+        return transport(*args, **kwargs)
+    return send
+
+
 class ApiRequests:
     """One Work's authenticated API calls.  ``approvals`` has ``consume(binding)``/``request(binding, text)``."""
 
     def __init__(self, store, work_id, *, approvals=None, transport=None, clock=time.time, sleep=time.sleep,
                  connections=None):
         self.store, self.work_id, self.approvals = store, work_id, approvals
-        self.transport = transport or http_request
+        self.transport = _work_mode_guarded(store, transport or http_request)
         self.clock, self.sleep = clock, sleep
         #: CONN-API: ``() -> {name: slot}`` of Still-held connections (``connection_slots.build``).
         self.connections = connections
@@ -793,11 +809,24 @@ class ApiRequests:
                 raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown')
             if method is None:
                 return None
+            # #208 review: asked in the reservation's own transaction, so work mode switched on
+            # before it reserves nothing (the switch's write waits for this transaction).
+            refuse_in_work_mode(self.store)
             detail = {'scope': 'api', 'evidence': {'engine': 'agentos', 'kind': 'api-slot',
                       'identity': slot['name'], 'operation': method, 'effect': effect, 'host': destination,
                       'input_digest': identity, 'revision': slot['revision'], 'work_id': self.work_id}}
             return db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                               (chain[-1]['id'], 'api_dispatch', 'dispatching', json.dumps(detail), time.time())).lastrowid
+
+    def _release_effect(self, claim):
+        """Remove a reservation whose request was never handed to the transport (#208 review).
+
+        Only a row still ``dispatching`` is removed; anything else is left as it is.
+        """
+        if claim is None:
+            return
+        with self.store.db() as db:
+            db.execute("DELETE FROM tool_events WHERE id=? AND tool='api_dispatch' AND status='dispatching'", (claim,))
 
     def _settle_effect(self, claim, status, response_status):
         try:
@@ -936,6 +965,15 @@ class ApiRequests:
             if identity:
                 claim = self._effect_guard(slot, identity, method=method, effect=effect, destination=named)
             attempts += 1
+            # #208 review: work mode switched on during this call (a retry, or after the token
+            # exchange) refuses before anything is handed off; a reservation made for this
+            # attempt is released, since nothing left.
+            try:
+                refuse_in_work_mode(self.store)
+            except ApiError:
+                if identity:
+                    self._release_effect(claim)
+                raise
             from .agent_runtime import handed_off
             handed_off()   # #233: the request leaves Still's own checks here
             try:

@@ -44,7 +44,8 @@ class SessionTest(unittest.TestCase):
     def test_binding_code_and_expiry(self):
         clock = [1000.0]
         tunnel = FakeTunnel()
-        session = phone_input.PhoneInput(phone_input.GOOGLE_CLIENT, '자체 Google client', popen=tunnel, clock=lambda: clock[0])
+        session = phone_input.PhoneInput(phone_input.GOOGLE_CLIENT, '자체 Google client', store=None, popen=tunnel,
+                                         clock=lambda: clock[0])
         link = session.start(8787)
         self.assertTrue(link.startswith('https://abc123.ngrok-free.app/phone-input?code='))
         self.assertTrue(session.code_ok(session.code))

@@ -256,11 +256,13 @@ class TelegramChannel:
 
     The channel holds no credential and no durable state.  It is given two
     zero-argument resolvers so that neither the transport nor the token is
-    captured at construction time.
+    captured at construction time.  ``guard`` (#208) runs before every Bot API
+    and file request and raises when none may leave this Mac (work mode).
     """
 
     def __init__(self, transport_source, token_source, file_transport_source=None, upload_transport_source=None,
-                 language_source=None, sleep=None):
+                 language_source=None, sleep=None, guard=None):
+        self._guard = guard or (lambda: None)
         self._transport_source = transport_source
         self._sleep = sleep or _time.sleep
         self._token_source = token_source
@@ -276,6 +278,7 @@ class TelegramChannel:
 
     def call_with_token(self, token, method, body, timeout=TELEGRAM_TIMEOUT):
         """Call one Bot API method with an explicitly supplied bot token."""
+        self._guard()
         body = _localized(method, body, self._language_source)
         result = self.transport(f'{TELEGRAM_API_ROOT}/bot{token}/{method}', body, {}, timeout=timeout)
         if not result.get('ok'):
@@ -288,6 +291,7 @@ class TelegramChannel:
 
     def upload(self, method, fields, files, timeout=TELEGRAM_TIMEOUT):
         """Call one Bot API method that takes an uploaded file (#1337)."""
+        self._guard()
         result = self._upload_transport_source()(f'{TELEGRAM_API_ROOT}/bot{self._token_source()}/{method}', fields, files,
                                                  timeout=timeout)
         if not result.get('ok'):
@@ -390,6 +394,7 @@ class TelegramChannel:
         pieces = path.split('/')
         if any(piece in ('', '.', '..') for piece in pieces):
             raise ProviderError(msg('conversation_handoff.telegram_photo_path_unknown'))
+        self._guard()
         token = self._token_source()
         url = f'{TELEGRAM_FILE_ROOT}/bot{token}/' + '/'.join(_quote(piece, safe='') for piece in pieces)
         data = self._retried(lambda: self._file_transport_source()(url, timeout=TELEGRAM_TIMEOUT,
@@ -411,10 +416,12 @@ class TelegramChannel:
 
         Only the read-only photo requests use this; every other call stays
         one HTTP request.  A transport failure that outlasts the tries is
-        told plainly; a refusal or limit keeps its own text.
+        told plainly; a refusal or limit keeps its own text.  #208 review: the
+        guard runs before every try, so a retry after the switch is refused.
         """
         for attempt in range(TELEGRAM_DOWNLOAD_ATTEMPTS):
             try:
+                self._guard()
                 return request()
             except ProviderError as exc:
                 if not transient_failure(exc):

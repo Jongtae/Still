@@ -69,7 +69,8 @@ class LazyStdout:
 
 
 def runner(process, **kwargs):
-    store = types.SimpleNamespace(root=tempfile.mkdtemp())
+    # #208: a run asks the owner store whether work mode is on; this fake store has no row (personal mode).
+    store = types.SimpleNamespace(root=tempfile.mkdtemp(), config=lambda key, default=None: default)
     run = CodeRunner(store, 'work-1', popen=lambda *a, **k: process, node='/usr/bin/node',
                      install=lambda store, node: store.root, **kwargs)
     return run

@@ -68,6 +68,16 @@ When your AI comes through your company's cloud rather than a personal plan, ope
 
 Still can also use a direct model connection: Ollama (an already running local model server), OpenAI-compatible Chat Completions endpoints, or OpenAI and Anthropic API keys. Choose a provider, endpoint and model name, test the settings, and apply the successful configuration. API keys stay in a private local file. Results depend heavily on how well the chosen model uses tools, so start with a subscription if you can. A company gateway that speaks OpenAI-compatible Chat Completions (for example LiteLLM in front of Bedrock or Azure) uses the OpenAI-compatible connection; its request shape is covered by a local fixture test (#211), not by an observation of a real gateway.
 
+### Work mode on a company network
+
+On a company network, switch on **회사 모드 (work mode)** in Settings > External connections, on this Mac (#208). It cannot be switched from a conversation or through a phone link, and every change is recorded. While it is on:
+
+- no temporary link into this Mac is opened (phone sign-in, phone input and family setup say to do it at the Mac instead), and a link that is open closes when you switch it on;
+- Telegram is not used: no polling, no replies or notifications (a reply that could not be sent is not sent later), and a bot cannot be connected or paired;
+- the AI's web search, public page reads, weather, browser, API calls, code runs and MCP server lookup are refused before they run, the CLI's own web search is off, signed-in sites are not refreshed, and no skill is fetched from GitHub.
+
+The AI route you set up keeps working. Not controlled by work mode: traffic a CLI makes inside its own turn besides that web search (its model provider, its own telemetry and update checks, and what its sandbox lets a command reach; Codex runs with `--sandbox read-only`), services you connected yourself (Google connections, the AI's claude.ai connectors, your MCP servers) and family assistants on this Mac. Intranet destinations you declare are admitted by #209 when it lands. Evidence so far is unit tests with fake tunnels and transports, not an observation on a company network.
+
 ## Windows (WSL2)
 
 Still does not run natively on Windows yet ([#33](https://github.com/Jongtae/Still/issues/33)). It runs in WSL2, the Linux environment built into Windows 10 and 11:

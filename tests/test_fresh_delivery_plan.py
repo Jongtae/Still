@@ -320,7 +320,7 @@ def test_the_in_context_program_is_closed_out_and_the_owed_reviews_stay_owed():
 
 
 def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_paused():
-    """#206: selected by the owner on 2026-10-23; cloud AI and the surface refactor merged, none in flight."""
+    """#206: selected by the owner on 2026-10-23; cloud AI and the surface refactor merged, work mode in flight."""
     current = plan()
     assert current["next_goal"]["id"] == "WORKPLACE-01"
     assert current["next_goal"]["status"] == "owner-activated-goal-ready"
@@ -329,10 +329,10 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     program = current["programs"]["WORKPLACE-01"]
     assert program["ordered_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01", "WORK-MODE-01", "INTRANET-DEST-01",
                                            "OWNER-MCP-WORK-01", "MATTERMOST-01", "SLACK-01"]
-    # One substep in flight at a time: CLOUD-AI-01 (#230) and SURFACE-SEAM-01 (#229) merged; none is running.
+    # One substep in flight at a time: CLOUD-AI-01 (#230) and SURFACE-SEAM-01 (#229) merged; WORK-MODE-01 runs.
     assert program["completed_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01"]
-    assert program["active_substeps"] == []
-    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "WORKPLACE-01") is None
+    assert program["active_substeps"] == ["WORK-MODE-01"]
+    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "WORKPLACE-01") == "WORK-MODE-01"
     evidence = items_of(current)["WORKPLACE-01"]["completed_substeps"]["CLOUD-AI-01"]
     assert (evidence["issue"], evidence["pull_request"]) == (211, 230)
     assert evidence["merge_commit"].startswith("4c49a2f")
@@ -349,6 +349,11 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     assert amendment["original"] != program["allowed_authority"]
     assert all(name in program["allowed_authority"] for name in amendment["files"])
     assert "cloud_engines.py" not in amendment["original"]
+    # #208: the substep's own PR records the files it needs outside the list, beside its plan record (#264).
+    work = items_of(current)["WORK-MODE-01"]["allowed_authority_amendment"]
+    assert (work["issue"], work["substep"]) == (208, "WORK-MODE-01")
+    assert all(name in program["allowed_authority"] and name not in work["original"] for name in work["files"])
+    assert "test_work_mode.py" in items_of(current)["WORK-MODE-01"]["tests"][0]
     assert "Codex review of the exact final head" in program["escalated_review"]
     items = {item["id"]: item for item in current["iterations"]}
     assert {items[name]["issue"] for name in program["ordered_substeps"]} == {208, 209, 210, 211, 212, 213, 214}

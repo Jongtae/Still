@@ -3232,5 +3232,83 @@
   "en": "{provider} didn't accept the credentials. Check the credentials and permissions your company gave you in Settings > AI. I didn't switch to another AI.",
   "ja": "{provider} が認証情報を受け付けませんでした。設定 > AI で会社から受け取った認証情報と権限を確認してください。別の AI には自動で切り替えていません。",
   "zh": "{provider} 没有接受凭据。请在“设置 > AI”中检查公司提供的凭据和权限。没有自动切换到其他 AI。"
+ },
+ "work_mode.refused.web_search": {
+  "ko": "회사 모드가 켜져 있어 웹 검색을 하지 않았어요. 회사 모드에서는 소유자가 허용하지 않은 곳으로 아무것도 보내지 않아요. 설정 > 외부 연결에서 회사 모드를 끄면 다시 할 수 있어요.",
+  "en": "Work mode is on, so I didn't search the web. In work mode nothing is sent anywhere the owner did not allow. Turn work mode off in Settings > External connections to do it again.",
+  "ja": "会社モードがオンのため、ウェブ検索をしませんでした。会社モードでは、所有者が許可していない宛先には何も送りません。 設定 > 外部接続 で会社モードをオフにすると、再びできます。",
+  "zh": "工作模式已开启，因此没有进行网页搜索。在工作模式下，不会向所有者未允许的地方发送任何内容。 在“设置 > 外部连接”中关闭工作模式后即可再次进行。"
+ },
+ "work_mode.refused.public_read": {
+  "ko": "회사 모드가 켜져 있어 공개 페이지나 날씨를 조회하지 않았어요. 회사 모드에서는 소유자가 허용하지 않은 곳으로 아무것도 보내지 않아요. 설정 > 외부 연결에서 회사 모드를 끄면 다시 할 수 있어요.",
+  "en": "Work mode is on, so I didn't read the public page or look up the weather. In work mode nothing is sent anywhere the owner did not allow. Turn work mode off in Settings > External connections to do it again.",
+  "ja": "会社モードがオンのため、公開ページや天気を参照しませんでした。会社モードでは、所有者が許可していない宛先には何も送りません。 設定 > 外部接続 で会社モードをオフにすると、再びできます。",
+  "zh": "工作模式已开启，因此没有读取公开网页或查询天气。在工作模式下，不会向所有者未允许的地方发送任何内容。 在“设置 > 外部连接”中关闭工作模式后即可再次进行。"
+ },
+ "work_mode.refused.browser": {
+  "ko": "회사 모드가 켜져 있어 브라우저로 사이트를 열거나 조작하지 않았어요. 회사 모드에서는 소유자가 허용하지 않은 곳으로 아무것도 보내지 않아요. 설정 > 외부 연결에서 회사 모드를 끄면 다시 할 수 있어요.",
+  "en": "Work mode is on, so I didn't open or use a site in the browser. In work mode nothing is sent anywhere the owner did not allow. Turn work mode off in Settings > External connections to do it again.",
+  "ja": "会社モードがオンのため、ブラウザでサイトを開いたり操作したりしませんでした。会社モードでは、所有者が許可していない宛先には何も送りません。 設定 > 外部接続 で会社モードをオフにすると、再びできます。",
+  "zh": "工作模式已开启，因此没有在浏览器中打开或操作网站。在工作模式下，不会向所有者未允许的地方发送任何内容。 在“设置 > 外部连接”中关闭工作模式后即可再次进行。"
+ },
+ "work_mode.refused.api_request": {
+  "ko": "회사 모드가 켜져 있어 API를 호출하지 않았어요. 회사 모드에서는 소유자가 허용하지 않은 곳으로 아무것도 보내지 않아요. 설정 > 외부 연결에서 회사 모드를 끄면 다시 할 수 있어요.",
+  "en": "Work mode is on, so I didn't call the API. In work mode nothing is sent anywhere the owner did not allow. Turn work mode off in Settings > External connections to do it again.",
+  "ja": "会社モードがオンのため、API を呼び出しませんでした。会社モードでは、所有者が許可していない宛先には何も送りません。 設定 > 外部接続 で会社モードをオフにすると、再びできます。",
+  "zh": "工作模式已开启，因此没有调用 API。在工作模式下，不会向所有者未允许的地方发送任何内容。 在“设置 > 外部连接”中关闭工作模式后即可再次进行。"
+ },
+ "work_mode.refused.code_run": {
+  "ko": "회사 모드가 켜져 있어 코드를 실행하지 않았어요(실행 환경 설치와 실행 중 접속이 이 Mac 밖으로 나가요). 회사 모드에서는 소유자가 허용하지 않은 곳으로 아무것도 보내지 않아요. 설정 > 외부 연결에서 회사 모드를 끄면 다시 할 수 있어요.",
+  "en": "Work mode is on, so I didn't run the code (installing its runtime and its connections leave this Mac). In work mode nothing is sent anywhere the owner did not allow. Turn work mode off in Settings > External connections to do it again.",
+  "ja": "会社モードがオンのため、コードを実行しませんでした（実行環境のインストールと実行中の接続がこの Mac の外に出るため）。会社モードでは、所有者が許可していない宛先には何も送りません。 設定 > 外部接続 で会社モードをオフにすると、再びできます。",
+  "zh": "工作模式已开启，因此没有运行代码（安装运行环境和运行中的连接会离开这台 Mac）。在工作模式下，不会向所有者未允许的地方发送任何内容。 在“设置 > 外部连接”中关闭工作模式后即可再次进行。"
+ },
+ "work_mode.refused.skill_acquisition": {
+  "ko": "회사 모드가 켜져 있어 GitHub에서 스킬을 받지 않았어요. 회사 모드에서는 소유자가 허용하지 않은 곳으로 아무것도 보내지 않아요. 설정 > 외부 연결에서 회사 모드를 끄면 다시 할 수 있어요.",
+  "en": "Work mode is on, so I didn't fetch the skill from GitHub. In work mode nothing is sent anywhere the owner did not allow. Turn work mode off in Settings > External connections to do it again.",
+  "ja": "会社モードがオンのため、GitHub からスキルを取得しませんでした。会社モードでは、所有者が許可していない宛先には何も送りません。 設定 > 外部接続 で会社モードをオフにすると、再びできます。",
+  "zh": "工作模式已开启，因此没有从 GitHub 获取技能。在工作模式下，不会向所有者未允许的地方发送任何内容。 在“设置 > 外部连接”中关闭工作模式后即可再次进行。"
+ },
+ "work_mode.refused.tunnel": {
+  "ko": "회사 모드가 켜져 있어 외부에서 이 Mac으로 들어오는 임시 링크를 열지 않았어요. 이 Mac 앞에서 직접 해 주세요: 로그인은 이 Mac에 열린 창에서, 입력은 이 Mac의 Still 설정 화면에서 할 수 있어요.",
+  "en": "Work mode is on, so I didn't open a temporary link into this Mac from outside. Please do it at this Mac: sign in in the window open on this Mac, or enter values in Still's Settings on this Mac.",
+  "ja": "会社モードがオンのため、外部からこの Mac に入る一時リンクを開きませんでした。この Mac の前で直接行ってください。ログインはこの Mac に開いたウィンドウで、入力はこの Mac の Still 設定画面でできます。",
+  "zh": "工作模式已开启，因此没有打开从外部进入这台 Mac 的临时链接。请在这台 Mac 前直接操作：在这台 Mac 上打开的窗口中登录，或在这台 Mac 的 Still 设置中输入。"
+ },
+ "work_mode.refused.telegram": {
+  "ko": "회사 모드가 켜져 있어 텔레그램을 쓰지 않아요. 이 Mac의 Still 화면에서 대화해 주세요. 설정 > 외부 연결에서 회사 모드를 끄면 텔레그램이 다시 동작해요.",
+  "en": "Work mode is on, so Telegram isn't used. Please talk to Still on this Mac. Turn work mode off in Settings > External connections and Telegram works again.",
+  "ja": "会社モードがオンのため、Telegram は使いません。この Mac の Still 画面で会話してください。設定 > 外部接続 で会社モードをオフにすると Telegram が再び動作します。",
+  "zh": "工作模式已开启，因此不使用 Telegram。请在这台 Mac 的 Still 界面中对话。在“设置 > 外部连接”中关闭工作模式后，Telegram 会恢复工作。"
+ },
+ "work_mode.invalid_value": {
+  "ko": "회사 모드는 켜기 또는 끄기로만 바꿀 수 있어요.",
+  "en": "Work mode can only be switched on or off.",
+  "ja": "会社モードはオンまたはオフにのみ切り替えられます。",
+  "zh": "工作模式只能开启或关闭。"
+ },
+ "work_mode.local_only": {
+  "ko": "회사 모드는 이 Mac의 설정 화면에서만 켜고 끌 수 있어요.",
+  "en": "Work mode can be switched only in Settings on this Mac.",
+  "ja": "会社モードはこの Mac の設定画面でのみオン・オフできます。",
+  "zh": "工作模式只能在这台 Mac 的设置中开启或关闭。"
+ },
+ "work_mode.label": {
+  "ko": "회사 모드",
+  "en": "Work mode",
+  "ja": "会社モード",
+  "zh": "工作模式"
+ },
+ "work_mode.read_line": {
+  "ko": "회사 모드: {state}. 이 Mac의 설정 화면에서만 켜고 끌 수 있어요.",
+  "en": "Work mode: {state}. It can be switched only in Settings on this Mac.",
+  "ja": "会社モード: {state}。この Mac の設定画面でのみオン・オフできます。",
+  "zh": "工作模式：{state}。只能在这台 Mac 的设置中开启或关闭。"
+ },
+ "work_mode.native_search_stopped": {
+  "ko": "회사 모드가 켜져 이 AI 실행을 멈췄어요. 이 실행은 자체 웹 검색을 쓸 수 있는 상태로 시작했기 때문이에요. 다음 실행은 웹 검색 없이 진행해요.",
+  "en": "Work mode was switched on, so I stopped this AI run: it had started with its own web search available. The next run goes ahead without web search.",
+  "ja": "会社モードがオンになったため、この AI の実行を止めました。この実行は自身のウェブ検索を使える状態で始まっていたためです。次の実行はウェブ検索なしで進めます。",
+  "zh": "工作模式已开启，因此停止了这次 AI 运行：它在开始时可以使用自带的网页搜索。下一次运行将不使用网页搜索。"
  }
 }

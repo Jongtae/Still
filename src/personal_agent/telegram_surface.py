@@ -44,6 +44,7 @@ from .messages import msg
 from . import owner_model as om
 from . import preparations as prep
 from . import remote_login
+from . import work_mode
 from .quickstart_service import (APPROVE_BUTTON, BROWSER_LOGIN_PHONE_ALERT, BROWSER_LOGIN_PHONE_LABEL, BROWSER_LOGIN_REOPENED_TEXT,
                                  BROWSER_LOGIN_REOPENING_TEXT, BROWSER_LOGIN_SKIP_LABEL,
                                  DENY_BUTTON, LOCAL_DOCUMENT_APPROVAL_TEXT, LOCAL_DOCUMENT_RESUMED_TEXT, LOG, MAX_OWNER_MESSAGE_CHARS,
@@ -68,7 +69,11 @@ class TelegramSurface(ConversationSurface):
 
     # -- the ConversationSurface boundary (#212) ------------------------------------
     def pairing(self):
-        """The paired private chat of the current bot generation, or None while unpaired."""
+        """The paired private chat of the current bot generation, or None while unpaired.
+
+        #208: None while work mode is on, so presence (👀, typing, drafts) is not attempted.
+        """
+        if work_mode.active(self.service.store):return None
         cfg=self.service.store.config('telegram',{})
         if not (cfg.get('enabled') and isinstance(cfg.get('user_id'),int)):return None
         return SurfacePairing(f"telegram:{cfg.get('generation')}",cfg['user_id'])
@@ -214,9 +219,14 @@ class TelegramSurface(ConversationSurface):
         notification=service.store.next_notification()
         if not notification:return False
         with service.lock:
+            # #208 review: the row was read before the lock; a switch to work mode may have cancelled
+            # it since (``cancel_pending_deliveries`` holds the same lock), so a cancelled row stays cancelled.
+            with service.store.db() as db:
+                state=db.execute('SELECT state FROM telegram_notifications WHERE id=?',(notification['id'],)).fetchone()
+            if state is None or state['state']=='cancelled':return True
             cfg=service.store.config('telegram',{})
             allowed=(cfg.get('enabled') and notification['generation']==cfg.get('generation')
-                     and notification['chat_id']==cfg.get('user_id'))
+                     and notification['chat_id']==cfg.get('user_id') and not work_mode.active(service.store))
             service.store.update_notification(notification['id'],'sending' if allowed else 'cancelled')
             if not allowed:return True
             reply_markup=None
@@ -376,6 +386,9 @@ class TelegramSurface(ConversationSurface):
                                                           service.scrub_prepared_answer(job) if job else '',service.preparations.clock())
                     except Exception as exc:
                         LOG.warning('watch notification record failed work=%s kind=%s',notification['job_id'],type(exc).__name__)
+            except work_mode.WorkModeRefused:
+                # #208 review: refused before hand-off, so definitely not delivered (never sent later).
+                service.store.update_notification(notification['id'],'cancelled')
             except ProviderError:
                 service.store.update_notification(notification['id'],'unknown')
         return True
@@ -1147,6 +1160,11 @@ class TelegramSurface(ConversationSurface):
         """
         service=self.service
         now=time.monotonic() if now is None else now
+        # #208: an enabled bot stands down while work mode is on: no poll, and Settings says why.
+        if work_mode.active(service.store):
+            paused={'state':'paused','message':msg('work_mode.refused.telegram')}
+            if service.store.config('telegram_status')!=paused:service.store.put('telegram_status',paused)
+            return
         try:
             service.poll_telegram()
             service.mark_telegram_connected()
@@ -1183,6 +1201,9 @@ class TelegramSurface(ConversationSurface):
             return
         updates=service.telegram.get_updates(cfg.get('cursor',0), timeout=1)
         for update in sorted(updates,key=lambda u:u.get('update_id',0)):
+            # #208 review: work mode switched on while this poll was in flight: nothing more is
+            # ingested and the cursor stays, so Telegram keeps these for after work mode.
+            if work_mode.active(service.store):return
             control=None
             if isinstance(update.get('callback_query'),dict):
                 control=lambda:service.ingest_callback(update['callback_query'],cfg['generation'])
@@ -1208,6 +1229,19 @@ class TelegramSurface(ConversationSurface):
         service.retry_family_handovers()
         service.settle_expired_telegram_photo_albums()
 
+    def cancel_pending_deliveries(self):
+        """#208 review: cancel every queued Telegram reply and notification as work mode goes on.
+
+        Done at the switch, not left to the next delivery tick, so turning work
+        mode off again before that tick cannot send them.  Returns the counts.
+        """
+        service=self.service
+        with service.lock,service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            replies=db.execute("UPDATE jobs SET delivery='cancelled' WHERE delivery='pending' AND channel LIKE 'telegram:%'").rowcount
+            notices=db.execute("UPDATE telegram_notifications SET state='cancelled' WHERE state='queued'").rowcount
+        return replies,notices
+
     def settle_expired_telegram_photo_albums(self, now=None):
         """Release persisted album Works after their short update-collection window."""
         service=self.service
@@ -1226,7 +1260,9 @@ class TelegramSurface(ConversationSurface):
                 row=db.execute("SELECT * FROM jobs WHERE delivery='pending' ORDER BY created LIMIT 1").fetchone()
                 if not row:return
                 job=dict(row)
-                allowed=cfg.get('enabled') and job['channel']==f"telegram:{cfg.get('generation')}" and job['chat_id']==cfg.get('user_id')
+                # #208: in work mode a Telegram reply is not sent (cancelled, never sent later); the Work keeps it.
+                allowed=(cfg.get('enabled') and job['channel']==f"telegram:{cfg.get('generation')}" and job['chat_id']==cfg.get('user_id')
+                         and not work_mode.active(service.store))
                 db.execute('UPDATE jobs SET delivery=? WHERE id=?',('sending' if allowed else 'cancelled',job['id']))
             if not allowed:return
             blocked=service.store.blocked_delivery_reply(job['id'])
@@ -1301,6 +1337,9 @@ class TelegramSurface(ConversationSurface):
                 service._unsent_retry_at=time.monotonic()+service._unsent_backoff
                 LOG.warning('telegram delivery waiting work=%s retry_in=%ss',job['id'],service._unsent_backoff)
                 return
+            except work_mode.WorkModeRefused:
+                # #208 review: refused before hand-off, so definitely not delivered (never sent later).
+                status='cancelled'
             except ProviderError as exc:
                 status='unknown'
                 LOG.warning('telegram delivery unknown work=%s kind=%s status=%s',job['id'],type(exc).__name__,exc.status)

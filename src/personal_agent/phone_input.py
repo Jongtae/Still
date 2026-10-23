@@ -31,6 +31,9 @@ from html import escape
 from urllib.parse import quote
 
 from .family_setup import start_tunnel
+from . import work_mode
+from .messages import msg
+from .work_mode import WorkModeRefused
 
 LOG = logging.getLogger('personal_agent.phone_input')
 
@@ -77,9 +80,11 @@ class PhoneInput:
     ``popen`` and ``clock`` are injectable for tests.
     """
 
-    def __init__(self, kind, label, *, on_end=None, popen=subprocess.Popen, clock=time.time, seconds=SESSION_SECONDS):
+    def __init__(self, kind, label, *, store, on_end=None, popen=subprocess.Popen, clock=time.time, seconds=SESSION_SECONDS):
         self.kind, self.label = str(kind), str(label)
         self._on_end, self._popen, self.clock = on_end, popen, clock
+        #: #208: the owner store whose work mode the tunnel start reads.
+        self._store = store
         self.code = secrets.token_urlsafe(32)
         self.created = clock()
         self.expires = self.created + max(1.0, min(float(seconds), SESSION_SECONDS))
@@ -96,13 +101,31 @@ class PhoneInput:
         if not isinstance(port, int) or not 1 <= port <= 65535:
             raise PhoneInputError(NO_PORT_TEXT)
         try:
-            self.process, public = start_tunnel(port, popen=self._popen)
+            self.process, public = start_tunnel(port, popen=self._popen, store=self._store)
+        except WorkModeRefused as exc:
+            # #208: the owner enters it on this Mac instead (``start_local``, Settings).
+            raise PhoneInputError(str(exc)) from None
         except (OSError, RuntimeError) as exc:
             raise PhoneInputError(TUNNEL_FAILED_TEXT + ' ' + str(exc)) from None
+        # #208 review: work mode switched on, or the session ended, while ngrok was starting: the
+        # switch's ``finish`` may already have run and found no process, so this end stops it.
+        if work_mode.active(self._store) or self._ended.is_set():
+            self._stop_unpublished_tunnel()
+            raise PhoneInputError(msg('work_mode.refused.tunnel') if work_mode.active(self._store) else TUNNEL_FAILED_TEXT)
         self.link = f'{public}{PAGE_PATH}?code={quote(self.code)}'
         LOG.info('phone input open kind=%s', self.kind)
         threading.Thread(target=self._watch, name='agentos-phone-input', daemon=True).start()
         return self.link
+
+    def _stop_unpublished_tunnel(self):
+        """Terminate a tunnel whose link was never given out (#208 review)."""
+        with self._lock:
+            process, self.process = self.process, None
+        if process is not None:
+            try:
+                process.terminate()
+            except Exception:
+                pass
 
     def _watch(self):
         while not self._ended.wait(0.5):

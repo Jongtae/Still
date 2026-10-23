@@ -165,7 +165,7 @@ def rehearse_domain(name, service, store, deadline):
     vendor_class, value_of, requests, secrets = DOMAINS[name]
     vendor = vendor_class().start()
     # A public HTTPS address, as a real vendor has: the product needs no rehearsal exception.
-    tunnel, public = start_tunnel(vendor.port)
+    tunnel, public = start_tunnel(vendor.port, store=store)
     try:
         vendor.base, vendor.host = public.rstrip('/'), public.split('://', 1)[1].rstrip('/')
         runs = [run_request(service, store, vendor, text, value_of, deadline) for text, _right in requests]
