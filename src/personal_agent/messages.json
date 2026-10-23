@@ -3304,5 +3304,11 @@
   "en": "Work mode: {state}. It can be switched only in Settings on this Mac.",
   "ja": "会社モード: {state}。この Mac の設定画面でのみオン・オフできます。",
   "zh": "工作模式：{state}。只能在这台 Mac 的设置中开启或关闭。"
+ },
+ "work_mode.native_search_stopped": {
+  "ko": "회사 모드가 켜져 이 AI 실행을 멈췄어요. 이 실행은 자체 웹 검색을 쓸 수 있는 상태로 시작했기 때문이에요. 다음 실행은 웹 검색 없이 진행해요.",
+  "en": "Work mode was switched on, so I stopped this AI run: it had started with its own web search available. The next run goes ahead without web search.",
+  "ja": "会社モードがオンになったため、この AI の実行を止めました。この実行は自身のウェブ検索を使える状態で始まっていたためです。次の実行はウェブ検索なしで進めます。",
+  "zh": "工作模式已开启，因此停止了这次 AI 运行：它在开始时可以使用自带的网页搜索。下一次运行将不使用网页搜索。"
  }
 }

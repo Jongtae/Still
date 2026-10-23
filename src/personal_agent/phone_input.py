@@ -31,6 +31,8 @@ from html import escape
 from urllib.parse import quote
 
 from .family_setup import start_tunnel
+from . import work_mode
+from .messages import msg
 from .work_mode import WorkModeRefused
 
 LOG = logging.getLogger('personal_agent.phone_input')
@@ -105,10 +107,25 @@ class PhoneInput:
             raise PhoneInputError(str(exc)) from None
         except (OSError, RuntimeError) as exc:
             raise PhoneInputError(TUNNEL_FAILED_TEXT + ' ' + str(exc)) from None
+        # #208 review: work mode switched on, or the session ended, while ngrok was starting: the
+        # switch's ``finish`` may already have run and found no process, so this end stops it.
+        if work_mode.active(self._store) or self._ended.is_set():
+            self._stop_unpublished_tunnel()
+            raise PhoneInputError(msg('work_mode.refused.tunnel') if work_mode.active(self._store) else TUNNEL_FAILED_TEXT)
         self.link = f'{public}{PAGE_PATH}?code={quote(self.code)}'
         LOG.info('phone input open kind=%s', self.kind)
         threading.Thread(target=self._watch, name='agentos-phone-input', daemon=True).start()
         return self.link
+
+    def _stop_unpublished_tunnel(self):
+        """Terminate a tunnel whose link was never given out (#208 review)."""
+        with self._lock:
+            process, self.process = self.process, None
+        if process is not None:
+            try:
+                process.terminate()
+            except Exception:
+                pass
 
     def _watch(self):
         while not self._ended.wait(0.5):

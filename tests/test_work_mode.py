@@ -318,6 +318,113 @@ class Tunnels(WorkModeCase):
         self.assertEqual((tunnel.processes, opened), ([], []))
 
 
+class SwitchedOnDuringStart(WorkModeCase):
+    """#208 review: the switch lands while ngrok is still starting; the new tunnel must not stay up."""
+
+    def racing_tunnel(self):
+        tunnel = FakeTunnel()
+
+        def spawn(argv, **kwargs):
+            process = tunnel(argv, **kwargs)
+            self.on()  # the owner switches work mode on mid-spawn, after start_tunnel's own check
+            return process
+        return tunnel, spawn
+
+    def test_a_phone_input_tunnel_started_across_the_switch_is_terminated(self):
+        tunnel, spawn = self.racing_tunnel()
+        session = phone_input.PhoneInput(phone_input.GOOGLE_CLIENT, 'client', store=self.store, popen=spawn)
+        with self.assertRaises(phone_input.PhoneInputError) as caught:
+            session.start(8787)
+        self.assertIn('이 Mac', str(caught.exception))
+        self.assertTrue(tunnel.processes[0][1].terminated)
+        self.assertIsNone(session.process)
+        self.assertIsNone(session.link, 'no link was given out')
+
+    def test_a_remote_login_tunnel_started_across_the_switch_is_terminated(self):
+        tunnel, spawn = self.racing_tunnel()
+        session = remote_login.RemoteLogin(object(), 'w', 'fixture.test', lambda reason: None, store=self.store,
+                                           popen=spawn)
+        with self.assertRaises(remote_login.RemoteLoginError):
+            session.start(8787)
+        self.assertTrue(tunnel.processes[0][1].terminated)
+        self.assertIsNone(session.link)
+
+    def test_a_session_finished_while_starting_does_not_keep_its_tunnel(self):
+        """The switch's ``finish`` ran before the process was attached; the start ends it itself."""
+        tunnel = FakeTunnel()
+        holder = {}
+
+        def spawn(argv, **kwargs):
+            holder['session'].finish('work_mode')
+            return tunnel(argv, **kwargs)
+        session = holder['session'] = phone_input.PhoneInput(phone_input.GOOGLE_CLIENT, 'client', store=self.store,
+                                                             popen=spawn)
+        with self.assertRaises(phone_input.PhoneInputError):
+            session.start(8787)
+        self.assertTrue(tunnel.processes[0][1].terminated)
+
+
+class RunningNativeSearchTurn(WorkModeCase):
+    """#208 review: a CLI turn that started with its own web search is ended when work mode goes on."""
+
+    def test_the_poll_reports_work_mode_before_the_works_own_reasons(self):
+        from personal_agent.bounded_execution import WORK_MODE_INTERRUPT, work_mode_interrupt
+        poll = work_mode_interrupt(self.store, lambda: None)
+        self.assertIsNone(poll())
+        self.assertEqual(work_mode_interrupt(self.store, lambda: 'stopped')(), 'stopped')
+        self.on()
+        self.assertEqual(poll(), WORK_MODE_INTERRUPT)
+        self.assertEqual(work_mode_interrupt(self.store, None)(), WORK_MODE_INTERRUPT)
+
+    def test_a_running_cli_process_is_killed_when_the_switch_goes_on(self):
+        import subprocess
+        import sys
+        import time
+        from personal_agent.bounded_execution import EngineInterrupted, bounded_run, work_mode_interrupt
+        timer = threading.Timer(0.5, self.on)
+        timer.start()
+        self.addCleanup(timer.cancel)
+        started = time.monotonic()
+        with self.assertRaises(EngineInterrupted) as caught:
+            bounded_run(subprocess.run, [sys.executable, '-c', 'import time; time.sleep(30)'], cwd=str(self.root),
+                        env={'PATH': '/usr/bin:/bin'}, timeout=30, interrupted=work_mode_interrupt(self.store, None))
+        self.assertEqual(caught.exception.reason, 'work_mode')
+        self.assertLess(time.monotonic() - started, 10)
+
+    def test_a_native_search_work_turn_is_ended_by_the_switch(self):
+        """The service route: a Codex turn launched with its own web search is killed, typed ``work_mode``."""
+        import time
+        from personal_agent.agent_runtime import WORK_STOP_KEEP, WORK_STOP_KEY
+        from personal_agent.bounded_execution import BoundedExecutionAdapter
+        from personal_agent.subscription_engines import SubscriptionEngines
+        from test_agency_recovery import CliProcessStopTests, _gone
+        script, marker = CliProcessStopTests.fake_cli(self, self.root)
+        (self.root / 'codex-home').mkdir()
+        adapter = BoundedExecutionAdapter(finder=lambda _: str(script), runtime_root=self.root / 'turns',
+                                          codex_home=self.root / 'codex-home')
+        service = AgentService(self.store, subscription_engines=SubscriptionEngines(finder=lambda _: str(script),
+                                                                                    clock=lambda: 1),
+                               execution_adapter=adapter)
+        service.connect_subscription_engine({'engine': 'codex', 'officially_authenticated': True})
+        job = self.store.enqueue('긴 조사 해줘', 'work-mode-native', channel='web')
+
+        def switch():
+            while not marker.exists():
+                time.sleep(0.05)
+            first = int(marker.read_text())
+            self.on()
+            _gone(first)
+            # Whatever the orchestration does next is stopped, so the test never waits on a re-run.
+            self.store.append_config_list(WORK_STOP_KEY, job, WORK_STOP_KEEP)
+        threading.Thread(target=switch, daemon=True).start()
+        started = time.monotonic()
+        service.run_one()
+        self.assertLess(time.monotonic() - started, 30)
+        failures = [event['trace'] for event in self.store.task_events(job)
+                    if event['tool'] == 'subscription_engine' and event['status'] == 'failed']
+        self.assertEqual(failures[0]['failure_class'], 'work_mode')
+
+
 class Telegram(WorkModeCase):
     def setUp(self):
         super().setUp()

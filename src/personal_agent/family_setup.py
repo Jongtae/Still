@@ -703,6 +703,9 @@ def prepare_family_setup(owner_store, name, display_name, *, service_action, env
         handle['process'] = process
         if isinstance(getattr(process, 'pid', None), int):
             record_tunnel(owner_store, name, process.pid)
+        # #208 review: work mode switched on while ngrok was starting; the close below stops it.
+        if work_mode.active(owner_store):
+            raise SetupError(work_mode.refusal(owner_store, 'tunnel'))
         handle['link'] = f"{public}/family-setup?code={quote(record['code'])}"
         return handle
     except BaseException:

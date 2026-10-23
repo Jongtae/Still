@@ -18,6 +18,8 @@ import tempfile
 import time
 
 from . import owner_mcp
+from . import work_mode
+from .messages import msg
 from .manifests import CONTEXT_GATED_ACTIONS, HOST_TOOLS  # noqa: F401 (#627: CONTEXT_GATED_ACTIONS re-exported for route checks)
 
 
@@ -1089,6 +1091,22 @@ def failure_details(engine_id, stdout, stderr, prompt=None):
 
 #: How often a running CLI is checked for the owner's Stop (#607 AX-10).
 STOP_POLL_SECONDS = 0.25
+#: #208 review: the interrupt reason of a native-search turn ended because work mode was switched on.
+WORK_MODE_INTERRUPT = 'work_mode'
+
+
+def work_mode_interrupt(store, interrupted):
+    """``interrupted`` that also ends the turn once work mode is on (#208 review).
+
+    The CLI's own web search is decided once, when its turn starts; a turn
+    started with it on would keep it after the switch.  The same Stop poll
+    (every ``STOP_POLL_SECONDS``) kills that turn's process group instead.
+    """
+    def poll():
+        if work_mode.active(store):
+            return WORK_MODE_INTERRUPT
+        return interrupted() if interrupted else None
+    return poll
 ENGINE_STOPPED = '소유자가 멈춤을 요청해 구독 엔진 실행과 그 하위 프로세스를 종료했습니다.'
 
 
@@ -2198,6 +2216,8 @@ class BoundedExecutionAdapter:
             if budget is not None and hasattr(budget, 'remaining'):
                 timeout = max(1, min(MAX_TIMEOUT_SECONDS, int(budget.remaining())))
             interrupted = getattr(budget, 'interrupted', None)
+            if native_search:
+                interrupted = work_mode_interrupt(getattr(tools.capabilities, 'store', None), interrupted)
             started = time.monotonic()
             LOG.info('engine turn started engine=%s profile=%s', engine_id, profile)
             # #678: the facade says whether this turn may use the CLI's own web search.
@@ -2234,6 +2254,9 @@ class BoundedExecutionAdapter:
                 LOG.warning('engine turn interrupted engine=%s reason=%s', engine_id, exc.reason)
                 if exc.reason == 'stopped':
                     raise ExecutionError(ENGINE_STOPPED, failure_class='stopped',
+                                         meta={**run_meta, 'duration_ms': elapsed_ms}) from None
+                if exc.reason == WORK_MODE_INTERRUPT:
+                    raise ExecutionError(msg('work_mode.native_search_stopped'), failure_class=WORK_MODE_INTERRUPT,
                                          meta={**run_meta, 'duration_ms': elapsed_ms}) from None
                 raise ExecutionError('이 작업의 처리 시간 한도에 도달해 구독 엔진 실행과 그 하위 프로세스를 종료했습니다.',
                                      failure_class='deadline_exceeded', meta={**run_meta, 'duration_ms': elapsed_ms}) from None
@@ -2278,7 +2301,6 @@ class BoundedExecutionAdapter:
                     failure_class, hint = 'usage-limit', usage_limit_hint(engine_id, evidence)
                 if cloud is not None and failure_class == 'auth':
                     # #211: the cloud credentials, not a CLI login, were refused.
-                    from .messages import msg
                     hint = msg('cloud_engines.auth_failed', provider=cloud.definition.name)
                 LOG.warning('engine turn failed engine=%s exit_code=%s class=%s status=%s duration=%.1fs reason=%s',
                             engine_id, completed.returncode, failure_class, status, elapsed, reason or '-')

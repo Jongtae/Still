@@ -38,6 +38,7 @@ from html import escape
 from urllib.parse import quote
 
 from .family_setup import start_tunnel
+from . import work_mode
 from .work_mode import WorkModeRefused
 
 LOG = logging.getLogger('personal_agent.remote_login')
@@ -158,12 +159,27 @@ class RemoteLogin:
             raise RemoteLoginError(str(exc)) from None
         except (OSError, RuntimeError) as exc:
             raise RemoteLoginError(TUNNEL_FAILED_TEXT + ' ' + str(exc)) from None
+        # #208 review: work mode switched on, or the session ended, while ngrok was starting: the
+        # switch's ``finish`` may already have run and found no process, so this end stops it.
+        if work_mode.active(self._store) or self._ended.is_set():
+            self._stop_unpublished_tunnel()
+            raise RemoteLoginError(msg('work_mode.refused.tunnel') if work_mode.active(self._store) else TUNNEL_FAILED_TEXT)
         self.link = f'{public}{PAGE_PATH}?code={quote(self.code)}'
         # Page dialogs (#936) are now held for the phone's answer and shown on the Mac as a sheet.
         self.profile.login_window_remote(self.window, True)
         LOG.info('remote login open site=%s', self.site)
         threading.Thread(target=self._watch, name='agentos-remote-login', daemon=True).start()
         return self.link
+
+    def _stop_unpublished_tunnel(self):
+        """Terminate a tunnel whose link was never given out (#208 review)."""
+        with self._lock:
+            process, self.process = self.process, None
+        if process is not None:
+            try:
+                process.terminate()
+            except Exception:
+                pass
 
     def _watch(self):
         """End the session at its expiry, or as soon as its window closed on its own."""
