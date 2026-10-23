@@ -672,6 +672,27 @@ class Invalidate(Upkeep):
             self.assertLessEqual(len(workplace), 1)
         self.assertEqual(workplace, [c['id']])
 
+    def test_an_older_request_cannot_end_a_fact_a_later_request_saved(self):
+        """Codex review on #226: newest-first upkeep; an older Work must not end a newer fact."""
+        job = self.finished('판교로 출근해')
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET created=created-60 WHERE id=?', (job,))
+        newer = self.saved('profile.place.work', '강남')  # saved by a later request
+        self.answers = [[proposal('profile.place.workplace', '판교', invalidates=[(newer['id'][:8], 'x')])]]
+        self.service.run_owner_model_upkeep()
+        self.assertEqual(self.row(newer['id'])['state'], 'current')
+        [(_status, detail)] = self.evidence(job)
+        self.assertEqual([item['reason'] for item in detail['dropped']], ['invalidates'])
+
+    def test_the_undone_notice_leaves_out_a_fact_whose_last_day_passed(self):
+        old = self.saved('profile.schedule.trip', '제주 여행 중', valid_until='2099-01-02')
+        new = self.saved('profile.place.now', '서울', invalidates=[(old['id'], 'back')])
+        with self.store.db() as db:
+            db.execute("UPDATE memories SET valid_until='2000-01-01' WHERE id=?", (old['id'],))
+        binding = {'items': [self.service.memory_saved_item(new)], 'done': {}, 'restored': {}}
+        self.service.undo_memory_saved('job', binding, [1])
+        self.assertNotIn('다시', self.service.memory_saved_text(binding))
+
     def test_a_settings_edit_keeps_the_last_day(self):
         from personal_agent.memory_service import MemoryService
         self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')

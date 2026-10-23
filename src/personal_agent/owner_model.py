@@ -695,17 +695,25 @@ class Upkeep:
                 "SELECT memory_key,content FROM memory_candidates WHERE state='pending' AND memory_key LIKE 'profile.%'")}
         return known, pending
 
-    def current_rows_by_short_id(self, owner_id, short_ids):
-        """The full ids of the current ``profile.`` rows the short ids name, in order; None if any names none or several (#220)."""
+    def current_rows_by_short_id(self, owner_id, short_ids, job=None):
+        """The full ids of the current ``profile.`` rows the short ids name, in order; None if any names none or several (#220).
+
+        With ``job`` (the reviewed Work), a row saved after that Work arrived - by a later request -
+        is refused unless the Work wrote it itself (Codex review: newest-first upkeep must never
+        let an older request end a newer fact).
+        """
         if not short_ids:
             return []
         owner_key = self.store._memory_binding(owner_id)
+        since = float(job['created']) if job and job.get('created') is not None else None
+        work_key = self.store._work_binding(job['id']) if job else None
         found = []
         with self.store.db() as db:
             for short in short_ids:
                 rows = db.execute("SELECT id FROM memories WHERE owner_key=? AND state='current' AND memory_key LIKE 'profile.%' "
-                                  "AND memory_key NOT LIKE ? AND substr(id,1,?)=?",
-                                  (owner_key, LESSON_PREFIX + '%', len(short), short)).fetchall()
+                                  "AND memory_key NOT LIKE ? AND substr(id,1,?)=? "
+                                  "AND (? IS NULL OR created<=? OR work_key=?)",
+                                  (owner_key, LESSON_PREFIX + '%', len(short), short, since, since, work_key)).fetchall()
                 if len(rows) != 1:
                     return None
                 found.append(rows[0]['id'])
@@ -796,7 +804,7 @@ class Upkeep:
                         or (same.get('valid_until') or '') == item['valid_until']):
                     dropped.append({'key_digest': key_digest(key), 'reason': 'duplicate'})
                     continue
-            ends = self.current_rows_by_short_id(MEMORY_OWNER, [end['id'] for end in item['invalidates']])
+            ends = self.current_rows_by_short_id(MEMORY_OWNER, [end['id'] for end in item['invalidates']], job=job)
             if ends is None:
                 # #220: an id that names no current profile row, or more than one, writes nothing.
                 dropped.append({'key_digest': key_digest(key), 'reason': 'invalidates'})

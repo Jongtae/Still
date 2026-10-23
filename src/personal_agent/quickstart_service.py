@@ -2552,7 +2552,13 @@ class AgentService:
             LOG.info('memory undo refused work=%s kind=%s',job_id,type(exc).__name__)
             return 'outdated',None,[]
         # #220 (Codex review): also the rows under other keys the save had ended and the undo made current again.
-        return 'retracted',(receipt.get('restored') or {}).get('id'),list(receipt.get('restored_ended') or ())
+        # Codex review: a row whose last day passed meanwhile is not "back in use"; the notice leaves it out.
+        holding={row['id'] for row in MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD).holding(
+            [self.store.memory(memory_id,MEMORY_OWNER,current_only=False) or {'id':None}
+             for memory_id in [(receipt.get('restored') or {}).get('id'),*(receipt.get('restored_ended') or ())] if memory_id])}
+        restored=(receipt.get('restored') or {}).get('id')
+        return ('retracted',restored if restored in holding else None,
+                [memory_id for memory_id in receipt.get('restored_ended') or () if memory_id in holding])
 
     def undo_memory_saved(self, job_id, binding, targets):
         """Apply one tap to the open ``targets`` (1-based) of a bound notice; returns the ids it decided (#918)."""
