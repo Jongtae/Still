@@ -103,6 +103,32 @@ def active(store):
     return store is not None and state(store)['enabled']
 
 
+def was_on_since(store, since):
+    """Whether work mode was on at any moment from ``since`` until now (#208 review).
+
+    Read from the switch's audit.  A Telegram reply or notification whose Work
+    was under way while work mode was on is never sent later, even after it is
+    switched off.  When the audit cannot answer (``since`` is older than every
+    kept row, which the bound of ``AUDIT_LIMIT`` rows can cause, or ``since`` is
+    not a time) this answers True: fail closed.
+    """
+    if state(store)['enabled']:
+        return True
+    if not isinstance(since, (int, float)) or isinstance(since, bool):
+        return True
+    audit = store.config(AUDIT_KEY, [])
+    rows = [row for row in audit if isinstance(row, dict) and isinstance(row.get('at'), (int, float))] \
+        if isinstance(audit, list) else []
+    if not rows:
+        return store.config(CONFIG_KEY, None) is not None   # a row with no audit: unknown history
+    if len(audit) >= AUDIT_LIMIT and since < rows[0]['at']:
+        return True
+    earlier = [row for row in rows if row['at'] <= since]
+    if earlier and earlier[-1].get('after') is True:
+        return True
+    return any(row.get('after') is True or row.get('before') is True for row in rows if row['at'] > since)
+
+
 def refusal(store, egress):
     """The owner-facing reason ``egress`` is refused now, or None when it may go out."""
     if egress not in EGRESS_CLASSES:

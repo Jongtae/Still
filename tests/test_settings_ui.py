@@ -636,6 +636,10 @@ vm.createContext(ctx);vm.runInContext(source,ctx);
  assert.equal(toggle.disabled,false);
  assert.equal(toggle.checked,false,'the returned state, not the clicked one, even while focused');
  assert(nodes['work-mode-feedback'].textContent.includes('껐습니다'));
+ // #208 review: a refresh always shows the server's state, focused or not, unless a change is in flight.
+ ctx.document.activeElement=toggle;ctx.renderWorkMode({enabled:true});assert.equal(toggle.checked,true,'another tab switched it on');
+ toggle.disabled=true;ctx.renderWorkMode({enabled:false});assert.equal(toggle.checked,true,'not while this page changes it');
+ toggle.disabled=false;
  console.log('work mode switch checks passed');
 })().catch(error=>{console.error(error);process.exit(1);});
 """

@@ -1243,7 +1243,8 @@ async function saveCurrentContext(body,message){try{await api('/api/current-cont
 $('current-context-enabled').onchange=event=>{const on=event.currentTarget.checked;void saveCurrentContext({enabled:on},on?'현재 맥락을 켰습니다.':'현재 맥락을 껐습니다.');};
 $('current-context-timezone').oninput=()=>{currentContextTimezoneDirty=true;};
 // #208: work mode is switched here on this Mac only (the server refuses it through a tunnel); the page shows on or off.
-function renderWorkMode(status){if(!status)return;const toggle=$('work-mode-enabled');if(document.activeElement!==toggle)toggle.checked=!!status.enabled;}
+// #208 review: always the server's state (another tab, a lost answer), except while this page's own change is in flight.
+function renderWorkMode(status){if(!status)return;const toggle=$('work-mode-enabled');if(!toggle.disabled)toggle.checked=!!status.enabled;}
 // #208 review: the switch is disabled while its request runs, and then shows the state the server returned.
 $('work-mode-enabled').onchange=event=>{const toggle=event.currentTarget,on=toggle.checked;toggle.disabled=true;void (async()=>{try{const status=await api('/api/work-mode',{enabled:on});toggle.checked=!!status?.enabled;setFeedback('work-mode-feedback',toggle.checked?t('회사 모드를 켰습니다. Telegram과 바깥으로 나가는 조회를 멈췄습니다.'):t('회사 모드를 껐습니다. 개인 모드로 돌아갑니다.'));}catch(error){toggle.checked=!on;setError('work-mode-feedback',error);}finally{toggle.disabled=false;}await refresh();})();};
 $('current-context-timezone-form').onsubmit=event=>{event.preventDefault();busy(event.submitter,async()=>{await saveCurrentContext({timezone:$('current-context-timezone').value.trim()},'시간대를 저장했습니다.');currentContextTimezoneDirty=false;});};

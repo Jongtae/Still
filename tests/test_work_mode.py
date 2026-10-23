@@ -10,6 +10,7 @@ import pathlib
 import socket
 import tempfile
 import threading
+import time
 import unittest
 from http.server import ThreadingHTTPServer
 from unittest import mock
@@ -95,6 +96,19 @@ class Switch(WorkModeCase):
         self.assertEqual([(row['before'], row['after'], row['surface']) for row in audit],
                          [(None, True, 'settings'), (True, False, 'settings')])
         self.assertEqual(work_mode.status(self.store)['last_change']['after'], False)
+
+    def test_was_on_since_reads_the_switch_history_and_fails_closed(self):
+        clock = iter([100.0, 200.0, 300.0])
+        self.assertFalse(work_mode.was_on_since(self.store, 50.0), 'never switched: personal mode')
+        work_mode.set_enabled(self.store, True, surface='settings', clock=lambda: next(clock))   # on at 100
+        work_mode.set_enabled(self.store, False, surface='settings', clock=lambda: next(clock))  # off at 200
+        self.assertTrue(work_mode.was_on_since(self.store, 50.0), 'on at 100, inside the window')
+        self.assertTrue(work_mode.was_on_since(self.store, 150.0), 'still on at 150')
+        self.assertFalse(work_mode.was_on_since(self.store, 250.0), 'off since 200')
+        self.assertTrue(work_mode.was_on_since(self.store, None), 'no start time: fail closed')
+        self.store.put(work_mode.AUDIT_KEY, [{'at': 1000.0 + i, 'before': False, 'after': False}
+                                             for i in range(work_mode.AUDIT_LIMIT)])
+        self.assertTrue(work_mode.was_on_since(self.store, 500.0), 'older than the kept history: fail closed')
 
     def test_unknown_egress_class_is_a_programming_error(self):
         with self.assertRaises(ValueError):
@@ -586,6 +600,26 @@ class Telegram(WorkModeCase):
         with self.store.db() as db:
             state = db.execute('SELECT state FROM telegram_notifications WHERE id=?', (stale['id'],)).fetchone()
         self.assertEqual(state['state'], 'cancelled')
+
+    def test_items_produced_while_on_are_not_sent_after_it_is_switched_off(self):
+        """A Telegram Work running across the switch finishes and queues after the one-time cancel."""
+        job_id = self.store.enqueue('질문', 'work-mode-across', f'telegram:{GENERATION}', CHAT)
+        self.service.set_work_mode({'enabled': True})
+        with self.store.db() as db:   # the Work finishes while work mode is on
+            db.execute("UPDATE jobs SET status='succeeded',response='company answer',delivery='pending' WHERE id=?",
+                       (job_id,))
+        self.store.queue_notification(job_id, CHAT, GENERATION, 'context_approval_needed')
+        self.service.set_work_mode({'enabled': False})
+        self.service.deliver_one()
+        self.service.deliver_notification()
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.store.job(job_id)['delivery'], 'cancelled')
+        later = self.store.enqueue('새 질문', 'work-mode-later', f'telegram:{GENERATION}', CHAT)
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded',response='answer',delivery='pending',created=? WHERE id=?",
+                       (time.time() + 5, later))
+        self.service.deliver_one()
+        self.assertIn('sendMessage', self.calls, 'a Work begun after it was switched off is delivered')
 
     def test_updates_from_a_poll_in_flight_at_the_switch_are_not_ingested(self):
         def transport(url, body, headers=None, timeout=None):
