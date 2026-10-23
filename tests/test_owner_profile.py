@@ -245,7 +245,8 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         # (Korean, 3 bytes a character) still leaves the conversation budget room.
         notes = '가' * om.NOTES_CHARS + 'x' * 600
         instructions = CORE_INSTRUCTIONS + CLI_TOOL_GUIDANCE + CLI_NATIVE_SEARCH_GUIDANCE
-        fixed = len(instructions.encode()) + PROFILE_SNAPSHOT_BYTES + len(notes.encode())
+        from personal_agent.memory_service import OWNER_WORDS_BYTES
+        fixed = len(instructions.encode()) + PROFILE_SNAPSHOT_BYTES + len(notes.encode()) + OWNER_WORDS_BYTES
         self.assertLess(fixed, CONTEXT_BUDGET_BYTES - 4000)
 
     def test_cut_to_fit_cuts_whole_lines_in_order_and_marks_each_cut(self):
@@ -262,6 +263,95 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.assertTrue(out['profile'].startswith('p0\np1\n') and out['profile'].endswith(CUT_TO_FIT_MARKER))
         freed = sum(len(str(sections[name] or '').encode()) - len(str(out[name] or '').encode()) for name in sections)
         self.assertGreaterEqual(freed, 200)
+
+    def said(self, *messages, role='user', days_ago=10, owner_typed=True):
+        """Transcript rows of their own Works, as the shipped paths leave them (#814 ``owner_typed``)."""
+        import time as clock
+        import uuid
+        for text in messages:
+            job = self.store.enqueue(text, f'said-{uuid.uuid4()}', owner_typed=owner_typed)
+            with self.store.db() as db:
+                db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                           (role, text, 'web', clock.time() - days_ago * 86400, job))
+
+    def test_the_owners_earlier_words_join_the_section_dated_and_outside_the_recent_window(self):
+        """#221: the owner's own earlier words that share words with the request, for every reader."""
+        from personal_agent.memory_service import OWNER_WORDS_HEADING
+        secret = 'sk-fixture-provider-key-0123456789'
+        self.store.secret('api_key:openai', secret)
+        self.said('건전지는 늘 동네 마트 앱 장바구니에 담아줘', f'마트 앱 키는 {secret}')
+        self.said('마트 앱 장바구니 확인했어요', role='assistant')
+        self.said(*[f'오늘 할 일 {index}' for index in range(15)], days_ago=0)
+        self.said('마트 앱 장바구니 다시 담아줘', days_ago=0)  # the current request, newest
+        section = self.service.owner_profile_snapshot('마트 앱 장바구니 다시 담아줘')
+        block = section[section.index(OWNER_WORDS_HEADING):]
+        self.assertRegex(block, r'\[said \d{4}-\d{2}-\d{2}\] 건전지는 늘 동네 마트 앱 장바구니에 담아줘')
+        self.assertNotIn(secret, section)
+        self.assertNotIn('확인했어요', block, 'the assistant\'s words are not the owner\'s')
+        self.assertNotIn('다시 담아줘', block, 'the request and the recent window are left out')
+        for name, text in self.readers(section).items():
+            self.assertEqual(text, section, name)
+        self.assertNotIn(OWNER_WORDS_HEADING, self.service.owner_profile_snapshot('마트 앱', notes=False),
+                         'the upkeep reads the profile without it')
+        self.assertNotIn(OWNER_WORDS_HEADING, self.service.owner_profile_snapshot('전혀 다른 질문'))
+
+    def test_only_owner_typed_words_are_recalled_and_never_into_a_preparation(self):
+        """Codex review on #227: Still-enqueued goals are not the owner's words; a preparation sees only its origin."""
+        from personal_agent.memory_service import OWNER_WORDS_HEADING
+        self.said('매주 마트 장바구니 가격을 확인해 둔다', owner_typed=False)  # a preparation's generated goal
+        self.said('마트 장바구니는 동네 마트 앱으로')
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        section = self.service.owner_profile_snapshot('마트 장바구니')
+        self.assertIn('동네 마트 앱으로', section)
+        self.assertNotIn('가격을 확인해 둔다', section)
+        self.assertNotIn(OWNER_WORDS_HEADING, self.service.owner_profile_snapshot('마트 장바구니', recall=False))
+
+    def test_recalled_words_are_audited_and_dated_in_the_owner_zone(self):
+        from datetime import datetime, timezone
+        from personal_agent import information_use
+        self.store.put('calendar_timezone', 'Asia/Seoul')
+        self.said('마트 장바구니는 동네 마트 앱으로', '마트 앱 쿠폰도 챙겨')
+        sent = datetime(2026, 10, 1, 16, 30, tzinfo=timezone.utc).timestamp()  # 2026-10-02 01:30 in Seoul
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET source_at=? WHERE message='마트 장바구니는 동네 마트 앱으로'", (sent,))
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        section = self.service.owner_profile_snapshot('마트 장바구니 쿠폰')
+        self.assertIn('[said 2026-10-02] 마트 장바구니는 동네 마트 앱으로', section)
+        self.assertEqual(information_use.profile_keys(section)[0], 'owner_said (2 earlier owner messages)')
+        crowded = '\n'.join(f'profile.k{index}: v (saved 2026-10-01)' for index in range(60)) + '\n' + section
+        self.assertEqual(information_use.profile_keys(crowded)[0], 'owner_said (2 earlier owner messages)',
+                         'kept ahead of the caps')
+
+    def test_a_secret_straddling_the_clip_is_redacted_before_it(self):
+        """Codex review on #227: clipping first would keep a prefix the stored-value redaction no longer matches."""
+        password = 'quietharbor-river-tulip'
+        self.store.secret('api_key:openai', password)
+        self.said('마트 장바구니 ' + '가' * 285 + ' ' + password)
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        section = self.service.owner_profile_snapshot('마트 장바구니')
+        self.assertIn('마트 장바구니 ' + '가' * 10, section)
+        self.assertNotIn('quieth', section)
+
+    def test_a_queued_web_message_is_dated_by_its_receipt(self):
+        """Codex review on #227: without ``source_at``, the Work's receipt, not when the transcript row was written."""
+        from datetime import datetime, timezone
+        self.store.put('calendar_timezone', 'Asia/Seoul')
+        self.said('마트 장바구니는 동네 마트 앱으로')
+        received = datetime(2026, 10, 1, 14, 50, tzinfo=timezone.utc).timestamp()  # 23:50 in Seoul
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET created=?, source_at=NULL WHERE message='마트 장바구니는 동네 마트 앱으로'", (received,))
+            db.execute("UPDATE messages SET created=? WHERE content='마트 장바구니는 동네 마트 앱으로'", (received + 1800,))
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        self.assertIn('[said 2026-10-01] 마트 장바구니는', self.service.owner_profile_snapshot('마트 장바구니'))
+
+    def test_the_owners_earlier_words_are_bounded_in_bytes(self):
+        from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
+        self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        section = self.service.owner_profile_snapshot('마트 장바구니')
+        block = section[section.index(OWNER_WORDS_HEADING):]
+        self.assertLessEqual(len(block.encode()), OWNER_WORDS_BYTES)
+        self.assertTrue(all(len(line) <= 320 for line in block.splitlines()[1:]))
 
     def test_the_worker_gets_the_profile_without_a_plan_call(self):
         """Memory supply is common start context: no decision engine, no plan, still the whole profile."""
