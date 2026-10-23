@@ -1244,7 +1244,8 @@ $('current-context-enabled').onchange=event=>{const on=event.currentTarget.check
 $('current-context-timezone').oninput=()=>{currentContextTimezoneDirty=true;};
 // #208: work mode is switched here on this Mac only (the server refuses it through a tunnel); the page shows on or off.
 function renderWorkMode(status){if(!status)return;const toggle=$('work-mode-enabled');if(document.activeElement!==toggle)toggle.checked=!!status.enabled;}
-$('work-mode-enabled').onchange=event=>{const toggle=event.currentTarget,on=toggle.checked;void (async()=>{try{await api('/api/work-mode',{enabled:on});setFeedback('work-mode-feedback',on?t('회사 모드를 켰습니다. Telegram과 바깥으로 나가는 조회를 멈췄습니다.'):t('회사 모드를 껐습니다. 개인 모드로 돌아갑니다.'));await refresh();}catch(error){toggle.checked=!on;setError('work-mode-feedback',error);}})();};
+// #208 review: the switch is disabled while its request runs, and then shows the state the server returned.
+$('work-mode-enabled').onchange=event=>{const toggle=event.currentTarget,on=toggle.checked;toggle.disabled=true;void (async()=>{try{const status=await api('/api/work-mode',{enabled:on});toggle.checked=!!status?.enabled;setFeedback('work-mode-feedback',toggle.checked?t('회사 모드를 켰습니다. Telegram과 바깥으로 나가는 조회를 멈췄습니다.'):t('회사 모드를 껐습니다. 개인 모드로 돌아갑니다.'));}catch(error){toggle.checked=!on;setError('work-mode-feedback',error);}finally{toggle.disabled=false;}await refresh();})();};
 $('current-context-timezone-form').onsubmit=event=>{event.preventDefault();busy(event.submitter,async()=>{await saveCurrentContext({timezone:$('current-context-timezone').value.trim()},'시간대를 저장했습니다.');currentContextTimezoneDirty=false;});};
 $('current-context-clear').onclick=event=>{const button=event.currentTarget;if(!currentContextClearArmed){currentContextClearArmed=true;button.textContent=t('지우기 확인');return;}currentContextClearArmed=false;button.textContent=t('현재 맥락 지우기');busy(button,()=>saveCurrentContext({clear:true},'현재 맥락을 지웠습니다. 지운 위치는 늦게 도착해도 되살아나지 않습니다.'));};
 

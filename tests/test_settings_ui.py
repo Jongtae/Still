@@ -614,3 +614,37 @@ def test_folder_settings_render_rows_and_preserve_drafts():
         text=True,
         timeout=20,
     )
+
+
+WORK_MODE_CHECKS = r"""
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const app=fs.readFileSync(process.argv[1],'utf8');
+const source=app.slice(app.indexOf('function renderWorkMode('),app.indexOf("$('current-context-timezone-form').onsubmit"));
+const nodes={'work-mode-enabled':{checked:false,disabled:false},'work-mode-feedback':{textContent:''}};
+let release,served=null;const calls=[];
+const ctx={$:id=>nodes[id],document:{activeElement:null},t:text=>text,refresh:async()=>{},
+ api:async(path,body)=>{calls.push(body);await new Promise(resolve=>{release=resolve;});return served;},
+ setFeedback:(id,text)=>{nodes[id].textContent=text;},setError:(id,error)=>{nodes[id].textContent=String(error);}};
+vm.createContext(ctx);vm.runInContext(source,ctx);
+(async()=>{
+ const toggle=nodes['work-mode-enabled'];
+ toggle.checked=true;ctx.document.activeElement=toggle;toggle.onchange({currentTarget:toggle});
+ assert.equal(toggle.disabled,true,'no second change while the first request runs');
+ assert.equal(calls.length,1);assert.equal(calls[0].enabled,true);
+ // Another request (another tab) turned it off meanwhile: the page shows what the server holds.
+ served={enabled:false};release();await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(toggle.disabled,false);
+ assert.equal(toggle.checked,false,'the returned state, not the clicked one, even while focused');
+ assert(nodes['work-mode-feedback'].textContent.includes('껐습니다'));
+ console.log('work mode switch checks passed');
+})().catch(error=>{console.error(error);process.exit(1);});
+"""
+
+
+def test_the_work_mode_switch_is_serialized_and_shows_the_returned_state():
+    """#208 review: one request at a time from the page, reconciled with the state the server returned."""
+    node = shutil.which("node")
+    if node is None:
+        return
+    subprocess.run([node, "-e", WORK_MODE_CHECKS, str(ROOT / "app.js")], check=True, capture_output=True, text=True,
+                   timeout=20)

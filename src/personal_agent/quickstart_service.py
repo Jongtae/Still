@@ -572,6 +572,8 @@ class AgentService:
         self.telegram_transport=telegram_transport or telegram_request_json
         self.telegram_file_transport=telegram_file_transport or telegram_request_file
         self.telegram_upload_transport=telegram_request_multipart
+        #: #208 review: serializes the Settings work-mode switch (``set_work_mode``).
+        self._work_mode_switch=threading.Lock()
         # Transport seam.  Both resolvers are late bound: `telegram_transport`
         # stays a live reassignable attribute and the bot token is read from
         # the secret store per call, never captured here.
@@ -9830,6 +9832,12 @@ class AgentService:
         again, and the Telegram status it paused is cleared for the next poll to set.
         """
         body=body if isinstance(body,dict) else {}
+        # #208 review: one switch at a time, so an older request cannot land between a newer one's
+        # state write and its clean-up; the answer is the state after this call.
+        with self._work_mode_switch:
+            return self._set_work_mode(body)
+
+    def _set_work_mode(self, body):
         current=work_mode.set_enabled(self.store,body.get('enabled'),surface='settings')
         if current['enabled']:
             self.telegram_surface.cancel_pending_deliveries()

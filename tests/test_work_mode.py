@@ -152,6 +152,26 @@ class SettingsOnly(WorkModeCase):
         self.assertTrue(work_mode.active(self.store))
         self.assertEqual(len(self.store.config(work_mode.AUDIT_KEY)), 1, 'only the Settings switch was recorded')
 
+    def test_one_switch_at_a_time(self):
+        held = []
+        original = work_mode.set_enabled
+
+        def recording(*args, **kwargs):
+            held.append(self.service._work_mode_switch.locked())
+            return original(*args, **kwargs)
+        with mock.patch.object(work_mode, 'set_enabled', recording):
+            self.service.set_work_mode({'enabled': True})
+        self.assertEqual(held, [True], 'the state write and its clean-up run under one lock')
+
+    def test_every_tunnel_caller_names_the_owner_store(self):
+        """#208 review: ``store`` is required; a caller left without it would fail at run time."""
+        import re
+        root = pathlib.Path(__file__).resolve().parents[1]
+        for path in [*root.joinpath('src').rglob('*.py'), *root.joinpath('scripts').rglob('*.py')]:
+            for call in re.findall(r'(?<!def )start_tunnel\(([^)]*)\)', path.read_text(encoding='utf-8')):
+                with self.subTest(path=str(path.relative_to(root)), call=call):
+                    self.assertIn('store=', call)
+
     def test_turning_it_on_ends_a_live_tunnel(self):
         tunnel = FakeTunnel()
         self.service.phone_input_popen = tunnel

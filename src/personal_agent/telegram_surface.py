@@ -220,10 +220,10 @@ class TelegramSurface(ConversationSurface):
         if not notification:return False
         with service.lock:
             # #208 review: the row was read before the lock; a switch to work mode may have cancelled
-            # it since (``cancel_pending_deliveries`` holds the same lock), so only a still-queued row is claimed.
+            # it since (``cancel_pending_deliveries`` holds the same lock), so a cancelled row stays cancelled.
             with service.store.db() as db:
                 state=db.execute('SELECT state FROM telegram_notifications WHERE id=?',(notification['id'],)).fetchone()
-            if state is None or state['state']!='queued':return True
+            if state is None or state['state']=='cancelled':return True
             cfg=service.store.config('telegram',{})
             allowed=(cfg.get('enabled') and notification['generation']==cfg.get('generation')
                      and notification['chat_id']==cfg.get('user_id') and not work_mode.active(service.store))
