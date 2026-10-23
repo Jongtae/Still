@@ -106,7 +106,10 @@ def _shown_time(moment, zone):
     ``15:00:59`` to ``15:00`` or drop a ``Z`` / ``+00:00`` offset that places
     the event at another instant than the zone shown beside it.  An offset is
     left out only when the value carries none (Google reads it in the zone) or
-    when it is the zone's own offset at that instant.
+    when it is the zone's one and only offset for that wall time.  A wall time
+    the zone repeats (a fall-back hour) or skips (a spring-forward gap) has no
+    single offset, so its offset is always shown.  The offsets are compared
+    without shifting the time, so no valid value fails to render.
     """
     text = f"{moment:%H:%M}"
     if moment.second or moment.microsecond:
@@ -116,8 +119,10 @@ def _shown_time(moment, zone):
     offset = moment.utcoffset()
     if offset is None:
         return text
-    if zone is not None and moment.astimezone(zone).replace(tzinfo=None) == moment.replace(tzinfo=None):
-        return text
+    if zone is not None:
+        wall = moment.replace(tzinfo=zone)
+        if wall.replace(fold=0).utcoffset() == wall.replace(fold=1).utcoffset() == offset:
+            return text
     sign = '-' if offset.days < 0 else '+'
     minutes = abs(int(offset.total_seconds())) // 60
     return f"{text} UTC{sign}{minutes // 60:02d}:{minutes % 60:02d}"

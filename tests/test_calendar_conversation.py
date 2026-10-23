@@ -218,6 +218,25 @@ class ExactTimePreviewTests(CalendarDraftApprovalCase):
         self.assertEqual(line, '일시: 2026-10-15 (목) 06:00 UTC+00:00 – 07:00:00.25 UTC+00:00 (Asia/Seoul)')
         self.assertNotIn('06:00 – ', line, 'a bare wall clock would read as Seoul time')
 
+    def test_a_repeated_fall_back_wall_time_keeps_both_offsets(self):
+        # 01:30 happens twice in New York on 2026-11-01; only the offset says which one is sent.
+        line = self.approved_span({**DENTIST, 'start': '2026-11-01T01:30:00-04:00', 'end': '2026-11-01T01:30:00-05:00',
+                                   'timezone': 'America/New_York'})
+        self.assertEqual(line, '일시: 2026-11-01 (일) 01:30 UTC-04:00 – 01:30 UTC-05:00 (America/New_York)')
+
+    def test_a_skipped_spring_forward_wall_time_keeps_its_offset(self):
+        line = self.approved_span({**DENTIST, 'start': '2026-03-08T02:30:00-05:00', 'end': '2026-03-08T04:00:00-04:00',
+                                   'timezone': 'America/New_York'})
+        self.assertEqual(line, '일시: 2026-03-08 (일) 02:30 UTC-05:00 – 04:00 (America/New_York)')
+
+    def test_a_boundary_year_value_still_renders_with_its_offset(self):
+        line = self.approved_span({**DENTIST, 'start': '0001-01-01T00:00:00+14:00', 'end': '0001-01-01T01:00:00+14:00',
+                                   'timezone': 'UTC'})
+        self.assertEqual(line, '일시: 0001-01-01 (월) 00:00 UTC+14:00 – 01:00 UTC+14:00 (UTC)')
+        lines = preview_lines({'action': 'create', 'payload': {**DENTIST, 'start': '9999-12-31T22:00:00-14:00',
+                                                                'end': '9999-12-31T23:00:00-14:00', 'timezone': 'UTC'}})
+        self.assertIn('일시: 9999-12-31 (금) 22:00 UTC-14:00 – 23:00 UTC-14:00 (UTC)', lines)
+
     def test_a_value_without_an_offset_is_read_in_its_zone(self):
         line = self.approved_span({**DENTIST, 'start': '2026-10-15T15:00', 'end': '2026-10-15T16:00:30'})
         self.assertEqual(line, '일시: 2026-10-15 (목) 15:00 – 16:00:30 (Asia/Seoul)')
