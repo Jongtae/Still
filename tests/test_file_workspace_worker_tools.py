@@ -579,6 +579,50 @@ class WorkerFileWorkspaceTests(unittest.TestCase):
         found = self.caps('job-later').execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})
         self.assertEqual([item['path'] for item in found['files']], ['Notes.md'])
 
+    def test_a_source_read_error_leaves_the_result_current(self):
+        # #203: a permission or I/O error reading a cited source observed no change; only a missing source is one.
+        from unittest.mock import patch
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'Notes', 'content': 'summary'})
+        workspace = FileWorkspace(self.store)
+        record = workspace.result_for('job-1')
+        def denied(self, reference_id, path): raise PermissionError('denied')
+        with patch.object(FileWorkspace, 'read', denied):
+            found = self.caps('job-later').execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})
+            self.assertEqual((found['files'], found['truncated']), ([], True))
+            self.assertIs(workspace.intact(record), FileWorkspace.UNKNOWN)
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'current')
+        found = self.caps('job-later').execute('find_files', {'query': 'Notes', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertEqual([item['path'] for item in found['files']], ['Notes.md'])
+        self.trip.unlink()
+        self.assertIs(workspace.intact(record), False)
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT state FROM file_workspace_results').fetchone()[0], 'stale')
+
+    def test_saved_result_searches_fold_non_ascii_case(self):
+        # #203: SQLite's lower() folds ASCII only; a lowercase query still finds uppercase non-ASCII text.
+        workspace_id = self.store.create_workspace('출장')['id']
+        with self.store.db() as db:
+            db.execute('INSERT INTO workspace_results VALUES (?,?,?,?,?,?)', ('old', workspace_id, 'job-old', 'PLAN D\'ÉTÉ', '', 1.0))
+            for index in range(120):
+                db.execute('INSERT INTO workspace_results VALUES (?,?,?,?,?,?)',
+                           (f'p{index}', workspace_id, f'job-{index}', f'answer {index}', '', 1000.0 + index))
+        found = self.caps().execute('find_files', {'query': 'été', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertEqual([item['path'] for item in found['files']], ['project/old'])
+        caps = self.caps()
+        caps.execute('read_file', {'root_id': self.root, 'path': 'trip.md'})
+        caps.execute('save_result', {'title': 'ÄRENDE notes', 'content': 'summary'})
+        with self.store.db() as db:
+            [record] = [dict(row) for row in db.execute('SELECT * FROM file_workspace_results')]
+            for index in range(110):
+                db.execute('INSERT INTO file_workspace_results(id,request_id,path,content_hash,sources,created,workspace_id,state) '
+                           'VALUES (?,?,?,?,?,?,?,?)', (f'r{index}', f'q{index}', f'other-{index}.md', 'x', record['sources'],
+                                                       record['created'] + 1 + index, record['workspace_id'], 'current'))
+        found = self.caps('job-later').execute('find_files', {'query': 'ärende', 'root_id': SAVED_RESULTS_ROOT})
+        self.assertEqual([item['path'] for item in found['files']], ['ÄRENDE notes.md'])
+
     def test_the_newest_document_work_survives_pruning(self):
         service = AgentService(self.store)
         self.store.put('file_workspace_document_jobs', [f'old-{index}' for index in range(100)])

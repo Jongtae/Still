@@ -1,8 +1,13 @@
 """Scoped local file workspace: references stay read-only; results are new files."""
 from pathlib import Path
-import hashlib, json, os, re, sqlite3, time, uuid
+import hashlib, json, os, re, sqlite3, time, unicodedata, uuid
 from .document_reader import MAX_FILE_BYTES, read as read_document, supported as supported_document
 from . import folder_grants
+
+
+def _search_key(text):
+    """The Python side of the store's ``unicode_search_key`` SQL function: NFKC, then casefold."""
+    return unicodedata.normalize('NFKC',text).casefold()
 
 
 class FileWorkspace:
@@ -269,7 +274,10 @@ class FileWorkspace:
                 current=self.read(source['reference_id'],source['path'])
                 if current['version']!=source['version'] or current['source_id']!=source['source_id']: return False
             return True
-        except (KeyError,ValueError,OSError,UnicodeError): return False
+        # A source gone, outside the folder now, or no longer text: it differs (#203).
+        except (KeyError,ValueError,FileNotFoundError,UnicodeError): return False
+        # Any other read error (permission, I/O) observed no difference: the record keeps its state (#203).
+        except OSError: return self.UNAVAILABLE
 
     def current_results(self, needle=None, latest=False, path=None, deadline=None, terms=None):
         """Fresh saved results, newest first: each one's sources still match the originals.
@@ -289,9 +297,9 @@ class FileWorkspace:
             self._ensure_results_table(db)
             records=[dict(row) for row in (db.execute('SELECT * FROM file_workspace_results WHERE path=?',(path,)) if path is not None
                                            else db.execute("SELECT * FROM file_workspace_results WHERE state IN ('current','stale') ORDER BY created DESC LIMIT 101"))]
-            terms=[term.lower() for term in (terms or ()) if isinstance(term,str) and term] if path is None else []
+            terms=[_search_key(term) for term in (terms or ()) if isinstance(term,str) and term] if path is None else []
             named=[dict(row) for row in db.execute(
-                "SELECT * FROM file_workspace_results WHERE state IN ('current','stale') AND ("+' OR '.join(['instr(lower(path),?)>0']*len(terms))+')'
+                "SELECT * FROM file_workspace_results WHERE state IN ('current','stale') AND ("+' OR '.join(['instr(unicode_search_key(path),?)>0']*len(terms))+')'
                 +' ORDER BY created DESC LIMIT 100',terms)] if terms else []
         results=[]
         # Whether the deadline, or the 100-record cap, stopped the checks before every record was seen (#182 review).
@@ -406,8 +414,9 @@ class FileWorkspace:
             if item_id is not None:
                 return [dict(row) for row in db.execute(query+' WHERE r.id=?',(item_id,))]
             # #182 review: a search filters before the cap, so an older matching answer is reachable.
-            terms=[term for term in (terms or ()) if isinstance(term,str) and term]
-            where=(' WHERE '+' OR '.join(["instr(lower(w.title||' '||r.content),?)>0"]*len(terms))) if terms else ''
+            # #203: Unicode case folding (the store's ``unicode_search_key``), not SQLite's ASCII-only ``lower()``.
+            terms=[_search_key(term) for term in (terms or ()) if isinstance(term,str) and term]
+            where=(' WHERE '+' OR '.join(["instr(unicode_search_key(w.title||' '||r.content),?)>0"]*len(terms))) if terms else ''
             # #182 review: a full-text scan of a long history is interrupted at the caller's deadline.
             if deadline is not None:
                 if time.monotonic()>deadline:
@@ -415,7 +424,7 @@ class FileWorkspace:
                     return []
                 db.set_progress_handler(lambda: 1 if time.monotonic()>deadline else 0, 200)
             try:
-                rows=[dict(row) for row in db.execute(query+where+' ORDER BY r.created DESC LIMIT 101',[term.lower() for term in terms])]
+                rows=[dict(row) for row in db.execute(query+where+' ORDER BY r.created DESC LIMIT 101',terms)]
             except sqlite3.OperationalError:
                 if deadline is None or time.monotonic()<=deadline: raise
                 self.project_capped=True
