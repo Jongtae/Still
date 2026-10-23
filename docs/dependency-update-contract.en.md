@@ -299,8 +299,8 @@ written.
 
 ## Parallel test runner — #135
 
-The `dev` group adds `pytest-xdist>=3.8,<4` so `full-validate` runs the suite on
-every core of its runner (`-n auto --dist loadfile`). The serial suite took
+The `dev` group adds `pytest-xdist>=3.8,<4` so `full-validate` (and, since #234,
+the required `validate` on Linux) runs the suite on every core of its runner (`-n auto --dist loadfile`). The serial suite took
 about 21 min on Linux and 26–32 min per macOS runner; a local 8-worker run on
 macOS arm64 took 4 min 15 s with the same outcome. `--dist loadfile` keeps each
 file on one worker; #156 measured `--dist worksteal` on the same runner and it

@@ -17,6 +17,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -66,7 +67,7 @@ jobs:
           enable-cache: true
 
       - name: Sync locked validation dependencies
-        run: uv sync --locked --group dev --no-python-downloads
+        run: uv sync --locked --extra mcp-host --extra schema-validation --group dev --no-python-downloads
 
       - name: Verify every platform installs from wheels
         run: sh scripts/dev/verify_wheels.sh
@@ -81,3 +82,9 @@ jobs:
             tests/test_governance_contract.py \
             tests/test_verify_src_layout.py \
             tests/test_release_script.py
+
+      # #234: the whole test suite on every PR, with full-validate's Linux invocation (#135).
+      # The real-WebKit classes skip on Linux; they run in the nightly/dispatched
+      # full-validate on macOS.
+      - name: Run the full test suite (parallel)
+        run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 tests
