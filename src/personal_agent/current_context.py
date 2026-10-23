@@ -33,6 +33,7 @@ import json
 import os
 import math
 import uuid
+import time
 from datetime import datetime, timedelta, timezone as dt_timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -201,6 +202,12 @@ def resolve_local_timezone(store=None, environ=None):
     return 'UTC'
 
 
+def owner_today(store, now=None):
+    """The owner's calendar date (``YYYY-MM-DD``) in ``resolve_local_timezone`` (#220: a fact's last day)."""
+    return datetime.fromtimestamp(time.time() if now is None else float(now),
+                                  ZoneInfo(resolve_local_timezone(store))).date().isoformat()
+
+
 def host_zone(store=None, environ=None):
     """``(name, tzinfo)`` of the host's local zone, for the turn's clock only (#804).
 
@@ -358,14 +365,16 @@ class CurrentContext:
         """A current ``profile.place.*`` Memory row, redacted, or None."""
         if not isinstance(key, str) or not key.startswith(PLACE_KEY_PREFIX):
             return None
-        for row in self.store.memories(PROFILE_OWNER, limit=101, key_prefix=PLACE_KEY_PREFIX):
+        for row in self.store.memories(PROFILE_OWNER, limit=101, key_prefix=PLACE_KEY_PREFIX,
+                                      holding_on=owner_today(self.store)):
             if row.get('memory_key') == key:
                 label = ' '.join(redact_known_secrets(self.store, row.get('content')).split())[:ANCHOR_CHARS]
                 return {'memory_key': key, 'label': label, 'memory_id': row.get('id')}
         return None
 
     def anchors(self):
-        rows = self.store.memories(PROFILE_OWNER, limit=101, key_prefix=PLACE_KEY_PREFIX)
+        rows = self.store.memories(PROFILE_OWNER, limit=101, key_prefix=PLACE_KEY_PREFIX,
+                                      holding_on=owner_today(self.store))
         out = []
         for row in sorted(rows, key=lambda row: row.get('memory_key') or ''):
             key = row.get('memory_key') or ''

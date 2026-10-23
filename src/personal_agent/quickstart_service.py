@@ -1849,8 +1849,9 @@ class AgentService:
             except Exception:
                 situation=note_situation=None
                 turns=''
+            # #220: the upkeep sees each row's short id, so a new fact can end earlier ones by id.
             state,calls,status,detail=upkeep.run(job,judgments,answer=job.get('response') or '',
-                                                 profile=self.owner_profile_snapshot(notes=False),clock=clock,
+                                                 profile=self.owner_profile_snapshot(notes=False,ids=True),clock=clock,
                                                  cancelled=cancelled,situation=situation,
                                                  note_situation=note_situation,situation_turns=turns)
             upkeep.finish(work_id,state,calls,status,detail,upkeep.clock())
@@ -2447,7 +2448,9 @@ class AgentService:
         """One saved fact as the notice binds it: id, content digest, key and what it superseded (#918)."""
         previous=self.store.memory(row['supersedes'],MEMORY_OWNER,current_only=False) if row.get('supersedes') else None
         return {'id':row['id'],'digest':row['content_digest'],'key':row['memory_key'],
-                'previous':[previous['id'],previous['content_digest']] if previous else None}
+                'previous':[previous['id'],previous['content_digest']] if previous else None,
+                # #220: the earlier facts this save ended under other keys, so the notice names them too.
+                'ended':[[item['id'],item['content_digest']] for item in self.store.ended_by(MEMORY_OWNER,row['id'])]}
 
     def bind_memory_saved(self, notification, now):
         """What a saved notice shows, bound at send time; None when the Work has nothing current (#918).
@@ -2488,10 +2491,14 @@ class AgentService:
             text=fact_of(item['id'])
             # Review P3: a previous or restored row deleted from 내 기록 since has no text; nothing empty is shown.
             if status=='retracted':
-                back=fact_of(restored.get(item['id'])) if restored.get(item['id']) else ''
+                again=[restored.get(item['id'])] if restored.get(item['id']) else []
+                again+=list((binding.get('restored_ended') or {}).get(item['id']) or ())
+                back=', '.join(fact for fact in (fact_of(memory_id) for memory_id in again) if fact)
                 return text+(f' (다시 {back})' if back else '')
             if status=='outdated':return text
-            before=fact_of(item['previous'][0]) if item.get('previous') else ''
+            earlier=[item['previous']] if item.get('previous') else []
+            earlier+=[pair for pair in item.get('ended') or () if isinstance(pair,list) and pair]
+            before=', '.join(fact for fact in (fact_of(pair[0]) for pair in earlier) if fact)
             return text+(f' (전에는 {before})' if before else '')
         single=len(items)==1
         all_done=bool(done) and not self.memory_saved_open(binding)
@@ -2548,17 +2555,25 @@ class AgentService:
             receipt=self.store.retract_memory(MEMORY_OWNER,item['id'],item['digest'],record=record)
         except ValueError as exc:
             LOG.info('memory undo refused work=%s kind=%s',job_id,type(exc).__name__)
-            return 'outdated',None
-        return 'retracted',(receipt.get('restored') or {}).get('id')
+            return 'outdated',None,[]
+        # #220 (Codex review): also the rows under other keys the save had ended and the undo made current again.
+        # Codex review: a row whose last day passed meanwhile is not "back in use"; the notice leaves it out.
+        holding={row['id'] for row in MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD).holding(
+            [self.store.memory(memory_id,MEMORY_OWNER,current_only=False) or {'id':None}
+             for memory_id in [(receipt.get('restored') or {}).get('id'),*(receipt.get('restored_ended') or ())] if memory_id])}
+        restored=(receipt.get('restored') or {}).get('id')
+        return ('retracted',restored if restored in holding else None,
+                [memory_id for memory_id in receipt.get('restored_ended') or () if memory_id in holding])
 
     def undo_memory_saved(self, job_id, binding, targets):
         """Apply one tap to the open ``targets`` (1-based) of a bound notice; returns the ids it decided (#918)."""
         decided=[]
         for index in targets:
             item=binding['items'][index-1]
-            status,restored=self.undo_memory_item(job_id,item)
+            status,restored,ended=self.undo_memory_item(job_id,item)
             binding['done'][item['id']]=status
             if restored:binding.setdefault('restored',{})[item['id']]=restored
+            if ended:binding.setdefault('restored_ended',{})[item['id']]=ended
             decided.append(item['id'])
         return decided
 
@@ -2689,7 +2704,7 @@ class AgentService:
         LOG.info('preparation %s id=%s by owner settings',operation,preparation_id)
         return self.preparations_status()
 
-    def owner_profile_snapshot(self, request=None, notes=True):
+    def owner_profile_snapshot(self, request=None, notes=True, ids=False):
         """The bounded ``profile.*`` snapshot text every turn context carries (#658).
 
         #19: with ``notes`` the owner's working-notes document follows as one
@@ -2713,7 +2728,7 @@ class AgentService:
         """
         memory=MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD)
         query=self._redact_known_secrets(request)[:500] if isinstance(request,str) and request.strip() else None
-        snapshot=memory.profile_snapshot(MEMORY_OWNER,query=query)
+        snapshot=memory.profile_snapshot(MEMORY_OWNER,query=query,ids=ids)
         text=snapshot['text']
         if snapshot.get('omitted_count'):
             text += ('\n' if text else '') + f"{snapshot['omitted_count']} saved profile facts omitted by the context limit; use search_memory if relevant."

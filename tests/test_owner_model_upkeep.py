@@ -14,6 +14,7 @@ import json
 import threading
 import time
 import unittest
+import unittest.mock
 
 from personal_agent import owner_model as om
 from personal_agent.agent_runtime import MEMORY_OWNER
@@ -26,9 +27,11 @@ from test_orchestrator import Harness
 SECRET = 'plain-stored-secret-805'
 
 
-def proposal(key, content, *, kind='stated', category='place', evidence='the owner said so', supersedes=''):
+def proposal(key, content, *, kind='stated', category='place', evidence='the owner said so', supersedes='',
+             invalidates=(), valid_until=''):
     return {'category': category, 'kind': kind, 'memory_key': key, 'content': content, 'evidence': evidence,
-            'supersedes_key': supersedes}
+            'supersedes_key': supersedes, 'invalidates': [{'id': i, 'reason': r} for i, r in invalidates],
+            'valid_until': valid_until}
 
 
 class Upkeep(Harness):
@@ -388,6 +391,393 @@ class Apply(Upkeep):
         receipt = self.store.retract_memory(MEMORY_OWNER, memory['id'], memory['content_digest'])
         self.assertEqual(receipt['restored']['id'], kept['id'])
         self.assertEqual([row['content'] for row in self.store.memories(MEMORY_OWNER)], ['서울역'])
+
+
+class Invalidate(Upkeep):
+    """#220: append + invalidate. A new fact ends earlier rows under any key, named by id with a reason;
+    nothing is overwritten or erased, a dated fact ends on its own, and the undo is exact."""
+
+    def saved(self, key, content, **terms):
+        return self.store.save_memory(key, content, MEMORY_OWNER, **terms)
+
+    def row(self, memory_id):
+        return self.store.memory(memory_id, MEMORY_OWNER, current_only=False)
+
+    def test_a_fact_ends_an_earlier_one_under_another_key_by_id(self):
+        old = self.saved('profile.place.workplace', '판교 사무실')
+        job = self.finished('이제 강남 사무실로 출근해')
+        self.answers = [[proposal('profile.place.work', '강남 사무실', invalidates=[(old['id'][:8], '사무실을 옮김')])]]
+        self.service.run_owner_model_upkeep()
+        [(context, _question, _schema)] = self.facts
+        self.assertIn(f"[{old['id'][:8]}] profile.place.workplace: 판교 사무실", context.facts['owner_profile'])
+        ended = self.row(old['id'])
+        [new] = self.store.memories(MEMORY_OWNER, key_prefix='profile.')
+        self.assertEqual((new['memory_key'], new['content']), ('profile.place.work', '강남 사무실'))
+        self.assertEqual((ended['state'], ended['invalidated_by'], ended['invalidation_reason']),
+                         ('superseded', new['id'], '사무실을 옮김'), 'kept, not erased')
+        snapshot = self.service.owner_profile_snapshot()
+        self.assertIn('강남 사무실', snapshot)
+        self.assertNotIn('판교', snapshot)
+        [(_status, detail)] = self.evidence(job)
+        self.assertEqual([item['invalidated'] for item in detail['applied']], [1])
+        # The notice names what ended, as it names a same-key replacement.
+        item = self.service.memory_saved_item(new)
+        self.assertEqual(item['ended'], [[old['id'], old['content_digest']]])
+        self.assertIn('강남 사무실 (전에는 판교 사무실)',
+                      self.service.memory_saved_text({'items': [item], 'done': {}, 'restored': {}}))
+
+    def test_undo_restores_every_row_the_save_ended(self):
+        first = self.saved('profile.place.workplace', '판교 사무실')
+        second = self.saved('profile.place.office', '판교')
+        new = self.saved('profile.place.work', '강남', invalidates=[(first['id'], 'moved'), (second['id'], 'moved')])
+        self.assertEqual({row['id'] for row in self.store.ended_by(MEMORY_OWNER, new['id'])}, {first['id'], second['id']})
+        receipt = self.store.retract_memory(MEMORY_OWNER, new['id'], new['content_digest'])
+        self.assertEqual(set(receipt['restored_ended']), {first['id'], second['id']})
+        for row in (self.row(first['id']), self.row(second['id'])):
+            self.assertEqual((row['state'], row['invalidated_by'], row['invalidation_reason']), ('current', None, None))
+        self.assertEqual(self.row(new['id'])['state'], 'retracted')
+
+    def test_undo_keeps_a_newer_value_under_an_ended_key(self):
+        """Codex review on #226: undo never puts two current rows under one key."""
+        first = self.saved('profile.place.workplace', '판교 사무실')
+        new = self.saved('profile.place.work', '강남', invalidates=[(first['id'], 'moved')])
+        later = self.saved('profile.place.workplace', '여의도 사무실')
+        receipt = self.store.retract_memory(MEMORY_OWNER, new['id'], new['content_digest'])
+        self.assertEqual(receipt['restored_ended'], [])
+        self.assertEqual(self.row(first['id'])['state'], 'superseded')
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER) if row['memory_key'] == 'profile.place.workplace'],
+                         [later['id']])
+
+    def test_ended_facts_are_not_read_by_the_models_memory_tools_and_use_the_owner_zone(self):
+        from datetime import datetime, timezone
+        from personal_agent.memory_service import MemoryService
+        self.store.put('calendar_timezone', 'Asia/Seoul')
+        # 2026-10-23 16:00 UTC is already 2026-10-24 in Seoul.
+        now = datetime(2026, 10, 23, 16, 0, tzinfo=timezone.utc).timestamp()
+        self.saved('profile.schedule.trip', '제주 여행 중', valid_until='2026-10-23')
+        self.saved('profile.schedule.cast', '깁스 중', valid_until='2026-10-24')
+        memory = MemoryService(self.store, now=lambda: now, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        found = [row['content'] for row in memory.search_memories(MEMORY_OWNER, '제주 여행 깁스')['memories']]
+        self.assertEqual(found, ['깁스 중'], 'search, the worker\'s memory tool, leaves the ended fact out')
+        self.assertEqual([row['content'] for row in memory.holding(self.store.memories(MEMORY_OWNER))], ['깁스 중'])
+        text = memory.profile_snapshot(MEMORY_OWNER)['text']
+        self.assertNotIn('제주', text)
+        self.assertIn('깁스 중', text)
+
+    def test_a_new_last_day_for_the_same_words_is_a_lifecycle_update(self):
+        """Codex review on #226: an expiry for an existing fact is applied to that key's row, never copied."""
+        cast = self.saved('profile.schedule.cast', '깁스 중')
+        job = self.finished('깁스는 금요일까지야')
+        self.answers = [[proposal('profile.schedule.cast', '깁스 중', valid_until='2099-01-02'),
+                         proposal('profile.schedule.other', '깁스 중', valid_until='2099-01-02')]]
+        self.service.run_owner_model_upkeep()
+        [current] = [row for row in self.store.memories(MEMORY_OWNER) if row['content'] == '깁스 중']
+        self.assertEqual((current['memory_key'], current['valid_until'], current['supersedes']),
+                         ('profile.schedule.cast', '2099-01-02', cast['id']))
+        [(_status, detail)] = self.evidence(job)
+        self.assertEqual([item['reason'] for item in detail['dropped']], ['duplicate'])
+
+    def test_a_dated_fact_can_become_lasting_and_an_ended_fact_be_said_again(self):
+        """Codex review on #226: clearing a last day is a lifecycle update; an ended fact is not a duplicate."""
+        cast = self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')
+        trip = self.saved('profile.schedule.trip', '제주에 있음', valid_until='2000-01-01')
+        job = self.finished('깁스는 계속 해야 한대, 그리고 다시 제주에 왔어')
+        self.answers = [[proposal('profile.schedule.cast', '깁스 중', supersedes='profile.schedule.cast'),
+                         proposal('profile.schedule.trip', '제주에 있음', supersedes='profile.schedule.trip'),
+                         proposal('profile.schedule.cast', '깁스 중', supersedes='profile.schedule.cast')]]
+        self.service.run_owner_model_upkeep()
+        current = {row['memory_key']: row for row in self.store.memories(MEMORY_OWNER)}
+        self.assertEqual((current['profile.schedule.cast']['valid_until'], current['profile.schedule.cast']['supersedes']),
+                         (None, cast['id']))
+        self.assertEqual((current['profile.schedule.trip']['valid_until'], current['profile.schedule.trip']['supersedes']),
+                         (None, trip['id']))
+        [(_status, detail)] = self.evidence(job)
+        self.assertEqual([item['reason'] for item in detail['dropped']], ['duplicate'], 'the repeat in one answer')
+
+    def test_ended_history_does_not_use_up_the_snapshot_row_cap(self):
+        from personal_agent import memory_service
+        from personal_agent.memory_service import MemoryService
+        for index in range(6):
+            self.saved(f'profile.aaa.ended{index}', '지난 일', valid_until='2000-01-01')
+        holding = self.saved('profile.zzz.now', '지금 맞음')
+        memory = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        with unittest.mock.patch.object(memory_service, '_PROFILE_ROWS_CAP', 3):
+            self.assertEqual([entry['id'] for entry in memory.profile_snapshot(MEMORY_OWNER)['entries']], [holding['id']])
+
+    def test_a_same_key_save_keeps_the_last_day_unless_it_clears_it(self):
+        """Codex review on #226: a worker's correction without a last day keeps it; '' says there is none."""
+        self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')
+        self.assertEqual(self.saved('profile.schedule.cast', '왼팔 깁스 중')['valid_until'], '2099-01-02')
+        self.assertIsNone(self.saved('profile.schedule.cast', '왼팔 깁스 중', valid_until='')['valid_until'])
+
+    def test_an_ended_place_leaves_the_current_context_anchors(self):
+        from personal_agent.current_context import ContextObservations, CurrentContext, PROFILE_OWNER
+        self.saved('profile.place.home', '합정')
+        self.saved('profile.place.hotel', '제주 호텔', valid_until='2000-01-01')
+        context = CurrentContext(self.store, ContextObservations(self.store))
+        self.assertEqual([anchor['label'] for anchor in context.anchors()], ['합정'])
+        self.assertIsNone(context._place_anchor('profile.place.hotel'))
+        self.assertEqual(PROFILE_OWNER, MEMORY_OWNER)
+
+    def test_the_id_marked_snapshot_fits_the_upkeep_bound(self):
+        from personal_agent.memory_service import MemoryService
+        for index in range(324):
+            self.saved(f'profile.p.k{index:03d}', 'v')
+        memory = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        text = memory.profile_snapshot(MEMORY_OWNER, ids=True)['text']
+        self.assertLessEqual(len(text), om.PROFILE_CHARS)
+
+    def test_the_upkeep_can_date_what_the_worker_saved_in_the_same_work(self):
+        """Codex review on #226: the worker's save_memory gives no last day; the upkeep may add it."""
+        job = self.finished('금요일까지 제주에 있어')
+        self.store.save_memory('profile.place.now', '제주에 있음', MEMORY_OWNER, work_id=job)
+        self.answers = [[proposal('profile.place.now', '제주에 있음', valid_until='2099-01-02'),
+                         proposal('profile.place.now', '서울에 있음')]]
+        self.service.run_owner_model_upkeep()
+        [row] = [row for row in self.store.memories(MEMORY_OWNER) if row['memory_key'] == 'profile.place.now']
+        self.assertEqual((row['content'], row['valid_until']), ('제주에 있음', '2099-01-02'))
+        [(_status, detail)] = self.evidence(job)
+        self.assertEqual([item['reason'] for item in detail['dropped']], ['duplicate'], 'one ask per message otherwise')
+
+    def test_the_upkeep_can_clear_a_last_day_the_workers_save_inherited(self):
+        """Codex review on #226: corrected and made lasting in one request."""
+        self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')
+        job = self.finished('왼팔 깁스는 이제 계속 해야 해')
+        inherited = self.store.save_memory('profile.schedule.cast', '왼팔 깁스 중', MEMORY_OWNER, work_id=job)
+        self.assertEqual(inherited['valid_until'], '2099-01-02')
+        self.answers = [[proposal('profile.schedule.cast', '왼팔 깁스 중', supersedes='profile.schedule.cast')]]
+        self.service.run_owner_model_upkeep()
+        [row] = [row for row in self.store.memories(MEMORY_OWNER) if row['memory_key'] == 'profile.schedule.cast']
+        self.assertEqual((row['content'], row['valid_until']), ('왼팔 깁스 중', None))
+
+    def test_an_elapsed_last_day_is_not_carried_onto_a_restated_fact(self):
+        self.saved('profile.place.now', '제주에 있음', valid_until='2000-01-01')
+        self.assertIsNone(self.saved('profile.place.now', '제주에 있음')['valid_until'])
+
+    def test_out_of_order_undos_still_end_at_the_original_fact(self):
+        """Codex review on #226: A ended by B, C under A's key; undo B, then undo C: A is current again."""
+        a = self.saved('profile.place.workplace', '판교 사무실')
+        b = self.saved('profile.place.work', '강남', invalidates=[(a['id'], 'moved')])
+        c = self.saved('profile.place.workplace', '여의도 사무실')
+        self.store.retract_memory(MEMORY_OWNER, b['id'], b['content_digest'])
+        self.assertEqual(self.row(a['id'])['state'], 'superseded')
+        receipt = self.store.retract_memory(MEMORY_OWNER, c['id'], c['content_digest'])
+        self.assertEqual(receipt['restored']['id'], a['id'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [a['id']])
+
+    def test_undos_through_a_longer_chain_still_end_at_the_original_fact(self):
+        a = self.saved('profile.place.workplace', '판교 사무실')
+        b = self.saved('profile.place.work', '강남', invalidates=[(a['id'], 'moved')])
+        d = self.saved('profile.place.workplace', '여의도 사무실')
+        c = self.saved('profile.place.workplace', '광화문 사무실')
+        for row in (b, c, d):
+            self.store.retract_memory(MEMORY_OWNER, row['id'], row['content_digest'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [a['id']])
+
+    def test_undos_keep_a_newer_value_that_was_itself_ended(self):
+        """Codex review on #226: A ended by B; C under A's key ended by D; undo B, then D: C is current, not A."""
+        a = self.saved('profile.place.workplace', '판교 사무실')
+        b = self.saved('profile.place.work', '강남', invalidates=[(a['id'], 'moved')])
+        c = self.saved('profile.place.workplace', '여의도 사무실')
+        d = self.saved('profile.place.office', '광화문', invalidates=[(c['id'], 'moved')])
+        self.store.retract_memory(MEMORY_OWNER, b['id'], b['content_digest'])
+        self.assertEqual(self.row(a['id'])['state'], 'superseded')
+        self.store.retract_memory(MEMORY_OWNER, d['id'], d['content_digest'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [c['id']])
+        self.store.retract_memory(MEMORY_OWNER, c['id'], c['content_digest'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [a['id']])
+
+    def test_deferred_restores_go_into_the_chain_in_creation_order(self):
+        """Codex review on #226: A ended by B; C ended by D; E; undo B, D, then E, C: C, then A."""
+        a = self.saved('profile.place.workplace', '판교 사무실')
+        b = self.saved('profile.place.work', '강남', invalidates=[(a['id'], 'moved')])
+        c = self.saved('profile.place.workplace', '여의도 사무실')
+        d = self.saved('profile.place.office', '광화문', invalidates=[(c['id'], 'moved')])
+        e = self.saved('profile.place.workplace', '종로 사무실')
+        for row in (b, d):
+            self.store.retract_memory(MEMORY_OWNER, row['id'], row['content_digest'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [e['id']])
+        self.store.retract_memory(MEMORY_OWNER, e['id'], e['content_digest'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [c['id']])
+        self.store.retract_memory(MEMORY_OWNER, c['id'], c['content_digest'])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], [a['id']])
+
+    def test_the_undone_notice_names_the_facts_that_came_back(self):
+        """Codex review on #226: an undo that brings back facts under other keys says so."""
+        old = self.saved('profile.place.workplace', '판교 사무실')
+        new = self.saved('profile.place.work', '강남 사무실', invalidates=[(old['id'], 'moved')])
+        binding = {'items': [self.service.memory_saved_item(new)], 'done': {}, 'restored': {}}
+        self.service.undo_memory_saved('job', binding, [1])
+        self.assertIn('강남 사무실 (다시 판교 사무실)', self.service.memory_saved_text(binding))
+
+    def test_any_undo_order_keeps_one_current_value_and_ends_where_it_began(self):
+        """Codex reviews on #226: every order of undos over saves that end rows under other keys."""
+        import itertools
+        import random
+        keys = ('profile.place.a', 'profile.place.b')
+        for seed in range(40):
+            with self.subTest(seed=seed):
+                with self.store.db() as db:
+                    db.execute('DELETE FROM memories')
+                rng = random.Random(seed)
+                base = {key: self.saved(key, f'{key} 처음') for key in keys}
+                saves = []
+                for step in range(4):
+                    key = rng.choice(keys)
+                    current = [row for row in self.store.memories(MEMORY_OWNER) if row['memory_key'] != key]
+                    ends = [(row['id'], 'x') for row in current[:rng.randint(0, 1)]]
+                    saves.append(self.saved(key, f'{key} 값 {step}', invalidates=ends))
+                for order in itertools.islice(itertools.permutations(saves), 0, None, 7):
+                    with self.store.db() as db:
+                        snapshot = [dict(row) for row in db.execute('SELECT * FROM memories')]
+                    left = list(order)
+                    while left:
+                        undone = []
+                        for row in left:
+                            try:
+                                self.store.retract_memory(MEMORY_OWNER, row['id'], row['content_digest'])
+                                undone.append(row)
+                            except ValueError:
+                                pass  # not current right now (ended or superseded): tried again next round
+                            current = self.store.memories(MEMORY_OWNER)
+                            self.assertLessEqual(max([sum(r['memory_key'] == key for r in current) for key in keys]), 1)
+                        if not undone:
+                            break
+                        left = [row for row in left if row not in undone]
+                    self.assertEqual(left, [], 'every save could be undone')
+                    self.assertEqual(sorted(row['id'] for row in self.store.memories(MEMORY_OWNER)),
+                                     sorted(row['id'] for row in base.values()), 'all undone: where it began')
+                    with self.store.db() as db:
+                        db.execute('DELETE FROM memories')
+                        for row in snapshot:
+                            db.execute(f"INSERT INTO memories({','.join(row)}) VALUES ({','.join('?' * len(row))})",
+                                       tuple(row.values()))
+
+    def test_a_settings_edit_does_not_carry_an_elapsed_last_day(self):
+        from personal_agent.memory_service import MemoryService
+        self.saved('profile.schedule.trip', '제주 여행 중', valid_until='2000-01-01')
+        memory = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        row = memory.remember_profile(MEMORY_OWNER, 'settings-profile', 'profile.schedule.trip', '제주 여행 중')
+        self.assertIsNone(row['valid_until'])
+
+    def test_undo_order_b_e_d_keeps_one_value(self):
+        a = self.saved('profile.place.workplace', '판교 사무실')
+        b = self.saved('profile.place.work', '강남', invalidates=[(a['id'], 'moved')])
+        c = self.saved('profile.place.workplace', '여의도 사무실')
+        d = self.saved('profile.place.office', '광화문', invalidates=[(c['id'], 'moved')])
+        e = self.saved('profile.place.workplace', '종로 사무실')
+        for row in (b, e, d):
+            self.store.retract_memory(MEMORY_OWNER, row['id'], row['content_digest'])
+            workplace = [r['id'] for r in self.store.memories(MEMORY_OWNER) if r['memory_key'] == 'profile.place.workplace']
+            self.assertLessEqual(len(workplace), 1)
+        self.assertEqual(workplace, [c['id']])
+
+    def test_an_older_request_cannot_end_a_fact_a_later_request_saved(self):
+        """Codex review on #226: newest-first upkeep; an older Work must not end a newer fact."""
+        job = self.finished('판교로 출근해')
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET created=created-60 WHERE id=?', (job,))
+        newer = self.saved('profile.place.work', '강남')  # saved by a later request
+        self.answers = [[proposal('profile.place.workplace', '판교', invalidates=[(newer['id'][:8], 'x')])]]
+        self.service.run_owner_model_upkeep()
+        self.assertEqual(self.row(newer['id'])['state'], 'current')
+        [(_status, detail)] = self.evidence(job)
+        self.assertEqual([item['reason'] for item in detail['dropped']], ['invalidates'])
+
+    def test_the_undone_notice_leaves_out_a_fact_whose_last_day_passed(self):
+        old = self.saved('profile.schedule.trip', '제주 여행 중', valid_until='2099-01-02')
+        new = self.saved('profile.place.now', '서울', invalidates=[(old['id'], 'back')])
+        with self.store.db() as db:
+            db.execute("UPDATE memories SET valid_until='2000-01-01' WHERE id=?", (old['id'],))
+        binding = {'items': [self.service.memory_saved_item(new)], 'done': {}, 'restored': {}}
+        self.service.undo_memory_saved('job', binding, [1])
+        self.assertNotIn('다시', self.service.memory_saved_text(binding))
+
+    def test_a_settings_edit_keeps_the_last_day(self):
+        from personal_agent.memory_service import MemoryService
+        self.saved('profile.schedule.cast', '깁스 중', valid_until='2099-01-02')
+        memory = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        row = memory.remember_profile(MEMORY_OWNER, 'settings-profile', 'profile.schedule.cast', '왼팔 깁스 중')
+        self.assertEqual((row['content'], row['valid_until']), ('왼팔 깁스 중', '2099-01-02'))
+
+    def test_ids_do_not_change_which_rows_the_upkeep_sees(self):
+        from personal_agent.memory_service import MemoryService
+        for index in range(80):
+            self.saved(f'profile.preference.fact{index:02d}', '가' * 150)
+        memory = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        plain, marked = memory.profile_snapshot(MEMORY_OWNER), memory.profile_snapshot(MEMORY_OWNER, ids=True)
+        self.assertTrue(plain['truncated'])
+        self.assertEqual([entry['id'] for entry in plain['entries']], [entry['id'] for entry in marked['entries']])
+
+    def test_ended_rows_cannot_crowd_a_holding_match_out_of_search_or_list(self):
+        from personal_agent.memory_service import MemoryService
+        holding = self.saved('profile.note.old', 'needle 지금도 맞음')
+        for index in range(12):
+            self.saved(f'profile.note.n{index:02d}', f'needle 지난 일 {index}', valid_until='2000-01-01')
+        memory = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        self.assertEqual([row['id'] for row in memory.search_memories(MEMORY_OWNER, 'needle', limit=10)['memories']],
+                         [holding['id']])
+        self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER, limit=5, holding_on='2026-10-23')],
+                         [holding['id']])
+
+    def test_settings_marks_ended_in_the_owner_zone(self):
+        from datetime import datetime, timezone
+        from personal_agent.memory_service import MemoryService
+        self.store.put('calendar_timezone', 'Asia/Seoul')
+        now = datetime(2026, 10, 23, 16, 0, tzinfo=timezone.utc).timestamp()
+        self.saved('profile.schedule.trip', '제주 여행 중', valid_until='2026-10-23')
+        memory = MemoryService(self.store, now=lambda: now, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        [row] = memory.profile_memories(MEMORY_OWNER)['memories']
+        self.assertTrue(row['ended'])
+
+    def test_an_id_that_names_no_current_profile_row_writes_nothing(self):
+        notes = self.saved('profile.working.style', '짧게 답한다')
+        gone = self.saved('profile.place.home', '분당')
+        self.saved('profile.place.home', '수지')  # ``gone`` is superseded now
+        other = self.store.save_memory('profile.place.home', '다른 사람', 'other-owner')
+        cases = {'unknown': '00000000', 'working notes': notes['id'][:8], 'not current': gone['id'][:8],
+                 'another owner': other['id'][:8]}
+        for name, short in cases.items():
+            with self.subTest(name):
+                before = [row['id'] for row in self.store.memories(MEMORY_OWNER)]
+                job = self.finished(f'{name} 테스트')
+                self.answers = [[proposal('profile.place.work', f'강남 {name}', invalidates=[(short, 'x')])]]
+                self.service.run_owner_model_upkeep()
+                self.assertEqual([row['id'] for row in self.store.memories(MEMORY_OWNER)], before, 'nothing written')
+                [(_status, detail)] = self.evidence(job)
+                self.assertEqual([item['reason'] for item in detail['dropped']], ['invalidates'])
+
+    def test_malformed_terms_are_dropped_and_the_store_refuses_them_too(self):
+        rows = [self.saved(f'profile.place.p{index}', f'장소 {index}') for index in range(4)]
+        job = self.finished('여러 곳')
+        self.answers = [[proposal('profile.place.a', '새 장소', invalidates=[(row['id'][:8], 'x') for row in rows]),
+                         proposal('profile.place.b', '새 장소 2', valid_until='2026-13-01'),
+                         proposal('profile.place.c', '새 장소 3', invalidates=[('ZZZZZZZZ', 'x')])]]
+        self.service.run_owner_model_upkeep()
+        [(_status, detail)] = self.evidence(job)
+        self.assertEqual([item['reason'] for item in detail['dropped']], ['invalidates', 'valid_until', 'invalidates'])
+        self.assertEqual(len(self.store.memories(MEMORY_OWNER)), 4)
+        for terms in ({'invalidates': [(row['id'], 'x') for row in rows]}, {'valid_until': 'tomorrow'},
+                      {'invalidates': [(rows[0]['id'], '')]}, {'invalidates': [('not-an-id', 'x')]}):
+            with self.subTest(terms=terms), self.assertRaises(ValueError):
+                self.saved('profile.place.z', '거부', **terms)
+        self.assertEqual(len(self.store.memories(MEMORY_OWNER)), 4, 'a refused save leaves every row as it was')
+
+    def test_a_dated_fact_leaves_every_snapshot_after_its_last_day_and_stays_listed(self):
+        from datetime import date, timedelta
+        today = date.fromtimestamp(time.time())
+        past = self.saved('profile.schedule.trip', '제주 여행 중', valid_until=(today - timedelta(days=1)).isoformat())
+        coming = self.saved('profile.schedule.cast', '깁스 중', valid_until=(today + timedelta(days=3)).isoformat())
+        snapshot = self.service.owner_profile_snapshot()
+        self.assertNotIn('제주 여행 중', snapshot)
+        self.assertNotIn('제주 여행 중', self.service.owner_profile_snapshot('제주 여행'), 'a literal match does not bring it back')
+        self.assertRegex(snapshot, r'profile\.schedule\.cast: 깁스 중 \(saved \d{4}-\d{2}-\d{2}, until '
+                         + coming['valid_until'] + r'\)')
+        from personal_agent.memory_service import MemoryService
+        # What the Settings profile list reads: the ended fact is still there, with its last day.
+        listed = {row['id']: row for row in MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+                  .profile_memories(MEMORY_OWNER)['memories']}
+        self.assertEqual(listed[past['id']]['valid_until'], past['valid_until'], 'the owner still sees it, as ended')
 
 
 class Budget(Upkeep):

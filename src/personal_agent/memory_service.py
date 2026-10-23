@@ -148,10 +148,10 @@ class MemoryService:
             armed = True
         return PrivateMemoryRead(payload, egress_guard_armed=armed)
 
-    def remember(self, owner_id, work_id, memory_key, content):
+    def remember(self, owner_id, work_id, memory_key, content, valid_until=None):
         """Persist one fact only through this explicit owner operation."""
         owner_id, work_id = self._request(owner_id, work_id)
-        return self.store.save_memory(memory_key, content, owner_id=owner_id, work_id=work_id)
+        return self.store.save_memory(memory_key, content, owner_id=owner_id, work_id=work_id, valid_until=valid_until)
 
     # -- owner profile facts (SEC-PROFILE-01 #658) ---------------------------
     #
@@ -178,14 +178,23 @@ class MemoryService:
         return memory_key.strip()
 
     def remember_profile(self, owner_id, work_id, memory_key, content):
-        """Explicit owner write of one profile fact; the same key supersedes."""
+        """Explicit owner write of one profile fact; the same key supersedes.
+
+        #220 (Codex review): editing a fact's words keeps the last day the current row has.
+        """
+        # The store keeps the replaced row's last day while it still holds (Codex review: never an elapsed one).
         return self.remember(owner_id, work_id, self.profile_key(memory_key), content)
 
-    def _profile_rows(self, owner_id):
-        """Every current ``profile.*`` row of this owner, ordered by key then value."""
+    def _profile_rows(self, owner_id, holding_on=None):
+        """Every current ``profile.*`` row of this owner, ordered by key then value.
+
+        #220 (Codex review): with ``holding_on`` (a date) rows past their last day are
+        left out in the query, so ended history cannot use up the row cap.
+        """
         rows, offset = [], 0
         while len(rows) < _PROFILE_ROWS_CAP:
-            page = self.store.memories(owner_id, limit=101, offset=offset, key_prefix=PROFILE_PREFIX)
+            page = self.store.memories(owner_id, limit=101, offset=offset, key_prefix=PROFILE_PREFIX,
+                                       holding_on=holding_on)
             rows.extend(row for row in page if self.is_profile_key(row.get('memory_key')))
             if len(page) < 101:
                 break
@@ -196,7 +205,9 @@ class MemoryService:
     def profile_memories(self, owner_id):
         """The owner's current profile rows, ordered by key; a private read."""
         self._identity(owner_id, 'owner')
-        rows = self._profile_rows(owner_id)
+        today = self._today()
+        # #220: ``ended`` is decided here in the owner's zone, so Settings labels a fact as the models read it.
+        rows = [{**row, 'ended': not self.holds(row, today)} for row in self._profile_rows(owner_id)]
         return self._private_read('memory_service.profile_memories', {
             'state': 'current', 'memories': rows, 'memory_count': len(rows),
         }, len(rows))
@@ -208,8 +219,26 @@ class MemoryService:
         except (TypeError, ValueError, OverflowError, OSError):
             return 'unknown-date'
 
+    #: #220: how many leading characters of a Memory id name its row in an ``ids`` snapshot.
+    SHORT_ID_CHARS = 8
+
+    def _today(self):
+        """The owner's date, for ``valid_until`` (the last day a fact holds): in the owner's calendar zone (Codex review)."""
+        from .current_context import owner_today
+        return owner_today(self.store, self.now())
+
+    def holds(self, row, today=None):
+        """Whether a current row still holds today (#220): no ``valid_until``, or not before today."""
+        until = row.get('valid_until') if isinstance(row, dict) else None
+        return not until or str(until) >= (today or self._today())
+
+    def holding(self, rows):
+        """``rows`` without the ones past their last day - what a model may read (#220, Codex review)."""
+        today = self._today()
+        return [row for row in rows if self.holds(row, today)]
+
     def profile_snapshot(self, owner_id, *, limit_chars=PROFILE_SNAPSHOT_CHARS, line_chars=PROFILE_LINE_CHARS, query=None,
-                         limit_bytes=PROFILE_SNAPSHOT_BYTES):
+                         limit_bytes=PROFILE_SNAPSHOT_BYTES, ids=False):
         """A bounded, attributable snapshot of ``profile.*`` rows for a turn prompt.
 
         ``text`` is one line per row - ``key: value (saved YYYY-MM-DD)`` - in
@@ -222,6 +251,12 @@ class MemoryService:
         ``entries`` carries the same rows with their Memory ids and saved
         times, so every line in the prompt is attributable to one row.
 
+        #220: a row whose ``valid_until`` is before today has ended and is left
+        out (it stays in the store and the owner's view); a row that ends
+        later says ``until YYYY-MM-DD``.  With ``ids`` each line starts with
+        ``[<first 8 characters of its id>]`` so the memory upkeep can name the
+        rows a new fact ends.
+
         This is a private read like ``list_memories``: it arms the caller's
         turn-scoped egress sink unless the service was built with
         ``NO_EGRESS_GUARD``.
@@ -233,7 +268,7 @@ class MemoryService:
             raise MemoryServiceError('profile snapshot line size is invalid')
         if isinstance(limit_bytes, bool) or not isinstance(limit_bytes, int) or limit_bytes < 1:
             raise MemoryServiceError('profile snapshot byte size is invalid')
-        rows = self._profile_rows(owner_id)
+        rows = self._profile_rows(owner_id, holding_on=self._today())
         if query is not None:
             matched = [row for row in self.search_memories(owner_id, query, limit=20, key_prefix=PROFILE_PREFIX)['memories']
                        if self.is_profile_key(row.get('memory_key'))]
@@ -244,14 +279,16 @@ class MemoryService:
             content = ' '.join(str(row.get('content') or '').split())
             if len(content) > line_chars:
                 content = content[:line_chars - 6] + ' [...]'
-            line = f"{row['memory_key']}: {content} (saved {self._saved_date(row.get('created'))})"
+            until = f", until {row['valid_until']}" if row.get('valid_until') else ''
+            line = f"{row['memory_key']}: {content} (saved {self._saved_date(row.get('created'))}{until})"
             size = len(line) + (1 if lines else 0)
             size_bytes = len(line.encode('utf-8')) + (1 if lines else 0)
             if used + size > limit_chars or used_bytes + size_bytes > limit_bytes:
                 break
             used += size
             used_bytes += size_bytes
-            lines.append(line)
+            # Codex review on #226: the id is added after the bounds, so the upkeep selects exactly the worker's rows.
+            lines.append(f"[{str(row['id'])[:self.SHORT_ID_CHARS]}] {line}" if ids else line)
             entries.append({'id': row['id'], 'memory_key': row['memory_key'], 'content': row['content'],
                             'created': row.get('created')})
         omitted = len(rows) - len(entries)
@@ -307,9 +344,11 @@ class MemoryService:
         # unicode61 indexes them as words; semantic alternatives are selected
         # by the worker and passed as additional words in the query.
         terms = list(dict.fromkeys(re.findall(r"[^\W_]+", query.casefold(), flags=re.UNICODE)))[:12]
-        searched = self.store.search_memories(owner_id, terms, limit=limit + 1, include_mode=True, key_prefix=key_prefix) if terms else {
+        searched = self.store.search_memories(owner_id, terms, limit=limit + 1, include_mode=True, key_prefix=key_prefix,
+                                              holding_on=self._today()) if terms else {
             'memories': [], 'search_mode': 'fts5' if getattr(self.store, 'memory_search_available', False) else 'bounded-like',
         }
+        # #220: a model reads search results, so facts past their last day are left out (in the query, before the limit).
         rows = searched['memories']
         page = rows[:limit]
         return self._private_read("memory_service.search_memories", {
