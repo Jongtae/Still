@@ -261,6 +261,20 @@ class Storage(unittest.TestCase):
             with self.assertRaises(CredentialError):
                 api_requests.remove_slot(self.store, 'example-broker')
         self.assertIn('example-broker', api_requests.slots(self.store))
+        # An unreadable OAuth token cache stops the removal the same way (Codex review on #259).
+        slot = dict(api_requests.slots(self.store)['example-broker'])
+        cache = 'api_credential:' + 'c' * 48
+        self.store.secret(cache, 'cache-ciphertext')
+        real = ApiCredentials.values
+        def cache_unreadable(credentials, records):
+            if cache in records:
+                raise CredentialError()
+            return real(credentials, records)
+        with mock.patch.object(api_requests, 'slots', lambda store: {'example-broker': {**slot, 'token_cache': {'reference': cache}}}), \
+                mock.patch.object(ApiCredentials, 'values', cache_unreadable):
+            with self.assertRaises(CredentialError):
+                api_requests.remove_slot(self.store, 'example-broker')
+        self.assertIn('example-broker', api_requests.slots(self.store))
         self.assertTrue(api_requests.remove_slot(self.store, 'example-broker'))
         self.assertNotIn('example-broker', api_requests.slots(self.store))
 

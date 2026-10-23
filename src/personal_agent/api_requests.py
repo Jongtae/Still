@@ -349,8 +349,13 @@ def remove_slot(store, name):
     from .api_credentials import ApiCredentials, STATE_PREFIX
     previous_slot = slots(store).get(name)
     credentials = ApiCredentials(store)
-    if isinstance(previous_slot, dict) and previous_slot.get('credential_ref'):
-        reference = previous_slot['credential_ref']
+    references = []
+    if isinstance(previous_slot, dict):
+        references.append(previous_slot.get('credential_ref'))
+        cache = previous_slot.get('token_cache')
+        # Codex review on #259: the OAuth token cache is a ciphertext of its own; it is checked here too.
+        references.append(cache.get('reference') if isinstance(cache, dict) else None)
+    for reference in (item for item in references if isinstance(item, str) and item):
         token = store.secret_items(reference).get(reference)
         if token:
             store.retire_secret_values(credentials.values({reference: token}))
