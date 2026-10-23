@@ -732,6 +732,12 @@ def assert_declared_goal_shape(case, plan=None, path=PLAN_PATH):
         case.assertTrue(closed_out_programs(plan),
                         "a terminal plan must record which program closed out")
 
+    # Shared: no program has more in flight than it may run, in either shape.
+    # Each record's own test used to decide whether to call this, and #218's
+    # activation passed required CI with two substeps in flight (#231).
+    for name in programs:
+        assert_active_substeps_are_legitimate(case, plan, name)
+
     # Shared: every closed-out program carries its full closeout record, in
     # either shape. This used to sit inside the terminal branch, so a program
     # that closed out while a *different* program held the declared goal was
