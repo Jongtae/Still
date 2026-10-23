@@ -500,6 +500,17 @@ class Telegram(WorkModeCase):
             self.service.telegram.download_photo('file-id')
         self.assertEqual(self.calls, [])
 
+    def test_a_delivery_refused_after_it_was_claimed_is_cancelled_not_unknown(self):
+        job_id = self.store.enqueue('질문', 'work-mode-claimed', f'telegram:{GENERATION}', CHAT)
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded',response='answer',delivery='pending' WHERE id=?", (job_id,))
+
+        def refused(*args, **kwargs):
+            raise work_mode.WorkModeRefused('telegram')  # the switch landed after the row was claimed
+        with mock.patch.object(self.service.telegram, 'send_message', refused):
+            self.service.deliver_one()
+        self.assertEqual(self.store.job(job_id)['delivery'], 'cancelled')
+
     def test_a_photo_retry_after_the_switch_is_not_sent(self):
         from personal_agent.providers import ProviderError
         self.service.telegram_transport = lambda url, body, headers=None, timeout=None: {

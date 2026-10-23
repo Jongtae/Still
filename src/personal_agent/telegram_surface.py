@@ -386,6 +386,9 @@ class TelegramSurface(ConversationSurface):
                                                           service.scrub_prepared_answer(job) if job else '',service.preparations.clock())
                     except Exception as exc:
                         LOG.warning('watch notification record failed work=%s kind=%s',notification['job_id'],type(exc).__name__)
+            except work_mode.WorkModeRefused:
+                # #208 review: refused before hand-off, so definitely not delivered (never sent later).
+                service.store.update_notification(notification['id'],'cancelled')
             except ProviderError:
                 service.store.update_notification(notification['id'],'unknown')
         return True
@@ -1334,6 +1337,9 @@ class TelegramSurface(ConversationSurface):
                 service._unsent_retry_at=time.monotonic()+service._unsent_backoff
                 LOG.warning('telegram delivery waiting work=%s retry_in=%ss',job['id'],service._unsent_backoff)
                 return
+            except work_mode.WorkModeRefused:
+                # #208 review: refused before hand-off, so definitely not delivered (never sent later).
+                status='cancelled'
             except ProviderError as exc:
                 status='unknown'
                 LOG.warning('telegram delivery unknown work=%s kind=%s status=%s',job['id'],type(exc).__name__,exc.status)
