@@ -107,10 +107,12 @@ ACTION_TIMEOUT_SECONDS = 20
 #: times, within ``LOAD_MORE_SECONDS``, to load rows a list adds only when scrolled.
 LOAD_MORE_ROUNDS = 5
 LOAD_MORE_SECONDS = 15.0
-LOAD_MORE_STOPS = frozenset({'no_progress', 'bound', 'time'})
+LOAD_MORE_STOPS = frozenset({'no_progress', 'bound', 'time', 'stopped'})
 #: The worker's own grace past its cap (``op_load_more``'s deadline), plus a second
 #: for the snapshot after it: the part of the Work's time a load-more cannot use.
 LOAD_MORE_RESERVE_SECONDS = 3.0
+#: #244: how often a waiting load-more request asks whether the owner stopped the Work.
+STOP_POLL_SECONDS = 0.25
 LOAD_MORE_ARGUMENT_TEXT = 'load_more는 1부터 5까지의 횟수입니다.'
 LOAD_MORE_UNAVAILABLE_TEXT = '이 브라우저에서는 페이지를 더 불러올 수 없어 지금 보이는 페이지만 읽었습니다.'
 LOGIN_WINDOW_SECONDS = 1800
@@ -873,6 +875,13 @@ class BrowserSession:
                 pass
         return max(1.0, float(seconds))
 
+    def _owner_stopped(self):
+        """Whether the owner stopped this Work (#244); never raises."""
+        try:
+            return self.budget.interrupted() == 'stopped'
+        except Exception:
+            return False
+
     def _spend_step(self):
         if self.budget is not None:
             self.budget.check()
@@ -1251,8 +1260,12 @@ class BrowserSession:
             # #11 review: the Work's remaining time cannot hold a round and the worker's
             # grace, so nothing is scrolled rather than running past the Work deadline.
             return {'rounds': 0, 'stopped': 'time', 'new_content': False, 'text': ''}
+        # #244: the owner's Stop ends a running load-more at its next round, not after its time bound.
+        stop = self._owner_stopped if self.budget is not None else None
         answer = self._call(lambda timeout: load(rounds, min(seconds, max(1.0, timeout - LOAD_MORE_RESERVE_SECONDS)),
-                                                 timeout))
+                                                 timeout, stop=stop))
+        if stop is not None and stop():
+            self.budget.check()   # stopped: the read fails as stopped and returns no page text
         answer = answer if isinstance(answer, dict) else {}
         text = scrub(str(answer.get('text') or '')[:TEXT_LIMIT * 2], self._excluded())[0]
         text = re.sub(r'\n{3,}', '\n\n', text).strip()
@@ -1958,7 +1971,7 @@ class WebKitWorkerDriver:
     def alive(self):
         return self._proc is not None and self._proc.poll() is None
 
-    def _send(self, op, timeout, **arguments):
+    def _send(self, op, timeout, stop=None, **arguments):
         proc, messages = self._proc, self._queue
         ident = next(self._ids)
         timeout = max(1.0, float(timeout))
@@ -1969,14 +1982,26 @@ class WebKitWorkerDriver:
             self._kill()
             raise WorkerError('worker_exited') from None
         deadline = time.monotonic() + timeout + self.grace_seconds
+        stop_sent = False
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 # Unresponsive: kill it; the next call starts a fresh worker.
                 self._kill()
                 raise TimeoutError('browser timeout')
+            if stop is not None and not stop_sent and stop():
+                # #244: the owner stopped the Work; the worker ends this request at its next probe
+                # and answers it as usual.  The stop's own answer is ignored below (another id).
+                stop_sent = True
+                try:
+                    proc.stdin.write(json.dumps({'id': next(self._ids), 'op': op + '_stop', 'target': ident,
+                                                 'timeout': 1.0}) + '\n')
+                    proc.stdin.flush()
+                except (OSError, ValueError, AttributeError):
+                    pass   # the wait below still ends at the request's own deadline
             try:
-                message = messages.get(timeout=remaining)
+                message = messages.get(timeout=min(remaining, STOP_POLL_SECONDS) if stop is not None and not stop_sent
+                                       else remaining)
             except queue.Empty:
                 continue
             if message is None:
@@ -2031,12 +2056,12 @@ class WebKitWorkerDriver:
                 raise refusal
             raise WorkerError(code)
 
-    def _request(self, op, timeout, **arguments):
+    def _request(self, op, timeout, stop=None, **arguments):
         with self._lock:
             if not self.alive():
                 self._kill()
                 self._start()   # restart after a crash, with the jar's cookies
-            return self._send(op, timeout, **arguments)
+            return self._send(op, timeout, stop=stop, **arguments)
 
     # -- PageDriver ------------------------------------------------------------
     def goto(self, url, timeout):
@@ -2046,14 +2071,16 @@ class WebKitWorkerDriver:
         """Wait, bounded by ``seconds``, until a client-rendered page's content stops changing (#709)."""
         self._request('settle', timeout, seconds=seconds)
 
-    def load_more(self, rounds, seconds, timeout):
+    def load_more(self, rounds, seconds, timeout, stop=None):
         """Scroll to the page's end up to ``rounds`` times within ``seconds`` (#11); the worker's answer.
 
         The worker captured the page state before it stopped holding navigation; the
         next ``snapshot`` returns that page rather than reading again, so the read
-        returns the page it scrolled (#11 review).
+        returns the page it scrolled (#11 review).  ``stop``: a zero-argument callable
+        polled while the worker scrolls; once it answers true the worker is asked to end
+        the request at its next probe (#244).
         """
-        message = self._request('load_more', timeout, rounds=rounds, seconds=seconds)
+        message = self._request('load_more', timeout, stop=stop, rounds=rounds, seconds=seconds)
         if isinstance(message.get('page'), dict):
             self._held_page = message['page']
         return {key: message.get(key) for key in ('rounds', 'stopped', 'added', 'text', 'navigation_refused', 'capped')}

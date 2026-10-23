@@ -38,7 +38,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from personal_agent import browser_session as bs
-from personal_agent.agent_runtime import ToolError
+from personal_agent.agent_runtime import ToolError, WorkBudget
 from personal_agent.browser_jar import JAR_NAME, CookieJar, JarError, KeychainKey, MemoryKey, SERVICE, store_account
 from personal_agent.portable_state import export_owner_state
 from personal_agent.quickstart_store import QuickStore
@@ -476,6 +476,19 @@ class DriverProtocolTests(unittest.TestCase):
     def commands(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
 
+    def test_the_owners_stop_ends_a_running_load_more(self):
+        """#244: a Stop while the worker scrolls asks it to end that request; it answers at once, stopped."""
+        driver = self.driver()
+        started = time.monotonic()
+        answer = driver.load_more(4, 12.0, 15, stop=lambda: time.monotonic() - started > 0.5)
+        self.assertLess(time.monotonic() - started, 3, 'not at the 12 s bound')
+        self.assertEqual(answer['stopped'], 'stopped')
+        request, stop = self.commands()[-2:]
+        self.assertEqual((request['op'], stop['op'], stop['target']), ('load_more', 'load_more_stop', request['id']))
+        self.assertNotIn('stop', request, 'the callable never crosses the process boundary')
+        driver.goto('https://shop.test/after', 4)   # the stop's own answer did not confuse the next request
+        self.assertEqual(self.commands()[-1]['op'], 'navigate')
+
     def test_requests_carry_timeouts_and_targets_carry_the_classified_descriptor(self):
         driver = self.driver()
         self.assertEqual(self.commands()[0]['op'], 'cookies_import', 'the jar is imported on start')
@@ -541,6 +554,7 @@ class DriverProtocolTests(unittest.TestCase):
                                                        'text': 'row 11\nrow 12', 'navigation_refused': 1, 'capped': None})
         self.assertEqual({key: self.commands()[-1][key] for key in ('op', 'rounds', 'seconds', 'timeout')},
                          {'op': 'load_more', 'rounds': 3, 'seconds': 9.0, 'timeout': 12.0})
+        self.assertNotIn('load_more_stop', [command['op'] for command in self.commands()], 'no Stop: never asked to stop')
         sent = len(self.commands())
         self.assertEqual(driver.snapshot()['title'], 'held', 'the page captured under the navigation hold is returned')
         self.assertEqual(len(self.commands()), sent, 'without reading the page again')
@@ -677,6 +691,38 @@ class WorkerGuardLogicTests(unittest.TestCase):
         self.assertEqual(worker.held['id'], 'x1', 'what an approval may release')
         self.assertIsNone(worker.take_cancelled(), 'reported once')
         self.assertIsNone(worker.take_cancelled(raw), 'the same page record is not reported twice')
+
+    def test_a_stop_ends_a_running_load_more_at_its_next_probe(self):
+        """#244: ``load_more_stop`` names the running request; its next probe finishes it as ``stopped``."""
+        emitted, later = [], []
+
+        class View:
+            def isLoading(self):
+                return False
+
+        class AppHelper:
+            @staticmethod
+            def callLater(seconds, then):
+                later.append(then)
+        bw, worker = self.worker(emit=emitted.append, view=View(), AppHelper=AppHelper, stopping=set(),
+                                 reading=False, read_navigations=0)
+        worker._snapshot_page = lambda ident, captured: captured({'url': 'https://shop.test/feed'}, None)
+
+        def step(value):
+            body, arguments, done = worker.ran.pop()
+            done(value, None)
+        worker.op_load_more(7, {'rounds': 5, 'seconds': 10}, 15)
+        step({'nodes': 10})        # begun: the first round scrolls
+        step({'scrolled': True})   # scrolled: the page is probed
+        worker.op_load_more_stop(8, {'target': 7}, 1)
+        worker.op_load_more_stop(9, {'target': 99}, 1)   # no such request: answered, nothing marked
+        self.assertEqual(worker.stopping, {7})
+        step({'added': 3, 'text': 'x', 'nodes': 13})     # the next probe sees the Stop
+        step({'text': 'row 11', 'added': 3, 'kept': 3})  # what it had loaded is collected
+        answer = emitted[-1]
+        self.assertEqual((answer['id'], answer['ok'], answer['stopped'], answer['rounds']), (7, True, 'stopped', 1))
+        self.assertEqual([message['id'] for message in emitted], [8, 9, 7])
+        self.assertEqual((worker.stopping, worker.reading, worker.ran), (set(), False, []), 'no further round is scheduled')
 
     def test_release_only_the_held_submit_it_reported_once(self):
         bw, worker = self.worker()
@@ -1676,6 +1722,23 @@ class WebKitIntegrationTests(unittest.TestCase):
             loaded = sess.read({'load_more': '5'})['loaded']
             self.assertEqual((loaded['stopped'], loaded['new_content']), ('time', True), loaded)
             self.assertLess(time.monotonic() - started, bs.LOAD_MORE_SECONDS + 10)
+        finally:
+            sess.close()
+
+    def test_the_owners_stop_ends_a_load_more_within_one_round(self):
+        """#244: a Stop during a load-more on a page that never settles ends the read promptly, as stopped."""
+        stopped_at = []
+        budget = WorkBudget(seconds=120, stop=lambda: bool(stopped_at) and time.monotonic() >= stopped_at[0])
+        sess = bs.BrowserSession(self.profile.driver_factory('work-244'), work_id='work-244', approvals=Approvals(),
+                                 steps=40, excluded=lambda: [PASSPORT], allowed_origins_for_tests=(self.fixture,),
+                                 budget=budget)
+        try:
+            sess.open({'url': self.origin + '/lazy-endless', 'effect': 'read'})
+            stopped_at.append(time.monotonic() + 1.5)
+            with self.assertRaises(ToolError) as caught:
+                sess.read({'load_more': '5'})
+            self.assertEqual(caught.exception.code, 'stopped')
+            self.assertLess(time.monotonic() - stopped_at[0], 4.0, 'within one round, not at the 15 s bound')
         finally:
             sess.close()
 
