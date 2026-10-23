@@ -593,6 +593,11 @@ class TransportRecheck(WorkModeCase):
             tools.page_reader.read('https://first.fixture.test/')
         self.assertIn('회사 모드', str(caught.exception))
         self.assertEqual(opener.urls, ['https://first.fixture.test/'])
+        self.assertIsNot(getattr(caught.exception, 'ran', None), False, 'the first hop was sent: an attempt (#233)')
+        with self.assertRaises(ValueError) as caught:
+            tools.page_reader.read('https://first.fixture.test/')
+        self.assertIs(caught.exception.ran, False, 'refused before any request: not sent (#233)')
+        self.assertEqual(len(opener.urls), 1)
 
     def test_a_native_search_resume_after_the_switch_is_not_sent(self):
         registry = ProviderRegistry.from_store(self.store)
@@ -618,9 +623,14 @@ class TransportRecheck(WorkModeCase):
             self.on()
             return {'results': [{'name': 'Seoul', 'latitude': 37.5, 'longitude': 127.0, 'population': 9_000_000,
                                  'country_code': 'KR', 'timezone': 'Asia/Seoul'}]}
-        with mock.patch.object(local_tools, 'request_json', request_json), self.assertRaises(ValueError):
+        with mock.patch.object(local_tools, 'request_json', request_json), self.assertRaises(ValueError) as caught:
             tools.weather('Seoul')
         self.assertEqual(len(calls), 1, 'the forecast request was never sent')
+        self.assertIsNot(getattr(caught.exception, 'ran', None), False, 'the city already went out: an attempt (#233)')
+        with mock.patch.object(local_tools, 'request_json', request_json), self.assertRaises(ValueError) as caught:
+            tools.weather('Seoul')
+        self.assertIs(caught.exception.ran, False)
+        self.assertEqual(len(calls), 1)
 
 
 if __name__ == '__main__':
