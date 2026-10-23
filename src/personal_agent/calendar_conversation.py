@@ -133,10 +133,10 @@ def describe_span(start, end, zone):
     first = datetime.fromisoformat(start)
     last = datetime.fromisoformat(end)
     tz = _zone(zone)
-    day = f"{first:%Y-%m-%d} ({_WEEKDAYS_KO[first.weekday()]})"
+    day = f"{first.date().isoformat()} ({_WEEKDAYS_KO[first.weekday()]})"
     if last.date() == first.date():
         return f"{day} {_shown_time(first, tz)} – {_shown_time(last, tz)} ({shown_value(zone)})"
-    return (f"{day} {_shown_time(first, tz)} – {last:%Y-%m-%d} ({_WEEKDAYS_KO[last.weekday()]}) "
+    return (f"{day} {_shown_time(first, tz)} – {last.date().isoformat()} ({_WEEKDAYS_KO[last.weekday()]}) "
             f"{_shown_time(last, tz)} ({shown_value(zone)})")
 
 
