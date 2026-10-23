@@ -10913,6 +10913,11 @@ class AgentService:
         # One host-visible CLI invocation, not its opaque
         # internal model calls. Refuse before recording sent.
         run.work_budget.spend_turn()
+        # #211: the cloud profile's daily cap is admitted here, before the turn is recorded as
+        # sent, so a refused launch leaves no sent envelope or egress record behind.
+        if cloud is not None:
+            try:self.cloud_engines.admit(cloud)
+            except CloudLaunchError as exc:raise BlockedTurn(BLOCKER_CLOUD_PROFILE,str(exc)) from exc
         photo_attempt_id=(self.record_photo_attempt(job['id'],status='staged',count=len(run.image_inputs),
                                                     route='subscription',engine=run.subscription['id'])
                           if run.image_inputs else None)
@@ -10976,8 +10981,9 @@ class AgentService:
                 work_model=(run.attempt.model if run.attempt is not None and run.attempt.model
                             else self.main_ai.subscription_model(run.subscription['id']))
                 served=facade(run.capabilities,**facade_options)
-                # #211: the profile this Work resolved, not a later Settings change.
+                # #211: the profile this Work resolved, not a later Settings change; already admitted above.
                 served.cloud_profile=cloud
+                served.cloud_admitted=cloud is not None
                 served.native_search=native_search
                 served.native_search_reason=native_reason or ''
                 # #718: the CLI's own search items update the draft while this attempt runs.

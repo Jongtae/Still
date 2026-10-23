@@ -2206,8 +2206,10 @@ class BoundedExecutionAdapter:
                                 cloud=cloud)
             run_meta = {'argv': display_argv(argv, prompt, instructions), 'requested_model': model or None,
                         'requested_effort': effort or None, **(cloud.record() if cloud else {})}
-            # #211: the last check before launch; a spent daily cap launches nothing.
-            self.admit_cloud(cloud)
+            # #211: the last check before launch; a spent daily cap launches nothing.  A Work turn the
+            # service already admitted (before recording it as sent) is not counted twice.
+            if not getattr(tools, 'cloud_admitted', False):
+                self.admit_cloud(cloud)
             launch['started'] = True
             try:
                 if self.runner is subprocess.run:

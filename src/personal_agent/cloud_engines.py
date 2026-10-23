@@ -238,9 +238,14 @@ def missing(provider_id, settings, saved_secrets):
     if provider_id == 'bedrock':
         if not settings.get('AWS_REGION'):
             lacks.append('AWS_REGION')
+        # A Work runs the CLI with an empty per-turn HOME, so a named profile needs an
+        # explicit file to be found in; without one it would launch only to fail.
+        profile_source = settings.get('AWS_PROFILE') and (settings.get('AWS_CONFIG_FILE')
+                                                         or settings.get('AWS_SHARED_CREDENTIALS_FILE'))
         if not (has('AWS_BEARER_TOKEN_BEDROCK') or (has('AWS_ACCESS_KEY_ID') and has('AWS_SECRET_ACCESS_KEY'))
-                or settings.get('AWS_PROFILE')):
-            lacks.append('AWS_BEARER_TOKEN_BEDROCK | AWS_ACCESS_KEY_ID+AWS_SECRET_ACCESS_KEY | AWS_PROFILE')
+                or profile_source):
+            lacks.append('AWS_BEARER_TOKEN_BEDROCK | AWS_ACCESS_KEY_ID+AWS_SECRET_ACCESS_KEY'
+                         ' | AWS_PROFILE+(AWS_CONFIG_FILE | AWS_SHARED_CREDENTIALS_FILE)')
     elif provider_id == 'foundry':
         if not (settings.get('ANTHROPIC_FOUNDRY_RESOURCE') or settings.get('ANTHROPIC_FOUNDRY_BASE_URL')):
             lacks.append('ANTHROPIC_FOUNDRY_RESOURCE | ANTHROPIC_FOUNDRY_BASE_URL')

@@ -130,6 +130,17 @@ class Profiles(StoreCase):
         with self.assertRaises(ValueError):
             self.cloud.save_secret('claude-code', 'bedrock', 'AWS_BEARER_TOKEN_BEDROCK', 'has a space in it ok')
 
+    def test_a_named_aws_profile_needs_an_explicit_file(self):
+        """#211 review: the per-turn HOME has no ~/.aws, so AWS_PROFILE alone is an unfinished profile."""
+        self.cloud.save_profile('claude-code', 'bedrock', {'AWS_REGION': 'us-east-1', 'AWS_PROFILE': 'work'}, 5)
+        with self.assertRaises(CloudLaunchError) as raised:
+            self.cloud.launch('claude-code')
+        self.assertEqual(raised.exception.failure_class, NOT_CONFIGURED)
+        self.assertIn('AWS_CONFIG_FILE', str(raised.exception))
+        self.cloud.save_profile('claude-code', 'bedrock', {'AWS_REGION': 'us-east-1', 'AWS_PROFILE': 'work',
+                                                           'AWS_SHARED_CREDENTIALS_FILE': '/Users/owner/.aws/credentials'}, 5)
+        self.assertEqual(self.cloud.launch('claude-code').environment()['AWS_PROFILE'], 'work')
+
     def test_an_unfinished_profile_never_launches(self):
         self.cloud.save_profile('claude-code', 'bedrock', {'AWS_REGION': 'us-east-1'}, 5)
         with self.assertRaises(CloudLaunchError) as caught:
@@ -588,6 +599,29 @@ class ServiceWork(unittest.TestCase):
         with self.store.db() as db:
             job = db.execute('SELECT status FROM jobs ORDER BY id DESC LIMIT 1').fetchone()
         self.assertEqual(job['status'], 'failed')
+
+    def test_a_spent_cap_is_refused_before_the_turn_is_recorded_as_sent(self):
+        """#211 review: no sent envelope or egress record for a launch the cap refused."""
+        engine = _Engine()
+        service = self.service(engine)
+        self.configure(service, cap=1)
+        service.cloud_engines.admit(service.cloud_engines.launch('claude-code'))
+        job = self.store.enqueue('hello', 'k1')
+        self.assertTrue(service.run_one())
+        self.assertEqual(engine.launches, [], 'nothing launched')
+        record = self.store.turn_provenance(job) or {}
+        self.assertNotIn('prompt_envelope', record)
+        self.assertNotEqual(record.get('status'), 'sent')
+        self.assertEqual(service.cloud_engines.used_today('claude-code', 'bedrock'), 1, 'not counted twice')
+
+    def test_an_admitted_work_turn_counts_once(self):
+        engine = _Engine()
+        service = self.service(engine)
+        self.configure(service, cap=5)
+        self.store.enqueue('hello', 'k1')
+        self.assertTrue(service.run_one())
+        self.assertEqual(len(engine.launches), 1)
+        self.assertEqual(service.cloud_engines.used_today('claude-code', 'bedrock'), 1)
 
     def test_an_unfinished_profile_stops_the_work_before_any_launch(self):
         engine = _Engine()
