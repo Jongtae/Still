@@ -184,7 +184,7 @@ class _PageCharset(HTMLParser):
 
 class PublicPageReader:
     """Small, anonymous, read-only page reader with an explicit egress boundary."""
-    def __init__(self, opener=None, resolver=None, clock=None):
+    def __init__(self, opener=None, resolver=None, clock=None, guard=None):
         """Build a reader whose production transport is the pinned connection path.
 
         ``opener`` is a TEST-ONLY transport seam. The production path passes
@@ -210,6 +210,8 @@ class PublicPageReader:
         self.opener = opener
         self.resolver = resolver or _bounded_system_resolver
         self.clock = clock or time.monotonic
+        #: #208 review: ``() -> str | None``, asked before every hop (redirects included).
+        self.guard = guard
 
     def _remaining(self, deadline):
         remaining=deadline-self.clock()
@@ -421,6 +423,8 @@ class PublicPageReader:
         current=self._safe_url(url); started=self.clock();deadline=started+MAX_PAGE_SECONDS
         approved={normalize_public_url(item) for item in approved_urls} if approved_urls is not None else None
         for redirect in range(MAX_PAGE_REDIRECTS+1):
+            refused=self.guard() if callable(self.guard) else None
+            if refused:raise ValueError(refused)
             self._remaining(deadline)
             if approved is not None and current not in approved:
                 raise ValueError('소유자가 승인한 공개 페이지 범위를 벗어난 주소입니다.')
@@ -502,10 +506,11 @@ GEOCODING_SEARCH='https://geocoding-api.open-meteo.com/v1/search'
 
 class LocalTools:
     def __init__(self, page_reader=None, providers=None):
-        self.page_reader=page_reader or PublicPageReader()
         # #655: the configured search providers; without an owner store none
         # is configured (#678: Bing RSS is an owner opt-in).
         self.providers=providers or ProviderRegistry.from_config({})
+        # #208 review: work mode is asked again at every page hop and weather request.
+        self.page_reader=page_reader or PublicPageReader(guard=lambda:self.egress_refusal())
     def search(self, query, provider=None, kind=None, locale=None, budget=None):
         """One public web search through the provider the model named (#655).
 
@@ -521,11 +526,21 @@ class LocalTools:
         return self.providers.search(query.strip(),provider=provider or None,kind=kind or None,locale=validate_locale(locale),
                                      **({'budget':budget} if budget is not None else {}))
 
+    def egress_refusal(self):
+        """#208: why a public read may not leave this Mac now (work mode), or None."""
+        refusal=getattr(self.providers,'egress_refusal',None)
+        return refusal('public_read') if callable(refusal) else None
+
+    def _public_request(self, url, timeout):
+        refused=self.egress_refusal()
+        if refused:raise ValueError(refused)
+        return request_json(url,None,timeout=timeout)
+
     def weather(self, city, country=''):
         if not isinstance(city,str) or not 1<=len(city.strip())<=100:raise ValueError('날씨를 조회할 도시를 알려 주세요.')
         args={'name':city,'count':20,'language':'en','format':'json'}
         if isinstance(country,str) and re.fullmatch('[A-Za-z]{2}',country):args['countryCode']=country.upper()
-        places=request_json(GEOCODING_SEARCH+'?'+urlencode(args),None,timeout=10).get('results',[])
+        places=self._public_request(GEOCODING_SEARCH+'?'+urlencode(args),10).get('results',[])
         if not places:raise ValueError('도시를 찾지 못했습니다. 도시와 국가를 함께 알려 주세요.')
         populated=sorted([p for p in places if p.get('population',0)>=100000],key=lambda p:p['population'],reverse=True)
         if len(populated)==1:places=populated
@@ -545,7 +560,7 @@ class LocalTools:
                 raise ValueError('날씨를 조회할 위치가 올바르지 않습니다.')
         args={'latitude':latitude,'longitude':longitude,'current':'temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m','daily':'temperature_2m_max,temperature_2m_min,precipitation_probability_max','forecast_days':3,'timezone':'auto'}
         url='https://api.open-meteo.com/v1/forecast?'+urlencode(args)
-        data=request_json(url,None,timeout=15)
+        data=self._public_request(url,15)
         location=dict(location or {'name':None,'latitude':latitude,'longitude':longitude})
         return {'tool':'weather','location':location,'retrieved_at':time.time(),'forecast':data,'sources':[url,'https://open-meteo.com/'],'scope':'Open-Meteo model-derived current weather and three-day forecast; report units and timestamps.'}
 

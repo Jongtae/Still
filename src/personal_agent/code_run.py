@@ -791,7 +791,12 @@ class CodeRunner:
         """Reads only: GET/HEAD to a host this run may reach, or a non-GET request the owner reviewed as a read.
 
         ``check`` (#1486): a parameter-flow check, where every other request is refused unsent.
+        #208 review: while work mode is on every request is refused unsent, a run already going included.
         """
+        from . import work_mode
+        refused = work_mode.refusal(self.store, 'code_run')
+        if refused:
+            return False, refused
         method = str(message.get('method') or '').upper()
         host = _host(message.get('host'))
         # A host named without a port covers every port of that host, as in sandbox-runtime's

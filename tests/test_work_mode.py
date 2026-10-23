@@ -527,13 +527,100 @@ class ApiInput(WorkModeCase):
         self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': GENERATION, 'cursor': 0})
         work_id = self.store.enqueue('API 연결', 'api-input', f'telegram:{GENERATION}', CHAT)
         self.on()
-        draft = {'id': 'draft-1', 'work_id': work_id, 'after': json.dumps({'name': 'Fixture'})}
+        draft = {'id': 'draft-1', 'work_id': work_id, 'after': json.dumps({'name': 'Fixture', 'fields': []})}
         with mock.patch.object(api_input, 'current', lambda service, draft: None), \
                 mock.patch.object(api_input, 'kept_fields', lambda store, data: {}):
             answer = api_input.start(service, draft)
-        self.assertIn('http://localhost:8787', answer)
-        self.assertEqual((tunnel.processes, sent), ([], []))
-        service.phone_input_session().finish('closed')
+            self.assertIn('http://localhost:8787', answer)
+            self.assertEqual((tunnel.processes, sent), ([], []))
+            service.phone_input_session().finish('closed')
+            # #208 review: an input verified by a request to its API is refused before any page opens.
+            probed = {**draft, 'after': json.dumps({'name': 'Fixture', 'probe': {'url': 'https://api.fixture.test/me'}})}
+            with self.assertRaises(ValueError) as caught:
+                api_input.start(service, probed)
+            self.assertIn('회사 모드', str(caught.exception))
+            self.assertIsNone(service.phone_input_session())
+
+
+class TransportRecheck(WorkModeCase):
+    """#208 review: a tool already running when the switch lands is refused at its next request."""
+
+    def test_api_requests_refuse_every_request_unsent(self):
+        from personal_agent.api_requests import ApiError, ApiRequests
+        sent = []
+        api = ApiRequests(self.store, 'job', transport=lambda *args: sent.append(args) or (200, {}, b'{}'))
+        api.transport('GET', 'https://api.fixture.test/a', {}, None, 5)
+        self.on()
+        with self.assertRaises(ApiError) as caught:
+            api.transport('GET', 'https://api.fixture.test/b', {}, None, 5)
+        self.assertEqual(caught.exception.code, 'work_mode')
+        self.assertEqual(len(sent), 1)
+
+    def test_a_code_run_request_is_refused_unsent(self):
+        from personal_agent.code_run import CodeRunner
+        runner = CodeRunner(self.store, 'job')
+        self.on()
+        allow, reason = runner._decide({'method': 'GET', 'host': 'api.fixture.test', 'path': '/'},
+                                       {'api.fixture.test': set()})
+        self.assertFalse(allow)
+        self.assertIn('회사 모드', reason)
+
+    def test_a_page_redirect_after_the_switch_is_not_followed(self):
+        class Opener:
+            def __init__(inner):
+                inner.urls = []
+
+            def open(inner, request, timeout=None):
+                inner.urls.append(request.full_url)
+                self.on()  # the switch lands while the first hop is in flight
+
+                class Redirect:
+                    status = 302
+                    url = request.full_url
+                    headers = {'Location': 'https://second.fixture.test/'}
+
+                    def read(self, *a):
+                        return b''
+
+                    def close(self):
+                        pass
+                return Redirect()
+        opener = Opener()
+        tools = LocalTools(page_reader=None, providers=ProviderRegistry.from_store(self.store))
+        tools.page_reader.opener = opener
+        tools.page_reader.resolver = lambda *a, **k: [(None, None, None, None, ('93.184.216.34', 443))]
+        with self.assertRaises(ValueError) as caught:
+            tools.page_reader.read('https://first.fixture.test/')
+        self.assertIn('회사 모드', str(caught.exception))
+        self.assertEqual(opener.urls, ['https://first.fixture.test/'])
+
+    def test_a_native_search_resume_after_the_switch_is_not_sent(self):
+        registry = ProviderRegistry.from_store(self.store)
+        from personal_agent.search_providers import AiNativeProvider
+        provider = AiNativeProvider.__new__(AiNativeProvider)
+        provider.refusal = lambda: registry.egress_refusal('web_search')
+        provider.budget = None
+        sent = []
+        provider.transport = lambda *args: sent.append(args) or {}
+        provider._send('https://api.fixture.test/v1/messages', {}, {})
+        self.on()
+        with self.assertRaises(SearchProviderError) as caught:
+            provider._send('https://api.fixture.test/v1/messages', {}, {})
+        self.assertEqual((caught.exception.code, len(sent)), ('work_mode', 1))
+
+    def test_weather_is_refused_between_its_two_requests(self):
+        from personal_agent import local_tools
+        tools = LocalTools(providers=ProviderRegistry.from_store(self.store))
+        calls = []
+
+        def request_json(url, body, timeout=None):
+            calls.append(url)
+            self.on()
+            return {'results': [{'name': 'Seoul', 'latitude': 37.5, 'longitude': 127.0, 'population': 9_000_000,
+                                 'country_code': 'KR', 'timezone': 'Asia/Seoul'}]}
+        with mock.patch.object(local_tools, 'request_json', request_json), self.assertRaises(ValueError):
+            tools.weather('Seoul')
+        self.assertEqual(len(calls), 1, 'the forecast request was never sent')
 
 
 if __name__ == '__main__':

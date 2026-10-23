@@ -72,6 +72,17 @@ def code_draft(data):
     return 'fields' in data
 
 
+def refuse_probe_in_work_mode(service, data):
+    """#208 review: a non-code input is verified by a request to its API, which work mode refuses.
+
+    A code-run set only stores the values (its probe is the Work's own code run, refused there
+    too), so its page still opens on this Mac.
+    """
+    refused = work_mode.refusal(service.store, 'api_request')
+    if refused and not code_draft(data):
+        raise ValueError(refused)
+
+
 def kept_fields(store, data):
     """Names of an existing code-run set's values that a draft keeps while only adding values (#1566).
 
@@ -170,6 +181,7 @@ def reads_update(service, draft):
 def start(service, draft):
     current(service, draft)
     data = json.loads(draft['after'])
+    refuse_probe_in_work_mode(service, data)
     orchestrator = service.settings_orchestrator
     attempts = [row for row in orchestrator._drafts().values() if isinstance(row, dict)
                 and row.get('work_id') == draft['work_id'] and row.get('category') == 'api_connections'
@@ -276,6 +288,7 @@ def submit(service, session, body):
                 else {'client_id', 'client_secret'} if data.get('oauth') else {'secret'})
     if set(body) != expected:
         raise ValueError('이 링크의 인증 정보 입력을 확인하세요.')
+    refuse_probe_in_work_mode(service, data)
     if not session.submit_lock.acquire(blocking=False):
         raise ValueError('입력을 확인하고 있어요. 잠시 기다려 주세요.')
     orchestrator = service.settings_orchestrator
