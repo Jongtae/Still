@@ -40,15 +40,34 @@ def scope(paths):
     return 'text'
 
 
+def _reads_text(source, names):
+    return any(marker in source for marker in TEXT_MARKERS) or any(name and name in source for name in names)
+
+
 def text_tests(paths, root=ROOT):
-    """The test files that read repository text, plus any that names a changed file, sorted."""
+    """The test files that read repository text - directly or through a local helper module - plus any
+    that names a changed file, sorted.
+
+    Codex review on #261: a test may read text only through a helper in ``tests/`` (``load_plan`` in
+    ``delivery_state_invariants``), so a helper that reads text, or imports one that does, marks every
+    test that imports it.
+    """
     names = {Path(path).name for path in paths} | {Path(path).stem for path in paths}
-    selected = []
-    for test in sorted((root / 'tests').glob('test_*.py')):
-        source = test.read_text(encoding='utf-8')
-        if any(marker in source for marker in TEXT_MARKERS) or any(name and name in source for name in names):
-            selected.append(test.relative_to(root).as_posix())
-    return selected
+    tests_dir = root / 'tests'
+    sources = {path.stem: path.read_text(encoding='utf-8') for path in tests_dir.glob('*.py')}
+    def imports(source, module):
+        return re.search(rf'^\s*(?:from\s+{re.escape(module)}\s+import|import\s+{re.escape(module)}\b)', source, re.M)
+    # Any module in tests/ (a helper, or a test module whose harness others import) that reads text,
+    # or imports one that does, reads text.
+    readers = {stem for stem, source in sources.items() if _reads_text(source, names)}
+    grew = True
+    while grew:
+        grew = False
+        for stem, source in sources.items():
+            if stem not in readers and any(imports(source, reader) for reader in readers):
+                readers.add(stem)
+                grew = True
+    return sorted(f'tests/{stem}.py' for stem in readers if stem.startswith('test_'))
 
 
 def changed(base, head, root=ROOT):

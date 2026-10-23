@@ -212,6 +212,13 @@ def test_the_test_scope_is_full_unless_every_changed_path_is_text(tmp_path) -> N
     (tmp_path / "tests/test_names_plan.py").write_text("open('roadmap.yaml')\n")
     (tmp_path / "tests/test_pure.py").write_text("assert 1 + 1 == 2\n")
     assert module.text_tests(["roadmap.yaml"], tmp_path) == ["tests/test_names_plan.py", "tests/test_reads_docs.py"]
+    # Codex review on #261: a test that reads text only through a local helper (directly or via another helper).
+    (tmp_path / "tests/plan_helpers.py").write_text("def load():\n    return open('delivery-plan.yaml').read()\n")
+    (tmp_path / "tests/more_helpers.py").write_text("from plan_helpers import load\n")
+    (tmp_path / "tests/test_via_helper.py").write_text("from more_helpers import load\n\ndef test_x():\n    load()\n")
+    assert "tests/test_via_helper.py" in module.text_tests(["docs/a.en.md"], tmp_path)
+    assert "tests/test_pure.py" not in module.text_tests(["docs/a.en.md"], tmp_path)
+    assert "tests/test_fu1_program_governance.py" in module.text_tests(["docs/history/predecessor-delivery-plan.yaml"])
     selected = set(module.text_tests(["docs/a.en.md"]))
     readers = {f"tests/{path.name}" for path in (ROOT / "tests").glob("test_*.py")
                if any(marker in path.read_text(encoding="utf-8") for marker in module.TEXT_MARKERS)}
