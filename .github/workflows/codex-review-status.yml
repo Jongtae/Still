@@ -25,9 +25,12 @@ permissions:
   issues: read
   statuses: write
 
+# #243: recomputes for one PR queue instead of cancelling each other, and a
+# comment that does not carry Codex's state gets a group of its own, so it can
+# never displace a pending recompute.
 concurrency:
-  group: codex-review-status-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
-  cancel-in-progress: true
+  group: codex-review-status-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}-${{ (github.event_name == 'issue_comment' && !contains(github.event.comment.body, 'codex-review-state')) && github.run_id || 'recompute' }}
+  cancel-in-progress: false
 
 jobs:
   status:

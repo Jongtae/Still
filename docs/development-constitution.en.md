@@ -137,18 +137,20 @@ It is required when a change materially changes one or more of these boundaries:
 
 A work item does not require escalated review merely because it is final closeout, recovery work, UI/conversation/Settings work, a bug fix, refactor, documentation change, or tracker/ledger reconciliation. Recovery requires escalated review only when it changes one of the material boundaries above.
 
+Outside an escalated review, the automatic Codex review is **advisory** (owner direction 2026-10-23, #264). A PR merges on its required CI without waiting for Codex and without a reply to each finding. A later finding that names a real product defect becomes a follow-up fix; other findings need no answer. A merged non-escalated change never gets a post-merge review program.
+
 ### How the escalated review is done
 
 Owner direction 2026-10-22 (#195): Still has one maintainer, who is the accountable author of every change, so a human non-author reviewer does not exist. The escalated review is therefore the **Codex review**:
 
 1. The PR records the boundary that triggered the review, its authority/threat model (data, Grants, destinations, abuse and failure paths) and the negative tests that hold it.
-2. The automatic Codex review (`chatgpt-codex-connector`) reviews the exact final head. Every finding is fixed or answered on its thread with a reason. Every push after the Codex review is reviewed by Codex again, so the review always covers the exact final head.
+2. The automatic Codex review (`chatgpt-codex-connector`) reviews the exact final head. Every finding is fixed or answered on its thread with a reason. After remediation, Codex is asked once (`@codex review`) for the consolidated final head rather than once per push, so the merged head is always one Codex reviewed (#264).
 3. Required `validate` and `full-validate` pass on that same head, including the negative tests.
 4. The owner then merges the PR. An AI session never merges a PR whose escalated review was triggered.
 
 Records call this a **Codex review**, never an independent review: a different AI model reviewing the author's change is still not independence. When another person contributes, the owner reviews that person's PR as a non-author; a human non-author review is welcome whenever one is available, and is recorded as such. A review owed under the earlier human non-author rule is resolved by the Codex review of that PR's final head, recorded as a Codex review.
 
-Codex re-reviews every remediation head (step 2). Any additional human or specialist review is repeated after a later remediation commit only if that remediation changes the boundary that triggered the review or introduces another review-triggering boundary change. Required CI, exact-head validation, acceptance-to-evidence audit and truthful evidence remain mandatory regardless of review escalation.
+Codex reviews the consolidated final head after remediation (step 2). Any additional human or specialist review is repeated after a later remediation commit only if that remediation changes the boundary that triggered the review or introduces another review-triggering boundary change. Required CI, exact-head validation, acceptance-to-evidence audit and truthful evidence remain mandatory regardless of review escalation.
 
 ## AgentPackage-specific review checklist
 

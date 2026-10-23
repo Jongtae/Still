@@ -295,14 +295,16 @@ def test_escalated_review_is_risk_based_not_default_completion_gate() -> None:
         "package/dependency supply-chain trust or install/update authority",
         "safety invariant",
         "does not require escalated review merely because it is final closeout, recovery work",
-        "Codex re-reviews every remediation head",
+        "Codex reviews the consolidated final head after remediation",
         "is repeated after a later remediation commit only if that remediation changes the boundary that triggered the review",
     )
     _assert_all(
         goal,
         "Ordinary recovery, final completion",
         "do not trigger review by themselves",
-        "The Codex review is re-run on every remediation head",
+        "Codex is asked once for that consolidated head",
+        "outside an escalated review the Codex review is advisory and nothing waits for it",
+        "never open a separate PR after the merge only to record it",
         "An additional human or specialist review is repeated only when the remediation changes the boundary that triggered review",
         "mechanical or non-boundary remediation does not automatically reopen that additional review",
     )
@@ -339,7 +341,8 @@ def test_escalated_review_is_a_codex_review_the_owner_merges() -> None:
         "The escalated review is therefore the **Codex review**",
         "negative tests that hold it",
         "exact final head",
-        "Every push after the Codex review is reviewed by Codex again",
+        "rather than once per push, so the merged head is always one Codex reviewed",
+        "the automatic Codex review is **advisory**",
         "The owner then merges the PR. An AI session never merges a PR whose escalated review was triggered.",
         "never an independent review",
     )

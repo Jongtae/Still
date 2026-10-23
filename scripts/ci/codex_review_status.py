@@ -2,7 +2,8 @@
 """Post a ``codex-review`` commit status on a PR head (#207).
 
 Green only when Codex's own ``codex-review-state`` summary names the exact head
-as reviewed and every Codex finding on the PR has a reply. The status is
+as reviewed and every Codex finding on the PR has a reply from the repository
+owner, a member or a collaborator (#264). The status is
 informational: it never approves or merges anything.
 """
 from __future__ import annotations
@@ -17,6 +18,7 @@ CONTEXT = "codex-review"
 STATE_MARK = "codex-review-state:v1"
 FINDING_MARK = "codex-code-review-finding"
 CODEX_LOGIN = "chatgpt-codex-connector[bot]"
+ANSWERING_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 _STATE = re.compile(r"codex-review-state:v1\s*(\{.*?\})\s*-->", re.S)
 
 
@@ -45,9 +47,13 @@ def review_state(issue_comments: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 
 def unanswered(review_comments: list[dict[str, Any]]) -> list[int]:
-    """Codex findings with no reply from anyone but Codex."""
+    """Codex findings with no reply from the owner, a member or a collaborator.
+
+    The repository is public, so a reply from any other account answers nothing.
+    """
     replied = {c.get("in_reply_to_id") for c in review_comments
-               if c.get("in_reply_to_id") and not _is_codex(c.get("user"))}
+               if c.get("in_reply_to_id") and not _is_codex(c.get("user"))
+               and c.get("author_association") in ANSWERING_ASSOCIATIONS}
     return [c["id"] for c in review_comments
             if _is_codex(c.get("user")) and not c.get("in_reply_to_id")
             and FINDING_MARK in (c.get("body") or "") and c["id"] not in replied]

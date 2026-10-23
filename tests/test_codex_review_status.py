@@ -25,8 +25,9 @@ def finding(cid):
     return {"id": cid, "user": CODEX, "body": "**P2** something\n<!-- codex-code-review-finding:v1 -->"}
 
 
-def reply(to, user=OWNER):
-    return {"id": to + 1000, "user": user, "in_reply_to_id": to, "body": "Fixed in abc"}
+def reply(to, user=OWNER, association="OWNER"):
+    return {"id": to + 1000, "user": user, "in_reply_to_id": to, "body": "Fixed in abc",
+            "author_association": association}
 
 
 def test_clean_review_of_the_exact_head_is_green():
@@ -57,6 +58,17 @@ def test_codex_replying_to_itself_does_not_answer_a_finding():
     assert state == "pending"
 
 
+def test_only_the_owner_a_member_or_a_collaborator_answers_a_finding():
+    """#264: on a public repository any account can reply; only these answer."""
+    outsider = {"login": "someone", "type": "User"}
+    for association in ("NONE", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", None):
+        state, _ = crs.decide(HEAD, [summary(findings=True)], [finding(1), reply(1, outsider, association)])
+        assert state == "pending", association
+    for association in ("OWNER", "MEMBER", "COLLABORATOR"):
+        state, _ = crs.decide(HEAD, [summary(findings=True)], [finding(1), reply(1, association=association)])
+        assert state == "success", association
+
+
 def test_only_codex_can_post_the_review_state():
     """A copy of the marker in someone else's comment is ignored."""
     assert crs.decide(HEAD, [summary(user=OWNER)], [])[0] == "pending"
@@ -83,3 +95,12 @@ def test_the_workflow_runs_the_script_from_main_with_status_permission_only():
     assert "contains(github.event.comment.body, 'codex-review-state')" in workflow
     # Codex finding 4349836836: a deleted reply recomputes the status.
     assert "types: [created, deleted]" in workflow
+
+
+def test_an_unrelated_comment_never_cancels_or_displaces_a_recompute():
+    """#243: recomputes queue; a comment without Codex's state runs in its own group."""
+    workflow = (ROOT / ".github/workflows/codex-review-status.yml").read_text(encoding="utf-8")
+    assert "cancel-in-progress: false" in workflow and "cancel-in-progress: true" not in workflow
+    group = next(line for line in workflow.splitlines() if line.strip().startswith("group:"))
+    assert "!contains(github.event.comment.body, 'codex-review-state')) && github.run_id" in group
+    assert "|| 'recompute'" in group
