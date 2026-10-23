@@ -499,6 +499,23 @@ class JudgmentCalls(StoreCase):
         self.assertEqual(engine.last_failure, BUDGET_EXCEEDED)
         self.assertEqual(len(calls), 1)
 
+    def test_a_spent_cap_costs_the_work_no_turn(self):
+        """#211 review: the cloud cap is admitted before the Work's turn allowance."""
+        self.bedrock(cap=1)
+        self.cloud.admit(self.cloud.launch('claude-code'))
+        spent, calls = [], []
+        context = DecisionContext('x', {'owner_message': 'a'})
+        context.admission = lambda: spent.append(1)
+        decision = self.engine('claude-code', self.runner(calls)).judge(context, 'p?')
+        self.assertEqual((decision.outcome, spent, calls), (OUTCOME_UNAVAILABLE, [], []))
+
+    def test_a_refused_work_turn_gives_the_cloud_call_back(self):
+        self.bedrock(cap=5)
+        calls = []
+        context = DecisionContext('x', {'owner_message': 'a'}, cancelled=lambda: True)
+        self.engine('claude-code', self.runner(calls)).judge(context, 'p?')
+        self.assertEqual((calls, self.cloud.used_today('claude-code', 'bedrock')), ([], 0))
+
     def test_an_unfinished_profile_makes_the_judgment_unavailable(self):
         self.cloud.save_profile('claude-code', 'foundry', {'ANTHROPIC_FOUNDRY_RESOURCE': 'corp-ai'}, 5)
         calls = []

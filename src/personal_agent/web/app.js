@@ -744,7 +744,9 @@ function cloudProviderForm(route){const cloud=route.cloud,box=element('fieldset'
   const limit=element('label',undefined,'cloud-field');limit.append(element('span',t('하루 호출 한도')),cap);fields.append(limit);
   fields.append(element('span',t('작업과 판단 AI 호출을 함께 셉니다. 한도에 닿으면 실행하지 않고 다른 AI로 넘기지도 않습니다.'),'field-hint'));};
  select.onchange=draw;draw();const save=element('button',t('제공자 저장'),'small');save.type='submit';form.append(select,fields,save);
- form.cloudSnapshot=()=>JSON.stringify([select.value,cap.value,...[...fields.querySelectorAll('input')].map(input=>[input.name,input.value])]);form.dataset.initial=form.cloudSnapshot();
+ // Hidden drafts of other providers count too: only values that differ from that provider's saved ones.
+ const hiddenDrafts=()=>Object.entries(drafts).filter(([id])=>id!==select.value).flatMap(([id,values])=>{const saved=((cloud.providers||[]).find(item=>item.id===id)||{}).values||{};return Object.entries(values).filter(([name,value])=>value!==(saved[name]||'')).map(([name,value])=>[id,name,value]);});
+ form.cloudSnapshot=()=>JSON.stringify([select.value,cap.value,...[...fields.querySelectorAll('input')].map(input=>[input.name,input.value]),...hiddenDrafts()]);form.dataset.initial=form.cloudSnapshot();
  form.onsubmit=event=>{event.preventDefault();const chosen=(cloud.providers||[]).find(item=>item.id===select.value),settings={};if(chosen)for(const name of chosen.settings){const value=fields.querySelector(`input[name="${name}"]`)?.value.trim();if(value)settings[name]=value;}
   return chooserAction(save,async()=>{await api('/api/cloud-engines/profile',{engine:route.id,provider:select.value,settings,daily_calls:chosen?Number(cap.value):undefined});return {resetPanel:true,message:t('클라우드 제공자 설정을 저장했습니다. 다음 작업부터 적용됩니다.')};});};
  box.append(form);

@@ -135,6 +135,12 @@ assert.equal(ctx.mainAiView(settingsFor('claude-code',{'claude-code':sub('claude
  const region=()=>holder.querySelectorAll('input').find(node=>node.name==='AWS_REGION'),select=holder.querySelectorAll('select')[0];
  region().value='eu-west-1';select.value='foundry';select.onchange();assert.equal(region(),undefined);
  select.value='bedrock';select.onchange();assert.equal(region().value,'eu-west-1','an edit survives switching providers and back');
+ // #211 review: a draft hidden behind another provider still counts as unsaved; a plain round trip does not.
+ region().value='us-east-1';select.value='foundry';select.onchange();select.value='bedrock';select.onchange();
+ assert.equal(ctx.chooserCloudDirty(),false,'switching back and forth without edits is not a draft');
+ select.value='foundry';select.onchange();holder.querySelectorAll('input').find(node=>node.name==='ANTHROPIC_FOUNDRY_RESOURCE').value='corp-ai';
+ select.value='bedrock';select.onchange();assert.equal(ctx.chooserCloudDirty(),true,'an edit left on the other provider is still unsaved');
+ region().value='eu-west-1';
  const before=calls.length,buttons=()=>holder.querySelectorAll('button');
  buttons().find(node=>node.textContent==='지우기').onclick();
  assert.equal(calls.length,before,'one click on 지우기 deletes nothing');

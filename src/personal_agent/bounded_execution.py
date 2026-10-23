@@ -1470,6 +1470,11 @@ class BoundedExecutionAdapter:
             LOG.warning('engine launch refused engine=%s class=%s', launch.engine, exc.failure_class)
             raise ExecutionError(str(exc), failure_class=exc.failure_class) from None
 
+    def release_cloud(self, launch):
+        """Give back one admitted cloud call that did not start (#211)."""
+        if launch is not None and self.cloud is not None:
+            self.cloud.release(launch)
+
     def environment(self, engine_id, binary, run_dir, ai_connections=False, cloud=None):
         env = {'HOME': str(run_dir), 'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}
         env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1])

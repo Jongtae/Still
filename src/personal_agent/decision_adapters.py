@@ -301,13 +301,19 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
             except ExecutionError:
                 # The strict launch refused the stored feature plan.
                 return done(OUTCOME_UNAVAILABLE, failure='capability-unchecked')
-            if not context.admit():return done(OUTCOME_CANCELLED)
             if cloud is not None:
-                # The daily cap is checked last: a spent cap launches nothing and falls back nowhere.
+                # The cloud cap is admitted before the Work's turn allowance, so a spent cap costs the
+                # Work nothing; a spent cap launches nothing and falls back nowhere.
                 try:
                     self.execution.admit_cloud(cloud)
                 except ExecutionError as exc:
                     return done(OUTCOME_UNAVAILABLE, failure=exc.failure_class or 'cloud-budget')
+            if not context.admit():
+                # The Work refused the turn (cancelled or out of turns): the cloud call is given back.
+                if cloud is not None:
+                    try:self.execution.release_cloud(cloud)
+                    except Exception:pass
+                return done(OUTCOME_CANCELLED)
             try:
                 completed = bounded_run(self.execution.runner, argv, cwd=run_dir, env=env, timeout=self.timeout)
             except subprocess.TimeoutExpired:
