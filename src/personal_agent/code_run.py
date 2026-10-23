@@ -492,6 +492,8 @@ class CodeRunner:
         return masked, plain, set_hosts
 
     def run(self, args, *, seconds=None):
+        # #233: first, so a run refused below never reports an earlier run's requests as its own.
+        self.sent = []
         # Live 2026-10-14: a resumed Work rewrote the code that asked for approval, so the request no
         # longer matched the approval.  ``rerun: approved`` runs exactly the run that asked.
         if isinstance(args, dict) and str(args.get('rerun') or '').strip().lower() == 'approved':
@@ -510,7 +512,6 @@ class CodeRunner:
         self._fields = parse_approval_fields(fields)
         if seconds is not None:
             timeout = max(1, min(timeout, int(seconds)))
-        self.sent = []
         node = self.node()
         if node is None:
             raise CodeRunError(UNAVAILABLE_TEXT, 'code_run_unavailable')
@@ -868,6 +869,8 @@ class CodeRunner:
                   'env': {**(plain or {}), 'PATH': '/usr/bin:/bin', 'HOME': workdir, 'LANG': 'en_US.UTF-8',
                           'PYTHONIOENCODING': 'utf-8', 'PYTHONDONTWRITEBYTECODE': '1'},
                   'masked': list(masked), 'timeoutMs': timeout * 1000, 'outputBytes': OUTPUT_BYTES}
+        from .agent_runtime import handed_off
+        handed_off()   # #233: the code runs, and may send requests, from here
         process = self.popen([node, str(Path(runtime) / 'runner.mjs')], cwd=str(runtime), stdin=subprocess.PIPE,
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
                              env={'PATH': f'{Path(node).parent}:/usr/bin:/bin', 'HOME': workdir})

@@ -390,8 +390,12 @@ def work_information_use(store, job_id, redact=None):
                      'status': status}
             if match not in matches and len(matches) < MAX_ITEMS:
                 matches.append(match)
-        if (status == 'succeeded' or withheld) and action == 'browser_open':
-            for value in (evidence.get('destination') or _host(evidence.get('url')), evidence.get('landed')):
+        if status in ('succeeded', 'failed') and action == 'browser_open':
+            # A failed open that reached the browser keeps its destination at the top level, like its
+            # matches (#233): the browser may have contacted that host before the failure.
+            reached = status == 'succeeded' or withheld
+            source = evidence if reached else trace
+            for value in (source.get('destination') or (_host(source.get('url')) if reached else ''), source.get('landed')):
                 host = label(value, 120)
                 if host and host not in opened and len(opened) < MAX_ITEMS:
                     opened.append(host)

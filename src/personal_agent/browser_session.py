@@ -1117,6 +1117,8 @@ class BrowserSession:
         any other one is cancelled and handled by ``_cancelled_submit`` (#700).
         """
         self._last_input = description
+        from .agent_runtime import handed_off
+        handed_off()   # #233: the step's input goes to the page from here
         try:
             return self._call(operation)
         except ToolError as exc:
@@ -1199,6 +1201,8 @@ class BrowserSession:
         # A failed navigation must not leave old element numbers actionable.
         self.last = None
         self._navigation_error = None
+        from .agent_runtime import handed_off
+        handed_off()   # #233: the address goes to the browser from here
         try:
             self._call(lambda timeout: self._driver().goto(url, timeout))
         except ToolError as exc:
