@@ -398,6 +398,38 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.assertIn('그냥 메모', text)
         self.assertNotIn('retired-secret-marks', ' '.join(tarfile.open(archive).getnames()))
 
+    def test_every_redacted_namespace_is_retired_and_exports_use_the_runtime_redaction(self):
+        """Codex review on #259: cloud credentials are retired; the export redacts what the runtime redacts,
+        decrypted values included, and stops when a value cannot be read."""
+        from unittest import mock
+        from personal_agent import api_requests, cloud_engines, current_context
+        from personal_agent.portable_state import export_owner_state
+        for key in (*current_context.KNOWN_SECRET_NAMES, api_requests.SECRET_PREFIX + 'x',
+                    cloud_engines.SECRET_PREFIX + 'codex:bedrock:AWS_SECRET_ACCESS_KEY'):
+            self.assertTrue(current_context.is_redacted_secret_key(key), key)
+        cloud = cloud_engines.SECRET_PREFIX + 'codex:bedrock:AWS_SECRET_ACCESS_KEY'
+        self.store.secret(cloud, 'old-aws-secret-value-123')
+        self.store.remove_secret(cloud)
+        self.assertTrue(self.store.holds_retired_secret('x old-aws-secret-value-123 y'))
+        self.said('클라우드 키는 decrypted-api-password-9 야')
+        real = current_context.stored_secret_values
+        with mock.patch.object(current_context, 'stored_secret_values',
+                               lambda store: [*real(store), 'decrypted-api-password-9']):
+            export_owner_state(self.data, self.root / 'a.tar.gz')
+        import sqlite3, tarfile
+        from personal_agent.portable_state import DB_RELATIVE, ROOT
+        with tarfile.open(self.root / 'a.tar.gz') as bundle:
+            bundle.extractall(self.root / 'a', filter='data')
+        with sqlite3.connect(self.root / 'a' / ROOT / DB_RELATIVE) as db:
+            text = ' '.join(str(row[0]) for row in db.execute('SELECT content FROM messages'))
+        self.assertIn('클라우드 키는 [redacted] 야', text)
+        def unreadable(store):
+            raise RuntimeError('owner-held key unavailable')
+        with mock.patch.object(current_context, 'stored_secret_values', unreadable):
+            with self.assertRaises(ValueError):
+                export_owner_state(self.data, self.root / 'b.tar.gz')
+        self.assertFalse((self.root / 'b.tar.gz').exists(), 'nothing exported')
+
     def test_the_owners_earlier_words_are_bounded_in_bytes(self):
         from personal_agent.memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING
         self.said(*[f'마트 장바구니 메모 {index} ' + '가' * 400 for index in range(20)])

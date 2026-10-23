@@ -399,8 +399,8 @@ class QuickStore:
 
         Rotating tokens (OAuth, run state) are not owner-typed and are not tracked (Codex review on #259).
         """
-        from .current_context import KNOWN_SECRET_NAMES
-        return isinstance(key,str) and (key in KNOWN_SECRET_NAMES or key.startswith('api_slot:'))
+        from .current_context import is_redacted_secret_key
+        return is_redacted_secret_key(key)
 
     def _retire_locked(self, values, old, key=None):
         """Record one retired secret value as ``[length, hmac]`` (caller holds the secrets lock)."""
@@ -429,25 +429,15 @@ class QuickStore:
                 fcntl.flock(lock_fd,fcntl.LOCK_UN)
                 os.close(lock_fd)
 
-    @classmethod
-    def secret_redaction_material(cls, private_dir):
-        """``(values, ledger)`` read from a store's private directory without opening the store (#258 export).
-
-        ``values`` are the current values the redaction knows (8 characters or more); ``ledger`` is the
-        retired-secret digests, or None.
-        """
-        private_dir=Path(private_dir)
-        try:
-            stored=json.loads((private_dir/'connections.json').read_text())
-        except (OSError,ValueError):
-            stored={}
-        values=sorted({value for key,value in (stored.items() if isinstance(stored,dict) else ())
-                       if cls._redacted_secret_key(key) and isinstance(value,str) and len(value)>=8},key=len,reverse=True)
-        try:
-            ledger=json.loads((private_dir/'retired-secret-marks.json').read_text())
-        except (OSError,ValueError):
-            ledger=None
-        return values,(ledger if isinstance(ledger,dict) and isinstance(ledger.get('key'),str) else None)
+    def secret_redaction_material(self):
+        """``(values, ledger)`` for a secret-free export (#258): every value the runtime redaction knows -
+        decrypted API credentials and cloud credentials included - and the retired digests.  Raises
+        when a value cannot be read, so an export fails closed rather than keep a secret."""
+        from .current_context import stored_secret_values
+        values=sorted(set(stored_secret_values(self)),key=len,reverse=True)
+        with self.secret_lock:
+            ledger=self._read_retired()
+        return values,ledger
 
     @staticmethod
     def redact_secret_spans(text, values, ledger):

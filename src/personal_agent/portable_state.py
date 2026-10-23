@@ -128,7 +128,11 @@ def export_owner_state(data, archive):
     with tempfile.TemporaryDirectory() as temporary:
         staging = Path(temporary) / ROOT;(staging / "private").mkdir(parents=True, mode=0o700)
         from .quickstart_store import QuickStore
-        redaction = QuickStore.secret_redaction_material(database.parent)
+        # The same decryption-aware source the runtime redaction uses; an unreadable value stops the export.
+        try:
+            redaction = QuickStore(data).secret_redaction_material()
+        except Exception as exc:
+            raise ValueError("Still could not read the secrets it must remove from the export; nothing was exported.") from exc
         portable_db = staging / DB_RELATIVE;_portable_db(database, portable_db, redaction);portable_db.chmod(0o600)
         files = {DB_RELATIVE: _sha256(portable_db)}
         plugins = data / "plugins"

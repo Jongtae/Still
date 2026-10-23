@@ -99,6 +99,16 @@ def redact_known_secrets(store, text):
     return SECRET_PATTERN.sub('[redacted]', text)
 
 
+#: #258: the plaintext secret namespaces ``stored_secret_values`` reads besides ``KNOWN_SECRET_NAMES``
+#: (API slots, cloud engine credentials); encrypted API credentials are retired by ``ApiCredentials.discard``.
+REDACTED_SECRET_PREFIXES = ('api_slot:', 'cloud_engine:')
+
+
+def is_redacted_secret_key(key):
+    """Whether ``stored_secret_values`` reads the plaintext under this secret key (#258)."""
+    return isinstance(key, str) and (key in KNOWN_SECRET_NAMES or key.startswith(REDACTED_SECRET_PREFIXES))
+
+
 def stored_secret_values(store):
     """The stored secrets' literal values that ``redact_known_secrets`` replaces (8 characters or more).
 
