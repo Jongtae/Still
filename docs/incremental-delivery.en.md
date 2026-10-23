@@ -57,8 +57,8 @@ to mirror GitHub. Keep a checkpoint parent open when remaining criteria or expli
    reviewed. Outside an escalated review the Codex review is advisory: do not wait for it or
    reply to its findings before merging; turn a real product defect it finds into a follow-up fix.
    The informational `codex-review` commit status (#207) turns green when Codex's own review
-   state names the exact head and every Codex finding has a reply; it never approves or merges,
-   and it matters only for an escalated review.
+   state names the exact head and every Codex finding has a reply from the owner, a member or a
+   collaborator; it never approves or merges, and it matters only for an escalated review.
    Resolve only addressed or explicitly triaged threads with evidence. Never impersonate
    another reviewer or treat self-review as independence.
 4. When any risk-triggered review and GitHub requirements are satisfied, attempt one normal
