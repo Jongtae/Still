@@ -8985,7 +8985,9 @@ class AgentService:
             if popen is subprocess.Popen and not find_cli('ngrok'):raise remote_login.RemoteLoginError(remote_login.NO_NGROK_TEXT)
             port=self.local_server_port
             if not isinstance(port,int):raise remote_login.RemoteLoginError(remote_login.NO_PORT_TEXT)
-            session=remote_login.RemoteLogin(self.browser_profile,window,site,close,store=self.store,popen=popen)
+            # #255: its end is said on the link message the owner got.
+            session=remote_login.RemoteLogin(self.browser_profile,window,site,close,store=self.store,popen=popen,
+                                             on_end=lambda reason:self._end_remote_login_link(session,reason))
             self._remote_login=session
             self._remote_login_started=True
         try:
@@ -9006,11 +9008,24 @@ class AgentService:
         cfg=self.store.config('telegram',{})
         if not (cfg.get('enabled') and isinstance(cfg.get('user_id'),int) and chat_id==cfg['user_id']):return False
         text=remote_login.LINK_TEXT.format(site=session.site or '로그인',minutes=max(1,int(session.expires-session.clock())//60),link=session.link)
-        try:self.telegram.call('sendMessage',{'chat_id':chat_id,'text':text,'link_preview_options':{'is_disabled':True}})
+        try:sent=self.telegram.call('sendMessage',{'chat_id':chat_id,'text':text,'link_preview_options':{'is_disabled':True}})
         except Exception as exc:
             LOG.warning('remote login: link not sent (%s)',type(exc).__name__)
             return False
+        message_id=sent.get('message_id') if isinstance(sent,dict) else None
+        # The session may have ended while the send was in flight: then its end is said now.
+        if isinstance(message_id,int) and not session.link_sent(chat_id,message_id):
+            self._end_remote_login_link(session,session.reason)
         return True
+
+    def _end_remote_login_link(self, session, reason):
+        """#255: rewrite the sent link message, in place, to how the session ended; it never looks live after."""
+        sent=session.take_link_message()
+        if sent is None:return
+        text=remote_login.LINK_ENDED_TEXT.get(reason,remote_login.LINK_ENDED_TEXT['closed']).format(site=session.site or '로그인')
+        try:self.telegram.edit_message_text(sent[0],sent[1],text)
+        except Exception as exc:
+            LOG.warning('remote login: link message not updated (%s)',type(exc).__name__)
 
     def _start_remote_login_for_work(self, work_id, nonce, chat_id):
         """The prompt's 휴대폰에서 로그인: start the session for this Work's offered window on its own thread."""
