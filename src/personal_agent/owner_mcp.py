@@ -42,6 +42,12 @@ RESERVED = frozenset({'agentos'})
 #: Environment names Still sets for the CLI itself; an owner server may not replace them.
 RESERVED_ENV = frozenset({'HOME', 'PATH', 'LANG', 'PYTHONPATH', 'USER', 'LOGNAME', 'CODEX_HOME',
                           'CLAUDE_CODE_OAUTH_TOKEN', 'TMPDIR'})
+#: #210: where a stdio server's own process finds the owner's files and tools.  A definition may
+#: set these for its server: they go into that server's literal ``env`` table, never into the CLI's
+#: own environment (which Still sets, ``bounded_execution.environment``) and never into the model's
+#: shell.  Observed on codex-cli 0.153.4 (local fixture model, no provider contacted): a stdio server
+#: otherwise gets the turn's empty ``HOME`` and no ``USER``, and its literal ``env`` replaces both.
+SERVER_LOCATION_ENV = frozenset({'HOME', 'PATH', 'USER', 'LOGNAME', 'TMPDIR'})
 #: Review P1 on #1296: a server whose name starts like a claude.ai connector would yield the
 #: connector's exact tool name (``mcp__claude_ai_<service>__<operation>``) and inherit its
 #: reviewed reads, so such names are never an owner server.
@@ -240,11 +246,16 @@ def codex_launch(definitions, reserved=()):
             if isinstance(transport.get('cwd'), str) and transport['cwd']:
                 server_args += ['-c', f'{prefix}.cwd={_toml(transport["cwd"])}']
             values = transport.get('env') if isinstance(transport.get('env'), dict) else {}
-            if not all(isinstance(k, str) and ENV_NAME.match(k) and k not in RESERVED_ENV and k not in reserved
-                       and isinstance(v, str) for k, v in values.items()):
+            if not all(isinstance(k, str) and ENV_NAME.match(k) and (k not in RESERVED_ENV or k in SERVER_LOCATION_ENV)
+                       and k not in reserved and isinstance(v, str) for k, v in values.items()):
                 continue
-            server_env.update(values)
-            forwarded = sorted(values)
+            # #210: the server's own location names are its literal ``env``; every other value may be
+            # secret, so it travels in the CLI environment by name only (``env_vars``).
+            located = {k: v for k, v in values.items() if k in SERVER_LOCATION_ENV}
+            if located:
+                server_args += ['-c', f'{prefix}.env={{' + ','.join(f'{k}={_toml(v)}' for k, v in sorted(located.items())) + '}']
+            server_env.update({k: v for k, v in values.items() if k not in SERVER_LOCATION_ENV})
+            forwarded = sorted(server_env)
         elif kind == 'streamable_http' and isinstance(transport.get('url'), str) and transport['url'].startswith('https://'):
             server_args += ['-c', f'{prefix}.url={_toml(transport["url"])}']
             literal = transport.get('http_headers') if isinstance(transport.get('http_headers'), dict) else {}

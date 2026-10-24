@@ -1713,9 +1713,14 @@ class BoundedExecutionAdapter:
             # record that `json` prints, so answer parsing is unchanged.
             # #961: no Claude Code skill or slash command of its own ("Disable all skills");
             # Still serves the Work's pinned skills through the bridge.
+            # #210: the permission mode is named.  Observed on Claude Code 2.1.287 (local fixture model, no
+            # provider contacted): with no settings, a -p turn starts in "auto", where the CLI's own
+            # classifier decides a tool call that has no allow rule, before (or instead of) the
+            # --permission-prompt-tool.  "default" leaves exactly the exact allow rules below and Still's
+            # permission prompt; nothing else runs.
             argv = [binary, '-p', prompt, '--output-format', 'stream-json', '--verbose',
                     *(() if ai_connections else ('--strict-mcp-config',)), '--mcp-config', str(mcp_config),
-                    '--disable-slash-commands', *model_args]
+                    '--disable-slash-commands', '--permission-mode', 'default', *model_args]
             if ai_connections:
                 # #1197: the owner's AI connectors load beside the bridge; none is
                 # pre-approved, so every connector call asks Still

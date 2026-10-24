@@ -112,8 +112,11 @@ class ApprovalModeArgv(unittest.TestCase):
     def test_claude_code_needs_nothing_beyond_its_exact_allow_list(self):
         argv = self.run_cli('claude-code')
         self.assertFalse([value for value in argv if APPROVAL_KEY in value])
-        for flag in ('--permission-mode', '--dangerously-skip-permissions', '--allow-dangerously-skip-permissions'):
+        for flag in ('--dangerously-skip-permissions', '--allow-dangerously-skip-permissions'):
             self.assertNotIn(flag, argv)
+        # #210: the mode is named, and it is the one where only exact allow rules and Still's prompt decide.
+        self.assertEqual(argv.count('--permission-mode'), 1)
+        self.assertEqual(argv[argv.index('--permission-mode') + 1], 'default')
         self.assertEqual(argv[-2], '--allowedTools')
         self.assertEqual(argv[-1].split(','), [f'mcp__agentos__{action}' for action in profile_actions(BOUNDED_PROFILE)])
 

@@ -79,6 +79,25 @@ Company hosts resolve to private addresses, which Still otherwise refuses so tha
 
 Company proxy and internal CA, as they are today: the browser uses macOS's proxy settings and the Keychain, so a company CA installed there is trusted. Page reads, and API calls to a declared host, connect directly to the checked address (no proxy) and trust Python's OpenSSL certificate store (not the Keychain); other API calls and signed-in session refreshes also trust that store and follow an `HTTPS_PROXY`/`NO_PROXY` set for the Still process. Code runs connect directly (no proxy) and their TLS is verified by Node's bundled CA list. MCP server setup runs the Claude Code CLI with its own trust settings and no proxy variables. A host whose certificate the path does not trust fails its TLS handshake; nothing is bypassed. Evidence is unit tests with injected resolvers, not an observation on a company network.
 
+### Company tools through your own MCP server
+
+Still never runs a script that comes inside a skill. If your skill for a company tool carries scripts (one that gets a token from the company's own tooling and calls the tool's API, say), split it in two (#210):
+
+1. **The executable part becomes a small local MCP server you own.** Write it with the official MCP Python SDK (`MCPServer`, formerly FastMCP), or use a maintained server for that tool when its auth fits your company. The server gets its token itself, inside its own process: from an internal CLI, SSO or a token file.
+2. **Register it in the CLI**, as you would for yourself: Claude Code's user scope (`claude mcp add --scope user …`, kept in `~/.claude.json`) or Codex's `~/.codex/config.toml` (`[mcp_servers.<name>]`).
+3. **Let Still start it for a Work.** Keep **AI의 연결 서비스 사용** on in Settings > External connections. Ask in conversation to use the server; Still proposes which servers this AI may start for Works, and which of their operations are reads, and you confirm. A server only present in your CLI configuration is never started by a Work.
+4. **Keep the know-how as a skill without scripts**: query syntax, project conventions and workflows.
+
+The environment the server starts with in a Work:
+
+- **Claude Code**: your `HOME` and `USER`, but `PATH` is only `/usr/bin:/bin`. Use an absolute `command` path, or set `PATH` in the definition's `env`.
+- **Codex**: the turn's own empty `HOME`, no `USER`, and Codex's `PATH`. Set `HOME`, `PATH`, `USER`, `LOGNAME` or `TMPDIR` in the definition's `env` (`[mcp_servers.<name>.env]`). Still passes these to that server only, never to the CLI or the model's shell. Before #210 a definition that set them was skipped whole.
+- Any other `env` value, a token for example, reaches the server through the CLI's own environment by name. The model's shell commands never see it, and it is never an argument, a prompt, a log line or Evidence. Keep token values out of tool arguments too: a call whose input carries a secret is refused.
+
+Still decides every call to the server: an operation you confirmed as a read runs; another change runs on the pilot authority and is reported; anything that moves money needs your approval of that exact call. Claude Code turns name the `default` permission mode, so the CLI's own auto-mode classifier never decides in Still's place (#210: with no settings, Claude Code 2.1.287 starts a `-p` turn in auto mode). Not controlled: what the server process does with your account's rights, and its own network traffic, in work mode too.
+
+Evidence is a local observation of a whole Work on Claude Code 2.1.287 and codex-cli 0.153.4: the Still service, the CLI, Still's decision path and a fixture server whose token comes from a fixture company CLI, against a local fixture model. No company system and no model provider were contacted.
+
 ### Work mode on a company network
 
 On a company network, switch on **회사 모드 (work mode)** in Settings > External connections, on this Mac (#208). It cannot be switched from a conversation or through a phone link, and every change is recorded. While it is on:
