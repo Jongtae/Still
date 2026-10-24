@@ -1264,6 +1264,11 @@ const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
  // The buttons share the same queue.
  sent();$('tab').onclick();$('back').onclick();$('enter').onclick();await tick();
  assert.deepEqual(sent(),[{type:'key',key:'Tab'},{type:'key',key:'Backspace'},{type:'key',key:'Enter'}]);
+ // 뒤로 and 새로고침 go behind what is still being typed.
+ sent();let typing;holds.push({type:'text',wait:new Promise(r=>{typing=r;})});
+ type(S+'a',{inputType:'insertText'});type(S+'b',{inputType:'insertText'});$('reload').onclick();$('nav-back').onclick();
+ await settle();typing();await tick();
+ assert.deepEqual(sent(),[{type:'text',text:'a'},{type:'text',text:'b'},{type:'nav',action:'reload'},{type:'nav',action:'back'}]);
  // 완료 waits for what is still queued: the window never closes before the sign-in Enter reaches it.
  sent();let held;holds.push({type:'text',wait:new Promise(r=>{held=r;})});
  type(S+'p',{inputType:'insertText'});type(S+'w',{inputType:'insertText'});

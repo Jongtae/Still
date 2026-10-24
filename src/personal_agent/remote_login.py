@@ -430,7 +430,7 @@ enqueue({{type:'tap',x:x,y:y,seq:seq}})}});
 // #1170: the phone's own AutoFill fills these two; they go out like typed text (ID, Tab, password) and are
 // cleared at once: the page keeps neither.
 function clearCred(){{$('user').value='';$('pass').value=''}}
-$('cred').addEventListener('submit',async e=>{{e.preventDefault();const u=$('user').value,p=$('pass').value;clearCred();
+$('cred').addEventListener('submit',async e=>{{e.preventDefault();const u=$('user').value,p=$('pass').value;clearCred();await drained();
 if(u&&!(await post('{INPUT_PATH}',{{type:'text',text:u}})))return;
 if(u&&p&&!(await post('{INPUT_PATH}',{{type:'key',key:'Tab'}})))return;
 if(p)await post('{INPUT_PATH}',{{type:'text',text:p}});setTimeout(frame,150)}});
@@ -438,8 +438,9 @@ window.addEventListener('pagehide',clearCred);
 $('enter').onclick=()=>enqueue({{type:'key',key:'Enter'}});
 $('tab').onclick=()=>enqueue({{type:'key',key:'Tab'}});
 $('back').onclick=()=>enqueue({{type:'key',key:'Backspace'}});
-$('nav-back').onclick=()=>post('{INPUT_PATH}',{{type:'nav',action:'back'}});
-$('reload').onclick=()=>post('{INPUT_PATH}',{{type:'nav',action:'reload'}});
+// Navigation goes behind what is still being typed, so no keystroke lands in the next page.
+$('nav-back').onclick=()=>enqueue({{type:'nav',action:'back'}});
+$('reload').onclick=()=>enqueue({{type:'nav',action:'reload'}});
 $('done').onclick=async()=>{{const b=$('done');if(b.disabled)return;b.disabled=true;await drained();b.disabled=false;
 if(await post('{DONE_PATH}')){{end('완료했어요. 로그인 창을 닫고 세션을 저장했어요. 이 페이지는 닫아도 돼요.')}}}};
 $('expire').textContent='이 링크는 약 {max(1, int(round((session.expires - session.clock()) / 60)))}분 뒤에 닫혀요.';
