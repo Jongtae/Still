@@ -99,7 +99,8 @@ class EarlierWorks(Case):
         with mock.patch('personal_agent.quickstart_service.worker_catalogue', return_value=SimpleNamespace(default='w')), \
                 mock.patch('personal_agent.quickstart_service.Orchestration') as built:
             self.service.work_orchestration(self.job, self.job['message'], rows, {}, None)
-        lines = built.call_args.kwargs['conversation'].splitlines()
+        lines = built.call_args.kwargs['conversation']  # #275: one line per earlier turn
+        self.assertIsInstance(lines, list)
         self.assertEqual(len(lines), 2, 'the current request is not part of the history')
         self.assertTrue(all(line.startswith(('[owner, earlier Work', '[assistant, earlier Work')) for line in lines), lines)
         self.assertEqual(built.call_args.kwargs['sections']['history'], 2)
