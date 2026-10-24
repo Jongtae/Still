@@ -538,7 +538,7 @@ class RemoteLoginSurface(unittest.TestCase):
         self.assertIn('if(!r.ok)return false;const d=await r.json();return d&&d.ok===true', post)
         self.assertNotRegex(post, r'return r\.ok\}', 'the HTTP status alone never counts as success')
         self.assertIn("const ok=await post('/api/remote-login/input',body)", page)
-        self.assertIn("else if(!ok)failed=true", page)
+        self.assertIn("if(item.type!=='tap'&&!ok)failed=true", page)
         self.assertIn("if(await post('/api/remote-login/done')){end(", page)
         # The server side of that contract: a refused input is a 200 whose ok is false.
         self.drivers[-1].open = False
@@ -1242,6 +1242,15 @@ const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
  await ctx.frame();assert.equal(keys.type,'password','a frame after the first tap only does not decide');
  second();await tick();assert.equal(keys.type,'text','the latest tap pressed: its frame decides');
  assert.deepEqual(sent().filter(p=>p.type==='tap'),[{type:'tap',x:195,y:211},{type:'tap',x:195,y:422}],'no seq leaves the page');
+ // 다음 칸 (Tab) moves the window's focus too: password again at once, while it is pending and after it
+ // was pressed, until a frame fetched after it says plain text.
+ let tabbed;holds.push({type:'key',wait:new Promise(r=>{tabbed=r;})});
+ $('tab').onclick();assert.equal(keys.type,'password','password while Tab is pending');await settle();
+ await ctx.frame();assert.equal(keys.type,'password','a frame from before Tab does not decide');
+ tabbed();await settle();assert.equal(keys.type,'password','password after Tab until a fresh frame');
+ frameAnswer.body={...frameAnswer.body,focus:'password'};await tick();assert.equal(keys.type,'password');
+ assert.deepEqual(sent(),[{type:'key',key:'Tab'}],'no seq leaves the page');
+ frameAnswer.body={...frameAnswer.body,focus:'text'};frameAnswer.body.jpeg='CCCC';await ctx.frame();assert.equal(keys.type,'text');
  // Enter that confirms an IME candidate stays with the IME: no early text, no Enter to the window.
  keys.fire('compositionstart');type(S+'にほん',{isComposing:true});
  let kept=true;keys.fire('keydown',{key:'Enter',isComposing:true,keyCode:229,preventDefault(){kept=false;}});await tick();

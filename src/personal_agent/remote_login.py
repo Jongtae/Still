@@ -371,7 +371,7 @@ details{{margin:8px 0}}summary{{font-size:14px;color:#aeaeb2;padding:6px 0}}</st
 <p id="end"></p>
 <script nonce="{nonce}">
 const code={code};const q='?code='+encodeURIComponent(code);const $=id=>document.getElementById(id);
-let W=0,H=0,busy=false,ended=false,full=true,F=null,checkAfter=0,tapSeq=0,composing=false,sending=false;const sendQ=[],idle=[];
+let W=0,H=0,busy=false,ended=false,full=true,F=null,checkAfter=0,moveSeq=0,composing=false,sending=false;const sendQ=[],idle=[];
 function end(text){{ended=true;$('keys').blur();$('live').classList.add('hidden');$('end').style.display='block';$('end').textContent=text}}
 async function post(path,body){{try{{const r=await fetch(path+q,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body||{{}}),credentials:'same-origin'}});
 if(r.status===404){{end('이 링크는 닫혔어요.');return false}}if(!r.ok)return false;const d=await r.json();return d&&d.ok===true}}catch(e){{return false}}}}
@@ -385,10 +385,11 @@ F=d.focus||null;if(t0>=checkAfter)applyFocus()}}}}catch(e){{}}finally{{busy=fals
 // value (noVNC's hidden keyboard input) and sent in order as text, Backspace or Enter, and it is reset
 // at once, so the page keeps nothing typed.  A frame's focus says what has focus in the window: the
 // keyboard stays up only for an editable element, as a password input unless it is plain text, so the
-// phone keyboard neither learns nor suggests what goes into a password field.  Only frames fetched after
-// the tap was pressed decide (checkAfter): an older one still shows the focus from before the tap, so
-// each tap starts as a password input until such a frame says the new field is plain text.  Only the
-// latest tap's press reopens the gate (tapSeq): an earlier one's would let a frame of its field decide.
+// phone keyboard neither learns nor suggests what goes into a password field.  Anything that can move
+// the window's focus (a tap, Tab, Enter, 뒤로, 새로고침: moving()) starts a password input again, and only
+// frames fetched after it was sent decide (checkAfter): an older one still shows the focus from before.
+// Only the latest such input reopens the gate (moveSeq): an earlier one's would let a frame of its field
+// decide.
 // Enter while an IME composes confirms the composition (a Japanese or Chinese candidate): it is left to
 // the IME, and only an Enter outside composition goes to the window.
 const S='__________';
@@ -405,8 +406,9 @@ if(part.length+ch.length>{TEXT_LIMIT}){{addText(part);part=''}}part+=ch}}if(part
 else sendQ.push(item);pump()}}
 async function pump(){{if(sending)return;sending=true;let failed=false;
 while(sendQ.length&&!ended){{const item=sendQ[0];item.sent=true;const body=Object.assign({{}},item);delete body.sent;delete body.seq;
-const ok=await post('{INPUT_PATH}',body);sendQ.shift();if(item.type==='tap'){{if(item.seq===tapSeq)checkAfter=Date.now()}}else if(!ok)failed=true}}
+const ok=await post('{INPUT_PATH}',body);sendQ.shift();if(item.seq!==undefined&&item.seq===moveSeq)checkAfter=Date.now();if(item.type!=='tap'&&!ok)failed=true}}
 sending=false;idle.splice(0).forEach(done=>done());$('typing-failed').classList.toggle('hidden',!failed);setTimeout(frame,150)}}
+function moving(item){{setKeyType('password');checkAfter=Infinity;item.seq=++moveSeq;enqueue(item)}}
 // 완료 closes the window: everything typed before it (the sign-in Enter included) reaches the window first.
 function drained(){{return sending||sendQ.length?new Promise(done=>idle.push(done)):Promise.resolve()}}
 // A whole-value replacement (AutoFill: insertReplacementText, or an input event with no inputType) is
@@ -418,15 +420,15 @@ resetKeys();
 $('keys').addEventListener('compositionstart',()=>{{composing=true}});
 $('keys').addEventListener('compositionend',()=>{{composing=false;flush()}});
 $('keys').addEventListener('input',e=>{{if(composing||e.isComposing)return;flush(!e.inputType||e.inputType==='insertReplacementText')}});
-$('keys').addEventListener('keydown',e=>{{if(e.key!=='Enter'||composing||e.isComposing||e.keyCode===229)return;e.preventDefault();flush();enqueue({{type:'key',key:'Enter'}})}});
+$('keys').addEventListener('keydown',e=>{{if(e.key!=='Enter'||composing||e.isComposing||e.keyCode===229)return;e.preventDefault();flush();moving({{type:'key',key:'Enter'}})}});
 function dialog(d){{const box=$('dialog');if(!d){{box.classList.add('hidden');return}}$('dialog-text').textContent=d.text||'';$('dialog-cancel').classList.toggle('hidden',d.kind!=='confirm');box.classList.remove('hidden')}}
 $('dialog-ok').onclick=()=>post('{INPUT_PATH}',{{type:'dialog',answer:'ok'}}).then(()=>setTimeout(frame,150));
 $('dialog-cancel').onclick=()=>post('{INPUT_PATH}',{{type:'dialog',answer:'cancel'}}).then(()=>setTimeout(frame,150));
 setInterval(frame,{REFRESH_MS});frame();
 $('shot').addEventListener('click',e=>{{if(!W||!H)return;const r=e.currentTarget.getBoundingClientRect();
 const x=Math.max(0,Math.min(W,(e.clientX-r.left)/r.width*W)),y=Math.max(0,Math.min(H,(e.clientY-r.top)/r.height*H));
-const k=$('keys');k.style.top=Math.round(e.clientY-r.top)+'px';setKeyType('password');resetKeys();k.focus();checkAfter=Infinity;const seq=++tapSeq;
-enqueue({{type:'tap',x:x,y:y,seq:seq}})}});
+const k=$('keys');k.style.top=Math.round(e.clientY-r.top)+'px';resetKeys();k.focus();
+moving({{type:'tap',x:x,y:y}})}});
 // #1170: the phone's own AutoFill fills these two; they go out like typed text (ID, Tab, password) and are
 // cleared at once: the page keeps neither.
 function clearCred(){{$('user').value='';$('pass').value=''}}
@@ -435,12 +437,12 @@ if(u&&!(await post('{INPUT_PATH}',{{type:'text',text:u}})))return;
 if(u&&p&&!(await post('{INPUT_PATH}',{{type:'key',key:'Tab'}})))return;
 if(p)await post('{INPUT_PATH}',{{type:'text',text:p}});setTimeout(frame,150)}});
 window.addEventListener('pagehide',clearCred);
-$('enter').onclick=()=>enqueue({{type:'key',key:'Enter'}});
-$('tab').onclick=()=>enqueue({{type:'key',key:'Tab'}});
+$('enter').onclick=()=>moving({{type:'key',key:'Enter'}});
+$('tab').onclick=()=>moving({{type:'key',key:'Tab'}});
 $('back').onclick=()=>enqueue({{type:'key',key:'Backspace'}});
 // Navigation goes behind what is still being typed, so no keystroke lands in the next page.
-$('nav-back').onclick=()=>enqueue({{type:'nav',action:'back'}});
-$('reload').onclick=()=>enqueue({{type:'nav',action:'reload'}});
+$('nav-back').onclick=()=>moving({{type:'nav',action:'back'}});
+$('reload').onclick=()=>moving({{type:'nav',action:'reload'}});
 $('done').onclick=async()=>{{const b=$('done');if(b.disabled)return;b.disabled=true;await drained();b.disabled=false;
 if(await post('{DONE_PATH}')){{end('완료했어요. 로그인 창을 닫고 세션을 저장했어요. 이 페이지는 닫아도 돼요.')}}}};
 $('expire').textContent='이 링크는 약 {max(1, int(round((session.expires - session.clock()) / 60)))}분 뒤에 닫혀요.';
