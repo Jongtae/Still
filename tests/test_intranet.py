@@ -10,6 +10,7 @@ never called), not only by its message.
 import ipaddress
 import json
 import pathlib
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -369,8 +370,51 @@ class CodeRun(Case):
         policy = {HOST: set()}
         self.assertEqual(runner._decide({'method': 'GET', 'host': HOST, 'port': 443, 'path': '/'}, policy), (True, ''))
         self.assertFalse(runner._decide({'method': 'GET', 'host': HOST, 'port': 80, 'path': '/'}, policy)[0])
-        runner_source = (pathlib.Path(__file__).resolve().parents[1] / 'src/personal_agent/sandbox/runner.mjs').read_text()
-        self.assertIn("port: Number(url.port) || (url.protocol === 'http:' ? 80 : 443)", runner_source)
+
+    @unittest.skipUnless(shutil.which('node'), 'needs Node.js')
+    def test_the_runner_reports_the_effective_port_of_each_request(self):
+        """#288 review: the real ``runner.mjs`` runs, with sandbox-runtime replaced by a stub that
+        hands its ``filterRequest`` URLs whose default port is omitted; the requests it asks
+        about carry the effective port."""
+        urls = ['http://wiki.corp.internal/a', 'https://wiki.corp.internal/b', 'https://wiki.corp.internal:8443/c']
+        package = self.root / 'runner' / 'node_modules' / '@anthropic-ai' / 'sandbox-runtime'
+        package.mkdir(parents=True)
+        (package / 'package.json').write_text(json.dumps({'name': '@anthropic-ai/sandbox-runtime', 'type': 'module',
+                                                          'exports': './index.js'}))
+        (package / 'index.js').write_text(
+            'let filter\n'
+            'export const SandboxManager = {\n'
+            '  async initialize (config) { filter = config.network.filterRequest },\n'
+            "  getSentinelRegistry () { return { register: () => 'sentinel' } },\n"
+            '  async wrapWithSandbox (command) {\n'
+            f'    for (const url of {json.dumps(urls)}) await filter(new Request(url))\n'
+            "    return 'true'\n"
+            '  },\n'
+            '  annotateStderrWithSandboxFailures (command, stderr) { return stderr },\n'
+            '  async reset () {}\n'
+            '}\n')
+        source = pathlib.Path(__file__).resolve().parents[1] / 'src/personal_agent/sandbox/runner.mjs'
+        runner = self.root / 'runner' / 'runner.mjs'
+        runner.write_text(source.read_text())
+        process = subprocess.Popen([shutil.which('node'), str(runner)], cwd=str(runner.parent), text=True,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.addCleanup(lambda: process.poll() is None and process.kill())
+        process.stdin.write(json.dumps({'workdir': str(self.root), 'argv': ['true'], 'allowedDomains': [HOST],
+                                        'deniedResolvedAddresses': [], 'denyRead': [], 'allowRead': [], 'env': {},
+                                        'masked': [], 'timeoutMs': 10000, 'outputBytes': 1000}) + '\n')
+        process.stdin.flush()
+        asked, result = [], None
+        for line in process.stdout:
+            message = json.loads(line)
+            if message.get('type') == 'request':
+                asked.append((message['host'], message['port']))
+                process.stdin.write(json.dumps({'id': message['id'], 'allow': True}) + '\n')
+                process.stdin.flush()
+            elif message.get('type') in ('result', 'error'):
+                result = message
+                break
+        self.assertEqual(result and result.get('type'), 'result', (result, process.stderr.read() if result is None else ''))
+        self.assertEqual(asked, [(HOST, 80), (HOST, 443), (f'{HOST}:8443', 8443)])
 
     def test_the_sandbox_refuses_private_use_space_unless_the_run_reaches_a_declared_host(self):
         from test_code_run import FakeProcess
