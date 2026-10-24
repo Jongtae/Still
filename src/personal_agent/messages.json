@@ -1487,6 +1487,24 @@
   "ja": "スマートフォン用のリンクを開けませんでした。Macのログイン画面でログインしてください。",
   "zh": "无法打开手机链接，请在 Mac 的登录窗口中登录。"
  },
+ "remote_login.link_ended_done": {
+  "ko": "휴대폰에서 [완료]를 눌러 로그인 창({site})을 닫았어요. 이 링크는 이제 열리지 않아요.",
+  "en": "You tapped [Done] on the phone and the login window ({site}) closed. This link no longer opens.",
+  "ja": "スマートフォンで[完了]を押し、ログイン画面（{site}）を閉じました。このリンクはもう開けません。",
+  "zh": "你在手机上点了[完成]，登录窗口（{site}）已关闭。此链接已无法打开。"
+ },
+ "remote_login.link_ended_expired": {
+  "ko": "휴대폰 로그인 링크({site})의 시간이 지나 닫혔어요. 이 링크는 이제 열리지 않아요.",
+  "en": "The phone login link ({site}) timed out and closed. This link no longer opens.",
+  "ja": "スマートフォン用のログインリンク（{site}）は時間切れで閉じました。このリンクはもう開けません。",
+  "zh": "手机登录链接（{site}）已超时关闭。此链接已无法打开。"
+ },
+ "remote_login.link_ended_closed": {
+  "ko": "로그인 창({site})이 닫혀서 휴대폰 로그인 링크도 닫혔어요. 이 링크는 이제 열리지 않아요.",
+  "en": "The login window ({site}) closed, so the phone login link closed too. This link no longer opens.",
+  "ja": "ログイン画面（{site}）が閉じたため、スマートフォン用のログインリンクも閉じました。このリンクはもう開けません。",
+  "zh": "登录窗口（{site}）已关闭，手机登录链接也随之关闭。此链接已无法打开。"
+ },
  "service.a_retry_was_already_requested": {
   "ko": "이미 다시 시도를 요청했습니다.",
   "en": "A retry was already requested.",

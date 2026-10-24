@@ -23,7 +23,8 @@ Boundaries:
 - the log records only ``open``, ``bound``, ``done``, ``expired`` or
   ``closed`` with the site name;
 - one session at a time; done, expiry, a Telegram skip and a Mac close each
-  stop the tunnel and the window.
+  stop the tunnel and the window, and rewrite the sent link message to say
+  how it ended, without the link (#255).
 """
 from .messages import msg
 import hashlib
@@ -62,6 +63,9 @@ REFRESH_MS = 500
 LINK_TEXT = ('휴대폰에서 로그인하는 링크예요 ({site}). 이 링크를 연 휴대폰 한 대만 쓸 수 있고, 약 {minutes}분 뒤에 닫혀요.\n'
              '화면을 누르면 Mac의 로그인 창에서 같은 자리가 눌리고, 입력한 글자는 선택한 칸에 들어가요. '
              '"로그인 상태 유지" 같은 옵션이 있으면 켜 주세요. 다 되면 [완료]를 눌러 주세요.\n{link}')
+#: #255: what the link message says, in place, once its session ended (``{site}``); never the link again.
+LINK_ENDED_TEXT = {'done': msg('remote_login.link_ended_done'), 'expired': msg('remote_login.link_ended_expired'),
+                   'closed': msg('remote_login.link_ended_closed')}
 NO_NGROK_TEXT = msg('remote_login.no_ngrok')
 NO_PORT_TEXT = msg('remote_login.no_local_address')
 BUSY_TEXT = msg('remote_login.a_phone_login_link_is_already')
@@ -144,6 +148,8 @@ class RemoteLogin:
         self.process = None
         self.link = None
         self.reason = None
+        #: #255: ``(chat_id, message_id)`` of the sent link message, until its end is said there.
+        self._link_message = None
         self._lock = threading.Lock()
         self._ended = threading.Event()
 
@@ -228,6 +234,18 @@ class RemoteLogin:
             except Exception as exc:
                 LOG.warning('remote login: end hook failed (%s)', type(exc).__name__)
         return True
+
+    def link_sent(self, chat_id, message_id):
+        """Remember the link message; False when the session already ended (its end is then said at once)."""
+        with self._lock:
+            self._link_message = (chat_id, message_id)
+            return not self._ended.is_set()
+
+    def take_link_message(self):
+        """The sent link message, once: whoever takes it (the end hook or a late send) rewrites it (#255)."""
+        with self._lock:
+            sent, self._link_message = self._link_message, None
+        return sent
 
     def finish_later(self, reason, delay=DONE_DELAY_SECONDS):
         """``finish`` after ``delay`` seconds, so a reply already written reaches the phone before the tunnel stops (review P3-3)."""

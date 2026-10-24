@@ -146,6 +146,13 @@ def telegram_transport(calls):
     return transport
 
 
+def ended_link_edits(calls):
+    """#255: the ``editMessageText`` calls on a sent link message (both transports number a reply 9000 + its call count)."""
+    links = {9000 + index + 1 for index, (method, body) in enumerate(list(calls))
+             if method == 'sendMessage' and 'remote-login?code=' in str(body.get('text'))}
+    return [body for method, body in list(calls) if method == 'editMessageText' and body.get('message_id') in links]
+
+
 # ---------------------------------------------------------------- unit: the worker refuses while parked
 
 class WorkerOpsWhileParked(unittest.TestCase):
@@ -525,6 +532,53 @@ class RemoteLoginSurface(unittest.TestCase):
             self.assertEqual(self.request(path + self.code(session), method, {} if method == 'POST' else None, cookie=cookie)[0], 404)
         self.assertFalse(session.finish('done'))
 
+    def ended_link_edits(self):
+        """The edits that rewrote a link message (#255)."""
+        return ended_link_edits(self.calls)
+
+    def test_each_end_rewrites_the_link_message_in_place_without_the_link(self):
+        """#255: a settled phone sign-in never leaves a live-looking link: done, expiry and a close each say so."""
+        cases = (('done', remote_login.LINK_ENDED_TEXT['done']), ('expired', remote_login.LINK_ENDED_TEXT['expired']),
+                 ('closed', remote_login.LINK_ENDED_TEXT['closed']))
+        for reason, ended in cases:
+            with self.subTest(reason=reason):
+                self.calls.clear()
+                session = self.open_window()
+                self.assertEqual(self.ended_link_edits(), [], 'still live: nothing rewritten yet')
+                if reason == 'expired':
+                    session.expires = session.clock() - 1
+                elif reason == 'closed':
+                    self.drivers[-1].open = False
+                else:
+                    self.assertTrue(session.finish('done'))
+                self.assertTrue(wait_until(lambda: self.ended_link_edits()), 'the link message was rewritten')
+                edits = self.ended_link_edits()
+                self.assertEqual(len(edits), 1, 'once')
+                self.assertEqual(edits[0]['chat_id'], CHAT)
+                self.assertEqual(edits[0]['text'], ended.format(site='fixture.test'))
+                self.assertNotIn(session.link, edits[0]['text'])
+                self.assertNotIn('remote-login?code=', edits[0]['text'])
+                self.assertFalse(session.finish('closed'), 'a later end does nothing more')
+                time.sleep(0.2)
+                self.assertEqual(len(self.ended_link_edits()), 1)
+                self.close_windows()
+                self.assertTrue(wait_until(lambda: self.service.remote_login_session() is None))
+
+    def test_a_link_whose_session_ended_while_it_was_sent_is_rewritten_at_once(self):
+        """#255: the session may end before the send returns; the late message is still not left live."""
+        service = self.service
+        original = service.telegram.call
+
+        def call(method, body, **kwargs):
+            result = original(method, body, **kwargs)
+            if method == 'sendMessage' and 'remote-login?code=' in str(body.get('text')):
+                service.remote_login_session().finish('expired')
+            return result
+        service.telegram.call = call
+        self.assertEqual(service.open_browser_for_login({'url': 'https://fixture.test/login', 'phone': True})['state'], 'opening')
+        self.assertTrue(wait_until(lambda: self.ended_link_edits()), 'rewritten once the send returned')
+        self.assertEqual(self.ended_link_edits()[0]['text'], remote_login.LINK_ENDED_TEXT['expired'].format(site='fixture.test'))
+
     def test_expiry_closes_the_window_and_the_tunnel(self):
         session = self.open_window()
         cookie = self.bound_cookie(session)
@@ -838,6 +892,10 @@ class PhoneButton(_flow_harness()):
         self.assertTrue(wait_until(lambda: not session.alive()))
         self.assertEqual(session.reason, 'closed')
         self.assertTrue(self.tunnel.processes[0].terminated)
+        # #255: below the prompt's skip text, the link no longer offers a live sign-in.
+        self.assertTrue(wait_until(lambda: ended_link_edits(self.calls)), 'the link message was rewritten')
+        self.assertEqual([edit['text'] for edit in ended_link_edits(self.calls)],
+                         [remote_login.LINK_ENDED_TEXT['closed'].format(site='fixture.test')])
 
 
 if __name__ == '__main__':
