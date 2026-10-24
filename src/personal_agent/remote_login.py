@@ -93,6 +93,15 @@ def _same(value, expected):
     return isinstance(value, str) and bool(value) and bool(expected) and hmac.compare_digest(value.encode(), str(expected).encode())
 
 
+def _encodable(text):
+    """#293: no lone surrogate: the worker pipe is UTF-8, and one that cannot be encoded ends the worker."""
+    try:
+        text.encode('utf-8')
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def validate_input(body):
     """``(kind, fields)`` of one phone input, or None when it is not one.
 
@@ -109,7 +118,8 @@ def validate_input(body):
             return 'tap', {'x': float(x), 'y': float(y)}
     elif kind == 'text':
         text = body.get('text')
-        if isinstance(text, str) and 0 < len(text) <= TEXT_LIMIT and '\n' not in text and '\r' not in text:
+        if isinstance(text, str) and 0 < len(text) <= TEXT_LIMIT and '\n' not in text and '\r' not in text \
+                and _encodable(text):
             return 'text', {'text': text}
     elif kind == 'key':
         if body.get('key') in KEYS:
@@ -387,9 +397,11 @@ function keyType(){{return F==='text'?'text':'password'}}
 function setKeyType(t){{const k=$('keys');t=t||keyType();if(k.type===t)return;k.type=t;
 k.setAttribute('autocomplete',t==='password'?'current-password':'username');resetKeys()}}
 function applyFocus(){{const k=$('keys');if(document.activeElement!==k)return;if(!F){{k.blur();return}}setKeyType()}}
-function enqueue(item){{if(item.type==='text'){{const t=item.text.replace(/[\\r\\n]+/g,'');for(let i=0;i<t.length;i+={TEXT_LIMIT}){{
-const part=t.slice(i,i+{TEXT_LIMIT}),last=sendQ[sendQ.length-1];
-if(last&&last.type==='text'&&!last.sent&&last.text.length+part.length<={TEXT_LIMIT})last.text+=part;else sendQ.push({{type:'text',text:part}})}}}}
+// Text is split only between code points (for..of), never inside a surrogate pair.
+function addText(part){{const last=sendQ[sendQ.length-1];
+if(last&&last.type==='text'&&!last.sent&&last.text.length+part.length<={TEXT_LIMIT})last.text+=part;else sendQ.push({{type:'text',text:part}})}}
+function enqueue(item){{if(item.type==='text'){{let part='';for(const ch of item.text.replace(/[\\r\\n]+/g,'')){{
+if(part.length+ch.length>{TEXT_LIMIT}){{addText(part);part=''}}part+=ch}}if(part)addText(part)}}
 else sendQ.push(item);pump()}}
 async function pump(){{if(sending)return;sending=true;let failed=false;
 while(sendQ.length&&!ended){{const item=sendQ[0];item.sent=true;const body=Object.assign({{}},item);delete body.sent;delete body.seq;

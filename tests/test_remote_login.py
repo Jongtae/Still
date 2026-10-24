@@ -346,11 +346,13 @@ class InputValidation(unittest.TestCase):
     def test_only_the_four_shapes_pass_and_bounded(self):
         self.assertEqual(remote_login.validate_input({'type': 'tap', 'x': 10, 'y': 20.5}), ('tap', {'x': 10.0, 'y': 20.5}))
         self.assertEqual(remote_login.validate_input({'type': 'text', 'text': 'abc'}), ('text', {'text': 'abc'}))
+        self.assertEqual(remote_login.validate_input({'type': 'text', 'text': '한😀'}), ('text', {'text': '한😀'}))
         self.assertEqual(remote_login.validate_input({'type': 'key', 'key': 'Backspace'}), ('key', {'key': 'Backspace'}))
         self.assertEqual(remote_login.validate_input({'type': 'nav', 'action': 'reload'}), ('nav', {'action': 'reload'}))
         self.assertEqual(remote_login.validate_input({'type': 'dialog', 'answer': 'cancel'}), ('dialog', {'answer': 'cancel'}))
         for bad in ({'type': 'dialog', 'answer': 'yes'}, {'type': 'dialog', 'answer': True},{'type': 'tap', 'x': -1, 'y': 0}, {'type': 'tap', 'x': True, 'y': 1}, {'type': 'text', 'text': ''},
                     {'type': 'text', 'text': 'a\nb'}, {'type': 'text', 'text': 'x' * (remote_login.TEXT_LIMIT + 1)},
+                    {'type': 'text', 'text': 'ab\ud83d'}, {'type': 'text', 'text': '\ude00'},
                     {'type': 'key', 'key': 'F5'}, {'type': 'nav', 'action': 'forward'}, {'type': 'script'}, [], None):
             with self.subTest(bad=bad):
                 self.assertIsNone(remote_login.validate_input(bad))
@@ -1249,6 +1251,11 @@ const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
  // A paste over the limit goes in bounded pieces; a refused input says so on the page.
  type(S+'x'.repeat(600),{inputType:'insertFromPaste'});await tick();
  assert.deepEqual(sent().map(p=>p.text.length),[512,88]);
+ // An astral character across the boundary stays whole: no chunk ends or starts inside a surrogate pair.
+ const lone=/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+ type(S+'x'.repeat(511)+'😀'+'y',{inputType:'insertFromPaste'});await tick();
+ const chunks=sent().map(p=>p.text);assert.equal(chunks.join(''),'x'.repeat(511)+'😀'+'y');
+ assert(chunks.every(c=>!lone.test(c)&&c.length<=512),'whole code points only');assert.deepEqual(chunks.map(c=>c.length),[511,3]);
  assert($('typing-failed').classList.contains('hidden'));
  inputAnswer=()=>({ok:false});type(S+'z',{inputType:'insertText'});await tick();
  assert(!$('typing-failed').classList.contains('hidden'),'the owner is told the text did not go in');
