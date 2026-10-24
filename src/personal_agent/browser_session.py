@@ -1701,6 +1701,8 @@ WORKER_QUIT_SECONDS = 5
 LOGIN_OPEN_SECONDS = 45
 #: #939: the phone inputs a login window accepts, as the worker's ``remote_*`` ops.
 REMOTE_INPUT_KINDS = ('tap', 'text', 'key', 'nav', 'dialog')
+#: #293: the focused-element kinds a frame may report (the worker's ``REMOTE_FOCUS_KINDS``).
+REMOTE_FOCUS_KINDS = ('text', 'password', 'frame')
 #: #709: how long closing a login window waits for its save and release.
 LOGIN_CLOSE_SECONDS = 20
 #: #709: how many closed login windows' outcomes a profile remembers.
@@ -2203,12 +2205,15 @@ class WebKitWorkerDriver:
             return self._send(op, ACTION_TIMEOUT_SECONDS, **arguments)
 
     def frame(self):
-        """``{'jpeg': base64, 'width': points, 'height': points, 'dialog': {'kind', 'text'} or None}`` of the
-        frontmost login view; never kept here.  ``dialog`` is a page dialog waiting for an answer."""
+        """``{'jpeg': base64, 'width': points, 'height': points, 'dialog': {'kind', 'text'} or None, 'focus': kind
+        or None}`` of the frontmost login view; never kept here.  ``dialog`` is a page dialog waiting for an
+        answer; ``focus`` is what kind of element has focus (``text``, ``password`` or ``frame``, #293)."""
         message = self._request_shown('frame')
         dialog = message.get('dialog') if isinstance(message.get('dialog'), dict) else None
+        focus = message.get('focus')
         return {'jpeg': str(message.get('jpeg') or ''), 'width': message.get('width'), 'height': message.get('height'),
-                'dialog': {'kind': str(dialog.get('kind') or ''), 'text': str(dialog.get('text') or '')} if dialog else None}
+                'dialog': {'kind': str(dialog.get('kind') or ''), 'text': str(dialog.get('text') or '')} if dialog else None,
+                'focus': focus if focus in REMOTE_FOCUS_KINDS else None}
 
     def remote_input(self, kind, **fields):
         """One phone input into the login window: ``tap`` (x, y), ``text`` (text), ``key`` (key), ``nav``

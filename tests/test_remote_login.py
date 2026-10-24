@@ -11,6 +11,8 @@ Evidence classes, named separately:
   closing, every other route refused through the tunnel, typed text reaching
   the driver and no log, and the Telegram button sending the link to the
   paired owner's chat only;
+* unit (Node, fake DOM; skipped without Node): the phone page's keystrokes,
+  composition, AutoFill and focus handling (#293);
 * not here: the real WebKit snapshot, native press/key and ``insertText``
   paths (macOS + PyObjC, opt-in real-browser tests), and a live ngrok tunnel.
 """
@@ -61,6 +63,8 @@ class WindowDriver:
         self.remote = False
         #: A page dialog waiting for an answer, as the worker reports it in a frame.
         self.dialog = None
+        #: #293: what kind of element has focus in the window, as the worker reports it in a frame.
+        self.focus = None
 
     def alive(self):
         return True
@@ -91,7 +95,7 @@ class WindowDriver:
         if not self.open:
             raise bs.WorkerError('not_shown')
         self.frames += 1
-        return {'jpeg': 'AAAA', 'width': 1280.0, 'height': 900.0, 'dialog': self.dialog}
+        return {'jpeg': 'AAAA', 'width': 1280.0, 'height': 900.0, 'dialog': self.dialog, 'focus': self.focus}
 
     def remote_input(self, kind, **fields):
         if not self.open:
@@ -185,7 +189,7 @@ class WorkerOpsWhileParked(unittest.TestCase):
         worker.front_view = lambda: self.fail('no snapshot while a dialog is held')
         worker.handle({'id': 9, 'op': 'frame'})
         self.assertEqual(worker.replies[-1], {'id': 9, 'ok': True, 'jpeg': 'AAAA', 'width': 1280.0, 'height': 900.0,
-                                              'dialog': {'kind': 'confirm', 'text': 'delete?'}})
+                                              'dialog': {'kind': 'confirm', 'text': 'delete?'}, 'focus': None})
 
     def test_a_page_dialog_is_held_for_the_phone_only_during_a_phone_session(self):
         """#936's rule stays in force without a phone session; with one, the phone (or the Mac's sheet) answers."""
@@ -222,6 +226,115 @@ class WorkerOpsWhileParked(unittest.TestCase):
         self.assertFalse(worker.remote)
         self.assertFalse(worker.hold_dialog('confirm', 'Sure?', answers.append))
         self.assertEqual(answers, [True], 'back to the #936 path: not held, not answered here')
+
+    def snapshot_worker(self, focus_answer):
+        """A shown window whose snapshot and focus probe answer at once (no PyObjC): ``focus_answer`` is
+        what ``REMOTE_FOCUS_SCRIPT`` returned, or an Exception for a failed script."""
+        worker = self.worker()
+        worker.owner_visible = True
+        worker.held_dialog = None
+        worker.deadline = lambda ident, seconds: worker.pending.__setitem__(ident, True)
+
+        class Size:
+            width, height = 390.0, 844.0
+
+        class View:
+            def frame(self):
+                return type('Frame', (), {'size': Size()})()
+
+            def takeSnapshotWithConfiguration_completionHandler_(self, config, done):
+                done('image', None)
+
+        class Config:
+            def init(self):
+                return self
+
+            def setSnapshotWidth_(self, width):
+                pass
+
+            def setAfterScreenUpdates_(self, flag):
+                pass
+
+        worker.WebKit = type('WebKit', (), {'WKSnapshotConfiguration': type('C', (), {'alloc': staticmethod(Config)})})
+        worker.AppKit = None
+        worker.front_view = View
+        worker.scripts = []
+
+        def run(body, arguments, done, world=None, view=None):
+            worker.scripts.append(body)
+            if isinstance(focus_answer, Exception):
+                return done(None, 'script_failed')
+            done(focus_answer, None)
+        worker.run = run
+        return worker
+
+    def test_a_frame_carries_the_kind_of_the_focused_element_and_nothing_else(self):
+        """#293: the phone keyboard follows what has focus; an unknown or failed answer is no focus."""
+        from unittest import mock
+        with mock.patch.object(browser_worker, '_jpeg_bytes', return_value=b'jpg'):
+            for answer, expected in (({'focus': 'text'}, 'text'), ({'focus': 'password'}, 'password'),
+                                     ({'focus': 'frame'}, 'frame'), ({'focus': None}, None),
+                                     ({'focus': 'hunter2'}, None), ({'focus': 'text', 'value': 'x'}, 'text'),
+                                     (RuntimeError('blocked'), None)):
+                with self.subTest(answer=answer):
+                    worker = self.snapshot_worker(answer)
+                    worker.handle({'id': 11, 'op': 'frame'})
+                    self.assertEqual(worker.scripts, [browser_worker.REMOTE_FOCUS_SCRIPT])
+                    self.assertEqual(worker.replies[-1], {'id': 11, 'ok': True, 'jpeg': 'anBn', 'width': 390.0, 'height': 844.0,
+                                                          'dialog': None, 'focus': expected})
+
+    def test_the_focus_probe_names_the_kind_through_shadow_roots_and_frames(self):
+        """#293: the probe's own logic over a minimal DOM (Node; WebKit itself is the opt-in real-browser path)."""
+        import shutil
+        import subprocess
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('node is not installed')
+        harness = """
+const el = (tag, extra = {}) => Object.assign({tagName: tag, getAttribute(name) { return this.attrs[name] ?? null; }, attrs: {}}, extra);
+const body = el('BODY');
+const cases = {
+  none: body,
+  text: el('INPUT', {attrs: {type: 'email'}}),
+  untyped: el('INPUT'),
+  password: el('INPUT', {attrs: {type: 'PASSWORD'}}),
+  checkbox: el('INPUT', {attrs: {type: 'checkbox'}}),
+  readonly: el('INPUT', {readOnly: true}),
+  disabled: el('TEXTAREA', {disabled: true}),
+  textarea: el('TEXTAREA'),
+  editable: el('DIV', {isContentEditable: true}),
+  button: el('BUTTON'),
+  shadow: el('X-LOGIN', {shadowRoot: {activeElement: el('INPUT', {attrs: {type: 'password'}})}}),
+  sameOrigin: el('IFRAME', {contentDocument: {body: {}, activeElement: el('INPUT')}}),
+  crossOrigin: el('IFRAME', {contentDocument: null}),
+  blocked: Object.defineProperty(el('IFRAME'), 'contentDocument', {get() { throw new Error('denied'); }}),
+};
+const probe = new Function('document', %s);
+const out = {};
+for (const [name, active] of Object.entries(cases)) out[name] = JSON.parse(probe({activeElement: active, body})).focus;
+out.empty = JSON.parse(probe({activeElement: null})).focus;
+console.log(JSON.stringify(out));
+""" % json.dumps(browser_worker.REMOTE_FOCUS_SCRIPT)
+        result = subprocess.run([node, '-e', harness], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {
+            'none': None, 'text': 'text', 'untyped': 'text', 'password': 'password', 'checkbox': None, 'readonly': None,
+            'disabled': None, 'textarea': 'text', 'editable': 'text', 'button': None, 'shadow': 'password',
+            'sameOrigin': 'text', 'crossOrigin': 'frame', 'blocked': 'frame', 'empty': None})
+
+    def test_the_focus_probe_reads_the_kind_never_a_value_or_the_page_text(self):
+        script = browser_worker.REMOTE_FOCUS_SCRIPT
+        for read in ('.value', 'innerText', 'textContent', 'innerHTML', 'outerHTML', 'getSelection', 'location'):
+            self.assertNotIn(read, script)
+        self.assertEqual(set(browser_worker.REMOTE_FOCUS_KINDS), set(bs.REMOTE_FOCUS_KINDS))
+
+    def test_the_driver_passes_only_a_known_focus_kind(self):
+        driver = bs.WebKitWorkerDriver.__new__(bs.WebKitWorkerDriver)
+        for focus, expected in (('text', 'text'), ('password', 'password'), ('frame', 'frame'), (None, None),
+                                ('secret', None), (['text'], None)):
+            with self.subTest(focus=focus):
+                driver._request_shown = lambda op, **kw: {'jpeg': 'AAAA', 'width': 1.0, 'height': 1.0, 'focus': focus}
+                self.assertEqual(driver.frame()['focus'], expected)
 
     def test_the_keys_and_actions_the_phone_offers_are_the_ones_the_worker_knows(self):
         self.assertEqual(set(remote_login.KEYS), set(browser_worker.REMOTE_KEYS))
@@ -414,15 +527,16 @@ class RemoteLoginSurface(unittest.TestCase):
         self.assertNotIn('<link', page)
 
     # -- driving the window ----------------------------------------------------------
-    def test_the_page_clears_text_or_claims_done_only_when_the_operation_said_ok(self):
-        """Codex P2: a 200 with ``{ok: false}`` (focus lost, worker refused) must not clear the typed text or show 완료."""
+    def test_the_page_reports_typing_or_claims_done_only_when_the_operation_said_ok(self):
+        """Codex P2: a 200 with ``{ok: false}`` (focus lost, worker refused) must not pass as typed or show 완료."""
         session = self.open_window()
         cookie = self.bound_cookie(session)
         page = self.request(remote_login.PAGE_PATH + self.code(session), cookie=cookie)[1].decode()
         post = page.split('async function post')[1].split('\n')[1]
         self.assertIn('if(!r.ok)return false;const d=await r.json();return d&&d.ok===true', post)
         self.assertNotRegex(post, r'return r\.ok\}', 'the HTTP status alone never counts as success')
-        self.assertIn("if(await post('/api/remote-login/input',{type:'text',text:t})){$('text').value=''}", page)
+        self.assertIn("const ok=await post('/api/remote-login/input',body)", page)
+        self.assertIn("else if(!ok)failed=true", page)
         self.assertIn("if(await post('/api/remote-login/done')){end(", page)
         # The server side of that contract: a refused input is a 200 whose ok is false.
         self.drivers[-1].open = False
@@ -439,7 +553,7 @@ class RemoteLoginSurface(unittest.TestCase):
         with self.assertLogs('personal_agent', level='DEBUG') as logs:
             status, body, _ = self.request(self.frame_url(session), cookie=cookie)
             self.assertEqual(status, 200)
-            self.assertEqual(json.loads(body), {'jpeg': 'AAAA', 'width': 1280.0, 'height': 900.0, 'dialog': None})
+            self.assertEqual(json.loads(body), {'jpeg': 'AAAA', 'width': 1280.0, 'height': 900.0, 'dialog': None, 'focus': None})
             self.assertEqual(driver.frames, frames_before + 1, 'read from the window now, never cached')
             for body in ({'type': 'tap', 'x': 640, 'y': 300}, {'type': 'text', 'text': SECRET_TEXT},
                          {'type': 'key', 'key': 'Backspace'}, {'type': 'nav', 'action': 'reload'}):
@@ -709,6 +823,16 @@ class RemoteLoginSurface(unittest.TestCase):
         self.assertEqual(json.loads(body)['dialog'], {'kind': 'alert', 'text': '안내'})
         self.assertEqual(self.request(self.frame_url(session, full=False), cookie=cookie)[0], 204)
         self.assertFalse(hasattr(session, 'last_frame') or getattr(session, '_last_frame', None) == 'AAAA', 'a digest, never the frame')
+
+    def test_a_change_of_focus_alone_is_a_changed_frame(self):
+        """#293: the image may look the same when a field gains focus; the page still has to hear of it."""
+        session = self.open_window()
+        cookie = self.bound_cookie(session)
+        self.assertEqual(self.request(self.frame_url(session, full=False), cookie=cookie)[0], 204)
+        self.drivers[-1].focus = 'password'
+        status, body, _ = self.request(self.frame_url(session, full=False), cookie=cookie)
+        self.assertEqual((status, json.loads(body)['focus']), (200, 'password'))
+        self.assertEqual(self.request(self.frame_url(session, full=False), cookie=cookie)[0], 204)
 
     def test_two_pages_opened_before_binding_both_keep_their_cookie(self):
         """Review P3-1: a later page open never invalidates an earlier one; whichever calls the API first binds."""
@@ -1020,3 +1144,131 @@ class PhonePageAutofill(unittest.TestCase):
         self.assertEqual(script.count(remote_login.INPUT_PATH), 3, 'only the existing input route')
         self.assertIn("window.addEventListener('pagehide',clearCred)", html)
         self.assertEqual(remote_login.validate_input({'type': 'key', 'key': 'Tab'}), ('key', {'key': 'Tab'}))
+
+
+PAGE_TYPING_CHECKS = r"""
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const script=fs.readFileSync(process.argv[1],'utf8');
+const ids=new Map();let active=null;
+class Element{
+ constructor(id){this.id=id;this.value='';this.type='text';this.attrs={};this.style={};this.listeners={};this._cls=new Set();this.textContent='';ids.set(id,this);}
+ get classList(){const c=this._cls;return {add:n=>c.add(n),remove:n=>c.delete(n),toggle:(n,on)=>on?c.add(n):c.delete(n),contains:n=>c.has(n)};}
+ addEventListener(name,fn){(this.listeners[name]=this.listeners[name]||[]).push(fn);}
+ fire(name,event={}){event.currentTarget=this;for(const fn of this.listeners[name]||[])fn(event);return event;}
+ setAttribute(k,v){this.attrs[k]=v;} focus(){active=this;} blur(){if(active===this)active=null;}
+ setSelectionRange(){} getBoundingClientRect(){return {left:0,top:0,width:390,height:844};}
+}
+for(const id of ['live','end','keys','shot','dialog','dialog-text','dialog-ok','dialog-cancel','typing-failed','enter','tab','back',
+ 'nav-back','reload','done','expire','cred','user','pass'])new Element(id);
+ids.get('keys').type='password';
+const document={getElementById:id=>ids.get(id),get activeElement(){return active;}};
+const posts=[];let frameAnswer={status:200,body:{jpeg:'AAAA',width:390,height:844,dialog:null,focus:null}};
+let inputAnswer=()=>({ok:true});let hold=null;
+const respond=(status,body)=>({status,ok:status>=200&&status<300,json:async()=>body});
+async function fetch(url,opts={}){
+ if(url.startsWith('/api/remote-login/frame'))return respond(frameAnswer.status,frameAnswer.body);
+ const body=JSON.parse(opts.body||'{}');posts.push(body);
+ if(hold&&body.type===hold.type){const gate=hold;hold=null;await gate.wait;}
+ return respond(200,inputAnswer(body));
+}
+const timers=[];
+const ctx={document,fetch,console,Date,Math,JSON,Object,Promise,encodeURIComponent,
+ setTimeout:fn=>timers.push(fn),setInterval:()=>0,window:{addEventListener(){}}};
+vm.createContext(ctx);vm.runInContext(script,ctx);
+const $=id=>ids.get(id),keys=$('keys');
+const settle=async()=>{for(let i=0;i<20;i++){await new Promise(r=>setImmediate(r));}};
+const tick=async()=>{await settle();while(timers.length){timers.shift()();await settle();}};
+const S='__________';
+const sent=()=>posts.splice(0);
+const tap=(x,y)=>$('shot').fire('click',{clientX:x,clientY:y});
+const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
+(async()=>{
+ await tick();assert.equal(keys.value,S,'the sentinel is set at load');
+ // A tap presses the point and opens the keyboard in the same gesture, as a password input until a frame says text.
+ tap(195,422);
+ assert.equal(active,keys,'focused inside the tap');assert.equal(keys.type,'password');assert.equal(keys.style.top,'422px');
+ frameAnswer.body={...frameAnswer.body,focus:'text'};await tick();
+ assert.deepEqual(sent(),[{type:'tap',x:195,y:422}]);
+ assert.equal(keys.type,'text','a plain text field gets a text input (the Korean keyboard)');
+ assert.equal(keys.attrs.autocomplete,'username');
+ // Each keystroke goes out in order and the page keeps nothing.
+ type(S+'a',{inputType:'insertText'});type(S+'b',{inputType:'insertText'});await tick();
+ assert.equal(sent().filter(p=>p.type==='text').map(p=>p.text).join(''),'ab');assert.equal(keys.value,S);
+ type(S.slice(0,-1),{inputType:'deleteContentBackward'});await tick();
+ assert.deepEqual(sent(),[{type:'key',key:'Backspace'}]);
+ // Korean: nothing while a syllable is composed; the committed syllable once.
+ keys.fire('compositionstart');type(S+'ㅎ',{isComposing:true});type(S+'하',{isComposing:true});type(S+'한',{isComposing:true});
+ await tick();assert.deepEqual(sent(),[]);
+ keys.fire('compositionend');await tick();
+ assert.deepEqual(sent(),[{type:'text',text:'한'}]);assert.equal(keys.value,S);
+ // AutoFill replaces the value: what it filled is text, never a run of Backspaces.
+ type('pw-filled',{inputType:'insertReplacementText'});await tick();
+ assert.deepEqual(sent(),[{type:'text',text:'pw-filled'}]);
+ // Return is the window's Enter, not a form submit here.
+ let prevented=false;keys.fire('keydown',{key:'Enter',preventDefault(){prevented=true;}});await tick();
+ assert(prevented);assert.deepEqual(sent(),[{type:'key',key:'Enter'}]);
+ // A password field (or a frame it cannot see into) gets a password input.
+ frameAnswer.body={...frameAnswer.body,focus:'password'};await ctx.frame();
+ assert.equal(keys.type,'password');assert.equal(keys.attrs.autocomplete,'current-password');assert.equal(active,keys);
+ frameAnswer.body={...frameAnswer.body,focus:'frame'};frameAnswer.body.jpeg='BBBB';await ctx.frame();assert.equal(keys.type,'password');
+ // Nothing editable has focus: the keyboard closes.
+ frameAnswer.body={...frameAnswer.body,focus:null};await ctx.frame();assert.equal(active,null,'blurred');
+ // A frame fetched before the tap was pressed never decides: it still shows the focus from before.
+ let release;hold={type:'tap',wait:new Promise(r=>{release=r;})};
+ tap(50,60);assert.equal(active,keys);await settle();
+ await ctx.frame();assert.equal(active,keys,'a stale frame does not close the keyboard');
+ frameAnswer.body={...frameAnswer.body,focus:'text'};release();await tick();
+ assert.equal(active,keys);assert.equal(keys.type,'text');sent();
+ // A paste over the limit goes in bounded pieces; a refused input says so on the page.
+ type(S+'x'.repeat(600),{inputType:'insertFromPaste'});await tick();
+ assert.deepEqual(sent().map(p=>p.text.length),[512,88]);
+ assert($('typing-failed').classList.contains('hidden'));
+ inputAnswer=()=>({ok:false});type(S+'z',{inputType:'insertText'});await tick();
+ assert(!$('typing-failed').classList.contains('hidden'),'the owner is told the text did not go in');
+ inputAnswer=()=>({ok:true});type(S+'y',{inputType:'insertText'});await tick();
+ assert($('typing-failed').classList.contains('hidden'));
+ // The buttons share the same queue.
+ sent();$('tab').onclick();$('back').onclick();$('enter').onclick();await tick();
+ assert.deepEqual(sent(),[{type:'key',key:'Tab'},{type:'key',key:'Backspace'},{type:'key',key:'Enter'}]);
+ console.log('ok');
+})().catch(error=>{console.error(error);process.exit(1);});
+"""
+
+
+class PhonePageTyping(unittest.TestCase):
+    """#293: typing on the phone keyboard goes straight into the window; run in Node against a fake DOM."""
+
+    def test_the_page_sends_each_keystroke_in_order_and_follows_the_window_focus(self):
+        import shutil
+        import subprocess
+        node = shutil.which('node')
+        if node is None:
+            self.skipTest('Node is needed to run the phone page script')
+
+        class Session:
+            site, code, expires = 'shop.test', 'c0de', 1000.0
+
+            @staticmethod
+            def clock():
+                return 400.0
+        html = remote_login.page(Session(), 'n0nce')
+        script = html.split('<script nonce="n0nce">')[1].split('</script>')[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'page.js'
+            path.write_text(script, encoding='utf-8')
+            result = subprocess.run([node, '-e', PAGE_TYPING_CHECKS, str(path)], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+        self.assertIn('ok', result.stdout)
+
+    def test_the_separate_text_box_is_gone_and_autofill_stays_folded(self):
+        class Session:
+            site, code, expires = 'shop.test', 'c0de', 1000.0
+
+            @staticmethod
+            def clock():
+                return 400.0
+        html = remote_login.page(Session(), 'n0nce')
+        self.assertNotIn('id="text"', html)
+        self.assertNotIn('id="send"', html)
+        self.assertIn('<input id="keys" type="password"', html, 'a password input until the window says plain text')
+        self.assertIn('<details id="autofill">', html)
