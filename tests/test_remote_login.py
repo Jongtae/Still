@@ -1163,12 +1163,12 @@ for(const id of ['live','end','keys','shot','dialog','dialog-text','dialog-ok','
 ids.get('keys').type='password';
 const document={getElementById:id=>ids.get(id),get activeElement(){return active;}};
 const posts=[];let frameAnswer={status:200,body:{jpeg:'AAAA',width:390,height:844,dialog:null,focus:null}};
-let inputAnswer=()=>({ok:true});let hold=null;
+let inputAnswer=()=>({ok:true});const holds=[];
 const respond=(status,body)=>({status,ok:status>=200&&status<300,json:async()=>body});
 async function fetch(url,opts={}){
  if(url.startsWith('/api/remote-login/frame'))return respond(frameAnswer.status,frameAnswer.body);
  const body=JSON.parse(opts.body||'{}');posts.push(body);
- if(hold&&body.type===hold.type){const gate=hold;hold=null;await gate.wait;}
+ if(holds.length&&body.type===holds[0].type){const gate=holds.shift();await gate.wait;}
  return respond(200,inputAnswer(body));
 }
 const timers=[];
@@ -1221,18 +1221,31 @@ const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
  // Nothing editable has focus: the keyboard closes.
  frameAnswer.body={...frameAnswer.body,focus:null};await ctx.frame();assert.equal(active,null,'blurred');
  // A frame fetched before the tap was pressed never decides: it still shows the focus from before.
- let release;hold={type:'tap',wait:new Promise(r=>{release=r;})};
+ let release;holds.push({type:'tap',wait:new Promise(r=>{release=r;})});
  tap(50,60);assert.equal(active,keys);await settle();
  await ctx.frame();assert.equal(active,keys,'a stale frame does not close the keyboard');
  frameAnswer.body={...frameAnswer.body,focus:'text'};release();await tick();
  assert.equal(active,keys);assert.equal(keys.type,'text');sent();
  // A new tap after a text field starts as a password input: the new field may be the password,
  // and what is typed before a post-tap frame arrives must not go through a text input.
- let release2;hold={type:'tap',wait:new Promise(r=>{release2=r;})};
+ let release2;holds.push({type:'tap',wait:new Promise(r=>{release2=r;})});
  tap(195,211);assert.equal(keys.type,'password','password until a post-tap frame says text');
  assert.equal(keys.attrs.autocomplete,'current-password');await settle();
  await ctx.frame();assert.equal(keys.type,'password','a stale text frame does not switch it back');
  release2();await tick();assert.equal(keys.type,'text','a post-tap frame confirming text switches it');sent();
+ // Two quick taps (ID, then password): the first one's press must not reopen the gate for a frame of its field.
+ let first,second;holds.push({type:'tap',wait:new Promise(r=>{first=r;})},{type:'tap',wait:new Promise(r=>{second=r;})});
+ tap(195,211);tap(195,422);assert.equal(keys.type,'password');await settle();
+ first();await settle();assert.equal(keys.type,'password');
+ await ctx.frame();assert.equal(keys.type,'password','a frame after the first tap only does not decide');
+ second();await tick();assert.equal(keys.type,'text','the latest tap pressed: its frame decides');
+ assert.deepEqual(sent().filter(p=>p.type==='tap'),[{type:'tap',x:195,y:211},{type:'tap',x:195,y:422}],'no seq leaves the page');
+ // Enter that confirms an IME candidate stays with the IME: no early text, no Enter to the window.
+ keys.fire('compositionstart');type(S+'にほん',{isComposing:true});
+ let kept=true;keys.fire('keydown',{key:'Enter',isComposing:true,keyCode:229,preventDefault(){kept=false;}});await tick();
+ assert(kept,'the IME keeps its Enter');assert.deepEqual(sent(),[]);
+ type(S+'日本',{isComposing:true});keys.fire('compositionend');await tick();
+ assert.deepEqual(sent(),[{type:'text',text:'日本'}]);
  // A paste over the limit goes in bounded pieces; a refused input says so on the page.
  type(S+'x'.repeat(600),{inputType:'insertFromPaste'});await tick();
  assert.deepEqual(sent().map(p=>p.text.length),[512,88]);

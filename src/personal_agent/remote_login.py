@@ -361,7 +361,7 @@ details{{margin:8px 0}}summary{{font-size:14px;color:#aeaeb2;padding:6px 0}}</st
 <p id="end"></p>
 <script nonce="{nonce}">
 const code={code};const q='?code='+encodeURIComponent(code);const $=id=>document.getElementById(id);
-let W=0,H=0,busy=false,ended=false,full=true,F=null,checkAfter=0,composing=false,sending=false;const sendQ=[];
+let W=0,H=0,busy=false,ended=false,full=true,F=null,checkAfter=0,tapSeq=0,composing=false,sending=false;const sendQ=[];
 function end(text){{ended=true;$('keys').blur();$('live').classList.add('hidden');$('end').style.display='block';$('end').textContent=text}}
 async function post(path,body){{try{{const r=await fetch(path+q,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body||{{}}),credentials:'same-origin'}});
 if(r.status===404){{end('이 링크는 닫혔어요.');return false}}if(!r.ok)return false;const d=await r.json();return d&&d.ok===true}}catch(e){{return false}}}}
@@ -377,7 +377,10 @@ F=d.focus||null;if(t0>=checkAfter)applyFocus()}}}}catch(e){{}}finally{{busy=fals
 // keyboard stays up only for an editable element, as a password input unless it is plain text, so the
 // phone keyboard neither learns nor suggests what goes into a password field.  Only frames fetched after
 // the tap was pressed decide (checkAfter): an older one still shows the focus from before the tap, so
-// each tap starts as a password input until such a frame says the new field is plain text.
+// each tap starts as a password input until such a frame says the new field is plain text.  Only the
+// latest tap's press reopens the gate (tapSeq): an earlier one's would let a frame of its field decide.
+// Enter while an IME composes confirms the composition (a Japanese or Chinese candidate): it is left to
+// the IME, and only an Enter outside composition goes to the window.
 const S='__________';
 function resetKeys(){{const k=$('keys');k.value=S;try{{k.setSelectionRange(S.length,S.length)}}catch(e){{}}}}
 function keyType(){{return F==='text'?'text':'password'}}
@@ -389,8 +392,8 @@ const part=t.slice(i,i+{TEXT_LIMIT}),last=sendQ[sendQ.length-1];
 if(last&&last.type==='text'&&!last.sent&&last.text.length+part.length<={TEXT_LIMIT})last.text+=part;else sendQ.push({{type:'text',text:part}})}}}}
 else sendQ.push(item);pump()}}
 async function pump(){{if(sending)return;sending=true;let failed=false;
-while(sendQ.length&&!ended){{const item=sendQ[0];item.sent=true;const body=Object.assign({{}},item);delete body.sent;
-const ok=await post('{INPUT_PATH}',body);sendQ.shift();if(item.type==='tap')checkAfter=Date.now();else if(!ok)failed=true}}
+while(sendQ.length&&!ended){{const item=sendQ[0];item.sent=true;const body=Object.assign({{}},item);delete body.sent;delete body.seq;
+const ok=await post('{INPUT_PATH}',body);sendQ.shift();if(item.type==='tap'){{if(item.seq===tapSeq)checkAfter=Date.now()}}else if(!ok)failed=true}}
 sending=false;$('typing-failed').classList.toggle('hidden',!failed);setTimeout(frame,150)}}
 // A whole-value replacement (AutoFill: insertReplacementText, or an input event with no inputType) is
 // the value itself, sent intact: a leading '_' in it is never taken for the sentinel.
@@ -401,15 +404,15 @@ resetKeys();
 $('keys').addEventListener('compositionstart',()=>{{composing=true}});
 $('keys').addEventListener('compositionend',()=>{{composing=false;flush()}});
 $('keys').addEventListener('input',e=>{{if(composing||e.isComposing)return;flush(!e.inputType||e.inputType==='insertReplacementText')}});
-$('keys').addEventListener('keydown',e=>{{if(e.key!=='Enter')return;e.preventDefault();composing=false;flush();enqueue({{type:'key',key:'Enter'}})}});
+$('keys').addEventListener('keydown',e=>{{if(e.key!=='Enter'||composing||e.isComposing||e.keyCode===229)return;e.preventDefault();flush();enqueue({{type:'key',key:'Enter'}})}});
 function dialog(d){{const box=$('dialog');if(!d){{box.classList.add('hidden');return}}$('dialog-text').textContent=d.text||'';$('dialog-cancel').classList.toggle('hidden',d.kind!=='confirm');box.classList.remove('hidden')}}
 $('dialog-ok').onclick=()=>post('{INPUT_PATH}',{{type:'dialog',answer:'ok'}}).then(()=>setTimeout(frame,150));
 $('dialog-cancel').onclick=()=>post('{INPUT_PATH}',{{type:'dialog',answer:'cancel'}}).then(()=>setTimeout(frame,150));
 setInterval(frame,{REFRESH_MS});frame();
 $('shot').addEventListener('click',e=>{{if(!W||!H)return;const r=e.currentTarget.getBoundingClientRect();
 const x=Math.max(0,Math.min(W,(e.clientX-r.left)/r.width*W)),y=Math.max(0,Math.min(H,(e.clientY-r.top)/r.height*H));
-const k=$('keys');k.style.top=Math.round(e.clientY-r.top)+'px';setKeyType('password');resetKeys();k.focus();checkAfter=Infinity;
-enqueue({{type:'tap',x:x,y:y}})}});
+const k=$('keys');k.style.top=Math.round(e.clientY-r.top)+'px';setKeyType('password');resetKeys();k.focus();checkAfter=Infinity;const seq=++tapSeq;
+enqueue({{type:'tap',x:x,y:y,seq:seq}})}});
 // #1170: the phone's own AutoFill fills these two; they go out like typed text (ID, Tab, password) and are
 // cleared at once: the page keeps neither.
 function clearCred(){{$('user').value='';$('pass').value=''}}
