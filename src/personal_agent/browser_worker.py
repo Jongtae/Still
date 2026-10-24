@@ -864,6 +864,37 @@ const done = document.execCommand('insertText', false, text);
 return JSON.stringify(done ? {ok: true} : {error: 'not_typable'});
 """
 
+#: #293: what the focused element of the login view is, for the phone keyboard: ``text``,
+#: ``password``, ``frame`` (a frame whose inside this world cannot see) or null.  Only the
+#: kind is read, never a value: the phone page raises its keyboard for an editable element
+#: and uses a password input for ``password``/``frame``.
+REMOTE_FOCUS_SCRIPT = r"""
+const TEXT_TYPES = ['text', 'email', 'tel', 'url', 'search', 'number'];
+let el = document.activeElement;
+for (let depth = 0; el && depth < 8; depth++) {
+  if (el.shadowRoot && el.shadowRoot.activeElement) { el = el.shadowRoot.activeElement; continue; }
+  if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
+    let inner = null;
+    try { inner = el.contentDocument && el.contentDocument.activeElement; } catch (e) { inner = null; }
+    if (!inner || inner === el.contentDocument.body) return JSON.stringify({focus: 'frame'});
+    el = inner;
+    continue;
+  }
+  break;
+}
+let focus = null;
+if (el && !el.disabled && !el.readOnly) {
+  if (el.tagName === 'INPUT') {
+    const type = (el.getAttribute('type') || 'text').toLowerCase();
+    focus = type === 'password' ? 'password' : (TEXT_TYPES.includes(type) ? 'text' : null);
+  } else if (el.tagName === 'TEXTAREA' || el.isContentEditable) {
+    focus = 'text';
+  }
+}
+return JSON.stringify({focus});
+"""
+REMOTE_FOCUS_KINDS = ('text', 'password', 'frame')
+
 #: #939: the phone's view of the login window: a JPEG no wider than this, at this quality.
 FRAME_MAX_WIDTH = 900
 FRAME_JPEG_QUALITY = 0.6
@@ -2146,8 +2177,9 @@ class Worker:
 
     # -- the phone's view of the login window (#939) ------------------------------
     # Allowed only while the owner's login window shows (``op_show``); a parked
-    # window answers ``not_shown``.  Nothing here reads the page: a tap, a key
-    # or text goes in, an image comes out.  The frontmost view is a sign-in
+    # window answers ``not_shown``.  Nothing here reads the page's content: a
+    # tap, a key or text goes in, an image and the focused element's kind
+    # (#293, never its value) come out.  The frontmost view is a sign-in
     # popup when one is open (#914), else the main view.
 
     def front_view(self):
@@ -2160,7 +2192,8 @@ class Worker:
         return True
 
     def op_frame(self, ident, command, timeout):
-        """A JPEG of the frontmost login view (base64) and that view's size in points."""
+        """A JPEG of the frontmost login view (base64), that view's size in points, and what kind of
+        element has focus in it (``REMOTE_FOCUS_SCRIPT``, #293)."""
         if not self._remote_allowed(ident):
             return
         held = self.held_dialog
@@ -2168,8 +2201,9 @@ class Worker:
         if held is not None and last is not None:
             # A page waiting on its own dialog renders nothing until it is answered, so a
             # snapshot would never complete: the phone gets the last frame and the question.
+            # Its scripts are blocked too, so no focus is asked: nothing can be typed now.
             return self.reply(ident, jpeg=last[0], width=last[1], height=last[2],
-                              dialog={'kind': held['kind'], 'text': held['text']})
+                              dialog={'kind': held['kind'], 'text': held['text']}, focus=None)
         view = self.front_view()
         size = view.frame().size
         width, height = float(size.width), float(size.height)
@@ -2184,11 +2218,20 @@ class Worker:
             data = _jpeg_bytes(self.AppKit, image) if error is None and image is not None else None
             if data is None:
                 return self.fail(ident, 'frame_failed')
-            held = self.held_dialog
-            dialog = {'kind': held['kind'], 'text': held['text']} if held is not None else None
             encoded = base64.b64encode(data).decode('ascii')
             self.last_frame = (encoded, width, height)
-            self.reply(ident, jpeg=encoded, width=width, height=height, dialog=dialog)
+
+            def focused(value, error):
+                if ident not in self.pending:
+                    return
+                kind = value.get('focus') if error is None and isinstance(value, dict) else None
+                held = self.held_dialog
+                dialog = {'kind': held['kind'], 'text': held['text']} if held is not None else None
+                self.reply(ident, jpeg=encoded, width=width, height=height, dialog=dialog,
+                           focus=kind if kind in REMOTE_FOCUS_KINDS else None)
+            if self.held_dialog is not None:
+                return focused(None, 'held')
+            self.run(REMOTE_FOCUS_SCRIPT, {}, focused, view=view)
         view.takeSnapshotWithConfiguration_completionHandler_(config, done)
 
     def op_remote_tap(self, ident, command, timeout):

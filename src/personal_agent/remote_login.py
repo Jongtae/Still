@@ -4,7 +4,8 @@ An in-flow login (#709) or an explicit login request shows the Still login
 window on the Mac.  The owner who is not at the Mac gets a temporary HTTPS
 link (ngrok, as the family setup's, #897) to a page that shows that window
 as an image refreshed about twice a second; a tap on the image is pressed at
-the same point in the window, text goes into the focused field, and [완료]
+the same point in the window and opens the phone keyboard while an editable
+element has focus there, each keystroke goes into that field (#293), and [완료]
 closes the window, which saves the session to the jar exactly as closing it
 on the Mac does.  Nothing is proxied: the site talks to the Mac's WebKit
 only, and the phone sees pixels.
@@ -92,6 +93,15 @@ def _same(value, expected):
     return isinstance(value, str) and bool(value) and bool(expected) and hmac.compare_digest(value.encode(), str(expected).encode())
 
 
+def _encodable(text):
+    """#293: no lone surrogate: the worker pipe is UTF-8, and one that cannot be encoded ends the worker."""
+    try:
+        text.encode('utf-8')
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def validate_input(body):
     """``(kind, fields)`` of one phone input, or None when it is not one.
 
@@ -108,7 +118,8 @@ def validate_input(body):
             return 'tap', {'x': float(x), 'y': float(y)}
     elif kind == 'text':
         text = body.get('text')
-        if isinstance(text, str) and 0 < len(text) <= TEXT_LIMIT and '\n' not in text and '\r' not in text:
+        if isinstance(text, str) and 0 < len(text) <= TEXT_LIMIT and '\n' not in text and '\r' not in text \
+                and _encodable(text):
             return 'text', {'text': text}
     elif kind == 'key':
         if body.get('key') in KEYS:
@@ -293,16 +304,17 @@ class RemoteLogin:
 
     # -- the window ----------------------------------------------------------------
     def frame(self, full=False):
-        """The window's current image (``{'jpeg', 'width', 'height', 'dialog'}``), ``{'unchanged': True}``
+        """The window's current image (``{'jpeg', 'width', 'height', 'dialog', 'focus'}``), ``{'unchanged': True}``
         when nothing changed since the last one sent (review P3-4; ``full`` sends it anyway), or None when
-        the window could not answer now."""
+        the window could not answer now.  ``focus`` (#293) is what kind of element has focus, so the page
+        knows when to keep the phone keyboard up; a change of it alone is a change."""
         if not self.alive():
             return None
         frame = self.profile.login_window_frame(self.window)
         if not isinstance(frame, dict):
             return None
-        digest = hashlib.sha256(json.dumps([frame.get('jpeg'), frame.get('width'), frame.get('height'), frame.get('dialog')],
-                                           sort_keys=True).encode()).hexdigest()
+        digest = hashlib.sha256(json.dumps([frame.get('jpeg'), frame.get('width'), frame.get('height'), frame.get('dialog'),
+                                            frame.get('focus')], sort_keys=True).encode()).hexdigest()
         if not full and digest == self._last_frame:
             return {'unchanged': True}
         self._last_frame = digest
@@ -339,52 +351,100 @@ h1{{font-size:16px;margin:0 0 8px;font-weight:600}}.note{{font-size:13px;color:#
 button{{font-size:15px;padding:12px 10px;border-radius:10px;border:0;background:#3a3a3c;color:#fff}}button.main{{background:#0a84ff}}
 button.wide{{flex:1}}#done{{width:100%;font-size:19px;padding:16px;background:#30d158;color:#000;font-weight:600;margin-top:10px}}
 #end{{display:none;text-align:center;padding:30px 0;font-size:18px}}.hidden{{display:none}}
-#dialog{{background:#2c2c2e;border:1px solid #ffd60a;border-radius:10px;padding:12px;margin:8px 0}}#dialog p{{margin:0 0 8px;white-space:pre-wrap}}</style></head><body>
+#dialog{{background:#2c2c2e;border:1px solid #ffd60a;border-radius:10px;padding:12px;margin:8px 0}}#dialog p{{margin:0 0 8px;white-space:pre-wrap}}
+#screen{{position:relative}}#keys{{position:absolute;left:0;top:0;width:1px;height:1px;min-width:0;flex:none;padding:0;margin:0;border:0;
+opacity:0;font-size:16px;color:transparent;background:transparent;caret-color:transparent}}
+details{{margin:8px 0}}summary{{font-size:14px;color:#aeaeb2;padding:6px 0}}</style></head><body>
 <h1>{site} 로그인</h1>
 <div id="live"><div id="dialog" class="hidden"><p class="note">Mac의 로그인 창이 이 질문에 답하기를 기다리고 있어요.</p><p id="dialog-text"></p>
 <div class="row"><button id="dialog-ok" class="main wide">확인</button><button id="dialog-cancel" class="wide">취소</button></div></div>
-<img id="shot" alt="Mac의 로그인 창">
-<p class="note">화면을 누르면 Mac의 로그인 창에서 같은 자리가 눌려요. 입력할 칸을 먼저 누른 뒤 아래에 글자를 넣고 [입력]을 누르세요.</p>
+<div id="screen"><img id="shot" alt="Mac의 로그인 창"><input id="keys" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Mac 창의 선택한 칸에 바로 입력"></div>
+<p class="note">화면을 누르면 Mac의 로그인 창에서 같은 자리가 눌려요. 입력할 칸을 누르면 키보드가 열리고, 치는 글자가 그 칸에 바로 들어가요.</p>
+<p class="note hidden" id="typing-failed">글자가 Mac 창에 들어가지 않았어요. 입력할 칸을 다시 누르고 쳐 주세요.</p>
+<div class="row"><button id="enter" class="wide">엔터</button><button id="tab" class="wide">다음 칸</button><button id="back" class="wide">←지우기</button><button id="nav-back" class="wide">뒤로</button><button id="reload" class="wide">새로고침</button></div>
+<details id="autofill"><summary>iPhone 암호로 채우기</summary>
 <form id="cred" autocomplete="on"><p class="note">위 화면에서 아이디 칸을 누른 뒤, 아래 칸을 눌러 iPhone 암호 자동 채우기(열쇠 아이콘)로 계정을 고르고 [넣기]를 누르세요. 아이디, Tab, 비밀번호 순으로 들어가요.</p>
 <div class="row"><input id="user" name="username" type="text" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="아이디" maxlength="{TEXT_LIMIT}"></div>
-<div class="row"><input id="pass" name="password" type="password" autocomplete="current-password" placeholder="비밀번호" maxlength="{TEXT_LIMIT}"><button id="fill" type="submit" class="main">넣기</button></div></form>
-<div class="row"><input id="text" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="선택한 칸에 넣을 글자" maxlength="{TEXT_LIMIT}"><button id="hide">가리기</button><button id="send" class="main">입력</button></div>
-<div class="row"><button id="enter" class="wide">엔터</button><button id="back" class="wide">←지우기</button><button id="nav-back" class="wide">뒤로</button><button id="reload" class="wide">새로고침</button></div>
+<div class="row"><input id="pass" name="password" type="password" autocomplete="current-password" placeholder="비밀번호" maxlength="{TEXT_LIMIT}"><button id="fill" type="submit" class="main">넣기</button></div></form></details>
 <button id="done">완료</button>
 <p class="note" id="expire"></p></div>
 <p id="end"></p>
 <script nonce="{nonce}">
 const code={code};const q='?code='+encodeURIComponent(code);const $=id=>document.getElementById(id);
-let W=0,H=0,busy=false,ended=false,full=true;
-function end(text){{ended=true;$('live').classList.add('hidden');$('end').style.display='block';$('end').textContent=text}}
+let W=0,H=0,busy=false,ended=false,full=true,F=null,checkAfter=0,moveSeq=0,composing=false,sending=false;const sendQ=[],idle=[];
+function end(text){{ended=true;$('keys').blur();$('live').classList.add('hidden');$('end').style.display='block';$('end').textContent=text}}
 async function post(path,body){{try{{const r=await fetch(path+q,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body||{{}}),credentials:'same-origin'}});
 if(r.status===404){{end('이 링크는 닫혔어요.');return false}}if(!r.ok)return false;const d=await r.json();return d&&d.ok===true}}catch(e){{return false}}}}
-async function frame(){{if(ended||busy)return;busy=true;try{{const r=await fetch('{FRAME_PATH}'+q+(full?'&full=1':''),{{cache:'no-store',credentials:'same-origin'}});
+async function frame(){{if(ended||busy)return;busy=true;const t0=Date.now();try{{const r=await fetch('{FRAME_PATH}'+q+(full?'&full=1':''),{{cache:'no-store',credentials:'same-origin'}});
 if(r.status===404){{end('이 링크는 닫혔어요.');return}}
-if(r.status===204){{full=false;return}}
-if(r.ok){{const d=await r.json();full=false;W=d.width;H=d.height;$('shot').src='data:image/jpeg;base64,'+d.jpeg;dialog(d.dialog)}}}}catch(e){{}}finally{{busy=false}}}}
+if(r.status===204){{full=false;if(t0>=checkAfter)applyFocus();return}}
+if(r.ok){{const d=await r.json();full=false;W=d.width;H=d.height;$('shot').src='data:image/jpeg;base64,'+d.jpeg;dialog(d.dialog);
+F=d.focus||null;if(t0>=checkAfter)applyFocus()}}}}catch(e){{}}finally{{busy=false}}}}
+// #293: typing goes straight into the Mac window.  A tap focuses the invisible #keys over the image in
+// the same gesture (iOS opens the keyboard only then); each change to it is read against a sentinel
+// value (noVNC's hidden keyboard input) and sent in order as text, Backspace or Enter, and it is reset
+// at once, so the page keeps nothing typed.  A frame's focus says what has focus in the window: the
+// keyboard stays up only for an editable element, as a password input unless it is plain text, so the
+// phone keyboard neither learns nor suggests what goes into a password field.  Anything that can move
+// the window's focus (a tap, Tab, Enter, 뒤로, 새로고침: moving()) starts a password input again, and only
+// frames fetched after it was sent decide (checkAfter): an older one still shows the focus from before.
+// Only the latest such input reopens the gate (moveSeq): an earlier one's would let a frame of its field
+// decide.
+// Enter while an IME composes confirms the composition (a Japanese or Chinese candidate): it is left to
+// the IME, and only an Enter outside composition goes to the window.
+const S='__________';
+function resetKeys(){{const k=$('keys');k.value=S;try{{k.setSelectionRange(S.length,S.length)}}catch(e){{}}}}
+function keyType(){{return F==='text'?'text':'password'}}
+function setKeyType(t){{const k=$('keys');t=t||keyType();if(k.type===t)return;k.type=t;
+k.setAttribute('autocomplete',t==='password'?'current-password':'username');resetKeys()}}
+function applyFocus(){{const k=$('keys');if(document.activeElement!==k)return;if(!F){{k.blur();return}}setKeyType()}}
+// Text is split only between code points (for..of), never inside a surrogate pair.
+function addText(part){{const last=sendQ[sendQ.length-1];
+if(last&&last.type==='text'&&!last.sent&&last.text.length+part.length<={TEXT_LIMIT})last.text+=part;else sendQ.push({{type:'text',text:part}})}}
+function enqueue(item){{if(item.type==='text'){{let part='';for(const ch of item.text.replace(/[\\r\\n]+/g,'')){{
+if(part.length+ch.length>{TEXT_LIMIT}){{addText(part);part=''}}part+=ch}}if(part)addText(part)}}
+else sendQ.push(item);pump()}}
+async function pump(){{if(sending)return;sending=true;let failed=false;
+while(sendQ.length&&!ended){{const item=sendQ[0];item.sent=true;const body=Object.assign({{}},item);delete body.sent;delete body.seq;
+const ok=await post('{INPUT_PATH}',body);sendQ.shift();if(item.seq!==undefined&&item.seq===moveSeq)checkAfter=Date.now();if(item.type!=='tap'&&!ok)failed=true}}
+sending=false;idle.splice(0).forEach(done=>done());$('typing-failed').classList.toggle('hidden',!failed);setTimeout(frame,150)}}
+function moving(item){{setKeyType('password');checkAfter=Infinity;item.seq=++moveSeq;enqueue(item)}}
+// 완료 closes the window: everything typed before it (the sign-in Enter included) reaches the window first.
+function drained(){{return sending||sendQ.length?new Promise(done=>idle.push(done)):Promise.resolve()}}
+// A whole-value replacement (AutoFill: insertReplacementText, or an input event with no inputType) is
+// the value itself, sent intact: a leading '_' in it is never taken for the sentinel.
+function flush(whole){{const k=$('keys'),v=k.value;resetKeys();if(whole){{if(v)enqueue({{type:'text',text:v}});return}}if(v===S)return;
+let p=0;while(p<S.length&&p<v.length&&v[p]===S[p])p++;const added=v.slice(p);
+if(added){{enqueue({{type:'text',text:added}});return}}for(let i=p;i<S.length;i++)enqueue({{type:'key',key:'Backspace'}})}}
+resetKeys();
+$('keys').addEventListener('compositionstart',()=>{{composing=true}});
+$('keys').addEventListener('compositionend',()=>{{composing=false;flush()}});
+$('keys').addEventListener('input',e=>{{if(composing||e.isComposing)return;flush(!e.inputType||e.inputType==='insertReplacementText')}});
+$('keys').addEventListener('keydown',e=>{{if(e.key!=='Enter'||composing||e.isComposing||e.keyCode===229)return;e.preventDefault();flush();moving({{type:'key',key:'Enter'}})}});
 function dialog(d){{const box=$('dialog');if(!d){{box.classList.add('hidden');return}}$('dialog-text').textContent=d.text||'';$('dialog-cancel').classList.toggle('hidden',d.kind!=='confirm');box.classList.remove('hidden')}}
 $('dialog-ok').onclick=()=>post('{INPUT_PATH}',{{type:'dialog',answer:'ok'}}).then(()=>setTimeout(frame,150));
 $('dialog-cancel').onclick=()=>post('{INPUT_PATH}',{{type:'dialog',answer:'cancel'}}).then(()=>setTimeout(frame,150));
 setInterval(frame,{REFRESH_MS});frame();
 $('shot').addEventListener('click',e=>{{if(!W||!H)return;const r=e.currentTarget.getBoundingClientRect();
-const x=Math.max(0,Math.min(W,(e.clientX-r.left)/r.width*W)),y=Math.max(0,Math.min(H,(e.clientY-r.top)/r.height*H));post('{INPUT_PATH}',{{type:'tap',x:x,y:y}}).then(()=>setTimeout(frame,150))}});
-$('send').onclick=async()=>{{const t=$('text').value;if(!t)return;if(await post('{INPUT_PATH}',{{type:'text',text:t}})){{$('text').value=''}}}};
-$('text').addEventListener('keydown',e=>{{if(e.key==='Enter'){{e.preventDefault();$('send').click()}}}});
+const x=Math.max(0,Math.min(W,(e.clientX-r.left)/r.width*W)),y=Math.max(0,Math.min(H,(e.clientY-r.top)/r.height*H));
+const k=$('keys');k.style.top=Math.round(e.clientY-r.top)+'px';resetKeys();k.focus();
+moving({{type:'tap',x:x,y:y}})}});
 // #1170: the phone's own AutoFill fills these two; they go out like typed text (ID, Tab, password) and are
 // cleared at once: the page keeps neither.
 function clearCred(){{$('user').value='';$('pass').value=''}}
-$('cred').addEventListener('submit',async e=>{{e.preventDefault();const u=$('user').value,p=$('pass').value;clearCred();
+$('cred').addEventListener('submit',async e=>{{e.preventDefault();const u=$('user').value,p=$('pass').value;clearCred();await drained();
 if(u&&!(await post('{INPUT_PATH}',{{type:'text',text:u}})))return;
 if(u&&p&&!(await post('{INPUT_PATH}',{{type:'key',key:'Tab'}})))return;
 if(p)await post('{INPUT_PATH}',{{type:'text',text:p}});setTimeout(frame,150)}});
 window.addEventListener('pagehide',clearCred);
-$('hide').onclick=()=>{{const t=$('text');t.type=t.type==='password'?'text':'password';$('hide').textContent=t.type==='password'?'보기':'가리기'}};
-$('enter').onclick=()=>post('{INPUT_PATH}',{{type:'key',key:'Enter'}});
-$('back').onclick=()=>post('{INPUT_PATH}',{{type:'key',key:'Backspace'}});
-$('nav-back').onclick=()=>post('{INPUT_PATH}',{{type:'nav',action:'back'}});
-$('reload').onclick=()=>post('{INPUT_PATH}',{{type:'nav',action:'reload'}});
-$('done').onclick=async()=>{{if(await post('{DONE_PATH}')){{end('완료했어요. 로그인 창을 닫고 세션을 저장했어요. 이 페이지는 닫아도 돼요.')}}}};
+$('enter').onclick=()=>moving({{type:'key',key:'Enter'}});
+$('tab').onclick=()=>moving({{type:'key',key:'Tab'}});
+$('back').onclick=()=>enqueue({{type:'key',key:'Backspace'}});
+// Navigation goes behind what is still being typed, so no keystroke lands in the next page.
+$('nav-back').onclick=()=>moving({{type:'nav',action:'back'}});
+$('reload').onclick=()=>moving({{type:'nav',action:'reload'}});
+$('done').onclick=async()=>{{const b=$('done');if(b.disabled)return;b.disabled=true;await drained();b.disabled=false;
+if(await post('{DONE_PATH}')){{end('완료했어요. 로그인 창을 닫고 세션을 저장했어요. 이 페이지는 닫아도 돼요.')}}}};
 $('expire').textContent='이 링크는 약 {max(1, int(round((session.expires - session.clock()) / 60)))}분 뒤에 닫혀요.';
 </script></body></html>'''
 
