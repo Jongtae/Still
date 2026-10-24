@@ -434,6 +434,8 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.assertIn('마트 앱 예전 비번 [redacted] 이고 지금은 [redacted] 야', text)
         self.assertIn('그냥 메모', text)
         self.assertNotIn('retired-secret-marks', ' '.join(tarfile.open(archive).getnames()))
+        # #271: nor in the search index, whose deleted terms stay in its segments until it is rebuilt.
+        self.assertNotIn(b'quietharbor', (out / ROOT / DB_RELATIVE).read_bytes())
 
     def test_every_redacted_namespace_is_retired_and_exports_use_the_runtime_redaction(self):
         """Codex review on #259: cloud credentials are retired; the export redacts what the runtime redacts,
@@ -527,6 +529,37 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
                 export_owner_state(self.data, self.root / 'd.tar.gz')
         self.assertFalse((self.root / 'd.tar.gz').exists())
         self.assertEqual(len(calls), 4, 'read, then once after each of three snapshots')
+
+    def test_the_export_redacts_secrets_that_json_escapes(self):
+        """#271: a value holding ``"``, ``\\`` or Hangul reads only escaped inside a JSON column or fragment."""
+        import sqlite3, tarfile
+        from personal_agent.portable_state import DB_RELATIVE, ROOT, export_owner_state
+        current, retired = 'pa"ss\\word-한글-42', 'old"pass\\비번-77'
+        self.store.secret('api_key:openai', retired)
+        self.store.secret('api_key:openai', current)
+        detail = json.dumps({'note': f'키 {current}', 'old': [retired], 'nested': json.dumps({'k': current}),
+                             f'{current}': 'as a key', 'count': 3})
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       ('j-271', 'note', 'done', detail, 1.0))
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       ('j-271-plain', 'note', 'done', '{"b":1,  "a":"노트"}', 1.0))
+        # Fragments that do not parse: a clipped document and an escaped value quoted in prose.
+        self.said(f'로그 {json.dumps({"v": current})[:-1]}', f'예전 값 {json.dumps(retired)} 끝')
+        export_owner_state(self.data, self.root / 'j.tar.gz')
+        with tarfile.open(self.root / 'j.tar.gz') as bundle:
+            bundle.extractall(self.root / 'j', filter='data')
+        with sqlite3.connect(self.root / 'j' / ROOT / DB_RELATIVE) as db:
+            dump = '\n'.join(db.iterdump())
+            exported = json.loads(db.execute("SELECT detail FROM tool_events WHERE job_id='j-271'").fetchone()[0])
+            plain = db.execute("SELECT detail FROM tool_events WHERE job_id='j-271-plain'").fetchone()[0]
+        for value in (current, retired):
+            for form in (value, json.dumps(value)[1:-1], json.dumps(value, ensure_ascii=False)[1:-1]):
+                self.assertNotIn(form, dump)
+        self.assertEqual(exported, {'note': '키 [redacted]', 'old': ['[redacted]'], 'nested': json.dumps({'k': '[redacted]'}),
+                                    '[redacted]': 'as a key', 'count': 3})
+        self.assertIn('예전 값 "[redacted]" 끝', dump)
+        self.assertEqual(plain, '{"b":1,  "a":"노트"}', 'a document without a secret keeps its exact text')
 
     def test_every_model_bound_text_has_retired_values_replaced(self):
         """Codex review on #259: a profile row or any judgment text, not only the transcript."""

@@ -117,6 +117,37 @@ def _owner_content_column(name):
     return name not in _STRUCTURAL_COLUMNS and not name.endswith(_STRUCTURAL_SUFFIXES)
 
 
+def _redact_owner_text(text, values, ledger):
+    """``text`` with known and retired secret values replaced, inside JSON too (#271).
+
+    A value holding a character JSON escapes (``"``, ``\\``, a control character, or non-ASCII text under
+    ``ensure_ascii``) is not a substring of a JSON-encoded column, and a retired digest cannot match its
+    escaped form, so a JSON object or array is parsed, its strings are redacted (a JSON text inside a
+    string the same way) and it is serialised again.  Only a changed document is serialised again.
+    """
+    from .quickstart_store import QuickStore
+    if text.lstrip()[:1] in ("{", "["):
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, (dict, list)):
+            clean = _redact_json(parsed, values, ledger)
+            if clean != parsed:
+                text = json.dumps(clean)
+    return QuickStore.redact_secret_spans(text, values, ledger)
+
+
+def _redact_json(item, values, ledger):
+    if isinstance(item, str):
+        return _redact_owner_text(item, values, ledger)
+    if isinstance(item, list):
+        return [_redact_json(value, values, ledger) for value in item]
+    if isinstance(item, dict):
+        return {_redact_json(key, values, ledger): _redact_json(value, values, ledger) for key, value in item.items()}
+    return item
+
+
 def _redact_transcript(copy, tables, redaction):
     """Every text column of every exported table, with known and retired secret values replaced.
 
@@ -141,9 +172,13 @@ def _redact_transcript(copy, tables, redaction):
             except sqlite3.OperationalError:
                 continue  # a WITHOUT ROWID table: none in the owner schema today
             for rowid, text in rows:
-                clean = QuickStore.redact_secret_spans(text, values, ledger)
+                clean = _redact_owner_text(text, values, ledger)
                 if clean != text:
                     copy.execute(f'UPDATE "{table}" SET "{column}"=? WHERE rowid=?', (clean, rowid))
+    # #271: an FTS5 delete only marks the old terms; their text stays in the index segments, so each index is
+    # rebuilt from its redacted rows.  A rebuild that fails stops the export rather than keep those terms.
+    for (table,) in copy.execute("SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE 'CREATE VIRTUAL TABLE%USING fts5%'").fetchall():
+        copy.execute(f'INSERT INTO "{table}"("{table}") VALUES (\'rebuild\')')
 
 def export_owner_state(data, archive):
     data, archive = Path(data).expanduser().resolve(), Path(archive).expanduser().resolve()

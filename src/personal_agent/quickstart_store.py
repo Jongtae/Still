@@ -450,6 +450,7 @@ class QuickStore:
         """
         olds=[old for old in olds or () if isinstance(old,str) and len(old)>=self.RETIRED_PREFIX_CHARS]
         if not olds:return
+        olds=[*olds,*(form for old in olds for form in self.json_escaped_forms(old))]
         ledger=self._read_retired() or {'key':secrets.token_hex(32),'marks':[]}
         key=bytes.fromhex(ledger['key'])
         marks=[item for item in ledger.get('marks') or () if isinstance(item,list) and len(item)==3]
@@ -524,10 +525,17 @@ class QuickStore:
         decrypted API credentials and cloud credentials included - and the retired digests.  Raises
         when a value cannot be read, so an export fails closed rather than keep a secret."""
         from .current_context import stored_secret_values
-        values=sorted(set(stored_secret_values(self)),key=len,reverse=True)
+        values=set(stored_secret_values(self))
+        values=sorted(values|{form for value in values for form in self.json_escaped_forms(value)},key=len,reverse=True)
         with self.secret_lock:
             ledger=self._read_retired()
         return values,ledger
+
+    @staticmethod
+    def json_escaped_forms(value):
+        """How ``value`` reads inside a JSON string when it differs from ``value`` (#271): ``"``, ``\\`` and
+        control characters are escaped, and non-ASCII text too under ``ensure_ascii``."""
+        return {form for form in (json.dumps(value)[1:-1],json.dumps(value,ensure_ascii=False)[1:-1]) if form!=value}
 
     @classmethod
     def redact_secret_spans(cls, text, values, ledger):
