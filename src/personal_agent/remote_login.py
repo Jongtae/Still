@@ -371,7 +371,7 @@ details{{margin:8px 0}}summary{{font-size:14px;color:#aeaeb2;padding:6px 0}}</st
 <p id="end"></p>
 <script nonce="{nonce}">
 const code={code};const q='?code='+encodeURIComponent(code);const $=id=>document.getElementById(id);
-let W=0,H=0,busy=false,ended=false,full=true,F=null,checkAfter=0,tapSeq=0,composing=false,sending=false;const sendQ=[];
+let W=0,H=0,busy=false,ended=false,full=true,F=null,checkAfter=0,tapSeq=0,composing=false,sending=false;const sendQ=[],idle=[];
 function end(text){{ended=true;$('keys').blur();$('live').classList.add('hidden');$('end').style.display='block';$('end').textContent=text}}
 async function post(path,body){{try{{const r=await fetch(path+q,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body||{{}}),credentials:'same-origin'}});
 if(r.status===404){{end('이 링크는 닫혔어요.');return false}}if(!r.ok)return false;const d=await r.json();return d&&d.ok===true}}catch(e){{return false}}}}
@@ -406,7 +406,9 @@ else sendQ.push(item);pump()}}
 async function pump(){{if(sending)return;sending=true;let failed=false;
 while(sendQ.length&&!ended){{const item=sendQ[0];item.sent=true;const body=Object.assign({{}},item);delete body.sent;delete body.seq;
 const ok=await post('{INPUT_PATH}',body);sendQ.shift();if(item.type==='tap'){{if(item.seq===tapSeq)checkAfter=Date.now()}}else if(!ok)failed=true}}
-sending=false;$('typing-failed').classList.toggle('hidden',!failed);setTimeout(frame,150)}}
+sending=false;idle.splice(0).forEach(done=>done());$('typing-failed').classList.toggle('hidden',!failed);setTimeout(frame,150)}}
+// 완료 closes the window: everything typed before it (the sign-in Enter included) reaches the window first.
+function drained(){{return sending||sendQ.length?new Promise(done=>idle.push(done)):Promise.resolve()}}
 // A whole-value replacement (AutoFill: insertReplacementText, or an input event with no inputType) is
 // the value itself, sent intact: a leading '_' in it is never taken for the sentinel.
 function flush(whole){{const k=$('keys'),v=k.value;resetKeys();if(whole){{if(v)enqueue({{type:'text',text:v}});return}}if(v===S)return;
@@ -438,7 +440,8 @@ $('tab').onclick=()=>enqueue({{type:'key',key:'Tab'}});
 $('back').onclick=()=>enqueue({{type:'key',key:'Backspace'}});
 $('nav-back').onclick=()=>post('{INPUT_PATH}',{{type:'nav',action:'back'}});
 $('reload').onclick=()=>post('{INPUT_PATH}',{{type:'nav',action:'reload'}});
-$('done').onclick=async()=>{{if(await post('{DONE_PATH}')){{end('완료했어요. 로그인 창을 닫고 세션을 저장했어요. 이 페이지는 닫아도 돼요.')}}}};
+$('done').onclick=async()=>{{const b=$('done');if(b.disabled)return;b.disabled=true;await drained();b.disabled=false;
+if(await post('{DONE_PATH}')){{end('완료했어요. 로그인 창을 닫고 세션을 저장했어요. 이 페이지는 닫아도 돼요.')}}}};
 $('expire').textContent='이 링크는 약 {max(1, int(round((session.expires - session.clock()) / 60)))}분 뒤에 닫혀요.';
 </script></body></html>'''
 

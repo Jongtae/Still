@@ -1264,6 +1264,15 @@ const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
  // The buttons share the same queue.
  sent();$('tab').onclick();$('back').onclick();$('enter').onclick();await tick();
  assert.deepEqual(sent(),[{type:'key',key:'Tab'},{type:'key',key:'Backspace'},{type:'key',key:'Enter'}]);
+ // 완료 waits for what is still queued: the window never closes before the sign-in Enter reaches it.
+ sent();let held;holds.push({type:'text',wait:new Promise(r=>{held=r;})});
+ type(S+'p',{inputType:'insertText'});type(S+'w',{inputType:'insertText'});
+ keys.fire('keydown',{key:'Enter',preventDefault(){}});await settle();
+ const closing=$('done').onclick();$('done').onclick();await settle();
+ assert.deepEqual(sent(),[{type:'text',text:'p'}],'nothing else goes out while the first text is held');
+ held();await closing;await settle();
+ assert.deepEqual(sent(),[{type:'text',text:'w'},{type:'key',key:'Enter'},{}],'the rest, then 완료 once');
+ assert.equal($('end').textContent.startsWith('완료했어요'),true);
  console.log('ok');
 })().catch(error=>{console.error(error);process.exit(1);});
 """
