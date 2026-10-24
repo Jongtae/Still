@@ -695,7 +695,11 @@ class Orchestration:
         #: #1293: whether the first plan may ask the owner for a current position (a Work the paired
         #: chat can answer, not itself a location continuation).  Later plans never may.
         self.can_ask_location = bool(can_ask_location)
-        self.request, self.conversation = str(request or ''), str(conversation or '')
+        #: #275: the earlier turns, one line each, when the caller passes them as a list, so a plan
+        #: call can say how many of them its bounded window reached (``sent_turns``).
+        self.turns = [str(turn) for turn in conversation] if isinstance(conversation, (list, tuple)) else None
+        self.request = str(request or '')
+        self.conversation = '\n'.join(self.turns) if self.turns is not None else str(conversation or '')
         #: #980: the owner message and reply of the Work this one follows up, when the
         #: follow-up judgment linked them ('' otherwise).  Read first for what the message refers to.
         self.continues = str(continues or '')
@@ -880,6 +884,7 @@ class Orchestration:
         self.context_sent = True
         self.sent_sections = {'profile': context.facts.get('owner_profile'),
                               'current_context': context.facts.get('current_context')}
+        self.sent_turns = self._turns_in(context.facts.get('recent_conversation'))
         try:
             decision = method(context, self._question(), self._schema(candidates), plan_shape)
         except Exception:
@@ -892,6 +897,23 @@ class Orchestration:
         if data is None:
             return None, FALLBACK_UNCONFIDENT
         return data, ''
+
+    def _turns_in(self, window):
+        """#275: how many earlier turns the plan's cut ``recent_conversation`` reached, newest first.
+
+        Each turn is measured as the plan call redacts it; without the turn list (a string
+        conversation) every earlier turn the sections count is taken as sent.
+        """
+        if not self.conversation or not window or window == 'none':
+            return 0
+        if self.turns is None:
+            return int(self.sections.get('history') or 0)
+        size, count = -1, 0
+        for turn in reversed(self.turns):
+            if size + 1 >= len(window):
+                break
+            size, count = size + len(self._redact(turn)) + 1, count + 1
+        return count
 
     def validate(self, data, candidates, number):
         """``(Attempt, '')`` for a plan that passes every deterministic check, else ``(None, what)``."""

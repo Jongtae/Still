@@ -195,6 +195,44 @@ class ConnectionPreferences(Harness):
         self.assertIn('owner_said (1 earlier owner message)', json.dumps(refs))
         self.assertEqual(refs.get('prepared'), [], 'the plan context carries no prepared answer itself')
 
+    def test_a_work_parked_after_its_early_plan_shows_the_conversation_it_read(self):
+        """#275: no worker turn records ``context_messages``; the audit counts the earlier turns the
+        plan's bounded window reached (the oldest one here lies wholly outside it)."""
+        import time as clock
+        from personal_agent.orchestrator import CONVERSATION_CHARS
+        rows = [('user', 'Oldest note, outside the window'), ('assistant', 'L' * (CONVERSATION_CHARS + 200)),
+                ('user', 'Which Unseen record?'), ('assistant', 'The Friday one.'), ('user', 'Read the Unseen record.')]
+        with self.store.db() as db:
+            for role, content in rows:
+                db.execute('INSERT INTO messages(role,content,channel,created) VALUES (?,?,?,?)',
+                           (role, content, 'web', clock.time()))
+        self.script([plan('codex', 'Read it.')], goals=[True])
+        ident = self.store.enqueue('Read the Unseen record.', 'early-parked-conversation')
+        self.service.early_work_plan(self.store.job(ident), 'Read the Unseen record.')
+        self.assertIn('The Friday one.', self.asked_plans[-1][0].facts['recent_conversation'])
+        self.assertNotIn('context_messages', self.store.turn_provenance(ident), 'no worker turn ran')
+        self.assertEqual(self.service.work_information_use(ident)['conversation_turns'], 3)
+
+    def test_a_plan_asked_again_over_newer_state_keeps_what_the_early_plan_read(self):
+        """#279: the early plan read profile A, the Work's own sections read B, so the plan is asked
+        again; the audit names both, not only the worker's B."""
+        import threading
+        worker = threading.current_thread()
+
+        def snapshot(service, request=None, recall=True):
+            if threading.current_thread() is worker:
+                service._early_plan.result()  # the early plan read A
+                return 'profile.beta.changed: read by the plan asked again'
+            return 'profile.alpha.before: read by the early plan'
+        self.script([plan('codex', 'Over A.'), plan('codex', 'Over B.')], goals=[True])
+        with mock.patch.object(type(self.service), 'owner_profile_snapshot', snapshot):
+            job, row = self.run_work('Read the Unseen record.', key='early-then-again')
+        self.assertEqual(row['status'], 'succeeded')
+        self.assertEqual(len(self.asked_plans), 2, 'the early plan missed and was asked again')
+        profile = next(item['items'] for item in self.service.work_information_use(job)['used'] if item['category'] == 'profile')
+        self.assertIn('profile.alpha.before', profile)
+        self.assertIn('profile.beta.changed', profile)
+
     def test_an_early_plan_that_never_asks_records_nothing(self):
         """Codex review on #259: the audit records the sections only once the plan call goes out."""
         from personal_agent.orchestrator import Orchestration
