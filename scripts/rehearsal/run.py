@@ -160,12 +160,13 @@ def run_request(service, store, vendor, text, value_of, deadline):
             'answer': job.get('response') or '', 'timeline': timeline, 'tools': tools, 'events': events}
 
 
-def rehearse_domain(name, service, store, deadline):
+def rehearse_domain(name, service, store, deadline, owner):
     from personal_agent.family_setup import start_tunnel
     vendor_class, value_of, requests, secrets = DOMAINS[name]
     vendor = vendor_class().start()
     # A public HTTPS address, as a real vendor has: the product needs no rehearsal exception.
-    tunnel, public = start_tunnel(vendor.port, store=store)
+    # #208: the owner's work mode decides whether a public tunnel may open, not the scratch store's.
+    tunnel, public = start_tunnel(vendor.port, store=owner)
     try:
         vendor.base, vendor.host = public.rstrip('/'), public.split('://', 1)[1].rstrip('/')
         runs = [run_request(service, store, vendor, text, value_of, deadline) for text, _right in requests]
@@ -244,6 +245,11 @@ def main():
     with store.db() as db:
         db.execute('DELETE FROM messages')
     owner = QuickStore(args.owner_data)
+    from personal_agent import work_mode
+    if work_mode.active(owner):
+        # #208: a rehearsal opens public tunnels and sends requests the scratch store cannot gate.
+        print('work mode is on for the owner; no rehearsal runs')
+        return 2
     copied = share_ai_route(owner, store)
     if copied is None:
         print('no owner AI route to rehearse with')
@@ -261,7 +267,7 @@ def main():
     report = {'qualification': qualification, 'scratch': scratch,
               'checks': {'judgment AI orchestrated': qualification in ('already qualified', 'passed')}}
     for name in domains:
-        report[name] = rehearse_domain(name, service, store, deadline)
+        report[name] = rehearse_domain(name, service, store, deadline, owner)
         report['checks'].update({f'{name}: {check}': passed for check, passed in report[name]['checks'].items()})
     print(json.dumps(report, ensure_ascii=False, indent=1))
     return 0 if all(report['checks'].values()) else 1

@@ -226,7 +226,7 @@ class TelegramSurface(ConversationSurface):
             if state is None or state['state']=='cancelled':return True
             cfg=service.store.config('telegram',{})
             allowed=(cfg.get('enabled') and notification['generation']==cfg.get('generation')
-                     and notification['chat_id']==cfg.get('user_id') and not work_mode.active(service.store))
+                     and notification['chat_id']==cfg.get('user_id') and not work_mode.was_on_since(service.store,self._notification_since(notification)))
             service.store.update_notification(notification['id'],'sending' if allowed else 'cancelled')
             if not allowed:return True
             reply_markup=None
@@ -1229,6 +1229,13 @@ class TelegramSurface(ConversationSurface):
         service.retry_family_handovers()
         service.settle_expired_telegram_photo_albums()
 
+    def _notification_since(self, notification):
+        """When the notification's content began: its Work's start, or its own queueing (#208 review)."""
+        job=self.service.store.job(notification.get('job_id')) if notification.get('job_id') else None
+        times=[value for value in ((job or {}).get('created'),notification.get('created'))
+               if isinstance(value,(int,float)) and not isinstance(value,bool)]
+        return min(times) if times else None
+
     def cancel_pending_deliveries(self):
         """#208 review: cancel every queued Telegram reply and notification as work mode goes on.
 
@@ -1261,8 +1268,9 @@ class TelegramSurface(ConversationSurface):
                 if not row:return
                 job=dict(row)
                 # #208: in work mode a Telegram reply is not sent (cancelled, never sent later); the Work keeps it.
+                # #208 review: nor one whose Work was under way while work mode was on.
                 allowed=(cfg.get('enabled') and job['channel']==f"telegram:{cfg.get('generation')}" and job['chat_id']==cfg.get('user_id')
-                         and not work_mode.active(service.store))
+                         and not work_mode.was_on_since(service.store,job.get('created')))
                 db.execute('UPDATE jobs SET delivery=? WHERE id=?',('sending' if allowed else 'cancelled',job['id']))
             if not allowed:return
             blocked=service.store.blocked_delivery_reply(job['id'])
