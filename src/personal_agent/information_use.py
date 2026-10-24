@@ -182,6 +182,26 @@ def section_references(profile=None, current_context=None, prepared=None, splice
                         for item in spliced or () if isinstance(item, dict)][:MAX_ITEMS]}
 
 
+#: #279: the most references one section keeps across a Work's calls (early plan, plan, worker).
+MERGED_ITEMS = 3 * MAX_ITEMS
+
+
+def merge_references(earlier, later):
+    """The union of two ``section_references`` records, earlier items first (#279).
+
+    A plan asked again over newer state, or a resumed Work, adds what its call carried
+    without dropping what an earlier call was sent.
+    """
+    merged = {}
+    for key in [*earlier, *(key for key in later if key not in earlier)]:
+        first, second = earlier.get(key), later.get(key)
+        if isinstance(first, list) and isinstance(second, list):
+            merged[key] = (first + [item for item in second if item not in first])[:MERGED_ITEMS]
+        else:
+            merged[key] = second if key in later else first
+    return merged
+
+
 def _event_items(action, evidence):
     """Short labels of the owner items one successful read or write event shows."""
     evidence = evidence if isinstance(evidence, dict) else {}
@@ -449,7 +469,8 @@ def work_information_use(store, job_id, redact=None):
     if photo_inputs:sent_to['attachments']=photo_inputs
     return {'work_id': job_id, 'recorded': bool(record), 'evidence_class': EVIDENCE_CLASS,
             'used': used,
-            'conversation_turns': int(record.get('context_messages') or 0),
+            # #275: a plan call's window counts too, so a Work parked before its worker shows it.
+            'conversation_turns': max(int(record.get('context_messages') or 0), int(record.get('plan_context_messages') or 0)),
             'sent_to': sent_to,
             'results': results[-MAX_ITEMS:]}
 

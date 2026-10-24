@@ -3129,9 +3129,25 @@ class AgentService:
                 fields['stream_errors']=[self.scrub_work_text(job_id,self._redact_provenance(redact_reason(str(text),request)))[:300]
                                          for text in fields['stream_errors'][:3]]
             # One transaction merges the fields into the stored record, so concurrent writers keep each other's.
-            self.store.merge_turn_provenance(job_id,{**{k:v for k,v in fields.items() if v is not None},'recorded_at':time.time()})
+            self.store.merge_turn_provenance(job_id,{**{k:v for k,v in fields.items() if v is not None},'recorded_at':time.time()},
+                                             combine=self._combine_turn_record)
         except Exception:
             LOG.warning('turn provenance could not be recorded job=%s',job_id)
+
+    @staticmethod
+    def _combine_turn_record(current, fields):
+        """#279: the audit keeps what every call of the Work was sent.
+
+        ``owner_information`` is the union of each call's references (an early plan over one
+        snapshot, the plan and worker over a newer one), and ``plan_context_messages`` the
+        largest window a plan call carried; every other field replaces the stored one.
+        """
+        merged=dict(fields)
+        if isinstance(fields.get('owner_information'),dict) and isinstance(current.get('owner_information'),dict):
+            merged['owner_information']=information_use.merge_references(current['owner_information'],fields['owner_information'])
+        if isinstance(fields.get('plan_context_messages'),int) and isinstance(current.get('plan_context_messages'),int):
+            merged['plan_context_messages']=max(current['plan_context_messages'],fields['plan_context_messages'])
+        return merged
 
     def record_photo_attempt(self, job_id, *, status, count=1, route=None, engine=None, provider=None, attempt_id=None):
         """Accumulate one Work's image destination evidence without storing image bytes."""
@@ -5630,7 +5646,8 @@ class AgentService:
             _zone,tz=host_zone(self.store)
         except Exception:
             tz=None
-        conversation='\n'.join(earlier_turn_line(row,context_message(row),tz) for row in earlier_rows)
+        # #275: one line per turn, so the plan call can say how many of them it sent.
+        conversation=[earlier_turn_line(row,context_message(row),tz) for row in earlier_rows]
         earlier=earlier_rows
         def event(status,detail):
             with self.store.db() as db:
@@ -5659,15 +5676,17 @@ class AgentService:
             orchestration=self.work_orchestration(job,prompt,list(stored),sections,budget,document_jobs=document_jobs,
                                                   can_ask_location=self.location_requester(job) is not None)
             early=orchestration.early_plan() if orchestration else None
-            if (orchestration and getattr(orchestration,'context_sent',False)
-                    and not (self.store.turn_provenance(job['id']) or {}).get('owner_information')):
+            if orchestration and getattr(orchestration,'context_sent',False):
                 # Codex review on #227/#259: the early plan sent these sections even when the Work is parked
                 # before its worker turn records them; recorded only once the plan call actually went out.
                 # Only what the plan's context carries (profile and current context; prepared answers are a
                 # count there), so the audit names nothing the Judgment AI did not receive.
                 # Codex review on #259: from the exact (bounded) facts the plan sent, not the whole sections.
+                # #279: merged with what other calls recorded (``record_turn_provenance``), never replaced.
+                # #275: and how many earlier turns the plan's bounded conversation window carried.
                 sent=getattr(orchestration,'sent_sections',None) or {}
-                self.record_turn_provenance(job['id'],owner_information=self.owner_information_refs(sent))
+                self.record_turn_provenance(job['id'],owner_information=self.owner_information_refs(sent),
+                                            plan_context_messages=getattr(orchestration,'sent_turns',0))
             return early
         finally:
             if own_budget and budget.ledger is not None:budget.ledger.pause()
