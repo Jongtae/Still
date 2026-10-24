@@ -43,6 +43,19 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual((env['USER'], env['LOGNAME']), ('owner', 'owner'), 'the Keychain login is found by account name')
         self.assertIn('--no-session-persistence', argv, 'no turn transcript is left under ~/.claude')
 
+    def test_every_claude_code_turn_names_the_default_permission_mode(self):
+        """#210: with no settings, Claude Code 2.1.287 starts a -p turn in "auto" (observed against a local
+        fixture model: the init record said ``permissionMode: auto`` and the CLI's own classifier, not
+        Still's permission prompt, was asked about an owner MCP call).  Every Work turn names "default",
+        so only the exact allow rules and Still's prompt decide."""
+        adapter, root = self.adapter()
+        for options in ({}, {'ai_connections': True}, {'native_search': True}, {'profile': 'strict-isolated'}):
+            with self.subTest(**options):
+                argv = adapter.command('claude-code', '/runtime/claude', 'hi', root / 'mcp.json', **options)
+                self.assertEqual(argv[argv.index('--permission-mode') + 1], 'default')
+                self.assertEqual(argv.count('--permission-mode'), 1)
+                self.assertEqual(argv[argv.index('--allowedTools')], argv[-2], '--allowedTools stays last (variadic)')
+
     def test_off_keeps_todays_isolation(self):
         adapter, root = self.adapter()
         argv = adapter.command('claude-code', '/runtime/claude', 'hi', root / 'mcp.json')

@@ -320,7 +320,7 @@ def test_the_in_context_program_is_closed_out_and_the_owed_reviews_stay_owed():
 
 
 def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_paused():
-    """#206: selected by the owner on 2026-10-23; cloud AI, the surface refactor and work mode merged, intranet in flight."""
+    """#206: selected by the owner on 2026-10-23; cloud AI, the surface refactor, work mode and intranet merged; owner MCP in flight."""
     current = plan()
     assert current["next_goal"]["id"] == "WORKPLACE-01"
     assert current["next_goal"]["status"] == "owner-activated-goal-ready"
@@ -329,11 +329,16 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     program = current["programs"]["WORKPLACE-01"]
     assert program["ordered_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01", "WORK-MODE-01", "INTRANET-DEST-01",
                                            "OWNER-MCP-WORK-01", "MATTERMOST-01", "SLACK-01"]
-    # One substep in flight at a time: CLOUD-AI-01 (#230), SURFACE-SEAM-01 (#229) and WORK-MODE-01 (#278, #280)
-    # merged; INTRANET-DEST-01 runs.
-    assert program["completed_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01", "WORK-MODE-01"]
-    assert program["active_substeps"] == ["INTRANET-DEST-01"]
-    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "WORKPLACE-01") == "INTRANET-DEST-01"
+    # One substep in flight at a time: CLOUD-AI-01 (#230), SURFACE-SEAM-01 (#229), WORK-MODE-01 (#278, #280) and
+    # INTRANET-DEST-01 (#284, #288) merged; OWNER-MCP-WORK-01 runs.
+    assert program["completed_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01", "WORK-MODE-01", "INTRANET-DEST-01"]
+    assert program["active_substeps"] == ["OWNER-MCP-WORK-01"]
+    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "WORKPLACE-01") == "OWNER-MCP-WORK-01"
+    intranet_done = items_of(current)["WORKPLACE-01"]["completed_substeps"]["INTRANET-DEST-01"]
+    assert (intranet_done["issue"], intranet_done["pull_request"], intranet_done["follow_up_pull_request"]) == (209, 284, 288)
+    assert intranet_done["merge_commit"].startswith("7cd87a3")
+    assert intranet_done["follow_up_merge_commit"].startswith("c4f66ad")
+    assert items_of(current)["INTRANET-DEST-01"]["activation_status"] == "complete-on-merge"
     work_mode = items_of(current)["WORKPLACE-01"]["completed_substeps"]["WORK-MODE-01"]
     assert (work_mode["issue"], work_mode["pull_request"], work_mode["follow_up_pull_request"]) == (208, 278, 280)
     assert work_mode["merge_commit"].startswith("db47d3c")
@@ -365,6 +370,11 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     assert (intranet["issue"], intranet["substep"]) == (209, "INTRANET-DEST-01")
     assert all(name in program["allowed_authority"] and name not in intranet["original"] for name in intranet["files"])
     assert "test_intranet.py" in items_of(current)["INTRANET-DEST-01"]["tests"][0]
+    # #210: the substep's observation harness is recorded the same way.
+    owner = items_of(current)["OWNER-MCP-WORK-01"]["allowed_authority_amendment"]
+    assert (owner["issue"], owner["substep"]) == (210, "OWNER-MCP-WORK-01")
+    assert all(name in program["allowed_authority"] and name not in owner["original"] for name in owner["files"])
+    assert "test_connect_decide.py" in items_of(current)["OWNER-MCP-WORK-01"]["tests"][0]
     assert "Codex review of the exact final head" in program["escalated_review"]
     items = {item["id"]: item for item in current["iterations"]}
     assert {items[name]["issue"] for name in program["ordered_substeps"]} == {208, 209, 210, 211, 212, 213, 214}

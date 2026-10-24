@@ -66,11 +66,41 @@ class CodexLaunchTests(unittest.TestCase):
     def test_unexpressible_or_reserved_definitions_are_skipped_whole(self):
         args, env, _secret = owner_mcp.codex_launch({
             'agentos': {'type': 'stdio', 'command': '/x'},
-            'path': {'type': 'stdio', 'command': '/x', 'env': {'PATH': '/evil'}},
+            'home': {'type': 'stdio', 'command': '/x', 'env': {'CODEX_HOME': '/elsewhere'}},
+            'token': {'type': 'stdio', 'command': '/x', 'env': {'CLAUDE_CODE_OAUTH_TOKEN': 'x'}},
+            'python': {'type': 'stdio', 'command': '/x', 'env': {'PYTHONPATH': '/x'}},
             'plain': {'type': 'streamable_http', 'url': 'http://insecure.test/mcp'},
             'odd': {'type': 'sse', 'url': 'https://x.test'},
             'bad name': {'type': 'stdio', 'command': '/x'}})
         self.assertEqual((args, env), ([], {}))
+
+    def test_a_server_sets_where_it_finds_the_owners_files_for_itself_only(self):
+        """#210: HOME, PATH, USER, LOGNAME and TMPDIR of a definition are that server's literal ``env``.
+
+        Observed on codex-cli 0.153.4 (local fixture model): a stdio server otherwise gets the turn's
+        empty HOME and no USER, and a definition that set PATH was skipped whole.  The values never
+        enter the CLI's own environment (which would move the CLI) or the model's shell exclusion list.
+        """
+        args, env, secret = owner_mcp.codex_launch({'tickets': {
+            'type': 'stdio', 'command': '/opt/company/bin/tickets-mcp', 'args': [],
+            'env': {'HOME': '/Users/owner', 'PATH': '/opt/company/bin:/usr/bin:/bin', 'USER': 'owner',
+                    'LOGNAME': 'owner', 'TMPDIR': '/tmp/owner', 'TICKETS_TOKEN': 'sk-company-1'}}})
+        self.assertIn('mcp_servers.tickets.env={HOME="/Users/owner",LOGNAME="owner",'
+                      'PATH="/opt/company/bin:/usr/bin:/bin",TMPDIR="/tmp/owner",USER="owner"}', args)
+        self.assertEqual(env, {'TICKETS_TOKEN': 'sk-company-1'}, 'the CLI environment keeps its own HOME and PATH')
+        self.assertEqual(secret, ['TICKETS_TOKEN'])
+        self.assertIn('mcp_servers.tickets.env_vars=["TICKETS_TOKEN"]', args)
+        self.assertNotIn('sk-company-1', ' '.join(args), 'a value that may be secret never becomes an argument')
+        import tomllib
+        table = next(a for a in args if a.startswith('mcp_servers.tickets.env='))
+        self.assertEqual(tomllib.loads(table)['mcp_servers']['tickets']['env']['PATH'], '/opt/company/bin:/usr/bin:/bin')
+
+    def test_a_location_value_is_quoted_as_toml(self):
+        args, _env, _secret = owner_mcp.codex_launch({'odd': {
+            'type': 'stdio', 'command': '/x', 'env': {'HOME': '/Users/o "q"\\x'}}})
+        import tomllib
+        table = next(a for a in args if a.startswith('mcp_servers.odd.env='))
+        self.assertEqual(tomllib.loads(table)['mcp_servers']['odd']['env']['HOME'], '/Users/o "q"\\x')
 
     def test_two_servers_cannot_share_a_name_with_different_values(self):
         args, env, _secret = owner_mcp.codex_launch({
