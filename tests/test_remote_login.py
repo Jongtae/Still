@@ -1219,6 +1219,13 @@ const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
  await ctx.frame();assert.equal(active,keys,'a stale frame does not close the keyboard');
  frameAnswer.body={...frameAnswer.body,focus:'text'};release();await tick();
  assert.equal(active,keys);assert.equal(keys.type,'text');sent();
+ // A new tap after a text field starts as a password input: the new field may be the password,
+ // and what is typed before a post-tap frame arrives must not go through a text input.
+ let release2;hold={type:'tap',wait:new Promise(r=>{release2=r;})};
+ tap(195,211);assert.equal(keys.type,'password','password until a post-tap frame says text');
+ assert.equal(keys.attrs.autocomplete,'current-password');await settle();
+ await ctx.frame();assert.equal(keys.type,'password','a stale text frame does not switch it back');
+ release2();await tick();assert.equal(keys.type,'text','a post-tap frame confirming text switches it');sent();
  // A paste over the limit goes in bounded pieces; a refused input says so on the page.
  type(S+'x'.repeat(600),{inputType:'insertFromPaste'});await tick();
  assert.deepEqual(sent().map(p=>p.text.length),[512,88]);

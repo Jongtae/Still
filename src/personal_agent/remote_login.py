@@ -376,11 +376,12 @@ F=d.focus||null;if(t0>=checkAfter)applyFocus()}}}}catch(e){{}}finally{{busy=fals
 // at once, so the page keeps nothing typed.  A frame's focus says what has focus in the window: the
 // keyboard stays up only for an editable element, as a password input unless it is plain text, so the
 // phone keyboard neither learns nor suggests what goes into a password field.  Only frames fetched after
-// the tap was pressed decide (checkAfter): an older one still shows the focus from before the tap.
+// the tap was pressed decide (checkAfter): an older one still shows the focus from before the tap, so
+// each tap starts as a password input until such a frame says the new field is plain text.
 const S='__________';
 function resetKeys(){{const k=$('keys');k.value=S;try{{k.setSelectionRange(S.length,S.length)}}catch(e){{}}}}
 function keyType(){{return F==='text'?'text':'password'}}
-function setKeyType(){{const k=$('keys'),t=keyType();if(k.type===t)return;k.type=t;
+function setKeyType(t){{const k=$('keys');t=t||keyType();if(k.type===t)return;k.type=t;
 k.setAttribute('autocomplete',t==='password'?'current-password':'username');resetKeys()}}
 function applyFocus(){{const k=$('keys');if(document.activeElement!==k)return;if(!F){{k.blur();return}}setKeyType()}}
 function enqueue(item){{if(item.type==='text'){{const t=item.text.replace(/[\\r\\n]+/g,'');for(let i=0;i<t.length;i+={TEXT_LIMIT}){{
@@ -405,7 +406,7 @@ $('dialog-cancel').onclick=()=>post('{INPUT_PATH}',{{type:'dialog',answer:'cance
 setInterval(frame,{REFRESH_MS});frame();
 $('shot').addEventListener('click',e=>{{if(!W||!H)return;const r=e.currentTarget.getBoundingClientRect();
 const x=Math.max(0,Math.min(W,(e.clientX-r.left)/r.width*W)),y=Math.max(0,Math.min(H,(e.clientY-r.top)/r.height*H));
-const k=$('keys');k.style.top=Math.round(e.clientY-r.top)+'px';setKeyType();resetKeys();k.focus();checkAfter=Infinity;
+const k=$('keys');k.style.top=Math.round(e.clientY-r.top)+'px';setKeyType('password');resetKeys();k.focus();checkAfter=Infinity;
 enqueue({{type:'tap',x:x,y:y}})}});
 // #1170: the phone's own AutoFill fills these two; they go out like typed text (ID, Tab, password) and are
 // cleared at once: the page keeps neither.
