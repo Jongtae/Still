@@ -672,10 +672,13 @@ def _transient(exc):
         (isinstance(exc, OSError) and not isinstance(exc, FileNotFoundError))
 
 
-def refuse_in_work_mode(store):
-    """#208 review: ``ApiError('work_mode')`` while work mode is on; nothing has been sent."""
-    from . import work_mode
-    refused = work_mode.refusal(store, 'api_request')
+def refuse_in_work_mode(store, url=None):
+    """#208 review: ``ApiError('work_mode')`` while work mode is on; nothing has been sent.
+
+    #209: a request to a declared intranet ``url`` may go out in work mode.
+    """
+    from . import intranet, work_mode
+    refused = work_mode.refusal(store, 'api_request', intranet.destination(url) if url is not None else None)
     if refused:
         raise ApiError(refused, 'work_mode')
 
@@ -683,7 +686,7 @@ def refuse_in_work_mode(store):
 def _work_mode_guarded(store, transport):
     """``transport`` that asks work mode first, so every request (OAuth token, probe, call) is refused unsent."""
     def send(*args, **kwargs):
-        refuse_in_work_mode(store)
+        refuse_in_work_mode(store, args[1] if len(args) > 1 else kwargs.get('url', ''))
         return transport(*args, **kwargs)
     return send
 
@@ -811,7 +814,7 @@ class ApiRequests:
                 return None
             # #208 review: asked in the reservation's own transaction, so work mode switched on
             # before it reserves nothing (the switch's write waits for this transaction).
-            refuse_in_work_mode(self.store)
+            refuse_in_work_mode(self.store, f'https://{destination}' if destination else None)
             detail = {'scope': 'api', 'evidence': {'engine': 'agentos', 'kind': 'api-slot',
                       'identity': slot['name'], 'operation': method, 'effect': effect, 'host': destination,
                       'input_digest': identity, 'revision': slot['revision'], 'work_id': self.work_id}}
@@ -969,7 +972,7 @@ class ApiRequests:
             # exchange) refuses before anything is handed off; a reservation made for this
             # attempt is released, since nothing left.
             try:
-                refuse_in_work_mode(self.store)
+                refuse_in_work_mode(self.store, url)
             except ApiError:
                 if identity:
                     self._release_effect(claim)

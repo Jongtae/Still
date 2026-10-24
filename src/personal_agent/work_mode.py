@@ -31,9 +31,13 @@ module only refuses the egress classes below):
     off for the turn.
 
 Allowed while on: the active AI route's own endpoint (the owner chose it in
-Settings, and no model output can change it) and loopback.  Intranet
-destinations the owner declares (#209) and company-approved chat surfaces
-(#213, #214) are admitted here when those land; until then every other
+Settings, and no model output can change it), loopback, and the intranet
+destinations the owner declared in Settings (#209, ``intranet``) for the
+classes whose every request names its destination and is checked
+(``DESTINATION_EGRESS``: page reads, API calls, code runs).  A browser page
+loads resources from wherever it names, which Still does not confine, so the
+browser stays refused even for a declared host.  Company-approved chat
+surfaces (#213, #214) are admitted here when those land; every other
 destination is refused.
 
 What work mode does **not** control (stated, never overclaimed): traffic a CLI
@@ -67,6 +71,9 @@ TOOL_EGRESS = {
 #: Every egress class this module refuses, with its owner-facing reason.
 EGRESS_CLASSES = ('web_search', 'public_read', 'browser', 'api_request', 'code_run', 'skill_acquisition',
                   'tunnel', 'telegram')
+#: #209: egress classes whose every request is checked against its destination, so a declared
+#: intranet destination may be reached while work mode is on.
+DESTINATION_EGRESS = frozenset({'public_read', 'api_request', 'code_run'})
 
 
 class WorkModeRefused(ProviderError, ValueError):
@@ -129,11 +136,22 @@ def was_on_since(store, since):
     return any(row.get('after') is True or row.get('before') is True for row in rows if row['at'] > since)
 
 
-def refusal(store, egress):
-    """The owner-facing reason ``egress`` is refused now, or None when it may go out."""
+def refusal(store, egress, destination=None):
+    """The owner-facing reason ``egress`` (to ``destination``) is refused now, or None when it may go out.
+
+    ``destination`` (#209): the ``(host, port)`` one request goes to.  While work
+    mode is on, a ``DESTINATION_EGRESS`` request to a declared intranet
+    destination may go out; nothing else.
+    """
     if egress not in EGRESS_CLASSES:
         raise ValueError(f'unknown egress class: {egress}')
-    return msg(f'work_mode.refused.{egress}') if active(store) else None
+    if not active(store):
+        return None
+    if egress in DESTINATION_EGRESS and destination is not None:
+        from . import intranet
+        if intranet.declared(store, *destination):
+            return None
+    return msg(f'work_mode.refused.{egress}')
 
 
 def refuse(store, egress):
@@ -142,10 +160,41 @@ def refuse(store, egress):
         raise WorkModeRefused(egress)
 
 
-def tool_refusal(store, host_action):
-    """``WorkModeRefused`` for a model tool that would leave this Mac, or None."""
+def _tool_destinations(host_action, args):
+    """#209: every ``(host, port)`` a tool call names, or None when the call reaches somewhere it does not name."""
+    from . import intranet
+    if host_action in ('public_page_read', 'api_request'):
+        found = intranet.destination(args.get('url'))
+        return [found] if found else None
+    if host_action == 'code_run':
+        # Installing packages reaches the package index, which no call names.
+        if args.get('packages'):
+            return None
+        hosts = args.get('hosts') or []
+        hosts = hosts.replace(',', ' ').split() if isinstance(hosts, str) else hosts
+        if not isinstance(hosts, list) or not hosts:
+            return None
+        found = [intranet.destination(f'https://{host}') if isinstance(host, str) else None for host in hosts]
+        return None if None in found else found
+    return None
+
+
+def tool_refusal(store, host_action, args=None):
+    """``WorkModeRefused`` for a model tool that would leave this Mac, or None.
+
+    #209: a page read, API call or code run whose every named destination is a
+    declared intranet destination may run; each of its requests is checked
+    again where it is sent.
+    """
     egress = TOOL_EGRESS.get(host_action)
-    return WorkModeRefused(egress) if egress and active(store) else None
+    if not egress or not active(store):
+        return None
+    if egress in DESTINATION_EGRESS:
+        from . import intranet
+        found = _tool_destinations(host_action, args if isinstance(args, dict) else {})
+        if found and all(intranet.declared(store, *item) for item in found):
+            return None
+    return WorkModeRefused(egress)
 
 
 def set_enabled(store, enabled, *, surface, clock=time.time):

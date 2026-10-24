@@ -52,7 +52,10 @@ def value(store, text):
     probe = data['probe']
     if not isinstance(probe, dict) or set(probe) != {'url', 'required_fields'}:
         raise ValueError('읽기 확인 주소와 필요한 응답 필드를 주세요.')
-    probe['url'] = remote_url(probe['url'], lambda v: redact_known_secrets(store, v))
+    # #209: a probe on a declared intranet host verifies an intranet API like any other.
+    from . import intranet
+    probe['url'] = remote_url(probe['url'], lambda v: redact_known_secrets(store, v),
+                              lambda host, port: intranet.declared(store, host, port))
     fields = probe['required_fields']
     if not isinstance(fields, list) or not 1 <= len(fields) <= api_requests.MAX_CHECKS:
         raise ValueError('필요한 응답 필드는 1~8개로 주세요.')
@@ -78,7 +81,10 @@ def refuse_probe_in_work_mode(service, data):
     A code-run set only stores the values (its probe is the Work's own code run, refused there
     too), so its page still opens on this Mac.
     """
-    refused = work_mode.refusal(service.store, 'api_request')
+    from .intranet import destination
+    probe = data.get('probe') if isinstance(data.get('probe'), dict) else {}
+    # #209: a probe to a declared intranet host may go out in work mode.
+    refused = work_mode.refusal(service.store, 'api_request', destination(probe.get('url')))
     if refused and not code_draft(data):
         raise ValueError(refused)
 

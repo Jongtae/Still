@@ -3,9 +3,11 @@
 // The Still host process owns every decision. This file only starts the
 // sandbox, asks the host about each outbound HTTP request and reports what
 // ran. Protocol (one JSON object per line):
-//   host -> runner, first line: {workdir, argv, allowedDomains, denyRead, allowRead,
-//                                env, masked: [{name, value, injectHosts}],
+//   host -> runner, first line: {workdir, argv, allowedDomains, deniedResolvedAddresses, denyRead,
+//                                allowRead, env, masked: [{name, value, injectHosts}],
 //                                timeoutMs, outputBytes}
+//     deniedResolvedAddresses (#209): ranges an allowed name may not resolve to, besides
+//     sandbox-runtime's own loopback, link-local, metadata and local-interface set.
 //   runner -> host: {type: "request", id, method, host, path, query, bodyBytes, bodyDigest, bodyText, headers}
 //     bodyText (#1456): a non-GET body as UTF-8 text with each masked value's sentinel replaced by
 //     {{NAME}}, so the host can show the owner the exact request and bind an approval to it across runs;
@@ -89,6 +91,7 @@ async function run () {
     network: {
       allowedDomains: config.allowedDomains,
       deniedDomains: [],
+      deniedResolvedAddresses: config.deniedResolvedAddresses || [],
       tlsTerminate: {},
       filterRequest
     },

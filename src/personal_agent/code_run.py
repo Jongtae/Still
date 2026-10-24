@@ -35,6 +35,7 @@ import tempfile
 import threading
 import time
 
+from .messages import msg
 from .prompt_files import prompt
 
 RUNTIME_PACKAGE = '@anthropic-ai/sandbox-runtime'
@@ -255,7 +256,7 @@ def _ip_literal(host):
     return True
 
 
-def _arguments(args):
+def _arguments(args, declared=lambda host: False):
     code = args.get('code')
     if not isinstance(code, str) or not code.strip() or len(code.encode()) > MAX_CODE_BYTES:
         raise CodeRunError('실행할 Python 코드를 64KB 이하로 주세요.', 'code_run_argument_invalid')
@@ -270,8 +271,11 @@ def _arguments(args):
         hosts = [part for part in re.split(r'[\s,]+', hosts) if part]
     hosts = sorted({_host(item) for item in hosts if isinstance(item, str)})
     from .api_requests import public_host
-    if len(hosts) > MAX_HOSTS or not all(HOST.match(item) and not _ip_literal(item) and public_host(item) for item in hosts):
-        raise CodeRunError('접속할 호스트는 공개 도메인 이름으로 16개까지 주세요.', 'code_run_argument_invalid')
+    # #209: an intranet host the owner declared in Settings may have a private name.
+    if len(hosts) > MAX_HOSTS or not all(HOST.match(item) and not _ip_literal(item) and (public_host(item) or declared(item))
+                                         for item in hosts):
+        raise CodeRunError('접속할 호스트는 공개 도메인 이름이나 설정에 등록한 사내 주소로 16개까지 주세요.',
+                           'code_run_argument_invalid')
     # #1470: the AI's declaration is not authority: every state-changing request needs the owner's
     # approval of exactly it (#1456), whatever the run declared.
     effect = args.get('effect') or 'read'
@@ -439,10 +443,17 @@ class CodeRunner:
         self._owners, self._asked, self._claims = {}, [], []
         #: #1489: the sets this Work's runs were already told how to keep their steps for.
         self._hinted = set()
+        #: #209: the declared intranet hosts the current run reaches (each request rechecks the list).
+        self._intranet_hosts = frozenset()
         self._fields, self._note = [], ''
         #: #167: ``[(text, host)]`` of the requests the last run let out (path, query, body, header values),
         #: held in memory for the information-use comparison only; never returned or recorded.
         self.sent = []
+
+    def _intranet_host(self, host):
+        """#209: whether ``host`` (a run's host, no port) is an intranet host the owner declared."""
+        from . import intranet
+        return intranet.host_declared(self.store, _hostname(host))
 
     def node(self):
         if self._node is None:
@@ -501,7 +512,7 @@ class CodeRunner:
             if not isinstance(kept, dict):
                 raise CodeRunError('이 작업에는 승인을 요청한 코드 실행이 없어요. 코드를 직접 주세요.', 'code_run_argument_invalid')
             args = dict(kept)
-        code, packages, hosts, names, timeout = _arguments(args if isinstance(args, dict) else {})
+        code, packages, hosts, names, timeout = _arguments(args if isinstance(args, dict) else {}, self._intranet_host)
         proposed = _library_argument(args, names)
         # #1470: the AI's plain words for a state change this run may ask the owner to approve.
         note = args.get('approval_note') if isinstance(args, dict) else None
@@ -516,6 +527,12 @@ class CodeRunner:
         if node is None:
             raise CodeRunError(UNAVAILABLE_TEXT, 'code_run_unavailable')
         masked, plain, set_hosts = self.secret_sets(names, hosts)
+        # #209: a run that reaches a declared intranet host reaches only declared hosts, so the sandbox can
+        # refuse private-use addresses to every run that names none (``_session``).
+        intranet = {host for host in [*hosts, *set_hosts] if self._intranet_host(host)}
+        if intranet and set(hosts) | set(set_hosts) != intranet:
+            raise CodeRunError(msg('intranet.code_run_mixed'), 'code_run_argument_invalid')
+        self._intranet_hosts = frozenset(_hostname(host) for host in intranet)
         libraries = self._libraries(names, proposed)
         runtime = self.install(self.store, node)
         python, roots = interpreter()
@@ -793,12 +810,19 @@ class CodeRunner:
         ``check`` (#1486): a parameter-flow check, where every other request is refused unsent.
         #208 review: while work mode is on every request is refused unsent, a run already going included.
         """
-        from . import work_mode
-        refused = work_mode.refusal(self.store, 'code_run')
-        if refused:
-            return False, refused
+        from . import intranet, work_mode
         method = str(message.get('method') or '').upper()
         host = _host(message.get('host'))
+        # #209: a declared intranet host is reached only on a declared port, read again for every
+        # request (a removed host is refused from the next one); in work mode it is the only destination.
+        name, port = _hostname(host), host.rsplit(':', 1)[1] if host != _hostname(host) else None
+        ports = (int(port),) if port else intranet.DEFAULT_PORTS
+        reached = next(((name, item) for item in ports if intranet.declared(self.store, name, item)), None)
+        refused = work_mode.refusal(self.store, 'code_run', reached)
+        if refused:
+            return False, refused
+        if name in self._intranet_hosts and reached is None:
+            return False, msg('intranet.not_declared', host=host)
         # A host named without a port covers every port of that host, as in sandbox-runtime's
         # allowedDomains (live: an API served on :9443 under a set listing the bare host).
         if host not in policy:
@@ -869,7 +893,12 @@ class CodeRunner:
         return True, ''
 
     def _session(self, node, runtime, workdir, argv, policy, roots, timeout, requests, phase, masked=(), plain=None, recorded=None):
-        config = {'workdir': workdir, 'argv': argv, 'allowedDomains': sorted(policy),
+        # #209: sandbox-runtime refuses loopback, link-local, metadata and this Mac's own addresses for every
+        # allowed name; a session that reaches no declared intranet host is refused private-use space too.
+        from . import intranet
+        denied = [*intranet.SPECIAL_PURPOSE, *(() if any(_hostname(host) in self._intranet_hosts for host in policy)
+                                              else intranet.PRIVATE_USE)]
+        config = {'workdir': workdir, 'argv': argv, 'allowedDomains': sorted(policy), 'deniedResolvedAddresses': denied,
                   'denyRead': private_roots(), 'allowRead': roots,
                   'env': {**(plain or {}), 'PATH': '/usr/bin:/bin', 'HOME': workdir, 'LANG': 'en_US.UTF-8',
                           'PYTHONIOENCODING': 'utf-8', 'PYTHONDONTWRITEBYTECODE': '1'},

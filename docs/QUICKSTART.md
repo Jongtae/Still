@@ -68,6 +68,17 @@ When your AI comes through your company's cloud rather than a personal plan, ope
 
 Still can also use a direct model connection: Ollama (an already running local model server), OpenAI-compatible Chat Completions endpoints, or OpenAI and Anthropic API keys. Choose a provider, endpoint and model name, test the settings, and apply the successful configuration. API keys stay in a private local file. Results depend heavily on how well the chosen model uses tools, so start with a subscription if you can. A company gateway that speaks OpenAI-compatible Chat Completions (for example LiteLLM in front of Bedrock or Azure) uses the OpenAI-compatible connection; its request shape is covered by a local fixture test (#211), not by an observation of a real gateway.
 
+### Intranet addresses
+
+Company hosts resolve to private addresses, which Still otherwise refuses so that nothing reaches this Mac, your home network or a cloud metadata service by accident. Add the exact hosts Still may reach in Settings > External connections > **사내 주소 (intranet addresses)**, on this Mac (#209), for example `jira.corp.example` or `gitlab.corp.example:8443`. A conversation cannot add one, and every change is recorded.
+
+- An entry is one host name with an optional port: no IP address, no wildcard, never `localhost`. Without a port only 443 and 80 are allowed.
+- A declared host may resolve to private-use space (10/8, 172.16/12, 192.168/16, 100.64/10, IPv6 unique-local), never to this Mac (loopback), link-local or a cloud metadata address. Undeclared private addresses stay refused, on every path.
+- It reaches page reads (of pages you approved), the browser, MCP server setup, API connection probes and code runs. A code run that names an intranet host may name only intranet hosts; every other run is refused private-use addresses by its sandbox.
+- Declaring grants reachability only: no credential, no write and no approval. A removal applies from the next request; settings that used the host are kept and refused until you add it again.
+
+Company proxy and internal CA, as they are today: the browser uses macOS's proxy settings and the Keychain, so a company CA installed there is trusted. Page reads connect directly to the checked address and trust Python's OpenSSL certificate store (not the Keychain); API calls and signed-in session refreshes also trust that store and follow an `HTTPS_PROXY`/`NO_PROXY` set for the Still process. Code runs connect directly (no proxy) and their TLS is verified by Node's bundled CA list. MCP server setup runs the Claude Code CLI with its own trust settings and no proxy variables. A host whose certificate the path does not trust fails its TLS handshake; nothing is bypassed. Evidence is unit tests with injected resolvers, not an observation on a company network.
+
 ### Work mode on a company network
 
 On a company network, switch on **회사 모드 (work mode)** in Settings > External connections, on this Mac (#208). It cannot be switched from a conversation or through a phone link, and every change is recorded. While it is on:
@@ -76,7 +87,7 @@ On a company network, switch on **회사 모드 (work mode)** in Settings > Exte
 - Telegram is not used: no polling, no replies or notifications (a reply that could not be sent is not sent later), and a bot cannot be connected or paired;
 - the AI's web search, public page reads, weather, browser, API calls, code runs and MCP server lookup are refused before they run, the CLI's own web search is off, signed-in sites are not refreshed, and no skill is fetched from GitHub.
 
-The AI route you set up keeps working. Not controlled by work mode: traffic a CLI makes inside its own turn besides that web search (its model provider, its own telemetry and update checks, and what its sandbox lets a command reach; Codex runs with `--sandbox read-only`), services you connected yourself (Google connections, the AI's claude.ai connectors, your MCP servers) and family assistants on this Mac. Intranet destinations you declare are admitted by #209 when it lands. Evidence so far is unit tests with fake tunnels and transports, not an observation on a company network.
+The AI route you set up keeps working. Not controlled by work mode: traffic a CLI makes inside its own turn besides that web search (its model provider, its own telemetry and update checks, and what its sandbox lets a command reach; Codex runs with `--sandbox read-only`), services you connected yourself (Google connections, the AI's claude.ai connectors, your MCP servers) and family assistants on this Mac. Page reads, API calls and code runs may still reach the intranet addresses you declared (below); the browser stays refused, because a page loads resources from wherever it names. Evidence so far is unit tests with fake tunnels and transports, not an observation on a company network.
 
 ## Windows (WSL2)
 

@@ -3296,7 +3296,8 @@ class Capabilities:
    if not tool or name not in self.allowed_tools:raise ValueError('활성 패키지에 선언되지 않은 도구입니다.')
    # #208: while work mode is on, a tool that would leave this Mac is refused here, on every
    # route, before it runs; the switch is read per call, so it applies from the next call.
-   refused=work_mode.tool_refusal(self.store,tool['host_action'])
+   # #209: a call that names only declared intranet destinations may run.
+   refused=work_mode.tool_refusal(self.store,tool['host_action'],args)
    if refused is not None:raise refused
    # #606 T1: every route's attempt, Stop and deadline check happens here.
    self.budget.spend_attempt()
@@ -3323,8 +3324,10 @@ class Capabilities:
    # same set again on every redirect, so a result cannot hand the read on to
    # a host neither the owner nor the search named.
    from .local_tools import normalize_public_url
+   # #209: an approved page on a declared intranet host compares like any other.
+   declared=getattr(self.network,'destination_declared',None)
    def normalized(url):
-    try:return normalize_public_url(url)
+    try:return normalize_public_url(url,declared)
     except (TypeError,ValueError):return None
    owner={normalized(url) for url in self.page_scope()}-{None}
    url=normalized(args.get('url'))
