@@ -658,6 +658,8 @@ SETTINGS_WEB_CHANGES={
     '/api/decision-route/activate':('판단 AI',None),'/api/current-context':('현재 맥락',None),
     # #208: the read model shows on/off; the notice states which.
     '/api/work-mode':('회사 모드',None),
+    # #209: the read model does not list the hosts; the notice states the action only.
+    '/api/intranet-destinations':('사내 주소 목록','바꿨습니다'),
     '/api/subscription-engines/connect':('구독 AI 연결',None),'/api/connections/google/disconnect':('Google 연결',None),
     '/api/telegram':('Telegram 봇',None),'/api/telegram/disconnect':('Telegram 연결',None),
     '/api/main-ai/key':('기본 AI 키','저장했습니다'),'/api/decision-route/credential':('판단 AI 키','저장했습니다'),
@@ -1392,6 +1394,10 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 if path=='/api/work-mode':
                     if self.tunneled():return self.reply(400,{'error':msg('work_mode.local_only')})
                     return self.reply(200,service.set_work_mode(body))
+                # #209: intranet destinations are declared in Settings on this computer only, never through a tunnel.
+                if path=='/api/intranet-destinations':
+                    if self.tunneled():return self.reply(400,{'error':msg('intranet.local_only')})
+                    return self.reply(200,service.set_intranet_destination(body))
                 if path=='/api/owner-model/request':return self.reply(200,service.owner_model_request(body))
                 if path=='/api/documents/approval':return self.reply(200,service.approve_document_sharing_from_settings(body))
                 if path=='/api/public-pages/approval':return self.reply(200,service.set_public_page_approval(body))

@@ -1000,10 +1000,15 @@ def local_host(host):
         return False
 
 
-def local_url(url, allowed_origins=()):
-    """True when an http(s) ``url`` names a local/private host (no DNS); False for anything allowed."""
+def local_url(url, allowed_origins=(), intranet=()):
+    """True when an http(s) ``url`` names a local/private host (no DNS); False for anything allowed.
+
+    ``intranet`` (#209): the ``host:port`` keys of the owner's declared intranet
+    destinations; such a host may have a private name (its addresses are
+    checked by ``destination_refusal``).
+    """
     key = origin_key(url)
-    if key and key in set(allowed_origins or ()):
+    if key and (key in set(allowed_origins or ()) or key in set(intranet or ())):
         return False
     try:
         parts = urlsplit(str(url or ''))
@@ -1032,7 +1037,7 @@ def navigation_error_code(error):
     return 'navigation_failed'
 
 
-def destination_refusal(url, allowed_origins=(), resolver=None):
+def destination_refusal(url, allowed_origins=(), resolver=None, intranet=()):
     """None when ``url`` may be loaded, else ``blocked_destination``.
 
     Only http(s).  The name or literal is checked with ``local_host``; a name
@@ -1040,12 +1045,17 @@ def destination_refusal(url, allowed_origins=(), resolver=None):
     private (a public name pointing at 127.0.0.1 included).  A resolution
     error is not a refusal (WebKit cannot load it either).
     ``allowed_origins`` is a test-only exact ``host:port`` allowance.
+    ``intranet`` (#209): declared intranet ``host:port`` keys; such a name may
+    resolve to private-use space, never to loopback, link-local or metadata
+    addresses (``intranet.address_admitted``).
     """
+    from .intranet import address_admitted
     from .local_tools import _denied_address
     key = origin_key(url)
     if key and key in set(allowed_origins or ()):
         return None
-    if local_url(url):
+    declared = bool(key) and key in set(intranet or ())
+    if local_url(url, intranet=intranet):
         return 'blocked_destination'
     parts = urlsplit(str(url))
     host = (parts.hostname or '').rstrip('.')
@@ -1064,7 +1074,7 @@ def destination_refusal(url, allowed_origins=(), resolver=None):
             address = ipaddress.ip_address(str(record[4][0]).split('%')[0])
         except (ValueError, IndexError, TypeError):
             continue
-        if _denied_address(address):
+        if (not address_admitted(address)) if declared else _denied_address(address):
             return 'blocked_destination'
     return None
 
@@ -1131,6 +1141,8 @@ class Worker:
         self.landed = 0            # main-frame navigations committed or failed so far (#736)
         self.deciding = 0          # main-frame policy decisions still resolving their destination (#736 review)
         self.resolved = {}         # url origin -> refusal code or None (this worker's life)
+        #: #209: the owner's declared intranet ``host:port`` keys, sent with every command.
+        self.intranet = frozenset()
         self.warming = None        # #5: (WKNavigation, done) of the start-up empty document
         self.app = AppKit.NSApplication.sharedApplication()
         self.app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)   # no Dock icon
@@ -1602,7 +1614,7 @@ class Worker:
 
         def resolve():
             try:
-                refusal = destination_refusal(url, self.allowed_origins)
+                refusal = destination_refusal(url, self.allowed_origins, intranet=self.intranet)
             except Exception:
                 refusal = 'blocked_destination'
             self.AppHelper.callAfter(answer, refusal)
@@ -1650,11 +1662,20 @@ class Worker:
             send(event)
 
     # -- ops -----------------------------------------------------------------
+    def set_intranet(self, keys):
+        """#209: the declared intranet keys of the latest command; a change forgets every judged origin."""
+        keys = frozenset(str(key) for key in keys) if isinstance(keys, list) else frozenset()
+        if keys != self.intranet:
+            self.intranet = keys
+            self.resolved.clear()
+
     def handle(self, command):
         ident = command.get('id')
         op = command.get('op')
         timeout = command.get('timeout') or 20
         try:
+            if 'intranet' in command:
+                self.set_intranet(command['intranet'])
             method = getattr(self, 'op_' + str(op), None)
             if method is None:
                 return self.fail(ident, 'unknown_op')

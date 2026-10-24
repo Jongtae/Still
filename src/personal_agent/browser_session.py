@@ -832,6 +832,9 @@ class BrowserSession:
         # Test-only exact ``host:port`` allowance for a local fixture site; only
         # a test constructor sets it (never config or environment).
         self._allowed_origins = frozenset(allowed_origins_for_tests)
+        #: #209: ``() -> {host:port}`` of the owner's declared intranet destinations, read per step;
+        #: carried by the profile's factory (``BrowserProfile.driver_factory``).
+        self._intranet = getattr(driver_factory, 'intranet', None) or frozenset
         self.driver = None
         self.work_id = work_id
         self.budget = budget
@@ -1180,7 +1183,7 @@ class BrowserSession:
         parts = urlsplit(url)
         if parts.scheme not in ('http', 'https') or not parts.netloc:
             raise ValueError('http 또는 https 주소만 열 수 있습니다.')
-        if local_destination(url, self._allowed_origins):
+        if local_destination(url, self._allowed_origins, self._intranet()):
             raise ToolError(BLOCKED_TEXT, 'blocked_destination')
         self._spend_step()
         # The login row, Evidence and the relay's page digest carry the site reference only
@@ -1199,7 +1202,7 @@ class BrowserSession:
         # #680 review P1-2: never this computer or its private network (the
         # Still UI included).  Name and literal here; the worker checks every
         # navigation again after DNS resolution (redirects, forms, new windows).
-        if local_destination(url, self._allowed_origins):
+        if local_destination(url, self._allowed_origins, self._intranet()):
             raise ToolError(BLOCKED_TEXT, 'blocked_destination')
         self._spend_step()
         # #934: the requested destination counts before the page is opened: a shared site's payment
@@ -1602,17 +1605,18 @@ def target_text(code, cover=None):
         # No numbered control to close it with: reading the page again is still the way on.
         parts.append('browser_read로 페이지를 다시 확인해 가린 요소를 닫을 방법을 찾으세요.')
     return ' '.join(parts)
-def local_destination(url, allowed_origins=()):
+def local_destination(url, allowed_origins=(), intranet=()):
     """True when ``url`` names this computer or a private network by name or literal address.
 
     ``browser_worker.local_url`` over the public-page guard's tables
     (``local_tools``): localhost, ``.local``/``.localhost``/``.internal``/
     ``.home.arpa``, loopback, private, link-local, reserved and multicast.  No
     DNS here; the worker resolves every navigation it performs.
-    ``allowed_origins`` is the test-only exact ``host:port`` allowance.
+    ``allowed_origins`` is the test-only exact ``host:port`` allowance;
+    ``intranet`` (#209) the owner's declared intranet ``host:port`` keys.
     """
     from .browser_worker import local_url
-    return local_url(url, allowed_origins)
+    return local_url(url, allowed_origins, intranet)
 
 
 LOG = logging.getLogger(__name__)
@@ -1781,7 +1785,7 @@ def _row_from_cookie(cookie, before):
             'same_site': old.get('same_site')}
 
 
-def http_refresh(url, rows, *, allowed_origins=(), opener=None, refusal=destination_refusal):
+def http_refresh(url, rows, *, allowed_origins=(), opener=None, refusal=destination_refusal, intranet=()):
     """One GET of ``url`` with a site's stored cookie ``rows``, without a browser (#1015).
 
     Returns ``(state, rows_after)``: ``refreshed`` with every row the site
@@ -1794,6 +1798,9 @@ def http_refresh(url, rows, *, allowed_origins=(), opener=None, refusal=destinat
     import http.cookiejar
     import urllib.error
     import urllib.request
+    if intranet:
+        # #209: a declared intranet site's session is kept alive like any other.
+        refusal = (lambda check: lambda target, allowed: check(target, allowed, intranet=intranet))(refusal)
     if urlsplit(str(url or '')).scheme not in ('http', 'https') or refusal(url, allowed_origins):
         return 'failed', None
     jar = http.cookiejar.CookieJar()
@@ -1877,8 +1884,10 @@ class WebKitWorkerDriver:
     """
 
     def __init__(self, profile_id='default', *, seed=None, command=None, start_seconds=WORKER_START_SECONDS,
-                 grace_seconds=WORKER_GRACE_SECONDS, cwd=None, allowed_origins_for_tests=()):
+                 grace_seconds=WORKER_GRACE_SECONDS, cwd=None, allowed_origins_for_tests=(), intranet=None):
         self.profile_id = str(profile_id)
+        #: #209: ``() -> {host:port}``, sent with every command so a change applies from the next one.
+        self._intranet = intranet or frozenset
         self._seed = seed
         # ``-P``: the working directory is never on the worker's import path.
         self._command = list(command) if command else [sys.executable, '-P', '-m', 'personal_agent.browser_worker',
@@ -1976,7 +1985,9 @@ class WebKitWorkerDriver:
         ident = next(self._ids)
         timeout = max(1.0, float(timeout))
         try:
-            proc.stdin.write(json.dumps({'id': ident, 'op': op, 'timeout': timeout, **arguments}, ensure_ascii=False) + '\n')
+            intranet = sorted(getattr(self, '_intranet', frozenset)())
+            proc.stdin.write(json.dumps({'id': ident, 'op': op, 'timeout': timeout, 'intranet': intranet, **arguments},
+                                        ensure_ascii=False) + '\n')
             proc.stdin.flush()
         except (OSError, ValueError, AttributeError):
             self._kill()
@@ -2301,6 +2312,16 @@ class BrowserProfile:
         #: #950 review P1: ``() -> {site}`` a login window must never load or overwrite (a family
         #: instance's sites received from the owner); None for none.  Agent sessions are unaffected.
         self.login_excluded = None
+        #: #209: ``() -> {host:port}`` of the owner's declared intranet destinations; None for none.
+        self.intranet = None
+
+    def intranet_keys(self):
+        """#209: the declared intranet ``host:port`` keys now; an unreadable list declares nothing."""
+        try:
+            keys = self.intranet() if callable(self.intranet) else ()
+            return frozenset(str(key) for key in keys)
+        except Exception:
+            return frozenset()
 
     def allow_origins_for_tests(self, *origins):
         """Test-only: exact ``host:port`` fixture origins the worker may load.  Never set by config."""
@@ -2323,7 +2344,7 @@ class BrowserProfile:
 
     def _launch_webkit(self, profile_dir, headless):
         return WebKitWorkerDriver(self.profile_dir.name, seed=self._seed, cwd=self.profile_dir,
-                                  allowed_origins_for_tests=self._allowed_origins)
+                                  allowed_origins_for_tests=self._allowed_origins, intranet=self.intranet_keys)
 
     def remove_legacy_profile(self):
         """Delete the pre-#680 Playwright Chromium profile (plaintext cookies) from ``profile_dir``.
@@ -2524,6 +2545,7 @@ class BrowserProfile:
                 raise
             self._live = driver
             return _ReleasingDriver(driver, self._save, self._release)
+        launch.intranet = self.intranet_keys
         return launch
 
     # -- the owner's sessions (Settings) -------------------------------------------
@@ -2633,7 +2655,8 @@ class BrowserProfile:
                 rows = self.jar.site_rows(site)
             if not rows:
                 return {'state': 'failed'}
-            state, after = http_refresh(url, rows, allowed_origins=self._allowed_origins, opener=opener)
+            state, after = http_refresh(url, rows, allowed_origins=self._allowed_origins, opener=opener,
+                                        intranet=self.intranet_keys())
             if state != 'refreshed':
                 return {'state': state}
             with self._jar_lock:
@@ -2681,7 +2704,7 @@ class BrowserProfile:
         parts = urlsplit(str(url or ''))
         if parts.scheme not in ('http', 'https') or not parts.netloc:
             raise ValueError('http 또는 https 주소를 입력하세요.')
-        if local_destination(url, self._allowed_origins):
+        if local_destination(url, self._allowed_origins, self.intranet_keys()):
             raise ValueError(BLOCKED_TEXT)
         try:
             self._acquire('login')

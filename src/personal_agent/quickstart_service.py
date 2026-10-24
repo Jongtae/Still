@@ -54,6 +54,7 @@ from .personal_knowledge import PersonalKnowledgeOrchestrator
 from .memory_service import MemoryService
 from .file_workspace import FileWorkspace
 from . import folder_grants
+from . import intranet
 from . import work_mode
 from .connector_contract import ConnectorContractError, ConnectorResultKind, _owner_key
 from .gmail import GMAIL_CONNECTOR_ID, GmailError
@@ -564,6 +565,8 @@ class AgentService:
             pass
         # #934: a jar save or delete that touched a site the owner shares with a family instance pushes it.
         self.browser_profile.on_saved=self._shared_sites_saved
+        # #209: the owner's declared intranet destinations, read again for every browser step.
+        self.browser_profile.intranet=lambda:intranet.origin_keys(self.store)
         # AX-11 (#603): identity of the code this process loaded, taken once
         # near start-up and recorded with each turn's provenance, so a stale
         # running build is distinguishable from a missing route binding.
@@ -884,7 +887,7 @@ class AgentService:
 
     def mcp_setup_value(self, value):
         from .mcp_setup import setup_value
-        value=setup_value(value,self._redact_known_secrets)
+        value=setup_value(value,self._redact_known_secrets,self.intranet_declared)
         data=json.loads(value)
         if not self._connector_input_safe(data):raise ValueError('인증 정보는 연결의 비밀 입력 경로로만 주세요.')
         definition=self.mcp_setup_definition(data)
@@ -933,7 +936,7 @@ class AgentService:
         binary=self.subscription_engines.finder('claude')
         if not binary:raise ValueError('설치된 Claude Code를 찾지 못했어요. 사용 가능한 일반 API·브라우저 경로를 검토하세요.')
         return RemoteMcpSetup(binary,getattr(self,'mcp_setup_home',None) or Path.home(),
-                              interrupted=interrupted,redact=self._redact_known_secrets)
+                              interrupted=interrupted,redact=self._redact_known_secrets,declared=self.intranet_declared)
 
     def mcp_setup_call(self, draft, client, phase):
         """Record the bounded CLI attempt, never credentials or raw auth output.
@@ -4076,7 +4079,7 @@ class AgentService:
                     'subscription_engines':self.subscription_engine_status(),
                     'subscription_execution':self.subscription_execution_profile(),
                     'telegram':{'enabled':tg.get('enabled',False),'mode':tg.get('mode','owner-token'),'username':tg.get('username',''),'paired':bool(tg.get('user_id')),'user_id':tg.get('user_id')},
-                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':self.google_connection_rows(),'google_client':self.google_client_status(),'ai_connections':self.ai_connections_status(),'current_context':self.current_state.status(),'browser':self.browser_status(),'work_mode':self.work_mode_status()}
+                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':self.google_connection_rows(),'google_client':self.google_client_status(),'ai_connections':self.ai_connections_status(),'current_context':self.current_state.status(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status()}
 
     def home(self):
         """Return the minimal, credential-free read model for the owner home."""
@@ -4805,7 +4808,7 @@ class AgentService:
             raise ValueError('승인할 공개 페이지 주소를 1~20개 입력하세요.')
         normalized=[]
         for url in urls:
-            value=normalize_public_url(url)
+            value=normalize_public_url(url,self.intranet_declared)
             if value not in normalized: normalized.append(value)
         model=self.store.config('model',{})
         if not model: raise ValueError('먼저 모델을 연결하세요.')
@@ -9852,6 +9855,29 @@ class AgentService:
     def work_mode_status(self):
         """Work mode for Settings (#208): on or off and its last recorded change."""
         return work_mode.status(self.store)
+
+    def intranet_declared(self, host, port):
+        """#209: whether the owner declared ``host`` on ``port`` an intranet destination (read per call)."""
+        return intranet.declared(self.store,host,port)
+
+    def intranet_status(self):
+        """The owner's intranet destinations for Settings (#209)."""
+        return intranet.status(self.store)
+
+    def set_intranet_destination(self, body):
+        """Add or remove one intranet destination (#209); the local Settings endpoint is its only caller.
+
+        A removal applies from the next request of every path; nothing that used
+        the host is deleted (an MCP server, an approved page or a code run naming
+        it is refused until it is declared again).
+        """
+        body=body if isinstance(body,dict) else {}
+        action=body.get('action')
+        if action not in ('add','remove'):raise ValueError(msg('intranet.invalid_action'))
+        change=intranet.add if action=='add' else intranet.remove
+        current=change(self.store,body.get('host'),surface='settings')
+        LOG.info('intranet destination %s',action)
+        return current
 
     def set_work_mode(self, body):
         """The owner's Settings switch for work mode (#208); the local endpoint is its only caller.

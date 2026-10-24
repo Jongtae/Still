@@ -127,21 +127,34 @@ def _bounded_complete_text(value, limit=MAX_PAGE_CONTENT_CHARACTERS):
     return (prefix[:token_boundary].strip() if token_boundary > 0 else ''),True
 
 
-def normalize_public_url(value):
-    """Return the exact, approval-comparable public URL form."""
+def _declared(declared, host, port):
+    """#209: whether ``declared`` (``(host, port) -> bool`` or None) admits ``host`` on ``port``."""
+    if not callable(declared): return False
+    try: return bool(declared(host,port))
+    except Exception: return False   # an unreadable list declares nothing
+
+
+def normalize_public_url(value, declared=None):
+    """Return the exact, approval-comparable public URL form.
+
+    ``declared`` (#209): ``(host, port) -> bool``, the owner's intranet
+    destinations.  A declared host may have a private name (``.internal``,
+    ``.local``); its resolved addresses are checked by the reader.
+    """
     if not isinstance(value, str) or len(value) > 2048:
         raise ValueError('공개 페이지 URL이 올바르지 않습니다.')
     parsed=urlsplit(value)
     if parsed.scheme not in ('http','https') or not parsed.hostname or parsed.username or parsed.password:
         raise ValueError('로그인 정보가 없는 HTTP(S) 공개 페이지만 읽을 수 있습니다.')
     host=parsed.hostname.casefold().rstrip('.')
-    if host in DENIED_PUBLIC_HOSTS or host.endswith(DENIED_PUBLIC_HOST_SUFFIXES):
+    port=_explicit_port(parsed)
+    intranet=_declared(declared,host,port or (443 if parsed.scheme.casefold()=='https' else 80))
+    if host in DENIED_PUBLIC_HOSTS or (host.endswith(DENIED_PUBLIC_HOST_SUFFIXES) and not intranet):
         raise ValueError('개인 네트워크나 메타데이터 주소에는 접근할 수 없습니다.')
     try: literal=ipaddress.ip_address(host)
     except ValueError: literal=None
     if literal is not None and _denied_address(literal):
         raise ValueError('개인 네트워크나 메타데이터 주소에는 접근할 수 없습니다.')
-    port=_explicit_port(parsed)
     if literal is not None and literal.version == 6: host=f'[{host}]'
     default_port=80 if parsed.scheme.casefold() == 'http' else 443
     if port is not None and port != default_port: host=f'{host}:{port}'
@@ -194,7 +207,7 @@ def _not_sent(exc):
 
 class PublicPageReader:
     """Small, anonymous, read-only page reader with an explicit egress boundary."""
-    def __init__(self, opener=None, resolver=None, clock=None, guard=None):
+    def __init__(self, opener=None, resolver=None, clock=None, guard=None, declared=None):
         """Build a reader whose production transport is the pinned connection path.
 
         ``opener`` is a TEST-ONLY transport seam. The production path passes
@@ -220,8 +233,10 @@ class PublicPageReader:
         self.opener = opener
         self.resolver = resolver or _bounded_system_resolver
         self.clock = clock or time.monotonic
-        #: #208 review: ``() -> str | None``, asked before every hop (redirects included).
+        #: #208 review: ``(url) -> str | None``, asked before every hop (redirects included).
         self.guard = guard
+        #: #209: ``(host, port) -> bool``, the owner's intranet destinations, read again at every hop.
+        self.declared = declared
 
     def _remaining(self, deadline):
         remaining=deadline-self.clock()
@@ -252,14 +267,16 @@ class PublicPageReader:
                 raise ProviderError('공개 페이지 읽기 시간이 제한을 초과했습니다.')
             self._remaining(deadline)
 
-    @staticmethod
-    def _safe_url(value):
-        return normalize_public_url(value)
+    def _safe_url(self, value):
+        return normalize_public_url(value, self.declared)
 
     def _validate_host(self, url, deadline=None):
         parsed=urlsplit(url); host=parsed.hostname
         port=_explicit_port(parsed) or (443 if parsed.scheme=='https' else 80)
         deadline=self.clock()+MAX_PAGE_SECONDS if deadline is None else deadline
+        # #209: a declared intranet host may resolve to private-use space, never to this Mac or metadata.
+        from .intranet import address_admitted
+        intranet=_declared(self.declared,host.casefold().rstrip('.'),port)
         try:
             literal=ipaddress.ip_address(host)
         except ValueError:
@@ -278,7 +295,7 @@ class PublicPageReader:
         for raw in addresses:
             try: address=ipaddress.ip_address(raw)
             except ValueError: raise ValueError('페이지 주소가 올바르지 않습니다.') from None
-            if _denied_address(address):
+            if (not address_admitted(address)) if intranet else _denied_address(address):
                 raise ValueError('개인 네트워크나 메타데이터 주소에는 접근할 수 없습니다.')
         return addresses
 
@@ -363,15 +380,14 @@ class PublicPageReader:
                 try: closer()
                 except OSError: pass
 
-    @staticmethod
-    def _reject_unvalidated_transport(response, validated_url):
+    def _reject_unvalidated_transport(self, response, validated_url):
         """Refuse a transport that answered for an address/URL this request never validated."""
         reported=getattr(response,'url',None)
         if reported is None:
             getter=getattr(response,'geturl',None)
             reported=getter() if callable(getter) else None
         if reported is None: return
-        try: normalized=normalize_public_url(reported)
+        try: normalized=normalize_public_url(reported,self.declared)
         except (TypeError,ValueError):
             raise ValueError('공개 페이지 전송 계층이 확인되지 않은 주소를 반환했습니다.') from None
         if normalized != validated_url:
@@ -432,13 +448,13 @@ class PublicPageReader:
     def read(self, url, approved_urls=None):
         try:
             current=self._safe_url(url); started=self.clock();deadline=started+MAX_PAGE_SECONDS
-            approved={normalize_public_url(item) for item in approved_urls} if approved_urls is not None else None
+            approved={normalize_public_url(item,self.declared) for item in approved_urls} if approved_urls is not None else None
         except ValueError as exc:
             raise _not_sent(exc)
         for redirect in range(MAX_PAGE_REDIRECTS+1):
             try:
                 # #208 review: work mode is asked before every hop, redirects included.
-                refused=self.guard() if callable(self.guard) else None
+                refused=self.guard(current) if callable(self.guard) else None
                 if refused:raise ValueError(refused)
                 self._remaining(deadline)
                 if approved is not None and current not in approved:
@@ -534,7 +550,9 @@ class LocalTools:
         # is configured (#678: Bing RSS is an owner opt-in).
         self.providers=providers or ProviderRegistry.from_config({})
         # #208 review: work mode is asked again at every page hop and weather request.
-        self.page_reader=page_reader or PublicPageReader(guard=lambda:self.egress_refusal())
+        # #209: the owner's intranet destinations are read again at every hop too.
+        self.page_reader=page_reader or PublicPageReader(guard=lambda url:self.egress_refusal(url),
+                                                         declared=self.destination_declared)
     def search(self, query, provider=None, kind=None, locale=None, budget=None):
         """One public web search through the provider the model named (#655).
 
@@ -552,10 +570,21 @@ class LocalTools:
         return self.providers.search(query.strip(),provider=provider or None,kind=kind or None,locale=locale,
                                      **({'budget':budget} if budget is not None else {}))
 
-    def egress_refusal(self):
-        """#208: why a public read may not leave this Mac now (work mode), or None."""
+    def egress_refusal(self, url=None):
+        """#208: why a public read (of ``url``) may not leave this Mac now (work mode), or None.
+
+        #209: in work mode a read of a declared intranet ``url`` may go out.
+        """
         refusal=getattr(self.providers,'egress_refusal',None)
-        return refusal('public_read') if callable(refusal) else None
+        if not callable(refusal): return None
+        if url is None: return refusal('public_read')
+        from .intranet import destination
+        return refusal('public_read',destination(url))
+
+    def destination_declared(self, host, port):
+        """#209: whether the owner declared ``host`` on ``port`` an intranet destination."""
+        declared=getattr(self.providers,'destination_declared',None)
+        return bool(declared(host,port)) if callable(declared) else False
 
     def _public_request(self, url, timeout, first=False):
         """One public lookup request, asked of work mode first (#208 review).

@@ -3310,5 +3310,41 @@
   "en": "Work mode was switched on, so I stopped this AI run: it had started with its own web search available. The next run goes ahead without web search.",
   "ja": "会社モードがオンになったため、この AI の実行を止めました。この実行は自身のウェブ検索を使える状態で始まっていたためです。次の実行はウェブ検索なしで進めます。",
   "zh": "工作模式已开启，因此停止了这次 AI 运行：它在开始时可以使用自带的网页搜索。下一次运行将不使用网页搜索。"
+ },
+ "intranet.invalid": {
+  "ko": "사내 주소는 jira.corp.example 또는 gitlab.corp.example:8443처럼 호스트 이름 하나와 선택 포트로 적어 주세요. IP 주소, 와일드카드(*), localhost, 주소 경로는 쓸 수 없어요.",
+  "en": "Enter one host name with an optional port, such as jira.corp.example or gitlab.corp.example:8443. IP addresses, wildcards (*), localhost and paths can't be used.",
+  "ja": "社内アドレスは jira.corp.example や gitlab.corp.example:8443 のように、ホスト名 1 つと任意のポートで入力してください。IP アドレス、ワイルドカード (*)、localhost、パスは使えません。",
+  "zh": "请像 jira.corp.example 或 gitlab.corp.example:8443 这样，输入一个主机名，端口可选。不能使用 IP 地址、通配符 (*)、localhost 或路径。"
+ },
+ "intranet.invalid_action": {
+  "ko": "사내 주소는 추가(add)하거나 삭제(remove)할 수 있어요.",
+  "en": "An intranet address can be added (add) or removed (remove).",
+  "ja": "社内アドレスは追加 (add) または削除 (remove) できます。",
+  "zh": "内网地址可以添加 (add) 或删除 (remove)。"
+ },
+ "intranet.too_many": {
+  "ko": "사내 주소는 {limit}개까지 등록할 수 있어요. 쓰지 않는 주소를 먼저 삭제해 주세요.",
+  "en": "Up to {limit} intranet addresses can be added. Remove one you no longer use first.",
+  "ja": "社内アドレスは {limit} 件まで登録できます。使わないアドレスを先に削除してください。",
+  "zh": "最多可以添加 {limit} 个内网地址。请先删除不再使用的地址。"
+ },
+ "intranet.not_declared": {
+  "ko": "{host}은(는) 설정에 등록된 사내 주소가 아니어서 접속하지 않았어요. 설정 > 외부 연결 > 사내 주소에서 추가하면 접속할 수 있어요.",
+  "en": "{host} is not an intranet address declared in Settings, so I didn't connect to it. Add it in Settings > External connections > Intranet addresses to reach it.",
+  "ja": "{host} は設定に登録された社内アドレスではないため、接続しませんでした。設定 > 外部接続 > 社内アドレス で追加すると接続できます。",
+  "zh": "{host} 不是在设置中登记的内网地址，因此没有连接。在“设置 > 外部连接 > 内网地址”中添加后即可连接。"
+ },
+ "intranet.local_only": {
+  "ko": "사내 주소는 이 Mac의 설정 화면에서만 바꿀 수 있어요.",
+  "en": "Intranet addresses can be changed only in Settings on this Mac.",
+  "ja": "社内アドレスは、この Mac の設定画面でのみ変更できます。",
+  "zh": "内网地址只能在这台 Mac 的设置界面中更改。"
+ },
+ "intranet.code_run_mixed": {
+  "ko": "사내 주소와 다른 호스트는 한 번의 코드 실행에서 함께 쓸 수 없어요. 사내 주소만 쓰는 실행과 나머지 실행으로 나눠 주세요.",
+  "en": "An intranet address and other hosts can't be used in the same code run. Split it into a run that reaches only intranet addresses and a run for the rest.",
+  "ja": "社内アドレスとほかのホストは、1 回のコード実行で一緒に使えません。社内アドレスだけを使う実行と、それ以外の実行に分けてください。",
+  "zh": "内网地址和其他主机不能在同一次代码运行中一起使用。请拆分为只访问内网地址的运行和其余的运行。"
  }
 }

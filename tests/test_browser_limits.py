@@ -134,11 +134,11 @@ class PendingPolicyDecisions(unittest.TestCase):
     def test_the_counter_covers_the_resolution_and_only_main_frames(self):
         release = threading.Event()
         later = []
-        stub = SimpleNamespace(resolved={}, allowed_origins=frozenset(), deciding=0,
+        stub = SimpleNamespace(resolved={}, allowed_origins=frozenset(), intranet=frozenset(), deciding=0,
                                AppHelper=SimpleNamespace(callAfter=lambda fn, *args: fn(*args),
                                                          callLater=lambda delay, fn: later.append(fn)))
 
-        def slow_resolve(url, allowed):
+        def slow_resolve(url, allowed, **kwargs):
             release.wait(5)
             return None
         decided = []
@@ -159,7 +159,7 @@ class PendingPolicyDecisions(unittest.TestCase):
 
     def test_a_resolver_timeout_also_ends_the_pending_decision(self):
         later = []
-        stub = SimpleNamespace(resolved={}, allowed_origins=frozenset(), deciding=0,
+        stub = SimpleNamespace(resolved={}, allowed_origins=frozenset(), intranet=frozenset(), deciding=0,
                                AppHelper=SimpleNamespace(callAfter=lambda fn, *args: None,
                                                          callLater=lambda delay, fn: later.append(fn)))
         decided = []
@@ -167,7 +167,7 @@ class PendingPolicyDecisions(unittest.TestCase):
         def decided_with_reason(allowed, reason=None):
             decided.append(allowed)
             reasons.append(reason)
-        with mock.patch.object(bw, 'destination_refusal', lambda url, allowed: None):
+        with mock.patch.object(bw, 'destination_refusal', lambda url, allowed, **kwargs: None):
             bw.Worker.decide(stub, 'https://slow.example/next', True, decided_with_reason)
         self.assertEqual(stub.deciding, 1)
         for fn in later:

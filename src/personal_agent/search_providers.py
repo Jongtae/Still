@@ -635,11 +635,14 @@ class ProviderRegistry:
     tool listing without a restart.
     """
     def __init__(self, secret, default=None, opener=None, *, bing=False, native=None, transport=None,
-                 status_store=None, clock=time.time, refusal=None):
+                 status_store=None, clock=time.time, refusal=None, declared=None):
         self._secret = secret
-        #: #208: ``(egress) -> str | None``, the owner-facing reason that egress class may not leave
-        #: this Mac now (``work_mode.refusal``); read again before each request a search makes.
-        self._refusal = refusal or (lambda egress: None)
+        #: #208: ``(egress, destination=None) -> str | None``, the owner-facing reason that egress class
+        #: (to ``destination``) may not leave this Mac now (``work_mode.refusal``); read again before
+        #: each request a search makes.
+        self._refusal = refusal or (lambda egress, destination=None: None)
+        #: #209: ``(host, port) -> bool``, the owner's intranet destinations (``intranet.declared``).
+        self._declared = declared or (lambda host, port: False)
         self._default = default if callable(default) else (lambda: default or '')
         self._bing = bing if callable(bing) else (lambda: bool(bing))
         self._native = native if callable(native) else (lambda: native or {'route': '', 'reason': 'no_main_ai'})
@@ -695,15 +698,20 @@ class ProviderRegistry:
         def read_status():
             value = store.config(NATIVE_STATUS_KEY, {}) or {}
             return value if isinstance(value, dict) else {}
-        from . import work_mode
+        from . import intranet, work_mode
         return cls(lambda name: str(store.secret(name) or ''), lambda: str(row().get('default') or ''), opener,
                    bing=lambda: bool(row().get('bing_enabled')), native=route, transport=transport,
                    status_store=(read_status, lambda value: store.put(NATIVE_STATUS_KEY, value)), clock=clock,
-                   refusal=lambda egress: work_mode.refusal(store, egress))
+                   refusal=lambda egress, destination=None: work_mode.refusal(store, egress, destination),
+                   declared=lambda host, port: intranet.declared(store, host, port))
 
-    def egress_refusal(self, egress):
-        """#208: the owner-facing reason ``egress`` may not leave this Mac now, or None."""
-        return self._refusal(egress)
+    def egress_refusal(self, egress, destination=None):
+        """#208: the owner-facing reason ``egress`` (to ``destination``) may not leave this Mac now, or None."""
+        return self._refusal(egress) if destination is None else self._refusal(egress, destination)
+
+    def destination_declared(self, host, port):
+        """#209: whether the owner declared ``host`` on ``port`` an intranet destination."""
+        return self._declared(host, port)
 
     # -- the connected AI's native search -----------------------------------
     @staticmethod

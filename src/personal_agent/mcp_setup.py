@@ -42,8 +42,12 @@ class SetupFailure(ValueError):
                 '취소되었거나 지원되지 않는 연결은 다시 실행하지 않았어요. 다른 사용 가능한 연결을 검토할 수 있어요.')
         super().__init__(f"연결 설정의 {phase} 단계에서 준비를 확인하지 못했어요 ({self.observed_state}). " + step)
 
-def remote_url(url, redact=lambda value: value):
-    """Public definition only. Credential/header input needs a secret channel."""
+def remote_url(url, redact=lambda value: value, declared=None):
+    """Public definition only. Credential/header input needs a secret channel.
+
+    ``declared`` (#209): ``(host, port) -> bool``, the owner's intranet
+    destinations; a declared host may have a private name.
+    """
     if not isinstance(url, str) or len(url) > 1000 or SENSITIVE.search(url):
         raise ValueError('공개 HTTPS 서버 주소를 확인하세요.')
     decoded = url
@@ -68,7 +72,7 @@ def remote_url(url, redact=lambda value: value):
     # Reuse the existing public-destination syntax/literal policy. Resolution
     # and OAuth redirects remain CLI-owned, not an Still-pinned egress path.
     from .local_tools import normalize_public_url
-    normalize_public_url(url)
+    normalize_public_url(url, declared)
     host = parts.hostname.rstrip('.')
     if '%' in host:
         raise ValueError('인코딩된 호스트 주소는 연결할 수 없어요.')
@@ -81,7 +85,7 @@ def remote_url(url, redact=lambda value: value):
     return url
 
 
-def setup_value(value, redact=lambda value: value):
+def setup_value(value, redact=lambda value: value, declared=None):
     """Canonical public owner-confirmation content, not executable instructions."""
     if not isinstance(value, str) or len(value) > 4000:
         raise ValueError('연결할 서버의 공개 정보를 확인하세요.')
@@ -98,7 +102,7 @@ def setup_value(value, redact=lambda value: value):
     if not valid_name(name) or name.startswith('-'):
         raise ValueError('MCP 서버 이름을 확인하세요.')
     for key in ('url', 'source'):
-        data[key] = remote_url(data[key], redact)
+        data[key] = remote_url(data[key], redact, declared)
     for key in ('publisher', 'licence'):
         text = data[key]
         if not isinstance(text, str) or not text.strip() or len(text) > 120 or any(ord(c) < 32 for c in text):
@@ -165,13 +169,16 @@ class RemoteMcpSetup:
     No caller may equate a zero registration/login exit code with readiness.
     Codex is explicitly unsupported until selected-server isolation is proven.
     """
-    def __init__(self, binary, home, *, runner=subprocess.run, interrupted=None, redact=lambda value: value, resolver=None):
+    def __init__(self, binary, home, *, runner=subprocess.run, interrupted=None, redact=lambda value: value, resolver=None,
+                 declared=None):
         if not isinstance(binary, (str, Path)) or not str(binary) or not Path(binary).is_absolute():
             raise ValueError('설치된 AI 실행 파일의 전체 경로를 확인하세요.')
         self.binary, self.home = str(binary), Path(home)
         self.runner, self.interrupted, self.redact = runner, interrupted, redact
         from .local_tools import PublicPageReader
-        self.destinations = PublicPageReader(resolver=resolver)
+        #: #209: ``(host, port) -> bool``, the owner's intranet destinations, read again for every call.
+        self.declared = declared
+        self.destinations = PublicPageReader(resolver=resolver, declared=declared)
 
     def _check_interrupted(self):
         if self.interrupted is not None:
@@ -214,7 +221,7 @@ class RemoteMcpSetup:
             return {'state': 'unsupported'}
         if not valid_name(name) or name.startswith('-') or SECRET_PATTERN.search(name) or self.redact(name) != name:
             raise ValueError('MCP 서버 이름을 확인하세요.')
-        url = remote_url(url, self.redact)
+        url = remote_url(url, self.redact, self.declared)
         state = self._registration_state(name)
         if state != 'absent':
             return {'state': state}
@@ -233,7 +240,7 @@ class RemoteMcpSetup:
             return {'state': 'unsupported'}
         if not valid_name(name) or name.startswith('-') or SECRET_PATTERN.search(name) or self.redact(name) != name:
             raise ValueError('MCP 서버 이름을 확인하세요.')
-        expected = {'type': 'http', 'url': remote_url(url, self.redact)}
+        expected = {'type': 'http', 'url': remote_url(url, self.redact, self.declared)}
         if claude_definitions(self.home, [name]).get(name) != expected:
             return {'state': 'definition-changed', 'authentication': 'unknown'}
         try:
@@ -250,14 +257,18 @@ class RemoteMcpSetup:
             return status_result('unsupported')
         if not valid_name(name) or name.startswith('-') or SECRET_PATTERN.search(name) or self.redact(name) != name:
             raise ValueError('MCP 서버 이름을 확인하세요.')
-        url = remote_url(url, self.redact)
+        url = remote_url(url, self.redact, self.declared)
+        from .intranet import destination
+        from .local_tools import _declared
+        intranet = _declared(self.declared, *(destination(url) or ('', 0)))
         # Use the SDK in a separate bounded process: suppress its untrusted logs
         # without changing the service's logging or inheriting host credentials.
         env = environment(self.home)
         env['PYTHONPATH'] = str(Path(__file__).resolve().parent.parent)
         try:
+            # #209: the helper has no owner store; told that this URL's own host is declared, it admits that host only.
             done = self._run([sys.executable, '-m', 'personal_agent.mcp_setup',
-                              self.binary, name, url], 25, destination=url, env=env)
+                              self.binary, name, url, *(['--intranet'] if intranet else [])], 25, destination=url, env=env)
             if done.returncode != 0 or len(done.stdout) > 24000:
                 return status_result()
             result = json.loads(done.stdout)
@@ -278,11 +289,16 @@ class RemoteMcpSetup:
             return status_result()
 
 
-async def sdk_observe(binary, name, url, *, sdk=None):
-    """Official SDK API only. No query() / user prompt is ever submitted."""
+async def sdk_observe(binary, name, url, intranet=False, *, sdk=None):
+    """Official SDK API only. No query() / user prompt is ever submitted.
+
+    ``intranet`` (#209): the parent found ``url``'s own host declared; only that host is admitted.
+    """
     import anyio
     if not binary or not Path(binary).is_absolute() or not valid_name(name) or name.startswith('-') or SECRET_PATTERN.search(name):
         return status_result('unsupported')
+    from .intranet import destination
+    own = (lambda host, port: (host, port) == destination(url)) if intranet else None
     if sdk is None:
         import claude_agent_sdk as sdk
         if sdk.__version__ != SDK_VERSION:
@@ -291,7 +307,7 @@ async def sdk_observe(binary, name, url, *, sdk=None):
         return sdk.PermissionResultDeny(message='Readiness does not authorize tool calls.')
     with tempfile.TemporaryDirectory(prefix='agentos-mcp-status-') as cwd:
         options = sdk.ClaudeAgentOptions(cli_path=binary, cwd=cwd, setting_sources=[],
-                    strict_mcp_config=True, mcp_servers={name: {'type': 'http', 'url': remote_url(url)}},
+                    strict_mcp_config=True, mcp_servers={name: {'type': 'http', 'url': remote_url(url, declared=own)}},
                     tools=[], can_use_tool=deny, permission_mode='default', stderr=lambda _line: None,
                     max_buffer_size=256 * 1024)
         with anyio.fail_after(20):
@@ -311,9 +327,11 @@ def main():
     logging.disable(logging.CRITICAL)
     result = status_result()
     try:
-        if len(sys.argv) == 4 and valid_name(sys.argv[2]):
+        args = sys.argv[1:]
+        intranet = args[3:] == ['--intranet']
+        if len(args) in (3, 4) and (len(args) == 3 or intranet) and valid_name(args[1]):
             import anyio
-            result = anyio.run(sdk_observe, *sys.argv[1:])
+            result = anyio.run(sdk_observe, *args[:3], intranet)
     except ImportError:
         result = status_result('unsupported')
     except Exception:
