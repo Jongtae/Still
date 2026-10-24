@@ -392,13 +392,15 @@ async function pump(){{if(sending)return;sending=true;let failed=false;
 while(sendQ.length&&!ended){{const item=sendQ[0];item.sent=true;const body=Object.assign({{}},item);delete body.sent;
 const ok=await post('{INPUT_PATH}',body);sendQ.shift();if(item.type==='tap')checkAfter=Date.now();else if(!ok)failed=true}}
 sending=false;$('typing-failed').classList.toggle('hidden',!failed);setTimeout(frame,150)}}
-function flush(){{const k=$('keys'),v=k.value;resetKeys();if(v===S)return;
+// A whole-value replacement (AutoFill: insertReplacementText, or an input event with no inputType) is
+// the value itself, sent intact: a leading '_' in it is never taken for the sentinel.
+function flush(whole){{const k=$('keys'),v=k.value;resetKeys();if(whole){{if(v)enqueue({{type:'text',text:v}});return}}if(v===S)return;
 let p=0;while(p<S.length&&p<v.length&&v[p]===S[p])p++;const added=v.slice(p);
 if(added){{enqueue({{type:'text',text:added}});return}}for(let i=p;i<S.length;i++)enqueue({{type:'key',key:'Backspace'}})}}
 resetKeys();
 $('keys').addEventListener('compositionstart',()=>{{composing=true}});
 $('keys').addEventListener('compositionend',()=>{{composing=false;flush()}});
-$('keys').addEventListener('input',e=>{{if(composing||e.isComposing)return;flush()}});
+$('keys').addEventListener('input',e=>{{if(composing||e.isComposing)return;flush(!e.inputType||e.inputType==='insertReplacementText')}});
 $('keys').addEventListener('keydown',e=>{{if(e.key!=='Enter')return;e.preventDefault();composing=false;flush();enqueue({{type:'key',key:'Enter'}})}});
 function dialog(d){{const box=$('dialog');if(!d){{box.classList.add('hidden');return}}$('dialog-text').textContent=d.text||'';$('dialog-cancel').classList.toggle('hidden',d.kind!=='confirm');box.classList.remove('hidden')}}
 $('dialog-ok').onclick=()=>post('{INPUT_PATH}',{{type:'dialog',answer:'ok'}}).then(()=>setTimeout(frame,150));

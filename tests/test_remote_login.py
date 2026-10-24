@@ -1204,6 +1204,13 @@ const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
  // AutoFill replaces the value: what it filled is text, never a run of Backspaces.
  type('pw-filled',{inputType:'insertReplacementText'});await tick();
  assert.deepEqual(sent(),[{type:'text',text:'pw-filled'}]);
+ // ...intact, even when it starts with the sentinel's character or equals the sentinel.
+ type('_secret',{inputType:'insertReplacementText'});type(S,{inputType:'insertReplacementText'});await tick();
+ assert.equal(sent().map(p=>p.text).join('|'),'_secret|'+S);
+ // Safari's AutoFill input event carries no inputType: also the whole value.
+ type('__init',{});await tick();assert.deepEqual(sent(),[{type:'text',text:'__init'}]);assert.equal(keys.value,S);
+ // Typed underscores are text like any other.
+ type(S+'_',{inputType:'insertText'});await tick();assert.deepEqual(sent(),[{type:'text',text:'_'}]);
  // Return is the window's Enter, not a form submit here.
  let prevented=false;keys.fire('keydown',{key:'Enter',preventDefault(){prevented=true;}});await tick();
  assert(prevented);assert.deepEqual(sent(),[{type:'key',key:'Enter'}]);
