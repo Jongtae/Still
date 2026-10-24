@@ -815,9 +815,13 @@ class CodeRunner:
         host = _host(message.get('host'))
         # #209: a declared intranet host is reached only on a declared port, read again for every
         # request (a removed host is refused from the next one); in work mode it is the only destination.
-        name, port = _hostname(host), host.rsplit(':', 1)[1] if host != _hostname(host) else None
-        ports = (int(port),) if port else intranet.DEFAULT_PORTS
-        reached = next(((name, item) for item in ports if intranet.declared(self.store, name, item)), None)
+        # #284 review: the runner reports the effective port (``url.host`` omits a default one); a request
+        # that does not say is judged on the port its host names, else none is declared for it.
+        name = _hostname(host)
+        port = message.get('port')
+        if not isinstance(port, int) or isinstance(port, bool):
+            port = int(host.rsplit(':', 1)[1]) if host != name else None
+        reached = (name, port) if port is not None and intranet.declared(self.store, name, port) else None
         refused = work_mode.refusal(self.store, 'code_run', reached)
         if refused:
             return False, refused

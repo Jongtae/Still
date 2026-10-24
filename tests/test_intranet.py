@@ -10,15 +10,18 @@ never called), not only by its message.
 import ipaddress
 import json
 import pathlib
+import shutil
 import subprocess
 import tempfile
 import threading
 import unittest
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest import mock
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from personal_agent import intranet, work_mode
+from personal_agent import api_requests, intranet, work_mode
+from personal_agent.api_requests import ApiError, ApiRequests
 from personal_agent.agent_runtime import Capabilities
 from personal_agent.browser_session import BrowserProfile, BrowserSession, http_refresh, local_destination
 from personal_agent.browser_worker import Worker, destination_refusal
@@ -240,7 +243,8 @@ class WorkMode(Case):
     def test_each_request_is_checked_at_its_egress_point(self):
         from personal_agent.api_requests import ApiError, ApiRequests
         sent = []
-        api = ApiRequests(self.store, 'job', transport=lambda *args: sent.append(args[1]) or (200, {}, b'{}'))
+        api = ApiRequests(self.store, 'job', transport=lambda *args: sent.append(args[1]) or (200, {}, b'{}'),
+                          resolver=resolving('10.1.1.1'))
         api.transport('GET', 'https://jira.corp.example/rest', {}, None, 5)
         with self.assertRaises(ApiError):
             api.transport('GET', 'https://api.example.com/', {}, None, 5)
@@ -261,11 +265,70 @@ class WorkMode(Case):
     def test_a_code_run_reaches_only_the_declared_host_in_work_mode(self):
         runner = CodeRunner(self.store, 'job')
         runner._intranet_hosts = frozenset({'jira.corp.example'})
-        self.assertEqual(runner._decide({'method': 'GET', 'host': 'jira.corp.example', 'path': '/'},
+        self.assertEqual(runner._decide({'method': 'GET', 'host': 'jira.corp.example', 'port': 443, 'path': '/'},
                                         {'jira.corp.example': set()}), (True, ''))
-        allow, reason = runner._decide({'method': 'GET', 'host': 'pypi.org', 'path': '/'}, {'pypi.org': set()})
+        allow, reason = runner._decide({'method': 'GET', 'host': 'pypi.org', 'port': 443, 'path': '/'},
+                                       {'pypi.org': set()})
         self.assertFalse(allow)
         self.assertIn('회사 모드', reason)
+
+
+class ApiCalls(Case):
+    """#284 review: a declared host's DNS answers are checked, and the request goes to the checked address."""
+
+    def client(self, *addresses, transport=None):
+        self.sent = []
+        return ApiRequests(self.store, 'job', resolver=resolving(*addresses),
+                           transport=transport or (lambda *args: self.sent.append(args[1]) or (200, {}, b'{}')))
+
+    def test_a_declared_host_resolving_to_private_use_space_is_sent(self):
+        self.declare()
+        self.client('10.2.2.2').transport('GET', f'https://{HOST}/rest', {}, None, 5)
+        self.assertEqual(self.sent, [f'https://{HOST}/rest'])
+
+    def test_a_declared_name_resolving_to_this_mac_or_metadata_is_refused_unsent(self):
+        self.declare()
+        for address in ('127.0.0.1', '169.254.169.254', 'fd00:ec2::254', '10.2.2.2 127.0.0.1'):
+            for mode in (False, True):
+                with self.subTest(address=address, work_mode=mode):
+                    work_mode.set_enabled(self.store, mode, surface='settings')
+                    api = self.client(*address.split())
+                    with self.assertRaises(ApiError) as caught:
+                        api.transport('GET', f'https://{HOST}/rest', {}, None, 5)
+                    self.assertEqual((caught.exception.code, self.sent), ('api_host_not_allowed', []))
+
+    def test_the_production_transport_connects_to_the_checked_address(self):
+        self.declare()
+        connected = []
+
+        def pinned(method, url, headers, body, timeout, addresses):
+            connected.append((url, addresses))
+            return 200, {}, b'{}'
+        with mock.patch.object(api_requests, 'pinned_http_request', pinned):
+            ApiRequests(self.store, 'job', resolver=resolving('10.2.2.2')).transport('GET', f'https://{HOST}/r', {}, None, 5)
+        self.assertEqual(connected, [(f'https://{HOST}/r', ['10.2.2.2'])])
+
+    def test_the_pinned_request_never_resolves_the_name_again(self):
+        seen = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(self.headers['Host'])
+                self.send_response(200)
+                self.send_header('Content-Length', '2')
+                self.end_headers()
+                self.wfile.write(b'{}')
+
+            def log_message(self, *args):
+                pass
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        port = server.server_port
+        status, _headers, body = api_requests.pinned_http_request(
+            'GET', f'http://{HOST}:{port}/x', {}, None, 5, ['127.0.0.1'])
+        self.assertEqual((status, body, seen), (200, b'{}', [f'{HOST}:{port}']))
 
 
 class CodeRun(Case):
@@ -289,12 +352,69 @@ class CodeRun(Case):
         runner = CodeRunner(self.store, 'job')
         runner._intranet_hosts = frozenset({HOST})
         policy = {HOST: set()}
-        self.assertEqual(runner._decide({'method': 'GET', 'host': HOST, 'path': '/'}, policy), (True, ''))
-        self.assertFalse(runner._decide({'method': 'GET', 'host': f'{HOST}:8443', 'path': '/'}, policy)[0])
+        self.assertEqual(runner._decide({'method': 'GET', 'host': HOST, 'port': 443, 'path': '/'}, policy), (True, ''))
+        self.assertFalse(runner._decide({'method': 'GET', 'host': f'{HOST}:8443', 'port': 8443, 'path': '/'}, policy)[0])
+        self.assertFalse(runner._decide({'method': 'GET', 'host': HOST, 'path': '/'}, policy)[0],
+                         'a request that does not say its port reaches no declared port')
         intranet.remove(self.store, HOST, surface='settings')
-        allow, reason = runner._decide({'method': 'GET', 'host': HOST, 'path': '/'}, policy)
+        allow, reason = runner._decide({'method': 'GET', 'host': HOST, 'port': 443, 'path': '/'}, policy)
         self.assertFalse(allow)
         self.assertIn(HOST, reason)
+
+    def test_only_the_declared_port_is_reached_when_the_default_port_is_omitted(self):
+        """#284 review: ``url.host`` omits a default port, so the runner's effective port is what is checked."""
+        self.declare(f'{HOST}:443')
+        work_mode.set_enabled(self.store, True, surface='settings')
+        runner = CodeRunner(self.store, 'job')
+        runner._intranet_hosts = frozenset({HOST})
+        policy = {HOST: set()}
+        self.assertEqual(runner._decide({'method': 'GET', 'host': HOST, 'port': 443, 'path': '/'}, policy), (True, ''))
+        self.assertFalse(runner._decide({'method': 'GET', 'host': HOST, 'port': 80, 'path': '/'}, policy)[0])
+
+    @unittest.skipUnless(shutil.which('node'), 'needs Node.js')
+    def test_the_runner_reports_the_effective_port_of_each_request(self):
+        """#288 review: the real ``runner.mjs`` runs, with sandbox-runtime replaced by a stub that
+        hands its ``filterRequest`` URLs whose default port is omitted; the requests it asks
+        about carry the effective port."""
+        urls = ['http://wiki.corp.internal/a', 'https://wiki.corp.internal/b', 'https://wiki.corp.internal:8443/c']
+        package = self.root / 'runner' / 'node_modules' / '@anthropic-ai' / 'sandbox-runtime'
+        package.mkdir(parents=True)
+        (package / 'package.json').write_text(json.dumps({'name': '@anthropic-ai/sandbox-runtime', 'type': 'module',
+                                                          'exports': './index.js'}))
+        (package / 'index.js').write_text(
+            'let filter\n'
+            'export const SandboxManager = {\n'
+            '  async initialize (config) { filter = config.network.filterRequest },\n'
+            "  getSentinelRegistry () { return { register: () => 'sentinel' } },\n"
+            '  async wrapWithSandbox (command) {\n'
+            f'    for (const url of {json.dumps(urls)}) await filter(new Request(url))\n'
+            "    return 'true'\n"
+            '  },\n'
+            '  annotateStderrWithSandboxFailures (command, stderr) { return stderr },\n'
+            '  async reset () {}\n'
+            '}\n')
+        source = pathlib.Path(__file__).resolve().parents[1] / 'src/personal_agent/sandbox/runner.mjs'
+        runner = self.root / 'runner' / 'runner.mjs'
+        runner.write_text(source.read_text())
+        process = subprocess.Popen([shutil.which('node'), str(runner)], cwd=str(runner.parent), text=True,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.addCleanup(lambda: process.poll() is None and process.kill())
+        process.stdin.write(json.dumps({'workdir': str(self.root), 'argv': ['true'], 'allowedDomains': [HOST],
+                                        'deniedResolvedAddresses': [], 'denyRead': [], 'allowRead': [], 'env': {},
+                                        'masked': [], 'timeoutMs': 10000, 'outputBytes': 1000}) + '\n')
+        process.stdin.flush()
+        asked, result = [], None
+        for line in process.stdout:
+            message = json.loads(line)
+            if message.get('type') == 'request':
+                asked.append((message['host'], message['port']))
+                process.stdin.write(json.dumps({'id': message['id'], 'allow': True}) + '\n')
+                process.stdin.flush()
+            elif message.get('type') in ('result', 'error'):
+                result = message
+                break
+        self.assertEqual(result and result.get('type'), 'result', (result, process.stderr.read() if result is None else ''))
+        self.assertEqual(asked, [(HOST, 80), (HOST, 443), (f'{HOST}:8443', 8443)])
 
     def test_the_sandbox_refuses_private_use_space_unless_the_run_reaches_a_declared_host(self):
         from test_code_run import FakeProcess
