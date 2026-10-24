@@ -1505,6 +1505,12 @@
   "ja": "ログイン画面（{site}）が閉じたため、スマートフォン用のログインリンクも閉じました。このリンクはもう開けません。",
   "zh": "登录窗口（{site}）已关闭，手机登录链接也随之关闭。此链接已无法打开。"
  },
+ "remote_login.prompt_phone_active": {
+  "ko": "휴대폰 로그인 링크로 로그인하는 중이에요. 로그인한 뒤 휴대폰 페이지의 [완료]를 누르면 요청을 한 번 이어서 처리해요. 예상한 사이트가 아니면 로그인하지 말고 그대로 두세요. 링크가 닫히면 지금까지의 결과로 마쳐요.",
+  "en": "Signing in through the phone login link. After you sign in, tap [Done] on the phone page and I'll continue the request once. If this isn't the site you expected, don't sign in; just leave it. When the link closes, I'll finish with what I have so far.",
+  "ja": "スマートフォン用のログインリンクでログイン中です。ログインしたらスマートフォンのページで[完了]を押してください。依頼を一度だけ続けて処理します。想定していたサイトでなければ、ログインせずそのままにしてください。リンクが閉じたら、それまでの結果で終えます。",
+  "zh": "正在通过手机登录链接登录。登录后在手机页面点[完成]，我会继续处理一次请求。如果这不是你预期的网站，请不要登录，放着即可。链接关闭后，我会用目前的结果结束。"
+ },
  "service.a_retry_was_already_requested": {
   "ko": "이미 다시 시도를 요청했습니다.",
   "en": "A retry was already requested.",

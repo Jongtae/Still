@@ -427,6 +427,8 @@ BROWSER_LOGIN_PROMPT=('로그인 요청 사이트: {site}\n'
                       '곧 보내는 휴대폰 로그인 링크나 이 Mac에 열린 Still 로그인 창에서 직접 로그인한 뒤 완료하면(링크의 완료, '
                       '창 닫기 또는 "로그인 완료") 요청을 한 번 이어서 처리합니다. 예상한 사이트가 아니면 로그인하지 말고 건너뛰세요. 지금까지의 결과로 마칩니다. '
                       '10분 안에 응답이 없으면 창을 닫습니다. Still은 로그인 창의 입력 내용을 보지 않습니다.')
+#: #255: the same site lines while the phone link drives the window; no buttons go with it.
+BROWSER_LOGIN_PHONE_PROMPT='로그인 요청 사이트: {site}\n{address}{moved}{session}'+remote_login.PROMPT_PHONE_ACTIVE_LINE.replace('{','{{').replace('}','}}')
 #: The full host, shown only when it is longer than the site.
 BROWSER_LOGIN_ADDRESS_LINE='전체 주소: {host}\n'
 #: #749: shown when the window's first navigation landed on another site than the one requested.
@@ -8203,15 +8205,16 @@ class AgentService:
         self.queue_notification(job,'browser_login_needed',fingerprint=nonce)
         self.store.telegram.rearm(job['id'],'browser_login_needed',nonce)
 
-    def browser_login_prompt(self, work_id):
+    def browser_login_prompt(self, work_id, phone=False):
         """The owner's login prompt: the site first, the full host when longer, and a note when no
-        sign-in for that site is stored (#716).  Names only; never the page path."""
+        sign-in for that site is stored (#716).  Names only; never the page path.  ``phone``: the
+        same lines while the phone link drives the window, ending in its one way to finish (#255)."""
         row=self._browser_login(work_id) or {}
         requested=row.get('site') or registrable_domain(row.get('host'))
         # #749: the site the window actually landed on (after redirects) leads; the requested one is named.
         host=ascii_host(row.get('landed_host') or row.get('host'))
         site=row.get('landed_site') or requested or registrable_domain(host) or '이 사이트'
-        return BROWSER_LOGIN_PROMPT.format(
+        return (BROWSER_LOGIN_PHONE_PROMPT if phone else BROWSER_LOGIN_PROMPT).format(
             site=site,address=BROWSER_LOGIN_ADDRESS_LINE.format(host=host) if host and host!=site else '',
             moved=BROWSER_LOGIN_MOVED_LINE.format(site=requested) if row.get('landed_site') and requested and requested!=site else '',
             session=BROWSER_LOGIN_NO_SESSION_LINE if row.get('stored_session') is False else '')
@@ -8369,14 +8372,7 @@ class AgentService:
         row=self._browser_login(work_id) or {}
         if note and note['fingerprint']==row.get('nonce') and note['state']=='sent':
             self.store.update_notification(note['id'],'browser_login_'+shown)
-            if isinstance(note.get('message_id'),int) and note['message_id']>0:
-                # #1573: an unanswered window that expired keeps one button to reopen it for this same Work.
-                reopen=shown=='expired' and self._login_reopenable(work_id)
-                text=BROWSER_LOGIN_REOPEN_TEXT if reopen else BROWSER_LOGIN_RESULT_TEXT.get(shown,'')
-                markup={'inline_keyboard':[[{'text':BROWSER_LOGIN_REOPEN_LABEL,
-                                             'callback_data':f"p7l:{note['id']}:reopen"}]] if reopen else []}
-                try:self.telegram.edit_message_text(note['chat_id'],note['message_id'],text,markup)
-                except ProviderError:pass
+            self._edit_login_result(work_id,note,shown)
             return
         if note and note['fingerprint']==row.get('nonce') and note['state']=='queued':
             self.store.update_notification(note['id'],'cancelled')
@@ -8386,6 +8382,40 @@ class AgentService:
                 with self.store.db() as db:
                     db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',
                                ('assistant',BROWSER_LOGIN_RESULT_TEXT[shown],job['channel'],time.time(),job.get('workspace_id'),work_id))
+
+    def _edit_login_result(self, work_id, note, shown):
+        """Edit the sent prompt ``note`` to the login's outcome ``shown``."""
+        if not (isinstance(note.get('message_id'),int) and note['message_id']>0):return
+        # #1573: an unanswered window that expired keeps one button to reopen it for this same Work.
+        reopen=shown=='expired' and self._login_reopenable(work_id)
+        text=BROWSER_LOGIN_REOPEN_TEXT if reopen else BROWSER_LOGIN_RESULT_TEXT.get(shown,'')
+        markup={'inline_keyboard':[[{'text':BROWSER_LOGIN_REOPEN_LABEL,
+                                     'callback_data':f"p7l:{note['id']}:reopen"}]] if reopen else []}
+        try:self.telegram.edit_message_text(note['chat_id'],note['message_id'],text,markup)
+        except ProviderError:pass
+
+    def _show_phone_login_prompt(self, work_id, nonce):
+        """#255 (owner choice 2026-10-24): once the phone link was delivered, the prompt drops its buttons.
+
+        Its 로그인 완료 and 건너뛰기 sat above the link, next to the phone page's [완료]; one tap there
+        (live 2026-10-23) skipped a sign-in in progress.  The settled outcome replaces this text as before,
+        also when the login settled while this edit was in flight.
+        """
+        session=self.remote_login_session()
+        note=self.store.notification_of(work_id,'browser_login_needed')
+        row=self._browser_login(work_id) or {}
+        if not (session is not None and session.window==row.get('window') and note and note['state']=='sent'
+                and note['fingerprint']==nonce and row.get('state')=='offered' and row.get('nonce')==nonce
+                and isinstance(note.get('message_id'),int) and note['message_id']>0):
+            return False
+        try:self.telegram.edit_message_text(note['chat_id'],note['message_id'],self.browser_login_prompt(work_id,phone=True),
+                                            {'inline_keyboard':[]})
+        except ProviderError:return False
+        after=self.store.notification(note['id']) or {}
+        state=str(after.get('state') or '')
+        if state.startswith('browser_login_'):
+            self._edit_login_result(work_id,after,state[len('browser_login_'):])
+        return True
 
     def _login_reopenable(self, work_id):
         """Whether this Work's unanswered, expired login may be reopened from its prompt (#1573).
@@ -9041,9 +9071,15 @@ class AgentService:
             try:self.start_remote_login(window,site,close,chat_id=chat_id)
             except remote_login.RemoteLoginError as exc:
                 self._notify_owner(f'telegram:{chat_id}',str(exc))
+                return
             except Exception as exc:
                 LOG.warning('remote login failed to start (%s)',type(exc).__name__)
                 self._notify_owner(f'telegram:{chat_id}',remote_login.TUNNEL_FAILED_TEXT)
+                return
+            # The link is out: the prompt is not a second place to finish (#255).
+            try:self._show_phone_login_prompt(work_id,nonce)
+            except Exception as exc:
+                LOG.warning('remote login: prompt not updated (%s)',type(exc).__name__)
         threading.Thread(target=run,name='agentos-remote-login-start',daemon=True).start()
         return True
 
