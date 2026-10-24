@@ -8,7 +8,8 @@
 //                                timeoutMs, outputBytes}
 //     deniedResolvedAddresses (#209): ranges an allowed name may not resolve to, besides
 //     sandbox-runtime's own loopback, link-local, metadata and local-interface set.
-//   runner -> host: {type: "request", id, method, host, path, query, bodyBytes, bodyDigest, bodyText, headers}
+//   runner -> host: {type: "request", id, method, host, port, path, query, bodyBytes, bodyDigest, bodyText, headers}
+//     port (#209): the effective port (url.host omits a default one), so a declared port is checked exactly.
 //     bodyText (#1456): a non-GET body as UTF-8 text with each masked value's sentinel replaced by
 //     {{NAME}}, so the host can show the owner the exact request and bind an approval to it across runs;
 //     null when the body is not text or longer than BODY_TEXT_BYTES.
@@ -75,6 +76,7 @@ async function filterRequest (request) {
   const decision = await ask({
     method: request.method,
     host: url.host,
+    port: Number(url.port) || (url.protocol === 'http:' ? 80 : 443),
     path: url.pathname || '/',
     query: url.search.replace(/^\?/, ''),
     bodyBytes: body.byteLength,

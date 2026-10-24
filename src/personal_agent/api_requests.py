@@ -31,9 +31,12 @@ Field references use the RFC 9535 JSONPath syntax, only the subset ``$``,
 """
 import email.utils
 import hashlib
+import http.client
 import ipaddress
 import json
 import re
+import socket
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -683,11 +686,99 @@ def refuse_in_work_mode(store, url=None):
         raise ApiError(refused, 'work_mode')
 
 
-def _work_mode_guarded(store, transport):
-    """``transport`` that asks work mode first, so every request (OAuth token, probe, call) is refused unsent."""
-    def send(*args, **kwargs):
-        refuse_in_work_mode(store, args[1] if len(args) > 1 else kwargs.get('url', ''))
-        return transport(*args, **kwargs)
+def intranet_addresses(store, url, resolver):
+    """#209: the checked addresses of ``url`` when its destination is a declared intranet host, else None.
+
+    A declared host may resolve to private-use space, never to this Mac,
+    link-local or a metadata address (``intranet.address_admitted``); any such
+    answer refuses the request unsent (#284 review).
+    """
+    from . import intranet
+    found = intranet.destination(url)
+    if found is None or not intranet.declared(store, *found):
+        return None
+    try:
+        records = resolver(found[0], found[1], type=socket.SOCK_STREAM, timeout=TIMEOUT)
+    except (OSError, ValueError, TimeoutError):
+        raise ApiError('API 주소를 확인하지 못해 보내지 않았습니다.', 'api_host_not_allowed') from None
+    addresses = []
+    for record in records or ():
+        try:
+            address = ipaddress.ip_address(str(record[4][0]).split('%')[0])
+        except (ValueError, IndexError, TypeError):
+            address = None
+        if address is None or not intranet.address_admitted(address):
+            raise ApiError('사내 주소가 이 컴퓨터나 메타데이터 주소로 연결되어 보내지 않았습니다.', 'api_host_not_allowed')
+        if str(address) not in addresses:
+            addresses.append(str(address))
+    if not addresses:
+        raise ApiError('API 주소를 확인하지 못해 보내지 않았습니다.', 'api_host_not_allowed')
+    return addresses
+
+
+class _PinnedConnection(http.client.HTTPSConnection):
+    """An HTTPS connection to one checked address, verified for the URL's own host name (#209)."""
+
+    def __init__(self, host, port, address, timeout):
+        super().__init__(host, port, timeout=timeout, context=ssl.create_default_context())
+        self._address = address
+
+    def connect(self):
+        raw = socket.create_connection((self._address, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(raw, server_hostname=self.host)
+
+
+class _PinnedPlainConnection(http.client.HTTPConnection):
+    def __init__(self, host, port, address, timeout):
+        super().__init__(host, port, timeout=timeout)
+        self._address = address
+
+    def connect(self):
+        self.sock = socket.create_connection((self._address, self.port), self.timeout)
+
+
+def pinned_http_request(method, url, headers, body, timeout, addresses):
+    """``http_request`` connected to an address ``intranet_addresses`` checked: no second resolution, no proxy."""
+    parts = urlsplit(url)
+    port = parts.port or (443 if parts.scheme == 'https' else 80)
+    path = urlunsplit(('', '', parts.path or '/', parts.query, ''))
+    kind = _PinnedConnection if parts.scheme == 'https' else _PinnedPlainConnection
+    last = None
+    for address in addresses:
+        connection = kind(parts.hostname, port, address, timeout)
+        try:
+            connection.connect()
+        except OSError as exc:
+            connection.close()
+            last = exc
+            continue
+        try:
+            connection.request(method, path, body=body, headers=headers)
+            response = connection.getresponse()
+            data = response.read(MAX_RESPONSE_BYTES + 1)
+            return response.status, {key.lower(): value for key, value in response.getheaders()}, data
+        finally:
+            connection.close()
+    raise last or OSError('no address')
+
+
+def _work_mode_guarded(store, transport, resolver=None, pins=None):
+    """``transport`` that asks work mode first, so every request (OAuth token, probe, call) is refused unsent.
+
+    #209 (#284 review): a request to a declared intranet host goes only to an
+    address ``intranet_addresses`` checked, which ``pins`` may already hold
+    for ``url``; the production transport connects to exactly that address.
+    """
+    from .local_tools import _bounded_system_resolver
+    resolver = resolver or _bounded_system_resolver
+    pins = {} if pins is None else pins
+
+    def send(method, url, headers, body, timeout):
+        refuse_in_work_mode(store, url)
+        addresses = pins.pop(url, None) or intranet_addresses(store, url, resolver)
+        if addresses is not None and transport is http_request:
+            return pinned_http_request(method, url, headers, body, timeout, addresses)
+        return transport(method, url, headers, body, timeout)
     return send
 
 
@@ -695,9 +786,14 @@ class ApiRequests:
     """One Work's authenticated API calls.  ``approvals`` has ``consume(binding)``/``request(binding, text)``."""
 
     def __init__(self, store, work_id, *, approvals=None, transport=None, clock=time.time, sleep=time.sleep,
-                 connections=None):
+                 connections=None, resolver=None):
         self.store, self.work_id, self.approvals = store, work_id, approvals
-        self.transport = _work_mode_guarded(store, transport or http_request)
+        from .local_tools import _bounded_system_resolver
+        #: #209: resolves a declared intranet host before its request (a test seam).
+        self.resolver = resolver or _bounded_system_resolver
+        #: #209: ``{url: addresses}`` a call checked before handing off, for the transport to connect to.
+        self._pins = {}
+        self.transport = _work_mode_guarded(store, transport or http_request, self.resolver, self._pins)
         self.clock, self.sleep = clock, sleep
         #: CONN-API: ``() -> {name: slot}`` of Still-held connections (``connection_slots.build``).
         self.connections = connections
@@ -973,6 +1069,11 @@ class ApiRequests:
             # attempt is released, since nothing left.
             try:
                 refuse_in_work_mode(self.store, url)
+                # #209 (#284 review): a declared intranet host's answers are checked before anything
+                # is handed off; the transport connects to exactly these addresses.
+                checked = intranet_addresses(self.store, url, self.resolver)
+                if checked is not None:
+                    self._pins[url] = checked
             except ApiError:
                 if identity:
                     self._release_effect(claim)
