@@ -898,6 +898,69 @@ class PhoneButton(_flow_harness()):
                          [remote_login.LINK_ENDED_TEXT['closed'].format(site='fixture.test')])
 
 
+    def prompt_edits(self, notification):
+        return [body for method, body in self.calls if method == 'editMessageText'
+                and body.get('message_id') == notification['message_id']]
+
+    def phone_prompt(self, notification):
+        """#255: the prompt's edit while the phone link runs (no buttons of its own)."""
+        return [body for body in self.prompt_edits(notification) if remote_login.PROMPT_PHONE_ACTIVE_LINE in body['text']]
+
+    def test_while_the_phone_link_runs_the_prompt_has_no_buttons_of_its_own(self):
+        """#255 (owner choice 2026-10-24): one place to finish, the phone page; the prompt keeps the site lines."""
+        from personal_agent.quickstart_service import BROWSER_LOGIN_RESULT_TEXT
+        job_id, prompt, buttons, notification = self.login_work()
+        self.tap(f"p7l:{notification['id']}:phone", notification['message_id'])
+        self.assertTrue(wait_until(lambda: self.phone_prompt(notification)), 'the prompt was rewritten')
+        edit = self.phone_prompt(notification)[-1]
+        self.assertEqual(edit['reply_markup'], {'inline_keyboard': []}, 'no 로그인 완료, 건너뛰기 or 휴대폰 button')
+        self.assertTrue(edit['text'].startswith('로그인 요청 사이트: fixture.test\n'), 'the site still leads')
+        self.assertNotIn('로그인 완료', edit['text'])
+        self.assertNotIn('건너뛰', edit['text'])
+        self.assertEqual(self.state(job_id), 'offered', 'the login is still offered')
+        # 완료 on the phone settles it, and the outcome is the prompt's last word.
+        session = self.service.remote_login_session()
+        self.window().login()
+        self.assertTrue(session.finish('done'))
+        self.assertEqual(self.settle(job_id), 'resumed')
+        self.assertEqual(self.prompt_edits(notification)[-1]['text'], BROWSER_LOGIN_RESULT_TEXT['resumed'])
+
+    def test_a_link_that_never_opened_leaves_the_prompt_and_its_buttons(self):
+        """#255: only a delivered link withdraws the prompt's buttons; without one the Mac path stays."""
+        job_id, prompt, buttons, notification = self.login_work()
+
+        def broken_popen(argv, **kwargs):
+            class Process:
+                stdout = iter([json.dumps({'lvl': 'eror', 'err': 'limited to 1 simultaneous session'}) + '\n'])
+
+                def terminate(inner):
+                    pass
+            return Process()
+        self.service.remote_login_popen = broken_popen
+        self.tap(f"p7l:{notification['id']}:phone", notification['message_id'])
+        self.assertTrue(wait_until(lambda: [b for m, b in self.calls if m == 'sendMessage' and 'Mac의 로그인 창에서' in b.get('text', '')]))
+        time.sleep(0.3)
+        self.assertEqual(self.prompt_edits(notification), [])
+
+    def test_a_login_settled_while_the_prompt_was_rewritten_keeps_its_outcome_last(self):
+        """#255: a settle racing the phone rewrite never leaves "signing in on the phone" as the last word."""
+        from personal_agent.quickstart_service import BROWSER_LOGIN_RESULT_TEXT
+        job_id, prompt, buttons, notification = self.login_work()
+        service, original = self.service, self.service.telegram.edit_message_text
+        nonce = self.service._browser_login(job_id)['nonce']
+
+        def edit(chat_id, message_id, text, reply_markup=None):
+            if remote_login.PROMPT_PHONE_ACTIVE_LINE in text:
+                # The owner's skip lands and settles first; this rewrite is the late one.
+                service._request_login_decision(job_id, nonce, 'skip')
+                self.settle(job_id)
+            return original(chat_id, message_id, text, reply_markup)
+        service.telegram.edit_message_text = edit
+        self.tap(f"p7l:{notification['id']}:phone", notification['message_id'])
+        self.assertTrue(wait_until(lambda: self.phone_prompt(notification)))
+        self.assertTrue(wait_until(lambda: self.prompt_edits(notification)[-1]['text'] == BROWSER_LOGIN_RESULT_TEXT['skipped']),
+                        [body['text'][:40] for body in self.prompt_edits(notification)])
+
 if __name__ == '__main__':
     unittest.main()
 

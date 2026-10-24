@@ -66,6 +66,9 @@ LINK_TEXT = ('휴대폰에서 로그인하는 링크예요 ({site}). 이 링크�
 #: #255: what the link message says, in place, once its session ended (``{site}``); never the link again.
 LINK_ENDED_TEXT = {'done': msg('remote_login.link_ended_done'), 'expired': msg('remote_login.link_ended_expired'),
                    'closed': msg('remote_login.link_ended_closed')}
+#: #255 (owner choice 2026-10-24): the in-flow prompt's last line while the phone link drives its window;
+#: the prompt then has no buttons, so the phone page's [완료] is the one place to finish.
+PROMPT_PHONE_ACTIVE_LINE = msg('remote_login.prompt_phone_active')
 NO_NGROK_TEXT = msg('remote_login.no_ngrok')
 NO_PORT_TEXT = msg('remote_login.no_local_address')
 BUSY_TEXT = msg('remote_login.a_phone_login_link_is_already')
