@@ -196,7 +196,7 @@ class ConversationSurface(ABC):
 
 
 #: #213: the owner conversation surfaces Still composes, by ``name`` (and so by ``channel_prefix``).
-SURFACE_NAMES = ('telegram', 'mattermost')
+SURFACE_NAMES = ('telegram', 'mattermost', 'slack')
 
 
 def surface_conversation(channel, chat_id):

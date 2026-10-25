@@ -78,8 +78,9 @@ LOCAL_OWNER_KEY = 'local:' + PROFILE_OWNER
 #: pilot boundary 1).  ``AgentService.KNOWN_SECRET_NAMES`` is this tuple.
 def _known_secret_names():
     from .search_providers import SECRET_SLOTS
-    # #213 (#306 review): the Mattermost bot token is redacted and retired like the Telegram one.
+    # #213 (#306 review): the Mattermost bot token is redacted and retired like the Telegram one; #214 the Slack ones.
     return ('model_key', 'decision_model_key', 'decision_jev_key', 'claude_code_token', 'telegram_token', 'mattermost_token',
+            'slack_bot_token', 'slack_app_token',
             'api_key:openai', 'api_key:anthropic', 'api_key:openrouter', *SECRET_SLOTS)
 
 

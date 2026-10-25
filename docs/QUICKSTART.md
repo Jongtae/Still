@@ -103,7 +103,7 @@ Evidence is a local observation of a whole Work on Claude Code 2.1.287 and codex
 On a company network, switch on **회사 모드 (work mode)** in Settings > External connections, on this Mac (#208). It cannot be switched from a conversation or through a phone link, and every change is recorded. While it is on:
 
 - no temporary link into this Mac is opened (phone sign-in, phone input and family setup say to do it at the Mac instead), and a link that is open closes when you switch it on;
-- Telegram is not used: no polling, no replies or notifications (a reply that could not be sent is not sent later), and a bot cannot be connected or paired. Mattermost pauses the same way, unless you marked it company-approved (below);
+- Telegram is not used: no polling, no replies or notifications (a reply that could not be sent is not sent later), and a bot cannot be connected or paired. Mattermost and Slack pause the same way, unless you marked them company-approved (below);
 - the AI's web search, public page reads, weather, browser, API calls, code runs and MCP server lookup are refused before they run, the CLI's own web search is off, signed-in sites are not refreshed, and no skill is fetched from GitHub.
 
 The AI route you set up keeps working. Not controlled by work mode: traffic a CLI makes inside its own turn besides that web search (its model provider, its own telemetry and update checks, and what its sandbox lets a command reach; Codex runs with `--sandbox read-only`), services you connected yourself (Google connections, the AI's claude.ai connectors, your MCP servers) and family assistants on this Mac. Page reads, API calls and code runs may still reach the intranet addresses you declared (below); the browser stays refused, because a page loads resources from wherever it names. Evidence so far is unit tests with fake tunnels and transports, not an observation on a company network.
@@ -173,6 +173,24 @@ You can talk to Still in a direct message with a bot on your Mattermost server, 
 - In work mode, Mattermost is used only when you switched on **회사 모드에서도 사용 (use in work mode too)**. Do that only for a company-approved server. Otherwise it pauses with Telegram, and nothing queued while it was paused is sent later.
 
 Evidence is unit tests with a fixture server, plus a local observation against a test Mattermost (`mattermost/mattermost-preview`, Mattermost 11, on this Mac). It covered connecting, a direct message becoming Work and its reply, the 👀 reaction, and an edit and another user's message ignored. It also covered a settings proposal applied by the owner's 👍 reaction, and an action approval that stayed unanswered there. There is no observation against a company server yet.
+
+## Slack
+
+You can talk to Still in a direct message with your own Slack app's bot (#214). Still connects out to Slack over **Socket Mode**, an outbound WebSocket. There is no public request URL, no tunnel, and nothing on this Mac is opened to the outside. Still uses the official `slack_sdk`.
+
+1. At [api.slack.com/apps](https://api.slack.com/apps) choose **Create New App → From a manifest**, pick your workspace and paste the manifest that Settings > External connections > **Slack** shows (**Slack 앱 만들기**). It asks only for `chat:write`, `im:history`, `im:write`, `reactions:read` and `reactions:write`. It subscribes to `message.im` and `reaction_added`, and turns on interactivity and Socket Mode.
+2. Install the app to the workspace and copy its **bot token** (`xoxb-…`). Under **Basic Information → App-Level Tokens**, create an **app token** (`xapp-…`) with the `connections:write` scope.
+3. In Settings on this Mac, enter both tokens and your own **member ID** (Slack profile → ⋮ → Copy member ID). Both tokens are kept in Still's secret store and never shown again. The bot says hello in your direct message.
+
+- Only your messages in that direct message, in that workspace, are read. Anyone else who messages the bot, a channel, or another workspace is never read or answered.
+- An edited or deleted message is never a new request. Slack may deliver an event twice; Still takes it once.
+- Still marks your message with 👀 while it works. Slack shows no typing indicator for an app's bot, and replies are not edited as live drafts.
+- A proposal to approve (a settings change, a schedule, remembering something, or an action approval) comes with **approve / decline buttons**. Only your press settles it, at most once, and the buttons are then removed. You can also answer by replying, or with a reaction such as 👍, read the same way as on Telegram.
+- **Payments and other exact action approvals can be given in Slack** (your decision on #214), by their button or a reply. Document-sharing and context approvals and browser logins are still answered in Still on this Mac.
+- A reply that never reached Slack is sent once it can be. A reply that may have arrived is never sent twice.
+- In work mode, Slack is used only when you switched on **회사 모드에서도 사용 (use in work mode too)**. Do that only for a company-approved workspace. Otherwise its connection closes, and nothing queued while it was paused is sent later.
+
+Evidence is unit tests with payloads shaped like Slack's Events API and Block Kit button presses. The SDK's own request path is tested against a local HTTP server.
 
 ## Restart and update
 

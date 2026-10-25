@@ -5,7 +5,8 @@ literal word list, a fixed precedence chain or a first-message-only rule.  An
 owner act - a typed message, a reaction, and the message it replies to or
 reacts on - is read by one judgment (``ConversationJudgments.owner_act_answer``)
 together with every item still waiting for the owner in this conversation.
-Buttons stay exact acts and are not read here.
+Buttons stay exact acts and are not read here (``answer_exact`` settles a
+button's one item without a judgment, #214).
 
 This module is the thin glue around that judgment:
 
@@ -342,17 +343,27 @@ class OwnerActs:
         """Whether a message in this conversation of ``surface`` showed an item still waiting for the owner."""
         return bool(self.open_items(self._act_job(surface, chat, generation), target=message_id))
 
-    def answer_reaction(self, surface, chat, generation, message_id, emoji):
-        """The owner's reaction on a message that showed an open item: judged, and settled when it answers it.
+    def answer_exact(self, surface, chat, generation, message_id, ref, approve):
+        """A button's exact act (#214): the one open item ``ref`` names on that message, settled with no judgment.
 
-        Runs off the poll thread.  What the owner is told is sent to the paired owner on ``surface``;
-        the calendar effect's Evidence goes to the Work that offered the drafts.
+        ``ref`` is the item's own reference (``{'notification_id': ...}``, or ``{'work_id': ...}`` for a
+        settings notice).  The item must still be open and shown on ``message_id`` in this conversation and
+        pairing; its settle path enforces the rest (digests, compare-and-set).  Returns the settled kind,
+        or None when nothing open matched.
         """
-        service = self.service
         job = self._act_job(surface, chat, generation)
-        answer = self.read(job, 'reaction: ' + ' '.join(emoji), target=message_id, reaction=True)
-        if not answer:
+        item = next((item for item in self.open_items(job, target=message_id)
+                     if all(item['ref'].get(key) == value for key, value in ref.items())), None)
+        if item is None:
             return None
+        if item['kind'] == KIND_MEMORY_SAVED and approve:
+            return item['kind']   # keeping what was remembered needs nothing settled
+        self._settle_and_tell(surface, chat, generation, job, {'item': item, 'approve': approve, 'rest': ''})
+        return item['kind']
+
+    def _settle_and_tell(self, surface, chat, generation, job, answer):
+        """Settle a reaction's or a button's answer and tell the owner on ``surface``; Evidence goes to the item's Work."""
+        service = self.service
         work_id = answer['item']['ref'].get('work_id')
 
         def evidence(tool, status, detail):
@@ -364,8 +375,21 @@ class OwnerActs:
             settled = self.settle(answer, job, evidence=evidence)
         except CalendarError:
             settled = {'text': ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID)}
-        # #299 review: told only to the owner who reacted, in the pairing they reacted in; a re-pairing
-        # during the judgment drops the reply instead of retargeting it.
+        # #299 review: told only to the owner who answered, in the pairing they answered in; a re-pairing
+        # during the settlement drops the reply instead of retargeting it.
         if settled.get('text') and not surface.send_owner(settled['text'], owner=chat, generation=generation):
             LOG.warning('owner act reply not delivered')
+        return settled
+
+    def answer_reaction(self, surface, chat, generation, message_id, emoji):
+        """The owner's reaction on a message that showed an open item: judged, and settled when it answers it.
+
+        Runs off the poll thread.  What the owner is told is sent to the paired owner on ``surface``;
+        the calendar effect's Evidence goes to the Work that offered the drafts.
+        """
+        job = self._act_job(surface, chat, generation)
+        answer = self.read(job, 'reaction: ' + ' '.join(emoji), target=message_id, reaction=True)
+        if not answer:
+            return None
+        self._settle_and_tell(surface, chat, generation, job, answer)
         return answer['item']['kind']

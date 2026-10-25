@@ -4086,7 +4086,7 @@ class AgentService:
                     'subscription_engines':self.subscription_engine_status(),
                     'subscription_execution':self.subscription_execution_profile(),
                     'telegram':{'enabled':tg.get('enabled',False),'mode':tg.get('mode','owner-token'),'username':tg.get('username',''),'paired':bool(tg.get('user_id')),'user_id':tg.get('user_id')},
-                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':self.google_connection_rows(),'google_client':self.google_client_status(),'ai_connections':self.ai_connections_status(),'current_context':self.current_state.status(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status(),'mattermost':self.mattermost_status()}
+                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':self.google_connection_rows(),'google_client':self.google_client_status(),'ai_connections':self.ai_connections_status(),'current_context':self.current_state.status(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status(),'mattermost':self.mattermost_status(),'slack':self.slack_status()}
 
     def home(self):
         """Return the minimal, credential-free read model for the owner home."""
@@ -5216,6 +5216,26 @@ class AgentService:
     def set_mattermost_company_approved(self, body):
         """#208: whether this Mattermost may be used while work mode is on (the owner's word for company-approved)."""
         return self.mattermost_surface.set_company_approved((body or {}).get('approved') if isinstance(body,dict) else None)
+
+    @cached_property
+    def slack_surface(self):
+        """The owner's Slack direct message over Socket Mode (``slack_surface``, #214); idle until connected in Settings."""
+        from .slack_surface import SlackSurface
+        return SlackSurface(self)
+
+    def slack_status(self):
+        return {**self.slack_surface.status(),'manifest':self.slack_surface.manifest()}
+
+    def connect_slack(self, body):
+        """Settings on this Mac only (the local endpoint is the only caller): bot token, app token, owner member id."""
+        return self.slack_surface.connect(body)
+
+    def disconnect_slack(self):
+        return self.slack_surface.disconnect()
+
+    def set_slack_company_approved(self, body):
+        """#208: whether this Slack workspace may be used while work mode is on (the owner's word for company-approved)."""
+        return self.slack_surface.set_company_approved((body or {}).get('approved') if isinstance(body,dict) else None)
 
     def receive_polled_surfaces(self):
         """One receive pass of every surface the service polls (``poll_seconds``); a failure stays in that surface."""
@@ -6548,8 +6568,8 @@ class AgentService:
 
     @property
     def surfaces(self):
-        """The owner conversation surfaces this service composes (#212): Telegram and Mattermost (#213)."""
-        return (self.telegram_surface,self.mattermost_surface)
+        """The owner conversation surfaces this service composes (#212): Telegram, Mattermost (#213) and Slack (#214)."""
+        return (self.telegram_surface,self.mattermost_surface,self.slack_surface)
 
     def surface_of(self, job):
         """The conversation surface whose current paired conversation ``job`` came from, or None."""
@@ -11915,7 +11935,7 @@ class AgentService:
                     self.store.put('telegram_status',{'state':'error','message':msg('service.check_the_telegram_connection_receiving_will')})
                 self.stop.wait(.25)
         def poll_surfaces():
-            # #213: surfaces without a long poll of their own (Mattermost) are polled here.
+            # #213: surfaces without a long poll of their own (Mattermost; Slack's connection check, #214) are polled here.
             interval=min((surface.poll_seconds for surface in self.surfaces if surface.poll_seconds),default=3)
             while not self.stop.is_set():
                 self.receive_polled_surfaces()
