@@ -720,7 +720,10 @@ class ServiceRoute(unittest.TestCase):
 
     def turn(self, fault, route):
         key = fake_key()
-        api = FakeHoldingsApi(key, now=time.time, fault=fault)
+        # #290: one instant per turn, so ``raw()`` after the turn shows the ``as_of`` the turn read
+        # (a minute boundary between the two calls made the minute prefix differ).
+        fixed = time.time()
+        api = FakeHoldingsApi(key, now=lambda: fixed, fault=fault)
         original = self.service
 
         def service(script, network):
