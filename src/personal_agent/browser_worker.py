@@ -73,6 +73,7 @@ import base64
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import platform
 import plistlib
@@ -894,6 +895,12 @@ if (el && !el.disabled && !el.readOnly) {
 return JSON.stringify({focus});
 """
 REMOTE_FOCUS_KINDS = ('text', 'password', 'frame')
+#: #254: in a phone session, how wide the main view's document is laid out and how wide its
+#: viewport is (CSS px).  Layout widths only: nothing of the page's content is read.
+PAGE_WIDTH_SCRIPT = r"""
+const root = document.scrollingElement || document.documentElement;
+return JSON.stringify({page: root ? root.scrollWidth : 0, inner: window.innerWidth});
+"""
 
 #: #939: the phone's view of the login window: a JPEG no wider than this, at this quality.
 FRAME_MAX_WIDTH = 900
@@ -1108,6 +1115,33 @@ def destination_refusal(url, allowed_origins=(), resolver=None, intranet=()):
         if (not address_admitted(address)) if declared else _denied_address(address):
             return 'blocked_destination'
     return None
+
+
+def phone_fit_width(page, inner, view, fitted, limit):
+    """#254: the login window's next content width (points) in a phone session, ``'phone'`` to go
+    back to ``WIDTH``, or None to keep it.  Pure; the worker asks it after each phone frame.
+
+    A desktop-only page (its layout follows ``pointer: fine``, which a Mac always matches, or a
+    fixed minimum width) is laid out wider than the phone-sized window, so the phone saw it cut
+    off at the right edge.  The window widens to the page instead (a resize, never a reload or a
+    user-agent change, #1183/#13); the phone's frame is downscaled anyway and taps map back by
+    the frame's own width.  ``page`` and ``inner`` are the document's and the viewport's widths
+    (CSS px), ``view`` the view's width (points; it differs from ``inner`` only under page zoom),
+    ``limit`` the widest content the window's screen holds: the window never outgrows the
+    screen, so a page wider than that is still cut, less.  ``fitted`` is the page width the
+    window last widened for on this page (None: not yet).  A page that grew with the window is
+    not a wider layout but overflow tied to the viewport (an off-canvas panel): ``'phone'``.
+    """
+    try:
+        page, inner, view, limit = float(page), float(inner), float(view), float(limit)
+    except (TypeError, ValueError):
+        return None
+    if not (page > inner > 0 and view > 0 and limit > 0):
+        return None
+    if fitted is not None and page > fitted:
+        return 'phone'
+    width = float(math.ceil(min(page * view / inner, limit)))
+    return width if width > view else None
 
 
 def click_settled(elapsed, quiet, loading, started, landed, deciding=False):
@@ -2229,6 +2263,7 @@ class Worker:
                 dialog = {'kind': held['kind'], 'text': held['text']} if held is not None else None
                 self.reply(ident, jpeg=encoded, width=width, height=height, dialog=dialog,
                            focus=kind if kind in REMOTE_FOCUS_KINDS else None)
+                self.fit_phone_page()   # #254: the next frame shows a wide page whole
             if self.held_dialog is not None:
                 return focused(None, 'held')
             self.run(REMOTE_FOCUS_SCRIPT, {}, focused, view=view)
@@ -2313,6 +2348,7 @@ class Worker:
             return
         # #956 review: the whole frame (origin and title bar included) is restored as it was.
         self.mobile_restore = self.window.frame()
+        self.phone_fit = None
         self.window.setContentSize_(self.Foundation.NSMakeSize(*MOBILE_SIZE))
         if self.owner_visible:
             self.window.center()
@@ -2323,7 +2359,68 @@ class Worker:
         if restore is None:
             return
         self.mobile_restore = None
+        self.phone_fit = None
         self.window.setFrame_display_(restore, True)
+
+    def set_phone_width(self, width):
+        """#254: the phone-session window's content this wide; its height is kept."""
+        height = self.window.contentRectForFrameRect_(self.window.frame()).size.height
+        self.window.setContentSize_(self.Foundation.NSMakeSize(float(width), float(height)))
+        if self.owner_visible:
+            self.window.center()
+
+    def phone_width_limit(self):
+        """#254: the widest content the window's screen holds (its visible frame less the window's own frame)."""
+        screen = self.window.screen()
+        if screen is None:
+            screen = self.AppKit.NSScreen.mainScreen()
+        if screen is None:
+            return float(WIDTH)
+        return float(self.window.contentRectForFrameRect_(screen.visibleFrame()).size.width)
+
+    def fit_phone_page(self):
+        """#254: in a phone session, a main-view page laid out wider than the window widens it
+        (``phone_fit_width``).  Asked after each phone frame, so a page that becomes wide once its
+        scripts ran is caught too; ``phone_navigated`` starts each new page from the phone width."""
+        if not (getattr(self, 'remote', False) and self.owner_visible) or getattr(self, 'mobile_restore', None) is None:
+            return
+        if self.held_dialog is not None or self.front_view() is not self.view:
+            return   # a page blocked on its dialog runs no script; a sign-in popup keeps its own window
+        fitted = getattr(self, 'phone_fit', None)
+        if fitted == 'phone':
+            return   # this page's overflow follows the window: kept phone-sized until the next page
+        if fitted == 'loading':
+            if self.view.isLoading():
+                return   # the page being left is not measured; the next one is, once it loads
+            fitted = self.phone_fit = None   # it never committed (or stayed in the same document)
+
+        def measured(value, error):
+            if error is not None or not isinstance(value, dict) or not self.remote:
+                return
+            if getattr(self, 'mobile_restore', None) is None or getattr(self, 'phone_fit', None) != fitted:
+                return   # the session ended or a new page started while this was measured
+            try:
+                width = phone_fit_width(value.get('page'), value.get('inner'), self.view.frame().size.width,
+                                        fitted, self.phone_width_limit())
+            except Exception:
+                return
+            if width == 'phone':
+                self.phone_fit = 'phone'
+                self.set_phone_width(WIDTH)
+            elif width is not None:
+                self.phone_fit = float(value['page'])
+                self.set_phone_width(width)
+        self.run(PAGE_WIDTH_SCRIPT, {}, measured)
+
+    def phone_navigated(self, committed=True):
+        """#254: a main-view, main-frame navigation was allowed (``committed`` False) or committed.
+
+        In a phone session the next page starts from the phone width: the window narrows when the
+        navigation is allowed, before the next document's scripts can read a widened viewport, and
+        is measured again once that document committed (or the load ended without one)."""
+        fitted, self.phone_fit = getattr(self, 'phone_fit', None), (None if committed else 'loading')
+        if isinstance(fitted, float) and getattr(self, 'mobile_restore', None) is not None:
+            self.set_phone_width(WIDTH)
 
     def op_remote_end(self, ident, command, timeout):
         self.end_remote()
@@ -2647,6 +2744,10 @@ def _delegate_class():
                     worker.navigation_refused(main_frame, reason or 'blocked_destination')
                 elif main_frame:
                     worker.main_navigations += 1   # a click waits for it to land (#736)
+                    try:
+                        worker.phone_navigated(committed=False)   # #254: the next page loads phone-sized
+                    except Exception:
+                        pass
                 handler(WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel)
             # #700: a form submission from or into the main frame while the guard is
             # armed is checked against the page's payment forms first (a native
@@ -2675,6 +2776,10 @@ def _delegate_class():
 
         def webView_didCommitNavigation_(self, view, navigation):
             self.worker.landed += 1
+            try:
+                self.worker.phone_navigated()
+            except Exception:
+                pass
             url = view.URL()
             host = _host(url.absoluteString()) if url is not None else ''
             if host:

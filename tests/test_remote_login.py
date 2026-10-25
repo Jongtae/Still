@@ -4,7 +4,9 @@ Evidence classes, named separately:
 
 * unit (any platform): the worker's remote ops refuse ``not_shown`` while the
   window is parked (the ``Worker`` methods over a bare instance, no PyObjC);
-  input validation; the session's code, binding and expiry rules;
+  input validation; the session's code, binding and expiry rules; the
+  phone-session window fitting a page wider than it (#254: the width rule, the
+  resize, the restore, over a fake window and view);
 * model-free local HTTP integration (fake login-window driver, fake ngrok
   process, temporary stores): the routes through a tunnel (forwarding
   headers), the cookie binding, 완료 saving the jar and closing, expiry
@@ -340,6 +342,234 @@ console.log(JSON.stringify(out));
         self.assertEqual(set(remote_login.KEYS), set(browser_worker.REMOTE_KEYS))
         self.assertEqual(set(remote_login.NAV_ACTIONS), set(browser_worker.REMOTE_NAV_ACTIONS))
         self.assertEqual(set(remote_login.INPUT_KINDS), set(bs.REMOTE_INPUT_KINDS))
+
+
+class PhoneWindowFitsThePage(unittest.TestCase):
+    """#254: in a phone session a page laid out wider than the window widens it (a resize only, no reload);
+    each new page starts from the phone width; the session's end restores the window exactly."""
+
+    def test_the_width_rule(self):
+        fit = browser_worker.phone_fit_width
+        limit = 1440.0
+        # page, inner (CSS px), view (points), fitted (the page width last widened for), limit -> next width
+        for args, expected in (((390, 390, 390.0, None, limit), None),          # fits: kept
+                               ((1200, 390, 390.0, None, limit), 1200.0),       # desktop-only: as wide as the page
+                               ((1200.4, 390, 390.0, None, limit), 1201.0),     # whole points, never short
+                               ((1200, 1200, 1200.0, 1200, limit), None),       # widened and fits now
+                               ((3000, 390, 390.0, None, limit), limit),        # never wider than the screen holds
+                               ((3000, 1440, 1440.0, 3000, limit), None),       # already at the limit: kept
+                               ((1560, 780, 780.0, 780, limit), 'phone'),       # grew with the window: back
+                               ((900, 450, 585.0, None, limit), 1170.0),        # page zoom: CSS px to points
+                               ((800, 390, 390.0, None, 300.0), None),          # a screen narrower than the window
+                               ((float('inf'), 390, 390.0, None, limit), limit),
+                               ((float('nan'), 390, 390.0, None, limit), None),
+                               ((1200, 0, 390.0, None, limit), None)):
+            with self.subTest(args=args):
+                self.assertEqual(fit(*args), expected)
+
+    def worker(self, measures):
+        """A shown worker with a fake window and view (no PyObjC); ``measures`` are ``PAGE_WIDTH_SCRIPT`` answers."""
+        worker = browser_worker.Worker.__new__(browser_worker.Worker)
+        worker.owner_visible = True
+        worker.pending = {}
+        worker.popups = []
+        worker.replies = []
+        worker.emit = worker.replies.append
+        worker.held_dialog = None
+        worker.remote = False
+        worker.dialog_step = None
+
+        class Size:
+            def __init__(self, width, height):
+                self.width, self.height = width, height
+
+        class Rect:
+            def __init__(self, x, y, width, height):
+                self.origin, self.size = (x, y), Size(width, height)
+
+        class Window:
+            title = 28.0   # the title bar: frame height minus content height
+
+            def __init__(self):
+                self.rect = Rect(100.0, 50.0, 700.0, 528.0)   # an owner-resized window, title bar included
+                self.calls = []
+
+            def frame(self):
+                return self.rect
+
+            def contentRectForFrameRect_(self, rect):
+                return Rect(rect.origin[0], rect.origin[1], rect.size.width, rect.size.height - self.title)
+
+            def setContentSize_(self, size):
+                self.calls.append(('content', size))
+                self.rect = Rect(self.rect.origin[0], self.rect.origin[1], size[0], size[1] + self.title)
+
+            def setFrame_display_(self, rect, display):
+                self.calls.append(('frame', rect))
+                self.rect = rect
+
+            def center(self):
+                self.calls.append(('center',))
+
+            def screen(self):
+                return type('Screen', (), {'visibleFrame': lambda self: Rect(0.0, 0.0, 1440.0, 875.0)})()
+
+        window = Window()
+
+        class View:
+            loading = False
+
+            def frame(self):
+                content = window.contentRectForFrameRect_(window.rect)
+                return Rect(0.0, 0.0, content.size.width, content.size.height)
+
+            def isLoading(self):
+                return self.loading
+        worker.window, worker.view = window, View()
+        worker.Foundation = type('Foundation', (), {'NSMakeSize': staticmethod(lambda width, height: (width, height))})
+        worker.scripts = []
+
+        def run(body, arguments, done, world=None, view=None):
+            worker.scripts.append((body, view))
+            done(measures.pop(0) if measures else None, None)
+        worker.run = run
+        return worker, window
+
+    def content(self, window):
+        content = window.contentRectForFrameRect_(window.rect).size
+        return (content.width, content.height)
+
+    def test_a_wide_page_widens_the_window_a_new_page_starts_phone_sized_and_the_end_restores_it(self):
+        measures = [{'page': 1200, 'inner': 390}, {'page': 1200, 'inner': 1200}, {'page': 390, 'inner': 390}]
+        worker, window = self.worker(measures)
+        original = window.rect
+        worker.handle({'id': 1, 'op': 'remote_begin'})
+        self.assertEqual(self.content(window), (390.0, 844.0), '#955: phone-sized first')
+        worker.fit_phone_page()
+        self.assertEqual(self.content(window), (1200.0, 844.0), 'as wide as the page, the same height')
+        self.assertEqual(worker.scripts[-1], (browser_worker.PAGE_WIDTH_SCRIPT, None), 'measured in the main view')
+        worker.fit_phone_page()
+        self.assertEqual(self.content(window), (1200.0, 844.0), 'it fits now: kept')
+        worker.phone_navigated()
+        self.assertEqual(self.content(window), (390.0, 844.0), 'a new page is measured from the phone width')
+        worker.fit_phone_page()
+        self.assertEqual(self.content(window), (390.0, 844.0), 'a page that fits stays phone-sized')
+        worker.handle({'id': 2, 'op': 'remote_end'})
+        self.assertIs(window.rect, original, 'the frame from before the session, exactly')
+        self.assertEqual(window.calls[-1], ('frame', original))
+
+    def test_the_end_restores_the_frame_from_before_the_session_while_widened(self):
+        worker, window = self.worker([{'page': 1200, 'inner': 390}])
+        original = window.rect
+        worker.handle({'id': 1, 'op': 'remote_begin'})
+        worker.fit_phone_page()
+        self.assertEqual(self.content(window), (1200.0, 844.0))
+        worker.handle({'id': 2, 'op': 'remote_end'})
+        self.assertIs(window.rect, original)
+        calls = len(window.calls)
+        worker.phone_navigated()
+        worker.fit_phone_page()
+        self.assertEqual(len(window.calls), calls, 'no phone session: nothing measured or resized')
+        self.assertIs(window.rect, original)
+
+    def test_overflow_that_grows_with_the_window_goes_back_to_phone_width_until_the_next_page(self):
+        measures = [{'page': 780, 'inner': 390}, {'page': 1560, 'inner': 780}, {'page': 780, 'inner': 390}]
+        worker, window = self.worker(measures)
+        worker.handle({'id': 1, 'op': 'remote_begin'})
+        worker.fit_phone_page()
+        self.assertEqual(self.content(window), (780.0, 844.0))
+        worker.fit_phone_page()
+        self.assertEqual(self.content(window), (390.0, 844.0), 'an off-canvas panel is not a page width')
+        measured = len(worker.scripts)
+        worker.fit_phone_page()
+        self.assertEqual((len(worker.scripts), self.content(window)), (measured, (390.0, 844.0)),
+                         'not measured again on this page')
+        worker.phone_navigated()
+        worker.fit_phone_page()
+        self.assertEqual(len(worker.scripts), measured + 1, 'the next page is measured')
+
+    def test_the_window_narrows_when_a_navigation_starts_and_the_next_page_is_measured_once_it_loads(self):
+        """The next document's own scripts read the phone width, not the last page's widened one."""
+        measures = [{'page': 1200, 'inner': 390}, {'page': 390, 'inner': 390}, {'page': 1200, 'inner': 390}]
+        worker, window = self.worker(measures)
+        worker.handle({'id': 1, 'op': 'remote_begin'})
+        worker.fit_phone_page()
+        self.assertEqual(self.content(window), (1200.0, 844.0))
+        worker.phone_navigated(committed=False)   # allowed: the request has not even started
+        self.assertEqual(self.content(window), (390.0, 844.0))
+        worker.view.loading = True
+        worker.fit_phone_page()
+        self.assertEqual((len(worker.scripts), self.content(window)), (1, (390.0, 844.0)),
+                         'the page being left is not measured (it would widen the window again)')
+        worker.phone_navigated()
+        worker.view.loading = False
+        worker.fit_phone_page()
+        self.assertEqual((len(worker.scripts), self.content(window)), (2, (390.0, 844.0)), 'the new page fits')
+        # A navigation that never commits (a download, a same-document move): the page is measured again.
+        worker.phone_navigated(committed=False)
+        worker.fit_phone_page()
+        self.assertEqual((len(worker.scripts), self.content(window)), (3, (1200.0, 844.0)))
+
+    def test_never_wider_than_the_screen_holds(self):
+        worker, window = self.worker([{'page': 5000, 'inner': 390}])
+        worker.handle({'id': 1, 'op': 'remote_begin'})
+        worker.fit_phone_page()
+        self.assertEqual(self.content(window), (1440.0, 844.0), 'the visible frame less the window frame')
+
+    def test_only_the_main_view_in_a_shown_phone_session_without_a_held_dialog_is_measured(self):
+        worker, window = self.worker([{'page': 1200, 'inner': 390}] * 4)
+        worker.fit_phone_page()
+        self.assertEqual(worker.scripts, [], 'no phone session')
+        worker.handle({'id': 1, 'op': 'remote_begin'})
+        worker.popups = [('popup-view', 'popup-window', None)]
+        worker.fit_phone_page()
+        worker.popups = []
+        worker.held_dialog = {'kind': 'alert', 'text': 'x', 'handler': None, 'sheet': None}
+        worker.fit_phone_page()
+        worker.held_dialog = None
+        self.assertEqual(worker.scripts, [], 'a sign-in popup in front, or a page blocked on its dialog')
+        self.assertEqual(self.content(window), (390.0, 844.0))
+        for broken in (None, {'page': 'wide', 'inner': 390}, {'inner': 390}):
+            with self.subTest(broken=broken):
+                worker.run = lambda body, arguments, done, world=None, view=None, answer=broken: done(answer, None)
+                worker.fit_phone_page()
+                self.assertEqual(self.content(window), (390.0, 844.0))
+        worker.run = lambda body, arguments, done, world=None, view=None: done(None, 'script_failed')
+        worker.fit_phone_page()
+        self.assertEqual(self.content(window), (390.0, 844.0))
+
+    def test_a_phone_frame_also_measures_the_page(self):
+        from unittest import mock
+        worker, window = self.worker([{'focus': None}, {'page': 1200, 'inner': 390}])
+        worker.deadline = lambda ident, seconds: worker.pending.__setitem__(ident, True)
+
+        class Config:
+            def init(self):
+                return self
+
+            def setSnapshotWidth_(self, width):
+                pass
+
+            def setAfterScreenUpdates_(self, flag):
+                pass
+        worker.WebKit = type('WebKit', (), {'WKSnapshotConfiguration': type('C', (), {'alloc': staticmethod(Config)})})
+        worker.AppKit = None
+        worker.view.takeSnapshotWithConfiguration_completionHandler_ = lambda config, done: done('image', None)
+        worker.handle({'id': 1, 'op': 'remote_begin'})
+        with mock.patch.object(browser_worker, '_jpeg_bytes', return_value=b'jpg'):
+            worker.handle({'id': 2, 'op': 'frame'})
+            self.assertEqual(worker.replies[-1]['width'], 390.0, 'this frame is the image it was taken from')
+            self.assertEqual([body for body, _ in worker.scripts],
+                             [browser_worker.REMOTE_FOCUS_SCRIPT, browser_worker.PAGE_WIDTH_SCRIPT])
+            self.assertEqual(self.content(window), (1200.0, 844.0))
+            worker.handle({'id': 3, 'op': 'frame'})
+            self.assertEqual((worker.replies[-1]['width'], worker.replies[-1]['height']), (1200.0, 844.0),
+                             'the next frame reports the wider view: the phone maps taps by it')
+
+    def test_the_width_probe_reads_layout_widths_never_content(self):
+        script = browser_worker.PAGE_WIDTH_SCRIPT
+        for read in ('.value', 'innerText', 'textContent', 'innerHTML', 'outerHTML', 'getSelection', 'location'):
+            self.assertNotIn(read, script)
 
 
 class InputValidation(unittest.TestCase):
