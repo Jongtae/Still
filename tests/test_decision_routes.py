@@ -1548,12 +1548,18 @@ class JudgmentModelTests(ServiceFixture):
                 self.assertTrue(service.decision_routes.status()['active']['requalification_needed'])
 
     def test_a_changed_cli_version_blocks_the_judgment(self):
+        from personal_agent import bounded_execution
         service = self.strict_route()
-        self.runner.version = 'codex-cli 0.158.0'
-        self.assert_blocked(service, 'an upgraded CLI under the same path and digest record needs requalification')
-        self.runner.version = 'garbled'
-        self.assert_blocked(service, 'an unreadable version is not the qualified one')
 
+        def reported(version):
+            # #309 L7: the binding's path/size/mtime fingerprint is unchanged here, so within one process the
+            # memo keeps the version it read (the owner-accepted residual); a new process reads it again.
+            self.runner.version = version
+            bounded_execution._STRICT_OBSERVATIONS.clear()
+        reported('codex-cli 0.158.0')
+        self.assert_blocked(service, 'an upgraded CLI under the same path and digest record needs requalification')
+        reported('garbled')
+        self.assert_blocked(service, 'an unreadable version is not the qualified one')
 
 if __name__ == '__main__':
     unittest.main()

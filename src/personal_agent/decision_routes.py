@@ -829,7 +829,8 @@ class DecisionRoutes:
         fingerprints, home, engine runtime root, owner store, CODEX_HOME), the
         launcher and native sha256 digests, and the version the CLI reports
         for ``--version`` in the Still environment (one local, model-free
-        subprocess), which must be a tested version equal to the qualified one.
+        subprocess on a binary-identity memo miss), which must be a tested
+        version equal to the qualified one.
         """
         from .bounded_execution import CLI_PROFILES, STRICT_PROFILE
         execution = self.service.execution_adapter
@@ -840,19 +841,23 @@ class DecisionRoutes:
         if not binary or not callable(check):
             return ['binding']
         stale = list(check('codex', strict, self.store.root, binary))
-        if not stale:
-            current = execution.strict_digests('codex', binary)
-            stale += [key for key, value in current.items() if not value or value != strict.get(key)]
+        if stale:
+            return stale
+        def read_version():
+            execution.runtime_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            with tempfile.TemporaryDirectory(dir=execution.runtime_root, prefix='decision-version-') as folder:
+                try:
+                    return execution.runtime_version('codex', binary, Path(folder))
+                except Exception:  # noqa: BLE001 - any failure is "not the qualified version"
+                    return None
+
+        stale, version = execution.strict_observation(
+            'codex', binary, strict, None, self.codex_instruction_qualified,
+            check_version=sys.platform in declared['tested_platforms'], read_version=read_version)
         if stale:
             return stale
         if sys.platform not in declared['tested_platforms']:
             return ['platform']
-        execution.runtime_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        with tempfile.TemporaryDirectory(dir=execution.runtime_root, prefix='decision-version-') as folder:
-            try:
-                version = execution.runtime_version('codex', binary, Path(folder))
-            except Exception:  # noqa: BLE001 - any failure is "not the qualified version"
-                version = None
         if version is None or version not in self.codex_instruction_qualified or version != strict.get('version'):
             return ['version']
         return []
