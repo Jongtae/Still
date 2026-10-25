@@ -7,6 +7,7 @@ import json
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -232,6 +233,75 @@ class ServiceProvenance(unittest.TestCase):
         self.assertEqual(selected['decisions'][-1]['answer'], 'retry')
         self.assertEqual(selected['decisions'][-1]['confidence'], 0.9)
         self.assertIsNone(service.current_work_id, 'the link ends with the Work')
+
+    def test_threaded_decisions_are_linked_to_their_work_only(self):
+        service = self._service(_Engine())
+        default_spawn = service.early_judgment_spawn
+        threads, cleared, errors = [], [], []
+        late = threading.Event()
+        together = threading.Barrier(2, timeout=5)
+
+        def spawn(target):
+            def tracked():
+                threads.append(threading.current_thread())
+                try:
+                    # Both real early-judgment threads must be running; do not
+                    # constrain which judgment records first.
+                    together.wait()
+                    target()
+                    cleared.append(service.current_work_id)
+                    if not late.wait(5):
+                        raise AssertionError('Work did not finish before the late decision')
+                    service.record_decision({'kind': 'decision', 'purpose': 'late', 'outcome': 'ok'})
+                except BaseException as exc:
+                    errors.append(exc)
+            default_spawn(tracked)
+
+        service.early_judgment_spawn = spawn
+        service.record_decision({'kind': 'decision', 'purpose': 'outside', 'outcome': 'ok'})
+        self.store.enqueue('hello', 'k1')
+        real_run = service.execution_adapter.execute
+
+        def execute(engine, prompt, tools, **kwargs):
+            # A separate caller while the worker has an active Work must not
+            # borrow its attribution. This fails with a global current_work_id.
+            outside = threading.Thread(target=lambda: service.record_decision(
+                {'kind': 'decision', 'purpose': 'outside-during-work', 'outcome': 'ok'}))
+            outside.start()
+            outside.join(5)
+            self.assertFalse(outside.is_alive())
+            service.record_decision({'kind': 'decision', 'purpose': 'presence', 'outcome': 'accepted'})
+            return real_run(engine, prompt, tools, **kwargs)
+
+        service.execution_adapter.execute = execute
+        try:
+            self.assertTrue(service.run_one())
+            self.assertIsNone(service.current_work_id, 'the worker context ends with the Work')
+            # Late records run after their original scopes ended, while a
+            # different thread has another Work. Neither Work may acquire them.
+            service.current_work_id = 'other-work'
+        finally:
+            late.set()
+            for thread in threads:
+                thread.join(5)
+            service.current_work_id = None
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(threads), 2)
+        self.assertTrue(all(not thread.is_alive() and thread.ident != threading.get_ident() for thread in threads))
+        self.assertEqual(cleared, [None, None], 'each early judgment restores its thread context')
+        selected = self._selected(service)
+        self.assertCountEqual([row['purpose'] for row in selected['decisions']],
+                              ['capability-need', 'work-orchestration', 'presence'])
+        audit = self.store.config('decision_audit')
+        early = [row for row in audit if row['purpose'] in ('capability-need', 'work-orchestration')]
+        self.assertCountEqual([(row['purpose'], row.get('work_id')) for row in early],
+                              [('capability-need', selected['id']), ('work-orchestration', selected['id'])])
+        outside = [row for row in audit if row['purpose'] in ('outside', 'outside-during-work', 'late')]
+        self.assertCountEqual([row['purpose'] for row in outside], ['outside', 'outside-during-work', 'late', 'late'])
+        self.assertTrue(all(row.get('work_id') is None for row in outside))
+        self.assertEqual(self.store.work_decisions('other-work'), [])
+        self.assertIsNone(service.current_work_id)
 
     def test_a_work_keeps_its_judgments_after_the_global_list_rolls_over(self):
         """#794: judgments live with their Work, not in a global newest-100 list."""

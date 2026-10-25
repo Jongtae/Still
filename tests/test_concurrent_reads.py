@@ -17,8 +17,9 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
-from personal_agent.agent_runtime import Capabilities, ReadOverlap, WorkBudget, run_agent
+from personal_agent.agent_runtime import CONCURRENT_READ_LIMIT, Capabilities, ReadOverlap, WorkBudget, run_agent
 from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.quickstart_store import QuickStore
 from test_agency_loop import CFG, Script, call, finish, judgments
@@ -33,12 +34,13 @@ def search_result(query):
 class Wire:
     """The public network.  Logs request start/end; optional barrier and delays per query."""
 
-    def __init__(self, barrier=None, delays=None, transient=()):
+    def __init__(self, barrier=None, delays=None, transient=(), gate=None):
         self.log, self.lock = [], threading.Lock()
         self.barrier, self.delays = barrier, delays or {}
         self.transient = set(transient)
         self.active = 0
         self.peak = 0
+        self.gate = gate
 
     def execute(self, plan):
         key = plan.get('query') or plan.get('url') or plan.get('city')
@@ -47,6 +49,8 @@ class Wire:
             self.active += 1
             self.peak = max(self.peak, self.active)
         try:
+            if self.gate is not None:
+                self.gate(key)
             if key in self.transient:
                 self.transient.discard(key)
                 raise TimeoutError('slow wire')
@@ -112,6 +116,101 @@ class ConcurrentReadTests(unittest.TestCase):
                                               ('web_search', 'failed', None, 'transient-retry'),
                                               ('web_search', 'succeeded', '2', 'main')])
         self.assertEqual(budget.attempts_used, 3, 'two reads and one retry, as one by one')
+
+    def test_six_reads_respect_the_thread_cap_and_keep_call_order(self):
+        # Every request waits until four are on the wire, then briefly for a fifth:
+        # an uncapped pool lets the fifth in (peak 5+); with four workers it cannot
+        # enter until one of the first wave returns.
+        condition = threading.Condition()
+        entered = []
+
+        def gate(key):
+            with condition:
+                entered.append(key)
+                condition.notify_all()
+                if not condition.wait_for(lambda: len(entered) >= CONCURRENT_READ_LIMIT, timeout=5):
+                    raise AssertionError('four reads never overlapped')
+                condition.wait_for(lambda: len(entered) > CONCURRENT_READ_LIMIT, timeout=0.2)
+
+        queries = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta']
+        calls = [call(str(i), 'web_search', query=q) for i, q in enumerate(queries)]
+        wire = Wire(gate=gate)
+        result, script, _caps = self.run_turn(calls, wire, budget=WorkBudget(turns=30, attempts=20))
+        self.assertEqual(result.outcome, 'succeeded')
+        self.assertEqual(wire.peak, CONCURRENT_READ_LIMIT)
+        self.assertCountEqual([q for event, q in wire.log if event == 'start'], queries)
+        self.assertEqual(self.tool_events(), [event for i in range(6) for event in
+                         [('web_search', 'running', str(i), 'main'),
+                          ('web_search', 'succeeded', str(i), 'main')]])
+        shown = [json.loads(m['content']) for m in script.bodies[1]['messages'] if m.get('role') == 'tool']
+        self.assertEqual([(row['ref'], row['query']) for row in shown], list(zip(map(str, range(6)), queries)))
+
+    def _interrupt_in_flight_group(self, reason):
+        queries = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta']
+        calls = [call(str(i), 'web_search', query=q) for i, q in enumerate(queries)]
+        stopped = threading.Event()
+        wall = [0.0]
+        budget = WorkBudget(turns=30, attempts=20, seconds=10, clock=lambda: wall[0], stop=stopped.is_set)
+        condition = threading.Condition()
+        entered = []
+        release = threading.Event()
+        read_threads = []
+
+        def gate(key):
+            with condition:
+                entered.append(key)
+                read_threads.append(threading.current_thread())
+                condition.notify_all()
+            if not release.wait(5):
+                raise AssertionError('test did not release the in-flight reads')
+
+        wire = Wire(gate=gate)
+
+        def run_and_snapshot():
+            result = self.run_turn(calls, wire, budget)
+            return result, list(self.events)
+
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            future = worker.submit(run_and_snapshot)
+            try:
+                with condition:
+                    self.assertTrue(condition.wait_for(lambda: len(entered) >= 4, timeout=5))
+                self.assertEqual(wire.active, 4, 'the interrupt must arrive on the wire, mid-group')
+                if reason == 'stopped':
+                    stopped.set()
+                else:
+                    wall[0] = budget.deadline
+            finally:
+                release.set()
+            (result, script, caps), returned_records = future.result(timeout=5)
+
+        for thread in read_threads:
+            thread.join(5)
+            self.assertFalse(thread.is_alive(), 'the read pool must terminate')
+        self.assertEqual(self.events, returned_records, 'no read records arrive after run_agent returns')
+
+        self.assertEqual(result.outcome, 'partial', 'already-sent reads remain observed after interruption')
+        self.assertEqual(len(script.bodies), 1, 'no further model turn after interruption')
+        self.assertCountEqual([q for event, q in wire.log if event == 'start'], queries[:4])
+        self.assertCountEqual([q for event, q in wire.log if event == 'end'], queries[:4])
+        self.assertEqual(self.tool_events(), [event for i in range(6) for event in
+                         [('web_search', 'running', str(i), 'main'),
+                          ('web_search', 'succeeded' if i < 4 else 'failed', str(i), 'main')]])
+        refused = [detail['code'] for tool, status, detail in self.events if tool != 'model' and status == 'failed']
+        self.assertEqual(refused, [reason, reason])
+        self.assertEqual([(status, detail.get('code')) for tool, status, detail in self.events
+                          if tool == 'model' and status == 'stopped'], [('stopped', reason)])
+        self.assertEqual(wire.active, 0, 'all in-flight requests settled before returning')
+        self.assertEqual(caps.record, self.record, 'settle restored the record sink')
+        records = list(self.events)
+        caps.record('probe', 'succeeded', {})
+        self.assertEqual(self.events, records + [('probe', 'succeeded', {})])
+
+    def test_stop_mid_group_finishes_sent_reads_and_refuses_queued_reads(self):
+        self._interrupt_in_flight_group('stopped')
+
+    def test_deadline_mid_group_finishes_sent_reads_and_refuses_queued_reads(self):
+        self._interrupt_in_flight_group('deadline_exceeded')
 
     def test_an_effect_between_reads_keeps_them_apart(self):
         wire = Wire()
