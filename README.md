@@ -90,7 +90,7 @@ agentos start
 3. Telegram: paste the @BotFather token in the terminal, open the pairing link it prints and press Start.
 4. Ask for what you need: **“My cat has been off her food lately. What should I try?”** A few days later, just ask **“Find me a robot vacuum under $500.”** Your PA remembers the cat and takes it into account without being reminded.
 
-**Release status:** both installers install **v0.1.0** (2026-10-18), built from the tagged main commit. The demo and the everyday-use image come from real sessions and are not release-specific end-to-end validation; the architecture figure is product direction. The [release manifest](docs/release-manifest.json) records what each release covers, and [product status](docs/product-status.en.md) separates shipped behavior, test evidence and direction.
+**Release status:** both installers install **v0.2.0** (2026-10-24), built from the tagged main commit. The demo and the everyday-use image come from real sessions and are not release-specific end-to-end validation; the architecture figure is product direction. The [release manifest](docs/release-manifest.json) records what each release covers, and [product status](docs/product-status.en.md) separates shipped behavior, test evidence and direction.
 
 **Uninstall:** `agentos uninstall` removes the background services and the program, and keeps your data unless you choose to delete it ([details](docs/QUICKSTART.md#uninstall)).
 

@@ -97,7 +97,7 @@ For installable agents the same rule holds: `downloaded != installed != enabled 
 <!-- readme-section:release -->
 ## The Homebrew release
 
-**The Homebrew package installs the newest published release, `v0.1.0` (2026-10-18), from its tagged main commit.** The [release manifest](release-manifest.json) records source coverage and local installed checks. Those checks establish package installation and foreground operation, not live Telegram, Google or shopping use, or the complete README demo scenes. The README’s everyday-use image is cut from real owner-pilot sessions, not release-specific validation.
+**The Homebrew package installs the newest published release, `v0.2.0` (2026-10-24), from its tagged main commit.** The [release manifest](release-manifest.json) records source coverage and local installed checks. Those checks establish package installation and foreground operation, not live Telegram, Google or shopping use, or the complete README demo scenes. The README’s everyday-use image is cut from real owner-pilot sessions, not release-specific validation.
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still
