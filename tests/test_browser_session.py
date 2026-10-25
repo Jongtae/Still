@@ -550,6 +550,17 @@ class MediationTests(unittest.TestCase):
         self.assertEqual([row['n'] for row in found['elements']], [1])
         self.assertFalse(sess.find({'text': '없는 텍스트'})['found'])
 
+    def test_a_control_no_scroll_can_bring_on_screen_is_listed_as_offscreen_with_its_link(self):
+        """#1575: the model reads which listed controls a press would refuse as hidden."""
+        snapshot = bs.mediate_snapshot({'url': ORIGIN + '/', 'title': 't', 'text': '', 'elements': [
+            {'index': 0, 'role': 'link', 'name': '내 자산', 'tag': 'a', 'href': ORIGIN + '/assets', 'offscreen': True},
+            {'index': 1, 'role': 'button', 'name': '메뉴', 'tag': 'button', 'type': 'button', 'offscreen': False}]})
+        rows = {row['name']: row for row in snapshot['elements']}
+        self.assertTrue(rows['내 자산']['offscreen'])
+        self.assertEqual(rows['내 자산']['href'], ORIGIN + '/assets', 'its link can still be opened')
+        self.assertNotIn('offscreen', rows['메뉴'])
+        self.assertIn('offscreen', bs.HIDDEN_TEXT)
+
     def test_find_and_click_reach_controls_beyond_the_listed_ones(self):
         """#925: menus filled the first 80 controls; product buttons came after them."""
         menus = [{'index': i, 'role': 'link', 'name': f'메뉴 {i}', 'tag': 'a', 'href': f'{ORIGIN}/m{i}'} for i in range(90)]
