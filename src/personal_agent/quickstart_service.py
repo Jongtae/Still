@@ -8342,6 +8342,41 @@ class AgentService:
         if not row or row.get('state')!='offered':raise ValueError('로그인을 기다리는 요청이 없습니다.')
         return self._request_login_decision(body['work_id'],row['nonce'],'resume' if body['decision']=='done' else 'skip')
 
+    @staticmethod
+    def _login_window_mark(nonce):
+        """#1572: a short public mark of one offered login (never its nonce), so a draft binds to exactly that window."""
+        return hashlib.sha256(('login-window:'+str(nonce or '')).encode()).hexdigest()[:12]
+
+    def open_login_windows(self):
+        """#1572: the in-flow login windows waiting for the owner: ``{value: label}`` for ``browser close_login``.
+
+        Site and minutes left only; never a URL path, query or what was typed in the window.
+        """
+        now,windows=time.time(),{}
+        for work_id,row in sorted(self.browser_login_requests().items()):
+            if not isinstance(row,dict) or row.get('state')!='offered':continue
+            site=row.get('landed_site') or row.get('site') or registrable_domain(row.get('host')) or '이 사이트'
+            left=max(0,int((float(row.get('deadline') or now)-now)//60))
+            windows[f"{work_id}|{self._login_window_mark(row.get('nonce'))}"]=(
+                f"{site} 로그인 창 (요청 {work_id[:8]}, 약 {left}분 뒤 자동으로 닫힘)")
+        return windows
+
+    def close_login_window_by_owner(self, value):
+        """#1572: the owner confirmed closing one exact offered login window (``browser close_login``).
+
+        The same settlement as the prompt's 건너뛰기: the window stops, its cookies are saved, and the Work
+        that asked is not resumed as if signed in.  Returns the owner-facing text; it never claims the
+        profile is free before the window has actually closed.
+        """
+        work_id,_sep,mark=str(value or '').partition('|')
+        row=self._browser_login(work_id) or {}
+        if row.get('state')!='offered' or not hmac.compare_digest(self._login_window_mark(row.get('nonce')),mark):
+            raise ValueError('그 로그인 창은 이미 닫혔거나 바뀌었어요. 아무것도 닫지 않았어요.')
+        decided=self._request_login_decision(work_id,row['nonce'],'skip')
+        if decided.get('state')!='closing':
+            raise ValueError('그 로그인 창은 이미 닫혔거나 바뀌었어요. 아무것도 닫지 않았어요.')
+        return '로그인 창을 닫고 있어요. 닫히면 브라우저를 다시 쓸 수 있어요. 그 창을 연 요청은 로그인 없이 끝나요.'
+
     def _request_login_decision(self, work_id, nonce, intent):
         """Mark one offered login for the work loop to close and settle; the first decision wins."""
         with self.lock:
@@ -10109,13 +10144,18 @@ class AgentService:
         self.context_observations.set_controls(body)
         return self.current_state.status()
 
-    def request_current_location(self, job_id, prompt, button_label=None):
+    def request_current_location(self, job_id, prompt, button_label=None, with_answer=False):
         """Ask the paired owner for a current position for one Work (#626 I3).
 
         A one-time reply keyboard with ``request_location``; the matching
         answer is a sender-reported current position bound to this Work, not
         verified GPS.  Only a shared location answers it: a typed reply is an
         ordinary new Work, so the keyboard offers no typed alternative.
+
+        #1582: ``with_answer`` opens the same request but sends nothing now:
+        the worker answered on a stated assumption, and the keyboard goes out
+        with that answer (``location_offer_markup``), so the owner reads one
+        reply and can still share another position to continue the request.
         """
         job=self.store.job(job_id)
         cfg=self.store.config('telegram',{})
@@ -10129,8 +10169,10 @@ class AgentService:
             request_id=self.context_observations.open_location_request(job_id,cfg['user_id'],cfg.get('generation'))
         for work_id in superseded:
             if work_id!=job_id:self.store.remove_telegram_photo(work_id)
-        markup={'keyboard':[[{'text':button_label or self.LOCATION_BUTTON_DEFAULT,'request_location':True}]],
-                'one_time_keyboard':True,'resize_keyboard':True}
+        markup=self.location_keyboard(button_label)
+        if with_answer:
+            self.store.put(self.LOCATION_OFFER_PREFIX+job_id,{'request_id':request_id,'label':button_label or ''})
+            return request_id
         try:
             self.telegram.send_message(cfg['user_id'],prompt.strip(),markup)
         except ProviderError:
@@ -10160,6 +10202,31 @@ class AgentService:
             return False
         self.store.put(self.LOCATION_KEYBOARD_KEY,{})
         return True
+
+    def location_keyboard(self, button_label=None):
+        return {'keyboard':[[{'text':button_label or self.LOCATION_BUTTON_DEFAULT,'request_location':True}]],
+                'one_time_keyboard':True,'resize_keyboard':True}
+
+    #: #1582: config row per Work whose answer carries the share-location button (``with_answer``).
+    LOCATION_OFFER_PREFIX='telegram_location_offer:'
+
+    def location_offer_markup(self, job):
+        """The share-location keyboard for this Work's answer, or None (#1582).
+
+        Only while the Work's own location request is still pending; the offer
+        row is consumed either way, so it rides on one answer at most.
+        """
+        key=self.LOCATION_OFFER_PREFIX+job['id']
+        with self.store.db() as db:
+            offer=self.store.config(key,None,db=db)
+            if offer is None:
+                return None
+            db.execute('DELETE FROM config WHERE key=?',(key,))
+        cfg=self.store.config('telegram',{})
+        pending=self.context_observations.pending_location_work_ids(cfg.get('user_id'),cfg.get('generation'))
+        if job['id'] not in pending:
+            return None
+        return self.location_keyboard(offer.get('label') or None)
 
     #: #992: config row set while a location keyboard may still be showing in the owner's chat.
     LOCATION_KEYBOARD_KEY='telegram_location_keyboard'
@@ -10195,11 +10262,12 @@ class AgentService:
         """
         if not answerable_work(job):
             return None
-        def ask(reason, button_label=None):
+        def ask(reason, button_label=None, with_answer=False):
             try:
                 # Pilot boundary 1: a stored secret never reaches the prompt text.
                 request_id=self.request_current_location(job['id'],self._redact_known_secrets(reason),
-                                                         self._redact_known_secrets(button_label) if button_label else None)
+                                                         self._redact_known_secrets(button_label) if button_label else None,
+                                                         with_answer=with_answer)
             except ToolError:
                 raise
             except ValueError as exc:

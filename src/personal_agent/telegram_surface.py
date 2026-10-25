@@ -1305,10 +1305,18 @@ class TelegramSurface(ConversationSurface):
                 anchor,controls=None,()
             markup=reply_controls_markup(job['id'],controls,route_options=route_options)
             # #992: a reply without inline controls takes away a location keyboard whose request ended.
+            # #1582: consume this Work's offer even when inline controls win.
             removal=None
+            try:offer=service.location_offer_markup(job)
+            except Exception as exc:
+                LOG.info('location offer skipped work=%s kind=%s',job['id'],type(exc).__name__)
+                offer=None
+            if markup:offer=None
             if not markup:
-                try:removal=service.location_keyboard_removal(job['chat_id'])
-                except Exception:removal=None
+                if offer:removal=offer
+                else:
+                    try:removal=service.location_keyboard_removal(job['chat_id'])
+                    except Exception:removal=None
             message_id=None
             try:
                 try:
@@ -1323,7 +1331,8 @@ class TelegramSurface(ConversationSurface):
                 message_id=result.get('message_id') if isinstance(result,dict) else None
                 status='sent'
                 service._unsent_backoff=0
-                if removal:service.store.put(service.LOCATION_KEYBOARD_KEY,{})
+                if offer:service.store.put(service.LOCATION_KEYBOARD_KEY,{'chat_id':job['chat_id']})
+                elif removal:service.store.put(service.LOCATION_KEYBOARD_KEY,{})
             except TelegramNotSent:
                 # #123: nothing reached Telegram, so the reply stays queued and is sent once it is
                 # reachable; what follows a settled send (notices, outcome) waits for that send.
