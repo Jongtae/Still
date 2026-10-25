@@ -122,8 +122,12 @@ class ConversationSurface(ABC):
         """Whether the surface is paired now and ``owner`` (an identity in ``SurfacePairing.owner`` form) is its owner."""
 
     @abstractmethod
-    def send_owner(self, text, reply_to=None):
-        """Best effort: ``text`` to the paired owner now; True when it was sent.  Never raises."""
+    def send_owner(self, text, reply_to=None, owner=None, generation=None):
+        """Best effort: ``text`` to the paired owner now; True when it was sent.  Never raises.
+
+        ``owner`` / ``generation`` (#299 review): the conversation the text answers.  When given, it
+        is sent only while that is still the current pairing, never retargeted to a newly paired owner.
+        """
 
     # -- ingestion -------------------------------------------------------------
     @abstractmethod

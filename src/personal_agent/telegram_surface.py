@@ -106,9 +106,12 @@ class TelegramSurface(ConversationSurface):
         cfg=self.service.store.config('telegram',{})
         return bool(cfg.get('enabled')) and owner is not None and str(owner)==str(cfg.get('user_id'))
 
-    def send_owner(self, text, reply_to=None):
+    def send_owner(self, text, reply_to=None, owner=None, generation=None):
         cfg=self.service.store.config('telegram',{})
         if not (cfg.get('enabled') and isinstance(cfg.get('user_id'),int)):return False
+        # #299 review: a result for a captured conversation is sent only while it is still the pairing.
+        if owner is not None and str(owner)!=str(cfg['user_id']):return False
+        if generation is not None and generation!=cfg.get('generation'):return False
         try:
             self.service.telegram.send_message(cfg['user_id'],text,**({'reply_to':reply_to} if reply_to is not None else {}))
         except Exception as exc:  # best effort: a lost bubble never changes durable state

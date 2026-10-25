@@ -848,7 +848,8 @@ class AgentService:
             db.execute('INSERT INTO messages(role,content,channel,created,workspace_id) VALUES (?,?,?,?,?)',
                        ('assistant',text,job['channel'],time.time(),job.get('workspace_id')))
         surface=self.surface_of(job)
-        if surface is not None and not surface.send_owner(text):
+        if surface is not None and not surface.send_owner(text,owner=job.get('chat_id'),
+                                                          generation=str(job.get('channel'))[len(surface.channel_prefix):]):
             LOG.warning('settings follow-up not delivered work=%s',job.get('id'))
 
     def settings_work_continued(self, work_id):
@@ -5263,7 +5264,7 @@ class AgentService:
         if surface is None:return False
         owner=str(owner_id)[len(surface.name)+1:]
         if not surface.paired_owner(owner):return False
-        return surface.send_owner(text)
+        return surface.send_owner(text,owner=owner)
 
     def connection_handoff(self, job, decision):
         """Owner guidance when a required connector is unavailable, else None.

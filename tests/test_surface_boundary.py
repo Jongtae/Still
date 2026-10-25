@@ -50,8 +50,8 @@ class SideSurface(ConversationSurface):
     def paired_owner(self, owner):
         return self.paired and owner == SIDE_OWNER
 
-    def send_owner(self, text, reply_to=None):
-        if not self.paired:
+    def send_owner(self, text, reply_to=None, owner=None, generation=None):
+        if not self.paired or owner is not None and owner != SIDE_OWNER or generation is not None and generation != self.generation:
             return False
         self.sent.append(text)
         return True
@@ -249,6 +249,23 @@ class OwnerActs(SurfaceBoundaryCase):
                 mock.patch.object(acts, 'settle', return_value={'text': 'done'}):
             self.assertEqual(acts.answer_reaction(self.side, SIDE_OWNER, 's1', 'post-9', ['👍']), 'action-approval')
         self.assertEqual((self.side.sent, self.sends()), (['done'], []))
+
+    def test_a_reaction_answer_is_never_retargeted_to_a_newly_paired_owner(self):
+        """#299 review: the pairing may change while the owner-act judgment runs; the result is then dropped."""
+        answer = {'item': {'kind': 'action-approval', 'ref': {'work_id': None}}, 'approve': True, 'rest': ''}
+        acts = self.service.owner_acts
+
+        def repair(*args, **kwargs):
+            self.store.put('telegram', {'enabled': True, 'user_id': 9999, 'generation': 'g2', 'cursor': 0})
+            return {'text': 'calendar result'}
+        with mock.patch.object(acts, 'read', return_value=answer), mock.patch.object(acts, 'settle', side_effect=repair):
+            acts.answer_reaction(self.service.telegram_surface, CHAT, GENERATION, 77, ['👍'])
+        self.assertEqual(self.sends(), [], 'never sent to the account paired during the judgment')
+        self.side.generation = 's1'
+        with mock.patch.object(acts, 'read', return_value=answer), \
+                mock.patch.object(acts, 'settle', side_effect=lambda *a, **k: setattr(self.side, 'generation', 's2') or {'text': 'x'}):
+            acts.answer_reaction(self.side, SIDE_OWNER, 's1', 'post-9', ['👍'])
+        self.assertEqual(self.side.sent, [])
 
 
 if __name__ == '__main__':

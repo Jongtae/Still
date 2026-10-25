@@ -361,6 +361,8 @@ class OwnerActs:
             settled = self.settle(answer, job, evidence=evidence)
         except CalendarError:
             settled = {'text': ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID)}
-        if settled.get('text') and not surface.send_owner(settled['text']):
+        # #299 review: told only to the owner who reacted, in the pairing they reacted in; a re-pairing
+        # during the judgment drops the reply instead of retargeting it.
+        if settled.get('text') and not surface.send_owner(settled['text'], owner=chat, generation=generation):
             LOG.warning('owner act reply not delivered')
         return answer['item']['kind']
