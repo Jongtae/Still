@@ -7475,8 +7475,8 @@ class AgentService:
         if operation == 'list':
             drafts = []
             for owner in owners:
-                connector = self.calendar_for({'chat_id': int(owner.split(':', 1)[1])}
-                                              if owner.startswith('telegram:') else {})
+                # #306 review: the connector bound to exactly this draft owner (any surface or local).
+                connector = self.calendar_for_owner(owner)
                 drafts.extend({**row, 'owner': owner} for row in connector.pending(owner))
             return {'drafts': drafts}
         draft_id = (body or {}).get('draft_id')
@@ -7486,8 +7486,7 @@ class AgentService:
         # `execute` each enforce the owner themselves, so a draft belonging
         # to neither candidate simply finds no owner and is refused.
         for owner in owners:
-            connector = self.calendar_for({'chat_id': int(owner.split(':', 1)[1])}
-                                          if owner.startswith('telegram:') else {})
+            connector = self.calendar_for_owner(owner)
             try:
                 connector.preview(draft_id, owner)
             except ValueError:

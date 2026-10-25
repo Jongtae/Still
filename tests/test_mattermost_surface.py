@@ -395,6 +395,13 @@ class WorkMode(MattermostCase):
 
 
 class Secrets(MattermostCase):
+    def test_the_token_is_redacted_everywhere_and_after_rotation(self):
+        from personal_agent.current_context import redact_known_secrets
+        self.connect()
+        self.assertNotIn(TOKEN, redact_known_secrets(self.store, f'my token is {TOKEN} ok'))
+        self.store.secret(SECRET_KEY, 'mm-bot-token-rotated-9876543210')
+        self.assertNotIn(TOKEN, redact_known_secrets(self.store, f'old {TOKEN}'), 'a retired token stays redacted')
+
     def test_the_token_never_reaches_a_log_or_a_record(self):
         with self.assertLogs('personal_agent', level=logging.DEBUG) as logs:
             self.connect()
@@ -652,6 +659,21 @@ class ReviewRegressions(MattermostCase):
             self.service.deliver_notification()
         self.assertEqual(self.store.notification(row['id'])['state'], 'sent')
         self.assertEqual([call.args[:2] for call in recorded.call_args_list], [(job['id'], 'digest-1')])
+
+    def test_a_calendar_draft_uses_its_own_owners_connection(self):
+        bound = []
+
+        class Calendar:
+            def __init__(inner, owner):
+                inner.owner = owner
+
+            def pending(inner, owner):
+                bound.append((inner.owner, owner))
+                return []
+        self.service.calendar_factory = lambda owner: Calendar(owner)
+        self.service.calendar_draft_request({'operation': 'list'})
+        self.assertIn((f'mattermost:{OWNER}', f'mattermost:{OWNER}'), bound)
+        self.assertTrue(all(made == asked for made, asked in bound), 'each draft owner gets its own connection')
 
     def test_a_long_reply_partly_sent_is_never_posted_again(self):
         self.owner_says('질문')
