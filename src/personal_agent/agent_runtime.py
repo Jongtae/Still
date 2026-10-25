@@ -1353,6 +1353,111 @@ HELD_MEMORY_MAX=500
 OUTBOUND_TEXT_MAX=1000
 #: The source label of a value this Work wrote to a private store (the #605 set) that is not current Memory.
 WRITTEN_SOURCE='work_write'
+#: #245: the comparison bounds a call's Evidence names when it was cut off by them, so the
+#: information-use view can say what was not compared (``outbound_comparison_cut``).
+COMPARISON_CUT_MEMORY='memory_rows'
+COMPARISON_CUT_TEXT='text_chars'
+
+#: #245: when an overlap the #605 matcher finds counts as carrying a held value.  The #605 matcher
+#: withholds any shared 2+ character span, which is right for keeping a value out of a lookup but
+#: names everyday words (``생일``, ``저녁``, ``marathon``) as held values in the information-use
+#: view.  Lengths are in normalised characters: a shared digit run (or a whole held one of
+#: MIN_PARTIAL_DIGITS+), a span inside a held identifier, one Hangul/Han/kana span or several
+#: shorter ones, a whole capitalised word of a cased script, or most of the held value.
+HELD_SHARED_DIGITS=6
+HELD_IDENTIFIER_SPAN=5
+HELD_UNCASED_SPAN=3
+HELD_OTHER_UNCASED_SPAN=5
+HELD_UNCASED_TOTAL=5
+HELD_MARKED_WORD=4
+HELD_COVERAGE=0.8
+HELD_JAMO_SPAN=7
+_HELD_JOINED=re.compile(r'[^\W_][-_.@/][^\W_]|_')
+_BARE_JAMO=re.compile('[\u1100-\u11ff\u3130-\u318f]')
+
+def _held_words(text):
+ """``[(word, marked)]`` of one text for the #245 comparison: normalised words without digits.
+
+ ``marked`` is a cased-script word with a capital other than only the first letter of the text's
+ first word (``Thompson``, ``GitHub``, not ``Training`` opening a sentence): a name, not vocabulary.
+ """
+ out=[]
+ for index,match in enumerate(_MEMORY_WORD.finditer(unicodedata.normalize('NFKC',str(text or '')))):
+  shown=match.group(0)
+  capitals=[at for at,ch in enumerate(shown) if ch.isupper()]
+  word=''.join(ch for ch in ''.join(lookup_words(shown)) if not ch.isdigit())
+  if word:out.append((word,bool(capitals) and not (index==0 and capitals==[0])))
+ return out
+
+def _longest_shared(a,b):
+ from difflib import SequenceMatcher
+ if not a or not b:return 0
+ return SequenceMatcher(None,a,b,autojunk=False).find_longest_match(0,len(a),0,len(b)).size
+
+def _shared_spans(held_words,text_words):
+ """``[(span, word index, offset)]``: 2+ character spans a held text shares with an outbound text.
+
+ Longest first, each character used once on either side, never across a word boundary.
+ """
+ from difflib import SequenceMatcher
+ held=list('\x00'.join(held_words));text=list('\x01'.join(text_words))
+ where=[(index,offset) for index,word in enumerate(held_words) for offset in range(len(word)+1)]
+ spans=[]
+ while True:
+  # The held text is the matcher's indexed side: it is the short one.
+  found=SequenceMatcher(None,text,held,autojunk=False).find_longest_match(0,len(text),0,len(held))
+  if found.size<2:return spans
+  spans.append((''.join(held[found.b:found.b+found.size]),*where[found.b]))
+  held[found.b:found.b+found.size]=['\x02']*found.size
+  text[found.a:found.a+found.size]=['\x03']*found.size
+
+def outbound_view(text):
+ """The outbound side of ``carries_held_value``, computed once per text (#245).  Held for one comparison only."""
+ shown=unicodedata.normalize('NFKC',str(text or ''))
+ words=lookup_words(shown)
+ return {'runs':value_digit_runs([shown]),'words':set(words),'joined':''.join(words),
+         'held_words':[word for word,_marked in _held_words(shown)],
+         'jamo':[key for key in map(jamo_key,words) if key] if _BARE_JAMO.search(shown) else None}
+
+def carries_held_value(text,value,view=None):
+ """Whether outbound ``text`` carries the held ``value`` rather than sharing an everyday word with it (#245).
+
+ For the information-use view only: the #605 lookup and browser exclusions keep their wider match,
+ and a value this passes is confirmed by the #605 matcher (``held_value_matches``).  Generic: digits,
+ identifiers, Unicode script and case, never a language's vocabulary.  ``view`` is
+ ``outbound_view(text)`` when the caller compares one text with many values.
+ """
+ view=view or outbound_view(text)
+ held_runs=value_digit_runs([value])
+ if any(run in view['runs'] for run in held_runs if len(run)>=MIN_PARTIAL_DIGITS) \
+    or any(_longest_shared(run,other)>=HELD_SHARED_DIGITS for run in held_runs for other in view['runs']):
+  return True
+ # A date or amount of two numbered words (``3월 14일``).
+ if len({word for word in lookup_words(value) if _MEMORY_DIGITS.search(word)}&view['words'])>=2:return True
+ for chunk in unicodedata.normalize('NFKC',str(value or '')).split():
+  ident=''.join(lookup_words(chunk))
+  mixed=_MEMORY_DIGITS.search(ident) and any(ch.isalpha() for ch in ident)
+  if len(ident)>=HELD_IDENTIFIER_SPAN and (mixed or _HELD_JOINED.search(chunk.strip('\'"()[]{}.,;:!?'))) \
+     and _longest_shared(ident,view['joined'])>=HELD_IDENTIFIER_SPAN:
+   return True
+ held=_held_words(value);words=[word for word,_marked in held]
+ spans=_shared_spans(words,view['held_words'])
+ uncased=[]
+ for span,index,offset in spans:
+  if any(ch.lower()!=ch.upper() for ch in span):
+   if held[index][1] and span==words[index] and len(span)>=HELD_MARKED_WORD:return True
+   continue
+  # Hangul is written with spaces between words: a span starting inside one is a fragment of it.
+  if _script_class(span[0])=='h' and offset and _script_class(words[index][offset-1])=='h':continue
+  uncased.append(span)
+  if len(span)>=(HELD_UNCASED_SPAN if _script_class(span[0]) in ('h','k','c') else HELD_OTHER_UNCASED_SPAN):return True
+ if len(uncased)>=2 and sum(map(len,uncased))>=HELD_UNCASED_TOTAL:return True
+ if view['jamo']:
+  # Hangul spelled in bare jamo (``기ᄆ처ᄅ수``): compared on jamo keys, a span of more than two syllables.
+  keys=[key for key in map(jamo_key,lookup_words(value)) if key]
+  if any(len(span)>=HELD_JAMO_SPAN for span,_index,_offset in _shared_spans(keys,view['jamo'])):return True
+ letters=sum(map(len,words))
+ return letters>=3 and sum(len(span) for span,_index,_offset in spans)>=HELD_COVERAGE*letters
 
 def _url_parts(url):
  """``(data text, host)`` of one URL: its path and query percent-decoded, and its host (#167).
@@ -1412,16 +1517,20 @@ def held_value_matches(texts,held):
 
  ``held`` is ``[(source, key, value)]``.  A value matches when the #605
  matcher (``lookup_text_violations``) finds it in a text in any spelling it
- covers (spacing, digit runs, jamo).  The matcher over-matches by design (a
- shared 2+ character span counts), so a match means the text carried
- something that overlaps the value.  The result holds no value and no text.
+ covers (spacing, digit runs, jamo) and the overlap carries the value rather
+ than an everyday word it shares (``carries_held_value``, #245).  Only the
+ first OUTBOUND_TEXT_MAX characters of a text are compared
+ (``outbound_evidence`` names the cut).  The result holds no value and no text.
  """
  matches=[]
  for text,destination in texts:
   text=text[:OUTBOUND_TEXT_MAX]
-  # Every rule of the matcher is "any excluded value", so a group that does not match holds no
-  # matching value: halving finds the few that do without comparing each value on its own.
-  groups=[list(held)] if held else []
+  # #245: the values the text carries rather than shares an everyday word with (cheap, per value);
+  # the #605 matcher then confirms them.  Every rule of that matcher is "any excluded value", so a
+  # group that does not match holds no matching value: halving finds the few that do.
+  view=outbound_view(text)
+  carried=[row for row in held if carries_held_value(text,row[2],view)]
+  groups=[carried] if carried else []
   while groups:
    rows=groups.pop()
    bad,digits=lookup_text_violations(text,[value for _source,_key,value in rows])
@@ -1459,6 +1568,11 @@ def outbound_evidence(capabilities,action,args,result):
   held=capabilities.held_values() if texts and callable(getattr(capabilities,'held_values',None)) else []
   matches=held_value_matches(texts,held) if held else []
   if matches:out['outbound_matches']=[{**row,'tool':action} for row in matches]
+  # #245: what the comparison left out, so the view does not read "nothing went out" past it.
+  cut=[{'kind':kind,'limit':limit} for kind,limit,left_out in (
+       (COMPARISON_CUT_MEMORY,HELD_MEMORY_MAX,getattr(capabilities,'held_memory_cut',False) is True),
+       (COMPARISON_CUT_TEXT,OUTBOUND_TEXT_MAX,any(len(text)>OUTBOUND_TEXT_MAX for text,_host in texts))) if held and left_out]
+  if cut:out['outbound_comparison_cut']=cut
  except Exception:
   return {}
  return out
@@ -1651,7 +1765,7 @@ def attempted_outbound(capabilities,action,args,exc):
  """
  if not action or ran_field(exc):return {}
  found=outbound_evidence(capabilities,action,args,{})
- return {key:found[key] for key in ('destination','landed','outbound_matches') if found.get(key)}
+ return {key:found[key] for key in ('destination','landed','outbound_matches','outbound_comparison_cut') if found.get(key)}
 
 def observed_field(exc):
  """``{'observed_step': ...}`` of a click or typing step that failed after Still observed it (#1496), else nothing.
@@ -2749,9 +2863,11 @@ class Capabilities:
   The owner's current Memory, whichever Work saved it (``memory``, by key),
   then the values this Work wrote to a private store that are not current
   Memory (the #605 set: candidates, notes, calendar drafts; ``work_write``).
-  Read when a call is recorded and never stored.
+  Read when a call is recorded and never stored.  Only the newest
+  HELD_MEMORY_MAX Memory rows are read; ``held_memory_cut`` says whether
+  older ones were left out (#245).
   """
-  held=[];seen=set()
+  held=[];seen=set();self.held_memory_cut=False
   if hasattr(self.store,'memories'):
    offset=0
    while offset<HELD_MEMORY_MAX:
@@ -2763,6 +2879,9 @@ class Capabilities:
       seen.add(value);held.append(('memory',str(row.get('memory_key') or '')[:80],value))
     if len(rows)<100:break
     offset+=100
+   else:
+    try:self.held_memory_cut=bool(self.store.memories(MEMORY_OWNER,limit=1,offset=HELD_MEMORY_MAX))
+    except Exception:pass
   for value in self._browser_excluded():
    if isinstance(value,str) and value.strip() and value not in seen:
     seen.add(value);held.append((WRITTEN_SOURCE,'',value))
