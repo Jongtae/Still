@@ -479,6 +479,15 @@ def page_reference(url):
     return urlunsplit((parts.scheme, _host(parts), parts.path, '', ''))
 
 
+def login_window_url(url):
+    """#340: the in-memory window address keeps its query, never userinfo."""
+    try:
+        parts = urlsplit(str(url or ''))
+        return parts._replace(netloc=parts.netloc.rsplit('@', 1)[-1]).geturl()
+    except ValueError:
+        return ''
+
+
 #: Binding fields, in order.  ``argument_digest`` is the normalized step
 #: argument (the typed text, the clicked target, the opened URL) and
 #: ``state_digest`` the relevant current page state, so an approval never
@@ -701,6 +710,8 @@ def mediate_snapshot(raw, excluded=(), requested_url=None):
     # Internal only (never returned): the unmediated page reference the
     # approval binds to, and the page state a guarded step is bound to.
     snapshot['_page'] = page_reference(raw.get('url'))
+    # #340: only the login window consumes this address; public_view drops it.
+    snapshot['_window_url'] = login_window_url(raw.get('url'))
     states, identities = page_states(raw, elements, text, excluded)
     snapshot['_states'] = states
     # Every payment form's identity and state (#698): part of every step's binding.
@@ -1033,10 +1044,10 @@ class BrowserSession:
             # offers one; it never types a password.
             return {**public_view(snapshot), 'state': 'login_required',
                     'needs_setup': True, 'requires': 'browser-login',
-                    'next_step': self._offer_login(snapshot['url']) or LOGIN_REQUIRED_TEXT}
+                    'next_step': self._offer_login(snapshot['url'], window_url=snapshot['_window_url']) or LOGIN_REQUIRED_TEXT}
         return {'state': 'page', **public_view(snapshot)}
 
-    def _offer_login(self, url, explicit=False):
+    def _offer_login(self, url, explicit=False, *, window_url=None):
         """Ask the owner to log in during this Work (#709), when the approvals surface can.
 
         ``approvals.login_required(url)`` records the request; the service
@@ -1051,7 +1062,11 @@ class BrowserSession:
         if not callable(offer):
             return None
         try:
-            text = offer(url, explicit=True) if explicit else offer(url)
+            try:
+                text = offer(url, explicit=True, window_url=window_url) if explicit else offer(url, window_url=window_url)
+            except TypeError:
+                # #340: older approvals surfaces must still receive the offer.
+                text = offer(url, explicit=True) if explicit else offer(url)
         except Exception:
             return None
         return text if isinstance(text, str) and text else None
@@ -1196,11 +1211,11 @@ class BrowserSession:
             raise ToolError(BLOCKED_TEXT, 'blocked_destination')
         self._spend_step()
         # The login row, Evidence and the relay's page digest carry the site reference only
-        # (no query, fragment or userinfo): the window opens at that address.
+        # (no query, fragment or userinfo). #340: only the window keeps the full address.
         reference = page_reference(url)
         return {'state': 'login_required', 'url': reference, 'title': None,
                 'needs_setup': True, 'requires': 'browser-login',
-                'next_step': self._offer_login(reference, explicit=True) or LOGIN_REQUIRED_TEXT}
+                'next_step': self._offer_login(reference, explicit=True, window_url=login_window_url(url)) or LOGIN_REQUIRED_TEXT}
 
     def open(self, args):
         effect = self._effect(args)
