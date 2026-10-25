@@ -1243,14 +1243,15 @@ class SessionFixtureHandler(FixtureHandler):
                               f' (navigator.userAgent === {json.dumps(agent)});</script>'
                               '</body></html>')
         if path == '/desktop-only':
-            # #254: a desktop-only page: laid out 1100 px wide whatever the viewport, with its
+            # #254: a desktop-only page: laid out 1000 px wide whatever the viewport (#321: inside the 1024-px
+            # screen of the CI macOS runners, since the window never grows past its screen), with its
             # controls at the right edge (where a phone-sized window cuts it off).
             return self._send('<html><head><title>넓은 페이지</title><meta name="viewport" content="width=device-width">'
-                              '</head><body style="margin:0"><div style="min-width:1100px;height:600px;position:relative">'
-                              '<input id="name" aria-label="이름" style="position:absolute;left:960px;top:100px;width:120px;height:40px">'
-                              '<button id="go" style="position:absolute;left:960px;top:200px;width:120px;height:60px"'
+                              '</head><body style="margin:0"><div style="min-width:1000px;height:600px;position:relative">'
+                              '<input id="name" aria-label="이름" style="position:absolute;left:860px;top:100px;width:120px;height:40px">'
+                              '<button id="go" style="position:absolute;left:860px;top:200px;width:120px;height:60px"'
                               ' onclick="document.getElementById(\'r\').textContent = \'눌림 \' + document.getElementById(\'name\').value">'
-                              '로그인</button><p id="r" style="position:absolute;left:960px;top:300px">대기</p></div>'
+                              '로그인</button><p id="r" style="position:absolute;left:860px;top:300px">대기</p></div>'
                               '<a href="/device">다음</a></body></html>')
         if path == '/off-canvas':
             # #254: a phone page whose off-screen panel is as wide as the viewport, so it always overflows.
@@ -2243,14 +2244,14 @@ class WebKitIntegrationTests(unittest.TestCase):
             navigations = worker.navigations()
             worker.remote_begin()
             frame = frame_until(lambda frame: frame['width'] > 390.0)
-            self.assertEqual((frame['width'], frame['height']), (1100.0, before['height']),
+            self.assertEqual((frame['width'], frame['height']), (1000.0, before['height']),
                              'as wide as the page, the same height')
             self.assertEqual(worker.navigations(), navigations, 'only a resize: the page was not reloaded')
             # The phone maps a tap by the frame's own width and height: view points.
-            worker.remote_input('tap', x=1020.0, y=120.0)
+            worker.remote_input('tap', x=920.0, y=120.0)
             self.assertEqual(frame_until(lambda frame: frame['focus'] == 'text')['focus'], 'text', '#293 focus')
             worker.remote_input('text', text='홍길동')
-            worker.remote_input('tap', x=1020.0, y=230.0)
+            worker.remote_input('tap', x=920.0, y=230.0)
             deadline = time.monotonic() + 5
             while '눌림' not in (text := worker.snapshot()['text']) and time.monotonic() < deadline:
                 time.sleep(0.2)
@@ -2265,7 +2266,7 @@ class WebKitIntegrationTests(unittest.TestCase):
             self.assertEqual(seen[-3:], [390.0] * 3, seen)
             # Back on the wide page; the session ends and the window is as it was before it.
             worker.goto(self.origin + '/desktop-only', 10)
-            self.assertEqual(frame_until(lambda frame: frame['width'] > 390.0)['width'], 1100.0)
+            self.assertEqual(frame_until(lambda frame: frame['width'] > 390.0)['width'], 1000.0)
             worker.remote_end()
             self.assertEqual((worker.frame()['width'], worker.frame()['height']), (before['width'], before['height']))
         finally:
