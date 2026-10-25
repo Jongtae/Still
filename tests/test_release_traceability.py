@@ -102,6 +102,13 @@ def newest_release():
     return max(published, key=lambda row: version_key(row['version'])) if published else None
 
 
+def formula_pin(body):
+    """The version and SHA-256 that ``Formula/agentos.rb`` installs."""
+    version = re.search(r'refs/tags/v(\d+\.\d+\.\d+)\.tar\.gz"', body)
+    sha256 = re.search(r'^\s*sha256 "([0-9a-f]{64})"', body, re.M)
+    return (version.group(1) if version else None, sha256.group(1) if sha256 else None)
+
+
 class ReleaseTraceabilityTests(unittest.TestCase):
     def test_the_release_manifest_and_runbook_exist(self):
         self.assertTrue(MANIFEST.is_file())
@@ -163,9 +170,20 @@ class ReleaseTraceabilityTests(unittest.TestCase):
         if release is None:
             self.assertFalse(FORMULA.exists(), 'a formula exists before any Still release')
             return
-        body = FORMULA.read_text(encoding='utf-8')
-        self.assertIn(f'refs/tags/v{release["version"]}.tar.gz"', body)
-        self.assertIn(f'sha256 "{release["archive_sha256"]}"', body)
+        version, sha256 = formula_pin(FORMULA.read_text(encoding='utf-8'))
+        self.assertIsNotNone(version, 'the formula names no tag archive')
+        self.assertIsNotNone(sha256, 'the formula names no SHA-256')
+        if version == release['version']:
+            self.assertEqual(sha256, release['archive_sha256'])
+            return
+        # The release workflow merges the formula PR before the record PR adds
+        # the release to `published` (docs/release.en.md steps 7 and 9, #301).
+        # In between, the formula names the release in progress: the in-tree
+        # version, still unpublished and newer than the newest published one.
+        self.assertEqual(version, project_version(),
+                         'the formula names neither the newest release nor the release in progress')
+        self.assertIn(version, {row['version'] for row in manifest()['unpublished']})
+        self.assertGreater(version_key(version), version_key(release['version']))
 
     def test_the_published_formula_matches_the_template(self):
         """A template change must re-sync ``Formula/agentos.rb`` in the same PR.
@@ -182,9 +200,9 @@ class ReleaseTraceabilityTests(unittest.TestCase):
             import release as release_script
         finally:
             sys.path.remove(str(SCRIPTS / 'dev'))
-        rendered = release_script.render_formula(release['version'], release['archive_sha256'])
-        self.assertEqual(release_script._formula_body(FORMULA.read_text(encoding='utf-8')),
-                         release_script._formula_body(rendered))
+        body = FORMULA.read_text(encoding='utf-8')
+        rendered = release_script.render_formula(*formula_pin(body))
+        self.assertEqual(release_script._formula_body(body), release_script._formula_body(rendered))
 
     # -- the template ------------------------------------------------------
 
