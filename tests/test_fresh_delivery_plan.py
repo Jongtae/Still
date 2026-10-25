@@ -322,9 +322,8 @@ def test_the_in_context_program_is_closed_out_and_the_owed_reviews_stay_owed():
 def test_the_workplace_program_is_closed_out_and_selects_no_successor():
     """#206: all seven substeps merged, the last (SLACK-01) by #316; no successor, heartbeat paused."""
     current = plan()
-    assert current["next_goal"]["id"] is None
-    assert "heartbeat stays paused" in current["next_goal"]["action"]
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "terminal"
+    assert current["next_goal"]["id"] != "WORKPLACE-01"
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) in {"goal-ready", "terminal"}
     assert "WORKPLACE-01" in invariants.closed_out_programs(current)
     invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["WORKPLACE-01"]
@@ -409,6 +408,26 @@ def test_the_workplace_program_is_closed_out_and_selects_no_successor():
     for state in ({}, {"completed": []}, {"active": "WORKPLACE-01", "status": "running"}):
         assert DeliveryPlan(PLAN).select(state) is None, state
 
+
+def test_the_responsive_program_is_goal_ready_with_one_substep_in_flight():
+    """#332: the owner selected #309's remaining slices, then #17; #16 was left out."""
+    current = plan()
+    assert current["next_goal"]["id"] == "RESPONSIVE-01"
+    assert "heartbeat stays paused" in current["next_goal"]["action"]
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    program = current["programs"]["RESPONSIVE-01"]
+    invariants.assert_activation_record(TestCase(), "RESPONSIVE-01 activation", program["activated_by"])
+    assert program["ordered_substeps"] == ["REPLY-LATENCY-01", "SIDE-ANSWER-01"]
+    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "RESPONSIVE-01") == "REPLY-LATENCY-01"
+    assert program["completed_substeps"] == []
+    items = items_of(current)
+    assert {items[name]["issue"] for name in program["ordered_substeps"]} == {309, 17}
+    assert items["SIDE-ANSWER-01"]["depends_on"] == ["REPLY-LATENCY-01"]
+    assert all(items[name]["program"] == "RESPONSIVE-01" for name in program["ordered_substeps"])
+    # #309 L7 weakens an isolation guard's freshness, so its PR waits for the Codex review and the owner's merge.
+    assert "REPLY-LATENCY-01" in program["escalated_review"]
+    assert "Codex review of the exact final head" in program["escalated_review"]
+    assert "#16" in program["non_goals"] and "L6" in program["non_goals"]
 
 def test_the_post_closeout_audit_notes_correct_without_rewriting_the_closeouts():
     """#250: the 2026-10-23 audit adds dated corrections beside each closeout (C12), never in place of it."""
