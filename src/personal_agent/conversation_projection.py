@@ -20,6 +20,8 @@ Two things live here:
   one-line reminder instead of the same failure again.  Which blocker it is
   comes from typed state at the raise site, not from reading the wording.
 """
+from datetime import datetime
+
 from .messages import msg
 import re
 import time
@@ -552,6 +554,20 @@ def qualify_transcript(rows):
             row['delivery'] = row.pop('work_delivery')
         projected.append(row)
     return projected
+
+
+def earlier_turn_line(row, message, tz=None):
+    """One earlier stored turn as the plan call and the outcome judgments read it (#170, #240).
+
+    Labelled as an earlier Work with its local time when known, so what happened there is never
+    read as the current Work's own event.
+    """
+    who='owner' if message.get('role')=='user' else 'assistant'
+    when=''
+    if tz is not None:
+        try:when=' '+datetime.fromtimestamp(float(row.get('created')),tz).strftime('%Y-%m-%d %H:%M')
+        except (TypeError,ValueError,OverflowError,OSError):pass
+    return f"[{who}, earlier Work{when}] {message.get('content') or ''}"
 
 
 def context_message(row):

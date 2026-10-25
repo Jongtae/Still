@@ -91,6 +91,33 @@ class EarlierWorks(Case):
         self.assertIn('Each recent_conversation row is an earlier Work', GOAL_REACHED_PROPOSITION)
         self.assertIn("only observations and failed_steps are this Work's own events", GOAL_REACHED_PROPOSITION)
 
+    def test_the_direct_route_judgment_reads_each_row_as_an_earlier_work(self):
+        """#240 (1): ``run_agent``'s own outcome judgment gets the same labels, and is told nothing false.
+
+        Its history carries no times, so no time is shown; the proposition says the time appears only
+        when known.  The real ``run_agent`` and ``goal_reached`` run; only the model and judge are fixtures.
+        """
+        import test_agency_loop as loop
+        from personal_agent.agent_runtime import Capabilities, run_agent
+        from personal_agent.providers import ModelAdapter
+        seen = []
+
+        def judge(facts):
+            seen.append(facts)
+            return True
+        history = [{'role': 'user', 'content': '이 일정 승인할게'}, {'role': 'assistant', 'content': '캘린더에 반영했어요'},
+                   {'role': 'user', 'content': 'add these to my calendar'}]
+        script = loop.Script({'tool_calls': [loop.call('1', 'web_search', query='calendar')]},
+                             loop.finish('f', '1', summary='초안을 만들었어요.'))
+        caps = Capabilities(self.store, ModelAdapter(script), loop.CFG, '', 'job', lambda *event: None,
+                            network=loop.Network(), judgments=loop.judgments(judge))
+        run_agent(caps.adapter, loop.CFG, '', history, '', caps, caps.record)
+        self.assertTrue(seen, 'the outcome judgment ran')
+        rows = seen[0]['recent_conversation'].splitlines()
+        self.assertEqual(rows, ['[owner, earlier Work] 이 일정 승인할게', '[assistant, earlier Work] 캘린더에 반영했어요'],
+                         'an earlier approval is labelled as an earlier Work, never this Work\'s own; the request is not a row')
+        self.assertIn('with its time when known', GOAL_REACHED_PROPOSITION)
+
     def test_the_plan_and_the_goal_judgment_get_labelled_rows(self):
         rows = [{'role': 'user', 'content': '승인', 'created': 1.0, 'job_id': 'earlier'},
                 {'role': 'assistant', 'content': '반영했어요', 'created': 2.0, 'job_id': 'earlier'},

@@ -37,7 +37,7 @@ from .cloud_engines import (BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIG
 from .conversation_projection import (BLOCKER_CLOUD_PROFILE, BLOCKER_DOCUMENT_APPROVAL, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE,
                                       TELEGRAM_RESULT_PREVIEW_CHARS, TERMINAL_FAILED_HEADER,
                                       TERMINAL_INTERRUPTED_HEADER, TERMINAL_NEXT_ACTION, TERMINAL_PARTIAL_HEADER,
-                                      BlockedTurn, ConversationProjection, context_message,
+                                      BlockedTurn, ConversationProjection, context_message, earlier_turn_line,
                                       answer_note, owner_cause, report_statement, terminal_text, tried_statement, turn_qualifier,
                                       verified_portion)
 from .subscription_engines import SubscriptionEngines
@@ -290,20 +290,6 @@ def awaiting_owner_rows(rows):
             if record.get('refused_because'):continue
             if record.get('applied') is not True and any(record.get(flag) for flag in OWNER_DECISION_FLAGS):return True
     return False
-
-
-def earlier_turn_line(row, message, tz=None):
-    """One earlier stored turn as the plan call and the outcome judgment read it (#170).
-
-    Labelled as an earlier Work with its local time when known, so what happened there is never
-    read as the current Work's own event.
-    """
-    who='owner' if message.get('role')=='user' else 'assistant'
-    when=''
-    if tz is not None:
-        try:when=' '+datetime.fromtimestamp(float(row.get('created')),tz).strftime('%Y-%m-%d %H:%M')
-        except (TypeError,ValueError,OverflowError,OSError):pass
-    return f"[{who}, earlier Work{when}] {message.get('content') or ''}"
 
 
 # Subscription CLIs do not receive Still credentials, local paths, or an
