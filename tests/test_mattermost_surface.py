@@ -675,6 +675,18 @@ class ReviewRegressions(MattermostCase):
         self.assertIn((f'mattermost:{OWNER}', f'mattermost:{OWNER}'), bound)
         self.assertTrue(all(made == asked for made, asked in bound), 'each draft owner gets its own connection')
 
+    def test_a_notice_of_a_work_that_ran_in_work_mode_is_never_sent_later(self):
+        self.owner_says('질문')
+        job = self.mm_jobs()[0]
+        self.service.set_work_mode({'enabled': True})
+        self.service.set_work_mode({'enabled': False})
+        row = self.store.queue_notification(job['id'], OWNER, self.surface.owner_generation(), 'memory_saved',
+                                            surface='mattermost')
+        before = len(self.fake.bot_posts())
+        self.service.deliver_notification()
+        self.assertEqual(self.store.notification(row['id'])['state'], 'cancelled')
+        self.assertEqual(len(self.fake.bot_posts()), before)
+
     def test_a_long_reply_partly_sent_is_never_posted_again(self):
         self.owner_says('질문')
         self.assertTrue(self.service.run_one())

@@ -568,8 +568,14 @@ class MattermostSurface(ConversationSurface):
             if state is None or state['state'] == 'cancelled':
                 return True
             cfg = self.config()
+            # #306 review: the earlier of the notice and its Work, as on Telegram (``_notification_since``),
+            # so a follow-up of a Work that ran while unapproved work mode was on is never sent later.
+            job = service.store.job(notification['job_id']) if notification.get('job_id') else None
+            times = [value for value in ((job or {}).get('created'), notification.get('created'))
+                     if isinstance(value, (int, float)) and not isinstance(value, bool)]
+            since = min(times) if times else None
             allowed = (notification['generation'] == cfg.get('generation') and notification['chat_id'] == cfg.get('owner_user_id')
-                       and self._allowed(cfg, notification.get('created')))
+                       and self._allowed(cfg, since))
             service.store.update_notification(notification['id'], 'sending' if allowed else 'cancelled')
             if not allowed:
                 return True
