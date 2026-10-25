@@ -115,13 +115,13 @@ class AiRouteSelectionTests(unittest.TestCase):
     def test_switch_during_running_work_does_not_redirect_it(self):
         self._ready_model()
         original = self.store.history
-        def history_then_switch():
+        def history_then_switch(*args, **kwargs):
             # The owner switches after this Work took its route snapshot.  #1261: the
             # plan asked alongside routing reads history earlier, on its own thread.
             import threading
             if threading.current_thread().name != 'agentos-early-judgment':
                 self.service.select_ai_route({'route': 'direct-api'})
-            return original()
+            return original(*args, **kwargs)
         self.store.history = history_then_switch
         job = self._run('hello', 'mid-switch')
         self.store.history = original

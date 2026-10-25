@@ -692,12 +692,19 @@ class QuickStore:
                         "CASE WHEN m.role='user' THEN j.source_at END AS source_at,"
                         "CASE WHEN m.role='user' THEN j.source_edited_at END AS source_edited_at")
 
-    def history(self):
+    def history(self, through=None):
+        """The newest transcript rows; with ``through`` (a Work id), ending at that Work's latest owner row.
+
+        #17: a side answer may be recorded while a Work runs, so a running Work
+        reads its window up to its own request rather than the transcript tail.
+        """
         with self.db() as db:
+            bound=(db.execute("SELECT MAX(id) AS id FROM messages WHERE job_id=? AND role='user'",(through,)).fetchone()['id']
+                   if through is not None else None)
             return qualify_transcript(db.execute(
                 f'SELECT {self.TRANSCRIPT_COLUMNS} '
-                'FROM (SELECT * FROM messages ORDER BY id DESC LIMIT 100) m '
-                'LEFT JOIN jobs j ON j.id=m.job_id ORDER BY m.id'))
+                f'FROM (SELECT * FROM messages {"WHERE id<=? " if bound is not None else ""}ORDER BY id DESC LIMIT 100) m '
+                'LEFT JOIN jobs j ON j.id=m.job_id ORDER BY m.id',(bound,) if bound is not None else ()))
 
     def blocked_delivery_reply(self, job_id):
         """Recover the owner-facing blocked-turn projection from its transcript row."""
@@ -1738,20 +1745,22 @@ class QuickStore:
             db.execute('DELETE FROM turn_provenance WHERE job_id NOT IN (SELECT job_id FROM turn_provenance ORDER BY created DESC LIMIT ?)',
                        (self.TURN_PROVENANCE_KEEP,))
 
-    def merge_turn_provenance(self, job_id, fields, combine=None):
+    def merge_turn_provenance(self, job_id, fields, combine=None, db=None):
         """Merge ``fields`` into one Work's record in a single transaction (Codex review on #259: two writers
         - the early plan's thread and the worker turn - never drop each other's fields).
 
         ``combine(current, fields)`` (#279), read inside the same transaction, returns the fields to write."""
-        with self.db() as db:
-            db.execute('BEGIN IMMEDIATE')
-            row=db.execute('SELECT record FROM turn_provenance WHERE job_id=?',(job_id,)).fetchone()
-            current=json.loads(row['record']) if row else {}
-            record={**current,**(combine(current,fields) if combine else fields)}
-            db.execute('INSERT INTO turn_provenance VALUES (?,?,?) ON CONFLICT(job_id) DO UPDATE SET record=excluded.record,created=excluded.created',
-                       (job_id,json.dumps(record,ensure_ascii=False),time.time()))
-            db.execute('DELETE FROM turn_provenance WHERE job_id NOT IN (SELECT job_id FROM turn_provenance ORDER BY created DESC LIMIT ?)',
-                       (self.TURN_PROVENANCE_KEEP,))
+        if db is None:
+            with self.db() as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                return self.merge_turn_provenance(job_id, fields, combine, db=conn)
+        row=db.execute('SELECT record FROM turn_provenance WHERE job_id=?',(job_id,)).fetchone()
+        current=json.loads(row['record']) if row else {}
+        record={**current,**(combine(current,fields) if combine else fields)}
+        db.execute('INSERT INTO turn_provenance VALUES (?,?,?) ON CONFLICT(job_id) DO UPDATE SET record=excluded.record,created=excluded.created',
+                   (job_id,json.dumps(record,ensure_ascii=False),time.time()))
+        db.execute('DELETE FROM turn_provenance WHERE job_id NOT IN (SELECT job_id FROM turn_provenance ORDER BY created DESC LIMIT ?)',
+                   (self.TURN_PROVENANCE_KEEP,))
         return record
 
     def turn_provenance(self, job_id):

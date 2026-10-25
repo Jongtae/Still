@@ -29,7 +29,7 @@ from .agent_runtime import (Capabilities, ToolError, CALENDAR_DRAFT_TOOLS, cut_t
 from .plugins import PluginRegistry
 from .quickstart_store import QuickStore
 from .providers import NOT_REPORTED, ModelAdapter, ProviderError, request_json, validate_model
-from .decision import DEFAULT_DECISION_PROVIDER, RoutedDecisionEngine
+from .decision import DEFAULT_DECISION_PROVIDER, OUTCOME_DECIDED, RoutedDecisionEngine
 from .decision_routes import DecisionRoutes
 from .main_ai import MainAiRoutes
 from .search_providers import (SEARCH_FAILED_TEXT, ProviderRegistry, SearchProviderSettings, public_http_url)
@@ -529,6 +529,10 @@ BROWSER_SIGNINS_LINE=('Browser sign-ins (stored sessions browser_open uses; no p
                       'page is not the owner\'s data; call browser_sign_in): ')
 
 
+#: #17: delivery passes the side lane makes for its own reply before leaving it to the work loop.
+SIDE_ANSWER_DELIVERY_PASSES=3
+
+
 class AgentService:
     #: #953: a Telegram login prompt is followed by the phone link at once.  The test suite turns this
     #: off (tests/conftest.py) so no test ever starts a real tunnel; a test that wants it injects a fake.
@@ -605,6 +609,9 @@ class AgentService:
         # steers (the finish guard decided).  Memory only: after a restart nothing is running.
         self.steer_judging,self.steer_judged=collections.Counter(),threading.Condition()
         self.steer_closed=set()
+        self.side_answer_flight=set()
+        self.side_answer_lock=threading.Lock()
+        self.side_answer_engine_factory=lambda:self.decision_routes.main_answer_engine()
         # #969 (PERF-START-01): the chosen start emoji is judged off the worker,
         # so the Work never waits for it; and judgments that read only the
         # owner's message and prior state overlap on this seam while the worker
@@ -5064,11 +5071,15 @@ class AgentService:
                 return True
         return False
 
-    def record_file_workspace_document_job(self, job_id):
-        rows=self.store.config('file_workspace_document_jobs',[])
+    def record_file_workspace_document_job(self, job_id, db=None):
+        if db is None:
+            with self.store.db() as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                return self.record_file_workspace_document_job(job_id,db=conn)
+        rows=self.store.config('file_workspace_document_jobs',[],db=db)
         rows=rows if isinstance(rows,list) else []
         # #182 review: insertion order kept and this Work appended last, so pruning drops the oldest, never it.
-        self.store.put('file_workspace_document_jobs',[row for row in rows if row!=job_id][-99:]+[job_id])
+        self.store.put('file_workspace_document_jobs',[row for row in rows if row!=job_id][-99:]+[job_id],db=db)
 
     def save_model(self, body, strict=False):
         config=validate_model(body)
@@ -5757,7 +5768,7 @@ class AgentService:
         Work would not be orchestrated. The host supplies the same durable budget
         used by its worker. A standalone caller opens and pauses its own lease."""
         stored=self.history_for_models(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
-                                       else self.store.history()[-16:])
+                                       else self.store.history(through=job['id'])[-16:])
         document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
         sections={'profile':self.owner_profile_snapshot(job.get('message'),recall=not prep.preparation_of(job.get('request_key'))),'current_context':self.current_context_text(job),
                   'prepared':self.prepared_text(job)}
@@ -10410,15 +10421,15 @@ class AgentService:
 
         Only the owner's Judgment AI decides (``steers_running_work``); a yes
         hands the message to that running Work, which passes it to its worker
-        with the next tool result.  Anything else leaves the message queued to
-        run as its own Work afterwards, as before.
+        with the next tool result. A no may get a tool-less Main AI side answer;
+        unavailable leaves the message queued to run as its own Work afterwards.
         """
         # ``current_work_id`` is per thread (#826) and this runs on the poll thread, so the
-        # running Work is read from the store; one conversation worker runs at a time.
+        # running Work is read from the store; one tool-capable worker runs at a time.
         job=self.store.job(task_id)
         with self.store.db() as db:
-            row=db.execute("SELECT id FROM jobs WHERE status='running' AND chat_id=? AND id!=? ORDER BY created DESC LIMIT 1",
-                           (job.get('chat_id') if job else None,task_id)).fetchone()
+            row=db.execute("SELECT id FROM jobs WHERE status='running' AND chat_id IS ? AND channel=? AND id!=? ORDER BY created DESC LIMIT 1",
+                           (job.get('chat_id') if job else None,job.get('channel') if job else None,task_id)).fetchone()
         if not row:return False
         running=row['id']
         # #308 S1: the running Work's finish guard waits (bounded) for this judgment.
@@ -10443,6 +10454,8 @@ class AgentService:
             job=self.store.job(running_id)
             if not job or job.get('status')!='running':return False
             judged=self.decision_judge.steers_running_work(job.get('message') or '',text)
+            if judged.outcome==JUDGMENT_NO:
+                return self.start_side_answer(job,task_id)
             if judged.outcome!=JUDGMENT_YES:return False
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
@@ -10461,6 +10474,172 @@ class AgentService:
         except Exception as exc:
             LOG.warning('owner steer judgment failed (%s)',type(exc).__name__)
             return False
+
+    def start_side_answer(self, running, task_id):
+        """Reserve one queued, independent owner turn; never acquire the worker lock."""
+        # Lock order matches claim: SQLite first, then the in-memory reservation.
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT * FROM jobs WHERE id=?',(task_id,)).fetchone()
+            job=dict(row) if row else None
+            if (not job or job['status']!='queued' or job.get('owner_typed')!=1
+                    or self.store.telegram_photo_file_ids(task_id)
+                    or self.intent_classifier.explicit(job['message']) is not None
+                    or continuation_request(job.get('request_key')) is not None):return False
+            try:
+                if len(WorkLedger.request_chain(db,task_id))!=1:return False
+            except ValueError:return False
+            photo_record=self.store.turn_provenance(task_id) or {}
+            if photo_record.get('telegram_photo_attached') or photo_record.get('photo_inputs') or photo_record.get('photo_input'):return False
+            if self.owner_acts.open_items(job):return False
+            with self.side_answer_lock:
+                if self.side_answer_flight:return False
+                self.side_answer_flight.add(task_id)
+        try:
+            # A separate spawn lets the running Work's finish guard stop waiting
+            # for the steer judgment as soon as it has answered no.
+            self.steer_spawn(lambda:self._side_answer(running,job))
+        except Exception:
+            with self.side_answer_lock:self.side_answer_flight.discard(task_id)
+            raise
+        return True
+
+    def _document_history_rows(self, rows, config, subscription, document_jobs):
+        """The #826 first-attempt boundary, shared with the side lane."""
+        if self.document_boundary(config)['requires_approval'] and not subscription.get('id'):
+            return [row for row in rows if row.get('job_id') not in document_jobs]
+        return list(rows)
+
+    def _side_answer_event(self, task_id, status, db=None):
+        if db is None:
+            with self.store.db() as conn:return self._side_answer_event(task_id,status,conn)
+        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                   (task_id,'side_answer',status,'{}',time.time()))
+
+    def _side_answer(self, running, job):
+        """One tool-less Main AI call and a queued-only atomic reply commit (#17).
+
+        No owner-item settlement, capabilities, Memory, upkeep or worker phases.
+        A declined attempt pauses the same ledger the eventual worker resumes.
+        """
+        task_id=job['id'];budget=None
+        try:
+            with self.store.db() as db:
+                current=db.execute('SELECT status FROM jobs WHERE id=?',(task_id,)).fetchone()
+            if not current or current['status']!='queued':
+                self._side_answer_event(task_id,'discarded');return
+            if self.owner_acts.open_items(job):
+                self._side_answer_event(task_id,'declined');return
+            with self.lock:
+                engine=self.side_answer_engine_factory()
+                config=dict(self.store.config('model',{}) or {})
+                subscription=dict(self.store.config('subscription_engine',{}) or {})
+                model=self.main_ai.subscription_model(subscription.get('id')) if subscription.get('id') else config.get('model')
+            if engine is None:
+                self._side_answer_event(task_id,'unavailable');return
+            # The worker's 16-row window includes its newly claimed owner row.
+            rows=self.history_for_models(self.store.history()[-15:])
+            document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
+            rows=self._document_history_rows(rows,config,subscription,document_jobs)
+            # Each text is redacted before serialization: JSON escaping would hide a stored secret's literal value.
+            history=[{**message,'content':self._redact_known_secrets(message['content'])} if isinstance(message.get('content'),str)
+                     else message for message in map(context_message,rows)]
+            context=self.decision_judge._context('side-answer',
+                {'owner_message':job['message'], 'another_task_in_progress':running.get('message') or '',
+                 'conversation':json.dumps(history,ensure_ascii=False)},
+                uncut=('owner_message','another_task_in_progress','conversation'),work_id=task_id)
+            budget=self.work_budget(task_id)
+            context.admission=budget.spend_turn
+            context.cancelled=lambda:bool(budget.interrupted())
+            schema={'type':'object','properties':{'answered':{'type':'boolean'},'reply':{'type':'string'}},
+                    'required':['answered','reply'],'additionalProperties':False}
+            def valid(data):
+                return (isinstance(data,dict) and set(data)=={'answered','reply'}
+                        and type(data['answered']) is bool and isinstance(data['reply'],str))
+            # #211: a CLI on a cloud provider profile sends the conversation there, so the
+            # information-use record names that provider and destination (no values).
+            cloud=None
+            if subscription.get('id'):
+                resolve=getattr(self.execution_adapter,'cloud_profile',None)
+                try:cloud=resolve(subscription['id']) if callable(resolve) else None
+                except ExecutionError:
+                    self._side_answer_event(task_id,'unavailable');return
+            provider=cloud.provider if cloud is not None else subscription.get('id') or config.get('provider')
+            destination=(cloud.destination() if cloud is not None else subscription['id'] if subscription.get('id')
+                         else config.get('endpoint'))
+            audit={'route':'subscription_cli' if subscription.get('id') else 'direct_api',
+                   'engine':subscription.get('id'), 'provider':provider,
+                   'requested_model':model,'context_messages':len(history),
+                   'owner_information':information_use.section_references(spliced=[
+                       {'kind':'대화','ref':running['id'],'label':'진행 중인 다른 요청'}]),
+                   'workers':[{'route':'subscription_cli' if subscription.get('id') else 'direct_api',
+                               'engine':subscription.get('id'),'provider':provider,
+                               'model':model,'destination':destination,'own_web_search':False}],
+                   **(cloud.record() if cloud is not None else {})}
+            # Also retain attempted egress when the AI declines or fails. The
+            # successful reply merges this same record inside its CAS transaction.
+            with self.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                current=db.execute('SELECT status FROM jobs WHERE id=?',(task_id,)).fetchone()
+                if not current or current['status']!='queued':
+                    self._side_answer_event(task_id,'discarded',db);return
+                self.store.merge_turn_provenance(task_id,audit,combine=self._combine_turn_record,db=db)
+            decision=engine.structured(context,
+                'Answer the owner message as the Main AI. Another task is in progress; do not answer that task. '
+                'You have no tools in this turn. Set answered=false unless you can fully answer from the '
+                'conversation and general knowledge. Anything needing lookup, current information, files, '
+                'accounts or any action must have answered=false. If answered=true, put the full answer in reply.',
+                schema,valid)
+            data=getattr(decision,'data',None)
+            # The dispatch resolved the cloud profile again; its reported recipient is the one recorded.
+            sent=getattr(decision,'confidence',None)
+            if subscription.get('id') and getattr(sent,'destination',''):
+                audit['provider']=audit['workers'][0]['provider']=sent.provider or provider
+                audit['workers'][0]['destination']=sent.destination
+            if decision.outcome!=OUTCOME_DECIDED:
+                self._side_answer_event(task_id,'unavailable');return
+            if not valid(data):
+                self._side_answer_event(task_id,'malformed');return
+            if not data['answered'] or not data['reply'].strip():
+                self._side_answer_event(task_id,'declined');return
+            if budget.interrupted():
+                self._side_answer_event(task_id,'discarded');return
+            reply=self._redact_known_secrets(data['reply'].strip())
+            with self.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                if self.owner_acts.open_items(job):
+                    self._side_answer_event(task_id,'declined',db);return
+                changed=db.execute("UPDATE jobs SET status='succeeded',response=?,provider=?,model=?,delivery=? WHERE id=? AND status='queued'",
+                    (reply,'subscription' if subscription.get('id') else audit['provider'],
+                     subscription.get('id') or model,'pending' if job['chat_id'] else 'none',task_id)).rowcount
+                if not changed:
+                    self._side_answer_event(task_id,'discarded',db);return
+                for role,content in (('user',job['message']),('assistant',reply)):
+                    db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',
+                               (role,content,job['channel'],time.time(),job.get('workspace_id'),task_id))
+                self.store.merge_turn_provenance(task_id,audit,combine=self._combine_turn_record,db=db)
+                # An answer exposed to document history keeps that boundary on
+                # later turns too, just as a worker that read private material.
+                if any(row.get('job_id') in document_jobs for row in rows):
+                    self.record_file_workspace_document_job(task_id,db=db)
+                self._side_answer_event(task_id,'answered',db)
+            self.presence.pop(task_id,None)
+            surface,source=self._presence_anchor(job)
+            if job.get('chat_id') and surface is not None and surface.capabilities.reactions:
+                self._presence_call(surface,PRESENCE_REACT,job['chat_id'],source,DONE_REACTION)
+            self.update_task_card(job,'succeeded')
+            # The work loop delivers only between Works, so the side reply is delivered here, off the
+            # tool-capable worker; each surface claims a pending reply atomically, so the loop's own
+            # delivery never sends it twice.  An older pending reply on the same surface goes first.
+            for _ in range(SIDE_ANSWER_DELIVERY_PASSES):
+                if (self.store.job(task_id) or {}).get('delivery')!='pending':break
+                self.deliver_one()
+        except Exception as exc:
+            self._side_answer_event(task_id,'exception')
+            LOG.warning('side answer unavailable work=%s kind=%s',task_id,type(exc).__name__)
+        finally:
+            if budget is not None:budget.ledger.pause()
+            with self.side_answer_lock:self.side_answer_flight.discard(task_id)
 
     def fold_delivered_steer(self, job):
         """Settle a queued message its running Work already received (#999); True when folded.
@@ -10646,7 +10825,7 @@ class AgentService:
 
     def _run_one(self):
         """Claim the oldest runnable Work and run it through its phases (``work_execution``)."""
-        # One conversation worker: ordering is shared across all connected channels.
+        # One tool-capable worker: ordering is shared across all connected channels.
         with self.worker_lock:
             job=self._claim_queued_work()
             if not isinstance(job,dict):return job
@@ -10686,6 +10865,8 @@ class AgentService:
             row=db.execute("SELECT j.* FROM jobs j WHERE j.status='queued' ORDER BY j.created LIMIT 1").fetchone()
             if not row:return False
             job=dict(row)
+            with self.side_answer_lock:
+                if job['id'] in self.side_answer_flight:return False
             try:
                 chain=WorkLedger.request_chain(db,job['id'])
             except ValueError:
@@ -11092,7 +11273,7 @@ class AgentService:
             run.route_snapshot=self.store.config('subscription_engine',{})
         # #659: a preparation's Work sees its own origin and goal only.
         run.stored_history=self.history_for_models(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
-                                                   else self.store.history()[-16:])
+                                                   else self.store.history(through=job['id'])[-16:])
         run.document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
         run.document_history=any(message.get('job_id') in run.document_jobs for message in run.stored_history)
         # Earlier replies of failed/partial/interrupted Work carry
@@ -11264,8 +11445,8 @@ class AgentService:
             # #826: only a direct-API model without the document-sharing approval is
             # shown earlier document jobs filtered out; a CLI worker sees them.
             if run.document_history and run.boundary['requires_approval'] and not run.subscription.get('id'):
-                run.history=[context_message(message) for message in run.stored_history if message.get('job_id') not in run.document_jobs]
-                run.history_rows=[message for message in run.stored_history if message.get('job_id') not in run.document_jobs]
+                run.history_rows=self._document_history_rows(run.stored_history,run.config,run.subscription,run.document_jobs)
+                run.history=[context_message(message) for message in run.history_rows]
                 if run.prepared_latest and run.history:
                     run.history[-1]=run.prepared_latest
             if run.steer_note:

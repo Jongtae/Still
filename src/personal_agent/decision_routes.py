@@ -352,8 +352,8 @@ class DecisionRoutes:
         return dict(rows) if isinstance(rows, dict) else {}
 
     # -- engines ------------------------------------------------------------
-    def _direct_engine(self, audit, route=None):
-        return ModelDecisionEngine(self.service.adapter, lambda: self._direct_resolve(route), audit=audit)
+    def _direct_engine(self, audit, route=None, *, resolve=None):
+        return ModelDecisionEngine(self.service.adapter, resolve or (lambda: self._direct_resolve(route)), audit=audit)
 
     def _direct_resolve(self, route):
         """The #417/#580 direct destination and key, with an activated model (#679).
@@ -399,6 +399,10 @@ class DecisionRoutes:
             return UnavailableDecisionEngine()
         if route['transport'] == ROUTE_JEV:
             return self._jev_engine(route.get('requested_model') or JEV_DEFAULT_MODEL, audit)
+        return self._qualified_cli_engine(route, audit)
+
+    def _qualified_cli_engine(self, route, audit):
+        """Reuse the recorded isolation qualification, including its dispatch guard."""
         engine_id, policy = route.get('engine'), route.get('model_policy')
         if engine_id not in CLI_BINARIES or policy not in MODEL_POLICIES:
             return UnavailableDecisionEngine()
@@ -431,6 +435,31 @@ class DecisionRoutes:
         return self._cli_engine(engine_id, model, policy, audit, guard,
                                 route.get('codex_disabled_features') if engine_id == 'codex' else None, effort,
                                 expected_cloud=route.get('cloud_profile') or 'subscription')
+
+    def main_answer_engine(self):
+        """A tool-less snapshot of the Main AI; never qualify or fall back here.
+
+        CLI isolation evidence currently lives only on an activated decision
+        route. Without matching evidence the side lane remains unavailable.
+        Its answer model is always the Main AI model, not the judgment model.
+        """
+        with self.service.lock:
+            main = self.service.main_ai.current()
+            if main in CLI_BINARIES:
+                route = self.active() or {}
+                if route.get('transport') != ROUTE_SUBSCRIPTION_CLI or route.get('engine') != main:
+                    return None
+                model = self.service.main_ai.subscription_model(main)
+                engine = self._qualified_cli_engine({**route, 'requested_model': model or None,
+                    'model_policy': POLICY_EXPLICIT if model else POLICY_ENGINE_DEFAULT, 'effort': None}, None)
+                if not isinstance(engine, SubscriptionCliDecisionEngine) or engine.guard():
+                    return None
+                return engine
+            config = dict(self.store.config('model', {}) or {})
+            key = self.store.secret('model_key')
+            if not config or not self.service.model_ready(config):
+                return None
+            return self._direct_engine(None, resolve=lambda: (config, key))
 
     def _main_key(self, main_id):
         """The Main AI's own probed Work key (``model_key``), only while ``main_id`` is it.
