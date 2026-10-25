@@ -10678,10 +10678,20 @@ class AgentService:
         early_prompt=run.prompt
         run.early_intent=(None if resumed or located or answered else
                       self.start_early_judgment(job['id'],self.classify_intent,early_prompt))
+        # #309 L1: planning shares the allowance with routing and continuity.
+        # Replays, explicit commands and answered owner acts ask for no plan.
+        self._early_plan=(None if replayed or owner_command or answered else
+                          self.start_early_judgment(job['id'],self.early_work_plan,job,run.prompt,run.work_budget))
         run.continuity=(None if replayed or answered
                         else self.continuity_relation(run.prompt,run.connector_owner,current_work_id=job['id']))
         if run.continuity:
+            # Finish over the unlinked state before recording the relation: the
+            # digest must still name the inputs sent, including no known continues.
+            self.settle_early_judgment(self._early_plan)
             relation,previous=run.continuity['relation'],run.continuity['previous']
+            # A retry or cancel never consumes the speculative answer. Its call
+            # already spent the shared budget and recorded its information use.
+            if relation in (FOLLOWUP_RETRY,FOLLOWUP_CANCEL):self._early_plan=None
             self.present_turn(job)
             if relation==FOLLOWUP_RETRY:
                 allowed,reason=self.safe_retry(previous,current_work_id=job["id"])
@@ -10733,10 +10743,6 @@ class AgentService:
                 # Calendar, Memory and connector state machines remain
                 # the authority for any actual change.
                 self.record_continuity(job['id'],previous['id'],relation,executed=False)
-        # Planning shares the allowance already used by routing.
-        # #22 review, #172: a turn that only answered an open item asks for no plan.
-        self._early_plan=(None if replayed or owner_command or answered else
-                          self.start_early_judgment(job['id'],self.early_work_plan,job,run.prompt,run.work_budget))
         if run.continued and run.retry_note is None:
             # #774 (C8): the continuation runs the asking Work's message again.
             # Nothing is replayed blindly: the worker reads, before it, which

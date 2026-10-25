@@ -305,6 +305,105 @@ class ScriptIsolation(Harness):
         self.assertTrue(all(context.purpose == 'work-orchestration' for context, _, _ in self.asked_plans))
 
 
+class EarlyPlanContinuity(Harness):
+    """#309 L1: speculative planning overlaps continuity without escaping its Work."""
+
+    def followup(self, relation, status='succeeded'):
+        import threading
+        from personal_agent.agent_runtime import WorkLedger
+        from personal_agent.decision import SelectionDecision
+        from personal_agent.conversation_handoff import IntentDecision, INTENT_CONVERSATION, AUTHORITY_OWNER
+        previous = self.store.enqueue('Earlier request', 'earlier-plan')
+        self.service.conversation_focus.record(IntentDecision(INTENT_CONVERSATION, AUTHORITY_OWNER), previous)
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET status=? WHERE id=?', (status, previous))
+        self.previous = previous
+        self.previous_turns = WorkLedger(self.store, previous).used('turns')
+        self.engine.turns.clear()
+        self.asked_plans.clear()
+        engine = self.script([plan('codex', 'Speculative notes.'), plan('codex', 'Fresh notes.')], goals=[True])
+        plan_started, continuity_running = threading.Event(), threading.Event()
+        structured = engine._structured
+
+        def planning(context, question, schema):
+            if context.purpose == PURPOSE and not self.asked_plans:
+                self.assertTrue(continuity_running.wait(5), 'continuity never started')
+                plan_started.set()
+            return structured(context, question, schema)
+
+        def choose(context, candidates, question):
+            if context.purpose != 'conversation-followup':return None
+            continuity_running.set()
+            self.assertTrue(plan_started.wait(5), 'plan did not start while continuity was blocked')
+            return SelectionDecision(OUTCOME_DECIDED, relation, candidates=candidates, confidence=fixture_confidence())
+
+        engine._structured, engine._choose = planning, choose
+        futures = []
+        start, record = self.service.start_early_judgment, self.service.record_continuity
+
+        def start_early(work_id, call, *args, **kwargs):
+            future = start(work_id, call, *args, **kwargs)
+            if call == self.service.early_work_plan:futures.append(future)
+            return future
+
+        def record_continuity(*args, **kwargs):
+            self.assertTrue(futures[0].done(), 'settle before changing the relation or migrating the budget')
+            return record(*args, **kwargs)
+
+        with mock.patch.object(self.service, 'start_early_judgment', start_early), \
+                mock.patch.object(self.service, 'record_continuity', record_continuity):
+            job, row = self.run_work('Current request')
+        self.assertTrue(futures[0].done(), 'no speculative judgment outlives its Work')
+        self.assertTrue(plan_started.is_set())
+        self.assertIsNone(self.service._early_plan, 'no plan future survives the Work')
+        self.assertEqual(self.asked_plans[0][0].facts['continues'], 'none')
+        self.assertIn('plan_context_messages', self.store.turn_provenance(job))
+        self.assertIn('owner_information', self.store.turn_provenance(job))
+        self.turns = WorkLedger(self.store, job).used('turns')
+        return job, row
+
+    def test_no_relation_overlaps_and_reuses_one_charged_plan(self):
+        job, row = self.followup(None)
+        self.assertEqual(row['status'], 'succeeded')
+        self.assertEqual(len(self.asked_plans), 1)
+        self.assertTrue(self.events(job, 'planned')[0][1]['early'])
+        self.assertEqual(self.turns, 3, 'one plan, one worker turn and one goal judgment')
+
+    def test_cancel_settles_charges_and_audits_without_using_or_delivering_the_plan(self):
+        job, row = self.followup('cancel', status='running')
+        self.assertEqual(row['model'], 'continuity')
+        self.assertEqual(row['relation_kind'], 'cancel')
+        self.assertEqual(self.turns, 1, 'only the speculative plan spent a turn')
+        self.assertEqual(len(self.asked_plans), 1)
+        self.assertEqual(self.engine.turns, [])
+        self.assertEqual(self.events(job, 'planned'), [])
+        self.assertNotIn('Speculative notes.', row['response'])
+
+    def test_a_relation_changes_continues_and_the_digest_guard_asks_again(self):
+        job, row = self.followup('reference')
+        self.assertEqual(row['status'], 'succeeded')
+        self.assertEqual(len(self.asked_plans), 2)
+        self.assertIn('[owner] Earlier request', self.asked_plans[1][0].facts['continues'])
+        [(_status, detail)] = self.events(job, 'planned')
+        self.assertIn('continues', detail['early_missed'])
+        self.assertNotIn('early', detail)
+        self.assertEqual(self.turns, 4, 'two plans, one worker turn and one goal judgment')
+        self.assertNotIn('Speculative notes.', self.engine.turns[0]['prompt'])
+        self.assertIn('Fresh notes.', self.engine.turns[0]['prompt'])
+
+    def test_retry_discards_the_plan_and_folds_its_charge_into_the_original_budget(self):
+        job, row = self.followup('retry', status='failed')
+        self.assertEqual(row['status'], 'succeeded')
+        self.assertEqual(row['relation_kind'], 'retry')
+        self.assertEqual(len(self.asked_plans), 2)
+        self.assertEqual(self.asked_plans[1][0].facts['owner_request'], 'Earlier request')
+        self.assertIn('[owner] Earlier request', self.asked_plans[1][0].facts['continues'])
+        self.assertEqual(self.turns, self.previous_turns + 4)
+        self.assertNotIn('early', self.events(job, 'planned')[0][1])
+        self.assertNotIn('Speculative notes.', self.engine.turns[0]['prompt'])
+        self.assertIn('Fresh notes.', self.engine.turns[0]['prompt'])
+
+
 class RoutingAndBriefs(Harness):
     def test_an_ordinary_new_request_is_planned_while_routing_runs(self):
         """#1261: the routed Work reads the plan asked alongside routing; nothing is asked twice."""

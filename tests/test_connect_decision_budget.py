@@ -137,9 +137,18 @@ class EarlyRequestBudget(fixtures.Harness):
         parent, row = self.run_work('Compare the two synthetic records', key='first')
         self.assertEqual(row['status'], 'failed')
         before = self.store.config('work_budget:' + parent)
-        self.script([fixtures.plan('openai', '')], goals=[True])
+        # #309 L1: the speculative plan asked beside continuity is spent, not used; the retry plans afresh.
+        # That one extra call would cross the default allowance this fixture's first run nearly used up.
+        self.script([fixtures.plan('openai', ''), fixtures.plan('openai', '')], goals=[True])
         relation = {'relation': 'retry', 'previous': self.store.job(parent)}
-        with mock.patch.object(self.service, 'continuity_relation', return_value=relation):
+        budget = self.service.work_budget
+
+        def roomier(job_id):
+            room = budget(job_id)
+            room.turns += 1
+            return room
+        with mock.patch.object(self.service, 'continuity_relation', return_value=relation), \
+                mock.patch.object(self.service, 'work_budget', roomier):
             child, row = self.run_work('Try again', key='second')
         self.assertEqual(row['status'], 'succeeded', row)
         self.assertEqual(row['related_job_id'], parent)
