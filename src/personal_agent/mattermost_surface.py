@@ -211,6 +211,12 @@ class MattermostSurface(ConversationSurface):
                     and job.get('channel') == f"mattermost:{cfg.get('generation')}"
                     and job.get('chat_id') == cfg.get('owner_user_id'))
 
+    def paired_connector_owner(self, enabled_only=True):
+        cfg = self.config()
+        if not cfg.get('owner_user_id') or enabled_only and not cfg.get('enabled'):
+            return None
+        return f"mattermost:{cfg['owner_user_id']}"
+
     def owner_generation(self):
         generation = self.config().get('generation')
         return generation if isinstance(generation, str) else ''
@@ -575,6 +581,9 @@ class MattermostSurface(ConversationSurface):
             raise ValueError(msg('mattermost.invalid_token'))
         if not username or len(username) > 64:
             raise ValueError(msg('mattermost.invalid_owner'))
+        # #306 review: in work mode nothing reaches an unapproved server, connecting included.
+        if work_mode.active(self.service.store) and self.config().get('company_approved') is not True:
+            raise ValueError(msg('mattermost.work_mode_unapproved'))
         private = self._check_destination(url)
         client = MattermostClient(url, token, transport=self._transport or getattr(self.service, 'mattermost_transport', None))
         try:

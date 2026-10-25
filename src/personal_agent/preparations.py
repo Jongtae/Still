@@ -766,10 +766,11 @@ class Preparations:
                 if decision[0] == DECISION_NOTIFY and notify_to:
                     # Queued here; the "last notified" fields advance only once
                     # Telegram confirms the send (``record_notified``).
-                    chat_id, generation = notify_to
-                    db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created) VALUES (?,?,?,?,?,?,?,?,?)',
+                    # #213: ``(owner, generation[, surface])``; the surface whose delivery claims the notice.
+                    chat_id, generation, *surface = notify_to
+                    db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created,surface) VALUES (?,?,?,?,?,?,?,?,?,?)',
                                (str(uuid.uuid4()), job['id'], chat_id, generation, NOTIFY_KIND, text_digest(answer),
-                                'queued', None, now))
+                                'queued', None, now, surface[0] if surface else 'telegram'))
                     notified = True
             db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=? AND state=?",
                        (*updates.values(), current['id'], STATE_RUNNING))

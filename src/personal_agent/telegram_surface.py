@@ -103,6 +103,11 @@ class TelegramSurface(ConversationSurface):
         turn=self.service.telegram_turns.get(work_id)
         return turn['reply_message_id'] if turn and turn['chat_id']==owner else None
 
+    def paired_connector_owner(self, enabled_only=True):
+        cfg=self.service.store.config('telegram',{})
+        if not isinstance(cfg,dict) or cfg.get('user_id') is None or enabled_only and not cfg.get('enabled'):return None
+        return f"telegram:{cfg['user_id']}"
+
     def owner_generation(self):
         generation=self.service.store.config('telegram',{}).get('generation')
         return generation if isinstance(generation,str) else ''

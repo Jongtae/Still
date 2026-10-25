@@ -3442,5 +3442,11 @@
   "en": "You can handle this in Still on your Mac.",
   "ja": "この項目は Mac の Still 画面で処理できます。",
   "zh": "你可以在 Mac 上的 Still 界面中处理此项。"
+ },
+ "mattermost.work_mode_unapproved": {
+  "ko": "회사 모드가 켜져 있어 Mattermost에 연결하지 않았어요. 회사가 승인한 서버라면 먼저 '회사 모드에서도 사용'을 켜 주세요.",
+  "en": "Work mode is on, so I didn't connect to Mattermost. If your company approved this server, switch on 'Use in work mode too' first.",
+  "ja": "会社モードがオンのため、Mattermost に接続しませんでした。会社が承認したサーバーなら、先に「会社モードでも使う」をオンにしてください。",
+  "zh": "工作模式已开启，因此没有连接到 Mattermost。如果这是公司批准的服务器，请先开启“在工作模式下也使用”。"
  }
 }

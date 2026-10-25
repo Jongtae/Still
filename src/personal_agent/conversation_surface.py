@@ -128,6 +128,13 @@ class ConversationSurface(ABC):
         """The id of Still's reply to ``work_id`` in ``owner``'s conversation, or None."""
 
     @abstractmethod
+    def paired_connector_owner(self, enabled_only=True):
+        """The connector owner identity of the paired owner (whatever the work mode), or None.
+
+        ``enabled_only`` False also names an owner whose pairing is switched off but still recorded.
+        """
+
+    @abstractmethod
     def owner_generation(self):
         """The current pairing's generation (a handoff is bound to it), or '' while unpaired."""
 

@@ -62,6 +62,9 @@ class SideSurface(ConversationSurface):
     def reply_to(self, work_id):
         return None
 
+    def paired_connector_owner(self, enabled_only=True):
+        return f'side:{SIDE_OWNER}' if self.paired else None
+
     def receive(self, now=None):
         return None
 

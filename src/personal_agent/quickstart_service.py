@@ -1629,7 +1629,11 @@ class AgentService:
                 if when_needed and kind!=prep.KIND_PREPARE:raise prep.PreparationRefusal('invalid_delivery')
             except prep.PreparationRefusal as exc:
                 raise ToolError(str(exc),exc.code) from None
-            channel=(prep.CHANNEL_TELEGRAM if kind==prep.KIND_REMINDER or args.get('delivery') in ('send',prep.DELIVERY_WHEN_NEEDED)
+            # #306 review: a reminder is sent back to the surface the request came from (Telegram for
+            # a request made elsewhere, as before); ``CHANNEL_WEB`` keeps the result in Still.
+            surface=self.surface_of(job)
+            channel=((surface.name if surface else prep.CHANNEL_TELEGRAM)
+                     if kind==prep.KIND_REMINDER or args.get('delivery') in ('send',prep.DELIVERY_WHEN_NEEDED)
                      else prep.CHANNEL_WEB)
             delivery_mode=prep.DELIVERY_WHEN_NEEDED if when_needed else None
             summary=prep.proposal_summary({'kind':kind,'goal_text':goal,'due_at':due_at,'timezone':timezone,
@@ -1672,7 +1676,7 @@ class AgentService:
     def preparation_delivery(row):
         """``send`` / ``keep`` / ``when_needed`` (#719) for one preparation row."""
         if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED:return prep.DELIVERY_WHEN_NEEDED
-        return 'send' if row['channel']==prep.CHANNEL_TELEGRAM else 'keep'
+        return 'send' if row['channel']!=prep.CHANNEL_WEB else 'keep'
 
     def run_due_preparation(self, now=None):
         """One tick of owner-accepted preparations (#659).
@@ -1687,9 +1691,10 @@ class AgentService:
         if not rows:return False
         for row in rows:
             try:
-                cfg=self.store.config('telegram',{})
-                paired=(row['channel']==prep.CHANNEL_TELEGRAM and cfg.get('enabled') and isinstance(cfg.get('user_id'),int)
-                        and cfg.get('generation'))
+                # #306 review: delivered on the surface the preparation was made for, through its pairing now.
+                surface=next((item for item in self.surfaces if item.name==row['channel']),None)
+                pairing=surface.pairing() if surface is not None else None
+                paired=pairing is not None
                 when_needed=row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
                 if row['state']==prep.STATE_RUNNING:
                     work_id=row.get('last_run_job_id')
@@ -1726,15 +1731,15 @@ class AgentService:
                         if waiting:continue
                     # #719: a when_needed run is judged once; only notify queues a message.
                     settled=self.preparations.settle(row,now,scrub=self.scrub_prepared_answer,decide=self.watch_judgment,
-                                                     notify_to=(cfg['user_id'],cfg['generation']) if paired else None,
+                                                     notify_to=(pairing.owner,surface.owner_generation(),surface.name) if paired else None,
                                                      waiting=lambda work:self.work_has_pending_resume(work,now))
                     if settled:LOG.info('preparation settled id=%s outcome=%s next=%s decision=%s',row['id'],settled['last_outcome'],
                                         settled['state'],settled.get('last_decision') if when_needed else '-')
                     continue
                 # #719: a when_needed run is kept in Still; only its notify decision reaches Telegram.
                 send=paired and not when_needed
-                work_id=self.preparations.start(row,channel=f"telegram:{cfg['generation']}" if send else 'web',
-                                                chat_id=cfg['user_id'] if send else None,now=now)
+                work_id=self.preparations.start(row,channel=pairing.channel if send else 'web',
+                                                chat_id=pairing.owner if send else None,now=now)
                 if work_id:LOG.info('preparation started id=%s work=%s kind=%s',row['id'],work_id,row['kind'])
             except Exception as exc:
                 LOG.warning('preparation tick failed id=%s kind=%s',row['id'],type(exc).__name__)
@@ -5273,6 +5278,14 @@ class AgentService:
         """The conversation surface a Work came from, in any pairing generation, or None (web, local)."""
         return next((surface for surface in self.surfaces if surface.claims(job)),None)
 
+    def surface_connector_owners(self, enabled_only=True):
+        """The connector owner identity of each surface's paired owner, in surface order (#306 review)."""
+        owners=[]
+        for surface in self.surfaces:
+            owner=surface.paired_connector_owner(enabled_only=enabled_only)
+            if owner and owner not in owners:owners.append(owner)
+        return owners
+
     def surface_of_owner(self, owner_id):
         """The conversation surface a connector owner identity names, or None (the local owner)."""
         return next((surface for surface in self.surfaces if surface.owns_connector_owner(owner_id)),None)
@@ -6236,11 +6249,8 @@ class AgentService:
 
     def _local_handoff_owner(self, row):
         """Recover the parked owner from the hashed index row, never from the request."""
-        candidates=[]
-        telegram=self.store.config('telegram',{})
-        if isinstance(telegram,dict) and telegram.get('enabled') and telegram.get('user_id') is not None:
-            candidates.append(f"telegram:{telegram['user_id']}")
-        candidates.append('local-owner')
+        # #306 review: every paired surface's owner (Telegram first, as before), then the local owner.
+        candidates=[*self.surface_connector_owners(),'local-owner']
         for candidate in candidates:
             if hmac.compare_digest(_owner_key(candidate),str(row.get('owner',''))):
                 return candidate
@@ -6479,11 +6489,8 @@ class AgentService:
         Telegram, and it is why an unmatched record falls back to the paired
         owner rather than to whatever the caller would have preferred.
         """
-        candidates=[]
-        telegram=self.store.config('telegram',{})
-        if isinstance(telegram,dict) and telegram.get('enabled') and telegram.get('user_id') is not None:
-            candidates.append(f"telegram:{telegram['user_id']}")
-        candidates.append('local-owner')
+        # #306 review: every paired surface's owner (Telegram first, as before), then the local owner.
+        candidates=[*self.surface_connector_owners(),'local-owner']
         record=self.connector_handoff.record(connector_id) if self.connector_handoff else None
         if isinstance(record,dict):
             for candidate in candidates:
@@ -7307,10 +7314,7 @@ class AgentService:
 
     def _connector_owner_candidates(self):
         """Every connector owner identity this install can hold a row under."""
-        owners=['local-owner']
-        telegram=self.store.config('telegram',{})
-        if isinstance(telegram,dict) and telegram.get('user_id') is not None:
-            owners.insert(0,f"telegram:{telegram['user_id']}")
+        owners=[*self.surface_connector_owners(enabled_only=False),'local-owner']
         known=self.store.config(self.CONNECTOR_OWNERS_KEY,[])
         for owner in known if isinstance(known,list) else []:
             if isinstance(owner,str) and owner not in owners:
@@ -7452,12 +7456,7 @@ class AgentService:
         listed and then refused with an opaque error, and nobody could apply
         it on a paired install.
         """
-        candidates = []
-        telegram = self.store.config('telegram', {})
-        if isinstance(telegram, dict) and telegram.get('enabled') and telegram.get('user_id') is not None:
-            candidates.append(f"telegram:{telegram['user_id']}")
-        candidates.append('local-owner')
-        return candidates
+        return [*self.surface_connector_owners(), 'local-owner']
 
     def calendar_draft_request(self, body, owner_id=None):
         """The owner's approve/apply surface for a Calendar draft.

@@ -485,6 +485,41 @@ class ReviewRegressions(MattermostCase):
         self.assertEqual(len([job for job in self.store.jobs() if job['channel'].startswith('mattermost:')]), 1,
                          'nothing is rerun')
 
+    def test_connecting_in_work_mode_sends_nothing_until_approved(self):
+        self.service.disconnect_mattermost()
+        self.service.set_work_mode({'enabled': True})
+        calls = len(self.fake.calls)
+        with self.assertRaises(ValueError) as caught:
+            self.connect()
+        self.assertIn('회사 모드', str(caught.exception))
+        self.assertEqual(self.fake.calls[calls:], [], 'no request, no token sent while unapproved')
+        self.service.set_mattermost_company_approved({'approved': True})
+        self.assertTrue(self.connect()['usable'])
+
+    def test_a_reminder_asked_here_is_delivered_here(self):
+        from personal_agent import preparations as prep
+        self.owner_says('내일 9시에 회의 알려줘')
+        job = self.mm_jobs()[0]
+        result = self.service.preparation_scheduler(job, job['message'])(
+            {'kind': prep.KIND_REMINDER, 'goal': '회의', 'timezone': 'Asia/Seoul',
+             'due': time.strftime('%Y-%m-%dT%H:%M', time.localtime(time.time() + 86400))})
+        row = self.service.preparations.get(result['preparation_id'])
+        self.assertEqual((row['channel'], result['delivery']), ('mattermost', 'send'))
+        with self.store.db() as db:
+            db.execute("UPDATE preparations SET state=?, due_at=? WHERE id=?",
+                       (prep.STATE_SCHEDULED, time.time() - 1, row['id']))
+        self.service.run_due_preparation()
+        started = [job for job in self.store.jobs() if prep.preparation_of(job.get('request_key'))]
+        self.assertEqual([(job['channel'], job['chat_id']) for job in started],
+                         [(f"mattermost:{self.surface.owner_generation()}", OWNER)])
+
+    def test_a_parked_mattermost_work_is_found_by_its_owner(self):
+        from personal_agent.connector_contract import _owner_key
+        self.assertEqual(self.service._local_handoff_owner({'owner': _owner_key(f'mattermost:{OWNER}')}),
+                         f'mattermost:{OWNER}')
+        self.assertIn(f'mattermost:{OWNER}', self.service.calendar_owner_candidates())
+        self.assertIn(f'mattermost:{OWNER}', self.service._connector_owner_candidates())
+
     def test_a_long_reply_partly_sent_is_never_posted_again(self):
         self.owner_says('질문')
         self.assertTrue(self.service.run_one())
