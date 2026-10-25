@@ -120,7 +120,7 @@ class CliAdapterPlacement(unittest.TestCase):
                 {'item': {'type': 'agent_message', 'text': 'ok'}})
 
         def runner(argv, **kwargs):
-            seen['argv'] = argv
+            seen['argv'], seen['input'] = argv, kwargs.get('input')
             return Done()
 
         context = turn_context([{'role': 'user', 'content': 'earlier'}, {'role': 'assistant', 'content': 'reply'},
@@ -131,13 +131,15 @@ class CliAdapterPlacement(unittest.TestCase):
             adapter = BoundedExecutionAdapter(finder=lambda name: '/runtime/' + name, runner=runner,
                                               runtime_root=Path(folder) / 'turns', codex_home=profile)
             adapter.execute(engine, render_turn_prompt(context), AgentOSMcpTools(_Caps()), context=context)
+        self.input = seen['input']
         return seen['argv'], context
 
     def test_claude_code_gets_instructions_as_a_system_prompt_addition(self):
         argv, context = self._run('claude-code')
         flag = argv.index('--append-system-prompt')
         self.assertEqual(argv[flag + 1], context['instructions'])
-        prompt = argv[argv.index('-p') + 1]
+        # #308 S2: the prompt is the stream-json owner message on stdin.
+        prompt = json.loads(self.input)['message']['content']
         self.assertNotIn('# Still instructions', prompt)
         self.assertIn('# Recent conversation', prompt)
         self.assertIn('now', prompt)

@@ -99,6 +99,7 @@ class ClaudeStreamJsonSteer(unittest.TestCase):
         job = store.enqueue(FIRST, 'q-308')
         with store.db() as db:
             db.execute("UPDATE jobs SET status='running' WHERE id=?", (job,))
+        self.store, self.job, self.root = store, job, root
         self.run_dir = root / 'turn'
         self.run_dir.mkdir()
         config = self.run_dir / 'agentos-mcp.json'
@@ -106,15 +107,15 @@ class ClaudeStreamJsonSteer(unittest.TestCase):
         config.write_text(json.dumps({'mcpServers': {'agentos': {
             'command': sys.executable, 'env': {'CLAUDE_CODE_OAUTH_TOKEN': ''},
             'args': ['-m', 'personal_agent.mcp_bridge', '--data', str(store.root), '--job', job,
-                     f'--profile={BOUNDED_PROFILE}']}}}))
+                     f'--profile={BOUNDED_PROFILE}', '--session-steers']}}}))
         adapter = BoundedExecutionAdapter(finder=lambda name: self.binary, credentials=lambda engine: '',
                                           runtime_root=root / 'runs')
         slot = 'PROMPT-SLOT-308'
         self.argv = adapter.command('claude-code', self.binary, slot, config, 'Still steer qualification.')
-        at = self.argv.index(slot)
-        self.assertEqual(self.argv[at - 1], '-p')
-        # The only change to Still's argv: the prompt moves from argv to stream-json input.
-        self.argv[at:at + 1] = ['--input-format', 'stream-json', '--replay-user-messages']
+        # #308 S2: Still's own argv; the prompt is stream-json input, never an argv element.
+        self.assertEqual(self.argv[1:8], ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json',
+                                          '--verbose', '--replay-user-messages'])
+        self.assertNotIn(slot, self.argv)
         self.env = adapter.environment('claude-code', self.binary, self.run_dir)
 
     def _session(self, model):
@@ -186,6 +187,58 @@ class ClaudeStreamJsonSteer(unittest.TestCase):
         text = json.dumps(follow_up)
         self.assertLess(text.index(FIRST), text.index('stale answer'))
         self.assertLess(text.index('stale answer'), text.index(SECOND), 'the next turn sees the earlier exchange')
+
+
+    def _through_still(self, model):
+        """#308 S2 end to end: ``BoundedExecutionAdapter.execute``; SECOND is queued as a steer while the model holds."""
+        from test_claude_session_steer import _Budget, _Caps
+        from personal_agent.agent_runtime import STEER_EVENT
+        from personal_agent.bounded_execution import AgentOSMcpTools
+
+        class LocalModel(BoundedExecutionAdapter):
+            def environment(self, *args, **kwargs):
+                return {**super().environment(*args, **kwargs), 'ANTHROPIC_BASE_URL': f'http://127.0.0.1:{model.port}',
+                        'ANTHROPIC_API_KEY': 'fake-key', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1'}
+        self.addCleanup(model.close)
+        adapter = LocalModel(finder=lambda name: self.binary, credentials=lambda engine: '', runtime_root=self.root / 'runs')
+        outcome = {}
+
+        def run():
+            try:
+                outcome['result'] = adapter.execute('claude-code', FIRST, AgentOSMcpTools(_Caps(self.store, self.job, _Budget(TURN_SECONDS))))
+            except Exception as exc:  # reported below
+                outcome['error'] = exc
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        _wait(model.held.is_set, HOLD_SECONDS, 'the first model request')
+        source = self.store.enqueue(SECOND, 'q-308-steer')
+        self.assertTrue(self.store.add_steer(self.job, source, SECOND))
+        _wait(lambda: self.store.steer_delivered(source), 10, 'the session pump to claim the steer')
+        time.sleep(SETTLE_SECONDS)
+        model.release.set()
+        thread.join(TURN_SECONDS)
+        self.assertNotIn('error', outcome, outcome.get('error'))
+        with self.store.db() as db:
+            events = [row['status'] for row in db.execute('SELECT status FROM tool_events WHERE job_id=? AND tool=? ORDER BY id',
+                                                          (self.job, STEER_EVENT))]
+        return outcome['result'], events, source
+
+    def test_still_delivers_a_steer_written_mid_answer_as_the_next_turn_and_answers_with_it(self):
+        model = _HeldModel('anthropic', [{'message': 'stale answer'}, {'message': 'answer with the new context'}])
+        result, events, source = self._through_still(model)
+        self.assertEqual(result.content, 'answer with the new context')
+        self.assertEqual(events, ['delivered', 'accepted'])
+        self.assertTrue(self.store.steer_delivered(source), 'claimed, accepted and not released')
+        self.assertIn(SECOND, json.dumps(model.requests[-1]['body']['messages'], ensure_ascii=False))
+
+    def test_still_delivers_a_steer_after_the_next_bridge_tool_result_in_one_answer(self):
+        model = _HeldModel('anthropic', [{'tool': 'mcp__agentos__list_notes', 'input': {}},
+                                         {'message': 'one answer for both'}])
+        result, events, _source = self._through_still(model)
+        self.assertEqual(result.content, 'one answer for both')
+        self.assertEqual(events, ['delivered', 'accepted'])
+        self.assertIn('fake-note-308', model.tool_results()[0], 'the Still bridge served the call')
+        self.assertNotIn(SECOND, model.tool_results()[0], 'the session bridge leaves the steer to stdin')
 
 
 class _Rpc:
