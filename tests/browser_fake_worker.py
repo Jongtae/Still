@@ -81,6 +81,10 @@ for line in sys.stdin:
             # #102, as the real worker: the trusted click landed elsewhere, and the target moved off the point.
             # #103: the press reached the page, so it says so with what the step observed.
             emit({'id': ident, 'ok': False, 'error': 'target_moved', 'pressed': True, 'posted': False})
+        elif command.get('index') == 3 and page['url'].endswith(('/missed', '/missed-early', '/moved-early')):
+            path = page['url'].rsplit('/', 1)[-1]
+            emit({'id': ident, 'ok': False, 'error': 'target_moved' if path == 'moved-early' else 'press_missed',
+                  'pressed': not path.endswith('-early'), 'posted': False})
         elif command.get('index') == 3 and page['url'].endswith('/no-click'):
             # #103, as the real worker: the page put a layer over the target during the press; no click landed.
             emit({'id': ident, 'ok': False, 'error': 'press_no_click', 'pressed': True, 'posted': False,

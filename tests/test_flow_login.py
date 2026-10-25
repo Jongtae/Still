@@ -779,6 +779,46 @@ class InFlowLogin(LoginHarness):
         self.assertEqual(self.state(job_id), 'resumed')
         self.assertEqual(self.store.job(job_id)['status'], 'queued', 'the original Work continues; no new request')
 
+    def test_a_prompt_rearmed_during_reopen_stays_at_the_bottom_and_resumes_its_work(self):
+        job_id, _prompt, _buttons, notification = self.login_work()
+        self.assertEqual(self.settle(job_id, now=time.time() + BROWSER_LOGIN_SECONDS + 1), 'expired')
+        reopen = self.service.reopen_browser_login
+        rearmed = {}
+
+        def reopen_and_run_loop(*args, **kwargs):
+            result = reopen(*args, **kwargs)
+            self.assertTrue(result)
+            # The work loop re-arms the prompt before the tap marks the expired one.  The
+            # window thread arms it outside the tap, but needs the service lock the tap
+            # holds first, so today the lock keeps this order out and the store guard is
+            # the defence behind it.  Release the lock here to reach that guard.
+            self.service.lock.release()
+            try:
+                self.service.process_browser_logins()
+                self.shown(job_id)
+                self.assertTrue(wait_until(self.service.deliver_notification))
+            finally:
+                self.service.lock.acquire()
+            rearmed.update(self.store.notification(notification['id']))
+            self.assertEqual(rearmed['state'], 'sent')
+            self.assertNotEqual(rearmed['message_id'], notification['message_id'])
+            return result
+
+        with mock.patch.object(self.service, 'reopen_browser_login', side_effect=reopen_and_run_loop):
+            self.tap(f"p7l:{notification['id']}:reopen", notification['message_id'])
+        sends = [body for method, body in self.calls if method == 'sendMessage']
+        self.assertNotIn(BROWSER_LOGIN_REOPENING_TEXT, [body['text'] for body in sends])
+        current = self.store.notification(notification['id'])
+        self.assertEqual((current['state'], current['message_id']), ('sent', rearmed['message_id']))
+        self.assertEqual(sends[-1], self.prompts()[-1])
+        self.assertEqual(len(self.prompts()), 2)
+        buttons = sends[-1]['reply_markup']['inline_keyboard'][0]
+        done = next(button['callback_data'] for button in buttons if button['callback_data'].endswith(':done'))
+        self.window().login()
+        self.tap(done, current['message_id'])
+        self.assertEqual(self.settle(job_id), 'resumed')
+        self.assertEqual(self.store.job(job_id)['status'], 'queued', 'the same Work resumes')
+
     def test_a_reopened_window_that_cannot_open_says_so_and_keeps_the_button(self):
         job_id, _prompt, _buttons, notification = self.login_work()
         self.assertEqual(self.settle(job_id, now=time.time() + BROWSER_LOGIN_SECONDS + 1), 'expired')

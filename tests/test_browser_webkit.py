@@ -576,6 +576,26 @@ class DriverProtocolTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 'blocked_destination')
         self.assertEqual(driver.cookies_export(), ({'shop.test': self.seeded}, []))
 
+    def test_press_misses_cross_the_process_and_session_boundary_without_replay(self):
+        driver = self.driver()
+        sess = bs.BrowserSession(lambda: driver, work_id='press-misses', approvals=Approvals(), steps=40)
+        self.addCleanup(sess.close)
+        for path, text, code, effect in (
+                ('intercepted', bs.press_text(), bs.PRESS_UNCONFIRMED_CODE, 'unknown'),
+                ('missed', bs.press_text(), bs.PRESS_UNCONFIRMED_CODE, 'unknown'),
+                ('moved-early', bs.MOVED_TEXT, 'target_unavailable', None),
+                ('missed-early', bs.MISSED_TEXT, 'target_unavailable', None)):
+            with self.subTest(path=path):
+                sess.open({'url': 'https://shop.test/' + path, 'effect': 'navigate'})
+                before = len([c for c in self.commands() if c['op'] == 'click'])
+                with self.assertRaises(ToolError) as caught:
+                    sess.click({'target': 'Go', 'effect': 'mutate'})
+                exc = caught.exception
+                self.assertEqual((exc.code, str(exc), getattr(exc, 'effect', None)), (code, text, effect))
+                if effect == 'unknown':
+                    self.assertEqual(exc.observed_step, {'posted': False, 'approved': False})
+                self.assertEqual(len([c for c in self.commands() if c['op'] == 'click']), before + 1)
+
     def test_the_worker_runs_with_a_minimal_environment_a_fixed_cwd_and_no_cwd_on_its_path(self):
         from unittest import mock
         seen = {}
@@ -1028,6 +1048,41 @@ console.log(JSON.stringify({el: el.a || {}, other: other.a || {}, kept: typeof e
                                                                       **({'focused': None} if op == 'op_type' else {})})],
                                  op)
 
+    def test_press_miss_classifies_the_current_target_and_hit_point(self):
+        from personal_agent import browser_worker as bw
+        import shutil
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('node is not installed')
+        # Use the worker's functions unchanged, with only their DOM inputs controlled.
+        functions = bw.PRELUDE[bw.PRELUDE.index('const coverOf ='):bw.PRELUDE.index('// #103: what one native press')]
+        harness = r"""
+const SELECTOR = '', cut = (s, n) => s.slice(0, n);
+let hit;
+const document = {querySelectorAll: () => [], elementFromPoint: () => hit};
+const child = {parentElement: null, contains: (node) => node === child, innerText: 'Child'};
+const layer = {parentElement: null, contains: () => false, innerText: 'Overlay'};
+const target = {isConnected: true, contains: (node) => node === child,
+  getBoundingClientRect: () => ({left: 10, right: 30, top: 10, bottom: 30})};
+%s
+const point = {x: 20, y: 20}, seen = {};
+target.isConnected = false;
+seen.disconnected = pressMiss(point, target);
+target.isConnected = true;
+hit = layer; seen.covered = pressMiss(point, target);
+seen.moved = pressMiss({x: 40, y: 20}, target);
+hit = target; seen.target = pressMiss(point, target);
+hit = child; seen.child = pressMiss(point, target);
+console.log(JSON.stringify(seen));
+""" % functions
+        result = subprocess.run([node, '-e', harness], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {
+            'disconnected': {'error': 'target_missing'},
+            'covered': {'error': 'target_obscured', 'cover': {'text': 'Overlay', 'controls': []}},
+            'moved': {'error': 'target_moved'},
+            'target': {'error': 'press_missed'}, 'child': {'error': 'press_missed'}})
+
     def test_the_press_guard_confirms_only_a_click_on_the_target(self):
         """#103: the guard's record of one press, and what each record answers, without WebKit."""
         import shutil
@@ -1347,6 +1402,14 @@ class SessionFixtureHandler(FixtureHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
         value = self.server.cookie_value
+        if path == '/plain-contenteditable':
+            return self._send('''<html><head><title>Editable fields</title></head><body>
+              <div contenteditable aria-label="Bare memo" id="bare" style="min-height:40px;border:1px solid"></div>
+              <div contenteditable="true" aria-label="True memo" style="min-height:40px;border:1px solid"></div>
+              <div contenteditable="plaintext-only" aria-label="Plain memo" style="min-height:40px;border:1px solid"></div>
+              <div contenteditable="false" aria-label="Locked memo">Read only</div>
+              <button onclick="document.getElementById('result').textContent = 'Typed:' + document.getElementById('bare').textContent">Read memo</button>
+              <p id="result">Waiting</p></body></html>''')
         if path == '/session-start':
             data = '<html><head><title>세션</title></head><body><h1>세션 시작</h1></body></html>'.encode()
             self.send_response(200)
@@ -1813,6 +1876,20 @@ class WebKitIntegrationTests(unittest.TestCase):
             self.assertNotIn('우유', flat(page))
             field = next(row['n'] for row in page['elements'] if row['name'] == '검색어 입력')
             self.assertIn('입력:우유', sess.type({'target': str(field), 'text': '우유', 'effect': 'mutate'})['text'])
+        finally:
+            sess.close()
+
+    def test_plain_contenteditable_fields_are_listed_and_the_bare_attribute_takes_text(self):
+        sess = self.session('work-12-plain-editable')
+        try:
+            page = sess.open({'url': self.origin + '/plain-contenteditable', 'effect': 'navigate'})
+            roles = {row['name']: row['role'] for row in page['elements']}
+            for name in ('Bare memo', 'True memo', 'Plain memo'):
+                self.assertEqual(roles.get(name), 'textbox', page['elements'])
+            self.assertNotIn('Locked memo', roles)
+            sess.type({'target': 'Bare memo', 'text': 'groceries milk', 'effect': 'mutate'})
+            page = sess.click({'target': 'Read memo', 'effect': 'mutate'})
+            self.assertIn('Typed:groceries milk', page['text'], 'read back the bare div itself through the page')
         finally:
             sess.close()
 
