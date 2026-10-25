@@ -320,7 +320,7 @@ def test_the_in_context_program_is_closed_out_and_the_owed_reviews_stay_owed():
 
 
 def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_paused():
-    """#206: selected by the owner on 2026-10-23; five substeps merged; Mattermost in flight."""
+    """#206: selected by the owner on 2026-10-23; six substeps merged; Slack in flight."""
     current = plan()
     assert current["next_goal"]["id"] == "WORKPLACE-01"
     assert current["next_goal"]["status"] == "owner-activated-goal-ready"
@@ -330,11 +330,18 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     assert program["ordered_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01", "WORK-MODE-01", "INTRANET-DEST-01",
                                            "OWNER-MCP-WORK-01", "MATTERMOST-01", "SLACK-01"]
     # One substep in flight at a time: CLOUD-AI-01 (#230), SURFACE-SEAM-01 (#229), WORK-MODE-01 (#278, #280),
-    # INTRANET-DEST-01 (#284, #288) and OWNER-MCP-WORK-01 (#297) merged; MATTERMOST-01 runs.
+    # INTRANET-DEST-01 (#284, #288), OWNER-MCP-WORK-01 (#297) and MATTERMOST-01 (#299, #306) merged; SLACK-01 runs.
     assert program["completed_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01", "WORK-MODE-01", "INTRANET-DEST-01",
-                                             "OWNER-MCP-WORK-01"]
-    assert program["active_substeps"] == ["MATTERMOST-01"]
-    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "WORKPLACE-01") == "MATTERMOST-01"
+                                             "OWNER-MCP-WORK-01", "MATTERMOST-01"]
+    assert program["active_substeps"] == ["SLACK-01"]
+    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "WORKPLACE-01") == "SLACK-01"
+    mattermost_done = items_of(current)["WORKPLACE-01"]["completed_substeps"]["MATTERMOST-01"]
+    assert (mattermost_done["issue"], mattermost_done["pull_request"], mattermost_done["follow_up_pull_request"]) == (213, 299, 306)
+    assert mattermost_done["merge_commit"].startswith("bc3a0eb")
+    assert mattermost_done["follow_up_merge_commit"].startswith("8929e4a")
+    assert items_of(current)["MATTERMOST-01"]["activation_status"] == "complete-on-merge"
+    # #214: the owner's two Slack decisions are recorded with the program.
+    assert {"slack-action-approvals", "slack-test-workspace"} <= set(program["decisions"])
     owner_mcp_done = items_of(current)["WORKPLACE-01"]["completed_substeps"]["OWNER-MCP-WORK-01"]
     assert (owner_mcp_done["issue"], owner_mcp_done["pull_request"]) == (210, 297)
     assert owner_mcp_done["merge_commit"].startswith("d056223")
@@ -386,6 +393,11 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     assert all(name in program["allowed_authority"] for name in surface["files"])
     assert "conversation_surface.py" not in surface["original"]
     assert "test_surface_boundary.py" in items_of(current)["MATTERMOST-01"]["tests"][0]
+    # #214: the shared direct-message module, recorded the same way.
+    slack = items_of(current)["SLACK-01"]["allowed_authority_amendment"]
+    assert (slack["issue"], slack["substep"]) == (214, "SLACK-01")
+    assert all(name in program["allowed_authority"] and name not in slack["original"] for name in slack["files"])
+    assert "test_slack_surface.py" in items_of(current)["SLACK-01"]["tests"][0]
     assert "Codex review of the exact final head" in program["escalated_review"]
     items = {item["id"]: item for item in current["iterations"]}
     assert {items[name]["issue"] for name in program["ordered_substeps"]} == {208, 209, 210, 211, 212, 213, 214}

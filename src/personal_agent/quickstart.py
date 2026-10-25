@@ -663,6 +663,9 @@ SETTINGS_WEB_CHANGES={
     # #213: the read model does not show the token; the notice states the action only.
     '/api/mattermost/connect':('Mattermost 연결','연결했습니다'),'/api/mattermost/disconnect':('Mattermost 연결','해제했습니다'),
     '/api/mattermost/company-approved':('Mattermost 회사 승인 표시','바꿨습니다'),
+    # #214: the read model does not show the tokens; the notice states the action only.
+    '/api/slack/connect':('Slack 연결','연결했습니다'),'/api/slack/disconnect':('Slack 연결','해제했습니다'),
+    '/api/slack/company-approved':('Slack 회사 승인 표시','바꿨습니다'),
     '/api/subscription-engines/connect':('구독 AI 연결',None),'/api/connections/google/disconnect':('Google 연결',None),
     '/api/telegram':('Telegram 봇',None),'/api/telegram/disconnect':('Telegram 연결',None),
     '/api/main-ai/key':('기본 AI 키','저장했습니다'),'/api/decision-route/credential':('판단 AI 키','저장했습니다'),
@@ -1403,6 +1406,12 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     if path=='/api/mattermost/connect':return self.reply(200,service.connect_mattermost(body))
                     if path=='/api/mattermost/disconnect':return self.reply(200,service.disconnect_mattermost())
                     return self.reply(200,service.set_mattermost_company_approved(body))
+                # #214: Slack is connected in Settings on this computer only, never through a tunnel.
+                if path in ('/api/slack/connect','/api/slack/disconnect','/api/slack/company-approved'):
+                    if self.tunneled():return self.reply(400,{'error':msg('slack.local_only')})
+                    if path=='/api/slack/connect':return self.reply(200,service.connect_slack(body))
+                    if path=='/api/slack/disconnect':return self.reply(200,service.disconnect_slack())
+                    return self.reply(200,service.set_slack_company_approved(body))
                 # #209: intranet destinations are declared in Settings on this computer only, never through a tunnel.
                 if path=='/api/intranet-destinations':
                     if self.tunneled():return self.reply(400,{'error':msg('intranet.local_only')})

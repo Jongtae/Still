@@ -31,11 +31,15 @@ license = {text = "AGPL-3.0-only"}
 # TCP connect and TLS handshake only (BSD-3-Clause, pydantic/httpx2; 2.13.1
 # reviewed). Already locked for mcp-host; its closure is httpcore2, h11, anyio,
 # idna, truststore (OS trust store). Used only by conversation_handoff.
+# slack_sdk: #214 the official Slack SDK for the owner's Slack direct message:
+# WebClient and the built-in Socket Mode client (MIT, Slack Technologies; 3.45.0
+# reviewed). No runtime dependencies of its own; imported only by slack_surface,
+# only once the owner connects Slack in Settings.
 dependencies = ["pypdf>=5.0", "python-docx>=1.1", "openpyxl>=3.1", "mcp-types==2.3.0", "oauthlib>=3.3.1,<4",
                 "cryptography>=42.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
                 "cryptography>=42.0,<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
                 "pyobjc-framework-WebKit>=12.2,<13; sys_platform == 'darwin'", "publicsuffixlist>=1.0.2,<2", "PyYAML>=6.0.1,<7",
-                "pydantic>=2.11,<3", "httpx2>=2.13.1,<3"]
+                "pydantic>=2.11,<3", "httpx2>=2.13.1,<3", "slack_sdk>=3.45.0,<4"]
 
 [project.optional-dependencies]
 schema-validation = ["jsonschema[format]>=4.23"]

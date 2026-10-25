@@ -3791,7 +3791,7 @@
   "ja": "Still が接続されました。ここでメッセージを送ると Still が答えます。支払いのように正確な実行承認が必要なことは、この会話ではなく Mac の Still で承認します。",
   "zh": "Still 已连接。在这里发送消息，Still 会回复。像付款这样需要精确执行批准的事项，请在 Mac 上的 Still 中批准，而不是在此对话中。"
  },
- "mattermost.invalid_value": {
+ "surface.invalid_value": {
   "ko": "켜기 또는 끄기로 정해 주세요.",
   "en": "Choose on or off.",
   "ja": "オンかオフを選んでください。",
@@ -3809,7 +3809,7 @@
   "ja": "この承認は Mattermost ではできません。Mac の Still 画面で承認または拒否してください。",
   "zh": "此批准无法在 Mattermost 中进行。请在 Mac 上的 Still 界面中批准或拒绝。"
  },
- "mattermost.answer_at_mac": {
+ "surface.answer_at_mac": {
   "ko": "이 항목은 이 Mac의 Still 화면에서 처리할 수 있어요.",
   "en": "You can handle this in Still on your Mac.",
   "ja": "この項目は Mac の Still 画面で処理できます。",
@@ -3820,5 +3820,65 @@
   "en": "Work mode is on, so I didn't connect to Mattermost. If your company approved this server, switch on 'Use in work mode too' first.",
   "ja": "会社モードがオンのため、Mattermost に接続しませんでした。会社が承認したサーバーなら、先に「会社モードでも使う」をオンにしてください。",
   "zh": "工作模式已开启，因此没有连接到 Mattermost。如果这是公司批准的服务器，请先开启“在工作模式下也使用”。"
+ },
+ "slack.not_connected": {
+  "ko": "Slack이 연결되어 있지 않아요. 설정 > 외부 연결에서 연결해 주세요.",
+  "en": "Slack is not connected. Connect it in Settings > External connections.",
+  "ja": "Slack が接続されていません。設定 > 外部接続 で接続してください。",
+  "zh": "Slack 尚未连接。请在“设置 > 外部连接”中连接。"
+ },
+ "slack.receive_failed": {
+  "ko": "Slack 연결이 끊겨 메시지를 받지 못하고 있어요. 앱 토큰과 봇 토큰을 확인해 주세요. 잠시 뒤 다시 연결해요.",
+  "en": "The Slack connection is down, so messages are not being received. Check the app token and the bot token. Still retries shortly.",
+  "ja": "Slack との接続が切れていて、メッセージを受け取れていません。アプリトークンとボットトークンを確認してください。しばらくして再接続します。",
+  "zh": "与 Slack 的连接已断开，无法接收消息。请检查应用令牌和机器人令牌。稍后会重新连接。"
+ },
+ "slack.invalid_token": {
+  "ko": "토큰을 확인해 주세요. 봇 토큰은 xoxb-, 앱 토큰은 xapp-로 시작하고, 공백 없이 한 줄로 붙여 넣어 주세요.",
+  "en": "Check the tokens. The bot token starts with xoxb- and the app token with xapp-; paste each as one line without spaces.",
+  "ja": "トークンを確認してください。ボットトークンは xoxb-、アプリトークンは xapp- で始まります。空白なしの 1 行で貼り付けてください。",
+  "zh": "请检查令牌。机器人令牌以 xoxb- 开头，应用令牌以 xapp- 开头，请不带空格粘贴为一行。"
+ },
+ "slack.invalid_owner": {
+  "ko": "Still과 대화할 내 Slack 멤버 ID(U로 시작)를 확인해 주세요. 프로필 > ⋮ > 멤버 ID 복사로 볼 수 있어요(봇 자신은 안 돼요).",
+  "en": "Check your Slack member ID (it starts with U), the one that talks to Still: Profile > ⋮ > Copy member ID. Not the bot itself.",
+  "ja": "Still と会話する自分の Slack メンバー ID（U で始まる）を確認してください。プロフィール > ⋮ > メンバー ID をコピー で確認できます（ボット自身は不可）。",
+  "zh": "请检查与 Still 对话的你的 Slack 成员 ID（以 U 开头），可在“个人资料 > ⋮ > 复制成员 ID”中找到（不能是机器人本身）。"
+ },
+ "slack.connect_failed": {
+  "ko": "Slack에 연결하지 못했어요. 두 토큰과 멤버 ID, 앱의 Socket Mode 설정을 확인해 주세요. 토큰은 저장하지 않았어요.",
+  "en": "Could not connect to Slack. Check both tokens, the member ID and the app's Socket Mode setting. The tokens were not saved.",
+  "ja": "Slack に接続できませんでした。2 つのトークン、メンバー ID、アプリの Socket Mode 設定を確認してください。トークンは保存していません。",
+  "zh": "无法连接到 Slack。请检查两个令牌、成员 ID 以及应用的 Socket Mode 设置。令牌未保存。"
+ },
+ "slack.connected_hello": {
+  "ko": "Still이 연결되었어요. 여기서 메시지를 보내면 Still이 답해요. 승인할 일은 버튼이나 답장, 이모지 반응으로 답할 수 있어요.",
+  "en": "Still is connected. Send a message here and Still answers. Answer anything to approve with its buttons, a reply or a reaction.",
+  "ja": "Still が接続されました。ここでメッセージを送ると Still が答えます。承認が必要なことには、ボタン、返信、絵文字リアクションで答えられます。",
+  "zh": "Still 已连接。在这里发送消息，Still 会回复。需要批准的事项可以用按钮、回复或表情回应来答复。"
+ },
+ "slack.local_only": {
+  "ko": "Slack 연결은 이 Mac의 설정 화면에서만 바꿀 수 있어요.",
+  "en": "The Slack connection can be changed only in Settings on this Mac.",
+  "ja": "Slack の接続は、この Mac の設定画面でのみ変更できます。",
+  "zh": "Slack 连接只能在这台 Mac 的设置界面中更改。"
+ },
+ "slack.work_mode_unapproved": {
+  "ko": "회사 모드가 켜져 있어 Slack에 연결하지 않았어요. 회사가 승인한 워크스페이스라면 먼저 '회사 모드에서도 사용'을 켜 주세요.",
+  "en": "Work mode is on, so I didn't connect to Slack. If your company approved this workspace, switch on 'Use in work mode too' first.",
+  "ja": "会社モードがオンのため、Slack に接続しませんでした。会社が承認したワークスペースなら、先に「会社モードでも使う」をオンにしてください。",
+  "zh": "工作模式已开启，因此没有连接到 Slack。如果这是公司批准的工作区，请先开启“在工作模式下也使用”。"
+ },
+ "slack.button_stale": {
+  "ko": "이 항목은 이미 처리됐거나 더 이상 기다리고 있지 않아요. 아무것도 바꾸지 않았어요.",
+  "en": "This was already answered or is no longer waiting. Nothing was changed.",
+  "ja": "この項目はすでに処理済みか、もう待機していません。何も変更していません。",
+  "zh": "此项已处理或不再等待。没有做任何更改。"
+ },
+ "slack.answered": {
+  "ko": "답했어요.",
+  "en": "Answered.",
+  "ja": "回答しました。",
+  "zh": "已答复。"
  }
 }

@@ -195,6 +195,10 @@ class QuickStore:
             # #213: the owner's Mattermost post each Work answers, Still's reply post, and what it replied to.
             db.execute('CREATE TABLE IF NOT EXISTS mattermost_turns(job_id TEXT PRIMARY KEY, owner TEXT NOT NULL, '
                        'source_post_id TEXT, reply_post_id TEXT, reply_to_post_id TEXT, created REAL NOT NULL)')
+            # #214: the same for Slack (message ts), and the Socket Mode events and button presses already taken.
+            db.execute('CREATE TABLE IF NOT EXISTS slack_turns(job_id TEXT PRIMARY KEY, owner TEXT NOT NULL, '
+                       'source_post_id TEXT, reply_post_id TEXT, reply_to_post_id TEXT, created REAL NOT NULL)')
+            db.execute('CREATE TABLE IF NOT EXISTS slack_events(key TEXT PRIMARY KEY, created REAL NOT NULL)')
             # #213: the conversation surface whose delivery claims a notice; every earlier row is Telegram's.
             if 'surface' not in columns:
                 db.execute("ALTER TABLE telegram_notifications ADD COLUMN surface TEXT NOT NULL DEFAULT 'telegram'")

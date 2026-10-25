@@ -86,12 +86,15 @@ class BoundaryShape(SurfaceCase):
     def test_the_composed_surfaces_declare_what_they_show(self):
         surface = self.service.telegram_surface
         self.assertIsInstance(surface, ConversationSurface)
-        # #213: Mattermost is composed beside Telegram; it stays unpaired until connected in Settings.
-        self.assertEqual(self.service.surfaces, (surface, self.service.mattermost_surface))
+        # #213, #214: Mattermost and Slack are composed beside Telegram; each stays unpaired until connected in Settings.
+        self.assertEqual(self.service.surfaces, (surface, self.service.mattermost_surface, self.service.slack_surface))
         self.assertIsNone(self.service.mattermost_surface.pairing())
+        self.assertIsNone(self.service.slack_surface.pairing())
         self.assertEqual(surface.capabilities, SurfaceCapabilities(reactions=True, typing=True, live_drafts=True,
                                                                    buttons=True, native_stop=True, action_approvals=True))
         self.assertEqual(self.service.mattermost_surface.capabilities, SurfaceCapabilities(reactions=True, typing=True))
+        self.assertEqual(self.service.slack_surface.capabilities,
+                         SurfaceCapabilities(reactions=True, buttons=True, action_approvals=True))
 
     def test_pairing_is_one_owner_identity_per_surface(self):
         surface = self.service.telegram_surface
