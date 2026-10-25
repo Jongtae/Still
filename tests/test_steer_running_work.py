@@ -27,6 +27,7 @@ from test_preparations import CHAT, GENERATION, _Case, call, finish
 
 FIRST = '마음에 드는 벨트 네 개를 장바구니에 한 번에 담아줘'
 REMARK = '보니까 내가 로고가 크게 박힌 걸 싫어하네'
+LATER = '그리고 갈색으로'
 DRAFT = '담았어요.'
 REPLY = {'content': DRAFT}
 STEERED = '로고가 크게 박히지 않은 벨트 네 개로 담았어요.'
@@ -173,6 +174,28 @@ class SteeringReachesTheRunningWork(_SteerCase):
         self.assertEqual(self.sends(), [])
         self.assertEqual([(r['message_id'], r['reaction']) for m, r in self.telegram if m == 'setMessageReaction'],
                          [(self.remark_message, [{'type': 'emoji', 'emoji': '👌'}])])
+
+    def test_a_continuation_carries_the_steers_the_last_attempt_already_had(self):
+        # Remark A reaches the worker with a tool result; remark B arrives after its last call.
+        later = {}
+        def second_remark(body):
+            later['message'] = self.typed_from_poll_thread(LATER)
+            return {'content': DRAFT}
+        self.script = [self.remark_mid_run, second_remark, REPLY, self.continued, {'content': STEERED}]
+        self.typed(FIRST)
+        self.assertTrue(self.service.run_one())
+        request = self.seen[-1][-1]['content']
+        self.assertIn(STEER_LEAD + '\n- ' + REMARK + '\n- ' + LATER, request, 'both, in the order sent')
+        self.assertEqual(self.jobs()[FIRST]['response'], STEERED)
+        calls = len(self.model_calls)
+        self.telegram.clear()
+        self.assertTrue(self.service.run_one())
+        self.assertTrue(self.service.run_one())
+        jobs = self.jobs()
+        self.assertEqual((jobs[REMARK]['response'], jobs[LATER]['response']), (STEER_FOLDED_TEXT, STEER_FOLDED_TEXT))
+        self.assertEqual(len(self.model_calls), calls, 'neither is answered twice')
+        self.assertEqual(sorted(r['message_id'] for m, r in self.telegram if m == 'setMessageReaction'),
+                         sorted([self.remark_message, later['message']]))
 
     def assert_runs_as_its_own_work(self):
         first = self.jobs()[FIRST]

@@ -646,16 +646,21 @@ class QuickStore:
             'ORDER BY created',(job_id,since))]
 
     def claim_unanswered_steers(self, job_id, since, db=None):
-        """``unanswered_steers``, claimed again for the attempt about to start (#308 S1)."""
+        """Every unanswered steer of Work ``job_id``, for the continuation about to start (#308 S1).
+
+        The ones its last attempt (started at ``since``) did not see are claimed
+        again; one that attempt already had keeps its claim, so the reply it is
+        answered by is either attempt's.
+        """
         if db is None:
             with self.db() as conn:
                 conn.execute('BEGIN IMMEDIATE')
                 return self.claim_unanswered_steers(job_id,since,db=conn)
-        texts=self.unanswered_steers(job_id,since,db=db)
-        if texts:
-            db.execute('UPDATE work_steers SET delivered_at=? WHERE job_id=? AND answered_at IS NULL AND (delivered_at IS NULL OR delivered_at<?)',
-                       (max(time.time(),since),job_id,since))
-        return texts
+        if not self.unanswered_steers(job_id,since,db=db):return []
+        db.execute('UPDATE work_steers SET delivered_at=? WHERE job_id=? AND answered_at IS NULL AND (delivered_at IS NULL OR delivered_at<?)',
+                   (max(time.time(),since),job_id,since))
+        return [row['content'] for row in db.execute('SELECT content FROM work_steers WHERE job_id=? AND answered_at IS NULL ORDER BY created',
+                                                     (job_id,))]
 
     def answer_steers(self, job_id, since, db):
         """Mark answered the steers claimed by the attempt (started at ``since``) whose reply is delivered (#308 S1)."""

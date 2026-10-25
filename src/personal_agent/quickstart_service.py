@@ -11083,9 +11083,9 @@ class AgentService:
             run.config,run.key,run.subscription,run.attempt_test=self.attempt_route(run.orchestration,run.attempt,run.base_config,run.base_key,run.route_snapshot)
             run.brief=run.attempt.brief(adjusted=run.attempt.number>1 and not run.attempt.steer) if run.attempt is not None else None
             run.attempt_start=self.last_event_id(job['id'])
-            # #308 S1: a steer claimed from now on reaches the attempt whose reply is delivered; the
-            # continuation's own steers were claimed just before it (``_continue_for_steers``).
-            run.attempt_started_at=run.steer_saved[2] if run.steer_note else time.time()
+            # #308 S1: a steer claimed from now on reaches the attempt whose reply is delivered.  A
+            # continuation keeps its predecessor's start: it carries the steers that attempt had too.
+            if not run.steer_note:run.attempt_started_at=time.time()
             # #795: whether this attempt's CLI ran with its own tools unconfined, and what it reported.
             run.unmediated_turn,run.engine_meta=False,None
             # #981: set by a CLI attempt whose worker asked for the owner's sign-in.
@@ -11142,7 +11142,8 @@ class AgentService:
         Before the reply is delivered, the owner's messages judged to steer this
         Work that its last attempt did not see (never claimed, or claimed by an
         attempt whose reply was dropped) get one more attempt on the same
-        worker: the request, the steers and the unsent reply as context.
+        worker: the request, every unanswered steer (those the last attempt had
+        too) and the unsent reply as context.
         Never after an effect or an unknown effect, while the owner's decision
         is pending, once the budget is spent, or after a continuation.  When no
         continuation follows, the Work takes no more steers: decided under the
