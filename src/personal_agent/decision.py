@@ -570,11 +570,17 @@ class SchemaDecisionEngine(DecisionEngine):
     _ANSWER_FIELD = {'judge': 'answer', 'choose': 'choice', 'score': 'score', 'choose_many': 'choices',
                      'structured': None}
 
-    def _done(self, context, kind, outcome, data, confidence, started, failure='', diagnostics=None, sent=False):
+    def _done(self, context, kind, outcome, data, confidence, started, failure='', diagnostics=None, sent=False,
+              timing=None):
         confidence.elapsed_seconds = round(self.now() - started, 3)
         confidence.sent = bool(sent)
         if self.audit:
-            self.audit(audit_record(context, kind, outcome, data, confidence, self.now(), failure, diagnostics))
+            record = audit_record(context, kind, outcome, data, confidence, self.now(), failure, diagnostics)
+            # #309 L3: process moments of a CLI judgment, numbers or None only, never content.
+            if timing is not None:
+                record['cli_timing'] = {key: value for key, value in timing.items()
+                                        if value is None or isinstance(value, (int, float)) and not isinstance(value, bool)}
+            self.audit(record)
         return outcome, data if isinstance(data, dict) else {}, confidence
 
 

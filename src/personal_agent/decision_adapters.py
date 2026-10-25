@@ -247,11 +247,16 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
         started = self.now()
         identity = self._identity()
         self.last_failure = ''
+        cli_timing = {'spawn_s': None, 'first_event_s': None, 'exit_s': None}
+
+        def observed(moment):
+            if cli_timing[moment] is None:
+                cli_timing[moment] = round(self.now() - started, 3)
 
         def done(outcome, data=None, confidence=None, failure='', diagnostics=None, sent=False):
             self.last_failure = failure
             return self._done(context, kind, outcome, data or {}, confidence or DecisionConfidence(**identity),
-                              started, failure, diagnostics, sent=sent)
+                              started, failure, diagnostics, sent=sent, timing=cli_timing)
 
         if self.guard:
             blocked = self.guard()
@@ -315,10 +320,16 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                     except Exception:pass
                 return done(OUTCOME_CANCELLED)
             try:
-                completed = bounded_run(self.execution.runner, argv, cwd=run_dir, env=env, timeout=self.timeout)
+                completed = bounded_run(self.execution.runner, argv, cwd=run_dir, env=env, timeout=self.timeout,
+                                        on_spawn=lambda: observed('spawn_s'),
+                                        on_line=lambda _line: observed('first_event_s'),
+                                        on_exit=lambda: observed('exit_s'))
             except subprocess.TimeoutExpired:
                 return done(OUTCOME_TIMEOUT, failure='timeout', sent=True)
             except OSError:
+                # An injected batch runner is observed at invocation time; an
+                # OSError means it never actually started a process.
+                cli_timing['spawn_s'] = None
                 return done(OUTCOME_UNAVAILABLE, failure='start-failed')
         stdout = (completed.stdout or '')[-MAX_CLI_OUTPUT_BYTES:]
         stderr = getattr(completed, 'stderr', '') or ''

@@ -6,6 +6,7 @@ it never receives the owner store, a host path, or arbitrary shell access.
 """
 from dataclasses import dataclass
 import json
+import inspect
 import logging
 import os
 from pathlib import Path
@@ -1343,7 +1344,27 @@ class _StreamedOutput:
                     pass
 
 
-def bounded_run(runner, argv, *, cwd, env, timeout, interrupted=None, on_line=None, session=None):
+def _runner_accepts(runner, name):
+    """Whether an injected runner explicitly opts into an optional callback."""
+    try:
+        parameters = inspect.signature(runner).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(parameter.name == name and parameter.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+               for parameter in parameters)
+
+
+def _observe(callback):
+    """Timing/progress observation must not change the bounded run's outcome."""
+    if callback is not None:
+        try:
+            callback()
+        except Exception:
+            pass
+
+
+def bounded_run(runner, argv, *, cwd, env, timeout, interrupted=None, on_line=None, session=None,
+                on_spawn=None, on_exit=None):
     """Run one CLI with no shell in its own process group.
 
     With the real ``subprocess.run`` a timeout kills the whole group, so the
@@ -1353,7 +1374,9 @@ def bounded_run(runner, argv, *, cwd, env, timeout, interrupted=None, on_line=No
     deadline) the group is killed at once and ``EngineInterrupted`` carries
     the reason.  An injected test runner receives ``start_new_session=True``.
     #718: ``on_line`` receives each stdout line while the CLI runs (live
-    progress); the returned output is unchanged.  #736 review: every run reads
+    progress); injected runners may opt into that callback too. ``on_spawn``
+    and ``on_exit`` observe process lifetime without affecting it. The returned
+    output is unchanged.  #736 review: every run reads
     its binary pipes itself (``_StreamedOutput``) and is killed, with the named
     ``STREAM_TOO_LARGE`` error, as soon as its combined output passes
     ``MAX_STREAM_BYTES``.  #308 S2: ``session`` (a ``ClaudeSteerSession``)
@@ -1364,25 +1387,36 @@ def bounded_run(runner, argv, *, cwd, env, timeout, interrupted=None, on_line=No
     """
     if runner is not subprocess.run:
         stdin = {'input': session.opening()} if session is not None else {'stdin': subprocess.DEVNULL}
-        return runner(argv, cwd=cwd, env=env, **stdin, capture_output=True, text=True,
-                      timeout=timeout, shell=False, start_new_session=True)
+        callbacks = {}
+        if on_line is not None and _runner_accepts(runner, 'on_line'):
+            callbacks['on_line'] = on_line
+        _observe(on_spawn)
+        completed = runner(argv, cwd=cwd, env=env, **stdin, **callbacks, capture_output=True, text=True,
+                           timeout=timeout, shell=False, start_new_session=True)
+        _observe(on_exit)
+        return completed
     process = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.PIPE if session is not None else subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, start_new_session=True)
+    _observe(on_spawn)
     if session is not None:
         os.set_blocking(process.stdin.fileno(), False)
         on_line = _both(session.on_line, on_line)
     streamed = _StreamedOutput(process, on_line, limit=MAX_STREAM_BYTES)
     try:
-        return _bounded_wait(process, streamed, argv, timeout, interrupted, session)
-    except StreamLimitExceeded:
-        kill_process_group(process)
-        streamed.close()
         try:
-            process.wait(timeout=KILL_DRAIN_SECONDS)
-        except subprocess.TimeoutExpired:
-            pass
-        LOG.warning('engine output passed the stream bound; process group killed')
-        raise ExecutionError(STREAM_TOO_LARGE, failure_class='invalid-output') from None
+            return _bounded_wait(process, streamed, argv, timeout, interrupted, session)
+        except StreamLimitExceeded:
+            kill_process_group(process)
+            streamed.close()
+            try:
+                process.wait(timeout=KILL_DRAIN_SECONDS)
+            except subprocess.TimeoutExpired:
+                pass
+            LOG.warning('engine output passed the stream bound; process group killed')
+            raise ExecutionError(STREAM_TOO_LARGE, failure_class='invalid-output') from None
+    finally:
+        if process.poll() is not None:
+            _observe(on_exit)
 
 
 def _both(first, second):
