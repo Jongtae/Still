@@ -41,7 +41,7 @@ class FakeMattermost:
     """The REST API v4 calls the surface makes, against in-memory users, channels and posts."""
 
     def __init__(self):
-        self.clock = 1_800_000_000_000
+        self.clock = int(time.time() * 1000) + 1000
         self.users = {BOT: 'still', OWNER: 'owner', INTRUDER: 'intruder'}
         self.channels = {}
         self.posts = {}
@@ -465,6 +465,25 @@ class ReviewRegressions(MattermostCase):
             self.surface.receive()
         self.assertEqual(sorted((call.args[0], call.args[1]) for call in read.call_args_list),
                          sorted([(x['id'], '+1'), (y['id'], '-1')]))
+
+    def test_the_work_keeps_when_the_owner_wrote_it(self):
+        post = self.fake.post(OWNER, self.dm(), '네')
+        self.surface.receive()
+        job = self.mm_jobs()[0]
+        self.assertAlmostEqual(job['source_at'], post['create_at'] / 1000)
+        self.assertLess(job['source_at'], job['created'] + 1)
+
+    def test_an_interrupted_work_gets_its_one_reply_after_a_restart(self):
+        self.owner_says('긴 작업')
+        work = self.mm_jobs()[0]
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='running' WHERE id=?", (work['id'],))
+        self.assertEqual(self.service.recover_interrupted_work(), [work['id']])
+        self.assertEqual(self.store.job(work['id'])['delivery'], 'pending')
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(work['id'])['delivery'], 'sent')
+        self.assertEqual(len([job for job in self.store.jobs() if job['channel'].startswith('mattermost:')]), 1,
+                         'nothing is rerun')
 
     def test_a_long_reply_partly_sent_is_never_posted_again(self):
         self.owner_says('질문')

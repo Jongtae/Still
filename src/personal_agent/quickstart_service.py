@@ -11816,7 +11816,7 @@ class AgentService:
             self.store.put('telegram_status',{'state':'connected','message':msg('service.your_personal_telegram_account_is_connected')})
 
     def recover_interrupted_work(self):
-        """Restart recovery that leaves running Telegram Work a durable surface.
+        """Restart recovery that leaves running surface Work a durable reply (#306 review: every surface).
 
         Running Work has only ephemeral presence (typing/draft, #581), which
         vanishes with the process.  `QuickStore.recover` marks it
@@ -11826,10 +11826,13 @@ class AgentService:
         `safe_retry` allows).  Nothing is re-run and nothing already sent or
         uncertain is re-sent - only `delivery='none'` rows are touched.
         """
+        prefixes=[surface.channel_prefix for surface in self.surfaces if surface.channel_prefix]
         with self.store.db() as db:
             running=[row['id'] for row in db.execute(
-                "SELECT j.id FROM jobs j WHERE j.status='running' AND j.channel LIKE 'telegram:%' AND j.delivery='none' "
-                "AND NOT EXISTS (SELECT 1 FROM telegram_task_cards c WHERE c.job_id=j.id AND c.state!='deleting')")]
+                "SELECT j.id FROM jobs j WHERE j.status='running' AND ("+(' OR '.join(['substr(j.channel,1,?)=?']*len(prefixes)) or '0')
+                +") AND j.delivery='none' "
+                "AND NOT EXISTS (SELECT 1 FROM telegram_task_cards c WHERE c.job_id=j.id AND c.state!='deleting')",
+                [value for prefix in prefixes for value in (len(prefix),prefix)])]
         self.store.recover()
         with self.store.db() as db:
             db.execute("DELETE FROM telegram_task_cards WHERE state='deleting' AND job_id IN (SELECT id FROM jobs WHERE status='interrupted')")

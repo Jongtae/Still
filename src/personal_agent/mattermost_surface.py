@@ -395,6 +395,11 @@ class MattermostSurface(ConversationSurface):
                 return None
             work_id = service.store.enqueue(text, f"mm:{generation}:{post['id']}", f'mattermost:{generation}', owner,
                                             db=db, owner_typed=True)
+            # #306 review: when the owner wrote it, not when it was fetched, so an act is never judged
+            # against an item shown after it (``owner_acts.read(before=...)``); a clock ahead of ours is not trusted.
+            spoke = int(post.get('create_at') or 0) / 1000
+            if 0 < spoke <= time.time() + 60:
+                db.execute('UPDATE jobs SET source_at=? WHERE id=?', (spoke, work_id))
             db.execute(f'INSERT INTO {TURNS_TABLE}(job_id,owner,source_post_id,reply_to_post_id,created) VALUES (?,?,?,?,?)',
                        (work_id, owner, post['id'], reply_to, time.time()))
         LOG.info('mattermost: owner message queued work=%s', work_id)
