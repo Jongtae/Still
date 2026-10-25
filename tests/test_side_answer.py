@@ -206,6 +206,33 @@ class SideAnswerTests(_SteerCase):
         self.assertIn('safe previous question', context.render())
         self.assertIn('another_task_in_progress', context.facts)
 
+    def test_secret_with_json_escapes_is_redacted_before_serialization(self):
+        secret = 'fixture"secret\\value'
+        self.store.secret('model_key', secret)
+        with self.store.db() as db:
+            db.execute("INSERT INTO messages(role,content,channel,created) VALUES ('user',?,'web',3)", ('my key is ' + secret,))
+        self.pair()
+        [context] = self.side_calls
+        conversation = json.loads(context.facts['conversation'])
+        self.assertFalse(any(secret in str(message.get('content')) for message in conversation))
+        self.assertNotIn(secret, context.render())
+
+    def test_side_reply_recorded_while_running_work_routes_keeps_its_request(self):
+        self.script = [{'content': 'The other task is complete.'}, {'content': 'The other task is complete.'}]
+        self.typed('Complete the other task.')
+        original = self.service._prepare_worker_turn
+        def prepare(run):
+            # The side answer commits after the running Work was claimed and routed.
+            self.typed(QUESTION)
+            self.assertEqual(self.jobs()[QUESTION]['status'], 'succeeded')
+            return original(run)
+        with mock.patch.object(self.service, '_prepare_worker_turn', side_effect=prepare):
+            self.assertTrue(self.service.run_one())
+        first = self.jobs()['Complete the other task.']
+        self.assertEqual(first['status'], 'succeeded')
+        self.assertEqual(self.replies(first), ['The other task is complete.'])
+        self.assertEqual(self.store.history(through=first['id'])[-1]['job_id'], first['id'])
+
     def test_web_handler_calls_consider_steer_without_socket(self):
         handler = object.__new__(make_handler(self.service))
         handler.path = '/api/chat'

@@ -5762,7 +5762,7 @@ class AgentService:
         Work would not be orchestrated. The host supplies the same durable budget
         used by its worker. A standalone caller opens and pauses its own lease."""
         stored=self.history_for_models(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
-                                       else self.store.history()[-16:])
+                                       else self.store.history(through=job['id'])[-16:])
         document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
         sections={'profile':self.owner_profile_snapshot(job.get('message'),recall=not prep.preparation_of(job.get('request_key'))),'current_context':self.current_context_text(job),
                   'prepared':self.prepared_text(job)}
@@ -10510,7 +10510,9 @@ class AgentService:
             rows=self.history_for_models(self.store.history()[-15:])
             document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
             rows=self._document_history_rows(rows,config,subscription,document_jobs)
-            history=[context_message(row) for row in rows]
+            # Each text is redacted before serialization: JSON escaping would hide a stored secret's literal value.
+            history=[{**message,'content':self._redact_known_secrets(message['content'])} if isinstance(message.get('content'),str)
+                     else message for message in map(context_message,rows)]
             context=self.decision_judge._context('side-answer',
                 {'owner_message':job['message'], 'another_task_in_progress':running.get('message') or '',
                  'conversation':json.dumps(history,ensure_ascii=False)},
@@ -11218,7 +11220,7 @@ class AgentService:
             run.route_snapshot=self.store.config('subscription_engine',{})
         # #659: a preparation's Work sees its own origin and goal only.
         run.stored_history=self.history_for_models(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
-                                                   else self.store.history()[-16:])
+                                                   else self.store.history(through=job['id'])[-16:])
         run.document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
         run.document_history=any(message.get('job_id') in run.document_jobs for message in run.stored_history)
         # Earlier replies of failed/partial/interrupted Work carry
