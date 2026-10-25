@@ -22,7 +22,7 @@ from personal_agent.agent_runtime import (EFFECT_CHANGED, EFFECT_FREE_READS, OWN
                                           Capabilities, ToolError, evidence_summary, record_effect, recorded_arguments)
 from personal_agent.bounded_execution import BOUNDED_PROFILE, CLI_PROFILES, STRICT_PROFILE, profile_actions
 from personal_agent.cli_browser_relay import RELAYED_LOCATION_REQUEST
-from personal_agent.conversation_handoff import FOLLOWUP_CANCEL
+from personal_agent.conversation_handoff import FOLLOWUP_CANCEL, TelegramNotSent
 from personal_agent.context_observations import LOCATION_REQUEST_TTL_SECONDS, continuation_key, continuation_request
 from personal_agent.manifests import HOST_ACTIONS, WRITE_ACTIONS
 from personal_agent.quickstart_service import CONTINUATION_EFFECT_NOTE_HEAD, LOCATION_NOT_CONTINUED_TEXT, LOCATION_RECEIVED_TEXT
@@ -284,6 +284,30 @@ class Continuation(_LocationCase):
             pass
         self.assertEqual(len([b for b in self.sends() if (b.get('reply_markup') or {}).get('keyboard')]), 1,
                          'the continuation\'s answer carries no second button')
+
+    def test_an_answer_not_sent_keeps_its_offer_for_the_retry(self):
+        """#201 review: Telegram unreachable (definitely not sent) must not drop the share button."""
+        self.script = [{'content': None, 'tool_calls': [call('1', 'ask_location', reason='다른 곳이면 위치를 보내 주세요.',
+                                                             button_label='현재 위치 공유', mode='with_answer')]},
+                       {'content': '지금 집이시면, 에그 샌드위치를 추천해요.'}]
+        work = self.receive(self.REQUEST)
+        outage, original = [True], self.service.telegram_transport
+        def unreachable(url, body=None, headers=None, timeout=60):
+            if url.endswith('/sendMessage') and outage[0]:
+                raise TelegramNotSent('connect failed after the client retries')
+            return original(url, body, headers, timeout=timeout)
+        self.service.telegram_transport = unreachable
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(work)['delivery'], 'pending')
+        self.assertIsNotNone(self.store.config(self.service.LOCATION_OFFER_PREFIX + work, None))
+        outage[0] = False
+        self.service._unsent_retry_at = 0
+        while self.service.deliver_one():
+            pass
+        [reply] = [b for b in self.sends() if (b.get('reply_markup') or {}).get('keyboard')]
+        self.assertIn('에그 샌드위치', reply['text'])
+        self.assertEqual(reply['reply_markup']['keyboard'][0][0], {'text': '현재 위치 공유', 'request_location': True})
+        self.assertIsNone(self.store.config(self.service.LOCATION_OFFER_PREFIX + work, None), 'the offer rides once')
 
     def test_an_offer_whose_request_ended_puts_no_button_on_the_answer(self):
         """#1582: an expired request leaves the answer plain."""

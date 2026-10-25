@@ -1336,6 +1336,7 @@ class TelegramSurface(ConversationSurface):
             except TelegramNotSent:
                 # #123: nothing reached Telegram, so the reply stays queued and is sent once it is
                 # reachable; what follows a settled send (notices, outcome) waits for that send.
+                if offer:service.restore_location_offer(job,offer)
                 with service.store.db() as db:
                     db.execute("UPDATE jobs SET delivery='pending' WHERE id=? AND delivery='sending'",(job['id'],))
                 service._unsent_backoff=min(TELEGRAM_UNSENT_BACKOFF_MAX,max(TELEGRAM_UNSENT_BACKOFF_FIRST,service._unsent_backoff*2))

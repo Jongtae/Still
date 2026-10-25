@@ -10228,6 +10228,11 @@ class AgentService:
             return None
         return self.location_keyboard(offer.get('label') or None)
 
+    def restore_location_offer(self, job, markup):
+        """#201 review: put a consumed offer back after a definite non-delivery (``TelegramNotSent``),
+        so the retried answer still carries the button; ``location_offer_markup`` re-checks the request."""
+        self.store.put(self.LOCATION_OFFER_PREFIX+job['id'],{'label':markup['keyboard'][0][0]['text']})
+
     #: #992: config row set while a location keyboard may still be showing in the owner's chat.
     LOCATION_KEYBOARD_KEY='telegram_location_keyboard'
     #: Neutral fallback; the owner's AI normally writes the label in the owner's language (#1230).
