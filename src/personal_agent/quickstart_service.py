@@ -140,7 +140,7 @@ STEER_SECOND_PASS_TEXT=msg('steer.applied_second_pass')
 STEER_NOT_APPLIED='not_applied'
 STEER_NOT_APPLIED_REASONS={
     'finished':'steer.not_applied.finished', 'continued':'steer.not_applied.continued',
-    'effect':'steer.not_applied.effect', 'owner':'steer.not_applied.owner', 'budget':'steer.not_applied.budget',
+    'effect':'steer.not_applied.effect', 'unknown':'steer.not_applied.unknown', 'owner':'steer.not_applied.owner', 'budget':'steer.not_applied.budget',
     'stopped':'steer.not_applied.stopped', 'route':'steer.not_applied.route', 'failed':'steer.not_applied.failed',
     'new_request':'steer.not_applied.new_request'}
 #: #308 S1: how long a finishing Work waits for steer judgments still running (the judgment is a few seconds).
@@ -10390,7 +10390,8 @@ class AgentService:
         steered=self.store.job(job.get('related_job_id')) if job.get('relation_kind')=='steer' else None
         if not steered or steered.get('status') not in ('succeeded','partial'):return False
         # #308 S4: applied in the reply being written, or by the one second pass (S1).
-        text=STEER_SECOND_PASS_TEXT if 'continued' in self._steer_events(steered['id']) else STEER_FOLDED_TEXT
+        events=self._steer_events(steered['id'])
+        text=STEER_SECOND_PASS_TEXT if 'continued' in events and 'continuation_failed' not in events else STEER_FOLDED_TEXT
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status='succeeded',response=?,delivery='none' WHERE id=?",(text,job['id']))
         self.presence.pop(job['id'],None)
@@ -10428,7 +10429,7 @@ class AgentService:
             if not reason and 'continuation_failed' in events:reason='failed'
             if not reason:
                 status=str(steered.get('status') or '')
-                reason=('effect' if status=='unknown' else 'owner' if status.startswith('awaiting_')
+                reason=('unknown' if status=='unknown' else 'owner' if status.startswith('awaiting_')
                         else 'failed' if status in ('failed','interrupted','cancelled','unsupported') else 'new_request')
         return msg(STEER_NOT_APPLIED_REASONS[reason]) if reason in STEER_NOT_APPLIED_REASONS else ''
 
@@ -11251,11 +11252,12 @@ class AgentService:
         """
         job_id=run.job['id']
         if run.steer_note:return 'continued'
-        if run.outcome=='unknown':return 'effect'
+        if run.outcome=='unknown':return 'unknown'
         if not isinstance((run.base_history or [{}])[-1].get('content'),str):return 'route'
         # A browser step asked for or approved and unspent: the steer may change what it covers.
         if run.approval_needed[0] or run.context_approval_needed[0] or run.waits_for_sign_in or self._browser_request(job_id):return 'owner'
-        if self._work_has_unknown_effect(job_id) or self.connector_effect_progress(job_id)[0]:return 'effect'
+        if self._work_has_unknown_effect(job_id):return 'unknown'
+        if self.connector_effect_progress(job_id)[0]:return 'effect'
         if run.unmediated_turn and self.cli_host_actions(run.engine_meta)!=():return 'effect'
         from .agent_runtime import EFFECT_NONE, call_effects
         with self.store.db() as db:

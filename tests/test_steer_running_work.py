@@ -201,6 +201,22 @@ class SteeringReachesTheRunningWork(_SteerCase):
         self.assertEqual(sorted(r['message_id'] for m, r in self.telegram if m == 'setMessageReaction'),
                          sorted([self.remark_message, later['message']]))
 
+    def test_a_steer_the_original_attempt_answered_is_folded_after_the_continuation_fails(self):
+        # Remark A reached the worker with its tool result; remark B starts the one continuation, which fails.
+        def second_remark(body):
+            self.typed_from_poll_thread(LATER)
+            return {'content': DRAFT}
+        self.script = [self.remark_mid_run, second_remark, REPLY, lambda body: 'not a message']
+        self.typed(FIRST)
+        self.assertTrue(self.service.run_one())
+        first = self.jobs()[FIRST]
+        self.assertEqual((first['status'], first['response']), ('succeeded', DRAFT))
+        self.assertEqual([e['status'] for e in self.events(first['id'], STEER_EVENT)],
+                         ['received', 'delivered', 'received', 'continued', 'continuation_failed'])
+
+        self.assertTrue(self.service.run_one())
+        self.assertEqual(self.jobs()[REMARK]['response'], STEER_FOLDED_TEXT)
+
     def assert_runs_as_its_own_work(self, reason):
         first = self.jobs()[FIRST]
         self.assertEqual(first['response'], DRAFT, 'the reply is delivered as written')
@@ -372,7 +388,8 @@ class DispositionFromRecordedState(_SteerCase):
                  (('succeeded', (STEER_NOT_APPLIED, {'reason': 'stopped'})), 'stopped'),
                  (('succeeded', ('continued', {}), ('continuation_failed', {})), 'failed'),
                  (('awaiting_connection',), 'owner'),
-                 (('unknown',), 'effect'),
+                 (('unknown',), 'unknown'),
+                 (('succeeded', (STEER_NOT_APPLIED, {'reason': 'unknown'})), 'unknown'),
                  (('interrupted',), 'failed'),
                  (('succeeded',), 'new_request')]
         for (status, *events), reason in cases:

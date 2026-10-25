@@ -3911,6 +3911,12 @@
   "ja": "前の作業ですでに実行したことがあるため、その回答には反映せず、新しい依頼として対応しました。",
   "zh": "上一项工作已经执行了操作，所以没有把这条消息纳入它的回复，而是当作新请求处理了。"
  },
+ "steer.not_applied.unknown": {
+  "ko": "앞 작업에서 실행됐는지 확인하지 못한 일이 있어 그 답에는 반영하지 않고 새 요청으로 처리했어요.",
+  "en": "The earlier work has an action whose outcome I could not confirm, so I did not add this to its reply and handled it as a new request.",
+  "ja": "前の作業で実行されたか確認できないことがあるため、その回答には反映せず、新しい依頼として対応しました。",
+  "zh": "上一项工作中有一项操作的结果无法确认，所以没有把这条消息纳入它的回复，而是当作新请求处理了。"
+ },
  "steer.not_applied.owner": {
   "ko": "앞 작업이 소유자의 확인을 기다리고 있어 그 답에는 반영하지 않고 새 요청으로 처리했어요.",
   "en": "The earlier work is waiting for your decision, so I did not add this to its reply and handled it as a new request.",
