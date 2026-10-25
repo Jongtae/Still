@@ -479,6 +479,18 @@
   "ja": "CLI 自身の検索",
   "zh": "CLI 自带搜索"
  },
+ "information_use.comparison_cut_memory_rows": {
+  "ko": "- 보관 정보 비교는 최근 기억 {limit}개까지만 했습니다. 그보다 오래된 기억이 밖으로 나간 내용에 들어 있었는지는 확인하지 않았습니다.",
+  "en": "- Held information was compared only with the newest {limit} Memory items. Whether older Memory was in what went out was not checked.",
+  "ja": "- 保管情報の照合は最近の記憶 {limit} 件までにとどめました。それより古い記憶が外に出た内容に含まれていたかは確認していません。",
+  "zh": "- 已保存信息仅与最近的 {limit} 条记忆进行了比对。更早的记忆是否包含在发出的内容中，未作确认。"
+ },
+ "information_use.comparison_cut_text_chars": {
+  "ko": "- 밖으로 나간 내용은 건마다 앞 {limit}자까지만 보관 정보와 비교했습니다. 그 뒤에 보관 정보가 들어 있었는지는 확인하지 않았습니다.",
+  "en": "- Only the first {limit} characters of each thing that went out were compared with held information. Whether held information came after that was not checked.",
+  "ja": "- 外に出た内容は、1 件ごとに先頭 {limit} 文字までしか保管情報と照合していません。その後ろに保管情報が含まれていたかは確認していません。",
+  "zh": "- 每条发出的内容只有前 {limit} 个字符与已保存信息进行了比对。之后是否包含已保存信息，未作确认。"
+ },
  "information_use.held_values_that_went_out": {
   "ko": "밖으로 나간 내용에 들어 있던 보관 정보",
   "en": "Held information found in what went out",

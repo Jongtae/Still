@@ -69,6 +69,117 @@ class Matcher(unittest.TestCase):
         self.assertNotIn('1234', json.dumps(row))
 
 
+FIXTURE = json.loads((Path(__file__).resolve().parent / 'fixtures' / 'held_values_multilingual.json').read_text(encoding='utf-8'))
+
+
+class MultilingualMemory(unittest.TestCase):
+    """#245: on a realistic ko/en/ja/zh Memory, an everyday word shared with a value is not a held value going out.
+
+    Measured on ``fixtures/held_values_multilingual.json`` (65 Memory rows, 68 unrelated outbound
+    texts, 33 carrying a held value).  Before #245 the matcher labelled 57 of the 68 unrelated texts
+    (88 labels); the bounds below pin what remains, so a looser matcher fails here.
+    """
+
+    HELD = [('memory', key, value) for key, value in FIXTURE['memory']]
+    UNRELATED_TEXTS_MATCHED_MAX = 21
+    UNRELATED_LABELS_MAX = 23
+    WRONG_LABELS_ON_CARRIED_MAX = 1
+
+    def keys(self, text, held=None):
+        return [row['key'] for row in held_value_matches([(text, 'search.example')], held or self.HELD)]
+
+    def test_false_matches_stay_bounded_and_every_carried_value_is_still_found(self):
+        false = {text: keys for text in FIXTURE['unrelated'] if (keys := self.keys(text))}
+        self.assertLessEqual(len(false), self.UNRELATED_TEXTS_MATCHED_MAX, false)
+        self.assertLessEqual(sum(map(len, false.values())), self.UNRELATED_LABELS_MAX, false)
+        wrong = []
+        for text, expected in FIXTURE['carried']:
+            with self.subTest(text=text):
+                found = self.keys(text)
+                self.assertIn(expected[0], found, 'a carried value is still found')
+                wrong.extend(key for key in found if key not in expected)
+        self.assertLessEqual(len(wrong), self.WRONG_LABELS_ON_CARRIED_MAX, wrong)
+
+    def test_everyday_words_shared_with_a_value_are_not_matches(self):
+        for text in ('생일 선물 추천',            # 생일 of "아내 생일은 3월 14일"
+                     '저녁 메뉴 추천',            # 저녁 of four rows
+                     '초등학생 수학 학원 추천',   # 초등 inside 서초초등학교
+                     '병원 예약 방법', '가족 여행지 추천', '등산화 추천', '/search q=주말 날씨',
+                     'marathon training plan', 'flat white vs latte', 'book club questions',
+                     'weather in Tokyo tomorrow', '東京 天気 明日', '京都 観光', '上海 天气', '出差 注意事项'):
+            with self.subTest(text=text):
+                self.assertEqual(self.keys(text), [])
+        # The same words with the value's own specific part still match.
+        self.assertEqual(self.keys('김민지 생일 선물'), ['family.wife-name'])
+        self.assertEqual(self.keys('아내 생일 3월 14일'), ['family.wife-birthday'])
+        self.assertEqual(self.keys('Chuncheon marathon October'), ['hobby.running'])
+        self.assertEqual(self.keys('柊家 京都 旅館'), ['travel.ryokan'])
+
+    def test_hangul_spelled_in_bare_jamo_still_matches(self):
+        rows = held(('name', '김철수'))
+        for text in ('기ᄆ처ᄅ수님', 'ㄱㅣㅁㅊㅓㄹㅅㅜ', '김철수님 연락처'):
+            with self.subTest(text=text):
+                self.assertEqual(self.keys(text, rows), ['name'])
+
+
+class ComparisonCut(unittest.TestCase):
+    """#245: a comparison cut off by its bounds is named on the Evidence and in the view, never silent."""
+
+    def test_text_past_the_compared_length_is_named_and_text_within_it_is_not(self):
+        caps = Recording.Caps(held(('member-number', MEMBER)))
+        long_text = '가' * agent_runtime.OUTBOUND_TEXT_MAX + ' ' + MEMBER
+        added = outbound_evidence(caps, 'browser_type', {'text': long_text}, {'url': 'https://a.example/'})
+        self.assertNotIn('outbound_matches', added, 'the value after the compared characters is not seen')
+        self.assertEqual(added['outbound_comparison_cut'], [{'kind': 'text_chars', 'limit': agent_runtime.OUTBOUND_TEXT_MAX}])
+        short = outbound_evidence(caps, 'browser_type', {'text': MEMBER}, {'url': 'https://a.example/'})
+        self.assertNotIn('outbound_comparison_cut', short)
+        self.assertEqual(outbound_evidence(Recording.Caps(), 'browser_type', {'text': long_text}, {'url': 'https://a.example/'}), {},
+                         'nothing held: nothing was compared, so nothing was cut off')
+        self.assertEqual(agent_runtime.attempted_outbound(caps, 'browser_type', {'text': long_text}, RuntimeError('x')),
+                         {'outbound_comparison_cut': [{'kind': 'text_chars', 'limit': agent_runtime.OUTBOUND_TEXT_MAX}]},
+                         'a failed attempt names the cut too')
+
+    def test_memory_past_the_compared_rows_is_named(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = QuickStore(Path(folder) / 'state')
+            for index in range(agent_runtime.HELD_MEMORY_MAX):
+                store.save_memory(f'fact-{index}', f'value {index:04d} kept')
+            job = store.enqueue('찾아줘', 'cut')
+            caps = Capabilities(store, None, {}, '', job, lambda *a: None)
+            self.assertEqual(len(caps.held_values()), agent_runtime.HELD_MEMORY_MAX)
+            self.assertNotIn('outbound_comparison_cut', outbound_evidence(caps, 'browser_type', {'text': 'hello'}, {}),
+                             'exactly the compared number of rows: nothing left out')
+            store.save_memory('newest', 'value 9999 newest')
+            self.assertEqual(len(caps.held_values()), agent_runtime.HELD_MEMORY_MAX)
+            added = outbound_evidence(caps, 'browser_type', {'text': 'hello'}, {})
+            self.assertEqual(added['outbound_comparison_cut'], [{'kind': 'memory_rows', 'limit': agent_runtime.HELD_MEMORY_MAX}])
+
+    def test_the_view_says_where_the_comparison_was_cut_off_even_without_a_match(self):
+        self.assertEqual(information_use.COMPARISON_CUTS,
+                         (agent_runtime.COMPARISON_CUT_MEMORY, agent_runtime.COMPARISON_CUT_TEXT))
+        with tempfile.TemporaryDirectory() as folder:
+            store = QuickStore(Path(folder) / 'state')
+            job = store.enqueue('찾아줘', 'cut')
+            text_cut = {'kind': 'text_chars', 'limit': 1000}
+            memory_cut = {'kind': 'memory_rows', 'limit': 500}
+            rows = [('browser_type', 'succeeded', {'call_id': 'c1', 'host_action': 'browser_type',
+                                                   'evidence': {'outbound_comparison_cut': [text_cut]}}),
+                    ('web_search', 'failed', {'call_id': 'c2', 'host_action': 'web_search', 'error': 'x',
+                                              'outbound_comparison_cut': [memory_cut, {'kind': 'other', 'limit': 3}]})]
+            with store.db() as db:
+                for tool, status, detail in rows:
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (job, tool, status, json.dumps(detail), 1))
+            audit = information_use.work_information_use(store, job)
+            self.assertEqual(audit['sent_to']['held_value_matches'], [])
+            self.assertEqual(audit['sent_to']['held_value_comparison_cut'], [memory_cut, text_cut])
+            text = information_use.render_korean(audit)
+            self.assertIn('- 보관 정보 비교는 최근 기억 500개까지만 했습니다.', text)
+            self.assertIn('- 밖으로 나간 내용은 건마다 앞 1,000자까지만 보관 정보와 비교했습니다.', text)
+            other = store.enqueue('다른 작업', 'plain')
+            self.assertNotIn('held_value_comparison_cut', information_use.work_information_use(store, other)['sent_to'])
+
+
 class OutboundTexts(unittest.TestCase):
     """What each mediated outbound call carried, and where; read for the comparison only."""
 
@@ -709,6 +820,33 @@ console.log(text);
         self.assertIn('웹 검색: 이 작업에서 저장한 값과 겹치는 내용', out)
         self.assertIn('이 작업의 대화는 선택한 AI 제공자가 처리합니다.', out)
         self.assertIn('AI CLI가 스스로 하는 웹 검색은 Still을 거치지 않습니다.', out)
+
+    def test_the_web_view_says_where_the_comparison_was_cut_off(self):
+        import shutil
+        import subprocess
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('node is not installed')
+        app = self.ROOT / 'src' / 'personal_agent' / 'web' / 'app.js'
+        script = r"""
+const ui=require(process.argv[1]);
+class Node{constructor(tag){this.tag=tag;this.children=[];this.textContent='';this.className='';}
+  append(...nodes){this.children.push(...nodes);}}
+global.document={createElement:tag=>new Node(tag)};
+for(const lang of ['ko','en']){
+  const box=new Node('div');ui.setLanguage(lang);
+  ui.informationUseView({information_use:{recorded:true,used:[],conversation_turns:0,sent_to:{workers:[],lookups:[],
+    held_value_matches:[],held_value_comparison_cut:[{kind:'memory_rows',limit:500},{kind:'text_chars',limit:1000},{kind:'other',limit:1}]}}},box);
+  console.log(JSON.stringify(box,(key,value)=>key==='tag'||key==='className'?undefined:value));
+}
+"""
+        ko, en = subprocess.run([node, '-e', script, str(app)], capture_output=True, text=True, check=True).stdout.splitlines()
+        self.assertIn('보관 정보 비교 범위', ko)
+        self.assertIn('최근 기억 500개까지만 비교했고, 그보다 오래된 기억은 확인하지 않았습니다', ko)
+        self.assertIn('나간 내용마다 앞 1,000자까지만 비교했고, 그 뒤는 확인하지 않았습니다', ko)
+        self.assertIn('Compared only with the newest 500 Memory items; older Memory was not checked', en)
+        self.assertIn('Compared only the first 1,000 characters of each thing that went out', en)
+        self.assertNotIn('other', ko + en)
 
 
 if __name__ == '__main__':

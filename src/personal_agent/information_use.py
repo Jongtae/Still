@@ -67,6 +67,9 @@ CATEGORY_NAMES = {
 _NOT_TOOLS = frozenset({'model', 'subscription_engine', 'orchestrator'})
 #: #167: where a held value an outbound call carried is kept (``agent_runtime.held_values``).
 MATCH_SOURCES = frozenset({'memory', 'work_write'})
+#: #245: the bounds that can cut that comparison off, in the order the view says them
+#: (``agent_runtime.COMPARISON_CUT_MEMORY`` and ``COMPARISON_CUT_TEXT``).
+COMPARISON_CUTS = ('memory_rows', 'text_chars')
 
 
 def _text(value, limit=LABEL_CHARS):
@@ -377,7 +380,7 @@ def work_information_use(store, job_id, redact=None):
         add('spliced', [f'Telegram 사진 {photo_count}개'])
     lookups, results, started, connections = [], [], {}, {}
     # #167 (#28 option A): labels of held values outbound calls carried, and the hosts the browser opened.
-    matches, opened = [], []
+    matches, opened, cuts = [], [], {}
     for event in store.task_events(job_id):
         tool, status, trace = event.get('tool'), event.get('status'), event.get('trace') or {}
         if tool in _NOT_TOOLS or not isinstance(trace, dict):
@@ -410,6 +413,13 @@ def work_information_use(store, job_id, redact=None):
                      'status': status}
             if match not in matches and len(matches) < MAX_ITEMS:
                 matches.append(match)
+        # #245: a comparison the bounds cut off (Memory rows past the newest ones, text past its first characters).
+        left_out = (evidence.get('outbound_comparison_cut') if status == 'succeeded' or withheld
+                    else trace.get('outbound_comparison_cut') if status == 'failed' else None)
+        for row in left_out if isinstance(left_out, list) else ():
+            if isinstance(row, dict) and row.get('kind') in COMPARISON_CUTS and isinstance(row.get('limit'), int) \
+                    and not isinstance(row.get('limit'), bool):
+                cuts.setdefault(row['kind'], row['limit'])
         if status in ('succeeded', 'failed') and action == 'browser_open':
             # A failed open that reached the browser keeps its destination at the top level, like its
             # matches (#233): the browser may have contacted that host before the failure.
@@ -465,6 +475,8 @@ def work_information_use(store, job_id, redact=None):
     # #167: places the signed-in browser opened (a URL carries data to its host), and held-value matches.
     sent_to['browser_destinations'] = opened
     sent_to['held_value_matches'] = matches
+    if cuts:
+        sent_to['held_value_comparison_cut'] = [{'kind': kind, 'limit': cuts[kind]} for kind in COMPARISON_CUTS if kind in cuts]
     if connections:sent_to['connections']=list(connections.values())[-MAX_ITEMS:]
     if photo_inputs:sent_to['attachments']=photo_inputs
     return {'work_id': job_id, 'recorded': bool(record), 'evidence_class': EVIDENCE_CLASS,
@@ -551,6 +563,9 @@ def render_korean(audit):
     if matches:
         lines.append(msg('information_use.held_values_that_went_out'))
         lines.extend(_match_line(match) for match in matches)
+    for cut in sent.get('held_value_comparison_cut') or ():
+        if cut.get('kind') in COMPARISON_CUTS:
+            lines.append(msg(f"information_use.comparison_cut_{cut['kind']}", limit=f"{int(cut.get('limit') or 0):,}"))
     if _cli_search(workers):
         lines.append(msg('information_use.cli_search_is_not_compared'))
     results = [row for row in audit.get('results') or () if row.get('status') == 'succeeded']
