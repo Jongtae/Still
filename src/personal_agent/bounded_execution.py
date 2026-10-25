@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 
 from . import owner_mcp
 from . import work_mode
@@ -51,6 +52,10 @@ def jsonl_lines(text):
 # The earlier fixed 120 s cap (#118) cut off multi-step browser work.
 MAX_TIMEOUT_SECONDS = 600
 MAX_REASON_CHARS = 300
+
+# Shared across adapters and early-judgment threads; at most eight binary identities.
+_STRICT_OBSERVATIONS = {}
+_STRICT_OBSERVATIONS_LOCK = threading.Lock()
 
 LOG = logging.getLogger('personal_agent.engine')
 ENGINE_NAMES = {'codex': 'Codex', 'claude-code': 'Claude Code'}
@@ -2030,6 +2035,52 @@ class BoundedExecutionAdapter:
         return {'binary_sha256': self._sha256(os.path.realpath(binary) if binary else ''),
                 'native_sha256': self._sha256(self.native_cli_binary(engine_id, binary))}
 
+    def _strict_binary_identity(self, engine_id, binary):
+        paths = (os.path.realpath(binary) if binary else '',
+                 self.native_cli_binary(engine_id, binary))
+        try:
+            return tuple((os.path.realpath(path), stat.st_size, stat.st_mtime_ns,
+                          stat.st_ino, stat.st_dev)
+                         for path in paths for stat in [os.stat(path)])
+        except OSError:
+            return None
+
+    def strict_observation(self, engine_id, binary, qualification, run_dir, tested_versions,
+                           *, check_version=True, read_version=None):
+        """Compare qualified bytes/version every time; memoize only matching observations.
+
+        Binding checks remain the caller's responsibility. #309, owner decision
+        2026-10-25: under the pilot posture, replacement in place preserving size,
+        mtime_ns, inode and device is undetected until process restart. Paths and
+        stats are still resolved on every call. This deliberately weakens #616's
+        byte freshness, without granting authority or changing launch isolation.
+        """
+        with _STRICT_OBSERVATIONS_LOCK:
+            identity = self._strict_binary_identity(engine_id, binary)
+            key = (engine_id, identity)
+            cached = _STRICT_OBSERVATIONS.get(key) if identity and engine_id == 'codex' else None
+            try:
+                current = dict(cached[0]) if cached else self.strict_digests(engine_id, binary)
+                stale = [name for name, value in current.items()
+                         if not value or value != qualification.get(name)]
+                version = None
+                if not stale and check_version:
+                    version = (cached[1] if cached else
+                               (read_version() if read_version else self.runtime_version(engine_id, binary, run_dir)))
+                success = (not stale and version is not None and version in tested_versions
+                           and version == qualification.get('version'))
+                if success and identity and engine_id == 'codex' \
+                        and self._strict_binary_identity(engine_id, binary) == identity:
+                    if key not in _STRICT_OBSERVATIONS and len(_STRICT_OBSERVATIONS) >= 8:
+                        del _STRICT_OBSERVATIONS[next(iter(_STRICT_OBSERVATIONS))]
+                    _STRICT_OBSERVATIONS[key] = (dict(current), version)
+                else:
+                    _STRICT_OBSERVATIONS.pop(key, None)
+                return stale, version
+            except Exception:
+                _STRICT_OBSERVATIONS.pop(key, None)
+                raise
+
     def strict_binding(self, engine_id, binary, store_root):
         """What a strict qualification is bound to, computed without a subprocess.
 
@@ -2428,12 +2479,11 @@ class BoundedExecutionAdapter:
                 disabled = qualification.get('disabled_features') or ()
                 if engine_id == 'codex' and not disabled:
                     stale.append('disabled_features')
+                version = None
                 if not stale:
-                    # Review N2: the qualified bytes, not only path/size/mtime.
-                    current = self.strict_digests(engine_id, binary)
-                    stale += [key for key, value in current.items() if not value or value != qualification.get(key)]
-                version = (self.runtime_version(engine_id, binary, run_dir)
-                           if sys.platform in declared['tested_platforms'] and not stale else None)
+                    stale, version = self.strict_observation(
+                        engine_id, binary, qualification, run_dir, declared['tested_versions'],
+                        check_version=sys.platform in declared['tested_platforms'])
                 if stale or version is None or version not in declared['tested_versions'] \
                         or version != qualification.get('version'):
                     LOG.warning('engine turn refused engine=%s profile=%s version=%s', engine_id, profile, version or '-')
