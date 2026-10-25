@@ -90,7 +90,7 @@ class QuickStore:
             CREATE TABLE IF NOT EXISTS memory_approvals(token_hash TEXT PRIMARY KEY, owner_key TEXT NOT NULL, work_key TEXT NOT NULL, action TEXT NOT NULL, subject_id TEXT NOT NULL, memory_key TEXT NOT NULL, source_digest TEXT NOT NULL, content_digest TEXT NOT NULL, created REAL NOT NULL, expires REAL NOT NULL, state TEXT NOT NULL DEFAULT 'issued', result_id TEXT, expected_memory_id TEXT, expected_memory_digest TEXT);
             CREATE TABLE IF NOT EXISTS telegram_task_cards(job_id TEXT PRIMARY KEY, chat_id INTEGER NOT NULL, message_id INTEGER NOT NULL, state TEXT NOT NULL, created REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS telegram_photo_attachments(job_id TEXT PRIMARY KEY, file_id TEXT NOT NULL, created REAL NOT NULL);
-            CREATE TABLE IF NOT EXISTS work_steers(source_job_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, content TEXT NOT NULL, created REAL NOT NULL, delivered_at REAL);
+            CREATE TABLE IF NOT EXISTS work_steers(source_job_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, content TEXT NOT NULL, created REAL NOT NULL, delivered_at REAL, answered_at REAL);
             CREATE INDEX IF NOT EXISTS work_steers_job ON work_steers(job_id, delivered_at);
             CREATE TABLE IF NOT EXISTS telegram_photo_albums(job_id TEXT PRIMARY KEY, generation TEXT NOT NULL, chat_id INTEGER NOT NULL, media_group_id TEXT NOT NULL, last_received REAL NOT NULL, caption TEXT NOT NULL DEFAULT '', UNIQUE(generation,chat_id,media_group_id));
             CREATE TABLE IF NOT EXISTS telegram_notifications(id TEXT PRIMARY KEY, job_id TEXT NOT NULL, chat_id INTEGER NOT NULL, generation TEXT NOT NULL, kind TEXT NOT NULL, fingerprint TEXT, state TEXT NOT NULL, message_id INTEGER, created REAL NOT NULL, UNIQUE(job_id, kind));
@@ -225,6 +225,12 @@ class QuickStore:
             # #814: 1 only for a Work whose message the owner typed (web chat, Telegram text);
             # NULL for everything Still enqueues (preparations, continuations, retries, checks).
             if 'owner_typed' not in columns: db.execute('ALTER TABLE jobs ADD COLUMN owner_typed INTEGER')
+            # #308 S1: a steer is answered only when a reply its Work delivered was made after the
+            # worker was handed it; a steer handed over before this column folded as it did then.
+            if 'answered_at' not in {row['name'] for row in db.execute('PRAGMA table_info(work_steers)')}:
+                db.execute('ALTER TABLE work_steers ADD COLUMN answered_at REAL')
+                db.execute("UPDATE work_steers SET answered_at=delivered_at WHERE delivered_at IS NOT NULL AND job_id IN "
+                           "(SELECT id FROM jobs WHERE status IN ('succeeded','partial'))")
             memory_columns={row['name'] for row in db.execute('PRAGMA table_info(memories)')}
             # #220: append + invalidate: which save ended a row, why and when; and the last day a fact holds.
             for name,kind in (('owner_key','TEXT'),('work_key','TEXT'),('content_digest','TEXT'),('candidate_id','TEXT'),
@@ -626,6 +632,45 @@ class QuickStore:
             with self.db() as conn:return self.steer_delivered(source_job_id,db=conn)
         row=db.execute('SELECT delivered_at FROM work_steers WHERE source_job_id=?',(source_job_id,)).fetchone()
         return bool(row and row['delivered_at'] is not None)
+
+    # #308 S1: a steer goes judged (inserted) -> claimed (``delivered_at``: handed to the worker)
+    # -> answered (``answered_at``: a delivered reply was made after the claim) -> folded (its
+    # queued Work settled by ``fold_delivered_steer``).  ``since`` is when the attempt whose reply
+    # is delivered started: a steer claimed before it reached an attempt whose reply was dropped.
+    def unanswered_steers(self, job_id, since, db=None):
+        """The steers of Work ``job_id`` its last attempt (started at ``since``) did not see (#308 S1)."""
+        if db is None:
+            with self.db() as conn:return self.unanswered_steers(job_id,since,db=conn)
+        return [row['content'] for row in db.execute(
+            'SELECT content FROM work_steers WHERE job_id=? AND answered_at IS NULL AND (delivered_at IS NULL OR delivered_at<?) '
+            'ORDER BY created',(job_id,since))]
+
+    def claim_unanswered_steers(self, job_id, since, db=None):
+        """``unanswered_steers``, claimed again for the attempt about to start (#308 S1)."""
+        if db is None:
+            with self.db() as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                return self.claim_unanswered_steers(job_id,since,db=conn)
+        texts=self.unanswered_steers(job_id,since,db=db)
+        if texts:
+            db.execute('UPDATE work_steers SET delivered_at=? WHERE job_id=? AND answered_at IS NULL AND (delivered_at IS NULL OR delivered_at<?)',
+                       (max(time.time(),since),job_id,since))
+        return texts
+
+    def answer_steers(self, job_id, since, db):
+        """Mark answered the steers claimed by the attempt (started at ``since``) whose reply is delivered (#308 S1)."""
+        db.execute('UPDATE work_steers SET answered_at=? WHERE job_id=? AND answered_at IS NULL AND delivered_at>=?',
+                   (time.time(),job_id,since))
+
+    def release_steers(self, job_id, since, db):
+        """Unclaim the unanswered steers handed over since ``since``: that attempt's reply is not delivered (#308 S1)."""
+        db.execute('UPDATE work_steers SET delivered_at=NULL WHERE job_id=? AND answered_at IS NULL AND delivered_at>=?',(job_id,since))
+
+    def steer_answered(self, source_job_id):
+        """True when a reply the steered Work delivered was made after its worker had this message (#308 S1)."""
+        with self.db() as db:
+            row=db.execute('SELECT answered_at FROM work_steers WHERE source_job_id=?',(source_job_id,)).fetchone()
+        return bool(row and row['answered_at'] is not None)
 
     #: Stored turns joined with the outcome of the Work that produced them, so
     #: every reader can qualify unverified text (#494).  Read-time only: the

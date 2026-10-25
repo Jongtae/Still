@@ -1,5 +1,6 @@
 """One personal conversation shared by web and an explicitly paired Telegram user."""
 from datetime import datetime
+import collections
 import concurrent.futures
 import hmac
 import json
@@ -19,7 +20,7 @@ from .messages import msg
 from .local_tools import LocalTools, normalize_public_url
 from functools import cached_property
 from .work_execution import PROCEED, REDELEGATED, WorkRun
-from .agent_runtime import (Capabilities, ToolError, CALENDAR_DRAFT_TOOLS, cut_to_fit, run_agent, AGENTS, STEER_EVENT, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
+from .agent_runtime import (Capabilities, ToolError, CALENDAR_DRAFT_TOOLS, cut_to_fit, run_agent, AGENTS, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
                             MEMORY_OWNER, context_sections, ENGINE_UNMEDIATED, OWNER_CONVERSATION, lookup_sources, work_written_values, WORK_SOURCES_KEY, WORK_SOURCES_LIMIT, base_label,
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
                             WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, goal_summary, work_source_records,
@@ -43,7 +44,7 @@ from .conversation_projection import (BLOCKER_CLOUD_PROFILE, BLOCKER_DOCUMENT_AP
 from .subscription_engines import SubscriptionEngines
 from .bounded_execution import BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls
 from .bounded_execution import AgentOSMcpTools, ReadOnlyAgentOSMcpTools, StrictIsolatedAgentOSMcpTools, BoundedExecutionAdapter, ExecutionError, ExecutionResult, MAX_PROMPT_BYTES, BOUNDED_PROFILE, HOST_CLI_PROFILES, STRICT_PROFILE, profile_actions, profile_status, route_unavailable
-from .orchestrator import model_refused, observations_with_pages, remember_model_refusal
+from .orchestrator import MIN_ATTEMPT_SECONDS, model_refused, observations_with_pages, remember_model_refusal
 from .orchestrator import (EVENT_TOOL as ORCHESTRATION_EVENT, NOT_JUDGED, NOT_REACHED, REACHED, UNJUDGED, WORKER_FAILED,
                            Orchestration, worker_catalogue)
 from .isolated_engine_gateway import EngineGatewayError
@@ -133,6 +134,8 @@ LOG=logging.getLogger('personal_agent.service')
 TELEGRAM_RECEIVE_GRACE_SECONDS=10
 #: #999: the stored result of a queued message its running Work received as steering.
 STEER_FOLDED_TEXT='진행 중이던 작업에 반영했어요.'
+#: #308 S1: how long a finishing Work waits for steer judgments still running (the judgment is a few seconds).
+STEER_JUDGMENT_WAIT_SECONDS=8
 #: #996: the owner's emoji on an assistant message, recorded on its Work.
 REACTION_EVENT='owner_reaction'
 #: #996: what the worker reads first when the owner's message just withdrew remembered facts.
@@ -588,6 +591,10 @@ class AgentService:
         self.owner_model_spawn=lambda target:threading.Thread(target=target,name='agentos-owner-model',daemon=True).start()
         # #999: a message that arrives while a Work runs is judged off the poll thread.
         self.steer_spawn=lambda target:threading.Thread(target=target,name='agentos-steer-judgment',daemon=True).start()
+        # #308 S1: steer judgments in flight per running Work, and the Works that take no more
+        # steers (the finish guard decided).  Memory only: after a restart nothing is running.
+        self.steer_judging,self.steer_judged=collections.Counter(),threading.Condition()
+        self.steer_closed=set()
         # #969 (PERF-START-01): the chosen start emoji is judged off the worker,
         # so the Work never waits for it; and judgments that read only the
         # owner's message and prior state overlap on this seam while the worker
@@ -5803,6 +5810,17 @@ class AgentService:
                                              'retry':'transient','effect':'none' if action in EFFECT_FREE_READS else 'unknown',
                                              'error':TOOL_INCOMPLETE_TEXT},ensure_ascii=False))
 
+    def attempt_tool_rows(self, rows):
+        """``(tool, status, detail)`` of the tool calls among ``tool_events`` rows, for the effect classifier."""
+        tool_rows=[]
+        for row in rows:
+            if row['tool'] in self.LOCAL_NON_TOOL_EVENTS|{'subscription_engine'} or row['status'] not in ('running','succeeded','failed'):
+                continue
+            try:data=json.loads(row['detail'] or '{}')
+            except (TypeError,ValueError):data={}
+            tool_rows.append((row['tool'],row['status'],data if isinstance(data,dict) else {}))
+        return tool_rows
+
     def orchestration_step(self, orchestration, attempt, job_id, since, *, result=None, answer='', outcome=None,
                            owner_needed=False, failed=None, unmediated=False, engine_meta=None, pages=()):
         """Evaluate one attempt and return the next one, or None (#710).
@@ -5841,13 +5859,7 @@ class AgentService:
         called,failed_codes,incomplete,sourceless=[],[],[],0
         # #1445 part 2: one effect classifier (``agent_runtime.record_effect``) over each call; any
         # call that is not ``none`` (a settings draft included) ends re-delegation, as before.
-        tool_rows=[]
-        for row in rows:
-            if row['tool'] in self.LOCAL_NON_TOOL_EVENTS|{'subscription_engine'} or row['status'] not in ('running','succeeded','failed'):
-                continue
-            try:data=json.loads(row['detail'] or '{}')
-            except (TypeError,ValueError):data={}
-            tool_rows.append((row['tool'],row['status'],data if isinstance(data,dict) else {}))
+        tool_rows=self.attempt_tool_rows(rows)
         if any(effect_class!=EFFECT_NONE for _action,effect_class,_status in call_effects(tool_rows)):effect=True
         # #170: an attempt that left something waiting for the owner's own decision (a calendar or
         # settings draft, a proposal) stops for the owner, as a pending step approval does (#1468):
@@ -10293,8 +10305,22 @@ class AgentService:
                            (job.get('chat_id') if job else None,task_id)).fetchone()
         if not row:return False
         running=row['id']
-        self.steer_spawn(lambda:self.judge_steer(running,task_id,text))
+        # #308 S1: the running Work's finish guard waits (bounded) for this judgment.
+        with self.steer_judged:self.steer_judging[running]+=1
+        def judge():
+            try:self.judge_steer(running,task_id,text)
+            finally:self._steer_judgment_done(running)
+        try:self.steer_spawn(judge)
+        except Exception:
+            self._steer_judgment_done(running)
+            raise
         return True
+
+    def _steer_judgment_done(self, running_id):
+        with self.steer_judged:
+            self.steer_judging[running_id]-=1
+            if self.steer_judging[running_id]<=0:del self.steer_judging[running_id]
+            self.steer_judged.notify_all()
 
     def judge_steer(self, running_id, task_id, text):
         try:
@@ -10304,6 +10330,9 @@ class AgentService:
             if judged.outcome!=JUDGMENT_YES:return False
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
+                # #308 S1: read under the write lock the finish guard closes with, so a steer is
+                # either seen by the guard or refused and run as its own Work, never lost.
+                if running_id in self.steer_closed:return False
                 if not self.store.add_steer(running_id,task_id,text,db=db):return False
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (running_id,STEER_EVENT,'received',json.dumps({'source_work_id':task_id}),time.time()))
@@ -10320,7 +10349,9 @@ class AgentService:
         them); no second answer is made, and the 👀 on the owner's message
         becomes 👌.
         """
-        if not self.store.steer_delivered(job['id']):return False
+        # #308 S1: only a steer a delivered reply answered; one handed to a worker whose reply
+        # was dropped or never made runs as its own Work.
+        if not self.store.steer_answered(job['id']):return False
         # A steered Work that then failed or ended unknown may never have read the steer
         # (claimed, then the process or provider failed): the message runs as its own Work.
         steered=self.store.job(job.get('related_job_id')) if job.get('relation_kind')=='steer' else None
@@ -10484,6 +10515,7 @@ class AgentService:
                 self._fail_work(run,exc)
             finally:
                 self._settle_work_judgments(run)
+                self.steer_closed.discard(job['id'])
             self._after_work(run)
             # The result delivery is the one terminal Telegram bubble.
             # Do not append a second generic completion notification.
@@ -11049,8 +11081,11 @@ class AgentService:
         job=run.job
         while True:
             run.config,run.key,run.subscription,run.attempt_test=self.attempt_route(run.orchestration,run.attempt,run.base_config,run.base_key,run.route_snapshot)
-            run.brief=run.attempt.brief(adjusted=run.attempt.number>1) if run.attempt is not None else None
+            run.brief=run.attempt.brief(adjusted=run.attempt.number>1 and not run.attempt.steer) if run.attempt is not None else None
             run.attempt_start=self.last_event_id(job['id'])
+            # #308 S1: a steer claimed from now on reaches the attempt whose reply is delivered; the
+            # continuation's own steers were claimed just before it (``_continue_for_steers``).
+            run.attempt_started_at=run.steer_saved[2] if run.steer_note else time.time()
             # #795: whether this attempt's CLI ran with its own tools unconfined, and what it reported.
             run.unmediated_turn,run.engine_meta=False,None
             # #981: set by a CLI attempt whose worker asked for the owner's sign-in.
@@ -11058,7 +11093,8 @@ class AgentService:
             # #710 review P2-1: what earlier attempts of this Work read from a private
             # store stays with the Work's provenance: it keeps the local envelope to size
             # and digest and is part of the Work's information-use record (#826).
-            run.work_private=self.earlier_attempt_private_sources(job['id']) if run.attempt is not None and run.attempt.number>1 else set()
+            run.work_private=(self.earlier_attempt_private_sources(job['id'])
+                              if (run.attempt is not None and run.attempt.number>1) or run.steer_note else set())
             run.history,run.history_rows=run.base_history,run.base_rows
             run.boundary=self.document_boundary(run.config)
             # #826: only a direct-API model without the document-sharing approval is
@@ -11068,7 +11104,15 @@ class AgentService:
                 run.history_rows=[message for message in run.stored_history if message.get('job_id') not in run.document_jobs]
                 if run.prepared_latest and run.history:
                     run.history[-1]=run.prepared_latest
-            step=self._run_cli_attempt(run) if run.subscription.get('id') else self._run_api_attempt(run)
+            if run.steer_note:
+                # #308 S1: the owner's steers and the unsent earlier reply follow the request itself.
+                run.history=[*run.history[:-1],{**run.history[-1],'content':run.history[-1]['content']+'\n\n'+run.steer_note}]
+            try:
+                step=self._run_cli_attempt(run) if run.subscription.get('id') else self._run_api_attempt(run)
+            except (ValueError,ProviderError,ExecutionError,OSError):
+                # #308 S1: a continuation that failed without any effect leaves the earlier reply to deliver.
+                if not self._keep_reply_before_steers(run):raise
+                break
             if step is REDELEGATED:continue
             if step is not PROCEED:return step
             # #710: evaluate this attempt; re-delegate while the goal is not shown
@@ -11082,10 +11126,100 @@ class AgentService:
                                                                             # #1468: never re-delegated past a pending approval.
                                                                             or self.step_approval_pending(job['id'])),
                                               unmediated=run.unmediated_turn,engine_meta=run.engine_meta)
-            if following is None:break
-            run.attempt=following
+            if following is not None:run.attempt=following
+            elif not self._continue_for_steers(run):break
             run.refusals.clear();run.owner_steps.clear();run.verified_parts.clear();run.agency_report=None;run.unknown_statement=None
         return PROCEED
+
+    def _await_steer_judgments(self, work_id):
+        """#308 S1: wait, bounded, for steer judgments of messages that arrived while this Work ran."""
+        with self.steer_judged:
+            self.steer_judged.wait_for(lambda:not self.steer_judging.get(work_id),timeout=STEER_JUDGMENT_WAIT_SECONDS)
+
+    def _continue_for_steers(self, run):
+        """#308 S1, the finish guard: True when one continuation attempt follows for unanswered steers.
+
+        Before the reply is delivered, the owner's messages judged to steer this
+        Work that its last attempt did not see (never claimed, or claimed by an
+        attempt whose reply was dropped) get one more attempt on the same
+        worker: the request, the steers and the unsent reply as context.
+        Never after an effect or an unknown effect, while the owner's decision
+        is pending, once the budget is spent, or after a continuation.  When no
+        continuation follows, the Work takes no more steers: decided under the
+        same write lock ``judge_steer`` records with, so each steer is either
+        claimed here or refused and runs as its own Work.  Engine-agnostic.
+        """
+        job=run.job
+        self._await_steer_judgments(job['id'])
+        claimed_at=time.time()
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            # The allowance only reads (other connections may read while this one holds the lock).
+            texts=(self.store.claim_unanswered_steers(job['id'],run.attempt_started_at,db=db)
+                   if self.store.unanswered_steers(job['id'],run.attempt_started_at,db=db) and self._steer_continuation_allowed(run)
+                   else [])
+            if not texts:self.steer_closed.add(job['id'])
+        if not texts:return False
+        run.record(STEER_EVENT,'continued',json.dumps({'count':len(texts)}))
+        # What a failed continuation restores (``_keep_reply_before_steers``); lists and sets copied.
+        run.steer_saved=({key:(type(value)(value) if isinstance(value,(list,set)) else value) for key,value in vars(run).items()},
+                         {key:getattr(run.orchestration,key) for key in ('terminal','terminal_gap','terminal_note','steers')}
+                         if run.orchestration is not None else {},
+                         claimed_at)
+        run.steer_note=steer_note(texts,run.response)
+        if run.orchestration is not None and run.attempt is not None:
+            run.attempt=run.orchestration.continue_for_steers(run.attempt,'\n'.join(texts),len(texts))
+        return True
+
+    def _steer_continuation_allowed(self, run):
+        """#308 S1: whether a steer continuation may run after this Work's last attempt."""
+        job_id=run.job['id']
+        if run.steer_note or run.outcome=='unknown' or not isinstance((run.base_history or [{}])[-1].get('content'),str):return False
+        # A browser step asked for or approved and unspent: the steer may change what it covers.
+        if run.approval_needed[0] or run.context_approval_needed[0] or run.waits_for_sign_in or self._browser_request(job_id):return False
+        if self._work_has_unknown_effect(job_id) or self.connector_effect_progress(job_id)[0]:return False
+        if run.unmediated_turn and self.cli_host_actions(run.engine_meta)!=():return False
+        from .agent_runtime import EFFECT_NONE, call_effects
+        with self.store.db() as db:
+            rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',(job_id,)).fetchall()
+        tool_rows=self.attempt_tool_rows(rows)
+        if awaiting_owner_rows(tool_rows) or any(effect!=EFFECT_NONE for _action,effect,_status in call_effects(tool_rows)):return False
+        budget=run.work_budget
+        if budget is None:return True
+        try:
+            return (budget.interrupted() is None and budget.remaining()>=MIN_ATTEMPT_SECONDS
+                    and budget.turns_used+1<=budget.turn_limit())
+        except Exception:
+            return False
+
+    def _keep_reply_before_steers(self, run):
+        """#308 S1: a steer continuation failed; True when the earlier reply is restored for delivery.
+
+        Only when the continuation left no effect, known or unknown.  Its steers
+        go back to unclaimed, so they are not answered and run as their own Work.
+        """
+        saved=getattr(run,'steer_saved',None)
+        if not run.steer_note or saved is None:return False
+        fields,terminal,started=saved
+        job_id=run.job['id']
+        if self._work_has_unknown_effect(job_id) or self.connector_effect_progress(job_id)[0]:return False
+        if run.unmediated_turn and self.cli_host_actions(run.engine_meta)!=():return False
+        from .agent_runtime import EFFECT_NONE, call_effects
+        with self.store.db() as db:
+            rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',
+                            (job_id,run.attempt_start or 0)).fetchall()
+        if any(effect!=EFFECT_NONE for _action,effect,_status in call_effects(self.attempt_tool_rows(rows))):return False
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self.store.release_steers(job_id,started,db)
+            self.steer_closed.add(job_id)
+        # What the continuation was sent and read stays in the Work's record (#826).
+        sources=run.work_sources|fields['work_sources']
+        vars(run).clear();vars(run).update(fields)
+        run.work_sources=sources
+        for key,value in terminal.items():setattr(run.orchestration,key,value)
+        run.record(STEER_EVENT,'continuation_failed','{}')
+        return True
 
     def _run_cli_attempt(self, run):
         """One attempt on a subscription CLI worker (the selected engine through its Still bridge)."""
@@ -11266,7 +11400,9 @@ class AgentService:
             owner_information=run.owner_information,
             # #211: the cloud provider and destination are durable before the CLI starts.
             **(cloud.record() if cloud is not None else {}))
-        self.record_turn_worker(job['id'],{'attempt':run.attempt.number if run.attempt is not None else 1,'route':'subscription',
+        self.record_turn_worker(job['id'],{'attempt':run.attempt.number if run.attempt is not None else 1,
+                                           # #308 S1: a worker turn made for the owner's steers.
+                                           'steer_continuation':True if run.steer_note else None,'route':'subscription',
                                            'engine':run.subscription['id'],
                                            'model':(run.attempt.model if run.attempt is not None and run.attempt.model else None) or self.main_ai.subscription_model(run.subscription['id']) or None,
                                            'own_web_search':bool(native_search)})
@@ -11530,7 +11666,9 @@ class AgentService:
             context_messages=len(api_context['conversation']),egress_taint=sorted(run.capabilities.private_provenance),
             # #826: what the owner-model sections and splices referred to.
             owner_information=run.owner_information)
-        self.record_turn_worker(job['id'],{'attempt':run.attempt.number if run.attempt is not None else 1,'route':'direct-api',
+        self.record_turn_worker(job['id'],{'attempt':run.attempt.number if run.attempt is not None else 1,
+                                           # #308 S1: a worker turn made for the owner's steers.
+                                           'steer_continuation':True if run.steer_note else None,'route':'direct-api',
                                            'provider':runtime_config.get('provider'),'model':runtime_config.get('model'),
                                            'own_web_search':False})
         try:
@@ -11708,6 +11846,9 @@ class AgentService:
             cause,spoken,observed,note=scrub(cause),scrub(spoken),scrub(observed),scrub(self._redact_reason(note) if note else None)
             db.execute("UPDATE jobs SET status=?,response=?,error=?,provider=?,model=?,delivery=?,owner_cause=?,owner_verified=?,owner_note=? WHERE id=?",
                        (run.outcome,run.response,cause,run.provider,run.model,'pending' if job['chat_id'] else 'none',spoken,observed,note,job['id']))
+            # #308 S1: the steers the attempt whose reply this is had in hand are answered by it.
+            if run.outcome in ('succeeded','partial') and run.attempt_started_at is not None:
+                self.store.answer_steers(job['id'],run.attempt_started_at,db)
             self.record_stage(job['id'],'finished',run.claimed_at,db=db,total_ms=int((time.time()-(job.get('created') or run.claimed_at))*1000))
             # #805: one pending owner-model upkeep, settled with the Work.
             if self.owner_model_eligible(job,run.outcome,run.provider):self.owner_model.enqueue(db,job['id'])

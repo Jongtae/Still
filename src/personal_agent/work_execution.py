@@ -124,4 +124,9 @@ class WorkRun:
         self.engine_meta = None
         self.work_private = None
         self.boundary = None
+        #: #308 S1: when the current attempt started (steers claimed since are its to answer), the
+        #: steer continuation's note (the steers and the unsent reply), and what a failed one restores.
+        self.attempt_started_at = None
+        self.steer_note = None
+        self.steer_saved = None
         self.capabilities = None

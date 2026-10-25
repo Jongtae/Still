@@ -2213,8 +2213,19 @@ MEMORY_SAVED_WORKER_NOTE=('Remembered. The owner is shown what was remembered an
 
 #: #999: owner messages handed to a running Work reach its worker with the next tool result.
 STEER_EVENT='owner_steer'
-STEER_LEAD=('The owner sent this while you are working on the current request. Take it into account '
-            'from here on:')
+STEER_LEAD=('The owner sent this while you are working on the current request. Give one reply that covers '
+            'the whole request with this taken into account:')
+#: #308 S1: the reply a steer continuation's worker reads as context; it was never sent.
+STEER_DRAFT_LEAD=('Your earlier reply to this request, written before the message above and not sent to the '
+                  'owner (context only; do not mention it):')
+STEER_DRAFT_CHARS=6000
+
+
+def steer_note(texts, draft=''):
+ """The owner steers as the worker reads them, then (#308 S1) the unsent earlier reply, if any."""
+ note=STEER_LEAD+'\n'+'\n'.join('- '+text for text in texts)
+ draft=str(draft or '').strip()
+ return note+('\n\n'+STEER_DRAFT_LEAD+'\n'+draft[:STEER_DRAFT_CHARS] if draft else '')
 
 
 def claim_owner_steers(store, job_id, record=None):
@@ -2229,7 +2240,7 @@ def claim_owner_steers(store, job_id, record=None):
  except Exception:return None
  if not texts:return None
  if record:record(STEER_EVENT,'delivered',json.dumps({'count':len(texts)}))
- return STEER_LEAD+'\n'+'\n'.join('- '+text for text in texts)
+ return steer_note(texts)
 
 
 def worker_result(action, result):

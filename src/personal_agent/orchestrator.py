@@ -41,6 +41,7 @@ the agency observed at run time (#701: own web search, browser tools,
 availability) and cost/latency tiers.  See docs/decision-layer.en.md
 "Orchestration (#710)".
 """
+import copy
 import hashlib
 import json
 
@@ -106,6 +107,9 @@ TIER_LOWEST, TIER_HIGHER, TIER_UNRANKED = 'lowest-cost', 'higher-cost', 'unranke
 # --- Evidence vocabulary (``orchestrator`` tool events) ----------------------
 EVENT_TOOL = 'orchestrator'
 PLANNED, FALLBACK, EVALUATED = 'planned', 'fallback', 'evaluated'
+#: #308 S1: one more attempt on the same worker for owner messages sent while the last one ran.
+STEER_CONTINUED = 'steer_continued'
+STEER_CONTINUED_TEXT = '작업 중에 보내신 말을 반영해 같은 AI가 답을 한 번 더 만듭니다.'
 #: Why the default Main AI ran the raw request.
 FALLBACK_UNAVAILABLE = 'judgment_unavailable'
 #: #1227: the Judgment AI is being checked for a newly chosen Main AI (#685) - a
@@ -121,6 +125,8 @@ REACHED, NOT_REACHED, UNJUDGED, OWNER_NEEDED, WORKER_FAILED, NOT_JUDGED = (
 #: Why no further attempt was made.
 STOP_REACHED, STOP_LIMIT, STOP_BUDGET, STOP_EFFECT, STOP_UNJUDGED, STOP_OWNER, STOP_REPLAN = (
     'reached', 'limit', 'budget', 'effect', 'unjudged', 'owner', 'replan_failed')
+#: #308 S1: a steer continuation is the Work's last attempt.
+STOP_STEER = 'steer'
 
 #: Owner-visible text (Korean) recorded with each event, for 작업 현황 (#707:
 #: presentation belongs to the UX child; the text is kept with the Evidence).
@@ -153,6 +159,7 @@ NEXT_TEXT = {
     STOP_UNJUDGED: '요청에 부응했는지 판단할 수 없어 더 맡기지 않았습니다.',
     STOP_OWNER: '소유자의 확인이나 정보가 필요해 더 맡기지 않았습니다.',
     STOP_REPLAN: '판단 AI가 새 계획을 내지 못해 더 맡기지 않았습니다.',
+    STOP_STEER: '작업 중에 보내신 말을 반영한 시도라 더 맡기지 않았습니다.',
 }
 DEFAULT_MODEL_LABEL = '기본 모델'
 #: The evaluator's reason as the next plan call reads it (#729).
@@ -636,7 +643,7 @@ class Attempt:
 
     __slots__ = ('number', 'worker', 'model', 'notes', 'lens', 'sections', 'reason', 'planned',
                  'fallback', 'digest', 'signature', 'account_change', 'owner_situation', 'technical_work',
-                 'lifted_from', 'ask_location', 'location_button', 'effort', 'unlisted_model')
+                 'lifted_from', 'ask_location', 'location_button', 'effort', 'unlisted_model', 'steer')
 
     def __init__(self, number, worker, *, model='', notes='', reason='', planned=False, fallback='', effort='', lens=''):
         self.number, self.worker, self.model = number, worker, model
@@ -657,6 +664,8 @@ class Attempt:
         self.technical_work = False
         #: #1293: the question (and button label) the plan asks the owner for a current position, or "".
         self.ask_location, self.location_button = '', ''
+        #: #308 S1: a continuation for owner steers; never re-delegated.
+        self.steer = False
 
     def brief(self, adjusted=False):
         """The notes section text a worker receives, or None (#820: supplementary only).
@@ -746,6 +755,8 @@ class Orchestration:
         #: already says it, None when the judgment did not give one), and the last attempt's.
         self.note = None
         self.terminal_note = None
+        #: #308 S1: the owner steers a continuation was given, read with the request by the outcome judgment.
+        self.steers = ''
 
     # -- the plan call --------------------------------------------------------
     def _redact(self, text, private=True):
@@ -1182,7 +1193,8 @@ class Orchestration:
         except Exception:
             return NOT_JUDGED
         try:
-            judged = goal_reached(self.request, observed, str(failed or '')[:FAILURE_CHARS], work_id=self.work_id,
+            request = self.request + ('\n\n' + self.steers if self.steers else '')
+            judged = goal_reached(request, observed, str(failed or '')[:FAILURE_CHARS], work_id=self.work_id,
                                   answer=reply, conversation=self._redact(self.conversation)[-CONVERSATION_CHARS:],
                                   owner_context=self._owner_context(), continues=self._continues_text(),
                                   **({'attachments': self.attachments} if getattr(self, 'attachments', '') else {}),
@@ -1240,6 +1252,8 @@ class Orchestration:
             stop = STOP_OWNER
         elif effect:
             stop = STOP_EFFECT
+        elif getattr(attempt, 'steer', False):
+            stop = STOP_STEER
         elif len(self.attempts) > MAX_REDELEGATIONS:
             stop = STOP_LIMIT
         elif evaluation == NOT_JUDGED or not self.budget_allows(calls=2):
@@ -1272,4 +1286,21 @@ class Orchestration:
             self.terminal = evaluation
             self.terminal_gap = gap
             self.terminal_note = note
+        return following
+
+    def continue_for_steers(self, attempt, steers, count):
+        """#308 S1: the one continuation after ``attempt``: the same worker, model and notes.
+
+        ``steers`` (the owner's words) joins the request the outcome judgment
+        reads; the continuation is evaluated like any attempt and never
+        re-delegated (``STOP_STEER``).  Not a plan call: no model is asked here.
+        """
+        following = copy.copy(attempt)
+        following.number, following.steer = len(self.attempts) + 1, True
+        self.steers = str(steers or '')
+        self.terminal = None
+        self.attempts.append(following)
+        self.record(STEER_CONTINUED, {'attempt': following.number, 'worker': following.worker,
+                                      'model': following.model or None, 'count': int(count),
+                                      'text': STEER_CONTINUED_TEXT})
         return following
