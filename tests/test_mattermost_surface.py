@@ -501,11 +501,21 @@ class ReviewRegressions(MattermostCase):
                          sorted([(x['id'], '+1'), (y['id'], '-1')]))
 
     def test_the_work_keeps_when_the_owner_wrote_it(self):
-        post = self.fake.post(OWNER, self.dm(), '네')
-        self.surface.receive()
+        self.fake.post(OWNER, self.dm(), '네')
+        wrote = time.time()
+        with mock.patch('time.time', return_value=wrote + 30):   # the poll comes 30 s late
+            self.surface.receive()
         job = self.mm_jobs()[0]
-        self.assertAlmostEqual(job['source_at'], post['create_at'] / 1000)
-        self.assertLess(job['source_at'], job['created'] + 1)
+        self.assertLess(abs(job['source_at'] - wrote), 2, 'when the owner wrote it, on this Mac\'s clock')
+        self.assertLess(job['source_at'], job['created'] - 20, 'not when it was fetched')
+
+    def test_a_server_clock_behind_ours_does_not_put_a_reply_before_what_it_answers(self):
+        self.surface.disconnect()
+        self.fake.clock = int(time.time() * 1000) - 30_000   # the server is 30 s behind this Mac
+        self.connect()
+        shown = time.time()   # an item shown to the owner, recorded on this Mac's clock
+        self.owner_says('네')
+        self.assertGreaterEqual(self.mm_jobs()[0]['source_at'], shown - 1, 'the reply is after what it answers')
 
     def test_an_interrupted_work_gets_its_one_reply_after_a_restart(self):
         self.owner_says('긴 작업')

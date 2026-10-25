@@ -463,10 +463,13 @@ class MattermostSurface(ConversationSurface):
             work_id = service.store.enqueue(text, f"mm:{generation}:{post['id']}", f'mattermost:{generation}', owner,
                                             db=db, owner_typed=True)
             # #306 review: when the owner wrote it, not when it was fetched, so an act is never judged
-            # against an item shown after it (``owner_acts.read(before=...)``); a clock ahead of ours is not trusted.
-            spoke = int(post.get('create_at') or 0) / 1000
-            if 0 < spoke <= time.time() + 60:
-                db.execute('UPDATE jobs SET source_at=? WHERE id=?', (spoke, work_id))
+            # against an item shown after it (``owner_acts.read(before=...)``).  The server's time is read on
+            # this Mac's clock (the offset measured at connect), since the items it is compared with were
+            # recorded here; a time still ahead of ours is not trusted.
+            spoke = (int(post.get('create_at') or 0) + int(current.get('clock_offset_ms') or 0)) / 1000
+            now = time.time()
+            if 0 < spoke <= now + 60:
+                db.execute('UPDATE jobs SET source_at=? WHERE id=?', (min(spoke, now), work_id))
             db.execute(f'INSERT INTO {TURNS_TABLE}(job_id,owner,source_post_id,reply_to_post_id,created) VALUES (?,?,?,?,?)',
                        (work_id, owner, post['id'], reply_to, time.time()))
         LOG.info('mattermost: owner message queued work=%s', work_id)
@@ -680,9 +683,14 @@ class MattermostSurface(ConversationSurface):
             raise ValueError(msg('mattermost.invalid_owner'))
         # #306 review: the watermarks are the server's clock, not this Mac's: the hello post's own
         # timestamp.  Without it, a bounded overlap (posts are taken once by their key) covers a skew.
+        offset = 0
         try:
+            sent = time.time()
             hello = client.create_post(channel['id'], msg('mattermost.connected_hello'))
             start = int(hello.get('create_at') or 0) if isinstance(hello, dict) else 0
+            if start:
+                # #306 review: how far this Mac's clock is from the server's, to read a post's time on ours.
+                offset = round((sent + time.time()) / 2 * 1000) - start
         except MattermostError:
             LOG.warning('mattermost: hello not delivered')
             start = 0
@@ -691,7 +699,7 @@ class MattermostSurface(ConversationSurface):
                'owner_user_id': owner_id, 'owner_username': owner.get('username', username), 'channel_id': channel['id'],
                'generation': secrets.token_hex(6), 'cursor': start, 'seen_created': start, 'reaction_cursor': start,
                'company_approved': self.config().get('company_approved') is True, 'connected_at': time.time(),
-               'private_server': bool(private), 'token_digest': token_digest(token)}
+               'private_server': bool(private), 'token_digest': token_digest(token), 'clock_offset_ms': offset}
         self.service.store.secret(SECRET_KEY, token)
         self.service.store.put(CONFIG_KEY, cfg)
         return self.status()
