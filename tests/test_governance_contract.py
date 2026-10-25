@@ -238,6 +238,66 @@ def test_the_test_scope_is_full_unless_every_changed_path_is_text(tmp_path) -> N
     assert "src/foo.py" in paths and module.scope(paths) == "full"
 
 
+REAL_BROWSER_GATE = re.compile(r"_webkit_ready\(\)|AGENTOS_REAL_BROWSER_TESTS|REAL_BROWSER_TESTS\b")
+
+
+def _serial_browser_classes(source, filename):
+    """Find opt-in classes, including a gate that skips from setUp or a test body."""
+    tree = ast.parse(source)
+    gated = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        decorated = any(REAL_BROWSER_GATE.search(ast.get_source_segment(source, item) or '')
+                        for item in node.decorator_list)
+        body_gate = False
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Require both the opt-in condition and a skip in its branch:
+            # an unrelated platform/dependency skip is not a serial gate.
+            for branch in ast.walk(node):
+                if isinstance(branch, ast.If) and REAL_BROWSER_GATE.search(ast.unparse(branch.test)):
+                    body_gate |= any(isinstance(call, ast.Call) and
+                                     ((isinstance(call.func, ast.Attribute) and call.func.attr == 'skipTest') or
+                                      (isinstance(call.func, ast.Name) and call.func.id == 'SkipTest'))
+                                     for statement in branch.body + branch.orelse for call in ast.walk(statement))
+        if not (decorated or body_gate):
+            continue
+        if isinstance(node, ast.ClassDef):
+            owner = node
+        elif body_gate:
+            owner = next((cls for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef) and node in cls.body), None)
+            assert owner is not None, f"{filename}::{node.name}: gate whole classes"
+        else:
+            raise AssertionError(f"{filename}::{node.name}: gate whole classes")
+        gated.add(f"tests/{filename}::{owner.name}")
+    return gated
+
+
+def test_serial_browser_guard_finds_in_body_skips():
+    import textwrap
+    source = textwrap.dedent("""
+        import os
+        import unittest
+        class WindowTests(unittest.TestCase):
+            def setUp(self):
+                if os.environ.get('AGENTOS_REAL_BROWSER_TESTS') != '1':
+                    self.skipTest('requires a visible window')
+        class OtherTests(unittest.TestCase):
+            def test_dependency(self):
+                if not node_installed():
+                    self.skipTest('node unavailable')
+        class AnotherWindow(unittest.TestCase):
+            def test_window(self):
+                if not _webkit_ready():
+                    self.skipTest('WebKit unavailable')
+    """)
+    assert _serial_browser_classes(source, 'test_planted.py') == {
+        'tests/test_planted.py::WindowTests', 'tests/test_planted.py::AnotherWindow'}
+    # Removing the gating branch must remove it from the required serial inventory.
+    assert _serial_browser_classes(source.replace("self.skipTest('requires a visible window')", 'pass'),
+                                   'test_planted.py') == {'tests/test_planted.py::AnotherWindow'}
+
+
 def test_the_full_suite_runs_in_parallel_and_real_browser_classes_run_serially() -> None:
     """#135, #156: every test runs in parallel; on macOS the classes that open real WebKit
     windows or Keychain items skip there and run serially afterwards."""
@@ -250,13 +310,7 @@ def test_the_full_suite_runs_in_parallel_and_real_browser_classes_run_serially()
     gated = set()
     for path in sorted((ROOT / "tests").glob("test_*.py")):
         source = path.read_text(encoding="utf-8")
-        for node in ast.walk(ast.parse(source)):
-            if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and any(
-                    re.search(r"_webkit_ready\(\)|AGENTOS_REAL_BROWSER_TESTS|REAL_BROWSER_TESTS\b",
-                              ast.get_source_segment(source, decorator) or "")
-                    for decorator in node.decorator_list):
-                assert isinstance(node, ast.ClassDef), f"{path.name}::{node.name}: gate whole classes"
-                gated.add(f"tests/{path.name}::{node.name}")
+        gated.update(_serial_browser_classes(source, path.name))
     assert set(listed.group(1).split()) == gated
     # The parallel step never sets the opt-in, so the gated classes skip there; only the serial step sets it.
     assert "AGENTOS_REAL_BROWSER_TESTS: '1'" in mac.split("Real-WebKit classes (serial)", 1)[1]
