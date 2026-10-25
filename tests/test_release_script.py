@@ -199,6 +199,19 @@ class ReleaseScriptTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIn('2026-11-02', (self.root / name).read_text(encoding='utf-8'))
 
+    def test_record_keeps_lines_about_an_earlier_release(self):
+        """#313: a note on an earlier release's behavior keeps naming that release."""
+        previous = self.publish_previous()
+        self.prepare()
+        old = 'v' + previous['version']
+        note = f'`{old}` resolved `PATH` first, which is why the Homebrew command passes `--cli-path`.\n'
+        quickstart = self.root / release.QUICKSTART
+        quickstart.write_text(quickstart.read_text(encoding='utf-8') + note, encoding='utf-8')
+        release.record(self.root, '9.0.0', COMMIT, SHA, '2026-11-02', 'formula-pr')
+        text = quickstart.read_text(encoding='utf-8')
+        self.assertIn(note, text)
+        self.assertIn('`v9.0.0` (2026-11-02)', text)
+
     def test_record_refuses_a_reworded_status_sentence(self):
         previous = self.publish_previous()
         self.prepare()
@@ -299,6 +312,26 @@ class ReleaseWorkflowShapeTests(unittest.TestCase):
                 with self.subTest(step=step.get('name')):
                     self.assertIn('MERGED)', run)
                     self.assertIn('closed without merging', run)
+
+    def test_a_rerun_resumes_only_on_the_tag_of_this_release_commit(self):
+        """#313: Re-run all jobs finds its own tag; any other commit's tag still stops it."""
+        check = next(step for step in self.jobs['prepare']['steps'] if step.get('id') == 'check')['run']
+        self.assertIn('refs/tags/v$version^{commit}', check)
+        self.assertIn('"$tagged" != "$GITHUB_SHA"', check)
+        self.assertIn('already exists at $tagged', check.split('"$tagged" != "$GITHUB_SHA"', 1)[1].split('fi', 1)[0])
+        self.assertIn('exit 1', check.split('"$tagged" != "$GITHUB_SHA"', 1)[1].split('fi', 1)[0])
+
+    def test_the_site_deploys_last_with_the_job_token(self):
+        """#313: the release approval promotes the site; RELEASE_TOKEN never dispatches it."""
+        publish = self.jobs['publish']
+        steps = publish['steps']
+        deploy = next(i for i, step in enumerate(steps) if 'deploy-pages.yml' in step.get('run', ''))
+        pin = next(i for i, step in enumerate(steps) if 'release.py --root "$tree" pin' in step.get('run', ''))
+        self.assertGreater(deploy, pin)
+        self.assertEqual(steps[deploy]['env'], {'GH_TOKEN': '${{ github.token }}'})
+        self.assertIn('--ref main', steps[deploy]['run'])
+        self.assertIn('timeout-minutes', steps[deploy])
+        self.assertEqual(publish['permissions'], {'contents': 'write', 'checks': 'read', 'actions': 'write'})
 
     def test_publication_waits_for_the_release_environment_and_its_credential(self):
         publish = self.jobs['publish']

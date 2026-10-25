@@ -58,8 +58,8 @@ looks reviewable and installs nothing.
 ## Steps
 
 Steps 1–4 are reversible and form one release-preparation PR. Steps 5 onward
-publish. Since #1472 `.github/workflows/release.yml` performs steps 5–7, 9 and
-10 after the owner approves its `release` environment; step 8 stays with the
+publish. Since #1472 `.github/workflows/release.yml` performs steps 5–7 and 9–11
+after the owner approves its `release` environment; step 8 stays with the
 owner. The numbered steps below are what the workflow does and the manual
 fallback when it cannot.
 
@@ -80,8 +80,9 @@ fallback when it cannot.
 4. **Merge to `main`** through the normal issue/PR/CI path from a
    `release/<issue>-vX.Y.Z` branch, with the Release Decision Brief in the PR.
    That merge starts the release workflow, which checks the branch name, the
-   manifest entry, that the tag does not exist and that the milestone has no
-   open issue, then waits for the owner.
+   manifest entry, that the tag does not exist (or already names this exact
+   commit, when a run is re-run after a partial failure) and that the
+   milestone has no open issue, then waits for the owner.
 
 --- everything below publishes ---
 
@@ -92,8 +93,10 @@ requests on this repository; the workflow stops
 before any change if that secret is missing, and before the tag until
 `validate` has passed on the release commit itself. Code that runs with the
 credential comes from the approved release commit, never from a newer `main`.
-Every workflow step is safe to re-run after a partial failure; a re-run
-accepts an existing PR only when it is merged or still open.
+Every workflow step is safe to re-run after a partial failure, with *Re-run
+failed jobs* or *Re-run all jobs*: an existing tag is accepted only when it
+names the release commit, an existing GitHub release is kept, and an existing
+PR is accepted only when it is merged or still open (#313).
 
 5. **Tag and push** `vX.Y.Z` at the merge commit, and create the GitHub release.
    The workflow uses `gh release create --target <merge commit>` with notes
@@ -126,10 +129,11 @@ accepts an existing PR only when it is merged or still open.
    `AGENTOS_VERSION` and `AGENTOS_ARCHIVE_SHA256` in `scripts/install.sh` to
    that release; `tests/test_install_script.py` fails until they match, and
    the `install-smoke` workflow then runs the real installer on Linux and macOS.
-   The workflow also moves the release-status sentences in the four READMEs
-   and `docs/product-status.*.md` to the new version
+   The workflow also moves the release-status sentences in the four READMEs,
+   `docs/QUICKSTART.md` and `docs/product-status.*.md` to the new version
    (`scripts/dev/release.py record`), and refuses to guess when one was
-   reworded.
+   reworded. Other lines that name an earlier release, such as notes on its
+   past behavior, are left alone.
 10. **Bump `pyproject.toml` to the next version immediately.** Steps 9 and 10
     must land together. `test_the_in_tree_version_is_not_a_published_version`
     fails the moment a version appears in `published` while `pyproject.toml`
@@ -142,11 +146,16 @@ accepts an existing PR only when it is merged or still open.
     the formula PR, neither relies on GitHub auto-merge, which needs branch
     protection on `main`, and a failing check stops the workflow before merge.
 
-After the workflow finishes, the site still shows the previous version until
-the owner runs `deploy-pages`, which stamps the new pin and version into
-`site/`; that run is the owner's promotion decision. RC tags
-(`vX.Y.Z-rc.N`) are not handled by the workflow: create them by hand with
-`gh release create --prerelease` and do not record them as published.
+11. **Deploy the site.** After the pin PR merges, the workflow dispatches
+    `deploy-pages` on `main` with its own job token (not `RELEASE_TOKEN`).
+    That run stamps the new pin and version into `site/` and publishes it.
+    The owner's approval of the `release` deployment is the site's promotion
+    decision too (#313); `deploy-pages` itself still has no push trigger, so
+    nothing else deploys the site. Run it by hand only when a release was
+    finished outside the workflow.
+
+RC tags (`vX.Y.Z-rc.N`) are not handled by the workflow: create them by hand
+with `gh release create --prerelease` and do not record them as published.
 
 ## Evidence classes
 
