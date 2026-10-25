@@ -8,15 +8,16 @@ from personal_agent.conversation_handoff import TelegramChannel
 
 class TableTests(unittest.TestCase):
     def test_every_entry_has_all_languages_and_matching_placeholders(self):
-        from personal_agent.messages import catalog
+        from personal_agent.messages import KOREAN_ONLY_PLACEHOLDERS, catalog
         data = {entry['ko']: entry for entry in catalog().values()}
         self.assertGreater(len(data), 200)
         names = re.compile(r'\{([a-z_]+)\}')
         for source, targets in data.items():
             with self.subTest(source=source):
+                expected = sorted(name for name in names.findall(source) if name not in KOREAN_ONLY_PLACEHOLDERS)
                 for lang in loc.LANGUAGES:
                     self.assertTrue(targets.get(lang), f'{lang} missing')
-                    self.assertEqual(sorted(names.findall(source)), sorted(names.findall(targets[lang])))
+                    self.assertEqual(expected, sorted(names.findall(targets[lang])))
                     self.assertIsNone(re.search('[가-힣]', targets[lang]), f'{lang} still Korean')
 
 
@@ -35,6 +36,14 @@ class TranslateTests(unittest.TestCase):
         self.assertEqual(loc.translate('기억했어요: Ethiopia Guji', 'zh'), '记住了：Ethiopia Guji')
         self.assertEqual(loc.translate('일부 단계만 완료했습니다.\nThe cart was updated.\n시도한 단계: search', 'en'),
                          'Only some steps were completed.\nThe cart was updated.\nSteps tried: search')
+
+    def test_a_value_named_twice_must_be_the_same_both_times(self):
+        """#242: ``{label} ... {label}{obj}`` matches only one label, and the Korean particle is dropped."""
+        from personal_agent.messages import msg
+        line = msg('handoff.connection_required', label='Gmail', obj='을')
+        self.assertEqual(loc.translate(line, 'en'), msg('handoff.connection_required', 'en', label='Gmail'))
+        mixed = line.replace('Gmail을 연결', 'Drive를 연결')
+        self.assertEqual(loc.translate(mixed, 'en'), mixed, 'two different names are not one template')
 
     def test_ai_answers_and_korean_owners_are_untouched(self):
         answer = 'The same Ethiopia Guji, 500 g, is in your cart.'

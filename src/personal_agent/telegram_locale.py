@@ -43,9 +43,12 @@ def _table():
     exact, templates = {}, []
     for source, targets in data.items():
         if _PLACEHOLDER.search(source):
-            names = _PLACEHOLDER.findall(source)
+            names = list(dict.fromkeys(_PLACEHOLDER.findall(source)))
             parts = _PLACEHOLDER.split(source)
-            pattern = ''.join(re.escape(part) if i % 2 == 0 else f'(?P<{part}>.+?)' for i, part in enumerate(parts))
+            # #242: a value named twice ("{label} ... {label}") must be the same text both times.
+            pattern = ''.join(re.escape(part) if i % 2 == 0 else
+                              f'(?P={part})' if part in parts[1:i:2] else f'(?P<{part}>.+?)'
+                              for i, part in enumerate(parts))
             templates.append((re.compile(f'^{pattern}$', re.S), names, targets, source.count('\n') + 1))
         else:
             exact[source] = targets
