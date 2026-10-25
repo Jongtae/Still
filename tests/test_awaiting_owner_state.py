@@ -208,6 +208,19 @@ class WaitingState(RefusedWriteTestCase):
         self.assertFalse(self.service.work_awaits_owner_preview(job))
         self.assertFalse(self.task(job['id'])['waiting_for_owner'])
 
+    def test_a_note_left_beside_the_wait_keeps_the_web_from_calling_it_only_waiting(self):
+        """#240 review: as on Telegram, a draft wait explains the outcome only when nothing else is left to
+        say; with a recorded note the web keeps "partly done" and its notice, and still lists the wait."""
+        self.plan = [('calendar_draft_create', self.DRAFT)]
+        self.text = '병원 예약 초안을 만들었어요.'
+        job, _bubble = self.ask('모레 오전 10시에 병원 예약 잡아줘')
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET owner_note=? WHERE id=?', ('남은 일: 확인', job['id']))
+        task = self.task(job['id'])
+        self.assertEqual((task['waiting_for_owner'], task['waiting_for']), (False, ['calendar-drafts']))
+        with mock.patch.object(self.service, 'work_waits_for_owner', return_value=('action-approval',)):
+            self.assertTrue(self.task(job['id'])['waiting_for_owner'], 'a step approval waits over a note')
+
     def test_a_work_with_nothing_waiting_is_unchanged(self):
         self.text = '안녕하세요.'
         job, _bubble = self.ask('안녕')

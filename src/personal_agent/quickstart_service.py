@@ -4255,7 +4255,7 @@ class AgentService:
             # #240: the one typed waiting state (``work_waits_for_owner``): a finished Work that waits for the
             # owner's own decision says so, and its kinds; its stored status (often ``partial``) is unchanged.
             waiting_for=self.work_waits_for_owner(job) if kind!='active' else ()
-            task['waiting_for_owner']=bool(waiting_for)
+            task['waiting_for_owner']=self.wait_explains_outcome(job,waiting_for)
             task['waiting_for']=list(waiting_for)
             # #855: the settings drafts this Work still offers the owner (id and wording only; no digest).
             task['settings_drafts']=[{'id':row['id'],'effect':row['effect'],'note':row.get('note'),'reason':row.get('reason'),
@@ -7725,6 +7725,16 @@ class AgentService:
             # #1468: a request that replaced an earlier one in this Work rebinds the Work's one prompt.
             if not self.store.rebind_notification(job['id'],'browser_approval_needed',row['offer_digest']):
                 self.queue_notification(job,'browser_approval_needed',fingerprint=row['offer_digest'])
+
+    @staticmethod
+    def wait_explains_outcome(job, waits):
+        """#240: whether ``waits`` (``work_waits_for_owner``) is the whole story of ``job``'s outcome.
+
+        One rule for every surface: a step approval always is; a draft or proposal wait is only when
+        no note of something else left (``owner_note``) was recorded (#173 slice C).
+        """
+        from .owner_acts import KIND_STEP
+        return KIND_STEP in waits or (bool(waits) and not job.get('owner_note'))
 
     def work_waits_for_owner(self, job):
         """#240: the one typed "waiting for the owner" state of a Work, read by every surface.

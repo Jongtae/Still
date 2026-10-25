@@ -1319,12 +1319,11 @@ class TelegramSurface(ConversationSurface):
             # #1470: a Work waiting for the owner's approval is not "unconfirmed".  #173 slice C: nor is one
             # whose drafts or proposals wait on Still's own preview, unless something else is left to say.
             # #240: the one typed waiting state (``work_waits_for_owner``) every surface reads.
-            from .owner_acts import KIND_STEP
             waits=service.work_waits_for_owner(job)
             text=blocked or service.telegram_result_text(job['response'],
                                                       job.get('owner_cause') or job['error'],job.get('status'),
                                                       verified=job.get('owner_verified'),note=job.get('owner_note'),
-                                                      waiting=KIND_STEP in waits or (bool(waits) and not job.get('owner_note')))
+                                                      waiting=service.wait_explains_outcome(job,waits))
             # #659: a prepared answer arrives without an owner turn; say what it is for.
             text=service.preparation_reply_prefix(job)+text
             try:route_options=service.usage_limit_route_options(job)
