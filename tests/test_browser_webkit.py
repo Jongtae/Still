@@ -867,13 +867,71 @@ class WorkerGuardLogicTests(unittest.TestCase):
         self.assertEqual(answers, [(True, None), (False, 'blocked_destination')])
         self.assertEqual(events[0]['where'], 'navigation_answer')
 
-    def test_the_popup_delegate_takes_the_decision_reason(self):
-        """#1579: ``decide`` answers ``(allowed, reason)``; the popup's callback took one argument."""
-        import inspect
+    def test_navigation_delegates_answer_once_and_contain_decision_errors(self):
+        """#1579 / #328: execute both real delegate methods without Cocoa (including on Linux)."""
+        from types import SimpleNamespace
+        from unittest import mock
         from personal_agent import browser_worker as bw
-        source = inspect.getsource(bw._popup_delegate_class)
-        self.assertIn('lambda allowed, reason=None:', source)
-        self.assertIn('guarded_policy(', inspect.getsource(bw._delegate_class))
+
+        class NSObject:
+            def __init_subclass__(cls, protocols=()):
+                super().__init_subclass__()
+
+        class BrokenAllowed:
+            def __bool__(self):
+                # Raise inside the delegate's decision callback, before it can answer.
+                raise ValueError('private callback detail')
+
+        webkit = SimpleNamespace(WKNavigationActionPolicyAllow=1, WKNavigationActionPolicyCancel=0,
+                                 WKNavigationTypeFormSubmitted=1, WKNavigationTypeFormResubmitted=2)
+        modules = {'Foundation': SimpleNamespace(NSObject=NSObject), 'WebKit': webkit,
+                   'objc': SimpleNamespace(ivar=lambda: None, protocolNamed=lambda name: object())}
+        url = 'https://shop.example/private?token=secret'
+        request = SimpleNamespace(URL=lambda: SimpleNamespace(absoluteString=lambda: url))
+        frame = SimpleNamespace(isMainFrame=lambda: True)
+        action = SimpleNamespace(request=lambda: request, targetFrame=lambda: frame,
+                                 sourceFrame=lambda: frame, navigationType=lambda: 0)
+        # Isolate the fake Objective-C classes from the process-wide production caches.
+        with mock.patch.dict(sys.modules, modules), mock.patch.object(bw, '_POPUP_DELEGATE', []), \
+                mock.patch.object(bw, '_DELEGATE', []):
+            for factory, place, main_frame in ((bw._popup_delegate_class, 'popup_navigation', False),
+                                                (bw._delegate_class, 'navigation', True)):
+                delegate = factory()()
+                for case in ('allow', 'deny', 'decide_error', 'callback_error', 'duplicate', 'handler_error'):
+                    with self.subTest(delegate=place, case=case):
+                        events, answers, decisions, refusals = [], [], [], []
+                        _, worker = self.worker(reading=False, main_navigations=0, emit=events.append,
+                                                phone_navigated=lambda **kwargs: None,
+                                                navigation_refused=lambda *args: refusals.append(args))
+
+                        def decide(destination, is_main, callback):
+                            decisions.append((destination, is_main))
+                            if case == 'decide_error':
+                                raise RuntimeError('private decision detail')
+                            allowed = BrokenAllowed() if case == 'callback_error' else case in ('allow', 'duplicate')
+                            callback(allowed, 'fixture_refusal')
+                            if case == 'duplicate':
+                                callback(False, 'late_refusal')
+
+                        def handler(policy):
+                            answers.append(policy)
+                            if case == 'handler_error':
+                                raise LookupError('private handler detail')
+
+                        worker.decide = decide
+                        delegate.worker = worker
+                        delegate.webView_decidePolicyForNavigationAction_decisionHandler_(None, action, handler)
+                        self.assertEqual(decisions, [(url, main_frame)])
+                        expected = webkit.WKNavigationActionPolicyAllow if case in ('allow', 'duplicate') else \
+                            webkit.WKNavigationActionPolicyCancel
+                        self.assertEqual(answers, [expected], 'the policy handler is called exactly once')
+                        errors = {'decide_error': 'RuntimeError', 'callback_error': 'ValueError',
+                                  'handler_error': 'LookupError'}
+                        self.assertEqual(events, [{'event': 'delegate_error', 'where': place,
+                                                   'error': errors[case], 'answered': case == 'handler_error'}]
+                                         if case in errors else [])
+                        if case == 'deny':
+                            self.assertEqual(refusals, [(True, 'fixture_refusal')] if main_frame else [])
 
     def test_typing_settles_only_once_no_decision_is_pending(self):
         """#899 review P1: ``settle`` waits for a pending policy decision as a click does."""
