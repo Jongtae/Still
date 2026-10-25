@@ -103,7 +103,7 @@ Evidence is a local observation of a whole Work on Claude Code 2.1.287 and codex
 On a company network, switch on **회사 모드 (work mode)** in Settings > External connections, on this Mac (#208). It cannot be switched from a conversation or through a phone link, and every change is recorded. While it is on:
 
 - no temporary link into this Mac is opened (phone sign-in, phone input and family setup say to do it at the Mac instead), and a link that is open closes when you switch it on;
-- Telegram is not used: no polling, no replies or notifications (a reply that could not be sent is not sent later), and a bot cannot be connected or paired;
+- Telegram is not used: no polling, no replies or notifications (a reply that could not be sent is not sent later), and a bot cannot be connected or paired. Mattermost pauses the same way, unless you marked it company-approved (below);
 - the AI's web search, public page reads, weather, browser, API calls, code runs and MCP server lookup are refused before they run, the CLI's own web search is off, signed-in sites are not refreshed, and no skill is fetched from GitHub.
 
 The AI route you set up keeps working. Not controlled by work mode: traffic a CLI makes inside its own turn besides that web search (its model provider, its own telemetry and update checks, and what its sandbox lets a command reach; Codex runs with `--sandbox read-only`), services you connected yourself (Google connections, the AI's claude.ai connectors, your MCP servers) and family assistants on this Mac. Page reads, API calls and code runs may still reach the intranet addresses you declared (below); the browser stays refused, because a page loads resources from wherever it names. Evidence so far is unit tests with fake tunnels and transports, not an observation on a company network.
@@ -155,6 +155,24 @@ Create your own bot using Telegram’s BotFather. In `v1.1.0` and later, open **
 When you connect your own bot, Still gives it the default assistant's profile once: the name **Still**, its picture, and a short introduction in English, Korean, Japanese and Chinese. If you rename the bot or change its picture in BotFather afterwards, Still leaves your choice alone. Family instances keep their own names. The chat background is a Telegram app setting that a bot cannot change.
 
 The computer must remain running and awake for remote requests to be processed. Installing Still does not start it at login: on macOS, register the background login service once with `agentos service install` so Still starts again after a restart without a terminal; see [Background service (macOS)](#background-service-macos) for exactly what that does and does not cover. Without that service, keep the terminal open; Ctrl-C stops Still.
+
+## Mattermost
+
+You can talk to Still in a direct message with a bot on your Mattermost server, typically a company one (#213). Still connects out to the server's API and checks the direct message every few seconds. Nothing on this Mac is opened to the outside, and no callback is received.
+
+1. In Mattermost, an admin creates a **bot account** (Integrations > Bot Accounts) and gives you its access token.
+2. In Settings > External connections > **Mattermost** on this Mac, enter the server address (`https://…`), the bot token and your own Mattermost username. The token is kept in Still's secret store and never shown again. If the server is on a private address, first add its host under **사내 주소 (intranet addresses)**.
+3. The bot says hello in your direct message. Write there as you would in Telegram.
+
+- Only your posts in that direct message are read. Anyone else who messages the bot, or a channel the bot is added to, is never read or answered.
+- An edited post is never a new request.
+- Still marks your message with 👀 while it works and shows typing. There are no live drafts or buttons.
+- You approve or decline what Still proposes (a settings change, a calendar change, remembering something) by replying, or with a reaction such as 👍 on the message that showed it. Still reads that answer the same way as on Telegram.
+- **Payments and other exact action approvals are never given in Mattermost** (your decision on #213). The prompt tells you to approve or decline in Still on this Mac.
+- A reply that never reached the server is sent once it can be. A reply that may have arrived is never sent twice.
+- In work mode, Mattermost is used only when you switched on **회사 모드에서도 사용 (use in work mode too)**. Do that only for a company-approved server. Otherwise it pauses with Telegram, and nothing queued while it was paused is sent later.
+
+Evidence is unit tests with a fixture server, plus a local observation against a test Mattermost (`mattermost/mattermost-preview`, Mattermost 11, on this Mac). It covered connecting, a direct message becoming Work and its reply, the 👀 reaction, and an edit and another user's message ignored. It also covered a settings proposal applied by the owner's 👍 reaction, and an action approval that stayed unanswered there. There is no observation against a company server yet.
 
 ## Restart and update
 

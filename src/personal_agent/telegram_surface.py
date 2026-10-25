@@ -38,7 +38,8 @@ from .telegram_presence import (CONTROL_RETRY, WaitState, draft_frame, draft_id_
                                 rich_draft_blocks, with_note, without_consumed)
 from .providers import ProviderError
 from .conversation_handoff import TELEGRAM_UNSENT_BACKOFF_FIRST, TELEGRAM_UNSENT_BACKOFF_MAX, TelegramNotSent, TelegramRejected, transient_failure
-from .conversation_surface import PRESENCE_REACT, PRESENCE_TYPING, ConversationSurface, SurfaceCapabilities, SurfacePairing
+from .conversation_surface import (PRESENCE_REACT, PRESENCE_TYPING, ConversationSurface, SurfaceCapabilities, SurfacePairing,
+                                   notice_binding, notice_text)
 from .agent_runtime import WORK_STOP_KEEP, WORK_STOP_KEY
 from .messages import msg
 from . import owner_model as om
@@ -60,7 +61,8 @@ class TelegramSurface(ConversationSurface):
     channel_prefix = 'telegram:'
     #: Telegram shows every optional presence: a reaction on the owner's message, ``typing…``, the
     #: thinking draft (``sendRichMessageDraft`` / ``sendMessageDraft``) with its Stop, and inline buttons.
-    capabilities = SurfaceCapabilities(reactions=True, typing=True, live_drafts=True, buttons=True, native_stop=True)
+    capabilities = SurfaceCapabilities(reactions=True, typing=True, live_drafts=True, buttons=True, native_stop=True,
+                                       action_approvals=True)
 
     #: The Bot API client method behind each presence action.
     PRESENCE_METHODS = {PRESENCE_REACT: 'set_message_reaction', PRESENCE_TYPING: 'send_chat_action'}
@@ -93,10 +95,18 @@ class TelegramSurface(ConversationSurface):
     def owns_connector_owner(self, owner_id):
         return isinstance(owner_id,str) and owner_id.startswith('telegram:') and owner_id[len('telegram:'):].isdigit()
 
+    def reply_to(self, work_id):
+        return self.service.telegram_turns.reply_to(work_id)
+
     def reply_message(self, work_id, owner):
         """The message id of Still's reply to ``work_id`` in ``owner``'s chat (a calendar item's binding), or None."""
         turn=self.service.telegram_turns.get(work_id)
         return turn['reply_message_id'] if turn and turn['chat_id']==owner else None
+
+    def paired_connector_owner(self, enabled_only=True):
+        cfg=self.service.store.config('telegram',{})
+        if not isinstance(cfg,dict) or cfg.get('user_id') is None or enabled_only and not cfg.get('enabled'):return None
+        return f"telegram:{cfg['user_id']}"
 
     def owner_generation(self):
         generation=self.service.store.config('telegram',{}).get('generation')
@@ -247,6 +257,38 @@ class TelegramSurface(ConversationSurface):
         fingerprint=service.document_fingerprint() if kind=='approval_needed' else fingerprint
         service.store.queue_notification(job['id'],job['chat_id'],cfg['generation'],kind,fingerprint,surface=self.name)
 
+    def _notice_markup(self, notification, bound):
+        """Telegram's buttons for a notice that is still shown (``notice_binding``), or None."""
+        service,kind,nid=self.service,notification['kind'],notification['id']
+        if kind=='approval_needed':
+            return {'inline_keyboard':[[{'text':APPROVE_BUTTON,'callback_data':f"p7a:{nid}:approve"},
+                                        {'text':DENY_BUTTON,'callback_data':f"p7a:{nid}:deny"}]]}
+        if kind=='context_approval_needed':
+            return {'inline_keyboard':[[{'text':APPROVE_BUTTON,'callback_data':f"v1c:{nid}:approve"},
+                                        {'text':DENY_BUTTON,'callback_data':f"v1c:{nid}:deny"}]]}
+        if kind=='browser_login_needed':
+            return {'inline_keyboard':[[{'text':msg('button.signed_in'),'callback_data':f"p7l:{nid}:done"},
+                                        {'text':BROWSER_LOGIN_SKIP_LABEL,'callback_data':f"p7l:{nid}:skip"}],
+                                       # #939: the same login window, driven from the phone through a one-time link.
+                                       [{'text':BROWSER_LOGIN_PHONE_LABEL,'callback_data':f"p7l:{nid}:phone"}]]}
+        if kind=='preparation_scheduled':
+            return service.preparation_cancel_markup(nid)
+        if kind=='preparation_proposed':
+            return {'inline_keyboard':[[{'text':msg('button.accept'),'callback_data':f"p7p:{nid}:accept"},
+                                        {'text':msg('button.decline_schedule'),'callback_data':f"p7p:{nid}:deny"}]]}
+        if kind in MEMORY_PROMPT_KINDS:
+            return service.memory_prompt_markup(nid,bound['memory_prompt'])
+        if kind in MEMORY_SAVED_KINDS:
+            return service.memory_saved_markup(nid,bound['memory_saved'])
+        if kind=='settings_change_proposed':
+            return {'inline_keyboard':[[{'text':msg('button.apply'),'callback_data':f"p7s:{nid}:confirm"},
+                                        {'text':msg('button.keep'),'callback_data':f"p7s:{nid}:cancel"}]]}
+        if kind==prep.NOTIFY_KIND:
+            return {'inline_keyboard':[[{'text':msg('button.stop_watching'),'callback_data':f"p7q:{nid}:stop"}]]}
+        # #1472 (owner choice 2026-10-13): a step approval has no buttons; the owner answers with a
+        # reaction or a reply.  Working notes have none either (#996).
+        return None
+
     def deliver_notification(self):
         # Persist the send intent first. An uncertain Telegram response is never
         # replayed after a restart because it might already have been delivered.
@@ -265,111 +307,16 @@ class TelegramSurface(ConversationSurface):
                      and notification['chat_id']==cfg.get('user_id') and not work_mode.was_on_since(service.store,self._notification_since(notification)))
             service.store.update_notification(notification['id'],'sending' if allowed else 'cancelled')
             if not allowed:return True
-            reply_markup=None
-            if notification['kind']=='approval_needed':
-                # #594 item 11: sharing was approved (e.g. in Settings) after
-                # this prompt was queued; its buttons could only be inert.
-                if not service.document_boundary()['requires_approval']:
-                    service.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup={'inline_keyboard':[[
-                    {'text':APPROVE_BUTTON,'callback_data':f"p7a:{notification['id']}:approve"},
-                    {'text':DENY_BUTTON,'callback_data':f"p7a:{notification['id']}:deny"},
-                ]]}
-            elif notification['kind']=='context_approval_needed':
-                reply_markup={'inline_keyboard':[[
-                    {'text':APPROVE_BUTTON,'callback_data':f"v1c:{notification['id']}:approve"},
-                    {'text':DENY_BUTTON,'callback_data':f"v1c:{notification['id']}:deny"},
-                ]]}
-            elif notification['kind']=='browser_approval_needed':
-                pending=service._browser_request(notification.get('job_id'))
-                if not pending or pending.get('state')!='requested' or pending.get('offer_digest')!=notification.get('fingerprint'):
-                    service.store.update_notification(notification['id'],'cancelled')
-                    return True
-                # #1472 (owner choice 2026-10-13): no buttons; the owner answers the prompt with a reaction
-                # or a reply (``answer_step_approval``).  Prompts already sent keep their p7w buttons working.
-                reply_markup=None
-            elif notification['kind']=='browser_login_needed':
-                # #709: only while this Work's login is still offered with this nonce.
-                row=service._browser_login(notification.get('job_id'))
-                if not row or row.get('state')!='offered' or row.get('nonce')!=notification.get('fingerprint'):
-                    service.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup={'inline_keyboard':[[
-                    {'text':msg('button.signed_in'),'callback_data':f"p7l:{notification['id']}:done"},
-                    {'text':BROWSER_LOGIN_SKIP_LABEL,'callback_data':f"p7l:{notification['id']}:skip"},
-                ],[
-                    # #939: the same login window, driven from the phone through a one-time link.
-                    {'text':BROWSER_LOGIN_PHONE_LABEL,'callback_data':f"p7l:{notification['id']}:phone"},
-                ]]}
-            elif notification['kind']=='preparation_scheduled':
-                scheduled_text=service.scheduled_notice_text(prepared_ids(notification))
-                if scheduled_text is None:
-                    service.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup=service.preparation_cancel_markup(notification['id'])
-            elif notification['kind']=='preparation_proposed':
-                # #659: the exact proposals of one Work; changed since -> not offered.
-                proposals,remaining=service.offered_proposals(notification)
-                if not proposals:
-                    service.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup={'inline_keyboard':[[
-                    {'text':msg('button.accept'),'callback_data':f"p7p:{notification['id']}:accept"},
-                    {'text':msg('button.decline_schedule'),'callback_data':f"p7p:{notification['id']}:deny"},
-                ]]}
-            elif notification['kind'] in MEMORY_PROMPT_KINDS:
-                # #818: bound now to the queued candidates still pending; none left -> not offered.
-                memory_prompt=service.bind_memory_prompt(notification,time.time())
-                if not memory_prompt:
-                    service.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup=service.memory_prompt_markup(notification['id'],memory_prompt)
-            elif notification['kind'] in MEMORY_SAVED_KINDS:
-                # #918: bound now to the Work's current saved facts; none left -> nothing to tell.
-                memory_saved=service.bind_memory_saved(notification,time.time())
-                if not memory_saved:
-                    service.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup=service.memory_saved_markup(notification['id'],memory_saved)
-            elif notification['kind']==WORKING_NOTES_KIND:
-                # #19: told only while its revision is still the current notes; no buttons (#996).
-                notes_text=service.working_notes_notice_text(notification)
-                if notes_text is None:
-                    service.store.update_notification(notification['id'],'cancelled')
-                    return True
-            elif notification['kind']=='settings_change_proposed':
-                # #814: the exact drafts of one Work; changed or expired since -> not offered.
-                settings_drafts=service.offered_settings_drafts(notification)
-                if not settings_drafts:
-                    service.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup={'inline_keyboard':[[
-                    {'text':msg('button.apply'),'callback_data':f"p7s:{notification['id']}:confirm"},
-                    {'text':msg('button.keep'),'callback_data':f"p7s:{notification['id']}:cancel"},
-                ]]}
-            elif notification['kind']==prep.NOTIFY_KIND:
-                # #719: one watch run the owner needs; the watch can be stopped from here.
-                watch_text=service.watch_notification_text(notification)
-                if watch_text is None:
-                    service.store.update_notification(notification['id'],'cancelled')
-                    return True
-                reply_markup={'inline_keyboard':[[
-                    {'text':msg('button.stop_watching'),'callback_data':f"p7q:{notification['id']}:stop"},
-                ]]}
+            # #213: whether it is still shown, what it binds and what it says are shared by every surface
+            # (``conversation_surface.notice_binding`` / ``notice_text``); the buttons are Telegram's.
+            bound=notice_binding(service,notification)
+            if bound is None:
+                service.store.update_notification(notification['id'],'cancelled')
+                return True
+            memory_prompt,memory_saved=bound.get('memory_prompt'),bound.get('memory_saved')
+            reply_markup=self._notice_markup(notification,bound)
             try:
-                text=(prep.proposal_text(proposals,remaining) if notification['kind']=='preparation_proposed' else
-                      scheduled_text if notification['kind']=='preparation_scheduled' else
-                      service.memory_prompt_text(notification['job_id'],memory_prompt) if notification['kind'] in MEMORY_PROMPT_KINDS else
-                      service.memory_saved_text(memory_saved) if notification['kind'] in MEMORY_SAVED_KINDS else
-                      notes_text if notification['kind']==WORKING_NOTES_KIND else
-                      service.settings_orchestrator.confirmation_text(settings_drafts) if notification['kind']=='settings_change_proposed' else
-                      watch_text if notification['kind']==prep.NOTIFY_KIND else
-                      LOCAL_DOCUMENT_APPROVAL_TEXT if notification['kind']=='approval_needed'
-                      and service.document_resume_eligible(notification.get('job_id'))
-                      else service.browser_step_prompt(notification.get('job_id')) if notification['kind']=='browser_approval_needed'
-                      else service.browser_login_prompt(notification.get('job_id')) if notification['kind']=='browser_login_needed'
-                      else service.notification_text(notification['kind']))
+                text=notice_text(service,notification,bound)
                 if notification['kind']==prep.NOTIFY_KIND:
                     # #719: a result bubble, rendered like deliver_one's (#581); a parse refusal is a definite non-delivery.
                     try:

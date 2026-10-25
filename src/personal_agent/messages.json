@@ -3382,5 +3382,83 @@
   "en": "An intranet address and other hosts can't be used in the same code run. Split it into a run that reaches only intranet addresses and a run for the rest.",
   "ja": "社内アドレスとほかのホストは、1 回のコード実行で一緒に使えません。社内アドレスだけを使う実行と、それ以外の実行に分けてください。",
   "zh": "内网地址和其他主机不能在同一次代码运行中一起使用。请拆分为只访问内网地址的运行和其余的运行。"
+ },
+ "mattermost.invalid_server": {
+  "ko": "Mattermost 서버 주소는 https://chat.corp.example 처럼 https 주소로 주세요. 이 Mac의 테스트 서버만 http를 쓸 수 있어요.",
+  "en": "Give the Mattermost server as an https address, such as https://chat.corp.example. Only a test server on this Mac may use http.",
+  "ja": "Mattermost サーバーは https://chat.corp.example のような https アドレスで指定してください。http はこの Mac のテストサーバーだけで使えます。",
+  "zh": "请以 https 地址提供 Mattermost 服务器，例如 https://chat.corp.example。只有这台 Mac 上的测试服务器可以使用 http。"
+ },
+ "mattermost.not_connected": {
+  "ko": "Mattermost가 연결되어 있지 않아요. 설정 > 외부 연결에서 연결해 주세요.",
+  "en": "Mattermost is not connected. Connect it in Settings > External connections.",
+  "ja": "Mattermost が接続されていません。設定 > 外部接続 で接続してください。",
+  "zh": "Mattermost 尚未连接。请在“设置 > 外部连接”中连接。"
+ },
+ "mattermost.receive_failed": {
+  "ko": "Mattermost에서 메시지를 받지 못하고 있어요. 서버 주소와 봇 토큰을 확인해 주세요.",
+  "en": "Messages from Mattermost are not being received. Check the server address and the bot token.",
+  "ja": "Mattermost からメッセージを受け取れていません。サーバーアドレスとボットトークンを確認してください。",
+  "zh": "无法接收来自 Mattermost 的消息。请检查服务器地址和机器人令牌。"
+ },
+ "mattermost.invalid_token": {
+  "ko": "봇 토큰을 확인해 주세요. 공백 없이 한 줄로 붙여 넣어 주세요.",
+  "en": "Check the bot token. Paste it as one line without spaces.",
+  "ja": "ボットトークンを確認してください。空白なしの 1 行で貼り付けてください。",
+  "zh": "请检查机器人令牌。请不带空格粘贴为一行。"
+ },
+ "mattermost.invalid_owner": {
+  "ko": "Still과 대화할 내 Mattermost 사용자 이름을 확인해 주세요(봇 자신은 안 돼요).",
+  "en": "Check your Mattermost username, the one that talks to Still (not the bot itself).",
+  "ja": "Still と会話する自分の Mattermost ユーザー名を確認してください（ボット自身は不可）。",
+  "zh": "请检查与 Still 对话的你的 Mattermost 用户名（不能是机器人本身）。"
+ },
+ "mattermost.connect_failed": {
+  "ko": "Mattermost에 연결하지 못했어요. 서버 주소, 봇 토큰, 사용자 이름을 확인해 주세요. 토큰은 저장하지 않았어요.",
+  "en": "Could not connect to Mattermost. Check the server address, the bot token and the username. The token was not saved.",
+  "ja": "Mattermost に接続できませんでした。サーバーアドレス、ボットトークン、ユーザー名を確認してください。トークンは保存していません。",
+  "zh": "无法连接到 Mattermost。请检查服务器地址、机器人令牌和用户名。令牌未保存。"
+ },
+ "mattermost.private_server": {
+  "ko": "이 Mattermost 서버는 사설 주소에 있어요. 설정 > 외부 연결 > 사내 주소에 서버 호스트를 먼저 추가해 주세요.",
+  "en": "This Mattermost server is on a private address. Add its host in Settings > External connections > Intranet addresses first.",
+  "ja": "この Mattermost サーバーはプライベートアドレスにあります。先に 設定 > 外部接続 > 社内アドレス にサーバーのホストを追加してください。",
+  "zh": "此 Mattermost 服务器位于私有地址。请先在“设置 > 外部连接 > 内网地址”中添加服务器主机。"
+ },
+ "mattermost.connected_hello": {
+  "ko": "Still이 연결되었어요. 여기서 메시지를 보내면 Still이 답해요. 결제처럼 정확한 실행 승인이 필요한 일은 이 대화가 아니라 Mac의 Still에서 승인해요.",
+  "en": "Still is connected. Send a message here and Still answers. Anything that needs an exact action approval, such as a payment, is approved in Still on your Mac, not in this conversation.",
+  "ja": "Still が接続されました。ここでメッセージを送ると Still が答えます。支払いのように正確な実行承認が必要なことは、この会話ではなく Mac の Still で承認します。",
+  "zh": "Still 已连接。在这里发送消息，Still 会回复。像付款这样需要精确执行批准的事项，请在 Mac 上的 Still 中批准，而不是在此对话中。"
+ },
+ "mattermost.invalid_value": {
+  "ko": "켜기 또는 끄기로 정해 주세요.",
+  "en": "Choose on or off.",
+  "ja": "オンかオフを選んでください。",
+  "zh": "请选择开启或关闭。"
+ },
+ "mattermost.local_only": {
+  "ko": "Mattermost 연결은 이 Mac의 설정 화면에서만 바꿀 수 있어요.",
+  "en": "The Mattermost connection can be changed only in Settings on this Mac.",
+  "ja": "Mattermost の接続は、この Mac の設定画面でのみ変更できます。",
+  "zh": "Mattermost 连接只能在这台 Mac 的设置界面中更改。"
+ },
+ "mattermost.approve_at_mac": {
+  "ko": "이 승인은 Mattermost에서 할 수 없어요. 이 Mac의 Still 화면에서 승인하거나 거절해 주세요.",
+  "en": "This approval cannot be given in Mattermost. Approve or decline it in Still on your Mac.",
+  "ja": "この承認は Mattermost ではできません。Mac の Still 画面で承認または拒否してください。",
+  "zh": "此批准无法在 Mattermost 中进行。请在 Mac 上的 Still 界面中批准或拒绝。"
+ },
+ "mattermost.answer_at_mac": {
+  "ko": "이 항목은 이 Mac의 Still 화면에서 처리할 수 있어요.",
+  "en": "You can handle this in Still on your Mac.",
+  "ja": "この項目は Mac の Still 画面で処理できます。",
+  "zh": "你可以在 Mac 上的 Still 界面中处理此项。"
+ },
+ "mattermost.work_mode_unapproved": {
+  "ko": "회사 모드가 켜져 있어 Mattermost에 연결하지 않았어요. 회사가 승인한 서버라면 먼저 '회사 모드에서도 사용'을 켜 주세요.",
+  "en": "Work mode is on, so I didn't connect to Mattermost. If your company approved this server, switch on 'Use in work mode too' first.",
+  "ja": "会社モードがオンのため、Mattermost に接続しませんでした。会社が承認したサーバーなら、先に「会社モードでも使う」をオンにしてください。",
+  "zh": "工作模式已开启，因此没有连接到 Mattermost。如果这是公司批准的服务器，请先开启“在工作模式下也使用”。"
  }
 }

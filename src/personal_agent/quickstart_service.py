@@ -1615,7 +1615,11 @@ class AgentService:
                 if when_needed and kind!=prep.KIND_PREPARE:raise prep.PreparationRefusal('invalid_delivery')
             except prep.PreparationRefusal as exc:
                 raise ToolError(str(exc),exc.code) from None
-            channel=(prep.CHANNEL_TELEGRAM if kind==prep.KIND_REMINDER or args.get('delivery') in ('send',prep.DELIVERY_WHEN_NEEDED)
+            # #306 review: a reminder is sent back to the surface the request came from (Telegram for
+            # a request made elsewhere, as before); ``CHANNEL_WEB`` keeps the result in Still.
+            surface=self.surface_of(job)
+            channel=((surface.name if surface else prep.CHANNEL_TELEGRAM)
+                     if kind==prep.KIND_REMINDER or args.get('delivery') in ('send',prep.DELIVERY_WHEN_NEEDED)
                      else prep.CHANNEL_WEB)
             delivery_mode=prep.DELIVERY_WHEN_NEEDED if when_needed else None
             summary=prep.proposal_summary({'kind':kind,'goal_text':goal,'due_at':due_at,'timezone':timezone,
@@ -1658,7 +1662,7 @@ class AgentService:
     def preparation_delivery(row):
         """``send`` / ``keep`` / ``when_needed`` (#719) for one preparation row."""
         if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED:return prep.DELIVERY_WHEN_NEEDED
-        return 'send' if row['channel']==prep.CHANNEL_TELEGRAM else 'keep'
+        return 'send' if row['channel']!=prep.CHANNEL_WEB else 'keep'
 
     def run_due_preparation(self, now=None):
         """One tick of owner-accepted preparations (#659).
@@ -1673,9 +1677,10 @@ class AgentService:
         if not rows:return False
         for row in rows:
             try:
-                cfg=self.store.config('telegram',{})
-                paired=(row['channel']==prep.CHANNEL_TELEGRAM and cfg.get('enabled') and isinstance(cfg.get('user_id'),int)
-                        and cfg.get('generation'))
+                # #306 review: delivered on the surface the preparation was made for, through its pairing now.
+                surface=next((item for item in self.surfaces if item.name==row['channel']),None)
+                pairing=surface.pairing() if surface is not None else None
+                paired=pairing is not None
                 when_needed=row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
                 if row['state']==prep.STATE_RUNNING:
                     work_id=row.get('last_run_job_id')
@@ -1712,15 +1717,15 @@ class AgentService:
                         if waiting:continue
                     # #719: a when_needed run is judged once; only notify queues a message.
                     settled=self.preparations.settle(row,now,scrub=self.scrub_prepared_answer,decide=self.watch_judgment,
-                                                     notify_to=(cfg['user_id'],cfg['generation']) if paired else None,
+                                                     notify_to=(pairing.owner,surface.owner_generation(),surface.name) if paired else None,
                                                      waiting=lambda work:self.work_has_pending_resume(work,now))
                     if settled:LOG.info('preparation settled id=%s outcome=%s next=%s decision=%s',row['id'],settled['last_outcome'],
                                         settled['state'],settled.get('last_decision') if when_needed else '-')
                     continue
                 # #719: a when_needed run is kept in Still; only its notify decision reaches Telegram.
                 send=paired and not when_needed
-                work_id=self.preparations.start(row,channel=f"telegram:{cfg['generation']}" if send else 'web',
-                                                chat_id=cfg['user_id'] if send else None,now=now)
+                work_id=self.preparations.start(row,channel=pairing.channel if send else 'web',
+                                                chat_id=pairing.owner if send else None,now=now)
                 if work_id:LOG.info('preparation started id=%s work=%s kind=%s',row['id'],work_id,row['kind'])
             except Exception as exc:
                 LOG.warning('preparation tick failed id=%s kind=%s',row['id'],type(exc).__name__)
@@ -4081,7 +4086,7 @@ class AgentService:
                     'subscription_engines':self.subscription_engine_status(),
                     'subscription_execution':self.subscription_execution_profile(),
                     'telegram':{'enabled':tg.get('enabled',False),'mode':tg.get('mode','owner-token'),'username':tg.get('username',''),'paired':bool(tg.get('user_id')),'user_id':tg.get('user_id')},
-                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':self.google_connection_rows(),'google_client':self.google_client_status(),'ai_connections':self.ai_connections_status(),'current_context':self.current_state.status(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status()}
+                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':self.google_connection_rows(),'google_client':self.google_client_status(),'ai_connections':self.ai_connections_status(),'current_context':self.current_state.status(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status(),'mattermost':self.mattermost_status()}
 
     def home(self):
         """Return the minimal, credential-free read model for the owner home."""
@@ -5193,6 +5198,33 @@ class AgentService:
         return TelegramSurface(self)
 
     @cached_property
+    def mattermost_surface(self):
+        """The owner's Mattermost direct message (``mattermost_surface``, #213); idle until connected in Settings."""
+        from .mattermost_surface import MattermostSurface
+        return MattermostSurface(self)
+
+    def mattermost_status(self):
+        return self.mattermost_surface.status()
+
+    def connect_mattermost(self, body):
+        """Settings on this Mac only (the local endpoint is the only caller): server, bot token, owner username."""
+        return self.mattermost_surface.connect(body)
+
+    def disconnect_mattermost(self):
+        return self.mattermost_surface.disconnect()
+
+    def set_mattermost_company_approved(self, body):
+        """#208: whether this Mattermost may be used while work mode is on (the owner's word for company-approved)."""
+        return self.mattermost_surface.set_company_approved((body or {}).get('approved') if isinstance(body,dict) else None)
+
+    def receive_polled_surfaces(self):
+        """One receive pass of every surface the service polls (``poll_seconds``); a failure stays in that surface."""
+        for surface in self.surfaces:
+            if surface.poll_seconds is None:continue
+            try:surface.receive()
+            except Exception as exc:LOG.warning('%s: receiving failed (%s)',surface.name,type(exc).__name__)
+
+    @cached_property
     def owner_acts(self):
         """The open items waiting for the owner, the one judgment over an owner act, and its settlement (#172)."""
         from .owner_acts import OwnerActs
@@ -5231,6 +5263,14 @@ class AgentService:
     def surface_claiming(self, job):
         """The conversation surface a Work came from, in any pairing generation, or None (web, local)."""
         return next((surface for surface in self.surfaces if surface.claims(job)),None)
+
+    def surface_connector_owners(self, enabled_only=True):
+        """The connector owner identity of each surface's paired owner, in surface order (#306 review)."""
+        owners=[]
+        for surface in self.surfaces:
+            owner=surface.paired_connector_owner(enabled_only=enabled_only)
+            if owner and owner not in owners:owners.append(owner)
+        return owners
 
     def surface_of_owner(self, owner_id):
         """The conversation surface a connector owner identity names, or None (the local owner)."""
@@ -6195,11 +6235,8 @@ class AgentService:
 
     def _local_handoff_owner(self, row):
         """Recover the parked owner from the hashed index row, never from the request."""
-        candidates=[]
-        telegram=self.store.config('telegram',{})
-        if isinstance(telegram,dict) and telegram.get('enabled') and telegram.get('user_id') is not None:
-            candidates.append(f"telegram:{telegram['user_id']}")
-        candidates.append('local-owner')
+        # #306 review: every paired surface's owner (Telegram first, as before), then the local owner.
+        candidates=[*self.surface_connector_owners(),'local-owner']
         for candidate in candidates:
             if hmac.compare_digest(_owner_key(candidate),str(row.get('owner',''))):
                 return candidate
@@ -6438,11 +6475,8 @@ class AgentService:
         Telegram, and it is why an unmatched record falls back to the paired
         owner rather than to whatever the caller would have preferred.
         """
-        candidates=[]
-        telegram=self.store.config('telegram',{})
-        if isinstance(telegram,dict) and telegram.get('enabled') and telegram.get('user_id') is not None:
-            candidates.append(f"telegram:{telegram['user_id']}")
-        candidates.append('local-owner')
+        # #306 review: every paired surface's owner (Telegram first, as before), then the local owner.
+        candidates=[*self.surface_connector_owners(),'local-owner']
         record=self.connector_handoff.record(connector_id) if self.connector_handoff else None
         if isinstance(record,dict):
             for candidate in candidates:
@@ -6514,8 +6548,8 @@ class AgentService:
 
     @property
     def surfaces(self):
-        """The owner conversation surfaces this service composes (#212); Telegram is the only one today."""
-        return (self.telegram_surface,)
+        """The owner conversation surfaces this service composes (#212): Telegram and Mattermost (#213)."""
+        return (self.telegram_surface,self.mattermost_surface)
 
     def surface_of(self, job):
         """The conversation surface whose current paired conversation ``job`` came from, or None."""
@@ -7266,10 +7300,7 @@ class AgentService:
 
     def _connector_owner_candidates(self):
         """Every connector owner identity this install can hold a row under."""
-        owners=['local-owner']
-        telegram=self.store.config('telegram',{})
-        if isinstance(telegram,dict) and telegram.get('user_id') is not None:
-            owners.insert(0,f"telegram:{telegram['user_id']}")
+        owners=[*self.surface_connector_owners(enabled_only=False),'local-owner']
         known=self.store.config(self.CONNECTOR_OWNERS_KEY,[])
         for owner in known if isinstance(known,list) else []:
             if isinstance(owner,str) and owner not in owners:
@@ -7411,12 +7442,7 @@ class AgentService:
         listed and then refused with an opaque error, and nobody could apply
         it on a paired install.
         """
-        candidates = []
-        telegram = self.store.config('telegram', {})
-        if isinstance(telegram, dict) and telegram.get('enabled') and telegram.get('user_id') is not None:
-            candidates.append(f"telegram:{telegram['user_id']}")
-        candidates.append('local-owner')
-        return candidates
+        return [*self.surface_connector_owners(), 'local-owner']
 
     def calendar_draft_request(self, body, owner_id=None):
         """The owner's approve/apply surface for a Calendar draft.
@@ -7435,8 +7461,8 @@ class AgentService:
         if operation == 'list':
             drafts = []
             for owner in owners:
-                connector = self.calendar_for({'chat_id': int(owner.split(':', 1)[1])}
-                                              if owner.startswith('telegram:') else {})
+                # #306 review: the connector bound to exactly this draft owner (any surface or local).
+                connector = self.calendar_for_owner(owner)
                 drafts.extend({**row, 'owner': owner} for row in connector.pending(owner))
             return {'drafts': drafts}
         draft_id = (body or {}).get('draft_id')
@@ -7446,8 +7472,7 @@ class AgentService:
         # `execute` each enforce the owner themselves, so a draft belonging
         # to neither candidate simply finds no owner and is refused.
         for owner in owners:
-            connector = self.calendar_for({'chat_id': int(owner.split(':', 1)[1])}
-                                          if owner.startswith('telegram:') else {})
+            connector = self.calendar_for_owner(owner)
             try:
                 connector.preview(draft_id, owner)
             except ValueError:
@@ -10476,7 +10501,8 @@ class AgentService:
         # message runs as an ordinary turn.  Only a message the owner typed answers; a replayed,
         # command, photo or scheduled turn never does.
         if not replayed and not owner_command and not run.photo_file_ids and job.get('owner_typed')==1:
-            run.owner_act=self.owner_acts.read(job,owner_prompt,target=self.telegram_turns.reply_to(job['id']),
+            surface=self.surface_of(job)
+            run.owner_act=self.owner_acts.read(job,owner_prompt,target=surface.reply_to(job['id']) if surface else None,
                                                before=job.get('source_at') or job.get('created'))
         if run.owner_act:
             self._settle_owner_act(run)
@@ -11774,7 +11800,7 @@ class AgentService:
             self.store.put('telegram_status',{'state':'connected','message':msg('service.your_personal_telegram_account_is_connected')})
 
     def recover_interrupted_work(self):
-        """Restart recovery that leaves running Telegram Work a durable surface.
+        """Restart recovery that leaves running surface Work a durable reply (#306 review: every surface).
 
         Running Work has only ephemeral presence (typing/draft, #581), which
         vanishes with the process.  `QuickStore.recover` marks it
@@ -11784,10 +11810,13 @@ class AgentService:
         `safe_retry` allows).  Nothing is re-run and nothing already sent or
         uncertain is re-sent - only `delivery='none'` rows are touched.
         """
+        prefixes=[surface.channel_prefix for surface in self.surfaces if surface.channel_prefix]
         with self.store.db() as db:
             running=[row['id'] for row in db.execute(
-                "SELECT j.id FROM jobs j WHERE j.status='running' AND j.channel LIKE 'telegram:%' AND j.delivery='none' "
-                "AND NOT EXISTS (SELECT 1 FROM telegram_task_cards c WHERE c.job_id=j.id AND c.state!='deleting')")]
+                "SELECT j.id FROM jobs j WHERE j.status='running' AND ("+(' OR '.join(['substr(j.channel,1,?)=?']*len(prefixes)) or '0')
+                +") AND j.delivery='none' "
+                "AND NOT EXISTS (SELECT 1 FROM telegram_task_cards c WHERE c.job_id=j.id AND c.state!='deleting')",
+                [value for prefix in prefixes for value in (len(prefix),prefix)])]
         self.store.recover()
         with self.store.db() as db:
             db.execute("DELETE FROM telegram_task_cards WHERE state='deleting' AND job_id IN (SELECT id FROM jobs WHERE status='interrupted')")
@@ -11885,8 +11914,15 @@ class AgentService:
                 except (ProviderError,ValueError):
                     self.store.put('telegram_status',{'state':'error','message':msg('service.check_the_telegram_connection_receiving_will')})
                 self.stop.wait(.25)
+        def poll_surfaces():
+            # #213: surfaces without a long poll of their own (Mattermost) are polled here.
+            interval=min((surface.poll_seconds for surface in self.surfaces if surface.poll_seconds),default=3)
+            while not self.stop.is_set():
+                self.receive_polled_surfaces()
+                self.stop.wait(interval)
         self.threads=[threading.Thread(target=work,daemon=True),threading.Thread(target=poll,daemon=True),
-                      threading.Thread(target=acknowledge,daemon=True)]
+                      threading.Thread(target=acknowledge,daemon=True),
+                      threading.Thread(target=poll_surfaces,daemon=True,name='agentos-surface-poll')]
         for thread in self.threads:thread.start()
 
     def healthy(self):
