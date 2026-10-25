@@ -423,6 +423,7 @@ class ReviewRegressions(MattermostCase):
             return [(2, 1, 6, '', ('10.3.3.3', port))]
         self.fake.dm(BOT, OWNER)
         intranet.add(self.store, 'chat.corp.example', surface='settings')
+        self.surface._resolver = resolver
         with mock.patch('personal_agent.local_tools._bounded_system_resolver', resolver):
             self.service.connect_mattermost({'server_url': 'https://chat.corp.example', 'token': TOKEN,
                                              'owner_username': 'owner'})
@@ -430,6 +431,7 @@ class ReviewRegressions(MattermostCase):
         self.owner_says('질문')
         self.assertTrue(self.service.run_one())
         intranet.remove(self.store, 'chat.corp.example', surface='settings')
+        self.surface._destination_checked = None   # the cached check expires (``DESTINATION_SECONDS``)
         calls = len(self.fake.calls)
         self.fake.post(OWNER, self.dm(), '또 질문')
         self.assertIsNone(self.surface.receive())
@@ -519,6 +521,51 @@ class ReviewRegressions(MattermostCase):
                          f'mattermost:{OWNER}')
         self.assertIn(f'mattermost:{OWNER}', self.service.calendar_owner_candidates())
         self.assertIn(f'mattermost:{OWNER}', self.service._connector_owner_candidates())
+
+    def test_a_server_that_moves_to_a_private_address_is_refused(self):
+        """Public at connect, private later (a VPN): an undeclared private address is refused at the next request."""
+        self.surface.disconnect()
+        answers = {'address': '93.184.216.34'}
+
+        def resolver(host, port, **kwargs):
+            return [(2, 1, 6, '', (answers['address'], port))]
+        self.surface._resolver = resolver
+        with mock.patch('personal_agent.local_tools._bounded_system_resolver', resolver):
+            self.service.connect_mattermost({'server_url': 'https://chat.example.com', 'token': TOKEN,
+                                             'owner_username': 'owner'})
+        self.assertFalse(self.store.config(CONFIG_KEY)['private_server'])
+        answers['address'] = '10.8.8.8'
+        self.surface._destination_checked = None
+        calls = len(self.fake.calls)
+        self.assertFalse(self.surface.send_owner('to a private address'))
+        self.assertIsNone(self.surface.receive())
+        self.assertEqual(self.fake.calls[calls:], [], 'no token or message reaches the private address')
+
+    def test_work_mode_switched_on_between_parts_stops_the_rest(self):
+        self.owner_says('질문')
+        self.assertTrue(self.service.run_one())
+        work = self.mm_jobs()[0]
+        original = self.fake.post
+
+        def post(user, channel, message, root_id=''):
+            made = original(user, channel, message, root_id)
+            if user == BOT:
+                work_mode.set_enabled(self.store, True, surface='settings')   # lands after the first part
+            return made
+        self.fake.post = post
+        with mock.patch.object(type(self.service), 'telegram_result_text', staticmethod(lambda *a, **k: '가' * 20000)):
+            self.service.deliver_one()
+        self.fake.post = original
+        self.assertEqual(self.store.job(work['id'])['delivery'], 'unknown', 'one part left; the rest never did')
+        self.assertEqual(sum(1 for text in self.fake.bot_posts() if text.startswith('가')), 1)
+
+    def test_watermarks_follow_the_servers_clock(self):
+        """A server 30 s behind this Mac: a message sent just after connecting is still taken."""
+        self.surface.disconnect()
+        self.fake.clock = int(time.time() * 1000) - 30_000
+        self.connect()
+        self.owner_says('연결 직후 질문')
+        self.assertEqual([job['message'] for job in self.mm_jobs()], ['연결 직후 질문'])
 
     def test_a_long_reply_partly_sent_is_never_posted_again(self):
         self.owner_says('질문')

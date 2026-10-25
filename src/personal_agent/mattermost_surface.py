@@ -108,11 +108,16 @@ def server_url(value):
 class MattermostClient:
     """The few REST API v4 calls the surface makes, authenticated by the bot token."""
 
-    def __init__(self, base_url, token, transport=None):
+    def __init__(self, base_url, token, transport=None, guard=None):
         self.base_url, self._token = server_url(base_url), token
         self._transport = transport or _http_transport()
+        #: #306 review: ``() -> None`` asked before every request; it raises ``MattermostNotSent`` when the
+        #: request may not go (work mode, a destination that is no longer allowed), so nothing is sent.
+        self._guard = guard
 
     def call(self, method, path, body=None):
+        if self._guard is not None:
+            self._guard()
         url = self.base_url + '/api/v4' + path
         headers = {'Authorization': f'Bearer {self._token}', 'Content-Type': 'application/json',
                    'X-Requested-With': 'XMLHttpRequest'}
@@ -184,14 +189,35 @@ class MattermostSurface(ConversationSurface):
         token = self.service.store.secret(SECRET_KEY) if token is None else token
         if not cfg.get('server_url') or not token:
             raise MattermostError(msg('mattermost.not_connected'))
-        # #306 review: a server reached through a declared intranet host is used only while it is still
-        # declared; removing the host stops polling and sending from the next request (#209).
-        if cfg.get('private_server'):
-            from . import intranet
-            found = intranet.destination(cfg['server_url'])
-            if found is None or not intranet.declared(self.service.store, *found):
-                raise MattermostNotSent(msg('mattermost.private_server'))
-        return MattermostClient(cfg['server_url'], token, transport=self._transport or getattr(self.service, 'mattermost_transport', None))
+        url = cfg['server_url']
+        return MattermostClient(url, token, transport=self._transport or getattr(self.service, 'mattermost_transport', None),
+                                guard=lambda: self._request_guard(url))
+
+    #: Seconds a destination check is reused (the system resolver is asked again after that).
+    DESTINATION_SECONDS = 15
+
+    def _request_guard(self, url):
+        """#306 review: before every request, the surface is still usable (work mode, approval) and the
+        server's current addresses are still allowed (#209: an undeclared private address is refused, a
+        removed intranet host from the next request).  Raises ``MattermostNotSent``: nothing was sent."""
+        if not self.usable():
+            raise MattermostNotSent(msg('mattermost.work_mode_unapproved') if work_mode.active(self.service.store)
+                                    else msg('mattermost.not_connected'))
+        now = time.monotonic()
+        cached = getattr(self, '_destination_checked', None)
+        if cached and cached[0] == url and cached[1] > now:
+            return
+        try:
+            self._check_destination(url, resolver=self._resolver)
+        except ValueError as exc:
+            self._destination_checked = None
+            raise MattermostNotSent(str(exc)) from None
+        self._destination_checked = (url, now + self.DESTINATION_SECONDS)
+
+    @staticmethod
+    def _resolver(host, port, **kwargs):
+        import socket
+        return socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
 
     def usable(self, cfg=None):
         """Configured and, while work mode is on, marked company-approved by the owner."""
@@ -595,21 +621,28 @@ class MattermostSurface(ConversationSurface):
         owner_id = str(owner.get('id') or '')
         if not owner_id or owner_id.isdigit() or owner_id == bot.get('id'):
             raise ValueError(msg('mattermost.invalid_owner'))
+        # #306 review: the watermarks are the server's clock, not this Mac's: the hello post's own
+        # timestamp.  Without it, a bounded overlap (posts are taken once by their key) covers a skew.
+        try:
+            hello = client.create_post(channel['id'], msg('mattermost.connected_hello'))
+            start = int(hello.get('create_at') or 0) if isinstance(hello, dict) else 0
+        except MattermostError:
+            LOG.warning('mattermost: hello not delivered')
+            start = 0
+        start = start or int(time.time() * 1000) - self.CLOCK_OVERLAP_MS
         cfg = {'enabled': True, 'server_url': url, 'bot_user_id': bot['id'], 'bot_username': bot.get('username', ''),
                'owner_user_id': owner_id, 'owner_username': owner.get('username', username), 'channel_id': channel['id'],
-               'generation': secrets.token_hex(6), 'cursor': int(time.time() * 1000), 'seen_created': int(time.time() * 1000),
-               'reaction_cursor': int(time.time() * 1000),
+               'generation': secrets.token_hex(6), 'cursor': start, 'seen_created': start, 'reaction_cursor': start,
                'company_approved': self.config().get('company_approved') is True, 'connected_at': time.time(),
                'private_server': bool(private)}
         self.service.store.secret(SECRET_KEY, token)
         self.service.store.put(CONFIG_KEY, cfg)
-        try:
-            client.create_post(channel['id'], msg('mattermost.connected_hello'))
-        except MattermostError:
-            LOG.warning('mattermost: hello not delivered')
         return self.status()
 
-    def _check_destination(self, url):
+    #: How far back, in ms, ingestion starts when the server's clock could not be read at connect.
+    CLOCK_OVERLAP_MS = 120_000
+
+    def _check_destination(self, url, resolver=None):
         """A server on a private address must be a declared intranet destination (#209); this Mac's own is a local test server."""
         from . import intranet
         from .local_tools import _bounded_system_resolver
@@ -620,7 +653,7 @@ class MattermostSurface(ConversationSurface):
         if host in ('127.0.0.1', 'localhost', '::1'):
             return False
         try:
-            records = _bounded_system_resolver(host, port, type=socket.SOCK_STREAM, timeout=10)
+            records = (resolver or _bounded_system_resolver)(host, port, type=socket.SOCK_STREAM, timeout=10)
         except (OSError, ValueError, TimeoutError):
             raise ValueError(msg('mattermost.connect_failed')) from None
         declared = intranet.declared(self.service.store, host, port)
