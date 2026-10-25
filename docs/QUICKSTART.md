@@ -179,7 +179,7 @@ Evidence is unit tests with a fixture server, plus a local observation against a
 You can talk to Still in a direct message with your own Slack app's bot (#214). Still connects out to Slack over **Socket Mode**, an outbound WebSocket. There is no public request URL, no tunnel, and nothing on this Mac is opened to the outside. Still uses the official `slack_sdk`.
 
 1. At [api.slack.com/apps](https://api.slack.com/apps) choose **Create New App → From a manifest**, pick your workspace and paste the manifest that Settings > External connections > **Slack** shows (**Slack 앱 만들기**). It asks only for `chat:write`, `im:history`, `im:write`, `reactions:read` and `reactions:write`. It subscribes to `message.im` and `reaction_added`, and turns on interactivity and Socket Mode.
-2. Install the app to the workspace and copy its **bot token** (`xoxb-…`). Under **Basic Information → App-Level Tokens**, create an **app token** (`xapp-…`) with the `connections:write` scope.
+2. Under **OAuth & Permissions** on the left, choose **Install to Workspace** and allow it; the **Bot User OAuth Token** (`xoxb-…`) then appears there. Under **Basic Information → App-Level Tokens**, create an **app token** (`xapp-…`) with the `connections:write` scope.
 3. In Settings on this Mac, enter both tokens and your own **member ID** (Slack profile → ⋮ → Copy member ID). Both tokens are kept in Still's secret store and never shown again. The bot says hello in your direct message.
 
 - Only your messages in that direct message, in that workspace, are read. Anyone else who messages the bot, a channel, or another workspace is never read or answered.
@@ -190,7 +190,7 @@ You can talk to Still in a direct message with your own Slack app's bot (#214). 
 - A reply that never reached Slack is sent once it can be. A reply that may have arrived is never sent twice.
 - In work mode, Slack is used only when you switched on **회사 모드에서도 사용 (use in work mode too)**. Do that only for a company-approved workspace. Otherwise its connection closes, and nothing queued while it was paused is sent later.
 
-Evidence is unit tests with payloads shaped like Slack's Events API and Block Kit button presses. The SDK's own request path is tested against a local HTTP server.
+Evidence is unit tests with payloads shaped like Slack's Events API and Block Kit button presses, and the SDK's own request path against a local HTTP server. A live observation in the owner's test workspace (2026-10-25) covered connecting, a direct message answered, a settings change applied and an action approval answered by their buttons, a 👍 on an answer, the connection closing in work mode and reconnecting, and an edit that made no new request. There is no observation in a company workspace.
 
 ## Restart and update
 
