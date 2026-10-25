@@ -654,6 +654,9 @@ def mediate_snapshot(raw, excluded=(), requested_url=None):
             value, count = scrub(element['value'][:VALUE_LIMIT], excluded)
             redacted += count
             row['value'] = value
+        if element.get('offscreen') is True:
+            # #1575: in a closed menu or panel; a press now is refused (open the menu, or its href).
+            row['offscreen'] = True
         near, count = scrub(' '.join(str(element.get('context') or '').split())[:NEAR_LIMIT], excluded)
         redacted += count
         if near:
@@ -1521,7 +1524,8 @@ DEPENDENCY_TEXT = ('macOS 시스템 WebKit 연결 구성요소(pyobjc-framework-
 GOOGLE_NOTE = 'Google 로그인은 내장 브라우저에서 지원되지 않습니다.'
 TARGET_TEXT = ('대상 요소가 바뀌었거나 다른 요소에 가려져 있어 실행하지 않았습니다. browser_read로 페이지를 다시 '
                '확인하세요.')
-HIDDEN_TEXT = '대상 요소가 화면에 보이지 않아 실행하지 않았습니다. browser_read로 페이지를 다시 확인하세요.'
+HIDDEN_TEXT = ('대상 요소가 화면에 보이지 않아 실행하지 않았습니다. 닫힌 메뉴나 패널 안의 요소(offscreen)라면 그 메뉴를 여는 '
+               '버튼을 먼저 누르거나, 링크(href)가 있으면 browser_open으로 여세요. 아니면 browser_read로 페이지를 다시 확인하세요.')
 OBSCURED_TEXT = '대상 요소가 다른 요소에 가려져 있어 누르지 않았습니다.'
 #: #12: why a press or typing step on a checked element did not run, one reason each.
 MISSING_TEXT = '대상 요소가 페이지에서 사라져 실행하지 않았습니다. browser_read로 페이지를 다시 확인하세요.'
@@ -1935,6 +1939,13 @@ class WebKitWorkerDriver:
                         continue
                     if message.get('event') == 'hidden':
                         self._visible = False
+                        continue
+                    if message.get('event') == 'delegate_error':
+                        # #1579: the worker survived a failing WebKit callback; say what became of its navigation.
+                        outcome = {True: 'it had already been answered', False: 'that navigation was refused'}.get(
+                            message.get('answered'), 'refused unless already answered')
+                        LOG.warning('browser worker %s failed (%s); %s', str(message.get('where'))[:40],
+                                    str(message.get('error'))[:60], outcome)
                         continue
                     messages.put(message)
             except (OSError, ValueError):
@@ -2766,11 +2777,16 @@ class BrowserProfile:
                 reason = 'closed' if stop.is_set() else 'timeout' if self.clock() >= deadline else 'owner'
             except Exception as exc:
                 failure.append(type(exc).__name__)
+                # #1579: a window that ends on a failure says which (type only), so the next one is diagnosable.
+                LOG.warning('browser login window ended on %s', type(exc).__name__)
             finally:
                 record.pop('driver', None)   # #939: nothing drives a closing window
                 stored = False
                 if driver is not None:
                     stored = bool(self._save(driver))
+                    if not stored:
+                        LOG.warning('browser login window closed without saving its session (reason %s)',
+                                    'failed' if failure else 'closed')
                     # After the final save (Codex P2 on #773): a sign-in navigation that committed while
                     # the save ran is counted with the cookies that save stored.
                     after, before = _navigations(driver), record.get('navigations')

@@ -807,6 +807,74 @@ class WorkerGuardLogicTests(unittest.TestCase):
         worker.deadline(5, 5)
         self.assertEqual(answers, [(5, 'timeout', {})])
 
+    def test_a_failing_policy_decision_refuses_that_navigation_instead_of_aborting(self):
+        """#1579 (live 2026-10-17): an exception in the navigation-policy delegate aborted the worker,
+        and the owner's login window vanished while they signed in."""
+        bw, worker = self.worker()
+        events = []
+        worker.emit = events.append
+        answers = []
+
+        def raising(answer):
+            raise TypeError('one-argument callback')
+        bw.guarded_policy(worker, 'popup_navigation', answers.append, 'cancel', raising)
+        self.assertEqual(answers, ['cancel'])
+        self.assertEqual(events, [{'event': 'delegate_error', 'where': 'popup_navigation', 'error': 'TypeError',
+                                   'answered': False}])
+
+        def answered_then_raised(answer):
+            answer('allow')
+            raise ValueError('later')
+        answers.clear()
+        bw.guarded_policy(worker, 'navigation', answers.append, 'cancel', answered_then_raised)
+        self.assertEqual(answers, ['allow'], 'WebKit is answered exactly once')
+        self.assertTrue(events[-1]['answered'], 'the report says it had been answered, not refused (review P2)')
+
+    def test_a_form_check_that_cannot_start_leaves_no_decision_pending(self):
+        """#1579 review P2: a raising check must not leave ``deciding`` raised (a click would wait forever)."""
+        bw, worker = self.worker()
+
+        def broken(*args, **kwargs):
+            raise RuntimeError('script could not run')
+        worker.run = broken
+        with self.assertRaises(RuntimeError):
+            worker.check_form_navigation('https://shop.example/pay', 'POST', lambda allowed: None)
+        self.assertEqual(worker.deciding, 0)
+        self.assertEqual(worker.refused_submits, 1)
+
+    def test_an_asynchronous_answer_that_fails_still_refuses_once(self):
+        bw, worker = self.worker(resolved={}, allowed_origins=(), intranet=None)
+        events = []
+        worker.emit = events.append
+        later = []
+        worker.AppHelper = type('Helper', (), {'callAfter': staticmethod(lambda fn, *a: later.append((fn, a))),
+                                               'callLater': staticmethod(lambda seconds, fn: None)})
+        answers = []
+
+        def decision(allowed, reason=None):
+            answers.append((allowed, reason))
+            if allowed:
+                raise RuntimeError('callback failed')
+        from unittest import mock
+        with mock.patch.object(bw, "destination_refusal", return_value=None):
+            worker.decide('https://shop.example/', False, decision)
+            for _ in range(50):
+                if later:
+                    break
+                time.sleep(0.02)
+            function, arguments = later[0]
+            function(*arguments)
+        self.assertEqual(answers, [(True, None), (False, 'blocked_destination')])
+        self.assertEqual(events[0]['where'], 'navigation_answer')
+
+    def test_the_popup_delegate_takes_the_decision_reason(self):
+        """#1579: ``decide`` answers ``(allowed, reason)``; the popup's callback took one argument."""
+        import inspect
+        from personal_agent import browser_worker as bw
+        source = inspect.getsource(bw._popup_delegate_class)
+        self.assertIn('lambda allowed, reason=None:', source)
+        self.assertIn('guarded_policy(', inspect.getsource(bw._delegate_class))
+
     def test_typing_settles_only_once_no_decision_is_pending(self):
         """#899 review P1: ``settle`` waits for a pending policy decision as a click does."""
         bw, worker = self.worker()
@@ -1277,6 +1345,20 @@ class SessionFixtureHandler(FixtureHandler):
             return self._send('''<html><head><title>새 창</title></head><body>
               <a href="/cart" target="_blank">새 창 장바구니</a>
               <a href="file:///etc/hosts" target="_blank">로컬 파일</a></body></html>''')
+        if path == '/offscreen-menu':
+            # #1575: a closed off-canvas menu in a fixed layer beside the viewport, and a button that opens it.
+            return self._send('''<html><head><title>메뉴</title><meta name="viewport" content="width=device-width"></head><body>
+              <button type="button" id="open" onclick="document.getElementById('menu').style.left='0'">메뉴 열기</button>
+              <nav id="menu" style="position:fixed;top:0;left:100vw;width:80vw;height:100vh;background:#fff">
+                <a href="/whoami">내 자산</a></nav>
+              <div style="position:fixed;bottom:0;left:0;width:100vw;height:30vh;overflow:auto;background:#eee">
+                <div style="height:200vh"></div><a href="/whoami">패널 아래 링크</a></div>
+              <a href="/whoami">본문 링크</a></body></html>''')
+        if path == '/popup-open':
+            # #1579: a sign-in flow opening its popup, which then navigates (first blank, then a page).
+            return self._send('<html><head><title>팝업 여는 페이지</title></head><body><p>열기</p>'
+                              '<script>var w = window.open("", "signin"); setTimeout(function(){ if (w) w.location = "/whoami"; }, 200);'
+                              '</script></body></html>')
         if path == '/memo-trap':
             # Review P1-1 repro: focusing the memo inserts a card field at the top of <body>.
             return self._send('''<html><head><title>메모</title></head><body>
@@ -2138,6 +2220,27 @@ class WebKitIntegrationTests(unittest.TestCase):
         finally:
             sess.close()
 
+    def test_a_closed_off_canvas_menu_item_is_marked_offscreen_until_its_menu_opens(self):
+        """#1575 (live 2026-10-16): items of a closed menu were listed as pressable, then refused as hidden."""
+        sess = bs.BrowserSession(self.profile.driver_factory('work-1575'), work_id='work-1575', approvals=Approvals(),
+                                 steps=20, allowed_origins_for_tests=(self.fixture,))
+        try:
+            page = sess.open({'url': self.origin + '/offscreen-menu', 'effect': 'navigate'})
+            rows = {row['name']: row for row in page['elements']}
+            self.assertTrue(rows['내 자산'].get('offscreen'))
+            self.assertNotIn('offscreen', rows['본문 링크'])
+            self.assertNotIn('offscreen', rows['메뉴 열기'])
+            # An open fixed panel that scrolls brings its lower controls in view: not offscreen (review P2).
+            self.assertNotIn('offscreen', rows['패널 아래 링크'])
+            with self.assertRaises(ToolError) as refused:
+                sess.click({'target': '내 자산', 'effect': 'navigate'})
+            self.assertEqual(refused.exception.code, 'target_unavailable')
+            page = sess.click({'target': '메뉴 열기', 'effect': 'read'})
+            rows = {row['name']: row for row in page['elements']}
+            self.assertNotIn('offscreen', rows['내 자산'], 'the opened menu shows it')
+        finally:
+            sess.close()
+
     def test_accessible_names_images_hidden_roles_and_children_of_pay_controls_are_classified(self):
         """Review of #763: aria-labelledby, a descendant image's alt, role=none, a child of a pay link."""
         sess = bs.BrowserSession(self.profile.driver_factory('work-758b'), work_id='work-758b', approvals=Approvals(),
@@ -2195,6 +2298,17 @@ class WebKitIntegrationTests(unittest.TestCase):
                 worker.click(index, 10)
             self.assertEqual(worker.release_submit(caught.exception.cancelled_form, 10), {'navigated': True, 'posted': True})
             self.assertEqual(self.server.posts, ['/coupon', '/pay'])
+        finally:
+            worker.close()
+
+    def test_a_sign_in_popup_navigating_does_not_end_the_owner_window(self):
+        """#1579 (live 2026-10-17): a popup's navigation decision raised inside WebKit and aborted the worker."""
+        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+        try:
+            worker.show(self.origin + '/popup-open', 10)
+            time.sleep(2)   # the popup opens and navigates on its own
+            self.assertTrue(worker.alive(), 'the worker survived the popup navigation')
+            self.assertIn('팝업 여는 페이지', worker.snapshot()['title'])
         finally:
             worker.close()
 

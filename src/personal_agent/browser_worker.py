@@ -156,6 +156,21 @@ const visible = (el) => {
   const rect = el.getBoundingClientRect();
   return rect.width > 0 || rect.height > 0;
 };
+// #1575: a listed control no scroll can bring on screen, which a press refuses as hidden (LOCATE_SCRIPT):
+// thinner than 1px, placed left of or above the page, or off screen in a fixed layer (a closed
+// off-canvas menu).  Measured where it is now, without scrolling.  A fixed layer that is itself on
+// screen (an open panel that scrolls) brings its controls in view, so only a layer wholly off screen counts.
+const onScreen = (r) => r.right > 0 && r.left < window.innerWidth && r.bottom > 0 && r.top < window.innerHeight;
+const offscreen = (el) => {
+  const r = el.getBoundingClientRect();
+  if (r.width < 1 || r.height < 1) return true;
+  if (r.right + window.scrollX <= 0 || r.bottom + window.scrollY <= 0) return true;
+  if (onScreen(r)) return false;
+  for (let a = el; a; a = a.parentElement) {
+    if (getComputedStyle(a).position === 'fixed') return !onScreen(a.getBoundingClientRect());
+  }
+  return false;
+};
 const clean = (text) => cut(String(text || '').replace(/\s+/g, ' ').trim(), 160);
 // The element's <label> without touching ``el.labels``: reading a label through
 // that list on password-form pages left WebKit (macOS 26) unable to evaluate any
@@ -495,7 +510,7 @@ Array.from(document.querySelectorAll(SELECTOR)).forEach((el, index) => {
     autocomplete: well(autocompleteOf(el)), value: takesValue ? cut(el.value || '', 200) : null, form: formId,
     label_form: idOf(control ? formOf(control) : null), own_text: ownText(el), label_name: labelName(el),
     ancestor_text: ancestorText(el), pressable: buttonish(el), nav_link: navLink(el), context: contextOf(el),
-    disabled: !!el.disabled});
+    disabled: !!el.disabled, offscreen: offscreen(el)});
 });
 return JSON.stringify({url: cut(location.href, 4000), title: cut(document.title, 400),
   text: cut(document.body ? document.body.innerText : '', 20000), elements: elements.slice(0, 300),
@@ -1583,8 +1598,16 @@ class Worker:
             if error is None and isinstance(value, dict) and value.get('allow') is True:
                 return answer(True)
             answer(False, value.get('cancelled') if error is None and isinstance(value, dict) else None)
-        self.run(FORM_NAVIGATION_SCRIPT, {'url': url, 'method': str(method or 'GET'), 'frame': into_frame is True}, done)
-        self.AppHelper.callLater(FORM_CHECK_SECONDS, lambda: answered or answer(False))
+        try:
+            self.run(FORM_NAVIGATION_SCRIPT, {'url': url, 'method': str(method or 'GET'), 'frame': into_frame is True}, done)
+            self.AppHelper.callLater(FORM_CHECK_SECONDS, lambda: answered or answer(False))
+        except Exception:
+            # #1579 review: a check that could not start is a refusal; the pending count goes back down.
+            if not answered:
+                answered.append(True)
+                self.deciding -= 1
+                self.refused_submits += 1
+            raise
 
     def end_step(self, done=None):
         """End a click/type step: the approval's allowance ends; ``done(cancelled record or None)``.
@@ -1675,7 +1698,15 @@ class Worker:
             # Refuse this navigation but do not poison the origin cache.
             if refusal != 'destination_check_timeout':
                 self.resolved[key] = refusal
-            decision(refusal is None, refusal)
+            # #1579: this runs later on the main loop, outside the delegate's own guard.
+            try:
+                decision(refusal is None, refusal)
+            except Exception as exc:
+                self.delegate_failed('navigation_answer', exc)
+                try:
+                    decision(False, 'blocked_destination')
+                except Exception:
+                    pass
 
         def resolve():
             try:
@@ -1683,9 +1714,24 @@ class Worker:
             except Exception:
                 refusal = 'blocked_destination'
             self.AppHelper.callAfter(answer, refusal)
-        threading.Thread(target=resolve, name='agentos-browser-resolve', daemon=True).start()
-        # A resolver that does not answer in time is a refusal (never a guess).
-        self.AppHelper.callLater(RESOLVE_SECONDS, lambda: answered or answer('destination_check_timeout'))
+        try:
+            threading.Thread(target=resolve, name='agentos-browser-resolve', daemon=True).start()
+            # A resolver that does not answer in time is a refusal (never a guess).
+            self.AppHelper.callLater(RESOLVE_SECONDS, lambda: answered or answer('destination_check_timeout'))
+        except Exception:
+            # #1579 review: a check that could not start leaves no decision pending; the caller refuses.
+            if not answered:
+                answered.append(True)
+                if main_frame:
+                    self.deciding -= 1
+            raise
+
+    def delegate_failed(self, where, exc, answered=None):
+        """#1579: a WebKit callback failed: tell the parent the place, the exception type and whether
+        its navigation had already been answered (True), is now refused (False) or may have been
+        answered before the failure (None).  Never a URL or page text; stderr is discarded by design."""
+        self.emit({'event': 'delegate_error', 'where': str(where)[:40], 'error': type(exc).__name__[:60],
+                   'answered': answered if isinstance(answered, bool) else None})
 
     def navigation_refused(self, main_frame, reason='blocked_destination'):
         if not main_frame:
@@ -2622,6 +2668,30 @@ def _blank(url):
     return text in ('', 'about:blank')
 
 
+def guarded_policy(worker, where, handler, cancel, body):
+    """#1579: run one navigation-policy decision so it answers WebKit exactly once and never raises into it.
+
+    An exception in a PyObjC delegate becomes an Objective-C exception nothing catches, and ``abort()``
+    ends the whole worker (live 2026-10-17: the owner's login window vanished while they signed in).
+    ``body(answer)`` decides; any exception refuses that one navigation and is reported by type only.
+    """
+    answered = []
+
+    def answer(policy):
+        if not answered:
+            answered.append(policy)
+            handler(policy)
+
+    try:
+        body(answer)
+    except Exception as exc:
+        try:
+            worker.delegate_failed(where, exc, answered=bool(answered))
+        except Exception:
+            pass
+        answer(cancel)
+
+
 def _popup_delegate_class():
     """#914: the delegate of a sign-in popup window: the same destination check, nothing else."""
     if _POPUP_DELEGATE:
@@ -2634,15 +2704,20 @@ def _popup_delegate_class():
         worker = objc.ivar()
 
         def webView_decidePolicyForNavigationAction_decisionHandler_(self, view, action, handler):
-            request = action.request()
-            url = str(request.URL().absoluteString()) if request is not None and request.URL() is not None else ''
-            frame = action.targetFrame()
-            top = frame is None or bool(frame.isMainFrame())
-            if top and str(urlsplit(url).scheme or '').lower() in ('data', 'blob'):
-                return handler(WebKit.WKNavigationActionPolicyCancel)
-            # main_frame=False: a popup's navigations never touch the login window's counters.
-            self.worker.decide(url, False, lambda allowed: handler(
-                WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel))
+            worker = self.worker
+
+            def body(handler):
+                request = action.request()
+                url = str(request.URL().absoluteString()) if request is not None and request.URL() is not None else ''
+                frame = action.targetFrame()
+                top = frame is None or bool(frame.isMainFrame())
+                if top and str(urlsplit(url).scheme or '').lower() in ('data', 'blob'):
+                    return handler(WebKit.WKNavigationActionPolicyCancel)
+                # main_frame=False: a popup's navigations never touch the login window's counters.
+                # #1579: ``decide`` answers ``(allowed, reason)``; a one-argument callback raised here.
+                worker.decide(url, False, lambda allowed, reason=None: handler(
+                    WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel))
+            guarded_policy(worker, 'popup_navigation', handler, WebKit.WKNavigationActionPolicyCancel, body)
 
         def webView_runJavaScriptAlertPanelWithMessage_initiatedByFrame_completionHandler_(self, view, message, frame, handler):
             # #936: answered by the worker's rule; never left to WebKit's silent default.
@@ -2724,55 +2799,61 @@ def _delegate_class():
         def webView_decidePolicyForNavigationAction_decisionHandler_(self, view, action, handler):
             # Every navigation: typed, redirect, form, window.open, frame.
             worker = self.worker
-            request = action.request()
-            url = str(request.URL().absoluteString()) if request is not None and request.URL() is not None else ''
-            frame = action.targetFrame()
-            main_frame = frame is None or bool(frame.isMainFrame())
-            if main_frame and worker.reading:
-                worker.read_navigations += 1
-                return handler(WebKit.WKNavigationActionPolicyCancel)
 
-            def decision(allowed, reason=None):
-                # #11 review: a destination check that finishes after a load-more read
-                # began is held to the read, like a navigation that starts during it.
-                if allowed and main_frame and worker.reading:
+            def body(handler):
+                request = action.request()
+                url = str(request.URL().absoluteString()) if request is not None and request.URL() is not None else ''
+                frame = action.targetFrame()
+                main_frame = frame is None or bool(frame.isMainFrame())
+                if main_frame and worker.reading:
                     worker.read_navigations += 1
                     return handler(WebKit.WKNavigationActionPolicyCancel)
-                # Record the typed refusal before cancellation can synchronously
-                # report a generic navigation failure through WebKit's delegate.
-                if not allowed:
-                    worker.navigation_refused(main_frame, reason or 'blocked_destination')
-                elif main_frame:
-                    worker.main_navigations += 1   # a click waits for it to land (#736)
-                    try:
-                        worker.phone_navigated(committed=False)   # #254: the next page loads phone-sized
-                    except Exception:
-                        pass
-                handler(WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel)
-            # #700: a form submission from or into the main frame while the guard is
-            # armed is checked against the page's payment forms first (a native
-            # ``submit`` that no ``submit`` event or wrapper saw); a refusal is a
-            # cancelled submit, not a blocked destination.  A resubmitted POST (a
-            # reload or back of one) is never an agent step's: refused.
-            source = action.sourceFrame()
-            source_main = source is not None and bool(source.isMainFrame())
-            kind = action.navigationType()
-            if (main_frame or source_main) and not worker.guard_off and kind in (
-                    WebKit.WKNavigationTypeFormSubmitted, WebKit.WKNavigationTypeFormResubmitted):
-                method = str(request.HTTPMethod() or 'GET') if request is not None else 'GET'
-                if method.upper() != 'GET':
-                    worker.posted_submits += 1   # #899: counted when started, whatever the guard decides
-                if kind == WebKit.WKNavigationTypeFormResubmitted and method.upper() != 'GET':
-                    worker.refused_submits += 1
-                    return handler(WebKit.WKNavigationActionPolicyCancel)
 
-                def checked(allowed):
-                    if allowed:
-                        worker.decide(url, main_frame, decision)
-                    else:
+                def decision(allowed, reason=None):
+                    # #11 review: a destination check that finishes after a load-more read
+                    # began is held to the read, like a navigation that starts during it.
+                    if allowed and main_frame and worker.reading:
+                        worker.read_navigations += 1
+                        return handler(WebKit.WKNavigationActionPolicyCancel)
+                    # Record the typed refusal before cancellation can synchronously
+                    # report a generic navigation failure through WebKit's delegate.
+                    if not allowed:
+                        worker.navigation_refused(main_frame, reason or 'blocked_destination')
+                    elif main_frame:
+                        worker.main_navigations += 1   # a click waits for it to land (#736)
+                        try:
+                            worker.phone_navigated(committed=False)   # #254: the next page loads phone-sized
+                        except Exception:
+                            pass
+                    handler(WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel)
+                # #700: a form submission from or into the main frame while the guard is
+                # armed is checked against the page's payment forms first (a native
+                # ``submit`` that no ``submit`` event or wrapper saw); a refusal is a
+                # cancelled submit, not a blocked destination.  A resubmitted POST (a
+                # reload or back of one) is never an agent step's: refused.
+                source = action.sourceFrame()
+                source_main = source is not None and bool(source.isMainFrame())
+                kind = action.navigationType()
+                if (main_frame or source_main) and not worker.guard_off and kind in (
+                        WebKit.WKNavigationTypeFormSubmitted, WebKit.WKNavigationTypeFormResubmitted):
+                    method = str(request.HTTPMethod() or 'GET') if request is not None else 'GET'
+                    if method.upper() != 'GET':
+                        worker.posted_submits += 1   # #899: counted when started, whatever the guard decides
+                    if kind == WebKit.WKNavigationTypeFormResubmitted and method.upper() != 'GET':
+                        worker.refused_submits += 1
+                        return handler(WebKit.WKNavigationActionPolicyCancel)
+
+                    def checked(allowed):
+                        # #1579: may run later, outside the delegate's guard; a failure refuses.
+                        try:
+                            if allowed:
+                                return worker.decide(url, main_frame, decision)
+                        except Exception as exc:
+                            worker.delegate_failed('form_navigation', exc)
                         handler(WebKit.WKNavigationActionPolicyCancel)
-                return worker.check_form_navigation(url, method, checked, into_frame=not main_frame)
-            worker.decide(url, main_frame, decision)
+                    return worker.check_form_navigation(url, method, checked, into_frame=not main_frame)
+                worker.decide(url, main_frame, decision)
+            guarded_policy(worker, 'navigation', handler, WebKit.WKNavigationActionPolicyCancel, body)
 
         def webView_didCommitNavigation_(self, view, navigation):
             self.worker.landed += 1
