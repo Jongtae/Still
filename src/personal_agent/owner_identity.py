@@ -7,7 +7,9 @@ retain the stage until the transaction commits so interruption is recoverable.
 import json
 import logging
 
+from .calendar_oauth import CalendarOAuthError
 from .connector_contract import CONNECTOR_STATE_KEY, _owner_key
+from .gmail import GmailError
 from .preparations import OWNER
 
 MIGRATION_KEY = 'connector_owner_migration_v1'
@@ -39,84 +41,117 @@ def migrate_connector_owner(service):
         db.execute('INSERT INTO config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
                    (key, json.dumps(value)))
 
-    with store.db() as db:
-        db.execute('BEGIN IMMEDIATE')
+    def progress_receipt(db):
         receipt = read(db, MIGRATION_KEY, None)
-        rows = read(db, CONNECTOR_STATE_KEY, {})
-        if receipt is None and not any(key != local and value for key, value in rows.items()):
-            return
-        holders = [holder for holder in (service.gmail, service.calendar_oauth, service.drive_oauth)
-                   if holder is not None and callable(getattr(holder, 'token_slots', None))]
-        available = {connector for holder in holders for connector in holder.token_slots(local)}
-        if receipt and not set(receipt['selected']).issubset(available):
-            return  # Finish wiring before recovering a prepared credential publication.
         if receipt is None:
-            connectors = {connector for by_owner in rows.values() for connector in by_owner}
-            if not connectors.issubset(available):
-                # Startup may still be wiring credential holders. Never migrate lifecycle
-                # metadata without the matching encrypted credentials.
-                return
-            selected, conflicts = {}, []
-            for connector in sorted(connectors):
-                candidates = [(key, by_owner[connector]) for key, by_owner in rows.items() if connector in by_owner]
-                # changed_at is the existing durable grant/lifecycle timestamp.
-                # Local wins ties, then the stable source key: no pairing-order dependency.
-                holder = next(holder for holder in holders if connector in holder.token_slots(local))
-                credentials = []
-                for key, state in candidates:
-                    token = holder.store.secret(holder.token_slots(key)[connector])
-                    if isinstance(token, dict) and token.get('owner') == key and token.get('access_token'):
-                        credentials.append((key, state))
-                winner, state = max(credentials or candidates,
-                                    key=lambda item: (item[1]['changed_at'], item[0] == local, item[0]))
-                selected[connector] = {'source': winner, 'state': state}
-                for key, _state in candidates:
-                    if key != winner:
-                        conflicts.append({'connector': connector, 'source': names.get(key, key),
-                                          'kept_source': names.get(winner, winner)})
-            receipt = {'phase': 'prepared', 'selected': selected, 'sources': list(rows), 'conflicts': conflicts}
-            # Stage ciphertext through the existing encryption boundary. No token in SQLite.
-            for holder in holders:
-                for connector, target in holder.token_slots(local).items():
-                    item = selected.get(connector)
-                    if item is None:
-                        continue
-                    source = holder.token_slots(item['source'])[connector]
-                    token = holder.store.secret(source)
-                    if token:
-                        holder.store.secret('owner-migration:' + target, {**token, 'owner': local})
-            put(db, MIGRATION_KEY, receipt)
+            return {'connectors': {}}
+        if 'connectors' in receipt:
+            return receipt
+        # Recover receipts written by the all-connectors-at-once upgrade too.
+        return {'phase': receipt['phase'], 'connectors': {
+            connector: {**item, 'phase': receipt['phase'],
+                        'sources': receipt['sources'],
+                        'conflicts': [row for row in receipt['conflicts'] if row['connector'] == connector]}
+            for connector, item in receipt['selected'].items()}}
 
-    committed = False
-    if receipt['phase'] != 'complete':
+    def save_receipt(db, receipt, rows):
+        phases = {item['phase'] for item in receipt['connectors'].values()}
+        receipt['phase'] = ('prepared' if 'prepared' in phases else
+                            'partial' if any(key != local and value for key, value in rows.items()) else
+                            'complete')
+        put(db, MIGRATION_KEY, receipt)
+
+    with store.db() as db:
+        rows = read(db, CONNECTOR_STATE_KEY, {})
+        receipt = progress_receipt(db)
+        if not receipt['connectors'] and not any(key != local and value for key, value in rows.items()):
+            return
+        connectors = {connector for by_owner in rows.values() for connector in by_owner}
+        connectors.update(receipt['connectors'])
+    # Credential holders are inspected only when legacy state needs migrating.
+    holders = {connector: holder
+               for holder in (service.gmail, service.calendar_oauth, service.drive_oauth)
+               if holder is not None and callable(getattr(holder, 'token_slots', None))
+               for connector in holder.token_slots(local)}
+
+    def migrate(connector, holder):
+        target = holder.token_slots(local)[connector]
+        stage = 'owner-migration:' + target
         with store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            # Re-read under the transaction, so a second startup cannot duplicate the audit.
-            receipt = read(db, MIGRATION_KEY, None)
-            if receipt['phase'] != 'complete':
-                for holder in holders:
-                    for connector, target in holder.token_slots(local).items():
-                        if connector in receipt['selected']:
-                            token = holder.store.secret('owner-migration:' + target)
-                            holder.store.secret(target, token or {})
-                put(db, CONNECTOR_STATE_KEY, {local: {key: item['state'] for key, item in receipt['selected'].items()}})
-                put(db, CONFLICTS_KEY, receipt['conflicts'])
-                put(db, MIGRATION_KEY, {**receipt, 'phase': 'complete'})
-                committed = True
-    if committed:
-        for conflict in receipt['conflicts']:
+            receipt = progress_receipt(db)
+            rows = read(db, CONNECTOR_STATE_KEY, {})
+            item = receipt['connectors'].get(connector)
+            if item is None:
+                candidates = [(key, by_owner[connector]) for key, by_owner in rows.items() if connector in by_owner]
+                # Read every candidate before selecting or writing anything. An unreadable
+                # credential is unknown, never evidence that another account should win.
+                tokens = {key: holder.store.secret(holder.token_slots(key)[connector]) for key, _ in candidates}
+                credentials = [(key, state) for key, state in candidates
+                               if isinstance(tokens[key], dict) and tokens[key].get('owner') == key
+                               and tokens[key].get('access_token')]
+                winner, state = max(credentials or candidates,
+                                    key=lambda row: (row[1]['changed_at'], row[0] == local, row[0]))
+                conflicts = [{'connector': connector, 'source': names.get(key, key),
+                              'kept_source': names.get(winner, winner)}
+                             for key, _ in candidates if key != winner]
+                item = {'phase': 'prepared', 'source': winner, 'state': state,
+                        'sources': [key for key, _ in candidates], 'conflicts': conflicts}
+                token = tokens[winner]
+                # Even an absent token replaces an abandoned stage from a rolled-back
+                # preparation. SQLite contains metadata only; staging remains encrypted.
+                holder.store.secret(stage, {**token, 'owner': local} if token else {})
+                receipt['connectors'][connector] = item
+                save_receipt(db, receipt, rows)
+
+        committed = False
+        if item['phase'] != 'complete':
+            with store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                receipt = progress_receipt(db)
+                item = receipt['connectors'][connector]
+                if item['phase'] != 'complete':
+                    token = holder.store.secret(stage)
+                    holder.store.secret(target, token or {})
+                    rows = read(db, CONNECTOR_STATE_KEY, {})
+                    # Remove this connector only. Unconfigured or unreadable connectors
+                    # retain their exact legacy lifecycle records for a later startup.
+                    for key in list(rows):
+                        rows[key].pop(connector, None)
+                        if not rows[key]:
+                            del rows[key]
+                    rows.setdefault(local, {})[connector] = item['state']
+                    put(db, CONNECTOR_STATE_KEY, rows)
+                    put(db, CONFLICTS_KEY, read(db, CONFLICTS_KEY, []) + item['conflicts'])
+                    item['phase'] = 'complete'
+                    save_receipt(db, receipt, rows)
+                    committed = True
+        if committed:
+            for conflict in item['conflicts']:
+                logging.getLogger(__name__).warning(
+                    'connector owner migration connector=%s dropped_source=%s kept_source=%s',
+                    connector, conflict['source'], conflict['kept_source'])
+        # A separate cleanup marker avoids touching or re-auditing completed connectors
+        # when another holder is configured later. Interrupted cleanup remains retryable.
+        if not item.get('cleanup_complete'):
+            with store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                receipt = progress_receipt(db)
+                item = receipt['connectors'][connector]
+                if not item.get('cleanup_complete'):
+                    slots = [holder.token_slots(key)[connector] for key in item['sources'] if key != local]
+                    slots.append(stage)
+                    populated = [slot for slot in slots if holder.store.secret(slot)]
+                    for slot in populated:
+                        holder.store.secret(slot, {})
+                    item['cleanup_complete'] = True
+                    save_receipt(db, receipt, read(db, CONNECTOR_STATE_KEY, {}))
+
+    for connector in sorted(connectors & holders.keys()):
+        try:
+            migrate(connector, holders[connector])
+        except (GmailError, CalendarOAuthError):
+            # Neither exception text/reason nor credential payloads belong in logs.
+            # A local key/credential problem must not prevent Settings or other Work.
             logging.getLogger(__name__).warning(
-                'connector owner migration connector=%s dropped_source=%s kept_source=%s',
-                conflict['connector'], conflict['source'], conflict['kept_source'])
-    # Idempotent cleanup after commit. A crash before here leaves only inaccessible
-    # old credentials, and the next startup completes cleanup without another audit.
-    for holder in holders:
-        for key in receipt['sources']:
-            if key == local:
-                continue
-            for slot in holder.token_slots(key).values():
-                if holder.store.secret(slot):
-                    holder.store.secret(slot, {})
-        for slot in holder.token_slots(local).values():
-            if holder.store.secret('owner-migration:' + slot):
-                holder.store.secret('owner-migration:' + slot, {})
+                'connector owner migration deferred connector=%s credential unavailable', connector)

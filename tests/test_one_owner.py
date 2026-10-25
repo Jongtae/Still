@@ -473,3 +473,198 @@ def test_startup_migrates_only_after_credential_holders_are_wired(setup, wiring)
     before = store.secret_path.read_bytes(), store.config(MIGRATION_KEY)
     migrate_connector_owner(service)
     assert (store.secret_path.read_bytes(), store.config(MIGRATION_KEY)) == before
+
+
+@pytest.mark.parametrize('historical_state', ['disconnected', 'connected'])
+def test_migration_progress_is_independent_of_unconfigured_holders(setup, caplog, historical_state):
+    from personal_agent.calendar_oauth import _spec
+    store, _, registry, gmail, clock, _ = setup
+    encrypted = EncryptedCalendarSecretStore(store, Fernet.generate_key())
+    calendar = CalendarOAuth(encrypted, 'fixture-client', 'https://example.test/callback',
+                             registry=registry, grants=('read',), now=lambda: clock[0])
+    connector = _spec('read').connector_id
+    # Retained disconnected metadata must not block a separately usable credential.
+    registry.transition('telegram:77', connector, ConnectorState.DISCONNECTED)
+    if historical_state == 'connected':
+        start = calendar.begin_oauth('telegram:77')
+        state = parse_qs(urlsplit(start['authorization_url']).query)['state'][0]
+        calendar.complete_oauth('telegram:77', {'state': state, 'code': 'fixture'},
+            lambda _: {'access_token': 'retained-calendar-secret', 'expires_in': 7200,
+                       'scope': ' '.join(_spec('read').required_scopes)})
+    calendar_slot = 'encrypted:calendar:' + calendar.token_slots(_owner_key('telegram:77'))[connector]
+    calendar_ciphertext = store.secret(calendar_slot)
+    connect(gmail, 'telegram:77', 'older-gmail-secret')
+    clock[0] += 1
+    connect(gmail, 'slack:sl-owner', 'newer-gmail-secret')
+    legacy = _owner_key('telegram:77')
+    calendar_row = store.config(CONNECTOR_STATE_KEY)[legacy][connector]
+    service = AgentService(store, connector_registry=registry, gmail=gmail)
+    assert gmail.credential_current(LOCAL)
+    assert store.config(CONNECTOR_STATE_KEY)[legacy] == {connector: calendar_row}
+    assert store.secret(calendar_slot) == calendar_ciphertext
+    first_receipt = store.config(MIGRATION_KEY)
+    assert connector not in first_receipt['connectors']
+    conflicts = store.config(CONFLICTS_KEY)
+    assert len(conflicts) == 1
+    # Wiring the deferred holder migrates either its retained credential or
+    # the credential newly supplied after the disconnected historical row.
+    if historical_state == 'disconnected':
+        start = calendar.begin_oauth('telegram:77')
+        state = parse_qs(urlsplit(start['authorization_url']).query)['state'][0]
+        calendar.complete_oauth('telegram:77', {'state': state, 'code': 'fixture'},
+            lambda _: {'access_token': 'calendar-secret', 'expires_in': 7200,
+                       'scope': ' '.join(_spec('read').required_scopes)})
+    service.calendar_oauth = calendar
+    with mock.patch.object(gmail.store, 'secret', side_effect=AssertionError('completed connector revisited')):
+        migrate_connector_owner(service)
+    assert calendar.credential_current(LOCAL)
+    assert store.config(CONFLICTS_KEY) == conflicts
+    assert store.config(MIGRATION_KEY)['connectors'][GMAIL_CONNECTOR_ID] == first_receipt['connectors'][GMAIL_CONNECTOR_ID]
+    before = store.config(MIGRATION_KEY), store.secret_path.read_bytes()
+    migrate_connector_owner(service)
+    assert (store.config(MIGRATION_KEY), store.secret_path.read_bytes()) == before
+    assert caplog.text.count('dropped_source=telegram:77') == 1
+
+
+@pytest.mark.parametrize('holder_kind', ['gmail', 'calendar', 'drive'])
+@pytest.mark.parametrize('wiring', ['constructor', 'installer'])
+@pytest.mark.parametrize('failure', ['locked', 'wrong-key', 'one-unreadable'])
+def test_startup_defers_unreadable_migration_without_losing_conflict_candidates(
+        setup, caplog, holder_kind, wiring, failure):
+    from personal_agent.calendar_oauth import DRIVE_GRANT, DRIVE_SECRET_NAMESPACE, CalendarOAuthError, _spec
+    from personal_agent.gmail import GmailError
+    from personal_agent.quickstart import install_google_connectors
+    store, _, registry, gmail, clock, _ = setup
+    key = Fernet.generate_key()
+    if holder_kind == 'gmail':
+        holder = gmail
+        holder.store = EncryptedGmailSecretStore(store, key)
+        connector, error = GMAIL_CONNECTOR_ID, GmailError
+        def connect_holder(owner, token):
+            connect(holder, owner, token)
+        def secret_store(provider):
+            return EncryptedGmailSecretStore(store, provider)
+    else:
+        grant = DRIVE_GRANT if holder_kind == 'drive' else 'read'
+        options = {'namespace': DRIVE_SECRET_NAMESPACE} if holder_kind == 'drive' else {}
+        def secret_store(provider):
+            return EncryptedCalendarSecretStore(store, provider, **options)
+        holder = CalendarOAuth(secret_store(key), 'fixture-client', 'https://example.test/callback',
+                               registry=registry, grants=(grant,), now=lambda: clock[0])
+        connector, error = _spec(grant).connector_id, CalendarOAuthError
+        def connect_holder(owner, token):
+            start = holder.begin_oauth(owner, grant=grant)
+            state = parse_qs(urlsplit(start['authorization_url']).query)['state'][0]
+            holder.complete_oauth(owner, {'state': state, 'code': 'fixture'},
+                lambda _: {'access_token': token, 'expires_in': 7200,
+                           'scope': ' '.join(_spec(grant).required_scopes)})
+    connect_holder('telegram:77', 'older-readable-secret')
+    clock[0] += 1
+    connect_holder('slack:sl-owner', 'newest-unreadable-secret')
+    before = store.config(CONNECTOR_STATE_KEY), store.secret_path.read_bytes()
+    def locked():
+        raise RuntimeError('secret-keychain-detail')
+    holder.store = secret_store(locked if failure == 'locked' else Fernet.generate_key() if failure == 'wrong-key' else key)
+    original = holder.store.secret
+    unreadable = holder.token_slots(_owner_key('slack:sl-owner'))[connector]
+    def failing_slot(slot, value=None):
+        if slot == unreadable:
+            raise error('newest-unreadable-secret')
+        return original(slot, value)
+    if failure == 'one-unreadable':
+        holder.store.secret = failing_slot
+    kwargs = {'gmail': holder} if holder_kind == 'gmail' else {holder_kind + '_oauth': holder}
+    if wiring == 'constructor':
+        service = AgentService(store, connector_registry=registry, **kwargs)
+    else:
+        service = AgentService(store, connector_registry=registry)
+        built = {'registry': registry, 'exchange': lambda _: pytest.fail('no exchange'),
+                 'drive_oauth': None, 'drive_reader_factory': None, 'source': 'fixture', 'client_id': 'fixture'}
+        built.update(kwargs)
+        if holder_kind == 'calendar':
+            built['calendar_factory'] = None
+        install_google_connectors(service, built)
+    assert (store.config(CONNECTOR_STATE_KEY), store.secret_path.read_bytes()) == before
+    assert store.config(MIGRATION_KEY) is None
+    assert store.config(CONFLICTS_KEY) is None
+    assert 'migration deferred' in caplog.text
+    assert 'secret-keychain-detail' not in caplog.text
+    assert 'newest-unreadable-secret' not in caplog.text
+    assert 'older-readable-secret' not in caplog.text
+    holder.store = secret_store(key)
+    migrate_connector_owner(service)
+    token = holder.store.secret(holder.token_slots(_owner_key(LOCAL))[connector])
+    assert token['access_token'] == 'newest-unreadable-secret'
+    assert len(store.config(CONFLICTS_KEY)) == 1
+    before = store.config(MIGRATION_KEY), store.secret_path.read_bytes()
+    migrate_connector_owner(service)
+    assert (store.config(MIGRATION_KEY), store.secret_path.read_bytes()) == before
+
+
+@pytest.mark.parametrize('phase', ['read', 'stage', 'publish'])
+def test_unreadable_connector_does_not_block_another_available_connector(setup, phase, caplog):
+    from personal_agent.calendar_oauth import CalendarOAuthError, _spec
+    store, service, registry, gmail, clock, _ = setup
+    encrypted = EncryptedCalendarSecretStore(store, Fernet.generate_key())
+    calendar = CalendarOAuth(encrypted, 'fixture-client', 'https://example.test/callback',
+                             registry=registry, grants=('read',), now=lambda: clock[0])
+    connector = _spec('read').connector_id
+    start = calendar.begin_oauth('telegram:77')
+    state = parse_qs(urlsplit(start['authorization_url']).query)['state'][0]
+    calendar.complete_oauth('telegram:77', {'state': state, 'code': 'fixture'},
+        lambda _: {'access_token': 'calendar-secret', 'expires_in': 7200,
+                   'scope': ' '.join(_spec('read').required_scopes)})
+    connect(gmail, 'telegram:77')
+    service.calendar_oauth = calendar
+    legacy = _owner_key('telegram:77')
+    calendar_row = store.config(CONNECTOR_STATE_KEY)[legacy][connector]
+    source = calendar.token_slots(legacy)[connector]
+    ciphertext = store.secret('encrypted:calendar:' + source)
+    target = calendar.token_slots(_owner_key(LOCAL))[connector]
+    original = encrypted.secret
+    def unavailable(slot, value=None):
+        if ((phase == 'read' and slot == source) or
+                (phase == 'stage' and slot == 'owner-migration:' + target and value is not None) or
+                (phase == 'publish' and slot == target and value is not None)):
+            raise CalendarOAuthError('calendar-secret')
+        return original(slot, value)
+    with mock.patch.object(encrypted, 'secret', unavailable):
+        migrate_connector_owner(service)
+    assert gmail.credential_current(LOCAL)
+    assert store.config(CONNECTOR_STATE_KEY)[legacy] == {connector: calendar_row}
+    assert store.secret('encrypted:calendar:' + source) == ciphertext
+    assert 'calendar-secret' not in caplog.text
+    migrate_connector_owner(service)
+    assert calendar.credential_current(LOCAL)
+    assert store.config(MIGRATION_KEY)['phase'] == 'complete'
+
+
+@pytest.mark.parametrize('phase', ['prepared', 'complete'])
+def test_migration_recovers_original_receipt_format(setup, phase, caplog):
+    store, service, _, gmail, clock, _ = setup
+    connect(gmail, 'telegram:77')
+    clock[0] += 1
+    connect(gmail, 'slack:sl-owner', 'newer-account')
+    target = gmail.token_slots(_owner_key(LOCAL))[GMAIL_CONNECTOR_ID]
+    original = gmail.store.secret
+    def interrupted(slot, value=None):
+        if slot == target and value is not None:
+            raise RuntimeError('fixture interruption')
+        return original(slot, value)
+    if phase == 'prepared':
+        with mock.patch.object(gmail.store, 'secret', interrupted), pytest.raises(RuntimeError):
+            migrate_connector_owner(service)
+    else:
+        migrate_connector_owner(service)
+    entry = store.config(MIGRATION_KEY)['connectors'][GMAIL_CONNECTOR_ID]
+    # The original v1 receipt described all selected connectors in one batch.
+    store.put(MIGRATION_KEY, {'phase': phase,
+        'selected': {GMAIL_CONNECTOR_ID: {'source': entry['source'], 'state': entry['state']}},
+        'sources': entry['sources'], 'conflicts': entry['conflicts']})
+    migrate_connector_owner(service)
+    assert gmail.credential_current(LOCAL)
+    assert len(store.config(CONFLICTS_KEY)) == 1
+    assert caplog.text.count('dropped_source=telegram:77') == 1
+    before = store.config(MIGRATION_KEY), store.secret_path.read_bytes()
+    migrate_connector_owner(service)
+    assert (store.config(MIGRATION_KEY), store.secret_path.read_bytes()) == before
