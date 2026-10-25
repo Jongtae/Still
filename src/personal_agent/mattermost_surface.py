@@ -184,6 +184,13 @@ class MattermostSurface(ConversationSurface):
         token = self.service.store.secret(SECRET_KEY) if token is None else token
         if not cfg.get('server_url') or not token:
             raise MattermostError(msg('mattermost.not_connected'))
+        # #306 review: a server reached through a declared intranet host is used only while it is still
+        # declared; removing the host stops polling and sending from the next request (#209).
+        if cfg.get('private_server'):
+            from . import intranet
+            found = intranet.destination(cfg['server_url'])
+            if found is None or not intranet.declared(self.service.store, *found):
+                raise MattermostNotSent(msg('mattermost.private_server'))
         return MattermostClient(cfg['server_url'], token, transport=self._transport or getattr(self.service, 'mattermost_transport', None))
 
     def usable(self, cfg=None):
@@ -233,8 +240,15 @@ class MattermostSurface(ConversationSurface):
         text = str(text or '')
         parts = [text[offset:offset + POST_CHARS] for offset in range(0, len(text), POST_CHARS)] or ['']
         post = None
-        for part in parts:
-            post = client.create_post(cfg['channel_id'], part)
+        for index, part in enumerate(parts):
+            try:
+                post = client.create_post(cfg['channel_id'], part)
+            except MattermostNotSent:
+                if index == 0:
+                    raise
+                # #306 review: earlier parts were delivered, so the message is not "not sent": it is
+                # unknown and is never posted again from the start.
+                raise MattermostError('Mattermost에 메시지의 일부만 보냈습니다.') from None
         return post.get('id') if isinstance(post, dict) else None
 
     # -- turns (the owner's post a Work answers, and Still's reply) -------------------------
@@ -316,18 +330,23 @@ class MattermostSurface(ConversationSurface):
         service, cfg = self.service, dict(self.config() if cfg is None else cfg)
         owner, generation = cfg['owner_user_id'], cfg['generation']
         cursor = int(cfg.get('cursor') or 0)
-        seen = int(cfg.get('seen_created') or 0)
-        reacted = int(cfg.get('reaction_cursor') or 0)
-        created, acts = [], []
+        # #306 review: every post and reaction of the batch is judged against the watermarks the batch
+        # started from (posts arrive ordered by their last change, not their creation); they advance
+        # only after the batch.  A post is taken once by its request key, a reaction by its own key.
+        seen_from = int(cfg.get('seen_created') or 0)
+        reacted_from = int(cfg.get('reaction_cursor') or 0)
+        done_at = set(cfg.get('reactions_at_cursor') or ())
+        seen, reacted = seen_from, reacted_from
+        created, acts, keys = [], [], {}
         for post in posts:
             cursor = max(cursor, int(post.get('update_at') or 0))
             if post.get('channel_id') != cfg['channel_id']:
                 continue
             if post.get('user_id') == owner and not post.get('type') and not post.get('delete_at'):
                 made = int(post.get('create_at') or 0)
-                # An edit, or a post seen before, is never a new act (#626).
-                if made > seen:
-                    seen = made
+                # An edit of a post taken before is never a new act (#626): its request key exists.
+                if made >= seen_from:
+                    seen = max(seen, made)
                     work_id = self._ingest_post(post, owner, generation)
                     if work_id:
                         created.append((work_id, post.get('message') or ''))
@@ -336,16 +355,24 @@ class MattermostSurface(ConversationSurface):
             elif post.get('user_id') not in (owner, cfg.get('bot_user_id')):
                 LOG.info('mattermost: a post from another user was ignored')
             for reaction in (post.get('metadata') or {}).get('reactions') or ():
-                if (isinstance(reaction, dict) and reaction.get('user_id') == owner
-                        and int(reaction.get('create_at') or 0) > reacted and not reaction.get('delete_at')):
-                    reacted = max(reacted, int(reaction['create_at']))
-                    acts.append((post['id'], reaction.get('emoji_name') or ''))
-        cfg.update(cursor=cursor, seen_created=seen, reaction_cursor=reacted)
+                if not (isinstance(reaction, dict) and reaction.get('user_id') == owner and not reaction.get('delete_at')):
+                    continue
+                at = int(reaction.get('create_at') or 0)
+                key = f"{post['id']}:{reaction.get('emoji_name') or ''}:{at}"
+                if at < reacted_from or at == reacted_from and key in done_at or key in keys:
+                    continue
+                keys[key] = at
+                acts.append((at, post['id'], reaction.get('emoji_name') or ''))
+        if keys:
+            reacted = max(reacted_from, *keys.values())
+        at_cursor = sorted({key for key, at in keys.items() if at == reacted}
+                           | (done_at if reacted == reacted_from else set()))[-50:]
         with service.lock:
             current = self.config()
             if current.get('generation') == generation:
                 service.store.put(CONFIG_KEY, {**current, 'cursor': cursor, 'seen_created': seen,
-                                               'reaction_cursor': reacted})
+                                               'reaction_cursor': reacted, 'reactions_at_cursor': at_cursor})
+        acts = [(post_id, name) for _at, post_id, name in sorted(acts)]
         for work_id, text in created:
             if service.is_natural_language(text):
                 service.consider_steer(work_id, text)
@@ -543,7 +570,7 @@ class MattermostSurface(ConversationSurface):
             raise ValueError(msg('mattermost.invalid_token'))
         if not username or len(username) > 64:
             raise ValueError(msg('mattermost.invalid_owner'))
-        self._check_destination(url)
+        private = self._check_destination(url)
         client = MattermostClient(url, token, transport=self._transport or getattr(self.service, 'mattermost_transport', None))
         try:
             bot = client.me()
@@ -558,7 +585,8 @@ class MattermostSurface(ConversationSurface):
                'owner_user_id': owner_id, 'owner_username': owner.get('username', username), 'channel_id': channel['id'],
                'generation': secrets.token_hex(6), 'cursor': int(time.time() * 1000), 'seen_created': int(time.time() * 1000),
                'reaction_cursor': int(time.time() * 1000),
-               'company_approved': self.config().get('company_approved') is True, 'connected_at': time.time()}
+               'company_approved': self.config().get('company_approved') is True, 'connected_at': time.time(),
+               'private_server': bool(private)}
         self.service.store.secret(SECRET_KEY, token)
         self.service.store.put(CONFIG_KEY, cfg)
         try:
@@ -576,7 +604,7 @@ class MattermostSurface(ConversationSurface):
         found = intranet.destination(url)
         host, port = found
         if host in ('127.0.0.1', 'localhost', '::1'):
-            return
+            return False
         try:
             records = _bounded_system_resolver(host, port, type=socket.SOCK_STREAM, timeout=10)
         except (OSError, ValueError, TimeoutError):
@@ -586,6 +614,7 @@ class MattermostSurface(ConversationSurface):
             address = ipaddress.ip_address(str(record[4][0]).split('%')[0])
             if (declared and not intranet.address_admitted(address)) or (not declared and not address.is_global):
                 raise ValueError(msg('mattermost.private_server'))
+        return declared and any(not ipaddress.ip_address(str(record[4][0]).split('%')[0]).is_global for record in records)
 
     def disconnect(self):
         self.service.store.put(CONFIG_KEY, {'company_approved': self.config().get('company_approved') is True})

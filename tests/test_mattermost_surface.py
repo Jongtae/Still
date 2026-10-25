@@ -47,6 +47,7 @@ class FakeMattermost:
         self.posts = {}
         self.calls = []
         self.fail = None   # None | 'connect' | 'lost' for the next create_post
+        self.fail_after = 0   # create_posts that still succeed before ``fail`` applies
 
     def tick(self):
         self.clock += 7
@@ -97,6 +98,9 @@ class FakeMattermost:
                      if post['channel_id'] == channel and post['update_at'] >= since}
             return 200, json.dumps({'order': list(found), 'posts': found}).encode()
         if (method, path) == ('POST', '/posts'):
+            if self.fail and self.fail_after:
+                self.fail_after -= 1
+                return 201, json.dumps(self.post(BOT, data['channel_id'], data['message'])).encode()
             if self.fail == 'connect':
                 self.fail = None
                 raise MattermostNotSent('not sent')
@@ -405,6 +409,74 @@ class Secrets(MattermostCase):
             dumped = ' '.join(str(tuple(row)) for table in ('tool_events', 'jobs', 'config')
                               for row in db.execute(f'SELECT * FROM {table}'))
         self.assertNotIn(TOKEN, dumped)
+
+
+class ReviewRegressions(MattermostCase):
+    """#306 review: revocation, batch watermarks and partial delivery."""
+
+    def setUp(self):
+        super().setUp()
+        self.connect()
+
+    def test_removing_the_declared_host_stops_polling_and_sending(self):
+        def resolver(host, port, **kwargs):
+            return [(2, 1, 6, '', ('10.3.3.3', port))]
+        self.fake.dm(BOT, OWNER)
+        intranet.add(self.store, 'chat.corp.example', surface='settings')
+        with mock.patch('personal_agent.local_tools._bounded_system_resolver', resolver):
+            self.service.connect_mattermost({'server_url': 'https://chat.corp.example', 'token': TOKEN,
+                                             'owner_username': 'owner'})
+        self.assertTrue(self.store.config(CONFIG_KEY)['private_server'])
+        self.owner_says('질문')
+        self.assertTrue(self.service.run_one())
+        intranet.remove(self.store, 'chat.corp.example', surface='settings')
+        calls = len(self.fake.calls)
+        self.fake.post(OWNER, self.dm(), '또 질문')
+        self.assertIsNone(self.surface.receive())
+        self.service.deliver_one()
+        self.assertFalse(self.surface.send_owner('x'))
+        self.assertEqual(self.fake.calls[calls:], [], 'nothing reaches the server once the host is removed')
+        self.assertEqual(self.store.job(self.mm_jobs()[0]['id'])['delivery'], 'pending', 'definitely not sent')
+
+    def test_a_post_edited_before_the_poll_is_still_taken(self):
+        first = self.fake.post(OWNER, self.dm(), 'A')
+        self.fake.post(OWNER, self.dm(), 'B')
+        self.fake.edit(first['id'], 'A (edited)')   # A now sorts after B in posts?since=
+        self.surface.receive()
+        self.assertEqual(sorted(job['message'] for job in self.mm_jobs()), ['A (edited)', 'B'])
+        self.surface.receive()
+        self.assertEqual(len(self.mm_jobs()), 2)
+
+    def test_posts_created_in_the_same_millisecond_are_all_taken(self):
+        self.fake.post(OWNER, self.dm(), 'one')
+        self.fake.clock -= 7
+        self.fake.post(OWNER, self.dm(), 'two')
+        self.surface.receive()
+        self.assertEqual(sorted(job['message'] for job in self.mm_jobs()), ['one', 'two'])
+
+    def test_every_reaction_of_a_batch_is_read_once(self):
+        x = self.fake.post(BOT, self.dm(), 'notice x')
+        y = self.fake.post(BOT, self.dm(), 'notice y')
+        self.fake.react(OWNER, x['id'], '+1')       # the older reaction
+        self.fake.react(OWNER, y['id'], '-1')       # the newer one
+        self.fake.edit(x['id'], 'notice x (edited)')   # x now sorts after y
+        with mock.patch.object(self.surface, 'ingest_reaction') as read:
+            self.surface.receive()
+            self.surface.receive()
+        self.assertEqual(sorted((call.args[0], call.args[1]) for call in read.call_args_list),
+                         sorted([(x['id'], '+1'), (y['id'], '-1')]))
+
+    def test_a_long_reply_partly_sent_is_never_posted_again(self):
+        self.owner_says('질문')
+        self.assertTrue(self.service.run_one())
+        work = self.mm_jobs()[0]
+        before = len(self.fake.bot_posts())
+        self.fake.fail, self.fake.fail_after = 'connect', 1
+        with mock.patch.object(type(self.service), 'telegram_result_text', staticmethod(lambda *a, **k: '가' * 20000)):
+            self.service.deliver_one()
+        self.assertEqual(self.store.job(work['id'])['delivery'], 'unknown')
+        self.service.deliver_one()
+        self.assertEqual(len(self.fake.bot_posts()), before + 1, 'the delivered first part only, never again')
 
 
 if __name__ == '__main__':
