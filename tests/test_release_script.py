@@ -9,8 +9,10 @@ to, and pin the workflow's authority shape: nothing publishes before the
 release (#45) and a later one are exercised.
 """
 import json
+import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import tomllib
@@ -313,13 +315,46 @@ class ReleaseWorkflowShapeTests(unittest.TestCase):
                     self.assertIn('MERGED)', run)
                     self.assertIn('closed without merging', run)
 
+    def tag_guard(self):
+        """The prepare step's tag check, cut out of the workflow as it runs there."""
+        check = next(step for step in self.jobs['prepare']['steps'] if step.get('id') == 'check')['run']
+        lines = check.splitlines()
+        start = next(i for i, line in enumerate(lines) if line.lstrip().startswith('tagged='))
+        end = next(i for i, line in enumerate(lines) if 'resuming' in line and i > start)
+        end = next(i for i in range(end, len(lines)) if lines[i].strip() == 'fi')
+        return '\n'.join(lines[start:end + 1])
+
+    def run_tag_guard(self, repo, sha):
+        return subprocess.run(['bash', '-c', 'set -euo pipefail\nversion=9.0.0\n' + self.tag_guard()],
+                              cwd=repo, env={**os.environ, 'GITHUB_SHA': sha},
+                              capture_output=True, text=True)
+
     def test_a_rerun_resumes_only_on_the_tag_of_this_release_commit(self):
         """#313: Re-run all jobs finds its own tag; any other commit's tag still stops it."""
-        check = next(step for step in self.jobs['prepare']['steps'] if step.get('id') == 'check')['run']
-        self.assertIn('refs/tags/v$version^{commit}', check)
-        self.assertIn('"$tagged" != "$GITHUB_SHA"', check)
-        self.assertIn('already exists at $tagged', check.split('"$tagged" != "$GITHUB_SHA"', 1)[1].split('fi', 1)[0])
-        self.assertIn('exit 1', check.split('"$tagged" != "$GITHUB_SHA"', 1)[1].split('fi', 1)[0])
+        with tempfile.TemporaryDirectory() as tmp:
+            git = lambda *args: subprocess.run(['git', '-c', 'user.name=t', '-c', 'user.email=t@example.invalid',
+                                                *args], cwd=tmp, check=True, capture_output=True, text=True).stdout.strip()
+            git('init', '-q')
+            git('commit', '-q', '--allow-empty', '-m', 'earlier')
+            earlier = git('rev-parse', 'HEAD')
+            git('commit', '-q', '--allow-empty', '-m', 'release')
+            release_commit = git('rev-parse', 'HEAD')
+
+            absent = self.run_tag_guard(tmp, release_commit)
+            self.assertEqual(absent.returncode, 0, absent.stderr)
+            self.assertNotIn('resuming', absent.stdout)
+
+            for kind in ('lightweight', 'annotated'):
+                with self.subTest(tag=kind):
+                    git('tag', '-d', 'v9.0.0') if git('tag', '--list', 'v9.0.0') else None
+                    git('tag', *(['-a', '-m', 'v9.0.0'] if kind == 'annotated' else []), 'v9.0.0', release_commit)
+                    same = self.run_tag_guard(tmp, release_commit)
+                    self.assertEqual(same.returncode, 0, same.stderr)
+                    self.assertIn('resuming', same.stdout)
+
+                    other = self.run_tag_guard(tmp, earlier)
+                    self.assertNotEqual(other.returncode, 0)
+                    self.assertIn(f'already exists at {release_commit}', other.stdout)
 
     def test_the_site_deploys_last_with_the_job_token(self):
         """#313: the release approval promotes the site; RELEASE_TOKEN never dispatches it."""
