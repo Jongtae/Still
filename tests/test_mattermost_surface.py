@@ -622,6 +622,25 @@ class ReviewRegressions(MattermostCase):
         self.assertEqual(len(rows), 2)
         self.assertTrue(all(surface == 'mattermost' and chat == OWNER for _kind, surface, chat in rows), rows)
 
+    def test_a_reconnect_between_parts_stops_the_rest(self):
+        self.owner_says('질문')
+        self.assertTrue(self.service.run_one())
+        work = self.mm_jobs()[0]
+        original = self.fake.post
+
+        def post(user, channel, message, root_id=''):
+            made = original(user, channel, message, root_id)
+            if user == BOT and message.startswith('가'):
+                cfg = self.store.config(CONFIG_KEY)
+                self.store.put(CONFIG_KEY, {**cfg, 'generation': 'reconnected'})   # Settings reconnects meanwhile
+            return made
+        self.fake.post = post
+        with mock.patch.object(type(self.service), 'telegram_result_text', staticmethod(lambda *a, **k: '가' * 20000)):
+            self.service.deliver_one()
+        self.fake.post = original
+        self.assertEqual(self.store.job(work['id'])['delivery'], 'unknown')
+        self.assertEqual(sum(1 for text in self.fake.bot_posts() if text.startswith('가')), 1, 'no part after the reconnect')
+
     def test_a_long_reply_partly_sent_is_never_posted_again(self):
         self.owner_says('질문')
         self.assertTrue(self.service.run_one())

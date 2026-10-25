@@ -189,14 +189,14 @@ class MattermostSurface(ConversationSurface):
         token = self.service.store.secret(SECRET_KEY) if token is None else token
         if not cfg.get('server_url') or not token:
             raise MattermostError(msg('mattermost.not_connected'))
-        url = cfg['server_url']
+        url, generation = cfg['server_url'], cfg.get('generation')
         return MattermostClient(url, token, transport=self._transport or getattr(self.service, 'mattermost_transport', None),
-                                guard=lambda: self._request_guard(url))
+                                guard=lambda: self._request_guard(url, generation=generation))
 
     #: Seconds a destination check is reused (the system resolver is asked again after that).
     DESTINATION_SECONDS = 15
 
-    def _request_guard(self, url, connecting=False):
+    def _request_guard(self, url, connecting=False, generation=None):
         """#306 review: before every request, the surface is still usable (work mode, approval) and the
         server's current addresses are still allowed (#209: an undeclared private address is refused, a
         removed intranet host from the next request).  Raises ``MattermostNotSent``: nothing was sent."""
@@ -204,6 +204,10 @@ class MattermostSurface(ConversationSurface):
             # #306 review: while connecting there is no pairing yet; work mode still refuses an unapproved server.
             if work_mode.active(self.service.store) and self.config().get('company_approved') is not True:
                 raise MattermostNotSent(msg('mattermost.work_mode_unapproved'))
+        elif generation is not None and self.config().get('generation') != generation:
+            # #306 review: a client belongs to the pairing it was made for; after a reconnect or disconnect
+            # its next request (a later part of a long post included) never reaches the old conversation.
+            raise MattermostNotSent(msg('mattermost.not_connected'))
         elif not self.usable():
             raise MattermostNotSent(msg('mattermost.work_mode_unapproved') if work_mode.active(self.service.store)
                                     else msg('mattermost.not_connected'))
