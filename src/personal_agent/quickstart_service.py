@@ -529,6 +529,10 @@ BROWSER_SIGNINS_LINE=('Browser sign-ins (stored sessions browser_open uses; no p
                       'page is not the owner\'s data; call browser_sign_in): ')
 
 
+#: #17: delivery passes the side lane makes for its own reply before leaving it to the work loop.
+SIDE_ANSWER_DELIVERY_PASSES=3
+
+
 class AgentService:
     #: #953: a Telegram login prompt is followed by the phone link at once.  The test suite turns this
     #: off (tests/conftest.py) so no test ever starts a real tunnel; a test that wants it injects a fake.
@@ -10597,6 +10601,12 @@ class AgentService:
             if job.get('chat_id') and surface is not None and surface.capabilities.reactions:
                 self._presence_call(surface,PRESENCE_REACT,job['chat_id'],source,DONE_REACTION)
             self.update_task_card(job,'succeeded')
+            # The work loop delivers only between Works, so the side reply is delivered here, off the
+            # tool-capable worker; each surface claims a pending reply atomically, so the loop's own
+            # delivery never sends it twice.  An older pending reply on the same surface goes first.
+            for _ in range(SIDE_ANSWER_DELIVERY_PASSES):
+                if (self.store.job(task_id) or {}).get('delivery')!='pending':break
+                self.deliver_one()
         except Exception as exc:
             self._side_answer_event(task_id,'exception')
             LOG.warning('side answer unavailable work=%s kind=%s',task_id,type(exc).__name__)

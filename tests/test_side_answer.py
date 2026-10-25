@@ -55,7 +55,8 @@ class SideAnswerTests(_SteerCase):
             side = self.jobs()[QUESTION]
             self.assertEqual(side['status'], 'succeeded')
             self.assertTrue(worker.is_alive())
-            self.service.deliver_one()
+            # Delivered by the side lane itself: the work loop is still inside run_one.
+            self.assertEqual(self.jobs()[QUESTION]['delivery'], 'sent')
             self.assertEqual(sum(ANSWER in t for t in self.texts()), 1)
             self.assertEqual(self.replies(side), [ANSWER])
             self.assertEqual([e['tool'] for e in self.events(side['id'], 'side_answer')], ['side_answer'])
