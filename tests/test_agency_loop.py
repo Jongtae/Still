@@ -845,7 +845,7 @@ class CalendarReadHandoffTests(unittest.TestCase):
         row = store.job(job)
         self.assertEqual(row['status'], 'awaiting_connection')
         self.assertNotIn('팀 회의', row['response'])
-        self.assertEqual(service.resume_index.parked_for(service.connector_owner_id(row)), ('google-calendar',))
+        self.assertEqual(service.resume_index.parked_for(service.issuer_owner_id(row)), ('google-calendar',))
         self.assertEqual(service.resume_index.record('google-calendar')['work_id'], job)
 
 

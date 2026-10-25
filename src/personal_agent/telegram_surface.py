@@ -105,7 +105,8 @@ class TelegramSurface(ConversationSurface):
 
     def paired_connector_owner(self, enabled_only=True):
         cfg=self.service.store.config('telegram',{})
-        if not isinstance(cfg,dict) or cfg.get('user_id') is None or enabled_only and not cfg.get('enabled'):return None
+        if (not isinstance(cfg,dict) or not isinstance(cfg.get('user_id'),int) or isinstance(cfg.get('user_id'),bool)
+                or enabled_only and not cfg.get('enabled')):return None
         return f"telegram:{cfg['user_id']}"
 
     def owner_generation(self):
@@ -224,7 +225,7 @@ class TelegramSurface(ConversationSurface):
             # A repeated Stop update (double tap, redelivery) says nothing twice.
             if state.stopped:return 'duplicate'
             state.stopped=True
-            cancelled,_reason=service.cancel_focused_work(job,service.connector_owner_id(job))
+            cancelled,_reason=service.cancel_focused_work(job,service.issuer_owner_id(job))
             current=service.store.job(job['id'])
             if cancelled:
                 service.presence.pop(job['id'],None)

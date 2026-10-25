@@ -398,7 +398,7 @@ class ContinuationTests(ConversationTests):
         job, draft = self.blocked()
         self.service.resume_settings_work()
         parked = self.store.job(job['id'])
-        canceled, _text = self.service.cancel_focused_work(parked, self.service.connector_owner_id(parked))
+        canceled, _text = self.service.cancel_focused_work(parked, self.service.issuer_owner_id(parked))
         self.assertTrue(canceled)
         with self.assertRaises(SettingsError):
             self.confirm(job, draft)

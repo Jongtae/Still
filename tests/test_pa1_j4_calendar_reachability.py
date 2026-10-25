@@ -274,39 +274,24 @@ class CalendarReachabilityTests(unittest.TestCase):
         return job_id
 
     def test_the_write_callback_resolves_the_owner_that_parked_the_work(self):
-        """Resolving every callback through the read connector id is a dead end.
-
-        `connector_callback_owner` recovers the identity by matching the
-        connector's parked record. No intent maps to `google-calendar`, so a
-        read record can never exist and that id always falls back to the
-        first candidate -- the paired Telegram owner. The write grant was
-        being stored under a different identity than the one that parked the
-        Work, the pending slot did not match, and the authorization could
-        never complete.
-
-        Without a paired Telegram owner both ids collapse to `local-owner`
-        and the bug is invisible, which is why this test pairs one.
-        """
+        """Both grants and every surface use the same credential owner."""
         service, base = self.serve()
         service.store.put('telegram', {'enabled': True, 'user_id': 4242})
         self.park_write_work(service)
-        # Precondition: the two identifiers genuinely disagree here. Read
-        # them BEFORE the callback -- resuming consumes the parked record,
-        # after which the write id also falls back to the Telegram owner and
-        # the disagreement disappears.
+        # A parked issuer cannot change the credential owner of either grant.
         write_owner = service.connector_callback_owner(CALENDAR_WRITE_CONNECTOR_ID)
         read_owner = service.connector_callback_owner(CALENDAR_CONNECTOR_ID)
-        self.assertNotEqual(write_owner, read_owner)
+        self.assertEqual(write_owner, read_owner)
         response = self.authorize(service, base, grant='write')
         self.assertEqual(response.status, 200)
         self.assertEqual(
             service.connector_registry.status(write_owner, CALENDAR_WRITE_CONNECTOR_ID).state.value,
             'connected',
             'the grant must land under the identity that parked the Work')
-        # ...and not under the identity the read connector would have named.
+        # The read callback names that same owner.
         self.assertEqual(
             service.connector_registry.status(read_owner, CALENDAR_WRITE_CONNECTOR_ID).state.value,
-            'disconnected')
+            'connected')
 
     def test_an_unparked_connection_does_not_tell_the_owner_it_failed(self):
         """`resume_connector_work` notifies before it raises.
@@ -501,12 +486,12 @@ class CalendarReachabilityTests(unittest.TestCase):
         # The connector built for this Work's owner sees the committed grant.
         status = service.connector_registry.status(owner, CALENDAR_CONNECTOR_ID)
         self.assertEqual(status.state.value, 'connected')
-        # And a Work belonging to the *other* identity does not.
+        # A surface Work reads the same connected credential.
         other = service.connector_owner_id({'chat_id': 4242})
-        self.assertNotEqual(other, owner)
+        self.assertEqual(other, owner)
         self.assertEqual(
             service.connector_registry.status(other, CALENDAR_CONNECTOR_ID).state.value,
-            'disconnected')
+            'connected')
 
     def test_the_client_secret_never_reaches_a_surface(self):
         service, base = self.serve()

@@ -27,12 +27,12 @@ class NativeIndependentWaits(ConnectorCase):
         self.service=AgentService(self.store,old.adapter,old.telegram_transport,
                                   connector_registry=self.registry,gmail=self.gmail)
         self.service.use_decision_engine(FixtureDecisionEngine(judge=self.reached, choose=self.none_unsupported))
-        self.service.connector_handoff=ConnectorHandoff(self.store,self.registry,now=lambda:self.clock[0])
+        self.service.connector_handoff=ConnectorHandoff(self.store,self.registry,now=lambda:self.clock[0],token_owner=lambda owner:"local-owner")
         self.handoff=self.service.connector_handoff
 
     def callback(self):
-        self.gmail.begin_oauth(OWNER)
-        pending=self.encrypted.secret('gmail_oauth_pending:'+hashlib.sha256(OWNER.encode()).hexdigest())
+        self.gmail.begin_oauth("local-owner")
+        pending=self.encrypted.secret('gmail_oauth_pending:'+hashlib.sha256(b"local-owner").hexdigest())
         self.service.gmail_token_exchange=lambda request: {
             'access_token':'fixture-access','refresh_token':'fixture-refresh',
             'expires_in':7200,'scope':GMAIL_READONLY_SCOPE}

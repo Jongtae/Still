@@ -774,7 +774,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             self.assertFalse(progress['result_available'])
             self.assertTrue(any('Gmail' in bubble for bubble in self.bubbles()))
             self.assertEqual(self.service.connector_registry.status(
-                f'telegram:{CHAT}', GMAIL_CONNECTOR_ID).state, ConnectorState.DISCONNECTED)
+                'local-owner', GMAIL_CONNECTOR_ID).state, ConnectorState.DISCONNECTED)
 
         with self.subTest('J3/J7 authorization resumes the original Work exactly once'):
             with self.assertRaises(HTTPError) as redirect:
@@ -793,7 +793,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertIn(b'Gmail connected', response.read())
             self.assertEqual(len(self.exchanges), 1)
-            status = self.service.connector_registry.status(f'telegram:{CHAT}',
+            status = self.service.connector_registry.status('local-owner',
                                                             GMAIL_CONNECTOR_ID)
             self.assertEqual(status.state, ConnectorState.CONNECTED)
             self.assertEqual(status.granted_scopes, (GMAIL_READONLY_SCOPE,))
@@ -888,7 +888,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             self.assertEqual(restarted.home()['state'], 'attention')
 
             # Connected authority, memory, pairing and artifacts survive.
-            status = restarted.connector_registry.status(f'telegram:{CHAT}',
+            status = restarted.connector_registry.status('local-owner',
                                                          GMAIL_CONNECTOR_ID)
             self.assertEqual(status.state, ConnectorState.CONNECTED)
             self.assertEqual(status.granted_scopes, (GMAIL_READONLY_SCOPE,))
@@ -976,7 +976,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             # Exactly one rejected read, not a retry loop, and the authority
             # is gone rather than reused.
             self.assertEqual(self.mailbox_reads(), connected_reads + 1)
-            status = restarted.connector_registry.status(f'telegram:{CHAT}',
+            status = restarted.connector_registry.status('local-owner',
                                                          GMAIL_CONNECTOR_ID)
             self.assertEqual(status.state, ConnectorState.REAUTH_REQUIRED)
             self.assertEqual(status.granted_scopes, ())

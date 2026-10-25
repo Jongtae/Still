@@ -13,7 +13,7 @@ from personal_agent.gmail import GMAIL_CONNECTOR_ID, GmailError
 from personal_agent.settings_orchestrator import DISCONNECT_NOTE, RETIRED_CONTROL_MESSAGE, SettingsError
 
 from test_conversation_connector_handoff import MODEL_ENDPOINT, OWNER
-from test_connector_revocation import RevocationTestCase
+from test_connector_revocation import RevocationTestCase, TOKEN_OWNER
 
 CHANNEL = 'telegram:42'
 
@@ -61,7 +61,7 @@ class ConnectionDisconnectDraftTests(RevocationTestCase):
 
     def test_a_draft_changes_nothing_until_the_owner_confirms_then_applies_once(self):
         self.connect_gmail()
-        self.assertTrue(self.gmail.search(OWNER, 'budget'))
+        self.assertTrue(self.gmail.search(TOKEN_OWNER, 'budget'))
         draft = self.propose()
         self.assertEqual((draft['state'], draft['requires_owner_confirmation'], draft['applied']),
                          ('awaiting-confirmation', True, False))
@@ -71,7 +71,7 @@ class ConnectionDisconnectDraftTests(RevocationTestCase):
         self.assertNotIn('digest', draft, 'the worker cannot confirm its own draft')
         # Nothing changed: still connected, still usable, nothing sent to Google.
         self.assertIs(self.gmail_state(), ConnectorState.CONNECTED)
-        self.assertTrue(self.gmail.search(OWNER, 'budget'))
+        self.assertTrue(self.gmail.search(TOKEN_OWNER, 'budget'))
         self.assertEqual(self.google.requests, [])
 
         row = self.draft_row(draft['draft_id'])
@@ -80,7 +80,7 @@ class ConnectionDisconnectDraftTests(RevocationTestCase):
         self.assertIn('Gmail 연결을 해제했습니다', result['response'])
         self.assertIs(self.gmail_state(), ConnectorState.DISCONNECTED)
         with self.assertRaises(GmailError):
-            self.gmail.search(OWNER, 'budget')
+            self.gmail.search(TOKEN_OWNER, 'budget')
         self.assertEqual(len(self.google.requests), 1, 'one revocation request')
         # Exactly once: a second confirmation applies nothing more.
         with self.assertRaises(SettingsError):
@@ -150,7 +150,7 @@ class ConnectionDisconnectDraftTests(RevocationTestCase):
             self.settings.confirm(OWNER, CHANNEL, row['id'], row['digest'])
         self.service.apply_connection_disconnect = apply
         self.assertIs(self.gmail_state(), ConnectorState.CONNECTED, 'the new connection stays')
-        self.assertTrue(self.gmail.search(OWNER, 'budget'))
+        self.assertTrue(self.gmail.search(TOKEN_OWNER, 'budget'))
         self.assertEqual(len(self.google.requests), 1, 'only the Settings disconnect reached Google')
         self.assertEqual(self.draft_row(row['id'])['state'], 'failed')
         self.assertEqual(raced, [True])

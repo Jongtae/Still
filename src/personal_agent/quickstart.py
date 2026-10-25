@@ -243,7 +243,7 @@ def install_google_connectors(service, built):
     """Attach :func:`build_google_connectors` output to a service (startup or Settings)."""
     service.connector_registry=built['registry']
     if service.connector_handoff is None:
-        service.connector_handoff=ConnectorHandoff(service.store,built['registry'])
+        service.connector_handoff=ConnectorHandoff(service.store,built['registry'],token_owner=lambda owner:'local-owner')
     if 'gmail' in built:
         service.gmail=built['gmail']
         service.gmail_token_exchange=built['exchange']
@@ -254,6 +254,9 @@ def install_google_connectors(service, built):
     service.drive_oauth=built['drive_oauth']
     service.drive_reader_factory=built['drive_reader_factory']
     service.drive_read_token_exchange=built['exchange']
+    # Settings can attach holders after construction; retry a deferred migration once they exist.
+    from .owner_identity import migrate_connector_owner
+    migrate_connector_owner(service)
     service.google_client_source=built['source']
     service.google_client_id=built['client_id']
     # #8: which connectors this client installed, by object, so removal never

@@ -21,6 +21,7 @@ from personal_agent.gmail import GMAIL_CONNECTOR_ID, GmailError
 from test_conversation_connector_handoff import GMAIL_SCOPES, OWNER, HandoffTestCase
 
 SESSION = 'owner-session-token'
+TOKEN_OWNER = 'local-owner'
 
 
 class FakeGoogle:
@@ -58,9 +59,9 @@ class RevocationTestCase(HandoffTestCase):
         self.service.drive_web_oauth = self.drive
 
     def connect_calendar(self, write=False, access='cal-access', refresh='cal-refresh'):
-        offer = self.calendar.begin_oauth(OWNER, write=write)
+        offer = self.calendar.begin_oauth(TOKEN_OWNER, write=write)
         state = parse_qs(urlsplit(offer['authorization_url']).query)['state'][0]
-        return self.calendar.complete_oauth(OWNER, {'state': state, 'code': 'c'}, lambda request: {
+        return self.calendar.complete_oauth(TOKEN_OWNER, {'state': state, 'code': 'c'}, lambda request: {
             'access_token': access, 'refresh_token': refresh, 'expires_in': 3600,
             'scope': CALENDAR_WRITE_SCOPE if write else " ".join(CALENDAR_SPEC.required_scopes)})
 
@@ -78,7 +79,7 @@ class RevocationTestCase(HandoffTestCase):
             {'connector_id': connector_id, 'confirmation': preview['confirmation']}, session)
 
     def gmail_state(self):
-        return self.registry.status(OWNER, GMAIL_CONNECTOR_ID).state
+        return self.registry.status(TOKEN_OWNER, GMAIL_CONNECTOR_ID).state
 
     def plain_state(self):
         """Everything Still stores outside the encrypted secret namespaces."""
@@ -119,7 +120,7 @@ class ProviderRequestTests(RevocationTestCase):
 class GmailDisconnectTests(RevocationTestCase):
     def test_useful_before_then_denied_after_with_google_revocation_observed(self):
         self.connect_gmail()
-        self.assertTrue(self.gmail.search(OWNER, 'budget'))
+        self.assertTrue(self.gmail.search(TOKEN_OWNER, 'budget'))
         receipt = self.disconnect()
         self.assertEqual(receipt['provider_revocation'], 'revoked')
         self.assertEqual(receipt['local_access'], 'stopped')
@@ -130,24 +131,24 @@ class GmailDisconnectTests(RevocationTestCase):
         self.assertEqual(self.google.requests[0]['body']['token'], ['fixture-refresh'])
         self.assertIs(self.gmail_state(), ConnectorState.DISCONNECTED)
         with self.assertRaises(GmailError) as caught:
-            self.gmail.search(OWNER, 'budget')
+            self.gmail.search(TOKEN_OWNER, 'budget')
         self.assertEqual(caught.exception.reason, 'connection_required')
-        self.assertFalse(self.gmail.credential_current(OWNER))
+        self.assertFalse(self.gmail.credential_current(TOKEN_OWNER))
 
     def test_an_in_flight_request_is_refused_by_the_revision_check(self):
         self.connect_gmail()
-        _headers, revision, access = self.gmail._authorization_context(OWNER)
+        _headers, revision, access = self.gmail._authorization_context(TOKEN_OWNER)
         self.disconnect()
         with self.assertRaises(GmailError) as caught:
-            self.gmail._assert_current_request(OWNER, revision, access)
+            self.gmail._assert_current_request(TOKEN_OWNER, revision, access)
         self.assertEqual(caught.exception.reason, 'superseded_connection')
 
     def test_a_stale_authorization_callback_cannot_reconnect(self):
-        self.gmail.begin_oauth(OWNER)
-        pending = self.encrypted.secret('gmail_oauth_pending:' + __import__('hashlib').sha256(OWNER.encode()).hexdigest())
+        self.gmail.begin_oauth(TOKEN_OWNER)
+        pending = self.encrypted.secret('gmail_oauth_pending:' + __import__('hashlib').sha256(TOKEN_OWNER.encode()).hexdigest())
         self.disconnect()
         with self.assertRaises(GmailError):
-            self.gmail.complete_oauth(OWNER, {'state': pending['state'], 'code': 'c'},
+            self.gmail.complete_oauth(TOKEN_OWNER, {'state': pending['state'], 'code': 'c'},
                                       lambda request: {'access_token': 'x', 'expires_in': 60,
                                                        'scope': GMAIL_SCOPES[0]})
         self.assertIs(self.gmail_state(), ConnectorState.DISCONNECTED)
@@ -162,7 +163,7 @@ class GmailDisconnectTests(RevocationTestCase):
             self.assertNotIn('fixture-access', text)
 
     def test_blocked_stays_blocked(self):
-        self.registry.transition(OWNER, GMAIL_CONNECTOR_ID, ConnectorState.BLOCKED)
+        self.registry.transition(TOKEN_OWNER, GMAIL_CONNECTOR_ID, ConnectorState.BLOCKED)
         receipt = self.disconnect()
         self.assertEqual(receipt['provider_revocation'], 'not_attempted')
         self.assertIs(self.gmail_state(), ConnectorState.BLOCKED)
@@ -177,8 +178,8 @@ class FormerTelegramOwnerTests(RevocationTestCase):
         self.store.put('telegram', cfg)
 
     def test_an_owner_recorded_at_authorization_is_disconnected_after_unpairing(self):
-        self.gmail.begin_oauth(OWNER)
-        pending = self.encrypted.secret('gmail_oauth_pending:' + __import__('hashlib').sha256(OWNER.encode()).hexdigest())
+        self.gmail.begin_oauth(TOKEN_OWNER)
+        pending = self.encrypted.secret('gmail_oauth_pending:' + __import__('hashlib').sha256(TOKEN_OWNER.encode()).hexdigest())
         self.service.gmail_token_exchange = lambda request: {
             'access_token': 'fixture-access', 'refresh_token': 'fixture-refresh',
             'expires_in': 7_200, 'scope': GMAIL_SCOPES[0]}
@@ -191,13 +192,16 @@ class FormerTelegramOwnerTests(RevocationTestCase):
         self.assertIs(self.gmail_state(), ConnectorState.DISCONNECTED)
 
     def test_an_unreachable_owner_is_never_reported_as_stopped(self):
-        self.connect_gmail()  # authorized outside the recorded completion route
+        self.connect_gmail('unrecorded-owner')  # an actual unreachable credential, not the shared owner
+        self.assertTrue(self.gmail.credential_current('unrecorded-owner'))
         self.unpair()
         receipt = self.disconnect()
         self.assertEqual(receipt['local_access'], 'incomplete')
         self.assertIn('모두 해제하지 못했습니다', receipt['message'])
         audit = self.store.config(revocation.AUDIT_KEY, [])
         self.assertEqual(audit[-1]['local_access'], 'incomplete')
+        self.assertTrue(self.gmail.credential_current('unrecorded-owner'))
+        self.assertEqual(self.google.requests, [])
 
 
 class UnreachableGoogleTests(RevocationTestCase):
@@ -212,7 +216,7 @@ class UnreachableGoogleTests(RevocationTestCase):
         self.assertNotIn('Google에서도 권한 취소를 확인', receipt['message'])
         self.assertIs(self.gmail_state(), ConnectorState.DISCONNECTED)
         with self.assertRaises(GmailError):
-            self.gmail.search(OWNER, 'budget')
+            self.gmail.search(TOKEN_OWNER, 'budget')
         pending = self.service.google_revocations()['pending_provider_revocations']
         self.assertEqual([row['connector_id'] for row in pending], [GMAIL_CONNECTOR_ID])
         self.google.answers = [(200, b'')]
@@ -323,7 +327,7 @@ class ConfirmationTests(RevocationTestCase):
         with self.assertRaisesRegex(ValueError, '확인 시간이 지났습니다'):
             self.confirm(expired)
         changed = self.preview()['confirmation']
-        self.gmail.mark_reauthentication_required(OWNER)
+        self.gmail.mark_reauthentication_required(TOKEN_OWNER)
         with self.assertRaisesRegex(ValueError, '연결 상태가 바뀌었습니다'):
             self.confirm(changed)
         with self.assertRaisesRegex(ValueError, '올바르지 않습니다'):
@@ -339,10 +343,10 @@ class CalendarIndependenceTests(RevocationTestCase):
         receipt = self.disconnect(CALENDAR_CONNECTOR_ID)
         self.assertEqual(receipt['provider_revocation'], 'revoked')
         self.assertEqual(self.google.requests[0]['body']['token'], ['read-refresh'])
-        self.assertIs(self.registry.status(OWNER, CALENDAR_CONNECTOR_ID).state, ConnectorState.DISCONNECTED)
-        self.assertIs(self.registry.status(OWNER, CALENDAR_WRITE_CONNECTOR_ID).state, ConnectorState.CONNECTED)
-        self.assertFalse(self.calendar.credential_current(OWNER))
-        self.assertTrue(self.calendar.credential_current(OWNER, write=True))
+        self.assertIs(self.registry.status(TOKEN_OWNER, CALENDAR_CONNECTOR_ID).state, ConnectorState.DISCONNECTED)
+        self.assertIs(self.registry.status(TOKEN_OWNER, CALENDAR_WRITE_CONNECTOR_ID).state, ConnectorState.CONNECTED)
+        self.assertFalse(self.calendar.credential_current(TOKEN_OWNER))
+        self.assertTrue(self.calendar.credential_current(TOKEN_OWNER, write=True))
 
 
 class ParkedWorkAndArtifactTests(RevocationTestCase):
