@@ -39,7 +39,9 @@
       "WORK-MODE-01",
       "INTRANET-DEST-01",
       "OWNER-MCP-WORK-01",
-      "MATTERMOST-01"
+      "MATTERMOST-01",
+      "SLACK-01",
+      "WORKPLACE-01"
     ]
   },
   "iterations": [
@@ -602,7 +604,7 @@
       "issue": 206,
       "milestone": "workplace",
       "kind": "implementation",
-      "activation_status": "owner-activated-goal-ready",
+      "activation_status": "complete-on-merge",
       "contract": "goal-execution-contract.en.md",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_fresh_delivery_plan.py"
@@ -651,6 +653,12 @@
           "follow_up_pull_request": 306,
           "follow_up_merge_commit": "8929e4a4a00adcaf746966e748c861729b8cb5dc",
           "decision": "The owner talks to Still in a Mattermost direct message with a bot on their server, outbound only (REST API v4 polling, no inbound listener). The surface boundary (#299) routes delivery claims, owner identity, guards, owner acts and notices through each surface; the adapter (#306) pairs one owner and one DM, guards every request (work mode, company approval, pairing generation, token digest, the server's current addresses against the declared intranet list), takes each owner post once and judges replies and reactions through OWNER-ACT-01. Exact action approvals are never given there (owner decision 2026-10-25 on #213). Observed against a local Mattermost 11 in Docker; no company server observed."
+        },
+        "SLACK-01": {
+          "issue": 214,
+          "pull_request": 316,
+          "merge_commit": "399ab29158f98c83ca43dd5b41cacc7bed83d0b2",
+          "decision": "The owner talks to Still in a Slack direct message with the owner's own app over Socket Mode (outbound WebSocket, no inbound endpoint) through the official Slack SDK (slack_sdk 3.45.0, MIT, reuse review on #316). The rules Mattermost wrote for a direct-message surface (pairing one owner and one DM, guarded requests, work mode and company approval, delivery marked before the post and never replayed) moved unchanged into direct_message_surface.py, which both surfaces subclass. Each owner message is taken once by its request key in the transaction that creates its Work; replies and reactions are judged through OWNER-ACT-01; exact one-use action approvals may be given on Slack and settle only for the paired owner's press, at most once (owner decision 2026-10-25 on #214). The Codex review of the final head dde49dc found no major issues after one finding was fixed; validate passed on that head; the owner merged it. Observed live in the owner's own free test Slack workspace with a fixture model and a simulated browser step (connect, an owner DM turned into one Work and its reply delivered, a settings proposal applied and an action approval settled once by their buttons, a reaction recorded on an answer, work mode closing and reopening the connection, an edit making no new Work); no company workspace, company network or live model was observed."
         }
       }
     },
@@ -790,7 +798,7 @@
       "issue": 214,
       "milestone": "workplace",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_slack_surface.py tests/test_mattermost_surface.py tests/test_surface_boundary.py tests/test_conversation_surface.py tests/test_owner_acts.py tests/test_owner_reaction.py tests/test_work_mode.py tests/test_telegram_conversation_channel.py"
       ],
@@ -1135,7 +1143,7 @@
       }
     },
     "WORKPLACE-01": {
-      "status": "owner-activated-goal-ready",
+      "status": "complete",
       "issue": 206,
       "activated_by": {
         "issue": 206,
@@ -1151,16 +1159,15 @@
         "MATTERMOST-01",
         "SLACK-01"
       ],
-      "active_substeps": [
-        "SLACK-01"
-      ],
+      "active_substeps": [],
       "completed_substeps": [
         "CLOUD-AI-01",
         "SURFACE-SEAM-01",
         "WORK-MODE-01",
         "INTRANET-DEST-01",
         "OWNER-MCP-WORK-01",
-        "MATTERMOST-01"
+        "MATTERMOST-01",
+        "SLACK-01"
       ],
       "decisions": {
         "work-mode-egress": {
@@ -1204,13 +1211,14 @@
         ],
         "reason": "PR #230 changed six files not named in the activated list, and search_providers.py beyond its listed work-mode purpose. Each is wiring of the same cloud provider profile and changes no other behaviour: cloud_engines.py is the new module holding the profiles, credential custody and the daily cap; decision.py adds the destination and profile-revision audit fields a Codex finding asked for; main_ai.py reports the cloud destination in the route status; quickstart.py adds the two local-only Settings endpoints; current_context.py adds the cloud credentials to the known-secret redaction; work_execution.py pins each Work's profile; search_providers.py reports that a cloud turn has no CLI-native search. All were inside the PR's escalated Codex review (final head 17abef7: no major issues) and full-validate, and the owner merged it. Recorded here as an auditable scope amendment (Codex finding on #256) rather than left implicit; it takes effect when the owner merges this record.",
         "original": "Engine launch environment and provider profiles (bounded_execution.py, subscription_engines.py, decision_routes.py, decision_adapters.py, providers.py for the recorded API-route decision only), destination guards (api_requests.py, local_tools.py, mcp_setup.py, code_run.py, browser_worker.py, limited_egress_proxy.py), tunnel starters (family_setup.py, remote_login.py, phone_input.py), search_providers.py and skills.py acquisition for work mode, owner_mcp.py launch environment, the conversation surface (telegram_surface.py, telegram_store.py, telegram_presence.py, conversation_handoff.py, conversation_projection.py, owner_acts.py, quickstart_service.py, quickstart_store.py, settings_orchestrator.py and Settings UI), new Mattermost and Slack surface modules, messages.json entries they use, tests, docs describing the changed behaviour, and new dependencies only with their recorded reuse review (Slack SDK; a WebSocket client if Plan selects it). Model-free tests with injected runners, transports and fixture servers; required validate on each final head and full-validate before closeout; one issue-linked PR per substep, normal squash merge, then a closeout PR."
-      }
+      },
+      "closeout": "Closed out 2026-10-25 (#206). All seven ordered substeps merged on their own PRs with issue acceptance mapped to model-free unit and fixture tests and required validate passing on each final head; every triggered escalated review was the Codex review of the PR's exact final head and the owner merged those PRs. CLOUD-AI-01 #211 (PR #230), SURFACE-SEAM-01 #212 (PR #229), WORK-MODE-01 #208 (PRs #278, #280), INTRANET-DEST-01 #209 (PRs #284, #288), OWNER-MCP-WORK-01 #210 (PR #297), MATTERMOST-01 #213 (PRs #299, #306), SLACK-01 #214 (PR #316). full-validate passed on main at fe653ad after the last merges (#316, then #320 outside this program and #322) (run 40185832753: Linux, macOS 15, macOS 26). Before that, #310 (#254) had left full-validate failing on main on both macOS runners because its WebKit fixture was wider than the runners' 1024-px screen; #322 (#321) fixed the fixture, test-only. Evidence classes: unit and fixture tests throughout; local operating observations against a private LAN test host (#209), a fixture owner MCP server on both engines (#210), a local Mattermost 11 in Docker (#213) and the owner's own free test Slack workspace (#214). No company network, company workspace, company system, Bedrock, Foundry or Azure call was observed. Left open as follow-ups: #319 (connectors and current context belong to the one owner, not to one messenger), #317 (Settings guided setup). No successor is selected by this closeout; the delivery heartbeat stayed paused throughout."
     }
   },
   "completion_claims": {},
   "next_goal": {
-    "id": "WORKPLACE-01",
-    "status": "owner-activated-goal-ready",
-    "action": "Owner direction 2026-10-22/23 (#206) selects WORKPLACE-01: work mode, intranet destinations, company tools through the owner's own MCP servers, cloud AI engines and Mattermost/Slack surfaces (#208-#214). CLOUD-AI-01 (#211, PR #230), SURFACE-SEAM-01 (#212, PR #229), WORK-MODE-01 (#208, PRs #278 and #280), INTRANET-DEST-01 (#209, PRs #284 and #288), OWNER-MCP-WORK-01 (#210, PR #297) and MATTERMOST-01 (#213, PRs #299 and #306) merged; SLACK-01 (#214) is in flight, one substep at a time. Each substep's own PR carries its plan record (#264). Session-driven at the owner's request. Scoped PRs are authorized; a PR whose escalated review is triggered merges only after the Codex review of its exact final head, and the owner merges it. Live accounts (except the owner's own test Slack workspace for SLACK-01's observation, owner decision 2026-10-25 on #214), company networks, live models, releases and deployment are not authorized. The delivery heartbeat stays paused, and no successor is selected on completion."
+    "id": null,
+    "status": "complete",
+    "action": "WORKPLACE-01 closed out (#206). No goal is selected; the owner activates the next one explicitly, for example from the curated backlog (#44). The delivery heartbeat stays paused."
   }
 }
