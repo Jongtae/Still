@@ -195,6 +195,22 @@ class ConversationSurface(ABC):
         """Show or refresh the draft of a running Work; True when it was shown."""
 
 
+#: #213: the owner conversation surfaces Still composes, by ``name`` (and so by ``channel_prefix``).
+SURFACE_NAMES = ('telegram', 'mattermost')
+
+
+def surface_conversation(channel, chat_id):
+    """``(surface name, pairing generation)`` of a Work on a surface's channel with an owner, else None (web, local).
+
+    For a module that holds no service (the store, the owner model): a notice it queues
+    for such a Work belongs to that surface's queue.
+    """
+    if not isinstance(channel, str) or chat_id is None:
+        return None
+    name, sep, generation = channel.partition(':')
+    return (name, generation) if sep and generation and name in SURFACE_NAMES else None
+
+
 # -- notices (#213) ------------------------------------------------------------------
 #
 # Every surface shows the same queued notices.  Whether a notice is still to be shown,

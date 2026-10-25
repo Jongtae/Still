@@ -816,11 +816,14 @@ class QuickStore:
                                   invalidates=invalidates,valid_until=valid_until)
             if notice and isinstance(work_id,str):
                 job=db.execute('SELECT channel,chat_id FROM jobs WHERE id=?',(work_id,)).fetchone()
-                channel=str(job['channel'] or '') if job else ''
-                if job and channel.startswith('telegram:') and isinstance(job['chat_id'],int):
-                    db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created) VALUES (?,?,?,?,?,?,?,?,?)',
-                               (str(uuid.uuid4()),work_id,job['chat_id'],channel[len('telegram:'):],self.MEMORY_SAVED_NOTICE_KIND,
-                                json.dumps({'items':[[row['id'],row['content_digest']]],'more':0}),self.NOTICE_HELD,None,time.time()))
+                from .conversation_surface import surface_conversation
+                # #306 review: the saved-memory notice of a Work from any conversation surface, on its queue.
+                conversation=surface_conversation(job['channel'],job['chat_id']) if job else None
+                if conversation:
+                    db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created,surface) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                               (str(uuid.uuid4()),work_id,job['chat_id'],conversation[1],self.MEMORY_SAVED_NOTICE_KIND,
+                                json.dumps({'items':[[row['id'],row['content_digest']]],'more':0}),self.NOTICE_HELD,None,time.time(),
+                                conversation[0]))
             return row
 
     def held_notifications(self, kind):

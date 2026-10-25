@@ -427,6 +427,12 @@ class MattermostSurface(ConversationSurface):
         reply_to = post.get('root_id') or None
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            # #306 review: the pairing is read again in this transaction; a disconnect or reconnect while
+            # the poll was in flight means its posts submit nothing.
+            current = service.store.config(CONFIG_KEY, {}, db=db) or {}
+            if not (isinstance(current, dict) and current.get('enabled') and current.get('generation') == generation
+                    and current.get('owner_user_id') == owner and self.usable(current)):
+                return None
             if db.execute('SELECT 1 FROM jobs WHERE request_key=?', (f"mm:{generation}:{post['id']}",)).fetchone():
                 return None
             work_id = service.store.enqueue(text, f"mm:{generation}:{post['id']}", f'mattermost:{generation}', owner,

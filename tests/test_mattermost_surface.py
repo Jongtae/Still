@@ -589,6 +589,39 @@ class ReviewRegressions(MattermostCase):
         self.assertEqual(switching.seen, ['/users/me'], 'no owner lookup, DM or greeting after the switch')
         self.assertFalse(self.surface.status()['connected'])
 
+    def test_a_poll_answered_after_a_disconnect_submits_nothing(self):
+        self.fake.post(OWNER, self.dm(), '연결 해제 직전 질문')
+        original = self.fake.__call__
+
+        def transport(method, url, headers, body, timeout):
+            answer = original(method, url, headers, body, timeout)
+            if method == 'GET' and url.split('?')[0].endswith('/posts'):
+                self.service.disconnect_mattermost()   # lands while the poll is in flight
+            return answer
+        self.service.mattermost_transport = transport
+        self.surface.receive()
+        self.assertEqual(self.mm_jobs(), [], 'a revoked conversation submits no request')
+
+    def test_saved_knowledge_is_searchable_from_here(self):
+        from personal_agent.personal_knowledge import PersonalKnowledgeOrchestrator
+        query = PersonalKnowledgeOrchestrator._request('channel:mattermost:g1:owner', 'mattermost:g1', '회의 메모')
+        self.assertEqual(query, '회의 메모')
+        with self.assertRaises(Exception):
+            PersonalKnowledgeOrchestrator._request('x', 'slackish:g1', '회의 메모')
+
+    def test_working_notes_and_saved_memory_notices_reach_this_surface(self):
+        from personal_agent import owner_model as om
+        self.owner_says('기억해줘')
+        work = self.mm_jobs()[0]
+        points = ['01 회의는 오전에 잡기']
+        om.WorkingNotes(self.store).save({'points': points, 'text': om.notes_text(points), 'change': '회의 시간'}, work['id'])
+        self.store.save_memory('profile.meeting', '회의는 오전', 'local-owner', work_id=work['id'], notice=True)
+        with self.store.db() as db:
+            rows = [tuple(row) for row in db.execute(
+                'SELECT kind, surface, chat_id FROM telegram_notifications WHERE job_id=? ORDER BY kind', (work['id'],))]
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(surface == 'mattermost' and chat == OWNER for _kind, surface, chat in rows), rows)
+
     def test_a_long_reply_partly_sent_is_never_posted_again(self):
         self.owner_says('질문')
         self.assertTrue(self.service.run_one())

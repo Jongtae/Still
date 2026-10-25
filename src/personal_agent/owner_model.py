@@ -987,12 +987,15 @@ class WorkingNotes:
             saved = {'id': row['id'], 'ref': REF_PREFIX + row['id'], 'version': row['version'], 'digest': row['digest']}
             job = (db.execute('SELECT channel,chat_id,delivery FROM jobs WHERE id=?', (work_id,)).fetchone()
                    if work_id else None)
-            channel = str(job['channel'] or '') if job else ''
-            if job and channel.startswith('telegram:') and isinstance(job['chat_id'], int):
+            from .conversation_surface import surface_conversation
+            # #306 review: the notice of a Work from any conversation surface, on that surface's queue.
+            conversation = surface_conversation(job['channel'], job['chat_id']) if job else None
+            if conversation:
                 state = 'queued' if job['delivery'] in self.store.DELIVERY_SETTLED else self.store.NOTICE_HELD
-                db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created) VALUES (?,?,?,?,?,?,?,?,?)',
-                           (str(uuid.uuid4()), work_id, job['chat_id'], channel[len('telegram:'):], NOTICE_KIND,
-                            json.dumps({'ref': saved['ref'], 'version': saved['version']}), state, None, self.clock()))
+                db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created,surface) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                           (str(uuid.uuid4()), work_id, job['chat_id'], conversation[1], NOTICE_KIND,
+                            json.dumps({'ref': saved['ref'], 'version': saved['version']}), state, None, self.clock(),
+                            conversation[0]))
         return saved
 
     def forgotten(self, text):

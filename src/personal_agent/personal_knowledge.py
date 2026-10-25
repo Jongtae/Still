@@ -45,7 +45,10 @@ class PersonalKnowledgeOrchestrator:
     def _request(owner, channel, query):
         if not isinstance(owner, str) or not owner or len(owner) > 200:
             raise KnowledgeRetrievalError("소유자 식별을 확인하세요.")
-        if not isinstance(channel, str) or channel not in ("http", "local-companion") and not channel.startswith("telegram:"):
+        from .conversation_surface import SURFACE_NAMES
+        # #306 review: a request from any composed conversation surface, as from the local web.
+        if not isinstance(channel, str) or channel not in ("http", "local-companion") and not any(
+                channel.startswith(f"{name}:") for name in SURFACE_NAMES):
             raise KnowledgeRetrievalError("요청 채널을 확인하세요.")
         if not isinstance(query, str):
             raise KnowledgeRetrievalError("찾을 내용을 입력하세요.")
