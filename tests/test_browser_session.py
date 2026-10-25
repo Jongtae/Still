@@ -1358,6 +1358,52 @@ class CommitControlTests(unittest.TestCase):
 # ---------------------------------------------------------------- login, budget, targets
 
 class LoginAndBudgetTests(unittest.TestCase):
+    def test_login_window_address_is_internal_and_has_no_userinfo(self):
+        """#340: both login paths offer the full address only to the window surface."""
+        for action in ('browser_open', 'browser_sign_in'):
+            with self.subTest(action=action):
+                offers = []
+                class OfferingApprovals(Approvals):
+                    def login_required(self, url, explicit=False, *, window_url=None):
+                        offers.append((url, explicit, window_url))
+                        return 'login offered'
+                sess, driver = session(approvals=OfferingApprovals())
+                url = ORIGIN.replace('://', '://owner:password@') + '/login?continue=%2Faccount#top'
+                args = {'url': url, 'effect': 'navigate'} if action == 'browser_open' else {'url': url}
+                result = sess.run(action, args)
+                self.assertEqual(offers, [(ORIGIN + '/login', action == 'browser_sign_in',
+                                          ORIGIN + '/login?continue=%2Faccount#top')])
+                self.assertNotIn('continue', flat(result))
+                self.assertNotIn('password@', flat(result))
+                self.assertFalse(any(key.startswith('_') for key in result))
+
+    def test_login_page_still_offers_to_an_older_approvals_signature(self):
+        """#340: a keyword rejected by an older surface must not swallow the offer."""
+        offers = []
+        class OfferingApprovals(Approvals):
+            def login_required(self, url, explicit=False):
+                offers.append((url, explicit))
+                return 'login offered'
+        sess, _ = session(approvals=OfferingApprovals())
+        result = sess.open({'url': ORIGIN + '/login?continue=%2Faccount', 'effect': 'navigate'})
+        self.assertEqual(offers, [(ORIGIN + '/login', False)])
+        self.assertEqual(result['next_step'], 'login offered')
+
+    def test_redirected_login_offers_the_raw_driver_address(self):
+        """#340: the window follows the landed page, including a query absent from the request."""
+        offers = []
+        class RedirectingDriver(FakeDriver):
+            def goto(self, url, timeout):
+                super().goto(ORIGIN + '/login?continue=%2Faccount', timeout)
+        class OfferingApprovals(Approvals):
+            def login_required(self, url, explicit=False, *, window_url=None):
+                offers.append((url, window_url))
+                return 'login offered'
+        sess, _ = session(driver=RedirectingDriver(), approvals=OfferingApprovals())
+        result = sess.open({'url': ORIGIN + '/account', 'effect': 'navigate'})
+        self.assertEqual(offers, [(ORIGIN + '/login', ORIGIN + '/login?continue=%2Faccount')])
+        self.assertNotIn('continue', flat(result))
+
     def test_a_page_with_a_password_field_is_login_required_and_withheld(self):
         sess, _ = session()
         result = sess.open({'url': ORIGIN + '/login', 'effect': 'navigate'})

@@ -100,7 +100,7 @@ from . import preparations as prep
 from . import owner_model as om
 from . import information_use
 from . import remote_login
-from .browser_session import BrowserProfile, ascii_host, binding_digest, step_binding, keepalive_due_at, keepalive_interval, registrable_domain
+from .browser_session import BrowserProfile, ascii_host, binding_digest, step_binding, keepalive_due_at, keepalive_interval, registrable_domain, page_reference, login_window_url
 from .browser_jar import unexpired
 from .cli_browser_relay import BrowserRelay
 from .telegram_presence import (ATTENTION_ACTION, ATTENTION_ASK, ATTENTION_COOLDOWN, ATTENTION_MEMORY_ASK_FRESH, ATTENTION_PREPARED, ATTENTION_REMINDER,
@@ -702,6 +702,8 @@ class AgentService:
         self.drive_read=None
         self.drive_picker_config=None
         self.lock=threading.RLock()
+        #: #340: full login addresses never enter config, Evidence or owner/model text.
+        self._browser_login_window_urls={}
         #: #123: while Telegram is unreachable, a never-sent reply waits until this monotonic time.
         self._unsent_retry_at,self._unsent_backoff=0.0,0
         #: #749: the Settings login window's observed outcome (in memory; a restart forgets it).
@@ -7662,7 +7664,7 @@ class AgentService:
             def request(self,binding,description):return service._request_browser_step(job,binding,description)
             def api_effect_current(self):return not service.work_stopped(job['id'])
             # #709: a login page during this Work asks the owner in-flow.
-            def login_required(self,url,explicit=False):return service._request_browser_login(job,url,explicit)
+            def login_required(self,url,explicit=False,*,window_url=None):return service._request_browser_login(job,url,explicit,window_url=window_url)
             # #934: on a site received from the owner, a payment step is refused outright (no request, no approval).
             def refuse(self,host):
                 from .family_share import payment_refusal
@@ -8022,12 +8024,28 @@ class AgentService:
 
     def _put_browser_login(self, work_id, row, *, db=None):
         with self.lock:
+            cached=self._browser_login_window_urls.get(work_id)
+            # #340: keep an unanswered expiry only while it may be reopened; pruning removes it too.
+            if row is None or row.get('state') in ('resumed','skipped','not_logged_in') or (cached and cached[0]!=row.get('nonce')) \
+                    or (row.get('state')=='unavailable' and not row.get('reopens')) \
+                    or (row.get('state')=='expired' and (row.get('cause')=='close_failed' or int(row.get('reopens') or 0)>=BROWSER_LOGIN_REOPENS)):
+                self._browser_login_window_urls.pop(work_id,None)
             rows=self.browser_login_requests(db=db)
             if row is None:rows.pop(work_id,None)
             else:rows[work_id]=row
             self.store.put(BROWSER_LOGINS_KEY,rows,db=db)
 
-    def _request_browser_login(self, job, url, explicit=False):
+    def _browser_login_window_url(self, work_id, row):
+        """#340: use memory only for this exact request and the stored scheme/host; caller holds lock."""
+        cached=self._browser_login_window_urls.get(work_id)
+        if cached and cached[0]==row.get('nonce'):
+            try:
+                target,reference=urlsplit(cached[1]),urlsplit(row['url'])
+                if (target.scheme,target.hostname,target.port)==(reference.scheme,reference.hostname,reference.port):return cached[1]
+            except ValueError:pass
+        return row['url']
+
+    def _request_browser_login(self, job, url, explicit=False, *, window_url=None):
         """Record that this Work needs the owner's login at ``url``; returns the model-facing text or None.
 
         A Work is asked again only after its last login expired or its window
@@ -8043,7 +8061,7 @@ class AgentService:
             return None
         if parts.scheme not in ('http','https') or not host or not self.browser_profile.available():
             return None
-        target=url if '[가림]' not in url else f'{parts.scheme}://{parts.netloc}/'
+        target=page_reference(url) if '[가림]' not in url else page_reference(f'{parts.scheme}://{parts.netloc}/')
         # #954 review: a refused site (a share received from the owner, #940) says so to the model
         # now, instead of a request that ``offer_browser_login`` would then silently refuse.
         refused=self.login_refusal(host)
@@ -8059,9 +8077,13 @@ class AgentService:
                 same=registrable_domain(existing.get('host'))==registrable_domain(host)
                 return (BROWSER_LOGIN_OFFERED_TEXT if explicit else BROWSER_LOGIN_PAGE_OFFERED_TEXT) if same \
                     else BROWSER_LOGIN_OTHER_PENDING_TEXT
+            nonce=secrets.token_hex(16)
             self._put_browser_login(job['id'],{'work_id':job['id'],'url':target,'host':host,
                                                'state':'requested','requested_at':time.time(),
-                                               'nonce':secrets.token_hex(16),'explicit':bool(explicit)})
+                                               'nonce':nonce,'explicit':bool(explicit)})
+            # #340: redacted references cannot vouch for an unmediated address.
+            if window_url and '[가림]' not in url:
+                self._browser_login_window_urls[job['id']]=(nonce,login_window_url(window_url))
         return BROWSER_LOGIN_OFFERED_TEXT if explicit else BROWSER_LOGIN_PAGE_OFFERED_TEXT
 
     def offer_browser_login(self, job):
@@ -8087,9 +8109,10 @@ class AgentService:
         work_id,nonce=job['id'],row['nonce']
         self._put_browser_login(work_id,{**row,'state':'opening','window':None,'offered_at':now,
                                          'deadline':now+BROWSER_LOGIN_SECONDS})
+        with self.lock:window_url=self._browser_login_window_url(work_id,row)
         try:
             opened=self.browser_profile.open_for_login(
-                row['url'],seconds=BROWSER_LOGIN_SECONDS,
+                window_url,seconds=BROWSER_LOGIN_SECONDS,
                 on_opened=lambda window,landed=None:self._browser_login_opened(work_id,nonce,window,landed),
                 on_closed=lambda window,reason,saved:self._browser_login_window_closed(work_id,nonce,window))
         except (ValueError,OSError):
@@ -8557,9 +8580,13 @@ class AgentService:
                     or not self._login_reopenable(work_id)):
                 return False
             kept={key:row[key] for key in ('work_id','url','host') if key in row}
+            window_url=self._browser_login_window_url(work_id,row)
+            cached=work_id in self._browser_login_window_urls
+            new_nonce=secrets.token_hex(16)
             self._put_browser_login(work_id,{**kept,'state':'requested','requested_at':time.time(),
-                                             'nonce':secrets.token_hex(16),'explicit':bool(row.get('explicit')),
+                                             'nonce':new_nonce,'explicit':bool(row.get('explicit')),
                                              'reopens':int(row.get('reopens') or 0)+1})
+            if cached:self._browser_login_window_urls[work_id]=(new_nonce,window_url)
         LOG.info('browser login reopened by owner work=%s',work_id)
         return True
 

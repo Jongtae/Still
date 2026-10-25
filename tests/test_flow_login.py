@@ -480,6 +480,103 @@ class AccountProviderTextTests(unittest.TestCase):
 
 
 class InFlowLogin(LoginHarness):
+    def query_login_work(self, action='browser_sign_in', defer=False):
+        """#340: run the real service/tool boundary with a query-bearing login address."""
+        url = ORIGIN + '/login?continue=https%3A%2F%2Ffixture.test%2Faccount'
+        args = {'url': url, **({'effect': 'navigate'} if action == 'browser_open' else {})}
+        script = Script({'tool_calls': [call('1', action, **args)]}, {'content': '로그인이 필요합니다.'})
+        self.scripts = [script]
+        job_id = self.receive('계정 페이지 확인해줘')
+        if defer:
+            with mock.patch.object(self.service, 'offer_browser_login', return_value=False):
+                self.assertTrue(self.service.run_one())
+        else:
+            self.assertTrue(self.service.run_one())
+            self.shown(job_id)
+        self.assertEqual(self.service._browser_login(job_id)['url'], ORIGIN + '/login')
+        with self.store.db() as db:
+            details = [json.loads(row[0]) for row in db.execute('SELECT detail FROM tool_events WHERE job_id=?', (job_id,))]
+        # The model's own call arguments are recorded as it wrote them, as before #340; what Still
+        # derives from them (Evidence, the result, the login row) carries the reference only.
+        events = [{key: value for key, value in detail.items() if key not in ('arguments', 'tool_calls')}
+                  for detail in details]
+        public = flat([self.service.browser_login_requests(), events, self.calls,
+                       [message for body in script.bodies for message in body.get('messages', [])
+                        if message.get('role') == 'tool']])
+        self.assertNotIn('continue', public)
+        self.assertNotIn('?continue', public)
+        return job_id, url
+
+    def test_explicit_login_opens_full_address_but_persists_only_reference(self):
+        """#340: the explicit tool argument reaches the window, not durable/public records."""
+        with mock.patch.object(self.profile, 'open_for_login', wraps=self.profile.open_for_login) as opened:
+            job_id, url = self.query_login_work()
+            self.assertEqual(opened.call_args.args[0], url)
+        self.assertEqual(self.driver_log[-1][0], 'goto')
+        self.owner_closes(job_id)
+        self.assertNotIn(job_id, self.service._browser_login_window_urls)
+
+    def test_login_page_opens_raw_address_but_model_sees_only_reference(self):
+        """#340: the raw driver snapshot survives mediation only for opening the window."""
+        with mock.patch.object(self.profile, 'open_for_login', wraps=self.profile.open_for_login) as opened:
+            _job_id, url = self.query_login_work('browser_open')
+            self.assertEqual(opened.call_args.args[0], url)
+
+    def test_login_window_without_memory_falls_back_to_stored_reference(self):
+        """#340: restart loses the window address without changing the stored row."""
+        job_id, _url = self.query_login_work(defer=True)
+        with self.service.lock:
+            self.service._browser_login_window_urls.clear()
+        with mock.patch.object(self.profile, 'open_for_login', wraps=self.profile.open_for_login) as opened:
+            self.assertTrue(self.service.offer_browser_login(self.store.job(job_id)))
+            self.shown(job_id)
+            self.assertEqual(opened.call_args.args[0], ORIGIN + '/login')
+
+    def test_expired_login_reopens_full_address_and_pruning_forgets_it(self):
+        """#340: an unanswered expiry retains the address across the new reopen nonce."""
+        job_id, url = self.query_login_work()
+        self.assertEqual(self.settle(job_id, now=time.time() + BROWSER_LOGIN_SECONDS + 1), 'expired')
+        row = self.service._browser_login(job_id)
+        self.assertTrue(self.service.reopen_browser_login(job_id, row['nonce']))
+        with mock.patch.object(self.profile, 'open_for_login', wraps=self.profile.open_for_login) as opened:
+            self.service.process_browser_logins()
+            self.shown(job_id)
+            self.assertEqual(opened.call_args.args[0], url)
+        self.assertEqual(self.settle(job_id, now=time.time() + BROWSER_LOGIN_SECONDS + 1), 'expired')
+        self.service.process_browser_logins(now=time.time() + 2 * 86400)
+        self.assertNotIn(job_id, self.service._browser_login_window_urls)
+
+    def test_login_window_rejects_memory_for_another_origin_or_nonce(self):
+        """#340: cached addresses cannot redirect a different request or origin."""
+        job_id, _url = self.query_login_work(defer=True)
+        row = self.service._browser_login(job_id)
+        for nonce, url in ((row['nonce'], 'https://fixture.test/login?continue=private'),
+                           (row['nonce'], 'http://other.test/login?continue=private'),
+                           (row['nonce'], ORIGIN + ':8080/login?continue=private'),
+                           ('stale', ORIGIN + '/login?continue=private')):
+            with self.subTest(nonce=nonce, url=url), self.service.lock:
+                self.service._put_browser_login(job_id, row)
+                self.service._browser_login_window_urls[job_id] = (nonce, url)
+                with mock.patch.object(self.profile, 'open_for_login', return_value={'state': 'failed'}) as opened:
+                    self.service.offer_browser_login(self.store.job(job_id))
+                    self.assertEqual(opened.call_args.args[0], row['url'])
+
+    def test_redacted_login_and_replacement_forget_the_full_address(self):
+        """#340: a new site or redacted reference cannot inherit a previous full address."""
+        job_id, _url = self.query_login_work(defer=True)
+        job = self.store.job(job_id)
+        row = self.service._browser_login(job_id)
+        self.service._put_browser_login(job_id, {**row, 'state': 'expired'})
+        self.service._request_browser_login(job, 'http://other.test/login')
+        self.assertNotIn(job_id, self.service._browser_login_window_urls)
+        row = self.service._browser_login(job_id)
+        self.service._put_browser_login(job_id, {**row, 'state': 'expired'})
+        self.service._request_browser_login(job, ORIGIN + '/[가림]', window_url=ORIGIN + '/private?continue=private')
+        self.assertNotIn(job_id, self.service._browser_login_window_urls)
+        with mock.patch.object(self.profile, 'open_for_login', return_value={'state': 'failed'}) as opened:
+            self.service.offer_browser_login(job)
+            self.assertEqual(opened.call_args.args[0], ORIGIN + '/')
+
     def test_a_second_login_page_while_the_login_is_pending_reads_the_same_in_flow_text(self):
         """#1006 (live 2026-10-04): a second sign-in request in one Work before its login was shown got the
         Settings pointer, and the owner was told to open Settings.  Pending, it is the same request."""
