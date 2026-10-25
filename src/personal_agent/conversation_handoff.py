@@ -817,6 +817,10 @@ GOAL_REACHED_PROPOSITION = ('The reply serves the owner\'s message, read in the 
                             'was for. A step marked awaiting the owner prepared something Still now shows the owner for '
                             'their own decision (an approval it requires); that wait is by design, not a failure, and a reply '
                             'that says plainly what was prepared and that it waits for the owner serves that part (#170). '
+                            'awaiting_owner is Still\'s own record of what this Work prepared and showed for the owner\'s '
+                            'own approval through Still\'s gate (kind and counts, and how many a later event settled): a reply '
+                            'that says so and leaves them waiting does not fall short for that reason, and an item is not '
+                            'approved or applied until a later event settles it (#240). '
                             'A reply that asks the owner to type or paste a password, key, token or other credential into '
                             'the conversation never serves the request: such values go only through a secure input. '
                             'A bare limitation is insufficient when the observations show a supported authorized route '
@@ -1150,7 +1154,7 @@ class ConversationJudgments:
         return self.policy.selection(decision)
 
     def goal_reached(self, request, observations, failed_steps='', work_id=None, answer='', conversation='',
-                     owner_context='', continues='', attachments=''):
+                     owner_context='', continues='', attachments='', awaiting_owner=''):
         """Did the reply serve the owner's ``request`` (#657, #820)?  The one outcome judgment.
 
         One ``judge`` call over the owner's message (never cut), the recent
@@ -1161,7 +1165,8 @@ class ConversationJudgments:
         caller bounds and redacts the other facts.  #1451: a no carries its
         gap (``Judgment.value``): what the reply left unserved, in owner words.
         #1517: ``attachments`` is what the message carried besides its words ('1 photo'), which
-        the worker was given and this judgment is not.
+        the worker was given and this judgment is not.  #240: ``awaiting_owner`` is this Work's typed
+        "awaiting the owner" items (``owner_model.awaiting_owner_text``), names and counts only.
         """
         request = str(request or '')
         facts = {'owner_request': request, 'recent_conversation': conversation or 'none',
@@ -1170,7 +1175,8 @@ class ConversationJudgments:
                  'owner_context': owner_context or 'none',
                  'attachments': attachments or 'none',
                  'reply': answer or 'none (only the observations are known)',
-                 'observations': observations, 'failed_steps': failed_steps or 'none'}
+                 'observations': observations, 'failed_steps': failed_steps or 'none',
+                 'awaiting_owner': str(awaiting_owner or '') or 'none'}
         context = self._context('goal-reached', facts, work_id=work_id, reserve=True,
                                 # #1451: the observations are caller-bounded too (``OBSERVATION_CHARS``).
                                 uncut=('owner_request', 'reply', 'recent_conversation', 'continues', 'owner_context',

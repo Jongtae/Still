@@ -280,16 +280,11 @@ def awaiting_owner_rows(rows):
     The typed flags a tool result carries while its effect waits for the owner, unless ``applied``
     (``telegram_presence.OWNER_DECISION_FLAGS``); never the reply's wording.  A write the policy
     refused and kept as a candidate (``refused_because``, a third-party memory write) is not a
-    wait this Work's answer stops for.
+    wait this Work's answer stops for.  #240: the one per-record rule ``om.owner_decision_record``,
+    shared with the typed items the judgments and the self-review read.
     """
-    from .telegram_presence import OWNER_DECISION_FLAGS
-    for _tool,status,detail in rows:
-        if status not in ('succeeded','failed') or not isinstance(detail,dict):continue
-        evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
-        for record in (detail,evidence):
-            if record.get('refused_because'):continue
-            if record.get('applied') is not True and any(record.get(flag) for flag in OWNER_DECISION_FLAGS):return True
-    return False
+    return any(om.owner_decision_record(detail) is not None for _tool,status,detail in rows
+               if status in ('succeeded','failed') and isinstance(detail,dict))
 
 
 # Subscription CLIs do not receive Still credentials, local paths, or an
@@ -4262,6 +4257,11 @@ class AgentService:
             # The same typed qualifier the transcript and model context use
             # (#494), so the card cannot disagree with them.
             task['qualifier']=turn_qualifier(job.get('status'))
+            # #240: the one typed waiting state (``work_waits_for_owner``): a finished Work that waits for the
+            # owner's own decision says so, and its kinds; its stored status (often ``partial``) is unchanged.
+            waiting_for=self.work_waits_for_owner(job) if kind!='active' else ()
+            task['waiting_for_owner']=self.wait_explains_outcome(job,waiting_for)
+            task['waiting_for']=list(waiting_for)
             # #855: the settings drafts this Work still offers the owner (id and wording only; no digest).
             task['settings_drafts']=[{'id':row['id'],'effect':row['effect'],'note':row.get('note'),'reason':row.get('reason'),
                                       'expires_at':row.get('expires_at')} for row in awaiting_drafts.get(job['id'],())]
@@ -5689,7 +5689,31 @@ class AgentService:
                              continues='\n'.join(part for part in (self.continued_exchange(job),self.action_continuation_note(job)) if part),
                              sections={**sections,'history':len(earlier)},budget=budget,record=event,state=state,
                              work_id=job['id'],qualifying=self.decision_routes.qualifying,
-                             can_ask_location=can_ask_location,attachments=attachments)
+                             can_ask_location=can_ask_location,attachments=attachments,
+                             # #240: what waits for the owner, for the plan call and this Work's goal judgment.
+                             awaiting_conversation=self.awaiting_in_conversation(job),
+                             awaiting_work=lambda:om.awaiting_owner_text(om.work_awaiting_owner(self.store,job['id'])))
+
+    def awaiting_in_conversation(self, job):
+        """#240: what already waits for the owner's own decision in ``job``'s conversation; '' when nothing.
+
+        Each open item (``owner_acts.open_items``) as its kind and when it was shown, measured from
+        this Work's own message so the text stays the same while the Work runs.  Kinds and times
+        only, never what was shown.  A failure leaves the fact out.
+        """
+        try:
+            items=self.owner_acts.open_items(job)
+        except Exception:
+            LOG.info('open items unavailable job=%s',job.get('id'))
+            return ''
+        at=float(job.get('created') or 0)
+        def shown(item):
+            moment=float(item.get('shown_at') or 0)
+            if not moment or not at:return 'shown at an unknown time'
+            if moment>at:return 'shown after this message'
+            minutes=int((at-moment)//60)
+            return 'shown just before this message' if minutes<1 else f'shown {minutes} minutes before this message'
+        return '; '.join(f"{item['kind']} ({shown(item)}, waiting)" for item in items)
 
     def early_work_plan(self, job, prompt, budget=None):
         """#1261: the Work's first plan call, asked while routing runs, over the inputs the
@@ -7726,6 +7750,39 @@ class AgentService:
             # #1468: a request that replaced an earlier one in this Work rebinds the Work's one prompt.
             if not self.store.rebind_notification(job['id'],'browser_approval_needed',row['offer_digest']):
                 self.queue_notification(job,'browser_approval_needed',fingerprint=row['offer_digest'])
+
+    @staticmethod
+    def wait_explains_outcome(job, waits):
+        """#240: whether ``waits`` (``work_waits_for_owner``) is the whole story of ``job``'s outcome.
+
+        One rule for every surface: a step approval always is; a draft or proposal wait is only when
+        no note of something else left (``owner_note``) was recorded (#173 slice C).
+        """
+        from .owner_acts import KIND_STEP
+        return KIND_STEP in waits or (bool(waits) and not job.get('owner_note'))
+
+    def work_waits_for_owner(self, job):
+        """#240: the one typed "waiting for the owner" state of a Work, read by every surface.
+
+        The kinds (``owner_acts`` item kinds) of what this Work still waits on for the owner's own
+        decision, from the live stores that hold each wait with its expiry: a step approval it asked
+        for (``step_approval_pending``), its drafts on Still's calendar preview or settings
+        confirmation (#173 slice C), and its preparation proposals not yet accepted.  () when
+        nothing waits.  A ``partial`` Work that waits stays ``partial`` in the database; this only
+        says why.  A read failure is () (nothing is claimed).
+        """
+        from .owner_acts import KIND_CALENDAR, KIND_PREPARATION, KIND_SETTINGS, KIND_STEP
+        kinds=[]
+        try:
+            if self.step_approval_pending(job['id']):kinds.append(KIND_STEP)
+            row=self.calendar_conversation.pending(self.connector_owner_id(job))
+            if row and row.get('work_id')==job.get('id'):kinds.append(KIND_CALENDAR)
+            if self.settings_orchestrator.pending_for_work(job['id']):kinds.append(KIND_SETTINGS)
+            if self.preparations.proposed_from(job['id']):kinds.append(KIND_PREPARATION)
+        except Exception:
+            LOG.info('owner wait unavailable job=%s',job.get('id'))
+            return ()
+        return tuple(kinds)
 
     def step_approval_pending(self, job_id):
         """Whether this Work waits for the owner's decision on a step it asked to approve (#1468)."""
@@ -11774,10 +11831,11 @@ class AgentService:
                 [reason for reason in run.owner_steps if reason not in shown])
 
     def work_awaits_owner_preview(self, job):
-        """Whether this Work's own drafts wait on the preview or confirmation Still showed (#173 slice C)."""
-        row=self.calendar_conversation.pending(self.connector_owner_id(job))
-        if row and row.get('work_id')==job.get('id'):return True
-        return bool(self.settings_orchestrator.pending_for_work(job['id']))
+        """Whether this Work's own drafts or proposals wait on the preview or confirmation Still showed (#173 slice C).
+
+        #240: read from the one typed waiting state (``work_waits_for_owner``), without a step approval."""
+        from .owner_acts import KIND_STEP
+        return any(kind!=KIND_STEP for kind in self.work_waits_for_owner(job))
 
     @staticmethod
     def telegram_result_text(response, error=None, outcome=None, verified=None, note=None, waiting=False):

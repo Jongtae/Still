@@ -185,6 +185,80 @@ def call_sent(decision):
 #: ``decision.STRUCTURED_UNSUPPORTED`` (kept stdlib-only here; a test pins the two equal).
 STRUCTURED_UNSUPPORTED_ENGINE = 'structured-unsupported'
 
+#: #240: the two states of one typed "awaiting the owner" item.
+AWAITING_WAITING, AWAITING_SETTLED = 'waiting', 'settled'
+#: #240: how much of the rendered items the plan call and the goal judgment read.
+AWAITING_OWNER_CHARS = 600
+
+
+def owner_decision_record(detail):
+    """The record in one recorded tool result that waits for the owner's own decision, or None (#170, #240).
+
+    The one per-record rule: the typed flags a result carries while its effect waits for the owner
+    (``telegram_presence.OWNER_DECISION_FLAGS``, on its ``evidence`` when that carries one, else on
+    the result itself), unless ``applied`` is true.  A write the policy refused and kept as a
+    candidate (``refused_because``) waits for nothing.  Never the result's wording.
+    """
+    from .telegram_presence import OWNER_DECISION_FLAGS
+    if not isinstance(detail, dict):
+        return None
+    evidence = detail.get('evidence') if isinstance(detail.get('evidence'), dict) else {}
+    record = evidence if any(evidence.get(flag) for flag in OWNER_DECISION_FLAGS) else detail
+    if (record.get('refused_because') or record.get('applied') is True
+            or not any(record.get(flag) for flag in OWNER_DECISION_FLAGS)):
+        return None
+    return record
+
+
+def awaiting_owner_items(rows, settled=None):
+    """The typed "awaiting the owner" items of recorded ``(tool, status, detail)`` rows (#240).
+
+    ``[{'kind', 'shown', 'settled', 'state'}]``, one per host action, in first-seen order: how many
+    results of that kind were shown for the owner's own approval (``owner_decision_record``) and
+    how many of them a later recorded event settled (``settled(draft_id)``, when given).  ``state``
+    is ``waiting`` while any is unsettled.  Names and counts only, never content.  ``detail`` may
+    be a dict or its JSON text; only finished calls (``succeeded`` / ``failed``) count.
+    """
+    counts = {}
+    for tool, status, detail in rows or ():
+        if status not in ('succeeded', 'failed'):
+            continue
+        if not isinstance(detail, dict):
+            try:
+                detail = json.loads(detail or '{}')
+            except (TypeError, ValueError):
+                continue
+        record = owner_decision_record(detail)
+        if record is None:
+            continue
+        ident = record.get('draft_id')
+        done = bool(settled and isinstance(ident, str) and ident and settled(ident))
+        shown = counts.setdefault(detail.get('host_action') or tool, [0, 0])
+        shown[0] += 1
+        shown[1] += 1 if done else 0
+    return [{'kind': kind, 'shown': total, 'settled': done,
+             'state': AWAITING_WAITING if total > done else AWAITING_SETTLED}
+            for kind, (total, done) in counts.items()]
+
+
+def work_awaiting_owner(store, job_id):
+    """``awaiting_owner_items`` of ``job_id``'s recorded tool events; an item is settled by a later
+    successful event of another Work that names its ``draft_id`` (#170, #240)."""
+    with store.db() as db:
+        rows = db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND status IN (?,?) ORDER BY id',
+                          (job_id, 'succeeded', 'failed')).fetchall()
+
+        def settled(ident):
+            return db.execute("SELECT 1 FROM tool_events WHERE job_id!=? AND status='succeeded' AND detail LIKE ? LIMIT 1",
+                              (job_id, '%' + json.dumps(ident)[1:-1] + '%')).fetchone() is not None
+        return awaiting_owner_items([(row['tool'], row['status'], row['detail']) for row in rows], settled)
+
+
+def awaiting_owner_text(items):
+    """The one rendering of typed awaiting items the judgments read (#170, #240); '' when none."""
+    return '; '.join(f"{item['kind']}: {item['shown']} shown for the owner's own approval, "
+                     f"{item['settled']} later settled by the owner" for item in items or ())
+
 TABLE_SQL = '''
 CREATE TABLE IF NOT EXISTS owner_model_upkeep(job_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'upkeep',
     state TEXT NOT NULL, created REAL NOT NULL, claimed REAL, calls INTEGER NOT NULL DEFAULT 0,
@@ -628,37 +702,9 @@ class Upkeep:
         Read from recorded tool events only: each item a tool result marked as waiting for the owner
         (``telegram_presence.OWNER_DECISION_FLAGS``, not applied, not a refused write) and, by its
         ``draft_id``, whether a later recorded event settled it.  Names and counts only, no content.
+        #240: the typed items (``work_awaiting_owner``) the plan call and the goal judgment read too.
         """
-        from .telegram_presence import OWNER_DECISION_FLAGS
-        with self.store.db() as db:
-            rows = db.execute('SELECT tool,detail FROM tool_events WHERE job_id=? AND status IN (?,?) ORDER BY id',
-                              (job_id, 'succeeded', 'failed')).fetchall()
-            waiting = {}
-            for row in rows:
-                try:
-                    detail = json.loads(row['detail'] or '{}')
-                except (TypeError, ValueError):
-                    continue
-                if not isinstance(detail, dict):
-                    continue
-                evidence = detail.get('evidence') if isinstance(detail.get('evidence'), dict) else {}
-                record = evidence if any(evidence.get(flag) for flag in OWNER_DECISION_FLAGS) else detail
-                if (record.get('refused_because') or record.get('applied') is True
-                        or not any(record.get(flag) for flag in OWNER_DECISION_FLAGS)):
-                    continue
-                action = detail.get('host_action') or row['tool']
-                ident = record.get('draft_id')
-                settled = False
-                if isinstance(ident, str) and ident:
-                    settled = db.execute("SELECT 1 FROM tool_events WHERE job_id!=? AND status='succeeded' AND detail LIKE ? LIMIT 1",
-                                         (job_id, '%' + json.dumps(ident)[1:-1] + '%')).fetchone() is not None
-                counts = waiting.setdefault(action, [0, 0])
-                counts[0] += 1
-                counts[1] += 1 if settled else 0
-        if not waiting:
-            return ''
-        return '; '.join(f'{action}: {total} shown for the owner\'s own approval, {done} later settled by the owner'
-                         for action, (total, done) in waiting.items())
+        return awaiting_owner_text(work_awaiting_owner(self.store, job_id))
 
     def evaluations(self, job_id, limit=6):
         """The orchestrator's recorded verdict texts on ``job_id``'s attempts, oldest first (#710 Evidence)."""

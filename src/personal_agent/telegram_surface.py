@@ -1263,14 +1263,14 @@ class TelegramSurface(ConversationSurface):
             blocked=service.store.blocked_delivery_reply(job['id'])
             # The owner-language cause when one was recorded (#598 X1); the
             # technical ``error`` remains the Task-detail record.
+            # #1470: a Work waiting for the owner's approval is not "unconfirmed".  #173 slice C: nor is one
+            # whose drafts or proposals wait on Still's own preview, unless something else is left to say.
+            # #240: the one typed waiting state (``work_waits_for_owner``) every surface reads.
+            waits=service.work_waits_for_owner(job)
             text=blocked or service.telegram_result_text(job['response'],
                                                       job.get('owner_cause') or job['error'],job.get('status'),
                                                       verified=job.get('owner_verified'),note=job.get('owner_note'),
-                                                      # #1470: a Work waiting for the owner's approval is not "unconfirmed".
-                                                      # #173 slice C: nor is one whose drafts wait on Still's own preview,
-                                                      # unless something else is left to say.
-                                                      waiting=service.step_approval_pending(job['id'])
-                                                      or (not job.get('owner_note') and service.work_awaits_owner_preview(job)))
+                                                      waiting=service.wait_explains_outcome(job,waits))
             # #659: a prepared answer arrives without an owner turn; say what it is for.
             text=service.preparation_reply_prefix(job)+text
             try:route_options=service.usage_limit_route_options(job)
