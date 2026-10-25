@@ -195,19 +195,21 @@ class TelegramStore:
             row=db.execute('SELECT * FROM telegram_notifications WHERE id=?',(notification_id,)).fetchone()
             return dict(row) if row else None
 
-    def queue_notification(self, job_id, chat_id, generation, kind, fingerprint=None):
+    def queue_notification(self, job_id, chat_id, generation, kind, fingerprint=None, surface='telegram'):
+        """#213: ``surface`` names the conversation surface whose delivery claims the row."""
         store=self.store
         notification_id=str(uuid.uuid4())
         with store.db() as db:
-            db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created) VALUES (?,?,?,?,?,?,?,?,?)',
-                       (notification_id,job_id,chat_id,generation,kind,fingerprint,'queued',None,time.time()))
+            db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created,surface) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                       (notification_id,job_id,chat_id,generation,kind,fingerprint,'queued',None,time.time(),surface))
             row=db.execute('SELECT * FROM telegram_notifications WHERE job_id=? AND kind=?',(job_id,kind)).fetchone()
             return dict(row)
 
-    def next_notification(self):
+    def next_notification(self, surface='telegram'):
         store=self.store
         with store.db() as db:
-            row=db.execute("SELECT * FROM telegram_notifications WHERE state='queued' ORDER BY created LIMIT 1").fetchone()
+            row=db.execute("SELECT * FROM telegram_notifications WHERE state='queued' AND surface=? ORDER BY created LIMIT 1",
+                           (surface,)).fetchone()
             return dict(row) if row else None
 
     def update_notification(self, notification_id, state, message_id=None, fingerprint=None, delivered=False):
@@ -315,16 +317,16 @@ class TelegramStore:
             "SELECT job_id,kind,fingerprint,created FROM telegram_notifications WHERE kind IN (%s) AND state='sent' AND job_id IS NOT ? "
             "ORDER BY created"%','.join('?'*len(kinds)),(*kinds,except_job_id)).fetchall()]
 
-    def sent_of_kinds(self, chat_id, kinds, limit=10, message_id=None):
-        """The sent notifications of ``kinds`` in this chat, newest first, at most ``limit`` (#172).
+    def sent_of_kinds(self, chat_id, kinds, limit=10, message_id=None, surface='telegram'):
+        """The sent notifications of ``kinds`` in this chat of ``surface``, newest first, at most ``limit`` (#172).
 
-        ``message_id``: only the one(s) sent as that Telegram message (#188).
+        ``message_id``: only the one(s) sent as that message (#188).
         """
         where,extra=('AND message_id=? ',(message_id,)) if message_id is not None else ('',())
         with self.store.db() as db:
             return [dict(row) for row in db.execute(
-                "SELECT * FROM telegram_notifications WHERE chat_id=? AND state='sent' AND kind IN (%s) %s"
-                "ORDER BY created DESC LIMIT ?"%(','.join('?'*len(kinds)),where),(chat_id,*kinds,*extra,int(limit)))]
+                "SELECT * FROM telegram_notifications WHERE surface=? AND chat_id=? AND state='sent' AND kind IN (%s) %s"
+                "ORDER BY created DESC LIMIT ?"%(','.join('?'*len(kinds)),where),(surface,chat_id,*kinds,*extra,int(limit)))]
 
     def rearm(self, job_id, kind, fingerprint):
         """Re-queue this Work's ``kind`` prompt for a new binding unless it is already queued or sending."""

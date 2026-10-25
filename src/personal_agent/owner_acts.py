@@ -99,14 +99,12 @@ class OwnerActs:
         self.service = service
 
     # -- collect -------------------------------------------------------------------
-    def _telegram(self, job):
-        """The paired private chat and current generation of this conversation, or None."""
-        cfg = self.service.store.config('telegram', {})
-        chat = job.get('chat_id')
-        if (cfg.get('enabled') and isinstance(chat, int) and chat == cfg.get('user_id')
-                and job.get('channel') == f"telegram:{cfg.get('generation')}"):
-            return chat, cfg.get('generation')
-        return None
+    def _conversation(self, job):
+        """``(surface, owner, generation)`` when ``job`` is a surface's current paired conversation, else None (#213)."""
+        surface = self.service.surface_of(job)
+        if surface is None:
+            return None
+        return surface, job.get('chat_id'), surface.owner_generation()
 
     def open_items(self, job, before=None, target=None):
         """Every item still waiting for the owner in ``job``'s conversation and identity, newest first.
@@ -118,17 +116,18 @@ class OwnerActs:
         """
         service = self.service
         now = time.time()
-        telegram = self._telegram(job)
+        conversation_of = self._conversation(job)
         items = []
         connector_owner = service.connector_owner_id(job)
         conversation = service.calendar_conversation
         row = conversation.pending(connector_owner)
         if row:
             work_id = row.get('work_id')
-            turn = service.telegram_turns.get(work_id) if telegram and isinstance(work_id, str) else None
+            message_id = (conversation_of[0].reply_message(work_id, conversation_of[1])
+                          if conversation_of and isinstance(work_id, str) else None)
             items.append({'kind': KIND_CALENDAR, 'shown_text': conversation.shown_text(connector_owner, row),
                           'shown_at': float(row.get('at') or 0), 'expires_at': float(row.get('expires') or 0),
-                          'message_id': turn['reply_message_id'] if turn and turn['chat_id'] == telegram[0] else None,
+                          'message_id': message_id,
                           'ref': {'owner': connector_owner, 'drafts': conversation.shown_drafts(row),
                                   'work_id': work_id}})
         settings = service.settings_orchestrator
@@ -140,16 +139,17 @@ class OwnerActs:
             deadline = max(float(draft.get('expires_at') or 0) for draft in rows)
             if deadline <= now:
                 deadline += settings.RENEW_GRACE_SECONDS
-            notice = service.store.notification_of(work_id, 'settings_change_proposed') if telegram else None
-            bound = (notice and notice['chat_id'] == telegram[0] and notice['generation'] == telegram[1]
-                     and isinstance(notice.get('message_id'), int))
+            notice = service.store.notification_of(work_id, 'settings_change_proposed') if conversation_of else None
+            bound = (notice and notice.get('surface', 'telegram') == conversation_of[0].name
+                     and notice['chat_id'] == conversation_of[1] and notice['generation'] == conversation_of[2]
+                     and notice.get('message_id') is not None)
             items.append({'kind': KIND_SETTINGS, 'shown_text': settings.confirmation_text(rows),
                           'shown_at': min(float(draft.get('created_at') or 0) for draft in rows),
                           'expires_at': deadline, 'message_id': notice['message_id'] if bound else None,
                           'ref': {'owner': owner, 'channel': channel, 'rows': rows,
                                   'work_id': work_id if any(draft.get('work_id') for draft in rows) else None}})
-        if telegram:
-            items.extend(self._notification_items(*telegram, now, target=target))
+        if conversation_of:
+            items.extend(self._notification_items(*conversation_of, now, target=target))
         if before is not None:
             # Telegram dates an owner message in whole seconds, so an item shown later within that same
             # second is not treated as unseen; one shown in a later second is.
@@ -162,7 +162,7 @@ class OwnerActs:
             item['id'] = f'item-{index}'
         return items
 
-    def _notification_items(self, chat, generation, now, target=None):
+    def _notification_items(self, surface, chat, generation, now, target=None):
         """The open prompts and notices sent to this chat in this bot generation (#1472, #996, #818, #659).
 
         With ``target``, only those sent as that message, however many newer ones were sent since (#188).
@@ -172,7 +172,8 @@ class OwnerActs:
         service = self.service
         kinds = ('browser_approval_needed', 'preparation_proposed', *MEMORY_SAVED_KINDS, *MEMORY_PROMPT_KINDS)
         items = []
-        for notification in service.store.telegram.sent_of_kinds(chat, kinds, limit=ITEM_LIMIT * 3, message_id=target):
+        for notification in service.store.telegram.sent_of_kinds(chat, kinds, limit=ITEM_LIMIT * 3, message_id=target,
+                                                                surface=surface.name):
             if notification['generation'] != generation:
                 continue
             kind, base = notification['kind'], {'message_id': notification.get('message_id'),
@@ -329,19 +330,23 @@ class OwnerActs:
         return result
 
     # -- a reaction ----------------------------------------------------------------
-    def bound_to(self, chat, generation, message_id):
-        """Whether a message in this chat showed an item still waiting for the owner."""
-        job = {'id': None, 'channel': f'telegram:{generation}', 'chat_id': chat}
-        return bool(self.open_items(job, target=message_id))
+    @staticmethod
+    def _act_job(surface, chat, generation):
+        """The conversation a reaction was made in, as a Work-shaped row (no Work of its own)."""
+        return {'id': None, 'channel': f'{surface.channel_prefix}{generation}', 'chat_id': chat}
 
-    def answer_reaction(self, chat, generation, message_id, emoji):
+    def bound_to(self, surface, chat, generation, message_id):
+        """Whether a message in this conversation of ``surface`` showed an item still waiting for the owner."""
+        return bool(self.open_items(self._act_job(surface, chat, generation), target=message_id))
+
+    def answer_reaction(self, surface, chat, generation, message_id, emoji):
         """The owner's reaction on a message that showed an open item: judged, and settled when it answers it.
 
-        Runs off the poll thread.  What the owner is told is sent to the chat;
+        Runs off the poll thread.  What the owner is told is sent to the paired owner on ``surface``;
         the calendar effect's Evidence goes to the Work that offered the drafts.
         """
         service = self.service
-        job = {'id': None, 'channel': f'telegram:{generation}', 'chat_id': chat}
+        job = self._act_job(surface, chat, generation)
         answer = self.read(job, 'reaction: ' + ' '.join(emoji), target=message_id, reaction=True)
         if not answer:
             return None
@@ -356,9 +361,6 @@ class OwnerActs:
             settled = self.settle(answer, job, evidence=evidence)
         except CalendarError:
             settled = {'text': ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID)}
-        if settled.get('text'):
-            try:
-                service.telegram.send_message(chat, settled['text'])
-            except Exception as exc:
-                LOG.warning('owner act reply not delivered (%s)', type(exc).__name__)
+        if settled.get('text') and not surface.send_owner(settled['text']):
+            LOG.warning('owner act reply not delivered')
         return answer['item']['kind']

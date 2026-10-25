@@ -75,6 +75,13 @@ class ConversationSurface(ABC):
     #: Short stable name of the surface (log and prompt wording, never a branch).
     name = ''
     capabilities = SurfaceCapabilities()
+    #: #213: the prefix of every ``jobs.channel`` value this surface creates (any pairing generation).
+    #: A surface claims, delivers and cancels only Work on its own channels, never another surface's.
+    channel_prefix = ''
+
+    def claims_channel(self, channel):
+        """Whether ``channel`` is one of this surface's (current or earlier pairing)."""
+        return bool(self.channel_prefix) and isinstance(channel, str) and channel.startswith(self.channel_prefix)
 
     # -- pairing ---------------------------------------------------------------
     @abstractmethod
@@ -84,6 +91,39 @@ class ConversationSurface(ABC):
     @abstractmethod
     def owns(self, job):
         """Whether ``job`` came from this surface's current paired owner conversation."""
+
+    # -- owner identity (#213) ------------------------------------------------------
+    def claims(self, job):
+        """Whether ``job`` came from this surface at all, in its current pairing or an earlier one.
+
+        A claimed Work keeps this surface's connector identity and is held to its
+        pairing by every guard, even after the pairing changed.
+        """
+        return bool(job) and self.claims_channel(job.get('channel')) and job.get('chat_id') is not None
+
+    def connector_owner(self, job):
+        """The durable connector owner identity of a Work this surface claims, stable across pairings."""
+        return f"{self.name}:{job.get('chat_id')}"
+
+    def owns_connector_owner(self, owner_id):
+        """Whether ``owner_id`` (a ``connector_owner`` value) names this surface."""
+        return isinstance(owner_id, str) and owner_id.startswith(f'{self.name}:')
+
+    @abstractmethod
+    def reply_message(self, work_id, owner):
+        """The id of Still's reply to ``work_id`` in ``owner``'s conversation, or None."""
+
+    @abstractmethod
+    def owner_generation(self):
+        """The current pairing's generation (a handoff is bound to it), or '' while unpaired."""
+
+    @abstractmethod
+    def paired_owner(self, owner):
+        """Whether the surface is paired now and ``owner`` (an identity in ``SurfacePairing.owner`` form) is its owner."""
+
+    @abstractmethod
+    def send_owner(self, text, reply_to=None):
+        """Best effort: ``text`` to the paired owner now; True when it was sent.  Never raises."""
 
     # -- ingestion -------------------------------------------------------------
     @abstractmethod
@@ -102,6 +142,10 @@ class ConversationSurface(ABC):
     @abstractmethod
     def deliver_notification(self):
         """Send one queued notice or approval prompt; True when one was handled."""
+
+    @abstractmethod
+    def cancel_pending_deliveries(self):
+        """Cancel this surface's pending replies and queued notices (work mode goes on); returns the counts."""
 
     @abstractmethod
     def deliver_conversation_notice(self, text):

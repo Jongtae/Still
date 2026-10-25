@@ -124,10 +124,10 @@ def guard(service, draft):
             or service.work_stopped(job['id'])):
         raise ValueError('원래 작업의 소유자와 현재 상태를 확인하지 못했습니다.')
     owner_id = service.connector_owner_id(job)
-    if isinstance(job.get('chat_id'), int):
-        cfg = service.store.config('telegram', {})
-        if not cfg.get('enabled') or cfg.get('user_id') != job['chat_id']:
-            raise ValueError('원래 작업의 연결된 대화를 확인하지 못했습니다.')
+    # #213: a Work from a conversation surface is held to that surface's paired owner.
+    surface = service.surface_claiming(job)
+    if surface is not None and not surface.paired_owner(job['chat_id']):
+        raise ValueError('원래 작업의 연결된 대화를 확인하지 못했습니다.')
     return {'generation': service._owner_generation(owner_id),
             'request': hashlib.sha256(job['message'].encode()).hexdigest()}
 
