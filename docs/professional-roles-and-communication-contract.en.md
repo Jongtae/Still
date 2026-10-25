@@ -86,6 +86,8 @@ Gaps found:
 3. The disposition of a steer is not told: a folded steer gets only a reaction, and a steer the worker never received (it called no Still tool before finishing) silently runs as its own Work afterwards.
 4. Relevance judgments carry no role or mandate, so “important” has one implicit (assistant) standard.
 
+Since #308 S1 (2026-10-25), on every route a steer the worker never received gets one continuation on the same worker before the reply is delivered: the request, the steer and the unsent reply as context. The continuation's outcome judgment reads the steer (part of gap 2). An effect, a pending approval or a spent budget prevents it, and the message then runs as its own Work. Gap 3's disposition is still not told (#308 S4).
+
 Rules:
 1. **The Decision Model decides what to say; Presence decides how it is carried.** The decision side emits a communicative act (inform, recommend, clarify, request approval, report outcome, follow up), its content and its evidence level (observed or inferred). Presence picks the surface (ambient, semantic, collaborative), timing and the one voice. Presence never invents content.
 2. **Relevance is judged by the person's AI against the Mandate and the active lenses' Communication Protocol** (the market-drop table). Core code holds no role rule; it keeps only budgets (messages per Work), authority and truth labels.
