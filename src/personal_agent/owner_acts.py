@@ -150,6 +150,9 @@ class OwnerActs:
                                   'work_id': work_id if any(draft.get('work_id') for draft in rows) else None}})
         if conversation_of:
             items.extend(self._notification_items(*conversation_of, now, target=target))
+            if not conversation_of[0].capabilities.action_approvals:
+                # #213: an exact action approval is never settled on this surface (approve at the Mac).
+                items = [item for item in items if item['kind'] != KIND_STEP]
         if before is not None:
             # Telegram dates an owner message in whole seconds, so an item shown later within that same
             # second is not treated as unseen; one shown in a later second is.

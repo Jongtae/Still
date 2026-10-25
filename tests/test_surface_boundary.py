@@ -59,6 +59,9 @@ class SideSurface(ConversationSurface):
     def reply_message(self, work_id, owner):
         return None
 
+    def reply_to(self, work_id):
+        return None
+
     def receive(self, now=None):
         return None
 

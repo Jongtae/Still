@@ -36,9 +36,11 @@ destinations the owner declared in Settings (#209, ``intranet``) for the
 classes whose every request names its destination and is checked
 (``DESTINATION_EGRESS``: page reads, API calls, code runs).  A browser page
 loads resources from wherever it names, which Still does not confine, so the
-browser stays refused even for a declared host.  Company-approved chat
-surfaces (#213, #214) are admitted here when those land; every other
-destination is refused.
+browser stays refused even for a declared host.  A
+Mattermost surface (#213) pauses with Telegram unless the owner marked it
+company-approved in Settings (``mattermost_surface.MattermostSurface.usable``);
+Slack (#214) is admitted the same way when it lands.  Every other destination
+is refused.
 
 What work mode does **not** control (stated, never overclaimed): traffic a CLI
 engine makes inside its own turn besides the web search Still turns off -- its

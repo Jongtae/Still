@@ -4095,7 +4095,7 @@ class AgentService:
                     'subscription_engines':self.subscription_engine_status(),
                     'subscription_execution':self.subscription_execution_profile(),
                     'telegram':{'enabled':tg.get('enabled',False),'mode':tg.get('mode','owner-token'),'username':tg.get('username',''),'paired':bool(tg.get('user_id')),'user_id':tg.get('user_id')},
-                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':self.google_connection_rows(),'google_client':self.google_client_status(),'ai_connections':self.ai_connections_status(),'current_context':self.current_state.status(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status()}
+                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':self.google_connection_rows(),'google_client':self.google_client_status(),'ai_connections':self.ai_connections_status(),'current_context':self.current_state.status(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status(),'mattermost':self.mattermost_status()}
 
     def home(self):
         """Return the minimal, credential-free read model for the owner home."""
@@ -5205,6 +5205,33 @@ class AgentService:
         """
         from .telegram_surface import TelegramSurface
         return TelegramSurface(self)
+
+    @cached_property
+    def mattermost_surface(self):
+        """The owner's Mattermost direct message (``mattermost_surface``, #213); idle until connected in Settings."""
+        from .mattermost_surface import MattermostSurface
+        return MattermostSurface(self)
+
+    def mattermost_status(self):
+        return self.mattermost_surface.status()
+
+    def connect_mattermost(self, body):
+        """Settings on this Mac only (the local endpoint is the only caller): server, bot token, owner username."""
+        return self.mattermost_surface.connect(body)
+
+    def disconnect_mattermost(self):
+        return self.mattermost_surface.disconnect()
+
+    def set_mattermost_company_approved(self, body):
+        """#208: whether this Mattermost may be used while work mode is on (the owner's word for company-approved)."""
+        return self.mattermost_surface.set_company_approved((body or {}).get('approved') if isinstance(body,dict) else None)
+
+    def receive_polled_surfaces(self):
+        """One receive pass of every surface the service polls (``poll_seconds``); a failure stays in that surface."""
+        for surface in self.surfaces:
+            if surface.poll_seconds is None:continue
+            try:surface.receive()
+            except Exception as exc:LOG.warning('%s: receiving failed (%s)',surface.name,type(exc).__name__)
 
     @cached_property
     def owner_acts(self):
@@ -6528,8 +6555,8 @@ class AgentService:
 
     @property
     def surfaces(self):
-        """The owner conversation surfaces this service composes (#212); Telegram is the only one today."""
-        return (self.telegram_surface,)
+        """The owner conversation surfaces this service composes (#212): Telegram and Mattermost (#213)."""
+        return (self.telegram_surface,self.mattermost_surface)
 
     def surface_of(self, job):
         """The conversation surface whose current paired conversation ``job`` came from, or None."""
@@ -10490,7 +10517,8 @@ class AgentService:
         # message runs as an ordinary turn.  Only a message the owner typed answers; a replayed,
         # command, photo or scheduled turn never does.
         if not replayed and not owner_command and not run.photo_file_ids and job.get('owner_typed')==1:
-            run.owner_act=self.owner_acts.read(job,owner_prompt,target=self.telegram_turns.reply_to(job['id']),
+            surface=self.surface_of(job)
+            run.owner_act=self.owner_acts.read(job,owner_prompt,target=surface.reply_to(job['id']) if surface else None,
                                                before=job.get('source_at') or job.get('created'))
         if run.owner_act:
             self._settle_owner_act(run)
@@ -11899,8 +11927,15 @@ class AgentService:
                 except (ProviderError,ValueError):
                     self.store.put('telegram_status',{'state':'error','message':msg('service.check_the_telegram_connection_receiving_will')})
                 self.stop.wait(.25)
+        def poll_surfaces():
+            # #213: surfaces without a long poll of their own (Mattermost) are polled here.
+            interval=min((surface.poll_seconds for surface in self.surfaces if surface.poll_seconds),default=3)
+            while not self.stop.is_set():
+                self.receive_polled_surfaces()
+                self.stop.wait(interval)
         self.threads=[threading.Thread(target=work,daemon=True),threading.Thread(target=poll,daemon=True),
-                      threading.Thread(target=acknowledge,daemon=True)]
+                      threading.Thread(target=acknowledge,daemon=True),
+                      threading.Thread(target=poll_surfaces,daemon=True,name='agentos-surface-poll')]
         for thread in self.threads:thread.start()
 
     def healthy(self):

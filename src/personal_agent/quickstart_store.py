@@ -192,6 +192,9 @@ class QuickStore:
             # Nullable and never backfilled: a prompt sent before this column existed has none.
             columns={row['name'] for row in db.execute('PRAGMA table_info(telegram_notifications)')}
             if 'sent_at' not in columns: db.execute('ALTER TABLE telegram_notifications ADD COLUMN sent_at REAL')
+            # #213: the owner's Mattermost post each Work answers, Still's reply post, and what it replied to.
+            db.execute('CREATE TABLE IF NOT EXISTS mattermost_turns(job_id TEXT PRIMARY KEY, owner TEXT NOT NULL, '
+                       'source_post_id TEXT, reply_post_id TEXT, reply_to_post_id TEXT, created REAL NOT NULL)')
             # #213: the conversation surface whose delivery claims a notice; every earlier row is Telegram's.
             if 'surface' not in columns:
                 db.execute("ALTER TABLE telegram_notifications ADD COLUMN surface TEXT NOT NULL DEFAULT 'telegram'")
