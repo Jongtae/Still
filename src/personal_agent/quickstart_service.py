@@ -10525,15 +10525,26 @@ class AgentService:
             def valid(data):
                 return (isinstance(data,dict) and set(data)=={'answered','reply'}
                         and type(data['answered']) is bool and isinstance(data['reply'],str))
+            # #211: a CLI on a cloud provider profile sends the conversation there, so the
+            # information-use record names that provider and destination (no values).
+            cloud=None
+            if subscription.get('id'):
+                resolve=getattr(self.execution_adapter,'cloud_profile',None)
+                try:cloud=resolve(subscription['id']) if callable(resolve) else None
+                except ExecutionError:
+                    self._side_answer_event(task_id,'unavailable');return
+            provider=cloud.provider if cloud is not None else subscription.get('id') or config.get('provider')
+            destination=(cloud.destination() if cloud is not None else subscription['id'] if subscription.get('id')
+                         else config.get('endpoint'))
             audit={'route':'subscription_cli' if subscription.get('id') else 'direct_api',
-                   'engine':subscription.get('id'), 'provider':subscription.get('id') or config.get('provider'),
+                   'engine':subscription.get('id'), 'provider':provider,
                    'requested_model':model,'context_messages':len(history),
                    'owner_information':information_use.section_references(spliced=[
                        {'kind':'대화','ref':running['id'],'label':'진행 중인 다른 요청'}]),
                    'workers':[{'route':'subscription_cli' if subscription.get('id') else 'direct_api',
-                               'engine':subscription.get('id'),'provider':subscription.get('id') or config.get('provider'),
-                               'model':model,'destination':config.get('endpoint') if not subscription.get('id') else subscription['id'],
-                               'own_web_search':False}]}
+                               'engine':subscription.get('id'),'provider':provider,
+                               'model':model,'destination':destination,'own_web_search':False}],
+                   **(cloud.record() if cloud is not None else {})}
             # Also retain attempted egress when the AI declines or fails. The
             # successful reply merges this same record inside its CAS transaction.
             with self.store.db() as db:
@@ -10549,6 +10560,11 @@ class AgentService:
                 'accounts or any action must have answered=false. If answered=true, put the full answer in reply.',
                 schema,valid)
             data=getattr(decision,'data',None)
+            # The dispatch resolved the cloud profile again; its reported recipient is the one recorded.
+            sent=getattr(decision,'confidence',None)
+            if subscription.get('id') and getattr(sent,'destination',''):
+                audit['provider']=audit['workers'][0]['provider']=sent.provider or provider
+                audit['workers'][0]['destination']=sent.destination
             if decision.outcome!=OUTCOME_DECIDED:
                 self._side_answer_event(task_id,'unavailable');return
             if not valid(data):

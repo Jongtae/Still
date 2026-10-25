@@ -4,7 +4,7 @@ import json
 import threading
 from unittest import mock
 
-from personal_agent.decision import FixtureDecisionEngine, OUTCOME_DECIDED, StructuredDecision, fixture_confidence
+from personal_agent.decision import DecisionConfidence, FixtureDecisionEngine, OUTCOME_DECIDED, StructuredDecision, fixture_confidence
 from personal_agent.quickstart import make_handler
 from test_steer_running_work import _SteerCase, steer_engine
 
@@ -232,6 +232,25 @@ class SideAnswerTests(_SteerCase):
         self.assertEqual(first['status'], 'succeeded')
         self.assertEqual(self.replies(first), ['The other task is complete.'])
         self.assertEqual(self.store.history(through=first['id'])[-1]['job_id'], first['id'])
+
+    def test_cloud_cli_side_answer_records_the_actual_recipient(self):
+        class Cloud:
+            provider = 'bedrock'
+            def destination(self):
+                return 'bedrock-runtime.us-east-1.amazonaws.com'
+            def record(self):
+                return {'cloud_provider': 'bedrock', 'cloud_destination': self.destination(),
+                        'cloud_profile_revision': 3, 'cloud_credentials': ['AWS_ACCESS_KEY_ID']}
+        self.store.put('subscription_engine', {'id': 'claude-code'})
+        self.side_script = lambda: StructuredDecision(OUTCOME_DECIDED, {'answered': True, 'reply': ANSWER}, DecisionConfidence(
+            1.0, provider='bedrock', destination='bedrock-runtime.us-east-1.amazonaws.com', cloud_profile='bedrock:3'))
+        with mock.patch.object(self.service.execution_adapter, 'cloud_profile', create=True, return_value=Cloud()):
+            running, side = self.pair()
+        record = self.store.turn_provenance(side['id'])
+        [worker] = record['workers']
+        self.assertEqual((worker['provider'], worker['destination']), ('bedrock', 'bedrock-runtime.us-east-1.amazonaws.com'))
+        self.assertEqual((record['provider'], record['cloud_provider'], record['cloud_profile_revision']), ('bedrock', 'bedrock', 3))
+        self.assertEqual(self.replies(side), [ANSWER])
 
     def test_web_handler_calls_consider_steer_without_socket(self):
         handler = object.__new__(make_handler(self.service))
