@@ -5094,7 +5094,7 @@ class AgentService:
         if not isinstance(code,str) or not isinstance(verifier,str) or not 43<=len(verifier)<=128 or not 1<=len(code)<=2048:
             raise ValueError('연결을 다시 시작해 주세요.')
         result=request_json('https://openrouter.ai/api/v1/auth/keys',{'code':code,'code_verifier':verifier,'code_challenge_method':'S256'})
-        if not isinstance(result,dict) or not isinstance(result.get('key'),str):raise ProviderError('계정 연결을 완료하지 못했습니다.')
+        if not isinstance(result,dict) or not isinstance(result.get('key'),str):raise ProviderError(msg('quickstart.account_connection_not_completed'))
         # #619: the account key goes into the OpenRouter slot only.  Saving a
         # key never switches the Main AI; 확인하고 사용 probes and switches.
         self.main_ai.store_openrouter_key(result['key'])
@@ -5104,7 +5104,7 @@ class AgentService:
         # `openrouter/free` can route to text-only models. Ask OpenRouter for
         # models that explicitly advertise both sides of native tool calling.
         data=request_json('https://openrouter.ai/api/v1/models?supported_parameters=tools,tool_choice',None,timeout=10)
-        if not isinstance(data,dict) or not isinstance(data.get('data'),list):raise ProviderError('무료 모델 목록을 가져오지 못했습니다.')
+        if not isinstance(data,dict) or not isinstance(data.get('data'),list):raise ProviderError(msg('quickstart.free_models_not_fetched'))
         models=[]
         for m in data['data']:
             if not isinstance(m,dict) or not isinstance(m.get('id'),str) or not m['id'].endswith(':free'):continue
@@ -5119,7 +5119,7 @@ class AgentService:
 
     def local_models(self):
         data=request_json('http://127.0.0.1:11434/api/tags',None,timeout=3)
-        if not isinstance(data,dict) or not isinstance(data.get('models'),list):raise ProviderError('모델 목록을 읽을 수 없습니다.')
+        if not isinstance(data,dict) or not isinstance(data.get('models'),list):raise ProviderError(msg('quickstart.model_list_unreadable'))
         return {'models':[{'name':m['name'],'size':m.get('size',0)} for m in data['models'] if isinstance(m,dict) and isinstance(m.get('name'),str)]}
 
     def probe_model(self, config, key):
@@ -5141,7 +5141,7 @@ class AgentService:
             calls=probe.get('tool_calls') if isinstance(probe,dict) else None
             supported=bool(isinstance(calls,list) and any(isinstance(call,dict) and call.get('function',{}).get('name')=='agentos_connection_probe' for call in calls))
             if not supported:
-                raise ProviderError('이 모델은 네이티브 도구 호출을 확인하지 못했습니다. 도구 호출 지원 모델을 선택하세요.')
+                raise ProviderError(msg('quickstart.native_tool_calls_unconfirmed'))
             record.update(ok=True,tools_ok=True,model=actual)
             # Free routing can vary between requests. Pin only the model proven
             # by this probe, while retaining the user's original provider setup.
@@ -9738,9 +9738,9 @@ class AgentService:
         webhook=self.telegram.get_webhook_info(token)
         username=me.get('username') if isinstance(me,dict) else None
         if not isinstance(username,str) or not 5<=len(username)<=64 or not username.replace('_','').isalnum():
-            raise ProviderError('Telegram이 유효한 봇 계정을 반환하지 않았습니다.')
+            raise ProviderError(msg('quickstart.telegram_bot_invalid'))
         if not isinstance(webhook,dict):
-            raise ProviderError('Telegram webhook 설정을 확인하지 못했습니다.')
+            raise ProviderError(msg('quickstart.telegram_webhook_unchecked'))
         if webhook.get('url'):
             raise ValueError('이 봇은 webhook을 사용 중입니다. 새 전용 봇을 연결하거나 기존 webhook을 먼저 해제하세요.')
         # #957: the bot's display name is how another instance on this Mac names this one as a share target.
@@ -10698,10 +10698,10 @@ class AgentService:
                 image_bytes=0
                 for file_id in run.photo_file_ids[:TELEGRAM_WORK_PHOTO_LIMIT]:
                     remaining=TELEGRAM_WORK_PHOTO_BYTES_LIMIT-image_bytes
-                    if remaining<=0:raise ProviderError('앨범 사진의 총 용량이 한도보다 큽니다.')
+                    if remaining<=0:raise ProviderError(msg('quickstart.album_photos_too_large'))
                     image=self.telegram.download_photo(file_id,max_bytes=remaining)
                     payload=image.get('data') if isinstance(image,dict) else None
-                    if not isinstance(payload,bytes):raise ProviderError('Telegram 사진을 읽을 수 없습니다.')
+                    if not isinstance(payload,bytes):raise ProviderError(msg('quickstart.telegram_photo_unreadable'))
                     image_bytes+=len(payload)
                     run.image_inputs.append(image)
             except ProviderError as exc:

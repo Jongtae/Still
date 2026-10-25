@@ -117,8 +117,9 @@ RETRY_SECONDS = 30
 PAYMENT_REFUSED_TEXT = msg('family_share.payment_refused')
 #: #940: a received site never gets a login window on this instance (explicit, in-flow or from the phone, #939).
 LOGIN_REFUSED_TEXT = msg('family_share.login_refused')
-NO_SESSION_TEXT = ('{site}에 저장된 내 로그인 세션이 없어 공유하지 않았어요. 먼저 로그인 창에서 그 사이트에 로그인해 주세요.'
-                   '{stored}')
+NO_SESSION_TEXT = msg('family_share.no_session')
+#: #242: the same refusal naming the sites this instance is signed in to.
+NO_SESSION_LISTED_TEXT = msg('family_share.no_session_signed_in')
 NOT_INSTALLED_TEXT = msg('family_share.not_installed')
 NOT_YOURS_TEXT = msg('family_share.not_yours')
 SELF_TEXT = msg('family_share.not_to_self')
@@ -133,7 +134,8 @@ REFUSALS = frozenset({RECEIVER_SIGNED_IN})
 #: instance that was named ``main`` keeps its own id, grants and data directory (#966 review).
 MAIN_INSTANCE = '@main'
 #: #957: what each target's own store says about its Telegram (never the one-time setup link's expiry).
-STATE_LABELS = {'paired': '연결됨', 'setting_up': '설정 중', 'not_connected': msg('family_share.not_connected')}
+STATE_LABELS = {'paired': msg('label.connected'), 'setting_up': msg('label.setting_up'),
+                'not_connected': msg('family_share.not_connected')}
 
 #: Review P2-2: every read-modify-write of one store's grant list or received marks, and the
 #: delivery in between, runs under that store's lock, so a push can never land after a remove.
@@ -316,9 +318,9 @@ def resolve_instance(value, rows):
         return matches[0]
     if matches:
         listed = ', '.join(describe(name, (rows or {}).get(name)) for name in matches)
-        raise ValueError(f"'{value}'라는 이름의 비서가 여럿이에요: {listed}. 어느 비서인지 괄호 안의 id로 말해 주세요. 아무것도 바꾸지 않았어요.")
-    listed = ', '.join(describe(name, row) for name, row in (rows or {}).items()) or '없음'
-    raise ValueError(f"'{value}'라는 비서를 찾지 못했어요. 이 Mac의 다른 비서: {listed}. 아무것도 바꾸지 않았어요.")
+        raise ValueError(msg('family_share.several_named', value=value, listed=listed))
+    listed = ', '.join(describe(name, row) for name, row in (rows or {}).items()) or msg('label.none')
+    raise ValueError(msg('family_share.not_found', value=value, listed=listed))
 
 
 # -- the link secret ------------------------------------------------------
@@ -502,7 +504,8 @@ def share(store, jar, instance, site, *, locate=locate_instance, opener=None, no
     rows = _rows_for(jar, site)
     if not rows:
         stored = [row['site'] for row in jar.sites()]
-        raise ValueError(NO_SESSION_TEXT.format(site=site, stored=f' 지금 로그인된 사이트: {", ".join(stored)}.' if stored else ''))
+        raise ValueError(NO_SESSION_LISTED_TEXT.format(site=site, sites=', '.join(stored)) if stored
+                         else NO_SESSION_TEXT.format(site=site))
     port, data_dir = locate(instance)
     # Review P2-2: never itself, however ``main`` or this instance's ``--data`` resolved; and no main without a store.
     if _same_dir(data_dir, store.root):
@@ -520,10 +523,9 @@ def share(store, jar, instance, site, *, locate=locate_instance, opener=None, no
         delivered = _deliver(row, jar, locate, opener, now)
         _put_grants(store, current)
     refused = row.get('error') if row.get('error') in REFUSALS else None
-    text = (f"{label} 비서에 {site} 로그인 세션을 공유했어요(쿠키 {len(rows)}개). 내 세션이 갱신되면 따라가고, "
-            f"결제는 계정 주인만 할 수 있어요." if delivered else
+    text = (msg('family_share.shared', label=label, site=site, count=len(rows)) if delivered else
             RECEIVER_SIGNED_IN_RECEIPT.format(label=label, site=site) if refused == RECEIVER_SIGNED_IN else
-            f"{label} 비서가 지금 응답하지 않아 {site} 로그인 세션은 비서가 켜지면 전달돼요. 공유는 기록해 두었어요.")
+            msg('family_share.share_pending', label=label, site=site))
     return {'instance': instance, 'site': site, 'cookies': len(rows), 'delivered': delivered, 'refused': refused, 'response': text}
 
 
@@ -543,7 +545,7 @@ def unshare(store, instance, site, *, locate=locate_instance, opener=None, now=N
         targets = [row for row in current if row['site'] == site and instance in (None, row['instance'])]
         if not targets:
             return {'site': site, 'instances': [], 'removed': True, 'idempotent': True,
-                    'response': f'{site} 로그인 세션은 공유하고 있지 않아요. 바꿀 것이 없어요.'}
+                    'response': msg('family_share.not_shared', site=site)}
         # Review P2-2: ``revoking`` is on disk before anything is sent, so no push is sent meanwhile.
         for row in targets:
             row.update(state='revoking', synced=None)
@@ -556,14 +558,14 @@ def unshare(store, instance, site, *, locate=locate_instance, opener=None, now=N
             else:
                 pending.append(row['instance'])
         _put_grants(store, current)
-    parts = []
-    if done:
-        parts.append(f"{', '.join(labels.get(name, name) for name in done)} 비서에서 {site} 로그인 세션을 지웠어요. 내 세션은 그대로예요.")
-    if pending:
-        parts.append(f"{', '.join(labels.get(name, name) for name in pending)} 비서가 지금 응답하지 않아 {site} 세션은 비서가 켜지면 지워져요. "
-                     '그때까지 새 세션은 보내지 않아요.')
+    # #242: both outcomes together are one catalog line, so the receipt is translated whole.
+    removed = ', '.join(labels.get(name, name) for name in done)
+    waiting = ', '.join(labels.get(name, name) for name in pending)
+    text = (msg('family_share.unshared_and_pending', done=removed, pending=waiting, site=site) if done and pending else
+            msg('family_share.unshared', done=removed, site=site) if done else
+            msg('family_share.unshare_pending', pending=waiting, site=site))
     return {'site': site, 'instances': done, 'pending': pending, 'removed': not pending, 'idempotent': False,
-            'response': ' '.join(parts)}
+            'response': text}
 
 
 def sync(store, jar, touched=None, *, locate=locate_instance, opener=None, now=None, retry_after=0):

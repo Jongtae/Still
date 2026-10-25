@@ -5141,11 +5141,11 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
     # call, but it did run and fallback_response explains it better than a
     # bare provider error would.
     if executions:content=fallback_response(executions,sources)
-    else:raise ProviderError('모델이 답변을 반환하지 않았습니다.')
+    else:raise ProviderError(msg('agent_runtime.model_returned_no_answer'))
    return conclude(content)
-  if not isinstance(calls,list):raise ProviderError('도구 호출 한도 또는 응답 형식 오류입니다.')
+  if not isinstance(calls,list):raise ProviderError(msg('agent_runtime.tool_call_limit_or_format'))
   ids=[c.get('id') for c in calls if isinstance(c,dict)]
-  if len(ids)!=len(calls) or any(not isinstance(i,str) or not i for i in ids) or len(set(ids))!=len(ids):raise ProviderError('도구 호출 식별자가 올바르지 않습니다.')
+  if len(ids)!=len(calls) or any(not isinstance(i,str) or not i for i in ids) or len(set(ids))!=len(ids):raise ProviderError(msg('agent_runtime.tool_call_ids_invalid'))
   messages.append(message)
   # #605: private-store writes proposed in this same batch are known before
   # any call runs, so a lookup listed first cannot carry their values.

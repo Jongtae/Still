@@ -15,7 +15,7 @@ import unittest
 from unittest import mock
 from urllib.error import HTTPError, URLError
 
-from personal_agent import calendar_conversation, conversation_handoff, family_share, providers, remote_login
+from personal_agent import conversation_handoff, providers
 from personal_agent.first_run import Terminal
 from personal_agent.messages import msg
 from personal_agent.providers import ProviderError
@@ -130,25 +130,11 @@ class ConnectionFailureFixtures(unittest.TestCase):
 
 
 class OtherFlowsTest(unittest.TestCase):
-    """The calendar, sign-in handoff and family-sharing lines moved into the catalog."""
+    """The calendar, sign-in handoff and family-sharing lines moved into the catalog.
 
-    def test_calendar_conversation_lines(self):
-        lines = {
-            calendar_conversation.PREVIEW_FOOTER: 'calendar_conversation.reply_approve_to_apply_it_as',
-            calendar_conversation.FAILED_RECONNECT: 'calendar_conversation.not_applied_reconnect',
-            calendar_conversation.FAILED_RETRY: 'calendar_conversation.not_applied_retry',
-            calendar_conversation.NOT_APPLIED_REST: 'calendar_conversation.rest_not_applied',
-            calendar_conversation.REPLACED_NOTICE: 'calendar_conversation.previous_draft_cancelled',
-        }
-        for text, message_id in lines.items():
-            for lang in LANGS:
-                self.assertEqual(translate(text, lang), msg(message_id, lang))
-        refused = calendar_conversation.UNVERIFIED_TARGET.format(count=2)
-        self.assertEqual(translate(refused, 'en'), msg('calendar_conversation.unverified_target', 'en', count=2))
-        # A reply of several fixed lines is translated line by line.
-        reply = calendar_conversation.FAILED_RETRY + '\n' + calendar_conversation.NOT_APPLIED_REST
-        self.assertEqual(translate(reply, 'zh'), msg('calendar_conversation.not_applied_retry', 'zh') + '\n'
-                         + msg('calendar_conversation.rest_not_applied', 'zh'))
+    #242: what the owner is sent on those flows is read off the real send paths in
+    ``test_handoff_locale`` (``CalendarDraftLines``, ``PhoneSignInLines``, ``FamilySharingLines``).
+    """
 
     def test_the_preview_footer_asks_for_no_exact_word(self):
         """#172: approval is judged, not matched, so no language is told to send one exact word."""
@@ -157,16 +143,6 @@ class OtherFlowsTest(unittest.TestCase):
         for lang in ('ko', *LANGS):
             with self.subTest(lang=lang):
                 self.assertEqual(quoted.findall(msg('calendar_conversation.reply_approve_to_apply_it_as', lang)), [])
-
-    def test_sign_in_handoff_and_family_lines(self):
-        self.assertEqual(translate(remote_login.NO_NGROK_TEXT, 'en'), msg('remote_login.no_ngrok', 'en'))
-        self.assertEqual(translate(remote_login.NO_PORT_TEXT, 'ja'), msg('remote_login.no_local_address', 'ja'))
-        self.assertEqual(translate(family_share.PAYMENT_REFUSED_TEXT, 'zh'), msg('family_share.payment_refused', 'zh'))
-        receipt = family_share.RECEIVER_SIGNED_IN_RECEIPT.format(label='Mom', site='example.com')
-        self.assertEqual(translate(receipt, 'en'),
-                         msg('family_share.receiver_signed_in_receipt', 'en', label='Mom', site='example.com'))
-        self.assertEqual(translate(family_share.NOT_INSTALLED_TEXT.format(instance='kid'), 'ja'),
-                         msg('family_share.not_installed', 'ja', instance='kid'))
 
     def test_telegram_buttons_and_bodies_use_the_same_lines(self):
         body = {'chat_id': 1, 'text': msg('providers.unreachable')}

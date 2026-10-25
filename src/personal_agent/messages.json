@@ -41,6 +41,24 @@
   "ja": "ツールの実行は終わりましたが、結果を説明する返答を受け取れませんでした。依頼が完了したかは確認できていません。実行記録を確認してください。",
   "zh": "工具已执行完，但没有收到说明结果的回复，无法确认请求是否完成。请查看执行记录。"
  },
+ "agent_runtime.model_returned_no_answer": {
+  "ko": "모델이 답변을 반환하지 않았습니다.",
+  "en": "The model did not return an answer.",
+  "ja": "モデルが回答を返しませんでした。",
+  "zh": "模型没有返回回答。"
+ },
+ "agent_runtime.tool_call_limit_or_format": {
+  "ko": "도구 호출 한도 또는 응답 형식 오류입니다.",
+  "en": "The tool call limit was reached, or the response format was wrong.",
+  "ja": "ツール呼び出しの上限、または応答形式のエラーです。",
+  "zh": "达到了工具调用上限，或响应格式有误。"
+ },
+ "agent_runtime.tool_call_ids_invalid": {
+  "ko": "도구 호출 식별자가 올바르지 않습니다.",
+  "en": "The tool call identifiers are not valid.",
+  "ja": "ツール呼び出しの識別子が正しくありません。",
+  "zh": "工具调用标识符不正确。"
+ },
  "agent_runtime.this_page_needs_a_sign_in": {
   "ko": "이 페이지는 로그인이 필요합니다.",
   "en": "This page needs a sign-in.",
@@ -455,6 +473,216 @@
   "ja": "依頼が変わったので前の依頼を取り消しました。接続が終わっても前の依頼は実行しません。",
   "zh": "请求已变更，之前的请求已取消。连接完成后也不会执行之前的请求。"
  },
+ "handoff.connection_required": {
+  "ko": "{label} 연결이 아직 없어 이 요청을 실행하지 않았습니다. 지금 필요한 다음 단계는 하나입니다: {label}{obj} 연결해 주세요. 연결이 확인되면 방금 요청을 한 번만 이어서 처리합니다.",
+  "en": "{label} is not connected yet, so I did not run this request. One next step: connect {label}. Once the connection is confirmed, I will continue this request once.",
+  "ja": "{label} がまだ接続されていないため、この依頼は実行していません。次に必要なのは 1 つだけです: {label} を接続してください。接続が確認できたら、この依頼を 1 回だけ続けて処理します。",
+  "zh": "{label} 还没有连接，所以没有执行这个请求。下一步只需要一件事：连接 {label}。确认连接后，会把刚才的请求继续处理一次。"
+ },
+ "handoff.reauth_required": {
+  "ko": "{label} 연결을 다시 인증해야 해서 이 요청을 실행하지 않았습니다. 지금 필요한 다음 단계는 하나입니다: {label}{obj} 다시 인증해 주세요. 인증이 확인되면 방금 요청을 한 번만 이어서 처리합니다.",
+  "en": "The {label} connection needs to be authorized again, so I did not run this request. One next step: authorize {label} again. Once that is confirmed, I will continue this request once.",
+  "ja": "{label} の接続を再認証する必要があるため、この依頼は実行していません。次に必要なのは 1 つだけです: {label} を再認証してください。認証が確認できたら、この依頼を 1 回だけ続けて処理します。",
+  "zh": "{label} 的连接需要重新授权，所以没有执行这个请求。下一步只需要一件事：重新授权 {label}。确认授权后，会把刚才的请求继续处理一次。"
+ },
+ "handoff.connection_blocked": {
+  "ko": "{label} 접근이 차단되어 있어 이 요청을 실행하지 않았습니다. 지금 필요한 다음 단계는 하나입니다: {label}의 접근 권한을 확인해 주세요. 차단이 풀릴 때까지 이 요청은 이어서 처리하지 않습니다.",
+  "en": "Access to {label} is blocked, so I did not run this request. One next step: check the access permissions for {label}. Until it is unblocked, I will not continue this request.",
+  "ja": "{label} へのアクセスがブロックされているため、この依頼は実行していません。次に必要なのは 1 つだけです: {label} のアクセス権限を確認してください。ブロックが解除されるまで、この依頼は続けません。",
+  "zh": "{label} 的访问被阻止，所以没有执行这个请求。下一步只需要一件事：检查 {label} 的访问权限。解除阻止之前，不会继续处理这个请求。"
+ },
+ "handoff.connect_link": {
+  "ko": "{guidance} 이 컴퓨터의 브라우저에서 {url} 주소를 열면 연결을 진행할 수 있습니다.",
+  "en": "{guidance} You can connect by opening {url} in a browser on this computer.",
+  "ja": "{guidance}このコンピューターのブラウザで {url} を開くと接続できます。",
+  "zh": "{guidance}在这台电脑的浏览器中打开 {url} 即可进行连接。"
+ },
+ "handoff.connector_unavailable": {
+  "ko": "{label} 기능이 이 로컬 설치에 구성되어 있지 않습니다. 소유자가 로컬 설정을 마친 뒤 다시 요청해 주세요.",
+  "en": "{label} is not set up in this local installation. Please ask again after the owner finishes the local setup.",
+  "ja": "{label} の機能はこのローカル環境に設定されていません。所有者がローカル設定を終えてから、もう一度依頼してください。",
+  "zh": "这个本地安装中没有配置 {label} 功能。请在所有者完成本地设置后再说一次。"
+ },
+ "handoff.mixed_tasks": {
+  "ko": "이 요청에 여러 작업이 함께 들어 있습니다. 일부만 처리하고 나머지를 빠뜨리지 않도록 아무 작업도 실행하지 않았습니다. 한 번에 하나씩 다시 말씀해 주세요.",
+  "en": "This request has several tasks in it. So that none of them is dropped while others are done, I did not run any of them. Please ask for one at a time.",
+  "ja": "この依頼には複数の作業が含まれています。一部だけ処理して残りを抜かすことがないよう、どの作業も実行していません。1 つずつもう一度お伝えください。",
+  "zh": "这个请求里包含多项任务。为了避免只处理一部分而漏掉其余部分，没有执行任何任务。请一次说一件事。"
+ },
+ "handoff.resume_wrong_owner": {
+  "ko": "이 연결은 다른 소유자의 것이라 요청을 이어서 처리하지 않았습니다.",
+  "en": "This connection belongs to a different owner, so I did not continue the request.",
+  "ja": "この接続は別の所有者のものなので、依頼は続けていません。",
+  "zh": "这个连接属于另一位所有者，没有继续处理请求。"
+ },
+ "handoff.request_changed": {
+  "ko": "요청이 바뀌어 이전 요청은 이어서 처리하지 않았습니다.",
+  "en": "The request changed, so I did not continue the earlier one.",
+  "ja": "依頼が変わったため、前の依頼は続けていません。",
+  "zh": "请求已变更，之前的请求没有继续处理。"
+ },
+ "handoff.resume_in_progress": {
+  "ko": "이 요청은 이미 다른 연결 완료 처리가 진행 중이라 다시 실행하지 않았습니다.",
+  "en": "Another connection is already being completed for this request, so I did not run it again.",
+  "ja": "この依頼は別の接続の完了処理がすでに進んでいるため、もう一度は実行していません。",
+  "zh": "这个请求已有另一个连接正在完成，没有再执行。"
+ },
+ "handoff.resume_unclaimed": {
+  "ko": "연결 확인이 완료되지 않아 요청을 이어서 처리하지 않았습니다.",
+  "en": "The connection check did not finish, so I did not continue the request.",
+  "ja": "接続の確認が完了しなかったため、依頼は続けていません。",
+  "zh": "连接确认没有完成，没有继续处理请求。"
+ },
+ "handoff.resume_reauth_required": {
+  "ko": "연결을 다시 인증해야 해서 요청을 이어서 처리하지 않았습니다.",
+  "en": "The connection needs to be authorized again, so I did not continue the request.",
+  "ja": "接続を再認証する必要があるため、依頼は続けていません。",
+  "zh": "连接需要重新授权，没有继续处理请求。"
+ },
+ "handoff.resume_blocked": {
+  "ko": "연결이 차단되어 있어 요청을 이어서 처리하지 않았습니다.",
+  "en": "The connection is blocked, so I did not continue the request.",
+  "ja": "接続がブロックされているため、依頼は続けていません。",
+  "zh": "连接被阻止，没有继续处理请求。"
+ },
+ "handoff.resume_callback_failed": {
+  "ko": "연결을 완료하지 못해 요청을 실행하지 않았습니다. 다시 연결해 주세요.",
+  "en": "I could not complete the connection, so the request did not run. Please connect again.",
+  "ja": "接続を完了できなかったため、依頼は実行していません。もう一度接続してください。",
+  "zh": "没能完成连接，请求没有执行。请重新连接。"
+ },
+ "handoff.resume_work_claimed": {
+  "ko": "이 요청의 연결 처리가 이미 진행 중입니다. 새로 실행하지 않았습니다.",
+  "en": "The connection for this request is already being handled. I did not start it again.",
+  "ja": "この依頼の接続処理はすでに進んでいます。新たには実行していません。",
+  "zh": "这个请求的连接处理已在进行中，没有重新执行。"
+ },
+ "handoff.resume_work_completed": {
+  "ko": "이 요청은 이미 처리되어 다시 실행하지 않았습니다.",
+  "en": "This request was already handled, so I did not run it again.",
+  "ja": "この依頼はすでに処理済みなので、もう一度は実行していません。",
+  "zh": "这个请求已经处理过，没有再执行。"
+ },
+ "handoff.resume_invalid": {
+  "ko": "이어서 처리할 유효한 연결 요청을 찾지 못했습니다.",
+  "en": "I could not find a valid connection request to continue.",
+  "ja": "続けられる有効な接続の依頼が見つかりませんでした。",
+  "zh": "没有找到可以继续处理的有效连接请求。"
+ },
+ "handoff.resume_default": {
+  "ko": "연결을 확인하지 못해 요청을 이어서 처리하지 않았습니다.",
+  "en": "I could not confirm the connection, so I did not continue the request.",
+  "ja": "接続を確かめられなかったため、依頼は続けていません。",
+  "zh": "没能确认连接，没有继续处理请求。"
+ },
+ "handoff.local_label_folder_read": {
+  "ko": "이 Mac의 참고 폴더 읽기",
+  "en": "Read a reference folder on this Mac",
+  "ja": "この Mac の参考フォルダーの読み取り",
+  "zh": "读取这台 Mac 上的参考文件夹"
+ },
+ "handoff.local_label_reference_read": {
+  "ko": "이 Mac의 원본 폴더 읽기",
+  "en": "Read a source folder on this Mac",
+  "ja": "この Mac の元フォルダーの読み取り",
+  "zh": "读取这台 Mac 上的原始文件夹"
+ },
+ "handoff.local_label_result_write": {
+  "ko": "이 Mac의 결과 저장 폴더",
+  "en": "Results folder on this Mac",
+  "ja": "この Mac の結果保存フォルダー",
+  "zh": "这台 Mac 上的结果保存文件夹"
+ },
+ "handoff.local_preview_folder_read": {
+  "ko": "선택한 폴더 하나를 읽기만 허용합니다. 파일을 바꾸거나 지우지 않고, 이 허용만으로 파일 내용을 외부 AI에 보내지 않습니다.",
+  "en": "Allows only reading the one folder you choose. Files are not changed or deleted, and this permission alone does not send file contents to an outside AI.",
+  "ja": "選んだフォルダー 1 つの読み取りだけを許可します。ファイルを変更・削除せず、この許可だけでファイルの内容を外部の AI に送ることはありません。",
+  "zh": "只允许读取你选择的一个文件夹。不会更改或删除文件，仅凭这项许可也不会把文件内容发送给外部 AI。"
+ },
+ "handoff.local_preview_reference_read": {
+  "ko": "선택한 폴더 하나를 정리할 원본으로 읽기만 허용합니다. 파일을 바꾸거나 지우지 않고, 이 허용만으로 파일 내용을 외부 AI에 보내지 않습니다.",
+  "en": "Allows only reading the one folder you choose, as the source to organize. Files are not changed or deleted, and this permission alone does not send file contents to an outside AI.",
+  "ja": "選んだフォルダー 1 つを、整理する元として読み取ることだけを許可します。ファイルを変更・削除せず、この許可だけでファイルの内容を外部の AI に送ることはありません。",
+  "zh": "只允许把你选择的一个文件夹作为要整理的原始资料来读取。不会更改或删除文件，仅凭这项许可也不会把文件内容发送给外部 AI。"
+ },
+ "handoff.local_preview_result_write": {
+  "ko": "선택한 폴더 하나에 새 결과 파일을 만드는 것만 허용합니다. 기존 파일을 덮어쓰거나 지우지 않고, 이 허용만으로 파일을 외부로 보내지 않습니다.",
+  "en": "Allows only creating new result files in the one folder you choose. Existing files are not overwritten or deleted, and this permission alone does not send files outside.",
+  "ja": "選んだフォルダー 1 つに新しい結果ファイルを作ることだけを許可します。既存のファイルを上書き・削除せず、この許可だけでファイルを外部に送ることはありません。",
+  "zh": "只允许在你选择的一个文件夹中创建新的结果文件。不会覆盖或删除现有文件，仅凭这项许可也不会把文件发送到外部。"
+ },
+ "handoff.local_need_folder_read": {
+  "ko": "이 요청에는 이 Mac의 폴더를 읽는 권한이 필요해 아직 파일을 찾지 않았습니다.",
+  "en": "This request needs permission to read a folder on this Mac, so I have not looked for files yet.",
+  "ja": "この依頼にはこの Mac のフォルダーを読む権限が必要なため、まだファイルを探していません。",
+  "zh": "这个请求需要读取这台 Mac 上文件夹的权限，所以还没有查找文件。"
+ },
+ "handoff.local_need_reference_read": {
+  "ko": "이 요청에는 정리할 원본 폴더를 읽는 권한이 필요해 아직 실행하지 않았습니다.",
+  "en": "This request needs permission to read the source folder to organize, so I have not run it yet.",
+  "ja": "この依頼には整理する元フォルダーを読む権限が必要なため、まだ実行していません。",
+  "zh": "这个请求需要读取要整理的原始文件夹的权限，所以还没有执行。"
+ },
+ "handoff.local_need_result_write": {
+  "ko": "이 요청은 결과 파일을 저장할 폴더가 필요해 아직 실행하지 않았습니다.",
+  "en": "This request needs a folder to save the result files in, so I have not run it yet.",
+  "ja": "この依頼には結果ファイルを保存するフォルダーが必要なため、まだ実行していません。",
+  "zh": "这个请求需要一个保存结果文件的文件夹，所以还没有执行。"
+ },
+ "handoff.local_next_action": {
+  "ko": "{need} 지금 필요한 다음 단계는 하나입니다: Mac에서 계속 — Mac에서 Still을 열고 설정 → 파일 · 저장에서 폴더를 선택해 주세요. {preview} 휴대폰이나 다른 기기에서는 Mac 폴더 권한을 줄 수 없으며, 요청은 그대로 기다립니다. 허용하면 방금 요청을 한 번만 이어서 처리합니다.",
+  "en": "{need} One next step: continue on the Mac. Open Still on the Mac and choose a folder in Settings → Files & storage. {preview} A phone or another device cannot give Mac folder permission, and the request keeps waiting. Once you allow it, I will continue this request once.",
+  "ja": "{need}次に必要なのは 1 つだけです: Mac で続ける — Mac で Still を開き、設定 → ファイル・保存 でフォルダーを選んでください。{preview}スマートフォンや他の端末からは Mac のフォルダー権限を与えられず、依頼はそのまま待ちます。許可すると、この依頼を 1 回だけ続けて処理します。",
+  "zh": "{need}下一步只需要一件事：在 Mac 上继续。在 Mac 上打开 Still，在 设置 → 文件与存储 中选择文件夹。{preview}手机或其他设备无法授予 Mac 文件夹权限，请求会一直等待。允许后，会把刚才的请求继续处理一次。"
+ },
+ "handoff.local_next_action_link": {
+  "ko": "{need} 지금 필요한 다음 단계는 하나입니다: Mac에서 계속 — Mac에서 Still을 열고 설정 → 파일 · 저장에서 폴더를 선택해 주세요. (Mac의 브라우저에서 {url} 주소를 열어도 됩니다.) {preview} 휴대폰이나 다른 기기에서는 Mac 폴더 권한을 줄 수 없으며, 요청은 그대로 기다립니다. 허용하면 방금 요청을 한 번만 이어서 처리합니다.",
+  "en": "{need} One next step: continue on the Mac. Open Still on the Mac and choose a folder in Settings → Files & storage. (You can also open {url} in a browser on the Mac.) {preview} A phone or another device cannot give Mac folder permission, and the request keeps waiting. Once you allow it, I will continue this request once.",
+  "ja": "{need}次に必要なのは 1 つだけです: Mac で続ける — Mac で Still を開き、設定 → ファイル・保存 でフォルダーを選んでください。（Mac のブラウザで {url} を開いても構いません。）{preview}スマートフォンや他の端末からは Mac のフォルダー権限を与えられず、依頼はそのまま待ちます。許可すると、この依頼を 1 回だけ続けて処理します。",
+  "zh": "{need}下一步只需要一件事：在 Mac 上继续。在 Mac 上打开 Still，在 设置 → 文件与存储 中选择文件夹。（也可以在 Mac 的浏览器中打开 {url}。）{preview}手机或其他设备无法授予 Mac 文件夹权限，请求会一直等待。允许后，会把刚才的请求继续处理一次。"
+ },
+ "handoff.local_no_pending_work": {
+  "ko": "폴더 권한을 기다리는 요청이 없어 아무 작업도 실행하지 않았습니다.",
+  "en": "No request was waiting for folder access, so nothing ran.",
+  "ja": "フォルダー権限を待っている依頼がないため、何も実行していません。",
+  "zh": "没有等待文件夹权限的请求，没有执行任何操作。"
+ },
+ "handoff.local_wrong_owner": {
+  "ko": "이 요청은 현재 연결된 소유자의 것이 아니라 이어서 처리하지 않았습니다.",
+  "en": "This request does not belong to the owner connected now, so I did not continue it.",
+  "ja": "この依頼は今接続している所有者のものではないため、続けていません。",
+  "zh": "这个请求不属于当前连接的所有者，没有继续处理。"
+ },
+ "handoff.local_resume_in_progress": {
+  "ko": "이 요청은 이미 다른 승인 처리가 진행 중이라 다시 실행하지 않았습니다.",
+  "en": "Another approval is already being handled for this request, so I did not run it again.",
+  "ja": "この依頼は別の承認処理がすでに進んでいるため、もう一度は実行していません。",
+  "zh": "这个请求已有另一个批准正在处理，没有再执行。"
+ },
+ "handoff.local_scope_mismatch": {
+  "ko": "허용한 권한이 요청에 필요한 권한과 달라 요청을 이어서 처리하지 않았습니다.",
+  "en": "The access you allowed does not match what the request needs, so I did not continue it.",
+  "ja": "許可した権限が依頼に必要な権限と違うため、続けていません。",
+  "zh": "你允许的权限与请求所需的权限不符，没有继续处理。"
+ },
+ "handoff.local_work_already_completed": {
+  "ko": "이 요청은 이미 끝났거나 취소되어 다시 실행하지 않았습니다.",
+  "en": "This request already finished or was cancelled, so I did not run it again.",
+  "ja": "この依頼はすでに終わったか取り消されたため、もう一度は実行していません。",
+  "zh": "这个请求已经结束或被取消，没有再执行。"
+ },
+ "handoff.local_invalid_resume": {
+  "ko": "이어서 처리할 유효한 폴더 요청을 찾지 못했습니다.",
+  "en": "I could not find a valid folder request to continue.",
+  "ja": "続けられる有効なフォルダーの依頼が見つかりませんでした。",
+  "zh": "没有找到可以继续处理的有效文件夹请求。"
+ },
+ "handoff.local_refusal_default": {
+  "ko": "폴더 권한을 확인하지 못해 요청을 이어서 처리하지 않았습니다.",
+  "en": "I could not confirm the folder access, so I did not continue the request.",
+  "ja": "フォルダー権限を確かめられなかったため、依頼は続けていません。",
+  "zh": "没能确认文件夹权限，没有继续处理请求。"
+ },
  "information_use.an_earlier_answer_s_information_use": {
   "ko": "이전 답변의 사용 기록",
   "en": "An earlier answer's information-use record",
@@ -628,6 +856,12 @@
   "en": "Connected",
   "ja": "接続済み",
   "zh": "已连接"
+ },
+ "label.setting_up": {
+  "ko": "설정 중",
+  "en": "Setting up",
+  "ja": "設定中",
+  "zh": "设置中"
  },
  "label.current_context": {
   "ko": "현재 맥락",
@@ -1385,6 +1619,12 @@
   "ja": "次の手順の提案:",
   "zh": "建议的下一步："
  },
+ "projection.suggested_next_step_line": {
+  "ko": "다음 단계 제안: {step}",
+  "en": "Suggested next step: {step}",
+  "ja": "次の手順の提案: {step}",
+  "zh": "建议的下一步：{step}"
+ },
  "projection.the_external_result_could_not_be": {
   "ko": "외부 결과를 확인할 수 없습니다. 실제 결과를 직접 확인해 주세요. 자동으로 다시 시도하지 않았습니다.",
   "en": "The external result could not be confirmed. Check the actual result yourself. It was not retried automatically.",
@@ -1439,6 +1679,12 @@
   "ja": "完了できなかった点",
   "zh": "未完成的部分"
  },
+ "projection.unfinished_step": {
+  "ko": "완료하지 못한 부분 — {step}: {reason}",
+  "en": "What I couldn't finish — {step}: {reason}",
+  "ja": "完了できなかった点 — {step}: {reason}",
+  "zh": "未完成的部分 — {step}：{reason}"
+ },
  "projection.you_can_connect_an_ai_in": {
   "ko": "AI 연결은 이 컴퓨터의 Still 설정에서 할 수 있습니다. Still을 시작할 때 표시된 주소(setup-link.txt)를 브라우저에서 여세요.",
   "en": "You can connect an AI in Still Settings on this computer. Open the address shown when Still starts (setup-link.txt) in your browser.",
@@ -1450,6 +1696,54 @@
   "en": "A sign-in is needed.",
   "ja": "ログインが必要です。",
   "zh": "需要登录。"
+ },
+ "quickstart.account_connection_not_completed": {
+  "ko": "계정 연결을 완료하지 못했습니다.",
+  "en": "I could not complete the account connection.",
+  "ja": "アカウントの接続を完了できませんでした。",
+  "zh": "没能完成账户连接。"
+ },
+ "quickstart.free_models_not_fetched": {
+  "ko": "무료 모델 목록을 가져오지 못했습니다.",
+  "en": "I could not get the list of free models.",
+  "ja": "無料モデルの一覧を取得できませんでした。",
+  "zh": "没能获取免费模型列表。"
+ },
+ "quickstart.model_list_unreadable": {
+  "ko": "모델 목록을 읽을 수 없습니다.",
+  "en": "The model list could not be read.",
+  "ja": "モデルの一覧を読み取れません。",
+  "zh": "无法读取模型列表。"
+ },
+ "quickstart.native_tool_calls_unconfirmed": {
+  "ko": "이 모델은 네이티브 도구 호출을 확인하지 못했습니다. 도구 호출 지원 모델을 선택하세요.",
+  "en": "Native tool calling could not be confirmed for this model. Choose a model that supports tool calling.",
+  "ja": "このモデルではネイティブのツール呼び出しを確認できませんでした。ツール呼び出しに対応したモデルを選んでください。",
+  "zh": "无法确认这个模型支持原生工具调用。请选择支持工具调用的模型。"
+ },
+ "quickstart.telegram_bot_invalid": {
+  "ko": "Telegram이 유효한 봇 계정을 반환하지 않았습니다.",
+  "en": "Telegram did not return a valid bot account.",
+  "ja": "Telegram から有効なボットアカウントが返されませんでした。",
+  "zh": "Telegram 没有返回有效的机器人账户。"
+ },
+ "quickstart.telegram_webhook_unchecked": {
+  "ko": "Telegram webhook 설정을 확인하지 못했습니다.",
+  "en": "I could not check the Telegram webhook setting.",
+  "ja": "Telegram の webhook 設定を確認できませんでした。",
+  "zh": "没能确认 Telegram webhook 设置。"
+ },
+ "quickstart.album_photos_too_large": {
+  "ko": "앨범 사진의 총 용량이 한도보다 큽니다.",
+  "en": "The album photos are larger in total than the limit.",
+  "ja": "アルバムの写真の合計サイズが上限を超えています。",
+  "zh": "相册照片的总大小超过了上限。"
+ },
+ "quickstart.telegram_photo_unreadable": {
+  "ko": "Telegram 사진을 읽을 수 없습니다.",
+  "en": "The Telegram photo could not be read.",
+  "ja": "Telegram の写真を読み取れません。",
+  "zh": "无法读取 Telegram 照片。"
  },
  "quickstart.own_google_client": {
   "ko": "자체 Google client",
@@ -3113,6 +3407,12 @@
   "ja": "この Mac の Still のアドレスがまだわからないため、スマートフォン用のログインリンクを作れませんでした。Mac のログイン画面でログインしてください。",
   "zh": "还不知道这台 Mac 上 Still 的地址，所以没能创建手机登录链接。请在 Mac 的登录窗口中登录。"
  },
+ "remote_login.link": {
+  "ko": "휴대폰에서 로그인하는 링크예요 ({site}). 이 링크를 연 휴대폰 한 대만 쓸 수 있고, 약 {minutes}분 뒤에 닫혀요.\n화면을 누르면 Mac의 로그인 창에서 같은 자리가 눌리고, 입력한 글자는 선택한 칸에 들어가요. \"로그인 상태 유지\" 같은 옵션이 있으면 켜 주세요. 다 되면 [완료]를 눌러 주세요.\n{link}",
+  "en": "Here's a link for signing in from your phone ({site}). Only the one phone that opens it can use it, and it closes in about {minutes} min.\nTapping the screen taps the same spot in the Mac's sign-in window, and what you type goes into the field you chose. If there is an option like \"Keep me signed in\", turn it on. When you are done, tap the button at the bottom of the page.\n{link}",
+  "ja": "スマートフォンからログインするリンクです（{site}）。このリンクを開いたスマートフォン 1 台だけが使え、約 {minutes} 分後に閉じます。\n画面をタップすると Mac のログイン画面の同じ位置がタップされ、入力した文字は選んだ欄に入ります。「ログインしたままにする」のようなオプションがあればオンにしてください。終わったらページ下部のボタンを押してください。\n{link}",
+  "zh": "这是用手机登录的链接（{site}）。只有打开这个链接的那一部手机可以使用，大约 {minutes} 分钟后关闭。\n点击屏幕会点击 Mac 登录窗口中的相同位置，输入的文字会进入所选的输入框。如果有“保持登录”之类的选项，请打开。完成后请点击页面底部的按钮。\n{link}"
+ },
  "family_share.payment_refused": {
   "ko": "결제는 계정 주인이 해 주세요. 공유받은 로그인으로는 결제 단계를 진행하지 않습니다.",
   "en": "Payment is for the account owner. I don't go through payment steps with a shared sign-in.",
@@ -3172,6 +3472,66 @@
   "en": "Tell me which assistant, by name. Nothing was changed.",
   "ja": "どのアシスタントか名前を教えてください。何も変更していません。",
   "zh": "请告诉我是哪个助理的名字。没有做任何更改。"
+ },
+ "family_share.no_session": {
+  "ko": "{site}에 저장된 내 로그인 세션이 없어 공유하지 않았어요. 먼저 로그인 창에서 그 사이트에 로그인해 주세요.",
+  "en": "I don't have a saved sign-in session for {site}, so I didn't share. First sign in to that site in the sign-in window.",
+  "ja": "{site} に保存されたログインセッションがないため、共有しませんでした。先にログイン画面でそのサイトにログインしてください。",
+  "zh": "没有保存的 {site} 登录会话，所以没有共享。请先在登录窗口中登录该网站。"
+ },
+ "family_share.no_session_signed_in": {
+  "ko": "{site}에 저장된 내 로그인 세션이 없어 공유하지 않았어요. 먼저 로그인 창에서 그 사이트에 로그인해 주세요. 지금 로그인된 사이트: {sites}.",
+  "en": "I don't have a saved sign-in session for {site}, so I didn't share. First sign in to that site in the sign-in window. Sites signed in now: {sites}.",
+  "ja": "{site} に保存されたログインセッションがないため、共有しませんでした。先にログイン画面でそのサイトにログインしてください。現在ログインしているサイト: {sites}。",
+  "zh": "没有保存的 {site} 登录会话，所以没有共享。请先在登录窗口中登录该网站。当前已登录的网站：{sites}。"
+ },
+ "family_share.several_named": {
+  "ko": "'{value}'라는 이름의 비서가 여럿이에요: {listed}. 어느 비서인지 괄호 안의 id로 말해 주세요. 아무것도 바꾸지 않았어요.",
+  "en": "There are several assistants named '{value}': {listed}. Tell me which one by the id in parentheses. Nothing was changed.",
+  "ja": "「{value}」という名前のアシスタントが複数あります: {listed}。どのアシスタントか、かっこ内の id で教えてください。何も変更していません。",
+  "zh": "名为“{value}”的助理有多个：{listed}。请用括号里的 id 说明是哪一个。没有做任何更改。"
+ },
+ "family_share.not_found": {
+  "ko": "'{value}'라는 비서를 찾지 못했어요. 이 Mac의 다른 비서: {listed}. 아무것도 바꾸지 않았어요.",
+  "en": "I couldn't find an assistant named '{value}'. Other assistants on this Mac: {listed}. Nothing was changed.",
+  "ja": "「{value}」というアシスタントが見つかりませんでした。この Mac のほかのアシスタント: {listed}。何も変更していません。",
+  "zh": "没有找到名为“{value}”的助理。这台 Mac 上的其他助理：{listed}。没有做任何更改。"
+ },
+ "family_share.shared": {
+  "ko": "{label} 비서에 {site} 로그인 세션을 공유했어요(쿠키 {count}개). 내 세션이 갱신되면 따라가고, 결제는 계정 주인만 할 수 있어요.",
+  "en": "I shared my {site} sign-in session with the {label} assistant ({count} cookies). It follows when my session is renewed, and only the account owner can pay.",
+  "ja": "{label} アシスタントに {site} のログインセッションを共有しました（Cookie {count} 個）。こちらのセッションが更新されると追従し、支払いはアカウントの持ち主だけができます。",
+  "zh": "已把 {site} 的登录会话共享给 {label} 助理（Cookie {count} 个）。我的会话更新时会跟着更新，只有账户主人可以付款。"
+ },
+ "family_share.share_pending": {
+  "ko": "{label} 비서가 지금 응답하지 않아 {site} 로그인 세션은 비서가 켜지면 전달돼요. 공유는 기록해 두었어요.",
+  "en": "The {label} assistant isn't responding right now, so the {site} sign-in session will be delivered when it's back on. I've recorded the share.",
+  "ja": "{label} アシスタントが今応答しないため、{site} のログインセッションはアシスタントが起動したときに届けます。共有は記録しました。",
+  "zh": "{label} 助理现在没有响应，{site} 的登录会话会在它开启后送达。已记录这次共享。"
+ },
+ "family_share.not_shared": {
+  "ko": "{site} 로그인 세션은 공유하고 있지 않아요. 바꿀 것이 없어요.",
+  "en": "I'm not sharing the {site} sign-in session, so there's nothing to change.",
+  "ja": "{site} のログインセッションは共有していません。変更するものはありません。",
+  "zh": "没有在共享 {site} 的登录会话，没有需要更改的。"
+ },
+ "family_share.unshared": {
+  "ko": "{done} 비서에서 {site} 로그인 세션을 지웠어요. 내 세션은 그대로예요.",
+  "en": "Removed the {site} sign-in session from the {done} assistant. My own session is unchanged.",
+  "ja": "{done} アシスタントから {site} のログインセッションを削除しました。こちらのセッションはそのままです。",
+  "zh": "已从 {done} 助理中删除 {site} 的登录会话。我的会话保持不变。"
+ },
+ "family_share.unshare_pending": {
+  "ko": "{pending} 비서가 지금 응답하지 않아 {site} 세션은 비서가 켜지면 지워져요. 그때까지 새 세션은 보내지 않아요.",
+  "en": "The {pending} assistant isn't responding right now, so its {site} session will be removed when it's back on. Until then, no new session is sent.",
+  "ja": "{pending} アシスタントが今応答しないため、{site} のセッションはアシスタントが起動したときに削除されます。それまで新しいセッションは送りません。",
+  "zh": "{pending} 助理现在没有响应，{site} 的会话会在它开启后删除。在那之前不会发送新的会话。"
+ },
+ "family_share.unshared_and_pending": {
+  "ko": "{done} 비서에서 {site} 로그인 세션을 지웠어요. 내 세션은 그대로예요. {pending} 비서가 지금 응답하지 않아 {site} 세션은 비서가 켜지면 지워져요. 그때까지 새 세션은 보내지 않아요.",
+  "en": "Removed the {site} sign-in session from the {done} assistant. My own session is unchanged. The {pending} assistant isn't responding right now, so its {site} session will be removed when it's back on. Until then, no new session is sent.",
+  "ja": "{done} アシスタントから {site} のログインセッションを削除しました。こちらのセッションはそのままです。{pending} アシスタントが今応答しないため、{site} のセッションはアシスタントが起動したときに削除されます。それまで新しいセッションは送りません。",
+  "zh": "已从 {done} 助理中删除 {site} 的登录会话。我的会话保持不变。{pending} 助理现在没有响应，{site} 的会话会在它开启后删除。在那之前不会发送新的会话。"
  },
  "projection.some_steps_unfinished": {
   "ko": "일부 단계는 끝내지 못했어요.",

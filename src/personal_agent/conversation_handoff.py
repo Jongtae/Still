@@ -1387,8 +1387,7 @@ class ConversationFocus:
 
 #: A turn that asks for several tasks at once (#672 review): nothing runs, so
 #: no part is done while another is silently dropped.
-MIXED_TASKS_CLARIFICATION = ('이 요청에 여러 작업이 함께 들어 있습니다. 일부만 처리하고 나머지를 빠뜨리지 않도록 '
-                             '아무 작업도 실행하지 않았습니다. 한 번에 하나씩 다시 말씀해 주세요.')
+MIXED_TASKS_CLARIFICATION = msg('handoff.mixed_tasks')
 
 
 class IntentClassifier:
@@ -1591,19 +1590,12 @@ CONNECTOR_LABELS = {
 #: None of these claims a connection happened, that a tool ran, or how long it
 #: will take.  The request is explicitly described as *not executed*.
 HANDOFF_GUIDANCE = {
-    ConnectorResultKind.CONNECTION_REQUIRED:
-        '{label} 연결이 아직 없어 이 요청을 실행하지 않았습니다. 지금 필요한 다음 단계는 하나입니다: '
-        '{label}{obj} 연결해 주세요. 연결이 확인되면 방금 요청을 한 번만 이어서 처리합니다.',
-    ConnectorResultKind.REAUTH_REQUIRED:
-        '{label} 연결을 다시 인증해야 해서 이 요청을 실행하지 않았습니다. 지금 필요한 다음 단계는 하나입니다: '
-        '{label}{obj} 다시 인증해 주세요. 인증이 확인되면 방금 요청을 한 번만 이어서 처리합니다.',
-    ConnectorResultKind.BLOCKED:
-        '{label} 접근이 차단되어 있어 이 요청을 실행하지 않았습니다. 지금 필요한 다음 단계는 하나입니다: '
-        '{label}의 접근 권한을 확인해 주세요. 차단이 풀릴 때까지 이 요청은 이어서 처리하지 않습니다.',
+    ConnectorResultKind.CONNECTION_REQUIRED: msg('handoff.connection_required'),
+    ConnectorResultKind.REAUTH_REQUIRED: msg('handoff.reauth_required'),
+    ConnectorResultKind.BLOCKED: msg('handoff.connection_blocked'),
 }
 
-CONNECTOR_UNAVAILABLE = ('{label} 기능이 이 로컬 설치에 구성되어 있지 않습니다. '
-                         '소유자가 로컬 설정을 마친 뒤 다시 요청해 주세요.')
+CONNECTOR_UNAVAILABLE = msg('handoff.connector_unavailable')
 
 #: Appended to the guidance above only when the caller observed a start route
 #: this installation can actually offer.  Telling the owner a connection is
@@ -1613,7 +1605,8 @@ CONNECTOR_UNAVAILABLE = ('{label} 기능이 이 로컬 설치에 구성되어 �
 #: The URL is always this computer's own loopback start route.  That route
 #: still requires the owner session and refuses a tunnel host, so naming it in
 #: a message is not a Grant and does not widen who can start an authorization.
-CONNECT_LINK = ' 이 컴퓨터의 브라우저에서 {url} 주소를 열면 연결을 진행할 수 있습니다.'
+#: #242: one catalog line holds the guidance too, so the whole message is translated.
+CONNECT_LINK = msg('handoff.connect_link')
 
 #: BLOCKED is deliberately absent.  Its single next action is reviewing the
 #: access that is blocked, and appending an authorization URL there would name
@@ -1658,25 +1651,25 @@ RETRYABLE_RESUME_REASONS = frozenset({'resume_claimed'})
 
 RESUME_REFUSALS = {
     'no_pending_work': msg('handoff.there_was_no_request_to_continue'),
-    'wrong_owner': '이 연결은 다른 소유자의 것이라 요청을 이어서 처리하지 않았습니다.',
+    'wrong_owner': msg('handoff.resume_wrong_owner'),
     'generation_changed': msg('handoff.the_telegram_bot_connection_was_replaced'),
     'expired_resume': msg('handoff.the_request_waiting_for_a_connection'),
-    'superseded_resume': '요청이 바뀌어 이전 요청은 이어서 처리하지 않았습니다.',
+    'superseded_resume': msg('handoff.request_changed'),
     'replayed_resume': msg('handoff.that_request_was_already_continued_so'),
-    'resume_claimed': '이 요청은 이미 다른 연결 완료 처리가 진행 중이라 다시 실행하지 않았습니다.',
-    'unclaimed_resume': '연결 확인이 완료되지 않아 요청을 이어서 처리하지 않았습니다.',
+    'resume_claimed': msg('handoff.resume_in_progress'),
+    'unclaimed_resume': msg('handoff.resume_unclaimed'),
     'scope_mismatch': msg('handoff.the_approved_access_does_not_match'),
     'disconnected': msg('handoff.the_connection_couldn_t_be_confirmed'),
-    'reauth_required': '연결을 다시 인증해야 해서 요청을 이어서 처리하지 않았습니다.',
-    'blocked': '연결이 차단되어 있어 요청을 이어서 처리하지 않았습니다.',
+    'reauth_required': msg('handoff.resume_reauth_required'),
+    'blocked': msg('handoff.resume_blocked'),
     'denied': msg('handoff.the_connection_was_not_approved_so'),
-    'callback_failed': '연결을 완료하지 못해 요청을 실행하지 않았습니다. 다시 연결해 주세요.',
-    'work_already_claimed': '이 요청의 연결 처리가 이미 진행 중입니다. 새로 실행하지 않았습니다.',
-    'work_already_completed': '이 요청은 이미 처리되어 다시 실행하지 않았습니다.',
-    'invalid_resume': '이어서 처리할 유효한 연결 요청을 찾지 못했습니다.',
+    'callback_failed': msg('handoff.resume_callback_failed'),
+    'work_already_claimed': msg('handoff.resume_work_claimed'),
+    'work_already_completed': msg('handoff.resume_work_completed'),
+    'invalid_resume': msg('handoff.resume_invalid'),
 }
 
-RESUME_REFUSAL_DEFAULT = '연결을 확인하지 못해 요청을 이어서 처리하지 않았습니다.'
+RESUME_REFUSAL_DEFAULT = msg('handoff.resume_default')
 
 SUPERSEDED_WORK_ERROR = msg('handoff.your_request_changed_so_i_cancelled')
 
@@ -1761,7 +1754,7 @@ class ConnectorHandoff:
         # #598: the object particle matches the label (을/를), not 을(를).
         text = HANDOFF_GUIDANCE[result.kind].format(label=label, obj=object_particle(label))
         if connect_url and result.kind in LINKABLE_KINDS:
-            text += CONNECT_LINK.format(url=connect_url)
+            text = CONNECT_LINK.format(guidance=text, url=connect_url)
         return text
 
     @staticmethod
@@ -1956,54 +1949,51 @@ LOCAL_AUTHORITY_SCOPES = {
 LOCAL_AUTHORITY_KIND = {LOCAL_FOLDER_READ: 'read', LOCAL_REFERENCE_READ: 'read', LOCAL_RESULT_WRITE: 'write'}
 
 LOCAL_AUTHORITY_LABELS = {
-    LOCAL_FOLDER_READ: '이 Mac의 참고 폴더 읽기',
-    LOCAL_REFERENCE_READ: '이 Mac의 원본 폴더 읽기',
-    LOCAL_RESULT_WRITE: '이 Mac의 결과 저장 폴더',
+    LOCAL_FOLDER_READ: msg('handoff.local_label_folder_read'),
+    LOCAL_REFERENCE_READ: msg('handoff.local_label_reference_read'),
+    LOCAL_RESULT_WRITE: msg('handoff.local_label_result_write'),
 }
 
 #: Plain-language authority previews, shown before the owner chooses and again
 #: next to the chosen folder.  They state what is included and what is not.
 LOCAL_AUTHORITY_PREVIEWS = {
-    LOCAL_FOLDER_READ: ('선택한 폴더 하나를 읽기만 허용합니다. 파일을 바꾸거나 지우지 않고, '
-                        '이 허용만으로 파일 내용을 외부 AI에 보내지 않습니다.'),
-    LOCAL_REFERENCE_READ: ('선택한 폴더 하나를 정리할 원본으로 읽기만 허용합니다. 파일을 바꾸거나 지우지 않고, '
-                           '이 허용만으로 파일 내용을 외부 AI에 보내지 않습니다.'),
-    LOCAL_RESULT_WRITE: ('선택한 폴더 하나에 새 결과 파일을 만드는 것만 허용합니다. 기존 파일을 덮어쓰거나 '
-                         '지우지 않고, 이 허용만으로 파일을 외부로 보내지 않습니다.'),
+    LOCAL_FOLDER_READ: msg('handoff.local_preview_folder_read'),
+    LOCAL_REFERENCE_READ: msg('handoff.local_preview_reference_read'),
+    LOCAL_RESULT_WRITE: msg('handoff.local_preview_result_write'),
 }
 
 #: The one next action, in conversation.  Telegram never receives a path, a
 #: folder name, a handle or an internal identifier: the message is the
 #: trigger, and the folder is chosen only on the Mac.
 LOCAL_AUTHORITY_GUIDANCE = {
-    LOCAL_FOLDER_READ: '이 요청에는 이 Mac의 폴더를 읽는 권한이 필요해 아직 파일을 찾지 않았습니다.',
-    LOCAL_REFERENCE_READ: '이 요청에는 정리할 원본 폴더를 읽는 권한이 필요해 아직 실행하지 않았습니다.',
-    LOCAL_RESULT_WRITE: '이 요청은 결과 파일을 저장할 폴더가 필요해 아직 실행하지 않았습니다.',
+    LOCAL_FOLDER_READ: msg('handoff.local_need_folder_read'),
+    LOCAL_REFERENCE_READ: msg('handoff.local_need_reference_read'),
+    LOCAL_RESULT_WRITE: msg('handoff.local_need_result_write'),
 }
-LOCAL_AUTHORITY_NEXT_ACTION = (' 지금 필요한 다음 단계는 하나입니다: Mac에서 계속 — Mac에서 Still을 열고 '
-                               '설정 → 파일 · 저장에서 폴더를 선택해 주세요.')
-LOCAL_AUTHORITY_LINK = ' (Mac의 브라우저에서 {url} 주소를 열어도 됩니다.)'
-LOCAL_AUTHORITY_REMOTE = (' 휴대폰이나 다른 기기에서는 Mac 폴더 권한을 줄 수 없으며, 요청은 그대로 기다립니다. '
-                          '허용하면 방금 요청을 한 번만 이어서 처리합니다.')
+#: #242: the need, the one next action, the preview and the phone note are one
+#: catalog line (with and without the Mac's address), so the whole message is
+#: translated for the owner.
+LOCAL_AUTHORITY_NEXT_ACTION = msg('handoff.local_next_action')
+LOCAL_AUTHORITY_LINK = msg('handoff.local_next_action_link')
 
 LOCAL_RESUME_TTL_SECONDS = 3600
 LOCAL_PENDING_KEY = 'local_authority_pending'
 LOCAL_PENDING_MAX = 64
 
 LOCAL_REFUSALS = {
-    'no_pending_work': '폴더 권한을 기다리는 요청이 없어 아무 작업도 실행하지 않았습니다.',
-    'wrong_owner': '이 요청은 현재 연결된 소유자의 것이 아니라 이어서 처리하지 않았습니다.',
+    'no_pending_work': msg('handoff.local_no_pending_work'),
+    'wrong_owner': msg('handoff.local_wrong_owner'),
     'generation_changed': msg('handoff.the_telegram_bot_connection_was_replaced'),
     'expired_resume': (msg('handoff.the_request_waiting_for_folder_access')),
-    'superseded_resume': '요청이 바뀌어 이전 요청은 이어서 처리하지 않았습니다.',
+    'superseded_resume': msg('handoff.request_changed'),
     'replayed_resume': msg('handoff.that_request_was_already_continued_so'),
-    'resume_claimed': '이 요청은 이미 다른 승인 처리가 진행 중이라 다시 실행하지 않았습니다.',
-    'scope_mismatch': '허용한 권한이 요청에 필요한 권한과 달라 요청을 이어서 처리하지 않았습니다.',
+    'resume_claimed': msg('handoff.local_resume_in_progress'),
+    'scope_mismatch': msg('handoff.local_scope_mismatch'),
     'denied': msg('handoff.folder_access_was_not_allowed_so'),
-    'work_already_completed': '이 요청은 이미 끝났거나 취소되어 다시 실행하지 않았습니다.',
-    'invalid_resume': '이어서 처리할 유효한 폴더 요청을 찾지 못했습니다.',
+    'work_already_completed': msg('handoff.local_work_already_completed'),
+    'invalid_resume': msg('handoff.local_invalid_resume'),
 }
-LOCAL_REFUSAL_DEFAULT = '폴더 권한을 확인하지 못해 요청을 이어서 처리하지 않았습니다.'
+LOCAL_REFUSAL_DEFAULT = msg('handoff.local_refusal_default')
 LOCAL_RESUMED_NOTICE = {
     'read': msg('handoff.reading_the_chosen_folder_is_allowed'),
     'write': msg('handoff.saving_results_to_the_chosen_folder'),
@@ -2012,10 +2002,10 @@ LOCAL_RESUMED_NOTICE = {
 
 def local_authority_guidance(key, local_url=''):
     """The one contextual next action for a missing local authority."""
-    text = LOCAL_AUTHORITY_GUIDANCE[key] + LOCAL_AUTHORITY_NEXT_ACTION
+    need, preview = LOCAL_AUTHORITY_GUIDANCE[key], LOCAL_AUTHORITY_PREVIEWS[key]
     if local_url:
-        text += LOCAL_AUTHORITY_LINK.format(url=local_url)
-    return text + ' ' + LOCAL_AUTHORITY_PREVIEWS[key] + LOCAL_AUTHORITY_REMOTE
+        return LOCAL_AUTHORITY_LINK.format(need=need, url=local_url, preview=preview)
+    return LOCAL_AUTHORITY_NEXT_ACTION.format(need=need, preview=preview)
 
 
 def local_refusal_text(reason):

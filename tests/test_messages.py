@@ -18,9 +18,12 @@ class CatalogTests(unittest.TestCase):
                 names = sorted(PLACEHOLDER.findall(entry['ko']))
                 for lang in messages.LANGUAGES:
                     self.assertTrue(entry[lang].strip())
-                    self.assertEqual(sorted(PLACEHOLDER.findall(entry[lang])), names, lang)
-                    if lang != 'ko':
-                        self.assertIsNone(re.search('[가-힣]', entry[lang]), f'{lang} still Korean')
+                    if lang == 'ko':
+                        continue
+                    # #242: a Korean-grammar placeholder ({obj}, 을/를) may be left out; every other one stays.
+                    self.assertEqual(sorted(PLACEHOLDER.findall(entry[lang])),
+                                     [name for name in names if name not in messages.KOREAN_ONLY_PLACEHOLDERS], lang)
+                    self.assertIsNone(re.search('[가-힣]', entry[lang]), f'{lang} still Korean')
 
     def test_ids_are_unique_by_korean_source(self):
         sources = [entry['ko'] for entry in messages.catalog().values()]

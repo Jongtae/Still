@@ -14,6 +14,9 @@ from pathlib import Path
 
 CATALOG = Path(__file__).with_name('messages.json')
 LANGUAGES = ('ko', 'en', 'ja', 'zh')
+#: #242: placeholders that carry Korean grammar only (``{obj}`` is the object
+#: particle 을/를 after a name).  The other languages may leave them out.
+KOREAN_ONLY_PLACEHOLDERS = frozenset({'obj'})
 
 
 @lru_cache(maxsize=1)
