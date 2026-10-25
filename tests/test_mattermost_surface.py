@@ -567,6 +567,28 @@ class ReviewRegressions(MattermostCase):
         self.owner_says('연결 직후 질문')
         self.assertEqual([job['message'] for job in self.mm_jobs()], ['연결 직후 질문'])
 
+    def test_work_mode_switched_on_while_connecting_stops_the_setup(self):
+        self.surface.disconnect()
+        original = self.fake.__call__
+
+        class Switching:
+            def __init__(inner):
+                inner.seen = []
+
+            def __call__(inner, method, url, headers, body, timeout):
+                inner.seen.append(url.split('/api/v4', 1)[1])
+                answer = original(method, url, headers, body, timeout)
+                if url.endswith('/users/me'):
+                    work_mode.set_enabled(self.store, True, surface='settings')
+                return answer
+        switching = Switching()
+        self.service.mattermost_transport = switching
+        with self.assertRaises(ValueError) as caught:
+            self.connect()
+        self.assertIn('회사 모드', str(caught.exception))
+        self.assertEqual(switching.seen, ['/users/me'], 'no owner lookup, DM or greeting after the switch')
+        self.assertFalse(self.surface.status()['connected'])
+
     def test_a_long_reply_partly_sent_is_never_posted_again(self):
         self.owner_says('질문')
         self.assertTrue(self.service.run_one())

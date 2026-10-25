@@ -196,11 +196,15 @@ class MattermostSurface(ConversationSurface):
     #: Seconds a destination check is reused (the system resolver is asked again after that).
     DESTINATION_SECONDS = 15
 
-    def _request_guard(self, url):
+    def _request_guard(self, url, connecting=False):
         """#306 review: before every request, the surface is still usable (work mode, approval) and the
         server's current addresses are still allowed (#209: an undeclared private address is refused, a
         removed intranet host from the next request).  Raises ``MattermostNotSent``: nothing was sent."""
-        if not self.usable():
+        if connecting:
+            # #306 review: while connecting there is no pairing yet; work mode still refuses an unapproved server.
+            if work_mode.active(self.service.store) and self.config().get('company_approved') is not True:
+                raise MattermostNotSent(msg('mattermost.work_mode_unapproved'))
+        elif not self.usable():
             raise MattermostNotSent(msg('mattermost.work_mode_unapproved') if work_mode.active(self.service.store)
                                     else msg('mattermost.not_connected'))
         now = time.monotonic()
@@ -611,11 +615,15 @@ class MattermostSurface(ConversationSurface):
         if work_mode.active(self.service.store) and self.config().get('company_approved') is not True:
             raise ValueError(msg('mattermost.work_mode_unapproved'))
         private = self._check_destination(url)
-        client = MattermostClient(url, token, transport=self._transport or getattr(self.service, 'mattermost_transport', None))
+        self._destination_checked = (url, time.monotonic() + self.DESTINATION_SECONDS)
+        client = MattermostClient(url, token, transport=self._transport or getattr(self.service, 'mattermost_transport', None),
+                                  guard=lambda: self._request_guard(url, connecting=True))
         try:
             bot = client.me()
             owner = client.user_by_username(username)
             channel = client.direct_channel(bot['id'], owner['id'])
+        except MattermostNotSent as exc:
+            raise ValueError(str(exc) or msg('mattermost.connect_failed')) from exc
         except (MattermostError, KeyError, TypeError) as exc:
             raise ValueError(msg('mattermost.connect_failed')) from exc
         owner_id = str(owner.get('id') or '')
