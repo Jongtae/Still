@@ -76,8 +76,14 @@ jobs:
           if [[ -z "$issue" || "$HEAD_REF" != "release/$issue-v$version" ]]; then
             echo "::error::branch $HEAD_REF must be release/<issue>-v$version"; exit 1
           fi
-          if [[ -n "$(git tag --list "v$version")" ]]; then
-            echo "::error::tag v$version already exists"; exit 1
+          # A re-run of every job after a partial failure finds its own tag (#313):
+          # resume only when the tag names this exact release commit.
+          tagged="$(git rev-parse -q --verify "refs/tags/v$version^{commit}" || true)"
+          if [[ -n "$tagged" && "$tagged" != "$GITHUB_SHA" ]]; then
+            echo "::error::tag v$version already exists at $tagged, not $GITHUB_SHA"; exit 1
+          fi
+          if [[ -n "$tagged" ]]; then
+            echo "tag v$version already names $GITHUB_SHA; resuming"
           fi
           milestone="$(gh api "repos/$GITHUB_REPOSITORY/milestones?state=all&per_page=100" \
             --jq ".[] | select(.title == \"v$version\") | \"\(.open_issues) \(.html_url)\"")"
@@ -102,6 +108,8 @@ jobs:
     permissions:
       contents: write
       checks: read
+      # Only to dispatch deploy-pages with the job's own token after the pin (#313).
+      actions: write
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       ISSUE: ${{ needs.prepare.outputs.issue }}
@@ -326,3 +334,12 @@ jobs:
               gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --squash --delete-branch ;;
             *) echo "::error::$pr was closed without merging; the README still pins the previous release"; exit 1 ;;
           esac
+
+      # The owner's approval of this release is the site's promotion decision
+      # too (#313): deploy-pages stamps the new pin and version from main. The
+      # job's own token can dispatch a workflow; RELEASE_TOKEN is not used.
+      - name: Deploy the site with the new release
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-pages.yml --repo "$GITHUB_REPOSITORY" --ref main

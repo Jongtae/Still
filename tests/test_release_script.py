@@ -9,8 +9,10 @@ to, and pin the workflow's authority shape: nothing publishes before the
 release (#45) and a later one are exercised.
 """
 import json
+import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import tomllib
@@ -199,6 +201,19 @@ class ReleaseScriptTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIn('2026-11-02', (self.root / name).read_text(encoding='utf-8'))
 
+    def test_record_keeps_lines_about_an_earlier_release(self):
+        """#313: a note on an earlier release's behavior keeps naming that release."""
+        previous = self.publish_previous()
+        self.prepare()
+        old = 'v' + previous['version']
+        note = f'`{old}` resolved `PATH` first, which is why the Homebrew command passes `--cli-path`.\n'
+        quickstart = self.root / release.QUICKSTART
+        quickstart.write_text(quickstart.read_text(encoding='utf-8') + note, encoding='utf-8')
+        release.record(self.root, '9.0.0', COMMIT, SHA, '2026-11-02', 'formula-pr')
+        text = quickstart.read_text(encoding='utf-8')
+        self.assertIn(note, text)
+        self.assertIn('`v9.0.0` (2026-11-02)', text)
+
     def test_record_refuses_a_reworded_status_sentence(self):
         previous = self.publish_previous()
         self.prepare()
@@ -299,6 +314,59 @@ class ReleaseWorkflowShapeTests(unittest.TestCase):
                 with self.subTest(step=step.get('name')):
                     self.assertIn('MERGED)', run)
                     self.assertIn('closed without merging', run)
+
+    def tag_guard(self):
+        """The prepare step's tag check, cut out of the workflow as it runs there."""
+        check = next(step for step in self.jobs['prepare']['steps'] if step.get('id') == 'check')['run']
+        lines = check.splitlines()
+        start = next(i for i, line in enumerate(lines) if line.lstrip().startswith('tagged='))
+        end = next(i for i, line in enumerate(lines) if 'resuming' in line and i > start)
+        end = next(i for i in range(end, len(lines)) if lines[i].strip() == 'fi')
+        return '\n'.join(lines[start:end + 1])
+
+    def run_tag_guard(self, repo, sha):
+        return subprocess.run(['bash', '-c', 'set -euo pipefail\nversion=9.0.0\n' + self.tag_guard()],
+                              cwd=repo, env={**os.environ, 'GITHUB_SHA': sha},
+                              capture_output=True, text=True)
+
+    def test_a_rerun_resumes_only_on_the_tag_of_this_release_commit(self):
+        """#313: Re-run all jobs finds its own tag; any other commit's tag still stops it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            git = lambda *args: subprocess.run(['git', '-c', 'user.name=t', '-c', 'user.email=t@example.invalid',
+                                                *args], cwd=tmp, check=True, capture_output=True, text=True).stdout.strip()
+            git('init', '-q')
+            git('commit', '-q', '--allow-empty', '-m', 'earlier')
+            earlier = git('rev-parse', 'HEAD')
+            git('commit', '-q', '--allow-empty', '-m', 'release')
+            release_commit = git('rev-parse', 'HEAD')
+
+            absent = self.run_tag_guard(tmp, release_commit)
+            self.assertEqual(absent.returncode, 0, absent.stderr)
+            self.assertNotIn('resuming', absent.stdout)
+
+            for kind in ('lightweight', 'annotated'):
+                with self.subTest(tag=kind):
+                    git('tag', '-d', 'v9.0.0') if git('tag', '--list', 'v9.0.0') else None
+                    git('tag', *(['-a', '-m', 'v9.0.0'] if kind == 'annotated' else []), 'v9.0.0', release_commit)
+                    same = self.run_tag_guard(tmp, release_commit)
+                    self.assertEqual(same.returncode, 0, same.stderr)
+                    self.assertIn('resuming', same.stdout)
+
+                    other = self.run_tag_guard(tmp, earlier)
+                    self.assertNotEqual(other.returncode, 0)
+                    self.assertIn(f'already exists at {release_commit}', other.stdout)
+
+    def test_the_site_deploys_last_with_the_job_token(self):
+        """#313: the release approval promotes the site; RELEASE_TOKEN never dispatches it."""
+        publish = self.jobs['publish']
+        steps = publish['steps']
+        deploy = next(i for i, step in enumerate(steps) if 'deploy-pages.yml' in step.get('run', ''))
+        pin = next(i for i, step in enumerate(steps) if 'release.py --root "$tree" pin' in step.get('run', ''))
+        self.assertGreater(deploy, pin)
+        self.assertEqual(steps[deploy]['env'], {'GH_TOKEN': '${{ github.token }}'})
+        self.assertIn('--ref main', steps[deploy]['run'])
+        self.assertIn('timeout-minutes', steps[deploy])
+        self.assertEqual(publish['permissions'], {'contents': 'write', 'checks': 'read', 'actions': 'write'})
 
     def test_publication_waits_for_the_release_environment_and_its_credential(self):
         publish = self.jobs['publish']

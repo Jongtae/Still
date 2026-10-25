@@ -234,19 +234,19 @@ def record(root: Path, version: str, commit: str, sha256: str, tag_date: str, fo
     if previous is None:
         _record_first_release_prose(root, version, tag_date)
         return following
-    old_name, new_name = f"v{previous['version']}", f"v{version}"
+    # Only the release-status sentence moves; a line about an earlier
+    # release's behavior keeps naming that release (#313).
+    texts = {}
     for name in RELEASE_PROSE:
-        path = root / name
-        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-        hits = 0
-        for index, line in enumerate(lines):
-            if re.search(rf"{re.escape(old_name)}(?![\d.])", line):
-                hits += 1
-                line = re.sub(rf"{re.escape(old_name)}(?![\d.])", new_name, line)
-                lines[index] = line.replace(previous.get("tag_date") or "\0", tag_date)
-        if not hits:
-            raise ReleaseError(f"{name} no longer names {old_name}; update its release-status sentence by hand")
-        path.write_text("".join(lines), encoding="utf-8")
+        sentence = FIRST_RELEASE_PROSE[name][1]
+        before = sentence.format(version=previous["version"], date=previous.get("tag_date"))
+        text = (root / name).read_text(encoding="utf-8")
+        if text.count(before) != 1:
+            raise ReleaseError(f"{name} no longer names v{previous['version']} in its release-status sentence; "
+                               "update it by hand")
+        texts[name] = text.replace(before, sentence.format(version=version, date=tag_date))
+    for name, text in texts.items():
+        (root / name).write_text(text, encoding="utf-8")
     return following
 
 
