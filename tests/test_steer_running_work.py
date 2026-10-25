@@ -2,7 +2,8 @@
 
 #308 S1 (the finish guard): an answer is never delivered with a steer its worker
 did not see; one continuation on the same worker answers it, or it runs as its
-own Work.
+own Work.  #308 S4: each such message's disposition is told, from the recorded
+steer state.
 
 Evidence class: model-free, fixture transports.  A scripted compatible-API
 model, a recording Telegram transport and a FixtureDecisionEngine replace only
@@ -21,7 +22,9 @@ from personal_agent.agent_runtime import STEER_DRAFT_LEAD, STEER_EVENT, STEER_LE
 from personal_agent.orchestrator import (EVENT_TOOL as ORCHESTRATION_EVENT, EVALUATED, NOT_REACHED, STEER_CONTINUED,
                                          STOP_STEER, Attempt, Catalogue, Orchestration)
 from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
-from personal_agent.quickstart_service import STEER_FOLDED_TEXT
+from personal_agent.messages import msg
+from personal_agent.quickstart_service import STEER_FOLDED_TEXT, STEER_NOT_APPLIED, STEER_SECOND_PASS_TEXT
+from personal_agent.telegram_locale import translate
 
 from test_preparations import CHAT, GENERATION, _Case, call, finish
 
@@ -169,7 +172,8 @@ class SteeringReachesTheRunningWork(_SteerCase):
         calls = len(self.model_calls)
         self.assertTrue(self.service.run_one())
         remark = self.jobs()[REMARK]
-        self.assertEqual((remark['status'], remark['response']), ('succeeded', STEER_FOLDED_TEXT))
+        # #308 S4: applied by the one second pass, and told so.
+        self.assertEqual((remark['status'], remark['response']), ('succeeded', STEER_SECOND_PASS_TEXT))
         self.assertEqual(len(self.model_calls), calls, 'the folded remark is not answered again')
         self.assertEqual(self.sends(), [])
         self.assertEqual([(r['message_id'], r['reaction']) for m, r in self.telegram if m == 'setMessageReaction'],
@@ -192,25 +196,54 @@ class SteeringReachesTheRunningWork(_SteerCase):
         self.assertTrue(self.service.run_one())
         self.assertTrue(self.service.run_one())
         jobs = self.jobs()
-        self.assertEqual((jobs[REMARK]['response'], jobs[LATER]['response']), (STEER_FOLDED_TEXT, STEER_FOLDED_TEXT))
+        self.assertEqual((jobs[REMARK]['response'], jobs[LATER]['response']), (STEER_SECOND_PASS_TEXT, STEER_SECOND_PASS_TEXT))
         self.assertEqual(len(self.model_calls), calls, 'neither is answered twice')
         self.assertEqual(sorted(r['message_id'] for m, r in self.telegram if m == 'setMessageReaction'),
                          sorted([self.remark_message, later['message']]))
 
-    def assert_runs_as_its_own_work(self):
+    def test_a_steer_the_original_attempt_answered_is_folded_after_the_continuation_fails(self):
+        # Remark A reached the worker with its tool result; remark B starts the one continuation, which fails.
+        def second_remark(body):
+            self.typed_from_poll_thread(LATER)
+            return {'content': DRAFT}
+        self.script = [self.remark_mid_run, second_remark, REPLY, lambda body: 'not a message']
+        self.typed(FIRST)
+        self.assertTrue(self.service.run_one())
+        first = self.jobs()[FIRST]
+        self.assertEqual((first['status'], first['response']), ('succeeded', DRAFT))
+        self.assertEqual([e['status'] for e in self.events(first['id'], STEER_EVENT)],
+                         ['received', 'delivered', 'received', 'continued', 'continuation_failed'])
+
+        self.assertTrue(self.service.run_one())
+        self.assertEqual(self.jobs()[REMARK]['response'], STEER_FOLDED_TEXT)
+
+    def assert_runs_as_its_own_work(self, reason):
         first = self.jobs()[FIRST]
         self.assertEqual(first['response'], DRAFT, 'the reply is delivered as written')
         self.assertFalse(any(STEER_LEAD in json.dumps(body, ensure_ascii=False) for body in self.model_calls),
                          'no continuation')
         model_calls = len(self.model_calls)
         self.assertNotIn('continued', [e['status'] for e in self.events(first['id'], STEER_EVENT)])
+        # #308 S4: the guard records why, content-free.
+        self.assertIn({'reason': reason}, [json.loads(e['detail']) for e in self.events(first['id'], STEER_EVENT)
+                                           if e['status'] == STEER_NOT_APPLIED])
         self.assertFalse(self.store.steer_answered(self.jobs()[REMARK]['id']))
+        self.telegram.clear()
         self.assertTrue(self.service.run_one())
         remark = self.jobs()[REMARK]
         self.assertNotEqual(remark['response'], STEER_FOLDED_TEXT)
         self.assertGreater(len(self.model_calls), model_calls, 'the remark ran as its own Work')
         self.assertNotIn([{'type': 'emoji', 'emoji': '👌'}],
                          [r['reaction'] for m, r in self.telegram if m == 'setMessageReaction'])
+        self.assert_told(msg('steer.not_applied.' + reason))
+
+    def assert_told(self, line):
+        """#308 S4: the remark's own reply starts with its disposition, stored and sent."""
+        remark = self.jobs()[REMARK]
+        self.assertTrue(remark['response'].startswith(line + '\n\n'), remark['response'])
+        for _ in range(3):  # one pending reply per call: the earlier Work's, then this one's
+            self.service.deliver_one()
+        self.assertTrue(any(text.startswith(line) for text in self.texts()), self.texts())
 
     def test_no_continuation_after_an_effect(self):
         # The worker saved a note (an effect), then the remark arrived while it wrote the answer.
@@ -218,7 +251,7 @@ class SteeringReachesTheRunningWork(_SteerCase):
                        self.remark_then_finish, REPLY]
         self.typed(FIRST)
         self.assertTrue(self.service.run_one())
-        self.assert_runs_as_its_own_work()
+        self.assert_runs_as_its_own_work('effect')
 
     def test_no_continuation_while_an_approval_is_pending(self):
         work = {}
@@ -232,14 +265,14 @@ class SteeringReachesTheRunningWork(_SteerCase):
         self.typed(FIRST)
         self.assertTrue(self.service.run_one())
         self.service._browser_request = real
-        self.assert_runs_as_its_own_work()
+        self.assert_runs_as_its_own_work('owner')
 
     def test_no_continuation_once_the_budget_is_spent(self):
         self.script = [self.remark_then_finish, REPLY]
         self.typed(FIRST)
         with mock.patch.object(quickstart_service, 'MIN_ATTEMPT_SECONDS', 10 ** 9):
             self.assertTrue(self.service.run_one())
-        self.assert_runs_as_its_own_work()
+        self.assert_runs_as_its_own_work('budget')
 
     def test_a_failed_continuation_delivers_the_earlier_reply_and_the_remark_runs_as_its_own_work(self):
         # The provider's reply to the continuation is unreadable; nothing had an effect.
@@ -253,9 +286,17 @@ class SteeringReachesTheRunningWork(_SteerCase):
         self.assertFalse(self.store.steer_delivered(self.jobs()[REMARK]['id']), 'released, not answered')
         self.assertFalse(self.store.steer_answered(self.jobs()[REMARK]['id']))
         calls = len(self.model_calls)
+        self.telegram.clear()
         self.assertTrue(self.service.run_one())
         self.assertNotEqual(self.jobs()[REMARK]['response'], STEER_FOLDED_TEXT)
         self.assertGreater(len(self.model_calls), calls)
+        self.assert_told(msg('steer.not_applied.failed'))
+
+    def test_the_disposition_line_reaches_the_owner_in_their_language(self):
+        line = msg('steer.not_applied.effect')
+        shown = translate(line + '\n\n' + '여기 답이에요.', 'en')
+        self.assertTrue(shown.startswith(msg('steer.not_applied.effect', 'en') + '\n\n'), shown)
+        self.assertEqual(translate(STEER_SECOND_PASS_TEXT, 'ja'), msg('steer.applied_second_pass', 'ja'))
 
 
 class SteerJudgedWhileTheWorkFinishes(_SteerCase):
@@ -300,6 +341,11 @@ class SteerJudgedWhileTheWorkFinishes(_SteerCase):
         self.assertTrue(self.service.run_one())
         self.assertEqual(self.jobs()[REMARK]['relation_kind'], None)
         self.assertGreater(len(self.model_calls), calls, 'the late message ran as its own Work')
+        # #308 S4: told that it came after the reply was settled; the record is content-free.
+        late = self.jobs()[REMARK]
+        self.assertEqual([(e['status'], json.loads(e['detail'])) for e in self.events(late['id'], STEER_EVENT)],
+                         [(STEER_NOT_APPLIED, {'reason': 'finished'})])
+        self.assertTrue(late['response'].startswith(msg('steer.not_applied.finished') + '\n\n'))
         self.assertFalse(self.service.run_one())
 
 
@@ -316,6 +362,48 @@ class SteeredWorkFailed(_SteerCase):
         self.assertTrue(self.service.run_one())
         self.assertNotEqual(self.jobs()[REMARK]['response'], STEER_FOLDED_TEXT)
         self.assertGreater(len(self.model_calls), calls)
+        self.assertTrue(self.jobs()[REMARK]['response'].startswith(msg('steer.not_applied.failed') + '\n\n'))
+
+
+class DispositionFromRecordedState(_SteerCase):
+    """#308 S4: the line comes from what was recorded about the steered Work, never from the message."""
+
+    def steered(self, status, *events):
+        self.case = getattr(self, 'case', 0) + 1
+        first = self.store.enqueue(FIRST, 'k-%d' % self.case)
+        remark = self.store.enqueue(REMARK, 'r-%d' % self.case)
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='running' WHERE id=?", (first,))
+        self.assertTrue(self.store.add_steer(first, remark, REMARK))
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET status=? WHERE id=?', (status, first))
+            for event, detail in events:
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (first, STEER_EVENT, event, json.dumps(detail), time.time()))
+        return self.store.job(remark)
+
+    def test_each_recorded_state_names_one_disposition(self):
+        cases = [(('succeeded', (STEER_NOT_APPLIED, {'reason': 'route'})), 'route'),
+                 (('succeeded', (STEER_NOT_APPLIED, {'reason': 'continued'})), 'continued'),
+                 (('succeeded', (STEER_NOT_APPLIED, {'reason': 'stopped'})), 'stopped'),
+                 (('succeeded', ('continued', {}), ('continuation_failed', {})), 'failed'),
+                 (('awaiting_connection',), 'owner'),
+                 (('unknown',), 'unknown'),
+                 (('succeeded', (STEER_NOT_APPLIED, {'reason': 'unknown'})), 'unknown'),
+                 (('interrupted',), 'failed'),
+                 (('succeeded',), 'new_request')]
+        for (status, *events), reason in cases:
+            with self.subTest(status=status, events=events):
+                self.assertEqual(self.service.steer_disposition_notice(self.steered(status, *events)),
+                                 msg('steer.not_applied.' + reason))
+
+    def test_a_message_with_no_steer_record_gets_no_line(self):
+        plain = self.store.job(self.store.enqueue('다른 요청', 'plain'))
+        self.assertEqual(self.service.steer_disposition_notice(plain), '')
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (plain['id'], STEER_EVENT, STEER_NOT_APPLIED, json.dumps({'reason': 'not-a-reason'}), time.time()))
+        self.assertEqual(self.service.steer_disposition_notice(plain), '', 'an unknown recorded reason says nothing')
 
 
 class NotASteer(_SteerCase):
@@ -332,6 +420,10 @@ class NotASteer(_SteerCase):
         self.assertEqual(self.events(self.jobs()[FIRST]['id'], STEER_EVENT), [])
         self.assertTrue(self.service.run_one())
         self.assertNotEqual(self.jobs()[REMARK]['response'], STEER_FOLDED_TEXT)
+        # #308 S4: a new request's own reply is its disposition; no line is added.
+        response = self.jobs()[REMARK]['response']
+        self.assertFalse(any(response.startswith(msg('steer.not_applied.' + reason))
+                             for reason in quickstart_service.STEER_NOT_APPLIED_REASONS), response)
 
 
 class Unavailable(NotASteer):
