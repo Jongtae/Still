@@ -643,8 +643,8 @@ SAME_PREPARATION_GOAL_PROPOSITION = (
 #: #999: a message that arrives while an earlier request is still being worked on.
 STEER_PROPOSITION = ('The assistant is still working on the owner\'s earlier request (given). The owner\'s latest '
                      'message is meant for that running task: a remark, preference, constraint, choice or correction '
-                     'the work in progress should take into account now. It is false when the message is a new, '
-                     'separate request, a question to be answered on its own, a request to stop, or when it is '
+                     'the work in progress should take into account now, including a request to stop or abandon that task. '
+                     'It is false when the message is a new, separate request, a question to be answered on its own, or when it is '
                      'unclear. This judgment does not authorize any action.')
 #: #1519: an answer to a question the assistant asked before another request came in between.
 OPEN_QUESTION_PROPOSITION = ('Earlier in the conversation the owner said something (earlier_owner_message) and the '

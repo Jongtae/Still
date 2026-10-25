@@ -1738,20 +1738,22 @@ class QuickStore:
             db.execute('DELETE FROM turn_provenance WHERE job_id NOT IN (SELECT job_id FROM turn_provenance ORDER BY created DESC LIMIT ?)',
                        (self.TURN_PROVENANCE_KEEP,))
 
-    def merge_turn_provenance(self, job_id, fields, combine=None):
+    def merge_turn_provenance(self, job_id, fields, combine=None, db=None):
         """Merge ``fields`` into one Work's record in a single transaction (Codex review on #259: two writers
         - the early plan's thread and the worker turn - never drop each other's fields).
 
         ``combine(current, fields)`` (#279), read inside the same transaction, returns the fields to write."""
-        with self.db() as db:
-            db.execute('BEGIN IMMEDIATE')
-            row=db.execute('SELECT record FROM turn_provenance WHERE job_id=?',(job_id,)).fetchone()
-            current=json.loads(row['record']) if row else {}
-            record={**current,**(combine(current,fields) if combine else fields)}
-            db.execute('INSERT INTO turn_provenance VALUES (?,?,?) ON CONFLICT(job_id) DO UPDATE SET record=excluded.record,created=excluded.created',
-                       (job_id,json.dumps(record,ensure_ascii=False),time.time()))
-            db.execute('DELETE FROM turn_provenance WHERE job_id NOT IN (SELECT job_id FROM turn_provenance ORDER BY created DESC LIMIT ?)',
-                       (self.TURN_PROVENANCE_KEEP,))
+        if db is None:
+            with self.db() as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                return self.merge_turn_provenance(job_id, fields, combine, db=conn)
+        row=db.execute('SELECT record FROM turn_provenance WHERE job_id=?',(job_id,)).fetchone()
+        current=json.loads(row['record']) if row else {}
+        record={**current,**(combine(current,fields) if combine else fields)}
+        db.execute('INSERT INTO turn_provenance VALUES (?,?,?) ON CONFLICT(job_id) DO UPDATE SET record=excluded.record,created=excluded.created',
+                   (job_id,json.dumps(record,ensure_ascii=False),time.time()))
+        db.execute('DELETE FROM turn_provenance WHERE job_id NOT IN (SELECT job_id FROM turn_provenance ORDER BY created DESC LIMIT ?)',
+                   (self.TURN_PROVENANCE_KEEP,))
         return record
 
     def turn_provenance(self, job_id):
