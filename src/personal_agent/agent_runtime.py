@@ -23,7 +23,7 @@ from .manifests import BUILTIN_MANIFEST, CONTEXT_GATED_ACTIONS, HOST_TOOLS, runt
 from .memory_service import PROFILE_KEY_GUIDANCE, CONNECTION_PREFERENCE_GUIDANCE, PROFILE_SECTION_CHARS
 from .prompt_files import prompt
 from .preparations import PREPARED_HEADING
-from .conversation_projection import clip_keeping_links
+from .conversation_projection import clip_keeping_links, earlier_turn_line
 
 AGENTS={role['id']:{key:value for key,value in role.items() if key!='id'} for role in BUILTIN_MANIFEST['roles']}
 BUILTIN_TOOLS={tool['id']:tool['host_action'] for tool in BUILTIN_MANIFEST['tools']}
@@ -4916,7 +4916,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  steps=[]
  goal=next((m.get('content') for m in reversed(history) if isinstance(m,dict) and m.get('role')=='user' and isinstance(m.get('content'),str)),'')
  # #820: the recent conversation the one outcome judgment reads (the current request excluded).
- conversation='\n'.join(f"[{'owner' if m['role']=='user' else 'assistant'}] {m['content']}" for m in history[:-1]
+ # #240: each row labelled as an earlier Work (as on the orchestrated route); this history carries no times.
+ conversation='\n'.join(earlier_turn_line(m,m) for m in history[:-1]
                          if isinstance(m,dict) and m.get('role') in ('user','assistant') and isinstance(m.get('content'),str))
  judged=0;nudges=0;checked_completion=False;draft=None
  budget=capabilities.budget

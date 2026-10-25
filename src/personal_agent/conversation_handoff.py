@@ -806,7 +806,7 @@ GOAL_REACHED_PROPOSITION = ('The reply serves the owner\'s message, read in the 
                             'Assess whether a route the owner did not name usefully serves the desired outcome while '
                             'preserving the stated constraints, required method, identity, preferences and corrections. '
                             'Novelty is not required; an alternative never authorizes an effect or replaces the request. '
-                            'Each recent_conversation row is an earlier Work, marked with its time: an approval, lookup or '
+                            'Each recent_conversation row is an earlier Work, marked as one and with its time when known: an approval, lookup or '
                             'change there belongs to that Work, never to this reply; only observations and failed_steps are '
                             'this Work\'s own events (#170). '
                             'failed_steps are calls that did not work, as Still recorded them (#14). One marked recovered '
