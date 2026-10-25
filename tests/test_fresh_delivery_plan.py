@@ -319,22 +319,25 @@ def test_the_in_context_program_is_closed_out_and_the_owed_reviews_stay_owed():
         assert DeliveryPlan(PLAN).select(state) is None, state
 
 
-def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_paused():
-    """#206: selected by the owner on 2026-10-23; six substeps merged; Slack in flight."""
+def test_the_workplace_program_is_closed_out_and_selects_no_successor():
+    """#206: all seven substeps merged, the last (SLACK-01) by #316; no successor, heartbeat paused."""
     current = plan()
-    assert current["next_goal"]["id"] == "WORKPLACE-01"
-    assert current["next_goal"]["status"] == "owner-activated-goal-ready"
+    assert current["next_goal"]["id"] is None
     assert "heartbeat stays paused" in current["next_goal"]["action"]
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "terminal"
+    assert "WORKPLACE-01" in invariants.closed_out_programs(current)
+    invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["WORKPLACE-01"]
-    assert program["ordered_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01", "WORK-MODE-01", "INTRANET-DEST-01",
-                                           "OWNER-MCP-WORK-01", "MATTERMOST-01", "SLACK-01"]
-    # One substep in flight at a time: CLOUD-AI-01 (#230), SURFACE-SEAM-01 (#229), WORK-MODE-01 (#278, #280),
-    # INTRANET-DEST-01 (#284, #288), OWNER-MCP-WORK-01 (#297) and MATTERMOST-01 (#299, #306) merged; SLACK-01 runs.
-    assert program["completed_substeps"] == ["CLOUD-AI-01", "SURFACE-SEAM-01", "WORK-MODE-01", "INTRANET-DEST-01",
-                                             "OWNER-MCP-WORK-01", "MATTERMOST-01"]
-    assert program["active_substeps"] == ["SLACK-01"]
-    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "WORKPLACE-01") == "SLACK-01"
+    assert program["status"] == "complete"
+    assert program["completed_substeps"] == program["ordered_substeps"] == [
+        "CLOUD-AI-01", "SURFACE-SEAM-01", "WORK-MODE-01", "INTRANET-DEST-01", "OWNER-MCP-WORK-01", "MATTERMOST-01",
+        "SLACK-01"]
+    assert program["active_substeps"] == []
+    assert "independent review" not in program["closeout"]
+    slack_done = items_of(current)["WORKPLACE-01"]["completed_substeps"]["SLACK-01"]
+    assert (slack_done["issue"], slack_done["pull_request"]) == (214, 316)
+    assert slack_done["merge_commit"].startswith("399ab29")
+    assert items_of(current)["SLACK-01"]["activation_status"] == "complete-on-merge"
     mattermost_done = items_of(current)["WORKPLACE-01"]["completed_substeps"]["MATTERMOST-01"]
     assert (mattermost_done["issue"], mattermost_done["pull_request"], mattermost_done["follow_up_pull_request"]) == (213, 299, 306)
     assert mattermost_done["merge_commit"].startswith("bc3a0eb")
@@ -403,8 +406,7 @@ def test_the_owner_activated_workplace_program_is_goal_ready_and_heartbeat_pause
     assert {items[name]["issue"] for name in program["ordered_substeps"]} == {208, 209, 210, 211, 212, 213, 214}
     assert items["OWNER-MCP-WORK-01"]["depends_on"] == ["INTRANET-DEST-01"]
     assert items["MATTERMOST-01"]["depends_on"] == items["SLACK-01"]["depends_on"] == ["SURFACE-SEAM-01"]
-    # Session-driven: the heartbeat never selects it on its own.
-    for state in ({}, {"completed": []}):
+    for state in ({}, {"completed": []}, {"active": "WORKPLACE-01", "status": "running"}):
         assert DeliveryPlan(PLAN).select(state) is None, state
 
 
@@ -424,7 +426,7 @@ def test_the_post_closeout_audit_notes_correct_without_rewriting_the_closeouts()
         # The original closeout and its owed reviews stay exactly as recorded.
         assert program["closeout"] == archived["programs"][name]["closeout"], name
         assert program.get("pending_reviews") == archived["programs"][name].get("pending_reviews"), name
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) in {"goal-ready", "terminal"}
 
 
 def items_of(current):
