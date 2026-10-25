@@ -3880,5 +3880,71 @@
   "en": "Answered.",
   "ja": "回答しました。",
   "zh": "已答复。"
+ },
+ "steer.applied_now": {
+  "ko": "진행 중이던 작업에 반영했어요.",
+  "en": "Added to the work in progress.",
+  "ja": "進行中の作業に反映しました。",
+  "zh": "已纳入正在进行的工作。"
+ },
+ "steer.applied_second_pass": {
+  "ko": "진행 중이던 작업에 반영해 답을 한 번 더 만들었어요.",
+  "en": "Added to the work in progress; its reply was made once more with it.",
+  "ja": "進行中の作業に反映し、回答をもう一度作りました。",
+  "zh": "已纳入正在进行的工作，并据此重新生成了一次回复。"
+ },
+ "steer.not_applied.finished": {
+  "ko": "이 말은 앞 작업의 답이 이미 정해진 뒤에 도착해서 새 요청으로 처리했어요.",
+  "en": "This message arrived after the earlier reply was already settled, so I handled it as a new request.",
+  "ja": "このメッセージは前の作業の回答が決まった後に届いたので、新しい依頼として対応しました。",
+  "zh": "这条消息在上一项工作的回复确定之后才到，所以我把它当作新请求处理了。"
+ },
+ "steer.not_applied.continued": {
+  "ko": "이 말은 앞 작업이 이미 한 번 더 답을 만든 뒤에 도착해서 새 요청으로 처리했어요.",
+  "en": "This message arrived after the earlier work had already made its reply once more, so I handled it as a new request.",
+  "ja": "このメッセージは前の作業がすでに回答を作り直した後に届いたので、新しい依頼として対応しました。",
+  "zh": "这条消息在上一项工作已经重新生成回复之后才到，所以我把它当作新请求处理了。"
+ },
+ "steer.not_applied.effect": {
+  "ko": "앞 작업에서 이미 실행된 일이 있어 그 답에는 반영하지 않고 새 요청으로 처리했어요.",
+  "en": "The earlier work had already carried something out, so I did not add this to its reply and handled it as a new request.",
+  "ja": "前の作業ですでに実行したことがあるため、その回答には反映せず、新しい依頼として対応しました。",
+  "zh": "上一项工作已经执行了操作，所以没有把这条消息纳入它的回复，而是当作新请求处理了。"
+ },
+ "steer.not_applied.owner": {
+  "ko": "앞 작업이 소유자의 확인을 기다리고 있어 그 답에는 반영하지 않고 새 요청으로 처리했어요.",
+  "en": "The earlier work is waiting for your decision, so I did not add this to its reply and handled it as a new request.",
+  "ja": "前の作業があなたの確認を待っているため、その回答には反映せず、新しい依頼として対応しました。",
+  "zh": "上一项工作正在等待你的确认，所以没有把这条消息纳入它的回复，而是当作新请求处理了。"
+ },
+ "steer.not_applied.budget": {
+  "ko": "앞 작업의 처리 한도를 다 써서 그 답에는 반영하지 못하고 새 요청으로 처리했어요.",
+  "en": "The earlier work had used up its limit, so I could not add this to its reply and handled it as a new request.",
+  "ja": "前の作業の処理上限に達したため、その回答には反映できず、新しい依頼として対応しました。",
+  "zh": "上一项工作已用完处理额度，没能把这条消息纳入它的回复，所以当作新请求处理了。"
+ },
+ "steer.not_applied.stopped": {
+  "ko": "앞 작업을 멈추셔서 이 말은 새 요청으로 처리했어요.",
+  "en": "You stopped the earlier work, so I handled this message as a new request.",
+  "ja": "前の作業を止められたので、このメッセージは新しい依頼として対応しました。",
+  "zh": "你停止了上一项工作，所以我把这条消息当作新请求处理了。"
+ },
+ "steer.not_applied.route": {
+  "ko": "앞 작업에는 진행 중에 말을 더할 수 없어서 이 말은 새 요청으로 처리했어요.",
+  "en": "The earlier work could not take a message while it was running, so I handled this one as a new request.",
+  "ja": "前の作業には実行中にメッセージを加えられなかったため、新しい依頼として対応しました。",
+  "zh": "上一项工作在进行中无法加入消息，所以我把这条消息当作新请求处理了。"
+ },
+ "steer.not_applied.failed": {
+  "ko": "앞 작업이 끝까지 처리되지 못해 이 말은 새 요청으로 처리했어요.",
+  "en": "The earlier work did not finish, so I handled this message as a new request.",
+  "ja": "前の作業が最後まで完了しなかったため、このメッセージは新しい依頼として対応しました。",
+  "zh": "上一项工作没有完成，所以我把这条消息当作新请求处理了。"
+ },
+ "steer.not_applied.new_request": {
+  "ko": "이 말은 앞 작업의 답에 반영되지 않아 새 요청으로 처리했어요.",
+  "en": "This message was not added to the earlier reply, so I handled it as a new request.",
+  "ja": "このメッセージは前の回答に反映されなかったため、新しい依頼として対応しました。",
+  "zh": "这条消息没有纳入上一条回复，所以我把它当作新请求处理了。"
  }
 }

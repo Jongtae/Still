@@ -133,7 +133,16 @@ LOG=logging.getLogger('personal_agent.service')
 #: reported as failed; getUpdates is read-only and the next poll asks again from the same cursor.
 TELEGRAM_RECEIVE_GRACE_SECONDS=10
 #: #999: the stored result of a queued message its running Work received as steering.
-STEER_FOLDED_TEXT='진행 중이던 작업에 반영했어요.'
+STEER_FOLDED_TEXT=msg('steer.applied_now')
+#: #308 S4: the stored result of one the running Work answered after one second pass (S1).
+STEER_SECOND_PASS_TEXT=msg('steer.applied_second_pass')
+#: #308 S4: the ``owner_steer`` event naming why a steer runs as its own Work, and what the owner is told.
+STEER_NOT_APPLIED='not_applied'
+STEER_NOT_APPLIED_REASONS={
+    'finished':'steer.not_applied.finished', 'continued':'steer.not_applied.continued',
+    'effect':'steer.not_applied.effect', 'owner':'steer.not_applied.owner', 'budget':'steer.not_applied.budget',
+    'stopped':'steer.not_applied.stopped', 'route':'steer.not_applied.route', 'failed':'steer.not_applied.failed',
+    'new_request':'steer.not_applied.new_request'}
 #: #308 S1: how long a finishing Work waits for steer judgments still running (the judgment is a few seconds).
 STEER_JUDGMENT_WAIT_SECONDS=8
 #: #996: the owner's emoji on an assistant message, recorded on its Work.
@@ -10352,7 +10361,11 @@ class AgentService:
                 db.execute('BEGIN IMMEDIATE')
                 # #308 S1: read under the write lock the finish guard closes with, so a steer is
                 # either seen by the guard or refused and run as its own Work, never lost.
-                if running_id in self.steer_closed:return False
+                if running_id in self.steer_closed:
+                    # #308 S4: judged to steer it, but its reply was already decided.
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (task_id,STEER_EVENT,STEER_NOT_APPLIED,json.dumps({'reason':'finished'}),time.time()))
+                    return False
                 if not self.store.add_steer(running_id,task_id,text,db=db):return False
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (running_id,STEER_EVENT,'received',json.dumps({'source_work_id':task_id}),time.time()))
@@ -10376,14 +10389,48 @@ class AgentService:
         # (claimed, then the process or provider failed): the message runs as its own Work.
         steered=self.store.job(job.get('related_job_id')) if job.get('relation_kind')=='steer' else None
         if not steered or steered.get('status') not in ('succeeded','partial'):return False
+        # #308 S4: applied in the reply being written, or by the one second pass (S1).
+        text=STEER_SECOND_PASS_TEXT if 'continued' in self._steer_events(steered['id']) else STEER_FOLDED_TEXT
         with self.store.db() as db:
-            db.execute("UPDATE jobs SET status='succeeded',response=?,delivery='none' WHERE id=?",(STEER_FOLDED_TEXT,job['id']))
+            db.execute("UPDATE jobs SET status='succeeded',response=?,delivery='none' WHERE id=?",(text,job['id']))
         self.presence.pop(job['id'],None)
         surface,source=self._presence_anchor(job)
         if job.get('chat_id') and surface is not None and surface.capabilities.reactions:
             self._presence_call(surface,PRESENCE_REACT,job['chat_id'],source,DONE_REACTION)
         self.update_task_card(job,'succeeded')
         return True
+
+    def _steer_events(self, work_id):
+        """``{status: detail}`` of the content-free ``owner_steer`` events recorded on ``work_id`` (latest wins)."""
+        with self.store.db() as db:
+            rows=db.execute('SELECT status,detail FROM tool_events WHERE job_id=? AND tool=? ORDER BY id',(work_id,STEER_EVENT)).fetchall()
+        events={}
+        for row in rows:
+            try:detail=json.loads(row['detail'] or '{}')
+            except (TypeError,ValueError):detail={}
+            events[row['status']]=detail if isinstance(detail,dict) else {}
+        return events
+
+    def steer_disposition_notice(self, job):
+        """#308 S4: why a message judged to steer a running Work runs as its own Work, as an owner line, or ''.
+
+        Read from the recorded steer state, never guessed: this message's own
+        refusal (judged after that Work's reply was decided), the reason that
+        Work's finish guard recorded, a failed second pass, or how that Work
+        ended.  A message judged to be a new request gets no line: its own
+        reply is its disposition.  No engine, site or task is consulted.
+        """
+        reason=(self._steer_events(job['id']).get(STEER_NOT_APPLIED) or {}).get('reason')
+        steered=self.store.job(job.get('related_job_id')) if not reason and job.get('relation_kind')=='steer' else None
+        if steered:
+            events=self._steer_events(steered['id'])
+            reason=(events.get(STEER_NOT_APPLIED) or {}).get('reason')
+            if not reason and 'continuation_failed' in events:reason='failed'
+            if not reason:
+                status=str(steered.get('status') or '')
+                reason=('effect' if status=='unknown' else 'owner' if status.startswith('awaiting_')
+                        else 'failed' if status in ('failed','interrupted','cancelled','unsupported') else 'new_request')
+        return msg(STEER_NOT_APPLIED_REASONS[reason]) if reason in STEER_NOT_APPLIED_REASONS else ''
 
     @staticmethod
     def _log_receiving_failure(exc, previous):
@@ -10521,6 +10568,9 @@ class AgentService:
             self.record_stage(job['id'],'queue_wait',job.get('created') or claimed_at)
             self.update_task_card(job,'running')
             run=WorkRun(job,claimed_at,retry_note=self.action_continuation_note(job))
+            # #308 S4: a message meant for an earlier Work says first why it is answered on its own.
+            notice=self.steer_disposition_notice(job)
+            if notice:run.calendar_notice=notice+'\n\n'
             try:
                 for phase in (self._route_work,self._load_work_photos,self._run_rule_intent):
                     step=phase(run)
@@ -11176,10 +11226,12 @@ class AgentService:
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             # The allowance only reads (other connections may read while this one holds the lock).
-            texts=(self.store.claim_unanswered_steers(job['id'],run.attempt_started_at,db=db)
-                   if self.store.unanswered_steers(job['id'],run.attempt_started_at,db=db) and self._steer_continuation_allowed(run)
-                   else [])
+            pending=self.store.unanswered_steers(job['id'],run.attempt_started_at,db=db)
+            refusal=self._steer_continuation_refusal(run) if pending else None
+            texts=self.store.claim_unanswered_steers(job['id'],run.attempt_started_at,db=db) if pending and refusal is None else []
             if not texts:self.steer_closed.add(job['id'])
+        # #308 S4: why the steers this Work leaves run as their own Work, for their disposition.
+        if refusal:run.record(STEER_EVENT,STEER_NOT_APPLIED,json.dumps({'reason':refusal}))
         if not texts:return False
         run.record(STEER_EVENT,'continued',json.dumps({'count':len(texts)}))
         # What a failed continuation restores (``_keep_reply_before_steers``); lists and sets copied.
@@ -11192,26 +11244,34 @@ class AgentService:
             run.attempt=run.orchestration.continue_for_steers(run.attempt,'\n'.join(texts),len(texts))
         return True
 
-    def _steer_continuation_allowed(self, run):
-        """#308 S1: whether a steer continuation may run after this Work's last attempt."""
+    def _steer_continuation_refusal(self, run):
+        """#308 S1: why no steer continuation may run after this Work's last attempt, or None.
+
+        #308 S4: the reason (``STEER_NOT_APPLIED_REASONS``) is what the owner is told.
+        """
         job_id=run.job['id']
-        if run.steer_note or run.outcome=='unknown' or not isinstance((run.base_history or [{}])[-1].get('content'),str):return False
+        if run.steer_note:return 'continued'
+        if run.outcome=='unknown':return 'effect'
+        if not isinstance((run.base_history or [{}])[-1].get('content'),str):return 'route'
         # A browser step asked for or approved and unspent: the steer may change what it covers.
-        if run.approval_needed[0] or run.context_approval_needed[0] or run.waits_for_sign_in or self._browser_request(job_id):return False
-        if self._work_has_unknown_effect(job_id) or self.connector_effect_progress(job_id)[0]:return False
-        if run.unmediated_turn and self.cli_host_actions(run.engine_meta)!=():return False
+        if run.approval_needed[0] or run.context_approval_needed[0] or run.waits_for_sign_in or self._browser_request(job_id):return 'owner'
+        if self._work_has_unknown_effect(job_id) or self.connector_effect_progress(job_id)[0]:return 'effect'
+        if run.unmediated_turn and self.cli_host_actions(run.engine_meta)!=():return 'effect'
         from .agent_runtime import EFFECT_NONE, call_effects
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',(job_id,)).fetchall()
         tool_rows=self.attempt_tool_rows(rows)
-        if awaiting_owner_rows(tool_rows) or any(effect!=EFFECT_NONE for _action,effect,_status in call_effects(tool_rows)):return False
+        if awaiting_owner_rows(tool_rows):return 'owner'
+        if any(effect!=EFFECT_NONE for _action,effect,_status in call_effects(tool_rows)):return 'effect'
         budget=run.work_budget
-        if budget is None:return True
+        if budget is None:return None
         try:
-            return (budget.interrupted() is None and budget.remaining()>=MIN_ATTEMPT_SECONDS
-                    and budget.turns_used+1<=budget.turn_limit())
+            interrupted=budget.interrupted()
+            if interrupted=='stopped':return 'stopped'
+            return None if (interrupted is None and budget.remaining()>=MIN_ATTEMPT_SECONDS
+                            and budget.turns_used+1<=budget.turn_limit()) else 'budget'
         except Exception:
-            return False
+            return 'budget'
 
     def _keep_reply_before_steers(self, run):
         """#308 S1: a steer continuation failed; True when the earlier reply is restored for delivery.
