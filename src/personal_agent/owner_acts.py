@@ -119,7 +119,7 @@ class OwnerActs:
         now = time.time()
         conversation_of = self._conversation(job)
         items = []
-        connector_owner = service.connector_owner_id(job)
+        connector_owner = service.issuer_owner_id(job)
         conversation = service.calendar_conversation
         row = conversation.pending(connector_owner)
         if row:

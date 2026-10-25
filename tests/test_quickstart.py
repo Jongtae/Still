@@ -1621,7 +1621,7 @@ class GmailConnectorWiringTests(unittest.TestCase):
         self.assertEqual(len(self.exchanges),1)
         self.assertEqual(self.exchanges[0]['code'],'fixture-code')
         self.assertEqual(self.exchanges[0]['redirect_uri'],'http://localhost:8787/oauth/gmail/callback')
-        status=service.connector_registry.status(self.OWNER,GMAIL_CONNECTOR_ID)
+        status=service.connector_registry.status('local-owner',GMAIL_CONNECTOR_ID)
         self.assertEqual(status.state,ConnectorState.CONNECTED)
         self.assertEqual(status.granted_scopes,(GMAIL_READONLY_SCOPE,))
         # The Work the owner parked from Telegram is re-queued and then runs.
@@ -1654,7 +1654,7 @@ class GmailConnectorWiringTests(unittest.TestCase):
         self.assertEqual(job['status'],'failed')
         self.assertIn('연결이 승인되지 않아',job['error'])
         self.assertTrue(any('연결이 승인되지 않아' in str(body.get('text','')) for body in self.sent))
-        self.assertEqual(service.connector_registry.status(self.OWNER,GMAIL_CONNECTOR_ID).state,
+        self.assertEqual(service.connector_registry.status('local-owner',GMAIL_CONNECTOR_ID).state,
                          ConnectorState.DISCONNECTED)
         self.assertEqual(self.exchanges,[])
         # The failure is terminal: connecting afterwards must not revive it.
@@ -1680,7 +1680,7 @@ class GmailConnectorWiringTests(unittest.TestCase):
             # Anyone who can reach the loopback port can send these, so they
             # must not be able to fail the owner's parked request either.
             self.assertEqual(self.store.job(job_id)['status'],'awaiting_connection')
-        self.assertEqual(service.connector_registry.status(self.OWNER,GMAIL_CONNECTOR_ID).state,
+        self.assertEqual(service.connector_registry.status('local-owner',GMAIL_CONNECTOR_ID).state,
                          ConnectorState.DISCONNECTED)
         self.assertEqual(self.exchanges,[])
         self.assertEqual(len(self.sent),messages)
@@ -1720,7 +1720,7 @@ class GmailConnectorWiringTests(unittest.TestCase):
         self.assertEqual(query['include_granted_scopes'],['false'])
         self.assertNotIn(self.CLIENT_SECRET,location)
         # Issuing an authorization URL is not a connection and not a Grant.
-        self.assertEqual(service.connector_registry.status(self.OWNER,GMAIL_CONNECTOR_ID).state,
+        self.assertEqual(service.connector_registry.status('local-owner',GMAIL_CONNECTOR_ID).state,
                          ConnectorState.DISCONNECTED)
 
     # -- the unconfigured installation ------------------------------------

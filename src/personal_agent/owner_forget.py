@@ -156,7 +156,7 @@ class OwnerForget:
         return {'rows': items}
 
     def _context_scope(self, db, owner_key=None):
-        """Claims and observations belong to the paired Telegram owner and generation (``current_context``).
+        """Claims belong to the owner context; observations retain their source pairing.
 
         That context belongs to this installation's one owner; any other owner
         id has no claims or observations here (review P2).
@@ -190,8 +190,10 @@ class OwnerForget:
 
     def _exclude_observation(self, db, owner_key, observation_id, receipt_id, now):
         scope = self._context_scope(db, owner_key)
-        row = db.execute("SELECT * FROM context_observations WHERE id=? AND owner_key=? AND generation=? "
-                         "AND state NOT IN ('invalidated',?)", (observation_id, *scope, FORGOTTEN)).fetchone()
+        from .context_observations import ContextObservations
+        predicate, identities = ContextObservations._source_filter(db)
+        row = db.execute(f"SELECT * FROM context_observations WHERE id=? AND ({predicate}) "
+                         "AND state NOT IN ('invalidated',?)", (observation_id, *identities, FORGOTTEN)).fetchone()
         if row is None:
             raise _refuse('stale')
         db.execute('UPDATE context_observations SET state=? WHERE id=?', (FORGOTTEN, observation_id))

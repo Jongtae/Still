@@ -733,7 +733,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
     def test_each_phrasing_parks_with_one_contextual_next_action_and_resumes_exactly_once(self):
         for phrase in self.PHRASES:
             with self.subTest(phrase=phrase):
-                self.registry.transition(OWNER, GMAIL_CONNECTOR_ID, ConnectorState.DISCONNECTED)
+                self.registry.transition("local-owner", GMAIL_CONNECTOR_ID, ConnectorState.DISCONNECTED)
                 start, searches = len(self.wire), self.searches()
                 job, _ = self.turn(phrase)
                 # Owner-visible: one guidance bubble; nothing ran, nothing is claimed.
@@ -787,7 +787,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
         failed = self.store.job(job['id'])
         self.assertEqual(failed['status'], 'failed')
         self.assertIn('연결이 승인되지 않아', failed['error'])
-        self.assertNotEqual(self.registry.status(OWNER, GMAIL_CONNECTOR_ID).state, ConnectorState.CONNECTED)
+        self.assertNotEqual(self.registry.status("local-owner", GMAIL_CONNECTOR_ID).state, ConnectorState.CONNECTED)
         self.assertFalse(self.service.run_one())
         self.assertEqual(self.searches(), 0)
 
@@ -850,7 +850,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
         # Opposing: a question about the landlord that is not about mail.
         for phrase in ('집주인이 월세를 올리면 어떻게 대응하지?', 'what does a landlord usually fix?'):
             with self.subTest(phrase=phrase):
-                self.registry.transition(OWNER, GMAIL_CONNECTOR_ID, ConnectorState.DISCONNECTED)
+                self.registry.transition("local-owner", GMAIL_CONNECTOR_ID, ConnectorState.DISCONNECTED)
                 start = len(self.wire)
                 job, _ = self.turn(phrase)
                 self.assertEqual(job['status'], 'succeeded')
@@ -868,7 +868,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
         # Positive: every phrasing parks with one contextual next action.
         observed = {}
         for phrase in mail:
-            self.registry.transition(OWNER, GMAIL_CONNECTOR_ID, ConnectorState.DISCONNECTED)
+            self.registry.transition("local-owner", GMAIL_CONNECTOR_ID, ConnectorState.DISCONNECTED)
             start = len(self.wire)
             job, _ = self.turn(phrase)
             observed[phrase] = job
@@ -904,7 +904,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
         self.service.use_decision_engine(UnavailableDecisionEngine())
         for phrase in ('집주인한테 답장 왔어?', 'did the landlord write back to me?'):
             with self.subTest(phrase=phrase):
-                self.registry.transition(OWNER, GMAIL_CONNECTOR_ID, ConnectorState.DISCONNECTED)
+                self.registry.transition("local-owner", GMAIL_CONNECTOR_ID, ConnectorState.DISCONNECTED)
                 start = len(self.wire)
                 job, _ = self.turn(phrase)
                 self.assertEqual(job['status'], 'succeeded')
@@ -1070,7 +1070,7 @@ class CalendarEval(PresenceEval):
         return CalendarProvider()
 
     def connect_write(self):
-        self.registry.transition(OWNER, CALENDAR_WRITE_SPEC.connector_id, ConnectorState.CONNECTED,
+        self.registry.transition("local-owner", CALENDAR_WRITE_SPEC.connector_id, ConnectorState.CONNECTED,
                                  granted_scopes=(CALENDAR_WRITE_SCOPE,))
 
     def drafts(self):
@@ -1168,7 +1168,7 @@ class F_CalendarApproval(CalendarEval):
         owner's verbatim words and the fact that Google Calendar is not
         connected.  Nothing is drafted and nothing reaches the provider.
         """
-        self.registry.transition(OWNER, CALENDAR_WRITE_SPEC.connector_id, ConnectorState.DISCONNECTED)
+        self.registry.transition("local-owner", CALENDAR_WRITE_SPEC.connector_id, ConnectorState.DISCONNECTED)
         request = '다음 주 화요일 10시 반 병원 예약 일정 추가해줘'
         job, _ = self.turn(request)
         self.assertNotEqual(job['status'], 'awaiting_connection')
@@ -1182,7 +1182,7 @@ class F_CalendarApproval(CalendarEval):
 
     def test_blocked_calendar_access_is_a_review_note_without_a_connect_link(self):
         # #834 review: connecting again cannot clear blocked access, so no link is offered.
-        self.registry.transition(OWNER, CALENDAR_WRITE_SPEC.connector_id, ConnectorState.BLOCKED)
+        self.registry.transition("local-owner", CALENDAR_WRITE_SPEC.connector_id, ConnectorState.BLOCKED)
         request = '다음 주 화요일 10시 반 병원 예약 일정 추가해줘'
         self.turn(request)
         sent = self.model_bodies[0]['messages'][-1]['content']
@@ -1291,7 +1291,7 @@ class CalendarParticleFinding(CalendarEval):
     def test_finding_particle_the_calendar_handoff_uses_the_matching_object_particle(self):
         # #832: a natural-language turn no longer parks on this handoff; the
         # guidance text itself (still used by a Work with no AI route) is checked.
-        self.registry.transition(OWNER, CALENDAR_WRITE_SPEC.connector_id, ConnectorState.DISCONNECTED)
+        self.registry.transition("local-owner", CALENDAR_WRITE_SPEC.connector_id, ConnectorState.DISCONNECTED)
         result = self.service.connector_handoff.prerequisite(OWNER, CALENDAR_WRITE_SPEC.connector_id)
         guidance = ConnectorHandoff.guidance(result)
         self.assertNotIn('을(를)', guidance)

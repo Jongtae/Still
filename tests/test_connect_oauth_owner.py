@@ -1,4 +1,4 @@
-"""Native OAuth callbacks keep their initiating owner across independent waits."""
+"""Native OAuth callbacks connect the one owner; continuation keeps each issuer binding."""
 from urllib.parse import parse_qs, urlsplit
 from cryptography.fernet import Fernet
 
@@ -45,15 +45,12 @@ class GmailCallbackOwner(NativeCase):
         state=state_of(self.service.begin_gmail_connection())
         later=self.park_owner(later_owner)
         result=self.complete(state)
-        self.assertEqual(result['work_id'],original)
-        self.assertEqual(result['resumed'],[{'work_id':original,'scheduled':True}])
-        self.assertEqual(self.registry.status(first_owner,GMAIL_CONNECTOR_ID).state,ConnectorState.CONNECTED)
-        self.assertEqual(self.registry.status(later_owner,GMAIL_CONNECTOR_ID).state,ConnectorState.DISCONNECTED)
-        self.assertEqual(self.drain(),1)
-        self.assertEqual(self.store.job(original)['status'],'succeeded')
-        self.assertIn('예산 승인 안내',self.store.job(original)['response'])
-        self.assertEqual(self.store.job(later)['status'],'awaiting_connection')
-        self.assertEqual(self.searches(),1)
+        self.assertEqual(result['resumed'],[{'work_id':original,'scheduled':True},
+                                             {'work_id':later,'scheduled':True}])
+        self.assertEqual(self.registry.status('local-owner',GMAIL_CONNECTOR_ID).state,ConnectorState.CONNECTED)
+        self.assertEqual(self.drain(),2)
+        for work in (original,later):self.assertEqual(self.store.job(work)['status'],'succeeded')
+        self.assertEqual(self.searches(),2)
         self.assertEqual(len(self.exchanges),1)
         with self.assertRaises(GmailError):self.complete(state)
         self.assertEqual(self.drain(),0)
@@ -65,22 +62,19 @@ class GmailCallbackOwner(NativeCase):
     def test_web_oauth_survives_a_later_telegram_wait(self):
         self.assert_direction('local-owner',OWNER)
 
-    def test_two_concurrent_flows_settle_only_their_own_waits(self):
+    def test_a_new_flow_supersedes_the_same_owners_previous_flow(self):
         first=self.park_owner(OWNER)
         first_state=state_of(self.service.begin_gmail_connection())
         second=self.park_owner('local-owner')
         second_state=state_of(self.service.begin_gmail_connection())
-        # Completion order differs from creation order and latest-wait order.
-        self.complete(first_state)
-        self.assertEqual(self.store.job(second)['status'],'awaiting_connection')
+        with self.assertRaises(GmailError):self.complete(first_state)
+        self.assertEqual(self.exchanges,[])
         self.complete(second_state)
         self.assertEqual(self.drain(),2)
-        for work in (first,second):
-            self.assertEqual(self.store.job(work)['status'],'succeeded')
-        self.assertEqual(self.searches(),2)
-        self.assertEqual(len(self.exchanges),2)
+        for work in (first,second):self.assertEqual(self.store.job(work)['status'],'succeeded')
+        self.assertEqual(len(self.exchanges),1)
 
-    def test_denial_is_bound_to_original_flow_not_latest_wait(self):
+    def test_authentic_denial_settles_current_issuer_waits(self):
         first=self.park_owner(OWNER)
         state=state_of(self.service.begin_gmail_connection())
         second=self.park_owner('local-owner')
@@ -88,10 +82,10 @@ class GmailCallbackOwner(NativeCase):
             self.complete(state,error='access_denied')
         self.assertEqual(caught.exception.reason,'authorization_denied')
         self.assertEqual(self.store.job(first)['status'],'failed')
-        self.assertEqual(self.store.job(second)['status'],'awaiting_connection')
+        self.assertEqual(self.store.job(second)['status'],'failed')
         self.assertEqual(self.exchanges,[])
 
-    def test_expired_auth_state_keeps_failure_bound_to_original_owner(self):
+    def test_expired_owner_flow_fails_without_exchange(self):
         first=self.park_owner(OWNER)
         state=state_of(self.service.begin_gmail_connection())
         second=self.park_owner('local-owner')
@@ -99,7 +93,7 @@ class GmailCallbackOwner(NativeCase):
         with self.assertRaises(GmailError) as caught:self.complete(state)
         self.assertEqual(caught.exception.reason,'state_expired')
         self.assertEqual(self.store.job(first)['status'],'failed')
-        self.assertEqual(self.store.job(second)['status'],'awaiting_connection')
+        self.assertEqual(self.store.job(second)['status'],'failed')
         self.assertEqual(self.exchanges,[])
 
     def test_forged_state_cannot_cancel_any_wait_or_exchange_tokens(self):
@@ -121,18 +115,19 @@ class GmailCallbackOwner(NativeCase):
                                   connector_registry=self.registry,gmail=self.gmail)
         self.service.use_decision_engine(FixtureDecisionEngine(judge=self.reached, choose=self.none_unsupported))
         self.service.gmail_token_exchange=old.gmail_token_exchange
-        self.service.connector_handoff=ConnectorHandoff(self.store,self.registry,now=lambda:self.clock[0])
-        self.assertEqual(self.complete(state)['work_id'],first)
-        self.assertEqual(self.drain(),1)
+        self.service.connector_handoff=ConnectorHandoff(self.store,self.registry,now=lambda:self.clock[0],token_owner=lambda owner:'local-owner')
+        self.assertTrue(self.complete(state)['scheduled'])
+        self.assertEqual(self.drain(),2)
         self.assertEqual(self.store.job(first)['status'],'succeeded')
 
-    def test_removed_paired_owner_is_not_an_authentication_candidate(self):
+    def test_replaced_pairing_cannot_resume_but_owner_connection_completes(self):
         first=self.park_owner(OWNER)
         state=state_of(self.service.begin_gmail_connection())
         self.store.put('telegram',{'enabled':True,'user_id':999,'generation':'replacement'})
-        with self.assertRaises(GmailError):self.complete(state)
-        self.assertEqual(self.exchanges,[])
-        self.assertEqual(self.registry.status(OWNER,GMAIL_CONNECTOR_ID).state,ConnectorState.DISCONNECTED)
+        result=self.complete(state)
+        self.assertEqual(result['resume_refused'],'wrong_owner')
+        self.assertEqual(len(self.exchanges),1)
+        self.assertEqual(self.registry.status('local-owner',GMAIL_CONNECTOR_ID).state,ConnectorState.CONNECTED)
         self.service.run_one()
         self.assertEqual(self.store.job(first)['status'],'failed')
 
@@ -173,16 +168,12 @@ class CalendarAndDriveCallbackOwner(NativeCase):
         first=self.wait(spec,OWNER)
         state=state_of(begin())
         later=self.wait(spec,'local-owner')
-        other_state=state_of(begin())
         result=complete({'state':state,'code':'fixture'})
-        self.assertEqual(result['resumed'],[{'work_id':first,'scheduled':True}])
-        self.assertEqual(self.store.job(later)['status'],'awaiting_connection')
-        self.assertEqual(self.registry.status(OWNER,spec.connector_id).granted_scopes,spec.required_scopes)
+        self.assertEqual(result['resumed'],[{'work_id':first,'scheduled':True},{'work_id':later,'scheduled':True}])
+        self.assertEqual(self.store.job(later)['status'],'queued')
+        self.assertEqual(self.registry.status('local-owner',spec.connector_id).granted_scopes,spec.required_scopes)
         with self.assertRaises(CalendarOAuthError):complete({'state':state,'code':'replay'})
         self.assertEqual(len(exchanges),1)
-        result=complete({'state':other_state,'code':'fixture'})
-        self.assertEqual(result['work_id'],later)
-        self.assertEqual(len(exchanges),2)
 
     def test_calendar_read_flow_keeps_owner_and_exact_grant(self):self.check_grant('read')
     def test_calendar_write_flow_keeps_owner_and_exact_grant(self):self.check_grant('write')
@@ -194,11 +185,11 @@ class CalendarAndDriveCallbackOwner(NativeCase):
         state=state_of(begin())
         self.wait(spec,'local-owner')
         self.clock[0]+=601
-        self.assertEqual(oauth.callback_owner(state,['local-owner',OWNER]),OWNER)
+        self.assertEqual(oauth.callback_owner(state,['local-owner',OWNER]),'local-owner')
         with self.assertRaises(CalendarOAuthError) as caught:complete({'state':state,'code':'fixture'})
         self.assertEqual(caught.exception.reason,'state_expired')
         self.assertEqual(exchanges,[])
-        self.assertEqual(self.registry.status(OWNER,spec.connector_id).state,ConnectorState.DISCONNECTED)
+        self.assertEqual(self.registry.status('local-owner',spec.connector_id).state,ConnectorState.DISCONNECTED)
 
     def test_relabelled_calendar_grant_cannot_find_an_owner_or_exchange(self):
         spec,oauth,begin,complete,exchanges=self.fixture('write')

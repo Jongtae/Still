@@ -276,21 +276,34 @@ class ContextObservations:
     # --- reads ------------------------------------------------------------
 
     @staticmethod
-    def _active_identity(db):
-        """The currently paired Telegram owner and generation, or None.
+    def _active_identities(db):
+        """Source identities that are paired now, read in the caller's DB snapshot."""
+        from types import SimpleNamespace
+        from .conversation_surface import registered_surfaces
 
-        Reads are scoped to it so a disconnect or re-pair never exposes the
-        previous account's observations, even inside the retention window.
-        """
-        row = db.execute("SELECT value FROM config WHERE key='telegram'").fetchone()
-        try:
-            cfg = json.loads(row['value']) if row else {}
-        except (TypeError, ValueError):
-            return None
-        user_id, generation = cfg.get('user_id'), cfg.get('generation')
-        if not cfg.get('enabled') or not isinstance(user_id, int) or isinstance(user_id, bool) or not generation:
-            return None
-        return owner_key(user_id), generation
+        def config(key, default=None):
+            row = db.execute('SELECT value FROM config WHERE key=?', (key,)).fetchone()
+            try:
+                return json.loads(row['value']) if row else default
+            except (TypeError, ValueError):
+                return default
+
+        service = SimpleNamespace(store=SimpleNamespace(config=config))
+        return [(owner, surface.owner_generation()) for surface in registered_surfaces(service)
+                if (owner := surface.paired_connector_owner()) and surface.owner_generation()]
+
+    @classmethod
+    def _active_identity(cls, db):
+        """One owner scope; derived state expires when any source pairing changes."""
+        import hashlib
+        identities = sorted(cls._active_identities(db))
+        return ('local-owner', hashlib.sha256(json.dumps(identities).encode()).hexdigest()) if identities else None
+
+    @classmethod
+    def _source_filter(cls, db):
+        identities = cls._active_identities(db)
+        return (' OR '.join('(owner_key=? AND generation=?)' for _ in identities) or '0',
+                [value for identity in identities for value in identity])
 
     def prune(self, db, now):
         db.execute('DELETE FROM context_observations WHERE expires_at<=?', (now,))
@@ -326,11 +339,11 @@ class ContextObservations:
         now = self.clock() if now is None else now
         with self.store.db() as db:
             settings = self.settings(db)
-            identity = self._active_identity(db)
-            rows = [] if identity is None else db.execute(
-                'SELECT * FROM context_observations WHERE owner_key=? AND generation=? AND context_epoch=? '
+            predicate, identities = self._source_filter(db)
+            rows = db.execute(
+                f'SELECT * FROM context_observations WHERE ({predicate}) AND context_epoch=? '
                 "AND expires_at>? AND state NOT IN ('invalidated','forgotten') ORDER BY observed_at DESC",
-                (*identity, settings['epoch'], now)).fetchall()
+                (*identities, settings['epoch'], now)).fetchall()
         entries = [self._entry(row, now) for row in rows]
         if not settings['enabled']:
             entries = [entry for entry in entries if job_id is not None and entry['job_id'] == job_id
@@ -344,16 +357,16 @@ class ContextObservations:
             db.execute('BEGIN IMMEDIATE')
             self.prune(db, now)
             settings = self.settings(db)
-            identity = self._active_identity(db)
-            rows = [] if identity is None else db.execute(
-                'SELECT * FROM context_observations WHERE owner_key=? AND generation=? AND context_epoch=? '
-                'ORDER BY observed_at DESC LIMIT ?', (*identity, settings['epoch'], USABLE_ENTRY_LIMIT)).fetchall()
+            predicate, identities = self._source_filter(db)
+            rows = db.execute(
+                f'SELECT * FROM context_observations WHERE ({predicate}) AND context_epoch=? '
+                'ORDER BY observed_at DESC LIMIT ?', (*identities, settings['epoch'], USABLE_ENTRY_LIMIT)).fetchall()
             pending = db.execute("SELECT count(*) FROM context_location_requests WHERE state='pending' AND expires>?",
                                  (now,)).fetchone()[0]
         items = []
         for row in rows:
             entry = self._entry(row, now)
-            items.append({'kind': entry['kind'], 'source': 'telegram', 'state': entry['state'],
+            items.append({'kind': entry['kind'], 'source': row['owner_key'].partition(':')[0], 'state': entry['state'],
                           'freshness': entry['freshness'], 'age_seconds': max(0, int(now - entry['observed_at'])),
                           'expires_at': entry['expires_at'], 'label': entry['payload'].get('label') or '',
                           'time_uncertain': bool(entry['payload'].get('time_uncertain'))})

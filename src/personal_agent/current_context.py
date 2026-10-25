@@ -317,7 +317,7 @@ def approx(value):
 
 
 def _owner_scope(db):
-    """The paired Telegram owner and generation, or the one local owner."""
+    """One owner and the current source-generation fingerprint."""
     identity = ContextObservations._active_identity(db)
     return identity if identity is not None else (LOCAL_OWNER_KEY, '')
 
@@ -362,9 +362,10 @@ class CurrentContext:
         return {'ref': REQUEST_PREFIX + job['id'], 'revision': job.get('source_edited_at') or 0, 'at': float(at)}
 
     def _observation(self, db, scope, epoch, obs_id, now):
-        row = db.execute('SELECT * FROM context_observations WHERE id=? AND owner_key=? AND generation=? '
+        predicate, identities = self.observations._source_filter(db)
+        row = db.execute(f'SELECT * FROM context_observations WHERE id=? AND ({predicate}) '
                          "AND context_epoch=? AND expires_at>? AND state NOT IN ('invalidated','forgotten')",
-                         (obs_id, *scope, epoch, now)).fetchone()
+                         (obs_id, *identities, epoch, now)).fetchone()
         if row is None or row['source_kind'] == 'text_edit':
             return None
         return row

@@ -367,7 +367,7 @@ class OwnerApplyPathTests(unittest.TestCase):
     def test_a_telegram_draft_is_approvable_by_the_owner_surface(self):
         """The primary J4 journey.
 
-        `connector_owner_id` gives Telegram Work `telegram:<chat>`, so every
+        `issuer_owner_id` gives Telegram Work `telegram:<chat>`, so every
         draft the model produces from a Telegram request is owned by it. The
         surface hardcoded `local-owner`, listed the draft anyway, and then
         refused to approve it with an opaque error -- on a paired install
@@ -378,16 +378,7 @@ class OwnerApplyPathTests(unittest.TestCase):
         draft = self.draft_as('telegram:4242')
         listed = self.service.calendar_draft_request({'operation': 'list'})
         self.assertIn(draft['id'], [row['id'] for row in listed['drafts']])
-        # Each connector identity carries its own grant. Only `local-owner`
-        # is connected so far, so this identity is refused -- a listed draft
-        # is not an approvable one.
-        with self.assertRaises(ValueError):
-            self.service.calendar_draft_request(
-                {'operation': 'approve', 'draft_id': draft['id']})
-        self.registry.transition('telegram:4242',
-                                 CALENDAR_WRITE_SPEC.connector_id,
-                                 ConnectorState.CONNECTED,
-                                 granted_scopes=(CALENDAR_WRITE_SCOPE,))
+        # The paired issuer uses the already connected owner's grant.
         approved = self.service.calendar_draft_request(
             {'operation': 'approve', 'draft_id': draft['id']})
         self.assertEqual(approved['owner'], 'telegram:4242')

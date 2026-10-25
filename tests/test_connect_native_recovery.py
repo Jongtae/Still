@@ -21,7 +21,7 @@ class ReadyNativeRecovery(NativeCase):
         self.service=AgentService(self.store,old.adapter,old.telegram_transport,
                                   connector_registry=self.registry,gmail=self.gmail)
         self.service.use_decision_engine(FixtureDecisionEngine(judge=self.reached, choose=self.none_unsupported))
-        self.handoff=ConnectorHandoff(self.store,self.registry,now=lambda:self.clock[0])
+        self.handoff=ConnectorHandoff(self.store,self.registry,now=lambda:self.clock[0],token_owner=lambda owner:"local-owner")
         self.service.connector_handoff=self.handoff
 
     def event(self, work, tool, status, detail):
@@ -63,7 +63,7 @@ class ReadyNativeRecovery(NativeCase):
         self.connect_gmail()
         row=self.handoff.record(GMAIL_CONNECTOR_ID)
         self.handoff.pending.claim(row['resume_token'],OWNER,GMAIL_CONNECTOR_ID,GMAIL_SCOPES,row['handoff_id'])
-        self.registry.transition(OWNER,GMAIL_CONNECTOR_ID,ConnectorState.DISCONNECTED)
+        self.registry.transition("local-owner",GMAIL_CONNECTOR_ID,ConnectorState.DISCONNECTED)
         self.restart()
         self.assertFalse(self.service.run_one())
         self.assertEqual(self.store.job(work)['status'],'awaiting_connection')
@@ -71,7 +71,8 @@ class ReadyNativeRecovery(NativeCase):
 
     def test_a_different_owners_connection_cannot_resume_the_wait(self):
         work=self.park()
-        self.connect_gmail('local-owner')
+        self.connect_gmail('unrelated-owner')
+        self.assertIs(self.registry.status('unrelated-owner',GMAIL_CONNECTOR_ID).state,ConnectorState.CONNECTED)
         self.assertFalse(self.service.run_one())
         self.assertEqual(self.store.job(work)['status'],'awaiting_connection')
         self.assertEqual(self.searches(),0)

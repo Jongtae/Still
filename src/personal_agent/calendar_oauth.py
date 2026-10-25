@@ -1046,6 +1046,11 @@ class CalendarOAuth:
         label = state.split(".", 1)[0]
         return label if label in (READ_GRANT, WRITE_GRANT) else None
 
+    def token_slots(self, owner_key):
+        """Host-only migration slot names for this holder's declared grants."""
+        return {_spec(grant).connector_id: f'{TOKEN_SECRET_KEY}:{_spec(grant).connector_id}:{owner_key}'
+                for grant in self.grants}
+
     def callback_owner(self, state, candidates):
         """Resolve only a signed pending flow's owner, without completing it.
 

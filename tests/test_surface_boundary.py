@@ -191,12 +191,12 @@ class DeliveryClaims(SurfaceBoundaryCase):
 
 
 class OwnerIdentity(SurfaceBoundaryCase):
-    def test_a_second_surfaces_work_keeps_its_own_connector_identity(self):
+    def test_surfaces_share_credentials_and_keep_their_own_issuer_identity(self):
         side = self.work('side:s1', SIDE_OWNER)
-        self.assertEqual(self.service.connector_owner_id(side), f'side:{SIDE_OWNER}',
-                         'never the local owner (a string chat id fell into local-owner before #213)')
-        self.assertEqual(self.service.connector_owner_id(self.work(f'telegram:{GENERATION}', CHAT)), f'telegram:{CHAT}')
+        self.assertEqual(self.service.connector_owner_id(side), 'local-owner')
+        self.assertEqual(self.service.connector_owner_id(self.work(f'telegram:{GENERATION}', CHAT)), 'local-owner')
         self.assertEqual(self.service.connector_owner_id(self.work('web', None, delivery='none')), 'local-owner')
+        self.assertEqual(self.service.issuer_owner_id(side), f'side:{SIDE_OWNER}')
         self.assertEqual(self.service._owner_generation(f'side:{SIDE_OWNER}'), 's1')
         self.assertEqual(self.service._owner_generation(f'telegram:{CHAT}'), GENERATION)
         self.assertEqual(self.service._owner_generation('local-owner'), '')

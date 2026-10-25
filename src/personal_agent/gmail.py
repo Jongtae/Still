@@ -606,6 +606,10 @@ class GmailConnector:
             "expires_at": pending["expires_at"],
         }
 
+    def token_slots(self, owner_key):
+        """Host-only migration slot names, already hashed by the caller."""
+        return {GMAIL_CONNECTOR_ID: f'{TOKEN_SECRET_KEY}:{owner_key}'}
+
     def callback_owner(self, state, candidates):
         """Resolve only a signed pending flow's owner, without completing it.
 

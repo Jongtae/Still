@@ -123,7 +123,7 @@ def guard(service, draft):
     if (not job or service.settings_owner(job) != draft['owner'] or job['channel'] != draft['channel']
             or service.work_stopped(job['id'])):
         raise ValueError('원래 작업의 소유자와 현재 상태를 확인하지 못했습니다.')
-    owner_id = service.connector_owner_id(job)
+    owner_id = service.issuer_owner_id(job)
     # #213: a Work from a conversation surface is held to that surface's paired owner.
     surface = service.surface_claiming(job)
     if surface is not None and not surface.paired_owner(job['chat_id']):

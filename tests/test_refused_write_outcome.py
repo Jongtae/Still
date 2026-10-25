@@ -37,10 +37,8 @@ from test_agency_loop import goal_engine
 
 CHAT = 909
 GENERATION = 'g1'
-#: `connector_owner_id` binds a Telegram job's grants to the paired chat, not
-#: to the local owner. Granting to the wrong identity makes the calendar tools
-#: error instead of draft, which passes a "did not claim success" assertion
-#: for entirely the wrong reason.
+#: Calendar draft identity stays with the paired issuer; grants belong to local-owner.
+#: The fixture grants local-owner so a refused write is not merely a missing connection.
 CONNECTOR_OWNER = f'telegram:{CHAT}'
 
 
@@ -134,7 +132,7 @@ class RefusedWriteTestCase(unittest.TestCase):
         registry = ConnectorRegistry(self.store, (CALENDAR_SPEC, CALENDAR_WRITE_SPEC))
         for spec, scope in ((CALENDAR_SPEC, CALENDAR_READ_SCOPE),
                             (CALENDAR_WRITE_SPEC, CALENDAR_WRITE_SCOPE)):
-            registry.transition(CONNECTOR_OWNER, spec.connector_id,
+            registry.transition('local-owner', spec.connector_id,
                                 ConnectorState.CONNECTED, granted_scopes=spec.required_scopes)
         return CalendarConnector(self.store, Provider(), registry=registry)
 

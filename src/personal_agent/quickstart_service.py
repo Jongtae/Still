@@ -91,6 +91,7 @@ from . import local_folder_picker
 from . import owner_mcp
 from . import trust_record
 # PRESENCE-TG-01 / #581: native Telegram presence (reaction, typing, draft, anchor).
+from .conversation_surface import SURFACE_NAMES
 from .context_observations import ContextObservations, answerable_work, continuation_key, continuation_request
 from .current_context import CLOCK_KEYS, CurrentContext, KNOWN_SECRET_NAMES, redact_known_secrets, render as current_context_render
 # SEC-ATTN-01 (#659): owner-accepted preparations (reminders, prepared answers).
@@ -651,7 +652,7 @@ class AgentService:
         # with no registry there are no declared connectors, so no ordinary
         # request can be parked waiting for one.
         self.connector_registry=connector_registry
-        self.connector_handoff=ConnectorHandoff(store,connector_registry) if connector_registry else None
+        self.connector_handoff=ConnectorHandoff(store,connector_registry,token_owner=lambda owner:MEMORY_OWNER) if connector_registry else None
         self.gmail=gmail
         # Calendar mutations use the current owner-bound connector path.
         self.calendar=calendar
@@ -659,17 +660,17 @@ class AgentService:
         # answers tool calls, `calendar_oauth` answers the two routes.
         self.calendar_oauth=calendar_oauth
         self.calendar_token_exchange=None
-        # A connector is bound to one owner's credential, and this process
-        # serves two connector identities (the paired Telegram chat and the
-        # local owner). So the connector is built per Work from this factory
-        # rather than once at startup; `calendar` stays available for tests
-        # that inject a ready-made one.
+        # Provider credentials are owner-wide; draft ownership is the issuer.
+        # The factory builds a provider using local-owner credentials.
         self.calendar_factory=calendar_factory
         # #1172: full-Drive read.  `drive_oauth` answers the two routes; the
         # factory builds a reader bound to one owner's credential per Work.
         self.drive_oauth=drive_oauth
         self.drive_reader_factory=drive_reader_factory
         self.drive_read_token_exchange=None
+        # Injected credential holders are ready here; the Google installer handles later wiring.
+        from .owner_identity import migrate_connector_owner
+        migrate_connector_owner(self)
         # #1172: the owner's own Google client.  `configured_service` sets the
         # installer; the source is 'settings' or 'environment' once installed.
         self.google_client_installer=None
@@ -914,7 +915,7 @@ class AgentService:
             raise ValueError('연결을 요청한 대화의 소유자 연결이 바뀌었어요.')
         data=json.loads(draft['after'])
         target=trust_record.connection(data['engine'],'owner-mcp',data['name'])
-        return {'generation':self._owner_generation(self.connector_owner_id(job)),
+        return {'generation':self._owner_generation(self.issuer_owner_id(job)),
                 'trust_epoch':trust_record.hand(self.store,target)['epoch']}
 
     def mcp_setup_client(self, draft, interrupted):
@@ -1113,14 +1114,14 @@ class AgentService:
         job=self.store.job(draft.get('work_id')) if draft.get('work_id') else None
         if not job or self.settings_owner(job)!=draft.get('owner') or job['channel']!=draft.get('channel'):return None
         if draft.get('continue_work') is True and (draft.get('category'),draft.get('setting'))==('api_connections','connect'):
-            return {'kind':'api-setting','generation':self._owner_generation(self.connector_owner_id(job)),
+            return {'kind':'api-setting','generation':self._owner_generation(self.issuer_owner_id(job)),
                     'prerequisite':'settings:'+draft['id']}
         if draft.get('continue_work') is True and (draft.get('category'),draft.get('setting'))==('ai_connections','connect'):
-            return {'kind':'mcp-setting','generation':self._owner_generation(self.connector_owner_id(job)),
+            return {'kind':'mcp-setting','generation':self._owner_generation(self.issuer_owner_id(job)),
                     'prerequisite':'settings:'+draft['id']}
         if draft.get('continue_work') is True and draft.get('category')=='skills':
             if draft.get('setting')=='add' or draft.get('setting')=='enabled' and draft.get('after')=='on':
-                return {'kind':'skill-setting','generation':self._owner_generation(self.connector_owner_id(job)),
+                return {'kind':'skill-setting','generation':self._owner_generation(self.issuer_owner_id(job)),
                         'prerequisite':'settings:'+draft['id'], 'skill':draft.get('required_skill')}
         if draft.get('category')!='ai_connections' or draft.get('setting')!='review':return None
         parts=str(draft.get('after') or '').split('|')
@@ -1133,7 +1134,7 @@ class AgentService:
             except (TypeError,ValueError,KeyError):continue
             if [evidence.get(key) for key in ('engine','kind','identity','operation')]==parts[:4]:
                 before=str(draft.get('before') or '').split(':')
-                return {'permission_event':event['id'],'generation':self._owner_generation(self.connector_owner_id(job)),
+                return {'permission_event':event['id'],'generation':self._owner_generation(self.issuer_owner_id(job)),
                         'trust_epoch':before[2] if len(before)==3 else ''}
         return None
 
@@ -1293,7 +1294,7 @@ class AgentService:
                 if not drafts:continue
                 valid=all(row.get('digest')==orchestrator._digest(row)
                           and row.get('owner')==self.settings_owner(job) and row.get('channel')==job['channel']
-                          and row['continuation'].get('generation')==self._owner_generation(self.connector_owner_id(job))
+                          and row['continuation'].get('generation')==self._owner_generation(self.issuer_owner_id(job))
                           for row in drafts)
                 stopped=self.work_stopped(work_id) or job['status'] not in ('partial','failed','interrupted','succeeded','awaiting_connection')
                 surface=self.surface_claiming(job)
@@ -3460,7 +3461,7 @@ class AgentService:
         if not ids:return ''
         # The target of an update or cancellation, as this Work's own calendar read returned it.
         targets=getattr(capabilities,'calendar_seen',None) or {}
-        return self.calendar_conversation.offer(self.connector_owner_id(job),ids,targets=targets,work_id=job['id'])
+        return self.calendar_conversation.offer(self.issuer_owner_id(job),ids,targets=targets,work_id=job['id'])
 
     @staticmethod
     def _minutes_ago(now, moment):
@@ -3856,7 +3857,7 @@ class AgentService:
     def cancel_focused_work(self, previous, connector_owner):
         """Cancel only the focused Work through an existing safe boundary."""
         work_id=previous['id']
-        if previous.get('status')=='awaiting_connection' and self.connector_owner_id(previous)==connector_owner:
+        if previous.get('status')=='awaiting_connection' and self.issuer_owner_id(previous)==connector_owner:
             orchestrator=self.settings_orchestrator
             with orchestrator._confirming:
                 drafts=[row for row in orchestrator._drafts().values() if isinstance(row,dict)
@@ -5267,14 +5268,11 @@ class AgentService:
 
     # -- connector prerequisite, handoff and exactly-once resume ----------
     def connector_owner_id(self, job):
-        """One connector owner identity, stable across bot generations.
+        """Credentials belong to the one owner, independently of conversation pairing."""
+        return MEMORY_OWNER
 
-        A job's `channel` embeds the Telegram generation, so the `owner`
-        string `run_one` builds for capability orchestrators changes every
-        time the bot is reconnected.  A connector grant must not be orphaned
-        by reconnecting a bot, so connector identity is the paired chat
-        itself; every web/local job is the one local owner.
-        """
+    def issuer_owner_id(self, job):
+        """The conversation that issued an approval or handoff, never the token key."""
         surface=self.surface_claiming(job)
         return surface.connector_owner(job) if surface is not None else 'local-owner'
 
@@ -5285,7 +5283,7 @@ class AgentService:
     def _owner_generation(self, owner_id):
         """Bind a paired-conversation handoff to the pairing generation that created it (#213: per surface)."""
         surface=self.surface_of_owner(owner_id)
-        return surface.owner_generation() if surface is not None else ''
+        return self._issuer_generation(owner_id) if surface is not None else ''
 
     def surface_claiming(self, job):
         """The conversation surface a Work came from, in any pairing generation, or None (web, local)."""
@@ -5343,8 +5341,8 @@ class AgentService:
 
     def _park_for_connector(self, job, connector_id):
         """Park one Work for one unmet connector and return the guidance, or None when ready."""
-        owner_id=self.connector_owner_id(job)
-        result=self.connector_handoff.prerequisite(owner_id,connector_id)
+        owner_id=self.issuer_owner_id(job)
+        result=self.connector_handoff.prerequisite('local-owner',connector_id)
         if result is None:
             return None
         try:
@@ -5978,7 +5976,7 @@ class AgentService:
             self.update_task_card(job,'superseded')
             self._present_outcome(job,delivered=False,blocked=False)
         if jobs and notify:
-            self._notify_owner(self.connector_owner_id(jobs[0]),SUPERSEDED_WORK_ERROR)
+            self._notify_owner(self.issuer_owner_id(jobs[0]),SUPERSEDED_WORK_ERROR)
         return cancelled
 
     def _answered_before(self, job_id):
@@ -6022,7 +6020,7 @@ class AgentService:
         """
         if not self.connector_handoff:
             raise ValueError(ConnectorHandoff.unavailable(connector_id))
-        records=self.connector_handoff.records(connector_id,owner_id=owner_id)
+        records=self.connector_handoff.records(connector_id,owner_id=None if owner_id=='local-owner' else owner_id)
         if not records:
             reason='wrong_owner' if self.connector_handoff.record(connector_id) else 'no_pending_work'
             raise ConversationHandoffError(reason)
@@ -6030,15 +6028,18 @@ class AgentService:
         refused=[]
         for row in records:
             try:
+                issuer=self._local_handoff_owner(row)
+                if issuer is None:raise ConversationHandoffError('wrong_owner')
                 work_id,scheduled=self.connector_handoff.resume(
-                    owner_id,connector_id,granted_scopes,self._schedule_resumed_work,
-                    generation=self._owner_generation(owner_id),abandon=self._abandon_parked_work,
+                    issuer,connector_id,granted_scopes,self._schedule_resumed_work,
+                    generation=self._owner_generation(issuer),abandon=self._abandon_parked_work,
                     handoff_id=row['handoff_id'])
                 resumed.append({'work_id':work_id,'scheduled':scheduled})
             except ConversationHandoffError as exc:
                 # One expired or stale wait must not starve other valid Works.
                 refused.append({'work_id':row['work_id'],'reason':exc.reason})
-                self._notify_owner(owner_id,ConnectorHandoff.refusal_text(exc.reason))
+                if issuer is not None and row.get('generation','')==self._owner_generation(issuer):
+                    self._notify_owner(issuer,ConnectorHandoff.refusal_text(exc.reason))
         if not resumed:
             raise ConversationHandoffError(refused[0]['reason'])
         representative=next((row for row in resumed if row['scheduled']),resumed[-1])
@@ -6081,7 +6082,7 @@ class AgentService:
                     if not job or job.get('status') in ('succeeded','failed','partial','cancelled','interrupted','unknown','blocked'):
                         if job:
                             try:
-                                handoff.pending.complete(row['resume_token'],self.connector_owner_id(job),
+                                handoff.pending.complete(row['resume_token'],self.issuer_owner_id(job),
                                                          key,row['handoff_id'])
                             except ConnectorContractError:
                                 pass  # Unclaimed/terminal offers need no claim or scheduling.
@@ -6169,14 +6170,16 @@ class AgentService:
         """Fail the parked Work explicitly after a refused or failed connection."""
         if not self.connector_handoff:
             raise ValueError(ConnectorHandoff.unavailable(connector_id))
-        records=self.connector_handoff.records(connector_id,owner_id=owner_id)
+        records=self.connector_handoff.records(connector_id,owner_id=None if owner_id=='local-owner' else owner_id)
         if not records:
             reason='wrong_owner' if self.connector_handoff.record(connector_id) else 'no_pending_work'
             raise ConversationHandoffError(reason)
         for row in records:
-            work_id=self.connector_handoff.deny(owner_id,connector_id,handoff_id=row['handoff_id'])
+            issuer=self._local_handoff_owner(row)
+            if issuer is None or row.get('generation','')!=self._owner_generation(issuer):continue
+            work_id=self.connector_handoff.deny(issuer,connector_id,handoff_id=row['handoff_id'])
             self._abandon_parked_work(work_id,reason)
-        self._notify_owner(owner_id,ConnectorHandoff.refusal_text(reason))
+            self._notify_owner(issuer,ConnectorHandoff.refusal_text(reason))
         return records[-1]['work_id']
 
     # -- contextual local authority handoff (PRESENCE-CAP-01 / #505) ------
@@ -6274,7 +6277,7 @@ class AgentService:
 
     def park_for_local_authority(self, job, key, notice=''):
         """Park one Work for one local authority and say the one next action."""
-        owner_id=self.connector_owner_id(job)
+        owner_id=self.issuer_owner_id(job)
         try:
             _handle,superseded=self.local_handoff.park(owner_id,job['id'],key,generation=self._owner_generation(owner_id))
         except ConnectorContractError as exc:
@@ -6291,7 +6294,7 @@ class AgentService:
 
     def _local_handoff_owner(self, row):
         """Recover the parked owner from the hashed index row, never from the request."""
-        # #306 review: every paired surface's owner (Telegram first, as before), then the local owner.
+        # Match current issuers by their stored hash; ordering grants no authority.
         candidates=[*self.surface_connector_owners(),'local-owner']
         for candidate in candidates:
             if hmac.compare_digest(_owner_key(candidate),str(row.get('owner',''))):
@@ -6456,7 +6459,7 @@ class AgentService:
         if not self.attempted_only_reads(job['id']):return False
         with self.lock:
             rows=self._document_resume_rows()
-            rows[job['id']]={'owner':_owner_key(self.connector_owner_id(job)),
+            rows[job['id']]={'owner':_owner_key(self.issuer_owner_id(job)),
                              'expires_at':self.local_handoff.now()+LOCAL_RESUME_TTL_SECONDS}
             self.store.put(LOCAL_DOCUMENT_RESUME_KEY,rows)
         return True
@@ -6518,27 +6521,8 @@ class AgentService:
 
     # -- the browser half of the connector handoff (PA1-INT-01 / #394) ----
     def connector_callback_owner(self, connector_id):
-        """Resolve the one owner identity a browser callback may complete for.
-
-        The browser never supplies it.  This installation has exactly two
-        connector owner identities, and `connector_owner_id` above decides
-        which of them a Work belongs to: the paired Telegram chat, or the one
-        local/web owner.  When Work is parked for this connector its index
-        record carries the hashed owner, so the identity is *recovered* by
-        matching that hash against the two candidates this process already
-        knows, never taken from the request.  That is what makes a connection
-        finished in a browser resume the request the same person parked from
-        Telegram, and it is why an unmatched record falls back to the paired
-        owner rather than to whatever the caller would have preferred.
-        """
-        # #306 review: every paired surface's owner (Telegram first, as before), then the local owner.
-        candidates=[*self.surface_connector_owners(),'local-owner']
-        record=self.connector_handoff.record(connector_id) if self.connector_handoff else None
-        if isinstance(record,dict):
-            for candidate in candidates:
-                if hmac.compare_digest(_owner_key(candidate),str(record.get('owner',''))):
-                    return candidate
-        return candidates[0]
+        """Settings and every conversation connect credentials for the same owner."""
+        return MEMORY_OWNER
 
     def local_settings_url(self):
         """This installation's own address, or '' when it cannot name one.
@@ -6605,7 +6589,7 @@ class AgentService:
     @property
     def surfaces(self):
         """The owner conversation surfaces this service composes (#212): Telegram, Mattermost (#213) and Slack (#214)."""
-        return (self.telegram_surface,self.mattermost_surface,self.slack_surface)
+        return tuple(getattr(self, name+'_surface') for name in SURFACE_NAMES)
 
     def surface_of(self, job):
         """The conversation surface whose current paired conversation ``job`` came from, or None."""
@@ -7133,6 +7117,8 @@ class AgentService:
             rows.append({'connector_id':connector.connector_id,
                          'label':CONNECTOR_LABELS.get(connector.connector_id,connector.connector_id),
                          'state':status.state.value,
+                         'migration_conflicts':[row for row in self.store.config('connector_owner_migration_conflicts',[])
+                                                if row.get('connector')==connector.connector_id],
                          'required_scopes':list(status.required_scopes),
                          'connect_path':(urlsplit(self.connector_connect_url(connector.connector_id)).path+(('?'+urlsplit(self.connector_connect_url(connector.connector_id)).query) if urlsplit(self.connector_connect_url(connector.connector_id)).query else '')) if self.connector_connect_url(connector.connector_id) else ''})
         return rows
@@ -7488,16 +7474,7 @@ class AgentService:
         return self.gmail.begin_oauth(self.connector_callback_owner(GMAIL_CONNECTOR_ID))
 
     def calendar_owner_candidates(self):
-        """The connector identities this install serves, same human, both.
-
-        `connector_owner_id` gives Telegram Work `telegram:<chat>` and
-        web/local Work `local-owner`, and `connector_callback_owner` already
-        treats the two as candidates for one owner. The first version of the
-        approve surface hardcoded `local-owner`, so every draft the model
-        produced from a Telegram request -- the primary J4 journey -- was
-        listed and then refused with an opaque error, and nobody could apply
-        it on a paired install.
-        """
+        """Current issuer identities whose Calendar drafts Settings may settle."""
         return [*self.surface_connector_owners(), 'local-owner']
 
     def calendar_draft_request(self, body, owner_id=None):
@@ -7753,9 +7730,12 @@ class AgentService:
         """
         row=self._browser_request(job['id'])
         keys=self._browser_step_keys(binding)
+        surface=self.surface_claiming(job)
+        if (surface is not None and not surface.owns(job) or
+                row and row.get('generation')!=self._owner_generation(self.issuer_owner_id(job))):return False
         if not row or row.get('state')!='issued' or not hmac.compare_digest(str(row.get('digest','')),keys['digest']):return False
         try:
-            self.store.consume_browser_step_approval(self.connector_owner_id(job),job['id'],binding['action'],
+            self.store.consume_browser_step_approval(self.issuer_owner_id(job),job['id'],binding['action'],
                                                      keys['page_digest'],keys['target_digest'],keys['step_digest'],row.get('token'))
         except ValueError:
             return False
@@ -7773,7 +7753,7 @@ class AgentService:
         row={'work_id':job['id'],'action':binding['action'],'label':label,**self._browser_step_keys(binding),
              'state':'requested','requested_at':time.time(),
              'offer_digest':secrets.token_hex(32),
-             'generation':self._owner_generation(self.connector_owner_id(job))}
+             'generation':self._owner_generation(self.issuer_owner_id(job))}
         current=self._browser_request(job['id'])
         if (current and current.get('state')=='requested' and current.get('digest')==row['digest']
                 and current.get('generation')==row['generation'] and current.get('offer_digest')
@@ -7807,7 +7787,7 @@ class AgentService:
         kinds=[]
         try:
             if self.step_approval_pending(job['id']):kinds.append(KIND_STEP)
-            row=self.calendar_conversation.pending(self.connector_owner_id(job))
+            row=self.calendar_conversation.pending(self.issuer_owner_id(job))
             if row and row.get('work_id')==job.get('id'):kinds.append(KIND_CALENDAR)
             if self.settings_orchestrator.pending_for_work(job['id']):kinds.append(KIND_SETTINGS)
             if self.preparations.proposed_from(job['id']):kinds.append(KIND_PREPARATION)
@@ -7905,7 +7885,7 @@ class AgentService:
             if not job or not row or row.get('state')!='requested':return result
             if expected_digest is not None and not hmac.compare_digest(expected_digest,str(row.get('offer_digest',''))):return result
             current=(not self.work_stopped(work_id) and time.time()<=float(row.get('requested_at',0))+600
-                     and row.get('generation',self._owner_generation(self.connector_owner_id(job)))==self._owner_generation(self.connector_owner_id(job)))
+                     and row.get('generation',self._owner_generation(self.issuer_owner_id(job)))==self._owner_generation(self.issuer_owner_id(job)))
             if not approve or not current:
                 with self.store.db() as db:
                     db.execute('BEGIN IMMEDIATE')
@@ -7921,7 +7901,7 @@ class AgentService:
                 actual=requests.get(work_id) or {}
                 if actual.get('state')!='requested' or actual.get('offer_digest')!=row.get('offer_digest'):return False
                 if (self.work_stopped(work_id) or time.time()>float(actual.get('requested_at',0))+600 or
-                        actual.get('generation')!=self._owner_generation(self.connector_owner_id(job))):return False
+                        actual.get('generation')!=self._owner_generation(self.issuer_owner_id(job))):return False
                 current_job=db.execute('SELECT status FROM jobs WHERE id=?',(work_id,)).fetchone()
                 if not current_job or current_job['status'] not in ('running','failed','partial','interrupted','succeeded'):return False
                 issued={**row,'state':'issued','token':approval['approval_token'],'issued_at':time.time()}
@@ -7932,7 +7912,7 @@ class AgentService:
                 result['approved']=True
                 return True
             try:
-                self.store.issue_browser_step_approval(self.connector_owner_id(job),work_id,row['action'],
+                self.store.issue_browser_step_approval(self.issuer_owner_id(job),work_id,row['action'],
                     row['page_digest'],row['target_digest'],row['step_digest'],on_issue=commit)
             except ValueError:
                 return result
@@ -7983,7 +7963,7 @@ class AgentService:
             if not job:continue
             expires=float(row.get('issued_at') if row.get('state')=='issued' else row.get('requested_at') or 0)+600
             reason=('work-stopped' if self.work_stopped(job['id']) else 'expired' if time.time()>expires else
-                    'owner-revoked' if row.get('generation')!=self._owner_generation(self.connector_owner_id(job)) else None)
+                    'owner-revoked' if row.get('generation')!=self._owner_generation(self.issuer_owner_id(job)) else None)
             if reason:
                 with self.store.db() as db:
                     db.execute('BEGIN IMMEDIATE')
@@ -8753,7 +8733,7 @@ class AgentService:
         record=trust_record.hand(self.store,target)
         state={'trust_revision':record['revision'],'trust_epoch':record['epoch'],
                'engine':target['engine'],'connection':target['identity'],'kind':target['kind'],
-               'owner_generation':self._owner_generation(self.connector_owner_id(job)),
+               'owner_generation':self._owner_generation(self.issuer_owner_id(job)),
                'connection_state':self.store.config(self.AI_CONNECTIONS_KEY,{}),
                'confirmed':owner_mcp.confirmed(self.store,target['engine']),
                'configuration_digest':((self.store.turn_provenance(job['id']) or {}).get('connector_configurations') or {}).get(target['engine'],{}).get(target['identity']),
@@ -9259,14 +9239,21 @@ class AgentService:
 
     def calendar_for(self, job):
         """The Calendar connector bound to this Work's owner, or None."""
-        return self.calendar_for_owner(self.connector_owner_id(job))
+        return self.calendar_for_owner(self.issuer_owner_id(job))
 
     def calendar_for_owner(self, owner_id):
-        if self.calendar is not None:
-            return self.calendar
-        if self.calendar_factory is None:
-            return None
-        return self.calendar_factory(owner_id)
+        connector=self.calendar if self.calendar is not None else (
+            self.calendar_factory('local-owner') if self.calendar_factory is not None else None)
+        if connector is not None:
+            connector.token_owner=lambda owner:MEMORY_OWNER
+            connector.owner_generation=self._issuer_generation
+        return connector
+
+    def _issuer_generation(self, owner_id):
+        surface=self.surface_of_owner(owner_id)
+        if surface is None:return ''
+        if surface.paired_connector_owner()!=owner_id:return None
+        return surface.owner_generation()
 
     def connection_slots(self, job):
         """CONN-API: this Work owner's Still-held connections as read-only ``api_request`` slots."""
@@ -9479,8 +9466,8 @@ class AgentService:
         if not self.drive_oauth or not callable(self.drive_read_token_exchange):
             raise ValueError(ConnectorHandoff.unavailable(DRIVE_CONNECTOR_ID))
         owner=self.drive_oauth.callback_owner(callback.get('state') if isinstance(callback,dict) else None,
-                                                  self.calendar_owner_candidates())
-        parked=bool(self.connector_handoff and self.connector_handoff.record(DRIVE_CONNECTOR_ID,owner_id=owner))
+                                                  ['local-owner'])
+        parked=bool(self.connector_handoff and self.connector_handoff.record(DRIVE_CONNECTOR_ID))
         result=self.drive_oauth.complete_oauth(owner,callback,self.drive_read_token_exchange)
         self._remember_connector_owner(owner)
         self.notify_connection_completed(DRIVE_CONNECTOR_ID,resuming=parked)
@@ -9528,7 +9515,7 @@ class AgentService:
                       if self.calendar_oauth.pending_grant(callback)=='write'
                       else CALENDAR_CONNECTOR_ID)
         owner=self.calendar_oauth.callback_owner(callback.get('state') if isinstance(callback,dict) else None,
-                                                       self.calendar_owner_candidates())
+                                                       ['local-owner'])
         # Read the parked record before the exchange consumes the pending
         # state, so a callback that arrives with nothing parked is a plain
         # connection rather than a resume reporting `no_pending_work` to the
@@ -9536,7 +9523,7 @@ class AgentService:
         # version of this method did not: the ordinary connect -- the one the
         # settings payload advertises -- committed the connection and then
         # returned HTTP 400 telling the owner it had failed.
-        parked=bool(self.connector_handoff and self.connector_handoff.record(connector_id,owner_id=owner))
+        parked=bool(self.connector_handoff and self.connector_handoff.record(connector_id))
         result=self.calendar_oauth.complete_oauth(owner,callback,self.calendar_token_exchange)
         self._remember_connector_owner(owner)
         connector_id=result.get('connector_id') or connector_id
@@ -9565,12 +9552,12 @@ class AgentService:
         if not self.gmail or not callable(self.gmail_token_exchange):
             raise ValueError(ConnectorHandoff.unavailable(GMAIL_CONNECTOR_ID))
         owner=self.gmail.callback_owner(callback.get('state') if isinstance(callback,dict) else None,
-                                                  self.calendar_owner_candidates())
+                                                  ['local-owner'])
         # Read the parked record before the exchange consumes the pending
         # state, so a callback that arrives with nothing parked is a plain
         # connection rather than a resume that reports `no_pending_work` to
         # the owner as if something had gone wrong.
-        parked=bool(self.connector_handoff and self.connector_handoff.record(GMAIL_CONNECTOR_ID,owner_id=owner))
+        parked=bool(self.connector_handoff and self.connector_handoff.record(GMAIL_CONNECTOR_ID))
         try:
             status=self.gmail.complete_oauth(owner,dict(callback),self.gmail_token_exchange)
             self._remember_connector_owner(owner)
@@ -10582,7 +10569,7 @@ class AgentService:
         run.prompt=owner_prompt
         #: The Work whose message is `prompt` (a retry replays another's).
         run.prompt_work_id=job['id']
-        run.connector_owner=self.connector_owner_id(job)
+        run.connector_owner=self.issuer_owner_id(job)
         # #672 review: a Work resumed after its connection runs the
         # capability judged when it parked; it is neither re-judged
         # nor re-related to another Work.
@@ -11282,7 +11269,7 @@ class AgentService:
                                   # calendar connector and its previews, #659 preparation acceptance,
                                   # the paired Telegram chat for ask_location.
                                   **({'memory_request':run.owner_memory_request,'calendar':self.calendar_for(job),
-                                      'calendar_owner':self.connector_owner_id(job),
+                                      'calendar_owner':self.issuer_owner_id(job),
                                       'drive':self.drive_for(job),'mail':self.mail_for(job),
                                       # CONN-API: Still-held connections through api_request.
                                       'connections':lambda job=job:self.connection_slots(job),
@@ -11642,7 +11629,7 @@ class AgentService:
                                   # #605 F4: read on every use, so a page approval revoked
                                   # during this Work refuses a read that starts afterwards.
                                   public_page_scope=lambda:self.public_page_boundary(run.config)['urls'],
-                                  memory_request=run.owner_memory_request,inherited_provenance=set(run.turn_provenance)|shown_sources|run.work_private,calendar=self.calendar_for(job),calendar_owner=self.connector_owner_id(job),drive=self.drive_for(job),mail=self.mail_for(job),connections=lambda job=job:self.connection_slots(job),current_packages=self.runtime_packages,
+                                  memory_request=run.owner_memory_request,inherited_provenance=set(run.turn_provenance)|shown_sources|run.work_private,calendar=self.calendar_for(job),calendar_owner=self.issuer_owner_id(job),drive=self.drive_for(job),mail=self.mail_for(job),connections=lambda job=job:self.connection_slots(job),current_packages=self.runtime_packages,
                                   budget=run.work_budget,
                                   # #656: the owner-logged-in browser profile and its per-step approvals.
                                   browser=self.browser_profile.driver_factory(job['id']),browser_approvals=self.browser_approvals_for(job),
@@ -11892,7 +11879,7 @@ class AgentService:
             # conversation.  The projected text is the whole bubble
             # and the transcript line; the job row keeps the plain
             # cause as the technical detail the Task surface shows.
-            transcript=run.calendar_notice+self.projection.blocked_reply(self.connector_owner_id(job),exc.kind,run.response)
+            transcript=run.calendar_notice+self.projection.blocked_reply(self.issuer_owner_id(job),exc.kind,run.response)
         else:
             transcript=run.calendar_notice+'이 요청은 완료하지 못했습니다: '+run.response
         # #607: a run that failed (or was stopped / timed out) after an
@@ -11957,7 +11944,7 @@ class AgentService:
         if run.outcome in ('failed','partial') and not self.photo_work_has_pending_resume(job['id']):
             self.store.remove_telegram_photo(job['id'])
         if run.resolved_blocker:
-            self.projection.clear(self.connector_owner_id(job))
+            self.projection.clear(self.issuer_owner_id(job))
         if run.approval_needed[0]:
             # #594 item 11: under the lock the Settings approval also takes,
             # so an approval that landed while this run was ending continues

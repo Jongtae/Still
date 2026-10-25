@@ -186,6 +186,8 @@ class CalendarConnector:
         self.provider = provider
         self.registry = registry
         self.authority = authority
+        self.token_owner = lambda owner: owner
+        self.owner_generation = lambda owner: ""
         self.now = now
         self.approval_ttl = float(approval_ttl)
         self.approval_factory = approval_factory
@@ -215,14 +217,14 @@ class CalendarConnector:
         try:
             if self.registry is not None:
                 connector_id = self._connector_for_scope(scope)
-                self.registry.require_connected(owner, connector_id, (scope,))
+                self.registry.require_connected(self.token_owner(owner), connector_id, (scope,))
                 # Both records describe authority backed by this connector's
                 # one injected Google credential. Capture each currently
                 # connected revision so a provider 401 can revoke the shared
                 # credential lifecycle without revoking a later reconnect.
                 snapshot = []
                 for candidate in (CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID):
-                    status = self.registry.status(owner, candidate)
+                    status = self.registry.status(self.token_owner(owner), candidate)
                     if status.state is ConnectorState.CONNECTED:
                         snapshot.append((candidate, status.connection_revision))
                 return tuple(snapshot)
@@ -244,14 +246,14 @@ class CalendarConnector:
             # Keep the same dispatch -> authority lock order used by provider
             # operations and lifecycle transitions. This is reentrant for the
             # query that observed a 401 and cannot deadlock a concurrent read.
-            with self.registry._dispatch_guard(owner, (connector_id,)):
+            with self.registry._dispatch_guard(self.token_owner(owner), (connector_id,)):
                 with self.registry._authority_guard():
-                    current = self.registry.status(owner, connector_id)
+                    current = self.registry.status(self.token_owner(owner), connector_id)
                     if (
                         current.state is ConnectorState.CONNECTED
                         and current.connection_revision == expected_revision
                     ):
-                        self.registry.transition(owner, connector_id, ConnectorState.REAUTH_REQUIRED)
+                        self.registry.transition(self.token_owner(owner), connector_id, ConnectorState.REAUTH_REQUIRED)
 
     def _prepare_provider(self, *, write: bool) -> None:
         """Let a credential-owning transport fetch its local key before a dispatch lock (#8).
@@ -292,7 +294,7 @@ class CalendarConnector:
         self._prepare_provider(write=False)
         if self.registry is not None:
             dispatch_guard = self.registry._dispatch_guard(
-                owner,
+                self.token_owner(owner),
                 (CALENDAR_CONNECTOR_ID,),
             )
         else:
@@ -312,7 +314,7 @@ class CalendarConnector:
             if self.registry is not None:
                 with self.registry._authority_guard():
                     expected_revision = dict(authority_snapshot or ()).get(CALENDAR_CONNECTOR_ID)
-                    current = self.registry.status(owner, CALENDAR_CONNECTOR_ID)
+                    current = self.registry.status(self.token_owner(owner), CALENDAR_CONNECTOR_ID)
                     if (expected_revision is None or current.state is not ConnectorState.CONNECTED or
                             current.connection_revision != expected_revision):
                         raise CalendarError("scope-denied", recovery="reconnect")
@@ -362,6 +364,7 @@ class CalendarConnector:
                 "event_id": event_id,
                 "event_version": event_version,
                 "owner": owner_key,
+                "owner_generation": self.owner_generation(owner),
                 "hash": _canonical(bound),
                 "state": "awaiting-approval",
                 "effect": "none",
@@ -400,6 +403,9 @@ class CalendarConnector:
         if not isinstance(row, dict):
             raise CalendarError("draft-not-found")
         owner_key = _owner_key(owner)
+        generation = self.owner_generation(owner)
+        if generation is None or row.get('owner_generation', '') != generation:
+            raise CalendarError('owner-generation-changed', recovery='request-new-draft')
         stored_owner = row.get("owner")
         if "payload" not in row:
             portable_fields = {
@@ -588,6 +594,10 @@ class CalendarConnector:
                 continue
             if row.get("state") != "awaiting-approval":
                 continue
+            try:
+                self._owned({ident: row}, ident, owner)
+            except CalendarError:
+                continue
             out.append({
                 "id": ident,
                 "action": row.get("action"),
@@ -647,7 +657,7 @@ class CalendarConnector:
 
     def approve(self, ident: str, owner: str) -> dict:
         dispatch_guard = (
-            self.registry._dispatch_guard(owner, (CALENDAR_WRITE_CONNECTOR_ID,))
+            self.registry._dispatch_guard(self.token_owner(owner), (CALENDAR_WRITE_CONNECTOR_ID,))
             if self.registry is not None else nullcontext()
         )
         with dispatch_guard:
@@ -726,7 +736,7 @@ class CalendarConnector:
             # an unknown outcome is answered locally below without the key.
             self._prepare_provider(write=True)
         dispatch_guard = (
-            self.registry._dispatch_guard(owner, (CALENDAR_WRITE_CONNECTOR_ID,))
+            self.registry._dispatch_guard(self.token_owner(owner), (CALENDAR_WRITE_CONNECTOR_ID,))
             if self.registry is not None else nullcontext()
         )
         try:

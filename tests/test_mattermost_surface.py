@@ -227,7 +227,7 @@ class Ingest(MattermostCase):
         self.assertEqual([(job['message'], job['chat_id'], job['owner_typed']) for job in jobs],
                          [('오늘 저녁 뭐 먹을까?', OWNER, 1)])
         self.assertEqual(created, [jobs[0]['id']])
-        self.assertEqual(self.service.connector_owner_id(jobs[0]), f'mattermost:{OWNER}')
+        self.assertEqual(self.service.connector_owner_id(jobs[0]), 'local-owner')
         self.assertEqual(self.surface.source_message(jobs[0]['id']), post['id'])
         self.surface.receive()
         self.assertEqual(len(self.mm_jobs()), 1, 'a second poll is not a second request')
@@ -705,8 +705,8 @@ class ReviewRegressions(MattermostCase):
                 return []
         self.service.calendar_factory = lambda owner: Calendar(owner)
         self.service.calendar_draft_request({'operation': 'list'})
-        self.assertIn((f'mattermost:{OWNER}', f'mattermost:{OWNER}'), bound)
-        self.assertTrue(all(made == asked for made, asked in bound), 'each draft owner gets its own connection')
+        self.assertIn(('local-owner', f'mattermost:{OWNER}'), bound)
+        self.assertTrue(all(made == 'local-owner' for made, asked in bound), 'draft issuers share the owner connection')
 
     def test_a_notice_of_a_work_that_ran_in_work_mode_is_never_sent_later(self):
         self.owner_says('질문')

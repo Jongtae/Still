@@ -112,7 +112,7 @@ class ConversationSurface(ABC):
         return bool(job) and self.claims_channel(job.get('channel')) and job.get('chat_id') is not None
 
     def connector_owner(self, job):
-        """The durable connector owner identity of a Work this surface claims, stable across pairings."""
+        """The issuer identity of a Work this surface claims; credentials belong to the local owner."""
         return f"{self.name}:{job.get('chat_id')}"
 
     def owns_connector_owner(self, owner_id):
@@ -197,6 +197,18 @@ class ConversationSurface(ABC):
 
 #: #213: the owner conversation surfaces Still composes, by ``name`` (and so by ``channel_prefix``).
 SURFACE_NAMES = ('telegram', 'mattermost', 'slack')
+
+
+def registered_surfaces(service):
+    """The registered surface implementations, including for store-only context readers.
+
+    Constructors and pairing identity reads require only ``service.store.config``;
+    observation readers supply that method from their existing SQLite snapshot."""
+    from .telegram_surface import TelegramSurface
+    from .mattermost_surface import MattermostSurface
+    from .slack_surface import SlackSurface
+    return (TelegramSurface(service), MattermostSurface(service), SlackSurface(service))
+
 
 
 def surface_conversation(channel, chat_id):

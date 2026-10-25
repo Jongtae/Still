@@ -617,6 +617,7 @@ class PendingWorkRegistry:
         token_factory: Callable[[], str] = lambda: secrets.token_urlsafe(32),
         max_records: int = 128,
         terminal_retention_seconds: float = 3600,
+        token_owner=lambda owner: owner,
     ):
         if isinstance(max_records, bool) or not isinstance(max_records, int) or not 1 <= max_records <= 10_000:
             raise ValueError("max_records must be between one and 10,000")
@@ -628,6 +629,7 @@ class PendingWorkRegistry:
             raise ValueError("terminal_retention_seconds must be between zero and one day")
         self.store = store
         self.connector_registry = connector_registry
+        self.token_owner = token_owner
         self.clock = clock
         self.token_factory = token_factory
         self.max_records = max_records
@@ -953,7 +955,7 @@ class PendingWorkRegistry:
             # commit in between those two operations.
             with self.connector_registry._authority_guard():
                 try:
-                    self.connector_registry.require_connected(owner_id, connector_id, actual)
+                    self.connector_registry.require_connected(self.token_owner(owner_id), connector_id, actual)
                 except ConnectorContractError as exc:
                     row["state"] = ResumeState.SUPERSEDED.value
                     row["completed_at"] = None

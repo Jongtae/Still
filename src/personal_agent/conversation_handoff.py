@@ -1693,10 +1693,11 @@ class ConnectorHandoff:
     """
 
     def __init__(self, store, connector_registry, pending_registry=None, *,
-                 now=time.time, ttl_seconds=RESUME_TTL_SECONDS, requirements=None):
+                 now=time.time, ttl_seconds=RESUME_TTL_SECONDS, requirements=None, token_owner=lambda owner: owner):
         self.store = store
         self.connectors = connector_registry
-        self.pending = pending_registry or PendingWorkRegistry(store, connector_registry, clock=now)
+        self.token_owner = token_owner
+        self.pending = pending_registry or PendingWorkRegistry(store, connector_registry, clock=now, token_owner=token_owner)
         self.now = now
         self.ttl_seconds = ttl_seconds
         # Declared non-connector requirements (#505): a local authority such
@@ -1730,6 +1731,7 @@ class ConnectorHandoff:
 
     def prerequisite(self, owner_id, connector_id):
         """Return the unmet :class:`ConnectorResult`, or None when ready."""
+        owner_id = self.token_owner(owner_id)
         connector = self.connectors.definition(connector_id)
         status = self.connectors.status(owner_id, connector_id)
         if status.state is not ConnectorState.CONNECTED:

@@ -140,7 +140,7 @@ class HandoffTestCase(unittest.TestCase):
         # Replace the default-clock handoff the service builds so expiry can be
         # driven deterministically.  The store and registry are the same ones.
         self.service.connector_handoff = ConnectorHandoff(self.store, self.registry,
-                                                          now=lambda: self.clock[0])
+                                                          now=lambda: self.clock[0], token_owner=lambda owner: 'local-owner')
         self.handoff = self.service.connector_handoff
         self.store.put('telegram', {'enabled': True, 'mode': 'owner-token', 'username': 'ownerbot',
                                     'generation': GENERATION, 'cursor': 0, 'user_id': CHAT})
@@ -209,7 +209,7 @@ class HandoffTestCase(unittest.TestCase):
                                  'model': 'test-model', 'api_key': 'k'})
         self.assertTrue(self.service.test_model()['ok'])
 
-    def connect_gmail(self, owner=OWNER):
+    def connect_gmail(self, owner='local-owner'):
         """Complete a *fixture* OAuth exchange; no live Google call is made.
 
         #173: a mail request the connection resumes is the worker's, which
@@ -226,7 +226,7 @@ class HandoffTestCase(unittest.TestCase):
             lambda request: {'access_token': 'fixture-access', 'refresh_token': 'fixture-refresh',
                              'expires_in': 7_200, 'scope': GMAIL_READONLY_SCOPE})
 
-    def connect_calendar_write(self, owner=OWNER):
+    def connect_calendar_write(self, owner='local-owner'):
         """Record fixture connector state; this is not an observed connection."""
         return self.registry.transition(owner, CALENDAR_WRITE_CONNECTOR_ID,
                                         ConnectorState.CONNECTED,
@@ -363,7 +363,7 @@ class NegativeResumeTests(HandoffTestCase):
         authority the handoff did not ask the owner for."""
         for granted in ((), (GMAIL_READONLY_SCOPE, CALENDAR_WRITE_SCOPE)):
             with self.subTest(granted=granted):
-                self.registry.transition(OWNER, GMAIL_CONNECTOR_ID, ConnectorState.DISCONNECTED)
+                self.registry.transition('local-owner', GMAIL_CONNECTOR_ID, ConnectorState.DISCONNECTED)
                 job_id = self.park()
                 self.connect_gmail()
                 with self.assertRaises(ConversationHandoffError) as caught:
@@ -683,7 +683,7 @@ class ParkedRequestSurvivesConversationTests(HandoffTestCase):
         asked = self.judge_withdrawal('취소')
         with_owner_acts(self.service.decision_engine)
         mail = self.park(MAIL_REQUEST)
-        draft = self.service.calendar.draft_create(DENTIST, OWNER)['id']
+        draft = self.service.calendar_for_owner(OWNER).draft_create(DENTIST, OWNER)['id']
         self.assertTrue(self.service.calendar_conversation.offer(OWNER, [draft]))
         self.store.enqueue('취소', f'wu3-{next(self.keys)}', channel=f'telegram:{GENERATION}', chat_id=CHAT,
                            owner_typed=True)  # only a message the owner typed answers drafts
@@ -915,7 +915,7 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
     def test_a_disconnected_gmail_request_parks_and_resumes_the_original_work(self):
         job_id = self.park()
         self.connect_gmail()
-        self.assertEqual(self.registry.status(OWNER, GMAIL_CONNECTOR_ID).state,
+        self.assertEqual(self.registry.status('local-owner', GMAIL_CONNECTOR_ID).state,
                          ConnectorState.CONNECTED)
         self.service.resume_connector_work(GMAIL_CONNECTOR_ID, OWNER, GMAIL_SCOPES)
         self.assertEqual(self.drain(), 1)
@@ -927,16 +927,16 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
         self.assertEqual(job['message'], MAIL_REQUEST)
 
     def test_a_missing_calendar_write_grant_parks_even_when_the_read_grant_exists(self):
-        self.registry.transition(OWNER, CALENDAR_SPEC.connector_id, ConnectorState.CONNECTED,
+        self.registry.transition('local-owner', CALENDAR_SPEC.connector_id, ConnectorState.CONNECTED,
                                  granted_scopes=CALENDAR_SPEC.required_scopes)
         job_id = self.park(CALENDAR_REQUEST)
         guidance = self.store.job(job_id)['response']
         self.assertIn('Google Calendar', guidance)
         self.assertIn('실행하지 않았습니다', guidance)
         # A read grant never became a write grant on the way through.
-        self.assertEqual(self.registry.status(OWNER, CALENDAR_SPEC.connector_id).granted_scopes,
+        self.assertEqual(self.registry.status('local-owner', CALENDAR_SPEC.connector_id).granted_scopes,
                          CALENDAR_SPEC.required_scopes)
-        self.assertEqual(self.registry.status(OWNER, CALENDAR_WRITE_CONNECTOR_ID).state,
+        self.assertEqual(self.registry.status('local-owner', CALENDAR_WRITE_CONNECTOR_ID).state,
                          ConnectorState.DISCONNECTED)
 
     def test_calendar_resume_reaches_the_worker_and_has_no_effect(self):

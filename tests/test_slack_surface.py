@@ -253,7 +253,7 @@ class Ingest(SlackCase):
         jobs = self.sl_jobs()
         self.assertEqual([(job['message'], job['chat_id'], job['owner_typed']) for job in jobs],
                          [('오늘 저녁 뭐 먹을까? <3', OWNER, 1)])
-        self.assertEqual(self.service.connector_owner_id(jobs[0]), f'slack:{OWNER}')
+        self.assertEqual(self.service.connector_owner_id(jobs[0]), 'local-owner')
         self.assertEqual(self.surface.source_message(jobs[0]['id']), message_id(ts))
         self.assertEqual(len(self.socket.acks), 1, 'the envelope is acknowledged')
         # Slack redelivers an envelope it saw acknowledged late: the same event id is taken once, and the same
