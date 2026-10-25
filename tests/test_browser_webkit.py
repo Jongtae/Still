@@ -1242,6 +1242,22 @@ class SessionFixtureHandler(FixtureHandler):
                               ' navigator.maxTouchPoints + " " + ("ontouchstart" in window) + " 같은UA " +'
                               f' (navigator.userAgent === {json.dumps(agent)});</script>'
                               '</body></html>')
+        if path == '/desktop-only':
+            # #254: a desktop-only page: laid out 1100 px wide whatever the viewport, with its
+            # controls at the right edge (where a phone-sized window cuts it off).
+            return self._send('<html><head><title>넓은 페이지</title><meta name="viewport" content="width=device-width">'
+                              '</head><body style="margin:0"><div style="min-width:1100px;height:600px;position:relative">'
+                              '<input id="name" aria-label="이름" style="position:absolute;left:960px;top:100px;width:120px;height:40px">'
+                              '<button id="go" style="position:absolute;left:960px;top:200px;width:120px;height:60px"'
+                              ' onclick="document.getElementById(\'r\').textContent = \'눌림 \' + document.getElementById(\'name\').value">'
+                              '로그인</button><p id="r" style="position:absolute;left:960px;top:300px">대기</p></div>'
+                              '<a href="/device">다음</a></body></html>')
+        if path == '/off-canvas':
+            # #254: a phone page whose off-screen panel is as wide as the viewport, so it always overflows.
+            return self._send('<html><head><title>메뉴</title><meta name="viewport" content="width=device-width">'
+                              '</head><body style="margin:0"><p>본문</p>'
+                              '<nav style="position:absolute;top:0;left:100%;width:100vw;height:100px">메뉴</nav>'
+                              '</body></html>')
         if path == '/device-worker':
             # #13 review: what a Web Worker sees (WebKit's separate WorkerNavigator).
             return self._send('<html><head><title>워커</title></head><body><p id="r">대기</p><script>'
@@ -2197,6 +2213,61 @@ class WebKitIntegrationTests(unittest.TestCase):
                 worker.click(scripted_pay(), 10)
             self.assertEqual(caught.exception.code, 'approval_required', 'armed again once the window is hidden')
             self.assertEqual(self.server.posts, ['/pay'])
+        finally:
+            worker.close()
+
+    def test_a_desktop_only_page_widens_the_phone_window_and_its_far_right_controls_work(self):
+        """#254: in a phone session a page wider than the window widens it (no reload); taps and typing land;
+        the next page is measured afresh from the phone width; the session's end restores the window."""
+        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+
+        def frame_until(check, seconds=8):
+            # The phone polls frames; the worker measures the page after each one.
+            deadline = time.monotonic() + seconds
+            while True:
+                frame = worker.frame()
+                if check(frame) or time.monotonic() > deadline:
+                    return frame
+                time.sleep(0.3)
+
+        def widths(count=8):
+            seen = []
+            for _ in range(count):
+                seen.append(worker.frame()['width'])
+                time.sleep(0.3)
+            return seen
+        try:
+            worker.show(self.origin + '/desktop-only', 10)
+            before = worker.frame()
+            self.assertEqual(before['width'], 390.0)
+            navigations = worker.navigations()
+            worker.remote_begin()
+            frame = frame_until(lambda frame: frame['width'] > 390.0)
+            self.assertEqual((frame['width'], frame['height']), (1100.0, before['height']),
+                             'as wide as the page, the same height')
+            self.assertEqual(worker.navigations(), navigations, 'only a resize: the page was not reloaded')
+            # The phone maps a tap by the frame's own width and height: view points.
+            worker.remote_input('tap', x=1020.0, y=120.0)
+            self.assertEqual(frame_until(lambda frame: frame['focus'] == 'text')['focus'], 'text', '#293 focus')
+            worker.remote_input('text', text='홍길동')
+            worker.remote_input('tap', x=1020.0, y=230.0)
+            deadline = time.monotonic() + 5
+            while '눌림' not in (text := worker.snapshot()['text']) and time.monotonic() < deadline:
+                time.sleep(0.2)
+            self.assertIn('눌림 홍길동', text, 'the far-right button got the tap after the typed name')
+            # A later phone page is measured from the phone width again.
+            worker.goto(self.origin + '/device', 10)
+            self.assertEqual(set(widths()), {390.0}, 'a page that fits stays phone-sized')
+            self.assertIn('폭 390', worker.snapshot()['text'], 'its own scripts read the phone width')
+            # A page whose overflow grows with the window is not widened for good.
+            worker.goto(self.origin + '/off-canvas', 10)
+            seen = widths()
+            self.assertEqual(seen[-3:], [390.0] * 3, seen)
+            # Back on the wide page; the session ends and the window is as it was before it.
+            worker.goto(self.origin + '/desktop-only', 10)
+            self.assertEqual(frame_until(lambda frame: frame['width'] > 390.0)['width'], 1100.0)
+            worker.remote_end()
+            self.assertEqual((worker.frame()['width'], worker.frame()['height']), (before['width'], before['height']))
         finally:
             worker.close()
 
