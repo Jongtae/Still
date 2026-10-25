@@ -310,6 +310,50 @@ class Ingest(SlackCase):
                 "SELECT detail FROM tool_events WHERE job_id=? AND tool='owner_reaction'", (work['id'],))]
         self.assertEqual(events, [{'emoji': ['👍'], 'on': 'answer'}])
 
+    def test_a_message_that_failed_to_be_taken_is_not_acknowledged_and_its_redelivery_is_taken(self):
+        import sqlite3
+        original = self.surface._ingest_owner_message
+        calls = []
+
+        def flaky(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                raise sqlite3.OperationalError('database is locked')
+            return original(*args, **kwargs)
+        payload = {'team_id': TEAM, 'event_id': 'EvFLAKY001', 'event': {
+            'type': 'message', 'channel': DM, 'channel_type': 'im', 'user': OWNER, 'text': '사라지면 안 되는 질문',
+            'ts': self.fake.tick()}}
+        acks = len(self.socket.acks)
+        with mock.patch.object(self.surface, '_ingest_owner_message', flaky):
+            self.socket.deliver('events_api', payload)
+            self.assertEqual((len(self.socket.acks), self.sl_jobs()), (acks, []), 'not acknowledged, nothing taken')
+            self.socket.deliver('events_api', payload)   # Slack delivers the unacknowledged envelope again
+        self.assertEqual([job['message'] for job in self.sl_jobs()], ['사라지면 안 되는 질문'])
+        self.assertEqual(len(self.socket.acks), acks + 1)
+
+    def test_a_reaction_that_failed_to_be_taken_is_read_again(self):
+        self.owner_says('질문')
+        self.assertTrue(self.service.run_one())
+        self.service.deliver_one()
+        work = self.sl_jobs()[0]
+        reaction = {'team_id': TEAM, 'event_id': 'EvREACT02', 'event': {
+            'type': 'reaction_added', 'user': OWNER, 'reaction': '+1',
+            'item': {'type': 'message', 'channel': DM, 'ts': slack_ts(self.surface.reply_message(work['id'], OWNER))}}}
+        original, calls = self.surface.ingest_reaction, []
+
+        def flaky(*args):
+            calls.append(1)
+            if len(calls) == 1:
+                raise OSError('disk')
+            return original(*args)
+        with mock.patch.object(self.surface, 'ingest_reaction', flaky):
+            self.socket.deliver('events_api', reaction)
+            self.socket.deliver('events_api', reaction)
+        with self.store.db() as db:
+            events = db.execute("SELECT COUNT(*) FROM tool_events WHERE job_id=? AND tool='owner_reaction'",
+                                (work['id'],)).fetchone()[0]
+        self.assertEqual(events, 1)
+
     def test_a_thread_reply_names_the_message_it_answers(self):
         root = self.fake.posted() and sorted(self.fake.messages)[0]
         self.owner_says('이거요', thread=root)

@@ -325,7 +325,8 @@ class SlackSurface(DirectMessageSurface):
                 LOG.warning('slack: closing failed (%s)', type(exc).__name__)
 
     def _on_request(self, sdk, request, generation):
-        """One Socket Mode envelope: a button press is acknowledged first (Slack waits 3 s), an event after it is taken."""
+        """One Socket Mode envelope: a button press is acknowledged first (Slack waits 3 s); an event only after it was
+        durably taken, so one that failed is not acknowledged and Slack delivers it again (#316 review)."""
         from slack_sdk.socket_mode.response import SocketModeResponse
 
         def ack():
@@ -338,11 +339,9 @@ class SlackSurface(DirectMessageSurface):
                 ack()
                 self.ingest_interaction(request.payload, generation)
                 return
-            try:
-                if request.type == 'events_api':
-                    self.ingest_event(request.payload, generation)
-            finally:
-                ack()
+            if request.type == 'events_api':
+                self.ingest_event(request.payload, generation)
+            ack()
         except Exception as exc:
             LOG.warning('slack: an envelope was not taken (%s)', type(exc).__name__)
 
@@ -355,6 +354,10 @@ class SlackSurface(DirectMessageSurface):
             return db.execute(f'INSERT OR IGNORE INTO {EVENTS_TABLE}(key,created) VALUES (?,?)',
                               (str(key)[:200], time.time())).rowcount == 1
 
+    def _forget(self, key):
+        with self.service.store.db() as db:
+            db.execute(f'DELETE FROM {EVENTS_TABLE} WHERE key=?', (str(key)[:200],))
+
     def _current(self, generation, team):
         cfg = self.config()
         return cfg if (generation and cfg.get('generation') == generation and team == cfg.get('team_id')
@@ -366,7 +369,7 @@ class SlackSurface(DirectMessageSurface):
         payload = payload if isinstance(payload, dict) else {}
         event = payload.get('event') if isinstance(payload.get('event'), dict) else {}
         cfg = self._current(generation, payload.get('team_id'))
-        if cfg is None or not self._first_time('event:' + str(payload.get('event_id') or '')):
+        if cfg is None:
             return None
         owner, kind = cfg['owner_user_id'], event.get('type')
         if kind == 'message':
@@ -391,6 +394,8 @@ class SlackSurface(DirectMessageSurface):
             except ValueError:
                 spoke = None
             text = _unescape(event.get('text'))
+            # A message is taken once by its request key, written with its Work in one transaction (#316 review):
+            # no separate marker that could outlive a failed ingestion.
             work_id = self._ingest_owner_message(message_id(ts), text, reply_to, owner, generation, spoke=spoke)
             if work_id and self.service.is_natural_language(text):
                 self.service.consider_steer(work_id, text)
@@ -401,7 +406,14 @@ class SlackSurface(DirectMessageSurface):
                 return None
             name = str(event.get('reaction') or '').split('::', 1)[0]
             reacted = message_id(item.get('ts'))
-            return self.ingest_reaction(reacted, name, owner, generation) if name and reacted else None
+            key = 'event:' + str(payload.get('event_id') or '')
+            if not (name and reacted) or not self._first_time(key):
+                return None
+            try:
+                return self.ingest_reaction(reacted, name, owner, generation)
+            except Exception:
+                self._forget(key)   # not taken: Slack's redelivery is read again (#316 review)
+                raise
         return None
 
     def ingest_interaction(self, payload, generation):
