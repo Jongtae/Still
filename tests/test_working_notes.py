@@ -80,6 +80,34 @@ class Document(unittest.TestCase):
         self.assertIn(f"forget_record forget {second['ref']} puts the previous notes back", block)
         self.assertTrue(block.endswith(':\n- 요약은 세 줄로\n- 링크는 맨 끝에'), 'one block, every point, in the owner\'s words')
 
+    def test_cut_to_fit_removes_notes_tail_before_profile_facts_without_changing_the_store(self):
+        from personal_agent.agent_runtime import CUT_TO_FIT_MARKER, cut_to_fit
+        from personal_agent.quickstart_service import AgentService
+        service = AgentService(self.store)
+        self.store.save_memory('profile.preference.format', 'Use numbered paragraphs', MEMORY_OWNER)
+        notes = om.WorkingNotes(self.store)
+        saved = notes.save(revision('Keep source links',
+                                    'Explain uncertainty and distinguish observations from assumptions',
+                                    change='Evidence style'), None)
+        profile = service.owner_profile_snapshot(recall=False)
+        facts = service.owner_profile_snapshot(notes=False)
+        block = notes.block()
+        self.assertEqual(profile, facts + '\n' + block)
+        sections = {'profile': profile, 'request': 'Compare the alternatives', 'instructions': 'Fixed instructions',
+                    'attachments': 'Attached source', 'surface': 'web'}
+        # Cutting just one byte still removes a whole notes line, including
+        # enough extra bytes for the omission marker; facts stay at the head.
+        out, cut = cut_to_fit(sections, 1)
+        self.assertEqual(cut, ['profile'])
+        self.assertEqual(out['profile'], profile.rsplit('\n', 1)[0] + '\n' + CUT_TO_FIT_MARKER)
+        self.assertTrue(out['profile'].startswith(facts + '\n'))
+        for name in sections.keys() - {'profile'}:
+            self.assertEqual(out[name], sections[name])
+        self.assertGreaterEqual(len(profile.encode()) - len(out['profile'].encode()), 1)
+        self.assertEqual(sections['profile'], profile, 'the caller snapshot is not mutated')
+        self.assertEqual(notes.current()['id'], saved['id'])
+        self.assertEqual(notes.block(), block, 'prompt trimming never revises durable notes')
+
     def test_a_save_based_on_a_document_that_changed_meanwhile_is_refused(self):
         first = self.save('a')
         self.assertIsNone(self.save('a', 'b', expected=None), 'the document exists now')
@@ -308,6 +336,25 @@ class Told(TelegramHarness):
         self.assertEqual(self.notices(again), [], 'a reworded existing lesson: no version, no notice')
         self.assertEqual(om.WorkingNotes(self.store).current()['version'], 1)
         self.assertEqual(self.store.memories(MEMORY_OWNER), [], 'no fact row either')
+
+    def test_a_revision_with_a_blocker_keeps_the_previous_version_and_queues_no_notice(self):
+        self.reviewed({'notes': '- Keep summaries short', 'change': 'Summary length', 'blocker': ''})
+        notes = om.WorkingNotes(self.store)
+        before = notes.current()
+        # Even a blocker too long to retain must veto an otherwise valid revision.
+        for blocker in ('The tool result was lost', 'x' * (om.MAX_TEXT_CHARS + 1)):
+            with self.subTest(blocker_chars=len(blocker)):
+                job = self.reviewed({'notes': '- Put links last', 'change': 'Link placement', 'blocker': blocker})
+                self.assertEqual(notes.current(), before)
+                self.assertEqual(self.notices(job), [])
+                with self.store.db() as db:
+                    self.assertEqual(db.execute('SELECT COUNT(*) FROM procedure_versions WHERE slot=?',
+                                                (NOTES_SLOT,)).fetchone()[0], 1)
+        # A subsequent unblocked answer can still advance the same document.
+        job = self.reviewed({'notes': '- Put links last', 'change': 'Link placement', 'blocker': ''})
+        self.assertEqual(notes.current()['version'], before['version'] + 1)
+        self.assertEqual(notes.current()['points'], ['Put links last'])
+        self.assertEqual(self.notices(job), ['queued'])
 
     def test_an_english_owner_is_told_in_english(self):
         # #235: the two-line notice was sent in Korean to every en/ja/zh owner.
