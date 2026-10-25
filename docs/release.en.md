@@ -58,7 +58,7 @@ looks reviewable and installs nothing.
 ## Steps
 
 Steps 1–4 are reversible and form one release-preparation PR. Steps 5 onward
-publish. Since #1472 `.github/workflows/release.yml` performs steps 5–7 and 9–11
+publish. Since #1472 `.github/workflows/release.yml` performs steps 5–7 and 9–12
 after the owner approves its `release` environment; step 8 stays with the
 owner. The numbered steps below are what the workflow does and the manual
 fallback when it cannot.
@@ -153,6 +153,16 @@ PR is accepted only when it is merged or still open (#313).
     decision too (#313); `deploy-pages` itself still has no push trigger, so
     nothing else deploys the site. Run it by hand only when a release was
     finished outside the workflow.
+
+12. **Close the milestone.** The `vX.Y.Z` milestone is the release's scope;
+    it closes once every step above has succeeded. A separate
+    `close-milestone` job that needs `publish` does it with its own job token
+    and `issues: write`, which neither `RELEASE_TOKEN` nor the `release`
+    environment holds (#335). If an earlier step fails, the milestone stays
+    open. A re-run accepts an already closed milestone, and the job refuses to
+    close one that gained an open issue during the release: move that issue
+    to the next milestone and re-run the job. By hand:
+    `gh api -X PATCH repos/Jongtae/Still/milestones/<number> -f state=closed`.
 
 RC tags (`vX.Y.Z-rc.N`) are not handled by the workflow: create them by hand
 with `gh release create --prerelease` and do not record them as published.

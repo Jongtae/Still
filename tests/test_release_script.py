@@ -368,6 +368,48 @@ class ReleaseWorkflowShapeTests(unittest.TestCase):
         self.assertIn('timeout-minutes', steps[deploy])
         self.assertEqual(publish['permissions'], {'contents': 'write', 'checks': 'read', 'actions': 'write'})
 
+    def test_the_milestone_closes_only_after_publish_with_the_job_token(self):
+        """#335: the scope milestone closes once every publish step succeeded."""
+        close = self.jobs['close-milestone']
+        self.assertEqual(close['needs'], ['prepare', 'publish'])
+        self.assertEqual(close['if'], "needs.prepare.outputs.release == 'true'")
+        self.assertEqual(close['permissions'], {'issues': 'write'})
+        self.assertNotIn('environment', close)
+        self.assertNotIn('secrets.', json.dumps(close))
+        self.assertIn('timeout-minutes', close)
+        self.assertEqual(close['steps'][0]['env']['GH_TOKEN'], '${{ github.token }}')
+        self.assertEqual(self.jobs['prepare']['outputs']['milestone_number'],
+                         '${{ steps.check.outputs.milestone_number }}')
+        self.assertEqual(list(self.jobs), ['prepare', 'publish', 'close-milestone'])
+
+    def run_close(self, milestone):
+        """The close step with a fake `gh` that answers GET with `milestone` and logs every call."""
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / 'calls'
+            gh = Path(tmp) / 'gh'
+            gh.write_text('#!/bin/bash\necho "$*" >> "$GH_LOG"\n'
+                          'if [[ "$*" == *PATCH* ]]; then echo closed; else echo "$FAKE_MILESTONE"; fi\n')
+            gh.chmod(0o755)
+            step = self.jobs['close-milestone']['steps'][0]
+            result = subprocess.run(['bash', '-c', step['run']], capture_output=True, text=True,
+                                    env={**os.environ, 'PATH': f'{tmp}:{os.environ["PATH"]}', 'GH_LOG': str(log),
+                                         'FAKE_MILESTONE': milestone, 'GITHUB_REPOSITORY': 'o/r',
+                                         'VERSION': '9.0.0', 'MILESTONE': '7'})
+            calls = log.read_text().splitlines() if log.exists() else []
+        return result, calls
+
+    def test_the_milestone_close_is_safe_to_rerun_and_refuses_a_changed_scope(self):
+        opened, calls = self.run_close('v9.0.0 open 0')
+        self.assertEqual(opened.returncode, 0, opened.stderr)
+        self.assertEqual(calls[-1], 'api -X PATCH repos/o/r/milestones/7 -f state=closed --jq "closed \\(.html_url)"')
+
+        for milestone, code in (('v9.0.0 closed 0', 0), ('v9.0.0 open 2', 1), ('v9.0.1 open 0', 1)):
+            with self.subTest(milestone=milestone):
+                result, calls = self.run_close(milestone)
+                self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+                self.assertEqual(len(calls), 1)
+                self.assertNotIn('PATCH', calls[0])
+
     def test_publication_waits_for_the_release_environment_and_its_credential(self):
         publish = self.jobs['publish']
         self.assertEqual(publish['environment'], 'release')

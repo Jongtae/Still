@@ -36,6 +36,7 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       issue: ${{ steps.check.outputs.issue }}
       milestone_url: ${{ steps.check.outputs.milestone_url }}
+      milestone_number: ${{ steps.check.outputs.milestone_number }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -86,17 +87,19 @@ jobs:
             echo "tag v$version already names $GITHUB_SHA; resuming"
           fi
           milestone="$(gh api "repos/$GITHUB_REPOSITORY/milestones?state=all&per_page=100" \
-            --jq ".[] | select(.title == \"v$version\") | \"\(.open_issues) \(.html_url)\"")"
+            --jq ".[] | select(.title == \"v$version\") | \"\(.open_issues) \(.number) \(.html_url)\"")"
           if [[ -z "$milestone" ]]; then
             echo "::error::milestone v$version does not exist"; exit 1
           fi
-          if [[ "${milestone%% *}" != 0 ]]; then
-            echo "::error::milestone v$version still has ${milestone%% *} open issues"; exit 1
+          read -r open_issues number url <<<"$milestone"
+          if [[ "$open_issues" != 0 ]]; then
+            echo "::error::milestone v$version still has $open_issues open issues"; exit 1
           fi
           {
             echo "version=$version"
             echo "issue=$issue"
-            echo "milestone_url=${milestone#* }"
+            echo "milestone_url=$url"
+            echo "milestone_number=$number"
           } >> "$GITHUB_OUTPUT"
 
   publish:
@@ -343,3 +346,35 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run deploy-pages.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+  # The milestone is the release's scope; it closes only after every publish
+  # step above succeeded (#335). A job of its own, so `issues: write` is held
+  # by the job token here and not by the release environment or RELEASE_TOKEN.
+  close-milestone:
+    needs: [prepare, publish]
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Close the release milestone
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          MILESTONE: ${{ needs.prepare.outputs.milestone_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          milestone="repos/$GITHUB_REPOSITORY/milestones/$MILESTONE"
+          read -r title state open_issues <<<"$(gh api "$milestone" --jq '"\(.title) \(.state) \(.open_issues)"')"
+          if [[ "$title" != "v$VERSION" ]]; then
+            echo "::error::milestone $MILESTONE is $title, not v$VERSION"; exit 1
+          fi
+          if [[ "$state" == closed ]]; then
+            echo "milestone v$VERSION already closed"; exit 0
+          fi
+          if [[ "$open_issues" != 0 ]]; then
+            echo "::error::milestone v$VERSION gained $open_issues open issues during the release; move them and re-run"; exit 1
+          fi
+          gh api -X PATCH "$milestone" -f state=closed --jq '"closed \(.html_url)"'
