@@ -4,8 +4,8 @@
 class Agentos < Formula
   desc "Self-hosted personal agent with browser setup and Telegram"
   homepage "https://github.com/Jongtae/Still"
-  url "https://github.com/Jongtae/Still/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "dabb1c5235651f9a30962bedecc6ef8f0acdf0077e9c0c23a51b120bd5cba257"
+  url "https://github.com/Jongtae/Still/archive/refs/tags/v0.2.0.tar.gz"
+  sha256 "6519e3526b814d9d13badc1c3e544abca6b6b7746b7318a2ce33030f14f56729"
   version_scheme 1
   depends_on "python@3.13"
 
