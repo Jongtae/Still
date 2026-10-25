@@ -680,12 +680,20 @@ class ReviewRegressions(MattermostCase):
         job = self.mm_jobs()[0]
         self.service.set_work_mode({'enabled': True})
         self.service.set_work_mode({'enabled': False})
-        row = self.store.queue_notification(job['id'], OWNER, self.surface.owner_generation(), 'memory_saved',
+        # A notice that binds nothing, so only the work-mode rule can hold it back.
+        row = self.store.queue_notification(job['id'], OWNER, self.surface.owner_generation(), 'location_not_continued',
                                             surface='mattermost')
         before = len(self.fake.bot_posts())
         self.service.deliver_notification()
         self.assertEqual(self.store.notification(row['id'])['state'], 'cancelled')
         self.assertEqual(len(self.fake.bot_posts()), before)
+        later = self.fake.post(OWNER, self.dm(), '회사 모드 끈 뒤 질문')
+        self.surface.receive()
+        fresh = next(job for job in self.mm_jobs() if job['message'] == later['message'])
+        fresh_row = self.store.queue_notification(fresh['id'], OWNER, self.surface.owner_generation(),
+                                                  'location_not_continued', surface='mattermost')
+        self.service.deliver_notification()
+        self.assertEqual(self.store.notification(fresh_row['id'])['state'], 'sent', 'a later Work is told as usual')
 
     def test_a_long_reply_partly_sent_is_never_posted_again(self):
         self.owner_says('질문')
