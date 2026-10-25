@@ -842,16 +842,15 @@ class AgentService:
         """#814 review P2-3: the result of a setter applied off-thread, told to the confirming conversation.
 
         One assistant transcript row on the Work's channel, and the same text
-        to the paired Telegram chat when the Work came from it (best effort).
+        to the paired conversation surface when the Work came from it (best effort, #213).
         """
         with self.store.db() as db:
             db.execute('INSERT INTO messages(role,content,channel,created,workspace_id) VALUES (?,?,?,?,?)',
                        ('assistant',text,job['channel'],time.time(),job.get('workspace_id')))
-        cfg=self.store.config('telegram',{})
-        if (cfg.get('enabled') and job.get('channel')==f"telegram:{cfg.get('generation')}"
-                and job.get('chat_id')==cfg.get('user_id')):
-            try:self.telegram.send_message(job['chat_id'],text)
-            except ProviderError:LOG.warning('settings follow-up not delivered work=%s',job.get('id'))
+        surface=self.surface_of(job)
+        if surface is not None and not surface.send_owner(text,owner=job.get('chat_id'),
+                                                          generation=str(job.get('channel'))[len(surface.channel_prefix):]):
+            LOG.warning('settings follow-up not delivered work=%s',job.get('id'))
 
     def settings_work_continued(self, work_id):
         """A queued original message is not newly typed owner approval after a settings wait."""
@@ -921,11 +920,10 @@ class AgentService:
         if (not job or self.settings_owner(job)!=draft['owner'] or job['channel']!=draft['channel']
                 or self.work_stopped(job['id']) or draft.get('recovery_of') and draft.get('continuation') and job['status']=='succeeded'):
             raise ValueError('연결을 요청한 작업과 소유자를 확인하세요.')
-        if isinstance(job.get('chat_id'),int):
-            pairing=self.store.config('telegram',{})
-            if (not pairing.get('enabled') or pairing.get('user_id')!=job['chat_id']
-                    or job['channel']!=f"telegram:{pairing.get('generation')}"):
-                raise ValueError('연결을 요청한 Telegram 소유자 연결이 바뀌었어요.')
+        # #213: a Work from a conversation surface is held to that surface's current pairing.
+        surface=self.surface_claiming(job)
+        if surface is not None and not surface.owns(job):
+            raise ValueError('연결을 요청한 대화의 소유자 연결이 바뀌었어요.')
         data=json.loads(draft['after'])
         target=trust_record.connection(data['engine'],'owner-mcp',data['name'])
         return {'generation':self._owner_generation(self.connector_owner_id(job)),
@@ -1310,9 +1308,9 @@ class AgentService:
                           and row['continuation'].get('generation')==self._owner_generation(self.connector_owner_id(job))
                           for row in drafts)
                 stopped=self.work_stopped(work_id) or job['status'] not in ('partial','failed','interrupted','succeeded','awaiting_connection')
-                if isinstance(job.get('chat_id'),int):
-                    pairing=self.store.config('telegram',{})
-                    stopped=stopped or not pairing.get('enabled') or pairing.get('user_id')!=job['chat_id']
+                surface=self.surface_claiming(job)
+                if surface is not None:
+                    stopped=stopped or not surface.paired_owner(job['chat_id'])
                 # A second Work waiting on the same operation uses the first
                 # owner's persisted classification; it never re-applies a setter.
                 changed_during_settlement=False
@@ -5232,16 +5230,25 @@ class AgentService:
         by reconnecting a bot, so connector identity is the paired chat
         itself; every web/local job is the one local owner.
         """
-        chat=job.get('chat_id')
-        return f'telegram:{chat}' if isinstance(chat,int) else 'local-owner'
+        surface=self.surface_claiming(job)
+        return surface.connector_owner(job) if surface is not None else 'local-owner'
 
     def telegram_generation(self):
         generation=self.store.config('telegram',{}).get('generation')
         return generation if isinstance(generation,str) else ''
 
     def _owner_generation(self, owner_id):
-        """Bind a paired-chat handoff to the bot generation that created it."""
-        return self.telegram_generation() if str(owner_id).startswith('telegram:') else ''
+        """Bind a paired-conversation handoff to the pairing generation that created it (#213: per surface)."""
+        surface=self.surface_of_owner(owner_id)
+        return surface.owner_generation() if surface is not None else ''
+
+    def surface_claiming(self, job):
+        """The conversation surface a Work came from, in any pairing generation, or None (web, local)."""
+        return next((surface for surface in self.surfaces if surface.claims(job)),None)
+
+    def surface_of_owner(self, owner_id):
+        """The conversation surface a connector owner identity names, or None (the local owner)."""
+        return next((surface for surface in self.surfaces if surface.owns_connector_owner(owner_id)),None)
 
     def _notify_owner(self, owner_id, text):
         """Best-effort owner message; a lost bubble never changes durable state.
@@ -5253,15 +5260,11 @@ class AgentService:
         the one moment the code knows better.  Same predicate as every other
         outbound send in this file.
         """
-        chat=str(owner_id)[len('telegram:'):] if str(owner_id).startswith('telegram:') else ''
-        if not chat.isdigit():return False
-        cfg=self.store.config('telegram',{})
-        if not (cfg.get('enabled') and chat==str(cfg.get('user_id'))):return False
-        try:
-            self.telegram.send_message(int(chat),text)
-        except ProviderError:
-            return False
-        return True
+        surface=self.surface_of_owner(owner_id)
+        if surface is None:return False
+        owner=str(owner_id)[len(surface.name)+1:]
+        if not surface.paired_owner(owner):return False
+        return surface.send_owner(text,owner=owner)
 
     def connection_handoff(self, job, decision):
         """Owner guidance when a required connector is unavailable, else None.
@@ -6021,7 +6024,7 @@ class AgentService:
         for work_id,owner,text,generation in notices:
             job=self.store.job(work_id)
             self.update_task_card(job,'failed')
-            if self._telegram_work(job):self._present_outcome(job,delivered=False,blocked=False)
+            if self._surface_work(job):self._present_outcome(job,delivered=False,blocked=False)
             if owner and generation==self._owner_generation(owner):self._notify_owner(owner,text)
         return len(notices)
 
@@ -6063,7 +6066,7 @@ class AgentService:
                 if changed:
                     current=self.store.job(job['id'])
                     self.update_task_card(current,terminal)
-                    if self._telegram_work(current):
+                    if self._surface_work(current):
                         self._present_outcome(current,delivered=False,blocked=False)
                         self._notify_owner(owner,refusal)
                 continue
@@ -6076,7 +6079,7 @@ class AgentService:
                 # Another callback may have settled this exact handle. A
                 # retryable claim stays quiet; terminal failure is told once.
                 current=self.store.job(job['id'])
-                if current and current.get('status')=='failed' and self._telegram_work(current):
+                if current and current.get('status')=='failed' and self._surface_work(current):
                     self._notify_owner(owner,ConnectorHandoff.refusal_text(exc.reason))
         return resumed
 
@@ -6325,15 +6328,15 @@ class AgentService:
         except ConversationHandoffError as exc:
             if exc.reason in ('wrong_owner','generation_changed','work_already_completed'):
                 changed=self.local_handoff.settle(row,exc.reason,self._abandon_local_work)
-                if changed and self._telegram_work(job):
+                if changed and self._surface_work(job):
                     self._present_outcome(self.store.job(job['id']),delivered=False,blocked=False)
-            if self._telegram_work(job):self._notify_owner(owner,local_refusal_text(exc.reason))
+            if self._surface_work(job):self._notify_owner(owner,local_refusal_text(exc.reason))
             raise
         finally:
             current=self.resume_index.record(key,handoff_id=row['handoff_id'])
             if not current or current.get('handoff_id')!=row['handoff_id']:
                 self._local_selections.pop(row['handoff_id'],None)
-        if self._telegram_work(job):
+        if self._surface_work(job):
             self._notify_owner(owner,LOCAL_KEPT_WORKSPACE_TEXT if kept_existing else LOCAL_RESUMED_NOTICE[LOCAL_AUTHORITY_KIND[key]])
         return {'state':'approved','authority':LOCAL_AUTHORITY_KIND[key],'scheduled':scheduled,'name':Path(selected).name,
                 'kept_existing':kept_existing}
@@ -6539,8 +6542,9 @@ class AgentService:
             if source is not None:return surface,source
         return None,None
 
-    def _telegram_work(self, job):
-        return self.telegram_surface.owns(job)
+    def _surface_work(self, job):
+        """Whether ``job`` came from a conversation surface's current paired conversation (#213: any surface)."""
+        return self.surface_of(job) is not None
 
     def _presence_call(self, surface, action, *args):
         """One best-effort presence call through ``surface`` (``conversation_surface.PRESENCE_*``); True when shown."""
@@ -8351,7 +8355,7 @@ class AgentService:
                 job=dict(job_row) if job_row else None
                 statuses=('failed','partial','succeeded') if row.get('explicit') else ('failed','partial')
                 current=bool(job and job['status'] in statuses and not self.work_stopped(work_id)
-                             and (not str(job.get('channel','')).startswith('telegram:') or self._telegram_work(job))
+                             and (not any(surface.claims_channel(job.get('channel')) for surface in self.surfaces) or self._surface_work(job))
                              and not self.login_refusal(row.get('host')))
                 if time.time()>float(row.get('deadline') or 0):
                     final=shown='expired'
@@ -8385,7 +8389,7 @@ class AgentService:
         """Tell the owner the outcome once: edit the Telegram prompt, cancel an unsent one, or (for a
         login that expired unanswered with no prompt shown) leave one line in the conversation."""
         note=self.store.notification_of(work_id,'browser_login_needed')
-        if note and not self._telegram_work(self.store.job(work_id)):
+        if note and not self._surface_work(self.store.job(work_id)):
             if note['state'] in ('sent','queued'):self.store.update_notification(note['id'],'cancelled')
             return
         row=self._browser_login(work_id) or {}
@@ -8448,7 +8452,7 @@ class AgentService:
         return bool(row.get('state')=='expired' and row.get('cause')=='expired'
                     and int(row.get('reopens') or 0)<BROWSER_LOGIN_REOPENS
                     and job and job['status'] in ('partial','failed') and not self.work_stopped(work_id)
-                    and self._telegram_work(job) and not self.login_refusal(row.get('host')))
+                    and self._surface_work(job) and not self.login_refusal(row.get('host')))
 
     def reopen_browser_login(self, work_id, nonce):
         """The expired prompt's 로그인 창 다시 열기: ask the same login again for the same Work (#1573).
@@ -9885,10 +9889,34 @@ class AgentService:
                 'location_not_continued':LOCATION_NOT_CONTINUED_TEXT}.get(kind,msg('notice.generic'))
 
     def queue_notification(self, job, kind, fingerprint=None):
-        return self.telegram_surface.queue_notification(job, kind, fingerprint)
+        """#213: queued on the surface the Work came from; a Work of no paired surface gets none."""
+        surface=self.surface_of(job)
+        return surface.queue_notification(job, kind, fingerprint) if surface is not None else None
 
     def deliver_notification(self):
-        return self.telegram_surface.deliver_notification()
+        """One queued notice per surface (#213: each claims only its own); True when one was handled."""
+        handled=self._cancel_orphan_deliveries()
+        for surface in self.surfaces:
+            handled=bool(surface.deliver_notification()) or handled
+        return handled
+
+    def _cancel_orphan_deliveries(self):
+        """#213: a pending reply or queued notice that no composed surface claims is cancelled, never sent.
+
+        Before #213 Telegram's delivery cancelled every row it did not own; with
+        claims partitioned per surface, rows of a surface that is not composed
+        (none today) are settled here instead of waiting forever.  True when one was.
+        """
+        prefixes=[surface.channel_prefix for surface in self.surfaces if surface.channel_prefix]
+        names=[surface.name for surface in self.surfaces]
+        with self.lock,self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            replies=db.execute("UPDATE jobs SET delivery='cancelled' WHERE delivery='pending' AND NOT ("
+                               +(' OR '.join(['substr(channel,1,?)=?']*len(prefixes)) or '0')+')',
+                               [value for prefix in prefixes for value in (len(prefix),prefix)]).rowcount
+            notices=db.execute("UPDATE telegram_notifications SET state='cancelled' WHERE state='queued' AND surface NOT IN ("
+                               +(','.join('?'*len(names)) or "''")+')',names).rowcount
+        return bool(replies or notices)
 
     @staticmethod
     def task_card_markup(job_id, state):
@@ -9967,7 +9995,8 @@ class AgentService:
     def _set_work_mode(self, body):
         current=work_mode.set_enabled(self.store,body.get('enabled'),surface='settings')
         if current['enabled']:
-            self.telegram_surface.cancel_pending_deliveries()
+            for surface in self.surfaces:
+                surface.cancel_pending_deliveries()
             self.end_tunnel_sessions('work_mode')
             from . import family_setup
             for row in self.store.config(family_setup.PENDING_KEY,[]) or []:
@@ -11744,7 +11773,10 @@ class AgentService:
         return terminal_text(response,error,outcome,verified=verified,note=note,waiting=waiting)
 
     def deliver_one(self):
-        return self.telegram_surface.deliver_one()
+        """One pending terminal reply per surface (#213: each claims only its own channels)."""
+        self._cancel_orphan_deliveries()
+        for surface in self.surfaces:
+            surface.deliver_reply()
 
     def mark_telegram_connected(self):
         cfg=self.store.config('telegram',{})

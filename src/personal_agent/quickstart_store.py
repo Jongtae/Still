@@ -192,6 +192,9 @@ class QuickStore:
             # Nullable and never backfilled: a prompt sent before this column existed has none.
             columns={row['name'] for row in db.execute('PRAGMA table_info(telegram_notifications)')}
             if 'sent_at' not in columns: db.execute('ALTER TABLE telegram_notifications ADD COLUMN sent_at REAL')
+            # #213: the conversation surface whose delivery claims a notice; every earlier row is Telegram's.
+            if 'surface' not in columns:
+                db.execute("ALTER TABLE telegram_notifications ADD COLUMN surface TEXT NOT NULL DEFAULT 'telegram'")
             columns={row['name'] for row in db.execute('PRAGMA table_info(messages)')}
             if 'workspace_id' not in columns: db.execute('ALTER TABLE messages ADD COLUMN workspace_id TEXT')
             if 'job_id' not in columns: db.execute('ALTER TABLE messages ADD COLUMN job_id TEXT')
@@ -1809,11 +1812,11 @@ class QuickStore:
     def notification(self, notification_id):
         return self.telegram.notification(notification_id)
 
-    def queue_notification(self, job_id, chat_id, generation, kind, fingerprint=None):
-        return self.telegram.queue_notification(job_id, chat_id, generation, kind, fingerprint)
+    def queue_notification(self, job_id, chat_id, generation, kind, fingerprint=None, surface='telegram'):
+        return self.telegram.queue_notification(job_id, chat_id, generation, kind, fingerprint, surface=surface)
 
-    def next_notification(self):
-        return self.telegram.next_notification()
+    def next_notification(self, surface='telegram'):
+        return self.telegram.next_notification(surface)
 
     def update_notification(self, notification_id, state, message_id=None, fingerprint=None, delivered=False):
         return self.telegram.update_notification(notification_id, state, message_id, fingerprint, delivered=delivered)

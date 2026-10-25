@@ -57,6 +57,7 @@ class TelegramSurface(ConversationSurface):
     """Telegram ingestion, callbacks and delivery for one ``AgentService``."""
 
     name = 'telegram'
+    channel_prefix = 'telegram:'
     #: Telegram shows every optional presence: a reaction on the owner's message, ``typing…``, the
     #: thinking draft (``sendRichMessageDraft`` / ``sendMessageDraft``) with its Stop, and inline buttons.
     capabilities = SurfaceCapabilities(reactions=True, typing=True, live_drafts=True, buttons=True, native_stop=True)
@@ -84,11 +85,45 @@ class TelegramSurface(ConversationSurface):
         return bool(job and cfg.get('enabled') and job.get('channel')==f"telegram:{cfg.get('generation')}"
                     and isinstance(job.get('chat_id'),int) and job.get('chat_id')==cfg.get('user_id'))
 
+    # -- owner identity (#213) ------------------------------------------------------
+    def claims(self, job):
+        """A Work with a Telegram chat id, whatever its bot generation (the identity before #213)."""
+        return bool(job) and isinstance(job.get('chat_id'),int)
+
+    def owns_connector_owner(self, owner_id):
+        return isinstance(owner_id,str) and owner_id.startswith('telegram:') and owner_id[len('telegram:'):].isdigit()
+
+    def reply_message(self, work_id, owner):
+        """The message id of Still's reply to ``work_id`` in ``owner``'s chat (a calendar item's binding), or None."""
+        turn=self.service.telegram_turns.get(work_id)
+        return turn['reply_message_id'] if turn and turn['chat_id']==owner else None
+
+    def owner_generation(self):
+        generation=self.service.store.config('telegram',{}).get('generation')
+        return generation if isinstance(generation,str) else ''
+
+    def paired_owner(self, owner):
+        cfg=self.service.store.config('telegram',{})
+        return bool(cfg.get('enabled')) and owner is not None and str(owner)==str(cfg.get('user_id'))
+
+    def send_owner(self, text, reply_to=None, owner=None, generation=None):
+        cfg=self.service.store.config('telegram',{})
+        if not (cfg.get('enabled') and isinstance(cfg.get('user_id'),int)):return False
+        # #299 review: a result for a captured conversation is sent only while it is still the pairing.
+        if owner is not None and str(owner)!=str(cfg['user_id']):return False
+        if generation is not None and generation!=cfg.get('generation'):return False
+        try:
+            self.service.telegram.send_message(cfg['user_id'],text,**({'reply_to':reply_to} if reply_to is not None else {}))
+        except Exception as exc:  # best effort: a lost bubble never changes durable state
+            LOG.warning('owner message not delivered (%s)',type(exc).__name__)
+            return False
+        return True
+
     def receive(self, now=None):
         return self.service.receive_telegram(now)
 
     def deliver_reply(self):
-        return self.service.deliver_one()
+        return self.deliver_one()
 
     def source_message(self, work_id):
         """The owner's Telegram message this Work answers (#581), or None."""
@@ -210,13 +245,14 @@ class TelegramSurface(ConversationSurface):
         cfg=service.store.config('telegram',{})
         if not (cfg.get('enabled') and job.get('channel')==f"telegram:{cfg.get('generation')}" and job.get('chat_id')==cfg.get('user_id')):return
         fingerprint=service.document_fingerprint() if kind=='approval_needed' else fingerprint
-        service.store.queue_notification(job['id'],job['chat_id'],cfg['generation'],kind,fingerprint)
+        service.store.queue_notification(job['id'],job['chat_id'],cfg['generation'],kind,fingerprint,surface=self.name)
 
     def deliver_notification(self):
         # Persist the send intent first. An uncertain Telegram response is never
         # replayed after a restart because it might already have been delivered.
         service=self.service
-        notification=service.store.next_notification()
+        # #213: only this surface's queued notices; another surface's are never claimed or cancelled here.
+        notification=service.store.next_notification(self.name)
         if not notification:return False
         with service.lock:
             # #208 review: the row was read before the lock; a switch to work mode may have cancelled
@@ -1142,8 +1178,8 @@ class TelegramSurface(ConversationSurface):
             LOG.info('owner reaction work=%s on=%s',target,'memory_notice' if notice else 'answer')
         # #172: a reaction on a message that showed an open item is the owner's act on that item,
         # judged off the poll thread; nothing is settled unless the judgment names it.
-        if service.owner_acts.bound_to(user,generation,message_id):
-            service.steer_spawn(lambda:service.owner_acts.answer_reaction(user,generation,message_id,emoji))
+        if service.owner_acts.bound_to(self,user,generation,message_id):
+            service.steer_spawn(lambda:service.owner_acts.answer_reaction(self,user,generation,message_id,emoji))
             return 'owner_act'
         if not target or notice:return None
         # #998: the answer the owner reacted to gets one self-review in the idle tick, under the
@@ -1245,8 +1281,10 @@ class TelegramSurface(ConversationSurface):
         service=self.service
         with service.lock,service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            replies=db.execute("UPDATE jobs SET delivery='cancelled' WHERE delivery='pending' AND channel LIKE 'telegram:%'").rowcount
-            notices=db.execute("UPDATE telegram_notifications SET state='cancelled' WHERE state='queued'").rowcount
+            replies=db.execute("UPDATE jobs SET delivery='cancelled' WHERE delivery='pending' AND substr(channel,1,?)=?",
+                               (len(self.channel_prefix),self.channel_prefix)).rowcount
+            notices=db.execute("UPDATE telegram_notifications SET state='cancelled' WHERE state='queued' AND surface=?",
+                               (self.name,)).rowcount
         return replies,notices
 
     def settle_expired_telegram_photo_albums(self, now=None):
@@ -1264,7 +1302,9 @@ class TelegramSurface(ConversationSurface):
             cfg=service.store.config('telegram',{})
             with service.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
-                row=db.execute("SELECT * FROM jobs WHERE delivery='pending' ORDER BY created LIMIT 1").fetchone()
+                # #213: only this surface's replies; another surface's pending reply is never claimed here.
+                row=db.execute("SELECT * FROM jobs WHERE delivery='pending' AND substr(channel,1,?)=? ORDER BY created LIMIT 1",
+                               (len(self.channel_prefix),self.channel_prefix)).fetchone()
                 if not row:return
                 job=dict(row)
                 # #208: in work mode a Telegram reply is not sent (cancelled, never sent later); the Work keeps it.

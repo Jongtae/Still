@@ -594,7 +594,7 @@ class Telegram(WorkModeCase):
         stale = self.store.next_notification()
         self.service.set_work_mode({'enabled': True})   # cancels it
         self.service.set_work_mode({'enabled': False})
-        with mock.patch.object(self.store, 'next_notification', lambda: stale):
+        with mock.patch.object(self.store, 'next_notification', lambda surface='telegram': stale):
             self.service.deliver_notification()
         self.assertEqual(self.calls, [])
         with self.store.db() as db:
