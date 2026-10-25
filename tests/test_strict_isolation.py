@@ -201,9 +201,13 @@ class StrictLaunchArguments(unittest.TestCase):
                        'mcp__agentos__method_gap')
         self.assertEqual(trusted[-2:], [allow[0], trusted_allow + browser + owner_state])
         self.assertEqual(strict[-2:], allow, 'the variadic --allowedTools stays last')
-        self.assertEqual(strict[:len(trusted) - 2], trusted[:-2])
+        # #308 S2: only the prompt slot differs; trusted-local reads it as stream-json input.
+        session = ['--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--replay-user-messages']
+        self.assertEqual(trusted[1:2 + len(session)], ['-p', *session])
+        one_shot = [trusted[0], '-p', 'prompt', '--output-format', 'stream-json', '--verbose', *trusted[2 + len(session):-2]]
+        self.assertEqual(strict[:len(one_shot)], one_shot)
         self.assertNotIn('browser', ' '.join(strict), 'strict never pre-approves a browser tool')
-        self.assertEqual(strict[len(trusted) - 2:], ['--tools', '', '--restricted', *allow])
+        self.assertEqual(strict[len(one_shot):], ['--tools', '', '--restricted', *allow])
         self.assertNotIn('--tools', trusted)
         self.assertNotIn('--restricted', trusted)
 

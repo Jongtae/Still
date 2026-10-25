@@ -706,7 +706,10 @@ class BoundedExecutionPreservedBoundaryTests(unittest.TestCase):
                 'claude-code', 'hello', AgentOSMcpTools(_Capabilities()))
         self.assertEqual(seen['kwargs']['timeout'], bounded_execution.MAX_TIMEOUT_SECONDS)
         self.assertIs(seen['kwargs']['shell'], False)
-        self.assertEqual(seen['kwargs']['stdin'], subprocess.DEVNULL)
+        # #308 S2: Claude Code's stdin carries only the prompt, as one stream-json owner message.
+        self.assertNotIn('stdin', seen['kwargs'])
+        self.assertEqual(json.loads(seen['kwargs']['input']),
+                         {'type': 'user', 'message': {'role': 'user', 'content': 'hello'}})
         self.assertIs(seen['kwargs']['capture_output'], True)
 
     def test_engine_timeout_fails_closed(self):

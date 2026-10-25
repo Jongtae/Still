@@ -95,7 +95,8 @@ class AdapterMetadata(unittest.TestCase):
                                           runtime_root=Path(tmp.name) / 'turns')
         result = adapter.execute('claude-code', 'hello', AgentOSMcpTools(_Caps()))
         self.assertEqual(result.meta['reported_model'], 'm1')
-        self.assertIn('<prompt: 5 bytes>', result.meta['argv'])
+        # #308 S2: the prompt travels on stdin, never in the recorded argv.
+        self.assertNotIn('hello', ' '.join(result.meta['argv']))
         self.assertIsNone(result.meta['requested_model'])
         with self.assertRaises(ExecutionError) as caught:
             adapter.execute('claude-code', 'hello', AgentOSMcpTools(_Caps()))

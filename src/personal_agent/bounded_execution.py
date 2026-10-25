@@ -916,9 +916,10 @@ CLI_TOOL_CALLS_KEPT = 30
 NOT_LAUNCHED = {'launched': False}
 
 
-def cli_metadata(engine_id, raw, connector_digest=None):
+def cli_metadata(engine_id, raw, connector_digest=None, answer=None):
     """What the CLI itself reported about the run (#570). Absent fields stay
-    absent: a missing model is "not reported", never guessed."""
+    absent: a missing model is "not reported", never guessed.  #308 S2: the
+    usage, turns and cost of a Claude Code session are its ``answer`` record's."""
     meta = {'reported_model': None, 'usage': None, 'tool_calls': [], 'num_turns': None, 'cost_usd': None}
     records = []
     lines = jsonl_lines(raw)
@@ -980,6 +981,15 @@ def cli_metadata(engine_id, raw, connector_digest=None):
                 meta['tool_calls'].append(entry)
                 if isinstance(key, str):
                     codex_items[key] = entry
+    try:
+        chosen = json.loads(answer) if answer else None
+    except ValueError:
+        chosen = None
+    if isinstance(chosen, dict):
+        meta['usage'] = ({k: v for k, v in chosen['usage'].items() if isinstance(v, (int, float))}
+                         if isinstance(chosen.get('usage'), dict) else None)
+        meta['num_turns'] = chosen['num_turns'] if isinstance(chosen.get('num_turns'), int) else None
+        meta['cost_usd'] = chosen['total_cost_usd'] if isinstance(chosen.get('total_cost_usd'), (int, float)) else None
     if len(meta['tool_calls']) > CLI_TOOL_CALLS_KEPT:
         partial = True
     meta['tool_calls'] = meta['tool_calls'][:CLI_TOOL_CALLS_KEPT]
@@ -1127,6 +1137,118 @@ def kill_process_group(process):
 #: After the process group is killed, how long a streamed run may still drain
 #: its pipes before they are closed (a descendant outside the group may hold them).
 KILL_DRAIN_SECONDS = 2.0
+#: #308 S2: how often a session's stdin is written while input is still pending.
+SESSION_WRITE_POLL_SECONDS = 0.02
+#: #308 S2: how long a session waits, after a result, for the echo of a steer it wrote before
+#: it closes stdin; the CLI then answers what it already read and exits.
+STEER_ECHO_SECONDS = 10.0
+
+
+def session_message(text):
+    """One Claude Code stream-json input line: an owner message (#308 S2)."""
+    return (json.dumps({'type': 'user', 'message': {'role': 'user', 'content': text}}, ensure_ascii=False) + '\n').encode()
+
+
+class ClaudeSteerSession:
+    """#308 S2: one Claude Code stream-json turn: its prompt, the owner's steers and the result that answers them.
+
+    ``claim`` is the one claim every route shares (``claim_owner_steers``): the
+    owner steers no worker has had yet, as one message, or None.  Each is
+    written to stdin and is accepted (``accepted``) only when the CLI echoes it
+    (``--replay-user-messages``).  The answer is the ``result`` record that
+    follows the echo of the last owner message written; stdin is then closed
+    and the CLI exits.  When the stream ends without one, the reply is the last
+    ``result``, and every steer no result followed is released (``release``,
+    from the earliest claim time) so the finish guard (S1) takes it.
+    """
+    def __init__(self, prompt, claim=None, accepted=None, release=None, clock=time.monotonic, wall=time.time):
+        self.pending = bytearray(session_message(prompt))
+        self.claim, self.accepted, self.release = claim, accepted, release
+        self.clock, self.wall = clock, wall
+        #: ``(message, claimed_at)`` written and not echoed yet, and echoed with no result since.
+        self.awaiting, self.echoed = [], []
+        self.answer, self.latest = None, None
+        #: When a result came while a written steer was not echoed yet.
+        self.stale_at = None
+        self.closed = False
+
+    def opening(self):
+        """The input an injected runner gets on stdin (no live pump)."""
+        return bytes(self.pending).decode()
+
+    def on_line(self, line):
+        try:
+            record = json.loads(line)
+        except ValueError:
+            return
+        if not isinstance(record, dict):
+            return
+        if record.get('type') == 'user' and record.get('isReplay') is True and self.awaiting:
+            message = record.get('message')
+            if isinstance(message, dict) and message.get('content') == self.awaiting[0][0]:
+                self.echoed.append(self.awaiting.pop(0))
+                self.stale_at = None
+                if self.accepted:
+                    self.accepted()
+        elif record.get('type') == 'result':
+            # Every message echoed before this record is answered by it.
+            self.latest = line
+            self.echoed.clear()
+            if self.awaiting:
+                self.stale_at = self.clock()
+            else:
+                self.answer = line
+
+    def answer_line(self):
+        """The result record that answers the turn (or the last one), or None."""
+        return self.answer or self.latest
+
+    def _echo_overdue(self):
+        return bool(self.awaiting) and self.stale_at is not None and self.clock() - self.stale_at > STEER_ECHO_SECONDS
+
+    def pump(self, stdin):
+        """Hand newly claimed steers over, write what is pending, and close stdin once answered."""
+        if self.closed or stdin is None:
+            return
+        if self.answer is None and not self._echo_overdue() and self.claim is not None:
+            claimed_at = self.wall()
+            try:
+                note = self.claim()
+            except Exception:
+                note = None
+            if note:
+                self.awaiting.append((note, claimed_at))
+                self.pending += session_message(note)
+        while self.pending:
+            try:
+                written = os.write(stdin.fileno(), self.pending)
+            except BlockingIOError:
+                return
+            except (OSError, ValueError):
+                # The CLI is gone; what it never read is released by ``finish``.
+                self.pending.clear()
+                self.close(stdin)
+                return
+            del self.pending[:written]
+        if self.answer is not None or self._echo_overdue():
+            self.close(stdin)
+
+    def close(self, stdin):
+        self.closed = True
+        try:
+            stdin.close()
+        except (OSError, ValueError):
+            pass
+
+    def finish(self):
+        """Release the steers no result followed (#308 S1 takes them); idempotent."""
+        unanswered = self.awaiting + self.echoed
+        self.awaiting, self.echoed = [], []
+        if unanswered and self.release:
+            try:
+                self.release(min(claimed_at for _message, claimed_at in unanswered), len(unanswered))
+            except Exception:
+                LOG.warning('session steers not released', exc_info=False)
 
 
 class StreamLimitExceeded(Exception):
@@ -1210,18 +1332,18 @@ class _StreamedOutput:
         return self._text(self.stdout), self._text(self.stderr)
 
     def close(self):
-        """Stop reading and close both pipes (after a kill)."""
+        """Stop reading and close the pipes (after a kill); #308 S2: a session's stdin too."""
         try:
             self.selector.close()
         finally:
-            for stream in (self.process.stdout, self.process.stderr):
+            for stream in (self.process.stdout, self.process.stderr, *((self.process.stdin,) if self.process.stdin else ())):
                 try:
                     stream.close()
                 except OSError:
                     pass
 
 
-def bounded_run(runner, argv, *, cwd, env, timeout, interrupted=None, on_line=None):
+def bounded_run(runner, argv, *, cwd, env, timeout, interrupted=None, on_line=None, session=None):
     """Run one CLI with no shell in its own process group.
 
     With the real ``subprocess.run`` a timeout kills the whole group, so the
@@ -1234,16 +1356,24 @@ def bounded_run(runner, argv, *, cwd, env, timeout, interrupted=None, on_line=No
     progress); the returned output is unchanged.  #736 review: every run reads
     its binary pipes itself (``_StreamedOutput``) and is killed, with the named
     ``STREAM_TOO_LARGE`` error, as soon as its combined output passes
-    ``MAX_STREAM_BYTES``.
+    ``MAX_STREAM_BYTES``.  #308 S2: ``session`` (a ``ClaudeSteerSession``)
+    keeps stdin a pipe: the poll loop writes its input and steers and it
+    closes stdin once the turn is answered; the process group, deadline, Stop
+    poll, stream bound and kill drain are unchanged.  An injected runner gets
+    the opening input and no live steers.
     """
     if runner is not subprocess.run:
-        return runner(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        stdin = {'input': session.opening()} if session is not None else {'stdin': subprocess.DEVNULL}
+        return runner(argv, cwd=cwd, env=env, **stdin, capture_output=True, text=True,
                       timeout=timeout, shell=False, start_new_session=True)
-    process = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, shell=False, start_new_session=True)
+    process = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.PIPE if session is not None else subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, start_new_session=True)
+    if session is not None:
+        os.set_blocking(process.stdin.fileno(), False)
+        on_line = _both(session.on_line, on_line)
     streamed = _StreamedOutput(process, on_line, limit=MAX_STREAM_BYTES)
     try:
-        return _bounded_wait(process, streamed, argv, timeout, interrupted)
+        return _bounded_wait(process, streamed, argv, timeout, interrupted, session)
     except StreamLimitExceeded:
         kill_process_group(process)
         streamed.close()
@@ -1255,12 +1385,26 @@ def bounded_run(runner, argv, *, cwd, env, timeout, interrupted=None, on_line=No
         raise ExecutionError(STREAM_TOO_LARGE, failure_class='invalid-output') from None
 
 
-def _bounded_wait(process, streamed, argv, timeout, interrupted):
+def _both(first, second):
+    """One ``on_line`` sink that feeds ``first`` and then ``second`` (if any)."""
+    if second is None:
+        return first
+    def on_line(line):
+        first(line)
+        second(line)
+    return on_line
+
+
+def _bounded_wait(process, streamed, argv, timeout, interrupted, session=None):
     """``bounded_run``'s wait loop over one streamed process (Stop, deadline and the kill drain)."""
     deadline = time.monotonic() + timeout
     while True:
+        if session is not None:
+            session.pump(process.stdin)
         left = deadline - time.monotonic()
-        wait = min(STOP_POLL_SECONDS, left) if interrupted else left
+        wait = min(STOP_POLL_SECONDS, left) if interrupted or session is not None else left
+        if session is not None and session.pending and not session.closed:
+            wait = min(wait, SESSION_WRITE_POLL_SECONDS)
         try:
             # Bounded like ``communicate``: a descendant holding the pipes
             # open after the CLI exits keeps this raising until Stop or the
@@ -1709,8 +1853,11 @@ class BoundedExecutionAdapter:
                 raise ExecutionError('현재 엄격 격리 Claude Code 프로필은 사진 입력을 지원하지 않습니다.',
                                      failure_class='unsupported-image-input')
             # #570: stream-json (which requires --verbose with -p) reports the
-            # session model and each tool_use; its last line is the same result
-            # record that `json` prints, so answer parsing is unchanged.
+            # session model and each tool_use and ends each turn with the result
+            # record that `json` prints.  #308 S2: outside the strict profile the
+            # prompt and the owner's steers arrive as stream-json input on stdin
+            # and each is echoed when the CLI reads it (``ClaudeSteerSession``);
+            # the strict profile keeps its qualified ``-p "<prompt>"`` argv.
             # #961: no Claude Code skill or slash command of its own ("Disable all skills");
             # Still serves the Work's pinned skills through the bridge.
             # #210: the permission mode is named.  Observed on Claude Code 2.1.287 (local fixture model, no
@@ -1718,7 +1865,8 @@ class BoundedExecutionAdapter:
             # classifier decides a tool call that has no allow rule, before (or instead of) the
             # --permission-prompt-tool.  "default" leaves exactly the exact allow rules below and Still's
             # permission prompt; nothing else runs.
-            argv = [binary, '-p', prompt, '--output-format', 'stream-json', '--verbose',
+            argv = [binary, '-p', *(('--input-format', 'stream-json') if not strict else (prompt,)),
+                    '--output-format', 'stream-json', '--verbose', *(() if strict else ('--replay-user-messages',)),
                     *(() if ai_connections else ('--strict-mcp-config',)), '--mcp-config', str(mcp_config),
                     '--disable-slash-commands', '--permission-mode', 'default', *model_args]
             if ai_connections:
@@ -1999,21 +2147,22 @@ class BoundedExecutionAdapter:
                 'reason': '' if qualified else ', '.join(dict.fromkeys(failed)) or 'not checked'}
 
     @staticmethod
-    def _content(engine_id, raw):
+    def _content(engine_id, raw, answer=None):
         """The final answer text of one CLI turn's machine output.
 
         #736: both CLIs stream every tool result before the answer, so only
         the final answer record is bounded by ``MAX_OUTPUT_BYTES``; the whole
         stream has the larger runaway guard ``MAX_STREAM_BYTES``.  The error
-        names which bound was hit.
+        names which bound was hit.  #308 S2: ``answer`` is the result record a
+        Claude Code session chose (``ClaudeSteerSession.answer_line``).
         """
         raw = raw or ''
         if len(raw.encode()) > MAX_STREAM_BYTES:
             raise ExecutionError(STREAM_TOO_LARGE)
         lines = jsonl_lines(raw)
         if engine_id == 'claude-code':
-            # The result record is the last line of the stream.
-            lines = lines[-1:]
+            # The session's answer, else the result record that is the last line of the stream.
+            lines = [answer.rstrip('\n')] if answer else lines[-1:]
         try:
             # Machine output is JSONL.  Only structured records are examined;
             # progress/event text is never concatenated into an answer.
@@ -2058,6 +2207,45 @@ class BoundedExecutionAdapter:
             if not launch['started'] and not exc.meta:
                 exc.meta = dict(NOT_LAUNCHED)
             raise
+        finally:
+            # #308 S2: a steer no result of this turn followed goes back to the finish guard (S1).
+            if launch.get('session') is not None:
+                launch['session'].finish()
+
+    @staticmethod
+    def steer_session(prompt, capabilities):
+        """#308 S2: the ``ClaudeSteerSession`` of one Work turn, claiming from the Work's steers.
+
+        The claim is the bridge's own (``claim_owner_steers``), after a
+        read-only check so an idle turn takes no write lock; acceptance and
+        release are content-free ``owner_steer`` events.
+        """
+        from .agent_runtime import STEER_EVENT, claim_owner_steers
+        store, job_id = getattr(capabilities, 'store', None), getattr(capabilities, 'job_id', None)
+        record = getattr(capabilities, 'record', None)
+        if not callable(getattr(store, 'claim_steers', None)) or not isinstance(job_id, str):
+            return ClaudeSteerSession(prompt)
+        waiting = getattr(store, 'unanswered_steers', None)
+
+        def claim():
+            # Unanswered and claimed before time 0: never claimed (``delivered_at`` NULL).
+            if callable(waiting) and not waiting(job_id, 0):
+                return None
+            return claim_owner_steers(store, job_id, record)
+
+        def note(status, detail):
+            if callable(record):
+                try:
+                    record(STEER_EVENT, status, json.dumps(detail))
+                except Exception:
+                    LOG.debug('steer event not recorded', exc_info=False)
+
+        def release(since, count):
+            with store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                store.release_steers(job_id, since, db)
+            note('released', {'writes': count})
+        return ClaudeSteerSession(prompt, claim=claim, accepted=lambda: note('accepted', {}), release=release)
 
     def _execute(self, engine_id, prompt, tools, launch, *, context=None, model=None, images=None, effort=None):
         instructions = ''
@@ -2124,6 +2312,10 @@ class BoundedExecutionAdapter:
             profile = getattr(tools, 'PROFILE', BOUNDED_PROFILE)
             # #211: the Work's cloud provider profile (None: the subscription).
             cloud = self.cloud_profile(engine_id, tools)
+            # #308 S2: a Claude Code turn outside the strict profile is a stream-json session; the
+            # owner's steers reach it on stdin, so its bridge leaves them off tool results.
+            session = launch['session'] = (self.steer_session(prompt, tools.capabilities)
+                                           if engine_id == 'claude-code' and profile != STRICT_PROFILE else None)
             # #678: a native-search turn's bridge lets the CLI's own search replace its search tools.
             native_search = bool(getattr(tools, 'native_search', False)) and profile == BOUNDED_PROFILE and cloud is None
             # #701: only the trusted-local route is ever given the service's browser relay.
@@ -2159,6 +2351,7 @@ class BoundedExecutionAdapter:
                          *(['--native-search'] if native_search else []),
                          *([f'--search-off-reason={search_off}'] if search_off else []),
                          *([f'--browser-relay={relay}'] if relay else []),
+                         *(['--session-steers'] if session is not None else []),
                          # #774: the relay serves owner-state tools even when no browser is served.
                          *(['--relay-no-browser'] if relay and not getattr(tools, 'relay_browser', True) else []),
                          # #1197: the bridge answers Claude Code's permission prompts for connector tools.
@@ -2247,13 +2440,14 @@ class BoundedExecutionAdapter:
                     progress = getattr(tools, 'progress', None)
                     observed=getattr(tools,'connector_observed',None)
                     completed = bounded_run(self.runner, argv, cwd=run_dir, env=env, timeout=timeout,
-                                            interrupted=interrupted,
+                                            interrupted=interrupted, session=session,
                                             on_line=live_progress_reader(engine_id,progress,observed,getattr(tools,'connector_input_digest',None))
                                             if callable(progress) or callable(observed) else None)
                 else:
                     completed = self.runner(argv, cwd=run_dir,
-                                            env=env, stdin=subprocess.DEVNULL, capture_output=True,
-                                            text=True, timeout=timeout, shell=False)
+                                            env=env, **({'input': session.opening()} if session is not None
+                                                        else {'stdin': subprocess.DEVNULL}),
+                                            capture_output=True, text=True, timeout=timeout, shell=False)
             except EngineInterrupted as exc:
                 elapsed_ms = int((time.monotonic() - started) * 1000)
                 LOG.warning('engine turn interrupted engine=%s reason=%s', engine_id, exc.reason)
@@ -2277,6 +2471,10 @@ class BoundedExecutionAdapter:
                 raise ExecutionError('구독 엔진 CLI를 실행하지 못했습니다.', failure_class='start-failed',
                                      meta=dict(NOT_LAUNCHED)) from exc
             elapsed = time.monotonic() - started
+            if session is not None and self.runner is not subprocess.run:
+                # An injected runner read the whole input at once; its output is read after the fact.
+                for line in jsonl_lines(completed.stdout or ''):
+                    session.on_line(line)
             if completed.returncode != 0:
                 # Remove the stored credential's literal value before any
                 # output is parsed, logged or shown, whatever its format.
@@ -2320,23 +2518,24 @@ class BoundedExecutionAdapter:
                 refused = unsupported_model(engine_id, model, reason, stderr)
                 raise ExecutionError(message, failure_class=failure_class,
                                      exit_code=completed.returncode, reason=reason,
-                                     meta={**run_meta, **cli_metadata(engine_id, stdout, getattr(tools,'connector_input_digest',None)),
+                                     meta={**run_meta, **cli_metadata(engine_id, stdout, getattr(tools,'connector_input_digest',None), session.answer_line() if session is not None else None),
                                            'duration_ms': int(elapsed * 1000),
                                            **({'unsupported_model': refused} if refused else {})})
+            answer = session.answer_line() if session is not None else None
             # #1130: the CLI's own record of whether the Still bridge started.
             bridge_status = claude_bridge_status(completed.stdout) if engine_id == 'claude-code' else None
             if bridge_status is not None and bridge_status != 'connected':
                 LOG.warning('engine turn had no bridge engine=%s status=%s', engine_id, bridge_status)
                 raise ExecutionError(BRIDGE_UNAVAILABLE_TEXT, failure_class=BRIDGE_UNAVAILABLE, exit_code=0,
                                      reason=f'agentos MCP server status: {bridge_status}',
-                                     meta={**run_meta, **cli_metadata(engine_id, completed.stdout, getattr(tools,'connector_input_digest',None)),
+                                     meta={**run_meta, **cli_metadata(engine_id, completed.stdout, getattr(tools,'connector_input_digest',None), answer),
                                            'duration_ms': int(elapsed * 1000)})
             try:
-                content = self._content(engine_id, completed.stdout)
+                content = self._content(engine_id, completed.stdout, answer)
             except ExecutionError as exc:
                 LOG.warning('engine turn returned no usable result engine=%s duration=%.1fs', engine_id, elapsed)
                 raise ExecutionError(str(exc), failure_class='invalid-output', exit_code=0,
-                                     meta={**run_meta, **cli_metadata(engine_id, completed.stdout, getattr(tools,'connector_input_digest',None)), 'duration_ms': int(elapsed * 1000)}) from None
+                                     meta={**run_meta, **cli_metadata(engine_id, completed.stdout, getattr(tools,'connector_input_digest',None), answer), 'duration_ms': int(elapsed * 1000)}) from None
             LOG.info('engine turn succeeded engine=%s duration=%.1fs', engine_id, elapsed)
             return ExecutionResult(content, engine_id, completed.returncode,
-                                   {**run_meta, **cli_metadata(engine_id, completed.stdout, getattr(tools,'connector_input_digest',None)), 'duration_ms': int(elapsed * 1000)})
+                                   {**run_meta, **cli_metadata(engine_id, completed.stdout, getattr(tools,'connector_input_digest',None), answer), 'duration_ms': int(elapsed * 1000)})

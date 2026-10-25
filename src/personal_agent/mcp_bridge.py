@@ -266,7 +266,8 @@ def _permission_text(decision):
 
 
 def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROFILE, browser_relay=None,
-          search_off_reason='', relay_browser=True, skills=(), ai_connections=False, connection_slots=()):
+          search_off_reason='', relay_browser=True, skills=(), ai_connections=False, connection_slots=(),
+          session_steers=False):
     """Serve one Work's Still tools over stdio for the route profile the host named (#701).
 
     ``profile`` is ``trusted-local`` or ``strict-isolated``; anything else
@@ -275,7 +276,8 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
     browser call is executed by the service (``cli_browser_relay``); without
     it no browser tool is offered.  ``skills`` (trusted-local only, #961) are the
     ``package/name@digest`` refs of the host Work's skill binding; without any
-    no skill tool is offered.
+    no skill tool is offered.  ``session_steers`` (#308 S2): the host writes the
+    owner's steers to the CLI session's stdin, so tool results carry none.
     """
     profile = profile if profile in HOST_CLI_PROFILES else STRICT_PROFILE
     relay = RelayClient(browser_relay) if browser_relay and profile == BOUNDED_PROFILE else None
@@ -393,7 +395,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                        json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id, **({'host_action':action} if action else {}), **typed,
                                    'error':redact_reason(str(exc)), **declared,
                                    **attempted_outbound(capabilities, action, arguments, exc)}, ensure_ascii=False))
-                _with_steer(result, store, job_id, record)
+                if not session_steers:_with_steer(result, store, job_id, record)
                 return result
             except Exception as exc:
                 # #735: any other exception inside one call (an EOFError from a
@@ -406,7 +408,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                        json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id, **({'host_action':action} if action else {}), **typed,
                                    'error':redact_reason(TOOL_FAILED_TEXT), **declared,
                                    **attempted_outbound(capabilities, action, arguments, exc)}, ensure_ascii=False))
-                _with_steer(result, store, job_id, record)
+                if not session_steers:_with_steer(result, store, job_id, record)
                 return result
             # The same redacted Evidence the direct route records
             # (sources, attempted/failed URLs, counts), never the payload.
@@ -419,7 +421,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                                                   ensure_ascii=False))
             # #836: the worker reads a held memory write as the owner's one-tap ask, nothing more.
             result = {'content':[{'type':'text','text':json.dumps(worker_result(host_action, value), ensure_ascii=False)}]}
-            _with_steer(result, store, job_id, record)
+            if not session_steers:_with_steer(result, store, job_id, record)
         elif method == 'notifications/initialized': return {}
         else: raise _Rejected(-32601, 'Method not found.')
         return result
@@ -441,8 +443,10 @@ if __name__ == '__main__':
     parser.add_argument('--skill',action='append',default=[])
     parser.add_argument('--ai-connections',action='store_true')
     parser.add_argument('--connection-slot',action='append',default=[])
+    # #308 S2: the host's Claude Code session takes the owner's steers on its own stdin.
+    parser.add_argument('--session-steers',action='store_true')
     args=parser.parse_args()
     serve(args.data, args.job, args.provenance, native_search=args.native_search, profile=args.profile,
           browser_relay=args.browser_relay, search_off_reason=args.search_off_reason,
           relay_browser=not args.relay_no_browser, skills=args.skill, ai_connections=args.ai_connections,
-          connection_slots=args.connection_slot)
+          connection_slots=args.connection_slot, session_steers=args.session_steers)
