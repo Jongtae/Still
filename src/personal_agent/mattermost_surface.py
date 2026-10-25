@@ -561,6 +561,7 @@ class MattermostSurface(ConversationSurface):
         if not notification:
             return False
         from .quickstart_service import MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS
+        from . import preparations as prep
         with service.lock:
             with service.store.db() as db:
                 state = db.execute('SELECT state FROM telegram_notifications WHERE id=?', (notification['id'],)).fetchone()
@@ -589,6 +590,17 @@ class MattermostSurface(ConversationSurface):
                     notification['id'], 'memory_listed' if listed else 'sent', post_id,
                     json.dumps(memory_prompt) if kind in MEMORY_PROMPT_KINDS else
                     json.dumps(memory_saved) if kind in MEMORY_SAVED_KINDS else None, delivered=True)
+                if kind == prep.NOTIFY_KIND:
+                    # #306 review: as on Telegram (#719), only a confirmed send is what the owner was last
+                    # told, so an unchanged result of the next watch run is not told again.
+                    try:
+                        job = service.store.job(notification['job_id'])
+                        service.preparations.record_notified(notification['job_id'], notification['fingerprint'],
+                                                             service.scrub_prepared_answer(job) if job else '',
+                                                             service.preparations.clock())
+                    except Exception as exc:
+                        LOG.warning('watch notification record failed work=%s kind=%s', notification['job_id'],
+                                    type(exc).__name__)
             except MattermostNotSent:
                 service.store.update_notification(notification['id'], 'queued')
             except ProviderError:

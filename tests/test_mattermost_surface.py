@@ -641,6 +641,18 @@ class ReviewRegressions(MattermostCase):
         self.assertEqual(self.store.job(work['id'])['delivery'], 'unknown')
         self.assertEqual(sum(1 for text in self.fake.bot_posts() if text.startswith('가')), 1, 'no part after the reconnect')
 
+    def test_a_delivered_watch_notice_is_recorded_as_told(self):
+        from personal_agent import preparations as prep
+        self.owner_says('가격 바뀌면 알려줘')
+        job = self.mm_jobs()[0]
+        row = self.store.queue_notification(job['id'], OWNER, self.surface.owner_generation(), prep.NOTIFY_KIND,
+                                            'digest-1', surface='mattermost')
+        with mock.patch.object(type(self.service), 'watch_notification_text', lambda service, n: '가격이 바뀌었어요'), \
+                mock.patch.object(self.service.preparations, 'record_notified') as recorded:
+            self.service.deliver_notification()
+        self.assertEqual(self.store.notification(row['id'])['state'], 'sent')
+        self.assertEqual([call.args[:2] for call in recorded.call_args_list], [(job['id'], 'digest-1')])
+
     def test_a_long_reply_partly_sent_is_never_posted_again(self):
         self.owner_says('질문')
         self.assertTrue(self.service.run_one())
