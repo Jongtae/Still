@@ -4784,7 +4784,16 @@ def steps_read_state(steps):
  return read_state_text([(tool,evidence_summary(action,detail)) for tool,action,state,detail,_reason in steps or ()
                          if state in ('succeeded','incomplete') and isinstance(detail,dict)])
 
-def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state=''):
+def work_awaiting_owner_text(capabilities):
+ """#240: this Work's typed "awaiting the owner" items as its goal judgment reads them; '' when none or unreadable.
+
+ Read from the Work's recorded tool events at judgment time (``owner_model.work_awaiting_owner``),
+ the same items the self-review reads; names and counts only."""
+ from .owner_model import AWAITING_OWNER_CHARS,awaiting_owner_text,work_awaiting_owner
+ try:return awaiting_owner_text(work_awaiting_owner(capabilities.store,capabilities.job_id))[:AWAITING_OWNER_CHARS]
+ except Exception:return ''
+
+def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting=''):
  """``yes`` / ``no`` / ``unavailable``: did the reply serve the owner's message ``goal``?
 
  The one outcome judgment (#657, #820): one ``ConversationJudgments.goal_reached``
@@ -4793,7 +4802,8 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  observed results, the Work's failed steps and (#833) the owner context the
  worker was given - ``owner_context`` is the turn context's ``profile`` /
  ``current_context`` sections, rendered by ``owner_context_fact``.  #151: ``read_state``
- (``steps_read_state``) says which listed items the run opened and read through.  No judgments, an engine error or a non-answer is
+ (``steps_read_state``) says which listed items the run opened and read through.  #240: ``awaiting``
+ (``work_awaiting_owner_text``) is what this Work showed for the owner's own approval.  No judgments, an engine error or a non-answer is
  ``unavailable``, which never yields ``succeeded``.  ``redact(text,
  private)`` (``Capabilities.judgment_text``) runs on every fact before it is
  bounded, so a cut can never leave part of a secret; the owner's request is
@@ -4819,7 +4829,8 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
   if budget is not None and getattr(getattr(judgments,'engine',None),'work_budget',None) is not budget:budget.spend_turn(reserve=True)
  except Exception:return 'unavailable'
  try:judged=judgments.goal_reached(clean(goal,private=False),observed,failed,work_id=work_id,answer=reply,conversation=recent,
-                                   owner_context=owner,**({'attachments':attachments} if attachments else {}))
+                                   owner_context=owner,**({'attachments':attachments} if attachments else {}),
+                                   **({'awaiting_owner':clean(awaiting)} if awaiting else {}))
  except Exception:return 'unavailable'
  outcome=getattr(judged,'outcome',None)
  if outcome not in ('yes','no'):return goal_verdict('unavailable')
@@ -5053,7 +5064,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    refs=[ref for ref,row in observations.items() if row[2]=='succeeded' and row[1] not in INTERNAL_STATE_ACTIONS]
    judgment=goal_judgment(capabilities.judgments,goal,{'evidence_refs':refs,'summary':content},observations,failed_steps_text(steps),
                           capabilities.job_id,getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
-                            attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps))
+                            attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
+                            awaiting=work_awaiting_owner_text(capabilities))
   if not _external(trail) and not invalid_calls:
    # Ordinary conversation: no tool ran (or only internal current-state
    # bookkeeping, #627), so there is nothing to observe.
@@ -5175,7 +5187,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       judged+=1
       judgment=goal_judgment(capabilities.judgments,goal,claim,observations,failed_steps_text(steps),capabilities.job_id,
                              getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
-                             attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps))
+                             attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
+                             awaiting=work_awaiting_owner_text(capabilities))
       # A "not shown" answer returns the claim once, so the model can take
       # another path; a second one, or no engine, ends the run below.
       if judgment=='no' and judged<GOAL_JUDGMENTS:reason='goal_not_observed'

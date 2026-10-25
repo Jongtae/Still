@@ -68,6 +68,8 @@ MAX_REASON_CHARS = 200
 #: Bounds of the facts the orchestrator is asked over, besides the owner's
 #: request and the catalogue, which are never cut.
 CONVERSATION_CHARS = 1500
+#: #240: the bound of the plan's and the goal judgment's ``awaiting_owner`` fact.
+AWAITING_OWNER_CHARS = 600
 #: #980: the earlier exchange the follow-up judgment linked this message to.
 CONTINUES_CHARS = 1200
 ATTEMPTS_CHARS = 1800
@@ -690,7 +692,7 @@ class Orchestration:
 
     def __init__(self, judgments, catalogue, *, request, conversation='', continues='', sections=None, budget=None,
                  record=None, state=None, work_id=None, policy=None, qualifying=None, can_ask_location=False,
-                 attachments=''):
+                 attachments='', awaiting_conversation='', awaiting_work=None):
         self.judgments, self.catalogue = judgments, catalogue
         #: #1293: whether the first plan may ask the owner for a current position (a Work the paired
         #: chat can answer, not itself a location continuation).  Later plans never may.
@@ -705,6 +707,11 @@ class Orchestration:
         self.continues = str(continues or '')
         #: #1517: what the message carried besides its words ('1 photo'), for the outcome judgment.
         self.attachments = str(attachments or '')
+        #: #240: what already waits for the owner's own decision in this conversation (kinds and when
+        #: shown, read once when the Work starts), and a reader of this Work's own typed items
+        #: (``owner_model.work_awaiting_owner``), read at each plan and goal judgment.  No content.
+        self.awaiting_conversation = str(awaiting_conversation or '')
+        self.awaiting_work = awaiting_work
         self.sections = dict(sections or {})
         self.budget, self.record = budget, record or (lambda status, detail: None)
         self.state, self.work_id = state, work_id
@@ -791,6 +798,19 @@ class Orchestration:
         judgment reads the same fact; the plan call's redaction (``_redact``) applies."""
         return owner_context_fact(self.sections, self._redact)
 
+    def _work_awaiting(self):
+        """#240: this Work's own typed "awaiting the owner" items, rendered; '' when none or unreadable."""
+        try:
+            return str(self.awaiting_work() or '')[:AWAITING_OWNER_CHARS] if callable(self.awaiting_work) else ''
+        except Exception:
+            return ''
+
+    def _awaiting_text(self):
+        """#240: the plan's ``awaiting_owner`` fact: what waits in this conversation and what this Work left."""
+        parts = [f'in this conversation: {self.awaiting_conversation}' if self.awaiting_conversation else '',
+                 f'left by this Work: {own}' if (own := self._work_awaiting()) else '']
+        return '\n'.join(part for part in parts if part)[:AWAITING_OWNER_CHARS] or 'none'
+
     def _owner_fact(self, name, limit):
         """#804: an always-given section as the plan call reads it: redacted, then cut."""
         return self._redact(self.sections.get(name) or '')[:limit] or 'none'
@@ -829,6 +849,7 @@ class Orchestration:
                  # Redacted before it is cut, so a cut never leaves part of a secret (#740 review).
                  'recent_conversation': self._redact(self.conversation)[-CONVERSATION_CHARS:] or 'none',
                  'continues': self._continues_text(),
+                 'awaiting_owner': self._redact(self._awaiting_text(), private=False),
                  'context_sections': self._sections_text(),
                  'workers': workers,
                  'tool_descriptions': tools_text,
@@ -1164,7 +1185,8 @@ class Orchestration:
             judged = goal_reached(self.request, observed, str(failed or '')[:FAILURE_CHARS], work_id=self.work_id,
                                   answer=reply, conversation=self._redact(self.conversation)[-CONVERSATION_CHARS:],
                                   owner_context=self._owner_context(), continues=self._continues_text(),
-                                  **({'attachments': self.attachments} if getattr(self, 'attachments', '') else {}))
+                                  **({'attachments': self.attachments} if getattr(self, 'attachments', '') else {}),
+                                  **({'awaiting_owner': awaiting} if (awaiting := self._work_awaiting()) else {}))
         except Exception:
             return UNJUDGED
         verdict = getattr(judged, 'outcome', None)
