@@ -438,7 +438,8 @@ class ReviewRegressions(MattermostCase):
         self.owner_says('질문')
         self.assertTrue(self.service.run_one())
         intranet.remove(self.store, 'chat.corp.example', surface='settings')
-        self.surface._destination_checked = None   # the cached check expires (``DESTINATION_SECONDS``)
+        # The last destination check is still fresh (``DESTINATION_SECONDS``); the removal applies anyway.
+        self.assertGreater(self.surface._destination_checked[1], time.monotonic())
         calls = len(self.fake.calls)
         self.fake.post(OWNER, self.dm(), '또 질문')
         self.assertIsNone(self.surface.receive())
