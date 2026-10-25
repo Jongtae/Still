@@ -494,3 +494,23 @@ checks passed: home and store reads were denied, the unedited decision route
 offered no shell, and the documented global AGENTS file residual remained.
 Historical 0.153.4 evidence above retains its original scope; no live model or
 account operation is established by these compatibility tests.
+
+### Codex 0.164.0 compatibility — #344 (2026-10-26)
+
+The installed Codex 0.164.0 is added to the no-tool Judgment route's existing
+instruction-qualified version set, following #1561. The same strict permissions,
+tool-feature allowlist, binary/path bindings and per-install denial probes apply;
+this is an exact-version compatibility addition. The strict Work route keeps its
+separate 0.153.4-only list. Unknown Judgment versions still fail closed.
+
+The existing opt-in process harness (`AGENTOS_CLI_QUALIFICATION=1
+tests/test_strict_isolation.py`) selected the installed 0.164.0 from the declared
+qualified set and ran it against a scripted loopback model endpoint and a
+synthetic CODEX_HOME, without live providers or owner credentials. On macOS on
+2026-10-26, the three `CodexDecisionInstructionFiles` probes passed: the strict
+sandbox qualification passed unchanged, a judgment under the strict profile
+could not read the home folder, and the unedited decision route loaded no skill
+or plugin canary while the documented global AGENTS file residual remained. The
+strict Work route's process tests were skipped as untested for 0.164.0, which
+is why that route is not advertised. Historical evidence retains its original
+scope; no live model or account operation is established by these tests.
