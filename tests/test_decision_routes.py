@@ -859,13 +859,26 @@ class ServiceRouteSelectionTests(ServiceFixture):
         self.assertEqual(self.judge(service).outcome, 'yes')
         self.assertNotIn('0.162.1', CLI_PROFILES[STRICT_PROFILE]['runtimes']['codex']['tested_versions'])
 
+    def test_codex_0164_judgments_qualify_without_enabling_strict_work(self):
+        from personal_agent.bounded_execution import CLI_PROFILES, STRICT_PROFILE
+        runner = CliRunner()
+        runner.version = 'codex-cli 0.164.0'
+        service = self.service(runner=runner)
+        self.store.put('subscription_engine', {'id': 'codex'})
+        status = self.follow(service)
+        self.assertEqual(status['effective']['state'], 'active')
+        self.assertEqual(service.decision_routes.active()['strict_profile']['version'], '0.164.0')
+        self.assertEqual(self.judge(service).outcome, 'yes')
+        self.assertNotIn('0.164.0', CLI_PROFILES[STRICT_PROFILE]['runtimes']['codex']['tested_versions'])
+
     def test_codex_is_refused_until_its_instruction_files_are_qualified(self):
-        # #624/#679/#1561: only harness-checked versions are qualified;
+        # #624/#679/#1561/#344: only declared versions are qualified;
         # any other version fails closed before any
         # judgment even when the tool surface passes.
-        self.assertEqual(CODEX_INSTRUCTION_FILES_QUALIFIED, frozenset({'0.153.4', '0.162.1'}))
-        service = self.service()
-        service.decision_routes.codex_instruction_qualified = frozenset({'0.160.0'})
+        self.assertEqual(CODEX_INSTRUCTION_FILES_QUALIFIED, frozenset({'0.153.4', '0.162.1', '0.164.0'}))
+        runner = CliRunner()
+        runner.version = 'codex-cli 0.165.0'
+        service = self.service(runner=runner)
         with self.assertRaises(DecisionRouteError):
             service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex'})
         self.assertIsNone(self.store.config('decision_route'))

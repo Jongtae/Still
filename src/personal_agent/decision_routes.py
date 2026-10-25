@@ -192,7 +192,8 @@ MODEL_FLAG = '--model'
 #: stat, never their content) and shows a warning when one is non-empty.  Any
 #: other version still fails closed until the harness is re-run for it.
 # #1561: 0.162.1 passed the same model-free sandbox and instruction-file probes.
-CODEX_INSTRUCTION_FILES_QUALIFIED = frozenset({'0.153.4', '0.162.1'})
+# #344: 0.164.0 passed the same probes (2026-10-26).
+CODEX_INSTRUCTION_FILES_QUALIFIED = frozenset({'0.153.4', '0.162.1', '0.164.0'})
 #: The global instruction files Codex loads from CODEX_HOME (#624), in precedence order.
 CODEX_INSTRUCTION_FILES = ('AGENTS.override.md', 'AGENTS.md')
 #: Owner-visible limitation for the Codex route (#624, observed on 0.153.4).

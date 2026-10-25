@@ -81,7 +81,7 @@ class StrictProfileDeclaration(unittest.TestCase):
         self.assertEqual(trusted['limitation'], TRUSTED_LOCAL_LIMITATION)
         self.assertIn('/tmp', strict['limitation'], 'the residual readable paths are stated')
         self.assertEqual(CLI_PROFILES[STRICT_PROFILE]['runtimes']['codex']['tested_versions'], ('0.153.4',))
-        self.assertEqual(CODEX_INSTRUCTION_FILES_QUALIFIED, frozenset({'0.153.4', '0.162.1'}))
+        self.assertEqual(CODEX_INSTRUCTION_FILES_QUALIFIED, frozenset({'0.153.4', '0.162.1', '0.164.0'}))
         self.assertEqual(CLI_PROFILES[STRICT_PROFILE]['runtimes']['claude-code']['tested_versions'], ('2.1.280',))
 
     def test_strict_offers_what_the_bridge_serves(self):
@@ -398,11 +398,12 @@ class StrictQualificationLogic(unittest.TestCase):
         return adapter.qualify_strict(engine, store_root=self.store, tested_versions=tested_versions)
 
     def test_judgment_versions_do_not_widen_work_or_skip_denial_checks(self):
-        version = 'codex-cli 0.162.1'
-        self.assertFalse(self._qualify(version=version)['qualified'])
-        self.assertTrue(self._qualify(version=version, tested_versions=CODEX_INSTRUCTION_FILES_QUALIFIED)['qualified'])
-        self.assertFalse(self._qualify(version=version, tested_versions=CODEX_INSTRUCTION_FILES_QUALIFIED,
-                                       readable=(self.store,))['qualified'])
+        for version in ('codex-cli 0.162.1', 'codex-cli 0.164.0'):
+            with self.subTest(version=version):
+                self.assertFalse(self._qualify(version=version)['qualified'])
+                self.assertTrue(self._qualify(version=version, tested_versions=CODEX_INSTRUCTION_FILES_QUALIFIED)['qualified'])
+                self.assertFalse(self._qualify(version=version, tested_versions=CODEX_INSTRUCTION_FILES_QUALIFIED,
+                                               readable=(self.store,))['qualified'])
 
     def test_codex_qualifies_and_binds_its_plan_binary_and_paths(self):
         result = self._qualify()
