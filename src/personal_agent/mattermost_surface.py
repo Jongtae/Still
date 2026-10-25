@@ -32,6 +32,7 @@ carries the conversation):
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import secrets
@@ -103,6 +104,11 @@ def server_url(value):
             or parts.scheme not in ('https', 'http') or parts.scheme == 'http' and host not in ('127.0.0.1', 'localhost', '::1')):
         raise ValueError(msg('mattermost.invalid_server'))
     return text
+
+
+def token_digest(token):
+    """Which token a pairing was connected with, without keeping the token in its configuration."""
+    return hashlib.sha256(str(token or '').encode()).hexdigest()[:16]
 
 
 class MattermostClient:
@@ -189,6 +195,10 @@ class MattermostSurface(ConversationSurface):
         token = self.service.store.secret(SECRET_KEY) if token is None else token
         if not cfg.get('server_url') or not token:
             raise MattermostError(msg('mattermost.not_connected'))
+        if cfg.get('token_digest') != token_digest(token):
+            # #306 review: the token belongs to the pairing it was connected with.  While a reconnect is
+            # between storing the new token and its configuration, neither server gets the other's token.
+            raise MattermostNotSent(msg('mattermost.not_connected'))
         url, generation = cfg['server_url'], cfg.get('generation')
         return MattermostClient(url, token, transport=self._transport or getattr(self.service, 'mattermost_transport', None),
                                 guard=lambda: self._request_guard(url, generation=generation))
@@ -681,7 +691,7 @@ class MattermostSurface(ConversationSurface):
                'owner_user_id': owner_id, 'owner_username': owner.get('username', username), 'channel_id': channel['id'],
                'generation': secrets.token_hex(6), 'cursor': start, 'seen_created': start, 'reaction_cursor': start,
                'company_approved': self.config().get('company_approved') is True, 'connected_at': time.time(),
-               'private_server': bool(private)}
+               'private_server': bool(private), 'token_digest': token_digest(token)}
         self.service.store.secret(SECRET_KEY, token)
         self.service.store.put(CONFIG_KEY, cfg)
         return self.status()

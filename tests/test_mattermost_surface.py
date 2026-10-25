@@ -425,6 +425,30 @@ class ReviewRegressions(MattermostCase):
         super().setUp()
         self.connect()
 
+    def test_a_reconnect_never_sends_the_new_token_to_the_old_server(self):
+        new_token, new_server = 'mm-new-token-fedcba9876543210', 'http://localhost:8065'
+        seen = []
+
+        def transport(method, url, headers, body, timeout):
+            seen.append((urlsplit(url).netloc, headers.get('Authorization')))
+            return self.fake(method, url, {**headers, 'Authorization': f'Bearer {TOKEN}'}, body, timeout)
+
+        self.service.mattermost_transport = transport
+        store_secret = self.store.secret
+
+        def secret(key, value=None, create=None):
+            result = store_secret(key, value, create)
+            if key == SECRET_KEY and value == new_token:
+                # A delivery runs between the new token being stored and its pairing being published.
+                self.assertFalse(self.surface.send_owner('x'))
+            return result
+
+        with mock.patch.object(self.store, 'secret', secret):
+            self.service.connect_mattermost({'server_url': new_server, 'token': new_token, 'owner_username': 'owner'})
+        self.assertNotIn(('127.0.0.1:8065', f'Bearer {new_token}'), seen, 'the old server never gets the new token')
+        self.assertTrue(self.surface.send_owner('y'), 'the new pairing works once it is published')
+        self.assertEqual(seen[-1], ('localhost:8065', f'Bearer {new_token}'))
+
     def test_removing_the_declared_host_stops_polling_and_sending(self):
         def resolver(host, port, **kwargs):
             return [(2, 1, 6, '', ('10.3.3.3', port))]
