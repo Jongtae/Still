@@ -153,22 +153,91 @@ def test_observations_use_only_current_source_generations_without_telegram(setup
         assert service.current_state._observation(db, (LOCAL, ''), 0, 'observation', 1001) is None
 
 
-def test_calendar_approval_stays_with_issuer_generation(setup):
+@pytest.mark.parametrize('surface,user', [('telegram', 77), ('mattermost', 'mm-owner'), ('slack', 'sl-owner')])
+@pytest.mark.parametrize('change', ['repaired', 'disconnected'])
+@pytest.mark.parametrize('phase', ['approve', 'execute', 'prepared'])
+def test_calendar_approval_stays_with_issuer_generation(setup, surface, user, change, phase):
     store, service, registry, *_ = setup
     provider = Provider()
     service.calendar = CalendarConnector(store, provider, registry=registry)
     registry.transition(LOCAL, CALENDAR_WRITE_SPEC.connector_id, ConnectorState.CONNECTED,
                         granted_scopes=CALENDAR_WRITE_SPEC.required_scopes)
-    job = work(store, 'slack', 'sl-owner')
+    job = work(store, surface, user)
     connector = service.calendar_for(job)
     issuer = service.issuer_owner_id(job)
     draft = connector.draft_create(EVENT, issuer)
-    approval = connector.approve(draft['id'], issuer)
-    store.put('slack', {**store.config('slack'), 'generation': 'g2'})
+    def change_pairing():
+        if change == 'repaired':
+            store.put(surface, {**store.config(surface), 'generation': 'g2'})
+        else:
+            getattr(service, 'disconnect_' + surface)()
+    if phase != 'approve':
+        approval = connector.approve(draft['id'], issuer)
+    if phase == 'prepared':
+        connector._prepare_provider = lambda **_: change_pairing()
+    else:
+        change_pairing()
     with pytest.raises(CalendarError) as caught:
-        connector.execute(draft['id'], approval['approval_id'], issuer)
+        if phase == 'approve':
+            connector.approve(draft['id'], issuer)
+        else:
+            connector.execute(draft['id'], approval['approval_id'], issuer)
     assert caught.value.reason == 'owner-generation-changed'
     assert provider.calls == []
+
+
+@pytest.mark.parametrize('surface,user', [('telegram', 77), ('mattermost', 'mm-owner'), ('slack', 'sl-owner')])
+@pytest.mark.parametrize('change', ['repaired', 'disconnected'])
+@pytest.mark.parametrize('outcome', ['succeeded', 'unknown'])
+def test_calendar_inflight_outcome_survives_pairing_change(setup, surface, user, change, outcome):
+    from personal_agent.calendar import CALENDAR_STATE_KEY
+    from personal_agent.calendar_conversation import CREATED, OUTCOME_UNKNOWN, FAILED_RETRY, FAILED_RECONNECT
+    from personal_agent.google_calendar import GoogleCalendarError
+    store, service, registry, *_ = setup
+    provider = Provider()
+    service.calendar = CalendarConnector(store, provider, registry=registry)
+    registry.transition(LOCAL, CALENDAR_WRITE_SPEC.connector_id, ConnectorState.CONNECTED,
+                        granted_scopes=CALENDAR_WRITE_SPEC.required_scopes)
+    job = work(store, surface, user)
+    issuer = service.issuer_owner_id(job)
+    connector = service.calendar_for(job)
+    draft = connector.draft_create(EVENT, issuer)
+    conversation = service.calendar_conversation
+    assert conversation.offer(issuer, [draft['id']], work_id=job['id'])
+    shown = conversation.shown_drafts(conversation.pending(issuer))
+    create = provider.create
+    def inflight_create(payload, key):
+        # The provider has received the write before the issuing pairing changes.
+        result = create(payload, key)
+        if change == 'repaired':
+            store.put(surface, {**store.config(surface), 'generation': 'g2'})
+        else:
+            getattr(service, 'disconnect_' + surface)()
+        if outcome == 'unknown':
+            raise GoogleCalendarError('transport-error', effect='unknown')
+        return result
+    provider.create = inflight_create
+    evidence = []
+    reply = conversation.approve(issuer, shown, evidence=lambda *args: evidence.append(args))
+    row = store.config(CALENDAR_STATE_KEY)[draft['id']]
+    expected_state = 'completed' if outcome == 'succeeded' else 'outcome-unknown'
+    expected_effect = 'observed' if outcome == 'succeeded' else 'unknown'
+    assert row['state'] == expected_state
+    assert row['effect'] == expected_effect
+    status = connector.status(draft['id'], issuer)
+    assert (status['state'], status['effect']) == (expected_state, expected_effect)
+    assert (CREATED if outcome == 'succeeded' else OUTCOME_UNKNOWN) in reply
+    assert FAILED_RETRY not in reply and FAILED_RECONNECT not in reply
+    assert len(evidence) == 1 and evidence[0][2]['effect'] == expected_effect
+    if outcome == 'succeeded':
+        assert evidence[0][1] == 'succeeded'
+        assert connector.create(draft['id'], row['approval'], issuer)['id'] == 'new-event'
+    else:
+        with pytest.raises(CalendarError) as caught:
+            connector.create(draft['id'], row['approval'], issuer)
+        assert (caught.value.reason, caught.value.effect) == ('unknown-external-outcome', 'unknown')
+    assert conversation.approve(issuer, shown) is None
+    assert len(provider.calls) == 1
 
 
 def test_migration_keeps_newest_records_conflict_and_is_idempotent(setup, caplog):

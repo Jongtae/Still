@@ -403,9 +403,6 @@ class CalendarConnector:
         if not isinstance(row, dict):
             raise CalendarError("draft-not-found")
         owner_key = _owner_key(owner)
-        generation = self.owner_generation(owner)
-        if generation is None or row.get('owner_generation', '') != generation:
-            raise CalendarError('owner-generation-changed', recovery='request-new-draft')
         stored_owner = row.get("owner")
         if "payload" not in row:
             portable_fields = {
@@ -564,6 +561,14 @@ class CalendarConnector:
             self._put(rows)
         return row
 
+    def _require_current_issuer(self, row: dict, owner: str) -> None:
+        # Pairing binds permission to start a write, not the durable evidence
+        # of a write already dispatched. Outcome persistence and replay must
+        # still work after the issuing messenger disconnects or re-pairs.
+        generation = self.owner_generation(owner)
+        if generation is None or row.get('owner_generation', '') != generation:
+            raise CalendarError('owner-generation-changed', recovery='request-new-draft')
+
     def preview(self, ident: str, owner: str) -> dict:
         row = self._visible_row(ident, owner)
         return {
@@ -596,6 +601,7 @@ class CalendarConnector:
                 continue
             try:
                 self._owned({ident: row}, ident, owner)
+                self._require_current_issuer(row, owner)
             except CalendarError:
                 continue
             out.append({
@@ -621,6 +627,8 @@ class CalendarConnector:
         with _LOCK:
             rows = self._rows()
             row = self._owned(rows, ident, owner)
+            if row.get("state") in {"awaiting-approval", "approved"}:
+                self._require_current_issuer(row, owner)
             if expire_approval and row.get("state") == "approved" and self._now() >= row.get("expires", 0):
                 row.update(
                     state="expired",
@@ -664,6 +672,7 @@ class CalendarConnector:
             with _LOCK:
                 rows = self._rows()
                 row = self._owned(rows, ident, owner)
+                self._require_current_issuer(row, owner)
                 if row.get("state") != "awaiting-approval":
                     raise CalendarError("not-awaiting-approval")
                 authority_guard = self.registry._authority_guard() if self.registry is not None else nullcontext()
@@ -725,6 +734,7 @@ class CalendarConnector:
         try:
             with _LOCK:
                 row = self._owned(self._rows(), ident, owner)
+                self._require_current_issuer(row, owner)
                 dispatchable = (row.get("state") == "approved"
                                 and _constant_text_equal(row.get("approval"), approval)
                                 and self._now() < row.get("expires", 0))
@@ -754,6 +764,7 @@ class CalendarConnector:
                 return dict(row["result"])
             if row.get("state") in {"executing", "outcome-unknown"}:
                 raise CalendarError("unknown-external-outcome", effect="unknown", recovery="inspect-calendar-before-retry")
+            self._require_current_issuer(row, owner)
             if row.get("state") != "approved" or not _constant_text_equal(row.get("approval"), approval):
                 raise CalendarError("exact-approval-required")
             if self._now() >= row.get("expires", 0):
