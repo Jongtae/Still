@@ -201,8 +201,11 @@ class ProfileTests(unittest.TestCase):
         self.profile._acquire('work-1')
         self.addCleanup(self.profile._release)
         self.assertLess(time.monotonic() - started, 5)
-        with self.assertRaises(ToolError):
+        # #1572 review P2: the Work that waited holds the profile under its own name, not the keep-alive's.
+        self.assertEqual(self.profile.occupancy(), 'work')
+        with self.assertRaises(ToolError) as refused:
             self.profile._acquire('work-2')  # any other holder is still refused at once
+        self.assertEqual(str(refused.exception), bs.BUSY_WORK_TEXT)
 
 
 class HttpRefreshTests(unittest.TestCase):

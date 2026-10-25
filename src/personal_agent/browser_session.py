@@ -133,6 +133,12 @@ HOST_NOT_FOUND_TEXT = ('이 주소의 도메인을 찾을 수 없습니다(DNS�
 HOST_UNREACHABLE_TEXT = ('이 주소의 사이트에 연결할 수 없습니다(연결 거부·보안 연결 실패·시간 초과). 주소가 맞는지 확인하거나, '
                          '로그인된 사이트 목록이나 검색으로 정확한 주소를 찾은 뒤 다시 여세요.')
 BUSY_TEXT = '브라우저 프로필을 다른 작업 또는 로그인 창이 사용하고 있어 지금은 실행하지 않았습니다.'
+#: #1572: the refusal names what holds the profile, so the model does not retry the same unavailable resource.
+BUSY_LOGIN_TEXT = ('소유자의 로그인 창이 브라우저 프로필을 쓰고 있어 지금은 실행하지 않았습니다. 같은 동작을 다시 시도하지 마세요. '
+                   '소유자가 그 창에서 로그인하면 그 창을 연 요청이 이어집니다. 로그인하지 않을 거라면 settings_read(category=browser)로 '
+                   '열린 로그인 창을 확인하고, settings_change(category=browser, setting=close_login)로 닫을지 소유자에게 확인받으세요.')
+BUSY_WORK_TEXT = ('다른 작업이 브라우저 프로필을 쓰고 있어 지금은 실행하지 않았습니다. 그 작업이 끝나면 다시 쓸 수 있으니 같은 동작을 곧바로 '
+                  '반복하지 말고, 브라우저 없이 할 수 있는 일을 하거나 그렇게 답하세요.')
 NO_PAGE_TEXT = '열린 페이지가 없습니다. 먼저 browser_open으로 페이지를 여세요.'
 WORKER_DELETE_FAILED_TEXT = ('저장된 로그인 세션은 지웠지만 실행 중인 브라우저에서 지우지 못했습니다. 그 브라우저를 멈췄고 '
                              '그 안의 내용은 저장하지 않습니다.')
@@ -2448,11 +2454,20 @@ class BrowserProfile:
         return view[0], view[1]
 
     # -- holding the profile ---------------------------------------------------
+    def occupancy(self):
+        """#1572: what holds the profile now: ``login``, ``keepalive``, ``work`` or ``none`` (never a page or site)."""
+        holder = self._holder
+        return ('none' if holder is None else 'login' if holder == 'login'
+                else 'keepalive' if holder == KEEPALIVE_HOLDER else 'work')
+
     def _acquire(self, holder):
         if not self._lock.acquire(blocking=False):
             # #990: a session keep-alive is one short page load; anyone else waits for it rather than failing.
-            if self._holder != KEEPALIVE_HOLDER or not self._lock.acquire(timeout=KEEPALIVE_YIELD_SECONDS):
-                raise ToolError(BUSY_TEXT, 'browser_busy')
+            current = self._holder
+            if current != KEEPALIVE_HOLDER or not self._lock.acquire(timeout=KEEPALIVE_YIELD_SECONDS):
+                # #1572: say which kind of holder it is (never which page or what it holds).
+                raise ToolError(BUSY_LOGIN_TEXT if current == 'login'
+                                else BUSY_WORK_TEXT if current not in (None, KEEPALIVE_HOLDER) else BUSY_TEXT, 'browser_busy')
         self._holder = holder
         self._suppressed = set()
         self._imported = set()

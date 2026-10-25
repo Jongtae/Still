@@ -1916,7 +1916,7 @@ class ServiceTests(unittest.TestCase):
                                {'content': '바쁨'})]
         job_id = self.receive('상품 페이지 열어줘')
         self.service.run_one()
-        self.assertIn(bs.BUSY_TEXT, self.store.job(job_id)['error'])
+        self.assertIn(bs.BUSY_LOGIN_TEXT, self.store.job(job_id)['error'])
         self.drivers[0].closed = True
         for _ in range(40):
             if not self.service.browser_status()['login_window_open']:

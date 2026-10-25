@@ -102,7 +102,7 @@ def next_action(row):
 CATEGORY_LABELS = {"connections": "외부 연결", "current_context": "현재 맥락", "judgment_ai": "판단 AI", "main_ai": "기본 AI",
                    "owner_model": "알아 두기", "family": "가족 비서", "skills": "스킬",
                    "phone_link": "휴대폰 링크", "ai_connections": "AI의 연결 서비스", "api_connections": "API 연결",
-                   "preparations": "예약"}
+                   "preparations": "예약", "browser": "브라우저"}
 SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", "model"), "main_ai": ("route", "model"),
             # #805 owner-model upkeep: its pause switch and rolling 24-hour call cap.
             "owner_model": ("enabled", "daily_calls"),
@@ -115,6 +115,8 @@ SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", 
             "phone_link": ("send",), "api_connections": ("connect",),
             # #1455: the owner's reservations (#659), seen and managed in the conversation first.
             "preparations": ("cancel", "accept"),
+            # #1572: close one exact login window that holds the browser while the owner will not sign in.
+            "browser": ("close_login",),
             # #1197: Works may use the owner's AI-side connections (claude.ai connectors), read-only.
             # #1297: which of the owner's MCP servers load, and the owner's trust record per connection.
             "ai_connections": ("enabled", "connect", "servers", "review", "money", "rung", "undo", "forget", "restore"),
@@ -124,7 +126,7 @@ SETTING_LABELS = {"enabled": "사용", "timezone": "시간대", "mode": "방식"
                   "daily_calls": "하루 판단 횟수", "add": "새로 만들기", "share_site": "로그인 공유", "unshare_site": "공유 그만",
                   "remove": "빼기", "send": "보내기", "servers": "MCP 서버", "review": "동작 검토", "money": "돈이 오가는 연결",
                   "connect": "새 MCP 연결", "rung": "신뢰 단계", "undo": "정확히 되돌리기", "forget": "신뢰 기록 잊기", "restore": "잊은 신뢰 기록 복원",
-                  "cancel": "취소", "accept": "수락", "disconnect": "연결 해제"}
+                  "cancel": "취소", "accept": "수락", "disconnect": "연결 해제", "close_login": "로그인 창 닫기"}
 #: #1297: trust values include "<engine>|<kind>|<stable identity>|..." so a
 #: decision cannot cross engines or connection kinds.
 TRUST_SETTINGS = frozenset({("ai_connections", "servers"), ("ai_connections", "review"), ("ai_connections", "money"),
@@ -138,7 +140,7 @@ FAMILY_SHARE_NOTE = "비밀번호는 넘기지 않고 지금 로그인된 세션
 VALUE_LABELS = {"on": "켜짐", "off": "꺼짐", "follow_main": msg('settings_orchestrator.follow_main_ai'), "explicit": "따로 지정"}
 JUDGMENT_MODE_LABELS = {"off": msg('settings_orchestrator.not_used')}
 UNKNOWN_SETTING_MESSAGE = ("대화로 바꿀 수 있는 설정이 아닙니다. 현재 맥락(enabled, timezone), 판단 AI(mode, model), "
-                           "기본 AI(route, model), 알아 두기(enabled, daily_calls), 가족 비서(add, share_site, unshare_site), 스킬(enabled, add, remove), 휴대폰 링크(send), AI의 연결 서비스(enabled, connect, servers, review, money, rung, undo, forget, restore), 예약(cancel, accept)만 바꿀 수 있습니다. API 키, 토큰, 로그인은 비밀 입력 화면에서 직접 입력하세요.")
+                           "기본 AI(route, model), 알아 두기(enabled, daily_calls), 가족 비서(add, share_site, unshare_site), 스킬(enabled, add, remove), 휴대폰 링크(send), AI의 연결 서비스(enabled, connect, servers, review, money, rung, undo, forget, restore), 예약(cancel, accept), 브라우저(close_login)만 바꿀 수 있습니다. API 키, 토큰, 로그인은 비밀 입력 화면에서 직접 입력하세요.")
 CREDENTIAL_VALUE_MESSAGE = ("자격 증명처럼 보이는 값은 대화로 설정하지 않습니다. API 키, 토큰, 로그인은 설정 화면에서 직접 입력하세요. "
                             "아무것도 바꾸지 않았습니다.")
 UNAVAILABLE_MESSAGE = "이 설정의 현재 상태를 확인하지 못해 바꾸지 않았습니다. 설정 화면에서 확인하세요."
@@ -467,6 +469,16 @@ class SettingsOrchestrator:
                                         self._options(tuple(labels), labels), format="해제할 연결의 id",
                                         note=DISCONNECT_NOTE)}
 
+    def _browser(self):
+        """#1572: what holds the browser now, and the login windows waiting for the owner (``close_login``'s options)."""
+        windows = self.service.open_login_windows()
+        occupancy = {"none": "쓰는 곳 없음", "login": "소유자의 로그인 창", "keepalive": "로그인 세션 유지(잠깐)",
+                     "work": "다른 작업"}[self.service.browser_profile.occupancy()]
+        return {"close_login": self._row("close_login", "", f"지금 브라우저: {occupancy}",
+                                         self._options(tuple(windows), windows), format="닫을 로그인 창의 값",
+                                         note="확인하면 그 창을 닫아요. 그 창에서 입력하던 로그인은 사라지고, 그 창을 연 요청은 "
+                                              "로그인 없이 끝나요. 이미 저장된 로그인 세션은 그대로예요.")}
+
     def _skills(self):
         """#961: the switch, and the installed skills for ``add`` / ``remove`` (names and pinned sources only)."""
         status = self.service.skills_status()
@@ -758,6 +770,10 @@ class SettingsOrchestrator:
         if category == "connections":
             # #183: bound to the connection's state and revision, so a reconnect or disconnect since makes it stale.
             return self.service.connection_disconnect_before(value)
+        if category == "browser":
+            # #1572: bound to the login's state; the value already names the exact window.
+            work_id = value.partition("|")[0]
+            return f"{value}:{(self.service._browser_login(work_id) or {}).get('state')}"
         if category == "preparations":
             # #1455: bound to the reservation's state, so a run, a cancel or an accept since the draft makes it stale.
             current = self.service.preparations.get(value) or {}
@@ -828,6 +844,9 @@ class SettingsOrchestrator:
             summary = f"스킬 '{after}'를 뺍니다"
         elif category == "connections":
             summary = f"{self._describe(category, setting, after, row)} 연결을 해제합니다"
+        elif category == "browser":
+            summary = (f"로그인 창을 닫습니다: {self._describe(category, setting, after, row)}. 그 창에서 입력하던 로그인은 "
+                       "사라지고, 그 창을 연 요청은 로그인 없이 끝나요. 이미 저장된 로그인 세션은 그대로예요")
         elif category == "preparations":
             summary = (f"예약을 취소합니다: {self._describe(category, setting, after, row)}" if setting == "cancel"
                        else f"예약을 수락합니다: {self._describe(category, setting, after, row)}")
@@ -958,6 +977,9 @@ class SettingsOrchestrator:
             # #183: the same disconnect as Settings (local stop, credential delete, Google revocation request).
             receipt = self.service.apply_connection_disconnect(row)
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = (receipt or {}).get("message")
+        elif category == "browser":
+            # #1572: the prompt's own 건너뛰기 settlement for exactly this window; its text is the answer.
+            self.__dict__.setdefault("_apply_text", {})[row["id"]] = self.service.close_login_window_by_owner(after)
         elif category == "preparations":
             # #1455: the same operations as the Settings list (#659), confirmed by the owner in the conversation.
             self.service.preparation_request({"operation": setting, "id": after})

@@ -922,6 +922,77 @@ class InFlowLogin(LoginHarness):
         self.assertTrue(any(link in text for text in results), results)
 
 
+class LoginWindowHolder(LoginHarness):
+    """#1572 (live 2026-10-16): a waiting login window held the profile; the owner's next request could not
+    browse and could not release it in conversation."""
+
+    def busy_follow_up(self):
+        self.scripts = [Script({'tool_calls': [call('1', 'browser_open', url=ORIGIN + '/product', effect='read')]},
+                               {'content': '바쁨'})]
+        job_id = self.receive('로그인 말고 그냥 볼 수 있는 것만 봐줘')
+        self.service.run_one()
+        return self.store.job(job_id)
+
+    def test_a_busy_refusal_names_the_login_window_and_settings_list_it_by_site(self):
+        job_id, _prompt, _buttons, _notification = self.login_work()
+        follow = self.busy_follow_up()
+        self.assertIn(bs.BUSY_LOGIN_TEXT, follow['error'])
+        read = self.service.settings_orchestrator.read(self.service.settings_owner(follow), 'browser')
+        close = read['settings']['browser']['close_login']
+        self.assertEqual(close['value_label'], '지금 브라우저: 소유자의 로그인 창')
+        [option] = close['options']
+        self.assertTrue(option['value'].startswith(job_id + '|'))
+        self.assertIn('fixture.test 로그인 창', option['label'])
+        self.assertNotIn(self.service._browser_login(job_id)['nonce'], json.dumps(read), 'the nonce stays inside')
+        self.assertNotIn('/login', json.dumps(read), 'no page path')
+
+    def test_an_owner_confirmed_close_skips_that_login_and_frees_the_browser(self):
+        job_id, _prompt, _buttons, _notification = self.login_work()
+        follow = self.busy_follow_up()
+        settings = self.service.settings_orchestrator
+        value = settings.read(self.service.settings_owner(follow), 'browser')['settings']['browser']['close_login']['options'][0]['value']
+        draft = self.service.settings_tools(follow)('settings_change', {'category': 'browser', 'setting': 'close_login',
+                                                                         'value': value})
+        row = settings._drafts()[draft['draft_id']]
+        self.assertIn('로그인 창을 닫습니다: fixture.test 로그인 창', row['effect'])
+        self.assertEqual(self.state(job_id), 'offered', 'a draft closes nothing')
+        result = settings.confirm(self.service.settings_owner(follow), follow['channel'], draft['draft_id'], row['digest'])
+        self.assertIn('닫고 있어요', result['response'])
+        self.assertEqual(self.settle(job_id), 'skipped')
+        self.assertTrue(self.window().closed)
+        self.assertEqual(self.store.job(job_id)['status'], self.ended, 'never resumed as if signed in')
+        self.assertTrue(wait_until(lambda: self.profile.occupancy() == 'none'))
+        self.assertEqual(settings.read(self.service.settings_owner(follow), 'browser')['settings']['browser']['close_login']['options'], [])
+
+    def test_the_settings_change_schema_offers_every_declared_setting(self):
+        """#1572 review P1: a setting the orchestrator declares is in the tool's enum (one declaration)."""
+        from personal_agent.agent_runtime import DEFINITIONS
+        from personal_agent.settings_orchestrator import SETTINGS
+        [schema] = [d['function']['parameters'] for d in DEFINITIONS if d['function']['name'] == 'settings_change']
+        offered = set(schema['properties']['setting']['enum'])
+        self.assertTrue({name for names in SETTINGS.values() for name in names} <= offered)
+        self.assertIn('close_login', offered)
+
+    def test_a_draft_for_a_window_that_was_replaced_closes_nothing(self):
+        job_id, _prompt, _buttons, _notification = self.login_work()
+        follow = self.busy_follow_up()
+        settings = self.service.settings_orchestrator
+        value = settings.read(self.service.settings_owner(follow), 'browser')['settings']['browser']['close_login']['options'][0]['value']
+        draft = self.service.settings_tools(follow)('settings_change', {'category': 'browser', 'setting': 'close_login',
+                                                                         'value': value})
+        row = settings._drafts()[draft['draft_id']]
+        # The same Work's login is now another window (another nonce): the draft named the old one.
+        current = self.service._browser_login(job_id)
+        self.service._put_browser_login(job_id, {**current, 'nonce': 'f' * 32})
+        from personal_agent.settings_orchestrator import SettingsError
+        with self.assertRaises(SettingsError):
+            settings.confirm(self.service.settings_owner(follow), follow['channel'], draft['draft_id'], row['digest'])
+        self.assertEqual(self.state(job_id), 'offered')
+        self.assertFalse(self.window().closed)
+        with self.assertRaises(ValueError):
+            self.service.close_login_window_by_owner(value)
+
+
 class LoginPromptAndThreads(LoginHarness):
     """#716: the prompt names the site as the Public Suffix List reads it; no thread waits for a window."""
 

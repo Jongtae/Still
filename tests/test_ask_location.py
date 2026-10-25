@@ -22,7 +22,7 @@ from personal_agent.agent_runtime import (EFFECT_CHANGED, EFFECT_FREE_READS, OWN
                                           Capabilities, ToolError, evidence_summary, record_effect, recorded_arguments)
 from personal_agent.bounded_execution import BOUNDED_PROFILE, CLI_PROFILES, STRICT_PROFILE, profile_actions
 from personal_agent.cli_browser_relay import RELAYED_LOCATION_REQUEST
-from personal_agent.conversation_handoff import FOLLOWUP_CANCEL
+from personal_agent.conversation_handoff import FOLLOWUP_CANCEL, TelegramNotSent
 from personal_agent.context_observations import LOCATION_REQUEST_TTL_SECONDS, continuation_key, continuation_request
 from personal_agent.manifests import HOST_ACTIONS, WRITE_ACTIONS
 from personal_agent.quickstart_service import CONTINUATION_EFFECT_NOTE_HEAD, LOCATION_NOT_CONTINUED_TEXT, LOCATION_RECEIVED_TEXT
@@ -63,6 +63,38 @@ class ToolDeclaration(unittest.TestCase):
         caps.execute('ask_location', {'reason': 'where are you?', 'button_label': 'x' * 41})
         caps.execute('ask_location', {'reason': 'where are you?'})
         self.assertEqual(self.asked, [('where are you?', 'Share location'), ('where are you?',), ('where are you?',)])
+
+    def test_with_answer_offers_the_button_on_the_answer_and_does_not_end_the_turn(self):
+        """#1582: an answer on a stated assumption carries the share button instead of a question."""
+        seen = []
+        caps = self.caps(location_request=lambda *a, **k: seen.append((a, k)))
+        result = caps.execute('ask_location', {'reason': '다른 곳이면 위치를 보내 주세요.', 'mode': 'with_answer'})
+        self.assertEqual(result, {'requested': True, 'channel': 'telegram', 'with_answer': True})
+        self.assertEqual(seen, [(('다른 곳이면 위치를 보내 주세요.', None), {'with_answer': True})])
+        schema = next(d for d in caps.definitions() if d['function']['name'] == 'ask_location')['function']
+        self.assertEqual(schema['parameters']['properties']['mode'], {'type': 'string', 'enum': ['ask', 'with_answer']})
+        self.assertEqual(evidence_summary('ask_location', result), result)
+        # Mode ask is the ordinary question.
+        caps.execute('ask_location', {'reason': '지금 어디세요?', 'mode': 'ask'})
+        self.assertEqual(seen[-1], (('지금 어디세요?',), {}))
+
+    def test_with_answer_crosses_the_cli_relay_to_the_service(self):
+        """#1582: CLI schema admission and relay preserve the answer offer."""
+        from personal_agent.bounded_execution import AgentOSMcpTools
+        from personal_agent.cli_browser_relay import BrowserRelay, RelayClient
+        seen = []
+        served = AgentOSMcpTools(self.caps(location_request=lambda *a, **k: seen.append((a, k))))
+        try:
+            relay = BrowserRelay(served)
+        except PermissionError:
+            self.skipTest('sandbox cannot bind the relay socket')
+        self.addCleanup(relay.close)
+        bridge = AgentOSMcpTools(self.caps(location_request=RELAYED_LOCATION_REQUEST))
+        bridge.relay = RelayClient(relay.address)
+        result = bridge.call('ask_location', {'reason': '다른 곳이면 위치를 보내 주세요.',
+                                             'button_label': '현재 위치 공유', 'mode': 'with_answer'})
+        self.assertTrue(result['with_answer'])
+        self.assertEqual(seen, [(('다른 곳이면 위치를 보내 주세요.', '현재 위치 공유'), {'with_answer': True})])
 
     def test_a_call_asks_once_with_the_reason_and_reports_the_channel(self):
         caps = self.caps(location_request=self.asked.append)
@@ -226,6 +258,68 @@ class Continuation(_LocationCase):
         self.assertIn('current_position_report', seen[0])
         self.assertIn(self.REQUEST, seen[0])
         self.assertEqual(self.store.job(row['id'])['status'], 'succeeded')
+
+    def test_an_answer_on_an_assumption_carries_the_share_button_and_a_share_continues_it(self):
+        """#1582 (owner 2026-10-17): answer first on a saved place, offer sharing on the same reply."""
+        self.script = [{'content': None, 'tool_calls': [call('1', 'ask_location', reason='다른 곳이면 위치를 보내 주세요.',
+                                                             button_label='현재 위치 공유', mode='with_answer')]},
+                       {'content': '지금 집이시면, 단지 앞 베이커리의 에그 샌드위치를 추천해요. 다른 곳이면 위치를 보내 주세요.'}]
+        work = self.receive(self.REQUEST)
+        self.assertEqual([b for b in self.sends() if (b.get('reply_markup') or {}).get('keyboard')], [],
+                         'no separate question is sent')
+        [request] = self.pending()
+        self.assertEqual(request['job_id'], work)
+        while self.service.deliver_one():
+            pass
+        [reply] = [b for b in self.sends() if (b.get('reply_markup') or {}).get('keyboard')]
+        self.assertIn('에그 샌드위치', reply['text'])
+        self.assertEqual(reply['reply_markup']['keyboard'][0][0], {'text': '현재 위치 공유', 'request_location': True})
+        self.assertIsNone(self.store.config(self.service.LOCATION_OFFER_PREFIX + work, None), 'the offer rides once')
+        self.now += 30
+        self.location()
+        [row] = self.continued()
+        self.assertEqual((row['message'], row['related_job_id']), (self.REQUEST, work))
+        self.assertTrue(self.service.run_one())
+        while self.service.deliver_one():
+            pass
+        self.assertEqual(len([b for b in self.sends() if (b.get('reply_markup') or {}).get('keyboard')]), 1,
+                         'the continuation\'s answer carries no second button')
+
+    def test_an_answer_not_sent_keeps_its_offer_for_the_retry(self):
+        """#201 review: Telegram unreachable (definitely not sent) must not drop the share button."""
+        self.script = [{'content': None, 'tool_calls': [call('1', 'ask_location', reason='다른 곳이면 위치를 보내 주세요.',
+                                                             button_label='현재 위치 공유', mode='with_answer')]},
+                       {'content': '지금 집이시면, 에그 샌드위치를 추천해요.'}]
+        work = self.receive(self.REQUEST)
+        outage, original = [True], self.service.telegram_transport
+        def unreachable(url, body=None, headers=None, timeout=60):
+            if url.endswith('/sendMessage') and outage[0]:
+                raise TelegramNotSent('connect failed after the client retries')
+            return original(url, body, headers, timeout=timeout)
+        self.service.telegram_transport = unreachable
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(work)['delivery'], 'pending')
+        self.assertIsNotNone(self.store.config(self.service.LOCATION_OFFER_PREFIX + work, None))
+        outage[0] = False
+        self.service._unsent_retry_at = 0
+        while self.service.deliver_one():
+            pass
+        [reply] = [b for b in self.sends() if (b.get('reply_markup') or {}).get('keyboard')]
+        self.assertIn('에그 샌드위치', reply['text'])
+        self.assertEqual(reply['reply_markup']['keyboard'][0][0], {'text': '현재 위치 공유', 'request_location': True})
+        self.assertIsNone(self.store.config(self.service.LOCATION_OFFER_PREFIX + work, None), 'the offer rides once')
+
+    def test_an_offer_whose_request_ended_puts_no_button_on_the_answer(self):
+        """#1582: an expired request leaves the answer plain."""
+        self.script = [{'content': None, 'tool_calls': [call('1', 'ask_location', reason='다른 곳이면 위치를 보내 주세요.',
+                                                             mode='with_answer')]},
+                       {'content': '집 근처로 봤어요.'}]
+        work = self.receive(self.REQUEST)
+        self.now += LOCATION_REQUEST_TTL_SECONDS + 1
+        while self.service.deliver_one():
+            pass
+        self.assertEqual([b for b in self.sends() if (b.get('reply_markup') or {}).get('keyboard')], [])
+        self.assertIsNone(self.store.config(self.service.LOCATION_OFFER_PREFIX + work, None))
 
     def test_the_location_keyboard_is_removed_by_the_first_answer_after_the_request_ended(self):
         """#992 (live 2026-10-03): a keyboard never removed let a tap answer yesterday's prompt."""
