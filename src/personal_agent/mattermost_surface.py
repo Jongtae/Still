@@ -203,9 +203,6 @@ class MattermostSurface(ConversationSurface):
         return MattermostClient(url, token, transport=self._transport or getattr(self.service, 'mattermost_transport', None),
                                 guard=lambda: self._request_guard(url, generation=generation))
 
-    #: Seconds a destination check is reused (the system resolver is asked again after that).
-    DESTINATION_SECONDS = 15
-
     def _request_guard(self, url, connecting=False, generation=None):
         """#306 review: before every request, the surface is still usable (work mode, approval) and the
         server's current addresses are still allowed (#209: an undeclared private address is refused, a
@@ -221,32 +218,15 @@ class MattermostSurface(ConversationSurface):
         elif not self.usable():
             raise MattermostNotSent(msg('mattermost.work_mode_unapproved') if work_mode.active(self.service.store)
                                     else msg('mattermost.not_connected'))
-        now = time.monotonic()
-        # #306 review: only the resolver's answer is reused; whether the host is declared is read from the
-        # current intranet list on every request, so a removed host is refused from the next request.
-        key = self._destination_key(url)
-        cached = getattr(self, '_destination_checked', None)
-        if cached and cached[0] == key and cached[1] > now:
-            return
+        # #306 review: checked on every request, nothing reused: an address change or a removed intranet
+        # host is refused from the very next request (the system resolver keeps its own short cache).
         try:
             self._check_destination(url, resolver=self._resolver)
         except ValueError as exc:
-            self._destination_checked = None
             raise MattermostNotSent(str(exc)) from None
-        self._destination_checked = (key, now + self.DESTINATION_SECONDS)
 
-    def _destination_key(self, url):
-        from . import intranet
-        try:
-            host, port = intranet.destination(url)
-        except ValueError:
-            return (url, None)
-        return (url, intranet.declared(self.service.store, host, port))
-
-    @staticmethod
-    def _resolver(host, port, **kwargs):
-        import socket
-        return socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    #: The resolver of every destination check; ``None`` is the bounded system resolver, as at connect.
+    _resolver = None
 
     def usable(self, cfg=None):
         """Configured and, while work mode is on, marked company-approved by the owner."""
@@ -667,7 +647,6 @@ class MattermostSurface(ConversationSurface):
         if work_mode.active(self.service.store) and self.config().get('company_approved') is not True:
             raise ValueError(msg('mattermost.work_mode_unapproved'))
         private = self._check_destination(url)
-        self._destination_checked = (self._destination_key(url), time.monotonic() + self.DESTINATION_SECONDS)
         client = MattermostClient(url, token, transport=self._transport or getattr(self.service, 'mattermost_transport', None),
                                   guard=lambda: self._request_guard(url, connecting=True))
         try:

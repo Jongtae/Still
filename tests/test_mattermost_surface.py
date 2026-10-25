@@ -462,8 +462,6 @@ class ReviewRegressions(MattermostCase):
         self.owner_says('질문')
         self.assertTrue(self.service.run_one())
         intranet.remove(self.store, 'chat.corp.example', surface='settings')
-        # The last destination check is still fresh (``DESTINATION_SECONDS``); the removal applies anyway.
-        self.assertGreater(self.surface._destination_checked[1], time.monotonic())
         calls = len(self.fake.calls)
         self.fake.post(OWNER, self.dm(), '또 질문')
         self.assertIsNone(self.surface.receive())
@@ -576,8 +574,8 @@ class ReviewRegressions(MattermostCase):
             self.service.connect_mattermost({'server_url': 'https://chat.example.com', 'token': TOKEN,
                                              'owner_username': 'owner'})
         self.assertFalse(self.store.config(CONFIG_KEY)['private_server'])
-        answers['address'] = '10.8.8.8'
-        self.surface._destination_checked = None
+        self.assertTrue(self.surface.send_owner('while still public'))
+        answers['address'] = '10.8.8.8'   # the very next request, seconds later
         calls = len(self.fake.calls)
         self.assertFalse(self.surface.send_owner('to a private address'))
         self.assertIsNone(self.surface.receive())
