@@ -17,14 +17,14 @@ from pathlib import Path
 
 from personal_agent.bounded_execution import (CODEX_STRICT_PERMISSIONS, CODEX_STRICT_TABLE, BoundedExecutionAdapter,
                                               strict_allowed_features)
-from personal_agent.conversation_handoff import ConversationJudgments, JUDGMENT_YES
+from personal_agent.conversation_handoff import ConversationJudgments, JUDGMENT_NO, JUDGMENT_YES
 from personal_agent.decision import (NO_CANDIDATE, OUTCOME_CANCELLED, OUTCOME_DECIDED, OUTCOME_MALFORMED,
-                                     OUTCOME_REJECTED, OUTCOME_TIMEOUT, OUTCOME_UNAVAILABLE, DecisionContext,
+                                     OUTCOME_REJECTED, OUTCOME_TIMEOUT, OUTCOME_UNAVAILABLE, DecisionContext, DecisionPolicy,
                                      ModelDecisionEngine, UnavailableDecisionEngine)
 from personal_agent.decision_adapters import (CODEX_DECISION_CONFIG, JEV_ENDPOINT, JevDecisionEngine,
                                               SubscriptionCliDecisionEngine, bounded_run, codex_disable_plan,
                                               parse_codex_features)
-from personal_agent.decision_qualification import CASE_IDS, SUITE_VERSION, qualify
+from personal_agent.decision_qualification import CASES, CASE_IDS, SUITE_VERSION, qualify
 from personal_agent.decision_routes import CODEX_INSTRUCTION_FILES_QUALIFIED, RANKED_MODELS, DecisionRouteError
 from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.quickstart_service import AgentService
@@ -50,6 +50,10 @@ def oracle(purpose, facts, kind, options):
         return ('취소' in message or '안 해도' in message), 0.9
     if purpose in ('conversation-followup', 'decision-route-probe'):
         value = {'다시 해봐': 'retry', '아니 4시로': 'correction', '그거 저장해': 'reference'}.get(message, NO_CANDIDATE)
+        # A reference needs a result to refer to. The old oracle hid the
+        # qualification fixture's missing history by matching the words alone.
+        if value == 'reference' and not (facts.get('previous_owner_message') and facts.get('previous_reply')):
+            value = NO_CANDIDATE
     elif purpose == 'unsupported-capability':
         value = 'mail-send' if '보내' in message else NO_CANDIDATE
     elif purpose == 'conversation-projection':
@@ -281,6 +285,14 @@ class AdapterParityTests(Temp):
                 self.assertTrue(result['qualified'], (name, result['results']))
                 self.assertEqual([row['case'] for row in result['results']], list(CASE_IDS))
 
+    def test_a_reference_without_previous_result_is_allowed_to_abstain(self):
+        # Valid structured abstention must survive every parser and the policy;
+        # qualification must supply facts rather than reward guessing history.
+        for name, engine in self.engines().items():
+            with self.subTest(route=name):
+                judged = ConversationJudgments(engine).followup_relation('그거 저장해', 'research', 'succeeded')
+                self.assertEqual(judged.outcome, JUDGMENT_NO)
+
     def test_the_caller_gets_identical_typed_answers_from_every_route(self):
         answers = set()
         for name, engine in self.engines().items():
@@ -315,6 +327,46 @@ class SubscriptionCliTests(Temp):
 
     def context(self, **facts):
         return DecisionContext('conversation-followup', facts or {'owner_message': '다시 해봐'})
+
+    def test_qualification_followups_send_the_previous_conversation(self):
+        engine = self.engine()
+        qualify(engine)
+        for call in self.runner.calls[:4]:
+            purpose, facts = parse_prompt(call['argv'][-1])
+            self.assertEqual(purpose, 'conversation-followup')
+            self.assertTrue(facts['previous_owner_message'])
+            self.assertTrue(facts['previous_reply'])
+            self.assertEqual(facts['previous_request_at'], 'just now')
+            self.assertEqual(facts['previous_reply_at'], 'just now')
+        self.assertEqual(SUITE_VERSION, 'decision-qualification/4')
+
+    def test_recorded_codex_0164_routing_failure_is_unavailable(self):
+        # Captured from the real CLI with synthetic qualification input and
+        # a temporary CODEX_HOME. No model answer arrived in this recording.
+        raw = (Path(__file__).parent / 'fixtures' / 'codex_exec_0164_routing_failure.jsonl').read_text()
+        engine = self.engine(runner=CliRunner(fail=lambda e, a: types.SimpleNamespace(
+            returncode=1, stdout=raw, stderr='')))
+        with self.assertLogs('personal_agent.decision', 'WARNING'):
+            passed, outcome = CASES[2][1](engine, DecisionPolicy())
+        self.assertFalse(passed)
+        self.assertEqual(outcome, 'unavailable')
+        self.assertEqual(engine.last_failure, 'engine-failed')
+
+    def test_reference_answer_and_abstention_parse_among_codex_0164_diagnostics(self):
+        raw = (Path(__file__).parent / 'fixtures' / 'codex_exec_0164_routing_failure.jsonl').read_text()
+        # Reuse only the recorded diagnostic item events; answers below are
+        # synthetic, not a claimed live model response from the recording.
+        diagnostics = [line for line in raw.split('\n') if line and
+                       json.loads(line).get('item', {}).get('type') == 'error']
+        for choice, passed, outcome in (('reference', True, 'yes'), (NO_CANDIDATE, False, 'no')):
+            with self.subTest(choice=choice):
+                events = [*diagnostics, json.dumps({'type': 'item.completed', 'item': {
+                    'id': 'answer', 'type': 'agent_message', 'text': json.dumps({'choice': choice, 'confidence': 0.9})}}),
+                    json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 5, 'output_tokens': 1}})]
+                engine = self.engine(runner=CliRunner(fail=lambda e, a: types.SimpleNamespace(
+                    returncode=0, stdout='\n'.join(events), stderr='')))
+                self.assertEqual(CASES[2][1](engine, DecisionPolicy()), (passed, outcome))
+                self.assertEqual(engine.last_failure, '', 'valid abstention is not a parser failure')
 
     def test_codex_runs_isolated_tool_less_and_ignores_owner_configuration(self):
         os.environ['OPENAI_API_KEY_FIXTURE_LEAK'] = 'must-not-travel'

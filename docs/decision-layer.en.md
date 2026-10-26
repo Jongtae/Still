@@ -286,7 +286,7 @@ is attribution only and does not grant or reset foreground execution time.
 
 ### Qualification suite
 
-`decision_qualification.py`, `SUITE_VERSION = decision-qualification/3` (#654 removed the `lookup-withholds-the-identifier` case that #605 had added in `/2`, so every route including Jev qualifies on the same cases; `/1` and `/2` qualifications recorded earlier stay as historical evidence), all cases must pass. Cases run through the production caller (`ConversationJudgments`) or `DecisionEngine.choose` + `DecisionPolicy`: retry after failed Work, correction, reference, a new topic is not a follow-up, an ambiguous referent abstains, declared-candidate selection, no invented candidate, parked-request withdrawal, and failed/partial/unknown projections that must not be upgraded. Contexts are synthetic. A provider failure is a failed case, never a pass. Changing any case requires a new suite version.
+`decision_qualification.py`, `SUITE_VERSION = decision-qualification/4` (the same 11 cases as `/3`, with synthetic previous requests, replies and relative times supplied to the four follow-up cases, matching the production caller after #173; earlier qualifications retain their historical scope), all cases must pass. Cases run through the production caller (`ConversationJudgments`) or `DecisionEngine.choose` + `DecisionPolicy`: retry after failed Work, correction, reference, a new topic is not a follow-up, an ambiguous referent abstains, declared-candidate selection, no invented candidate, parked-request withdrawal, and failed/partial/unknown projections that must not be upgraded. Contexts are synthetic. A provider failure is a failed case, never a pass. Changing any case requires a new suite version.
 
 ### Authority and threat model
 
@@ -361,7 +361,7 @@ Authority: the plan chooses among destinations the owner already configured and 
 
 ### Comparison protocol and promotion gate
 
-**Current coverage:** `decision-qualification/3` exercises `judge` and `choose`, not `score` or `structured`. The capability table describes interface mappings, not measured qualification. Until versioned score cases with a declared scale/rubric, expected mapping and failure behavior are frozen and run against the compared routes, `score` remains unqualified; passing the current suite cannot qualify or promote a provider for scoring.
+**Current coverage:** `decision-qualification/4` exercises `judge` and `choose`, not `score` or `structured`. The capability table describes interface mappings, not measured qualification. Until versioned score cases with a declared scale/rubric, expected mapping and failure behavior are frozen and run against the compared routes, `score` remains unqualified; passing the current suite cannot qualify or promote a provider for scoring.
 
 1. Establish the baseline using the current qualified API/subscription route and versioned `decision_qualification.py` cases; record exact route/model, suite version, case IDs, covered operations, and whether evidence is fixture, synthetic or owner-live.
 2. Evaluate specialized providers only for the supported `judge` and `choose` operations exercised by the same frozen cases, including Korean correction, reference resolution, ambiguous abstention, withdrawal, topic change and recovery. Include Jev live only after explicit owner choice. Do not report `score` compatibility from these results.

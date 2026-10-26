@@ -1,0 +1,18 @@
+{"type":"thread.started","thread_id":"01a17791-35e9-74b3-ae77-05bd6bb43ec0"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`[features].use_legacy_landlock` is deprecated and will be removed soon. (Remove this setting to stop opting into the legacy Linux sandbox behavior.)"}}
+{"type":"item.completed","item":{"id":"item_1","type":"error","message":"`[features].web_search_cached` is deprecated because web search is enabled by default. (Set `web_search` to `\"live\"`, `\"indexed\"`, `\"cached\"`, or `\"disabled\"` at the top level (or under a profile) in config.toml if you want to override it.)"}}
+{"type":"item.completed","item":{"id":"item_2","type":"error","message":"`[features].web_search_request` is deprecated because web search is enabled by default. (Set `web_search` to `\"live\"`, `\"indexed\"`, `\"cached\"`, or `\"disabled\"` at the top level (or under a profile) in config.toml if you want to override it.)"}}
+{"type":"item.completed","item":{"id":"item_3","type":"error","message":"Code Mode is unavailable because code-mode host is disabled. Code mode will fail closed; enable `features.code_mode_host` and install `codex-code-mode-host`."}}
+{"type":"turn.started"}
+{"type":"error","message":"Reconnecting... 2/5 (workspace routing discovery failed)"}
+{"type":"error","message":"Reconnecting... 3/5 (workspace routing discovery failed)"}
+{"type":"error","message":"Reconnecting... 4/5 (workspace routing discovery failed)"}
+{"type":"error","message":"Reconnecting... 5/5 (workspace routing discovery failed)"}
+{"type":"item.completed","item":{"id":"item_4","type":"error","message":"Falling back from WebSockets to HTTPS transport. workspace routing discovery failed"}}
+{"type":"error","message":"Reconnecting... 1/5 (workspace routing discovery failed)"}
+{"type":"error","message":"Reconnecting... 2/5 (workspace routing discovery failed)"}
+{"type":"error","message":"Reconnecting... 3/5 (workspace routing discovery failed)"}
+{"type":"error","message":"Reconnecting... 4/5 (workspace routing discovery failed)"}
+{"type":"error","message":"Reconnecting... 5/5 (workspace routing discovery failed)"}
+{"type":"error","message":"workspace routing discovery failed"}
+{"type":"turn.failed","error":{"message":"workspace routing discovery failed"}}

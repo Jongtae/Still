@@ -23,7 +23,7 @@ from .conversation_handoff import (FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE, FOLL
                                    ConversationJudgments)
 from .decision import NO_CANDIDATE, DecisionContext, DecisionPolicy
 
-SUITE_VERSION = 'decision-qualification/3'
+SUITE_VERSION = 'decision-qualification/4'
 #: Every case must pass.  The suite is small and each case guards a
 #: truth/continuity property, so a partial pass does not qualify.
 PASS_THRESHOLD = 1.0
@@ -37,16 +37,20 @@ _REFERENT_QUESTION = ('The owner said "그거 저장해" (save that). Which earl
                       'Choose none-of-these when more than one result fits equally well.')
 
 
-def _followup(utterance, intent, status, expected):
+def _followup(utterance, intent, status, expected, *, previous_request, previous_reply):
     def run(engine, policy):
-        judged = ConversationJudgments(engine, policy).followup_relation(utterance, intent, status)
+        judged = ConversationJudgments(engine, policy).followup_relation(
+            utterance, intent, status, previous_request=previous_request, previous_reply=previous_reply,
+            previous_request_at='just now', previous_reply_at='just now')
         return judged.outcome == JUDGMENT_YES and judged.value == expected, judged.outcome
     return run
 
 
-def _followup_none(utterance, intent, status):
+def _followup_none(utterance, intent, status, *, previous_request, previous_reply):
     def run(engine, policy):
-        judged = ConversationJudgments(engine, policy).followup_relation(utterance, intent, status)
+        judged = ConversationJudgments(engine, policy).followup_relation(
+            utterance, intent, status, previous_request=previous_request, previous_reply=previous_reply,
+            previous_request_at='just now', previous_reply_at='just now')
         # A confident none-of-these; "unavailable" here would hide an engine failure.
         return judged.outcome == JUDGMENT_NO, judged.outcome
     return run
@@ -84,10 +88,21 @@ def _choose(purpose, facts, candidates, question, expected=None, abstain=False):
 
 #: (case id, runner).  Ids are stable; changing a case changes SUITE_VERSION.
 CASES = (
-    ('retry-after-failed-work', _followup('다시 해봐', 'research', 'failed', FOLLOWUP_RETRY)),
-    ('correction-replaces-parameters', _followup('아니 4시로', 'calendar-create', 'succeeded', FOLLOWUP_CORRECTION)),
-    ('reference-to-previous-result', _followup('그거 저장해', 'research', 'succeeded', FOLLOWUP_REFERENCE)),
-    ('new-topic-is-not-a-followup', _followup_none('오늘 저녁 메뉴 추천해줘', 'calendar-create', 'succeeded')),
+    # /4: #173 made the production question depend on the previous request
+    # and reply. Intent/status alone leave "that" without an observed referent.
+    # Supply synthetic conversation facts, never an expected relation label.
+    ('retry-after-failed-work', _followup('다시 해봐', 'research', 'failed', FOLLOWUP_RETRY,
+        previous_request='두 후보의 장단점을 비교해줘.',
+        previous_reply='자료를 가져오다가 오류가 나서 비교를 마치지 못했어요.')),
+    ('correction-replaces-parameters', _followup('아니 4시로', 'calendar-create', 'succeeded', FOLLOWUP_CORRECTION,
+        previous_request='내일 오후 3시에 팀 회의 잡아줘.',
+        previous_reply='내일 오후 3시에 팀 회의를 잡았어요.')),
+    ('reference-to-previous-result', _followup('그거 저장해', 'research', 'succeeded', FOLLOWUP_REFERENCE,
+        previous_request='두 후보의 장단점을 비교해줘.',
+        previous_reply='비교 결과: 후보 A는 비용이 적고, 후보 B는 지원 기간이 길어요.')),
+    ('new-topic-is-not-a-followup', _followup_none('오늘 저녁 메뉴 추천해줘', 'calendar-create', 'succeeded',
+        previous_request='내일 오후 3시에 팀 회의 잡아줘.',
+        previous_reply='내일 오후 3시에 팀 회의를 잡았어요.')),
     ('ambiguous-referent-abstains', _choose(
         'conversation-referent',
         {'owner_message': '그거 저장해',
