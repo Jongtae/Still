@@ -7,6 +7,7 @@ claims that any provider is calibrated or available.
 import json
 import tempfile
 import unittest
+from unittest import mock
 
 from personal_agent.conversation_handoff import (JUDGMENT_NO, JUDGMENT_UNAVAILABLE, JUDGMENT_YES,
                                                  ConversationJudgments)
@@ -353,4 +354,67 @@ class ServiceRouteTests(unittest.TestCase):
 
 
 if __name__ == '__main__':  # pragma: no cover
+    unittest.main()
+
+
+class ExplainedGoalDimensions(unittest.TestCase):
+    def response(self, answer=False, retry=True):
+        return {'answer': answer, 'gap': 'A concrete defect.', 'note': '', 'confidence': 0.9,
+                'dimensions': {'purpose': 'Continue the agreed frame.', 'fulfillment': 'A condition remains.',
+                               'claims': 'No effect claimed.', 'continuity': 'Latest correction was supplied.',
+                               'retry_value': 'Revise the brief using that correction.'}, 'retry_warranted': retry}
+
+    def test_dimensions_and_retry_value_arrive_in_one_call_without_text_in_audit(self):
+        data = self.response()
+        transport = ScriptedTransport(openai_tool_reply(data))
+        engine, audit = engine_for(transport)
+        decision = engine.judge_explained(DecisionContext('goal-reached', {'reply': 'r'}), 'Serve the message.')
+        self.assertEqual(decision.dimensions, data['dimensions'])
+        self.assertTrue(decision.retry_warranted)
+        self.assertEqual(len(transport.calls), 1)
+        self.assertEqual(len(audit), 1)
+        self.assertNotIn('Latest correction', json.dumps(audit))
+        schema = transport.calls[0]['body']['tools'][0]['function']['parameters']
+        self.assertIn('dimensions', schema['required'])
+        self.assertIn('retry_warranted', schema['required'])
+
+    def test_null_answer_is_undecided_and_never_requests_retry(self):
+        transport = ScriptedTransport(openai_tool_reply(self.response(answer=None, retry=True)))
+        engine, _ = engine_for(transport)
+        decision = engine.judge_explained(DecisionContext('goal-reached'), 'Serve the message.')
+        self.assertEqual(decision.outcome, OUTCOME_DECIDED)
+        self.assertEqual(DecisionPolicy().binary(decision), 'unknown')
+        self.assertFalse(decision.retry_warranted)
+        self.assertEqual(len(transport.calls), 1)
+
+    def test_malformed_dimensions_or_retry_flag_are_nonanswers(self):
+        for field, value in (('dimensions', {'purpose': 'only one'}), ('retry_warranted', 'yes')):
+            with self.subTest(field=field):
+                transport = ScriptedTransport(openai_tool_reply({**self.response(), field: value}))
+                engine, _ = engine_for(transport)
+                decision = engine.judge_explained(DecisionContext('goal-reached'), 'Serve the message.')
+                self.assertEqual(decision.outcome, OUTCOME_MALFORMED)
+                self.assertEqual(DecisionPolicy().binary(decision), 'unknown')
+
+
+class JudgmentHistoryCounts(unittest.TestCase):
+    def test_evaluator_count_is_measured_after_its_final_history_cap(self):
+        from personal_agent.agent_runtime import goal_judgment
+        turns = ['[owner, earlier Work] wholly outside', '[assistant, earlier Work] ' + 'x' * 300]
+        transport = ScriptedTransport(openai_tool_reply({'answer': True, 'gap': '', 'note': '', 'confidence': 0.9}))
+        engine, audit = engine_for(transport)
+        with mock.patch('personal_agent.agent_runtime.GOAL_CONVERSATION_CHARS', 200):
+            verdict = goal_judgment(ConversationJudgments(engine), 'request', {'summary': 'reply', 'evidence_refs': []},
+                                   {}, [], conversation='\n'.join(turns), conversation_turns=turns)
+        self.assertEqual(verdict, 'yes')
+        self.assertEqual(audit[0]['context_messages'], 1)
+        self.assertNotIn('wholly outside', transport.calls[0]['body']['messages'][-1]['content'])
+
+    def test_a_context_not_sent_never_claims_its_history_was_received(self):
+        engine, audit = engine_for(ScriptedTransport(), route=lambda: None)
+        engine.judge(DecisionContext('goal-reached', context_messages=4), 'q')
+        self.assertNotIn('context_messages', audit[0])
+
+
+if __name__ == '__main__':
     unittest.main()

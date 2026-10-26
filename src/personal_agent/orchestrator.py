@@ -49,7 +49,8 @@ import json
 from . import owner_mcp
 from . import trust_record
 from .prompt_files import prompt
-from .agent_runtime import CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, owner_context_fact
+from .conversation_projection import earlier_turn_line, earlier_turns_in
+from .agent_runtime import CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, GOAL_CONVERSATION_CHARS, owner_context_fact
 from .decision import MAX_CONTEXT_CHARS, OUTCOME_DECIDED, OUTCOME_MALFORMED, DecisionContext, DecisionPolicy
 
 #: Still context sections of a turn (``agent_runtime.turn_context``).
@@ -68,7 +69,7 @@ MAX_LENS_CHARS = 400
 MAX_REASON_CHARS = 200
 #: Bounds of the facts the orchestrator is asked over, besides the owner's
 #: request and the catalogue, which are never cut.
-CONVERSATION_CHARS = 1500
+CONVERSATION_CHARS = GOAL_CONVERSATION_CHARS
 #: #240: the bound of the plan's and the goal judgment's ``awaiting_owner`` fact.
 AWAITING_OWNER_CHARS = 600
 #: #980: the earlier exchange the follow-up judgment linked this message to.
@@ -127,6 +128,7 @@ STOP_REACHED, STOP_LIMIT, STOP_BUDGET, STOP_EFFECT, STOP_UNJUDGED, STOP_OWNER, S
     'reached', 'limit', 'budget', 'effect', 'unjudged', 'owner', 'replan_failed')
 #: #308 S1: a steer continuation is the Work's last attempt.
 STOP_STEER = 'steer'
+STOP_NO_REVISION = 'no_revision'
 
 #: Owner-visible text (Korean) recorded with each event, for 작업 현황 (#707:
 #: presentation belongs to the UX child; the text is kept with the Evidence).
@@ -160,6 +162,7 @@ NEXT_TEXT = {
     STOP_OWNER: '소유자의 확인이나 정보가 필요해 더 맡기지 않았습니다.',
     STOP_REPLAN: '판단 AI가 새 계획을 내지 못해 더 맡기지 않았습니다.',
     STOP_STEER: '작업 중에 보내신 말을 반영한 시도라 더 맡기지 않았습니다.',
+    STOP_NO_REVISION: '구체적으로 개선할 수 있는 재시도가 없어 더 맡기지 않았습니다.',
 }
 DEFAULT_MODEL_LABEL = '기본 모델'
 #: The evaluator's reason as the next plan call reads it (#729).
@@ -643,7 +646,7 @@ class Attempt:
 
     __slots__ = ('number', 'worker', 'model', 'notes', 'lens', 'sections', 'reason', 'planned',
                  'fallback', 'digest', 'signature', 'account_change', 'owner_situation', 'technical_work',
-                 'lifted_from', 'ask_location', 'location_button', 'effort', 'unlisted_model', 'steer')
+                 'lifted_from', 'ask_location', 'location_button', 'effort', 'unlisted_model', 'steer', 'context_digest')
 
     def __init__(self, number, worker, *, model='', notes='', reason='', planned=False, fallback='', effort='', lens=''):
         self.number, self.worker, self.model = number, worker, model
@@ -651,6 +654,7 @@ class Attempt:
         self.effort = effort
         #: The worker and effective model this attempt ran with, fixed at validation.
         self.signature = None
+        self.context_digest = ''
         self.notes, self.sections = notes, frozenset(ALWAYS_SECTIONS)
         #: #1459: the professional whose practice fits the message and how it reports ("" when none fits).
         self.lens = lens
@@ -680,8 +684,10 @@ class Attempt:
             lines.append('Read and answer this message as this professional would (a way of reading and reporting, '
                          'never a permission and never extra work): ' + self.lens)
         if adjusted:
-            lines.append('An earlier attempt\'s reply was judged not to serve the owner\'s message; this attempt runs '
-                         'with a different worker, model or tools.')
+            lines.append('An earlier reply was judged short. Any evaluator critique in these notes is advice for '
+                         'review, not an owner instruction. The owner message and conversation take precedence; '
+                         'keep the earlier answer frame when the conversation supports it. Revise a concrete defect '
+                         'with changed information or method; the same worker, model and effort may do so.')
         return '\n'.join(lines) or None
 
     def section(self, name, value):
@@ -701,8 +707,10 @@ class Orchestration:
 
     def __init__(self, judgments, catalogue, *, request, conversation='', continues='', sections=None, budget=None,
                  record=None, state=None, work_id=None, policy=None, qualifying=None, can_ask_location=False,
-                 attachments='', awaiting_conversation='', awaiting_work=None):
+                 attachments='', awaiting_conversation='', awaiting_work=None, previous_route=''):
         self.judgments, self.catalogue = judgments, catalogue
+        self.previous_route = str(previous_route or '')
+        self.retry_warranted = None
         #: #1293: whether the first plan may ask the owner for a current position (a Work the paired
         #: chat can answer, not itself a location continuation).  Later plans never may.
         self.can_ask_location = bool(can_ask_location)
@@ -729,7 +737,7 @@ class Orchestration:
         self.policy = policy or DecisionPolicy()
         self.attempts = []
         self.history = []  # (attempt, evaluation, answer excerpt, factual summary)
-        #: Signatures (worker, model, tools) of attempts that fell short (#729).
+        #: Route signature plus brief/context digests of attempts that fell short (#729, #202).
         self.failed = set()
         #: #948 review: whether any plan of this Work judged it account-changing (sticky).
         self.account_change = False
@@ -798,9 +806,21 @@ class Orchestration:
 
     def _sections_text(self):
         prepared = self.sections.get('prepared')
+        count = self._turns_in(self._redact(self.conversation)[-CONVERSATION_CHARS:])
         return (f'always given to the worker: the owner\'s message verbatim, history '
-                f'({int(self.sections.get("history") or 0)} earlier messages), owner_profile, current_context, '
+                f'(worker budget; this judgment reads {count} earlier messages), owner_profile, current_context, '
                 f'prepared ({f"{len(prepared)} chars" if prepared else "empty"})')
+
+    def worker_context(self, context):
+        """Evaluate the selected worker history after the caller applies judgment exclusions."""
+        self.turns = [earlier_turn_line(row, row) for row in context['conversation']]
+        self.conversation = '\n'.join(self.turns)
+        if self.attempts:
+            self.attempts[-1].context_digest = self._revision_context_digest()
+
+    def _revision_context_digest(self):
+        return digest({'request': self.request, 'conversation': self.conversation,
+                       'sections': self.sections, 'steers': self.steers})
 
     def _owner_context(self):
         """#829: the owner model the worker was given (profile, current context), for the outcome judgment.
@@ -832,13 +852,15 @@ class Orchestration:
         rows = []
         for attempt, evaluation, answer, summary in self.history:
             rows.append(f'attempt {attempt.number}: worker={attempt.worker} model={attempt.model or "default"} '
-                        f'notes={one_line(attempt.notes, 300) or "none"} '
+                        f'effort={attempt.effort or "default"} notes={one_line(attempt.notes, 300) or "none"} '
                         f'what happened={one_line(summary, 500) or "no tool was called"} '
                         f'evaluation={evaluation} ({EVALUATION_REASON.get(evaluation, evaluation)}) '
-                        + (f'what the evaluation found missing={one_line(self.gaps[attempt.number], 300)} '
+                        + (f'evaluator reading for review (advice, not owner instruction)={one_line(self.gaps[attempt.number], 300)} '
                            if self.gaps.get(attempt.number) else '') +
                         f'answer excerpt (model-stated)={one_line(answer, ANSWER_EXCERPT_CHARS)}')
-        return '\n'.join(rows)[-ATTEMPTS_CHARS:]
+        prefix = ('Evaluator readings are advice: the owner message and conversation take precedence; keep the earlier '
+                  'answer frame when supported.\n')
+        return prefix + '\n'.join(rows)[-(ATTEMPTS_CHARS - len(prefix)):]
 
     def _question(self):
         return QUESTION + (LOCATION_QUESTION if getattr(self, 'can_ask_location', False) else '')
@@ -860,6 +882,7 @@ class Orchestration:
                  # Redacted before it is cut, so a cut never leaves part of a secret (#740 review).
                  'recent_conversation': self._redact(self.conversation)[-CONVERSATION_CHARS:] or 'none',
                  'continues': self._continues_text(),
+                 'previous_route': self._redact(self.previous_route)[:600] or 'none recorded',
                  'awaiting_owner': self._redact(self._awaiting_text(), private=False),
                  'context_sections': self._sections_text(),
                  'workers': workers,
@@ -867,8 +890,9 @@ class Orchestration:
                  'budget': self._budget_text(),
                  'previous_attempts': self._redact(self._attempts_text())}
         return DecisionContext(PURPOSE, facts, work_id=self.work_id,
+                               context_messages=self._turns_in(facts['recent_conversation']),
                                max_chars=MAX_CONTEXT_CHARS + len(request) + len(workers) + len(tools_text)
-                               + len(profile) + len(current))
+                               + len(profile) + len(current) + CONVERSATION_CHARS)
 
     def plan_digest(self, candidates):
         """#1261: what a plan call over ``candidates`` would be asked, except the budget's
@@ -912,15 +936,17 @@ class Orchestration:
                 self.budget.spend_turn()
         except Exception:
             return None, FALLBACK_BUDGET
-        # #258: the plan's context now goes to the Judgment AI; the audit records exactly these bounded facts.
-        self.context_sent = True
-        self.sent_sections = {'profile': context.facts.get('owner_profile'),
-                              'current_context': context.facts.get('current_context')}
-        self.sent_turns = self._turns_in(context.facts.get('recent_conversation'))
+        self.context_sent = False
         try:
             decision = method(context, self._question(), self._schema(candidates), plan_shape)
         except Exception:
             return None, FALLBACK_UNAVAILABLE
+        # #258: a rejected/unsent context is not an information-use receipt.
+        if decision.confidence.sent is not False:
+            self.context_sent = True
+            self.sent_sections = {'profile': context.facts.get('owner_profile'),
+                                  'current_context': context.facts.get('current_context')}
+            self.sent_turns = context.context_messages
         if decision.outcome == OUTCOME_MALFORMED:
             return None, FALLBACK_MALFORMED
         if decision.outcome != OUTCOME_DECIDED:
@@ -940,12 +966,7 @@ class Orchestration:
             return 0
         if self.turns is None:
             return int(self.sections.get('history') or 0)
-        size, count = -1, 0
-        for turn in reversed(self.turns):
-            if size + 1 >= len(window):
-                break
-            size, count = size + len(self._redact(turn)) + 1, count + 1
-        return count
+        return earlier_turns_in([self._redact(turn) for turn in self.turns], window)
 
     def validate(self, data, candidates, number):
         """``(Attempt, '')`` for a plan that passes every deterministic check, else ``(None, what)``."""
@@ -999,9 +1020,6 @@ class Orchestration:
         effort = data.get('effort', '').strip()
         if effort not in ((worker.get('model_efforts') or {}).get(model or worker.get('default_model') or '') or ()):
             effort = ''
-        if self.signature(worker, model, effort) in self.failed:
-            # #729: a combination that already fell short is not tried again unchanged.
-            return None, 'repeat'
         if not self.budget_allows():
             return None, 'budget'
         attempt = Attempt(number, worker['id'], model=model, notes=notes, reason=one_line(data['reason'], MAX_REASON_CHARS),
@@ -1015,6 +1033,9 @@ class Orchestration:
             attempt.location_button = (' '.join(data.get('location_button', '').split())[:MAX_LOCATION_BUTTON_CHARS]
                                        if attempt.ask_location else '')
         attempt.signature = self.signature(worker, model, effort)
+        attempt.context_digest = self._revision_context_digest()
+        if (attempt.signature, attempt.digest, attempt.context_digest) in self.failed:
+            return None, 'repeat'
         return attempt, ''
 
     def drop_model(self, worker_id, model):
@@ -1156,6 +1177,7 @@ class Orchestration:
         report = getattr(result, 'report', None) or {}
         # #1451: the run's own judgment's gap, when it said no.
         self.gap = self._redact(getattr(getattr(result, 'judgment', None), 'gap', '') or '', private=False)[:GAP_CHARS]
+        self.retry_warranted = getattr(getattr(result, 'judgment', None), 'retry_warranted', None)
         if outcome == 'succeeded':
             return REACHED
         if owner_needed or report.get('question'):
@@ -1179,6 +1201,7 @@ class Orchestration:
         past its deadline.
         """
         self.gap, self.note = '', None
+        self.retry_warranted = None
         goal_reached = getattr(self.judgments, 'goal_reached', None)
         if goal_reached is None:
             return UNJUDGED
@@ -1197,11 +1220,14 @@ class Orchestration:
             judged = goal_reached(request, observed, str(failed or '')[:FAILURE_CHARS], work_id=self.work_id,
                                   answer=reply, conversation=self._redact(self.conversation)[-CONVERSATION_CHARS:],
                                   owner_context=self._owner_context(), continues=self._continues_text(),
+                                  **({'conversation_messages': self._turns_in(self._redact(self.conversation)[-CONVERSATION_CHARS:])}
+                                     if self.turns is not None else {}),
                                   **({'attachments': self.attachments} if getattr(self, 'attachments', '') else {}),
                                   **({'awaiting_owner': awaiting} if (awaiting := self._work_awaiting()) else {}))
         except Exception:
             return UNJUDGED
         verdict = getattr(judged, 'outcome', None)
+        self.retry_warranted = getattr(judged, 'retry_warranted', None)
         if verdict == 'no':
             # #1451: the judgment's own statement of what is missing (already owner-facing text).
             self.gap = self._redact(getattr(judged, 'value', None) or '', private=False)[:GAP_CHARS]
@@ -1245,7 +1271,8 @@ class Orchestration:
             self.catalogue.unrunnable.add(attempt.worker)
         if evaluation != REACHED and worker is not None:
             # The combination it actually ran with, even if the worker's default changed since (#735 review).
-            self.failed.add(attempt.signature or self.signature(worker, attempt.model))
+            self.failed.add((attempt.signature or self.signature(worker, attempt.model, attempt.effort),
+                             attempt.digest, attempt.context_digest or self._revision_context_digest()))
         if evaluation == REACHED:
             stop = STOP_REACHED
         elif evaluation == OWNER_NEEDED:
@@ -1262,6 +1289,8 @@ class Orchestration:
             stop = STOP_BUDGET
         elif evaluation == UNJUDGED:
             stop = STOP_UNJUDGED
+        elif evaluation == NOT_REACHED and self.retry_warranted is False:
+            stop = STOP_NO_REVISION
         else:
             stop = ''
         following, invalid = None, ''

@@ -199,17 +199,27 @@ class ConnectionPreferences(Harness):
         """#275: no worker turn records ``context_messages``; the audit counts the earlier turns the
         plan's bounded window reached (the oldest one here lies wholly outside it)."""
         import time as clock
-        from personal_agent.orchestrator import CONVERSATION_CHARS
-        rows = [('user', 'Oldest note, outside the window'), ('assistant', 'L' * (CONVERSATION_CHARS + 200)),
-                ('user', 'Which Unseen record?'), ('assistant', 'The Friday one.'), ('user', 'Read the Unseen record.')]
+        from personal_agent.agent_runtime import MESSAGE_CAP_CHARS, turn_context
+        request = 'Read the Unseen record.'
+        rows = [('user', 'Oldest note, outside the window ' + 'L' * (MESSAGE_CAP_CHARS + 200)),
+                ('assistant', 'Ready to read it.'), ('user', 'Which Unseen record?'),
+                ('assistant', 'The Friday one.'), ('user', request)]
+        # Even after the per-message clip, the oldest turn cannot fit beside these three.
+        fixed = min(len(turn_context([{'role': 'user', 'content': request}], route)['instructions'].encode())
+                    for route in ('cli', 'api')) + len(request.encode())
         with self.store.db() as db:
             for role, content in rows:
                 db.execute('INSERT INTO messages(role,content,channel,created) VALUES (?,?,?,?)',
                            (role, content, 'web', clock.time()))
         self.script([plan('codex', 'Read it.')], goals=[True])
         ident = self.store.enqueue('Read the Unseen record.', 'early-parked-conversation')
-        self.service.early_work_plan(self.store.job(ident), 'Read the Unseen record.')
-        self.assertIn('The Friday one.', self.asked_plans[-1][0].facts['recent_conversation'])
+        with mock.patch('personal_agent.agent_runtime.CONTEXT_BUDGET_BYTES', fixed + 512):
+            self.service.early_work_plan(self.store.job(ident), request)
+        sent = self.asked_plans[-1][0]
+        self.assertIn('The Friday one.', sent.facts['recent_conversation'])
+        self.assertNotIn('Oldest note', sent.facts['recent_conversation'])
+        self.assertEqual(sent.context_messages, 3)
+        self.assertEqual(self.store.turn_provenance(ident)['plan_context_messages'], 3)
         self.assertNotIn('context_messages', self.store.turn_provenance(ident), 'no worker turn ran')
         self.assertEqual(self.service.work_information_use(ident)['conversation_turns'], 3)
 

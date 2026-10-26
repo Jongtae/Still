@@ -466,11 +466,13 @@ def work_information_use(store, job_id, redact=None):
     judgments = store.work_decisions(job_id)
     judgment_models = sorted({label(row.get('observed_model') or row.get('model') or row.get('engine') or row.get('provider'), 80)
                               for row in judgments} - {''})
+    judgment_contexts=[{'purpose':row.get('purpose'), 'context_messages':row['context_messages']}
+                       for row in judgments if isinstance(row.get('context_messages'),int)]
     photo_inputs=[{key: (label(value,80) if isinstance(value,str) else value)
                    for key,value in photo.items() if key in ('attempt','source','count','status','route','engine','provider')}
                   for photo in photo_rows]
     sent_to={'workers': workers,
-             'judgment_ai': {'calls': len(judgments), 'models': judgment_models},
+             'judgment_ai': {'calls': len(judgments), 'models': judgment_models, 'contexts': judgment_contexts},
              'web_search_ran': bool(lookups), 'lookups': lookups[:MAX_ITEMS]}
     # #167: places the signed-in browser opened (a URL carries data to its host), and held-value matches.
     sent_to['browser_destinations'] = opened
@@ -482,7 +484,8 @@ def work_information_use(store, job_id, redact=None):
     return {'work_id': job_id, 'recorded': bool(record), 'evidence_class': EVIDENCE_CLASS,
             'used': used,
             # #275: a plan call's window counts too, so a Work parked before its worker shows it.
-            'conversation_turns': max(int(record.get('context_messages') or 0), int(record.get('plan_context_messages') or 0)),
+            'conversation_turns': max(int(record.get('context_messages') or 0), int(record.get('plan_context_messages') or 0),
+                                      max((row['context_messages'] for row in judgment_contexts),default=0)),
             'sent_to': sent_to,
             'results': results[-MAX_ITEMS:]}
 
@@ -548,6 +551,10 @@ def render_korean(audit):
     if judgment.get('calls'):
         models = ', '.join(judgment.get('models') or ()) or '판단 AI'
         lines.append(f"- 판단 AI: {judgment['calls']}회 ({models})")
+        contexts=judgment.get('contexts') or []
+        if contexts:
+            counts=', '.join(str(row['context_messages'])+'턴' for row in contexts)
+            lines.append(f"  최근 대화 입력 (계획·결과 판단 호출 순서): {counts}")
     lookups = sent.get('lookups') or ()
     if lookups:
         for lookup in lookups[:8]:

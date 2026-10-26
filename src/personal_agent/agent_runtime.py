@@ -23,7 +23,7 @@ from .manifests import BUILTIN_MANIFEST, CONTEXT_GATED_ACTIONS, HOST_TOOLS, runt
 from .memory_service import PROFILE_KEY_GUIDANCE, CONNECTION_PREFERENCE_GUIDANCE, PROFILE_SECTION_CHARS
 from .prompt_files import prompt
 from .preparations import PREPARED_HEADING
-from .conversation_projection import clip_keeping_links, earlier_turn_line
+from .conversation_projection import clip_keeping_links, earlier_turn_line, earlier_turns_in
 
 AGENTS={role['id']:{key:value for key,value in role.items() if key!='id'} for role in BUILTIN_MANIFEST['roles']}
 BUILTIN_TOOLS={tool['id']:tool['host_action'] for tool in BUILTIN_MANIFEST['tools']}
@@ -4652,7 +4652,7 @@ GOAL_GAP_CHARS=300
 #: #820: the reply and the recent conversation the outcome judgment reads.  The reply is
 #: whole: this is the delivered answer's own cap, so no claim is hidden from the judgment.
 GOAL_REPLY_CHARS=24000
-GOAL_CONVERSATION_CHARS=1500
+GOAL_CONVERSATION_CHARS=CONTEXT_BUDGET_BYTES+CONTEXT_MESSAGES*64  # selected text plus earlier-Work labels
 #: #804/#829/#833: the owner model the plan call and the outcome judgment read (redacted, then cut):
 #: the profile and current-context sections the worker was given in this run.
 #: #217: the profile bound is the section's own, so the plan and the judgment never see less than the worker.
@@ -4794,10 +4794,12 @@ class GoalVerdict(str):
  gap=''
  #: #1459: the line the owner reads ('' when the reply already says it; None when none was given).
  note=None
+ retry_warranted=None
 
-def goal_verdict(outcome,gap='',note=None):
+def goal_verdict(outcome,gap='',note=None,retry_warranted=None):
  verdict=GoalVerdict(outcome);verdict.gap=gap if outcome=='no' else ''
  verdict.note=note if outcome=='no' and isinstance(note,str) else None
+ verdict.retry_warranted=retry_warranted if outcome=='no' else False
  return verdict
 
 def steps_read_state(steps):
@@ -4817,7 +4819,7 @@ def work_awaiting_owner_text(capabilities):
  try:return awaiting_owner_text(work_awaiting_owner(capabilities.store,capabilities.job_id))[:AWAITING_OWNER_CHARS]
  except Exception:return ''
 
-def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting=''):
+def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None):
  """``yes`` / ``no`` / ``unavailable``: did the reply serve the owner's message ``goal``?
 
  The one outcome judgment (#657, #820): one ``ConversationJudgments.goal_reached``
@@ -4848,19 +4850,21 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  failed=clean(failures if isinstance(failures,str) else '; '.join(f'{tool}: {reason or "failed"}' for tool,reason in failures))[:GOAL_FAILURE_CHARS]
  reply=clean(claim.get('summary') or '')[:GOAL_REPLY_CHARS]
  recent=clean(conversation or '')[-GOAL_CONVERSATION_CHARS:]
+ count=earlier_turns_in([clean(turn) for turn in conversation_turns],recent) if conversation_turns is not None else None
  owner=owner_context_fact(owner_context,clean)
  try:
   if budget is not None and getattr(getattr(judgments,'engine',None),'work_budget',None) is not budget:budget.spend_turn(reserve=True)
  except Exception:return 'unavailable'
  try:judged=judgments.goal_reached(clean(goal,private=False),observed,failed,work_id=work_id,answer=reply,conversation=recent,
-                                   owner_context=owner,**({'attachments':attachments} if attachments else {}),
+                                   owner_context=owner,**({'conversation_messages':count} if count is not None else {}),
+                                   **({'attachments':attachments} if attachments else {}),
                                    **({'awaiting_owner':clean(awaiting)} if awaiting else {}))
  except Exception:return 'unavailable'
  outcome=getattr(judged,'outcome',None)
  if outcome not in ('yes','no'):return goal_verdict('unavailable')
  note=getattr(judged,'note',None)
  note=clean(' '.join(note.split()),private=False)[:GOAL_GAP_CHARS] if isinstance(note,str) else None
- return goal_verdict(outcome,clean(' '.join(str(getattr(judged,'value',None) or '').split()),private=False)[:GOAL_GAP_CHARS],note)
+ return goal_verdict(outcome,clean(' '.join(str(getattr(judged,'value',None) or '').split()),private=False)[:GOAL_GAP_CHARS],note,getattr(judged,'retry_warranted',None))
 
 def agency_report(goal,verified,failures,unknown,next_step,question=None):
  """The typed owner report of one run: requested / observed / failed / unknown / next.
@@ -5038,7 +5042,7 @@ class ReadOverlap:
   if self.sink is not None:
    self.capabilities.record=self.sink;self.sink=None
 
-def run_agent(adapter,config,key,history,system,capabilities,record,scope='main',owner_context=None,images=None):
+def run_agent(adapter,config,key,history,system,capabilities,record,scope='main',owner_context=None,images=None,judgment_history=None):
  """The direct-API tool loop.  ``owner_context`` (#833) is the turn context whose
  ``profile`` / ``current_context`` sections ``system`` already carries, so the outcome
  judgment reads the same owner model the worker was given; None reads ``none``."""
@@ -5071,8 +5075,10 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  goal=next((m.get('content') for m in reversed(history) if isinstance(m,dict) and m.get('role')=='user' and isinstance(m.get('content'),str)),'')
  # #820: the recent conversation the one outcome judgment reads (the current request excluded).
  # #240: each row labelled as an earlier Work (as on the orchestrated route); this history carries no times.
- conversation='\n'.join(earlier_turn_line(m,m) for m in history[:-1]
-                         if isinstance(m,dict) and m.get('role') in ('user','assistant') and isinstance(m.get('content'),str))
+ judgment_rows=[m for m in (history[:-1] if judgment_history is None else judgment_history)
+                if isinstance(m,dict) and m.get('role') in ('user','assistant') and isinstance(m.get('content'),str)]
+ conversation_turns=[earlier_turn_line(m,m) for m in judgment_rows]
+ conversation='\n'.join(conversation_turns)
  judged=0;nudges=0;checked_completion=False;draft=None
  budget=capabilities.budget
  active_config=dict(config);rerouted=False;checked_direct=False;attempts={};actual=None
@@ -5089,7 +5095,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    judgment=goal_judgment(capabilities.judgments,goal,{'evidence_refs':refs,'summary':content},observations,failed_steps_text(steps),
                           capabilities.job_id,getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                             attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
-                            awaiting=work_awaiting_owner_text(capabilities))
+                            awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns)
   if not _external(trail) and not invalid_calls:
    # Ordinary conversation: no tool ran (or only internal current-state
    # bookkeeping, #627), so there is nothing to observe.
@@ -5212,10 +5218,10 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       judgment=goal_judgment(capabilities.judgments,goal,claim,observations,failed_steps_text(steps),capabilities.job_id,
                              getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                              attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
-                             awaiting=work_awaiting_owner_text(capabilities))
+                             awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns)
       # A "not shown" answer returns the claim once, so the model can take
       # another path; a second one, or no engine, ends the run below.
-      if judgment=='no' and judged<GOAL_JUDGMENTS:reason='goal_not_observed'
+      if judgment=='no' and getattr(judgment,'retry_warranted',None) is not False and judged<GOAL_JUDGMENTS:reason='goal_not_observed'
      if reason is None:return conclude(claim['summary'],claim,judgment)
      record('model','claim_rejected',json.dumps({'scope':scope,'call_id':call['id'],'code':reason,
                                                   'evidence_refs':(claim or {}).get('evidence_refs')},ensure_ascii=False))

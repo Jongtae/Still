@@ -570,6 +570,16 @@ def earlier_turn_line(row, message, tz=None):
     return f"[{who}, earlier Work{when}] {message.get('content') or ''}"
 
 
+def earlier_turns_in(turns, window):
+    """Count rows intersecting an already-bounded transcript suffix, including a partial row."""
+    if not window or window == 'none':return 0
+    size,count=-1,0
+    for turn in reversed(turns):
+        if size+1>=len(window):break
+        size,count=size+len(turn)+1,count+1
+    return count
+
+
 def context_message(row):
     """One stored turn as a later model turn may read it.
 
