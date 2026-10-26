@@ -27,7 +27,7 @@ from personal_agent.decision import (OUTCOME_DECIDED, OUTCOME_MALFORMED, OUTCOME
                                      ModelDecisionEngine, RoutedDecisionEngine, StructuredDecision,
                                      UnavailableDecisionEngine, audit_record, fixture_confidence)
 from personal_agent.decision_adapters import JevDecisionEngine
-from personal_agent.orchestrator import (ATTEMPTS_CHARS, EVENT_TOOL, OBSERVATION_CHARS, PAGE_TEXT_FLOOR_CHARS, PAGE_TEXT_HEADER,
+from personal_agent.orchestrator import (ATTEMPTS_CHARS, CONVERSATION_CHARS, EVENT_TOOL, OBSERVATION_CHARS, PAGE_TEXT_FLOOR_CHARS, PAGE_TEXT_HEADER,
                                          observations_with_pages, FALLBACK_TEXT, MAX_REDELEGATIONS, NOTICE_ONCE,
                                          PURPOSE, QUESTION, SECTIONS, Attempt, Catalogue, Orchestration, plan_schema,
                                          render_catalogue)
@@ -516,7 +516,7 @@ class Redelegation(Harness):
         self.assertEqual([(turn['engine'], turn['model']) for turn in self.engine.turns],
                          [('codex', 'gpt-5.6-luna'), ('codex', 'gpt-5.6-terra')])
         self.assertEqual(self.transport.bodies, [])
-        self.assertIn('An earlier attempt\'s reply was judged not to serve', self.engine.turns[1]['prompt'])
+        self.assertIn('Any evaluator critique in these notes is advice for review', self.engine.turns[1]['prompt'])
         # The re-plan saw the first attempt and its evaluation.
         attempts = self.asked_plans[1][0].facts['previous_attempts']
         self.assertIn('attempt 1: worker=codex', attempts)
@@ -1252,7 +1252,7 @@ class BridgeTimeout(unittest.TestCase):
 
 class PlannerHistory(Harness):
     def test_the_plan_call_reads_the_conversation_the_worker_is_shown(self):
-        """#740: only document-job rows are withheld, as from the worker; source labels no longer hide a row."""
+        """#826: document-job rows reach the worker, but neither planner nor evaluator."""
         from personal_agent.agent_runtime import WORK_SOURCES_KEY
         jobs = []
         for text, answer in (('문서 질문', 'DOCUMENT-ANSWER'), ('브라우저 질문', 'BROWSER-ANSWER'), ('일반 질문', 'PLAIN-ANSWER')):
@@ -1268,8 +1268,15 @@ class PlannerHistory(Harness):
         excerpt = self.asked_plans[-1][0].facts['recent_conversation']
         for shown in ('PLAIN-ANSWER', '일반 질문', 'BROWSER-ANSWER', '브라우저 질문'):
             self.assertIn(shown, excerpt)
+        judged = self.asked_goals[-1].facts['recent_conversation']
+        worker = self.engine.turns[-1]['context']['conversation']
         for withheld in ('DOCUMENT-ANSWER', '문서 질문'):
             self.assertNotIn(withheld, excerpt)
+            self.assertNotIn(withheld, judged)
+            self.assertTrue(any(withheld in message['content'] for message in worker),
+                            'the document exclusion must not change the worker input')
+        self.assertEqual(self.asked_plans[-1][0].context_messages, 4)
+        self.assertEqual(self.asked_goals[-1].context_messages, 4)
 
     def test_a_work_without_a_source_record_is_still_shown(self):
         from personal_agent.agent_runtime import WORK_SOURCES_KEY
@@ -1807,7 +1814,7 @@ class OrchestrationUnit(unittest.TestCase):
         self.assertEqual((kept.effort, kept.signature), ('high', ('a', 'm1', 'high')))
         dropped, _ = orchestration.validate(plan('a', 'g', model='m1', effort='ultra'), candidates, 1)
         self.assertEqual((dropped.effort, dropped.signature), ('', ('a', 'm1')))
-        orchestration.failed.add(('a', 'm1'))
+        orchestration.failed.add((dropped.signature, dropped.digest, dropped.context_digest))
         self.assertEqual(orchestration.validate(plan('a', 'g', model='m1'), candidates, 2), (None, 'repeat'))
         again, _ = orchestration.validate(plan('a', 'g', model='m1', effort='high'), candidates, 2)
         self.assertEqual(again.effort, 'high', 'the same model may be retried at a higher effort')
@@ -1843,11 +1850,11 @@ class OrchestrationUnit(unittest.TestCase):
         seen = []
         engine = FixtureDecisionEngine(structured=lambda context, question, schema: seen.append(context))
         orchestration = Orchestration(ConversationJudgments(engine), self.catalogue(), request=request,
-                                      conversation='x' * 9000)
+                                      conversation='x' * (CONVERSATION_CHARS + 9000))
         orchestration.first()
         [context] = seen
         self.assertEqual(context.facts['owner_request'], request)
-        self.assertLessEqual(len(context.facts['recent_conversation']), 1500)
+        self.assertEqual(len(context.facts['recent_conversation']), CONVERSATION_CHARS)
         self.assertFalse(context.too_large())
 
     def test_attempts_history_is_bounded(self):
@@ -1911,8 +1918,6 @@ class TurnContextBrief(unittest.TestCase):
         self.assertNotIn('brief', turn_context([{'role': 'user', 'content': 'r'}], 'cli'))
 
 
-if __name__ == '__main__':
-    unittest.main()
 
 
 class LiveContinuationEvidence(Harness):
@@ -2934,13 +2939,13 @@ class AccountChangeFloor(unittest.TestCase):
     def test_validate_lifts_only_when_the_plan_says_account_change(self):
         from personal_agent.orchestrator import Orchestration
         worker = {**self.worker(), 'id': 'claude-code', 'available': True}
-        orchestration = Orchestration.__new__(Orchestration)
+        orchestration = Orchestration(None, None, request='')
         orchestration.failed, orchestration.budget_allows = set(), (lambda: True)
         plan = {'worker': 'claude-code', 'model': 'haiku', 'brief': {'notes': ''}, 'reason': 'r'}
         attempt, why = orchestration.validate({**plan, 'account_change': True}, [worker], 1)
         self.assertEqual((attempt.model, attempt.lifted_from, attempt.account_change, why), ('sonnet', 'haiku', True, ''))
         for other in ({**plan, 'account_change': False}, plan):
-            fresh = Orchestration.__new__(Orchestration)
+            fresh = Orchestration(None, None, request='')
             fresh.failed, fresh.budget_allows = set(), (lambda: True)
             attempt, _ = fresh.validate(other, [worker], 1)
             self.assertEqual((attempt.model, attempt.lifted_from), ('haiku', None), 'false or missing: not lifted')
@@ -2949,13 +2954,13 @@ class AccountChangeFloor(unittest.TestCase):
         """#948 review P1/P2."""
         from personal_agent.orchestrator import Orchestration
         worker = {**self.worker(), 'id': 'claude-code', 'available': True}
-        orchestration = Orchestration.__new__(Orchestration)
+        orchestration = Orchestration(None, None, request='')
         orchestration.failed, orchestration.budget_allows = set(), (lambda: True)
         plan = {'worker': 'claude-code', 'model': 'haiku', 'brief': {'notes': ''}, 'reason': 'r'}
         orchestration.validate({**plan, 'account_change': True}, [worker], 1)
         attempt, _ = orchestration.validate({**plan, 'account_change': False}, [worker], 2)
         self.assertEqual((attempt.model, attempt.account_change), ('sonnet', True), 'a replan saying false keeps the floor')
-        fresh = Orchestration.__new__(Orchestration)
+        fresh = Orchestration(None, None, request='')
         fresh.failed, fresh.budget_allows = set(), (lambda: True)
         for value in ('true', 1, None):
             with self.subTest(value=value):
@@ -2967,7 +2972,7 @@ class AccountChangeFloor(unittest.TestCase):
         worker = {**self.worker(default_model='haiku'), 'id': 'claude-code', 'available': True}
         catalogue = type('Catalogue', (), {'default': 'claude-code', 'available': lambda self: [worker],
                                            'worker': lambda self, wid: worker if wid == 'claude-code' else None})()
-        orchestration = Orchestration.__new__(Orchestration)
+        orchestration = Orchestration(None, None, request='')
         orchestration.failed, orchestration.budget_allows, orchestration.attempts = set(), (lambda: True), []
         orchestration.catalogue, orchestration.notice, orchestration.account_change = catalogue, None, False
         orchestration._ask = lambda candidates: ({'worker': 'nope', 'model': 'haiku', 'brief': {'notes': ''},
@@ -2986,7 +2991,7 @@ class OwnerSituationFloor(unittest.TestCase):
 
     def orchestration(self):
         from personal_agent.orchestrator import Orchestration
-        orchestration = Orchestration.__new__(Orchestration)
+        orchestration = Orchestration(None, None, request='')
         orchestration.failed, orchestration.budget_allows = set(), (lambda: True)
         return orchestration
 
@@ -3055,3 +3060,252 @@ class OwnerSituationFloor(unittest.TestCase):
     def test_the_question_asks_for_it_without_naming_a_category(self):
         from personal_agent.orchestrator import QUESTION
         self.assertIn('owner_situation is true when a useful reply depends on the owner\'s own situation', QUESTION)
+
+
+class ContextPreservingRevision(unittest.TestCase):
+    """#202: input and retry boundaries, independent of a model's interpretation."""
+
+    def make(self, plans, verdict=None, **kwargs):
+        pending = iter(plans)
+        self.plans, self.goals, self.events = [], [], []
+
+        def plan_call(context, question, schema):
+            self.plans.append(context)
+            return decided(next(pending))
+
+        def judge(context, proposition):
+            self.goals.append(context)
+            return verdict or BinaryDecision(OUTCOME_DECIDED, False, fixture_confidence(), gap='Review the earlier frame.')
+
+        return Orchestration(ConversationJudgments(FixtureDecisionEngine(structured=plan_call, judge=judge)),
+                             OrchestrationUnit.catalogue(None), request='Keep the frame we agreed on.',
+                             record=lambda status, detail: self.events.append((status, detail)), **kwargs)
+
+    def test_same_route_revises_a_changed_brief_and_refuses_an_identical_repeat(self):
+        orchestration = self.make([plan('a', 'First brief', model='m1'),
+                                   plan('a', 'Review the correction and retain its frame.', model='m1'),
+                                   plan('a', 'Review the correction and retain its frame.', model='m1')])
+        first = orchestration.first()
+        revised = orchestration.next(first, orchestration.evaluate_answer('reply', ''), answer='reply')
+        self.assertIsNotNone(revised)
+        self.assertEqual(revised.signature, first.signature)
+        self.assertNotEqual(revised.digest, first.digest)
+        self.assertIsNone(orchestration.next(revised, orchestration.evaluate_answer('revision', '')))
+        self.assertEqual(self.events[-1][1]['invalid'], 'repeat')
+
+    def test_gap_is_advice_in_replan_and_brief_and_owner_request_stays_verbatim(self):
+        orchestration = self.make([plan('a', ''), plan('a', 'Review the earlier frame.')])
+        original = orchestration.request
+        first = orchestration.first()
+        revised = orchestration.next(first, orchestration.evaluate_answer('earlier answer', ''), answer='earlier answer')
+        facts = self.plans[-1].facts
+        self.assertIn('Review the earlier frame.', facts['previous_attempts'])
+        self.assertIn('advice, not owner instruction', facts['previous_attempts'])
+        context = turn_context([{'role': 'user', 'content': original}], 'api', brief=revised.brief(adjusted=True))
+        self.assertIn('advice for review, not an owner instruction', context['brief'])
+        self.assertIn('keep the earlier answer frame', context['brief'])
+        self.assertEqual((facts['owner_request'], context['request'], orchestration.request), (original,) * 3)
+
+    def test_undecided_or_no_useful_revision_never_replans(self):
+        for answer, retry, stop in ((None, False, 'unjudged'), (False, False, 'no_revision')):
+            with self.subTest(answer=answer):
+                verdict = BinaryDecision(OUTCOME_DECIDED, answer, fixture_confidence(), retry_warranted=retry)
+                orchestration = self.make([plan('a', '')], verdict=verdict)
+                attempt = orchestration.first()
+                evaluation = orchestration.evaluate_answer('reply', '')
+                self.assertIsNone(orchestration.next(attempt, evaluation))
+                self.assertEqual(len(self.plans), 1)
+                self.assertEqual(self.events[-1][1]['stop'], stop)
+
+    def test_added_context_allows_revision_without_changing_the_route_or_notes(self):
+        orchestration = self.make([plan('a', ''), plan('a', '')])
+        first = orchestration.first()
+        evaluation = orchestration.evaluate_answer('reply', '')
+        orchestration.conversation += '\n[owner, earlier Work] Here is the missing correction.'
+        following = orchestration.next(first, evaluation)
+        self.assertIsNotNone(following)
+        self.assertEqual((following.signature, following.digest), (first.signature, first.digest))
+        self.assertNotEqual(following.context_digest, first.context_digest)
+
+    def test_direct_route_carries_no_retry_through_its_verdict(self):
+        from types import SimpleNamespace
+        from personal_agent.agent_runtime import goal_judgment
+        verdict = BinaryDecision(OUTCOME_DECIDED, False, fixture_confidence(), retry_warranted=False)
+        orchestration = self.make([plan('a', '')], verdict=verdict)
+        first = orchestration.first()
+        judged = goal_judgment(orchestration.judgments, orchestration.request,
+                               {'summary': 'reply', 'evidence_refs': []}, {}, [])
+        self.assertEqual(judged, 'no')
+        self.assertFalse(judged.retry_warranted)
+        evaluation = orchestration.evaluate_run(SimpleNamespace(outcome='partial', judgment=judged))
+        self.assertIsNone(orchestration.next(first, evaluation))
+        self.assertEqual(len(self.plans), 1)
+        self.assertEqual(self.events[-1][1]['stop'], 'no_revision')
+
+    def test_changed_brief_never_bypasses_effect_stop(self):
+        for effect in (True, 'unknown'):
+            with self.subTest(effect=effect):
+                orchestration = self.make([plan('a', ''), plan('a', 'changed')])
+                attempt = orchestration.first()
+                self.assertIsNone(orchestration.next(attempt, 'not_reached', effect=effect))
+                self.assertEqual(len(self.plans), 1)
+                self.assertEqual(self.events[-1][1]['stop'], 'effect')
+
+    def test_worker_window_reaches_both_evaluators_and_is_bounded(self):
+        from personal_agent.agent_runtime import (CONTEXT_BUDGET_BYTES, CONTEXT_MESSAGES, GOAL_CONVERSATION_CHARS,
+                                                  goal_judgment)
+        from personal_agent.conversation_projection import earlier_turn_line
+        history = [{'role': 'user' if n % 2 == 0 else 'assistant',
+                    'content': f'Exchange {n}: ' + ('가나다 ' * 180)} for n in range(30)]
+        history.append({'role': 'user', 'content': 'Keep the frame we agreed on.'})
+        context = turn_context(history, 'cli')
+        self.assertLessEqual(len(context['conversation']), CONTEXT_MESSAGES - 1)
+        self.assertTrue(context['conversation'])
+        self.assertLessEqual(sum(len(m['content'].encode()) + 16 for m in context['conversation']), CONTEXT_BUDGET_BYTES)
+        orchestration = self.make([plan('a', '')])
+        orchestration.worker_context(context)
+        orchestration.evaluate_answer('reply', '')
+        recent = self.goals[-1].facts['recent_conversation']
+        for message in context['conversation']:
+            self.assertIn(message['content'], recent)
+        self.assertNotIn('Exchange 0:', recent)
+        self.assertLessEqual(len(recent), GOAL_CONVERSATION_CHARS)
+        self.assertFalse(self.goals[-1].too_large())
+        api_context = turn_context(history, 'api')
+        transcript = '\n'.join(earlier_turn_line(m, m) for m in api_context['conversation'])
+        goal_judgment(orchestration.judgments, context['request'], {'evidence_refs': [], 'summary': 'reply'},
+                      {}, [], conversation=transcript)
+        self.assertEqual(self.goals[-1].facts['recent_conversation'], transcript)
+        self.assertLessEqual(len(transcript), GOAL_CONVERSATION_CHARS)
+        orchestration.conversation = 'x' * (GOAL_CONVERSATION_CHARS + 1000)
+        orchestration.evaluate_answer('reply', '')
+        self.assertEqual(len(self.goals[-1].facts['recent_conversation']), GOAL_CONVERSATION_CHARS)
+        goal_judgment(orchestration.judgments, context['request'], {'evidence_refs': [], 'summary': 'reply'},
+                      {}, [], conversation=orchestration.conversation)
+        self.assertEqual(len(self.goals[-1].facts['recent_conversation']), GOAL_CONVERSATION_CHARS)
+
+
+class ContextWindowAndPreviousRoute(Harness):
+    def test_planner_and_evaluator_read_the_exchange_beyond_the_old_cut(self):
+        from personal_agent.agent_runtime import GOAL_CONVERSATION_CHARS
+        # Store history without running a model: the relevant exchange is older than four rows
+        # and the former 1500-character tail, yet inside the worker's actual selected window.
+        for n in range(5):
+            job = self.store.enqueue(f'Prior exchange {n}: ' + 'details ' * 40, f'prior-{n}')
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET status='succeeded' WHERE id=?", (job,))
+                for role, text in (('user', f'Prior exchange {n}: ' + 'details ' * 40),
+                                   ('assistant', f'Agreed frame {n}: ' + 'details ' * 40)):
+                    db.execute('INSERT INTO messages(role,content,job_id,created) VALUES (?,?,?,?)', (role, text, job, n + 1))
+        self.script([plan('codex', '')], goals=[True])
+        self.run_work('Continue that frame.')
+        worker = self.engine.turns[-1]['context']['conversation']
+        planned = self.asked_plans[-1][0].facts['recent_conversation']
+        judged = self.asked_goals[-1].facts['recent_conversation']
+        self.assertIn('Agreed frame 0:', planned)
+        for message in worker:
+            self.assertIn(message['content'], planned)
+            self.assertIn(message['content'], judged)
+        self.assertLessEqual(len(planned), GOAL_CONVERSATION_CHARS)
+        self.assertLessEqual(len(judged), GOAL_CONVERSATION_CHARS)
+
+    def test_previous_related_route_comes_from_work_records(self):
+        self.script([plan('codex', '', model='gpt-5.6-terra', effort='medium')], goals=[True])
+        prior, _ = self.run_work('Earlier request')
+        # The related Work need not be the most recent Work in the history.
+        current = self.store.enqueue('Keep the same model.', 'related-route')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET related_job_id=?,relation_kind='reference' WHERE id=?", (prior, current))
+        self.script([plan('codex', '', model='gpt-5.6-terra')], goals=[True])
+        self.assertTrue(self.service.run_one())
+        recorded = self.events(prior, 'planned')[-1][1]
+        route = json.loads(self.asked_plans[-1][0].facts['previous_route'])
+        self.assertEqual((route['work_id'], route['worker'], route['model'], route['effort']),
+                         (prior, recorded['worker'], recorded['model'], recorded['effort'] or 'default'))
+
+
+class JudgmentHistoryAudit(Harness):
+    def history(self):
+        document = self.store.enqueue('DOCUMENT-REQUEST', 'document-history')
+        earlier = self.store.enqueue('VISIBLE-REQUEST', 'visible-history')
+        with self.store.db() as db:
+            for job, request, answer in ((document, 'DOCUMENT-REQUEST', 'DOCUMENT-EXCERPT'),
+                                         (earlier, 'VISIBLE-REQUEST', 'VISIBLE-ANSWER')):
+                db.execute("UPDATE jobs SET status='succeeded' WHERE id=?", (job,))
+                for role, text in (('user', request), ('assistant', answer)):
+                    db.execute('INSERT INTO messages(role,content,job_id,created) VALUES (?,?,?,?)', (role, text, job, 1))
+        self.store.put('file_workspace_document_jobs', [document])
+        return document
+
+    def test_actual_plan_and_cli_judgment_audits_match_filtered_inputs(self):
+        from test_decision_engine import OPENAI, ScriptedTransport, openai_tool_reply
+        document = self.history()
+        ident = self.store.enqueue('Current request', 'judgment-audit')
+        job = self.store.job(ident)
+        rows = [*self.store.history(), {'role': 'user', 'content': job['message'], 'job_id': ident}]
+        data = {**plan('codex', ''), 'brief': {'notes': '', 'lens': ''}, 'effort': '',
+                'account_change': False, 'owner_situation': False, 'technical_work': False, 'confidence': 0.9}
+        transport = ScriptedTransport(openai_tool_reply(data),
+                                      openai_tool_reply({'answer': True, 'gap': '', 'note': '', 'confidence': 0.9}))
+        engine = ModelDecisionEngine(ModelAdapter(transport), lambda: (OPENAI, OPENAI_KEY), audit=self.service.record_decision)
+        self.service.use_decision_engine(engine)
+        worker = turn_context(rows, 'cli')
+        filtered = self.service.judgment_history(worker, rows, [document])
+        self.assertEqual((len(worker['conversation']), len(filtered)), (4, 2))
+        with self.service.work_decision_scope(ident, None):
+            orchestration = self.service.work_orchestration(job, job['message'], rows, {}, None, document_jobs=[document])
+            self.assertTrue(orchestration.first().planned)
+            orchestration.worker_context({**worker, 'conversation': filtered})
+            self.assertEqual(orchestration.evaluate_answer('reply', ''), 'reached')
+        records = self.store.work_decisions(ident)
+        self.assertEqual([(row['purpose'], row['context_messages']) for row in records],
+                         [('work-orchestration', 2), ('goal-reached', 2)])
+        self.assertEqual(self.store.turn_provenance(ident)['plan_context_messages'], 2)
+        audit = self.service.work_information_use(ident)
+        self.assertEqual(audit['sent_to']['judgment_ai']['contexts'],
+                         [{'purpose': row['purpose'], 'context_messages': 2} for row in records])
+        self.assertEqual(audit['conversation_turns'], 2)
+        for call in transport.calls:
+            content = call['body']['messages'][-1]['content']
+            self.assertIn('VISIBLE-ANSWER', content)
+            for hidden in ('DOCUMENT-REQUEST', 'DOCUMENT-EXCERPT'):
+                self.assertNotIn(hidden, content)
+                self.assertNotIn(hidden, json.dumps(records))
+        self.assertTrue(any('DOCUMENT-EXCERPT' in row['content'] for row in worker['conversation']))
+
+    def test_early_plan_rejected_before_sending_records_no_history_receipt(self):
+        from test_decision_engine import ScriptedTransport
+        self.history()
+        ident = self.store.enqueue('Current request', 'unsent-history-audit')
+        transport = ScriptedTransport()
+        engine = ModelDecisionEngine(ModelAdapter(transport), lambda: None, audit=self.service.record_decision)
+        self.service.use_decision_engine(engine)
+        with self.service.work_decision_scope(ident, None):
+            self.service.early_work_plan(self.store.job(ident), 'Current request')
+        self.assertEqual(transport.calls, [])
+        self.assertNotIn('plan_context_messages', self.store.turn_provenance(ident) or {})
+        self.assertTrue(self.store.work_decisions(ident))
+        self.assertTrue(all('context_messages' not in record for record in self.store.work_decisions(ident)))
+
+    def test_direct_evaluator_excludes_document_history_and_counts_its_actual_input(self):
+        import test_agency_loop as loop
+        self.history()
+        self.use_main('openai')
+        script = loop.Script({'tool_calls': [loop.call('lookup', 'web_search', query='fixture')]},
+                             loop.finish('finish', 'lookup', summary='The result.'))
+        self.service.adapter = ModelAdapter(script)
+        self.service.local_tools = loop.Network()
+        self.script([plan('openai', '')], goals=[True])
+        _ident, row = self.run_work('Current request')
+        self.assertEqual(row['status'], 'succeeded')
+        worker = json.dumps(script.bodies[0]['messages'])
+        for hidden in ('DOCUMENT-REQUEST', 'DOCUMENT-EXCERPT'):
+            self.assertNotIn(hidden, worker, 'the existing API document-sharing boundary is unchanged')
+            self.assertNotIn(hidden, self.asked_plans[-1][0].facts['recent_conversation'])
+            self.assertNotIn(hidden, self.asked_goals[-1].facts['recent_conversation'])
+        self.assertIn('VISIBLE-ANSWER', worker)
+        self.assertEqual(self.asked_goals[-1].context_messages, 2)
+
+
+if __name__ == '__main__':
+    unittest.main()

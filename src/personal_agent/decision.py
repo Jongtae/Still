@@ -44,7 +44,8 @@ MAX_CONTEXT_CHARS = 6000
 #: #1451: what ``judge_explained`` asks besides the verdict.  Generic: it names no request or task.
 GAP_INSTRUCTION = ('gap: when the proposition is false, one short sentence, in the language of the owner\'s words '
                    'in the facts, naming what makes it false - what is missing, unsupported or different from what '
-                   'was asked - so another attempt can aim at it; no tool names and no instructions. When it is '
+                   'was asked, grounded in the facts. This is the evaluator reading for review, advice rather than an owner '
+                   'instruction; the owner message and conversation take precedence. No tool names and no instructions. When it is '
                    'true, an empty string.\n'
                    # #1459: the owner reads only this one; the gap stays internal.
                    'note: when the proposition is false, what the owner is told after the reply about what is still '
@@ -79,10 +80,11 @@ class DecisionContext:
     attached by the routed engine, is checked at the adapter dispatch boundary.
     """
 
-    __slots__ = ('purpose', 'facts', 'work_id', 'cancelled', 'max_chars', 'admission', 'reserve')
+    __slots__ = ('purpose', 'facts', 'work_id', 'cancelled', 'max_chars', 'admission', 'reserve', 'context_messages')
 
     def __init__(self, purpose, facts=None, *, work_id=None, cancelled=None, max_chars=MAX_CONTEXT_CHARS,
-                 reserve=False):
+                 reserve=False, context_messages=None):
+        self.context_messages = context_messages
         self.purpose = str(purpose)
         self.facts = {str(k): str(v) for k, v in (facts or {}).items()}
         self.work_id = work_id
@@ -165,11 +167,13 @@ class _Decision:
 
 
 class BinaryDecision(_Decision):
-    __slots__ = ('answer', 'gap', 'note')
+    __slots__ = ('answer', 'gap', 'note', 'dimensions', 'retry_warranted')
 
-    def __init__(self, outcome, answer=None, confidence=None, gap='', note=None):
+    def __init__(self, outcome, answer=None, confidence=None, gap='', note=None, dimensions=None, retry_warranted=None):
         super().__init__(outcome, confidence)
         self.answer = answer if outcome == OUTCOME_DECIDED else None
+        self.dimensions = dict(dimensions or {}) if outcome == OUTCOME_DECIDED else {}
+        self.retry_warranted = retry_warranted if outcome == OUTCOME_DECIDED and answer is False else False
         #: #1451: from ``judge_explained`` only: what makes the proposition false, in owner words.
         self.gap = str(gap or '') if outcome == OUTCOME_DECIDED and answer is False else ''
         #: #1459: from ``judge_explained`` only: the line the owner reads about what stays open ('' when the
@@ -483,17 +487,30 @@ class SchemaDecisionEngine(DecisionEngine):
         return BinaryDecision(outcome, data.get('answer'), confidence)
 
     def judge_explained(self, context, proposition):
+        dimensions = ('purpose', 'fulfillment', 'claims', 'continuity', 'retry_value')
         schema = {'type': 'object', 'additionalProperties': False,
-                  'properties': {'answer': {'type': 'boolean'}, 'gap': {'type': 'string'}, 'note': {'type': 'string'},
+                  'properties': {'answer': {'type': ['boolean', 'null']}, 'gap': {'type': 'string'}, 'note': {'type': 'string'},
+                                 'dimensions': {'type': 'object', 'additionalProperties': False,
+                                                'properties': {key: {'type': 'string'} for key in dimensions},
+                                                'required': list(dimensions)},
+                                 'retry_warranted': {'type': 'boolean'},
                                  'confidence': {'type': 'number', 'minimum': 0, 'maximum': 1}},
-                  'required': ['answer', 'gap', 'note', 'confidence']}
+                  'required': ['answer', 'gap', 'note', 'dimensions', 'retry_warranted', 'confidence']}
+        # Older engines can still supply the bare explained verdict (#1451). When supplied,
+        # dimension and retry fields must have their declared shapes; no extra judgment follows.
+        def valid(data):
+            return ('answer' in data and (data['answer'] is None or isinstance(data['answer'], bool))
+                    and isinstance(data.get('gap'), str)
+                    and ('dimensions' not in data or isinstance(data['dimensions'], dict)
+                         and set(data['dimensions']) == set(dimensions)
+                         and all(isinstance(value, str) for value in data['dimensions'].values()))
+                    and ('retry_warranted' not in data or isinstance(data['retry_warranted'], bool)))
         outcome, data, confidence = self._ask(context, 'judge', f'Proposition: {proposition}\n{GAP_INSTRUCTION}\n\n'+prompt('voice'),
-                                              schema, lambda d: isinstance(d.get('answer'), bool)
-                                              and isinstance(d.get('gap'), str))
-        # #1459: an engine that leaves the note out still answers the verdict and its gap (note None).
+                                              schema, valid)
         note = data.get('note')
         return BinaryDecision(outcome, data.get('answer'), confidence, gap=' '.join(str(data.get('gap') or '').split()),
-                              note=' '.join(note.split()) if isinstance(note, str) else None)
+                              note=' '.join(note.split()) if isinstance(note, str) else None,
+                              dimensions=data.get('dimensions'), retry_warranted=data.get('retry_warranted'))
 
     def choose(self, context, candidates, question):
         options = [*dict.fromkeys(str(c) for c in candidates), NO_CANDIDATE]
@@ -612,6 +629,8 @@ def audit_record(context, kind, outcome, data, confidence, at, failure='', diagn
               'elapsed_seconds': confidence.elapsed_seconds,
               'route': confidence.route, 'engine': confidence.engine,
               'model_policy': confidence.model_policy, 'requested_model': confidence.model or ''}
+    if confidence.sent is True and isinstance(context.context_messages, int):
+        record['context_messages'] = context.context_messages
     # #211: the cloud provider destination and profile revision of a CLI judgment, never a credential.
     if getattr(confidence, 'destination', ''):
         record['destination'] = confidence.destination

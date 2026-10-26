@@ -20,6 +20,7 @@ that path cannot use the stored-token resolver.
 from .messages import msg
 from .prompt_files import prompt
 import copy
+from .prompt_files import prompt
 import math
 import json as _json
 import secrets as _secrets
@@ -754,98 +755,7 @@ WATCH_NOTIFY_PROPOSITION = ('The owner accepted a standing watch with the goal s
 #: SEC-LOOP-01 (#657), ARCH-THIN-01 (#820): the one outcome judgment of a Work -
 #: did the reply serve the owner's message, given the conversation?  Step
 #: bookkeeping is evidence for it, never a verdict of its own.
-GOAL_REACHED_PROPOSITION = ('The reply serves the owner\'s message, read in the light of the recent conversation and '
-                            'what Still knows about the owner (owner_context). What the message refers to is read '
-                            'from the recent conversation and continues (the earlier exchange it follows up) first; '
-                            'owner_context settles it only when the conversation does not, and a saved fact that '
-                            'merely shares words with the message is not its subject. The reply answers what the message asks, does '
-                            'what it asks, or - when the owner tells something rather than asks - responds to it the way '
-                            'a capable personal secretary would. A reply that asks the owner for information or a '
-                            'decision the message needs, which neither the message, the recent conversation nor the owner '
-                            'context provides, also serves it. Judge whether it serves the message, not whether it is '
-                            'perfect: a useful reply that could be more detailed still serves it. Every statement in the '
-                            'reply that something was found, read, saved, added, booked, sent or changed is supported by '
-                            'the observations - results that tools actually returned, as Still recorded them; the '
-                            'reply\'s own claims are not evidence. A statement that something is absent, missing or not '
-                            'written (an item has no such detail, nothing matches) is a statement about what was read: '
-                            'it is supported only when the observations show that part was read, and a part outside '
-                            'the read_fields an observation lists was not read. A current fact that changes over time or depends on '
-                            'place is acceptable when the observations or the owner context support it, or when the reply '
-                            'plainly presents it as approximate or unverified. Support must be about the case the message asks: a '
-                            'usual or standing fact (regular hours, a typical price, a standing schedule) supports only '
-                            'itself, not a claim about the specific day, time or case the message asks about, and a reply '
-                            'that presents the specific case as settled on such a fact states a changing fact as checked '
-                            'when nothing supports it (#1440). A source the reply names counts only when '
-                            'that source appears in the observations. A worker\'s own web search whose results Still '
-                            'could not see shows that the lookup was made: what the reply presents as found there was '
-                            'looked up, not invented, though unverified, and does not by itself make the reply false; a '
-                            'claim that something was saved, added, booked, sent or changed still needs the observations. '
-                            'What the message carried besides its words is given as attachments (for example 1 photo): '
-                            'the worker was given those files and you are not, so what the reply reads from them (text, '
-                            'items or details shown in a photo) is supported by that attachment and needs no observation '
-                            '(#1517). '
-                            'It is '
-                            'false when the reply does not address the owner\'s message or addresses a different or '
-                            'earlier topic, serves only part of it, claims an action the observations do not show, says '
-                            'something is absent from what the observations show was not read, states '
-                            'a changing fact as checked when nothing supports it, asks for something the message, the '
-                            'conversation or the owner context already says, says the message carries an attachment '
-                            '(a photo, a file) the message states it does not have, or - when the message asks about something '
-                            'or asks for something to be done - says instead that it lacks the information, offers to '
-                            'look it up, check it or do it, or asks the owner what it is or why they ask, when the '
-                            'observations show no attempt to find it: the assistant can look things up, so an offer to '
-                            'is not an answer. A reply whose answer to what the message asks is that it could not find, '
-                            'open or confirm it does not serve the message either, even after an attempt: another attempt '
-                            'may find another route, and related findings around the question (a usual fact, a nearby '
-                            'page) do not answer it (#1440). '
-                            'A read_state line in the observations is Still\'s own record of which listed items this '
-                            'attempt opened and read through. When it shows items listed but never opened, opened but '
-                            'returned only in part, or returned with no readable text, a reply that says what the message '
-                            'asks for was not found, not shown or could not be confirmed does not serve the message: that '
-                            'material was not read, and the gap names it. A reply that says it is absent when read_state '
-                            'shows every listed item opened and read through is a statement about what was read and can '
-                            'serve the message (#151). '
-                            'Assess whether a route the owner did not name usefully serves the desired outcome while '
-                            'preserving the stated constraints, required method, identity, preferences and corrections. '
-                            'Novelty is not required; an alternative never authorizes an effect or replaces the request. '
-                            'Each recent_conversation row is an earlier Work, marked as one and with its time when known: an approval, lookup or '
-                            'change there belongs to that Work, never to this reply; only observations and failed_steps are '
-                            'this Work\'s own events (#170). '
-                            'failed_steps are calls that did not work, as Still recorded them (#14). One marked recovered '
-                            'was done by a later call of the same action; one marked changed nothing changed no outside '
-                            'state and a later call succeeded on another path. Neither is by itself a part the reply left '
-                            'unserved: the reply is judged on what the observations show. An unmarked failed step, or one '
-                            'marked effect unknown, still counts against a reply that states or depends on what that call '
-                            'was for. A step marked awaiting the owner prepared something Still now shows the owner for '
-                            'their own decision (an approval it requires); that wait is by design, not a failure, and a reply '
-                            'that says plainly what was prepared and that it waits for the owner serves that part (#170). '
-                            'awaiting_owner is Still\'s own record of what this Work prepared and showed for the owner\'s '
-                            'own approval through Still\'s gate (kind and counts, and how many a later event settled): a reply '
-                            'that says so and leaves them waiting does not fall short for that reason, and an item is not '
-                            'approved or applied until a later event settles it (#240). '
-                            'A reply that asks the owner to type or paste a password, key, token or other credential into '
-                            'the conversation never serves the request: such values go only through a secure input. '
-                            'A bare limitation is insufficient when the observations show a supported authorized route '
-                            'that could advance the request. A reply that says something the message asks cannot be done '
-                            'here (not supported, not connected, must be done elsewhere) does not serve it when '
-                            'owner_context lists a connected route whose stated authority covers it - with the owner\'s '
-                            'approval where that is required - and the observations show no attempt through it (#1504). '
-                            'When the request depends on a service that was not yet '
-                            'connected, a reply that reports a limitation, or proposes a route needing owner sign-in, '
-                            'credentials, registration or installation, also states which candidate routes were found '
-                            'and why this one was chosen; without that, or with no observed discovery, it does not serve '
-                            'the request unless it follows a saved owner route choice. When a required prerequisite prevents completion, a useful '
-                            'reply leads with observed findings and a supported proposed route, then one concrete next '
-                            'step the owner can settle in one answer, with the unresolved condition stated. For a '
-                            'request to perform work, return false when the reply only proposes a route, asks for a '
-                            'prerequisite or reports a setup receipt alone and the original result is not observed, '
-                            'even if that reply is useful. This overrides the general rule above about a needed '
-                            'question serving the message. An observed durable prerequisite binding establishes '
-                            'waiting for continuation, not successful completion. If the owner requested only advice, '
-                            'a proposal or setup itself, judge that actual request without inventing further work. '
-                            'Claims of completion still need the original result in the observations; claims of later action '
-                            'need an observed authorized durable continuation or schedule. Do not reward an alternative '
-                            'that repeats a known or unknown prior effect, ignores a refusal or silently changes scope.')
+GOAL_REACHED_PROPOSITION = prompt('goal_reached')
 #: #1451: the outcome judgment's gap sentence, as kept.
 GOAL_GAP_CHARS = 300
 
@@ -853,12 +763,13 @@ GOAL_GAP_CHARS = 300
 class Judgment:
     """One bounded judgment reduced by policy.  It informs routing; it never authorizes."""
 
-    __slots__ = ('outcome', 'value', 'source', 'note')
+    __slots__ = ('outcome', 'value', 'source', 'note', 'retry_warranted')
 
-    def __init__(self, outcome, value=None, source='policy', note=None):
+    def __init__(self, outcome, value=None, source='policy', note=None, retry_warranted=None):
         self.outcome, self.value, self.source = outcome, value, source
         #: #1459: the outcome judgment's owner-facing line (``BinaryDecision.note``), when it said no.
         self.note = note
+        self.retry_warranted = retry_warranted
 
     def __repr__(self):  # pragma: no cover - diagnostic only
         return f'<Judgment {self.outcome} from {self.source}>'
@@ -1156,7 +1067,7 @@ class ConversationJudgments:
         return self.policy.selection(decision)
 
     def goal_reached(self, request, observations, failed_steps='', work_id=None, answer='', conversation='',
-                     owner_context='', continues='', attachments='', awaiting_owner=''):
+                     owner_context='', continues='', attachments='', awaiting_owner='', conversation_messages=None):
         """Did the reply serve the owner's ``request`` (#657, #820)?  The one outcome judgment.
 
         One ``judge`` call over the owner's message (never cut), the recent
@@ -1180,6 +1091,7 @@ class ConversationJudgments:
                  'observations': observations, 'failed_steps': failed_steps or 'none',
                  'awaiting_owner': str(awaiting_owner or '') or 'none'}
         context = self._context('goal-reached', facts, work_id=work_id, reserve=True,
+                                context_messages=conversation_messages,
                                 # #1451: the observations are caller-bounded too (``OBSERVATION_CHARS``).
                                 uncut=('owner_request', 'reply', 'recent_conversation', 'continues', 'owner_context',
                                        'observations'))
@@ -1191,7 +1103,8 @@ class ConversationJudgments:
         note = getattr(decision, 'note', None) if verdict == 'no' else None
         note = ' '.join(str(note).split())[:GOAL_GAP_CHARS] if isinstance(note, str) else None
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict, gap or None,
-                        source=decision.confidence.provider or decision.outcome, note=note)
+                        source=decision.confidence.provider or decision.outcome, note=note,
+                        retry_warranted=getattr(decision, 'retry_warranted', None) if verdict == 'no' else False)
 
     def explicit_memory_request(self, utterance):
         """Does ``utterance`` explicitly ask Still to remember a stated value (#597)?

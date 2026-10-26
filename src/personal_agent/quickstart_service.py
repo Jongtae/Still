@@ -46,7 +46,7 @@ from .subscription_engines import SubscriptionEngines
 from .bounded_execution import BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls
 from .bounded_execution import AgentOSMcpTools, ReadOnlyAgentOSMcpTools, StrictIsolatedAgentOSMcpTools, BoundedExecutionAdapter, ExecutionError, ExecutionResult, MAX_PROMPT_BYTES, BOUNDED_PROFILE, HOST_CLI_PROFILES, STRICT_PROFILE, profile_actions, profile_status, route_unavailable
 from .orchestrator import MIN_ATTEMPT_SECONDS, model_refused, observations_with_pages, remember_model_refusal
-from .orchestrator import (EVENT_TOOL as ORCHESTRATION_EVENT, NOT_JUDGED, NOT_REACHED, REACHED, UNJUDGED, WORKER_FAILED,
+from .orchestrator import (EVENT_TOOL as ORCHESTRATION_EVENT, PURPOSE as ORCHESTRATION_PURPOSE, NOT_JUDGED, NOT_REACHED, REACHED, UNJUDGED, WORKER_FAILED,
                            Orchestration, worker_catalogue)
 from .isolated_engine_gateway import EngineGatewayError
 from .service_control import build_identity
@@ -3385,7 +3385,10 @@ class AgentService:
         with self.lock:
             self.store.append_config_list('decision_audit',record,100)
             # #794: the Work keeps its own judgments for as long as it exists.
-            if record.get('work_id'):self.store.add_work_decision(record['work_id'],record)
+            if record.get('work_id'):
+                self.store.add_work_decision(record['work_id'],record)
+                if record.get('purpose')==ORCHESTRATION_PURPOSE and isinstance(record.get('context_messages'),int):
+                    self.record_turn_provenance(record['work_id'],plan_context_messages=record['context_messages'])
 
     def use_decision_engine(self, engine):
         """Replace the engine behind both consumers (tests, later providers)."""
@@ -5665,20 +5668,18 @@ class AgentService:
         return set(recorded_private_sources(self.store,job_id,tools))
 
     def planner_history(self, rows, document_jobs):
-        """The earlier stored messages the orchestrator's plan call may read (#710, #740).
-
-        Every owner and assistant row except file-workspace document jobs
-        (#826: a CLI worker is now shown those; the plan call is not a worker
-        and does not need document excerpts to choose one).
-        #740: rows are no longer withheld by their Work's source labels.  The
-        Judgment AI is an owner-configured AI (pilot posture, #653), and a
-        follow-up planned without the conversation it continues loses what it
-        refers to.  Every fact is still redacted by ``Orchestration._redact``
-        before the plan call.  The current request is not part of the excerpt.
-        """
+        """#826: document-job excerpts stay out of the Judgment AI's plan call."""
         document_jobs=set(document_jobs or ())
         return [row for row in (rows or [])[:-1]
                 if row.get('role') in ('user','assistant') and row.get('job_id') not in document_jobs]
+
+    def judgment_history(self, context, rows, document_jobs):
+        """Apply #826's exclusion to the worker's selected history, without changing its window."""
+        shown=context['conversation']
+        earlier=[row for row in (rows or [])[:-1] if row.get('role') in ('user','assistant')]
+        document_jobs=set(document_jobs or ())
+        return [message for row,message in zip(earlier[-len(shown):] if shown else [],shown)
+                if row.get('job_id') not in document_jobs]
 
     def continued_exchange(self, job):
         """The owner message and final reply of the Work this one follows up, or '' (#980).
@@ -5717,7 +5718,15 @@ class AgentService:
             LOG.warning('worker catalogue unavailable job=%s',job.get('id'))
             return None
         if not catalogue.default:return None
-        earlier_rows=self.planner_history(rows,document_jobs)[-4:]
+        earlier_rows=self.planner_history(rows,document_jobs)
+        messages=[context_message(row) for row in earlier_rows]+[{'role':'user','content':request}]
+        messages=[{**message,'content':self._redact_known_secrets(message['content'])} for message in messages]
+        # Retain the widest window either worker envelope can carry, before optional sections.
+        # A CLI may shed those sections to fit its prompt limit; evaluation uses its exact window.
+        windows=[turn_context(messages,route)['conversation']
+                 for route in ('cli','api')]
+        selected=max(windows,key=len)
+        earlier_rows=earlier_rows[-len(selected):] if selected else []
         # #170: each row is marked as an earlier Work, with its local time, so the plan and the
         # outcome judgment never read an earlier approval, lookup or effect as this Work's own.
         try:
@@ -5726,8 +5735,9 @@ class AgentService:
         except Exception:
             tz=None
         # #275: one line per turn, so the plan call can say how many of them it sent.
-        conversation=[earlier_turn_line(row,context_message(row),tz) for row in earlier_rows]
+        conversation=[earlier_turn_line(row,message,tz) for row,message in zip(earlier_rows,selected)]
         earlier=earlier_rows
+        previous_route=self.previous_work_route(job,rows)
         def event(status,detail):
             with self.store.db() as db:
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
@@ -5737,10 +5747,30 @@ class AgentService:
                              continues='\n'.join(part for part in (self.continued_exchange(job),self.action_continuation_note(job)) if part),
                              sections={**sections,'history':len(earlier)},budget=budget,record=event,state=state,
                              work_id=job['id'],qualifying=self.decision_routes.qualifying,
-                             can_ask_location=can_ask_location,attachments=attachments,
+                             can_ask_location=can_ask_location,attachments=attachments,previous_route=previous_route,
                              # #240: what waits for the owner, for the plan call and this Work's goal judgment.
                              awaiting_conversation=self.awaiting_in_conversation(job),
                              awaiting_work=lambda:om.awaiting_owner_text(om.work_awaiting_owner(self.store,job['id'])))
+
+    def previous_work_route(self, job, rows):
+        """Route of the linked Work, or latest earlier Work in this conversation; no new selection."""
+        current=self.store.job(job['id']) or job
+        related=current.get('related_job_id')
+        if not related:
+            related=next((row.get('job_id') for row in reversed((rows or [])[:-1])
+                          if row.get('job_id') and row['job_id']!=job['id']),None)
+        if not related:return ''
+        with self.store.db() as db:
+            row=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool=? AND status='planned' ORDER BY id DESC LIMIT 1",
+                           (related,ORCHESTRATION_EVENT)).fetchone()
+        planned=json.loads(row['detail']) if row else {}
+        workers=(self.store.turn_provenance(related) or {}).get('workers') or []
+        worker=workers[-1] if workers else {}
+        if not planned and not worker:return ''
+        return json.dumps({'work_id':related,'worker':planned.get('worker') or worker.get('engine') or worker.get('provider'),
+                           'model':worker.get('model') or planned.get('model') or 'default (not recorded)',
+                           'effort':planned.get('effort') or 'default',
+                           'reason':planned.get('reason') or 'not recorded'},ensure_ascii=False)
 
     def awaiting_in_conversation(self, job):
         """#240: what already waits for the owner's own decision in ``job``'s conversation; '' when nothing.
@@ -11706,6 +11736,9 @@ class AgentService:
         # #211: a cloud provider turn uses the bridge's search (Bedrock has no WebSearch).
         if cloud is not None and native_search:native_search,native_reason=False,'cloud_provider'
         engine_context,engine_prompt,adapter_context,sent,shown_sources=cli_context(native_search)
+        judgment_history=self.judgment_history(engine_context,run.history_rows,run.document_jobs)
+        if run.orchestration is not None:
+            run.orchestration.worker_context({**engine_context,'conversation':judgment_history})
         run.capabilities.private_provenance.update(shown_sources)
         run.work_sources|=run.capabilities.private_provenance
         # #605 F1: a trusted-local CLI may read host files Still never
@@ -11974,6 +12007,9 @@ class AgentService:
         # worker is shown replace the file-workspace job-list
         # flag (`document_context`), which missed an earlier
         # `/notes`, memory or model-driven read.
+        judgment_history=self.judgment_history(api_context,run.history_rows,run.document_jobs)
+        if run.orchestration is not None:
+            run.orchestration.worker_context({**api_context,'conversation':judgment_history})
         shown=api_context['conversation']
         shown_sources=self.shown_history_provenance(run.history_rows[:-1][-len(shown):] if shown else [],run.document_jobs)
         run.capabilities=Capabilities(self.store,self.adapter,runtime_config,run.key,job['id'],run.record,network=self.local_tools,document_access=not run.boundary['requires_approval'],packages=self.runtime_packages(),skills=run.skill_binding,
@@ -12035,7 +12071,7 @@ class AgentService:
             # current-context sections in its system text, the same
             # sections the CLI envelope renders.
             # #833: the outcome judgment reads the same profile / current-context sections.
-            run_options={'owner_context':api_context}
+            run_options={'owner_context':api_context,'judgment_history':judgment_history}
             if run.image_inputs:run_options['images']=run.image_inputs
             run.result=run_agent(self.adapter,runtime_config,run.key,[*api_context['conversation'],{'role':'user','content':api_context['request']}],context_sections(api_context),run.capabilities,run.record,**run_options)
             if run.image_inputs:
