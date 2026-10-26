@@ -18,6 +18,7 @@ supplied by the owner is checked against Telegram *before* it is stored, so
 that path cannot use the stored-token resolver.
 """
 from .messages import msg
+from .prompt_files import prompt
 import copy
 import math
 import json as _json
@@ -702,16 +703,17 @@ CAPABILITY_NEED_QUESTION = ('Does answering the owner\'s message require one of 
 # keeps the curated, documented set); the questions here only frame the choice.
 TURN_REACTION_QUESTION = ('The owner just sent this message to their personal assistant, which is starting to work '
                           'on it. Choose the one reaction emoji that best acknowledges the message itself - its '
-                          'tone, mood and what it asks - as a warm, attentive secretary would tap on it. Vary with '
+                          'tone, mood and what it asks - following the shared Voice instructions. Vary with '
                           'the message; do not default to the same emoji. Choose none-of-these only if no listed '
-                          'emoji fits. This judgment is presentation only and does not authorize any action.')
+                          'emoji fits. This judgment is presentation only and does not authorize any action.\n\n'
+                          + prompt('voice'))
 CLOSING_REACTION_QUESTION = ('The assistant has answered the owner\'s message; the answer was delivered and the work '
                              'succeeded. Choose the one reaction emoji that best closes this exchange, fitting the '
                              'owner\'s message and the content-free fact that it received a successful answer, '
-                             'as a warm secretary would tap on the request once it is done. '
+                             'following the shared Voice instructions. '
                              'Vary with the exchange; do not default to the same emoji. Choose none-of-these only if '
                              'no listed emoji fits. This judgment is presentation only and never claims more than '
-                             'the observed Work outcome.')
+                             'the observed Work outcome.\n\n' + prompt('voice'))
 MEMORY_REQUEST_PROPOSITION = ('The owner\'s latest message explicitly instructs the assistant to remember, keep '
                               'in mind or not forget a specific fact, value or preference that the owner states in '
                               'that same message, for later conversations. It is also true when the owner asserts, '

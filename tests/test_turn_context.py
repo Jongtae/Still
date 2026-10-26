@@ -44,10 +44,10 @@ class TurnContextBuilder(unittest.TestCase):
         for route in ('api', 'cli'):
             instructions = turn_context([{'role': 'user', 'content': 'hi'}], route)['instructions']
             with self.subTest(route=route):
-                self.assertIn('Sound warm and natural', instructions)
-                self.assertIn('one genuine follow-up question', instructions)
-                self.assertIn('thank them for their patience', instructions)
-                self.assertIn('never praise or agree just to please', instructions)
+                self.assertIn('Use short, natural sentences', instructions)
+                self.assertIn('ask a genuine follow-up only when it helps', instructions)
+                self.assertIn('Thank rather than over-apologise', instructions)
+                self.assertIn('Never flatter, praise or agree just to please', instructions)
 
     def test_order_budget_and_current_request_are_preserved(self):
         history = [{'role': 'user', 'content': f'old {i}'} for i in range(30)]

@@ -196,7 +196,7 @@ STATUS_ARGUMENT='status'
 STATUS_MAX=40
 #: Input longer than this is cut before redaction (a status is one sentence).
 _STATUS_INPUT_MAX=400
-STATUS_SCHEMA={'type':'string','description':'Optional. One short, friendly sentence (at most 40 characters) in the owner\'s language saying what you are doing, in natural everyday words rather than a tool name (in Korean a soft 해요체 such as "자료 좀 더 찾아볼게요"). The owner sees it only while the call runs. Never put credentials, card numbers, one-time codes or text you type into it.'}
+STATUS_SCHEMA={'type':'string','description':'Optional. One short sentence (at most 40 characters) saying what you are doing, following the shared Voice instructions. The owner sees it only while the call runs. Never put credentials, card numbers, one-time codes or text you type into it.'}
 #: The observed argument a fallback line may name, per argument (#718): a URL
 #: shows only its host, a search only its query.
 _TARGET_URL='url'
@@ -3878,7 +3878,7 @@ class Capabilities:
 #: #1272: the closing style sentences follow the contract's *Conversation style* section (#1266).
 #: #1508 step 2: Markdown sections (## level: a CLI prompt nests them under "# Still instructions")
 #: with one stated priority order; the change table with each sentence's origin is in the #1508 PR.
-CORE_INSTRUCTIONS=prompt('worker_core')
+CORE_INSTRUCTIONS=prompt('worker_core')+'\n\n'+prompt('voice')
 # Tool guidance for the direct-API route.
 API_TOOL_GUIDANCE=prompt('worker_tools_api')
 # Tool guidance for a subscription CLI turn: the CLI sees only the Still MCP bridge.

@@ -680,7 +680,7 @@ class Guidance(unittest.TestCase):
         self.assertIn('may be saved the same way, as what you inferred', save_memory['description'])
         self.assertIn('Never save a credential', save_memory['description'])
         self.assertNotIn('Never save an inference as a fact', save_memory['description'])
-        self.assertIn("Speak as the owner's secretary", CORE_INSTRUCTIONS)
+        self.assertIn("Never narrate Still, tools, approvals, candidates or other internal states", CORE_INSTRUCTIONS)
 
 
 if __name__ == '__main__':

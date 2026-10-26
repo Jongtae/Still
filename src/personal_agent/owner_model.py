@@ -292,6 +292,8 @@ DROP TABLE owner_model_upkeep_v1;
 
 REVIEW_QUESTION = prompt('owner_model_review').format(notes_chars=NOTES_CHARS, notes_points=NOTES_POINTS,
                                                        point_chars=POINT_CHARS)
+REVIEW_QUESTION += ('\n\nThe shared Voice instructions below apply to change, which is shown to the owner. '
+                    'The internal notes and blocker keep their formats above.\n\n' + prompt('voice'))
 
 REVIEW_SCHEMA = {'type': 'object', 'additionalProperties': False,
                  'properties': {'notes': {'type': 'string'}, 'change': {'type': 'string'},

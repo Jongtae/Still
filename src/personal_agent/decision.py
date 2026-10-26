@@ -48,9 +48,8 @@ GAP_INSTRUCTION = ('gap: when the proposition is false, one short sentence, in t
                    'true, an empty string.\n'
                    # #1459: the owner reads only this one; the gap stays internal.
                    'note: when the proposition is false, what the owner is told after the reply about what is still '
-                   'open, in one or two sentences addressed to the owner, in the language and register of the owner\'s '
-                   'words, as the professional the request calls for would say it (for example a personal assistant, '
-                   'an investment adviser or a researcher): plain and natural, with no internal terms such as '
+                   'open, in one or two sentences addressed to the owner following the shared Voice instructions, '
+                   'with no internal terms such as '
                    'observation, evidence, judgment, attempt or proposition. '
                    # #155: the owner typed the approval and was asked for it again.
                    'Never ask the owner again for a step their request already took (an approval, an answer, a value '
@@ -488,7 +487,7 @@ class SchemaDecisionEngine(DecisionEngine):
                   'properties': {'answer': {'type': 'boolean'}, 'gap': {'type': 'string'}, 'note': {'type': 'string'},
                                  'confidence': {'type': 'number', 'minimum': 0, 'maximum': 1}},
                   'required': ['answer', 'gap', 'note', 'confidence']}
-        outcome, data, confidence = self._ask(context, 'judge', f'Proposition: {proposition}\n{GAP_INSTRUCTION}',
+        outcome, data, confidence = self._ask(context, 'judge', f'Proposition: {proposition}\n{GAP_INSTRUCTION}\n\n'+prompt('voice'),
                                               schema, lambda d: isinstance(d.get('answer'), bool)
                                               and isinstance(d.get('gap'), str))
         # #1459: an engine that leaves the note out still answers the verdict and its gap (note None).

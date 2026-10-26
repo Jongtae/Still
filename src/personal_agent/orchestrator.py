@@ -176,7 +176,7 @@ EVALUATION_REASON = {
 #: site, provider or category (C16).  ARCH-THIN-01 (#820): the plan chooses the
 #: worker, model and tools; it never restates, replaces or narrows the owner's
 #: message, which the worker always receives verbatim with the conversation.
-QUESTION = prompt('planner')
+QUESTION = prompt('planner')+'\n\n'+prompt('voice')
 #: #1293: offered only when this Work can ask the paired chat for a position (``can_ask_location``).
 LOCATION_QUESTION = '\n' + prompt('planner_location')
 #: Bounds of the location question and its button label (Telegram keyboard text stays short).

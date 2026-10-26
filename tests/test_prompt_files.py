@@ -72,6 +72,37 @@ class ConsolidatedPromptTests(unittest.TestCase):
         self.assertIn("for a change in the run that asks the owner's approval", GOAL_FIRST_GUIDANCE)
         self.assertIn('A saved function never carries an approval', GOAL_FIRST_GUIDANCE)
 
+    def test_every_worker_route_and_its_status_generation_share_one_voice(self):
+        from personal_agent.agent_runtime import (DEFINITIONS, action_definitions, context_sections,
+                                                  render_turn_prompt, turn_context)
+        voice = prompt_files.prompt('voice')
+        for route, native_search in (('api', False), ('cli', False), ('cli', True)):
+            context = turn_context([{'role': 'user', 'content': '안녕'}], route, native_search=native_search)
+            assembled = (render_turn_prompt(context) if route == 'cli'
+                         else context['instructions'] + '\n\n' + context_sections(context))
+            with self.subTest(route=route, native_search=native_search):
+                self.assertEqual(assembled.count(voice), 1)
+                self.assertEqual(assembled.count('## Voice'), 1)
+                self.assertNotIn("in the owner's language and register", assembled)
+        # Status is written by this same worker, with this same context; the schema
+        # refers to the shared instructions rather than repeating a separate register.
+        tools = {tool['function']['name']: {'host_action': tool['function']['name']} for tool in DEFINITIONS}
+        statuses = [tool['function']['parameters']['properties']['status']['description']
+                    for tool in action_definitions(tools, set(tools))]
+        self.assertTrue(statuses)
+        for description in statuses:
+            self.assertIn('shared Voice instructions', description)
+            self.assertNotIn('해요체', description)
+            self.assertNotIn('friendly', description)
+
+    def test_planner_lens_frames_content_without_assigning_a_voice(self):
+        from personal_agent.orchestrator import QUESTION
+        [lens] = [line for line in QUESTION.splitlines() if line.startswith('- brief.lens')]
+        self.assertNotRegex(lens, r'(?i)\b(register|voice|persona)\b|how brief')
+        for content in ('what matters', 'numbers', 'risks', 'next steps', 'when to report'):
+            self.assertIn(content, lens)
+        self.assertIn(prompt_files.prompt('voice'), QUESTION)
+
 
 if __name__ == '__main__':
     unittest.main()

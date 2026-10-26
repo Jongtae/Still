@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import hashlib
 from urllib.parse import urlsplit
 from .messages import msg
+from .prompt_files import prompt
 from .local_tools import LocalTools, normalize_public_url
 from functools import cached_property
 from .work_execution import PROCEED, REDELEGATED, WorkRun
@@ -5802,7 +5803,7 @@ class AgentService:
         reply itself is delivered either way (#820).  #1451: a not-reached
         verdict's ``gap`` (what the reply left unserved) replaces the generic
         unknown and closes the answer.  #1459: the owner reads the judgment's ``note``
-        instead - written to the owner, in the voice the request calls for - and nothing
+        instead - written to the owner in the shared voice - and nothing
         when the note is empty (the reply already said it); ``gap`` stays internal.  Only
         an engine that gave no note falls back to the gap.
         """
@@ -10588,7 +10589,8 @@ class AgentService:
                 'Answer the owner message as the Main AI. Another task is in progress; do not answer that task. '
                 'You have no tools in this turn. Set answered=false unless you can fully answer from the '
                 'conversation and general knowledge. Anything needing lookup, current information, files, '
-                'accounts or any action must have answered=false. If answered=true, put the full answer in reply.',
+                'accounts or any action must have answered=false. If answered=true, put the full answer in reply.\n\n'
+                + prompt('voice'),
                 schema,valid)
             data=getattr(decision,'data',None)
             # The dispatch resolved the cloud profile again; its reported recipient is the one recorded.
