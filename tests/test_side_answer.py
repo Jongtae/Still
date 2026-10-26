@@ -22,9 +22,11 @@ class SideAnswerTests(_SteerCase):
     def setUp(self):
         super().setUp()
         self.side_calls = []
+        self.side_questions = []
         self.side_script = lambda: result()
         def answer(context, question, schema):
             self.side_calls.append(context)
+            self.side_questions.append(question)
             return self.side_script()
         self.side_engine = FixtureDecisionEngine(structured=answer)
         self.service.side_answer_engine_factory = lambda: self.side_engine
@@ -38,6 +40,21 @@ class SideAnswerTests(_SteerCase):
     def replies(self, work):
         with self.store.db() as db:
             return [r[0] for r in db.execute("SELECT content FROM messages WHERE job_id=? AND role='assistant'", (work['id'],))]
+
+    def test_side_reply_uses_shared_default_voice_without_expanding_its_context(self):
+        from personal_agent.agent_runtime import MEMORY_OWNER
+        from personal_agent.memory_service import MemoryService
+        from personal_agent.prompt_files import prompt
+        preference = '일할 땐 짧게, 힘든 얘기엔 다정하게 말해 줘'
+        MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD).remember_profile(
+            MEMORY_OWNER, 'settings', 'profile.preference.communication', preference)
+        running, side = self.pair()
+        self.service._side_answer(running, side)
+        [question] = self.side_questions
+        self.assertEqual(question.count(prompt('voice')), 1)
+        [context] = self.side_calls
+        self.assertEqual(set(context.facts), {'owner_message', 'another_task_in_progress', 'conversation'})
+        self.assertNotIn(preference, context.render(), 'the tool-less lane still excludes Memory')
 
     def test_delivers_side_reply_while_real_worker_is_blocked_then_worker_finishes(self):
         entered, release = threading.Event(), threading.Event()

@@ -192,7 +192,10 @@ class Trigger(SelfReview):
 
 class Run(SelfReview):
     def test_the_facts_are_the_request_answer_outcome_verdicts_followup_and_profile(self):
+        from personal_agent.prompt_files import prompt
+        preference = '일할 땐 짧게, 힘든 얘기엔 다정하게 말해 줘'
         self.store.save_memory('profile.place.home', '분당', work_id='w0')
+        self.store.save_memory('profile.preference.communication', preference, work_id='w0')
         job = self.settled('그거 찾아줘', answer='사진이 없어 찾지 못했습니다')
         self.evaluated(job, 'The goal was not reached; the worker asked for a photo.', 'Not reached; stopped.')
         self.corrected(job, '사진이 아니라 아까 말한 책 말이야')
@@ -208,6 +211,8 @@ class Run(SelfReview):
                          'The goal was not reached; the worker asked for a photo.\nNot reached; stopped.')
         self.assertEqual(context.facts['owner_followup'], '사진이 아니라 아까 말한 책 말이야')
         self.assertIn('profile.place.home: 분당', context.facts['owner_profile'])
+        self.assertIn(preference, context.facts['owner_profile'])
+        self.assertEqual(question.count(prompt('voice')), 1)
         self.assertEqual(context.facts['working_notes'], 'none', 'no document yet')
         self.assertEqual(question, om.REVIEW_QUESTION)
         self.assertEqual(schema, om.REVIEW_SCHEMA)

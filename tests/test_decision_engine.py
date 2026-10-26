@@ -111,6 +111,47 @@ class ModelEngineTests(unittest.TestCase):
     def context(self):
         return DecisionContext('parked-work-withdrawal', {'waiting_connection': 'Gmail', 'owner_message': '취소해줘'})
 
+    def test_owner_facing_note_and_reactions_send_the_same_voice_through_the_adapter(self):
+        from personal_agent.prompt_files import prompt
+        transport = ScriptedTransport(
+            openai_tool_reply({'answer': False, 'gap': '미완료', 'note': '아직 끝내지 못했어요.', 'confidence': 0.93}),
+            openai_tool_reply({'choice': '🤗', 'confidence': 0.93}),
+            openai_tool_reply({'choice': '🎉', 'confidence': 0.93}))
+        engine, _audit = engine_for(transport)
+        judgments = ConversationJudgments(engine)
+        preference = '일할 땐 짧게, 힘든 얘기엔 다정하게 말해 줘'
+        verdict = judgments.goal_reached('확인해 줘', 'none', answer='미완료', owner_context=preference)
+        self.assertEqual(verdict.note, '아직 끝내지 못했어요.')
+        self.assertEqual(judgments.turn_reaction('안녕', ('🤗',)), '🤗')
+        self.assertEqual(judgments.closing_reaction('안녕', ('🎉',)), '🎉')
+        self.assertEqual(len(transport.calls), 3)
+        for index, call in enumerate(transport.calls):
+            assembled = '\n'.join(message['content'] for message in call['body']['messages'])
+            with self.subTest(generator=index):
+                self.assertEqual(assembled.count(prompt('voice')), 1)
+                for removed in ("language and register of the owner's", 'as the professional the request calls for',
+                                'as a warm secretary', 'as a warm, attentive secretary'):
+                    self.assertNotIn(removed, assembled)
+                if index == 0:
+                    self.assertIn(preference, assembled)
+                else:
+                    self.assertNotIn(preference, assembled, 'presentation judgment never receives Memory')
+
+    def test_self_review_notification_line_receives_the_voice_and_owner_preference(self):
+        from personal_agent.prompt_files import prompt
+        transport = ScriptedTransport(openai_tool_reply({
+            'notes': '', 'change': '', 'blocker': '', 'confidence': 0.93}))
+        engine, _audit = engine_for(transport)
+        preference = '일할 땐 짧게, 힘든 얘기엔 다정하게 말해 줘'
+        data, _decision = ConversationJudgments(engine).self_review(
+            '요청', '답', 'failed', 'not_reached', '정정', preference, 'correction')
+        self.assertEqual(data, {'notes': '', 'change': '', 'blocker': ''})
+        [call] = transport.calls
+        assembled = '\n'.join(message['content'] for message in call['body']['messages'])
+        self.assertEqual(assembled.count(prompt('voice')), 1)
+        self.assertIn(preference, assembled)
+        self.assertIn('apply to change, which is shown to the owner', assembled)
+
     def test_a_valid_tool_call_becomes_a_decided_judgment_with_provider_identity(self):
         transport = ScriptedTransport(openai_tool_reply({'answer': True, 'confidence': 0.93}))
         engine, audit = engine_for(transport, timeout=7)

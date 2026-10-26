@@ -666,7 +666,7 @@ class GuidanceTests(unittest.TestCase):
         self.assertIs(worker_result('save_note', held), held)
 
     def test_the_worker_speaks_as_the_secretary(self):
-        self.assertIn("Speak as the owner's secretary: never narrate Still, tools, approvals", CORE_INSTRUCTIONS)
+        self.assertIn("Never narrate Still, tools, approvals, candidates or other internal states", CORE_INSTRUCTIONS)
         [save_memory] = [tool['function'] for tool in DEFINITIONS if tool['function']['name'] == 'save_memory']
         self.assertNotIn('candidate', save_memory['description'])
         # #918: the owner's worker saves at once; nothing is asked.

@@ -2296,7 +2296,7 @@ class SecretaryStandard(Harness):
     def test_the_worker_guidance_and_the_judgment_state_the_standard(self):
         from personal_agent.agent_runtime import API_TOOL_GUIDANCE, CLI_TOOL_GUIDANCE, CORE_INSTRUCTIONS
         from personal_agent.conversation_handoff import GOAL_REACHED_PROPOSITION
-        self.assertIn('capable personal secretary', CORE_INSTRUCTIONS)
+        self.assertIn("specific, actionable options fitted to the owner's situation", CORE_INSTRUCTIONS)
         self.assertIn('look them up and cite the sources', CORE_INSTRUCTIONS)
         # #1423: an answer may carry a guide the owner can follow along with, judged by the worker
         # (#1508: stated for any request, not only a how-to one).
@@ -2312,8 +2312,8 @@ class SecretaryStandard(Harness):
         self.assertNotIn('every_minutes', CORE_INSTRUCTIONS)
         self.assertIn('never the request sentence itself', CORE_INSTRUCTIONS)
         # #923: no invented title for the owner; no offer the assistant cannot carry out.
-        self.assertIn('never invent one', CORE_INSTRUCTIONS)
-        self.assertIn('do not copy one that only earlier replies used (a title the owner asked for stays)', CORE_INSTRUCTIONS)
+        self.assertIn('without a title or honorific unless they asked for one', CORE_INSTRUCTIONS)
+        self.assertIn('never inherit one only earlier replies used', CORE_INSTRUCTIONS)
         self.assertIn('only what you can actually carry out with the tools you have', CORE_INSTRUCTIONS)
         self.assertIn('capable personal secretary', GOAL_REACHED_PROPOSITION)
         self.assertIn('read in the light of the recent conversation', GOAL_REACHED_PROPOSITION)
@@ -2434,6 +2434,38 @@ class OwnerModelAlwaysOn(Harness):
         MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD).remember_profile(
             MEMORY_OWNER, 'settings', 'profile.place.work', '판교 사무실')
 
+    def test_saved_voice_preference_reaches_workers_planner_location_and_outcome_note(self):
+        from personal_agent.agent_runtime import MEMORY_OWNER
+        from personal_agent.memory_service import MemoryService
+        from personal_agent.prompt_files import prompt
+        preference = '일할 땐 짧게, 힘든 얘기엔 다정하게 말해 줘'
+        MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD).remember_profile(
+            MEMORY_OWNER, 'settings', 'profile.preference.communication', preference)
+        self.script([plan('codex', 'Answer.'), plan('openai', 'Answer.')], goals=[True, True])
+        self.run_work('안녕')
+        cli = self.engine.turns[-1]['prompt']
+        self.use_main('openai')
+        self.run_work('고마워')
+        system = self.transport.bodies[-1]['messages'][0]['content']
+        for assembled in (cli, system):
+            self.assertIn(preference, assembled)
+            self.assertIn(prompt('voice'), assembled)
+        for context, question, _schema in self.asked_plans:
+            self.assertIn(preference, context.facts['owner_profile'])
+            self.assertIn(prompt('voice'), question)
+        self.assertEqual(len(self.asked_goals), 2)
+        for context in self.asked_goals:
+            self.assertIn(preference, context.facts['owner_context'])
+
+    def test_location_question_generation_keeps_the_shared_voice(self):
+        from personal_agent.prompt_files import prompt
+        orchestration = Orchestration(self.service.decision_judge, OrchestrationUnit.catalogue(None), request='요청')
+        orchestration.can_ask_location = True
+        question = orchestration._question()
+        self.assertIn('ask_location', question)
+        self.assertEqual(question.count(prompt('voice')), 1)
+        self.assertNotIn("owner's language and register", question)
+
     @mock.patch.dict('os.environ', {'TZ': 'Asia/Seoul'})  # #804: a host zone, not the CI's unset UTC
     def test_both_routes_get_the_owner_model_when_the_brief_selects_no_section(self):
         from personal_agent.agent_runtime import CURRENT_CONTEXT_HEADING, PROFILE_HEADING
@@ -2501,8 +2533,11 @@ class OwnerModelUnit(unittest.TestCase):
 
     def test_the_question_leaves_the_owners_message_to_the_worker(self):
         """#820: no topic-continuation or statement-handling wording: the worker reads the message itself."""
+        from personal_agent.prompt_files import prompt
+        # The shared voice mentions topics only to keep the same voice across them.
+        planning = QUESTION.removesuffix('\n\n' + prompt('voice'))
         self.assertNotIn('brief.goal', QUESTION)
-        self.assertNotIn('topic', QUESTION)
+        self.assertNotIn('topic', planning)
         self.assertNotIn('propose a memory', QUESTION)
         self.assertIn('it decides for itself what the message needs', QUESTION)
 
