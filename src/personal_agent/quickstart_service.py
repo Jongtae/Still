@@ -59,7 +59,7 @@ from . import folder_grants
 from . import intranet
 from . import work_mode
 from .connector_contract import ConnectorContractError, ConnectorResultKind, _owner_key
-from .gmail import GMAIL_CONNECTOR_ID, GmailError
+from .gmail import GMAIL_CONNECTOR_ID, GMAIL_MODIFY_CONNECTOR_ID, GmailError
 from .connector_revocation import (GoogleConnectionRevoker, RevocationError, drive_connection,
                                    google_revoke_transport, registry_connection)
 from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID, CalendarError
@@ -164,6 +164,8 @@ OWNER_ACT_SETTLED_NOTE=('[Still observation, not an owner instruction] Part of t
 #: owner is handed and the route that answers it cannot drift apart: a rename
 #: in one place without the other would ship a reachable-looking dead link.
 GMAIL_CONNECT_PATH = '/google-gmail'
+GMAIL_MODIFY_CONNECT_PATH='/gmail-modify'
+GMAIL_MODIFY_CALLBACK_PATH='/oauth/gmail-modify/callback'
 CALENDAR_CONNECT_PATH='/google-calendar'
 #: #1172: one-button Google Drive connection (full-Drive read) and its callback.
 DRIVE_CONNECT_PATH='/google-drive-connect'
@@ -550,7 +552,7 @@ class AgentService:
     def __init__(self, store, adapter=None, telegram_transport=None, subscription_engines=None, execution_adapter=None,
                  isolated_engine_adapter=None, isolated_mcp_registry=None,
                  drive_web_oauth=None, connector_registry=None, gmail=None, calendar=None, calendar_oauth=None, calendar_factory=None,
-                 browser_profile=None, telegram_file_transport=None, drive_oauth=None, drive_reader_factory=None):
+                 browser_profile=None, telegram_file_transport=None, drive_oauth=None, drive_reader_factory=None, gmail_modify_oauth=None):
         self.store=store
         # #656/#680: the one browser profile this installation owns (its encrypted session jar),
         # under the owner-only private directory.  The embedded WebKit worker
@@ -671,6 +673,8 @@ class AgentService:
         self.connector_registry=connector_registry
         self.connector_handoff=ConnectorHandoff(store,connector_registry,token_owner=lambda owner:MEMORY_OWNER) if connector_registry else None
         self.gmail=gmail
+        self.gmail_modify_oauth=gmail_modify_oauth
+        self.gmail_modify_token_exchange=None
         # Calendar mutations use the current owner-bound connector path.
         self.calendar=calendar
         # The OAuth half is separate from the policy connector: `calendar`
@@ -6586,7 +6590,7 @@ class AgentService:
         """
         if isinstance(self.local_server_port,int) and 1<=self.local_server_port<=65535:
             return f'http://{LOCAL_ADDRESS_HOST}:{self.local_server_port}/'
-        for holder in (self.gmail,self.calendar_oauth,self.drive_oauth):
+        for holder in (self.gmail,self.calendar_oauth,self.drive_oauth,self.gmail_modify_oauth):
             parts=urlsplit(getattr(holder,'redirect_uri','') or '')
             if parts.scheme=='http' and parts.port:
                 return f'http://{LOCAL_ADDRESS_HOST}:{parts.port}/'
@@ -7132,6 +7136,8 @@ class AgentService:
             # signed state carries it through the callback.
             holder=self.calendar_oauth
             path=CALENDAR_CONNECT_PATH+('?grant=write' if connector_id==CALENDAR_WRITE_CONNECTOR_ID else '?grant=read')
+        elif connector_id==GMAIL_MODIFY_CONNECTOR_ID and self.gmail_modify_oauth:
+            holder,path=self.gmail_modify_oauth,GMAIL_MODIFY_CONNECT_PATH
         elif connector_id==DRIVE_CONNECTOR_ID and self.drive_oauth:
             holder,path=self.drive_oauth,DRIVE_CONNECT_PATH
         else:
@@ -7216,6 +7222,9 @@ class AgentService:
             return (self.calendar_oauth.credential_current(owner,write=write)
                     or bool(callable(self.calendar_token_exchange) and self.calendar_oauth.credential_renewable(owner,write=write))
                     if self.calendar_oauth else None)
+        if connector_id==GMAIL_MODIFY_CONNECTOR_ID:
+            return (self.gmail_modify_oauth.credential_current(owner) or self.gmail_modify_oauth.credential_renewable(owner)
+                    if self.gmail_modify_oauth else None)
         if connector_id==DRIVE_CONNECTOR_ID:
             # An expired access token with a stored refresh token is renewed
             # by the next read, so it is not a reconnect (#1172).
@@ -7241,11 +7250,12 @@ class AgentService:
             rows.append(drive)
         # #1172: which connections run on the owner's own Google client.
         own={cid for cid,holder in ((GMAIL_CONNECTOR_ID,self.gmail),(CALENDAR_CONNECTOR_ID,self.calendar_oauth),
-                                     (CALENDAR_WRITE_CONNECTOR_ID,self.calendar_oauth),(DRIVE_CONNECTOR_ID,self.drive_oauth))
+                                     (CALENDAR_WRITE_CONNECTOR_ID,self.calendar_oauth),(DRIVE_CONNECTOR_ID,self.drive_oauth),
+                                     (GMAIL_MODIFY_CONNECTOR_ID,self.gmail_modify_oauth))
              if self.google_client_id and holder is not None and getattr(holder,'client_id',None)==self.google_client_id}
         return [{**row,'source':'own-client'} if row.get('connector_id') in own else row for row in rows]
 
-    CONNECTION_NAMES={'google-gmail-read':'Google Gmail','google-calendar':'Google Calendar',
+    CONNECTION_NAMES={GMAIL_MODIFY_CONNECTOR_ID:msg('handoff.modify_gmail'), 'google-gmail-read':'Google Gmail','google-calendar':'Google Calendar',
                       'google-calendar-write':msg('handoff.create_google_calendar_events'),'google-drive-read':'Google Drive',
                       DRIVE_CONNECTOR_ID:'Google Drive'}
 
@@ -7412,6 +7422,9 @@ class AgentService:
                                                    self._connector_owner_candidates,write=False))
             connections.append(registry_connection(CALENDAR_WRITE_CONNECTOR_ID,msg('handoff.create_google_calendar_events'),
                                                    self.calendar_oauth,self._connector_owner_candidates,write=True))
+        if self.gmail_modify_oauth:
+            connections.append(registry_connection(GMAIL_MODIFY_CONNECTOR_ID,msg('handoff.modify_gmail'),
+                                                   self.gmail_modify_oauth,self._connector_owner_candidates))
         if self.drive_oauth:
             connections.append(registry_connection(DRIVE_CONNECTOR_ID,'Google Drive',self.drive_oauth,
                                                    self._connector_owner_candidates))
@@ -9401,7 +9414,8 @@ class AgentService:
         By installation, not by client id: a separately configured Gmail or
         Calendar client may carry the same id and is not this client's.
         """
-        holders={'gmail':self.gmail,'calendar':self.calendar_oauth,'drive':self.drive_oauth}
+        holders={'gmail':self.gmail,'calendar':self.calendar_oauth,'drive':self.drive_oauth,
+                 'gmail_modify':self.gmail_modify_oauth}
         installed=getattr(self,'own_client_installed',None) or {}
         return {name:holder for name,holder in holders.items()
                 if holder is not None and installed.get(name) is holder}
@@ -9438,7 +9452,7 @@ class AgentService:
 
     def _own_client_connector_ids(self):
         ids={'gmail':(GMAIL_CONNECTOR_ID,),'calendar':(CALENDAR_CONNECTOR_ID,CALENDAR_WRITE_CONNECTOR_ID),
-             'drive':(DRIVE_CONNECTOR_ID,)}
+             'drive':(DRIVE_CONNECTOR_ID,),'gmail_modify':(GMAIL_MODIFY_CONNECTOR_ID,)}
         return {cid for name in self._own_client_holders() for cid in ids[name]}
 
     def _own_client_rows_held(self):
@@ -9558,6 +9572,9 @@ class AgentService:
                 self.calendar_oauth=None
                 self.calendar_factory=None
                 self.calendar_token_exchange=None
+            if 'gmail_modify' in holders:
+                self.gmail_modify_oauth=None
+                self.gmail_modify_token_exchange=None
             if 'drive' in holders:
                 self.drive_oauth=None
                 self.drive_reader_factory=None
@@ -9588,6 +9605,33 @@ class AgentService:
             return result
         try:
             resumed=self.resume_connector_work(DRIVE_CONNECTOR_ID,owner,tuple(result.get('granted_scopes') or ()))
+        except (ConnectorContractError,ConversationHandoffError) as exc:
+            return {**result,'resume_refused':exc.reason}
+        if not resumed:
+            return result
+        return {**result,'work_id':resumed['work_id'],'scheduled':resumed['scheduled'],
+                'resumed':resumed['resumed'],'resume_refusals':resumed['refused']}
+
+    def begin_gmail_modify_connection(self):
+        """One owner-local Google Gmail modify authorization URL (#355); issuing it grants nothing."""
+        if not self.gmail_modify_oauth:
+            raise ValueError(ConnectorHandoff.unavailable(GMAIL_MODIFY_CONNECTOR_ID))
+        return self.gmail_modify_oauth.begin_oauth(self.connector_callback_owner(GMAIL_MODIFY_CONNECTOR_ID))
+
+    def complete_gmail_modify_connection(self, callback):
+        """Complete the Gmail modify callback, then resume a Work parked for it, as Calendar does."""
+        if not self.gmail_modify_oauth or not callable(self.gmail_modify_token_exchange):
+            raise ValueError(ConnectorHandoff.unavailable(GMAIL_MODIFY_CONNECTOR_ID))
+        owner=self.gmail_modify_oauth.callback_owner(callback.get('state') if isinstance(callback,dict) else None,
+                                                  ['local-owner'])
+        parked=bool(self.connector_handoff and self.connector_handoff.record(GMAIL_MODIFY_CONNECTOR_ID))
+        result=self.gmail_modify_oauth.complete_oauth(owner,callback,self.gmail_modify_token_exchange)
+        self._remember_connector_owner(owner)
+        self.notify_connection_completed(GMAIL_MODIFY_CONNECTOR_ID,resuming=parked)
+        if not parked:
+            return result
+        try:
+            resumed=self.resume_connector_work(GMAIL_MODIFY_CONNECTOR_ID,owner,tuple(result.get('granted_scopes') or ()))
         except (ConnectorContractError,ConversationHandoffError) as exc:
             return {**result,'resume_refused':exc.reason}
         if not resumed:

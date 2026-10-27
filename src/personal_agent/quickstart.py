@@ -27,12 +27,13 @@ from .browser_worker import EMBEDDED_UA_TOKEN
 from . import first_run
 from .quickstart_store import QuickStore
 from .calendar import CalendarConnector
-from .calendar_oauth import (DRIVE_GRANT, DRIVE_SECRET_NAMESPACE, CalendarOAuth, EncryptedCalendarSecretStore,
+from .calendar_oauth import (GMAIL_MODIFY_GRANT, GMAIL_MODIFY_SECRET_NAMESPACE, DRIVE_GRANT, DRIVE_SECRET_NAMESPACE, CalendarOAuth, EncryptedCalendarSecretStore,
                              calendar_transport, drive_transport)
 from .google_drive_read import GoogleDriveReader
 from .browser_jar import KeychainKey, store_account
 from .google_calendar import GoogleCalendar
 from .quickstart_service import (AgentService, CALENDAR_CONNECT_PATH, DRIVE_CONNECT_PATH, DRIVE_CALLBACK_PATH,
+                                 GMAIL_MODIFY_CONNECT_PATH, GMAIL_MODIFY_CALLBACK_PATH,
                                  GMAIL_CONNECT_PATH, LOCAL_ADDRESS_HOST, OwnerLocalRequired)
 from .subscription_engines import SubscriptionEngines
 from .conversation_handoff import ConnectorHandoff, ConversationHandoffError, local_refusal_text
@@ -190,7 +191,7 @@ def google_publisher_client(environ):
     return client[:2] if client else None
 
 
-def build_google_connectors(store, client, port, key_provider, registry, *, gmail=True, calendar=True):
+def build_google_connectors(store, client, port, key_provider, registry, *, gmail=True, calendar=True, gmail_modify=True):
     """Gmail, Calendar and Drive connectors over the owner's own client (#1172).
 
     Each stays its own connector, consent and exact scope set.  ``gmail`` /
@@ -234,6 +235,11 @@ def build_google_connectors(store, client, port, key_provider, registry, *, gmai
     drive_oauth=CalendarOAuth(EncryptedCalendarSecretStore(store,key_provider,namespace=DRIVE_SECRET_NAMESPACE),
                               client_id,f'{base}{DRIVE_CALLBACK_PATH}',registry=registry,allow_localhost=True,
                               grants=(DRIVE_GRANT,))
+    if gmail_modify:
+        built['gmail_modify_oauth']=CalendarOAuth(
+            EncryptedCalendarSecretStore(store,key_provider,namespace=GMAIL_MODIFY_SECRET_NAMESPACE),
+            client_id,f'{base}{GMAIL_MODIFY_CALLBACK_PATH}',registry=registry,allow_localhost=True,
+            grants=(GMAIL_MODIFY_GRANT,))
     built['drive_oauth']=drive_oauth
     built['drive_reader_factory']=lambda owner_id:GoogleDriveReader(drive_transport(drive_oauth,owner_id,exchange))
     return built
@@ -251,6 +257,9 @@ def install_google_connectors(service, built):
         service.calendar_oauth=built['calendar_oauth']
         service.calendar_factory=built['calendar_factory']
         service.calendar_token_exchange=built['exchange']
+    if 'gmail_modify_oauth' in built:
+        service.gmail_modify_oauth=built['gmail_modify_oauth']
+        service.gmail_modify_token_exchange=built['exchange']
     service.drive_oauth=built['drive_oauth']
     service.drive_reader_factory=built['drive_reader_factory']
     service.drive_read_token_exchange=built['exchange']
@@ -262,7 +271,7 @@ def install_google_connectors(service, built):
     # #8: which connectors this client installed, by object, so removal never
     # touches a separately configured connector that shares its client id.
     service.own_client_installed={name:built[key] for name,key in
-                                  (('gmail','gmail'),('calendar','calendar_oauth'),('drive','drive_oauth')) if key in built}
+                                  (('gmail','gmail'),('calendar','calendar_oauth'),('drive','drive_oauth'),('gmail_modify','gmail_modify_oauth')) if key in built}
 
 
 def google_oauth_key(store):
@@ -577,6 +586,12 @@ def configured_service(store, environ=None):
                     return json.loads(response.read())
             # #1172: renew an expired access token instead of asking to reconnect.
             gmail.token_exchange=gmail_exchange
+    gmail_modify_oauth=None
+    if gmail is not None:
+        gmail_modify_oauth=CalendarOAuth(
+            EncryptedCalendarSecretStore(store,gmail_key,namespace=GMAIL_MODIFY_SECRET_NAMESPACE),
+            gmail_client_id,f'http://localhost:{gmail_port}{GMAIL_MODIFY_CALLBACK_PATH}',
+            registry=connector_registry,allow_localhost=True,grants=(GMAIL_MODIFY_GRANT,))
     # --- Google Calendar (J4) -------------------------------------------
     # Construction and routes land together, on purpose. `CalendarConnector`
     # registers both specs on construction, and registering them without a
@@ -622,13 +637,14 @@ def configured_service(store, environ=None):
             connector_registry=calendar_registry
     service=AgentService(store,subscription_engines=isolated_engines,
                          isolated_engine_adapter=isolated_engine,drive_web_oauth=drive,
-                         connector_registry=connector_registry,gmail=gmail,
+                         connector_registry=connector_registry,gmail=gmail,gmail_modify_oauth=gmail_modify_oauth,
                          calendar_factory=calendar_factory,calendar_oauth=calendar_oauth)
     service.calendar_token_exchange=calendar_exchange
     service.drive_token_exchange=drive_exchange
     service.drive_read=drive_read
     service.drive_picker_config=picker_config
     service.gmail_token_exchange=gmail_exchange
+    service.gmail_modify_token_exchange=gmail_exchange
     # --- The owner's own Google client (#1172) ---------------------------
     # Construction and routes land together, as for Calendar: registering the
     # connectors grants nothing until the owner finishes Google's consent.
@@ -640,7 +656,8 @@ def configured_service(store, environ=None):
         port=service.local_server_port if isinstance(service.local_server_port,int) else google_port
         install_google_connectors(service,build_google_connectors(
             store,client,port,key_provider,service.connector_registry,
-            gmail=service.gmail is None,calendar=service.calendar_oauth is None))
+            gmail=service.gmail is None,calendar=service.calendar_oauth is None,
+            gmail_modify=service.gmail_modify_oauth is None))
     service.google_client_installer=install_google_client
     own=google_own_client(environ,store)
     if own:
@@ -1118,6 +1135,25 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 except (AttributeError, ValueError, OSError):
                     return self.reply(400,b'Google Drive connection could not be completed. Start the connection again from Still.','text/plain; charset=utf-8')
                 return self.reply(200,connected_page('Google Drive'),'text/plain; charset=utf-8')
+            if path==GMAIL_MODIFY_CONNECT_PATH:
+                # #355: owner-authenticated and loopback only, like Calendar.
+                if not self.auth():return
+                if self.tunneled():
+                    return self.reply(400,b'Open Still on its local address to connect Gmail modify.','text/plain; charset=utf-8')
+                try:return self.redirect(service.begin_gmail_modify_connection()['authorization_url'])
+                except (AttributeError, ValueError, KeyError):
+                    return self.reply(400,b'Gmail modify connection is unavailable.','text/plain; charset=utf-8')
+            if path==GMAIL_MODIFY_CALLBACK_PATH:
+                # Unauthenticated by necessity (cross-site redirect from
+                # Google); authority is the owner-bound, signed, single-use state.
+                if self.tunneled():
+                    return self.reply(400,b'Gmail modify connection could not be completed. Start the connection again from Still.','text/plain; charset=utf-8')
+                try:
+                    callback={key:values[0] for key,values in parse_qs(parts.query).items()}
+                    service.complete_gmail_modify_connection(callback)
+                except (AttributeError, ValueError, OSError):
+                    return self.reply(400,b'Gmail modify connection could not be completed. Start the connection again from Still.','text/plain; charset=utf-8')
+                return self.reply(200,connected_page('Gmail modify'),'text/plain; charset=utf-8')
             if path=='/google-drive-picker':
                 grant=parse_qs(parts.query).get('grant',[''])[0]
                 if not (getattr(service,'drive_picker_config',None) and service.drive_web_oauth.picker_grant_active(grant)):

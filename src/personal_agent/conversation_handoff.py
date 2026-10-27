@@ -1486,7 +1486,7 @@ from .calendar import CALENDAR_WRITE_CONNECTOR_ID
 # disagreement would be a wrong-owner check that quietly stops matching.
 from .connector_contract import (ConnectorContractError, ConnectorResult, ConnectorResultKind,
                                  ConnectorState, PendingWorkRegistry, RecoveryAction, _owner_key)
-from .gmail import GMAIL_CONNECTOR_ID
+from .gmail import GMAIL_CONNECTOR_ID, GMAIL_MODIFY_CONNECTOR_ID
 from .google_drive_read import DRIVE_CONNECTOR_ID
 
 #: Which connector one routing decision needs, decided by Still before any
@@ -1503,6 +1503,7 @@ CONNECTOR_BY_INTENT = {
 
 CONNECTOR_LABELS = {
     GMAIL_CONNECTOR_ID: 'Gmail',
+    GMAIL_MODIFY_CONNECTOR_ID: msg('handoff.modify_gmail'),
     CALENDAR_WRITE_CONNECTOR_ID: msg('handoff.create_google_calendar_events'),
     DRIVE_CONNECTOR_ID: 'Google Drive',
 }

@@ -322,3 +322,211 @@ class Build(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class GmailModify(unittest.TestCase):
+    """#355: exact opt-in scope, generic endpoint authority and durable mutation receipts."""
+
+    def setUp(self):
+        from cryptography.fernet import Fernet
+        from personal_agent.calendar_oauth import (CalendarOAuth, EncryptedCalendarSecretStore,
+                                                   GMAIL_MODIFY_GRANT, GMAIL_MODIFY_SECRET_NAMESPACE)
+        from personal_agent.connector_contract import ConnectorRegistry
+        from personal_agent.gmail import GmailConnector, EncryptedGmailSecretStore
+        from personal_agent.quickstart_service import AgentService
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.store = QuickStore(Path(tmp.name) / 'data')
+        self.clock = [1000.0]
+        key = Fernet.generate_key()
+        self.registry = ConnectorRegistry(self.store, (), clock=lambda: self.clock[0])
+        self.oauth = CalendarOAuth(EncryptedCalendarSecretStore(self.store, key, namespace=GMAIL_MODIFY_SECRET_NAMESPACE),
+                                  'client', 'http://127.0.0.1:9911/oauth/gmail-modify/callback', registry=self.registry,
+                                  grants=(GMAIL_MODIFY_GRANT,), now=lambda: self.clock[0], allow_localhost=True)
+        gmail = GmailConnector(EncryptedGmailSecretStore(self.store, key), 'client',
+                               'http://127.0.0.1:9911/oauth/gmail/callback', registry=self.registry,
+                               now=lambda: self.clock[0], allow_localhost=True)
+        self.service = AgentService(self.store, connector_registry=self.registry, gmail=gmail, gmail_modify_oauth=self.oauth)
+        self.exchange_calls = []
+        self.service.gmail_modify_token_exchange = self.exchange
+        self.job = self.store.enqueue('organise my mailbox', 'gmail-modify-test')
+        self.transport = Transport({})
+        self.api = ApiRequests(self.store, self.job, transport=self.transport, clock=lambda: self.clock[0],
+                               connections=lambda: connection_slots.build(self.service, 'local-owner'))
+
+    def exchange(self, payload):
+        from personal_agent.gmail import GMAIL_MODIFY_SCOPE
+        self.exchange_calls.append(dict(payload))
+        return {'access_token': TOKEN, 'refresh_token': 'fixture-refresh-token', 'expires_in': 3600,
+                'scope': GMAIL_MODIFY_SCOPE}
+
+    def connect(self):
+        from urllib.parse import parse_qs, urlsplit
+        offer = self.service.begin_gmail_modify_connection()
+        query = parse_qs(urlsplit(offer['authorization_url']).query)
+        return self.service.complete_gmail_modify_connection({'state': query['state'][0], 'code': 'fixture'})
+
+    def read_connect(self):
+        from personal_agent.gmail import GMAIL_CONNECTOR_ID, GMAIL_READONLY_SCOPE
+        self.registry.transition('local-owner', GMAIL_CONNECTOR_ID, ConnectorState.CONNECTED,
+                                 granted_scopes=(GMAIL_READONLY_SCOPE,))
+
+    def call(self, method, path, **kwargs):
+        return self.api.call({'slot': 'gmail', 'method': method,
+                              'url': 'https://gmail.googleapis.com/gmail/v1/users/me/' + path,
+                              'effect': 'read', **kwargs})
+
+    def claims(self):
+        with self.store.db() as db:
+            return [json.loads(row['detail']) for row in db.execute("SELECT detail FROM tool_events WHERE tool='api_dispatch'")]
+
+    def test_allowed_organising_calls_dispatch_as_mutations_without_approval(self):
+        self.connect()
+        allowed = [('POST', 'messages/batchModify'), ('POST', 'labels'), ('PATCH', 'labels/Label_1'),
+                   ('PUT', 'labels/Label_1'), ('DELETE', 'labels/Label_1')]
+        allowed += [('POST', f'{kind}/abc123/{operation}') for kind in ('messages', 'threads')
+                    for operation in ('modify', 'trash', 'untrash')]
+        from unittest.mock import patch
+        with patch.object(self.api, '_approve', side_effect=AssertionError('no per-call approval')):
+            for method, path in allowed:
+                with self.subTest(method=method, path=path):
+                    self.call(method, path, body='{}' if method != 'DELETE' else None)
+        self.assertEqual(len(self.transport.calls), len(allowed))
+        self.assertTrue(all(call[2]['Authorization'] == 'Bearer ' + TOKEN for call in self.transport.calls))
+        self.assertEqual([row['evidence']['effect'] for row in self.claims()], ['mutate'] * len(allowed))
+
+    def test_every_other_write_is_refused_before_token_resolution_or_effect_claim(self):
+        from personal_agent.api_requests import PRE_DISPATCH_CODES, UNUSABLE_CALL_CODES
+        self.connect()
+        self.clock[0] += 4000  # Even renewal must not be attempted for a refused call.
+        self.exchange_calls.clear()
+        refused = [('POST', path) for path in ('send', 'messages/send', 'drafts', 'drafts/send', 'drafts/id/send',
+                                              'messages/import', 'messages/insert', 'messages/batchDelete',
+                                              'settings/filters', 'futureEndpoint')]
+        refused += [('DELETE', path) for path in ('messages/id', 'threads/id', 'drafts/id', 'settings/filters/id')]
+        refused += [('PUT', 'messages/id/modify'), ('PATCH', 'labels'), ('POST', 'labels/id')]
+        for method, path in refused:
+            with self.subTest(method=method, path=path), self.assertRaises(ApiError) as caught:
+                self.call(method, path)
+            self.assertEqual(caught.exception.code, 'api_path_refused')
+            self.assertIn(caught.exception.code, PRE_DISPATCH_CODES)
+            self.assertNotIn(caught.exception.code, UNUSABLE_CALL_CODES)
+        self.assertEqual((self.transport.calls, self.claims(), self.exchange_calls), ([], [], []))
+
+    def test_ambiguous_and_case_changed_paths_never_dispatch(self):
+        self.connect()
+        for path in ('messages/../messages/send', 'messages/./batchModify', 'messages/%2E%2e/send',
+                     'messages/%2E/modify', 'messages/id%2Fsend/modify', 'messages/id%2fsend/modify',
+                     'messages/%252e%252e/send', 'messages//batchModify', 'messages/batchModify/',
+                     'Messages/batchModify', 'messages/batchmodify', 'messages/id/Modify',
+                     'messages/batchModify/../send', 'labels/..', 'labels/.', 'labels/%2E', 'labels//id'):
+            with self.subTest(path=path), self.assertRaises(ApiError) as caught:
+                self.call('POST', path)
+            self.assertEqual(caught.exception.code, 'api_path_refused')
+        self.assertEqual((self.transport.calls, self.claims()), ([], []))
+
+    def test_read_grant_stays_read_only_and_disconnect_restores_it(self):
+        self.read_connect()
+        for connected in (False, True):
+            if connected:
+                self.connect()
+                self.oauth.disconnect('local-owner', lambda *args: None)
+            with self.assertRaises(ApiError) as caught:
+                self.call('POST', 'messages/batchModify')
+            self.assertEqual((caught.exception.code, caught.exception.requires), ('api_read_only', 'gmail-modify'))
+            self.assertTrue(connection_slots.build(self.service, 'local-owner')['gmail']['read_only'])
+        self.assertEqual((self.transport.calls, self.claims()), ([], []))
+
+    def test_replay_is_refused_after_reconnect_too(self):
+        self.connect()
+        self.call('POST', 'messages/batchModify', body='{"ids":["abc"]}')
+        self.oauth.disconnect('local-owner', lambda *args: None)
+        self.connect()
+        with self.assertRaises(ApiError) as caught:
+            self.call('POST', 'messages/batchModify', body='{"ids":["abc"]}')
+        self.assertEqual(caught.exception.code, 'api_effect_replayed')
+        self.assertEqual(len(self.transport.calls), 1)
+        self.assertEqual(len(self.claims()), 1)
+
+    def test_exact_scope_pkce_and_wrong_callback_scopes(self):
+        from urllib.parse import parse_qs, urlsplit
+        from personal_agent.calendar_oauth import CalendarOAuthError
+        from personal_agent.gmail import GMAIL_MODIFY_SCOPE, GMAIL_READONLY_SCOPE
+        for scope in (GMAIL_READONLY_SCOPE, GMAIL_MODIFY_SCOPE + ' ' + GMAIL_READONLY_SCOPE,
+                      'https://mail.google.com/', None):
+            offer = self.service.begin_gmail_modify_connection()
+            query = parse_qs(urlsplit(offer['authorization_url']).query)
+            self.assertEqual(query['scope'], [GMAIL_MODIFY_SCOPE])
+            self.assertEqual(query['include_granted_scopes'], ['false'])
+            self.assertEqual(query['code_challenge_method'], ['S256'])
+            with self.subTest(scope=scope), self.assertRaises(CalendarOAuthError):
+                self.oauth.complete_oauth('local-owner', {'state': query['state'][0], 'code': 'fixture'},
+                                          lambda payload: {**self.exchange(payload), 'scope': scope})
+        self.assertEqual(connection_slots.build(self.service, 'local-owner'), {})
+
+    def test_bridge_writability_round_trips_but_service_resolves_current_authority(self):
+        self.connect()
+        held = connection_slots.build(self.service, 'local-owner')
+        names = connection_slots.names(held)
+        self.assertEqual(names, ('gmail', 'gmail-modify'))
+        bridged = connection_slots.relayed(names)['gmail']
+        self.assertFalse(bridged['read_only'])
+        self.assertEqual(bridged['write_paths'], held['gmail']['write_paths'])
+        self.assertIn('sending', bridged['note'])
+        self.assertTrue(connection_slots.relayed(['gmail'])['gmail']['read_only'])
+        self.read_connect()
+        self.oauth.disconnect('local-owner', lambda *args: None)
+        with self.assertRaises(ApiError) as caught:
+            self.call('POST', 'messages/batchModify')
+        self.assertEqual(caught.exception.code, 'api_read_only')
+
+    def test_revocation_during_token_resolution_refuses_before_dispatch(self):
+        self.connect()
+        self.read_connect()
+        self.clock[0] += 4000
+        def exchange(payload):
+            result = self.exchange(payload)
+            self.oauth.disconnect('local-owner', lambda *args: None)
+            return result
+        self.service.gmail_modify_token_exchange = exchange
+        with self.assertRaises(ApiError):
+            self.call('POST', 'messages/batchModify')
+        self.assertEqual((self.transport.calls, self.claims()), ([], []))
+
+    def test_settings_connect_and_disconnect_use_the_separate_holder(self):
+        row = next(row for row in self.service.google_connection_rows() if row['connector_id'] == 'gmail-modify')
+        self.assertEqual(row['connect_path'], '/gmail-modify')
+        self.assertEqual(row['state'], 'disconnected')
+        self.connect()
+        self.service.google_revoke_transport = lambda *args: (200, {}, b'')
+        revoker = self.service.google_revocation()
+        offer = revoker.preview('owner-session', 'gmail-modify')
+        revoker.disconnect('owner-session', 'gmail-modify', offer['confirmation'])
+        self.assertEqual(connection_slots.build(self.service, 'local-owner'), {})
+
+    def test_expired_modify_token_renews_and_reads_use_the_modify_token(self):
+        self.connect()
+        self.read_connect()
+        self.clock[0] += 4000
+        self.call('GET', 'messages/abc123')
+        self.assertEqual(len(self.exchange_calls), 2)
+        self.assertEqual(self.exchange_calls[-1]['grant_type'], 'refresh_token')
+        self.assertEqual(self.transport.calls[0][2]['Authorization'], 'Bearer ' + TOKEN)
+        self.assertEqual(self.claims(), [])
+
+    def test_dispatch_guard_rechecks_writability_after_token_resolution(self):
+        from unittest.mock import patch
+        self.connect()
+        self.read_connect()
+        original = connection_slots._oauth_token
+        def token(*args):
+            resolve = original(*args)
+            def resolve_then_disconnect():
+                value = resolve()
+                self.oauth.disconnect('local-owner', lambda *args: None)
+                return value
+            return resolve_then_disconnect
+        with patch.object(connection_slots, '_oauth_token', token), self.assertRaises(ApiError) as caught:
+            self.call('POST', 'messages/batchModify')
+        self.assertEqual(caught.exception.code, 'needs_setup')
+        self.assertEqual((self.transport.calls, self.claims()), ([], []))

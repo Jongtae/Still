@@ -49,6 +49,10 @@ from .connector_contract import (
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 GMAIL_CONNECTOR_ID = "google-gmail-read"
 GMAIL_CONNECTOR = ConnectorSpec(GMAIL_CONNECTOR_ID, (GMAIL_READONLY_SCOPE,))
+# #355: separate opt-in authority; the API slot further bounds its write paths.
+GMAIL_MODIFY_CONNECTOR_ID = "gmail-modify"
+GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
+GMAIL_MODIFY_SPEC = ConnectorSpec(GMAIL_MODIFY_CONNECTOR_ID, (GMAIL_MODIFY_SCOPE,))
 AUTHORIZATION_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 MESSAGES_ENDPOINT = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
 PENDING_SECRET_KEY = "gmail_oauth_pending"

@@ -58,6 +58,7 @@ from .connector_http import (
     token_endpoint_refused,
     token_response_unusable,
 )
+from .gmail import GMAIL_MODIFY_SPEC
 from .google_calendar import CALENDAR_API, GoogleCalendarHTTPError
 from .google_drive_read import DRIVE_API, DRIVE_SPEC, DriveHTTPError
 
@@ -70,6 +71,8 @@ WRITE_GRANT = "write"
 #: DRIVE-CONNECT-01 #1172: Drive's single read grant.  It reuses every
 #: lifecycle check below; a ``CalendarOAuth`` built for Drive serves only it.
 DRIVE_GRANT = "drive"
+GMAIL_MODIFY_GRANT = "gmail-modify"
+GMAIL_MODIFY_SECRET_NAMESPACE = "encrypted:gmail-modify:"
 CALENDAR_GRANTS = (READ_GRANT, WRITE_GRANT)
 # The two grants are named by the connector definitions that already exist in
 # ``personal_agent.calendar``; the scope set committed to the registry is read
@@ -79,6 +82,7 @@ _GRANTS: dict[str, ConnectorSpec] = {
     READ_GRANT: CALENDAR_SPEC,
     WRITE_GRANT: CALENDAR_WRITE_SPEC,
     DRIVE_GRANT: DRIVE_SPEC,
+    GMAIL_MODIFY_GRANT: GMAIL_MODIFY_SPEC,
 }
 # A Calendar secret must never be reachable through a Gmail-namespaced key even
 # when both stores wrap the same owner store with the same local key. See the
@@ -90,7 +94,7 @@ _GRANTS: dict[str, ConnectorSpec] = {
 # ``"encrypted:calendar:encrypted:gmail:x"``.
 _SECRET_NAMESPACE = "encrypted:calendar:"
 DRIVE_SECRET_NAMESPACE = "encrypted:google-drive:"
-_SECRET_NAMESPACES = (_SECRET_NAMESPACE, DRIVE_SECRET_NAMESPACE)
+_SECRET_NAMESPACES = (_SECRET_NAMESPACE, DRIVE_SECRET_NAMESPACE, GMAIL_MODIFY_SECRET_NAMESPACE)
 _NONCE = re.compile(r"[A-Za-z0-9_-]{22,128}\Z")
 _SIGNATURE = re.compile(r"[0-9a-f]{64}\Z")
 _VERIFIER = re.compile(r"[A-Za-z0-9._~-]{43,128}\Z")
