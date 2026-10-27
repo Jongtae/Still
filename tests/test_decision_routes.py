@@ -939,7 +939,15 @@ class ServiceRouteSelectionTests(ServiceFixture):
         self.assertIn('instruction-files-0', str(caught.exception))
         self.assertIsNone(self.store.config('decision_route'))
         self.assertFalse(any('--output-schema' in call['argv'] for call in runner.calls))
-        # Failure was not cached; the same unlisted binary passes when observed checks pass.
+        # Backoff refuses without another probe; an explicit recheck can observe recovery.
+        with mock.patch.object(service.execution_adapter, 'qualify_strict',
+                               wraps=service.execution_adapter.qualify_strict) as probe:
+            with self.assertRaises(DecisionRouteError) as repeated:
+                service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex'})
+            probe.assert_not_called()
+        self.assertEqual(str(repeated.exception), str(caught.exception))
+        result = service.execution_adapter.qualify_strict('codex', store_root=self.store.root, purpose='judgment')
+        self.assertTrue(result['qualified'])
         service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex'})
         self.assertEqual(self.judge(service).value, 'retry')
         self.assertEqual(service.decision_routes.active()['strict_profile']['version'], '9.9.9')

@@ -34,7 +34,9 @@ def harness(tmp_path):
         def offered_tools(self):
             return self.tools
 
-    options = SimpleNamespace(leak=False, host_tool=False, bridge=True, output=True, instructions=True)
+    options = SimpleNamespace(leak=False, host_tool=False, bridge=True, output=True, instructions=True,
+                              bridge_offered=True, refused=True, later_host_tool=False, extra_bridge_tool=False,
+                              attempts=[])
 
     def runner(argv, **kwargs):
         model = models[-1]
@@ -52,12 +54,27 @@ def harness(tmp_path):
             instruction += 'SKILL-CANARY-616'
         model.requests = [{'body': {'input': instruction}}]
         work = '--output-schema' not in argv
+        if work and options.attempts:
+            for name, value in options.attempts.pop(0).items():
+                setattr(options, name, value)
+        if work and options.leak:
+            model.requests[0]['body']['input'] += 'QUALIFIER-PRIVATE-CANARY-346'
         model.tools = ([{'name': 'exec_command'}] if options.host_tool else [])
         if work:
             denied = 'unsupported call' if engine == 'codex' else 'No such tool available'
-            model.results = [denied + ' shell', denied + ' file', 'QUALIFIER-NOTE-346' if options.bridge else 'bridge unavailable']
-            if engine != 'codex' and not options.host_tool:
-                model.tools = [{'name': f'mcp__agentos__{action}'} for action in profile_actions(STRICT_PROFILE)]
+            model.results = [denied + ' shell' if options.refused else 'shell succeeded', denied + ' file',
+                             'QUALIFIER-NOTE-346' if options.bridge else 'bridge unavailable']
+            if options.bridge_offered:
+                # Production hides propose_current_state while current context is off.
+                actions = [a for a in profile_actions(STRICT_PROFILE) if a != 'propose_current_state']
+                if options.extra_bridge_tool:
+                    actions.append('read_file')
+                model.tools += ([{'type': 'namespace', 'name': 'mcp__agentos',
+                                  'tools': [{'type': 'function', 'name': a} for a in actions]}] if engine == 'codex' else
+                                [{'name': f'mcp__agentos__{a}'} for a in actions])
+        model.requests[0]['body']['tools'] = model.tools
+        if work and options.later_host_tool:
+            model.requests.append({'body': {'tools': [{'name': 'exec_command' if engine == 'codex' else 'Bash'}]}})
         out = (json.dumps({'item': {'type': 'agent_message', 'text': 'done'}}) if engine == 'codex' else
                json.dumps({'type': 'result', 'result': 'done'})) if options.output else 'unparseable'
         return SimpleNamespace(returncode=0, stdout=out, stderr='')
@@ -117,3 +134,43 @@ def test_claude_harness_uses_strict_work_flags_and_only_fake_key(harness):
     assert kwargs['env']['ANTHROPIC_BASE_URL'] == 'http://127.0.0.1:1234'
     assert kwargs['env']['ANTHROPIC_API_KEY'] == 'fake-key'
     assert 'CLAUDE_CODE_OAUTH_TOKEN' not in kwargs['env']
+
+
+@pytest.mark.parametrize('engine', ['codex', 'claude-code'])
+def test_bridge_startup_race_retries_only_the_work_turn(harness, engine):
+    h = harness
+    h.options.attempts = [dict(bridge_offered=False, bridge=False), dict(bridge_offered=True, bridge=True)]
+    checks = run(h, engine)
+    assert all(check['passed'] for check in checks)
+    assert len(h.launches) == (5 if engine == 'codex' else 2)
+    assert all(model.closed for model in h.models)
+
+
+@pytest.mark.parametrize('engine', ['codex', 'claude-code'])
+def test_unreachable_offered_bridge_retries(harness, engine):
+    h = harness
+    h.options.attempts = [dict(bridge=False), dict(bridge=True)]
+    assert all(check['passed'] for check in run(h, engine))
+    assert len(h.launches) == (5 if engine == 'codex' else 2)
+
+
+@pytest.mark.parametrize('engine', ['codex', 'claude-code'])
+@pytest.mark.parametrize('defect', ['leak', 'host_tool', 'later_host_tool', 'extra_bridge_tool', 'refused'])
+@pytest.mark.parametrize('attempt', [0, 1, 2])
+def test_security_defect_on_any_attempt_refuses_without_retry(harness, engine, defect, attempt):
+    h = harness
+    h.options.attempts = [dict(bridge=False)] * attempt + [{defect: defect != 'refused', 'bridge': False}]
+    check = qualifier._work_bridge_check(h.adapter, engine, h.binary, h.root, ['shell_tool'])
+    assert check == {'check': 'strict-work-bridge-and-tool-surface', 'passed': False}
+    assert len(h.launches) == attempt + 1
+    assert all(model.closed for model in h.models)
+
+
+@pytest.mark.parametrize('engine', ['codex', 'claude-code'])
+def test_bridge_retry_exhaustion_is_a_named_failure(harness, engine):
+    h = harness
+    h.options.bridge_offered = h.options.bridge = False
+    check = qualifier._work_bridge_check(h.adapter, engine, h.binary, h.root, ['shell_tool'])
+    assert check == {'check': 'strict-work-bridge-and-tool-surface', 'passed': False}
+    assert len(h.launches) == 3
+    assert all(model.closed for model in h.models)

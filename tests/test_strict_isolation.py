@@ -500,14 +500,14 @@ class StrictAutomaticAdmission(unittest.TestCase):
         self.adapter.execute('codex', 'hello', self.tools)
         self.binary.write_bytes(FAKE_NATIVE + b'new binary')
         self.fail_probe = True
-        for _ in range(2):  # a failure is never cached
+        for attempt in range(2):  # backoff repeats only the refusal, never admission
             self.calls.clear()
             with self.assertRaises(ExecutionError) as caught:
                 self.adapter.execute('codex', 'hello', self.tools)
             self.assertEqual(caught.exception.failure_class, 'isolation-unqualified')
             self.assertIn('turn-directory-readable', caught.exception.reason)
             self.assertFalse(any(argv[1] == 'exec' for argv, _ in self.calls))
-            self.assertTrue(self.calls)
+            self.assertEqual(bool(self.calls), attempt == 0)
 
     def test_each_identity_field_invalidates_the_pass(self):
         from unittest import mock
@@ -524,13 +524,14 @@ class StrictAutomaticAdmission(unittest.TestCase):
                     self.adapter.execute('codex', 'hello', self.tools)
                 self.assertFalse(any(argv[1] == 'exec' for argv, _ in self.calls))
 
-    def test_an_unobservable_surface_refuses_and_is_not_cached(self):
+    def test_an_unobservable_surface_backs_off_and_keeps_refusing(self):
         self.surface.side_effect = OSError('loopback unavailable')
         for _ in range(2):
             with self.assertRaises(ExecutionError) as caught:
                 self.adapter.execute('codex', 'hello', self.tools)
             self.assertIn('instruction-files-and-tool-surface', caught.exception.reason)
-        self.assertEqual(self.surface.call_count, 2)
+        self.assertEqual(self.surface.call_count, 1)
+        self.assertFalse(any(argv[1] == 'exec' for argv, _ in self.calls))
 
     def test_a_failing_surface_names_the_check(self):
         self.surface.return_value = [{'check': 'instruction-files-0', 'passed': False}]

@@ -59,6 +59,9 @@ _STRICT_OBSERVATIONS_LOCK = threading.RLock()
 # Only successful local probe records, bounded and scoped to identity + path binding.
 _STRICT_QUALIFICATIONS = {}
 _STRICT_QUALIFICATION_LOCK = threading.Lock()
+# Refusal only: at most eight failed identity/binding/scope records, for one minute.
+_STRICT_FAILURES = {}
+_STRICT_FAILURE_BACKOFF_SECONDS = 60
 
 LOG = logging.getLogger('personal_agent.engine')
 ENGINE_NAMES = {'codex': 'Codex', 'claude-code': 'Claude Code'}
@@ -2213,17 +2216,38 @@ class BoundedExecutionAdapter:
             return copy.deepcopy(record) if identity else None
 
     def qualified_identity(self, engine_id, binary, store_root, *, purpose='work'):
-        """Admit this identity only after local checks; never memoize failures.
+        """Admit only local passes; briefly reuse failures solely to refuse.
 
         Slow probes never hold the observation/Settings lock. An explicit
         ``qualify_strict`` always reruns checks and replaces the local record.
+        Backoff is in-process, bounded, and bound to the same identity, paths
+        and purpose as a pass. A new identity is checked immediately.
         """
+        import copy
         cached = self.strict_cached_qualification(engine_id, binary, store_root, purpose=purpose)
         if cached:
             return cached
         with _STRICT_QUALIFICATION_LOCK:
             cached = self.strict_cached_qualification(engine_id, binary, store_root, purpose=purpose)
-            return cached or self.qualify_strict(engine_id, binary=binary, store_root=store_root, purpose=purpose)
+            if cached:
+                return cached
+            identity = self._strict_binary_identity(engine_id, binary)
+            binding = self.strict_binding(engine_id, binary, store_root)
+            key = (engine_id, identity, tuple(sorted(binding.items())), purpose)
+            with _STRICT_OBSERVATIONS_LOCK:
+                failed = _STRICT_FAILURES.get(key) if identity else None
+                if failed and time.monotonic() - failed[0] < _STRICT_FAILURE_BACKOFF_SECONDS:
+                    return copy.deepcopy(failed[1])
+                _STRICT_FAILURES.pop(key, None)
+            result = self.qualify_strict(engine_id, binary=binary, store_root=store_root, purpose=purpose)
+            if (not result.get('qualified') and identity
+                    and self._strict_binary_identity(engine_id, binary) == identity
+                    and self.strict_binding(engine_id, binary, store_root) == binding):
+                with _STRICT_OBSERVATIONS_LOCK:
+                    if len(_STRICT_FAILURES) >= 8:
+                        del _STRICT_FAILURES[next(iter(_STRICT_FAILURES))]
+                    _STRICT_FAILURES[key] = (time.monotonic(), copy.deepcopy(result))
+            return result
 
     def _remember_strict_pass(self, result):
         import copy
@@ -2261,6 +2285,7 @@ class BoundedExecutionAdapter:
         digests = self.strict_digests(engine_id, binary)
         with _STRICT_OBSERVATIONS_LOCK:
             # A failed explicit recheck must not leave an earlier pass usable.
+            _STRICT_FAILURES.pop((engine_id, identity, tuple(sorted(binding.items())), purpose), None)
             for key in list(_STRICT_QUALIFICATIONS):
                 if key[:2] == (engine_id, identity):
                     del _STRICT_QUALIFICATIONS[key]

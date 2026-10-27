@@ -17,6 +17,8 @@ NATIVE = b'\x7fELFfake-native'
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     be._STRICT_OBSERVATIONS.clear()
+    be._STRICT_QUALIFICATIONS.clear()
+    be._STRICT_FAILURES.clear()
     launcher = tmp_path / 'codex'
     native = tmp_path / 'native'
     launcher.write_bytes(b'launcher')
@@ -36,6 +38,8 @@ def setup(tmp_path, monkeypatch):
                                           tmp_path, {VERSION}, **kwargs)
     yield SimpleNamespace(**locals())
     be._STRICT_OBSERVATIONS.clear()
+    be._STRICT_QUALIFICATIONS.clear()
+    be._STRICT_FAILURES.clear()
 
 
 def test_unchanged_and_record_comparison(setup):
@@ -290,3 +294,57 @@ def test_accepted_same_identity_replacement_risk_until_restart(setup):
     assert s.digest.call_count == 2
     be._STRICT_OBSERVATIONS.clear()  # a new process has an empty memo
     assert s.observe() == (['native_sha256'], None)
+
+
+@pytest.mark.parametrize('purpose', ['work', 'judgment'])
+def test_failed_qualification_backoff_only_refuses_and_expires(setup, monkeypatch, purpose):
+    s = setup
+    now = [100.0]
+    monkeypatch.setattr(be.time, 'monotonic', lambda: now[0])
+    failure = {'qualified': False, 'reason': 'strict-work-bridge-and-tool-surface',
+               'checks': [{'check': 'strict-work-bridge-and-tool-surface', 'passed': False}]}
+    probe = Mock(return_value=failure)
+    monkeypatch.setattr(s.adapter, 'qualify_strict', probe)
+    def qualify():
+        return s.adapter.qualified_identity('codex', str(s.launcher), s.tmp_path, purpose=purpose)
+    assert qualify() == failure
+    refusal = qualify()
+    assert refusal == failure and not refusal['qualified']
+    refusal['checks'].clear()  # callers cannot alter the stored refusal/reason
+    now[0] += be._STRICT_FAILURE_BACKOFF_SECONDS - 1
+    assert qualify() == failure
+    assert probe.call_count == 1
+    assert s.adapter.strict_cached_qualification('codex', str(s.launcher), s.tmp_path, purpose=purpose) is None
+    now[0] += 1
+    assert qualify() == failure
+    assert probe.call_count == 2
+
+
+def test_failed_qualification_does_not_cover_changed_identity_binding_or_scope(setup, monkeypatch):
+    s = setup
+    probe = Mock(return_value={'qualified': False, 'reason': 'reported-version', 'checks': []})
+    monkeypatch.setattr(s.adapter, 'qualify_strict', probe)
+    def qualify(store=None, purpose='work'):
+        return s.adapter.qualified_identity('codex', str(s.launcher), store or s.tmp_path, purpose=purpose)
+    assert not qualify()['qualified']
+    s.native.write_bytes(NATIVE + b'changed')
+    assert not qualify()['qualified']
+    assert probe.call_count == 2
+    assert not qualify(s.tmp_path / 'other-store')['qualified']
+    assert not qualify(purpose='judgment')['qualified']
+    assert probe.call_count == 4
+    for _ in range(2):
+        assert not qualify()['qualified']
+        assert not qualify(purpose='judgment')['qualified']
+    assert probe.call_count == 4
+
+
+def test_failed_qualification_backoff_is_bounded(setup, monkeypatch):
+    s = setup
+    probe = Mock(return_value={'qualified': False, 'reason': 'reported-version', 'checks': []})
+    monkeypatch.setattr(s.adapter, 'qualify_strict', probe)
+    for index in range(12):
+        result = s.adapter.qualified_identity('codex', str(s.launcher), s.tmp_path / str(index))
+        assert not result['qualified']
+    assert len(be._STRICT_FAILURES) == 8
+    assert probe.call_count == 12

@@ -169,6 +169,17 @@ def _loopback_run(adapter, engine_id, binary, argv, run_dir, model):
 
 
 def _work_bridge_check(adapter, engine_id, binary, root, disabled):
+    """Retry only an unavailable bridge, with security observed on every attempt."""
+    for attempt in range(3):
+        attempt_root = root / f'work-attempt-{attempt}'
+        attempt_root.mkdir()
+        safe, reached, unavailable = _work_bridge_attempt(adapter, engine_id, binary, attempt_root, disabled)
+        if not safe or reached or not unavailable:
+            break
+    return {'check': 'strict-work-bridge-and-tool-surface', 'passed': bool(safe and reached)}
+
+
+def _work_bridge_attempt(adapter, engine_id, binary, root, disabled):
     """Relevant #616 process checks: no host tools, bridge round trip, no canary leak.
 
     Reuse Still's existing temporary store and MCP bridge, with only list_notes;
@@ -204,16 +215,31 @@ def _work_bridge_check(adapter, engine_id, binary, root, disabled):
                                profile=STRICT_PROFILE, disabled_features=disabled)
         context = _loopback_run(adapter, engine_id, binary, argv, run_dir, model)
         results = model.tool_results()
-        offered = {tool.get('name') or tool.get('type') for tool in model.offered_tools()}
         denied = 'unsupported call' if engine_id == 'codex' else 'No such tool available'
-        safe_tools = (offered <= STRICT_CODEX_TOOLS if engine_id == 'codex' else
-                      offered == {f'mcp__agentos__{action}' for action in profile_actions(STRICT_PROFILE)})
-        return {'check': 'strict-work-bridge-and-tool-surface',
-                'passed': bool(safe_tools and len(results) >= 3 and all(denied in item for item in results[:2])
-                               and 'QUALIFIER-NOTE-346' in results[2]
-                               and all(marker not in context for marker in
-                                       ('QUALIFIER-PRIVATE-CANARY-346', 'SKILL-CANARY-616', 'canary-skill-616',
-                                        'SKILL-BODY-CANARY-616', 'PLUGIN-CANARY-616')))}
+        actions = set(profile_actions(STRICT_PROFILE))
+        safe_tools, bridge_offered = True, False
+        # Inspect every request, including catalogs that change after startup.
+        for request in model.requests:
+            for tool in request['body'].get('tools', []):
+                name = tool.get('name') or tool.get('type')
+                if engine_id == 'codex':
+                    safe_tools &= name in STRICT_CODEX_TOOLS
+                    if name == 'mcp__agentos':
+                        names = {item.get('name') for item in tool.get('tools', [])}
+                        safe_tools &= names <= actions
+                        bridge_offered |= 'list_notes' in names
+                else:
+                    safe_tools &= name in {f'mcp__agentos__{action}' for action in actions}
+                    bridge_offered |= name == 'mcp__agentos__list_notes'
+        safe = bool(safe_tools and len(results) >= 2 and all(denied in item for item in results[:2])
+                    and all(marker not in context for marker in
+                            ('QUALIFIER-PRIVATE-CANARY-346', 'SKILL-CANARY-616', 'canary-skill-616',
+                             'SKILL-BODY-CANARY-616', 'PLUGIN-CANARY-616')))
+        reached = bridge_offered and len(results) >= 3 and 'QUALIFIER-NOTE-346' in results[2]
+        unavailable = not bridge_offered or (len(results) >= 3 and any(
+            marker in results[2] for marker in
+            (denied, 'tool call failed', 'Connection closed', 'Transport closed', 'bridge unavailable')))
+        return safe, reached, unavailable
     finally:
         model.close()
 

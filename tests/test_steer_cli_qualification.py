@@ -291,6 +291,7 @@ class CodexAppServerSteer(unittest.TestCase):
 
     def setUp(self):
         self.binary, version = _installed('codex')
+        self.version = version
         if not self.binary:
             self.skipTest('codex is not installed')
         if version != OBSERVED['codex']:
@@ -338,7 +339,8 @@ class CodexAppServerSteer(unittest.TestCase):
         _wait(lambda: rpc.completed(), TURN_SECONDS, 'turn/completed')
         time.sleep(SETTLE_SECONDS)
         self.assertEqual(len(rpc.completed()), 1, 'one turn')
-        self.assertEqual([item['text'] for item in rpc.items('agentMessage')], ['stale answer', 'answer with the new context'])
+        self.assertEqual([item['text'] for item in rpc.items('agentMessage')], ['stale answer', 'answer with the new context'],
+                         f'not observed on version {self.version}: stale answer followed by the steered answer in one turn')
         steer_item = [item for item in rpc.items('userMessage') if item['content'][0]['text'] == SECOND]
         self.assertEqual([item.get('clientId') for item in steer_item], ['steer-308'],
                          'the steer comes back as a correlated user item: the receipt S3 waits for')
