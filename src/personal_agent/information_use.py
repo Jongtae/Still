@@ -61,7 +61,7 @@ CATEGORY_NAMES = {
     'profile': '프로필', 'memory': '기억', 'calendar': '캘린더', 'files': '파일', 'ai_connection': 'AI에 연결된 서비스', 'drive': 'Google Drive', 'mail': 'Gmail', 'api': '인증 API',
     'current_context': '현재 상황', 'notes': '메모', 'browser': msg('information_use.signed_in_browser_pages'),
     'settings': '설정', 'spliced': msg('information_use.material_attached_to_the_request'), 'prepared': msg('information_use.prepared_answers'),
-    'records': msg('information_use.an_earlier_answer_s_information_use'), 'attention': '기다리는 동안 알린 것',
+    'conversation': '이전 대화', 'records': msg('information_use.an_earlier_answer_s_information_use'), 'attention': '기다리는 동안 알린 것',
 }
 #: Turn-provenance events that are not tools the worker called.
 _NOT_TOOLS = frozenset({'model', 'subscription_engine', 'orchestrator'})
@@ -103,8 +103,11 @@ def profile_keys(text):
     #19: the working-notes block counts as one entry, ``working_notes v<n> (procedure:<id>)``,
     so the audit shows the notes were sent without their points.
     """
+    from .memory_service import conversation_block_refs, OWNER_WORDS_HEADING
+    exchanges=conversation_block_refs(text)
     keys, said = [], 0
     for line in str(text or '').splitlines():
+        if line==OWNER_WORDS_HEADING or line.startswith('[exchange] '):continue
         # #221: the owner's recalled earlier words count as one entry with how many lines were sent.
         if line.startswith(OWNER_SAID_PREFIX):
             said = -1
@@ -125,6 +128,8 @@ def profile_keys(text):
     if said > 0:
         # Codex review on #227: first, so neither cap (40 here, the audit's own item cap) can drop it.
         keys.insert(0, f'owner_said ({said} earlier owner message{"s" if said != 1 else ""})')
+    if exchanges:
+        keys.insert(0, f'earlier exchanges ({len(exchanges)} exchanges; messages '+','.join(str(i) for ref in exchanges for i in ref['message_ids'])+')')
     return keys[:40]
 
 
@@ -179,7 +184,8 @@ def section_references(profile=None, current_context=None, prepared=None, splice
     (``owner_information``), so the audit reads what was sent, not what the
     stores hold later.
     """
-    return {'profile_keys': profile_keys(profile), 'current_context': context_claims(current_context),
+    from .memory_service import conversation_block_refs
+    return {'earlier_exchanges': conversation_block_refs(profile), 'profile_keys': profile_keys(profile), 'current_context': context_claims(current_context),
             'prepared': prepared_refs(prepared),
             'spliced': [{key: _text(value) for key, value in item.items() if key in ('kind', 'ref', 'label')}
                         for item in spliced or () if isinstance(item, dict)][:MAX_ITEMS]}
@@ -208,6 +214,8 @@ def merge_references(earlier, later):
 def _event_items(action, evidence):
     """Short labels of the owner items one successful read or write event shows."""
     evidence = evidence if isinstance(evidence, dict) else {}
+    if action == 'search_conversation':
+        return [f"earlier exchange {ref['work_id']} (messages {','.join(str(i) for i in ref['message_ids'])})" for ref in evidence.get('exchange_refs') or []]
     if action == 'list_memory':
         keys = [_text(key, 80) for key in evidence.get('memory_keys') or ()]
         return keys or [f"기억 {int(evidence.get('memory_count') or 0)}개"]
@@ -471,8 +479,12 @@ def work_information_use(store, job_id, redact=None):
     photo_inputs=[{key: (label(value,80) if isinstance(value,str) else value)
                    for key,value in photo.items() if key in ('attempt','source','count','status','route','engine','provider')}
                   for photo in photo_rows]
-    sent_to={'workers': workers,
-             'judgment_ai': {'calls': len(judgments), 'models': judgment_models, 'contexts': judgment_contexts},
+    sent_to={'earlier_exchanges': {'worker_sections':[ref for worker in workers for ref in worker.get('earlier_exchanges') or []],
+                                  'worker_tool_reads':record.get('conversation_tool_reads') or [],
+                                  'readers':record.get('conversation_readers') or []},
+             'workers': workers,
+             'judgment_ai': {'calls': len(judgments), 'models': judgment_models, 'contexts': judgment_contexts,
+                             'earlier_exchanges':[{'purpose':row.get('purpose'),'exchanges':row['earlier_exchanges']} for row in judgments if row.get('earlier_exchanges')]},
              'web_search_ran': bool(lookups), 'lookups': lookups[:MAX_ITEMS]}
     # #167: places the signed-in browser opened (a URL carries data to its host), and held-value matches.
     sent_to['browser_destinations'] = opened

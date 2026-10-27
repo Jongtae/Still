@@ -265,6 +265,7 @@ FALLBACK_STEP_LINES = {
     'save_result': (None, msg('step.save_result')),
     'list_memory': (None, msg('step.list_memory')),
     'search_memory': (None, msg('step.list_memory')),
+    'search_conversation': (None, '이전 대화를 찾아보고 있어요.'),
     'save_memory': (None, msg('step.save_memory')),
     'forget_record': (None, msg('step.forget')),
     'list_agents': (None, msg('step.list_agents')),

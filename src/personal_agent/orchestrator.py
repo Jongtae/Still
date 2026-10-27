@@ -813,6 +813,8 @@ class Orchestration:
 
     def worker_context(self, context):
         """Evaluate the selected worker history after the caller applies judgment exclusions."""
+        for name in ('profile','current_context','prepared'):
+            if name in context:self.sections[name]=context[name] if context.get('mode')!='bare-request' else ''
         self.turns = [earlier_turn_line(row, row) for row in context['conversation']]
         self.conversation = '\n'.join(self.turns)
         if self.attempts:

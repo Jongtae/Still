@@ -78,7 +78,7 @@ class SectionReferences(unittest.TestCase):
 
     def test_malformed_sections_give_empty_references(self):
         self.assertEqual(information_use.section_references('not a profile', 'legend only', '{broken'),
-                         {'profile_keys': [], 'current_context': [], 'prepared': [], 'spliced': []})
+                         {'earlier_exchanges': [], 'profile_keys': [], 'current_context': [], 'prepared': [], 'spliced': []})
 
     def test_memory_search_is_audited_with_query_and_keys_but_not_values(self):
         item = information_use._event_items('search_memory', {

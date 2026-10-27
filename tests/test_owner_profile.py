@@ -322,9 +322,11 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.said('마트 앱 장바구니 다시 담아줘', days_ago=0)  # the current request, newest
         section = self.service.owner_profile_snapshot('마트 앱 장바구니 다시 담아줘')
         block = section[section.index(OWNER_WORDS_HEADING):]
-        self.assertRegex(block, r'\[said \d{4}-\d{2}-\d{2}\] 건전지는 늘 동네 마트 앱 장바구니에 담아줘')
+        self.assertIn('건전지는 늘 동네 마트 앱 장바구니에 담아줘',block)
+        self.assertIn('owner-stated',block)
         self.assertNotIn(secret, section)
-        self.assertNotIn('확인했어요', block, 'the assistant\'s words are not the owner\'s')
+        self.assertIn('확인했어요',block)
+        self.assertIn('model-stated',block)
         self.assertNotIn('다시 담아줘', block, 'the request and the recent window are left out')
         for name, text in self.readers(section).items():
             self.assertEqual(text, section, name)
@@ -353,10 +355,11 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
             db.execute("UPDATE jobs SET source_at=? WHERE message='마트 장바구니는 동네 마트 앱으로'", (sent,))
         self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
         section = self.service.owner_profile_snapshot('마트 장바구니 쿠폰')
-        self.assertIn('[said 2026-10-02] 마트 장바구니는 동네 마트 앱으로', section)
-        self.assertEqual(information_use.profile_keys(section)[0], 'owner_said (2 earlier owner messages)')
+        self.assertIn('마트 장바구니는 동네 마트 앱으로', section)
+        self.assertIn(str(sent),section)
+        self.assertTrue(information_use.profile_keys(section)[0].startswith('earlier exchanges (2 exchanges; messages '))
         crowded = '\n'.join(f'profile.k{index}: v (saved 2026-10-01)' for index in range(60)) + '\n' + section
-        self.assertEqual(information_use.profile_keys(crowded)[0], 'owner_said (2 earlier owner messages)',
+        self.assertEqual(information_use.profile_keys(crowded)[0], information_use.profile_keys(section)[0],
                          'kept ahead of the caps')
 
     def test_a_secret_straddling_the_clip_is_redacted_before_it(self):
@@ -379,7 +382,7 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
             db.execute("UPDATE jobs SET created=?, source_at=NULL WHERE message='마트 장바구니는 동네 마트 앱으로'", (received,))
             db.execute("UPDATE messages SET created=? WHERE content='마트 장바구니는 동네 마트 앱으로'", (received + 1800,))
         self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
-        self.assertIn('[said 2026-10-01] 마트 장바구니는', self.service.owner_profile_snapshot('마트 장바구니'))
+        self.assertIn(str(received), self.service.owner_profile_snapshot('마트 장바구니'))
 
     def test_a_message_holding_a_replaced_or_removed_secret_is_never_recalled(self):
         """Codex review on #227: after rotation the current redaction no longer knows the old value."""
@@ -590,7 +593,7 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
             redact_known_secrets(self.store, 'anything')
         with self.assertRaises(ValueError):
             self.service.history_for_models(self.store.history()[-16:])
-        self.assertNotIn('owner_said', self.service.owner_words_block('마트 장바구니'))
+        self.assertEqual(self.service.owner_words_block('마트 장바구니'), '')
 
     def test_turn_provenance_fields_merge_in_one_transaction(self):
         """Codex review on #259: the early plan's thread and the worker turn never drop each other's fields."""
@@ -620,7 +623,7 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         section = self.service.owner_profile_snapshot('마트 장바구니')
         block = section[section.index(OWNER_WORDS_HEADING):]
         self.assertLessEqual(len(block.encode()), OWNER_WORDS_BYTES)
-        self.assertTrue(all(len(line) <= 320 for line in block.splitlines()[1:]))
+        self.assertLessEqual(len(block.splitlines())-1,3)
 
     def test_the_worker_gets_the_profile_without_a_plan_call(self):
         """Memory supply is common start context: no decision engine, no plan, still the whole profile."""

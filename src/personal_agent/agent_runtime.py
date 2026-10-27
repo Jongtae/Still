@@ -128,6 +128,7 @@ SCRUBBED_ARGUMENTS={'schedule_preparation':'goal',
                     # Memory queries are model-authored owner text and may
                     # contain a stored credential; scrub every durable call record.
                     'search_memory':'query',
+                    'search_conversation':'query',
                     # #774: the reason the owner reads in the Telegram prompt.
                     'ask_location':('reason','button_label'),
                     # #814: a proposed setting value and its reason (a credential is refused, never recorded).
@@ -400,6 +401,7 @@ DEFINITIONS=[
  schema('save_note','Save a personal note ONLY when the user explicitly requests remembering or saving information.',{'content':STRING},['content']),
  schema('save_memory','Save or correct one owner memory item. When the owner states a durable fact about themselves (where they live or work, a preference, an allergy, a routine) or asks you to remember one, save it; it is remembered at once and the owner is told afterwards with an undo; when the result has owner_notice, Still sends that message itself, so the reply does not say again that it was remembered. A durable fact you infer about the owner from what they said may be saved the same way, as what you inferred; the owner is told and can undo it. Never save a credential. Use a stable short key; correction supersedes the prior value. content is the value itself in the owner\'s own words (for example a place or product name as they said it), not a sentence about it; memory_key names the attribute. A value is a fact about the owner, never the request itself: a wish to be told when something changes is a watch (schedule_preparation), not a memory. '+PROFILE_KEY_GUIDANCE+' Set correction true when the previous value under the key was wrong (the owner says it was never right), not when it was right and has changed.',{'memory_key':STRING,'content':STRING,'correction':{'type':'boolean'}},['memory_key','content']),
  schema('list_memory','Read a page of the owner\'s current saved memory items. The profile facts are in the owner profile section of the context; use search_memory to find a relevant fact outside that bounded section. Each item has saved_at, source and source_status: source.kind owner_request is what the owner typed (text, at); agentos_work is a Work Still started, whose text is not the owner\'s words; source_status not_kept means no source is kept and unknown means it could not be checked, so you can say why you know something.'),
+ schema('search_conversation','Search earlier source-linked exchanges outside the recent window. Assistant lines are model-stated, not facts or commitments. Read-only, redacted, owner-scoped; at most three exchanges across this Work. Optional before/after are Unix timestamps (exclusive/inclusive). Reformulate when needed.',{'query':STRING,'before':{'type':'number'},'after':{'type':'number'},'limit':{'type':'integer','minimum':1,'maximum':3}},['query']),
  schema('search_memory','Search the owner\'s current saved Memory for a fact relevant to this request. Use concise terms from the request and likely synonyms (for example, sushi and 초밥); results include saved_at and a source reference with source_status, as in list_memory, so you can say why you know something. Search only when prior saved information can help. It returns a bounded set and never reads another owner\'s data.',{'query':STRING},['query']),
  schema('forget_record',FORGET_RECORD_DESCRIPTION,{'action':{'type':'string','enum':['forget','delete','undo','list']},'ref':STRING,'receipt':STRING},['action']),
  schema('list_agents','List available specialist agents and their roles.'),
@@ -667,6 +669,7 @@ PROJECT_RESULT_PREFIX='project/'
 PRIVATE_PROVENANCE={'find_files':'connected-document','read_file':'connected-document',
                     'list_notes':'personal-space','list_memory':'owner-memory',
                     'search_memory':'owner-memory',
+                    'search_conversation':'owner-conversation',
                     'save_memory':'owner-memory','list_roots':'owner-folder-names',
                     # #794: list shows forgotten items the owner can still undo.
                     'forget_record':'owner-memory',
@@ -1658,11 +1661,19 @@ def check_arguments(parameters,args):
  """The schema-level argument check shared by the native loop and the MCP facade.
 
  ``parameters`` is a ``DEFINITIONS`` parameter schema: an object whose
- declared properties are all strings, ``additionalProperties: false``.
+ declared properties are strings or bounded numeric scalars, ``additionalProperties: false``.
  Unknown and missing fields are refused rather than dropped.
  """
  if not isinstance(args,dict) or set(args)-set(parameters['properties']) or set(parameters['required'])-set(args):raise ValueError('허용하지 않은 도구 또는 인수입니다.')
- if any(not isinstance(v,str) for v in args.values()):raise ValueError('도구 인수는 문자열이어야 합니다.')
+ for key,value in args.items():
+  spec=parameters['properties'][key];kind=spec.get('type')
+  if kind not in ('integer','number'):
+   if not isinstance(value,str):raise ValueError('도구 인수는 문자열이어야 합니다.')
+  else:
+   import math
+   if isinstance(value,bool) or not isinstance(value,(int,float)) or (isinstance(value,float) and not math.isfinite(value)) or (kind=='integer' and not isinstance(value,int)):
+    raise ValueError('Invalid numeric tool argument')
+   if value<spec.get('minimum',-math.inf) or value>spec.get('maximum',math.inf):raise ValueError('Numeric tool argument outside bounds')
  return args
 
 # --- One Work's shared loop budget (#606 T1, #607 AX-10) --------------------
@@ -3802,6 +3813,24 @@ class Capabilities:
    except ForgetError as exc:
     raise ToolError(str(exc),exc.code) from None
    self.evidence.append({'tool':name,'result':evidence_summary(name,result)}); return result
+  if name=='search_conversation':
+   from .memory_service import conversation_refs
+   sent=[]
+   for event in self.store.task_events(self.job_id):
+    trace=event.get('trace') or {}
+    if event.get('status')=='succeeded' and (trace.get('host_action') or event.get('tool'))==name:
+     sent.extend((trace.get('evidence') or {}).get('exchange_refs') or [])
+   sent.extend(ref for item in self.evidence if item.get('tool')==name for ref in conversation_refs(item.get('result',{}).get('exchanges') or []))
+   remaining=max(0,3-len({tuple(ref['message_ids']) for ref in sent}))
+   try:
+    limit=args.get('limit',3)
+    if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=3:raise ValueError('Invalid conversation limit')
+    # Validate even when the Work's result budget is exhausted.
+    rows=self.store.search_conversation(args.get('query',''),before=args.get('before'),after=args.get('after'),limit=min(limit,remaining) if remaining else 1)
+   except ValueError as exc:raise ToolError(str(exc),'invalid_arguments') from None
+   result={'exchanges':rows if remaining else [],'budget_exhausted':not remaining,
+           'label':'earlier exchanges; may or may not be relevant; assistant lines are model-stated, not facts or commitments'}
+   self.evidence.append({'tool':name,'result':result});return result
   if name=='search_memory':
    from .memory_service import MemoryService
    marker_sink=lambda item:self.evidence.append({'tool':name,'result':item.get('result',{})})
@@ -4420,6 +4449,10 @@ def _evidence_detail(name,result):
   # #826: the keys of the rows read (references for the information-use audit), never their values.
   rows=[row for row in result.get('memories',[]) if isinstance(row,dict)]
   return {'memory_count':len(result.get('memories',[])),'memory_keys':[str(row.get('memory_key') or '')[:80] for row in rows[:20]]}
+ if name=='search_conversation':
+  from .memory_service import conversation_refs
+  refs=conversation_refs(result.get('exchanges') or [])
+  return {'exchange_count':len(refs),'exchange_refs':refs,'budget_exhausted':bool(result.get('budget_exhausted'))}
  if name=='search_memory':
   rows=[row for row in result.get('memories',[]) if isinstance(row,dict)]
   refs=[]
@@ -4854,6 +4887,14 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  recent=clean(conversation or '')[-GOAL_CONVERSATION_CHARS:]
  count=earlier_turns_in([clean(turn) for turn in conversation_turns],recent) if conversation_turns is not None else None
  owner=owner_context_fact(owner_context,clean)
+ from .memory_service import conversation_block
+ exchanges=[]
+ for row in observations.values():
+  if row[1]=='search_conversation' and row[2]=='succeeded':
+   exchanges.extend(row[3].get('exchanges') or [])
+ exchanges=list({tuple(turn['id'] for turn in row['turns']):row for row in exchanges}.values())
+ recalled=conversation_block(exchanges,budget=9000)
+ if recalled:observed=recalled+'\n'+observed[:max(0,GOAL_OBSERVATION_CHARS-len(recalled)-1)]
  try:
   if budget is not None and getattr(getattr(judgments,'engine',None),'work_budget',None) is not budget:budget.spend_turn(reserve=True)
  except Exception:return 'unavailable'

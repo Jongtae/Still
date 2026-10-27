@@ -258,7 +258,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
         self.assertEqual(names, ["calendar_draft_cancel", "calendar_draft_create",
                                  "calendar_draft_update", "calendar_query", "capability_search", *CODE_RUN, "drive_read", "drive_search", "find_files", "forget_record", "information_use",
                                  "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_page_read", "read_file", "save_memory",
-                                 "save_note", "save_result", "schedule_preparation", "search_memory", "settings_change", "settings_read", "weather",
+                                 "save_note", "save_result", "schedule_preparation", "search_conversation", "search_memory", "settings_change", "settings_read", "weather",
                                  "web_search"])
         replies = self._wire(
             {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
@@ -272,6 +272,11 @@ class ExposedToolWireBoundary(unittest.TestCase):
                               "params": {"name": "search_memory", "arguments": {"query": "교보문고 책"}}})
         result = json.loads(replies[2]["result"]["content"][0]["text"])
         self.assertEqual([row['id'] for row in result['memories']], [expected['id']])
+        # #205: the conversation recall is served over the same bridge, read-only and bounded.
+        replies = self._wire({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                              "params": {"name": "search_conversation", "arguments": {"query": "교보문고"}}})
+        recalled = json.loads(replies[2]["result"]["content"][0]["text"])
+        self.assertIsInstance(recalled["exchanges"], list)
 
     def test_a_bridge_save_without_folders_parks_a_resumable_work_for_the_folder(self):
         """#182 review: save_result runs in the bridge; its setup-required event parks the Work (#505).
@@ -307,7 +312,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
         self.assertEqual([tool["name"] for tool in replies[2]["result"]["tools"]],
                          ["calendar_draft_cancel", "calendar_draft_create", "calendar_draft_update", "calendar_query",
                           "capability_search", *CODE_RUN, "drive_read", "drive_search", "find_files", "forget_record", "information_use", "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_page_read",
-                          "read_file", "save_memory", "save_note", "save_result", "schedule_preparation", "search_memory", "settings_change",
+                          "read_file", "save_memory", "save_note", "save_result", "schedule_preparation", "search_conversation", "search_memory", "settings_change",
                           "settings_read", "weather"])
         self.assertFalse(_refused(replies[3]))
         self.assertIn("notes", json.loads(replies[3]["result"]["content"][0]["text"]))

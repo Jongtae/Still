@@ -6,6 +6,7 @@ import fcntl
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -1411,29 +1412,84 @@ class QuickStore:
                             (self._memory_binding(owner_id),memory_id)).fetchall()
             return [self._memory_row(row) for row in rows]
 
-    def owner_words(self, text, *, skip_recent=16, limit=8):
-        """The owner's own earlier messages that share words with ``text``, oldest first (#221).
+    def owner_words(self, text, *, skip_recent=16, limit=3):
+        """Compatibility entry point; earlier exchanges replace owner-only fragments (#205)."""
+        return self.search_conversation(text, skip_recent=skip_recent, limit=min(limit,3))
 
-        SQLite FTS5 (``unicode61``, BM25) over transcript rows of Works the owner
-        typed (``jobs.owner_typed``, #814; a ``user`` row Still enqueued, such
-        as a preparation's goal, is not the owner's words), leaving out the
-        newest ``skip_recent`` messages (the recent window every reader already
-        sees, and the current request).  ``[]`` without FTS5 or without
-        searchable words.  Rows are ``{'id', 'content', 'created'}``; ``created``
-        is when the owner sent it (``source_at``), else when Still received it (the Work's ``created``).
+    def search_conversation(self, query, *, before=None, after=None, limit=3, skip_recent=16, message_ids=None):
+        """Bounded source history, never Memory. One owner-typed Work per exchange.
+
+        Adopt FTS5 unicode61/BM25 prefix queries. At most 12 tokens, with at
+        most two shorter Hangul prefixes per token (minimum two syllables).
+        This handles suffix variation, not arbitrary spelling corrections or
+        synonyms. At most 30 hits are inspected, three Works returned. Only
+        adjacent turns in the same Work qualify; recent rows never reappear.
+        Document Works are withheld from both readers to preserve #826.
+        Delivery is true/false only with a transport receipt; otherwise unknown.
+        This is conversation history as recorded; forget/delete applies to Memory and state.
+        ``message_ids`` reopens only source rows actually sent by a tool.
         """
+        if not isinstance(query,str) or len(query)>500:raise ValueError('Invalid conversation query')
+        if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=3:raise ValueError('Invalid conversation limit')
+        for value in (before,after):
+            if value is not None and (isinstance(value,bool) or not isinstance(value,(int,float)) or not -1e12<=value<=1e12 or not math.isfinite(value)):
+                raise ValueError('Conversation dates must be finite Unix timestamps')
         if not getattr(self,'messages_search_available',False):return []
-        terms=[term for term in re.findall(r'\w+',str(text or '')) if len(term)>1][:20]
-        if not terms:return []
-        query=' OR '.join('"'+term.replace('"','')+'"' for term in terms)
+        terms=list(dict.fromkeys(re.findall(r'[^\W_]+',query,flags=re.UNICODE)))[:12]
+        terms=[term[:64] for term in terms if len(term)>1]
+        prefixes=[]
+        for term in terms:
+            prefixes.append(term)
+            if re.fullmatch('[가-힣]+',term):
+                prefixes.extend(term[:n] for n in range(len(term)-1,max(1,len(term)-3),-1))
+        expression=' OR '.join('"'+term+'"*' for term in dict.fromkeys(prefixes))
+        if not expression and message_ids is None:return []
+        from .current_context import redact_known_secrets
+        from .memory_service import OWNER_WORDS_LINE_CHARS
+        documents=set(self.config('file_workspace_document_jobs',[]) or [])
         with self.db() as db:
             newest=db.execute('SELECT id FROM messages ORDER BY id DESC LIMIT 1 OFFSET ?',(max(0,int(skip_recent)-1),)).fetchone()
             if newest is None:return []
-            rows=db.execute('''SELECT m.id,m.content,COALESCE(j.source_at,j.created,m.created) AS created FROM messages_search
-                               JOIN messages m ON m.id=messages_search.rowid JOIN jobs j ON j.id=m.job_id
-                               WHERE messages_search MATCH ? AND m.role='user' AND j.owner_typed=1 AND m.id<?
-                               ORDER BY bm25(messages_search) LIMIT ?''',(query,newest['id'],int(limit))).fetchall()
-        return sorted(({'id':row['id'],'content':row['content'],'created':row['created']} for row in rows),key=lambda row:row['id'])
+            cutoff=newest['id']
+            columns="m.id,m.job_id,m.role,m.content,m.created,j.created AS work_created,j.source_at,j.delivery,j.channel,j.owner_typed"
+            if message_ids is None:
+                hits=db.execute(f"""SELECT {columns} FROM messages_search
+                    JOIN messages m ON m.id=messages_search.rowid JOIN jobs j ON j.id=m.job_id
+                    WHERE messages_search MATCH ? AND m.role IN ('user','assistant') AND j.owner_typed=1 AND m.id<?
+                    AND (? IS NULL OR COALESCE(j.source_at,j.created)<?)
+                    AND (? IS NULL OR COALESCE(j.source_at,j.created)>=?)
+                    ORDER BY bm25(messages_search),m.id LIMIT 30""",
+                    (expression,cutoff,before,before,after,after)).fetchall()
+            else:
+                ids=[v for v in message_ids[:9] if isinstance(v,int) and not isinstance(v,bool)]
+                if not ids:return []
+                hits=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.id IN ({','.join('?' for _ in ids)}) AND j.owner_typed=1 ORDER BY m.id",ids).fetchall()
+            result=[];seen=set();used=0
+            for hit in hits:
+                if hit['job_id'] in seen or hit['job_id'] in documents:continue
+                seen.add(hit['job_id'])
+                rows=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.job_id=? AND m.id<? AND m.role IN ('user','assistant') ORDER BY ABS(m.id-?),m.id LIMIT 3",(hit['job_id'],cutoff,hit['id'])).fetchall()
+                rows=sorted(rows,key=lambda row:row['id'])
+                if not rows:continue
+                if any(len(row['content'] or '')>16000 for row in rows):continue
+                # Preserve the existing retired-secret exclusion; redact current
+                # secrets before clipping, so partial credentials cannot escape.
+                if any(self.holds_retired_secret(row['content'] or '') for row in rows):continue
+                turns=[]
+                for row in rows:
+                    content=' '.join(redact_known_secrets(self,row['content'] or '').split())[:OWNER_WORDS_LINE_CHARS]
+                    turns.append({'id':row['id'],'work_id':row['job_id'],'role':row['role'],
+                                  'created':row['work_created'] if row['role']=='user' else row['created'],
+                                  'source_at':row['source_at'] if row['role']=='user' else None,
+                                  'delivered':(True if row['delivery']=='sent' else False if row['delivery'] in ('pending','cancelled','failed') else None) if row['role']=='assistant' else None,
+                                  'delivery':row['delivery'] if row['role']=='assistant' else None,
+                                  'kind':'model-stated' if row['role']=='assistant' else 'owner-stated','content':content})
+                exchange={'matched_id':hit['id'],'work_id':hit['job_id'],'turns':turns}
+                size=len(json.dumps(exchange,ensure_ascii=False).encode())
+                if used+size>2600:break
+                result.append(exchange);used+=size
+                if len(result)>=limit:break
+        return result
 
     def work_memories(self, owner_id, work_id, limit=101):
         """The current Memory rows one Work wrote, oldest first (#918: what its notice shows)."""
