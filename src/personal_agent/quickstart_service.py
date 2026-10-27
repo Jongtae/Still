@@ -1963,7 +1963,8 @@ class AgentService:
         rows=[]
         row=self.preparations.get(prep.preparation_of(job.get('request_key')))
         origin=self.store.job(row['created_from']) if row and row.get('created_from') else None
-        if origin and origin.get('message'):
+        # #367 review P1: a request the owner forgot is not shown to the preparation's Work again.
+        if origin and origin.get('message') and not self.store.work_request_forgotten(origin['id']):
             rows.append({'role':'user','content':self.scrub_work_text(origin['id'],origin['message']),
                          'job_id':origin['id'],'channel':origin.get('channel'),'qualifier':None,
                          'request_key':origin.get('request_key'),'created':origin.get('created')})
@@ -3836,7 +3837,8 @@ class AgentService:
                 return None
             seen.add(work_id)
             if current.get('relation_kind')!='retry':
-                return current
+                # #367: a request the owner forgot is never replayed by a retry.
+                return None if self.store.work_request_forgotten(work_id) else current
             parent_id=current.get('related_job_id')
             if not isinstance(parent_id,str):
                 return None

@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from unittest import mock
 
 from personal_agent.agent_runtime import MEMORY_OWNER, Capabilities, ToolError, evidence_summary
 from personal_agent.owner_forget import UNDO_SECONDS, ForgetError, OwnerForget
@@ -134,6 +135,51 @@ class ForgetTranscript(unittest.TestCase):
         self.assertEqual((done['kind'], done['items'], done['message']), ('message', 2, '잊었어요. 언제든 되돌릴 수 있어요.'))
         with self.assertRaises(ToolError):
             caps.execute('forget_record', {'action': 'find'})
+
+
+    def test_an_already_forgotten_item_can_still_be_deleted_through_its_receipt(self):
+        """#367 review P2: with no purge, delete must reach what a forget kept, without restoring it first."""
+        job, ids = self.exchange('계좌 메모 마흔둘', '마흔둘 메모했어요')
+        forgot = self.forget.forget(MEMORY_OWNER, self.refs(ids))
+        with self.assertRaises(ForgetError) as refused:
+            self.forget.forget(MEMORY_OWNER, self.refs(ids), delete=True)
+        self.assertEqual(refused.exception.code, 'stale', 'a ref no longer names a forgotten row')
+        work = self.store.enqueue('완전히 지워줘', 'erase')
+        caps = Capabilities(self.store, None, {}, '', work, lambda *e: None)
+        [entry] = caps.execute('forget_record', {'action': 'list'})['undoable']
+        deleted = caps.execute('forget_record', {'action': 'delete', 'receipt': entry['receipt']})
+        self.assertEqual((deleted['receipt'], deleted['state'], deleted['message']),
+                         (forgot['receipt'], 'deleted', '완전히 지웠어요. 되돌릴 수 없어요.'))
+        with self.store.db() as db:
+            rows = [row['content'] for row in db.execute('SELECT content FROM messages WHERE id IN (?,?)', tuple(ids))]
+        self.assertEqual(rows, ['', ''])
+        self.assertEqual(self.store.job(job)['message'], '')
+        with self.assertRaises(ForgetError) as refused:
+            self.forget.undo(MEMORY_OWNER, forgot['receipt'])
+        self.assertEqual(refused.exception.code, 'settled')
+        with self.assertRaises(ForgetError) as refused:
+            self.forget.delete_forgotten(MEMORY_OWNER, forgot['receipt'])
+        self.assertEqual(refused.exception.code, 'settled', 'a receipt is erased once')
+        memory = self.store.save_memory('city', '서울', MEMORY_OWNER, work_id='w-source')
+        kept = self.forget.forget(MEMORY_OWNER, 'memory:' + memory['id'])
+        self.assertEqual(self.forget.delete_forgotten(MEMORY_OWNER, kept['receipt'])['state'], 'deleted')
+        with self.store.db() as db:
+            self.assertIsNone(db.execute('SELECT 1 FROM memories WHERE id=?', (memory['id'],)).fetchone())
+
+    def test_a_forgotten_request_is_neither_shown_to_a_preparation_nor_replayed_by_a_retry(self):
+        """#367 review P1: the preparation history and the retry source read ``jobs.message`` directly."""
+        origin, ids = self.exchange('매일 아침 엄마 생신 선물 챙겨줘', '매일 아침 챙길게요')
+        service = AgentService(self.store)
+        run = {'id': 'prep-work', 'message': '오늘 준비', 'request_key': 'preparation:p1', 'channel': 'web', 'created': 20}
+        with mock.patch.object(service.preparations, 'get', return_value={'created_from': origin}):
+            self.assertEqual(len(service.preparation_history(run)), 2, 'before the forget the origin is shown')
+            self.forget.forget(MEMORY_OWNER, self.refs(ids[:1]))
+            history = service.preparation_history(run)
+        self.assertEqual([row['content'] for row in history], ['오늘 준비'])
+        retry = self.store.enqueue('다시 해줘', 'retry')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET relation_kind='retry',related_job_id=? WHERE id=?", (origin, retry))
+        self.assertIsNone(service.canonical_retry_source(self.store.job(retry)))
 
 
 if __name__ == '__main__':

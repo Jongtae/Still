@@ -114,6 +114,7 @@ FORGET_RECORD_DESCRIPTION=('Forget, completely delete or restore one item of wha
   'conversation messages that state it, together with any Memory item. '
   'action forget removes it from use now; Still keeps the record that the owner chose to forget it and the owner can undo it at any time; '
   'delete erases it now with no undo (use it only when the owner asks to erase it completely; a message is blanked); '
+  'to erase something already forgotten, call delete with its receipt from list instead of a ref; '
   'undo restores one earlier forget by its receipt; list shows the forgets the owner can still undo, with what each covered. '
   'Trust records also accept trust:<engine>|<kind>|<identity> from settings_read ai_connections. Their authority is disabled immediately and a revocation marker remains. Restoring trust requires settings_change ai_connections restore and owner confirmation, never this tool undo. '
   'To correct a wrong Memory value instead, save the right value with save_memory under the same key. '
@@ -3807,6 +3808,11 @@ class Capabilities:
     elif action=='undo':
      result={'action':'undo',**forget.undo(MEMORY_OWNER,args.get('receipt'))}
      result['message']=msg('agent_runtime.undone')
+    elif action=='delete' and not args.get('ref') and args.get('receipt'):
+     # #367 review P2: an item already forgotten is erased through its receipt (from list).
+     result={'action':action,**forget.delete_forgotten(MEMORY_OWNER,args.get('receipt'))}
+     result['message']=('신뢰 기록 내용은 지웠고 이전 권한을 막는 최소한의 표시는 남겼어요. 되돌릴 수 없어요.'
+                        if result['kind']=='trust' else '완전히 지웠어요. 되돌릴 수 없어요.')
     elif action in ('forget','delete'):
      result={'action':action,**forget.forget(MEMORY_OWNER,args.get('ref'),delete=action=='delete',work_id=self.job_id)}
      result['message']=('완전히 지웠어요. 되돌릴 수 없어요.' if action=='delete' else '잊었어요. 언제든 되돌릴 수 있어요.')

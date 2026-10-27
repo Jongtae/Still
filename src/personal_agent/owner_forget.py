@@ -346,6 +346,25 @@ class OwnerForget:
             db.execute("UPDATE owner_state_receipts SET state='undone',settled=? WHERE id=?", (now, receipt['id']))
             return self._receipt(db.execute('SELECT * FROM owner_state_receipts WHERE id=?', (receipt['id'],)).fetchone())
 
+    def delete_forgotten(self, owner_id, receipt_id):
+        """#367 review P2: erase what an open forget kept, when the owner asks to delete it completely; no undo.
+
+        A forget is never purged now, so this is the way to erase an item that is already out of use
+        (the AI finds the receipt with ``undoable``); it never puts the item back in use first.
+        """
+        owner_key = self.store._memory_binding(owner_id)
+        now = self.clock()
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            receipt = db.execute('SELECT * FROM owner_state_receipts WHERE id=? AND owner_key=?',
+                                 (str(receipt_id or ''), owner_key)).fetchone()
+            if receipt is None or receipt['operation'] not in UNDOABLE_OPERATIONS:
+                raise _refuse('no_receipt')
+            if receipt['state'] != FORGOTTEN:
+                raise _refuse('settled')
+            self._purge(db, receipt['id'], now, final='deleted')
+            return self._receipt(db.execute('SELECT * FROM owner_state_receipts WHERE id=?', (receipt['id'],)).fetchone())
+
     def _refuse_later_value(self, db, owner_key, kind, items, rows):
         ids = [row['id'] for row in rows]
         # A re-paired or disconnected Telegram owner is another context owner: never restored for them.
