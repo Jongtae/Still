@@ -11,6 +11,7 @@ account.
 import json
 import os
 import tempfile
+import time
 import types
 import unittest
 from pathlib import Path
@@ -214,7 +215,7 @@ class CliRunner:
             # `codex sandbox ... -P <profile> -- /bin/ls <target>`: the turn
             # directory is readable, anything else is denied unless listed.
             target = Path(argv[-1])
-            return done('', 0 if target == Path(cwd) or target in self.readable else 1)
+            return done('', 0 if target == Path(cwd) or target in self.readable else 1, 'Operation not permitted')
         if argv[1:3] == ['login', 'status']:
             return done('Logged in using ChatGPT' if self.logged_in else 'Not logged in', 0 if self.logged_in else 1)
         if argv[1:3] == ['auth', 'status']:
@@ -656,7 +657,10 @@ def strict_fixture(case):
     import sys
     from unittest import mock
     from personal_agent import bounded_execution
-    for patcher in (mock.patch.object(sys, 'platform', 'darwin'),
+    for patcher in (mock.patch('personal_agent.cli_qualification.surface_checks',
+                                    return_value=[{'check': 'strict-work-bridge-and-tool-surface', 'passed': True},
+                                                  *[{'check': f'instruction-files-{i}', 'passed': True} for i in range(3)]]),
+                    mock.patch.object(sys, 'platform', 'darwin'),
                     mock.patch.object(bounded_execution, 'BASELINE_READABLE_ROOTS', ('/nonexistent-baseline-root',))):
         patcher.start()
         case.addCleanup(patcher.stop)
@@ -899,7 +903,7 @@ class ServiceRouteSelectionTests(ServiceFixture):
                        'CodexDecisionInstructionFiles', '--ignore-rules'):
             self.assertIn(phrase, doc)
 
-    def test_codex_0162_judgments_qualify_without_enabling_strict_work(self):
+    def test_codex_0162_judgments_qualify_with_local_evidence(self):
         from personal_agent.bounded_execution import CLI_PROFILES, STRICT_PROFILE
         runner = CliRunner()
         runner.version = 'codex-cli 0.162.1'
@@ -911,7 +915,7 @@ class ServiceRouteSelectionTests(ServiceFixture):
         self.assertEqual(self.judge(service).outcome, 'yes')
         self.assertNotIn('0.162.1', CLI_PROFILES[STRICT_PROFILE]['runtimes']['codex']['tested_versions'])
 
-    def test_codex_0164_judgments_qualify_without_enabling_strict_work(self):
+    def test_codex_0164_judgments_qualify_with_local_evidence(self):
         from personal_agent.bounded_execution import CLI_PROFILES, STRICT_PROFILE
         runner = CliRunner()
         runner.version = 'codex-cli 0.164.0'
@@ -923,32 +927,41 @@ class ServiceRouteSelectionTests(ServiceFixture):
         self.assertEqual(self.judge(service).outcome, 'yes')
         self.assertNotIn('0.164.0', CLI_PROFILES[STRICT_PROFILE]['runtimes']['codex']['tested_versions'])
 
-    def test_codex_is_refused_until_its_instruction_files_are_qualified(self):
-        # #624/#679/#1561/#344: only declared versions are qualified;
-        # any other version fails closed before any
-        # judgment even when the tool surface passes.
-        self.assertEqual(CODEX_INSTRUCTION_FILES_QUALIFIED, frozenset({'0.153.4', '0.162.1', '0.164.0'}))
+    def test_an_unlisted_codex_version_requires_local_instruction_observation(self):
+        from unittest import mock
         runner = CliRunner()
-        runner.version = 'codex-cli 0.165.0'
+        runner.version = 'codex-cli 9.9.9'
         service = self.service(runner=runner)
-        with self.assertRaises(DecisionRouteError):
-            service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex'})
+        with mock.patch('personal_agent.cli_qualification.surface_checks',
+                        return_value=[{'check': 'instruction-files-0', 'passed': False}]):
+            with self.assertRaises(DecisionRouteError) as caught:
+                service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex'})
+        self.assertIn('instruction-files-0', str(caught.exception))
         self.assertIsNone(self.store.config('decision_route'))
-        self.assertEqual(self.store.config('decision_cli_capabilities')['codex']['tool_surface'], 'allowlisted-features-only')
-        self.assertFalse(any('exec' in call['argv'] and '--json' in call['argv'] for call in self.runner.calls))
-        engines = {e['id']: e for e in service.settings()['decision_route']['subscription_cli']}
-        self.assertEqual(engines['codex']['check']['failure'], 'instruction-files-unqualified')
-        self.assertIn('AGENTS.md', engines['codex']['instruction_files'])
-        self.assertEqual(engines['claude-code']['instruction_files'], '')
+        self.assertFalse(any('--output-schema' in call['argv'] for call in runner.calls))
+        # Backoff refuses without another probe; an explicit recheck can observe recovery.
+        with mock.patch.object(service.execution_adapter, 'qualify_strict',
+                               wraps=service.execution_adapter.qualify_strict) as probe:
+            with self.assertRaises(DecisionRouteError) as repeated:
+                service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex'})
+            probe.assert_not_called()
+        self.assertEqual(str(repeated.exception), str(caught.exception))
+        result = service.execution_adapter.qualify_strict('codex', store_root=self.store.root, purpose='judgment')
+        self.assertTrue(result['qualified'])
+        service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex'})
+        self.assertEqual(self.judge(service).value, 'retry')
+        self.assertEqual(service.decision_routes.active()['strict_profile']['version'], '9.9.9')
 
-    def test_a_stored_codex_route_stops_when_its_version_is_not_instruction_qualified(self):
+    def test_a_stored_codex_route_requires_instruction_observations_for_every_policy(self):
         # #624 review P3: the runtime guard applies the activation rule to a
         # route stored earlier (unchanged binary), for every policy.
         service = self.service()
         service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex'})
         self.assertTrue(service.decision_routes.status()['active']['available'])
         calls = len(self.runner.calls)
-        service.decision_routes.codex_instruction_qualified = frozenset({'0.160.0'})
+        route = service.decision_routes.active()
+        route['strict_profile']['checks'] = ['tested-platform']
+        self.store.put('decision_route', route)
         active = service.decision_routes.status()['active']
         self.assertTrue(active['instruction_files_unqualified'])
         self.assertFalse(active['available'])
@@ -999,6 +1012,8 @@ class ServiceRouteSelectionTests(ServiceFixture):
         active = status['active']
         self.assertEqual((active['model_policy'], active['requested_model']), ('lowest_qualified', 'small'))
         self.assertEqual(active['qualification']['suite_version'], SUITE_VERSION)
+        self.assertEqual(self.store.config('decision_route')['declared_candidates'], ['tiny', 'small', 'large'])
+        self.assertNotIn('declared_candidates', active, 'the declaration stays internal to the route')
         tried = next(e for e in status['subscription_cli'] if e['id'] == 'codex')['check']['candidates']
         self.assertEqual([(row['model'], row['qualified']) for row in tried], [('tiny', False), ('small', True)])
         models = [call['argv'][call['argv'].index('--model') + 1] for call in self.runner.calls if '--model' in call['argv']]
@@ -1152,9 +1167,9 @@ class JudgmentModelTests(ServiceFixture):
         calls = len(self.runner.calls)
         self.assertEqual(self.judge(service).value, 'retry')
         self.assertEqual(self.model_of(self.runner.calls[-1]['argv']), 'gpt-5.6-luna')
-        self.assertEqual([call['argv'][1:] for call in self.runner.calls[calls:-1]], [['--version']],
-                         'one local --version check (as the strict Work route does), then the judgment')
-        self.assertEqual(len(self.runner.calls), calls + 2)
+        self.assertEqual([call['argv'][1:] for call in self.runner.calls[calls:-1]], [],
+                         'the local qualification already observed this exact identity and version')
+        self.assertEqual(len(self.runner.calls), calls + 1)
 
     def test_a_newer_codex_that_bundles_gpt_6_luna_makes_it_the_default(self):
         service = self.service(runner=CliRunner(bundled=bundled_listing(('gpt-6-luna', 'gpt-5.6-luna', 'gpt-5.6-terra'))))
@@ -1625,6 +1640,100 @@ class JudgmentModelTests(ServiceFixture):
         self.assert_blocked(service, 'an upgraded CLI under the same path and digest record needs requalification')
         reported('garbled')
         self.assert_blocked(service, 'an unreadable version is not the qualified one')
+
+class AutomaticCliQualificationTests(ServiceFixture):
+    def test_binary_update_queues_one_background_suite_and_readmits_on_pass(self):
+        service = self.service()
+        service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex'})
+        old = service.decision_routes.active()
+        binary = Path(self.finder('codex'))
+        binary.write_bytes(FAKE_NATIVE + b'new unlisted release')
+        self.runner.version = 'codex-cli 9.9.9'
+        pending = []
+        service.decision_routes.spawn = pending.append
+        for _ in range(3):
+            self.assertEqual(self.judge(service).outcome, 'unavailable')
+        job = service.decision_routes.qualification()
+        self.assertEqual(job['state'], 'queued')
+        self.assertTrue(service.run_due_qualification())
+        for _ in range(3):
+            self.assertEqual(self.judge(service).outcome, 'unavailable')
+            self.assertFalse(service.run_due_qualification())
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(service.decision_routes.qualification()['id'], job['id'])
+        pending.pop()()
+        self.assertEqual(service.decision_routes._jobs()['update:codex']['state'], 'passed')
+        active = service.decision_routes.active()
+        self.assertNotEqual(old['fingerprint'], active['fingerprint'])
+        self.assertEqual(active['strict_profile']['version'], '9.9.9')
+        self.assertEqual(active['qualification']['suite_version'], SUITE_VERSION)
+        self.assertEqual(self.judge(service).value, 'retry')
+
+    def test_failed_update_stays_refused_notifies_and_does_not_retry_same_identity(self):
+        service = self.service()
+        service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex'})
+        binary = Path(self.finder('codex'))
+        binary.write_bytes(FAKE_NATIVE + b'update with broken judgment')
+        self.runner.judges = {model: careless for model in (None, *RANKED_MODELS['codex'])}
+        self.assertEqual(self.judge(service).outcome, 'unavailable')
+        self.assertTrue(service.run_due_qualification())
+        job = service.decision_routes.qualification()
+        self.assertEqual(job['state'], 'failed')
+        self.assertIn('이전에 검증한 판단 경로', job['message'])
+        self.assertIn(job['message'], service.decision_routes.status()['effective']['note'])
+        for _ in range(3):
+            calls = len(self.runner.calls)
+            self.assertEqual(self.judge(service).outcome, 'unavailable')
+            self.assertFalse(service.run_due_qualification())
+            self.assertEqual(len(self.runner.calls), calls)
+        rows = service.decision_routes._jobs()
+        for index in range(8):
+            rows[f'history-{index}'] = {'state': 'failed', 'finished_at': time.time() + index + 1}
+        service.decision_routes._put_jobs(rows)
+        self.assertIn('update:codex', service.decision_routes._jobs(), 'history trimming retains the no-retry marker')
+        from personal_agent.decision_routes import DecisionRoutes
+        service.decision_routes = DecisionRoutes(service, spawn=lambda run: run())
+        self.assertFalse(service.run_due_qualification(), 'failure survives restart')
+        self.runner.judges = {model: oracle for model in (None, *RANKED_MODELS['codex'])}
+        service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex'})
+        self.assertEqual(self.judge(service).value, 'retry', 'owner can retry the same identity by hand')
+
+    def test_cloud_profile_change_automatically_runs_the_full_suite_even_for_engine_default(self):
+        service = self.service()
+        service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'claude-code',
+                                         'model_policy': 'engine_default'})
+        # A real temporary profile, with an injected CLI transport (no provider call).
+        service.execution_adapter.cloud = service.cloud_engines
+        service.save_cloud_profile({'engine': 'claude-code', 'provider': 'bedrock',
+                                    'settings': {'AWS_REGION': 'us-east-1'}, 'daily_calls': 100})
+        service.save_cloud_secret({'engine': 'claude-code', 'provider': 'bedrock',
+                                   'name': 'AWS_BEARER_TOKEN_BEDROCK', 'value': 'fixture-bedrock-346-only'})
+        self.assertEqual(self.judge(service).outcome, 'unavailable')
+        self.assertTrue(service.run_due_qualification())
+        active = service.decision_routes.active()
+        self.assertEqual(active['cloud_profile'], service.cloud_engines.identity('claude-code'),
+                         service.decision_routes.qualification())
+        self.assertEqual(active['qualification']['suite_version'], SUITE_VERSION)
+        self.assertEqual(service.decision_routes._jobs()['update:claude-code']['state'], 'passed')
+
+    def test_update_qualification_cannot_commit_after_another_binary_or_owner_choice(self):
+        service = self.service()
+        service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex'})
+        binary = Path(self.finder('codex'))
+        binary.write_bytes(FAKE_NATIVE + b'update one')
+        self.assertEqual(self.judge(service).outcome, 'unavailable')
+        pending = []
+        service.decision_routes.spawn = pending.append
+        service.run_due_qualification()
+        binary.write_bytes(FAKE_NATIVE + b'update two different identity')
+        pending.pop()()
+        self.assertEqual(service.decision_routes._jobs()['update:codex']['state'], 'cancelled')
+        self.assertEqual(self.judge(service).outcome, 'unavailable')
+        service.run_due_qualification()
+        service.store.put('decision_route', {'transport': 'off', 'activated_at': 'owner-choice'})
+        pending.pop()()
+        self.assertEqual(service.decision_routes.active()['transport'], 'off')
+
 
 if __name__ == '__main__':
     unittest.main()

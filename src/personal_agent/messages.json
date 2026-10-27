@@ -5,6 +5,72 @@
   "ja": "Gmail メールの整理",
   "zh": "Gmail 邮箱整理"
  },
+ "engine.local_qualification_unavailable": {
+   "ko": "설치된 CLI의 격리 확인을 실행하지 못했습니다: {check} ({code}; {error}). 이전에 검증한 실행 경로도 지금은 사용할 수 없습니다.",
+   "en": "The installed CLI isolation check could not run: {check} ({code}; {error}). The previously qualified route is unavailable.",
+   "ja": "インストール済み CLI の隔離確認を実行できませんでした: {check} ({code}; {error})。以前に検証した実行経路も現在は利用できません。",
+   "zh": "无法运行已安装 CLI 的隔离检查：{check} ({code}; {error})。先前验证过的执行路径目前也不可用。"
+ },
+ "engine.local_qualification_failed": {
+   "ko": "설치된 CLI의 엄격 격리 확인에 실패했습니다: {check} ({code}). 이전에 검증한 실행 경로도 지금은 사용할 수 없습니다.",
+   "en": "The installed CLI failed its strict isolation check: {check} ({code}). The previously qualified route is unavailable.",
+   "ja": "インストール済み CLI の確認に失敗しました: {check} ({code})。以前に検証した実行経路も現在は利用できません。",
+   "zh": "已安装的 CLI 未通过检查：{check} ({code})。先前验证过的执行路径目前也不可用。"
+ },
+ "engine.check_platform": {
+   "ko": "운영 체제 지원",
+   "en": "operating system support",
+   "ja": "OS の対応",
+   "zh": "操作系统支持"
+ },
+ "engine.check_root": {
+   "ko": "작업 폴더의 격리",
+   "en": "isolating the working folder",
+   "ja": "作業フォルダーの隔離",
+   "zh": "工作文件夹隔离"
+ },
+ "engine.check_version": {
+   "ko": "설치된 CLI 버전 읽기",
+   "en": "reading the installed CLI version",
+   "ja": "CLI バージョンの読み取り",
+   "zh": "读取已安装的 CLI 版本"
+ },
+ "engine.check_sandbox": {
+   "ko": "작업 폴더 밖의 접근 차단",
+   "en": "blocking access outside the working folder",
+   "ja": "作業フォルダー外へのアクセス遮断",
+   "zh": "阻止访问工作文件夹之外"
+ },
+ "engine.check_features": {
+   "ko": "컴퓨터에 접근하는 도구 끄기",
+   "en": "disabling host tool features",
+   "ja": "ホストにアクセスするツールの無効化",
+   "zh": "禁用访问主机的工具"
+ },
+ "engine.check_surface": {
+   "ko": "격리된 도구와 로컬 연결",
+   "en": "isolated tools and the local bridge",
+   "ja": "隔離されたツールとローカル接続",
+   "zh": "隔离工具和本地连接"
+ },
+ "engine.check_instructions": {
+   "ko": "지침 파일과 스킬의 격리",
+   "en": "instruction file and skill isolation",
+   "ja": "指示ファイルとスキルの隔離",
+   "zh": "指令文件和技能隔离"
+ },
+ "engine.check_identity": {
+   "ko": "확인한 CLI 파일이 그대로인지 검사",
+   "en": "checking that the qualified binary is unchanged",
+   "ja": "確認済み CLI ファイルの同一性",
+   "zh": "检查验证过的 CLI 文件是否未变"
+ },
+ "engine.check_local": {
+   "ko": "이 컴퓨터에서 실행 확인",
+   "en": "running local qualification",
+   "ja": "このコンピューターでの実行確認",
+   "zh": "在本机运行验证"
+ },
  "agent_runtime.a_needed_connection_isn_t_set": {
   "ko": "필요한 연결이 아직 설정되지 않아 확인하지 못했습니다. 설정에서 연결을 먼저 확인해 주세요.",
   "en": "A needed connection isn't set up yet, so I couldn't check. Please check the connection in Settings first.",

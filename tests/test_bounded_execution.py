@@ -83,10 +83,12 @@ class BoundedExecutionTests(unittest.TestCase):
         self.assertEqual(seen['argv'][:2], ['/runtime/claude','-p'])
         self.assertTrue(seen['kwargs']['shell'] is False)
         self.assertEqual(set(seen['kwargs']['env']), {'HOME','PATH','LANG','PYTHONPATH'})
-        # PYTHONPATH carries this checkout's own path, which may sit under /private (macOS tmp);
-        # check the argv and the other env values only.
-        self.assertNotIn('private', str(seen['argv']))
-        self.assertNotIn('private', str({k:v for k,v in seen['kwargs']['env'].items() if k!='PYTHONPATH'}))
+        # The allowed temporary runtime and checkout may both sit under /private.
+        # Ignore only those known paths when checking for undeclared private inputs.
+        turn_root = str(Path(folder).resolve())
+        self.assertNotIn('private', str(seen['argv']).replace(turn_root, '<turn-root>'))
+        self.assertNotIn('private', str({k:v for k,v in seen['kwargs']['env'].items()
+                                      if k!='PYTHONPATH'}).replace(turn_root, '<turn-root>'))
 
     def test_codex_uses_only_its_existing_profile_and_cli_directory(self):
         seen={}

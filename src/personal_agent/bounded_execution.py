@@ -55,7 +55,13 @@ MAX_REASON_CHARS = 300
 
 # Shared across adapters and early-judgment threads; at most eight binary identities.
 _STRICT_OBSERVATIONS = {}
-_STRICT_OBSERVATIONS_LOCK = threading.Lock()
+_STRICT_OBSERVATIONS_LOCK = threading.RLock()
+# Only successful local probe records, bounded and scoped to identity + path binding.
+_STRICT_QUALIFICATIONS = {}
+_STRICT_QUALIFICATION_LOCK = threading.Lock()
+# Refusal only: at most eight failed identity/binding/scope records, for one minute.
+_STRICT_FAILURES = {}
+_STRICT_FAILURE_BACKOFF_SECONDS = 60
 
 LOG = logging.getLogger('personal_agent.engine')
 ENGINE_NAMES = {'codex': 'Codex', 'claude-code': 'Claude Code'}
@@ -265,8 +271,7 @@ CLI_PROFILES = {
             'information_use': _INFORMATION_USE,
             **{action: _SKILLS for action in _SKILL_ACTIONS},
         },
-        # Only these exact CLI versions passed the process-level tests; any
-        # other version is refused until requalified (no silent downgrade).
+        # Historical manual observations; admission uses local checks for the installed identity.
         'runtimes': {
             'codex': {'tested_versions': ('0.153.4',), 'tested_platforms': ('darwin',), 'live_tested_version': None,
                       'enforcement': f'Codex permissions profile {CODEX_STRICT_PERMISSIONS} (Seatbelt) instead of '
@@ -1135,6 +1140,17 @@ class EngineInterrupted(Exception):
         self.reason = reason
 
 
+def interruption_error(reason, meta=None):
+    """The existing Work terminal classes, shared by qualification and execution."""
+    if reason == 'stopped':
+        return ExecutionError(ENGINE_STOPPED, failure_class='stopped', meta=meta)
+    if reason == WORK_MODE_INTERRUPT:
+        return ExecutionError(msg('work_mode.native_search_stopped'), failure_class=WORK_MODE_INTERRUPT,
+                              meta=meta)
+    return ExecutionError('이 작업의 처리 시간 한도에 도달해 구독 엔진 실행과 그 하위 프로세스를 종료했습니다.',
+                          failure_class='deadline_exceeded', meta=meta)
+
+
 def kill_process_group(process):
     try:
         os.killpg(process.pid, signal.SIGKILL)
@@ -1599,13 +1615,15 @@ class StrictIsolatedAgentOSMcpTools(AgentOSMcpTools):
 
     ``qualification`` is the owner's stored qualification record for this CLI
     (version, platform, binary identity, resolved paths and, for Codex, the
-    verified feature-disable plan).  The adapter refuses to launch unless the
-    current CLI and paths still match it; without one nothing runs.
+    verified feature-disable plan). The adapter automatically checks a changed
+    CLI before launch. ``qualification_allowed`` distinguishes the owner's
+    strict selection from an unrecognized saved profile, which stays refused.
     """
     PROFILE = STRICT_PROFILE
 
-    def __init__(self, capabilities, qualification=None):
+    def __init__(self, capabilities, qualification=None, qualification_allowed=True):
         super().__init__(capabilities)
+        self.qualification_allowed = qualification_allowed
         self.qualification = dict(qualification) if isinstance(qualification, dict) else None
 
     @property
@@ -1636,6 +1654,7 @@ class BoundedExecutionAdapter:
         self.credentials = credentials or (lambda engine_id: '')
         # #211: the owner's cloud provider profiles (``cloud_engines.CloudEngines``); None: subscription only.
         self.cloud = cloud
+        self._stream_input = {}  # capability observations, never shared across binary identities
 
     def cloud_profile(self, engine_id, tools=None):
         """#211: the engine's cloud profile for one launch, or None on the subscription.
@@ -1949,16 +1968,52 @@ class BoundedExecutionAdapter:
             return argv
         raise ExecutionError('지원하는 구독 엔진을 선택하세요.')
 
-    def runtime_version(self, engine_id, binary, run_dir):
+    def _session_identity(self, engine_id, binary):
+        identity = self._strict_binary_identity(engine_id, binary)
+        if identity:
+            return identity
+        try:
+            stat = os.stat(binary)
+            return ((os.path.realpath(binary), stat.st_size, stat.st_mtime_ns, stat.st_ino, stat.st_dev),)
+        except OSError:
+            return None  # no identity means no remembered capability
+
+    @staticmethod
+    def _plain_claude_argv(argv, prompt):
+        argv = list(argv)
+        at = argv.index('--input-format')
+        argv[at:at + 2] = [prompt]
+        argv.remove('--replay-user-messages')
+        return argv
+
+    @staticmethod
+    def _stream_input_rejected(completed, elapsed):
+        if completed.returncode == 0 or elapsed > 5:
+            return False
+        for line in jsonl_lines(completed.stdout or ''):
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(record, dict) or record.get('type') not in ('system', 'error'):
+                return False  # never replay a turn that may have done work
+            if record.get('type') == 'system' and record.get('subtype') != 'init':
+                return False
+        error = (getattr(completed, 'stderr', '') or '') + '\n' + (completed.stdout or '')
+        return bool(re.search(r'--(?:input-format|replay-user-messages)\b', error)
+                    and re.search(r'unknown|unrecognized|unexpected|unsupported|invalid|not supported', error, re.I))
+
+    def runtime_version(self, engine_id, binary, run_dir, *, deadline=None, interrupted=None):
         """The version the CLI itself reports, run in the Still environment.
 
         Local and model-free; no credential is passed to this call.
         """
+        from .cli_qualification import qualification_run
         env = {key: value for key, value in self.environment(engine_id, binary, run_dir).items()
                if key != 'CLAUDE_CODE_OAUTH_TOKEN'}
         try:
-            done = self.runner([binary, '--version'], cwd=run_dir, env=env, stdin=subprocess.DEVNULL,
-                               capture_output=True, text=True, timeout=20, shell=False)
+            done = qualification_run(self, [binary, '--version'], cwd=run_dir, env=env, timeout=20,
+                                     deadline=deadline, interrupted=interrupted)
         except (subprocess.TimeoutExpired, OSError):
             return None
         return parse_cli_version(engine_id, done.stdout) if done.returncode == 0 else None
@@ -2072,7 +2127,7 @@ class BoundedExecutionAdapter:
                 if not stale and check_version:
                     version = (cached[1] if cached else
                                (read_version() if read_version else self.runtime_version(engine_id, binary, run_dir)))
-                success = (not stale and version is not None and version in tested_versions
+                success = (not stale and version is not None
                            and version == qualification.get('version'))
                 if success and identity and engine_id == 'codex' \
                         and self._strict_binary_identity(engine_id, binary) == identity:
@@ -2116,7 +2171,7 @@ class BoundedExecutionAdapter:
         current = self.strict_binding(engine_id, binary, store_root)
         return sorted(key for key in current if recorded.get(key) != current[key])
 
-    def _codex_sandbox_denies(self, binary, run_dir, target):
+    def _codex_sandbox_denies(self, binary, run_dir, target, *, deadline=None, interrupted=None):
         """Run the CLI's own sandbox runner under the strict permissions profile.
 
         ``/bin/ls`` output is discarded, so no protected content is read into
@@ -2124,16 +2179,22 @@ class BoundedExecutionAdapter:
         config cannot change the policy under test (``exec`` ignores it too).
         Returns True when the listing was refused, False when it succeeded.
         """
+        from .cli_qualification import qualification_run
         home = run_dir / '.codex-qualify'
         home.mkdir(exist_ok=True, mode=0o700)
         env = {**self.environment('codex', binary, run_dir), 'CODEX_HOME': str(home)}
         argv = [binary, 'sandbox', '-C', str(run_dir), '-c', CODEX_STRICT_TABLE, '-P', CODEX_STRICT_PERMISSIONS,
                 '--', '/bin/ls', str(target)]
-        done = self.runner(argv, cwd=run_dir, env=env, stdin=subprocess.DEVNULL, capture_output=True,
-                           text=True, timeout=30, shell=False)
-        return done.returncode != 0
+        done = qualification_run(self, argv, cwd=run_dir, env=env, timeout=30,
+                                 deadline=deadline, interrupted=interrupted)
+        if done.returncode == 0:
+            return False
+        if done.returncode == 1 and re.search(r'Operation not permitted|Permission denied',
+                                              (done.stdout or '') + (done.stderr or ''), re.I):
+            return True
+        raise ValueError('sandbox denial was not observed')
 
-    def _codex_feature_plan(self, binary, run_dir):
+    def _codex_feature_plan(self, binary, run_dir, *, deadline=None, interrupted=None):
         """Reuse the #580 allowlist plan for the strict Work profile.
 
         ``codex features list`` (local, no model) with an empty CODEX_HOME,
@@ -2143,14 +2204,15 @@ class BoundedExecutionAdapter:
         Returns ``(plan, remaining)``; ValueError on anything unparsable.
         """
         from .decision_adapters import codex_disable_plan, codex_still_enabled, parse_codex_features
+        from .cli_qualification import qualification_run
         home = run_dir / '.codex-qualify'
         home.mkdir(exist_ok=True, mode=0o700)
         env = {**self.environment('codex', binary, run_dir), 'CODEX_HOME': str(home)}
         allowed = strict_allowed_features()
 
         def listing(argv):
-            done = self.runner(argv, cwd=run_dir, env=env, stdin=subprocess.DEVNULL, capture_output=True,
-                               text=True, timeout=30, shell=False)
+            done = qualification_run(self, argv, cwd=run_dir, env=env, timeout=30,
+                                     deadline=deadline, interrupted=interrupted)
             if done.returncode != 0:
                 raise ValueError(f'features list exit {done.returncode}')
             return parse_codex_features(done.stdout)
@@ -2160,81 +2222,186 @@ class BoundedExecutionAdapter:
             argv += ['--disable', feature]
         return plan, codex_still_enabled(listing(argv), allowed)
 
-    def qualify_strict(self, engine_id, binary=None, store_root=None, *, tested_versions=None):
-        """No-model qualification of the strict-isolated profile for one CLI.
+    def strict_cached_qualification(self, engine_id, binary, store_root, *, purpose='work'):
+        """Read-only Settings view of a current local pass; never runs a probe."""
+        import copy
+        with _STRICT_OBSERVATIONS_LOCK:
+            identity = self._strict_binary_identity(engine_id, binary)
+            binding = self.strict_binding(engine_id, binary, store_root)
+            key = (engine_id, identity, tuple(sorted(binding.items())))
+            record = _STRICT_QUALIFICATIONS.get((*key, purpose))
+            if purpose == 'judgment':
+                record = record or _STRICT_QUALIFICATIONS.get((*key, 'work'))
+            return copy.deepcopy(record) if identity else None
 
-        Passes only when all hold: a tested platform and CLI version; an
-        engine runtime root outside the paths Codex's baseline keeps readable;
-        and, for Codex, (a) its own sandbox runner under the exact permissions
-        profile refuses the owner store, home, the login profile and a sibling
-        turn directory while a control listing of the turn directory succeeds,
-        and (b) the #580-style feature plan leaves only allowlisted features.
-        The record binds the resolved binary (path, sha256, fingerprint) and
-        paths.  It never contains file content.  Claude Code's confinement is
-        structural (no built-in tools), so version, platform and paths are
-        its checks.
+    def qualified_identity(self, engine_id, binary, store_root, *, purpose='work', deadline=None, interrupted=None):
+        """Admit only local passes; briefly reuse failures solely to refuse.
+
+        Slow probes never hold the observation/Settings lock. An explicit
+        ``qualify_strict`` always reruns checks and replaces the local record.
+        Backoff is in-process, bounded, and bound to the same identity, paths
+        and purpose as a pass. A new identity is checked immediately.
         """
+        import copy
+        from .cli_qualification import qualification_timeout
+        qualification_timeout(STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)
+        cached = self.strict_cached_qualification(engine_id, binary, store_root, purpose=purpose)
+        if cached:
+            qualification_timeout(STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)
+            return cached
+        while not _STRICT_QUALIFICATION_LOCK.acquire(timeout=qualification_timeout(
+                STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)):
+            pass
+        try:
+            qualification_timeout(STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)
+            cached = self.strict_cached_qualification(engine_id, binary, store_root, purpose=purpose)
+            if cached:
+                qualification_timeout(STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)
+                return cached
+            identity = self._strict_binary_identity(engine_id, binary)
+            binding = self.strict_binding(engine_id, binary, store_root)
+            key = (engine_id, identity, tuple(sorted(binding.items())), purpose)
+            with _STRICT_OBSERVATIONS_LOCK:
+                failed = _STRICT_FAILURES.get(key) if identity else None
+                if failed and time.monotonic() - failed[0] < _STRICT_FAILURE_BACKOFF_SECONDS:
+                    qualification_timeout(STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)
+                    return copy.deepcopy(failed[1])
+                _STRICT_FAILURES.pop(key, None)
+            result = self.qualify_strict(engine_id, binary=binary, store_root=store_root, purpose=purpose,
+                                         deadline=deadline, interrupted=interrupted)
+            if (not result.get('qualified') and identity
+                    and self._strict_binary_identity(engine_id, binary) == identity
+                    and self.strict_binding(engine_id, binary, store_root) == binding):
+                with _STRICT_OBSERVATIONS_LOCK:
+                    qualification_timeout(STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)
+                    if len(_STRICT_FAILURES) >= 8:
+                        del _STRICT_FAILURES[next(iter(_STRICT_FAILURES))]
+                    _STRICT_FAILURES[key] = (time.monotonic(), copy.deepcopy(result))
+            return result
+        finally:
+            _STRICT_QUALIFICATION_LOCK.release()
+
+    def _remember_strict_pass(self, result, *, deadline=None, interrupted=None):
+        import copy
+        from .cli_qualification import qualification_timeout
+        engine, identity, binding = result['engine'], result['identity'], result['binding']
+        with _STRICT_OBSERVATIONS_LOCK:
+            if not result['qualified'] or not identity or self._strict_binary_identity(engine, binding['binary']) != identity:
+                return
+            qualification_timeout(45, deadline=deadline, interrupted=interrupted)
+            key = (engine, identity, tuple(sorted(binding.items())), result['scope'])
+            if len(_STRICT_QUALIFICATIONS) >= 8:
+                del _STRICT_QUALIFICATIONS[next(iter(_STRICT_QUALIFICATIONS))]
+            _STRICT_QUALIFICATIONS[key] = copy.deepcopy(result)
+            observation_key = (engine, identity)
+            if observation_key not in _STRICT_OBSERVATIONS and len(_STRICT_OBSERVATIONS) >= 8:
+                del _STRICT_OBSERVATIONS[next(iter(_STRICT_OBSERVATIONS))]
+            _STRICT_OBSERVATIONS[observation_key] = (
+                {name: result[name] for name in ('binary_sha256', 'native_sha256')}, result['version'])
+
+    def qualify_strict(self, engine_id, binary=None, store_root=None, *, tested_versions=None, purpose='work',
+                       deadline=None, interrupted=None):
+        """Local qualification with synthetic state and a loopback scripted model.
+
+        ``tested_versions`` remains a compatibility argument for historical
+        manual observations, never an admission gate. Platform and runtime root
+        remain gates. No owner credentials, config or model provider is used.
+        """
+        import copy
+        from .cli_qualification import surface_checks, qualification_timeout
+        bounds = {'deadline': deadline, 'interrupted': interrupted}
+        qualification_timeout(45, **bounds)
         declared = CLI_PROFILES[STRICT_PROFILE]['runtimes'].get(engine_id)
-        if declared is None:
+        if declared is None or purpose not in ('work', 'judgment') or (purpose == 'judgment' and engine_id != 'codex'):
             return {'engine': engine_id, 'qualified': False, 'version': None, 'checks': [], 'reason': 'unsupported engine'}
-        # The no-tool Judgment route may qualify a narrower CLI contract
-        # independently of the Work route's MCP compatibility. No caller can
-        # skip the platform, sandbox, feature or binding checks.
-        versions = declared['tested_versions'] if tested_versions is None else tuple(tested_versions)
         binary = binary or self.finder({'codex': 'codex', 'claude-code': 'claude'}[engine_id])
         if not binary:
             return {'engine': engine_id, 'qualified': False, 'version': None, 'checks': [], 'reason': 'CLI not found'}
-        # The process-level evidence is per platform (Codex: macOS Seatbelt).
+        identity = self._strict_binary_identity(engine_id, binary)
+        binding = self.strict_binding(engine_id, binary, store_root)
+        digests = self.strict_digests(engine_id, binary)
+        with _STRICT_OBSERVATIONS_LOCK:
+            # A failed explicit recheck must not leave an earlier pass usable.
+            _STRICT_FAILURES.pop((engine_id, identity, tuple(sorted(binding.items())), purpose), None)
+            for key in list(_STRICT_QUALIFICATIONS):
+                if key[:2] == (engine_id, identity):
+                    del _STRICT_QUALIFICATIONS[key]
+            _STRICT_OBSERVATIONS.pop((engine_id, identity), None)
         checks = [{'check': 'tested-platform', 'observed': sys.platform,
                    'expected': list(declared['tested_platforms']), 'passed': sys.platform in declared['tested_platforms']}]
         if not checks[0]['passed']:
-            return {'engine': engine_id, 'profile': STRICT_PROFILE, 'qualified': False, 'version': None,
-                    'checks': checks, 'reason': 'tested-platform'}
+            return {'engine': engine_id, 'qualified': False, 'version': None, 'checks': checks, 'reason': 'tested-platform'}
         runtime_root = Path(self.runtime_root).expanduser().resolve()
         under_baseline = any(runtime_root == Path(root).resolve() or Path(root).resolve() in runtime_root.parents
                              for root in BASELINE_READABLE_ROOTS)
         checks.append({'check': 'runtime-root-not-baseline-readable', 'passed': not under_baseline})
         disabled, version = None, None
-        if not under_baseline:
-            self.runtime_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-            with tempfile.TemporaryDirectory(dir=self.runtime_root, prefix='qualify-') as folder, \
-                    tempfile.TemporaryDirectory(dir=self.runtime_root, prefix='qualify-sibling-') as sibling:
-                run_dir = Path(folder)
-                try:
-                    version = self.runtime_version(engine_id, binary, run_dir)
-                    checks.append({'check': 'tested-version', 'observed': version,
-                                   'expected': list(versions),
-                                   'passed': version in versions})
-                    if engine_id == 'codex' and checks[-1]['passed']:
-                        checks.append({'check': 'turn-directory-readable',
-                                       'passed': not self._codex_sandbox_denies(binary, run_dir, run_dir)})
-                        checks.append({'check': 'sibling-turn-denied',
-                                       'passed': self._codex_sandbox_denies(binary, run_dir, Path(sibling))})
-                        for target in (Path.home(), self._login_profile(), *([store_root] if store_root else [])):
-                            target = Path(target).expanduser()
-                            if not target.is_dir():
-                                continue
-                            checks.append({'check': 'protected-directory-denied', 'target': target.name or str(target),
-                                           'passed': self._codex_sandbox_denies(binary, run_dir, target)})
-                        try:
-                            plan, remaining = self._codex_feature_plan(binary, run_dir)
-                            checks.append({'check': 'tool-features-allowlisted', 'passed': bool(plan) and not remaining,
+        stage = 'qualification-directory'
+        try:
+            if not under_baseline:
+                self.runtime_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+                with tempfile.TemporaryDirectory(dir=self.runtime_root, prefix='qualify-') as folder, \
+                        tempfile.TemporaryDirectory(dir=self.runtime_root, prefix='qualify-sibling-') as sibling:
+                    run_dir = Path(folder)
+                    # Copy only adapter seams; replace all credential/config/provider sources.
+                    local = copy.copy(self)
+                    local.codex_home = run_dir / 'synthetic-codex'
+                    local.codex_home.mkdir()
+                    local.credentials = lambda engine: ''
+                    local.cloud = None
+                    stage = 'reported-version'
+                    version = local.runtime_version(engine_id, binary, run_dir, **bounds)
+                    checks.append({'check': stage, 'observed': version, 'passed': version is not None})
+                    if version is not None:
+                        if engine_id == 'codex':
+                            stage = 'turn-directory-readable'
+                            checks.append({'check': stage, 'passed': not local._codex_sandbox_denies(
+                                binary, run_dir, run_dir, **bounds)})
+                            stage = 'sibling-turn-denied'
+                            checks.append({'check': stage, 'passed': local._codex_sandbox_denies(
+                                binary, run_dir, Path(sibling), **bounds)})
+                            for target in (Path.home(), self._login_profile(), *([store_root] if store_root else [])):
+                                target = Path(target).expanduser()
+                                if target.is_dir():
+                                    stage = 'protected-directory-denied'
+                                    checks.append({'check': stage, 'target': target.name or str(target),
+                                                   'passed': local._codex_sandbox_denies(binary, run_dir, target, **bounds)})
+                            stage = 'tool-features-allowlisted'
+                            plan, remaining = local._codex_feature_plan(binary, run_dir, **bounds)
+                            checks.append({'check': stage, 'passed': bool(plan) and not remaining,
                                            'still_enabled': remaining})
                             disabled = plan if plan and not remaining else None
-                        except ValueError as exc:
-                            checks.append({'check': 'tool-features-allowlisted', 'passed': False, 'error': str(exc)[:120]})
-                except (ExecutionError, subprocess.TimeoutExpired, OSError) as exc:
-                    checks.append({'check': 'runner', 'passed': False, 'error': type(exc).__name__})
-        binding = self.strict_binding(engine_id, binary, store_root)
-        digests = self.strict_digests(engine_id, binary)
+                        if all(check['passed'] for check in checks):
+                            stage = 'instruction-files-and-tool-surface' if engine_id == 'codex' else 'strict-tool-surface'
+                            observed = surface_checks(local, engine_id, binary, run_dir, disabled,
+                                                      include_work=purpose == 'work', **bounds)
+                            required = {'strict-work-bridge-and-tool-surface'} if purpose == 'work' else set()
+                            if engine_id == 'codex':
+                                required.update(f'instruction-files-{i}' for i in range(3))
+                            if not required <= {check.get('check') for check in observed}:
+                                checks.append({'check': stage, 'passed': False})
+                            checks.extend(observed)
+        except EngineInterrupted:
+            raise
+        except Exception as exc:  # any unobservable property refuses admission; no raw CLI output persisted
+            checks.append({'check': stage, 'passed': False, 'error': type(exc).__name__})
+        checks.append({'check': 'binding-unchanged',
+                       'passed': self.strict_binding(engine_id, binary, store_root) == binding})
         checks.append({'check': 'native-binary-identified',
                        'passed': bool(binding['native_binary']) and all(digests.values())})
+        checks.append({'check': 'binary-unchanged', 'passed': bool(identity)
+                       and self._strict_binary_identity(engine_id, binary) == identity
+                       and self.strict_digests(engine_id, binary) == digests})
         qualified = all(check['passed'] for check in checks)
         failed = [check['check'] for check in checks if not check['passed']]
-        return {'engine': engine_id, 'profile': STRICT_PROFILE, 'qualified': qualified, 'version': version,
+        result = {'engine': engine_id, 'profile': STRICT_PROFILE, 'platform': sys.platform,
+                'qualified': qualified, 'version': version, 'identity': identity, 'scope': purpose, 'checked_at': time.time(),
                 'checks': checks, 'binding': binding, **digests,
                 'disabled_features': disabled if engine_id == 'codex' else None,
                 'reason': '' if qualified else ', '.join(dict.fromkeys(failed)) or 'not checked'}
+        qualification_timeout(45, **bounds)
+        self._remember_strict_pass(result, **bounds)
+        return result
 
     @staticmethod
     def _content(engine_id, raw, answer=None):
@@ -2353,6 +2520,9 @@ class BoundedExecutionAdapter:
         binary = self.finder(binaries[engine_id])
         if not binary:
             raise ExecutionError('연결한 구독 엔진 CLI를 격리된 런타임에서 찾지 못했습니다.')
+        if getattr(tools, 'qualification_allowed', True) is not True:
+            raise ExecutionError('저장된 실행 프로필을 확인할 수 없어 실행하지 않았습니다.',
+                                 failure_class='isolation-unqualified', reason='unrecognized-profile')
         # #1130: a bridge that cannot start leaves the CLI without Still tools while
         # the turn still exits 0; refuse before launch instead of letting it look like a worker shortfall.
         problem = self.bridge_check()
@@ -2404,8 +2574,10 @@ class BoundedExecutionAdapter:
             cloud = self.cloud_profile(engine_id, tools)
             # #308 S2: a Claude Code turn outside the strict profile is a stream-json session; the
             # owner's steers reach it on stdin, so its bridge leaves them off tool results.
+            session_route = engine_id == 'claude-code' and profile != STRICT_PROFILE
+            session_identity = self._session_identity(engine_id, binary) if session_route else None
             session = launch['session'] = (self.steer_session(prompt, tools.capabilities)
-                                           if engine_id == 'claude-code' and profile != STRICT_PROFILE else None)
+                                           if session_route and self._stream_input.get(session_identity) is not False else None)
             # #678: a native-search turn's bridge lets the CLI's own search replace its search tools.
             native_search = bool(getattr(tools, 'native_search', False)) and profile == BOUNDED_PROFILE and cloud is None
             # #701: only the trusted-local route is ever given the service's browser relay.
@@ -2441,7 +2613,7 @@ class BoundedExecutionAdapter:
                          *(['--native-search'] if native_search else []),
                          *([f'--search-off-reason={search_off}'] if search_off else []),
                          *([f'--browser-relay={relay}'] if relay else []),
-                         *(['--session-steers'] if session is not None else []),
+                         *(['--session-steers'] if session_route else []),
                          # #774: the relay serves owner-state tools even when no browser is served.
                          *(['--relay-no-browser'] if relay and not getattr(tools, 'relay_browser', True) else []),
                          # #1197: the bridge answers Claude Code's permission prompts for connector tools.
@@ -2470,41 +2642,34 @@ class BoundedExecutionAdapter:
             if ai_connections and callable(getattr(tools,'connector_configuration',None)):
                 tools.connector_configuration({name:{'definition':definition,'forwarded_environment':server_env}
                                                for name,definition in definitions.items() if definition})
-            disabled = ()
-            if profile == STRICT_PROFILE:
-                # #616: never launch an unqualified CLI under the strict
-                # profile and never fall back to trusted-local; the owner
-                # requalifies after a CLI upgrade or chooses another profile.
-                # Platform, binary and paths are checked too: a data folder
-                # moved to another OS or install keeps its record but is
-                # refused here.
-                declared = CLI_PROFILES[STRICT_PROFILE]['runtimes'][engine_id]
-                qualification = getattr(tools, 'qualification', None) or {}
-                stale = self.strict_binding_mismatch(engine_id, qualification, tools.capabilities.store.root, binary)
-                disabled = qualification.get('disabled_features') or ()
-                if engine_id == 'codex' and not disabled:
-                    stale.append('disabled_features')
-                version = None
-                if not stale:
-                    stale, version = self.strict_observation(
-                        engine_id, binary, qualification, run_dir, declared['tested_versions'],
-                        check_version=sys.platform in declared['tested_platforms'])
-                if stale or version is None or version not in declared['tested_versions'] \
-                        or version != qualification.get('version'):
-                    LOG.warning('engine turn refused engine=%s profile=%s version=%s', engine_id, profile, version or '-')
-                    raise ExecutionError('엄격 격리 프로필이 현재 CLI 버전 또는 플랫폼에서 검증되지 않아 실행하지 않았습니다. '
-                                         '설정에서 다시 검증하거나 다른 실행 프로필을 선택하세요.',
-                                         failure_class='isolation-unqualified',
-                                         reason=f'stale: {", ".join(stale) or "version"}; observed version {version or "unknown"}')
-            # #607 AX-10: the CLI gets at most the Work's remaining shared
-            # budget, and the owner's Stop kills its process group mid-run.
             budget = getattr(tools.capabilities, 'budget', None)
-            timeout = MAX_TIMEOUT_SECONDS
-            if budget is not None and hasattr(budget, 'remaining'):
-                timeout = max(1, min(MAX_TIMEOUT_SECONDS, int(budget.remaining())))
             interrupted = getattr(budget, 'interrupted', None)
             if native_search:
                 interrupted = work_mode_interrupt(getattr(tools.capabilities, 'store', None), interrupted)
+            deadline = (time.monotonic() + budget.remaining()
+                        if budget is not None and hasattr(budget, 'remaining') else None)
+            disabled = ()
+            if profile == STRICT_PROFILE:
+                try:
+                    qualification = self.qualified_identity(engine_id, binary, tools.capabilities.store.root,
+                                                            deadline=deadline, interrupted=interrupted)
+                except EngineInterrupted as exc:
+                    raise interruption_error(exc.reason) from None
+                if not qualification.get('qualified'):
+                    reason = qualification.get('reason') or 'local checks unavailable'
+                    from .cli_qualification import failure_message
+                    raise ExecutionError(failure_message(qualification),
+                                         failure_class='isolation-unqualified', reason=reason)
+                # Check again immediately before constructing the launch.
+                if self._strict_binary_identity(engine_id, binary) != qualification.get('identity'):
+                    raise ExecutionError('확인 중 CLI가 바뀌어 실행하지 않았습니다.',
+                                         failure_class='isolation-unqualified', reason='binary-unchanged')
+                disabled = qualification.get('disabled_features') or ()
+            # #607 AX-10: the CLI gets at most the Work's remaining shared
+            # budget, and the owner's Stop kills its process group mid-run.
+            timeout = MAX_TIMEOUT_SECONDS
+            if budget is not None and hasattr(budget, 'remaining'):
+                timeout = max(1, min(MAX_TIMEOUT_SECONDS, int(budget.remaining())))
             started = time.monotonic()
             LOG.info('engine turn started engine=%s profile=%s', engine_id, profile)
             # #678: the facade says whether this turn may use the CLI's own web search.
@@ -2516,38 +2681,54 @@ class BoundedExecutionAdapter:
                                 tool_timeout=bridge_tool_timeout(offered, timeout), image_paths=image_paths,
                                 ai_connections=ai_connections and engine_id == 'claude-code', owner_mcp_args=owner_args,
                                 cloud=cloud)
+            if session_route and session is None:
+                argv = self._plain_claude_argv(argv, prompt)
             run_meta = {'argv': display_argv(argv, prompt, instructions), 'requested_model': model or None,
                         'requested_effort': effort or None, **(cloud.record() if cloud else {})}
             # #211: the last check before launch; a spent daily cap launches nothing.  A Work turn the
             # service already admitted (before recording it as sent) is not counted twice.
             if not getattr(tools, 'cloud_admitted', False):
                 self.admit_cloud(cloud)
+            if profile == STRICT_PROFILE and self._strict_binary_identity(engine_id, binary) != qualification.get('identity'):
+                raise ExecutionError('확인 후 CLI가 바뀌어 실행하지 않았습니다.',
+                                     failure_class='isolation-unqualified', reason='binary-unchanged')
             launch['started'] = True
-            try:
+            attempts = 0
+
+            def run_current():
+                nonlocal attempts
+                remaining = timeout if attempts == 0 else max(0.01, timeout - (time.monotonic() - started))
+                attempts += 1
                 if self.runner is subprocess.run:
-                    # #718: the facade's live-progress sink (set by the service), if any.
                     progress = getattr(tools, 'progress', None)
-                    observed=getattr(tools,'connector_observed',None)
-                    completed = bounded_run(self.runner, argv, cwd=run_dir, env=env, timeout=timeout,
-                                            interrupted=interrupted, session=session,
-                                            on_line=live_progress_reader(engine_id,progress,observed,getattr(tools,'connector_input_digest',None))
-                                            if callable(progress) or callable(observed) else None)
-                else:
-                    completed = self.runner(argv, cwd=run_dir,
-                                            env=env, **({'input': session.opening()} if session is not None
-                                                        else {'stdin': subprocess.DEVNULL}),
-                                            capture_output=True, text=True, timeout=timeout, shell=False)
+                    observed = getattr(tools, 'connector_observed', None)
+                    return bounded_run(self.runner, argv, cwd=run_dir, env=env, timeout=remaining,
+                                       interrupted=interrupted, session=session,
+                                       on_line=live_progress_reader(engine_id, progress, observed,
+                                                                  getattr(tools, 'connector_input_digest', None))
+                                       if callable(progress) or callable(observed) else None)
+                return self.runner(argv, cwd=run_dir, env=env,
+                                   **({'input': session.opening()} if session is not None else {'stdin': subprocess.DEVNULL}),
+                                   capture_output=True, text=True, timeout=remaining, shell=False)
+
+            try:
+                completed = run_current()
+                if session is not None and self._stream_input_rejected(completed, time.monotonic() - started):
+                    # Only an early explicit flag rejection, before any result/tool work,
+                    # can replay this turn. Release unacknowledged steers for S1.
+                    session.finish()
+                    session = launch['session'] = None
+                    if session_identity and self._session_identity(engine_id, binary) == session_identity:
+                        if len(self._stream_input) >= 8:
+                            del self._stream_input[next(iter(self._stream_input))]
+                        self._stream_input[session_identity] = False
+                    argv = self._plain_claude_argv(argv, prompt)
+                    run_meta['argv'] = display_argv(argv, prompt, instructions)
+                    completed = run_current()
             except EngineInterrupted as exc:
                 elapsed_ms = int((time.monotonic() - started) * 1000)
                 LOG.warning('engine turn interrupted engine=%s reason=%s', engine_id, exc.reason)
-                if exc.reason == 'stopped':
-                    raise ExecutionError(ENGINE_STOPPED, failure_class='stopped',
-                                         meta={**run_meta, 'duration_ms': elapsed_ms}) from None
-                if exc.reason == WORK_MODE_INTERRUPT:
-                    raise ExecutionError(msg('work_mode.native_search_stopped'), failure_class=WORK_MODE_INTERRUPT,
-                                         meta={**run_meta, 'duration_ms': elapsed_ms}) from None
-                raise ExecutionError('이 작업의 처리 시간 한도에 도달해 구독 엔진 실행과 그 하위 프로세스를 종료했습니다.',
-                                     failure_class='deadline_exceeded', meta={**run_meta, 'duration_ms': elapsed_ms}) from None
+                raise interruption_error(exc.reason, {**run_meta, 'duration_ms': elapsed_ms}) from None
             except subprocess.TimeoutExpired as exc:
                 LOG.warning('engine turn timed out engine=%s after=%ss', engine_id, timeout)
                 # A Work whose shared deadline, not the CLI cap, ended the run
@@ -2621,6 +2802,10 @@ class BoundedExecutionAdapter:
                                            'duration_ms': int(elapsed * 1000)})
             try:
                 content = self._content(engine_id, completed.stdout, answer)
+                if session is not None and session_identity and self._session_identity(engine_id, binary) == session_identity:
+                    if session_identity not in self._stream_input and len(self._stream_input) >= 8:
+                        del self._stream_input[next(iter(self._stream_input))]
+                    self._stream_input[session_identity] = True
             except ExecutionError as exc:
                 LOG.warning('engine turn returned no usable result engine=%s duration=%.1fs', engine_id, elapsed)
                 raise ExecutionError(str(exc), failure_class='invalid-output', exit_code=0,

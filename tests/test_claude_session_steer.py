@@ -491,5 +491,56 @@ class BridgeOnSessionRoute(unittest.TestCase):
                             'a route without a session still gets the steer with the tool result')
 
 
+class StreamInputFallback(unittest.TestCase):
+    """Real subprocess usage rejection followed by a plain turn; no provider."""
+    def setUp(self):
+        SessionProcess.setUp(self)
+        self.cli.write_text(f'#!{sys.executable}\n' + r'''
+import json, sys
+from pathlib import Path
+here = Path(__file__).parent
+with (here / 'launches.jsonl').open('a') as out:
+    out.write(json.dumps(sys.argv[1:]) + '\n')
+if '--input-format' in sys.argv:
+    sys.stderr.write('error: unknown option --replay-user-messages\n')
+    sys.exit(2)
+assert sys.argv[sys.argv.index('-p') + 1] == '브런치 하기 좋은 곳 알려줘'
+print(json.dumps({'type': 'result', 'is_error': False, 'result': 'plain answer'}))
+''')
+
+    _steer = SessionProcess._steer
+    _run = SessionProcess._run
+    _events = SessionProcess._events
+    _claimed = SessionProcess._claimed
+
+    def _launches(self):
+        return [json.loads(line) for line in (self.bin / 'launches.jsonl').read_text().splitlines()]
+
+    def test_flag_rejection_falls_back_remembers_only_identity_and_releases_steer_for_s1(self):
+        source = self._steer(REMARK, 'fallback-steer')
+        self.assertEqual(self._run().content, 'plain answer')
+        self.assertEqual(len(self._launches()), 2)
+        self.assertIn('--input-format', self._launches()[0])
+        self.assertNotIn('--input-format', self._launches()[1])
+        self.assertIsNone(self._claimed(source))
+        self.assertNotIn('accepted', self._events())
+        self.assertTrue(self.store.unanswered_steers(self.job, time.time()), 'S1 can still take the steer')
+        self.assertEqual(self._run().content, 'plain answer')
+        self.assertEqual(len(self._launches()), 3, 'same identity uses plain input directly')
+        self.cli.write_text(self.cli.read_text() + '\n# new identity\n')
+        self.assertEqual(self._run().content, 'plain answer')
+        self.assertEqual(len(self._launches()), 5, 'a new identity observes capability again')
+
+    def test_result_or_tool_record_prevents_replay_even_with_flag_error(self):
+        from types import SimpleNamespace
+        for kind in ('result', 'assistant', 'tool_use', 'tool_result', 'stream_event', 'user'):
+            done = SimpleNamespace(returncode=2, stdout=json.dumps({'type': kind}),
+                                   stderr='error: unknown option --input-format')
+            self.assertFalse(self.adapter._stream_input_rejected(done, 0.1))
+        for error, seconds in (('network unavailable', 0.1), ('unknown option --input-format', 6)):
+            done = SimpleNamespace(returncode=2, stdout='', stderr=error)
+            self.assertFalse(self.adapter._stream_input_rejected(done, seconds))
+
+
 if __name__ == '__main__':
     unittest.main()

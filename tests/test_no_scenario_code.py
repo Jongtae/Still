@@ -759,7 +759,25 @@ def skill_file_references(paths):
     for path in paths:
         if path.name == 'skills.py':
             continue
-        for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'), filename=str(path))):
+        tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+        # #346 moves the synthetic qualification fixture into runtime. It writes
+        # a canary skill, never reads or chooses a real skill. Exempt only that
+        # exact write target; reads and all other references remain forbidden.
+        synthetic_writes = set()
+        if path.name == 'cli_qualification.py':
+            for function in tree.body:
+                if isinstance(function, ast.FunctionDef) and function.name == 'populate_codex_home':
+                    for call in ast.walk(function):
+                        if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                                and call.func.attr == 'write_text'):
+                            target = call.func.value
+                            if (isinstance(target, ast.BinOp) and isinstance(target.op, ast.Div)
+                                    and isinstance(target.left, ast.Name) and isinstance(target.right, ast.Constant)
+                                    and target.right.value == 'SKILL.md'):
+                                synthetic_writes.add(id(target.right))
+        for node in ast.walk(tree):
+            if id(node) in synthetic_writes:
+                continue
             text = (node.value if isinstance(node, ast.Constant) and isinstance(node.value, str)
                     else node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute)
                     else node.name if isinstance(node, ast.alias) else None)
@@ -878,3 +896,13 @@ class CoreSelectsNoSkill(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SyntheticQualificationSkillCanary(unittest.TestCase):
+    def test_only_the_synthetic_write_is_exempt_and_a_read_is_still_caught(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'cli_qualification.py'
+            path.write_text("def populate_codex_home(home):\n    (home / 'SKILL.md').write_text('synthetic canary')\n")
+            self.assertEqual(skill_file_references([path]), [])
+            path.write_text(path.read_text() + "    return (home / 'SKILL.md').read_text()\n")
+            self.assertEqual([hit[2] for hit in skill_file_references([path])], ['SKILL.md'])

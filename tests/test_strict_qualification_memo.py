@@ -17,6 +17,8 @@ NATIVE = b'\x7fELFfake-native'
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     be._STRICT_OBSERVATIONS.clear()
+    be._STRICT_QUALIFICATIONS.clear()
+    be._STRICT_FAILURES.clear()
     launcher = tmp_path / 'codex'
     native = tmp_path / 'native'
     launcher.write_bytes(b'launcher')
@@ -36,6 +38,8 @@ def setup(tmp_path, monkeypatch):
                                           tmp_path, {VERSION}, **kwargs)
     yield SimpleNamespace(**locals())
     be._STRICT_OBSERVATIONS.clear()
+    be._STRICT_QUALIFICATIONS.clear()
+    be._STRICT_FAILURES.clear()
 
 
 def test_unchanged_and_record_comparison(setup):
@@ -188,32 +192,47 @@ def test_native_path_change_recomputes(setup, monkeypatch):
 
 
 @pytest.mark.parametrize('first', ['judgment', 'work'])
-def test_judgments_and_work_share_memo_and_keep_refusal_reasons(setup, monkeypatch, first):
+def test_judgments_and_work_share_local_qualification_and_never_cover_new_identity(setup, monkeypatch, first):
     import json
     from personal_agent.decision_routes import DecisionRoutes
+    from test_strict_isolation import FEATURES
 
     s = setup
     monkeypatch.setattr(be.sys, 'platform', 'darwin')
+    monkeypatch.setattr(be, 'BASELINE_READABLE_ROOTS', ('/not-baseline',))
     monkeypatch.setattr(s.adapter, 'finder', lambda _: str(s.launcher))
     monkeypatch.setattr(s.adapter, 'environment', lambda *args, **kwargs: {})
     monkeypatch.setattr(s.adapter, 'bridge_check', lambda: None)
+    from personal_agent import cli_qualification
+    surface = Mock(return_value=[{'check': 'strict-work-bridge-and-tool-surface', 'passed': True},
+                  *[{'check': f'instruction-files-{i}', 'passed': True} for i in range(3)]])
+    monkeypatch.setattr(cli_qualification, 'surface_checks', surface)
     root = SimpleNamespace(root=s.tmp_path)
     caps = SimpleNamespace(store=root, job_id='test', private_provenance=set())
-    record = {**s.record, 'binding': s.adapter.strict_binding('codex', str(s.launcher), s.tmp_path),
-              'disabled_features': ['shell_tool']}
+    tools = be.StrictIsolatedAgentOSMcpTools(caps, qualification={})
     routes = DecisionRoutes.__new__(DecisionRoutes)
     routes.service = SimpleNamespace(execution_adapter=s.adapter)
-    routes.store = root
+    routes.store, routes.clock = root, lambda: 0
     routes.codex_instruction_qualified = {VERSION}
-    tools = be.StrictIsolatedAgentOSMcpTools(caps, qualification=record)
+    broken = False
 
     def run(argv, **kwargs):
-        out = (f'codex-cli {VERSION}' if argv[1:] == ['--version'] else
-               json.dumps({'item': {'type': 'agent_message', 'text': 'answer'}}))
-        return SimpleNamespace(returncode=0, stdout=out, stderr='')
+        if argv[1:] == ['--version']:
+            return SimpleNamespace(returncode=0, stdout=f'codex-cli {VERSION}', stderr='')
+        if argv[1:3] == ['features', 'list']:
+            disabled = {argv[i + 1] for i, part in enumerate(argv) if part == '--disable'}
+            return SimpleNamespace(returncode=0, stdout='\n'.join(line for line in FEATURES.splitlines()
+                                   if line.split()[0] not in disabled), stderr='')
+        if argv[1] == 'sandbox':
+            return SimpleNamespace(returncode=0 if not broken and Path(argv[-1]) == kwargs['cwd'] else 1,
+                                   stdout='', stderr='Operation not permitted')
+        return SimpleNamespace(returncode=0, stdout=json.dumps({'item': {'type': 'agent_message', 'text': 'answer'}}), stderr='')
     s.runner.side_effect = run
+    record = None
 
     def judgment():
+        nonlocal record
+        record = routes._codex_strict_profile('test', str(s.launcher))
         assert routes._codex_strict_stale({'strict_profile': record}) == []
 
     def work():
@@ -222,29 +241,22 @@ def test_judgments_and_work_share_memo_and_keep_refusal_reasons(setup, monkeypat
     checks = {'judgment': judgment, 'work': work}
     checks[first]()
     checks['work' if first == 'judgment' else 'judgment']()
-    assert s.digest.call_count == 2
-    assert sum(call.args[0][1:] == ['--version'] for call in s.runner.call_args_list) == 1
+    expected = 1 if first == 'work' else 2  # a no-tool judgment pass never qualifies the Work bridge
+    assert surface.call_count == expected
+    assert sum(call.args[0][1:] == ['--version'] for call in s.runner.call_args_list) == expected
 
-    # A changed binding still refuses before any memo lookup or version run.
     record['binding']['home'] = '/other-home'
     assert routes._codex_strict_stale({'strict_profile': record}) == ['home']
-    with pytest.raises(be.ExecutionError) as caught:
-        work()
-    assert caught.value.failure_class == 'isolation-unqualified'
-    assert caught.value.reason == 'stale: home; observed version unknown'
-    record['binding'] = s.adapter.strict_binding('codex', str(s.launcher), s.tmp_path)
+    # Work independently uses the real local pass, never authority from the facade's stored record.
     tools.qualification = record
-
+    work()
+    assert surface.call_count == expected
     s.native.write_bytes(NATIVE + b'changed')
-    # As in the original guard, binding is checked first. Keep it current to
-    # isolate the stored digest comparison and its exact refusal reason.
-    record['binding'] = s.adapter.strict_binding('codex', str(s.launcher), s.tmp_path)
-    tools.qualification = record
-    assert routes._codex_strict_stale({'strict_profile': record}) == ['native_sha256']
+    broken = True
     with pytest.raises(be.ExecutionError) as caught:
         work()
     assert caught.value.failure_class == 'isolation-unqualified'
-    assert caught.value.reason == 'stale: native_sha256; observed version unknown'
+    assert 'turn-directory-readable' in caught.value.reason
 
 
 def test_missing_file_cannot_use_earlier_success(setup):
@@ -282,3 +294,242 @@ def test_accepted_same_identity_replacement_risk_until_restart(setup):
     assert s.digest.call_count == 2
     be._STRICT_OBSERVATIONS.clear()  # a new process has an empty memo
     assert s.observe() == (['native_sha256'], None)
+
+
+@pytest.mark.parametrize('purpose', ['work', 'judgment'])
+def test_failed_qualification_backoff_only_refuses_and_expires(setup, monkeypatch, purpose):
+    s = setup
+    now = [100.0]
+    monkeypatch.setattr(be.time, 'monotonic', lambda: now[0])
+    failure = {'qualified': False, 'reason': 'strict-work-bridge-and-tool-surface',
+               'checks': [{'check': 'strict-work-bridge-and-tool-surface', 'passed': False}]}
+    probe = Mock(return_value=failure)
+    monkeypatch.setattr(s.adapter, 'qualify_strict', probe)
+    def qualify():
+        return s.adapter.qualified_identity('codex', str(s.launcher), s.tmp_path, purpose=purpose)
+    assert qualify() == failure
+    refusal = qualify()
+    assert refusal == failure and not refusal['qualified']
+    refusal['checks'].clear()  # callers cannot alter the stored refusal/reason
+    now[0] += be._STRICT_FAILURE_BACKOFF_SECONDS - 1
+    assert qualify() == failure
+    assert probe.call_count == 1
+    assert s.adapter.strict_cached_qualification('codex', str(s.launcher), s.tmp_path, purpose=purpose) is None
+    now[0] += 1
+    assert qualify() == failure
+    assert probe.call_count == 2
+
+
+def test_failed_qualification_does_not_cover_changed_identity_binding_or_scope(setup, monkeypatch):
+    s = setup
+    probe = Mock(return_value={'qualified': False, 'reason': 'reported-version', 'checks': []})
+    monkeypatch.setattr(s.adapter, 'qualify_strict', probe)
+    def qualify(store=None, purpose='work'):
+        return s.adapter.qualified_identity('codex', str(s.launcher), store or s.tmp_path, purpose=purpose)
+    assert not qualify()['qualified']
+    s.native.write_bytes(NATIVE + b'changed')
+    assert not qualify()['qualified']
+    assert probe.call_count == 2
+    assert not qualify(s.tmp_path / 'other-store')['qualified']
+    assert not qualify(purpose='judgment')['qualified']
+    assert probe.call_count == 4
+    for _ in range(2):
+        assert not qualify()['qualified']
+        assert not qualify(purpose='judgment')['qualified']
+    assert probe.call_count == 4
+
+
+def test_failed_qualification_backoff_is_bounded(setup, monkeypatch):
+    s = setup
+    probe = Mock(return_value={'qualified': False, 'reason': 'reported-version', 'checks': []})
+    monkeypatch.setattr(s.adapter, 'qualify_strict', probe)
+    for index in range(12):
+        result = s.adapter.qualified_identity('codex', str(s.launcher), s.tmp_path / str(index))
+        assert not result['qualified']
+    assert len(be._STRICT_FAILURES) == 8
+    assert probe.call_count == 12
+
+
+@pytest.fixture
+def automatic(setup, monkeypatch):
+    """The actual admission/cache path, with local CLI responses and a fake clock."""
+    from personal_agent import cli_qualification
+    from test_strict_isolation import FEATURES
+    s = setup
+    monkeypatch.setattr(be.sys, 'platform', 'darwin')
+    monkeypatch.setattr(be, 'BASELINE_READABLE_ROOTS', ('/not-baseline',))
+    monkeypatch.setattr(s.adapter, 'finder', lambda _: str(s.launcher))
+    monkeypatch.setattr(s.adapter, 'environment', lambda *args, **kwargs: {})
+    monkeypatch.setattr(s.adapter, 'bridge_check', lambda: None)
+    surface = Mock(return_value=[{'check': 'strict-work-bridge-and-tool-surface', 'passed': True},
+                    *[{'check': f'instruction-files-{i}', 'passed': True} for i in range(3)]])
+    monkeypatch.setattr(cli_qualification, 'surface_checks', surface)
+    now, stopped = [100.0], [False]
+    monkeypatch.setattr(be.time, 'monotonic', lambda: now[0])
+    budget = SimpleNamespace(remaining=lambda: 110.0 - now[0],
+                             interrupted=lambda: 'stopped' if stopped[0] else None)
+    caps = SimpleNamespace(store=SimpleNamespace(root=s.tmp_path), job_id='test',
+                           private_provenance=set(), budget=budget)
+    tools = be.StrictIsolatedAgentOSMcpTools(caps, qualification={})
+
+    def run(argv, **kwargs):
+        if argv[1:] == ['--version']:
+            return SimpleNamespace(returncode=0, stdout=f'codex-cli {VERSION}', stderr='')
+        if argv[1:3] == ['features', 'list']:
+            disabled = {argv[i + 1] for i, part in enumerate(argv) if part == '--disable'}
+            return SimpleNamespace(returncode=0, stdout='\n'.join(line for line in FEATURES.splitlines()
+                                   if line.split()[0] not in disabled), stderr='')
+        if argv[1] == 'sandbox':
+            return SimpleNamespace(returncode=0 if Path(argv[-1]) == kwargs['cwd'] else 1,
+                                   stdout='', stderr='Operation not permitted')
+        return SimpleNamespace(returncode=0, stdout='{"item":{"type":"agent_message","text":"answer"}}', stderr='')
+    s.runner.side_effect = run
+    return SimpleNamespace(s=s, tools=tools, now=now, stopped=stopped, surface=surface, run=run,
+                           work=lambda: s.adapter.execute('codex', 'hello', tools))
+
+
+@pytest.mark.parametrize('probe', ['version', 'sandbox', 'features-first', 'features-second', 'surface'])
+def test_stop_during_qualification_is_not_cached_or_backed_off_and_next_work_retries(automatic, probe):
+    a = automatic
+    count = 0
+
+    def run(argv, **kwargs):
+        nonlocal count
+        done = a.run(argv, **kwargs)
+        if argv[1:3] == ['features', 'list']:
+            count += 1
+        if ((probe == 'version' and argv[1:] == ['--version'])
+                or (probe == 'sandbox' and argv[1] == 'sandbox')
+                or (probe == 'features-first' and count == 1)
+                or (probe == 'features-second' and count == 2)):
+            a.stopped[0] = True
+        return done
+
+    a.s.runner.side_effect = run
+    if probe == 'surface':
+        def surface(*args, **kwargs):
+            a.stopped[0] = True
+            return a.surface.return_value
+        a.surface.side_effect = surface
+    with pytest.raises(be.ExecutionError) as caught:
+        a.work()
+    assert caught.value.failure_class == 'stopped'
+    assert caught.value.meta == be.NOT_LAUNCHED
+    assert not any(call.args[0][1] == 'exec' for call in a.s.runner.call_args_list)
+    if probe == 'version':
+        assert a.s.runner.call_count == 1
+    if probe != 'surface':
+        a.surface.assert_not_called()
+    assert not be._STRICT_QUALIFICATIONS and not be._STRICT_FAILURES and not be._STRICT_OBSERVATIONS
+    a.stopped[0] = False
+    a.s.runner.side_effect = a.run
+    a.surface.side_effect = None
+    before = a.s.runner.call_count
+    assert a.work().content == 'answer'
+    assert a.s.runner.call_args_list[before].args[0][1:] == ['--version']
+    assert be._STRICT_QUALIFICATIONS and not be._STRICT_FAILURES
+
+
+@pytest.mark.parametrize('remaining', [0, -1])
+def test_exhausted_work_deadline_starts_no_probe(automatic, remaining):
+    a = automatic
+    a.now[0] = 110.0 - remaining
+    with pytest.raises(be.ExecutionError) as caught:
+        a.work()
+    assert caught.value.failure_class == 'deadline_exceeded'
+    a.s.runner.assert_not_called()
+    a.surface.assert_not_called()
+    assert not be._STRICT_QUALIFICATIONS and not be._STRICT_FAILURES
+
+
+def test_work_budget_caps_each_probe_and_spent_qualification_reduces_turn_budget(automatic):
+    a = automatic
+    def run(argv, **kwargs):
+        # Each preceding probe has consumed the shared budget.
+        assert 0 < kwargs['timeout'] <= 110.0 - a.now[0]
+        a.now[0] += 0.25
+        return a.run(argv, **kwargs)
+    a.s.runner.side_effect = run
+    assert a.work().content == 'answer'
+    caps = [call.kwargs['timeout'] for call in a.s.runner.call_args_list]
+    assert caps[0] == 10.0 and caps[-1] < caps[0]
+    assert all(later < earlier for earlier, later in zip(caps, caps[1:]))
+    assert a.surface.call_args.kwargs['deadline'] == 110.0
+    assert a.surface.call_args.kwargs['interrupted'] is a.tools.capabilities.budget.interrupted
+
+
+@pytest.mark.parametrize('raises_timeout', [True, False])
+def test_deadline_spent_during_probe_does_not_become_a_failed_identity(automatic, raises_timeout):
+    import subprocess
+    a = automatic
+    def run(argv, **kwargs):
+        a.now[0] = 110.0
+        if raises_timeout:
+            raise subprocess.TimeoutExpired(argv, kwargs['timeout'])
+        return a.run(argv, **kwargs)
+    a.s.runner.side_effect = run
+    with pytest.raises(be.ExecutionError) as caught:
+        a.work()
+    assert caught.value.failure_class == 'deadline_exceeded'
+    assert a.s.runner.call_count == 1
+    assert not be._STRICT_FAILURES and not be._STRICT_QUALIFICATIONS and not be._STRICT_OBSERVATIONS
+    a.now[0] = 100.0
+    a.s.runner.side_effect = a.run
+    assert a.work().content == 'answer'
+
+
+@pytest.mark.parametrize('reason', ['stopped', 'deadline_exceeded'])
+def test_qualification_lock_wait_can_end_without_acquiring_it(setup, monkeypatch, reason):
+    import threading
+    import time
+    s = setup
+    stop, waiting = threading.Event(), threading.Event()
+    lock = be._STRICT_QUALIFICATION_LOCK
+    class ObservedLock:
+        def acquire(self, *, timeout):
+            waiting.set()  # Signal the real lock wait, rather than the initial Stop check.
+            return lock.acquire(timeout=timeout)
+        def release(self):
+            lock.release()
+    monkeypatch.setattr(be, '_STRICT_QUALIFICATION_LOCK', ObservedLock())
+    probe = Mock()
+    monkeypatch.setattr(s.adapter, 'qualify_strict', probe)
+    # A different Work holds the real shared lock throughout the assertion.
+    with ThreadPoolExecutor(max_workers=1) as pool, lock:
+        deadline = time.monotonic() + 0.1 if reason == 'deadline_exceeded' else None
+        future = pool.submit(s.adapter.qualified_identity, 'codex', str(s.launcher), s.tmp_path,
+                             interrupted=lambda: 'stopped' if stop.is_set() else None, deadline=deadline)
+        assert waiting.wait(1)
+        if reason == 'stopped':
+            stop.set()
+        with pytest.raises(be.EngineInterrupted) as caught:
+            future.result(timeout=1)
+        assert caught.value.reason == reason
+        assert lock.locked()
+    probe.assert_not_called()
+    assert not be._STRICT_FAILURES and not be._STRICT_QUALIFICATIONS
+
+
+def test_stopped_work_cannot_use_an_existing_pass(automatic):
+    a = automatic
+    assert a.work().content == 'answer'
+    a.s.runner.reset_mock()
+    a.stopped[0] = True
+    with pytest.raises(be.ExecutionError) as caught:
+        a.work()
+    assert caught.value.failure_class == 'stopped'
+    a.s.runner.assert_not_called()
+
+
+def test_probe_own_cap_is_still_a_failure_with_backoff(automatic):
+    import subprocess
+    a = automatic
+    def timed_out(argv, **kwargs):
+        raise subprocess.TimeoutExpired(argv, kwargs['timeout'])
+    a.s.runner.side_effect = timed_out
+    for _ in range(2):
+        with pytest.raises(be.ExecutionError) as caught:
+            a.work()
+        assert caught.value.failure_class == 'isolation-unqualified'
+    assert a.s.runner.call_count == 1
+    assert be._STRICT_FAILURES and not be._STRICT_QUALIFICATIONS
