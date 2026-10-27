@@ -631,6 +631,13 @@ def audit_record(context, kind, outcome, data, confidence, at, failure='', diagn
               'model_policy': confidence.model_policy, 'requested_model': confidence.model or ''}
     if confidence.sent is True and isinstance(context.context_messages, int):
         record['context_messages'] = context.context_messages
+    if confidence.sent is True:
+        from .memory_service import conversation_block_refs
+        refs=[]
+        for value in context.facts.values():
+            for ref in conversation_block_refs(value):
+                if ref not in refs:refs.append(ref)
+        if refs:record['earlier_exchanges']=refs
     # #211: the cloud provider destination and profile revision of a CLI judgment, never a credential.
     if getattr(confidence, 'destination', ''):
         record['destination'] = confidence.destination

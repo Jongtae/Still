@@ -2781,7 +2781,7 @@ class AgentService:
                 LOG.warning('working notes unavailable for the brief (%s)',type(exc).__name__)
                 block=''
             if block:text += ('\n' if text else '') + block
-            # #221: the owner's own earlier words that share words with the request, in the same
+            # #205: source-linked earlier exchanges matching the request, in the same
             # section, so the worker, the plan and the outcome judgment read one selection.
             # Codex review on #227: a preparation's Work sees only its origin (``preparation_history``), so no recall.
             said=self.owner_words_block(query) if recall else ''
@@ -2800,35 +2800,15 @@ class AgentService:
                 if isinstance(row.get('content'),str) else row for row in rows]
 
     def owner_words_block(self, request):
-        """The ``owner_said`` block for ``request`` ('' when none): dated lines, bounded in bytes (#221)."""
-        from .memory_service import OWNER_WORDS_BYTES, OWNER_WORDS_HEADING, OWNER_WORDS_LINE_CHARS
+        """The earlier-exchange block for ``request`` ('' when none), within the existing profile budget."""
         if not request:return ''
         try:
             rows=self.store.owner_words(request)
         except Exception as exc:  # a recall that fails leaves the brief as it was
             LOG.warning('owner words unavailable for the brief (%s)',type(exc).__name__)
             return ''
-        from zoneinfo import ZoneInfo
-        from .current_context import resolve_local_timezone
-        zone=ZoneInfo(resolve_local_timezone(self.store))
-        lines,used=[],len(OWNER_WORDS_HEADING.encode())
-        for row in rows:
-            # Codex review on #227: a message holding a secret that was since replaced or removed is never
-            # recalled - the current redaction no longer knows that value.  An unreadable ledger (#259)
-            # withholds the whole block.
-            try:
-                if self.store.holds_retired_secret(row['content']):continue
-            except Exception:
-                LOG.warning('retired-secret ledger unreadable; no earlier words recalled')
-                return ''
-            # Codex review on #227: the day the owner sent it, in the owner's zone.
-            day=datetime.fromtimestamp(float(row['created']),zone).date().isoformat()
-            # Codex review on #227: redacted before it is clipped, so a cut can never keep part of a stored secret.
-            words=' '.join(str(self._redact_known_secrets(row['content'] or '')).split())
-            line=f"[said {day}] {words[:OWNER_WORDS_LINE_CHARS]}"
-            if used+len(line.encode())+1>OWNER_WORDS_BYTES:break
-            used+=len(line.encode())+1;lines.append(line)
-        return '\n'.join([OWNER_WORDS_HEADING,*lines]) if lines else ''
+        from .memory_service import conversation_block
+        return conversation_block(rows)
 
     def working_notes_notice_text(self, notification):
         """The notice of one revision while it is still the current document, or None (then it is not sent).
@@ -3310,7 +3290,12 @@ class AgentService:
             rows=[{'name':str(row.get('tool') or '')[:80],'status':str(row.get('status') or '')[:20]}
                   for row in self.store.task_events(job_id)
                   if row.get('tool') not in ('model','subscription_engine') and row.get('status') in ('succeeded','failed','denied','withheld')][:30]
-            self.record_turn_provenance(job_id,agentos_tool_calls=rows)
+            recalled=[]
+            for event in self.store.task_events(job_id):
+                trace=event.get('trace') or {}
+                if event.get('status')=='succeeded' and (trace.get('host_action') or event.get('tool'))=='search_conversation':
+                    recalled.extend((trace.get('evidence') or {}).get('exchange_refs') or [])
+            self.record_turn_provenance(job_id,agentos_tool_calls=rows,conversation_tool_reads=list({tuple(ref['message_ids']):ref for ref in recalled}.values())[:3])
         except Exception:
             LOG.warning('turn provenance could not be recorded job=%s',job_id)
 
@@ -3391,6 +3376,11 @@ class AgentService:
             # #794: the Work keeps its own judgments for as long as it exists.
             if record.get('work_id'):
                 self.store.add_work_decision(record['work_id'],record)
+                if record.get('earlier_exchanges'):
+                    current=self.store.turn_provenance(record['work_id']) or {}
+                    readers=list(current.get('conversation_readers') or [])
+                    readers.append({'reader':'judgment','purpose':record.get('purpose'),'exchanges':record['earlier_exchanges']})
+                    self.record_turn_provenance(record['work_id'],conversation_readers=readers[-20:])
                 if record.get('purpose')==ORCHESTRATION_PURPOSE and isinstance(record.get('context_messages'),int):
                     self.record_turn_provenance(record['work_id'],plan_context_messages=record['context_messages'])
 
@@ -5929,6 +5919,8 @@ class AgentService:
         unknown=outcome=='unknown' or self._work_has_unknown_effect(job_id)
         unobserved=unmediated and self.cli_host_actions(engine_meta)!=()
         effect=unknown or unobserved or bool(self.connector_effect_progress(job_id)[0])
+        from .memory_service import conversation_block, recalled_tool_exchanges
+        recalled=conversation_block(recalled_tool_exchanges(self.store,job_id),budget=9000)
         observed=[]
         # #729: the factual summary the next plan call reads (names and codes only).
         called,failed_codes,incomplete,sourceless=[],[],[],0
@@ -5969,6 +5961,7 @@ class AgentService:
         read_state=read_state_text([(tool,data.get('evidence')) for tool,status,data in tool_rows if status=='succeeded'])
         read_state=('- '+str(orchestration._redact(read_state,private=False) or '')) if read_state else ''
         observations=observations_with_pages(observed,pages,orchestration._redact,last=read_state)
+        if recalled:observations=recalled+'\n'+observations[:max(0,16000-len(recalled)-1)]
         summary='; '.join(part for part in (
             f"tools called: {', '.join(called) or 'none'}",
             f"failed: {', '.join(failed_codes)}" if failed_codes else '',
@@ -11841,7 +11834,8 @@ class AgentService:
                                            'steer_continuation':True if run.steer_note else None,'route':'subscription',
                                            'engine':run.subscription['id'],
                                            'model':(run.attempt.model if run.attempt is not None and run.attempt.model else None) or self.main_ai.subscription_model(run.subscription['id']) or None,
-                                           'own_web_search':bool(native_search)})
+                                           'own_web_search':bool(native_search),
+                                           'earlier_exchanges':information_use.section_references(engine_context.get('profile') if adapter_context is not None else '')['earlier_exchanges']})
         run.record('subscription_engine','running',json.dumps({'engine':run.subscription['id'],'mode':mode,
             'context_messages':len(engine_context['conversation']),'context_bytes':len(engine_prompt.encode()),
             'context_mode':engine_context.get('mode','shared-context')}))
@@ -12109,7 +12103,8 @@ class AgentService:
                                            # #308 S1: a worker turn made for the owner's steers.
                                            'steer_continuation':True if run.steer_note else None,'route':'direct-api',
                                            'provider':runtime_config.get('provider'),'model':runtime_config.get('model'),
-                                           'own_web_search':False})
+                                           'own_web_search':False,
+                                           'earlier_exchanges':information_use.section_references(api_context.get('profile'))['earlier_exchanges']})
         try:
             # #658/#627: the direct route carries the owner profile and
             # current-context sections in its system text, the same

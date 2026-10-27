@@ -45,6 +45,7 @@ HOST_TOOLS={
     'save_result': HostTool(True, False, False, 'files', False, 'content'),
     'list_memory': HostTool(False, True, True, 'memory', False, None),
     'search_memory': HostTool(False, True, True, 'memory', False, None),
+    'search_conversation': HostTool(False, True, True, 'conversation', False, None),
     'save_memory': HostTool(True, False, True, 'memory', False, None),
     'list_agents': HostTool(False, True, False, None, False, None),
     'delegate_agent': HostTool(True, False, False, None, False, None),

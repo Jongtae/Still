@@ -112,7 +112,7 @@ class OneActionSource(_Store):
                                  # #1380: this slice's code runs only read (GET/HEAD).
                                  'code_run': True,
                                  'weather': True, 'web_search': True, 'calendar_query': True, 'list_memory': True,
-                                 'search_memory': True,
+                                 'search_memory': True, 'search_conversation': True,
                                  'calendar_draft_create': False, 'calendar_draft_update': False,
                                  'calendar_draft_cancel': False, 'save_memory': False,
                                  # #794 phase 3: the owner's exact forget/delete/undo.
@@ -372,7 +372,7 @@ class SettingsProjection(_Store):
                                              # #953: the sign-in request, served the same way.
                                              'browser_sign_in',
                                              # #774: relayed to the service on this route.
-                                             'calendar_query', 'calendar_draft_create', 'calendar_draft_update', 'calendar_draft_cancel', 'list_memory', 'search_memory', 'save_memory', 'schedule_preparation',
+                                             'calendar_query', 'calendar_draft_create', 'calendar_draft_update', 'calendar_draft_cancel', 'list_memory', 'search_memory', 'search_conversation', 'save_memory', 'schedule_preparation',
                                              'ask_location',
                                              # #794 phase 3: relayed the same way.
                                              'forget_record',

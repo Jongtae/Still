@@ -219,9 +219,10 @@ class ConnectionPreferences(Harness):
         self.script([plan('codex', 'Read it.')], goals=[True])
         ident = self.store.enqueue('Read the Unseen record.', 'early-audit')
         self.assertIsNotNone(self.service.early_work_plan(self.store.job(ident), 'Read the Unseen record.'))
-        self.assertIn('owner_said', self.asked_plans[-1][0].facts['owner_profile'])
+        self.assertIn('earlier exchanges', self.asked_plans[-1][0].facts['owner_profile'])
         refs = self.store.turn_provenance(ident)['owner_information']
-        self.assertIn('owner_said (1 earlier owner message)', json.dumps(refs))
+        self.assertEqual(len(refs['earlier_exchanges']),1)
+        self.assertEqual(refs['earlier_exchanges'][0]['work_id'],old)
         self.assertEqual(refs.get('prepared'), [], 'the plan context carries no prepared answer itself')
 
     def test_a_work_parked_after_its_early_plan_shows_the_conversation_it_read(self):

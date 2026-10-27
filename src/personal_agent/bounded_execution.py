@@ -230,7 +230,7 @@ CLI_PROFILES = {
         'unavailable': {action: _ISOLATED for action in (
             'save_note', 'weather', 'web_search', 'public_page_read',
             'find_files', 'read_file', 'list_roots', 'save_result', 'calendar_query', 'calendar_draft_create',
-            'calendar_draft_update', 'calendar_draft_cancel', 'save_memory', 'list_memory', 'search_memory', 'forget_record',
+            'calendar_draft_update', 'calendar_draft_cancel', 'save_memory', 'list_memory', 'search_memory', 'search_conversation', 'forget_record',
             'list_agents', 'delegate_agent', 'propose_current_state', 'schedule_preparation', 'ask_location',
             'settings_read', 'settings_change', 'capability_search', 'information_use', 'drive_search', 'drive_read', 'mail_search', 'mail_read', 'api_request', 'code_run',
             *_BROWSER_ACTIONS, *_SKILL_ACTIONS)},
@@ -256,7 +256,7 @@ CLI_PROFILES = {
             'drive_search': _DRIVE, 'drive_read': _DRIVE,
             'mail_search': _MAIL, 'mail_read': _MAIL,
             'api_request': _API, 'code_run': _API,
-            'save_memory': _MEMORY, 'list_memory': _MEMORY, 'search_memory': _MEMORY, 'forget_record': _MEMORY,
+            'save_memory': _MEMORY, 'list_memory': _MEMORY, 'search_memory': _MEMORY, 'search_conversation': _MEMORY, 'forget_record': _MEMORY,
             'list_agents': _SPECIALISTS, 'delegate_agent': _SPECIALISTS,
             **{action: _BROWSER for action in _BROWSER_ACTIONS},
             'schedule_preparation': _PREPARATIONS,

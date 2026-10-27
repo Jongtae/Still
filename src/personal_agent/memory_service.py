@@ -73,11 +73,61 @@ PROFILE_SNAPSHOT_BYTES = 12000
 #: omission line, the working-notes block and (#221) the owner's earlier words -
 #: so a reader's own bound (``PROFILE_SECTION_CHARS``) never cuts what the worker was given.
 PROFILE_SECTION_EXTRA_CHARS = 5500
-#: #221: the owner's earlier words block: at most this many UTF-8 bytes, lines of at most this many characters.
+#: #205: the existing recall block budget in UTF-8 bytes; each turn's excerpt has its own character cap.
 OWNER_WORDS_BYTES = 3000
-OWNER_WORDS_LINE_CHARS = 300
-OWNER_WORDS_HEADING = ("owner_said (the owner's own earlier messages that share words with this request, each with the "
-                       "day it was said; what the owner said then, not necessarily true now):")
+OWNER_WORDS_LINE_CHARS = 180
+OWNER_WORDS_HEADING = ("earlier exchanges (may or may not be relevant; model-stated assistant lines are not facts "
+                       "about the owner or world, nor commitments; source conversation history):")
+
+
+def conversation_block(exchanges, budget=OWNER_WORDS_BYTES):
+    """Same bounded rendering for profile supply and tool observations; whole exchanges only."""
+    import json
+    lines=[OWNER_WORDS_HEADING]
+    used=len(lines[0].encode())
+    for exchange in exchanges[:3]:
+        line='[exchange] '+json.dumps(exchange,ensure_ascii=False,separators=(',',':'))
+        if used+len(line.encode())+1>budget:break
+        lines.append(line);used+=len(line.encode())+1
+    return '\n'.join(lines) if len(lines)>1 else ''
+
+
+def conversation_refs(exchanges):
+    """Content-free references to exactly the exchanges/turns supplied."""
+    return [{'work_id':row['work_id'],'matched_id':row['matched_id'],
+             'message_ids':[turn['id'] for turn in row['turns']]} for row in exchanges[:3]]
+
+
+def conversation_block_refs(text):
+    import json
+    rows=[]
+    for line in str(text or '').splitlines():
+        if not line.startswith('[exchange] '):continue
+        try:
+            row=json.loads(line[len('[exchange] '):])
+            rows.extend(conversation_refs([row]))
+        except (ValueError,KeyError,TypeError):continue
+    return rows[:6]
+
+
+def recalled_tool_exchanges(store, work_id):
+    """Reopen only tool-observed ids; new exclusions/redaction still apply (#826)."""
+    refs=[]
+    for event in store.task_events(work_id):
+        trace=event.get('trace') or {}
+        if event.get('status')=='succeeded' and (trace.get('host_action') or event.get('tool'))=='search_conversation':
+            refs.extend((trace.get('evidence') or {}).get('exchange_refs') or [])
+    unique={}
+    for ref in refs:
+        unique.setdefault(tuple(ref['message_ids']),ref)
+    rows=[]
+    for ref in list(unique.values())[:3]:
+        found=store.search_conversation('',message_ids=[ref['matched_id']],limit=1)
+        allowed=set(ref['message_ids'])
+        rows.extend({**row,'turns':[turn for turn in row['turns'] if turn['id'] in allowed]} for row in found)
+    return rows
+
+
 PROFILE_SECTION_CHARS = PROFILE_SNAPSHOT_CHARS + PROFILE_SECTION_EXTRA_CHARS
 PROFILE_LINE_CHARS = 200
 #: Hard cap on rows a snapshot will ever read, whatever the char budget.
