@@ -46,6 +46,8 @@ MEMORY_PREFIX, CLAIM_PREFIX, OBSERVATION_PREFIX = 'memory:', 'state:', 'obs:'
 MESSAGE_PREFIX = 'message:'
 #: At most this many transcript rows under one receipt.
 MESSAGE_REFS = 20
+#: A Work in one of these states no longer runs on its own; a transcript row of any other Work is refused.
+FINISHED_WORK = ('succeeded', 'failed', 'partial', 'cancelled', 'interrupted', 'unknown', 'blocked')
 #: #1486: ``procedure:<id>``, one saved version of a secret set's function library (``procedures``).
 KINDS = {MEMORY_PREFIX: 'memory', CLAIM_PREFIX: 'claim', OBSERVATION_PREFIX: 'observation', 'trust:': 'trust',
          'procedure:': 'procedure', MESSAGE_PREFIX: 'message'}
@@ -85,7 +87,7 @@ def _refuse(code):
         'stale': '그 항목은 이미 바뀌었거나 없어요. 지금 값을 다시 확인해 주세요.',
         'no_receipt': '되돌릴 기록을 찾지 못했어요.',
         'expired': '되돌릴 수 있는 기간(7일)이 지났어요.',
-        'running': '아직 처리 중인 요청의 메시지는 잊거나 지울 수 없어요. 끝난 뒤에 다시 요청해 주세요.',
+        'running': '아직 끝나지 않은 요청의 메시지는 잊거나 지울 수 없어요. 끝난 뒤에 다시 요청해 주세요.',
         'later_value': '그 뒤에 새로 저장된 값이 있어 되돌리지 않았어요. 지금 값은 그대로예요.',
         'settled': '이미 완전히 지워져 되돌릴 수 없어요.',
         'authority_confirmation': '연결 권한 복원은 설정 변경 초안을 확인해야 해요. AI가 바로 복원할 수는 없어요.',
@@ -301,7 +303,8 @@ class OwnerForget:
             if row is None or not (row['content'] or '') or db.execute(
                     'SELECT 1 FROM forgotten_messages WHERE message_id=?', (message_id,)).fetchone():
                 raise _refuse('stale')
-            if row['status'] in ('queued', 'running'):
+            # #367 review P1: only a finished Work's turn; a queued, running or parked one could still run.
+            if row['status'] is not None and row['status'] not in FINISHED_WORK:
                 raise _refuse('running')
             db.execute('INSERT INTO forgotten_messages(message_id,receipt_id,created) VALUES (?,?,?)',
                        (message_id, receipt_id, now))

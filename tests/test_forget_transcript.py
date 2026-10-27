@@ -182,5 +182,41 @@ class ForgetTranscript(unittest.TestCase):
         self.assertIsNone(service.canonical_retry_source(self.store.job(retry)))
 
 
+    def test_a_forgotten_exchange_is_not_sent_to_its_pending_upkeep(self):
+        """#367 review P1: the upkeep of a Work whose turn the owner forgot settles without any model call."""
+        from personal_agent import owner_model as om
+        job, ids = self.exchange('내 비밀 취미는 뜨개질이야', '뜨개질 기억할게요')
+        self.forget.forget(MEMORY_OWNER, self.refs(ids[1:]))
+        service = AgentService(self.store)
+        with mock.patch.object(service.owner_model, 'run') as run, \
+                mock.patch.object(service.owner_model, 'run_review') as review, \
+                mock.patch.object(service.owner_model, 'finish') as finish:
+            for kind in (om.KIND_UPKEEP, om.KIND_SELF_REVIEW):
+                service._owner_model_run({'job_id': job, 'expired': False, 'kind': kind}, 1000.0)
+        run.assert_not_called()
+        review.assert_not_called()
+        self.assertEqual([call.args[4] for call in finish.call_args_list], [{'reason': 'forgotten'}] * 2)
+
+    def test_an_unfinished_work_is_refused_and_a_resumed_forgotten_request_never_runs(self):
+        """#367 review P1: a parked Work could resume; forget refuses it, and admission cancels a forgotten request."""
+        parked, (asked, _reply) = self.exchange('연결되면 메일 정리해줘', '연결을 기다려요', status='awaiting_connection')
+        with self.assertRaises(ForgetError) as refused:
+            self.forget.forget(MEMORY_OWNER, f'message:{asked}')
+        self.assertEqual(refused.exception.code, 'running')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='failed' WHERE id=?", (parked,))
+        self.forget.forget(MEMORY_OWNER, f'message:{asked}')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='queued' WHERE id=?", (parked,))   # a resume puts it back in the queue
+            before = db.execute('SELECT count(*) FROM messages WHERE job_id=?', (parked,)).fetchone()[0]
+        service = AgentService(self.store)
+        self.assertIs(service._claim_queued_work(), True)
+        settled = self.store.job(parked)
+        self.assertEqual((settled['status'], settled['error']), ('cancelled', 'forgotten'))
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM messages WHERE job_id=?', (parked,)).fetchone()[0], before,
+                             'no fresh transcript row of the forgotten request')
+
+
 if __name__ == '__main__':
     unittest.main()

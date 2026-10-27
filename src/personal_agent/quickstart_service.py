@@ -1832,6 +1832,10 @@ class AgentService:
             if not job or job.get('status') not in (om.REVIEWABLE_STATUSES if review else ('succeeded','partial')):
                 upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'work-not-finished'},now,kind=kind)
                 return
+            if self.store.work_turn_forgotten(work_id):
+                # #367 review P1: what the owner forgot of this Work is not sent to the upkeep; it settles unsent.
+                upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'forgotten'},now,kind=kind)
+                return
             # Every fact is redacted by the judgment redaction scoped to the source Work:
             # stored secrets and credential shapes always, and its saved private values
             # (#605 set) from the model-stated facts.
@@ -10983,6 +10987,12 @@ class AgentService:
                 self.preparations.refuse_run(db,job['id'],self.preparations.clock(),refusal)
                 return True
             if self.store.telegram.album_open(db,job['id']):return False
+            # #367 review P1: a parked Work whose request the owner forgot since is never run (or recorded) again.
+            if db.execute("SELECT 1 FROM messages m JOIN forgotten_messages f ON f.message_id=m.id "
+                          "WHERE m.job_id=? AND m.role='user' LIMIT 1",(job['id'],)).fetchone():
+                cause='잊기로 한 요청이라 다시 실행하지 않았어요.'
+                db.execute("UPDATE jobs SET status='cancelled',error='forgotten',owner_cause=? WHERE id=?",(cause,job['id']))
+                return True
             card=self.store.telegram.card_row(db,job['id'])
             if card and (card['message_id']==-1 or card['created']>time.time()-TELEGRAM_CARD_GRACE_SECONDS):return False
             db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))

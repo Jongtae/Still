@@ -746,6 +746,12 @@ class QuickStore:
             return db.execute(f"SELECT content{',created' if with_created else ''} FROM messages WHERE job_id=? AND role='assistant' "
                               f"AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id DESC LIMIT 1",(job_id,)).fetchone()
 
+    def work_turn_forgotten(self, job_id):
+        """#367: whether the owner forgot any transcript row of this Work."""
+        with self.db() as db:
+            return db.execute(f"SELECT 1 FROM messages WHERE job_id=? AND id IN ({FORGOTTEN_MESSAGE_IDS}) LIMIT 1",
+                              (job_id,)).fetchone() is not None
+
     def work_request_forgotten(self, job_id):
         """#367: whether the owner forgot the request row of this Work (its ``jobs.message`` copy is then withheld too)."""
         with self.db() as db:
