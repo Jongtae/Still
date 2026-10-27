@@ -41,7 +41,9 @@
       "OWNER-MCP-WORK-01",
       "MATTERMOST-01",
       "SLACK-01",
-      "WORKPLACE-01"
+      "WORKPLACE-01",
+      "REPLY-LATENCY-01",
+      "SIDE-ANSWER-01"
     ]
   },
   "iterations": [
@@ -857,6 +859,21 @@
       "depends_on": [
         "REPLY-LATENCY-01"
       ]
+    },
+    {
+      "id": "CLI-UPDATE-01",
+      "program": "RESPONSIVE-01",
+      "issue": 346,
+      "milestone": "responsive",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_decision_routes.py tests/test_bounded_execution.py tests/test_strict_isolation.py tests/test_steer_cli_qualification.py tests/test_claude_session_steer.py tests/test_no_scenario_code.py"
+      ],
+      "summary": "#346: a Codex or Claude Code update does not stop Still. A new binary identity is qualified locally and automatically with the existing isolation checks (loopback scripted model, synthetic home, no provider, no owner credentials) and admitted only on a pass; a failing or unrunnable check refuses it and tells the owner which check failed. The Judgment route requalifies itself in the background with the same suite when the CLI fingerprint changes. Claude Code stream-json input is used by capability, not version. The in-code version lists stay as a record, not the gate.",
+      "depends_on": [
+        "REPLY-LATENCY-01"
+      ]
     }
   ],
   "milestones": {
@@ -1268,12 +1285,16 @@
       },
       "ordered_substeps": [
         "REPLY-LATENCY-01",
-        "SIDE-ANSWER-01"
+        "SIDE-ANSWER-01",
+        "CLI-UPDATE-01"
       ],
       "active_substeps": [
-        "REPLY-LATENCY-01"
+        "CLI-UPDATE-01"
       ],
-      "completed_substeps": [],
+      "completed_substeps": [
+        "REPLY-LATENCY-01",
+        "SIDE-ANSWER-01"
+      ],
       "decisions": {
         "early-plan-cost": {
           "issue": 309,
@@ -1289,11 +1310,21 @@
           "issue": 16,
           "date": "2026-10-25",
           "decision": "#16 is not part of this program: slice 1 merged in #140 (CORE-PARALLEL-01); slices 2-3 wait for an owner decision on the completion-check and checked_direct guards; slice 4 needs a live provider."
+        },
+        "cli-update-added": {
+          "issue": 346,
+          "date": "2026-10-26",
+          "decision": "After the 2026-10-25 Codex 0.164.0 self-update stopped every judgment (#344, fixed by #345 and #349/#350), the owner required that Still not depend on CLI versions and chose to deliver #346 inside this program as its last substep."
+        },
+        "latency-measurement-dropped": {
+          "issue": 309,
+          "date": "2026-10-26",
+          "decision": "The owner dropped the #309 L1 + L7 after-measurement: the judgment outage (#344) fell inside the window and made it unusable. #309 closed as completed (L1 #331, L3 #329, L7 #333 merged); the latency target is not verified. #17 merged as PR #342."
         }
       },
-      "allowed_authority": "Codex strict qualification and launch (decision_routes.py, bounded_execution.py, decision_adapters.py for timing records only), the turn path (quickstart_service.py, quickstart_store.py for steer and side-answer records, orchestrator.py, agent_runtime.py for claim_owner_steers and the steer lead only), the conversation surfaces' steer hand-off (conversation_surface.py, direct_message_surface.py, telegram_surface.py, mattermost_surface.py, slack_surface.py, quickstart.py and the web conversation page for the same steer judgment), Presence notices for a side answer (telegram_presence.py, conversation_projection.py), messages.json entries they use, tests, a measurement script under scripts/dev that reads aggregates only, and docs describing the changed behaviour. Model-free tests with injected runners, transports, fake clocks and temporary stores; required validate on each final head and full-validate before closeout; one issue-linked PR per substep, normal squash merge, then a closeout PR.",
+      "allowed_authority": "Codex strict qualification and launch (decision_routes.py, bounded_execution.py, decision_adapters.py for timing records only; for #346 also the local qualification of a new Codex or Claude Code binary identity, the Judgment route's background requalification through decision_qualification.py, the Claude Code stream-json capability fallback, Settings route status for a refused binary, and the opt-in qualification tests' drift report), the turn path (quickstart_service.py, quickstart_store.py for steer and side-answer records, orchestrator.py, agent_runtime.py for claim_owner_steers and the steer lead only), the conversation surfaces' steer hand-off (conversation_surface.py, direct_message_surface.py, telegram_surface.py, mattermost_surface.py, slack_surface.py, quickstart.py and the web conversation page for the same steer judgment), Presence notices for a side answer (telegram_presence.py, conversation_projection.py), messages.json entries they use, tests, a measurement script under scripts/dev that reads aggregates only, and docs describing the changed behaviour. Model-free tests with injected runners, transports, fake clocks and temporary stores; required validate on each final head and full-validate before closeout; one issue-linked PR per substep, normal squash merge, then a closeout PR.",
       "non_goals": "A lexical or category short-turn fast path (C16, RULES-OUT-01 #173); #309 L4 (merge continuity into the plan judgment), L5 (a warm Codex app-server, gated on #308 S0) and L6 (skip or defer the goal judgment) without their own owner decision; read or effect tools for a side answer (#17 later slice); #16; lowering judgment effort; live-model benchmark campaigns, provider switches, message content in measurements, releases, deployment and the delivery heartbeat; other backlog items.",
-      "escalated_review": "Constitution escalated review (#195): a Codex review of the exact final head, required validate and full-validate on that head, and the owner merges. Required for REPLY-LATENCY-01 (#309 L7 weakens the freshness of the #616 isolation qualification; negative tests: a changed size, mtime, inode or device forces requalification, a failure is never cached, a different path is never covered). Required for SIDE-ANSWER-01 (#17) if it changes the worker lock's approval, pending-owner-input or external-effect guarantees; otherwise not. An AI session never merges a PR whose escalated review was triggered.",
+      "escalated_review": "Constitution escalated review (#195): a Codex review of the exact final head, required validate and full-validate on that head, and the owner merges. Required for REPLY-LATENCY-01 (#309 L7 weakens the freshness of the #616 isolation qualification; negative tests: a changed size, mtime, inode or device forces requalification, a failure is never cached, a different path is never covered). Required for SIDE-ANSWER-01 (#17) if it changes the worker lock's approval, pending-owner-input or external-effect guarantees; otherwise not. Required for CLI-UPDATE-01 (#346 replaces the reviewed exact-version admission of the #616 isolation qualification with an automatic local check; negative tests: a failing probe refuses the binary, a probe that cannot run refuses it, one identity's result never covers another, no strict launch runs unqualified). An AI session never merges a PR whose escalated review was triggered.",
       "completion_rule": "Every ordered substep merged on its own PR with its issue's in-scope acceptance criteria mapped to tests and its declared focused tests passing, required validate passing on each final head, the triggered Codex reviews recorded, the #309 median received-to-evaluated measurement recorded from owner-instance aggregates (or its absence stated), and full-validate passing on main after the last merge (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision."
     }
   },
