@@ -188,32 +188,47 @@ def test_native_path_change_recomputes(setup, monkeypatch):
 
 
 @pytest.mark.parametrize('first', ['judgment', 'work'])
-def test_judgments_and_work_share_memo_and_keep_refusal_reasons(setup, monkeypatch, first):
+def test_judgments_and_work_share_local_qualification_and_never_cover_new_identity(setup, monkeypatch, first):
     import json
     from personal_agent.decision_routes import DecisionRoutes
+    from test_strict_isolation import FEATURES
 
     s = setup
     monkeypatch.setattr(be.sys, 'platform', 'darwin')
+    monkeypatch.setattr(be, 'BASELINE_READABLE_ROOTS', ('/not-baseline',))
     monkeypatch.setattr(s.adapter, 'finder', lambda _: str(s.launcher))
     monkeypatch.setattr(s.adapter, 'environment', lambda *args, **kwargs: {})
     monkeypatch.setattr(s.adapter, 'bridge_check', lambda: None)
+    from personal_agent import cli_qualification
+    surface = Mock(return_value=[{'check': 'strict-work-bridge-and-tool-surface', 'passed': True},
+                  *[{'check': f'instruction-files-{i}', 'passed': True} for i in range(3)]])
+    monkeypatch.setattr(cli_qualification, 'surface_checks', surface)
     root = SimpleNamespace(root=s.tmp_path)
     caps = SimpleNamespace(store=root, job_id='test', private_provenance=set())
-    record = {**s.record, 'binding': s.adapter.strict_binding('codex', str(s.launcher), s.tmp_path),
-              'disabled_features': ['shell_tool']}
+    tools = be.StrictIsolatedAgentOSMcpTools(caps, qualification={})
     routes = DecisionRoutes.__new__(DecisionRoutes)
     routes.service = SimpleNamespace(execution_adapter=s.adapter)
-    routes.store = root
+    routes.store, routes.clock = root, lambda: 0
     routes.codex_instruction_qualified = {VERSION}
-    tools = be.StrictIsolatedAgentOSMcpTools(caps, qualification=record)
+    broken = False
 
     def run(argv, **kwargs):
-        out = (f'codex-cli {VERSION}' if argv[1:] == ['--version'] else
-               json.dumps({'item': {'type': 'agent_message', 'text': 'answer'}}))
-        return SimpleNamespace(returncode=0, stdout=out, stderr='')
+        if argv[1:] == ['--version']:
+            return SimpleNamespace(returncode=0, stdout=f'codex-cli {VERSION}', stderr='')
+        if argv[1:3] == ['features', 'list']:
+            disabled = {argv[i + 1] for i, part in enumerate(argv) if part == '--disable'}
+            return SimpleNamespace(returncode=0, stdout='\n'.join(line for line in FEATURES.splitlines()
+                                   if line.split()[0] not in disabled), stderr='')
+        if argv[1] == 'sandbox':
+            return SimpleNamespace(returncode=0 if not broken and Path(argv[-1]) == kwargs['cwd'] else 1,
+                                   stdout='', stderr='Operation not permitted')
+        return SimpleNamespace(returncode=0, stdout=json.dumps({'item': {'type': 'agent_message', 'text': 'answer'}}), stderr='')
     s.runner.side_effect = run
+    record = None
 
     def judgment():
+        nonlocal record
+        record = routes._codex_strict_profile('test', str(s.launcher))
         assert routes._codex_strict_stale({'strict_profile': record}) == []
 
     def work():
@@ -222,29 +237,22 @@ def test_judgments_and_work_share_memo_and_keep_refusal_reasons(setup, monkeypat
     checks = {'judgment': judgment, 'work': work}
     checks[first]()
     checks['work' if first == 'judgment' else 'judgment']()
-    assert s.digest.call_count == 2
-    assert sum(call.args[0][1:] == ['--version'] for call in s.runner.call_args_list) == 1
+    expected = 1 if first == 'work' else 2  # a no-tool judgment pass never qualifies the Work bridge
+    assert surface.call_count == expected
+    assert sum(call.args[0][1:] == ['--version'] for call in s.runner.call_args_list) == expected
 
-    # A changed binding still refuses before any memo lookup or version run.
     record['binding']['home'] = '/other-home'
     assert routes._codex_strict_stale({'strict_profile': record}) == ['home']
-    with pytest.raises(be.ExecutionError) as caught:
-        work()
-    assert caught.value.failure_class == 'isolation-unqualified'
-    assert caught.value.reason == 'stale: home; observed version unknown'
-    record['binding'] = s.adapter.strict_binding('codex', str(s.launcher), s.tmp_path)
+    # Work independently uses the real local pass, never authority from the facade's stored record.
     tools.qualification = record
-
+    work()
+    assert surface.call_count == expected
     s.native.write_bytes(NATIVE + b'changed')
-    # As in the original guard, binding is checked first. Keep it current to
-    # isolate the stored digest comparison and its exact refusal reason.
-    record['binding'] = s.adapter.strict_binding('codex', str(s.launcher), s.tmp_path)
-    tools.qualification = record
-    assert routes._codex_strict_stale({'strict_profile': record}) == ['native_sha256']
+    broken = True
     with pytest.raises(be.ExecutionError) as caught:
         work()
     assert caught.value.failure_class == 'isolation-unqualified'
-    assert caught.value.reason == 'stale: native_sha256; observed version unknown'
+    assert 'turn-directory-readable' in caught.value.reason
 
 
 def test_missing_file_cannot_use_earlier_success(setup):

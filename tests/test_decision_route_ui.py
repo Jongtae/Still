@@ -193,7 +193,7 @@ const base=(active,extra={})=>({decision_route:{active,suite_version:'decision-q
  // A changed CLI binary is shown as needing a re-check, not as in use.
  box().dataset.state='';switchEditor('');
  ctx.renderDecisionRoute(base({transport:'subscription_cli',source:'owner',engine:'codex',model_policy:'explicit',requested_model:'small',available:false,requalification_needed:true,destination:'OpenAI (Codex 구독 계정)'}));
- assert.equal(stateOf(rowTitled('사용 방식')).textContent,'확인 필요');assert(rowTitled('사용 방식').textContent.includes('CLI가 바뀌어 다시 확인해야 합니다'));
+ assert.equal(stateOf(rowTitled('사용 방식')).textContent,'확인 필요');assert(rowTitled('사용 방식').textContent.includes('CLI가 바뀌어 자동으로 확인합니다'));
  // A CLI refused for its tool surface is a visible needs-attention state with the reason, not an absence.
  box().dataset.state='';switchEditor('');
  ctx.renderDecisionRoute(base({transport:'direct_api',source:'owner',destination:'api.openai.com',available:true},

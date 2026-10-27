@@ -4001,6 +4001,13 @@ class AgentService:
         status=profile_status(selection['profile'])
         qualified={engine:{key:row.get(key) for key in ('version','platform','checked_at')}
                    for engine,row in selection['qualified'].items() if isinstance(row,dict)}
+        cached=getattr(self.execution_adapter,'strict_cached_qualification',None)
+        if selection['profile']==STRICT_PROFILE and callable(cached):
+            engine=self.store.config('subscription_engine',{}).get('id','')
+            binary=self.subscription_engines.finder({'codex':'codex','claude-code':'claude'}.get(engine,''))
+            current=cached(engine,binary,self.store.root)
+            if current:
+                qualified[engine]={key:current.get(key) for key in ('version','platform','checked_at')}
         status.update(selectable=list(HOST_CLI_PROFILES),qualified=qualified)
         if selection['profile']==STRICT_PROFILE:
             status['requalify_needed']=bool(self.strict_requalify_reasons())
@@ -4028,18 +4035,20 @@ class AgentService:
         selection=self.subscription_isolation()
         engine=self.store.config('subscription_engine',{}).get('id','')
         record=selection['qualified'].get(engine)
+        binary=self.subscription_engines.finder({'codex':'codex','claude-code':'claude'}.get(engine,''))
+        cached=getattr(self.execution_adapter,'strict_cached_qualification',None)
+        if callable(cached) and cached(engine,binary,self.store.root):return []
         if not isinstance(record,dict):return ['not-qualified']
         check=getattr(self.execution_adapter,'strict_binding_mismatch',None)
         if not callable(check):return []
-        binary=self.subscription_engines.finder({'codex':'codex','claude-code':'claude'}.get(engine,''))
         return check(engine,record,self.store.root,binary)
 
     def subscription_facade(self, engine=None):
         """The facade class and constructor keywords of the selected host-CLI profile.
 
         strict-isolated and an unrecognised stored value both yield the strict
-        facade; with no (or another platform's) record it carries no
-        qualification and the adapter refuses the turn.  Nothing falls back.
+        facade. A valid strict selection is checked automatically for the
+        current binary; an unrecognised selection stays refused. Nothing falls back.
         ``engine`` (#710) names the CLI a Work attempt runs on; by default the
         selected Main AI CLI.
         """
@@ -4047,7 +4056,7 @@ class AgentService:
         if selection['profile']==BOUNDED_PROFILE:
             return AgentOSMcpTools,{}
         if selection['profile']!=STRICT_PROFILE:
-            return StrictIsolatedAgentOSMcpTools,{'qualification':None}
+            return StrictIsolatedAgentOSMcpTools,{'qualification':None,'qualification_allowed':False}
         engine=engine or self.store.config('subscription_engine',{}).get('id','')
         record=selection['qualified'].get(engine)
         # A record from another platform (a moved data folder) qualifies nothing here.

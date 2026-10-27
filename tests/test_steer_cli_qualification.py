@@ -6,7 +6,7 @@ loopback scripted model that holds its first answer until the second owner
 message was written, a fake store and a synthetic ``CODEX_HOME``.  No live
 model, account or owner data.  They pin the observed behaviour the native-steer
 slices (#308 S2/S3) build on, for the versions in ``OBSERVED``; another version
-is skipped until these are re-run for it.
+reports drift explicitly; runtime capability observation governs admission.
 """
 
 import json
@@ -18,12 +18,14 @@ import tempfile
 import threading
 import time
 import unittest
+import warnings
 from pathlib import Path
 
 from personal_agent.bounded_execution import BOUNDED_PROFILE, BoundedExecutionAdapter
 from personal_agent.quickstart_store import QuickStore
 
-from test_strict_isolation import _ScriptedModel, _installed
+from personal_agent.cli_qualification import _ScriptedModel
+from test_strict_isolation import _installed
 
 ROOT = Path(__file__).resolve().parents[1]
 #: The CLI versions these observations were made on (2026-10-25).
@@ -89,7 +91,7 @@ class ClaudeStreamJsonSteer(unittest.TestCase):
         if not self.binary:
             self.skipTest('claude is not installed')
         if version != OBSERVED['claude-code']:
-            self.skipTest(f'claude {version} is not the observed version {OBSERVED["claude-code"]}')
+            warnings.warn(f'not observed on version {version}: runtime qualifier governs; testing stream input', RuntimeWarning)
         tmp = tempfile.TemporaryDirectory(prefix='agentos-308-')
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
@@ -292,7 +294,7 @@ class CodexAppServerSteer(unittest.TestCase):
         if not self.binary:
             self.skipTest('codex is not installed')
         if version != OBSERVED['codex']:
-            self.skipTest(f'codex {version} is not the observed version {OBSERVED["codex"]}')
+            warnings.warn(f'not observed on version {version}: runtime qualifier governs; testing session input', RuntimeWarning)
         tmp = tempfile.TemporaryDirectory(prefix='agentos-308-')
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)

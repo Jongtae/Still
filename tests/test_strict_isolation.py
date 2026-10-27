@@ -23,10 +23,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import threading
 import unittest
+import warnings
 import uuid
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from personal_agent.bounded_execution import (
@@ -244,104 +243,6 @@ def _pinned_platform(case):
     case.addCleanup(patcher.stop)
 
 
-class StrictExecuteRefusesStaleQualifications(unittest.TestCase):
-    def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.folder = Path(tmp.name)
-        (self.folder / 'codex-home').mkdir()
-        (self.folder / 'bin').mkdir()
-        self.binary = self.folder / 'bin' / 'codex'
-        self.binary.write_bytes(FAKE_NATIVE)
-        self.calls = []
-        _pinned_platform(self)
-
-    def _adapter(self, version_output=None, runtime_root=None):
-        version_output = version_output or f'codex-cli {CODEX_VERSION}'
-
-        def runner(argv, **kwargs):
-            self.calls.append(list(argv))
-            return _Done(stdout=version_output) if argv[1:] == ['--version'] else _codex_answer()
-        return BoundedExecutionAdapter(finder=lambda name: str(self.binary), runner=runner,
-                                       runtime_root=runtime_root or self.folder / 'turns', codex_home=self.folder / 'codex-home')
-
-    def _record(self, adapter, **changes):
-        record = {'version': CODEX_VERSION, 'platform': sys.platform, 'disabled_features': PLAN,
-                  'binding': adapter.strict_binding('codex', str(self.binary), self.folder),
-                  **adapter.strict_digests('codex', str(self.binary))}
-        record.update(changes)
-        return record
-
-    def _facade(self, record):
-        return StrictIsolatedAgentOSMcpTools(_Caps(self.folder), qualification=record)
-
-    def test_a_current_qualification_runs_with_its_verified_plan(self):
-        adapter = self._adapter()
-        result = adapter.execute('codex', 'hello', self._facade(self._record(adapter)))
-        self.assertEqual(result.content, 'answer')
-        self.assertEqual(self.calls[0], [str(self.binary), '--version'])
-        self.assertIn('--ignore-rules', self.calls[1])
-        self.assertEqual([self.calls[1][i + 1] for i, part in enumerate(self.calls[1]) if part == '--disable'], PLAN)
-        self.assertNotIn('--sandbox', self.calls[1])
-
-    def _refused(self, adapter, record, expected_calls):
-        self.calls.clear()
-        with self.assertRaises(ExecutionError) as caught:
-            adapter.execute('codex', 'hello', self._facade(record))
-        self.assertEqual(caught.exception.failure_class, 'isolation-unqualified')
-        self.assertEqual(self.calls, expected_calls, 'no CLI turn is started at all')
-        return caught.exception
-
-    def test_an_upgraded_unqualified_or_unknown_version_is_refused_without_fallback(self):
-        version_call = [[str(self.binary), '--version']]
-        for output, qualified in ((f'codex-cli {CODEX_VERSION}', None), (f'codex-cli {CODEX_VERSION}', '0.1.0'),
-                                  ('codex-cli 9.9.9', '9.9.9'), ('garbled', CODEX_VERSION)):
-            adapter = self._adapter(output)
-            with self.subTest(output=output, qualified=qualified):
-                self._refused(adapter, self._record(adapter, version=qualified), version_call)
-
-    def test_changed_paths_binary_or_plan_are_refused_before_any_process(self):
-        """Review P2/P3: the qualification is bound to the resolved paths and binary."""
-        adapter = self._adapter()
-        good = self._record(adapter)
-        for field, value in (('store', '/elsewhere/store'), ('home', '/Users/other'), ('runtime_root', '/elsewhere/turns'),
-                             ('codex_home', '/elsewhere/.codex'), ('binary', '/other/codex'), ('fingerprint', 'x|1|2'),
-                             ('platform', 'linux')):
-            with self.subTest(field=field):
-                error = self._refused(adapter, {**good, 'binding': {**good['binding'], field: value}}, [])
-                self.assertIn(field, error.reason)
-        for broken in ({**good, 'disabled_features': None}, {**good, 'binding': None}, {}, None):
-            with self.subTest(record=broken):
-                self._refused(adapter, broken, [])
-
-    def test_changed_bytes_with_the_same_path_size_and_mtime_are_refused(self):
-        """Review N2: the sha256 is enforced, not only path/size/mtime."""
-        adapter = self._adapter()
-        record = self._record(adapter)
-        stat = self.binary.stat()
-        self.binary.write_bytes(FAKE_NATIVE.replace(b'fake', b'fak3'))
-        os.utime(self.binary, ns=(stat.st_atime_ns, stat.st_mtime_ns))
-        self.assertEqual(adapter.strict_binding('codex', str(self.binary), self.folder), record['binding'])
-        error = self._refused(adapter, record, [])
-        self.assertIn('binary_sha256', error.reason)
-        for missing in ('binary_sha256', 'native_sha256'):
-            with self.subTest(missing=missing):
-                self._refused(adapter, {**self._record(adapter), missing: None}, [])
-
-    def test_an_untested_platform_is_refused_even_with_a_matching_record(self):
-        """A data folder moved from the qualified Mac to another OS (review P1)."""
-        from unittest import mock
-        adapter = self._adapter()
-        record = self._record(adapter)
-        with mock.patch.object(sys, 'platform', 'linux'):
-            record['binding']['platform'] = 'linux'
-            self._refused(adapter, record, [])
-
-    def test_trusted_local_does_not_check_versions(self):
-        result = self._adapter('garbled').execute('codex', 'hello', AgentOSMcpTools(_Caps(self.folder)))
-        self.assertEqual(result.content, 'answer')
-        self.assertEqual(len(self.calls), 1)
-        self.assertIn('--sandbox', self.calls[0])
 
 
 FEATURES = ('apps                 stable             true\n'
@@ -367,6 +268,12 @@ class StrictQualificationLogic(unittest.TestCase):
             (self.folder / 'bin' / name).write_bytes(FAKE_NATIVE)
         self.finder = lambda name: str(self.folder / 'bin' / name)
         self.calls = []
+        from unittest import mock
+        probe = mock.patch('personal_agent.cli_qualification.surface_checks',
+                           return_value=[{'check': 'strict-work-bridge-and-tool-surface', 'passed': True},
+                                                  *[{'check': f'instruction-files-{i}', 'passed': True} for i in range(3)]])
+        self.surface = probe.start()
+        self.addCleanup(probe.stop)
         _pinned_platform(self)
         # tempfile lives under /tmp on Linux CI; the baseline-readable
         # refusal has its own test with the real list.
@@ -387,7 +294,7 @@ class StrictQualificationLogic(unittest.TestCase):
                          if line.split()[0] not in disabled or line.split()[0] in stuck]
                 return _Done(stdout='\n'.join(lines))
             target, turn = Path(argv[-1]), Path(kwargs['cwd'])
-            return _Done(returncode=0 if target == turn or target in readable else 1)
+            return _Done(returncode=0 if target == turn or target in readable else 1, stderr='Operation not permitted')
         return runner
 
     def _qualify(self, engine='codex', version=None, readable=(), stuck=(), runtime_root=None, tested_versions=None):
@@ -400,7 +307,7 @@ class StrictQualificationLogic(unittest.TestCase):
     def test_judgment_versions_do_not_widen_work_or_skip_denial_checks(self):
         for version in ('codex-cli 0.162.1', 'codex-cli 0.164.0'):
             with self.subTest(version=version):
-                self.assertFalse(self._qualify(version=version)['qualified'])
+                self.assertTrue(self._qualify(version=version)['qualified'])
                 self.assertTrue(self._qualify(version=version, tested_versions=CODEX_INSTRUCTION_FILES_QUALIFIED)['qualified'])
                 self.assertFalse(self._qualify(version=version, tested_versions=CODEX_INSTRUCTION_FILES_QUALIFIED,
                                                readable=(self.store,))['qualified'])
@@ -410,10 +317,11 @@ class StrictQualificationLogic(unittest.TestCase):
         self.assertTrue(result['qualified'], result)
         self.assertEqual(result['version'], CODEX_VERSION)
         self.assertEqual([check['check'] for check in result['checks']],
-                         ['tested-platform', 'runtime-root-not-baseline-readable', 'tested-version',
+                         ['tested-platform', 'runtime-root-not-baseline-readable', 'reported-version',
                           'turn-directory-readable', 'sibling-turn-denied', 'protected-directory-denied',
                           'protected-directory-denied', 'protected-directory-denied', 'tool-features-allowlisted',
-                          'native-binary-identified'])
+                          'strict-work-bridge-and-tool-surface', 'instruction-files-0', 'instruction-files-1', 'instruction-files-2',
+                          'binding-unchanged', 'native-binary-identified', 'binary-unchanged'])
         self.assertEqual(result['binary_sha256'], result['native_sha256'], 'a plain executable is its own native binary')
         self.assertEqual(len(result['binary_sha256']), 64)
         self.assertEqual(result['disabled_features'], ['apps', 'memories', 'shell_tool'],
@@ -463,12 +371,15 @@ class StrictQualificationLogic(unittest.TestCase):
                 self.assertEqual(result['reason'], 'runtime-root-not-baseline-readable')
                 self.assertEqual(self.calls, [])
 
-    def test_an_untested_version_fails_before_any_sandbox_probe(self):
+    def test_an_unlisted_version_passes_only_after_all_probes(self):
         self.calls.clear()
         result = self._qualify(version='codex-cli 9.9.9')
+        self.assertTrue(result['qualified'], result)
+        self.assertTrue([argv for argv, _ in self.calls if 'sandbox' in argv])
+        self.surface.assert_called_once()
+        result = self._qualify(version='garbled')
         self.assertFalse(result['qualified'])
-        self.assertEqual(result['reason'], 'tested-version')
-        self.assertFalse([argv for argv, _ in self.calls if 'sandbox' in argv])
+        self.assertIn('reported-version', result['reason'])
 
     def test_a_broken_runner_is_not_mistaken_for_denial(self):
         """Every probe failing (for example no sandbox) fails the turn-dir control."""
@@ -479,6 +390,21 @@ class StrictQualificationLogic(unittest.TestCase):
         result = adapter.qualify_strict('codex', store_root=self.store)
         self.assertFalse(result['qualified'])
         self.assertIn('turn-directory-readable', result['reason'])
+
+    def test_a_crashing_or_unobservable_denial_probe_is_not_permission_denial(self):
+        base = self._runner(f'codex-cli {CODEX_VERSION}')
+        for code, error in ((-11, 'crashed'), (2, 'unknown permissions profile'), (1, '')):
+            def runner(argv, **kwargs):
+                if argv[1] == 'sandbox' and Path(argv[-1]) == self.store:
+                    return _Done(returncode=code, stderr=error)
+                return base(argv, **kwargs)
+            adapter = BoundedExecutionAdapter(finder=self.finder, runner=runner,
+                       runtime_root=self.folder / 'turns', codex_home=self.folder / 'codex-home')
+            with self.subTest(code=code, error=error):
+                result = adapter.qualify_strict('codex', store_root=self.store)
+                self.assertFalse(result['qualified'])
+                self.assertIn('protected-directory-denied', result['reason'])
+                self.surface.assert_not_called()
 
     def test_an_untested_platform_fails_closed_before_running_anything(self):
         from unittest import mock
@@ -492,7 +418,7 @@ class StrictQualificationLogic(unittest.TestCase):
         result = self._qualify('claude-code')
         self.assertTrue(result['qualified'])
         self.assertNotIn('codex_home', result['binding'])
-        self.assertFalse(self._qualify('claude-code', version='2.2.0 (Claude Code)')['qualified'])
+        self.assertTrue(self._qualify('claude-code', version='2.2.0 (Claude Code)')['qualified'])
         self.assertFalse(BoundedExecutionAdapter(finder=lambda name: None).qualify_strict('codex')['qualified'])
         # A launcher whose native executable cannot be identified fails closed.
         missing = BoundedExecutionAdapter(finder=lambda name: '/runtime/' + name, runner=self._runner(f'codex-cli {CODEX_VERSION}'),
@@ -543,6 +469,145 @@ class StrictQualificationLogic(unittest.TestCase):
                 self.assertEqual(native_of(engine, str(self.folder / 'bin' / 'codex')),
                                  str((self.folder / 'bin' / 'codex').resolve()))
         self.assertFalse(BoundedExecutionAdapter().qualify_strict('other')['qualified'])
+
+
+class StrictAutomaticAdmission(unittest.TestCase):
+    """Stored records and version lists cannot authorize a changed binary."""
+    def setUp(self):
+        StrictQualificationLogic.setUp(self)
+        self.binary = self.folder / 'bin' / 'codex'
+        self.fail_probe = False
+        base = StrictQualificationLogic._runner(self, 'codex-cli 9.9.9')
+
+        def runner(argv, **kwargs):
+            if argv[1] == 'exec':
+                self.calls.append((list(argv), kwargs['env']))
+                return _codex_answer()
+            if self.fail_probe and argv[1] == 'sandbox':
+                raise subprocess.TimeoutExpired(argv, 30)
+            return base(argv, **kwargs)
+        self.adapter = BoundedExecutionAdapter(finder=self.finder, runner=runner,
+                    runtime_root=self.folder / 'turns', codex_home=self.folder / 'codex-home')
+        self.tools = StrictIsolatedAgentOSMcpTools(_Caps(self.store), qualification=None)
+
+    def test_an_unlisted_installed_version_automatically_qualifies_work(self):
+        self.assertEqual(self.adapter.execute('codex', 'hello', self.tools).content, 'answer')
+        probes = sum(argv[1] == 'sandbox' for argv, _ in self.calls)
+        self.adapter.execute('codex', 'again', self.tools)
+        self.assertEqual(sum(argv[1] == 'sandbox' for argv, _ in self.calls), probes)
+
+    def test_a_failed_new_identity_never_uses_the_earlier_pass_or_launches(self):
+        self.adapter.execute('codex', 'hello', self.tools)
+        self.binary.write_bytes(FAKE_NATIVE + b'new binary')
+        self.fail_probe = True
+        for _ in range(2):  # a failure is never cached
+            self.calls.clear()
+            with self.assertRaises(ExecutionError) as caught:
+                self.adapter.execute('codex', 'hello', self.tools)
+            self.assertEqual(caught.exception.failure_class, 'isolation-unqualified')
+            self.assertIn('turn-directory-readable', caught.exception.reason)
+            self.assertFalse(any(argv[1] == 'exec' for argv, _ in self.calls))
+            self.assertTrue(self.calls)
+
+    def test_each_identity_field_invalidates_the_pass(self):
+        from unittest import mock
+        self.adapter.execute('codex', 'hello', self.tools)
+        identity = self.adapter._strict_binary_identity('codex', str(self.binary))
+        for index in range(5):
+            changed = list(identity[0])
+            changed[index] = str(changed[index]) + '-different' if index == 0 else changed[index] + 1
+            with self.subTest(field=index), mock.patch.object(self.adapter, '_strict_binary_identity',
+                         return_value=(tuple(changed), *identity[1:])):
+                self.fail_probe = True
+                self.calls.clear()
+                with self.assertRaises(ExecutionError):
+                    self.adapter.execute('codex', 'hello', self.tools)
+                self.assertFalse(any(argv[1] == 'exec' for argv, _ in self.calls))
+
+    def test_an_unobservable_surface_refuses_and_is_not_cached(self):
+        self.surface.side_effect = OSError('loopback unavailable')
+        for _ in range(2):
+            with self.assertRaises(ExecutionError) as caught:
+                self.adapter.execute('codex', 'hello', self.tools)
+            self.assertIn('instruction-files-and-tool-surface', caught.exception.reason)
+        self.assertEqual(self.surface.call_count, 2)
+
+    def test_a_failing_surface_names_the_check(self):
+        self.surface.return_value = [{'check': 'instruction-files-0', 'passed': False}]
+        with self.assertRaises(ExecutionError) as caught:
+            self.adapter.execute('codex', 'hello', self.tools)
+        self.assertIn('instruction-files-0', caught.exception.reason)
+        self.assertFalse(any(argv[1] == 'exec' for argv, _ in self.calls))
+
+    def test_an_unrecognized_profile_cannot_automatically_qualify_or_launch(self):
+        tools = StrictIsolatedAgentOSMcpTools(_Caps(self.store), qualification_allowed=False)
+        with self.assertRaises(ExecutionError) as caught:
+            self.adapter.execute('codex', 'hello', tools)
+        self.assertEqual(caught.exception.reason, 'unrecognized-profile')
+        self.assertEqual(self.calls, [])
+        self.surface.assert_not_called()
+
+    def test_a_changed_binary_during_probes_and_a_missing_check_fail_closed(self):
+        good = self.surface.return_value
+        def change(*args, **kwargs):
+            self.binary.write_bytes(FAKE_NATIVE + b'changed while checking')
+            return good
+        self.surface.side_effect = change
+        with self.assertRaises(ExecutionError) as caught:
+            self.adapter.execute('codex', 'hello', self.tools)
+        self.assertIn('binary-unchanged', caught.exception.reason)
+        self.surface.side_effect = None
+        self.surface.return_value = []
+        with self.assertRaises(ExecutionError) as caught:
+            self.adapter.execute('codex', 'hello', self.tools)
+        self.assertIn('instruction-files-and-tool-surface', caught.exception.reason)
+
+    def test_qualification_never_uses_owner_credentials_or_profile(self):
+        from unittest import mock
+        self.adapter.credentials = mock.Mock(side_effect=AssertionError('owner credential requested'))
+        def inspect(local, engine, binary, root, disabled, **kwargs):
+            self.assertEqual(local.credentials(engine), '')
+            self.assertIsNone(local.cloud)
+            self.assertTrue(local.codex_home.is_relative_to(root))
+            self.assertNotEqual(local.codex_home, self.adapter.codex_home)
+            return [{'check': 'strict-work-bridge-and-tool-surface', 'passed': True},
+                    *[{'check': f'instruction-files-{i}', 'passed': True} for i in range(3)]]
+        self.surface.side_effect = inspect
+        self.assertTrue(self.adapter.qualify_strict('codex', store_root=self.store)['qualified'])
+        self.adapter.credentials.assert_not_called()
+
+    def test_a_judgment_pass_never_admits_a_failing_work_bridge(self):
+        def observed(*args, include_work=True):
+            checks = [{'check': f'instruction-files-{i}', 'passed': True} for i in range(3)]
+            if include_work:
+                checks.append({'check': 'strict-work-bridge-and-tool-surface', 'passed': False})
+            return checks
+        self.surface.side_effect = observed
+        local = self.adapter.qualified_identity('codex', str(self.binary), self.store, purpose='judgment')
+        self.assertTrue(local['qualified'])
+        with self.assertRaises(ExecutionError) as caught:
+            self.adapter.execute('codex', 'hello', self.tools)
+        self.assertIn('strict-work-bridge-and-tool-surface', caught.exception.reason)
+        self.assertFalse(any(argv[1] == 'exec' for argv, _ in self.calls))
+
+    def test_an_explicit_failed_recheck_evicts_an_earlier_work_pass(self):
+        self.adapter.execute('codex', 'hello', self.tools)
+        self.surface.side_effect = OSError('loopback unavailable')
+        self.assertFalse(self.adapter.qualify_strict('codex', store_root=self.store)['qualified'])
+        with self.assertRaises(ExecutionError):
+            self.adapter.execute('codex', 'hello', self.tools)
+        self.assertIsNone(self.adapter.strict_cached_qualification('codex', str(self.binary), self.store))
+
+    def test_platform_and_runtime_root_still_refuse_without_any_process(self):
+        from unittest import mock
+        for field, value in (('platform', 'linux'),):
+            with mock.patch.object(sys, field, value), self.assertRaises(ExecutionError):
+                self.adapter.execute('codex', 'hello', self.tools)
+        self.assertEqual(self.calls, [])
+        with mock.patch('personal_agent.bounded_execution.BASELINE_READABLE_ROOTS', (str(self.folder),)), \
+                self.assertRaises(ExecutionError):
+            self.adapter.execute('codex', 'hello', self.tools)
+        self.assertEqual(self.calls, [])
 
 
 class _Engine:
@@ -729,112 +794,7 @@ class DoctorReportsTheSelectedProfile(unittest.TestCase):
 
 # -- Process-level qualification (opt-in) ------------------------------------
 
-class _ScriptedModel:
-    """A loopback fake model endpoint that plays a fixed tool-call script.
-
-    ``responses`` speaks the OpenAI Responses SSE shape Codex reads;
-    ``anthropic`` speaks the Messages SSE shape Claude Code reads.  It records
-    every request so a test can read the tool results the CLI sent back.
-    """
-
-    def __init__(self, dialect, script):
-        self.dialect, self.script, self.requests, self.turn = dialect, list(script), [], 0
-        model = self
-
-        class Handler(BaseHTTPRequestHandler):
-            def log_message(self, *args):
-                pass
-
-            def do_GET(self):
-                self.send_response(404)
-                self.end_headers()
-
-            def do_POST(self):
-                body = json.loads(self.rfile.read(int(self.headers.get('content-length') or 0)) or b'{}')
-                model.requests.append({'path': self.path, 'body': body,
-                                       'authorization': 'authorization' in {k.lower() for k in self.headers.keys()}})
-                events = model.events(self.path, body)
-                if events is None:
-                    self.send_response(404)
-                    self.end_headers()
-                    return
-                self.send_response(200)
-                self.send_header('content-type', 'text/event-stream')
-                self.end_headers()
-                for name, data in events:
-                    self.wfile.write(f'event: {name}\ndata: {json.dumps(data)}\n\n'.encode())
-                self.wfile.flush()
-
-        self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        self.port = self.server.server_address[1]
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
-
-    def close(self):
-        self.server.shutdown()
-        self.server.server_close()
-
-    def _next(self):
-        step = self.script[self.turn] if self.turn < len(self.script) else {'message': 'done'}
-        self.turn += 1
-        return step
-
-    def events(self, path, body):
-        if self.dialect == 'responses':
-            if not path.endswith('/responses'):
-                return None
-            step = self._next()
-            if 'message' in step:
-                item = {'type': 'message', 'role': 'assistant', 'id': f'm{self.turn}',
-                        'content': [{'type': 'output_text', 'text': step['message']}]}
-            else:
-                item = {'type': 'function_call', 'id': f'f{self.turn}', 'call_id': f'c{self.turn}',
-                        'name': step['name'], 'arguments': json.dumps(step['arguments'])}
-                if step.get('namespace'):
-                    item['namespace'] = step['namespace']
-            usage = {'input_tokens': 1, 'input_tokens_details': None, 'output_tokens': 1,
-                     'output_tokens_details': None, 'total_tokens': 2}
-            return [('response.created', {'type': 'response.created', 'response': {'id': f'r{self.turn}'}}),
-                    ('response.output_item.done', {'type': 'response.output_item.done', 'output_index': 0, 'item': item}),
-                    ('response.completed', {'type': 'response.completed', 'response': {'id': f'r{self.turn}', 'usage': usage}})]
-        if '/v1/messages' not in path or 'count_tokens' in path:
-            return None
-        # Side requests (for example a title) carry no tools: answer plainly.
-        step = self._next() if body.get('tools') else {'message': 'ok'}
-        if 'message' in step:
-            block, delta, stop = {'type': 'text', 'text': ''}, {'type': 'text_delta', 'text': step['message']}, 'end_turn'
-        else:
-            block = {'type': 'tool_use', 'id': f'toolu_{self.turn}', 'name': step['tool'], 'input': {}}
-            delta, stop = {'type': 'input_json_delta', 'partial_json': json.dumps(step['input'])}, 'tool_use'
-        usage = {'input_tokens': 1, 'output_tokens': 1}
-        return [('message_start', {'type': 'message_start', 'message': {
-                    'id': f'msg_{self.turn}', 'type': 'message', 'role': 'assistant', 'model': body.get('model', 'fake'),
-                    'content': [], 'stop_reason': None, 'stop_sequence': None, 'usage': usage}}),
-                ('content_block_start', {'type': 'content_block_start', 'index': 0, 'content_block': block}),
-                ('content_block_delta', {'type': 'content_block_delta', 'index': 0, 'delta': delta}),
-                ('content_block_stop', {'type': 'content_block_stop', 'index': 0}),
-                ('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': stop, 'stop_sequence': None},
-                                   'usage': {'output_tokens': 1}}),
-                ('message_stop', {'type': 'message_stop'})]
-
-    def tool_results(self):
-        """Tool results the CLI returned to the model, in call order."""
-        last = self.requests[-1]['body'] if self.requests else {}
-        if self.dialect == 'responses':
-            results = []
-            for request in self.requests:
-                for item in request['body'].get('input', []):
-                    if item.get('type') == 'function_call_output':
-                        results.append(json.dumps(item.get('output')))
-            return list(dict.fromkeys(results))
-        return [json.dumps(part.get('content')) for message in last.get('messages', [])
-                for part in (message.get('content') if isinstance(message.get('content'), list) else [])
-                if part.get('type') == 'tool_result']
-
-    def offered_tools(self):
-        for request in self.requests:
-            if request['body'].get('tools'):
-                return request['body']['tools']
-        return []
+from personal_agent.cli_qualification import _ScriptedModel, populate_codex_home
 
 
 _BRIDGE_STUB = '''
@@ -859,29 +819,6 @@ def _installed(engine):
         return None, None
     done = subprocess.run([binary, '--version'], capture_output=True, text=True, timeout=30)
     return binary, parse_cli_version(engine, done.stdout)
-
-
-def populate_codex_home(home, store_root):
-    """A synthetic, populated CODEX_HOME (review): never the owner's real one.
-
-    An "always allow" exec rule, a global AGENTS.md, a skill, a plugin
-    folder, a hooks file and a config.toml that would widen the sandbox.
-    """
-    home = Path(home)
-    (home / 'rules').mkdir(parents=True)
-    (home / 'rules' / 'default.rules').write_text(
-        'prefix_rule(pattern=["cat"], decision="allow")\nprefix_rule(pattern=["ls"], decision="allow")\n')
-    (home / 'AGENTS.md').write_text('AGENTS-MD-CANARY-616 global owner instructions\n')
-    (home / 'AGENTS.override.md').write_text('AGENTS-OVERRIDE-CANARY-616 global owner override\n')
-    skill = home / 'skills' / 'canary-skill'
-    skill.mkdir(parents=True)
-    (skill / 'SKILL.md').write_text('---\nname: canary-skill-616\ndescription: SKILL-CANARY-616\n---\nSKILL-BODY-CANARY-616\n')
-    plugin = home / 'plugins' / 'canary-plugin'
-    plugin.mkdir(parents=True)
-    (plugin / 'plugin.json').write_text(json.dumps({'name': 'canary-plugin-616', 'description': 'PLUGIN-CANARY-616'}))
-    (home / 'hooks.json').write_text(json.dumps({'hooks': {'PreToolUse': [{'hooks': [
-        {'type': 'command', 'command': f'cat {store_root}/FAKE-STORE-CANARY.txt'}]}]}}))
-    (home / 'config.toml').write_text('sandbox_mode = "danger-full-access"\napproval_policy = "never"\n')
 
 
 #: The owner's request in the qualification Work is ``/search PUBLIC_QUERY``.
@@ -979,7 +916,9 @@ class ProcessLevelQualification(unittest.TestCase):
     def _codex(self, tested=True):
         binary, version = _installed('codex')
         if tested and version not in CLI_PROFILES[STRICT_PROFILE]['runtimes']['codex']['tested_versions']:
-            self.skipTest(f'codex {version} is not the tested version')
+            warnings.warn(f'not observed on version {version}: runtime qualifier governs Codex admission', RuntimeWarning)
+        if not binary:
+            self.skipTest('codex is not installed')
         return binary
 
     def _shell_script(self):
@@ -1150,7 +1089,9 @@ class ProcessLevelQualification(unittest.TestCase):
     def _claude(self):
         binary, version = _installed('claude-code')
         if version not in CLI_PROFILES[STRICT_PROFILE]['runtimes']['claude-code']['tested_versions']:
-            self.skipTest(f'claude {version} is not a tested version')
+            warnings.warn(f'not observed on version {version}: runtime qualifier governs Claude Code admission', RuntimeWarning)
+        if not binary:
+            self.skipTest('claude is not installed')
         return binary
 
     def test_claude_strict_has_no_file_tools_and_keeps_the_bridge(self):
@@ -1256,7 +1197,9 @@ class CodexDecisionInstructionFiles(unittest.TestCase):
     def setUp(self):
         binary, version = _installed('codex')
         if version not in CODEX_INSTRUCTION_FILES_QUALIFIED:
-            self.skipTest(f'codex {version} is not a qualified instruction-file version')
+            warnings.warn(f'not observed on version {version}: runtime qualifier governs instruction-file admission', RuntimeWarning)
+        if not binary:
+            self.skipTest('codex is not installed')
         self.binary = binary
         tmp = tempfile.TemporaryDirectory(dir=Path.home(), prefix='.agentos-624-decision-')
         self.addCleanup(tmp.cleanup)
@@ -1302,7 +1245,7 @@ class CodexDecisionInstructionFiles(unittest.TestCase):
         adapter = BoundedExecutionAdapter(finder=lambda name: self.binary, runtime_root=self.root / 'engine-runs',
                                           codex_home=self.root / 'codex-home')
         result = adapter.qualify_strict('codex', store_root=self.root / 'store',
-                                        tested_versions=CODEX_INSTRUCTION_FILES_QUALIFIED)
+                                        tested_versions=CODEX_INSTRUCTION_FILES_QUALIFIED, purpose='judgment')
         self.assertTrue(result['qualified'], result)
 
     def test_global_instruction_files_reach_the_decision_prompt(self):

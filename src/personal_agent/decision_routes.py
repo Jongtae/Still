@@ -43,6 +43,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -189,10 +190,11 @@ MODEL_FLAG = '--model'
 #: which file reaches the prompt (`$CODEX_HOME/AGENTS.override.md`, else
 #: `AGENTS.md`); the owner accepts it as owner-authored, untracked input to an
 #: advisory judgment.  Activation checks only the *size* of those two files (a
-#: stat, never their content) and shows a warning when one is non-empty.  Any
-#: other version still fails closed until the harness is re-run for it.
+#: stat, never their content) and shows a warning when one is non-empty.
+#: Local runtime checks now decide admission for every installed identity (#346).
 # #1561: 0.162.1 passed the same model-free sandbox and instruction-file probes.
 # #344: 0.164.0 passed the same probes (2026-10-26).
+# Historical manual observations only; local checks govern admission (#346).
 CODEX_INSTRUCTION_FILES_QUALIFIED = frozenset({'0.153.4', '0.162.1', '0.164.0'})
 #: The global instruction files Codex loads from CODEX_HOME (#624), in precedence order.
 CODEX_INSTRUCTION_FILES = ('AGENTS.override.md', 'AGENTS.md')
@@ -407,7 +409,6 @@ class DecisionRoutes:
         if engine_id not in CLI_BINARIES or policy not in MODEL_POLICIES:
             return UnavailableDecisionEngine()
         model = None if policy == POLICY_ENGINE_DEFAULT else route.get('requested_model')
-        fingerprint = route.get('fingerprint') or ''
 
         def guard():
             # The isolation-flag check, the Codex tool-surface plan and any
@@ -415,19 +416,17 @@ class DecisionRoutes:
             # against; a changed binary needs a new check, for every policy.
             if self.service.isolated_engine_adapter:
                 return 'isolated-deployment'
-            if fingerprint != cli_fingerprint(self.service.execution_adapter.finder(CLI_BINARIES[engine_id])):
+            if self._cli_requalify(route):
+                self._queue_cli_update(route)
                 return 'requalification-needed'
-            # #211: the qualification also belongs to the engine's cloud provider profile.
-            if (route.get('cloud_profile') or 'subscription') != self._cloud_identity(engine_id):
-                return 'requalification-needed'
-            if engine_id == 'codex' and not self._codex_instructions_qualified(route):
-                return 'instruction-files-unqualified'
             if engine_id == 'codex' and not self._codex_strict_recorded(route):
-                # #679: a Codex judgment runs only under a passed strict
-                # qualification on this platform (a route stored before #679,
-                # or moved to another OS, has none).
+                self._queue_cli_update(route)
                 return 'strict-profile-unqualified'
+            if engine_id == 'codex' and not self._codex_instructions_qualified(route):
+                self._queue_cli_update(route)
+                return 'instruction-files-unqualified'
             if engine_id == 'codex' and self._codex_strict_stale(route):
+                self._queue_cli_update(route)
                 return 'requalification-needed'
             return ''
 
@@ -558,7 +557,11 @@ class DecisionRoutes:
 
     def _put_jobs(self, rows):
         # Open jobs are always kept; finished ones only the newest few.
-        finished = sorted((key for key, row in rows.items() if row.get('state') not in JOB_OPEN),
+        rev = self._route_rev()
+        # A failed automatic attempt is also the no-retry marker for the active
+        # identity. History trimming must not make that identity retry itself.
+        finished = sorted((key for key, row in rows.items() if row.get('state') not in JOB_OPEN
+                           and not (row.get('target_identity') is not None and row.get('route_rev') == rev)),
                           key=lambda key: rows[key].get('finished_at') or 0, reverse=True)
         for key in finished[JOB_HISTORY:]:
             rows.pop(key, None)
@@ -618,6 +621,40 @@ class DecisionRoutes:
             self._put_jobs(rows)
             return dict(job)
 
+    def _cli_update_identity(self, route):
+        engine = route['engine']
+        execution = self.service.execution_adapter
+        binary = execution.finder(CLI_BINARIES[engine])
+        # Include the native identity (including inode/device) behind a launcher.
+        identify = getattr(execution, '_strict_binary_identity', None)
+        return {'fingerprint': cli_fingerprint(binary), 'cloud_profile': self._cloud_identity(engine),
+                'binary_identity': json.loads(json.dumps(identify(engine, binary))) if callable(identify) else None}
+
+    def _queue_cli_update(self, route):
+        """One automatic attempt per route revision and installed identity, durable across restarts.
+
+        Reuse the existing jobs, checkpoint/commit guard, progress and failure
+        status. A failed identity stays failed until it changes or the owner
+        explicitly requests another qualification. No notification on success.
+        """
+        if (route.get('engine') not in CLI_BINARIES or self.service.isolated_engine_adapter
+                or (route.get('mode') == MODE_FOLLOW and route.get('main') != self.service.main_ai.current())):
+            return
+        identity = self._cli_update_identity(route)
+        option = f"update:{route['engine']}"
+        with self.service.lock:
+            if self._route_rev() != route.get('activated_at'):
+                return
+            rows = self._jobs()
+            current = rows.get(option) or {}
+            if current.get('route_rev') == route.get('activated_at') and current.get('target_identity') == identity:
+                return
+            now = self.clock()
+            rows[option] = {'id': f'{option}@{uuid.uuid4().hex}', 'option': option, 'main': self.service.main_ai.current(),
+                            'state': JOB_QUEUED, 'queued_at': now, 'requeued': 0,
+                            'route_rev': route.get('activated_at'), 'route': route, 'target_identity': identity}
+            self._put_jobs(rows)
+
     def run_due_qualification(self):
         """One work-loop tick (#685): claim the oldest queued job and run it off-thread.
 
@@ -625,6 +662,9 @@ class DecisionRoutes:
         subprocess.  One qualification (or explicit activation) runs at a
         time; while one does, a queued job waits for a later tick.
         """
+        route = self.active()
+        if route and route.get('transport') == ROUTE_SUBSCRIPTION_CLI and self._cli_requalify(route):
+            self._queue_cli_update(route)
         with self.service.lock:
             queued = sorted((row for row in self._jobs().values() if row.get('state') == JOB_QUEUED),
                             key=lambda row: row.get('queued_at') or 0)
@@ -653,6 +693,12 @@ class DecisionRoutes:
         queued against (a job stored before #760 has no revision: it still
         needs the follow mode).
         """
+        if row.get('target_identity') is not None:
+            route = self.active()
+            return bool(route and self._route_rev() == row.get('route_rev')
+                        and self._cli_update_identity(route) == row['target_identity']
+                        and (route.get('mode') != MODE_FOLLOW
+                             or route.get('main') == self.service.main_ai.current()))
         if self.service.main_ai.current() != row.get('main'):
             return False
         if 'route_rev' in row:
@@ -674,7 +720,7 @@ class DecisionRoutes:
         """Record progress; stop when the owner cancelled or a newer switch replaced the job."""
         row = self._update_job(job['option'], job['id'],
                                step={'model': model, 'case': case_id, 'index': index + 1, 'cases': len(CASE_IDS)})
-        if row is None or row.get('state') == JOB_CANCELLING:
+        if row is None or row.get('state') == JOB_CANCELLING or not self._job_current(row):
             raise QualificationCancelled()
 
     def _run_job(self, job):
@@ -696,20 +742,34 @@ class DecisionRoutes:
             self._job_live = live
             try:
                 # keep_previous: the decision_route row changes only on a pass.
-                self._follow(main_id, keep_previous=True)
+                if job.get('target_identity') is not None:
+                    route = job['route']
+                    body = {'engine': route['engine'], 'model_policy': route.get('model_policy'),
+                            'model': route.get('requested_model'), 'effort': route.get('effort')}
+                    extra = {key: route[key] for key in ('mode', 'main') if key in route}
+                    self._activate_cli(body, extra=extra)
+                else:
+                    self._follow(main_id, keep_previous=True)
             except QualificationCancelled:
                 row = self._jobs().get(option) or {}
                 return finish(JOB_CANCELLED, failure=row.get('failure') or 'cancelled')
             except DecisionRouteError as exc:
-                failure = self._latest_failure(main_id)
+                failure = ((self._checks().get(f"{ROUTE_SUBSCRIPTION_CLI}:{job['route']['engine']}") or {}).get('failure')
+                           if job.get('target_identity') is not None else self._latest_failure(main_id)) or 'probe-failed'
                 self._record_check(option, {'state': 'failed', 'failure': failure})
                 message = str(exc)[:300]
+                if job.get('target_identity') is not None:
+                    message = message.removesuffix(' 현재 대화 해석 경로는 그대로 유지됩니다.')
+                    message += ' 이전에 검증한 판단 경로도 지금은 사용할 수 없습니다.'
                 return finish(JOB_FAILED, failure=failure, message=message,
                               result={'state': 'attention', 'failure': failure, 'message': message})
             except Exception as exc:  # noqa: BLE001 - reported as a failure, never a pass
                 self._record_check(option, {'state': 'failed', 'failure': 'probe-failed'})
                 message = (f'판단 AI를 확인하는 중 오류가 났습니다({type(exc).__name__}). '
                            '현재 대화 해석 경로는 그대로 유지됩니다.')
+                if job.get('target_identity') is not None:
+                    message = (f'판단 AI의 자동 확인에 실패했습니다({type(exc).__name__}). '
+                               '이전에 검증한 판단 경로도 지금은 사용할 수 없습니다.')
                 return finish(JOB_FAILED, failure='probe-failed', message=message,
                               result={'state': 'attention', 'failure': 'probe-failed', 'message': message})
             return finish(JOB_PASSED, result={'state': 'active'})
@@ -735,6 +795,9 @@ class DecisionRoutes:
         option = f'{MODE_FOLLOW}:{main_id}'
         with self.service.lock:
             rows = self._jobs()
+            update = f"update:{(self.active() or {}).get('engine')}"
+            if (rows.get(update) or {}).get('state') in JOB_OPEN:
+                option = update
             row = rows.get(option)
             if not row or row.get('state') not in JOB_OPEN:
                 raise DecisionRouteError('취소할 판단 AI 확인이 없습니다.')
@@ -782,6 +845,11 @@ class DecisionRoutes:
 
     def qualification(self, main_id=None):
         """The current Main AI's follow job, content free, or None.  Read-only."""
+        if main_id is None:
+            active = self.active() or {}
+            update = self._jobs().get(f"update:{active.get('engine')}")
+            if update and update.get('route_rev') == active.get('activated_at'):
+                return dict(update)
         main_id = self.service.main_ai.current() if main_id is None else main_id
         row = self._jobs().get(f'{MODE_FOLLOW}:{main_id}') if main_id else None
         return dict(row) if row else None
@@ -840,9 +908,8 @@ class DecisionRoutes:
         return {'state': 'active'}
 
     def _codex_instructions_qualified(self, route):
-        # #624: a stored Codex route is usable only while its recorded CLI
-        # version is instruction-file qualified (the same rule as activation).
-        return parse_cli_version('codex', route.get('cli_version') or '') in self.codex_instruction_qualified
+        checks = (route.get('strict_profile') or {}).get('checks') or ()
+        return all(f'instruction-files-{index}' in checks for index in range(3))
 
     @staticmethod
     def _codex_strict_recorded(route):
@@ -859,8 +926,8 @@ class DecisionRoutes:
         fingerprints, home, engine runtime root, owner store, CODEX_HOME), the
         launcher and native sha256 digests, and the version the CLI reports
         for ``--version`` in the Still environment (one local, model-free
-        subprocess on a binary-identity memo miss), which must be a tested
-        version equal to the qualified one.
+        subprocess on a binary-identity memo miss), which must be equal to the locally
+        qualified observation (not a version allowlist).
         """
         from .bounded_execution import CLI_PROFILES, STRICT_PROFILE
         execution = self.service.execution_adapter
@@ -888,7 +955,7 @@ class DecisionRoutes:
             return stale
         if sys.platform not in declared['tested_platforms']:
             return ['platform']
-        if version is None or version not in self.codex_instruction_qualified or version != strict.get('version'):
+        if version is None or version != strict.get('version'):
             return ['version']
         return []
 
@@ -935,7 +1002,9 @@ class DecisionRoutes:
         return (route.get('engine') in CLI_BINARIES
                 and ((route.get('fingerprint') or '') != cli_fingerprint(
                     self.service.execution_adapter.finder(CLI_BINARIES[route['engine']]))
-                     or (route.get('cloud_profile') or 'subscription') != self._cloud_identity(route['engine'])))
+                     or (route.get('cloud_profile') or 'subscription') != self._cloud_identity(route['engine'])
+                     or ('binary_identity' in route and route['binary_identity'] !=
+                         self._cli_update_identity(route)['binary_identity'])))
 
     def _cli_destination(self, engine_id):
         """#211: where a CLI judgment is sent: the engine's cloud profile when one is selected, else its subscription account."""
@@ -1023,7 +1092,7 @@ class DecisionRoutes:
                                                             'reason': '기본 AI가 아직 없습니다.'}
         if route is not None and route.get('mode') == MODE_FOLLOW:
             stale = route.get('main') != main
-            active = {**{k: v for k, v in route.items() if k not in ('fingerprint',)}, 'source': 'follow', 'stale': stale}
+            active = {**{k: v for k, v in route.items() if k not in ('fingerprint', 'binary_identity')}, 'source': 'follow', 'stale': stale}
             if route['transport'] == ROUTE_DIRECT_API:
                 active.update(destination=urlsplit(route.get('endpoint') or '').hostname,
                               available=bool(self._follow_resolve(route)) and not stale)
@@ -1036,7 +1105,7 @@ class DecisionRoutes:
                        'requested_model': direct['model'], 'destination': direct['destination'], 'available': True}
                       if resolved else {'transport': 'none', 'source': 'default'})
         else:
-            active = {**{k: v for k, v in route.items() if k not in ('fingerprint',)}, 'source': 'owner'}
+            active = {**{k: v for k, v in route.items() if k not in ('fingerprint', 'binary_identity')}, 'source': 'owner'}
             if route['transport'] == ROUTE_DIRECT_API:
                 active.update(provider=direct['provider'], requested_model=direct['model'],
                               destination=direct['destination'], available=bool(resolved))
@@ -1048,14 +1117,16 @@ class DecisionRoutes:
         # #685: the background qualification for the current Main AI, if any.
         # #760: an explicit 기본 AI 따라가기 job is shown while the row it was
         # queued against is still current, even when the mode is off/explicit.
-        qualification = self.qualification(main)
+        qualification = self.qualification()
         if qualification and self.mode(route) != MODE_FOLLOW and not (
-                qualification.get('explicit') and qualification.get('route_rev') == (route or {}).get('activated_at')):
+                (qualification.get('explicit') or qualification.get('target_identity') is not None)
+                and qualification.get('route_rev') == (route or {}).get('activated_at')):
             qualification = None
         return {'active': active, 'direct_api': direct, 'jev': jev, 'subscription_cli': engines,
                 'suite_version': SUITE_VERSION, 'mode': self.mode(route), 'main': main, 'follow': follow,
                 'follow_candidates': {route_id: self.follow_preview(route_id) for route_id in CHOOSER_ORDER},
-                'follow_check': follow_check, 'qualification': qualification,
+                'follow_check': follow_check, 'qualification': ({k: v for k, v in qualification.items()
+                    if k not in ('target_identity', 'route')} if qualification else None),
                 'effective': self.effective(active, route, main, follow, follow_check, qualification),
                 'model_lists': self._model_lists()}
 
@@ -1101,7 +1172,8 @@ class DecisionRoutes:
         if job.get('state') in (JOB_FAILED, JOB_CANCELLED) and not (
                 active.get('source') == 'follow' and active.get('available') and route.get('main') == main):
             job_reason = ('기본 AI({main})에 맞는 판단 AI 확인이 끝나지 않았습니다: {detail}',
-                          {'main': main_name, 'detail': JOB_FAILURE_TEXT.get(job.get('failure'), '확인 실패')})
+                          {'main': main_name, 'detail': (job.get('message') if job.get('target_identity') is not None else None)
+                           or JOB_FAILURE_TEXT.get(job.get('failure'), '확인 실패')})
 
         def noted(result):
             # #760: an off / explicitly chosen Judgment AI keeps its sentence;
@@ -1399,6 +1471,8 @@ class DecisionRoutes:
             # a replacing switch or a cancel writes under).
             if self._job_live is not None and not self._job_live():
                 raise QualificationCancelled()
+            if route.get('transport') == ROUTE_SUBSCRIPTION_CLI and self._cli_requalify(route):
+                self._fail(option, 'requalification-needed', '확인 중 CLI 또는 연결 정보가 바뀌었습니다.')
             self._record_check(option, {'state': 'active', **check})
             # Only the decision route row.  The Work-execution rows
             # (`subscription_engine`, `model`) are never written here.
@@ -1520,8 +1594,8 @@ class DecisionRoutes:
     def _codex_strict_profile(self, option, binary):
         """The #616 strict-isolated qualification, reused for Codex judgments (#679).
 
-        ``BoundedExecutionAdapter.qualify_strict`` (no model): tested platform
-        and CLI version, an engine runtime root outside the paths Codex's
+        ``BoundedExecutionAdapter.qualified_identity`` (scripted loopback model only): tested platform
+        and observed CLI version, an engine runtime root outside the paths Codex's
         baseline keeps readable, Codex's own sandbox runner under the exact
         permissions profile refusing the owner store, the home folder, the
         login profile and a sibling turn directory while the turn directory
@@ -1529,15 +1603,15 @@ class DecisionRoutes:
         features.  Any failure refuses activation; nothing falls back to the
         read-only sandbox.
         """
-        qualify_strict = getattr(self.service.execution_adapter, 'qualify_strict', None)
-        if not callable(qualify_strict):
+        qualify_local = getattr(self.service.execution_adapter, 'qualified_identity', None)
+        if not callable(qualify_local):
             self._fail(option, 'strict-profile-unqualified',
                        '이 실행 환경에서는 Codex 판단의 엄격 격리를 검증할 수 없습니다.')
-        result = qualify_strict('codex', binary=binary, store_root=self.store.root,
-                                tested_versions=self.codex_instruction_qualified)
+        result = qualify_local('codex', binary, self.store.root, purpose='judgment')
         if not result.get('qualified') or not result.get('disabled_features'):
+            from .cli_qualification import failure_message
             self._fail(option, 'strict-profile-unqualified',
-                       f'Codex 판단용 엄격 격리 검증을 통과하지 못했습니다({result.get("reason") or "unknown"}).',
+                       failure_message(result),
                        detail=str(result.get('reason') or '')[:160])
         # The complete record, as the strict Work route stores it
         # (quickstart_service.select_subscription_isolation): the binding and
@@ -1545,7 +1619,7 @@ class DecisionRoutes:
         return {'version': result.get('version'), 'platform': sys.platform, 'checked_at': self.clock(),
                 'checks': [check.get('check') for check in result.get('checks') or ()],
                 'binding': result.get('binding'), 'binary_sha256': result.get('binary_sha256'),
-                'native_sha256': result.get('native_sha256'),
+                'native_sha256': result.get('native_sha256'), 'identity': result.get('identity'),
                 'disabled_features': list(result['disabled_features'])}
 
     def _codex_instruction_files(self):
@@ -1597,13 +1671,6 @@ class DecisionRoutes:
             self._fail(option, 'tool-surface-unverified',
                        f'설치된 {name} CLI에서 도구 기능을 모두 끌 수 있는지 확인하지 못했습니다.',
                        detail=capability.get('tool_surface_detail') or capability.get('tool_surface') or '')
-        if engine_id == 'codex' and parse_cli_version('codex', capability['version']) not in self.codex_instruction_qualified:
-            # #624: CODEX_HOME instruction files reach the prompt and no
-            # official option stops them; a version is allowed only after the
-            # no-model harness was re-run and the limitation is shown.
-            self._fail(option, 'instruction-files-unqualified',
-                       f'설치된 {name} CLI가 로그인 프로필의 지침 파일을 판단 요청에 보내는지 아직 확인하지 않았습니다.',
-                       detail=CODEX_INSTRUCTION_FILES_LIMITATION)
         codex_extra = {}
         if engine_id == 'codex':
             strict = self._codex_strict_profile(option, binary)
@@ -1613,6 +1680,7 @@ class DecisionRoutes:
                            'instruction_files_present': self._codex_instruction_files()}
         base = {'transport': ROUTE_SUBSCRIPTION_CLI, 'engine': engine_id, 'model_policy': policy,
                 'fingerprint': capability['fingerprint'], 'cli_version': capability['version'],
+                'binary_identity': self._cli_update_identity({'engine': engine_id})['binary_identity'],
                 'cloud_profile': self._cloud_identity(engine_id),
                 **codex_extra, **(extra or {})}
         warning = {'instruction_files_present': codex_extra['instruction_files_present']} if codex_extra else {}
@@ -1629,8 +1697,19 @@ class DecisionRoutes:
             wanted = requested_effort or DEFAULT_EFFORT
             return wanted if wanted in levels else None
 
+        if policy == POLICY_ENGINE_DEFAULT and self._job_live is not None:
+            _model, result, tried = self._first_qualified(
+                [None], lambda model, audit: self._cli_engine(engine_id, None, policy, audit,
+                                                             codex_disabled_features=disabled,
+                                                             expected_cloud=base['cloud_profile']))
+            if not result:
+                self._fail(option, 'not-qualified', f'{name}의 자동 판단 확인에 실패했습니다.')
+            return self._commit(option, {**base, 'requested_model': None, 'effort': None,
+                                'qualification': self._qualification_record(None, result, capability)},
+                                {'model_policy': policy, 'candidates': tried, **warning})
         if policy == POLICY_ENGINE_DEFAULT:
-            engine = self._cli_engine(engine_id, None, policy, None, codex_disabled_features=disabled)
+            engine = self._cli_engine(engine_id, None, policy, None, codex_disabled_features=disabled,
+                                      expected_cloud=base['cloud_profile'])
             ok, decision = self._probe(engine)
             if not ok:
                 self._fail(option, engine.last_failure or decision.outcome, f'{name}이(가) 확인 판단에 답하지 않았습니다.')
@@ -1664,7 +1743,7 @@ class DecisionRoutes:
         chosen, result, tried = self._first_qualified(
             candidates, lambda model, audit: self._cli_engine(engine_id, model, policy, audit,
                                                               codex_disabled_features=disabled,
-                                                              effort=effort_for(model)))
+                                                              effort=effort_for(model), expected_cloud=base['cloud_profile']))
         if not chosen:
             if policy == POLICY_EXPLICIT:
                 model = candidates[0]

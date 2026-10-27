@@ -587,7 +587,7 @@ def cli_fingerprint(binary):
     """A local identity of the CLI binary Still would run (no subprocess).
 
     Used to invalidate a qualification when the engine changes: resolved
-    path, size and modification time.  ``''`` when the binary is absent.
+    path, size, nanosecond mtime, inode and device. ``''`` when absent.
     """
     if not binary:
         return ''
@@ -596,4 +596,4 @@ def cli_fingerprint(binary):
         info = os.stat(path)
     except OSError:
         return ''
-    return f'{path}|{info.st_size}|{int(info.st_mtime)}'
+    return f'{path}|{info.st_size}|{info.st_mtime_ns}|{info.st_ino}|{info.st_dev}'
