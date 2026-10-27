@@ -59,7 +59,7 @@ spacing, case or order of the current points, one that adds a semantic owner
 fact already in Memory, and one equal to a version the owner forgot.  A kept
 revision is the next version, attributed to the reviewed Work; the owner is
 told once, and forgetting it (``forget_record`` ``procedure:<id>``) puts the
-previous document back, undoable for the existing seven days.  Earlier
+previous document back, undoable at any time (#367: a forget is never purged).  Earlier
 ``profile.working.`` Memory rows are moved into the first version once
 (``WorkingNotes.migrate``), each under an undoable ``migrate`` receipt.
 Semantic owner facts stay in Memory.
@@ -693,8 +693,11 @@ class Upkeep:
         Read, not judged: only the stored ``relation_kind`` / ``related_job_id``
         link is used, oldest first.
         """
+        from .quickstart_store import forgotten_turn
         with self.store.db() as db:
-            rows = db.execute("SELECT message FROM jobs WHERE related_job_id=? AND relation_kind IN (?,?) AND id!=? "
+            # #367: a follow-up the owner forgot is not reviewed.
+            rows = db.execute(f"SELECT message FROM jobs WHERE related_job_id=? AND relation_kind IN (?,?) AND id!=? "
+                              f"AND NOT {forgotten_turn('user')} "
                               'ORDER BY created LIMIT ?', (job_id, REVIEW_CORRECTION, REVIEW_RETRY, job_id, limit)).fetchall()
         return [str(row['message'] or '') for row in rows if row['message']]
 

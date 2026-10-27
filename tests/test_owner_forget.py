@@ -49,7 +49,7 @@ class MemoryForget(unittest.TestCase):
         row = self.save('profile.place.home', '합정동')
         receipt = self.forget.forget(MEMORY_OWNER, 'memory:' + row['id'])
         self.assertEqual((receipt['operation'], receipt['state'], receipt['items']), ('forget', 'forgotten', 2))
-        self.assertEqual(receipt['undo_until'], self.clock.now + UNDO_SECONDS)
+        self.assertIsNone(receipt['undo_until'], '#367: a forget has no undo deadline and is never purged')
         self.assertNotIn('profile.place.home', self.current())
         self.assertEqual(self.searched('합정동'), [])
         self.assertEqual(self.searched('망원동'), [], 'an older value of the key does not come back either')
@@ -106,33 +106,42 @@ class MemoryForget(unittest.TestCase):
         self.assertEqual(caught.exception.code, 'later_value')
         self.assertEqual(self.current(), {'city': '부산'})
 
-    def test_restart_keeps_the_exclusion_and_purges_overdue_items(self):
+    def test_restart_keeps_the_exclusion_and_never_purges_a_forget(self):
+        """#367 (append + invalidate): a forget keeps its record past the old 7-day window, across a restart."""
         row = self.save('city', '서울')
         receipt = self.forget.forget(MEMORY_OWNER, 'memory:' + row['id'])
-        # A restart: a new store and module over the same files, the window already over.
         store = QuickStore(self.root)
         later = Clock(self.clock.now + UNDO_SECONDS + 1)
         again = OwnerForget(store, clock=later)
-        self.assertNotIn('city', {r['memory_key'] for r in MemoryService(store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
-                                  .list_memories(MEMORY_OWNER)['memories']})
-        self.assertEqual(again.purge_due(), 1)
-        self.assertEqual(again.purge_due(), 0, 'a second purge finds nothing')
+        memories = MemoryService(store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        self.assertNotIn('city', {r['memory_key'] for r in memories.list_memories(MEMORY_OWNER)['memories']})
+        self.assertEqual(again.purge_due(), 0, 'nothing is ever due')
         with store.db() as db:
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM memories').fetchone()[0], 0)
-            settled = db.execute('SELECT state,counts_json FROM owner_state_receipts WHERE id=?', (receipt['receipt'],)).fetchone()
-        self.assertEqual(settled['state'], 'purged')
-        self.assertEqual(json.loads(settled['counts_json'])['memories'], 1)
-        with self.assertRaises(ForgetError) as caught:
-            again.undo(MEMORY_OWNER, receipt['receipt'])
-        self.assertEqual(caught.exception.code, 'settled')
+            kept = db.execute('SELECT state,content FROM memories WHERE id=?', (row['id'],)).fetchone()
+            settled = db.execute('SELECT state FROM owner_state_receipts WHERE id=?', (receipt['receipt'],)).fetchone()
+        self.assertEqual((kept['state'], kept['content'], settled['state']), ('forgotten', '서울', 'forgotten'))
+        self.assertEqual([entry['receipt'] for entry in again.undoable(MEMORY_OWNER)], [receipt['receipt']])
+        self.assertEqual(again.undo(MEMORY_OWNER, receipt['receipt'])['state'], 'undone')
+        self.assertIn('city', {r['memory_key'] for r in memories.list_memories(MEMORY_OWNER)['memories']})
 
-    def test_undo_after_the_window_is_refused_even_before_the_purge_ran(self):
+    def test_a_forget_written_before_367_is_undoable_after_its_old_window(self):
+        """A receipt that still carries the pre-#367 ``undo_until`` is not refused as expired."""
         row = self.save('city', '서울')
         receipt = self.forget.forget(MEMORY_OWNER, 'memory:' + row['id'])
-        self.clock.now += UNDO_SECONDS
+        with self.store.db() as db:
+            db.execute('UPDATE owner_state_receipts SET undo_until=? WHERE id=?', (self.clock.now + UNDO_SECONDS, receipt['receipt']))
+        self.clock.now += UNDO_SECONDS + 1
+        self.assertEqual(self.forget.undo(MEMORY_OWNER, receipt['receipt'])['state'], 'undone')
+
+    def test_delete_still_erases_at_once_and_cannot_be_undone(self):
+        row = self.save('city', '서울')
+        receipt = self.forget.forget(MEMORY_OWNER, 'memory:' + row['id'], delete=True)
+        self.assertEqual(receipt['state'], 'deleted')
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM memories').fetchone()[0], 0)
         with self.assertRaises(ForgetError) as caught:
             self.forget.undo(MEMORY_OWNER, receipt['receipt'])
-        self.assertEqual(caught.exception.code, 'expired')
+        self.assertEqual(caught.exception.code, 'no_receipt')
 
     def test_delete_purges_now_with_no_undo(self):
         self.save('city', '서울')
@@ -283,7 +292,7 @@ class ClaimAndObservationForget(ContextCase):
             self.assertEqual(caught.exception.code, 'stale')
         self.assertEqual(len(self.context.hypotheses()), 1)
 
-    def test_a_forgotten_claim_is_purged_with_its_exposures(self):
+    def test_a_forgotten_claim_is_kept_out_of_use_and_only_delete_erases_its_exposures(self):
         job, _ = self.request('오늘 재택이야')
         result = self.propose(job, predicate='work_mode', value='remote')
         self.assertTrue(result.get('recorded'), result)
@@ -293,12 +302,19 @@ class ClaimAndObservationForget(ContextCase):
                        ('w-earlier', 'state:' + claim['id'], '1', json.dumps(['remote']), self.now))
         receipt = self.forget.forget(MEMORY_OWNER, 'state:' + claim['id'])
         self.assertEqual(self.context.hypotheses(), [])
+        started = self.now
         self.now += UNDO_SECONDS + 1
-        self.assertEqual(self.forget.purge_due(), 1)
+        self.assertEqual(self.forget.purge_due(), 0, '#367: a forget is never purged')
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM current_state_claims').fetchone()[0], 1)
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM current_context_exposures').fetchone()[0], 1)
+        self.now = started
+        self.assertEqual(self.forget.undo(MEMORY_OWNER, receipt['receipt'])['state'], 'undone')
+        [claim] = self.context.hypotheses()
+        self.assertEqual(self.forget.forget(MEMORY_OWNER, 'state:' + claim['id'], delete=True)['state'], 'deleted')
         with self.store.db() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM current_state_claims').fetchone()[0], 0)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM current_context_exposures').fetchone()[0], 0)
-        self.assertTrue(receipt['receipt'])
 
 
 if __name__ == '__main__':

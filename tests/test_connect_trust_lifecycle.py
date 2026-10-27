@@ -58,16 +58,22 @@ class LifecycleTests(unittest.TestCase):
         self.forget.undo(MEMORY_OWNER, receipt['receipt'], confirmed_authority=True)
         self.assertTrue(trust.is_read(restarted, self.target, 'list_notes'))
 
-    def test_purge_removes_payload_but_retains_revocation(self):
+    def test_a_forget_keeps_the_record_revoked_and_only_delete_removes_the_payload(self):
+        """#367: a forget keeps the revoked record (undoable with confirmation); delete leaves only the marker."""
         receipt = self.forget.forget(MEMORY_OWNER, self.ref)
         self.now += UNDO_SECONDS
-        self.assertEqual(self.forget.purge_due(), 1)
+        self.assertEqual(self.forget.purge_due(), 0)
+        raw = self.store.config(trust.KEY)['hands']['codex|owner-mcp|notes']
+        self.assertIn('operations', raw)
+        self.assertFalse(trust.is_read(self.store, self.target, 'list_notes', {'list_notes'}))
+        self.assertEqual(self.forget.undo(MEMORY_OWNER, receipt['receipt'], confirmed_authority=True)['state'], 'undone')
+        deleted = self.forget.forget(MEMORY_OWNER, self.ref, delete=True)
         raw = self.store.config(trust.KEY)['hands']['codex|owner-mcp|notes']
         self.assertNotIn('operations', raw)
         self.assertNotIn('history', raw)
         self.assertFalse(trust.is_read(self.store, self.target, 'list_notes', {'list_notes'}))
         with self.assertRaises(ForgetError):
-            self.forget.undo(MEMORY_OWNER, receipt['receipt'], confirmed_authority=True)
+            self.forget.undo(MEMORY_OWNER, deleted['receipt'], confirmed_authority=True)
 
     def test_later_explicit_decision_does_not_revive_old_permissions_or_allow_restore(self):
         receipt = self.forget.forget(MEMORY_OWNER, self.ref)

@@ -570,9 +570,13 @@ class CurrentContext:
         live = self.situation(now)
         start = live['at'] if live else now - SITUATION_SECONDS
         noted = {source.get('ref') for source in (live or {}).get('sources', ())}
+        from .quickstart_store import forgotten_turn
         with self.store.db() as db:
             rows = [dict(row) for row in db.execute(
-                "SELECT id,message,response,created FROM jobs WHERE created>=? AND created<? AND id!=? "
+                # #367: what the owner forgot of a Work is not read back into the day's note.
+                f"SELECT id,CASE WHEN {forgotten_turn('user')} THEN '' ELSE message END AS message,"
+                f"CASE WHEN {forgotten_turn('assistant')} THEN '' ELSE response END AS response,created "
+                "FROM jobs WHERE created>=? AND created<? AND id!=? "
                 "AND request_key NOT LIKE 'preparation:%' ORDER BY created DESC LIMIT ?",
                 (start, job['created'], job_id, SITUATION_TURNS + len(noted)))]
             settings = self.observations.settings(db)

@@ -161,15 +161,19 @@ class OwnerUndo(unittest.TestCase):
         self.assertEqual(refused.exception.code, 'later_value')
         self.assertEqual(self.library.current('set-a')['version'], 3)
 
-    def test_a_candidate_or_unknown_ref_is_refused_and_the_purge_deletes_the_source(self):
+    def test_a_candidate_or_unknown_ref_is_refused_and_only_delete_removes_the_source(self):
         candidate = self.library.propose('w9', 'set-a', SOURCE_V1 + '#x\n', FUNCTIONS)
         for ref in ('procedure:' + candidate, 'procedure:missing'):
             with self.subTest(ref=ref), self.assertRaises(ForgetError):
                 self.forget.forget(OWNER, ref)
-        self.forget.forget(OWNER, 'procedure:' + self.v1)
-        self.forget.purge_due(now=time.time() + 8 * 86400)
+        receipt = self.forget.forget(OWNER, 'procedure:' + self.v1)
+        self.assertEqual(self.forget.purge_due(now=time.time() + 8 * 86400), 0, '#367: a forget is never purged')
         with self.store.db() as db:
-            self.assertIsNone(db.execute('SELECT 1 FROM procedure_versions WHERE id=?', (self.v1,)).fetchone())
+            self.assertEqual(db.execute('SELECT state FROM procedure_versions WHERE id=?', (self.v1,)).fetchone()['state'], 'forgotten')
+        self.assertTrue(receipt['receipt'])
+        self.forget.forget(OWNER, 'procedure:' + self.v2, delete=True)
+        with self.store.db() as db:
+            self.assertIsNone(db.execute('SELECT 1 FROM procedure_versions WHERE id=?', (self.v2,)).fetchone(), 'delete erases at once')
 
 
 class OwnerFacing(unittest.TestCase):

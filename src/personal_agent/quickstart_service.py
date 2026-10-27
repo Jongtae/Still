@@ -1832,6 +1832,10 @@ class AgentService:
             if not job or job.get('status') not in (om.REVIEWABLE_STATUSES if review else ('succeeded','partial')):
                 upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'work-not-finished'},now,kind=kind)
                 return
+            if self.store.work_turn_forgotten(work_id):
+                # #367 review P1: what the owner forgot of this Work is not sent to the upkeep; it settles unsent.
+                upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'forgotten'},now,kind=kind)
+                return
             # Every fact is redacted by the judgment redaction scoped to the source Work:
             # stored secrets and credential shapes always, and its saved private values
             # (#605 set) from the model-stated facts.
@@ -1963,7 +1967,8 @@ class AgentService:
         rows=[]
         row=self.preparations.get(prep.preparation_of(job.get('request_key')))
         origin=self.store.job(row['created_from']) if row and row.get('created_from') else None
-        if origin and origin.get('message'):
+        # #367 review P1: a request the owner forgot is not shown to the preparation's Work again.
+        if origin and origin.get('message') and not self.store.work_request_forgotten(origin['id']):
             rows.append({'role':'user','content':self.scrub_work_text(origin['id'],origin['message']),
                          'job_id':origin['id'],'channel':origin.get('channel'),'qualifier':None,
                          'request_key':origin.get('request_key'),'created':origin.get('created')})
@@ -3500,12 +3505,11 @@ class AgentService:
         kinds only, no content).  Read from stores; a failure leaves a fact out.
         """
         now=time.time()
-        context={'previous_request':previous.get('message') or '',
+        # #367: a request or reply the owner forgot is not read back to the judgment.
+        context={'previous_request':'' if self.store.work_request_forgotten(previous['id']) else previous.get('message') or '',
                  'previous_request_at':self._minutes_ago(now,previous.get('created'))}
         try:
-            with self.store.db() as db:
-                reply=db.execute("SELECT content,created FROM messages WHERE job_id=? AND role='assistant' ORDER BY id DESC LIMIT 1",
-                                 (previous['id'],)).fetchone()
+            reply=self.store.last_reply(previous['id'],with_created=True)
             if reply:
                 context.update(previous_reply=reply['content'] or '',
                                previous_reply_at=self._minutes_ago(now,reply['created']))
@@ -3543,8 +3547,8 @@ class AgentService:
                 if db.execute('SELECT 1 FROM jobs WHERE related_job_id=? AND id!=? AND relation_kind!=?',
                               (earlier['id'],current['id'],'steer')).fetchone():
                     return None
-                reply=db.execute("SELECT content FROM messages WHERE job_id=? AND role='assistant' ORDER BY id DESC LIMIT 1",
-                                 (earlier['id'],)).fetchone()
+            # #367: a forgotten request or reply is no open question to answer.
+            reply=None if self.store.work_request_forgotten(earlier['id']) else self.store.last_reply(earlier['id'])
         except Exception:
             LOG.info('open question lookup unavailable job=%s',current_work_id)
             return None
@@ -3837,7 +3841,8 @@ class AgentService:
                 return None
             seen.add(work_id)
             if current.get('relation_kind')!='retry':
-                return current
+                # #367: a request the owner forgot is never replayed by a retry.
+                return None if self.store.work_request_forgotten(work_id) else current
             parent_id=current.get('related_job_id')
             if not isinstance(parent_id,str):
                 return None
@@ -4126,7 +4131,8 @@ class AgentService:
         else:
             state='ready';next_action='메모는 바로 남길 수 있어요. 대화가 필요할 때 AI를 연결하세요.'
         tg=self.store.config('telegram', {})
-        conversation=self.owner_messages(self.store.history())
+        # #367: the owner's own view keeps forgotten rows, marked; AI readers never get them.
+        conversation=self.owner_messages(self.store.history(include_forgotten=True))
         workspaces=self.store.workspaces()
         return {'state':state,'next_action':next_action,'active_jobs':active,
                 'conversation':conversation,'model_connected':bool(model_ready or subscription),
@@ -5743,12 +5749,11 @@ class AgentService:
             if current.get('relation_kind') not in ('reference','retry','correction','steer') or not related:return ''
             earlier=self.store.job(related)
             if not earlier:return ''
-            with self.store.db() as db:
-                reply=db.execute("SELECT content FROM messages WHERE job_id=? AND role='assistant' ORDER BY id DESC LIMIT 1",
-                                 (related,)).fetchone()
+            # #367: what the owner forgot of that exchange is not continued.
+            reply=self.store.last_reply(related)
             message=context_message({**earlier,'role':'user','content':earlier.get('message') or ''})
             who='owner' if message['role']=='user' else 'assistant'
-            lines=[f"[{who}] {message['content']}"]
+            lines=[] if self.store.work_request_forgotten(related) else [f"[{who}] {message['content']}"]
             if reply and reply['content']:lines.append(f"[assistant] {reply['content']}")
             return '\n'.join(lines)
         except Exception:
@@ -8826,7 +8831,7 @@ class AgentService:
             lifecycle=OwnerForget(self.store)
             if setting=='forget':
                 receipt=lifecycle.forget(MEMORY_OWNER,'trust:'+'|'.join(parts[:3]),expected_revision=expected_revision)
-                return {**receipt,'response':f"{parts[2]}의 이전 권한 사용을 중지했어요. 7일 안에 설정 확인으로 복원할 수 있어요. 그 뒤 기록 내용은 지우고 권한 중지 표시만 남겨요."}
+                return {**receipt,'response':f"{parts[2]}의 이전 권한 사용을 중지했어요. 설정 확인으로 언제든 복원할 수 있어요."}
             candidates=lifecycle.undoable(MEMORY_OWNER,limit=trust_record.MAX_HANDS,kind='trust')
             if not any(row['receipt']==parts[3] and row['kind']=='trust'
                        and row.get('item',{}).get('ref')=='trust:'+'|'.join(parts[:3]) for row in candidates):
@@ -11009,6 +11014,12 @@ class AgentService:
                 self.preparations.refuse_run(db,job['id'],self.preparations.clock(),refusal)
                 return True
             if self.store.telegram.album_open(db,job['id']):return False
+            # #367 review P1: a parked Work whose request the owner forgot since is never run (or recorded) again.
+            if db.execute("SELECT 1 FROM messages m JOIN forgotten_messages f ON f.message_id=m.id "
+                          "WHERE m.job_id=? AND m.role='user' LIMIT 1",(job['id'],)).fetchone():
+                cause='잊기로 한 요청이라 다시 실행하지 않았어요.'
+                db.execute("UPDATE jobs SET status='cancelled',error='forgotten',owner_cause=? WHERE id=?",(cause,job['id']))
+                return True
             card=self.store.telegram.card_row(db,job['id'])
             if card and (card['message_id']==-1 or card['created']>time.time()-TELEGRAM_CARD_GRACE_SECONDS):return False
             db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))
@@ -12581,7 +12592,7 @@ class AgentService:
                 now=time.monotonic()
                 if now>=next_document_resume_prune:
                     self.prune_expired_document_resumes()
-                    # #794 phase 3: forgotten owner state whose 7-day undo ended is purged (overdue after a restart too).
+                    # #794 phase 3 / #367: the forget purge hook; a forget is never purged now, so this finds nothing.
                     self.purge_forgotten()
                     next_document_resume_prune=now+30
                 if now>=next_shared_sites_retry:
