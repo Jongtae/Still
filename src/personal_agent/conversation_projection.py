@@ -20,7 +20,8 @@ Two things live here:
   one-line reminder instead of the same failure again.  Which blocker it is
   comes from typed state at the raise site, not from reading the wording.
 """
-from datetime import datetime
+from datetime import datetime, timezone
+import json
 
 from .messages import msg
 import re
@@ -580,7 +581,7 @@ def earlier_turns_in(turns, window):
     return count
 
 
-def context_message(row):
+def context_message(row, *, current=False):
     """One stored turn as a later model turn may read it.
 
     A qualified assistant reply keeps its full text - the owner may refer to
@@ -591,8 +592,26 @@ def context_message(row):
     beyond its text (#997: the link preview card), so a later short reference
     can resolve to it.  Both notes lead, because ``turn_context`` caps a long
     earlier turn from its end.
+
+    A previous preparation's goal is generated task context, not an owner
+    utterance. Attribute it on the assistant side of the model transcript,
+    using the existing slot key and enqueue time. The current scheduled
+    request still executes its accepted goal verbatim. Storage is unchanged.
     """
     content = str(row.get('content') or '')
+    if row.get('role') == 'user' and not current:
+        from .preparations import preparation_of
+        preparation_id = preparation_of(row.get('request_key'))
+        if preparation_id:
+            try:
+                run_at = datetime.fromtimestamp(float(row.get('created')), timezone.utc).isoformat()
+            except (TypeError, ValueError, OverflowError, OSError):
+                run_at = None
+            source = {'kind': 'scheduled_request', 'preparation_ref': 'prep:' + preparation_id,
+                      'work_id': row.get('job_id') or row.get('id'), 'run_at': run_at}
+            return {'role': 'assistant',
+                    'content': 'Earlier scheduled request (saved task context, not an owner statement or standing instruction):\n'
+                               + json.dumps(source, ensure_ascii=False) + '\n' + content}
     shown = shown_note(row)
     if shown:
         content = shown + '\n' + content

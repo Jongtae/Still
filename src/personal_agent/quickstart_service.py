@@ -1965,8 +1965,10 @@ class AgentService:
         origin=self.store.job(row['created_from']) if row and row.get('created_from') else None
         if origin and origin.get('message'):
             rows.append({'role':'user','content':self.scrub_work_text(origin['id'],origin['message']),
-                         'job_id':origin['id'],'channel':origin.get('channel'),'qualifier':None})
-        rows.append({'role':'user','content':job['message'],'job_id':job['id'],'channel':job.get('channel'),'qualifier':None})
+                         'job_id':origin['id'],'channel':origin.get('channel'),'qualifier':None,
+                         'request_key':origin.get('request_key'),'created':origin.get('created')})
+        rows.append({'role':'user','content':job['message'],'job_id':job['id'],'channel':job.get('channel'),'qualifier':None,
+                     'request_key':job.get('request_key'),'created':job.get('created')})
         return rows
 
     def queue_preparation_proposal(self, job):
@@ -5719,7 +5721,9 @@ class AgentService:
             with self.store.db() as db:
                 reply=db.execute("SELECT content FROM messages WHERE job_id=? AND role='assistant' ORDER BY id DESC LIMIT 1",
                                  (related,)).fetchone()
-            lines=[f"[owner] {earlier.get('message') or ''}"]
+            message=context_message({**earlier,'role':'user','content':earlier.get('message') or ''})
+            who='owner' if message['role']=='user' else 'assistant'
+            lines=[f"[{who}] {message['content']}"]
             if reply and reply['content']:lines.append(f"[assistant] {reply['content']}")
             return '\n'.join(lines)
         except Exception:
@@ -11375,7 +11379,8 @@ class AgentService:
         run.document_history=any(message.get('job_id') in run.document_jobs for message in run.stored_history)
         # Earlier replies of failed/partial/interrupted Work carry
         # their outcome into the model's context (#494).
-        run.history=[context_message(m) for m in run.stored_history]
+        run.history=[context_message(m,current=index==len(run.stored_history)-1)
+                     for index,m in enumerate(run.stored_history)]
         # The stored rows behind `history`, index for index, so the
         # sources of exactly the messages a worker is shown can be
         # read from their Works' records (#605).
