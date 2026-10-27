@@ -48,9 +48,23 @@ def shortcut_slot(action):
     return next((name for name, spec in SLOT_SPECS.items() if action in spec['shortcuts']), None)
 
 
+#: #363: what a read-only slot with a separate write grant tells the AI, so a change goes to the
+#: connection handoff (the call is refused before dispatch and Still parks the Work) rather than the browser.
+WRITE_GRANT_NOTE = ("; changes need the owner's separate '{grant}' connection: make the change with api_request "
+                    "anyway, and if it is refused as read-only Still asks the owner to connect and continues "
+                    "this request once afterwards")
+
+
+def write_grants():
+    """The separate write connections a slot can be upgraded by (#363): ``write_requires`` of every spec."""
+    return frozenset(spec['write_requires'] for spec in SLOT_SPECS.values() if spec.get('write_requires'))
+
+
 def _slot(name, token, *, writable=False):
     spec = SLOT_SPECS[name]
-    return {'name': name, 'note': spec['write_note'] if writable else spec['note'], 'hosts': tuple(spec['hosts']), 'paths': tuple(spec['paths']),
+    note = spec['write_note'] if writable else spec['note'] + (
+        WRITE_GRANT_NOTE.format(grant=spec['write_requires']) if spec.get('write_requires') else '')
+    return {'name': name, 'note': note, 'hosts': tuple(spec['hosts']), 'paths': tuple(spec['paths']),
             'header': 'Authorization', 'scheme': 'Bearer', 'subject': None, 'revision': 1,
             'max_age_seconds': 900, 'read_only': not writable, 'connection': name, 'token': token,
             'write_paths': spec.get('write_paths'), 'write_requires': spec.get('write_requires'),

@@ -95,7 +95,7 @@ class ConnectorHandoffLines(unittest.TestCase):
         self.assertEqual(bubble, 'Gmail 연결이 아직 없어 이 요청을 실행하지 않았습니다. 지금 필요한 다음 단계는 하나입니다: '
                                  'Gmail을 연결해 주세요. 연결이 확인되면 방금 요청을 한 번만 이어서 처리합니다.')
         _case, _job, bubble = self.park(None, url=CONNECT_URL)
-        self.assertTrue(bubble.endswith(f'처리합니다. 이 컴퓨터의 브라우저에서 {CONNECT_URL} 주소를 열면 연결을 진행할 수 있습니다.'))
+        self.assertTrue(bubble.endswith(f'처리합니다. Still이 실행 중인 PC(Mac)의 브라우저에서 {CONNECT_URL} 주소를 열어 연결해 주세요. 중요한 설정이라 휴대폰에서는 열리지 않습니다.'))
 
     def test_each_unmet_connection_is_said_in_the_owner_language(self):
         scopes = connector_case.GMAIL_SCOPES

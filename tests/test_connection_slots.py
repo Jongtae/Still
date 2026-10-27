@@ -437,6 +437,67 @@ class GmailModify(unittest.TestCase):
             self.assertTrue(connection_slots.build(self.service, 'local-owner')['gmail']['read_only'])
         self.assertEqual((self.transport.calls, self.claims()), ([], []))
 
+    def refused_change_event(self):
+        """#363: record the refused change exactly as the loop records a failed call (either route)."""
+        from personal_agent.agent_runtime import _error_observation
+        with self.assertRaises(ApiError) as caught:
+            self.call('POST', 'messages/batchModify', body='{}')
+        self.record('api_request', 'failed', {'scope': 'subscription-mcp-bridge', 'call_id': 'c1', 'host_action': 'api_request',
+                                              **_error_observation(caught.exception, True, 'api_request'),
+                                              'declared_effect': 'read'})
+        return caught.exception
+
+    def record(self, tool, status, detail):
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (self.job, tool, status, json.dumps(detail), self.clock[0]))
+
+    def test_a_read_only_slot_names_its_write_connection_to_the_ai(self):
+        self.read_connect()
+        slot = connection_slots.build(self.service, 'local-owner')['gmail']
+        self.assertIn("'gmail-modify' connection", slot['note'])
+        self.assertIn('gmail-modify', self.refused_change_event().args[0])
+        self.assertNotIn("'gmail-modify' connection", connection_slots.relayed(('gmail', 'gmail-modify'))['gmail']['note'])
+
+    def test_a_change_refused_for_the_write_connection_parks_the_work_for_it(self):
+        self.read_connect()
+        self.refused_change_event()
+        self.assertEqual(self.service.connector_need(type('C', (), {'memo': {}})(), self.job), 'gmail-modify')
+        job = self.store.job(self.job)
+        self.assertTrue(self.service.park_for_connector_read(job, 'gmail-modify'))
+        job = self.store.job(self.job)
+        self.assertEqual(job['status'], 'awaiting_connection')
+        self.assertIn('/gmail-modify', job['response'])
+        self.assertIn('PC(Mac)', job['response'])
+        result = self.connect()
+        self.assertEqual(result['work_id'], self.job)
+        self.assertTrue(result['resumed'])
+
+    def test_an_earlier_attempts_refusal_is_not_reused(self):
+        self.read_connect()
+        self.refused_change_event()
+        with self.store.db() as db:
+            last = db.execute('SELECT MAX(id) FROM tool_events WHERE job_id=?', (self.job,)).fetchone()[0]
+        self.assertIsNone(self.service.recorded_connector_write_need(self.job, since=last))
+
+    def test_a_work_that_changed_anything_is_not_parked_for_the_write_connection(self):
+        self.read_connect()
+        self.refused_change_event()
+        self.record('api_request', 'succeeded', {'scope': 's', 'call_id': 'c2', 'host_action': 'api_request',
+                                                 'declared_effect': 'mutate', 'evidence': {'effect': 'mutate'}})
+        self.assertIsNone(self.service.recorded_connector_write_need(self.job))
+
+    def test_an_unknown_outcome_or_a_read_connector_name_does_not_park_for_a_write(self):
+        self.read_connect()
+        self.record('api_request', 'failed', {'scope': 's', 'call_id': 'c3', 'host_action': 'api_request',
+                                              'code': 'api_read_only', 'effect': 'unknown', 'requires': 'gmail-modify'})
+        self.assertIsNone(self.service.recorded_connector_write_need(self.job))
+        with self.store.db() as db:
+            db.execute('DELETE FROM tool_events WHERE job_id=?', (self.job,))
+        self.record('api_request', 'failed', {'scope': 's', 'call_id': 'c4', 'host_action': 'api_request',
+                                              'code': 'api_read_only', 'effect': 'none', 'requires': 'google-calendar-write'})
+        self.assertIsNone(self.service.recorded_connector_write_need(self.job))
+
     def test_replay_is_refused_after_reconnect_too(self):
         self.connect()
         self.call('POST', 'messages/batchModify', body='{"ids":["abc"]}')

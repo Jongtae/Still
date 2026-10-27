@@ -988,8 +988,11 @@ class ApiRequests:
             raise ApiError('지원하는 메서드는 ' + ', '.join(METHODS) + '입니다.', 'api_argument_invalid')
         if slot.get('read_only') and method not in READ_METHODS:
             # CONN-API: a read grant never authorizes a mutation.
-            raise ApiError(f"연결 '{slot['name']}'은 읽기 전용이라 {method} 요청을 보내지 않았습니다.", 'api_read_only',
-                           requires=slot.get('write_requires'))
+            text = f"연결 '{slot['name']}'은 읽기 전용이라 {method} 요청을 보내지 않았습니다."
+            if slot.get('write_requires'):
+                # #363: the Work parks for this connection after the turn; the AI need not find another way.
+                text += f" 변경에는 소유자의 '{slot['write_requires']}' 연결이 필요합니다. Still이 대화에서 연결을 안내하고, 연결되면 이 요청을 한 번 이어서 처리합니다."
+            raise ApiError(text, 'api_read_only', requires=slot.get('write_requires'))
         url = str(args.get('url') or '').strip()
         try:
             parts, named = self._target(slot, url)

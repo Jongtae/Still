@@ -55,6 +55,7 @@ from .settings_orchestrator import SettingsOrchestrator, SettingsError
 from .personal_knowledge import PersonalKnowledgeOrchestrator
 from .memory_service import MemoryService
 from .file_workspace import FileWorkspace
+from . import connection_slots
 from . import folder_grants
 from . import intranet
 from . import work_mode
@@ -5391,6 +5392,33 @@ class AgentService:
     #: Connectors a model-chosen read may be parked for (#606 T5).  Mail became
     #: a loop read through the Gmail API slot (CONN-API) and ``mail_read`` (#150).
     PARKABLE_READ_CONNECTORS=frozenset({CALENDAR_CONNECTOR_ID,DRIVE_CONNECTOR_ID,GMAIL_CONNECTOR_ID})
+    #: #363: a slot's separate write connection, asked for by a change refused before dispatch.
+    PARKABLE_WRITE_CONNECTORS=connection_slots.write_grants()
+
+    def connector_need(self, capabilities, job_id, since=None):
+        """The connector a turn that changed nothing found missing: a typed read result, else a refused change."""
+        return self.connector_read_need(capabilities,job_id) or self.recorded_connector_write_need(job_id,since)
+
+    def recorded_connector_write_need(self, job_id, since=None):
+        """The write connection a change refused before dispatch named (#363), or None.
+
+        The refusal is a failed event of either route (``_error_observation`` records ``requires``);
+        guarded like ``connector_read_need``: only a Work whose every attempt changed nothing parks.
+        """
+        from .agent_runtime import EFFECT_NONE, record_effect
+        if not self.connector_handoff or not self.attempted_only_reads(job_id):return None
+        with self.store.db() as db:
+            rows=db.execute("SELECT tool,status,detail FROM tool_events WHERE job_id=? AND status='failed' AND id>? ORDER BY id",
+                            (job_id,since or 0)).fetchall()
+        for row in rows:
+            try:detail=json.loads(row['detail'] or '{}')
+            except (TypeError,ValueError):continue
+            if not isinstance(detail,dict):continue
+            need=detail.get('requires')
+            if (need in self.PARKABLE_WRITE_CONNECTORS and self.connector_handoff.known(need)
+                    and record_effect(detail.get('host_action') or row['tool'],detail,row['status'])==EFFECT_NONE):
+                return need
+        return None
 
     def connector_read_need(self, capabilities, job_id):
         """The declared connector a read-only turn found missing, or None.
@@ -12005,7 +12033,7 @@ class AgentService:
         run.waits_for_sign_in=self.sign_in_requested(job['id'],since=run.attempt_start)
         # #774 review: a relayed calendar read with no connection parks the Work
         # for the connector handoff and resumes it once, as on the direct route.
-        connector_need=self.connector_read_need(run.capabilities,job['id']) if cli_browser else None
+        connector_need=self.connector_need(run.capabilities,job['id'],run.attempt_start) if cli_browser else None
         if connector_need:
             self.record_work_sources(job['id'],run.work_sources|run.capabilities.private_provenance)
             self.record_turn_provenance(job['id'],status='setup-required')
@@ -12168,7 +12196,7 @@ class AgentService:
             return self.park_for_local_authority(job,local_need,run.calendar_notice)
         # #606 T5: a calendar read with no calendar connection is
         # parked once for the existing connector handoff.
-        connector_need=self.connector_read_need(run.capabilities,job['id'])
+        connector_need=self.connector_need(run.capabilities,job['id'],run.attempt_start)
         if connector_need:
             self.record_work_sources(job['id'],run.work_sources|run.capabilities.private_provenance)
             self.record_turn_provenance(job['id'],status='setup-required')

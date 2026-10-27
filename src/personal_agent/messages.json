@@ -498,10 +498,10 @@
   "zh": "{label} 的访问被阻止，所以没有执行这个请求。下一步只需要一件事：检查 {label} 的访问权限。解除阻止之前，不会继续处理这个请求。"
  },
  "handoff.connect_link": {
-  "ko": "{guidance} 이 컴퓨터의 브라우저에서 {url} 주소를 열면 연결을 진행할 수 있습니다.",
-  "en": "{guidance} You can connect by opening {url} in a browser on this computer.",
-  "ja": "{guidance}このコンピューターのブラウザで {url} を開くと接続できます。",
-  "zh": "{guidance}在这台电脑的浏览器中打开 {url} 即可进行连接。"
+  "ko": "{guidance} Still이 실행 중인 PC(Mac)의 브라우저에서 {url} 주소를 열어 연결해 주세요. 중요한 설정이라 휴대폰에서는 열리지 않습니다.",
+  "en": "{guidance} Please connect by opening {url} in a browser on the PC (Mac) where Still is running. This is an important setting, so it does not open on a phone.",
+  "ja": "{guidance}Still が動いている PC（Mac）のブラウザで {url} を開いて接続してください。重要な設定のため、スマートフォンでは開けません。",
+  "zh": "{guidance}请在运行 Still 的电脑（Mac）的浏览器中打开 {url} 进行连接。这是重要设置，无法在手机上打开。"
  },
  "handoff.connector_unavailable": {
   "ko": "{label} 기능이 이 로컬 설치에 구성되어 있지 않습니다. 소유자가 로컬 설정을 마친 뒤 다시 요청해 주세요.",
