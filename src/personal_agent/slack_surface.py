@@ -63,10 +63,16 @@ EVENTS_TABLE = 'slack_events'
 #: Seconds between two checks that the Socket Mode connection matches the pairing and work mode.
 POLL_SECONDS = 3
 REQUEST_SECONDS = 15
-#: Slack shows at most 40,000 characters of a message; longer replies are sent in parts.
-POST_CHARS = 39000
-#: A section block holds 3,000 characters; a message at most 50 blocks.
-SECTION_CHARS, MAX_SECTIONS = 2900, 45
+#: #372: a reply is sent as standard Markdown (``markdown_text``, or a ``markdown`` block beside buttons), which Slack
+#: lays out itself and which holds 12,000 characters; longer replies are sent in parts.  The margin leaves room for
+#: characters Slack may count twice.
+POST_CHARS = 11000
+#: A plain-text section block holds 3,000 characters.
+SECTION_CHARS = 2900
+#: Slack's refusals of a message body it could not lay out.  Slack answered, so nothing was posted: the part is
+#: sent once more as plain text, like Telegram's plain resend (#581).
+BODY_REFUSED = frozenset({'invalid_arguments', 'invalid_blocks', 'invalid_blocks_format', 'msg_blocks_too_long',
+                          'msg_too_long'})
 OWNER_ID = re.compile(r'^[UW][A-Z0-9]{2,30}$')
 #: Notice kinds that carry an approve / decline button pair (the item each one shows is settled exactly).
 BUTTON_LABELS = {'settings_change_proposed': ('button.apply', 'button.keep'),
@@ -77,6 +83,11 @@ ACTION_APPROVE, ACTION_DECLINE = 'still_approve', 'still_decline'
 
 class SlackError(ProviderError):
     """A Slack refusal or an unreadable answer; never carries a token."""
+
+    def __init__(self, message, status=None, code=None):
+        super().__init__(message, status=status)
+        #: Slack's own error code when it answered ``ok: false``; None when no answer was read.
+        self.code = code
 
 
 class SlackNotSent(SlackError):
@@ -107,7 +118,8 @@ def web_client(token, guard):
                 response = getattr(exc, 'response', None)
                 code = response.get('error') if response is not None else None
                 status = getattr(response, 'status_code', None)
-                raise SlackError(f'Slack이 요청을 거절했습니다 ({code or status}).', status=status) from None
+                raise SlackError(f'Slack이 요청을 거절했습니다 ({code or status}).', status=status,
+                                 code=code if isinstance(code, str) else None) from None
             except URLError:
                 raise SlackNotSent('Slack에 연결하지 못했습니다.') from None
             except Exception:
@@ -131,6 +143,25 @@ def message_id(ts):
 def slack_ts(message):
     """The Slack ``ts`` of a Still message id, or None."""
     return message[3:] if isinstance(message, str) and message.startswith('ts:') else None
+
+
+def markdown_parts(text, limit):
+    """``text`` in parts of at most ``limit`` characters: cut after a blank line, else a line end, outside a code
+    fence; a hard cut only when no such line end exists."""
+    parts = []
+    while len(text) > limit:
+        window, cut = text[:limit], 0
+        for separator in ('\n\n', '\n'):
+            at = window.rfind(separator)
+            while at > 0 and window[:at].count('```') % 2:
+                at = window.rfind(separator, 0, at)
+            if at > 0:
+                cut = at + len(separator)
+                break
+        cut = cut or limit
+        parts.append(text[:cut])
+        text = text[cut:]
+    return [*parts, text] if text or not parts else parts
 
 
 def _unescape(text):
@@ -201,20 +232,30 @@ class SlackSurface(DirectMessageSurface):
 
     # -- posting --------------------------------------------------------------------
     def _post(self, cfg, text):
-        """Post ``text`` (in parts when long) to the owner's direct message; the last message's ``ts``."""
+        """Post ``text`` as Markdown (in parts when long) to the owner's direct message; the last message's ``ts``."""
         client = self.client(cfg)
-        text = str(text or '')
-        parts = [text[offset:offset + POST_CHARS] for offset in range(0, len(text), POST_CHARS)] or ['']
         posted = None
-        for index, part in enumerate(parts):
+        for index, part in enumerate(markdown_parts(str(text or ''), POST_CHARS)):
             try:
-                posted = client.chat_postMessage(channel=cfg['channel_id'], text=part)
+                posted = self._refused_as_plain(lambda: client.chat_postMessage(channel=cfg['channel_id'], markdown_text=part),
+                                                lambda: client.chat_postMessage(channel=cfg['channel_id'], text=part))
             except SlackNotSent:
                 if index == 0:
                     raise
                 # Earlier parts were delivered: the message is unknown and is never posted again from the start.
                 raise SlackError('Slack에 메시지의 일부만 보냈습니다.') from None
         return message_id(self._ts(posted))
+
+    @staticmethod
+    def _refused_as_plain(markdown, plain):
+        """``markdown()``; when Slack refused that body (so it was never posted), ``plain()`` once instead."""
+        try:
+            return markdown()
+        except SlackError as exc:
+            if exc.code not in BODY_REFUSED:
+                raise
+            LOG.info('slack: the Markdown body was refused (%s); sent as plain text', exc.code)
+            return plain()
 
     @staticmethod
     def _ts(posted):
@@ -236,8 +277,8 @@ class SlackSurface(DirectMessageSurface):
         from .quickstart_service import MEMORY_PROMPT_KINDS
         kind = notification['kind']
         labels = BUTTON_LABELS.get(kind) or (('button.approve', 'button.deny') if kind in MEMORY_PROMPT_KINDS else None)
-        sections = self._sections(text)
-        if not labels or len(sections) > MAX_SECTIONS:
+        text = str(text or '')
+        if not labels or len(text) > POST_CHARS:
             return self._post(cfg, text)
         nid = notification['id']
         actions = {'type': 'actions', 'block_id': 'still_answer', 'elements': [
@@ -245,8 +286,11 @@ class SlackSurface(DirectMessageSurface):
              'text': {'type': 'plain_text', 'text': msg(labels[0]), 'emoji': True}},
             {'type': 'button', 'action_id': ACTION_DECLINE, 'value': f'{nid}:decline',
              'text': {'type': 'plain_text', 'text': msg(labels[1]), 'emoji': True}}]}
-        posted = self.client(cfg).chat_postMessage(channel=cfg['channel_id'], text=str(text or '')[:SECTION_CHARS],
-                                                   blocks=[*sections, actions])
+        client, channel, fallback = self.client(cfg), cfg['channel_id'], text[:SECTION_CHARS]
+        posted = self._refused_as_plain(
+            lambda: client.chat_postMessage(channel=channel, text=fallback,
+                                            blocks=[{'type': 'markdown', 'text': text or ' '}, actions]),
+            lambda: client.chat_postMessage(channel=channel, text=fallback, blocks=[*self._sections(text), actions]))
         return message_id(self._ts(posted))
 
     # -- presence -----------------------------------------------------------------------
