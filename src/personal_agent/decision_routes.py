@@ -1607,7 +1607,17 @@ class DecisionRoutes:
         if not callable(qualify_local):
             self._fail(option, 'strict-profile-unqualified',
                        '이 실행 환경에서는 Codex 판단의 엄격 격리를 검증할 수 없습니다.')
-        result = qualify_local('codex', binary, self.store.root, purpose='judgment')
+        # Background qualification already tracks cancellation/replacement.
+        # Let the local probes and their shared lock wait obey it as well.
+        live = getattr(self, '_job_live', None)
+        interrupted = (lambda: None if live() else 'stopped') if live is not None else None
+        from .bounded_execution import EngineInterrupted
+        try:
+            result = qualify_local('codex', binary, self.store.root, purpose='judgment', interrupted=interrupted)
+        except EngineInterrupted:
+            if interrupted is not None:
+                raise QualificationCancelled() from None
+            raise
         if not result.get('qualified') or not result.get('disabled_features'):
             from .cli_qualification import failure_message
             self._fail(option, 'strict-profile-unqualified',

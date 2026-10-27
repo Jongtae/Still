@@ -1138,6 +1138,17 @@ class EngineInterrupted(Exception):
         self.reason = reason
 
 
+def interruption_error(reason, meta=None):
+    """The existing Work terminal classes, shared by qualification and execution."""
+    if reason == 'stopped':
+        return ExecutionError(ENGINE_STOPPED, failure_class='stopped', meta=meta)
+    if reason == WORK_MODE_INTERRUPT:
+        return ExecutionError(msg('work_mode.native_search_stopped'), failure_class=WORK_MODE_INTERRUPT,
+                              meta=meta)
+    return ExecutionError('이 작업의 처리 시간 한도에 도달해 구독 엔진 실행과 그 하위 프로세스를 종료했습니다.',
+                          failure_class='deadline_exceeded', meta=meta)
+
+
 def kill_process_group(process):
     try:
         os.killpg(process.pid, signal.SIGKILL)
@@ -1987,16 +1998,17 @@ class BoundedExecutionAdapter:
         return bool(re.search(r'--(?:input-format|replay-user-messages)\b', error)
                     and re.search(r'unknown|unrecognized|unexpected|unsupported|invalid|not supported', error, re.I))
 
-    def runtime_version(self, engine_id, binary, run_dir):
+    def runtime_version(self, engine_id, binary, run_dir, *, deadline=None, interrupted=None):
         """The version the CLI itself reports, run in the Still environment.
 
         Local and model-free; no credential is passed to this call.
         """
+        from .cli_qualification import qualification_run
         env = {key: value for key, value in self.environment(engine_id, binary, run_dir).items()
                if key != 'CLAUDE_CODE_OAUTH_TOKEN'}
         try:
-            done = self.runner([binary, '--version'], cwd=run_dir, env=env, stdin=subprocess.DEVNULL,
-                               capture_output=True, text=True, timeout=20, shell=False)
+            done = qualification_run(self, [binary, '--version'], cwd=run_dir, env=env, timeout=20,
+                                     deadline=deadline, interrupted=interrupted)
         except (subprocess.TimeoutExpired, OSError):
             return None
         return parse_cli_version(engine_id, done.stdout) if done.returncode == 0 else None
@@ -2154,7 +2166,7 @@ class BoundedExecutionAdapter:
         current = self.strict_binding(engine_id, binary, store_root)
         return sorted(key for key in current if recorded.get(key) != current[key])
 
-    def _codex_sandbox_denies(self, binary, run_dir, target):
+    def _codex_sandbox_denies(self, binary, run_dir, target, *, deadline=None, interrupted=None):
         """Run the CLI's own sandbox runner under the strict permissions profile.
 
         ``/bin/ls`` output is discarded, so no protected content is read into
@@ -2162,13 +2174,14 @@ class BoundedExecutionAdapter:
         config cannot change the policy under test (``exec`` ignores it too).
         Returns True when the listing was refused, False when it succeeded.
         """
+        from .cli_qualification import qualification_run
         home = run_dir / '.codex-qualify'
         home.mkdir(exist_ok=True, mode=0o700)
         env = {**self.environment('codex', binary, run_dir), 'CODEX_HOME': str(home)}
         argv = [binary, 'sandbox', '-C', str(run_dir), '-c', CODEX_STRICT_TABLE, '-P', CODEX_STRICT_PERMISSIONS,
                 '--', '/bin/ls', str(target)]
-        done = self.runner(argv, cwd=run_dir, env=env, stdin=subprocess.DEVNULL, capture_output=True,
-                           text=True, timeout=30, shell=False)
+        done = qualification_run(self, argv, cwd=run_dir, env=env, timeout=30,
+                                 deadline=deadline, interrupted=interrupted)
         if done.returncode == 0:
             return False
         if done.returncode == 1 and re.search(r'Operation not permitted|Permission denied',
@@ -2176,7 +2189,7 @@ class BoundedExecutionAdapter:
             return True
         raise ValueError('sandbox denial was not observed')
 
-    def _codex_feature_plan(self, binary, run_dir):
+    def _codex_feature_plan(self, binary, run_dir, *, deadline=None, interrupted=None):
         """Reuse the #580 allowlist plan for the strict Work profile.
 
         ``codex features list`` (local, no model) with an empty CODEX_HOME,
@@ -2186,14 +2199,15 @@ class BoundedExecutionAdapter:
         Returns ``(plan, remaining)``; ValueError on anything unparsable.
         """
         from .decision_adapters import codex_disable_plan, codex_still_enabled, parse_codex_features
+        from .cli_qualification import qualification_run
         home = run_dir / '.codex-qualify'
         home.mkdir(exist_ok=True, mode=0o700)
         env = {**self.environment('codex', binary, run_dir), 'CODEX_HOME': str(home)}
         allowed = strict_allowed_features()
 
         def listing(argv):
-            done = self.runner(argv, cwd=run_dir, env=env, stdin=subprocess.DEVNULL, capture_output=True,
-                               text=True, timeout=30, shell=False)
+            done = qualification_run(self, argv, cwd=run_dir, env=env, timeout=30,
+                                     deadline=deadline, interrupted=interrupted)
             if done.returncode != 0:
                 raise ValueError(f'features list exit {done.returncode}')
             return parse_codex_features(done.stdout)
@@ -2215,7 +2229,7 @@ class BoundedExecutionAdapter:
                 record = record or _STRICT_QUALIFICATIONS.get((*key, 'work'))
             return copy.deepcopy(record) if identity else None
 
-    def qualified_identity(self, engine_id, binary, store_root, *, purpose='work'):
+    def qualified_identity(self, engine_id, binary, store_root, *, purpose='work', deadline=None, interrupted=None):
         """Admit only local passes; briefly reuse failures solely to refuse.
 
         Slow probes never hold the observation/Settings lock. An explicit
@@ -2224,12 +2238,20 @@ class BoundedExecutionAdapter:
         and purpose as a pass. A new identity is checked immediately.
         """
         import copy
+        from .cli_qualification import qualification_timeout
+        qualification_timeout(STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)
         cached = self.strict_cached_qualification(engine_id, binary, store_root, purpose=purpose)
         if cached:
+            qualification_timeout(STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)
             return cached
-        with _STRICT_QUALIFICATION_LOCK:
+        while not _STRICT_QUALIFICATION_LOCK.acquire(timeout=qualification_timeout(
+                STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)):
+            pass
+        try:
+            qualification_timeout(STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)
             cached = self.strict_cached_qualification(engine_id, binary, store_root, purpose=purpose)
             if cached:
+                qualification_timeout(STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)
                 return cached
             identity = self._strict_binary_identity(engine_id, binary)
             binding = self.strict_binding(engine_id, binary, store_root)
@@ -2237,24 +2259,31 @@ class BoundedExecutionAdapter:
             with _STRICT_OBSERVATIONS_LOCK:
                 failed = _STRICT_FAILURES.get(key) if identity else None
                 if failed and time.monotonic() - failed[0] < _STRICT_FAILURE_BACKOFF_SECONDS:
+                    qualification_timeout(STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)
                     return copy.deepcopy(failed[1])
                 _STRICT_FAILURES.pop(key, None)
-            result = self.qualify_strict(engine_id, binary=binary, store_root=store_root, purpose=purpose)
+            result = self.qualify_strict(engine_id, binary=binary, store_root=store_root, purpose=purpose,
+                                         deadline=deadline, interrupted=interrupted)
             if (not result.get('qualified') and identity
                     and self._strict_binary_identity(engine_id, binary) == identity
                     and self.strict_binding(engine_id, binary, store_root) == binding):
                 with _STRICT_OBSERVATIONS_LOCK:
+                    qualification_timeout(STOP_POLL_SECONDS, deadline=deadline, interrupted=interrupted)
                     if len(_STRICT_FAILURES) >= 8:
                         del _STRICT_FAILURES[next(iter(_STRICT_FAILURES))]
                     _STRICT_FAILURES[key] = (time.monotonic(), copy.deepcopy(result))
             return result
+        finally:
+            _STRICT_QUALIFICATION_LOCK.release()
 
-    def _remember_strict_pass(self, result):
+    def _remember_strict_pass(self, result, *, deadline=None, interrupted=None):
         import copy
+        from .cli_qualification import qualification_timeout
         engine, identity, binding = result['engine'], result['identity'], result['binding']
         with _STRICT_OBSERVATIONS_LOCK:
             if not result['qualified'] or not identity or self._strict_binary_identity(engine, binding['binary']) != identity:
                 return
+            qualification_timeout(45, deadline=deadline, interrupted=interrupted)
             key = (engine, identity, tuple(sorted(binding.items())), result['scope'])
             if len(_STRICT_QUALIFICATIONS) >= 8:
                 del _STRICT_QUALIFICATIONS[next(iter(_STRICT_QUALIFICATIONS))]
@@ -2265,7 +2294,8 @@ class BoundedExecutionAdapter:
             _STRICT_OBSERVATIONS[observation_key] = (
                 {name: result[name] for name in ('binary_sha256', 'native_sha256')}, result['version'])
 
-    def qualify_strict(self, engine_id, binary=None, store_root=None, *, tested_versions=None, purpose='work'):
+    def qualify_strict(self, engine_id, binary=None, store_root=None, *, tested_versions=None, purpose='work',
+                       deadline=None, interrupted=None):
         """Local qualification with synthetic state and a loopback scripted model.
 
         ``tested_versions`` remains a compatibility argument for historical
@@ -2273,7 +2303,9 @@ class BoundedExecutionAdapter:
         remain gates. No owner credentials, config or model provider is used.
         """
         import copy
-        from .cli_qualification import surface_checks
+        from .cli_qualification import surface_checks, qualification_timeout
+        bounds = {'deadline': deadline, 'interrupted': interrupted}
+        qualification_timeout(45, **bounds)
         declared = CLI_PROFILES[STRICT_PROFILE]['runtimes'].get(engine_id)
         if declared is None or purpose not in ('work', 'judgment') or (purpose == 'judgment' and engine_id != 'codex'):
             return {'engine': engine_id, 'qualified': False, 'version': None, 'checks': [], 'reason': 'unsupported engine'}
@@ -2313,34 +2345,39 @@ class BoundedExecutionAdapter:
                     local.credentials = lambda engine: ''
                     local.cloud = None
                     stage = 'reported-version'
-                    version = local.runtime_version(engine_id, binary, run_dir)
+                    version = local.runtime_version(engine_id, binary, run_dir, **bounds)
                     checks.append({'check': stage, 'observed': version, 'passed': version is not None})
                     if version is not None:
                         if engine_id == 'codex':
                             stage = 'turn-directory-readable'
-                            checks.append({'check': stage, 'passed': not local._codex_sandbox_denies(binary, run_dir, run_dir)})
+                            checks.append({'check': stage, 'passed': not local._codex_sandbox_denies(
+                                binary, run_dir, run_dir, **bounds)})
                             stage = 'sibling-turn-denied'
-                            checks.append({'check': stage, 'passed': local._codex_sandbox_denies(binary, run_dir, Path(sibling))})
+                            checks.append({'check': stage, 'passed': local._codex_sandbox_denies(
+                                binary, run_dir, Path(sibling), **bounds)})
                             for target in (Path.home(), self._login_profile(), *([store_root] if store_root else [])):
                                 target = Path(target).expanduser()
                                 if target.is_dir():
                                     stage = 'protected-directory-denied'
                                     checks.append({'check': stage, 'target': target.name or str(target),
-                                                   'passed': local._codex_sandbox_denies(binary, run_dir, target)})
+                                                   'passed': local._codex_sandbox_denies(binary, run_dir, target, **bounds)})
                             stage = 'tool-features-allowlisted'
-                            plan, remaining = local._codex_feature_plan(binary, run_dir)
+                            plan, remaining = local._codex_feature_plan(binary, run_dir, **bounds)
                             checks.append({'check': stage, 'passed': bool(plan) and not remaining,
                                            'still_enabled': remaining})
                             disabled = plan if plan and not remaining else None
                         if all(check['passed'] for check in checks):
                             stage = 'instruction-files-and-tool-surface' if engine_id == 'codex' else 'strict-tool-surface'
-                            observed = surface_checks(local, engine_id, binary, run_dir, disabled, include_work=purpose == 'work')
+                            observed = surface_checks(local, engine_id, binary, run_dir, disabled,
+                                                      include_work=purpose == 'work', **bounds)
                             required = {'strict-work-bridge-and-tool-surface'} if purpose == 'work' else set()
                             if engine_id == 'codex':
                                 required.update(f'instruction-files-{i}' for i in range(3))
                             if not required <= {check.get('check') for check in observed}:
                                 checks.append({'check': stage, 'passed': False})
                             checks.extend(observed)
+        except EngineInterrupted:
+            raise
         except Exception as exc:  # any unobservable property refuses admission; no raw CLI output persisted
             checks.append({'check': stage, 'passed': False, 'error': type(exc).__name__})
         checks.append({'check': 'binding-unchanged',
@@ -2357,7 +2394,8 @@ class BoundedExecutionAdapter:
                 'checks': checks, 'binding': binding, **digests,
                 'disabled_features': disabled if engine_id == 'codex' else None,
                 'reason': '' if qualified else ', '.join(dict.fromkeys(failed)) or 'not checked'}
-        self._remember_strict_pass(result)
+        qualification_timeout(45, **bounds)
+        self._remember_strict_pass(result, **bounds)
         return result
 
     @staticmethod
@@ -2599,9 +2637,19 @@ class BoundedExecutionAdapter:
             if ai_connections and callable(getattr(tools,'connector_configuration',None)):
                 tools.connector_configuration({name:{'definition':definition,'forwarded_environment':server_env}
                                                for name,definition in definitions.items() if definition})
+            budget = getattr(tools.capabilities, 'budget', None)
+            interrupted = getattr(budget, 'interrupted', None)
+            if native_search:
+                interrupted = work_mode_interrupt(getattr(tools.capabilities, 'store', None), interrupted)
+            deadline = (time.monotonic() + budget.remaining()
+                        if budget is not None and hasattr(budget, 'remaining') else None)
             disabled = ()
             if profile == STRICT_PROFILE:
-                qualification = self.qualified_identity(engine_id, binary, tools.capabilities.store.root)
+                try:
+                    qualification = self.qualified_identity(engine_id, binary, tools.capabilities.store.root,
+                                                            deadline=deadline, interrupted=interrupted)
+                except EngineInterrupted as exc:
+                    raise interruption_error(exc.reason) from None
                 if not qualification.get('qualified'):
                     reason = qualification.get('reason') or 'local checks unavailable'
                     from .cli_qualification import failure_message
@@ -2614,13 +2662,9 @@ class BoundedExecutionAdapter:
                 disabled = qualification.get('disabled_features') or ()
             # #607 AX-10: the CLI gets at most the Work's remaining shared
             # budget, and the owner's Stop kills its process group mid-run.
-            budget = getattr(tools.capabilities, 'budget', None)
             timeout = MAX_TIMEOUT_SECONDS
             if budget is not None and hasattr(budget, 'remaining'):
                 timeout = max(1, min(MAX_TIMEOUT_SECONDS, int(budget.remaining())))
-            interrupted = getattr(budget, 'interrupted', None)
-            if native_search:
-                interrupted = work_mode_interrupt(getattr(tools.capabilities, 'store', None), interrupted)
             started = time.monotonic()
             LOG.info('engine turn started engine=%s profile=%s', engine_id, profile)
             # #678: the facade says whether this turn may use the CLI's own web search.
@@ -2679,14 +2723,7 @@ class BoundedExecutionAdapter:
             except EngineInterrupted as exc:
                 elapsed_ms = int((time.monotonic() - started) * 1000)
                 LOG.warning('engine turn interrupted engine=%s reason=%s', engine_id, exc.reason)
-                if exc.reason == 'stopped':
-                    raise ExecutionError(ENGINE_STOPPED, failure_class='stopped',
-                                         meta={**run_meta, 'duration_ms': elapsed_ms}) from None
-                if exc.reason == WORK_MODE_INTERRUPT:
-                    raise ExecutionError(msg('work_mode.native_search_stopped'), failure_class=WORK_MODE_INTERRUPT,
-                                         meta={**run_meta, 'duration_ms': elapsed_ms}) from None
-                raise ExecutionError('이 작업의 처리 시간 한도에 도달해 구독 엔진 실행과 그 하위 프로세스를 종료했습니다.',
-                                     failure_class='deadline_exceeded', meta={**run_meta, 'duration_ms': elapsed_ms}) from None
+                raise interruption_error(exc.reason, {**run_meta, 'duration_ms': elapsed_ms}) from None
             except subprocess.TimeoutExpired as exc:
                 LOG.warning('engine turn timed out engine=%s after=%ss', engine_id, timeout)
                 # A Work whose shared deadline, not the CLI cap, ended the run

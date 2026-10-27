@@ -578,7 +578,7 @@ class StrictAutomaticAdmission(unittest.TestCase):
         self.adapter.credentials.assert_not_called()
 
     def test_a_judgment_pass_never_admits_a_failing_work_bridge(self):
-        def observed(*args, include_work=True):
+        def observed(*args, include_work=True, **kwargs):
             checks = [{'check': f'instruction-files-{i}', 'passed': True} for i in range(3)]
             if include_work:
                 checks.append({'check': 'strict-work-bridge-and-tool-surface', 'passed': False})

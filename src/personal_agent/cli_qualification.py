@@ -6,6 +6,8 @@ or provider requests. A missing observation is a failure, never evidence of safe
 import json
 import threading
 import sys
+import time
+import subprocess
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -146,9 +148,38 @@ STRICT_CODEX_TOOLS = {'mcp__agentos', 'list_mcp_resources', 'list_mcp_resource_t
                       'read_mcp_resource', 'request_user_input'}
 
 
-def _loopback_run(adapter, engine_id, binary, argv, run_dir, model):
-    """Only the scripted loopback model is added to the exact production argv."""
+def qualification_timeout(cap, *, deadline=None, interrupted=None):
+    """Check the caller's cancellation and share its monotonic deadline."""
+    from .bounded_execution import EngineInterrupted
+    reason = interrupted() if interrupted else None
+    if reason:
+        raise EngineInterrupted(reason)
+    if deadline is None:
+        return cap
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise EngineInterrupted('deadline_exceeded')
+    return min(cap, remaining)
+
+
+def qualification_run(adapter, argv, *, cwd, env, timeout, deadline=None, interrupted=None):
+    """Reuse the process-group kill path for every local qualification probe."""
     from .bounded_execution import bounded_run
+    timeout = qualification_timeout(timeout, deadline=deadline, interrupted=interrupted)
+    try:
+        done = bounded_run(adapter.runner, argv, cwd=cwd, env=env, timeout=timeout, interrupted=interrupted)
+    except subprocess.TimeoutExpired:
+        # A probe's own cap is a failed observation; a spent caller budget is
+        # an interrupted turn and must escape qualification's failure cache.
+        qualification_timeout(timeout, deadline=deadline, interrupted=interrupted)
+        raise
+    qualification_timeout(timeout, deadline=deadline, interrupted=interrupted)
+    return done
+
+
+def _loopback_run(adapter, engine_id, binary, argv, run_dir, model, *, deadline=None, interrupted=None):
+    """Only the scripted loopback model is added to the exact production argv."""
+    qualification_timeout(45, deadline=deadline, interrupted=interrupted)
     argv = list(argv)
     env = adapter.environment(engine_id, binary, run_dir)
     if engine_id == 'codex':
@@ -159,7 +190,8 @@ def _loopback_run(adapter, engine_id, binary, argv, run_dir, model):
     else:
         env.update(ANTHROPIC_BASE_URL=f'http://127.0.0.1:{model.port}', ANTHROPIC_API_KEY='fake-key',
                    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1')
-    done = bounded_run(adapter.runner, argv, cwd=run_dir, env=env, timeout=45)
+    done = qualification_run(adapter, argv, cwd=run_dir, env=env, timeout=45,
+                             deadline=deadline, interrupted=interrupted)
     if done.returncode != 0:
         raise ValueError('scripted CLI turn failed')
     adapter._content(engine_id, done.stdout)  # crashes/unparseable output never count as success
@@ -168,7 +200,7 @@ def _loopback_run(adapter, engine_id, binary, argv, run_dir, model):
     return json.dumps([request['body'] for request in model.requests])
 
 
-def _work_bridge_check(adapter, engine_id, binary, root, disabled):
+def _work_bridge_check(adapter, engine_id, binary, root, disabled, *, deadline=None, interrupted=None):
     """Retry a bridge round trip that did not complete; security is observed on every attempt.
 
     Codex may build its first request before the bridge MCP server is ready
@@ -176,20 +208,23 @@ def _work_bridge_check(adapter, engine_id, binary, root, disabled):
     attempts in all; any security defect refuses at once.
     """
     for attempt in range(3):
+        qualification_timeout(45, deadline=deadline, interrupted=interrupted)
         attempt_root = root / f'work-attempt-{attempt}'
         attempt_root.mkdir()
-        safe, reached = _work_bridge_attempt(adapter, engine_id, binary, attempt_root, disabled)
+        safe, reached = _work_bridge_attempt(adapter, engine_id, binary, attempt_root, disabled,
+                                            deadline=deadline, interrupted=interrupted)
         if not safe or reached:
             break
     return {'check': 'strict-work-bridge-and-tool-surface', 'passed': bool(safe and reached)}
 
 
-def _work_bridge_attempt(adapter, engine_id, binary, root, disabled):
+def _work_bridge_attempt(adapter, engine_id, binary, root, disabled, *, deadline=None, interrupted=None):
     """Relevant #616 process checks: no host tools, bridge round trip, no canary leak.
 
     Reuse Still's existing temporary store and MCP bridge, with only list_notes;
     no public network tool or owner data is exercised by this probe.
     """
+    qualification_timeout(45, deadline=deadline, interrupted=interrupted)
     from .bounded_execution import STRICT_PROFILE, profile_actions
     from .quickstart_store import QuickStore
     run_dir = root / 'work-surface'
@@ -218,7 +253,8 @@ def _work_bridge_attempt(adapter, engine_id, binary, root, disabled):
     try:
         argv = adapter.command(engine_id, binary, 'Local isolation qualification.', config,
                                profile=STRICT_PROFILE, disabled_features=disabled)
-        context = _loopback_run(adapter, engine_id, binary, argv, run_dir, model)
+        context = _loopback_run(adapter, engine_id, binary, argv, run_dir, model,
+                                deadline=deadline, interrupted=interrupted)
         results = model.tool_results()
         denied = 'unsupported call' if engine_id == 'codex' else 'No such tool available'
         actions = set(profile_actions(STRICT_PROFILE))
@@ -246,22 +282,25 @@ def _work_bridge_attempt(adapter, engine_id, binary, root, disabled):
         model.close()
 
 
-def surface_checks(adapter, engine_id, binary, root, disabled, *, include_work=True):
+def surface_checks(adapter, engine_id, binary, root, disabled, *, include_work=True, deadline=None, interrupted=None):
     """Shared runtime/process harness; every property must be observed.
 
     All state is synthetic under the runtime root, with empty credentials and
     loopback endpoints. Raw request bodies die with the temporary fixture.
     """
+    qualification_timeout(45, deadline=deadline, interrupted=interrupted)
     from .decision_adapters import SubscriptionCliDecisionEngine
     home = Path(adapter.codex_home) if engine_id == 'codex' else None
     if home is not None:
         populate_codex_home(home, root / 'synthetic-store')
-    checks = [_work_bridge_check(adapter, engine_id, binary, root, disabled)] if include_work else []
+    checks = [_work_bridge_check(adapter, engine_id, binary, root, disabled,
+                                 deadline=deadline, interrupted=interrupted)] if include_work else []
     if engine_id != 'codex':
         return checks
     expected = [('AGENTS-OVERRIDE-CANARY-616', 'AGENTS-MD-CANARY-616'),
                 ('AGENTS-MD-CANARY-616', 'AGENTS-OVERRIDE-CANARY-616'), ('', '')]
     for index, (present, absent) in enumerate(expected):
+        qualification_timeout(45, deadline=deadline, interrupted=interrupted)
         if index == 1:
             (home / 'AGENTS.override.md').unlink()
         elif index == 2:
@@ -277,7 +316,8 @@ def surface_checks(adapter, engine_id, binary, root, disabled, *, include_work=T
             schema_path = run_dir / 'schema.json'
             schema_path.write_text(json.dumps(schema))
             argv = engine.argv(binary, 'Local isolation qualification. Reply retry.', schema_path, schema)
-            context = _loopback_run(adapter, engine_id, binary, argv, run_dir, model)
+            context = _loopback_run(adapter, engine_id, binary, argv, run_dir, model,
+                                    deadline=deadline, interrupted=interrupted)
             offered = {tool.get('name') or tool.get('type') for tool in model.offered_tools()}
             forbidden = ['SKILL-CANARY-616', 'canary-skill-616', 'PLUGIN-CANARY-616', 'SKILL-BODY-CANARY-616']
             if index == 2:

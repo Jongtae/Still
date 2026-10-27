@@ -51,6 +51,35 @@ class JobFixture(ServiceFixture):
 
 class QualificationJobTests(JobFixture):
 
+    def test_cancelling_automatic_codex_job_interrupts_local_probes(self):
+        from personal_agent import bounded_execution as be
+        service = self.service()
+        service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex'})
+        before = service.decision_routes.active()
+        binary = Path(self.finder('codex'))
+        binary.write_bytes(binary.read_bytes() + b'updated')
+        self.runner.version = 'codex-cli 9.9.9'
+        original = service.execution_adapter.runner
+        probes = []
+
+        def run(argv, **kwargs):
+            probes.append(list(argv))
+            result = original(argv, **kwargs)
+            if argv[1] == 'sandbox':
+                service.decision_routes.cancel_qualification()
+            return result
+        service.execution_adapter.runner = run
+        self.assertTrue(service.run_due_qualification())
+        job = service.decision_routes._jobs()['update:codex']
+        self.assertEqual((job['state'], job['failure']), (JOB_CANCELLED, 'cancelled'))
+        self.assertEqual(service.decision_routes.active(), before)
+        self.assertEqual(sum(argv[1] == 'sandbox' for argv in probes), 1)
+        self.assertFalse(any('--output-schema' in argv for argv in probes))
+        identity = service.execution_adapter._strict_binary_identity('codex', str(binary))
+        self.assertFalse(any(key[:2] == ('codex', identity) for key in be._STRICT_FAILURES))
+        self.assertIsNone(service.execution_adapter.strict_cached_qualification(
+            'codex', str(binary), self.store.root, purpose='judgment'))
+
     def follow_claude(self, service):
         service.activate_main_ai({'route': 'claude-code'})
         self.assertTrue(service.run_due_qualification())

@@ -174,3 +174,87 @@ def test_bridge_retry_exhaustion_is_a_named_failure(harness, engine):
     assert check == {'check': 'strict-work-bridge-and-tool-surface', 'passed': False}
     assert len(h.launches) == 3
     assert all(model.closed for model in h.models)
+
+
+@pytest.mark.parametrize('engine', ['codex', 'claude-code'])
+@pytest.mark.parametrize('reason', ['stopped', 'deadline_exceeded'])
+def test_no_bridge_retry_starts_after_caller_ends(harness, monkeypatch, engine, reason):
+    from personal_agent.bounded_execution import EngineInterrupted
+    h = harness
+    now, stopped = [100.0], [False]
+    monkeypatch.setattr(qualifier.time, 'monotonic', lambda: now[0])
+    h.options.bridge = False
+    original = qualifier._work_bridge_attempt
+    attempts = []
+    def attempt(*args, **kwargs):
+        attempts.append(args)
+        result = original(*args, **kwargs)
+        if reason == 'stopped':
+            stopped[0] = True
+        else:
+            now[0] = 101.0
+        return result
+    monkeypatch.setattr(qualifier, '_work_bridge_attempt', attempt)
+    with pytest.raises(EngineInterrupted) as caught:
+        qualifier.surface_checks(h.adapter, engine, h.binary, h.root, ['shell_tool'], deadline=101.0,
+                                 interrupted=lambda: 'stopped' if stopped[0] else None)
+    assert caught.value.reason == reason
+    assert len(attempts) == len(h.launches) == 1
+    assert all(model.closed for model in h.models)
+
+
+def test_loopback_probes_share_remaining_time(harness, monkeypatch):
+    h = harness
+    now = [100.0]
+    monkeypatch.setattr(qualifier.time, 'monotonic', lambda: now[0])
+    original = h.adapter.runner
+    def run(argv, **kwargs):
+        assert kwargs['timeout'] == 110.0 - now[0]
+        now[0] += 0.25
+        return original(argv, **kwargs)
+    h.adapter.runner = run
+    assert all(check['passed'] for check in qualifier.surface_checks(
+        h.adapter, 'codex', h.binary, h.root, ['shell_tool'], deadline=110.0))
+    assert [kwargs['timeout'] for _, kwargs in h.launches] == [10.0, 9.75, 9.5, 9.25]
+
+
+@pytest.mark.parametrize('include_work', [True, False])
+def test_stop_during_loopback_probe_kills_real_process_and_starts_no_later_probe(harness, monkeypatch, include_work):
+    import os
+    import subprocess
+    import sys
+    import time
+    from personal_agent import bounded_execution as be
+    h = harness
+    pid_file = h.root / 'probe.pid'
+    script = (f'from pathlib import Path; import os, time; '
+              f'Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(60)')
+    argv = [sys.executable, '-c', script]
+    # Keep the actual process boundary; replace only the CLI with a sleeping
+    # Python child and the scripted HTTP server with the socket-free fixture.
+    h.adapter.runner = subprocess.run
+    monkeypatch.setattr(h.adapter, 'command', lambda *args, **kwargs: argv)
+    monkeypatch.setattr(h.adapter, 'environment', lambda *args, **kwargs: {})
+    if not include_work:
+        from personal_agent.decision_adapters import SubscriptionCliDecisionEngine
+        monkeypatch.setattr(SubscriptionCliDecisionEngine, 'argv', lambda *args, **kwargs: argv)
+    original = be.bounded_run
+    calls = []
+    def run(runner, cli_argv, **kwargs):
+        calls.append(kwargs)
+        # Codex loopback configuration arguments are immaterial to this child.
+        return original(runner, argv, **kwargs)
+    monkeypatch.setattr(be, 'bounded_run', run)
+    started = time.monotonic()
+    with pytest.raises(be.EngineInterrupted) as caught:
+        qualifier.surface_checks(h.adapter, 'claude-code' if include_work else 'codex', h.binary,
+                                 h.root, ['shell_tool'], include_work=include_work,
+                                 deadline=started + 5,
+                                 interrupted=lambda: 'stopped' if pid_file.exists() else None)
+    assert caught.value.reason == 'stopped'
+    assert time.monotonic() - started < 3
+    assert len(calls) == len(h.models) == 1
+    assert calls[0]['interrupted'] is not None and 0 < calls[0]['timeout'] <= 5
+    assert h.models[0].closed
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pid_file.read_text()), 0)
