@@ -417,15 +417,20 @@ def test_the_responsive_program_is_goal_ready_with_one_substep_in_flight():
     assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
     program = current["programs"]["RESPONSIVE-01"]
     invariants.assert_activation_record(TestCase(), "RESPONSIVE-01 activation", program["activated_by"])
-    assert program["ordered_substeps"] == ["REPLY-LATENCY-01", "SIDE-ANSWER-01"]
-    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "RESPONSIVE-01") == "REPLY-LATENCY-01"
-    assert program["completed_substeps"] == []
+    assert program["ordered_substeps"] == ["REPLY-LATENCY-01", "SIDE-ANSWER-01", "CLI-UPDATE-01"]
+    # #346 was added on 2026-10-26 after #309 and #17 had merged.
+    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "RESPONSIVE-01") == "CLI-UPDATE-01"
+    assert program["completed_substeps"] == ["REPLY-LATENCY-01", "SIDE-ANSWER-01"]
     items = items_of(current)
-    assert {items[name]["issue"] for name in program["ordered_substeps"]} == {309, 17}
+    assert {items[name]["issue"] for name in program["ordered_substeps"]} == {309, 17, 346}
     assert items["SIDE-ANSWER-01"]["depends_on"] == ["REPLY-LATENCY-01"]
+    assert items["CLI-UPDATE-01"]["depends_on"] == ["REPLY-LATENCY-01"]
+    assert {"cli-update-added", "latency-measurement-dropped"} <= set(program["decisions"])
     assert all(items[name]["program"] == "RESPONSIVE-01" for name in program["ordered_substeps"])
     # #309 L7 weakens an isolation guard's freshness, so its PR waits for the Codex review and the owner's merge.
     assert "REPLY-LATENCY-01" in program["escalated_review"]
+    # #346 replaces the exact-version admission of the same qualification with a local check.
+    assert "CLI-UPDATE-01" in program["escalated_review"]
     assert "Codex review of the exact final head" in program["escalated_review"]
     assert "#16" in program["non_goals"] and "L6" in program["non_goals"]
 
