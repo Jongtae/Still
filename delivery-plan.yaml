@@ -43,7 +43,9 @@
       "SLACK-01",
       "WORKPLACE-01",
       "REPLY-LATENCY-01",
-      "SIDE-ANSWER-01"
+      "SIDE-ANSWER-01",
+      "CLI-UPDATE-01",
+      "RESPONSIVE-01"
     ]
   },
   "iterations": [
@@ -824,13 +826,38 @@
       "issue": 332,
       "milestone": "responsive",
       "kind": "implementation",
-      "activation_status": "owner-activated-goal-ready",
+      "activation_status": "complete-on-merge",
       "contract": "goal-execution-contract.en.md",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_fresh_delivery_plan.py"
       ],
       "summary": "Responsiveness: a short tool-free reply reaches the owner sooner with the same decisions, records and guards (#309), and a short independent question is answered while another Work keeps running (#17).",
-      "depends_on": []
+      "depends_on": [],
+      "completed_substeps": {
+        "REPLY-LATENCY-01": {
+          "issue": 309,
+          "pull_request": 333,
+          "merge_commit": "0cf671b2d4a6e80888724b40fafaa7e68209d904",
+          "earlier_pull_requests": [
+            331,
+            329
+          ],
+          "decision": "L7 qualifies the Codex binary once per binary identity per process (PR #333; L1 #331 and L3 #329 merged before this activation; L2 dropped). The Codex review of the final head a5f353b found no major issues and the owner merged it. The owner dropped the L1 + L7 after-measurement because the #344 judgment outage fell inside its window; the latency target is not verified."
+        },
+        "SIDE-ANSWER-01": {
+          "issue": 17,
+          "pull_request": 342,
+          "merge_commit": "c904292b4b91827e044ce2942e73b72cbfb13b1e",
+          "decision": "The existing steer judgment tells a steer from an independent question; a tool-free independent question is answered while the original Work continues, and a correction or cancel still reaches it. The worker lock's approval and external-effect guarantees were unchanged, so no escalated review was triggered."
+        },
+        "CLI-UPDATE-01": {
+          "issue": 346,
+          "pull_request": 358,
+          "merge_commit": "1048297d7fd9b12eb1b276c3afbb7fac46f49460",
+          "plan_pull_request": 356,
+          "decision": "A new Codex or Claude Code binary identity is qualified locally with the existing isolation checks (loopback scripted model, synthetic home and CODEX_HOME, no provider, no owner credentials) and admitted only on a pass; a failing or unrunnable check refuses it with a plain reason, and a failure is backed off, never cached as a pass. The Judgment route requalifies itself in the background with decision-qualification/4 when the CLI fingerprint changes, keeping the owner's declared candidates and the persisted route. Claude Code stream-json input is used by capability. The in-code version lists remain a record. The Codex review found three P2s (Work Stop and deadline during qualification, declared candidates, persisted route snapshot), all fixed; its review of the final head 3be65aa had no findings; validate and full-validate (run 40528324620) passed on that head; it merged on the owner's one-off instruction (\"auto-merge\", 2026-10-27 and 2026-10-28)."
+        }
+      }
     },
     {
       "id": "REPLY-LATENCY-01",
@@ -838,7 +865,7 @@
       "issue": 309,
       "milestone": "responsive",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_decision_routes.py tests/test_bounded_execution.py tests/test_orchestrator.py tests/test_no_scenario_code.py"
       ],
@@ -851,7 +878,7 @@
       "issue": 17,
       "milestone": "responsive",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_steer_running_work.py tests/test_orchestrator.py tests/test_no_scenario_code.py"
       ],
@@ -866,7 +893,7 @@
       "issue": 346,
       "milestone": "responsive",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_decision_routes.py tests/test_bounded_execution.py tests/test_strict_isolation.py tests/test_steer_cli_qualification.py tests/test_claude_session_steer.py tests/test_no_scenario_code.py"
       ],
@@ -1276,7 +1303,7 @@
       "closeout": "Closed out 2026-10-25 (#206). All seven ordered substeps merged on their own PRs with issue acceptance mapped to model-free unit and fixture tests and required validate passing on each final head; every triggered escalated review was the Codex review of the PR's exact final head and the owner merged those PRs. CLOUD-AI-01 #211 (PR #230), SURFACE-SEAM-01 #212 (PR #229), WORK-MODE-01 #208 (PRs #278, #280), INTRANET-DEST-01 #209 (PRs #284, #288), OWNER-MCP-WORK-01 #210 (PR #297), MATTERMOST-01 #213 (PRs #299, #306), SLACK-01 #214 (PR #316). full-validate passed on main at fe653ad after the last merges (#316, then #320 outside this program and #322) (run 40185832753: Linux, macOS 15, macOS 26). Before that, #310 (#254) had left full-validate failing on main on both macOS runners because its WebKit fixture was wider than the runners' 1024-px screen; #322 (#321) fixed the fixture, test-only. Evidence classes: unit and fixture tests throughout; local operating observations against a private LAN test host (#209), a fixture owner MCP server on both engines (#210), a local Mattermost 11 in Docker (#213) and the owner's own free test Slack workspace (#214). No company network, company workspace, company system, Bedrock, Foundry or Azure call was observed. Left open as follow-ups: #319 (connectors and current context belong to the one owner, not to one messenger), #317 (Settings guided setup). No successor is selected by this closeout; the delivery heartbeat stayed paused throughout."
     },
     "RESPONSIVE-01": {
-      "status": "owner-activated-goal-ready",
+      "status": "complete",
       "issue": 332,
       "activated_by": {
         "issue": 332,
@@ -1288,12 +1315,11 @@
         "SIDE-ANSWER-01",
         "CLI-UPDATE-01"
       ],
-      "active_substeps": [
-        "CLI-UPDATE-01"
-      ],
+      "active_substeps": [],
       "completed_substeps": [
         "REPLY-LATENCY-01",
-        "SIDE-ANSWER-01"
+        "SIDE-ANSWER-01",
+        "CLI-UPDATE-01"
       ],
       "decisions": {
         "early-plan-cost": {
@@ -1325,13 +1351,14 @@
       "allowed_authority": "Codex strict qualification and launch (decision_routes.py, bounded_execution.py, decision_adapters.py for timing records only; for #346 also the local qualification of a new Codex or Claude Code binary identity, the Judgment route's background requalification through decision_qualification.py, the Claude Code stream-json capability fallback, Settings route status for a refused binary, and the opt-in qualification tests' drift report), the turn path (quickstart_service.py, quickstart_store.py for steer and side-answer records, orchestrator.py, agent_runtime.py for claim_owner_steers and the steer lead only), the conversation surfaces' steer hand-off (conversation_surface.py, direct_message_surface.py, telegram_surface.py, mattermost_surface.py, slack_surface.py, quickstart.py and the web conversation page for the same steer judgment), Presence notices for a side answer (telegram_presence.py, conversation_projection.py), messages.json entries they use, tests, a measurement script under scripts/dev that reads aggregates only, and docs describing the changed behaviour. Model-free tests with injected runners, transports, fake clocks and temporary stores; required validate on each final head and full-validate before closeout; one issue-linked PR per substep, normal squash merge, then a closeout PR.",
       "non_goals": "A lexical or category short-turn fast path (C16, RULES-OUT-01 #173); #309 L4 (merge continuity into the plan judgment), L5 (a warm Codex app-server, gated on #308 S0) and L6 (skip or defer the goal judgment) without their own owner decision; read or effect tools for a side answer (#17 later slice); #16; lowering judgment effort; live-model benchmark campaigns, provider switches, message content in measurements, releases, deployment and the delivery heartbeat; other backlog items.",
       "escalated_review": "Constitution escalated review (#195): a Codex review of the exact final head, required validate and full-validate on that head, and the owner merges. Required for REPLY-LATENCY-01 (#309 L7 weakens the freshness of the #616 isolation qualification; negative tests: a changed size, mtime, inode or device forces requalification, a failure is never cached, a different path is never covered). Required for SIDE-ANSWER-01 (#17) if it changes the worker lock's approval, pending-owner-input or external-effect guarantees; otherwise not. Required for CLI-UPDATE-01 (#346 replaces the reviewed exact-version admission of the #616 isolation qualification with an automatic local check; negative tests: a failing probe refuses the binary, a probe that cannot run refuses it, one identity's result never covers another, no strict launch runs unqualified). An AI session never merges a PR whose escalated review was triggered.",
-      "completion_rule": "Every ordered substep merged on its own PR with its issue's in-scope acceptance criteria mapped to tests and its declared focused tests passing, required validate passing on each final head, the triggered Codex reviews recorded, the #309 median received-to-evaluated measurement recorded from owner-instance aggregates (or its absence stated), and full-validate passing on main after the last merge (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision."
+      "completion_rule": "Every ordered substep merged on its own PR with its issue's in-scope acceptance criteria mapped to tests and its declared focused tests passing, required validate passing on each final head, the triggered Codex reviews recorded, the #309 median received-to-evaluated measurement recorded from owner-instance aggregates (or its absence stated), and full-validate passing on main after the last merge (not cancelled, not still running); then a closeout entry recording per-substep issue, pull request, merge commit and decision.",
+      "closeout": "Closed out 2026-10-28 (#332). All three ordered substeps merged on their own PRs, with issue acceptance mapped to model-free unit and fixture tests and required validate passing on each final head. REPLY-LATENCY-01 #309: L1 PR #331, L3 PR #329, L7 PR #333. The Codex review of the final head a5f353b found no major issues and the owner merged it. SIDE-ANSWER-01 #17: PR #342. No escalated review was triggered. CLI-UPDATE-01 #346: plan PR #356, implementation PR #358. The Codex review found three P2s, all fixed; its review of the final head 3be65aa had no findings. validate and full-validate (run 40528324620) passed on that head, and it merged on the owner's one-off instruction. full-validate passed on main at 1048297 after the last program merge (run 40598909917: Linux, macOS 15, macOS 26). The #309 L1 + L7 after-measurement was dropped by the owner because the #344 judgment outage fell inside its window, so the latency target is not verified. Evidence classes: unit and fixture tests throughout. For #346, local operation of the installed Codex 0.164.0 and Claude Code 2.1.287 against a loopback scripted model with a synthetic home. Owner-instance operating observation after the restart on 1048297 (2026-10-27 23:01 UTC), from read-only aggregates: the Judgment route requalified itself in the background in 75 s with no Settings step, and the next 6 judgments across 6 purposes were all decided. Left open as follow-ups: Codex mcp_servers required/startup wait for production strict Works; four opt-in ProcessLevelQualification assertions that have rotted (they fail the same way on main); and the Codex app-server steer drift on 0.164.0 (#308 S0, an unused route). No successor is selected by this closeout; the delivery heartbeat stayed paused throughout."
     }
   },
   "completion_claims": {},
   "next_goal": {
-    "id": "RESPONSIVE-01",
-    "status": "owner-activated-goal-ready",
-    "action": "Owner direction 2026-10-25 (#332) selects RESPONSIVE-01: faster short replies (#309 L7, then the L1 + L7 measurement) and answering an independent question while another Work runs (#17), starting with REPLY-LATENCY-01 (#309). Session-driven at the owner's request. Scoped PRs are authorized; a PR whose escalated review is triggered merges only after the Codex review of its exact final head, and the owner merges it. #309 L4-L6, #16, live models, releases and deployment are not authorized. The delivery heartbeat stays paused, and no successor is selected on completion."
+    "id": null,
+    "status": "complete",
+    "action": "RESPONSIVE-01 closed out (#332). No goal is selected; the owner activates the next one explicitly, for example from the curated backlog (#44). The delivery heartbeat stays paused."
   }
 }
