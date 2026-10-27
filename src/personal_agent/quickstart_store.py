@@ -684,7 +684,7 @@ class QuickStore:
     #: Stored turns joined with the outcome of the Work that produced them, so
     #: every reader can qualify unverified text (#494).  Read-time only: the
     #: stored message text and schema are unchanged.
-    TRANSCRIPT_COLUMNS=('m.id,m.role,m.content,m.channel,m.created,m.workspace_id,m.job_id,'
+    TRANSCRIPT_COLUMNS=('m.id,m.role,m.content,m.channel,m.created,m.workspace_id,m.job_id,j.request_key,'
                         'j.status AS work_outcome,j.error AS work_error,'
                         # #997: whether the reply reached the owner's Telegram (what they saw).
                         'j.delivery AS work_delivery,'
