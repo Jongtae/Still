@@ -1,5 +1,7 @@
 """#569 PRESENCE-WORKER-CTX-01: every AI route receives the same Still turn context."""
 import json
+import os
+import tomllib
 import tempfile
 import unittest
 from pathlib import Path
@@ -111,7 +113,7 @@ class TurnContextBuilder(unittest.TestCase):
 
 
 class CliAdapterPlacement(unittest.TestCase):
-    def _run(self, engine):
+    def _run(self, engine, *, native_search=False, request='now OWNER-REQUEST-198'):
         seen = {}
 
         class Done:
@@ -121,17 +123,24 @@ class CliAdapterPlacement(unittest.TestCase):
 
         def runner(argv, **kwargs):
             seen['argv'], seen['input'] = argv, kwargs.get('input')
+            seen['env'] = kwargs['env']
             return Done()
 
-        context = turn_context([{'role': 'user', 'content': 'earlier'}, {'role': 'assistant', 'content': 'reply'},
-                                {'role': 'user', 'content': 'now'}], 'cli')
+        context = turn_context([{'role': 'user', 'content': 'earlier OWNER-HISTORY-198'},
+                                {'role': 'assistant', 'content': 'reply ASSISTANT-HISTORY-198'},
+                                {'role': 'user', 'content': request}], 'cli', profile='OWNER-PROFILE-198',
+                               current_context='OWNER-CONTEXT-198', prepared='OWNER-PREPARED-198',
+                               brief='ATTEMPT-BRIEF-198', skills='SKILL-CATALOGUE-198', native_search=native_search)
         with tempfile.TemporaryDirectory() as folder:
             profile = Path(folder) / 'codex-home'
             profile.mkdir()
             adapter = BoundedExecutionAdapter(finder=lambda name: '/runtime/' + name, runner=runner,
                                               runtime_root=Path(folder) / 'turns', codex_home=profile)
-            adapter.execute(engine, render_turn_prompt(context), AgentOSMcpTools(_Caps()), context=context)
+            tools = AgentOSMcpTools(_Caps())
+            tools.native_search = native_search
+            adapter.execute(engine, render_turn_prompt(context), tools, context=context)
         self.input = seen['input']
+        self.environment = seen['env']
         return seen['argv'], context
 
     def test_claude_code_gets_instructions_as_a_system_prompt_addition(self):
@@ -144,12 +153,61 @@ class CliAdapterPlacement(unittest.TestCase):
         self.assertIn('# Recent conversation', prompt)
         self.assertIn('now', prompt)
 
-    def test_codex_gets_the_instructions_inside_the_envelope(self):
+    def test_codex_gets_only_standing_instructions_in_the_developer_channel(self):
         argv, context = self._run('codex')
         prompt = argv[-1]
-        self.assertIn('# Still instructions', prompt)
-        self.assertIn(CORE_INSTRUCTIONS, prompt)
+        self.assertEqual(prompt, render_turn_prompt(context, include_instructions=False))
+        self.assertNotIn('# Still instructions', prompt)
+        self.assertNotIn(CORE_INSTRUCTIONS, prompt)
+        [config] = [part for part in argv if part.startswith('developer_instructions=')]
+        self.assertEqual(tomllib.loads(config)['developer_instructions'], context['instructions'])
+        for value in ('earlier', 'reply', 'now', 'OWNER-PROFILE-198', 'OWNER-CONTEXT-198',
+                      'OWNER-PREPARED-198', 'ATTEMPT-BRIEF-198', 'SKILL-CATALOGUE-198'):
+            self.assertIn(value, prompt)
+        for value in ('OWNER-REQUEST-198', 'OWNER-HISTORY-198', 'ASSISTANT-HISTORY-198',
+                      'OWNER-PROFILE-198', 'OWNER-CONTEXT-198', 'OWNER-PREPARED-198',
+                      'ATTEMPT-BRIEF-198', 'SKILL-CATALOGUE-198'):
+            self.assertNotIn(value, config)
+        self.assertLess(len(config.encode()), 48 * 1024, 'static instructions fit in one argv element')
         self.assertNotIn('--append-system-prompt', argv)
+
+    def test_codex_builds_native_search_guidance_for_each_launch(self):
+        from personal_agent.agent_runtime import CLI_NATIVE_SEARCH_GUIDANCE
+        for enabled in (True, False):
+            with self.subTest(native_search=enabled):
+                argv, context = self._run('codex', native_search=enabled)
+                [config] = [part for part in argv if part.startswith('developer_instructions=')]
+                instructions = tomllib.loads(config)['developer_instructions']
+                self.assertEqual(instructions, context['instructions'])
+                self.assertEqual(CLI_NATIVE_SEARCH_GUIDANCE in instructions, enabled)
+                self.assertIn('web_search="live"' if enabled else 'web_search="disabled"', argv)
+                self.assertNotIn(CLI_NATIVE_SEARCH_GUIDANCE, argv[-1])
+
+    def test_codex_combined_near_limit_launch_fits_the_platform_argument_budget(self):
+        from personal_agent.bounded_execution import MAX_PROMPT_BYTES
+        argv, _context = self._run('codex', request='r' * 46_000, native_search=True)
+        self.assertLessEqual(len(argv[-1].encode()), MAX_PROMPT_BYTES)
+        size = sum(len(part.encode()) + 1 for part in argv)
+        size += sum(len(f'{key}={value}'.encode()) + 1 for key, value in self.environment.items())
+        size += (len(argv) + len(self.environment) + 2) * 8
+        self.assertLess(size, os.sysconf('SC_ARG_MAX'))
+        self.assertLess(max(len(part.encode()) + 1 for part in argv), 128 * 1024)
+
+    def test_codex_developer_config_preserves_the_strict_launch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / 'mcp.json'
+            config.write_text(json.dumps({'mcpServers': {'agentos': {'args': ['-m', 'bridge']}}}))
+            adapter = BoundedExecutionAdapter()
+            options = dict(profile='strict-isolated', disabled_features=['apps', 'shell_tool'])
+            base = adapter.command('codex', '/runtime/codex', 'request', config, **options)
+            text = 'Static "quoted" instructions\\path\n해요체를 써요.'
+            changed = adapter.command('codex', '/runtime/codex', 'request', config, text, **options)
+            index = next(i for i, part in enumerate(changed) if part.startswith('developer_instructions='))
+            self.assertEqual(tomllib.loads(changed[index])['developer_instructions'], text)
+            self.assertEqual(changed[:index - 1] + changed[index + 1:], base)
+            for flag in ('--ignore-user-config', '--ignore-rules', '--ephemeral'):
+                self.assertIn(flag, changed)
+            self.assertFalse(any('model_instructions_file=' in part for part in changed))
 
 
 class _RecordingEngine:
@@ -473,15 +531,16 @@ class DestinationScopedHistory(unittest.TestCase):
 class OversizeRequestKeepsWorking(DestinationScopedHistory):
     """Automated review on #574: a request that fit before must not start failing because of the envelope."""
 
-    def test_a_near_limit_prepared_request_is_sent_bare_to_codex(self):
-        # A Drive excerpt makes the prepared request ~47 KB: it fit before this
-        # change, but not together with the shared instructions envelope.
+    def test_a_near_limit_prepared_request_keeps_the_developer_instructions(self):
+        # The standing instructions no longer consume the prompt's byte budget.
         self.service.selected_drive_context = lambda chat_id: 'DRIVE-SECRET ' + 'd' * 46_600
         self._run('summarize my drive file', 'big')
         call = self.engine.calls[-1]
         self.assertLessEqual(len(call['prompt'].encode()), 48_000)
-        self.assertNotIn('# Still instructions', call['prompt'], 'falls back to the bare request, as before')
-        self.assertIsNone(call['context'])
+        self.assertNotIn('# Still instructions', call['prompt'])
+        self.assertIsNotNone(call['context'])
+        self.assertTrue(call['context']['instructions'].startswith(CORE_INSTRUCTIONS))
+        self.assertEqual(call['prompt'], render_turn_prompt(call['context'], include_instructions=False))
         job = self.store.jobs()[0]
         self.assertEqual(job['status'], 'succeeded')
 

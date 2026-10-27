@@ -183,11 +183,18 @@ class GoalRouteWorkerHandoff(Harness):
             if worker == 'api':
                 self.use_main('openai')  # #1431: the API route runs as the Main AI
             _job, row = self.run_work(request, key='first-goal-' + worker)
+            if worker == 'cli':
+                cli_job = _job
             self.assertEqual(row['status'], 'succeeded')
         cli = self.engine.turns[0]['context']
         self.assertEqual(cli['request'], request)
         self.assertEqual(cli['brief'], notes)
-        self.assertIn(agent_runtime.GOAL_FIRST_GUIDANCE, self.engine.turns[0]['prompt'])
+        sent = self.store.turn_provenance(cli_job)
+        self.assertEqual(sent['instructions_channel'], 'developer-instructions')
+        self.assertIn(agent_runtime.GOAL_FIRST_GUIDANCE, sent['instructions'])
+        self.assertIn(notes, self.engine.turns[0]['prompt'])
+        self.assertIn(request, self.engine.turns[0]['prompt'])
+        self.assertNotIn(notes, sent['instructions'])
         body = self.transport.bodies[0]
         self.assertIn(notes, body['messages'][0]['content'])
         self.assertIn(agent_runtime.GOAL_FIRST_GUIDANCE, body['messages'][0]['content'])

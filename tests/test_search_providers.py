@@ -914,7 +914,10 @@ class ServiceIntegration(unittest.TestCase):
         self.assertTrue(service.run_one())
         [launched] = engine.calls
         self.assertTrue(launched['native_search'])
-        self.assertIn('built-in web search', launched['prompt'])
+        sent = service.store.turn_provenance(job)
+        self.assertEqual(sent['instructions_channel'], 'developer-instructions')
+        self.assertIn('built-in web search', sent['instructions'])
+        self.assertNotIn('built-in web search', launched['prompt'])
         row = service.store.job(job)
         self.assertEqual(row['status'], 'succeeded')
         # #1009: a search's result URLs are candidates, not sources the answer used; the reply is the CLI's own.
@@ -970,7 +973,10 @@ class ServiceIntegration(unittest.TestCase):
         self.assertTrue(service.run_one())
         [launched] = engine.calls
         self.assertTrue(launched['native_search'])
-        self.assertIn('built-in web search', launched['prompt'])
+        sent = store.turn_provenance(second)
+        self.assertEqual(sent['instructions_channel'], 'developer-instructions')
+        self.assertIn('built-in web search', sent['instructions'])
+        self.assertNotIn('built-in web search', launched['prompt'])
         self.assertIsNone(store.turn_provenance(second).get('native_search_reason'))
         self.assertEqual(store.turn_provenance(second)['cli_native_tools'], ['web_search'])
         # #605 inheritance is unchanged for Still-composed lookups and the turn record.

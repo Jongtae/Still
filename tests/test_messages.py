@@ -11,6 +11,12 @@ PLACEHOLDER = re.compile(r'\{([a-z_]+)\}')
 
 
 class CatalogTests(unittest.TestCase):
+    def test_owner_messages_do_not_use_secretary_framing(self):
+        for message_id, entry in messages.catalog().items():
+            for lang, value in entry.items():
+                with self.subTest(id=message_id, lang=lang):
+                    self.assertNotRegex(value, r'(?i)secretary|비서')
+
     def test_every_id_has_every_language_and_the_same_placeholders(self):
         for message_id, entry in messages.catalog().items():
             with self.subTest(id=message_id):

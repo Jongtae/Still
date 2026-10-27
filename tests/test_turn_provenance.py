@@ -63,6 +63,10 @@ class AdapterMetadata(unittest.TestCase):
         self.assertNotIn('secret question', ' '.join(shown))
         self.assertIn('<prompt: 15 bytes>', shown)
         self.assertIn('<Still instructions: 5 bytes>', shown)
+        shown = display_argv(['codex', 'exec', '-c', 'developer_instructions="rules"', 'secret question'],
+                             'secret question', 'rules')
+        self.assertNotIn('rules', ' '.join(shown))
+        self.assertIn('developer_instructions=<Still instructions: 5 bytes>', shown)
 
     def test_claude_stream_reports_session_model_tool_use_and_denials(self):
         # Record shapes follow `claude -p --output-format stream-json --verbose`
@@ -108,18 +112,34 @@ class AdapterMetadata(unittest.TestCase):
 class _Engine:
     def __init__(self, meta=None, fail=None):
         self.meta, self.fail, self.prompts = meta or {}, fail, []
+        self.contexts = []
 
     def login_status(self, engine_id, binary=None):
         return {'state': 'signed-in'}
 
     def execute(self, engine, prompt, tools, **kwargs):
         self.prompts.append(prompt)
+        self.contexts.append(kwargs.get('context'))
         if self.fail:
             raise self.fail
         return ExecutionResult('answer', engine, 0, dict(self.meta))
 
 
 class ServiceProvenance(unittest.TestCase):
+    def test_codex_records_the_developer_channel_and_only_owner_data_in_the_prompt(self):
+        from personal_agent.agent_runtime import render_turn_prompt
+        engine = _Engine()
+        service = self._service(engine)
+        job = self.store.enqueue('OWNER-REQUEST-198', 'k1')
+        self.assertTrue(service.run_one())
+        record = self.store.turn_provenance(job)
+        context = engine.contexts[-1]
+        self.assertEqual(record['instructions_channel'], 'developer-instructions')
+        self.assertEqual(record['prompt_envelope'], render_turn_prompt(context, include_instructions=False))
+        self.assertNotIn('# Still instructions', record['prompt_envelope'])
+        self.assertIn('OWNER-REQUEST-198', record['prompt_envelope'])
+        self.assertNotIn('OWNER-REQUEST-198', context['instructions'])
+
     def _service(self, engine):
         tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
         self.store = QuickStore(Path(tmp.name) / 'state')

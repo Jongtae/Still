@@ -2320,7 +2320,7 @@ class SecretaryStandard(Harness):
         self.assertIn('without a title or honorific unless they asked for one', CORE_INSTRUCTIONS)
         self.assertIn('never inherit one only earlier replies used', CORE_INSTRUCTIONS)
         self.assertIn('only what you can actually carry out with the tools you have', CORE_INSTRUCTIONS)
-        self.assertIn('capable personal secretary', GOAL_REACHED_PROPOSITION)
+        self.assertIn('capable assistant who knows them', GOAL_REACHED_PROPOSITION)
         self.assertIn('read in the light of the recent conversation', GOAL_REACHED_PROPOSITION)
         self.assertIn('the reply\'s own claims are not evidence', GOAL_REACHED_PROPOSITION)
         # #829: evidence stays strict for action claims; a current fact may be sourced or flagged instead.
@@ -2447,14 +2447,18 @@ class OwnerModelAlwaysOn(Harness):
         MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD).remember_profile(
             MEMORY_OWNER, 'settings', 'profile.preference.communication', preference)
         self.script([plan('codex', 'Answer.'), plan('openai', 'Answer.')], goals=[True, True])
-        self.run_work('안녕')
+        cli_job, _ = self.run_work('안녕')
         cli = self.engine.turns[-1]['prompt']
         self.use_main('openai')
         self.run_work('고마워')
         system = self.transport.bodies[-1]['messages'][0]['content']
-        for assembled in (cli, system):
-            self.assertIn(preference, assembled)
-            self.assertIn(prompt('voice'), assembled)
+        sent = self.store.turn_provenance(cli_job)
+        self.assertEqual(sent['instructions_channel'], 'developer-instructions')
+        self.assertIn(preference, cli)
+        self.assertNotIn(preference, sent['instructions'])
+        self.assertIn(prompt('voice'), sent['instructions'])
+        self.assertIn(preference, system)
+        self.assertIn(prompt('voice'), system)
         for context, question, _schema in self.asked_plans:
             self.assertIn(preference, context.facts['owner_profile'])
             self.assertIn(prompt('voice'), question)

@@ -36,13 +36,19 @@ class ConnectionPreferences(Harness):
                 self.assertTrue(self.saved_results[-1]['auto_saved'])
                 self.asked_plans.clear()
                 self.script([plan('codex', 'Answer from the owner context.'), plan('openai', 'Answer from the owner context.')], goals=[True])
-                self.run_work('Show the Unseen connection choice.', key='cli-' + choice)
+                cli_job, _ = self.run_work('Show the Unseen connection choice.', key='cli-' + choice)
                 self.use_main('openai')  # #1431: the API route runs as the Main AI
                 self.run_work('State the Unseen connection choice.', key='api-' + choice)
                 self.use_main('codex')
-                for text in (self.engine.turns[-1]['prompt'], self.transport.bodies[-1]['messages'][0]['content']):
-                    self.assertIn(KEY + ': ' + choice, text)
-                    self.assertIn(CONNECTION_PREFERENCE_GUIDANCE, text)
+                sent = self.store.turn_provenance(cli_job)
+                cli_prompt = self.engine.turns[-1]['prompt']
+                self.assertEqual(sent['instructions_channel'], 'developer-instructions')
+                self.assertIn(CONNECTION_PREFERENCE_GUIDANCE, sent['instructions'])
+                self.assertIn(KEY + ': ' + choice, cli_prompt)
+                self.assertNotIn(KEY + ': ' + choice, sent['instructions'])
+                system = self.transport.bodies[-1]['messages'][0]['content']
+                self.assertIn(KEY + ': ' + choice, system)
+                self.assertIn(CONNECTION_PREFERENCE_GUIDANCE, system)
                 self.assertTrue(all(KEY + ': ' + choice in item[0].facts['owner_profile'] for item in self.asked_plans))
 
     def prepare_slots(self):
@@ -161,21 +167,44 @@ class ConnectionPreferences(Harness):
         """Codex review on #223: fixed sections past the CLI byte limit are cut, least needed first,
         instead of the request-only fallback dropping the profile, the context and the instructions."""
         from personal_agent import quickstart_service
+        import os
+        import tomllib
         from personal_agent.agent_runtime import CUT_TO_FIT_MARKER
+        from personal_agent.bounded_execution import BoundedExecutionAdapter
         for index in range(40):
             self.store.save_memory(f'profile.aaa.item{index:02d}', '평소에 쓰는 가게와 방식 ' * 4, owner_id='local-owner')
         _, row = self.save_choice('Still-owned connection')
-        self.script([plan('codex', 'Use the connection choice in the owner context.')], goals=[True])
-        limit = 17000
+        brief = 'Use the connection choice in the owner context.\n' + '\n'.join(
+            f'OPTIONAL-BRIEF-{index} ' + 'b' * 180 for index in range(4))
+        self.script([plan('codex', brief)], goals=[True])
+        limit = 6000
         with mock.patch.object(quickstart_service, 'MAX_PROMPT_BYTES', limit):
             job, result = self.run_work('Read the Unseen record.', key='over-limit')
         self.assertEqual(result['status'], 'succeeded')
         prompt = self.engine.turns[-1]['prompt']
         self.assertLessEqual(len(prompt.encode()), limit)
-        self.assertIn('# Still instructions', prompt, 'not the bare-request fallback')
+        turn = self.engine.turns[-1]
+        self.assertIsNotNone(turn['context'], 'not the bare-request fallback')
+        self.assertNotIn('# Still instructions', prompt)
+        self.assertIn('brief', turn['context']['cut_to_fit'])
+        self.assertIn('profile', turn['context']['cut_to_fit'])
+        self.assertNotIn('OPTIONAL-BRIEF-3', prompt)
         self.assertIn(KEY + ': ' + row['content'], prompt, 'the query match heads the profile and survives')
         self.assertIn(CUT_TO_FIT_MARKER, prompt)
         self.assertNotIn('profile.aaa.item39', prompt, 'the profile tail was cut')
+        sent = self.store.turn_provenance(job)
+        self.assertEqual(sent['instructions_channel'], 'developer-instructions')
+        self.assertIn(CONNECTION_PREFERENCE_GUIDANCE, sent['instructions'])
+        self.assertNotIn(row['content'], sent['instructions'])
+        config = self.tmp / 'launch-mcp.json'
+        config.write_text(json.dumps({'mcpServers': {'agentos': {'args': ['-m', 'bridge']}}}))
+        argv = BoundedExecutionAdapter().command('codex', '/runtime/codex', prompt, config, sent['instructions'])
+        [developer] = [part for part in argv if part.startswith('developer_instructions=')]
+        self.assertEqual(tomllib.loads(developer)['developer_instructions'], sent['instructions'])
+        self.assertEqual(argv[-1], prompt)
+        self.assertLessEqual(len(argv[-1].encode()), limit)
+        self.assertLess(sum(len(part.encode()) + 1 for part in argv), os.sysconf('SC_ARG_MAX') // 2,
+                        'combined argv leaves at least half ARG_MAX for environment and pointers')
 
     def test_the_early_plan_records_the_recalled_words_it_read(self):
         """Codex review on #227: a Work parked after its early plan still shows what that plan read."""
