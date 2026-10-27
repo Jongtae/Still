@@ -21,6 +21,8 @@ from .conversation_projection import qualify_transcript, turn_qualifier
 
 #: #367: the transcript rows the owner forgot; every AI reader of ``messages`` leaves them out.
 FORGOTTEN_MESSAGE_IDS='SELECT message_id FROM forgotten_messages'
+#: #380: the ``forget_record`` actions that change what Still keeps about the owner.
+OWNER_STATE_ACTIONS=('forget','delete','undo')
 
 
 def fts_prefix_expression(query):
@@ -745,6 +747,24 @@ class QuickStore:
         with self.db() as db:
             return db.execute(f"SELECT content{',created' if with_created else ''} FROM messages WHERE job_id=? AND role='assistant' "
                               f"AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id DESC LIMIT 1",(job_id,)).fetchone()
+
+    def managed_owner_state(self, job_id):
+        """#380: whether this Work, or a correction or retry linked to it, forgot, deleted or undid owner state.
+
+        Read from the recorded ``forget_record`` outcomes (``evidence.action``), never from words. Such a
+        Work is the owner managing what Still keeps; no lesson or fact is drawn from it.
+        """
+        with self.db() as db:
+            works=[job_id,*(row['id'] for row in db.execute(
+                "SELECT id FROM jobs WHERE related_job_id=? AND relation_kind IN ('correction','retry') AND id<>?",(job_id,job_id)))]
+            rows=db.execute(f"SELECT detail FROM tool_events WHERE tool='forget_record' AND status='succeeded' "
+                            f"AND job_id IN ({','.join('?'*len(works))})",works).fetchall()
+        for row in rows:
+            try:detail=json.loads(row['detail'] or '{}')
+            except ValueError:continue
+            evidence=detail.get('evidence') if isinstance(detail,dict) else None
+            if isinstance(evidence,dict) and evidence.get('action') in OWNER_STATE_ACTIONS:return True
+        return False
 
     def work_turn_forgotten(self, job_id):
         """#367: whether the owner forgot any transcript row of this Work."""
