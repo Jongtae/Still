@@ -25,7 +25,7 @@ from personal_agent.quickstart import configured_service, make_handler
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
 from personal_agent.slack_surface import (ACTION_APPROVE, ACTION_DECLINE, APP_SECRET, BOT_SECRET, CONFIG_KEY, MANIFEST,
-                                          SlackError, SlackNotSent, message_id, slack_ts, web_client)
+                                          SlackError, SlackNotSent, markdown_parts, message_id, slack_ts, web_client)
 from owner_act_script import with_owner_acts
 
 BOT_TOKEN = 'xoxb-1111-2222-abcdefghijklmnop'
@@ -44,6 +44,7 @@ class FakeSlack:
         self.calls = []
         self.fail = None        # None | 'not_sent' | 'lost' for the next chat_postMessage
         self.fail_after = 0
+        self.refuse_markdown = None     # a Slack error code for every Markdown body (#372)
 
     def tick(self):
         self.clock += 0.007
@@ -73,7 +74,12 @@ class FakeSlack:
     def apps_connections_open(self, app_token):
         return {'ok': True, 'url': 'wss://wss-primary.slack.com/link/?ticket=x'}
 
-    def chat_postMessage(self, channel, text, blocks=None):
+    def chat_postMessage(self, channel, text=None, blocks=None, markdown_text=None):
+        if markdown_text is not None and (text is not None or blocks is not None):
+            raise SlackError('markdown_text_conflict', status=200, code='markdown_text_conflict')
+        if self.refuse_markdown and (markdown_text is not None
+                                     or any(block.get('type') == 'markdown' for block in blocks or ())):
+            raise SlackError(self.refuse_markdown, status=200, code=self.refuse_markdown)
         if self.fail and self.fail_after:
             self.fail_after -= 1
         elif self.fail == 'not_sent':
@@ -83,7 +89,8 @@ class FakeSlack:
             self.fail = None
             raise SlackError('lost')
         ts = self.tick()
-        self.messages[ts] = {'channel': channel, 'text': text, 'blocks': blocks}
+        self.messages[ts] = {'channel': channel, 'text': markdown_text if text is None else text, 'blocks': blocks,
+                             'markdown': markdown_text is not None}
         return {'ok': True, 'ts': ts, 'channel': channel}
 
     def chat_update(self, channel, ts, text, blocks=None):
@@ -433,6 +440,27 @@ class Delivery(SlackCase):
             self.service.deliver_one()
         self.assertEqual(self.store.job(self.work['id'])['delivery'], 'unknown')
 
+    def test_a_reply_is_sent_as_markdown(self):
+        # #372: the model's own Markdown, laid out by Slack, instead of raw ``**`` and ``|---|`` in mrkdwn text.
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(self.work['id'])['delivery'], 'sent')
+        _method, _token, kwargs = [call for call in self.fake.calls if call[0] == 'chat_postMessage'][-1]
+        self.assertEqual(kwargs, {'channel': DM, 'markdown_text': '저녁은 순두부찌개 어때요?'})
+
+    def test_a_refused_markdown_body_is_sent_once_as_plain_text(self):
+        # Slack answered ok:false, so nothing was posted: one plain resend, as Telegram's plain resend (#581).
+        self.fake.refuse_markdown = 'invalid_blocks'
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(self.work['id'])['delivery'], 'sent')
+        self.assertEqual(self.fake.posted().count('저녁은 순두부찌개 어때요?'), 1)
+        self.assertEqual([message['markdown'] for message in self.fake.messages.values()][-1], False)
+
+    def test_another_refusal_is_not_resent_as_plain_text(self):
+        self.fake.refuse_markdown = 'channel_not_found'
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(self.work['id'])['delivery'], 'unknown')
+        self.assertNotIn('저녁은 순두부찌개 어때요?', self.fake.posted())
+
     def test_a_token_is_used_only_with_its_own_pairing(self):
         self.store.secret(BOT_SECRET, 'xoxb-new-other-workspace-1')   # a reconnect stored new tokens, not yet its pairing
         calls = len(self.fake.calls)
@@ -476,6 +504,20 @@ class Buttons(SlackCase):
         self.assertIn('이미 처리됐거나', self.fake.posted()[-1])
         self.assertNotIn('actions', [block['type'] for block in self.fake.messages[slack_ts(notice['message_id'])]['blocks']],
                          'the answered message loses its buttons')
+
+    def test_a_notice_shows_its_markdown_beside_the_buttons(self):
+        _job, _draft_id, notice = self.settings_notice()
+        message = self.fake.messages[slack_ts(notice['message_id'])]
+        self.assertEqual([block['type'] for block in message['blocks']], ['markdown', 'actions'])
+        self.assertEqual(message['blocks'][0]['text'][:200], message['text'][:200], 'the fallback text is the same notice')
+
+    def test_a_refused_markdown_notice_keeps_its_buttons_as_plain_text(self):
+        self.fake.refuse_markdown = 'invalid_blocks'
+        _job, _draft_id, notice = self.settings_notice()
+        self.assertEqual(notice['state'], 'sent')
+        blocks = self.fake.messages[slack_ts(notice['message_id'])]['blocks']
+        self.assertEqual({block['type'] for block in blocks[:-1]}, {'section'})
+        self.assertEqual(blocks[-1]['type'], 'actions')
 
     def test_a_replayed_press_is_taken_once(self):
         _job, _draft_id, notice = self.settings_notice()
@@ -657,6 +699,13 @@ class GuardedClient(unittest.TestCase):
         self.assertNotIsInstance(caught.exception, SlackNotSent)
         self.assertNotIn(BOT_TOKEN, str(caught.exception))
 
+    def test_markdown_reaches_slack_and_a_refusal_keeps_its_code(self):
+        base, seen = self.serve(lambda path: (200, {'ok': False, 'error': 'invalid_blocks'}))
+        with self.assertRaises(SlackError) as caught:
+            self.client(base).chat_postMessage(channel=DM, markdown_text='**굵게**')
+        self.assertEqual(caught.exception.code, 'invalid_blocks')
+        self.assertIn(b'markdown_text', seen[0][2])
+
     def test_a_server_that_cannot_be_reached_is_not_sent(self):
         with self.assertRaises(SlackNotSent):
             self.client('http://127.0.0.1:9/api/').chat_postMessage(channel=DM, text='x')
@@ -666,7 +715,30 @@ class GuardedClient(unittest.TestCase):
         with self.assertRaises(SlackError) as caught:
             self.client(base).chat_postMessage(channel=DM, text='x')
         self.assertNotIsInstance(caught.exception, SlackNotSent)
+        self.assertIsNone(caught.exception.code, 'no answer was read, so it is never taken for a refusal')
         self.assertEqual(len(seen), 1, 'the request is never sent twice')
+
+
+class MarkdownParts(unittest.TestCase):
+    def test_short_text_is_one_part(self):
+        self.assertEqual(markdown_parts('짧은 답', 100), ['짧은 답'])
+        self.assertEqual(markdown_parts('', 100), [''])
+
+    def test_parts_are_cut_at_a_blank_line_and_keep_every_character(self):
+        text = '## 요약\n첫 줄\n\n## 상세\n' + '가' * 30
+        parts = markdown_parts(text, 25)
+        self.assertEqual(''.join(parts), text)
+        self.assertEqual(parts[0], '## 요약\n첫 줄\n\n')
+        self.assertTrue(all(len(part) <= 25 for part in parts))
+
+    def test_a_code_fence_is_not_cut_when_a_line_end_outside_it_exists(self):
+        text = '앞\n```\na\nb\nc\n```\n뒤'
+        parts = markdown_parts(text, 14)
+        self.assertEqual(''.join(parts), text)
+        self.assertEqual(parts[0], '앞\n')
+
+    def test_text_without_line_ends_is_cut_hard(self):
+        self.assertEqual(markdown_parts('abcdefghij', 4), ['abcd', 'efgh', 'ij'])
 
 
 class Shape(unittest.TestCase):
