@@ -11748,10 +11748,9 @@ class AgentService:
                                      attachments=attachment_facts(images=len(run.image_inputs)),
                                      # #1380: where the owner is writing from, as a fact.
                                      surface='telegram' if isinstance(job.get('chat_id'),int) else None)
-                # Bounded Claude Code gets the instructions as a separate
-                # argv element, so only conversation + request count
-                # against the prompt limit there.
-                return context,render_turn_prompt(context,include_instructions=not (run.subscription['id']=='claude-code' and not isolated))
+                # Host CLIs get standing instructions separately; owner data
+                # and the request count against the prompt limit.
+                return context,render_turn_prompt(context,include_instructions=not (run.subscription['id'] in ('claude-code','codex') and not isolated))
             context,sent_text=build(sections)
             if len(sent_text.encode())>MAX_PROMPT_BYTES:
                 # #217 review: the fixed sections alone can pass the limit; cut the least needed
@@ -11759,7 +11758,8 @@ class AgentService:
                 sections,cut=cut_to_fit(sections,len(sent_text.encode())-MAX_PROMPT_BYTES)
                 context,sent_text=build(sections)
                 context['cut_to_fit']=cut
-            prompt_text,adapter=render_turn_prompt(context),context
+            prompt_text=sent_text if run.subscription['id']=='codex' and not isolated else render_turn_prompt(context)
+            adapter=context
             if len(sent_text.encode())>MAX_PROMPT_BYTES:
                 # The shared envelope cannot fit next to a request this
                 # large. Send the request exactly as before rather than
@@ -11792,10 +11792,10 @@ class AgentService:
         # Recorded before model use: the bridge process rehydrates it.
         self.record_work_sources(job['id'],run.work_sources)
         mode=profile_status(facade.PROFILE)['mode']
-        # Record exactly what reached the CLI: bounded Claude Code
-        # gets the instructions as their own argv element, and the
+        # Record exactly what reached the CLI: host CLIs
+        # get the instructions as their own argv element, and the
         # bare-request fallback sends no instructions at all.
-        separate=run.subscription['id']=='claude-code' and not isolated and adapter_context is not None
+        separate=run.subscription['id'] in ('claude-code','codex') and not isolated and adapter_context is not None
         # AX-11 (#603): the tool names this route actually offers the
         # CLI, from the same facade class that serves it below.
         listing=facade(run.capabilities);listing.native_search=native_search
@@ -11818,7 +11818,7 @@ class AgentService:
             capability_trust=profile_status(facade.PROFILE)['trust'],
             capability_limitation=profile_status(facade.PROFILE)['limitation'],
             instructions=engine_context['instructions'] if adapter_context is not None else '',
-            instructions_channel='append-system-prompt' if separate else ('prompt' if adapter_context is not None else 'not sent (bare request)'),
+            instructions_channel=('developer-instructions' if run.subscription['id']=='codex' else 'append-system-prompt') if separate else ('prompt' if adapter_context is not None else 'not sent (bare request)'),
             # #658: record-only labels for the profile, current-context and
             # prepared sections, not for capabilities (lookups stay open).
             # #701: they no longer withhold the local envelope, which is

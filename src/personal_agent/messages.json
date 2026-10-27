@@ -372,7 +372,7 @@
   "zh": "没能完成 Google Drive 连接。请在 Telegram 中请求新的连接链接。"
  },
  "family_setup.the_family_assistant_is_connected_your": {
-  "ko": "가족 비서 연결이 끝났어요. 이제 가족이 텔레그램에서 비서와 대화할 수 있어요.",
+  "ko": "가족 AI 연결이 끝났어요. 이제 가족이 텔레그램에서 AI와 대화할 수 있어요.",
   "en": "The family assistant is connected. Your family can now chat with the assistant in Telegram.",
   "ja": "家族用アシスタントの接続が完了しました。これで家族がTelegramでアシスタントと話せます。",
   "zh": "家人助手已连接好，家人现在可以在 Telegram 中与助手对话了。"
@@ -2154,7 +2154,7 @@
   "zh": "没有已保存的笔记，试试用 /note 加上内容来记录。"
  },
  "service.this_mac_s_ai_sign_in": {
-  "ko": "이 Mac의 AI 로그인과 그 연결은 소유자의 것이라 가족 비서에서는 쓸 수 없어요.",
+  "ko": "이 Mac의 AI 로그인과 그 연결은 소유자의 것이라 가족 AI에서는 쓸 수 없어요.",
   "en": "This Mac's AI sign-in and its connections belong to the owner, so a family member's assistant cannot use them.",
   "ja": "この Mac の AI ログインとその接続は所有者のものなので、家族のアシスタントでは使えません。",
   "zh": "此 Mac 的 AI 登录及其连接属于所有者，家人的助理无法使用。"
@@ -3432,31 +3432,31 @@
   "zh": "这个网站的登录是共享来的，所以不能在这里重新登录"
  },
  "family_share.not_installed": {
-  "ko": "'{instance}' 비서가 이 Mac에 설치되어 있지 않아요.",
+  "ko": "'{instance}' AI가 이 Mac에 설치되어 있지 않아요.",
   "en": "The '{instance}' assistant isn't installed on this Mac.",
   "ja": "「{instance}」アシスタントはこの Mac にインストールされていません。",
   "zh": "这台 Mac 上没有安装“{instance}”助理。"
  },
  "family_share.not_yours": {
-  "ko": "{site} 로그인은 계정 주인에게 받은 것이라 다른 비서에게 공유할 수 없어요. 아무것도 바꾸지 않았어요.",
+  "ko": "{site} 로그인은 계정 주인에게 받은 것이라 다른 AI에게 공유할 수 없어요. 아무것도 바꾸지 않았어요.",
   "en": "The {site} sign-in was shared with me by its account owner, so I can't share it with another assistant. Nothing was changed.",
   "ja": "{site} のログインはアカウントの持ち主から共有されたものなので、ほかのアシスタントには共有できません。何も変更していません。",
   "zh": "{site} 的登录是账户所有者共享给我的，不能再共享给其他助理。没有做任何更改。"
  },
  "family_share.not_to_self": {
-  "ko": "이 비서 자신에게는 공유할 수 없어요. 아무것도 바꾸지 않았어요.",
+  "ko": "이 AI 자체에는 공유할 수 없어요. 아무것도 바꾸지 않았어요.",
   "en": "I can't share with this assistant itself. Nothing was changed.",
   "ja": "このアシスタント自身には共有できません。何も変更していません。",
   "zh": "不能共享给这个助理自己。没有做任何更改。"
  },
  "family_share.receiver_signed_in": {
-  "ko": "이 비서는 그 사이트에 자기 계정으로 이미 로그인되어 있어 공유받지 않았어요.",
+  "ko": "이 AI는 그 사이트에 자기 계정으로 이미 로그인되어 있어 공유받지 않았어요.",
   "en": "This assistant is already signed in to that site with its own account, so it didn't take the shared sign-in.",
   "ja": "このアシスタントはそのサイトに自分のアカウントですでにログインしているため、共有を受けませんでした。",
   "zh": "这个助理已经用自己的账户登录了该网站，所以没有接收共享。"
  },
  "family_share.receiver_signed_in_receipt": {
-  "ko": "'{label}' 비서는 {site}에 이미 자기 계정으로 로그인되어 있어 공유하지 않았어요. 그 비서의 로그인은 그대로예요. 그 비서가 그 사이트에서 로그아웃하면 다시 공유할 수 있어요.",
+  "ko": "'{label}' AI는 {site}에 이미 자기 계정으로 로그인되어 있어 공유하지 않았어요. 그 AI의 로그인은 그대로예요. 그 AI가 그 사이트에서 로그아웃하면 다시 공유할 수 있어요.",
   "en": "The '{label}' assistant is already signed in to {site} with its own account, so I didn't share. Its sign-in is unchanged. You can share again after it signs out of that site.",
   "ja": "「{label}」アシスタントは {site} に自分のアカウントですでにログインしているため、共有しませんでした。そのアシスタントのログインはそのままです。そのアシスタントがそのサイトからログアウトすれば、もう一度共有できます。",
   "zh": "“{label}”助理已经用自己的账户登录了 {site}，所以没有共享。它的登录保持不变。它从该网站退出后可以再次共享。"
@@ -3474,7 +3474,7 @@
   "zh": "请告诉我要共享的网站地址（例如 example.com）。没有做任何更改。"
  },
  "family_share.assistant_name_needed": {
-  "ko": "어느 비서인지 이름을 주세요. 아무것도 바꾸지 않았어요.",
+  "ko": "어느 AI인지 이름을 주세요. 아무것도 바꾸지 않았어요.",
   "en": "Tell me which assistant, by name. Nothing was changed.",
   "ja": "どのアシスタントか名前を教えてください。何も変更していません。",
   "zh": "请告诉我是哪个助理的名字。没有做任何更改。"
@@ -3492,25 +3492,25 @@
   "zh": "没有保存的 {site} 登录会话，所以没有共享。请先在登录窗口中登录该网站。当前已登录的网站：{sites}。"
  },
  "family_share.several_named": {
-  "ko": "'{value}'라는 이름의 비서가 여럿이에요: {listed}. 어느 비서인지 괄호 안의 id로 말해 주세요. 아무것도 바꾸지 않았어요.",
+  "ko": "'{value}'라는 이름의 AI가 여럿이에요: {listed}. 어느 AI인지 괄호 안의 id로 말해 주세요. 아무것도 바꾸지 않았어요.",
   "en": "There are several assistants named '{value}': {listed}. Tell me which one by the id in parentheses. Nothing was changed.",
   "ja": "「{value}」という名前のアシスタントが複数あります: {listed}。どのアシスタントか、かっこ内の id で教えてください。何も変更していません。",
   "zh": "名为“{value}”的助理有多个：{listed}。请用括号里的 id 说明是哪一个。没有做任何更改。"
  },
  "family_share.not_found": {
-  "ko": "'{value}'라는 비서를 찾지 못했어요. 이 Mac의 다른 비서: {listed}. 아무것도 바꾸지 않았어요.",
+  "ko": "'{value}'라는 AI를 찾지 못했어요. 이 Mac의 다른 AI: {listed}. 아무것도 바꾸지 않았어요.",
   "en": "I couldn't find an assistant named '{value}'. Other assistants on this Mac: {listed}. Nothing was changed.",
   "ja": "「{value}」というアシスタントが見つかりませんでした。この Mac のほかのアシスタント: {listed}。何も変更していません。",
   "zh": "没有找到名为“{value}”的助理。这台 Mac 上的其他助理：{listed}。没有做任何更改。"
  },
  "family_share.shared": {
-  "ko": "{label} 비서에 {site} 로그인 세션을 공유했어요(쿠키 {count}개). 내 세션이 갱신되면 따라가고, 결제는 계정 주인만 할 수 있어요.",
+  "ko": "{label} AI에 {site} 로그인 세션을 공유했어요(쿠키 {count}개). 내 세션이 갱신되면 따라가고, 결제는 계정 주인만 할 수 있어요.",
   "en": "I shared my {site} sign-in session with the {label} assistant ({count} cookies). It follows when my session is renewed, and only the account owner can pay.",
   "ja": "{label} アシスタントに {site} のログインセッションを共有しました（Cookie {count} 個）。こちらのセッションが更新されると追従し、支払いはアカウントの持ち主だけができます。",
   "zh": "已把 {site} 的登录会话共享给 {label} 助理（Cookie {count} 个）。我的会话更新时会跟着更新，只有账户主人可以付款。"
  },
  "family_share.share_pending": {
-  "ko": "{label} 비서가 지금 응답하지 않아 {site} 로그인 세션은 비서가 켜지면 전달돼요. 공유는 기록해 두었어요.",
+  "ko": "{label} AI가 지금 응답하지 않아 {site} 로그인 세션은 AI가 켜지면 전달돼요. 공유는 기록해 두었어요.",
   "en": "The {label} assistant isn't responding right now, so the {site} sign-in session will be delivered when it's back on. I've recorded the share.",
   "ja": "{label} アシスタントが今応答しないため、{site} のログインセッションはアシスタントが起動したときに届けます。共有は記録しました。",
   "zh": "{label} 助理现在没有响应，{site} 的登录会话会在它开启后送达。已记录这次共享。"
@@ -3522,19 +3522,19 @@
   "zh": "没有在共享 {site} 的登录会话，没有需要更改的。"
  },
  "family_share.unshared": {
-  "ko": "{done} 비서에서 {site} 로그인 세션을 지웠어요. 내 세션은 그대로예요.",
+  "ko": "{done} AI에서 {site} 로그인 세션을 지웠어요. 내 세션은 그대로예요.",
   "en": "Removed the {site} sign-in session from the {done} assistant. My own session is unchanged.",
   "ja": "{done} アシスタントから {site} のログインセッションを削除しました。こちらのセッションはそのままです。",
   "zh": "已从 {done} 助理中删除 {site} 的登录会话。我的会话保持不变。"
  },
  "family_share.unshare_pending": {
-  "ko": "{pending} 비서가 지금 응답하지 않아 {site} 세션은 비서가 켜지면 지워져요. 그때까지 새 세션은 보내지 않아요.",
+  "ko": "{pending} AI가 지금 응답하지 않아 {site} 세션은 AI가 켜지면 지워져요. 그때까지 새 세션은 보내지 않아요.",
   "en": "The {pending} assistant isn't responding right now, so its {site} session will be removed when it's back on. Until then, no new session is sent.",
   "ja": "{pending} アシスタントが今応答しないため、{site} のセッションはアシスタントが起動したときに削除されます。それまで新しいセッションは送りません。",
   "zh": "{pending} 助理现在没有响应，{site} 的会话会在它开启后删除。在那之前不会发送新的会话。"
  },
  "family_share.unshared_and_pending": {
-  "ko": "{done} 비서에서 {site} 로그인 세션을 지웠어요. 내 세션은 그대로예요. {pending} 비서가 지금 응답하지 않아 {site} 세션은 비서가 켜지면 지워져요. 그때까지 새 세션은 보내지 않아요.",
+  "ko": "{done} AI에서 {site} 로그인 세션을 지웠어요. 내 세션은 그대로예요. {pending} AI가 지금 응답하지 않아 {site} 세션은 AI가 켜지면 지워져요. 그때까지 새 세션은 보내지 않아요.",
   "en": "Removed the {site} sign-in session from the {done} assistant. My own session is unchanged. The {pending} assistant isn't responding right now, so its {site} session will be removed when it's back on. Until then, no new session is sent.",
   "ja": "{done} アシスタントから {site} のログインセッションを削除しました。こちらのセッションはそのままです。{pending} アシスタントが今応答しないため、{site} のセッションはアシスタントが起動したときに削除されます。それまで新しいセッションは送りません。",
   "zh": "已从 {done} 助理中删除 {site} 的登录会话。我的会话保持不变。{pending} 助理现在没有响应，{site} 的会话会在它开启后删除。在那之前不会发送新的会话。"

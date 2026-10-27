@@ -12,6 +12,11 @@ LOADED = re.compile(r"\bprompt\('([a-z_]+)'\)")
 
 
 class PromptFileTests(unittest.TestCase):
+    def test_prompts_do_not_assign_a_secretary_role(self):
+        for path in prompt_files.PROMPTS.glob('*.md'):
+            with self.subTest(prompt=path.stem):
+                self.assertNotRegex(path.read_text(encoding='utf-8'), r'(?i)secretary|비서')
+
     def test_every_prompt_file_is_loaded_and_every_load_has_a_file(self):
         loaded = set()
         for module in SRC.glob('*.py'):

@@ -266,7 +266,7 @@ class OwnerSide(unittest.TestCase):
         with self.assertLogs('personal_agent.family_share', level='WARNING') as logs:
             receipt = self.share()
         self.assertFalse(receipt['delivered'])
-        self.assertIn('비서가 켜지면', receipt['response'])
+        self.assertIn('AI가 켜지면', receipt['response'])
         grant = family_share.grants(self.store)[0]
         self.assertEqual((grant['synced'], grant['error'], grant['attempted']), (None, 'URLError', 2000.0))
         self.assertFalse(family_share.listing(self.store)[0]['delivered'])
@@ -923,7 +923,7 @@ class AnyInstanceOnThisMac(unittest.TestCase):
         self.assertEqual(family_share.resolve_instance('아들  비서', rows), 'family-1')
         with self.assertRaises(ValueError) as caught:
             family_share.resolve_instance('이비서', rows)
-        self.assertIn('이 Mac의 다른 비서: 김비서(@main, 연결됨), 아들 비서(family-1, 설정 중)', str(caught.exception))
+        self.assertIn('이 Mac의 다른 AI: 김비서(@main, 연결됨), 아들 비서(family-1, 설정 중)', str(caught.exception))
         self.assertNotIn('가족', str(caught.exception))
         # An instance never set up at all, and a main service never set up: not connected / not listed.
         self.install('family-3', 8817)
@@ -1026,7 +1026,7 @@ class MainInstanceReceives(unittest.TestCase):
         receipt = family_share.share(self.giver_store, self.giver_jar, family_share.MAIN_INSTANCE, 'https://www.shop.test/cart',
                                      locate=self.locate, label='김비서')
         self.assertEqual((receipt['instance'], receipt['site'], receipt['cookies'], receipt['delivered']), ('@main', 'shop.test', 2, True))
-        self.assertIn('김비서 비서에 shop.test', receipt['response'])
+        self.assertIn('김비서 AI에 shop.test', receipt['response'])
         self.assertTrue(family_share.link_secret_path(self.store.root).exists(), "written into the receiver's data dir")
         # Only that site's rows arrived; the main instance marks it, refuses payment and keeps it out of login windows.
         self.assertEqual([row['value'] for row in self.jar.site_rows('shop.test')], [SECRET_VALUE, 'p'])
@@ -1045,7 +1045,7 @@ class MainInstanceReceives(unittest.TestCase):
         # Unshare revokes at once: the main instance's copy and mark are gone, the giver's own session stays.
         receipt = family_share.unshare(self.giver_store, '@main', 'shop.test', locate=self.locate, labels={'@main': '김비서'})
         self.assertEqual((receipt['instances'], receipt['removed']), (['@main'], True))
-        self.assertIn('김비서 비서에서 shop.test', receipt['response'])
+        self.assertIn('김비서 AI에서 shop.test', receipt['response'])
         self.assertEqual((self.jar.site_rows('shop.test'), family_share.received(self.store), family_share.grants(self.giver_store)),
                          ([], {}, []))
         self.assertIsNone(self.service.browser_approvals_for({'id': 'w'}).refuse('www.shop.test'))

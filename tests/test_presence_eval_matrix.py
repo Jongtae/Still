@@ -1637,7 +1637,10 @@ class RouteAndIdentity(LocalHttp, PresenceEval):
         self.assertEqual(self.task(third['id'])['route'], {'kind': 'direct-api', 'model': 'eval-model',
                                                           'status': 'succeeded'})
         # One identity: the same Still instructions on both workers ...
-        self.assertIn(CORE_INSTRUCTIONS, self.engine.prompts[0])
+        sent = self.store.turn_provenance(first['id'])
+        self.assertEqual(sent['instructions_channel'], 'developer-instructions')
+        self.assertIn(CORE_INSTRUCTIONS, sent['instructions'])
+        self.assertNotIn(CORE_INSTRUCTIONS, self.engine.prompts[0])
         system = [m['content'] for m in self.model_bodies[0]['messages'] if m['role'] == 'system']
         self.assertTrue(any(CORE_INSTRUCTIONS in text for text in system))
         # ... and one conversation: the API worker reads what the CLI worker answered.

@@ -1028,6 +1028,8 @@ def display_argv(argv, prompt, instructions=''):
             shown.append(f'<prompt: {len(prompt.encode())} bytes>')
         elif instructions and part == instructions:
             shown.append(f'<Still instructions: {len(instructions.encode())} bytes>')
+        elif instructions and part == 'developer_instructions=' + json.dumps(instructions, ensure_ascii=False):
+            shown.append(f'developer_instructions=<Still instructions: {len(instructions.encode())} bytes>')
         elif prompt and len(part) > 200:
             shown.append(part[:200] + '…')
         else:
@@ -1882,6 +1884,9 @@ class BoundedExecutionAdapter:
                     *(['-c', codex_bridge_timeout_argument(tool_timeout)] if tool_timeout else []),
                     # #1296: the owner's confirmed servers and the hook that decides each of their calls.
                     *owner_mcp_args, *model_args,
+                    # Additional developer instructions preserve Codex's built-in base instructions.
+                    *(['-c', 'developer_instructions=' + json.dumps(instructions, ensure_ascii=False)]
+                      if instructions else []),
                     # Codex declares --image as a variadic FILE... option. Put
                     # the positional prompt before it so the prompt cannot be
                     # consumed as another image path (which leaves exec reading
@@ -2334,9 +2339,9 @@ class BoundedExecutionAdapter:
 
     def _execute(self, engine_id, prompt, tools, launch, *, context=None, model=None, images=None, effort=None):
         instructions = ''
-        if context and engine_id == 'claude-code':
-            # Claude Code accepts a system-prompt addition; send the shared
-            # instructions there and only conversation + request as the prompt.
+        if context and engine_id in ('claude-code', 'codex'):
+            # Standing instructions use each CLI's supported instruction channel;
+            # owner data and the request stay in the prompt.
             from .agent_runtime import render_turn_prompt
             instructions = context['instructions']
             prompt = render_turn_prompt(context, include_instructions=False)
