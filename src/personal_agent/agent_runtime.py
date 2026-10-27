@@ -1675,7 +1675,9 @@ def check_arguments(parameters,args):
 # budget, and `bounded_execution` kills the CLI process group on Stop or at
 # the deadline.
 WORK_MODEL_TURNS=9
-WORK_TOOL_ATTEMPTS=40
+#: #353: a click, a typed field or an API call is one attempt, so browser and API Works
+#: need many; the deadline and model turns still bound a runaway Work.
+WORK_TOOL_ATTEMPTS=200
 WORK_DEADLINE_SECONDS=600
 #: #1418: one turn of a request's allowance is held for the outcome judgment, so the
 #: worker, a plan or a reaction can never leave the last answer unjudged.
