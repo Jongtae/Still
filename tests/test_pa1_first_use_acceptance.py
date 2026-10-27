@@ -61,7 +61,7 @@ from personal_agent.agent_runtime import work_sources
 from personal_agent.connector_contract import CONNECTOR_STATE_KEY, ConnectorState
 from personal_agent.decision import (OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, SelectionDecision,
                                      fixture_confidence)
-from personal_agent.gmail import GMAIL_CONNECTOR_ID, GMAIL_READONLY_SCOPE
+from personal_agent.gmail import GMAIL_CONNECTOR_ID, GMAIL_MODIFY_CONNECTOR_ID, GMAIL_READONLY_SCOPE
 from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.quickstart import configured_service, make_handler
 from personal_agent.quickstart_store import QuickStore
@@ -489,7 +489,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             self.assertIsNotNone(self.service.connector_handoff)
             self.assertEqual([spec.connector_id for spec
                               in self.service.connector_registry.definitions()],
-                             [GMAIL_CONNECTOR_ID])
+                             [GMAIL_MODIFY_CONNECTOR_ID, GMAIL_CONNECTOR_ID])
             # Declaring a connector grants nothing: no owner row exists yet.
             self.assertIsNone(self.store.config(CONNECTOR_STATE_KEY, None))
 

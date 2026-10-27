@@ -1,4 +1,10 @@
 {
+ "handoff.modify_gmail": {
+  "ko": "Gmail 메일 정리",
+  "en": "Gmail mailbox organisation",
+  "ja": "Gmail メールの整理",
+  "zh": "Gmail 邮箱整理"
+ },
  "agent_runtime.a_needed_connection_isn_t_set": {
   "ko": "필요한 연결이 아직 설정되지 않아 확인하지 못했습니다. 설정에서 연결을 먼저 확인해 주세요.",
   "en": "A needed connection isn't set up yet, so I couldn't check. Please check the connection in Settings first.",

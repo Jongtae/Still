@@ -1,4 +1,4 @@
-"""Still-held connections as read-only ``api_request`` slots (CONN-API).
+"""Still-held connections as bounded ``api_request`` slots (CONN-API).
 
 The owner's AI decides at request time what it needs from a connected
 service - one event in full, a message body, a file's revisions - and calls
@@ -6,7 +6,7 @@ the provider's own API through ``api_request``.  Still keeps what an AI
 must not own: the token (resolved, renewed and revision-checked per call by
 the connector's existing machinery, never shown), the provider API host and
 path prefix the token may reach, and read-only methods for a read grant.
-No field list, endpoint list or question is defined here (C16).
+Write grants are further bounded by endpoint authority allow-lists (#355).
 
 The tools that already exist for these services (``calendar_query``,
 ``drive_search``/``drive_read``) stay; this only removes the blocker that
@@ -14,7 +14,7 @@ anything outside their fixed shape was unreachable except by the browser.
 """
 
 #: Connector id -> the slot it serves: provider API hosts, path prefixes and a note for the AI.
-#: Every one is a read grant, so only GET/HEAD are allowed.  ``shortcuts`` are the
+#: Read grants allow only GET/HEAD. Write grants keep an explicit path allow-list.  ``shortcuts`` are the
 #: fixed-shape tools that read a few fields of the same service's records (#1325):
 #: their results name this slot as the way to read an item in full.
 SLOT_SPECS = {
@@ -28,7 +28,18 @@ SLOT_SPECS = {
     'gmail': {'hosts': ('gmail.googleapis.com',), 'paths': ('/gmail/v1/users/me/',),
               'note': "the owner's Gmail, read-only (Gmail API v1, users/me); message bodies come "
                       "base64url-encoded, so read one with mail_read to get its text",
-              'shortcuts': ()},
+              'shortcuts': (), 'write_requires': 'gmail-modify',
+              'write_note': "the owner's Gmail (Gmail API v1, users/me); can modify message/thread labels, "
+                            "trash/untrash messages and threads, and create/update/delete labels; sending, "
+                            "draft writes, import/insert, permanent deletion and settings writes are unavailable. "
+                            "Message bodies are base64url-encoded; mail_read returns their text",
+              'write_paths': (('POST', r'/gmail/v1/users/me/messages/[A-Za-z0-9_-]+/(modify|trash|untrash)'),
+                              ('POST', r'/gmail/v1/users/me/messages/batchModify'),
+                              ('POST', r'/gmail/v1/users/me/threads/[A-Za-z0-9_-]+/(modify|trash|untrash)'),
+                              ('POST', r'/gmail/v1/users/me/labels'),
+                              ('PATCH', r'/gmail/v1/users/me/labels/[A-Za-z0-9_-]+'),
+                              ('PUT', r'/gmail/v1/users/me/labels/[A-Za-z0-9_-]+'),
+                              ('DELETE', r'/gmail/v1/users/me/labels/[A-Za-z0-9_-]+'))},
 }
 
 
@@ -37,11 +48,12 @@ def shortcut_slot(action):
     return next((name for name, spec in SLOT_SPECS.items() if action in spec['shortcuts']), None)
 
 
-def _slot(name, token):
+def _slot(name, token, *, writable=False):
     spec = SLOT_SPECS[name]
-    return {'name': name, 'note': spec['note'], 'hosts': tuple(spec['hosts']), 'paths': tuple(spec['paths']),
+    return {'name': name, 'note': spec['write_note'] if writable else spec['note'], 'hosts': tuple(spec['hosts']), 'paths': tuple(spec['paths']),
             'header': 'Authorization', 'scheme': 'Bearer', 'subject': None, 'revision': 1,
-            'max_age_seconds': 900, 'read_only': True, 'connection': name, 'token': token,
+            'max_age_seconds': 900, 'read_only': not writable, 'connection': name, 'token': token,
+            'write_paths': spec.get('write_paths'), 'write_requires': spec.get('write_requires'),
             # #1329: the provider's live API returns the owner's records as they are at retrieval.
             'live': True}
 
@@ -58,12 +70,15 @@ def relayed(names):
     is on the direct route.  Every call is relayed and the service resolves
     the real slot; an unknown name is dropped.
     """
-    return {name: _slot(name, _relayed_token) for name in names if name in SLOT_SPECS}
+    return {name: _slot(name, _relayed_token, writable=bool(SLOT_SPECS[name].get('write_requires') in names))
+            for name in names if name in SLOT_SPECS}
 
 
 def names(slots):
     """The Still-held connection slots among ``slots``, by name only (never a token)."""
-    return tuple(sorted(name for name, slot in (slots or {}).items() if isinstance(slot, dict) and slot.get('connection')))
+    held = {name: slot for name, slot in (slots or {}).items() if isinstance(slot, dict) and slot.get('connection')}
+    return tuple(sorted(set(held) | {slot['write_requires'] for slot in held.values()
+                                    if not slot.get('read_only') and slot.get('write_requires')}))
 
 
 def _oauth_token(oauth, owner_id, grant, exchange):
@@ -113,9 +128,9 @@ def _gmail_token(gmail, owner_id):
 
 
 def build(service, owner_id):
-    """The connection slots this owner can use now: one per connected read connector, else none."""
+    """The connection slots this owner can use now: one per service, using a connected write grant when available."""
     from .calendar import CALENDAR_CONNECTOR_ID
-    from .calendar_oauth import DRIVE_GRANT, READ_GRANT
+    from .calendar_oauth import DRIVE_GRANT, READ_GRANT, GMAIL_MODIFY_GRANT
     from .connector_contract import ConnectorState
     from .google_drive_read import DRIVE_CONNECTOR_ID
     registry = getattr(service, 'connector_registry', None)
@@ -136,9 +151,15 @@ def build(service, owner_id):
     if drive_oauth is not None and connected(DRIVE_CONNECTOR_ID):
         slots['google-drive'] = _slot('google-drive', _oauth_token(
             drive_oauth, owner_id, DRIVE_GRANT, getattr(service, 'drive_read_token_exchange', None)))
+    modify = getattr(service, 'gmail_modify_oauth', None)
+    from .gmail import GMAIL_MODIFY_CONNECTOR_ID
+    if modify is not None and connected(GMAIL_MODIFY_CONNECTOR_ID):
+        slots['gmail'] = _slot('gmail', _oauth_token(
+            modify, owner_id, GMAIL_MODIFY_GRANT, getattr(service, 'gmail_modify_token_exchange', None)), writable=True)
+        slots['gmail']['revision'] = registry.status(owner_id, GMAIL_MODIFY_CONNECTOR_ID).connection_revision
     gmail = getattr(service, 'gmail', None)
     if gmail is not None:
         from .gmail import GMAIL_CONNECTOR_ID
-        if connected(GMAIL_CONNECTOR_ID):
+        if 'gmail' not in slots and connected(GMAIL_CONNECTOR_ID):
             slots['gmail'] = _slot('gmail', _gmail_token(gmail, owner_id))
     return slots

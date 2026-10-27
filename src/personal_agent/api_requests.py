@@ -64,7 +64,7 @@ MAX_READ_REQUESTS = 8
 #: transport).  A sent request leaves an ``api_dispatch`` record of its own; ``needs_setup`` and
 #: response-time codes are not here because they can follow a dispatch.
 PRE_DISPATCH_CODES = frozenset({'api_slot_code_only', 'api_slot_unknown', 'api_slot_invalid', 'api_argument_invalid',
-                                'api_path_invalid', 'api_read_only', 'api_approval_unrepresentable', 'approval_required',
+                                'api_path_invalid', 'api_path_refused', 'api_read_only', 'api_approval_unrepresentable', 'approval_required',
                                 'api_effect_replayed', 'api_work_inactive'})
 #: #1445: the pre-dispatch refusals of a call that could not be made as written (the wrong tool for a
 #: set, an unknown slot, a malformed argument or path).  Like a click on a target that was not on the
@@ -987,11 +987,22 @@ class ApiRequests:
         if method not in METHODS:
             raise ApiError('지원하는 메서드는 ' + ', '.join(METHODS) + '입니다.', 'api_argument_invalid')
         if slot.get('read_only') and method not in READ_METHODS:
-            # CONN-API: a read grant is used for reads only; changes go through the existing drafts and approvals.
-            raise ApiError(f"연결 '{slot['name']}'은 읽기 전용이라 {method} 요청을 보내지 않았습니다.", 'api_read_only')
+            # CONN-API: a read grant never authorizes a mutation.
+            raise ApiError(f"연결 '{slot['name']}'은 읽기 전용이라 {method} 요청을 보내지 않았습니다.", 'api_read_only',
+                           requires=slot.get('write_requires'))
         url = str(args.get('url') or '').strip()
-        parts, named = self._target(slot, url)
+        try:
+            parts, named = self._target(slot, url)
+        except ApiError:
+            if method not in READ_METHODS and slot.get('write_paths') is not None:
+                raise ApiError('연결의 변경 주소를 허용할 수 없어 보내지 않았습니다.', 'api_path_refused') from None
+            raise
         path = parts.path or '/'
+        # #355: match exactly what HTTP sends, before a token, approval or effect claim.
+        if method not in READ_METHODS and slot.get('write_paths') is not None:
+            path = urlsplit(urlunsplit((parts.scheme.lower(), named, path, parts.query, ''))).path
+            if not any(method == allowed and re.fullmatch(pattern, path) for allowed, pattern in slot['write_paths']):
+                raise ApiError(f"연결 '{slot['name']}'에서 허용하지 않은 변경 경로입니다.", 'api_path_refused')
         # Fragments never reach HTTP; they cannot create a fresh dispatch identity.
         url = urlunsplit((parts.scheme.lower(), named, path, parts.query, ''))
         # CONN-API: a read grant used with GET/HEAD (enforced above) cannot change anything.

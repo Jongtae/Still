@@ -70,7 +70,7 @@ def migrate_connector_owner(service):
         connectors.update(receipt['connectors'])
     # Credential holders are inspected only when legacy state needs migrating.
     holders = {connector: holder
-               for holder in (service.gmail, service.calendar_oauth, service.drive_oauth)
+               for holder in (service.gmail, service.calendar_oauth, service.drive_oauth, getattr(service, 'gmail_modify_oauth', None))
                if holder is not None and callable(getattr(holder, 'token_slots', None))
                for connector in holder.token_slots(local)}
 

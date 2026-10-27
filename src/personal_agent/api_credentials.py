@@ -38,6 +38,9 @@ def fingerprint(name, slot):
              'scheme': slot['scheme'], 'subject': slot.get('subject'),
              'money': slot.get('money', False), 'revision': slot['revision'],
              'max_age_seconds': slot.get('max_age_seconds', DEFAULT_MAX_AGE)}
+    # #355: a connection's current write boundary participates in the dispatch guard.
+    if slot.get('connection'):
+        bound.update({key: slot.get(key) for key in ('connection', 'paths', 'read_only', 'write_paths')})
     # #1380: a code-run secret set binds its named fields and owner-reviewed reads too.
     for key in ('oauth', 'credential_parent', 'token_expires_at', 'kind', 'fields', 'reads'):
         if key in slot:
