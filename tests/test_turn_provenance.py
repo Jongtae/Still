@@ -79,8 +79,9 @@ class AdapterMetadata(unittest.TestCase):
              'permission_denials': [{'tool_name': 'Bash'}], 'usage': {'input_tokens': 9}}))
         meta = cli_metadata('claude-code', stream)
         self.assertEqual(meta['reported_model'], 'claude-x', 'the init record names the session model')
-        self.assertEqual(meta['tool_calls'], [{'type': 'tool_use', 'name': 'mcp__agentos__web_search', 'status': 'requested'},
-                                              {'type': 'tool_use', 'name': 'Bash', 'status': 'denied'}])
+        # #372: the bridge call is counted; the CLI's own denied Bash stays listed.
+        self.assertEqual(meta['tool_calls'], [{'type': 'tool_use', 'name': 'Bash', 'status': 'denied'}])
+        self.assertEqual(meta['bridge_calls'], 1)
         self.assertEqual(BoundedExecutionAdapter._content('claude-code', stream), 'final answer',
                          'a large tool result earlier in the stream does not reject a small answer')
         synthetic = json.dumps({'type': 'assistant', 'message': {'model': '<synthetic>'}})
