@@ -4462,7 +4462,11 @@ def _evidence_detail(name,result):
                                 'cited':[str(path)[:200] for path in result.get('cited') or ()][:20],
                                 'needs_setup':bool(result.get('needs_setup')),'requires':result.get('requires')}
  # #794: the receipt only - never the forgotten content (list results are counted, not copied).
- if name=='forget_record':return ({key:result.get(key) for key in ('action','receipt','operation','kind','state','items','counts','undo_until','code') if result.get(key) is not None}
+ if name=='forget_record':return ({key:result.get(key) for key in ('action','receipt','operation','kind','state','items','counts','undo_until','code',
+                                                                  # #380: content-free scope, so the judgment can check the reply's account.
+                                                                  'local_scope_only','outside_scope') if result.get(key) is not None}
+                                 # #380: a kept forget (#367) can be undone at any time; a deletion never.
+                                 |({'can_undo':result.get('state')=='forgotten'} if result.get('action') in ('forget','delete') else {})
                                  |({'undoable':len(result['undoable'])} if isinstance(result.get('undoable'),list) else {})
                                  # #367: a find records how many candidates it showed, never their text.
                                  |({'found':len(result['messages'])} if isinstance(result.get('messages'),list) else {}))

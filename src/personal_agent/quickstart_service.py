@@ -1836,6 +1836,12 @@ class AgentService:
                 # #367 review P1: what the owner forgot of this Work is not sent to the upkeep; it settles unsent.
                 upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'forgotten'},now,kind=kind)
                 return
+            if self.store.managed_owner_state(work_id):
+                # #380: the owner forgot, deleted or restored something here (or in the correction that
+                # follows). How forget works is the software's rule, not an owner habit, and a lesson or
+                # fact drawn from it would record again what the owner chose to forget: it settles unsent.
+                upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'owner-state-management'},now,kind=kind)
+                return
             # Every fact is redacted by the judgment redaction scoped to the source Work:
             # stored secrets and credential shapes always, and its saved private values
             # (#605 set) from the model-stated facts.
