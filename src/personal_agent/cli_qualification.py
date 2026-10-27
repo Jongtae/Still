@@ -169,12 +169,17 @@ def _loopback_run(adapter, engine_id, binary, argv, run_dir, model):
 
 
 def _work_bridge_check(adapter, engine_id, binary, root, disabled):
-    """Retry only an unavailable bridge, with security observed on every attempt."""
+    """Retry a bridge round trip that did not complete; security is observed on every attempt.
+
+    Codex may build its first request before the bridge MCP server is ready
+    (#346, live on 0.164.0). A missed round trip is retried, at most three
+    attempts in all; any security defect refuses at once.
+    """
     for attempt in range(3):
         attempt_root = root / f'work-attempt-{attempt}'
         attempt_root.mkdir()
-        safe, reached, unavailable = _work_bridge_attempt(adapter, engine_id, binary, attempt_root, disabled)
-        if not safe or reached or not unavailable:
+        safe, reached = _work_bridge_attempt(adapter, engine_id, binary, attempt_root, disabled)
+        if not safe or reached:
             break
     return {'check': 'strict-work-bridge-and-tool-surface', 'passed': bool(safe and reached)}
 
@@ -236,10 +241,7 @@ def _work_bridge_attempt(adapter, engine_id, binary, root, disabled):
                             ('QUALIFIER-PRIVATE-CANARY-346', 'SKILL-CANARY-616', 'canary-skill-616',
                              'SKILL-BODY-CANARY-616', 'PLUGIN-CANARY-616')))
         reached = bridge_offered and len(results) >= 3 and 'QUALIFIER-NOTE-346' in results[2]
-        unavailable = not bridge_offered or (len(results) >= 3 and any(
-            marker in results[2] for marker in
-            (denied, 'tool call failed', 'Connection closed', 'Transport closed', 'bridge unavailable')))
-        return safe, reached, unavailable
+        return safe, reached
     finally:
         model.close()
 
