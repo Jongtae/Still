@@ -129,7 +129,12 @@ class FakeSocket:
             listener(self, request)
 
 
+#: Every request body the fixture model was sent.
+MODEL_REQUESTS = []
+
+
 def model(url, body, headers=None, timeout=60):
+    MODEL_REQUESTS.append(body)
     tools = [t.get('function', {}).get('name') or t.get('name') for t in body.get('tools', [])]
     if 'agentos_connection_probe' in tools:
         return {'message': {'content': '', 'tool_calls': [
@@ -432,6 +437,16 @@ class Delivery(SlackCase):
             self.fake.fail, self.fake.fail_after = 'not_sent', 1
             self.service.deliver_one()
         self.assertEqual(self.store.job(self.work['id'])['delivery'], 'unknown')
+
+    def test_the_worker_is_told_it_answers_in_a_slack_chat(self):
+        # #375: the surface fact of the Work's own channel (#1380), as on Telegram; it was Telegram-only.
+        MODEL_REQUESTS.clear()
+        self.owner_says('다른 질문')
+        self.assertTrue(self.service.run_one())
+        system = '\n'.join(str(message.get('content')) for body in MODEL_REQUESTS for message in body.get('messages', ())
+                           if message.get('role') == 'system')
+        self.assertIn('# Where the owner is writing\nIn their paired Slack direct message.', system)
+        self.assertIn('read as a chat message', system)
 
     def test_a_token_is_used_only_with_its_own_pairing(self):
         self.store.secret(BOT_SECRET, 'xoxb-new-other-workspace-1')   # a reconnect stored new tokens, not yet its pairing
