@@ -1522,8 +1522,14 @@ class QuickStore:
                 # Preserve the existing retired-secret exclusion; redact current
                 # secrets before clipping, so partial credentials cannot escape.
                 if any(self.holds_retired_secret(row['content'] or '') for row in rows):continue
-                turns=[]
+                turns=[];owner_contents=set()
                 for row in rows:
+                    # Continuations repeat the request for history(through=work).
+                    # In recall only, retain its earliest selected row, before
+                    # redaction/clipping can make distinct owner words look alike.
+                    if row['role']=='user':
+                        if row['content'] in owner_contents:continue
+                        owner_contents.add(row['content'])
                     content=' '.join(redact_known_secrets(self,row['content'] or '').split())[:OWNER_WORDS_LINE_CHARS]
                     turns.append({'id':row['id'],'work_id':row['job_id'],'role':row['role'],
                                   'created':row['work_created'] if row['role']=='user' else row['created'],
