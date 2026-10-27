@@ -28,7 +28,7 @@ Owner direction: memory is not overwritten or erased. A new fact is added, and t
   - `supersedes_key` still names only the proposal's own key. #805's rule that the upkeep never retires another key's row is superseded by this explicit, id-named, bounded form.
 - **Facts that end on their own.** A proposal may carry `valid_until`, the last day the fact holds. After that day the row leaves every model snapshot, including literal query matches. It stays current in the store, and the owner's Settings list shows it as ended. A row that ends later reads `until YYYY-MM-DD` in the snapshot.
 - **Notice and undo.** The saved notice names the ended facts after "전에는", as it names a same-key replacement. Undoing the save restores every row it ended (`retract_memory`, exact to the row and its digest).
-- **Unchanged.** Owner "forget" remains deletion with its receipt and undo window. Turning it into invalidation would change retention, and needs a separate owner decision. Third-party writers still create candidates (C5). No key-name, synonym or category rule decides what ends (C16): the AI names ids, and Still checks and applies them.
+- **Forget is invalidation (owner decision 2026-10-28, #367).** Owner "forget" keeps the record that the owner chose to forget an item and is never purged; it stays undoable. Only "delete" erases. Forget and delete also cover transcript messages the owner's AI names (`message:<id>`). Third-party writers still create candidates (C5). No key-name, synonym or category rule decides what ends (C16): the AI names ids, and Still checks and applies them.
 
 ## Amendment — #19 STEADY-NOTES-01 (2026-10-20): one bounded, revisable working-notes document
 

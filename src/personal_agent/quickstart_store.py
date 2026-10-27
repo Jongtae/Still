@@ -18,6 +18,30 @@ import unicodedata
 import uuid
 
 from .conversation_projection import qualify_transcript, turn_qualifier
+
+#: #367: the transcript rows the owner forgot; every AI reader of ``messages`` leaves them out.
+FORGOTTEN_MESSAGE_IDS='SELECT message_id FROM forgotten_messages'
+
+
+def fts_prefix_expression(query):
+    """An FTS5 MATCH expression for ``query``: up to 12 quoted prefix terms, Hangul ones also two shorter prefixes."""
+    terms=list(dict.fromkeys(re.findall(r'[^\W_]+',query,flags=re.UNICODE)))[:12]
+    terms=[term[:64] for term in terms if len(term)>1]
+    prefixes=[]
+    for term in terms:
+        prefixes.append(term)
+        if re.fullmatch('[가-힣]+',term):
+            prefixes.extend(term[:n] for n in range(len(term)-1,max(1,len(term)-3),-1))
+    return ' OR '.join('"'+term+'"*' for term in dict.fromkeys(prefixes))
+
+
+def forgotten_turn(role, work='jobs.id'):
+    """#367: SQL true when a ``role`` transcript row of the Work ``work`` was forgotten.
+
+    ``jobs.message`` / ``jobs.response`` copy those rows, so a reader of the copy withholds it too.
+    """
+    return (f"EXISTS (SELECT 1 FROM messages fm JOIN forgotten_messages ff ON ff.message_id=fm.id "
+            f"WHERE fm.job_id={work} AND fm.role='{role}')")
 from .telegram_store import TelegramStore
 from .preparations import TABLE_SQL as PREPARATIONS_TABLE_SQL, migrate as migrate_preparations
 from .owner_model import TABLE_SQL as OWNER_MODEL_TABLE_SQL, migrate as owner_model_migrate
@@ -79,6 +103,8 @@ class QuickStore:
             CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, expires REAL);
             CREATE TABLE IF NOT EXISTS config(key TEXT PRIMARY KEY, value TEXT);
             CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT, content TEXT, channel TEXT, created REAL);
+            -- #367: transcript rows the owner chose to forget (owner_forget ``message:<id>``); no AI reader sees them.
+            CREATE TABLE IF NOT EXISTS forgotten_messages(message_id INTEGER PRIMARY KEY, receipt_id TEXT NOT NULL, created REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, request_key TEXT UNIQUE, message TEXT, channel TEXT, chat_id INTEGER, status TEXT, response TEXT, error TEXT, delivery TEXT, provider TEXT, model TEXT, created REAL);
             CREATE TABLE IF NOT EXISTS tool_events(id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, tool TEXT, status TEXT, detail TEXT, created REAL);
             CREATE TABLE IF NOT EXISTS turn_provenance(job_id TEXT PRIMARY KEY, record TEXT NOT NULL, created REAL NOT NULL);
@@ -693,19 +719,38 @@ class QuickStore:
                         "CASE WHEN m.role='user' THEN j.source_at END AS source_at,"
                         "CASE WHEN m.role='user' THEN j.source_edited_at END AS source_edited_at")
 
-    def history(self, through=None):
+    def history(self, through=None, *, include_forgotten=False):
         """The newest transcript rows; with ``through`` (a Work id), ending at that Work's latest owner row.
 
         #17: a side answer may be recorded while a Work runs, so a running Work
         reads its window up to its own request rather than the transcript tail.
+        #367: rows the owner forgot are left out, so no AI reader sees them;
+        ``include_forgotten`` (the owner's own view) keeps them, marked ``forgotten``.
         """
         with self.db() as db:
             bound=(db.execute("SELECT MAX(id) AS id FROM messages WHERE job_id=? AND role='user'",(through,)).fetchone()['id']
                    if through is not None else None)
-            return qualify_transcript(db.execute(
-                f'SELECT {self.TRANSCRIPT_COLUMNS} '
-                f'FROM (SELECT * FROM messages {"WHERE id<=? " if bound is not None else ""}ORDER BY id DESC LIMIT 100) m '
+            where=[*(['id<=?'] if bound is not None else []),*([] if include_forgotten else [f'id NOT IN ({FORGOTTEN_MESSAGE_IDS})'])]
+            marked=(f', (m.id IN ({FORGOTTEN_MESSAGE_IDS})) AS forgotten' if include_forgotten else '')
+            rows=qualify_transcript(db.execute(
+                f'SELECT {self.TRANSCRIPT_COLUMNS}{marked} '
+                f'FROM (SELECT * FROM messages {"WHERE "+" AND ".join(where)+" " if where else ""}ORDER BY id DESC LIMIT 100) m '
                 'LEFT JOIN jobs j ON j.id=m.job_id ORDER BY m.id',(bound,) if bound is not None else ()))
+            if include_forgotten:
+                for row in rows:row['forgotten']=bool(row.get('forgotten'))
+            return rows
+
+    def last_reply(self, job_id, *, with_created=False):
+        """#367: a Work's last assistant transcript row an AI reader may see (``None`` when absent or forgotten)."""
+        with self.db() as db:
+            return db.execute(f"SELECT content{',created' if with_created else ''} FROM messages WHERE job_id=? AND role='assistant' "
+                              f"AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id DESC LIMIT 1",(job_id,)).fetchone()
+
+    def work_request_forgotten(self, job_id):
+        """#367: whether the owner forgot the request row of this Work (its ``jobs.message`` copy is then withheld too)."""
+        with self.db() as db:
+            return db.execute(f"SELECT 1 FROM messages WHERE job_id=? AND role='user' AND id IN ({FORGOTTEN_MESSAGE_IDS}) LIMIT 1",
+                              (job_id,)).fetchone() is not None
 
     def blocked_delivery_reply(self, job_id):
         """Recover the owner-facing blocked-turn projection from its transcript row."""
@@ -1014,7 +1059,8 @@ class QuickStore:
             index=self._work_digests(db) if keyed else {}
             work_ids=sorted({index[key] for key in keyed.values() if key in index})
             works={row['id']:row for row in db.execute(
-                f"SELECT id,message,created,source_at,owner_typed FROM jobs WHERE id IN ({','.join('?'*len(work_ids))})",work_ids)} if work_ids else {}
+                f"SELECT id,CASE WHEN {forgotten_turn('user')} THEN '' ELSE message END AS message,created,source_at,owner_typed "
+                f"FROM jobs WHERE id IN ({','.join('?'*len(work_ids))})",work_ids)} if work_ids else {}
         sources={}
         for memory_id,key in keyed.items():
             row=works.get(index.get(key))
@@ -1426,7 +1472,7 @@ class QuickStore:
         adjacent turns in the same Work qualify; recent rows never reappear.
         Document Works are withheld from both readers to preserve #826.
         Delivery is true/false only with a transport receipt; otherwise unknown.
-        This is conversation history as recorded; forget/delete applies to Memory and state.
+        This is conversation history as recorded, without the rows the owner forgot (#367).
         ``message_ids`` reopens only source rows actually sent by a tool.
         """
         if not isinstance(query,str) or len(query)>500:raise ValueError('Invalid conversation query')
@@ -1435,20 +1481,14 @@ class QuickStore:
             if value is not None and (isinstance(value,bool) or not isinstance(value,(int,float)) or not -1e12<=value<=1e12 or not math.isfinite(value)):
                 raise ValueError('Conversation dates must be finite Unix timestamps')
         if not getattr(self,'messages_search_available',False):return []
-        terms=list(dict.fromkeys(re.findall(r'[^\W_]+',query,flags=re.UNICODE)))[:12]
-        terms=[term[:64] for term in terms if len(term)>1]
-        prefixes=[]
-        for term in terms:
-            prefixes.append(term)
-            if re.fullmatch('[가-힣]+',term):
-                prefixes.extend(term[:n] for n in range(len(term)-1,max(1,len(term)-3),-1))
-        expression=' OR '.join('"'+term+'"*' for term in dict.fromkeys(prefixes))
+        expression=fts_prefix_expression(query)
         if not expression and message_ids is None:return []
         from .current_context import redact_known_secrets
         from .memory_service import OWNER_WORDS_LINE_CHARS
         documents=set(self.config('file_workspace_document_jobs',[]) or [])
         with self.db() as db:
-            newest=db.execute('SELECT id FROM messages ORDER BY id DESC LIMIT 1 OFFSET ?',(max(0,int(skip_recent)-1),)).fetchone()
+            # The recent window every reader already sees, counted as history() counts it (#367: without forgotten rows).
+            newest=db.execute(f'SELECT id FROM messages WHERE id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id DESC LIMIT 1 OFFSET ?',(max(0,int(skip_recent)-1),)).fetchone()
             if newest is None:return []
             cutoff=newest['id']
             columns="m.id,m.job_id,m.role,m.content,m.created,j.created AS work_created,j.source_at,j.delivery,j.channel,j.owner_typed"
@@ -1456,6 +1496,7 @@ class QuickStore:
                 hits=db.execute(f"""SELECT {columns} FROM messages_search
                     JOIN messages m ON m.id=messages_search.rowid JOIN jobs j ON j.id=m.job_id
                     WHERE messages_search MATCH ? AND m.role IN ('user','assistant') AND j.owner_typed=1 AND m.id<?
+                    AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS})
                     AND (? IS NULL OR COALESCE(j.source_at,j.created)<?)
                     AND (? IS NULL OR COALESCE(j.source_at,j.created)>=?)
                     ORDER BY bm25(messages_search),m.id LIMIT 30""",
@@ -1463,12 +1504,12 @@ class QuickStore:
             else:
                 ids=[v for v in message_ids[:9] if isinstance(v,int) and not isinstance(v,bool)]
                 if not ids:return []
-                hits=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.id IN ({','.join('?' for _ in ids)}) AND j.owner_typed=1 ORDER BY m.id",ids).fetchall()
+                hits=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.id IN ({','.join('?' for _ in ids)}) AND j.owner_typed=1 AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY m.id",ids).fetchall()
             result=[];seen=set();used=0
             for hit in hits:
                 if hit['job_id'] in seen or hit['job_id'] in documents:continue
                 seen.add(hit['job_id'])
-                rows=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.job_id=? AND m.id<? AND m.role IN ('user','assistant') ORDER BY ABS(m.id-?),m.id LIMIT 3",(hit['job_id'],cutoff,hit['id'])).fetchall()
+                rows=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.job_id=? AND m.id<? AND m.role IN ('user','assistant') AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY ABS(m.id-?),m.id LIMIT 3",(hit['job_id'],cutoff,hit['id'])).fetchall()
                 rows=sorted(rows,key=lambda row:row['id'])
                 if not rows:continue
                 if any(len(row['content'] or '')>16000 for row in rows):continue
@@ -1490,6 +1531,25 @@ class QuickStore:
                 result.append(exchange);used+=size
                 if len(result)>=limit:break
         return result
+
+    def find_messages(self, query, *, limit=20):
+        """#367: transcript rows the owner may ask to forget, newest first, as ``message:<id>`` refs.
+
+        Unlike ``search_conversation`` (recall), this includes the recent window and every
+        Work, since the owner's AI picks what to forget; already forgotten rows are left out.
+        Excerpts are short and redacted; the AI chooses the rows, code judges nothing.
+        """
+        if not isinstance(query,str) or not query.strip() or len(query)>500:raise ValueError('Invalid conversation query')
+        if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=20:raise ValueError('Invalid conversation limit')
+        expression=fts_prefix_expression(query)
+        if not expression or not getattr(self,'messages_search_available',False):return []
+        from .current_context import redact_known_secrets
+        with self.db() as db:
+            rows=db.execute(f"""SELECT m.id,m.role,m.content,m.created FROM messages_search JOIN messages m ON m.id=messages_search.rowid
+                WHERE messages_search MATCH ? AND m.role IN ('user','assistant') AND m.content<>''
+                AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY m.id DESC LIMIT ?""",(expression,limit)).fetchall()
+        return [{'ref':f"message:{row['id']}",'role':'owner' if row['role']=='user' else 'assistant','created':row['created'],
+                 'excerpt':' '.join(redact_known_secrets(self,row['content'] or '').split())[:160]} for row in rows]
 
     def work_memories(self, owner_id, work_id, limit=101):
         """The current Memory rows one Work wrote, oldest first (#918: what its notice shows)."""
@@ -1737,7 +1797,9 @@ class QuickStore:
                                   for row in db.execute('SELECT r.id,r.job_id,r.content,r.created,j.status AS work_outcome,j.error AS work_error FROM workspace_results r LEFT JOIN jobs j ON j.id=r.job_id WHERE r.workspace_id=? ORDER BY r.created DESC LIMIT 30',(workspace_id,))]
             workspace['result_count']=db.execute('SELECT COUNT(*) FROM workspace_results WHERE workspace_id=?',(workspace_id,)).fetchone()[0]
             workspace['saved_job_ids']=[row['job_id'] for row in db.execute('SELECT job_id FROM workspace_results WHERE workspace_id=? AND job_id IN (SELECT id FROM jobs ORDER BY created DESC LIMIT 40)',(workspace_id,))]
-            workspace['messages']=qualify_transcript(db.execute(f'SELECT {self.TRANSCRIPT_COLUMNS} FROM messages m LEFT JOIN jobs j ON j.id=m.job_id WHERE m.workspace_id=? ORDER BY m.id DESC LIMIT 100',(workspace_id,)))[::-1]
+            # #367: the owner's own project view keeps forgotten rows, marked.
+            workspace['messages']=qualify_transcript(db.execute(f'SELECT {self.TRANSCRIPT_COLUMNS}, (m.id IN ({FORGOTTEN_MESSAGE_IDS})) AS forgotten FROM messages m LEFT JOIN jobs j ON j.id=m.job_id WHERE m.workspace_id=? ORDER BY m.id DESC LIMIT 100',(workspace_id,)))[::-1]
+            for row in workspace['messages']:row['forgotten']=bool(row.get('forgotten'))
         return workspace
 
     def attach_context(self, job_id, event_ids, assistant_id, db=None):

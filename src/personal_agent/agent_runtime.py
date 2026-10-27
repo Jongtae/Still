@@ -108,13 +108,16 @@ EFFECT={'type':'string','enum':['read','navigate','mutate','payment']}
 FORGET_RECORD_DESCRIPTION=('Forget, completely delete or restore one item of what Still keeps about the owner, when the owner asks. '
   'ref names the exact item: memory:<id> (an id from list_memory or search_memory), state:<id> or obs:<id> (from the current context), '
   'or procedure:<id> (a saved function library listed with its secret set in the current context, or the working_notes ref in '
-  'the owner profile; forgetting it stops its use and puts the previous saved version, if any, back in use). '
-  'action forget removes it from use now and lets the owner undo it for 7 days, after which it is purged; '
-  'delete purges it now with no undo (use it only when the owner asks to erase it completely); '
+  'the owner profile; forgetting it stops its use and puts the previous saved version, if any, back in use), '
+  'or message:<id>[,<id>...] (up to 20 conversation messages; action find with a query lists them, newest first, '
+  'including recent ones). When the owner asks to forget something they said or were told, also find and forget the '
+  'conversation messages that state it, together with any Memory item. '
+  'action forget removes it from use now; Still keeps the record that the owner chose to forget it and the owner can undo it at any time; '
+  'delete erases it now with no undo (use it only when the owner asks to erase it completely; a message is blanked); '
   'undo restores one earlier forget by its receipt; list shows the forgets the owner can still undo, with what each covered. '
-  'Trust records also accept trust:<engine>|<kind>|<identity> from settings_read ai_connections. Their authority is disabled immediately; after payload purge a minimal revocation marker remains. Restoring trust requires settings_change ai_connections restore and owner confirmation, never this tool undo. '
+  'Trust records also accept trust:<engine>|<kind>|<identity> from settings_read ai_connections. Their authority is disabled immediately and a revocation marker remains. Restoring trust requires settings_change ai_connections restore and owner confirmation, never this tool undo. '
   'To correct a wrong Memory value instead, save the right value with save_memory under the same key. '
-  'Tell the owner exactly what the result says, including that copies already sent to an AI provider, exports and backups are not affected.')
+  'Tell the owner exactly what the result says, including what it says is not affected (the Telegram app\'s own copy, copies already sent to an AI provider, Work records, exports and backups).')
 #: The argument recorded as a length placeholder, per host action: typed
 #: browser text (#656) and a proposed current-state value (#627), which the
 #: owner may have phrased around a secret before the host redacts it.
@@ -403,7 +406,7 @@ DEFINITIONS=[
  schema('list_memory','Read a page of the owner\'s current saved memory items. The profile facts are in the owner profile section of the context; use search_memory to find a relevant fact outside that bounded section. Each item has saved_at, source and source_status: source.kind owner_request is what the owner typed (text, at); agentos_work is a Work Still started, whose text is not the owner\'s words; source_status not_kept means no source is kept and unknown means it could not be checked, so you can say why you know something.'),
  schema('search_conversation','Search earlier source-linked exchanges outside the recent window. Assistant lines are model-stated, not facts or commitments. Read-only, redacted, owner-scoped; at most three exchanges across this Work. Optional before/after are Unix timestamps (exclusive/inclusive). Reformulate when needed.',{'query':STRING,'before':{'type':'number'},'after':{'type':'number'},'limit':{'type':'integer','minimum':1,'maximum':3}},['query']),
  schema('search_memory','Search the owner\'s current saved Memory for a fact relevant to this request. Use concise terms from the request and likely synonyms (for example, sushi and 초밥); results include saved_at and a source reference with source_status, as in list_memory, so you can say why you know something. Search only when prior saved information can help. It returns a bounded set and never reads another owner\'s data.',{'query':STRING},['query']),
- schema('forget_record',FORGET_RECORD_DESCRIPTION,{'action':{'type':'string','enum':['forget','delete','undo','list']},'ref':STRING,'receipt':STRING},['action']),
+ schema('forget_record',FORGET_RECORD_DESCRIPTION,{'action':{'type':'string','enum':['forget','delete','undo','list','find']},'ref':STRING,'receipt':STRING,'query':STRING},['action']),
  schema('list_agents','List available specialist agents and their roles.'),
  schema('browser_open','Open a URL in the owner\'s own logged-in browser profile and return the page state: bounded visible text and a numbered list of interactive elements. Use for sites where the owner is signed in (shopping carts, account pages); public_page_read is enough for anonymous pages. A login_required state means the owner must log in first; never enter credentials. An element marked offscreen sits in a closed menu or panel and cannot be pressed yet: press the control that opens it first, or open its href with browser_open.'+BROWSER_SIGN_IN_NOTE+BROWSER_SESSION_NOTE+BROWSER_EFFECT_NOTE,{'url':STRING,'effect':EFFECT},['url','effect']),
  schema('browser_read','Return the current page state of the owner\'s browser session again (visible text and numbered interactive elements), for example after the page changed. load_more (optional, 1-5): first scroll the page to its end up to that many times, for a list that adds rows only when scrolled; it stops early when nothing new appears and is bounded in time. The result then has loaded: rounds, why it stopped, new_content and the text that appeared (use browser_find to reach controls in the added rows). Scrolling never presses a control.',{'load_more':STRING}),
@@ -3796,20 +3799,25 @@ class Capabilities:
     if action=='list':
      rows=forget.undoable(MEMORY_OWNER)
      result={'action':'list','undoable':rows,'message':f'되돌릴 수 있는 항목 {len(rows)}개'}
+    elif action=='find':
+     # #367: candidate conversation messages for the AI to choose from; nothing is forgotten here.
+     try:rows=self.store.find_messages(args.get('query'))
+     except ValueError as exc:raise ToolError(str(exc),'invalid_arguments') from None
+     result={'action':'find','messages':rows,'message':f'찾은 대화 메시지 {len(rows)}개'}
     elif action=='undo':
      result={'action':'undo',**forget.undo(MEMORY_OWNER,args.get('receipt'))}
      result['message']=msg('agent_runtime.undone')
     elif action in ('forget','delete'):
      result={'action':action,**forget.forget(MEMORY_OWNER,args.get('ref'),delete=action=='delete',work_id=self.job_id)}
-     result['message']=('완전히 지웠어요. 되돌릴 수 없어요.' if action=='delete' else '잊었어요. 7일 안에는 되돌릴 수 있어요.')
+     result['message']=('완전히 지웠어요. 되돌릴 수 없어요.' if action=='delete' else '잊었어요. 언제든 되돌릴 수 있어요.')
      if result['kind']=='procedure' and action=='forget':
-      result['message']='저장해 둔 그 방법은 이제 쓰지 않아요. 이전에 저장한 방법이 있으면 그걸 다시 써요. 7일 안에는 되돌릴 수 있어요.'
+      result['message']='저장해 둔 그 방법은 이제 쓰지 않아요. 이전에 저장한 방법이 있으면 그걸 다시 써요. 언제든 되돌릴 수 있어요.'
      if result['kind']=='trust':
       result['message']=('신뢰 기록 내용은 지웠고 이전 권한을 막는 최소한의 표시는 남겼어요. 되돌릴 수 없어요.'
                          if action=='delete' else
-                         '이전 권한 사용을 중지했어요. 7일 안에 설정 확인으로 복원할 수 있어요. 그 뒤 기록 내용은 지우고 권한 중지 표시만 남겨요.')
+                         '이전 권한 사용을 중지했어요. 설정 확인으로 언제든 복원할 수 있어요.')
     else:
-     raise ToolError('action은 forget, delete, undo, list 중 하나여야 합니다.','invalid_arguments')
+     raise ToolError('action은 forget, delete, undo, list, find 중 하나여야 합니다.','invalid_arguments')
    except ForgetError as exc:
     raise ToolError(str(exc),exc.code) from None
    self.evidence.append({'tool':name,'result':evidence_summary(name,result)}); return result
@@ -4439,7 +4447,10 @@ def _evidence_detail(name,result):
                                 'cited':[str(path)[:200] for path in result.get('cited') or ()][:20],
                                 'needs_setup':bool(result.get('needs_setup')),'requires':result.get('requires')}
  # #794: the receipt only - never the forgotten content (list results are counted, not copied).
- if name=='forget_record':return {key:result.get(key) for key in ('action','receipt','operation','kind','state','items','counts','undo_until','code') if result.get(key) is not None}|({'undoable':len(result['undoable'])} if isinstance(result.get('undoable'),list) else {})
+ if name=='forget_record':return ({key:result.get(key) for key in ('action','receipt','operation','kind','state','items','counts','undo_until','code') if result.get(key) is not None}
+                                 |({'undoable':len(result['undoable'])} if isinstance(result.get('undoable'),list) else {})
+                                 # #367: a find records how many candidates it showed, never their text.
+                                 |({'found':len(result['messages'])} if isinstance(result.get('messages'),list) else {}))
  if name=='save_memory':return {'saved':result.get('state')=='current','id':result.get('id'),'memory_key':result.get('memory_key'),'supersedes':result.get('supersedes'),'state':result.get('state'),'refused_because':result.get('refused_because'),
                                  # #918 slice (a): the owner's worker saved it at once (told afterwards, with undo).
                                  'auto_saved':bool(result.get('auto_saved')),

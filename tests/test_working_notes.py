@@ -115,11 +115,11 @@ class Document(unittest.TestCase):
         self.assertIsNone(self.save('a', 'd', expected=first['id']), 'another revision replaced it')
         self.assertEqual(self.notes.current()['points'], ['a', 'c'])
 
-    def test_forgetting_the_version_restores_the_previous_document_for_seven_days_then_it_is_purged(self):
+    def test_forgetting_the_version_restores_the_previous_document_and_keeps_the_record(self):
         first = self.save('a')
         second = self.save('a', 'b', expected=first['id'])
         receipt = self.forget.forget(MEMORY_OWNER, second['ref'])
-        self.assertEqual(receipt['undo_until'], self.clock.now + UNDO_SECONDS, 'the existing seven-day undo')
+        self.assertIsNone(receipt['undo_until'], '#367: no undo deadline')
         self.assertEqual(self.notes.current()['id'], first['id'], 'the previous document is back')
         self.assertTrue(self.notes.forgotten(om.notes_text(['a', 'b'])), 'the host never saves it again')
         self.assertEqual(self.forget.undoable(MEMORY_OWNER, kind='procedure')[0]['item'], {'working_notes_version': 2})
@@ -128,15 +128,13 @@ class Document(unittest.TestCase):
         self.assertFalse(self.notes.forgotten(om.notes_text(['a', 'b'])))
         again = self.forget.forget(MEMORY_OWNER, second['ref'])
         self.clock.now += UNDO_SECONDS + 1
-        self.assertEqual(self.forget.purge_due(), 1)
-        with self.assertRaises(ForgetError) as refused:
-            self.forget.undo(MEMORY_OWNER, again['receipt'])
-        self.assertEqual(refused.exception.code, 'settled')
+        self.assertEqual(self.forget.purge_due(), 0, '#367: a forget is never purged')
         with self.store.db() as db:
-            self.assertIsNone(db.execute('SELECT 1 FROM procedure_versions WHERE id=?', (second['id'],)).fetchone())
+            self.assertEqual(db.execute('SELECT state FROM procedure_versions WHERE id=?', (second['id'],)).fetchone()['state'],
+                             'forgotten')
             tombstones = [dict(row) for row in db.execute('SELECT * FROM forgotten_values')]
         self.assertEqual(self.notes.current()['id'], first['id'])
-        # Review P2: the purge removes the text, but a content-free tombstone keeps the forget authoritative.
+        # The content-free tombstone keeps the forget authoritative: the host never saves the version again.
         self.assertTrue(self.notes.forgotten(om.notes_text(['a', 'b'])))
         self.assertNotIn('a\\n- b', json.dumps(tombstones))
         self.assertEqual({row['receipt_id'] for row in tombstones}, {again['receipt']})
@@ -256,15 +254,15 @@ class Migration(unittest.TestCase):
         self.assertIsNone(self.notes.migrate(), 'an undone row is not moved again')
         self.assertEqual(self.current_memory(), [('profile.working.summary', '요약은 세 줄로')])
 
-    def test_the_receipts_follow_the_seven_day_purge(self):
+    def test_the_migrated_rows_are_kept_out_of_use_and_never_purged(self):
+        """#367 (append + invalidate): the migrated row keeps its record past the old 7-day window."""
         row = self.save('profile.working.summary', '요약은 세 줄로')
         record = self.notes.migrate()
         self.clock.now += UNDO_SECONDS + 1
-        self.assertEqual(self.forget.purge_due(), 1)
+        self.assertEqual(self.forget.purge_due(), 0)
         with self.store.db() as db:
-            self.assertIsNone(db.execute('SELECT 1 FROM memories WHERE id=?', (row['id'],)).fetchone())
-        with self.assertRaises(ForgetError):
-            self.forget.undo(MEMORY_OWNER, record['receipts'][0])
+            self.assertEqual(db.execute('SELECT state FROM memories WHERE id=?', (row['id'],)).fetchone()['state'], 'forgotten')
+        self.assertIn(record['receipts'][0], [entry['receipt'] for entry in self.forget.undoable(MEMORY_OWNER)])
         self.assertEqual(self.notes.current()['points'], ['요약은 세 줄로'], 'the lesson itself lives on in the notes')
 
     def test_bounds_secrets_and_long_values_leave_rows_in_memory_untouched(self):

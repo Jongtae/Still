@@ -38,7 +38,7 @@ A clear request is handled in conversation; the owner does not navigate a manage
 
 **Correct.** For a request such as “that was remembered wrongly; it has changed to this now”, change the identified Memory or current-state claim through its owning service. Subsequent current retrieval uses the corrected information. Distinguish a correction from a fact that became outdated. Ask a clarifying question only when the target or requested change is genuinely unresolved.
 
-**Forget.** Apply #918 option B: the identified Memory, claim or observation is immediately excluded from current use, with a durable receipt and an exact 7-day undo; then purge the covered payload when the window expires. Resuming after a process restart must preserve the exclusion and execute overdue cleanup safely. Do not conflate this with the already-implemented undo of a newly saved Memory.
+**Forget.** Apply #918 option B: the identified Memory, claim or observation is immediately excluded from current use, with a durable receipt and an exact 7-day undo; then purge the covered payload when the window expires. Resuming after a process restart must preserve the exclusion and execute overdue cleanup safely. Do not conflate this with the already-implemented undo of a newly saved Memory. *Superseded by #367 (owner decision 2026-10-28):* a forget is never purged and stays undoable, and transcript messages are covered too; the 7-day purge above is historical.
 
 **Complete deletion.** An explicit request such as “delete it completely” uses the immediate-purge path without waiting for the undo window. Report success only for the deletion actually performed; stale targets, partial deletion and failure have distinct truthful results.
 

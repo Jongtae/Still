@@ -435,7 +435,7 @@ class SettingsOrchestrator:
                                   note="선택한 변경 직전의 돈 표시·단계·동작 결정을 함께 복원해요. 이후 변경이 있으면 적용하지 않아요."),
                 "forget": self._row("forget", "", "", self._options(tuple(name for name, record in hands.items()
                                                                                  if record['state'] == 'active')),
-                                    note="이전 권한과 대기 중인 확인을 중지해요. 7일 뒤 기록 내용은 지워지고 권한 중지 표시는 남아요."),
+                                    note="이전 권한과 대기 중인 확인을 중지해요. 기록은 남아 있어 설정 확인으로 언제든 복원할 수 있어요."),
                 "restore": self._row("restore", "", "", [
                     {'value': row['item']['ref'][6:] + '|' + row['receipt'], 'label': row['item']['summary']}
                     for row in restores], note="잊었던 권한을 복원해요. 이전 확인 요청이나 작업은 다시 실행하지 않아요.")}

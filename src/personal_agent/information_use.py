@@ -249,7 +249,8 @@ def _event_items(action, evidence):
         return [f'{key} ({state})' if key else state]
     if action == 'forget_record':
         # #794: the receipt only; the forgotten value is never repeated in the audit.
-        names = {'forget': '잊음 (7일 안 되돌리기 가능)', 'delete': '완전 삭제', 'undo': '잊음 되돌림', 'list': '되돌릴 수 있는 항목 확인'}
+        names = {'forget': '잊음 (언제든 되돌리기 가능)', 'delete': '완전 삭제', 'undo': '잊음 되돌림', 'list': '되돌릴 수 있는 항목 확인',
+                 'find': '잊을 대화 메시지 찾기'}
         kind = {'memory': '기억', 'claim': '현재 상태', 'observation': '관찰'}.get(evidence.get('kind'), '')
         return [' '.join(part for part in (kind, names.get(evidence.get('action'), '기억 정리')) if part)]
     if action == MEMORY_UNDO_ACTION:

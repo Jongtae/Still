@@ -7,14 +7,18 @@ scope, the exact item and version, the state transitions and a truthful,
 content-free receipt; it recognises no phrase, site or task (C16).
 
 * ``forget``: the item - for Memory its whole supersession chain - leaves current
-  use at once (state ``forgotten``) and stays undoable for ``UNDO_SECONDS``;
-  ``purge_due`` then deletes its payload.  Restart keeps the exclusion (it is a
-  row state) and the next purge runs overdue cleanup.
-* ``delete``: the same exclusion and the purge in one transaction; no undo.
+  use at once (state ``forgotten``).  #367 (owner decision 2026-10-28, the #220
+  append + invalidate principle): Still keeps the record that the owner chose to
+  forget it and never purges it; it stays undoable.  A transcript row
+  (``message:<id>[,<id>...]``) is listed in ``forgotten_messages`` and every AI
+  reader leaves it out; the owner's own view still shows it, marked.
+* ``delete``: the same exclusion and an erasure in one transaction; no undo.  A
+  transcript row is blanked in place (its search index follows by trigger), and
+  so are the Work's ``jobs.message`` / ``jobs.response`` copies.
 * ``undo``: restores exactly the receipt's items to the states they had, once,
   unless a later value for the same Memory key, claim or observation source
-  exists (a later correction is never overwritten), the window ended, or the
-  receipt belongs to another owner.
+  exists (a later correction is never overwritten), the item was deleted since,
+  or the receipt belongs to another owner.
 
 * ``migrate`` (#19): Still itself moves a Memory row into the working-notes
   document (``owner_model.WorkingNotes.migrate``).  The row leaves current use
@@ -33,18 +37,25 @@ import json
 import time
 import uuid
 
-#: #918 option B: a forgotten item stays undoable for a week, then its payload is purged.
+#: #918 option B kept a forgotten item undoable for a week, then purged it.  #367: a forget is
+#: never purged; receipts written before #367 may still carry an ``undo_until``, which no
+#: longer limits undo.  Kept for readers of those receipts.
 UNDO_SECONDS = 7 * 86400
 MEMORY_PREFIX, CLAIM_PREFIX, OBSERVATION_PREFIX = 'memory:', 'state:', 'obs:'
+#: #367: ``message:<id>[,<id>...]``, transcript rows the owner's AI found with ``find``.
+MESSAGE_PREFIX = 'message:'
+#: At most this many transcript rows under one receipt.
+MESSAGE_REFS = 20
 #: #1486: ``procedure:<id>``, one saved version of a secret set's function library (``procedures``).
 KINDS = {MEMORY_PREFIX: 'memory', CLAIM_PREFIX: 'claim', OBSERVATION_PREFIX: 'observation', 'trust:': 'trust',
-         'procedure:': 'procedure'}
+         'procedure:': 'procedure', MESSAGE_PREFIX: 'message'}
 FORGOTTEN = 'forgotten'
 #: #19: the receipt operation of a Memory row Still moved into the working notes (undone like a forget).
 MIGRATE = 'migrate'
 UNDOABLE_OPERATIONS = ('forget', MIGRATE)
 #: What a result says about copies outside this store (never claimed erased).
-OUTSIDE_SCOPE = 'copies already sent to an AI provider, exports and backups are not affected'
+OUTSIDE_SCOPE = ('the Telegram app\'s own copy of the conversation, copies already sent to an AI provider, '
+                 'Work records that quoted it, exports and backups are not affected')
 
 DDL = '''
 CREATE TABLE IF NOT EXISTS owner_state_receipts(
@@ -55,6 +66,7 @@ CREATE INDEX IF NOT EXISTS owner_state_receipts_due ON owner_state_receipts(stat
 CREATE TABLE IF NOT EXISTS forgotten_values(
   owner_key TEXT NOT NULL, digest TEXT NOT NULL, receipt_id TEXT NOT NULL, created REAL NOT NULL,
   PRIMARY KEY(owner_key, digest, receipt_id));
+CREATE TABLE IF NOT EXISTS forgotten_messages(message_id INTEGER PRIMARY KEY, receipt_id TEXT NOT NULL, created REAL NOT NULL);
 '''
 
 
@@ -69,10 +81,11 @@ class ForgetError(ValueError):
 def _refuse(code):
     return ForgetError({
         'bad_ref': ('잊을 항목을 확인할 수 없어요. 기억은 memory:<id>, 현재 상태는 state:<id>, 관찰은 obs:<id>, '
-                    '저장된 함수는 procedure:<id>로 지정해 주세요.'),
+                    '저장된 함수는 procedure:<id>, 대화 메시지는 message:<id>로 지정해 주세요.'),
         'stale': '그 항목은 이미 바뀌었거나 없어요. 지금 값을 다시 확인해 주세요.',
         'no_receipt': '되돌릴 기록을 찾지 못했어요.',
         'expired': '되돌릴 수 있는 기간(7일)이 지났어요.',
+        'running': '아직 처리 중인 요청의 메시지는 잊거나 지울 수 없어요. 끝난 뒤에 다시 요청해 주세요.',
         'later_value': '그 뒤에 새로 저장된 값이 있어 되돌리지 않았어요. 지금 값은 그대로예요.',
         'settled': '이미 완전히 지워져 되돌릴 수 없어요.',
         'authority_confirmation': '연결 권한 복원은 설정 변경 초안을 확인해야 해요. AI가 바로 복원할 수는 없어요.',
@@ -120,7 +133,7 @@ class OwnerForget:
         db.execute('INSERT INTO owner_state_receipts(id,owner_key,operation,kind,items_json,state,created,undo_until,work_id) '
                    'VALUES (?,?,?,?,?,?,?,?,?)',
                    (receipt_id, owner_key, operation, kind, json.dumps(items), FORGOTTEN, now,
-                    None if delete else now + UNDO_SECONDS, work_id if isinstance(work_id, str) else None))
+                    None, work_id if isinstance(work_id, str) else None))
         if delete:
             self._purge(db, receipt_id, now, final='deleted')
         return self._receipt(db.execute('SELECT * FROM owner_state_receipts WHERE id=?', (receipt_id,)).fetchone())
@@ -275,6 +288,26 @@ class OwnerForget:
                 'slot': row['slot'], 'version': row['version'],
                 'restored_version': restored['version'] if restored is not None else None}
 
+    def _exclude_message(self, db, owner_key, ids, receipt_id, now):
+        """#367: transcript rows leave every AI reader now; the row and its text stay (append + invalidate)."""
+        self._context_scope(db, owner_key)   # only this installation's owner has a transcript here
+        parts = ids.split(',')
+        if not 1 <= len(parts) <= MESSAGE_REFS or not all(part.isdigit() and len(part) <= 18 for part in parts):
+            raise _refuse('bad_ref')
+        items = []
+        for message_id in dict.fromkeys(int(part) for part in parts):
+            row = db.execute("SELECT m.id,m.content,j.status FROM messages m LEFT JOIN jobs j ON j.id=m.job_id "
+                             "WHERE m.id=? AND m.role IN ('user','assistant')", (message_id,)).fetchone()
+            if row is None or not (row['content'] or '') or db.execute(
+                    'SELECT 1 FROM forgotten_messages WHERE message_id=?', (message_id,)).fetchone():
+                raise _refuse('stale')
+            if row['status'] in ('queued', 'running'):
+                raise _refuse('running')
+            db.execute('INSERT INTO forgotten_messages(message_id,receipt_id,created) VALUES (?,?,?)',
+                       (message_id, receipt_id, now))
+            items.append({'table': 'messages', 'id': message_id, 'prior': 'current'})
+        return {'rows': items}
+
     # -- undo ----------------------------------------------------------------
     def undo(self, owner_id, receipt_id, *, confirmed_authority=False):
         """Restore exactly what one forget excluded, once, within its window."""
@@ -292,8 +325,7 @@ class OwnerForget:
                 return self._receipt(receipt)   # a repeated undo changes nothing
             if receipt['state'] != FORGOTTEN:
                 raise _refuse('settled')
-            if receipt['undo_until'] is None or now >= receipt['undo_until']:
-                raise _refuse('expired')
+            # #367: a forget no longer expires; a receipt written before #367 is undoable as well.
             items = json.loads(receipt['items_json'])
             rows = items.get('rows') or []
             self._refuse_later_value(db, owner_key, receipt['kind'], items, rows)
@@ -302,6 +334,8 @@ class OwnerForget:
                 row.update(state='active', revision=uuid.uuid4().hex)
                 row.pop('forget_receipt', None)
                 self._save_trust(db, data)
+            elif receipt['kind'] == 'message':
+                db.execute('DELETE FROM forgotten_messages WHERE receipt_id=?', (receipt['id'],))
             else:
                 if receipt['kind'] == 'procedure' and rows and rows[0]['prior'] == 'current':
                     # #1486: the version put back in its place steps aside again.
@@ -321,6 +355,13 @@ class OwnerForget:
             _data, current = self._trust_row(db, rows[0]['id'])
             if current.get('state') != FORGOTTEN or current.get('revision') != rows[0]['revision']:
                 raise _refuse('later_value')
+            return
+        if kind == 'message':
+            for row in rows:
+                found = db.execute('SELECT m.content FROM messages m JOIN forgotten_messages f ON f.message_id=m.id '
+                                   'WHERE m.id=?', (row['id'],)).fetchone()
+                if found is None or not (found['content'] or ''):
+                    raise _refuse('settled')
             return
         if kind == 'memory':
             current = [row for row in rows if row['table'] == 'memories' and row['prior'] == 'current']
@@ -351,16 +392,12 @@ class OwnerForget:
 
     # -- purge ---------------------------------------------------------------
     def purge_due(self, now=None):
-        """Purge every forget whose undo window ended; safe to repeat and after a restart."""
-        now = self.clock() if now is None else now
-        purged = 0
-        with self.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
-            for row in db.execute("SELECT id FROM owner_state_receipts WHERE state=? AND undo_until IS NOT NULL AND undo_until<=?",
-                                  (FORGOTTEN, now)).fetchall():
-                self._purge(db, row['id'], now, final='purged')
-                purged += 1
-        return purged
+        """#367: a forget is never purged (append + invalidate), so nothing is due; kept for the scheduler.
+
+        Before #367 this deleted a forgotten item's payload once its 7-day undo window ended.  Only
+        ``delete`` erases now, at once.
+        """
+        return 0
 
     def _purge(self, db, receipt_id, now, *, final):
         receipt = db.execute('SELECT * FROM owner_state_receipts WHERE id=?', (receipt_id,)).fetchone()
@@ -376,6 +413,17 @@ class OwnerForget:
                                                ('engine', 'kind', 'identity', 'name', 'state', 'revision', 'epoch') if key in current}
                     self._save_trust(db, data)
                     counts['trust_payloads'] = 1
+                continue
+            if table == 'messages':
+                # #367: the row stays (its Work keeps its shape), its words go; the search index follows by
+                # trigger, and the Work's own copies of the same turn are blanked with it.
+                found = db.execute('SELECT job_id,role FROM messages WHERE id=?', (row['id'],)).fetchone()
+                counts['messages'] = counts.get('messages', 0) + db.execute(
+                    "UPDATE messages SET content='' WHERE id=?", (row['id'],)).rowcount
+                if found is not None and found['job_id']:
+                    column = 'message' if found['role'] == 'user' else 'response'
+                    counts['work_copies'] = counts.get('work_copies', 0) + db.execute(
+                        f"UPDATE jobs SET {column}='' WHERE id=? AND {column}<>''", (found['job_id'],)).rowcount
                 continue
             # Only a row still forgotten: one a new location point revived is current information again.
             counts[table] = counts.get(table, 0) + db.execute(f'DELETE FROM {table} WHERE id=? AND state=?',
@@ -400,8 +448,9 @@ class OwnerForget:
         if int(limit) <= 0:
             return out
         with self.store.db() as db:
-            query = 'SELECT * FROM owner_state_receipts WHERE owner_key=? AND state=? AND undo_until>? '
-            args = [owner_key, FORGOTTEN, now]
+            # #367: every forget stays undoable (no window); a delete has no receipt in this state.
+            query = 'SELECT * FROM owner_state_receipts WHERE owner_key=? AND state=? AND operation IN (?,?) '
+            args = [owner_key, FORGOTTEN, *UNDOABLE_OPERATIONS]
             if kind is not None:
                 query += 'AND kind=? '
                 args.append(kind)
@@ -435,6 +484,8 @@ class OwnerForget:
                     entry['item'] = {'ref': 'trust:' + head['id'], 'requires_owner_confirmation': True,
                                      'authority': {key: record[key] for key in ('money', 'rung', 'operations', 'seed_allowed')},
                                      'summary': trust_record.describe(record)}
+                elif receipt['kind'] == 'message':
+                    entry['item'] = {'messages': len(json.loads(receipt['items_json']).get('rows') or [])}
                 elif head.get('id'):
                     found = db.execute('SELECT source_kind FROM context_observations WHERE id=?', (head['id'],)).fetchone()
                     if found:
