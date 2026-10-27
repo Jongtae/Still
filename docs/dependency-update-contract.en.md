@@ -85,10 +85,11 @@ first updater scope.
   build constraint is exact and attributable but is not artifact-hash locked
   by 0.11, which remains an explicit integrity limitation.
 
-The CI bootstrap uses `astral-sh/setup-uv` v10.3.0 at exact commit
-`1c37ad07a6a961277cf70c0d37d6f313000f5884` (Dependabot #1, merged 2026-10-17;
-tag observed to resolve to that commit; v10.3.0 published 2026-10-09 adds a
-`python-arch` input and embedded uv checksums) and requests `uv==0.11.33`.
+The CI bootstrap uses `astral-sh/setup-uv` v10.3.2 at exact commit
+`07a047e608db84b3d8c06cd9a7c7dcc9c355c18e` (Dependabot #347; tag observed to
+resolve to that commit; v10.3.2 published 2026-10-22 adds known checksums for
+uv 0.13.5, and v10.3.1 stops the concurrent cache-save warning) and requests
+`uv==0.11.33`.
 `setup-uv` is MIT licensed. `[tool.uv]` rejects writers outside the reviewed
 0.11.33 through 0.12.x compatibility window; contributor and CI commands pin
 0.11.33 exactly. A Dependabot update records the hosted writer observed in
