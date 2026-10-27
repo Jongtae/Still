@@ -176,4 +176,13 @@ def build(service, owner_id):
         from .gmail import GMAIL_CONNECTOR_ID
         if 'gmail' not in slots and connected(GMAIL_CONNECTOR_ID):
             slots['gmail'] = _slot('gmail', _gmail_token(gmail, owner_id))
+    # #366: a read-only slot's refusal hands the AI the address that makes its write connection,
+    # so the owner gets the link even when the Work cannot wait for it.  Naming it grants nothing.
+    address = getattr(service, 'connector_connect_url', None)
+    for slot in slots.values():
+        if slot['read_only'] and slot.get('write_requires') and callable(address):
+            try:
+                slot['write_connect_url'] = address(slot['write_requires']) or ''
+            except Exception:
+                slot['write_connect_url'] = ''
     return slots

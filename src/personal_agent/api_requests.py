@@ -992,6 +992,9 @@ class ApiRequests:
             if slot.get('write_requires'):
                 # #363: the Work parks for this connection after the turn; the AI need not find another way.
                 text += f" 변경에는 소유자의 '{slot['write_requires']}' 연결이 필요합니다. Still이 대화에서 연결을 안내하고, 연결되면 이 요청을 한 번 이어서 처리합니다."
+                if slot.get('write_connect_url'):
+                    # #366: the AI cannot open this loopback page itself; the owner opens it on the PC.
+                    text += f" 소유자가 Still이 실행 중인 PC에서 열 연결 주소: {slot['write_connect_url']}"
             raise ApiError(text, 'api_read_only', requires=slot.get('write_requires'))
         url = str(args.get('url') or '').strip()
         try:
