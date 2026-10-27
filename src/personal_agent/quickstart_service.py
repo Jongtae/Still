@@ -5398,7 +5398,7 @@ class AgentService:
         guarded like ``connector_read_need``: only a Work whose every attempt changed nothing parks.
         """
         from .agent_runtime import EFFECT_NONE, record_effect
-        if not self.connector_handoff or not self.attempted_only_reads(job_id):return None
+        if not self.connector_handoff or not self.changed_nothing(job_id):return None
         with self.store.db() as db:
             rows=db.execute("SELECT tool,status,detail FROM tool_events WHERE job_id=? AND status='failed' AND id>? ORDER BY id",
                             (job_id,since or 0)).fetchall()
@@ -5412,6 +5412,31 @@ class AgentService:
                 return need
         return None
 
+    def changed_nothing(self, job_id):
+        """Whether a Work may park for an owner connection: nothing it did changed anything (#366).
+
+        ``attempted_only_reads`` alone never holds on the CLI route, whose own ``subscription_engine``
+        records it counts; ``settings_resume_safe`` accounts for them and fails closed on unaccounted
+        CLI actions.  The same pair ``recorded_local_authority_need`` uses.
+        """
+        return self.attempted_only_reads(job_id) or self.settings_resume_safe(job_id)
+
+    def missing_connection_rows(self, rows):
+        """Whether an attempt's failed call named a declared connector that is not connected (#366).
+
+        Another worker cannot make the owner's connection, so such an attempt stops for the owner.
+        """
+        handoff=self.connector_handoff
+        if not handoff:return False
+        for _tool,status,detail in rows:
+            need=detail.get('requires') if status=='failed' and isinstance(detail,dict) else None
+            if isinstance(need,str) and handoff.known(need):
+                try:
+                    if handoff.prerequisite('local-owner',need) is not None:return True
+                except ConnectorContractError:
+                    continue
+        return False
+
     def connector_read_need(self, capabilities, job_id):
         """The declared connector a read-only turn found missing, or None.
 
@@ -5419,7 +5444,7 @@ class AgentService:
         guarded exactly like ``local_authority_need``: only a Work whose every
         attempt was a read may be parked and resumed.
         """
-        if not self.connector_handoff or not self.attempted_only_reads(job_id):return None
+        if not self.connector_handoff or not self.changed_nothing(job_id):return None
         for result in capabilities.memo.values():
             if (isinstance(result,dict) and result.get('needs_setup') is True
                     and result.get('requires') in self.PARKABLE_READ_CONNECTORS
@@ -5964,6 +5989,8 @@ class AgentService:
         # settings draft, a proposal) stops for the owner, as a pending step approval does (#1468):
         # no outcome judgment reads that by-design wait as a shortfall, and nothing is re-delegated.
         if awaiting_owner_rows(tool_rows):owner_needed=True
+        # #366: an attempt blocked by a connection only the owner can make is not re-delegated.
+        if self.missing_connection_rows(tool_rows):owner_needed=True
         for row in rows:
             if row['tool'] in self.LOCAL_NON_TOOL_EVENTS|{'subscription_engine'} or row['status'] not in ('running','succeeded','failed'):
                 continue

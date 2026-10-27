@@ -352,6 +352,7 @@ const matrix=[
  [{connector_id:'google-gmail-read',label:'Gmail',state:'connected',required_scopes:['gmail.readonly'],connect_path:'/google-gmail'},'Google Gmail','연결됨','active','다시 연결'],
  [{connector_id:'google-calendar',label:'google-calendar',state:'disconnected',required_scopes:['calendar.readonly'],connect_path:'/google-calendar'},'Google Calendar','연결 안 됨','neutral','연결'],
  [{connector_id:'google-calendar-write',label:'Google Calendar 일정 만들기',state:'reauth_required',required_scopes:['calendar.events'],connect_path:'/google-calendar'},'Google Calendar 일정 만들기','다시 인증 필요','attention','다시 연결'],
+ [{connector_id:'gmail-modify',label:'Gmail 메일 정리',state:'disconnected',required_scopes:['gmail.modify'],connect_path:'/gmail-modify'},'Gmail 메일 정리','연결 안 됨','neutral','변경 권한 허용'],
  [{connector_id:'fixture-blocked',label:'Blocked',state:'blocked',required_scopes:[],connect_path:'/blocked'},'Blocked','차단됨','attention',null],
  [{connector_id:'fixture-unknown',label:'Unknown',state:'surprising',required_scopes:[],connect_path:'/unknown'},'Unknown','확인 필요','attention',null],
  [{connector_id:'google-drive-read',label:'Google Drive',state:'disconnected',required_scopes:['drive.file'],connect_path:'',connect_hint:'Telegram에서 Google Drive 파일을 요청하면 연결 링크를 보냅니다.',detail_state:'expired'},'Google Drive','연결 안 됨','neutral',null],
@@ -364,7 +365,12 @@ for(const [connector,name,label,kind,action] of matrix){
  const details=descendants(row).find(node=>node.tag==='details');assert(details&&details.textContent.includes(`연결 ID: ${connector.connector_id}`),'connector ID only inside 세부 정보');
  assert(!descendants(row).filter(node=>node.tag!=='details'&&!descendants(details).includes(node)&&node!==details).some(node=>node._text&&node._text.includes(connector.connector_id)&&connector.connector_id!==name),'no raw connector ID outside 세부 정보');
 }
-ctx.renderConnectors([matrix[5][0]]);assert($('connector-controls').textContent.includes('Telegram에서 Google Drive'),'Drive explains where a connection starts');assert($('connector-controls').textContent.includes('세부 상태: expired'),'the raw Drive handoff state stays inspectable');
+// #366: a connected read row whose change grant is not connected offers that grant first, not only 다시 연결.
+{const read={connector_id:'google-gmail-read',label:'Gmail',state:'connected',required_scopes:['gmail.readonly'],connect_path:'/google-gmail'},grant={connector_id:'gmail-modify',label:'Gmail 메일 정리',state:'disconnected',required_scopes:['gmail.modify'],connect_path:'/gmail-modify'};
+ ctx.renderConnectors([grant,read]);const readRow=$('connector-controls').children[1],links=descendants(readRow).filter(node=>node.tag==='a'&&node.className.includes('settings-row-action'));
+ same(links.map(node=>[node.textContent,node.href]),[['변경 권한 허용','/gmail-modify'],['다시 연결','/google-gmail']],'the read row offers the change grant first');
+ ctx.renderConnectors([{...grant,state:'connected'},read]);assert.equal(descendants($('connector-controls').children[1]).filter(node=>node.tag==='a'&&node.textContent==='변경 권한 허용').length,0,'no grant action once it is connected');}
+ctx.renderConnectors([matrix.find(row=>row[0].connector_id==='google-drive-read')[0]]);assert($('connector-controls').textContent.includes('Telegram에서 Google Drive'),'Drive explains where a connection starts');assert($('connector-controls').textContent.includes('세부 상태: expired'),'the raw Drive handoff state stays inspectable');
 ctx.renderConnectors([]);assert($('connector-controls').textContent.includes('연결할 수 있는 Google 서비스가 없습니다'));
 assert(app.includes("'ArrowLeft','ArrowRight'"),'settings tabs handle horizontal arrow keys');
 console.log('settings DOM regressions passed');

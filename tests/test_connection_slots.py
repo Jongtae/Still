@@ -498,6 +498,45 @@ class GmailModify(unittest.TestCase):
                                               'code': 'api_read_only', 'effect': 'none', 'requires': 'google-calendar-write'})
         self.assertIsNone(self.service.recorded_connector_write_need(self.job))
 
+    def cli_turn(self, *, accounted):
+        """#366: the CLI route as recorded live: the engine's own records around the bridge's calls."""
+        self.record('subscription_engine', 'running', {'engine': 'codex', 'mode': 'bounded-agentos-mcp'})
+        self.record('settings_read', 'succeeded', {'scope': 'subscription-mcp-bridge', 'call_id': 'r1',
+                                                   'host_action': 'settings_read', 'evidence': {'category': 'connections'}})
+        self.refused_change_event()
+        self.record('subscription_engine', 'succeeded', {'engine': 'codex', 'exit_code': 0,
+                                                         'continuation_read_only': accounted,
+                                                         'continuation_accounted': accounted})
+
+    def test_a_cli_route_turn_that_changed_nothing_parks_for_the_write_connection(self):
+        self.read_connect()
+        self.cli_turn(accounted=True)
+        self.assertFalse(self.service.attempted_only_reads(self.job))  # the engine's records, as live
+        self.assertEqual(self.service.connector_need(type('C', (), {'memo': {}})(), self.job), 'gmail-modify')
+        self.assertTrue(self.service.park_for_connector_read(self.store.job(self.job), 'gmail-modify'))
+        self.assertEqual(self.store.job(self.job)['status'], 'awaiting_connection')
+
+    def test_a_cli_turn_with_unaccounted_actions_does_not_park(self):
+        self.read_connect()
+        self.cli_turn(accounted=False)
+        self.assertIsNone(self.service.connector_need(type('C', (), {'memo': {}})(), self.job))
+
+    def test_an_attempt_blocked_by_a_missing_connection_is_for_the_owner_until_it_is_connected(self):
+        self.read_connect()
+        self.refused_change_event()
+        with self.store.db() as db:
+            rows = db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=?', (self.job,)).fetchall()
+        attempt = self.service.attempt_tool_rows(rows)
+        self.assertTrue(self.service.missing_connection_rows(attempt))
+        self.connect()
+        self.assertFalse(self.service.missing_connection_rows(attempt))
+
+    def test_the_refusal_hands_the_ai_the_connect_address(self):
+        self.read_connect()
+        address = self.service.connector_connect_url('gmail-modify')
+        self.assertTrue(address.endswith('/gmail-modify'))
+        self.assertIn(address, self.refused_change_event().args[0])
+
     def test_replay_is_refused_after_reconnect_too(self):
         self.connect()
         self.call('POST', 'messages/batchModify', body='{"ids":["abc"]}')
