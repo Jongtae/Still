@@ -101,7 +101,8 @@ NEAR_LIMIT = 120
 NAME_LIMIT = 120
 VALUE_LIMIT = 200
 FIND_LINES = 12
-STEPS_PER_WORK = 40
+#: #353: matches ``WORK_TOOL_ATTEMPTS``; the Work's deadline still bounds the session.
+STEPS_PER_WORK = 200
 ACTION_TIMEOUT_SECONDS = 20
 #: #11: a ``browser_read`` may first scroll the page to its end up to this many
 #: times, within ``LOAD_MORE_SECONDS``, to load rows a list adds only when scrolled.

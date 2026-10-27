@@ -38,21 +38,21 @@ FAKE_WORKER = Path(__file__).resolve().with_name('browser_fake_worker.py')
 
 
 class Budgets(unittest.TestCase):
-    def test_a_work_gets_forty_tool_attempts_and_forty_browser_steps(self):
-        self.assertEqual((WORK_TOOL_ATTEMPTS, bs.STEPS_PER_WORK), (40, 40))
-        self.assertIn('40회', WORK_ATTEMPTS_EXHAUSTED)
-        self.assertIn('40회', bs.STEP_BUDGET_TEXT)
+    def test_a_work_gets_two_hundred_tool_attempts_and_browser_steps(self):
+        self.assertEqual((WORK_TOOL_ATTEMPTS, bs.STEPS_PER_WORK), (200, 200))
+        self.assertIn('200회', WORK_ATTEMPTS_EXHAUSTED)
+        self.assertIn('200회', bs.STEP_BUDGET_TEXT)
         budget = WorkBudget()
-        for _ in range(40):
+        for _ in range(200):
             budget.spend_attempt()
         with self.assertRaises(ToolError) as caught:
             budget.spend_attempt()
         self.assertEqual(caught.exception.code, 'attempt_budget')
 
-    def test_the_forty_first_browser_step_is_refused(self):
+    def test_the_step_after_the_browser_cap_is_refused(self):
         session = bs.BrowserSession(lambda: FakeDriver(), work_id='w')
         session.open({'url': ORIGIN + '/product', 'effect': 'read'})
-        for _ in range(39):
+        for _ in range(bs.STEPS_PER_WORK - 1):
             session.read()
         with self.assertRaises(ToolError) as caught:
             session.read()
