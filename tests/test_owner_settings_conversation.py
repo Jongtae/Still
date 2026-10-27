@@ -25,6 +25,7 @@ from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
 from personal_agent import preparations as prep
+from conftest import SERVICE_THREAD_JOIN_SECONDS
 from personal_agent.settings_orchestrator import (CREDENTIAL_VALUE_MESSAGE, FOLLOW_REQUESTED_MESSAGE,
                                                   NOT_OWNER_TYPED_MESSAGE, SettingsError,
                                                   canonical_timezone)
@@ -48,10 +49,19 @@ class _Case(unittest.TestCase):
         self.clock = [1000.0]
         self.service = AgentService(self.store, ModelAdapter(self._model), self._telegram)
         self.settings = self.service.settings_orchestrator
+        self.addCleanup(self._join_settings_worker)
         self.settings.now = lambda: self.clock[0]
         self.store.secret('telegram_token', TELEGRAM_SECRET)
         self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': GENERATION, 'cursor': 0})
         self.update_id, self.message_id = 100, 500
+
+    def _join_settings_worker(self):
+        # Cleanups run LIFO: drain follow-up writes before removing the store.
+        # A queued continuation does not mean the settings worker has finished.
+        thread = self.service.settings_orchestrator.thread
+        if thread is not None:
+            thread.join(SERVICE_THREAD_JOIN_SECONDS)
+            self.assertFalse(thread.is_alive(), 'settings worker still running at teardown')
 
     def _model(self, url, body, headers=None, timeout=60):
         self.urls.append(url)
