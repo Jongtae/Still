@@ -12,7 +12,7 @@ from pathlib import Path
 from personal_agent.decision_qualification import CASE_IDS
 from personal_agent.decision_routes import (JOB_CANCELLED, JOB_FAILED, JOB_PASSED, JOB_QUEUED, JOB_RUNNING,
                                             MODE_FOLLOW, QUALIFICATION_JOBS, DecisionRouteError)
-from test_decision_routes import CliRunner, ServiceFixture, careless, oracle
+from test_decision_routes import CliRunner, ServiceFixture, bundled_listing, careless, oracle
 
 
 class FakeClock:
@@ -47,6 +47,119 @@ class JobFixture(ServiceFixture):
         service.decision_routes.spawn = lambda run: None
         self.assertTrue(service.run_due_qualification())
         self.assertEqual(self.job(service)['state'], JOB_RUNNING)
+
+
+class AutomaticCandidateQualificationTests(JobFixture):
+    def activate_candidates(self):
+        runner = CliRunner()
+        runner.judges.update({'tiny': careless, 'small': oracle, 'large': oracle})
+        service = self.service(runner=runner)
+        service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex',
+                                         'model_policy': 'lowest_qualified', 'candidates': ['tiny', 'small', 'large']})
+        self.assertEqual(service.decision_routes.active()['requested_model'], 'small')
+        return service
+
+    def update_binary(self):
+        binary = Path(self.finder('codex'))
+        binary.write_bytes(binary.read_bytes() + b'updated')
+        self.runner.version = 'codex-cli 9.9.9'
+        self.runner.calls.clear()
+
+    def tried_models(self):
+        return list(dict.fromkeys(call['argv'][call['argv'].index('--model') + 1]
+                                  for call in self.judgments('codex')))
+
+    def test_declared_candidates_survive_restart_and_automatic_fingerprint_requalification(self):
+        self.activate_candidates()
+        service = self.service(runner=self.runner)
+        before = service.decision_routes.active()
+        self.runner.judges['small'] = careless
+        self.update_binary()
+        self.assertEqual(self.judge(service).outcome, 'unavailable')
+        queued = service.settings()['decision_route']
+        self.assertNotIn('declared_candidates', queued['active'])
+        self.assertNotIn('route', queued['qualification'])
+        self.assertTrue(service.run_due_qualification())
+        self.assertEqual(service.decision_routes._jobs()['update:codex']['state'], JOB_PASSED)
+        active = service.decision_routes.active()
+        self.assertNotEqual(active['fingerprint'], before['fingerprint'])
+        self.assertEqual(active['requested_model'], 'large')
+        self.assertEqual(active['declared_candidates'], ['tiny', 'small', 'large'])
+        self.assertEqual(self.tried_models(), ['tiny', 'small', 'large'])
+        status = service.settings()['decision_route']
+        self.assertNotIn('declared_candidates', status['active'])
+        self.assertIsNone(status['qualification'])
+
+    def test_failed_declared_candidates_never_fall_back_to_qualified_builtins(self):
+        service = self.activate_candidates()
+        before = service.decision_routes.active()
+        self.runner.judges.update({'small': careless, 'large': careless})
+        self.update_binary()
+        self.assertTrue(service.run_due_qualification())
+        job = service.decision_routes._jobs()['update:codex']
+        self.assertEqual((job['state'], job.get('failure')), (JOB_FAILED, 'no-qualified-candidate'))
+        self.assertEqual(self.tried_models(), ['tiny', 'small', 'large'])
+        self.assertEqual(service.decision_routes.active(), before)
+        self.assertEqual(self.judge(service).outcome, 'unavailable')
+        self.assertFalse(service.run_due_qualification())
+
+    def test_undeclared_candidates_use_the_new_binarys_filtered_ranking(self):
+        service = self.service()
+        service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex',
+                                         'model_policy': 'lowest_qualified'})
+        self.assertNotIn('declared_candidates', service.decision_routes.active())
+        # The new binary bundles only a different built-in candidate.
+        self.runner.bundled = bundled_listing(('gpt-5.6-terra',))
+        self.update_binary()
+        self.assertTrue(service.run_due_qualification())
+        self.assertEqual(self.tried_models(), ['gpt-5.6-terra'])
+        active = service.decision_routes.active()
+        self.assertEqual(active['requested_model'], 'gpt-5.6-terra')
+        self.assertNotIn('declared_candidates', active)
+
+    def test_legacy_route_does_not_infer_candidates_from_previous_checks(self):
+        service = self.activate_candidates()
+        legacy = service.decision_routes.active()
+        legacy.pop('declared_candidates', None)
+        self.store.put('decision_route', legacy)
+        self.update_binary()
+        self.assertTrue(service.run_due_qualification())
+        active = service.decision_routes.active()
+        self.assertEqual(self.tried_models(), [active['requested_model']])
+        self.assertIn(active['requested_model'], service.decision_routes._ranked('codex'))
+        self.assertNotIn('declared_candidates', active)
+
+    def test_explicit_requalification_keeps_the_model_and_effort(self):
+        service = self.service()
+        service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex',
+                                         'model_policy': 'explicit', 'model': 'gpt-5.6-luna', 'effort': 'low',
+                                         'candidates': ['ignored-for-explicit']})
+        self.update_binary()
+        self.assertTrue(service.run_due_qualification())
+        self.assertEqual(service.decision_routes._jobs()['update:codex']['state'], JOB_PASSED)
+        active = service.decision_routes.active()
+        self.assertEqual((active['model_policy'], active['requested_model'], active['effort']),
+                         ('explicit', 'gpt-5.6-luna', 'low'))
+        self.assertEqual(self.tried_models(), ['gpt-5.6-luna'])
+        self.assertNotIn('declared_candidates', active)
+
+    def test_cloud_identity_requalification_preserves_declared_candidates(self):
+        service = self.service(runner=CliRunner({'tiny': careless, 'small': oracle}))
+        service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'claude-code',
+                                         'model_policy': 'lowest_qualified', 'candidates': ['tiny', 'small']})
+        service.execution_adapter.cloud = service.cloud_engines
+        service.save_cloud_profile({'engine': 'claude-code', 'provider': 'bedrock',
+                                    'settings': {'AWS_REGION': 'us-east-1'}, 'daily_calls': 100})
+        service.save_cloud_secret({'engine': 'claude-code', 'provider': 'bedrock',
+                                   'name': 'AWS_BEARER_TOKEN_BEDROCK', 'value': 'fixture-bedrock-346-only'})
+        self.runner.calls.clear()
+        self.assertTrue(service.run_due_qualification())
+        self.assertEqual(service.decision_routes._jobs()['update:claude-code']['state'], JOB_PASSED)
+        active = service.decision_routes.active()
+        self.assertEqual(active['cloud_profile'], service.cloud_engines.identity('claude-code'))
+        self.assertEqual(active['declared_candidates'], ['tiny', 'small'])
+        self.assertEqual(list(dict.fromkeys(call['argv'][call['argv'].index('--model') + 1]
+                                           for call in self.judgments())), ['tiny', 'small'])
 
 
 class QualificationJobTests(JobFixture):

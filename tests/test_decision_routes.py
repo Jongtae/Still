@@ -1012,6 +1012,8 @@ class ServiceRouteSelectionTests(ServiceFixture):
         active = status['active']
         self.assertEqual((active['model_policy'], active['requested_model']), ('lowest_qualified', 'small'))
         self.assertEqual(active['qualification']['suite_version'], SUITE_VERSION)
+        self.assertEqual(self.store.config('decision_route')['declared_candidates'], ['tiny', 'small', 'large'])
+        self.assertNotIn('declared_candidates', active, 'the declaration stays internal to the route')
         tried = next(e for e in status['subscription_cli'] if e['id'] == 'codex')['check']['candidates']
         self.assertEqual([(row['model'], row['qualified']) for row in tried], [('tiny', False), ('small', True)])
         models = [call['argv'][call['argv'].index('--model') + 1] for call in self.runner.calls if '--model' in call['argv']]

@@ -746,6 +746,8 @@ class DecisionRoutes:
                     route = job['route']
                     body = {'engine': route['engine'], 'model_policy': route.get('model_policy'),
                             'model': route.get('requested_model'), 'effort': route.get('effort')}
+                    if route.get('model_policy') == POLICY_LOWEST_QUALIFIED and 'declared_candidates' in route:
+                        body['candidates'] = route['declared_candidates']
                     extra = {key: route[key] for key in ('mode', 'main') if key in route}
                     self._activate_cli(body, extra=extra)
                 else:
@@ -1092,7 +1094,7 @@ class DecisionRoutes:
                                                             'reason': '기본 AI가 아직 없습니다.'}
         if route is not None and route.get('mode') == MODE_FOLLOW:
             stale = route.get('main') != main
-            active = {**{k: v for k, v in route.items() if k not in ('fingerprint', 'binary_identity')}, 'source': 'follow', 'stale': stale}
+            active = {**{k: v for k, v in route.items() if k not in ('fingerprint', 'binary_identity', 'declared_candidates')}, 'source': 'follow', 'stale': stale}
             if route['transport'] == ROUTE_DIRECT_API:
                 active.update(destination=urlsplit(route.get('endpoint') or '').hostname,
                               available=bool(self._follow_resolve(route)) and not stale)
@@ -1105,7 +1107,7 @@ class DecisionRoutes:
                        'requested_model': direct['model'], 'destination': direct['destination'], 'available': True}
                       if resolved else {'transport': 'none', 'source': 'default'})
         else:
-            active = {**{k: v for k, v in route.items() if k not in ('fingerprint', 'binary_identity')}, 'source': 'owner'}
+            active = {**{k: v for k, v in route.items() if k not in ('fingerprint', 'binary_identity', 'declared_candidates')}, 'source': 'owner'}
             if route['transport'] == ROUTE_DIRECT_API:
                 active.update(provider=direct['provider'], requested_model=direct['model'],
                               destination=direct['destination'], available=bool(resolved))
@@ -1738,7 +1740,8 @@ class DecisionRoutes:
             candidates = [model]
         else:
             candidates = body.get('candidates')
-            if candidates in (None, '', []):
+            candidates_declared = candidates not in (None, '', [])
+            if not candidates_declared:
                 # #679: the ranked cheapest-first list, filtered by what this
                 # binary bundles (checked just above).
                 candidates = self._ranked(engine_id, capability)
@@ -1750,6 +1753,10 @@ class DecisionRoutes:
             if not isinstance(candidates, list) or not 1 <= len(candidates) <= MAX_CANDIDATES \
                     or not all(valid_model_id(item) for item in candidates) or len(set(candidates)) != len(candidates):
                 raise DecisionRouteError(f'후보 모델을 가벼운 순서로 1~{MAX_CANDIDATES}개 입력하세요.')
+            if candidates_declared:
+                # Keep the full validated declaration, including untried models.
+                # Without it, later CLI updates continue to use the fresh ranking.
+                base['declared_candidates'] = list(candidates)
         chosen, result, tried = self._first_qualified(
             candidates, lambda model, audit: self._cli_engine(engine_id, model, policy, audit,
                                                               codex_disabled_features=disabled,
