@@ -409,30 +409,35 @@ def test_the_workplace_program_is_closed_out_and_selects_no_successor():
         assert DeliveryPlan(PLAN).select(state) is None, state
 
 
-def test_the_responsive_program_is_goal_ready_with_one_substep_in_flight():
-    """#332: the owner selected #309's remaining slices, then #17; #16 was left out."""
+def test_the_responsive_program_is_closed_out_and_selects_no_successor():
+    """#332: #309, #17 and #346 merged on their own PRs; no successor, heartbeat paused."""
     current = plan()
-    assert current["next_goal"]["id"] == "RESPONSIVE-01"
+    assert current["next_goal"]["id"] is None
     assert "heartbeat stays paused" in current["next_goal"]["action"]
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "terminal"
+    assert "RESPONSIVE-01" in invariants.closed_out_programs(current)
+    invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["RESPONSIVE-01"]
     invariants.assert_activation_record(TestCase(), "RESPONSIVE-01 activation", program["activated_by"])
-    assert program["ordered_substeps"] == ["REPLY-LATENCY-01", "SIDE-ANSWER-01", "CLI-UPDATE-01"]
+    assert program["status"] == "complete"
     # #346 was added on 2026-10-26 after #309 and #17 had merged.
-    assert invariants.assert_active_substeps_are_legitimate(TestCase(), current, "RESPONSIVE-01") == "CLI-UPDATE-01"
-    assert program["completed_substeps"] == ["REPLY-LATENCY-01", "SIDE-ANSWER-01"]
+    assert program["completed_substeps"] == program["ordered_substeps"] == [
+        "REPLY-LATENCY-01", "SIDE-ANSWER-01", "CLI-UPDATE-01"]
+    assert program["active_substeps"] == []
+    assert "independent review" not in program["closeout"]
     items = items_of(current)
-    assert {items[name]["issue"] for name in program["ordered_substeps"]} == {309, 17, 346}
-    assert items["SIDE-ANSWER-01"]["depends_on"] == ["REPLY-LATENCY-01"]
-    assert items["CLI-UPDATE-01"]["depends_on"] == ["REPLY-LATENCY-01"]
+    done = items["RESPONSIVE-01"]["completed_substeps"]
+    assert {name: (done[name]["issue"], done[name]["pull_request"]) for name in done} == {
+        "REPLY-LATENCY-01": (309, 333), "SIDE-ANSWER-01": (17, 342), "CLI-UPDATE-01": (346, 358)}
+    assert done["CLI-UPDATE-01"]["merge_commit"].startswith("1048297")
+    assert all(items[name]["activation_status"] == "complete-on-merge"
+               for name in ("RESPONSIVE-01", *program["ordered_substeps"]))
     assert {"cli-update-added", "latency-measurement-dropped"} <= set(program["decisions"])
-    assert all(items[name]["program"] == "RESPONSIVE-01" for name in program["ordered_substeps"])
-    # #309 L7 weakens an isolation guard's freshness, so its PR waits for the Codex review and the owner's merge.
-    assert "REPLY-LATENCY-01" in program["escalated_review"]
-    # #346 replaces the exact-version admission of the same qualification with a local check.
-    assert "CLI-UPDATE-01" in program["escalated_review"]
-    assert "Codex review of the exact final head" in program["escalated_review"]
+    # #309 L7 and #346 change the #616 isolation qualification, so both waited for the Codex review.
+    assert "REPLY-LATENCY-01" in program["escalated_review"] and "CLI-UPDATE-01" in program["escalated_review"]
     assert "#16" in program["non_goals"] and "L6" in program["non_goals"]
+    for state in ({}, {"completed": []}, {"active": "RESPONSIVE-01", "status": "running"}):
+        assert DeliveryPlan(PLAN).select(state) is None, state
 
 def test_the_post_closeout_audit_notes_correct_without_rewriting_the_closeouts():
     """#250: the 2026-10-23 audit adds dated corrections beside each closeout (C12), never in place of it."""
