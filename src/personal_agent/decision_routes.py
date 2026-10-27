@@ -637,14 +637,18 @@ class DecisionRoutes:
         status. A failed identity stays failed until it changes or the owner
         explicitly requests another qualification. No notification on success.
         """
-        if (route.get('engine') not in CLI_BINARIES or self.service.isolated_engine_adapter
-                or (route.get('mode') == MODE_FOLLOW and route.get('main') != self.service.main_ai.current())):
-            return
-        identity = self._cli_update_identity(route)
-        option = f"update:{route['engine']}"
         with self.service.lock:
-            if self._route_rev() != route.get('activated_at'):
+            active = self.active()
+            if (not active or active.get('activated_at') != route.get('activated_at')
+                    or active.get('engine') != route.get('engine')
+                    or active.get('engine') not in CLI_BINARIES or self.service.isolated_engine_adapter
+                    or (active.get('mode') == MODE_FOLLOW and active.get('main') != self.service.main_ai.current())):
                 return
+            # The Main AI side lane overrides model/policy/effort for its
+            # answer engine. Only the persisted Judgment choice may be queued.
+            route = active
+            identity = self._cli_update_identity(route)
+            option = f"update:{route['engine']}"
             rows = self._jobs()
             current = rows.get(option) or {}
             if current.get('route_rev') == route.get('activated_at') and current.get('target_identity') == identity:

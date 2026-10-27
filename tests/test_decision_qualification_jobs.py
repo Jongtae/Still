@@ -143,6 +143,61 @@ class AutomaticCandidateQualificationTests(JobFixture):
         self.assertEqual(self.tried_models(), ['gpt-5.6-luna'])
         self.assertNotIn('declared_candidates', active)
 
+    def test_main_answer_first_queues_and_commits_the_persisted_judgment_configuration(self):
+        for policy in ('lowest_qualified', 'explicit'):
+            for main_model in ('gpt-5.6-terra', ''):
+                with self.subTest(policy=policy, main_model=main_model):
+                    service = self.service()
+                    self.store.put('subscription_engine', {'id': 'codex'})
+                    self.store.put('subscription_engine_models', {'codex': main_model})
+                    service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex',
+                        'model_policy': policy, 'model': 'gpt-5.6-luna', 'effort': 'high',
+                        'candidates': ['gpt-5.6-luna', 'gpt-5.6-terra']})
+                    before = service.decision_routes.active()
+                    self.update_binary()
+
+                    self.assertIsNone(service.decision_routes.main_answer_engine())
+                    job = service.decision_routes._jobs()['update:codex']
+                    self.assertEqual(job['state'], JOB_QUEUED)
+                    self.assertEqual(job['route'], before)
+                    self.assertEqual(job['target_identity'], service.decision_routes._cli_update_identity(before))
+                    self.assertEqual(self.judgments('codex'), [], 'the side lane only queues requalification')
+                    self.assertEqual(service.decision_routes.active(), before)
+
+                    # A later Judgment guard and background tick must keep the
+                    # same job, rather than repairing a Main AI snapshot.
+                    self.assertEqual(self.judge(service).outcome, 'unavailable')
+                    self.assertEqual(service.decision_routes._jobs()['update:codex'], job)
+                    self.assertTrue(service.run_due_qualification())
+                    finished = service.decision_routes._jobs()['update:codex']
+                    self.assertEqual((finished['id'], finished['state']), (job['id'], JOB_PASSED))
+                    active = service.decision_routes.active()
+                    for key in ('requested_model', 'model_policy', 'effort', 'declared_candidates'):
+                        self.assertEqual(active.get(key), before.get(key), key)
+                    self.assertNotEqual(active['fingerprint'], before['fingerprint'])
+                    self.assertEqual(self.tried_models(), ['gpt-5.6-luna'])
+                    self.assertEqual(service.main_ai.subscription_model('codex'), main_model)
+
+    def test_stale_caller_revision_queues_nothing(self):
+        service = self.activate_candidates()
+        stale = service.decision_routes.active()
+        self.update_binary()
+        self.store.put('decision_route', {**stale, 'activated_at': self.clock()})
+        service.decision_routes._queue_cli_update(stale)
+        self.assertEqual(service.decision_routes._jobs(), {})
+        self.assertEqual(self.runner.calls, [])
+
+    def test_missing_or_different_engine_active_route_queues_nothing(self):
+        service = self.activate_candidates()
+        caller = service.decision_routes.active()
+        self.update_binary()
+        for active in (None, {**caller, 'engine': 'claude-code'}):
+            with self.subTest(active=active):
+                self.store.put('decision_route', active)
+                service.decision_routes._queue_cli_update(caller)
+                self.assertEqual(service.decision_routes._jobs(), {})
+                self.assertEqual(self.runner.calls, [])
+
     def test_cloud_identity_requalification_preserves_declared_candidates(self):
         service = self.service(runner=CliRunner({'tiny': careless, 'small': oracle}))
         service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'claude-code',
