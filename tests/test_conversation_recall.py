@@ -68,6 +68,52 @@ class ConversationRecall(audit_helpers._ServiceBase):
         self.assertEqual(len(self.store.search_conversation('커피',after=9,before=10)),1)
         self.assertEqual(len(self.store.history()),100)
 
+    def test_action_continuation_keeps_first_owner_row_and_recall(self):
+        owner='커피 이야기 이어가요'
+        work=self.exchange(owner)
+        with self.store.db() as db:
+            original=[dict(row) for row in db.execute('SELECT * FROM messages WHERE job_id=? ORDER BY id',(work,))]
+        between=self.exchange('중간 질문','중간 답변')
+        for index in range(2):
+            # A completed login requeues the original Work, not a new owner utterance.
+            service=AgentService(self.store)
+            with self.store.db() as db:
+                self.assertTrue(service._queue_action_continuation(db,self.store.job(work),{
+                    'action':'browser_sign_in','state':'offered',
+                    'digest':f'login-{index}','offer_digest':f'offer-{index}'}))
+            self.assertEqual(service._claim_queued_work()['id'],work)
+            history=self.store.history(through=work)
+            self.assertEqual((history[-1]['role'],history[-1]['content']),('user',owner))
+            self.assertGreater(history[-1]['id'],original[-1]['id'])
+            self.assertIn(original[-1]['id'],[row['id'] for row in history])
+            self.assertIn(between,[row['job_id'] for row in history])
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET status='succeeded' WHERE id=?",(work,))
+        self.age()
+        [exchange]=self.store.owner_words('커피')
+        self.assertEqual([turn['id'] for turn in exchange['turns']],[row['id'] for row in original])
+        self.assertEqual(exchange['turns'][0]['created'],10)
+        self.assertEqual(exchange['turns'][0]['source_at'],9)
+        self.assertEqual(service.owner_words_block('커피').count(owner),1)
+        self.assertEqual(self.store.search_conversation('커피'),[exchange])
+        self.assertEqual(self.store.search_conversation('',message_ids=[exchange['matched_id']]),[exchange])
+
+    def test_identical_owner_messages_in_different_works_are_both_written_and_recalled(self):
+        owner='커피 이야기 이어가요'
+        service=AgentService(self.store)
+        works=[]
+        for index in range(2):
+            work=self.store.enqueue(owner,f'separate-{index}',owner_typed=True)
+            works.append(work)
+            self.assertEqual(service._claim_queued_work()['id'],work)
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET status='succeeded' WHERE id=?",(work,))
+        self.age()
+        exchanges=self.store.owner_words('커피')
+        self.assertEqual([exchange['work_id'] for exchange in exchanges],works)
+        self.assertEqual([turn['content'] for exchange in exchanges for turn in exchange['turns']],[owner,owner])
+        self.assertEqual(service.owner_words_block('커피').count(owner),2)
+
     def test_ownership_documents_secrets_and_delivery(self):
         self.exchange(typed=False)
         document=self.exchange('커피 문서 요청','커피 문서 답')
