@@ -133,6 +133,8 @@ SCRUBBED_ARGUMENTS={'schedule_preparation':'goal',
                     # contain a stored credential; scrub every durable call record.
                     'search_memory':'query',
                     'search_conversation':'query',
+                    # #367 review: the forget search is owner text too.
+                    'forget_record':'query',
                     # #774: the reason the owner reads in the Telegram prompt.
                     'ask_location':('reason','button_label'),
                     # #814: a proposed setting value and its reason (a credential is refused, never recorded).
@@ -3802,7 +3804,8 @@ class Capabilities:
      result={'action':'list','undoable':rows,'message':f'되돌릴 수 있는 항목 {len(rows)}개'}
     elif action=='find':
      # #367: candidate conversation messages for the AI to choose from; nothing is forgotten here.
-     try:rows=self.store.find_messages(args.get('query'))
+     # #367 review: document-backed Works stay out unless this AI may read connected documents (#826 boundary).
+     try:rows=self.store.find_messages(args.get('query'),include_documents=self.document_access)
      except ValueError as exc:raise ToolError(str(exc),'invalid_arguments') from None
      result={'action':'find','messages':rows,'message':f'찾은 대화 메시지 {len(rows)}개'}
     elif action=='undo':

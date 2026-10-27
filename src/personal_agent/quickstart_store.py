@@ -1538,24 +1538,32 @@ class QuickStore:
                 if len(result)>=limit:break
         return result
 
-    def find_messages(self, query, *, limit=20):
+    def find_messages(self, query, *, limit=20, include_documents=False):
         """#367: transcript rows the owner may ask to forget, newest first, as ``message:<id>`` refs.
 
         Unlike ``search_conversation`` (recall), this includes the recent window and every
         Work, since the owner's AI picks what to forget; already forgotten rows are left out.
-        Excerpts are short and redacted; the AI chooses the rows, code judges nothing.
+        Excerpts are short and redacted; the AI chooses the rows, code judges nothing.  Rows of
+        file-workspace document Works are left out unless ``include_documents`` (the reader may see
+        connected documents), as ``search_conversation`` and the document boundary do.
         """
         if not isinstance(query,str) or not query.strip() or len(query)>500:raise ValueError('Invalid conversation query')
         if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=20:raise ValueError('Invalid conversation limit')
         expression=fts_prefix_expression(query)
         if not expression or not getattr(self,'messages_search_available',False):return []
         from .current_context import redact_known_secrets
+        documents=[] if include_documents else [value for value in (self.config('file_workspace_document_jobs',[]) or [])
+                                                  if isinstance(value,str)]
+        withheld=f"AND COALESCE(m.job_id,'') NOT IN ({','.join('?'*len(documents))}) " if documents else ''
         with self.db() as db:
             rows=db.execute(f"""SELECT m.id,m.role,m.content,m.created FROM messages_search JOIN messages m ON m.id=messages_search.rowid
                 WHERE messages_search MATCH ? AND m.role IN ('user','assistant') AND m.content<>''
-                AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY m.id DESC LIMIT ?""",(expression,limit)).fetchall()
+                AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) {withheld}ORDER BY m.id DESC LIMIT ?""",(expression,*documents,limit)).fetchall()
+        # A row holding a retired secret is left out, as ``search_conversation`` does; current secrets are
+        # redacted before clipping.
         return [{'ref':f"message:{row['id']}",'role':'owner' if row['role']=='user' else 'assistant','created':row['created'],
-                 'excerpt':' '.join(redact_known_secrets(self,row['content'] or '').split())[:160]} for row in rows]
+                 'excerpt':' '.join(redact_known_secrets(self,row['content'] or '').split())[:160]}
+                for row in rows if not self.holds_retired_secret(row['content'] or '')]
 
     def work_memories(self, owner_id, work_id, limit=101):
         """The current Memory rows one Work wrote, oldest first (#918: what its notice shows)."""

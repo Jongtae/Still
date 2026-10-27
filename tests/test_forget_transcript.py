@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from unittest import mock
 
-from personal_agent.agent_runtime import MEMORY_OWNER, Capabilities, ToolError, evidence_summary
+from personal_agent.agent_runtime import MEMORY_OWNER, Capabilities, ToolError, evidence_summary, recorded_arguments
 from personal_agent.owner_forget import UNDO_SECONDS, ForgetError, OwnerForget
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore, forgotten_turn
@@ -216,6 +216,37 @@ class ForgetTranscript(unittest.TestCase):
         with self.store.db() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM messages WHERE job_id=?', (parked,)).fetchone()[0], before,
                              'no fresh transcript row of the forgotten request')
+
+
+    def test_the_find_query_is_scrubbed_in_the_call_record(self):
+        """#367 review: the forget search is owner text and may hold a credential, like search_memory's query."""
+        recorded = recorded_arguments('forget_record', {'action': 'find', 'query': '내 키 sk-live-1234567890abcdef'},
+                                      lambda text: text.replace('sk-live-1234567890abcdef', '[redacted]'))
+        self.assertEqual(recorded, {'action': 'find', 'query': '내 키 [redacted]'})
+
+    def test_find_keeps_document_works_from_an_ai_without_document_access(self):
+        """#367 review: the #826 document boundary holds for the forget search too."""
+        document, _ids = self.exchange('계약서 요약해줘 커피', '계약서 커피 조항 요약')
+        self.store.put('file_workspace_document_jobs', [document])
+        _plain, plain = self.exchange('커피 좋아', '커피 좋죠')
+        work = self.store.enqueue('커피 얘기 잊어줘', 'forget-doc')
+        refs = lambda access: [row['ref'] for row in Capabilities(self.store, None, {}, '', work, lambda *e: None,
+                                                                   document_access=access)
+                               .execute('forget_record', {'action': 'find', 'query': '커피'})['messages']]
+        self.assertEqual(refs(False), [f'message:{i}' for i in reversed(plain)])
+        self.assertEqual(len(refs(True)), 4)
+
+
+    def test_find_redacts_current_secrets_and_leaves_out_rows_with_a_retired_one(self):
+        self.store.secret('api_key:openai', 'current-credential-value')
+        _a, current = self.exchange('커피 current-credential-value', '커피 답')
+        self.store.secret('api_key:anthropic', 'old-credential-value')
+        _b, retired = self.exchange('커피 old-credential-value', '커피 또 답')
+        self.store.secret('api_key:anthropic', 'replacement-credential-value')
+        found = {row['ref']: row['excerpt'] for row in self.store.find_messages('커피')}
+        self.assertNotIn(f'message:{retired[0]}', found)
+        self.assertNotIn('current-credential-value', json.dumps(found, ensure_ascii=False))
+        self.assertIn(f'message:{current[0]}', found)
 
 
 if __name__ == '__main__':
