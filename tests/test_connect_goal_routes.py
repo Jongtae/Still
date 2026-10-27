@@ -46,6 +46,10 @@ class GoalRouteContract(unittest.TestCase):
         phone = agent_runtime.turn_context(history, 'cli', surface='telegram')
         self.assertIn('# Where the owner is writing', agent_runtime.render_turn_prompt(phone))
         self.assertIn('one-time page', agent_runtime.context_sections(phone))
+        # #375: every paired chat surface says the answer is read as a chat message.
+        for surface in ('telegram', 'slack', 'mattermost'):
+            chat = agent_runtime.turn_context(history, 'cli', surface=surface)
+            self.assertIn('read as a chat message', agent_runtime.render_turn_prompt(chat))
         for surface in (None, 'local', 'anything'):
             plain = agent_runtime.turn_context(history, 'cli', surface=surface)
             self.assertNotIn('surface', plain)

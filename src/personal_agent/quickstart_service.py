@@ -11819,8 +11819,8 @@ class AgentService:
                                      native_search=native,**sections,
                                      # #997: what this request carries besides its words, as a fact.
                                      attachments=attachment_facts(images=len(run.image_inputs)),
-                                     # #1380: where the owner is writing from, as a fact.
-                                     surface='telegram' if isinstance(job.get('chat_id'),int) else None)
+                                     # #1380, #375: where the owner is writing from, as a fact of the Work's channel.
+                                     surface=getattr(self.surface_claiming(job),'name',None))
                 # Host CLIs get standing instructions separately; owner data
                 # and the request count against the prompt limit.
                 return context,render_turn_prompt(context,include_instructions=not (run.subscription['id'] in ('claude-code','codex') and not isolated))
@@ -12119,8 +12119,8 @@ class AgentService:
                                  skills=run.skill_binding.catalogue_text() if run.skill_binding is not None else None,
                                  # #997: what this request carries besides its words, as a fact.
                                  attachments=attachment_facts(images=len(run.image_inputs)),
-                                 # #1380: where the owner is writing from, as a fact.
-                                 surface='telegram' if isinstance(job.get('chat_id'),int) else None)
+                                 # #1380, #375: where the owner is writing from, as a fact of the Work's channel.
+                                 surface=getattr(self.surface_claiming(job),'name',None))
         # #605: the sources of exactly the earlier messages this
         # worker is shown replace the file-workspace job-list
         # flag (`document_context`), which missed an earlier

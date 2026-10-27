@@ -4020,9 +4020,15 @@ def attachments_section(context):
 #: owner's words.  Live: from Telegram the worker sent the owner to check a key on a computer instead of
 #: offering the one-time phone input it could prepare.
 SURFACE_HEADING='# Where the owner is writing'
+#: #375: every paired chat surface, so the worker knows the answer is read as a chat message (``voice``).
 SURFACE_NOTES={'telegram':('In their paired Telegram chat; they may be away from the Mac, likely on a phone. Prefer steps '
                            'they can finish there: an owner-only value (an API key, a password) is entered on a one-time '
-                           'page whose link Still sends to this chat, so no laptop is needed.')}
+                           'page whose link Still sends to this chat, so no laptop is needed. The answer is read as a '
+                           'chat message; Markdown tables show there as one line per row.'),
+               'slack':('In their paired Slack direct message. The answer is read as a chat message, on a computer or '
+                        'a phone; Markdown renders there, tables included.'),
+               'mattermost':('In their paired Mattermost direct message. The answer is read as a chat message; Markdown '
+                             'renders there, tables included.')}
 
 def surface_section(context):
  """The rendered owner-surface section of a turn context, or '' (#1380)."""
