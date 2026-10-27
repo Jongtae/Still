@@ -2774,10 +2774,38 @@ class CliHostActions(unittest.TestCase):
             lines += [json.dumps({'type': 'item.started', 'item': {**item, 'status': 'in_progress'}}),
                       json.dumps({'type': 'item.completed', 'item': {**item, 'status': 'completed'}})]
         meta = cli_metadata('codex', '\n'.join(lines + [json.dumps({'type': 'turn.completed'})]))
-        self.assertEqual(len(meta['tool_calls']), 15)
-        self.assertEqual({call['status'] for call in meta['tool_calls']}, {'completed'})
+        # #372: bridge calls are counted, not listed; Still records each one as its own tool event.
+        self.assertEqual((meta['tool_calls'], meta['bridge_calls']), ([], 15))
         self.assertNotIn('tool_calls_partial', meta)
         self.assertEqual(AgentService.cli_host_actions(meta), ())
+
+    def test_many_bridge_calls_do_not_make_the_summary_partial(self):
+        """#372: a Work reading 124 mail messages through the bridge stays observable; the CLI's own actions still count."""
+        from personal_agent.bounded_execution import CLI_TOOL_CALLS_KEPT, cli_metadata
+        lines = []
+        for index in range(CLI_TOOL_CALLS_KEPT * 4):
+            item = {'id': f'c{index}', 'type': 'mcp_tool_call', 'server': 'agentos', 'tool': 'api_request'}
+            lines += [json.dumps({'type': 'item.started', 'item': {**item, 'status': 'in_progress'}}),
+                      json.dumps({'type': 'item.completed', 'item': {**item, 'status': 'completed'}})]
+        end = json.dumps({'type': 'turn.completed'})
+        meta = cli_metadata('codex', '\n'.join(lines + [end]))
+        self.assertNotIn('tool_calls_partial', meta)
+        self.assertEqual(AgentService.cli_host_actions(meta), ())
+        command = json.dumps({'type': 'item.completed', 'item': {'id': 'x', 'type': 'command_execution', 'status': 'completed'}})
+        self.assertEqual(AgentService.cli_host_actions(cli_metadata('codex', '\n'.join(lines + [command, end]))),
+                         ('command_execution',))
+        other = json.dumps({'type': 'item.completed', 'item': {'id': 'y', 'type': 'mcp_tool_call', 'server': 'codex_apps',
+                                                               'tool': 'api_request', 'status': 'completed'}})
+        self.assertEqual(AgentService.cli_host_actions(cli_metadata('codex', '\n'.join(lines + [other, end]))),
+                         ('api_request',), 'another server is a host action whatever its tool is named')
+        unknown = json.dumps({'type': 'item.completed', 'item': {'id': 'z', 'type': 'mcp_tool_call', 'server': 'agentos',
+                                                                 'tool': 'not_a_bridge_action', 'status': 'completed'}})
+        self.assertEqual(AgentService.cli_host_actions(cli_metadata('codex', '\n'.join(lines + [unknown, end]))),
+                         ('not_a_bridge_action',), 'an agentos name outside the bridge stays a host action')
+        many = [json.dumps({'type': 'item.completed', 'item': {'id': f'h{i}', 'type': 'command_execution', 'status': 'completed'}})
+                for i in range(CLI_TOOL_CALLS_KEPT + 1)]
+        self.assertIsNone(AgentService.cli_host_actions(cli_metadata('codex', '\n'.join(many + [end]))),
+                          "the cap still makes the CLI's own actions unobservable")
 
     def test_one_id_reported_as_two_kinds_is_unobservable(self):
         """#808 review P2: a started command and a completed bridge call under one id are not merged into a bridge call."""

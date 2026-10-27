@@ -952,6 +952,15 @@ def cli_metadata(engine_id, raw, connector_digest=None, answer=None):
             records.append(value)
     # #808: one entry per Codex item id (it writes item.started and item.completed for each call).
     codex_items = {}
+    # #372: a Still bridge call is recorded by Still as its own tool event, so the summary only counts
+    # it: the cap that makes a summary partial is for the CLI's own actions, which only it reports.
+    bridge = frozenset(profile_actions(BOUNDED_PROFILE))
+    bridge_calls = []
+
+    def bridge_call(entry):
+        name = entry['name']
+        return ((entry['type'] == 'mcp_tool_call' and entry.get('server') == 'agentos' and name in bridge)
+                or (entry['type'] == 'tool_use' and name.startswith('mcp__agentos__') and name[len('mcp__agentos__'):] in bridge))
     observe=connector_observation_reader(connector_digest)
     meta['connector_reads'] = []
     for record in records:
@@ -971,10 +980,12 @@ def cli_metadata(engine_id, raw, connector_digest=None, answer=None):
         if isinstance(message, dict) and isinstance(message.get('content'), list):
             for part in message['content']:
                 if isinstance(part, dict) and part.get('type') == 'tool_use':
-                    meta['tool_calls'].append({'type': 'tool_use', 'name': str(part.get('name') or '')[:80], 'status': 'requested'})
+                    entry = {'type': 'tool_use', 'name': str(part.get('name') or '')[:80], 'status': 'requested'}
+                    (bridge_calls if bridge_call(entry) else meta['tool_calls']).append(entry)
         for denial in record.get('permission_denials') or []:
             if isinstance(denial, dict):
-                meta['tool_calls'].append({'type': 'tool_use', 'name': str(denial.get('tool_name') or '')[:80], 'status': 'denied'})
+                entry = {'type': 'tool_use', 'name': str(denial.get('tool_name') or '')[:80], 'status': 'denied'}
+                (bridge_calls if bridge_call(entry) else meta['tool_calls']).append(entry)
         item = record.get('item')
         # #808: every Codex item but the known non-actions is a call (collab_tool_call, apps, ...).
         if isinstance(item, dict) and item.get('type') and item.get('type') not in CODEX_NON_ACTION_ITEMS:
@@ -985,11 +996,12 @@ def cli_metadata(engine_id, raw, connector_digest=None, answer=None):
             key = item.get('id')
             if isinstance(key, str) and key in codex_items:
                 # Review P2: one id reported as two kinds is not one call; do not merge it away.
-                if codex_items[key]['type'] != entry['type']:
+                # #372: nor one first counted as a bridge call and later reported as something else.
+                if codex_items[key]['type'] != entry['type'] or bridge_call(codex_items[key]) != bridge_call(entry):
                     partial = True
                 codex_items[key].update(entry)
             else:
-                meta['tool_calls'].append(entry)
+                (bridge_calls if bridge_call(entry) else meta['tool_calls']).append(entry)
                 if isinstance(key, str):
                     codex_items[key] = entry
     try:
@@ -1001,6 +1013,8 @@ def cli_metadata(engine_id, raw, connector_digest=None, answer=None):
                          if isinstance(chosen.get('usage'), dict) else None)
         meta['num_turns'] = chosen['num_turns'] if isinstance(chosen.get('num_turns'), int) else None
         meta['cost_usd'] = chosen['total_cost_usd'] if isinstance(chosen.get('total_cost_usd'), (int, float)) else None
+    if bridge_calls:
+        meta['bridge_calls'] = len(bridge_calls)
     if len(meta['tool_calls']) > CLI_TOOL_CALLS_KEPT:
         partial = True
     meta['tool_calls'] = meta['tool_calls'][:CLI_TOOL_CALLS_KEPT]

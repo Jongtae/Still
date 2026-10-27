@@ -52,7 +52,7 @@ def shortcut_slot(action):
 #: connection handoff (the call is refused before dispatch and Still parks the Work) rather than the browser.
 WRITE_GRANT_NOTE = ("; changes need the owner's separate '{grant}' connection: make the change with api_request "
                     "anyway, and if it is refused as read-only Still asks the owner to connect and continues "
-                    "this request once afterwards")
+                    "this request once afterwards; do not work around it through the browser")
 
 
 def write_grants():
