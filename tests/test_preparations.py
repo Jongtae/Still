@@ -1009,20 +1009,47 @@ class SilentDeliveryTests(_WatchCase):
         self.assertEqual(self.run_slot('상황 C')['last_decision'], 'quiet')
         self.assertEqual(len(self.notifications()), 1)
 
-    def test_a_run_without_a_result_is_quiet_and_asks_nothing(self):
-        self.use([True])
-        self.watched = self.watch()
+    def end_slot(self, status='failed'):
+        """Advance to the row's slot, start it, end its Work without a result, settle, deliver."""
         row = self.service.preparations.get(self.watched['id'])
-        self.now = row['due_at'] + 1
-        self.tick()
-        [run] = self.runs(row['id'])
+        self.now = max(self.now, row['due_at']) + 1
+        self.assertTrue(self.tick())
+        run = self.runs(row['id'])[-1]
         with self.store.db() as db:
-            db.execute("UPDATE jobs SET status='failed',response=NULL,error='x',delivery='none' WHERE id=?", (run['id'],))
-        self.tick()
-        row = self.service.preparations.get(row['id'])
+            db.execute("UPDATE jobs SET status=?,response=NULL,error='조회 서버가 응답하지 않았습니다.',delivery='none' WHERE id=?",
+                       (status, run['id']))
+        self.assertTrue(self.tick())
+        self.service.deliver_notification()
+        return self.service.preparations.get(self.watched['id'])
+
+    def test_a_failing_watch_is_told_once_and_asks_nothing(self):
+        """#394: a watch whose runs fail must not look like one with nothing to report."""
+        self.use([False])
+        self.watched = self.watch()
+        row = self.end_slot()
         self.assertEqual((row['last_decision'], row['last_decision_reason'], row['state']),
-                         ('quiet', prep.REASON_RUN_FAILED, 'scheduled'))
-        self.assertEqual((self.watch_asks(), self.telegram), ([], []))
+                         ('notify', prep.REASON_RUN_FAILED_TOLD, 'scheduled'))
+        [told] = self.notifications()
+        self.assertIn('출발 시각을 앞당겨야 하는지 확인', told)
+        self.assertIn('조회 서버가 응답하지 않았습니다', told, 'the owner is told why')
+        self.assertEqual(self.watch_asks(), [], 'no judgment is asked about a run without a result')
+        row = self.end_slot()
+        self.assertEqual((row['last_decision'], row['last_decision_reason']), ('quiet', prep.REASON_RUN_FAILED))
+        self.assertEqual(len(self.notifications()), 1, 'a failure already told stays quiet')
+        row = self.run_slot('지금은 평소와 같습니다.')
+        self.assertEqual(row['last_decision_reason'], prep.REASON_JUDGED_NOT_NEEDED)
+        row = self.end_slot()
+        self.assertEqual(row['last_decision_reason'], prep.REASON_RUN_FAILED_TOLD)
+        self.assertEqual(len(self.notifications()), 2, 'a failure after a result is told again')
+
+    def test_a_run_the_owner_stopped_is_quiet(self):
+        self.use([])
+        self.watched = self.watch()
+        row = self.end_slot(status='cancelled')
+        self.assertEqual((row['last_decision'], row['last_decision_reason']), ('quiet', prep.REASON_RUN_STOPPED))
+        self.assertEqual((self.watch_asks(), self.notifications()), ([], []))
+        row = self.end_slot()
+        self.assertEqual(row['last_decision_reason'], prep.REASON_RUN_FAILED_TOLD, 'a stop does not hide a later failure')
 
     def test_the_owner_stops_a_watch_from_its_notification(self):
         self.use([True])
@@ -1114,6 +1141,77 @@ class WatchAcceptanceTests(_WatchCase):
         self.assertEqual((row['state'], row['every_seconds'], row['delivery_mode']), ('proposed', 420 * 60, 'when_needed'))
         self.assertEqual((result['every_minutes'], result['delivery']), (420, 'when_needed'))
         self.assertNotIn('refused_because', json.dumps(result))
+
+    def proposal_notification(self, work):
+        with self.store.db() as db:
+            return dict(db.execute("SELECT * FROM telegram_notifications WHERE job_id=? AND kind='preparation_proposed'",
+                                   (work,)).fetchone())
+
+    def test_a_watch_accepted_after_its_window_ended_is_not_started(self):
+        """#395: a late yes never reads as a running watch."""
+        work, row, _result = self.propose_watch(preparation=False)
+        self.service.deliver_one()
+        self.service.deliver_notification()
+        notification = self.proposal_notification(work)
+        self.now = row['window_end'] + 60
+        self.tap(f"p7p:{notification['id']}:accept", notification['message_id'])
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_CANCELLED)
+        edit = [body for method, body in self.telegram if method == 'editMessageText'][-1]
+        self.assertIn('시작하지 않았어요', edit['text'])
+        self.assertNotIn('예약했어요', edit['text'])
+        self.assertEqual(edit['reply_markup'], {'inline_keyboard': []})
+        self.assertFalse(self.tick())
+        self.assertEqual(self.runs(row['id']), [])
+
+    def test_a_late_yes_starts_only_the_watches_still_open(self):
+        """#395: of one message's proposals, the ended watch is not started and the open one is."""
+        self.service.use_decision_engine(watch_engine([], preparation=False))
+        self.script = [{'content': '알겠습니다.'}]
+        work = self.receive('두 가지 지켜봐 줘')
+        made = {}
+        for name, span in (('ENDS', 900), ('OPEN', 7200)):
+            due = self.now + 600
+            window = prep.normalize_window(10, datetime.fromtimestamp(due + span, SEOUL).isoformat(), None, due,
+                                           'Asia/Seoul', self.now)
+            made[name] = self.service.preparations.create(
+                kind='prepare', goal=name + ' 확인', due_at=due, timezone='Asia/Seoul', recurrence=None, channel='telegram',
+                created_from=work, state=prep.STATE_PROPOSED, window=window, delivery_mode=prep.DELIVERY_WHEN_NEEDED)
+        self.service.queue_preparation_proposal(self.store.job(work))
+        self.service.deliver_one()
+        self.service.deliver_notification()
+        notification = self.proposal_notification(work)
+        self.now = made['ENDS']['window_end'] + 1
+        self.tap(f"p7p:{notification['id']}:accept", notification['message_id'])
+        get = self.service.preparations.get
+        self.assertEqual((get(made['ENDS']['id'])['state'], get(made['OPEN']['id'])['state']),
+                         (prep.STATE_CANCELLED, prep.STATE_SCHEDULED))
+        edit = [body for method, body in self.telegram if method == 'editMessageText'][-1]
+        self.assertIn('예약했어요', edit['text'])
+        self.assertIn('시작하지 않았어요', edit['text'])
+        [[button]] = edit['reply_markup']['inline_keyboard']
+        self.tap(button['callback_data'], notification['message_id'])
+        self.assertEqual(get(made['OPEN']['id'])['state'], prep.STATE_CANCELLED, 'the cancel button covers what was accepted')
+
+    def test_accept_refuses_only_an_ended_window(self):
+        """#395: the refusal is in the UPDATE; a one-shot proposal past its time is unaffected."""
+        once = self.service.preparations.create(kind='prepare', goal='한 번', due_at=self.now + 60, timezone='Asia/Seoul',
+                                                recurrence=None, channel='web', created_from='w', state=prep.STATE_PROPOSED)
+        due = self.now + 60
+        window = prep.normalize_window(10, datetime.fromtimestamp(due + 1200, SEOUL).isoformat(), None, due,
+                                       'Asia/Seoul', self.now)
+        watch = self.service.preparations.create(kind='prepare', goal='지켜보기', due_at=due, timezone='Asia/Seoul',
+                                                 recurrence=None, channel='web', created_from='w', state=prep.STATE_PROPOSED,
+                                                 window=window)
+        self.now = watch['window_end']
+        with self.assertRaises(prep.PreparationRefusal) as refused:
+            self.service.preparations.accept(watch['id'], prep.ACCEPTED_OWNER_SETTINGS)
+        self.assertEqual(refused.exception.code, 'expired')
+        self.assertEqual(self.service.preparations.get(watch['id'])['state'], prep.STATE_PROPOSED)
+        self.assertEqual(self.service.preparations.accept(once['id'], prep.ACCEPTED_OWNER_SETTINGS)['state'],
+                         prep.STATE_SCHEDULED)
+        with self.assertRaises(prep.PreparationRefusal) as again:
+            self.service.preparations.accept(once['id'], prep.ACCEPTED_OWNER_SETTINGS)
+        self.assertEqual(again.exception.code, 'not_proposed')
 
     def test_the_owners_own_request_schedules_it(self):
         _work, row, _result = self.propose_watch(preparation=True)

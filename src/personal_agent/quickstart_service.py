@@ -2713,16 +2713,27 @@ class AgentService:
         message keeps a cancel button bound to exactly what it accepted (#1455).
         Returns what the message now says.
         """
+        accepted,expired=[],[]
         for row in proposals:
-            if accept:self.preparations.accept(row['id'],prep.ACCEPTED_OWNER_BUTTON if by=='button' else prep.ACCEPTED_OWNER_ANSWER)
-            else:self.cancel_preparation(row['id'])
-        result_kind='preparation_accepted' if accept else 'preparation_denied'
-        LOG.info('preparation %s by owner %s work=%s count=%s','accept' if accept else 'deny',by,
-                 notification['job_id'],len(proposals))
+            if not accept:
+                self.cancel_preparation(row['id'])
+                continue
+            try:
+                self.preparations.accept(row['id'],prep.ACCEPTED_OWNER_BUTTON if by=='button' else prep.ACCEPTED_OWNER_ANSWER)
+                accepted.append(row)
+            except prep.PreparationRefusal as exc:
+                # #395: a watch whose window ended while the message waited is not started.
+                if exc.code!='expired':raise
+                self.cancel_preparation(row['id'])
+                expired.append(row)
+        result_kind=('preparation_accepted' if accepted else 'preparation_expired') if accept else 'preparation_denied'
+        LOG.info('preparation %s by owner %s work=%s count=%s expired=%s','accept' if accept else 'deny',by,
+                 notification['job_id'],len(proposals),len(expired))
         self.store.update_notification(notification['id'],result_kind,fingerprint=(
-            PREPARED_IDS_PREFIX+','.join(row['id'] for row in proposals) if accept else None))
-        markup=self.preparation_cancel_markup(notification['id']) if accept else {'inline_keyboard':[]}
+            PREPARED_IDS_PREFIX+','.join(row['id'] for row in accepted) if accepted else None))
+        markup=self.preparation_cancel_markup(notification['id']) if accepted else {'inline_keyboard':[]}
         text=self.notification_text(result_kind)
+        if accepted and expired:text+='\n'+self.notification_text('preparation_expired')
         if isinstance(notification.get('message_id'),int):
             try:self.telegram.edit_message_text(notification['chat_id'],notification['message_id'],text,markup)
             except ProviderError:pass
@@ -10230,6 +10241,7 @@ class AgentService:
                 'preparation_denied':msg('notice.preparation_denied'),
                 'preparation_cancelled':msg('notice.preparation_cancelled'),
                 'preparation_already_settled':msg('notice.preparation_already_settled'),
+                'preparation_expired':msg('notice.preparation_expired'),
                 'location_not_continued':LOCATION_NOT_CONTINUED_TEXT}.get(kind,msg('notice.generic'))
 
     def queue_notification(self, job, kind, fingerprint=None):

@@ -332,16 +332,28 @@ class InstalledHostBridge(unittest.TestCase):
             notification, call('finished'),
             {'jsonrpc':'2.0', 'method':'notifications/cancelled', 'params':{'requestId':'finished'}},
             request('later', 'tools/list')])
-        self.assertEqual([row['id'] for row in replies], ['finished', 'later'])
+        # #386: a call is its own task, so the cancel may reach it while it runs; MCP then sends no
+        # answer for it.  Either way it ran once, finished, and nothing is replayed.
+        self.assertIn([row['id'] for row in replies], (['finished', 'later'], ['later']))
         self.assertEqual(len([row for row in effects if row['kind']=='enter']), 2)
+        self.assertEqual(len([row for row in effects if row['kind']=='exit']), 2)
+        self.assertEqual([row[1] for row in self._events()].count('succeeded'), 2)
 
-    def test_batched_same_tool_calls_stay_serialized_and_eof_flushes_all_responses(self):
+    def test_batched_effect_free_reads_overlap_and_eof_flushes_all_responses(self):
+        """#386 (#16 generalized): two independent reads run together; both answer before EOF closes."""
         replies, effects = self._exchange([
             call('first', arguments={'city':'First'}), call('second', arguments={'city':'Second'})], mode='slow')
-        self.assertEqual([row['id'] for row in replies], ['first', 'second'])
-        self.assertEqual([(row['kind'], row['plan']['city']) for row in effects if row['kind'] in {'enter','exit'}],
-                         [('enter','First'), ('exit','First'), ('enter','Second'), ('exit','Second')])
-        self.assertEqual([row[1] for row in self._events()], ['running','succeeded','running','succeeded'])
+        self.assertEqual(sorted(row['id'] for row in replies), ['first', 'second'])
+        self.assertTrue(all('result' in row for row in replies))
+        kinds = [row['kind'] for row in effects if row['kind'] in {'enter','exit'}]
+        self.assertEqual(kinds, ['enter','enter','exit','exit'], 'the second read started before the first ended')
+        events = self._events()
+        self.assertEqual(sorted(row[1] for row in events), ['running','running','succeeded','succeeded'])
+        by_call = {}
+        for _tool, status, detail in events:
+            by_call.setdefault(detail['call_id'], []).append(status)
+        self.assertEqual(sorted(by_call.values()), [['running','succeeded'], ['running','succeeded']],
+                         'each call pairs its own records by call id')
 
     def test_unsupported_method_as_only_request_before_eof_is_answered(self):
         replies, effects = self._exchange([request('unknown', 'unknown/synthetic-method')])

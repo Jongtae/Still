@@ -69,6 +69,9 @@ REASON_JUDGED_NEEDED = 'judged-needed'
 REASON_JUDGED_NOT_NEEDED = 'judged-not-needed'
 REASON_UNCHANGED = 'same-as-last-notification'
 REASON_RUN_FAILED = 'run-did-not-finish'
+#: #394: the first run without a result after a run that had one is told once.
+REASON_RUN_FAILED_TOLD = 'run-did-not-finish-told'
+REASON_RUN_STOPPED = 'run-stopped'
 REASON_UNJUDGED = 'judgment-unavailable'
 REASON_UNJUDGED_REPEAT = 'judgment-unavailable-already-notified'
 #: The Telegram notification kind of a ``notify`` decision.
@@ -166,6 +169,7 @@ REFUSALS = {
     'too_many': f'진행 중인 준비가 {MAX_ACTIVE}개를 넘어 더 만들지 않았습니다. 설정에서 필요 없는 준비를 정리해 주세요.',
     'not_found': '이 준비를 찾지 못했습니다.',
     'not_proposed': '이미 처리된 준비입니다.',
+    'expired': '지켜보는 기간이 이미 끝나 시작하지 않았습니다.',
     'running': '지금 실행 중인 준비는 지울 수 없습니다. 먼저 취소하세요.',
 }
 
@@ -413,11 +417,15 @@ def bounded_text(text, limit=NOTIFIED_TEXT_BYTES):
     return raw[:limit].decode('utf-8', 'ignore') + (' [...]' if len(raw) > limit else '')
 
 
-def watch_decision(row, answer, decide=None):
+def watch_decision(row, answer, decide=None, stopped=False):
     """``(decision, reason)`` of one finished ``when_needed`` run (#719).
 
-    Deterministic only where no judgment is needed: a run with no result is
-    quiet, and a result identical to the last notification is quiet.
+    Deterministic only where no judgment is needed. A run with no result
+    is told once (#394): a watch whose runs fail must not look like a watch
+    with nothing to report, so the first failure after a result reaches the
+    owner and later failures stay quiet until a run has a result again. A
+    run the owner ``stopped`` is quiet. A result identical to the last
+    notification is quiet.
     Otherwise ``decide(row, answer)`` - the DecisionEngine's bounded
     judgment, never a text rule - says whether the owner needs it now.
     When no judgment is available the result is sent once, and later
@@ -425,7 +433,11 @@ def watch_decision(row, answer, decide=None):
     outage neither hides the watch nor repeats it every slot.
     """
     if not str(answer or '').strip():
-        return DECISION_QUIET, REASON_RUN_FAILED
+        if stopped:
+            return DECISION_QUIET, REASON_RUN_STOPPED
+        if row.get('last_decision_reason') in (REASON_RUN_FAILED_TOLD, REASON_RUN_FAILED):
+            return DECISION_QUIET, REASON_RUN_FAILED
+        return DECISION_NOTIFY, REASON_RUN_FAILED_TOLD
     if text_digest(answer) == row.get('last_notified_digest'):
         return DECISION_QUIET, REASON_UNCHANGED
     verdict = None
@@ -441,6 +453,11 @@ def watch_decision(row, answer, decide=None):
     if row.get('last_decision_reason') in (REASON_UNJUDGED, REASON_UNJUDGED_REPEAT):
         return DECISION_QUIET, REASON_UNJUDGED_REPEAT
     return DECISION_NOTIFY, REASON_UNJUDGED
+
+
+def window_ended(row, now):
+    """#395: a watch whose window has no slot left at ``now``."""
+    return row.get('recurrence') == RECURRENCE_WINDOW and row.get('window_end') is not None and row['window_end'] <= now
 
 
 def reminder_text(goal, due_at, timezone_name, now):
@@ -662,13 +679,21 @@ class Preparations:
             return row
 
     def accept(self, preparation_id, accepted_by):
-        """``proposed`` → ``scheduled``: the owner's explicit yes."""
+        """``proposed`` → ``scheduled``: the owner's explicit yes.
+
+        #395: a watch whose window has already ended is refused (``expired``)
+        in the same UPDATE, so a late yes never reads as a running watch.
+        """
         now = self.clock()
         with self.store.db() as db:
-            changed = db.execute("UPDATE preparations SET state='scheduled',accepted_by=?,updated_at=? WHERE id=? AND state='proposed'",
-                                 (accepted_by, now, preparation_id)).rowcount
+            changed = db.execute("UPDATE preparations SET state='scheduled',accepted_by=?,updated_at=? WHERE id=? AND state='proposed' "
+                                 'AND (recurrence IS NOT ? OR window_end>?)',
+                                 (accepted_by, now, preparation_id, RECURRENCE_WINDOW, now)).rowcount
         if not changed:
-            raise PreparationRefusal('not_found' if not self.get(preparation_id) else 'not_proposed')
+            row = self.get(preparation_id)
+            if not row:
+                raise PreparationRefusal('not_found')
+            raise PreparationRefusal('expired' if row['state'] == STATE_PROPOSED and window_ended(row, now) else 'not_proposed')
         return self.get(preparation_id)
 
     def cancel(self, preparation_id):
@@ -865,7 +890,7 @@ class Preparations:
         if (row.get('delivery_mode') == DELIVERY_WHEN_NEEDED and finished
                 and finished['status'] not in ('queued', 'running', 'awaiting_connection')
                 and finished['delivery'] not in ('pending', 'sending')):
-            decision = watch_decision(row, answer, decide)
+            decision = watch_decision(row, answer, decide, stopped=finished['status'] == 'cancelled')
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()

@@ -1511,6 +1511,12 @@
   "ja": "すでに終わったか取り消された予約なので、変えたものはありません。",
   "zh": "这些预约已经结束或已取消，没有改动。"
  },
+ "notice.preparation_expired": {
+  "ko": "지켜볼 시간이 이미 끝나서 시작하지 않았어요.",
+  "en": "The time to watch had already ended, so I did not start it.",
+  "ja": "見守る時間がもう終わっていたので、始めませんでした。",
+  "zh": "要关注的时间已经结束，所以没有开始。"
+ },
  "notice.preparation_denied": {
   "ko": "준비를 예약하지 않았습니다.",
   "en": "Not scheduled.",

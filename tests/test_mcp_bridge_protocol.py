@@ -493,7 +493,8 @@ class BoundedProfileHostInvocation(unittest.TestCase):
             self._call(9, "list_notes", {}),
         ])
         self.assertEqual(self.weather, [{"city": "Daejeon", "country": "KR"}])
-        self.assertEqual(self.searches, ["today news", "model a price"])
+        # #386: independent reads overlap, so their order is not fixed; a page read still waits for the searches before it.
+        self.assertEqual(sorted(self.searches), ["model a price", "today news"])
         self.assertEqual(self._value(replies[2])["location"]["name"], "Daejeon")
         # #23: a page this Work's searches did not return is refused before the network ...
         self.assertTrue(_refused(replies[4]))
@@ -504,13 +505,13 @@ class BoundedProfileHostInvocation(unittest.TestCase):
         for ident in (7, 8):
             with self.subTest(case=ident):
                 self.assertTrue(_refused(replies[ident]))
-        self.assertEqual(self.opened, ["https://example.com/a", "https://example.com/b"])
+        self.assertEqual(sorted(self.opened), ["https://example.com/a", "https://example.com/b"])
         self.assertIn("granted private note", [note["content"] for note in self._value(replies[9])["notes"]])
         with self.store.db() as db:
             events = [tuple(row) for row in db.execute(
                 "SELECT tool,status FROM tool_events WHERE job_id=? AND status='succeeded' ORDER BY id", (self.job,))]
-        self.assertEqual(events, [("weather", "succeeded"), ("web_search", "succeeded"), ("web_search", "succeeded"),
-                                  ("public_page_read", "succeeded"), ("list_notes", "succeeded")])
+        self.assertEqual(sorted(events), sorted([("weather", "succeeded"), ("web_search", "succeeded"), ("web_search", "succeeded"),
+                                                 ("public_page_read", "succeeded"), ("list_notes", "succeeded")]))
         # Review P1: the success trace carries the direct route's redacted
         # Evidence -- sources, no payload.
         traces = self._traces("succeeded")

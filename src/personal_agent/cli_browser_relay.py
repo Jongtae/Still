@@ -37,7 +37,7 @@ import socketserver
 import tempfile
 import threading
 
-from .agent_runtime import (BROWSER_ACTIONS, CODE_ACTIONS, EFFECT_FREE_READS, HOST_RELAYED_ACTIONS, REPEAT_PATH_TEXT, ToolError, not_run,
+from .agent_runtime import (BROWSER_ACTIONS, CODE_ACTIONS, EFFECT_FREE_READS, HOST_RELAYED_ACTIONS, REPEAT_PATH_TEXT, ToolError, concurrent_read, not_run,
                             observed_field, observed_value, path_key, ran_field, result_page_digest)
 
 SOCKET_NAME = 's'
@@ -116,12 +116,16 @@ class BrowserRelay:
     ``tools`` is the trusted-local ``AgentOSMcpTools`` facade built for this
     turn in the service (its ``Capabilities`` carries the browser profile
     factory, the approvals surface, the Work budget and the lookup sources).
-    Calls are executed one at a time.
+    Calls are executed one at a time, except effect-free reads (#386: ``concurrent_read``),
+    which the bridge may send together and which run without the turn's lock.
     """
 
     def __init__(self, tools):
         self.tools = tools
         self._lock = threading.Lock()
+        # #386: effect-free reads in flight outside the lock; closing waits for them too.
+        self._reading = threading.Condition()
+        self._reads = 0
         self._closed = False
         # The page the next step acts on and the page steps already taken (#657).
         self._page, self._paths = None, set()
@@ -187,6 +191,9 @@ class BrowserRelay:
         # Only this Work's browser and owner-state tools (#774): every other tool stays in the bridge.
         if not isinstance(name, str) or (tools.get(name) or {}).get('host_action') not in HOST_RELAYED_ACTIONS:
             return {'error': {'kind': 'invalid_arguments', 'message': '', 'ran': False}}
+        action = tools[name]['host_action']
+        if concurrent_read(action, arguments if isinstance(arguments, dict) else {}):
+            return self._read(name, arguments, action)
         with self._lock:
             if self._closed:
                 return {'error': {'kind': 'tool', 'message': RELAY_UNAVAILABLE_TEXT, 'code': 'stopped', 'ran': False}}
@@ -207,25 +214,52 @@ class BrowserRelay:
             if action in BROWSER_ACTIONS:
                 self._page = result_page_digest(value) or self._page
             else:
-                # #774 review: the service reads typed owner-state results (a missing
-                # connector's ``needs_setup``) after the turn, as the direct route's memo.
-                memo = getattr(self.tools.capabilities, 'memo', None)
-                if isinstance(memo, dict):
-                    memo[(name, json.dumps(arguments, sort_keys=True, ensure_ascii=False))] = value
-                # #1466: what an effect-free read returned joins this attempt's judgment (memory only);
-                # code_run keeps its own output in ``Capabilities.execute``.
-                keep = getattr(self.tools.capabilities, 'keep_read_result', None)
-                if callable(keep) and action in EFFECT_FREE_READS and action not in CODE_ACTIONS:
-                    keep(name, arguments, value)
+                self._remember(name, arguments, action, value)
             return {'ok': value}
+
+    def _remember(self, name, arguments, action, value):
+        """What the service reads of one relayed owner-state result after the turn (caller holds the lock)."""
+        # #774 review: the service reads typed owner-state results (a missing
+        # connector's ``needs_setup``) after the turn, as the direct route's memo.
+        memo = getattr(self.tools.capabilities, 'memo', None)
+        if isinstance(memo, dict):
+            memo[(name, json.dumps(arguments, sort_keys=True, ensure_ascii=False))] = value
+        # #1466: what an effect-free read returned joins this attempt's judgment (memory only);
+        # code_run keeps its own output in ``Capabilities.execute``.
+        keep = getattr(self.tools.capabilities, 'keep_read_result', None)
+        if callable(keep) and action in EFFECT_FREE_READS and action not in CODE_ACTIONS:
+            keep(name, arguments, value)
+
+    def _read(self, name, arguments, action):
+        """One effect-free read, run beside the turn's other reads (#386); its results are kept under the lock."""
+        with self._reading:
+            if self._closed:
+                return {'error': {'kind': 'tool', 'message': RELAY_UNAVAILABLE_TEXT, 'code': 'stopped', 'ran': False}}
+            self._reads += 1
+        try:
+            try:
+                value = self.tools.call(name, arguments)
+            except Exception as exc:   # every failure becomes a typed reply
+                return {'error': _error_payload(exc)}
+            with self._lock:
+                self._remember(name, arguments, action, value)
+            return {'ok': value}
+        finally:
+            with self._reading:
+                self._reads -= 1
+                self._reading.notify_all()
 
     def close(self):
         """Stop serving; an in-flight call finishes first.  The directory and key are removed."""
-        self._closed = True
+        with self._reading:
+            self._closed = True
         try:
             self._server.shutdown()
         finally:
             self._server.server_close()
+            with self._reading:
+                while self._reads:
+                    self._reading.wait()
             with self._lock:
                 shutil.rmtree(self.directory, ignore_errors=True)
 
