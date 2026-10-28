@@ -1066,8 +1066,9 @@ def incomplete_bridge_calls(rows):
     """``[(tool, host_action)]`` of bridge calls that went ``running`` with no result after (#729).
 
     ``rows`` are ``(tool, status, detail)`` of one attempt, in order.  A call
-    is paired with the next ``succeeded``/``failed`` bridge event of the same
-    tool; what is left over never completed.
+    is paired with its ``succeeded``/``failed`` bridge event by call id (#386:
+    reads may overlap), else with the next one of the same tool; what is left
+    over never completed.
     """
     open_calls = []
     for tool, status, detail in rows:
@@ -1077,13 +1078,15 @@ def incomplete_bridge_calls(rows):
             data = {}
         if not isinstance(data, dict) or data.get('scope') != 'subscription-mcp-bridge':
             continue
+        call_id = data.get('call_id') if isinstance(data.get('call_id'), str) else None
         if status == 'running':
-            open_calls.append((tool, data.get('host_action') or tool))
+            open_calls.append((tool, data.get('host_action') or tool, call_id))
         elif status in ('succeeded', 'failed'):
-            match = next((index for index, (name, _action) in enumerate(open_calls) if name == tool), None)
+            match = next((index for index, (name, _action, ref) in enumerate(open_calls)
+                          if name == tool and (call_id is None or ref is None or ref == call_id)), None)
             if match is not None:
                 open_calls.pop(match)
-    return open_calls
+    return [(name, action) for name, action, _ref in open_calls]
 
 
 _RETRY_STATUS = re.compile(r'\blast status:? (\d{3})\b', re.I)
