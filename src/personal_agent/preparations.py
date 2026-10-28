@@ -89,6 +89,13 @@ ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_SETTINGS = 'owner-
 ACCEPTED_OWNER_ANSWER = 'owner-answer'
 
 GOAL_MAX_CHARS = 500
+#: #393: a ``prepare`` goal is the run's brief, which the owner no longer reads
+#: inline when an offer is given, so it is not squeezed into a reminder's length.
+BRIEF_MAX_CHARS = 1000
+#: #393: what the owner reads and accepts: a short name and a few plain lines.
+TITLE_MAX_CHARS = 60
+OFFER_MAX_CHARS = 400
+OFFER_MAX_LINES = 6
 MAX_ACTIVE = 50
 #: A due time a little in the past (the model computing "now") is still now.
 PAST_GRACE_SECONDS = 120
@@ -126,7 +133,9 @@ COLUMN_MIGRATIONS = (('prepared_text', 'TEXT'),
                      ('run_count', 'INTEGER NOT NULL DEFAULT 0'),
                      # #719: silent-unless-needed delivery and its last decision.
                      ('delivery_mode', 'TEXT'), ('last_decision', 'TEXT'), ('last_decision_reason', 'TEXT'),
-                     ('last_notified_digest', 'TEXT'), ('last_notified_text', 'TEXT'), ('last_notified_at', 'REAL'))
+                     ('last_notified_digest', 'TEXT'), ('last_notified_text', 'TEXT'), ('last_notified_at', 'REAL'),
+                     # #393: what the owner reads and accepts, apart from the run's brief (goal_text).
+                     ('title_text', 'TEXT'), ('offer_text', 'TEXT'))
 
 
 def migrate(db):
@@ -138,7 +147,10 @@ def migrate(db):
 
 REFUSALS = {
     'invalid_kind': 'kind는 reminder(정해진 때에 이 문장을 알려 주기) 또는 prepare(정해진 때에 이 목표를 미리 처리해 두기)입니다.',
-    'invalid_goal': f'goal은 1~{GOAL_MAX_CHARS}자의 한 가지 목표로 적어 주세요.',
+    'invalid_goal': (f'goal은 한 가지 목표로 적어 주세요(reminder는 {GOAL_MAX_CHARS}자, '
+                     f'prepare는 {BRIEF_MAX_CHARS}자 이내).'),
+    'invalid_offer': (f'title은 {TITLE_MAX_CHARS}자 이내의 짧은 이름, offer는 {OFFER_MAX_LINES}줄·'
+                      f'{OFFER_MAX_CHARS}자 이내로 적어 주세요.'),
     'invalid_due': 'due는 RFC3339 시각입니다(예: 2026-09-28T09:00:00+09:00). 오프셋이 없으면 timezone이 필요합니다.',
     'timezone_unknown': '시간대를 알 수 없습니다. due에 오프셋을 붙이거나 timezone(예: Asia/Seoul)을 주세요.',
     'due_in_past': '이 시각은 이미 지났습니다.',
@@ -251,11 +263,28 @@ def normalize_recurrence(value):
     return value
 
 
-def normalize_goal(goal):
+def normalize_goal(goal, limit=GOAL_MAX_CHARS):
     goal = ' '.join(str(goal or '').split())
-    if not goal or len(goal) > GOAL_MAX_CHARS:
+    if not goal or len(goal) > limit:
         raise PreparationRefusal('invalid_goal')
     return goal
+
+
+def normalize_offer(title, offer):
+    """``(title, offer)`` the owner reads and accepts (#393), each None when not given.
+
+    The title is one short line; the offer keeps its line breaks (one point a
+    line) with each line's whitespace collapsed.  Content is the AI's; only
+    its shape is bounded here.
+    """
+    title = ' '.join(str(title or '').split()) or None
+    lines = [' '.join(line.split()) for line in str(offer or '').splitlines()]
+    offer = '\n'.join(line for line in lines if line) or None
+    if title and len(title) > TITLE_MAX_CHARS:
+        raise PreparationRefusal('invalid_offer')
+    if offer and (len(offer) > OFFER_MAX_CHARS or offer.count('\n') >= OFFER_MAX_LINES):
+        raise PreparationRefusal('invalid_offer')
+    return title, offer
 
 
 def _whole_number(value):
@@ -421,19 +450,116 @@ def reminder_text(goal, due_at, timezone_name, now):
     return text
 
 
-def proposal_summary(row):
-    """One owner-readable line for a proposal (Telegram, judgment context)."""
-    kind = '알림' if row['kind'] == KIND_REMINDER else '미리 준비'
-    repeat = {'daily': ' · 매일', 'weekdays': ' · 평일마다', 'weekly': ' · 매주'}.get(row.get('recurrence') or '', '')
-    if row.get('recurrence') == RECURRENCE_WINDOW:
-        repeat = (f" · {int(row['every_seconds']) // 60}분마다 {local_text(row['window_end'], row['timezone'])}까지"
-                  f" · 최대 {int(row['max_runs'])}회")
+WEEKDAYS = '월화수목금토일'
+
+
+def _local_parts(ts, timezone_name):
+    local = datetime.fromtimestamp(ts, zone(timezone_name) or dt_timezone.utc)
+    return f'{local.month}월 {local.day}일({WEEKDAYS[local.weekday()]})', local.strftime('%H:%M'), local.date()
+
+
+def _minutes_text(minutes):
+    hours, rest = divmod(int(minutes), 60)
+    if not hours:
+        return f'{rest}분'
+    return f'{hours}시간' + (f' {rest}분' if rest else '')
+
+
+def last_run_at(row):
+    """#393: the time of a watch's last run: its bound, never the deadline it may not reach."""
+    return row['due_at'] + int(row['every_seconds']) * (max(1, int(row['max_runs'])) - 1)
+
+
+def schedule_text(row, home_zone=None):
+    """#393: one owner-readable line - when it runs and how the owner hears of it.
+
+    A date in the owner's words (``10월 28일(수) 18:35``), the end time alone
+    when it is the same day, the zone only when it is not ``home_zone``, and
+    a watch's real last run (the window ``[due, until)`` excludes its end).
+    """
+    day, at, date = _local_parts(row['due_at'], row['timezone'])
+    zone_note = '' if home_zone and row['timezone'] == home_zone else f" ({row['timezone']})"
+    recurrence = row.get('recurrence') or ''
+    if recurrence == RECURRENCE_WINDOW:
+        runs = max(1, int(row['max_runs']))
+        if runs == 1:
+            when = f'{day} {at}{zone_note} 한 번'
+        else:
+            last_day, last_at, last_date = _local_parts(last_run_at(row), row['timezone'])
+            end = last_at if last_date == date else f'{last_day} {last_at}'
+            when = f"{day} {at}~{end}{zone_note}, {_minutes_text(int(row['every_seconds']) // 60)}마다 {runs}번"
+    else:
+        when = f'{day} {at}{zone_note}' + {'daily': '부터 매일', 'weekdays': '부터 평일마다', 'weekly': '부터 매주'}.get(recurrence, '')
+    if row['kind'] == KIND_REMINDER:
+        return when
     if row.get('delivery_mode') == DELIVERY_WHEN_NEEDED:
-        repeat += ' · 알려야 할 때만 Telegram으로 알림'
-    return f"[{kind}] {local_text(row['due_at'], row['timezone'])}{repeat} — {row['goal_text']}"
+        tell = '알릴 일이 있을 때만 알려요'
+    elif row.get('channel') == CHANNEL_WEB:
+        tell = '결과는 Still에 보관해요'
+    else:
+        tell = '결과를 보내 드려요'
+    return f'{when} · {tell}'
+
+
+def offered(row):
+    """#393: whether the AI wrote an owner-facing offer for this row."""
+    return bool(row.get('title_text') or row.get('offer_text'))
+
+
+def owner_title(row, limit=120):
+    """#393: the short name the owner knows this preparation by: its title, else its goal cut short."""
+    title = row.get('title_text')
+    if title:
+        return title
+    goal = str(row.get('goal_text') or '')
+    return goal[:limit] + ('…' if len(goal) > limit else '')
+
+
+def proposal_summary(row, home_zone=None, brief=True):
+    """What the owner reads for one proposal (Telegram, web, judgment context).
+
+    #393: with an offer, its title, the schedule line and the offer come
+    first; the run's brief follows under its own label (``brief`` False
+    leaves it out).  Without one, one line as before.
+    """
+    if not offered(row):
+        kind = '알림' if row['kind'] == KIND_REMINDER else '미리 준비'
+        return f"[{kind}] {schedule_text(row, home_zone)} — {row['goal_text']}"
+    lines = [row.get('title_text') or owner_title(row), schedule_text(row, home_zone)]
+    if row.get('offer_text'):
+        lines.append(row['offer_text'])
+    if brief:
+        lines.append(f"{BRIEF_LABEL}: {row['goal_text']}")
+    return '\n'.join(lines)
+
+
+def proposal_html(shown, remaining, home_zone=None):
+    """#393: the Telegram (HTML) proposal: the offer first, each run's brief folded."""
+    from html import escape
+    single = len(shown) == 1 and offered(shown[0])
+    parts = [] if single else [escape(PROPOSAL_HEADER)]
+    for row in shown:
+        if not offered(row):
+            parts.append(escape(proposal_summary(row, home_zone)))
+            continue
+        block = [f'<b>{escape(row.get("title_text") or owner_title(row))}</b>', escape(schedule_text(row, home_zone))]
+        if row.get('offer_text'):
+            block.append(escape(row['offer_text']))
+        block.append(f'<blockquote expandable>{escape(BRIEF_LABEL)}\n{escape(row["goal_text"])}</blockquote>')
+        parts.append('\n'.join(block))
+    if remaining:
+        parts.append(escape(MORE_TEXT.format(remaining=remaining)))
+    if single:
+        parts.append(escape(PROPOSAL_QUESTION))
+    return '\n\n'.join(parts)
 
 
 PROPOSAL_HEADER = msg('preparations.shall_i_schedule_the_following_preparation')
+#: #393: a single offered proposal ends with one question instead of the generic header.
+PROPOSAL_QUESTION = '이대로 예약할까요?'
+#: #393: the label of the run's brief under an offer.
+BRIEF_LABEL = msg('preparations.brief_label')
+MORE_TEXT = '그 밖의 제안 {remaining}개는 이 메시지로 수락되지 않습니다. "예약 보여줘"처럼 대화로 확인하고 수락할 수 있어요.'
 #: One Telegram proposal message stays well under Telegram's 4096 characters.
 PROPOSAL_TEXT_LIMIT = 3500
 
@@ -448,17 +574,22 @@ def proposal_page(rows):
     """
     shown, size = [], len(PROPOSAL_HEADER) + 120  # room for the "more" line
     for row in rows:
-        size += 1 + len(proposal_summary(row))
+        size += 2 + len(proposal_summary(row))
         if shown and size > PROPOSAL_TEXT_LIMIT:
             break
         shown.append(row)
     return shown, len(rows) - len(shown)
 
 
-def proposal_text(shown, remaining):
-    text = PROPOSAL_HEADER + '\n' + '\n'.join(proposal_summary(row) for row in shown)
+def proposal_text(shown, remaining, home_zone=None):
+    """The plain proposal; #393: a single offered proposal needs no generic header."""
+    single = len(shown) == 1 and offered(shown[0])
+    parts = ([] if single else [PROPOSAL_HEADER]) + [proposal_summary(row, home_zone) for row in shown]
+    text = ('\n\n' if any(offered(row) for row in shown) else '\n').join(parts)
     if remaining:
-        text += f'\n그 밖의 제안 {remaining}개는 이 메시지로 수락되지 않습니다. "예약 보여줘"처럼 대화로 확인하고 수락할 수 있어요.'
+        text += '\n' + MORE_TEXT.format(remaining=remaining)
+    if single:
+        text += '\n\n' + PROPOSAL_QUESTION
     return text
 
 
@@ -468,6 +599,9 @@ def digest(rows):
                                   # #719: the watch's window, bound and delivery are part of what was offered.
                                   row.get('every_seconds'), row.get('window_end'), row.get('max_runs'),
                                   row.get('delivery_mode'))
+                                 # #393: the offer the owner read is part of what is accepted; a row
+                                 # without one keeps the digest an earlier message was bound to.
+                                 + ((row.get('title_text'), row.get('offer_text')) if offered(row) else ())
                                  for row in rows), ensure_ascii=False)
     return hashlib.sha256(material.encode()).hexdigest()[:32]
 
@@ -486,7 +620,7 @@ class Preparations:
             return dict(row) if row else None
 
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
-               accepted_by=None, owner=OWNER, window=None, delivery_mode=None):
+               accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         ``window`` is ``(every_seconds, window_end, max_runs)`` from
@@ -522,7 +656,8 @@ class Preparations:
                    'created_from': created_from, 'accepted_by': accepted_by, 'created_at': now, 'updated_at': now,
                    'every_seconds': every_seconds, 'window_end': window_end, 'max_runs': max_runs, 'run_count': 0,
                    'delivery_mode': delivery_mode, 'last_decision': None, 'last_decision_reason': None,
-                   'last_notified_digest': None, 'last_notified_text': None, 'last_notified_at': None}
+                   'last_notified_digest': None, 'last_notified_text': None, 'last_notified_at': None,
+                   'title_text': title, 'offer_text': offer}
             db.execute(f"INSERT INTO preparations({','.join(row)}) VALUES ({','.join('?' * len(row))})", tuple(row.values()))
             return row
 

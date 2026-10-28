@@ -328,7 +328,10 @@ class TelegramSurface(ConversationSurface):
                 else:
                     # #1472: a request prompt reads its description first; the exact request is folded.
                     folded=(service.browser_step_prompt_html(notification.get('job_id'))
-                            if notification['kind']=='browser_approval_needed' else None)
+                            if notification['kind']=='browser_approval_needed' else
+                            # #393: a proposal reads its offer first; each run's brief is folded.
+                            service.preparation_proposal_html(bound)
+                            if notification['kind']=='preparation_proposed' else None)
                     if folded and len(folded)<=3800:
                         try:
                             result=service.telegram.send_message(notification['chat_id'],folded,reply_markup,parse_mode='HTML')

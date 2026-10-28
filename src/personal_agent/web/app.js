@@ -1234,7 +1234,7 @@ function renderPreparations(){const list=$('preparations-list');if(!list||!prepa
    if(pending){actions.push(element('span',t('이 준비를 지웁니다. 지난 실행 기록은 남습니다.'),'confirm-text'));const keep=settingsAction(t('취소'),()=>{preparationDeletePending=null;renderPreparations();$('preparations-list').querySelector('[data-focus-key="preparation-delete:'+row.id+'"]')?.focus();});keep.dataset.focusKey='preparation-keep:'+row.id;actions.push(keep);}
    const remove=settingsAction(pending?t('삭제 확인'):t('삭제'),event=>{if(!pending){preparationDeletePending=row.id;setFeedback('preparations-feedback','');renderPreparations();$('preparations-list').querySelector('[data-focus-key="preparation-delete:'+row.id+'"]')?.focus();return;}
     preparationDeletePending=null;return busy(event.currentTarget,()=>preparationAction('delete',row.id,t('지웠습니다.')));},'destructive'+(pending?' confirm':''));remove.dataset.focusKey='preparation-delete:'+row.id;actions.push(remove);}
-  list.append(settingsRow(row.goal,preparationDescription(row),preparationStateLabel(row.state),preparationStateKind(row.state),actions));}
+  list.append(settingsRow(row.title||row.goal,(row.offer?row.offer.split('\n').join(' · ')+' · ':'')+preparationDescription(row),preparationStateLabel(row.state),preparationStateKind(row.state),actions));}
  if(!preparationRows.length)list.append(element('p',t('아직 등록한 알림이나 준비가 없습니다. 대화에서 시간 알림이나 미리 준비할 일을 요청하세요.'),'settings-empty'));
  restoreFocus(list,focusKey);}
 // end of #659 preparations
