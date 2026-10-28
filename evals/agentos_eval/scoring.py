@@ -3,9 +3,10 @@
 A *run record* is what the solver collected from one sandbox::
 
     {'worker': 'codex', 'error': None,
-     'turns': [{'say', 'note', 'task_id', 'status', 'answer', 'answer_withheld',
+     'turns': [{'say', 'note', 'sent_at', 'task_id', 'status', 'answer', 'answer_withheld',
                 'timed_out', 'failure_class', 'error', 'events', 'elapsed'}],
-     'diff': {'memories', 'candidates', 'preparations', 'settings_changed', 'owner_model_changed'}}
+     'diff': {'memories', 'candidates', 'preparations', 'current_state', 'settings_changed',
+              'owner_model_changed'}}
 
 Every failure is a ``{'kind', 'name', 'reason'}`` row.  ``kind`` and ``name``
 form the root-cause cluster key the report groups by (a rubric dimension, a
@@ -21,6 +22,10 @@ from .scenarios import RUBRIC
 #: Terminal statuses that are not a failed outcome.
 OK_STATUSES = frozenset({'succeeded', 'partial'})
 ANSWER_CHARS = 6000
+#: Work lifecycle rows in a turn's events: not tools, so the judge's tool list leaves them out.
+WORK_EVENTS = frozenset({'orchestrator', 'subscription_engine'})
+#: The current-context predicate of the running day summary (``personal_agent.current_context.SITUATION``).
+SITUATION = 'situation'
 JUDGE_MAX_TOKENS = 1500
 
 
@@ -77,6 +82,15 @@ def deterministic_checks(scenario, run):
         for group in missing:
             failures.append({'kind': 'check', 'name': 'memory', 'reason': 'no new memory/candidate mentions '
                              + ' | '.join(group)})
+    groups = scenario['expect'].get('current_state_any') or []
+    if groups:
+        # #392: a fact about today (a meal eaten, where the owner is) is a current-context hypothesis, not Memory.
+        stored = ' \n'.join(_texts(diff.get('current_state', []), 'value')).casefold()
+        missing = [group for group in groups if not any(item.casefold() in stored for item in group)]
+        checks['current_state'] = not missing
+        for group in missing:
+            failures.append({'kind': 'check', 'name': 'current_state', 'reason': 'no new current-state note mentions '
+                             + ' | '.join(group)})
     if scenario['expect'].get('preparation'):
         checks['preparation'] = bool(diff.get('preparations'))
         if not checks['preparation']:
@@ -97,9 +111,11 @@ def deterministic_checks(scenario, run):
 
 # -- judge --------------------------------------------------------------------
 JUDGE_SYSTEM = (
-    'You evaluate a personal AI secretary called Still. You see an owner scenario, the owner turns, '
-    'the answers Still delivered and the owner-state changes it recorded. Judge only what is shown; '
-    'do not assume a tool ran, a place exists or a price is right unless the answer shows its source. '
+    'You evaluate a personal AI secretary called Still. You see an owner scenario, the owner turns with the '
+    'local time each was sent, the tools each turn actually ran (names and statuses only), the answers Still '
+    'delivered and the owner-state changes it recorded. Judge only what is shown; do not assume a tool ran, '
+    'a place exists or a price is right unless the tool list or the answer shows it. Still saw the real clock '
+    'at the time sent: judge timing against that time, even when a situation note describes another time. '
     'Score each listed dimension 2 (meets), 1 (partly) or 0 (fails), or null when the conversation gives '
     'no occasion to show it. Reply with JSON only.')
 
@@ -113,7 +129,11 @@ def judge_prompt(scenario, run):
     for index, turn in enumerate(run.get('turns') or [], 1):
         if turn.get('note'):
             lines.append(f'[situation before turn {index}: {turn["note"]}]')
-        lines.append(f'OWNER {index}: {turn.get("say", "")}')
+        sent = f' (sent {turn["sent_at"]})' if turn.get('sent_at') else ''
+        lines.append(f'OWNER {index}{sent}: {turn.get("say", "")}')
+        tools = [f'{event["tool"]} {event.get("status", "")}'.strip() for event in turn.get('events') or ()
+                 if event.get('tool') and event['tool'] not in WORK_EVENTS]
+        lines.append(f'[tools run in turn {index}: {", ".join(tools) or "none"}]')
         answer = (turn.get('answer') or '').strip()
         if turn.get('answer_withheld'):
             answer = '(answer withheld by Still)'
@@ -121,15 +141,21 @@ def judge_prompt(scenario, run):
             answer = answer[:ANSWER_CHARS] + ' [...]'
         lines.append(f'AGENTOS {index} (status {turn.get("status")}): {answer or "(no answer delivered)"}')
     diff = run.get('diff') or {}
+    # The running situation summary is rewritten every turn from the whole day, including the seed's own
+    # history, so its text would hand the judge unrelated owner details; the judge learns only that it changed.
+    claims = [row for row in diff.get('current_state', []) if row.get('predicate') != SITUATION]
     lines += ['', 'Owner-state changes recorded during the conversation:']
     for label, rows, keys in (('new memory', diff.get('memories', []), ('content',)),
                               ('new memory candidate (awaiting owner confirmation)', diff.get('candidates', []),
                                ('content', 'value')),
                               ('new reminder/preparation', diff.get('preparations', []),
-                               ('kind', 'goal', 'due_local', 'every_minutes', 'until_local', 'delivery', 'state'))):
+                               ('kind', 'goal', 'due_local', 'every_minutes', 'until_local', 'delivery', 'state')),
+                              ('new current-state note (about today, not Memory)', claims, ('predicate', 'value', 'until'))):
         for row in rows[:10]:
             lines.append(f'- {label}: ' + ' / '.join(str(row.get(key)) for key in keys if row.get(key)))
-    if not any(diff.get(key) for key in ('memories', 'candidates', 'preparations')):
+    if len(claims) < len(diff.get('current_state', [])):
+        lines.append("- today's running situation summary was updated (its text is not shown)")
+    if not any(diff.get(key) for key in ('memories', 'candidates', 'preparations', 'current_state')):
         lines.append('- none')
     if diff.get('settings_changed'):
         lines.append('- settings changed')
@@ -170,7 +196,7 @@ def rubric_failures(judgment):
     return rows
 
 
-CHECK_NAMES = ('harness', 'delivered', 'not_failed', 'memory', 'preparation', 'no_memory_of_request')
+CHECK_NAMES = ('harness', 'delivered', 'not_failed', 'memory', 'current_state', 'preparation', 'no_memory_of_request')
 
 
 def combine(scenario, run, checks, failures, judgment=None, judge_status='skipped'):

@@ -34,7 +34,7 @@ from agentos_eval.sandbox import SandboxPool
 from agentos_eval.scoring import (JUDGE_MAX_TOKENS, JUDGE_SYSTEM, combine, deterministic_checks, judge_prompt,
                                   parse_judgment)
 
-DEFAULT_JUDGE = 'openai/gpt-5.4-mini'
+DEFAULT_JUDGE = 'openai/gpt-6.1-terra'
 
 def workers_for(worker):
     if worker in ('both', 'split'):

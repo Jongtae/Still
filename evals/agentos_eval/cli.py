@@ -114,7 +114,7 @@ def _write(log, run):
 def cmd_sweep(args):
     from inspect_ai import eval as inspect_eval  # the eval extra
     from .task import agentos_secretary
-    judge = args.judge or os.environ.get('AGENTOS_EVAL_JUDGE_MODEL') or 'openai/gpt-5.4-mini'
+    judge = args.judge or os.environ.get('AGENTOS_EVAL_JUDGE_MODEL') or 'openai/gpt-6.1-terra'
     key_source = ensure_judge_key(judge)
     if args.cap_usd is not None:
         os.environ['AGENTOS_EVAL_JUDGE_CAP_USD'] = str(args.cap_usd)
@@ -170,7 +170,7 @@ def main(argv=None):
     sweep.add_argument('--scenarios', default='', help='comma-separated scenario ids')
     sweep.add_argument('--split', choices=scenario_module.SPLITS)
     sweep.add_argument('--no-local', action='store_true', help='bundled synthetic scenarios only')
-    sweep.add_argument('--judge', default='', help="Inspect model name, e.g. openai/gpt-5.4-mini, or 'none'")
+    sweep.add_argument('--judge', default='', help="Inspect model name, e.g. openai/gpt-6.1-terra, or 'none'")
     sweep.add_argument('--cap-usd', type=float, default=None, help='daily judge spend cap (default 10)')
     sweep.add_argument('--turn-timeout', type=int, default=900)
     sweep.add_argument('--limit', type=int, default=None)

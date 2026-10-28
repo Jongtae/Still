@@ -2,8 +2,11 @@
 
 Standard library only; ``task.py`` calls it from Inspect in a worker thread.
 """
+import json
 import time
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .client import AgentOSClient, ClientError, compact_events, state_diff
 from .sandbox import JUDGMENT_KEYS, SandboxError
@@ -48,14 +51,49 @@ class StopOnUsageLimit:
         return {'tripped_by': self.tripped}
 
 
-def run_turns(client, scenario, turn_timeout=900, poll_interval=2.0, clock=time.monotonic):
+def sandbox_zone(snapshot, box):
+    """The zone of the clock Still shows its worker in this sandbox, or ``None`` for the host's zone (#392).
+
+    Same order as ``personal_agent.current_context``: the current-context
+    setting, then the owner's calendar zone, then the host.  An inherited
+    ``TZ`` would come between the last two, but the sandbox drops it.
+    """
+    names = [((snapshot or {}).get('current_context') or {}).get('timezone')]
+    try:
+        names.append(box.read_config(('calendar_timezone',)).get('calendar_timezone'))
+    except Exception:  # noqa: BLE001 - an unreadable row leaves the host's zone, as in Still
+        pass
+    for name in names:
+        if isinstance(name, str) and name.startswith('"'):
+            try:
+                name = json.loads(name)
+            except ValueError:
+                continue
+        if not isinstance(name, str) or not name or name.startswith((':', '/')):
+            continue
+        try:
+            return ZoneInfo(name)
+        except (ValueError, ZoneInfoNotFoundError):
+            continue
+    return None
+
+
+def sent_time(timestamp, zone=None):
+    """``2026-10-28 22:25 Wed Asia/Seoul (UTC+0900)``: the wall clock Still saw, with its zone and offset."""
+    moment = datetime.fromtimestamp(timestamp, zone) if zone else datetime.fromtimestamp(timestamp).astimezone()
+    return moment.strftime('%Y-%m-%d %H:%M %a ') + f'{getattr(zone, "key", None) or moment.tzname()} (UTC{moment:%z})'
+
+
+def run_turns(client, scenario, turn_timeout=900, poll_interval=2.0, clock=time.monotonic, wall=time.time, zone=None):
     turns = []
     for turn in scenario['turns']:
         started = clock()
+        # #392: the sandbox runs on the real clock; the judge reads timing against this, not the scenario note.
+        sent_at = sent_time(wall(), zone)
         task_id = client.send(owner_message(turn), f'eval-{scenario["id"]}-{uuid.uuid4().hex[:12]}')
         detail = client.wait(task_id, timeout=turn_timeout, interval=poll_interval)
         answer = client.answer(task_id)
-        turns.append({'say': turn['say'], 'note': turn.get('note', ''), 'task_id': task_id,
+        turns.append({'say': turn['say'], 'note': turn.get('note', ''), 'sent_at': sent_at, 'task_id': task_id,
                       'status': detail.get('status'), 'answer': answer.get('response') or '',
                       'answer_withheld': answer.get('answer_withheld', False),
                       'timed_out': bool(detail.get('timed_out')), 'failure_class': detail.get('failure_class'),
@@ -121,7 +159,7 @@ def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_time
             client.select_worker(worker)
             record['judgment'] = prepare_judgment(client, pool, box, worker, judgment_timeout)
             before = client.snapshot()
-            record['turns'] = run_turns(client, scenario, turn_timeout, poll_interval)
+            record['turns'] = run_turns(client, scenario, turn_timeout, poll_interval, zone=sandbox_zone(before, box))
             # #832: upkeep proposes Memory asynchronously after a Work (#805); let it settle first.
             record['upkeep'] = client.wait_upkeep_idle(upkeep_timeout, poll_interval)
             record['diff'] = state_diff(before, client.snapshot())

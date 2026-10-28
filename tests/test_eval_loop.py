@@ -92,6 +92,7 @@ class FakeServer:
         self.calls = []
         self.memories = []
         # The decision route as ``settings.decision_route`` reports it.
+        self.hypotheses = []
         self.judgment = judgment or {'mode': 'follow_main', 'main': 'claude-code', 'qualification': None,
                                      'active': {'available': True, 'engine': 'claude-code', 'transport': 'subscription_cli'}}
 
@@ -111,7 +112,8 @@ class FakeServer:
             return 200, {}, json.dumps({'selected': {'status': status, 'events': [{'tool': 'web_search', 'status': 'succeeded', 'trace': {'x': 1}}]}}).encode()
         if path == '/api/state':
             return 200, {}, json.dumps({'jobs': [{'id': 'task-1', 'status': 'succeeded', 'response': '두 시간'}],
-                                        'settings': {'decision_route': self.judgment}}).encode()
+                                        'settings': {'decision_route': self.judgment,
+                                                     'current_context': {'hypotheses': self.hypotheses}}}).encode()
         if path == '/api/main-ai/activate':
             main = json.loads(body)['route']
             self.judgment = {'mode': 'follow_main', 'main': main, 'qualification': {'state': 'passed'},
@@ -162,6 +164,12 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(caught.exception.status, 403)
         self.assertEqual(client.snapshot()['owner_model'], {'unavailable': 403})
 
+    def test_snapshot_reads_current_context_hypotheses_from_state(self):
+        server = FakeServer()
+        server.hypotheses = [{'ref': 'state:h1', 'predicate': 'availability_hint', 'value': '점심 먹음'}]
+        client = AgentOSClient('http://127.0.0.1:18900', transport=server)
+        self.assertEqual(client.snapshot()['current_context'], {'hypotheses': server.hypotheses})
+
     def test_state_diff_reports_only_new_rows(self):
         before = {'personal_space': {'memories': [{'id': 'm1', 'content': 'old'}], 'memory_candidates': []},
                   'candidates': {'candidates': []}, 'preparations': {'preparations': []}, 'settings': {'a': 1}}
@@ -173,7 +181,12 @@ class ClientTest(unittest.TestCase):
         self.assertEqual([row['id'] for row in diff['memories']], ['m2'])
         self.assertEqual([row['id'] for row in diff['candidates']], ['c1'])
         self.assertEqual([row['id'] for row in diff['preparations']], ['p1'])
+        self.assertEqual(diff['current_state'], [])
         self.assertTrue(diff['settings_changed'])
+        before['current_context'] = {'hypotheses': [{'ref': 'state:h1', 'value': '판교 출근'}]}
+        after['current_context'] = {'hypotheses': [{'ref': 'state:h1', 'value': '판교 출근'},
+                                                   {'ref': 'state:h2', 'value': '반포 분짜오에서 점심'}]}
+        self.assertEqual([row['ref'] for row in state_diff(before, after)['current_state']], ['state:h2'])
 
 
 class UpkeepWaitTest(unittest.TestCase):
@@ -269,10 +282,31 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(pool.used, 1)
         self.assertEqual([row['answer'] for row in record['turns']], ['두 시간', '두 시간'])
         self.assertEqual(record['turns'][0]['events'], [{'tool': 'web_search', 'status': 'succeeded'}])
+        self.assertRegex(record['turns'][0]['sent_at'], r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \w{3} \S+ \(UTC[+-]\d{4}\)$')
         self.assertIn(('POST', '/api/subscription-engines/connect',
                        {'engine': 'claude-code', 'officially_authenticated': True}),
                       [call[:3] for call in server.calls])
         self.assertEqual(sum(1 for call in server.calls if call[1] == '/api/chat'), 2)
+
+    def test_send_time_uses_the_zone_still_uses_in_the_sandbox(self):
+        """#392 review: the current-context zone, then the owner's calendar zone, then the host; with its offset."""
+        class Box:
+            def __init__(self, row):
+                self.row = row
+
+            def read_config(self, keys):
+                return {'calendar_timezone': self.row} if self.row else {}
+
+        snapshot = {'current_context': {'timezone': 'America/New_York'}}
+        self.assertEqual(runner.sandbox_zone(snapshot, Box('"Asia/Seoul"')).key, 'America/New_York')
+        self.assertEqual(runner.sandbox_zone({'current_context': {'timezone': None}}, Box('"Asia/Seoul"')).key, 'Asia/Seoul')
+        self.assertEqual(runner.sandbox_zone({}, Box('Europe/Paris')).key, 'Europe/Paris')
+        self.assertIsNone(runner.sandbox_zone({'current_context': {'unavailable': 403}}, Box('"Not/AZone"')))
+        moment = 1793194050.0                                   # 2026-10-28 13:27:30 UTC
+        self.assertEqual(runner.sent_time(moment, runner.sandbox_zone(snapshot, Box(None))),
+                         '2026-10-28 09:27 Wed America/New_York (UTC-0400)')
+        self.assertEqual(runner.sent_time(moment, runner.sandbox_zone({}, Box('"Asia/Seoul"'))),
+                         '2026-10-28 22:27 Wed Asia/Seoul (UTC+0900)')
 
     def test_judgment_ai_is_requalified_for_the_worker_once_and_cached(self):
         server = FakeServer(statuses=['succeeded'], judgment={
@@ -341,6 +375,21 @@ class ScoringTest(unittest.TestCase):
         checks, failures = scoring.deterministic_checks(item, run)
         self.assertFalse(checks['memory'])
 
+    def test_current_state_expectation_reads_new_hypotheses_not_memory(self):
+        item = scenario(expect={'current_state_any': [['분짜오', '반포']]})
+        self.assertEqual(item['expect']['memory_any'], [])
+        run = {'turns': [turn()], 'diff': {'memories': [{'content': '반포 분짜오'}], 'current_state': []}}
+        checks, failures = scoring.deterministic_checks(item, run)
+        self.assertFalse(checks['current_state'])
+        self.assertEqual([row['name'] for row in failures], ['current_state'])
+        run['diff']['current_state'] = [{'ref': 'state:h2', 'predicate': 'availability_hint', 'value': '점심 반포6 분짜오'}]
+        checks, failures = scoring.deterministic_checks(item, run)
+        self.assertTrue(checks['current_state'])
+        self.assertEqual(failures, [])
+        self.assertNotIn('current_state', scoring.deterministic_checks(scenario(), run)[0])
+        with self.assertRaises(scenarios.ScenarioError):
+            scenario(expect={'current_state_any': [[]]})
+
     def test_no_memory_of_request_rejects_the_owner_sentence_as_a_value(self):
         """#846: a standing wish is a watch; the request sentence must not become a memory."""
         item = scenario(turns=[{'say': '가격이 내려가면 알려줘.'}], expect={'no_memory_of_request': True})
@@ -378,6 +427,35 @@ class ScoringTest(unittest.TestCase):
         self.assertIn('- context_carry:', prompt)
         self.assertNotIn('- owner_model:', prompt)
         self.assertIn('[...]', prompt)
+
+    def test_judge_prompt_shows_send_time_tools_and_current_state(self):
+        events = [{'tool': 'orchestrator', 'status': 'planned'}, {'tool': 'save_memory', 'status': 'succeeded'},
+                  {'tool': 'subscription_engine', 'status': 'succeeded'}]
+        run = {'turns': [turn(say='첫 번째', sent_at='2026-10-28 22:25 Wed', events=events), turn(say='두 번째')],
+               'diff': {'current_state': [{'ref': 'state:h2', 'predicate': 'availability_hint',
+                                           'value': '점심 반포6 분짜오', 'until': '2026-10-28T23:59'}]}}
+        prompt = scoring.judge_prompt(scenario(), run)
+        self.assertIn('OWNER 1 (sent 2026-10-28 22:25 Wed): 첫 번째', prompt)
+        self.assertIn('[tools run in turn 1: save_memory succeeded]', prompt)
+        self.assertIn('[tools run in turn 2: none]', prompt)
+        self.assertIn('OWNER 2: 두 번째', prompt)
+        self.assertIn('- new current-state note (about today, not Memory): availability_hint / 점심 반포6 분짜오', prompt)
+        self.assertNotIn('- none', prompt)
+        self.assertNotIn('running situation summary', prompt)
+        self.assertIn('judge timing against that time', scoring.JUDGE_SYSTEM)
+
+    def test_judge_prompt_never_carries_the_running_situation_summary_text(self):
+        """#392: the day summary holds the seed's own history, so only the fact that it changed is shown."""
+        summary = {'ref': 'state:s1', 'predicate': 'situation', 'kind': 'conversation_summary',
+                   'value': '오전에 받은편지함 정리. 점심은 반포6에서 분짜오를 먹었다.'}
+        item = scenario(expect={'current_state_any': [['분짜오']]})
+        run = {'turns': [turn()], 'diff': {'current_state': [summary]}}
+        self.assertTrue(scoring.deterministic_checks(item, run)[0]['current_state'])
+        prompt = scoring.judge_prompt(item, run)
+        self.assertNotIn('받은편지함', prompt)
+        self.assertNotIn('분짜오', prompt)
+        self.assertIn("- today's running situation summary was updated (its text is not shown)", prompt)
+        self.assertNotIn('- none', prompt)
 
     def test_parse_judgment_normalizes_scores_and_rejects_bad_replies(self):
         text = 'Here: {"dimensions": {"context_carry": {"score": 2, "reason": "ok"}, "follow_through": {"score": null}}, "summary": "s"}'
