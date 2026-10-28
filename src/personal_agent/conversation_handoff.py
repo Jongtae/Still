@@ -750,8 +750,9 @@ WATCH_NOTIFY_PROPOSITION = ('The owner accepted a standing watch with the goal s
                             'or to act on now, and it is new compared with the last notification the owner received '
                             '(a changed situation or a different action). It is false when the result says nothing '
                             'needs the owner\'s attention yet, when it only repeats what the last notification already '
-                            'said, when the run could not observe what the goal needs, or when it is unclear. This '
-                            'judgment sends nothing.')
+                            'said, when the run could not observe what the goal needs (unless the goal asks to be '
+                            'told when a check cannot be made and the last notification did not already say so), or '
+                            'when it is unclear. This judgment sends nothing.')
 #: SEC-LOOP-01 (#657), ARCH-THIN-01 (#820): the one outcome judgment of a Work -
 #: did the reply serve the owner's message, given the conversation?  Step
 #: bookkeeping is evidence for it, never a verdict of its own.

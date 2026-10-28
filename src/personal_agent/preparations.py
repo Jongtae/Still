@@ -69,6 +69,9 @@ REASON_JUDGED_NEEDED = 'judged-needed'
 REASON_JUDGED_NOT_NEEDED = 'judged-not-needed'
 REASON_UNCHANGED = 'same-as-last-notification'
 REASON_RUN_FAILED = 'run-did-not-finish'
+#: #394: the first run without a result after a run that had one is told once.
+REASON_RUN_FAILED_TOLD = 'run-did-not-finish-told'
+REASON_RUN_STOPPED = 'run-stopped'
 REASON_UNJUDGED = 'judgment-unavailable'
 REASON_UNJUDGED_REPEAT = 'judgment-unavailable-already-notified'
 #: The Telegram notification kind of a ``notify`` decision.
@@ -384,11 +387,15 @@ def bounded_text(text, limit=NOTIFIED_TEXT_BYTES):
     return raw[:limit].decode('utf-8', 'ignore') + (' [...]' if len(raw) > limit else '')
 
 
-def watch_decision(row, answer, decide=None):
+def watch_decision(row, answer, decide=None, stopped=False):
     """``(decision, reason)`` of one finished ``when_needed`` run (#719).
 
-    Deterministic only where no judgment is needed: a run with no result is
-    quiet, and a result identical to the last notification is quiet.
+    Deterministic only where no judgment is needed. A run with no result
+    is told once (#394): a watch whose runs fail must not look like a watch
+    with nothing to report, so the first failure after a result reaches the
+    owner and later failures stay quiet until a run has a result again. A
+    run the owner ``stopped`` is quiet. A result identical to the last
+    notification is quiet.
     Otherwise ``decide(row, answer)`` - the DecisionEngine's bounded
     judgment, never a text rule - says whether the owner needs it now.
     When no judgment is available the result is sent once, and later
@@ -396,7 +403,11 @@ def watch_decision(row, answer, decide=None):
     outage neither hides the watch nor repeats it every slot.
     """
     if not str(answer or '').strip():
-        return DECISION_QUIET, REASON_RUN_FAILED
+        if stopped:
+            return DECISION_QUIET, REASON_RUN_STOPPED
+        if row.get('last_decision_reason') in (REASON_RUN_FAILED_TOLD, REASON_RUN_FAILED):
+            return DECISION_QUIET, REASON_RUN_FAILED
+        return DECISION_NOTIFY, REASON_RUN_FAILED_TOLD
     if text_digest(answer) == row.get('last_notified_digest'):
         return DECISION_QUIET, REASON_UNCHANGED
     verdict = None
@@ -730,7 +741,7 @@ class Preparations:
         if (row.get('delivery_mode') == DELIVERY_WHEN_NEEDED and finished
                 and finished['status'] not in ('queued', 'running', 'awaiting_connection')
                 and finished['delivery'] not in ('pending', 'sending')):
-            decision = watch_decision(row, answer, decide)
+            decision = watch_decision(row, answer, decide, stopped=finished['status'] == 'cancelled')
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
