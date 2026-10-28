@@ -1009,20 +1009,47 @@ class SilentDeliveryTests(_WatchCase):
         self.assertEqual(self.run_slot('상황 C')['last_decision'], 'quiet')
         self.assertEqual(len(self.notifications()), 1)
 
-    def test_a_run_without_a_result_is_quiet_and_asks_nothing(self):
-        self.use([True])
-        self.watched = self.watch()
+    def end_slot(self, status='failed'):
+        """Advance to the row's slot, start it, end its Work without a result, settle, deliver."""
         row = self.service.preparations.get(self.watched['id'])
-        self.now = row['due_at'] + 1
-        self.tick()
-        [run] = self.runs(row['id'])
+        self.now = max(self.now, row['due_at']) + 1
+        self.assertTrue(self.tick())
+        run = self.runs(row['id'])[-1]
         with self.store.db() as db:
-            db.execute("UPDATE jobs SET status='failed',response=NULL,error='x',delivery='none' WHERE id=?", (run['id'],))
-        self.tick()
-        row = self.service.preparations.get(row['id'])
+            db.execute("UPDATE jobs SET status=?,response=NULL,error='조회 서버가 응답하지 않았습니다.',delivery='none' WHERE id=?",
+                       (status, run['id']))
+        self.assertTrue(self.tick())
+        self.service.deliver_notification()
+        return self.service.preparations.get(self.watched['id'])
+
+    def test_a_failing_watch_is_told_once_and_asks_nothing(self):
+        """#394: a watch whose runs fail must not look like one with nothing to report."""
+        self.use([False])
+        self.watched = self.watch()
+        row = self.end_slot()
         self.assertEqual((row['last_decision'], row['last_decision_reason'], row['state']),
-                         ('quiet', prep.REASON_RUN_FAILED, 'scheduled'))
-        self.assertEqual((self.watch_asks(), self.telegram), ([], []))
+                         ('notify', prep.REASON_RUN_FAILED_TOLD, 'scheduled'))
+        [told] = self.notifications()
+        self.assertIn('출발 시각을 앞당겨야 하는지 확인', told)
+        self.assertIn('조회 서버가 응답하지 않았습니다', told, 'the owner is told why')
+        self.assertEqual(self.watch_asks(), [], 'no judgment is asked about a run without a result')
+        row = self.end_slot()
+        self.assertEqual((row['last_decision'], row['last_decision_reason']), ('quiet', prep.REASON_RUN_FAILED))
+        self.assertEqual(len(self.notifications()), 1, 'a failure already told stays quiet')
+        row = self.run_slot('지금은 평소와 같습니다.')
+        self.assertEqual(row['last_decision_reason'], prep.REASON_JUDGED_NOT_NEEDED)
+        row = self.end_slot()
+        self.assertEqual(row['last_decision_reason'], prep.REASON_RUN_FAILED_TOLD)
+        self.assertEqual(len(self.notifications()), 2, 'a failure after a result is told again')
+
+    def test_a_run_the_owner_stopped_is_quiet(self):
+        self.use([])
+        self.watched = self.watch()
+        row = self.end_slot(status='cancelled')
+        self.assertEqual((row['last_decision'], row['last_decision_reason']), ('quiet', prep.REASON_RUN_STOPPED))
+        self.assertEqual((self.watch_asks(), self.notifications()), ([], []))
+        row = self.end_slot()
+        self.assertEqual(row['last_decision_reason'], prep.REASON_RUN_FAILED_TOLD, 'a stop does not hide a later failure')
 
     def test_the_owner_stops_a_watch_from_its_notification(self):
         self.use([True])
