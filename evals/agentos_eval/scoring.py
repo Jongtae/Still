@@ -24,6 +24,8 @@ OK_STATUSES = frozenset({'succeeded', 'partial'})
 ANSWER_CHARS = 6000
 #: Work lifecycle rows in a turn's events: not tools, so the judge's tool list leaves them out.
 WORK_EVENTS = frozenset({'orchestrator', 'subscription_engine'})
+#: The current-context predicate of the running day summary (``personal_agent.current_context.SITUATION``).
+SITUATION = 'situation'
 JUDGE_MAX_TOKENS = 1500
 
 
@@ -139,16 +141,20 @@ def judge_prompt(scenario, run):
             answer = answer[:ANSWER_CHARS] + ' [...]'
         lines.append(f'AGENTOS {index} (status {turn.get("status")}): {answer or "(no answer delivered)"}')
     diff = run.get('diff') or {}
+    # The running situation summary is rewritten every turn from the whole day, including the seed's own
+    # history, so its text would hand the judge unrelated owner details; the judge learns only that it changed.
+    claims = [row for row in diff.get('current_state', []) if row.get('predicate') != SITUATION]
     lines += ['', 'Owner-state changes recorded during the conversation:']
     for label, rows, keys in (('new memory', diff.get('memories', []), ('content',)),
                               ('new memory candidate (awaiting owner confirmation)', diff.get('candidates', []),
                                ('content', 'value')),
                               ('new reminder/preparation', diff.get('preparations', []),
                                ('kind', 'goal', 'due_local', 'every_minutes', 'until_local', 'delivery', 'state')),
-                              ('new current-state note (about today, not Memory)', diff.get('current_state', []),
-                               ('predicate', 'value', 'until'))):
+                              ('new current-state note (about today, not Memory)', claims, ('predicate', 'value', 'until'))):
         for row in rows[:10]:
             lines.append(f'- {label}: ' + ' / '.join(str(row.get(key)) for key in keys if row.get(key)))
+    if len(claims) < len(diff.get('current_state', [])):
+        lines.append("- today's running situation summary was updated (its text is not shown)")
     if not any(diff.get(key) for key in ('memories', 'candidates', 'preparations', 'current_state')):
         lines.append('- none')
     if diff.get('settings_changed'):

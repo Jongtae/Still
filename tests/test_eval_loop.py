@@ -421,7 +421,21 @@ class ScoringTest(unittest.TestCase):
         self.assertIn('OWNER 2: 두 번째', prompt)
         self.assertIn('- new current-state note (about today, not Memory): availability_hint / 점심 반포6 분짜오', prompt)
         self.assertNotIn('- none', prompt)
+        self.assertNotIn('running situation summary', prompt)
         self.assertIn('judge timing against that time', scoring.JUDGE_SYSTEM)
+
+    def test_judge_prompt_never_carries_the_running_situation_summary_text(self):
+        """#392: the day summary holds the seed's own history, so only the fact that it changed is shown."""
+        summary = {'ref': 'state:s1', 'predicate': 'situation', 'kind': 'conversation_summary',
+                   'value': '오전에 받은편지함 정리. 점심은 반포6에서 분짜오를 먹었다.'}
+        item = scenario(expect={'current_state_any': [['분짜오']]})
+        run = {'turns': [turn()], 'diff': {'current_state': [summary]}}
+        self.assertTrue(scoring.deterministic_checks(item, run)[0]['current_state'])
+        prompt = scoring.judge_prompt(item, run)
+        self.assertNotIn('받은편지함', prompt)
+        self.assertNotIn('분짜오', prompt)
+        self.assertIn("- today's running situation summary was updated (its text is not shown)", prompt)
+        self.assertNotIn('- none', prompt)
 
     def test_parse_judgment_normalizes_scores_and_rejects_bad_replies(self):
         text = 'Here: {"dimensions": {"context_carry": {"score": 2, "reason": "ok"}, "follow_through": {"score": null}}, "summary": "s"}'

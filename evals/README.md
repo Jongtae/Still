@@ -133,7 +133,7 @@ The deterministic checks are:
 
 Before the judge prompt leaves the machine, it passes through Still's own deterministic redaction. That is the `SECRET_PATTERN` credential shapes plus the literal values of every stored secret in the seed's and the live profile's `connections.json`. No secret reaches the judge provider.
 
-The **rubric judge** sees the scenario, the owner turns with the local time each was sent and any situation notes, the tools each turn ran (names and statuses only, no payloads), the delivered answers and the recorded owner-state changes, including new current-state hypotheses. It judges timing against the time sent, because that is the clock Still saw. It scores each of the scenario's dimensions 2, 1, 0 or null:
+The **rubric judge** sees the scenario, the owner turns with the local time each was sent and any situation notes, the tools each turn ran (names and statuses only, no payloads), the delivered answers and the recorded owner-state changes, including new current-state hypotheses. The running situation summary is the exception: it is rewritten every turn from the whole day, including the seed's own history, so the judge is told only that it changed, never its text. It judges timing against the time sent, because that is the clock Still saw. It scores each of the scenario's dimensions 2, 1, 0 or null:
 
 | Dimension | Meaning |
 | --- | --- |
