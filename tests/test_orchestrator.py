@@ -1659,6 +1659,23 @@ class ReadIsNotAnEffect(Harness):
         bubble = self.service.telegram_result_text(None, report, 'failed')
         self.assertIn(report, bubble)
 
+    def test_an_unobservable_turn_that_only_read_is_not_reported_as_an_executed_change(self):
+        """Live 2026-10-28 (Work 655c9aba): a CLI turn cut off at the output cap had only read, yet the
+        owner was told an irreversible action had run.  It still stops (C8), and says it could not confirm."""
+        from personal_agent.orchestrator import NEXT_TEXT, STOP_EFFECT
+        def run(tools):
+            if len(self.engine.turns) == 1:
+                bridge_step(tools.capabilities.record, 'browser_open', 'read')
+        self.engine.before = run
+        cut_off = {'tool_calls': [], 'tool_calls_partial': True, 'stream_tail': ['thread.started', 'turn.started']}
+        self.engine.fail = [ExecutionError(INVALID_OUTPUT, failure_class='invalid-output', meta=cut_off)]
+        self.script([plan('codex', 'Look it up.'), plan('openai', 'Answer directly.')])
+        job, row = self.run_work('알려줘', key='unobserved-read-only')
+        last = self.events(job, 'evaluated')[-1][1]
+        self.assertEqual((last['next'], last['stop']), ('stop', 'effect'), 'an unobservable turn is never re-delegated')
+        self.assertIn(NEXT_TEXT[STOP_EFFECT + ':unknown'], row['owner_cause'])
+        self.assertNotIn('되돌릴 수 없는 작업이 실행되어', row['owner_cause'])
+
     def test_the_report_after_a_state_change_names_the_effect_stop_and_no_retry(self):
         from personal_agent.quickstart_service import FAILED_NEXT_REVIEW
         job, row = self.attempt_with(('browser_open', 'read'), ('browser_click', 'mutate'))

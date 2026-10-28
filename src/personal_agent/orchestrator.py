@@ -127,6 +127,8 @@ REACHED, NOT_REACHED, UNJUDGED, OWNER_NEEDED, WORKER_FAILED, NOT_JUDGED = (
 #: Why no further attempt was made.
 STOP_REACHED, STOP_LIMIT, STOP_BUDGET, STOP_EFFECT, STOP_UNJUDGED, STOP_OWNER, STOP_REPLAN = (
     'reached', 'limit', 'budget', 'effect', 'unjudged', 'owner', 'replan_failed')
+#: ``next(effect=...)``: the attempt's effect is unknown or unobserved, not an observed change (#368 follow-up).
+EFFECT_UNKNOWN_STOP = 'unknown'
 #: #308 S1: a steer continuation is the Work's last attempt.
 STOP_STEER = 'steer'
 STOP_NO_REVISION = 'no_revision'
@@ -159,6 +161,9 @@ NEXT_TEXT = {
     STOP_LIMIT: f'다시 맡기는 횟수 한도({MAX_REDELEGATIONS}회)에 도달해 더 맡기지 않았습니다.',
     STOP_BUDGET: '남은 작업 시간이나 턴이 부족해 더 맡기지 않았습니다.',
     STOP_EFFECT: '이 시도에서 되돌릴 수 없는 작업이 실행되어 같은 요청을 다시 맡기지 않았습니다.',
+    # Truthful variant: nothing is known to have changed, but Still could not confirm that either.
+    STOP_EFFECT + ':unknown': ('이 시도에서 결과를 확인할 수 없는 동작이 있어, 같은 일이 두 번 일어나지 않도록 '
+                               '같은 요청을 다시 맡기지 않았습니다.'),
     STOP_UNJUDGED: '요청에 부응했는지 판단할 수 없어 더 맡기지 않았습니다.',
     STOP_OWNER: '소유자의 확인이나 정보가 필요해 더 맡기지 않았습니다.',
     STOP_REPLAN: '판단 AI가 새 계획을 내지 못해 더 맡기지 않았습니다.',
@@ -1306,7 +1311,10 @@ class Orchestration:
                                    else (None, ''))
             if following is None:
                 stop = STOP_BUDGET if failure == FALLBACK_BUDGET else STOP_REPLAN
-        after = NEXT_TEXT['redelegate'] if following is not None else NEXT_TEXT[stop]
+        # An effect stop says "executed" only for an observed change; an unknown or unobserved one says so.
+        after = (NEXT_TEXT['redelegate'] if following is not None
+                 else NEXT_TEXT[STOP_EFFECT + ':unknown'] if stop == STOP_EFFECT and effect == EFFECT_UNKNOWN_STOP
+                 else NEXT_TEXT[stop])
         self.record(EVALUATED, {'attempt': attempt.number, 'worker': attempt.worker, 'model': attempt.model or None,
                                 'brief_digest': attempt.digest or None, 'outcome': evaluation,
                                 'next': 'redelegate' if following is not None else 'stop', 'stop': stop or None,

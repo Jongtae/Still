@@ -126,7 +126,8 @@ class EffectBoundary(unittest.TestCase):
         with self.store.db() as db:since=db.execute('SELECT MAX(id) FROM tool_events WHERE job_id=?',(self.job['id'],)).fetchone()[0]
         orchestration=SimpleNamespace(orchestrated=True,_redact=lambda text:text,next=Mock(return_value=None))
         self.service.orchestration_step(orchestration,object(),self.job['id'],since,failed='resumed worker failed before any tools')
-        self.assertIs(orchestration.next.call_args.kwargs['effect'],True)
+        # #387: an observed change (here a completed connector effect) is named as such.
+        self.assertEqual(orchestration.next.call_args.kwargs['effect'],'changed')
 
     def test_rejected_or_expired_offer_cannot_approve_an_identical_new_offer(self):
         from unittest import mock
