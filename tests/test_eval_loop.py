@@ -282,11 +282,31 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(pool.used, 1)
         self.assertEqual([row['answer'] for row in record['turns']], ['두 시간', '두 시간'])
         self.assertEqual(record['turns'][0]['events'], [{'tool': 'web_search', 'status': 'succeeded'}])
-        self.assertRegex(record['turns'][0]['sent_at'], r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \w{3}$')
+        self.assertRegex(record['turns'][0]['sent_at'], r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \w{3} \S+ \(UTC[+-]\d{4}\)$')
         self.assertIn(('POST', '/api/subscription-engines/connect',
                        {'engine': 'claude-code', 'officially_authenticated': True}),
                       [call[:3] for call in server.calls])
         self.assertEqual(sum(1 for call in server.calls if call[1] == '/api/chat'), 2)
+
+    def test_send_time_uses_the_zone_still_uses_in_the_sandbox(self):
+        """#392 review: the current-context zone, then the owner's calendar zone, then the host; with its offset."""
+        class Box:
+            def __init__(self, row):
+                self.row = row
+
+            def read_config(self, keys):
+                return {'calendar_timezone': self.row} if self.row else {}
+
+        snapshot = {'current_context': {'timezone': 'America/New_York'}}
+        self.assertEqual(runner.sandbox_zone(snapshot, Box('"Asia/Seoul"')).key, 'America/New_York')
+        self.assertEqual(runner.sandbox_zone({'current_context': {'timezone': None}}, Box('"Asia/Seoul"')).key, 'Asia/Seoul')
+        self.assertEqual(runner.sandbox_zone({}, Box('Europe/Paris')).key, 'Europe/Paris')
+        self.assertIsNone(runner.sandbox_zone({'current_context': {'unavailable': 403}}, Box('"Not/AZone"')))
+        moment = 1793194050.0                                   # 2026-10-28 13:27:30 UTC
+        self.assertEqual(runner.sent_time(moment, runner.sandbox_zone(snapshot, Box(None))),
+                         '2026-10-28 09:27 Wed America/New_York (UTC-0400)')
+        self.assertEqual(runner.sent_time(moment, runner.sandbox_zone({}, Box('"Asia/Seoul"'))),
+                         '2026-10-28 22:27 Wed Asia/Seoul (UTC+0900)')
 
     def test_judgment_ai_is_requalified_for_the_worker_once_and_cached(self):
         server = FakeServer(statuses=['succeeded'], judgment={

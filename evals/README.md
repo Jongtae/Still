@@ -114,7 +114,7 @@ A direct `inspect eval` run writes only the Inspect log. Build the trend report 
    - `/api/preparations` and `/api/settings`;
    - the current-context hypotheses in `GET /api/state` (`settings.current_context.hypotheses`).
 6. For each owner turn:
-   - record the local time it is sent (the sandbox runs on the real clock);
+   - record the time it is sent, in the zone Still's clock uses there and with its UTC offset: the current-context setting, then the owner's calendar zone, then the host (the sandbox drops an inherited `TZ`). The sandbox runs on the real clock;
    - `POST /api/chat` with `{message, request_key}`;
    - poll `GET /api/tasks/<id>` until the task is no longer queued or running;
    - read the delivered answer from `GET /api/state`, as the owner's web shows it. A withheld answer stays withheld.
