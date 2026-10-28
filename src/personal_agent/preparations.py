@@ -154,6 +154,7 @@ REFUSALS = {
     'too_many': f'진행 중인 준비가 {MAX_ACTIVE}개를 넘어 더 만들지 않았습니다. 설정에서 필요 없는 준비를 정리해 주세요.',
     'not_found': '이 준비를 찾지 못했습니다.',
     'not_proposed': '이미 처리된 준비입니다.',
+    'expired': '지켜보는 기간이 이미 끝나 시작하지 않았습니다.',
     'running': '지금 실행 중인 준비는 지울 수 없습니다. 먼저 취소하세요.',
 }
 
@@ -414,6 +415,11 @@ def watch_decision(row, answer, decide=None):
     return DECISION_NOTIFY, REASON_UNJUDGED
 
 
+def window_ended(row, now):
+    """#395: a watch whose window has no slot left at ``now``."""
+    return row.get('recurrence') == RECURRENCE_WINDOW and row.get('window_end') is not None and row['window_end'] <= now
+
+
 def reminder_text(goal, due_at, timezone_name, now):
     text = '알림: ' + goal
     if now - due_at > LATE_NOTE_SECONDS:
@@ -527,13 +533,21 @@ class Preparations:
             return row
 
     def accept(self, preparation_id, accepted_by):
-        """``proposed`` → ``scheduled``: the owner's explicit yes."""
+        """``proposed`` → ``scheduled``: the owner's explicit yes.
+
+        #395: a watch whose window has already ended is refused (``expired``)
+        in the same UPDATE, so a late yes never reads as a running watch.
+        """
         now = self.clock()
         with self.store.db() as db:
-            changed = db.execute("UPDATE preparations SET state='scheduled',accepted_by=?,updated_at=? WHERE id=? AND state='proposed'",
-                                 (accepted_by, now, preparation_id)).rowcount
+            changed = db.execute("UPDATE preparations SET state='scheduled',accepted_by=?,updated_at=? WHERE id=? AND state='proposed' "
+                                 'AND (recurrence IS NOT ? OR window_end>?)',
+                                 (accepted_by, now, preparation_id, RECURRENCE_WINDOW, now)).rowcount
         if not changed:
-            raise PreparationRefusal('not_found' if not self.get(preparation_id) else 'not_proposed')
+            row = self.get(preparation_id)
+            if not row:
+                raise PreparationRefusal('not_found')
+            raise PreparationRefusal('expired' if row['state'] == STATE_PROPOSED and window_ended(row, now) else 'not_proposed')
         return self.get(preparation_id)
 
     def cancel(self, preparation_id):
