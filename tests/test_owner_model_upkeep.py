@@ -246,6 +246,23 @@ class Apply(Upkeep):
         from personal_agent.agent_runtime import work_written_values
         self.assertNotIn('판교', work_written_values(self.store, job))
 
+    def test_a_plan_the_owner_states_beside_a_request_is_saved_with_its_last_day(self):
+        """#398: a goal, upcoming need or obligation has its own category and ends on its day."""
+        self.finished('3개월 뒤 이사할 때 보증금으로 2,000만 원이 필요해. 그건 그렇고 대출 지금 다 갚을까?')
+        self.answers = [[proposal('profile.plan.moving_deposit', '3개월 뒤 이사 보증금 2,000만 원 필요', category='plan',
+                                  valid_until='2027-01-28')]]
+        self.service.run_owner_model_upkeep()
+        [memory] = self.store.memories(MEMORY_OWNER, key_prefix='profile.')
+        self.assertEqual((memory['memory_key'], memory['content'], memory['valid_until']),
+                         ('profile.plan.moving_deposit', '3개월 뒤 이사 보증금 2,000만 원 필요', '2027-01-28'))
+
+    def test_a_category_word_never_names_a_key(self):
+        """#805 kept for #398: every category is a namespace word, so "plan" alone never names a fact."""
+        from personal_agent.agent_runtime import KEY_NAMESPACE_WORDS, memory_key_name
+        self.assertLessEqual(set(om.CATEGORIES), set(KEY_NAMESPACE_WORDS))
+        self.assertEqual(memory_key_name('profile.plan'), '')
+        self.assertNotIn('plan', memory_key_name('profile.plan.moving_deposit').split())
+
     def test_a_credential_shaped_or_stored_secret_value_is_never_saved(self):
         """#918 review P1: the upkeep write passes the same secret gate as the worker's save."""
         self.store.secret('telegram_token', 'LEAKYSECRET0918VALUE')

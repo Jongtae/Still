@@ -130,7 +130,9 @@ RUN_SECONDS = 300
 #: A row still ``claimed`` this long after its claim was cut off by a crash.
 CLAIM_STALE_SECONDS = 3600
 
-CATEGORIES = ('identity', 'place', 'routine', 'schedule', 'preference')
+#: #398: ``plan`` holds what the owner says about their own plans - a goal, an upcoming need with its
+#: amount and date, an obligation they carry - so a later request can be weighed against it.
+CATEGORIES = ('identity', 'place', 'routine', 'schedule', 'preference', 'plan')
 KIND_STATED, KIND_INFERRED = 'stated', 'inferred'
 KINDS = (KIND_STATED, KIND_INFERRED)
 PROFILE_PREFIX = 'profile.'
