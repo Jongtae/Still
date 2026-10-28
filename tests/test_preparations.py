@@ -1111,9 +1111,9 @@ class WatchAcceptanceTests(_WatchCase):
         self.service.deliver_one()
         self.service.deliver_notification()
         proposal = self.sends()[-1]['text']
-        # #393: the run count and the real last run (the window excludes its deadline), no repeated date or zone.
-        last = datetime.fromtimestamp(row['due_at'] + 5 * 600, SEOUL).strftime('%H:%M')
-        self.assertIn(f'~{last}, 10분마다 6번', proposal)
+        # #393: the window as enforced - before its deadline, at most max_runs - with no repeated date or zone.
+        end = datetime.fromtimestamp(row['window_end'], SEOUL).strftime('%H:%M')
+        self.assertIn(f'{end} 전까지, 10분마다 최대 6번', proposal)
         self.assertIn('알릴 일이 있을 때만', proposal)
         self.assertNotIn('Asia/Seoul', proposal, 'the owner\'s own zone is not repeated')
         with self.store.db() as db:
@@ -1403,8 +1403,8 @@ class OwnerOfferTests(_WatchCase):
         text = sent['text']
         self.assertEqual(sent.get('parse_mode'), 'HTML')
         self.assertTrue(text.startswith(f'<b>{self.TITLE}</b>\n'), text)
-        last = datetime.fromtimestamp(row['due_at'] + 15 * 300, SEOUL).strftime('%H:%M')
-        self.assertIn(f'~{last}, 5분마다 16번 · 알릴 일이 있을 때만 알려요', text)
+        end = datetime.fromtimestamp(row['window_end'], SEOUL).strftime('%H:%M')
+        self.assertIn(f'{end} 전까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요', text)
         self.assertIn('한 번에 잃을 수 있는 돈은 1,000원 이하', text)
         brief_at = text.index('<blockquote expandable>')
         self.assertLess(text.index('주문은 하지 않고'), brief_at, 'the offer comes before the folded brief')
@@ -1451,12 +1451,42 @@ class OwnerOfferTests(_WatchCase):
         run_prompt = json.dumps(self.model_calls[0]['messages'], ensure_ascii=False)
         self.assertIn('한 번에 잃을 수 있는 돈은 1,000원 이하', run_prompt, 'the run sees what the owner accepted')
         self.assertIn('매회 시세를 조회한다', run_prompt)
+        self.assertNotIn('마다 최대', run_prompt, 'no schedule line re-rendered from the advanced due time')
         [asked] = [item[1] for item in self.judge.asked if item[0] == 'judge' and item[1].purpose == 'watch-notification']
         self.assertIn('1,000원 이하', asked.facts['accepted_offer'])
         [told] = [text for text in self.texts() if text.startswith('지켜보던 일에서 알려 드립니다')]
         self.assertTrue(told.startswith(f'지켜보던 일에서 알려 드립니다 ({self.TITLE}).'), told)
         listed = self.service.preparations_status()['preparations'][0]
         self.assertEqual((listed['title'], listed['offer']), (self.TITLE, self.OFFER))
+
+    def test_a_late_start_never_runs_past_what_the_owner_read(self):
+        """#399 review: max_runs below the slot count, accepted late: runs stay within the stated bound."""
+        self.judge = watch_engine([False] * 10)
+        self.service.use_decision_engine(self.judge)
+        due = self.now + 60
+        until = due + 80 * 60
+        window = prep.normalize_window(5, datetime.fromtimestamp(until, SEOUL).isoformat(), 2, due, 'Asia/Seoul', self.now)
+        self.watched = self.service.preparations.create(
+            kind='prepare', goal='시세 확인', due_at=due, timezone='Asia/Seoul', recurrence=None, channel='telegram',
+            created_from='settings', state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_OWNER_SETTINGS, window=window,
+            delivery_mode=prep.DELIVERY_WHEN_NEEDED, title=self.TITLE, offer=self.OFFER)
+        shown = prep.schedule_text(self.watched, 'Asia/Seoul')
+        end = datetime.fromtimestamp(until, SEOUL).strftime('%H:%M')
+        self.assertIn(f'{end} 전까지, 5분마다 최대 2번', shown)
+        self.now = due + 15 * 60  # three slots late
+        starts = []
+        for _ in range(6):
+            row = self.service.preparations.get(self.watched['id'])
+            if row['state'] != prep.STATE_SCHEDULED:
+                break
+            self.now = max(self.now, row['due_at']) + 1
+            if self.tick():
+                starts.append(self.now)
+                self.script = [{'content': '평소와 같아요.'}] * 2
+                self.service.run_one()
+                self.tick()
+        self.assertEqual(len(starts), 2, 'at most the stated number of runs')
+        self.assertTrue(all(at < until for at in starts), 'never at or after the stated deadline')
 
     def test_an_offer_out_of_shape_is_refused_to_the_model_and_a_secret_never_stays(self):
         _work, result = self.propose(title='가' * (prep.TITLE_MAX_CHARS + 1))
@@ -1499,18 +1529,18 @@ class ScheduleTextTests(unittest.TestCase):
         return self.row(recurrence=prep.RECURRENCE_WINDOW, every_seconds=every, window_end=end, max_runs=max_runs,
                         delivery_mode=prep.DELIVERY_WHEN_NEEDED)
 
-    def test_the_last_run_is_shown_not_the_deadline(self):
-        """The live case: 18:35 until 19:55 every 5 minutes runs 16 times, the last at 19:50."""
+    def test_the_deadline_is_stated_as_enforced(self):
+        """The live case: 18:35 until 19:55 every 5 minutes: nothing runs at 19:55 itself."""
         self.assertEqual(prep.schedule_text(self.window(5, (19, 55), 16), 'Asia/Seoul'),
-                         '10월 28일(수) 18:35~19:50, 5분마다 16번 · 알릴 일이 있을 때만 알려요')
+                         '10월 28일(수) 18:35부터 19:55 전까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요')
 
     def test_a_window_past_midnight_names_its_last_day_and_a_foreign_zone_is_named(self):
         self.assertEqual(prep.schedule_text(self.window(120, (0, 40), None), 'Europe/Paris'),
-                         '10월 28일(수) 18:35~10월 29일(목) 00:35 (Asia/Seoul), 2시간마다 4번 · 알릴 일이 있을 때만 알려요')
+                         '10월 28일(수) 18:35부터 10월 29일(목) 00:40 전까지 (Asia/Seoul), 2시간마다 최대 4번 · 알릴 일이 있을 때만 알려요')
 
     def test_one_run_repetitions_and_delivery(self):
         self.assertEqual(prep.schedule_text(self.window(5, (19, 0), 1), 'Asia/Seoul'),
-                         '10월 28일(수) 18:35 한 번 · 알릴 일이 있을 때만 알려요')
+                         '10월 28일(수) 18:35부터 19:00 전까지 한 번 · 알릴 일이 있을 때만 알려요')
         self.assertEqual(prep.schedule_text(self.row(recurrence='daily', channel='web'), 'Asia/Seoul'),
                          '10월 28일(수) 18:35부터 매일 · 결과는 Still에 보관해요')
         self.assertEqual(prep.schedule_text(self.row(kind='reminder'), 'Asia/Seoul'), '10월 28일(수) 18:35')

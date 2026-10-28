@@ -482,29 +482,28 @@ def _minutes_text(minutes):
     return f'{hours}시간' + (f' {rest}분' if rest else '')
 
 
-def last_run_at(row):
-    """#393: the time of a watch's last run: its bound, never the deadline it may not reach."""
-    return row['due_at'] + int(row['every_seconds']) * (max(1, int(row['max_runs'])) - 1)
-
-
 def schedule_text(row, home_zone=None):
     """#393: one owner-readable line - when it runs and how the owner hears of it.
 
     A date in the owner's words (``10월 28일(수) 18:35``), the end time alone
-    when it is the same day, the zone only when it is not ``home_zone``, and
-    a watch's real last run (the window ``[due, until)`` excludes its end).
+    when it is the same day and the zone only when it is not ``home_zone``.
+    A watch is stated as it is enforced (``start``/``next_window_slot``): runs
+    only *before* its deadline (the window ``[due, until)`` excludes it) and
+    at most ``max_runs`` times, so a late start or a skipped slot can never
+    run past what the owner read.
     """
     day, at, date = _local_parts(row['due_at'], row['timezone'])
     zone_note = '' if home_zone and row['timezone'] == home_zone else f" ({row['timezone']})"
     recurrence = row.get('recurrence') or ''
     if recurrence == RECURRENCE_WINDOW:
         runs = max(1, int(row['max_runs']))
+        end_day, end_at, end_date = _local_parts(row['window_end'], row['timezone'])
+        end = end_at if end_date == date else f'{end_day} {end_at}'
         if runs == 1:
-            when = f'{day} {at}{zone_note} 한 번'
+            when = f'{day} {at}부터 {end} 전까지{zone_note} 한 번'
         else:
-            last_day, last_at, last_date = _local_parts(last_run_at(row), row['timezone'])
-            end = last_at if last_date == date else f'{last_day} {last_at}'
-            when = f"{day} {at}~{end}{zone_note}, {_minutes_text(int(row['every_seconds']) // 60)}마다 {runs}번"
+            when = (f"{day} {at}부터 {end} 전까지{zone_note}, "
+                    f"{_minutes_text(int(row['every_seconds']) // 60)}마다 최대 {runs}번")
     else:
         when = f'{day} {at}{zone_note}' + {'daily': '부터 매일', 'weekdays': '부터 평일마다', 'weekly': '부터 매주'}.get(recurrence, '')
     if row['kind'] == KIND_REMINDER:
@@ -530,6 +529,16 @@ def owner_title(row, limit=120):
         return title
     goal = str(row.get('goal_text') or '')
     return goal[:limit] + ('…' if len(goal) > limit else '')
+
+
+def accepted_offer(row):
+    """#393: the title and offer the owner accepted, without the schedule line.
+
+    For a run's context and the watch judgment: a row's ``due_at`` advances
+    to its next slot, so a schedule line rendered later would not be the one
+    the owner read; the brief carries the run's own times.
+    """
+    return '\n'.join(part for part in (row.get('title_text'), row.get('offer_text')) if part)
 
 
 def proposal_summary(row, home_zone=None, brief=True):

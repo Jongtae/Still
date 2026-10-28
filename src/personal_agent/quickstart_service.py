@@ -1937,7 +1937,7 @@ class AgentService:
         if len(result)>self.WATCH_RESULT_CHARS:result=result[:self.WATCH_RESULT_CHARS]+' [...]'
         judged=self.decision_judge.watch_notification_needed(row['goal_text'],result,row.get('last_notified_text'),
                                                              work_id=row.get('last_run_job_id'),
-                                                             offer=prep.proposal_summary(row,brief=False) if prep.offered(row) else None)
+                                                             offer=prep.accepted_offer(row) or None)
         return {JUDGMENT_YES:'yes',JUDGMENT_NO:'no'}.get(judged.outcome)
 
     def watch_notification_text(self, notification):
@@ -1988,7 +1988,7 @@ class AgentService:
         content=job['message']
         if row and prep.offered(row):
             # #393: the run works within what the owner read and accepted, not only its brief.
-            content+='\n\n'+msg('preparations.accepted_offer_label')+'\n'+prep.proposal_summary(row,self.home_zone(),brief=False)
+            content+='\n\n'+msg('preparations.accepted_offer_label')+'\n'+prep.accepted_offer(row)
         rows.append({'role':'user','content':content,'job_id':job['id'],'channel':job.get('channel'),'qualifier':None,
                      'request_key':job.get('request_key'),'created':job.get('created')})
         return rows
