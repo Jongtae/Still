@@ -638,7 +638,7 @@ def memory_write_refusal(store,job_id,approval,memory_key,content):
 
 #: #805 review: words that name a key's namespace or category, never the fact.
 #: "I prefer quiet cafes" must not name ``profile.preference.drink``.
-KEY_NAMESPACE_WORDS=('profile','identity','place','routine','schedule','preference')
+KEY_NAMESPACE_WORDS=('profile','identity','place','routine','schedule','preference','plan')
 
 def memory_key_name(memory_key):
  """The words of ``memory_key`` that name its fact: namespace and category words
