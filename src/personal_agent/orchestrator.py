@@ -51,6 +51,7 @@ from . import trust_record
 from .prompt_files import prompt
 from .conversation_projection import earlier_turn_line, earlier_turns_in
 from .agent_runtime import CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, GOAL_CONVERSATION_CHARS, owner_context_fact
+from .current_context import without_moving_clock
 from .decision import MAX_CONTEXT_CHARS, OUTCOME_DECIDED, OUTCOME_MALFORMED, DecisionContext, DecisionPolicy
 
 #: Still context sections of a turn (``agent_runtime.turn_context``).
@@ -897,13 +898,15 @@ class Orchestration:
                                + len(profile) + len(current) + CONVERSATION_CHARS)
 
     def plan_digest(self, candidates):
-        """#1261: what a plan call over ``candidates`` would be asked, except the budget's
-        remaining seconds (the only fact that moves while routing runs)."""
+        """#1261: what a plan call over ``candidates`` would be asked, except what moves by itself
+        while routing runs: the budget's remaining seconds and (#384) the current-context clock."""
         return digest(self._plan_inputs(candidates))
 
     def _plan_inputs(self, candidates):
         facts = dict(self._plan_context(candidates).facts)
         facts.pop('budget', None)
+        if 'current_context' in facts:
+            facts['current_context'] = without_moving_clock(facts['current_context'])
         return {'facts': facts, 'question': self._question(), 'schema': self._schema(candidates)}
 
     def _input_digests(self, candidates):

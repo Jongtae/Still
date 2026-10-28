@@ -901,3 +901,33 @@ def render(body):
     """The section text: one legend line and the compact JSON snapshot."""
     legend = CLOCK_LEGEND if set(body) <= CLOCK_KEYS else LEGEND
     return legend + '\n' + json.dumps(body, ensure_ascii=False, separators=(',', ':'))
+
+
+def without_moving_clock(text):
+    """The section text as the #1261 early plan's reuse check compares it (#384).
+
+    ``as_of``, the time of day in ``local_time`` and each location's ``age_min`` move by
+    themselves while one Work is routed.  The local date, the weekday and every other value
+    stay, so a midnight crossing or a real change still asks the plan again.  Text whose
+    snapshot line does not parse (cut or redacted) is returned unchanged.
+    """
+    lines = (text or '').split('\n')
+    for index, line in enumerate(lines):
+        if not line.startswith('{'):
+            continue
+        try:
+            body = json.loads(line)
+        except ValueError:
+            return text
+        if not isinstance(body, dict):
+            return text
+        body.pop('as_of', None)
+        local = body.get('local_time')
+        if isinstance(local, str):
+            body['local_time'] = local.split('T')[0] + ' ' + local.rsplit(' ', 1)[-1]
+        for item in body.get('locations') or []:
+            if isinstance(item, dict):
+                item.pop('age_min', None)
+        lines[index] = json.dumps(body, ensure_ascii=False, separators=(',', ':'))
+        return '\n'.join(lines)
+    return text

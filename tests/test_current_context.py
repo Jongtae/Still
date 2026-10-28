@@ -19,7 +19,7 @@ from personal_agent.context_observations import FRESHNESS_SECONDS, RETENTION_SEC
 from personal_agent.current_context import (SITUATION, SITUATION_CHARS, SITUATION_KIND, SITUATION_SECONDS, CLOCK_KEYS, CLOCK_LEGEND, SNAPSHOT_BYTES, SNAPSHOT_ENTRIES, ContextRefusal,
                                             CurrentContext,
                                             PROFILE_OWNER, local_day_end, mark_conflicts, parse_until,
-                                            redact_known_secrets, render)
+                                            redact_known_secrets, render, without_moving_clock)
 from personal_agent.memory_service import MemoryService
 from personal_agent.quickstart_store import QuickStore
 
@@ -50,6 +50,27 @@ class PureHelpers(unittest.TestCase):
         self.assertEqual(local_day_end(fall, ny) - fall, 24 * 3600 + 30 * 60, 'the 25-hour day')
         # Late evening: "today" is the source day, not the next day.
         self.assertEqual(local_day_end(at(SEOUL, 2026, 9, 21, 23, 50), SEOUL), at(SEOUL, 2026, 9, 22, 0, 0))
+
+    def test_the_reuse_check_drops_only_what_moves_by_itself(self):
+        """#384: the minute and a location's age drop out; the date, status and later lines stay."""
+        def text(as_of, local, age, status='fresh'):
+            body = {'version': 'current-context-v1', 'as_of': as_of, 'timezone': SEOUL, 'local_time': local,
+                    'locations': [{'ref': 'obs:1', 'kind': 'position', 'status': status, 'age_min': age,
+                                   'approx': '37.57,126.98'}]}
+            return render(body) + '\nSigned-in sites: example'
+        earlier = text('2026-09-21T03:00:00Z', '2026-09-21T12:00+09:00 Mon', 2)
+        later = text('2026-09-21T03:01:00Z', '2026-09-21T12:01+09:00 Mon', 3)
+        self.assertEqual(without_moving_clock(earlier), without_moving_clock(later))
+        self.assertTrue(without_moving_clock(later).endswith('\nSigned-in sites: example'))
+        self.assertIn('"local_time":"2026-09-21 Mon"', without_moving_clock(later))
+        midnight = text('2026-09-21T15:00:00Z', '2026-09-22T00:00+09:00 Tue', 2)
+        self.assertNotEqual(without_moving_clock(midnight),
+                            without_moving_clock(text('2026-09-21T14:59:00Z', '2026-09-21T23:59+09:00 Mon', 2)))
+        self.assertNotEqual(without_moving_clock(earlier), without_moving_clock(text(
+            '2026-09-21T03:00:00Z', '2026-09-21T12:00+09:00 Mon', 2, status='stale')))
+        cut = earlier[:len(earlier) // 2]
+        self.assertEqual(without_moving_clock(cut), cut, 'a cut snapshot is compared exactly')
+        self.assertEqual(without_moving_clock('none'), 'none')
 
     def test_unknown_timezone_is_refused_not_taken_from_the_server_clock(self):
         for name in ('', 'Mars/Olympus'):
