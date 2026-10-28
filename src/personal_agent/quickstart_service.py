@@ -5995,7 +5995,7 @@ class AgentService:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',(job_id,since or 0)).fetchall()
         unknown=outcome=='unknown' or self._work_has_unknown_effect(job_id)
         unobserved=unmediated and self.cli_host_actions(engine_meta)!=()
-        effect=unknown or unobserved or bool(self.connector_effect_progress(job_id)[0])
+        changed=bool(self.connector_effect_progress(job_id)[0])
         from .memory_service import conversation_block, recalled_tool_exchanges
         recalled=conversation_block(recalled_tool_exchanges(self.store,job_id),budget=9000)
         observed=[]
@@ -6004,7 +6004,13 @@ class AgentService:
         # #1445 part 2: one effect classifier (``agent_runtime.record_effect``) over each call; any
         # call that is not ``none`` (a settings draft included) ends re-delegation, as before.
         tool_rows=self.attempt_tool_rows(rows)
-        if any(effect_class!=EFFECT_NONE for _action,effect_class,_status in call_effects(tool_rows)):effect=True
+        from .agent_runtime import EFFECT_UNKNOWN
+        classes={effect_class for _action,effect_class,_status in call_effects(tool_rows)}
+        if classes-{EFFECT_NONE,EFFECT_UNKNOWN}:changed=True
+        if EFFECT_UNKNOWN in classes:unknown=True
+        # The owner is told "executed" only for an observed change; otherwise that it could not be confirmed.
+        from .orchestrator import EFFECT_UNKNOWN_STOP
+        effect='changed' if changed else EFFECT_UNKNOWN_STOP if (unknown or unobserved) else False
         # #170: an attempt that left something waiting for the owner's own decision (a calendar or
         # settings draft, a proposal) stops for the owner, as a pending step approval does (#1468):
         # no outcome judgment reads that by-design wait as a shortfall, and nothing is re-delegated.
