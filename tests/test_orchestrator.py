@@ -22,6 +22,7 @@ from personal_agent.agent_runtime import GOAL_NOT_SHOWN, GOAL_UNJUDGED, WorkBudg
 from personal_agent.bounded_execution import (BOUNDED_PROFILE, AgentOSMcpTools, BoundedExecutionAdapter,
                                               ExecutionError, ExecutionResult, turn_actions)
 from personal_agent.conversation_handoff import ConversationJudgments
+from personal_agent.current_context import render as render_context
 from personal_agent.decision import (OUTCOME_DECIDED, OUTCOME_MALFORMED, OUTCOME_UNAVAILABLE, STRUCTURED_UNSUPPORTED,
                                      BinaryDecision, DecisionContext, DecisionPolicy, FixtureDecisionEngine,
                                      ModelDecisionEngine, RoutedDecisionEngine, StructuredDecision,
@@ -112,15 +113,47 @@ class EarlyPlan(unittest.TestCase):
     def catalogue(self):
         return OrchestrationUnit.catalogue(self)
 
-    def orchestration(self, asked, request='요청', budget=None):
+    def orchestration(self, asked, request='요청', budget=None, current=None):
         def structured(context, question, schema):
             asked.append(context.facts['owner_request'])
             return decided(plan('a', 'g'))
         engine = FixtureDecisionEngine(structured=structured)
         events = []
         orchestration = Orchestration(ConversationJudgments(engine), self.catalogue(), request=request, budget=budget,
+                                      sections={'current_context': current} if current else None,
                                       record=lambda status, detail: events.append((status, detail)))
         return orchestration, events
+
+    @staticmethod
+    def clock(local, age=2, status='fresh'):
+        """A current-context section read at ``local`` (Seoul) with one shared position."""
+        return render_context({'version': 'current-context-v1', 'as_of': 'moves', 'timezone': 'Asia/Seoul',
+                               'local_time': local, 'locations': [{'ref': 'obs:1', 'kind': 'position',
+                                                                   'status': status, 'age_min': age,
+                                                                   'approx': '37.57,126.98'}]})
+
+    def test_a_minute_that_passed_while_routing_ran_uses_the_early_answer(self):
+        """#384: the clock and a position's age move by themselves; the plan asked over 12:00 stands."""
+        asked = []
+        early = self.orchestration(asked, current=self.clock('2026-10-14T12:00+09:00 Wed'))[0].early_plan()
+        orchestration, events = self.orchestration(asked, current=self.clock('2026-10-14T12:01+09:00 Wed', age=3))
+        orchestration.first(early=self.future(early))
+        self.assertEqual(asked, ['요청'], 'one plan call, asked early')
+        self.assertTrue(events[0][1]['early'])
+        self.assertNotIn('early_missed', events[0][1])
+
+    def test_a_new_day_or_a_changed_position_still_asks_again(self):
+        """#384: local midnight and a position that went stale are real changes."""
+        for before, after in ((self.clock('2026-10-14T23:59+09:00 Wed'), self.clock('2026-10-15T00:00+09:00 Thu')),
+                              (self.clock('2026-10-14T12:00+09:00 Wed'),
+                               self.clock('2026-10-14T12:00+09:00 Wed', status='stale'))):
+            with self.subTest(after=after):
+                asked = []
+                early = self.orchestration(asked, current=before)[0].early_plan()
+                orchestration, events = self.orchestration(asked, current=after)
+                orchestration.first(early=self.future(early))
+                self.assertEqual(asked, ['요청', '요청'])
+                self.assertEqual(events[0][1]['early_missed'], ['current_context'])
 
     @staticmethod
     def future(value):
@@ -413,9 +446,9 @@ class RoutingAndBriefs(Harness):
         self.assertEqual(len(self.asked_plans), 1)
         self.assertTrue(self.events(job, 'planned')[0][1]['early'])
 
-    def test_a_minute_boundary_during_routing_asks_the_plan_again_over_the_new_clock(self):
-        """#9: the early plan was asked over the earlier minute, so the Work asks once more and
-        names the moved input; the second scripted plan, not an empty script, answers it."""
+    def test_a_minute_boundary_during_routing_keeps_the_early_plan(self):
+        """#384 (was #9): the early plan was asked over the earlier minute of the same day, so it
+        answers the Work; the worker still reads its own sections, at the later minute."""
         import threading
         self.clock.now = Clock.START - Clock.START % 60 + 59.0
         snapshot, worker = self.service.current_context_text, threading.current_thread()
@@ -425,15 +458,20 @@ class RoutingAndBriefs(Harness):
                 self.service._early_plan.result()  # the early plan read 12:00
                 self.clock.now += 2  # the Work reads its own sections at 12:01
             return snapshot(job)
-        self.script([plan('codex', 'Asked at 12:00.'), plan('codex', 'Asked at 12:01.')], goals=[True])
+        self.script([plan('codex', 'Asked at 12:00.')], goals=[True])
         with mock.patch.object(self.service, 'current_context_text', current_context_text):
             job, row = self.run_work('이 두 가지 비교해줘')
         self.assertEqual(row['status'], 'succeeded')
-        self.assertEqual(len(self.asked_plans), 2)
+        self.assertEqual(len(self.asked_plans), 1)
         [(_s, planned)] = self.events(job, 'planned')
-        self.assertNotIn('early', planned)
-        self.assertEqual(planned['early_missed'], ['current_context'])
-        self.assertIn('Asked at 12:01.', self.engine.turns[-1]['prompt'])
+        self.assertTrue(planned['early'])
+        self.assertNotIn('early_missed', planned)
+        self.assertIn('Asked at 12:00.', self.engine.turns[-1]['prompt'])
+        later = self.service.current_context_text(self.store.job(job))
+        # ``as_of`` is always there; ``local_time`` needs a zone the CI host may not have.
+        self.assertEqual(json.loads(later.split('\n')[1])['as_of'], '2026-10-14T12:01:00Z')
+        self.assertIn('"as_of":"2026-10-14T12:01:00Z"', self.engine.turns[-1]['prompt'],
+                      'the worker reads the later minute')
 
     def test_the_planned_effort_reaches_the_worker_turn_and_its_evidence(self):
         """#1434: the catalogue shows each model's declared efforts; the chosen one reaches the CLI turn."""
