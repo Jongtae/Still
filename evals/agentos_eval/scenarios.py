@@ -16,7 +16,10 @@ Scenario fields:
 - ``rubric``: the rubric dimensions this scenario is judged on;
 - ``expect`` (optional deterministic expectations): ``memory_any`` (a list of
   groups; each group is a list of alternative substrings and one of them must
-  appear in a new Memory row or MemoryCandidate), ``preparation`` (a new
+  appear in a new Memory row or MemoryCandidate), ``current_state_any`` (the
+  same group form, matched against new current-context hypotheses: a fact
+  about today, such as a meal already eaten, belongs there rather than in
+  Memory, #627), ``preparation`` (a new
   preparation/reminder must exist), ``no_memory_of_request`` (no new Memory
   row or MemoryCandidate may hold an owner turn's sentence as its content: a
   request is not a fact about the owner, #846), ``allow_status`` (extra terminal statuses
@@ -47,13 +50,17 @@ RUBRIC = {
 
 SPLITS = ('dev', 'heldout')
 _ID = re.compile(r'^[a-z0-9][a-z0-9-]{2,79}$')
-_EXPECT_KEYS = {'memory_any', 'preparation', 'no_memory_of_request', 'allow_status'}
+_EXPECT_KEYS = {'memory_any', 'current_state_any', 'preparation', 'no_memory_of_request', 'allow_status'}
 _TURN_KEYS = {'say', 'note', 'note_in_message'}
 _KEYS = {'id', 'title', 'split', 'turns', 'rubric', 'expect', 'good_secretary', 'tags'}
 
 
 class ScenarioError(ValueError):
     """A scenario file that does not match the format."""
+
+
+def _groups(expect, key):
+    return [[item.strip() for item in group] for group in expect.get(key, [])]
 
 
 def validate(raw, origin='scenario'):
@@ -93,11 +100,12 @@ def validate(raw, origin='scenario'):
     expect = raw.get('expect', {})
     if not isinstance(expect, dict) or set(expect) - _EXPECT_KEYS:
         raise ScenarioError(f'{where}: expect may only hold {sorted(_EXPECT_KEYS)}')
-    memory_any = expect.get('memory_any', [])
-    if (not isinstance(memory_any, list) or any(not isinstance(group, list) or not group or
+    for key in ('memory_any', 'current_state_any'):
+        groups = expect.get(key, [])
+        if (not isinstance(groups, list) or any(not isinstance(group, list) or not group or
                                                 any(not isinstance(item, str) or not item.strip() for item in group)
-                                                for group in memory_any)):
-        raise ScenarioError(f'{where}: expect.memory_any must be a list of non-empty lists of text')
+                                                for group in groups)):
+            raise ScenarioError(f'{where}: expect.{key} must be a list of non-empty lists of text')
     allow_status = expect.get('allow_status', [])
     if not isinstance(allow_status, list) or any(not isinstance(item, str) for item in allow_status):
         raise ScenarioError(f'{where}: expect.allow_status must be a list of status names')
@@ -106,7 +114,8 @@ def validate(raw, origin='scenario'):
         raise ScenarioError(f'{where}: tags must be a list of text')
     return {'id': ident, 'title': str(raw.get('title') or ident), 'split': split, 'turns': normalized_turns,
             'rubric': list(dict.fromkeys(rubric)),
-            'expect': {'memory_any': [[item.strip() for item in group] for group in memory_any],
+            'expect': {'memory_any': _groups(expect, 'memory_any'),
+                       'current_state_any': _groups(expect, 'current_state_any'),
                        'preparation': expect.get('preparation') is True,
                        'no_memory_of_request': expect.get('no_memory_of_request') is True,
                        'allow_status': list(allow_status)},

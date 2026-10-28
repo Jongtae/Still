@@ -2,8 +2,9 @@
 
 Only public owner routes are used, exactly as the local web page uses them:
 ``/api/local-login`` (or the first local ``/api/claim`` of a fresh data
-folder), ``/api/chat``, ``/api/tasks/<id>``, ``/api/state`` and the read-only
-personal-space, owner-model, preparation and settings routes.  The transport
+folder), ``/api/chat``, ``/api/tasks/<id>``, ``/api/state`` (answers and the
+current-context hypotheses) and the read-only personal-space, owner-model,
+preparation and settings routes.  The transport
 is injectable so tests run without a server.
 """
 import json
@@ -201,6 +202,11 @@ class AgentOSClient:
                 views[name] = self.get(path)
             except ClientError as exc:
                 views[name] = {'unavailable': exc.status}
+        # #392: current-context hypotheses (#627) are read where the owner's web reads them.
+        try:
+            views['current_context'] = (self.get('/api/state').get('settings') or {}).get('current_context') or {}
+        except ClientError as exc:
+            views['current_context'] = {'unavailable': exc.status}
         return views
 
 
@@ -222,10 +228,11 @@ def _rows(view, *keys):
 
 
 def state_diff(before, after):
-    """New Memory rows, MemoryCandidates and preparations a scenario produced, plus changed settings."""
-    def new(view_name, *keys):
-        seen = {row.get('id') for row in _rows(before.get(view_name, {}), *keys)}
-        return [row for row in _rows(after.get(view_name, {}), *keys) if row.get('id') not in seen]
+    """New Memory rows, MemoryCandidates, preparations and current-state hypotheses a scenario produced,
+    plus changed settings."""
+    def new(view_name, *keys, ident='id'):
+        seen = {row.get(ident) for row in _rows(before.get(view_name, {}), *keys)}
+        return [row for row in _rows(after.get(view_name, {}), *keys) if row.get(ident) not in seen]
     candidates = new('candidates', 'candidates', 'memory_candidates', 'items')
     space_candidates = new('personal_space', 'memory_candidates')
     known = {row.get('id') for row in candidates}
@@ -233,5 +240,6 @@ def state_diff(before, after):
     return {'memories': new('personal_space', 'memories'),
             'candidates': candidates,
             'preparations': new('preparations', 'preparations', 'items'),
+            'current_state': new('current_context', 'hypotheses', ident='ref'),
             'settings_changed': before.get('settings') != after.get('settings'),
             'owner_model_changed': before.get('owner_model') != after.get('owner_model')}

@@ -48,14 +48,16 @@ class StopOnUsageLimit:
         return {'tripped_by': self.tripped}
 
 
-def run_turns(client, scenario, turn_timeout=900, poll_interval=2.0, clock=time.monotonic):
+def run_turns(client, scenario, turn_timeout=900, poll_interval=2.0, clock=time.monotonic, wall=time.time):
     turns = []
     for turn in scenario['turns']:
         started = clock()
+        # #392: the sandbox runs on the real clock; the judge reads timing against this, not the scenario note.
+        sent_at = time.strftime('%Y-%m-%d %H:%M %a', time.localtime(wall()))
         task_id = client.send(owner_message(turn), f'eval-{scenario["id"]}-{uuid.uuid4().hex[:12]}')
         detail = client.wait(task_id, timeout=turn_timeout, interval=poll_interval)
         answer = client.answer(task_id)
-        turns.append({'say': turn['say'], 'note': turn.get('note', ''), 'task_id': task_id,
+        turns.append({'say': turn['say'], 'note': turn.get('note', ''), 'sent_at': sent_at, 'task_id': task_id,
                       'status': detail.get('status'), 'answer': answer.get('response') or '',
                       'answer_withheld': answer.get('answer_withheld', False),
                       'timed_out': bool(detail.get('timed_out')), 'failure_class': detail.get('failure_class'),

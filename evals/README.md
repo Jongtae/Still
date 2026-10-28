@@ -51,7 +51,7 @@ Without `--seed`, a sweep starts from an empty data folder. That works for Codex
 
 ### Judge key and spend cap
 
-The judge is any Inspect model name. The default is `openai/gpt-5.4-mini`; set another with `--judge` or `AGENTOS_EVAL_JUDGE_MODEL`, or pass `--judge none` for checks only.
+The judge is any Inspect model name. The default is `openai/gpt-6.1-terra`; set another with `--judge` or `AGENTOS_EVAL_JUDGE_MODEL`, or pass `--judge none` for checks only.
 
 The key is read at run time from the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, ...). If it is not there, the key is read from the login Keychain:
 
@@ -111,12 +111,14 @@ A direct `inspect eval` run writes only the Inspect log. Build the trend report 
 5. Snapshot the owner state:
    - `GET /api/personal-space` and `/api/personal-space/memory-candidates`;
    - `/api/personal-space/profile` and `/api/owner-model`;
-   - `/api/preparations` and `/api/settings`.
+   - `/api/preparations` and `/api/settings`;
+   - the current-context hypotheses in `GET /api/state` (`settings.current_context.hypotheses`).
 6. For each owner turn:
+   - record the local time it is sent (the sandbox runs on the real clock);
    - `POST /api/chat` with `{message, request_key}`;
    - poll `GET /api/tasks/<id>` until the task is no longer queued or running;
    - read the delivered answer from `GET /api/state`, as the owner's web shows it. A withheld answer stays withheld.
-7. Snapshot again and diff: new Memory rows, MemoryCandidates, preparations, and settings or owner-model changes.
+7. Snapshot again and diff: new Memory rows, MemoryCandidates, preparations, current-state hypotheses, and settings or owner-model changes.
 8. Stop the server and delete the slot folder (`--keep-sandboxes` keeps it, including `server.log`).
 
 ## Scoring
@@ -126,11 +128,12 @@ The deterministic checks are:
 - **`delivered`:** every turn delivered a non-empty answer that was not withheld.
 - **`not_failed`:** every turn ended `succeeded` or `partial` (plus any statuses the scenario allows in `allow_status`) and none timed out.
 - **`memory`:** each `expect.memory_any` group appears in a new Memory row or MemoryCandidate.
+- **`current_state`:** each `expect.current_state_any` group appears in a new current-context hypothesis. A fact about today, such as a meal already eaten, belongs there rather than in Memory (#627, #392).
 - **`preparation`:** a new reminder or preparation exists, when `expect.preparation` is set.
 
 Before the judge prompt leaves the machine, it passes through Still's own deterministic redaction. That is the `SECRET_PATTERN` credential shapes plus the literal values of every stored secret in the seed's and the live profile's `connections.json`. No secret reaches the judge provider.
 
-The **rubric judge** sees the scenario, the owner turns (with any situation notes), the delivered answers and the recorded owner-state changes. It scores each of the scenario's dimensions 2, 1, 0 or null:
+The **rubric judge** sees the scenario, the owner turns with the local time each was sent and any situation notes, the tools each turn ran (names and statuses only, no payloads), the delivered answers and the recorded owner-state changes, including new current-state hypotheses. It judges timing against the time sent, because that is the clock Still saw. It scores each of the scenario's dimensions 2, 1, 0 or null:
 
 | Dimension | Meaning |
 | --- | --- |
