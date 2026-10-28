@@ -1161,8 +1161,12 @@ class ApiRequests:
         except Exception:
             raise ApiError('API 응답의 인증 정보 가림을 확인할 수 없어 응답을 쓰지 않았습니다.',
                            'api_redaction_unavailable', effect='unknown' if effect in STATE_CHANGING_EFFECTS else None) from None
+        # #368: the same floor as every other redaction (``stored_secret_values``); a short value such
+        # as an account product code "01" replaced everywhere corrupted Gmail message ids for the AI.
+        from .current_context import MIN_REDACTED_CHARS
         for value in private_values:
-            data = scrub(data, value)
+            if isinstance(value, str) and len(value) >= MIN_REDACTED_CHARS:
+                data = scrub(data, value)
         # A read for another subject is withheld.  A sent change already happened, so it is not
         # reported as a failure; its response body is withheld instead when it is not the
         # slot's subject (review P1: another account's data must not reach the AI either way).

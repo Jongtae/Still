@@ -118,6 +118,11 @@ def is_redacted_secret_key(key):
     return isinstance(key, str) and (key in KNOWN_SECRET_NAMES or key.startswith(REDACTED_SECRET_PREFIXES))
 
 
+#: #1380, #368: the shortest stored value redaction replaces.  A shorter one (an account product code
+#: such as "01") identifies nothing alone and, replaced everywhere, garbles every id and number it occurs in.
+MIN_REDACTED_CHARS = 8
+
+
 def stored_secret_values(store):
     """The stored secrets' literal values that ``redact_known_secrets`` replaces (8 characters or more).
 
@@ -134,11 +139,11 @@ def stored_secret_values(store):
             value = store.secret(name)
         except Exception:
             value = None
-        if isinstance(value, str) and len(value) >= 8:
+        if isinstance(value, str) and len(value) >= MIN_REDACTED_CHARS:
             values.append(value)
     # #1380: a short code-run value (an account product code such as "01") identifies nothing
-    # alone and would garble every number it occurs in; the same 8-character floor as above.
-    values.extend(value for value in encrypted_secret_values(store) if len(value) >= 8)
+    # alone and would garble every number it occurs in; the same floor as above.
+    values.extend(value for value in encrypted_secret_values(store) if len(value) >= MIN_REDACTED_CHARS)
     # #211: the owner's cloud provider credentials.
     from .cloud_engines import CloudEngines
     values.extend(CloudEngines(store).secret_values())
