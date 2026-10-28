@@ -468,7 +468,9 @@ class RoutingAndBriefs(Harness):
         self.assertNotIn('early_missed', planned)
         self.assertIn('Asked at 12:00.', self.engine.turns[-1]['prompt'])
         later = self.service.current_context_text(self.store.job(job))
-        self.assertIn(json.loads(later.split('\n')[1])['local_time'], self.engine.turns[-1]['prompt'],
+        # ``as_of`` is always there; ``local_time`` needs a zone the CI host may not have.
+        self.assertEqual(json.loads(later.split('\n')[1])['as_of'], '2026-10-14T12:01:00Z')
+        self.assertIn('"as_of":"2026-10-14T12:01:00Z"', self.engine.turns[-1]['prompt'],
                       'the worker reads the later minute')
 
     def test_the_planned_effort_reaches_the_worker_turn_and_its_evidence(self):
