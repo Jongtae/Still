@@ -176,6 +176,24 @@ class Storage(unittest.TestCase):
         text = redact_known_secrets(self.store, f"key={VALUES['APP_KEY']} year=2001 product=01")
         self.assertEqual(text, 'key=[redacted] year=2001 product=01')
 
+    def test_a_short_value_does_not_garble_an_api_response(self):
+        """#368 live: a stored "01" was replaced in every API response, so Gmail ids reached the AI as
+        ``1a17[redacted]b50b38a121``; the AI read them back and got HTTP 400.  Long values stay redacted."""
+        import json
+        from personal_agent.connection_slots import _slot
+        api_requests.save_slot(self.store, 'short-set', [HOST], {'APP_KEY': VALUES['APP_KEY'], 'PRODUCT': '01'},
+                               note='', money=True, encrypted=True,
+                               code={'fields': ['APP_KEY', {'name': 'PRODUCT', 'use': 'in_code'}], 'reads': []})
+        body = {'messages': [{'id': '1a1701b50b38a121'}], 'echo': VALUES['APP_KEY']}
+        transport = lambda method, url, headers, data, timeout: (200, {}, json.dumps(body).encode())
+        held = {'gmail': _slot('gmail', lambda: 'ya29.connection-access-token-value')}
+        result = api_requests.ApiRequests(self.store, 'work', transport=transport, connections=lambda: held).call(
+            {'slot': 'gmail', 'url': 'https://gmail.googleapis.com/gmail/v1/users/me/messages', 'effect': 'read'})
+        text = json.dumps(result)
+        self.assertIn('1a1701b50b38a121', text, 'the id reaches the AI whole')
+        self.assertNotIn(VALUES['APP_KEY'], text)
+        self.assertIn('[redacted]', text)
+
     def test_changing_reviewed_reads_rebinds_the_stored_values(self):
         self.save()
         slot = dict(slots(self.store)['example-broker'])
