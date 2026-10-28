@@ -205,7 +205,7 @@ class ConversationRecall(audit_helpers._ServiceBase):
             from personal_agent import mcp_bridge
             class Relay:
                 def call(self,name,args):return tools.call(name,args)
-            def protocol(handle):
+            def protocol(handle, concurrent=None):
                 listed=handle('tools/list',{})['tools']
                 definition=next(row for row in listed if row['name']=='search_conversation')
                 self.assertTrue(definition['annotations']['readOnlyHint'])

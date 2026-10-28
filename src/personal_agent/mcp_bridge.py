@@ -47,20 +47,157 @@ def negotiated_protocol_version(offered):
 
 
 class _AllInlineMethods(frozenset):
-    """Make every request use the dispatcher's documented inline path.
+    """Make every request but ``tools/call`` use the dispatcher's documented inline path.
 
     The public API accepts a frozenset and checks membership.  Still must
     serialize supported and rejected requests alike: otherwise the SDK cancels
     a final unknown-method task as soon as stdin reaches EOF, before its error
     is written.  The exact SDK pin and contract tests cover this small wildcard
-    adaptation until upstream offers an explicit all-inline mode.
+    adaptation until upstream offers an explicit all-inline mode.  #386: a
+    ``tools/call`` is its own task so independent reads can overlap; ``_CallOrder``
+    keeps every other call in arrival order.
     """
 
     def __contains__(self, value):
-        return True
+        return value != 'tools/call'
 
 
-def _serve_stdio(handle):
+class _CallOrder:
+    """Arrival-ordered ``tools/call`` execution where only effect-free reads overlap (#386, #16).
+
+    Every call passes one FIFO gate in arrival order.  A read then runs at once, at most
+    ``CONCURRENT_READ_LIMIT`` together; any other call holds the gate until the reads that
+    arrived before it have finished and it has run, so nothing after it starts first.  As in
+    #16, a page read whose scope includes search results and a search keep their arrival order
+    with each other, so a page read sees exactly the searches before it.
+    Each call runs in a worker thread that a cancellation waits for, so a started call always
+    writes its terminal record.
+    """
+
+    def __init__(self):
+        import anyio
+        from .agent_runtime import CONCURRENT_READ_LIMIT
+        self.gate = anyio.Lock()
+        self.limiter = anyio.CapacityLimiter(CONCURRENT_READ_LIMIT)
+        self.settled = anyio.Condition()
+        self.reads = 0
+        # Searches and search-scoped page reads admitted and not finished.  Each waits only for the
+        # other kind admitted before it, so a page read sees exactly the searches that preceded it.
+        self.searches, self.pages = set(), set()
+        # Ids of calls read off the wire whose answer is not yet written: EOF waits for them
+        # (``_AnsweredBeforeEof``).  A call the peer cancelled is never answered, so it leaves too.
+        self.pending = set()
+
+    async def settle(self, request_id):
+        async with self.settled:
+            self.pending.discard(request_id)
+            self.settled.notify_all()
+
+    async def all_answered(self):
+        async with self.settled:
+            while self.pending:
+                await self.settled.wait()
+
+    async def run(self, call, read, search=False, after_searches=False):
+        import anyio
+        if read:
+            token = object()
+            async with self.gate:
+                self.reads += 1
+                earlier = (set(self.pages) if search else set(self.searches) if after_searches else set())
+                (self.searches if search else self.pages if after_searches else set()).add(token)
+            try:
+                if earlier:
+                    async with self.settled:
+                        while earlier & (self.searches | self.pages):
+                            await self.settled.wait()
+                async with self.limiter:
+                    return await anyio.to_thread.run_sync(call)
+            finally:
+                async with self.settled:
+                    self.reads -= 1
+                    self.searches.discard(token)
+                    self.pages.discard(token)
+                    self.settled.notify_all()
+        async with self.gate:
+            async with self.settled:
+                while self.reads:
+                    await self.settled.wait()
+            return await anyio.to_thread.run_sync(call)
+
+
+def _request_key(value):
+    return json.dumps(value) if isinstance(value, (str, int)) and not isinstance(value, bool) else None
+
+
+class _AnsweredBeforeEof:
+    """The read stream, with EOF held back until every ``tools/call`` read off it is answered (#386).
+
+    Inline calls were answered before the next message was read, so EOF never cut one off.  A
+    call that is its own task is noted when it is read and settled when its answer is written
+    (``_NotingAnswers``) or the peer cancels it; the dispatcher sees EOF only then, which would
+    otherwise cancel it and answer "Connection closed".
+    """
+
+    def __init__(self, stream, order):
+        self._stream, self._order = stream, order
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+    async def __aenter__(self):
+        await self._stream.__aenter__()
+        return self
+
+    async def __aexit__(self, *exc):
+        return await self._stream.__aexit__(*exc)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            item = await self._stream.__anext__()
+        except StopAsyncIteration:
+            await self._order.all_answered()
+            raise
+        message = getattr(item, 'message', None)
+        method = getattr(message, 'method', None)
+        if method == 'tools/call' and _request_key(getattr(message, 'id', None)) is not None:
+            self._order.pending.add(_request_key(message.id))
+        elif method == 'notifications/cancelled':
+            params = getattr(message, 'params', None)
+            key = _request_key(params.get('requestId')) if isinstance(params, dict) else None
+            if key is not None:
+                await self._order.settle(key)
+        return item
+
+
+class _NotingAnswers:
+    """The write stream, settling a noted call once its answer has been handed to the transport (#386)."""
+
+    def __init__(self, stream, order):
+        self._stream, self._order = stream, order
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+    async def __aenter__(self):
+        await self._stream.__aenter__()
+        return self
+
+    async def __aexit__(self, *exc):
+        return await self._stream.__aexit__(*exc)
+
+    async def send(self, item):
+        await self._stream.send(item)
+        message = getattr(item, 'message', None)
+        key = _request_key(getattr(message, 'id', None)) if getattr(message, 'method', None) is None else None
+        if key is not None and key in self._order.pending:
+            await self._order.settle(key)
+
+
+def _serve_stdio(handle, concurrent=None):
     """Adapt the exact-pinned SDK's public dispatcher to Still callbacks.
 
     Imports stay here so importing the host facade does not require the SDK
@@ -72,11 +209,9 @@ def _serve_stdio(handle):
     from mcp.server.stdio import stdio_server
     from mcp.shared.jsonrpc_dispatcher import JSONRPCDispatcher
 
-    async def on_request(context, method, params):
-        if method == 'notifications/initialized':
-            # This is notification-only; do not turn a malformed request
-            # into a newly supported request method.
-            raise MCPError(code=-32601, message='Method not found.')
+    order = []
+
+    def answer(method, params):
         try:
             return handle(method, params)
         except _Rejected as exc:
@@ -85,6 +220,22 @@ def _serve_stdio(handle):
             # The dispatcher otherwise logs the exception and sends its text,
             # which can contain owner payloads, destinations or credentials.
             raise MCPError(code=-32602, message='Still MCP request rejected.') from None
+
+    async def on_request(context, method, params):
+        if method == 'notifications/initialized':
+            # This is notification-only; do not turn a malformed request
+            # into a newly supported request method.
+            raise MCPError(code=-32601, message='Method not found.')
+        if method != 'tools/call':
+            # Inline, so the read loop waits: a later request never overtakes a call before it.
+            await order[0].all_answered()
+            return answer(method, params)
+        try:
+            kind = concurrent(params) if callable(concurrent) else None
+        except Exception:
+            kind = None
+        return await order[0].run(lambda: answer(method, params), bool(kind), search=kind == 'search',
+                                  after_searches=kind == 'after-searches')
 
     def handle_notification(method, params):
         # The old bridge also executed supported methods without an id.
@@ -115,15 +266,17 @@ def _serve_stdio(handle):
         # stray handler/child output off the protocol wire.
         stdin = None if hasattr(sys.stdin, 'buffer') else anyio.wrap_file(sys.stdin)
         stdout = None if hasattr(sys.stdout, 'buffer') else anyio.wrap_file(sys.stdout)
+        order.append(_CallOrder())
         async with stdio_server(stdin=stdin, stdout=stdout) as (read_stream, write_stream):
             dispatcher = JSONRPCDispatcher(
-                read_stream, write_stream,
+                _AnsweredBeforeEof(read_stream, order[0]), _NotingAnswers(write_stream, order[0]),
                 inline_methods=_AllInlineMethods(),
                 peer_cancel_mode='signal', on_stream_exception=malformed_input,
             )
-            # Inline callbacks have no awaits during tool execution. A later
-            # call cannot overtake its predecessor or alter shared Work budget
-            # and same-tool Event pairing. Owner Stop remains the Work gate.
+            # Inline callbacks have no awaits during tool execution.  #386: a tool
+            # call is ordered by ``_CallOrder`` instead: only effect-free reads overlap,
+            # each spends the shared Work budget under its lock and pairs its records by
+            # call id; nothing else can overtake a predecessor. Owner Stop remains the Work gate.
             await dispatcher.run(on_request, on_notify, on_notify_intercept)
 
     anyio.run(run)
@@ -426,7 +579,21 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
         else: raise _Rejected(-32601, 'Method not found.')
         return result
 
-    _serve_stdio(handle)
+    def concurrent(params):
+        """#386: how this call may overlap others: None (it runs alone, in order), ``'search'``,
+        ``'after-searches'`` (#16: a page read waits for searches before it) or ``'read'``."""
+        from .agent_runtime import SEARCH_BACKED_ACTIONS, concurrent_read, reads_search_results
+        name = (params or {}).get('name')
+        if not isinstance(name, str) or name not in capabilities.allowed_tools or name not in tools._offered():
+            return None
+        arguments = (params or {}).get('arguments')
+        action = (capabilities.tools.get(name) or {}).get('host_action')
+        if not concurrent_read(action, arguments if isinstance(arguments, dict) else {}):
+            return None
+        return ('search' if action in SEARCH_BACKED_ACTIONS else
+                'after-searches' if reads_search_results(action) else 'read')
+
+    _serve_stdio(handle, concurrent)
 
 
 if __name__ == '__main__':

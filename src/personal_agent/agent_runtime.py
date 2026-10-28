@@ -4981,6 +4981,26 @@ def _external(trail):
 #: #16 slice 1: at most this many public reads of one model turn run at the same time.
 CONCURRENT_READ_LIMIT=4
 
+#: #386: the calls a CLI route may have in flight together: effect-free reads, without the page
+#: state of browser steps, a code run, the Work's skill state or a method-gap record.
+CONCURRENT_CALL_READS=frozenset(EFFECT_FREE_READS-BROWSER_ACTIONS-CODE_ACTIONS-{'skill_load','skill_resource','method_gap'})
+
+def concurrent_read(action,args):
+ """Whether one call changes nothing and may run while other such calls run (#386, #16 generalized).
+
+ Keyed on the call's effect, never on a tool's service or task: an effect-free read, or an
+ ``api_request`` whose effective effect (the declaration, floored by the method) is ``read``.
+ """
+ if action in API_ACTIONS:
+  from .api_requests import effective_effect
+  args=args if isinstance(args,dict) else {}
+  return effective_effect(args.get('method'),args.get('effect'))=='read'
+ return action in CONCURRENT_CALL_READS
+
+def reads_search_results(action):
+ """Whether a read's scope includes what this Work's searches returned (#23), so it waits for searches before it (#16, #386)."""
+ return action=='public_page_read'
+
 class ReadOverlap:
  """The independent public reads of one model turn, run at the same time (#16 slice 1).
 
