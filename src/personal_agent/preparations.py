@@ -482,6 +482,15 @@ def _minutes_text(minutes):
     return f'{hours}시간' + (f' {rest}분' if rest else '')
 
 
+def last_slot(row):
+    """#404: a watch's last scheduled slot (``max_runs`` never exceeds the slots before its deadline).
+
+    What the model is told to plan by; a late start or a skipped slot can
+    still run until the deadline, which is what the owner is shown (#399).
+    """
+    return row['due_at'] + int(row['every_seconds']) * (max(1, int(row['max_runs'])) - 1)
+
+
 def schedule_text(row, home_zone=None):
     """#393: one owner-readable line - when it runs and how the owner hears of it.
 
