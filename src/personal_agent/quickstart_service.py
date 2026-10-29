@@ -1687,7 +1687,9 @@ class AgentService:
                                  f'{when} {label}을 제안했습니다. 소유자가 수락해야 예약됩니다(Telegram의 수락 버튼이나 대화로 수락).')}
             if window:
                 result.update(every_minutes=row['every_seconds']//60,until=prep.iso(row['window_end'],row['timezone']),
-                              max_runs=row['max_runs'])
+                              max_runs=row['max_runs'],
+                              # #404: until is exclusive; the model sees when its last check is.
+                              last_check=prep.iso(prep.last_slot(row),row['timezone']))
             return result
         return schedule
 

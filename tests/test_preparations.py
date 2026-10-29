@@ -1126,6 +1126,23 @@ class WatchAcceptanceTests(_WatchCase):
                          (10, 6, 0, 'when_needed'))
         self.assertIn('Asia/Seoul', listed['until_local'])
 
+    def test_the_model_is_told_its_last_check_and_until_is_exclusive(self):
+        """#404: a check at the until time never runs; the result names the real last scheduled check."""
+        _work, row, result = self.propose_watch(preparation=False)
+        self.assertEqual(result['last_check'], prep.iso(row['due_at'] + 5 * 600, 'Asia/Seoul'), 'six runs: due + 50 min')
+        self.judge = watch_engine([], preparation=False)
+        self.service.use_decision_engine(self.judge)
+        due = self.now + 600
+        for until, expected in ((due + 3600, due + 3000), (due + 3660, due + 3600)):
+            self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal=f'확인 {until}',
+                                                                 due=self.due_iso(600), every_minutes='10',
+                                                                 until=datetime.fromtimestamp(until, SEOUL).isoformat(),
+                                                                 delivery='when_needed')]},
+                           {'content': '지켜볼까요?'}]
+            self.receive('확인해 줘')
+            [result] = [json.loads(m['content']) for m in self.model_calls[-1]['messages'] if m['role'] == 'tool']
+            self.assertEqual(result['last_check'], prep.iso(expected, 'Asia/Seoul'))
+
     def test_a_three_a_day_watch_until_a_deadline_is_accepted_as_a_proposal(self):
         """#846: the guidance's default cadence (every_minutes ~420 with until) is within the validated window."""
         self.judge = watch_engine([], preparation=False)
