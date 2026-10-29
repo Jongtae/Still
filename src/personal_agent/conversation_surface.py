@@ -284,7 +284,7 @@ def notice_text(service, notification, bound):
     from .quickstart_service import LOCAL_DOCUMENT_APPROVAL_TEXT, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS, WORKING_NOTES_KIND
     kind = notification['kind']
     if kind == 'preparation_proposed':
-        return prep.proposal_text(bound['proposals'], bound['remaining'])
+        return prep.proposal_text(bound['proposals'], bound['remaining'], service.home_zone())
     if kind == 'preparation_scheduled':
         return bound['scheduled_text']
     if kind in MEMORY_PROMPT_KINDS:

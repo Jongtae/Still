@@ -128,7 +128,7 @@ REDACTED_ARGUMENTS={name:tool.recorded_by_length for name,tool in HOST_TOOLS.ite
 #: saved private values removed (``Capabilities.judgment_text``): a
 #: preparation goal is owner text the owner reads back, not a secret.
 #: Without a redactor it falls back to the length placeholder.
-SCRUBBED_ARGUMENTS={'schedule_preparation':'goal',
+SCRUBBED_ARGUMENTS={'schedule_preparation':('goal','title','offer'),
                     # Memory queries are model-authored owner text and may
                     # contain a stored credential; scrub every durable call record.
                     'search_memory':'query',
@@ -326,6 +326,7 @@ SCHEDULE_PREPARATION_DESCRIPTION=('Schedule something for a later time that the 
  'every_minutes with until (#719): instead of recurrence, repeat every that many minutes (a whole number, 5 to 720) from due until the until time (RFC3339, within 31 days of due), at most max_runs times (1 to 96; default every slot) - for watching something up to a deadline. '
  'delivery: send (every result reaches the owner), keep (results stay in Still), or when_needed (kind prepare: every result stays in Still and Still tells the owner only when a result needs them). '
  'goal: one short sentence the owner will read (reminder) or the request to run (prepare); never credentials. Preserve the task interval and distinguish the owner\'s required limits from your provisional method or parameter choices. When revising a plan, reassess those choices against the latest request instead of copying earlier parameters as standing preferences. '
+ 'For kind prepare, also write what the owner reads and accepts (#393), apart from goal, which each run receives as its brief: title, a short name in the owner\'s language (at most 60 characters); offer, at most 6 short lines (400 characters) in the owner\'s own words, one point a line: the limits that matter to their decision (money, risk, counts), which of those you chose yourself and are assuming (say so), what it will not do, and when they will hear from it. Write plain words, not the method\'s terms: say what a term means for the owner, and prefer concrete amounts and times to ratios. State something as blocked only when Still or the service actually blocks it; otherwise say it is how you will do it. Still shows the time, repetition and last run itself, so the offer need not repeat them. '
  'Standing wish (#846): when the owner states a wish about something that changes over time (a price, availability, weather, a delivery, an opening) and wants to know when it comes about, propose one kind prepare watch with delivery when_needed in one question, rather than answering once and stopping: goal states what to check and what counts as news, due is the first check, until is the owner\'s deadline. When a detail is missing, still propose the watch with what is known and ask for the detail in the same reply. '
  'Default cadence about three checks a day at times fitted to the owner\'s day (morning, afternoon, evening local), so every_minutes around 360 to 480; hourly or closer only when the owner asks for it or the deadline is within hours. The wish itself is not a memory: never save the request sentence with save_memory. After an invalid_window result, correct and retry that same bounded watch; never replace it with separately dated one-shot or daily preparations for the same goal. If a required value is missing, ask one question and do not claim the watch is scheduled.')
 #: #774 step 2: ask the owner, in the paired Telegram chat, for a current position.
@@ -390,7 +391,7 @@ DEFINITIONS=[
  schema('calendar_draft_cancel','Draft the cancellation of one existing event and return an exact preview for the owner to approve. Requires the event_id and event_version returned by calendar_query. Does not cancel anything.',{'event_id':STRING,'event_version':STRING},['event_id','event_version']),
  schema('weather',WEATHER_DESCRIPTION,{'city':STRING,'country':STRING,'location_ref':STRING}),
  schema('propose_current_state',PROPOSE_CURRENT_STATE_DESCRIPTION,{'predicate':{'type':'string','enum':['current_place','work_mode','availability_hint']},'value':STRING,'place_ref':STRING,'source':STRING,'until':STRING,'supersedes':STRING},['predicate']),
- schema('schedule_preparation',SCHEDULE_PREPARATION_DESCRIPTION,{'kind':{'type':'string','enum':['reminder','prepare']},'goal':STRING,'due':STRING,'timezone':STRING,'recurrence':{'type':'string','enum':['daily','weekdays','weekly']},'every_minutes':STRING,'until':STRING,'max_runs':STRING,'delivery':{'type':'string','enum':['send','keep','when_needed']}},['kind','goal','due']),
+ schema('schedule_preparation',SCHEDULE_PREPARATION_DESCRIPTION,{'kind':{'type':'string','enum':['reminder','prepare']},'goal':STRING,'due':STRING,'timezone':STRING,'recurrence':{'type':'string','enum':['daily','weekdays','weekly']},'every_minutes':STRING,'until':STRING,'max_runs':STRING,'delivery':{'type':'string','enum':['send','keep','when_needed']},'title':STRING,'offer':STRING},['kind','goal','due']),
  schema('ask_location',ASK_LOCATION_DESCRIPTION,{'reason':STRING,'button_label':STRING,'mode':{'type':'string','enum':['ask','with_answer']}},['reason']),
  schema('skill_load',SKILL_LOAD_DESCRIPTION,{'skill':STRING,'part':{'type':'string','enum':['full','header']}},['skill']),
  schema('skill_resource',SKILL_RESOURCE_DESCRIPTION,{'skill':STRING,'path':STRING},['skill','path']),
@@ -3654,9 +3655,11 @@ class Capabilities:
     raise ToolError('이 경로에서는 준비를 예약할 수 없습니다.','needs_setup',requires='owner-preparations')
    # The Work's saved private values leave the goal before it is stored (the
    # service also removes stored secrets), as for a current-state value.
-   if isinstance(args.get('goal'),str) and args['goal']:
-    from .browser_session import redact_private_values
-    args={**args,'goal':redact_private_values(args['goal'],self._browser_excluded())[0]}
+   # #393: so do the title and offer the owner reads.
+   from .browser_session import redact_private_values
+   for field in ('goal','title','offer'):
+    if isinstance(args.get(field),str) and args[field]:
+     args={**args,field:redact_private_values(args[field],self._browser_excluded())[0]}
    return self.preparations(args)
   if name=='ask_location':
    # #774: one Telegram prompt to the owner; the reply continues this request once.

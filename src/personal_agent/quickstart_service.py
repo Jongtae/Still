@@ -1626,7 +1626,12 @@ class AgentService:
                 kind=args.get('kind')
                 if kind not in prep.KINDS:raise prep.PreparationRefusal('invalid_kind')
                 # Pilot boundary 1: a stored secret never becomes goal text.
-                goal=prep.normalize_goal(self._redact_known_secrets(args.get('goal')))
+                goal=prep.normalize_goal(self._redact_known_secrets(args.get('goal')),
+                                         prep.BRIEF_MAX_CHARS if kind==prep.KIND_PREPARE else prep.GOAL_MAX_CHARS)
+                # #393: what the owner reads and accepts, apart from the run's brief (a reminder's goal already is it).
+                title,offer=(prep.normalize_offer(self._redact_known_secrets(args.get('title') or ''),
+                                                  self._redact_known_secrets(args.get('offer') or ''))
+                             if kind==prep.KIND_PREPARE else (None,None))
                 if not has_window and self.repeats_refused_watch(job['id'],goal):
                     raise prep.PreparationRefusal('window_retry_required')
                 zone_name=self.context_observations.settings().get('timezone') or ''
@@ -1652,7 +1657,8 @@ class AgentService:
             summary=prep.proposal_summary({'kind':kind,'goal_text':goal,'due_at':due_at,'timezone':timezone,
                                            'recurrence':prep.RECURRENCE_WINDOW if window else recurrence,
                                            'every_seconds':window and window[0],'window_end':window and window[1],
-                                           'max_runs':window and window[2],'delivery_mode':delivery_mode})
+                                           'max_runs':window and window[2],'delivery_mode':delivery_mode,
+                                           'channel':channel,'title_text':title,'offer_text':offer},self.home_zone())
             own_request=(isinstance(prompt,str) and prompt==job.get('message')
                          and prep.preparation_of(job.get('request_key')) is None
                          # #774: a location continuation re-runs an earlier message; the owner's own
@@ -1664,7 +1670,7 @@ class AgentService:
                                              channel=channel,created_from=job['id'],
                                              state=prep.STATE_SCHEDULED if accepted else prep.STATE_PROPOSED,
                                              accepted_by=prep.ACCEPTED_OWNER_REQUEST if accepted else None,
-                                             window=window,delivery_mode=delivery_mode)
+                                             window=window,delivery_mode=delivery_mode,title=title,offer=offer)
             except prep.PreparationRefusal as exc:
                 raise ToolError(str(exc),exc.code) from None
             LOG.info('preparation %s id=%s work=%s kind=%s',row['state'],row['id'],job['id'],kind)
@@ -1930,7 +1936,8 @@ class AgentService:
         result=str(answer or '')
         if len(result)>self.WATCH_RESULT_CHARS:result=result[:self.WATCH_RESULT_CHARS]+' [...]'
         judged=self.decision_judge.watch_notification_needed(row['goal_text'],result,row.get('last_notified_text'),
-                                                             work_id=row.get('last_run_job_id'))
+                                                             work_id=row.get('last_run_job_id'),
+                                                             offer=prep.accepted_offer(row) or None)
         return {JUDGMENT_YES:'yes',JUDGMENT_NO:'no'}.get(judged.outcome)
 
     def watch_notification_text(self, notification):
@@ -1938,11 +1945,11 @@ class AgentService:
         job=self.store.job(notification.get('job_id'))
         row=self.preparations.get(prep.preparation_of((job or {}).get('request_key')))
         if not job or not row or row['state']==prep.STATE_CANCELLED:return None
-        goal=str(row['goal_text'])
         body=self.telegram_result_text(job['response'],
                                        job.get('owner_cause') or job.get('error'),job.get('status'),
                                        verified=job.get('owner_verified'),note=job.get('owner_note'))
-        return (f"지켜보던 일에서 알려 드립니다 ({goal[:120]}{'…' if len(goal)>120 else ''}).\n\n"+body+
+        # #393: the watch is named as the owner accepted it, not by its run's brief.
+        return (f"지켜보던 일에서 알려 드립니다 ({prep.owner_title(row)}).\n\n"+body+
                 '\n\n더 알릴 필요가 없으면 아래 버튼으로 지켜보기를 멈출 수 있습니다.')
 
     def scrub_prepared_answer(self, job):
@@ -1978,9 +1985,22 @@ class AgentService:
             rows.append({'role':'user','content':self.scrub_work_text(origin['id'],origin['message']),
                          'job_id':origin['id'],'channel':origin.get('channel'),'qualifier':None,
                          'request_key':origin.get('request_key'),'created':origin.get('created')})
-        rows.append({'role':'user','content':job['message'],'job_id':job['id'],'channel':job.get('channel'),'qualifier':None,
+        content=job['message']
+        if row and prep.offered(row):
+            # #393: the run works within what the owner read and accepted, not only its brief.
+            content+='\n\n'+msg('preparations.accepted_offer_label')+'\n'+prep.accepted_offer(row)
+        rows.append({'role':'user','content':content,'job_id':job['id'],'channel':job.get('channel'),'qualifier':None,
                      'request_key':job.get('request_key'),'created':job.get('created')})
         return rows
+
+    def home_zone(self):
+        """#393: the owner's time zone, so a proposal names a zone only when it differs."""
+        try:return self.context_observations.settings().get('timezone') or None
+        except Exception:return None
+
+    def preparation_proposal_html(self, bound):
+        """#393: the Telegram proposal with each run's brief folded (expandable quote)."""
+        return self._redact_known_secrets(prep.proposal_html(bound['proposals'],bound['remaining'],self.home_zone()))
 
     def queue_preparation_proposal(self, job):
         """Offer this Work's unaccepted preparations to the paired owner once (#659).
@@ -2003,7 +2023,7 @@ class AgentService:
         """#1455: what a directly scheduled message says: each reservation, and that it is cancelled here."""
         rows=[row for row in (self.preparations.get(item) for item in ids) if row and row['state'] in prep.ACTIVE_STATES]
         if not rows:return None
-        return (msg('notice.preparation_scheduled')+'\n'+'\n'.join(self._redact_known_secrets(prep.proposal_summary(row)) for row in rows)
+        return (msg('notice.preparation_scheduled')+'\n'+'\n'.join(self._redact_known_secrets(prep.proposal_summary(row,self.home_zone(),brief=False)) for row in rows)
                 +'\n'+msg('notice.preparation_cancel_hint'))
 
     def pending_memory_candidates(self, job_id):
@@ -2719,12 +2739,12 @@ class AgentService:
             except ProviderError:pass
         return text
 
-    @staticmethod
-    def preparation_reply_prefix(job):
+    def preparation_reply_prefix(self, job):
         """A prepared answer says what it was prepared for; a reminder needs nothing."""
-        if prep.preparation_of(job.get('request_key')) is None or job.get('model')=='preparation':return ''
-        goal=str(job.get('message') or '')
-        return f"미리 준비한 결과입니다 ({goal[:120]}{'…' if len(goal)>120 else ''}).\n\n"
+        preparation_id=prep.preparation_of(job.get('request_key'))
+        if preparation_id is None or job.get('model')=='preparation':return ''
+        row=self.preparations.get(preparation_id) or {'goal_text':job.get('message') or ''}
+        return f"미리 준비한 결과입니다 ({prep.owner_title(row)}).\n\n"
 
     def preparations_status(self):
         """The Settings 준비해 둔 일 list: owner's own view (#659)."""
@@ -2732,6 +2752,8 @@ class AgentService:
         for row in self.preparations.rows():
             last=str(row.get('last_response') or '')
             rows.append({'id':row['id'],'kind':row['kind'],'goal':row['goal_text'],'state':row['state'],
+                         # #393: the owner's name and offer for it, when the AI wrote them.
+                         'title':row.get('title_text'),'offer':row.get('offer_text'),
                          'due':row['due_at'],'due_local':prep.local_text(row['due_at'],row['timezone']),
                          'timezone':row['timezone'],'recurrence':row['recurrence'],'delivery':self.preparation_delivery(row),
                          'accepted_by':row['accepted_by'],'last_outcome':row['last_outcome'],'last_work_id':row['last_run_job_id'],

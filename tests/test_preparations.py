@@ -1111,9 +1111,11 @@ class WatchAcceptanceTests(_WatchCase):
         self.service.deliver_one()
         self.service.deliver_notification()
         proposal = self.sends()[-1]['text']
-        self.assertIn('10분마다', proposal)
-        self.assertIn('최대 6회', proposal)
-        self.assertIn('알려야 할 때만', proposal)
+        # #393: the window as enforced - before its deadline, at most max_runs - with no repeated date or zone.
+        end = datetime.fromtimestamp(row['window_end'], SEOUL).strftime('%H:%M')
+        self.assertIn(f'{end} 전까지, 10분마다 최대 6번', proposal)
+        self.assertIn('알릴 일이 있을 때만', proposal)
+        self.assertNotIn('Asia/Seoul', proposal, 'the owner\'s own zone is not repeated')
         with self.store.db() as db:
             notification = dict(db.execute("SELECT * FROM telegram_notifications WHERE job_id=? AND kind='preparation_proposed'",
                                            (work,)).fetchone())
@@ -1362,6 +1364,188 @@ class WatchAcceptanceAcrossMidnightTests(WatchAcceptanceTests):
         self.assertEqual(datetime.fromtimestamp(self.now, SEOUL).date().isoformat(), '2026-10-14')
 
 
+class OwnerOfferTests(_WatchCase):
+    """#393: the owner reads and accepts an offer; each run gets its brief."""
+
+    TITLE = '5종목 반등 매수 타이밍 지켜보기'
+    OFFER = '예산은 최대 10만 원, 처음엔 1주\n한 번에 잃을 수 있는 돈은 1,000원 이하\n주문은 하지 않고, 살 때마다 직접 승인받아요'
+    BRIEF = '매회 잔고·오늘주문·미체결·완성분봉·최신호가를 조회하고 비용차감 손익비 2 이상만 제안한다. ' * 12
+
+    def propose(self, **extra):
+        self.judge = watch_engine([], preparation=False)
+        self.service.use_decision_engine(self.judge)
+        args = dict(kind='prepare', goal=self.BRIEF.strip(), due=self.due_iso(600), every_minutes='5',
+                    until=self.due_iso(600 + 80 * 60), max_runs='16', delivery='when_needed',
+                    title=self.TITLE, offer=self.OFFER)
+        args.update(extra)
+        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', **args)]},
+                       {'content': '이렇게 지켜볼까요?'}]
+        work = self.receive('오늘 저녁 반등 매수 타이밍 봐줘')
+        [result] = [json.loads(m['content']) for m in self.model_calls[-1]['messages'] if m['role'] == 'tool']
+        return work, result
+
+    def proposal_message(self, work):
+        self.service.deliver_one()
+        self.service.deliver_notification()
+        with self.store.db() as db:
+            notification = dict(db.execute("SELECT * FROM telegram_notifications WHERE job_id=? AND kind='preparation_proposed'",
+                                           (work,)).fetchone())
+        [sent] = [body for body in self.sends() if body.get('message_id') is None and 'reply_markup' in body
+                  and 'p7p:' in json.dumps(body['reply_markup'])]
+        return notification, sent
+
+    def test_the_owner_reads_the_offer_and_the_brief_is_folded(self):
+        work, result = self.propose()
+        [row] = self.rows()
+        self.assertEqual((row['title_text'], row['offer_text'], row['goal_text']), (self.TITLE, self.OFFER, self.BRIEF.strip()))
+        self.assertGreater(len(row['goal_text']), prep.GOAL_MAX_CHARS, 'a prepare brief is not cut to a reminder length')
+        _notification, sent = self.proposal_message(work)
+        text = sent['text']
+        self.assertEqual(sent.get('parse_mode'), 'HTML')
+        self.assertTrue(text.startswith(f'<b>{self.TITLE}</b>\n'), text)
+        end = datetime.fromtimestamp(row['window_end'], SEOUL).strftime('%H:%M')
+        self.assertIn(f'{end} 전까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요', text)
+        self.assertIn('한 번에 잃을 수 있는 돈은 1,000원 이하', text)
+        brief_at = text.index('<blockquote expandable>')
+        self.assertLess(text.index('주문은 하지 않고'), brief_at, 'the offer comes before the folded brief')
+        self.assertIn('완성분봉', text[brief_at:])
+        self.assertNotIn('완성분봉', text[:brief_at], 'the method is not in what the owner reads first')
+        self.assertNotIn(prep.PROPOSAL_HEADER, text)
+        self.assertTrue(text.endswith(prep.PROPOSAL_QUESTION))
+        # The judged-answer path and other surfaces get the same offer first, the brief under its label.
+        plain = prep.proposal_text([row], 0, 'Asia/Seoul')
+        self.assertLess(plain.index(self.OFFER.splitlines()[-1]), plain.index(prep.BRIEF_LABEL))
+
+    def test_accepting_binds_the_offer_that_was_shown(self):
+        work, _result = self.propose()
+        notification, _sent = self.proposal_message(work)
+        [row] = self.rows()
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET offer_text=? WHERE id=?', ('주문까지 해 드려요', row['id']))
+        self.tap(f"p7p:{notification['id']}:accept", notification['message_id'])
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], 'proposed', 'a changed offer is not accepted')
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET offer_text=? WHERE id=?', (self.OFFER, row['id']))
+        self.tap(f"p7p:{notification['id']}:accept", notification['message_id'])
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], 'scheduled')
+
+    def test_a_row_without_an_offer_keeps_its_digest(self):
+        """An earlier message's buttons keep working: its rows' digest material is unchanged."""
+        row = {'id': 'a', 'kind': 'prepare', 'goal_text': 'g', 'due_at': 1.0, 'recurrence': None, 'every_seconds': None,
+               'window_end': None, 'max_runs': None, 'delivery_mode': None, 'title_text': None, 'offer_text': None}
+        import hashlib
+        before = json.dumps(sorted([('a', 'prepare', 'g', 1.0, None, None, None, None, None)]), ensure_ascii=False)
+        self.assertEqual(prep.digest([row]), hashlib.sha256(before.encode()).hexdigest()[:32])
+        self.assertNotEqual(prep.digest([{**row, 'offer_text': 'o'}]), prep.digest([row]))
+
+    def test_each_run_works_within_the_accepted_offer_and_is_named_by_it(self):
+        self.judge = watch_engine([True])
+        self.service.use_decision_engine(self.judge)
+        due = self.now + 60
+        window = prep.normalize_window(10, datetime.fromtimestamp(due + 3600, SEOUL).isoformat(), None, due, 'Asia/Seoul', self.now)
+        self.watched = self.service.preparations.create(
+            kind='prepare', goal='매회 시세를 조회한다', due_at=due, timezone='Asia/Seoul', recurrence=None, channel='telegram',
+            created_from='settings', state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_OWNER_SETTINGS, window=window,
+            delivery_mode=prep.DELIVERY_WHEN_NEEDED, title=self.TITLE, offer=self.OFFER)
+        self.run_slot('한화오션 1주, 지금 살 만해요.')
+        run_prompt = json.dumps(self.model_calls[0]['messages'], ensure_ascii=False)
+        self.assertIn('한 번에 잃을 수 있는 돈은 1,000원 이하', run_prompt, 'the run sees what the owner accepted')
+        self.assertIn('매회 시세를 조회한다', run_prompt)
+        self.assertNotIn('마다 최대', run_prompt, 'no schedule line re-rendered from the advanced due time')
+        [asked] = [item[1] for item in self.judge.asked if item[0] == 'judge' and item[1].purpose == 'watch-notification']
+        self.assertIn('1,000원 이하', asked.facts['accepted_offer'])
+        [told] = [text for text in self.texts() if text.startswith('지켜보던 일에서 알려 드립니다')]
+        self.assertTrue(told.startswith(f'지켜보던 일에서 알려 드립니다 ({self.TITLE}).'), told)
+        listed = self.service.preparations_status()['preparations'][0]
+        self.assertEqual((listed['title'], listed['offer']), (self.TITLE, self.OFFER))
+
+    def test_a_late_start_never_runs_past_what_the_owner_read(self):
+        """#399 review: max_runs below the slot count, accepted late: runs stay within the stated bound."""
+        self.judge = watch_engine([False] * 10)
+        self.service.use_decision_engine(self.judge)
+        due = self.now + 60
+        until = due + 80 * 60
+        window = prep.normalize_window(5, datetime.fromtimestamp(until, SEOUL).isoformat(), 2, due, 'Asia/Seoul', self.now)
+        self.watched = self.service.preparations.create(
+            kind='prepare', goal='시세 확인', due_at=due, timezone='Asia/Seoul', recurrence=None, channel='telegram',
+            created_from='settings', state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_OWNER_SETTINGS, window=window,
+            delivery_mode=prep.DELIVERY_WHEN_NEEDED, title=self.TITLE, offer=self.OFFER)
+        shown = prep.schedule_text(self.watched, 'Asia/Seoul')
+        end = datetime.fromtimestamp(until, SEOUL).strftime('%H:%M')
+        self.assertIn(f'{end} 전까지, 5분마다 최대 2번', shown)
+        self.now = due + 15 * 60  # three slots late
+        starts = []
+        for _ in range(6):
+            row = self.service.preparations.get(self.watched['id'])
+            if row['state'] != prep.STATE_SCHEDULED:
+                break
+            self.now = max(self.now, row['due_at']) + 1
+            if self.tick():
+                starts.append(self.now)
+                self.script = [{'content': '평소와 같아요.'}] * 2
+                self.service.run_one()
+                self.tick()
+        self.assertEqual(len(starts), 2, 'at most the stated number of runs')
+        self.assertTrue(all(at < until for at in starts), 'never at or after the stated deadline')
+
+    def test_an_offer_out_of_shape_is_refused_to_the_model_and_a_secret_never_stays(self):
+        _work, result = self.propose(title='가' * (prep.TITLE_MAX_CHARS + 1))
+        self.assertEqual(result['code'], 'invalid_offer')
+        self.assertEqual(self.rows(), [])
+        _work, result = self.propose(offer='\n'.join(['한 줄'] * (prep.OFFER_MAX_LINES + 1)))
+        self.assertEqual((result['code'], self.rows()), ('invalid_offer', []))
+        self.propose(offer=f'토큰 {SECRET} 으로 조회해요\n주문은 하지 않아요')
+        [row] = self.rows()
+        self.assertNotIn(SECRET, row['offer_text'])
+        with self.store.db() as db:
+            events = ' '.join(r['detail'] or '' for r in db.execute('SELECT detail FROM tool_events'))
+        self.assertNotIn(SECRET, events)
+
+    def test_a_reminder_ignores_an_offer_and_keeps_its_length(self):
+        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='reminder', goal='약 먹기',
+                                                             due=self.due_iso(600), title='제목', offer='설명')]},
+                       {'content': '알려 드릴게요.'}]
+        self.receive('10분 뒤에 약 먹으라고 알려줘')
+        [row] = self.rows()
+        self.assertEqual((row['title_text'], row['offer_text']), (None, None))
+        with self.assertRaises(prep.PreparationRefusal):
+            prep.normalize_goal('가' * (prep.GOAL_MAX_CHARS + 1))
+
+
+class ScheduleTextTests(unittest.TestCase):
+    """#393: the schedule line in the owner's words."""
+
+    def row(self, **extra):
+        due = datetime(2026, 10, 28, 18, 35, tzinfo=SEOUL).timestamp()
+        row = {'kind': 'prepare', 'goal_text': 'g', 'due_at': due, 'timezone': 'Asia/Seoul', 'recurrence': None,
+               'channel': 'telegram', 'delivery_mode': None}
+        row.update(extra)
+        return row
+
+    def window(self, minutes, until_hm, runs):
+        due = self.row()['due_at']
+        until = datetime(2026, 10, 28, *until_hm, tzinfo=SEOUL) if until_hm[0] >= 18 else datetime(2026, 10, 29, *until_hm, tzinfo=SEOUL)
+        every, end, max_runs = prep.normalize_window(minutes, until.isoformat(), runs, due, 'Asia/Seoul', due - 60)
+        return self.row(recurrence=prep.RECURRENCE_WINDOW, every_seconds=every, window_end=end, max_runs=max_runs,
+                        delivery_mode=prep.DELIVERY_WHEN_NEEDED)
+
+    def test_the_deadline_is_stated_as_enforced(self):
+        """The live case: 18:35 until 19:55 every 5 minutes: nothing runs at 19:55 itself."""
+        self.assertEqual(prep.schedule_text(self.window(5, (19, 55), 16), 'Asia/Seoul'),
+                         '10월 28일(수) 18:35부터 19:55 전까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요')
+
+    def test_a_window_past_midnight_names_its_last_day_and_a_foreign_zone_is_named(self):
+        self.assertEqual(prep.schedule_text(self.window(120, (0, 40), None), 'Europe/Paris'),
+                         '10월 28일(수) 18:35부터 10월 29일(목) 00:40 전까지 (Asia/Seoul), 2시간마다 최대 4번 · 알릴 일이 있을 때만 알려요')
+
+    def test_one_run_repetitions_and_delivery(self):
+        self.assertEqual(prep.schedule_text(self.window(5, (19, 0), 1), 'Asia/Seoul'),
+                         '10월 28일(수) 18:35부터 19:00 전까지 한 번 · 알릴 일이 있을 때만 알려요')
+        self.assertEqual(prep.schedule_text(self.row(recurrence='daily', channel='web'), 'Asia/Seoul'),
+                         '10월 28일(수) 18:35부터 매일 · 결과는 Still에 보관해요')
+        self.assertEqual(prep.schedule_text(self.row(kind='reminder'), 'Asia/Seoul'), '10월 28일(수) 18:35')
+
+
 class SurfaceTests(unittest.TestCase):
     def test_the_tool_is_offered_only_where_the_service_wired_it(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1441,6 +1625,11 @@ const press=async(label)=>{const button=descendants(rows()[0]).find(n=>n.tag==='
  await ctx.loadPreparations();
  assert.equal(texts(rows()[0],'settings-row-description')[0],'Prepare ahead · Every 10 min until U · 2/6 runs · D · Telegram only when you need to know · Last run: notified (judged you need to know)');
  assert.deepEqual(texts(rows()[0],'settings-state neutral'),['Window closed']);
+ // #393: a row with the owner's title and offer is listed by them, the brief is not its name.
+ vm.runInContext("setLanguage('ko')",ctx);ctx.rows=[{...ctx.rows[0],state:'scheduled',goal:'매회 잔고와 호가를 조회한다',title:'5종목 지켜보기',offer:'예산 10만 원\n주문은 하지 않아요'}];
+ await ctx.loadPreparations();
+ assert.deepEqual(texts(rows()[0],'settings-row-title'),['5종목 지켜보기']);
+ assert.ok(texts(rows()[0],'settings-row-description')[0].startsWith('예산 10만 원 · 주문은 하지 않아요 · 미리 준비'));
  console.log('ok');
 })().catch(error=>{console.error(error);process.exit(1);});
 """

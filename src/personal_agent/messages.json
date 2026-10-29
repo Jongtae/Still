@@ -1535,6 +1535,18 @@
   "ja": "この手順は許可されませんでした。依頼はここで止まります。",
   "zh": "未允许这一步，请求到此为止。"
  },
+ "preparations.accepted_offer_label": {
+  "ko": "소유자가 읽고 수락한 내용(이 범위 안에서 하세요):",
+  "en": "What the owner read and accepted (stay within it):",
+  "ja": "オーナーが読んで承諾した内容（この範囲内で行ってください）:",
+  "zh": "主人阅读并接受的内容（请在此范围内进行）："
+ },
+ "preparations.brief_label": {
+  "ko": "매번 실행할 때 맡길 내용",
+  "en": "What each run is asked to do",
+  "ja": "毎回の実行で任せる内容",
+  "zh": "每次运行时交代的内容"
+ },
  "preparations.shall_i_schedule_the_following_preparation": {
   "ko": "다음 준비를 예약할까요? 수락하면 정해진 때에 실행합니다.",
   "en": "Shall I schedule the following preparation? If you accept, it will run at the set time.",
