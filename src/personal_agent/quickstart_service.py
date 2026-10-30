@@ -1875,10 +1875,10 @@ class AgentService:
             upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'nothing-to-review','period':period},now,kind=kind)
             return
         from .current_context import owner_today
-        deadline=upkeep.clock()+om.RUN_SECONDS
+        deadline=upkeep.clock()+om.DREAM_RUN_SECONDS
         state,calls,status,detail=upkeep.run_dream(
             job,row,self._owner_model_judgments(work_id),turns=turns,
-            profile=self.owner_profile_snapshot(None,notes=False,ids=True),clock=self._owner_model_clock(),
+            profile=lambda:self.owner_profile_snapshot(None,notes=False,ids=True),clock=self._owner_model_clock(),
             diary_date=owner_today(self.store,works[-1]['created']),ends_after=now,
             cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline)
         detail['period']=period

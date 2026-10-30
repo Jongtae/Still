@@ -41,9 +41,14 @@ def dream(proposals=(), notes='', change='', notes_sources=(), diary=''):
 class Dream(Harness):
     def setUp(self):
         super().setUp()
-        self.dreams, self.asked = [], []
+        self.dreams, self.asked, self.gathers, self.gathered = [], [], [], []
 
         def structured(context, question, schema):
+            if context.purpose == om.DREAM_GATHER_PURPOSE:
+                self.gathered.append((context, question, schema))
+                if not self.gathers:
+                    return None
+                return StructuredDecision(OUTCOME_DECIDED, {'proposals': self.gathers.pop(0)}, fixture_confidence(0.9))
             if context.purpose == om.DREAM_PURPOSE:
                 self.asked.append((context, question, schema))
                 if not self.dreams:
@@ -256,6 +261,45 @@ class Run(Dream):
         self.upkeep.run_dream = paused
         self.tick()
         self.assertEqual(self.store.memories(MEMORY_OWNER), [])
+
+
+class TwoPasses(Dream):
+    """#416: the first pass only finds facts; the look back reads the profile with them and tidies."""
+
+    def test_the_first_pass_saves_found_facts_before_the_look_back_reads_the_profile(self):
+        self.day('주말엔 보통 자가용으로 다녀', '집에서 김치찌개 끓여 먹었어', '오늘도 차로 갈게')
+        self.gathers = [[fact('profile.routine.car', '주말에는 보통 자가용으로 이동함', 't1', 't3', kind='inferred',
+                              category='routine'),
+                         fact('profile.preference.cooking', '집에서 요리해 먹음', 't2', category='preference',
+                              invalidates=[('aaaaaaa1', 'not in this pass')])]]
+        self.dreams = [dream()]
+        self.tick()
+        [(gather_context, question, schema)] = self.gathered
+        self.assertEqual((question, schema), (om.DREAM_GATHER_QUESTION, om.DREAM_GATHER_SCHEMA))
+        self.assertEqual((gather_context.strongest, gather_context.timeout), (True, om.DREAM_TIMEOUT_SECONDS))
+        self.assertIn('[t1] owner: 주말엔 보통 자가용으로', gather_context.facts['turns'])
+        saved = {row['memory_key'] for row in self.store.memories(MEMORY_OWNER, key_prefix='profile.')}
+        self.assertEqual(saved, {'profile.routine.car', 'profile.preference.cooking'})
+        [(look_context, _question, _schema)] = self.asked
+        self.assertIn('주말에는 보통 자가용으로 이동함', look_context.facts['owner_profile'],
+                      'the look back reads what the first pass saved')
+        [(_status, detail)] = self.evidence(self.dream_rows()[0]['job_id'])
+        self.assertEqual((detail['gather']['proposed'], len(detail['gather']['applied']), len(detail['applied'])), (2, 2, 2))
+
+    def test_the_first_pass_keeps_up_to_its_own_limit(self):
+        self.day(*[f'요청 {i}' for i in range(3)])
+        self.gathers = [[fact(f'profile.plan.item{i}', f'계획 {i}', 't1') for i in range(om.DREAM_GATHER_LIMIT + 2)]]
+        self.dreams = [dream()]
+        self.tick()
+        self.assertEqual(len(self.store.memories(MEMORY_OWNER, key_prefix='profile.')), om.DREAM_GATHER_LIMIT)
+        self.assertGreater(om.DREAM_GATHER_LIMIT, om.MAX_PROPOSALS)
+
+    def test_an_unavailable_first_pass_still_lets_the_look_back_run(self):
+        self.day('a', 'b', 'c')
+        self.dreams = [dream(diary='2026-10-29: 기록')]
+        self.tick()
+        self.assertEqual(len(self.gathered), 1)
+        self.assertEqual(len(self.store.memories(MEMORY_OWNER, key_prefix=om.DIARY_PREFIX)), 1)
 
 
 class Gates(unittest.TestCase):

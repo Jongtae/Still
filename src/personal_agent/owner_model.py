@@ -112,6 +112,12 @@ DREAM_TURNS_CHARS = 12000
 #: #420: the dream's one judgment runs on the engine's strongest model and may take this long
 #: (inside the run's own ``RUN_SECONDS`` deadline).
 DREAM_TIMEOUT_SECONDS = 240
+#: #416: a dream is two judgments - a first pass that only finds facts in the turns, then the look back
+#: that tidies what is remembered, the notes and the daily record - so no call starts after this.
+DREAM_RUN_SECONDS = 600
+DREAM_GATHER_PURPOSE = 'owner-model-dream-gather'
+#: How many facts the first pass may keep: it reads up to a day of requests.
+DREAM_GATHER_LIMIT = 10
 #: #402: one dream may end at most this share of the current profile rows (at least one);
 #: more is refused whole, the OpenClaw ``maxPriorEntryLossFraction`` lesson.
 DREAM_END_FRACTION = 0.25
@@ -457,6 +463,9 @@ DREAM_QUESTION = prompt('owner_model_dream').format(categories=', '.join(CATEGOR
 DREAM_QUESTION += ('\n\nThe shared Voice instructions below apply to diary and change, which the owner may read. '
                    'They never relax the rules above.\n\n' + prompt('voice'))
 
+DREAM_GATHER_QUESTION = prompt('owner_model_dream_gather').format(categories=', '.join(CATEGORIES),
+                                                                  gather_limit=DREAM_GATHER_LIMIT)
+
 _DREAM_ITEM = json.loads(json.dumps(SCHEMA['properties']['proposals']['items']))
 _DREAM_ITEM['properties']['sources'] = {'type': 'array', 'items': {'type': 'string'}}
 _DREAM_ITEM['required'] = [*_DREAM_ITEM['required'], 'sources']
@@ -466,6 +475,15 @@ DREAM_SCHEMA = {'type': 'object', 'additionalProperties': False,
                                'notes_sources': {'type': 'array', 'items': {'type': 'string'}},
                                'diary': {'type': 'string'}},
                 'required': ['proposals', 'notes', 'change', 'notes_sources', 'diary']}
+
+
+DREAM_GATHER_SCHEMA = {'type': 'object', 'additionalProperties': False,
+                       'properties': {'proposals': {'type': 'array', 'items': _DREAM_ITEM}}, 'required': ['proposals']}
+
+
+def gather_shape(data):
+    """Types only; what may be kept is ``validate_dream``'s."""
+    return isinstance(data.get('proposals'), list)
 
 
 def dream_shape(data):
@@ -482,7 +500,7 @@ def dream_refs(sources, refs):
     return named if all(ref in refs for ref in named) else None
 
 
-def validate_dream(proposals, refs, requests, known, pending, profile_rows, profile_ids=None):
+def validate_dream(proposals, refs, requests, known, pending, profile_rows, profile_ids=None, limit=MAX_PROPOSALS):
     """``(kept, dropped)`` of a dream's proposals (#402, deterministic).
 
     Each proposal must name what it rests on (``sources``): refs of turns the dream read, or, to tidy
@@ -524,7 +542,7 @@ def validate_dream(proposals, refs, requests, known, pending, profile_rows, prof
             cited.append({**item, 'invalidates': [end for end in item.get('invalidates') or ()
                                                   if not (isinstance(end, dict)
                                                           and profile_ids.get(str(end.get('id') or '').strip()) == key)]})
-    kept, refused = validate(cited, known, pending)
+    kept, refused = validate(cited, known, pending, limit=limit)
     dropped.extend(refused)
     if sum(len(item['invalidates']) for item in kept) > max(1, int(DREAM_END_FRACTION * max(0, profile_rows))):
         # Too much ended at once: every proposal that ends a line is refused; a pure addition stays.
@@ -594,7 +612,7 @@ def key_digest(key):
     return hashlib.sha256(str(key).encode()).hexdigest()[:12]
 
 
-def validate(proposals, known, pending, noted_keys=(), request=''):
+def validate(proposals, known, pending, noted_keys=(), request='', limit=MAX_PROPOSALS):
     """``(kept, dropped)`` of the proposals Still may apply (deterministic).
 
     ``known`` is the normalized content of every current ``profile.`` Memory
@@ -611,7 +629,7 @@ def validate(proposals, known, pending, noted_keys=(), request=''):
     request_text = normalized(request)
     kept, dropped, keys, contents = [], [], set(), set()
     for index, item in enumerate(proposals if isinstance(proposals, list) else ()):
-        reason = 'over-limit' if index >= MAX_PROPOSALS else _refusal(item)
+        reason = 'over-limit' if index >= limit else _refusal(item)
         key = item.get('memory_key') if isinstance(item, dict) and isinstance(item.get('memory_key'), str) else None
         if reason is None:
             content = normalized(item['content'])
@@ -1227,31 +1245,59 @@ class Upkeep:
             used -= len(lines.pop(0)) + 1
         shown = {line[1:line.index(']')] for line in lines}
         refs = {ref: owner for ref, owner in refs.items() if ref in shown}
+        snapshot = profile if callable(profile) else (lambda: profile)
+        today = MemoryService(self.store, now=self.clock, private_read_sink=MemoryService.NO_EGRESS_GUARD)._today()
+
+        def lines_now():
+            rows = self.store.memories(MEMORY_OWNER, limit=101, key_prefix=PROFILE_PREFIX, holding_on=today)
+            return rows, {row['id'][:MemoryService.SHORT_ID_CHARS]: row['memory_key'] for row in rows
+                          if not row['memory_key'].startswith(LESSON_PREFIX)}
+
+        # #416: the first pass only finds facts in the turns; what it keeps is in the profile the look back reads.
+        found, gather = judgments.owner_model_dream_gather('\n'.join(lines), snapshot(), clock, work_id=job['id'],
+                                                           cancelled=cancelled)
+        calls = 1 if call_sent(gather) else 0
+        self.count(job['id'], calls, KIND_DREAM)
+        first = {'decision': gather.outcome, 'model': gather.confidence.model or None,
+                 'observed_model': gather.confidence.observed_model or None}
+        gathered, stopped = [], None
+        if found is not None:
+            known, pending = self.known_values(MEMORY_OWNER, job['id'])
+            rows, ids = lines_now()
+            kept, refused = validate_dream(found.get('proposals'), refs, refs.values(), known, pending, len(rows), ids,
+                                           limit=DREAM_GATHER_LIMIT)
+            gathered, stopped = self._apply_facts([{**item, 'invalidates': []} for item in kept], job, refused,
+                                                  ends_after=ends_after)
+            first.update(proposed=len(found.get('proposals') or []), applied=gathered, dropped=refused)
         current = notes.current()
         current_text = current['text'] if current else ''
         previous = self.diary_previous(MEMORY_OWNER)
-        data, decision = judgments.owner_model_dream('\n'.join(lines), profile, current_text,
+        if stopped == STOPPED_PAUSED or (cancelled and cancelled()):
+            return STATE_DONE, calls, EVENT_RECORDED, {'gather': first, 'sent': bool(calls), 'applied': gathered,
+                                                       'dropped': [], 'notes': None, 'diary': None,
+                                                       'stopped': stopped or STOPPED_DEADLINE,
+                                                       'inputs': {'turns': len(lines)}}
+        data, decision = judgments.owner_model_dream('\n'.join(lines), snapshot(), current_text,
                                                      previous['content'] if previous else '', clock,
                                                      work_id=job['id'], cancelled=cancelled)
         confidence = decision.confidence
-        calls = 1 if call_sent(decision) else 0
+        calls += 1 if call_sent(decision) else 0
         self.count(job['id'], calls, KIND_DREAM)
         detail = {'decision': decision.outcome, 'route': confidence.route or None, 'provider': confidence.provider or None,
                   'model': confidence.model or None, 'observed_model': confidence.observed_model or None,
                   'confidence': confidence.probability, 'sent': bool(calls),
-                  'inputs': {'turns': len(lines), 'turns_chars': sum(len(line) for line in lines),
-                             'profile_chars': len(profile or ''), 'clock': bool(clock),
+                  'gather': first,
+                  'inputs': {'turns': len(lines), 'turns_chars': sum(len(line) for line in lines), 'clock': bool(clock),
                              'working_notes_version': current['version'] if current else None,
                              'previous_diary': bool(previous)}}
         if data is None:
-            return STATE_UNAVAILABLE, calls, EVENT_UNAVAILABLE, detail
+            detail.update(applied=gathered)
+            return (STATE_DONE if gathered else STATE_UNAVAILABLE), calls, (EVENT_RECORDED if gathered else EVENT_UNAVAILABLE), detail
         known, pending = self.known_values(MEMORY_OWNER, job['id'])
-        today = MemoryService(self.store, now=self.clock, private_read_sink=MemoryService.NO_EGRESS_GUARD)._today()
-        rows = self.store.memories(MEMORY_OWNER, limit=101, key_prefix=PROFILE_PREFIX, holding_on=today)
-        lines = {row['id'][:MemoryService.SHORT_ID_CHARS]: row['memory_key'] for row in rows
-                 if not row['memory_key'].startswith(LESSON_PREFIX)}
-        kept, dropped = validate_dream(data.get('proposals'), refs, refs.values(), known, pending, len(rows), lines)
+        rows, ids = lines_now()
+        kept, dropped = validate_dream(data.get('proposals'), refs, refs.values(), known, pending, len(rows), ids)
         applied, stopped = self._apply_facts(kept, job, dropped, ends_after=ends_after)
+        applied = gathered + applied
         detail.update(proposed=len(data.get('proposals') or []), applied=applied, dropped=dropped, stopped=stopped,
                       notes=None, diary=None)
         if stopped != STOPPED_PAUSED:
