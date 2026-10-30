@@ -175,6 +175,16 @@ class BrowserRelay:
         if not isinstance(request, dict) or not hmac.compare_digest(str(request.get('key') or ''), self._key):
             return {'error': {'kind': 'tool', 'message': RELAY_UNAVAILABLE_TEXT, 'code': 'relay_refused', 'ran': False}}
         name, arguments = request.get('name'), request.get('arguments')
+        if name == SECRET_REDACTION:
+            # #369: pure, so outside the turn lock; a failure answers an error and the bridge withholds.
+            text = arguments.get('text') if isinstance(arguments, dict) else None
+            if not isinstance(text, str):
+                return {'error': {'kind': 'invalid_arguments', 'message': ''}}
+            try:
+                from .current_context import redact_known_secrets
+                return {'ok': redact_known_secrets(self.tools.capabilities.store, text)}
+            except Exception:
+                return {'error': {'kind': 'tool', 'message': RELAY_UNAVAILABLE_TEXT, 'code': 'redaction_unavailable'}}
         if name == 'connector_permission':
             # #1197: the turn's connector permission decision, made by the service.
             decide = getattr(self.tools, 'connector_permission', None)
@@ -304,6 +314,12 @@ def unused_browser_factory():
     Never a driver: were it ever called, the call is refused, not run in the bridge.
     """
     raise ToolError(RELAY_UNAVAILABLE_TEXT, 'browser_relay_unavailable')
+
+
+#: #369: the bridge's stored-secret redaction runs in the service.  Encrypted API slot values are read
+#: with the owner's Keychain key, which a process the CLI starts cannot read (observed under Codex's
+#: seatbelt: ``CredentialError``), so every bridge redaction failed closed and withheld its text.
+SECRET_REDACTION = 'redact_known_secrets'
 
 
 def RELAYED_PREPARATIONS(*_args, **_kwargs):
