@@ -359,7 +359,7 @@ class ContinuityTests(ProjectionTestCase):
         self.assertEqual(first['status'], 'failed')
         with self.store.db() as db:
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                       (first['id'], 'calendar_draft_create', 'failed',
+                       (first['id'], 'api_request', 'failed',
                         json.dumps({'effect':'unknown','state':'outcome-unknown'}), time.time()))
         self.connect_model()
         self.retry_engine()
@@ -460,7 +460,6 @@ class UnsupportedCapabilityTests(ProjectionTestCase):
         self.assertFalse(decision.executes)
         self.assertEqual(decision.clarification, UNSUPPORTED_CAPABILITY_TEXT['mail-send'])
         self.assertEqual([item[1].facts for item in engine.asked], [{'owner_message': text}])
-        self.assertEqual(self.store.config('calendar_create', {}), {})
 
     def test_a_none_of_these_judgment_leaves_the_turn_to_the_worker(self):
         self.judged({})
@@ -589,12 +588,12 @@ class TruthfulRepliesTests(unittest.TestCase):
         from personal_agent.conversation_projection import answer_note
         steps = [('browser_click', '일치하는 요소가 없습니다. 요소 목록에 있는 번호나 이름을 사용하세요.'),
                  ('browser_click', '일치하는 요소가 없습니다. 요소 목록에 있는 번호나 이름을 사용하세요.'),
-                 ('calendar_draft_create', '소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.')]
-        kept = {'소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.'}
+                 ('settings_change', '설정 변경은 소유자 확인을 기다립니다.')]
+        kept = {'설정 변경은 소유자 확인을 기다립니다.'}
         self.assertEqual(answer_note(steps, 'partial', kept=kept),
-                         '일부 단계는 끝내지 못했어요. 소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.')
+                         '일부 단계는 끝내지 못했어요. 설정 변경은 소유자 확인을 기다립니다.')
         self.assertEqual(answer_note(steps, 'failed', kept=kept),
-                         '요청하신 작업은 끝내지 못했어요. 소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.')
+                         '요청하신 작업은 끝내지 못했어요. 설정 변경은 소유자 확인을 기다립니다.')
         self.assertEqual(answer_note(steps[:1], 'partial'), '일부 단계는 끝내지 못했어요.')
         self.assertEqual(answer_note([('a', 'x'), ('b', 'y'), ('c', 'z'), ('d', 'w')], 'partial'), '일부 단계는 끝내지 못했어요.')
         self.assertIsNone(answer_note([], 'partial'))
@@ -704,7 +703,7 @@ class ConversationContinuityTests(ProjectionTestCase):
         with self.store.db() as db:
             db.execute(
                 'INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                (first['id'], 'calendar_draft_create', 'failed',
+                (first['id'], 'api_request', 'failed',
                  '{"effect":"unknown","state":"outcome-unknown"}', time.time()),
             )
         self.service.use_decision_engine(self.relation_engine({'그거 다시 해줘': FOLLOWUP_RETRY}))

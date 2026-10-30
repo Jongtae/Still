@@ -559,7 +559,6 @@ class ReviewRegressions(MattermostCase):
         from personal_agent.connector_contract import _owner_key
         self.assertEqual(self.service._local_handoff_owner({'owner': _owner_key(f'mattermost:{OWNER}')}),
                          f'mattermost:{OWNER}')
-        self.assertIn(f'mattermost:{OWNER}', self.service.calendar_owner_candidates())
         self.assertIn(f'mattermost:{OWNER}', self.service._connector_owner_candidates())
 
     def test_a_server_that_moves_to_a_private_address_is_refused(self):
@@ -692,21 +691,6 @@ class ReviewRegressions(MattermostCase):
             self.service.deliver_notification()
         self.assertEqual(self.store.notification(row['id'])['state'], 'sent')
         self.assertEqual([call.args[:2] for call in recorded.call_args_list], [(job['id'], 'digest-1')])
-
-    def test_a_calendar_draft_uses_its_own_owners_connection(self):
-        bound = []
-
-        class Calendar:
-            def __init__(inner, owner):
-                inner.owner = owner
-
-            def pending(inner, owner):
-                bound.append((inner.owner, owner))
-                return []
-        self.service.calendar_factory = lambda owner: Calendar(owner)
-        self.service.calendar_draft_request({'operation': 'list'})
-        self.assertIn(('local-owner', f'mattermost:{OWNER}'), bound)
-        self.assertTrue(all(made == 'local-owner' for made, asked in bound), 'draft issuers share the owner connection')
 
     def test_a_notice_of_a_work_that_ran_in_work_mode_is_never_sent_later(self):
         self.owner_says('질문')

@@ -248,9 +248,6 @@ class LoopUnitTests(unittest.TestCase):
                                                                  'end': '2026-09-28T00:00:00+09:00',
                                                                  'timezone': 'Asia/Seoul'})
         self.assertEqual((result['needs_setup'], result['requires']), (True, 'google-calendar'))
-        with self.assertRaises(ToolError) as refused:
-            self.caps(Script()).execute('calendar_draft_create', {'summary': 'x', 'start': 'a', 'end': 'b', 'timezone': 'z'})
-        self.assertEqual((refused.exception.code, refused.exception.requires), ('needs_setup', 'google-calendar-write'))
 
     def test_outcome_rules(self):
         read_fail = ('weather', 'failed', json.dumps({'error': 'x'}))
@@ -602,9 +599,12 @@ class AlternativesAndCompletionTests(unittest.TestCase):
         self.assertEqual(self.concluded()['alternatives_tried']['count'], 3)
 
     def test_a_missing_authority_is_not_nudged_toward_another_path(self):
-        script = Script({'tool_calls': [call('1', 'calendar_draft_create', summary='x', start='a', end='b', timezone='z')]},
-                        {'content': '캘린더 연결이 필요합니다.'})
-        self.run_script(script)
+        # A delegated specialist cannot schedule for the owner: a setup-required refusal, not a failed path.
+        script = Script({'tool_calls': [call('1', 'schedule_preparation', kind='reminder', goal='x',
+                                             due='2030-01-01T09:00:00+09:00', timezone='Asia/Seoul')]},
+                        {'content': '준비를 예약할 수 없습니다.'})
+        self.run_script(script, preparations=object(), delegated=True)
+        self.assertEqual(self.failed_codes(), ['needs_setup'])
         self.assertFalse(any(m['role'] == 'system' and m['content'].startswith('Path check')
                              for m in script.bodies[-1]['messages']))
 

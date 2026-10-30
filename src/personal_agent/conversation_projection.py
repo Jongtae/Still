@@ -70,14 +70,15 @@ TOOL_LABELS = {
     'subscription_engine': msg('projection.subscription_cli_run'), 'model': 'AI 응답', 'web_search': '웹 검색',
     'list_notes': '메모 조회', 'save_note': '메모 저장', 'save_result': msg('projection.save_result'), 'save_memory': '기억 저장', 'memory_undo': msg('projection.undo_memory'), 'forget_record': '기억 잊기',
     'list_memory': '기억 조회', 'search_memory': '기억 검색', 'search_conversation': '이전 대화 검색', 'local_authority': '폴더 권한', 'calendar_create': msg('handoff.create_event'),
-    'calendar_query': '일정 조회', 'calendar_draft_create': '일정 초안', 'calendar_draft_update': '일정 초안',
-    'calendar_draft_cancel': '일정 초안', 'weather': '날씨 조회', 'ask_location': '위치 확인', 'tell_owner': '중간 소식',
+    'calendar_query': '일정 조회', 'weather': '날씨 조회', 'ask_location': '위치 확인', 'tell_owner': '중간 소식',
     'delegate_agent': msg('projection.handed_to_another_agent'), 'list_agents': '에이전트 목록 조회',
     'find_files': '파일 찾기', 'read_file': '파일 읽기', 'list_roots': '연결 폴더 확인', 'public_page_read': msg('projection.read_a_public_page'),
     'drive_search': msg('projection.find_drive_files'), 'drive_read': msg('projection.read_drive_file'),
     'mail_search': msg('projection.find_mail'), 'mail_read': msg('projection.read_mail'), 'api_request': '인증 API 호출', 'code_run': '코드 실행',
     # #23 retired this tool; the label keeps Works recorded before then readable.
     'bounded_public_research': msg('projection.public_research'),
+    # #432 retired the calendar draft tools; the labels keep Works recorded before then readable.
+    'calendar_draft_create': '일정 초안', 'calendar_draft_update': '일정 초안', 'calendar_draft_cancel': '일정 초안',
     # SEC-BROWSER-01 (#656): steps in the owner-logged-in browser profile.
     'browser_open': msg('projection.open_browser_page'), 'browser_read': msg('projection.read_browser_page'), 'browser_find': msg('projection.find_on_browser_page'), 'browser_click': msg('projection.click_in_browser'), 'browser_type': msg('projection.type_in_browser'),
     # BROWSE-09 (#953): the owner is asked to sign in.

@@ -458,7 +458,7 @@ class TelegramChannel:
 #   * A turn is asked, as a bounded semantic question, of the
 #     provider-neutral DecisionEngine (PRESENCE-INTENT-01 / #597): does it
 #     need one of Still's declared capabilities (``CAPABILITY_NEEDS``), so a
-#     missing connection can be offered first or a calendar draft previewed?
+#     missing connection can be offered first?
 #     The engine may only *select* a declared candidate; Still policy
 #     thresholds the answer, and an unavailable, abstaining or unsure engine
 #     leaves the turn on ``conversation``, the ordinary model-answered route.
@@ -559,8 +559,7 @@ SEVERAL_TASKS = 'several-tasks'
 CAPABILITY_NEEDS = {
     INTENT_MAIL_SEARCH: ("search or check the owner's own mailbox (Gmail) for a received message, "
                          "for example whether someone wrote, replied or sent something"),
-    INTENT_CALENDAR_CREATE: ("put a new event, meeting or appointment on the owner's own calendar; the "
-                             "assistant only drafts it and the owner approves the exact preview"),
+    INTENT_CALENDAR_CREATE: "put a new event, meeting or appointment on the owner's own calendar",
     INTENT_DRIVE_READ: ("read, search or summarize files in the owner's own Google Drive, or connect "
                         "Google Drive to do that"),
     INTENT_SAVED_CONTEXT: ("use the owner's own saved context items (texts or links they captured earlier for "
@@ -1445,11 +1444,7 @@ class IntentClassifier:
         return self._with_suggestion(decision, model_suggestion)
 
     def _fallback(self, text):
-        """Not an explicit form: a judged capability, else the ordinary conversation route.
-
-        A pending calendar draft's approve or cancel reply never reaches this
-        classifier: the service answers it first (#22).
-        """
+        """Not an explicit form: a judged capability, else the ordinary conversation route."""
         judged = self._judged_capability(text)
         if judged is not None:
             return judged
@@ -1461,12 +1456,12 @@ class IntentClassifier:
     def _judged_capability(self, text):
         """Ask the DecisionEngine whether a turn needs a declared capability.
 
-        Asked for every turn that is not an explicit form (#672 review; a
-        pending calendar draft's answer never reaches here, #22).  The owner
+        Asked for every turn that is not an explicit form (#672 review; an
+        owner act's answer to an open item never reaches here, #172).  The owner
         text is redacted by ``ConversationJudgments`` before it reaches the
         engine.  A yes selects an Still-declared candidate (``several-tasks``
         yields the mixed-turn clarification); the only argument is the
-        utterance itself for a calendar draft, never text the engine produced.
+        utterance itself for a calendar event, never text the engine produced.
         A judged mail need carries no query (#173): its connection is offered
         first when missing, and the worker reads the owner's words and
         searches mail with its own tools.  Unavailable, unsure or
@@ -1483,9 +1478,8 @@ class IntentClassifier:
         if need.value == INTENT_MAIL_SEARCH:
             return IntentDecision(INTENT_MAIL_SEARCH, AUTHORITY_RULE, cues=cues)
         if need.value == INTENT_CALENDAR_CREATE:
-            # The utterance is the argument, as it always was: title, date
-            # and time are read by ``CalendarConversation``, which ends in a
-            # draft and an exact preview; only the owner's approval executes.
+            # The utterance is the argument: the worker reads it and changes the
+            # calendar through api_request's google-calendar slot (#432).
             return IntentDecision(INTENT_CALENDAR_CREATE, AUTHORITY_RULE, argument=text, cues=cues)
         if need.value == INTENT_DRIVE_READ:
             return IntentDecision(INTENT_DRIVE_READ, AUTHORITY_RULE, cues=cues)

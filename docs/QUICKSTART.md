@@ -353,7 +353,7 @@ Then, on this computer, press **연결** on each service in the same section and
 | Google Drive | `http://127.0.0.1:8787/google-drive-connect` | read the whole Drive (`drive.readonly`) |
 | Gmail | `http://127.0.0.1:8787/google-gmail` | search and read mail (`gmail.readonly`) |
 | Google Calendar | `http://127.0.0.1:8787/google-calendar?grant=read` | read events from every calendar you show in Google Calendar (`calendar.events.readonly`, `calendar.calendarlist.readonly`) |
-| Calendar changes | `http://127.0.0.1:8787/google-calendar?grant=write` | create or change events, each after your approval (`calendar.events`) |
+| Calendar changes | `http://127.0.0.1:8787/google-calendar?grant=write` | create, change, move or delete events; no attendee is emailed (`calendar.events`) |
 
 Google shows "Google hasn't verified this app" because the client is your own unverified
 app. Choose *Advanced → continue*. You are its only user, so Google's verification and its
@@ -371,7 +371,9 @@ access in your Google account).
 What this does and does not do:
 
 - **Read-only Drive and Gmail.** Still cannot change Drive files or send, delete or label
-  mail. A calendar change is only drafted, and runs after you approve it.
+  mail. With the calendar write connection, your AI makes a calendar change itself, and its
+  answer and the Work's information-use record say what it changed. Nobody you add to an
+  event is emailed.
 - **Everything stays on this computer.** The client is kept in the Still secret store.
   Tokens are stored encrypted, with the key in the macOS Keychain. No Still server sits
   between you and Google, and no client ships with Still. On Linux, set
@@ -416,14 +418,19 @@ Then open Still on its local address and connect each grant from the settings pa
 `/google-calendar?grant=read` and `/google-calendar?grant=write`. Both routes require
 your owner session and refuse a tunnel host.
 
-**What the model can and cannot do.** The model may read your calendar and may draft a
-create, update or cancel. It has no tool that applies one. A draft carries the exact
-payload that would be sent and its hash; applying it needs a one-time approval bound to
-you, that draft, that payload and the current write connection, and only you can issue
-that — through `/api/calendar/drafts`, on the local address only. That surface covers
-drafts from both your Telegram conversation and the web, because both are you; each
-still needs its own write grant. Attendee invitation and recurring events are not
-supported and are refused rather than quietly dropped.
+**What the model can and cannot do (#432).** The model reads your calendar with
+`calendar_query` or the Calendar API. With the write connection it creates, changes, moves
+and deletes events itself, through the Google Calendar API (`api_request`, slot
+`google-calendar`). It can use any field of Google's event format, including all-day
+events, recurrence and attendees, so a case Still never planned for is not a dead end.
+When Google refuses a change, the model gets Google's own reason back, and a refused change
+is recorded as changing nothing, so the model can correct the request and send it again.
+Still keeps the token, which a change spends: only the write grant can change anything.
+Still also keeps the paths: event insert, quickAdd, patch, update, delete and move. It
+never shares a calendar, creates or deletes calendars, imports events, or registers a
+watch. Every change is sent with `sendUpdates=none`, so no invitation or update email
+reaches anyone. A change applies without a separate approval, as for the other connected
+services; only payments need your approval for each action.
 
 Reading your calendar puts event titles in the model's context. A later public lookup in
 the same turn (web search, public page read, weather) is not refused for that reason: as

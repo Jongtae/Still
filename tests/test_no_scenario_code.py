@@ -75,7 +75,7 @@ SCANNED_MODULES = ('agent_runtime.py', 'conversation_handoff.py', 'current_conte
                    # PROC-MEM-01 (#1486): the sandboxed code run and the per-connection function library.
                    'code_run.py', 'procedures.py',
                    # GUARD-NL-01 (#171): modules that read owner or page text.
-                   'calendar_conversation.py', 'settings_orchestrator.py', 'telegram_presence.py',
+                   'settings_orchestrator.py', 'telegram_presence.py',
                    'information_use.py',
                    # OWNER-ACT-01 (#172): the one judgment over owner acts and the open items it settles.
                    'owner_acts.py')
@@ -536,7 +536,7 @@ class NoScenarioCodeTests(unittest.TestCase):
                          'local_tools.py', 'quickstart_service.py', 'decision.py', 'decision_adapters.py',
                          'decision_routes.py', 'orchestrator.py',
                          # GUARD-NL-01 (#171): the modules that read owner or page text.
-                         'calendar_conversation.py', 'settings_orchestrator.py', 'telegram_presence.py',
+                         'settings_orchestrator.py', 'telegram_presence.py',
                          'information_use.py'):
             self.assertIn(required, names)
         self.assertFalse(names & set(ALLOWED_MODULES))
@@ -650,7 +650,7 @@ class NoScenarioCodeTests(unittest.TestCase):
                 return reason
         ''')
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / 'calendar_conversation.py'
+            path = Path(tmp) / 'settings_orchestrator.py'
             path.write_text(planted, encoding='utf-8')
             hits = scan([path])
         by_literal = {}

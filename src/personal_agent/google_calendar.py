@@ -1,16 +1,15 @@
 """Minimal Google Calendar v3 adapter with an injected HTTP transport.
 
-The adapter owns provider syntax, not owner authority or credentials.  Writes
-are fixed to the primary calendar and suppress attendee updates.  Reads cover
-every calendar the owner shows (``selected``) in Google Calendar, plus the
-primary (#1225); only primary events carry an ``etag`` for later changes.
+The adapter owns provider syntax, not owner authority or credentials.  It
+only reads (#432: changes go through ``api_request``'s google-calendar slot).
+Reads cover every calendar the owner shows (``selected``) in Google Calendar,
+plus the primary (#1225); only primary events carry an ``etag``.
 The injected transport has the signature ``(method, url, body, headers)``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 from urllib.parse import quote, urlencode
 
 
@@ -54,36 +53,15 @@ class GoogleCalendarError(ValueError):
 
 
 class GoogleCalendarHTTPError(Exception):
-    """Transport-neutral HTTP failure used by injected provider transports.
+    """Transport-neutral HTTP failure used by injected provider transports."""
 
-    ``reauthentication_required`` is False on a 401 after which a
-    credential-owning transport kept a usable credential (#246): the request
-    was refused before Google acted on it, and the connection stays connected.
-    """
-
-    def __init__(self, status: int, *, reauthentication_required: bool = True):
+    def __init__(self, status: int):
         super().__init__(f"Google Calendar HTTP status {status}")
         self.status = status
-        self.reauthentication_required = reauthentication_required
-
-
-def _event_body(payload: dict, *, partial: bool = False) -> dict:
-    body = {}
-    for key in ("summary", "location", "description"):
-        if key in payload:
-            body[key] = payload[key]
-    if any(key in payload for key in ("start", "end", "timezone")):
-        if not all(key in payload for key in ("start", "end", "timezone")):
-            raise GoogleCalendarError("invalid-payload")
-        body["start"] = {"dateTime": payload["start"], "timeZone": payload["timezone"]}
-        body["end"] = {"dateTime": payload["end"], "timeZone": payload["timezone"]}
-    if not body and partial:
-        raise GoogleCalendarError("invalid-payload")
-    return body
 
 
 class GoogleCalendar:
-    """Exact GET/POST/PATCH/DELETE operations for one primary calendar."""
+    """Exact GET reads of the owner's shown calendars."""
 
     def __init__(self, transport, access_token: str | None = None):
         if access_token is not None and (not isinstance(access_token, str) or not access_token):
@@ -91,51 +69,27 @@ class GoogleCalendar:
         self.transport = transport
         self.access_token = access_token
 
-    def _headers(self, extra: dict | None = None) -> dict:
-        headers = dict(extra or {})
+    def _headers(self) -> dict:
+        headers = {}
         if self.access_token is not None:
             headers["Authorization"] = "Bearer " + self.access_token
         return headers
 
-    def _call(self, method: str, url: str, body, headers: dict, *, mutation: bool):
+    def _get(self, url: str):
         try:
-            return self.transport(method, url, body, self._headers(headers))
+            return self.transport("GET", url, None, self._headers())
         except GoogleCalendarHTTPError as error:
             if error.status == 401:
-                if not getattr(error, "reauthentication_required", True):
-                    # Refused before Google acted on it; the transport kept a
-                    # usable credential, so this is not an expired connection.
-                    raise GoogleCalendarError("token-rejected") from None
                 raise GoogleCalendarError("scope-expired") from None
-            if error.status == 403:
-                raise GoogleCalendarError("provider-rejected") from None
-            if error.status == 412:
-                raise GoogleCalendarError("stale-event") from None
-            if error.status == 409 and mutation:
-                # Google documents 409 as "The requested identifier already
-                # exists" (reason ``duplicate``) and as ``conflict``. create()
-                # sends an event ID derived from the approved idempotency key,
-                # so a create 409 means the event plausibly already exists; a
-                # PATCH/DELETE 409 does not establish that nothing changed.
-                # Neither may be reported as "no external effect".
-                reason = "event-already-exists" if method == "POST" else "provider-conflict"
-                raise GoogleCalendarError(reason, "unknown") from None
-            if mutation and (error.status in (408, 429) or (method in ("PATCH", "DELETE") and error.status in (404, 410))):
-                # #594 item 6 (#607): a timed-out/throttled mutation may still
-                # have been applied, and "not found"/"gone" on PATCH/DELETE can
-                # be the trace of an earlier attempt of this same action.
-                # Neither proves that nothing changed; reconcile, never replay.
-                raise GoogleCalendarError("provider-error", "unknown") from None
             if error.status >= 500:
-                raise GoogleCalendarError("provider-error", "unknown" if mutation else "none") from None
+                raise GoogleCalendarError("provider-error") from None
             raise GoogleCalendarError("provider-rejected") from None
         except (TimeoutError, OSError):
-            raise GoogleCalendarError("provider-timeout", "unknown" if mutation else "none") from None
+            raise GoogleCalendarError("provider-timeout") from None
         except Exception:
             # Injected transports and response decoders are an external trust
-            # boundary. Never expose their exception text; after a mutation
-            # attempt, conservatively preserve an unknown-effect receipt.
-            raise GoogleCalendarError("provider-error", "unknown" if mutation else "none") from None
+            # boundary. Never expose their exception text.
+            raise GoogleCalendarError("provider-error") from None
 
     def calendars(self) -> list[dict]:
         """The calendars to read: primary first, then each one shown in Google Calendar.
@@ -148,7 +102,7 @@ class GoogleCalendar:
                            "fields": "items(id,summary,summaryOverride,primary,selected)"})
         self.calendar_list_failed = False
         try:
-            response = self._call("GET", f"{CALENDAR_API}/users/me/calendarList?{query}", None, {}, mutation=False)
+            response = self._get(f"{CALENDAR_API}/users/me/calendarList?{query}")
         except GoogleCalendarError as error:
             if error.reason == "scope-expired":
                 raise
@@ -193,7 +147,7 @@ class GoogleCalendar:
                 row["calendar"] = calendar["name"]
                 row["calendar_primary"] = calendar["primary"]
                 if not calendar["primary"]:
-                    # Writes go to the primary calendar only: no version to draft a change against.
+                    # Only a primary event carries its version (#1225).
                     row["etag"] = ""
                 events.append(row)
         events.sort(key=lambda row: _instant(row["start"], timezone))
@@ -211,13 +165,7 @@ class GoogleCalendar:
                 "fields": "items(id,etag,summary,start,end,location,status)",
             }
         )
-        response = self._call(
-            "GET",
-            f"{CALENDAR_API}/calendars/{quote(calendar_id, safe='')}/events?{query}",
-            None,
-            {},
-            mutation=False,
-        )
+        response = self._get(f"{CALENDAR_API}/calendars/{quote(calendar_id, safe='')}/events?{query}")
         if not isinstance(response, dict) or not isinstance(response.get("items"), list):
             raise GoogleCalendarError("malformed-response")
         if len(response["items"]) > max_results:
@@ -261,43 +209,3 @@ class GoogleCalendar:
                 }
             )
         return events
-
-    def create(self, payload: dict, idempotency_key: str) -> dict:
-        # Google Calendar has no generic Idempotency-Key contract.  A stable,
-        # provider-valid event ID makes the approved create identity explicit.
-        event_id = "a" + hashlib.sha256(idempotency_key.encode()).hexdigest()[:31]
-        body = {"id": event_id, **_event_body(payload)}
-        response = self._call(
-            "POST",
-            f"{CALENDAR_API}/calendars/primary/events?sendUpdates=none",
-            body,
-            {"Content-Type": "application/json", "Idempotency-Key": idempotency_key},
-            mutation=True,
-        )
-        if not isinstance(response, dict) or response.get("id") != event_id:
-            raise GoogleCalendarError("malformed-response", "unknown")
-        return {"id": event_id, "etag": response.get("etag", "")}
-
-    def update(self, event_id: str, etag: str, payload: dict) -> dict:
-        response = self._call(
-            "PATCH",
-            f"{CALENDAR_API}/calendars/primary/events/{quote(event_id, safe='')}?sendUpdates=none",
-            _event_body(payload, partial=True),
-            {"Content-Type": "application/json", "If-Match": etag},
-            mutation=True,
-        )
-        if not isinstance(response, dict) or response.get("id") != event_id:
-            raise GoogleCalendarError("malformed-response", "unknown")
-        return {"id": event_id, "etag": response.get("etag", "")}
-
-    def cancel(self, event_id: str, etag: str) -> dict:
-        response = self._call(
-            "DELETE",
-            f"{CALENDAR_API}/calendars/primary/events/{quote(event_id, safe='')}?sendUpdates=none",
-            None,
-            {"If-Match": etag},
-            mutation=True,
-        )
-        if response not in (None, {}):
-            raise GoogleCalendarError("malformed-response", "unknown")
-        return {"id": event_id, "cancelled": True}

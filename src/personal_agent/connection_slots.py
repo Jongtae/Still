@@ -18,10 +18,24 @@ anything outside their fixed shape was unreachable except by the browser.
 #: fixed-shape tools that read a few fields of the same service's records (#1325):
 #: their results name this slot as the way to read an item in full.
 SLOT_SPECS = {
+    # #432: with the owner's separate write connection the AI changes events through the Events API itself;
+    # Still keeps the token, the event paths and ``sendUpdates=none`` (no email reaches an attendee).
     'google-calendar': {'hosts': ('www.googleapis.com',), 'paths': ('/calendar/v3/',),
                         'note': "the owner's Google Calendar, read-only (Calendar API v3, e.g. "
                                 "/calendar/v3/calendars/{calendarId}/events/{eventId})",
-                        'shortcuts': ('calendar_query',)},
+                        'shortcuts': ('calendar_query',), 'write_requires': 'google-calendar-write',
+                        'write_note': "the owner's Google Calendar (Calendar API v3): read it, and create, change, move "
+                                      "or delete events with the Events API (insert, quickAdd, patch, update, delete, "
+                                      "move); a change applies at once. Still always sends sendUpdates=none, so no "
+                                      "invitation or update email reaches an attendee. A refused change returns the "
+                                      "API's own reason: correct the request from it and the Calendar API reference",
+                        'write_paths': (('POST', r'/calendar/v3/calendars/[^/]+/events'),
+                                        ('POST', r'/calendar/v3/calendars/[^/]+/events/quickAdd'),
+                                        ('PATCH', r'/calendar/v3/calendars/[^/]+/events/[A-Za-z0-9_-]+'),
+                                        ('PUT', r'/calendar/v3/calendars/[^/]+/events/[A-Za-z0-9_-]+'),
+                                        ('DELETE', r'/calendar/v3/calendars/[^/]+/events/[A-Za-z0-9_-]+'),
+                                        ('POST', r'/calendar/v3/calendars/[^/]+/events/[A-Za-z0-9_-]+/move')),
+                        'write_query': {'sendUpdates': 'none', 'sendNotifications': 'false'}},
     'google-drive': {'hosts': ('www.googleapis.com',), 'paths': ('/drive/v3/',),
                      'note': "the owner's Google Drive, read-only (Drive API v3)",
                      'shortcuts': ('drive_search',)},
@@ -60,7 +74,8 @@ def write_grants():
     return frozenset(spec['write_requires'] for spec in SLOT_SPECS.values() if spec.get('write_requires'))
 
 
-def _slot(name, token, *, writable=False):
+def _slot(name, token, *, writable=False, write_token=None):
+    """One connection slot; ``write_token`` (#432) resolves the separate write grant for a mutation."""
     spec = SLOT_SPECS[name]
     note = spec['write_note'] if writable else spec['note'] + (
         WRITE_GRANT_NOTE.format(grant=spec['write_requires']) if spec.get('write_requires') else '')
@@ -68,6 +83,7 @@ def _slot(name, token, *, writable=False):
             'header': 'Authorization', 'scheme': 'Bearer', 'subject': None, 'revision': 1,
             'max_age_seconds': 900, 'read_only': not writable, 'connection': name, 'token': token,
             'write_paths': spec.get('write_paths'), 'write_requires': spec.get('write_requires'),
+            'write_query': spec.get('write_query'), 'write_token': write_token if writable else None,
             # #1329: the provider's live API returns the owner's records as they are at retrieval.
             'live': True}
 
@@ -143,8 +159,8 @@ def _gmail_token(gmail, owner_id):
 
 def build(service, owner_id):
     """The connection slots this owner can use now: one per service, using a connected write grant when available."""
-    from .calendar import CALENDAR_CONNECTOR_ID
-    from .calendar_oauth import DRIVE_GRANT, READ_GRANT, GMAIL_MODIFY_GRANT
+    from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID
+    from .calendar_oauth import DRIVE_GRANT, READ_GRANT, WRITE_GRANT, GMAIL_MODIFY_GRANT
     from .connector_contract import ConnectorState
     from .google_drive_read import DRIVE_CONNECTOR_ID
     registry = getattr(service, 'connector_registry', None)
@@ -159,8 +175,15 @@ def build(service, owner_id):
     slots = {}
     calendar_oauth = getattr(service, 'calendar_oauth', None)
     if calendar_oauth is not None and connected(CALENDAR_CONNECTOR_ID):
-        slots['google-calendar'] = _slot('google-calendar', _oauth_token(
-            calendar_oauth, owner_id, READ_GRANT, getattr(service, 'calendar_token_exchange', None)))
+        exchange = getattr(service, 'calendar_token_exchange', None)
+        read = _oauth_token(calendar_oauth, owner_id, READ_GRANT, exchange)
+        if connected(CALENDAR_WRITE_CONNECTOR_ID):
+            # #432: reads keep the read grant (it alone lists calendars); a change spends the write grant.
+            slots['google-calendar'] = _slot('google-calendar', read, writable=True,
+                                             write_token=_oauth_token(calendar_oauth, owner_id, WRITE_GRANT, exchange))
+            slots['google-calendar']['revision'] = registry.status(owner_id, CALENDAR_WRITE_CONNECTOR_ID).connection_revision
+        else:
+            slots['google-calendar'] = _slot('google-calendar', read)
     drive_oauth = getattr(service, 'drive_oauth', None)
     if drive_oauth is not None and connected(DRIVE_CONNECTOR_ID):
         slots['google-drive'] = _slot('google-drive', _oauth_token(

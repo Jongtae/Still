@@ -10,7 +10,7 @@ when nothing else says it, and every fixed line comes from the catalog
 language.
 
 Evidence class: deterministic unit tests of the projection functions and the
-catalog; the service-level cases (the calendar preview, the context sources)
+catalog; the service-level cases (the settings draft, the context sources)
 live in ``tests/test_refused_write_outcome.py``,
 ``tests/test_truth_integrity_history.py`` and ``tests/test_judged_continuity.py``.
 """
@@ -80,11 +80,7 @@ class ClosingLineTests(unittest.TestCase):
 
 
 class PendingLineTests(unittest.TestCase):
-    """A draft's pending line is not repeated next to Still's own preview or confirmation (slice C).
-
-    The calendar case runs end to end in ``tests/test_refused_write_outcome.py``; this pins the
-    settings case and that every other line stays.
-    """
+    """A settings draft's pending line is not repeated next to Still's own confirmation (slice C); every other line stays."""
 
     def setUp(self):
         import tempfile
@@ -105,7 +101,7 @@ class PendingLineTests(unittest.TestCase):
     def test_a_settings_draft_confirmed_on_telegram_is_not_repeated_after_the_answer(self):
         from unittest.mock import patch
         with patch.object(self.service.settings_orchestrator, 'pending_for_work', return_value=[{'id': 'd1'}]):
-            steps, kept = self.service._unshown_steps(self.run, self.job, '')
+            steps, kept = self.service._unshown_steps(self.run, self.job)
         self.assertEqual(steps, [('browser_open', '페이지를 열지 못했습니다.')], 'every other line stays')
         self.assertEqual(kept, [])
         note = answer_note(steps, 'partial', kept=set(kept))
@@ -114,7 +110,7 @@ class PendingLineTests(unittest.TestCase):
         self.assertEqual(len(self.run.refusals), 2, 'the cause and the record keep the line')
 
     def test_without_a_confirmation_shown_the_pending_line_stays(self):
-        steps, kept = self.service._unshown_steps(self.run, {**self.job, 'chat_id': None, 'channel': 'web'}, '')
+        steps, kept = self.service._unshown_steps(self.run, {**self.job, 'chat_id': None, 'channel': 'web'})
         self.assertEqual((steps, kept), (self.run.refusals, self.run.owner_steps))
 
 

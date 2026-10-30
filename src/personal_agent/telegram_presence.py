@@ -68,7 +68,6 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from .calendar_conversation import STATE_AWAITING_APPROVAL
 from .orchestrator import EVENT_TOOL, PLANNED
 
 # --- typed presentation vocabulary -------------------------------------------
@@ -248,9 +247,6 @@ FALLBACK_STEP_LINES = {
     'browser_sign_in': (msg('step.sign_in.host'), msg('step.sign_in')),
     'weather': (None, msg('step.weather')),
     'calendar_query': (None, msg('step.calendar_query')),
-    'calendar_draft_create': (None, msg('step.calendar_draft')),
-    'calendar_draft_update': (None, msg('step.calendar_draft')),
-    'calendar_draft_cancel': (None, msg('step.calendar_draft')),
     'list_roots': (None, msg('step.roots')),
     'find_files': (None, msg('step.find_files')),
     'read_file': (None, msg('step.read_file')),
@@ -465,7 +461,7 @@ def wrote_record(events):
 
 
 #: Typed flags a tool result carries while its effect waits for the owner's
-#: decision (a calendar draft, a settings draft, a proposed preparation),
+#: decision (a settings draft, a proposed preparation),
 #: unless ``applied`` is true.  The same fields ``agent_runtime.event_trail``
 #: and ``withheld_effect`` read.
 OWNER_DECISION_FLAGS = ('requires_owner_approval', 'requires_owner_confirmation', 'requires_owner_acceptance')
@@ -477,8 +473,6 @@ def awaits_owner(events):
         trace = event.get('trace') if isinstance(event.get('trace'), dict) else {}
         evidence = trace.get('evidence') if isinstance(trace.get('evidence'), dict) else {}
         for record in (trace, evidence):
-            if record.get('state') == STATE_AWAITING_APPROVAL:
-                return True
             if record.get('applied') is not True and any(record.get(flag) for flag in OWNER_DECISION_FLAGS):
                 return True
     return False
@@ -501,8 +495,8 @@ def outcome_reaction(outcome, events=(), *, delivered=True, blocked=False, await
       still waits for the owner's approval - ``awaiting_owner`` or
       ``awaits_owner(events)``) -> CLEAR_REACTION.  No emoji at all rather
       than a neutral one: the reply states the truth, and any gesture there
-      could be read as success (a 👌 under a calendar preview would read as
-      "scheduled").
+      could be read as success (a 👌 under a settings confirmation would
+      read as "applied").
     """
     if outcome not in TERMINAL_OUTCOMES:
         return None

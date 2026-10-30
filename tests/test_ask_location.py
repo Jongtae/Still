@@ -503,12 +503,10 @@ class Continuation(_LocationCase):
         seen = []
         self.script = [lambda body: seen.append(body['messages']) or {'content': '출발하셨네요.'}]
         with mock.patch.object(self.service, 'continuity_relation', return_value=judged_cancel) as relation, \
-                mock.patch.object(self.service.decision_judge, 'parked_work_withdrawn') as withdrawn, \
-                mock.patch.object(self.service.calendar_conversation, 'clear') as clear:
+                mock.patch.object(self.service.decision_judge, 'parked_work_withdrawn') as withdrawn:
             self.assertTrue(self.service.run_one())
         relation.assert_not_called()
         withdrawn.assert_not_called()
-        clear.assert_not_called()
         self.assertTrue(seen, 'the worker ran the continued request')
         self.assertIn(self.REQUEST, json.dumps(seen[0], ensure_ascii=False))
         self.assertEqual(self.store.job(row['id'])['status'], 'succeeded')

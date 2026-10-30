@@ -295,7 +295,7 @@ class DriveRenewalTest(DriveCase):
 
 
 class ConnectionSlotRenewalTest(DriveCase):
-    """CONN-API slots: a 401 gets one renewal, the call is not resent, as a Calendar write (#8, #246)."""
+    """CONN-API slots: a 401 gets one renewal and the call is not resent (#8, #246)."""
 
     def slot_token(self, exchange=None):
         from personal_agent.connection_slots import _oauth_token
@@ -370,9 +370,6 @@ class CalendarTransportRenewalTest(unittest.TestCase):
                                    now=lambda: self.clock[0], allow_localhost=True)
         self.exchange = Exchange(' '.join(CALENDAR_SPEC.required_scopes))
         self.oauth.complete_oauth(OWNER, {'state': state_of(self.oauth.begin_oauth(OWNER)), 'code': 'c'}, self.exchange)
-        write_exchange = Exchange(' '.join(CALENDAR_WRITE_SPEC.required_scopes))
-        self.oauth.complete_oauth(OWNER, {'state': state_of(self.oauth.begin_oauth(OWNER, write=True)), 'code': 'c'},
-                                  write_exchange)
         self.sent = []
         self.replies = []
 
@@ -384,7 +381,7 @@ class CalendarTransportRenewalTest(unittest.TestCase):
         return reply
 
     def transport(self):
-        return calendar_transport(self.store, self.registry, OWNER, allow_writes=True, now=lambda: self.clock[0],
+        return calendar_transport(self.store, self.registry, OWNER, now=lambda: self.clock[0],
                                   oauth=self.oauth, exchange=self.exchange, opener=self.opener)
 
     def test_a_read_refused_with_401_is_renewed_and_sent_once_more(self):
@@ -393,79 +390,6 @@ class CalendarTransportRenewalTest(unittest.TestCase):
         self.assertEqual([method for method, _ in self.sent], ['GET', 'GET'])
         self.assertEqual(self.exchange.renewals(), 1)
         self.assertTrue(self.oauth.credential_current(OWNER))
-
-    def write(self):
-        return self.transport()('POST', CALENDAR_API + '/calendars/primary/events', {'summary': 'x'}, {})
-
-    def test_a_write_refused_with_401_renews_the_credential_and_is_never_replayed(self):
-        # #246: Google refused the write before executing it, so the credential is
-        # renewed once and the write is reported as not done -- never resent.
-        self.exchange.scope = ' '.join(CALENDAR_WRITE_SPEC.required_scopes)
-        self.replies = [GoogleCalendarHTTPError(401)]
-        with self.assertRaises(GoogleCalendarHTTPError) as caught:
-            self.write()
-        self.assertFalse(caught.exception.reauthentication_required)
-        self.assertEqual(self.sent, [('POST', 'Bearer first')])
-        self.assertEqual(self.exchange.renewals(), 1)
-        self.assertEqual(self.oauth.status(OWNER, write=True)['state'], 'connected')
-        self.assertTrue(self.oauth.credential_current(OWNER, write=True))
-        # The separately authorized read grant is untouched.
-        self.assertEqual(self.oauth.status(OWNER)['state'], 'connected')
-        # The next write the AI chooses to send uses the renewed token.
-        self.write()
-        self.assertEqual(self.sent[-1], ('POST', 'Bearer renewed-2'))
-
-    def test_a_write_401_whose_renewal_is_refused_requires_reauthentication(self):
-        self.replies = [GoogleCalendarHTTPError(401)]
-        self.exchange.renewal = DEFINITIVE[0]
-        with self.assertRaises(GoogleCalendarHTTPError) as caught:
-            self.write()
-        self.assertTrue(caught.exception.reauthentication_required)
-        self.assertEqual(self.sent, [('POST', 'Bearer first')])
-        self.assertEqual(self.exchange.renewals(), 1)
-        self.assertEqual(self.oauth.status(OWNER, write=True)['state'], 'reauth_required')
-        self.assertEqual(self.oauth.status(OWNER)['state'], 'connected')
-
-    def test_a_write_401_whose_renewal_gets_no_answer_keeps_the_credential(self):
-        for make in (RETRYABLE[0], lambda: oauth_error(400, 'invalid_request')) + UNUSABLE:
-            with self.subTest(failure=repr(make())):
-                self.sent.clear()
-                self.replies = [GoogleCalendarHTTPError(401)]
-                self.exchange.renewal = make
-                with self.assertRaises(GoogleCalendarHTTPError) as caught:
-                    self.write()
-                self.assertFalse(caught.exception.reauthentication_required)
-                self.assertEqual(self.sent, [('POST', 'Bearer first')])
-                self.assertEqual(self.oauth.status(OWNER, write=True)['state'], 'connected')
-                self.assertTrue(self.oauth.credential_renewable(OWNER, write=True))
-
-    def test_the_connector_reports_a_write_401_with_a_kept_credential_as_not_done(self):
-        # End to end: the connector must not turn the 401 into an expired connection.
-        from personal_agent.calendar import CalendarError
-        self.exchange.scope = ' '.join(CALENDAR_WRITE_SPEC.required_scopes)
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        calendar = CalendarConnector(QuickStore(temp.name), GoogleCalendar(self.transport()), registry=self.registry)
-        event = {'summary': 'review', 'start': '2026-09-22T10:00:00+09:00', 'end': '2026-09-22T11:00:00+09:00',
-                 'timezone': 'Asia/Seoul'}
-        draft = calendar.draft_create(event, OWNER)
-        approval = calendar.approve(draft['id'], OWNER)['approval_id']
-        self.replies = [GoogleCalendarHTTPError(401)]
-        with self.assertRaises(CalendarError) as caught:
-            calendar.create(draft['id'], approval, OWNER)
-        self.assertEqual((caught.exception.reason, caught.exception.effect), ('token-rejected', 'none'))
-        self.assertEqual([method for method, _ in self.sent], ['POST'])
-        self.assertEqual(self.oauth.status(OWNER, write=True)['state'], 'connected')
-        self.assertEqual(self.oauth.status(OWNER)['state'], 'connected')
-        # A refused renewal still ends in an expired connection, as before.
-        draft = calendar.draft_create({**event, 'summary': 'second'}, OWNER)
-        approval = calendar.approve(draft['id'], OWNER)['approval_id']
-        self.replies = [GoogleCalendarHTTPError(401)]
-        self.exchange.renewal = DEFINITIVE[0]
-        with self.assertRaises(CalendarError) as caught:
-            calendar.create(draft['id'], approval, OWNER)
-        self.assertEqual((caught.exception.reason, caught.exception.effect), ('scope-expired', 'none'))
-        self.assertEqual(self.oauth.status(OWNER, write=True)['state'], 'reauth_required')
 
     def test_an_unusable_renewal_answer_keeps_the_calendar_connected(self):
         self.clock[0] += 7200
@@ -489,19 +413,16 @@ class CalendarTransportRenewalTest(unittest.TestCase):
 
 
 class CalendarConnectorKeyTest(unittest.TestCase):
-    """The connector asks its transport for the key before dispatch, never for a completed change."""
+    """The connector asks its transport for the key before the dispatch lock (#8)."""
 
-    def test_a_completed_change_is_returned_even_when_the_key_is_unavailable(self):
-        from personal_agent.calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID, CalendarError
-        from personal_agent.google_calendar import CALENDAR_WRITE_SCOPE
+    def test_a_read_whose_key_is_unavailable_fails_before_anything_is_sent(self):
+        from personal_agent.calendar import CALENDAR_CONNECTOR_ID, CalendarError
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         store = QuickStore(temp.name)
-        key = {'problem': None}
 
-        def prepare_key(*, write=False):
-            if key['problem']:
-                raise CalendarOAuthError(key['problem'])
+        def prepare_key():
+            raise CalendarOAuthError('local_key_unavailable')
 
         class Provider:
             def __init__(self):
@@ -509,36 +430,19 @@ class CalendarConnectorKeyTest(unittest.TestCase):
                 self.transport.prepare_key = prepare_key
                 self.calls = []
 
-            def create(self, payload, idempotency):
-                self.calls.append('create')
-                return {'id': 'new-event', 'etag': '"v1"'}
+            def query(self, *args):
+                self.calls.append('query')
+                return []
 
         provider = Provider()
         registry = ConnectorRegistry(store, (CALENDAR_SPEC, CALENDAR_WRITE_SPEC))
         registry.transition('owner', CALENDAR_CONNECTOR_ID, ConnectorState.CONNECTED,
                             granted_scopes=CALENDAR_SPEC.required_scopes)
-        registry.transition('owner', CALENDAR_WRITE_CONNECTOR_ID, ConnectorState.CONNECTED,
-                            granted_scopes=(CALENDAR_WRITE_SCOPE,))
         calendar = CalendarConnector(store, provider, registry=registry)
-        event = {'summary': 'review', 'start': '2026-09-22T10:00:00+09:00', 'end': '2026-09-22T11:00:00+09:00',
-                 'timezone': 'Asia/Seoul'}
-        draft = calendar.draft_create(event, 'owner')
-        approval = calendar.approve(draft['id'], 'owner')['approval_id']
-        created = calendar.create(draft['id'], approval, 'owner')
-        key['problem'] = 'local_key_unavailable'
-        self.assertEqual(calendar.create(draft['id'], approval, 'owner'), created)
-        self.assertEqual(provider.calls, ['create'])
-        # A change not yet sent fails before dispatch with the key reason and sends nothing.
-        other = calendar.draft_create({**event, 'summary': 'second'}, 'owner')
-        # Purely local refusals are answered without asking for the key.
         with self.assertRaises(CalendarError) as caught:
-            calendar.create(other['id'], 'not-the-approval-token', 'owner')
-        self.assertEqual(caught.exception.reason, 'exact-approval-required')
-        other_approval = calendar.approve(other['id'], 'owner')['approval_id']
-        with self.assertRaises(CalendarError) as caught:
-            calendar.create(other['id'], other_approval, 'owner')
+            calendar.query('owner', '2026-09-22T00:00:00+09:00', '2026-09-23T00:00:00+09:00', 'Asia/Seoul')
         self.assertEqual((caught.exception.reason, caught.exception.effect), ('local-key-unavailable', 'none'))
-        self.assertEqual(provider.calls, ['create'])
+        self.assertEqual(provider.calls, [])
 
 
 class GmailRenewalTest(unittest.TestCase):

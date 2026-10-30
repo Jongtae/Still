@@ -86,11 +86,11 @@ class RetryRunsCurrent(projection.ProjectionTestCase):
         self.assertEqual(trace.get('source_work_id', self.first['id']), self.first['id'])
 
     def test_an_unknown_effect_work_is_never_replayed_and_the_current_message_runs(self):
-        self.event(self.first['id'], 'calendar_draft_create', 'failed', {'effect': 'unknown', 'state': 'outcome-unknown'})
+        self.event(self.first['id'], 'api_request', 'failed', {'effect': 'unknown', 'state': 'outcome-unknown'})
         second, bubbles = self.turn(CURRENT)
         [sent] = set(self.seen)
         self.assertTrue(sent.startswith(RETRY_EFFECT_NOTE_HEAD) and sent.endswith(CURRENT), sent)
-        self.assertIn('- calendar_draft_create: outcome unknown', sent)
+        self.assertIn('- api_request: outcome unknown', sent)
         trace = self.continuity(second['id'])
         self.assertEqual((trace['relation'], trace['executed'], trace['reason']),
                          (RETRY_REFUSED_RAN_CURRENT, False, UNKNOWN_EFFECT_RETRY_REFUSAL))

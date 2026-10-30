@@ -41,6 +41,9 @@ def fingerprint(name, slot):
     # #355: a connection's current write boundary participates in the dispatch guard.
     if slot.get('connection'):
         bound.update({key: slot.get(key) for key in ('connection', 'paths', 'read_only', 'write_paths')})
+        # #432: fixed write parameters are part of the boundary only where a slot has them.
+        if slot.get('write_query'):
+            bound['write_query'] = slot['write_query']
     # #1380: a code-run secret set binds its named fields and owner-reviewed reads too.
     for key in ('oauth', 'credential_parent', 'token_expires_at', 'kind', 'fields', 'reads'):
         if key in slot:

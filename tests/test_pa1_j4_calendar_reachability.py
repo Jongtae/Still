@@ -140,32 +140,6 @@ class CalendarReachabilityTests(unittest.TestCase):
                             headers={'Content-Type': 'application/json'}), timeout=3).read()
         return client
 
-    def test_the_apply_surface_refuses_a_tunnel_host(self):
-        """The first route in this server with a real third-party effect.
-
-        It was modelled on `/api/personal-space/memory-candidates`, which
-        admits the public tunnel host because it has no external effect.
-        This one creates, changes or cancels a real calendar event, and
-        every other Calendar route already refuses a tunnel host. Review
-        drove list -> approve -> apply over `Host: tunnel.example.test` and
-        the provider's `create` fired.
-        """
-        self.public_hosts = ('tunnel.example.test',)
-        _, base = self.serve()
-        self.store.claim(self.store.bootstrap.read_text(), 'long-password-test')
-        headers = {'Cookie': 'agentos_session=' + self.store.local_session(),
-                   'Host': 'tunnel.example.test'}
-        request = Request(base + '/api/calendar/drafts', headers=headers)
-        with self.assertRaises(HTTPError) as refused:
-            build_opener().open(request, timeout=3)
-        self.assertEqual(refused.exception.code, 400)
-        post = Request(base + '/api/calendar/drafts/request',
-                       data=json.dumps({'operation': 'list'}).encode(),
-                       headers={**headers, 'Content-Type': 'application/json'})
-        with self.assertRaises(HTTPError) as refused:
-            build_opener().open(post, timeout=3)
-        self.assertEqual(refused.exception.code, 400)
-
     # -- the offer ---------------------------------------------------------
 
     def test_the_settings_payload_offers_a_route_for_both_grants(self):
@@ -390,8 +364,7 @@ class CalendarReachabilityTests(unittest.TestCase):
         registry = service.connector_registry
         service.calendar_factory = lambda owner_id: CalendarConnector(
             service.store,
-            GoogleCalendar(calendar_transport(secrets, registry, owner_id,
-                                              allow_writes=True, opener=fake_opener)),
+            GoogleCalendar(calendar_transport(secrets, registry, owner_id, opener=fake_opener)),
             registry=registry)
         service.adapter = ModelAdapter(transport)
         service.save_model({'provider': 'ollama', 'endpoint': 'http://127.0.0.1:11434',

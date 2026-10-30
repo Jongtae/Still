@@ -30,11 +30,13 @@ from personal_agent.quickstart_store import QuickStore
 import test_orchestrator as orch
 from test_refused_write_outcome import RefusedWriteTestCase
 
-DRAFT = {'scope': 'subscription-mcp-bridge', 'call_id': 'c1', 'host_action': 'calendar_draft_create',
-         'evidence': {'draft_id': 'draft-1', 'action': 'create', 'applied': False, 'requires_owner_approval': True}}
-SETTINGS = {'host_action': 'settings_change',
-            'evidence': {'draft_id': 'set-1', 'applied': False, 'requires_owner_confirmation': True}}
-WAITING_TEXT = "calendar_draft_create: 1 shown for the owner's own approval, 0 later settled by the owner"
+DRAFT = {'scope': 'subscription-mcp-bridge', 'call_id': 'c1', 'host_action': 'settings_change',
+         'evidence': {'draft_id': 'set-1', 'category': 'current_context', 'setting': 'timezone',
+                      'applied': False, 'requires_owner_confirmation': True}}
+PROPOSAL = {'host_action': 'schedule_preparation',
+            'evidence': {'preparation_id': 'p1', 'kind': 'reminder', 'state': 'proposed',
+                         'requires_owner_acceptance': True}}
+WAITING_TEXT = "settings_change: 1 shown for the owner's own approval, 0 later settled by the owner"
 
 
 def record(store, job_id, tool, status, detail):
@@ -48,43 +50,45 @@ class StoreCase(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.store = QuickStore(Path(temp.name) / 'state')
-        self.job = self.store.job(self.store.enqueue('add these to my calendar', 'k1', owner_typed=True))
+        self.job = self.store.job(self.store.enqueue('change my timezone to New York', 'k1', owner_typed=True))
 
 
 class TypedItems(StoreCase):
     def test_an_item_waits_until_a_later_event_settles_it(self):
         self.assertEqual(om.work_awaiting_owner(self.store, self.job['id']), [])
-        record(self.store, self.job['id'], 'calendar_draft_create', 'failed', DRAFT)
-        record(self.store, self.job['id'], 'settings_change', 'succeeded', SETTINGS)
+        record(self.store, self.job['id'], 'settings_change', 'failed', DRAFT)
+        record(self.store, self.job['id'], 'schedule_preparation', 'succeeded', PROPOSAL)
         self.assertEqual(om.work_awaiting_owner(self.store, self.job['id']),
-                         [{'kind': 'calendar_draft_create', 'shown': 1, 'settled': 0, 'state': 'waiting'},
-                          {'kind': 'settings_change', 'shown': 1, 'settled': 0, 'state': 'waiting'}])
+                         [{'kind': 'settings_change', 'shown': 1, 'settled': 0, 'state': 'waiting'},
+                          {'kind': 'schedule_preparation', 'shown': 1, 'settled': 0, 'state': 'waiting'}])
         later = self.store.enqueue('승인', 'k2', owner_typed=True)
-        record(self.store, later, 'calendar_create', 'succeeded', {'draft_id': 'draft-1', 'event_id': 'e1'})
-        self.assertEqual(om.work_awaiting_owner(self.store, self.job['id'])[0],
-                         {'kind': 'calendar_draft_create', 'shown': 1, 'settled': 1, 'state': 'settled'})
+        record(self.store, later, 'settings_change', 'succeeded',
+               {**DRAFT, 'evidence': {**DRAFT['evidence'], 'applied': True, 'requires_owner_confirmation': False}})
+        self.assertEqual(om.work_awaiting_owner(self.store, self.job['id']),
+                         [{'kind': 'settings_change', 'shown': 1, 'settled': 1, 'state': 'settled'},
+                          {'kind': 'schedule_preparation', 'shown': 1, 'settled': 0, 'state': 'waiting'}])
 
     def test_a_refused_write_an_applied_record_and_an_unfinished_call_are_not_items(self):
         refused = {'host_action': 'save_memory',
                    'evidence': {'requires_owner_approval': True, 'refused_because': 'third-party-memory-write'}}
         applied = {**DRAFT, 'evidence': {**DRAFT['evidence'], 'applied': True}}
         worded = {'host_action': 'web_search', 'evidence': {'note': 'requires_owner_approval'}}
-        rows = [('save_memory', 'succeeded', refused), ('calendar_draft_create', 'succeeded', applied),
-                ('web_search', 'succeeded', worded), ('calendar_draft_create', 'running', DRAFT)]
+        rows = [('save_memory', 'succeeded', refused), ('settings_change', 'succeeded', applied),
+                ('web_search', 'succeeded', worded), ('settings_change', 'running', DRAFT)]
         self.assertEqual(om.awaiting_owner_items(rows), [])
         self.assertFalse(awaiting_owner_rows(rows), 'the attempt evaluation reads the same rule')
-        self.assertTrue(awaiting_owner_rows([('calendar_draft_create', 'succeeded', DRAFT)]))
+        self.assertTrue(awaiting_owner_rows([('settings_change', 'succeeded', DRAFT)]))
 
     def test_the_self_review_text_is_unchanged(self):
         upkeep = om.Upkeep(self.store)
-        record(self.store, self.job['id'], 'calendar_draft_create', 'failed', DRAFT)
+        record(self.store, self.job['id'], 'settings_change', 'failed', DRAFT)
         record(self.store, self.job['id'], 'schedule_preparation', 'succeeded', {'requires_owner_acceptance': True})
-        record(self.store, self.job['id'], 'calendar_draft_create', 'failed',
-               {**DRAFT, 'evidence': {**DRAFT['evidence'], 'draft_id': 'draft-2'}})
-        record(self.store, self.store.enqueue('승인', 'k3', owner_typed=True), 'calendar_create', 'succeeded',
-               {'draft_id': 'draft-2'})
+        record(self.store, self.job['id'], 'settings_change', 'failed',
+               {**DRAFT, 'evidence': {**DRAFT['evidence'], 'draft_id': 'set-2'}})
+        record(self.store, self.store.enqueue('승인', 'k3', owner_typed=True), 'settings_change', 'succeeded',
+               {'draft_id': 'set-2', 'applied': True})
         self.assertEqual(upkeep.awaiting(self.job['id']),
-                         "calendar_draft_create: 2 shown for the owner's own approval, 1 later settled by the owner; "
+                         "settings_change: 2 shown for the owner's own approval, 1 later settled by the owner; "
                          "schedule_preparation: 1 shown for the owner's own approval, 0 later settled by the owner")
 
 
@@ -99,10 +103,10 @@ class PlanCall(unittest.TestCase):
         return seen[0].facts
 
     def test_the_plan_reads_what_waits_in_the_conversation_and_what_this_work_left(self):
-        facts = self.plan_facts(awaiting_conversation='calendar-drafts (shown 5 minutes before this message, waiting)',
+        facts = self.plan_facts(awaiting_conversation='settings-drafts (shown 5 minutes before this message, waiting)',
                                 awaiting_work=lambda: WAITING_TEXT)
         self.assertEqual(facts['awaiting_owner'],
-                         'in this conversation: calendar-drafts (shown 5 minutes before this message, waiting)\n'
+                         'in this conversation: settings-drafts (shown 5 minutes before this message, waiting)\n'
                          f'left by this Work: {WAITING_TEXT}')
         self.assertIn('awaiting_owner is Still\'s own record of what already waits', QUESTION)
 
@@ -115,7 +119,7 @@ class ServicePlanInputs(StoreCase):
     def test_the_work_orchestration_passes_the_conversation_items_and_this_works_events(self):
         service = AgentService(self.store)
         created = float(self.job['created'])
-        items = [{'kind': 'calendar-drafts', 'shown_text': 'PRIVATE PREVIEW TEXT', 'shown_at': created - 330},
+        items = [{'kind': 'settings-drafts', 'shown_text': 'PRIVATE PREVIEW TEXT', 'shown_at': created - 330},
                  {'kind': 'action-approval', 'shown_text': 'x', 'shown_at': created - 10}]
         with mock.patch('personal_agent.quickstart_service.worker_catalogue', return_value=mock.Mock(default='w')), \
                 mock.patch('personal_agent.quickstart_service.Orchestration') as built, \
@@ -123,11 +127,11 @@ class ServicePlanInputs(StoreCase):
             service.work_orchestration(self.job, self.job['message'], [], {}, None)
         kwargs = built.call_args.kwargs
         self.assertEqual(kwargs['awaiting_conversation'],
-                         'calendar-drafts (shown 5 minutes before this message, waiting); '
+                         'settings-drafts (shown 5 minutes before this message, waiting); '
                          'action-approval (shown just before this message, waiting)')
         self.assertNotIn('PRIVATE', kwargs['awaiting_conversation'], 'kinds and times only, never what was shown')
         self.assertEqual(kwargs['awaiting_work'](), '')
-        record(self.store, self.job['id'], 'calendar_draft_create', 'failed', DRAFT)
+        record(self.store, self.job['id'], 'settings_change', 'failed', DRAFT)
         self.assertEqual(kwargs['awaiting_work'](), WAITING_TEXT, 'read at each plan, so a re-plan sees this Work\'s items')
 
 
@@ -141,17 +145,17 @@ class DirectRouteJudgment(StoreCase):
         def judge(facts):
             seen.append(facts)
             return True
-        script = loop.Script({'tool_calls': [loop.call('1', 'web_search', query='calendar')]},
+        script = loop.Script({'tool_calls': [loop.call('1', 'web_search', query='New York timezone')]},
                              loop.finish('f', '1', summary='초안을 만들었어요. 승인하시면 반영돼요.'))
         caps = Capabilities(self.store, ModelAdapter(script), loop.CFG, '', self.job['id'], lambda *event: None,
                             network=loop.Network(), judgments=loop.judgments(judge))
-        run_agent(caps.adapter, loop.CFG, '', [{'role': 'user', 'content': 'add these to my calendar'}], '', caps,
+        run_agent(caps.adapter, loop.CFG, '', [{'role': 'user', 'content': 'change my timezone to New York'}], '', caps,
                   caps.record)
         self.assertTrue(seen, 'the outcome judgment ran')
         return seen[0]
 
     def test_the_direct_route_judgment_reads_this_works_waiting_items(self):
-        record(self.store, self.job['id'], 'calendar_draft_create', 'failed', DRAFT)
+        record(self.store, self.job['id'], 'settings_change', 'failed', DRAFT)
         self.assertEqual(self.run_direct()['awaiting_owner'], WAITING_TEXT)
 
     def test_nothing_waiting_is_none(self):
@@ -170,9 +174,9 @@ class OrchestratedRouteJudgment(orch.Harness):
     def test_the_plan_and_the_cli_goal_judgment_read_this_works_waiting_items(self):
         self.engine.answers = ['초안을 만들었어요. 승인하시면 반영돼요.']
         self.script([orch.plan('codex', 'Answer.')], goals=[True])
-        job = self.store.enqueue('add these to my calendar', 'awaiting-1')
+        job = self.store.enqueue('change my timezone to New York', 'awaiting-1')
         # An earlier run of this Work left a draft for the owner (a resumed Work).
-        record(self.store, job, 'calendar_draft_create', 'failed', DRAFT)
+        record(self.store, job, 'settings_change', 'failed', DRAFT)
         self.assertTrue(self.service.run_one())
         self.assertEqual(self.asked_goals[-1].facts['awaiting_owner'], WAITING_TEXT)
         self.assertIn(f'left by this Work: {WAITING_TEXT}', self.asked_plans[-1][0].facts['awaiting_owner'])
@@ -186,24 +190,25 @@ class OrchestratedRouteJudgment(orch.Harness):
 
 
 class WaitingState(RefusedWriteTestCase):
-    DRAFT = {'summary': '병원 예약', 'start': '2026-09-25T10:00:00+09:00',
-             'end': '2026-09-25T11:00:00+09:00', 'timezone': 'Asia/Seoul'}
+    DRAFT = {'category': 'current_context', 'setting': 'timezone', 'value': 'America/New_York',
+             'reason': '소유자가 시간대를 뉴욕으로 바꿔 달라고 했습니다.'}
 
     def task(self, job_id):
         return self.service.task_progress(job_id)['selected']
 
     def test_a_work_left_awaiting_approval_is_typed_waiting_and_stays_partial(self):
-        self.plan = [('calendar_draft_create', self.DRAFT)]
-        self.text = '병원 예약 초안을 만들었어요.'
-        job, bubble = self.ask('모레 오전 10시에 병원 예약 잡아줘')
+        self.plan = [('settings_change', self.DRAFT)]
+        self.text = '시간대 변경 초안을 만들었어요.'
+        job, bubble = self.ask('시간대를 뉴욕으로 바꿔줘')
         self.assertEqual(job['status'], 'partial', 'no status migration: the stored status is unchanged')
-        self.assertEqual(self.service.work_waits_for_owner(job), ('calendar-drafts',))
+        self.assertEqual(self.service.work_waits_for_owner(job), ('settings-drafts',))
         self.assertTrue(self.service.work_awaits_owner_preview(job), 'the preview reading other surfaces call agrees')
         task = self.task(job['id'])
-        self.assertEqual((task['waiting_for_owner'], task['waiting_for']), (True, ['calendar-drafts']))
+        self.assertEqual((task['waiting_for_owner'], task['waiting_for']), (True, ['settings-drafts']))
         self.assertNotIn(TERMINAL_UNCONFIRMED_NOTE, bubble)
         # The owner declines: nothing waits any more, and no surface keeps saying it does.
-        self.service.calendar_conversation.clear(f'telegram:{909}')
+        [draft] = self.service.settings_orchestrator.pending_for_work(job['id'])
+        self.service.settings_orchestrator.cancel(draft['owner'], draft['channel'], draft['id'])
         self.assertEqual(self.service.work_waits_for_owner(job), ())
         self.assertFalse(self.service.work_awaits_owner_preview(job))
         self.assertFalse(self.task(job['id'])['waiting_for_owner'])
@@ -211,13 +216,13 @@ class WaitingState(RefusedWriteTestCase):
     def test_a_note_left_beside_the_wait_keeps_the_web_from_calling_it_only_waiting(self):
         """#240 review: as on Telegram, a draft wait explains the outcome only when nothing else is left to
         say; with a recorded note the web keeps "partly done" and its notice, and still lists the wait."""
-        self.plan = [('calendar_draft_create', self.DRAFT)]
-        self.text = '병원 예약 초안을 만들었어요.'
-        job, _bubble = self.ask('모레 오전 10시에 병원 예약 잡아줘')
+        self.plan = [('settings_change', self.DRAFT)]
+        self.text = '시간대 변경 초안을 만들었어요.'
+        job, _bubble = self.ask('시간대를 뉴욕으로 바꿔줘')
         with self.store.db() as db:
             db.execute('UPDATE jobs SET owner_note=? WHERE id=?', ('남은 일: 확인', job['id']))
         task = self.task(job['id'])
-        self.assertEqual((task['waiting_for_owner'], task['waiting_for']), (False, ['calendar-drafts']))
+        self.assertEqual((task['waiting_for_owner'], task['waiting_for']), (False, ['settings-drafts']))
         with mock.patch.object(self.service, 'work_waits_for_owner', return_value=('action-approval',)):
             self.assertTrue(self.task(job['id'])['waiting_for_owner'], 'a step approval waits over a note')
 
@@ -254,7 +259,7 @@ class TelegramClosingLine(RefusedWriteTestCase):
         self.assertTrue(self.deliver(()).endswith(TERMINAL_UNCONFIRMED_NOTE))
 
     def test_a_note_is_still_said_unless_a_step_approval_waits(self):
-        self.assertTrue(self.deliver(('calendar-drafts',), note='남은 일: 확인').endswith('남은 일: 확인'))
+        self.assertTrue(self.deliver(('settings-drafts',), note='남은 일: 확인').endswith('남은 일: 확인'))
 
     def test_a_step_approval_waits_over_a_note(self):
         self.assertFalse(self.deliver(('action-approval',), note='남은 일: 확인').endswith('남은 일: 확인'))

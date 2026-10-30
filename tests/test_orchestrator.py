@@ -2181,7 +2181,7 @@ class OwnerStateOnTheCliRoute(Harness):
         self.script([plan('codex', 'Remind the owner.')], goals=[True])
         job, _row = self.run_work('오후 4시 반에 출발하라고 알려줘')
         # A native-search turn offers the relayed writes and, since #826, the private reads too.
-        for name in ('schedule_preparation', 'calendar_draft_create'):
+        for name in ('schedule_preparation', 'calendar_query'):
             self.assertIn(name, seen['offered'])
         with self.store.db() as db:
             rows = db.execute('SELECT goal_text,state FROM preparations').fetchall()
