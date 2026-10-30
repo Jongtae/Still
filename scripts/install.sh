@@ -58,6 +58,9 @@ trap 'rm -rf "$work"' EXIT INT TERM
 
 # Verify the Still release first, so a bad download changes nothing on this machine.
 archive="$work/agentos-$AGENTOS_VERSION.tar.gz"
+say ""
+say "  Still - your personal agent, on your own machine."
+say ""
 say "Downloading Still $AGENTOS_VERSION..."
 download "https://github.com/Jongtae/Still/archive/refs/tags/v$AGENTOS_VERSION.tar.gz" "$archive"
 [ "$(sha256_of "$archive")" = "$AGENTOS_ARCHIVE_SHA256" ] \
@@ -90,9 +93,14 @@ else
   [ -x "$UV" ] || fail "uv was installed but not found at $UV."
 fi
 
-say "Installing Still $AGENTOS_VERSION..."
-"$UV" --no-config tool install --force --quiet --python "$PYTHON_VERSION" "personal-agentos[mcp-host] @ $archive" \
-  || fail "uv could not install Still."
+say "Installing Still $AGENTOS_VERSION (this can take a minute)..."
+"$UV" --no-config tool install --force --python "$PYTHON_VERSION" "personal-agentos[mcp-host] @ $archive" \
+  >"$work/install.log" 2>&1 &
+installing=$!
+# #438: a dot a second, so resolving and downloading do not look stuck.
+while kill -0 "$installing" 2>/dev/null; do printf '.'; sleep 1; done
+printf '\n'
+wait "$installing" || { tail -n 20 "$work/install.log" >&2; fail "uv could not install Still."; }
 "$UV" --no-config tool update-shell >/dev/null 2>&1 || true
 bin_dir=$("$UV" --no-config tool dir --bin)
 

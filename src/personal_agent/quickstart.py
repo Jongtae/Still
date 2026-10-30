@@ -1723,6 +1723,12 @@ def hand_over_to_login_service(data_dir, term, release, action=service_action):
     return False
 
 
+def with_language(url, language):
+    """``url`` carrying the screen language in its fragment (web/app.js reads ``lang`` once)."""
+    if not language:return url
+    return url+('&' if '#' in url else '#')+'lang='+language
+
+
 def configure_logging(store):
     """Send Still operational logs to stderr and a bounded private file.
 
@@ -1736,7 +1742,10 @@ def configure_logging(store):
     # Create the file owner-only before the handler opens it, independent of umask.
     os.close(os.open(path,os.O_WRONLY|os.O_CREAT|os.O_APPEND,0o600));path.chmod(0o600)
     formatter=logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s')
-    for handler in (logging.StreamHandler(sys.stderr),
+    console=logging.StreamHandler(sys.stderr)
+    # #438: an owner's terminal shows warnings and errors only; the file keeps every line.
+    if sys.stderr.isatty():console.setLevel(logging.WARNING)
+    for handler in (console,
                     logging.handlers.RotatingFileHandler(path,maxBytes=1_000_000,backupCount=3,encoding='utf-8')):
         handler.setFormatter(formatter);logger.addHandler(handler)
     logger.setLevel(logging.INFO)
@@ -1822,8 +1831,12 @@ def main():
     def close_listeners():
         server.server_close()
         if handoff_server:handoff_server.server_close()
+    # #438: the browser a terminal setup opens starts in the terminal's language.
+    browser_language=''
     if sys.stdin.isatty() and not first_run.finished(store):
-        term=first_run.Terminal(first_run.terminal_language())
+        language=first_run.terminal_language()
+        term=first_run.open_terminal(language)
+        browser_language=first_run.WEB_LANGUAGES.get(language,'')
         if not first_run.run(service,store,term,login_service=login_service_status(args)):
             close_listeners()
             return 130
@@ -1832,7 +1845,7 @@ def main():
             if hand_over_to_login_service(args.data,term,lambda:(close_listeners(),instance_lock.close())):
                 home=f'http://{LOCAL_ADDRESS_HOST}:{SERVICE_PORT}/'
                 print(f'Still: {home}',flush=True)
-                if not args.no_browser:webbrowser.open(home)
+                if not args.no_browser:webbrowser.open(with_language(home,browser_language))
                 return 0
             instance_lock=lock()
             server,handoff_server=listen()
@@ -1852,7 +1865,7 @@ def main():
     if public_hosts:
         print(f'Mobile pairing URL: https://{public_hosts[0]}/?access={public_token}',flush=True)
     if not store.claimed():print(f'Setup link: {store.private / "setup-link.txt"} (private file)',flush=True)
-    if not args.no_browser:threading.Timer(.6,lambda:webbrowser.open(url)).start()
+    if not args.no_browser:threading.Timer(.6,lambda:webbrowser.open(with_language(url,browser_language))).start()
     def shutdown(signum,frame):
         service.stop.set()
         threading.Thread(target=server.shutdown,daemon=True).start()

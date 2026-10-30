@@ -36,6 +36,8 @@ FAKE_UV = """#!/bin/sh
 if [ "$1" = "--version" ]; then echo "uv ${FAKE_UV_VERSION:-0.12.23}"; exit 0; fi
 echo "uv $*" >> "$FAKE_LOG"
 if [ "$2 $3" = "tool dir" ]; then echo "$FAKE_BIN"; fi
+if [ "$2 $3" = "tool install" ] && [ -n "$FAKE_UV_FAIL" ]; then echo "error: $FAKE_UV_FAIL" >&2; exit 2; fi
+if [ "$2 $3" = "tool install" ]; then echo "Installed 1 executable: agentos"; fi
 """
 FAKE_AGENTOS = """#!/bin/sh
 echo "agentos $*" >> "$FAKE_LOG"
@@ -113,6 +115,23 @@ class InstallScriptTests(unittest.TestCase):
         self.assertFalse(any("uv-installer.sh" in call for call in calls), "a current uv is reused")
         self.assertRegex(install, rf"personal-agentos\[mcp-host\] @ \S+agentos-{re.escape(version)}\.tar\.gz$")
         self.assertEqual(calls[-1], "agentos start")
+
+    def test_install_shows_progress_and_keeps_uv_output_off_the_screen(self):
+        """#438: a dot per second while uv works; uv's own lines go to a log, not the owner's terminal."""
+        digest = hashlib.sha256(b"agentos-archive").hexdigest()
+        result, _ = self.run_script(self.with_archive_checksum(digest), env={"AGENTOS_NO_START": "1"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("this can take a minute", result.stdout)
+        self.assertNotIn("Installed 1 executable", result.stdout + result.stderr)
+
+    def test_a_failed_uv_install_shows_why_and_starts_nothing(self):
+        digest = hashlib.sha256(b"agentos-archive").hexdigest()
+        result, calls = self.run_script(self.with_archive_checksum(digest),
+                                        env={"FAKE_UV_FAIL": "no wheel for this platform"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("error: no wheel for this platform", result.stderr)
+        self.assertIn("uv could not install Still.", result.stderr)
+        self.assertNotIn("agentos start", calls)
 
     def test_no_start_flag_installs_without_starting(self):
         digest = hashlib.sha256(b"agentos-archive").hexdigest()
