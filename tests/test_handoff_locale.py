@@ -217,7 +217,7 @@ class FolderPermissionLines(unittest.TestCase):
         _job, bubbles = case.park_read()
         self.assertEqual(bubbles, [
             '이 요청에는 이 Mac의 폴더를 읽는 권한이 필요해 아직 파일을 찾지 않았습니다. 지금 필요한 다음 단계는 하나입니다: '
-            'Mac에서 계속 — Mac에서 Still을 열고 설정 → 파일 · 저장에서 폴더를 선택해 주세요. '
+            'Mac에서 계속 — Mac에서 Still을 열고 설정 → 파일 · 권한에서 폴더를 선택해 주세요. '
             f'(Mac의 브라우저에서 {self.LOCAL_URL} 주소를 열어도 됩니다.) 선택한 폴더 하나를 읽기만 허용합니다. '
             '파일을 바꾸거나 지우지 않고, 이 허용만으로 파일 내용을 외부 AI에 보내지 않습니다. '
             '휴대폰이나 다른 기기에서는 Mac 폴더 권한을 줄 수 없으며, 요청은 그대로 기다립니다. '

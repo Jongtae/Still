@@ -593,3 +593,30 @@ details.technical details>summary{color:var(--muted)}
 .search-account>summary{min-height:36px;padding:7px 10px;border-radius:4px;background:var(--surface-3)}
 .search-account .button-row{margin-top:8px;justify-content:flex-end;flex-wrap:wrap}
 @media(max-width:620px){.settings-row-action,.settings-row-actions>button,.search-account>summary{min-height:44px;white-space:normal}.settings-row-actions{max-width:100%;flex-wrap:wrap}.settings-row-body,.settings-row-description{overflow-wrap:anywhere}}
+/* #390: grouped settings, folded optional setup, the 진단 foot link and 작업 현황's two views. */
+.settings-group{margin-top:var(--sp-6)}
+.settings-group-heading{margin:0;font-size:var(--fs-1);font-weight:600;letter-spacing:.02em;color:var(--muted)}
+.settings-group-heading+.settings-section,.settings-group-heading+.settings-section[hidden]+.settings-section{margin-top:var(--sp-2)}
+#company-network[open]>summary{margin-bottom:var(--sp-2)}
+#company-network>p.field-hint{margin:0 0 0 16px}
+#company-network>.settings-section{margin-left:16px}
+.settings-section>.settings-editor{margin-top:var(--sp-3)}
+.settings-section>.settings-editor>summary{min-height:32px;font-size:var(--fs-2);font-weight:600;color:var(--accent)}
+.settings-section>.settings-editor[open]>summary{margin-bottom:var(--sp-2)}
+.settings-section>.button-row:empty,.settings-section>.button-row:not(:has(button:not([hidden]))){display:none}
+.attention-summary,.task-attention{margin:0 0 var(--sp-5);padding:var(--sp-3) var(--sp-4) 0;border:1px solid var(--line);border-radius:var(--r-2);background:var(--surface)}
+.attention-summary .settings-section-heading h2,.task-attention .settings-section-heading h2{margin:0;font-size:var(--fs-4)}
+.attention-summary .settings-row:last-child,.task-attention .settings-row:last-child,.task-attention .settings-empty:last-child{border-bottom:0}
+.settings-elsewhere{margin-top:var(--sp-6);padding:var(--sp-3) var(--sp-4);border-radius:var(--r-2);background:var(--surface-2);font-size:var(--fs-2);color:var(--muted)}
+.settings-elsewhere p{margin:0}
+.settings-elsewhere .button-row{margin-top:var(--sp-2)}
+.nav-foot-link{justify-self:start;min-height:30px;padding:0 10px;margin:0 -10px;border:1px solid transparent;background:transparent;color:var(--ink-2);font-size:var(--fs-2);font-weight:500}
+.nav-foot-link:hover{background:var(--surface);border-color:transparent}
+.nav-foot-link.active{background:var(--accent);color:#fff;font-weight:600}
+.task-tabs{display:flex;gap:var(--sp-1);margin:0 0 var(--sp-4);padding-bottom:var(--sp-2);border-bottom:1px solid var(--line)}
+.task-tabs button{min-height:32px;padding:0 12px;border:1px solid transparent;background:transparent;color:var(--ink-2);font-weight:500}
+.task-tabs button:hover{background:var(--surface-2);border-color:transparent}
+.task-tabs button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+#task-scheduled #preparations{margin-top:0}
+#task-scheduled .settings-section-heading h2{margin:0;font-size:var(--fs-4)}
+@media(max-width:620px){.nav-foot-link{margin:0;min-height:44px}.task-tabs button{flex:1;min-height:44px}}
