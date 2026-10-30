@@ -172,7 +172,7 @@ class ReadHandoffTests(HandoffTestCase):
         self.assertEqual(len(bubbles), 1, bubbles)
         guidance = bubbles[0]
         self.assertIn('Mac에서 계속', guidance)
-        self.assertIn('설정 → 파일 · 저장', guidance)
+        self.assertIn('설정 → 파일 · 권한', guidance)
         self.assertIn('http://127.0.0.1:8765/#settings/files', guidance)
         self.assertIn('읽기만', guidance)
         self.assertIn('휴대폰이나 다른 기기에서는 Mac 폴더 권한을 줄 수 없으며', guidance)
@@ -1085,7 +1085,7 @@ class HttpSurfaceTests(HandoffTestCase):
 
 
 class FilesPaneTests(unittest.TestCase):
-    """The 파일 · 저장 pane carries the owner-local approval surface."""
+    """The 파일 · 권한 pane carries the owner-local approval surface."""
 
     WEB = Path(__file__).parents[1] / 'src' / 'personal_agent' / 'web'
 

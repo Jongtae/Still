@@ -380,7 +380,9 @@ console.log('settings DOM regressions passed');
 def test_settings_uses_goal_oriented_owner_language():
     assert "<h1>AI</h1>" in HTML
     assert ">AI</button>" in HTML
-    assert "파일 · 저장" in HTML
+    # #390: 파일 · 저장 became 파일 · 권한 and 개인정보 · 진단 became 기억 · 개인정보.
+    assert "파일 · 권한" in HTML and "파일 · 저장" not in HTML
+    assert "기억 · 개인정보" in HTML and "개인정보 · 진단" not in HTML
     assert "외부 연결" in HTML
     assert "내 기록" not in HTML
     assert "AI가 찾아볼 폴더" in HTML
@@ -420,7 +422,7 @@ def test_owner_flow_has_two_destinations_and_optional_projects():
     assert 'id="language-select"' in HTML and 'id="logout"' in HTML
     assert 'data-view="records"' not in HTML
     assert 'id="chat-form"' not in HTML
-    # Projects stay reachable as optional grouping under 파일 · 저장.
+    # Projects stay reachable as optional grouping under 파일 · 권한.
     files = HTML[HTML.index('id="settings-files"'):HTML.index('id="settings-external"')]
     assert 'id="projects"' in files and 'id="workspace-form"' in files
     assert "setup-checklist" not in APP

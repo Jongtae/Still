@@ -239,7 +239,7 @@ const start=app.indexOf('function navigate('),end=app.indexOf('function viewShow
 assert(start>=0&&end>start,'the production navigation function is available');
 const scrolls=[],historyCalls=[],events=[];
 const location={hash:'#settings/external'};
-const ctx={activeView:'settings',activeSettings:'external',activeItem:{id:'previous'},location,
+const ctx={activeView:'settings',activeSettings:'external',activeTaskTab:'recent',activeItem:{id:'previous'},location,
  window:{scrollY:740,scrollTo(x,y){scrolls.push([x,y]);this.scrollY=y;events.push('scroll:'+y);}},
  history:Object.fromEntries(['pushState','replaceState'].map(method=>[method,(state,title,hash)=>{historyCalls.push([method,state,title,hash]);location.hash=hash;events.push(method);} ])),
  renderNavigation(){events.push('render');},viewShown(){events.push('shown');}};

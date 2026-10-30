@@ -131,7 +131,7 @@ After connecting and testing your model, [pair your Telegram bot](#telegram), th
 
 Create two dedicated local folders (for example, `/Users/your-name/Still-dogfood/reference`
 and `/Users/your-name/Still-dogfood/workspace`) and place one small Markdown or text note in the
-reference folder. Put the words `Launch review` in that note. In **설정 → 파일 · 저장**
+reference folder. Put the words `Launch review` in that note. In **설정 → 파일 · 권한**
 (Settings → Files · storage), enter the reference folder and workspace folder, then choose a
 direct model-provider connection (OpenAI-compatible, OpenAI, Anthropic, or
 Ollama) and complete its connection test; subscription engines do not run this

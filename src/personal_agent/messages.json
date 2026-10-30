@@ -702,16 +702,16 @@
   "zh": "这个请求需要一个保存结果文件的文件夹，所以还没有执行。"
  },
  "handoff.local_next_action": {
-  "ko": "{need} 지금 필요한 다음 단계는 하나입니다: Mac에서 계속 — Mac에서 Still을 열고 설정 → 파일 · 저장에서 폴더를 선택해 주세요. {preview} 휴대폰이나 다른 기기에서는 Mac 폴더 권한을 줄 수 없으며, 요청은 그대로 기다립니다. 허용하면 방금 요청을 한 번만 이어서 처리합니다.",
-  "en": "{need} One next step: continue on the Mac. Open Still on the Mac and choose a folder in Settings → Files & storage. {preview} A phone or another device cannot give Mac folder permission, and the request keeps waiting. Once you allow it, I will continue this request once.",
-  "ja": "{need}次に必要なのは 1 つだけです: Mac で続ける — Mac で Still を開き、設定 → ファイル・保存 でフォルダーを選んでください。{preview}スマートフォンや他の端末からは Mac のフォルダー権限を与えられず、依頼はそのまま待ちます。許可すると、この依頼を 1 回だけ続けて処理します。",
-  "zh": "{need}下一步只需要一件事：在 Mac 上继续。在 Mac 上打开 Still，在 设置 → 文件与存储 中选择文件夹。{preview}手机或其他设备无法授予 Mac 文件夹权限，请求会一直等待。允许后，会把刚才的请求继续处理一次。"
+  "ko": "{need} 지금 필요한 다음 단계는 하나입니다: Mac에서 계속 — Mac에서 Still을 열고 설정 → 파일 · 권한에서 폴더를 선택해 주세요. {preview} 휴대폰이나 다른 기기에서는 Mac 폴더 권한을 줄 수 없으며, 요청은 그대로 기다립니다. 허용하면 방금 요청을 한 번만 이어서 처리합니다.",
+  "en": "{need} One next step: continue on the Mac. Open Still on the Mac and choose a folder in Settings → Files & permissions. {preview} A phone or another device cannot give Mac folder permission, and the request keeps waiting. Once you allow it, I will continue this request once.",
+  "ja": "{need}次に必要なのは 1 つだけです: Mac で続ける — Mac で Still を開き、設定 → ファイル・権限 でフォルダーを選んでください。{preview}スマートフォンや他の端末からは Mac のフォルダー権限を与えられず、依頼はそのまま待ちます。許可すると、この依頼を 1 回だけ続けて処理します。",
+  "zh": "{need}下一步只需要一件事：在 Mac 上继续。在 Mac 上打开 Still，在 设置 → 文件与权限 中选择文件夹。{preview}手机或其他设备无法授予 Mac 文件夹权限，请求会一直等待。允许后，会把刚才的请求继续处理一次。"
  },
  "handoff.local_next_action_link": {
-  "ko": "{need} 지금 필요한 다음 단계는 하나입니다: Mac에서 계속 — Mac에서 Still을 열고 설정 → 파일 · 저장에서 폴더를 선택해 주세요. (Mac의 브라우저에서 {url} 주소를 열어도 됩니다.) {preview} 휴대폰이나 다른 기기에서는 Mac 폴더 권한을 줄 수 없으며, 요청은 그대로 기다립니다. 허용하면 방금 요청을 한 번만 이어서 처리합니다.",
-  "en": "{need} One next step: continue on the Mac. Open Still on the Mac and choose a folder in Settings → Files & storage. (You can also open {url} in a browser on the Mac.) {preview} A phone or another device cannot give Mac folder permission, and the request keeps waiting. Once you allow it, I will continue this request once.",
-  "ja": "{need}次に必要なのは 1 つだけです: Mac で続ける — Mac で Still を開き、設定 → ファイル・保存 でフォルダーを選んでください。（Mac のブラウザで {url} を開いても構いません。）{preview}スマートフォンや他の端末からは Mac のフォルダー権限を与えられず、依頼はそのまま待ちます。許可すると、この依頼を 1 回だけ続けて処理します。",
-  "zh": "{need}下一步只需要一件事：在 Mac 上继续。在 Mac 上打开 Still，在 设置 → 文件与存储 中选择文件夹。（也可以在 Mac 的浏览器中打开 {url}。）{preview}手机或其他设备无法授予 Mac 文件夹权限，请求会一直等待。允许后，会把刚才的请求继续处理一次。"
+  "ko": "{need} 지금 필요한 다음 단계는 하나입니다: Mac에서 계속 — Mac에서 Still을 열고 설정 → 파일 · 권한에서 폴더를 선택해 주세요. (Mac의 브라우저에서 {url} 주소를 열어도 됩니다.) {preview} 휴대폰이나 다른 기기에서는 Mac 폴더 권한을 줄 수 없으며, 요청은 그대로 기다립니다. 허용하면 방금 요청을 한 번만 이어서 처리합니다.",
+  "en": "{need} One next step: continue on the Mac. Open Still on the Mac and choose a folder in Settings → Files & permissions. (You can also open {url} in a browser on the Mac.) {preview} A phone or another device cannot give Mac folder permission, and the request keeps waiting. Once you allow it, I will continue this request once.",
+  "ja": "{need}次に必要なのは 1 つだけです: Mac で続ける — Mac で Still を開き、設定 → ファイル・権限 でフォルダーを選んでください。（Mac のブラウザで {url} を開いても構いません。）{preview}スマートフォンや他の端末からは Mac のフォルダー権限を与えられず、依頼はそのまま待ちます。許可すると、この依頼を 1 回だけ続けて処理します。",
+  "zh": "{need}下一步只需要一件事：在 Mac 上继续。在 Mac 上打开 Still，在 设置 → 文件与权限 中选择文件夹。（也可以在 Mac 的浏览器中打开 {url}。）{preview}手机或其他设备无法授予 Mac 文件夹权限，请求会一直等待。允许后，会把刚才的请求继续处理一次。"
  },
  "handoff.local_no_pending_work": {
   "ko": "폴더 권한을 기다리는 요청이 없어 아무 작업도 실행하지 않았습니다.",
