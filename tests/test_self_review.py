@@ -64,7 +64,8 @@ class SelfReview(Harness):
 
     def settled(self, text, answer='an answer', status='failed', channel='web', chat_id=None):
         """A settled Work as the Work loop leaves it, with no queue row yet."""
-        job = self.store.enqueue(text, f'sr-{time.time()}-{text}', channel=channel, chat_id=chat_id)
+        job = self.store.enqueue(text, f'sr-{time.time()}-{text}', channel=channel, chat_id=chat_id, owner_typed=True,
+                                 owner_words=True)
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status=?,response=?,provider='subscription',model='codex' WHERE id=?",
                        (status, answer, job))
@@ -119,7 +120,7 @@ class Trigger(SelfReview):
         self.assertEqual(self.review_calls(), [], 'nothing runs on the request path')
 
     def test_a_succeeded_work_without_a_correction_gets_no_self_review(self):
-        job, row = self.run_work('나는 판교에서 일해')
+        job, row = self.run_work('나는 판교에서 일해', owner_words=True)
         self.assertEqual(row['status'], 'succeeded')
         self.assertEqual(list(self.rows(om.KIND_UPKEEP)), [job], 'upkeep as before')
         self.assertEqual(self.rows(), {})

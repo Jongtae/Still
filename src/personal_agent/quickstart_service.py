@@ -28,7 +28,7 @@ from .agent_runtime import (Capabilities, ToolError, CALENDAR_DRAFT_TOOLS, cut_t
                             backfill_work_sources, recorded_private_sources, NOTES_SUMMARY_COMMANDS, WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_BACKFILL_VERSION,
                             progress_step)
 from .plugins import PluginRegistry
-from .quickstart_store import INTERIM_PROJECTIONS, PREVIEW_PROJECTION, UPDATE_PROJECTION, QuickStore
+from .quickstart_store import INTERIM_PROJECTIONS, PREVIEW_PROJECTION, UPDATE_PROJECTION, QuickStore, owner_words_work
 from .providers import NOT_REPORTED, ModelAdapter, ProviderError, request_json, validate_model
 from .decision import DEFAULT_DECISION_PROVIDER, OUTCOME_DECIDED, RoutedDecisionEngine
 from .decision_routes import DecisionRoutes
@@ -1775,10 +1775,12 @@ class AgentService:
         rule/command reply (``provider`` stays ``builtin``: no worker AI ran),
         not a preparation's run (its request is the accepted goal, not new
         owner words) and not a location continuation (the owner's latest
-        message was the location; the asking Work has its own upkeep).
+        message was the location; the asking Work has its own upkeep).  #423:
+        only a Work whose text is the owner's own words (``owner_words_work``):
+        a bare API request, such as a developer's verification call, is not.
         """
         key=job.get('request_key')
-        return (outcome in ('succeeded','partial') and provider!='builtin'
+        return (outcome in ('succeeded','partial') and provider!='builtin' and owner_words_work(job)
                 and prep.preparation_of(key) is None and continuation_request(key) is None)
 
     @staticmethod

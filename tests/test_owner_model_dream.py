@@ -66,10 +66,13 @@ class Dream(Harness):
         self.service._owner_local_hour = lambda now: self.hour
         self.upkeep = self.service.owner_model
 
-    def settled(self, text, answer='an answer', status='succeeded', provider='subscription', upkept=True, telegram=False):
+    def settled(self, text, answer='an answer', status='succeeded', provider='subscription', upkept=True, telegram=False,
+                owner_words=True):
         """A settled Work a worker AI answered; with ``upkept`` its upkeep row is already done."""
-        options = {'channel': f'telegram:{GENERATION}', 'chat_id': CHAT} if telegram else {}
-        job = self.store.enqueue(text, f'dr-{time.time()}-{text}', **options)
+        # #423: the owner's own words, typed on a conversation surface or declared by an API caller; without
+        # ``owner_words`` it is a bare API request (a developer's verification call).
+        options = {'channel': f'telegram:{GENERATION}', 'chat_id': CHAT} if telegram else {'owner_words': owner_words}
+        job = self.store.enqueue(text, f'dr-{time.time()}-{text}', owner_typed=True, **options)
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status=?,response=?,provider=?,model='codex',delivery='sent' WHERE id=?",
                        (status, answer, provider, job))
@@ -238,6 +241,16 @@ class Run(Dream):
         turns = self.asked[0][0].facts['turns']
         self.assertNotIn('명령 응답', turns)
         self.assertNotIn(SECRET, turns)
+
+    def test_a_bare_api_request_is_never_a_turn_or_part_of_the_record(self):
+        """#423, the live case: verification calls through ``/api/chat`` were summarised as the owner's requests."""
+        self.settled('검증용 좌석 확인 요청', upkept=False, owner_words=False)
+        self.day('a', 'b', 'c')
+        self.dreams = [dream(diary='기록')]
+        self.tick()
+        turns = self.asked[0][0].facts['turns']
+        self.assertNotIn('좌석', turns)
+        self.assertEqual(turns.count('owner:'), 3)
 
     def test_a_merge_of_duplicates_ends_the_other_row_and_keeps_one(self):
         spouse = self.profile('profile.identity.spouse', '배우자가 있음')

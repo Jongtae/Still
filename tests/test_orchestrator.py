@@ -301,8 +301,9 @@ class Harness(unittest.TestCase):
         self.service.use_decision_engine(engine)
         return engine
 
-    def run_work(self, text, key=None):
-        job = self.store.enqueue(text, key or f'orch-{len(self.engine.turns)}-{len(self.transport.bodies)}-{text}')
+    def run_work(self, text, key=None, owner_words=False):
+        job = self.store.enqueue(text, key or f'orch-{len(self.engine.turns)}-{len(self.transport.bodies)}-{text}',
+                                 owner_typed=owner_words, owner_words=owner_words)
         self.assertTrue(self.service.run_one())
         return job, self.store.job(job)
 
@@ -2948,7 +2949,7 @@ class ThinOrchestration(Harness):
         self.script([plan('codex', 'Short acknowledgement only.'),
                      plan('openai', 'Other path.'), plan('codex', 'Third.', model='gpt-5.6-luna')],
                     goals=[True, False, False])
-        job, row = self.run_work(self.STATEMENT)
+        job, row = self.run_work(self.STATEMENT, owner_words=True)
         self.assertEqual(row['status'], 'succeeded')
         self.assertEqual(row['response'], self.ACK)
         self.assertEqual(len(self.asked_plans), 1, 'one plan call')

@@ -209,7 +209,8 @@ class ConnectionPreferences(Harness):
     def test_the_early_plan_records_the_recalled_words_it_read(self):
         """Codex review on #227: a Work parked after its early plan still shows what that plan read."""
         import time as clock
-        old = self.store.enqueue('Unseen records live in the archive app', 'said-early', owner_typed=True)
+        old = self.store.enqueue('Unseen records live in the archive app', 'said-early', owner_typed=True,
+                                 owner_words=True)
         with self.store.db() as db:
             db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
                        ('user', 'Unseen records live in the archive app', 'web', clock.time() - 864000, old))

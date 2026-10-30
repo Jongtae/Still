@@ -19,7 +19,7 @@ class ConversationRecall(audit_helpers._ServiceBase):
     service = audit_helpers.ApiRouteAudit.service
 
     def exchange(self, owner='같이 이야기해요', assistant='커피 마시면서 여기서 만나요', *, typed=True, channel='web', delivery='none'):
-        job=self.store.enqueue(owner,str(uuid.uuid4()),owner_typed=typed,channel=channel)
+        job=self.store.enqueue(owner,str(uuid.uuid4()),owner_typed=typed,owner_words=typed,channel=channel)
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status='succeeded',created=10,source_at=9,delivery=? WHERE id=?",(delivery,job))
             db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',('user',owner,channel,10,job))
@@ -103,7 +103,7 @@ class ConversationRecall(audit_helpers._ServiceBase):
         service=AgentService(self.store)
         works=[]
         for index in range(2):
-            work=self.store.enqueue(owner,f'separate-{index}',owner_typed=True)
+            work=self.store.enqueue(owner,f'separate-{index}',owner_typed=True,owner_words=True)
             works.append(work)
             self.assertEqual(service._claim_queued_work()['id'],work)
             with self.store.db() as db:

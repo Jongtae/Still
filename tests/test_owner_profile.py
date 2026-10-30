@@ -306,7 +306,7 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         import time as clock
         import uuid
         for text in messages:
-            job = self.store.enqueue(text, f'said-{uuid.uuid4()}', owner_typed=owner_typed)
+            job = self.store.enqueue(text, f'said-{uuid.uuid4()}', owner_typed=owner_typed, owner_words=owner_typed)
             with self.store.db() as db:
                 db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
                            (role, text, 'web', clock.time() - days_ago * 86400, job))
@@ -344,6 +344,19 @@ class ProfileSupplyToEveryReader(_OwnerSurface):
         self.assertIn('동네 마트 앱으로', section)
         self.assertNotIn('가격을 확인해 둔다', section)
         self.assertNotIn(OWNER_WORDS_HEADING, self.service.owner_profile_snapshot('마트 장바구니', recall=False))
+
+    def test_a_bare_api_request_is_not_recalled_as_the_owners_words(self):
+        """#423: a verification call through ``/api/chat`` is owner-typed but not the owner's words."""
+        import time as clock
+        self.said('마트 장바구니는 동네 마트 앱으로')
+        job = self.store.enqueue('마트 장바구니 검증 요청', 'verify-cart', owner_typed=True)
+        with self.store.db() as db:
+            db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                       ('user', '마트 장바구니 검증 요청', 'web', clock.time() - 10 * 86400, job))
+        self.said(*[f'최근 {index}' for index in range(16)], days_ago=0)
+        section = self.service.owner_profile_snapshot('마트 장바구니')
+        self.assertIn('동네 마트 앱으로', section)
+        self.assertNotIn('검증 요청', section)
 
     def test_recalled_words_are_audited_and_dated_in_the_owner_zone(self):
         from datetime import datetime, timezone
