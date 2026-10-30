@@ -1551,6 +1551,17 @@ class ScheduleTextTests(unittest.TestCase):
         self.assertEqual(prep.schedule_text(self.window(5, (19, 55), 16), 'Asia/Seoul'),
                          '10월 28일(수) 18:35부터 19:55 전까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요')
 
+    def test_an_end_set_one_minute_after_the_last_check_reads_as_that_check(self):
+        """#412: "11시 반까지" is set as until 11:31; the owner reads 11:30까지, which stays exact."""
+        self.assertEqual(prep.schedule_text(self.window(5, (19, 56), 16), 'Asia/Seoul'),
+                         '10월 28일(수) 18:35부터 19:55까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요')
+        row = self.window(5, (19, 56), 16)
+        self.assertEqual(prep.schedule_text({**row, 'due_at': row['due_at'] + 600}, 'Asia/Seoul'),
+                         '10월 28일(수) 18:45부터 19:55까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요',
+                         'a later slot of the same watch still names 19:55')
+        self.assertIn('19:57 전까지', prep.schedule_text(self.window(5, (19, 57), 16), 'Asia/Seoul'),
+                      'a deadline whose previous minute is not a slot keeps "전까지"')
+
     def test_a_window_past_midnight_names_its_last_day_and_a_foreign_zone_is_named(self):
         self.assertEqual(prep.schedule_text(self.window(120, (0, 40), None), 'Europe/Paris'),
                          '10월 28일(수) 18:35부터 10월 29일(목) 00:40 전까지 (Asia/Seoul), 2시간마다 최대 4번 · 알릴 일이 있을 때만 알려요')

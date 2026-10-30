@@ -499,20 +499,26 @@ def schedule_text(row, home_zone=None):
     A watch is stated as it is enforced (``start``/``next_window_slot``): runs
     only *before* its deadline (the window ``[due, until)`` excludes it) and
     at most ``max_runs`` times, so a late start or a skipped slot can never
-    run past what the owner read.
+    run past what the owner read.  When the minute before the deadline is
+    itself a slot (an owner's "11시 반까지" set as ``until`` 11:31, #412),
+    that minute is named inclusively ("11:30까지"): no run can start after
+    it, so the minute-level statement stays exact.
     """
     day, at, date = _local_parts(row['due_at'], row['timezone'])
     zone_note = '' if home_zone and row['timezone'] == home_zone else f" ({row['timezone']})"
     recurrence = row.get('recurrence') or ''
     if recurrence == RECURRENCE_WINDOW:
         runs = max(1, int(row['max_runs']))
-        end_day, end_at, end_date = _local_parts(row['window_end'], row['timezone'])
-        end = end_at if end_date == date else f'{end_day} {end_at}'
+        every, deadline = int(row['every_seconds']), row['window_end']
+        last_minute = deadline - 60
+        inclusive = (deadline % 60 == 0 and last_minute >= row['due_at']
+                     and (last_minute - row['due_at']) % every == 0)
+        end_day, end_at, end_date = _local_parts(last_minute if inclusive else deadline, row['timezone'])
+        end = (end_at if end_date == date else f'{end_day} {end_at}') + ('까지' if inclusive else ' 전까지')
         if runs == 1:
-            when = f'{day} {at}부터 {end} 전까지{zone_note} 한 번'
+            when = f'{day} {at}부터 {end}{zone_note} 한 번'
         else:
-            when = (f"{day} {at}부터 {end} 전까지{zone_note}, "
-                    f"{_minutes_text(int(row['every_seconds']) // 60)}마다 최대 {runs}번")
+            when = f"{day} {at}부터 {end}{zone_note}, {_minutes_text(every // 60)}마다 최대 {runs}번"
     else:
         when = f'{day} {at}{zone_note}' + {'daily': '부터 매일', 'weekdays': '부터 평일마다', 'weekly': '부터 매주'}.get(recurrence, '')
     if row['kind'] == KIND_REMINDER:
