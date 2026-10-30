@@ -17,6 +17,32 @@ This contract contains dated amendments because they are durable decision eviden
 
 Cross-cutting invariants remain: secrets never enter model prompts, logs or Evidence; payment is per-action approved; external effects are not replayed and `unknown` remains explicit; folder grants bound file authority; owner-visible claims remain Evidence-qualified. The [Presence Experience Contract](presence-experience-contract.en.md) controls owner-facing projection where it adds presentation rules without changing these authority boundaries.
 
+## Amendment — #402 (2026-10-30): the once-a-day look back ("dream")
+
+Owner direction 2026-10-29: Still's model of the owner should also improve between conversations, not only right after each request. The design follows OpenClaw dreaming, Claude Code Auto Dream, Letta sleep-time agents and Generative Agents reflection (design review #402). No external runtime or scheduler is adopted.
+
+- **Queue and bounds.** A third run kind, `dream`, on the #805 `owner_model_upkeep` queue. It shares the tick, single flight, owner pause, rolling `daily_calls` cap and deadline, and has its own owner switch `dream` (Settings, 알아 두기 → 밤사이 기억 정리).
+- **When.** The tick asks at most once a minute. A dream is enqueued only when all of these hold:
+  - no upkeep row is pending or in flight, and no Work is queued or running;
+  - at least 20 hours have passed since the last dream;
+  - at least 3 requests that got upkeep have finished since then;
+  - it is the owner's night (01:00–05:59 local), or 36 hours have passed since the last dream.
+
+  Its row belongs to the newest of those requests (the anchor).
+- **What it reads.** The settled requests a worker AI answered since the last dream: at most 7 days back and 40 requests. Each is scrubbed with its own Work's saved private values and bounded in size. It also reads the profile with short ids, the working notes, the previous daily record and the clock.
+  - It leaves out what upkeep never reads: rule or command replies, preparation runs, location continuations, Works where the owner managed what Still keeps, and forgotten requests.
+- **One judgment, then Still's checks.**
+  - **Facts:** each must cite turns it read. An `inferred` fact needs two separate turns, and a request sentence is never a fact. Facts then pass upkeep's `validate` and its save path (secret, forgotten-value and id checks).
+  - **Mass ending:** a dream whose facts would end more than a quarter of the current profile rows (at least one) is refused whole.
+  - **Working notes:** a revision must cite two separate turns and passes `validate_review`. One that drops more than half of the current points at once is refused. So is one whose anchor already used its one notes notice, since it would go untold.
+  - **Daily record:** at most 800 characters. A secret shape and the pause stop it.
+- **What it writes.** Everything is attributed to the anchor.
+  - Facts become current Memory (#918 slice a).
+  - Notes become the next version (#19).
+  - The daily record becomes a Memory row `diary.<owner date>`, outside `profile.`. No brief reads it; only a memory search finds it.
+- **The owner is told.** One saved-memory notice per dream, with undo; the notes keep their own notice. When the anchor's saved notice was already sent, the dream's saves get the separate upkeep notice instead of a late edit.
+- **Evidence.** One `owner_model_dream` event on the anchor: counts, outcomes, digests and the period's size, never text.
+
 ## Amendment — #220 (2026-10-23): append + invalidate
 
 Owner direction: memory is not overwritten or erased. A new fact is added, and the facts it replaces are invalidated. The #205 memory experiment measured this structure (M5) against key rows with a full view (M3). M5 delivered 54% of needed facts against 35%, with 11 stale facts shown as current against 19.

@@ -1195,6 +1195,30 @@ class ConversationJudgments:
                     else StructuredDecision(OUTCOME_UNAVAILABLE))
         return self.policy.structured(decision), decision
 
+    def owner_model_dream(self, turns, profile, working_notes, previous_diary, clock, work_id=None, cancelled=None):
+        """``(data, decision)``: one look back over the requests since the last one (#402, the "dream").
+
+        One ``structured`` call over the turns (each scrubbed by its own Work's values by the
+        caller and bounded by the host, so never cut here), the profile snapshot with short ids,
+        the working notes, the previous daily record and the clock, each redacted first.  ``data``
+        is the answer only when decided with enough confidence; what may be kept is the caller's
+        deterministic validation.  Judgment only: it writes nothing.
+        """
+        from .decision import OUTCOME_UNAVAILABLE, StructuredDecision
+        from .owner_model import (CLOCK_CHARS, DIARY_CHARS, DREAM_PURPOSE, DREAM_QUESTION, DREAM_SCHEMA, PROFILE_CHARS,
+                                  dream_shape)
+        facts = {'turns': str(turns or '') or 'none',
+                 'owner_profile': self.redact(profile)[:PROFILE_CHARS] or 'none',
+                 'working_notes': str(working_notes or '') or 'none',
+                 'previous_diary': self.redact(previous_diary)[:DIARY_CHARS] or 'none',
+                 'clock': self.redact(clock)[:CLOCK_CHARS] or 'unknown'}
+        context = self._context(DREAM_PURPOSE, facts, work_id=work_id, uncut=('turns', 'owner_profile', 'working_notes'),
+                                cancelled=cancelled)
+        method = getattr(self.engine, 'structured', None)
+        decision = (method(context, DREAM_QUESTION, DREAM_SCHEMA, dream_shape) if method is not None
+                    else StructuredDecision(OUTCOME_UNAVAILABLE))
+        return self.policy.structured(decision), decision
+
     def explicit_memory_fact(self, utterance, memory_key, content, work_id=None, cancelled=None):
         """``(judgment, decision)``: does ``utterance`` itself ask to keep, or assert, this one
         proposed fact (#597, #805 review)?
