@@ -7,7 +7,7 @@ This is the owner-facing projection contract. **It does not select the repositor
 | Concern | Current controlling rule | Older text retained only as history where superseded |
 | --- | --- | --- |
 | Presence identity | North Star + Experience principles: one continuous secretary voice over replaceable workers; receipts/details on demand | Worker/tool/Still machinery as the ordinary speaking identity |
-| Owner AI Memory presentation | #918 slice (a): no ask; save, then one quiet notice with exact seven-day undo | #836/#818 ask flow for the owner's own AI |
+| Owner AI Memory presentation | #918 slice (a): no ask; save, then one quiet notice with exact seven-day undo. #422 adds: each item names its kind, background consolidation is quiet, a change the owner relies on is raised at the next relevant conversation, and answers show memory by using it | #836/#818 ask flow for the owner's own AI; #402's one notice per dream |
 | Third-party/delegated Memory presentation | #836 one ask per owner message/Work, natural values not keys; #818 exact approval mechanics underneath | Owner-AI no-ask policy does not apply |
 | Conversation lifecycle | current Telegram rules: no routine acknowledgement/status card; native typing/thinking presence; semantic progress only when useful | received/queued/running/completed narration and fixed wait text |
 | Answer projection | PRESENCE-ANS-01 / #847 plus truth-first outcome rules: the answer is the message; technical causes stay in detail; failed/partial/unknown remain explicit | machinery headers, tool names and raw execution errors in ordinary replies |
@@ -75,7 +75,14 @@ The owner-facing projection should instead read as:
 4. **Communicate semantic progress, not scheduler state.** Do not mechanically project queued/running/completed lifecycle events. Send only progress that changes what the owner needs to know.
 5. **Truth before fluency.** failed, partial, unknown and approval-pending state constrain the response before conversational wording is applied. Model prose never outranks observed Evidence.
 6. **Ask at the moment of need; the agent manages.** Capability, folder and account authority should be requested contextually when needed. The owner does not operate a management console: the owner's AI reads and changes settings in conversation. A page appears only when conversation text cannot carry a result, or cannot safely carry an input (owner direction 2026-09-30, #880; see *Pages* below).
-7. **Memory is useful, scoped and correctable.** Short-horizon conversational focus and durable Memory are distinct. Durable memory remains inspectable, correctable and revocable.
+7. **Memory is useful, scoped and correctable.** Short-horizon conversational focus and durable Memory are distinct. Durable memory remains inspectable, correctable and revocable. Since #422, memory is **shown in use, not reported**:
+   - an answer that relies on a remembered fact mentions it in passing, in the owner's terms, so the owner can correct it in the next turn;
+   - an inferred or possibly outdated fact is offered tentatively;
+   - background consolidation is quiet and inspectable in 내 기록;
+   - a change the owner relies on is raised once, at the next conversation where it is relevant;
+   - only the owner's own words become their memory.
+
+   The rules are in the [Secretary Agency Contract](secretary-agency-contract.en.md) #422 amendment.
 8. **Proactivity must earn the interruption.** Attention/heartbeat can amplify Presence later, but reactive Presence must work without it and unsolicited contact requires relevance, authority and timing.
 9. **Model-first semantics; rules only where exactness is unavoidable.** Ordinary language/intent/reference/routing/recovery/projection decisions should use the provider-neutral DecisionEngine rather than keyword lists, regexes or capability-specific branches. Deterministic code remains authoritative for security, owner authority, approval, idempotency, effect/Evidence truth and protocol/state invariants.
 
