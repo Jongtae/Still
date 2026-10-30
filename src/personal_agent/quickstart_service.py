@@ -7171,7 +7171,7 @@ class AgentService:
                                                 draft_available=capabilities.live_drafts and not state.draft_failed)
                     if surface not in (WAIT_CHAT_ACTION,WAIT_DRAFT):continue
                     if surface==WAIT_DRAFT:
-                        # #718: the draft names the observed step in flight, as the latest line.
+                        # #445: observed steps gate approval waits; the draft shows only dots.
                         line=self._draft_step_text(job,state)
                         if line is None:
                             continue  # a payment/approval step: the approval prompt is the only surface
@@ -7179,11 +7179,11 @@ class AgentService:
                             # #839: one already-prepared item may ride along, chosen once per Work.
                             if state.attention is None:
                                 state.attention=self.waiting_attention(job,now) or {}
-                            text=draft_frame(line,state.dots_frame,state.attention.get('line'))
+                            text=draft_frame('',state.dots_frame,state.attention.get('line'))
                             # #978: the same text again only to outlive the draft preview; a re-send
                             # restarts the client's reveal of the text.
                             if text!=state.draft_text or now-state.draft_at>=timing.draft_keepalive:
-                                if conversation.show_draft(job,state,draft_frame(line,state.dots_frame),state.attention.get('line')):
+                                if conversation.show_draft(job,state,draft_frame('',state.dots_frame),state.attention.get('line')):
                                     state.draft_at=now
                                     state.draft_text=None if state.rich_draft_retry else text
                                     state.dots_frame+=1
@@ -7300,13 +7300,14 @@ class AgentService:
     APPROVAL_NOTIFICATIONS=('approval_needed','context_approval_needed','browser_approval_needed')
 
     def _draft_step_text(self, job, state):
-        """The draft line for running Work from its observed steps (#718), or None.
+        """The observed step line (#718), or None to suppress the draft (#445).
 
         NO_STEP_LINE (the draft shows the dots alone) while no step is in
         flight.  None while an approval prompt is pending or the step in flight is a
         payment step: the existing approval prompt is then the only surface.
         A step line was redacted when it was recorded; it passes this Work's
-        saved-value and stored-secret redaction again before display.  #881: a
+        saved-value and stored-secret redaction again.  #445: the waiting
+        draft uses only the None gate, never the line.  #881: a
         line left with a masking mark gives way to the step's plainer line
         (``step_line``), so the internal mark is never shown.
         """
@@ -7324,7 +7325,7 @@ class AgentService:
         return state.scrubbed[1]
 
     def _observe_cli_step(self, job_id, step):
-        """Keep the CLI's own streamed web-search step for the draft (#718); presentation only.
+        """Keep the CLI's own streamed step for Work status (#445); presentation only.
 
         The query is redacted exactly as the durable event later records it
         (`record_cli_native_searches`) and bounded like any step target.  A
