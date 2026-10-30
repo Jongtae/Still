@@ -25,7 +25,7 @@ from .bounded_execution import (AgentOSMcpTools, BOUNDED_PROFILE, HOST_CLI_PROFI
 from .skills import SkillBinding, SkillLibrary
 from .connection_slots import relayed as relayed_slots
 from .cli_browser_relay import (RELAYED_INFORMATION_USE, RELAYED_LOCATION_REQUEST, RELAYED_PREPARATIONS, RELAYED_SETTINGS,
-                                RelayClient, unused_browser_factory)
+                                SECRET_REDACTION, RelayClient, unused_browser_factory)
 from .context_observations import answerable_work
 from .local_tools import LocalTools
 from .search_providers import ProviderRegistry
@@ -418,6 +418,18 @@ def _permission_text(decision):
     return {'content': [{'type': 'text', 'text': json.dumps(decision, ensure_ascii=False)}]}
 
 
+def bridge_secret_redactor(store, relay):
+    """The stored-secret pass for text this bridge records or returns (#718), done where the key is (#369).
+
+    With the service's relay it is the service's own ``redact_known_secrets``: encrypted API slot values
+    need the owner's Keychain key, which this process cannot read when the CLI started it.  A failed
+    call raises, so the caller withholds the text as before.  Without a relay it runs here.
+    """
+    if relay is None:
+        return lambda text: redact_known_secrets(store, text)
+    return lambda text: relay.call(SECRET_REDACTION, {'text': str(text)})
+
+
 def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROFILE, browser_relay=None,
           search_off_reason='', relay_browser=True, skills=(), ai_connections=False, connection_slots=(),
           session_steers=False):
@@ -475,7 +487,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                                 budget=WorkBudget(stop=lambda: work_stop_requested(store, job_id),
                                                   ledger=WorkLedger(store, job_id)),
                                 # #718: the same stored-secret pass as the host, for recorded step text.
-                                secret_redactor=lambda text: redact_known_secrets(store, text))
+                                secret_redactor=bridge_secret_redactor(store, relay))
     capabilities.private_provenance.update(_recorded_private_sources(store, job_id, capabilities.tools))
     tools = AgentOSMcpTools(capabilities, native_search=native_search and profile == BOUNDED_PROFILE)
     tools.PROFILE = profile
