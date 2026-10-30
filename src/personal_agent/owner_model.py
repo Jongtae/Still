@@ -511,7 +511,8 @@ def dream_refs(sources, refs):
     return named if all(ref in refs for ref in named) else None
 
 
-def validate_dream(proposals, refs, requests, known, pending, profile_rows, profile_ids=None, limit=MAX_PROPOSALS):
+def validate_dream(proposals, refs, requests, known, pending, profile_rows, profile_ids=None, limit=MAX_PROPOSALS,
+                   held=None):
     """``(kept, dropped)`` of a dream's proposals (#402, deterministic).
 
     Each proposal must name what it rests on (``sources``): refs of turns the dream read, or, to tidy
@@ -556,7 +557,7 @@ def validate_dream(proposals, refs, requests, known, pending, profile_rows, prof
             # The line under the proposal's own key is replaced by saving it, not ended: it is no loss.
             own = [end for end in item.get('invalidates') or ()
                    if not (isinstance(end, dict) and profile_ids.get(str(end.get('id') or '').strip()) == key)]
-            cited.append({**item, 'invalidates': grounded_ends(own, key, turns, lines, dropped)})
+            cited.append({**item, 'invalidates': grounded_ends(own, key, turns, lines, dropped, held)})
     kept, refused = validate(cited, known, pending, limit=limit)
     dropped.extend(refused)
     if sum(len(item['invalidates']) for item in kept) > max(1, int(DREAM_END_FRACTION * max(0, profile_rows))):
@@ -567,7 +568,7 @@ def validate_dream(proposals, refs, requests, known, pending, profile_rows, prof
     return kept, dropped
 
 
-def grounded_ends(ends, key, turns, lines, dropped):
+def grounded_ends(ends, key, turns, lines, dropped, held=None):
     """The ``ends`` of one dream proposal that are grounded (#424); the others go to ``dropped``.
 
     An ending stands only when its line is cited in the proposal's ``sources`` (``lines``) and the
@@ -575,7 +576,8 @@ def grounded_ends(ends, key, turns, lines, dropped):
     never a lasting fact (#429).  A
     malformed entry is kept for ``validate``, which refuses the whole proposal's shape.  A dropped
     ending names the line's short id (never its text): ``held`` when the judgment was unsure, so a
-    later step can raise it with the owner; ``end-uncited`` or ``end-ungrounded`` otherwise.
+    later step can raise it with the owner; ``end-uncited`` or ``end-ungrounded`` otherwise.  A held
+    ending of a cited line is also added to ``held`` (a list) as ``{'line', 'reason'}`` (#425).
     """
     kept = []
     for end in ends:
@@ -586,6 +588,8 @@ def grounded_ends(ends, key, turns, lines, dropped):
         because, turn = end.get('because'), str(end.get('turn') or '').strip().strip('[]')
         if because == END_UNSURE:
             reason = 'held'
+            if held is not None and line in lines:
+                held.append({'line': line, 'reason': ' '.join(str(end.get('reason') or '').split())[:MAX_TEXT_CHARS]})
         elif line not in lines:
             reason = 'end-uncited'
         elif because in (END_RESTATES, END_NOT_LASTING) or (because == END_REPLACED and turn in turns):
@@ -828,7 +832,8 @@ class Upkeep:
         upkeep and dream switches on, call budget left, no upkeep row pending or in flight and no
         Work queued or running, ``DREAM_INTERVAL_SECONDS`` since the last dream, and
         ``DREAM_MIN_WORKS`` upkeep-eligible requests (their upkeep rows) since it; then the owner's
-        night hours, or ``DREAM_LATE_SECONDS`` since the last.  The anchor is the newest of those
+        night hours, or ``DREAM_LATE_SECONDS`` since the last (#425: the first dream, with no last, waits for
+        the night).  The anchor is the newest of those
         requests made on a conversation surface (so its notice can reach the owner), else the newest.
         ``reason`` holds the start of the period the dream reads.
         """
@@ -850,7 +855,7 @@ class Upkeep:
             last = self.last_dream(db)
             if last is not None and now - last < DREAM_INTERVAL_SECONDS:
                 return None
-            if local_hour not in DREAM_NIGHT_HOURS and last is not None and now - last < DREAM_LATE_SECONDS:
+            if local_hour not in DREAM_NIGHT_HOURS and (last is None or now - last < DREAM_LATE_SECONDS):
                 return None
             since = max(last or 0.0, now - DREAM_WINDOW_SECONDS)
             rows = db.execute('SELECT u.job_id,j.channel,j.chat_id FROM owner_model_upkeep u LEFT JOIN jobs j ON j.id=u.job_id '
@@ -1107,12 +1112,13 @@ class Upkeep:
                                        'chars': result.get('chars')}
         return STATE_DONE, calls, EVENT_RECORDED, detail
 
-    def _apply_facts(self, kept, job, dropped, ends_after=None):
+    def _apply_facts(self, kept, job, dropped, ends_after=None, origin=None):
         """Save the kept proposals at once as current Memory attributed to ``job``; returns ``(applied, stopped)``.
 
         Shared by upkeep and the dream (#402).  ``dropped`` is extended in place.  ``ends_after``
         (the dream's claim time) widens which current rows a proposal may end: any row that existed
-        then, instead of the rows that existed when ``job`` arrived.
+        then, instead of the rows that existed when ``job`` arrived.  ``origin`` 'dream' (#425) marks the
+        rows the look back wrote: they hold no notice of the Work's own and are raised by ``MemoryRaise``.
         """
         from .agent_runtime import MEMORY_OWNER, SECRET_SHAPED_VALUE, memory_value_has_secret
         applied, stopped = [], None
@@ -1156,7 +1162,8 @@ class Upkeep:
             # A write is not a model call, so the cap and the deadline do not stop it; the pause does.
             try:
                 # Review: the owner notice is held in the same transaction as the row, so a save is never untold.
-                memory = self.store.save_memory(key, content, MEMORY_OWNER, work_id=job['id'], notice=True,
+                memory = self.store.save_memory(key, content, MEMORY_OWNER, work_id=job['id'], notice=origin is None,
+                                                origin=origin,
                                                 invalidates=[(full, end['reason'])
                                                              for full, end in zip(ends, item['invalidates'])],
                                                 # '' is the AI saying the fact has no last day.
@@ -1313,7 +1320,7 @@ class Upkeep:
             kept, refused = validate_dream(found.get('proposals'), refs, refs.values(), known, pending, len(rows), ids,
                                            limit=DREAM_GATHER_LIMIT)
             gathered, stopped = self._apply_facts([{**item, 'invalidates': []} for item in kept], job, refused,
-                                                  ends_after=ends_after)
+                                                  ends_after=ends_after, origin=ORIGIN_DREAM)
             first.update(proposed=len(found.get('proposals') or []), applied=gathered, dropped=refused)
         current = notes.current()
         current_text = current['text'] if current else ''
@@ -1341,9 +1348,21 @@ class Upkeep:
             return (STATE_DONE if gathered else STATE_UNAVAILABLE), calls, (EVENT_RECORDED if gathered else EVENT_UNAVAILABLE), detail
         known, pending = self.known_values(MEMORY_OWNER, job['id'])
         rows, ids = lines_now()
-        kept, dropped = validate_dream(data.get('proposals'), refs, refs.values(), known, pending, len(rows), ids)
-        applied, stopped = self._apply_facts(kept, job, dropped, ends_after=ends_after)
+        held = []
+        kept, dropped = validate_dream(data.get('proposals'), refs, refs.values(), known, pending, len(rows), ids,
+                                       held=held)
+        applied, stopped = self._apply_facts(kept, job, dropped, ends_after=ends_after, origin=ORIGIN_DREAM)
         applied = gathered + applied
+        # #425: the look back is quiet; what the owner relies on that it changed, and what it held, waits to be
+        # raised once at the next request it matters to (``MemoryRaise``), never as a message of its own.
+        full = {row['id'][:MemoryService.SHORT_ID_CHARS]: row['id'] for row in rows}
+        changed = [{'kind': RAISE_CHANGED, 'memory_id': row['memory_id']} for row in applied
+                   if row.get('memory_id') and (row.get('superseded') or row.get('invalidated'))]
+        unsure = [{'kind': RAISE_HELD, 'memory_id': full[item['line']], 'reason': item['reason']} for item in held
+                  if item['line'] in full and self.store.memory(full[item['line']], MEMORY_OWNER)]
+        if stopped != STOPPED_PAUSED and (changed or unsure):
+            MemoryRaise(self.store, self.clock).add(changed + unsure)
+        detail['raise'] = {'changed': len(changed), 'held': len(unsure)}
         detail.update(proposed=len(data.get('proposals') or []), applied=applied, dropped=dropped, stopped=stopped,
                       notes=None, diary=None)
         if stopped != STOPPED_PAUSED:
@@ -1378,7 +1397,8 @@ class Upkeep:
                 dropped.append({'note': 'diary', 'reason': SECRET_SHAPED_VALUE})
             else:
                 try:
-                    memory = self.store.save_memory(key, diary, MEMORY_OWNER, work_id=job['id'], notice=True)
+                    # #425: the daily record is never told; it is a search-only record of the owner's turns.
+                    memory = self.store.save_memory(key, diary, MEMORY_OWNER, work_id=job['id'], origin=ORIGIN_DREAM)
                 except ValueError:
                     dropped.append({'note': 'diary', 'reason': 'store-refused'})
                 else:
@@ -1386,6 +1406,73 @@ class Upkeep:
                                        'chars': len(diary), 'superseded': bool(memory.get('supersedes'))}
         detail['stopped'] = stopped
         return STATE_DONE, calls, EVENT_RECORDED, detail
+
+
+#: #425: the ``memories.origin`` of what a dream writes (its facts and the daily record).
+ORIGIN_DREAM = 'dream'
+#: #425: a dream change the owner relies on, or an ending it held, waits this long to be raised.
+RAISE_SECONDS = 7 * 86400
+RAISE_KEY = 'owner_model.raise'
+RAISE_LIMIT = 20
+RAISE_CHANGED, RAISE_HELD = 'changed', 'held'
+#: What the owner's AI reads on the line (model-facing; it speaks to the owner in their own words).
+RAISE_NOTES = {
+    RAISE_CHANGED: ('[changed in the overnight look back; before: {before}. If this matters to the current request, '
+                    'mention the change in passing so the owner can correct it; otherwise say nothing about it.]'),
+    RAISE_HELD: ('[may no longer hold: {reason}. If this matters to the current request, ask the owner once, briefly, '
+                 'and say why; otherwise say nothing about it. Change the memory only on the owner\'s answer.]'),
+}
+
+
+class MemoryRaise:
+    """#425: what a dream changed that the owner relies on, and the endings it held, until raised once.
+
+    The look back tidies quietly: a new fact or a restated line is applied and listed in 내 기록, with no
+    message.  A row it wrote that replaced or ended a line (``changed``), and a line whose ending it
+    held because it was unsure (``held``), become one item each, kept in ``config`` (bounded, newest
+    first).  An item is shown on its own line in the next brief whose request matches that line; the
+    owner's AI then mentions it in passing or asks once, only if it matters (C16: no rule here decides
+    what matters), and changes Memory only through its own tools on the owner's answer.  The first
+    Work whose brief showed an item consumes it.  An item expires after ``RAISE_SECONDS`` and is
+    dropped once its row is no longer current.
+    """
+
+    def __init__(self, store, clock=time.time):
+        self.store, self.clock = store, clock
+
+    def _items(self):
+        items = self.store.config(RAISE_KEY, [])
+        return [item for item in items if isinstance(item, dict) and isinstance(item.get('memory_id'), str)
+                and item.get('kind') in RAISE_NOTES] if isinstance(items, list) else []
+
+    def add(self, items):
+        """Add ``{'kind', 'memory_id', 'reason'?}`` items; the newest replaces an older one for the same row."""
+        now = self.clock()
+        fresh = [{'kind': item['kind'], 'memory_id': item['memory_id'], 'reason': str(item.get('reason') or ''),
+                  'at': now, 'shown_in': None} for item in items]
+        if not fresh:
+            return
+        ids = {item['memory_id'] for item in fresh}
+        kept = [item for item in self._items() if item['memory_id'] not in ids and now - float(item.get('at') or 0) < RAISE_SECONDS]
+        self.store.put(RAISE_KEY, (fresh + kept)[:RAISE_LIMIT])
+
+    def open(self, work_id=None):
+        """``{memory_id: item}`` not expired and not consumed by a Work other than ``work_id``."""
+        now = self.clock()
+        return {item['memory_id']: item for item in self._items()
+                if now - float(item.get('at') or 0) < RAISE_SECONDS
+                and (item.get('shown_in') is None or (work_id is not None and item.get('shown_in') == work_id))}
+
+    def shown(self, memory_ids, work_id):
+        """The Work ``work_id`` showed these items: they are consumed (a second brief of that Work still shows them)."""
+        ids = set(memory_ids)
+        if not ids or not work_id:
+            return
+        items = self._items()
+        for item in items:
+            if item['memory_id'] in ids and item.get('shown_in') is None:
+                item['shown_in'] = work_id
+        self.store.put(RAISE_KEY, items)
 
 
 class WorkingNotes:

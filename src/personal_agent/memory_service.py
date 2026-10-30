@@ -293,7 +293,7 @@ class MemoryService:
         return [row for row in rows if self.holds(row, today)]
 
     def profile_snapshot(self, owner_id, *, limit_chars=PROFILE_SNAPSHOT_CHARS, line_chars=PROFILE_LINE_CHARS, query=None,
-                         limit_bytes=PROFILE_SNAPSHOT_BYTES, ids=False):
+                         limit_bytes=PROFILE_SNAPSHOT_BYTES, ids=False, annotations=None):
         """A bounded, attributable snapshot of ``profile.*`` rows for a turn prompt.
 
         ``text`` is one line per row - ``key: value (saved YYYY-MM-DD)`` - in
@@ -312,6 +312,10 @@ class MemoryService:
         ``[<first 8 characters of its id>]`` so the memory upkeep can name the
         rows a new fact ends.
 
+        #425: ``annotations`` maps a Memory id to a note shown after that row's line, only when the row
+        matched ``query`` (the request it matters to); such entries carry ``annotated``.  The note is
+        bounded and counts against the same limits.
+
         This is a private read like ``list_memories``: it arms the caller's
         turn-scoped egress sink unless the service was built with
         ``NO_EGRESS_GUARD``.
@@ -324,6 +328,8 @@ class MemoryService:
         if isinstance(limit_bytes, bool) or not isinstance(limit_bytes, int) or limit_bytes < 1:
             raise MemoryServiceError('profile snapshot byte size is invalid')
         rows = self._profile_rows(owner_id, holding_on=self._today())
+        annotations = annotations if isinstance(annotations, dict) else {}
+        found = set()
         if query is not None:
             matched = [row for row in self.search_memories(owner_id, query, limit=20, key_prefix=PROFILE_PREFIX)['memories']
                        if self.is_profile_key(row.get('memory_key'))]
@@ -336,6 +342,9 @@ class MemoryService:
                 content = content[:line_chars - 6] + ' [...]'
             until = f", until {row['valid_until']}" if row.get('valid_until') else ''
             line = f"{row['memory_key']}: {content} (saved {self._saved_date(row.get('created'))}{until})"
+            note = ' '.join(str(annotations.get(row['id']) or '').split())[:2 * line_chars] if row['id'] in found else ''
+            if note:
+                line = f'{line} {note}'
             size = len(line) + (1 if lines else 0)
             size_bytes = len(line.encode('utf-8')) + (1 if lines else 0)
             if used + size > limit_chars or used_bytes + size_bytes > limit_bytes:
@@ -345,7 +354,7 @@ class MemoryService:
             # Codex review on #226: the id is added after the bounds, so the upkeep selects exactly the worker's rows.
             lines.append(f"[{str(row['id'])[:self.SHORT_ID_CHARS]}] {line}" if ids else line)
             entries.append({'id': row['id'], 'memory_key': row['memory_key'], 'content': row['content'],
-                            'created': row.get('created')})
+                            'created': row.get('created'), **({'annotated': True} if note else {})})
         omitted = len(rows) - len(entries)
         return self._private_read('memory_service.profile_snapshot', {
             'state': 'current', 'text': '\n'.join(lines), 'entries': entries,

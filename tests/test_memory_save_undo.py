@@ -263,6 +263,15 @@ class SaveAndTell(TelegramHarness):
         self.assertEqual(self.memory_states(), [(VALUE, 'retracted'), ('매운 음식', 'current')])
         self.assertFalse(self.answers()[-1], 'a tap that changes nothing shows no system toast')
 
+    def test_a_fact_retired_under_another_key_is_named_as_such_not_as_the_before(self):
+        """#425: the live case read "X (전에는 X, an unrelated fact)"; a retired fact is said apart from the before."""
+        self.store.save_memory(KEY, '서울 역삼 오피스')
+        other = self.store.save_memory(SECOND_KEY, '버스')
+        job_id = self.enqueue('출근 얘기')
+        row = self.store.save_memory(KEY, VALUE, MEMORY_OWNER, work_id=job_id, invalidates=[(other['id'], 'retired')])
+        text = self.service.memory_saved_text({'items': [self.service.memory_saved_item(row)], 'done': {}})
+        self.assertEqual(text, f'기억했어요: {VALUE} (전에는 서울 역삼 오피스; 함께 정리한 기억: 버스)')
+
     def test_undo_restores_the_superseded_value(self):
         self.store.save_memory(KEY, '서울 역삼 오피스')
         job, notice, row = self.told()

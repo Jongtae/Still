@@ -125,7 +125,9 @@ class Due(Dream):
     def test_after_a_dream_the_next_waits_the_interval_and_prefers_the_night(self):
         self.day('a', 'b', 'c')
         start = time.time() + 1
-        self.assertIsNotNone(self.upkeep.enqueue_dream_if_due(start, 14), 'the first look back may run by day')
+        self.assertIsNone(self.upkeep.enqueue_dream_if_due(start, 14), '#425: the first look back waits for the night too')
+        self.upkeep.dream_checked = None
+        self.assertIsNotNone(self.upkeep.enqueue_dream_if_due(start, 3))
         with self.store.db() as db:
             db.execute("UPDATE owner_model_upkeep SET state='done' WHERE kind=?", (om.KIND_DREAM,))
         later = start + 21 * HOUR
@@ -210,8 +212,10 @@ class Run(Dream):
         self.assertEqual(context.work_id, newest)
         [plan] = self.store.memories(MEMORY_OWNER, key_prefix='profile.')
         self.assertEqual((plan['memory_key'], plan['valid_until']), ('profile.plan.car_installment', '2027-03-31'))
-        self.assertEqual([row['id'] for row in self.store.work_memories(MEMORY_OWNER, newest)][0], plan['id'],
-                         'kept facts are attributed to the newest request it covers')
+        with self.store.db() as db:
+            work_key = db.execute('SELECT work_key FROM memories WHERE id=?', (plan['id'],)).fetchone()[0]
+        self.assertEqual(work_key, self.store._work_binding(newest), 'kept facts are attributed to the newest request it covers')
+        self.assertEqual(plan['origin'], om.ORIGIN_DREAM, '#425: written by the look back, outside the request\'s notice')
         self.assertEqual(om.WorkingNotes(self.store).current()['points'], ['비교나 정리는 표로 보여 준다'])
         [diary] = self.store.memories(MEMORY_OWNER, key_prefix=om.DIARY_PREFIX)
         self.assertTrue(diary['memory_key'].startswith(om.DIARY_PREFIX))
@@ -444,7 +448,8 @@ class Notes(Dream):
 
 
 class Told(Dream):
-    """What a dream keeps is told: its own notice when the newest request's notice was already sent."""
+    """#425: the look back is quiet; a change the owner relies on, or an ending it held, is raised once on the
+    line of the next request it matters to, and nothing is pushed."""
 
     def notice(self, job, kind, state='sent', fingerprint=None):
         from personal_agent.conversation_surface import surface_conversation
@@ -460,15 +465,67 @@ class Told(Dream):
             return {row['kind']: row['state'] for row in db.execute(
                 'SELECT kind,state FROM telegram_notifications WHERE job_id=?', (job,))}
 
-    def test_saves_after_a_sent_notice_get_a_separate_notice_not_an_edit(self):
-        from personal_agent.quickstart_service import MEMORY_SAVED_KIND, MEMORY_SAVED_UPKEEP_KIND
+    def brief(self, request, work):
+        self.service.current_work_id = work
+        try:
+            return self.service.owner_profile_snapshot(request)
+        finally:
+            self.service.current_work_id = None
+
+    def test_a_dream_pushes_no_notice_and_its_rows_stay_out_of_the_requests_own_notice(self):
+        from personal_agent.quickstart_service import MEMORY_SAVED_KIND
         self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': GENERATION})
         self.day('a', 'b')
         newest = self.settled('11월에 제주 여행 가', telegram=True)
         self.notice(newest, MEMORY_SAVED_KIND)
-        self.dreams = [dream([fact('profile.plan.trip', '2026년 11월 제주 여행', 't3')])]
+        self.dreams = [dream([fact('profile.plan.trip', '2026년 11월 제주 여행', 't3')], diary='제주 여행 계획을 말했다.')]
         self.tick()
-        self.assertEqual(self.notices(newest), {MEMORY_SAVED_KIND: 'sent', MEMORY_SAVED_UPKEEP_KIND: 'queued'})
+        self.assertEqual(self.notices(newest), {MEMORY_SAVED_KIND: 'sent'}, 'nothing queued, no edit')
+        rows = self.store.memories(MEMORY_OWNER)
+        self.assertEqual(sorted(row['memory_key'].split('.')[0] for row in rows), ['diary', 'profile'])
+        self.assertEqual({row['origin'] for row in rows}, {om.ORIGIN_DREAM}, 'the fact and the daily record')
+        self.assertEqual(self.store.work_memories(MEMORY_OWNER, newest), [],
+                         'a later notice of the request never lists what the look back wrote')
+
+    def test_a_replacement_is_raised_once_on_the_line_of_the_next_request_it_matters_to(self):
+        old = self.profile('profile.place.office', '판교 사무실')
+        self.day('a', 'b', '이제 분당 사무실로 출근해')
+        self.dreams = [dream([fact('profile.place.office', '분당 사무실', 't3', old['id'][:8], category='place',
+                                   invalidates=[(old['id'][:8], 'moved', om.END_REPLACED, 't3')])])]
+        self.tick()
+        self.assertNotIn('overnight look back', self.brief('점심 메뉴 추천', 'w0'), 'not raised where it does not matter')
+        shown = self.brief('사무실 가는 길', 'w1')
+        self.assertIn('분당 사무실', shown)
+        self.assertIn('changed in the overnight look back; before: 판교 사무실', shown)
+        self.assertEqual(self.brief('사무실 가는 길', 'w1'), shown, 'every reader of that Work reads the same line')
+        self.assertNotIn('overnight look back', self.brief('사무실 주차', 'w2'), 'raised once')
+
+    def test_an_unsure_ending_is_held_and_asked_about_at_most_once(self):
+        old = self.profile('profile.place.office', '판교 사무실')
+        self.day('a', 'b', 'c')
+        self.dreams = [dream([fact('profile.plan.trip', '11월 제주 여행', 't1', old['id'][:8], category='plan',
+                                   invalidates=[(old['id'][:8], '요즘 다른 곳 이야기가 많음', om.END_UNSURE)])])]
+        self.tick()
+        self.assertEqual(self.store.memory(old['id'], MEMORY_OWNER)['content'], '판교 사무실', 'held, not ended')
+        shown = self.brief('사무실 가는 길', 'w1')
+        self.assertIn('may no longer hold: 요즘 다른 곳 이야기가 많음', shown)
+        self.assertNotIn('may no longer hold', self.brief('사무실 가는 길', 'w2'))
+
+    def test_a_raised_item_expires_after_a_week(self):
+        now = [1000.0]
+        raising = om.MemoryRaise(self.store, clock=lambda: now[0])
+        row = self.profile('profile.place.office', '판교 사무실')
+        raising.add([{'kind': om.RAISE_HELD, 'memory_id': row['id'], 'reason': 'unsure'}])
+        self.assertIn(row['id'], raising.open())
+        now[0] += om.RAISE_SECONDS
+        self.assertEqual(raising.open(), {})
+
+    def test_the_upkeep_and_the_dream_read_the_profile_without_raise_notes(self):
+        old = self.profile('profile.place.office', '판교 사무실')
+        om.MemoryRaise(self.store).add([{'kind': om.RAISE_HELD, 'memory_id': old['id'], 'reason': 'unsure'}])
+        self.assertNotIn('may no longer hold', self.service.owner_profile_snapshot('사무실', notes=False))
+        self.assertNotIn('may no longer hold', self.service.owner_profile_snapshot('사무실', notes=False, ids=True))
+        self.assertIn(old['id'], om.MemoryRaise(self.store).open(), 'reading it there consumes nothing')
 
     def test_a_notes_revision_whose_notice_is_taken_is_not_saved(self):
         self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': GENERATION})

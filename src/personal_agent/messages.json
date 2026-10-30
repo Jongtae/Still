@@ -1349,6 +1349,30 @@
   "ja": "覚えました",
   "zh": "记住了"
  },
+ "memory.saved.before": {
+  "ko": "전에는 {facts}",
+  "en": "before: {facts}",
+  "ja": "以前は {facts}",
+  "zh": "之前：{facts}"
+ },
+ "memory.saved.ended": {
+  "ko": "함께 정리한 기억: {facts}",
+  "en": "also retired: {facts}",
+  "ja": "あわせて整理した記憶: {facts}",
+  "zh": "一并整理的记忆：{facts}"
+ },
+ "memory.saved.again": {
+  "ko": "다시 {facts}",
+  "en": "back to: {facts}",
+  "ja": "元に戻した: {facts}",
+  "zh": "恢复为：{facts}"
+ },
+ "memory.saved.more": {
+  "ko": "그 밖의 {count}가지는 내 기록에서 볼 수 있어요.",
+  "en": "{count} more are in My records.",
+  "ja": "ほか{count}件はマイ記録で確認できます。",
+  "zh": "其余 {count} 项可在“我的记录”中查看。"
+ },
  "memory.saved_expired": {
   "ko": "여기서는 더 되돌릴 수 없어요. 내 기록에서 지울 수 있어요.",
   "en": "This can't be undone here any more. You can delete it in My records.",

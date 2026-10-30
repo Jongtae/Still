@@ -35,14 +35,22 @@ The owner's reference is an assistant that asks at the moment it matters, says w
 
   Different subjects are never duplicates. An ending the judgment is unsure of is held, not applied. The AI names ids and reasons; Still checks citation and shape only, with no key-name or topic rule (C16). The 25% mass-end cap stays.
 - **Quiet consolidation (#425).**
-  - New facts and tidy-ups from a dream are applied without a message. 내 기록 lists them with their source and the exact undo.
+  - New facts and tidy-ups from a dream are applied without a message. Every row a dream writes (its facts and the daily record) carries `origin` `dream`. It is never part of the anchor request's own saved-memory notice. 내 기록 lists it with its source and the exact undo.
   - The daily record is never told and never shown as a remembered fact. It stays a search-only record of owner-typed turns and is never a fact source.
+  - A working-notes revision keeps its own #19 notice. This is the only thing a dream may still tell by itself.
   - The first dream, like every later one, waits for the owner's night hours.
 - **Raised at the next relevant conversation (#425).**
-  - A dream change to something the owner relies on (a replaced or ended fact), and every held ending, becomes one open item. It is raised at most once, as one line in the owner's next conversation where a relevance judgment says it belongs.
-  - Only a held ending is a question, with its reason. It is settled through `owner_acts`: yes ends the fact, no keeps it.
-  - An item not raised within seven days expires unchanged and stays visible in 내 기록. A dream never sends a standalone push.
-- **Plain kinds in every memory notice (#425).** A foreground #918 notice and a dream line say what each item is: new, changed ("전에는 …"), tidied, or ended. An ended fact under another key is never shown as the "전에는" of an unrelated fact. Undo by words can target one item; the exact digest-bound `retract_memory` is unchanged.
+  - A dream row that replaced or ended a fact the owner relies on (`changed`), and every held ending (`held`), becomes one open item (`MemoryRaise`).
+  - The item is shown as a note on its own line in the owner's AI's brief, only in a request whose text matches that line (the existing query-first profile selection). A `changed` note says what the line said before. A `held` note gives the reason for the doubt.
+  - The owner's AI mentions a change in passing, or asks once with its reason, only when it matters to that request. It changes Memory only through its own tools, on the owner's answer. No rule in Still decides relevance (C16).
+  - The first Work whose brief shows an item consumes it. Every reader of that Work sees the same line.
+  - An item not raised within seven days expires unchanged; the row stays in 내 기록. The look back sends no saved-memory notice and no push.
+- **Plain kinds in every memory notice (#425).** A foreground #918 notice says what each item is:
+  - the value it replaced under its own key ("전에는 …");
+  - facts it retired under other keys ("함께 정리한 기억: …");
+  - after an undo, the value brought back ("다시 …").
+
+  A retired fact is never shown as the "전에는" of an unrelated fact. The wording lives in `messages.json`. Undo by words can target one item (#424); the exact digest-bound `retract_memory` is unchanged.
 - **Memory shown in use (#426).** When a remembered fact changes what an answer does, the owner's AI mentions it in passing, paraphrased and in the owner's terms, never as a stored line or key. A fact the AI inferred, or one that may be out of date, is offered tentatively. When being wrong would matter, the AI asks one short question with its reason instead. This is general guidance to the owner's AI, never a template or a task-specific rule (C16).
 - **Kept.** These rules stay as they are:
   - #918 act-then-tell for foreground saves;
