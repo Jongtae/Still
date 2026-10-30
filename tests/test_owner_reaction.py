@@ -25,8 +25,8 @@ from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDeci
 from personal_agent.quickstart_service import MEMORY_SAVED_KIND, REACTION_EVENT
 
 from owner_act_script import with_owner_acts
-from test_memory_candidate_confirm import CHAT, GENERATION, OTHER, VALUE
-from test_memory_save_undo import SaveAndTell
+from test_memory_candidate_confirm import CHAT, GENERATION, KEY, OTHER, VALUE
+from test_memory_save_undo import SECOND_KEY, SECOND_VALUE, SaveAndTell
 
 
 class _Answering(SaveAndTell):
@@ -228,6 +228,60 @@ class QueuedBeforeTheNotice(_Answering):
         self.service.run_one()
         self.assertEqual(self.asked, [])
         self.assertEqual([m['content'] for m in self.store.memories()], [VALUE])
+
+
+class _WordsUndoParts(_Answering):
+    """#424: words that name numbered facts of a notice undo only those facts."""
+    PARTS = []
+
+    def setUp(self):
+        super().setUp()
+
+        def judge(context, proposition):
+            if context.purpose == 'goal-reached':
+                return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+            return None
+
+        def act(response, items):
+            notices = [item for item in items if item['kind'] == 'memory-saved']
+            return (notices[0]['id'], 'decline', '', self.PARTS) if notices else ('none', 'unrelated', '')
+        self.claim_completion(with_owner_acts(FixtureDecisionEngine(judge=judge), rule=act))
+
+    def two_facts_told(self):
+        return self.told(plan=[('save_memory', {'memory_key': KEY, 'content': VALUE}),
+                               ('save_memory', {'memory_key': SECOND_KEY, 'content': SECOND_VALUE})])
+
+    def say(self, text):
+        self.plan = []
+        self.bodies.clear()
+        follow = self.enqueue(text)
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET owner_typed=1 WHERE id=?', (follow,))
+        self.service.run_one()
+
+
+class WordsUndoOnePart(_WordsUndoParts):
+    PARTS = [2]
+
+    def test_declining_the_second_fact_keeps_the_first_and_the_notice_stays_open(self):
+        _job, _notice, row = self.two_facts_told()
+        self.say('두 번째 건 기억하지 마')
+        self.assertEqual([m['content'] for m in self.store.memories()], [VALUE])
+        self.assertEqual(self.store.notification(row['id'])['state'], 'sent', 'the first fact can still be undone')
+        users = [str(m.get('content')) for body in self.bodies for m in body.get('messages', []) if m.get('role') == 'user']
+        note = next(text for text in users if 'removed what you had just said you remembered' in text)
+        self.assertIn(SECOND_VALUE, note)
+        self.assertNotIn(VALUE, note, 'the worker is told only what was removed')
+
+
+class WordsUndoAPartNotOpen(_WordsUndoParts):
+    PARTS = [5]
+
+    def test_a_part_that_names_no_open_fact_undoes_nothing(self):
+        _job, _notice, row = self.two_facts_told()
+        self.say('다섯 번째 건 빼줘')
+        self.assertEqual(sorted(m['content'] for m in self.store.memories()), sorted([VALUE, SECOND_VALUE]))
+        self.assertEqual(self.store.notification(row['id'])['state'], 'sent')
 
 
 class WordsKeep(WordsAfterTheNotice.__bases__[0]):

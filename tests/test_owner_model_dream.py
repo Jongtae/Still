@@ -28,9 +28,11 @@ HOUR = 3600
 
 
 def fact(key, content, *sources, kind='stated', category='plan', invalidates=(), valid_until=''):
+    """One dream proposal; each ``invalidates`` entry is ``(id, reason[, because[, turn]])``, a restate by default."""
+    ends = [{'id': end[0], 'reason': end[1], 'because': end[2] if len(end) > 2 else om.END_RESTATES,
+             'turn': end[3] if len(end) > 3 else ''} for end in invalidates]
     return {'category': category, 'kind': kind, 'memory_key': key, 'content': content, 'evidence': 'the owner said so',
-            'supersedes_key': '', 'invalidates': [{'id': i, 'reason': r} for i, r in invalidates],
-            'valid_until': valid_until, 'sources': list(sources)}
+            'supersedes_key': '', 'invalidates': ends, 'valid_until': valid_until, 'sources': list(sources)}
 
 
 def dream(proposals=(), notes='', change='', notes_sources=(), diary=''):
@@ -350,15 +352,17 @@ class Gates(unittest.TestCase):
         self.assertEqual((kept, [item['reason'] for item in dropped]), ([], ['request']))
 
     def test_ending_more_than_a_quarter_of_the_profile_refuses_the_endings_and_keeps_additions(self):
-        ends = [('aaaaaaa1', 'old'), ('aaaaaaa2', 'old'), ('aaaaaaa3', 'old')]
-        kept, dropped = self.check(fact('profile.place.work', '판교', 't1', category='place', invalidates=ends),
+        self.lines = {**self.lines, 'aaaaaaa3': 'profile.place.home'}
+        ids = ['aaaaaaa1', 'aaaaaaa2', 'aaaaaaa3']
+        ends = [(line, 'old', om.END_REPLACED, 't1') for line in ids]
+        kept, dropped = self.check(fact('profile.place.work', '판교', 't1', *ids, category='place', invalidates=ends),
                                    fact('profile.schedule.dentist', '10월 31일 치과', 't3', category='schedule'),
                                    profile_rows=8)
         self.assertEqual([item['memory_key'] for item in kept], ['profile.schedule.dentist'])
         self.assertEqual([item['reason'] for item in dropped], ['mass-end'])
-        kept, _dropped = self.check(fact('profile.place.work', '판교', 't1', category='place', invalidates=ends[:2]),
-                                    profile_rows=8)
-        self.assertEqual(len(kept), 1)
+        kept, _dropped = self.check(fact('profile.place.work', '판교', 't1', *ids[:2], category='place',
+                                         invalidates=ends[:2]), profile_rows=8)
+        self.assertEqual(len(kept[0]['invalidates']), 2)
 
     def test_naming_the_own_keys_line_is_a_replacement_not_an_ending(self):
         date_fix = fact('profile.identity.spouse', '2026년부터 배우자가 있음', 'aaaaaaa1', category='identity',
@@ -371,9 +375,50 @@ class Gates(unittest.TestCase):
         self.assertEqual([end['id'] for end in kept[0]['invalidates']], ['aaaaaaa1'])
 
     def test_a_small_profile_may_still_end_one_row(self):
-        kept, _dropped = self.check(fact('profile.place.work', '판교', 't1', category='place',
-                                         invalidates=[('aaaaaaa1', 'moved')]), profile_rows=2)
-        self.assertEqual(len(kept), 1)
+        kept, _dropped = self.check(fact('profile.place.work', '판교', 't1', 'aaaaaaa1', category='place',
+                                         invalidates=[('aaaaaaa1', 'moved', om.END_REPLACED, 't1')]), profile_rows=2)
+        self.assertEqual([end['id'] for end in kept[0]['invalidates']], ['aaaaaaa1'])
+
+    # -- #424: an ending must be grounded -------------------------------------------
+    def test_an_ending_of_a_line_the_proposal_does_not_cite_is_dropped_and_the_fact_stays(self):
+        """The live case: a fact drawn from turns ended an unrelated line it never cited."""
+        self.lines = {**self.lines, 'bbbbbbb1': 'profile.identity.account_keys'}
+        kept, dropped = self.check(fact('profile.identity.spouse', '아내가 있음', 't1', 'aaaaaaa1', category='identity',
+                                        invalidates=[('bbbbbbb1', 'duplicate')]))
+        self.assertEqual(([item['memory_key'] for item in kept], kept[0]['invalidates']), (['profile.identity.spouse'], []))
+        self.assertEqual([(item['reason'], item['line']) for item in dropped], [('end-uncited', 'bbbbbbb1')])
+
+    def test_a_replacement_must_name_a_turn_the_proposal_cites(self):
+        uncited_turn = fact('profile.place.work', '판교', 't1', 'aaaaaaa1', category='place',
+                            invalidates=[('aaaaaaa1', 'moved', om.END_REPLACED, 't2')])
+        no_turn = fact('profile.place.work', '판교', 't1', 'aaaaaaa1', category='place',
+                       invalidates=[('aaaaaaa1', 'moved', om.END_REPLACED, '')])
+        for proposal in (uncited_turn, no_turn):
+            kept, dropped = self.check(proposal)
+            self.assertEqual((len(kept), kept[0]['invalidates']), (1, []))
+            self.assertEqual([item['reason'] for item in dropped], ['end-ungrounded'])
+
+    def test_a_line_that_was_never_lasting_may_be_ended_when_cited(self):
+        """#429: a request sentence or current state kept as lasting is ended by citing it, with no turn."""
+        kept, dropped = self.check(fact('profile.place.work', '판교', 't1', 'aaaaaaa1', category='place',
+                                        invalidates=[('aaaaaaa1', 'a current state', om.END_NOT_LASTING)]))
+        self.assertEqual(([end['id'] for end in kept[0]['invalidates']], dropped), (['aaaaaaa1'], []))
+        kept, dropped = self.check(fact('profile.place.work', '판교', 't1', category='place',
+                                        invalidates=[('aaaaaaa1', 'a current state', om.END_NOT_LASTING)]))
+        self.assertEqual([item['reason'] for item in dropped], ['end-uncited'])
+
+    def test_an_unsure_ending_is_held_not_applied(self):
+        kept, dropped = self.check(fact('profile.place.work', '판교', 't1', 'aaaaaaa1', category='place',
+                                        invalidates=[('aaaaaaa1', 'may be over', om.END_UNSURE, '')]))
+        self.assertEqual(kept[0]['invalidates'], [])
+        self.assertEqual([(item['reason'], item['line']) for item in dropped], [('held', 'aaaaaaa1')])
+
+    def test_the_dream_schema_asks_why_each_line_ends(self):
+        end = om.DREAM_SCHEMA['properties']['proposals']['items']['properties']['invalidates']['items']
+        self.assertEqual(end['properties']['because']['enum'], list(om.END_BECAUSE))
+        self.assertIn('turn', end['required'])
+        upkeep_end = om.SCHEMA['properties']['proposals']['items']['properties']['invalidates']['items']
+        self.assertNotIn('because', upkeep_end['properties'], 'the per-request upkeep schema is unchanged')
 
 
 class Notes(Dream):

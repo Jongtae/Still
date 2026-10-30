@@ -44,9 +44,9 @@ class OwnerActCase(CalendarDraftApprovalCase):
             answer = self.rule(context.facts['owner_message'], items) if self.rule else None
             if answer is None:
                 return None
-            item, verdict, rest = answer
-            return StructuredDecision(OUTCOME_DECIDED, {'item': item, 'answer': verdict, 'rest': rest},
-                                      fixture_confidence(getattr(self, 'probability', 1.0)))
+            item, verdict, rest, *parts = answer
+            data = {'item': item, 'answer': verdict, 'rest': rest, **({'parts': parts[0]} if parts else {})}
+            return StructuredDecision(OUTCOME_DECIDED, data, fixture_confidence(getattr(self, 'probability', 1.0)))
 
         def structured(context, question, schema, valid=None):
             if context.purpose != 'owner-act':
@@ -121,6 +121,15 @@ class Positive(OwnerActCase):
         job = self.job(self.receive('넵'))
         self.assertIn(CREATED, job['response'])
         self.assertEqual(len(self.provider.calls), 1)
+
+    def test_an_approve_of_part_of_a_calendar_preview_executes_nothing(self):
+        """#424: only a saved-memory notice settles part of itself; part of a preview is not what was shown."""
+        self.offered()
+        shown = self.pending()
+        self.rule = lambda act, items: (items[0]['id'], 'approve', '', [1])
+        self.receive('첫 번째만 해줘')
+        self.assertEqual(self.provider.calls, [])
+        self.assertEqual(self.pending(), shown, 'still pending, nothing deleted')
 
     def test_a_hesitation_judged_unclear_executes_nothing(self):
         self.offered()
@@ -327,11 +336,23 @@ class JudgmentTests(unittest.TestCase):
     def test_an_answer_is_one_declared_item_and_answer(self):
         judgments, asked = self.judgments({'item': 'item-1', 'answer': 'approve', 'rest': ' '})
         self.assertEqual(judgments.owner_act_answer('넵', self.ITEMS),
-                         {'item': 'item-1', 'answer': 'approve', 'rest': ''})
+                         {'item': 'item-1', 'answer': 'approve', 'rest': '', 'parts': []})
         context, _question, schema = asked[-1]
         self.assertEqual(context.purpose, 'owner-act')
         self.assertEqual(schema['properties']['item']['enum'], ['item-1', 'none'])
         self.assertEqual(context.facts['owner_message'], '넵')
+
+    def test_parts_name_numbered_entries_and_may_be_absent(self):
+        """#424: which numbered entries the act answers alone; absent or empty is the whole item."""
+        judgments, asked = self.judgments({'item': 'item-1', 'answer': 'decline', 'rest': '', 'parts': [3, 1, 3, 0]})
+        self.assertEqual(judgments.owner_act_answer('첫째랑 셋째는 빼줘', self.ITEMS)['parts'], [1, 3])
+        self.assertIn('parts', asked[-1][2]['required'])
+        judgments, _ = self.judgments({'item': 'item-1', 'answer': 'decline', 'rest': ''})
+        self.assertEqual(judgments.owner_act_answer('빼줘', self.ITEMS)['parts'], [])
+        for parts in (['1'], [True], 'all'):
+            with self.subTest(parts=parts):
+                judgments, _ = self.judgments({'item': 'item-1', 'answer': 'decline', 'rest': '', 'parts': parts})
+                self.assertIsNone(judgments.owner_act_answer('빼줘', self.ITEMS))
 
     def test_an_undeclared_item_or_answer_is_no_answer(self):
         for data in ({'item': 'item-2', 'answer': 'approve', 'rest': ''},

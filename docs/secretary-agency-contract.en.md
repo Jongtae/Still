@@ -28,9 +28,10 @@ Owner direction 2026-10-30, after the first live dream. What it remembered was f
 The owner's reference is an assistant that asks at the moment it matters, says why, and then shows what it understood by using it. The evidence behind each rule is recorded in [Memory telling research](research/memory-telling-2026-10-30.ko.md). Implementation is tracked by #423–#426. Until each merges, the code follows #402 and #918 as written for that part.
 
 - **Only the owner's words (#423).** Upkeep, the dream, the daily record and recalled owner words read only Works the owner typed on a conversation surface, or that an API caller declared owner-typed under an owner session. Evals, scripts and verification calls are answered but never become memory. Every dream fact records the turns it rests on, so "how do you know" names the request it came from (OWASP ASI06 source attribution and segmentation).
-- **Endings must be grounded (#424).** An id a dream ends must be cited by the same proposal. It may be ended only for one of two reasons:
+- **Endings must be grounded (#424).** An id a dream ends must be cited by the same proposal. It may be ended only for one of three reasons:
   - the proposal restates the same line (a tidy-up);
-  - a cited owner turn replaces it.
+  - a cited owner turn replaces it;
+  - the line itself was never a lasting fact (#429): a request sentence, a passing reaction, one task's condition or a current state kept as lasting.
 
   Different subjects are never duplicates. An ending the judgment is unsure of is held, not applied. The AI names ids and reasons; Still checks citation and shape only, with no key-name or topic rule (C16). The 25% mass-end cap stays.
 - **Quiet consolidation (#425).**

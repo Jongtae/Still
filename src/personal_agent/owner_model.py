@@ -466,9 +466,20 @@ DREAM_QUESTION += ('\n\nThe shared Voice instructions below apply to diary and c
 DREAM_GATHER_QUESTION = prompt('owner_model_dream_gather').format(categories=', '.join(CATEGORIES),
                                                                   gather_limit=DREAM_GATHER_LIMIT)
 
+#: #424: why a dream ends a line.  ``restates``: the proposal says the same thing as that line (a tidy-up).
+#: ``replaced``: an owner turn the proposal cites (``turn``) replaced or ended it.  ``unsure``: the judgment
+#: doubts the line still holds but cannot ground the ending; it is held, not applied.  ``not_lasting``
+#: (#429): the line itself was never a lasting fact (a request sentence, a passing reaction, one task's
+#: condition or a current state kept as lasting).
+END_RESTATES, END_REPLACED, END_UNSURE, END_NOT_LASTING = 'restates', 'replaced', 'unsure', 'not_lasting'
+END_BECAUSE = (END_RESTATES, END_REPLACED, END_NOT_LASTING, END_UNSURE)
+
 _DREAM_ITEM = json.loads(json.dumps(SCHEMA['properties']['proposals']['items']))
 _DREAM_ITEM['properties']['sources'] = {'type': 'array', 'items': {'type': 'string'}}
 _DREAM_ITEM['required'] = [*_DREAM_ITEM['required'], 'sources']
+_DREAM_END = _DREAM_ITEM['properties']['invalidates']['items']
+_DREAM_END['properties'].update(because={'type': 'string', 'enum': list(END_BECAUSE)}, turn={'type': 'string'})
+_DREAM_END['required'] = [*_DREAM_END['required'], 'because', 'turn']
 DREAM_SCHEMA = {'type': 'object', 'additionalProperties': False,
                 'properties': {'proposals': {'type': 'array', 'items': _DREAM_ITEM},
                                'notes': {'type': 'string'}, 'change': {'type': 'string'},
@@ -510,10 +521,14 @@ def validate_dream(proposals, refs, requests, known, pending, profile_rows, prof
     An ``inferred`` fact drawn from turns needs two separate turns: a pattern is never drawn from one
     occasion.  A proposal that is one of the turns' request sentences is the request, not a fact.  The
     rest is ``validate``'s.  Naming the line under the proposal's own key in ``invalidates`` is no
-    ending (saving the key replaces it) and is left out.  When the kept proposals together would end
-    more than ``DREAM_END_FRACTION`` of the ``profile_rows`` current profile rows (at least one), every
-    proposal that ends a line is refused and pure additions stay: a look back that removes much of
-    what is known is not trusted to do it at once.
+    ending (saving the key replaces it) and is left out.  Every other ending must be grounded (#424):
+    the line is among the proposal's own ``sources`` and the proposal restates it, a turn the proposal
+    cites replaced it, or it was never a lasting fact (``because``/``turn``); an ending that is not, or that the judgment marks
+    ``unsure``, is dropped (``held`` for the unsure one) while the fact itself stays.  Still checks
+    citation only: what counts as the same fact or a replacement is the AI's (C16).  When the kept
+    proposals together would end more than ``DREAM_END_FRACTION`` of the ``profile_rows`` current
+    profile rows (at least one), every proposal that ends a line is refused and pure additions stay: a
+    look back that removes much of what is known is not trusted to do it at once.
     """
     proposals = proposals if isinstance(proposals, list) else []
     profile_ids = profile_ids or {}
@@ -539,9 +554,9 @@ def validate_dream(proposals, refs, requests, known, pending, profile_rows, prof
             dropped.append({'key_digest': key_digest(key), 'reason': reason} if key else {'reason': reason})
         else:
             # The line under the proposal's own key is replaced by saving it, not ended: it is no loss.
-            cited.append({**item, 'invalidates': [end for end in item.get('invalidates') or ()
-                                                  if not (isinstance(end, dict)
-                                                          and profile_ids.get(str(end.get('id') or '').strip()) == key)]})
+            own = [end for end in item.get('invalidates') or ()
+                   if not (isinstance(end, dict) and profile_ids.get(str(end.get('id') or '').strip()) == key)]
+            cited.append({**item, 'invalidates': grounded_ends(own, key, turns, lines, dropped)})
     kept, refused = validate(cited, known, pending, limit=limit)
     dropped.extend(refused)
     if sum(len(item['invalidates']) for item in kept) > max(1, int(DREAM_END_FRACTION * max(0, profile_rows))):
@@ -550,6 +565,36 @@ def validate_dream(proposals, refs, requests, known, pending, profile_rows, prof
                        for item in kept if item['invalidates'])
         kept = [item for item in kept if not item['invalidates']]
     return kept, dropped
+
+
+def grounded_ends(ends, key, turns, lines, dropped):
+    """The ``ends`` of one dream proposal that are grounded (#424); the others go to ``dropped``.
+
+    An ending stands only when its line is cited in the proposal's ``sources`` (``lines``) and the
+    proposal restates that line, cites the owner turn (``turns``) that replaced it, or says the line was
+    never a lasting fact (#429).  A
+    malformed entry is kept for ``validate``, which refuses the whole proposal's shape.  A dropped
+    ending names the line's short id (never its text): ``held`` when the judgment was unsure, so a
+    later step can raise it with the owner; ``end-uncited`` or ``end-ungrounded`` otherwise.
+    """
+    kept = []
+    for end in ends:
+        if not isinstance(end, dict) or not isinstance(end.get('id'), str):
+            kept.append(end)
+            continue
+        line = end['id'].strip()
+        because, turn = end.get('because'), str(end.get('turn') or '').strip().strip('[]')
+        if because == END_UNSURE:
+            reason = 'held'
+        elif line not in lines:
+            reason = 'end-uncited'
+        elif because in (END_RESTATES, END_NOT_LASTING) or (because == END_REPLACED and turn in turns):
+            kept.append(end)
+            continue
+        else:
+            reason = 'end-ungrounded'
+        dropped.append({'key_digest': key_digest(key), 'reason': reason, 'line': line})
+    return kept
 
 
 #: #794 phase 3: an upkeep proposal whose exact value the owner forgot (``owner_forget``).

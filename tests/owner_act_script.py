@@ -42,7 +42,7 @@ def literal(act, items):
 def answering(rule=literal, probability=1.0, asked=None):
     """A ``structured`` script answering ``owner-act`` contexts with ``rule``; None (unavailable) otherwise.
 
-    ``rule(act, items)`` returns ``(item, answer, rest)`` or None (no answer).
+    ``rule(act, items)`` returns ``(item, answer, rest)``, ``(item, answer, rest, parts)`` (#424) or None.
     ``asked`` collects ``(act, items, target)`` per call.
     """
     def script(context, question, schema):
@@ -55,9 +55,9 @@ def answering(rule=literal, probability=1.0, asked=None):
         answer = rule(act, items)
         if answer is None:
             return None
-        item, verdict, rest = answer
-        return StructuredDecision(OUTCOME_DECIDED, {'item': item, 'answer': verdict, 'rest': rest},
-                                  fixture_confidence(probability))
+        item, verdict, rest, *parts = answer
+        data = {'item': item, 'answer': verdict, 'rest': rest, **({'parts': parts[0]} if parts else {})}
+        return StructuredDecision(OUTCOME_DECIDED, data, fixture_confidence(probability))
     return script
 
 
