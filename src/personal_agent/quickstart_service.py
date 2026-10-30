@@ -10779,18 +10779,26 @@ class AgentService:
         if time.time()-float(binding['sent'])>MEMORY_SAVED_TTL_SECONDS:return None
         return notification,binding
 
-    def withdraw_memory_notice(self, notification):
+    def withdraw_memory_notice(self, notification, parts=None):
         """Undo a saved notice the owner's judged answer declined (#996, #172).
 
         Returns the withdrawn facts as text, or None.  The undo is the exact
         #918 path: each fact re-validated against its bound row and digest.
+        ``parts`` (#424): the notice's numbered facts the owner declined alone;
+        only those still open are undone, and none named open undoes nothing.
         """
         try:
             current=self.open_memory_notice(self.store.notification(notification['id']))
             if not current:return None
             notification,binding=current
             open_=self.memory_saved_open(binding)
-            remembered=self.memory_saved_text(binding)
+            if parts:open_=[index for index in open_ if index in set(parts)]
+            if not open_:return None
+            remembered=(self.memory_saved_text(binding) if len(open_)==len(binding['items'])
+                        else '\n'.join(self.memory_fact(row.get('content'),MEMORY_CANDIDATE_CHARS,row.get('memory_key'))[0]
+                                       for row in (self.store.memory(binding['items'][index-1]['id'],MEMORY_OWNER,
+                                                                     current_only=False) or {}
+                                                   for index in open_)))
             decided=self.undo_memory_saved(notification['job_id'],binding,open_)
             finished=not self.memory_saved_open(binding)
             self.store.update_notification(notification['id'],'memory_undone' if finished else 'sent',fingerprint=json.dumps(binding))

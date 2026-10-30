@@ -685,6 +685,8 @@ OWNER_ACT_QUESTION = (
     'Repeating or restating an earlier request is a new message, not an answer to an item. '
     'rest: when a typed message also asks for something else besides its answer, that remaining request in the '
     'owner\'s own words; otherwise an empty string. '
+    'parts: when the item\'s shown text lists numbered entries and the act answers only some of them (it names '
+    'or plainly points at those entries), their numbers; otherwise an empty list, which means the whole item. '
     'This judgment does not carry out, cancel or change anything.')
 UNSUPPORTED_QUESTION = ('Is the owner asking the assistant to do one of these things it does not offer: '
                         + '; '.join(f'{key} = {label}' for key, label in UNSUPPORTED_CAPABILITIES.items())
@@ -876,7 +878,10 @@ class ConversationJudgments:
                         source=decision.confidence.provider or decision.outcome)
 
     def owner_act_answer(self, act, items, target='', work_id=None):
-        """``{item, answer, rest}``: which open item one owner act answers, and how (#172), or None.
+        """``{item, answer, rest, parts}``: which open item one owner act answers, and how (#172), or None.
+
+        ``parts`` (#424) are the numbered entries of the item's shown text the act answers alone, sorted
+        and positive; empty means the whole item.  What they mean is the settling path's.
 
         ``act`` is the owner's typed text or ``reaction: <emoji>``; ``target``
         says which message it replies to or reacts on ('' when none).  ``items``
@@ -901,12 +906,16 @@ class ConversationJudgments:
         schema = {'type': 'object', 'additionalProperties': False,
                   'properties': {'item': {'type': 'string', 'enum': [*ids, OWNER_ACT_NONE]},
                                  'answer': {'type': 'string', 'enum': list(OWNER_ACT_ANSWERS)},
-                                 'rest': {'type': 'string'}},
-                  'required': ['item', 'answer', 'rest']}
+                                 'rest': {'type': 'string'},
+                                 'parts': {'type': 'array', 'items': {'type': 'integer'}}},
+                  'required': ['item', 'answer', 'rest', 'parts']}
 
         def shape(data):
+            # #424: ``parts`` (which numbered entries of the item the act answers) may be absent: the whole item.
+            parts = data.get('parts', [])
             return (data.get('item') in (*ids, OWNER_ACT_NONE) and data.get('answer') in OWNER_ACT_ANSWERS
-                    and isinstance(data.get('rest'), str))
+                    and isinstance(data.get('rest'), str) and isinstance(parts, list)
+                    and all(isinstance(part, int) and not isinstance(part, bool) for part in parts))
         method = getattr(self.engine, 'structured', None)
         decision = (method(context, OWNER_ACT_QUESTION, schema, shape) if method is not None
                     else StructuredDecision(OUTCOME_UNAVAILABLE))
@@ -915,7 +924,8 @@ class ConversationJudgments:
             return None
         if data['answer'] in ('approve', 'decline') and not self.policy.confident_binary(decision):
             return None
-        return {'item': data['item'], 'answer': data['answer'], 'rest': data['rest'].strip()}
+        return {'item': data['item'], 'answer': data['answer'], 'rest': data['rest'].strip(),
+                'parts': sorted({part for part in data.get('parts') or () if part > 0})}
 
     def connector_effect(self, tool_name, argument_names, owner_request, work_id=None):
         """Classify an unknown operation from minimized metadata, never argument values.

@@ -251,7 +251,9 @@ class OwnerActs:
         message it replies to or reacts on (``reaction``).  A target binds the
         act to the item(s) shown on that message before anything is judged; a
         target that showed nothing open settles nothing.  Returns
-        ``{item, approve, rest}``; a reaction has no rest.
+        ``{item, approve, rest, parts}``; a reaction has no rest.  ``parts``
+        (#424) names numbered facts of a saved-memory notice the act alone
+        answers; an act that answers part of any other item settles nothing.
         """
         service = self.service
         items = self.open_items(job, before=before, target=target)
@@ -280,7 +282,13 @@ class OwnerActs:
             return None
         if item['kind'] == KIND_MEMORY_SAVED and answer['answer'] == 'approve':
             return None  # keeping what was remembered needs nothing settled
-        return {'item': item, 'approve': answer['answer'] == 'approve', 'rest': '' if reaction else answer['rest']}
+        parts = answer.get('parts') or []
+        if parts and item['kind'] != KIND_MEMORY_SAVED:
+            # #424: only a saved-memory notice settles part of itself; part of any other item is not what
+            # was shown, so nothing executes (as a change).
+            return None
+        return {'item': item, 'approve': answer['answer'] == 'approve', 'rest': '' if reaction else answer['rest'],
+                'parts': parts}
 
     # -- settle --------------------------------------------------------------------
     def settle(self, answer, job, *, evidence=None):
@@ -313,7 +321,8 @@ class OwnerActs:
             result['text'] = (service.answer_step_approval(current[0], approve) if current
                               else msg('notice.step_approval_stale'))
         elif kind == KIND_MEMORY_SAVED:
-            withdrawn = service.withdraw_memory_notice({'id': ref['notification_id']})
+            # #424: an act that names some of a notice's numbered facts undoes only those.
+            withdrawn = service.withdraw_memory_notice({'id': ref['notification_id']}, parts=answer.get('parts'))
             if withdrawn:
                 from .quickstart_service import MEMORY_WITHDRAWN_NOTE
                 result['note'] = MEMORY_WITHDRAWN_NOTE.format(facts=withdrawn)
