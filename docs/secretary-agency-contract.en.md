@@ -86,7 +86,7 @@ Owner direction 2026-10-29: Still's model of the owner should also improve betwe
 - **What it writes.** Everything is attributed to the anchor.
   - Facts become current Memory (#918 slice a).
   - Notes become the next version (#19).
-  - The daily record becomes a Memory row `diary.<owner date>`, outside `profile.`. No brief reads it; only a memory search finds it.
+  - The daily record becomes a Memory row `diary.<owner date>`, outside `profile.`, one dated line per event (#442). A Work's brief carries the records of the last two owner days and up to three older ones its request finds, whole, within 4,000 characters, after the owner's earlier words; the owner-model judgments and a preparation's Work do not.
 - **The owner is told.** One saved-memory notice per dream, with undo; the notes keep their own notice. When the anchor's saved notice was already sent, the dream's saves get the separate upkeep notice instead of a late edit.
 - **Evidence.** One `owner_model_dream` event on the anchor: counts, outcomes, digests and the period's size, never text.
 

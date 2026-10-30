@@ -421,6 +421,46 @@ class MemoryService:
             "truncated": len(rows) > limit,
         }, len(page))
 
+    #: #442: the daily records a brief carries - the last ``RECORD_DAYS`` owner days and up to
+    #: ``RECORDS_MATCHED`` older ones that match the request - within ``RECORDS_CHARS``.
+    RECORD_DAYS = 2
+    RECORDS_MATCHED = 3
+    RECORDS_CHARS = 4000
+    RECORDS_HEADING = "The assistant's daily records (what happened on those days, not necessarily current):"
+
+    def records_block(self, owner_id, query=None):
+        """The daily records (``diary.<date>`` rows the dream writes) for one brief; '' when none (#442).
+
+        Recent days first by date, then older records the request's words find, oldest first in the
+        text; each record is whole or left out, never cut.  A private read like ``search_memories``.
+        """
+        from datetime import date, timedelta
+        from .owner_model import DIARY_PREFIX
+        self._identity(owner_id, 'owner')
+        today = self._today()
+        try:
+            since = (date.fromisoformat(today) - timedelta(days=self.RECORD_DAYS)).isoformat()
+        except ValueError:
+            return ''
+        day = lambda row: row['memory_key'][len(DIARY_PREFIX):]  # noqa: E731
+        rows = self.store.memories(owner_id, limit=self.RECORD_DAYS + 3, key_prefix=DIARY_PREFIX)
+        chosen = {row['id']: row for row in rows if since <= day(row) <= today}
+        if isinstance(query, str) and query.strip():
+            older = 0
+            for row in self.search_memories(owner_id, query[:500], limit=min(20, self.RECORDS_MATCHED + len(chosen)),
+                                            key_prefix=DIARY_PREFIX)['memories']:
+                if row['id'] not in chosen and day(row) < since and older < self.RECORDS_MATCHED:
+                    chosen[row['id']] = row
+                    older += 1
+        lines, used = [self.RECORDS_HEADING], len(self.RECORDS_HEADING)
+        for row in sorted(chosen.values(), key=day):
+            text = f"[record of {day(row)}]\n{row['content']}"
+            if used + len(text) + 1 > self.RECORDS_CHARS:
+                continue
+            lines.append(text)
+            used += len(text) + 1
+        return '\n'.join(lines) if len(lines) > 1 else ''
+
     def inspect_memory(self, owner_id, memory_id):
         self._identity(owner_id, "owner")
         row = self.store.memory(memory_id, owner_id)

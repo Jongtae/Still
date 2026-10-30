@@ -121,10 +121,11 @@ DREAM_GATHER_LIMIT = 10
 #: #402: one dream may end at most this share of the current profile rows (at least one);
 #: more is refused whole, the OpenClaw ``maxPriorEntryLossFraction`` lesson.
 DREAM_END_FRACTION = 0.25
-#: #402: the daily record.  A Memory row outside ``profile.``, so no brief reads it unless a
-#: search finds it; one per owner date, in the owner's language.
+#: #402: the daily record.  A Memory row outside ``profile.``, one per owner date, in the owner's language;
+#: #442: a Work's brief carries the last days' records (``MemoryService.records_block``).
 DIARY_PREFIX = 'diary.'
-DIARY_CHARS = 800
+#: #442: one line per event, so a busy day needs more room than a summary did.
+DIARY_CHARS = 1500
 #: Why a self-review was enqueued (typed markers, never text rules).
 REVIEW_FAILED, REVIEW_CORRECTION, REVIEW_RETRY, REVIEW_REACTION = 'failed', 'correction', 'retry', 'reaction'
 REVIEW_REASONS = (REVIEW_FAILED, REVIEW_CORRECTION, REVIEW_RETRY, REVIEW_REACTION)
@@ -1283,7 +1284,7 @@ class Upkeep:
 
         ``job`` is the anchor Work (the newest request the dream covers): what is kept is attributed to
         it and its notice tells the owner, with an undo, as upkeep's saves do (#918 slice a).  ``turns``
-        are ``(ref, owner words, answer)`` triples the caller scrubbed, oldest first; ``profile`` the
+        are ``(ref, owner words, answer[, local time])`` tuples the caller scrubbed, oldest first; ``profile`` the
         snapshot with short ids and no notes. ``source_works`` optionally maps turn refs to
         their Work ids (#443); omitted by legacy callers. One ``structured`` judgment
         (``ConversationJudgments.owner_model_dream``), then Still's deterministic checks:
@@ -1295,10 +1296,12 @@ class Upkeep:
         notes = WorkingNotes(self.store, self.clock)
         if not notes.migrated():
             return STATE_UNAVAILABLE, 0, EVENT_UNAVAILABLE, {'sent': False, 'stopped': STOPPED_MIGRATION}
-        refs = {ref: owner for ref, owner, _answer in turns}
+        refs = {turn[0]: turn[1] for turn in turns}
         lines, used = [], 0
-        for ref, owner, answer in turns:
-            line = (f"[{ref}] owner: {' '.join(str(owner or '').split())[:DREAM_OWNER_CHARS] or '(withheld)'}"
+        for ref, owner, answer, *when in turns:
+            # #438: the owner's local time of each request, so the daily record can date its events.
+            stamp = f" {when[0]}" if when and when[0] else ''
+            line = (f"[{ref}]{stamp} owner: {' '.join(str(owner or '').split())[:DREAM_OWNER_CHARS] or '(withheld)'}"
                     f" | assistant: {' '.join(str(answer or '').split())[:DREAM_ANSWER_CHARS] or 'none'}")
             lines.append(line)
             used += len(line) + 1
@@ -1395,7 +1398,8 @@ class Upkeep:
                 else:
                     self._save_notes(notes, current, revision, job['id'], judgments, dropped, detail)
             stopped = detail.get('stopped') or stopped
-        diary = ' '.join(str(data.get('diary') or '').split())
+        # #438: one line per event; each line's spacing is collapsed, the lines are kept.
+        diary = '\n'.join(' '.join(line.split()) for line in str(data.get('diary') or '').splitlines() if line.strip())
         if diary and stopped != STOPPED_PAUSED:
             key = DIARY_PREFIX + diary_date
             if len(diary) > DIARY_CHARS:
