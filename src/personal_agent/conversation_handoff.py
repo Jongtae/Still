@@ -1205,15 +1205,16 @@ class ConversationJudgments:
         deterministic validation.  Judgment only: it writes nothing.
         """
         from .decision import OUTCOME_UNAVAILABLE, StructuredDecision
-        from .owner_model import (CLOCK_CHARS, DIARY_CHARS, DREAM_PURPOSE, DREAM_QUESTION, DREAM_SCHEMA, PROFILE_CHARS,
-                                  dream_shape)
+        from .owner_model import (CLOCK_CHARS, DIARY_CHARS, DREAM_PURPOSE, DREAM_QUESTION, DREAM_SCHEMA,
+                                  DREAM_TIMEOUT_SECONDS, PROFILE_CHARS, dream_shape)
         facts = {'turns': str(turns or '') or 'none',
                  'owner_profile': self.redact(profile)[:PROFILE_CHARS] or 'none',
                  'working_notes': str(working_notes or '') or 'none',
                  'previous_diary': self.redact(previous_diary)[:DIARY_CHARS] or 'none',
                  'clock': self.redact(clock)[:CLOCK_CHARS] or 'unknown'}
+        # Once a day and off the conversation: the engine's strongest model, with the longer bound it may need.
         context = self._context(DREAM_PURPOSE, facts, work_id=work_id, uncut=('turns', 'owner_profile', 'working_notes'),
-                                cancelled=cancelled)
+                                cancelled=cancelled, strongest=True, timeout=DREAM_TIMEOUT_SECONDS)
         method = getattr(self.engine, 'structured', None)
         decision = (method(context, DREAM_QUESTION, DREAM_SCHEMA, dream_shape) if method is not None
                     else StructuredDecision(OUTCOME_UNAVAILABLE))

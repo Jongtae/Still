@@ -191,6 +191,8 @@ class Run(Dream):
         self.assertTrue(self.tick())
         [(context, question, schema)] = self.asked
         self.assertEqual(question, om.DREAM_QUESTION)
+        self.assertEqual((context.strongest, context.timeout), (True, om.DREAM_TIMEOUT_SECONDS),
+                         "#420: the dream asks for the engine's strongest model")
         self.assertEqual(schema, om.DREAM_SCHEMA)
         turns = context.facts['turns']
         self.assertTrue(turns.startswith('[t1] owner: 내년 3월까지'), turns)

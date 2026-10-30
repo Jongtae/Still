@@ -80,11 +80,17 @@ class DecisionContext:
     attached by the routed engine, is checked at the adapter dispatch boundary.
     """
 
-    __slots__ = ('purpose', 'facts', 'work_id', 'cancelled', 'max_chars', 'admission', 'reserve', 'context_messages')
+    __slots__ = ('purpose', 'facts', 'work_id', 'cancelled', 'max_chars', 'admission', 'reserve', 'context_messages',
+                 'strongest', 'timeout')
 
     def __init__(self, purpose, facts=None, *, work_id=None, cancelled=None, max_chars=MAX_CONTEXT_CHARS,
-                 reserve=False, context_messages=None):
+                 reserve=False, context_messages=None, strongest=False, timeout=None):
         self.context_messages = context_messages
+        # A judgment that asks for the route engine's strongest model (the newest top model its own
+        # catalogue lists, never a pinned name) and the longer bound that model may need; an engine
+        # that cannot choose one answers with its route model as usual.
+        self.strongest = bool(strongest)
+        self.timeout = timeout
         self.purpose = str(purpose)
         self.facts = {str(k): str(v) for k, v in (facts or {}).items()}
         self.work_id = work_id

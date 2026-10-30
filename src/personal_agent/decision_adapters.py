@@ -182,7 +182,7 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
 
     def __init__(self, execution, engine_id, *, model=None, model_policy='engine_default',
                  timeout=CLI_DECISION_TIMEOUT_SECONDS, audit=None, now=time.time, guard=None,
-                 codex_disabled_features=None, effort=None, expected_cloud=None):
+                 codex_disabled_features=None, effort=None, expected_cloud=None, strongest=None):
         super().__init__(audit=audit, now=now)
         if engine_id not in CLI_BINARIES:
             raise ValueError('지원하는 구독 엔진을 선택하세요.')
@@ -195,12 +195,16 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
         # #211: the cloud profile identity the route was qualified on (``subscription`` or
         # ``<provider>:<revision>``); None for a qualification probe, which binds what it observes.
         self.expected_cloud = expected_cloud
+        #: ``() -> (model, effort) | None``: the engine's strongest model now, from its own catalogue,
+        #: for a context that asks for it (``DecisionContext.strongest``).
+        self.strongest = strongest
         # Codex fails closed without the disable plan from a capability check.
         self.codex_disabled_features = (tuple(codex_disabled_features) if codex_disabled_features is not None
                                         else None)
         self.last_failure = ''
 
-    def argv(self, binary, prompt, schema_path, schema, cloud=None):
+    def argv(self, binary, prompt, schema_path, schema, cloud=None, choice=None):
+        model, effort = choice or (self.model, self.effort)
         if self.engine_id == 'codex':
             # #679: a judgment runs under the #616 strict-isolated launch
             # arguments, reused as-is: the Codex permissions profile (the
@@ -215,12 +219,12 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
             # unverified plan raises ExecutionError (no judgment runs).
             argv = [binary, 'exec', '--json', *strict_launch_arguments('codex', self.codex_disabled_features),
                     '--skip-git-repo-check', '--ignore-user-config', '--ephemeral', '--output-schema', str(schema_path)]
-            if self.effort:
+            if effort:
                 # Official config key; the level was checked against the
                 # model's bundled metadata by the route.
-                argv += ['-c', f'model_reasoning_effort="{self.effort}"']
-            if self.model:
-                argv += ['--model', self.model]
+                argv += ['-c', f'model_reasoning_effort="{effort}"']
+            if model:
+                argv += ['--model', model]
             if cloud is not None:
                 # #211: the owner's cloud provider (documented model_providers keys) and its key withheld from
                 # any shell command (the strict profile offers none; the exclusion is the second layer).
@@ -233,11 +237,26 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                 # settings; --tools "" names none.  Checked via --help only.
                 '--tools', '', '--restricted', '--strict-mcp-config', '--setting-sources', '', '--no-session-persistence',
                 '--system-prompt', DECISION_SYSTEM]
-        if self.model:
-            argv += ['--model', self.model]
-        if self.effort:
-            argv += ['--effort', self.effort]
+        if model:
+            argv += ['--model', model]
+        if effort:
+            argv += ['--effort', effort]
         return argv
+
+    def _strongest_choice(self, context, cloud):
+        """``(model, effort)`` for a context that asks for the strongest model, or None (the route model).
+
+        Not on a cloud provider profile: the CLI's own catalogue does not describe that provider's models.
+        """
+        if not getattr(context, 'strongest', False) or self.strongest is None or cloud is not None:
+            return None
+        try:
+            choice = self.strongest()
+        except Exception:  # noqa: BLE001 - an unreadable catalogue leaves the route model
+            return None
+        if not choice or not valid_model_id(choice[0]) or (choice[1] is not None and not valid_effort(choice[1])):
+            return None
+        return tuple(choice)
 
     def _identity(self):
         return dict(provider=self.engine_id, engine=self.engine_id, model=self.model or '',
@@ -301,8 +320,11 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                 return done(OUTCOME_UNAVAILABLE, failure='auth')
             if self.engine_id == 'claude-code':
                 env = {**env, **CLAUDE_DECISION_ENV}
+            choice = self._strongest_choice(context, cloud)
+            if choice:
+                identity.update(model=choice[0], model_policy='strongest')
             try:
-                argv = self.argv(binary, prompt, schema_path, schema, cloud=cloud)
+                argv = self.argv(binary, prompt, schema_path, schema, cloud=cloud, choice=choice)
             except ExecutionError:
                 # The strict launch refused the stored feature plan.
                 return done(OUTCOME_UNAVAILABLE, failure='capability-unchecked')
@@ -320,7 +342,8 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                     except Exception:pass
                 return done(OUTCOME_CANCELLED)
             try:
-                completed = bounded_run(self.execution.runner, argv, cwd=run_dir, env=env, timeout=self.timeout,
+                timeout = max(self.timeout, context.timeout) if getattr(context, 'timeout', None) else self.timeout
+                completed = bounded_run(self.execution.runner, argv, cwd=run_dir, env=env, timeout=timeout,
                                         on_spawn=lambda: observed('spawn_s'),
                                         on_line=lambda _line: observed('first_event_s'),
                                         on_exit=lambda: observed('exit_s'))
@@ -349,6 +372,12 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                 failure = 'request-rejected'
             else:
                 failure = 'engine-failed'
+            if choice and failure == 'request-rejected':
+                # The catalogue lists a model, not what this account may use: the route model answers instead.
+                LOG.warning('decision call: strongest model refused engine=%s purpose=%s; using the route model',
+                            self.engine_id, context.purpose)
+                context.strongest = False
+                return self._ask(context, kind, question, schema, valid)
             diagnostics = self._failure_diagnostics(completed.returncode, status, stdout, stderr, env, prompt)
             LOG.warning('decision call failed engine=%s kind=%s purpose=%s exit_code=%s class=%s status=%s '
                         'source=%s duration=%.1fs reason=%s', self.engine_id, kind, context.purpose,
