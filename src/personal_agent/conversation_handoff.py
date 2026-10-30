@@ -1195,6 +1195,25 @@ class ConversationJudgments:
                     else StructuredDecision(OUTCOME_UNAVAILABLE))
         return self.policy.structured(decision), decision
 
+    def owner_model_dream_gather(self, turns, profile, clock, work_id=None, cancelled=None):
+        """``(data, decision)``: the dream's first pass (#416) - only the facts the turns hold.
+
+        The same facts as ``owner_model_dream``'s, without the notes and the previous record; the
+        engine's strongest model.  Judgment only: it writes nothing.
+        """
+        from .decision import OUTCOME_UNAVAILABLE, StructuredDecision
+        from .owner_model import (CLOCK_CHARS, DREAM_GATHER_PURPOSE, DREAM_GATHER_QUESTION, DREAM_GATHER_SCHEMA,
+                                  DREAM_TIMEOUT_SECONDS, PROFILE_CHARS, gather_shape)
+        facts = {'turns': str(turns or '') or 'none',
+                 'owner_profile': self.redact(profile)[:PROFILE_CHARS] or 'none',
+                 'clock': self.redact(clock)[:CLOCK_CHARS] or 'unknown'}
+        context = self._context(DREAM_GATHER_PURPOSE, facts, work_id=work_id, uncut=('turns', 'owner_profile'),
+                                cancelled=cancelled, strongest=True, timeout=DREAM_TIMEOUT_SECONDS)
+        method = getattr(self.engine, 'structured', None)
+        decision = (method(context, DREAM_GATHER_QUESTION, DREAM_GATHER_SCHEMA, gather_shape) if method is not None
+                    else StructuredDecision(OUTCOME_UNAVAILABLE))
+        return self.policy.structured(decision), decision
+
     def owner_model_dream(self, turns, profile, working_notes, previous_diary, clock, work_id=None, cancelled=None):
         """``(data, decision)``: one look back over the requests since the last one (#402, the "dream").
 
