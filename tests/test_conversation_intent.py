@@ -450,8 +450,6 @@ class ServiceRoutingTests(unittest.TestCase):
                 self.assertEqual(job['status'], 'failed')
                 self.assertIn('설정에서 모델 또는 구독 엔진을 먼저 연결하세요', job['error'])
         self.assertEqual(self.store.config('personal_assistant_evidence', []), [])
-        self.assertEqual(self.store.config('calendar_create', {}), {})
-        self.assertEqual(self.store.config('calendar_conversation', {}), {})
 
     def test_natural_delegation_never_reaches_the_orchestrator(self):
         for text in ('이 작업을 외부 에이전트에게 맡겨줘', 'delegate this task to the external agent'):

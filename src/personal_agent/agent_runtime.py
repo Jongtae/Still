@@ -730,9 +730,7 @@ def base_label(label):
 #: Host actions that write owner text into a private store, and the store's
 #: label (#605 N2), kept beside the read map PRIVATE_PROVENANCE.  A successful
 #: write event labels its Work durably, whichever process ran the tool.
-PRIVATE_WRITE_PROVENANCE={'save_note':'personal-space','save_result':'connected-document','save_memory':'owner-memory','forget_record':'owner-memory',
-                          'calendar_draft_create':'owner-calendar','calendar_draft_update':'owner-calendar',
-                          'calendar_draft_cancel':'owner-calendar'}
+PRIVATE_WRITE_PROVENANCE={'save_note':'personal-space','save_result':'connected-document','save_memory':'owner-memory','forget_record':'owner-memory'}
 
 def recorded_private_sources(store, job_id, tools=None):
  """Private-source labels a Work's own successful tool events already carry.
@@ -1284,30 +1282,6 @@ def explicit_search_query(message):
  query=text[len(EXPLICIT_SEARCH_PREFIX):].strip()
  return query or None
 
-def _work_draft_values(store, events, tools=None):
- """String fields of the calendar drafts a Work wrote (#605 R3).
-
- Read from the draft store by the draft ids in this Work's durable tool
- events, so a restarted bridge or resumed Work still excludes them.
- """
- from .calendar import CALENDAR_STATE_KEY
- ids=set()
- for tool,detail in events:
-  try:data=json.loads(detail or '{}')
-  except (TypeError,ValueError):continue
-  if not isinstance(data,dict):continue
-  action=data.get('host_action') or (tools or {}).get(tool,{}).get('host_action') or tool
-  evidence=data.get('evidence') if isinstance(data.get('evidence'),dict) else {}
-  if action in CALENDAR_DRAFT_TOOLS and isinstance(evidence.get('draft_id'),str):ids.add(evidence['draft_id'])
- if not ids:return []
- rows=store.config(CALENDAR_STATE_KEY,{})
- rows=rows if isinstance(rows,dict) else {}
- values=[]
- for ident in ids:
-  payload=(rows.get(ident) or {}).get('payload') if isinstance(rows.get(ident),dict) else None
-  if isinstance(payload,dict):values.extend(str(value) for value in payload.values() if isinstance(value,str))
- return values
-
 PROFILE_PREFIX='profile.'
 
 def owner_stated_profile(memory_key, result):
@@ -1315,9 +1289,9 @@ def owner_stated_profile(memory_key, result):
  return (str(memory_key or '').startswith(PROFILE_PREFIX) and isinstance(result,dict)
          and result.get('state')=='current' and not result.get('requires_owner_approval'))
 
-def work_written_values(store, job_id, tools=None):
- """The values one Work wrote to a private store: Memory candidates, notes
- and calendar drafts (#605).  The lookup exclusion set; also removed from a
+def work_written_values(store, job_id):
+ """The values one Work wrote to a private store: Memory candidates and notes
+ (#605).  The lookup exclusion set; also removed from a
  prepared answer before it is kept for later turns (#659)."""
  import hashlib
  with store.db() as db:
@@ -1333,15 +1307,13 @@ def work_written_values(store, job_id, tools=None):
   # under sha256(Work id + content).  Survives a restarted bridge (#605 N2).
   for row in db.execute('SELECT id,content FROM notes'):
    if row['id']==job_id or row['id']==hashlib.sha256((job_id+str(row['content'])).encode()).hexdigest():written.append(row['content'])
-  events=db.execute("SELECT tool,detail FROM tool_events WHERE job_id=? AND status='succeeded'",(job_id,)).fetchall()
- written.extend(_work_draft_values(store,events,tools))
- return written
+  return written
 
-def lookup_sources(store, job_id, tools=None):
+def lookup_sources(store, job_id):
  """The binding and redaction set of one public lookup of a running Work.
 
  ``current`` is the owner's request.  ``excluded`` are the values this Work
- wrote to a private store -- Memory candidates, notes and calendar drafts --
+ wrote to a private store -- Memory candidates and notes --
  which the browser snapshot, judgment and envelope redaction remove (#605,
  #701).  #826: they no longer leave public lookups.  Raises when the Work is
  no longer running (the binding).
@@ -1349,7 +1321,7 @@ def lookup_sources(store, job_id, tools=None):
  job=store.job(job_id) if isinstance(job_id,str) and job_id else None
  if not job or job.get('status')!='running':
   raise ValueError('이 작업은 더 이상 실행 중이 아니어서 공개 조회를 실행하지 않았습니다.')
- return {'current':job.get('message') or '','excluded':work_written_values(store,job_id,tools)}
+ return {'current':job.get('message') or '','excluded':work_written_values(store,job_id)}
 
 # --- AUDIT-OUTBOUND-01 (#167, #28 option A): held values seen in outbound text --
 #
@@ -2427,8 +2399,7 @@ def trail_steps(rows, tools=None):
   evidence=data.get('evidence') if isinstance(data.get('evidence'),dict) else {}
   gaps=[label for label in evidence.get('qualifiers') or () if label in INCOMPLETE_QUALIFIERS]
   if memory_proposal(action,evidence):state='proposed'
-  elif evidence.get('refused_because') or (action in CALENDAR_DRAFT_TOOLS and evidence.get('requires_owner_approval') and not evidence.get('applied')) \
-     or (action=='settings_change' and evidence.get('requires_owner_confirmation') and not evidence.get('applied')
+  elif evidence.get('refused_because') or (action=='settings_change' and evidence.get('requires_owner_confirmation') and not evidence.get('applied')
          and evidence.get('draft_id') not in completed):
    state='withheld'
   elif gaps:state='incomplete'
@@ -2652,7 +2623,7 @@ def outcome_from_events(rows, tools=None):
  trail,refusals=event_trail(rows,tools)
  if all(state in SETTLED_STATES for _action,state in trail) or recovered(trail):return 'succeeded',refusals
  advanced=any(state in ('succeeded','incomplete') for _action,state in trail) or any(
-  state=='withheld' and action in (*CALENDAR_DRAFT_TOOLS,'settings_change') for action,state in trail)
+  state=='withheld' and action=='settings_change' for action,state in trail)
  return ('partial' if advanced else 'failed'),refusals
 
 class Capabilities:
@@ -2672,9 +2643,6 @@ class Capabilities:
   self.public_page_scope=public_page_scope if public_page_scope is None or callable(public_page_scope) else frozenset(public_page_scope)
   # #23: normalized result URLs this Work's own searches returned; `public_page_read` may read them.
   self.search_result_urls=set()
-  #: #22 review: the events this Work's own calendar reads returned, by (event id, version):
-  #: what an update or cancellation draft's approval preview shows as its target.
-  self.calendar_seen={}
   self.memory_approval=memory_approval
   # #597: a zero-argument resolver that asks, once and only when a write is
   # proposed, whether the owner explicitly requested a memory in this Work;
@@ -2907,7 +2875,7 @@ class Capabilities:
 
   The owner's current Memory, whichever Work saved it (``memory``, by key),
   then the values this Work wrote to a private store that are not current
-  Memory (the #605 set: candidates, notes, calendar drafts; ``work_write``).
+  Memory (the #605 set: candidates and notes; ``work_write``).
   Read when a call is recorded and never stored.  Only the newest
   HELD_MEMORY_MAX Memory rows are read; ``held_memory_cut`` says whether
   older ones were left out (#245).
@@ -3572,64 +3540,24 @@ class Capabilities:
     if exc.reason=='provider_rejected':raise ToolError('Gmail에서 그 메일을 찾지 못했거나 읽을 수 없습니다. mail_search로 다시 찾아 주세요.','mail_not_found') from None
     raise ToolError('Gmail에 접근하지 못했습니다. 잠시 후 다시 시도해 주세요.','mail_unavailable') from None
    return self._from_private('owner-mail',result)
-  if name.startswith('calendar_'):
-   # J4. The model may READ the calendar and may DRAFT a change; it may not
-   # apply one. `CalendarConnector.execute` needs a one-time approval token
-   # bound to this owner, this draft, this payload hash and the write
-   # connector's connection_revision, and nothing the model can call mints
-   # one -- the owner does, through their own surface. So a draft is a
-   # proposal with an exact preview attached, which is what J4 asks for.
-   #
-   # Authority note: this path uses ConnectorRegistry's `google-calendar`/
-   # `google-calendar-write`, the canonical owner-bound connector contract
-   # with scope-exact, revision-bound checks.
+  if name=='calendar_query':
+   # Calendar contents are owner-private.  Changes go through api_request's
+   # google-calendar slot (#432), so this is the one calendar tool; it uses
+   # ConnectorRegistry's owner-bound, scope-exact, revision-bound `google-calendar`.
+   from .calendar import CALENDAR_CONNECTOR_ID, CalendarError
    if self.calendar is None:
-    from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID
-    if name=='calendar_query':
-     # #606 T5: a read with no calendar is setup-required, typed like the
-     # folder reads, so the service can park the Work for one connection
-     # handoff and resume it once.  Nothing was read.
-     return {'needs_setup':True,'requires':CALENDAR_CONNECTOR_ID,'events':[],
-             'next_step':CALENDAR_UNCONFIGURED}
-    raise ToolError('Google Calendar가 로컬에 구성되어 있지 않습니다. 먼저 캘린더를 연결해 주세요.','needs_setup',
-                    requires=CALENDAR_WRITE_CONNECTOR_ID)
-   owner=self.calendar_owner
-   if name=='calendar_query':
-    # Calendar contents are owner-private and this is the read that makes
-    # `event_id`/`event_version` available to the draft tools.
-    from .calendar import CALENDAR_CONNECTOR_ID, CalendarError
-    try:events=self.calendar.query(owner,args['start'],args['end'],args['timezone'])
-    except CalendarError as exc:
-     # #606 T5: a declared calendar the owner has not connected (or must
-     # reconnect) is the same setup-required read as no calendar at all.
-     if getattr(exc,'recovery',None)!='reconnect':raise
-     return {'needs_setup':True,'requires':CALENDAR_CONNECTOR_ID,'events':[],'next_step':CALENDAR_UNCONFIGURED}
-    for event in events.get('events',()) if isinstance(events,dict) else ():
-     if isinstance(event,dict) and isinstance(event.get('id'),str) and event.get('etag'):
-      self.calendar_seen[(event['id'],event['etag'])]={key:event.get(key,'') for key in ('summary','start','end','location')}
-    return self._from_private('owner-calendar',self._shortcut_read(name,events,'events'))
-   # Refuse an unsupported field rather than filtering it out. The tool
-   # schema already sets additionalProperties:false, but a filter here would
-   # have turned "invite alice@example.com" into a silently attendee-less
-   # event the owner then approves believing the invitation was included.
-   # J4 excludes attendee invitation; saying so is part of excluding it.
-   allowed=('summary','start','end','timezone','location','description')
-   extra=sorted(set(args)-set(allowed)-{'event_id','event_version'})
-   if extra:raise ValueError('이 일정 도구가 지원하지 않는 항목입니다: '+', '.join(extra)+'. 참석자 초대와 반복 일정은 지원하지 않습니다.')
-   content={key:args[key] for key in allowed if args.get(key)}
-   # #605 R3: a draft is a private-store write; its text never becomes a
-   # public lookup word in this Work.
-   self.written_private.extend(str(value) for value in content.values() if isinstance(value,str))
-   self.written_labels.add('owner-calendar')
-   if name=='calendar_draft_create':draft=self.calendar.draft_create(content,owner)
-   elif name=='calendar_draft_update':draft=self.calendar.draft_update(args['event_id'],args['event_version'],content,owner)
-   elif name=='calendar_draft_cancel':draft=self.calendar.draft_cancel(args['event_id'],args['event_version'],owner)
-   else:raise ValueError('허용하지 않은 도구입니다.')
-   preview=self.calendar.preview(draft['id'],owner)
-   result={'draft_id':draft['id'],'action':draft.get('action'),'preview':preview,
-           'applied':False,'requires_owner_approval':True,
-           'next_step':msg('agent_runtime.this_preview_reaches_your_calendar_only')}
-   self.evidence.append({'tool':name,'result':result});return result
+    # #606 T5: a read with no calendar is setup-required, typed like the
+    # folder reads, so the service can park the Work for one connection
+    # handoff and resume it once.  Nothing was read.
+    return {'needs_setup':True,'requires':CALENDAR_CONNECTOR_ID,'events':[],
+            'next_step':CALENDAR_UNCONFIGURED}
+   try:events=self.calendar.query(self.calendar_owner,args['start'],args['end'],args['timezone'])
+   except CalendarError as exc:
+    # #606 T5: a declared calendar the owner has not connected (or must
+    # reconnect) is the same setup-required read as no calendar at all.
+    if getattr(exc,'recovery',None)!='reconnect':raise
+    return {'needs_setup':True,'requires':CALENDAR_CONNECTOR_ID,'events':[],'next_step':CALENDAR_UNCONFIGURED}
+   return self._from_private('owner-calendar',self._shortcut_read(name,events,'events'))
   if name=='weather':
    # `weather` sends `name=<city>` - an arbitrary 100-character string - to a
    # third-party geocoding host, so it is a public destination exactly like
@@ -4188,7 +4116,6 @@ def render_turn_prompt(context,*,include_instructions=True):
  parts.append('# Current request\n'+context['request'])
  return '\n\n'.join(parts)
 
-CALENDAR_DRAFT_TOOLS=('calendar_draft_create','calendar_draft_update','calendar_draft_cancel')
 #: #774: owner-state actions held by the Still service (Memory approval, the
 #: calendar connector, preparation acceptance, the paired Telegram chat).  A trusted-local CLI turn
 #: reaches them through the service relay (``cli_browser_relay``), exactly as
@@ -4209,8 +4136,6 @@ MAIL_UNCONNECTED='Gmail이 아직 연결되지 않아 메일을 읽지 못했습
 #: this Work.  See ``withheld_effect``.
 Withheld=namedtuple('Withheld','reason advanced')
 
-#: What the owner is told when a durable write was drafted rather than applied.
-CALENDAR_PENDING='소유자 승인이 필요해 일정 초안만 만들었습니다. 실제 일정에는 아직 반영되지 않았습니다.'
 #: #659: a preparation the owner has not accepted yet.
 PREPARATION_PROPOSED='준비를 제안했습니다. 소유자가 수락해야 예약됩니다.'
 #: #814: a settings change drafted, waiting for the owner's confirmation.
@@ -4224,7 +4149,7 @@ def withheld_effect(name,result):
  A tool declines or defers in two ways.  Raising is already handled: the
  loop marks the turn failed and the reason reaches the owner.  The other
  way is to *return* a dict describing what was withheld - a held memory
- candidate, a calendar draft awaiting approval - and that was invisible.
+ candidate, a settings draft awaiting confirmation - and that was invisible.
  The call was counted successful, the turn reported ``succeeded``, and the
  renderer #476 added is correct for a succeeded turn, so it handed the
  owner the model's "I remembered that" / "I scheduled that" unchallenged
@@ -4242,7 +4167,7 @@ def withheld_effect(name,result):
  ``advanced`` separates the two shapes this covers.  A held memory write
  delivered nothing the owner asked for, so a turn whose only call was that
  one is ``failed`` - claiming '일부 단계만 완료했습니다' when no step
- completed is the same unobserved claim one level down.  A calendar draft
+ completed is the same unobserved claim one level down.  A settings draft
  and a partly finished specialist report are real, inspectable work with a
  step remaining, which is what ``partial`` already means.
  """
@@ -4269,8 +4194,6 @@ def withheld_effect(name,result):
  if name=='schedule_preparation' and result.get('requires_owner_acceptance'):
   # #659: proposed, not scheduled; real work with the owner's yes remaining.
   return Withheld(result.get('next_step') or PREPARATION_PROPOSED,advanced=True)
- if name in CALENDAR_DRAFT_TOOLS and result.get('applied') is False and result.get('requires_owner_approval'):
-  return Withheld(result.get('next_step') or CALENDAR_PENDING,advanced=True)
  if name=='settings_change' and result.get('applied') is False and result.get('requires_owner_confirmation'):
   # #814: drafted, not applied; real work with the owner's confirmation remaining.
   return Withheld(result.get('next_step') or SETTINGS_PENDING,advanced=True)
@@ -4473,12 +4396,6 @@ def _evidence_detail(name,result):
   return {'root_id':result.get('root_id'),'path':result.get('path'),'kind':result.get('kind'),'locations':result.get('locations',[])[:12],'characters':len(result.get('content','')),'truncated':bool(result.get('truncated')),
           # #182: a reference read's identity and content version (no content), for a later save's sources.
           **({'citation':result['citation']} if isinstance(result.get('citation'),dict) else {})}
- if name in CALENDAR_DRAFT_TOOLS:
-  # The default branch emits sorted key *names*, so 'applied' appeared in
-  # the tool event while the fact that it is False did not.
-  return {'draft_id':result.get('draft_id'),'action':result.get('action'),
-          'applied':bool(result.get('applied')),
-          'requires_owner_approval':bool(result.get('requires_owner_approval'))}
  if name=='save_note':return {'saved':bool(result.get('saved')),'id':result.get('id')}
  # #182: the new result file's name and the reference paths it cites; never its content.
  if name=='save_result':return {'saved':bool(result.get('saved')),'id':result.get('id'),'path':result.get('path'),
@@ -4623,9 +4540,6 @@ def _fallback_text(name, result, sources):
   if memory_proposal(name,result):return MEMORY_ASK_OWNER_TEXT
   if result.get('state')=='pending':return MEMORY_REFUSALS.get(result.get('refused_because'),'소유자 확인이 필요해 기억 후보로 보관했습니다. 승인 후 저장할 수 있습니다.')
   if result.get('id'):return msg('agent_runtime.remembered')
- if name in CALENDAR_DRAFT_TOOLS and isinstance(result,dict):
-  withheld=withheld_effect(name,result)
-  return withheld.reason if withheld else '일정 초안을 만들었습니다.'
  if name=='find_files' and isinstance(result,dict):
   files=result.get('files',[])
   return '찾은 파일:\n'+('\n'.join('- '+str(f.get('path')) for f in files[:12] if isinstance(f,dict)) or '일치하는 파일이 없습니다.')
@@ -5399,7 +5313,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       result=capabilities.memo[cache_key]
      ran=True
      executions.append((name,result))
-     if name in ('find_files','read_file','list_notes','list_memory','search_memory','save_memory','calendar_query','drive_search','drive_read','mail_search','mail_read')+CALENDAR_DRAFT_TOOLS:capabilities.evidence.append({'tool':name,'result':result})
+     if name in ('find_files','read_file','list_notes','list_memory','search_memory','save_memory','calendar_query','drive_search','drive_read','mail_search','mail_read'):capabilities.evidence.append({'tool':name,'result':result})
      invalid_calls.discard(name)
      sources.extend(result.get('sources',[]))
      # #657: a page state the call returned is the page the next step acts on.

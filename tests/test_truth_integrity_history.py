@@ -23,12 +23,10 @@ from pathlib import Path
 
 from personal_agent.agent_runtime import (DELEGATE_FAILED, FALLBACK_UNDESCRIBED, QUALIFIER_NOTES,
                                           evidence_qualifiers, fallback_response, evidence_summary, turn_context)
-from personal_agent.calendar import CALENDAR_SPEC, CALENDAR_WRITE_SPEC, CalendarConnector
-from personal_agent.calendar_conversation import PREVIEW_HEADER
+from personal_agent.calendar import CALENDAR_SPEC, CalendarConnector
 from personal_agent.connector_contract import ConnectorRegistry, ConnectorState
 from personal_agent.conversation_projection import (CONTEXT_QUALIFIER, TERMINAL_PARTIAL_HEADER,
                                                     context_message, qualify_transcript)
-from personal_agent.google_calendar import CALENDAR_READ_SCOPE, CALENDAR_WRITE_SCOPE
 from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
@@ -36,10 +34,12 @@ from test_agency_loop import goal_engine
 
 CHAT = 909
 GENERATION = 'g1'
-CONNECTOR_OWNER = f'telegram:{CHAT}'
-CLAIM = '9월 25일 오전 10시에 병원 예약 일정을 등록했습니다.'
-DRAFT = {'summary': '병원 예약', 'start': '2026-09-25T10:00:00+09:00',
-         'end': '2026-09-25T11:00:00+09:00', 'timezone': 'Asia/Seoul'}
+CLAIM = '시간대를 뉴욕으로 바꿨습니다.'
+#: #814: `settings_change` only drafts; the owner's confirmation applies it.
+DRAFT = {'category': 'current_context', 'setting': 'timezone', 'value': 'America/New_York',
+         'reason': '소유자가 시간대를 뉴욕으로 바꿔 달라고 했습니다.'}
+#: The draft's pending step, as the Work's cause records it.
+PENDING = '소유자 확인을 기다립니다'
 WEB = Path(__file__).parents[1] / 'src' / 'personal_agent' / 'web' / 'app.js'
 
 
@@ -99,21 +99,15 @@ class TruthIntegrityTestCase(unittest.TestCase):
         self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': GENERATION})
 
     def calendar(self):
-        self.calendar_calls = []
+        """A connected read Calendar: the read-only turns below need one."""
 
         class Provider:
             def query(inner, start, end, timezone, max_results):
-                self.calendar_calls.append('query')
                 return [{'id': 'ev1', 'summary': '팀 회의', 'version': '"etag1"', 'start': start, 'end': end}]
 
-            def create(inner, payload, idempotency_key):
-                self.calendar_calls.append('create')
-                return {'id': 'new1', 'version': '"etag2"'}
-
-        registry = ConnectorRegistry(self.store, (CALENDAR_SPEC, CALENDAR_WRITE_SPEC))
-        for spec, scope in ((CALENDAR_SPEC, CALENDAR_READ_SCOPE), (CALENDAR_WRITE_SPEC, CALENDAR_WRITE_SCOPE)):
-            registry.transition("local-owner", spec.connector_id, ConnectorState.CONNECTED,
-                                granted_scopes=spec.required_scopes)
+        registry = ConnectorRegistry(self.store, (CALENDAR_SPEC,))
+        registry.transition("local-owner", CALENDAR_SPEC.connector_id, ConnectorState.CONNECTED,
+                            granted_scopes=CALENDAR_SPEC.required_scopes)
         return CalendarConnector(self.store, Provider(), registry=registry)
 
     def claim_completion(self):
@@ -143,17 +137,18 @@ class TruthIntegrityTestCase(unittest.TestCase):
             (root / name).write_text(text, encoding='utf-8')
         self.service.save_roots({'paths': [str(root)]})
 
-    def calendar_false_claim(self):
-        self.plan = [('calendar_draft_create', DRAFT)]
+    def settings_false_claim(self):
+        """The model says it changed a setting it only drafted."""
+        self.plan = [('settings_change', DRAFT)]
         self.text = CLAIM
-        return self.ask('모레 오전 10시에 병원 예약 잡아줘')
+        return self.ask('시간대를 뉴욕으로 바꿔줘')
 
 
 class TranscriptQualificationTests(TruthIntegrityTestCase):
     """The issue's executed example, now through every reader of `messages`."""
 
-    def test_the_calendar_false_claim_is_preserved_but_qualified_in_the_transcript(self):
-        job, bubble = self.calendar_false_claim()
+    def test_a_false_claim_is_preserved_but_qualified_in_the_transcript(self):
+        job, bubble = self.settings_false_claim()
         self.assertEqual(job['status'], 'partial')
         row = self.assistant_row(job['id'])
         # Preserved: the text is exactly what the model wrote (nothing deleted).
@@ -162,26 +157,23 @@ class TranscriptQualificationTests(TruthIntegrityTestCase):
         self.assertEqual(row['qualifier']['outcome'], 'partial')
         self.assertIs(row['qualifier']['verified'], False)
         self.assertEqual(row['qualifier']['label'], '일부 완료')
-        self.assertIn('소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.', row['qualifier']['cause'])
-        # #820/#847: the bubble delivers the AI's answer first; nothing reached the calendar.
-        # #22: Still's own exact preview of the draft follows the answer and says nothing is applied
-        # before the owner's yes; #173 slice C: the step's pending line is not repeated after it.
-        self.assertTrue(bubble.startswith(CLAIM + '\n\n' + PREVIEW_HEADER), bubble)
-        self.assertNotIn('소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.', bubble)
+        self.assertIn(PENDING, row['qualifier']['cause'])
+        # #820/#847: the bubble delivers the AI's answer first; nothing was applied.
+        self.assertTrue(bubble.startswith(CLAIM), bubble)
         self.assertNotIn(TERMINAL_PARTIAL_HEADER, bubble)
-        self.assertEqual(self.calendar_calls, [])
+        self.assertTrue(self.service.settings_orchestrator.pending_for_work(job['id']), 'the draft awaits the owner')
 
     def test_the_home_conversation_and_project_view_carry_the_same_qualifier(self):
         workspace = self.store.create_workspace('병원', '')
-        self.plan = [('calendar_draft_create', DRAFT)]
+        self.plan = [('settings_change', DRAFT)]
         self.text = CLAIM
-        job_id = self.store.enqueue('모레 오전 10시에 병원 예약 잡아줘', 'ws-ask',
+        job_id = self.store.enqueue('시간대를 뉴욕으로 바꿔줘', 'ws-ask',
                                     channel=f'telegram:{GENERATION}', chat_id=CHAT,
                                     workspace_id=workspace['id'])
         self.service.run_one()
         home = self.assistant_row(job_id, self.service.home()['conversation'])
         project = self.assistant_row(job_id, self.service.workspace(workspace['id'])['messages'])
-        # #820: the calendar write was withheld for approval; the answer is still delivered
+        # #820: the settings change was withheld for confirmation; the answer is still delivered
         # on both views alike, and the qualifier says partial.
         for row in (home, project):
             self.assertIn(CLAIM, row['content'])
@@ -194,7 +186,7 @@ class TranscriptQualificationTests(TruthIntegrityTestCase):
 
     def test_what_is_stored_is_unchanged(self):
         """Non-goal: the stored message text is not rewritten."""
-        job, _bubble = self.calendar_false_claim()
+        job, _bubble = self.settings_false_claim()
         with self.store.db() as db:
             stored = db.execute("SELECT content FROM messages WHERE job_id=? AND role='assistant'",
                                 (job['id'],)).fetchone()['content']
@@ -218,7 +210,7 @@ class TranscriptQualificationTests(TruthIntegrityTestCase):
 
     def test_the_qualifier_survives_a_restart(self):
         """Restart continuity reads the durable Work outcome, not process memory."""
-        job, _bubble = self.calendar_false_claim()
+        job, _bubble = self.settings_false_claim()
         reopened = QuickStore(Path(self.temp.name) / 'data')
         reopened.recover()
         self.assertEqual(self.assistant_row(job['id'], reopened.history())['qualifier']['outcome'], 'partial')
@@ -241,11 +233,11 @@ class ModelContextTests(TruthIntegrityTestCase):
     def later_turn_context(self):
         self.plan = []
         self.text = '네.'
-        self.ask('그 일정 확인됐지?')
+        self.ask('그거 확인됐지?')
         return self.model_requests[-1]
 
     def test_the_next_turn_reads_the_earlier_claim_with_its_outcome(self):
-        self.calendar_false_claim()
+        self.settings_false_claim()
         messages = self.later_turn_context()
         earlier = [m for m in messages if m['role'] == 'assistant' and CLAIM in (m.get('content') or '')]
         self.assertEqual(len(earlier), 1, messages)
@@ -262,10 +254,10 @@ class ModelContextTests(TruthIntegrityTestCase):
 
     def test_the_qualifier_adds_no_cause_or_payload_to_model_context(self):
         """Only the typed outcome travels; the cause stays on owner surfaces."""
-        self.calendar_false_claim()
+        self.settings_false_claim()
         messages = self.later_turn_context()
         earlier = next(m for m in messages if m['role'] == 'assistant' and CLAIM in (m.get('content') or ''))
-        self.assertNotIn('소유자가 이 미리보기를', earlier['content'].split('\n', 1)[0])
+        self.assertNotIn(PENDING, earlier['content'])
 
     def test_the_cli_route_prompt_uses_the_same_policy(self):
         rows = qualify_transcript([

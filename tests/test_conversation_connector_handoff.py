@@ -464,7 +464,6 @@ class ExactlyOnceTests(HandoffTestCase):
         # One parking message plus exactly one execution of the resumed Work.
         self.assertEqual(len(self.assistant_messages(job_id)), 2)
         # And no calendar mutation was produced or recorded by any of it.
-        self.assertEqual(self.store.config('calendar_create', {}), {})
         self.assertEqual([row for row in self.store.config('personal_assistant_evidence', [])
                           if 'calendar' in row.get('kind', '')], [])
 
@@ -584,7 +583,6 @@ class ParkedRequestSurvivesConversationTests(HandoffTestCase):
         self.assertEqual(self.drain(), 1)
         self.assertNotEqual(self.store.job(job_id)['status'], 'awaiting_connection')
         # Resuming reaches at most a draft; no calendar effect was produced.
-        self.assertEqual(self.store.config('calendar_create', {}), {})
 
     def test_ordinary_conversation_and_other_requests_do_not_cancel(self):
         job_id = self.park_with_card(MAIL_REQUEST)
@@ -669,30 +667,6 @@ class ParkedRequestSurvivesConversationTests(HandoffTestCase):
         self.assertEqual(self.store.job(calendar)['status'], 'awaiting_connection')
         self.assertNotIn(SUPERSEDED_WORK_ERROR, [body.get('text') for body in self.sent[before:]])
         self.assertEqual(len(asked), 1, 'only the calendar turn found something parked to ask about')
-
-    def test_an_answer_to_pending_calendar_drafts_does_not_cancel_an_unrelated_parked_request(self):
-        # #22, #172: the worker's drafts wait for the owner's answer; an act judged to
-        # answer them is addressed to them and never judged as a withdrawal.  Nothing
-        # here is approved, so no calendar effect is ever attempted.
-        from owner_act_script import with_owner_acts
-        from test_calendar_conversation import DENTIST, Provider
-        self.service.calendar = CalendarConnector(self.store, Provider(), registry=self.registry,
-                                                  now=lambda: self.clock[0])
-        self.service.calendar_conversation.now = lambda: self.clock[0]
-        self.connect_calendar_write()
-        asked = self.judge_withdrawal('취소')
-        with_owner_acts(self.service.decision_engine)
-        mail = self.park(MAIL_REQUEST)
-        draft = self.service.calendar_for_owner(OWNER).draft_create(DENTIST, OWNER)['id']
-        self.assertTrue(self.service.calendar_conversation.offer(OWNER, [draft]))
-        self.store.enqueue('취소', f'wu3-{next(self.keys)}', channel=f'telegram:{GENERATION}', chat_id=CHAT,
-                           owner_typed=True)  # only a message the owner typed answers drafts
-        self.assertTrue(self.service.run_one())
-        self.assertFalse(self.service.calendar_conversation.has_pending(OWNER),
-                         'the cancel was judged a decline of the drafts')
-        self.assertNotIn('취소', [utterance for utterance, _ in asked])
-        self.assertEqual(self.store.job(mail)['status'], 'awaiting_connection')
-        self.assertIsNotNone(self.handoff.record(GMAIL_CONNECTOR_ID))
 
     def test_another_owner_identity_withdrawal_does_not_cancel(self):
         asked = self.judge_withdrawal('아니 됐고 메모 목록 보여줘')
@@ -960,7 +934,6 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
         job = self.store.job(job_id)
         self.assertEqual(job['status'], 'failed')
         self.assertIn(NO_AI_ROUTE, job['error'])
-        self.assertEqual(self.store.config('calendar_create', {}), {}, 'Still drafts nothing itself')
         self.assertEqual(calls, [], 'a resumed create request must not reach the provider')
 
     def _resume_after_the_engine_changes(self, engine):
@@ -986,7 +959,6 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
         # #22: the judged capability resumes on the worker route (no AI route here).
         self.assertEqual(job['status'], 'failed')
         self.assertIn(NO_AI_ROUTE, job['error'])
-        self.assertEqual(self.store.config('calendar_create', {}), {})
         self.assertEqual(calls, [])
         self.assertNotIn(job_id, self.store.config(AgentService.JUDGED_RESUME_KEY, {}), 'consumed once')
         return engine
@@ -1012,7 +984,6 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
         job = self.store.job(job_id)
         self.assertEqual(job['status'], 'failed')
         self.assertIn(NO_AI_ROUTE, job['error'])
-        self.assertEqual(self.store.config('calendar_create', {}), {})
 
     def test_a_connected_row_with_a_narrower_grant_fails_closed_into_reauth(self):
         """Defence in depth against a stale or edited connector row."""
@@ -1055,7 +1026,6 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
         self.assertEqual(job['status'], 'failed')
         self.assertIn(NO_AI_ROUTE, job['error'])
         self.assertEqual(self.index(), {})
-        self.assertEqual(self.store.config('calendar_create', {}), {})
 
 
 class MailIntentTests(unittest.TestCase):

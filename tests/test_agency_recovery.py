@@ -25,7 +25,6 @@ from personal_agent.agent_runtime import (WORK_TOOL_ATTEMPTS, WORK_STOP_KEEP, WO
                                           WorkBudget, WorkLedger, classify_failure, goal_summary)
 from personal_agent.bounded_execution import BoundedExecutionAdapter, EngineInterrupted, ExecutionError, bounded_run
 from personal_agent.calendar import CalendarError
-from personal_agent.google_calendar import GoogleCalendar, GoogleCalendarError, GoogleCalendarHTTPError
 from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
@@ -76,27 +75,12 @@ class FailureClassificationTests(unittest.TestCase):
              ('needs_setup', 'needs_setup', 'none')),
             (ToolError('stop', 'stopped'), 'weather', ('stopped', 'budget', 'none')),
             (ToolError('late', 'deadline_exceeded'), 'weather', ('deadline_exceeded', 'budget', 'none')),
-            (CalendarError('provider-timeout', effect='unknown'), 'calendar_draft_create', ('effect_unknown', 'never', 'unknown')),
+            (CalendarError('provider-timeout', effect='unknown'), 'calendar_query', ('effect_unknown', 'never', 'unknown')),
             (CalendarError('rejected', effect='none'), 'calendar_query', ('tool_failed', 'permanent', 'none')),
         ]
         for exc, action, expected in cases:
             with self.subTest(exc=type(exc).__name__, action=action, expected=expected):
                 self.assertEqual(classify_failure(exc, action), expected)
-
-    def test_ambiguous_calendar_mutations_are_unknown_not_no_effect(self):
-        """#594 item 6: 408/429 mutations and 404/410 PATCH/DELETE may follow an earlier effect."""
-        def raising(status):
-            def transport(method, url, body, headers):
-                raise GoogleCalendarHTTPError(status)
-            return GoogleCalendar(transport, 'token')
-        for method, status in (('DELETE', 410), ('DELETE', 404), ('PATCH', 404), ('POST', 408), ('PATCH', 429)):
-            with self.subTest(method=method, status=status), self.assertRaises(GoogleCalendarError) as caught:
-                raising(status)._call(method, 'https://example.invalid', None, {}, mutation=True)
-            self.assertEqual(caught.exception.effect, 'unknown')
-        # Control: a read's 404 is still a plain no-effect rejection.
-        with self.assertRaises(GoogleCalendarError) as caught:
-            raising(404)._call('GET', 'https://example.invalid', None, {}, mutation=False)
-        self.assertEqual(caught.exception.effect, 'none')
 
 
 class TransientReadRetryTests(unittest.TestCase):
@@ -438,8 +422,8 @@ class UnknownEffectTests(unittest.TestCase):
 
         class UnknownThenStopped:
             def execute(self, engine, prompt, tools, **_kwargs):
-                tools.capabilities.record('calendar_draft_create', 'failed', json.dumps(
-                    {'host_action': 'calendar_draft_create', 'code': 'effect_unknown', 'retry': 'never', 'effect': 'unknown'}))
+                tools.capabilities.record('api_request', 'failed', json.dumps(
+                    {'host_action': 'api_request', 'code': 'effect_unknown', 'retry': 'never', 'effect': 'unknown'}))
                 raise ExecutionError('멈춤', failure_class='stopped')
 
         service = AgentService(store, subscription_engines=SubscriptionEngines(finder=lambda _: '/runtime/codex', clock=lambda: 1),

@@ -881,17 +881,12 @@ class HttpSurfaceTests(HandoffTestCase):
                     self.assertEqual(status, 403)
                     self.assertIn('Mac에서 계속', reply['error'])
                 # Every "this device only" route refuses the relayed request too:
-                # Google revocations, Gmail connect, a Calendar apply (a real
-                # external effect) and a headed browser login on this Mac.
+                # Google revocations, Gmail connect and a headed browser login on this Mac.
                 status, _reply = self.call(base, '/api/connections/google/revocations', relayed)
                 self.assertEqual(status, 403)
                 status, reply = self.call(base, GMAIL_CONNECT_PATH, relayed)
                 self.assertEqual(status, 400)
                 self.assertIn('local address', reply['text'])
-                status, reply = self.call(base, '/api/calendar/drafts/request', relayed,
-                                          {'operation': 'apply', 'draft_id': 'x'})
-                self.assertEqual(status, 400)
-                self.assertIn('local address', reply['error'])
                 status, reply = self.call(base, '/api/browser/login', relayed, {'url': 'https://example.com/'})
                 self.assertEqual(status, 403)
                 self.assertIn('이 기기에서만', reply['error'])

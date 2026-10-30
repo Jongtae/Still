@@ -22,7 +22,6 @@ from unittest import mock
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-import test_calendar_conversation as calendar_case
 import test_contextual_capability_handoff as local_case
 import test_conversation_connector_handoff as connector_case
 from scripted_capability_need import capability_need_engine
@@ -35,7 +34,6 @@ from personal_agent.conversation_handoff import (LOCAL_FOLDER_READ, LOCAL_REFERE
                                                  RESUME_REFUSALS, LOCAL_REFUSALS, SEVERAL_TASKS, ConnectorHandoff,
                                                  ConversationHandoffError, TelegramChannel, local_refusal_text)
 from personal_agent.gmail import GMAIL_CONNECTOR_ID
-from personal_agent.google_calendar import GoogleCalendarError
 from personal_agent.messages import msg
 from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart_store import QuickStore
@@ -501,54 +499,6 @@ class FamilySharingLines(unittest.TestCase):
     def test_a_received_site_refuses_payment(self):
         self.store.put(family_share.SHARED_KEY, {'shop.test': {'from': 'owner', 'since': 1.0}})
         self.assertSent(family_share.payment_refusal(self.store, 'www.shop.test'), 'family_share.payment_refused')
-
-
-class CalendarDraftLines(calendar_case.CalendarDraftApprovalCase):
-    """#10's calendar lines, read off the bubble the owner is sent (this replaces the pinned constants)."""
-
-    def setUp(self):
-        super().setUp()
-        config = dict(self.store.config('telegram', {}))
-        config['owner_language'] = 'ja'
-        self.store.put('telegram', config)
-
-    def delivered(self):
-        before = len(self.telegram)
-        self.service.deliver_one()
-        texts = [body['text'] for method, body in self.telegram[before:] if method == 'sendMessage']
-        self.assertTrue(texts)
-        return texts[-1].split('\n')
-
-    def test_the_preview_ends_with_its_footer_and_a_replaced_preview_says_so(self):
-        self.drafting(('calendar_draft_create', calendar_case.DENTIST))
-        self.receive('치과 일정 잡아줘')
-        self.assertEqual(self.delivered()[-1], msg('calendar_conversation.reply_approve_to_apply_it_as', 'ja'))
-        self.drafting(('calendar_draft_create', calendar_case.GYM))
-        self.receive('운동 일정도 잡아줘')
-        self.assertIn(msg('calendar_conversation.previous_draft_cancelled', 'ja'), self.delivered())
-
-    def test_a_failed_batch_says_what_was_not_applied(self):
-        self.drafting(('calendar_draft_create', calendar_case.DENTIST), ('calendar_draft_create', calendar_case.GYM))
-        self.receive('치과랑 운동 일정 잡아줘')
-        self.delivered()
-        self.provider.fail = GoogleCalendarError('provider-rejected', 'none')
-        self.receive('승인')
-        lines = self.delivered()
-        self.assertIn(msg('calendar_conversation.not_applied_retry', 'ja'), lines)
-        self.assertIn(msg('calendar_conversation.rest_not_applied', 'ja'), lines)
-
-    def test_a_failure_that_needs_a_reconnect_says_so(self):
-        self.drafting(('calendar_draft_create', calendar_case.DENTIST))
-        self.receive('치과 일정 잡아줘')
-        self.delivered()
-        self.provider.fail = GoogleCalendarError('scope-expired')
-        self.receive('승인')
-        self.assertIn(msg('calendar_conversation.not_applied_reconnect', 'ja'), self.delivered())
-
-    def test_a_change_to_an_event_this_work_did_not_read(self):
-        self.drafting(('calendar_draft_cancel', {'event_id': 'event-2', 'event_version': '"v2"'}))
-        self.receive('운동 일정 취소해줘')
-        self.assertIn(msg('calendar_conversation.unverified_target', 'ja', count=1), self.delivered())
 
 
 class BrowserSetupErrors(unittest.TestCase):

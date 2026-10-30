@@ -57,7 +57,8 @@ class WorkRun:
         #: The effect owner's own statement when this Work's consequential
         #: effect could not be observed (#598 I1).
         self.unknown_statement = None
-        self.calendar_notice = ''
+        #: What the reply says first: a steer disposition, an owner act's settlement, an unknown-effect notice.
+        self.reply_notice = ''
         #: #730 review: the factual note a refused retry's worker reads first.
         self.retry_note = retry_note
         # #605: the sources that enter this Work's context, recorded with

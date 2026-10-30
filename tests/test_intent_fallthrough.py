@@ -16,7 +16,6 @@ contacted, and none is claimed.
 import unittest
 
 from personal_agent.calendar import CALENDAR_SPEC, CALENDAR_WRITE_SPEC, CalendarConnector
-from personal_agent.calendar_conversation import STATE_KEY
 from personal_agent.connector_contract import ConnectorRegistry, ConnectorState
 from personal_agent.google_calendar import CALENDAR_WRITE_SCOPE
 from personal_agent.quickstart_service import MAX_OWNER_MESSAGE_CHARS
@@ -59,18 +58,22 @@ class IntentFallthroughTests(_Case):
         self.assertIn('Google Calendar is not connected in this install', sent)
         [row] = self.rows()
         self.assertEqual((row['kind'], row['state'], row['created_from']), ('reminder', 'scheduled', work))
-        self.assertEqual(self.store.config('calendar_create', {}), {}, 'no rule-made calendar draft')
 
     def test_a_calendar_create_reaches_the_worker_with_the_owner_words_only(self):
         # #22: no kernel rule reads the date from the words any more, so there is
         # neither a Still-held question nor a parse note; the worker reads the
-        # message and what it points to, and drafts through calendar_draft_create.
+        # message and what it points to, and (#432) adds the event itself through
+        # api_request's google-calendar slot.
         self.use_needs({LINKED_EVENT: 'calendar-create'})
         registry = ConnectorRegistry(self.store, (CALENDAR_SPEC, CALENDAR_WRITE_SPEC))
+        registry.transition('local-owner', CALENDAR_SPEC.connector_id, ConnectorState.CONNECTED,
+                            granted_scopes=CALENDAR_SPEC.required_scopes)
         registry.transition('local-owner', CALENDAR_WRITE_SPEC.connector_id, ConnectorState.CONNECTED,
                             granted_scopes=(CALENDAR_WRITE_SCOPE,))
         self.service.calendar = CalendarConnector(self.store, object(), registry=registry)
-        self.script = [{'content': '페이지에서 날짜를 확인해 초안을 만들게요.'}] * 2
+        # The slot's token is read only when a call is made; no call is made here.
+        self.service.connector_registry, self.service.calendar_oauth = registry, object()
+        self.script = [{'content': '페이지에서 날짜를 확인해 일정을 추가할게요.'}] * 2
         work = self.receive(LINKED_EVENT)
         job = self.store.job(work)
         self.assertEqual(job['status'], 'succeeded', job.get('error'))
@@ -80,9 +83,9 @@ class IntentFallthroughTests(_Case):
         self.assertNotIn('could not read the event', sent)
         self.assertNotIn(NOTE, sent, 'a connected calendar needs no note')
         tools = {tool['function']['name'] for tool in self.model_calls[0].get('tools', [])}
-        self.assertTrue({'public_page_read', 'calendar_draft_create'} <= tools, tools)
-        self.assertFalse(self.store.config(STATE_KEY, {}), 'no rule-held question is left pending')
-        self.assertEqual(self.store.config('calendar_create', {}), {}, 'no rule-made calendar draft')
+        self.assertTrue({'public_page_read', 'calendar_query', 'api_request'} <= tools, tools)
+        self.assertFalse(self.service.connection_slots(job)['google-calendar']['read_only'],
+                         'the worker changes the calendar through the write-granted slot')
 
     def test_a_former_two_rule_turn_reaches_the_worker_verbatim_with_no_rule_note(self):
         # #173: no keyword rule reads this turn any more, so nothing is ambiguous

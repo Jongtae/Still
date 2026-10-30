@@ -38,6 +38,8 @@ from test_agency_loop import goal_engine
 
 CHAT = 4242
 GENERATION = 'g1'
+#: A reminder whose time has passed: refused before anything is scheduled.
+PAST_REMINDER = {'kind': 'reminder', 'goal': '팀 회의', 'due': '2020-01-01T09:00:00+09:00', 'timezone': 'Asia/Seoul'}
 
 
 class TerminalResultTestCase(unittest.TestCase):
@@ -198,22 +200,21 @@ class PartialTurnTests(TerminalResultTestCase):
     def partial_turn(self, claim):
         """One tool completes, one state-changing action fails without effect -> `partial`.
 
-        The calendar draft fails with ``needs_setup`` and ``effect: none``:
-        nothing was changed; the answer claiming the draft is delivered below
-        what did not complete, under the unverified label (#820).
+        The reminder is refused (its time has passed): nothing was scheduled;
+        the answer claiming it is delivered below what did not complete,
+        under the unverified label (#820).
         """
         self.connect_folder()
         self.plan = [
             ('find_files', {'query': '급여'}),          # succeeds
-            ('calendar_draft_cancel', {'event_id': 'ev1',
-                                                  'event_version': '"etag1"'}),  # refused, no effect
+            ('schedule_preparation', PAST_REMINDER),   # refused, no effect
         ]
         self.text = claim
-        return self.ask('내일 팀 회의 취소해줘')
+        return self.ask('팀 회의 시간에 알려줘')
 
     def test_a_partial_turn_is_not_announced_as_a_completed_result(self):
-        """#476 case 2. The model said a draft existed; none was created."""
-        job, bubble = self.partial_turn('팀 회의 취소 초안을 만들었습니다. 승인해 주세요.')
+        """#476 case 2. The model said a reminder existed; none was scheduled."""
+        job, bubble = self.partial_turn('팀 회의 알림을 예약했습니다.')
         self.assertEqual(job['status'], 'partial', job.get('error'))
         self.assertNotIn('처리가 끝났습니다', bubble)
         # #847: the answer first, then the one note; the old header is gone.
@@ -221,29 +222,29 @@ class PartialTurnTests(TerminalResultTestCase):
         self.assertTrue(bubble.endswith('\n\n일부 단계는 끝내지 못했어요.'), bubble)
 
     def test_a_partial_turn_delivers_a_claim_of_an_action_that_did_not_run_after_the_truth(self):
-        """#476 case 2 / #820: the draft action did nothing; the answer is still delivered.
+        """#476 case 2 / #820: the reminder action did nothing; the answer is still delivered.
 
         The answer comes first; the closing note says a step was not
         confirmed (#847), so the claim never reads as a result.
         """
-        claim = '팀 회의 취소 초안을 만들었습니다. 승인해 주세요.'
+        claim = '팀 회의 알림을 예약했습니다.'
         job, bubble = self.partial_turn(claim)
         self.assertEqual(job['status'], 'partial')
-        self.assertAnswerFirst(bubble, job, '초안을 만들었습니다')
+        self.assertAnswerFirst(bubble, job, '알림을 예약했습니다')
         self.assertEqual(job['response'], claim, 'the text must be preserved, not deleted')
 
     def test_a_partial_turn_names_what_did_not_complete(self):
-        job, bubble = self.partial_turn('초안을 만들었습니다.')
+        job, bubble = self.partial_turn('알림을 예약했습니다.')
         self.assertTrue(job['error'], 'the job carries no cause to report')
         # #598 X1: the same observed cause, in owner words; the technical
         # cause with the tool id stays on the Work record for Task detail.
         self.assertTrue(job['owner_cause'])
-        self.assertIn('일정 초안: Google Calendar가 로컬에 구성되어 있지 않습니다.', job['owner_cause'])
-        self.assertIn('calendar_draft_cancel', job['error'])
+        self.assertIn('준비 예약: 이 시각은 이미 지났습니다.', job['owner_cause'])
+        self.assertIn('schedule_preparation', job['error'])
         # #847: with the answer delivered, the bubble carries neither the
         # tool id nor the tool's error; the step is counted and stays in 상세.
-        self.assertNotIn('calendar_draft_cancel', bubble)
-        self.assertNotIn('Google Calendar가 로컬에 구성되어 있지 않습니다', bubble)
+        self.assertNotIn('schedule_preparation', bubble)
+        self.assertNotIn('이 시각은 이미 지났습니다', bubble)
         self.assertNotIn(job['owner_cause'], bubble)
         self.assertEqual(job['owner_note'], '일부 단계는 끝내지 못했어요.')
         self.assertTrue(bubble.endswith('\n\n' + job['owner_note']), bubble)
@@ -347,10 +348,9 @@ class SurfaceConsistencyTests(TerminalResultTestCase):
         """Both surfaces deliver the answer and both flag attention (#752, #820)."""
         self.connect_folder()
         self.plan = [('find_files', {'query': '급여'}),
-                     ('calendar_draft_cancel', {'event_id': 'ev1',
-                                                'event_version': '"etag1"'})]
-        self.text = '취소 초안을 만들었습니다.'
-        job, bubble = self.ask('내일 팀 회의 취소해줘')
+                     ('schedule_preparation', PAST_REMINDER)]
+        self.text = '알림을 예약했습니다.'
+        job, bubble = self.ask('팀 회의 시간에 알려줘')
         self.assertEqual(job['status'], 'partial')
         card = self.card(job)
         self.assertEqual(card['status_label'], '확인 필요')
@@ -368,10 +368,9 @@ class SurfaceConsistencyTests(TerminalResultTestCase):
         """
         self.connect_folder()
         self.plan = [('find_files', {'query': '급여'}),
-                     ('calendar_draft_cancel', {'event_id': 'ev1',
-                                                'event_version': '"etag1"'})]
-        self.text = '취소 초안을 만들었습니다.'
-        job, bubble = self.ask('내일 팀 회의 취소해줘', card=True)
+                     ('schedule_preparation', PAST_REMINDER)]
+        self.text = '알림을 예약했습니다.'
+        job, bubble = self.ask('팀 회의 시간에 알려줘', card=True)
         self.assertEqual(job['status'], 'partial')
         self.assertTrue(self.cards, 'the card was never updated')
         # Exact, not a substring: '일부 단계만 완료했습니다. 아래 결과를 확인하세요.'

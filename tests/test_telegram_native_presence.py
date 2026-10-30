@@ -965,10 +965,9 @@ class OutcomeReactionTests(unittest.TestCase):
         self.assertEqual(outcome_reaction('succeeded', [write_event('save_note')], blocked=True), CLEAR_REACTION)
 
     def test_a_succeeded_work_awaiting_the_owners_approval_is_not_done(self):
-        # Typed flags only: a calendar draft awaiting approval, an unapplied
+        # Typed flags only: an unapplied result awaiting approval, an unapplied
         # draft needing confirmation, or the caller's pending-approval signal.
-        for events in ([{'tool': 'calendar_draft', 'status': 'succeeded', 'trace': {'state': 'awaiting-approval'}}],
-                       [{'tool': 'x', 'status': 'succeeded',
+        for events in ([{'tool': 'x', 'status': 'succeeded',
                          'trace': {'evidence': {'requires_owner_approval': True, 'applied': False}}}],
                        [{'tool': 'y', 'status': 'succeeded', 'trace': {'evidence': {'requires_owner_confirmation': True}}}]):
             self.assertEqual(outcome_reaction('succeeded', events), CLEAR_REACTION, events)

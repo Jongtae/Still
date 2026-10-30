@@ -229,7 +229,7 @@ def build_google_connectors(store, client, port, key_provider, registry, *, gmai
                                      registry=registry,allow_localhost=True)
         def calendar_factory(owner_id):
             return CalendarConnector(store,GoogleCalendar(
-                calendar_transport(calendar_secrets,registry,owner_id,allow_writes=True,oauth=calendar_oauth,exchange=exchange)),
+                calendar_transport(calendar_secrets,registry,owner_id,oauth=calendar_oauth,exchange=exchange)),
                 registry=registry)
         built['calendar_oauth'],built['calendar_factory']=calendar_oauth,calendar_factory
     drive_oauth=CalendarOAuth(EncryptedCalendarSecretStore(store,key_provider,namespace=DRIVE_SECRET_NAMESPACE),
@@ -627,7 +627,7 @@ def configured_service(store, environ=None):
             def calendar_factory(owner_id,_registry=calendar_registry,_secrets=calendar_secrets,
                                  _oauth=calendar_oauth,_exchange=calendar_exchange):
                 return CalendarConnector(store,GoogleCalendar(
-                    calendar_transport(_secrets,_registry,owner_id,allow_writes=True,oauth=_oauth,exchange=_exchange)),
+                    calendar_transport(_secrets,_registry,owner_id,oauth=_oauth,exchange=_exchange)),
                     registry=_registry)
             # `CalendarOAuth` already registered both definitions above, so
             # the connect route and the parked-Work guidance agree about what
@@ -1201,20 +1201,6 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             if path=='/api/preparations':
                 # #659: the Settings 준비해 둔 일 list.
                 return self.reply(200,service.preparation_request({'operation':'list'}))
-            if path=='/api/calendar/drafts':
-                # The owner's own surface. A draft the model proposed is
-                # inert until the owner approves and applies it here.
-                #
-                # Tunnel host refused, unlike the neighbouring
-                # memory-candidate surface it is modelled on. That one has no
-                # external effect; this one creates, changes or cancels a
-                # real calendar event, and it is the first route in this
-                # server that does. Every other Calendar route already
-                # refuses a tunnel host and this should not be the exception.
-                if self.tunneled():
-                    return self.reply(400,{'error':'Open Still on its local address to review calendar drafts.'})
-                try:return self.reply(200,service.calendar_draft_request({'operation':'list'}))
-                except ValueError as exc:return self.reply(400,{'error':str(exc)})
             if path.startswith('/api/personal-space/items/'):
                 # #562: one exact retained item for a contextual deep link.
                 # Same owner session gate as /api/personal-records, which
@@ -1413,13 +1399,6 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 if path=='/api/preparations/request':
                     # #659: the owner accepts, cancels or deletes one preparation.
                     return self.reply(200,service.preparation_request(body))
-                if path=='/api/calendar/drafts/request':
-                    # See the GET above: this one applies a real external
-                    # effect, so loopback only.
-                    if self.tunneled():
-                        return self.reply(400,{'error':'Open Still on its local address to approve a calendar change.'})
-                    try:return self.reply(200,service.calendar_draft_request(body))
-                    except ValueError as exc:return self.reply(400,{'error':str(exc)})
                 if path in ('/api/browser/login','/api/browser/approval','/api/browser/sessions/delete','/api/browser/login/decision'):
                     # #656: a headed window on this Mac, and the approval of a
                     # guarded step in the owner's session; #680: deleting saved

@@ -130,19 +130,11 @@ class ConnectionFailureFixtures(unittest.TestCase):
 
 
 class OtherFlowsTest(unittest.TestCase):
-    """The calendar, sign-in handoff and family-sharing lines moved into the catalog.
+    """The sign-in handoff and family-sharing lines moved into the catalog.
 
     #242: what the owner is sent on those flows is read off the real send paths in
-    ``test_handoff_locale`` (``CalendarDraftLines``, ``PhoneSignInLines``, ``FamilySharingLines``).
+    ``test_handoff_locale`` (``PhoneSignInLines``, ``FamilySharingLines``).
     """
-
-    def test_the_preview_footer_asks_for_no_exact_word(self):
-        """#172: approval is judged, not matched, so no language is told to send one exact word."""
-        import re
-        quoted = re.compile(r'"([^"]+)"|「([^」]+)」|“([^”]+)”')
-        for lang in ('ko', *LANGS):
-            with self.subTest(lang=lang):
-                self.assertEqual(quoted.findall(msg('calendar_conversation.reply_approve_to_apply_it_as', lang)), [])
 
     def test_telegram_buttons_and_bodies_use_the_same_lines(self):
         body = {'chat_id': 1, 'text': msg('providers.unreachable')}

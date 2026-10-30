@@ -13,8 +13,7 @@ This module is the thin glue around that judgment:
 * ``open_items`` collects the open items for one conversation and identity,
   each ``{kind, id, shown_text, shown_at, message_id, expires_at}`` plus the
   reference its own settle path needs.  Every source and every check is the
-  existing one: the pending calendar drafts (``CalendarConversation``), the
-  pending settings drafts (``SettingsOrchestrator.pending_or_renewable``),
+  existing one: the pending settings drafts (``SettingsOrchestrator.pending_or_renewable``),
   every open step-approval prompt, the open saved-memory notice, open memory
   proposals and preparation proposals (their sent Telegram messages, bound as
   their buttons are).
@@ -24,8 +23,7 @@ This module is the thin glue around that judgment:
   item that is still open.  Unclear, unavailable, low-confidence, ``change``
   and ``unrelated`` settle nothing and the act is an ordinary turn.
 * ``settle`` runs the chosen item's existing path, unchanged in authority:
-  calendar compare-and-clear then the connector's digest-bound approve ->
-  execute; settings ``settle_pending``; ``_decide_browser_step`` with the
+  settings ``settle_pending``; ``_decide_browser_step`` with the
   offer digest; the saved-memory undo; the memory-proposal and preparation
   button paths.  Nothing pending is deleted on a miss.
 
@@ -36,13 +34,9 @@ cannot answer an item shown after it, expiry, digests, compare-and-set,
 No owner wording is matched here.  Evidence class of the tests: model-free,
 with a scripted judgment; no live model was asked.
 """
-import json
 import logging
 import time
 
-from .calendar import CALENDAR_WRITE_CONNECTOR_ID, CalendarError
-from .calendar_conversation import CHANGED_UNDER_US
-from .conversation_handoff import ConnectorHandoff
 from .messages import msg
 from . import preparations as prep
 
@@ -53,7 +47,6 @@ ITEM_LIMIT = 6
 #: How much of each item's shown text the judgment reads.
 SHOWN_CHARS = 700
 
-KIND_CALENDAR = 'calendar-drafts'
 KIND_SETTINGS = 'settings-drafts'
 KIND_STEP = 'action-approval'
 KIND_MEMORY_SAVED = 'memory-saved'
@@ -65,7 +58,6 @@ LONG_LIVED = frozenset({KIND_MEMORY_SAVED, KIND_MEMORY_PROPOSAL, KIND_PREPARATIO
 
 #: What an answer does to an item of each kind, told to the judgment in generic words.
 ANSWERS = {
-    KIND_CALENDAR: 'approve applies the calendar changes exactly as shown; decline drops them',
     KIND_SETTINGS: 'approve applies the settings change as shown; decline keeps the current setting',
     KIND_STEP: 'approve lets the waiting action run once, exactly as shown; decline stops it',
     KIND_MEMORY_SAVED: 'decline removes what the assistant said it remembered; approve keeps it',
@@ -119,18 +111,6 @@ class OwnerActs:
         now = time.time()
         conversation_of = self._conversation(job)
         items = []
-        connector_owner = service.issuer_owner_id(job)
-        conversation = service.calendar_conversation
-        row = conversation.pending(connector_owner)
-        if row:
-            work_id = row.get('work_id')
-            message_id = (conversation_of[0].reply_message(work_id, conversation_of[1])
-                          if conversation_of and isinstance(work_id, str) else None)
-            items.append({'kind': KIND_CALENDAR, 'shown_text': conversation.shown_text(connector_owner, row),
-                          'shown_at': float(row.get('at') or 0), 'expires_at': float(row.get('expires') or 0),
-                          'message_id': message_id,
-                          'ref': {'owner': connector_owner, 'drafts': conversation.shown_drafts(row),
-                                  'work_id': work_id}})
         settings = service.settings_orchestrator
         owner, channel = service.settings_owner(job), job.get('channel')
         groups = {}
@@ -227,8 +207,8 @@ class OwnerActs:
         it would add a Judgment AI call to nearly every turn.  An unbound typed
         act (no reply-to) therefore includes such a long-lived item only when it
         was shown after the owner's previous typed message in this conversation
-        - the owner has not spoken since.  Short-lived items (calendar drafts,
-        step approvals, settings drafts) are always included while open.  A
+        - the owner has not spoken since.  Short-lived items (step approvals,
+        settings drafts) are always included while open.  A
         long-lived item left out stays open and answerable by a reaction, a
         reply-to its message or its button.
         """
@@ -291,25 +271,18 @@ class OwnerActs:
                 'parts': parts}
 
     # -- settle --------------------------------------------------------------------
-    def settle(self, answer, job, *, evidence=None):
+    def settle(self, answer, job):
         """Settle the one item a judged answer named, through its own path.
 
         Returns ``{'text', 'note', 'source', 'focus'}``: what the owner is told
         (''), what the worker reads first when the turn goes on (None), the
         Work source it read, and the Work a settings answer keeps in focus.
-        Raises ``CalendarError('unavailable')`` when the calendar connector is
-        gone.
         """
         service = self.service
         item, approve, ref = answer['item'], answer['approve'], answer['item']['ref']
         kind = item['kind']
         result = {'text': '', 'note': None, 'source': None, 'focus': None}
-        if kind == KIND_CALENDAR:
-            conversation = service.calendar_conversation
-            text = (conversation.approve(ref['owner'], ref['drafts'], evidence=evidence) if approve
-                    else conversation.decline(ref['owner'], ref['drafts']))
-            result.update(text=text or CHANGED_UNDER_US, source='owner-calendar')
-        elif kind == KIND_SETTINGS:
+        if kind == KIND_SETTINGS:
             notify_job = job if job.get('id') else (service.store.job(ref['work_id']) if ref['work_id'] else None)
             outcome = service.settings_orchestrator.settle_pending(
                 ref['owner'], ref['channel'], ref['rows'], approve,
@@ -371,19 +344,8 @@ class OwnerActs:
         return item['kind']
 
     def _settle_and_tell(self, surface, chat, generation, job, answer):
-        """Settle a reaction's or a button's answer and tell the owner on ``surface``; Evidence goes to the item's Work."""
-        service = self.service
-        work_id = answer['item']['ref'].get('work_id')
-
-        def evidence(tool, status, detail):
-            if isinstance(work_id, str):
-                with service.store.db() as db:
-                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                               (work_id, tool, status, json.dumps(detail), time.time()))
-        try:
-            settled = self.settle(answer, job, evidence=evidence)
-        except CalendarError:
-            settled = {'text': ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID)}
+        """Settle a reaction's or a button's answer and tell the owner on ``surface``."""
+        settled = self.settle(answer, job)
         # #299 review: told only to the owner who answered, in the pairing they answered in; a re-pairing
         # during the settlement drops the reply instead of retargeting it.
         if settled.get('text') and not surface.send_owner(settled['text'], owner=chat, generation=generation):
@@ -393,8 +355,7 @@ class OwnerActs:
     def answer_reaction(self, surface, chat, generation, message_id, emoji):
         """The owner's reaction on a message that showed an open item: judged, and settled when it answers it.
 
-        Runs off the poll thread.  What the owner is told is sent to the paired owner on ``surface``;
-        the calendar effect's Evidence goes to the Work that offered the drafts.
+        Runs off the poll thread.  What the owner is told is sent to the paired owner on ``surface``.
         """
         job = self._act_job(surface, chat, generation)
         answer = self.read(job, 'reaction: ' + ' '.join(emoji), target=message_id, reaction=True)

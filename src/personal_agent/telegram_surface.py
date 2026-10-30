@@ -99,7 +99,7 @@ class TelegramSurface(ConversationSurface):
         return self.service.telegram_turns.reply_to(work_id)
 
     def reply_message(self, work_id, owner):
-        """The message id of Still's reply to ``work_id`` in ``owner``'s chat (a calendar item's binding), or None."""
+        """The message id of Still's reply to ``work_id`` in ``owner``'s chat, or None."""
         turn=self.service.telegram_turns.get(work_id)
         return turn['reply_message_id'] if turn and turn['chat_id']==owner else None
 

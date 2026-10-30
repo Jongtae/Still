@@ -255,8 +255,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
         # (ask_location only to a Telegram Work: this turn is a web one).
         # #814: and the owner settings tools.
         # #826: and the connected-folder documents, approved pages and the information-use audit.
-        self.assertEqual(names, ["calendar_draft_cancel", "calendar_draft_create",
-                                 "calendar_draft_update", "calendar_query", "capability_search", *CODE_RUN, "drive_read", "drive_search", "find_files", "forget_record", "information_use",
+        self.assertEqual(names, ["calendar_query", "capability_search", *CODE_RUN, "drive_read", "drive_search", "find_files", "forget_record", "information_use",
                                  "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_page_read", "read_file", "save_memory",
                                  "save_note", "save_result", "schedule_preparation", "search_conversation", "search_memory", "settings_change", "settings_read", "weather",
                                  "web_search"])
@@ -310,7 +309,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
                              {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "list_notes", "arguments": {}}})
         self.assertIn("--native-search", self.server["args"])
         self.assertEqual([tool["name"] for tool in replies[2]["result"]["tools"]],
-                         ["calendar_draft_cancel", "calendar_draft_create", "calendar_draft_update", "calendar_query",
+                         ["calendar_query",
                           "capability_search", *CODE_RUN, "drive_read", "drive_search", "find_files", "forget_record", "information_use", "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_page_read",
                           "read_file", "save_memory", "save_note", "save_result", "schedule_preparation", "search_conversation", "search_memory", "settings_change",
                           "settings_read", "weather"])

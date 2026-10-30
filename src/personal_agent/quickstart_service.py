@@ -21,7 +21,7 @@ from .prompt_files import prompt
 from .local_tools import LocalTools, normalize_public_url
 from functools import cached_property
 from .work_execution import PROCEED, REDELEGATED, WorkRun
-from .agent_runtime import (Capabilities, ToolError, CALENDAR_DRAFT_TOOLS, cut_to_fit, run_agent, AGENTS, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
+from .agent_runtime import (Capabilities, ToolError, cut_to_fit, run_agent, AGENTS, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
                             MEMORY_OWNER, context_sections, ENGINE_UNMEDIATED, OWNER_CONVERSATION, lookup_sources, work_written_values, WORK_SOURCES_KEY, WORK_SOURCES_LIMIT, base_label,
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
                             WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, goal_summary, work_source_records,
@@ -63,11 +63,8 @@ from .connector_contract import ConnectorContractError, ConnectorResultKind, _ow
 from .gmail import GMAIL_CONNECTOR_ID, GMAIL_MODIFY_CONNECTOR_ID, GmailError
 from .connector_revocation import (GoogleConnectionRevoker, RevocationError, drive_connection,
                                    google_revoke_transport, registry_connection)
-from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID, CalendarError
+from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID
 from .google_drive_read import DRIVE_CONNECTOR_ID
-from .calendar_conversation import (EFFECT_TOOLS as CALENDAR_EFFECT_TOOL_NAMES,
-                                    FAILED as CALENDAR_APPLY_FAILED, CalendarConversation, work_draft_ids)
-CALENDAR_EFFECT_TOOLS=frozenset(CALENDAR_EFFECT_TOOL_NAMES.values())
 from .conversation_handoff import (CONNECTOR_LABELS, JUDGMENT_NO, JUDGMENT_YES,
                                    FOLLOWUP_CANCEL, FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE,
                                    FOLLOWUP_RETRY, eligible_for_followup_judgment,
@@ -698,12 +695,6 @@ class AgentService:
         self.google_client_installer=None
         self.google_client_source=None
         self.google_client_id=None
-        # The natural-language create flow: literal-rule slot collection, an
-        # exact preview, and the owner's explicit approval spending the
-        # connector's own one-time token.  It resolves the connector per turn
-        # through `calendar_for_owner`, so it sees the same owner-bound
-        # connector the tool path and the approve surface use.
-        self.calendar_conversation=CalendarConversation(store,self.calendar_for_owner)
         # Owner-local token-exchange transport for the Gmail callback route,
         # supplied by the same deployment that supplies `gmail`.  Kept off the
         # connector so the client secret never enters connector state.
@@ -2052,8 +2043,7 @@ class AgentService:
     def scrub_work_text(self, work_id, text):
         """``text`` with Work ``work_id``'s saved private values and stored secrets removed (#659)."""
         from .browser_session import redact_private_values
-        tools={tool['id']:tool for package in self.runtime_packages() for tool in package['tools']}
-        text,_count=redact_private_values(str(text or ''),work_written_values(self.store,work_id,tools))
+        text,_count=redact_private_values(str(text or ''),work_written_values(self.store,work_id))
         return self._redact_known_secrets(text)
 
     def preparation_history(self, job):
@@ -3358,7 +3348,7 @@ class AgentService:
                           f'{size} bytes, sha256 {hashlib.sha256(sent.encode()).hexdigest()[:16]}]')
             else:
                 # #701: the Work's whole lookup-exclusion set (``lookup_sources``:
-                # its Memory candidates, notes and calendar drafts), then the
+                # its Memory candidates and notes), then the
                 # stored secrets' values and credential shapes, are removed
                 # before it is kept.
                 envelope=self.scrub_envelope(job_id,sent)
@@ -3384,9 +3374,8 @@ class AgentService:
         equal to a stored secret is already redacted in the snapshot).
         """
         from .browser_session import redact_private_values
-        tools={tool['id']:tool for package in self.runtime_packages() for tool in package['tools']}
-        try:excluded=lookup_sources(self.store,job_id,tools)['excluded']
-        except Exception:excluded=work_written_values(self.store,job_id,tools)
+        try:excluded=lookup_sources(self.store,job_id)['excluded']
+        except Exception:excluded=work_written_values(self.store,job_id)
         text,_count=redact_private_values(str(text or ''),excluded)
         return self._redact_known_secrets(text)
 
@@ -3569,14 +3558,11 @@ class AgentService:
         is a follow-up (the memory-save and file-save word checks are gone);
         the follow-up judgment reads it with the focused Work's request and
         reply, their times and what still waits for the owner
-        (``followup_context``).  Explicit commands and pending Calendar drafts
-        keep their own dedicated state machines.
+        (``followup_context``).  Explicit commands keep their own dedicated state machines.
         """
         if not eligible_for_followup_judgment(prompt):
             return None
         if self.intent_classifier.has_local_candidate(prompt):
-            return None
-        if connector_owner and self.calendar_conversation.has_pending(connector_owner):
             return None
         focus=self.conversation_focus.current()
         previous_id=focus.get('work_id')
@@ -3595,24 +3581,6 @@ class AgentService:
         }:
             return None
         return {'relation':judged.value,'previous':previous,'source':judged.source}
-
-    def offer_calendar_drafts(self, job, capabilities=None):
-        """#22: the calendar drafts this Work's worker made, offered for the owner's approval.
-
-        Read from this Work's durable tool events; Still renders the exact
-        preview from the connector (``CalendarConversation.offer``).  Returns
-        the preview text to follow the answer, or ''.
-        """
-        with self.store.db() as db:
-            # A draft is recorded as a withheld step (status ``failed``, state ``withheld``):
-            # its effect waits for the owner.  Only an event carrying the draft id counts.
-            events=db.execute("SELECT tool,detail FROM tool_events WHERE job_id=? AND status IN ('succeeded','failed') ORDER BY id",
-                              (job['id'],)).fetchall()
-        ids=work_draft_ids([(row['tool'],row['detail']) for row in events])
-        if not ids:return ''
-        # The target of an update or cancellation, as this Work's own calendar read returned it.
-        targets=getattr(capabilities,'calendar_seen',None) or {}
-        return self.calendar_conversation.offer(self.issuer_owner_id(job),ids,targets=targets,work_id=job['id'])
 
     @staticmethod
     def _minutes_ago(now, moment):
@@ -5181,12 +5149,11 @@ class AgentService:
 
         Always supplied, so every public lookup is composed (N3).
         """
-        tools={tool['id']:tool for package in self.runtime_packages() for tool in package['tools']}
         def resolve(bound=job['message']):
             current=self.store.job(job['id']) or {}
             if current.get('message')!=bound:
                 raise ValueError('이 작업의 요청이 바뀌어 공개 조회를 실행하지 않았습니다.')
-            sources=lookup_sources(self.store,job['id'],tools)
+            sources=lookup_sources(self.store,job['id'])
             # A retry's effective request is the owner's own earlier words.
             if prompt!=bound:sources['current']=prompt
             return sources
@@ -7859,60 +7826,6 @@ class AgentService:
             raise ValueError(ConnectorHandoff.unavailable(GMAIL_CONNECTOR_ID))
         return self.gmail.begin_oauth(self.connector_callback_owner(GMAIL_CONNECTOR_ID))
 
-    def calendar_owner_candidates(self):
-        """Current issuer identities whose Calendar drafts Settings may settle."""
-        return [*self.surface_connector_owners(), 'local-owner']
-
-    def calendar_draft_request(self, body, owner_id=None):
-        """The owner's approve/apply surface for a Calendar draft.
-
-        The model has no approve tool by design, so this owner-local surface
-        is the only place that may spend a Calendar draft approval.
-
-        `approve` mints the one-time token bound to this owner, draft,
-        payload hash and the write connector's `connection_revision`;
-        `apply` spends it. Neither is reachable from a tool.
-        """
-        if self.calendar is None and self.calendar_factory is None:
-            raise ValueError(ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID))
-        owners = [owner_id] if owner_id else self.calendar_owner_candidates()
-        operation = (body or {}).get('operation')
-        if operation == 'list':
-            drafts = []
-            for owner in owners:
-                # #306 review: the connector bound to exactly this draft owner (any surface or local).
-                connector = self.calendar_for_owner(owner)
-                drafts.extend({**row, 'owner': owner} for row in connector.pending(owner))
-            return {'drafts': drafts}
-        draft_id = (body or {}).get('draft_id')
-        if not isinstance(draft_id, str) or not draft_id:
-            raise ValueError('승인할 일정 초안을 선택하세요.')
-        # Act as whichever identity owns the draft. `preview`, `approve` and
-        # `execute` each enforce the owner themselves, so a draft belonging
-        # to neither candidate simply finds no owner and is refused.
-        for owner in owners:
-            connector = self.calendar_for_owner(owner)
-            try:
-                connector.preview(draft_id, owner)
-            except ValueError:
-                continue
-            if operation == 'preview':
-                return {'preview': connector.preview(draft_id, owner), 'owner': owner}
-            if operation == 'approve':
-                return {'approval': connector.approve(draft_id, owner), 'owner': owner,
-                        'applied': False,
-                        'next_step': '승인만 기록했습니다. 적용하려면 apply를 호출하세요.'}
-            if operation == 'apply':
-                approval = (body or {}).get('approval_id')
-                if not isinstance(approval, str) or not approval:
-                    raise ValueError('승인 토큰이 필요합니다.')
-                return {'result': connector.execute(draft_id, approval, owner),
-                        'owner': owner, 'applied': True}
-            if operation == 'status':
-                return {'status': connector.status(draft_id, owner), 'owner': owner}
-            raise ValueError('지원하지 않는 일정 초안 요청입니다.')
-        raise ValueError('해당 일정 초안을 찾을 수 없습니다.')
-
     # -- the owner-logged-in browser profile (SEC-BROWSER-01 #656) -----------
     #
     # Settings status, the owner's login window and the per-step approval of
@@ -8164,17 +8077,15 @@ class AgentService:
 
         The kinds (``owner_acts`` item kinds) of what this Work still waits on for the owner's own
         decision, from the live stores that hold each wait with its expiry: a step approval it asked
-        for (``step_approval_pending``), its drafts on Still's calendar preview or settings
-        confirmation (#173 slice C), and its preparation proposals not yet accepted.  () when
+        for (``step_approval_pending``), its drafts on a settings confirmation (#173 slice C), and its
+        preparation proposals not yet accepted.  () when
         nothing waits.  A ``partial`` Work that waits stays ``partial`` in the database; this only
         says why.  A read failure is () (nothing is claimed).
         """
-        from .owner_acts import KIND_CALENDAR, KIND_PREPARATION, KIND_SETTINGS, KIND_STEP
+        from .owner_acts import KIND_PREPARATION, KIND_SETTINGS, KIND_STEP
         kinds=[]
         try:
             if self.step_approval_pending(job['id']):kinds.append(KIND_STEP)
-            row=self.calendar_conversation.pending(self.issuer_owner_id(job))
-            if row and row.get('work_id')==job.get('id'):kinds.append(KIND_CALENDAR)
             if self.settings_orchestrator.pending_for_work(job['id']):kinds.append(KIND_SETTINGS)
             if self.preparations.proposed_from(job['id']):kinds.append(KIND_PREPARATION)
         except Exception:
@@ -9692,7 +9603,6 @@ class AgentService:
             self.calendar_factory('local-owner') if self.calendar_factory is not None else None)
         if connector is not None:
             connector.token_owner=lambda owner:MEMORY_OWNER
-            connector.owner_generation=self._issuer_generation
         return connector
 
     def _issuer_generation(self, owner_id):
@@ -11243,7 +11153,7 @@ class AgentService:
             run=WorkRun(job,claimed_at,retry_note=self.action_continuation_note(job))
             # #308 S4: a message meant for an earlier Work says first why it is answered on its own.
             notice=self.steer_disposition_notice(job)
-            if notice:run.calendar_notice=notice+'\n\n'
+            if notice:run.reply_notice=notice+'\n\n'
             try:
                 for phase in (self._route_work,self._load_work_photos,self._run_rule_intent):
                     step=phase(run)
@@ -11323,8 +11233,8 @@ class AgentService:
             run.prompt,run.prompt_work_id,resumed_decision=resumed
         # #774: a location continuation re-runs the asking Work's message; the
         # owner's own latest message was the location, so like a resumed Work
-        # it skips the owner-utterance judgments (relation, calendar draft,
-        # parked withdrawal) that would read the replayed words as a new turn.
+        # it skips the owner-utterance judgments (relation, parked
+        # withdrawal) that would read the replayed words as a new turn.
         run.continued=continuation_request(job.get('request_key'))
         # #1418: and runs on the asking Work's kept conversation route, unjudged again.
         located=self.located_route(job,run.continued) if run.continued and not resumed else None
@@ -11334,7 +11244,7 @@ class AgentService:
         owner_command=not replayed and self.intent_classifier.explicit(owner_prompt) is not None
         # #172 (OWNER-ACT-01, owner decision 2026-10-21, revising #22 option A): one judgment
         # reads this owner act against every item still waiting for the owner in this
-        # conversation (calendar drafts, settings drafts, approval prompts, the saved-memory
+        # conversation (settings drafts, approval prompts, the saved-memory
         # notice, memory and preparation proposals); a Telegram reply-to binds it to what that
         # message showed.  Only a judged plain approve or decline of one named item settles,
         # through that item's own path; anything else settles nothing, deletes nothing, and the
@@ -11404,7 +11314,7 @@ class AgentService:
                     run.retry_note=self.retry_effect_note(previous)
                     if reason==UNKNOWN_EFFECT_RETRY_REFUSAL:
                         # The owner still needs to check the earlier uncertain effect.
-                        run.calendar_notice=UNKNOWN_EFFECT_RAN_CURRENT_NOTICE+'\n\n'
+                        run.reply_notice=UNKNOWN_EFFECT_RAN_CURRENT_NOTICE+'\n\n'
             elif relation==FOLLOWUP_CANCEL:
                 cancelled,run.response=self.cancel_focused_work(previous,run.connector_owner)
                 self.record_continuity(job['id'],previous['id'],relation,
@@ -11496,7 +11406,7 @@ class AgentService:
         if guidance is not None:
             self.remember_judged_intent(job['id'],run.decision,run.prompt_work_id,run.prompt)
             self.record_work_sources(job['id'],run.work_sources)
-            guidance=run.calendar_notice+guidance
+            guidance=run.reply_notice+guidance
             with self.store.db() as db:
                 db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',('assistant',guidance,job['channel'],time.time(),job.get('workspace_id'),job['id']))
                 db.execute("UPDATE jobs SET status='awaiting_connection',response=?,error=NULL,delivery=? WHERE id=?",(guidance,'pending' if job['chat_id'] else 'none',job['id']))
@@ -11511,27 +11421,17 @@ class AgentService:
         reply (``act_reply``).  When the judgment says something remains
         (``rest``), the turn goes on over the owner's own message, verbatim,
         with what Still settled said first.  ``rest`` is model text: it only
-        says whether anything remains and never becomes the request (#188).  A calendar effect's Evidence is this
-        Work's own, content-free.
+        says whether anything remains and never becomes the request (#188).
         """
         job,answer=run.job,run.owner_act
-        def evidence(tool,status,detail):
-            # Content-free lifecycle evidence: draft and event ids, error and effect.  Never the title, time or utterance.
-            with self.store.db() as db:
-                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                           (job['id'],tool,status,json.dumps(detail),time.time()))
-        try:
-            settled=self.owner_acts.settle(answer,job,evidence=evidence)
-        except CalendarError as exc:
-            raise ValueError(ConnectorHandoff.unavailable(CALENDAR_WRITE_CONNECTOR_ID) if exc.reason=='unavailable'
-                             else f'일정 초안을 승인하지 못했습니다 ({exc.reason}). 캘린더에 아무것도 반영하지 않았습니다.') from None
+        settled=self.owner_acts.settle(answer,job)
         if settled['source']:run.work_sources.add(settled['source'])
         run.act_focus=settled['focus']
         if settled['note'] is not None:
             # A withdrawn saved notice: the worker acknowledges it (#996), with the rest of the message if any.
             run.act_note=settled['note']
         elif answer['rest']:
-            if settled['text']:run.calendar_notice+=settled['text']+'\n\n'
+            if settled['text']:run.reply_notice+=settled['text']+'\n\n'
             run.act_note=OWNER_ACT_SETTLED_NOTE.format(settled=settled['text'] or '-')
         elif settled['text']:
             run.act_reply=settled['text']
@@ -11577,19 +11477,12 @@ class AgentService:
             # #172: this turn was the owner's judged answer to one open item, settled in
             # ``_route_work`` through that item's own path; its reply says what happened.
             run.response=run.act_reply
-            # #598 I1: an approval whose effect could not be observed is
-            # not a succeeded Work, and one the calendar refused is not either.
-            # The outcome comes from this Work's own typed Evidence (#593
-            # effect='unknown'; the calendar effect events), never from the reply wording.
+            # #598 I1: an approval whose effect could not be observed is not a succeeded Work.
+            # The outcome comes from this Work's own typed Evidence (#593 effect='unknown'),
+            # never from the reply wording.
             if self._work_has_unknown_effect(job['id']):
                 run.outcome='unknown'
                 run.unknown_statement=run.response
-            else:
-                effects=[event for event in self.store.task_events(job['id']) if event['tool'] in CALENDAR_EFFECT_TOOLS]
-                refused=[event for event in effects if event['status']=='failed']
-                if refused:
-                    run.outcome='partial' if any(event['status']=='succeeded' for event in effects) else 'failed'
-                    run.refusals.extend((event['tool'],CALENDAR_APPLY_FAILED) for event in refused)
         elif run.rule_note is not None:
             run.handled=False;run.fallthrough_note=run.rule_note
         elif not run.decision.executes:
@@ -11731,7 +11624,7 @@ class AgentService:
             # one authority at a time, instead of failing the request.
             local_need=self.workspace_authority_need()
             if local_need:
-                return self.park_for_local_authority(job,local_need,run.calendar_notice)
+                return self.park_for_local_authority(job,local_need,run.reply_notice)
             sources=FileWorkspace(self.store).find_references(query)
             if not sources:
                 raise ValueError('연결한 참고 폴더에서 일치하는 자료를 찾지 못했습니다.')
@@ -12353,7 +12246,7 @@ class AgentService:
         if connector_need:
             self.record_work_sources(job['id'],run.work_sources|run.capabilities.private_provenance)
             self.record_turn_provenance(job['id'],status='setup-required')
-            if self.park_for_connector_read(job,connector_need,run.calendar_notice):
+            if self.park_for_connector_read(job,connector_need,run.reply_notice):
                 return True
         # #182 review: a folder read or result save the bridge ran found its folder grant missing;
         # park for that one local authority, as the direct route does (#505).
@@ -12361,7 +12254,7 @@ class AgentService:
         if local_need:
             self.record_work_sources(job['id'],run.work_sources|run.capabilities.private_provenance)
             self.record_turn_provenance(job['id'],status='setup-required')
-            return self.park_for_local_authority(job,local_need,run.calendar_notice)
+            return self.park_for_local_authority(job,local_need,run.reply_notice)
         if self._work_has_unknown_effect(job['id']):
             run.outcome='unknown';run.unknown_statement=run.response
         run.resolved_blocker=run.result.exit_code==0 and run.outcome=='succeeded'
@@ -12512,14 +12405,14 @@ class AgentService:
         if local_need:
             self.record_work_sources(job['id'],run.work_sources|run.capabilities.private_provenance)
             self.record_turn_provenance(job['id'],status='setup-required')
-            return self.park_for_local_authority(job,local_need,run.calendar_notice)
+            return self.park_for_local_authority(job,local_need,run.reply_notice)
         # #606 T5: a calendar read with no calendar connection is
         # parked once for the existing connector handoff.
         connector_need=self.connector_need(run.capabilities,job['id'],run.attempt_start)
         if connector_need:
             self.record_work_sources(job['id'],run.work_sources|run.capabilities.private_provenance)
             self.record_turn_provenance(job['id'],status='setup-required')
-            if self.park_for_connector_read(job,connector_need,run.calendar_notice):
+            if self.park_for_connector_read(job,connector_need,run.reply_notice):
                 return True
         return PROCEED
 
@@ -12581,12 +12474,7 @@ class AgentService:
     def _finish_work(self, run):
         """Phase 7: the answer, its disclosures and the Work row, written once."""
         job=run.job
-        # #22: the calendar drafts this Work's worker made wait for the owner's approval of
-        # Still's own exact preview, shown after the answer; the model's prose never stands in for it.
-        calendar_preview=self.offer_calendar_drafts(job,run.work_capabilities[0])
-        if calendar_preview:
-            run.response=run.response.rstrip()+'\n\n'+calendar_preview if run.response.strip() else calendar_preview
-        run.response=run.calendar_notice+run.response
+        run.response=run.reply_notice+run.response
         # #659: a preparation's answer is kept and replayed into later
         # turns, so it is scrubbed before it is persisted anywhere.
         scrub=(lambda text:self.scrub_work_text(job['id'],text) if text else text) if prep.preparation_of(job.get('request_key')) else (lambda text:text)
@@ -12615,9 +12503,9 @@ class AgentService:
             spoken=owner_cause([(tool,scrub(self._redact_reason(reason))) for tool,reason in run.refusals]) if run.outcome in ('failed','partial') else None
             # #847: what follows the answer when there is one - no tool names or errors.
             # #173 slice C: a draft's pending line is not said again after the answer next to Still's
-            # own exact preview or confirmation, which already says nothing is applied before the
-            # owner's yes; the cause and the record keep it.
-            note_steps,note_kept=self._unshown_steps(run,job,calendar_preview)
+            # own confirmation, which already says nothing is applied before the owner's yes; the
+            # cause and the record keep it.
+            note_steps,note_kept=self._unshown_steps(run,job)
             note=answer_note([(tool,scrub(self._redact_reason(reason))) for tool,reason in note_steps],run.outcome,
                              kept={scrub(self._redact_reason(reason)) for reason in note_kept},
                              report=run.agency_report) if run.outcome in ('failed','partial') else None
@@ -12657,9 +12545,9 @@ class AgentService:
             # conversation.  The projected text is the whole bubble
             # and the transcript line; the job row keeps the plain
             # cause as the technical detail the Task surface shows.
-            transcript=run.calendar_notice+self.projection.blocked_reply(self.issuer_owner_id(job),exc.kind,run.response)
+            transcript=run.reply_notice+self.projection.blocked_reply(self.issuer_owner_id(job),exc.kind,run.response)
         else:
-            transcript=run.calendar_notice+'이 요청은 완료하지 못했습니다: '+run.response
+            transcript=run.reply_notice+'이 요청은 완료하지 못했습니다: '+run.response
         # #607: a run that failed (or was stopped / timed out) after an
         # action whose effect is unknown is not a plain failure: the
         # unknown effect stays visible and retry refuses to replay it.
@@ -12671,7 +12559,7 @@ class AgentService:
             try:report=self.failed_attempt_report(job,run.response)
             except Exception:
                 LOG.warning('failed-attempt report could not be built job=%s',job['id'])
-            if report:transcript=run.calendar_notice+TERMINAL_FAILED_HEADER+'\n\n'+report
+            if report:transcript=run.reply_notice+TERMINAL_FAILED_HEADER+'\n\n'+report
         if prep.preparation_of(job.get('request_key')):
             # #659: see the success path; nothing unscrubbed is persisted.
             run.response,transcript=self.scrub_work_text(job['id'],run.response),self.scrub_work_text(job['id'],transcript)
@@ -12688,7 +12576,7 @@ class AgentService:
             # #787 review: an unknown effect recorded while the report was built still wins.
             if run.outcome=='failed' and self._work_has_unknown_effect(job['id']):
                 run.outcome,report='unknown',None
-                transcript=run.calendar_notice+'이 요청은 완료하지 못했습니다: '+run.response
+                transcript=run.reply_notice+'이 요청은 완료하지 못했습니다: '+run.response
             db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',('assistant',transcript,job['channel'],time.time(),job.get('workspace_id'),job['id'],'blocked-turn' if isinstance(exc,BlockedTurn) else None))
             db.execute("UPDATE jobs SET status=?,error=?,delivery=?,owner_cause=COALESCE(?,owner_cause) WHERE id=?",
                        (run.outcome,run.response,'pending' if job['chat_id'] else 'none',report,job['id']))
@@ -12738,23 +12626,20 @@ class AgentService:
         self.queue_settings_confirmation(job)
 
 
-    def _unshown_steps(self, run, job, calendar_preview):
+    def _unshown_steps(self, run, job):
         """``(refusals, owner_steps)`` for the closing note, without what Still's own prompt already says (#173 slice C).
 
-        The calendar preview follows the answer in the same bubble; a settings
-        draft of a paired Telegram Work gets Still's confirmation message.  Each
-        says that nothing is applied before the owner's yes, so the drafting
-        tool's pending line would only repeat it.  Every other line stays, and
-        the Work's cause and record keep them all.
+        A settings draft of a paired Telegram Work gets Still's confirmation
+        message, which says that nothing is applied before the owner's yes, so
+        the drafting tool's pending line would only repeat it.  Every other line
+        stays, and the Work's cause and record keep them all.
         """
-        covered=set(CALENDAR_DRAFT_TOOLS) if calendar_preview else set()
         cfg=self.store.config('telegram',{})
-        if (cfg.get('enabled') and job.get('channel')==f"telegram:{cfg.get('generation')}"
+        if not (cfg.get('enabled') and job.get('channel')==f"telegram:{cfg.get('generation')}"
                 and job.get('chat_id')==cfg.get('user_id') and self.settings_orchestrator.pending_for_work(job['id'])):
-            covered.add('settings_change')
-        if not covered:return run.refusals,run.owner_steps
-        shown={reason for tool,reason in run.refusals if tool in covered}
-        return ([(tool,reason) for tool,reason in run.refusals if tool not in covered],
+            return run.refusals,run.owner_steps
+        shown={reason for tool,reason in run.refusals if tool=='settings_change'}
+        return ([(tool,reason) for tool,reason in run.refusals if tool!='settings_change'],
                 [reason for reason in run.owner_steps if reason not in shown])
 
     def work_awaits_owner_preview(self, job):

@@ -137,12 +137,6 @@
   "ja": "このページにはログインが必要です。",
   "zh": "这个页面需要登录。"
  },
- "agent_runtime.this_preview_reaches_your_calendar_only": {
-  "ko": "소유자가 이 미리보기를 승인해야 실제 일정에 반영됩니다.",
-  "en": "This preview reaches your calendar only after you approve it.",
-  "ja": "このプレビューは、承認されてから実際の予定に反映されます。",
-  "zh": "只有你批准后，这个预览才会写入实际日程。"
- },
  "agent_runtime.undone": {
   "ko": "되돌렸어요.",
   "en": "Undone.",
@@ -262,66 +256,6 @@
   "en": "Undo",
   "ja": "元に戻す",
   "zh": "撤销"
- },
- "calendar_conversation.calendar_google_primary_calendar": {
-  "ko": "캘린더: Google 기본 캘린더",
-  "en": "Calendar: Google primary calendar",
-  "ja": "カレンダー：Googleのメインカレンダー",
-  "zh": "日历：Google 主日历"
- },
- "calendar_conversation.here_is_the_calendar_draft": {
-  "ko": "캘린더 초안입니다. 승인 전에는 캘린더에 아무것도 반영하지 않습니다.",
-  "en": "Here is the calendar draft. Nothing reaches the calendar before you approve it.",
-  "ja": "カレンダーの下書きです。承認されるまで、カレンダーには何も反映しません。",
-  "zh": "这是日历草稿。在你批准之前，不会写入日历。"
- },
- "calendar_conversation.i_cannot_confirm_whether_the_event": {
-  "ko": "일정을 만들었는지 확인할 수 없습니다. 캘린더를 직접 확인하고, 없으면 다시 요청해 주세요. 자동으로 다시 시도하지 않았습니다.",
-  "en": "I cannot confirm whether the event was created. Please check the calendar and make a new request if it is missing. I did not retry automatically.",
-  "ja": "予定が作成されたか確認できません。カレンダーを直接確認し、なければ再度依頼してください。自動では再試行していません。",
-  "zh": "无法确认是否已创建日程。请直接查看日历，如果没有，请重新请求。没有自动重试。"
- },
- "calendar_conversation.i_cannot_confirm_whether_the_cancellation": {
-  "ko": "일정 취소가 반영됐는지 확인할 수 없습니다. 캘린더를 직접 확인하고, 일정이 그대로 있으면 다시 요청해 주세요. 자동으로 다시 시도하지 않았습니다.",
-  "en": "I cannot confirm whether the event was cancelled. Please check the calendar and make a new request if the event is still there. I did not retry automatically.",
-  "ja": "予定の取り消しが反映されたか確認できません。カレンダーを直接確認し、予定が残っていれば再度依頼してください。自動では再試行していません。",
-  "zh": "无法确认日程是否已取消。请直接查看日历，如果日程仍在，请重新请求。没有自动重试。"
- },
- "calendar_conversation.i_cannot_confirm_whether_the_change": {
-  "ko": "일정 변경이 반영됐는지 확인할 수 없습니다. 캘린더를 직접 확인하고, 바뀌지 않았으면 다시 요청해 주세요. 자동으로 다시 시도하지 않았습니다.",
-  "en": "I cannot confirm whether the event was changed. Please check the calendar and make a new request if it was not changed. I did not retry automatically.",
-  "ja": "予定の変更が反映されたか確認できません。カレンダーを直接確認し、変わっていなければ再度依頼してください。自動では再試行していません。",
-  "zh": "无法确认日程是否已修改。请直接查看日历，如果没有改变，请重新请求。没有自动重试。"
- },
- "calendar_conversation.reply_approve_to_apply_it_as": {
-  "ko": "이대로 캘린더에 반영할까요? 답장이나 👍로 알려 주시면 이 내용 그대로 반영합니다. 바꾸려면 바꿀 내용을, 그만두려면 그만두라고 말해 주세요.",
-  "en": "Apply this to the calendar? Say so, or react with 👍, and it is applied exactly as shown. To change it, say what to change; to stop, say so.",
-  "ja": "この内容でカレンダーに反映しますか？返信か👍で伝えていただければ、このまま反映します。変更する場合は変更内容を、やめる場合はそう伝えてください。",
-  "zh": "要按此内容写入日历吗？回复或用👍表示，就会按所示内容写入。要修改，请说明要改什么；要停止，也请直接说。"
- },
- "calendar_conversation.the_event_draft_was_canceled_no": {
-  "ko": "일정 초안을 취소했습니다. 아무 일정도 만들지 않았습니다.",
-  "en": "The event draft was canceled. No events were created.",
-  "ja": "予定の下書きをキャンセルしました。予定は作成していません。",
-  "zh": "已取消日程草稿，没有创建任何日程。"
- },
- "calendar_conversation.the_event_was_added_to_the": {
-  "ko": "캘린더에 일정을 만들었습니다.",
-  "en": "The event was added to the calendar.",
-  "ja": "カレンダーに予定を作成しました。",
-  "zh": "已在日历中创建日程。"
- },
- "calendar_conversation.the_event_was_cancelled": {
-  "ko": "캘린더 일정을 취소했습니다.",
-  "en": "The calendar event was cancelled.",
-  "ja": "カレンダーの予定を取り消しました。",
-  "zh": "已取消日历中的日程。"
- },
- "calendar_conversation.the_event_was_changed": {
-  "ko": "캘린더 일정을 바꿨습니다.",
-  "en": "The calendar event was changed.",
-  "ja": "カレンダーの予定を変更しました。",
-  "zh": "已修改日历中的日程。"
  },
  "card.awaiting_connection": {
   "ko": "필요한 연결을 기다리고 있습니다. 연결이 확인되면 이 요청을 한 번만 이어서 처리합니다.",
@@ -2423,12 +2357,6 @@
   "ja": "位置情報をお聞きしようとしています",
   "zh": "准备问你的位置"
  },
- "step.calendar_draft": {
-  "ko": "일정 바꿀 안을 만들고 있어요",
-  "en": "Drafting a calendar change",
-  "ja": "予定変更の案を作っています",
-  "zh": "正在拟定日程更改"
- },
  "step.calendar_query": {
   "ko": "일정 살펴보고 있어요",
   "en": "Looking at your calendar",
@@ -3448,48 +3376,6 @@
   "en": "Received a photo format from Telegram that isn't supported.",
   "ja": "Telegram から対応していない形式の写真を受け取りました。",
   "zh": "从 Telegram 收到了不支持的照片格式。"
- },
- "calendar_conversation.previous_draft_cancelled": {
-  "ko": "이전 일정 초안은 취소했습니다.",
-  "en": "I cancelled the previous event draft.",
-  "ja": "前の予定の下書きは取り消しました。",
-  "zh": "已取消之前的日程草稿。"
- },
- "calendar_conversation.draft_changed": {
-  "ko": "초안 내용이 확인한 미리보기와 달라 캘린더에 아무것도 반영하지 않았습니다. 다시 요청해 주세요.",
-  "en": "The draft no longer matches the preview you checked, so nothing was changed in the calendar. Please make the request again.",
-  "ja": "下書きの内容が確認したプレビューと異なるため、カレンダーには何も反映していません。もう一度依頼してください。",
-  "zh": "草稿内容与您确认的预览不一致，日历中没有做任何更改。请重新提出请求。"
- },
- "calendar_conversation.not_applied": {
-  "ko": "캘린더에 반영하지 못했습니다. 이 초안은 반영되지 않았습니다.",
-  "en": "Couldn't apply it to the calendar. This draft was not applied.",
-  "ja": "カレンダーに反映できませんでした。この下書きは反映されていません。",
-  "zh": "未能写入日历。此草稿没有生效。"
- },
- "calendar_conversation.not_applied_reconnect": {
-  "ko": "캘린더에 반영하지 못했습니다. 이 초안은 반영되지 않았습니다. 캘린더를 다시 연결한 뒤 새로 요청해 주세요.",
-  "en": "Couldn't apply it to the calendar. This draft was not applied. Reconnect the calendar, then make a new request.",
-  "ja": "カレンダーに反映できませんでした。この下書きは反映されていません。カレンダーを再接続してから、もう一度依頼してください。",
-  "zh": "未能写入日历。此草稿没有生效。请重新连接日历后再提出请求。"
- },
- "calendar_conversation.not_applied_retry": {
-  "ko": "캘린더에 반영하지 못했습니다. 이 초안은 반영되지 않았습니다. 새로 요청해 주세요.",
-  "en": "Couldn't apply it to the calendar. This draft was not applied. Please make a new request.",
-  "ja": "カレンダーに反映できませんでした。この下書きは反映されていません。もう一度依頼してください。",
-  "zh": "未能写入日历。此草稿没有生效。请重新提出请求。"
- },
- "calendar_conversation.rest_not_applied": {
-  "ko": "나머지 초안은 반영하지 않았습니다.",
-  "en": "The remaining drafts were not applied.",
-  "ja": "残りの下書きは反映していません。",
-  "zh": "其余草稿没有生效。"
- },
- "calendar_conversation.unverified_target": {
-  "ko": "이 작업에서 조회한 일정과 맞춰 볼 수 없는 일정 변경·취소 초안 {count}개는 대상 일정을 보여 드릴 수 없어 여기서 승인할 수 없습니다. 아무것도 반영하지 않았습니다.",
-  "en": "{count} change or cancellation draft(s) don't match any event read in this task, so I can't show their target event and they can't be approved here. Nothing was applied.",
-  "ja": "この作業で確認した予定と照合できない予定の変更・取消の下書き {count} 件は、対象の予定をお見せできないため、ここでは承認できません。何も反映していません。",
-  "zh": "有 {count} 个日程更改或取消草稿无法与本次任务读取的日程对应，无法显示目标日程，因此不能在这里批准。没有做任何更改。"
  },
  "remote_login.no_ngrok": {
   "ko": "휴대폰에서 로그인할 임시 링크를 만들 ngrok이 이 Mac에 없어요. Mac의 로그인 창에서 로그인해 주세요.",

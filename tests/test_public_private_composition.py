@@ -610,35 +610,6 @@ class Redaction(unittest.TestCase):
         self.assertEqual(self.wire.plans, [{'tool': 'web_search', 'query': '병원'}])
 
     # -- #826: a value this Work wrote goes out; withdrawn text never leaves, in any spelling
-    def test_r3_a_calendar_draft_value_goes_out_in_process_and_after_a_restart(self):
-        from personal_agent.agent_runtime import lookup_sources
-        from personal_agent.calendar import CALENDAR_STATE_KEY
-
-        class Calendar:
-            def draft_create(self, content, owner):
-                return {'id': 'd1', 'action': 'create'}
-
-            def preview(self, ident, owner):
-                return {'summary': 'x'}
-
-        message = f'{SECRET_ID} 치과 일정 잡고 병원 검색해줘'
-        caps = self.caps((), [message], calendar=Calendar(), calendar_owner='owner')
-        caps.execute('calendar_draft_create', {'summary': f'{SECRET_ID} 치과', 'start': 's', 'end': 'e', 'timezone': 'UTC'})
-        caps.execute('web_search', {'query': f'{SECRET_ID} 병원'})
-        self.assertEqual(self.wire.plans, [{'tool': 'web_search', 'query': f'{SECRET_ID} 병원'}])
-        # A restarted process: the draft is found through the Work's durable event.
-        job = self.store.enqueue(message, 'r3')
-        with self.store.db() as db:
-            db.execute("UPDATE jobs SET status='running' WHERE id=?", (job,))
-            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                       (job, 'calendar_draft_create', 'succeeded',
-                        json.dumps({'host_action': 'calendar_draft_create', 'evidence': {'draft_id': 'd1'}}), 1))
-        self.store.put(CALENDAR_STATE_KEY, {'d1': {'payload': {'summary': f'{SECRET_ID} 치과'}}})
-        self.wire.plans.clear()
-        Capabilities(QuickStore(self.path), None, CFG, '', job, lambda *e: None, network=self.wire,
-                     lookup_sources=lambda: lookup_sources(QuickStore(self.path), job)).execute('web_search', {'query': f'{SECRET_ID} 병원'})
-        self.assertEqual(self.wire.plans, [{'tool': 'web_search', 'query': f'{SECRET_ID} 병원'}])
-
     def test_r7_a_short_number_is_not_a_piece_of_a_saved_value(self):
         self.caps(('owner-memory',), ['3일 서울 날씨 검색해줘'], [SECRET_ID]).execute('web_search', {'query': '3일 서울 날씨'})
         self.assertEqual(self.wire.plans, [{'tool': 'web_search', 'query': '3일 서울 날씨'}])

@@ -47,7 +47,6 @@ from personal_agent.agent_runtime import CORE_INSTRUCTIONS
 from personal_agent.messages import msg
 from personal_agent.bounded_execution import ExecutionError, ExecutionResult
 from personal_agent.calendar import CALENDAR_SPEC, CALENDAR_WRITE_SPEC, CalendarConnector
-from personal_agent.calendar_conversation import CREATED, OUTCOME_UNKNOWN, PREVIEW_FOOTER, PREVIEW_HEADER
 from personal_agent.connector_contract import ConnectorRegistry, ConnectorState
 from personal_agent.conversation_handoff import ConnectorHandoff, FOLLOWUP_RETRY, LOCAL_AUTHORITY_PREVIEWS, LOCAL_FOLDER_READ
 from personal_agent.conversation_projection import TERMINAL_FAILED_HEADER, TERMINAL_PARTIAL_HEADER, TERMINAL_UNCONFIRMED_NOTE
@@ -55,7 +54,7 @@ from personal_agent.decision import (OUTCOME_DECIDED, BinaryDecision, FixtureDec
                                      UnavailableDecisionEngine, fixture_confidence)
 from personal_agent.gmail import (GMAIL_CONNECTOR, GMAIL_CONNECTOR_ID, GMAIL_READONLY_SCOPE,
                                   EncryptedGmailSecretStore, GmailConnector)
-from personal_agent.google_calendar import CALENDAR_WRITE_SCOPE, GoogleCalendar, GoogleCalendarHTTPError
+from personal_agent.google_calendar import CALENDAR_WRITE_SCOPE
 from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.quickstart import make_handler
 from personal_agent.quickstart_service import AgentService
@@ -71,7 +70,7 @@ CHAT = 5120
 GENERATION = 'eval-g1'
 OWNER = f'telegram:{CHAT}'
 ZONE = 'Asia/Seoul'
-#: Tuesday 2026-09-22 10:00 KST: a fixed clock for Calendar previews.
+#: Tuesday 2026-09-22 10:00 KST: a fixed clock for the Calendar connection registry.
 CAL_NOW = datetime(2026, 9, 22, 10, 0, tzinfo=ZoneInfo(ZONE)).timestamp()
 #: The calendar create requests the scripted DecisionEngine judges to need
 #: ``calendar-create`` (#672: no request word selects it).
@@ -114,14 +113,14 @@ def research_steps(query):
 
 
 class CalendarProvider:
-    """Fixture Calendar create; records every create reaching the provider."""
+    """Fixture Calendar provider; records every read reaching it."""
 
     def __init__(self):
         self.calls = []
 
-    def create(self, payload, key):
-        self.calls.append((payload, key))
-        return {'id': f'ev{len(self.calls)}', 'version': '"etag"'}
+    def query(self, time_min, time_max, timezone, max_results):
+        self.calls.append((time_min, time_max, timezone, max_results))
+        return []
 
 
 class CliEngine:
@@ -1048,125 +1047,34 @@ class E_MissingFolder(LocalHttp, PresenceEval):
 
 
 # =============================================================================
-# F. Calendar effect -> exact preview + approval boundary
-# I. unknown external effect -> unknown wording + no unsafe automatic duplicate
+# F. Calendar request without the write connection -> a truthful connection note
 # =============================================================================
 class CalendarEval(PresenceEval):
     def setUp(self):
         super().setUp()
         self.clock = [CAL_NOW]
         self.registry = ConnectorRegistry(self.store, (CALENDAR_SPEC, CALENDAR_WRITE_SPEC), clock=lambda: self.clock[0])
-        self.provider = self.make_provider()
-        self.calendar = CalendarConnector(self.store, self.provider, registry=self.registry, now=lambda: self.clock[0])
+        self.provider = CalendarProvider()
+        self.calendar = CalendarConnector(self.store, self.provider, registry=self.registry)
         self.service = self.make_service(connector_registry=self.registry, calendar=self.calendar)
-        self.service.calendar_conversation.now = lambda: self.clock[0]
         # #172: the one owner-act judgment, scripted; Still reads no approval word list.
         from owner_act_script import with_owner_acts
         with_owner_acts(self.service.decision_engine)
         self.connect_write()
         self.connect_model()
 
-    def make_provider(self):
-        return CalendarProvider()
-
     def connect_write(self):
         self.registry.transition("local-owner", CALENDAR_WRITE_SPEC.connector_id, ConnectorState.CONNECTED,
                                  granted_scopes=(CALENDAR_WRITE_SCOPE,))
 
-    def drafts(self):
-        return self.store.config('calendar_create', {})
 
-    def states(self):
-        return sorted(row['state'] for row in self.drafts().values())
-
-    def drafting(self, summary, start, end):
-        """#22: the worker reads the request and calls its own draft tool; Still renders the preview."""
-        self.script = [('tool', 'calendar_draft_create', {'summary': summary, 'start': start, 'end': end, 'timezone': ZONE})]
-        self.plain_reply_served = True
-
-    def draft_dentist(self):
-        self.drafting('치과', '2026-09-23T15:00:00+09:00', '2026-09-23T16:00:00+09:00')
-        return self.turn('내일 오후 3시에 치과 일정 잡아줘')
-
-
-class F_CalendarApproval(CalendarEval):
-    CASES = (('내일 오후 3시에 치과 일정 잡아줘', ('치과', '2026-09-23T15:00:00+09:00', '2026-09-23T16:00:00+09:00'),
-              '제목: 치과', '2026-09-23 (수) 15:00 – 16:00 (Asia/Seoul)'),
-             ('book a dentist appointment tomorrow at 3pm for 30 minutes',
-              ('dentist appointment', '2026-09-23T15:00:00+09:00', '2026-09-23T15:30:00+09:00'),
-              '제목: dentist appointment', '15:00 – 15:30'),
-             ('금요일 오전 9시 스탠드업 30분 일정 등록해줘', ('스탠드업', '2026-09-25T09:00:00+09:00', '2026-09-25T09:30:00+09:00'),
-              '제목: 스탠드업', '2026-09-25 (금) 09:00 – 09:30'))
-
-    def test_each_phrasing_gets_an_exact_preview_then_one_effect_only_after_approval(self):
-        for index, (phrase, draft, title, when) in enumerate(self.CASES):
-            with self.subTest(phrase=phrase):
-                start, calls = len(self.wire), len(self.provider.calls)
-                self.drafting(*draft)
-                job, _ = self.turn(phrase)
-                # #835: 👀, the preview, then no done reaction while the effect awaits approval.
-                self.assertEqual(self.methods(start), ['setMessageReaction', 'sendMessage', 'setMessageReaction'])
-                self.assertEqual(self.reactions(start), [RECEIVED_REACTION, CLEAR_REACTION])
-                [preview] = self.texts(start)
-                # #22: the worker's answer, then Still's own exact preview.
-                self.assertIn(PREVIEW_HEADER, preview)
-                self.assertIn(title, preview)
-                self.assertIn(when, preview)
-                self.assertIn(PREVIEW_FOOTER, preview)
-                self.assertEqual(len(self.provider.calls), calls, 'nothing reaches the provider before approval')
-                self.assertIn('awaiting-approval', self.states())
-                approval = ('승인', 'approve', 'yes')[index]
-                approved_at = len(self.wire)
-                done, _ = self.turn(approval)
-                [created] = self.texts(approved_at)
-                self.assertTrue(created.startswith(CREATED))
-                self.assertEqual(self.reactions(approved_at)[-1], DONE_REACTION, 'done only once the event exists')
-                self.assertIn(title, created)
-                self.assertEqual(len(self.provider.calls), calls + 1)
-                # Replayed approval: nothing is created twice.
-                self.turn(approval)
-                self.assertEqual(len(self.provider.calls), calls + 1)
-                calendar_events = [e for e in self.events(done['id']) if e['tool'].startswith('calendar')]
-                self.assertTrue(calendar_events, 'the effect is attributable in Evidence')
-                for event in calendar_events:
-                    self.assertNotIn(title.split(': ')[1], json.dumps(event['trace'], ensure_ascii=False),
-                                     'evidence is content-free')
-
-    def test_an_expired_preview_cannot_be_approved(self):
-        self.draft_dentist()
-        self.clock[0] += 901
-        self.turn('승인')
-        self.assertEqual(self.provider.calls, [])
-        self.assertEqual(self.states(), ['awaiting-approval'])
-
-    def test_a_correction_redrafts_and_only_the_corrected_preview_executes(self):
-        self.draft_dentist()
-        start = len(self.wire)
-        # #22: the correction is the worker's to read; it drafts again, and the first draft is dropped.
-        self.drafting('치과', '2026-09-23T16:00:00+09:00', '2026-09-23T17:00:00+09:00')
-        self.turn('아니 4시로')
-        [redraft] = self.texts(start)
-        self.assertIn('16:00 – 17:00', redraft)
-        self.turn('승인')
-        [(payload, _key)] = self.provider.calls
-        self.assertEqual(payload['start'], '2026-09-23T16:00:00+09:00')
-
-    def test_another_identity_cannot_approve_and_cancel_creates_nothing(self):
-        self.draft_dentist()
-        web = self.store.enqueue('승인', 'web-approve', channel='web')
-        self.service.run_one()
-        self.assertEqual(self.provider.calls, [], 'a web turn cannot spend the Telegram preview')
-        self.turn('취소')
-        self.turn('승인')
-        self.assertEqual(self.provider.calls, [])
-        self.assertNotEqual(self.store.job(web)['response'], CREATED)
-
+class F_CalendarConnection(CalendarEval):
     def test_missing_write_grant_reaches_the_worker_with_a_connection_note(self):
         """#832 (ARCH-THIN-02): the rule's calendar reading is a note, not a park or a failure.
 
         The worker has its own calendar and preparation tools; it receives the
         owner's verbatim words and the fact that Google Calendar is not
-        connected.  Nothing is drafted and nothing reaches the provider.
+        connected.  Nothing reaches the provider.
         """
         self.registry.transition("local-owner", CALENDAR_WRITE_SPEC.connector_id, ConnectorState.DISCONNECTED)
         request = '다음 주 화요일 10시 반 병원 예약 일정 추가해줘'
@@ -1177,7 +1085,6 @@ class F_CalendarApproval(CalendarEval):
         self.assertTrue(sent.startswith(request), 'the owner words reach the worker verbatim')
         self.assertIn('Google Calendar is not connected in this install', sent)
         self.assertIn('schedule_preparation', [tool['function']['name'] for tool in self.model_bodies[0]['tools']])
-        self.assertEqual(self.drafts(), {})
         self.assertEqual(self.provider.calls, [])
 
     def test_blocked_calendar_access_is_a_review_note_without_a_connect_link(self):
@@ -1189,100 +1096,6 @@ class F_CalendarApproval(CalendarEval):
         self.assertIn('Google Calendar access is blocked in this install', sent)
         self.assertNotIn('connect it at', sent)
         self.assertEqual(self.provider.calls, [])
-
-
-class _Conflict409:
-    """A Google Calendar transport whose create answers HTTP 409 (#447)."""
-
-    def __init__(self):
-        self.calls = 0
-
-    def __call__(self, *args, **kwargs):
-        self.calls += 1
-        raise GoogleCalendarHTTPError(409)
-
-
-class I_UnknownExternalEffect(CalendarEval):
-    def make_provider(self):
-        self.transport = _Conflict409()
-        return GoogleCalendar(self.transport)
-
-    def approve_into_unknown(self):
-        self.draft_dentist()
-        start = len(self.wire)
-        job, message_id = self.turn('승인')
-        return job, message_id, start
-
-    def test_a_409_create_is_reported_unknown_and_never_retried(self):
-        job, _message_id, start = self.approve_into_unknown()
-        [bubble] = self.texts(start)
-        self.assertEqual(bubble, OUTCOME_UNKNOWN)
-        self.assertIn('확인할 수 없습니다', bubble)
-        self.assertIn('자동으로 다시 시도하지 않았습니다', bubble)
-        self.assertNotIn(CREATED, bubble)
-        self.assertEqual(self.transport.calls, 1)
-        self.assertEqual(self.states(), ['outcome-unknown'])
-        # A repeated approval, and a judged "try again", never replay the create.
-        self.turn('승인')
-        self.relations = {'다시 해줘': FOLLOWUP_RETRY, 'is it there now?': FOLLOWUP_RETRY}
-        for phrase in ('다시 해줘', 'is it there now?'):
-            retry, _ = self.turn(phrase)
-            continuity = [e for e in self.events(retry['id']) if e['tool'] == 'conversation_continuity']
-            self.assertEqual(continuity[-1]['trace']['executed'], False)
-        self.assertEqual(self.transport.calls, 1, 'no unsafe automatic duplicate')
-
-    def test_finding_i1_the_unknown_effect_work_is_recorded_as_succeeded(self):
-        """FINDING I1 (fixed by #598): the unknown-effect Work is recorded ``unknown``.
-
-        The owner-visible bubble was already truthful (OUTCOME_UNKNOWN), but
-        the Work record, its web status and its transcript qualifier said the
-        turn simply succeeded, and a later "try again" was refused for the
-        wrong reason.  Now the Work outcome is ``unknown`` from its own typed
-        Evidence (#593 ``effect='unknown'``), every reader sees the
-        qualifier, no retry is offered, and the refusal names the unknown
-        effect and its duplicate risk.  Still no second provider call.
-        """
-        job, _message_id, start = self.approve_into_unknown()
-        [bubble] = self.bubbles(start)
-        self.assertEqual(bubble['text'], OUTCOME_UNKNOWN, 'the bubble is the effect owner\'s own statement')
-        controls = [b['text'] for row in bubble.get('reply_markup', {}).get('inline_keyboard', []) for b in row]
-        self.assertNotIn('다시 시도', controls, 'an unknown effect is never offered a retry')
-        record = self.store.job(job['id'])
-        self.assertEqual(record['status'], 'unknown', 'not succeeded, not failed/partial')
-        task = self.task(job['id'])
-        qualifier = task['qualifier'] or {}
-        self.assertEqual(qualifier.get('outcome'), 'unknown', 'an explicit unknown outcome, not failed/partial')
-        self.assertFalse(qualifier.get('verified'))
-        self.assertNotEqual(task['status_label'], '완료')
-        self.assertEqual(task['error'], OUTCOME_UNKNOWN, 'the cause is inspectable')
-        [row] = self.assistant_rows(job['id'])
-        self.assertEqual(row['qualifier']['outcome'], 'unknown', 'the transcript carries it too')
-        self.relations = {'다시 해줘': FOLLOWUP_RETRY}
-        retry_at = len(self.wire)
-        retry, _ = self.turn('다시 해줘')
-        # #730: the current message ran as a fresh Work; the owner is still told first.
-        self.assertIn('외부 결과가 불확실', retry['response'], 'the notice names the unknown effect')
-        self.assertIn('중복', retry['response'], 'and its duplicate risk')
-        self.assertIn('새 요청으로 처리했습니다', retry['response'])
-        self.assertNotIn('실패 또는 중단 상태가 아니어서', retry['response'])
-        self.assertIn('외부 결과가 불확실', ' '.join(self.texts(retry_at)))
-        self.assertEqual(self.transport.calls, 1, 'no unsafe automatic duplicate')
-        self.assertEqual(self.states(), ['outcome-unknown'], 'the calendar state machine is untouched')
-
-
-class I1_ObservedEffectOpposing(CalendarEval):
-    """Opposing case for I1: an observed create stays a plain succeeded Work."""
-
-    def test_finding_i1_an_observed_create_stays_succeeded_without_a_qualifier(self):
-        self.draft_dentist()
-        start = len(self.wire)
-        job, _ = self.turn('승인')
-        [bubble] = self.bubbles(start)
-        self.assertTrue(bubble['text'].startswith(CREATED))
-        self.assertNotIn('reply_markup', bubble)
-        self.assertEqual(self.store.job(job['id'])['status'], 'succeeded')
-        self.assertIsNone(self.task(job['id'])['qualifier'])
-        self.assertEqual(len(self.provider.calls), 1)
 
 
 class CalendarParticleFinding(CalendarEval):

@@ -59,8 +59,8 @@ class TrailTests(unittest.TestCase):
 
     def test_the_rule_is_scoped_to_save_memory_candidates(self):
         """``refused_because`` on another tool, or a draft awaiting approval, still withholds."""
-        other = event('calendar_draft_create', applied=False, requires_owner_approval=True)
-        self.assertEqual(event_trail([other])[0], [('calendar_draft_create', 'withheld')])
+        other = event('settings_change', applied=False, requires_owner_confirmation=True, draft_id='d1')
+        self.assertEqual(event_trail([other])[0], [('settings_change', 'withheld')])
         self.assertTrue(state_change_short(event_trail([other])[0]))
         refused = event('save_note', refused_because='no-owner-memory-request', state='pending')
         self.assertEqual(event_trail([refused])[0], [('save_note', 'withheld')])

@@ -175,15 +175,13 @@ class ServiceRouteTests(unittest.TestCase):
         self.assertTrue(self.service.run_one())
         return self.store.job(job)
 
-    def test_book_in_a_book_request_creates_no_calendar_draft(self):
+    def test_book_in_a_book_request_stays_a_conversation(self):
         # The loop asks once more before ending a turn with no finish claim (#657).
         self.script += [{'content': '이번 달 추천 도서는 다음과 같습니다.'}] * 2
         row = self.run_turn('책 book 추천해줘')
         self.assertEqual(row['status'], 'succeeded')
         self.assertEqual(row['response'], '이번 달 추천 도서는 다음과 같습니다.')
         self.assertEqual(self.service.conversation_focus.current()['intent'], INTENT_CONVERSATION)
-        self.assertEqual(self.store.config('calendar_create', {}), {})
-        self.assertEqual(self.store.config('calendar_conversation', {}), {})
 
     def test_a_research_request_reaches_web_search_through_the_loop(self):
         self.script += [{'tool_calls': [{'id': '1', 'function': {
@@ -241,8 +239,6 @@ class ServiceRouteTests(unittest.TestCase):
         for label in labels:
             self.assertIn(label, sent)
         self.assertEqual(self.store.notes(), [], 'no rule ran a part of the turn')
-        self.assertEqual(self.store.config('calendar_create', {}), {})
-        self.assertEqual(self.store.config('calendar_conversation', {}), {})
 
     def test_schedule_a_meeting_and_save_a_note_reaches_the_worker_verbatim(self):
         text = 'schedule a meeting and save a note'
@@ -345,16 +341,6 @@ class MixedJudgmentTests(unittest.TestCase):
             OUTCOME_DECIDED, 'mail-search' if context.purpose == 'capability-need' else 'none-of-these',
             candidates, fixture_confidence()))
         self.assertEqual(classifier(engine).classify(text).intent, 'mail-search')
-
-    def test_pending_calendar_drafts_no_longer_steer_the_classifier(self):
-        # #22: the service answers a pending draft's approve or cancel before
-        # classification; no draft state changes how a turn is classified.
-        text = '오후 4시 메모해줘'
-        with_flag = classifier(capability_need_engine({text: INTENT_CALENDAR_CREATE})).classify(
-            text, focus={'calendar_pending': True})
-        without = classifier(capability_need_engine({text: INTENT_CALENDAR_CREATE})).classify(text)
-        self.assertEqual((with_flag.intent, with_flag.alternatives), (without.intent, without.alternatives))
-        self.assertEqual(with_flag.supersedes_previous, without.supersedes_previous)
 
     def test_a_mixed_turn_cannot_be_narrowed_by_a_suggestion(self):
         # #173: a mixed turn is the judgment's several-tasks answer, not two rule hits.

@@ -434,22 +434,18 @@ def _authorized_call(
     oauth: "CalendarOAuth | None" = None,
     exchange: Callable[[dict], dict] | None = None,
     serialize: bool = True,
-    replay: bool = False,
 ):
-    """Send one request with the grant's current access token (#8).
+    """Send one read with the grant's current access token (#8).
 
     ``send(access_token)`` performs the HTTP call and raises an error whose
     ``status`` is 401 when Google refused the token.  With ``oauth`` and
     ``exchange``, a token that is expired or about to expire is renewed
     first.  After a 401 there is at most one renewal attempt, pinned to the
-    revision that saw the 401.  Only a request the caller marks ``replay`` (a
-    read: no external effect) is sent once more with the renewed token.  A
-    write is never resent (#246): Google refused it before executing it, so
-    the 401 is re-raised as not done, and unless the renewal was definitively
-    refused it carries ``reauthentication_required = False`` -- the stored
-    credential was renewed, or kept because the renewal got no answer.  Only
-    a renewal Google refused, or no way to renew, requires reauthentication
-    for the revision that saw the 401.
+    revision that saw the 401, and the read (no external effect) is sent once
+    more with the renewed token.  Only a renewal Google refused, or no way to
+    renew, requires reauthentication for the revision that saw the 401.
+    Writes go through ``api_request`` slots (``connection_slots``), which
+    never resend (#246, #432).
     """
     renewing = oauth is not None and exchange is not None
     if renewing:
@@ -461,27 +457,8 @@ def _authorized_call(
             response = send(access_token)
         except (GoogleCalendarHTTPError, DriveHTTPError) as error:
             if error.status == 401:
-                if renewing and not renewed and not replay:
-                    # A write: one renewal for the revision that saw the 401,
-                    # and the write is reported as not done, never resent.
-                    try:
-                        kept = oauth.renew_after_rejection(
-                            owner_id,
-                            exchange,
-                            grant=grant,
-                            expected_revision=connection_revision,
-                            serialize=serialize,
-                        )
-                    except CalendarOAuthError:
-                        # No answer from Google, or the local key is not
-                        # available: nothing was said about the grant.
-                        kept = True
-                    if kept:
-                        error.reauthentication_required = False
-                        raise
-                elif (
-                    replay
-                    and renewing
+                if (
+                    renewing
                     and not renewed
                     and oauth.renew_after_rejection(
                         owner_id,
@@ -561,7 +538,6 @@ def calendar_transport(
     registry: ConnectorRegistry,
     owner_id: str,
     *,
-    allow_writes: bool = False,
     opener: Callable | None = None,
     now: Callable[[], float] = time.time,
     timeout: float = 20.0,
@@ -576,25 +552,17 @@ def calendar_transport(
     ``None``, so this transport owns the credential and each call re-checks
     connector state, connection revision, grant, scope and token freshness.
 
-    The HTTP method selects the grant, and that is the authority rule: ``GET``
-    spends the read grant, every mutating method spends the write grant, and
-    the two are separate credentials in separate secret slots.
-    ``CalendarConnector`` injects one ``GoogleCalendar`` provider for both
-    reads and writes, so a transport that refused mutations outright would
-    make the write grant obtainable and unspendable.
-
-    With ``allow_writes=False`` (the default) a mutating method is refused
+    Only ``GET`` is sent, with the read grant; a mutating method is refused
     before any credential is resolved, so a refused mutation never even loads
-    a token. A caller with no business writing keeps that guarantee by not
-    asking for it.
+    a token.  Changes spend the write grant through ``api_request``'s
+    google-calendar slot (#432), never through this transport.
 
     #1172: given ``oauth`` and ``exchange``, an expired access token for the
     grant in use is first renewed (``CalendarOAuth.refresh``), as the Drive
     transport does; without them an expired token requires reconnecting.
     #8: renewal starts ``RENEWAL_MARGIN_SECONDS`` before expiry, a retryable
     renewal failure keeps the stored credential, and a read refused with 401
-    is renewed and sent once more (see ``_authorized_call``); a write refused
-    with 401 is renewed too but never resent (#246).
+    is renewed and sent once more (see ``_authorized_call``).
     """
     if not getattr(secret_store, "encrypted_secrets", False):
         raise ValueError("Calendar OAuth requires an encrypted owner-local secret store.")
@@ -611,17 +579,9 @@ def calendar_transport(
         raise ValueError("Calendar token renewal needs both the OAuth instance and its exchange.")
 
     def transport(method, url, body, headers):
-        reading = method == "GET"
-        if not reading and not allow_writes:
-            raise CalendarOAuthError("mutation_not_permitted")
-        if reading and body is not None:
+        if method != "GET" or body is not None:
             raise CalendarOAuthError("mutation_not_permitted")
         url = _assert_calendar_url(url)
-        # The grant follows the method. A read can never spend the write
-        # credential and a write can never be satisfied by the read one:
-        # `_authorization_context` checks scope-set equality against the
-        # named grant's spec.
-        grant = READ_GRANT if reading else WRITE_GRANT
 
         def send(access_token):
             request_headers = {
@@ -630,7 +590,7 @@ def calendar_transport(
                 "Authorization": "Bearer " + access_token,
                 "Accept": "application/json",
             }
-            return opener(method, url, body if not reading else None, request_headers)
+            return opener(method, url, None, request_headers)
 
         # The caller (``CalendarConnector``) may hold the dispatch lock, so a
         # renewal here does not take the OAuth lock (``serialize=False``).
@@ -638,20 +598,18 @@ def calendar_transport(
             secret_store,
             registry,
             owner_id,
-            grant,
+            READ_GRANT,
             now,
             send,
             oauth=oauth,
             exchange=exchange,
             serialize=False,
-            replay=reading,
         )
 
-    def prepare_key(*, write: bool = False) -> None:
+    def prepare_key() -> None:
         # #8: ``CalendarConnector`` calls this before its dispatch lock, so a
         # first key fetch never waits on the key store under that lock.
-        grant = WRITE_GRANT if write else READ_GRANT
-        _prepare_key(secret_store, _secret_slot(TOKEN_SECRET_KEY, grant, owner_id))
+        _prepare_key(secret_store, _secret_slot(TOKEN_SECRET_KEY, READ_GRANT, owner_id))
 
     transport.prepare_key = prepare_key
     return transport
@@ -745,7 +703,6 @@ def drive_transport(
             lambda access_token: opener(url, {"Authorization": "Bearer " + access_token}),
             oauth=oauth,
             exchange=exchange,
-            replay=True,
         )
 
     transport.destination_guard = _assert_drive_url

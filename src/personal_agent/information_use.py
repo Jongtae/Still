@@ -261,8 +261,6 @@ def _event_items(action, evidence):
         events = [f"{_text(row.get('title'), 60)} ({_text(row.get('start'), 25)})".strip()
                   for row in evidence.get('events') or () if isinstance(row, dict)]
         return events or [f"일정 {int(evidence.get('event_count') or 0)}개"]
-    if action.startswith('calendar_draft_'):
-        return [f"일정 초안 {_text(evidence.get('draft_id'), 40)}"]
     if action == 'find_files':
         files = [_text(row.get('path')) for row in evidence.get('files') or () if isinstance(row, dict)]
         return files or [f"일치하는 파일 {int(evidence.get('file_count') or 0)}개"]
