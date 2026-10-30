@@ -5888,11 +5888,52 @@ class AgentService:
                              sections={**sections,'history':len(earlier)},budget=budget,record=event,state=state,
                              work_id=job['id'],qualifying=self.decision_routes.qualifying,
                              can_ask_location=can_ask_location,attachments=attachments,previous_route=previous_route,
+                             effort_timing=self.effort_timing_text(),
                              # #407: computed here so the early plan and the Work's own plan ask the same question.
                              can_preview=self.can_preview(job),
                              # #240: what waits for the owner, for the plan call and this Work's goal judgment.
                              awaiting_conversation=self.awaiting_in_conversation(job),
                              awaiting_work=lambda:om.awaiting_owner_text(om.work_awaiting_owner(self.store,job['id'])))
+
+    #: How far back and how often the observed effort timing is read; levels with fewer turns are left out.
+    EFFORT_TIMING_DAYS,EFFORT_TIMING_REFRESH,EFFORT_TIMING_MIN_TURNS=14,600,3
+
+    def effort_timing_text(self):
+        """The median worker-turn time each planned effort level took here recently, one line (#410).
+
+        Read from this Work history's own ``orchestrator`` plans and ``subscription_engine`` turns; ''
+        when nothing is recorded.  Cached per refresh window, so the early plan and the Work's own plan
+        read the same text.
+        """
+        window=int(time.time()//self.EFFORT_TIMING_REFRESH)
+        cached=getattr(self,'_effort_timing',None)
+        if cached and cached[0]==window:return cached[1]
+        since=time.time()-self.EFFORT_TIMING_DAYS*86400
+        try:
+            with self.store.db() as db:
+                rows=db.execute("SELECT job_id,tool,status,detail,created FROM tool_events WHERE created>? AND "
+                                "tool IN (?,'subscription_engine') ORDER BY id",(since,ORCHESTRATION_EVENT)).fetchall()
+        except Exception:
+            rows=[]
+        planned,started,turns={},{},{}
+        for row in rows:
+            try:detail=json.loads(row['detail'] or '{}')
+            except (TypeError,ValueError):continue
+            if not isinstance(detail,dict):continue
+            if row['tool']==ORCHESTRATION_EVENT:
+                if row['status']=='planned':planned[row['job_id']]=str(detail.get('effort') or 'default')
+            elif row['status']=='running':
+                started[row['job_id']]=row['created']
+            elif row['status'] in ('succeeded','failed') and row['job_id'] in planned and row['job_id'] in started:
+                turns.setdefault(planned[row['job_id']],[]).append(row['created']-started.pop(row['job_id']))
+        order=('default','minimal','low','medium','high','xhigh','max')
+        parts=[f"{level} {round(sorted(times)[len(times)//2])} s ({len(times)} turns)"
+               for level,times in sorted(turns.items(),key=lambda item:(order.index(item[0]) if item[0] in order else 99,item[0]))
+               if len(times)>=self.EFFORT_TIMING_MIN_TURNS]
+        text=(f"median worker-turn time by planned effort on this installation, last {self.EFFORT_TIMING_DAYS} days: "
+              +', '.join(parts)) if parts else ''
+        self._effort_timing=(window,text)
+        return text
 
     def previous_work_route(self, job, rows):
         """Route of the linked Work, or latest earlier Work in this conversation; no new selection."""

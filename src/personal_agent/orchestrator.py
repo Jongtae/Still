@@ -771,9 +771,13 @@ class Orchestration:
 
     def __init__(self, judgments, catalogue, *, request, conversation='', continues='', sections=None, budget=None,
                  record=None, state=None, work_id=None, policy=None, qualifying=None, can_ask_location=False,
-                 can_preview=False, attachments='', awaiting_conversation='', awaiting_work=None, previous_route=''):
+                 can_preview=False, attachments='', awaiting_conversation='', awaiting_work=None, previous_route='',
+                 effort_timing=''):
         self.judgments, self.catalogue = judgments, catalogue
         self.previous_route = str(previous_route or '')
+        #: What each effort level has cost a worker turn on this installation (observed medians), so the
+        #: plan weighs a raised level against the owner's wait as data, not a rule.
+        self.effort_timing = str(effort_timing or '')
         self.retry_warranted = None
         #: #1293: whether the first plan may ask the owner for a current position (a Work the paired
         #: chat can answer, not itself a location continuation).  Later plans never may.
@@ -956,6 +960,7 @@ class Orchestration:
                  'recent_conversation': self._redact(self.conversation)[-CONVERSATION_CHARS:] or 'none',
                  'continues': self._continues_text(),
                  'previous_route': self._redact(self.previous_route)[:600] or 'none recorded',
+                 'effort_timing': self.effort_timing[:600] or 'none recorded',
                  'awaiting_owner': self._redact(self._awaiting_text(), private=False),
                  'context_sections': self._sections_text(),
                  'workers': workers,
