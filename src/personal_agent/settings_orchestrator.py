@@ -105,7 +105,8 @@ CATEGORY_LABELS = {"connections": "외부 연결", "current_context": "현재 �
                    "preparations": "예약", "browser": "브라우저"}
 SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", "model"), "main_ai": ("route", "model"),
             # #805 owner-model upkeep: its pause switch and rolling 24-hour call cap.
-            "owner_model": ("enabled", "daily_calls"),
+            # #402: the once-a-day look back over recent requests has its own switch.
+            "owner_model": ("enabled", "daily_calls", "dream"),
             # #912: a family member's own agent, created by asking the assistant (FAMILY-02 #897).
             # #934: the owner shares (and stops sharing) one signed-in site with one of them.
             "family": ("add", "share_site", "unshare_site"),
@@ -123,7 +124,7 @@ SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", 
             # #183: disconnect one Google connection (``GoogleConnectionRevoker``), confirmed like any draft.
             "connections": ("disconnect",)}
 SETTING_LABELS = {"enabled": "사용", "timezone": "시간대", "mode": "방식", "model": "모델", "route": "경로",
-                  "daily_calls": "하루 판단 횟수", "add": "새로 만들기", "share_site": "로그인 공유", "unshare_site": "공유 그만",
+                  "daily_calls": "하루 판단 횟수", "dream": "밤사이 기억 정리", "add": "새로 만들기", "share_site": "로그인 공유", "unshare_site": "공유 그만",
                   "remove": "빼기", "send": "보내기", "servers": "MCP 서버", "review": "동작 검토", "money": "돈이 오가는 연결",
                   "connect": "새 MCP 연결", "rung": "신뢰 단계", "undo": "정확히 되돌리기", "forget": "신뢰 기록 잊기", "restore": "잊은 신뢰 기록 복원",
                   "cancel": "취소", "accept": "수락", "disconnect": "연결 해제", "close_login": "로그인 창 닫기"}
@@ -353,7 +354,9 @@ class SettingsOrchestrator:
         settings = self.service.owner_model.settings()
         enabled = "on" if settings.get("enabled") else "off"
         cap = str(settings.get("daily_calls"))
+        dream = "on" if settings.get("dream") else "off"
         return {"enabled": self._row("enabled", enabled, VALUE_LABELS[enabled], self._options(("on", "off"))),
+                "dream": self._row("dream", dream, VALUE_LABELS[dream], self._options(("on", "off"))),
                 "daily_calls": self._row("daily_calls", cap, f"{cap}회", None,
                                          format=f"0~{MAX_DAILY_CALLS} 사이의 정수(24시간 동안 판단 AI 호출 수)")}
 
@@ -988,7 +991,7 @@ class SettingsOrchestrator:
             receipt = self.service.apply_skill_setting(setting, after)
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = (receipt or {}).get("response")
         elif category == "owner_model":
-            self.service.owner_model_request({"operation": "set", **({"enabled": after == "on"} if setting == "enabled"
+            self.service.owner_model_request({"operation": "set", **({setting: after == "on"} if setting in ("enabled", "dream")
                                                                       else {"daily_calls": int(after)})})
         elif (category, setting) == ("judgment_ai", "mode"):
             self.service.activate_decision_route({"transport": after})

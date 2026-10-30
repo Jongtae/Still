@@ -1808,6 +1808,10 @@ class AgentService:
             now=upkeep.clock() if now is None else now
             # Only with no run in flight can a still-claimed row be a crash's leftover.
             upkeep.expire_interrupted(now)
+            # #402: once a day, when it is due, a look back over the day's requests joins the queue.
+            try:upkeep.enqueue_dream_if_due(now,self._owner_local_hour(now))
+            except Exception as exc:  # noqa: BLE001 - never stop the upkeep tick
+                LOG.warning('owner-model dream check failed kind=%s',type(exc).__name__)
             row=upkeep.claim_due(now)
             if row is None:
                 self.owner_model_flight.release()
@@ -1818,6 +1822,89 @@ class AgentService:
             self._release_owner_model_flight()
             return False
         return True
+
+    def _owner_local_hour(self, now):
+        """The owner's local hour (0-23) in ``resolve_local_timezone``, for the #402 night hours."""
+        from zoneinfo import ZoneInfo
+        from .current_context import resolve_local_timezone
+        return datetime.fromtimestamp(float(now),ZoneInfo(resolve_local_timezone(self.store))).hour
+
+    def _owner_model_clock(self):
+        """The clock part of the current context, rendered for an owner-model judgment ('' when unavailable)."""
+        try:
+            return current_context_render({key:value for key,value in (self.current_state.snapshot() or {}).items()
+                                           if key in CLOCK_KEYS})
+        except Exception:
+            return ''
+
+    def _owner_model_judgments(self, work_id):
+        """The judgments of one owner-model run, every fact redacted by the redaction scoped to ``work_id``."""
+        return ConversationJudgments(self.decision_judge.engine,policy=self.decision_judge.policy,
+                                     redactor=lambda text,private=True:(self.scrub_work_text(work_id,text) if private
+                                                                         else self._redact_known_secrets(text)))
+
+    def _owner_model_dream(self, row, job, now):
+        """One claimed dream (#402): read the requests since the last one, then ``Upkeep.run_dream``.
+
+        The turns are the settled requests a worker AI answered in the period, each scrubbed with its
+        own Work's saved private values; what upkeep never reads is left out by the same typed markers
+        (rule/command replies, preparation runs, location continuations, Works where the owner managed
+        what Still keeps, forgotten requests).  What is kept is attributed to the anchor Work and its
+        one saved-memory notice tells the owner, with an undo.
+        """
+        upkeep=self.owner_model
+        work_id=row['job_id']
+        kind=om.KIND_DREAM
+        if not job:
+            upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'work-not-finished'},now,kind=kind)
+            return
+        try:since=float(row.get('reason'))
+        except (TypeError,ValueError):since=now-om.DREAM_WINDOW_SECONDS
+        works=upkeep.dream_works(since,now)
+        turns=[]
+        for work in works:
+            key=work.get('request_key')
+            if (work.get('provider') in (None,'builtin') or prep.preparation_of(key) is not None
+                    or continuation_request(key) is not None or self.store.managed_owner_state(work['id'])):
+                continue
+            owner=self.scrub_work_text(work['id'],work.get('message') or '')
+            if not owner.strip():continue
+            turns.append((f"t{len(turns)+1}",owner,self.scrub_work_text(work['id'],work.get('response') or '')))
+        period={'works':len(works),'turns':len(turns)}
+        if not turns:
+            upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'nothing-to-review','period':period},now,kind=kind)
+            return
+        from .current_context import owner_today
+        deadline=upkeep.clock()+om.RUN_SECONDS
+        state,calls,status,detail=upkeep.run_dream(
+            job,row,self._owner_model_judgments(work_id),turns=turns,
+            profile=self.owner_profile_snapshot(None,notes=False,ids=True),clock=self._owner_model_clock(),
+            diary_date=owner_today(self.store,works[-1]['created']),ends_after=now,
+            cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline)
+        detail['period']=period
+        upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
+        LOG.info('owner-model dream work=%s state=%s calls=%s turns=%s applied=%s notes=%s diary=%s',work_id,state,calls,
+                 len(turns),len(detail.get('applied') or ()),(detail.get('notes') or {}).get('version'),bool(detail.get('diary')))
+        # What the dream saved joins the anchor Work's one notice (with undo), as upkeep's saves do (#918).
+        if detail.get('diary') or any(item.get('memory_id') and item.get('outcome')==om.APPLIED_MEMORY
+                                      for item in detail.get('applied') or ()):
+            self.queue_dream_memory_saved(work_id)
+
+    def queue_dream_memory_saved(self, work_id):
+        """Tell the owner what a dream saved (#402): a notice of its own when the Work's notice was already sent.
+
+        ``release_memory_saved`` would add them to a sent notice by an edit, which hours later no one
+        sees; a dream's saves get the separate upkeep notice instead.  Only when that one is taken
+        too does the edit remain, so a save is never left untold.
+        """
+        with self.lock:
+            job=self.store.job(work_id)
+            if not job or job.get('delivery') not in self.DELIVERY_SETTLED:return
+            rows=self._saved_notice_rows(work_id)
+            told=rows.get(MEMORY_SAVED_KIND)
+            if told and told['state']=='sent' and MEMORY_SAVED_UPKEEP_KIND not in rows:
+                self._queue_separate_saved_notice(job,rows);return
+            self.release_memory_saved(job)
 
     def _release_owner_model_flight(self):
         try:self.owner_model_flight.release()
@@ -1837,6 +1924,9 @@ class AgentService:
             if row['expired']:
                 upkeep.finish(work_id,om.STATE_EXPIRED,0,om.EVENT_EXPIRED,{'reason':'expired'},now,kind=kind)
                 return
+            if kind==om.KIND_DREAM:
+                self._owner_model_dream(row,job,now)
+                return
             if not job or job.get('status') not in (om.REVIEWABLE_STATUSES if review else ('succeeded','partial')):
                 upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'work-not-finished'},now,kind=kind)
                 return
@@ -1853,14 +1943,8 @@ class AgentService:
             # Every fact is redacted by the judgment redaction scoped to the source Work:
             # stored secrets and credential shapes always, and its saved private values
             # (#605 set) from the model-stated facts.
-            judgments=ConversationJudgments(self.decision_judge.engine,policy=self.decision_judge.policy,
-                                            redactor=lambda text,private=True:(self.scrub_work_text(work_id,text) if private
-                                                                                else self._redact_known_secrets(text)))
-            try:
-                clock=current_context_render({key:value for key,value in (self.current_state.snapshot() or {}).items()
-                                               if key in CLOCK_KEYS})
-            except Exception:
-                clock=''
+            judgments=self._owner_model_judgments(work_id)
+            clock=self._owner_model_clock()
             # The hard deadline: no model call starts after it (each call has its adapter's own timeout).
             deadline=upkeep.clock()+om.RUN_SECONDS
             cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline
