@@ -291,7 +291,9 @@ class QuickStore:
             # #220: append + invalidate: which save ended a row, why and when; and the last day a fact holds.
             for name,kind in (('owner_key','TEXT'),('work_key','TEXT'),('content_digest','TEXT'),('candidate_id','TEXT'),
                               ('invalidated_by','TEXT'),('invalidation_reason','TEXT'),('invalidated_at','REAL'),
-                              ('valid_until','TEXT')):
+                              ('valid_until','TEXT'),
+                              # #425: who wrote a row when it was not a request's own save ('dream': the look back).
+                              ('origin','TEXT')):
                 if name not in memory_columns: db.execute(f'ALTER TABLE memories ADD COLUMN {name} {kind}')
             candidate_columns={row['name'] for row in db.execute('PRAGMA table_info(memory_candidates)')}
             for name,kind in (('owner_key','TEXT'),('work_key','TEXT'),('content_digest','TEXT'),('decided','REAL'),('resulting_memory_id','TEXT')):
@@ -891,7 +893,7 @@ class QuickStore:
         if not row:return None
         value=dict(row)
         return {key:value[key] for key in ('id','memory_key','content','created','supersedes','state','content_digest','candidate_id',
-                                           'valid_until','invalidated_by','invalidation_reason','invalidated_at') if key in value}
+                                           'valid_until','invalidated_by','invalidation_reason','invalidated_at','origin') if key in value}
 
     #: #220: at most this many earlier rows one save may end.
     MAX_INVALIDATES=3
@@ -919,7 +921,7 @@ class QuickStore:
         return pairs,valid_until
 
     def _save_memory(self, db, memory_key, content, owner_key, work_key=None, candidate_id=None,
-                     preserve_correction_token=None, corrected=False, invalidates=(), valid_until=None):
+                     preserve_correction_token=None, corrected=False, invalidates=(), valid_until=None, origin=None):
         memory_id=str(uuid.uuid4());digest=self.memory_digest(memory_key,content)
         # ``valid_until`` None keeps the replaced row's last day; '' says the fact has none.
         keep_last_day=valid_until is None
@@ -966,8 +968,8 @@ class QuickStore:
                           WHERE id=? AND owner_key=?""",(memory_id,reason,now,row['id'],owner_key))
             db.execute("""UPDATE memory_approvals SET state='revoked',memory_key=''
                           WHERE owner_key=? AND memory_key=? AND state='issued'""",(owner_key,row['memory_key']))
-        db.execute('INSERT INTO memories(id,memory_key,content,created,supersedes,state,owner_key,work_key,content_digest,candidate_id,valid_until) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-                   (memory_id,memory_key,content,now,previous['id'] if previous else None,'current',owner_key,work_key,digest,candidate_id,valid_until))
+        db.execute('INSERT INTO memories(id,memory_key,content,created,supersedes,state,owner_key,work_key,content_digest,candidate_id,valid_until,origin) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+                   (memory_id,memory_key,content,now,previous['id'] if previous else None,'current',owner_key,work_key,digest,candidate_id,valid_until,origin))
         return self._memory_row(db.execute('SELECT * FROM memories WHERE id=?',(memory_id,)).fetchone())
 
     #: #918 review: the Telegram notice kind a direct save holds in its own transaction.
@@ -978,7 +980,7 @@ class QuickStore:
     DELIVERY_SETTLED=('sent','unknown','cancelled')
 
     def save_memory(self, memory_key, content, owner_id='local-owner', work_id=None, notice=False, corrected=False,
-                    invalidates=(), valid_until=None):
+                    invalidates=(), valid_until=None, origin=None):
         """Write one current Memory row; with ``notice``, hold its owner notice durably in the same transaction (#918).
 
         A direct save by the owner's own AI must never end without the owner
@@ -992,7 +994,7 @@ class QuickStore:
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row=self._save_memory(db,memory_key,content,owner_key,work_key,corrected=corrected is True,
-                                  invalidates=invalidates,valid_until=valid_until)
+                                  invalidates=invalidates,valid_until=valid_until,origin=origin)
             if notice and isinstance(work_id,str):
                 job=db.execute('SELECT channel,chat_id FROM jobs WHERE id=?',(work_id,)).fetchone()
                 from .conversation_surface import surface_conversation
@@ -1638,10 +1640,15 @@ class QuickStore:
                 for row in rows if not self.holds_retired_secret(row['content'] or '')]
 
     def work_memories(self, owner_id, work_id, limit=101):
-        """The current Memory rows one Work wrote, oldest first (#918: what its notice shows)."""
+        """The current Memory rows one Work wrote, oldest first (#918: what its notice shows).
+
+        #425: what a dream wrote under the Work (``origin`` 'dream') is not the Work's own save and is never
+        in its notice: the look back is quiet, and 내 기록 lists it.
+        """
         if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=101:raise ValueError('기억 조회 범위를 확인하세요.')
         with self.db() as db:
-            rows=db.execute("SELECT * FROM memories WHERE owner_key=? AND work_key=? AND state='current' ORDER BY created,id LIMIT ?",
+            rows=db.execute("SELECT * FROM memories WHERE owner_key=? AND work_key=? AND state='current' "
+                            "AND origin IS NOT 'dream' ORDER BY created,id LIMIT ?",
                             (self._memory_binding(owner_id),self._work_binding(work_id),limit)).fetchall()
             return [self._memory_row(row) for row in rows]
 

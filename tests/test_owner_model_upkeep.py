@@ -442,10 +442,10 @@ class Invalidate(Upkeep):
         self.assertNotIn('판교', snapshot)
         [(_status, detail)] = self.evidence(job)
         self.assertEqual([item['invalidated'] for item in detail['applied']], [1])
-        # The notice names what ended, as it names a same-key replacement.
+        # The notice names what ended; #425: as a fact retired with it, apart from a same-key "before".
         item = self.service.memory_saved_item(new)
         self.assertEqual(item['ended'], [[old['id'], old['content_digest']]])
-        self.assertIn('강남 사무실 (전에는 판교 사무실)',
+        self.assertIn('강남 사무실 (함께 정리한 기억: 판교 사무실)',
                       self.service.memory_saved_text({'items': [item], 'done': {}, 'restored': {}}))
 
     def test_undo_restores_every_row_the_save_ended(self):

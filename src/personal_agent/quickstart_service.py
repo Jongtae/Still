@@ -500,6 +500,12 @@ def prepared_ids(notification):
     return [item for item in value[len(PREPARED_IDS_PREFIX):].split(',') if item]
 MEMORY_SAVED_HEADER=msg('memory.saved')
 MEMORY_SAVED_UNDONE=msg('memory.undone')
+#: #425: each saved fact says what kind of change it is - a value it replaced, other facts it retired, a value
+#: an undo brought back - so a tidy-up never reads as the "before" of an unrelated fact.
+MEMORY_SAVED_BEFORE=msg('memory.saved.before')
+MEMORY_SAVED_ENDED=msg('memory.saved.ended')
+MEMORY_SAVED_AGAIN=msg('memory.saved.again')
+MEMORY_SAVED_MORE=msg('memory.saved.more')
 MEMORY_UNDO_BUTTON=msg('button.undo')
 MEMORY_SAVED_STATUS={'retracted':msg('memory.undone'),'outdated':msg('memory.status.outdated')}
 MEMORY_SAVED_OUTDATED_TEXT=msg('memory.saved_outdated')
@@ -1887,26 +1893,8 @@ class AgentService:
         upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
         LOG.info('owner-model dream work=%s state=%s calls=%s turns=%s applied=%s notes=%s diary=%s',work_id,state,calls,
                  len(turns),len(detail.get('applied') or ()),(detail.get('notes') or {}).get('version'),bool(detail.get('diary')))
-        # What the dream saved joins the anchor Work's one notice (with undo), as upkeep's saves do (#918).
-        if detail.get('diary') or any(item.get('memory_id') and item.get('outcome')==om.APPLIED_MEMORY
-                                      for item in detail.get('applied') or ()):
-            self.queue_dream_memory_saved(work_id)
-
-    def queue_dream_memory_saved(self, work_id):
-        """Tell the owner what a dream saved (#402): a notice of its own when the Work's notice was already sent.
-
-        ``release_memory_saved`` would add them to a sent notice by an edit, which hours later no one
-        sees; a dream's saves get the separate upkeep notice instead.  Only when that one is taken
-        too does the edit remain, so a save is never left untold.
-        """
-        with self.lock:
-            job=self.store.job(work_id)
-            if not job or job.get('delivery') not in self.DELIVERY_SETTLED:return
-            rows=self._saved_notice_rows(work_id)
-            told=rows.get(MEMORY_SAVED_KIND)
-            if told and told['state']=='sent' and MEMORY_SAVED_UPKEEP_KIND not in rows:
-                self._queue_separate_saved_notice(job,rows);return
-            self.release_memory_saved(job)
+        # #425: a dream sends no saved-memory notice: what it changed that the owner relies on is raised at the
+        # next request it matters to (``om.MemoryRaise``, in ``owner_profile_snapshot``); the rest is in 내 기록.
 
     def _release_owner_model_flight(self):
         try:self.owner_model_flight.release()
@@ -2658,12 +2646,15 @@ class AgentService:
                 again=[restored.get(item['id'])] if restored.get(item['id']) else []
                 again+=list((binding.get('restored_ended') or {}).get(item['id']) or ())
                 back=', '.join(fact for fact in (fact_of(memory_id) for memory_id in again) if fact)
-                return text+(f' (다시 {back})' if back else '')
+                return text+(f' ({MEMORY_SAVED_AGAIN.format(facts=back)})' if back else '')
             if status=='outdated':return text
-            earlier=[item['previous']] if item.get('previous') else []
-            earlier+=[pair for pair in item.get('ended') or () if isinstance(pair,list) and pair]
-            before=', '.join(fact for fact in (fact_of(pair[0]) for pair in earlier) if fact)
-            return text+(f' (전에는 {before})' if before else '')
+            # #425: the value this fact replaced under its own key, then the other facts it retired, each named so.
+            before=fact_of(item['previous'][0]) if item.get('previous') else ''
+            ended=', '.join(fact for fact in (fact_of(pair[0]) for pair in item.get('ended') or ()
+                                             if isinstance(pair,list) and pair) if fact)
+            notes=[*([MEMORY_SAVED_BEFORE.format(facts=before)] if before else []),
+                   *([MEMORY_SAVED_ENDED.format(facts=ended)] if ended else [])]
+            return text+(f" ({'; '.join(notes)})" if notes else '')
         single=len(items)==1
         all_done=bool(done) and not self.memory_saved_open(binding)
         every_retracted=all_done and all(done.get(item['id'])=='retracted' for item in items)
@@ -2679,7 +2670,7 @@ class AgentService:
                 line=f'{index}. '+line_of(item)
                 if status:line+=' → '+MEMORY_SAVED_STATUS[status]
                 lines.append(line)
-        if binding.get('more'):lines.append(f"그 밖의 {binding['more']}가지는 내 기록에서 볼 수 있어요.")
+        if binding.get('more'):lines.append(MEMORY_SAVED_MORE.format(count=binding['more']))
         if footer and footer not in lines:lines.append(footer)
         return '\n'.join(lines)
 
@@ -2905,7 +2896,11 @@ class AgentService:
         """
         memory=MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD)
         query=self._redact_known_secrets(request)[:500] if isinstance(request,str) and request.strip() else None
-        snapshot=memory.profile_snapshot(MEMORY_OWNER,query=query,ids=ids)
+        # #425: a brief (notes, no ids) shows what a dream changed or held on the line it concerns, once.
+        raising=self._memory_raise_notes(memory) if notes and not ids and query else {}
+        snapshot=memory.profile_snapshot(MEMORY_OWNER,query=query,ids=ids,annotations=raising)
+        shown=[entry['id'] for entry in snapshot['entries'] if entry.get('annotated')]
+        if shown:om.MemoryRaise(self.store).shown(shown,self.current_work_id)
         text=snapshot['text']
         if snapshot.get('omitted_count'):
             text += ('\n' if text else '') + f"{snapshot['omitted_count']} saved profile facts omitted by the context limit; use search_memory if relevant."
@@ -2922,6 +2917,26 @@ class AgentService:
             said=self.owner_words_block(query) if recall else ''
             if said:text += ('\n' if text else '') + said
         return self._redact_known_secrets(text)
+
+    def _memory_raise_notes(self, memory):
+        """``{memory_id: note}`` for the open ``om.MemoryRaise`` items of current rows (#425), or {} on any error."""
+        try:
+            notes={}
+            for memory_id,item in om.MemoryRaise(self.store).open(self.current_work_id).items():
+                row=self.store.memory(memory_id,MEMORY_OWNER)
+                if not row:continue
+                if item['kind']==om.RAISE_CHANGED:
+                    earlier=[self.store.memory(row['supersedes'],MEMORY_OWNER,current_only=False)] if row.get('supersedes') else []
+                    earlier+=self.store.ended_by(MEMORY_OWNER,memory_id)
+                    before='; '.join(' '.join(str(old.get('content') or '').split())[:80] for old in earlier if old)[:160]
+                    if not before:continue
+                    notes[memory_id]=om.RAISE_NOTES[om.RAISE_CHANGED].format(before=before)
+                else:
+                    notes[memory_id]=om.RAISE_NOTES[om.RAISE_HELD].format(reason=item.get('reason') or 'the look back was unsure')
+            return notes
+        except Exception as exc:
+            LOG.warning('memory raise notes unavailable (%s)',type(exc).__name__)
+            return {}
 
     def history_for_models(self, rows):
         """The recent transcript rows a plan or worker reads, with retired secret values replaced (#258).
