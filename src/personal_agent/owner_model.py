@@ -763,7 +763,8 @@ class Upkeep:
         Work queued or running, ``DREAM_INTERVAL_SECONDS`` since the last dream, and
         ``DREAM_MIN_WORKS`` upkeep-eligible requests (their upkeep rows) since it; then the owner's
         night hours, or ``DREAM_LATE_SECONDS`` since the last.  The anchor is the newest of those
-        requests.  ``reason`` holds the start of the period the dream reads.
+        requests made on a conversation surface (so its notice can reach the owner), else the newest.
+        ``reason`` holds the start of the period the dream reads.
         """
         if self.dream_checked is not None and now - self.dream_checked < DREAM_CHECK_SECONDS:
             return None
@@ -786,11 +787,14 @@ class Upkeep:
             if local_hour not in DREAM_NIGHT_HOURS and last is not None and now - last < DREAM_LATE_SECONDS:
                 return None
             since = max(last or 0.0, now - DREAM_WINDOW_SECONDS)
-            rows = db.execute('SELECT job_id FROM owner_model_upkeep WHERE kind=? AND created>? ORDER BY created DESC',
-                              (KIND_UPKEEP, since)).fetchall()
+            rows = db.execute('SELECT u.job_id,j.channel,j.chat_id FROM owner_model_upkeep u LEFT JOIN jobs j ON j.id=u.job_id '
+                              'WHERE u.kind=? AND u.created>? ORDER BY u.created DESC', (KIND_UPKEEP, since)).fetchall()
             if len(rows) < DREAM_MIN_WORKS:
                 return None
-            anchor = rows[0]['job_id']
+            # The newest request from a conversation surface, so the owner can be told there; else the newest.
+            from .conversation_surface import surface_conversation
+            anchor = next((row['job_id'] for row in rows if row['channel'] and surface_conversation(row['channel'], row['chat_id'])),
+                          rows[0]['job_id'])
             inserted = db.execute('INSERT OR IGNORE INTO owner_model_upkeep(job_id,kind,state,created,reason) '
                                   'VALUES (?,?,?,?,?)', (anchor, KIND_DREAM, STATE_PENDING, now, repr(float(since))))
             return anchor if inserted.rowcount == 1 else None
