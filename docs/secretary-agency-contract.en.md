@@ -10,12 +10,48 @@ This contract contains dated amendments because they are durable decision eviden
 | Owner AI Memory writes | #918 slice (a): the owner's own AI saves current Memory directly, tells the owner, and offers exact bounded undo; secret-shaped values are refused | #818/#836 ask flow and #597 request-path write gate for the owner's own AI |
 | Third-party/delegated Memory writes | #918 keeps C5: third-party/delegated writers create pending MemoryCandidate; #836/#818 define the one-ask/approval presentation | Owner-AI auto-save does not widen third-party authority |
 | Owner-model upkeep | #805 trigger/budget/evidence mechanics, with Memory disposition superseded by #918 slice (a) and the write structure by #220 (append + invalidate) | #805 candidate/per-fact judgment disposition, #836 owner-AI ask behavior, and #805's rule that an upkeep never ends another key's row |
+| Dream and how memory is told | #402 mechanics, with its sources, endings and telling superseded by #422: only the owner's words, endings that restate or are replaced by the owner's words, quiet consolidation, and a change the owner relies on raised at the next relevant conversation | #402's "one saved-memory notice per dream", which included the daily record |
 | Private context + web search / egress | #826 EGRESS-OPEN-01: private reads and web search may share a turn; public lookups may carry owner values; information-use audit is required | #678 separation and the conflicting #774/#701/#705 native-search/private-read restrictions |
 | Browser/search platform | #677 as subsequently integrated by #701/#826: connected AI native search by default; macOS system WebKit browser; payment approval and browser mediation remain | Naver and separate Playwright-browser direction |
 | Main/Judgment orchestration | #710 plus the current [Decision Layer](decision-layer.en.md): Judgment plans and evaluates; deterministic code enforces authority/effect boundaries | Any older wording that treats deterministic routing rules as the semantic planner |
 | Preparations/watch | #719 on top of #659: bounded accepted watch windows, when-needed notification judgment, owner cancellation | No general background scheduler or unbounded monitoring is implied |
 
 Cross-cutting invariants remain: secrets never enter model prompts, logs or Evidence; payment is per-action approved; external effects are not replayed and `unknown` remains explicit; folder grants bound file authority; owner-visible claims remain Evidence-qualified. The [Presence Experience Contract](presence-experience-contract.en.md) controls owner-facing projection where it adds presentation rules without changing these authority boundaries.
+
+## Amendment — #422 (2026-10-30): memory is shown in use; consolidation is quiet and reads only the owner's words
+
+Owner direction 2026-10-30, after the first live dream. What it remembered was fine; how it was told and handled was not. One evening push mixed three things:
+- tidy-ups shown as "(전에는 …)";
+- an unrelated fact ended as a "duplicate";
+- a daily record that summarised developer verification requests as the owner's own.
+
+The owner's reference is an assistant that asks at the moment it matters, says why, and then shows what it understood by using it. The evidence behind each rule is recorded in [Memory telling research](research/memory-telling-2026-10-30.ko.md). Implementation is tracked by #423–#426. Until each merges, the code follows #402 and #918 as written for that part.
+
+- **Only the owner's words (#423).** Upkeep, the dream, the daily record and recalled owner words read only Works the owner typed on a conversation surface, or that an API caller declared owner-typed under an owner session. Evals, scripts and verification calls are answered but never become memory. Every dream fact records the turns it rests on, so "how do you know" names the request it came from (OWASP ASI06 source attribution and segmentation).
+- **Endings must be grounded (#424).** An id a dream ends must be cited by the same proposal. It may be ended only for one of two reasons:
+  - the proposal restates the same line (a tidy-up);
+  - a cited owner turn replaces it.
+
+  Different subjects are never duplicates. An ending the judgment is unsure of is held, not applied. The AI names ids and reasons; Still checks citation and shape only, with no key-name or topic rule (C16). The 25% mass-end cap stays.
+- **Quiet consolidation (#425).**
+  - New facts and tidy-ups from a dream are applied without a message. 내 기록 lists them with their source and the exact undo.
+  - The daily record is never told and never shown as a remembered fact. It stays a search-only record of owner-typed turns and is never a fact source.
+  - The first dream, like every later one, waits for the owner's night hours.
+- **Raised at the next relevant conversation (#425).**
+  - A dream change to something the owner relies on (a replaced or ended fact), and every held ending, becomes one open item. It is raised at most once, as one line in the owner's next conversation where a relevance judgment says it belongs.
+  - Only a held ending is a question, with its reason. It is settled through `owner_acts`: yes ends the fact, no keeps it.
+  - An item not raised within seven days expires unchanged and stays visible in 내 기록. A dream never sends a standalone push.
+- **Plain kinds in every memory notice (#425).** A foreground #918 notice and a dream line say what each item is: new, changed ("전에는 …"), tidied, or ended. An ended fact under another key is never shown as the "전에는" of an unrelated fact. Undo by words can target one item; the exact digest-bound `retract_memory` is unchanged.
+- **Memory shown in use (#426).** When a remembered fact changes what an answer does, the owner's AI mentions it in passing, paraphrased and in the owner's terms, never as a stored line or key. A fact the AI inferred, or one that may be out of date, is offered tentatively. When being wrong would matter, the AI asks one short question with its reason instead. This is general guidance to the owner's AI, never a template or a task-specific rule (C16).
+- **Kept.** These rules stay as they are:
+  - #918 act-then-tell for foreground saves;
+  - #220 append + invalidate;
+  - forget and delete semantics;
+  - secret refusal;
+  - C5 for third parties;
+  - nothing described as remembered before it is.
+
+  Whether the foreground notice should move further toward show-in-use alone is left open for the owner.
 
 ## Amendment — #402 (2026-10-30): the once-a-day look back ("dream")
 
