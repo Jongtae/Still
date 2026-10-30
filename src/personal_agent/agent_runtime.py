@@ -3984,7 +3984,8 @@ SURFACE_NOTES={'telegram':('In their paired Telegram chat; they may be away from
                              'renders there, tables included.'),
                'terminal':('In the terminal on this Mac where they started Still, so they are at the computer and its '
                            'Still screen. The answer is printed there as a chat message; Markdown is rendered, tables '
-                           'included.')}
+                           'included. While Telegram is not connected, a settings draft (connections, connect_chat, '
+                           'telegram) lets the owner type the bot token into a hidden prompt here; you never see it.')}
 
 def surface_section(context):
  """The rendered owner-surface section of a turn context, or '' (#1380)."""

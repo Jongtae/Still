@@ -2640,10 +2640,10 @@
   "zh": "设置已暂停。再次运行 `agentos start` 会从剩余的步骤继续。"
  },
  "first_run.access_title": {
-  "ko": "1. 접근 비밀번호",
-  "en": "1. Access password",
-  "ja": "1. アクセスパスワード",
-  "zh": "1. 访问密码"
+  "ko": "접근 비밀번호",
+  "en": "Access password",
+  "ja": "アクセスパスワード",
+  "zh": "访问密码"
  },
  "first_run.access_help": {
   "ko": "Still 화면을 열 때 쓸 비밀번호를 따로 정할 수 있습니다. Mac 로그인 암호가 아니라 Still에서만 쓰는 새 비밀번호입니다. 정하지 않으면 이 컴퓨터에서만 열립니다.",
@@ -2658,10 +2658,10 @@
   "zh": "请输入至少 12 个字符。"
  },
  "first_run.ai_title": {
-  "ko": "2. AI 연결",
-  "en": "2. AI connection",
-  "ja": "2. AI の接続",
-  "zh": "2. 连接 AI"
+  "ko": "AI 연결",
+  "en": "AI connection",
+  "ja": "AI の接続",
+  "zh": "连接 AI"
  },
  "first_run.ai_help": {
   "ko": "이미 쓰는 구독이나 API 키 중 하나를 연결합니다.",
@@ -2796,10 +2796,10 @@
   "zh": "已确认 API 连接并设为使用的 AI。"
  },
  "first_run.telegram_title": {
-  "ko": "3. Telegram (선택)",
-  "en": "3. Telegram (optional)",
-  "ja": "3. Telegram (任意)",
-  "zh": "3. Telegram (可选)"
+  "ko": "Telegram (선택)",
+  "en": "Telegram (optional)",
+  "ja": "Telegram (任意)",
+  "zh": "Telegram (可选)"
  },
  "first_run.telegram_help": {
   "ko": "휴대폰의 Telegram에서 내 봇으로 Still과 대화할 수 있습니다.",
@@ -2988,10 +2988,10 @@
   "zh": "现在连接吗? [y/N]"
  },
  "first_run.login_title": {
-  "ko": "4. 로그인할 때 시작 (선택)",
-  "en": "4. Start at login (optional)",
-  "ja": "4. ログイン時に起動 (任意)",
-  "zh": "4. 登录时启动 (可选)"
+  "ko": "로그인할 때 시작 (선택)",
+  "en": "Start at login (optional)",
+  "ja": "ログイン時に起動 (任意)",
+  "zh": "登录时启动 (可选)"
  },
  "first_run.login_help": {
   "ko": "이 Mac에 로그인하면 Still이 백그라운드에서 시작되어, 터미널을 열어 두지 않아도 Telegram과 브라우저에서 쓸 수 있습니다.",
@@ -3226,6 +3226,18 @@
   "en": "You can talk to Still right here now. Type anything. Press Ctrl-D to finish.",
   "ja": "ここで今すぐ Still と話せます。何でも入力してみてください。終えるには Ctrl-D を押してください。",
   "zh": "现在可以直接在这里和 Still 对话。随便输入点什么吧。按 Ctrl-D 结束。"
+ },
+ "terminal.telegram_hint": {
+  "ko": "휴대폰에서도 대화하고 싶다면 \"텔레그램 연결해줘\"라고 말해 보세요.",
+  "en": "Want to talk from your phone too? Just say \"connect Telegram\".",
+  "ja": "スマートフォンからも話したい場合は「Telegram をつないで」と言ってみてください。",
+  "zh": "想在手机上也能对话？试着说“帮我连接 Telegram”。"
+ },
+ "terminal.input_stopped": {
+  "ko": "입력을 멈췄어요. 아무것도 바꾸지 않았습니다.",
+  "en": "Input stopped. Nothing was changed.",
+  "ja": "入力を中止しました。何も変更していません。",
+  "zh": "已停止输入。没有做任何更改。"
  },
  "terminal.working": {
   "ko": "Still이 답을 준비하고 있어요…",
