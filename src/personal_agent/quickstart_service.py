@@ -1828,6 +1828,15 @@ class AgentService:
         from .current_context import resolve_local_timezone
         return datetime.fromtimestamp(float(now),ZoneInfo(resolve_local_timezone(self.store))).hour
 
+    def _owner_local_time(self, ts):
+        """``YYYY-MM-DD HH:MM`` in the owner's zone ('' when unknown), for the dream's dated turns (#438)."""
+        from zoneinfo import ZoneInfo
+        from .current_context import resolve_local_timezone
+        try:
+            return datetime.fromtimestamp(float(ts),ZoneInfo(resolve_local_timezone(self.store))).strftime('%Y-%m-%d %H:%M')
+        except (TypeError,ValueError,OverflowError,OSError):
+            return ''
+
     def _owner_model_clock(self):
         """The clock part of the current context, rendered for an owner-model judgment ('' when unavailable)."""
         try:
@@ -1871,7 +1880,8 @@ class AgentService:
             if not owner.strip():continue
             ref=f"t{len(turns)+1}"
             source_works[ref]=work['id']
-            turns.append((ref,owner,self.scrub_work_text(work['id'],work.get('response') or '')))
+            turns.append((ref,owner,self.scrub_work_text(work['id'],work.get('response') or ''),
+                          self._owner_local_time(work.get('created'))))
         period={'works':len(works),'turns':len(turns)}
         if not turns:
             upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'nothing-to-review','period':period},now,kind=kind)

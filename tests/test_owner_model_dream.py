@@ -253,8 +253,8 @@ class Run(Dream):
                          "#420: the dream asks for the engine's strongest model")
         self.assertEqual(schema, om.DREAM_SCHEMA)
         turns = context.facts['turns']
-        self.assertTrue(turns.startswith('[t1] owner: 내년 3월까지'), turns)
-        self.assertIn('[t3] owner: 이번에도 표로', turns)
+        self.assertRegex(turns, r'^\[t1\] \d{4}-\d{2}-\d{2} \d{2}:\d{2} owner: 내년 3월까지')
+        self.assertRegex(turns, r'\[t3\] [0-9: -]+ owner: 이번에도 표로')
         self.assertEqual(context.work_id, newest)
         [plan] = self.store.memories(MEMORY_OWNER, key_prefix='profile.')
         self.assertEqual((plan['memory_key'], plan['valid_until']), ('profile.plan.car_installment', '2027-03-31'))
@@ -272,6 +272,13 @@ class Run(Dream):
         self.assertEqual(detail['period'], {'works': 3, 'turns': 3})
         self.assertNotIn('할부', json.dumps(detail, ensure_ascii=False), 'Evidence keeps no text')
         self.assertEqual(self.dream_rows()[0]['state'], om.STATE_DONE)
+
+    def test_the_day_record_keeps_one_line_per_event(self):
+        self.day('a', 'b', 'c')
+        self.dreams = [dream(diary='- 2026-10-13 20:20 예약매수 요청, 접수 확인 안 됨\n\n-  2026-10-13   21:00 장바구니 담기 완료')]
+        self.tick()
+        [diary] = self.store.memories(MEMORY_OWNER, key_prefix=om.DIARY_PREFIX)
+        self.assertEqual(diary['content'], '- 2026-10-13 20:20 예약매수 요청, 접수 확인 안 됨\n- 2026-10-13 21:00 장바구니 담기 완료')
 
     def test_the_day_record_is_found_by_search_but_never_read_by_a_brief(self):
         self.day('a', 'b', 'c')
@@ -342,7 +349,7 @@ class TwoPasses(Dream):
         [(gather_context, question, schema)] = self.gathered
         self.assertEqual((question, schema), (om.DREAM_GATHER_QUESTION, om.DREAM_GATHER_SCHEMA))
         self.assertEqual((gather_context.strongest, gather_context.timeout), (True, om.DREAM_TIMEOUT_SECONDS))
-        self.assertIn('[t1] owner: 주말엔 보통 자가용으로', gather_context.facts['turns'])
+        self.assertRegex(gather_context.facts['turns'], r'\[t1\] [0-9: -]+ owner: 주말엔 보통 자가용으로')
         saved = {row['memory_key'] for row in self.store.memories(MEMORY_OWNER, key_prefix='profile.')}
         self.assertEqual(saved, {'profile.routine.car', 'profile.preference.cooking'})
         [(look_context, _question, _schema)] = self.asked
