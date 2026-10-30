@@ -82,7 +82,7 @@ The two directions already exist as separate judgments; this contract binds them
 
 Gaps found:
 1. No *should this be reported now* judgment or channel exists for foreground Work; the only mid-Work surface is the transient 40-character tool `status`, so fixed tool-name lines (#718) fill the space.
-2. A steer reaches the running worker but not the orchestrator: a re-delegation plan can be made without the correction (stale plan).
+2. A steer reaches the running worker but not the orchestrator: a re-delegation plan can be made without the correction (stale plan). Closed by #428: each attempt's evaluation, every later plan (`owner_corrections`) and a re-delegated brief carry the owner's steers, and a brief that carried them counts as their delivery.
 3. The disposition of a steer is not told: a folded steer gets only a reaction, and a steer the worker never received (it called no Still tool before finishing) silently runs as its own Work afterwards.
 4. Relevance judgments carry no role or mandate, so “important” has one implicit (assistant) standard.
 

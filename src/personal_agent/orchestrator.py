@@ -200,6 +200,9 @@ PREVIEW_QUESTION = '\n' + prompt('planner_preview')
 MAX_PREVIEW_SENTENCE_CHARS = 300
 MAX_PREVIEW_STEPS = 5
 MAX_PREVIEW_STEP_CHARS = 120
+#: #428: the owner's mid-Work corrections a plan and a later brief carry (most recent kept).
+MAX_CORRECTIONS = 5
+MAX_CORRECTION_CHARS = 600
 PURPOSE = 'work-orchestration'
 
 
@@ -701,7 +704,7 @@ class Attempt:
     __slots__ = ('number', 'worker', 'model', 'notes', 'lens', 'sections', 'reason', 'planned',
                  'fallback', 'digest', 'signature', 'account_change', 'owner_situation', 'technical_work',
                  'lifted_from', 'ask_location', 'location_button', 'effort', 'unlisted_model', 'steer', 'context_digest',
-                 'preview', 'shown_preview')
+                 'preview', 'shown_preview', 'corrections')
 
     def __init__(self, number, worker, *, model='', notes='', reason='', planned=False, fallback='', effort='', lens=''):
         self.number, self.worker, self.model = number, worker, model
@@ -729,6 +732,8 @@ class Attempt:
         self.preview = None
         #: #407: the preview text the owner was actually sent, which the brief then names, or "".
         self.shown_preview = ''
+        #: #428: the owner's own words that steered this Work before the attempt was planned.
+        self.corrections = ()
 
     def brief(self, adjusted=False):
         """The notes section text a worker receives, or None (#820: supplementary only).
@@ -742,6 +747,12 @@ class Attempt:
         if self.lens:
             lines.append('Read and answer this message as this professional would (a way of reading and reporting, '
                          'never a permission and never extra work): ' + self.lens)
+        if self.corrections and not self.steer:
+            # #428: an earlier attempt of this Work received these; this attempt's conversation does not carry them.
+            lines.append('While this request was being worked on, the owner added the following, in their own words. '
+                         'Where it conflicts with their earlier message, this wins'
+                         + (', and it corrects the preview below' if self.shown_preview else '') + ':\n'
+                         + '\n'.join(f'- {text}' for text in self.corrections))
         if self.shown_preview:
             lines.append('Before you started, Still showed the owner this preview of how their message would be '
                          'handled (a preview, not an instruction; the owner\'s message is the goal). If the owner '
@@ -791,6 +802,8 @@ class Orchestration:
         self.can_preview = bool(can_preview)
         #: #407: the preview text the owner was sent (``preview_shown``); every later attempt's brief names it.
         self.shown_preview = ''
+        #: #428: the owner's messages judged to steer this Work so far (``owner_corrected``), redacted.
+        self.corrections = ()
         #: #275: the earlier turns, one line each, when the caller passes them as a list, so a plan
         #: call can say how many of them its bounded window reached (``sent_turns``).
         self.turns = [str(turn) for turn in conversation] if isinstance(conversation, (list, tuple)) else None
@@ -899,7 +912,8 @@ class Orchestration:
 
     def _revision_context_digest(self):
         return digest({'request': self.request, 'conversation': self.conversation,
-                       'sections': self.sections, 'steers': self.steers})
+                       'sections': self.sections, 'steers': self.steers,
+                       **({'corrections': list(self.corrections)} if getattr(self, 'corrections', ()) else {})})
 
     def _owner_context(self):
         """#829: the owner model the worker was given (profile, current context), for the outcome judgment.
@@ -971,6 +985,9 @@ class Orchestration:
                  'tool_descriptions': tools_text,
                  'budget': self._budget_text(),
                  'previous_attempts': self._redact(self._attempts_text())}
+        if getattr(self, 'corrections', ()):
+            # #428: only when the owner corrected this Work, so an uncorrected plan asks exactly as before.
+            facts['owner_corrections'] = '\n'.join(f'- {text}' for text in self.corrections)
         return DecisionContext(PURPOSE, facts, work_id=self.work_id,
                                context_messages=self._turns_in(facts['recent_conversation']),
                                max_chars=MAX_CONTEXT_CHARS + len(request) + len(workers) + len(tools_text)
@@ -1119,11 +1136,22 @@ class Orchestration:
         if getattr(self, 'can_preview', False) and number == 1:
             attempt.preview = plan_preview(data.get('preview'))
         attempt.shown_preview = getattr(self, 'shown_preview', '')
+        attempt.corrections = tuple(getattr(self, 'corrections', ()))
         attempt.signature = self.signature(worker, model, effort)
         attempt.context_digest = self._revision_context_digest()
         if (attempt.signature, attempt.digest, attempt.context_digest) in self.failed:
             return None, 'repeat'
         return attempt, ''
+
+    def owner_corrected(self, texts):
+        """#428: the owner's messages that steered this Work so far, for every later plan, brief and judgment.
+
+        Redacted of stored secrets (the owner's own words, like ``owner_request``) and bounded: the
+        most recent ``MAX_CORRECTIONS``, each at most ``MAX_CORRECTION_CHARS``.
+        """
+        kept = [' '.join(self._redact(text, private=False).split())[:MAX_CORRECTION_CHARS]
+                for text in texts or () if isinstance(text, str) and text.strip()]
+        self.corrections = tuple(kept[-MAX_CORRECTIONS:])
 
     def preview_shown(self, attempt, text):
         """#407: the owner was sent ``text``; this attempt's brief and every later one's names it."""
@@ -1313,7 +1341,9 @@ class Orchestration:
         except Exception:
             return NOT_JUDGED
         try:
-            request = self.request + ('\n\n' + self.steers if self.steers else '')
+            # #428: the owner's later words are part of what the reply must meet, on every attempt after them.
+            words = self.steers or '\n'.join(getattr(self, 'corrections', ()))
+            request = self.request + ('\n\n' + words if words else '')
             judged = goal_reached(request, observed, str(failed or '')[:FAILURE_CHARS], work_id=self.work_id,
                                   answer=reply, conversation=self._redact(self.conversation)[-CONVERSATION_CHARS:],
                                   owner_context=self._owner_context(), continues=self._continues_text(),
