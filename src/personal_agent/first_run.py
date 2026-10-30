@@ -16,6 +16,7 @@ import re
 import secrets
 import subprocess
 import sys
+import time
 import webbrowser
 
 from .messages import msg
@@ -125,6 +126,9 @@ class Terminal:
         """One line the owner types; ``status`` names what Still is doing, or ''."""
         return input('> ')
 
+    def interrupt(self):
+        """End the line being typed ('' is returned); plain ``input()`` cannot be, so a request waits for Enter."""
+
     def answer(self, text):
         """Still's answer: the model's own text, printed as it is (not a catalog line)."""
         print(f'\nStill: {text}\n', flush=True)
@@ -189,9 +193,17 @@ class RichTerminal(Terminal):
         return patch_stdout(raw=True)
 
     def message(self, status):
+        from prompt_toolkit.application.current import get_app
         from prompt_toolkit.formatted_text import ANSI
         return self.reader(ANSI('\x1b[1;36m› \x1b[0m'),
-                           bottom_toolbar=lambda: self.local(status()) if status() else None, refresh_interval=0.5)
+                           bottom_toolbar=lambda: self.local(status()) if status() else None, refresh_interval=0.5,
+                           pre_run=lambda: setattr(self, '_line', get_app()))
+
+    def interrupt(self):
+        # Called from the worker thread: the running line ends on its own event loop.
+        app = getattr(self, '_line', None)
+        if app is not None and app.is_running:
+            app.loop.call_soon_threadsafe(lambda: app.exit(result='') if app.is_running else None)
 
     def answer(self, text):
         from rich.markdown import Markdown
@@ -240,11 +252,13 @@ def _record(store, **values):
     store.put(SETUP_KEY, {**store.config(SETUP_KEY, {}), **values})
 
 
-def run(service, store, term, login_service=None):
+def run(service, store, term, login_service=None, conversation=False):
     """Return True when the setup finished; False when the owner stopped early.
 
     ``login_service`` reads the macOS login service's status when this start
-    could offer to register it (#105); None skips the offer.
+    could offer to register it (#105); None skips the offer. ``conversation``:
+    this terminal becomes a conversation once an AI is connected (#438), so
+    Telegram is offered there instead, unless Still moves to the login service.
     """
     try:
         # #90: an install set up in the browser or by an earlier version has nothing to ask.
@@ -256,10 +270,14 @@ def run(service, store, term, login_service=None):
         if not ai_ready(service):
             _ai(service, term)
         _judgment(service)
-        if not store.config('telegram', {}).get('enabled'):
+        in_conversation = conversation and ai_ready(service)
+        if not store.config('telegram', {}).get('enabled') and not in_conversation:
             _telegram(service, term)
         if login_service:
             _login_service(store, term, login_service)
+        if in_conversation and wants_login_service(store) and not store.config('telegram', {}).get('enabled'):
+            # The login service takes Still out of this terminal, so there is no conversation to offer it in.
+            _telegram(service, term)
     except (KeyboardInterrupt, EOFError):
         term.say('\n' + msg('first_run.stopped'))
         return False
@@ -272,17 +290,39 @@ def converse(service, term):
     """Talk to Still in this terminal until the owner ends it (Ctrl-D or Ctrl-C) (#438)."""
     surface = service.terminal_surface
     term.say('\n' + msg('terminal.ready'))
+    if not service.store.config('telegram', {}).get('enabled'):
+        term.say(msg('terminal.telegram_hint'))
     working = msg('terminal.working')
     with term.conversation():
-        surface.attach(term.answer)
+        surface.attach(term.answer, term.interrupt)
         try:
             while True:
-                surface.say(term.message(lambda: working if surface.waiting() else ''))
+                line = term.message(lambda: working if surface.waiting() else '')
+                while (kind := surface.take_request()) is not None:
+                    _requested_input(service, term, kind)
+                surface.say(line)
         except (KeyboardInterrupt, EOFError):
             pass
         finally:
             surface.detach()
     term.say(msg('terminal.bye'))
+
+
+def _requested_input(service, term, kind):
+    """An input a confirmed settings draft asked for (``TerminalSurface.INPUTS``), read here and never sent as a message."""
+    try:
+        if kind == 'telegram':
+            _telegram_connect(service, term)
+        elif isinstance(kind, dict):
+            # A notice's button pair: the owner's choice is settled exactly, like a pressed button.
+            # patch_stdout writes on its own thread every 0.2 s; let the notice reach the screen before its menu.
+            time.sleep(0.3)
+            options = [(str(index), f'{index}) ' + term.local(msg(label))) for index, label in enumerate(kind['labels'], 1)]
+            answer = term.choose(msg('first_run.choice_prompt'), options, '1')
+            if answer in ('1', '2'):
+                service.terminal_surface.answer_choice(kind, answer == '1')
+    except (KeyboardInterrupt, EOFError):
+        term.say('   ' + msg('terminal.input_stopped'))
 
 
 def _access(store, term):
@@ -470,6 +510,11 @@ def _telegram(service, term):
     term.say('   ' + msg('first_run.telegram_help'))
     if term.ask('   ' + msg('first_run.telegram_prompt') + ' ').lower() not in ('y', 'yes'):
         return
+    _telegram_connect(service, term)
+
+
+def _telegram_connect(service, term):
+    """BotFather's steps, the bot token from a hidden prompt, then the pairing link; the token goes only to the service."""
     term.say('   ' + msg('first_run.telegram_steps_intro'))
     term.say('   ' + BOTFATHER_URL)
     term.say('   ' + msg('first_run.telegram_no_app'))

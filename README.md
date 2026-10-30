@@ -85,9 +85,9 @@ brew install jongtae/still/agentos
 agentos start
 ```
 
-1. Setup runs in this terminal, like Claude Code's first start: a password, your AI (Codex, Claude Code or an API key) and a Telegram bot token, each skippable.
+1. Setup runs in this terminal, like Claude Code's first start: a password (skippable) and your AI (Codex, Claude Code or an API key); a signed-in one is preselected.
 2. Then talk to Still right there in the terminal. The Still screen is at [http://127.0.0.1:8787](http://127.0.0.1:8787/) (it opens by itself while no AI is connected) in your terminal's language or English; switch at the bottom left. A few screens and replies are still Korean. [Other connections](docs/QUICKSTART.md#other-model-connections).
-3. Telegram: paste the @BotFather token in the terminal, open the pairing link it prints and press Start.
+3. Telegram: say "connect Telegram" there, paste the @BotFather token into the hidden prompt, open the pairing link and press Start.
 4. Ask for what you need: **“My cat has been off her food lately. What should I try?”** A few days later, just ask **“Find me a robot vacuum under $500.”** Your PA remembers the cat and takes it into account without being reminded.
 
 **Release status:** both installers install **v0.2.0** (2026-10-24), built from the tagged main commit. The demo and the everyday-use image come from real sessions and are not release-specific end-to-end validation; the architecture figure is product direction. The [release manifest](docs/release-manifest.json) records what each release covers, and [product status](docs/product-status.en.md) separates shipped behavior, test evidence and direction.

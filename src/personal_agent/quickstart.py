@@ -1838,7 +1838,8 @@ def main():
         term=first_run.open_terminal(language)
     if term is not None and not first_run.finished(store):
         browser_language=first_run.WEB_LANGUAGES.get(language,'')
-        if not first_run.run(service,store,term,login_service=login_service_status(args)):
+        if not first_run.run(service,store,term,login_service=login_service_status(args),
+                             conversation=sys.stdout.isatty()):
             close_listeners()
             return 130
         if first_run.wants_login_service(store):

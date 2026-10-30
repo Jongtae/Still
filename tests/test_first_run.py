@@ -353,7 +353,7 @@ class LanguageTest(unittest.TestCase):
     def test_english_terminal_translates_every_wizard_line(self):
         term = first_run.Terminal('en')
         self.assertEqual(term.local('   ' + first_run.msg('first_run.access_prompt') + ' '), '   Set a password? [y/N] ')
-        self.assertEqual(term.local('\n' + first_run.msg('first_run.ai_title')), '\n2. AI connection')
+        self.assertEqual(term.local('\n' + first_run.msg('first_run.ai_title')), '\nAI connection')
         self.assertEqual(term.local('   ' + first_run.msg('first_run.cli_missing', name='Codex')),
                          '   Codex needs to be installed. Opening its official install page in the browser:')
         self.assertEqual(term.local('   ' + first_run.msg('first_run.model_prompt_default', model='gpt-4o-mini') + ' '),
@@ -438,6 +438,27 @@ class SetupLookTest(unittest.TestCase):
         term = ScriptedTerminal()
         first_run._summary(service, term)
         self.assertIn('! ' + first_run.msg('first_run.judgment_attention'), term.lines)
+
+    def test_a_conversation_to_follow_offers_telegram_there_instead(self):
+        service = FakeService()
+        service.logins['codex'] = 'signed-in'
+        term = ScriptedTerminal(asks=['', ''])  # a Telegram question would find no answer left
+        self.assertTrue(first_run.run(service, self.store, term, conversation=True))
+        self.assertNotIn(first_run.msg('first_run.telegram_title'), term.text())
+
+    def test_without_an_ai_the_telegram_step_stays(self):
+        term = ScriptedTerminal(asks=['', '4', ''])
+        self.assertTrue(first_run.run(FakeService(), self.store, term, conversation=True))
+        self.assertIn(first_run.msg('first_run.telegram_title'), term.text())
+
+    def test_moving_to_the_login_service_asks_about_telegram_after_all(self):
+        service = FakeService()
+        service.logins['codex'] = 'signed-in'
+        term = ScriptedTerminal(asks=['', '', 'y', ''])
+        self.assertTrue(first_run.run(service, self.store, term, login_service=lambda: {'status': 'not_installed'},
+                                      conversation=True))
+        text = term.text()
+        self.assertLess(text.index(first_run.msg('first_run.login_title')), text.index(first_run.msg('first_run.telegram_title')))
 
 
 class RichTerminalTest(unittest.TestCase):
