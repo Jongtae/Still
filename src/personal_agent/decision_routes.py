@@ -119,6 +119,10 @@ CLAUDE_CODE_MODELS = {'haiku': (), 'sonnet': ('low', 'medium', 'high', 'xhigh', 
 #: #710: models a route documents without a machine-readable list (the
 #: aliases above), offered to the orchestrator's worker catalogue as data.
 DOCUMENTED_MODELS = {'claude-code': tuple(CLAUDE_CODE_MODELS)}
+#: The documented Claude Code alias of its most capable family; the CLI resolves it to the newest version.
+CLAUDE_CODE_STRONGEST = 'opus'
+#: The reasoning level a strongest-model judgment asks for when the model declares it.
+STRONGEST_EFFORT = 'high'
 
 
 def known_models(route_id, listed=None):
@@ -383,7 +387,30 @@ class DecisionRoutes:
         return SubscriptionCliDecisionEngine(self.service.execution_adapter, engine_id, model=model,
                                              model_policy=policy, audit=audit, guard=guard,
                                              codex_disabled_features=codex_disabled_features, effort=effort,
-                                             expected_cloud=expected_cloud)
+                                             expected_cloud=expected_cloud,
+                                             strongest=lambda: self.strongest_choice(engine_id))
+
+    def strongest_choice(self, engine_id):
+        """``(model, effort)`` of the engine's strongest model now, or None (#420).
+
+        Never a pinned name: Codex - the first model its installed catalogue lists
+        (``codex debug models --bundled``, sorted by the CLI's own priority, cached per binary, so a
+        CLI update brings the newer top model); Claude Code - its documented top alias, which the CLI
+        resolves to the newest version.  Only when the installed CLI accepts a model flag.  The effort
+        is ``STRONGEST_EFFORT`` when that model declares it, else the model's own default.
+        """
+        if (self._capabilities().get(engine_id) or {}).get('model_override') is not True:
+            return None
+        if engine_id == 'claude-code':
+            levels = CLAUDE_CODE_MODELS.get(CLAUDE_CODE_STRONGEST) or ()
+            return CLAUDE_CODE_STRONGEST, (STRONGEST_EFFORT if STRONGEST_EFFORT in levels else None)
+        if engine_id != 'codex':
+            return None
+        models = self.bundled_models('codex')
+        if not models:
+            return None
+        top = models[0]
+        return top, (STRONGEST_EFFORT if STRONGEST_EFFORT in (self.bundled_efforts('codex').get(top) or ()) else None)
 
     def engine(self):
         """The engine for the next judgment, from the active route only."""

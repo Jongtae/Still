@@ -109,6 +109,9 @@ DREAM_TURNS = 40
 DREAM_OWNER_CHARS = 600
 DREAM_ANSWER_CHARS = 300
 DREAM_TURNS_CHARS = 12000
+#: #420: the dream's one judgment runs on the engine's strongest model and may take this long
+#: (inside the run's own ``RUN_SECONDS`` deadline).
+DREAM_TIMEOUT_SECONDS = 240
 #: #402: one dream may end at most this share of the current profile rows (at least one);
 #: more is refused whole, the OpenClaw ``maxPriorEntryLossFraction`` lesson.
 DREAM_END_FRACTION = 0.25
