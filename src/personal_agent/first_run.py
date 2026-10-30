@@ -115,6 +115,20 @@ class Terminal:
             self.say('   ' + label)
         return self.ask('   ' + prompt + ' ') or default or ''
 
+    # -- the terminal conversation (#438) --------------------------------------------------
+    def conversation(self):
+        """A context in which answers may print while the owner types."""
+        import contextlib
+        return contextlib.nullcontext()
+
+    def message(self, status):
+        """One line the owner types; ``status`` names what Still is doing, or ''."""
+        return input('> ')
+
+    def answer(self, text):
+        """Still's answer: the model's own text, printed as it is (not a catalog line)."""
+        print(f'\nStill: {text}\n', flush=True)
+
 
 class RichTerminal(Terminal):
     """The same steps drawn by Rich, with lines and choices read by prompt_toolkit (#438)."""
@@ -169,6 +183,24 @@ class RichTerminal(Terminal):
         line.append(' ' + self.local(text))
         self.console.print(line)
 
+    def conversation(self):
+        from prompt_toolkit.patch_stdout import patch_stdout
+        # Answers printed by the delivery thread appear above the line being typed, colours kept.
+        return patch_stdout(raw=True)
+
+    def message(self, status):
+        from prompt_toolkit.formatted_text import ANSI
+        return self.reader(ANSI('\x1b[1;36m› \x1b[0m'),
+                           bottom_toolbar=lambda: self.local(status()) if status() else None, refresh_interval=0.5)
+
+    def answer(self, text):
+        from rich.markdown import Markdown
+        from rich.text import Text
+        self.console.print()
+        self.console.print(Text('Still', style='bold cyan'))
+        self.console.print(Markdown(text))
+        self.console.print()
+
     def choose(self, prompt, options, default=None):
         keys = [key for key, _ in options]
         return self.chooser('', options=[(key, _OPTION_NUMBER.sub('', self.local(label))) for key, label in options],
@@ -216,12 +248,12 @@ def run(service, store, term, login_service=None):
     """
     try:
         # #90: an install set up in the browser or by an earlier version has nothing to ask.
-        if not (store.claimed() and _ai_ready(service) and store.config('telegram', {}).get('enabled')):
+        if not (store.claimed() and ai_ready(service) and store.config('telegram', {}).get('enabled')):
             term.banner(version())
             term.say(msg('first_run.intro'))
         if not store.claimed():
             _access(store, term)
-        if not _ai_ready(service):
+        if not ai_ready(service):
             _ai(service, term)
         _judgment(service)
         if not store.config('telegram', {}).get('enabled'):
@@ -234,6 +266,23 @@ def run(service, store, term, login_service=None):
     _record(store, finished=True)
     _summary(service, term)
     return True
+
+
+def converse(service, term):
+    """Talk to Still in this terminal until the owner ends it (Ctrl-D or Ctrl-C) (#438)."""
+    surface = service.terminal_surface
+    term.say('\n' + msg('terminal.ready'))
+    working = msg('terminal.working')
+    with term.conversation():
+        surface.attach(term.answer)
+        try:
+            while True:
+                surface.say(term.message(lambda: working if surface.waiting() else ''))
+        except (KeyboardInterrupt, EOFError):
+            pass
+        finally:
+            surface.detach()
+    term.say(msg('terminal.bye'))
 
 
 def _access(store, term):
@@ -258,7 +307,7 @@ def _new_password(term):
             return password
 
 
-def _ai_ready(service):
+def ai_ready(service):
     status = service.onboarding()
     return bool(status['subscription_engine'] or status['model_ready'])
 
@@ -450,7 +499,7 @@ def _login_service(store, term, status):
 
 
 def _summary(service, term):
-    ready = _ai_ready(service)
+    ready = ai_ready(service)
     term.title(msg('first_run.finished' if ready else 'first_run.finished_without_ai'))
     for step in service.onboarding()['steps']:
         term.mark(STEP_MARKS.get(step['state'], '·'), step['message'])

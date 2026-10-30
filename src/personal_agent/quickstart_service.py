@@ -5465,6 +5465,12 @@ class AgentService:
         from .slack_surface import SlackSurface
         return SlackSurface(self)
 
+    @cached_property
+    def terminal_surface(self):
+        """The terminal where the owner started Still (``terminal_surface``, #438); idle until a terminal conversation attaches."""
+        from .terminal_surface import TerminalSurface
+        return TerminalSurface(self)
+
     def slack_status(self):
         return {**self.slack_surface.status(),'manifest':self.slack_surface.manifest()}
 
@@ -6965,7 +6971,7 @@ class AgentService:
 
     @property
     def surfaces(self):
-        """The owner conversation surfaces this service composes (#212): Telegram, Mattermost (#213) and Slack (#214)."""
+        """The owner conversation surfaces this service composes (#212): Telegram, Mattermost (#213), Slack (#214) and the terminal (#438)."""
         return tuple(getattr(self, name+'_surface') for name in SURFACE_NAMES)
 
     def surface_of(self, job):

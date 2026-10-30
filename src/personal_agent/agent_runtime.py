@@ -4053,7 +4053,10 @@ SURFACE_NOTES={'telegram':('In their paired Telegram chat; they may be away from
                'slack':('In their paired Slack direct message. The answer is read as a chat message, on a computer or '
                         'a phone; Markdown renders there, tables included.'),
                'mattermost':('In their paired Mattermost direct message. The answer is read as a chat message; Markdown '
-                             'renders there, tables included.')}
+                             'renders there, tables included.'),
+               'terminal':('In the terminal on this Mac where they started Still, so they are at the computer and its '
+                           'Still screen. The answer is printed there as a chat message; Markdown is rendered, tables '
+                           'included.')}
 
 def surface_section(context):
  """The rendered owner-surface section of a turn context, or '' (#1380)."""

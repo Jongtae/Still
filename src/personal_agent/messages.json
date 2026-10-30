@@ -2868,10 +2868,10 @@
   "zh": "正在 Telegram 中打开配对链接。点击 Start 即可完成连接:"
  },
  "first_run.finished": {
-  "ko": "설정이 끝났습니다. 마지막 확인은 브라우저 화면에서 합니다.",
-  "en": "Setup is done. The browser opens for a final check.",
-  "ja": "設定が完了しました。最後の確認はブラウザの画面で行います。",
-  "zh": "设置完成。最后在浏览器中确认。"
+  "ko": "설정이 끝났습니다.",
+  "en": "Setup is done.",
+  "ja": "設定が完了しました。",
+  "zh": "设置完成。"
  },
  "service.onboarding_claim_needed": {
   "ko": "이 컴퓨터에서 초기 설정 링크를 열어 개인 환경을 만드세요.",
@@ -3268,6 +3268,24 @@
   "en": "{name} is already signed in, so it is selected by default.",
   "ja": "{name} にはすでにログインしているので、既定で選んであります。",
   "zh": "{name} 已登录，已默认选中。"
+ },
+ "terminal.ready": {
+  "ko": "이제 여기서 Still과 바로 대화할 수 있어요. 무엇이든 입력해 보세요. 끝내려면 Ctrl-D를 누르세요.",
+  "en": "You can talk to Still right here now. Type anything. Press Ctrl-D to finish.",
+  "ja": "ここで今すぐ Still と話せます。何でも入力してみてください。終えるには Ctrl-D を押してください。",
+  "zh": "现在可以直接在这里和 Still 对话。随便输入点什么吧。按 Ctrl-D 结束。"
+ },
+ "terminal.working": {
+  "ko": "Still이 답을 준비하고 있어요…",
+  "en": "Still is working on the answer…",
+  "ja": "Still が答えを準備しています…",
+  "zh": "Still 正在准备回答…"
+ },
+ "terminal.bye": {
+  "ko": "대화를 마쳤어요. Still도 멈춥니다. 다시 시작하려면 `agentos start`를 실행하세요.",
+  "en": "Conversation finished, and Still stops. Run `agentos start` to start again.",
+  "ja": "会話を終えました。Still も停止します。再開するには `agentos start` を実行してください。",
+  "zh": "对话已结束，Still 也随之停止。要重新开始，请运行 `agentos start`。"
  },
  "first_run.finished_without_ai": {
   "ko": "AI가 아직 연결되지 않았습니다. 브라우저의 AI 설정에서 연결하면 바로 쓸 수 있습니다.",

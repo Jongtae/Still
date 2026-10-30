@@ -1832,10 +1832,11 @@ def main():
         server.server_close()
         if handoff_server:handoff_server.server_close()
     # #438: the browser a terminal setup opens starts in the terminal's language.
-    browser_language=''
-    if sys.stdin.isatty() and not first_run.finished(store):
+    browser_language,term='',None
+    if sys.stdin.isatty():
         language=first_run.terminal_language()
         term=first_run.open_terminal(language)
+    if term is not None and not first_run.finished(store):
         browser_language=first_run.WEB_LANGUAGES.get(language,'')
         if not first_run.run(service,store,term,login_service=login_service_status(args)):
             close_listeners()
@@ -1865,14 +1866,30 @@ def main():
     if public_hosts:
         print(f'Mobile pairing URL: https://{public_hosts[0]}/?access={public_token}',flush=True)
     if not store.claimed():print(f'Setup link: {store.private / "setup-link.txt"} (private file)',flush=True)
-    if not args.no_browser:threading.Timer(.6,lambda:webbrowser.open(with_language(url,browser_language))).start()
+    # #438: with an AI connected, an owner's terminal becomes the conversation instead of opening the browser.
+    chat=term is not None and sys.stdout.isatty() and first_run.ai_ready(service)
+    if not args.no_browser and not chat:
+        threading.Timer(.6,lambda:webbrowser.open(with_language(url,browser_language))).start()
     def shutdown(signum,frame):
         service.stop.set()
         threading.Thread(target=server.shutdown,daemon=True).start()
         if handoff_server:threading.Thread(target=handoff_server.shutdown,daemon=True).start()
-    signal.signal(signal.SIGINT,shutdown)
-    signal.signal(signal.SIGTERM,shutdown)
-    try:server.serve_forever()
+    if chat:
+        if not browser_language:term.banner(first_run.version())   # the setup already drew it on a first start
+        serving=threading.Thread(target=server.serve_forever,name='still-http',daemon=True)
+        serving.start()
+        def interrupted(signum,frame):raise KeyboardInterrupt
+        # The conversation reads on this thread: a stop request ends its prompt, then Still stops.
+        signal.signal(signal.SIGTERM,interrupted)
+        def run():
+            first_run.converse(service,term)
+            shutdown(None,None)
+            serving.join(timeout=5)
+    else:
+        signal.signal(signal.SIGINT,shutdown)
+        signal.signal(signal.SIGTERM,shutdown)
+        run=server.serve_forever
+    try:run()
     finally:
         service.stop.set()
         # #1380: a tunnel must not outlive its server (it blocks the next link).
