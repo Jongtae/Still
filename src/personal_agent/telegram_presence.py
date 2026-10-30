@@ -273,6 +273,7 @@ FALLBACK_STEP_LINES = {
     'propose_current_state': (None, msg('step.current_state')),
     'schedule_preparation': (None, msg('step.schedule')),
     'ask_location': (None, msg('step.ask_location')),
+    'tell_owner': (None, msg('step.tell_owner')),
     'settings_read': (None, msg('step.settings_read')),
     'information_use': (None, msg('step.information_use')),
     'settings_change': (None, msg('step.settings_change')),

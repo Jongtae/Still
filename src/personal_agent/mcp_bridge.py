@@ -24,7 +24,7 @@ from .bounded_execution import (AgentOSMcpTools, BOUNDED_PROFILE, HOST_CLI_PROFI
                                 profile_actions, redact_reason, turn_actions)
 from .skills import SkillBinding, SkillLibrary
 from .connection_slots import relayed as relayed_slots
-from .cli_browser_relay import (RELAYED_INFORMATION_USE, RELAYED_LOCATION_REQUEST, RELAYED_PREPARATIONS, RELAYED_SETTINGS,
+from .cli_browser_relay import (RELAYED_INFORMATION_USE, RELAYED_LOCATION_REQUEST, RELAYED_OWNER_UPDATE, RELAYED_PREPARATIONS, RELAYED_SETTINGS,
                                 SECRET_REDACTION, RelayClient, unused_browser_factory)
 from .context_observations import answerable_work
 from .local_tools import LocalTools
@@ -467,6 +467,8 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                                 # #774: placeholders that list schedule_preparation and ask_location; their calls go to the service.
                                 preparations=RELAYED_PREPARATIONS if relay is not None else None,
                                 # ask_location only for a Work from the paired Telegram chat, as on the direct route.
+                                # #407: tell_owner only for a Work that showed the owner a plan preview, as on the direct route.
+                                owner_update=(RELAYED_OWNER_UPDATE if relay is not None and store.shown_preview(job_id) else None),
                                 location_request=(RELAYED_LOCATION_REQUEST if relay is not None
                                                   and answerable_work(store.job(job_id)) else None),
                                 # #814: a placeholder that lists the settings tools; their calls go to the service.

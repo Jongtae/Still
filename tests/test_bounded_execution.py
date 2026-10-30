@@ -47,7 +47,9 @@ BOUNDED_NAMES = ['ask_location', 'browser_click', 'browser_find', 'browser_open'
                  'read_file', 'save_memory', 'save_note',
                  'save_result',  # #182: a new result file in the file workspace, in the bridge process.
                  'schedule_preparation',
-                 'search_conversation', 'search_memory', 'settings_change', 'settings_read', 'weather', 'web_search',
+                 'search_conversation', 'search_memory', 'settings_change', 'settings_read',
+                 'tell_owner',  # #407: an interim message to the owner, relayed to the service.
+                 'weather', 'web_search',
                  # #1216: authenticated API calls by slot, relayed to the service.
                  'api_request']
 # #961: the skill tools join only when the Work has a skill binding (skills on, one installed).
@@ -437,6 +439,8 @@ class SubscriptionServiceTests(unittest.TestCase):
                                                ('propose_current_state', 'web_search',
                                                 # #774: a non-Telegram Work could never be answered.
                                                 'ask_location',
+                                                # #407: no plan preview was shown to a web Work.
+                                                'tell_owner',
                                                 # #1216: no API slot is registered.
                                                 'api_request')
                                                # #1380: offered only where Node.js can start the sandbox.

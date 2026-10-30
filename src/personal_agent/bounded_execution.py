@@ -127,6 +127,8 @@ _MAIL = 'owner-mail-connection-served-on-trusted-local-route-only'
 _API = 'owner-api-slots-served-on-trusted-local-route-only'
 #: #774: the owner's paired Telegram chat is held by the service, reached only through its relay.
 _LOCATION = 'owner-telegram-location-request-served-on-trusted-local-route-only'
+#: #407: the owner's interim messages go through the paired chat the service holds.
+_OWNER_UPDATE = 'owner-telegram-interim-message-served-on-trusted-local-route-only'
 #: #814: the owner settings and their confirmation are held by the service, reached only through its relay.
 _SETTINGS = 'owner-settings-served-on-trusted-local-route-only'
 #: #826: the Work records are held by the service, reached only through its relay.
@@ -238,7 +240,7 @@ CLI_PROFILES = {
             'find_files', 'read_file', 'list_roots', 'save_result', 'calendar_query', 'calendar_draft_create',
             'calendar_draft_update', 'calendar_draft_cancel', 'save_memory', 'list_memory', 'search_memory', 'search_conversation', 'forget_record',
             'list_agents', 'delegate_agent', 'propose_current_state', 'schedule_preparation', 'ask_location',
-            'settings_read', 'settings_change', 'capability_search', 'information_use', 'drive_search', 'drive_read', 'mail_search', 'mail_read', 'api_request', 'code_run',
+            'tell_owner', 'settings_read', 'settings_change', 'capability_search', 'information_use', 'drive_search', 'drive_read', 'mail_search', 'mail_read', 'api_request', 'code_run',
             *_BROWSER_ACTIONS, *_SKILL_ACTIONS)},
                 'runtimes': {'codex': {'pinned_version': '0.153.4', 'live_tested_version': None}},
     },
@@ -267,6 +269,7 @@ CLI_PROFILES = {
             **{action: _BROWSER for action in _BROWSER_ACTIONS},
             'schedule_preparation': _PREPARATIONS,
             'ask_location': _LOCATION,
+            'tell_owner': _OWNER_UPDATE,
             'settings_read': _SETTINGS, 'settings_change': _SETTINGS, 'capability_search': _SETTINGS,
             'information_use': _INFORMATION_USE,
             **{action: _SKILLS for action in _SKILL_ACTIONS},

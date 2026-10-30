@@ -333,6 +333,12 @@ SCHEDULE_PREPARATION_DESCRIPTION=('Schedule something for a later time that the 
 ASK_LOCATION_DESCRIPTION=('Ask the owner through their paired Telegram chat to share their current location for this request. Use it only when the answer depends on where the owner is now and the current context does not already hold a fresh position. '
  'When a saved place, the time of day or the conversation gives a reasonable assumption and a wrong guess costs little, answer on that assumption, say it in one short clause (for example "if you are at home now"), and call this with mode "with_answer": Still then puts the share-location button on your answer instead of sending a separate question, so do not end your turn after the call. In mode "ask" (the default), use it only when no useful answer is possible without the position. '
  'reason: one short sentence the owner will read (at most 300 characters; in mode "with_answer" it is recorded, not sent); never credentials. button_label: optional, the text of the share-location button (at most 40 characters), in the language the owner is writing in. When the owner later shares a location, Still continues this request once with it in its current context; a typed reply is an ordinary new message, not a continuation. In mode "ask", end this turn after calling it, telling the owner you asked.')
+TELL_OWNER_DESCRIPTION=('Send the owner one short message now, in their paired chat, while you keep working. Use it the way a capable person '
+ 'working for them would speak up: when a step gave you something they would want to hear before your answer (what you found so far, '
+ 'something different from what they were told to expect, a choice ahead), not for routine progress or to say you are starting. '
+ 'text: a sentence or two in the owner\'s language and voice (at most 500 characters); never credentials. It is not your answer: '
+ 'keep working and give the complete answer when you finish, without repeating what you already told them. It asks nothing: '
+ 'if you need the owner\'s decision, end your turn with the question instead. At most 3 per request.')
 #: OWNER-SETTINGS-01 (#814): owner settings in conversation, confirm-before-apply.
 #: #1572 review: the settings_change setting names come from the orchestrator's own declaration, so a new
 #: setting (preparations cancel/accept, browser close_login) cannot be missing from the schema.
@@ -392,6 +398,7 @@ DEFINITIONS=[
  schema('weather',WEATHER_DESCRIPTION,{'city':STRING,'country':STRING,'location_ref':STRING}),
  schema('propose_current_state',PROPOSE_CURRENT_STATE_DESCRIPTION,{'predicate':{'type':'string','enum':['current_place','work_mode','availability_hint']},'value':STRING,'place_ref':STRING,'source':STRING,'until':STRING,'supersedes':STRING},['predicate']),
  schema('schedule_preparation',SCHEDULE_PREPARATION_DESCRIPTION,{'kind':{'type':'string','enum':['reminder','prepare']},'goal':STRING,'due':STRING,'timezone':STRING,'recurrence':{'type':'string','enum':['daily','weekdays','weekly']},'every_minutes':STRING,'until':STRING,'max_runs':STRING,'delivery':{'type':'string','enum':['send','keep','when_needed']},'title':STRING,'offer':STRING},['kind','goal','due']),
+ schema('tell_owner',TELL_OWNER_DESCRIPTION,{'text':STRING},['text']),
  schema('ask_location',ASK_LOCATION_DESCRIPTION,{'reason':STRING,'button_label':STRING,'mode':{'type':'string','enum':['ask','with_answer']}},['reason']),
  schema('skill_load',SKILL_LOAD_DESCRIPTION,{'skill':STRING,'part':{'type':'string','enum':['full','header']}},['skill']),
  schema('skill_resource',SKILL_RESOURCE_DESCRIPTION,{'skill':STRING,'path':STRING},['skill','path']),
@@ -1620,6 +1627,8 @@ READONLY_EXCLUDED=tuple(name for name,tool in HOST_TOOLS.items() if not tool.rea
 PREPARATION_ACTIONS=frozenset({'schedule_preparation'})
 #: #774: offered only when the service wired a Telegram location request into this Work.
 LOCATION_ACTIONS=frozenset({'ask_location'})
+#: #407: offered only when the service wired the owner's interim messages into this Work.
+OWNER_UPDATE_ACTIONS=frozenset({'tell_owner'})
 #: #814: offered only when the service wired the owner settings into this Work.
 SETTINGS_ACTIONS=frozenset({'settings_read','settings_change','capability_search'})
 #: #826: the information-use audit read, served by the host that holds the Work records.
@@ -2650,7 +2659,7 @@ def outcome_from_events(rows, tools=None):
  return ('partial' if advanced else 'failed'),refusals
 
 class Capabilities:
- def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,public_page_scope=None,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_excluded=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None):
+ def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,public_page_scope=None,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_excluded=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None):
   # CONN-API: ``() -> {name: slot}`` of Still-held connections usable through api_request.
   self.connections=connections
   # #606 T1: shared with a delegated specialist, spent in `execute`.
@@ -2730,6 +2739,8 @@ class Capabilities:
   # #774: the service's owner location request bound to this Work (takes the
   # reason), or None (delegated specialist, web-only host): then not offered.
   self.location_request=location_request
+  #: #407: ``owner_update(text)`` sends one interim message to the owner (``AgentService.owner_updater``).
+  self.owner_update=owner_update
   # #814: the service's settings handler bound to this Work (``(action, args)``:
   # a read, or a draft the owner confirms), or None: then neither tool is offered.
   self.settings=settings
@@ -2800,6 +2811,7 @@ class Capabilities:
   if self.browser is None:hidden|=BROWSER_ACTIONS
   if self.preparations is None:hidden|=PREPARATION_ACTIONS
   if self.location_request is None:hidden|=LOCATION_ACTIONS
+  if self.owner_update is None:hidden|=OWNER_UPDATE_ACTIONS
   if self.settings is None:hidden|=SETTINGS_ACTIONS
   if self.information_use is None:hidden|=INFORMATION_USE_ACTIONS
   if self.skills is None:hidden|=SKILL_ACTIONS
@@ -3677,6 +3689,16 @@ class Capabilities:
     return {'requested':True,'channel':'telegram','with_answer':True}
    self.location_request(redact_private_values(reason.strip(),self._browser_excluded())[0],*([label] if label else []))
    return {'requested':True,'channel':'telegram'}
+  if name=='tell_owner':
+   # #407: one interim message in the owner's chat; the Work goes on and its answer still comes at the end.
+   if self.owner_update is None or self.delegated:
+    raise ToolError('이 경로에서는 작업 중에 메시지를 보낼 수 없어요.','owner_update_unavailable')
+   text=args.get('text')
+   if not isinstance(text,str) or not 0<len(text.strip())<=500:
+    raise ToolError('보낼 말을 500자 이내로 적어 주세요.','invalid_text')
+   from .browser_session import redact_private_values
+   self.owner_update(redact_private_values(text.strip(),self._browser_excluded())[0])
+   return {'sent':True,'channel':'telegram'}
   if name in SKILL_ACTIONS:
    from .skills import SkillError
    if self.skills is None:raise ToolError('이 작업에서는 스킬을 쓸 수 없어요.','skill_unavailable')
@@ -4408,6 +4430,7 @@ def _evidence_detail(name,result):
   # #659: which preparation, its state and slot; never the goal text.
   return {key:result.get(key) for key in ('preparation_id','kind','state','scheduled','requires_owner_acceptance',
                                           'due','recurrence','delivery','accepted_by','every_minutes','until','max_runs')}
+ if name=='tell_owner':return {'sent':bool(result.get('sent')),'channel':result.get('channel')}
  if name=='ask_location':return {'requested':bool(result.get('requested')),'channel':result.get('channel'),
                                  **({'with_answer':True} if result.get('with_answer') else {})}
  # #814: which settings were read / which draft waits; never a value beyond the fixed choices.
@@ -4589,6 +4612,8 @@ def _fallback_text(name, result, sources):
  if name=='forget_record' and isinstance(result,dict):return str(result.get('message') or '')
  if name=='schedule_preparation' and isinstance(result,dict):
   return str(result.get('next_step') or '준비를 기록했습니다.')
+ if name=='tell_owner' and isinstance(result,dict) and result.get('sent'):
+  return '보냈어요. 하던 일을 이어서 하고, 끝나면 이미 말한 내용은 반복하지 말고 답을 주세요.'
  if name=='ask_location' and isinstance(result,dict) and result.get('requested'):
   if result.get('with_answer'):return '답에 현재 위치 공유 버튼을 함께 붙입니다. 다른 곳이면 위치를 보내 주시면 그 위치로 다시 처리합니다.'
   return 'Telegram으로 현재 위치를 요청했습니다. 위치를 보내 주시면 이어서 처리합니다.'

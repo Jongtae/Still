@@ -178,6 +178,8 @@ class StrictLaunchArguments(unittest.TestCase):
                        'mcp__agentos__calendar_draft_update,mcp__agentos__calendar_draft_cancel,'
                        'mcp__agentos__list_memory,mcp__agentos__search_memory,mcp__agentos__search_conversation,mcp__agentos__save_memory,mcp__agentos__schedule_preparation,'
                        'mcp__agentos__ask_location,'
+                       # #407: the owner's interim messages, relayed the same way.
+                       'mcp__agentos__tell_owner,'
                        # #794 phase 3: the owner's exact forget/delete/undo, relayed the same way.
                        'mcp__agentos__forget_record,'
                        # #814: the owner settings tools, relayed the same way.

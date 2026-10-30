@@ -63,6 +63,8 @@ HOST_TOOLS={
     'schedule_preparation': HostTool(True, False, True, None, False, None),
     # #774: ask the owner for a current position in the paired Telegram chat.
     'ask_location': HostTool(True, False, True, None, False, None),
+    # #407: one short message to the owner while the Work runs; its text is the transcript's, recorded by length.
+    'tell_owner': HostTool(True, False, True, None, False, 'text'),
     # #794 phase 3: the owner's exact forget, complete deletion and undo.
     'forget_record': HostTool(True, False, True, 'memory', False, None),
     # #814: owner settings read, and a change drafted for the owner to confirm.
