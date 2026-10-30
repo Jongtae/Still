@@ -42,7 +42,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 #: Owner config row: ``{name: slot}`` (never the secret).
 SLOTS_KEY = 'api_slots'
@@ -650,6 +650,47 @@ def http_request(method, url, headers, body, timeout):
         return status, {key.lower(): value for key, value in response.headers.items()}, data
 
 
+#: Statuses that say the service did not carry out the request: authentication and authorization
+#: refusals, and (#432) a request refused as invalid (400), against a changed version (412) or as
+#: unprocessable (422).  A refused change is settled as rejected, not unknown; anything else stays unknown.
+REFUSED_STATUSES = frozenset({400, 401, 403, 412, 422})
+#: #432: the most of a provider's own error reason handed back to the AI.
+MAX_PROVIDER_REASON_CHARS = 400
+
+
+def provider_reason(raw, redact):
+    """The provider's own words for a refused call, bounded and redacted, or ''.
+
+    The AI corrects its request from this reason (#432): an error that says
+    only its status leaves the AI nothing to go on. JSON error bodies (Google's
+    ``error.message`` and ``error.errors[].reason``, OAuth's ``error`` and
+    ``error_description``, a top-level ``message``) come back as those fields;
+    any other body as a short excerpt. ``redact`` replaces secret values.
+    """
+    text = (raw or b'')[:MAX_RESPONSE_BYTES].decode('utf-8', 'replace')
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    parts = []
+    if isinstance(data, dict):
+        error = data.get('error')
+        if isinstance(error, dict):
+            parts.append(error.get('message'))
+            parts.extend(row.get('reason') for row in error.get('errors') or () if isinstance(row, dict))
+        else:
+            parts.extend((error, data.get('error_description')))
+        parts.append(data.get('message'))
+        parts = [part for part in dict.fromkeys(parts) if isinstance(part, str) and part.strip()]
+    elif text.strip():
+        parts = [text]
+    reason = ' '.join(' / '.join(parts).split())
+    if not reason:
+        return ''
+    reason = redact(reason)
+    return reason if len(reason) <= MAX_PROVIDER_REASON_CHARS else reason[:MAX_PROVIDER_REASON_CHARS - 1] + '…'
+
+
 def _loopback(host):
     if host == 'localhost':
         return True
@@ -1011,8 +1052,15 @@ class ApiRequests:
             path = urlsplit(urlunsplit((parts.scheme.lower(), named, path, parts.query, ''))).path
             if not any(method == allowed and re.fullmatch(pattern, path) for allowed, pattern in slot['write_paths']):
                 raise ApiError(f"연결 '{slot['name']}'에서 허용하지 않은 변경 경로입니다.", 'api_path_refused')
+        query = parts.query
+        if method not in READ_METHODS and slot.get('write_query'):
+            # #432: a connection's fixed parameters replace whatever the AI sent for them (the calendar
+            # sends no attendee email), before the dispatch identity is taken from the URL.
+            forced = slot['write_query']
+            query = urlencode([(key, value) for key, value in parse_qsl(query, keep_blank_values=True)
+                               if key not in forced] + list(forced.items()))
         # Fragments never reach HTTP; they cannot create a fresh dispatch identity.
-        url = urlunsplit((parts.scheme.lower(), named, path, parts.query, ''))
+        url = urlunsplit((parts.scheme.lower(), named, path, query, ''))
         # CONN-API: a read grant used with GET/HEAD (enforced above) cannot change anything.
         effect = 'read' if slot.get('read_only') else effective_effect(method, args.get('effect'))
         if slot.get('money') is True and effect in STATE_CHANGING_EFFECTS:
@@ -1052,7 +1100,9 @@ class ApiRequests:
         elif callable(slot.get('token')):
             # CONN-API: the connector resolves, renews and checks the token for this one call.
             try:
-                secret = slot['token']()
+                # #432: a change spends the connection's separate write grant when it has one.
+                getter = slot['write_token'] if method not in READ_METHODS and callable(slot.get('write_token')) else slot['token']
+                secret = getter()
                 if isinstance(secret, tuple):
                     secret, finish = secret
             except Exception:
@@ -1114,8 +1164,9 @@ class ApiRequests:
                 self.sleep(1)
                 continue
             break
-        if identity and status in (401, 403):
-            # HTTP authentication/authorization refusal is not an accepted change.
+        if identity and status in REFUSED_STATUSES:
+            # HTTP authentication/authorization refusal is not an accepted change, and neither is a
+            # request the service refused as invalid (#432), so the AI may correct it and send again.
             # Settle before token invalidation; never retry this transport here.
             self._settle_effect(claim, 'rejected', status)
         if callable(finish):
@@ -1126,24 +1177,42 @@ class ApiRequests:
             except Exception:
                 raise ApiError(f"연결 '{slot['name']}'이 그사이 바뀌어 응답을 쓰지 않았습니다. 연결을 다시 확인해 주세요.",
                                'needs_setup', requires=f"connection:{slot['name']}",
-                               effect='unknown' if identity and status not in (401, 403) else None) from None
-        if identity and status not in (401, 403):
+                               effect='unknown' if identity and status not in REFUSED_STATUSES else None) from None
+        if identity and status not in REFUSED_STATUSES:
             from .api_credentials import fingerprint
             current = self.slots().get(slot['name'])
             if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
                 raise ApiError('API 연결이 그사이 바뀌어 응답을 쓰지 않았습니다.', 'needs_setup',
                                requires=f"api-slot:{slot['name']}", effect='unknown')
         retrieved = datetime.fromtimestamp(self.clock(), timezone.utc)
+        said = ''
+        if status >= 400:
+            # #432: the provider's own reason, redacted like a response body; none when redaction cannot be checked.
+            try:
+                private_values = [value for value in encrypted_secret_values(self.store)
+                                  if isinstance(value, str) and len(value) >= _min_redacted_chars()]
+            except Exception:
+                private_values = None
+            if private_values is not None:
+                def redact(text):
+                    text = text.replace(secret, '[redacted]')
+                    for value in private_values:
+                        text = text.replace(value, '[redacted]')
+                    return text
+                reason = provider_reason(raw, redact)
+                said = f' 서비스 응답: {reason}' if reason else ''
         if 300 <= status < 400:
             raise ApiError('API가 다른 주소로 보내려 해 따라가지 않았습니다(키는 허용 호스트에만 보냅니다).', 'api_redirect_refused',
                            effect='unknown' if identity else None)
         if status in (401, 403):
-            raise ApiError(f"API가 인증을 거절했습니다(HTTP {status}). 슬롯 '{slot['name']}'의 키나 권한을 확인해 주세요.",
+            raise ApiError(f"API가 인증을 거절했습니다(HTTP {status}). 슬롯 '{slot['name']}'의 키나 권한을 확인해 주세요." + said,
                            'api_unauthorized', requires=f"api-slot:{slot['name']}")
         if status >= 400:
+            refused = status in REFUSED_STATUSES
             raise ApiError(f'API가 오류로 답했습니다(HTTP {status}, {method} {path}).'
-                           + (' 이 경로가 없습니다. 슬롯 설명의 경로를 확인하세요.' if status == 404 else ''), 'api_error',
-                           effect='unknown' if identity else None)
+                           + (' 이 경로가 없습니다. 슬롯 설명의 경로를 확인하세요.' if status == 404 else '')
+                           + (' 서비스가 이 요청을 처리하지 않아 바뀐 것은 없습니다. 이유를 보고 요청을 고쳐 보내세요.' if refused and identity else '')
+                           + said, 'api_error', effect='unknown' if identity and not refused else None)
         if len(raw) > MAX_RESPONSE_BYTES:
             raise ApiError('응답이 너무 커서 읽지 않았습니다.' + (' ' + SENT_UNREADABLE_TEXT if effect in STATE_CHANGING_EFFECTS else ''),
                            'api_response_too_large', effect='unknown' if effect in STATE_CHANGING_EFFECTS else None)
@@ -1163,9 +1232,8 @@ class ApiRequests:
                            'api_redaction_unavailable', effect='unknown' if effect in STATE_CHANGING_EFFECTS else None) from None
         # #368: the same floor as every other redaction (``stored_secret_values``); a short value such
         # as an account product code "01" replaced everywhere corrupted Gmail message ids for the AI.
-        from .current_context import MIN_REDACTED_CHARS
         for value in private_values:
-            if isinstance(value, str) and len(value) >= MIN_REDACTED_CHARS:
+            if isinstance(value, str) and len(value) >= _min_redacted_chars():
                 data = scrub(data, value)
         # A read for another subject is withheld.  A sent change already happened, so it is not
         # reported as a failure; its response body is withheld instead when it is not the
@@ -1199,6 +1267,11 @@ class ApiRequests:
                 # Typed Evidence qualifiers (``agent_runtime.EVIDENCE_QUALIFIER_FLAGS``).
                 'stale': record['freshness'] == 'stale', 'as_of_unknown': record['freshness'] == 'unknown',
                 'partial': record['completeness'] == 'partial', 'inconsistent': record['completeness'] == 'inconsistent'}
+
+
+def _min_redacted_chars():
+    from .current_context import MIN_REDACTED_CHARS
+    return MIN_REDACTED_CHARS
 
 
 def evidence(result):

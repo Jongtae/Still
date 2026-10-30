@@ -630,3 +630,151 @@ class GmailModify(unittest.TestCase):
             self.call('POST', 'messages/batchModify')
         self.assertEqual(caught.exception.code, 'needs_setup')
         self.assertEqual((self.transport.calls, self.claims()), ([], []))
+
+
+class CalendarWrites(unittest.TestCase):
+    """#432: with the write connection the AI changes events through the Calendar API itself."""
+
+    READ, WRITE = 'ya29.calendar-read-token-value', 'ya29.calendar-write-token-value'
+    EVENTS = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.store = QuickStore(Path(tmp.name) / 'data')
+        self.work = self.store.enqueue('put the round on my calendar', 'calendar-write-test')
+        self.slot = connection_slots._slot('google-calendar', lambda: self.READ, writable=True,
+                                           write_token=lambda: self.WRITE)
+
+    def api(self, transport, slot=None):
+        held = {'google-calendar': slot or self.slot}
+        return ApiRequests(self.store, self.work, transport=transport, connections=lambda: held)
+
+    def call(self, api, method, url, body=None):
+        return api.call({'slot': 'google-calendar', 'method': method, 'url': url, 'effect': 'mutate',
+                         **({'body': body} if body is not None else {})})
+
+    def test_a_change_spends_the_write_grant_and_a_read_keeps_the_read_grant(self):
+        transport = Transport({'id': 'round'})
+        api = self.api(transport)
+        api.call({'slot': 'google-calendar', 'url': self.EVENTS + '/round'})
+        self.call(api, 'PATCH', self.EVENTS + '/round', '{"start": {"date": null}}')
+        self.assertEqual([call[2]['Authorization'] for call in transport.calls],
+                         ['Bearer ' + self.READ, 'Bearer ' + self.WRITE])
+
+    def test_event_changes_dispatch_without_approval_and_every_other_write_is_refused(self):
+        allowed = [('POST', self.EVENTS), ('POST', self.EVENTS + '/quickAdd?text=lunch'),
+                   ('PATCH', self.EVENTS + '/round'), ('PUT', self.EVENTS + '/round_20261122T021200Z'),
+                   ('DELETE', self.EVENTS + '/round'), ('POST', self.EVENTS + '/round/move?destination=team%40example.com'),
+                   ('PATCH', 'https://www.googleapis.com/calendar/v3/calendars/team%40example.com/events/round')]
+        transport = Transport({'id': 'round'})
+        api = self.api(transport)
+        from unittest.mock import patch
+        with patch.object(api, '_approve', side_effect=AssertionError('no per-call approval')):
+            for method, url in allowed:
+                with self.subTest(method=method, url=url):
+                    self.call(api, method, url, '{}' if method != 'DELETE' else None)
+        self.assertEqual(len(transport.calls), len(allowed))
+        # Sharing a calendar, making or deleting calendars, importing, watching (an outside callback
+        # address) and settings stay out of reach.
+        refused = [('POST', 'calendars/primary/acl'), ('PATCH', 'calendars/primary/acl/rule'),
+                   ('POST', 'calendars'), ('DELETE', 'calendars/team'), ('PATCH', 'calendars/primary'),
+                   ('POST', 'calendars/primary/clear'), ('POST', 'calendars/primary/events/import'),
+                   ('POST', 'calendars/primary/events/watch'), ('POST', 'users/me/calendarList'),
+                   ('DELETE', 'users/me/calendarList/team'), ('POST', 'channels/stop'),
+                   ('POST', 'calendars/primary/events/round'), ('PATCH', 'calendars/primary/events/round/instances'),
+                   ('PATCH', 'calendars/primary/events/../acl/x')]
+        transport = Transport({'id': 'round'})
+        for method, path in refused:
+            with self.subTest(method=method, path=path), self.assertRaises(ApiError) as caught:
+                self.call(self.api(transport), method, 'https://www.googleapis.com/calendar/v3/' + path, '{}')
+            self.assertIn(caught.exception.code, ('api_path_refused', 'api_host_not_allowed'))
+        self.assertEqual(transport.calls, [])
+
+    def test_still_always_sends_no_attendee_email(self):
+        transport = Transport({'id': 'round'})
+        api = self.api(transport)
+        self.call(api, 'PATCH', self.EVENTS + '/round?sendUpdates=all&sendNotifications=true&conferenceDataVersion=1',
+                  '{"attendees": [{"email": "kim@example.com"}]}')
+        self.call(api, 'POST', self.EVENTS, '{"summary": "round"}')
+        from urllib.parse import parse_qs, urlsplit
+        sent = [parse_qs(urlsplit(call[1]).query) for call in transport.calls]
+        self.assertEqual(sent[0], {'sendUpdates': ['none'], 'sendNotifications': ['false'], 'conferenceDataVersion': ['1']})
+        self.assertEqual(sent[1], {'sendUpdates': ['none'], 'sendNotifications': ['false']})
+        # A read is sent as asked.
+        api.call({'slot': 'google-calendar', 'url': self.EVENTS + '?q=round'})
+        self.assertEqual(urlsplit(transport.calls[-1][1]).query, 'q=round')
+
+    def test_a_refused_change_returns_the_services_reason_changes_nothing_and_can_be_corrected(self):
+        refusal = {'error': {'code': 400, 'message': 'Invalid start time.',
+                             'errors': [{'domain': 'global', 'reason': 'invalid', 'message': 'Invalid start time.'}]}}
+        sent = []
+
+        def transport(method, url, headers, body, timeout):
+            sent.append(body)
+            if len(sent) == 1:
+                return 400, {}, json.dumps(refusal).encode()
+            return 200, {}, json.dumps({'id': 'round'}).encode()
+        api = self.api(transport)
+        with self.assertRaises(ApiError) as caught:
+            self.call(api, 'PATCH', self.EVENTS + '/round', '{"start": {"dateTime": "2026-11-22T11:12:00+09:00"}}')
+        self.assertEqual((caught.exception.code, caught.exception.effect), ('api_error', None))
+        self.assertIn('Invalid start time. / invalid', str(caught.exception))
+        self.assertIn('바뀐 것은 없습니다', str(caught.exception))
+        # The AI corrects the request from the reason; the Work is not stuck behind an unknown outcome.
+        result = self.call(api, 'PATCH', self.EVENTS + '/round',
+                           '{"start": {"date": null, "dateTime": "2026-11-22T11:12:00+09:00"}}')
+        self.assertEqual(result['data'], {'id': 'round'})
+        self.assertEqual(len(sent), 2)
+
+    def test_a_server_failure_of_a_change_stays_unknown(self):
+        api = self.api(lambda *args: (500, {}, b'{"error": {"message": "Backend Error"}}'))
+        with self.assertRaises(ApiError) as caught:
+            self.call(api, 'PATCH', self.EVENTS + '/round', '{}')
+        self.assertEqual(caught.exception.effect, 'unknown')
+        self.assertIn('Backend Error', str(caught.exception))
+        with self.assertRaises(ApiError) as again:
+            self.call(api, 'PATCH', self.EVENTS + '/round', '{"summary": "other"}')
+        self.assertEqual(again.exception.code, 'effect_unknown')
+
+    def test_the_services_reason_never_carries_the_token_and_is_bounded(self):
+        echo = {'error': {'message': 'bad token ' + self.WRITE + ' ' + 'x' * 2000}}
+        api = self.api(lambda *args: (400, {}, json.dumps(echo).encode()))
+        with self.assertRaises(ApiError) as caught:
+            self.call(api, 'PATCH', self.EVENTS + '/round', '{}')
+        text = str(caught.exception)
+        self.assertNotIn(self.WRITE, text)
+        self.assertIn('[redacted]', text)
+        self.assertLess(len(text), 700)
+
+    def test_without_the_write_connection_a_change_asks_for_it_and_sends_nothing(self):
+        transport = Transport({'id': 'round'})
+        read_only = connection_slots._slot('google-calendar', lambda: self.READ)
+        with self.assertRaises(ApiError) as caught:
+            self.call(self.api(transport, read_only), 'PATCH', self.EVENTS + '/round', '{}')
+        self.assertEqual((caught.exception.code, caught.exception.requires), ('api_read_only', 'google-calendar-write'))
+        self.assertEqual(transport.calls, [])
+        self.assertIn('google-calendar-write', connection_slots.write_grants())
+
+    def test_the_write_connection_makes_the_built_slot_writable(self):
+        class Registry:
+            def __init__(self, connected):
+                self.connected = connected
+
+            def status(self, owner, connector_id):
+                state = ConnectorState.CONNECTED if connector_id in self.connected else ConnectorState.DISCONNECTED
+                return type('Status', (), {'state': state, 'connection_revision': 'rev-7'})()
+
+        def service(connected):
+            return type('Service', (), {'connector_registry': Registry(connected), 'calendar_oauth': object(),
+                                        'drive_oauth': None, 'gmail': None})()
+        read_only = connection_slots.build(service({'google-calendar'}), 'owner')['google-calendar']
+        self.assertTrue(read_only['read_only'])
+        self.assertIsNone(read_only['write_token'])
+        writable = connection_slots.build(service({'google-calendar', 'google-calendar-write'}), 'owner')['google-calendar']
+        self.assertFalse(writable['read_only'])
+        self.assertTrue(callable(writable['write_token']))
+        self.assertEqual(writable['revision'], 'rev-7')
+        self.assertIn('sendUpdates=none', writable['note'])
+        self.assertEqual(connection_slots.relayed(('google-calendar', 'google-calendar-write'))['google-calendar']['read_only'],
+                         False)

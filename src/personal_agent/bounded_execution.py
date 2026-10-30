@@ -237,8 +237,7 @@ CLI_PROFILES = {
         'actions': ('list_notes',),
         'unavailable': {action: _ISOLATED for action in (
             'save_note', 'weather', 'web_search', 'public_page_read',
-            'find_files', 'read_file', 'list_roots', 'save_result', 'calendar_query', 'calendar_draft_create',
-            'calendar_draft_update', 'calendar_draft_cancel', 'save_memory', 'list_memory', 'search_memory', 'search_conversation', 'forget_record',
+            'find_files', 'read_file', 'list_roots', 'save_result', 'calendar_query', 'save_memory', 'list_memory', 'search_memory', 'search_conversation', 'forget_record',
             'list_agents', 'delegate_agent', 'propose_current_state', 'schedule_preparation', 'ask_location',
             'tell_owner', 'settings_read', 'settings_change', 'capability_search', 'information_use', 'drive_search', 'drive_read', 'mail_search', 'mail_read', 'api_request', 'code_run',
             *_BROWSER_ACTIONS, *_SKILL_ACTIONS)},
@@ -259,8 +258,7 @@ CLI_PROFILES = {
         'actions': ('list_notes', 'propose_current_state', 'public_page_read', 'save_note', 'weather', 'web_search'),
         'unavailable': {
             'find_files': _STRICT_FILES, 'read_file': _STRICT_FILES, 'list_roots': _STRICT_FILES, 'save_result': _STRICT_FILES,
-            'calendar_query': _CALENDAR, 'calendar_draft_create': _CALENDAR,
-            'calendar_draft_update': _CALENDAR, 'calendar_draft_cancel': _CALENDAR,
+            'calendar_query': _CALENDAR,
             'drive_search': _DRIVE, 'drive_read': _DRIVE,
             'mail_search': _MAIL, 'mail_read': _MAIL,
             'api_request': _API, 'code_run': _API,

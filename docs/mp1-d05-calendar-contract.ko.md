@@ -1,5 +1,7 @@
 # MP1 D-05 — Google Calendar Create-Event Approval Contract
 
+> **후속 — Jongtae/Still#432 (소유자 결정 2026-10-30).** 캘린더 변경은 더 이상 초안과 승인을 거치지 않는다. 쓰기 연결이 있으면 소유자의 AI가 Google Calendar API로 일정을 직접 만들고, 바꾸고, 옮기고, 지운다(`api_request`, 슬롯 `google-calendar`). Still은 토큰, 이벤트 경로, `sendUpdates=none`을 지킨다. 이 문서는 원래 I-05 범위의 기록이다.
+
 > **과거 참고용 한국어 번역본.** 내부 개발 기준은 [영어 원본](mp1-d05-calendar-contract.en.md)을 따른다.
 
 ## 범위

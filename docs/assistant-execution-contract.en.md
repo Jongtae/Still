@@ -97,7 +97,7 @@ The target full profile is independently tested on `direct-api`, `codex` and `cl
 | --- | --- | --- |
 | Public reads | Weather with resolved place/time, search, bounded source-page read and follow-up | Authenticated browsing, cookies, arbitrary JavaScript, CAPTCHA bypass, private hosts |
 | Granted private reads | Existing notes, approved files, supported mailbox metadata, calendar queries | New mailbox/body scope, ambient folders, connected=authorized assumptions |
-| Drafts/artifacts | Exact calendar draft/approval, explicitly requested memory/note/output under existing policy | Auto-approval, unsupported invitations/recurrence, arbitrary original mutation |
+| Drafts/artifacts | Calendar event changes through the Calendar API with the write connection (#432), explicitly requested memory/note/output under existing policy | Attendee email, calendar sharing, arbitrary original mutation |
 | Discovery | Find/describe existing reviewed declarations, load qualified schema, request needed connection/grant | Automatic download/install/update, account creation or grant expansion |
 | Recovery | Safe alternative/read retry, current-authority resume and actual Stop | Hidden provider switch, duplicate uncertain write, false cancellation |
 

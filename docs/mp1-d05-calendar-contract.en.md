@@ -1,5 +1,7 @@
 # MP1 D-05 — Google Calendar Create-Event Approval Contract
 
+> **Successor — Jongtae/Still#432 (owner decision 2026-10-30).** Calendar changes no longer go through drafts and approval. With the write connection, the owner's AI creates, changes, moves and deletes events through the Google Calendar API itself (`api_request`, slot `google-calendar`). Still keeps the token, the event paths and `sendUpdates=none`. This contract records the original I-05 scope.
+
 ## Scope
 
 I-05 creates one new event on the owner's primary Google Calendar through a mock-validated adapter. It requests a Calendar write scope separate from Drive, but only after the owner has previewed and approved one exact event payload. Update, deletion, invitations, attendee lookup, conflict resolution, and automatic scheduling are excluded.
