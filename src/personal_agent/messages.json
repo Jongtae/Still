@@ -2411,6 +2411,12 @@
   "ja": "手順の案内を読んでいます",
   "zh": "正在阅读操作指南"
  },
+ "step.tell_owner": {
+  "ko": "지금까지 알게 된 걸 전하고 있어요",
+  "en": "Telling you what I found so far",
+  "ja": "ここまでにわかったことをお伝えしています",
+  "zh": "正在告诉你目前了解到的情况"
+ },
  "step.ask_location": {
   "ko": "위치를 물어보려고 해요",
   "en": "About to ask for your location",

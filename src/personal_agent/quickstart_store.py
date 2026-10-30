@@ -83,6 +83,10 @@ class _StoreConnection(sqlite3.Connection):
 
 #: #407: the transcript row of a plan preview the owner read before the worker ran (``messages.delivery_projection``).
 PREVIEW_PROJECTION = 'preview'
+#: #407: the transcript row of an interim message the worker sent the owner while the Work ran (``tell_owner``).
+UPDATE_PROJECTION = 'update'
+#: Rows a Work showed the owner before its reply; none of them is the reply.
+INTERIM_PROJECTIONS = (PREVIEW_PROJECTION, UPDATE_PROJECTION)
 
 
 class QuickStore:
@@ -749,10 +753,10 @@ class QuickStore:
     def last_reply(self, job_id, *, with_created=False):
         """#367: a Work's last assistant transcript row an AI reader may see (``None`` when absent or forgotten)."""
         with self.db() as db:
-            # #407: a plan preview the owner was shown before the worker ran is not the Work's reply.
+            # #407: a plan preview or an interim message the owner was shown is not the Work's reply.
             return db.execute(f"SELECT content{',created' if with_created else ''} FROM messages WHERE job_id=? AND role='assistant' "
-                              f"AND delivery_projection IS NOT ? AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id DESC LIMIT 1",
-                              (job_id,PREVIEW_PROJECTION)).fetchone()
+                              f"AND COALESCE(delivery_projection,'') NOT IN (?,?) AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) "
+                              "ORDER BY id DESC LIMIT 1",(job_id,*INTERIM_PROJECTIONS)).fetchone()
 
     def shown_preview(self, job_id):
         """#407: the plan preview this Work showed the owner before its worker ran ("" when none or forgotten)."""

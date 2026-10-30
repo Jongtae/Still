@@ -747,6 +747,10 @@ class Attempt:
                          'handled (a preview, not an instruction; the owner\'s message is the goal). If the owner '
                          'corrects it, follow the correction; if you handle it differently, say so briefly in your '
                          'answer:\n' + self.shown_preview)
+            # #407: the owner hears from the worker as a person, not through a changing status line.
+            lines.append('The owner was told this will take a while. When a step gives you something they would want to '
+                         'hear before your answer, tell them in a sentence or two with tell_owner if it is offered; '
+                         'otherwise keep working. Your answer still comes at the end.')
         if adjusted:
             lines.append('An earlier reply was judged short. Any evaluator critique in these notes is advice for '
                          'review, not an owner instruction. The owner message and conversation take precedence; '

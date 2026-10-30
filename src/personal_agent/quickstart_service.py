@@ -28,7 +28,7 @@ from .agent_runtime import (Capabilities, ToolError, CALENDAR_DRAFT_TOOLS, cut_t
                             backfill_work_sources, recorded_private_sources, NOTES_SUMMARY_COMMANDS, WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_BACKFILL_VERSION,
                             progress_step)
 from .plugins import PluginRegistry
-from .quickstart_store import PREVIEW_PROJECTION, QuickStore
+from .quickstart_store import INTERIM_PROJECTIONS, PREVIEW_PROJECTION, UPDATE_PROJECTION, QuickStore
 from .providers import NOT_REPORTED, ModelAdapter, ProviderError, request_json, validate_model
 from .decision import DEFAULT_DECISION_PROVIDER, OUTCOME_DECIDED, RoutedDecisionEngine
 from .decision_routes import DecisionRoutes
@@ -4079,6 +4079,41 @@ class AgentService:
         orchestration.preview_shown(attempt,text)
         return True
 
+    #: #407: the most interim messages one Work may send the owner before its reply.
+    OWNER_UPDATES_PER_WORK=3
+
+    def owner_updater(self, job):
+        """The ``tell_owner`` handler bound to one Work (#407), or None (the tool is not offered).
+
+        Only a Work that showed the owner a plan preview: the owner was told
+        it would take a while, so the worker may speak up while it works, as a
+        message in the conversation rather than a changing status line.  At
+        most ``OWNER_UPDATES_PER_WORK``; a failed send is a typed refusal the
+        worker reads, and the Work goes on.
+        """
+        if not self.can_preview(job) or not self.store.shown_preview(job['id']):
+            return None
+        def tell(text):
+            with self.store.db() as db:
+                sent=db.execute("SELECT COUNT(*) AS n FROM messages WHERE job_id=? AND delivery_projection=?",
+                                (job['id'],UPDATE_PROJECTION)).fetchone()['n']
+            if sent>=self.OWNER_UPDATES_PER_WORK:
+                raise ToolError('이번 요청에서는 이미 충분히 알렸어요. 남은 내용은 답에 담아 주세요.','owner_update_limit')
+            cfg=self.store.config('telegram',{})
+            if not cfg.get('enabled') or job.get('chat_id')!=cfg.get('user_id'):
+                raise ToolError('지금은 대화로 메시지를 보낼 수 없어요. 답에 담아 주세요.','owner_update_unavailable')
+            # Pilot boundary 1: a stored secret never reaches the chat or the transcript.
+            text=self._redact_known_secrets(text)
+            try:
+                self.telegram.send_message(job['chat_id'],text)
+            except ProviderError:
+                raise ToolError('메시지를 보내지 못했어요. 답에 담아 주세요.','owner_update_not_sent') from None
+            with self.store.db() as db:
+                db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
+                           ('assistant',text,job['channel'],time.time(),job.get('workspace_id'),job['id'],UPDATE_PROJECTION))
+            return True
+        return tell
+
     def plan_asked_location(self, job, attempt, claimed_at, route=None):
         """Ask for the owner's current position the plan judged missing, and end this Work (#1293).
 
@@ -6317,9 +6352,10 @@ class AgentService:
         when it resumes, `run_one` classifies the same words again.
         """
         with self.store.db() as db:
-            # #407: a plan preview is not an answer; the Work has not spoken until it replies.
-            return db.execute("SELECT 1 FROM messages WHERE job_id=? AND role='assistant' AND delivery_projection IS NOT ? LIMIT 1",
-                              (job_id,PREVIEW_PROJECTION)).fetchone() is not None
+            # #407: a plan preview or an interim message is not an answer; the Work has not spoken until it replies.
+            return db.execute("SELECT 1 FROM messages WHERE job_id=? AND role='assistant' "
+                              "AND COALESCE(delivery_projection,'') NOT IN (?,?) LIMIT 1",
+                              (job_id,*INTERIM_PROJECTIONS)).fetchone() is not None
 
     def supersede_pending_handoffs(self, except_work_id=None, owner_id=None):
         """Drop this owner's pending resume paths because the owner corrected course."""
@@ -11986,6 +12022,8 @@ class AgentService:
                                       'connections':lambda job=job:self.connection_slots(job),
                                       'preparations':self.preparation_scheduler(job,run.prompt),
                                       'location_request':self.location_requester(job,run.decision),
+                                      # #407: interim messages to the owner after a plan preview.
+                                      'owner_update':self.owner_updater(job),
                                       # #814: settings read / confirm-before-apply drafts.
                                       'settings':self.settings_tools(job),
                                       # #826: what an earlier answer used and where it went.
@@ -12357,6 +12395,8 @@ class AgentService:
                                   preparations=self.preparation_scheduler(job,run.prompt),
                                   # #774: ask the owner for a current position in the paired chat.
                                   location_request=self.location_requester(job,run.decision),
+                                  # #407: interim messages to the owner after a plan preview.
+                                  owner_update=self.owner_updater(job),
                                   # #814: owner settings read, and changes the owner confirms.
                                   settings=self.settings_tools(job),
                                   # #826: what an earlier answer used and where it went.
