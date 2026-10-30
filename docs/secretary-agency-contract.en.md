@@ -32,8 +32,8 @@ Owner direction 2026-10-29: Still's model of the owner should also improve betwe
 - **What it reads.** The settled requests a worker AI answered since the last dream: at most 7 days back and 40 requests. Each is scrubbed with its own Work's saved private values and bounded in size. It also reads the profile with short ids, the working notes, the previous daily record and the clock.
   - It leaves out what upkeep never reads: rule or command replies, preparation runs, location continuations, Works where the owner managed what Still keeps, and forgotten requests.
 - **One judgment, then Still's checks.**
-  - **Facts:** each must cite turns it read. An `inferred` fact needs two separate turns, and a request sentence is never a fact. Facts then pass upkeep's `validate` and its save path (secret, forgotten-value and id checks).
-  - **Mass ending:** a dream whose facts would end more than a quarter of the current profile rows (at least one) is refused whole.
+  - **Facts:** each must cite what it rests on: turns it read, or, to tidy what is remembered, the short ids of the profile lines it restates or ends. A proposal citing no turn may only restate or end the lines it names, so no new fact comes from the profile alone. An `inferred` fact needs two separate turns, and a request sentence is never a fact. Facts then pass upkeep's `validate` and its save path (secret, forgotten-value and id checks).
+  - **Mass ending:** naming the line under the proposal's own key is a replacement, not an ending. When the dream's facts would end more than a quarter of the current profile rows (at least one), every proposal that ends a line is refused; pure additions stay.
   - **Working notes:** a revision must cite two separate turns and passes `validate_review`. One that drops more than half of the current points at once is refused. So is one whose anchor already used its one notes notice, since it would go untold.
   - **Daily record:** at most 800 characters. A secret shape and the pause stop it.
 - **What it writes.** Everything is attributed to the anchor.

@@ -283,15 +283,26 @@ class Gates(unittest.TestCase):
         kept, dropped = self.check(fact('profile.place.work', '나는 판교에서 일해', 't1', category='place'))
         self.assertEqual((kept, [item['reason'] for item in dropped]), ([], ['request']))
 
-    def test_ending_more_than_a_quarter_of_the_profile_is_refused_whole(self):
+    def test_ending_more_than_a_quarter_of_the_profile_refuses_the_endings_and_keeps_additions(self):
         ends = [('aaaaaaa1', 'old'), ('aaaaaaa2', 'old'), ('aaaaaaa3', 'old')]
         kept, dropped = self.check(fact('profile.place.work', '판교', 't1', category='place', invalidates=ends),
+                                   fact('profile.schedule.dentist', '10월 31일 치과', 't3', category='schedule'),
                                    profile_rows=8)
-        self.assertEqual(kept, [])
+        self.assertEqual([item['memory_key'] for item in kept], ['profile.schedule.dentist'])
         self.assertEqual([item['reason'] for item in dropped], ['mass-end'])
         kept, _dropped = self.check(fact('profile.place.work', '판교', 't1', category='place', invalidates=ends[:2]),
                                     profile_rows=8)
         self.assertEqual(len(kept), 1)
+
+    def test_naming_the_own_keys_line_is_a_replacement_not_an_ending(self):
+        date_fix = fact('profile.identity.spouse', '2026년부터 배우자가 있음', 'aaaaaaa1', category='identity',
+                        invalidates=[('aaaaaaa1', 'absolute date')])
+        merge = fact('profile.identity.marital_status', '배우자(아내)가 있음', 'aaaaaaa2', 'aaaaaaa1', category='identity',
+                     invalidates=[('aaaaaaa1', 'same fact')])
+        kept, dropped = self.check(date_fix, profile_rows=4)
+        self.assertEqual((len(kept), kept[0]['invalidates'], dropped), (1, [], []))
+        kept, _dropped = self.check(merge, profile_rows=4)
+        self.assertEqual([end['id'] for end in kept[0]['invalidates']], ['aaaaaaa1'])
 
     def test_a_small_profile_may_still_end_one_row(self):
         kept, _dropped = self.check(fact('profile.place.work', '판교', 't1', category='place',

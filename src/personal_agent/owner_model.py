@@ -488,9 +488,11 @@ def validate_dream(proposals, refs, requests, known, pending, profile_rows, prof
     ``invalidates`` or is the row under its own key - so no new fact comes from the profile alone.
     An ``inferred`` fact drawn from turns needs two separate turns: a pattern is never drawn from one
     occasion.  A proposal that is one of the turns' request sentences is the request, not a fact.  The
-    rest is ``validate``'s.  When the kept proposals together would end more than
-    ``DREAM_END_FRACTION`` of the ``profile_rows`` current profile rows (at least one), every
-    proposal is refused: a look back that rewrites much of what is known is not trusted to do it at once.
+    rest is ``validate``'s.  Naming the line under the proposal's own key in ``invalidates`` is no
+    ending (saving the key replaces it) and is left out.  When the kept proposals together would end
+    more than ``DREAM_END_FRACTION`` of the ``profile_rows`` current profile rows (at least one), every
+    proposal that ends a line is refused and pure additions stay: a look back that removes much of
+    what is known is not trusted to do it at once.
     """
     proposals = proposals if isinstance(proposals, list) else []
     profile_ids = profile_ids or {}
@@ -515,13 +517,17 @@ def validate_dream(proposals, refs, requests, known, pending, profile_rows, prof
         if reason:
             dropped.append({'key_digest': key_digest(key), 'reason': reason} if key else {'reason': reason})
         else:
-            cited.append(item)
+            # The line under the proposal's own key is replaced by saving it, not ended: it is no loss.
+            cited.append({**item, 'invalidates': [end for end in item.get('invalidates') or ()
+                                                  if not (isinstance(end, dict)
+                                                          and profile_ids.get(str(end.get('id') or '').strip()) == key)]})
     kept, refused = validate(cited, known, pending)
     dropped.extend(refused)
-    ends = sum(len(item['invalidates']) for item in kept)
-    if ends > max(1, int(DREAM_END_FRACTION * max(0, profile_rows))):
-        dropped.extend({'key_digest': key_digest(item['memory_key']), 'reason': 'mass-end'} for item in kept)
-        kept = []
+    if sum(len(item['invalidates']) for item in kept) > max(1, int(DREAM_END_FRACTION * max(0, profile_rows))):
+        # Too much ended at once: every proposal that ends a line is refused; a pure addition stays.
+        dropped.extend({'key_digest': key_digest(item['memory_key']), 'reason': 'mass-end'}
+                       for item in kept if item['invalidates'])
+        kept = [item for item in kept if not item['invalidates']]
     return kept, dropped
 
 
