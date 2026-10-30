@@ -667,6 +667,19 @@ class QuickStore:
                 db.execute('UPDATE work_steers SET delivered_at=? WHERE job_id=? AND delivered_at IS NULL',(time.time(),job_id))
         return [row['content'] for row in rows]
 
+    def work_steer_texts(self, job_id):
+        """#428: every owner message judged to steer Work ``job_id`` so far, oldest first, claimed or not."""
+        with self.db() as db:
+            return [row['content'] for row in db.execute('SELECT content FROM work_steers WHERE job_id=? ORDER BY created',(job_id,))]
+
+    def steers_carried(self, job_id, at):
+        """#428: every unanswered steer of Work ``job_id`` reached the attempt that started at ``at`` in its brief.
+
+        That attempt's reply answers them, so the #308 S1 finish guard does not run them again.
+        """
+        with self.db() as db:
+            db.execute('UPDATE work_steers SET delivered_at=? WHERE job_id=? AND answered_at IS NULL',(at,job_id))
+
     def steer_delivered(self, source_job_id, db=None):
         """True when this queued message already reached the Work it steered (#999)."""
         if db is None:

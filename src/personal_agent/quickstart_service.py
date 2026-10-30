@@ -6221,6 +6221,12 @@ class AgentService:
         can be checked against what the page showed.
         """
         if orchestration is None or attempt is None or not orchestration.orchestrated:return None
+        # #428: a correction the owner sent while this attempt ran reaches the judgment and any re-plan,
+        # not only the running worker; a steer still being judged is waited for (bounded) first.
+        corrected=getattr(orchestration,'owner_corrected',None)
+        if callable(corrected):
+            self._await_steer_judgments(job_id)
+            corrected(self.store.work_steer_texts(job_id))
         from .agent_runtime import EFFECT_NONE, call_effects, failed_steps_text, read_state_text, trail_steps
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',(job_id,since or 0)).fetchall()
@@ -11829,6 +11835,9 @@ class AgentService:
             # #308 S1: a steer claimed from now on reaches the attempt whose reply is delivered.  A
             # continuation keeps its predecessor's start: it carries the steers that attempt had too.
             if not run.steer_note:run.attempt_started_at=time.time()
+            # #428: a re-delegated attempt whose brief carries the owner's corrections has received them.
+            if run.attempt is not None and run.attempt.corrections and not run.attempt.steer:
+                self.store.steers_carried(job['id'],run.attempt_started_at)
             # #795: whether this attempt's CLI ran with its own tools unconfined, and what it reported.
             run.unmediated_turn,run.engine_meta=False,None
             # #981: set by a CLI attempt whose worker asked for the owner's sign-in.
