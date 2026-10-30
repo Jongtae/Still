@@ -2389,7 +2389,8 @@ class SecretaryStandard(Harness):
         self.assertIn('when the observations show no attempt to find it', GOAL_REACHED_PROPOSITION)
 
     def test_the_guidance_puts_the_source_next_to_a_looked_up_fact_and_proposes_a_watch_despite_a_missing_detail(self):
-        """#854: a looked-up changing fact carries its link or is called unsourced; a missing detail never blocks a watch."""
+        """#854: a looked-up changing fact carries its link or is called unsourced; an assumable missing detail never
+        blocks a watch (#406: only one that decides what is checked is asked first)."""
         from personal_agent.agent_runtime import (CLI_NATIVE_SEARCH_GUIDANCE, CORE_INSTRUCTIONS, DEFINITIONS,
                                                   SCHEDULE_PREPARATION_DESCRIPTION)
         from test_no_scenario_code import scenario_tokens
@@ -2402,7 +2403,9 @@ class SecretaryStandard(Harness):
         self.assertIn('before saying it could not be checked', CLI_NATIVE_SEARCH_GUIDANCE)
         by_name = {tool['function']['name']: tool['function']['description'] for tool in DEFINITIONS}
         for text in (SCHEDULE_PREPARATION_DESCRIPTION, by_name['schedule_preparation']):
-            self.assertIn('still propose the watch with what is known and ask for the detail in the same reply', text)
+            self.assertIn('still propose the watch with what is known, say the assumption and ask in the same reply', text)
+            self.assertIn('when the missing detail decides what is checked (which date, which item) and nothing gives it, '
+                          'ask that one question first', text)
         for text in (CORE_INSTRUCTIONS, CLI_NATIVE_SEARCH_GUIDANCE, SCHEDULE_PREPARATION_DESCRIPTION):
             self.assertEqual(scenario_tokens(text), [])
 
