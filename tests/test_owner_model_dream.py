@@ -280,15 +280,37 @@ class Run(Dream):
         [diary] = self.store.memories(MEMORY_OWNER, key_prefix=om.DIARY_PREFIX)
         self.assertEqual(diary['content'], '- 2026-10-13 20:20 예약매수 요청, 접수 확인 안 됨\n- 2026-10-13 21:00 장바구니 담기 완료')
 
-    def test_the_day_record_is_found_by_search_but_never_read_by_a_brief(self):
-        self.day('a', 'b', 'c')
-        self.dreams = [dream(diary='2026-10-29: 이사 준비로 부동산 세 곳을 비교했다.')]
-        self.tick()
-        snapshot = self.service.owner_profile_snapshot('이사 준비', notes=True)
-        self.assertNotIn('부동산', snapshot)
-        memory = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)
-        found = memory.search_memories(MEMORY_OWNER, '부동산')['memories']
-        self.assertEqual([row['memory_key'][:len(om.DIARY_PREFIX)] for row in found], [om.DIARY_PREFIX])
+    def records(self, *rows):
+        for day, text in rows:
+            self.store.save_memory(om.DIARY_PREFIX + day, text, MEMORY_OWNER)
+
+    def test_a_brief_carries_the_last_days_records_and_older_ones_the_request_finds(self):
+        """#442: measured on the memory set, attaching records raised needed facts with no loss."""
+        from datetime import date, timedelta
+        today = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)._today()
+        ago = lambda n: (date.fromisoformat(today) - timedelta(days=n)).isoformat()  # noqa: E731
+        self.records((ago(1), '- 어제 360750 예약매수 요청, 접수 확인 안 됨'), (ago(2), '- 그제 이마트 장바구니 담기'),
+                     (ago(9), '- 부동산 커뮤니티 여론 정리 요청'), (ago(12), '- 골프 벨트 주문'))
+        brief = self.service.owner_profile_snapshot('부동산 커뮤니티 다시 봐줘', notes=True)
+        self.assertIn(MemoryService.RECORDS_HEADING, brief)
+        for text in ('360750 예약매수', '이마트 장바구니', '부동산 커뮤니티 여론'):
+            self.assertIn(text, brief)
+        self.assertNotIn('골프 벨트', brief, 'an older record the request does not find stays out')
+        self.assertLess(brief.index(f'[record of {ago(9)}]'), brief.index(f'[record of {ago(1)}]'), 'oldest first')
+        upkeep_view = self.service.owner_profile_snapshot('부동산 커뮤니티 다시 봐줘', notes=False)
+        self.assertNotIn('360750', upkeep_view, 'the owner-model judgments read the facts alone')
+        preparation = self.service.owner_profile_snapshot('부동산', notes=True, recall=False)
+        self.assertNotIn('360750', preparation, "a preparation's Work sees only its origin")
+
+    def test_a_record_is_whole_or_left_out(self):
+        from datetime import date, timedelta
+        today = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)._today()
+        self.records((today, '- ' + '가' * (MemoryService.RECORDS_CHARS - 100)),
+                     ((date.fromisoformat(today) - timedelta(days=1)).isoformat(), '- ' + '나' * 200))
+        block = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD).records_block(MEMORY_OWNER)
+        self.assertLessEqual(len(block), MemoryService.RECORDS_CHARS)
+        self.assertIn('나' * 200, block)
+        self.assertNotIn('가' * 10, block)
 
     def test_turns_leave_out_what_upkeep_never_reads(self):
         self.settled('명령 응답', provider='builtin')

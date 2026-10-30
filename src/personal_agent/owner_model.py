@@ -121,10 +121,10 @@ DREAM_GATHER_LIMIT = 10
 #: #402: one dream may end at most this share of the current profile rows (at least one);
 #: more is refused whole, the OpenClaw ``maxPriorEntryLossFraction`` lesson.
 DREAM_END_FRACTION = 0.25
-#: #402: the daily record.  A Memory row outside ``profile.``, so no brief reads it unless a
-#: search finds it; one per owner date, in the owner's language.
+#: #402: the daily record.  A Memory row outside ``profile.``, one per owner date, in the owner's language;
+#: #442: a Work's brief carries the last days' records (``MemoryService.records_block``).
 DIARY_PREFIX = 'diary.'
-#: #438: one line per event, so a busy day needs more room than a summary did.
+#: #442: one line per event, so a busy day needs more room than a summary did.
 DIARY_CHARS = 1500
 #: Why a self-review was enqueued (typed markers, never text rules).
 REVIEW_FAILED, REVIEW_CORRECTION, REVIEW_RETRY, REVIEW_REACTION = 'failed', 'correction', 'retry', 'reaction'

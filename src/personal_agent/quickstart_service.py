@@ -2919,6 +2919,13 @@ class AgentService:
             # Codex review on #227: a preparation's Work sees only its origin (``preparation_history``), so no recall.
             said=self.owner_words_block(query) if recall else ''
             if said:text += ('\n' if text else '') + said
+            # #442: the dream's daily records of the last days and older ones the request finds.
+            try:
+                records=memory.records_block(MEMORY_OWNER,query) if recall else ''
+            except Exception as exc:  # a record that fails to read leaves the brief as it was
+                LOG.warning('daily records unavailable for the brief (%s)',type(exc).__name__)
+                records=''
+            if records:text += ('\n' if text else '') + records
         return self._redact_known_secrets(text)
 
     def _memory_raise_notes(self, memory):
