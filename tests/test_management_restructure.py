@@ -89,6 +89,12 @@ class Structure(unittest.TestCase):
         self.assertIn('id="preparations"', tasks[tasks.index('id="task-scheduled"'):])
         self.assertLess(tasks.index('id="task-attention"'), tasks.index('id="task-list"'))
         diagnostics = pane("settings-diagnostics")
+        # Codex review on #433: a link that focuses a turn must show 최근 기록 even when 예약된 일
+        # was the last 작업 현황 view, or it scrolls to a turn inside the hidden panel.
+        jumps = re.findall(r"navigate\('tasks'[^;]*;focusTurn\(", APP)
+        self.assertTrue(jumps)
+        for jump in jumps:
+            self.assertIn("taskTab:'recent'", jump)
         self.assertIn('id="activity-details"', diagnostics)
         self.assertIn('id="developer-settings"', diagnostics)
 

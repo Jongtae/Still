@@ -1121,7 +1121,7 @@ async function loadItem(){const target=activeItem;if(!target)return;const reques
  try{const data=await api('/api/personal-space/items/'+target.kind+'/'+encodeURIComponent(target.id));if(request!==itemLoadSequence||activeItem!==target)return;itemState={target,item:data.item||null,error:''};}
  catch(error){if(request!==itemLoadSequence||activeItem!==target)return;itemState={target,item:null,error:error.message||String(error),offline:Boolean(error.offline)};}
  renderItem();}
-function relatedWork(box,item){if(!item.work_id)return;const open=element('button',t('이 기록을 남긴 대화 보기'),'link-button');open.type='button';open.dataset.focusKey='item-work';open.onclick=()=>{navigate('tasks');focusTurn(item.work_id);};const row=element('p',undefined,'item-related');row.append(open);box.append(row);}
+function relatedWork(box,item){if(!item.work_id)return;const open=element('button',t('이 기록을 남긴 대화 보기'),'link-button');open.type='button';open.dataset.focusKey='item-work';open.onclick=()=>{navigate('tasks','',{taskTab:'recent'});focusTurn(item.work_id);};const row=element('p',undefined,'item-related');row.append(open);box.append(row);}
 function renderItem(){const box=$('item-detail'),target=activeItem;if(!box||!target)return;const state=itemState&&itemState.target===target?itemState:null,focusKey=rememberFocus(box);box.replaceChildren();
  if(!state){box.append(element('p',t('불러오는 중…'),'empty-state'));return;}
  const head=element('div',undefined,'detail-head'),meta=element('div',undefined,'meta'),item=state.item,title=element('h2',item?itemTitle(item):itemLabel(target.kind));title.id='item-title';head.append(title,meta);box.append(head);
