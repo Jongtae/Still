@@ -81,6 +81,10 @@ class _StoreConnection(sqlite3.Connection):
                 time.sleep(0.005*(attempt+1))
 
 
+#: #407: the transcript row of a plan preview the owner read before the worker ran (``messages.delivery_projection``).
+PREVIEW_PROJECTION = 'preview'
+
+
 class QuickStore:
     @cached_property
     def telegram(self):
@@ -745,8 +749,17 @@ class QuickStore:
     def last_reply(self, job_id, *, with_created=False):
         """#367: a Work's last assistant transcript row an AI reader may see (``None`` when absent or forgotten)."""
         with self.db() as db:
+            # #407: a plan preview the owner was shown before the worker ran is not the Work's reply.
             return db.execute(f"SELECT content{',created' if with_created else ''} FROM messages WHERE job_id=? AND role='assistant' "
-                              f"AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id DESC LIMIT 1",(job_id,)).fetchone()
+                              f"AND delivery_projection IS NOT ? AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id DESC LIMIT 1",
+                              (job_id,PREVIEW_PROJECTION)).fetchone()
+
+    def shown_preview(self, job_id):
+        """#407: the plan preview this Work showed the owner before its worker ran ("" when none or forgotten)."""
+        with self.db() as db:
+            row=db.execute(f"SELECT content FROM messages WHERE job_id=? AND role='assistant' AND delivery_projection=? "
+                           f"AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id LIMIT 1",(job_id,PREVIEW_PROJECTION)).fetchone()
+        return row['content'] if row else ''
 
     def managed_owner_state(self, job_id):
         """#380: whether this Work, or a correction or retry linked to it, forgot, deleted or undid owner state.

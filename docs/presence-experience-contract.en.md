@@ -140,6 +140,8 @@ One concise acknowledgement is allowed when latency or handoff makes it useful. 
 
 For paired Telegram there is no acknowledgement card (owner decision 2026-10-01, #958). Queued Work shows only the received reaction on the owner's message; the owner withdraws it in words or with Telegram's native Stop. Use the existing native typing/thinking presence for the running interval, not a status bubble.
 
+One exception is the plan preview (owner decision 2026-10-30, #407). When the decision model judges that a request takes more than one short reply, its first plan also writes a preview: what it understood (with any assumption), how it will be handled, and two to five steps. Still sends that preview once, before the worker starts, as one durable message the owner can answer to correct it. A short request gets no preview. The preview names no worker, model or reason; those stay in 작업 현황 (#740). The worker's brief and the running-Work steer judgment both see what the owner was shown. A failed send changes nothing else about the Work. Step progress in the draft is the follow-up slice of #407.
+
 ### Telegram presence: reactions, thinking draft and typing (#581, #835, #858)
 
 Owner feedback 2026-09-28 (#835) and 2026-09-29 (#858): a fixed reaction meant nothing, the "생각 중…" wait text felt stiff, and the header `typing…` ended too early. These changes stay presentation only: Work, Event, Evidence and outcome semantics are unchanged, and every reaction, chat action and draft is a best-effort call whose failure never fails, duplicates or changes Work.

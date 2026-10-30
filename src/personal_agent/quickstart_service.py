@@ -28,7 +28,7 @@ from .agent_runtime import (Capabilities, ToolError, CALENDAR_DRAFT_TOOLS, cut_t
                             backfill_work_sources, recorded_private_sources, NOTES_SUMMARY_COMMANDS, WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_BACKFILL_VERSION,
                             progress_step)
 from .plugins import PluginRegistry
-from .quickstart_store import QuickStore
+from .quickstart_store import PREVIEW_PROJECTION, QuickStore
 from .providers import NOT_REPORTED, ModelAdapter, ProviderError, request_json, validate_model
 from .decision import DEFAULT_DECISION_PROVIDER, OUTCOME_DECIDED, RoutedDecisionEngine
 from .decision_routes import DecisionRoutes
@@ -45,7 +45,7 @@ from .conversation_projection import (BLOCKER_CLOUD_PROFILE, BLOCKER_DOCUMENT_AP
 from .subscription_engines import SubscriptionEngines
 from .bounded_execution import BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls
 from .bounded_execution import AgentOSMcpTools, ReadOnlyAgentOSMcpTools, StrictIsolatedAgentOSMcpTools, BoundedExecutionAdapter, ExecutionError, ExecutionResult, MAX_PROMPT_BYTES, BOUNDED_PROFILE, HOST_CLI_PROFILES, STRICT_PROFILE, profile_actions, profile_status, route_unavailable
-from .orchestrator import MIN_ATTEMPT_SECONDS, model_refused, observations_with_pages, remember_model_refusal
+from .orchestrator import MIN_ATTEMPT_SECONDS, model_refused, observations_with_pages, preview_text, remember_model_refusal
 from .orchestrator import (EVENT_TOOL as ORCHESTRATION_EVENT, PURPOSE as ORCHESTRATION_PURPOSE, NOT_JUDGED, NOT_REACHED, REACHED, UNJUDGED, WORKER_FAILED,
                            Orchestration, worker_catalogue)
 from .isolated_engine_gateway import EngineGatewayError
@@ -3961,6 +3961,40 @@ class AgentService:
             return True,'이전 요청을 취소했습니다. 위치를 보내도 이어서 처리하지 않습니다.'
         return False,msg('service.the_previous_request_is_already_running')
 
+    def can_preview(self, job):
+        """#407: whether this Work's first plan may write a preview the owner reads before it runs.
+
+        Only a Work from the paired Telegram chat the owner is reading; a
+        scheduled preparation run speaks only through its own notice.
+        """
+        return answerable_work(job) and not prep.preparation_of(job.get('request_key'))
+
+    def show_plan_preview(self, job, orchestration, attempt):
+        """Send the first plan's preview once, before the worker starts (#407).
+
+        The owner reads what was understood, how it will be handled and the
+        steps, as one durable message they can answer to correct it.  Best
+        effort: a failed send never fails or delays the Work, and the worker
+        is then not told a preview was shown.  The row is the transcript's
+        (``delivery_projection='preview'``), never the Work's reply.
+        """
+        preview=getattr(attempt,'preview',None)
+        if not preview or attempt.number!=1 or orchestration is None:return False
+        cfg=self.store.config('telegram',{})
+        if (not cfg.get('enabled') or not self.can_preview(job) or job.get('chat_id')!=cfg.get('user_id')):return False
+        # Pilot boundary 1: a stored secret never reaches the chat or the transcript.
+        text=self._redact_known_secrets(preview_text(preview))
+        try:
+            self.telegram.send_message(job['chat_id'],text,reply_to=self.telegram_turns.source(job['id']))
+        except Exception as exc:  # presentation never fails or delays the Work
+            LOG.info('plan preview not sent job=%s kind=%s',job['id'],type(exc).__name__)
+            return False
+        with self.store.db() as db:
+            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
+                       ('assistant',text,job['channel'],time.time(),job.get('workspace_id'),job['id'],PREVIEW_PROJECTION))
+        orchestration.preview_shown(attempt,text)
+        return True
+
     def plan_asked_location(self, job, attempt, claimed_at, route=None):
         """Ask for the owner's current position the plan judged missing, and end this Work (#1293).
 
@@ -5854,6 +5888,8 @@ class AgentService:
                              sections={**sections,'history':len(earlier)},budget=budget,record=event,state=state,
                              work_id=job['id'],qualifying=self.decision_routes.qualifying,
                              can_ask_location=can_ask_location,attachments=attachments,previous_route=previous_route,
+                             # #407: computed here so the early plan and the Work's own plan ask the same question.
+                             can_preview=self.can_preview(job),
                              # #240: what waits for the owner, for the plan call and this Work's goal judgment.
                              awaiting_conversation=self.awaiting_in_conversation(job),
                              awaiting_work=lambda:om.awaiting_owner_text(om.work_awaiting_owner(self.store,job['id'])))
@@ -6156,7 +6192,9 @@ class AgentService:
         when it resumes, `run_one` classifies the same words again.
         """
         with self.store.db() as db:
-            return db.execute("SELECT 1 FROM messages WHERE job_id=? AND role='assistant' LIMIT 1",(job_id,)).fetchone() is not None
+            # #407: a plan preview is not an answer; the Work has not spoken until it replies.
+            return db.execute("SELECT 1 FROM messages WHERE job_id=? AND role='assistant' AND delivery_projection IS NOT ? LIMIT 1",
+                              (job_id,PREVIEW_PROJECTION)).fetchone() is not None
 
     def supersede_pending_handoffs(self, except_work_id=None, owner_id=None):
         """Drop this owner's pending resume paths because the owner corrected course."""
@@ -10642,7 +10680,8 @@ class AgentService:
         try:
             job=self.store.job(running_id)
             if not job or job.get('status')!='running':return False
-            judged=self.decision_judge.steers_running_work(job.get('message') or '',text)
+            judged=self.decision_judge.steers_running_work(job.get('message') or '',text,
+                                                           shown_plan=self.store.shown_preview(running_id))
             if judged.outcome==JUDGMENT_NO:
                 return self.start_side_answer(job,task_id)
             if judged.outcome!=JUDGMENT_YES:return False
@@ -11616,6 +11655,7 @@ class AgentService:
         if not run.orchestration:self.settle_early_judgment(early_plan)
         if run.attempt is not None and run.attempt.ask_location and self.plan_asked_location(job,run.attempt,run.claimed_at,run.decision):
             return True
+        if run.attempt is not None:self.show_plan_preview(job,run.orchestration,run.attempt)
         return PROCEED
 
     def _run_worker_attempts(self, run):
