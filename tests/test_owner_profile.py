@@ -761,7 +761,7 @@ const $=id=>ids.get(id),document={getElementById:$,createElement:tag=>new Elemen
 const part=(start,end)=>app.slice(app.indexOf(start),app.indexOf(end)),line=start=>{const at=app.indexOf(start);return app.slice(at,app.indexOf('\n',at)+1);};
 const source=part('const LANGUAGES=','function normalizeEndpoint(')+line('function formatTimeParts(')+part('function element(','function setError(')+
  'let ownerProfile=null,ownerProfileLoadSequence=0,ownerProfileEdit=null,ownerProfileDeletePending=null,savedMemory=null;function __setSaved(rows){savedMemory=rows;}\n'+
- part('function renderSavedMemory(','// Reload the list on the existing poll')+part('const PROFILE_PREFIX=','function rememberWorkspaceResultSummary(');
+ part('function memoryOriginLabel(','// Reload the list on the existing poll')+part('const PROFILE_PREFIX=','function rememberWorkspaceResultSummary(');
 const calls=[];let refreshes=0;
 const ctx={document,$,console,calls,
  api:async(path,body,method)=>{calls.push({path,body,method:method||(body===undefined?'GET':'POST')});if(path==='/api/personal-space/profile')return {memories:ctx.profileRows};return {deleted:true};},
@@ -808,6 +808,17 @@ const buttons=node=>descendants(node).filter(n=>n.tag==='button').map(n=>n.textC
  ctx.__setSaved({items:[{id:'m2',type:'memory',memory_key:'profile.place.home',content:'서울',created:1},{id:'m3',type:'memory',memory_key:'meeting-time',content:'mornings',created:1},{id:'n1',type:'note',content:'우유',created:1}],has_more:false});
  ctx.renderSavedMemory();
  assert.deepEqual(descendants($('saved-memory-list')).filter(n=>n.className.startsWith('settings-state')).map(n=>n.textContent),['프로필','기억','메모']);
+ // Only dream rows carry the localized overnight marker; ordinary rows keep their description.
+ ctx.__setSaved({items:[{id:'dream',type:'memory',memory_key:'profile.preference',created:1,origin:'dream'},
+                       {id:'chat',type:'memory',memory_key:'meeting-time',created:1}],has_more:false});
+ for(const [language,label] of [['ko','밤사이 정리'],['en','Overnight tidy-up'],['ja','夜間の整理'],['zh-CN','夜间整理']]){
+  vm.runInContext(`setLanguage('${language}')`,ctx);ctx.renderSavedMemory();
+  const descriptions=texts($('saved-memory-list'),'settings-row-description');
+  assert(descriptions[0].includes(label));assert(!descriptions[1].includes(label));
+ }
+ vm.runInContext("setLanguage('ko')",ctx);
+ ctx.profileRows=[{id:'dream',memory_key:'profile.preference',content:'기억',created:1,origin:'dream'}];
+ await ctx.loadOwnerProfile();assert($('owner-profile-list').textContent.includes('밤사이 정리'));
  // Key shape only: the helper never judges content.
  for(const key of ['profile.allergy','profile.place.home','profile.알러지'])assert(ctx.isProfileKey(key),key);
  for(const key of ['profile','profile.','allergy','profile.a b',null])assert(!ctx.isProfileKey(key),String(key));

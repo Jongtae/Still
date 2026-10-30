@@ -293,7 +293,9 @@ class QuickStore:
                               ('invalidated_by','TEXT'),('invalidation_reason','TEXT'),('invalidated_at','REAL'),
                               ('valid_until','TEXT'),
                               # #425: who wrote a row when it was not a request's own save ('dream': the look back).
-                              ('origin','TEXT')):
+                              ('origin','TEXT'),
+                              # #443: cited Work ids as JSON; NULL keeps the legacy anchor lookup.
+                              ('source_works','TEXT')):
                 if name not in memory_columns: db.execute(f'ALTER TABLE memories ADD COLUMN {name} {kind}')
             candidate_columns={row['name'] for row in db.execute('PRAGMA table_info(memory_candidates)')}
             for name,kind in (('owner_key','TEXT'),('work_key','TEXT'),('content_digest','TEXT'),('decided','REAL'),('resulting_memory_id','TEXT')):
@@ -893,7 +895,8 @@ class QuickStore:
         if not row:return None
         value=dict(row)
         return {key:value[key] for key in ('id','memory_key','content','created','supersedes','state','content_digest','candidate_id',
-                                           'valid_until','invalidated_by','invalidation_reason','invalidated_at','origin') if key in value}
+                                           'valid_until','invalidated_by','invalidation_reason','invalidated_at','origin')
+                if key in value and (key != 'origin' or value[key] is not None)}
 
     #: #220: at most this many earlier rows one save may end.
     MAX_INVALIDATES=3
@@ -921,7 +924,11 @@ class QuickStore:
         return pairs,valid_until
 
     def _save_memory(self, db, memory_key, content, owner_key, work_key=None, candidate_id=None,
-                     preserve_correction_token=None, corrected=False, invalidates=(), valid_until=None, origin=None):
+                     preserve_correction_token=None, corrected=False, invalidates=(), valid_until=None, origin=None, source_works=None):
+        if source_works is not None:
+            if not isinstance(source_works, (list, tuple)) or any(not isinstance(work, str) or not work for work in source_works):
+                raise ValueError('기억 출처를 확인하세요.')
+            source_works=json.dumps(list(dict.fromkeys(source_works)))
         memory_id=str(uuid.uuid4());digest=self.memory_digest(memory_key,content)
         # ``valid_until`` None keeps the replaced row's last day; '' says the fact has none.
         keep_last_day=valid_until is None
@@ -968,8 +975,8 @@ class QuickStore:
                           WHERE id=? AND owner_key=?""",(memory_id,reason,now,row['id'],owner_key))
             db.execute("""UPDATE memory_approvals SET state='revoked',memory_key=''
                           WHERE owner_key=? AND memory_key=? AND state='issued'""",(owner_key,row['memory_key']))
-        db.execute('INSERT INTO memories(id,memory_key,content,created,supersedes,state,owner_key,work_key,content_digest,candidate_id,valid_until,origin) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-                   (memory_id,memory_key,content,now,previous['id'] if previous else None,'current',owner_key,work_key,digest,candidate_id,valid_until,origin))
+        db.execute('INSERT INTO memories(id,memory_key,content,created,supersedes,state,owner_key,work_key,content_digest,candidate_id,valid_until,origin,source_works) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                   (memory_id,memory_key,content,now,previous['id'] if previous else None,'current',owner_key,work_key,digest,candidate_id,valid_until,origin,source_works))
         return self._memory_row(db.execute('SELECT * FROM memories WHERE id=?',(memory_id,)).fetchone())
 
     #: #918 review: the Telegram notice kind a direct save holds in its own transaction.
@@ -980,7 +987,7 @@ class QuickStore:
     DELIVERY_SETTLED=('sent','unknown','cancelled')
 
     def save_memory(self, memory_key, content, owner_id='local-owner', work_id=None, notice=False, corrected=False,
-                    invalidates=(), valid_until=None, origin=None):
+                    invalidates=(), valid_until=None, origin=None, source_works=None):
         """Write one current Memory row; with ``notice``, hold its owner notice durably in the same transaction (#918).
 
         A direct save by the owner's own AI must never end without the owner
@@ -994,7 +1001,7 @@ class QuickStore:
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row=self._save_memory(db,memory_key,content,owner_key,work_key,corrected=corrected is True,
-                                  invalidates=invalidates,valid_until=valid_until,origin=origin)
+                                  invalidates=invalidates,valid_until=valid_until,origin=origin,source_works=source_works)
             if notice and isinstance(work_id,str):
                 job=db.execute('SELECT channel,chat_id FROM jobs WHERE id=?',(work_id,)).fetchone()
                 from .conversation_surface import surface_conversation
@@ -1117,30 +1124,36 @@ class QuickStore:
             return state['index']
 
     def memory_sources(self, memory_ids):
-        """The Work each Memory row came from, for "why do you know that?" (#794 phase 2).
+        """Retained source Works, with legacy anchor lookup when no sources were recorded.
 
-        Resolved at read time from the row's ``work_key`` digest; nothing new
-        is stored.  Returns ``{memory_id: {'work_id', 'requested_at', 'text',
-        'owner_typed'}}`` for rows whose Work is still retained.  ``text`` is
-        the Work's raw message (the owner's words only when ``owner_typed``),
-        to be redacted by the caller before it reaches a model.
+        The first retained Work keeps the existing source fields. Recorded citations also
+        carry ``sources`` with every retained Work in citation order. Raw request text must
+        be redacted by the caller before reaching a model, as for the legacy anchor.
         """
         ids=[value for value in memory_ids if isinstance(value,str) and value][:101]
         if not ids:return {}
         with self.db() as db:
-            keyed={row['id']:row['work_key'] for row in db.execute(
-                f"SELECT id,work_key FROM memories WHERE id IN ({','.join('?'*len(ids))})",ids) if row['work_key']}
-            index=self._work_digests(db) if keyed else {}
-            work_ids=sorted({index[key] for key in keyed.values() if key in index})
+            rows=db.execute(
+                f"SELECT id,work_key,source_works FROM memories WHERE id IN ({','.join('?'*len(ids))})",ids).fetchall()
+            index=self._work_digests(db) if any(row['source_works'] is None and row['work_key'] for row in rows) else {}
+            keyed={}
+            for row in rows:
+                if row['source_works'] is not None:
+                    keyed[row['id']]=json.loads(row['source_works'])
+                else:
+                    work=index.get(row['work_key'])
+                    keyed[row['id']]=[work] if work else []
+            work_ids=sorted({work for values in keyed.values() for work in values})
             works={row['id']:row for row in db.execute(
                 f"SELECT id,CASE WHEN {forgotten_turn('user')} THEN '' ELSE message END AS message,created,source_at,owner_typed "
                 f"FROM jobs WHERE id IN ({','.join('?'*len(work_ids))})",work_ids)} if work_ids else {}
         sources={}
-        for memory_id,key in keyed.items():
-            row=works.get(index.get(key))
-            if row is not None:
-                sources[memory_id]={'work_id':row['id'],'requested_at':row['source_at'] or row['created'],
-                                    'text':row['message'] or '','owner_typed':bool(row['owner_typed'])}
+        for row in rows:
+            found=[{'work_id':work['id'],'requested_at':work['source_at'] or work['created'],
+                    'text':work['message'] or '', 'owner_typed':bool(work['owner_typed'])}
+                   for work_id in keyed[row['id']] if (work:=works.get(work_id)) is not None]
+            if found:
+                sources[row['id']]={**found[0], **({'sources':found} if row['source_works'] is not None else {})}
         return sources
 
     def search_memories(self, owner_id, terms, *, limit=10, include_mode=False, key_prefix=None, holding_on=None):
@@ -1696,7 +1709,9 @@ class QuickStore:
         with self.db() as db:
             db.execute('DELETE FROM context_events WHERE expires_at<=?',(now,))
             memories=[dict(r) for r in db.execute('SELECT id,content,created FROM notes ORDER BY created DESC LIMIT 50')]
-            memories.extend(dict(r) for r in db.execute("SELECT id,content,created FROM memories WHERE state='current' ORDER BY created DESC LIMIT 50"))
+            memories.extend(dict(r) for r in db.execute("SELECT id,content,created,origin FROM memories WHERE state='current' ORDER BY created DESC LIMIT 50"))
+            for memory in memories:
+                if memory.get('origin') is None:memory.pop('origin',None)
             memories=sorted(memories,key=lambda row:row.get('created',0),reverse=True)[:50]
             results=[dict(r) for r in db.execute('SELECT id,workspace_id,job_id,content,created FROM workspace_results ORDER BY created DESC LIMIT 50')]
             context=[dict(r) for r in db.execute('SELECT id,captured_at,source_kind,expires_at,sharing_state,source_app,source_domain FROM context_events ORDER BY captured_at DESC LIMIT 100')]
@@ -1716,16 +1731,16 @@ class QuickStore:
         union='''
             SELECT id,'note' AS type,'메모' AS label,'' AS memory_key,content,created,
                    NULL AS expires_at,'' AS sharing_state,'' AS source_kind,'' AS source_app,
-                   '' AS workspace_id,'' AS job_id,'memories' AS deleteKind FROM notes
+                   '' AS workspace_id,'' AS job_id,'memories' AS deleteKind,NULL AS origin FROM notes
             UNION ALL
-            SELECT id,'memory','기억',memory_key,content,created,NULL,'','','','','','memories'
+            SELECT id,'memory','기억',memory_key,content,created,NULL,'','','','','','memories',origin
               FROM memories WHERE state='current'
             UNION ALL
             SELECT id,'temporary','임시 자료','',source_kind||' · '||source_app||' · '||sharing_state,
-                   captured_at,expires_at,sharing_state,source_kind,source_app,'','',''
+                   captured_at,expires_at,sharing_state,source_kind,source_app,'','','',NULL
               FROM context_events WHERE expires_at>?
             UNION ALL
-            SELECT id,'artifact','저장된 결과','',content,created,NULL,'','','',workspace_id,job_id,'results'
+            SELECT id,'artifact','저장된 결과','',content,created,NULL,'','','',workspace_id,job_id,'results',NULL
               FROM workspace_results
         '''
         escaped=unicodedata.normalize('NFKC',query).casefold().replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
@@ -1749,6 +1764,8 @@ class QuickStore:
                 'temporary':db.execute('SELECT COUNT(*) FROM context_events WHERE expires_at>?',(now,)).fetchone()[0],
                 'artifact':db.execute('SELECT COUNT(*) FROM workspace_results').fetchone()[0],
             }
+        for row in rows:
+            if row['origin'] is None:row.pop('origin')
         return {'items':rows,'counts':counts,'match_count':match_count,'offset':offset,'limit':limit,
                 'has_more':offset+len(rows)<match_count}
 

@@ -1861,6 +1861,7 @@ class AgentService:
         except (TypeError,ValueError):since=now-om.DREAM_WINDOW_SECONDS
         works=upkeep.dream_works(since,now)
         turns=[]
+        source_works={}
         for work in works:
             key=work.get('request_key')
             if (work.get('provider') in (None,'builtin') or prep.preparation_of(key) is not None
@@ -1868,7 +1869,9 @@ class AgentService:
                 continue
             owner=self.scrub_work_text(work['id'],work.get('message') or '')
             if not owner.strip():continue
-            turns.append((f"t{len(turns)+1}",owner,self.scrub_work_text(work['id'],work.get('response') or '')))
+            ref=f"t{len(turns)+1}"
+            source_works[ref]=work['id']
+            turns.append((ref,owner,self.scrub_work_text(work['id'],work.get('response') or '')))
         period={'works':len(works),'turns':len(turns)}
         if not turns:
             upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'nothing-to-review','period':period},now,kind=kind)
@@ -1876,7 +1879,7 @@ class AgentService:
         from .current_context import owner_today
         deadline=upkeep.clock()+om.DREAM_RUN_SECONDS
         state,calls,status,detail=upkeep.run_dream(
-            job,row,self._owner_model_judgments(work_id),turns=turns,
+            job,row,self._owner_model_judgments(work_id),turns=turns,source_works=source_works,
             profile=lambda:self.owner_profile_snapshot(None,notes=False,ids=True),clock=self._owner_model_clock(),
             diary_date=owner_today(self.store,works[-1]['created']),ends_after=now,
             cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline)

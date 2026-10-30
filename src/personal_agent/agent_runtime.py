@@ -3395,7 +3395,8 @@ class Capabilities:
   is ``owner_request`` for a message the owner typed, else ``agentos_work``
   (for example a scheduled preparation's task text - not the owner's words).
   The text passes the stored-secret redactor and the credential-shape filter
-  before it reaches the model; no new state is recorded.
+  before it reaches the model; no new state is recorded. Recorded citations add
+  ``sources`` in citation order; ``source`` remains the first retained Work.
   """
   from datetime import datetime, timezone
   from .bounded_execution import SECRET_PATTERN
@@ -3405,18 +3406,20 @@ class Capabilities:
   rows=[dict(row) for row in rows if isinstance(row,dict)]
   try:sources=self.store.memory_sources([row.get('id') for row in rows]);failed=False
   except Exception:sources,failed={},True
+  def redact_source(source):
+   text=' '.join(str(source.get('text') or '').split())
+   if self.secret_redactor is not None:
+    try:text=str(self.secret_redactor(text))
+    except Exception:text=''
+   text=SECRET_PATTERN.sub('[redacted]',text)
+   return {'kind':'owner_request' if source.get('owner_typed') else 'agentos_work','work_id':source['work_id'],
+           'at':iso(source.get('requested_at')),'text':text[:79]+'…' if len(text)>80 else text}
   for row in rows:
    row['saved_at']=iso(row.get('created'))
    source=sources.get(row.get('id'))
-   if source:
-    text=' '.join(str(source.get('text') or '').split())
-    if self.secret_redactor is not None:
-     try:text=str(self.secret_redactor(text))
-     except Exception:text=''
-    text=SECRET_PATTERN.sub('[redacted]',text)
-    source={'kind':'owner_request' if source.get('owner_typed') else 'agentos_work','work_id':source['work_id'],
-            'at':iso(source.get('requested_at')),'text':text[:79]+'…' if len(text)>80 else text}
-   row['source']=source or None
+   if source and 'sources' in source:
+    row['sources']=[redact_source(work) for work in source['sources']]
+   row['source']=redact_source(source) if source else None
    row['source_status']='found' if source else ('unknown' if failed else 'not_kept')
   return rows
 

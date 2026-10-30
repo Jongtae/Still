@@ -157,6 +157,43 @@ class MemorySearchTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn('sk-abcdefghijklmnop', serialized)
 
+    def test_additive_source_migration_preserves_legacy_anchor_lookup(self):
+        work = self.store.enqueue('기존 요청', 'migration-work', owner_typed=True)
+        memory = self.store.save_memory('profile.legacy', '기존 기억', work_id=work)
+        with self.store.db() as db:
+            db.execute('ALTER TABLE memories DROP COLUMN source_works')
+        reopened = QuickStore(self.store.root)
+        with reopened.db() as db:
+            self.assertIsNone(db.execute('SELECT source_works FROM memories WHERE id=?', (memory['id'],)).fetchone()[0])
+        self.assertEqual(reopened.memory_sources([memory['id']]), {
+            memory['id']: {'work_id': work, 'requested_at': reopened.job(work)['created'],
+                           'text': '기존 요청', 'owner_typed': True}})
+
+    def test_recorded_sources_are_redacted_and_never_fall_back_to_the_anchor(self):
+        secret = 'SOURCESECRET987654'
+        first = self.store.enqueue('출처 ' + secret, 'source-first', owner_typed=True)
+        second = self.store.enqueue('다른 출처 sk-abcdefghijklmnop', 'source-second', owner_typed=True)
+        anchor = self.store.enqueue('연결 기준 요청', 'source-anchor', owner_typed=True)
+        cited = self.store.save_memory('profile.cited', '출처가 있는 기억', work_id=anchor,
+                                      origin='dream', source_works=[first, second])
+        empty = self.store.save_memory('profile.empty', '요청 출처 없음', work_id=anchor,
+                                      origin='dream', source_works=[])
+        legacy = self.store.save_memory('profile.legacy', '예전 기억', work_id=anchor)
+        capabilities = Capabilities(self.store, None, {}, '', anchor, lambda *args: None,
+                                    allowed_tools=['list_memory'],
+                                    secret_redactor=lambda value: value.replace(secret, '[redacted]'))
+        rows = {row['id']: row for row in capabilities.execute('list_memory', {})['memories']}
+        self.assertEqual([source['work_id'] for source in rows[cited['id']]['sources']], [first, second])
+        self.assertNotIn(secret, str(rows))
+        self.assertNotIn('sk-abcdefghijklmnop', str(rows))
+        self.assertEqual((rows[empty['id']]['source'], rows[empty['id']]['source_status']), (None, 'not_kept'))
+        self.assertEqual(rows[legacy['id']]['source']['work_id'], anchor)
+        self.assertNotIn('sources', rows[legacy['id']])
+        with self.store.db() as db:
+            db.execute('DELETE FROM jobs WHERE id IN (?,?)', (first, second))
+        rows = {row['id']: row for row in capabilities.execute('list_memory', {})['memories']}
+        self.assertEqual((rows[cited['id']]['source'], rows[cited['id']]['source_status']), (None, 'not_kept'))
+
     def test_a_failed_source_lookup_is_unknown_not_not_kept(self):
         self.store.save_memory('profile.note', '값', owner_id='local-owner', work_id='w')
         capabilities = Capabilities(self.store, None, {}, '', 'job', lambda *args: None, allowed_tools=['list_memory'])
