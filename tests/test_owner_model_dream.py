@@ -105,6 +105,13 @@ class Due(Dream):
         [row] = self.dream_rows()
         self.assertEqual((row['job_id'], row['state']), (newest, om.STATE_PENDING))
 
+    def test_the_anchor_is_the_newest_request_the_owner_can_be_told_on(self):
+        self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': GENERATION})
+        self.settled('a')
+        told = self.settled('b', telegram=True)
+        self.settled('c')
+        self.assertEqual(self.upkeep.enqueue_dream_if_due(time.time() + 1, 3), told)
+
     def test_after_a_dream_the_next_waits_the_interval_and_prefers_the_night(self):
         self.day('a', 'b', 'c')
         start = time.time() + 1
