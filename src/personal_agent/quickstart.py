@@ -1482,9 +1482,12 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     return self.reply(200,service.save_workspace_result(path.split('/')[3],body))
                 if path.startswith('/api/workspaces/'):
                     return self.reply(200,service.update_workspace(path.rsplit('/',1)[-1],body))
-                # #814: the owner's own typed message (it may confirm a settings draft).
+                # #814: the owner's own typed message (it may confirm a settings draft).  #423: it is learned
+                # from (owner-model upkeep, the dream, recall of owner words) only when the caller declares
+                # ``owner_words: true`` - an eval playing the owner; a bare call is answered, never learned from.
                 if path=='/api/chat':
-                    task_id=store.enqueue(body.get('message'),body.get('request_key'),workspace_id=body.get('workspace_id'),owner_typed=True)
+                    task_id=store.enqueue(body.get('message'),body.get('request_key'),workspace_id=body.get('workspace_id'),owner_typed=True,
+                                          owner_words=body.get('owner_words') is True)
                     try:service.consider_steer(task_id,body.get('message'))
                     except Exception:pass  # Enqueue succeeded; steering is best effort.
                     return self.reply(202,{'id':task_id})

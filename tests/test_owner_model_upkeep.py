@@ -68,7 +68,8 @@ class Upkeep(Harness):
 
     def finished(self, text, answer='an answer', status='succeeded'):
         """A settled Work with one pending upkeep, as the success path leaves it."""
-        job = self.store.enqueue(text, f'om-{time.time()}-{text}')
+        # #423: the owner's own words (an API caller declares them; a surface message is typed).
+        job = self.store.enqueue(text, f'om-{time.time()}-{text}', owner_typed=True, owner_words=True)
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status=?,response=?,provider='subscription',model='codex' WHERE id=?",
                        (status, answer, job))
@@ -91,7 +92,7 @@ class Upkeep(Harness):
 
 class Trigger(Upkeep):
     def test_a_finished_work_enqueues_exactly_one_upkeep(self):
-        job, row = self.run_work('나는 판교에서 일해')
+        job, row = self.run_work('나는 판교에서 일해', owner_words=True)
         self.assertEqual((row['status'], row['provider']), ('succeeded', 'subscription'))
         self.assertEqual(list(self.upkeep_rows()), [job])
         self.assertEqual(self.upkeep_rows()[job]['state'], om.STATE_PENDING)
@@ -102,7 +103,7 @@ class Trigger(Upkeep):
 
     def test_failed_cancelled_unknown_command_preparation_and_continuation_do_not_enqueue(self):
         eligible = AgentService.owner_model_eligible
-        job = {'request_key': 'k'}
+        job = {'request_key': 'k', 'owner_typed': 1, 'channel': 'telegram:7'}
         self.assertTrue(eligible(job, 'succeeded', 'subscription'))
         self.assertTrue(eligible(job, 'partial', 'openai'))
         for outcome in ('failed', 'cancelled', 'unknown', 'interrupted'):
@@ -110,13 +111,17 @@ class Trigger(Upkeep):
         self.assertFalse(eligible(job, 'succeeded', 'builtin'), 'a rule/command reply: no worker AI ran')
         from personal_agent import preparations as prep
         from personal_agent.context_observations import continuation_key
-        self.assertFalse(eligible({'request_key': prep.REQUEST_KEY_PREFIX + 'p1:1'}, 'succeeded', 'subscription'))
-        self.assertFalse(eligible({'request_key': continuation_key('r1')}, 'succeeded', 'subscription'))
+        self.assertFalse(eligible({**job, 'request_key': prep.REQUEST_KEY_PREFIX + 'p1:1'}, 'succeeded', 'subscription'))
+        self.assertFalse(eligible({**job, 'request_key': continuation_key('r1')}, 'succeeded', 'subscription'))
+        # #423: only the owner's own words: a bare API request (a verification call) or Still's own Work is not.
+        self.assertFalse(eligible({**job, 'channel': 'web'}, 'succeeded', 'subscription'), 'undeclared API request')
+        self.assertTrue(eligible({**job, 'channel': 'web', 'owner_words': 1}, 'succeeded', 'subscription'))
+        self.assertFalse(eligible({**job, 'owner_typed': None}, 'succeeded', 'subscription'), 'not typed by the owner')
 
     def test_a_command_and_a_failed_work_leave_no_upkeep(self):
         self.run_work('/note 판교 사무실 주소 메모')
         self.engine.fail = [ValueError('worker failed')] * 3
-        job, row = self.run_work('나는 판교에서 일해')
+        job, row = self.run_work('나는 판교에서 일해', owner_words=True)
         self.assertEqual(row['status'], 'failed')
         self.assertEqual(self.upkeep_rows(), {})
         # #998: a failed Work a worker AI answered gets a self-review row instead (test_self_review).
@@ -124,7 +129,7 @@ class Trigger(Upkeep):
 
     def test_paused_upkeep_enqueues_nothing(self):
         self.service.owner_model_request({'operation': 'set', 'enabled': False})
-        self.run_work('나는 판교에서 일해')
+        self.run_work('나는 판교에서 일해', owner_words=True)
         self.assertEqual(self.upkeep_rows(), {})
 
 

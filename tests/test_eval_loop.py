@@ -143,7 +143,7 @@ class ClientTest(unittest.TestCase):
         client = AgentOSClient('http://127.0.0.1:18900', transport=server, sleep=lambda _: None)
         client.cookie = 'tok123'
         task_id = client.send('안녕', 'key-1')
-        self.assertEqual(server.calls[-1][2], {'message': '안녕', 'request_key': 'key-1'})
+        self.assertEqual(server.calls[-1][2], {'message': '안녕', 'request_key': 'key-1', 'owner_words': True})
         self.assertEqual(server.calls[-1][3], 'agentos_session=tok123')
         self.assertEqual(client.wait(task_id)['status'], 'succeeded')
         self.assertEqual(client.answer(task_id)['response'], '두 시간')

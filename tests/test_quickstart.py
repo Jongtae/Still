@@ -526,6 +526,27 @@ class QuickstartTests(unittest.TestCase):
         self.assertTrue(any('금요일' in m.get('content','') for m in self.calls[-1][1]['messages'] if m['role']=='user'))
         self.assertEqual(len(QuickStore(self.temp.name).notes()),1)
 
+    def test_api_chat_is_owner_typed_but_learned_from_only_when_declared(self):
+        """#423: a bare ``/api/chat`` call (a developer's verification) keeps its owner authority but is never
+        the owner's words for upkeep, the dream or recall; an eval playing the owner declares ``owner_words``."""
+        from personal_agent.quickstart_store import owner_words_work
+        password='long-password-test';self.store.claim(self.store.bootstrap.read_text(),password)
+        server=ThreadingHTTPServer(('127.0.0.1',0),make_handler(self.service));thread=threading.Thread(target=server.serve_forever);thread.start()
+        client=build_opener(HTTPCookieProcessor(CookieJar()));base='http://127.0.0.1:'+str(server.server_port)
+        def post(path,body):
+            request=Request(base+path,data=json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+            with client.open(request,timeout=3) as response:return json.load(response)
+        try:
+            post('/api/login',{'password':password})
+            bare=post('/api/chat',{'message':'검증 요청','request_key':'verify-1'})['id']
+            declared=post('/api/chat',{'message':'평가 요청','request_key':'eval-1','owner_words':True})['id']
+            loose=post('/api/chat',{'message':'느슨한 선언','request_key':'eval-2','owner_words':'yes'})['id']
+        finally:
+            server.shutdown();thread.join();server.server_close()
+        rows={key:self.store.job(job) for key,job in (('bare',bare),('declared',declared),('loose',loose))}
+        self.assertEqual({key:row['owner_typed'] for key,row in rows.items()},{'bare':1,'declared':1,'loose':1})
+        self.assertEqual({key:owner_words_work(row) for key,row in rows.items()},{'bare':False,'declared':True,'loose':False})
+
     def test_conversation_summary_saves_real_workspace_markdown(self):
         reference=Path(self.temp.name)/'reference'; workspace=Path(self.temp.name)/'workspace';reference.mkdir();workspace.mkdir()
         original=reference/'meeting.txt';original.write_text('Aurora launch decision: ship October 12.',encoding='utf-8');before=original.read_bytes()

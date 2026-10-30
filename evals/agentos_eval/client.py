@@ -133,7 +133,9 @@ class AgentOSClient:
 
     # -- one turn -------------------------------------------------------------
     def send(self, message, request_key=None):
-        return self.post('/api/chat', {'message': message, 'request_key': request_key or f'eval-{uuid.uuid4()}'})['id']
+        # #423: the eval plays the owner in its sandbox, so its messages are declared the owner's own words.
+        return self.post('/api/chat', {'message': message, 'request_key': request_key or f'eval-{uuid.uuid4()}',
+                                       'owner_words': True})['id']
 
     def wait(self, task_id, timeout=900, interval=2.0):
         """Poll ``/api/tasks/<id>`` until the Work stops moving; returns the task detail."""

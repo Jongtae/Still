@@ -37,6 +37,18 @@ def fts_prefix_expression(query):
     return ' OR '.join('"'+term+'"*' for term in dict.fromkeys(prefixes))
 
 
+#: #423: the Works whose text is the owner's own words, which owner-model upkeep, the dream and recall of
+#: owner words may learn from (``j`` is the jobs alias): typed by the owner on a conversation surface, or an
+#: API request whose caller declared it the owner's words.  A bare API request (``channel`` 'web', e.g. a
+#: developer's verification call) is still answered, with its owner authority, but never learned from.
+OWNER_WORDS_SQL="(j.owner_typed=1 AND (j.channel<>'web' OR j.owner_words=1))"
+
+
+def owner_words_work(job):
+    """Whether one Work row's text is the owner's own words (#423; ``OWNER_WORDS_SQL`` for one row)."""
+    return bool(job) and job.get('owner_typed')==1 and (job.get('channel')!='web' or job.get('owner_words')==1)
+
+
 def forgotten_turn(role, work='jobs.id'):
     """#367: SQL true when a ``role`` transcript row of the Work ``work`` was forgotten.
 
@@ -266,6 +278,9 @@ class QuickStore:
             # #814: 1 only for a Work whose message the owner typed (web chat, Telegram text);
             # NULL for everything Still enqueues (preparations, continuations, retries, checks).
             if 'owner_typed' not in columns: db.execute('ALTER TABLE jobs ADD COLUMN owner_typed INTEGER')
+            # #423: 1 only for an API Work whose caller declared the message the owner's own words (an eval
+            # playing the owner); NULL otherwise.  See ``OWNER_WORDS_SQL``.
+            if 'owner_words' not in columns: db.execute('ALTER TABLE jobs ADD COLUMN owner_words INTEGER')
             # #308 S1: a steer is answered only when a reply its Work delivered was made after the
             # worker was handed it; a steer handed over before this column folded as it did then.
             if 'answered_at' not in {row['name'] for row in db.execute('PRAGMA table_info(work_steers)')}:
@@ -616,7 +631,8 @@ class QuickStore:
             values=json.loads(self.secret_path.read_text()) if self.secret_path.exists() else {}
             return {key: value for key, value in values.items() if key.startswith(prefix)}
 
-    def enqueue(self, message, request_key, channel='web', chat_id=None, workspace_id=None, db=None, owner_typed=False):
+    def enqueue(self, message, request_key, channel='web', chat_id=None, workspace_id=None, db=None, owner_typed=False,
+                owner_words=False):
         if not isinstance(message,str) or not message.strip() or len(message)>12000:
             raise ValueError('메시지는 1~12,000자로 입력하세요.')
         if not isinstance(request_key,str) or not 1<=len(request_key)<=160:
@@ -624,7 +640,7 @@ class QuickStore:
         if db is None:
             with self.db() as conn:
                 conn.execute('BEGIN IMMEDIATE')
-                return self.enqueue(message,request_key,channel,chat_id,workspace_id,conn,owner_typed)
+                return self.enqueue(message,request_key,channel,chat_id,workspace_id,conn,owner_typed,owner_words)
         if workspace_id is not None and not self.workspace(workspace_id, db=db):
             raise ValueError('작업공간을 찾을 수 없습니다.')
         old=db.execute('SELECT * FROM jobs WHERE request_key=?',(request_key,)).fetchone()
@@ -635,7 +651,7 @@ class QuickStore:
         if db.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running')").fetchone()[0]>=100:
             raise ValueError('대기 중인 작업이 많습니다. 잠시 후 다시 시도하세요.')
         task_id=str(uuid.uuid4())
-        db.execute('INSERT INTO jobs(id,request_key,message,channel,chat_id,status,response,error,delivery,provider,model,created,workspace_id,owner_typed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(task_id,request_key,message,channel,chat_id,'queued',None,None,'none',None,None,time.time(),workspace_id,1 if owner_typed is True else None))
+        db.execute('INSERT INTO jobs(id,request_key,message,channel,chat_id,status,response,error,delivery,provider,model,created,workspace_id,owner_typed,owner_words) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(task_id,request_key,message,channel,chat_id,'queued',None,None,'none',None,None,time.time(),workspace_id,1 if owner_typed is True else None,1 if owner_typed is True and owner_words is True else None))
         return task_id
 
     def add_steer(self, job_id, source_job_id, content, db=None):
@@ -1538,7 +1554,7 @@ class QuickStore:
             if message_ids is None:
                 hits=db.execute(f"""SELECT {columns} FROM messages_search
                     JOIN messages m ON m.id=messages_search.rowid JOIN jobs j ON j.id=m.job_id
-                    WHERE messages_search MATCH ? AND m.role IN ('user','assistant') AND j.owner_typed=1 AND m.id<?
+                    WHERE messages_search MATCH ? AND m.role IN ('user','assistant') AND {OWNER_WORDS_SQL} AND m.id<?
                     AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS})
                     AND (? IS NULL OR COALESCE(j.source_at,j.created)<?)
                     AND (? IS NULL OR COALESCE(j.source_at,j.created)>=?)
@@ -1547,7 +1563,7 @@ class QuickStore:
             else:
                 ids=[v for v in message_ids[:9] if isinstance(v,int) and not isinstance(v,bool)]
                 if not ids:return []
-                hits=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.id IN ({','.join('?' for _ in ids)}) AND j.owner_typed=1 AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY m.id",ids).fetchall()
+                hits=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.id IN ({','.join('?' for _ in ids)}) AND {OWNER_WORDS_SQL} AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY m.id",ids).fetchall()
             result=[];seen=set();used=0
             for hit in hits:
                 if hit['job_id'] in seen or hit['job_id'] in documents:continue

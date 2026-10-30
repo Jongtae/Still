@@ -823,15 +823,16 @@ class Upkeep:
     def dream_works(self, since, until, limit=DREAM_TURNS):
         """The settled requests a dream reads, oldest first: ``{'id', 'message', 'response', 'created', 'request_key',
         'provider'}``, the newest ``limit`` of those created in ``(since, until]``.  A request or answer the owner
-        forgot is withheld (#367); the caller drops what upkeep would not read (typed markers)."""
-        from .quickstart_store import forgotten_turn
+        forgot is withheld (#367); the caller drops what upkeep would not read (typed markers).  Only Works whose
+        text is the owner's own words (#423, ``OWNER_WORDS_SQL``) are read."""
+        from .quickstart_store import OWNER_WORDS_SQL, forgotten_turn
         with self.store.db() as db:
             rows = db.execute(
-                f"SELECT id,request_key,provider,created,"
-                f"CASE WHEN {forgotten_turn('user')} THEN '' ELSE message END AS message,"
-                f"CASE WHEN {forgotten_turn('assistant')} THEN '' ELSE response END AS response "
-                f"FROM jobs WHERE created>? AND created<=? AND status IN ('succeeded','partial','failed') "
-                f"ORDER BY created DESC LIMIT ?", (since, until, limit)).fetchall()
+                f"SELECT j.id,j.request_key,j.provider,j.created,"
+                f"CASE WHEN {forgotten_turn('user', 'j.id')} THEN '' ELSE j.message END AS message,"
+                f"CASE WHEN {forgotten_turn('assistant', 'j.id')} THEN '' ELSE j.response END AS response "
+                f"FROM jobs j WHERE j.created>? AND j.created<=? AND j.status IN ('succeeded','partial','failed') "
+                f"AND {OWNER_WORDS_SQL} ORDER BY j.created DESC LIMIT ?", (since, until, limit)).fetchall()
         return [dict(row) for row in reversed(rows)]
 
     def _notice_taken(self, job_id, kind):
