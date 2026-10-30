@@ -647,7 +647,9 @@ STEER_PROPOSITION = ('The assistant is still working on the owner\'s earlier req
                      'message is meant for that running task: a remark, preference, constraint, choice or correction '
                      'the work in progress should take into account now, including a request to stop or abandon that task. '
                      'It is false when the message is a new, separate request, a question to be answered on its own, or when it is '
-                     'unclear. This judgment does not authorize any action.')
+                     'unclear. When given, shown_plan is what the assistant told the owner it understood and planned before it '
+                     'started; a message that corrects or adjusts it is meant for the running task. '
+                     'This judgment does not authorize any action.')
 #: #1519: an answer to a question the assistant asked before another request came in between.
 OPEN_QUESTION_PROPOSITION = ('Earlier in the conversation the owner said something (earlier_owner_message) and the '
                              'assistant replied (earlier_reply); another exchange came in between. The earlier reply '
@@ -842,14 +844,17 @@ class ConversationJudgments:
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
                         source=decision.confidence.provider or decision.outcome)
 
-    def steers_running_work(self, running_request, utterance):
+    def steers_running_work(self, running_request, utterance, shown_plan=''):
         """Is ``utterance`` meant for the Work still running on ``running_request`` (#999)?
 
-        Both texts are the owner's own words.  Unavailable or unknown leaves the
-        message to run as its own Work afterwards, as before.
+        Both texts are the owner's own words; ``shown_plan`` (#407) is the plan
+        preview the owner was shown before that Work started, when there was one.
+        Unavailable or unknown leaves the message to run as its own Work
+        afterwards, as before.
         """
         context = self._context('running-work-steer',
-                                {'running_request': running_request, 'owner_message': utterance},
+                                {'running_request': running_request, 'owner_message': utterance,
+                                 **({'shown_plan': shown_plan} if shown_plan else {})},
                                 uncut='owner_message')
         decision = self.engine.judge(context, STEER_PROPOSITION)
         verdict = self.policy.binary(decision)

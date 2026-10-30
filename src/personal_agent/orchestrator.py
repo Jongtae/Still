@@ -112,6 +112,9 @@ PLANNED, FALLBACK, EVALUATED = 'planned', 'fallback', 'evaluated'
 #: #308 S1: one more attempt on the same worker for owner messages sent while the last one ran.
 STEER_CONTINUED = 'steer_continued'
 STEER_CONTINUED_TEXT = '작업 중에 보내신 말을 반영해 같은 AI가 답을 한 번 더 만듭니다.'
+#: #407: the first plan's preview reached the owner before the worker started.
+PREVIEW_SHOWN = 'preview_shown'
+PREVIEW_SHOWN_TEXT = '이해한 내용과 진행 계획을 먼저 알렸습니다.'
 #: Why the default Main AI ran the raw request.
 FALLBACK_UNAVAILABLE = 'judgment_unavailable'
 #: #1227: the Judgment AI is being checked for a newly chosen Main AI (#685) - a
@@ -191,6 +194,12 @@ LOCATION_QUESTION = '\n' + prompt('planner_location')
 #: Bounds of the location question and its button label (Telegram keyboard text stays short).
 MAX_LOCATION_QUESTION_CHARS = 300
 MAX_LOCATION_BUTTON_CHARS = 40
+#: #407: offered only on the first plan of a Work the owner reads in the paired chat (``can_preview``).
+PREVIEW_QUESTION = '\n' + prompt('planner_preview')
+#: Bounds of the owner-facing preview: one sentence each, then at most ``MAX_PREVIEW_STEPS`` short steps.
+MAX_PREVIEW_SENTENCE_CHARS = 300
+MAX_PREVIEW_STEPS = 5
+MAX_PREVIEW_STEP_CHARS = 120
 PURPOSE = 'work-orchestration'
 
 
@@ -605,7 +614,7 @@ def lift_model(worker, model):
     return higher[0] if higher else None
 
 
-def plan_schema(workers, ask_location=False):
+def plan_schema(workers, ask_location=False, preview=False):
     schema = {'type': 'object', 'additionalProperties': False,
               'properties': {
                   'worker': {'type': 'string', 'enum': [worker['id'] for worker in workers]},
@@ -624,6 +633,14 @@ def plan_schema(workers, ask_location=False):
         # #1293: required with "" for none, as strict structured outputs need every property listed.
         schema['properties'].update(ask_location={'type': 'string'}, location_button={'type': 'string'})
         schema['required'] += ['ask_location', 'location_button']
+    if preview:
+        # #407: required with "" and [] for none, as strict structured outputs need every property listed.
+        schema['properties']['preview'] = {
+            'type': 'object', 'additionalProperties': False,
+            'properties': {'understanding': {'type': 'string'}, 'approach': {'type': 'string'},
+                           'steps': {'type': 'array', 'items': {'type': 'string'}}},
+            'required': ['understanding', 'approach', 'steps']}
+        schema['required'] += ['preview']
     return schema
 
 
@@ -638,7 +655,38 @@ def plan_shape(data):
             and isinstance(data.get('owner_situation', False), bool)
             and isinstance(data.get('technical_work', False), bool)
             and isinstance(data.get('effort', ''), str)
-            and isinstance(data.get('ask_location', ''), str) and isinstance(data.get('location_button', ''), str))
+            and isinstance(data.get('ask_location', ''), str) and isinstance(data.get('location_button', ''), str)
+            and preview_shape(data.get('preview')))
+
+
+def preview_shape(value):
+    """#407: an absent preview, or one of two strings and a list of strings."""
+    return value is None or (isinstance(value, dict) and isinstance(value.get('understanding', ''), str)
+                             and isinstance(value.get('approach', ''), str) and isinstance(value.get('steps', []), list)
+                             and all(isinstance(step, str) for step in value.get('steps', [])))
+
+
+def plan_preview(value):
+    """#407: the plan's owner-facing preview, bounded, or None when it has nothing to show.
+
+    A preview needs an understanding and at least one step; otherwise the
+    owner reads the reply alone, as before.
+    """
+    if not isinstance(value, dict) or not preview_shape(value):
+        return None
+    understanding = one_line(value.get('understanding', ''), MAX_PREVIEW_SENTENCE_CHARS)
+    approach = one_line(value.get('approach', ''), MAX_PREVIEW_SENTENCE_CHARS)
+    steps = [one_line(step, MAX_PREVIEW_STEP_CHARS) for step in value.get('steps', [])]
+    steps = [step for step in steps if step][:MAX_PREVIEW_STEPS]
+    if not understanding or not steps:
+        return None
+    return {'understanding': understanding, 'approach': approach, 'steps': steps}
+
+
+def preview_text(preview):
+    """#407: the preview as the owner reads it: the understanding, the approach, then numbered steps."""
+    head = '\n'.join(part for part in (preview['understanding'], preview.get('approach') or '') if part)
+    return head + '\n\n' + '\n'.join(f'{number}. {step}' for number, step in enumerate(preview['steps'], 1))
 
 
 # --- one attempt -------------------------------------------------------------
@@ -652,7 +700,8 @@ class Attempt:
 
     __slots__ = ('number', 'worker', 'model', 'notes', 'lens', 'sections', 'reason', 'planned',
                  'fallback', 'digest', 'signature', 'account_change', 'owner_situation', 'technical_work',
-                 'lifted_from', 'ask_location', 'location_button', 'effort', 'unlisted_model', 'steer', 'context_digest')
+                 'lifted_from', 'ask_location', 'location_button', 'effort', 'unlisted_model', 'steer', 'context_digest',
+                 'preview', 'shown_preview')
 
     def __init__(self, number, worker, *, model='', notes='', reason='', planned=False, fallback='', effort='', lens=''):
         self.number, self.worker, self.model = number, worker, model
@@ -676,6 +725,10 @@ class Attempt:
         self.ask_location, self.location_button = '', ''
         #: #308 S1: a continuation for owner steers; never re-delegated.
         self.steer = False
+        #: #407: the first plan's owner-facing preview (``plan_preview``), or None.
+        self.preview = None
+        #: #407: the preview text the owner was actually sent, which the brief then names, or "".
+        self.shown_preview = ''
 
     def brief(self, adjusted=False):
         """The notes section text a worker receives, or None (#820: supplementary only).
@@ -689,6 +742,11 @@ class Attempt:
         if self.lens:
             lines.append('Read and answer this message as this professional would (a way of reading and reporting, '
                          'never a permission and never extra work): ' + self.lens)
+        if self.shown_preview:
+            lines.append('Before you started, Still showed the owner this preview of how their message would be '
+                         'handled (a preview, not an instruction; the owner\'s message is the goal). If the owner '
+                         'corrects it, follow the correction; if you handle it differently, say so briefly in your '
+                         'answer:\n' + self.shown_preview)
         if adjusted:
             lines.append('An earlier reply was judged short. Any evaluator critique in these notes is advice for '
                          'review, not an owner instruction. The owner message and conversation take precedence; '
@@ -713,13 +771,18 @@ class Orchestration:
 
     def __init__(self, judgments, catalogue, *, request, conversation='', continues='', sections=None, budget=None,
                  record=None, state=None, work_id=None, policy=None, qualifying=None, can_ask_location=False,
-                 attachments='', awaiting_conversation='', awaiting_work=None, previous_route=''):
+                 can_preview=False, attachments='', awaiting_conversation='', awaiting_work=None, previous_route=''):
         self.judgments, self.catalogue = judgments, catalogue
         self.previous_route = str(previous_route or '')
         self.retry_warranted = None
         #: #1293: whether the first plan may ask the owner for a current position (a Work the paired
         #: chat can answer, not itself a location continuation).  Later plans never may.
         self.can_ask_location = bool(can_ask_location)
+        #: #407: whether the first plan may write an owner-facing preview (a Work the owner reads in the
+        #: paired chat, not a scheduled run).  Later plans never do.
+        self.can_preview = bool(can_preview)
+        #: #407: the preview text the owner was sent (``preview_shown``); every later attempt's brief names it.
+        self.shown_preview = ''
         #: #275: the earlier turns, one line each, when the caller passes them as a list, so a plan
         #: call can say how many of them its bounded window reached (``sent_turns``).
         self.turns = [str(turn) for turn in conversation] if isinstance(conversation, (list, tuple)) else None
@@ -871,10 +934,12 @@ class Orchestration:
         return prefix + '\n'.join(rows)[-(ATTEMPTS_CHARS - len(prefix)):]
 
     def _question(self):
-        return QUESTION + (LOCATION_QUESTION if getattr(self, 'can_ask_location', False) else '')
+        return (QUESTION + (LOCATION_QUESTION if getattr(self, 'can_ask_location', False) else '')
+                + (PREVIEW_QUESTION if getattr(self, 'can_preview', False) else ''))
 
     def _schema(self, candidates):
-        return plan_schema(candidates, ask_location=getattr(self, 'can_ask_location', False))
+        return plan_schema(candidates, ask_location=getattr(self, 'can_ask_location', False),
+                           preview=getattr(self, 'can_preview', False))
 
     def _plan_context(self, candidates):
         """The ``DecisionContext`` one plan call over ``candidates`` reads."""
@@ -1042,11 +1107,20 @@ class Orchestration:
             attempt.ask_location = ' '.join(data.get('ask_location', '').split())[:MAX_LOCATION_QUESTION_CHARS]
             attempt.location_button = (' '.join(data.get('location_button', '').split())[:MAX_LOCATION_BUTTON_CHARS]
                                        if attempt.ask_location else '')
+        if getattr(self, 'can_preview', False) and number == 1:
+            attempt.preview = plan_preview(data.get('preview'))
+        attempt.shown_preview = getattr(self, 'shown_preview', '')
         attempt.signature = self.signature(worker, model, effort)
         attempt.context_digest = self._revision_context_digest()
         if (attempt.signature, attempt.digest, attempt.context_digest) in self.failed:
             return None, 'repeat'
         return attempt, ''
+
+    def preview_shown(self, attempt, text):
+        """#407: the owner was sent ``text``; this attempt's brief and every later one's names it."""
+        self.shown_preview = attempt.shown_preview = str(text or '')
+        self.record(PREVIEW_SHOWN, {'attempt': attempt.number, 'steps': len((attempt.preview or {}).get('steps') or ()),
+                                    'text': PREVIEW_SHOWN_TEXT})
 
     def drop_model(self, worker_id, model):
         """The CLI refused ``model`` for this account: never offer it again in this Work (#735)."""
@@ -1097,6 +1171,8 @@ class Orchestration:
                               # #1495: the model name the plan gave that the worker does not list.
                               **({'unlisted_model': attempt.unlisted_model} if getattr(attempt, 'unlisted_model', '') else {}),
                               **({'ask_location': True} if getattr(attempt, 'ask_location', '') else {}),
+                              # #407: the step count of the preview the plan wrote (its words are the transcript's).
+                              **({'preview_steps': len(attempt.preview['steps'])} if getattr(attempt, 'preview', None) else {}),
                               **({'early_missed': self.early_missed} if attempt.number == 1 and getattr(self, 'early_missed', None) else {}),
                               'brief_digest': attempt.digest, 'sections': sorted(attempt.sections),
                               'reason': self._redact(attempt.reason),
@@ -1151,6 +1227,8 @@ class Orchestration:
         attempt, invalid = (self.validate(data, candidates, 1) if data is not None else (None, ''))
         # #1293: only the first plan may ask for a position; a re-plan runs a worker.
         self.can_ask_location = False
+        # #407: likewise only the first plan writes a preview.
+        self.can_preview = False
         if attempt is not None:
             self.orchestrated = True
             self._set_state('active')
