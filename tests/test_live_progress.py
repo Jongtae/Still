@@ -1,8 +1,8 @@
-"""SEC-PROGRESS-01 / #718: the Telegram draft names the observed step in flight.
+"""SEC-PROGRESS-01 / #718: observed steps stay available; Telegram shows only dots (#445).
 
 The model writes the wording (an optional ``status`` on every tool call); Still
 validates, bounds and redacts it, records it on the call's own ``running`` event
-and shows it only while that call runs.  Without a status the line is generic,
+and exposes it only while that call runs.  Without a status the line is generic,
 keyed on the tool kind plus the host or query of the observed arguments.  The
 CLI route streams its own search items while the run is live.
 
@@ -410,7 +410,7 @@ class _TelegramCase(unittest.TestCase):
 
 
 class ScriptedLoopDraftTests(_TelegramCase):
-    """The direct-API loop: each draft follows the observed step."""
+    """The direct-API loop: observed steps never enter the dots draft (#445)."""
 
     def setUp(self):
         super().setUp()
@@ -456,7 +456,7 @@ class ScriptedLoopDraftTests(_TelegramCase):
         self.service.deliver_one()
         return self.store.job(job_id)
 
-    def test_the_draft_follows_each_step_with_model_status_or_generic_fallback(self):
+    def test_the_draft_omits_each_step_with_model_status_or_generic_fallback(self):
         self.script = [[('list_notes', {'status': '저장한 메모를 훑어보고 있어요'})],
                        [('list_memory', {})],
                        '정리했습니다.']
@@ -465,8 +465,8 @@ class ScriptedLoopDraftTests(_TelegramCase):
         # at +10 s, model turn 3 at +13 s.
         self.ticks = {'model': [6, 9, 13], 'list_notes': [8], 'list_memory': [(9.2, 10)]}
         job = self.run_turn('메모랑 기억 좀 정리해줘')
-        # #835: each edit advances the dots; the step line (if any) comes first.
-        self.assertEqual(self.drafts(), [DOTS[0], f'저장한 메모를 훑어보고 있어요 {DOTS[1]}', f'기억해 둔 걸 떠올리고 있어요 {DOTS[2]}', DOTS[0]])
+        # #445/#978: step changes leave the dots unchanged, so no re-send is due.
+        self.assertEqual(self.drafts(), [DOTS[0]])
         draft_ids = {body['draft_id'] for method, body in self.calls if method in DRAFT_METHODS}
         self.assertEqual(draft_ids, {draft_id_for(job['id'])}, 'one draft, edited in place (Stop maps back)')
         for method, body in self.calls:
@@ -478,12 +478,12 @@ class ScriptedLoopDraftTests(_TelegramCase):
         steps = [event['trace'].get('step') for event in self.store.task_events(job['id']) if event['status'] == 'running']
         self.assertIn({'action': 'list_notes', 'status': '저장한 메모를 훑어보고 있어요'}, steps)
 
-    def test_rate_limit_shows_at_most_one_edit_per_interval_and_always_the_latest(self):
+    def test_rate_limit_and_dedupe_omit_even_the_latest_step(self):
         self.script = [[('list_notes', {'status': '첫 단계'})], [('list_memory', {'status': '둘째 단계'})], '끝']
-        # Draft at +6; +6.5 inside the interval (first step skipped); +7.6 shows the latest (second step).
+        # Draft at +6; +6.5 is rate-limited; +7.6 keeps the same dots (#445/#978).
         self.ticks = {'model': [6], 'list_notes': [6.5], 'list_memory': [7.6]}
         self.run_turn('두 단계 해줘')
-        self.assertEqual(self.drafts(), [DOTS[0], f'둘째 단계 {DOTS[1]}'])
+        self.assertEqual(self.drafts(), [DOTS[0]])
         self.assertEqual(PresenceTiming().dots_refresh, 1.5)
 
     def test_stop_ends_step_drafts(self):
@@ -503,14 +503,14 @@ class ScriptedLoopDraftTests(_TelegramCase):
         self.tick = tick
         self.run_turn('긴 조사 부탁해')
         self.assertEqual(outcomes, ['running'])
-        self.assertEqual(self.drafts(), [DOTS[0], f'메모 보는 중 {DOTS[1]}'], 'no draft after Stop')
+        self.assertEqual(self.drafts(), [DOTS[0]], 'no step line or draft after Stop (#445)')
 
     def test_a_stored_secret_in_the_status_never_reaches_the_draft(self):
         self.store.secret('decision_model_key', SECRET)
         self.script = [[('list_notes', {'status': f'{SECRET} 메모 확인 중'})], '끝']
         self.ticks = {'model': [6], 'list_notes': [8]}
         job = self.run_turn('메모 보여줘')
-        self.assertEqual(len(self.drafts()), 2)
+        self.assertEqual(self.drafts(), [DOTS[0]])
         for text in self.drafts():
             self.assertNotIn(SECRET, text)
         for event in self.store.task_events(job['id']):
@@ -524,8 +524,8 @@ class ScriptedLoopDraftTests(_TelegramCase):
         saved = [e for e in self.store.task_events(job['id']) if e['tool'] == 'save_note' and e['status'] == 'succeeded']
         self.assertTrue(saved, 'the note write ran, so its value is a saved private value of this Work')
         shown = self.drafts()
-        # #881: the masked status gives way to the step's plain line.
-        self.assertEqual(shown, [DOTS[0], f'메모 살펴보고 있어요 {DOTS[1]}'])
+        # #445: neither the masked status nor the fallback line enters the draft.
+        self.assertEqual(shown, [DOTS[0]])
         steps = [event['trace']['step'] for event in self.store.task_events(job['id'])
                  if event['status'] == 'running' and event['tool'] == 'list_notes']
         self.assertNotIn('4719', json.dumps(steps, ensure_ascii=False), 'redacted before it is recorded')
@@ -552,8 +552,8 @@ class ScriptedLoopDraftTests(_TelegramCase):
                 self.service.acknowledge_long_work(now=job['created'] + 8)
         self.tick = tick
         self.run_turn('사물함 정보 보여줘')
-        # #881: the masked status gives way to the step's plain line; the internal mark is never shown.
-        self.assertEqual(self.drafts(), [DOTS[0], f'메모 살펴보고 있어요 {DOTS[1]}'])
+        # #445: neither the recorded status nor its fallback enters the draft.
+        self.assertEqual(self.drafts(), [DOTS[0]])
 
     def test_pending_approval_prompt_is_the_only_surface(self):
         self.script = [[('list_notes', {'status': '메모 보는 중'})], '끝']
@@ -586,9 +586,9 @@ emit({{"type": "item.completed", "item": {{"id": "m1", "type": "agent_message", 
 
 
 class CliRouteDraftTests(_TelegramCase):
-    """The CLI route: the CLI's own search item updates the draft during the run."""
+    """The CLI route: streamed search items leave the dots draft unchanged (#445)."""
 
-    def test_streamed_native_search_updates_the_draft_while_the_cli_runs(self):
+    def test_streamed_native_search_keeps_a_dots_only_draft_while_the_cli_runs(self):
         root = Path(self.temp.name)
         go = root / 'go'
         script = root / 'fake-codex'
@@ -621,8 +621,8 @@ class CliRouteDraftTests(_TelegramCase):
         watcher.join(5)
         self.assertEqual(len(during), 1)
         [line] = during[0]
-        # #881: the redacted query carries a mark, so the plain search line is shown instead.
-        self.assertTrue(line.startswith('웹에서 찾아보고 있어요 '), line)
+        # #445: neither the query nor the generic search line enters the draft.
+        self.assertEqual(line, DOTS[0])
         self.assertNotIn(SECRET, line, 'the query is redacted like the recorded event')
         self.assertNotIn('[redacted]', line)
         self.assertNotIn(job_id, self.service.live_steps, 'the live step ends with the run')

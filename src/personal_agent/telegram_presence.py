@@ -10,8 +10,8 @@ This module only decides *how an already-decided turn looks in Telegram*:
   answer again the Judgment AI's choice among ``CLOSING_CANDIDATES``);
 * a **wait surface** while Work runs - nothing, ``typing…``, and from
   ``draft_after`` an ephemeral draft: Telegram's own animated *thinking*
-  block (``sendRichMessageDraft``, #858) carrying cycling dots and the
-  observed step line (#718), a plain ``sendMessageDraft`` with the same text
+  block (``sendRichMessageDraft``, #858) carrying only dots (#445),
+  a plain ``sendMessageDraft`` with the same text
   when the rich draft is refused, plus Telegram's Stop button, with
   ``typing…`` kept alive until the answer lands;
 * the **reply anchor** and bounded **controls** of the one durable reply;
@@ -94,13 +94,15 @@ WAIT_DRAFT = 'draft'
 # the blink of Telegram's thinking block. (#917's moving dot is removed.)
 DOTS_FRAMES = ('· · ·',)
 #: ``draft_step`` text while no observed step is in flight (before the first
-#: tool call, or between two): the draft then shows the dots alone.
+#: tool call, or between two); #445: Telegram always shows the dots alone.
 NO_STEP_LINE = ''
 _TRAILING_ELLIPSIS = re.compile(r'(?:\s*(?:…|\.{2,}))+\s*$')
 
 
 def draft_frame(line, frame, note=None):
-    """The draft text: the observed step line (if any) followed by dots frame ``frame``.
+    """Dots frame ``frame`` with an optional line and attention note.
+
+    #445: Telegram waiting drafts pass an empty line; keep the line API.
 
     A trailing ellipsis on the line is dropped, since the dots replace it.
     ``note`` (ATTN-WAIT-01 / #839: the one "참, …" attention line) follows on
@@ -121,7 +123,7 @@ def rich_draft_blocks(text, note=None):
     """The ``InputRichMessage.blocks`` of one waiting draft (#858).
 
     The first block is Telegram's ``thinking`` block holding ``text`` (the
-    step line and dots, never empty); the #839 attention ``note`` follows as
+    dots only, never empty, #445); the #839 attention ``note`` follows as
     an ordinary paragraph so the animated block keeps only the wait itself.
     """
     blocks = [{'type': 'thinking', 'text': text or draft_frame('', 0)}]
@@ -216,8 +218,9 @@ def pick_attention(items, now, surfaced=None, cooldown=ATTENTION_COOLDOWN):
 # --- live step lines (SEC-PROGRESS-01 / #718) ----------------------------------
 #
 # While a tool call of the running Work is observed in flight (its ``running``
-# tool event, or a CLI's own streamed search item), the draft names that step
-# before the dots.  The wording is the model's own ``status``
+# tool event, or a CLI's own streamed search item), its line is available to
+# other surfaces; Telegram shows only dots (#445).  The wording is the
+# model's own ``status``
 # (validated, bounded and redacted in ``agent_runtime.progress_step``); without
 # one, a generic line keyed only on the tool kind plus the host or query taken
 # from the observed arguments.  Nothing here names a site, provider or task
@@ -229,7 +232,7 @@ DEFAULT_STEP_TEXT = msg('step.default')
 #: ``PLANNED``).  #740: a re-delegated attempt is announced with this line
 #: only; the plan's worker, model and reason stay in the Work's Evidence
 #: (작업 현황), never in the conversation.  The first attempt announces
-#: nothing: the draft shows the dots alone until its first step.
+#: nothing.  #445: Telegram shows only dots, including on re-delegation.
 ORCHESTRATION_TOOL = EVENT_TOOL
 ORCHESTRATION_PLANNED = PLANNED
 RETRY_STEP_TEXT = msg('step.retry')
@@ -293,7 +296,7 @@ def masked(text):
 
 
 def step_line(step, last_host=None, clean=None):
-    """The draft line for one observed running step, or None for an approval step.
+    """The line for one observed running step, or None for an approval step.
 
     ``step`` is the recorded ``progress_step`` dict.  The model's ``status``
     wins; otherwise the generic line for its tool kind with the observed
@@ -329,7 +332,7 @@ def step_line(step, last_host=None, clean=None):
 
 
 def draft_step(events, live=None, clean=None):
-    """``(text, approval)`` for the draft of one running Work, from observed events only.
+    """``(text, approval)`` for one running Work, from observed events only (#445).
 
     ``events`` are the Work's tool events in order (``QuickStore.task_events``
     shape).  The step in flight is the latest ``running`` event carrying a
@@ -338,7 +341,8 @@ def draft_step(events, live=None, clean=None):
     'id', 'step'}``, or None; it counts only when not older than that event.
     ``approval`` is true while the step in flight is a payment step: then
     the only surface is the existing approval prompt and ``text`` is None.
-    With no step in flight ``text`` is NO_STEP_LINE (the draft shows dots).
+    With no step in flight ``text`` is NO_STEP_LINE.  #445: Telegram uses
+    only the approval gate.
     """
     text, approval, _identity = draft_step_details(events, live, clean)
     return text, approval
@@ -522,9 +526,9 @@ class PresenceTiming:
     chat_action_after: float = 1.0
     draft_after: float = 5.0
     chat_action_refresh: float = 4.0
-    #: #835: the draft is checked this often for the latest observed step
-    #: line (#718), never a queued old one.  With ``typing…`` every 4 s this
-    #: stays under Telegram's guidance of about one message per second in one chat.
+    #: #445: the dots draft is checked this often, including its approval gate.
+    #: With ``typing…`` every 4 s this stays under Telegram's guidance of
+    #: about one message per second in one chat.
     dots_refresh: float = 1.5
     #: #978: an unchanged draft is re-sent only this often, to outlive the
     #: draft preview; a re-sent identical text restarts the client's text
@@ -574,7 +578,7 @@ class WaitState:
     rich_draft_retry: bool = False
     stopped: bool = False
     shown: set = field(default_factory=set)
-    #: #718/#835: the text the draft last showed (step line and dots), the
+    #: #445: the text the draft last showed (dots and optional note), the
     #: next DOTS_FRAMES index, and the (raw, displayed) pair of the last
     #: display-time redaction of a step line.
     draft_text: str = None

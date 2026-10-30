@@ -248,8 +248,7 @@ class JudgmentReactionTests(NativePresenceTestCase):
         self.assertTrue(all(body['message_id'] == message_id for body in self.reactions()))
 
     def test_observed_progress_steps_ask_no_judgment_and_keep_the_reaction(self):
-        """#219 (#205 0a): a running step is shown by the draft line; no per-step emoji judgment
-        is asked, the start reaction stays until the outcome replaces it."""
+        """#219/#445: running steps keep the dots draft and start reaction, with no emoji judgment."""
         self.connect_model()
         self.install_reaction_judgment({'turn-reaction': '🤗', 'closing-reaction': '🎉'})
 
@@ -262,8 +261,7 @@ class JudgmentReactionTests(NativePresenceTestCase):
                                                                                  'status': f'step {index}'}}),
                                 job['created'] + 5 + index))
                 self.service.acknowledge_long_work(now=job['created'] + 6 + index)
-            self.assertTrue(any(method == 'sendRichMessageDraft' for method in self.methods()),
-                            'the draft still names the observed step')
+            self.assertEqual(self.drafts(), [DOTS[0]], 'no observed step line in the draft (#445)')
 
         self.during_model = show_progress
         job, message_id = self.turn('자료를 조사해줘')
@@ -352,8 +350,8 @@ class DraftCompositionTests(unittest.TestCase):
     """#858: the animated thinking block carries the wait, attention stays a paragraph."""
 
     def test_rich_draft_blocks_keep_attention_outside_the_thinking_block(self):
-        self.assertEqual(rich_draft_blocks('저장한 메모를 확인 중 · ·', '참, 준비한 답이 있어요'),
-                         [{'type': 'thinking', 'text': '저장한 메모를 확인 중 · ·'},
+        self.assertEqual(rich_draft_blocks('· · ·', '참, 준비한 답이 있어요'),
+                         [{'type': 'thinking', 'text': '· · ·'},
                           {'type': 'paragraph', 'text': '참, 준비한 답이 있어요'}])
         self.assertEqual(rich_draft_blocks('·'), [{'type': 'thinking', 'text': '·'}])
 
@@ -1277,6 +1275,20 @@ class LiveWaitTests(NativePresenceTestCase):
             seen.append((offset, [method for method, _body in self.calls[before:]]))
         return seen
 
+    def test_running_web_search_sends_a_dots_only_draft_body(self):
+        """#445: an observed search keeps its step line out of the Telegram draft."""
+        self.connect_model()
+
+        def during(job):
+            self.service._observe_cli_step(job['id'], {'state': 'running', 'id': 's1', 'query': '환율'})
+            self.service.acknowledge_long_work(now=job['created'] + 6)
+            self.assertEqual(self.drafts(), [DOTS[0]])
+            [body] = [body for method, body in self.calls if method == 'sendRichMessageDraft']
+            self.assertEqual(body['rich_message']['blocks'], [{'type': 'thinking', 'text': DOTS[0]}])
+
+        self.during_model = during
+        self.turn('자료를 조사해줘')
+
     def test_typing_is_refreshed_while_the_dots_draft_is_shown(self):
         self.connect_model()
         ticks = []
@@ -1297,9 +1309,9 @@ class LiveWaitTests(NativePresenceTestCase):
         self.assertTrue(all(len(methods) <= 1 for _offset, methods in ticks))
         self.assertEqual(job['status'], 'succeeded')
 
-    def test_an_unchanged_draft_is_kept_alive_and_a_changed_one_is_sent_at_once(self):
+    def test_an_unchanged_draft_is_kept_alive_despite_step_changes(self):
         """#978: a re-sent identical draft restarts the client's text reveal, so it is not re-sent
-        before ``draft_keepalive``; a new step line goes out on the next check."""
+        before ``draft_keepalive``; #445: a new step line never changes the dots."""
         self.connect_model()
         ticks = []
 
@@ -1310,11 +1322,8 @@ class LiveWaitTests(NativePresenceTestCase):
         self.during_model = during
         self.turn('긴 조사 부탁해')
         drafted = [offset for offset, methods in ticks if 'sendRichMessageDraft' in methods]
-        self.assertEqual(drafted, [5, 10.25, 30.25], drafted)
-        texts = self.drafts()
-        self.assertEqual(texts[0], DOTS[0])
-        self.assertIn('환율', texts[1])
-        self.assertEqual(texts[2], texts[1], 'the keep-alive repeats the same text')
+        self.assertEqual(drafted, [5, 25], drafted)
+        self.assertEqual(self.drafts(), [DOTS[0], DOTS[0]], 'the keep-alive repeats only dots (#445)')
 
     def test_nothing_is_sent_after_the_final_answer(self):
         self.connect_model()
@@ -1333,8 +1342,8 @@ class LiveWaitTests(NativePresenceTestCase):
 
 
 class DotsFrameTests(unittest.TestCase):
-    def test_three_still_dots_follow_a_step_line_and_are_never_empty(self):
-        # Owner direction 2026-10-01 (#921): no moving dot; only the thinking block blinks.
+    def test_three_still_dots_are_never_empty_and_keep_the_optional_line_api(self):
+        # #445: waiting drafts pass an empty line; the helper keeps its optional line API.
         self.assertEqual(DOTS_FRAMES, ('· · ·',))
         self.assertEqual({draft_frame('', frame) for frame in range(4)}, {'· · ·'})
         self.assertEqual(draft_frame('웹 검색 중: 환율', 1), '웹 검색 중: 환율 · · ·')

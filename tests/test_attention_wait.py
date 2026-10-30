@@ -13,7 +13,7 @@ from personal_agent import preparations as prep
 from personal_agent.information_use import work_information_use
 from personal_agent.quickstart_service import MEMORY_CANDIDATES_KIND
 from personal_agent.telegram_presence import (ATTENTION_ASK, ATTENTION_COOLDOWN, ATTENTION_MEMORY_ASK_FRESH, ATTENTION_PREFIX, ATTENTION_PREPARED, ATTENTION_REMINDER,
-                                              DOTS_FRAMES, attention_line, draft_frame, pick_attention)
+                                              DOTS_FRAMES, attention_line, pick_attention)
 from test_telegram_native_presence import CHAT, GENERATION, NativePresenceTestCase
 
 #: The dots of the first four drafts, whatever the frame count (#921).
@@ -79,13 +79,19 @@ class AttentionWaitTests(NativePresenceTestCase):
 
     def test_fresh_unread_prepared_answer_is_surfaced_on_the_draft(self):
         row = self.prepared()
+
+        def during(job):
+            self.service._observe_cli_step(job['id'], {'state': 'running', 'id': 's1', 'query': '환율'})
+            for offset in (6, 8):
+                self.service.acknowledge_long_work(now=job['created'] + offset)
+        self.during_model = during
         job, _ = self.turn('오늘 저녁 뭐 먹지?')
         self.assertEqual(job['status'], 'succeeded')
         drafts = self.drafts()
         # #978: sent once, not re-sent unchanged, so the client finishes revealing the line.
         self.assertEqual(len(drafts), 1)
-        # Dots first, the "참, …" line under them, never empty.
-        self.assertEqual(drafts[0], draft_frame('', 0, attention_line(ATTENTION_PREPARED, row['goal_text'])))
+        # #445: only dots above the #839 attention note, never a step line.
+        self.assertEqual(drafts[0], DOTS[0] + '\n' + attention_line(ATTENTION_PREPARED, row['goal_text']))
         self.assertTrue(all(line.startswith(ATTENTION_PREFIX) and row['goal_text'] in line for line in self.attention_lines()))
         self.assertNotIn(SECRET, '\n'.join(drafts))
         # The durable surfaces are unchanged: one reply, no extra message, the preparation row untouched.
