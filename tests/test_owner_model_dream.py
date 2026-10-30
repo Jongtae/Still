@@ -192,6 +192,52 @@ class Due(Dream):
 
 
 class Run(Dream):
+    def test_cited_works_survive_both_dream_passes_and_replace_the_anchor_source(self):
+        from personal_agent.agent_runtime import Capabilities
+        from personal_agent.quickstart_store import QuickStore
+        first, second, anchor = self.day('출근은 지하철로 해', '늘 지하철로 출근해', '오늘 일정 알려줘')
+        self.gathers = [[fact('profile.routine.commute', '지하철 출근', '[t1]', 't2', 't1')]]
+        self.dreams = [dream([fact('profile.preference.transport', '대중교통을 선호함', 't2', 't1', kind='inferred')])]
+        self.assertTrue(self.tick())
+        # Reopen the real store: citations are durable, rather than only in the event or runtime.
+        reopened = QuickStore(self.tmp / 'state')
+        rows = reopened.memories(MEMORY_OWNER, key_prefix='profile.')
+        self.assertEqual(len(rows), 2)
+        expected = {'profile.routine.commute': [first, second], 'profile.preference.transport': [second, first]}
+        for row in rows:
+            with reopened.db() as db:
+                raw = db.execute('SELECT source_works,work_key FROM memories WHERE id=?', (row['id'],)).fetchone()
+            self.assertEqual(json.loads(raw['source_works']), expected[row['memory_key']])
+            self.assertEqual(raw['work_key'], reopened._work_binding(anchor))
+            sources = reopened.memory_sources([row['id']])[row['id']]
+            self.assertEqual([source['work_id'] for source in sources['sources']], expected[row['memory_key']])
+            self.assertNotEqual(sources['work_id'], anchor)
+        detail = self.evidence(anchor)[0][1]
+        self.assertEqual([row['source_works'] for row in detail['applied']], [[first, second], [second, first]])
+        self.assertNotIn('지하철', json.dumps(detail, ensure_ascii=False))
+        capabilities = Capabilities(reopened, None, {}, '', anchor, lambda *args: None,
+                                    allowed_tools=['list_memory', 'search_memory'])
+        for result in (capabilities.execute('list_memory', {}),
+                       capabilities.execute('search_memory', {'query': '지하철'})):
+            self.assertTrue(result['memories'])
+            for row in result['memories']:
+                self.assertEqual(row['source_status'], 'found')
+                self.assertEqual([source['work_id'] for source in row['sources']], expected[row['memory_key']])
+                self.assertEqual(row['source']['work_id'], expected[row['memory_key']][0])
+
+    def test_owner_memory_lists_mark_dream_rows_only(self):
+        self.day('내 직장은 판교야', '둘째 요청', '셋째 요청')
+        self.dreams = [dream([fact('profile.place.work', '판교', 't1')])]
+        self.assertTrue(self.tick())
+        ordinary = self.store.save_memory('profile.place.home', '서울', MEMORY_OWNER)
+        for rows in (self.store.personal_records(record_filter='saved')['items'],
+                     self.store.personal_space()['memories'],
+                     self.service.memory_profile_request({'operation': 'list'})['memories']):
+            by_id = {row['id']: row for row in rows}
+            self.assertNotIn('origin', by_id[ordinary['id']])
+            dream_rows = [row for row in rows if row['id'] != ordinary['id']]
+            self.assertEqual([row['origin'] for row in dream_rows], [om.ORIGIN_DREAM])
+
     def test_one_dream_saves_cited_facts_notes_and_the_day_record_on_the_newest_request(self):
         first, second, newest = self.day('내년 3월까지 자동차 할부를 매달 45만 원씩 갚고 있어', '답은 표로 정리해줘',
                                          '이번에도 표로 보여줘')

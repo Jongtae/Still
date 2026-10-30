@@ -560,6 +560,8 @@ def validate_dream(proposals, refs, requests, known, pending, profile_rows, prof
             cited.append({**item, 'invalidates': grounded_ends(own, key, turns, lines, dropped, held)})
     kept, refused = validate(cited, known, pending, limit=limit)
     dropped.extend(refused)
+    for item in kept:
+        item['sources']=[ref for ref in dream_refs(item['sources'], {**refs, **profile_ids}) if ref in refs]
     if sum(len(item['invalidates']) for item in kept) > max(1, int(DREAM_END_FRACTION * max(0, profile_rows))):
         # Too much ended at once: every proposal that ends a line is refused; a pure addition stays.
         dropped.extend({'key_digest': key_digest(item['memory_key']), 'reason': 'mass-end'}
@@ -707,7 +709,8 @@ def validate(proposals, known, pending, noted_keys=(), request='', limit=MAX_PRO
                                      for end in item.get('invalidates') or ()],
                      'valid_until': (item.get('valid_until') or '').strip(),
                      # Same words as a current value: kept only as a lifecycle update (see ``Upkeep.run``).
-                     'lifecycle': content in known})
+                     'lifecycle': content in known,
+                     **({'sources': item['sources']} if 'sources' in item else {})})
     return kept, dropped
 
 
@@ -1112,7 +1115,7 @@ class Upkeep:
                                        'chars': result.get('chars')}
         return STATE_DONE, calls, EVENT_RECORDED, detail
 
-    def _apply_facts(self, kept, job, dropped, ends_after=None, origin=None):
+    def _apply_facts(self, kept, job, dropped, ends_after=None, origin=None, source_works=None):
         """Save the kept proposals at once as current Memory attributed to ``job``; returns ``(applied, stopped)``.
 
         Shared by upkeep and the dream (#402).  ``dropped`` is extended in place.  ``ends_after``
@@ -1160,10 +1163,13 @@ class Upkeep:
             # current Memory, attributed to the source Work (#794); the owner is told afterwards with
             # an undo (the Work's memory_saved notice) instead of a per-fact #597 judgment and an ask.
             # A write is not a model call, so the cap and the deadline do not stop it; the pause does.
+            cited_works = (list(dict.fromkeys(source_works[ref] for ref in item.get('sources', ())
+                                              if ref in source_works)) if source_works is not None else None)
             try:
                 # Review: the owner notice is held in the same transaction as the row, so a save is never untold.
                 memory = self.store.save_memory(key, content, MEMORY_OWNER, work_id=job['id'], notice=origin is None,
-                                                origin=origin,
+                                                # A fact citing no turn (a pure tidy-up) records none: the legacy lookup stays.
+                                                origin=origin, source_works=cited_works or None,
                                                 invalidates=[(full, end['reason'])
                                                              for full, end in zip(ends, item['invalidates'])],
                                                 # '' is the AI saying the fact has no last day.
@@ -1173,6 +1179,8 @@ class Upkeep:
                 continue
             row.update(outcome=APPLIED_MEMORY, memory_id=memory['id'], superseded=bool(memory.get('supersedes')),
                        invalidated=len(ends), auto_saved=True)
+            if source_works is not None:
+                row['source_works']=cited_works
             applied.append(row)
         return applied, stopped
 
@@ -1270,13 +1278,14 @@ class Upkeep:
 
 
     # -- one dream (#402) ---------------------------------------------------
-    def run_dream(self, job, row, judgments, *, turns, profile, clock, diary_date, ends_after, cancelled=None):
+    def run_dream(self, job, row, judgments, *, turns, profile, clock, diary_date, ends_after, cancelled=None, source_works=None):
         """Look back over ``turns`` once and keep the owner model in order; returns ``(state, calls, event_status, detail)``.
 
         ``job`` is the anchor Work (the newest request the dream covers): what is kept is attributed to
         it and its notice tells the owner, with an undo, as upkeep's saves do (#918 slice a).  ``turns``
         are ``(ref, owner words, answer)`` triples the caller scrubbed, oldest first; ``profile`` the
-        snapshot with short ids and no notes.  One ``structured`` judgment
+        snapshot with short ids and no notes. ``source_works`` optionally maps turn refs to
+        their Work ids (#443); omitted by legacy callers. One ``structured`` judgment
         (``ConversationJudgments.owner_model_dream``), then Still's deterministic checks:
         ``validate_dream`` for facts, ``validate_review`` and two separate cited turns for the working
         notes, the size bound, a secret shape and the pause for the daily record (``diary_date``).
@@ -1320,7 +1329,7 @@ class Upkeep:
             kept, refused = validate_dream(found.get('proposals'), refs, refs.values(), known, pending, len(rows), ids,
                                            limit=DREAM_GATHER_LIMIT)
             gathered, stopped = self._apply_facts([{**item, 'invalidates': []} for item in kept], job, refused,
-                                                  ends_after=ends_after, origin=ORIGIN_DREAM)
+                                                  ends_after=ends_after, origin=ORIGIN_DREAM, source_works=source_works)
             first.update(proposed=len(found.get('proposals') or []), applied=gathered, dropped=refused)
         current = notes.current()
         current_text = current['text'] if current else ''
@@ -1351,7 +1360,7 @@ class Upkeep:
         held = []
         kept, dropped = validate_dream(data.get('proposals'), refs, refs.values(), known, pending, len(rows), ids,
                                        held=held)
-        applied, stopped = self._apply_facts(kept, job, dropped, ends_after=ends_after, origin=ORIGIN_DREAM)
+        applied, stopped = self._apply_facts(kept, job, dropped, ends_after=ends_after, origin=ORIGIN_DREAM, source_works=source_works)
         applied = gathered + applied
         # #425: the look back is quiet; what the owner relies on that it changed, and what it held, waits to be
         # raised once at the next request it matters to (``MemoryRaise``), never as a message of its own.
