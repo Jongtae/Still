@@ -424,6 +424,8 @@ def start_tunnel(port, popen=subprocess.Popen, timeout=30, *, store, find=None, 
     work_mode.refuse(store, 'tunnel')
     try:
         binary = find('cloudflared') or quick_tunnel.ensure(store, **({'fetch': fetch} if fetch else {}))
+        # A first download takes a while: work mode may have been switched on meanwhile (Codex P1).
+        work_mode.refuse(store, 'tunnel')
         process = popen(quick_tunnel.argv(binary, port, quick_tunnel.config_file(store)),
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         return process, _await_address(process, timeout, quick_tunnel.read_line,

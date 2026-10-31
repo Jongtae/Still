@@ -261,6 +261,22 @@ class WorkModeRefusesBoth(Case):
             self.start(popen, finder('ngrok', 'cloudflared'))
         self.assertEqual([pathlib.Path(argv[0]).name for argv in popen.calls], ['ngrok'])
 
+    def test_switched_on_during_the_download_the_downloaded_cloudflared_is_not_started(self):
+        """Codex P1 on #531: a first download takes a while; the switch may land meanwhile."""
+        data = archive(('cloudflared', b'pinned'))
+
+        def fetch(url):
+            self.on()  # the owner switches work mode on while cloudflared downloads
+            return data
+        popen = Popen({'cloudflared': list(CLOUDFLARED_LINES)})
+        digest = hashlib.sha256(data).hexdigest()
+        with mock.patch.dict(quick_tunnel.ASSETS, {('darwin', 'arm64'): ('cloudflared-darwin-arm64.tgz', digest)}, clear=True), \
+                mock.patch.object(quick_tunnel.sys, 'platform', 'darwin'), \
+                mock.patch.object(quick_tunnel.platform, 'machine', return_value='arm64'):
+            with self.assertRaises(work_mode.WorkModeRefused):
+                self.start(popen, finder(), fetch=fetch)
+        self.assertEqual(popen.calls, [], 'no tunnel process is started after the switch')
+
 
 class OwnTunnelProcess(unittest.TestCase):
     """#929, #1445: only Still's own tunnel to this port is ever signalled, cloudflared's included."""
