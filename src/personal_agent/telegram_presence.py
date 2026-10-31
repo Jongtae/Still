@@ -548,13 +548,18 @@ class PresenceTiming:
         return WAIT_CHAT_ACTION
 
 
-def draft_id_for(work_id):
+def draft_id_for(work_id, said=0):
     """A stable, non-zero 31-bit draft id for one Work.
 
     Deterministic, so a ``stopped_message_generation`` update can be mapped
-    back to its Work without storing anything.
+    back to its Work without storing anything.  #518: ``said`` is how many
+    messages the Work had sent in the chat (plan preview, interim messages).
+    A sent message ends the draft, and an edit of the same id comes back where
+    the draft was, above the message; a new id replaces it below the message
+    (Bot API ``sendMessageDraft``: one draft per chat, "replaced without
+    animation" for another id).
     """
-    digest = hashlib.sha256(str(work_id).encode()).digest()
+    digest = hashlib.sha256((str(work_id) if not said else f'{work_id}#{int(said)}').encode()).digest()
     return int.from_bytes(digest[:4], 'big') % 0x7FFFFFFE + 1
 
 
@@ -579,6 +584,8 @@ class WaitState:
     #: timeout (#908), so the next check re-sends even an unchanged text.
     rich_draft_retry: bool = False
     stopped: bool = False
+    #: #518: the Work's sent messages when its draft was last shown; a new one moves the draft below it.
+    said: int = 0
     shown: set = field(default_factory=set)
     #: #445: the text the draft last showed (dots and optional note), the
     #: next DOTS_FRAMES index, and the (raw, displayed) pair of the last

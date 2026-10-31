@@ -391,6 +391,30 @@ class WaitSurfaceTests(NativePresenceTestCase):
         self.assertEqual(reply['reply_parameters'], {'message_id': message_id, 'allow_sending_without_reply': True})
         self.assertIsNone(self.store.task_card(job['id']), 'the draft replaces the old running-Work card')
 
+    def test_a_message_the_work_sends_moves_the_draft_below_it_at_once(self):
+        """#518: the dots stayed above an interim message; a new draft id after it comes back below it."""
+        from personal_agent.quickstart_store import UPDATE_PROJECTION
+        self.connect_model()
+        outcomes = []
+
+        def think(job):
+            self.service.acknowledge_long_work(now=job['created'] + 6)
+            self.service.acknowledge_long_work(now=job['created'] + 7.6)  # same dots, nothing new to show
+            with self.store.db() as db:  # what ``owner_updater`` records when the interim message is sent
+                db.execute('INSERT INTO messages(role,content,channel,created,job_id,delivery_projection) '
+                           'VALUES (?,?,?,?,?,?)', ('assistant', '확인해볼게요.', job['channel'], time.time(),
+                                                    job['id'], UPDATE_PROJECTION))
+            self.service.acknowledge_long_work(now=job['created'] + 9.2)
+            outcomes.append(self.service.ingest_stop({'chat': {'id': CHAT, 'type': 'private'},
+                                                      'draft_id': draft_id_for(job['id'], 1)}, GENERATION))
+        self.during_model = think
+        job, _ = self.turn('내 주식 잔고 확인해줘')
+        ids = [body['draft_id'] for method, body in self.calls if method in DRAFT_METHODS]
+        self.assertEqual(ids, [draft_id_for(job['id']), draft_id_for(job['id'], 1)],
+                         'resent at once after the message, under a new id; not again while nothing changed')
+        self.assertNotEqual(draft_id_for(job['id']), draft_id_for(job['id'], 1))
+        self.assertEqual(outcomes, ['running'], 'Stop on the new draft still reaches the Work')
+
     def test_nothing_is_presented_after_the_final_answer(self):
         self.connect_model()
         job, _ = self.turn('질문')

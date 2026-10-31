@@ -813,6 +813,13 @@ class QuickStore:
                            f"AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id LIMIT 1",(job_id,PREVIEW_PROJECTION)).fetchone()
         return row['content'] if row else ''
 
+    def interim_count(self, job_id):
+        """#518: how many messages this Work sent the owner while it ran (plan preview, interim messages)."""
+        with self.db() as db:
+            return db.execute(f"SELECT COUNT(*) AS n FROM messages WHERE job_id=? AND role='assistant' "
+                              f"AND delivery_projection IN ({','.join('?' * len(INTERIM_PROJECTIONS))})",
+                              (job_id, *INTERIM_PROJECTIONS)).fetchone()['n']
+
     def sent_updates(self, job_id):
         """#466: the interim messages this Work sent the owner so far, oldest first (forgotten ones left out)."""
         with self.db() as db:

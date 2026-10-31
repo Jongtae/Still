@@ -7248,8 +7248,11 @@ class AgentService:
                                 state.attention=self.waiting_attention(job,now) or {}
                             text=draft_frame(line,state.dots_frame,state.attention.get('line'))
                             # #978: the same text again only to outlive the draft preview; a re-send
-                            # restarts the client's reveal of the text.
-                            if text!=state.draft_text or now-state.draft_at>=timing.draft_keepalive:
+                            # restarts the client's reveal of the text.  #518: a message the Work sent
+                            # ended the draft; it comes back at once, below that message.
+                            said=self.store.interim_count(job['id'])
+                            if text!=state.draft_text or now-state.draft_at>=timing.draft_keepalive or said!=state.said:
+                                state.said=said
                                 if conversation.show_draft(job,state,draft_frame(line,state.dots_frame),state.attention.get('line')):
                                     state.draft_at=now
                                     state.draft_text=None if state.rich_draft_retry else text
