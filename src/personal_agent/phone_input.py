@@ -105,6 +105,9 @@ class PhoneInput:
         except WorkModeRefused as exc:
             # #208: the owner enters it on this Mac instead (``start_local``, Settings).
             raise PhoneInputError(str(exc)) from None
+        except FileNotFoundError:
+            # #520: the owner's words, not "[Errno 2] No such file or directory: 'ngrok'".
+            raise PhoneInputError(NO_NGROK_TEXT) from None
         except (OSError, RuntimeError) as exc:
             raise PhoneInputError(TUNNEL_FAILED_TEXT + ' ' + str(exc)) from None
         # #208 review: work mode switched on, or the session ended, while ngrok was starting: the

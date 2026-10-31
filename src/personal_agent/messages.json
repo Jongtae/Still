@@ -1,4 +1,10 @@
 {
+ "api_input.phone_link_unavailable": {
+  "ko": "{reason}\n대신 Still이 실행 중인 Mac에서 아래 화면을 열어 API 인증 정보를 입력해 주세요. 확인되면 원래 작업을 이어갑니다.\n{link}",
+  "en": "{reason}\nInstead, open the page below on the Mac where Still is running and enter the API credentials there. Once they check out, the original task continues.\n{link}",
+  "ja": "{reason}\n代わりに、Still が動いている Mac で下の画面を開き、API の認証情報を入力してください。確認できたら元の作業を続けます。\n{link}",
+  "zh": "{reason}\n请改为在运行 Still 的 Mac 上打开下面的页面，输入 API 认证信息。确认后会继续原来的任务。\n{link}"
+ },
  "button.continue": {
   "ko": "계속하기",
   "en": "Continue",
