@@ -337,8 +337,11 @@ def describe(record):
     """An owner-readable one-line summary (names and decisions only)."""
     if record.get('state') == 'forgotten':
         return f"{record['name']}: 잊음 · 이전 권한 사용 중지"
-    labels = {'read': '읽기', 'mutate': '변경', 'payment': '결제', 'refused': '막음'}
-    rungs = {'report': '보고만', 'propose': '제안까지', 'approve': '건별 승인 후 실행', 'mandate': '위임 범위 안에서 실행'}
+    from .messages import msg
+    labels = {'read': msg('settings_orchestrator.read_class'), 'mutate': msg('label.change'),
+              'payment': msg('settings_orchestrator.payment_class'), 'refused': msg('settings_orchestrator.refused_class')}
+    rungs = {'report': msg('settings_orchestrator.report_rung'), 'propose': msg('settings_orchestrator.propose_rung'),
+             'approve': msg('settings_orchestrator.approve_rung'), 'mandate': msg('settings_orchestrator.mandate_rung')}
     operations = ', '.join(f'{op}({labels[cls]})' for op, cls in sorted(record['operations'].items())) or '검토한 동작 없음'
     scope = f"{record['engine']} {record['kind']} " if record.get('engine') else ''
     return f"{scope}{record['name']}: {rungs[record['rung']]}{' · 돈이 오가는 연결' if record['money'] else ''} · {operations}"
