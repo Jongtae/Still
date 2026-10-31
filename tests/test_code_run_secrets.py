@@ -460,8 +460,15 @@ class InputPage(PhoneInputServiceCase):
         draft = self.service.settings_tools(self.job)('settings_change', {
             'category': 'api_connections', 'setting': 'connect', 'value': json.dumps(CODE_SET), 'continue_work': 'yes'})
         row = self.settings._drafts()[draft['draft_id']]
-        self.assertIn('코드 실행용 비밀값 묶음', row['effect'])
-        self.assertIn('Account number (코드 안에서 직접 사용)', row['effect'])
+        self.assertEqual(row['effect'].split('\n'), [
+            f'API 연결 example-broker: {HOST}에만 보냅니다',
+            '입력할 값: App key, App secret, Account number',
+            '· App key, App secret: AI가 만든 코드에도 보이지 않고, 보낼 때만 채워요',
+            '· Account number: 코드가 직접 써요',
+            f'승인 없이 보내는 조회 요청: POST {HOST}/oauth2/token',
+            '돈이 오가는 연결이라 주문·이체 같은 변경은 매번 직접 승인해야 보냅니다'])
+        from personal_agent.telegram_locale import translate
+        self.assertNotRegex(translate(row['effect'], 'en'), '[가-힣]', 'every line is a catalog line')
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status='partial' WHERE id=?", (self.job['id'],))
         result = self.settings.confirm(self.service.settings_owner(self.job), self.job['channel'],
@@ -487,7 +494,7 @@ class InputPage(PhoneInputServiceCase):
         self.service.resume_settings_work()
         note = self.service.action_continuation_note(self.store.job(self.job['id']))
         self.assertIn('The owner completed the prerequisite proposed for this Work', note)
-        self.assertIn('코드 실행용 비밀값 묶음', note)
+        self.assertIn('API 연결 example-broker', note)
         self.assertNotIn('key-value-0001', note)
 
     def telegram_job(self):
@@ -545,6 +552,26 @@ class InputPage(PhoneInputServiceCase):
         self.assertNotIn('같은 연결 요청에서 다시 시도해 주세요', str(raised.exception))
         self.assertIsNone(self.service.phone_input_session())
 
+    def test_the_lines_after_confirming_name_the_connection_and_never_repeat_its_summary(self):
+        """#519: the progress and the failure each repeated the whole multi-line summary."""
+        import threading
+        draft = self.service.settings_tools(self.job)('settings_change', {
+            'category': 'api_connections', 'setting': 'connect', 'value': json.dumps(CODE_SET), 'continue_work': 'yes'})
+        row = self.settings._drafts()[draft['draft_id']]
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='partial' WHERE id=?", (self.job['id'],))
+        self.service.local_server_port = None  # the input page cannot open: the draft fails
+        told, done = [], threading.Event()
+        result = self.settings.confirm(self.service.settings_owner(self.job), self.job['channel'], draft['draft_id'],
+                                       row['digest'], notify=lambda text: (told.append(text), done.set()))
+        self.assertEqual(result['state'], 'applying')
+        self.assertEqual(result['response'], 'API 연결 example-broker 변경을 확인하고 있어요. 끝나면 결과를 알려드릴게요.')
+        self.assertTrue(done.wait(10))
+        self.assertTrue(told[0].startswith('API 연결 example-broker 변경을 적용하지 못했습니다: '), told[0])
+        for line in (result['response'], told[0]):
+            self.assertNotIn('입력할 값', line)
+            self.assertNotIn('\n', line)
+
     def _confirmed(self, value):
         draft = self.service.settings_tools(self.job)('settings_change', {
             'category': 'api_connections', 'setting': 'connect', 'value': json.dumps(value), 'continue_work': 'yes'})
@@ -566,8 +593,8 @@ class InputPage(PhoneInputServiceCase):
         # #1566 live: a set lacked an identifier only the owner holds; adding it re-asked every key.
         self._saved_without_account()
         row, session = self._confirmed(CODE_SET)
-        self.assertIn('App key (코드에는 가려지고 보낼 때만 채움, 저장된 값 그대로)', row['effect'])
-        self.assertIn('Account number (코드 안에서 직접 사용)', row['effect'])
+        self.assertIn('입력할 값: Account number\n', row['effect'])
+        self.assertIn('이미 저장된 값을 그대로 씀: App key, App secret\n', row['effect'])
         page = phone_input.page(session, 'nonce')
         self.assertIn('id="f_ACCOUNT"', page)
         self.assertNotIn('id="f_APP_KEY"', page)
