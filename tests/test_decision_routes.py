@@ -689,6 +689,8 @@ class ServiceFixture(Temp):
         service.decision_routes.jev_transport = self.jev
         # #685/#760: a claimed background qualification runs synchronously here.
         service.decision_routes.spawn = lambda run: run()
+        # #472: equal measured latency, so fastest_qualified falls back to the ranked order.
+        service.decision_routes.timer = lambda: 0.0
         return service
 
     def follow(self, service):
@@ -739,11 +741,12 @@ class ServiceRouteSelectionTests(ServiceFixture):
         self.assertEqual(status['active']['transport'], 'none', 'the pre-#580 default is unchanged')
         self.assertTrue(status['direct_api']['configured'], 'the saved key makes the route selectable')
         status = service.activate_decision_route({'transport': 'direct_api'})
-        self.assertEqual(len(self.openai.calls), len(CASE_IDS),
-                         'the explicit activation runs the synthetic qualification suite (#679), nothing else')
+        self.assertEqual(len(self.openai.calls), len(CASE_IDS) * len(RANKED_MODELS['openai']),
+                         'the explicit activation runs the synthetic qualification suite on each ranked model '
+                         '(#679, #472), nothing else')
         self.assertEqual(self.store.config('decision_model')['model'], 'gpt-4o-mini')
         self.assertEqual((status['active']['model_policy'], status['active']['requested_model']),
-                         ('lowest_qualified', 'gpt-4o-mini'), 'the cheapest ranked candidate qualified first')
+                         ('fastest_qualified', 'gpt-4o-mini'), 'equal speed: the ranked order decides')
         self.assertEqual(self.judge(service).value, 'retry')
 
     def test_concurrent_activations_are_serialised(self):
@@ -1152,20 +1155,21 @@ class JudgmentModelTests(ServiceFixture):
     def model_of(argv):
         return argv[argv.index('--model') + 1] if '--model' in argv else None
 
-    def test_codex_follow_defaults_to_the_cheapest_bundled_qualified_model_under_the_strict_profile(self):
+    def test_codex_follow_defaults_to_the_fastest_bundled_qualified_model_under_the_strict_profile(self):
         service = self.service()
         self.main('codex')
         status = self.follow(service)
         active = status['active']
         self.assertEqual((active['source'], active['transport'], active['engine']), ('follow', 'subscription_cli', 'codex'))
         self.assertEqual((active['model_policy'], active['requested_model'], active['effort']),
-                         ('lowest_qualified', 'gpt-5.6-luna', 'low'),
-                         'gpt-6-luna is ranked first but codex-cli 0.153.4 does not bundle it')
+                         ('fastest_qualified', 'gpt-5.6-luna', 'low'),
+                         'gpt-6-luna is ranked first but codex-cli 0.153.4 does not bundle it; '
+                         'equal speed, so the ranked order decides')
         self.assertTrue(active['available'])
         self.assertEqual(active['strict_profile']['platform'], 'darwin')
         self.assertIn('protected-directory-denied', active['strict_profile']['checks'])
         tried = {self.model_of(argv) for argv in self.judgments('codex')}
-        self.assertEqual(tried, {'gpt-5.6-luna'}, 'no dearer model once the cheapest qualified')
+        self.assertEqual(tried, {'gpt-5.6-luna', 'gpt-5.6-terra'}, 'every bundled candidate is measured (#472)')
         argv = self.judgments('codex')[-1]
         self.assertIn('model_reasoning_effort="low"', argv)
         self.assertNotIn('--sandbox', argv)
@@ -1191,7 +1195,7 @@ class JudgmentModelTests(ServiceFixture):
         self.main('claude-code')
         active = self.follow(service)['active']
         self.assertEqual((active['requested_model'], active['effort']), ('haiku', None))
-        self.assertTrue(all('--effort' not in argv for argv in self.judgments('claude')))
+        self.assertTrue(all('--effort' not in argv for argv in self.judgments('claude') if self.model_of(argv) == 'haiku'))
 
     def test_claude_code_falls_to_sonnet_with_low_effort_only_when_haiku_does_not_qualify(self):
         service = self.service(runner=CliRunner({None: oracle, 'haiku': careless, 'sonnet': oracle}))
@@ -1204,11 +1208,11 @@ class JudgmentModelTests(ServiceFixture):
         self.assertEqual([(row['model'], row['qualified']) for row in check['candidates']],
                          [('haiku', False), ('sonnet', True)], 'cheapest first; the next only after a failure')
 
-    def test_separate_mode_defaults_to_lowest_qualified_with_the_ranked_list(self):
+    def test_separate_mode_defaults_to_fastest_qualified_with_the_ranked_list(self):
         service = self.service()
         status = service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'claude-code'})
         self.assertEqual((status['active']['source'], status['active']['model_policy'], status['active']['requested_model']),
-                         ('owner', 'lowest_qualified', 'haiku'))
+                         ('owner', 'fastest_qualified', 'haiku'))
         engines = {e['id']: e for e in status['subscription_cli']}
         self.assertEqual(engines['claude-code']['ranked_models'], ['haiku', 'sonnet'])
         self.assertEqual(engines['codex']['ranked_models'], ['gpt-6-luna', 'gpt-5.6-luna', 'gpt-5.6-terra'],

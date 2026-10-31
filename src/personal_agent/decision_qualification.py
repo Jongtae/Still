@@ -1,7 +1,9 @@
 """The versioned DecisionEngine qualification suite (DECISION-ROUTE-01 / #580).
 
 ``lowest_qualified`` picks the first owner-declared, verified candidate model
-that passes this suite - not the smallest name or cheapest price.  The suite
+that passes this suite - not the smallest name or cheapest price.
+``fastest_qualified`` (#472) runs every candidate and picks the fastest one
+that passes, using the per-case latency recorded here.  The suite
 exercises the same typed ``DecisionEngine`` contract production uses: the
 conversation cases go through ``ConversationJudgments`` (the production
 caller) and the remaining cases through ``DecisionEngine.choose`` with
@@ -18,6 +20,10 @@ failure, never a pass) and Still policy reduced the answer to an expected
 value.  Abstention cases pass on a confident ``none-of-these`` or on a
 decided answer that policy reduces to unknown - never on a guessed target.
 """
+import math
+import statistics
+import time
+
 from .conversation_handoff import (FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE, FOLLOWUP_RETRY,
                                    JUDGMENT_NO, JUDGMENT_UNAVAILABLE, JUDGMENT_YES,
                                    ConversationJudgments)
@@ -131,28 +137,63 @@ CASE_IDS = tuple(case_id for case_id, _run in CASES)
 assert NO_CANDIDATE not in _PROJECTION_CANDIDATES and JUDGMENT_UNAVAILABLE
 
 
-def qualify(engine, *, policy=None, stop_on_failure=True, checkpoint=None):
+def latency(seconds):
+    """``{'p50', 'p95', 'samples'}`` of per-call seconds (nearest-rank p95), or None without samples."""
+    if not seconds:
+        return None
+    ordered = sorted(seconds)
+    return {'p50': round(statistics.median(ordered), 3),
+            'p95': round(ordered[math.ceil(0.95 * len(ordered)) - 1], 3), 'samples': len(ordered)}
+
+
+def qualify(engine, *, policy=None, stop_on_failure=True, checkpoint=None, trials=1, timer=time.monotonic):
     """Run the suite against one engine; return a content-free result record.
 
     ``stop_on_failure`` bounds the calls (and cost) spent on a candidate
     that already cannot qualify.  ``checkpoint(case_id, index)`` (#685) is
     called before each case, outside the per-case failure capture, so a
     background job can record progress and stop between cases by raising.
+
+    ``trials`` (#472): a case that passes on its first run passes.  A case
+    whose engine answered but failed policy is run again, up to ``trials``
+    runs, and passes only when most of its runs passed, so one unlucky
+    answer on a borderline case (#470) neither excludes nor admits a model
+    by chance.  An engine failure (timeout, auth, rejected model) is not
+    variance and is not repeated.  ``timer`` times every run; the record
+    carries each case's run seconds and the candidate's p50/p95.
     """
     policy = policy or DecisionPolicy()
-    results = []
+    majority = trials // 2 + 1
+    results, seconds = [], []
     for index, (case_id, run) in enumerate(CASES):
         if checkpoint is not None:
             checkpoint(case_id, index)
-        try:
-            passed, outcome = run(engine, policy)
-        except Exception as exc:  # an adapter bug is a failed case, not a pass
-            passed, outcome = False, type(exc).__name__
-        results.append({'case': case_id, 'passed': bool(passed), 'outcome': str(outcome)})
+        runs = []
+        while True:
+            started = timer()
+            try:
+                passed, outcome = run(engine, policy)
+            except Exception as exc:  # an adapter bug is a failed case, not a pass
+                passed, outcome = False, type(exc).__name__
+            runs.append((bool(passed), str(outcome), round(timer() - started, 3)))
+            passes = sum(1 for ok, _outcome, _s in runs if ok)
+            if (len(runs) == 1 and passed) or passes >= majority or len(runs) - passes >= majority \
+                    or len(runs) >= trials or getattr(engine, 'last_failure', ''):
+                break
+        passed = runs[0][0] if len(runs) == 1 else passes >= majority
+        seconds.extend(s for _ok, _outcome, s in runs)
+        row = {'case': case_id, 'passed': passed, 'outcome': runs[-1][1], 'seconds': [s for *_rest, s in runs]}
+        if len(runs) > 1:
+            row.update(trials=len(runs), passes=passes)
+        results.append(row)
         if stop_on_failure and not passed:
             break
     passed_count = sum(1 for row in results if row['passed'])
     score = passed_count / len(CASES)
+    runs_total = sum(row.get('trials', 1) for row in results)
+    passes_total = sum(row.get('passes', 1 if row['passed'] else 0) for row in results)
     return {'suite_version': SUITE_VERSION, 'cases': len(CASES), 'ran': len(results),
             'passed_cases': passed_count, 'score': round(score, 3),
-            'qualified': score >= PASS_THRESHOLD, 'results': results}
+            'qualified': score >= PASS_THRESHOLD, 'results': results,
+            'pass_rate': round(passes_total / runs_total, 3) if runs_total else 0.0,
+            'latency': latency(seconds)}
