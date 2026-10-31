@@ -22,7 +22,7 @@ from personal_agent.connector_contract import CONNECTOR_STATE_KEY, PENDING_WORK_
 from personal_agent.conversation_handoff import CONVERSATION_RESUME_KEY, INTENT_CALENDAR_CREATE, INTENT_DRIVE_READ
 from personal_agent.decision import (OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, SelectionDecision,
                                      fixture_confidence)
-from personal_agent.gmail import GMAIL_CONNECTOR_ID, GMAIL_MODIFY_CONNECTOR_ID, GMAIL_READONLY_SCOPE, GmailError
+from personal_agent.gmail import GMAIL_FILTERS_CONNECTOR_ID, GMAIL_CONNECTOR_ID, GMAIL_MODIFY_CONNECTOR_ID, GMAIL_READONLY_SCOPE, GmailError
 from cryptography.fernet import Fernet
 from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.file_workspace import FileWorkspace
@@ -1581,7 +1581,7 @@ class GmailConnectorWiringTests(unittest.TestCase):
     def test_registering_gmail_declares_a_capability_and_grants_nothing(self):
         service=self.configured()
         self.assertEqual([spec.connector_id for spec in service.connector_registry.definitions()],
-                         [GMAIL_MODIFY_CONNECTOR_ID, GMAIL_CONNECTOR_ID])
+                         [GMAIL_FILTERS_CONNECTOR_ID, GMAIL_MODIFY_CONNECTOR_ID, GMAIL_CONNECTOR_ID])
         # Registration wrote no owner row at all: the durable connector state
         # does not exist until an owner completes an authorization.
         self.assertIsNone(self.store.config(CONNECTOR_STATE_KEY,None))

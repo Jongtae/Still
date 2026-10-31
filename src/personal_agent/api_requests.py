@@ -64,7 +64,7 @@ MAX_READ_REQUESTS = 8
 #: transport).  A sent request leaves an ``api_dispatch`` record of its own; ``needs_setup`` and
 #: response-time codes are not here because they can follow a dispatch.
 PRE_DISPATCH_CODES = frozenset({'api_slot_code_only', 'api_slot_unknown', 'api_slot_invalid', 'api_argument_invalid',
-                                'api_path_invalid', 'api_path_refused', 'api_read_only', 'api_approval_unrepresentable', 'approval_required',
+                                'api_path_invalid', 'api_path_refused', 'api_body_refused', 'api_read_only', 'api_approval_unrepresentable', 'approval_required',
                                 'api_effect_replayed', 'api_work_inactive'})
 #: #1445: the pre-dispatch refusals of a call that could not be made as written (the wrong tool for a
 #: set, an unknown slot, a malformed argument or path).  Like a click on a target that was not on the
@@ -567,6 +567,46 @@ def _json_list(text, label):
     return value
 
 
+def _unique_keys(pairs):
+    """``json.loads`` hook refusing a repeated key: Python keeps the last one, a provider may keep the first."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('duplicate key')
+        result[key] = value
+    return result
+
+
+def body_refusal(rules, method, path, query, body):
+    """The reason a slot's ``write_body_refuse`` rule refuses this mutation, or None (#502).
+
+    A rule is ``(method, path_pattern, key_path, reason)``: the exact JSON body that would be sent may
+    not hold ``key_path`` (any value, null included).  A body that cannot be checked - not JSON, not an
+    object, or with a repeated key at any depth - is refused too, and the field may not be set through a
+    query parameter either (some provider APIs read body fields from the query string).
+    """
+    for allowed, pattern, keys, reason in rules or ():
+        if method != allowed or not re.fullmatch(pattern, path):
+            continue
+        if any(keys[-1] in name.split('.') for name, _value in parse_qsl(query, keep_blank_values=True)):
+            return reason
+        if body is None:
+            continue
+        try:
+            value = json.loads(body, object_pairs_hook=_unique_keys)
+        except (TypeError, ValueError, RecursionError):
+            return reason
+        if not isinstance(value, dict):
+            return reason
+        for key in keys:
+            if not isinstance(value, dict) or key not in value:
+                break
+            value = value[key]
+        else:
+            return reason
+    return None
+
+
 def provenance(data, *, status, headers, retrieved_at, as_of_field=None, max_age_seconds=DEFAULT_MAX_AGE,
                checks=(), required_fields=(), live=False):
     """Reference time, freshness, completeness and Still-derived values of one response.
@@ -1019,6 +1059,21 @@ class ApiRequests:
             raise ApiError('필요한 응답을 확인하지 못해 연결을 저장하지 않았습니다.', 'api_not_ready')
         return evidence(result)
 
+    @staticmethod
+    def _write_refusal(slot, method, grant, address):
+        """A change refused for a missing write connection: the slot's own (CONN-API) or one path's (#502)."""
+        text = (f"연결 '{slot['name']}'은 읽기 전용이라 {method} 요청을 보내지 않았습니다." if slot.get('read_only') else
+                f"연결 '{slot['name']}'의 이 변경 경로는 별도 연결이 필요해 {method} 요청을 보내지 않았습니다.")
+        if grant:
+            # #363: the Work parks for this connection after the turn; the AI need not find another way.
+            text += (f" 변경에는 소유자의 '{grant}' 연결이 필요합니다. Still이 대화에서 연결을 안내하고, 연결되면 이 요청을 한 번 이어서 처리합니다."
+                     # #372: a Still-owned connection comes before the browser (connection contract §3).
+                     " 이 변경을 브라우저 로그인 등 다른 방법으로 우회하지 말고, 지금까지 확인한 내용과 연결 안내로 이 턴을 마치세요.")
+            if address:
+                # #366: the AI cannot open this loopback page itself; the owner opens it on the PC.
+                text += f" 소유자가 Still이 실행 중인 PC에서 열 연결 주소: {address}"
+        return ApiError(text, 'api_read_only', requires=grant)
+
     def _call_slot(self, args, slot, *, before_send=None):
         """Run the same bounded transport for active calls and input readiness."""
         if slot.get('kind') == CODE_KIND:
@@ -1029,16 +1084,7 @@ class ApiRequests:
             raise ApiError('지원하는 메서드는 ' + ', '.join(METHODS) + '입니다.', 'api_argument_invalid')
         if slot.get('read_only') and method not in READ_METHODS:
             # CONN-API: a read grant never authorizes a mutation.
-            text = f"연결 '{slot['name']}'은 읽기 전용이라 {method} 요청을 보내지 않았습니다."
-            if slot.get('write_requires'):
-                # #363: the Work parks for this connection after the turn; the AI need not find another way.
-                text += (f" 변경에는 소유자의 '{slot['write_requires']}' 연결이 필요합니다. Still이 대화에서 연결을 안내하고, 연결되면 이 요청을 한 번 이어서 처리합니다."
-                         # #372: a Still-owned connection comes before the browser (connection contract §3).
-                         " 이 변경을 브라우저 로그인 등 다른 방법으로 우회하지 말고, 지금까지 확인한 내용과 연결 안내로 이 턴을 마치세요.")
-                if slot.get('write_connect_url'):
-                    # #366: the AI cannot open this loopback page itself; the owner opens it on the PC.
-                    text += f" 소유자가 Still이 실행 중인 PC에서 열 연결 주소: {slot['write_connect_url']}"
-            raise ApiError(text, 'api_read_only', requires=slot.get('write_requires'))
+            raise self._write_refusal(slot, method, slot.get('write_requires'), slot.get('write_connect_url'))
         url = str(args.get('url') or '').strip()
         try:
             parts, named = self._target(slot, url)
@@ -1047,11 +1093,27 @@ class ApiRequests:
                 raise ApiError('연결의 변경 주소를 허용할 수 없어 보내지 않았습니다.', 'api_path_refused') from None
             raise
         path = parts.path or '/'
+        matched = None
+        getter = None
+        body = args.get('body') or None
         # #355: match exactly what HTTP sends, before a token, approval or effect claim.
         if method not in READ_METHODS and slot.get('write_paths') is not None:
             path = urlsplit(urlunsplit((parts.scheme.lower(), named, path, parts.query, ''))).path
-            if not any(method == allowed and re.fullmatch(pattern, path) for allowed, pattern in slot['write_paths']):
+            matched = next((entry for entry in slot['write_paths']
+                            if method == entry[0] and re.fullmatch(entry[1], path)), None)
+            if matched is None:
                 raise ApiError(f"연결 '{slot['name']}'에서 허용하지 않은 변경 경로입니다.", 'api_path_refused')
+        # #502: the exact outgoing body (and query) against the slot's declared body rules, before authority is spent.
+        if method not in READ_METHODS and slot.get('write_body_refuse'):
+            reason = body_refusal(slot['write_body_refuse'], method, path, parts.query, body)
+            if reason:
+                raise ApiError(reason, 'api_body_refused')
+        # #502: a path that needs its own opt-in grant spends only that grant's token, never the slot's.
+        if matched is not None and len(matched) == 3:
+            grant = matched[2]
+            getter = slot.get('write_tokens', {}).get(grant)
+            if not callable(getter):
+                raise self._write_refusal(slot, method, grant, slot.get('write_connect_urls', {}).get(grant))
         query = parts.query
         if method not in READ_METHODS and slot.get('write_query'):
             # #432: a connection's fixed parameters replace whatever the AI sent for them (the calendar
@@ -1085,7 +1147,7 @@ class ApiRequests:
         idempotency = self._approve(slot, method, url, body, effect, named, path) if effect == 'payment' else identity[:32] if identity else None
         claim = None
         finish = None
-        if slot.get('credential_ref'):
+        if slot.get('credential_ref') and getter is None:
             from .api_credentials import ApiCredentials
             try:
                 if slot.get('oauth'):
@@ -1097,11 +1159,11 @@ class ApiRequests:
             except Exception:
                 raise ApiError('API 인증 정보를 사용할 수 없어 호출하지 않았습니다.', 'needs_setup',
                                requires=f"api-slot:{slot['name']}") from None
-        elif callable(slot.get('token')):
+        elif callable(getter) or callable(slot.get('token')):
             # CONN-API: the connector resolves, renews and checks the token for this one call.
             try:
                 # #432: a change spends the connection's separate write grant when it has one.
-                getter = slot['write_token'] if method not in READ_METHODS and callable(slot.get('write_token')) else slot['token']
+                getter = getter or (slot['write_token'] if method not in READ_METHODS and callable(slot.get('write_token')) else slot['token'])
                 secret = getter()
                 if isinstance(secret, tuple):
                     secret, finish = secret

@@ -53,6 +53,10 @@ GMAIL_CONNECTOR = ConnectorSpec(GMAIL_CONNECTOR_ID, (GMAIL_READONLY_SCOPE,))
 GMAIL_MODIFY_CONNECTOR_ID = "gmail-modify"
 GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
 GMAIL_MODIFY_SPEC = ConnectorSpec(GMAIL_MODIFY_CONNECTOR_ID, (GMAIL_MODIFY_SCOPE,))
+# #502: filter settings use a separate opt-in grant; existing modify scopes stay unchanged.
+GMAIL_FILTERS_CONNECTOR_ID = "gmail-filters"
+GMAIL_SETTINGS_BASIC_SCOPE = "https://www.googleapis.com/auth/gmail.settings.basic"
+GMAIL_FILTERS_SPEC = ConnectorSpec(GMAIL_FILTERS_CONNECTOR_ID, (GMAIL_SETTINGS_BASIC_SCOPE,))
 AUTHORIZATION_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 MESSAGES_ENDPOINT = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
 PROFILE_ENDPOINT = "https://gmail.googleapis.com/gmail/v1/users/me/profile"

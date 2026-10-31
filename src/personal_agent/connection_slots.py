@@ -44,10 +44,18 @@ SLOT_SPECS = {
                       "base64url-encoded, so read one with mail_read to get its text",
               'shortcuts': (), 'write_requires': 'gmail-modify',
               'write_note': "the owner's Gmail (Gmail API v1, users/me); can modify message/thread labels, "
-                            "trash/untrash messages and threads, and create/update/delete labels; sending, "
-                            "draft writes, import/insert, permanent deletion and settings writes are unavailable. "
+                            "trash/untrash messages and threads, create/update/delete labels, and "
+                            "create/delete mail filters (settings/filters) with the owner's separate 'gmail-filters' connection; "
+                            "if refused for that grant, Still asks the owner to connect and continues once. Filter actions "
+                            "apply labels/archive (remove INBOX)/trash as messages do; filters with forward are refused; "
+                            "sending, draft writes, import/insert, permanent deletion and other settings writes are unavailable. "
                             "Message bodies are base64url-encoded; mail_read returns their text",
-              'write_paths': (('POST', r'/gmail/v1/users/me/messages/[A-Za-z0-9_-]+/(modify|trash|untrash)'),
+              'write_body_refuse': (('POST', r'/gmail/v1/users/me/settings/filters', ('action', 'forward'),
+                                     '전달(forward) 동작이 있는 필터는 소유자의 메일을 다른 수신자에게 보내므로 Still이 보내지 않았습니다. '
+                                     'forward 없이 라벨 추가·제거(보관은 INBOX 제거, 휴지통은 TRASH 추가)만으로 필터를 만드세요.'),),
+              'write_paths': (('POST', r'/gmail/v1/users/me/settings/filters', 'gmail-filters'),
+                              ('DELETE', r'/gmail/v1/users/me/settings/filters/[A-Za-z0-9_-]+', 'gmail-filters'),
+                              ('POST', r'/gmail/v1/users/me/messages/[A-Za-z0-9_-]+/(modify|trash|untrash)'),
                               ('POST', r'/gmail/v1/users/me/messages/batchModify'),
                               ('POST', r'/gmail/v1/users/me/threads/[A-Za-z0-9_-]+/(modify|trash|untrash)'),
                               ('POST', r'/gmail/v1/users/me/labels'),
@@ -70,11 +78,12 @@ WRITE_GRANT_NOTE = ("; changes need the owner's separate '{grant}' connection: m
 
 
 def write_grants():
-    """The separate write connections a slot can be upgraded by (#363): ``write_requires`` of every spec."""
-    return frozenset(spec['write_requires'] for spec in SLOT_SPECS.values() if spec.get('write_requires'))
+    """The separate write connections a slot can be upgraded by (#363): slot and per-path grants."""
+    return frozenset({spec['write_requires'] for spec in SLOT_SPECS.values() if spec.get('write_requires')}
+                     | {entry[2] for spec in SLOT_SPECS.values() for entry in spec.get('write_paths', ()) if len(entry)==3})
 
 
-def _slot(name, token, *, writable=False, write_token=None):
+def _slot(name, token, *, writable=False, write_token=None, write_tokens=None, write_connect_urls=None):
     """One connection slot; ``write_token`` (#432) resolves the separate write grant for a mutation."""
     spec = SLOT_SPECS[name]
     note = spec['write_note'] if writable else spec['note'] + (
@@ -83,6 +92,8 @@ def _slot(name, token, *, writable=False, write_token=None):
             'header': 'Authorization', 'scheme': 'Bearer', 'subject': None, 'revision': 1,
             'max_age_seconds': 900, 'read_only': not writable, 'connection': name, 'token': token,
             'write_paths': spec.get('write_paths'), 'write_requires': spec.get('write_requires'),
+            'write_body_refuse': spec.get('write_body_refuse'),
+            'write_tokens': write_tokens or {}, 'write_connect_urls': write_connect_urls or {},
             'write_query': spec.get('write_query'), 'write_token': write_token if writable else None,
             # #1329: the provider's live API returns the owner's records as they are at retrieval.
             'live': True}
@@ -100,7 +111,9 @@ def relayed(names):
     is on the direct route.  Every call is relayed and the service resolves
     the real slot; an unknown name is dropped.
     """
-    return {name: _slot(name, _relayed_token, writable=bool(SLOT_SPECS[name].get('write_requires') in names))
+    return {name: _slot(name, _relayed_token, writable=bool(SLOT_SPECS[name].get('write_requires') in names),
+                        write_tokens={entry[2]: _relayed_token for entry in SLOT_SPECS[name].get('write_paths', ())
+                                      if len(entry)==3 and entry[2] in names})
             for name in names if name in SLOT_SPECS}
 
 
@@ -108,7 +121,8 @@ def names(slots):
     """The Still-held connection slots among ``slots``, by name only (never a token)."""
     held = {name: slot for name, slot in (slots or {}).items() if isinstance(slot, dict) and slot.get('connection')}
     return tuple(sorted(set(held) | {slot['write_requires'] for slot in held.values()
-                                    if not slot.get('read_only') and slot.get('write_requires')}))
+                                    if not slot.get('read_only') and slot.get('write_requires')}
+                        | {grant for slot in held.values() for grant, token in slot.get('write_tokens', {}).items() if callable(token)}))
 
 
 def _oauth_token(oauth, owner_id, grant, exchange):
@@ -160,7 +174,7 @@ def _gmail_token(gmail, owner_id):
 def build(service, owner_id):
     """The connection slots this owner can use now: one per service, using a connected write grant when available."""
     from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID
-    from .calendar_oauth import DRIVE_GRANT, READ_GRANT, WRITE_GRANT, GMAIL_MODIFY_GRANT
+    from .calendar_oauth import DRIVE_GRANT, READ_GRANT, WRITE_GRANT, GMAIL_MODIFY_GRANT, GMAIL_FILTERS_GRANT
     from .connector_contract import ConnectorState
     from .google_drive_read import DRIVE_CONNECTOR_ID
     registry = getattr(service, 'connector_registry', None)
@@ -189,11 +203,16 @@ def build(service, owner_id):
         slots['google-drive'] = _slot('google-drive', _oauth_token(
             drive_oauth, owner_id, DRIVE_GRANT, getattr(service, 'drive_read_token_exchange', None)))
     modify = getattr(service, 'gmail_modify_oauth', None)
-    from .gmail import GMAIL_MODIFY_CONNECTOR_ID
+    from .gmail import GMAIL_MODIFY_CONNECTOR_ID, GMAIL_FILTERS_CONNECTOR_ID
     if modify is not None and connected(GMAIL_MODIFY_CONNECTOR_ID):
         slots['gmail'] = _slot('gmail', _oauth_token(
             modify, owner_id, GMAIL_MODIFY_GRANT, getattr(service, 'gmail_modify_token_exchange', None)), writable=True)
         slots['gmail']['revision'] = registry.status(owner_id, GMAIL_MODIFY_CONNECTOR_ID).connection_revision
+        if connected(GMAIL_FILTERS_CONNECTOR_ID):
+            slots['gmail']['write_tokens'][GMAIL_FILTERS_GRANT] = _oauth_token(
+                modify, owner_id, GMAIL_FILTERS_GRANT, getattr(service, 'gmail_modify_token_exchange', None))
+            slots['gmail']['write_grant_revisions'] = {GMAIL_FILTERS_GRANT:
+                registry.status(owner_id, GMAIL_FILTERS_CONNECTOR_ID).connection_revision}
     gmail = getattr(service, 'gmail', None)
     if gmail is not None:
         from .gmail import GMAIL_CONNECTOR_ID
@@ -203,6 +222,11 @@ def build(service, owner_id):
     # so the owner gets the link even when the Work cannot wait for it.  Naming it grants nothing.
     address = getattr(service, 'connector_connect_url', None)
     for slot in slots.values():
+        # #502: each path may require its own opt-in connection.
+        for entry in slot.get('write_paths') or ():
+            if len(entry)==3 and entry[2] not in slot['write_tokens'] and callable(address):
+                try:slot['write_connect_urls'][entry[2]] = address(entry[2]) or ''
+                except Exception:slot['write_connect_urls'][entry[2]] = ''
         if slot['read_only'] and slot.get('write_requires') and callable(address):
             try:
                 slot['write_connect_url'] = address(slot['write_requires']) or ''

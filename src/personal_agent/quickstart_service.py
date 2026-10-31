@@ -60,7 +60,8 @@ from . import folder_grants
 from . import intranet
 from . import work_mode
 from .connector_contract import ConnectorContractError, ConnectorResultKind, _owner_key
-from .gmail import GMAIL_CONNECTOR_ID, GMAIL_MODIFY_CONNECTOR_ID, GmailError
+from .calendar_oauth import GMAIL_FILTERS_GRANT, GMAIL_MODIFY_GRANT
+from .gmail import GMAIL_FILTERS_CONNECTOR_ID, GMAIL_CONNECTOR_ID, GMAIL_MODIFY_CONNECTOR_ID, GmailError
 from .connector_revocation import (GoogleConnectionRevoker, RevocationError, drive_connection,
                                    google_revoke_transport, registry_connection)
 from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID
@@ -7517,8 +7518,9 @@ class AgentService:
             # signed state carries it through the callback.
             holder=self.calendar_oauth
             path=CALENDAR_CONNECT_PATH+('?grant=write' if connector_id==CALENDAR_WRITE_CONNECTOR_ID else '?grant=read')
-        elif connector_id==GMAIL_MODIFY_CONNECTOR_ID and self.gmail_modify_oauth:
+        elif connector_id in (GMAIL_MODIFY_CONNECTOR_ID,GMAIL_FILTERS_CONNECTOR_ID) and self.gmail_modify_oauth:
             holder,path=self.gmail_modify_oauth,GMAIL_MODIFY_CONNECT_PATH
+            if connector_id==GMAIL_FILTERS_CONNECTOR_ID:path+='?grant=filters'
         elif connector_id==DRIVE_CONNECTOR_ID and self.drive_oauth:
             holder,path=self.drive_oauth,DRIVE_CONNECT_PATH
         else:
@@ -7603,8 +7605,9 @@ class AgentService:
             return (self.calendar_oauth.credential_current(owner,write=write)
                     or bool(callable(self.calendar_token_exchange) and self.calendar_oauth.credential_renewable(owner,write=write))
                     if self.calendar_oauth else None)
-        if connector_id==GMAIL_MODIFY_CONNECTOR_ID:
-            return (self.gmail_modify_oauth.credential_current(owner) or self.gmail_modify_oauth.credential_renewable(owner)
+        if connector_id in (GMAIL_MODIFY_CONNECTOR_ID,GMAIL_FILTERS_CONNECTOR_ID):
+            grant=GMAIL_FILTERS_GRANT if connector_id==GMAIL_FILTERS_CONNECTOR_ID else GMAIL_MODIFY_GRANT
+            return (self.gmail_modify_oauth.credential_current(owner,grant=grant) or self.gmail_modify_oauth.credential_renewable(owner,grant=grant)
                     if self.gmail_modify_oauth else None)
         if connector_id==DRIVE_CONNECTOR_ID:
             # An expired access token with a stored refresh token is renewed
@@ -7632,11 +7635,11 @@ class AgentService:
         # #1172: which connections run on the owner's own Google client.
         own={cid for cid,holder in ((GMAIL_CONNECTOR_ID,self.gmail),(CALENDAR_CONNECTOR_ID,self.calendar_oauth),
                                      (CALENDAR_WRITE_CONNECTOR_ID,self.calendar_oauth),(DRIVE_CONNECTOR_ID,self.drive_oauth),
-                                     (GMAIL_MODIFY_CONNECTOR_ID,self.gmail_modify_oauth))
+                                     (GMAIL_MODIFY_CONNECTOR_ID,self.gmail_modify_oauth),(GMAIL_FILTERS_CONNECTOR_ID,self.gmail_modify_oauth))
              if self.google_client_id and holder is not None and getattr(holder,'client_id',None)==self.google_client_id}
         return [{**row,'source':'own-client'} if row.get('connector_id') in own else row for row in rows]
 
-    CONNECTION_NAMES={GMAIL_MODIFY_CONNECTOR_ID:msg('handoff.modify_gmail'), 'google-gmail-read':'Google Gmail','google-calendar':'Google Calendar',
+    CONNECTION_NAMES={GMAIL_FILTERS_CONNECTOR_ID:msg('handoff.gmail_filters'), GMAIL_MODIFY_CONNECTOR_ID:msg('handoff.modify_gmail'), 'google-gmail-read':'Google Gmail','google-calendar':'Google Calendar',
                       'google-calendar-write':msg('handoff.create_google_calendar_events'),'google-drive-read':'Google Drive',
                       DRIVE_CONNECTOR_ID:'Google Drive'}
 
@@ -7806,6 +7809,8 @@ class AgentService:
         if self.gmail_modify_oauth:
             connections.append(registry_connection(GMAIL_MODIFY_CONNECTOR_ID,msg('handoff.modify_gmail'),
                                                    self.gmail_modify_oauth,self._connector_owner_candidates))
+            connections.append(registry_connection(GMAIL_FILTERS_CONNECTOR_ID,msg('handoff.gmail_filters'),
+                                                   self.gmail_modify_oauth,self._connector_owner_candidates,grant=GMAIL_FILTERS_GRANT))
         if self.drive_oauth:
             connections.append(registry_connection(DRIVE_CONNECTOR_ID,'Google Drive',self.drive_oauth,
                                                    self._connector_owner_candidates))
@@ -9973,7 +9978,7 @@ class AgentService:
 
     def _own_client_connector_ids(self):
         ids={'gmail':(GMAIL_CONNECTOR_ID,),'calendar':(CALENDAR_CONNECTOR_ID,CALENDAR_WRITE_CONNECTOR_ID),
-             'drive':(DRIVE_CONNECTOR_ID,),'gmail_modify':(GMAIL_MODIFY_CONNECTOR_ID,)}
+             'drive':(DRIVE_CONNECTOR_ID,),'gmail_modify':(GMAIL_MODIFY_CONNECTOR_ID,GMAIL_FILTERS_CONNECTOR_ID)}
         return {cid for name in self._own_client_holders() for cid in ids[name]}
 
     def _own_client_rows_held(self):
@@ -10133,26 +10138,32 @@ class AgentService:
         return {**result,'work_id':resumed['work_id'],'scheduled':resumed['scheduled'],
                 'resumed':resumed['resumed'],'resume_refusals':resumed['refused']}
 
-    def begin_gmail_modify_connection(self):
+    def begin_gmail_modify_connection(self, grant='modify'):
         """One owner-local Google Gmail modify authorization URL (#355); issuing it grants nothing."""
         if not self.gmail_modify_oauth:
             raise ValueError(ConnectorHandoff.unavailable(GMAIL_MODIFY_CONNECTOR_ID))
-        return self.gmail_modify_oauth.begin_oauth(self.connector_callback_owner(GMAIL_MODIFY_CONNECTOR_ID))
+        if grant not in ('modify','filters'):raise ValueError('invalid_grant')
+        connector_id=GMAIL_FILTERS_CONNECTOR_ID if grant=='filters' else GMAIL_MODIFY_CONNECTOR_ID
+        label=GMAIL_FILTERS_GRANT if grant=='filters' else GMAIL_MODIFY_GRANT
+        return self.gmail_modify_oauth.begin_oauth(self.connector_callback_owner(connector_id),grant=label)
 
     def complete_gmail_modify_connection(self, callback):
         """Complete the Gmail modify callback, then resume a Work parked for it, as Calendar does."""
         if not self.gmail_modify_oauth or not callable(self.gmail_modify_token_exchange):
             raise ValueError(ConnectorHandoff.unavailable(GMAIL_MODIFY_CONNECTOR_ID))
+        connector_id=(GMAIL_FILTERS_CONNECTOR_ID if self.gmail_modify_oauth.pending_grant(callback)==GMAIL_FILTERS_GRANT
+                      else GMAIL_MODIFY_CONNECTOR_ID)
         owner=self.gmail_modify_oauth.callback_owner(callback.get('state') if isinstance(callback,dict) else None,
                                                   ['local-owner'])
-        parked=bool(self.connector_handoff and self.connector_handoff.record(GMAIL_MODIFY_CONNECTOR_ID))
+        parked=bool(self.connector_handoff and self.connector_handoff.record(connector_id))
         result=self.gmail_modify_oauth.complete_oauth(owner,callback,self.gmail_modify_token_exchange)
+        connector_id=result.get('connector_id') or connector_id
         self._remember_connector_owner(owner)
-        self.notify_connection_completed(GMAIL_MODIFY_CONNECTOR_ID,resuming=parked)
+        self.notify_connection_completed(connector_id,resuming=parked)
         if not parked:
             return result
         try:
-            resumed=self.resume_connector_work(GMAIL_MODIFY_CONNECTOR_ID,owner,tuple(result.get('granted_scopes') or ()))
+            resumed=self.resume_connector_work(connector_id,owner,tuple(result.get('granted_scopes') or ()))
         except (ConnectorContractError,ConversationHandoffError) as exc:
             return {**result,'resume_refused':exc.reason}
         if not resumed:

@@ -65,6 +65,12 @@
   "ja": "使い方: /dev on · /dev off · /dev（現在の状態）",
   "zh": "用法：/dev on · /dev off · /dev（当前状态）"
  },
+ "handoff.gmail_filters": {
+  "ko": "Gmail 메일 필터",
+  "en": "Gmail mail filters",
+  "ja": "Gmail メールフィルタ",
+  "zh": "Gmail 邮件过滤器"
+ },
  "handoff.modify_gmail": {
   "ko": "Gmail 메일 정리",
   "en": "Gmail mailbox organisation",
