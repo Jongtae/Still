@@ -317,6 +317,24 @@ class ReleaseScriptTests(unittest.TestCase):
         older = f'{major}.{minor - 1}.99' if minor else f'{major - 1}.99.99'
         self.assertFalse(release.newest(self.root, older))
 
+    def test_a_line_record_moves_the_lines_formula_with_it(self):
+        """Codex on #536: the line's formula must name the line's newest release after record."""
+        previous = self.publish_previous()
+        release.formula(self.root, previous['version'], previous['archive_sha256'])
+        patch = self.main_after(previous)
+        self.prepare(version=patch)
+        release.record(self.root, patch, COMMIT, SHA, '2026-11-02', '')
+        text = (self.root / release.FORMULA).read_text(encoding='utf-8')
+        self.assertIn(f'/archive/refs/tags/v{patch}.tar.gz"', text)
+        self.assertIn(f'sha256 "{SHA}"', text)
+
+    def test_record_on_main_leaves_the_formula_the_formula_pr_merged(self):
+        self.prepare()
+        release.formula(self.root, '9.0.0', SHA)
+        before = (self.root / release.FORMULA).read_text(encoding='utf-8')
+        release.record(self.root, '9.0.0', COMMIT, SHA, '2026-11-02', 'formula-pr')
+        self.assertEqual((self.root / release.FORMULA).read_text(encoding='utf-8'), before)
+
     def test_register_of_the_newest_patch_moves_main_past_it(self):
         """The v0.3.1 case: main still carries the placeholder the line now publishes."""
         previous = self.publish_previous()

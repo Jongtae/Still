@@ -285,12 +285,19 @@ def _move_to_release(root: Path, previous: dict | None, version: str, sha256: st
 
 
 def record(root: Path, version: str, commit: str, sha256: str, tag_date: str, formula_pr: str) -> str:
-    """Record a published release on the branch it came from and return the next placeholder version."""
+    """Record a published release on the branch it came from and return the next placeholder version.
+
+    The branch's formula moves with it. On main the formula PR already did
+    that, so nothing changes; a maintenance line's formula is not the tap's,
+    but it must name the line's newest release like main's does (#533).
+    """
     _check_measurements(commit, sha256, tag_date)
     data = load_manifest(root)
     previous = newest_published(data)
     entry = unpublished_entry(data, version)
     following = _next_patch(version)
+    if (root / FORMULA).exists():
+        formula(root, version, sha256)
     _move_to_release(root, previous, version, sha256, tag_date)
     data["unpublished"].remove(entry)
     data["published"].append(_published_row(entry, version, commit, sha256, tag_date, formula_pr))

@@ -182,7 +182,9 @@ minor (#533; [release policy](governance/release-policy.en.md#scope-and-branches
    version that is not an `X.Y.*` patch.
 4. **Publish**: merging it starts the workflow on `maint/X.Y`; the owner
    approves the same `release` environment. The tag names the line's
-   release commit. The record PR (step 9–10) targets the line, and a
+   release commit. The record PR (step 9–10) targets the line and also
+   points the line's own `Formula/agentos.rb` at the patch, so the line stays
+   consistent (the tap reads `main`'s formula only), and a
    *register* PR adds the published row to `main`'s manifest, which lists
    every published release, and moves `main`'s in-tree version past the patch
    only if it does not already exceed it.
