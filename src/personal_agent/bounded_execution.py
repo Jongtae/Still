@@ -274,11 +274,12 @@ CLI_PROFILES = {
         },
         # Historical manual observations; admission uses local checks for the installed identity.
         'runtimes': {
-            'codex': {'tested_versions': ('0.153.4',), 'tested_platforms': ('darwin',), 'live_tested_version': None,
-                      'enforcement': f'Codex permissions profile {CODEX_STRICT_PERMISSIONS} (Seatbelt) instead of '
+            # #450: Linux too; Codex there runs its bubblewrap sandbox, and the probes decide.
+            'codex': {'tested_versions': ('0.153.4',), 'tested_platforms': ('darwin', 'linux'), 'live_tested_version': None,
+                      'enforcement': f'Codex permissions profile {CODEX_STRICT_PERMISSIONS} (Seatbelt on macOS, bubblewrap on Linux) instead of '
                                      '--sandbox read-only, --ignore-rules, every non-allowlisted feature disabled '
                                      '(verified at qualification), decision-route instruction overrides'},
-            'claude-code': {'tested_versions': ('2.1.280',), 'tested_platforms': ('darwin',), 'live_tested_version': None,
+            'claude-code': {'tested_versions': ('2.1.280',), 'tested_platforms': ('darwin', 'linux'), 'live_tested_version': None,
                             'enforcement': 'no built-in tools (--tools ""), --restricted, '
                                            'only the offered Still MCP tools allowed'},
         },
@@ -2192,10 +2193,13 @@ class BoundedExecutionAdapter:
     def _codex_sandbox_denies(self, binary, run_dir, target, *, deadline=None, interrupted=None):
         """Run the CLI's own sandbox runner under the strict permissions profile.
 
-        ``/bin/ls`` output is discarded, so no protected content is read into
-        Still.  The runner gets an empty CODEX_HOME so the owner's Codex
-        config cannot change the policy under test (``exec`` ignores it too).
-        Returns True when the listing was refused, False when it succeeded.
+        The runner gets an empty CODEX_HOME so the owner's Codex config cannot
+        change the policy under test (``exec`` ignores it too).  Returns True
+        when ``target`` is not readable inside: macOS Seatbelt refuses the
+        listing, and Linux bubblewrap does not mount what the profile leaves
+        out, so the target is missing or lists only the way to the workspace
+        (#450).  Only entry names are compared, in memory; no protected file is
+        read and nothing of the output is kept.  Anything else fails closed.
         """
         from .cli_qualification import qualification_run
         home = run_dir / '.codex-qualify'
@@ -2205,12 +2209,28 @@ class BoundedExecutionAdapter:
                 '--', '/bin/ls', str(target)]
         done = qualification_run(self, argv, cwd=run_dir, env=env, timeout=30,
                                  deadline=deadline, interrupted=interrupted)
-        if done.returncode == 0:
+        if done.returncode != 0:
+            if re.search(r'Operation not permitted|Permission denied|No such file or directory',
+                         (done.stdout or '') + (done.stderr or ''), re.I):
+                return True
+            raise ValueError('sandbox denial was not observed')
+        return self._only_the_way_shown(Path(target), Path(run_dir), done.stdout or '')
+
+    @staticmethod
+    def _only_the_way_shown(target, run_dir, listed):
+        """Whether a listing that went through shows nothing of ``target`` but the way to the workspace.
+
+        A sandbox that mounts only allowed paths (Linux bubblewrap) shows at
+        most the directory leading to ``run_dir``.  Any other name, or an empty
+        listing, counts as readable; so does a target with nothing else in it
+        to look for, since nothing hidden could be observed.
+        """
+        target, run_dir = target.resolve(), run_dir.resolve()
+        shown = set(listed.splitlines()) - {''}
+        if target == run_dir or not shown:
             return False
-        if done.returncode == 1 and re.search(r'Operation not permitted|Permission denied',
-                                              (done.stdout or '') + (done.stderr or ''), re.I):
-            return True
-        raise ValueError('sandbox denial was not observed')
+        way = {run_dir.relative_to(target).parts[0]} if target in run_dir.parents else set()
+        return shown <= way and bool(set(os.listdir(target)) - way)
 
     def _codex_feature_plan(self, binary, run_dir, *, deadline=None, interrupted=None):
         """Reuse the #580 allowlist plan for the strict Work profile.
