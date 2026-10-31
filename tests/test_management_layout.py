@@ -106,11 +106,12 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 const app=fs.readFileSync(process.argv[1],'utf8');
 const source=app.slice(app.indexOf('function addableOn('),app.indexOf('function paintNoteClamps('));
 class El{constructor(cls='',attrs={},children=[]){this.cls=cls.split(' ').filter(Boolean);this.attrs={...attrs};this.hidden=Boolean(attrs.hidden);this.checked=Boolean(attrs.checked);this.children=children;for(const c of children)c.parent=this;}
- matches(sel){if(sel.includes(','))return sel.split(',').some(part=>this.matches(part));if(sel==='[hidden]')return this.hidden;if(sel==='input[role="switch"]')return this.attrs.role==='switch';
-  if(sel==='[role="status"]')return this.attrs.role==='status';if(sel.startsWith('#'))return this.attrs.id===sel.slice(1);if(sel.startsWith('.'))return this.cls.includes(sel.slice(1));throw new Error('selector '+sel);}
+ matches(sel){if(sel.includes(','))return sel.split(',').some(part=>this.matches(part.replace(/^:scope>/,'')));if(sel==='[hidden]')return this.hidden;if(sel==='input[role="switch"]')return this.attrs.role==='switch';
+  if(sel.startsWith('#'))return this.attrs.id===sel.slice(1);const role=sel.match(/^\[role="(\w+)"\]/),classes=sel.replace(/^\[role="\w+"\]/,'').split('.').filter(Boolean);
+  if(!role&&!classes.length)throw new Error('selector '+sel);if(role&&this.attrs.role!==role[1])return false;return classes.every(c=>this.cls.includes(c));}
  get textContent(){return this.attrs.text||'';}
  closest(sel){for(let n=this;n;n=n.parent)if(n.matches(sel))return n;return null;}
- querySelectorAll(sel){if(sel.startsWith(':scope>'))return this.children.filter(c=>c.matches(sel.slice(7)));const out=[],walk=n=>{for(const c of n.children){if(c.matches(sel))out.push(c);walk(c);}};walk(this);return out;}
+ querySelectorAll(sel){if(sel.startsWith(':scope>'))return this.children.filter(c=>c.matches(sel.replace(/^:scope>/,'')));const out=[],walk=n=>{for(const c of n.children){if(c.matches(sel))out.push(c);walk(c);}};walk(this);return out;}
  querySelector(sel){return this.querySelectorAll(sel)[0]||null;}
  hasAttribute(name){return Object.hasOwn(this.attrs,name);}
  toggleAttribute(name,on){if(on)this.attrs[name]='';else delete this.attrs[name];}}
@@ -121,18 +122,27 @@ const empty=new El('settings-section',{},[new El('settings-list',{},[new El('set
 const hiddenSwitch=new El('settings-section',{},[new El('pref-list',{hidden:true},[new El('switch',{role:'switch',checked:true})])]);
 const company=new El('settings-section',{},[new El('pref-list',{},[new El('switch',{role:'switch',checked:true})])]);
 const confirming=new El('settings-section',{},[new El('settings-inline-confirm')]);
-const receipt=new El('settings-section',{},[new El('settings-list',{},[row({'data-inactive':''})]),new El('',{role:'status',text:'세션은 지웠지만 키체인 키는 지우지 못했습니다.'})]);
+const receipt=new El('settings-section',{},[new El('settings-list',{},[row({'data-inactive':''})]),new El('error',{role:'status',text:'세션은 지웠지만 키체인 키는 지우지 못했습니다.'})]);
+const settled=new El('settings-section',{},[new El('settings-list',{},[row({'data-inactive':''})]),new El('field-feedback',{role:'status',text:'Slack 연결을 해제했습니다.'})]);
 const silent=new El('settings-section',{},[new El('settings-list',{},[row({'data-inactive':''})]),new El('field-feedback',{role:'status'})]);
 const editing=new El('settings-section',{},[new El('settings-list',{hidden:true}),new El('folder-edit',{},[new El('settings-list')])]);
 const closedEdit=new El('settings-section',{},[new El('folder-edit',{hidden:true})]);
 const card=new El('settings-card',{},[offRows,empty]),group=new El('settings-group',{},[card]);
 const card2=new El('settings-card',{},[on,new El('settings-section',{hidden:true})]),group2=new El('settings-group',{},[card2]);
-const sections=[on,offRows,empty,hiddenSwitch,company,confirming,receipt,silent,editing,closedEdit];
+const sections=[on,offRows,empty,hiddenSwitch,company,confirming,receipt,silent,editing,closedEdit,settled];
 const ctx={document:{querySelectorAll:sel=>sel.includes('settings-group')?[group,group2]:sections}};
 vm.createContext(ctx);vm.runInContext(source,ctx);
 ctx.syncAddables();
-assert.deepEqual(sections.map(s=>s.hasAttribute('data-off')),[false,true,true,true,false,false,false,true,false,true],
- 'on: an active row, a visible switch that is on, a pending confirmation, an action receipt or an open edit; off: only inactive rows, an empty state, a hidden switch, an empty status line or a closed editor');
+assert.deepEqual(sections.map(s=>s.hasAttribute('data-off')),[false,true,true,true,false,false,false,true,false,true,true],
+ 'on: an active row, a visible switch that is on, a pending confirmation, an unresolved error or an open edit; off: only inactive rows, an empty state, a hidden switch, an empty status line, a closed editor or a settled success receipt');
+// 사용 중 in the add dialog: something of the type is set up and working, not merely visible.
+const stateRow=kind=>{const r=row();r.children=[new El('settings-state '+kind)];r.children[0].parent=r;return r;};
+const unavailable=new El('settings-section',{},[new El('settings-list',{},[stateRow('attention')])]);
+const working=new El('settings-section',{},[new El('settings-list',{},[stateRow('attention'),stateRow('active')])]);
+assert.equal(ctx.addableInUse(unavailable),false,'an unavailable or attention-only type is shown but not 사용 중');
+assert.equal(ctx.addableInUse(working),true);
+assert.equal(ctx.addableInUse(company),true,'a switch that is on');
+assert.equal(ctx.addableInUse(receipt),false,'a section kept only for its error is not 사용 중');
 assert.equal(group.hasAttribute('data-off'),true,'a group whose sections are all off leaves the pane with its heading');
 assert.equal(group2.hasAttribute('data-off'),false);
 on.children[0].children[1].attrs['data-inactive']='';ctx.syncAddables();
