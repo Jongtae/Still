@@ -1300,6 +1300,16 @@ class StreamLimitExceeded(Exception):
     """The CLI's combined stdout and stderr passed ``MAX_STREAM_BYTES`` while being read (#736 review)."""
 
 
+class _Answered(Exception):
+    """#469: a stdout line carried the run's final answer; the caller stops waiting for the exit."""
+
+
+#: #469: how long a CLI that already answered may take to exit on its own
+#: before its process group is killed (Codex 0.164.0 exits ~0.46 s after
+#: ``turn.completed``, observed).
+ANSWERED_EXIT_GRACE_SECONDS = 10.0
+
+
 class _StreamedOutput:
     """``Popen.communicate`` for a binary-pipe process, with stdout seen line by line (#718).
 
@@ -1311,11 +1321,14 @@ class _StreamedOutput:
     The returned text is decoded the way text-mode ``communicate`` decodes
     (locale encoding, universal newlines), so ``cli_metadata`` and the result
     parsing are unchanged; ``on_line`` only sees each stdout line earlier.
+    #469: ``answered`` is a stdout-line predicate; once it answers True,
+    ``communicate`` raises ``_Answered`` instead of waiting for the exit.
     """
-    def __init__(self, process, on_line, limit=None):
+    def __init__(self, process, on_line, limit=None, answered=None):
         import locale
         import selectors
         self.process, self.on_line, self.limit = process, on_line, limit
+        self.answered, self.is_answered = answered, False
         self.encoding = locale.getpreferredencoding(False)
         self.stdout, self.stderr, self.partial = bytearray(), bytearray(), bytearray()
         self.selector = selectors.DefaultSelector()
@@ -1324,12 +1337,19 @@ class _StreamedOutput:
             self.selector.register(stream.fileno(), selectors.EVENT_READ, stream is process.stdout)
 
     def _line(self, raw):
-        if self.on_line is None:
+        if self.on_line is None and self.answered is None:
             return
-        try:
-            self.on_line(raw.decode(self.encoding, 'replace').replace('\r\n', '\n'))
-        except Exception:  # presentation must never fail the run
-            pass
+        text = raw.decode(self.encoding, 'replace').replace('\r\n', '\n')
+        if self.on_line is not None:
+            try:
+                self.on_line(text)
+            except Exception:  # presentation must never fail the run
+                pass
+        if self.answered is not None and not self.is_answered:
+            try:
+                self.is_answered = bool(self.answered(text))
+            except Exception:  # an unreadable line is not an answer; the run waits for the exit
+                pass
 
     def _read(self, fd, is_stdout):
         try:
@@ -1364,10 +1384,18 @@ class _StreamedOutput:
     def _text(self, data):
         return bytes(data).decode(self.encoding).replace('\r\n', '\n').replace('\r', '\n')
 
+    def answered_output(self):
+        """#469: the complete lines read so far (stdout up to its last newline) and stderr."""
+        complete = bytes(self.stdout[:self.stdout.rfind(b'\n') + 1])
+        return (complete.decode(self.encoding, 'replace').replace('\r\n', '\n').replace('\r', '\n'),
+                bytes(self.stderr).decode(self.encoding, 'replace').replace('\r\n', '\n').replace('\r', '\n'))
+
     def communicate(self, timeout):
         """Both pipes at EOF and the process exited within ``timeout``, or ``TimeoutExpired``."""
         end = time.monotonic() + max(0.0, timeout)
         while self.selector.get_map():
+            if self.is_answered:
+                raise _Answered()
             left = end - time.monotonic()
             if left <= 0:
                 raise subprocess.TimeoutExpired(self.process.args, timeout)
@@ -1408,7 +1436,7 @@ def _observe(callback):
 
 
 def bounded_run(runner, argv, *, cwd, env, timeout, interrupted=None, on_line=None, session=None,
-                on_spawn=None, on_exit=None):
+                on_spawn=None, on_exit=None, answered=None, on_reaped=None):
     """Run one CLI with no shell in its own process group.
 
     With the real ``subprocess.run`` a timeout kills the whole group, so the
@@ -1427,8 +1455,29 @@ def bounded_run(runner, argv, *, cwd, env, timeout, interrupted=None, on_line=No
     keeps stdin a pipe: the poll loop writes its input and steers and it
     closes stdin once the turn is answered; the process group, deadline, Stop
     poll, stream bound and kill drain are unchanged.  An injected runner gets
-    the opening input and no live steers.
+    the opening input and no live steers.  #469: ``answered`` (a stdout-line
+    predicate, without ``session``) ends the wait as soon as a line carries the
+    final answer: the lines read so far are returned with exit code 0 (or the
+    code, if the CLI already exited) and the process is left to exit on its
+    own within ``ANSWERED_EXIT_GRACE_SECONDS``, then its group is killed and
+    it is reaped in the background.  ``on_exit`` is not observed then.  An
+    injected runner ignores ``answered``.  ``on_reaped`` is called exactly
+    once, when the process is gone (or never started): before this returns or
+    raises, or from the background reaper after an early answer, so a caller
+    removes the CLI's working directory only after the CLI left it.
     """
+    handed = []
+    try:
+        return _bounded_run(runner, argv, cwd=cwd, env=env, timeout=timeout, interrupted=interrupted, on_line=on_line,
+                            session=session, on_spawn=on_spawn, on_exit=on_exit, answered=answered,
+                            on_reaped=on_reaped, handed=handed)
+    finally:
+        if not handed:
+            _observe(on_reaped)
+
+
+def _bounded_run(runner, argv, *, cwd, env, timeout, interrupted, on_line, session, on_spawn, on_exit, answered,
+                 on_reaped, handed):
     if runner is not subprocess.run:
         stdin = {'input': session.opening()} if session is not None else {'stdin': subprocess.DEVNULL}
         callbacks = {}
@@ -1445,10 +1494,10 @@ def bounded_run(runner, argv, *, cwd, env, timeout, interrupted=None, on_line=No
     if session is not None:
         os.set_blocking(process.stdin.fileno(), False)
         on_line = _both(session.on_line, on_line)
-    streamed = _StreamedOutput(process, on_line, limit=MAX_STREAM_BYTES)
+    streamed = _StreamedOutput(process, on_line, limit=MAX_STREAM_BYTES, answered=answered if session is None else None)
     try:
         try:
-            return _bounded_wait(process, streamed, argv, timeout, interrupted, session)
+            return _bounded_wait(process, streamed, argv, timeout, interrupted, session, on_reaped, handed)
         except StreamLimitExceeded:
             kill_process_group(process)
             streamed.close()
@@ -1473,7 +1522,7 @@ def _both(first, second):
     return on_line
 
 
-def _bounded_wait(process, streamed, argv, timeout, interrupted, session=None):
+def _bounded_wait(process, streamed, argv, timeout, interrupted, session=None, on_reaped=None, handed=None):
     """``bounded_run``'s wait loop over one streamed process (Stop, deadline and the kill drain)."""
     deadline = time.monotonic() + timeout
     while True:
@@ -1490,6 +1539,13 @@ def _bounded_wait(process, streamed, argv, timeout, interrupted, session=None):
             stdout, stderr = streamed.communicate(max(0.01, wait))
             streamed.close()
             return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+        except _Answered:
+            stdout, stderr = streamed.answered_output()
+            code = process.poll()
+            if handed is not None:
+                handed.append(True)
+            _reap_answered(process, streamed, on_reaped)
+            return subprocess.CompletedProcess(argv, 0 if code is None else code, stdout, stderr)
         except subprocess.TimeoutExpired:
             try:
                 reason = interrupted() if interrupted else None
@@ -1500,9 +1556,10 @@ def _bounded_wait(process, streamed, argv, timeout, interrupted, session=None):
                 # The group is gone; a descendant that left it may still
                 # hold the pipes, so draining is bounded and the pipes are
                 # closed either way.
+                streamed.answered = None
                 try:
                     streamed.communicate(KILL_DRAIN_SECONDS)
-                except (subprocess.TimeoutExpired, StreamLimitExceeded):
+                except (subprocess.TimeoutExpired, StreamLimitExceeded, _Answered):
                     pass
                 finally:
                     streamed.close()
@@ -1513,6 +1570,38 @@ def _bounded_wait(process, streamed, argv, timeout, interrupted, session=None):
                 if reason:
                     raise EngineInterrupted(reason) from None
                 raise subprocess.TimeoutExpired(argv, timeout) from None
+
+
+def _reap_answered(process, streamed, on_reaped=None):
+    """#469: an answered CLI exits on its own or its group is killed; it is always reaped.
+
+    Runs in a daemon thread so the answer is not held by the CLI's shutdown.
+    The pipes keep being drained (a full pipe cannot block the exit) and the
+    stream bound still applies; nothing read here reaches the caller.
+    """
+    streamed.answered, streamed.is_answered, streamed.on_line = None, False, None
+
+    def reap():
+        try:
+            try:
+                streamed.communicate(ANSWERED_EXIT_GRACE_SECONDS)
+            except (subprocess.TimeoutExpired, StreamLimitExceeded):
+                kill_process_group(process)
+                try:
+                    streamed.communicate(KILL_DRAIN_SECONDS)
+                except (subprocess.TimeoutExpired, StreamLimitExceeded):
+                    pass
+            try:
+                process.wait(timeout=KILL_DRAIN_SECONDS)
+            except subprocess.TimeoutExpired:
+                kill_process_group(process)
+                process.wait()
+        except Exception:  # noqa: BLE001 - reaping must never surface into the answered run
+            LOG.warning('answered engine process not reaped cleanly', exc_info=False)
+        finally:
+            streamed.close()
+            _observe(on_reaped)
+    threading.Thread(target=reap, name='engine-reaper', daemon=True).start()
 
 
 @dataclass(frozen=True)
