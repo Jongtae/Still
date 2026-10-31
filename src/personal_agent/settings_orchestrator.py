@@ -81,7 +81,7 @@ def next_action(row):
             return "추가로 할 일이 없습니다. 해제는 설정 > 외부 연결에서 합니다."
         if state == "pending":
             return "Telegram에서 연결 링크를 열어 소유자 계정을 연결하세요."
-        return "설정 > 외부 연결에서 봇 토큰으로 연결하세요."
+        return "Still을 실행한 터미널 대화에서 연결을 요청하거나, 설정 > 외부 연결에서 봇 토큰으로 연결하세요."
     if not row.get("connectable"):
         if state == "connected":
             return "추가로 할 일이 없습니다."
@@ -122,12 +122,14 @@ SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", 
             # #1297: which of the owner's MCP servers load, and the owner's trust record per connection.
             "ai_connections": ("enabled", "connect", "servers", "review", "money", "rung", "undo", "forget", "restore"),
             # #183: disconnect one Google connection (``GoogleConnectionRevoker``), confirmed like any draft.
-            "connections": ("disconnect",)}
+            # #438: connect a place to talk (Telegram) from the terminal conversation; its token is typed there, hidden.
+            "connections": ("disconnect", "connect_chat")}
 SETTING_LABELS = {"enabled": "사용", "timezone": "시간대", "mode": "방식", "model": "모델", "route": "경로",
                   "daily_calls": "하루 판단 횟수", "dream": "밤사이 기억 정리", "add": "새로 만들기", "share_site": "로그인 공유", "unshare_site": "공유 그만",
                   "remove": "빼기", "send": "보내기", "servers": "MCP 서버", "review": "동작 검토", "money": "돈이 오가는 연결",
                   "connect": "새 MCP 연결", "rung": "신뢰 단계", "undo": "정확히 되돌리기", "forget": "신뢰 기록 잊기", "restore": "잊은 신뢰 기록 복원",
-                  "cancel": "취소", "accept": "수락", "disconnect": "연결 해제", "close_login": "로그인 창 닫기"}
+                  "cancel": "취소", "accept": "수락", "disconnect": "연결 해제", "close_login": "로그인 창 닫기",
+                  "connect_chat": "대화할 곳 연결"}
 #: #1297: trust values include "<engine>|<kind>|<stable identity>|..." so a
 #: decision cannot cross engines or connection kinds.
 TRUST_SETTINGS = frozenset({("ai_connections", "servers"), ("ai_connections", "review"), ("ai_connections", "money"),
@@ -160,6 +162,11 @@ SLOW_SETTINGS = frozenset({("judgment_ai", "model"), ("main_ai", "route"), ("mai
 SKILL_ADD_NOTE = ("확인하면 고정된 커밋에서 그 폴더만 받아 라이선스와 내용을 확인한 뒤 추가해요(브랜치 이름은 이 초안을 만들 때 "
                   "GitHub에 물어 커밋으로 고정했어요). 스크립트·훅은 실행하지 않고, 라이선스를 확인할 수 없거나 실행 파일이 "
                   "필요한 스킬은 추가하지 않아요. 스킬은 방법 안내일 뿐 권한이 아니에요.")
+#: #438: what connecting Telegram from the terminal conversation does, shown with the draft.
+CONNECT_CHAT_NOTE = ("확인하면 Still을 실행한 터미널에 봇 토큰 입력 칸이 열려요. 토큰은 화면에 보이지 않고 AI에게도 가지 않아요. "
+                     "이 연결은 그 터미널 대화에서만 요청할 수 있어요.")
+CONNECT_CHAT_TERMINAL_ONLY = ("Telegram 연결은 Still을 실행한 터미널 대화에서 요청하거나, 설정 > 외부 연결에서 봇 토큰으로 할 수 있어요. "
+                              "아무것도 바꾸지 않았습니다.")
 #: How long a confirmation waits for another apply of the same category (#814 review).
 APPLY_WAIT_SECONDS = 5
 #: #814 review: a draft left ``applying`` by a restart: its setter may or may not have committed.
@@ -468,9 +475,13 @@ class SettingsOrchestrator:
         """#183: the Google connections that can be disconnected now, by connector id."""
         labels = {row["id"]: f"{row['label']} ({state_label(row['state'])})"
                   for row in self.service.connection_disconnect_options()}
+        telegram = msg("label.connected" if self.service.store.config("telegram", {}).get("enabled")
+                       else "family_share.not_connected")
         return {"disconnect": self._row("disconnect", "", ", ".join(labels.values()) or "없음",
                                         self._options(tuple(labels), labels), format="해제할 연결의 id",
-                                        note=DISCONNECT_NOTE)}
+                                        note=DISCONNECT_NOTE),
+                "connect_chat": self._row("connect_chat", "", f"Telegram: {telegram}",
+                                          self._options(("telegram",), {"telegram": "Telegram"}), note=CONNECT_CHAT_NOTE)}
 
     def _browser(self):
         """#1572: what holds the browser now, and the login windows waiting for the owner (``close_login``'s options)."""
@@ -601,7 +612,7 @@ class SettingsOrchestrator:
         """The canonical allowed value, or a fail-closed ``SettingsError`` (#814)."""
         if not isinstance(category, str) or not isinstance(setting, str):
             raise SettingsError(UNKNOWN_SETTING_MESSAGE)
-        if category == "connections" and setting != "disconnect":
+        if category == "connections" and setting not in ("disconnect", "connect_chat"):
             raise SettingsError(RETIRED_CONTROL_MESSAGE)
         # #208: work mode is switched only by the owner in Settings on the Mac, never by a proposal.
         if category == "work_mode":
@@ -770,6 +781,9 @@ class SettingsOrchestrator:
             return before(self.store, value)
         if (category, setting) == ("ai_connections", "connect"):
             return self.service.mcp_setup_before(value)
+        if (category, setting) == ("connections", "connect_chat"):
+            # #438: bound to whether Telegram is connected, so a connect from Settings since makes it stale.
+            return f"telegram:{'connected' if self.service.store.config('telegram', {}).get('enabled') else 'disconnected'}"
         if category == "connections":
             # #183: bound to the connection's state and revision, so a reconnect or disconnect since makes it stale.
             return self.service.connection_disconnect_before(value)
@@ -819,6 +833,12 @@ class SettingsOrchestrator:
                 or setting == 'connect' and category in ('ai_connections', 'api_connections'))):
             raise SettingsError("이 설정은 아직 원래 작업의 자동 재개를 지원하지 않아요.")
         after, row = self._normalized(category, setting, value)
+        if (category, setting) == ("connections", "connect_chat"):
+            # #438: the token is typed in the terminal that asked; no other conversation can show that prompt.
+            if not self.service.terminal_surface.in_conversation(channel):
+                raise SettingsError(CONNECT_CHAT_TERMINAL_ONLY)
+            if self.service.store.config("telegram", {}).get("enabled"):
+                raise SettingsError("Telegram은 이미 연결되어 있어요. 바꿀 것이 없습니다.")
         if continue_work and setting == "enabled":
             if not isinstance(required_skill, str) or required_skill not in row["enabled"].get("required_skills", []):
                 raise SettingsError("이어갈 작업에 필요한 스킬을 현재 required_skills에서 정확히 골라 주세요.")
@@ -845,6 +865,8 @@ class SettingsOrchestrator:
 
         elif (category, setting) == ("skills", "remove"):
             summary = f"스킬 '{after}'를 뺍니다"
+        elif (category, setting) == ("connections", "connect_chat"):
+            summary = "Telegram을 연결해 휴대폰에서도 Still과 대화할 수 있게 합니다"
         elif category == "connections":
             summary = f"{self._describe(category, setting, after, row)} 연결을 해제합니다"
         elif category == "browser":
@@ -976,6 +998,12 @@ class SettingsOrchestrator:
         elif category == "phone_link":
             # #1213: the link goes to the paired Telegram chat; its text is the answer.
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = self.service.start_phone_input(after)
+        elif (category, setting) == ("connections", "connect_chat"):
+            # #438: the terminal shows its hidden token prompt; the token goes from there to ``connect_telegram``.
+            if not self.service.terminal_surface.request_input(after):
+                raise ValueError(CONNECT_CHAT_TERMINAL_ONLY)
+            self.__dict__.setdefault("_apply_text", {})[row["id"]] = "터미널에 봇 토큰 입력 칸을 열었어요."
+            return "requested"
         elif category == "connections":
             # #183: the same disconnect as Settings (local stop, credential delete, Google revocation request).
             receipt = self.service.apply_connection_disconnect(row)

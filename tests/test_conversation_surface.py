@@ -93,7 +93,7 @@ class BoundaryShape(SurfaceCase):
         self.assertIsNone(self.service.mattermost_surface.pairing())
         self.assertIsNone(self.service.slack_surface.pairing())
         self.assertIsNone(self.service.terminal_surface.pairing())
-        self.assertEqual(self.service.terminal_surface.capabilities, SurfaceCapabilities())
+        self.assertEqual(self.service.terminal_surface.capabilities, SurfaceCapabilities(buttons=True))
         self.assertEqual(surface.capabilities, SurfaceCapabilities(reactions=True, typing=True, live_drafts=True,
                                                                    buttons=True, native_stop=True, action_approvals=True))
         self.assertEqual(self.service.mattermost_surface.capabilities, SurfaceCapabilities(reactions=True, typing=True))

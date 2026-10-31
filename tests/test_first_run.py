@@ -353,7 +353,7 @@ class LanguageTest(unittest.TestCase):
     def test_english_terminal_translates_every_wizard_line(self):
         term = first_run.Terminal('en')
         self.assertEqual(term.local('   ' + first_run.msg('first_run.access_prompt') + ' '), '   Set a password? [y/N] ')
-        self.assertEqual(term.local('\n' + first_run.msg('first_run.ai_title')), '\n2. AI connection')
+        self.assertEqual(term.local('\n' + first_run.msg('first_run.ai_title')), '\nAI connection')
         self.assertEqual(term.local('   ' + first_run.msg('first_run.cli_missing', name='Codex')),
                          '   Codex needs to be installed. Opening its official install page in the browser:')
         self.assertEqual(term.local('   ' + first_run.msg('first_run.model_prompt_default', model='gpt-4o-mini') + ' '),
@@ -439,6 +439,27 @@ class SetupLookTest(unittest.TestCase):
         first_run._summary(service, term)
         self.assertIn('! ' + first_run.msg('first_run.judgment_attention'), term.lines)
 
+    def test_a_conversation_to_follow_offers_telegram_there_instead(self):
+        service = FakeService()
+        service.logins['codex'] = 'signed-in'
+        term = ScriptedTerminal(asks=['', ''])  # a Telegram question would find no answer left
+        self.assertTrue(first_run.run(service, self.store, term, conversation=True))
+        self.assertNotIn(first_run.msg('first_run.telegram_title'), term.text())
+
+    def test_without_an_ai_the_telegram_step_stays(self):
+        term = ScriptedTerminal(asks=['', '4', ''])
+        self.assertTrue(first_run.run(FakeService(), self.store, term, conversation=True))
+        self.assertIn(first_run.msg('first_run.telegram_title'), term.text())
+
+    def test_moving_to_the_login_service_asks_about_telegram_after_all(self):
+        service = FakeService()
+        service.logins['codex'] = 'signed-in'
+        term = ScriptedTerminal(asks=['', '', 'y', ''])
+        self.assertTrue(first_run.run(service, self.store, term, login_service=lambda: {'status': 'not_installed'},
+                                      conversation=True))
+        text = term.text()
+        self.assertLess(text.index(first_run.msg('first_run.login_title')), text.index(first_run.msg('first_run.telegram_title')))
+
 
 class RichTerminalTest(unittest.TestCase):
     """#438: Rich draws and prompt_toolkit reads; the catalog lines and the secret path stay the same."""
@@ -454,8 +475,11 @@ class RichTerminalTest(unittest.TestCase):
             self.reads.append((prompt, options))
             return answers.pop(0)
 
+        self.chosen_messages = []
+
         def chooser(message, **options):
             self.picks.append(options)
+            self.chosen_messages.append(message)
             return choice
         return first_run.RichTerminal(lang, Console(file=self.out, width=120, color_system=None),
                                       reader=reader, chooser=chooser)
@@ -488,6 +512,43 @@ class RichTerminalTest(unittest.TestCase):
         self.assertEqual(self.picks[0]['default'], '2')
         term.choose('', options, 'missing')
         self.assertIsNone(self.picks[1]['default'])
+
+    def line_terminal(self, app):
+        import io
+        from rich.console import Console
+        self.exits = []
+
+        def reader(prompt, **options):
+            before = len(self.exits)
+            options['pre_run']()
+            return '' if len(self.exits) > before else 'typed'
+        app.exit = lambda result=None: self.exits.append(result)
+        return first_run.RichTerminal('en', Console(file=io.StringIO()), reader=reader, chooser=lambda *a, **k: None)
+
+    def test_a_request_between_two_lines_ends_the_next_line_at_once(self):
+        """Review on #456: a wake-up with no line running is kept for the next line, and used once."""
+        from unittest import mock
+        app = SimpleNamespace(is_running=False)
+        term = self.line_terminal(app)
+        term.interrupt()
+        with mock.patch('prompt_toolkit.application.current.get_app', return_value=app):
+            self.assertEqual(term.message(lambda: ''), '')
+            self.assertEqual(term.message(lambda: ''), 'typed')
+        self.assertEqual(self.exits, [''])
+
+    def test_a_request_during_a_line_ends_that_line(self):
+        app = SimpleNamespace(is_running=True, loop=SimpleNamespace(call_soon_threadsafe=lambda callback: callback()))
+        term = self.line_terminal(app)
+        term._line = app
+        term.interrupt()
+        self.assertEqual(self.exits, [''])
+        self.assertFalse(term._woken, 'a running line is ended, not remembered')
+
+    def test_the_menu_is_drawn_with_the_notice_it_settles(self):
+        term = self.terminal('en', choice='1')
+        term.choose('', [('1', '1) Apply'), ('2', '2) Keep')], '1', preview='Change **timezone** to Europe/Paris')
+        self.assertEqual(self.chosen_messages[0].__class__.__name__, 'ANSI')
+        self.assertIn('Europe/Paris', ''.join(text for _style, text in self.chosen_messages[0].__pt_formatted_text__()))
 
     def test_plain_lines_when_the_terminal_is_redirected_or_dumb(self):
         tty, pipe = SimpleNamespace(isatty=lambda: True), SimpleNamespace(isatty=lambda: False)
