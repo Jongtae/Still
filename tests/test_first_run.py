@@ -557,6 +557,23 @@ class RichTerminalTest(unittest.TestCase):
         self.assertIs(type(first_run.open_terminal('en', tty, tty, {'TERM': 'dumb'})), first_run.Terminal)
         self.assertIs(type(first_run.open_terminal('en', tty, tty, {'TERM': 'xterm-256color'})), first_run.RichTerminal)
 
+    def test_each_question_drops_keys_typed_before_it_appeared(self):
+        """#510: a stray Enter queued during a wait would answer the next question; the conversation line keeps it."""
+        events = []
+        term = self.terminal('en', answers=['y', 'secret', 'typed'], choice='1')
+        term.discard = lambda: events.append('discard')
+        term.reader = lambda prompt, **options: events.append('read') or 'y'
+        term.chooser = lambda message, **options: events.append('choose') or '1'
+        term.ask('Q')
+        term.secret('S')
+        term.choose('C', [('1', '1) One')], '1')
+        self.assertEqual(events, ['discard', 'read', 'discard', 'read', 'discard', 'choose'])
+        events.clear()
+        from unittest import mock
+        with mock.patch('prompt_toolkit.application.current.get_app'):
+            term.message(lambda: '')
+        self.assertEqual(events, ['read'])
+
     def test_plain_choice_lists_the_numbered_lines_and_takes_the_default_on_enter(self):
         term = first_run.Terminal(None)
         lines = []
@@ -564,6 +581,85 @@ class RichTerminalTest(unittest.TestCase):
         term.ask = lambda prompt: ''
         self.assertEqual(term.choose('번호:', [('1', first_run.msg('first_run.ai_codex'))], '1'), '1')
         self.assertEqual(lines, ['   ' + first_run.msg('first_run.ai_codex')])
+
+
+@unittest.skipUnless(hasattr(__import__('os'), 'openpty'), 'needs a pseudo-terminal')
+class TerminalInputTest(unittest.TestCase):
+    """#510: the setup reads its questions from a real terminal device, and only keys typed after them."""
+
+    def setUp(self):
+        import os
+        self.master, slave = os.openpty()
+        self.device = os.ttyname(slave)
+        self.addCleanup(os.close, self.master)
+        self.stdin = open(slave, 'rb', buffering=0)
+        self.addCleanup(self.stdin.close)
+        self.stdout = open(os.open(self.device, os.O_WRONLY), 'wb', buffering=0)
+        self.addCleanup(self.stdout.close)
+        # A spare descriptor standing in for whatever stdin held before; the reopen replaces it.
+        self.other = open(os.open(self.device, os.O_RDONLY), 'rb', buffering=0)
+        self.addCleanup(self.other.close)
+
+    def pending(self, stream):
+        import select
+        return bool(select.select([stream], [], [], 0.2)[0])
+
+    def test_a_dev_tty_stdin_is_reopened_on_the_device_stdout_is_attached_to(self):
+        import os
+        names = {self.other.fileno(): '/dev/tty', self.stdout.fileno(): self.device}
+        self.assertTrue(first_run.attach_terminal_input(self.other, self.stdout, ttyname=lambda fd: names[fd]))
+        self.assertEqual(os.fstat(self.other.fileno()).st_rdev, os.fstat(self.stdout.fileno()).st_rdev)
+        os.write(self.master, b'y\n')
+        self.assertEqual(self.other.read(2), b'y\n')
+
+    def test_a_stdin_that_is_already_a_device_or_not_a_terminal_is_left_alone(self):
+        import os
+        calls = []
+
+        def ttyname(fd):
+            calls.append(fd)
+            return os.ttyname(fd)
+        before = os.fstat(self.stdin.fileno())
+        self.assertFalse(first_run.attach_terminal_input(self.stdin, self.stdout, ttyname=ttyname))
+        self.assertEqual(calls, [self.stdin.fileno()], 'a real device needs no reopen')
+        with tempfile.TemporaryFile() as plain:
+            self.assertFalse(first_run.attach_terminal_input(plain, self.stdout, ttyname=ttyname))
+        self.assertEqual(os.fstat(self.stdin.fileno()).st_ino, before.st_ino)
+
+    def test_keys_typed_before_a_question_are_dropped_and_later_keys_are_kept(self):
+        import os
+        import termios
+        attrs = termios.tcgetattr(self.stdin.fileno())
+        attrs[3] &= ~termios.ICANON  # deliver each key at once, as prompt_toolkit's raw mode does
+        termios.tcsetattr(self.stdin.fileno(), termios.TCSANOW, attrs)
+        os.write(self.master, b'\r')
+        self.assertTrue(self.pending(self.stdin), 'the stray Enter is queued')
+        first_run.discard_typeahead(self.stdin)
+        self.assertFalse(self.pending(self.stdin), 'and dropped before the question')
+        os.write(self.master, b'y')
+        self.assertTrue(self.pending(self.stdin))
+        self.assertEqual(self.stdin.read(1), b'y')
+
+    def test_keys_prompt_toolkit_read_past_the_last_answer_are_dropped_too(self):
+        """An Enter read together with the previous answer waits in prompt_toolkit's typeahead, not the terminal."""
+        import io
+        import os
+        from unittest import mock
+        from rich.console import Console
+        from prompt_toolkit.input import create_input
+        from prompt_toolkit.input.typeahead import get_typeahead, store_typeahead
+        from prompt_toolkit.key_binding import KeyPress
+        from prompt_toolkit.keys import Keys
+        stdin = io.TextIOWrapper(open(os.dup(self.stdin.fileno()), 'rb', buffering=0))
+        self.addCleanup(stdin.close)
+        with mock.patch('sys.stdin', stdin):
+            store_typeahead(create_input(), [KeyPress(Keys.ControlM, '\r')])
+            seen = []
+            term = first_run.RichTerminal('en', Console(file=io.StringIO()), chooser=lambda *a, **k: None,
+                                          reader=lambda prompt, **options: seen.append(get_typeahead(create_input())) or 'y',
+                                          discard=lambda: None)
+            self.assertEqual(term.ask('Q'), 'y')
+        self.assertEqual(seen, [[]])
 
 
 if __name__ == '__main__':

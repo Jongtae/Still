@@ -68,11 +68,57 @@ def terminal_language(env=None, platform=None, runner=subprocess.run):
     return 'en'
 
 
+def attach_terminal_input(stdin=None, stdout=None, ttyname=os.ttyname):
+    """Read from the terminal device itself when stdin is the ``/dev/tty`` alias; True when reopened (#510).
+
+    The installer starts Still with ``</dev/tty``, since its own stdin is the
+    piped script. On macOS prompt_toolkit's event loop watches stdin with
+    kqueue, which cannot watch that alias, so the first question ended at once
+    with EOFError. The device stdout is attached to is the same terminal in a
+    form kqueue watches. A stdin that is already a device, or not a terminal,
+    is left alone.
+    """
+    stdin, stdout = stdin or sys.stdin, stdout or sys.stdout
+    try:
+        if not (stdin.isatty() and stdout.isatty()) or ttyname(stdin.fileno()) != '/dev/tty':
+            return False
+        device = os.open(ttyname(stdout.fileno()), os.O_RDONLY)
+    except (OSError, ValueError):
+        return False
+    try:
+        os.dup2(device, stdin.fileno())
+    finally:
+        os.close(device)
+    return True
+
+
+def discard_typeahead(stdin=None):
+    """Drop keys typed before a question appeared, so a stray Enter cannot answer it (#510).
+
+    An Enter pressed while a step waits (``codex login`` in the browser, a
+    connection check) otherwise stays queued and answers the next question,
+    and the start-at-login answer is recorded once.
+    """
+    stdin = stdin or sys.stdin
+    try:
+        import termios
+        if stdin.isatty():
+            termios.tcflush(stdin.fileno(), termios.TCIFLUSH)
+    except (ImportError, OSError, ValueError):
+        pass
+
+
 class Terminal:
     """Plain lines and ``input()``: what every setup step talks to."""
 
-    def __init__(self, lang='en'):
+    def __init__(self, lang='en', discard=discard_typeahead):
         self.lang = lang
+        #: Called before each question; the conversation line itself keeps typeahead.
+        self.discard = discard
+
+    def fresh(self):
+        """Before a question: only keys typed after it appears answer it (#510)."""
+        self.discard()
 
     def local(self, text):
         if not self.lang:
@@ -90,9 +136,11 @@ class Terminal:
         print(self.local(text), flush=True)
 
     def ask(self, prompt):
+        self.fresh()
         return input(self.local(prompt)).strip()
 
     def secret(self, prompt):
+        self.fresh()
         return getpass.getpass(self.local(prompt)).strip()
 
     def run(self, argv):
@@ -144,8 +192,8 @@ class RichTerminal(Terminal):
 
     STYLES = {'✓': 'green', '!': 'yellow'}
 
-    def __init__(self, lang='en', console=None, reader=None, chooser=None):
-        super().__init__(lang)
+    def __init__(self, lang='en', console=None, reader=None, chooser=None, discard=discard_typeahead):
+        super().__init__(lang, discard)
         if console is None:
             from rich.console import Console
             console = Console(highlight=False)
@@ -164,10 +212,22 @@ class RichTerminal(Terminal):
             # A wrapped help line stays under its own indent instead of falling back to column 0.
             self.console.print(Padding(Text(body), (0, 0, 0, len(line) - len(body))))
 
+    def fresh(self):
+        super().fresh()
+        # prompt_toolkit keeps keys it read past the previous answer for the next prompt (its typeahead).
+        try:
+            from prompt_toolkit.input import create_input
+            from prompt_toolkit.input.typeahead import clear_typeahead
+            clear_typeahead(create_input())
+        except (OSError, ValueError):
+            pass
+
     def ask(self, prompt):
+        self.fresh()
         return self.reader(self.local(prompt)).strip()
 
     def secret(self, prompt):
+        self.fresh()
         # A fresh prompt per call: the typed value is masked and kept in no history.
         return self.reader(self.local(prompt), is_password=True).strip()
 
@@ -231,6 +291,7 @@ class RichTerminal(Terminal):
 
     def choose(self, prompt, options, default=None, preview=None):
         keys = [key for key, _ in options]
+        self.fresh()
         return self.chooser(self._rendered(preview) if preview else '',
                             options=[(key, _OPTION_NUMBER.sub('', self.local(label))) for key, label in options],
                             default=default if default in keys else None)
