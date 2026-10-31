@@ -6257,7 +6257,10 @@ class AgentService:
         if callable(corrected):
             self._await_steer_judgments(job_id)
             corrected(self.store.work_steer_texts(job_id))
-        from .agent_runtime import EFFECT_NONE, call_effects, failed_steps_text, read_state_text, trail_steps
+        # #466: what this attempt already told the owner, so a further attempt does not say it again.
+        told=getattr(orchestration,'owner_told',None)
+        if callable(told):told(self.store.sent_updates(job_id))
+        from .agent_runtime import EFFECT_NONE, failed_steps_text, read_state_text, trail_steps
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',(job_id,since or 0)).fetchall()
         unknown=outcome=='unknown' or self._work_has_unknown_effect(job_id)
@@ -6270,9 +6273,10 @@ class AgentService:
         called,failed_codes,incomplete,sourceless=[],[],[],0
         # #1445 part 2: one effect classifier (``agent_runtime.record_effect``) over each call; any
         # call that is not ``none`` (a settings draft included) ends re-delegation, as before.
+        # #466: except an interim message to the owner, which changed nothing outside the owner's chat.
         tool_rows=self.attempt_tool_rows(rows)
-        from .agent_runtime import EFFECT_UNKNOWN
-        classes={effect_class for _action,effect_class,_status in call_effects(tool_rows)}
+        from .agent_runtime import EFFECT_UNKNOWN, redelegation_effects
+        classes=redelegation_effects(tool_rows)
         if classes-{EFFECT_NONE,EFFECT_UNKNOWN}:changed=True
         if EFFECT_UNKNOWN in classes:unknown=True
         # The owner is told "executed" only for an observed change; otherwise that it could not be confirmed.

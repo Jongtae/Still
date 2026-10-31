@@ -805,6 +805,13 @@ class QuickStore:
                            f"AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id LIMIT 1",(job_id,PREVIEW_PROJECTION)).fetchone()
         return row['content'] if row else ''
 
+    def sent_updates(self, job_id):
+        """#466: the interim messages this Work sent the owner so far, oldest first (forgotten ones left out)."""
+        with self.db() as db:
+            rows=db.execute(f"SELECT content FROM messages WHERE job_id=? AND role='assistant' AND delivery_projection=? "
+                            f"AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id",(job_id,UPDATE_PROJECTION)).fetchall()
+        return [row['content'] for row in rows]
+
     def managed_owner_state(self, job_id):
         """#380: whether this Work, or a correction or retry linked to it, forgot, deleted or undid owner state.
 
