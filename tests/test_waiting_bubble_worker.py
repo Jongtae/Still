@@ -1,4 +1,4 @@
-"""Owner direction 2026-10-31: the waiting bubble names the launched worker and model, not each tool step.
+"""#458/#477: developer mode names the launched worker and model while waiting.
 
 Evidence class: model-free, fixture transports (the real QuickStore, AgentService and run_one;
 a scripted compatible-API model; a recording Telegram transport).  Nothing live is contacted.
@@ -7,8 +7,11 @@ import unittest
 from types import SimpleNamespace
 
 from personal_agent.bounded_execution import live_progress_reader, live_sub_agent_steps
+from personal_agent.conversation_handoff import AUTHORITY_OWNER, INTENT_DEVELOPER_MODE, IntentClassifier
+from personal_agent.messages import msg
+from personal_agent.quickstart_store import QuickStore
 from personal_agent.orchestrator import DEFAULT_MODEL_LABEL
-from personal_agent.quickstart_service import worker_line
+from personal_agent.quickstart_service import AgentService, worker_line
 
 from test_preparations import _Case, call, finish
 
@@ -25,6 +28,7 @@ class WorkerLine(unittest.TestCase):
 
 class DraftShowsTheWorker(_Case):
     def test_while_the_worker_runs_the_bubble_names_it_then_the_line_ends_with_the_work(self):
+        self.store.put('developer_mode', True)
         seen = []
 
         def step(body):
@@ -63,6 +67,7 @@ class SubAgentsInTheBubble(_Case):
     def test_the_bubble_names_them_while_they_run_redacted(self):
         import json
         from test_preparations import SECRET
+        self.store.put('developer_mode', True)
         work = self.store.enqueue('부산 숙소', 'tg-sub', 'telegram:gen-1', 77)
         self.service.record_turn_worker(work, {'engine': 'claude-code', 'model': 'claude-opus-5-5'})
         on_line = live_progress_reader('claude-code', lambda step: self.service._observe_cli_step(work, step))
@@ -77,6 +82,39 @@ class SubAgentsInTheBubble(_Case):
         on_line(json.dumps(self.done('a2')))
         on_line(json.dumps(self.done('a3')))
         self.assertEqual(line(), 'Claude Code · claude-opus-5-5')
+
+
+class DeveloperModeCommands(_Case):
+    def test_commands_persist_and_report_without_calling_a_model(self):
+        for index, (command, enabled, usage) in enumerate((
+                ('/dev', False, True), ('/dev off', False, False),
+                ('/dev on', True, False), ('/dev', True, True),
+                ('/dev unknown', True, True), ('/dev off', False, False),
+                ('/dev ON', False, True), ('/dev on off', False, True))):
+            with self.subTest(command=command, index=index):
+                work = self.receive(command)
+                self.assertEqual(self.store.job(work)['status'], 'succeeded')
+                expected = msg('service.developer_mode_on' if enabled else 'service.developer_mode_off')
+                if usage:
+                    expected += '\n' + msg('service.developer_mode_usage')
+                self.assertEqual(self.store.job(work)['response'], expected)
+                self.assertIs(self.store.config('developer_mode', False), enabled)
+                self.assertEqual(self.model_calls, [])
+                self.service = self.make_service()
+                self.assertIs(self.service.store.config('developer_mode', False), enabled)
+        restarted = AgentService(QuickStore(self.root))
+        self.assertIs(restarted.store.config('developer_mode'), False)
+
+    def test_only_exact_slash_command_is_owner_authoritative(self):
+        handoff = IntentClassifier()
+        for command, argument in (('/dev', ''), ('/dev on', 'on'), ('/dev off', 'off'),
+                                  ('/dev unknown', 'unknown')):
+            decision = handoff.explicit(command)
+            self.assertEqual(decision.intent, INTENT_DEVELOPER_MODE)
+            self.assertEqual(decision.authority, AUTHORITY_OWNER)
+            self.assertEqual(decision.argument, argument)
+        for text in ('/developer', '/devon', 'turn developer mode on'):
+            self.assertIsNone(handoff.explicit(text))
 
 
 if __name__ == '__main__':

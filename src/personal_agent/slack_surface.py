@@ -331,17 +331,22 @@ class SlackSurface(DirectMessageSurface):
 
     # -- presence -----------------------------------------------------------------------
     def _set_wait_status(self, job, cfg, turn, text):
-        """Show ``text`` as the thread's status, or clear it (``None``).
+        """Show ``text`` as the thread's status, Slack's own loading state for ``''``, or end it (``None``).
 
-        #446: the legacy ``assistant.threads.setStatus`` (Slack's compatibility bridge), because
-        ``agents.sessions.setStatus`` takes no custom text ("Custom loading messages are not supported",
-        https://docs.slack.dev/ai/developing-agents/).  An empty status clears it.
+        #477: with no words to show, Slack draws its standard loading state (``agents.sessions.setStatus``
+        ``processing``) and Still adds no text of its own.  Words (developer mode) go through the legacy
+        ``assistant.threads.setStatus`` bridge (#446), the only method that takes custom text ("Custom loading
+        messages are not supported", https://docs.slack.dev/ai/developing-agents/).  ``active`` ends processing,
+        which "does not disappear automatically".
         """
         if turn.get('status_failed'):
             return False
         try:
-            self.client(cfg).assistant_threads_setStatus(channel_id=cfg['channel_id'], thread_ts=turn['thread_ts'],
-                                                         status=text or '')
+            client, where = self.client(cfg), {'channel_id': cfg['channel_id'], 'thread_ts': turn['thread_ts']}
+            if text:
+                client.assistant_threads_setStatus(**where, status=text)
+            else:
+                client.agents_sessions_setStatus(**where, status='processing' if text == '' else 'active')
             return True
         except Exception as exc:
             LOG.info('slack wait status disabled work=%s kind=%s', job['id'], type(exc).__name__)

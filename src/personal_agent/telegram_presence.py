@@ -102,7 +102,7 @@ _TRAILING_ELLIPSIS = re.compile(r'(?:\s*(?:…|\.{2,}))+\s*$')
 def draft_frame(line, frame, note=None):
     """Dots frame ``frame`` with an optional line and attention note.
 
-    #445: Telegram waiting drafts pass an empty line; keep the line API.
+    #445/#477: Telegram passes an empty line unless developer mode is on.
 
     A trailing ellipsis on the line is dropped, since the dots replace it.
     ``note`` (ATTN-WAIT-01 / #839: the one "참, …" attention line) follows on
@@ -341,8 +341,8 @@ def draft_step(events, live=None, clean=None):
     'id', 'step'}``, or None; it counts only when not older than that event.
     ``approval`` is true while the step in flight is a payment step: then
     the only surface is the existing approval prompt and ``text`` is None.
-    With no step in flight ``text`` is NO_STEP_LINE.  #445: Telegram uses
-    only the approval gate.
+    With no step in flight ``text`` is NO_STEP_LINE.  #477: Presence uses
+    the approval gate before its developer-mode worker line.
     """
     text, approval, _identity = draft_step_details(events, live, clean)
     return text, approval
