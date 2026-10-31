@@ -490,6 +490,61 @@ class InputPage(PhoneInputServiceCase):
         self.assertIn('코드 실행용 비밀값 묶음', note)
         self.assertNotIn('key-value-0001', note)
 
+    def telegram_job(self):
+        from test_phone_input import CHAT
+        self.pair()
+        return self.store.job(self.store.enqueue('잔고 확인해줘', 'from-telegram', channel='telegram:g1', chat_id=CHAT))
+
+    def confirm_in(self, job, tunnel):
+        self.job = job
+        self.service.phone_input_popen = tunnel
+        draft = self.service.settings_tools(job)('settings_change', {
+            'category': 'api_connections', 'setting': 'connect', 'value': json.dumps(CODE_SET), 'continue_work': 'yes'})
+        row = self.settings._drafts()[draft['draft_id']]
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='partial' WHERE id=?", (job['id'],))
+        return self.settings.confirm(self.service.settings_owner(job), job['channel'], draft['draft_id'], row['digest'])
+
+    def test_without_a_phone_link_the_page_opens_on_this_mac_and_says_why(self):
+        """#520: without ngrok the owner got only "try again in the same request"; now the reason and a way to finish."""
+        def no_ngrok(argv, **kwargs):
+            raise FileNotFoundError(2, 'No such file or directory', 'ngrok')
+        result = self.confirm_in(self.telegram_job(), no_ngrok)
+        self.assertEqual(result['state'], 'awaiting-input')
+        session = self.service.phone_input_session()
+        self.assertTrue(session.link.startswith(f'http://localhost:{self.server.server_port}{phone_input.PAGE_PATH}?code='))
+        self.assertIn(phone_input.NO_NGROK_TEXT, result['response'])
+        self.assertIn(session.link, result['response'])
+        self.assertNotIn('Errno', result['response'])
+        self.assertEqual([call for call in self.calls if call[0] == 'sendMessage'], [], 'no phone link was sent')
+        cookie = self.open_page(session)
+        status, body, _ = self.request(f'{phone_input.API_PATH}?code={session.code}', 'POST',
+                                       dict(VALUES), tunneled=False, cookie=cookie)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(slots(self.store)['example-broker']['kind'], 'code')
+        self.assertEqual(self.store.job(self.job['id'])['status'], 'queued', 'the original Work resumes')
+
+    def test_a_tunnel_ngrok_refuses_names_ngroks_reason(self):
+        class Refused:
+            def __call__(self, argv, **kwargs):
+                return types.SimpleNamespace(stdout=iter([json.dumps({'lvl': 'eror', 'err': 'authentication failed'}) + '\n']),
+                                             terminate=lambda: None)
+        result = self.confirm_in(self.telegram_job(), Refused())
+        self.assertEqual(result['state'], 'awaiting-input')
+        self.assertIn(phone_input.TUNNEL_FAILED_TEXT, result['response'])
+        self.assertIn('authentication failed', result['response'])
+        self.assertIn(self.service.phone_input_session().link, result['response'])
+
+    def test_a_reason_in_the_owners_words_is_kept(self):
+        """No local address either: the owner's sentence, not the generic retry line."""
+        job = self.telegram_job()
+        self.service.local_server_port = None
+        with self.assertRaises(Exception) as raised:
+            self.confirm_in(job, self.tunnel)
+        self.assertIn(phone_input.NO_PORT_TEXT, str(raised.exception))
+        self.assertNotIn('같은 연결 요청에서 다시 시도해 주세요', str(raised.exception))
+        self.assertIsNone(self.service.phone_input_session())
+
     def _confirmed(self, value):
         draft = self.service.settings_tools(self.job)('settings_change', {
             'category': 'api_connections', 'setting': 'connect', 'value': json.dumps(value), 'continue_work': 'yes'})

@@ -12,6 +12,7 @@ from . import api_requests, phone_input, work_mode
 from .api_requests import ApiError
 from .current_context import redact_known_secrets
 from .mcp_setup import remote_url, SECRET_PATTERN, SENSITIVE
+from .messages import msg
 
 
 def value(store, text):
@@ -217,13 +218,22 @@ def start(service, draft):
             job = service.store.job(draft['work_id'])
             if not cfg.get('enabled') or cfg.get('user_id') != job.get('chat_id'):
                 raise ValueError(phone_input.NOT_PAIRED_TEXT)
-            session.start(service.local_server_port)
+            try:
+                session.start(service.local_server_port)
+            except phone_input.PhoneInputError as exc:
+                # #520: no phone link (ngrok missing or refusing): the same one-time page on this Mac, and why.
+                session.start_local(service.local_server_port)
+                return msg('api_input.phone_link_unavailable', reason=str(exc), link=session.link)
             service.telegram.call('sendMessage', {'chat_id': cfg['user_id'],
                 'text': phone_input.LINK_TEXT.format(label=session.label, minutes=10, link=session.link),
                 'link_preview_options': {'is_disabled': True}})
             return 'API 인증 정보를 입력할 일회용 링크를 Telegram으로 보냈어요. 확인되면 원래 작업을 이어갑니다.'
         session.start_local(service.local_server_port)
         return 'API 인증 정보는 이 일회용 화면에 입력해 주세요. 확인되면 원래 작업을 이어갑니다.\n' + session.link
+    except (ValueError, phone_input.PhoneInputError) as exc:
+        # #520: the reason is already the owner's words (not paired, no port); a generic "try again" hid it.
+        session.finish('failed')
+        raise ValueError(str(exc)) from None
     except Exception:
         session.finish('failed')
         raise ValueError('비밀 입력 링크를 열지 못했습니다. 같은 연결 요청에서 다시 시도해 주세요.') from None
