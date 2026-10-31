@@ -3146,7 +3146,7 @@ class AccountChangeFloor(unittest.TestCase):
     def test_the_question_covers_api_accounts_and_a_new_change_names_no_model(self):
         # #1502 (owner decision 2026-10-14): information for the choice, not a rule naming a model.
         self.assertIn('through stored API keys', QUESTION)
-        self.assertIn('no saved function listed in current_context covers yet', QUESTION)
+        self.assertIn('no saved function listed in connections covers yet', QUESTION)
         self.assertIn('able to finish it in the first attempt', QUESTION)
         for name in ('gpt-', 'sonnet', 'opus', 'haiku'):
             self.assertNotIn(name, QUESTION)

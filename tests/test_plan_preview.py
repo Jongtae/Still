@@ -109,6 +109,96 @@ class PlanPreviewUnit(unittest.TestCase):
         self.assertIn('1. 후보 숙소 찾기', redelegated.brief(adjusted=True))
 
 
+class PlanFactsCarryConnections(unittest.TestCase):
+    """#501: the plan call (and so the preview it writes) reads what each connection can do, uncut.
+
+    The browser sign-ins and API-slot lines come after the current-state snapshot in the
+    current-context section; cut with the snapshot at ``CURRENT_CONTEXT_FACT_CHARS`` they were
+    the first text lost.  Real snapshot renderer, real slot notes, a fixture decision engine.
+    """
+
+    @staticmethod
+    def snapshot(note_repeat=4):
+        from personal_agent.current_context import SITUATION_CHARS, render
+        note = ('오늘 아침 판교로 출근했고 오후에 회의가 두 개 있으며 저녁에는 가족과 외식 약속이 있다고 함. '
+                '메일을 여섯 가지로 분류하기로 합의했고 처리해 달라고 함. ' * note_repeat)[:SITUATION_CHARS]
+        return render({'version': 1, 'as_of': '2026-10-31T09:12:00+09:00', 'timezone': 'Asia/Seoul',
+                       'timezone_source': 'owner', 'local_time': '2026-10-31T09:12 Saturday',
+                       'hypotheses': [{'ref': 'state:a1', 'predicate': 'situation', 'value': note, 'kind': 'situation',
+                                       'state': 'active', 'until': '2026-10-31T23:59'},
+                                      {'ref': 'state:a2', 'predicate': 'current_place', 'value': '회사 (판교)',
+                                       'place_ref': 'profile:work', 'kind': 'place', 'state': 'active',
+                                       'until': '2026-10-31T18:00'}],
+                       'anchors': [{'ref': 'profile:home', 'label': '집 (성남시 분당구)'},
+                                   {'ref': 'profile:work', 'label': '회사 (판교)'},
+                                   {'ref': 'profile:parents', 'label': '부모님 댁 (수원)'}],
+                       'locations': [{'ref': 'obs:1', 'status': 'stale', 'approx': '37.39,127.11', 'age_min': 300,
+                                      'label': '판교역 근처', 'kind': 'sender'}]})
+
+    @staticmethod
+    def route_lines():
+        from personal_agent.api_requests import context_line
+        from personal_agent.connection_slots import SLOT_SPECS, _slot
+        from personal_agent.quickstart_service import BROWSER_SIGNINS_LINE
+
+        class Store:
+            def config(self, key, default=None):
+                return default
+        browser = BROWSER_SIGNINS_LINE + ', '.join(f'{site} (owner signed in 2026-10-20 10:00)' for site in
+                                                   ('shop.example', 'news.example', 'books.example', 'market.example'))
+        slots = context_line(Store(), {name: _slot(name, None, writable=bool(spec.get('write_requires')))
+                                       for name, spec in SLOT_SPECS.items()})
+        return browser, slots
+
+    def plan_facts(self, current):
+        seen = []
+        engine = FixtureDecisionEngine(structured=lambda context, question, schema: seen.append(context))
+        orchestration = Orchestration(ConversationJudgments(engine), OrchestrationUnit.catalogue(self), request='처리해줘',
+                                      sections={'current_context': current}, can_preview=True)
+        orchestration.first()
+        return orchestration, seen[0]
+
+    def test_a_long_snapshot_no_longer_cuts_what_the_connections_can_do(self):
+        from personal_agent.orchestrator import CURRENT_CONTEXT_FACT_CHARS
+        browser, slots = self.route_lines()
+        for snapshot in (self.snapshot(), self.snapshot() + ' ' + 'x' * 3000):
+            current = f'{snapshot}\n{browser}\n{slots}'
+            self.assertGreater(len(current), CURRENT_CONTEXT_FACT_CHARS, 'the measured case: the section is cut')
+            self.assertNotIn(slots, current[:CURRENT_CONTEXT_FACT_CHARS], 'the slot line was what the old cut lost')
+            orchestration, context = self.plan_facts(current)
+            self.assertTrue(any(slots in str(value) for value in context.facts.values()),
+                            'every slot note reaches the plan call whole')
+            self.assertEqual(context.facts['connections'], f'{browser}\n{slots}')
+            self.assertNotIn(slots, context.facts['current_context'])
+            self.assertNotIn(browser, context.facts['current_context'])
+            self.assertTrue(context.facts['current_context'].startswith(snapshot[:CURRENT_CONTEXT_FACT_CHARS]),
+                            'the snapshot keeps its own bound')
+            self.assertLessEqual(len(context.facts['current_context']), CURRENT_CONTEXT_FACT_CHARS)
+            self.assertFalse(context.too_large())
+            self.assertEqual(orchestration.sections['current_context'], current, 'the worker section is unchanged')
+
+    def test_a_section_without_route_lines_reads_as_before(self):
+        from personal_agent.orchestrator import CURRENT_CONTEXT_FACT_CHARS
+        snapshot = self.snapshot() + ' ' + 'x' * 3000
+        _orchestration, context = self.plan_facts(snapshot)
+        self.assertEqual(context.facts['current_context'], snapshot[:CURRENT_CONTEXT_FACT_CHARS])
+        self.assertEqual(context.facts['connections'], 'none')
+
+    def test_the_information_use_audit_still_names_the_signed_in_sites_the_plan_read(self):
+        from personal_agent.information_use import context_claims
+        browser, slots = self.route_lines()
+        orchestration, _context = self.plan_facts(f'{self.snapshot()}\n{browser}\n{slots}')
+        labels = [claim['label'] for claim in context_claims(orchestration.sent_sections['current_context'])]
+        self.assertIn('로그인한 사이트: shop.example', labels)
+        self.assertTrue(any(label.startswith('장소:') for label in labels), 'the snapshot claims stay too')
+
+    def test_guard_the_preview_question_points_at_the_routes_it_was_given(self):
+        """A wording guard only; the behaviour above is what the plan call receives."""
+        from personal_agent.orchestrator import PREVIEW_QUESTION, QUESTION
+        self.assertIn('connections', PREVIEW_QUESTION)
+        self.assertIn('connections', QUESTION)
+
+
 class _PreviewCase(_Case):
     """A paired Telegram Work whose first plan writes ``self.preview``."""
     REQUEST = '이번 주말 부산 숙소 찾아줘'

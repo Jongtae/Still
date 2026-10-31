@@ -54,6 +54,8 @@ from .prompt_files import prompt
 from .conversation_projection import earlier_turn_line, earlier_turns_in
 from .agent_runtime import CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, GOAL_CONVERSATION_CHARS, owner_context_fact
 from .current_context import without_moving_clock
+from .api_requests import CONTEXT_LINE as API_SLOTS_LINE
+from .information_use import BROWSER_SIGNINS_PREFIX
 from .decision import MAX_CONTEXT_CHARS, OUTCOME_DECIDED, OUTCOME_MALFORMED, DecisionContext, DecisionPolicy
 
 #: Still context sections of a turn (``agent_runtime.turn_context``).
@@ -77,6 +79,12 @@ CONVERSATION_CHARS = GOAL_CONVERSATION_CHARS
 AWAITING_OWNER_CHARS = 600
 #: #980: the earlier exchange the follow-up judgment linked this message to.
 CONTINUES_CHARS = 1200
+#: #501: the lines of the current-context section that say what the worker can reach now: the browser
+#: sign-ins and the API slots with what each can and cannot do.  They come after the snapshot, so the
+#: snapshot's cut dropped them first; the plan reads them as their own ``connections`` fact.
+ROUTE_LINE_PREFIXES = (BROWSER_SIGNINS_PREFIX, API_SLOTS_LINE)
+#: #501: that fact's own bound (20 signed-in sites and several slots with their notes fit).
+CONNECTIONS_FACT_CHARS = 4000
 ATTEMPTS_CHARS = 1800
 ANSWER_EXCERPT_CHARS = 600
 #: #1451: the judgment reads what the reply rests on.  At 3800 a Work's step lines left about
@@ -995,7 +1003,8 @@ class Orchestration:
         prepared = self.sections.get('prepared')
         count = self._turns_in(self._redact(self.conversation)[-CONVERSATION_CHARS:])
         return (f'always given to the worker: the owner\'s message verbatim, history '
-                f'(worker budget; this judgment reads {count} earlier messages), owner_profile, current_context, '
+                f'(worker budget; this judgment reads {count} earlier messages), owner_profile, current_context '
+                f'(with the connections lines), '
                 f'prepared ({f"{len(prepared)} chars" if prepared else "empty"})')
 
     def worker_context(self, context):
@@ -1036,6 +1045,16 @@ class Orchestration:
         """#804: an always-given section as the plan call reads it: redacted, then cut."""
         return self._redact(self.sections.get(name) or '')[:limit] or 'none'
 
+    def _current_facts(self):
+        """#501: ``(current_context, connections)`` as the plan call reads them: the current-context
+        section redacted, its route lines (``ROUTE_LINE_PREFIXES``) taken out whole into ``connections``,
+        and each cut to its own bound.  The worker's section is unchanged."""
+        lines = self._redact(self.sections.get('current_context') or '').split('\n')
+        routes = [line for line in lines if line.startswith(ROUTE_LINE_PREFIXES)]
+        rest = '\n'.join(line for line in lines if not line.startswith(ROUTE_LINE_PREFIXES))
+        return (rest[:CURRENT_CONTEXT_FACT_CHARS] or 'none',
+                '\n'.join(routes)[:CONNECTIONS_FACT_CHARS] or 'none')
+
     def _attempts_text(self):
         if not self.history:
             return 'none'
@@ -1067,10 +1086,11 @@ class Orchestration:
         tools_text = render_tool_descriptions(candidates, getattr(self.catalogue, 'descriptions', {}))
         # #804: the owner model the worker is always given, so the plan fits it too.
         profile = self._owner_fact('profile', PROFILE_FACT_CHARS)
-        current = self._owner_fact('current_context', CURRENT_CONTEXT_FACT_CHARS)
+        current, connections = self._current_facts()
         facts = {'owner_request': request,
                  'owner_profile': profile,
                  'current_context': current,
+                 'connections': connections,
                  # Redacted before it is cut, so a cut never leaves part of a secret (#740 review).
                  'recent_conversation': self._redact(self.conversation)[-CONVERSATION_CHARS:] or 'none',
                  'continues': self._continues_text(),
@@ -1088,7 +1108,7 @@ class Orchestration:
         return DecisionContext(PURPOSE, facts, work_id=self.work_id,
                                context_messages=self._turns_in(facts['recent_conversation']),
                                max_chars=MAX_CONTEXT_CHARS + len(request) + len(workers) + len(tools_text)
-                               + len(profile) + len(current) + CONVERSATION_CHARS)
+                               + len(profile) + len(current) + len(connections) + CONVERSATION_CHARS)
 
     def plan_digest(self, candidates):
         """#1261: what a plan call over ``candidates`` would be asked, except what moves by itself
@@ -1142,8 +1162,11 @@ class Orchestration:
         # #258: a rejected/unsent context is not an information-use receipt.
         if decision.confidence.sent is not False:
             self.context_sent = True
+            # #501: the route lines went out as their own fact; the audit reads them with the section.
+            sent = [context.facts.get(name) for name in ('current_context', 'connections')]
             self.sent_sections = {'profile': context.facts.get('owner_profile'),
-                                  'current_context': context.facts.get('current_context')}
+                                  'current_context': '\n'.join(part for part in sent if part and part != 'none')
+                                  or context.facts.get('current_context')}
             self.sent_turns = context.context_messages
         if decision.outcome == OUTCOME_MALFORMED:
             return None, FALLBACK_MALFORMED
