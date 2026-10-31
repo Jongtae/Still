@@ -276,6 +276,9 @@ class ApprovalTest(unittest.TestCase):
         self.assertFalse(bad['paid_only_after_approval'])
         twice = runner.world_checks(scenario, turns, approved, paid * 2, {'passed': True})
         self.assertFalse(twice['paid_only_after_approval'])
+        approved_late = [{'operation': 'pay', 'decision': 'approve', 'approved': True, 'at': 3.0}]
+        early = runner.world_checks(scenario, turns, approved_late, paid, {'passed': True})
+        self.assertFalse(early['paid_only_after_approval'])     # paid before the owner consented
         self.assertFalse(runner.world_checks(scenario, turns, [], [], {'passed': True})['money_asked'])
         self.assertFalse(runner.world_checks(scenario, turns, approved, paid, {'passed': False})['reply_matches_world'])
 
