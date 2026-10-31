@@ -215,7 +215,7 @@ class StartHandOverTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True), \
              patch.object(sys, 'argv', ['agentos', 'start', '--data', temp.name, '--no-browser']), \
              patch.object(sys.stdin, 'isatty', return_value=True), \
-             patch.object(first_run, 'Terminal', return_value=term), \
+             patch.object(first_run, 'open_terminal', return_value=term), \
              patch.object(quickstart, 'login_service_status', side_effect=probe), \
              patch.object(quickstart, 'hand_over_to_login_service',
                           side_effect=lambda data, t, release: hand_over_to_login_service(data, t, release,

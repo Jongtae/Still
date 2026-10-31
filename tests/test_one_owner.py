@@ -326,10 +326,13 @@ def test_registered_surface_identity_reads_need_only_store_config():
     from personal_agent.conversation_surface import registered_surfaces
     configs = {'telegram': {'enabled': True, 'user_id': 77, 'generation': 'tg'},
                'mattermost': {'enabled': True, 'owner_user_id': 'mm', 'generation': 'mg'},
-               'slack': {'enabled': True, 'owner_user_id': 'sl', 'generation': 'sg'}}
+               'slack': {'enabled': True, 'owner_user_id': 'sl', 'generation': 'sg'},
+               # #438: an enabled terminal row (a crash leaves one) adds no paired source identity.
+               'terminal': {'enabled': True, 'owner_user_id': 'owner', 'channel_id': 'tty', 'generation': '3'}}
     service = SimpleNamespace(store=SimpleNamespace(config=lambda key, default=None: configs.get(key, default)))
     assert [(surface.paired_connector_owner(), surface.owner_generation())
-            for surface in registered_surfaces(service)] == [('telegram:77', 'tg'), ('mattermost:mm', 'mg'), ('slack:sl', 'sg')]
+            for surface in registered_surfaces(service)] == [('telegram:77', 'tg'), ('mattermost:mm', 'mg'), ('slack:sl', 'sg'),
+                                                                 (None, '3')]
 
 
 @pytest.mark.parametrize('wiring', ['constructor', 'installer'])

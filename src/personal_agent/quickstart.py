@@ -1702,6 +1702,12 @@ def hand_over_to_login_service(data_dir, term, release, action=service_action):
     return False
 
 
+def with_language(url, language):
+    """``url`` carrying the screen language in its fragment (web/app.js reads ``lang`` once)."""
+    if not language:return url
+    return url+('&' if '#' in url else '#')+'lang='+language
+
+
 def configure_logging(store):
     """Send Still operational logs to stderr and a bounded private file.
 
@@ -1715,7 +1721,10 @@ def configure_logging(store):
     # Create the file owner-only before the handler opens it, independent of umask.
     os.close(os.open(path,os.O_WRONLY|os.O_CREAT|os.O_APPEND,0o600));path.chmod(0o600)
     formatter=logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s')
-    for handler in (logging.StreamHandler(sys.stderr),
+    console=logging.StreamHandler(sys.stderr)
+    # #438: an owner's terminal shows warnings and errors only; the file keeps every line.
+    if sys.stderr.isatty():console.setLevel(logging.WARNING)
+    for handler in (console,
                     logging.handlers.RotatingFileHandler(path,maxBytes=1_000_000,backupCount=3,encoding='utf-8')):
         handler.setFormatter(formatter);logger.addHandler(handler)
     logger.setLevel(logging.INFO)
@@ -1801,8 +1810,13 @@ def main():
     def close_listeners():
         server.server_close()
         if handoff_server:handoff_server.server_close()
-    if sys.stdin.isatty() and not first_run.finished(store):
-        term=first_run.Terminal(first_run.terminal_language())
+    # #438: the browser a terminal setup opens starts in the terminal's language.
+    browser_language,term='',None
+    if sys.stdin.isatty():
+        language=first_run.terminal_language()
+        term=first_run.open_terminal(language)
+    if term is not None and not first_run.finished(store):
+        browser_language=first_run.WEB_LANGUAGES.get(language,'')
         if not first_run.run(service,store,term,login_service=login_service_status(args)):
             close_listeners()
             return 130
@@ -1811,7 +1825,7 @@ def main():
             if hand_over_to_login_service(args.data,term,lambda:(close_listeners(),instance_lock.close())):
                 home=f'http://{LOCAL_ADDRESS_HOST}:{SERVICE_PORT}/'
                 print(f'Still: {home}',flush=True)
-                if not args.no_browser:webbrowser.open(home)
+                if not args.no_browser:webbrowser.open(with_language(home,browser_language))
                 return 0
             instance_lock=lock()
             server,handoff_server=listen()
@@ -1831,14 +1845,30 @@ def main():
     if public_hosts:
         print(f'Mobile pairing URL: https://{public_hosts[0]}/?access={public_token}',flush=True)
     if not store.claimed():print(f'Setup link: {store.private / "setup-link.txt"} (private file)',flush=True)
-    if not args.no_browser:threading.Timer(.6,lambda:webbrowser.open(url)).start()
+    # #438: with an AI connected, an owner's terminal becomes the conversation instead of opening the browser.
+    chat=term is not None and sys.stdout.isatty() and first_run.ai_ready(service)
+    if not args.no_browser and not chat:
+        threading.Timer(.6,lambda:webbrowser.open(with_language(url,browser_language))).start()
     def shutdown(signum,frame):
         service.stop.set()
         threading.Thread(target=server.shutdown,daemon=True).start()
         if handoff_server:threading.Thread(target=handoff_server.shutdown,daemon=True).start()
-    signal.signal(signal.SIGINT,shutdown)
-    signal.signal(signal.SIGTERM,shutdown)
-    try:server.serve_forever()
+    if chat:
+        if not browser_language:term.banner(first_run.version())   # the setup already drew it on a first start
+        serving=threading.Thread(target=server.serve_forever,name='still-http',daemon=True)
+        serving.start()
+        def interrupted(signum,frame):raise KeyboardInterrupt
+        # The conversation reads on this thread: a stop request ends its prompt, then Still stops.
+        signal.signal(signal.SIGTERM,interrupted)
+        def run():
+            first_run.converse(service,term)
+            shutdown(None,None)
+            serving.join(timeout=5)
+    else:
+        signal.signal(signal.SIGINT,shutdown)
+        signal.signal(signal.SIGTERM,shutdown)
+        run=server.serve_forever
+    try:run()
     finally:
         service.stop.set()
         # #1380: a tunnel must not outlive its server (it blocks the next link).

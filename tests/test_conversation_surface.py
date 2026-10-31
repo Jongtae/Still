@@ -87,9 +87,13 @@ class BoundaryShape(SurfaceCase):
         surface = self.service.telegram_surface
         self.assertIsInstance(surface, ConversationSurface)
         # #213, #214: Mattermost and Slack are composed beside Telegram; each stays unpaired until connected in Settings.
-        self.assertEqual(self.service.surfaces, (surface, self.service.mattermost_surface, self.service.slack_surface))
+        # #438: so is the terminal, until a terminal conversation attaches.
+        self.assertEqual(self.service.surfaces, (surface, self.service.mattermost_surface, self.service.slack_surface,
+                                                 self.service.terminal_surface))
         self.assertIsNone(self.service.mattermost_surface.pairing())
         self.assertIsNone(self.service.slack_surface.pairing())
+        self.assertIsNone(self.service.terminal_surface.pairing())
+        self.assertEqual(self.service.terminal_surface.capabilities, SurfaceCapabilities())
         self.assertEqual(surface.capabilities, SurfaceCapabilities(reactions=True, typing=True, live_drafts=True,
                                                                    buttons=True, native_stop=True, action_approvals=True))
         self.assertEqual(self.service.mattermost_surface.capabilities, SurfaceCapabilities(reactions=True, typing=True))

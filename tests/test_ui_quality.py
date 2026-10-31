@@ -240,7 +240,7 @@ class Languages(unittest.TestCase):
     def test_english_is_the_default_and_the_owner_can_choose(self):
         self.assertEqual(HTML.count("data-language-select"), 2)
         self.assertIn("localStorage.setItem('agentos-language'", APP)
-        self.assertIn("setLanguage(storedLanguage()||'en')", APP)
+        self.assertIn("setLanguage(handedLanguage()||storedLanguage()||'en')", APP)
         out = node_run(r"""
 const assert=require('node:assert/strict');const ui=require(process.argv[1]);
 assert.deepEqual(Object.keys(ui.LANGUAGES),['en','ko','zh-CN','ja']);
