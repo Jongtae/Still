@@ -13,71 +13,47 @@
 
 [English](../../README.md) | [한국어](README.ko.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
-[クイックスタート](#クイックスタート) · [自分に残るもの](#自分に残るもの) · [仕組み](#仕組み) · [ドキュメント](#ドキュメント)
+[いまできること](#いまできること) · [クイックスタート](#クイックスタート) · [自分に残るもの](#自分に残るもの) · [ドキュメント](#ドキュメント)
 
 </div>
 
 <!-- readme-parity:v1 -->
+
 <!-- readme-section:hero -->
 
-## 頭脳を所有していなくても、自分の J.A.R.V.I.S. を持てる？
+## 頭脳は借りものでも、自分だけの J.A.R.V.I.S.
 
-**頭脳は借りられる。アシスタントは自分のものであるべきだ。**
-
-トニー・スタークには J.A.R.V.I.S. がいました。自分の文脈を理解し、いつでも話しかけられ、コンピューターやシステムを通じて実際に行動する個人アシスタントです。しかもトニーは、その背後にある技術まで所有していました。しかし私たちの多くは、使う最も高性能な AI の頭脳を所有していません。モデルの性能や価格、ポリシー、利用条件は提供元によって変わる可能性があります。
-
-だから問いは、*自分の Jarvis を作れるか* だけではありません。**その知性を借りながらも、本当に自分のものと言える個人アシスタントを持ち、記憶や文脈、終わっていない仕事、任せた権限を保てるでしょうか。** より良いモデルが現れるたびに、アシスタントとの積み重ねまで手放さなければならないのでしょうか。
-
-Still は、その必要はないという可能性を探ります。自分でインストールし管理するオープンソース環境で、一つのパーソナルエージェント（PA）が文脈・進行中の仕事・権限を保ち、実際に働く AI は替えられるようにします。
+私たちの多くは、使う AI モデルを所有することはありません。価格もルールも提供状況も、作り手がいつでも変えられます。Still は、自分のコンピューターにインストールするオープンソースのアシスタントです。あなたについて知っていること、終わっていない仕事、任せた権限はそこに残し、実際に働く AI（すでに契約しているもの）は替えられます。
 
 <p align="center">
   <img src="../../docs/assets/readme/demo/demo-v5.ja.gif" width="800" alt="実際の会話記録：コーヒーの好み、Amazonへ続くF1モデル検索、豆のおすすめとログイン後のカート確認。">
 </p>
 <p align="center"><sub>実際の録画を編集。</sub></p>
 
-**主な特長**
+<!-- readme-section:capabilities -->
 
-- **契約中の AI をそのまま。** ChatGPT のプランは Codex で、Claude のプランは Claude Code で接続し、実際の仕事を任せます。そのほかの接続方法は [QUICKSTART](../../docs/QUICKSTART.md#other-model-connections) にあります。
-- **会話が変わっても同じ PA。** 記憶、保存した結果、未完の仕事の状態は次の会話や再起動後も残ります。中断された実行は黙って再実行せず、中断として報告します。
-- **境界は自分で決める。** アクセスは自分が接続したフォルダー・アカウント・ツールから始まります。対応している支払いフローは行動ごとの承認を求め、[現在のブラウザー上の制限](https://github.com/Jongtae/Still/issues/26)も公開しています。[秘密情報](../../.github/SECURITY.md)はモデルのプロンプト・ログ・Evidenceに入りません。
-- **隠さずに知らせる。** AI が何かを記憶するとそれを知らせ、正確に取り消せるようにします。任せた仕事ごとに、どの情報を使いどこへ送ったかを記録します。
-- **いつもの場所で会話。** スマートフォンの Telegram、または macOS・Linux のブラウザーで話せます。Windows は[現在制限のある WSL2](../../docs/QUICKSTART.md#windows-wsl2)で動作します。
+## いまできること
 
-<!-- readme-section:principles -->
+- **契約中の AI がそのまま働く。** ChatGPT のプランは Codex で、Claude のプランは Claude Code で実際の仕事をします。API キーや [Ollama](https://ollama.com) も使えます。会話の途中で `/ai` で切り替えても、そのまま続きます。
+- **いつもの場所で話せる。** ターミナルとブラウザー、Telegram、そして Slack や Mattermost のダイレクトメッセージで。
+- **言わなくても覚えている。** 先週話したことが、必要なときに戻ってきます。1 日 1 回、最近の依頼を振り返って記憶を整理し、それぞれの事実があなた自身の言葉にもとづくのか、推測にもとづくのかを示します。保存はすべて取り消せます。
+- **自分のものと一緒に働く。** 接続したフォルダー（指定しない限り読み取り専用）、Gmail の検索と、許可すればメールボックスの整理（送信はしません）、Google カレンダーとドライブ、そしてログインした Web サイト。スマートフォンからでも使えます。
+- **待たせない。** 長い仕事の前に、計画とどの AI が担当するかを伝えます。実行中に別のことを聞いたり、途中で訂正したりできます。
+- **止まるべきところで止まる。** 支払いには毎回あなたの承諾が必要です。[秘密情報](../../.github/SECURITY.md)はプロンプトにもログにも入りません。仕事ごとに、どの情報を使い、どこへ送ったかを示します。
 
-## Still の五つの柱
-
-これは特定の AI モデルの機能ではありません。私たちが作るアシスタントを評価するための基準です。
-
-- **Presence:** 毎回別のアプリを開いて依頼するのではなく、普段コミュニケーションする場所で寄り添い続けるアシスタント。
-- **Portable Memory:** 記憶と文脈が一つの AI サービスに閉じ込められないこと。
-- **Model Independence:** AI モデルを替えても、アシスタントとの継続性や関係を失わないこと。
-- **Execution:** 質問に答えるだけでなく、実際のサービスやコンピューター上で行動できること。
-- **Owner Control:** データ、権限、実行結果を自分で管理できること。
-
-これらは指針であり、すべての場面がすでに動くという主張ではありません。[製品の状況](../../docs/product-status.en.md)、上の実際のデモ、[現在のブラウザー上の制限](https://github.com/Jongtae/Still/issues/26)で、観測済みのことと今後の課題を区別しています。
+まだ荒削りなところもあります。どれがそうかは[製品の状況](../../docs/product-status.en.md)にあります。
 
 <!-- readme-section:try-today -->
 
 ## クイックスタート
 
-**始める前に用意するもの：**
-
-- Mac、Linux のコンピューター、または WSL2 を入れた Windows と、インターネット接続。
-- 仕事を任せる AI を一つ：ChatGPT のプランと [Codex CLI](https://github.com/openai/codex)、Claude のプランと [Claude Code](https://code.claude.com/docs/en/setup)、または API キー（OpenAI、Anthropic、OpenAI 互換サーバー）か、このコンピューターの [Ollama](https://ollama.com)。CLI がまだなければ、初回設定でインストールページを開きます。
-- 任意：スマートフォンかコンピューターの [Telegram](https://telegram.org)。@BotFather で作ったボットを通じて、スマートフォンから Still と話せます。
-
-macOS、Linux、Windows（WSL2）で、コマンド一つでインストールしてそのまま起動します。Homebrew、Python、Docker は不要です。
+Mac、Linux、または [WSL2](../../docs/QUICKSTART.md#windows-wsl2) を入れた Windows（一部制限あり）と、AI を一つ用意してください。ChatGPT のプランと [Codex CLI](https://github.com/openai/codex)、Claude のプランと [Claude Code](https://code.claude.com/docs/en/setup)、API キー、または Ollama です。コマンド一つで Still をインストールして起動します。Homebrew、Python、Docker は不要です。
 
 ```sh
 curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh
 ```
 
-実行前に[スクリプトを確認](https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh)でき、スクリプトは公開済み Still アーカイブと、ダウンロードする uv インストーラーのチェックサムを検証します。リリースのたびに、この URL はそのリリースを入れるコミットに固定されます。
-
-Windows では PowerShell で `wsl --install` を実行して再起動し、Ubuntu を開いて最初のコマンドを実行してください。Windows の手順、インストーラーの動作、ソースからの実行、すべての設定は [QUICKSTART](../../docs/QUICKSTART.md) にあります。会話中は `agentos start` を起動したままにしてください。
-
-macOS で [Homebrew](https://brew.sh) を使っている場合：
+実行前に[スクリプトを確認](https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh)できます。スクリプトはダウンロードするものをすべて検証します。Windows では PowerShell で `wsl --install` を実行して再起動し、Ubuntu でこのコマンドを実行してください。Apple シリコンの Mac で [Homebrew](https://brew.sh) を使う場合は次のとおりです（Homebrew は Intel Mac 向けのパッケージをビルドしなくなったため、Intel Mac では上のコマンドを使ってください）：
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still
@@ -85,14 +61,13 @@ brew install jongtae/still/agentos
 agentos start
 ```
 
-1. 初回起動は、このターミナルで設定します。Claude Code を初めて起動したときと同じ流れです。アクセスパスワード（任意）と AI の接続（Codex で ChatGPT、Claude Code で Claude、または API キー）を尋ね、ログイン済みの AI はあらかじめ選んであります。
-2. そのまま同じターミナルで Still と会話できます。Still の画面は [http://127.0.0.1:8787](http://127.0.0.1:8787/) にあり (AI をまだ接続していなければ自動で開きます)、ターミナルの言語か英語で表示され、左下で切り替えられます。一部の画面と返信はまだ韓国語です。[そのほかの接続](../../docs/QUICKSTART.md#other-model-connections)
-3. Telegram: その会話で「Telegram をつないで」と言うと非表示の入力欄が開きます。@BotFather のトークンを貼り付け、表示されたペアリングリンクを開いて Start を押してください。
-4. 必要なことを聞いてみてください。**「最近、猫がごはんをあまり食べない。どうしたらいい？」** 数日後に **「5万円以下のロボット掃除機を選んで。」** と言うだけで、PA が猫のことを自分から思い出して反映します。
+1. 設定はターミナルで進みます。アクセスパスワード（任意）、次に AI です（ログイン済みの AI はあらかじめ選ばれています）。そのままターミナルで Still と話すか、[http://127.0.0.1:8787](http://127.0.0.1:8787/) の Still の画面で話せます。会話中は `agentos start` を起動したままにしてください。
+2. Telegram を使うには「Telegram をつないで」と言い、@BotFather のトークンを非表示の入力欄に貼り付け、ペアリングリンクを開いて Start を押してください。
+3. 必要なことを聞いてみてください。**「最近、猫がごはんをあまり食べない。どうしたらいい？」** 数日後に **「5万円以下のロボット掃除機を選んで。」** 猫のことを覚えています。
+
+すべての設定、Windows の詳細、アンインストール（`agentos uninstall` は、削除を選ばない限りデータを残します）は [QUICKSTART](../../docs/QUICKSTART.md) にあります。
 
 **リリース状況：** どちらのインストール方法でも、タグを付けた main コミットの **v0.3.0**（2026-10-31）が入ります。デモと日常利用の画面は実際の利用セッションにもとづくもので、この版の一連の動作を検証したものではありません。構成図は製品の方向性を示す例です。[release manifest](../../docs/release-manifest.json) は各リリースの範囲を記録し、[製品の状況](../../docs/product-status.en.md) は提供中の機能・テストの根拠・方向性を区別しています。
-
-**アンインストール：** `agentos uninstall` はバックグラウンドサービスとプログラムを削除し、データは削除を選ばない限り残します（[詳しく](../../docs/QUICKSTART.md#uninstall)）。
 
 <!-- readme-section:ownership -->
 
@@ -105,9 +80,7 @@ agentos start
 | ツールとコネクター | 権限と承認 |
 | | 実際に実行されたことの記録 |
 
-より良い AI が現れたら、替えるのはエージェントではなく働く AI です。[誰のエージェントか](../../docs/whitepapers/whose-agent.ko.md)（韓国語の白書）がこの問いをさらに掘り下げます。
-
-ローカルファースト（local-first）はローカル限定（local-only）ではありません。サブスクリプションの AI は OpenAI や Anthropic 側で動くため、リクエストに使う文脈はその提供元へ送られます。
+より良い AI が現れたら、替えるのはエージェントではなく働く AI です。ローカルファースト（local-first）はローカル限定（local-only）ではありません。サブスクリプションの AI は OpenAI や Anthropic 側で動くため、リクエストに使う文脈はその提供元へ送られます。このプロジェクトは五つの原則に導かれています。いつもそばにいること、持ち運べる記憶、モデルからの独立、実行、オーナーによる管理です（[理由](../../docs/VISION.md)）。
 
 <!-- readme-section:presence -->
 
@@ -118,12 +91,7 @@ agentos start
   <img src="../../docs/assets/readme/presence-overview.ja.svg" alt="概念図：あなたとの関係（目的・記憶・好み・約束・権限）が Assistant・Finance・Research の専門的視点につながり、ドメイン・役割・委任範囲・権限が Decision Model に入ります。Unified Presence は一つの関係を保ち、作業中のあなたの介入を判断に戻します。提供済みの機能ではなく、製品の方向性の例です。">
 </picture>
 
-- **あなたとの関係** は、目的・記憶・好み・約束・権限をあなたの管理下に置きます。
-- **専門的視点** は、同じ状況を関連するドメインと役割で読み解きます。委任範囲は目標と制約を定め、実際の権限は別に守られます。
-- **Decision Model** は、考えるか、実行するか、任せるか、尋ねるか、知らせるか、引き続き見守るかを判断します。ツールを選ぶだけではありません。
-- **Unified Presence** は役割ではありません。すべての役割をまたいで一つの関係を保ち、意味のある知らせはあなたに届き、あなたの訂正は進行中の仕事に反映されます（実行環境が対応する範囲で）。
-
-役割は資格や実行権限ではなく、複数の役割が協働する姿は提供済みの機能ではなく製品の方向性です（[契約](../../docs/professional-roles-and-communication-contract.en.md)）。図は設計の方向性であり、観測された実行ではありません。詳しくは [アーキテクチャとオントロジー](../../docs/personal-agentos-architecture.en.md) · [Presence](../../docs/presence-experience-contract.en.md)。
+Still はあなたとの一つの関係（目的、記憶、好み、権限）を保ち、依頼ごとに必要な役割の視点で読み解いて、答えるか、実行するか、尋ねるか、あとで知らせるかを判断します。作業中にあなたが言ったことは、進行中の仕事を変えます。図は設計の方向性であり、観測された実行ではありません：[アーキテクチャ](../../docs/personal-agentos-architecture.en.md) · [Presence](../../docs/presence-experience-contract.en.md)。
 
 <!-- readme-section:ai-switch -->
 
@@ -134,11 +102,7 @@ agentos start
 </p>
 <p align="center"><sub>実際の会話から抜き出した画面です（Telegram、韓国語 UI）。ログインリンクは切り取り、名前はぼかしています。 · <a href="../../docs/assets/readme/ai-switch/ai-switch-conversation.png">原寸で見る</a></sub></p>
 
-① **Claude Code に切り替え。** 「昨日スパムは結局入れた？抜いた？」という質問に、前の買い物の会話を引き継ぎます。
-
-② **今のカートを確認。** もう一度ログインしたあと、スパム クラシック 200g が 1 個カートにあると答えます。
-
-③ **Codex に切り替えて次の行動を依頼。** 「スパムを抜いて」。同じ会話の中で、削除の結果と残り 22 点の商品を伝えます。
+Claude Code に切り替えたあと、PA は昨日の買い物の会話を引き継いでカートを確認します。Codex に切り替えたあとも、同じ会話の中で「スパムを抜いて」が通じます。
 
 <!-- readme-section:conversation -->
 
@@ -151,26 +115,15 @@ agentos start
   <img src="../../docs/assets/readme/readme-examples-v4.ja.png" alt="実際の画面抜粋：好みの記憶、Amazonへ続くF1検索、カートで確認したJardin Espresso Blend 500g 1点。">
 </picture>
 
-以前話したラテの好みは、コーヒーマシン用の豆を選ぶときにまた基準になります。F1 モデルの検索は言い直さなくても Amazon へ続き、おすすめと一緒に確認できなかった点も伝えます。豆を決めると、ログインしたカートに 1 点入ったことまで確かめます。**話したことや見せたもの → 出典と時刻のある許可された文脈 → 必要な質問やツール → 行動の境界 → 確認された結果。** カートへの追加と支払いは別の行動です。
-
-**次の目標：** 数時間たっても「それ」や「同じの」が何を指すかを追えること。ワークフローを組み立てず、会話を続けるだけで済むようにします。
-
-> 「コーヒーがほとんどない。」 · *数時間後* · 「出かけるついでに買える所ある？」 · *その後* · 「時間ない。前と同じので。」
+以前話したラテの好みは、豆を選ぶときにまた戻ってきます。F1 モデルの検索は言い直さなくても Amazon へ続き、選んだ豆はログインしたカートに入ります。カートへの追加と支払いは別の行動です。
 
 <!-- readme-section:more -->
 
 ## ドキュメント
 
-| ドキュメント | 内容 |
-| --- | --- |
-| [QUICKSTART](../../docs/QUICKSTART.md) | インストール、モデル接続、ファイル、Telegram、ソースからの実行 |
-| [製品の状況](../../docs/product-status.en.md) | できること、まだ不便なこと、領域ごとの根拠 |
-| [なぜ作るのか](../../docs/VISION.md) | プロジェクトの動機 |
-| [アーキテクチャとオントロジー](../../docs/personal-agentos-architecture.en.md) | カーネルの基本概念、パッケージ、ランタイム、オーナーによる管理 |
-| [ドキュメントマップ](../../docs/README.md) | 現在の契約とガイドの一覧 |
-| [謝辞と参考文献](../../docs/acknowledgements.en.md) | 設計に影響を与えた研究とプロジェクト |
+[QUICKSTART](../../docs/QUICKSTART.md)（インストール、接続、Telegram、Slack、ソースからの実行） · [製品の状況](../../docs/product-status.en.md) · [なぜ作るのか](../../docs/VISION.md) · [アーキテクチャ](../../docs/personal-agentos-architecture.en.md) · [ドキュメントマップ](../../docs/README.md) · [謝辞](../../docs/acknowledgements.en.md)
 
-**コントリビュート。** Issue と Pull Request を歓迎します。まず [CONTRIBUTING](../../.github/CONTRIBUTING.md) を、開発の流れは [AGENTS.md](../../AGENTS.md) をご覧ください。コードが初めての方は、[コントリビューター向けオンボーディングガイド](../contributor-onboarding.en.md)（英語）でコードの構成と最初の作業の進め方をご確認ください。試したら、[フィードバックフォーム](https://github.com/Jongtae/Still/issues/new?template=feedback.yml) か [Discussions](https://github.com/Jongtae/Still/discussions) で、よかった点と困った点を教えてください。
+**コントリビュート。** Issue と Pull Request を歓迎します。まず [CONTRIBUTING](../../.github/CONTRIBUTING.md) と[コントリビューター向けオンボーディングガイド](../../docs/contributor-onboarding.en.md)（英語）をご覧ください。試したら、[フィードバックフォーム](https://github.com/Jongtae/Still/issues/new?template=feedback.yml) か [Discussions](https://github.com/Jongtae/Still/discussions) で、よかった点を教えてください。
 
 <!-- readme-section:license -->
 
