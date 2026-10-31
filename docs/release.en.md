@@ -87,7 +87,8 @@ fallback when it cannot.
 --- everything below publishes ---
 
 The owner approves the `release` environment deployment in the Actions run.
-The `release` environment admits `main` only, requires the owner as reviewer
+The `release` environment admits `main` and maintenance lines `maint/*` only
+(see *Maintenance releases*), requires the owner as reviewer
 and holds `RELEASE_TOKEN`, a fine-grained token limited to contents and pull
 requests on this repository; the workflow stops
 before any change if that secret is missing, and before the tag until
@@ -163,6 +164,41 @@ PR is accepted only when it is merged or still open (#313).
     close one that gained an open issue during the release: move that issue
     to the next milestone and re-run the job. By hand:
     `gh api -X PATCH repos/Jongtae/Still/milestones/<number> -f state=closed`.
+
+## Maintenance releases
+
+A patch can ship from a maintenance line while `main` carries the next
+minor (#533; [release policy](governance/release-policy.en.md#scope-and-branches)).
+
+1. **Cut the line** from the minor's newest tag: `git push origin vX.Y.Z:refs/heads/maint/X.Y`.
+   The line runs its own `release.yml` and `scripts/dev/release.py`, so a
+   line cut from a tag older than this procedure first receives the release
+   tooling of `main` as a cherry-pick PR. Later release-tooling fixes are
+   cherry-picked to every line that will still release.
+2. **Bring the fixes**: each fix merges to `main` first, then a cherry-pick PR
+   (`git cherry-pick -x`) targets `maint/X.Y`, in the `vX.Y.Z` milestone.
+3. **Prepare** exactly as steps 1–4 above, with the release-preparation PR
+   targeting `maint/X.Y`. `release.py check --branch maint/X.Y` refuses any
+   version that is not an `X.Y.*` patch.
+4. **Publish**: merging it starts the workflow on `maint/X.Y`; the owner
+   approves the same `release` environment. The tag names the line's
+   release commit. The record PR (step 9–10) targets the line, and a
+   *register* PR adds the published row to `main`'s manifest, which lists
+   every published release, and moves `main`'s in-tree version past the patch
+   only if it does not already exceed it.
+5. **Only the newest release moves what owners install.** When the patch is
+   newer than every release on `main`'s manifest, the formula, the installer
+   pin, the release-status prose, the README pin, the site and GitHub's
+   "Latest" badge move to it as for a `main` release. A patch of an older
+   minor published after a newer minor moves none of them
+   (`gh release create --latest=false`); it is recorded only.
+
+The repository settings this needs are the owner's: the `release` environment's
+deployment-branch policy admits `maint/*` next to `main`, and the ruleset that
+protects `main` (no deletion or force-push, pull request and `validate`
+required) also targets `refs/heads/maint/*`. `validate` and `install-smoke` run
+on pull requests to and pushes on `maint/*`, and every pushed commit keeps its
+own `validate` run (#292).
 
 RC tags (`vX.Y.Z-rc.N`) are not handled by the workflow: create them by hand
 with `gh release create --prerelease` and do not record them as published.
