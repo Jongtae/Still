@@ -7141,7 +7141,8 @@ class AgentService:
         """Show 👀, `typing…` and a Stop-able dots draft for running Work on a paired surface.
 
         #212: each part only where the surface declares it (``reactions``,
-        ``typing``, ``live_drafts``); without drafts the wait shows `typing…`.
+        ``typing``, ``live_drafts``, ``wait_status``); a one-line status uses
+        the same lock and observed step redaction, independently of drafts. Without drafts the wait shows `typing…`.
 
         The surface is chosen from elapsed time only (`PresenceTiming`); no
         sleep is ever added.  `typing…` is refreshed every
@@ -7184,6 +7185,12 @@ class AgentService:
                     if not job or job['status']!='running' or not conversation.owns(job):continue
                     state=self.presence.get(job['id'])
                     if state is None or state.stopped:continue
+                    if capabilities.wait_status:
+                        line=self._draft_step_text(job,state)
+                        text=msg('surface.waiting_work') if line == NO_STEP_LINE else line
+                        if conversation.show_wait_status(job,state,text,now):
+                            shown.append((job['id'],'wait_status'))
+                        continue
                     surface=timing.wait_surface(now-job['created'],
                                                 draft_available=capabilities.live_drafts and not state.draft_failed)
                     if surface not in (WAIT_CHAT_ACTION,WAIT_DRAFT):continue

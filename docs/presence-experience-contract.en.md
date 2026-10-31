@@ -325,3 +325,33 @@ Any owner-facing conversation, recovery, model-route, contextual setup, Settings
 ## Cross-role, collaborative Presence refinement (2026-10-10)
 
 The continuous owner-facing relationship is **not restricted to secretary tasks**. [Professional Roles and Communication Contract](professional-roles-and-communication-contract.en.md) defines the cross-role operating semantics. Separate transient ambient feedback, evidence-grounded semantic communication and collaborative intervention. The owner must be able to correct, question or stop in-flight Work where the runtime permits; if it cannot be applied, disclose that honestly. A tool-name fallback, source counter or streamed text alone does not satisfy Presence. Role-specific reporting changes what is relevant, not who is speaking. **Presence is not a role**: it is the common interaction capability held across every role, and it is tied to the Decision Model during execution, not rendered after it (that contract's *Decision Model ↔ Presence contract* and *Conversation style* sections). The #718 tool-name step lines and the re-delegation line described under *Telegram presence* above are current behavior and are to be replaced by that contract's near-term track. Existing Memory, authority, payment, unknown-effect and delivery-selection rules remain controlling.
+
+## Threaded surface wait status (#446)
+
+Owner-authorized presentation change (2026-10-31).
+
+- An inbound thread id stays with its turn across recovery. Terminal replies and the Work's notices go to that thread.
+- A surface may declare `wait_status` and implement `show_wait_status`. The status text is:
+  - the observed, redacted `_draft_step_text` line;
+  - a catalog fallback when no step is in flight;
+  - no step at all during an approval or payment wait.
+- Telegram drafts remain dots-only (#445).
+- The existing delivery lock serializes status calls and terminal posts.
+- The status is refreshed every 90 seconds while the Work runs, because a Slack status lasts two minutes. A confirmed terminal post clears it once.
+- A status failure disables status for that Work, including after restart, without changing execution or replaying delivery.
+
+Slack carries the text through the legacy `assistant.threads.setStatus` (Slack's compatibility bridge). The current `agents.sessions.setStatus` takes only `processing` / `active` / `suspended` and "Custom loading messages are not supported" (https://docs.slack.dev/ai/developing-agents/, checked 2026-10-31). If Slack retires the bridge, the call fails and the status turns off for that Work.
+
+Reuse decision: **Adopt**:
+- `SurfaceCapabilities`, `present_waiting_work`, `WaitState`, the direct-message delivery/turn transaction, and QuickStore's nullable-column migration pattern;
+- the existing official MIT `slack_sdk` 3.45.0 `WebClient.assistant_threads_setStatus`.
+
+No new dependency, framework, runtime authority or transport.
+
+Boundary:
+- The approved `assistant:write` scope and `features.agent_view` enable the Slack agent presentation. Event subscriptions are unchanged.
+- Only the paired owner, workspace and DM, with effective work-mode permission, receive status, through the existing guarded client.
+- The stored thread timestamp is routing metadata, never authority.
+- Status contains only the redacted observed line already available to Presence, or neutral catalog text.
+- Fake-client evidence establishes request shape and ordering, not live agent-view behavior or entitlement.
+- Stop events, streaming, titles and suggested prompts are excluded.

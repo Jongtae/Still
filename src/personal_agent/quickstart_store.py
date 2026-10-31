@@ -247,6 +247,10 @@ class QuickStore:
             # #214: the same for Slack (message ts), and the Socket Mode events and button presses already taken.
             db.execute('CREATE TABLE IF NOT EXISTS slack_turns(job_id TEXT PRIMARY KEY, owner TEXT NOT NULL, '
                        'source_post_id TEXT, reply_post_id TEXT, reply_to_post_id TEXT, created REAL NOT NULL)')
+            turn_columns={row['name'] for row in db.execute('PRAGMA table_info(slack_turns)')}
+            for column, declaration in (('thread_ts', 'TEXT'), ('status_failed', 'INTEGER NOT NULL DEFAULT 0')):
+                if column not in turn_columns:
+                    db.execute(f'ALTER TABLE slack_turns ADD COLUMN {column} {declaration}')
             db.execute('CREATE TABLE IF NOT EXISTS slack_events(key TEXT PRIMARY KEY, created REAL NOT NULL)')
             # #213: the conversation surface whose delivery claims a notice; every earlier row is Telegram's.
             if 'surface' not in columns:

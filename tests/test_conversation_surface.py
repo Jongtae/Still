@@ -94,7 +94,7 @@ class BoundaryShape(SurfaceCase):
                                                                    buttons=True, native_stop=True, action_approvals=True))
         self.assertEqual(self.service.mattermost_surface.capabilities, SurfaceCapabilities(reactions=True, typing=True))
         self.assertEqual(self.service.slack_surface.capabilities,
-                         SurfaceCapabilities(reactions=True, buttons=True, action_approvals=True))
+                         SurfaceCapabilities(reactions=True, buttons=True, action_approvals=True, wait_status=True))
 
     def test_pairing_is_one_owner_identity_per_surface(self):
         surface = self.service.telegram_surface

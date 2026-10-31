@@ -65,6 +65,11 @@ class FakeSlack:
                 return lambda **kwargs: self._call(method, **kwargs)
         return Client()
 
+    def assistant_threads_setStatus(self, **kwargs):
+        if getattr(self, 'status_error', False):
+            raise SlackError('missing_scope', code='missing_scope')
+        return {'ok': True}
+
     def auth_test(self):
         return {'ok': True, 'team_id': TEAM, 'team': 'Test workspace', 'user_id': BOT}
 
@@ -74,7 +79,7 @@ class FakeSlack:
     def apps_connections_open(self, app_token):
         return {'ok': True, 'url': 'wss://wss-primary.slack.com/link/?ticket=x'}
 
-    def chat_postMessage(self, channel, text=None, blocks=None, markdown_text=None):
+    def chat_postMessage(self, channel, text=None, blocks=None, markdown_text=None, thread_ts=None):
         if markdown_text is not None and (text is not None or blocks is not None):
             raise SlackError('markdown_text_conflict', status=200, code='markdown_text_conflict')
         if self.refuse_markdown and (markdown_text is not None
@@ -90,7 +95,7 @@ class FakeSlack:
             raise SlackError('lost')
         ts = self.tick()
         self.messages[ts] = {'channel': channel, 'text': markdown_text if text is None else text, 'blocks': blocks,
-                             'markdown': markdown_text is not None}
+                             'markdown': markdown_text is not None, 'thread_ts': thread_ts}
         return {'ok': True, 'ts': ts, 'channel': channel}
 
     def chat_update(self, channel, ts, text, blocks=None):
@@ -231,7 +236,13 @@ class Connect(SlackCase):
 
     def test_the_manifest_asks_for_direct_message_scopes_only(self):
         self.assertEqual(sorted(MANIFEST['oauth_config']['scopes']['bot']),
-                         ['chat:write', 'im:history', 'im:write', 'reactions:read', 'reactions:write'])
+                         ['assistant:write', 'chat:write', 'im:history', 'im:write', 'reactions:read', 'reactions:write'])
+        description = MANIFEST['features']['agent_view']['agent_description']
+        self.assertEqual(description, '내 Still에 연결된 개인 비서예요. 질문하거나 일을 맡기면 Still이 처리하고 결과를 여기로 알려드려요. 결제나 중요한 작업은 항상 먼저 확인을 받아요.')
+        self.assertLessEqual(len(description), 300)
+        self.assertEqual(MANIFEST['settings']['event_subscriptions']['bot_events'], ['message.im', 'reaction_added'])
+        self.assertNotIn('suggested_prompts', json.dumps(MANIFEST))
+        self.assertNotIn('actions', MANIFEST['features']['agent_view'])
         self.assertTrue(MANIFEST['settings']['socket_mode_enabled'])
         self.assertNotIn('request_url', json.dumps(MANIFEST), 'no public request URL')
         self.assertEqual(self.service.slack_status()['manifest'], MANIFEST)
@@ -759,7 +770,195 @@ class MarkdownParts(unittest.TestCase):
 class Shape(unittest.TestCase):
     def test_capabilities(self):
         from personal_agent.slack_surface import SlackSurface
-        self.assertEqual(SlackSurface.capabilities, SurfaceCapabilities(reactions=True, buttons=True, action_approvals=True))
+        self.assertEqual(SlackSurface.capabilities, SurfaceCapabilities(reactions=True, buttons=True, action_approvals=True, wait_status=True))
+
+
+
+class ThreadStatus(SlackCase):
+    def setUp(self):
+        super().setUp()
+        self.connect()
+        self.fake.calls.clear()
+
+    def running(self, thread='1234.000001'):
+        self.owner_says('자료를 조사해줘', thread=thread)
+        job = self.sl_jobs()[0]
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='running' WHERE id=?", (job['id'],))
+        # Received reaction already shown; this pass can show the status.
+        from personal_agent.telegram_presence import WaitState
+        self.service.presence[job['id']] = WaitState(reacted=True)
+        return self.store.job(job['id'])
+
+    def statuses(self):
+        return [args for name, token, args in self.fake.calls if name == 'assistant_threads_setStatus']
+
+    def finish(self, job, status='succeeded'):
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status=?,response='결과',delivery='pending' WHERE id=?", (status, job['id']))
+        self.service.deliver_one()
+
+    def observe(self, job, text='자료 읽는 중'):
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job['id'], 'read_file', 'running', json.dumps({'call_id': 'step-1',
+                        'step': {'action': 'read_file', 'status': text}}), job['created'] + 1))
+
+    def test_thread_routing_survives_service_restart_before_delivery(self):
+        job = self.running()
+        self.finish_without_delivery(job)
+        restarted = AgentService(QuickStore(self.store.root), ModelAdapter(model), lambda *a, **k: {})
+        restarted.slack_web = self.fake.client
+        restarted.deliver_one()
+        posts = [args for name, token, args in self.fake.calls if name == 'chat_postMessage']
+        self.assertEqual(posts[-1]['thread_ts'], '1234.000001')
+        self.assertEqual(self.statuses()[-1]['status'], '')
+
+    def finish_without_delivery(self, job):
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded',response='결과',delivery='pending' WHERE id=?", (job['id'],))
+
+    def test_observed_status_changes_refreshes_and_clears_after_terminal_post(self):
+        job = self.running()
+        self.observe(job)
+        expected = self.service._draft_step_text(job, self.service.presence[job['id']])
+        self.assertTrue(expected)
+        self.service.present_waiting_work(now=job['created'] + 2)
+        self.assertEqual(self.statuses(), [{'channel_id': DM, 'thread_ts': '1234.000001', 'status': expected}])
+        self.service.present_waiting_work(now=job['created'] + 3)
+        self.assertEqual(len(self.statuses()), 1)
+        # Changed observed wording goes out immediately.
+        self.observe(job, '다른 자료 읽는 중')
+        self.service.present_waiting_work(now=job['created'] + 4)
+        self.assertEqual(len(self.statuses()), 2)
+        self.service.present_waiting_work(now=job['created'] + 95)
+        self.assertEqual(len(self.statuses()), 3)
+        self.finish(job)
+        self.assertEqual(self.statuses()[-1], {'channel_id': DM, 'thread_ts': '1234.000001', 'status': ''})
+        methods = [name for name, token, args in self.fake.calls]
+        self.assertEqual(methods[methods.index('chat_postMessage') + 1], 'assistant_threads_setStatus')
+        before = list(self.statuses())
+        self.service.present_waiting_work(now=job['created'] + 900)
+        self.service.deliver_one()
+        self.assertEqual(self.statuses(), before)
+
+    def test_plain_dm_has_no_thread_or_status(self):
+        job = self.running(thread=None)
+        self.observe(job)
+        self.service.present_waiting_work(now=job['created'] + 10)
+        self.finish(job)
+        self.assertEqual(self.statuses(), [])
+        post = next(args for name, token, args in self.fake.calls if name == 'chat_postMessage')
+        self.assertNotIn('thread_ts', post)
+
+    def test_no_observed_step_uses_catalog_status(self):
+        from personal_agent.messages import msg
+        job = self.running()
+        self.service.present_waiting_work(now=job['created'] + 10)
+        self.assertEqual(self.statuses()[-1]['status'], msg('surface.waiting_work'))
+
+    def test_approval_and_payment_show_no_step_and_clear_previous_status(self):
+        job = self.running()
+        self.service.present_waiting_work(now=job['created'] + 2)
+        for line in (None, None):
+            with mock.patch.object(self.service, '_draft_step_text', return_value=line):
+                self.service.present_waiting_work(now=job['created'] + 3)
+        from personal_agent.messages import msg
+        self.assertEqual([s['status'] for s in self.statuses()], [msg('surface.waiting_work'), ''])
+
+    def test_pending_approval_has_no_initial_status(self):
+        job = self.running()
+        self.service.queue_notification(job, 'approval_needed')
+        self.service.present_waiting_work(now=job['created'] + 10)
+        self.assertEqual(self.statuses(), [])
+
+    def test_status_failure_is_disabled_for_work_even_after_restart(self):
+        job = self.running()
+        self.fake.status_error = True
+        self.service.present_waiting_work(now=job['created'] + 2)
+        self.service.present_waiting_work(now=job['created'] + 400)
+        self.assertEqual(len(self.statuses()), 1)
+        self.assertEqual(self.store.job(job['id'])['status'], 'running')
+        self.service = AgentService(QuickStore(self.store.root), ModelAdapter(model), lambda *a, **k: {})
+        self.service.slack_web = self.fake.client
+        self.surface = self.service.slack_surface
+        self.finish(job)
+        self.assertEqual(self.store.job(job['id'])['delivery'], 'sent')
+        self.assertEqual(len(self.statuses()), 1)
+
+    def test_every_terminal_outcome_clears(self):
+        job = self.running()
+        self.finish(job, status='failed')
+        self.assertEqual(self.statuses()[-1]['status'], '')
+
+    def test_payment_step_does_not_display_its_text(self):
+        job = self.running()
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job['id'], 'api_request', 'running', json.dumps({'call_id': 'pay',
+                        'step': {'action': 'api_request', 'status': '결제 중', 'approval': True}}), job['created'] + 1))
+        self.service.present_waiting_work(now=job['created'] + 2)
+        self.assertEqual(self.statuses(), [])
+
+    def test_thread_preserved_for_plain_fallback_and_all_parts(self):
+        from personal_agent.slack_surface import POST_CHARS
+        job = self.running()
+        self.fake.refuse_markdown = 'invalid_arguments'
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded',response=?,delivery='pending' WHERE id=?",
+                       ('a' * (POST_CHARS + 10), job['id']))
+        self.service.deliver_one()
+        posts = [args for name, token, args in self.fake.calls if name == 'chat_postMessage']
+        self.assertGreater(len(posts), 1)
+        self.assertTrue(all(post['thread_ts'] == '1234.000001' for post in posts))
+        self.assertEqual([status['status'] for status in self.statuses()], [''])
+
+    def test_existing_turn_table_migrates_without_inventing_a_thread(self):
+        self.owner_says('이전 요청')
+        job = self.sl_jobs()[0]
+        with self.store.db() as db:
+            db.execute('ALTER TABLE slack_turns DROP COLUMN thread_ts')
+            db.execute('ALTER TABLE slack_turns DROP COLUMN status_failed')
+        migrated = QuickStore(self.store.root)
+        with migrated.db() as db:
+            turn = dict(db.execute('SELECT * FROM slack_turns WHERE job_id=?', (job['id'],)).fetchone())
+        self.assertIsNone(turn['thread_ts'])
+        self.assertEqual(turn['status_failed'], 0)
+        self.assertIsNotNone(turn['source_post_id'])
+
+    def test_sdk_legacy_status_carries_custom_text_and_clears_with_empty(self):
+        """#446: the pinned SDK sends the free-text status; an empty one clears it."""
+        from slack_sdk import WebClient
+        client = WebClient(token=BOT_TOKEN, retry_handlers=[])
+        with mock.patch.object(client, 'api_call', return_value={'ok': True}) as call:
+            client.assistant_threads_setStatus(channel_id=DM, thread_ts='1234.000001', status='자료 읽는 중')
+            client.assistant_threads_setStatus(channel_id=DM, thread_ts='1234.000001', status='')
+        self.assertEqual(call.call_args_list, [
+            mock.call('assistant.threads.setStatus', json={'channel_id': DM, 'thread_ts': '1234.000001', 'status': '자료 읽는 중'}),
+            mock.call('assistant.threads.setStatus', json={'channel_id': DM, 'thread_ts': '1234.000001', 'status': ''})])
+
+    def test_a_notice_of_a_threaded_work_goes_to_its_thread(self):
+        job = self.running()
+        self.store.queue_notification(job['id'], OWNER, self.surface.owner_generation(), 'browser_approval_needed',
+                                      'offer-1', surface='slack')
+        with mock.patch.object(type(self.service), '_browser_request',
+                               lambda service, work_id: {'state': 'requested', 'offer_digest': 'offer-1',
+                                                         'requested_at': time.time()}), \
+                mock.patch.object(type(self.service), 'browser_step_prompt', lambda service, work_id: '결제 승인 요청'):
+            self.service.deliver_notification()
+        posts = [args for name, token, args in self.fake.calls if name == 'chat_postMessage' and '결제 승인 요청' in args.get('text', '')]
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]['thread_ts'], '1234.000001')
+
+    def test_clear_failure_does_not_change_delivery_or_repost_answer(self):
+        job = self.running()
+        self.service.present_waiting_work(now=job['created'] + 2)
+        self.fake.status_error = True
+        self.finish(job)
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(job['id'])['delivery'], 'sent')
+        self.assertEqual(len(self.statuses()), 2)
+        self.assertEqual(sum(name == 'chat_postMessage' for name, token, args in self.fake.calls), 1)
 
 
 if __name__ == '__main__':

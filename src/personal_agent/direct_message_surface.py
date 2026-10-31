@@ -149,10 +149,11 @@ class DirectMessageSurface(ConversationSurface):
         return False   # no editable drafts on a direct-message surface
 
     # -- ingestion ----------------------------------------------------------------------
-    def _ingest_owner_message(self, message_id, text, reply_to, owner, generation, spoke=None):
+    def _ingest_owner_message(self, message_id, text, reply_to, owner, generation, spoke=None, turn_data=None):
         """One owner message as Work, at most once and only in the current pairing; the Work id or None.
 
         ``spoke``: when the owner wrote it, in seconds on this Mac's clock (None when unknown).
+        ``turn_data``: trusted, subclass-owned routing columns, never event-supplied column names.
         """
         service = self.service
         text = str(text or '')
@@ -181,6 +182,9 @@ class DirectMessageSurface(ConversationSurface):
                 db.execute('UPDATE jobs SET source_at=? WHERE id=?', (min(spoke, now), work_id))
             db.execute(f'INSERT INTO {self.TURNS_TABLE}(job_id,owner,source_post_id,reply_to_post_id,created) VALUES (?,?,?,?,?)',
                        (work_id, owner, message_id, reply_to, time.time()))
+            # Internal surface routing metadata, in the same transaction as the turn.
+            for column, value in (turn_data or {}).items():
+                db.execute(f'UPDATE {self.TURNS_TABLE} SET {column}=? WHERE job_id=?', (value, work_id))
         LOG.info('%s: owner message queued work=%s', self.name, work_id)
         return work_id
 
@@ -215,6 +219,10 @@ class DirectMessageSurface(ConversationSurface):
             return False
         return cfg.get('company_approved') is True or not work_mode.was_on_since(self.service.store, since)
 
+    def _post_reply(self, cfg, text, job):
+        """Terminal post; a surface can carry its turn's routing metadata."""
+        return self._post(cfg, text)
+
     def deliver_reply(self):
         service = self.service
         with service.lock:
@@ -247,7 +255,7 @@ class DirectMessageSurface(ConversationSurface):
                 memory_saved = False
             post_id = None
             try:
-                post_id = self._post(cfg, text)
+                post_id = self._post_reply(cfg, text, job)
                 status = 'sent'
             except self.NOT_SENT:
                 with service.store.db() as db:
