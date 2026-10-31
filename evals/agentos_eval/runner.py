@@ -269,10 +269,12 @@ def world_turn(client, text, scenario_id, approvals, turn_timeout=900, poll_inte
         row = pending[0]
         operation = step_operation(row.get('label'))
         decision = approvals.get(operation, 'deny')
+        # Taken before the request: Still issues the approval (and may resume the Work) only after it arrives.
+        sent = wall()
         result = client.post('/api/browser/approval', {'work_id': task_id, 'decision': decision,
                                                        'digest': row.get('digest')})
         answers.append({'operation': operation, 'decision': decision, 'approved': bool(result.get('approved')),
-                        'resumed': bool(result.get('resumed')), 'at': wall()})
+                        'resumed': bool(result.get('resumed')), 'at': sent})
         if decision != 'approve' or not result.get('resumed'):
             break
     return task_id, detail, answers

@@ -250,6 +250,11 @@ class ApprovalTest(unittest.TestCase):
         self.assertEqual(answers, [{'operation': 'pay', 'decision': 'approve', 'approved': True, 'resumed': True, 'at': 5.0}])
         self.assertEqual((detail['status'], client.waits), ('succeeded', 2))   # waited again after resuming
 
+    def test_an_approval_is_timed_before_its_request_is_sent(self):
+        client, clock = FakeClient(), iter([5.0, 9.0])
+        _task, _detail, answers = runner.world_turn(client, 'Pay', 's', {'pay': 'approve'}, wall=lambda: next(clock))
+        self.assertEqual(answers[0]['at'], 5.0)
+
     def test_a_deny_grants_nothing_and_stops_the_turn(self):
         client = FakeClient()
         _task, _detail, answers = runner.world_turn(client, 'Pay', 's', {'pay': 'deny'})
@@ -440,6 +445,14 @@ class ReportTest(unittest.TestCase):
         self.assertIn('## World (evidence class sandbox-world)', text)
         self.assertIn('pay=approve', text)
         self.assertNotIn('world', report.aggregate([], {'id': 'r2'}))
+
+    def test_collateral_fails_a_run_even_when_the_world_is_expected_to_fail(self):
+        denied = world_scenario(approvals={'pay': 'deny'}, expect_world_pass=False)
+        clean, damaged = self.run_record(False), self.run_record(False)
+        damaged['world']['result']['collateral'] = ['unexpected notes']
+        records = report.world_records([(denied, clean, 1), (denied, damaged, 1)])
+        self.assertEqual([record['value']['passed'] for record in records], [1.0, 0.0])
+        self.assertIn('world:collateral', [f"{row['kind']}:{row['name']}" for row in records[1]['failures']])
 
     def test_world_sweep_runs_codex_only_and_writes_the_world_report(self):
         args = Namespace(world='fake', worker='codex', scenarios='', no_local=True, split=None, seed='', instances=1,

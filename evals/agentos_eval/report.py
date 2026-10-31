@@ -102,22 +102,27 @@ def cohort(records):
 def world_records(runs):
     """Report records of world runs, from ``[(scenario, run record, epoch), ...]`` (``runner.run_world_scenario``).
 
-    A run passes when the world's tests end as the scenario expects and every
-    Still check holds; an error is an ``infra`` failure in the denominator.
+    A run passes when the world's tests end as the scenario expects, the world
+    reports no collateral change (even on a trial expected to fail, such as a
+    refused payment) and every Still check holds; an error is an ``infra``
+    failure in the denominator.
     """
     records = []
     for scenario, run, epoch in runs:
         world = run.get('world') or {}
         result = world.get('result')
         expected = scenario['world']['expect_world_pass']
-        world_ok = result is not None and result['passed'] == expected
+        collateral = list((result or {}).get('collateral') or [])
+        world_ok = result is not None and result['passed'] == expected and not collateral
         still = dict(run.get('still') or {})
         failures = []
         if run.get('error'):
             failures.append({'kind': 'infra', 'name': 'world_run', 'reason': run['error'][:200]})
-        elif not world_ok:
+        elif result is None or result['passed'] != expected:
             reason = '; '.join(result['failures'][:3]) if result else 'not evaluated'
             failures.append({'kind': 'world', 'name': 'tests', 'reason': f'expected pass={expected}: {reason}'[:200]})
+        if collateral:
+            failures.append({'kind': 'world', 'name': 'collateral', 'reason': '; '.join(collateral[:3])[:200]})
         failures += [{'kind': 'check', 'name': name, 'reason': 'Still check failed'} for name, ok in still.items() if not ok]
         passed = world_ok and all(still.values()) and not run.get('error')
         records.append({'scenario': scenario['id'], 'source': scenario.get('source'), 'split': scenario.get('split'),
