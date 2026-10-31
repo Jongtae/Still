@@ -23,6 +23,17 @@ def _no_automatic_phone_login(monkeypatch):
     monkeypatch.setattr(quickstart_service.AgentService, 'SESSION_KEEPALIVE', False)
 
 
+@pytest.fixture(autouse=True)
+def _no_cloudflared_download(monkeypatch):
+    """#523: no test downloads cloudflared (a test that wants it injects ``fetch``) or waits for DNS."""
+    from personal_agent import quick_tunnel
+
+    def refused(url):
+        raise OSError('a test tried to download cloudflared')
+    monkeypatch.setattr(quick_tunnel, '_fetch', refused)
+    monkeypatch.setattr(quick_tunnel, 'SETTLE_SECONDS', 0)
+
+
 @pytest.fixture(autouse=True, scope='session')
 def _fixture_servers_skip_the_reverse_lookup():
     """#156: a fixture HTTP server binds without a reverse DNS lookup of its own address.

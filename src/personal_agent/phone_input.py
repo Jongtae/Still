@@ -1,7 +1,8 @@
 """A one-time phone page for inputs only a page can safely take (PHONE-INPUT-01 #1213).
 
 The owner who is not at the Mac asks in conversation, confirms the draft, and
-gets a temporary HTTPS link (ngrok, as the remote login's, #939, and the family
+gets a temporary HTTPS link (``family_setup.start_tunnel``: ngrok when installed,
+else a Cloudflare quick tunnel, #523; as the remote login's, #939, and the family
 setup's, #897) in the paired Telegram chat.  The page does one of two things:
 
 * ``google-client``: take the owner's own Google "Desktop app" client JSON
@@ -52,7 +53,7 @@ DONE_DELAY_SECONDS = 0.3
 
 LINK_TEXT = ('휴대폰에서 {label} 설정을 하는 링크예요. 이 링크를 연 휴대폰 한 대만 쓸 수 있고, 약 {minutes}분 뒤에 닫혀요. '
              '중간에 이 화면을 닫았다면 새 링크를 요청해 주세요.\n{link}')
-NO_NGROK_TEXT = '휴대폰 링크를 만들 ngrok이 이 Mac에 없어요. Mac에서 설정해 주세요.'
+NO_TUNNEL_TEXT = '이 Mac에서는 휴대폰 링크를 만들 수 없어요(ngrok도 cloudflared도 없어요). Mac에서 설정해 주세요.'
 NO_PORT_TEXT = '이 Mac의 Still 주소를 아직 알 수 없어 휴대폰 링크를 만들지 못했어요.'
 BUSY_TEXT = '이미 휴대폰 링크가 열려 있어요. 그 링크가 닫힌 뒤에 다시 요청해 주세요.'
 NOT_PAIRED_TEXT = '휴대폰 링크는 연결된 Telegram 대화로만 보내요. Telegram을 먼저 연결해 주세요.'
@@ -107,10 +108,10 @@ class PhoneInput:
             raise PhoneInputError(str(exc)) from None
         except FileNotFoundError:
             # #520: the owner's words, not "[Errno 2] No such file or directory: 'ngrok'".
-            raise PhoneInputError(NO_NGROK_TEXT) from None
+            raise PhoneInputError(NO_TUNNEL_TEXT) from None
         except (OSError, RuntimeError) as exc:
             raise PhoneInputError(TUNNEL_FAILED_TEXT + ' ' + str(exc)) from None
-        # #208 review: work mode switched on, or the session ended, while ngrok was starting: the
+        # #208 review: work mode switched on, or the session ended, while the tunnel was starting: the
         # switch's ``finish`` may already have run and found no process, so this end stops it.
         if work_mode.active(self._store) or self._ended.is_set():
             self._stop_unpublished_tunnel()

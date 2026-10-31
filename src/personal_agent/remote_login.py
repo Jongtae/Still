@@ -2,8 +2,8 @@
 
 An in-flow login (#709) or an explicit login request shows the Still login
 window on the Mac.  The owner who is not at the Mac gets a temporary HTTPS
-link (ngrok, as the family setup's, #897) to a page that shows that window
-as an image refreshed about twice a second; a tap on the image is pressed at
+link (ngrok or a Cloudflare quick tunnel, #523, as the family setup's, #897)
+to a page that shows that window as an image refreshed about twice a second; a tap on the image is pressed at
 the same point in the window and opens the phone keyboard while an editable
 element has focus there, each keystroke goes into that field (#293), and [완료]
 closes the window, which saves the session to the jar exactly as closing it
@@ -70,7 +70,7 @@ LINK_ENDED_TEXT = {'done': msg('remote_login.link_ended_done'), 'expired': msg('
 #: #255 (owner choice 2026-10-24): the in-flow prompt's last line while the phone link drives its window;
 #: the prompt then has no buttons, so the phone page's [완료] is the one place to finish.
 PROMPT_PHONE_ACTIVE_LINE = msg('remote_login.prompt_phone_active')
-NO_NGROK_TEXT = msg('remote_login.no_ngrok')
+NO_TUNNEL_TEXT = msg('remote_login.no_tunnel')
 NO_PORT_TEXT = msg('remote_login.no_local_address')
 BUSY_TEXT = msg('remote_login.a_phone_login_link_is_already')
 #: A link that could not open or be delivered leaves the Mac window and its prompt as they are (review P2-1).
@@ -179,7 +179,7 @@ class RemoteLogin:
             raise RemoteLoginError(str(exc)) from None
         except (OSError, RuntimeError) as exc:
             raise RemoteLoginError(TUNNEL_FAILED_TEXT + ' ' + str(exc)) from None
-        # #208 review: work mode switched on, or the session ended, while ngrok was starting: the
+        # #208 review: work mode switched on, or the session ended, while the tunnel was starting: the
         # switch's ``finish`` may already have run and found no process, so this end stops it.
         if work_mode.active(self._store) or self._ended.is_set():
             self._stop_unpublished_tunnel()
