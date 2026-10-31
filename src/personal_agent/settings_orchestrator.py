@@ -163,10 +163,8 @@ SKILL_ADD_NOTE = ("확인하면 고정된 커밋에서 그 폴더만 받아 라�
                   "GitHub에 물어 커밋으로 고정했어요). 스크립트·훅은 실행하지 않고, 라이선스를 확인할 수 없거나 실행 파일이 "
                   "필요한 스킬은 추가하지 않아요. 스킬은 방법 안내일 뿐 권한이 아니에요.")
 #: #438: what connecting Telegram from the terminal conversation does, shown with the draft.
-CONNECT_CHAT_NOTE = ("확인하면 Still을 실행한 터미널에 봇 토큰 입력 칸이 열려요. 토큰은 화면에 보이지 않고 AI에게도 가지 않아요. "
-                     "이 연결은 그 터미널 대화에서만 요청할 수 있어요.")
-CONNECT_CHAT_TERMINAL_ONLY = ("Telegram 연결은 Still을 실행한 터미널 대화에서 요청하거나, 설정 > 외부 연결에서 봇 토큰으로 할 수 있어요. "
-                              "아무것도 바꾸지 않았습니다.")
+CONNECT_CHAT_NOTE = msg('settings_orchestrator.connect_chat_note')
+CONNECT_CHAT_TERMINAL_ONLY = msg('settings_orchestrator.connect_chat_terminal_only')
 #: How long a confirmation waits for another apply of the same category (#814 review).
 APPLY_WAIT_SECONDS = 5
 #: #814 review: a draft left ``applying`` by a restart: its setter may or may not have committed.
@@ -866,7 +864,7 @@ class SettingsOrchestrator:
         elif (category, setting) == ("skills", "remove"):
             summary = f"스킬 '{after}'를 뺍니다"
         elif (category, setting) == ("connections", "connect_chat"):
-            summary = "Telegram을 연결해 휴대폰에서도 Still과 대화할 수 있게 합니다"
+            summary = msg('settings_orchestrator.connect_chat_summary')
         elif category == "connections":
             summary = f"{self._describe(category, setting, after, row)} 연결을 해제합니다"
         elif category == "browser":
@@ -1002,7 +1000,7 @@ class SettingsOrchestrator:
             # #438: the terminal shows its hidden token prompt; the token goes from there to ``connect_telegram``.
             if not self.service.terminal_surface.request_input(after):
                 raise ValueError(CONNECT_CHAT_TERMINAL_ONLY)
-            self.__dict__.setdefault("_apply_text", {})[row["id"]] = "터미널에 봇 토큰 입력 칸을 열었어요."
+            self.__dict__.setdefault("_apply_text", {})[row["id"]] = msg('settings_orchestrator.connect_chat_opened')
             return "requested"
         elif category == "connections":
             # #183: the same disconnect as Settings (local stop, credential delete, Google revocation request).
@@ -1431,9 +1429,11 @@ class SettingsOrchestrator:
     def confirmation_text(rows):
         lines = [msg('settings_orchestrator.this_settings_change_was_requested_in')]
         for row in rows:
-            lines.append(f"- {row['effect']}" + (f" ({row['note']})" if row.get("note") else ""))
+            # #511: catalog lines, so each surface shows them in its language.
+            lines.append(msg('settings_orchestrator.draft_line_with_note', effect=row['effect'], note=row['note'])
+                         if row.get("note") else msg('settings_orchestrator.draft_line', effect=row['effect']))
             if row.get("reason"):
-                lines.append(f"  이유: {row['reason']}")
+                lines.append("  " + msg('settings_orchestrator.draft_reason', reason=row['reason']))
         return "\n".join(lines)
 
     def work_tools(self, owner, channel, work_id, telegram=False):

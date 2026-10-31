@@ -168,7 +168,7 @@ class Terminal:
         ``preview`` is what the choice settles, shown with it (not a catalog line).
         """
         if preview:
-            print(f'\n{preview}\n', flush=True)
+            print(f'\n{translate(preview, self.lang)}\n', flush=True)
         for _, label in options:
             self.say('   ' + label)
         return self.ask('   ' + prompt + ' ') or default or ''
@@ -187,8 +187,11 @@ class Terminal:
         """End the line being typed ('' is returned); plain ``input()`` cannot be, so a request waits for Enter."""
 
     def answer(self, text):
-        """Still's answer: the model's own text, printed as it is (not a catalog line)."""
-        print(f'\nStill: {text}\n', flush=True)
+        """Still's answer as it is, except Still's own fixed lines, shown in the terminal language (#511).
+
+        The same seam as Telegram's (#1350): a model's own text matches no catalog line and passes unchanged.
+        """
+        print(f'\nStill: {translate(text, self.lang)}\n', flush=True)
 
 
 class RichTerminal(Terminal):
@@ -293,13 +296,13 @@ class RichTerminal(Terminal):
         from rich.text import Text
         self.console.print()
         self.console.print(Text('Still', style='bold cyan'))
-        self.console.print(Markdown(text))
+        self.console.print(Markdown(translate(text, self.lang)))
         self.console.print()
 
     def choose(self, prompt, options, default=None, preview=None):
         keys = [key for key, _ in options]
         self.fresh()
-        return self.chooser(self._rendered(preview) if preview else '',
+        return self.chooser(self._rendered(translate(preview, self.lang)) if preview else '',
                             options=[(key, _OPTION_NUMBER.sub('', self.local(label))) for key, label in options],
                             default=default if default in keys else None)
 

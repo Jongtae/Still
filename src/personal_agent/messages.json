@@ -2381,6 +2381,48 @@
   "ja": "会話で依頼された設定変更です。「適用」を押すか、会話で実行するよう返信するまで何も変わりません。",
   "zh": "这是在对话中请求的设置更改。点击“应用”或在对话中回复同意之前，不会更改任何内容。"
  },
+ "settings_orchestrator.draft_line": {
+  "ko": "- {effect}",
+  "en": "- {effect}",
+  "ja": "- {effect}",
+  "zh": "- {effect}"
+ },
+ "settings_orchestrator.draft_line_with_note": {
+  "ko": "- {effect} ({note})",
+  "en": "- {effect} ({note})",
+  "ja": "- {effect}（{note}）",
+  "zh": "- {effect}（{note}）"
+ },
+ "settings_orchestrator.draft_reason": {
+  "ko": "이유: {reason}",
+  "en": "Reason: {reason}",
+  "ja": "理由: {reason}",
+  "zh": "原因：{reason}"
+ },
+ "settings_orchestrator.connect_chat_summary": {
+  "ko": "Telegram을 연결해 휴대폰에서도 Still과 대화할 수 있게 합니다",
+  "en": "Connect Telegram so you can talk to Still from your phone too",
+  "ja": "Telegram を接続して、スマートフォンからも Still と話せるようにします",
+  "zh": "连接 Telegram，让你也能在手机上和 Still 对话"
+ },
+ "settings_orchestrator.connect_chat_note": {
+  "ko": "확인하면 Still을 실행한 터미널에 봇 토큰 입력 칸이 열려요. 토큰은 화면에 보이지 않고 AI에게도 가지 않아요. 이 연결은 그 터미널 대화에서만 요청할 수 있어요.",
+  "en": "Once you confirm, a bot token prompt opens in the terminal where Still is running. The token is not shown on screen and never goes to the AI. This connection can only be requested from that terminal conversation.",
+  "ja": "確認すると、Still を起動したターミナルにボットトークンの入力欄が開きます。トークンは画面に表示されず、AI にも渡りません。この接続はそのターミナルでの会話からのみ依頼できます。",
+  "zh": "确认后，运行 Still 的终端会打开机器人令牌输入框。令牌不会显示在屏幕上，也不会发送给 AI。此连接只能在该终端对话中请求。"
+ },
+ "settings_orchestrator.connect_chat_terminal_only": {
+  "ko": "Telegram 연결은 Still을 실행한 터미널 대화에서 요청하거나, 설정 > 외부 연결에서 봇 토큰으로 할 수 있어요. 아무것도 바꾸지 않았습니다.",
+  "en": "Connect Telegram by asking in the terminal conversation where Still is running, or with a bot token in Settings > External connections. Nothing was changed.",
+  "ja": "Telegram の接続は、Still を起動したターミナルでの会話で依頼するか、設定 > 外部接続 でボットトークンを使って行えます。何も変更していません。",
+  "zh": "可以在运行 Still 的终端对话中请求连接 Telegram，或在“设置 > 外部连接”中用机器人令牌连接。没有做任何更改。"
+ },
+ "settings_orchestrator.connect_chat_opened": {
+  "ko": "터미널에 봇 토큰 입력 칸을 열었어요.",
+  "en": "I opened the bot token prompt in the terminal.",
+  "ja": "ターミナルにボットトークンの入力欄を開きました。",
+  "zh": "已在终端打开机器人令牌输入框。"
+ },
  "state.cancelled": {
   "ko": "취소됨",
   "en": "cancelled",
