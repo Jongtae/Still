@@ -2387,6 +2387,78 @@
   "ja": "会話で依頼された設定変更です。「適用」を押すか、会話で実行するよう返信するまで何も変わりません。",
   "zh": "这是在对话中请求的设置更改。点击“应用”或在对话中回复同意之前，不会更改任何内容。"
  },
+ "settings_orchestrator.api_code_title": {
+  "ko": "API 연결 {name}: {hosts}에만 보냅니다",
+  "en": "API connection {name}: sent only to {hosts}",
+  "ja": "API 接続 {name}: {hosts} にだけ送ります",
+  "zh": "API 连接 {name}：只发送到 {hosts}"
+ },
+ "settings_orchestrator.api_values_to_enter": {
+  "ko": "입력할 값: {labels}",
+  "en": "Values you will enter: {labels}",
+  "ja": "入力する値: {labels}",
+  "zh": "需要输入的值：{labels}"
+ },
+ "settings_orchestrator.api_values_kept": {
+  "ko": "이미 저장된 값을 그대로 씀: {labels}",
+  "en": "Already saved and kept as is: {labels}",
+  "ja": "保存済みの値をそのまま使用: {labels}",
+  "zh": "沿用已保存的值：{labels}"
+ },
+ "settings_orchestrator.api_values_masked": {
+  "ko": "· {labels}: AI가 만든 코드에도 보이지 않고, 보낼 때만 채워요",
+  "en": "· {labels}: hidden even from the code the AI writes, filled in only when sent",
+  "ja": "· {labels}: AI が書いたコードからも見えず、送るときだけ入ります",
+  "zh": "· {labels}：AI 编写的代码也看不到，仅在发送时填入"
+ },
+ "settings_orchestrator.api_values_in_code": {
+  "ko": "· {labels}: 코드가 직접 써요",
+  "en": "· {labels}: used directly by the code",
+  "ja": "· {labels}: コードが直接使います",
+  "zh": "· {labels}：由代码直接使用"
+ },
+ "settings_orchestrator.api_reads": {
+  "ko": "승인 없이 보내는 조회 요청: {reads}",
+  "en": "Lookups sent without asking you: {reads}",
+  "ja": "承認なしで送る照会リクエスト: {reads}",
+  "zh": "无需你批准即可发送的查询请求：{reads}"
+ },
+ "settings_orchestrator.api_money": {
+  "ko": "돈이 오가는 연결이라 주문·이체 같은 변경은 매번 직접 승인해야 보냅니다",
+  "en": "Money moves through this connection, so changes such as orders or transfers are sent only after you approve each one",
+  "ja": "お金が動く接続のため、注文や振替などの変更は毎回あなたの承認後にだけ送ります",
+  "zh": "这是涉及资金的连接，下单、转账等变更每次都需要你亲自批准后才会发送"
+ },
+ "settings_orchestrator.api_no_money": {
+  "ko": "돈이 오가지 않는 연결이에요",
+  "en": "No money moves through this connection",
+  "ja": "お金は動かない接続です",
+  "zh": "这是不涉及资金的连接"
+ },
+ "settings_orchestrator.api_short": {
+  "ko": "API 연결 {name}",
+  "en": "API connection {name}",
+  "ja": "API 接続 {name}",
+  "zh": "API 连接 {name}"
+ },
+ "settings_orchestrator.applying": {
+  "ko": "{label} 변경을 확인하고 있어요. 끝나면 결과를 알려드릴게요.",
+  "en": "Checking the change to {label}. I'll tell you the result when it's done.",
+  "ja": "{label} の変更を確認しています。終わったら結果をお知らせします。",
+  "zh": "正在确认 {label} 的变更，完成后会告诉你结果。"
+ },
+ "settings_orchestrator.apply_failed": {
+  "ko": "{label} 변경을 적용하지 못했습니다: {reason}",
+  "en": "Couldn't apply the change to {label}: {reason}",
+  "ja": "{label} の変更を適用できませんでした: {reason}",
+  "zh": "无法应用 {label} 的变更：{reason}"
+ },
+ "settings_orchestrator.apply_failed_plain": {
+  "ko": "{label} 변경을 적용하지 못했습니다.",
+  "en": "Couldn't apply the change to {label}.",
+  "ja": "{label} の変更を適用できませんでした。",
+  "zh": "无法应用 {label} 的变更。"
+ },
  "settings_orchestrator.draft_line": {
   "ko": "- {effect}",
   "en": "- {effect}",

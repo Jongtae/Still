@@ -517,7 +517,7 @@ class TelegramSurface(ConversationSurface):
                         if parts[2]=='confirm' else service.settings_orchestrator.cancel(owner,channel,row['id']))
                 lines.append(result.get('response') or msg('service.done'))
             except ValueError as exc:
-                lines.append(f"{row['effect']}: {exc}")
+                lines.append(f"{service.settings_orchestrator.short_label(row)}: {exc}")
         LOG.info('settings drafts %s by owner button work=%s count=%s',parts[2],job['id'],len(rows))
         service.store.update_notification(notification['id'],'settings_confirmed' if parts[2]=='confirm' else 'settings_canceled')
         try:service.telegram.edit_message_text(sender,notification['message_id'],'\n'.join(lines),{'inline_keyboard':[]})

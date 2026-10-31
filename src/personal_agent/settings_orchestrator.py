@@ -877,16 +877,30 @@ class SettingsOrchestrator:
             data = json.loads(after)
             if 'fields' in data:
                 # #1380: a code-run secret set; the owner sees what each value is and how code uses it.
+                # #519: in the owner's words, one fact per line; every authority detail the draft carries
+                # (destinations, which values code sees, the requests sent without approval, money) is kept.
                 from .api_input import kept_fields
-                uses = {'header_or_body': '코드에는 가려지고 보낼 때만 채움', 'in_code': '코드 안에서 직접 사용'}
                 kept = kept_fields(self.service.store, data)
-                summary = (f"코드 실행용 비밀값 묶음 {data['name']}: {', '.join(data['hosts'])}에만 사용\n"
-                           + '\n'.join(f"· {item['label']} ({uses[item['use']]}"
-                                       + (', 저장된 값 그대로' if item['name'] in kept else '') + ')'
-                                       for item in data['fields'])
-                           + (f"\n읽기로 취급할 요청: {', '.join(data['reads'])}" if data['reads'] else '')
-                           + f"\n돈이 오가는 연결: {'예' if data['money'] else '아니요'} · "
-                             "주문·이체 같은 변경은 요청마다 직접 승인해야 보냅니다")
+
+                def labels(items):
+                    return ', '.join(item['label'] for item in items)
+                asked = [item for item in data['fields'] if item['name'] not in kept]
+                masked = [item for item in data['fields'] if item['use'] == 'header_or_body']
+                in_code = [item for item in data['fields'] if item['use'] == 'in_code']
+                lines = [msg('settings_orchestrator.api_code_title', name=data['name'], hosts=', '.join(data['hosts']))]
+                if asked:
+                    lines.append(msg('settings_orchestrator.api_values_to_enter', labels=labels(asked)))
+                if kept:
+                    lines.append(msg('settings_orchestrator.api_values_kept',
+                                     labels=labels(item for item in data['fields'] if item['name'] in kept)))
+                if masked:
+                    lines.append(msg('settings_orchestrator.api_values_masked', labels=labels(masked)))
+                if in_code:
+                    lines.append(msg('settings_orchestrator.api_values_in_code', labels=labels(in_code)))
+                if data['reads']:
+                    lines.append(msg('settings_orchestrator.api_reads', reads=', '.join(data['reads'])))
+                lines.append(msg('settings_orchestrator.api_money' if data['money'] else 'settings_orchestrator.api_no_money'))
+                summary = '\n'.join(lines)
             else:
                 summary = (f"API 연결 {data['name']}: {', '.join(data['hosts'])}\n"
                            f"읽기 확인: {data['probe']['url']} · 대상 확인: {data['subject_value'] or '지정 안 함'}\n"
@@ -1218,7 +1232,9 @@ class SettingsOrchestrator:
                 try:
                     text = self._checked_apply(row)["response"]
                 except Exception as exc:
-                    text = f"{row['effect']} 변경을 적용하지 못했습니다: {exc if isinstance(exc, SettingsError) else '오류'}"
+                    text = (msg('settings_orchestrator.apply_failed', label=self.short_label(row), reason=exc)
+                            if isinstance(exc, SettingsError) and str(exc)
+                            else msg('settings_orchestrator.apply_failed_plain', label=self.short_label(row)))
             try:
                 notify(text)
             except Exception:
@@ -1245,7 +1261,7 @@ class SettingsOrchestrator:
             self.thread = thread
         return {"state": "applying", "draft_id": row["id"], "target": row["target"], "before": row["before"],
                 "after": row["after"],
-                "response": f"{row['effect']} 변경을 확인하고 있어요. 끝나면 결과를 알려드릴게요."}
+                "response": msg('settings_orchestrator.applying', label=self.short_label(row))}
 
     def _confirm_owner_setting(self, row, digest, notify=None):
         """Apply one awaiting draft exactly once, after re-checking it is still current (#814).
@@ -1323,7 +1339,7 @@ class SettingsOrchestrator:
                 lines.append(result.get("response") or msg('service.done'))
             except SettingsError as exc:
                 states.append("failed")
-                lines.append(f"{row['effect']}: {exc}")
+                lines.append(f"{self.short_label(row)}: {exc}")
         return {"state": states[0] if len(states) == 1 else ("mixed" if len(set(states)) > 1 else states[0]),
                 "drafts": [row["id"] for row in rows], "response": "\n".join(lines)}
 
@@ -1418,6 +1434,20 @@ class SettingsOrchestrator:
             if self.drafts_digest(old[start:]) == fingerprint:
                 return [self._renew(owner, channel, row) for row in old[start:]]
         return []
+
+    @staticmethod
+    def short_label(row):
+        """The draft named in a few words, for the lines after its confirmation (#519).
+
+        The full ``effect`` is shown once, with the confirmation; the progress
+        and result lines name it only, so a long summary is never repeated.
+        """
+        if (row.get("category"), row.get("setting")) == ("api_connections", "connect"):
+            try:
+                return msg('settings_orchestrator.api_short', name=json.loads(row["after"])["name"])
+            except (KeyError, TypeError, ValueError):
+                pass
+        return str(row.get("effect") or "").split("\n", 1)[0]
 
     @staticmethod
     def drafts_digest(rows):
