@@ -12,5 +12,6 @@ They are not bundled into Still. The owner adds one in conversation ("add a shop
 | `summary-or-analysis` | A method for telling which answer the owner asked for (summary, comparison, analysis, recommendation) and when an answer of that form is finished |
 | `claim-analysis` | A method for analysing claims and opinions: support, counter-evidence, disagreement, uncertainty and a justified conclusion |
 | `source-cross-check` | A method for checking a fact across sources: the original, independent confirmation, dates and definitions, and an honest report of agreement or conflict |
+| `first-conversations` | A method for first conversations and missing owner facts: open with what the AI is good at and one easy start, use the best evidence it has as a stated assumption, and ask one gentle, task-framed question only when a request needs it |
 
 Site hints are observations, not guarantees. Pages change, and the method tells the AI to check each hint on the page.
