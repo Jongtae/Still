@@ -251,6 +251,33 @@ class TelegramFromConversation(TerminalCase):
             first_run._requested_input(self.service, Menu(TOKEN), choice)
         self.assertEqual(shown, [first['text'], second['text']])
 
+    def test_an_english_terminal_shows_the_draft_and_its_reply_in_english(self):
+        """#511: the notice drawn with its menu and Still's own reply follow the terminal language."""
+        import io
+        from rich.console import Console
+        work_id = self.surface.say('I want to talk from my phone too')
+        self.settings.propose(self.owner, self.channel, 'connections', 'connect_chat', 'telegram',
+                              reason='Connect Telegram so you can chat with Still there.', work_id=work_id)
+        self.service.queue_settings_confirmation(self.store.job(work_id))
+        self.assertTrue(self.service.deliver_notification())
+        choice = self.surface.take_request()
+        out, menus = io.StringIO(), []
+        term = first_run.RichTerminal('en', Console(file=out, width=400, color_system=None),
+                                      reader=lambda prompt, **options: '',
+                                      chooser=lambda message, **options: menus.append(message) or '1')
+        first_run._requested_input(self.service, term, choice)
+        self.service.deliver_one()
+        for text in self.printed:  # what the surface printed, through the terminal's own writer
+            term.answer(text)
+        shown = ''.join(text for _style, text in menus[0].__pt_formatted_text__())
+        self.assertIn(first_run.msg('settings_orchestrator.connect_chat_summary', 'en'), shown)
+        self.assertIn('Reason: Connect Telegram so you can chat with Still there.', shown)
+        self.assertNotRegex(shown, '[가-힣]')
+        self.assertIn(first_run.msg('settings_orchestrator.connect_chat_opened', 'en'), out.getvalue())
+        self.assertNotRegex(out.getvalue(), '[가-힣]')
+        term.answer('연결 대상이 바뀌어서 다시 확인해 볼게요.')
+        self.assertIn('연결 대상이 바뀌어서 다시 확인해 볼게요.', out.getvalue(), "a model's own words pass unchanged")
+
     def test_keeping_the_setting_asks_for_nothing(self):
         choice = self.offered()
         self.surface.answer_choice(choice, False)
