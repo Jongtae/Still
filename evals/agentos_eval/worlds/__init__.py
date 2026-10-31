@@ -15,13 +15,16 @@ The protocol is duck-typed; one instance serves one run::
         def instruction(self): ...    # the task's owner request, read from the world at run time
         def operations(self): ...     # {tool name: 'read' | 'mutate'}: every tool the server exposes
         def evaluate(self): ...       # {'passed', 'num_tests', 'failures', 'collateral'}; no task text
+        completion_note: str          # optional: how a task ends in this world, added after the instruction
         def __exit__(self, *exc): ... # stops everything it started
 
 ``instruction`` keeps task text out of the repository: a scenario stores only
 the task id.  ``operations`` lets the eval play the owner's trust-record
 review of the world's tools (reads as reads; the scenario names the money
 operations).  A tool name is what the MCP server lists, without Codex's
-``mcp__<server>__`` prefix.
+``mcp__<server>__`` prefix.  ``completion_note`` is the world's own protocol for
+ending a task (AppWorld scores only a task its agent marked complete); it is
+generic, the same for every task of the world, never a hint about one task.
 """
 import importlib
 import json

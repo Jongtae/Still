@@ -79,6 +79,10 @@ def operations_from_docs(apps, docs_dir):
 
 class AppWorldWorld:
     name = 'appworld'
+    #: AppWorld's own protocol (its ``supervisor.complete_task`` API docs): a task is scored only once it is
+    #: marked complete, with an answer only when the request asks a question.
+    completion_note = ('When you have finished, mark the task complete with the supervisor__complete_task tool. '
+                       'Pass an answer only if the request asks a question; otherwise leave the answer empty.')
 
     def __init__(self, task_id: str, *, root: Path, apps=None, python: Path | None = None,
                  popen=subprocess.Popen, urlopen=urllib.request.urlopen,

@@ -369,6 +369,41 @@ class RunWorldScenarioTest(unittest.TestCase):
             self.assertIsNotNone(world['world'].process.poll())     # the world stopped after the run
             self.assertNotIn('Pay the corner shop', json.dumps(record))  # the task text stays out of the record
 
+    def test_the_default_world_root_is_the_world_named_folder_of_the_eval_home(self):
+        # The adapter's data root (``data/``, ``venv/``) is ``<eval home>/<world name>``, as evals/requirements.txt installs it.
+        roots = []
+
+        def loader(name, task_id, root):
+            roots.append(root)
+            return worlds.load(name, task_id, root)
+
+        with tempfile.TemporaryDirectory() as folder, mock.patch.dict(os.environ, {'AGENTOS_EVAL_HOME': folder}):
+            record = runner.run_world_scenario(world_scenario(), FakePool(Path(folder) / 'box'), world_loader=loader,
+                                               client_factory=WorldClient)
+            self.assertIsNone(record['error'])
+            self.assertEqual(roots, [Path(folder) / 'fake'])
+
+    def test_the_world_completion_note_follows_the_instruction(self):
+        clients = []
+
+        def factory(url):
+            clients.append(WorldClient(url))
+            return clients[-1]
+
+        def loader(name, task_id, root):
+            world = worlds.load(name, task_id, root)
+            world.completion_note = 'Mark the task complete when done.'
+            return world
+
+        with tempfile.TemporaryDirectory() as folder:
+            record = runner.run_world_scenario(world_scenario(), FakePool(Path(folder) / 'box'),
+                                               world_root=Path(folder) / 'worlds', world_loader=loader,
+                                               client_factory=factory)
+            self.assertIsNone(record['error'])
+            self.assertEqual(clients[0].sent, worlds.FAKE_TASKS['fake-pay']['instruction'] +
+                             '\n\nMark the task complete when done.')
+            self.assertNotIn(worlds.FAKE_TASKS['fake-pay']['instruction'], json.dumps(record))
+
     def test_a_scenario_that_embeds_the_task_text_never_runs(self):
         scenario = world_scenario()
         scenario['good_secretary'] = worlds.FAKE_TASKS['fake-pay']['instruction']
