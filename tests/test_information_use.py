@@ -13,6 +13,8 @@ provider, network, credential or owner data is used.
 import contextlib
 import io
 import json
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -147,6 +149,72 @@ class RecordsOnly(unittest.TestCase):
             self.assertEqual([(row['status'], row['queries']) for row in lookups],
                              [('failed', ['서울 날씨']), ('succeeded', ['병원']), ('succeeded', [])],
                              'a success shows what its Evidence says left, never the worker\'s raw arguments')
+
+
+class ReportedUsageAudit(unittest.TestCase):
+    def test_attempts_totals_and_missing_reports(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = QuickStore(Path(folder) / 'state')
+            job = store.enqueue('fixture', 'usage-attempts')
+            def record(status, fields):
+                with store.db() as db:
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (job, 'subscription_engine', status, json.dumps({'engine': 'codex', **fields}), 1))
+            record('running', {'usage': {'input_tokens': 999}})
+            record('failed', {'usage': {'input_tokens': 10, 'output_tokens': 0}, 'num_turns': 2, 'cost_usd': 0.1,
+                              'cli_tool_calls': 3, 'cli_tool_calls_partial': True})
+            record('succeeded', {'usage': {'input_tokens': 20, 'cached_input_tokens': 5, 'output_tokens': 7},
+                                 'num_turns': 1, 'cost_usd': 0.2, 'cli_tool_calls': 4})
+            audit = information_use.work_information_use(store, job)
+            usage = audit['usage']
+            self.assertEqual([row['status'] for row in usage['attempts']], ['failed', 'succeeded'])
+            self.assertEqual(usage['attempts'][0]['usage']['output_tokens'], 0)
+            self.assertEqual(usage['totals']['usage'], {'input_tokens': 30, 'cached_input_tokens': 5, 'output_tokens': 7})
+            self.assertEqual(usage['totals']['num_turns'], 3)
+            self.assertAlmostEqual(usage['totals']['cost_usd'], 0.3)
+            self.assertEqual(usage['totals']['cli_tool_calls'], 7)
+            self.assertTrue(usage['totals']['cli_tool_calls_partial'])
+            self.assertFalse(usage['totals']['partial'])
+            rendered = information_use.render_korean(audit)
+            self.assertEqual(rendered.count('- AI 사용량'), 2)
+            self.assertIn('input_tokens 10', rendered)
+            record('failed', {'usage': {'bad-key': 50, 'secret': 'sk-fixture-secret'}, 'prompt': 'private prompt text'})
+            audit = information_use.work_information_use(store, job)
+            missing = audit['usage']['attempts'][-1]
+            for key in ('usage', 'num_turns', 'cost_usd', 'cli_tool_calls'):self.assertIsNone(missing[key])
+            self.assertTrue(audit['usage']['totals']['partial'])
+            self.assertEqual(audit['usage']['totals']['usage'], usage['totals']['usage'])
+            self.assertIn('보고되지 않음', information_use.render_korean(audit))
+            for text in ('private prompt text', 'sk-fixture-secret', 'bad-key'):self.assertNotIn(text, json.dumps(audit))
+
+    def test_web_audit_renders_reported_and_missing_attempts(self):
+        node = shutil.which('node')
+        if not node:self.skipTest('Node is needed for the web audit check')
+        script = r"""
+const assert=require('node:assert/strict'),ui=require(process.argv[1]);
+class Element{constructor(){this.children=[];this.textContent='';}append(...nodes){this.children.push(...nodes);}}
+global.document={createElement:()=>new Element()};
+const audit={usage:{attempts:[{engine:'codex',status:'failed',usage:{input_tokens:12345,output_tokens:0},cli_tool_calls:3,cli_tool_calls_partial:true,cost_usd:0.000001},
+                            {engine:'codex',status:'succeeded',usage:null}]}};
+for(const [language,missing] of [['ko','보고되지 않음'],['en','not reported'],['ja','報告なし'],['zh-CN','未报告']]){
+ ui.setLanguage(language);const box=new Element();ui.informationUseView({information_use:audit},box);
+ const facts=box.children[0].children,index=facts.findIndex(row=>row.textContent===ui.t('AI 사용량'));
+ assert.ok(index>=0);const text=facts[index+1].textContent;
+ assert.ok(text.includes('input_tokens 12,345'));assert.ok(text.includes('output_tokens 0'));assert.ok(text.includes('cost_usd 0.000001'));
+ assert.ok(text.includes(ui.t('도구 호출 일부만 보고됨')));assert.ok(text.includes(`codex (succeeded): ${missing}`));
+}
+"""
+        subprocess.run([node, '-e', script, str(Path(__file__).resolve().parents[1] / 'src/personal_agent/web/app.js')],
+                       check=True, capture_output=True, text=True, timeout=20)
+
+    def test_no_terminal_events_does_not_invent_zero_usage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = QuickStore(Path(folder) / 'state')
+            job = store.enqueue('fixture', 'usage-none')
+            audit = information_use.work_information_use(store, job)
+            self.assertEqual(audit['usage']['attempts'], [])
+            self.assertIsNone(audit['usage']['totals']['usage'])
+            self.assertIn('- AI 사용량: 보고되지 않음', information_use.render_korean(audit))
 
 
 class _ServiceBase(unittest.TestCase):
