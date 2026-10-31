@@ -285,7 +285,10 @@ class SlackSurface(DirectMessageSurface):
         turn = self._turn(notification['job_id']) if notification.get('job_id') else None
         thread = {'thread_ts': turn['thread_ts']} if turn and turn.get('thread_ts') else {}
         if not labels or len(text) > POST_CHARS:
-            return self._post({**cfg, **thread}, text)
+            posted = self._post({**cfg, **thread}, text)
+            if thread:
+                self._resend_thread_statuses(thread['thread_ts'])
+            return posted
         nid = notification['id']
         actions = {'type': 'actions', 'block_id': 'still_answer', 'elements': [
             {'type': 'button', 'action_id': ACTION_APPROVE, 'style': 'primary', 'value': f'{nid}:approve',
@@ -297,6 +300,8 @@ class SlackSurface(DirectMessageSurface):
             lambda: client.chat_postMessage(channel=channel, text=fallback,
                                             blocks=[{'type': 'markdown', 'text': text or ' '}, actions], **thread),
             lambda: client.chat_postMessage(channel=channel, text=fallback, blocks=[*self._sections(text), actions], **thread))
+        if thread:
+            self._resend_thread_statuses(thread['thread_ts'])
         return message_id(self._ts(posted))
 
     def _post_reply(self, cfg, text, job):
@@ -305,7 +310,18 @@ class SlackSurface(DirectMessageSurface):
         posted = self._post({**cfg, 'thread_ts': thread}, text)
         if thread:
             self._set_wait_status(job, cfg, turn, None)
+            self._resend_thread_statuses(thread, job['id'])
         return posted
+
+    def _resend_thread_statuses(self, thread, done=None):
+        """Slack clears a thread's status when the app posts in it (#446 review): every other running Work in
+        that thread re-sends its own status on the next wait tick instead of after ``WAIT_STATUS_REFRESH``."""
+        with self.service.store.db() as db:
+            rows = db.execute('SELECT job_id FROM slack_turns WHERE thread_ts=?', (thread,)).fetchall()
+        for row in rows:
+            state = self.service.presence.get(row['job_id'])
+            if row['job_id'] != done and state is not None:
+                state.wait_status_at = state.wait_status_text = None
 
     # -- presence -----------------------------------------------------------------------
     def _set_wait_status(self, job, cfg, turn, text):

@@ -950,6 +950,19 @@ class ThreadStatus(SlackCase):
         self.assertEqual(len(posts), 1)
         self.assertEqual(posts[0]['thread_ts'], '1234.000001')
 
+    def test_a_side_answer_in_the_thread_does_not_hide_a_running_works_status(self):
+        """#446 review: Slack clears the thread status on any post; the running Work shows its own again at once."""
+        job = self.running()
+        self.observe(job)
+        self.service.present_waiting_work(now=job['created'] + 2)
+        shown = self.statuses()[-1]['status']
+        self.owner_says('그건 그렇고 지금 몇 시야?', thread='1234.000001')
+        side = next(row for row in self.sl_jobs() if row['id'] != job['id'])
+        self.finish(side)
+        self.assertEqual(self.statuses()[-1]['status'], '', 'the side answer cleared the thread')
+        self.service.present_waiting_work(now=job['created'] + 3)
+        self.assertEqual(self.statuses()[-1], {'channel_id': DM, 'thread_ts': '1234.000001', 'status': shown})
+
     def test_clear_failure_does_not_change_delivery_or_repost_answer(self):
         job = self.running()
         self.service.present_waiting_work(now=job['created'] + 2)
