@@ -25,7 +25,13 @@ Scenario fields:
   request is not a fact about the owner, #846), ``allow_status`` (extra terminal statuses
   that count as not failed, e.g. ``awaiting_context``);
 - ``good_secretary``: what a good secretary would do, for the judge;
-- ``tags``: free labels for grouping.
+- ``tags``: free labels for grouping;
+- ``world`` (#484, a world scenario): ``{"name", "task_id", "task_set", "approvals", "money_capable"?,
+  "expect_world_pass"?}``.  ``task_set`` is the world's ``train`` or ``dev`` set (never a test set);
+  ``approvals`` maps each money operation (a tool name of the world's server) to ``approve`` or
+  ``deny``, which the eval answers as the owner.  A world scenario's turns are ``{"from_world": true}``:
+  the owner's words are the world's task instruction, fetched at run time, so no task text is ever
+  stored here (``embedded_world_text``).  World scenarios run only with ``sweep --world``.
 """
 import json
 import re
@@ -61,7 +67,15 @@ SPLITS = ('dev', 'heldout')
 _ID = re.compile(r'^[a-z0-9][a-z0-9-]{2,79}$')
 _EXPECT_KEYS = {'memory_any', 'current_state_any', 'preparation', 'no_memory_of_request', 'allow_status'}
 _TURN_KEYS = {'say', 'note', 'note_in_message'}
-_KEYS = {'id', 'title', 'split', 'turns', 'rubric', 'expect', 'good_secretary', 'tags', 'channel'}
+_KEYS = {'id', 'title', 'split', 'turns', 'rubric', 'expect', 'good_secretary', 'tags', 'channel', 'world'}
+_WORLD_KEYS = {'name', 'task_id', 'task_set', 'approvals', 'money_capable', 'expect_world_pass'}
+#: The world task sets a scenario may use: never a test set (AppWorld forbids tuning on them).
+WORLD_TASK_SETS = ('train', 'dev')
+DECISIONS = ('approve', 'deny')
+_TASK_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$')
+_OPERATION = re.compile(r'^[A-Za-z0-9_.-]{1,60}$')
+#: Free text a world scenario may carry (title, good_secretary): short, so it cannot hold a task's text.
+WORLD_TEXT_LIMIT = 200
 
 
 class ScenarioError(ValueError):
@@ -70,6 +84,28 @@ class ScenarioError(ValueError):
 
 def _groups(expect, key):
     return [[item.strip() for item in group] for group in expect.get(key, [])]
+
+
+def _world(raw, where):
+    """A world scenario's ``world`` block, normalized."""
+    if not isinstance(raw, dict) or set(raw) - _WORLD_KEYS:
+        raise ScenarioError(f'{where}: world may only hold {sorted(_WORLD_KEYS)}')
+    if not isinstance(raw.get('name'), str) or not _ID.match(raw['name']):
+        raise ScenarioError(f'{where}: world.name must be a world name')
+    if not isinstance(raw.get('task_id'), str) or not _TASK_ID.match(raw['task_id']):
+        raise ScenarioError(f'{where}: world.task_id must be a task id')
+    if raw.get('task_set') not in WORLD_TASK_SETS:
+        raise ScenarioError(f'{where}: world.task_set must be one of {WORLD_TASK_SETS} (never a test set)')
+    approvals = raw.get('approvals', {})
+    if (not isinstance(approvals, dict) or len(approvals) > 16
+            or any(not isinstance(op, str) or not _OPERATION.match(op) or value not in DECISIONS
+                   for op, value in approvals.items())):
+        raise ScenarioError(f'{where}: world.approvals must map operation names to approve or deny')
+    for key in ('money_capable', 'expect_world_pass'):
+        if key in raw and not isinstance(raw[key], bool):
+            raise ScenarioError(f'{where}: world.{key} must be true or false')
+    return {'name': raw['name'], 'task_id': raw['task_id'], 'task_set': raw['task_set'], 'approvals': dict(approvals),
+            'money_capable': raw.get('money_capable') is True, 'expect_world_pass': raw.get('expect_world_pass', True)}
 
 
 def validate(raw, origin='scenario'):
@@ -89,8 +125,15 @@ def validate(raw, origin='scenario'):
     turns = raw.get('turns')
     if not isinstance(turns, list) or not 1 <= len(turns) <= 12:
         raise ScenarioError(f'{where}: turns must be a list of 1-12 owner turns')
+    world = _world(raw['world'], where) if 'world' in raw else None
     normalized_turns = []
     for index, turn in enumerate(turns):
+        if world is not None:
+            # #484: the owner's words come from the world at run time; the file holds no task text.
+            if turn != {'from_world': True}:
+                raise ScenarioError(f'{where}: a world scenario turn must be {{"from_world": true}}')
+            normalized_turns.append({'say': '', 'note': '', 'note_in_message': False, 'from_world': True})
+            continue
         if isinstance(turn, str):
             turn = {'say': turn}
         if not isinstance(turn, dict) or set(turn) - _TURN_KEYS:
@@ -124,6 +167,12 @@ def validate(raw, origin='scenario'):
     tags = raw.get('tags', [])
     if not isinstance(tags, list) or any(not isinstance(item, str) for item in tags):
         raise ScenarioError(f'{where}: tags must be a list of text')
+    if world is not None:
+        if len(normalized_turns) != 1:
+            raise ScenarioError(f'{where}: a world scenario has exactly one turn, the world task')
+        if any(len(str(raw.get(key) or '')) > WORLD_TEXT_LIMIT for key in ('title', 'good_secretary')):
+            raise ScenarioError(f'{where}: a world scenario keeps title and good_secretary under '
+                                f'{WORLD_TEXT_LIMIT} characters (no task text)')
     return {'id': ident, 'title': str(raw.get('title') or ident), 'split': split, 'turns': normalized_turns,
             'rubric': list(dict.fromkeys(rubric)),
             'expect': {'memory_any': _groups(expect, 'memory_any'),
@@ -131,7 +180,8 @@ def validate(raw, origin='scenario'):
                        'preparation': expect.get('preparation') is True,
                        'no_memory_of_request': expect.get('no_memory_of_request') is True,
                        'allow_status': list(allow_status)},
-            'good_secretary': str(raw.get('good_secretary') or ''), 'tags': list(tags), 'channel': channel}
+            'good_secretary': str(raw.get('good_secretary') or ''), 'tags': list(tags), 'channel': channel,
+            **({'world': world} if world is not None else {})}
 
 
 def load_file(path):
@@ -144,8 +194,11 @@ def load_file(path):
     return [validate(item, path.name) for item in items]
 
 
-def load(dirs=None, include_local=True, split=None, ids=None, environ=None):
+def load(dirs=None, include_local=True, split=None, ids=None, environ=None, world=None):
     """Load scenarios from the bundled set and, by default, the owner-local folders.
+
+    ``world`` selects world scenarios (#484): ``None`` leaves them out (the
+    rubric sweep), a world name keeps only that world's scenarios.
 
     Every scenario records its ``source`` (``bundled`` or ``local``) so a
     report can keep owner-derived cases apart without printing their text.
@@ -163,7 +216,7 @@ def load(dirs=None, include_local=True, split=None, ids=None, environ=None):
                 if scenario['id'] in found:
                     raise ScenarioError(f'{path.name}: duplicate scenario id {scenario["id"]}')
                 found[scenario['id']] = {**scenario, 'source': source}
-    scenarios = list(found.values())
+    scenarios = [item for item in found.values() if (item.get('world') or {}).get('name') == world]
     if split:
         scenarios = [item for item in scenarios if item['split'] == split]
     if ids:
@@ -175,8 +228,29 @@ def load(dirs=None, include_local=True, split=None, ids=None, environ=None):
     return scenarios
 
 
-def owner_message(turn):
-    """The text actually sent to Still for one turn."""
+def _plain(text):
+    return ' '.join(re.sub(r'[^\w]+', ' ', str(text).casefold()).split())
+
+
+def embedded_world_text(scenario_text, instruction, window=6):
+    """Whether ``scenario_text`` (a scenario file's text) holds any ``window`` consecutive words of ``instruction``.
+
+    The guard behind "scenarios reference task ids only" (#484): the runner
+    checks every world scenario against the instruction it fetched before it
+    sends anything, and the tests check the bundled files.
+    """
+    words, blob = _plain(instruction).split(), f' {_plain(scenario_text)} '
+    if len(words) < window:
+        return bool(words) and f' {" ".join(words)} ' in blob
+    return any(f' {" ".join(words[start:start + window])} ' in blob for start in range(len(words) - window + 1))
+
+
+def owner_message(turn, instruction=None):
+    """The text actually sent to Still for one turn (a world turn sends the world's ``instruction``)."""
+    if turn.get('from_world'):
+        if not isinstance(instruction, str) or not instruction.strip():
+            raise ScenarioError('a world turn needs the world task instruction')
+        return instruction.strip()
     if turn.get('note_in_message') and turn.get('note'):
         return f"({turn['note']}) {turn['say']}"
     return turn['say']
