@@ -180,7 +180,7 @@ class TelegramSurface(ConversationSurface):
         to the Work either way (``ingest_stop``, the ``native_stop`` capability).
         """
         text=text or draft_frame('',0)
-        draft_id=draft_id_for(job['id'])
+        draft_id=draft_id_for(job['id'],state.said)
         can_stop=self.capabilities.native_stop
         if not state.rich_draft_failed:
             sent,refused=self._attempt('send_rich_message_draft',job['chat_id'],draft_id,rich_draft_blocks(text,note),can_stop=can_stop)
@@ -219,7 +219,9 @@ class TelegramSurface(ConversationSurface):
             with service.store.db() as db:
                 rows=db.execute("SELECT * FROM jobs WHERE channel=? AND chat_id=? AND status IN ('queued','running')",
                                 (f"telegram:{generation}",chat['id'])).fetchall()
-            job=next((dict(row) for row in rows if draft_id_for(row['id'])==draft_id),None)
+            # #518: the draft id changes after each message the Work sent; any of them stops it.
+            job=next((dict(row) for row in rows
+                      if draft_id in {draft_id_for(row['id'],said) for said in range(service.store.interim_count(row['id'])+1)}),None)
             if not job:return 'finished'
             state=service.presence.setdefault(job['id'],WaitState())
             # A repeated Stop update (double tap, redelivery) says nothing twice.
