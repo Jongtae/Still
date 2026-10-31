@@ -190,7 +190,12 @@ class CookieJar:
         """The decrypted payload; an absent jar is empty.  Raises JarError when unreadable."""
         if not self.path.is_file():
             return {'sites': {}}
-        token = self.path.read_bytes()
+        return self._decrypt(self.path.read_bytes())
+
+    def _decrypt(self, token):
+        """The payload of ``token`` (None: no jar).  Raises JarError when unreadable; takes no lock."""
+        if token is None:
+            return {'sites': {}}
         try:
             payload = json.loads(self._cipher().decrypt(token).decode())
         except InvalidToken:
@@ -346,9 +351,12 @@ class CookieJar:
         exists but cannot be read.
         """
         host = str(host or '').lower().rstrip('.')
+        # #488 review: only the file read holds the lock; the Keychain and decryption run outside it,
+        # so Settings' ``cached_sites`` never waits on a slow Keychain behind this reading.
         with self._lock:
-            sites = self._read()['sites']
+            token = self.path.read_bytes() if self.path.is_file() else None
             now = self.clock()
+        sites = self._decrypt(token)['sites']
         marks = []
         for site, entry in sites.items():
             if not isinstance(entry, dict) or not (host == site or host.endswith('.' + site) or site.endswith('.' + host)):
