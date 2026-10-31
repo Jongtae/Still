@@ -402,8 +402,8 @@ class GmailModify(unittest.TestCase):
         self.exchange_calls.clear()
         refused = [('POST', path) for path in ('send', 'messages/send', 'drafts', 'drafts/send', 'drafts/id/send',
                                               'messages/import', 'messages/insert', 'messages/batchDelete',
-                                              'settings/filters', 'futureEndpoint')]
-        refused += [('DELETE', path) for path in ('messages/id', 'threads/id', 'drafts/id', 'settings/filters/id')]
+                                              'futureEndpoint')]
+        refused += [('DELETE', path) for path in ('messages/id', 'threads/id', 'drafts/id')]
         refused += [('PUT', 'messages/id/modify'), ('PATCH', 'labels'), ('POST', 'labels/id')]
         for method, path in refused:
             with self.subTest(method=method, path=path), self.assertRaises(ApiError) as caught:
@@ -778,3 +778,227 @@ class CalendarWrites(unittest.TestCase):
         self.assertIn('sendUpdates=none', writable['note'])
         self.assertEqual(connection_slots.relayed(('google-calendar', 'google-calendar-write'))['google-calendar']['read_only'],
                          False)
+
+
+class GmailFilters(unittest.TestCase):
+    """#502: a separate grant and declarative pre-dispatch body boundary."""
+
+    FILTER_TOKEN = 'ya29.filters-access-token-value'
+    connect = GmailModify.connect
+    read_connect = GmailModify.read_connect
+    call = GmailModify.call
+    claims = GmailModify.claims
+    record = GmailModify.record
+
+    def setUp(self):
+        GmailModify.setUp(self)
+        from personal_agent.calendar_oauth import CalendarOAuth, GMAIL_MODIFY_GRANT, GMAIL_FILTERS_GRANT
+        self.oauth = CalendarOAuth(self.oauth.store, 'client', self.oauth.redirect_uri, registry=self.registry,
+                                  grants=(GMAIL_MODIFY_GRANT, GMAIL_FILTERS_GRANT),
+                                  now=lambda: self.clock[0], allow_localhost=True)
+        self.service.gmail_modify_oauth = self.oauth
+        self.scope = None
+
+    def exchange(self, payload):
+        from personal_agent.gmail import GMAIL_MODIFY_SCOPE, GMAIL_SETTINGS_BASIC_SCOPE
+        self.exchange_calls.append(dict(payload))
+        filters = self.scope == GMAIL_SETTINGS_BASIC_SCOPE or payload.get('refresh_token') == 'filters-refresh'
+        return {'access_token': self.FILTER_TOKEN if filters else TOKEN,
+                'refresh_token': 'filters-refresh' if filters else 'modify-refresh', 'expires_in': 3600,
+                'scope': GMAIL_SETTINGS_BASIC_SCOPE if filters else GMAIL_MODIFY_SCOPE}
+
+    def connect_filters(self):
+        from urllib.parse import parse_qs, urlsplit
+        from personal_agent.gmail import GMAIL_SETTINGS_BASIC_SCOPE
+        self.scope = GMAIL_SETTINGS_BASIC_SCOPE
+        offer = self.service.begin_gmail_modify_connection('filters')
+        query = parse_qs(urlsplit(offer['authorization_url']).query)
+        try:
+            return self.service.complete_gmail_modify_connection({'state': query['state'][0], 'code': 'fixture'})
+        finally:
+            self.scope = None
+
+    def test_filter_mutations_use_only_filters_token_and_no_approval(self):
+        from unittest.mock import patch
+        self.connect()
+        self.connect_filters()
+        with patch.object(self.api, '_approve', side_effect=AssertionError('no approval')):
+            self.call('POST', 'settings/filters', body='{"action":{"removeLabelIds":["INBOX"]}}')
+            self.call('DELETE', 'settings/filters/filter_1')
+        self.assertEqual(len(self.transport.calls), 2)
+        self.assertEqual([c[2]['Authorization'] for c in self.transport.calls], ['Bearer ' + self.FILTER_TOKEN] * 2)
+        self.assertEqual([c['evidence']['effect'] for c in self.claims()], ['mutate'] * 2)
+        held = connection_slots.build(self.service, 'local-owner')
+        self.assertEqual(connection_slots.names(held), ('gmail', 'gmail-filters', 'gmail-modify'))
+        self.assertTrue(callable(connection_slots.relayed(connection_slots.names(held))['gmail']['write_tokens']['gmail-filters']))
+
+    def test_forward_and_uncheckable_bodies_refused_before_refresh(self):
+        from personal_agent.api_requests import PRE_DISPATCH_CODES, UNUSABLE_CALL_CODES
+        self.connect()
+        self.connect_filters()
+        self.clock[0] += 4000
+        self.exchange_calls.clear()
+        bodies = [json.dumps({'action': {'forward': v}}) for v in ('x@y', '', None)]
+        bodies += ['{"action":{"forward":"x@y"},"action":{"addLabelIds":["L"]}}',
+                   '{"action":{"forward":"x@y","forward":null}}',
+                   '{"action":{"addLabelIds":[],"addLabelIds":["L"]}}',
+                   r'{"action":{"\u0066orward":"x@y"}}', 'not json', '[]']
+        for body in bodies:
+            with self.subTest(body=body), self.assertRaises(ApiError) as caught:
+                self.call('POST', 'settings/filters', body=body)
+            self.assertEqual(caught.exception.code, 'api_body_refused')
+            self.assertIn('전달(forward)', str(caught.exception))
+            self.assertIn(caught.exception.code, PRE_DISPATCH_CODES)
+            self.assertNotIn(caught.exception.code, UNUSABLE_CALL_CODES)
+        self.assertEqual((self.transport.calls, self.claims(), self.exchange_calls), ([], [], []))
+
+    def test_forward_through_the_query_string_is_refused_too(self):
+        self.connect()
+        self.connect_filters()
+        for query in ('action.forward=x%40y', 'filter.action.forward=x%40y', 'forward=', 'alt=json&action.forward=x'):
+            with self.subTest(query=query), self.assertRaises(ApiError) as caught:
+                self.api.call({'slot': 'gmail', 'method': 'POST', 'effect': 'read', 'body': '{"action":{}}',
+                               'url': 'https://gmail.googleapis.com/gmail/v1/users/me/settings/filters?' + query})
+            self.assertEqual(caught.exception.code, 'api_body_refused')
+        self.assertEqual((self.transport.calls, self.claims()), ([], []))
+        self.api.call({'slot': 'gmail', 'method': 'POST', 'effect': 'read', 'body': '{"action":{}}',
+                       'url': 'https://gmail.googleapis.com/gmail/v1/users/me/settings/filters?alt=json'})
+        self.assertEqual(len(self.transport.calls), 1)
+
+    def test_the_write_note_tells_the_ai_about_filters_and_the_forward_refusal(self):
+        self.connect()
+        note = connection_slots.build(self.service, 'local-owner')['gmail']['note']
+        for phrase in ('settings/filters', "'gmail-filters'", 'forward', 'other settings writes are unavailable'):
+            self.assertIn(phrase, note)
+
+    def test_other_settings_paths_stay_refused(self):
+        self.connect()
+        self.connect_filters()
+        self.clock[0] += 4000
+        self.exchange_calls.clear()
+        paths = [('POST', p) for p in ('forwardingAddresses', 'sendAs', 'delegates', 'filters/id')]
+        paths += [('PUT', p) for p in ('vacation', 'autoForwarding', 'imap', 'pop', 'language', 'filters/id')]
+        paths += [('PATCH', 'filters/id'), ('DELETE', 'filters')]
+        for method, path in paths:
+            with self.subTest(method=method, path=path), self.assertRaises(ApiError) as caught:
+                self.call(method, 'settings/' + path, body='{}')
+            self.assertEqual(caught.exception.code, 'api_path_refused')
+        self.assertEqual((self.transport.calls, self.claims(), self.exchange_calls), ([], [], []))
+
+    def test_missing_filters_grant_parks_and_resumes_without_using_modify(self):
+        from personal_agent.agent_runtime import _error_observation
+        self.connect()
+        self.clock[0] += 4000
+        self.exchange_calls.clear()
+        with self.assertRaises(ApiError) as caught:
+            self.call('POST', 'settings/filters', body='{}')
+        self.assertEqual((caught.exception.code, caught.exception.requires), ('api_read_only', 'gmail-filters'))
+        self.assertIn('/gmail-modify?grant=filters', str(caught.exception))
+        self.assertEqual((self.transport.calls, self.claims(), self.exchange_calls), ([], [], []))
+        self.record('api_request', 'failed', {'scope': 's', 'call_id': 'f1', 'host_action': 'api_request',
+                                             **_error_observation(caught.exception, True, 'api_request'),
+                                             'declared_effect': 'read'})
+        self.assertEqual(self.service.connector_need(type('C', (), {'memo': {}})(), self.job), 'gmail-filters')
+        self.assertTrue(self.service.park_for_connector_read(self.store.job(self.job), 'gmail-filters'))
+        result = self.connect_filters()
+        self.assertEqual(result['work_id'], self.job)
+        self.assertTrue(result['resumed'])
+        self.call('POST', 'messages/batchModify', body='{}')
+        self.assertEqual(self.transport.calls[-1][2]['Authorization'], 'Bearer ' + TOKEN)
+
+    def test_old_single_grant_connection_remains_connected(self):
+        from personal_agent.calendar_oauth import CalendarOAuth, GMAIL_MODIFY_GRANT, GMAIL_FILTERS_GRANT
+        old = CalendarOAuth(self.oauth.store, 'client', self.oauth.redirect_uri, registry=self.registry,
+                            grants=(GMAIL_MODIFY_GRANT,), now=lambda: self.clock[0], allow_localhost=True)
+        self.service.gmail_modify_oauth = old
+        self.connect()
+        self.service.gmail_modify_oauth = CalendarOAuth(self.oauth.store, 'client', self.oauth.redirect_uri,
+            registry=self.registry, grants=(GMAIL_MODIFY_GRANT, GMAIL_FILTERS_GRANT),
+            now=lambda: self.clock[0], allow_localhost=True)
+        self.assertEqual(self.registry.status('local-owner', 'gmail-modify').state, ConnectorState.CONNECTED)
+        self.assertTrue(self.service.connector_credential_current('gmail-modify'))
+        self.call('POST', 'messages/batchModify', body='{}')
+        self.assertEqual(self.transport.calls[-1][2]['Authorization'], 'Bearer ' + TOKEN)
+
+    def test_filter_scopes_are_exact_and_sharing_is_never_requested(self):
+        from urllib.parse import parse_qs, urlsplit
+        from personal_agent.calendar_oauth import _GRANTS, CalendarOAuthError
+        from personal_agent.gmail import GMAIL_FILTERS_SPEC, GMAIL_SETTINGS_BASIC_SCOPE, GMAIL_MODIFY_SCOPE
+        self.assertEqual(GMAIL_FILTERS_SPEC.required_scopes, (GMAIL_SETTINGS_BASIC_SCOPE,))
+        sharing = 'https://www.googleapis.com/auth/gmail.settings.sharing'
+        self.assertFalse(any(sharing in spec.required_scopes for spec in _GRANTS.values()))
+        for scope in (sharing, GMAIL_SETTINGS_BASIC_SCOPE + ' ' + sharing,
+                      GMAIL_SETTINGS_BASIC_SCOPE + ' ' + GMAIL_MODIFY_SCOPE, GMAIL_MODIFY_SCOPE):
+            query = parse_qs(urlsplit(self.service.begin_gmail_modify_connection('filters')['authorization_url']).query)
+            self.assertEqual(query['scope'], [GMAIL_SETTINGS_BASIC_SCOPE])
+            self.assertEqual(query['include_granted_scopes'], ['false'])
+            with self.subTest(scope=scope), self.assertRaises(CalendarOAuthError):
+                self.oauth.complete_oauth('local-owner', {'state': query['state'][0], 'code': 'fixture'},
+                    lambda payload: {'access_token': self.FILTER_TOKEN, 'refresh_token': 'refresh',
+                                     'expires_in': 3600, 'scope': scope})
+            self.assertEqual(self.registry.status('local-owner', 'gmail-filters').state, ConnectorState.DISCONNECTED)
+        with self.assertRaises(CalendarOAuthError):
+            self.oauth.begin_oauth('local-owner', write=True)
+        with self.assertRaises(ValueError):
+            self.service.begin_gmail_modify_connection('other')
+
+    def test_settings_revocation_only_removes_the_named_grant(self):
+        self.read_connect()
+        self.connect()
+        self.connect_filters()
+        self.service.google_revoke_transport = lambda *args, **kwargs: (200, {}, b'')
+        revoker = self.service.google_revocation()
+        preview = revoker.preview('owner-session', 'gmail-filters')
+        self.assertEqual(preview['state'], 'connected')
+        revoker.disconnect('owner-session', 'gmail-filters', preview['confirmation'])
+        with self.assertRaises(ApiError) as caught:
+            self.call('POST', 'settings/filters', body='{}')
+        self.assertEqual(caught.exception.requires, 'gmail-filters')
+        self.call('POST', 'messages/batchModify', body='{}')
+        self.assertEqual(self.transport.calls[-1][2]['Authorization'], 'Bearer ' + TOKEN)
+        preview = revoker.preview('owner-session', 'gmail-modify')
+        revoker.disconnect('owner-session', 'gmail-modify', preview['confirmation'])
+        self.assertTrue(connection_slots.build(self.service, 'local-owner')['gmail']['read_only'])
+
+    def test_generic_body_rule_and_path_grant_on_a_synthetic_slot(self):
+        from unittest.mock import patch
+        spec = {'hosts': ('example.com',), 'paths': ('/v1/',), 'note': 'read', 'write_note': 'write',
+                'shortcuts': (), 'write_paths': (('POST', '/v1/items', 'item-write'),),
+                'write_body_refuse': (('POST', '/v1/items', ('options', 'export'), 'export refused'),)}
+        with patch.dict(connection_slots.SLOT_SPECS, {'items': spec}):
+            slot = connection_slots._slot('items', lambda: (_ for _ in ()).throw(AssertionError('base token')),
+                writable=True, write_tokens={'item-write': lambda: 'item-token'})
+        api = ApiRequests(self.store, self.job, transport=self.transport, connections=lambda: {'items': slot})
+        args = {'slot': 'items', 'method': 'POST', 'url': 'https://example.com/v1/items'}
+        with self.assertRaises(ApiError) as caught:
+            api.call({**args, 'body': '{"options":{"export":null}}'})
+        self.assertEqual(caught.exception.code, 'api_body_refused')
+        self.assertEqual((self.transport.calls, self.claims()), ([], []))
+        api.call({**args, 'body': '{}'})
+        self.assertEqual(self.transport.calls[-1][2]['Authorization'], 'Bearer item-token')
+        api.call(args)  # No body contains no forbidden key.
+
+    def test_filters_revision_change_leaves_inflight_response_unused(self):
+        from personal_agent.calendar_oauth import GMAIL_FILTERS_GRANT
+        self.connect()
+        self.connect_filters()
+        def transport(*args):
+            response = self.transport(*args)
+            self.oauth.disconnect('local-owner', lambda *unused: None, grant=GMAIL_FILTERS_GRANT)
+            self.connect_filters()
+            return response
+        self.api.transport = transport
+        with self.assertRaises(ApiError):
+            self.call('POST', 'settings/filters', body='{}')
+        self.assertEqual(len(self.transport.calls), 1)
+
+    def test_fingerprint_binds_only_present_body_rules_and_grant_revisions(self):
+        from personal_agent.api_credentials import fingerprint
+        self.connect()
+        self.connect_filters()
+        slot = connection_slots.build(self.service, 'local-owner')['gmail']
+        original = fingerprint('gmail', slot)
+        for key in ('write_body_refuse', 'write_grant_revisions'):
+            changed = dict(slot)
+            changed.pop(key)
+            self.assertNotEqual(original, fingerprint('gmail', changed))

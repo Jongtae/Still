@@ -58,7 +58,7 @@ from .connector_http import (
     token_endpoint_refused,
     token_response_unusable,
 )
-from .gmail import GMAIL_MODIFY_SPEC
+from .gmail import GMAIL_MODIFY_SPEC, GMAIL_FILTERS_SPEC
 from .google_calendar import CALENDAR_API, GoogleCalendarHTTPError
 from .google_drive_read import DRIVE_API, DRIVE_SPEC, DriveHTTPError
 
@@ -72,6 +72,7 @@ WRITE_GRANT = "write"
 #: lifecycle check below; a ``CalendarOAuth`` built for Drive serves only it.
 DRIVE_GRANT = "drive"
 GMAIL_MODIFY_GRANT = "gmail-modify"
+GMAIL_FILTERS_GRANT = "gmail-filters"
 GMAIL_MODIFY_SECRET_NAMESPACE = "encrypted:gmail-modify:"
 CALENDAR_GRANTS = (READ_GRANT, WRITE_GRANT)
 # The two grants are named by the connector definitions that already exist in
@@ -83,6 +84,7 @@ _GRANTS: dict[str, ConnectorSpec] = {
     WRITE_GRANT: CALENDAR_WRITE_SPEC,
     DRIVE_GRANT: DRIVE_SPEC,
     GMAIL_MODIFY_GRANT: GMAIL_MODIFY_SPEC,
+    GMAIL_FILTERS_GRANT: GMAIL_FILTERS_SPEC,
 }
 # A Calendar secret must never be reachable through a Gmail-namespaced key even
 # when both stores wrap the same owner store with the same local key. See the
@@ -785,12 +787,12 @@ class CalendarOAuth:
         """The one grant a call names, refused unless this instance serves it.
 
         ``write`` keeps Calendar's read/write selection.  An instance serving a
-        single grant (Drive) resolves the default call to that grant, so the
-        shared revocation adapter can address it without naming it.
+        non-Calendar grant resolves the default call to its first grant (#502),
+        so existing callers and the shared revocation adapter keep their default.
         """
         if grant is None:
             label = _grant_label(write)
-            if len(self.grants) == 1 and label == READ_GRANT:
+            if label == READ_GRANT and READ_GRANT not in self.grants:
                 label = self.grants[0]
         else:
             label = grant
@@ -1005,7 +1007,7 @@ class CalendarOAuth:
         if not isinstance(state, str):
             return None
         label = state.split(".", 1)[0]
-        return label if label in (READ_GRANT, WRITE_GRANT) else None
+        return label if label in _GRANTS else None
 
     def token_slots(self, owner_key):
         """Host-only migration slot names for this holder's declared grants."""

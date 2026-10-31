@@ -1567,6 +1567,7 @@ CONNECTOR_BY_INTENT = {
 CONNECTOR_LABELS = {
     GMAIL_CONNECTOR_ID: 'Gmail',
     GMAIL_MODIFY_CONNECTOR_ID: msg('handoff.modify_gmail'),
+    'gmail-filters': msg('handoff.gmail_filters'),
     CALENDAR_WRITE_CONNECTOR_ID: msg('handoff.create_google_calendar_events'),
     DRIVE_CONNECTOR_ID: 'Google Drive',
 }

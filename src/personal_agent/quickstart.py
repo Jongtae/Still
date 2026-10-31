@@ -27,7 +27,7 @@ from .browser_worker import EMBEDDED_UA_TOKEN
 from . import first_run
 from .quickstart_store import QuickStore
 from .calendar import CalendarConnector
-from .calendar_oauth import (GMAIL_MODIFY_GRANT, GMAIL_MODIFY_SECRET_NAMESPACE, DRIVE_GRANT, DRIVE_SECRET_NAMESPACE, CalendarOAuth, EncryptedCalendarSecretStore,
+from .calendar_oauth import (GMAIL_FILTERS_GRANT, GMAIL_MODIFY_GRANT, GMAIL_MODIFY_SECRET_NAMESPACE, DRIVE_GRANT, DRIVE_SECRET_NAMESPACE, CalendarOAuth, EncryptedCalendarSecretStore,
                              calendar_transport, drive_transport)
 from .google_drive_read import GoogleDriveReader
 from .browser_jar import KeychainKey, store_account
@@ -239,7 +239,7 @@ def build_google_connectors(store, client, port, key_provider, registry, *, gmai
         built['gmail_modify_oauth']=CalendarOAuth(
             EncryptedCalendarSecretStore(store,key_provider,namespace=GMAIL_MODIFY_SECRET_NAMESPACE),
             client_id,f'{base}{GMAIL_MODIFY_CALLBACK_PATH}',registry=registry,allow_localhost=True,
-            grants=(GMAIL_MODIFY_GRANT,))
+            grants=(GMAIL_MODIFY_GRANT,GMAIL_FILTERS_GRANT))
     built['drive_oauth']=drive_oauth
     built['drive_reader_factory']=lambda owner_id:GoogleDriveReader(drive_transport(drive_oauth,owner_id,exchange))
     return built
@@ -591,7 +591,7 @@ def configured_service(store, environ=None):
         gmail_modify_oauth=CalendarOAuth(
             EncryptedCalendarSecretStore(store,gmail_key,namespace=GMAIL_MODIFY_SECRET_NAMESPACE),
             gmail_client_id,f'http://localhost:{gmail_port}{GMAIL_MODIFY_CALLBACK_PATH}',
-            registry=connector_registry,allow_localhost=True,grants=(GMAIL_MODIFY_GRANT,))
+            registry=connector_registry,allow_localhost=True,grants=(GMAIL_MODIFY_GRANT,GMAIL_FILTERS_GRANT))
     # --- Google Calendar (J4) -------------------------------------------
     # Construction and routes land together, on purpose. `CalendarConnector`
     # registers both specs on construction, and registering them without a
@@ -1140,7 +1140,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 if not self.auth():return
                 if self.tunneled():
                     return self.reply(400,b'Open Still on its local address to connect Gmail modify.','text/plain; charset=utf-8')
-                try:return self.redirect(service.begin_gmail_modify_connection()['authorization_url'])
+                try:return self.redirect(service.begin_gmail_modify_connection('filters' if parse_qs(parts.query).get('grant',[''])[0]=='filters' else 'modify')['authorization_url'])
                 except (AttributeError, ValueError, KeyError):
                     return self.reply(400,b'Gmail modify connection is unavailable.','text/plain; charset=utf-8')
             if path==GMAIL_MODIFY_CALLBACK_PATH:

@@ -236,7 +236,7 @@ class _Connection:
         return [c for c in (self.pending() or {}).get("credentials", []) if isinstance(c, dict)]
 
 
-def registry_connection(connector_id, label, holder, owners, *, write=None):
+def registry_connection(connector_id, label, holder, owners, *, write=None, grant=None):
     """Adapter for a ConnectorRegistry-backed connection (Gmail, Calendar).
 
     ``owners`` returns every owner identity this installation can hold the
@@ -245,6 +245,8 @@ def registry_connection(connector_id, label, holder, owners, *, write=None):
     Settings resolved the other.
     """
     kwargs = {} if write is None else {"write": write}
+    if grant is not None:
+        kwargs["grant"] = grant
 
     def statuses():
         return [holder.status(owner, **kwargs) for owner in owners()]
