@@ -55,6 +55,7 @@ GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
 GMAIL_MODIFY_SPEC = ConnectorSpec(GMAIL_MODIFY_CONNECTOR_ID, (GMAIL_MODIFY_SCOPE,))
 AUTHORIZATION_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 MESSAGES_ENDPOINT = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
+PROFILE_ENDPOINT = "https://gmail.googleapis.com/gmail/v1/users/me/profile"
 PENDING_SECRET_KEY = "gmail_oauth_pending"
 TOKEN_SECRET_KEY = "gmail_oauth_tokens"
 _MAX_RESULTS = 20
@@ -508,6 +509,7 @@ class GmailConnector:
         # #1172: with an exchange, an expired access token is renewed with the
         # stored refresh token before a request instead of requiring reconnect.
         self.token_exchange = token_exchange
+        self._account_emails: dict[str, tuple[str, str | None]] = {}
         self.now = now
         self.oauth_ttl_seconds = float(oauth_ttl_seconds)
         self.registry = registry or ConnectorRegistry(store, (GMAIL_CONNECTOR,), clock=now)
@@ -714,6 +716,46 @@ class GmailConnector:
             return read(True)
         except _RenewedAfterRejection:
             return read(False)
+
+    def account_email(self, owner_id: str, *, expected_connection_revision: str | None = None) -> str | None:
+        """Best-effort web account selector, retained only for the current connection."""
+        try:
+            return self._with_one_renewal(
+                lambda renew: self._account_email(owner_id, expected_connection_revision, renew)
+            )
+        except GmailReauthenticationRequired:
+            raise
+        except GmailError:
+            return None
+
+    def _account_email(self, owner_id: str, expected_revision: str | None, renew: bool) -> str | None:
+        headers, revision, access_token = self._authorization_context(owner_id)
+        if expected_revision is not None and revision != expected_revision:
+            return None
+        owner_key = _owner_key(owner_id)
+        cached = self._account_emails.get(owner_key)
+        if cached is not None and cached[0] == revision:
+            self._assert_current_request(owner_id, revision, access_token)
+            return cached[1]
+        try:
+            response = self._get(owner_id, PROFILE_ENDPOINT, {}, headers, revision, access_token, renew=renew)
+        except GmailReauthenticationRequired:
+            raise
+        except GmailError:
+            # A failed read is not an answer: the next call asks again.
+            self._assert_current_request(owner_id, revision, access_token)
+            return None
+        value = response.get("emailAddress") if isinstance(response, dict) else None
+        email = value if (
+            isinstance(value, str)
+            and 3 <= len(value) <= 254
+            and value.count("@") == 1
+            and all(value.split("@"))
+            and not any(char.isspace() or ord(char) < 32 or char in "/#?\x7f" for char in value)
+        ) else None
+        self._assert_current_request(owner_id, revision, access_token)
+        self._account_emails[owner_key] = (revision, email)
+        return email
 
     def search(self, owner_id: str, query: str, *, max_results: int = 10) -> tuple[GmailSearchResult, ...]:
         if not isinstance(query, str) or not query.strip() or len(query) > _MAX_QUERY_LENGTH:
@@ -1569,9 +1611,13 @@ class GmailWorkerReader:
 
     def search(self, query: str, limit: int = _MAX_RESULTS) -> dict:
         rows = self.connector.search(self.owner_id, query, max_results=limit)
+        email = self.connector.account_email(
+            self.owner_id, expected_connection_revision=rows[0].connection_revision
+        ) if rows else None
         return {
             "messages": [
-                {key: row.as_dict()[key] for key in ("message_id", "thread_id", "subject", "sender", "date")}
+                {**{key: row.as_dict()[key] for key in ("message_id", "thread_id", "subject", "sender", "date")},
+                 "link": self._link(row.message_id, email)}
                 for row in rows
             ],
             # Gmail may hold more matches than one page returned.
@@ -1581,6 +1627,8 @@ class GmailWorkerReader:
     def read(self, message_id: str) -> dict:
         revision = self.connector.status(self.owner_id).get("connection_revision")
         message = self.connector.read_message(self.owner_id, message_id, expected_connection_revision=revision)
+        email = self.connector.account_email(self.owner_id, expected_connection_revision=message.connection_revision)
+        link = self._link(message.message_id, email)
         text = message.body
         if message.mime_type == "text/html":
             from .local_tools import _PageText
@@ -1596,5 +1644,11 @@ class GmailWorkerReader:
             "mime_type": message.mime_type,
             "content": content,
             "truncated": len(text) > len(content),
-            "sources": [f"Gmail message {message.message_id}"],
+            "link": link,
+            "sources": [link],
         }
+
+    @staticmethod
+    def _link(message_id: str, email: str | None) -> str:
+        account = "u/" + quote(email, safe="@") + "/" if email else ""
+        return "https://mail.google.com/mail/" + account + "#all/" + quote(message_id, safe="")

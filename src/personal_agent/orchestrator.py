@@ -108,7 +108,7 @@ KIND_TIERS = {
 }
 #: #473: newest terminal CLI events across all workers, including failed attempts.
 WORKER_OBSERVATION_WINDOW = 200
-WORKER_USAGE_KEYS = 4
+WORKER_USAGE_KEYS = 3
 
 #: Model cost tier from its rank in the route's cheapest-first list (#679).
 TIER_LOWEST, TIER_HIGHER, TIER_UNRANKED = 'lowest-cost', 'higher-cost', 'unranked'
@@ -373,13 +373,18 @@ def worker_observations(store):
                 continue
         except (TypeError, ValueError, KeyError):
             continue
-        sample = samples.setdefault((worker, model), {'seconds': [], 'usage': {}})
+        sample = samples.setdefault((worker, model), {'seconds': [], 'usage': {}, 'tool_calls': []})
         sample['seconds'].append(duration)
         fields = reported_usage(end)
         usage = dict(fields.get('usage') or {})
-        usage.update({key: fields[key] for key in ('num_turns', 'cli_tool_calls') if key in fields})
+        if 'num_turns' in fields:
+            usage['num_turns'] = fields['num_turns']
         for key, value in usage.items():
             sample['usage'].setdefault(key, []).append(value)
+        # #498: task size beside the time, paired per attempt; a partial count is not a reported count.
+        calls = fields.get('cli_tool_calls')
+        if type(calls) is int and calls >= 0 and not fields.get('cli_tool_calls_partial'):
+            sample['tool_calls'].append((duration, calls))
     return samples
 
 
@@ -389,12 +394,24 @@ def render_worker_observation(sample):
         return '; observed: not measured; CLI-reported per attempt (median): not reported'
     seconds = sample['seconds']
     usage = sample['usage']
-    preferred = ('input_tokens', 'output_tokens', 'num_turns', 'cli_tool_calls')
+    preferred = ('input_tokens', 'output_tokens', 'num_turns')
     keys = [key for key in preferred if key in usage]
     keys += [key for key in sorted(usage, key=lambda key: ('token' not in key, key)) if key not in keys]
     values = ', '.join(f'{key} {round(median(usage[key]))}' for key in keys[:WORKER_USAGE_KEYS]) or 'not reported'
     return (f'; observed: {len(seconds)} attempt{"" if len(seconds) == 1 else "s"}, median {seconds_text(median(seconds))} s '
-            f'({seconds_text(min(seconds))}–{seconds_text(max(seconds))} s); CLI-reported per attempt (median): {values}')
+            f'({seconds_text(min(seconds))}–{seconds_text(max(seconds))} s){render_tool_calls(sample.get("tool_calls") or [], len(seconds))}; '
+            f'CLI-reported per attempt (median): {values}')
+
+
+def render_tool_calls(calls, attempts):
+    """#498: reported tool calls per attempt and seconds per call; facts only, no ranking."""
+    if not calls:
+        return '; tool calls per attempt: not reported'
+    text = f'; tool calls per attempt (median): {round(median(count for _, count in calls))}'
+    if len(calls) < attempts:
+        text += f' (reported in {len(calls)} of {attempts})'
+    per_call = [duration / count for duration, count in calls if count]
+    return text + (f', {seconds_text(median(per_call))} s per call' if per_call else '')
 
 
 def seconds_text(value):

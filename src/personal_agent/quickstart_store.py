@@ -21,6 +21,9 @@ from .conversation_projection import qualify_transcript, turn_qualifier
 
 #: #367: the transcript rows the owner forgot; every AI reader of ``messages`` leaves them out.
 FORGOTTEN_MESSAGE_IDS='SELECT message_id FROM forgotten_messages'
+#: #452: what a Memory row rests on (NULL: unknown, every row written before).
+MEMORY_BASES=('owner_said','inferred','observed')
+MEMORY_EVIDENCE_CHARS=300
 #: #380: the ``forget_record`` actions that change what Still keeps about the owner.
 OWNER_STATE_ACTIONS=('forget','delete','undo')
 
@@ -304,7 +307,10 @@ class QuickStore:
                               # #425: who wrote a row when it was not a request's own save ('dream': the look back).
                               ('origin','TEXT'),
                               # #443: cited Work ids as JSON; NULL keeps the legacy anchor lookup.
-                              ('source_works','TEXT')):
+                              ('source_works','TEXT'),
+                              # #452: what the row rests on - the owner's own words, an inference - its quoted
+                              # evidence and the owner's message it was found in; NULL is unknown (older rows).
+                              ('basis','TEXT'),('evidence','TEXT'),('evidence_message','TEXT')):
                 if name not in memory_columns: db.execute(f'ALTER TABLE memories ADD COLUMN {name} {kind}')
             candidate_columns={row['name'] for row in db.execute('PRAGMA table_info(memory_candidates)')}
             for name,kind in (('owner_key','TEXT'),('work_key','TEXT'),('content_digest','TEXT'),('decided','REAL'),('resulting_memory_id','TEXT')):
@@ -911,8 +917,9 @@ class QuickStore:
         if not row:return None
         value=dict(row)
         return {key:value[key] for key in ('id','memory_key','content','created','supersedes','state','content_digest','candidate_id',
-                                           'valid_until','invalidated_by','invalidation_reason','invalidated_at','origin')
-                if key in value and (key != 'origin' or value[key] is not None)}
+                                           'valid_until','invalidated_by','invalidation_reason','invalidated_at','origin',
+                                           'basis','evidence','evidence_message')
+                if key in value and (key not in ('origin','basis','evidence','evidence_message') or value[key] is not None)}
 
     #: #220: at most this many earlier rows one save may end.
     MAX_INVALIDATES=3
@@ -940,7 +947,14 @@ class QuickStore:
         return pairs,valid_until
 
     def _save_memory(self, db, memory_key, content, owner_key, work_key=None, candidate_id=None,
-                     preserve_correction_token=None, corrected=False, invalidates=(), valid_until=None, origin=None, source_works=None):
+                     preserve_correction_token=None, corrected=False, invalidates=(), valid_until=None, origin=None, source_works=None,
+                     basis=None, evidence=None, evidence_message=None):
+        if basis is not None and basis not in MEMORY_BASES:
+            raise ValueError('기억의 근거를 확인하세요.')
+        if evidence is not None and (not isinstance(evidence, str) or len(evidence) > MEMORY_EVIDENCE_CHARS):
+            raise ValueError('기억의 근거 문장을 확인하세요.')
+        if evidence_message is not None and not isinstance(evidence_message, (str, int)):
+            raise ValueError('기억의 근거 메시지를 확인하세요.')
         if source_works is not None:
             if not isinstance(source_works, (list, tuple)) or any(not isinstance(work, str) or not work for work in source_works):
                 raise ValueError('기억 출처를 확인하세요.')
@@ -991,8 +1005,9 @@ class QuickStore:
                           WHERE id=? AND owner_key=?""",(memory_id,reason,now,row['id'],owner_key))
             db.execute("""UPDATE memory_approvals SET state='revoked',memory_key=''
                           WHERE owner_key=? AND memory_key=? AND state='issued'""",(owner_key,row['memory_key']))
-        db.execute('INSERT INTO memories(id,memory_key,content,created,supersedes,state,owner_key,work_key,content_digest,candidate_id,valid_until,origin,source_works) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                   (memory_id,memory_key,content,now,previous['id'] if previous else None,'current',owner_key,work_key,digest,candidate_id,valid_until,origin,source_works))
+        db.execute('INSERT INTO memories(id,memory_key,content,created,supersedes,state,owner_key,work_key,content_digest,candidate_id,valid_until,origin,source_works,basis,evidence,evidence_message) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                   (memory_id,memory_key,content,now,previous['id'] if previous else None,'current',owner_key,work_key,digest,candidate_id,valid_until,origin,source_works,
+                    basis,evidence,None if evidence_message is None else str(evidence_message)))
         return self._memory_row(db.execute('SELECT * FROM memories WHERE id=?',(memory_id,)).fetchone())
 
     #: #918 review: the Telegram notice kind a direct save holds in its own transaction.
@@ -1003,7 +1018,8 @@ class QuickStore:
     DELIVERY_SETTLED=('sent','unknown','cancelled')
 
     def save_memory(self, memory_key, content, owner_id='local-owner', work_id=None, notice=False, corrected=False,
-                    invalidates=(), valid_until=None, origin=None, source_works=None):
+                    invalidates=(), valid_until=None, origin=None, source_works=None, basis=None, evidence=None,
+                    evidence_message=None):
         """Write one current Memory row; with ``notice``, hold its owner notice durably in the same transaction (#918).
 
         A direct save by the owner's own AI must never end without the owner
@@ -1017,7 +1033,8 @@ class QuickStore:
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row=self._save_memory(db,memory_key,content,owner_key,work_key,corrected=corrected is True,
-                                  invalidates=invalidates,valid_until=valid_until,origin=origin,source_works=source_works)
+                                  invalidates=invalidates,valid_until=valid_until,origin=origin,source_works=source_works,
+                                  basis=basis,evidence=evidence,evidence_message=evidence_message)
             if notice and isinstance(work_id,str):
                 job=db.execute('SELECT channel,chat_id FROM jobs WHERE id=?',(work_id,)).fetchone()
                 from .conversation_surface import surface_conversation
