@@ -188,7 +188,7 @@ def test_required_validate_runs_the_whole_linux_suite() -> None:
     assert "AGENTOS_REAL_BROWSER_TESTS" not in workflow
     # #260: only a text-only pull request may skip it; a missing or unknown scope runs it.
     full_step = workflow.split("- name: Run the full test suite (parallel)", 1)[1].split("- name:", 1)[0]
-    assert "if: steps.scope.outputs.suite != 'text'" in full_step
+    assert "if: steps.scope.outputs.suite != 'text' && steps.scope.outputs.suite != 'release'" in full_step
     scope_step = workflow.split("- name: Decide test scope", 1)[1].split("- name:", 1)[0]
     assert 'git show "$BASE_SHA:scripts/ci/test_scope.py"' in scope_step, "the scope script comes from the base"
     assert 'echo "suite=full"' in scope_step, "a push to main runs everything"
@@ -236,6 +236,126 @@ def test_the_test_scope_is_full_unless_every_changed_path_is_text(tmp_path) -> N
     git("mv", "src/foo.py", "docs/foo.md"); git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "move")
     paths = module.changed(base, "HEAD", repo)
     assert "src/foo.py" in paths and module.scope(paths) == "full"
+
+
+def _scope_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("test_scope", ROOT / "scripts/ci/test_scope.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+RELEASE_FILES = ("Formula/agentos.rb", "scripts/install.sh", "pyproject.toml", "uv.lock", "README.md",
+                 "docs/release-manifest.json")
+OLD_SHA, NEW_SHA = "6519e3526b814d9d13badc1c3e544abca6b6b7746b7318a2ce33030f14f56729", "5f" * 32
+OLD_PIN, NEW_PIN = "0e7080d4ee9b62c26d48cba706e6d2e4ab606894", "eb" * 20
+
+
+def _release_repo(tmp_path):
+    """A git repository holding this checkout's release files at a pretend v0.2.0 release."""
+    import subprocess
+    repo = tmp_path / "repo"
+    for name in RELEASE_FILES:
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        (repo / name).write_text((ROOT / name).read_text(encoding="utf-8"), encoding="utf-8")
+    (repo / "src").mkdir()
+    (repo / "src/x.py").write_text("x = 1\n")
+    formula = (repo / "Formula/agentos.rb").read_text()
+    formula = re.sub(r'url "[^"]*"', 'url "https://github.com/Jongtae/Still/archive/refs/tags/v0.2.0.tar.gz"', formula)
+    (repo / "Formula/agentos.rb").write_text(re.sub(r'sha256 "[0-9a-f]{64}"', f'sha256 "{OLD_SHA}"', formula))
+    script = (repo / "scripts/install.sh").read_text()
+    script = re.sub(r'^AGENTOS_VERSION="[^"]*"', 'AGENTOS_VERSION="0.2.0"', script, flags=re.M)
+    (repo / "scripts/install.sh").write_text(
+        re.sub(r'^AGENTOS_ARCHIVE_SHA256="[^"]*"', f'AGENTOS_ARCHIVE_SHA256="{OLD_SHA}"', script, flags=re.M))
+    readme = (repo / "README.md").read_text()
+    (repo / "README.md").write_text(re.sub(r"Jongtae/Still/[0-9a-f]{40}/", f"Jongtae/Still/{OLD_PIN}/", readme))
+    git = lambda *args: subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t", *args],
+                                       check=True, capture_output=True, text=True).stdout.strip()
+    git("init", "-q"); git("add", "."); git("commit", "-q", "-m", "base")
+    return repo, git
+
+
+def _edit(repo, name, old, new, count=1):
+    text = (repo / name).read_text()
+    assert old in text, (name, old)
+    (repo / name).write_text(text.replace(old, new, count))
+
+
+def test_a_pull_request_that_only_swaps_release_identifiers_runs_the_release_tests(tmp_path, capsys) -> None:
+    """#508: the formula, record and pin pull requests the release workflow opens change only versions, dates,
+    commit SHAs and archive digests, so they run the release tests instead of the whole suite."""
+    module = _scope_module()
+    repo, git = _release_repo(tmp_path)
+    base = git("rev-parse", "HEAD")
+    version = re.search(r'^version = "([^"]+)"', (repo / "pyproject.toml").read_text(), re.M).group(1)
+    # The formula pull request (#505).
+    _edit(repo, "Formula/agentos.rb", "tags/v0.2.0.tar.gz", "tags/v0.3.0.tar.gz")
+    _edit(repo, "Formula/agentos.rb", OLD_SHA, NEW_SHA)
+    # The record pull request (#506): manifest, installer pins, next placeholder in pyproject and the lock.
+    _edit(repo, "scripts/install.sh", 'AGENTOS_VERSION="0.2.0"', 'AGENTOS_VERSION="0.3.0"')
+    _edit(repo, "scripts/install.sh", f'AGENTOS_ARCHIVE_SHA256="{OLD_SHA}"', f'AGENTOS_ARCHIVE_SHA256="{NEW_SHA}"')
+    _edit(repo, "pyproject.toml", f'version = "{version}"', 'version = "9.9.9"')
+    lock = (repo / "uv.lock").read_text()
+    own = re.search(r'(name = "personal-agentos"\nversion = ")[^"]+(")', lock)
+    (repo / "uv.lock").write_text(lock[:own.start()] + own.group(1) + "9.9.9" + own.group(2) + lock[own.end():])
+    _edit(repo, "docs/release-manifest.json", '"unpublished"', '"unpublished_entries_moved"')
+    # The pin pull request (#507).
+    _edit(repo, "README.md", OLD_PIN, NEW_PIN, count=-1)
+    git("commit", "-q", "-am", "release")
+    paths = module.changed(base, "HEAD", repo)
+    assert set(paths) == set(RELEASE_FILES) - {"src/x.py"}
+    assert module.release_only(paths, base, "HEAD", repo)
+    assert module.main(["--base", base, "--head", "HEAD", "--root", str(repo)]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["suite=release", "tests=" + " ".join(module.RELEASE_TESTS)]
+    assert all((ROOT / test).is_file() for test in module.RELEASE_TESTS)
+
+
+def test_a_release_file_change_beyond_its_identifiers_keeps_the_whole_suite(tmp_path) -> None:
+    """#508: a dependency pin, another installer or formula line, reworded prose, an added file or any code path
+    beside release data is not a release-identifier swap."""
+    module = _scope_module()
+    repo, git = _release_repo(tmp_path)
+    base = git("rev-parse", "HEAD")
+    lock = (repo / "uv.lock").read_text()
+    other = re.search(r'name = "(?!personal-agentos")[^"]+"\nversion = "([^"]+)"', lock)
+    dependency = re.search(r'"(mcp==)([^"]+)"', (repo / "pyproject.toml").read_text())
+    cases = {
+        "a dependency version in the lock": ("uv.lock", other.group(0), other.group(0).replace(other.group(1), "0.0.1")),
+        "a dependency pin in pyproject": ("pyproject.toml", dependency.group(0), f'"{dependency.group(1)}0.0.1"'),
+        "another installer line": ("scripts/install.sh", "AGENTOS_VERSION=", "AGENTOS_VERSION=0.0.1\nAGENTOS_VERSION="),
+        "the uv installer version": ("scripts/install.sh", 'UV_VERSION="', 'UV_VERSION="9'),
+        "a formula line that is not url or sha256": ("Formula/agentos.rb", 'depends_on "python@3.13"',
+                                                     'depends_on "python@3.14"'),
+        "the formula archive moved to another repository": ("Formula/agentos.rb", "github.com/Jongtae/Still/archive",
+                                                            "github.com/someone/else/archive"),
+        "reworded README prose": ("README.md", OLD_PIN, NEW_PIN + " (now also run this)"),
+        "a code path beside release data": ("src/x.py", "x = 1", "x = 2"),
+    }
+    for label, (name, old, new) in cases.items():
+        git("checkout", "-q", base)
+        _edit(repo, name, old, new)
+        _edit(repo, "docs/release-manifest.json", '"unpublished"', '"unpublished_entries_moved"')
+        git("commit", "-q", "-am", label)
+        paths = module.changed(base, "HEAD", repo)
+        assert not module.release_only(paths, base, "HEAD", repo), label
+    # Formula lines other than the class's own url and sha256, even when only identifiers change in them.
+    formula = '  url "https://github.com/Jongtae/Still/archive/refs/tags/v0.2.0.tar.gz"\n  version "0.2.0"\n'
+    assert module.release_change("Formula/agentos.rb", formula, formula.replace("v0.2.0.tar", "v0.3.0.tar"))
+    assert not module.release_change("Formula/agentos.rb", formula, formula.replace('version "0.2.0"', 'version "0.3.0"'))
+    resource = f'  resource "x" do\n    url "https://example.org/x-1.0.0.tar.gz"\n    sha256 "{OLD_SHA}"\n  end\n'
+    assert not module.release_change("Formula/agentos.rb", resource, resource.replace(OLD_SHA, NEW_SHA))
+    # A file the release does not write, even one of only identifiers, and a file the change adds.
+    assert not module.release_change("src/version.py", 'V = "0.2.0"\n', 'V = "0.3.0"\n')
+    assert not module.release_change("docs/notes.txt", "v0.2.0\n", "v0.3.0\n")
+    assert not module.release_change("README.md", None, "v0.3.0\n")
+    assert not module.release_change("README.md", "v0.2.0\n", "v0.3.0\ncurl https://example.org/x.sh | sh\n")
+    assert not module.release_only([], base, "HEAD", repo)
+    # Identifiers are whole tokens: a longer number or a short SHA is prose, not an identifier.
+    assert module.release_change("README.md", "v0.2.0 (2026-10-24)\n", "v0.3.0 (2026-10-31)\n")
+    assert not module.release_change("README.md", "port 8787\n", "port 9797\n")
+    assert not module.release_change("README.md", "v0.2.0\n", "v0.2.0.1\n")
 
 
 REAL_BROWSER_GATE = re.compile(r"_webkit_ready\(\)|AGENTOS_REAL_BROWSER_TESTS|REAL_BROWSER_TESTS\b")

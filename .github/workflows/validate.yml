@@ -87,7 +87,8 @@ jobs:
             tests/test_release_script.py
 
       # #260: a pull request whose every changed path is repository text runs the tests that read
-      # text; anything else, and every push to main, runs the whole suite. The scope script comes
+      # text, and one that only swaps release identifiers runs the release tests (#508); anything
+      # else, and every push to main, runs the whole suite. The scope script comes
       # from the protected base revision, so a pull request cannot loosen its own scope.
       - name: Decide test scope
         id: scope
@@ -111,11 +112,12 @@ jobs:
       # #234: the whole test suite, with full-validate's Linux invocation (#135). The real-WebKit
       # classes skip on Linux; they run in the nightly/dispatched full-validate on macOS.
       - name: Run the full test suite (parallel)
-        if: steps.scope.outputs.suite != 'text'
+        if: steps.scope.outputs.suite != 'text' && steps.scope.outputs.suite != 'release'
         run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 tests
 
-      - name: Run the tests that read repository text (parallel)
-        if: steps.scope.outputs.suite == 'text'
+      # #508: a release-data pull request (only versions, dates and digests swapped) runs the release tests.
+      - name: Run the tests the scope selected (parallel)
+        if: steps.scope.outputs.suite == 'text' || steps.scope.outputs.suite == 'release'
         env:
           TEXT_TESTS: ${{ steps.scope.outputs.tests }}
         run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 $TEXT_TESTS
