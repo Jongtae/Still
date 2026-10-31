@@ -817,6 +817,13 @@ const buttons=node=>descendants(node).filter(n=>n.tag==='button').map(n=>n.textC
   assert(descriptions[0].includes(label));assert(!descriptions[1].includes(label));
  }
  vm.runInContext("setLanguage('ko')",ctx);
+ // #452: what a fact rests on is shown when known; an older row says nothing.
+ ctx.__setSaved({items:[{id:'a',type:'memory',memory_key:'profile.place.home',created:1,basis:'owner_said'},
+                       {id:'b',type:'memory',memory_key:'profile.routine.golf',created:1,basis:'inferred'},
+                       {id:'c',type:'memory',memory_key:'meeting-time',created:1}],has_more:false});
+ ctx.renderSavedMemory();
+ const based=texts($('saved-memory-list'),'settings-row-description');
+ assert(based[0].includes('직접 말함'));assert(based[1].includes('추론'));assert(!/직접 말함|추론|관찰/.test(based[2]));
  ctx.profileRows=[{id:'dream',memory_key:'profile.preference',content:'기억',created:1,origin:'dream'}];
  await ctx.loadOwnerProfile();assert($('owner-profile-list').textContent.includes('밤사이 정리'));
  // Key shape only: the helper never judges content.
