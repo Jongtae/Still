@@ -1004,16 +1004,31 @@ class DecisionRoutes:
         for model in candidates:
             seen = []  # content-free records of the qualification calls, for observed identity only
             engine = make_engine(model, seen.append)
-            checkpoint = (None if job_checkpoint is None
-                          else lambda case_id, index, model=model: job_checkpoint(model, case_id, index))
+            starts = {}  # case id -> index of its first call in ``seen``
+
+            def checkpoint(case_id, index, model=model, seen=seen, starts=starts):
+                starts[case_id] = len(seen)
+                if job_checkpoint is not None:
+                    job_checkpoint(model, case_id, index)
             result = qualify(engine, checkpoint=checkpoint)
             observed = sorted({row.get('observed_model') for row in seen
                                if row.get('observed_model') and row.get('observed_model') != 'not reported'})
             failures = [row.get('failure') for row in seen if row.get('failure')]
-            tried.append({'model': model, 'qualified': result['qualified'], 'score': result['score'],
-                          'ran': result['ran'], 'failure': getattr(engine, 'last_failure', '') or
-                          (failures[-1] if failures else ''),
-                          'observed_model': ', '.join(observed) or 'not reported'})
+            row = {'model': model, 'qualified': result['qualified'], 'score': result['score'],
+                   'ran': result['ran'], 'failure': getattr(engine, 'last_failure', '') or
+                   (failures[-1] if failures else ''),
+                   'observed_model': ', '.join(observed) or 'not reported'}
+            failed = next((case for case in result['results'] if not case['passed']), None)
+            if failed:
+                # #470: name the failed case and what the engine answered there.  The
+                # answer is a declared candidate, bool or number and the cases are
+                # synthetic, so the record stays content free.
+                calls = seen[starts.get(failed['case'], len(seen)):]
+                row.update(failure=row['failure'] or 'case-failed', failed_case=failed['case'],
+                           failed_outcome=failed['outcome'],
+                           failed_answer=calls[-1].get('answer') if calls else None,
+                           failed_confidence=calls[-1].get('confidence') if calls else None)
+            tried.append(row)
             if result['qualified']:
                 if job_checkpoint is not None:
                     # A cancellation that arrived during the last case wins over the commit.
