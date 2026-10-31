@@ -77,7 +77,7 @@ from .conversation_handoff import (CONNECTOR_LABELS, JUDGMENT_NO, JUDGMENT_YES,
                                    AUTHORITY_DEFAULT, INTENT_CONVERSATION,
                                    IntentDecision,
                                    INTENT_GREETING, INTENT_KNOWLEDGE,
-                                   INTENT_MAIL_SEARCH, INTENT_MAIN_AI, INTENT_NOTE_CREATE, INTENT_NOTE_LIST, INTENT_DRIVE_READ,
+                                   INTENT_MAIL_SEARCH, INTENT_MAIN_AI, INTENT_DEVELOPER_MODE, INTENT_NOTE_CREATE, INTENT_NOTE_LIST, INTENT_DRIVE_READ,
                                    INTENT_SETTINGS, INTENT_SAVED_CONTEXT,
                                    INTENT_UNSUPPORTED, INTENT_WORKSPACE_SEARCH, SUPERSEDED_WORK_ERROR)
 # PRESENCE-CAP-01 / #505: contextual local authority handoff.
@@ -4528,9 +4528,8 @@ class AgentService:
             # #855: the settings drafts this Work still offers the owner (id and wording only; no digest).
             task['settings_drafts']=[{'id':row['id'],'effect':row['effect'],'note':row.get('note'),'reason':row.get('reason'),
                                       'expires_at':row.get('expires_at')} for row in awaiting_drafts.get(job['id'],())]
-            # #845: the web's transient typing bubble shows the same observed step
-            # line as the Telegram draft (#718) while the Work runs. Read model
-            # only, computed per poll from recorded events; never stored.
+            # #845/#477: the transient bubble shares the /dev worker gate.
+            # Read model only, computed per poll; never stored.
             if kind=='active':task['step_line']=self._draft_step_text(job,SimpleNamespace(scrubbed=None)) or ''
             # #571: expose the class of the last failed CLI run (e.g. 'auth')
             # so the owner sees the right recovery, not raw CLI output.
@@ -7170,7 +7169,7 @@ class AgentService:
                 state.reaction=emoji
 
     def present_waiting_work(self, now=None):
-        """Show 👀, `typing…` and a Stop-able dots draft for running Work on a paired surface.
+        """Show 👀, `typing…` and a Stop-able draft; /dev adds the worker (#477).
 
         #212: each part only where the surface declares it (``reactions``,
         ``typing``, ``live_drafts``, ``wait_status``); a one-line status uses
@@ -7218,16 +7217,15 @@ class AgentService:
                     state=self.presence.get(job['id'])
                     if state is None or state.stopped:continue
                     if capabilities.wait_status:
-                        line=self._draft_step_text(job,state)
-                        text=msg('surface.waiting_work') if line == NO_STEP_LINE else line
-                        if conversation.show_wait_status(job,state,text,now):
+                        # #477: no words of Still's own; '' is the surface's standard loading state.
+                        if conversation.show_wait_status(job,state,self._draft_step_text(job,state),now):
                             shown.append((job['id'],'wait_status'))
                         continue
                     surface=timing.wait_surface(now-job['created'],
                                                 draft_available=capabilities.live_drafts and not state.draft_failed)
                     if surface not in (WAIT_CHAT_ACTION,WAIT_DRAFT):continue
                     if surface==WAIT_DRAFT:
-                        # #445: observed steps gate approval waits; the draft shows only dots.
+                        # #477: approval waits suppress the draft; /dev gates the worker line.
                         line=self._draft_step_text(job,state)
                         if line is None:
                             continue  # a payment/approval step: the approval prompt is the only surface
@@ -7235,11 +7233,11 @@ class AgentService:
                             # #839: one already-prepared item may ride along, chosen once per Work.
                             if state.attention is None:
                                 state.attention=self.waiting_attention(job,now) or {}
-                            text=draft_frame('',state.dots_frame,state.attention.get('line'))
+                            text=draft_frame(line,state.dots_frame,state.attention.get('line'))
                             # #978: the same text again only to outlive the draft preview; a re-send
                             # restarts the client's reveal of the text.
                             if text!=state.draft_text or now-state.draft_at>=timing.draft_keepalive:
-                                if conversation.show_draft(job,state,draft_frame('',state.dots_frame),state.attention.get('line')):
+                                if conversation.show_draft(job,state,draft_frame(line,state.dots_frame),state.attention.get('line')):
                                     state.draft_at=now
                                     state.draft_text=None if state.rich_draft_retry else text
                                     state.dots_frame+=1
@@ -7356,23 +7354,18 @@ class AgentService:
     APPROVAL_NOTIFICATIONS=('approval_needed','context_approval_needed','browser_approval_needed')
 
     def _draft_step_text(self, job, state):
-        """The observed step line (#718), or None to suppress the draft (#445).
+        """The launched worker in /dev mode, dots alone otherwise (#477).
 
-        NO_STEP_LINE (the draft shows the dots alone) while no step is in
-        flight.  None while an approval prompt is pending or the step in flight is a
-        payment step: the existing approval prompt is then the only surface.
-        A step line was redacted when it was recorded; it passes this Work's
-        saved-value and stored-secret redaction again.  #445: the waiting
-        draft uses only the None gate, never the line.  #881: a
-        line left with a masking mark gives way to the step's plainer line
-        (``step_line``), so the internal mark is never shown.
+        None during approval/payment waits: the prompt is the only surface.
+        Worker Evidence is recorded independently of this presentation gate.
         """
         if any(row['kind'] in self.APPROVAL_NOTIFICATIONS and row['state'] in ('queued','sent')
                for row in self.store.task_notifications(job['id'])):
             return None
         _text,approval=draft_step(self.store.task_events(job['id']),self.live_steps.get(job['id']))
         if approval:return None
-        # Owner direction 2026-10-31: the per-tool step lines meant little; the bubble names who is working.
+        if not self.store.config('developer_mode',False):return NO_STEP_LINE
+        # #458/#477: with /dev on, the bubble names the launched worker, never a per-tool step.
         line=self.live_workers.get(job['id']) or NO_STEP_LINE
         # #460: the worker's sub-agents at work, by the description it gave them.
         agents=list((self.live_agents.get(job['id']) or {}).values())
@@ -11632,6 +11625,16 @@ class AgentService:
             if run.decision.argument and job.get('owner_typed')!=1:
                 raise ValueError('기본 AI는 소유자가 직접 보낸 메시지로만 바꿉니다. 기본 AI는 그대로입니다.')
             run.response=self.main_ai.command(run.decision.argument)
+        elif run.decision.intent==INTENT_DEVELOPER_MODE:
+            # #477: an exact owner command changes only the waiting presentation.
+            run.work_sources.add('owner-settings')
+            argument=run.decision.argument
+            if argument in ('on','off'):
+                self.store.put('developer_mode',argument=='on')
+            enabled=self.store.config('developer_mode',False)
+            run.response=msg('service.developer_mode_on' if enabled else 'service.developer_mode_off')
+            if argument not in ('on','off'):
+                run.response+='\n'+msg('service.developer_mode_usage')
         elif run.decision.intent==INTENT_DRIVE_READ and self.drive_oauth:
             # #1172: the worker reads Drive with its own tools; the
             # selected-file handoff below is the drive.file path only.

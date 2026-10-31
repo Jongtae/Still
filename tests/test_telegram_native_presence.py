@@ -1276,10 +1276,11 @@ class LiveWaitTests(NativePresenceTestCase):
         return seen
 
     def test_running_web_search_sends_a_dots_only_draft_body(self):
-        """#445: an observed search keeps its step line out of the Telegram draft."""
+        """#445/#477: default-off hides the worker and each observed search step."""
         self.connect_model()
 
         def during(job):
+            self.assertTrue(self.service.live_workers.get(job['id']), 'a worker is launched (#477)')
             self.service._observe_cli_step(job['id'], {'state': 'running', 'id': 's1', 'query': '환율'})
             self.service.acknowledge_long_work(now=job['created'] + 6)
             self.assertEqual(self.drafts(), [DOTS[0]])
@@ -1311,7 +1312,7 @@ class LiveWaitTests(NativePresenceTestCase):
 
     def test_an_unchanged_draft_is_kept_alive_despite_step_changes(self):
         """#978: a re-sent identical draft restarts the client's text reveal, so it is not re-sent
-        before ``draft_keepalive``; #445: a new step line never changes the dots."""
+        before ``draft_keepalive``; #445/#477: with /dev off, steps never change the dots."""
         self.connect_model()
         ticks = []
 
@@ -1324,6 +1325,55 @@ class LiveWaitTests(NativePresenceTestCase):
         drafted = [offset for offset, methods in ticks if 'sendRichMessageDraft' in methods]
         self.assertEqual(drafted, [5, 25], drafted)
         self.assertEqual(self.drafts(), [DOTS[0], DOTS[0]], 'the keep-alive repeats only dots (#445)')
+
+    def test_developer_worker_line_dedupes_and_keeps_alive_then_hides_when_off(self):
+        """#477/#978: dedupe compares the same worker/dots text the draft sends."""
+        self.connect_model()
+        self.store.put('developer_mode', True)
+        ticks = []
+
+        def during(job):
+            line = self.service.live_workers[job['id']]
+            ticks.extend(self.tick_every(job, 0, 26))
+            self.assertEqual(self.drafts(), [draft_frame(line, 0)] * 2)
+            self.service.live_workers[job['id']] = 'Codex · gpt-6.1-sol · medium'
+            ticks.extend(self.tick_every(job, 26.25, 28))
+            self.assertEqual(self.drafts()[-1], draft_frame('Codex · gpt-6.1-sol · medium', 0))
+            self.store.put('developer_mode', False)
+            ticks.extend(self.tick_every(job, 28.25, 30))
+            self.assertEqual(self.drafts()[-1], DOTS[0])
+        self.during_model = during
+        job, _ = self.turn('긴 조사 부탁해')
+        self.assertEqual(job['status'], 'succeeded', job.get('error'))
+        drafted = [offset for offset, methods in ticks if 'sendRichMessageDraft' in methods]
+        self.assertEqual(drafted[:2], [5, 25])
+        self.assertEqual(len(drafted), 4, drafted)
+        self.assertTrue(all(len(methods) <= 1 for _offset, methods in ticks))
+
+    def test_approval_and_payment_suppress_drafts_in_both_developer_modes(self):
+        """#477: the approval/payment gate precedes the presentation preference."""
+        self.connect_model()
+
+        def during(job):
+            self.assertTrue(self.service.live_workers.get(job['id']))
+            self.service.queue_notification(job, 'browser_approval_needed', fingerprint='dev-approval')
+            for enabled in (False, True):
+                self.store.put('developer_mode', enabled)
+                self.tick_every(job, 0, 8)
+                self.assertEqual(self.drafts(), [])
+                self.assertIsNone(self.service._draft_step_text(job, self.service.presence[job['id']]))
+            # Exercise payment separately from a pending notification.
+            with mock.patch.object(self.store, 'task_notifications', return_value=[]):
+                self.service.live_steps[job['id']] = {'at': time.time(), 'running': True, 'id': 'pay',
+                                                       'step': {'action': 'browser_click', 'approval': True}}
+                for enabled in (False, True):
+                    self.store.put('developer_mode', enabled)
+                    self.assertIsNone(self.service._draft_step_text(job, self.service.presence[job['id']]))
+                    self.tick_every(job, 10, 18)
+                    self.assertEqual(self.drafts(), [])
+        self.during_model = during
+        job, _ = self.turn('긴 조사 부탁해')
+        self.assertEqual(job['status'], 'succeeded', job.get('error'))
 
     def test_nothing_is_sent_after_the_final_answer(self):
         self.connect_model()
@@ -1343,7 +1393,7 @@ class LiveWaitTests(NativePresenceTestCase):
 
 class DotsFrameTests(unittest.TestCase):
     def test_three_still_dots_are_never_empty_and_keep_the_optional_line_api(self):
-        # #445: waiting drafts pass an empty line; the helper keeps its optional line API.
+        # #445/#477: /dev off passes an empty line; on uses the same line API.
         self.assertEqual(DOTS_FRAMES, ('· · ·',))
         self.assertEqual({draft_frame('', frame) for frame in range(4)}, {'· · ·'})
         self.assertEqual(draft_frame('웹 검색 중: 환율', 1), '웹 검색 중: 환율 · · ·')
