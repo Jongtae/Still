@@ -134,6 +134,9 @@ def judge_prompt(scenario, run):
         tools = [f'{event["tool"]} {event.get("status", "")}'.strip() for event in turn.get('events') or ()
                  if event.get('tool') and event['tool'] not in WORK_EVENTS]
         lines.append(f'[tools run in turn {index}: {", ".join(tools) or "none"}]')
+        # #407: on the paired-chat path the owner also read these before the answer.
+        for message in turn.get('before_answer') or ():
+            lines.append(f'AGENTOS {index} before the answer (+{message.get("after_s", "?")}s): {message.get("text", "")}')
         answer = (turn.get('answer') or '').strip()
         if turn.get('answer_withheld'):
             answer = '(answer withheld by Still)'

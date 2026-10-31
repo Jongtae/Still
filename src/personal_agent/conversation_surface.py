@@ -202,7 +202,8 @@ class ConversationSurface(ABC):
 
 
 #: #213: the owner conversation surfaces Still composes, by ``name`` (and so by ``channel_prefix``).
-SURFACE_NAMES = ('telegram', 'mattermost', 'slack')
+#: #438: the terminal where the owner started Still.
+SURFACE_NAMES = ('telegram', 'mattermost', 'slack', 'terminal')
 
 
 def registered_surfaces(service):
@@ -213,7 +214,8 @@ def registered_surfaces(service):
     from .telegram_surface import TelegramSurface
     from .mattermost_surface import MattermostSurface
     from .slack_surface import SlackSurface
-    return (TelegramSurface(service), MattermostSurface(service), SlackSurface(service))
+    from .terminal_surface import TerminalSurface
+    return (TelegramSurface(service), MattermostSurface(service), SlackSurface(service), TerminalSurface(service))
 
 
 

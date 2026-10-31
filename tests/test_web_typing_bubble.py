@@ -103,7 +103,8 @@ class TypingBubbleReadModelTests(unittest.TestCase):
             db.execute('UPDATE jobs SET status=? WHERE id=?', (status, job_id))
         return job_id
 
-    def test_active_work_carries_dots_only_until_a_step_is_observed(self):
+    def test_active_work_carries_dots_only_until_its_worker_is_launched(self):
+        """Owner direction 2026-10-31: the bubble names the launched worker and model, not each tool step."""
         with tempfile.TemporaryDirectory() as folder:
             store, service = self._service(folder)
             job_id = self._job(store, 'running')
@@ -116,7 +117,11 @@ class TypingBubbleReadModelTests(unittest.TestCase):
                             json.dumps({'step': {'action': 'web_search', 'query': '경주 휴게소'}}, ensure_ascii=False),
                             time.time()))
             task = next(t for t in service.task_progress()['tasks'] if t['id'] == job_id)
-            self.assertEqual(task['step_line'], "웹에서 '경주 휴게소' 찾아보고 있어요")
+            self.assertEqual(task['step_line'], '', 'a tool step alone shows no line')
+            service.record_turn_worker(job_id, {'attempt': 1, 'route': 'subscription', 'engine': 'codex',
+                                                'model': 'gpt-6.1-sol'}, effort='medium')
+            task = next(t for t in service.task_progress()['tasks'] if t['id'] == job_id)
+            self.assertEqual(task['step_line'], 'Codex · gpt-6.1-sol · medium')
             self.assertNotIn(task['step_line'], ('running', 'queued', '진행 중'))
 
     def test_a_pending_browser_approval_is_an_owner_wait_not_typing(self):

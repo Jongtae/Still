@@ -56,6 +56,19 @@ class LaunchTests(unittest.TestCase):
                 self.assertEqual(argv.count('--permission-mode'), 1)
                 self.assertEqual(argv[argv.index('--allowedTools')], argv[-2], '--allowedTools stays last (variadic)')
 
+    def test_no_claude_code_turn_offers_a_sub_agent(self):
+        """#460 (observed on Claude Code 2.1.287): a sub-agent runs in the background and the turn's first
+        result only says it is waiting, which would be delivered as the answer.  Every Work turn disallows
+        the sub-agent tool, and the next flag ends the variadic list."""
+        from personal_agent.bounded_execution import CLAUDE_SUB_AGENT_TOOLS
+        adapter, root = self.adapter()
+        for options in ({}, {'ai_connections': True}, {'native_search': True}, {'profile': 'strict-isolated'}):
+            with self.subTest(**options):
+                argv = adapter.command('claude-code', '/runtime/claude', 'hi', root / 'mcp.json', **options)
+                start = argv.index('--disallowedTools') + 1
+                self.assertEqual(tuple(argv[start:start + len(CLAUDE_SUB_AGENT_TOOLS)]), CLAUDE_SUB_AGENT_TOOLS)
+                self.assertTrue(argv[start + len(CLAUDE_SUB_AGENT_TOOLS)].startswith('--'))
+
     def test_off_keeps_todays_isolation(self):
         adapter, root = self.adapter()
         argv = adapter.command('claude-code', '/runtime/claude', 'hi', root / 'mcp.json')

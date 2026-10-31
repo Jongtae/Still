@@ -137,6 +137,21 @@ class AgentOSClient:
         return self.post('/api/chat', {'message': message, 'request_key': request_key or f'eval-{uuid.uuid4()}',
                                        'owner_words': True})['id']
 
+    def job_ids(self):
+        """The ids of the Works the owner's web lists now."""
+        return {job.get('id') for job in self.get('/api/state').get('jobs') or [] if job.get('id')}
+
+    def find_task(self, message, known, timeout=60, interval=1.0):
+        """The id of the new Work whose request is ``message`` (a paired-chat turn has no ``/api/chat`` id)."""
+        deadline = self.clock() + timeout
+        while True:
+            for job in self.get('/api/state').get('jobs') or []:
+                if job.get('id') not in known and (job.get('message') or '').strip() == message.strip():
+                    return job['id']
+            if self.clock() >= deadline:
+                raise ClientError('the paired-chat message did not become a Work in time')
+            self.sleep(interval)
+
     def wait(self, task_id, timeout=900, interval=2.0):
         """Poll ``/api/tasks/<id>`` until the Work stops moving; returns the task detail."""
         deadline = self.clock() + timeout

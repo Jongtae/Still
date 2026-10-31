@@ -164,8 +164,11 @@ def free_port(start=18900, end=19900, taken=()):
     raise SandboxError('no free loopback port for a sandbox')
 
 
-def sandbox_environment(data, base=None, src=SRC):
-    """The minimal environment of one sandbox server: no AgentOS_* or connector settings inherited."""
+def sandbox_environment(data, base=None, src=SRC, telegram_root=None):
+    """The minimal environment of one sandbox server: no AgentOS_* or connector settings inherited.
+
+    ``telegram_root`` is the eval's loopback Bot API stand-in (``fake_telegram``), when the run uses one.
+    """
     base = os.environ if base is None else base
     env = {name: base[name] for name in PASS_ENV if base.get(name)}
     extra_path = ['/opt/homebrew/bin', '/usr/local/bin',
@@ -175,7 +178,36 @@ def sandbox_environment(data, base=None, src=SRC):
     env['PYTHONPATH'] = os.pathsep.join([str(SANDBOX_SITE), str(src)])
     env['AGENTOS_ENGINE_RUNS'] = str(Path(data) / 'engine-runs')
     env['PYTHONUNBUFFERED'] = '1'
+    if telegram_root:
+        env['AGENTOS_EVAL_TELEGRAM_ROOT'] = telegram_root
     return env
+
+
+def pair_fake_telegram(data, token):
+    """Re-enable the seed's paired chat against the eval's stand-in: its made-up token, a fresh cursor.
+
+    The seed keeps the owner's chat id and generation (so the history reads as one conversation)
+    but has no token and Telegram disabled (``sanitize_database``).  Returns the paired chat id.
+    """
+    db = sqlite3.connect(Path(data) / 'private' / 'quickstart.db')
+    try:
+        row = db.execute("SELECT value FROM config WHERE key='telegram'").fetchone()
+        telegram = json.loads(row[0]) if row and row[0] else {}
+        telegram = telegram if isinstance(telegram, dict) else {}
+        chat = telegram.get('user_id') if isinstance(telegram.get('user_id'), int) else 77
+        telegram.update(enabled=True, user_id=chat, cursor=0, generation=telegram.get('generation') or 'eval')
+        db.execute("INSERT INTO config(key,value) VALUES('telegram',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                   (json.dumps(telegram),))
+        db.execute("DELETE FROM config WHERE key='telegram_status'")
+        db.commit()
+    finally:
+        db.close()
+    secrets = Path(data) / 'private' / 'connections.json'
+    values = json.loads(secrets.read_text()) if secrets.is_file() else {}
+    values['telegram_token'] = token
+    secrets.write_text(json.dumps(values))
+    os.chmod(secrets, 0o600)
+    return chat
 
 
 #: Config rows that hold the Judgment AI qualification.  Its binding names the
@@ -221,7 +253,8 @@ class Sandbox:
     and re-copied for every run); without it a new temporary folder is used.
     """
 
-    def __init__(self, root, seed=None, port=None, slot=None, python=None, src=SRC, keep=False, start_timeout=60):
+    def __init__(self, root, seed=None, port=None, slot=None, python=None, src=SRC, keep=False, start_timeout=60,
+                 telegram=None):
         self.root = Path(root)
         self.seed = Path(seed).expanduser() if seed else None
         self.port = port
@@ -233,6 +266,8 @@ class Sandbox:
         self.process = None
         self.data = None
         self.log = None
+        #: The eval's Bot API stand-in (``fake_telegram.FakeTelegram``), or None for a web-only run.
+        self.telegram = telegram
 
     @property
     def url(self):
@@ -266,11 +301,16 @@ class Sandbox:
         self.prepare()
         if config and (self.data / 'private' / 'quickstart.db').is_file():
             write_config(self.data, config)
+        if self.telegram is not None:
+            from .fake_telegram import TOKEN
+            self.telegram.chat_id = pair_fake_telegram(self.data, TOKEN)
         argv = [self.python, '-m', 'personal_agent.quickstart', 'start', '--host', '127.0.0.1',
                 '--port', str(self.port), '--drive-handoff-port', str(self.port + 1),
                 '--data', str(self.data), '--no-browser']
         self.log = open(self.data / 'server.log', 'ab')
-        self.process = subprocess.Popen(argv, cwd=str(self.data), env=sandbox_environment(self.data, src=self.src),
+        env = sandbox_environment(self.data, src=self.src,
+                                  telegram_root=self.telegram.root if self.telegram is not None else None)
+        self.process = subprocess.Popen(argv, cwd=str(self.data), env=env,
                                         stdin=subprocess.DEVNULL, stdout=self.log, stderr=subprocess.STDOUT,
                                         start_new_session=True)
         return self.process
@@ -373,13 +413,14 @@ class SandboxPool:
         self._cache_path(slot, worker).unlink(missing_ok=True)
 
     @contextmanager
-    def sandbox(self, worker=None):
+    def sandbox(self, worker=None, telegram=None):
         with self.slots:
             with self.lock:
                 slot = self._claim_slot()
                 port = free_port(taken=self.ports)
                 self.ports.update({port, port + 1})
-            box = self.factory(self.root, seed=self.seed, port=port, slot=slot, keep=self.keep)
+            box = self.factory(self.root, seed=self.seed, port=port, slot=slot, keep=self.keep,
+                               **({'telegram': telegram} if telegram is not None else {}))
             box.cached = self.cached_judgment(slot, worker) if worker else None
             try:
                 box.start(config=box.cached)

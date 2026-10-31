@@ -4,12 +4,19 @@ The steps call the same service methods as the browser screens, so the browser
 later shows exactly what was saved here. Secrets are read with hidden input and
 are never printed or passed as arguments. Lines are catalog lines (#1356),
 translated on the way to the terminal like the Telegram seam (#1350).
+
+On a real terminal Rich draws the banner, steps and summary and prompt_toolkit
+reads lines and the arrow-key choice (#438); elsewhere the same steps print
+plain lines. Either way the libraries only draw and read lines: a secret goes
+from the hidden prompt straight to the service.
 """
 import getpass
 import os
+import re
 import secrets
 import subprocess
 import sys
+import threading
 import webbrowser
 
 from .messages import msg
@@ -32,6 +39,15 @@ API_PROVIDERS = {
 }
 STEP_MARKS = {'ready': '✓', 'attention': '!'}
 BOTFATHER_URL = 'https://t.me/BotFather'
+#: The README's wordmark, drawn above the first setup on a real terminal.
+LOGO = r"""   ________________   __
+  / __/_  __/  _/ /  / /
+ _\ \  / / _/ // /__/ /__
+/___/ /_/ /___/____/____/"""
+#: The numbering a catalog option line carries for the plain list; the arrow-key menu numbers its own rows.
+_OPTION_NUMBER = re.compile(r'^\d+\)\s*')
+#: The web screens' language codes (web/app.js LANGUAGES) for a terminal catalog language.
+WEB_LANGUAGES = {None: 'ko', 'en': 'en', 'ja': 'ja', 'zh': 'zh-CN'}
 
 
 def terminal_language(env=None, platform=None, runner=subprocess.run):
@@ -53,6 +69,8 @@ def terminal_language(env=None, platform=None, runner=subprocess.run):
 
 
 class Terminal:
+    """Plain lines and ``input()``: what every setup step talks to."""
+
     def __init__(self, lang='en'):
         self.lang = lang
 
@@ -83,6 +101,171 @@ class Terminal:
     def open(self, url):
         webbrowser.open(url)
 
+    def banner(self, version=''):
+        self.say(f'Still {version}'.strip())
+
+    def title(self, text):
+        self.say('\n' + text)
+
+    def mark(self, mark, text):
+        self.say(f'   {mark} {text}')
+
+    def choose(self, prompt, options, default=None, preview=None):
+        """The key of one of ``options`` (key, catalog label); a typed number here, '' only without a default.
+
+        ``preview`` is what the choice settles, shown with it (not a catalog line).
+        """
+        if preview:
+            print(f'\n{preview}\n', flush=True)
+        for _, label in options:
+            self.say('   ' + label)
+        return self.ask('   ' + prompt + ' ') or default or ''
+
+    # -- the terminal conversation (#438) --------------------------------------------------
+    def conversation(self):
+        """A context in which answers may print while the owner types."""
+        import contextlib
+        return contextlib.nullcontext()
+
+    def message(self, status):
+        """One line the owner types; ``status`` names what Still is doing, or ''."""
+        return input('> ')
+
+    def interrupt(self):
+        """End the line being typed ('' is returned); plain ``input()`` cannot be, so a request waits for Enter."""
+
+    def answer(self, text):
+        """Still's answer: the model's own text, printed as it is (not a catalog line)."""
+        print(f'\nStill: {text}\n', flush=True)
+
+
+class RichTerminal(Terminal):
+    """The same steps drawn by Rich, with lines and choices read by prompt_toolkit (#438)."""
+
+    STYLES = {'✓': 'green', '!': 'yellow'}
+
+    def __init__(self, lang='en', console=None, reader=None, chooser=None):
+        super().__init__(lang)
+        if console is None:
+            from rich.console import Console
+            console = Console(highlight=False)
+        if reader is None or chooser is None:
+            from prompt_toolkit import prompt
+            from prompt_toolkit.shortcuts import choice
+            reader, chooser = reader or prompt, chooser or choice
+        self.console, self.reader, self.chooser = console, reader, chooser
+        self._wake_lock, self._woken = threading.Lock(), False
+
+    def say(self, text=''):
+        from rich.padding import Padding
+        from rich.text import Text
+        for line in self.local(text).split('\n'):
+            body = line.lstrip(' ')
+            # A wrapped help line stays under its own indent instead of falling back to column 0.
+            self.console.print(Padding(Text(body), (0, 0, 0, len(line) - len(body))))
+
+    def ask(self, prompt):
+        return self.reader(self.local(prompt)).strip()
+
+    def secret(self, prompt):
+        # A fresh prompt per call: the typed value is masked and kept in no history.
+        return self.reader(self.local(prompt), is_password=True).strip()
+
+    def banner(self, version=''):
+        from rich.text import Text
+        logo = Text(LOGO, style='bold cyan')
+        if version:
+            logo.append(f'  v{version}', style='cyan')
+        self.console.print()
+        self.console.print(logo)
+        self.console.print(Text(self.local(msg('first_run.tagline')), style='dim'))
+
+    def title(self, text):
+        from rich.rule import Rule
+        from rich.text import Text
+        self.console.print()
+        self.console.print(Rule(Text(self.local(text), style='bold'), align='left', style='cyan'))
+
+    def mark(self, mark, text):
+        from rich.text import Text
+        line = Text('   ')
+        line.append(mark, style='bold ' + self.STYLES.get(mark, 'dim'))
+        line.append(' ' + self.local(text))
+        self.console.print(line)
+
+    def conversation(self):
+        from prompt_toolkit.patch_stdout import patch_stdout
+        # Answers printed by the delivery thread appear above the line being typed, colours kept.
+        return patch_stdout(raw=True)
+
+    def message(self, status):
+        from prompt_toolkit.application.current import get_app
+        from prompt_toolkit.formatted_text import ANSI
+        def started():
+            with self._wake_lock:
+                self._line, woken, self._woken = get_app(), self._woken, False
+            if woken:
+                # A request arrived between two lines: this one ends at once so it is served now.
+                self._line.exit(result='')
+        return self.reader(ANSI('\x1b[1;36m› \x1b[0m'),
+                           bottom_toolbar=lambda: self.local(status()) if status() else None, refresh_interval=0.5,
+                           pre_run=started)
+
+    def interrupt(self):
+        # Called from the worker thread: the running line ends on its own event loop; with no line
+        # running (the owner's message is being taken), the next line ends as soon as it starts.
+        with self._wake_lock:
+            app = getattr(self, '_line', None)
+            if app is None or not app.is_running:
+                self._woken = True
+                return
+        app.loop.call_soon_threadsafe(lambda: app.exit(result='') if app.is_running else None)
+
+    def answer(self, text):
+        from rich.markdown import Markdown
+        from rich.text import Text
+        self.console.print()
+        self.console.print(Text('Still', style='bold cyan'))
+        self.console.print(Markdown(text))
+        self.console.print()
+
+    def choose(self, prompt, options, default=None, preview=None):
+        keys = [key for key, _ in options]
+        return self.chooser(self._rendered(preview) if preview else '',
+                            options=[(key, _OPTION_NUMBER.sub('', self.local(label))) for key, label in options],
+                            default=default if default in keys else None)
+
+    def _rendered(self, text):
+        """``text`` as Markdown in this terminal's width, for a prompt_toolkit message (drawn with the menu)."""
+        import io
+        from prompt_toolkit.formatted_text import ANSI
+        from rich.console import Console
+        from rich.markdown import Markdown
+        out = io.StringIO()
+        # A little narrower than the terminal and without Rich's trailing padding, so the menu does not re-wrap it.
+        Console(file=out, force_terminal=True, width=max(40, self.console.width - 4), highlight=False).print(Markdown(text))
+        return ANSI('\n'.join(line.rstrip() for line in out.getvalue().rstrip().split('\n')) + '\n')
+
+
+def open_terminal(lang, stdin=None, stdout=None, environ=None):
+    """Rich drawing on a real terminal; plain lines when either side is redirected or TERM is dumb."""
+    stdin, stdout = stdin or sys.stdin, stdout or sys.stdout
+    environ = os.environ if environ is None else environ
+    if stdin.isatty() and stdout.isatty() and environ.get('TERM') != 'dumb':
+        try:
+            return RichTerminal(lang)
+        except ImportError:
+            pass
+    return Terminal(lang)
+
+
+def version():
+    try:
+        from importlib.metadata import PackageNotFoundError, version as installed
+        return installed('personal-agentos')
+    except PackageNotFoundError:
+        return ''
+
 
 def finished(store):
     return bool(store.config(SETUP_KEY, {}).get('finished'))
@@ -97,25 +280,32 @@ def _record(store, **values):
     store.put(SETUP_KEY, {**store.config(SETUP_KEY, {}), **values})
 
 
-def run(service, store, term, login_service=None):
+def run(service, store, term, login_service=None, conversation=False):
     """Return True when the setup finished; False when the owner stopped early.
 
     ``login_service`` reads the macOS login service's status when this start
-    could offer to register it (#105); None skips the offer.
+    could offer to register it (#105); None skips the offer. ``conversation``:
+    this terminal becomes a conversation once an AI is connected (#438), so
+    Telegram is offered there instead, unless Still moves to the login service.
     """
     try:
         # #90: an install set up in the browser or by an earlier version has nothing to ask.
-        if not (store.claimed() and _ai_ready(service) and store.config('telegram', {}).get('enabled')):
+        if not (store.claimed() and ai_ready(service) and store.config('telegram', {}).get('enabled')):
+            term.banner(version())
             term.say(msg('first_run.intro'))
         if not store.claimed():
             _access(store, term)
-        if not _ai_ready(service):
+        if not ai_ready(service):
             _ai(service, term)
         _judgment(service)
-        if not store.config('telegram', {}).get('enabled'):
+        in_conversation = conversation and ai_ready(service)
+        if not store.config('telegram', {}).get('enabled') and not in_conversation:
             _telegram(service, term)
         if login_service:
             _login_service(store, term, login_service)
+        if in_conversation and wants_login_service(store) and not store.config('telegram', {}).get('enabled'):
+            # The login service takes Still out of this terminal, so there is no conversation to offer it in.
+            _telegram(service, term)
     except (KeyboardInterrupt, EOFError):
         term.say('\n' + msg('first_run.stopped'))
         return False
@@ -124,8 +314,46 @@ def run(service, store, term, login_service=None):
     return True
 
 
+def converse(service, term):
+    """Talk to Still in this terminal until the owner ends it (Ctrl-D or Ctrl-C) (#438)."""
+    surface = service.terminal_surface
+    term.say('\n' + msg('terminal.ready'))
+    if not service.store.config('telegram', {}).get('enabled'):
+        term.say(msg('terminal.telegram_hint'))
+    working = msg('terminal.working')
+    with term.conversation():
+        surface.attach(term.answer, term.interrupt)
+        try:
+            while True:
+                line = term.message(lambda: working if surface.waiting() else '')
+                while (kind := surface.take_request()) is not None:
+                    _requested_input(service, term, kind)
+                surface.say(line)
+        except (KeyboardInterrupt, EOFError):
+            pass
+        finally:
+            surface.detach()
+    term.say(msg('terminal.bye'))
+
+
+def _requested_input(service, term, kind):
+    """An input a confirmed settings draft asked for (``TerminalSurface.INPUTS``), read here and never sent as a message."""
+    try:
+        if kind == 'telegram':
+            _telegram_connect(service, term)
+        elif isinstance(kind, dict):
+            # A notice's button pair: the owner's choice is settled exactly, like a pressed button, and
+            # the notice it settles is drawn with the menu itself.
+            options = [(str(index), f'{index}) ' + term.local(msg(label))) for index, label in enumerate(kind['labels'], 1)]
+            answer = term.choose(msg('first_run.choice_prompt'), options, '1', preview=kind.get('text'))
+            if answer in ('1', '2'):
+                service.terminal_surface.answer_choice(kind, answer == '1')
+    except (KeyboardInterrupt, EOFError):
+        term.say('   ' + msg('terminal.input_stopped'))
+
+
 def _access(store, term):
-    term.say('\n' + msg('first_run.access_title'))
+    term.title(msg('first_run.access_title'))
     term.say('   ' + msg('first_run.access_help'))
     password = ''
     if term.ask('   ' + msg('first_run.access_prompt') + ' ').lower() in ('y', 'yes'):
@@ -146,17 +374,24 @@ def _new_password(term):
             return password
 
 
-def _ai_ready(service):
+def ai_ready(service):
     status = service.onboarding()
     return bool(status['subscription_engine'] or status['model_ready'])
 
 
 def _ai(service, term):
-    term.say('\n' + msg('first_run.ai_title'))
-    for line in ('ai_help', 'ai_codex', 'ai_claude', 'ai_api', 'ai_later'):
-        term.say('   ' + msg(f'first_run.{line}'))
+    term.title(msg('first_run.ai_title'))
+    term.say('   ' + msg('first_run.ai_help'))
+    default = None
+    for key, engine_id in (('1', 'codex'), ('2', 'claude-code')):
+        if service.subscription_engines.finder(ENGINES[engine_id].command) and _signed_in(service, engine_id):
+            default = key
+            term.say('   ' + msg('first_run.ai_detected', name=ENGINES[engine_id].name))
+            break
+    options = [(str(index), msg(f'first_run.{line}'))
+               for index, line in enumerate(('ai_codex', 'ai_claude', 'ai_api', 'ai_later'), 1)]
     while True:
-        choice = term.ask('   ' + msg('first_run.choice_prompt') + ' ')
+        choice = term.choose(msg('first_run.choice_prompt'), options, default)
         if choice == '4':
             return
         if choice == '1':
@@ -244,9 +479,8 @@ def _connect_engine(service, term, engine_id, name):
 
 def _api(service, term):
     term.say('   ' + msg('first_run.api_help'))
-    for _, label, _, _, _ in API_PROVIDERS.values():
-        term.say(f'   {label}')
-    choice = term.ask('   ' + msg('first_run.choice_prompt') + ' ')
+    choice = term.choose(msg('first_run.choice_prompt'),
+                         [(key, label) for key, (_, label, _, _, _) in API_PROVIDERS.items()])
     if choice not in API_PROVIDERS:
         term.say('   ' + msg('first_run.choose_one_to_four'))
         return False
@@ -299,10 +533,15 @@ def _judgment(service):
 
 
 def _telegram(service, term):
-    term.say('\n' + msg('first_run.telegram_title'))
+    term.title(msg('first_run.telegram_title'))
     term.say('   ' + msg('first_run.telegram_help'))
     if term.ask('   ' + msg('first_run.telegram_prompt') + ' ').lower() not in ('y', 'yes'):
         return
+    _telegram_connect(service, term)
+
+
+def _telegram_connect(service, term):
+    """BotFather's steps, the bot token from a hidden prompt, then the pairing link; the token goes only to the service."""
     term.say('   ' + msg('first_run.telegram_steps_intro'))
     term.say('   ' + BOTFATHER_URL)
     term.say('   ' + msg('first_run.telegram_no_app'))
@@ -325,16 +564,19 @@ def _login_service(store, term, status):
     """Ask once whether Still starts at login; only an explicit yes registers it (#105)."""
     if LOGIN_SERVICE in store.config(SETUP_KEY, {}) or status().get('status') != 'not_installed':
         return
-    term.say('\n' + msg('first_run.login_title'))
+    term.title(msg('first_run.login_title'))
     term.say('   ' + msg('first_run.login_help'))
     answer = term.ask('   ' + msg('first_run.login_prompt') + ' ').lower() in ('y', 'yes')
     _record(store, **{LOGIN_SERVICE: 'yes' if answer else 'no'})
 
 
 def _summary(service, term):
-    term.say('\n' + msg('first_run.finished'))
+    ready = ai_ready(service)
+    term.title(msg('first_run.finished' if ready else 'first_run.finished_without_ai'))
     for step in service.onboarding()['steps']:
-        term.say(f'   {STEP_MARKS.get(step["state"], "·")} {step["message"]}')
+        term.mark(STEP_MARKS.get(step['state'], '·'), step['message'])
+    if not ready:
+        # Judgment follows the AI the owner connects later; without one there is nothing to warn about.
+        return
     state = service.decision_routes.status()['effective']['state']
-    mark = {'active': '✓', 'checking': '·'}.get(state, '!')
-    term.say(f'   {mark} ' + msg(f'first_run.judgment_{state}'))
+    term.mark({'active': '✓', 'checking': '·'}.get(state, '!'), msg(f'first_run.judgment_{state}'))

@@ -95,6 +95,16 @@ A direct `inspect eval` run writes only the Inspect log. Build the trend report 
 
 `sweep` exits with status 1 when the trend shows a regression. It exits with status 2 when it stopped on a usage limit (see *Capacity*).
 
+## Paired-chat scenarios (`"channel": "telegram"`)
+
+Some owner-facing behavior exists only for a Work from the paired Telegram chat, such as the plan preview and the worker's interim messages (#407). A scenario with `"channel": "telegram"` runs that path without Telegram:
+
+- The eval starts a loopback stand-in for the Bot API (`agentos_eval/fake_telegram.py`). It uses the standard library only.
+- The sandbox re-enables the seed's paired chat with a **made-up bot token**, never the owner's (`pair_fake_telegram`).
+- The sandbox's import guard (`sandbox_site/sitecustomize.py`) points Still's Bot API root at the stand-in through `AGENTOS_EVAL_TELEGRAM_ROOT`. Only an `http://127.0.0.1:<port>` root is accepted; any other value stops the sandbox. The owner's live server never loads this guard.
+- Each owner turn is queued for Still's own `getUpdates` poll. The run records what the owner would have read before the answer (`before_answer`, with seconds after the message), and the judge sees those lines too.
+- The opt-in `conversational` rubric dimension judges them.
+
 ## What one run does
 
 1. Claim a free sandbox slot and a free loopback port. Slots use `~/.local/share/agentos-evals/sandboxes/slot-N`, with one file lock per slot so two sweeps never share one. Port 8787/8788 and the live data folder are refused.

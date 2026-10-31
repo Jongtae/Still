@@ -820,15 +820,16 @@ class ThreadStatus(SlackCase):
 
     def test_observed_status_changes_refreshes_and_clears_after_terminal_post(self):
         job = self.running()
-        self.observe(job)
+        # #458: the waiting line names the launched worker and model.
+        self.service.live_workers[job['id']] = 'Codex · gpt-6.1-sol · medium'
         expected = self.service._draft_step_text(job, self.service.presence[job['id']])
-        self.assertTrue(expected)
+        self.assertEqual(expected, 'Codex · gpt-6.1-sol · medium')
         self.service.present_waiting_work(now=job['created'] + 2)
         self.assertEqual(self.statuses(), [{'channel_id': DM, 'thread_ts': '1234.000001', 'status': expected}])
         self.service.present_waiting_work(now=job['created'] + 3)
         self.assertEqual(len(self.statuses()), 1)
-        # Changed observed wording goes out immediately.
-        self.observe(job, '다른 자료 읽는 중')
+        # A re-delegated attempt's worker goes out immediately.
+        self.service.live_workers[job['id']] = 'Claude Code · claude-opus-5-5'
         self.service.present_waiting_work(now=job['created'] + 4)
         self.assertEqual(len(self.statuses()), 2)
         self.service.present_waiting_work(now=job['created'] + 95)

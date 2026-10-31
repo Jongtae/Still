@@ -85,9 +85,9 @@ brew install jongtae/still/agentos
 agentos start
 ```
 
-1. 首次启动时在此终端中完成设置，方式与第一次启动 Claude Code 相同：依次询问访问密码（可选）、AI 连接（通过 Codex 连接 ChatGPT、通过 Claude Code 连接 Claude，或使用 API 密钥）以及 Telegram 机器人令牌（可选）。每一步都可以按 Enter 跳过。
-2. 随后浏览器会打开 [http://127.0.0.1:8787](http://127.0.0.1:8787/) 进行最终确认。界面默认为英语，可在左下角切换为简体中文、韩语或日语。连接错误和固定系统提示会以你选择的语言显示；部分界面和回复目前仍为韩语。[其他接入方式](../../docs/QUICKSTART.md#other-model-connections)
-3. Telegram 配对：在终端粘贴 @BotFather 的令牌后会输出配对链接。打开链接并点击 Start 即可。
+1. 首次启动时在此终端中完成设置，方式与第一次启动 Claude Code 相同：询问访问密码（可选）和 AI 连接（通过 Codex 连接 ChatGPT、通过 Claude Code 连接 Claude，或使用 API 密钥），已登录的 AI 会预先选中。
+2. 然后直接在这个终端里和 Still 对话。Still 界面位于 [http://127.0.0.1:8787](http://127.0.0.1:8787/)（尚未连接 AI 时会自动打开），以终端语言或英语显示，可在左下角切换。部分界面和回复目前仍为韩语。[其他接入方式](../../docs/QUICKSTART.md#other-model-connections)
+3. Telegram：在对话中说“帮我连接 Telegram”，会打开隐藏输入框。粘贴 @BotFather 的令牌，然后打开输出的配对链接并点击 Start。
 4. 问你真正需要的事：**“我家猫最近不怎么吃饭，该怎么办？”** 几天后只要说 **“帮我挑一台 3000 元以内的扫地机器人。”** PA 会自己记得你养猫，并把这一点考虑进去。
 
 **发布状态：** 两种安装方式安装的都是从已打标签的 main 提交构建的 **v0.2.0**（2026-10-24）。演示和日常使用画面来自真实使用会话，并非该发行版本的端到端验证；架构图属于产品方向。[release manifest](../../docs/release-manifest.json) 记录每个版本的覆盖范围，[产品状态](../../docs/product-status.en.md) 区分已提供的功能、测试依据和发展方向。

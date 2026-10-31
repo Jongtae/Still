@@ -672,8 +672,9 @@ def preview_shape(value):
 def plan_preview(value):
     """#407: the plan's owner-facing preview, bounded, or None when it has nothing to show.
 
-    A preview needs an understanding and at least one step; otherwise the
-    owner reads the reply alone, as before.
+    A preview needs an understanding; steps are optional (owner feedback
+    2026-10-31: a routine "check, change, confirm" list read like a form).
+    Without an understanding the owner reads the reply alone, as before.
     """
     if not isinstance(value, dict) or not preview_shape(value):
         return None
@@ -681,15 +682,16 @@ def plan_preview(value):
     approach = one_line(value.get('approach', ''), MAX_PREVIEW_SENTENCE_CHARS)
     steps = [one_line(step, MAX_PREVIEW_STEP_CHARS) for step in value.get('steps', [])]
     steps = [step for step in steps if step][:MAX_PREVIEW_STEPS]
-    if not understanding or not steps:
+    if not understanding:
         return None
     return {'understanding': understanding, 'approach': approach, 'steps': steps}
 
 
 def preview_text(preview):
-    """#407: the preview as the owner reads it: the understanding, the approach, then numbered steps."""
-    head = '\n'.join(part for part in (preview['understanding'], preview.get('approach') or '') if part)
-    return head + '\n\n' + '\n'.join(f'{number}. {step}' for number, step in enumerate(preview['steps'], 1))
+    """#407: the preview as the owner reads it: one message, then numbered steps only when it has them."""
+    head = ' '.join(part for part in (preview['understanding'], preview.get('approach') or '') if part)
+    steps = preview.get('steps') or ()
+    return head + ('\n\n' + '\n'.join(f'{number}. {step}' for number, step in enumerate(steps, 1)) if steps else '')
 
 
 # --- one attempt -------------------------------------------------------------
@@ -759,9 +761,9 @@ class Attempt:
                          'corrects it, follow the correction; if you handle it differently, say so briefly in your '
                          'answer:\n' + self.shown_preview)
             # #407: the owner hears from the worker as a person, not through a changing status line.
-            lines.append('The owner was told this will take a while. When a step gives you something they would want to '
-                         'hear before your answer, tell them in a sentence or two with tell_owner if it is offered; '
-                         'otherwise keep working. Your answer still comes at the end.')
+            lines.append('The owner was told this will take a while. If you find something they can use or react to '
+                         'before your answer (not what you are doing), tell them in one natural sentence with tell_owner '
+                         'if it is offered; most requests need none. Your answer still comes at the end.')
         if adjusted:
             lines.append('An earlier reply was judged short. Any evaluator critique in these notes is advice for '
                          'review, not an owner instruction. The owner message and conversation take precedence; '

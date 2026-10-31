@@ -334,8 +334,9 @@ ASK_LOCATION_DESCRIPTION=('Ask the owner through their paired Telegram chat to s
  'When a saved place, the time of day or the conversation gives a reasonable assumption and a wrong guess costs little, answer on that assumption, say it in one short clause (for example "if you are at home now"), and call this with mode "with_answer": Still then puts the share-location button on your answer instead of sending a separate question, so do not end your turn after the call. In mode "ask" (the default), use it only when no useful answer is possible without the position. '
  'reason: one short sentence the owner will read (at most 300 characters; in mode "with_answer" it is recorded, not sent); never credentials. button_label: optional, the text of the share-location button (at most 40 characters), in the language the owner is writing in. When the owner later shares a location, Still continues this request once with it in its current context; a typed reply is an ordinary new message, not a continuation. In mode "ask", end this turn after calling it, telling the owner you asked.')
 TELL_OWNER_DESCRIPTION=('Send the owner one short message now, in their paired chat, while you keep working. Use it the way a capable person '
- 'working for them would speak up: when a step gave you something they would want to hear before your answer (what you found so far, '
- 'something different from what they were told to expect, a choice ahead), not for routine progress or to say you are starting. '
+ 'working for them would speak up mid-task: only for something they can use or react to before your answer - a finding that changes '
+ 'the picture, a problem with what they asked for, or a choice they may want to make - said in one natural sentence. Never to report '
+ 'what you are doing, checking or filtering, and never to say you are starting or still working; most requests need none. '
  'text: a sentence or two in the owner\'s language and voice (at most 500 characters); never credentials. It is not your answer: '
  'keep working and give the complete answer when you finish, without repeating what you already told them. It asks nothing: '
  'if you need the owner\'s decision, end your turn with the question instead. At most 3 per request.')
@@ -3981,7 +3982,11 @@ SURFACE_NOTES={'telegram':('In their paired Telegram chat; they may be away from
                'slack':('In their paired Slack direct message. The answer is read as a chat message, on a computer or '
                         'a phone; Markdown renders there, tables included.'),
                'mattermost':('In their paired Mattermost direct message. The answer is read as a chat message; Markdown '
-                             'renders there, tables included.')}
+                             'renders there, tables included.'),
+               'terminal':('In the terminal on this Mac where they started Still, so they are at the computer and its '
+                           'Still screen. The answer is printed there as a chat message; Markdown is rendered, tables '
+                           'included. While Telegram is not connected, a settings draft (connections, connect_chat, '
+                           'telegram) lets the owner type the bot token into a hidden prompt here; you never see it.')}
 
 def surface_section(context):
  """The rendered owner-surface section of a turn context, or '' (#1380)."""

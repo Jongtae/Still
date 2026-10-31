@@ -2634,10 +2634,10 @@
   "zh": "没能收到你发来的照片。请稍后再发一次。"
  },
  "first_run.intro": {
-  "ko": "Still 첫 설정을 이 터미널에서 진행합니다. 건너뛰려면 Enter를 누르세요.",
-  "en": "Let's set up Still here in the terminal. Press Enter to skip a step.",
-  "ja": "Still の初期設定をこのターミナルで行います。スキップするには Enter を押してください。",
-  "zh": "将在此终端中完成 Still 的首次设置。按 Enter 可跳过某一步。"
+  "ko": "Still 첫 설정을 이 터미널에서 진행합니다. Enter를 누르면 기본값으로 넘어갑니다.",
+  "en": "Let's set up Still here in the terminal. Press Enter to take the default.",
+  "ja": "Still の初期設定をこのターミナルで行います。Enter を押すと既定の選択で進みます。",
+  "zh": "将在此终端中完成 Still 的首次设置。按 Enter 即采用默认选项。"
  },
  "first_run.stopped": {
   "ko": "설정을 멈췄습니다. `agentos start`를 다시 실행하면 남은 단계부터 이어집니다.",
@@ -2646,10 +2646,10 @@
   "zh": "设置已暂停。再次运行 `agentos start` 会从剩余的步骤继续。"
  },
  "first_run.access_title": {
-  "ko": "1. 접근 비밀번호",
-  "en": "1. Access password",
-  "ja": "1. アクセスパスワード",
-  "zh": "1. 访问密码"
+  "ko": "접근 비밀번호",
+  "en": "Access password",
+  "ja": "アクセスパスワード",
+  "zh": "访问密码"
  },
  "first_run.access_help": {
   "ko": "Still 화면을 열 때 쓸 비밀번호를 따로 정할 수 있습니다. Mac 로그인 암호가 아니라 Still에서만 쓰는 새 비밀번호입니다. 정하지 않으면 이 컴퓨터에서만 열립니다.",
@@ -2664,10 +2664,10 @@
   "zh": "请输入至少 12 个字符。"
  },
  "first_run.ai_title": {
-  "ko": "2. AI 연결",
-  "en": "2. AI connection",
-  "ja": "2. AI の接続",
-  "zh": "2. 连接 AI"
+  "ko": "AI 연결",
+  "en": "AI connection",
+  "ja": "AI の接続",
+  "zh": "连接 AI"
  },
  "first_run.ai_help": {
   "ko": "이미 쓰는 구독이나 API 키 중 하나를 연결합니다.",
@@ -2802,10 +2802,10 @@
   "zh": "已确认 API 连接并设为使用的 AI。"
  },
  "first_run.telegram_title": {
-  "ko": "3. Telegram (선택)",
-  "en": "3. Telegram (optional)",
-  "ja": "3. Telegram (任意)",
-  "zh": "3. Telegram (可选)"
+  "ko": "Telegram (선택)",
+  "en": "Telegram (optional)",
+  "ja": "Telegram (任意)",
+  "zh": "Telegram (可选)"
  },
  "first_run.telegram_help": {
   "ko": "휴대폰의 Telegram에서 내 봇으로 Still과 대화할 수 있습니다.",
@@ -2826,10 +2826,10 @@
   "zh": "正在 Telegram 中打开配对链接。点击 Start 即可完成连接:"
  },
  "first_run.finished": {
-  "ko": "설정이 끝났습니다. 마지막 확인은 브라우저 화면에서 합니다.",
-  "en": "Setup is done. The browser opens for a final check.",
-  "ja": "設定が完了しました。最後の確認はブラウザの画面で行います。",
-  "zh": "设置完成。最后在浏览器中确认。"
+  "ko": "설정이 끝났습니다.",
+  "en": "Setup is done.",
+  "ja": "設定が完了しました。",
+  "zh": "设置完成。"
  },
  "service.onboarding_claim_needed": {
   "ko": "이 컴퓨터에서 초기 설정 링크를 열어 개인 환경을 만드세요.",
@@ -2994,10 +2994,10 @@
   "zh": "现在连接吗? [y/N]"
  },
  "first_run.login_title": {
-  "ko": "4. 로그인할 때 시작 (선택)",
-  "en": "4. Start at login (optional)",
-  "ja": "4. ログイン時に起動 (任意)",
-  "zh": "4. 登录时启动 (可选)"
+  "ko": "로그인할 때 시작 (선택)",
+  "en": "Start at login (optional)",
+  "ja": "ログイン時に起動 (任意)",
+  "zh": "登录时启动 (可选)"
  },
  "first_run.login_help": {
   "ko": "이 Mac에 로그인하면 Still이 백그라운드에서 시작되어, 터미널을 열어 두지 않아도 Telegram과 브라우저에서 쓸 수 있습니다.",
@@ -3192,10 +3192,10 @@
   "zh": "判断 AI 已连接并通过检查。"
  },
  "first_run.judgment_checking": {
-  "ko": "판단 AI 연결을 확인하는 중입니다. 끝날 때까지 판단이 필요한 기능은 제한됩니다.",
-  "en": "Judgment AI is being checked. Features that need it are limited until the check finishes.",
-  "ja": "判断AIの接続を確認中です。完了するまで判断が必要な機能は制限されます。",
-  "zh": "正在检查判断 AI。检查完成前，需要判断的功能将受限。"
+  "ko": "판단 AI 연결을 확인하는 중입니다. 몇 분 걸릴 수 있고, 끝날 때까지 판단이 필요한 기능은 제한됩니다.",
+  "en": "Judgment AI is being checked. This can take a few minutes; features that need it are limited until it finishes.",
+  "ja": "判断AIの接続を確認中です。数分かかることがあり、完了するまで判断が必要な機能は制限されます。",
+  "zh": "正在检查判断 AI。可能需要几分钟，检查完成前，需要判断的功能将受限。"
  },
  "first_run.judgment_attention": {
   "ko": "판단 AI를 사용할 수 없습니다. AI 설정에서 확인이 필요합니다.",
@@ -3214,6 +3214,54 @@
   "en": "Judgment AI is using the existing API route instead of following Main AI. Check AI settings.",
   "ja": "判断AIはメインAIではなく既存のAPI経路を使用中です。AI設定を確認してください。",
   "zh": "判断 AI 正在使用现有 API 路径，而非跟随主 AI。请检查 AI 设置。"
+ },
+ "first_run.tagline": {
+  "ko": "내 컴퓨터에서 돌아가는 나만의 개인 에이전트. 일하는 AI를 바꿔도 기억과 진행 중인 일, 권한은 그대로 남습니다.",
+  "en": "Your personal agent, on your own machine. Change the AI underneath; keep its memory, open work and permissions.",
+  "ja": "自分のコンピューターで動く、自分のパーソナルエージェント。下で働く AI を替えても、記憶と進行中の仕事と権限はそのまま残ります。",
+  "zh": "在你自己电脑上运行的个人智能体。底层 AI 可以更换，记忆、进行中的工作和权限都会保留。"
+ },
+ "first_run.ai_detected": {
+  "ko": "{name}에 이미 로그인되어 있어 기본으로 골라 두었습니다.",
+  "en": "{name} is already signed in, so it is selected by default.",
+  "ja": "{name} にはすでにログインしているので、既定で選んであります。",
+  "zh": "{name} 已登录，已默认选中。"
+ },
+ "terminal.ready": {
+  "ko": "이제 여기서 Still과 바로 대화할 수 있어요. 무엇이든 입력해 보세요. 끝내려면 Ctrl-D를 누르세요.",
+  "en": "You can talk to Still right here now. Type anything. Press Ctrl-D to finish.",
+  "ja": "ここで今すぐ Still と話せます。何でも入力してみてください。終えるには Ctrl-D を押してください。",
+  "zh": "现在可以直接在这里和 Still 对话。随便输入点什么吧。按 Ctrl-D 结束。"
+ },
+ "terminal.telegram_hint": {
+  "ko": "휴대폰에서도 대화하고 싶다면 \"텔레그램 연결해줘\"라고 말해 보세요.",
+  "en": "Want to talk from your phone too? Just say \"connect Telegram\".",
+  "ja": "スマートフォンからも話したい場合は「Telegram をつないで」と言ってみてください。",
+  "zh": "想在手机上也能对话？试着说“帮我连接 Telegram”。"
+ },
+ "terminal.input_stopped": {
+  "ko": "입력을 멈췄어요. 아무것도 바꾸지 않았습니다.",
+  "en": "Input stopped. Nothing was changed.",
+  "ja": "入力を中止しました。何も変更していません。",
+  "zh": "已停止输入。没有做任何更改。"
+ },
+ "terminal.working": {
+  "ko": "Still이 답을 준비하고 있어요…",
+  "en": "Still is working on the answer…",
+  "ja": "Still が答えを準備しています…",
+  "zh": "Still 正在准备回答…"
+ },
+ "terminal.bye": {
+  "ko": "대화를 마쳤어요. Still도 멈춥니다. 다시 시작하려면 `agentos start`를 실행하세요.",
+  "en": "Conversation finished, and Still stops. Run `agentos start` to start again.",
+  "ja": "会話を終えました。Still も停止します。再開するには `agentos start` を実行してください。",
+  "zh": "对话已结束，Still 也随之停止。要重新开始，请运行 `agentos start`。"
+ },
+ "first_run.finished_without_ai": {
+  "ko": "AI가 아직 연결되지 않았습니다. 브라우저의 AI 설정에서 연결하면 바로 쓸 수 있습니다.",
+  "en": "No AI is connected yet. Connect one in the browser's AI settings and Still is ready to use.",
+  "ja": "AI はまだ接続されていません。ブラウザの AI 設定で接続すれば、すぐに使えます。",
+  "zh": "尚未连接 AI。在浏览器的 AI 设置中连接后即可使用。"
  },
  "browser.destination_check_timeout": {
   "ko": "주소의 공개 네트워크 여부를 시간 안에 확인하지 못해 이번 이동을 중단했습니다. 실제 접근 금지가 확인된 것은 아닙니다.",

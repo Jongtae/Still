@@ -392,6 +392,53 @@ class StrictQualificationLogic(unittest.TestCase):
         self.assertFalse(result['qualified'])
         self.assertIn('turn-directory-readable', result['reason'])
 
+    def _bubblewrap(self, leak=None, refuse=None):
+        """Linux bubblewrap (#450): only the workspace and the way to it are mounted, nothing else exists inside."""
+        import os
+        base = self._runner(f'codex-cli {CODEX_VERSION}')
+
+        def runner(argv, **kwargs):
+            if argv[1] != 'sandbox':
+                return base(argv, **kwargs)
+            self.calls.append((list(argv), dict(kwargs['env'])))
+            if refuse:
+                return _Done(returncode=1, stderr=refuse)
+            target, turn = Path(argv[-1]).resolve(), Path(kwargs['cwd']).resolve()
+            # /bin/ls hides dot entries unless asked with -A (review: the default runtime root is under ~/.local).
+            listed = (lambda names: '\n'.join(name for name in names if '-A' in argv or not name.startswith('.')))
+            if target == turn:
+                return _Done(stdout=listed(os.listdir(turn)))
+            if target in turn.parents:
+                return _Done(stdout=listed([turn.relative_to(target).parts[0], *([leak] if leak else [])]))
+            return _Done(returncode=2, stderr=f"/bin/ls: cannot access '{target}': No such file or directory")
+        return runner
+
+    def _qualify_on_linux(self, runner):
+        from unittest import mock
+        (self.store / 'quickstart.db').write_text('')
+        adapter = BoundedExecutionAdapter(finder=self.finder, runner=runner, runtime_root=self.store / '.local' / 'runs',
+                                          codex_home=self.folder / 'codex-home')
+        with mock.patch.object(sys, 'platform', 'linux'):
+            return adapter.qualify_strict('codex', store_root=self.store)
+
+    def test_linux_qualifies_when_only_the_workspace_is_mounted(self):
+        result = self._qualify_on_linux(self._bubblewrap())
+        self.assertTrue(result['qualified'], result['reason'])
+        denied = [check for check in result['checks'] if check['check'] == 'protected-directory-denied']
+        self.assertIn(self.store.name, [check['target'] for check in denied], 'the store, which holds the runtime root')
+
+    def test_linux_fails_closed_when_a_protected_entry_shows_inside(self):
+        result = self._qualify_on_linux(self._bubblewrap(leak='quickstart.db'))
+        self.assertFalse(result['qualified'])
+        self.assertIn('protected-directory-denied', result['reason'])
+
+    def test_linux_without_user_namespaces_fails_closed(self):
+        result = self._qualify_on_linux(self._bubblewrap(
+            refuse='bwrap: No permissions to create a new namespace, likely because the kernel does not allow '
+                   'non-privileged user namespaces.'))
+        self.assertFalse(result['qualified'])
+        self.assertIn('turn-directory-readable', result['reason'])
+
     def test_a_crashing_or_unobservable_denial_probe_is_not_permission_denial(self):
         base = self._runner(f'codex-cli {CODEX_VERSION}')
         for code, error in ((-11, 'crashed'), (2, 'unknown permissions profile'), (1, '')):
@@ -409,7 +456,8 @@ class StrictQualificationLogic(unittest.TestCase):
 
     def test_an_untested_platform_fails_closed_before_running_anything(self):
         from unittest import mock
-        with mock.patch.object(sys, 'platform', 'linux'):
+        # #450: Linux qualifies by its probes now; native Windows (outside WSL) has no qualified sandbox.
+        with mock.patch.object(sys, 'platform', 'win32'):
             result = self._qualify()
         self.assertFalse(result['qualified'])
         self.assertEqual(result['reason'], 'tested-platform')
@@ -602,7 +650,7 @@ class StrictAutomaticAdmission(unittest.TestCase):
 
     def test_platform_and_runtime_root_still_refuse_without_any_process(self):
         from unittest import mock
-        for field, value in (('platform', 'linux'),):
+        for field, value in (('platform', 'win32'),):
             with mock.patch.object(sys, field, value), self.assertRaises(ExecutionError):
                 self.adapter.execute('codex', 'hello', self.tools)
         self.assertEqual(self.calls, [])

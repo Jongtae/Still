@@ -46,13 +46,22 @@ RUBRIC = {
     'follow_through': 'Follows through: sets or offers the reminder, records the memory, acknowledges a missed '
                       'timing, or corrects its own earlier advice when the owner adds new facts.',
     'no_wrong_narrowing': 'Does not wrongly narrow a new, unrelated request to the previous topic.',
+    # #407 follow-up: what the owner reads before the answer, on the paired-chat path.
+    'conversational': 'Talks like a capable person working for the owner, not like a system: anything it says '
+                      'before or while working is natural, in one register, worth hearing (no restating the request '
+                      'as a form, no routine "check, change, confirm" lists, no status chatter), and the final '
+                      'answer does not repeat it.',
 }
+#: The dimensions a scenario is judged on when it names none (``conversational`` only when asked for).
+DEFAULT_RUBRIC = tuple(name for name in RUBRIC if name != 'conversational')
+#: ``web`` sends each turn to ``/api/chat``; ``telegram`` through the eval's Bot API stand-in.
+CHANNELS = ('web', 'telegram')
 
 SPLITS = ('dev', 'heldout')
 _ID = re.compile(r'^[a-z0-9][a-z0-9-]{2,79}$')
 _EXPECT_KEYS = {'memory_any', 'current_state_any', 'preparation', 'no_memory_of_request', 'allow_status'}
 _TURN_KEYS = {'say', 'note', 'note_in_message'}
-_KEYS = {'id', 'title', 'split', 'turns', 'rubric', 'expect', 'good_secretary', 'tags'}
+_KEYS = {'id', 'title', 'split', 'turns', 'rubric', 'expect', 'good_secretary', 'tags', 'channel'}
 
 
 class ScenarioError(ValueError):
@@ -94,7 +103,10 @@ def validate(raw, origin='scenario'):
             raise ScenarioError(f'{where}: turn {index} note must be text up to 1000 characters')
         normalized_turns.append({'say': say.strip(), 'note': (note or '').strip(),
                                  'note_in_message': turn.get('note_in_message') is True})
-    rubric = raw.get('rubric', list(RUBRIC))
+    channel = raw.get('channel', 'web')
+    if channel not in CHANNELS:
+        raise ScenarioError(f'{where}: channel must be one of {CHANNELS}')
+    rubric = raw.get('rubric', list(DEFAULT_RUBRIC))
     if not isinstance(rubric, list) or not rubric or any(item not in RUBRIC for item in rubric):
         raise ScenarioError(f'{where}: rubric must name dimensions from {sorted(RUBRIC)}')
     expect = raw.get('expect', {})
@@ -119,7 +131,7 @@ def validate(raw, origin='scenario'):
                        'preparation': expect.get('preparation') is True,
                        'no_memory_of_request': expect.get('no_memory_of_request') is True,
                        'allow_status': list(allow_status)},
-            'good_secretary': str(raw.get('good_secretary') or ''), 'tags': list(tags)}
+            'good_secretary': str(raw.get('good_secretary') or ''), 'tags': list(tags), 'channel': channel}
 
 
 def load_file(path):

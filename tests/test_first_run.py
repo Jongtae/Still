@@ -40,6 +40,19 @@ class ScriptedTerminal:
         if self.on_open:
             self.on_open(url)
 
+    def banner(self, version=''):
+        self.lines.append(f'Still {version}')
+
+    def title(self, text):
+        self.lines.append(text)
+
+    def mark(self, mark, text):
+        self.lines.append(f'{mark} {text}')
+
+    def choose(self, prompt, options, default=None):
+        self.choices = getattr(self, 'choices', []) + [(options, default)]
+        return self.ask(prompt) or default or ''
+
     def text(self):
         return '\n'.join(self.lines)
 
@@ -308,6 +321,7 @@ class FirstRunTest(unittest.TestCase):
         term = ScriptedTerminal()
         self.assertTrue(self.run_wizard(service, term))
         self.assertNotIn(first_run.msg('first_run.intro'), term.text())
+        self.assertFalse(term.text().startswith('Still'))
         self.assertIn(first_run.msg('first_run.finished'), term.text())
         self.assertTrue(first_run.finished(self.store))
 
@@ -315,7 +329,8 @@ class FirstRunTest(unittest.TestCase):
         service = FakeService()
         term = ScriptedTerminal(asks=['', '4', ''])
         self.assertTrue(self.run_wizard(service, term))
-        self.assertTrue(term.text().startswith(first_run.msg('first_run.intro')))
+        self.assertTrue(term.lines[0].startswith('Still'))
+        self.assertEqual(term.lines[1], first_run.msg('first_run.intro'))
 
 
 class Done:
@@ -338,7 +353,7 @@ class LanguageTest(unittest.TestCase):
     def test_english_terminal_translates_every_wizard_line(self):
         term = first_run.Terminal('en')
         self.assertEqual(term.local('   ' + first_run.msg('first_run.access_prompt') + ' '), '   Set a password? [y/N] ')
-        self.assertEqual(term.local('\n' + first_run.msg('first_run.ai_title')), '\n2. AI connection')
+        self.assertEqual(term.local('\n' + first_run.msg('first_run.ai_title')), '\nAI connection')
         self.assertEqual(term.local('   ' + first_run.msg('first_run.cli_missing', name='Codex')),
                          '   Codex needs to be installed. Opening its official install page in the browser:')
         self.assertEqual(term.local('   ' + first_run.msg('first_run.model_prompt_default', model='gpt-4o-mini') + ' '),
@@ -376,6 +391,179 @@ class LanguageTest(unittest.TestCase):
         self.assertTrue(lines)
         for line in lines:
             self.assertNotRegex(line, '[가-힣]', line)
+
+
+class SetupLookTest(unittest.TestCase):
+    """#438: the AI step offers a signed-in CLI first, and an unconnected AI is not reported as broken."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.store = QuickStore(Path(self.temp.name) / 'data')
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_enter_takes_the_signed_in_claude_code(self):
+        service = FakeService()
+        service.logins['claude-code'] = 'signed-in'
+        term = ScriptedTerminal(asks=['', '', ''])
+        self.assertTrue(first_run.run(service, self.store, term))
+        self.assertEqual(term.choices[0][1], '2')
+        self.assertIn(first_run.msg('first_run.ai_detected', name='Claude Code'), term.text())
+        self.assertIn(('connect', 'claude-code', True), service.calls)
+        self.assertEqual(term.commands, [])
+
+    def test_without_a_signed_in_cli_enter_asks_again(self):
+        service = FakeService()
+        term = ScriptedTerminal(asks=['', '', '4', ''])
+        self.assertTrue(first_run.run(service, self.store, term))
+        self.assertIsNone(term.choices[0][1])
+        self.assertIn(first_run.msg('first_run.choose_one_to_four'), term.text())
+        self.assertNotIn(first_run.msg('first_run.ai_detected', name='Codex'), term.text())
+        self.assertEqual(service.calls, [])
+
+    def test_connect_later_is_not_shown_as_a_failure(self):
+        term = ScriptedTerminal(asks=['', '4', ''])
+        self.assertTrue(first_run.run(FakeService(), self.store, term))
+        self.assertIn(first_run.msg('first_run.finished_without_ai'), term.text())
+        self.assertNotIn(first_run.msg('first_run.finished'), term.text())
+        self.assertFalse([line for line in term.lines if line.startswith('! ')])
+        self.assertNotIn(first_run.msg('first_run.judgment_attention'), term.text())
+
+    def test_a_connected_ai_whose_judgment_fails_is_still_flagged(self):
+        service = FakeService()
+        service.decision_routes.follow_main_switched = Mock()
+        service.logins['codex'] = 'signed-in'
+        self.assertTrue(first_run.run(service, self.store, ScriptedTerminal(asks=['', '1', ''])))
+        term = ScriptedTerminal()
+        first_run._summary(service, term)
+        self.assertIn('! ' + first_run.msg('first_run.judgment_attention'), term.lines)
+
+    def test_a_conversation_to_follow_offers_telegram_there_instead(self):
+        service = FakeService()
+        service.logins['codex'] = 'signed-in'
+        term = ScriptedTerminal(asks=['', ''])  # a Telegram question would find no answer left
+        self.assertTrue(first_run.run(service, self.store, term, conversation=True))
+        self.assertNotIn(first_run.msg('first_run.telegram_title'), term.text())
+
+    def test_without_an_ai_the_telegram_step_stays(self):
+        term = ScriptedTerminal(asks=['', '4', ''])
+        self.assertTrue(first_run.run(FakeService(), self.store, term, conversation=True))
+        self.assertIn(first_run.msg('first_run.telegram_title'), term.text())
+
+    def test_moving_to_the_login_service_asks_about_telegram_after_all(self):
+        service = FakeService()
+        service.logins['codex'] = 'signed-in'
+        term = ScriptedTerminal(asks=['', '', 'y', ''])
+        self.assertTrue(first_run.run(service, self.store, term, login_service=lambda: {'status': 'not_installed'},
+                                      conversation=True))
+        text = term.text()
+        self.assertLess(text.index(first_run.msg('first_run.login_title')), text.index(first_run.msg('first_run.telegram_title')))
+
+
+class RichTerminalTest(unittest.TestCase):
+    """#438: Rich draws and prompt_toolkit reads; the catalog lines and the secret path stay the same."""
+
+    def terminal(self, lang=None, answers=(), choice=None):
+        import io
+        from rich.console import Console
+        self.out = io.StringIO()
+        self.reads, self.picks = [], []
+        answers = list(answers)
+
+        def reader(prompt, **options):
+            self.reads.append((prompt, options))
+            return answers.pop(0)
+
+        self.chosen_messages = []
+
+        def chooser(message, **options):
+            self.picks.append(options)
+            self.chosen_messages.append(message)
+            return choice
+        return first_run.RichTerminal(lang, Console(file=self.out, width=120, color_system=None),
+                                      reader=reader, chooser=chooser)
+
+    def test_banner_title_and_marks_are_drawn_in_the_terminal_language(self):
+        term = self.terminal('en')
+        term.banner('0.3.0')
+        term.title(first_run.msg('first_run.ai_title'))
+        term.mark('✓', first_run.msg('first_run.judgment_active'))
+        text = self.out.getvalue()
+        self.assertIn('/___/ /_/ /___/____/____/', text)
+        self.assertIn(first_run.msg('first_run.tagline', 'en'), text)
+        self.assertIn('v0.3.0', text)
+        self.assertIn(first_run.msg('first_run.ai_title', 'en'), text)
+        self.assertIn('✓ ' + first_run.msg('first_run.judgment_active', 'en'), text)
+        self.assertNotRegex(text, '[가-힣]')
+
+    def test_a_secret_is_read_masked_and_never_drawn(self):
+        term = self.terminal(None, answers=['  123456789:AAsecret  '])
+        self.assertEqual(term.secret(first_run.msg('first_run.bot_token_prompt')), '123456789:AAsecret')
+        self.assertEqual(self.reads[0][1], {'is_password': True})
+        self.assertNotIn('AAsecret', self.out.getvalue())
+
+    def test_the_arrow_menu_numbers_its_own_rows_and_keeps_the_default(self):
+        term = self.terminal('en', choice='2')
+        options = [('1', first_run.msg('first_run.ai_codex')), ('2', first_run.msg('first_run.ai_claude'))]
+        self.assertEqual(term.choose(first_run.msg('first_run.choice_prompt'), options, '2'), '2')
+        self.assertEqual(self.picks[0]['options'], [('1', 'ChatGPT subscription (Codex)'),
+                                                    ('2', 'Claude subscription (Claude Code)')])
+        self.assertEqual(self.picks[0]['default'], '2')
+        term.choose('', options, 'missing')
+        self.assertIsNone(self.picks[1]['default'])
+
+    def line_terminal(self, app):
+        import io
+        from rich.console import Console
+        self.exits = []
+
+        def reader(prompt, **options):
+            before = len(self.exits)
+            options['pre_run']()
+            return '' if len(self.exits) > before else 'typed'
+        app.exit = lambda result=None: self.exits.append(result)
+        return first_run.RichTerminal('en', Console(file=io.StringIO()), reader=reader, chooser=lambda *a, **k: None)
+
+    def test_a_request_between_two_lines_ends_the_next_line_at_once(self):
+        """Review on #456: a wake-up with no line running is kept for the next line, and used once."""
+        from unittest import mock
+        app = SimpleNamespace(is_running=False)
+        term = self.line_terminal(app)
+        term.interrupt()
+        with mock.patch('prompt_toolkit.application.current.get_app', return_value=app):
+            self.assertEqual(term.message(lambda: ''), '')
+            self.assertEqual(term.message(lambda: ''), 'typed')
+        self.assertEqual(self.exits, [''])
+
+    def test_a_request_during_a_line_ends_that_line(self):
+        app = SimpleNamespace(is_running=True, loop=SimpleNamespace(call_soon_threadsafe=lambda callback: callback()))
+        term = self.line_terminal(app)
+        term._line = app
+        term.interrupt()
+        self.assertEqual(self.exits, [''])
+        self.assertFalse(term._woken, 'a running line is ended, not remembered')
+
+    def test_the_menu_is_drawn_with_the_notice_it_settles(self):
+        term = self.terminal('en', choice='1')
+        term.choose('', [('1', '1) Apply'), ('2', '2) Keep')], '1', preview='Change **timezone** to Europe/Paris')
+        self.assertEqual(self.chosen_messages[0].__class__.__name__, 'ANSI')
+        self.assertIn('Europe/Paris', ''.join(text for _style, text in self.chosen_messages[0].__pt_formatted_text__()))
+
+    def test_plain_lines_when_the_terminal_is_redirected_or_dumb(self):
+        tty, pipe = SimpleNamespace(isatty=lambda: True), SimpleNamespace(isatty=lambda: False)
+        self.assertIs(type(first_run.open_terminal('en', tty, pipe, {})), first_run.Terminal)
+        self.assertIs(type(first_run.open_terminal('en', pipe, tty, {})), first_run.Terminal)
+        self.assertIs(type(first_run.open_terminal('en', tty, tty, {'TERM': 'dumb'})), first_run.Terminal)
+        self.assertIs(type(first_run.open_terminal('en', tty, tty, {'TERM': 'xterm-256color'})), first_run.RichTerminal)
+
+    def test_plain_choice_lists_the_numbered_lines_and_takes_the_default_on_enter(self):
+        term = first_run.Terminal(None)
+        lines = []
+        term.say = lines.append
+        term.ask = lambda prompt: ''
+        self.assertEqual(term.choose('번호:', [('1', first_run.msg('first_run.ai_codex'))], '1'), '1')
+        self.assertEqual(lines, ['   ' + first_run.msg('first_run.ai_codex')])
 
 
 if __name__ == '__main__':
