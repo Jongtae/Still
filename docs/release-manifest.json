@@ -45,14 +45,15 @@
   ],
   "unpublished": [
     {
-      "version": "0.3.1",
+      "version": "0.4.0",
       "tag": null,
       "commit": null,
       "why_no_commit": "The future tagged main merge commit does not exist; no earlier source SHA can stand in for it.",
       "archive_sha256": null,
       "state": "unpublished",
-      "why_no_checksum": "No v0.3.1 GitHub tag archive exists; its served SHA-256 must be measured only after publication.",
-      "carries": "Next development-source version after v0.3.0. This placeholder does not choose the next release's version or claim a new product capability; the release-preparation PR does."
+      "why_no_checksum": "No v0.4.0 GitHub tag archive exists; its served SHA-256 must be measured only after publication.",
+      "carries": "Minor release after v0.3.0; milestone v0.4.0 and everything merged to main since v0.3.0. Version 0.3.1 was skipped: its fixes ship here. New for the owner: one-time phone links (API secret input, remote login, family setup) open through a Cloudflare Quick Tunnel when ngrok is not configured, so no ngrok account is needed (#523); the owner's AI creates Gmail filters through a separate opt-in gmail-filters grant, and a filter that forwards mail is refused before the request leaves (#502); and the plan preview reads what each connection can do, so it no longer promises an action no connection can perform (#501). Fixes include first setup from the installer reading its questions from the terminal and ignoring keys typed before a question (#510), Still's own terminal lines shown in the terminal's language (#511), a terminal working line that keeps turning and shows how long Still has worked (#512), Telegram's waiting draft moved below a message the Work sends (#518), an API connection described plainly once and named briefly after (#519), and a failed API secret link that says why and opens the input page on this Mac instead (#520). For development only, a short release scope in validate for release-data pull requests (#508).",
+      "not_claimed": "No install of this tag archive was observed before publication; the publish workflow's macOS brew install/brew test and the installer smoke run only after the tag exists, and the owner's own upgrade is not yet recorded. Tests and CI do not prove live external integrations, model-dependent behavior or a background service surviving a restart. In particular, no live Cloudflare Quick Tunnel link opened from a phone and no live Gmail filter created in a real mailbox is claimed by this release. Cloudflare states that Quick Tunnels are for testing and development, without an uptime guarantee; each link gets a new hostname. Existing gmail-modify connections keep their abilities; creating filters needs the owner to connect the new gmail-filters grant."
     }
   ]
 }
