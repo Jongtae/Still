@@ -43,7 +43,7 @@ EFFECTS = ('read', 'mutate')
 OPERATION = re.compile(r'^[A-Za-z0-9_.-]{1,60}$')
 ENV_NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,127}$')
 #: ``name -> 'module:Class'``; imported only when a run asks for that world.
-REGISTRY = {'appworld': 'agentos_eval.worlds.appworld:AppWorld', 'fake': 'agentos_eval.worlds:FakeWorld'}
+REGISTRY = {'appworld': 'agentos_eval.worlds.appworld:AppWorldWorld', 'fake': 'agentos_eval.worlds:FakeWorld'}
 
 
 class WorldError(RuntimeError):
