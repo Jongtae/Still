@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import json
 import inspect
 import logging
+import math
 import os
 from pathlib import Path
 import re
@@ -929,6 +930,30 @@ CODEX_NON_ACTION_ITEMS = frozenset({'agent_message', 'reasoning', 'todo_list', '
 CLI_TOOL_CALLS_KEPT = 30
 #: #808: the meta of an execute that never launched the CLI, so it ran nothing.
 NOT_LAUNCHED = {'launched': False}
+
+
+def reported_usage(meta):
+    """#467: terminal event fields: usage (up to 12 CLI numeric keys), num_turns,
+    cost_usd, cli_tool_calls and cli_tool_calls_partial. Missing stays absent;
+    no stream text or other metadata crosses this boundary.
+    """
+    meta = meta if isinstance(meta, dict) else {}
+    numeric = lambda value: type(value) in (int, float) and (not isinstance(value, float) or math.isfinite(value))
+    usage = meta.get('usage')
+    usage = {key: value for key, value in usage.items()
+             if isinstance(key, str) and re.fullmatch(r'[a-z0-9_]{1,48}', key) and numeric(value)} if isinstance(usage, dict) else {}
+    fields = {'usage': dict(list(usage.items())[:12]) or None}
+    if type(meta.get('num_turns')) is int:fields['num_turns'] = meta['num_turns']
+    if numeric(meta.get('cost_usd')):fields['cost_usd'] = meta['cost_usd']
+    calls = meta.get('tool_calls')
+    if isinstance(calls, list):
+        bridge = meta.get('bridge_calls', 0)
+        fields['cli_tool_calls'] = len(calls) + (bridge if type(bridge) is int and bridge >= 0 else 0)
+    elif type(meta.get('cli_tool_calls')) is int:
+        fields['cli_tool_calls'] = meta['cli_tool_calls']
+    if meta.get('tool_calls_partial') is True or meta.get('cli_tool_calls_partial') is True:
+        fields['cli_tool_calls_partial'] = True
+    return fields
 
 
 def cli_metadata(engine_id, raw, connector_digest=None, answer=None):

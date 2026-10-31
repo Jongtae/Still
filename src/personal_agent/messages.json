@@ -803,6 +803,24 @@
   "ja": "返ってきた結果",
   "zh": "返回的结果"
  },
+ "information_use.usage": {
+  "ko": "- AI 사용량{attempt}: {values}",
+  "en": "- AI usage{attempt}: {values}",
+  "ja": "- AI 使用量{attempt}: {values}",
+  "zh": "- AI 用量{attempt}: {values}"
+ },
+ "information_use.usage_not_reported": {
+  "ko": "보고되지 않음",
+  "en": "Not reported",
+  "ja": "報告なし",
+  "zh": "未报告"
+ },
+ "information_use.usage_partial": {
+  "ko": "도구 호출 일부만 보고됨",
+  "en": "Tool calls partially reported",
+  "ja": "ツール呼び出しは一部のみ報告",
+  "zh": "工具调用仅部分报告"
+ },
  "information_use.signed_in_browser_pages": {
   "ko": "로그인한 브라우저 페이지",
   "en": "Signed-in browser pages",

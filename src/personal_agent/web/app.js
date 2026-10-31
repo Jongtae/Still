@@ -387,6 +387,9 @@ function provenanceView(task){const record=task.provenance,box=devNode('section'
 // #826 이 답변에 쓴 정보: which owner information this Work used and where it went,
 // built by the backend from Still's own records (references and short labels, never values).
 const INFO_CATEGORY={profile:()=>t('프로필'),memory:()=>t('기억'),calendar:()=>t('캘린더'),files:()=>t('파일'),current_context:()=>t('현재 상황'),notes:()=>t('메모'),browser:()=>t('로그인한 브라우저 페이지'),settings:()=>t('설정'),spliced:()=>t('요청에 붙인 자료'),prepared:()=>t('준비해 둔 답변'),records:()=>t('이전 답변의 사용 기록')};
+Object.assign(I18N["en"],{"AI 사용량": "AI usage", "도구 호출 일부만 보고됨": "Tool calls partially reported"});
+Object.assign(I18N["ja"],{"AI 사용량": "AI 使用量", "도구 호출 일부만 보고됨": "ツール呼び出しは一部のみ報告"});
+Object.assign(I18N["zh-CN"],{"AI 사용량": "AI 用量", "도구 호출 일부만 보고됨": "工具调用仅部分报告"});
 function informationUseView(task,box){const audit=task.information_use;if(!audit||typeof audit!=='object'){box.append(devNode('p',t('이 작업의 정보 사용 기록이 없습니다.'),'empty'));return;}
  const facts=devNode('dl');box.append(facts);const fact=(term,value)=>facts.append(devNode('dt',term),devNode('dd',value));
  const used=Array.isArray(audit.used)?audit.used:[];for(const row of used)fact((INFO_CATEGORY[row.category]||(()=>String(row.category||'')))(),(row.items||[]).join('\n'));
@@ -395,6 +398,9 @@ function informationUseView(task,box){const audit=task.information_use;if(!audit
  const sent=audit.sent_to||{};fact(t('작업 AI'),(sent.workers||[]).map(row=>`${row.engine||row.provider||row.route||'-'} (${row.reported_model||row.model||t('기본 모델')})${row.own_web_search?' · '+t('자체 웹 검색 켜짐'):''}`).join('\n')||t('기록 없음'));
  if(sent.judgment_ai?.calls)fact(t('판단 AI'),t('{count}회',{count:sent.judgment_ai.calls})+(sent.judgment_ai.models?.length?` (${sent.judgment_ai.models.join(', ')})`:''));
  fact(t('웹 검색'),(sent.lookups||[]).map(row=>`${row.cli_own_search?t('CLI 자체 검색'):(row.by||'Still')}${row.status==='failed'?' · '+t('실패'):''}: ${(row.queries||[]).map(query=>`"${query}"`).join(' / ')||t('검색어 보고 없음')}`).join('\n')||t('실행하지 않음'));
+ // #467: CLI-reported numbers per attempt; missing reports are never zero.
+ const usageAttempts=audit.usage?.attempts||[],usageNumber=value=>value.toLocaleString('en-US',{maximumSignificantDigits:21});
+ fact(t('AI 사용량'),usageAttempts.map(row=>{const values=Object.entries(row.usage||{}).map(([key,value])=>`${key} ${usageNumber(value)}`);if(!values.length)values.push(t('보고되지 않음'));for(const key of ['num_turns','cost_usd','cli_tool_calls'])if(row[key]!=null)values.push(`${key} ${usageNumber(row[key])}`);if(row.cli_tool_calls_partial)values.push(t('도구 호출 일부만 보고됨'));return `${row.engine} (${row.status}): ${values.join(' · ')}`;}).join('\n')||t('보고되지 않음'));
  const photoStatus={'included-in-request':t('요청에 포함'),staged:t('전달 대기'),'not-sent':t('전달하지 않음'),unsupported:t('지원되지 않음'),unknown:t('전달 여부 불명'),failed:t('실패')};
  const attachments=Array.isArray(sent.attachments)?sent.attachments:[];if(attachments.length)fact(t('사진 첨부 전달 기록'),attachments.map(row=>`${row.source||t('Telegram 사진')} ${row.count||1}개 · ${[row.route,row.engine,row.provider].filter(Boolean).join(' / ')||t('기록 없음')} · ${photoStatus[row.status]||row.status||t('기록 없음')}`).join('\n'));
  // #167 (#28 option A): where the signed-in browser went, and held values found in what went out (labels only).
