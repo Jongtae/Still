@@ -106,7 +106,7 @@ from .telegram_presence import (ATTENTION_ACTION, ATTENTION_ASK, ATTENTION_COOLD
                                 ATTENTION_REMINDER_HORIZON, ATTENTION_TOOL, CLEAR_REACTION, DONE_REACTION, CONTROL_DETAILS, CONTROL_RETRY, NO_STEP_LINE,
                                 CLOSING_CANDIDATES, DONE_REACTIONS, RECEIVED_CANDIDATES,
                                 RECEIVED_REACTION, WAIT_CHAT_ACTION, WAIT_DRAFT, WROTE_REACTION, PresenceTiming, TelegramTurnAddressing,
-                                WaitState, draft_frame, draft_id_for, draft_step, outcome_reaction, pick_attention,
+                                WaitState, draft_frame, draft_id_for, draft_step, masked as masked_step, outcome_reaction, pick_attention,
                                 rich_draft_blocks, with_note,
                                 without_consumed)
 from .conversation_surface import PRESENCE_REACT, PRESENCE_TYPING
@@ -646,6 +646,8 @@ class AgentService:
         self.live_steps={}
         #: The worker and model each running Work's current attempt was launched with (``worker_line``).
         self.live_workers={}
+        #: #460: each running Work's live sub-agents, ``{call id: description}`` (``_observe_sub_agent``).
+        self.live_agents={}
         self.subscription_engines=subscription_engines or SubscriptionEngines()
         # The Claude Code token is read from the secret store per run and
         # handed to that CLI only as CLAUDE_CODE_OAUTH_TOKEN (#571).
@@ -7371,7 +7373,10 @@ class AgentService:
         _text,approval=draft_step(self.store.task_events(job['id']),self.live_steps.get(job['id']))
         if approval:return None
         # Owner direction 2026-10-31: the per-tool step lines meant little; the bubble names who is working.
-        return self.live_workers.get(job['id']) or NO_STEP_LINE
+        line=self.live_workers.get(job['id']) or NO_STEP_LINE
+        # #460: the worker's sub-agents at work, by the description it gave them.
+        agents=list((self.live_agents.get(job['id']) or {}).values())
+        return f"{line} › {', '.join(agents[:2])}" if line and agents else line
 
     def _observe_cli_step(self, job_id, step):
         """Keep the CLI's own streamed step for Work status (#445); presentation only.
@@ -7381,6 +7386,9 @@ class AgentService:
         completion closes only the step it names.
         """
         if not isinstance(step,dict):return
+        if step.get('state') in ('agent_running','agent_done'):
+            self._observe_sub_agent(job_id,step)
+            return
         if step.get('state')=='running':
             query=self._redact_provenance(str(step.get('query') or ''))[:200]
             self.live_steps[job_id]={'at':time.time(),'running':True,'id':step.get('id'),
@@ -7389,6 +7397,19 @@ class AgentService:
             live=self.live_steps.get(job_id)
             if live and live.get('running') and live.get('id')==step.get('id'):
                 self.live_steps[job_id]={**live,'at':time.time(),'running':False}
+
+    def _observe_sub_agent(self, job_id, step):
+        """The worker's sub-agents running now, by the description it gave each (#460); presentation only.
+
+        Redacted like any Work text; a description that would keep a masking mark is not shown.
+        """
+        agents=self.live_agents.setdefault(job_id,{})
+        if step.get('state')=='agent_done':
+            agents.pop(step.get('id'),None)
+            return
+        try:text=' '.join(self.scrub_work_text(job_id,str(step.get('description') or '')).split())
+        except Exception:return  # never show a line that could not be redacted
+        if text and not masked_step(text):agents[step.get('id')]=text[:60]
 
     STOP_CANCELLED_TEXT=msg('service.stopped_this_request_didn_t_run')
     # #606 T1: a running Work checks Stop before its next model turn or tool
@@ -12224,6 +12245,7 @@ class AgentService:
                 finally:
                     # #718: a live CLI step ends with its attempt.
                     self.live_steps.pop(job['id'],None)
+                    self.live_agents.pop(job['id'],None)
                     if relay is not None:relay.close()
                     # The Work's browser session ends with the run (as on the direct route).
                     run.capabilities.close_browser()

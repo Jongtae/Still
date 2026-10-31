@@ -305,7 +305,8 @@ class WorkTurns(StoreCase):
                          {'CLAUDE_CODE_USE_BEDROCK': '1', 'AWS_REGION': 'us-east-1', 'AWS_BEARER_TOKEN_BEDROCK': BEDROCK_TOKEN})
         self.assertEqual(env['CLAUDE_CODE_SUBPROCESS_ENV_SCRUB'], '1', "the CLI's documented scrub of subprocess env")
         self.assertNotIn('CLAUDE_CODE_OAUTH_TOKEN', env, 'a cloud turn never carries the personal subscription token')
-        self.assertLessEqual(set(env) - {'HOME', 'PATH', 'LANG', 'PYTHONPATH', 'CLAUDE_CODE_SUBPROCESS_ENV_SCRUB'},
+        # #460: CLAUDE_CODE_DISABLE_BACKGROUND_TASKS is a fixed Still value, not inherited.
+        self.assertLessEqual(set(env) - {'HOME', 'PATH', 'LANG', 'PYTHONPATH', 'CLAUDE_CODE_SUBPROCESS_ENV_SCRUB', 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS'},
                              DOCUMENTED['bedrock'])
         self.assertNotEqual(env['HOME'], str(Path.home()))
         tools = argv[argv.index('--tools') + 1]
@@ -411,7 +412,7 @@ class WorkTurns(StoreCase):
         adapter.execute('claude-code', 'hi', AgentOSMcpTools(_Caps()))
         argv, env = seen[0]
         self.assertEqual(env['CLAUDE_CODE_OAUTH_TOKEN'], OAUTH)
-        self.assertEqual(set(env), {'HOME', 'PATH', 'LANG', 'PYTHONPATH', 'CLAUDE_CODE_OAUTH_TOKEN'})
+        self.assertEqual(set(env), {'HOME', 'PATH', 'LANG', 'PYTHONPATH', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS'})
         self.assertNotIn('--tools', argv)
         self.assertEqual(self.store.config(cloud_engines.USAGE_KEY), None, 'nothing counted off the cloud')
 

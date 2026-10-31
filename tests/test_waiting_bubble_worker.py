@@ -6,6 +6,7 @@ a scripted compatible-API model; a recording Telegram transport).  Nothing live 
 import unittest
 from types import SimpleNamespace
 
+from personal_agent.bounded_execution import live_progress_reader, live_sub_agent_steps
 from personal_agent.orchestrator import DEFAULT_MODEL_LABEL
 from personal_agent.quickstart_service import worker_line
 
@@ -38,6 +39,44 @@ class DraftShowsTheWorker(_Case):
     def work_id(self):
         with self.store.db() as db:
             return db.execute("SELECT id FROM jobs WHERE status='running' ORDER BY created DESC LIMIT 1").fetchone()['id']
+
+
+class SubAgentsInTheBubble(_Case):
+    """#460: the worker's sub-agents, read from Claude Code's own stream, by the description it gave them."""
+
+    def launch(self, ident, description):
+        return {'type': 'assistant', 'message': {'content': [
+            {'type': 'tool_use', 'id': ident, 'name': 'Agent', 'input': {'description': description, 'prompt': 'p'}}]}}
+
+    def done(self, ident):
+        return {'type': 'user', 'message': {'content': [{'type': 'tool_result', 'tool_use_id': ident, 'content': 'r'}]}}
+
+    def test_only_top_level_launches_count_and_codex_reports_none(self):
+        self.assertEqual(live_sub_agent_steps('claude-code', self.launch('a1', '숙소 후보 찾기')),
+                         [{'state': 'agent_running', 'id': 'a1', 'description': '숙소 후보 찾기'}])
+        nested = {**self.launch('a2', 'inner'), 'parent_tool_use_id': 'a1'}
+        self.assertEqual(live_sub_agent_steps('claude-code', nested), [], "a sub-agent's own calls are not a new one")
+        self.assertEqual(live_sub_agent_steps('codex', self.launch('a1', 'x')), [])
+        other = {'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'id': 't', 'name': 'WebSearch', 'input': {}}]}}
+        self.assertEqual(live_sub_agent_steps('claude-code', other), [])
+
+    def test_the_bubble_names_them_while_they_run_redacted(self):
+        import json
+        from test_preparations import SECRET
+        work = self.store.enqueue('부산 숙소', 'tg-sub', 'telegram:gen-1', 77)
+        self.service.record_turn_worker(work, {'engine': 'claude-code', 'model': 'claude-opus-5-5'})
+        on_line = live_progress_reader('claude-code', lambda step: self.service._observe_cli_step(work, step))
+        line = lambda: self.service._draft_step_text(self.store.job(work), SimpleNamespace(scrubbed=None))
+        on_line(json.dumps(self.launch('a1', '숙소 후보 찾기'), ensure_ascii=False))
+        on_line(json.dumps(self.launch('a2', '교통편 알아보기'), ensure_ascii=False))
+        self.assertEqual(line(), 'Claude Code · claude-opus-5-5 › 숙소 후보 찾기, 교통편 알아보기')
+        on_line(json.dumps(self.done('a1')))
+        self.assertEqual(line(), 'Claude Code · claude-opus-5-5 › 교통편 알아보기')
+        on_line(json.dumps(self.launch('a3', f'토큰 {SECRET} 확인'), ensure_ascii=False))
+        self.assertNotIn(SECRET, line())
+        on_line(json.dumps(self.done('a2')))
+        on_line(json.dumps(self.done('a3')))
+        self.assertEqual(line(), 'Claude Code · claude-opus-5-5')
 
 
 if __name__ == '__main__':

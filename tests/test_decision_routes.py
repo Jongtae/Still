@@ -424,7 +424,8 @@ class SubscriptionCliTests(Temp):
         self.assertEqual((call['env'].get('CLAUDE_CODE_DISABLE_CLAUDE_MDS'), call['env'].get('CLAUDE_CODE_DISABLE_AUTO_MEMORY')),
                          ('1', '1'), 'no CLAUDE.md discovery or auto-memory')
         self.assertEqual(set(call['env']) - {'HOME', 'PATH', 'LANG', 'PYTHONPATH', 'CLAUDE_CODE_OAUTH_TOKEN',
-                                             'CLAUDE_CODE_DISABLE_CLAUDE_MDS', 'CLAUDE_CODE_DISABLE_AUTO_MEMORY'}, set())
+                                             'CLAUDE_CODE_DISABLE_CLAUDE_MDS', 'CLAUDE_CODE_DISABLE_AUTO_MEMORY',
+                                             'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS'}, set())
 
     def test_requested_and_observed_models_stay_separate(self):
         self.engine('claude-code', model='haiku', model_policy='explicit').judge(self.context(), 'p')

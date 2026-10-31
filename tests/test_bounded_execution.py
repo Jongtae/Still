@@ -84,7 +84,9 @@ class BoundedExecutionTests(unittest.TestCase):
         self.assertEqual(result.content,'bounded result')
         self.assertEqual(seen['argv'][:2], ['/runtime/claude','-p'])
         self.assertTrue(seen['kwargs']['shell'] is False)
-        self.assertEqual(set(seen['kwargs']['env']), {'HOME','PATH','LANG','PYTHONPATH'})
+        # #460: one fixed Still value, not inherited: sub-agents run inside the turn.
+        self.assertEqual(set(seen['kwargs']['env']), {'HOME','PATH','LANG','PYTHONPATH','CLAUDE_CODE_DISABLE_BACKGROUND_TASKS'})
+        self.assertEqual(seen['kwargs']['env']['CLAUDE_CODE_DISABLE_BACKGROUND_TASKS'], '1')
         # The allowed temporary runtime and checkout may both sit under /private.
         # Ignore only those known paths when checking for undeclared private inputs.
         turn_root = str(Path(folder).resolve())
@@ -678,7 +680,7 @@ class BoundedExecutionPreservedBoundaryTests(unittest.TestCase):
         finally:
             os.environ.pop('AGENTOS_R4_FAKE_SECRET', None)
         # A closed allowlist, not an inherited-and-extended environment.
-        self.assertEqual(set(seen['env']), {'HOME', 'PATH', 'LANG', 'PYTHONPATH'})
+        self.assertEqual(set(seen['env']), {'HOME', 'PATH', 'LANG', 'PYTHONPATH', 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS'})
         self.assertNotIn('AGENTOS_R4_FAKE_SECRET', seen['env'])
         self.assertEqual(seen['env']['PATH'], '/usr/bin:/bin')
 
