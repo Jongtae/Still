@@ -313,6 +313,11 @@ class SlackSurface(DirectMessageSurface):
             self._resend_thread_statuses(thread, job['id'])
         return posted
 
+    def _is_conversation_thread(self, thread):
+        with self.service.store.db() as db:
+            return db.execute(f'SELECT 1 FROM {self.TURNS_TABLE} WHERE source_post_id=? OR thread_ts=?',
+                              (message_id(thread), thread)).fetchone() is not None
+
     def _resend_thread_statuses(self, thread, done=None):
         """Slack clears a thread's status when the app posts in it (#446 review): every other running Work in
         that thread re-sends its own status on the next wait tick instead of after ``WAIT_STATUS_REFRESH``."""
@@ -498,6 +503,10 @@ class SlackSurface(DirectMessageSurface):
                 return None
             thread = event.get('thread_ts')
             reply_to = message_id(thread) if isinstance(thread, str) and thread != ts else None
+            if reply_to is not None and self._is_conversation_thread(thread):
+                # #446 review: in a thread the owner started (or one earlier turns already used), every reply
+                # carries the root, not the notice it answers, so the act is read in context like a direct message.
+                reply_to = None
             try:
                 # Slack's time on this Mac's clock (the offset measured at connect), as on Mattermost.
                 spoke = float(ts) + float(cfg.get('clock_offset') or 0)

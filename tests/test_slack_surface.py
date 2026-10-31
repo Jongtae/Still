@@ -963,6 +963,13 @@ class ThreadStatus(SlackCase):
         self.service.present_waiting_work(now=job['created'] + 3)
         self.assertEqual(self.statuses()[-1], {'channel_id': DM, 'thread_ts': '1234.000001', 'status': shown})
 
+    def test_a_typed_answer_in_the_owners_thread_is_read_in_context(self):
+        """#446 review: replies in a thread the owner started carry its root, never the notice posted inside it."""
+        job = self.running()
+        self.owner_says('응 진행해', thread='1234.000001')
+        answer = next(row for row in self.sl_jobs() if row['id'] != job['id'])
+        self.assertIsNone(self.surface.reply_to(answer['id']))
+
     def test_clear_failure_does_not_change_delivery_or_repost_answer(self):
         job = self.running()
         self.service.present_waiting_work(now=job['created'] + 2)
