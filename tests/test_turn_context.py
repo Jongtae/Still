@@ -9,7 +9,7 @@ from pathlib import Path
 from personal_agent.agent_runtime import (ATTACHMENT_NONE_NOTE, ATTACHMENTS_HEADING, CLI_TOOL_GUIDANCE, CONTEXT_BUDGET_BYTES,
                                           CORE_INSTRUCTIONS, MESSAGE_CAP_CHARS, POLICY, PROFILE_HEADING, attachment_facts,
                                           attachments_section, context_sections, profile_section, render_turn_prompt,
-                                          turn_context, work_sources)
+                                          turn_context, work_sources, WorkBudget, WorkLedger)
 from personal_agent.conversation_projection import TELEGRAM_PREVIEW_NOTE, context_message, previewed_link, qualify_transcript
 from personal_agent.bounded_execution import AgentOSMcpTools, BoundedExecutionAdapter, ExecutionResult
 from personal_agent.memory_service import MemoryService
@@ -32,6 +32,52 @@ class _Caps:
 
 
 class TurnContextBuilder(unittest.TestCase):
+    def test_worker_brief_shows_remaining_work_allowance_on_both_routes(self):
+        now = [100.0]
+        budget = WorkBudget(clock=lambda: now[0])
+        for _ in range(13):
+            budget.spend_attempt()
+        for _ in range(2):
+            budget.spend_turn()
+        now[0] += 61.5
+        line = 'Allowance left in this Work: 187 of 200 tool calls, 6 of 8 model turns, 538 seconds.'
+        for route in ('cli', 'api'):
+            with self.subTest(route=route):
+                context = turn_context([{'role': 'user', 'content': 'request'}], route,
+                                       brief='a note', work_budget=budget)
+                text = render_turn_prompt(context) if route == 'cli' else context_sections(context)
+                self.assertIn('a note\n' + line, text)
+                allowance = next(row for row in text.splitlines() if row.startswith('Allowance left'))
+                for name in ('codex', 'claude', 'openai', 'gmail', 'github'):
+                    self.assertNotIn(name, allowance.lower())
+
+    def test_worker_allowance_uses_durable_attempts_spent_after_budget_attached(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = QuickStore(Path(folder) / 'state')
+            job = store.enqueue('request', 'allowance')
+            ledger = WorkLedger(store, job, wall=lambda: 100.0)
+            budget = WorkBudget(clock=lambda: 100.0, ledger=ledger)
+            self.assertTrue(ledger.spend(budget.attempts))
+            self.assertEqual(budget.attempts_used, 0)
+            context = turn_context([{'role': 'user', 'content': 'request'}], 'cli', work_budget=budget)
+            self.assertIn('199 of 200 tool calls', render_turn_prompt(context))
+
+    def test_worker_allowance_is_omitted_without_a_budget(self):
+        for route in ('cli', 'api'):
+            context = turn_context([{'role': 'user', 'content': 'request'}], route, brief='a note')
+            self.assertEqual(context['brief'], 'a note')
+            self.assertNotIn('Allowance left', render_turn_prompt(context))
+            self.assertNotIn('Allowance left', context_sections(context))
+
+    def test_exhausted_worker_allowance_is_clamped_to_zero(self):
+        now = [100.0]
+        budget = WorkBudget(clock=lambda: now[0])
+        budget.attempts_used = budget.attempts
+        budget.turns_used = budget.turns
+        now[0] += 601
+        context = turn_context([{'role': 'user', 'content': 'request'}], 'api', work_budget=budget)
+        self.assertIn('0 of 200 tool calls, 0 of 8 model turns, 0 seconds.', context_sections(context))
+
     def test_every_route_shares_the_core_instructions(self):
         api = turn_context([{'role': 'user', 'content': 'hi'}], 'api')
         cli = turn_context([{'role': 'user', 'content': 'hi'}], 'cli')
@@ -277,12 +323,14 @@ class RoutesReceiveTheSameContext(unittest.TestCase):
         self.assertIn('profile.place.home: 판교', system['content'])
         self.assertNotIn('meeting-time', system['content'], 'only the profile namespace is carried')
         self.assertTrue(system['content'].startswith(CORE_INSTRUCTIONS), 'the section is appended, not a replacement')
+        self.assertIn('Allowance left in this Work:', system['content'])
         self.service.connect_subscription_engine({'engine': 'claude-code', 'officially_authenticated': True})
         self._run('저녁은?', 'k2')                                   # CLI route
         call = self.engine.calls[-1]
         self.assertIn('profile.allergy.peanut: 땅콩 알러지', call['context']['profile'])
         self.assertEqual(call['context']['profile'].split('\n')[0].split(':')[0], 'profile.allergy.peanut', 'key order')
         self.assertIn(PROFILE_HEADING, call['prompt'])
+        self.assertIn('Allowance left in this Work:', call['prompt'])
         self.assertLess(call['prompt'].index(PROFILE_HEADING), call['prompt'].index('# Current request'))
         self.assertNotIn('meeting-time', call['prompt'])
 

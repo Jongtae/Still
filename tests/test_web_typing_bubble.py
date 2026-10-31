@@ -1,8 +1,9 @@
 """PRESENCE-WEB-01 (#845): the web chat's wait state is a transient typing bubble.
 
 The bubble is ephemeral UI state derived from the live task status on every
-render. Nothing about it is stored: the read model carries an observed step
-line only while the Work is active, and a finished Work never carries one.
+render. Nothing about it is stored: the read model carries a launched worker
+line only while the Work is active and developer mode is on (#477).
+A finished Work never carries one.
 """
 import json
 import re
@@ -104,7 +105,7 @@ class TypingBubbleReadModelTests(unittest.TestCase):
         return job_id
 
     def test_active_work_carries_dots_only_until_its_worker_is_launched(self):
-        """Owner direction 2026-10-31: the bubble names the launched worker and model, not each tool step."""
+        """#458/#477: only developer mode shows the launched worker and model."""
         with tempfile.TemporaryDirectory() as folder:
             store, service = self._service(folder)
             job_id = self._job(store, 'running')
@@ -121,7 +122,12 @@ class TypingBubbleReadModelTests(unittest.TestCase):
             service.record_turn_worker(job_id, {'attempt': 1, 'route': 'subscription', 'engine': 'codex',
                                                 'model': 'gpt-6.1-sol'}, effort='medium')
             task = next(t for t in service.task_progress()['tasks'] if t['id'] == job_id)
+            self.assertEqual(task['step_line'], '', 'default off hides a launched worker (#477)')
+            store.put('developer_mode', True)
+            task = next(t for t in service.task_progress()['tasks'] if t['id'] == job_id)
             self.assertEqual(task['step_line'], 'Codex · gpt-6.1-sol · medium')
+            store.put('developer_mode', False)
+            self.assertEqual(next(t for t in service.task_progress()['tasks'] if t['id'] == job_id)['step_line'], '')
             self.assertNotIn(task['step_line'], ('running', 'queued', '진행 중'))
 
     def test_a_pending_browser_approval_is_an_owner_wait_not_typing(self):
@@ -132,6 +138,11 @@ class TypingBubbleReadModelTests(unittest.TestCase):
             task = next(t for t in service.task_progress()['tasks'] if t['id'] == job_id)
             self.assertEqual(task['waits'], ['승인 대기'])
             self.assertEqual(task['step_line'], '')
+            service.live_workers[job_id] = 'Codex · gpt-6.1-sol · medium'
+            for enabled in (False, True):
+                store.put('developer_mode', enabled)
+                task = next(t for t in service.task_progress()['tasks'] if t['id'] == job_id)
+                self.assertEqual(task['step_line'], '', 'approval wins over /dev (#477)')
 
     def test_finished_and_failed_work_carry_no_typing_state_and_nothing_is_stored(self):
         with tempfile.TemporaryDirectory() as folder:

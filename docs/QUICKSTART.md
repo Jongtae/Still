@@ -178,13 +178,15 @@ Evidence is unit tests with a fixture server, plus a local observation against a
 
 You can talk to Still in a direct message with your own Slack app's bot (#214). Still connects out to Slack over **Socket Mode**, an outbound WebSocket. There is no public request URL, no tunnel, and nothing on this Mac is opened to the outside. Still uses the official `slack_sdk`.
 
-1. At [api.slack.com/apps](https://api.slack.com/apps) choose **Create New App → From a manifest**, pick your workspace and paste the manifest that Settings > External connections > **Slack** shows (**Slack 앱 만들기**). It asks only for `chat:write`, `im:history`, `im:write`, `reactions:read` and `reactions:write`. It subscribes to `message.im` and `reaction_added`, and turns on interactivity and Socket Mode.
+1. At [api.slack.com/apps](https://api.slack.com/apps) choose **Create New App → From a manifest**, pick your workspace and paste the manifest that Settings > External connections > **Slack** shows (**Slack 앱 만들기**). It enables Agent Experience (`agent_view`) and asks for `assistant:write`, `chat:write`, `im:history`, `im:write`, `reactions:read` and `reactions:write`. It subscribes to `message.im` and `reaction_added`, and turns on interactivity and Socket Mode.
 2. Under **OAuth & Permissions** on the left, choose **Install to Workspace** and allow it; the **Bot User OAuth Token** (`xoxb-…`) then appears there. Under **Basic Information → App-Level Tokens**, create an **app token** (`xapp-…`) with the `connections:write` scope.
 3. In Settings on this Mac, enter both tokens and your own **member ID** (Slack profile → ⋮ → Copy member ID). Both tokens are kept in Still's secret store and never shown again. The bot says hello in your direct message.
 
+For an existing app, re-paste the updated manifest in Slack, then **reinstall the app** under OAuth & Permissions. If the Bot User OAuth Token shown afterwards differs from the one in Still, enter the new one in Settings. Switching on Agent Experience alone does not grant the new scope.
+
 - Only your messages in that direct message, in that workspace, are read. Anyone else who messages the bot, a channel, or another workspace is never read or answered.
 - An edited or deleted message is never a new request. Slack may deliver an event twice; Still takes it once.
-- Still marks your message with 👀 while it works. Slack shows no typing indicator for an app's bot, and replies are not edited as live drafts.
+- Still marks your message with 👀 while it works. For a message written in a thread, the reply stays in that thread and Agent Experience can show the observed, redacted wait status until the answer. Plain DMs keep their existing behavior; replies are not edited as live drafts.
 - A proposal to approve (a settings change, a schedule, remembering something, or an action approval) comes with **approve / decline buttons**. Only your press settles it, at most once, and the buttons are then removed. You can also answer by replying, or with a reaction such as 👍, read the same way as on Telegram.
 - **Payments and other exact action approvals can be given in Slack** (your decision on #214), by their button or a reply. Document-sharing and context approvals and browser logins are still answered in Still on this Mac.
 - A reply that never reached Slack is sent once it can be. A reply that may have arrived is never sent twice.

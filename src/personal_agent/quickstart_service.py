@@ -24,7 +24,7 @@ from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import (Capabilities, ToolError, cut_to_fit, run_agent, AGENTS, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
                             MEMORY_OWNER, context_sections, ENGINE_UNMEDIATED, OWNER_CONVERSATION, lookup_sources, work_written_values, WORK_SOURCES_KEY, WORK_SOURCES_LIMIT, base_label,
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
-                            WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, goal_summary, work_source_records,
+                            WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, WORK_LEDGER_KEY, goal_summary, work_source_records,
                             backfill_work_sources, recorded_private_sources, NOTES_SUMMARY_COMMANDS, WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_BACKFILL_VERSION,
                             progress_step)
 from .plugins import PluginRegistry
@@ -43,7 +43,7 @@ from .conversation_projection import (BLOCKER_CLOUD_PROFILE, BLOCKER_DOCUMENT_AP
                                       answer_note, owner_cause, report_statement, terminal_text, tried_statement, turn_qualifier,
                                       verified_portion)
 from .subscription_engines import SubscriptionEngines
-from .bounded_execution import BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls
+from .bounded_execution import reported_usage, BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls
 from .bounded_execution import AgentOSMcpTools, ReadOnlyAgentOSMcpTools, StrictIsolatedAgentOSMcpTools, BoundedExecutionAdapter, ExecutionError, ExecutionResult, MAX_PROMPT_BYTES, BOUNDED_PROFILE, HOST_CLI_PROFILES, STRICT_PROFILE, profile_actions, profile_status, route_unavailable
 from .orchestrator import DEFAULT_MODEL_LABEL, MIN_ATTEMPT_SECONDS, model_refused, observations_with_pages, preview_text, remember_model_refusal
 from .orchestrator import (EVENT_TOOL as ORCHESTRATION_EVENT, PURPOSE as ORCHESTRATION_PURPOSE, NOT_JUDGED, NOT_REACHED, REACHED, UNJUDGED, WORKER_FAILED,
@@ -77,7 +77,7 @@ from .conversation_handoff import (CONNECTOR_LABELS, JUDGMENT_NO, JUDGMENT_YES,
                                    AUTHORITY_DEFAULT, INTENT_CONVERSATION,
                                    IntentDecision,
                                    INTENT_GREETING, INTENT_KNOWLEDGE,
-                                   INTENT_MAIL_SEARCH, INTENT_MAIN_AI, INTENT_NOTE_CREATE, INTENT_NOTE_LIST, INTENT_DRIVE_READ,
+                                   INTENT_MAIL_SEARCH, INTENT_MAIN_AI, INTENT_DEVELOPER_MODE, INTENT_NOTE_CREATE, INTENT_NOTE_LIST, INTENT_DRIVE_READ,
                                    INTENT_SETTINGS, INTENT_SAVED_CONTEXT,
                                    INTENT_UNSUPPORTED, INTENT_WORKSPACE_SEARCH, SUPERSEDED_WORK_ERROR)
 # PRESENCE-CAP-01 / #505: contextual local authority handoff.
@@ -106,7 +106,7 @@ from .telegram_presence import (ATTENTION_ACTION, ATTENTION_ASK, ATTENTION_COOLD
                                 ATTENTION_REMINDER_HORIZON, ATTENTION_TOOL, CLEAR_REACTION, DONE_REACTION, CONTROL_DETAILS, CONTROL_RETRY, NO_STEP_LINE,
                                 CLOSING_CANDIDATES, DONE_REACTIONS, RECEIVED_CANDIDATES,
                                 RECEIVED_REACTION, WAIT_CHAT_ACTION, WAIT_DRAFT, WROTE_REACTION, PresenceTiming, TelegramTurnAddressing,
-                                WaitState, draft_frame, draft_id_for, draft_step, outcome_reaction, pick_attention,
+                                WaitState, draft_frame, draft_id_for, draft_step, masked as masked_step, outcome_reaction, pick_attention,
                                 rich_draft_blocks, with_note,
                                 without_consumed)
 from .conversation_surface import PRESENCE_REACT, PRESENCE_TYPING
@@ -646,6 +646,8 @@ class AgentService:
         self.live_steps={}
         #: The worker and model each running Work's current attempt was launched with (``worker_line``).
         self.live_workers={}
+        #: #460: each running Work's live sub-agents, ``{call id: description}`` (``_observe_sub_agent``).
+        self.live_agents={}
         self.subscription_engines=subscription_engines or SubscriptionEngines()
         # The Claude Code token is read from the secret store per run and
         # handed to that CLI only as CLAUDE_CODE_OAUTH_TOKEN (#571).
@@ -733,6 +735,7 @@ class AgentService:
         self._unsent_retry_at,self._unsent_backoff=0.0,0
         #: #749: the Settings login window's observed outcome (in memory; a restart forgets it).
         self._settings_login=None
+        self._signin_view,self._signin_view_refreshing={},False
         self.worker_lock=threading.Lock()
         # #655: the owner's configured search providers, read at call time.
         # #678: the connected AI's own search runs over this service's model
@@ -3348,7 +3351,8 @@ class AgentService:
 
     def photo_work_has_pending_resume(self, work_id):
         """Keep the Telegram photo available while an owner-approved continuation can requeue this Work."""
-        return self.work_has_pending_resume(work_id)
+        # #471: also while the budget boundary this run hit is still being turned into a Continue offer.
+        return self.work_has_pending_resume(work_id) or self.budget_continue_offer(work_id).get('state')=='pending'
 
     def work_has_pending_resume(self, work_id, now=None):
         """Existing owner-input waits shared by photo retention and scheduled settlement."""
@@ -3364,6 +3368,9 @@ class AgentService:
         if attachment and not attachment.get('approved'):
             return True
         if self.context_observations.awaiting_answer(work_id,now):
+            return True
+        offer=self.budget_continue_offer(work_id)
+        if offer.get('state')=='offered' and self.budget_continue_current(self.store.job(work_id),offer):
             return True
         return work_id in self._document_resume_rows()
 
@@ -4517,6 +4524,13 @@ class AgentService:
             task={'id':job['id'],'title':self._progress_title(job.get('message'),job['id']),'status':job.get('status'),'status_kind':kind,'status_label':label,'started_at':job.get('created'),'observed_at':last,'result_available':bool(job.get('response')) and job.get('status') in ('succeeded','partial','failed'),'workspace_id':job.get('workspace_id'),'events_count':len(events),'waits':waits,'configured':{'provider':configured.get('provider'),'model':configured.get('model'),'runtime':selected_subscription or (configured.get('provider') if configured else None)},'observed':{'provider':job.get('provider'),'model':job.get('model'),'runtime':job.get('provider') or None},'route':self._observed_route(job,events,model_events),'artifacts':artifacts}
             # The same typed qualifier the transcript and model context use
             # (#494), so the card cannot disagree with them.
+            task['budget_continue']=None
+            offer=self.budget_continue_offer(job['id'])
+            if self.budget_continue_current(job,offer):
+                from .telegram_locale import translate
+                task['budget_continue']={'nonce':offer['nonce'],'text':offer['text'],
+                    'texts':{lang:translate(offer['text'],lang) for lang in ('en','ja','zh')},
+                    'labels':{lang:msg('button.continue',lang) for lang in ('ko','en','ja','zh')}}
             task['qualifier']=turn_qualifier(job.get('status'))
             # #240: the one typed waiting state (``work_waits_for_owner``): a finished Work that waits for the
             # owner's own decision says so, and its kinds; its stored status (often ``partial``) is unchanged.
@@ -4526,9 +4540,8 @@ class AgentService:
             # #855: the settings drafts this Work still offers the owner (id and wording only; no digest).
             task['settings_drafts']=[{'id':row['id'],'effect':row['effect'],'note':row.get('note'),'reason':row.get('reason'),
                                       'expires_at':row.get('expires_at')} for row in awaiting_drafts.get(job['id'],())]
-            # #845: the web's transient typing bubble shows the same observed step
-            # line as the Telegram draft (#718) while the Work runs. Read model
-            # only, computed per poll from recorded events; never stored.
+            # #845/#477: the transient bubble shares the /dev worker gate.
+            # Read model only, computed per poll; never stored.
             if kind=='active':task['step_line']=self._draft_step_text(job,SimpleNamespace(scrubbed=None)) or ''
             # #571: expose the class of the last failed CLI run (e.g. 'auth')
             # so the owner sees the right recovery, not raw CLI output.
@@ -6257,7 +6270,10 @@ class AgentService:
         if callable(corrected):
             self._await_steer_judgments(job_id)
             corrected(self.store.work_steer_texts(job_id))
-        from .agent_runtime import EFFECT_NONE, call_effects, failed_steps_text, read_state_text, trail_steps
+        # #466: what this attempt already told the owner, so a further attempt does not say it again.
+        told=getattr(orchestration,'owner_told',None)
+        if callable(told):told(self.store.sent_updates(job_id))
+        from .agent_runtime import EFFECT_NONE, failed_steps_text, read_state_text, trail_steps
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',(job_id,since or 0)).fetchall()
         unknown=outcome=='unknown' or self._work_has_unknown_effect(job_id)
@@ -6270,9 +6286,10 @@ class AgentService:
         called,failed_codes,incomplete,sourceless=[],[],[],0
         # #1445 part 2: one effect classifier (``agent_runtime.record_effect``) over each call; any
         # call that is not ``none`` (a settings draft included) ends re-delegation, as before.
+        # #466: except an interim message to the owner, which changed nothing outside the owner's chat.
         tool_rows=self.attempt_tool_rows(rows)
-        from .agent_runtime import EFFECT_UNKNOWN
-        classes={effect_class for _action,effect_class,_status in call_effects(tool_rows)}
+        from .agent_runtime import EFFECT_UNKNOWN, redelegation_effects
+        classes=redelegation_effects(tool_rows)
         if classes-{EFFECT_NONE,EFFECT_UNKNOWN}:changed=True
         if EFFECT_UNKNOWN in classes:unknown=True
         # The owner is told "executed" only for an observed change; otherwise that it could not be confirmed.
@@ -7164,10 +7181,11 @@ class AgentService:
                 state.reaction=emoji
 
     def present_waiting_work(self, now=None):
-        """Show 👀, `typing…` and a Stop-able dots draft for running Work on a paired surface.
+        """Show 👀, `typing…` and a Stop-able draft; /dev adds the worker (#477).
 
         #212: each part only where the surface declares it (``reactions``,
-        ``typing``, ``live_drafts``); without drafts the wait shows `typing…`.
+        ``typing``, ``live_drafts``, ``wait_status``); a one-line status uses
+        the same lock and observed step redaction, independently of drafts. Without drafts the wait shows `typing…`.
 
         The surface is chosen from elapsed time only (`PresenceTiming`); no
         sleep is ever added.  `typing…` is refreshed every
@@ -7210,11 +7228,16 @@ class AgentService:
                     if not job or job['status']!='running' or not conversation.owns(job):continue
                     state=self.presence.get(job['id'])
                     if state is None or state.stopped:continue
+                    if capabilities.wait_status:
+                        # #477: no words of Still's own; '' is the surface's standard loading state.
+                        if conversation.show_wait_status(job,state,self._draft_step_text(job,state),now):
+                            shown.append((job['id'],'wait_status'))
+                        continue
                     surface=timing.wait_surface(now-job['created'],
                                                 draft_available=capabilities.live_drafts and not state.draft_failed)
                     if surface not in (WAIT_CHAT_ACTION,WAIT_DRAFT):continue
                     if surface==WAIT_DRAFT:
-                        # #445: observed steps gate approval waits; the draft shows only dots.
+                        # #477: approval waits suppress the draft; /dev gates the worker line.
                         line=self._draft_step_text(job,state)
                         if line is None:
                             continue  # a payment/approval step: the approval prompt is the only surface
@@ -7222,11 +7245,11 @@ class AgentService:
                             # #839: one already-prepared item may ride along, chosen once per Work.
                             if state.attention is None:
                                 state.attention=self.waiting_attention(job,now) or {}
-                            text=draft_frame('',state.dots_frame,state.attention.get('line'))
+                            text=draft_frame(line,state.dots_frame,state.attention.get('line'))
                             # #978: the same text again only to outlive the draft preview; a re-send
                             # restarts the client's reveal of the text.
                             if text!=state.draft_text or now-state.draft_at>=timing.draft_keepalive:
-                                if conversation.show_draft(job,state,draft_frame('',state.dots_frame),state.attention.get('line')):
+                                if conversation.show_draft(job,state,draft_frame(line,state.dots_frame),state.attention.get('line')):
                                     state.draft_at=now
                                     state.draft_text=None if state.rich_draft_retry else text
                                     state.dots_frame+=1
@@ -7343,24 +7366,22 @@ class AgentService:
     APPROVAL_NOTIFICATIONS=('approval_needed','context_approval_needed','browser_approval_needed')
 
     def _draft_step_text(self, job, state):
-        """The observed step line (#718), or None to suppress the draft (#445).
+        """The launched worker in /dev mode, dots alone otherwise (#477).
 
-        NO_STEP_LINE (the draft shows the dots alone) while no step is in
-        flight.  None while an approval prompt is pending or the step in flight is a
-        payment step: the existing approval prompt is then the only surface.
-        A step line was redacted when it was recorded; it passes this Work's
-        saved-value and stored-secret redaction again.  #445: the waiting
-        draft uses only the None gate, never the line.  #881: a
-        line left with a masking mark gives way to the step's plainer line
-        (``step_line``), so the internal mark is never shown.
+        None during approval/payment waits: the prompt is the only surface.
+        Worker Evidence is recorded independently of this presentation gate.
         """
         if any(row['kind'] in self.APPROVAL_NOTIFICATIONS and row['state'] in ('queued','sent')
                for row in self.store.task_notifications(job['id'])):
             return None
         _text,approval=draft_step(self.store.task_events(job['id']),self.live_steps.get(job['id']))
         if approval:return None
-        # Owner direction 2026-10-31: the per-tool step lines meant little; the bubble names who is working.
-        return self.live_workers.get(job['id']) or NO_STEP_LINE
+        if not self.store.config('developer_mode',False):return NO_STEP_LINE
+        # #458/#477: with /dev on, the bubble names the launched worker, never a per-tool step.
+        line=self.live_workers.get(job['id']) or NO_STEP_LINE
+        # #460: the worker's sub-agents at work, by the description it gave them.
+        agents=list((self.live_agents.get(job['id']) or {}).values())
+        return f"{line} › {', '.join(agents[:2])}" if line and agents else line
 
     def _observe_cli_step(self, job_id, step):
         """Keep the CLI's own streamed step for Work status (#445); presentation only.
@@ -7370,6 +7391,9 @@ class AgentService:
         completion closes only the step it names.
         """
         if not isinstance(step,dict):return
+        if step.get('state') in ('agent_running','agent_done'):
+            self._observe_sub_agent(job_id,step)
+            return
         if step.get('state')=='running':
             query=self._redact_provenance(str(step.get('query') or ''))[:200]
             self.live_steps[job_id]={'at':time.time(),'running':True,'id':step.get('id'),
@@ -7378,6 +7402,19 @@ class AgentService:
             live=self.live_steps.get(job_id)
             if live and live.get('running') and live.get('id')==step.get('id'):
                 self.live_steps[job_id]={**live,'at':time.time(),'running':False}
+
+    def _observe_sub_agent(self, job_id, step):
+        """The worker's sub-agents running now, by the description it gave each (#460); presentation only.
+
+        Redacted like any Work text; a description that would keep a masking mark is not shown.
+        """
+        agents=self.live_agents.setdefault(job_id,{})
+        if step.get('state')=='agent_done':
+            agents.pop(step.get('id'),None)
+            return
+        try:text=' '.join(self.scrub_work_text(job_id,str(step.get('description') or '')).split())
+        except Exception:return  # never show a line that could not be redacted
+        if text and not masked_step(text):agents[step.get('id')]=text[:60]
 
     STOP_CANCELLED_TEXT=msg('service.stopped_this_request_didn_t_run')
     # #606 T1: a running Work checks Stop before its next model turn or tool
@@ -7901,7 +7938,34 @@ class AgentService:
         # #709: logins waiting for the owner (host and times only); decided at /api/browser/login/decision.
         # #749: the Settings login window's observed outcome after its request answered ``opening``.
         settings_login=self._settings_login or {}
-        status['settings_login']={'state':settings_login.get('state'),'at':settings_login.get('at')} if settings_login else None
+        status['settings_login']={'state':settings_login.get('state'),'at':settings_login.get('at'),
+                                  'saved':settings_login.get('saved'),'sites':settings_login.get('sites') or []} if settings_login else None
+        # #488: whether each stored site still holds the owner's login-window sign-in (``_owner_signed_in``, checked
+        # off the poll), and whether a keep-alive was since refused.  ``login_url`` reopens the window for that site.
+        signins=self.store.config(BROWSER_OWNER_SIGNINS_KEY,{})
+        signins=signins if isinstance(signins,dict) else {}
+        paused=self.store.config(self.KEEPALIVE_PAUSED_KEY,{})
+        paused=paused if isinstance(paused,dict) else {}
+        signed={}
+        for session in status.get('sessions') or []:
+            record=signins.get(session.get('site'))
+            at=record.get('at') if isinstance(record,dict) and record.get('marks') else None
+            if isinstance(at,(int,float)) and at>0:
+                signed[session['site']]=(session.get('cookies'),session.get('last_used'),at,tuple(map(str,record['marks'])))
+        current=self._owner_signin_view(signed)
+        for session in status.get('sessions') or []:
+            site=session.get('site')
+            record=signins.get(site)
+            if site in signed:
+                at=signed[site][2]
+                held=current.get(site,'checking')
+                refused=isinstance(paused.get(site),(int,float)) and paused[site]>=at
+                state='checking' if held=='checking' else 'unknown' if held is None else 'expired' if not held else 'refresh_refused' if refused else 'signed_in'
+                session.update(sign_in=state,signed_in_at=at)
+            else:
+                session['sign_in']='none'
+            host=ascii_host(record.get('host')) if isinstance(record,dict) and record.get('host') else None
+            session['login_url']=f"https://{host or site}/"
         status['pending_logins']=[{'work_id':row['work_id'],'host':row.get('host',''),'site':row.get('site'),
                                    'landed_host':row.get('landed_host'),'landed_site':row.get('landed_site'),
                                    'stored_session':row.get('stored_session'),'offered_at':row.get('offered_at'),
@@ -7909,6 +7973,38 @@ class AgentService:
                                   for row in self.browser_login_requests().values()
                                   if isinstance(row,dict) and row.get('state')=='offered']
         return status
+
+    SIGNIN_VIEW_SECONDS=60
+
+    def _owner_signin_view(self, signed):
+        """``{site: True | False | None}`` of ``_owner_signed_in`` for the sites in ``signed`` (#488), never blocking.
+
+        ``signed`` maps each site with a login-window sign-in record to a key of
+        its stored row and record.  A result is kept while that key is unchanged
+        and for ``SIGNIN_VIEW_SECONDS`` (a cookie expires with time alone); a
+        site not checked for its current key is absent until the off-thread
+        check finishes, so the poll never waits on the Keychain.
+        """
+        now=time.time()
+        with self.lock:
+            view=self._signin_view
+            fresh={site:entry[1] for site,entry in view.items() if site in signed and entry[0]==signed[site]}
+            due=len(fresh)<len(signed) or any(now-view[site][2]>=self.SIGNIN_VIEW_SECONDS for site in fresh)
+            if not due or self._signin_view_refreshing:return fresh
+            self._signin_view_refreshing=True
+        def check():
+            results={}
+            try:
+                for site,key in signed.items():
+                    try:held=self._owner_signed_in(site)
+                    except Exception:held=None
+                    results[site]=(key,held,time.time())
+            finally:
+                with self.lock:
+                    self._signin_view=results
+                    self._signin_view_refreshing=False
+        threading.Thread(target=check,daemon=True,name='agentos-signin-view').start()
+        return fresh
 
     def open_browser_for_login(self, body):
         """Show the embedded engine's login window; Still types nothing in it (#680).
@@ -7936,10 +8032,10 @@ class AgentService:
         row={'host':host,'cookies_before':self._login_cookie_marks({'host':host}) if host else None}
         # What Settings shows after answering ``opening``: the window's observed outcome (in memory only).
         token=secrets.token_hex(8)
-        def mark(state):
+        def mark(state,**outcome):
             with self.lock:
                 if state=='opening' or (self._settings_login or {}).get('token')==token:
-                    self._settings_login={'token':token,'state':state,'at':time.time()}
+                    self._settings_login={'token':token,'state':state,'at':time.time(),**outcome}
         def opened(window,landed=None):
             # #765: the same baselines as the in-flow window (after the landing's own cookies were saved).
             row.update(self._login_window_baselines(window,host,landed))
@@ -7952,8 +8048,15 @@ class AgentService:
                     # Review P2-1: the window stays open for the owner at the Mac; the owner is told why.
                     self._notify_owner(f'telegram:{chat}',str(exc))
         def closed(window,reason,saved):
-            mark('failed' if reason=='failed' and (self._settings_login or {}).get('state')=='opening' else 'closed')
-            if saved:self._record_owner_signins(self._signed_in_sites({**row,'window':window}))
+            failed=reason=='failed' and (self._settings_login or {}).get('state')=='opening'
+            signed=self._signed_in_sites({**row,'window':window}) if saved else []
+            started=time.time()
+            if signed:self._record_owner_signins(signed)
+            # #488: Settings tells the owner what the close saved: the site(s) whose sign-in was just recorded.
+            signins=self.store.config(BROWSER_OWNER_SIGNINS_KEY,{}) if signed else {}
+            sites=sorted(site for site,record in (signins.items() if isinstance(signins,dict) else ())
+                         if isinstance(record,dict) and float(record.get('at') or 0)>=started)
+            mark('failed' if failed else 'closed',saved=bool(saved),sites=sites)
         mark('opening')
         result=self.browser_profile.open_for_login(url.strip(),on_opened=opened,on_closed=closed)
         if not isinstance(result,dict) or result.get('state')!='opening':
@@ -8284,7 +8387,7 @@ class AgentService:
             "SELECT detail FROM tool_events WHERE job_id=? AND tool IN ('action_continuation','settings_continuation')",(job['id'],))]
         if any(item.get('offer_digest')==row.get('offer_digest') and item.get('resumed') for item in receipts):return False
         from .quickstart_store import REQUEST_APPROVAL_ACTIONS
-        guarded=REQUEST_APPROVAL_ACTIONS|{'browser_sign_in'}
+        guarded=REQUEST_APPROVAL_ACTIONS|{'browser_sign_in','budget_continue'}
         reason=('unknown-effect' if row.get('action') in guarded and self._work_has_unknown_effect(job['id'])
                 else 'unaccounted-action' if row.get('action') in guarded and not self.settings_resume_safe(job['id'])
                 else 'continuation-budget' if sum(item.get('resumed') is True for item in receipts)>=8 else None)
@@ -8296,11 +8399,14 @@ class AgentService:
                    else '이 요청의 자동 재개 한도에 도달해 추가 실행하지 않았습니다.')
             db.execute("UPDATE jobs SET status='partial',owner_cause=? WHERE id=?",(cause,job['id']))
             return False
+        if row.get('action')=='budget_continue':
+            from .agent_runtime import renew_for_owner_prerequisite
+            if not renew_for_owner_prerequisite(db,job['id'],budget_continue=True):return False
         changed=db.execute("UPDATE jobs SET status='queued',error=NULL,delivery='none' WHERE id=? AND status IN ('failed','partial','interrupted','succeeded')",
                            (job['id'],)).rowcount==1
         if changed:
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                       (job['id'],'action_continuation','queued',json.dumps({'action_digest':row['digest'],'offer_digest':row.get('offer_digest'),'resumed':True}),time.time()))
+                       (job['id'],'action_continuation','queued',json.dumps({'action_digest':row['digest'],'offer_digest':row.get('offer_digest'),'resumed':True,**({'budget_progress':row['progress']} if row.get('action')=='budget_continue' else {})}),time.time()))
             # #1478 (live): the owner's approval of a step is a human boundary like a completed setup (#1445);
             # the approved step runs with a fresh allowance (bounded per Work), not the turns spent reaching it.
             # A login resume is not an approval and keeps the original ledger (its own contract, #709).
@@ -9084,12 +9190,140 @@ class AgentService:
         from .agent_runtime import external_effect_progress
         return external_effect_progress(self.store,work_id)
 
+    #: #471: how long a budget-boundary Continue stays offered; the ledger epoch and Work state still bind it.
+    BUDGET_CONTINUE_SECONDS=24*3600
+
+    def budget_continue_offer(self, work_id, *, db=None):
+        row=self.store.config('budget_continue:'+str(work_id),{},db=db)
+        return row if isinstance(row,dict) else {}
+
+    def budget_continue_current(self, job, row):
+        if row.get('state')!='offered':return False
+        try:ledger=WorkLedger._validate(self.store.config(row.get('ledger_key')))
+        except (ValueError,TypeError,KeyError):return False
+        if ledger['active'] or ledger['epoch']!=row.get('epoch'):return False
+        return bool(job and job.get('status') in ('partial','failed') and row.get('state')=='offered'
+                    and time.time()<float(row.get('deadline') or 0) and not self.work_stopped(job['id'])
+                    and not self.work_waits_for_owner(job)
+                    and (self._browser_login(job['id']) or {}).get('state') not in ('requested','opening','offered','closing')
+                    and row.get('generation')==self._owner_generation(self.issuer_owner_id(job))
+                    and (not any(surface.claims_channel(job.get('channel')) for surface in self.surfaces) or self._surface_work(job)))
+
+    @staticmethod
+    def _attempt_stop_codes(rows):
+        """The failure codes of one attempt's tool events; ``None`` when a detail is unreadable."""
+        failed=[]
+        for event in rows:
+            try:data=json.loads(event['detail'] or '{}')
+            except (TypeError,ValueError):return None
+            if isinstance(data,dict) and event['status'] in ('failed','stopped'):
+                failed.append(data.get('code') or data.get('failure_class'))
+        return failed
+
+    @staticmethod
+    def _budget_boundary(codes):
+        from .agent_runtime import BUDGET_CODES
+        return bool(codes is not None and set(codes)&(BUDGET_CODES-{'stopped'}) and not set(codes)&{'stopped','work_stopped'})
+
+    def offer_budget_continue(self, run):
+        """Offer Continue at a budget boundary, or release what the run held for one (#471)."""
+        offered=self._offer_budget_continue(run)
+        work_id=run.job['id']
+        if not offered and self.budget_continue_offer(work_id).get('state')=='pending':
+            self.store.put('budget_continue:'+work_id,{'state':'none'})
+            if run.outcome in ('failed','partial') and not self.photo_work_has_pending_resume(work_id):
+                self.store.remove_telegram_photo(work_id)
+        return offered
+
+    def _offer_budget_continue(self, run):
+        from .agent_runtime import read_state_text
+        job=self.store.job(run.job['id'])
+        if not job or job['status'] not in ('partial','failed') or self.work_stopped(job['id']):return False
+        with self.store.db() as db:
+            rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND created>=? ORDER BY id',
+                            (job['id'],run.claimed_at)).fetchall()
+            receipts=db.execute("SELECT count(*) FROM tool_events WHERE job_id=? AND tool IN ('action_continuation','settings_continuation') AND status='queued'",(job['id'],)).fetchone()[0]
+        tools=self.attempt_tool_rows(rows)
+        failed=self._attempt_stop_codes(rows)
+        # A completed read does not turn an owner/effect wait into a budget boundary.
+        if (not self._budget_boundary(failed) or receipts>=8
+                or any(code in {'needs_setup','input_required','approval_required','login_required','awaiting_connection'} for code in failed)
+                or run.approval_needed[0] or run.context_approval_needed[0] or run.waits_for_sign_in
+                or (run.agency_report or {}).get('question')
+                or self.work_waits_for_owner(job) or awaiting_owner_rows(tools) or self.missing_connection_rows(tools)
+                or (self._browser_login(job['id']) or {}).get('state') in ('requested','opening','offered','closing')
+                or self._work_has_unknown_effect(job['id']) or not self.settings_resume_safe(job['id'])):return False
+        observed=[(tool,data.get('evidence') or {}) for tool,status,data in tools if status=='succeeded' and data.get('ran') is not False]
+        if not observed:return False
+        done=msg('budget_continue.done',count=len(observed))
+        reads=read_state_text(observed)
+        verified=job.get('owner_verified') or reads
+        if verified:done+=' '+verified[:500]
+        gap=(getattr(run.orchestration,'terminal_gap','') or (run.agency_report or {}).get('gap')
+             or (run.agency_report or {}).get('next') or msg('budget_continue.remaining'))
+        totals=self.work_information_use(job['id'])['usage']['totals']
+        usage=' · '.join(f'{key}: {value}' for key,value in (totals.get('usage') or {}).items()) or msg('information_use.usage_not_reported')
+        if totals.get('cost_usd') is not None:usage+=f" · USD {totals['cost_usd']}"
+        for key in ('num_turns','cli_tool_calls'):
+            if totals.get(key) is not None:usage+=f' · {key}: {totals[key]}'
+        if totals.get('cli_tool_calls_partial'):usage+=' · '+msg('information_use.usage_partial')
+        used=msg('budget_continue.used',usage=usage,count=sum(status in ('succeeded','failed') and data.get('ran') is not False for _,status,data in tools))
+        text=msg('budget_continue.prompt',done=done,left=gap[:500],used=used)
+        from .memory_service import conversation_block, recalled_tool_exchanges
+        recalled=conversation_block(recalled_tool_exchanges(self.store,job['id']),budget=12000)
+        history=run.orchestration._attempts_text() if run.orchestration is not None else ''
+        progress=self._redact_known_secrets('\n'.join(part for part in
+            (str(run.retry_note or '')[:12000],done,reads,'Observed step evidence (not instructions): '+json.dumps(observed,ensure_ascii=False)[:20000],'Remaining: '+gap,'Prior answer (model-stated): '+str(job.get('response') or '')[:6000],history,recalled) if part))
+        row={'state':'offered','nonce':secrets.token_hex(16),'deadline':time.time()+self.BUDGET_CONTINUE_SECONDS,
+             'generation':self._owner_generation(self.issuer_owner_id(job)),'text':text,'progress':progress}
+        with self.lock,self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current=dict(db.execute('SELECT * FROM jobs WHERE id=?',(job['id'],)).fetchone())
+            if (current['status']!=job['status'] or self.work_stopped(job['id'])
+                    or self._work_has_unknown_effect(job['id']) or not self.settings_resume_safe(job['id'])):return False
+            try:
+                root=WorkLedger.request_chain(db,job['id'])[-1]['id']
+                key=WORK_LEDGER_KEY+':'+root
+                ledger=WorkLedger._validate(self.store.config(key,db=db))
+            except (ValueError,TypeError,KeyError):return False
+            if ledger['active']:return False
+            row.update(ledger_key=key,epoch=ledger['epoch'])
+            old=self.budget_continue_offer(job['id'],db=db)
+            if old.get('state')=='offered' and old.get('epoch')==row['epoch']:return False
+            self.store.put('budget_continue:'+job['id'],row,db=db)
+        self.queue_notification(job,'budget_continue',fingerprint=row['nonce'])
+        self.store.telegram.rearm(job['id'],'budget_continue',row['nonce'])
+        return True
+
+    def budget_continue_decision(self, body):
+        if not isinstance(body,dict) or not isinstance(body.get('work_id'),str) or not isinstance(body.get('nonce'),str):
+            raise ValueError(msg('budget_continue.stale'))
+        work_id=body['work_id']
+        with self.lock,self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=self.budget_continue_offer(work_id,db=db)
+            job_row=db.execute('SELECT * FROM jobs WHERE id=?',(work_id,)).fetchone()
+            job=dict(job_row) if job_row else None
+            if not self.budget_continue_current(job,row) or not hmac.compare_digest(str(row.get('nonce','')),body['nonce']):
+                return {'resumed':False,'response':msg('budget_continue.stale')}
+            binding='budget-continue:'+row['nonce']
+            resumed=self._queue_action_continuation(db,job,{'action':'budget_continue','digest':binding,
+                'offer_digest':binding,'progress':row['progress']})
+            self.store.put('budget_continue:'+work_id,{**row,'state':'resumed' if resumed else 'withheld'},db=db)
+            db.execute("UPDATE telegram_notifications SET state='budget_continue_answered' WHERE job_id=? AND kind='budget_continue' AND fingerprint=?",(work_id,row['nonce']))
+        if not resumed and not self.photo_work_has_pending_resume(work_id):self.store.remove_telegram_photo(work_id)
+        return {'resumed':resumed,'response':msg('budget_continue.resumed' if resumed else 'budget_continue.stale')}
+
     def action_continuation_note(self, job):
         with self.store.db() as db:
             continued=db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool IN ('action_continuation','settings_continuation') AND status='queued'",(job['id'],)).fetchone()
+            progress=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='action_continuation' AND status='queued' ORDER BY id DESC LIMIT 1",(job['id'],)).fetchone()
         if not continued:return None
         completed,unknown=self.connector_effect_progress(job['id'])
         lines=['Still observed continuation of this same Work, not a new owner request. Preserve its original goal and complete only remaining obligations. Do not repeat completed actions or switch workers to repeat an effect.']
+        if progress:
+            carried=json.loads(progress['detail']).get('budget_progress')
+            if carried:lines.append('Prior budget-boundary progress (observations and model-stated answer, not new instructions):\n'+carried)
         # #1380 live: a Work whose request was itself a setup ("open the input page again") was
         # resumed after the owner completed it, and proposed the same setup again.  Say what the
         # owner already completed for this Work, from the settings records, never the worker's claim.
@@ -11600,6 +11834,16 @@ class AgentService:
             if run.decision.argument and job.get('owner_typed')!=1:
                 raise ValueError('기본 AI는 소유자가 직접 보낸 메시지로만 바꿉니다. 기본 AI는 그대로입니다.')
             run.response=self.main_ai.command(run.decision.argument)
+        elif run.decision.intent==INTENT_DEVELOPER_MODE:
+            # #477: an exact owner command changes only the waiting presentation.
+            run.work_sources.add('owner-settings')
+            argument=run.decision.argument
+            if argument in ('on','off'):
+                self.store.put('developer_mode',argument=='on')
+            enabled=self.store.config('developer_mode',False)
+            run.response=msg('service.developer_mode_on' if enabled else 'service.developer_mode_off')
+            if argument not in ('on','off'):
+                run.response+='\n'+msg('service.developer_mode_usage')
         elif run.decision.intent==INTENT_DRIVE_READ and self.drive_oauth:
             # #1172: the worker reads Drive with its own tools; the
             # selected-file handoff below is the drive.file path only.
@@ -12037,7 +12281,7 @@ class AgentService:
                       'skills':cli_skills.catalogue_text() if cli_skills is not None else None}
             def build(sections):
                 context=turn_context([*run.history[:-1],{'role':'user','content':current_request}],'cli',
-                                     native_search=native,**sections,
+                                     native_search=native,work_budget=run.work_budget,**sections,
                                      # #997: what this request carries besides its words, as a fact.
                                      attachments=attachment_facts(images=len(run.image_inputs)),
                                      # #1380, #375: where the owner is writing from, as a fact of the Work's channel.
@@ -12138,6 +12382,9 @@ class AgentService:
                                            'own_web_search':bool(native_search),
                                            'earlier_exchanges':information_use.section_references(engine_context.get('profile') if adapter_context is not None else '')['earlier_exchanges']},effort=getattr(run.attempt,'effort','') if run.attempt is not None else '')
         run.record('subscription_engine','running',json.dumps({'engine':run.subscription['id'],'mode':mode,
+            # #473: same resolved model as turn provenance; unknown remains null.
+            'model':(run.attempt.model if run.attempt is not None and run.attempt.model else None) or self.main_ai.subscription_model(run.subscription['id']) or None,
+            'effort':getattr(run.attempt,'effort','') if run.attempt is not None else '',
             'context_messages':len(engine_context['conversation']),'context_bytes':len(engine_prompt.encode()),
             'context_mode':engine_context.get('mode','shared-context')}))
         work_model=''
@@ -12213,6 +12460,7 @@ class AgentService:
                 finally:
                     # #718: a live CLI step ends with its attempt.
                     self.live_steps.pop(job['id'],None)
+                    self.live_agents.pop(job['id'],None)
                     if relay is not None:relay.close()
                     # The Work's browser session ends with the run (as on the direct route).
                     run.capabilities.close_browser()
@@ -12253,7 +12501,7 @@ class AgentService:
             cloud_launch=bool((getattr(exc,'meta',None) or {}).get('cloud_provider'))
             if not isolated and diagnostics.get('failure_class')=='auth' and not cloud_launch:
                 self._remember_engine_login(run.subscription['id'],'signed-out','run')
-            run.record('subscription_engine','failed',json.dumps({'engine':run.subscription['id'],'error':str(exc),**diagnostics,'continuation_read_only':continuation_read_only,'continuation_accounted':continuation_accounted},ensure_ascii=False))
+            run.record('subscription_engine','failed',json.dumps({'engine':run.subscription['id'],'error':str(exc),**diagnostics,**reported_usage(getattr(exc,'meta',None)),'continuation_read_only':continuation_read_only,'continuation_accounted':continuation_accounted},ensure_ascii=False))
             # #710: a failed worker may be re-delegated within the Work's bounds.
             # #1130: not to another CLI when the shared Still bridge failed; it would run without tools too.
             if diagnostics.get('failure_class')==BRIDGE_UNAVAILABLE and run.orchestration is not None:
@@ -12275,7 +12523,7 @@ class AgentService:
         # #729: a bridge call the CLI never saw completed is a typed failure.
         self.close_incomplete_bridge_calls(job['id'],run.attempt_start,run.record)
         self.record_turn_provenance(job['id'],status='answered',exit_code=run.result.exit_code,**(getattr(run.result,'meta',None) or {}))
-        run.record('subscription_engine','succeeded',json.dumps({'engine':run.result.engine,'exit_code':run.result.exit_code,
+        run.record('subscription_engine','succeeded',json.dumps({'engine':run.result.engine,'exit_code':run.result.exit_code,**reported_usage(getattr(run.result,'meta',None)),
             'continuation_read_only':self.connector_turn_read_only(job['id'],run.result.engine,getattr(run.result,'meta',None)),
             'continuation_accounted':self._connector_turn_accounted(job['id'],run.result.engine,getattr(run.result,'meta',None),allow_effects=True)}))
         self.record_observed_tools(job['id'])
@@ -12334,6 +12582,7 @@ class AgentService:
         # #804, #820: every attempt carries the conversation, the profile, the current
         # context and the prepared answers; the plan's notes (``brief``) only add to them.
         api_context=turn_context(run.history,'api',
+                                 work_budget=run.work_budget,
                                  current_context=run.section_values['current_context'],
                                  profile=run.section_values['profile'],
                                  prepared=run.section_values['prepared'],brief=run.brief,
@@ -12576,6 +12825,11 @@ class AgentService:
                 cause=spoken=run.unknown_statement or None
             observed=verified_portion(run.verified_parts) if run.outcome=='partial' else None
             cause,spoken,observed,note=scrub(cause),scrub(spoken),scrub(observed),scrub(self._redact_reason(note) if note else None)
+            # #471: a budget stop holds the Work's photos (the status trigger reads this) until _after_work
+            # turns it into a Continue offer or releases it.
+            if run.outcome in ('failed','partial') and self._budget_boundary(self._attempt_stop_codes(db.execute(
+                    'SELECT status,detail FROM tool_events WHERE job_id=? AND created>=?',(job['id'],run.claimed_at)).fetchall())):
+                self.store.put('budget_continue:'+job['id'],{'state':'pending'},db=db)
             db.execute("UPDATE jobs SET status=?,response=?,error=?,provider=?,model=?,delivery=?,owner_cause=?,owner_verified=?,owner_note=? WHERE id=?",
                        (run.outcome,run.response,cause,run.provider,run.model,'pending' if job['chat_id'] else 'none',spoken,observed,note,job['id']))
             # #308 S1: the steers the attempt whose reply this is had in hand are answered by it.
@@ -12682,6 +12936,7 @@ class AgentService:
         self.queue_preparation_proposal(job)
         # #814: settings changes this Work drafted wait for the owner's confirm.
         self.queue_settings_confirmation(job)
+        self.offer_budget_continue(run)
 
 
     def _unshown_steps(self, run, job):

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from personal_agent import bounded_execution
+from personal_agent import bounded_execution, information_use
 from personal_agent.bounded_execution import (
     AgentOSMcpTools,
     BoundedExecutionAdapter,
@@ -84,7 +84,9 @@ class BoundedExecutionTests(unittest.TestCase):
         self.assertEqual(result.content,'bounded result')
         self.assertEqual(seen['argv'][:2], ['/runtime/claude','-p'])
         self.assertTrue(seen['kwargs']['shell'] is False)
-        self.assertEqual(set(seen['kwargs']['env']), {'HOME','PATH','LANG','PYTHONPATH'})
+        # #460: one fixed Still value, not inherited: sub-agents run inside the turn.
+        self.assertEqual(set(seen['kwargs']['env']), {'HOME','PATH','LANG','PYTHONPATH','CLAUDE_CODE_DISABLE_BACKGROUND_TASKS'})
+        self.assertEqual(seen['kwargs']['env']['CLAUDE_CODE_DISABLE_BACKGROUND_TASKS'], '1')
         # The allowed temporary runtime and checkout may both sit under /private.
         # Ignore only those known paths when checking for undeclared private inputs.
         turn_root = str(Path(folder).resolve())
@@ -410,6 +412,69 @@ class EngineFailureDiagnosticsTests(unittest.TestCase):
         self.assertIn('--ignore-rules', runs[0])
 
 
+class ReportedUsageTests(unittest.TestCase):
+    def test_numeric_boundary_and_bounds(self):
+        meta = {'usage': {'input_tokens': 0, 'bad-key': 99, 'secret': 'sk-fixture-secret',
+                          'boolean': True, 'nested': {'tokens': 1}, 'infinite': float('inf'),
+                          'nan': float('nan'), 'x' * 49: 1},
+                'num_turns': True, 'cost_usd': float('inf'), 'argv': ['sk-fixture-secret'],
+                'tool_calls': [{'text': 'sk-fixture-secret'}], 'bridge_calls': 2, 'tool_calls_partial': True}
+        self.assertEqual(bounded_execution.reported_usage(meta),
+                         {'usage': {'input_tokens': 0}, 'cli_tool_calls': 3, 'cli_tool_calls_partial': True})
+        self.assertEqual(len(bounded_execution.reported_usage({'usage': {f'key_{i}': i for i in range(20)}})['usage']), 12)
+        self.assertEqual(bounded_execution.reported_usage(None), {'usage': None})
+
+    def test_cli_fixture_usage_reaches_success_and_failure_events(self):
+        fixtures = [
+            ('codex', [{'type': 'thread.started', 'thread_id': 'fixture'},
+                       {'type': 'item.completed', 'item': {'id': 'a', 'type': 'agent_message', 'text': 'private agent text'}},
+                       {'type': 'item.completed', 'item': {'id': 'b', 'type': 'command_execution', 'status': 'completed'}},
+                       {'type': 'turn.completed', 'usage': {'input_tokens': 12345, 'cached_input_tokens': 10000,
+                            'output_tokens': 678, 'reasoning_output_tokens': 12, 'bad-key': 90, 'secret': 'sk-fixture-secret'},
+                        'prompt': 'private prompt text', 'adjacent': 'sk-fixture-secret'}],
+             {'input_tokens': 12345, 'cached_input_tokens': 10000, 'output_tokens': 678, 'reasoning_output_tokens': 12}),
+            ('claude-code', [{'type': 'result', 'result': 'private agent text', 'usage': {'input_tokens': 100,
+                        'cache_creation_input_tokens': 20, 'cache_read_input_tokens': 80, 'output_tokens': 9,
+                        'secret': 'sk-fixture-secret'}, 'num_turns': 7, 'total_cost_usd': 0.15,
+                        'prompt': 'private prompt text', 'adjacent': 'sk-fixture-secret'}],
+             {'input_tokens': 100, 'cache_creation_input_tokens': 20, 'cache_read_input_tokens': 80, 'output_tokens': 9}),
+            ('codex', [{'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'private agent text'}}], None),
+        ]
+        for engine, records, expected in fixtures:
+            meta = bounded_execution.cli_metadata(engine, '\n'.join(json.dumps(row) for row in records))
+            reported = bounded_execution.reported_usage(meta)
+            self.assertEqual(reported['usage'], expected)
+            if engine == 'claude-code':
+                self.assertEqual((reported['num_turns'], reported['cost_usd']), (7, 0.15))
+            else:self.assertNotIn('cost_usd', reported)
+            for failed in (False, True):
+                with self.subTest(engine=engine, failed=failed, usage=expected), tempfile.TemporaryDirectory() as folder:
+                    class Adapter:
+                        def execute(self, *args, **kwargs):
+                            if failed:raise ExecutionError('fixture failed', meta=meta)
+                            return bounded_execution.ExecutionResult('fixture answer', engine, 0, meta)
+                    store = QuickStore(Path(folder) / 'data')
+                    service = AgentService(store, subscription_engines=SubscriptionEngines(finder=lambda _: '/runtime/cli', clock=lambda: 1),
+                                           execution_adapter=Adapter())
+                    service.connect_subscription_engine({'engine': engine, 'officially_authenticated': True})
+                    job = store.enqueue('fixture request', 'usage-fixture')
+                    self.assertTrue(service.run_one())
+                    events = [row for row in store.task_events(job) if row['tool'] == 'subscription_engine'
+                              and row['status'] in ('succeeded', 'failed')]
+                    self.assertEqual(len(events), 1)
+                    self.assertEqual(events[0]['status'], 'failed' if failed else 'succeeded')
+                    detail = events[0]['trace']
+                    for key, value in reported.items():self.assertEqual(detail[key], value)
+                    if engine == 'codex':self.assertNotIn('cost_usd', detail)
+                    audit = service.work_information_use(job)
+                    self.assertEqual(audit['usage']['attempts'][0]['usage'], expected)
+                    if expected is None:
+                        self.assertIn('보고되지 않음', information_use.render_korean(audit))
+                    for text in ('private prompt text', 'private agent text', 'sk-fixture-secret', 'bad-key'):
+                        self.assertNotIn(text, json.dumps(detail))
+                        self.assertNotIn(text, json.dumps(audit))
+
+
 class SubscriptionServiceTests(unittest.TestCase):
     def test_selected_subscription_engine_runs_through_bounded_adapter(self):
         class Adapter:
@@ -615,7 +680,7 @@ class BoundedExecutionPreservedBoundaryTests(unittest.TestCase):
         finally:
             os.environ.pop('AGENTOS_R4_FAKE_SECRET', None)
         # A closed allowlist, not an inherited-and-extended environment.
-        self.assertEqual(set(seen['env']), {'HOME', 'PATH', 'LANG', 'PYTHONPATH'})
+        self.assertEqual(set(seen['env']), {'HOME', 'PATH', 'LANG', 'PYTHONPATH', 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS'})
         self.assertNotIn('AGENTOS_R4_FAKE_SECRET', seen['env'])
         self.assertEqual(seen['env']['PATH'], '/usr/bin:/bin')
 

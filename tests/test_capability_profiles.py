@@ -502,7 +502,7 @@ class IsolationIsNotUnlockedForParity(unittest.TestCase):
             for forbidden in ('danger-full-access', 'workspace-write', '--full-auto', 'dangerously', '--add-dir', 'bypass'):
                 self.assertNotIn(forbidden, joined)
         self.assertEqual(set(codex_env), {'HOME', 'PATH', 'LANG', 'PYTHONPATH', 'CODEX_HOME'})
-        self.assertEqual(set(claude_env), {'HOME', 'PATH', 'LANG', 'PYTHONPATH'})
+        self.assertEqual(set(claude_env), {'HOME', 'PATH', 'LANG', 'PYTHONPATH', 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS'})
         for env in (codex_env, claude_env):
             self.assertTrue(env['PATH'].endswith('/usr/bin:/bin'))
             self.assertNotEqual(env['HOME'], str(Path.home()), 'HOME is the per-turn directory')

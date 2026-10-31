@@ -1791,13 +1791,14 @@ WORK_LEDGER_KEY='work_budget'
 #: #1445: how many times one Work's allowance is renewed by an owner-completed prerequisite.
 MAX_OWNER_RENEWALS=3
 
-def renew_for_owner_prerequisite(db,job_id):
+def renew_for_owner_prerequisite(db,job_id,*,budget_continue=False):
  """Give a paused Work a fresh allowance because the owner completed its prerequisite (#1445).
 
  Called inside the transaction that queues the continuation.  The owner's confirmation and
  input are a human boundary, like a new request: without this, a Work that spent its turns
  discovering and proposing the setup resumed with none left (rehearsal: "모델 호출 한도(9회)").
- Never for an active run, at most ``MAX_OWNER_RENEWALS`` times per Work; returns whether it renewed.
+ Never for an active run. Prerequisites have ``MAX_OWNER_RENEWALS``; an exact
+ budget-continue offer uses the queue's eight-resume cap instead. Returns whether it renewed.
  """
  try:root=WorkLedger.request_chain(db,job_id)[-1]['id']
  except ValueError:return False
@@ -1805,9 +1806,13 @@ def renew_for_owner_prerequisite(db,job_id):
  found=db.execute('SELECT value FROM config WHERE key=?',(key,)).fetchone()
  try:row=WorkLedger._validate(json.loads(found[0])) if found else None
  except (TypeError,ValueError):return False
- if row is None or row['active'] or row.get('renewals',0)>=MAX_OWNER_RENEWALS:return False
+ if row is None or row['active'] or type(row.get('renewals',0)) is not int or row.get('renewals',0)<0:return False
+ if budget_continue:
+  # The exact owner offer and eight-resume bound are enforced by the queue transaction.
+  if row.get('active_work_id',root)!=job_id:return False
+ elif row.get('renewals',0)>=MAX_OWNER_RENEWALS:return False
  row.update(attempts=0,turns=0,nudges=0,presentation=0,remaining_seconds=WORK_DEADLINE_SECONDS,
-            renewals=row.get('renewals',0)+1)
+            renewals=row.get('renewals',0)+(0 if budget_continue else 1),epoch=row['epoch']+1)
  db.execute('UPDATE config SET value=? WHERE key=?',(json.dumps(row),key))
  return True
 
@@ -2344,6 +2349,17 @@ def call_effects(rows):
   elif status!='running':
    calls[key][:]=[action,detail,status]
  return [(action,record_effect(action,detail,status),status) for action,detail,status in entries]
+
+def redelegation_effects(rows):
+ """The effect classes of recorded rows that stop a further attempt of the same Work (#466).
+
+ ``call_effects`` with one exception: an interim message to the owner (``OWNER_UPDATE_ACTIONS``) that
+ counts as ``changed``.  Still sent it to the owner on the Work's own chat; nothing outside the owner
+ changed, and a later attempt cannot exceed the Work's message limit.  It still counts everywhere else
+ (resumption, parking, steer continuation), and its ``unknown`` outcome still stops re-delegation.
+ """
+ return {effect for action,effect,_status in call_effects(rows)
+         if not (action in OWNER_UPDATE_ACTIONS and effect==EFFECT_CHANGED)}
 
 def event_trail(rows, tools=None):
  """``(trail, refusals)`` of the attempts in a Work's durable tool events.
@@ -4001,7 +4017,7 @@ def context_sections(context):
                                      surface_section(context)) if part)
 
 def turn_context(history,route,current_context=None,profile=None,prepared=None,native_search=False,brief=None,skills=None,
-                 attachments=None,surface=None):
+                 attachments=None,surface=None,work_budget=None):
  """The one Work-scoped turn context every route receives (#569).
 
  ``history`` is the prepared transcript whose last item is the current
@@ -4032,6 +4048,9 @@ def turn_context(history,route,current_context=None,profile=None,prepared=None,n
  attempt, supplementary to the verbatim request, counted against the same
  budget; None or empty sends nothing and changes nothing.
 
+ ``work_budget`` (#468), when attached, adds the remaining Work allowance
+ to the brief using the same model-turn limit as the plan.
+
  ``skills`` (#961) is the Work's installed-skills catalogue
  (``SkillBinding.catalogue_text``), counted against the same budget; None or
  empty (skills off or none installed) sends nothing and changes nothing.
@@ -4059,6 +4078,15 @@ def turn_context(history,route,current_context=None,profile=None,prepared=None,n
  prepared=str(prepared or '')
  if prepared:budget-=len(PREPARED_HEADING.encode())+len(prepared.encode())+2
  brief=str(brief or '')
+ # #468: every worker sees the shared allowance as a fact, including fallback attempts.
+ if work_budget is not None:
+  used=work_budget.ledger.used() if work_budget.ledger is not None else work_budget.attempts_used
+  attempts=max(0,work_budget.attempts-(used if used is not None else work_budget.attempts))
+  limit=work_budget.turn_limit()
+  turns=max(0,limit-work_budget.turns_used)
+  left=max(0,int(work_budget.remaining()))
+  brief='\n'.join(part for part in (brief,f'Allowance left in this Work: {attempts} of {work_budget.attempts} tool calls, '
+                                  f'{turns} of {limit} model turns, {left} seconds.') if part)
  if brief:budget-=len(BRIEF_HEADING.encode())+len(brief.encode())+2
  skills=str(skills or '')
  if skills:budget-=len(SKILLS_HEADING.encode())+len(skills.encode())+2

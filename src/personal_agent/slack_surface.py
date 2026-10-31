@@ -63,6 +63,8 @@ EVENTS_TABLE = 'slack_events'
 #: Seconds between two checks that the Socket Mode connection matches the pairing and work mode.
 POLL_SECONDS = 3
 REQUEST_SECONDS = 15
+#: #446: the legacy ``assistant.threads.setStatus`` status lasts two minutes; refresh it well before.
+WAIT_STATUS_REFRESH = 90
 #: #372: a reply is sent as standard Markdown (``markdown_text``, or a ``markdown`` block beside buttons), which Slack
 #: lays out itself and which holds 12,000 characters; longer replies are sent in parts.  The margin leaves room for
 #: characters Slack may count twice.
@@ -75,7 +77,7 @@ BODY_REFUSED = frozenset({'invalid_arguments', 'invalid_blocks', 'invalid_blocks
                           'msg_too_long'})
 OWNER_ID = re.compile(r'^[UW][A-Z0-9]{2,30}$')
 #: Notice kinds that carry an approve / decline button pair (the item each one shows is settled exactly).
-BUTTON_LABELS = {'settings_change_proposed': ('button.apply', 'button.keep'),
+BUTTON_LABELS = {'budget_continue': ('button.continue', 'button.deny'), 'settings_change_proposed': ('button.apply', 'button.keep'),
                  'preparation_proposed': ('button.accept', 'button.decline_schedule'),
                  'browser_approval_needed': ('button.approve', 'button.deny')}
 ACTION_APPROVE, ACTION_DECLINE = 'still_approve', 'still_decline'
@@ -176,7 +178,7 @@ class SlackSurface(DirectMessageSurface):
     channel_prefix = 'slack:'
     #: Reactions and buttons; exact action approvals (owner decision 2026-10-25 on #214).  Slack has no
     #: typing indicator for an app's bot, and replies are not edited as live drafts.
-    capabilities = SurfaceCapabilities(reactions=True, buttons=True, action_approvals=True)
+    capabilities = SurfaceCapabilities(reactions=True, buttons=True, action_approvals=True, wait_status=True)
     poll_seconds = POLL_SECONDS
     CONFIG_KEY, STATUS_KEY, TURNS_TABLE, SECRET_KEYS = CONFIG_KEY, STATUS_KEY, TURNS_TABLE, (BOT_SECRET, APP_SECRET)
     REQUEST_KEY_PREFIX, MESSAGES = 'sl', 'slack'
@@ -234,11 +236,12 @@ class SlackSurface(DirectMessageSurface):
     def _post(self, cfg, text):
         """Post ``text`` as Markdown (in parts when long) to the owner's direct message; the last message's ``ts``."""
         client = self.client(cfg)
+        thread = {'thread_ts': cfg['thread_ts']} if cfg.get('thread_ts') else {}
         posted = None
         for index, part in enumerate(markdown_parts(str(text or ''), POST_CHARS)):
             try:
-                posted = self._refused_as_plain(lambda: client.chat_postMessage(channel=cfg['channel_id'], markdown_text=part),
-                                                lambda: client.chat_postMessage(channel=cfg['channel_id'], text=part))
+                posted = self._refused_as_plain(lambda: client.chat_postMessage(channel=cfg['channel_id'], markdown_text=part, **thread),
+                                                lambda: client.chat_postMessage(channel=cfg['channel_id'], text=part, **thread))
             except SlackNotSent:
                 if index == 0:
                     raise
@@ -278,22 +281,96 @@ class SlackSurface(DirectMessageSurface):
         kind = notification['kind']
         labels = BUTTON_LABELS.get(kind) or (('button.approve', 'button.deny') if kind in MEMORY_PROMPT_KINDS else None)
         text = str(text or '')
+        # #446: a notice of a Work the owner asked in a thread goes to that thread.
+        turn = self._turn(notification['job_id']) if notification.get('job_id') else None
+        thread = {'thread_ts': turn['thread_ts']} if turn and turn.get('thread_ts') else {}
         if not labels or len(text) > POST_CHARS:
-            return self._post(cfg, text)
+            posted = self._post({**cfg, **thread}, text)
+            if thread:
+                self._resend_thread_statuses(thread['thread_ts'])
+            return posted
         nid = notification['id']
         actions = {'type': 'actions', 'block_id': 'still_answer', 'elements': [
             {'type': 'button', 'action_id': ACTION_APPROVE, 'style': 'primary', 'value': f'{nid}:approve',
              'text': {'type': 'plain_text', 'text': msg(labels[0]), 'emoji': True}},
             {'type': 'button', 'action_id': ACTION_DECLINE, 'value': f'{nid}:decline',
              'text': {'type': 'plain_text', 'text': msg(labels[1]), 'emoji': True}}]}
+        if kind == 'budget_continue':actions['elements'] = actions['elements'][:1]
         client, channel, fallback = self.client(cfg), cfg['channel_id'], text[:SECTION_CHARS]
         posted = self._refused_as_plain(
             lambda: client.chat_postMessage(channel=channel, text=fallback,
-                                            blocks=[{'type': 'markdown', 'text': text or ' '}, actions]),
-            lambda: client.chat_postMessage(channel=channel, text=fallback, blocks=[*self._sections(text), actions]))
+                                            blocks=[{'type': 'markdown', 'text': text or ' '}, actions], **thread),
+            lambda: client.chat_postMessage(channel=channel, text=fallback, blocks=[*self._sections(text), actions], **thread))
+        if thread:
+            self._resend_thread_statuses(thread['thread_ts'])
         return message_id(self._ts(posted))
 
+    def _post_reply(self, cfg, text, job):
+        turn = self._turn(job['id']) or {}
+        thread = turn.get('thread_ts')
+        posted = self._post({**cfg, 'thread_ts': thread}, text)
+        if thread:
+            self._set_wait_status(job, cfg, turn, None)
+            self._resend_thread_statuses(thread, job['id'])
+        return posted
+
+    def _is_conversation_thread(self, thread):
+        with self.service.store.db() as db:
+            return db.execute(f'SELECT 1 FROM {self.TURNS_TABLE} WHERE source_post_id=? OR thread_ts=?',
+                              (message_id(thread), thread)).fetchone() is not None
+
+    def _resend_thread_statuses(self, thread, done=None):
+        """Slack clears a thread's status when the app posts in it (#446 review): every other running Work in
+        that thread re-sends its own status on the next wait tick instead of after ``WAIT_STATUS_REFRESH``."""
+        with self.service.store.db() as db:
+            rows = db.execute('SELECT job_id FROM slack_turns WHERE thread_ts=?', (thread,)).fetchall()
+        for row in rows:
+            state = self.service.presence.get(row['job_id'])
+            if row['job_id'] != done and state is not None:
+                state.wait_status_at = state.wait_status_text = None
+
     # -- presence -----------------------------------------------------------------------
+    def _set_wait_status(self, job, cfg, turn, text):
+        """Show ``text`` as the thread's status, Slack's own loading state for ``''``, or end it (``None``).
+
+        #477: with no words to show, Slack draws its standard loading state (``agents.sessions.setStatus``
+        ``processing``) and Still adds no text of its own.  Words (developer mode) go through the legacy
+        ``assistant.threads.setStatus`` bridge (#446), the only method that takes custom text ("Custom loading
+        messages are not supported", https://docs.slack.dev/ai/developing-agents/).  ``active`` ends processing,
+        which "does not disappear automatically".
+        """
+        if turn.get('status_failed'):
+            return False
+        try:
+            client, where = self.client(cfg), {'channel_id': cfg['channel_id'], 'thread_ts': turn['thread_ts']}
+            if text:
+                client.assistant_threads_setStatus(**where, status=text)
+            else:
+                client.agents_sessions_setStatus(**where, status='processing' if text == '' else 'active')
+            return True
+        except Exception as exc:
+            LOG.info('slack wait status disabled work=%s kind=%s', job['id'], type(exc).__name__)
+            with self.service.store.db() as db:
+                db.execute('UPDATE slack_turns SET status_failed=1 WHERE job_id=?', (job['id'],))
+            return False
+
+    def show_wait_status(self, job, state, text, now):
+        turn = self._turn(job['id']) or {}
+        cfg = self.config()
+        if not turn.get('thread_ts') or turn.get('status_failed'):
+            return False
+        if not self.owns(job) or not self._allowed(cfg, job.get('created')):
+            return False
+        # No initial call during approval; clear an earlier processing line once.
+        if text is None and state.wait_status_text is None:
+            return False
+        if text == state.wait_status_text and state.wait_status_at is not None and now-state.wait_status_at < WAIT_STATUS_REFRESH:
+            return False
+        if self._set_wait_status(job, cfg, turn, text):
+            state.wait_status_at, state.wait_status_text = now, text
+            return True
+        return False
+
     def present(self, action, *args):
         cfg = self.config()
         if not self.usable(cfg) or action != PRESENCE_REACT:
@@ -432,6 +509,10 @@ class SlackSurface(DirectMessageSurface):
                 return None
             thread = event.get('thread_ts')
             reply_to = message_id(thread) if isinstance(thread, str) and thread != ts else None
+            if reply_to is not None and self._is_conversation_thread(thread):
+                # #446 review: in a thread the owner started (or one earlier turns already used), every reply
+                # carries the root, not the notice it answers, so the act is read in context like a direct message.
+                reply_to = None
             try:
                 # Slack's time on this Mac's clock (the offset measured at connect), as on Mattermost.
                 spoke = float(ts) + float(cfg.get('clock_offset') or 0)
@@ -440,7 +521,8 @@ class SlackSurface(DirectMessageSurface):
             text = _unescape(event.get('text'))
             # A message is taken once by its request key, written with its Work in one transaction (#316 review):
             # no separate marker that could outlive a failed ingestion.
-            work_id = self._ingest_owner_message(message_id(ts), text, reply_to, owner, generation, spoke=spoke)
+            work_id = self._ingest_owner_message(message_id(ts), text, reply_to, owner, generation, spoke=spoke,
+                                                 turn_data={'thread_ts': thread if isinstance(thread, str) and thread else None})
             if work_id and self.service.is_natural_language(text):
                 self.service.consider_steer(work_id, text)
             return work_id
@@ -592,9 +674,10 @@ class SlackSurface(DirectMessageSurface):
 #: The app the owner creates in their workspace (Settings shows it; QUICKSTART has the steps).
 MANIFEST = {
     'display_information': {'name': 'Still'},
-    'features': {'bot_user': {'display_name': 'Still', 'always_online': True},
+    'features': {'agent_view': {'agent_description': '내 Still에 연결된 개인 비서예요. 질문하거나 일을 맡기면 Still이 처리하고 결과를 여기로 알려드려요. 결제나 중요한 작업은 항상 먼저 확인을 받아요.'},
+                 'bot_user': {'display_name': 'Still', 'always_online': True},
                  'app_home': {'messages_tab_enabled': True, 'messages_tab_read_only_enabled': False}},
-    'oauth_config': {'scopes': {'bot': ['chat:write', 'im:history', 'im:write', 'reactions:read', 'reactions:write']}},
+    'oauth_config': {'scopes': {'bot': ['assistant:write', 'chat:write', 'im:history', 'im:write', 'reactions:read', 'reactions:write']}},
     'settings': {'event_subscriptions': {'bot_events': ['message.im', 'reaction_added']},
                  'interactivity': {'is_enabled': True}, 'org_deploy_enabled': False, 'socket_mode_enabled': True,
                  'token_rotation_enabled': False},

@@ -596,10 +596,7 @@ details.technical details>summary{color:var(--muted)}
 /* #390: grouped settings, folded optional setup, the 진단 foot link and 작업 현황's two views. */
 .settings-group{margin-top:var(--sp-6)}
 .settings-group-heading{margin:0;font-size:var(--fs-1);font-weight:600;letter-spacing:.02em;color:var(--muted)}
-.settings-group-heading+.settings-section,.settings-group-heading+.settings-section[hidden]+.settings-section{margin-top:var(--sp-2)}
 #company-network[open]>summary{margin-bottom:var(--sp-2)}
-#company-network>p.field-hint{margin:0 0 0 16px}
-#company-network>.settings-section{margin-left:16px}
 .settings-section>.settings-editor{margin-top:var(--sp-3)}
 .settings-section>.settings-editor>summary{min-height:32px;font-size:var(--fs-2);font-weight:600;color:var(--accent)}
 .settings-section>.settings-editor[open]>summary{margin-bottom:var(--sp-2)}
@@ -620,3 +617,95 @@ details.technical details>summary{color:var(--muted)}
 #task-scheduled #preparations{margin-top:0}
 #task-scheduled .settings-section-heading h2{margin:0;font-size:var(--fs-4)}
 @media(max-width:620px){.nav-foot-link{margin:0;min-height:44px}.task-tabs button{flex:1;min-height:44px}}
+
+/* ---------- 9. Management layout (#474) ----------
+   One grammar on every pane: a title with a short lead and the pane's one add action, then
+   groups. A group's heading sits above one card; the card holds its sections, each a heading,
+   a two-line note and its rows. A pane shows only what is on (rows marked data-inactive and
+   addable sections marked data-off are hidden); the add dialog shows the rest. */
+.app{grid-template-columns:232px minmax(0,1fr);background:linear-gradient(to right,var(--rail) 232px,var(--canvas) 232px)}
+.rail{gap:var(--sp-4);padding:20px 12px 16px}
+.brand{margin:0;padding:2px 10px 4px;font-size:17px;letter-spacing:-.02em}
+.primary-nav button,.settings-nav button,.nav-foot-link{min-height:34px;padding:0 10px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink-2);font-size:var(--fs-3);font-weight:500}
+.primary-nav button:hover,.settings-nav button:hover,.nav-foot-link:hover{background:rgb(255 255 255 / .7);border-color:transparent}
+.primary-nav button.active,.settings-nav button[aria-selected="true"],.nav-foot-link.active{background:var(--surface);border-color:var(--line);color:var(--accent);font-weight:600;box-shadow:0 1px 2px rgb(20 25 35 / .06)}
+.content{padding:36px 48px 64px}
+.settings-pane{max-width:780px}
+.pane-heading,.view-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-4);margin:0 0 var(--sp-5)}
+.pane-heading h1{margin:0}
+.pane-heading-copy p,.view-heading p{margin:6px 0 0;max-width:62ch;color:var(--muted);font-size:var(--fs-2)}
+.pane-add{flex:none;background:var(--accent);border-color:var(--accent);color:#fff}
+.pane-add:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+/* groups and their cards */
+.settings-group{margin-top:28px}
+.pane-heading+.settings-group,.pane-heading+.settings-section[hidden]+.settings-group{margin-top:0}
+.settings-group-heading,#company-network>summary{margin:0 0 8px;padding:0 4px;font-size:var(--fs-2);font-weight:650;letter-spacing:0;color:var(--ink-2)}
+.settings-card{display:grid;gap:1px;overflow:hidden;border-radius:12px;background:var(--line)}
+.settings-card>*{min-width:0;background:var(--surface-2)}
+.settings-card>.settings-section{margin:0;padding:16px 18px}
+.settings-card>:not(.settings-section){margin:0;padding:12px 18px}
+.settings-pane>.settings-section:not(.attention-summary),.settings-pane>details{margin:16px 0 0;padding:16px 18px;border:0;border-radius:12px;background:var(--surface-2)}
+.settings-pane [data-off],.settings-pane .settings-row[data-inactive],.settings-pane [data-add-editor]{display:none}
+/* a section: heading, note, rows, then its own controls */
+.settings-section-heading{padding:0;border:0}
+.settings-section-heading h3{font-size:var(--fs-3);font-weight:650}
+.settings-section-heading p{margin:2px 0 0;max-width:68ch;color:var(--muted);font-size:var(--fs-2)}
+.note-clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
+.note-more{min-height:24px;margin-top:2px;padding:0;color:var(--accent);font-size:var(--fs-1)}
+.note-more:hover{background:transparent;color:var(--accent-hover);text-decoration:underline}
+.settings-section .settings-list{margin-top:10px}
+.settings-section .settings-row{grid-template-columns:minmax(0,1fr) auto auto;padding:12px 0;border-bottom:0;border-top:1px solid var(--line)}
+.settings-section .settings-row>.settings-state{justify-self:end}
+.settings-section .settings-empty{padding:12px 0;border-bottom:0;border-top:1px solid var(--line)}
+.settings-section>.settings-editor{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+#telegram-form,.settings-section .folder-edit,.settings-section .status-card{background:var(--surface)}
+/* destructive actions stay quiet until their confirmation step */
+.settings-row-action.destructive,.settings-section .button-row>.destructive{border-color:transparent;background:transparent}
+.settings-row-action.destructive:hover,.settings-section .button-row>.destructive:hover{border-color:transparent;background:var(--danger-soft)}
+.settings-row-action.destructive.confirm,.settings-section .button-row>.destructive.confirm{border-color:var(--danger);background:var(--danger);color:#fff}
+/* something needs the owner: one tinted card above the rest */
+.settings-pane>.attention-summary,.task-attention{margin:0 0 24px;padding:14px 18px 4px;border:1px solid #ecdcb8;border-radius:12px;background:#fffaf0}
+.attention-summary .settings-section-heading h2,.task-attention .settings-section-heading h2{display:flex;align-items:center;gap:8px;font-size:var(--fs-3)}
+.attention-summary .settings-section-heading h2::before,.task-attention .settings-section-heading h2::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--attn)}
+.attention-summary .settings-row,.task-attention .settings-row{border-top-color:#f0e4c8}
+/* 작업 현황: the two views as one segmented control */
+.task-tabs{display:inline-flex;gap:2px;margin:0 0 20px;padding:3px;border:0;border-radius:9px;background:var(--surface-3)}
+.task-tabs button{min-height:30px;padding:0 14px;border:0;border-radius:7px;background:transparent;color:var(--ink-2);font-size:var(--fs-2)}
+.task-tabs button:hover{background:rgb(255 255 255 / .6)}
+.task-tabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgb(20 25 35 / .08)}
+/* the add dialog: a list of types, then the chosen type's own section */
+.add-type-list{display:grid;gap:1px;margin-top:4px;overflow:hidden;border-radius:12px;background:var(--line)}
+.add-type{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:56px;padding:12px 16px;border:0;border-radius:0;background:var(--surface-2);text-align:left;white-space:normal}
+.add-type:hover{border-color:transparent;background:var(--surface-3)}
+.add-type::after{content:"›";flex:none;color:var(--faint);font-size:20px;line-height:1}
+.add-type-copy{display:grid;gap:2px;min-width:0;margin-right:auto}
+.add-type-name{font-weight:600}
+.add-type>.settings-state{flex:none;white-space:nowrap}
+.add-type-note{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;line-clamp:1;overflow:hidden;color:var(--muted);font-size:var(--fs-2);font-weight:400}
+#add-dialog-host>*{margin:0;padding:0;border:0;background:none}
+#add-dialog-host .settings-section-heading>h3,#add-dialog-host>details>summary{display:none}
+#add-dialog-host .settings-card{background:none;gap:var(--sp-4)}
+#add-dialog-host .settings-card>*{padding:0;background:none}
+@media(max-width:860px){.app{grid-template-columns:200px minmax(0,1fr);background:linear-gradient(to right,var(--rail) 200px,var(--canvas) 200px)}.content{padding:28px 28px 48px}}
+@media(max-width:620px){
+ .app{grid-template-columns:1fr;background:var(--canvas)}
+ .rail{gap:var(--sp-2) var(--sp-3);padding:10px 16px}
+ .primary-nav button{min-height:36px}
+ .settings-nav button,.nav-foot-link{min-height:44px}
+ .brand{padding:0}
+ .content{padding:16px 16px 48px}
+ .pane-heading{flex-wrap:wrap}
+ .pane-add{min-height:44px}
+ .settings-card>.settings-section,.settings-pane>.settings-section:not(.attention-summary),.settings-pane>details{padding:14px}
+ .settings-card>:not(.settings-section){padding:12px 14px}
+ .settings-section .settings-row{grid-template-columns:minmax(0,1fr) auto}
+ .settings-section .settings-row>.settings-state{justify-self:start}
+ .task-tabs{display:flex}
+ .task-tabs button{flex:1;min-height:44px}
+ .note-more{min-height:44px;margin:-8px 0}
+ .add-dialog .dialog-actions button{min-height:44px}
+ .add-type{min-height:60px}
+}
+.ai-preference-group{padding:0 18px;border-radius:12px}
+.settings-pane .settings-list:not(:has(>:not([data-inactive]))){display:none}
+.settings-section p[role="status"]:empty,.settings-section .field-feedback:empty,.settings-pane #telegram-status:empty{min-height:0;margin:0}

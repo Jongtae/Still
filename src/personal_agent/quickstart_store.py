@@ -167,6 +167,8 @@ class QuickStore:
                        )
                    )
                    OR EXISTS (SELECT 1 FROM context_job_attachments WHERE job_id=NEW.id AND approved=0)
+                   OR EXISTS (SELECT 1 FROM config WHERE config.key='budget_continue:'||NEW.id AND json_valid(config.value)
+                                AND json_extract(config.value,'$.state') IN ('pending','offered'))
                  ))
                  OR EXISTS (SELECT 1 FROM context_location_requests WHERE job_id=NEW.id AND state='pending'
                               AND expires>CAST(strftime('%s','now') AS REAL))
@@ -247,6 +249,10 @@ class QuickStore:
             # #214: the same for Slack (message ts), and the Socket Mode events and button presses already taken.
             db.execute('CREATE TABLE IF NOT EXISTS slack_turns(job_id TEXT PRIMARY KEY, owner TEXT NOT NULL, '
                        'source_post_id TEXT, reply_post_id TEXT, reply_to_post_id TEXT, created REAL NOT NULL)')
+            turn_columns={row['name'] for row in db.execute('PRAGMA table_info(slack_turns)')}
+            for column, declaration in (('thread_ts', 'TEXT'), ('status_failed', 'INTEGER NOT NULL DEFAULT 0')):
+                if column not in turn_columns:
+                    db.execute(f'ALTER TABLE slack_turns ADD COLUMN {column} {declaration}')
             db.execute('CREATE TABLE IF NOT EXISTS slack_events(key TEXT PRIMARY KEY, created REAL NOT NULL)')
             # #438: the same for the terminal conversation (line ids within one terminal session).
             db.execute('CREATE TABLE IF NOT EXISTS terminal_turns(job_id TEXT PRIMARY KEY, owner TEXT NOT NULL, '
@@ -800,6 +806,13 @@ class QuickStore:
             row=db.execute(f"SELECT content FROM messages WHERE job_id=? AND role='assistant' AND delivery_projection=? "
                            f"AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id LIMIT 1",(job_id,PREVIEW_PROJECTION)).fetchone()
         return row['content'] if row else ''
+
+    def sent_updates(self, job_id):
+        """#466: the interim messages this Work sent the owner so far, oldest first (forgotten ones left out)."""
+        with self.db() as db:
+            rows=db.execute(f"SELECT content FROM messages WHERE job_id=? AND role='assistant' AND delivery_projection=? "
+                            f"AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id",(job_id,UPDATE_PROJECTION)).fetchall()
+        return [row['content'] for row in rows]
 
     def managed_owner_state(self, job_id):
         """#380: whether this Work, or a correction or retry linked to it, forgot, deleted or undid owner state.
@@ -1955,6 +1968,29 @@ class QuickStore:
     def approve_context_attachment(self, job_id):
         with self.db() as db:
             db.execute('UPDATE context_job_attachments SET approved=1 WHERE job_id=?',(job_id,))
+
+    def worker_attempt_events(self, limit):
+        """#473: newest terminal CLI attempts with their start and preceding plan, one bounded read."""
+        with self.db() as db:
+            return [dict(row) for row in db.execute("""
+                WITH terminal AS (
+                    SELECT id,job_id,detail,created FROM tool_events
+                    WHERE tool='subscription_engine' AND status IN ('succeeded','failed')
+                    ORDER BY id DESC LIMIT ?
+                )
+                SELECT t.detail,t.created,s.detail AS start_detail,s.created AS started,
+                       p.detail AS plan_detail
+                FROM terminal t
+                LEFT JOIN tool_events s ON s.id=(
+                    SELECT MAX(id) FROM tool_events WHERE job_id=t.job_id
+                    AND tool='subscription_engine' AND id<t.id
+                ) AND s.status='running'
+                LEFT JOIN tool_events p ON p.id=(
+                    SELECT MAX(id) FROM tool_events WHERE job_id=t.job_id
+                    AND tool='orchestrator' AND status='planned' AND id<s.id
+                )
+                ORDER BY t.id DESC
+                """, (limit,))]
 
     def recent_tool_events(self):
         with self.db() as db:

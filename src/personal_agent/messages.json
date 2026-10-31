@@ -1,4 +1,64 @@
 {
+ "button.continue": {
+  "ko": "계속하기",
+  "en": "Continue",
+  "ja": "続ける",
+  "zh": "继续"
+ },
+ "budget_continue.done": {
+  "ko": "관찰된 작업 {count}단계를 마쳤어요.",
+  "en": "Completed {count} observed steps.",
+  "ja": "確認できた作業を{count}段階終えました。",
+  "zh": "已完成 {count} 个已观察步骤。"
+ },
+ "budget_continue.remaining": {
+  "ko": "원래 요청에서 아직 완료가 확인되지 않은 부분",
+  "en": "The parts of the original request not yet confirmed complete",
+  "ja": "元の依頼でまだ完了を確認できていない部分",
+  "zh": "原始请求中尚未确认完成的部分"
+ },
+ "budget_continue.used": {
+  "ko": "{usage} · 도구 호출 {count}회",
+  "en": "{usage} · {count} tool calls",
+  "ja": "{usage} · ツール呼び出し{count}回",
+  "zh": "{usage} · {count} 次工具调用"
+ },
+ "budget_continue.prompt": {
+  "ko": "이번 실행 한도에 도달했어요.\n완료: {done}\n남은 일: {left}\n사용량: {used}\n이어서 할까요?",
+  "en": "This run reached its budget.\nDone: {done}\nLeft: {left}\nUsed: {used}\nContinue?",
+  "ja": "今回の実行上限に達しました。\n完了: {done}\n残り: {left}\n使用量: {used}\n続けますか？",
+  "zh": "本次运行已达到预算。\n完成：{done}\n剩余：{left}\n用量：{used}\n继续吗？"
+ },
+ "budget_continue.stale": {
+  "ko": "지금은 이 요청을 이어서 실행할 수 없어요.",
+  "en": "This Work cannot be continued now.",
+  "ja": "この依頼は現在再開できません。",
+  "zh": "此工作现在无法继续。"
+ },
+ "budget_continue.resumed": {
+  "ko": "앞서 확인한 진행 내용을 가지고 같은 요청을 이어서 처리할게요.",
+  "en": "Continuing the same Work with its recorded progress.",
+  "ja": "記録した進捗を引き継いで同じ依頼を続けます。",
+  "zh": "将根据已记录的进度继续同一工作。"
+ },
+ "service.developer_mode_on": {
+  "ko": "개발자 모드가 켜져 있어요. 기다리는 동안 AI와 모델을 보여 드려요.",
+  "en": "Developer mode is on. The AI and model appear while you wait.",
+  "ja": "開発者モードはオンです。待機中に AI とモデルを表示します。",
+  "zh": "开发者模式已开启。等待时会显示 AI 和模型。"
+ },
+ "service.developer_mode_off": {
+  "ko": "개발자 모드가 꺼져 있어요.",
+  "en": "Developer mode is off.",
+  "ja": "開発者モードはオフです。",
+  "zh": "开发者模式已关闭。"
+ },
+ "service.developer_mode_usage": {
+  "ko": "사용법: /dev on · /dev off · /dev (현재 상태)",
+  "en": "Usage: /dev on · /dev off · /dev (current state)",
+  "ja": "使い方: /dev on · /dev off · /dev（現在の状態）",
+  "zh": "用法：/dev on · /dev off · /dev（当前状态）"
+ },
  "handoff.modify_gmail": {
   "ko": "Gmail 메일 정리",
   "en": "Gmail mailbox organisation",
@@ -802,6 +862,24 @@
   "en": "Results returned",
   "ja": "返ってきた結果",
   "zh": "返回的结果"
+ },
+ "information_use.usage": {
+  "ko": "- AI 사용량{attempt}: {values}",
+  "en": "- AI usage{attempt}: {values}",
+  "ja": "- AI 使用量{attempt}: {values}",
+  "zh": "- AI 用量{attempt}: {values}"
+ },
+ "information_use.usage_not_reported": {
+  "ko": "보고되지 않음",
+  "en": "Not reported",
+  "ja": "報告なし",
+  "zh": "未报告"
+ },
+ "information_use.usage_partial": {
+  "ko": "도구 호출 일부만 보고됨",
+  "en": "Tool calls partially reported",
+  "ja": "ツール呼び出しは一部のみ報告",
+  "zh": "工具调用仅部分报告"
  },
  "information_use.signed_in_browser_pages": {
   "ko": "로그인한 브라우저 페이지",

@@ -62,6 +62,8 @@ class SurfaceCapabilities:
     buttons: bool = False
     native_stop: bool = False
     action_approvals: bool = False
+    #: A one-line, best-effort wait status independent of editable drafts.
+    wait_status: bool = False
 
 
 @dataclass(frozen=True)
@@ -176,6 +178,10 @@ class ConversationSurface(ABC):
     def deliver_conversation_notice(self, text):
         """Best effort: one conversation notice to the paired owner."""
 
+    def show_wait_status(self, job, state, text, now):
+        """Best effort wait line, or None to suppress it. Called under the delivery lock."""
+        return False
+
     # -- presence (best effort; only what ``capabilities`` declares is asked) -------
     @abstractmethod
     def source_message(self, work_id):
@@ -244,6 +250,10 @@ def notice_binding(service, notification):
         if not pending or pending.get('state') != 'requested' or pending.get('offer_digest') != notification.get('fingerprint'):
             return None
         return {}
+    if kind == 'budget_continue':
+        row = service.budget_continue_offer(notification.get('job_id'))
+        job = service.store.job(notification.get('job_id'))
+        return row if service.budget_continue_current(job, row) and row.get('nonce') == notification.get('fingerprint') else None
     if kind == 'browser_login_needed':
         # #709: only while this Work's login is still offered with this nonce.
         row = service._browser_login(notification.get('job_id'))
@@ -303,6 +313,8 @@ def notice_text(service, notification, bound):
         return LOCAL_DOCUMENT_APPROVAL_TEXT
     if kind == 'browser_approval_needed':
         return service.browser_step_prompt(notification.get('job_id'))
+    if kind == 'budget_continue':
+        return bound['text']
     if kind == 'browser_login_needed':
         return service.browser_login_prompt(notification.get('job_id'))
     return service.notification_text(kind)

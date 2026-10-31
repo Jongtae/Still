@@ -1399,6 +1399,10 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 if path=='/api/preparations/request':
                     # #659: the owner accepts, cancels or deletes one preparation.
                     return self.reply(200,service.preparation_request(body))
+                if path=='/api/work/continue':
+                    if self.tunneled():return self.reply(403,{'error':'이 작업은 이 기기에서만 할 수 있습니다.'})
+                    try:return self.reply(200,service.budget_continue_decision(body))
+                    except ValueError as exc:return self.reply(400,{'error':str(exc)})
                 if path in ('/api/browser/login','/api/browser/approval','/api/browser/sessions/delete','/api/browser/login/decision'):
                     # #656: a headed window on this Mac, and the approval of a
                     # guarded step in the owner's session; #680: deleting saved

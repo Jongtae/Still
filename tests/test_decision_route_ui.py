@@ -8,6 +8,8 @@ from pathlib import Path
 import shutil
 import subprocess
 
+import pytest
+
 ROOT = Path(__file__).parents[1] / "src" / "personal_agent" / "web"
 HTML = (ROOT / "index.html").read_text(encoding="utf-8")
 APP = (ROOT / "app.js").read_text(encoding="utf-8")
@@ -96,19 +98,19 @@ const base=(active,extra={})=>({decision_route:{active,suite_version:'decision-q
  assert.deepEqual(JSON.parse(JSON.stringify(calls)),[{path:'/api/decision-route/credential',body:{transport:'jev',key:'ts-key',model:'jev-latest'}}]);
  assert(!calls.some(call=>call.path==='/api/decision-route/activate'),'saving never activates');
  assert($('decision-route-feedback').textContent.includes('아직 대화 해석 경로는 바뀌지 않았습니다'));
- // #679: the default is the cheapest qualified model (ranked list prefilled), even before the model flag was
- // checked (activation checks it); the engine default is offered but never preselected.
+ // #472: the default is the fastest qualified model (#679 had the cheapest; ranked list prefilled), even before
+ // the model flag was checked (activation checks it); the engine default is offered but never preselected.
  calls.length=0;box().dataset.state='';ctx.renderDecisionRoute(base({transport:'direct_api',source:'default',destination:'api.openai.com'}));
  let codex=rowTitled('구독 AI · Codex');await button(codex,'사용').onclick({currentTarget:button(codex,'사용')});
  let form=descendants(rowTitled('구독 AI · Codex')).find(node=>node.tag==='form');
  let radios=descendants(form).filter(node=>node.tag==='input'&&node.type==='radio');
- assert.deepEqual(radios.map(node=>node.value),['lowest_qualified','explicit','engine_default']);
- assert.equal(radios.find(node=>node.checked).value,'lowest_qualified','engine_default (Opus for Claude Code) is not preselected');
+ assert.deepEqual(radios.map(node=>node.value),['fastest_qualified','lowest_qualified','explicit','engine_default']);
+ assert.equal(radios.find(node=>node.checked).value,'fastest_qualified','engine_default (Opus for Claude Code) is not preselected');
  assert(descendants(form).some(node=>node.tag==='button'&&node.textContent==='모델 지정 지원 확인'));
  assert(form.textContent.includes('모델 목록은 새로고침을 눌렀을 때만 가져옵니다.'));
  assert(!calls.some(call=>call.path.startsWith('/api/decision-route/models')),'no model list on render');
  await form.onsubmit({preventDefault(){}});
- assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{path:'/api/decision-route/activate',body:{transport:'subscription_cli',engine:'codex',model_policy:'lowest_qualified',candidates:'gpt-5.6-luna, gpt-5.6-terra'}});
+ assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{path:'/api/decision-route/activate',body:{transport:'subscription_cli',engine:'codex',model_policy:'fastest_qualified',candidates:'gpt-5.6-luna, gpt-5.6-terra'}});
  // 모델 목록 새로고침 is the only thing that lists models; entries are labelled as unverified.
  codex=rowTitled('구독 AI · Codex');await button(codex,'사용').onclick({currentTarget:button(codex,'사용')});
  form=descendants(rowTitled('구독 AI · Codex')).find(node=>node.tag==='form');
@@ -136,13 +138,13 @@ const base=(active,extra={})=>({decision_route:{active,suite_version:'decision-q
  form=descendants(rowTitled('구독 AI · Codex')).find(node=>node.tag==='form');
  assert.deepEqual(descendants(form).filter(node=>node.type==='radio').map(node=>node.value),['engine_default']);
  assert(form.textContent.includes('모델 지정을 지원하지 않아'));
- // Supported: all three policies; lowest_qualified sends the owner's ordered candidates.
+ // Supported: all four policies; lowest_qualified sends the owner's ordered candidates.
  switchEditor('');box().dataset.state='';ctx.renderDecisionRoute(base({transport:'direct_api',source:'default',destination:'api.openai.com'},{selection:'supported'}));
  codex=rowTitled('구독 AI · Codex');await button(codex,'사용').onclick({currentTarget:button(codex,'사용')});
  form=descendants(rowTitled('구독 AI · Codex')).find(node=>node.tag==='form');
  const inputs=descendants(form).filter(node=>node.tag==='input');
- assert.deepEqual(inputs.filter(node=>node.type==='radio').map(node=>node.value),['lowest_qualified','explicit','engine_default']);
- inputs.find(node=>node.value==='engine_default').checked=false;inputs.find(node=>node.value==='lowest_qualified').checked=true;
+ assert.deepEqual(inputs.filter(node=>node.type==='radio').map(node=>node.value),['fastest_qualified','lowest_qualified','explicit','engine_default']);
+ inputs.find(node=>node.value==='fastest_qualified').checked=false;inputs.find(node=>node.value==='engine_default').checked=false;inputs.find(node=>node.value==='lowest_qualified').checked=true;
  inputs.filter(node=>node.type==='text')[0].value=' tiny, small ';
  failNext=new Error('후보 모델 중 적격성 검사를 통과한 모델이 없습니다. 현재 대화 해석 경로는 그대로 유지됩니다.');const before=refreshes;
  await form.onsubmit({preventDefault(){}});
@@ -163,7 +165,7 @@ const base=(active,extra={})=>({decision_route:{active,suite_version:'decision-q
  assert(rowTitled('사용 방식').textContent.includes('OpenAI (Codex 구독 계정)'));
  const change=button(policyRow,'변경');await change.onclick({currentTarget:change});
  const policyForm=descendants(rowTitled('판단 모델')).find(node=>node.tag==='form');
- assert.deepEqual(descendants(policyForm).filter(node=>node.type==='radio').map(node=>node.value),['lowest_qualified','explicit','engine_default'],'the policy is changed in place');
+ assert.deepEqual(descendants(policyForm).filter(node=>node.type==='radio').map(node=>node.value),['fastest_qualified','lowest_qualified','explicit','engine_default'],'the policy is changed in place');
  switchEditor('cli:codex');
  assert(rowTitled('OpenAI API · gpt-4o-mini'),'the direct API becomes another choice');
  const details=all().find(node=>node.tag==='details').textContent;
@@ -208,7 +210,7 @@ const base=(active,extra={})=>({decision_route:{active,suite_version:'decision-q
   {route:{direct_api:{configured:true,model:'gpt-4o-mini',destination:'api.openai.com',ranked_models:['gpt-4o-mini','gpt-6-luna']}}}));
  const openai=rowTitled('OpenAI API · gpt-4o-mini');await button(openai,'모델 선택').onclick({currentTarget:button(openai,'모델 선택')});
  const directForm=descendants(rowTitled('OpenAI API · gpt-4o-mini')).find(node=>node.tag==='form');
- assert(directForm.textContent.includes('gpt-4o-mini → gpt-6-luna'),'the cheapest-first default is named');
+ assert(directForm.textContent.includes('가장 빠른 적격 모델: gpt-4o-mini, gpt-6-luna'),'the fastest-qualified default and its candidates are named (#472)');
  assert(!descendants(directForm).some(node=>node.tag==='select'),'no effort choice for the API route');
  descendants(directForm).find(node=>node.tag==='input'&&node.type==='text').value='gpt-6-luna';
  await directForm.onsubmit({preventDefault(){}});
@@ -441,3 +443,86 @@ def test_decision_route_renderer_behaviour():
     result = subprocess.run([node, "-e", DOM_CHECKS, str(ROOT / "app.js")], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr + result.stdout
     assert "decision route DOM checks passed" in result.stdout
+
+
+@pytest.mark.parametrize("scenario", ["qualified", "candidate"])
+def test_judgment_follow_distinguishes_qualified_route_from_first_candidate(scenario):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for DOM checks")
+    # Reuse the DOM/VM setup without running the long editor interaction suite.
+    script = DOM_CHECKS.split("(async()=>{", 1)[0] + r"""
+const followBox=new Element('div');followBox.id='judgment-follow';
+const follow={available:true,model:'first-ranked-model',destination:'candidate.example.invalid'};
+const render=active=>{
+ ctx.aiSettings={decision_route:{mode:'follow_main',active,follow}};
+ ctx.renderJudgmentFollow();return $('judgment-follow').textContent;
+};
+if(process.argv[2]==='qualified'){
+ const active={source:'follow',available:true,transport:'subscription_cli',requested_model:'qualified-model',destination:'qualified.example.invalid'};
+ const text=render(active);
+ assert(text.includes('qualified-model'),'the qualified route supplies the model in use');
+ assert(!text.includes('first-ranked-model'),'the first candidate is not the qualified model');
+ assert(text.includes('을(를) 씁니다.'),'a qualified follow route is in use');
+ assert(text.includes('전송 대상: qualified.example.invalid'));
+ assert(!text.includes('candidate.example.invalid'),'the active destination takes precedence');
+ assert(render({...active,destination:undefined}).includes('전송 대상: candidate.example.invalid'),'missing active destination falls back to the preview');
+}else{
+ for(const active of [undefined,{transport:'none'},{source:'follow',available:false},
+   {source:'owner',available:true,requested_model:'explicit-model'},
+   {source:'default',available:true,requested_model:'default-model'}]){
+  const text=render(active);
+  assert(text.includes('first-ranked-model'),'unqualified follow shows the first candidate');
+  assert(!text.includes('을(를) 씁니다.'),'a candidate must not be described as in use');
+  assert(text.includes('부터 확인해 사용합니다.'),'the model will be checked first');
+  assert(text.includes('전송 대상: candidate.example.invalid'));
+ }
+ follow.available=false;follow.reason='synthetic unavailable reason';
+ assert(render({transport:'none'}).includes('기본 AI를 따라갈 수 없습니다: synthetic unavailable reason'));
+}
+assert.equal(calls.length,0,'rendering makes no API requests');
+"""
+    result = subprocess.run(
+        [node, "-e", script, str(ROOT / "app.js"), scenario],
+        capture_output=True, text=True, timeout=20,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+
+
+def test_settings_names_the_fastest_qualified_model_and_why():
+    """#472: the follow row names the chosen model, its measured speed and what it beat."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for DOM checks")
+    script = DOM_CHECKS.split("(async()=>{", 1)[0] + r"""
+const followBox=new Element('div');followBox.id='judgment-follow';
+for(const id of ['judgment-feedback','active-ai'])if(!$(id))new Element('p').id=id;
+const follow={available:true,model:'gpt-5.6-luna',model_policy:'fastest_qualified',candidates:['gpt-5.6-luna','gpt-5.6-terra'],destination:'OpenAI (Codex 구독 계정)'};
+const render=active=>{ctx.aiSettings={decision_route:{mode:'follow_main',active,follow}};ctx.renderJudgmentFollow();return $('judgment-follow').textContent;};
+(async()=>{
+const active={source:'follow',available:true,transport:'subscription_cli',model_policy:'fastest_qualified',requested_model:'gpt-5.6-luna',
+ qualification:{model:'gpt-5.6-luna',p50_seconds:3.214,p95_seconds:4.9,pass_rate:0.923,
+  compared:[{model:'gpt-5.6-luna',qualified:true,p50_seconds:3.214},{model:'gpt-5.6-terra',qualified:true,p50_seconds:11.2},{model:'gpt-6-luna',qualified:false,failed_case:'reference-to-previous-result'}]}};
+let text=render(active);
+assert(text.includes('적격성 검사를 통과한 가장 빠른 모델 gpt-5.6-luna을(를) 씁니다.'),text);
+assert(text.includes('응답 시간 중앙값 3.2초, 95% 4.9초.'),text);
+assert(text.includes('비교한 후보: gpt-5.6-terra 11.2초, gpt-6-luna 검사 미통과'),text);
+text=render(undefined);
+assert(text.includes('후보 gpt-5.6-luna, gpt-5.6-terra을(를) 모두 확인해 가장 빠른 적격 모델을 씁니다.'),text);
+assert(!text.includes('을(를) 씁니다. 응답'),'no measured speed before a qualification');
+text=render({...active,qualification:{model:'gpt-5.6-luna'}});
+assert(!text.includes('중앙값'),'a record without a measurement claims no speed');
+assert(!$('judgment-follow').textContent.includes('다시 확인'),'a route under the current policy offers no re-check');
+// A follow row qualified by #679 cheapest-first: the owner can re-check it; nothing runs by itself.
+text=render({source:'follow',available:true,transport:'subscription_cli',model_policy:'lowest_qualified',requested_model:'gpt-5.6-terra'});
+assert(text.includes('이전 방식(처음 통과한 가장 저렴한 모델)'),text);
+const recheck=descendants($('judgment-follow')).find(node=>node.tag==='button'&&node.textContent==='다시 확인');
+assert(recheck,'the outdated follow row offers 다시 확인');
+calls.length=0;await recheck.onclick({currentTarget:recheck});
+assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))),{path:'/api/decision-route/activate',body:{transport:'follow_main'}});
+console.log('fastest judgment DOM checks passed');
+})().catch(error=>{console.error(error);process.exit(1);});
+"""
+    result = subprocess.run([node, "-e", script, str(ROOT / "app.js")], capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "fastest judgment DOM checks passed" in result.stdout

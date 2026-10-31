@@ -341,7 +341,7 @@ class OrchestratorCategories(_Case):
         with self.assertRaisesRegex(SettingsError, '다음 중 하나'):
             self.draft('judgment_ai', 'model', 'gpt-imaginary')
         qualified = []
-        self.service.decision_routes._first_qualified = lambda candidates, make: (
+        self.service.decision_routes._first_qualified = lambda candidates, make, policy=None: (
             qualified.append(list(candidates)) or candidates[0],
             {'suite_version': 'test', 'score': 1.0, 'qualified': True}, [{'observed_model': candidates[0]}])
         model = self.draft('judgment_ai', 'model', 'gpt-6-luna')
@@ -671,7 +671,7 @@ class ReviewRemediation(ConversationConfirmation):
         self.store.secret('decision_model_key', 'decision-owner-key-value-0003')
         self.store.put('decision_route', {'transport': 'direct_api', 'provider': 'openai',
                                           'requested_model': 'gpt-4o-mini', 'model_policy': 'explicit'})
-        self.service.decision_routes._first_qualified = lambda candidates, make: (
+        self.service.decision_routes._first_qualified = lambda candidates, make, policy=None: (
             candidates[0], {'suite_version': 'test', 'score': 1.0, 'qualified': True}, [{'observed_model': candidates[0]}])
 
     def telegram_drafts(self, *changes):

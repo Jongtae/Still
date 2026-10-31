@@ -3,11 +3,13 @@
     python -m agentos_eval snapshot --from ~/.local/share/agentos --name owner
     python -m agentos_eval scenarios
     python -m agentos_eval sweep --seed owner --worker codex --instances 3 --epochs 3
+    python -m agentos_eval sweep --world appworld --scenarios world-appworld-pay-approved
     python -m agentos_eval report --log <eval log>
     python -m agentos_eval budget
 
 Run from the ``evals`` folder (or with it on ``PYTHONPATH``).  ``sweep`` and
-``report`` need the eval extra (``evals/requirements.txt``); the rest is
+``report`` need the eval extra (``evals/requirements.txt``); a ``--world``
+sweep needs no Inspect or judge, only the world's own package; the rest is
 standard library.
 """
 import argparse
@@ -15,14 +17,16 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import scenarios as scenario_module
 from .budget import JudgeBudget
 from .paths import LIVE_DATA, REPO, eval_home
-from .report import records_from_samples, write_report
-from .sandbox import run_id, snapshot_seed
+from .report import records_from_samples, world_records, write_report
+from .sandbox import WORLD_WORKER, run_id, snapshot_seed
 
 #: Where a judge key may come from at run time (never stored by this tool).
 KEY_ENV = {'openai': 'OPENAI_API_KEY', 'anthropic': 'ANTHROPIC_API_KEY', 'google': 'GOOGLE_API_KEY'}
@@ -85,7 +89,7 @@ def cmd_snapshot(args):
 
 
 def cmd_scenarios(args):
-    loaded = scenario_module.load(include_local=not args.no_local, split=args.split or None)
+    loaded = scenario_module.load(include_local=not args.no_local, split=args.split or None, world=args.world or None)
     for scenario in loaded:
         # Owner-local scenarios may hold real conversation text: list their ids only.
         title = scenario['title'] if scenario['source'] == 'bundled' else '(local)'
@@ -111,7 +115,51 @@ def _write(log, run):
     return report
 
 
+def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
+    """``sweep --world``: each scenario × epoch in a fresh world and a fresh sandbox, on Codex; no judge (#484)."""
+    from .runner import USAGE_LIMIT, run_world_scenario
+    from .sandbox import SandboxPool
+    from .worlds import EVIDENCE_CLASS
+    if args.worker != WORLD_WORKER:
+        raise SystemExit('A world sweep runs on the Codex worker only.')
+    ids = [item for item in args.scenarios.split(',') if item]
+    loaded = scenario_module.load(include_local=not args.no_local, split=args.split or None, ids=ids or None,
+                                  world=args.world)
+    if not loaded:
+        raise SystemExit(f'No {args.world} world scenarios to run.')
+    seed = resolve_seed(args.seed)
+    run = {'id': run_id(), 'started': time.time(), 'git_head': git_head(), 'worker': WORLD_WORKER,
+           'instances': args.instances, 'epochs': args.epochs, 'judge': 'none', 'world': args.world,
+           'evidence_class': EVIDENCE_CLASS, 'seed': seed.name if seed else 'fresh'}
+    pool = (pool_factory or SandboxPool)(size=args.instances, seed=seed, keep=args.keep_sandboxes)
+    run_scenario = run_scenario or run_world_scenario
+    jobs = [(scenario, epoch) for epoch in range(1, args.epochs + 1) for scenario in loaded][:args.limit]
+    tripped = threading.Event()
+
+    def one(job):
+        # #887: past a usage limit every run fails the same way; start no more.
+        if tripped.is_set():
+            return None
+        record = run_scenario(job[0], pool, turn_timeout=args.turn_timeout)
+        if any(turn.get('failure_class') == USAGE_LIMIT for turn in record.get('turns') or ()):
+            tripped.set()
+        return job[0], record, job[1]
+
+    with ThreadPoolExecutor(max_workers=args.instances) as executor:
+        done = [item for item in executor.map(one, jobs) if item is not None]
+    if tripped.is_set():
+        run['stopped'] = {'tripped_by': 'world sweep', 'skipped': len(jobs) - len(done)}
+    json_path, md_path, report = write_report(world_records(done), folder or eval_home() / 'reports', run)
+    print(md_path.read_text(encoding='utf-8'))
+    print(f'report: {json_path}')
+    if tripped.is_set():
+        return 2
+    return 1 if report['trend']['regressions'] else 0
+
+
 def cmd_sweep(args):
+    if args.world:
+        return run_world_sweep(args)
     from inspect_ai import eval as inspect_eval  # the eval extra
     from .task import agentos_secretary
     judge = args.judge or os.environ.get('AGENTOS_EVAL_JUDGE_MODEL') or 'openai/gpt-6.1-terra'
@@ -161,6 +209,7 @@ def main(argv=None):
     listing = sub.add_parser('scenarios', help='list scenarios')
     listing.add_argument('--split', choices=scenario_module.SPLITS)
     listing.add_argument('--no-local', action='store_true')
+    listing.add_argument('--world', default='', help='list the world scenarios of this world instead')
     sweep = sub.add_parser('sweep', help='run scenarios on fresh sandboxes and write the trend report')
     sweep.add_argument('--worker', choices=('codex', 'claude-code', 'both'), default='codex')
     sweep.add_argument('--instances', type=int, default=3)
@@ -176,6 +225,7 @@ def main(argv=None):
     sweep.add_argument('--limit', type=int, default=None)
     sweep.add_argument('--keep-sandboxes', action='store_true')
     sweep.add_argument('--display', default='plain')
+    sweep.add_argument('--world', default='', help='run the world scenarios of this world (e.g. appworld), on Codex')
     rep = sub.add_parser('report', help='rebuild the trend report from an Inspect log')
     rep.add_argument('--log', required=True)
     sub.add_parser('budget', help="show today's judge spend")
