@@ -192,7 +192,7 @@ class GoalRouteWorkerHandoff(Harness):
             self.assertEqual(row['status'], 'succeeded')
         cli = self.engine.turns[0]['context']
         self.assertEqual(cli['request'], request)
-        self.assertEqual(cli['brief'], notes)
+        self.assertTrue(cli['brief'].startswith(notes + '\nAllowance left in this Work: '))
         sent = self.store.turn_provenance(cli_job)
         self.assertEqual(sent['instructions_channel'], 'developer-instructions')
         self.assertIn(agent_runtime.GOAL_FIRST_GUIDANCE, sent['instructions'])

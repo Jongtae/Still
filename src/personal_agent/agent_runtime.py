@@ -4001,7 +4001,7 @@ def context_sections(context):
                                      surface_section(context)) if part)
 
 def turn_context(history,route,current_context=None,profile=None,prepared=None,native_search=False,brief=None,skills=None,
-                 attachments=None,surface=None):
+                 attachments=None,surface=None,work_budget=None):
  """The one Work-scoped turn context every route receives (#569).
 
  ``history`` is the prepared transcript whose last item is the current
@@ -4032,6 +4032,9 @@ def turn_context(history,route,current_context=None,profile=None,prepared=None,n
  attempt, supplementary to the verbatim request, counted against the same
  budget; None or empty sends nothing and changes nothing.
 
+ ``work_budget`` (#468), when attached, adds the remaining Work allowance
+ to the brief using the same model-turn limit as the plan.
+
  ``skills`` (#961) is the Work's installed-skills catalogue
  (``SkillBinding.catalogue_text``), counted against the same budget; None or
  empty (skills off or none installed) sends nothing and changes nothing.
@@ -4059,6 +4062,15 @@ def turn_context(history,route,current_context=None,profile=None,prepared=None,n
  prepared=str(prepared or '')
  if prepared:budget-=len(PREPARED_HEADING.encode())+len(prepared.encode())+2
  brief=str(brief or '')
+ # #468: every worker sees the shared allowance as a fact, including fallback attempts.
+ if work_budget is not None:
+  used=work_budget.ledger.used() if work_budget.ledger is not None else work_budget.attempts_used
+  attempts=max(0,work_budget.attempts-(used if used is not None else work_budget.attempts))
+  limit=work_budget.turn_limit()
+  turns=max(0,limit-work_budget.turns_used)
+  left=max(0,int(work_budget.remaining()))
+  brief='\n'.join(part for part in (brief,f'Allowance left in this Work: {attempts} of {work_budget.attempts} tool calls, '
+                                  f'{turns} of {limit} model turns, {left} seconds.') if part)
  if brief:budget-=len(BRIEF_HEADING.encode())+len(brief.encode())+2
  skills=str(skills or '')
  if skills:budget-=len(SKILLS_HEADING.encode())+len(skills.encode())+2

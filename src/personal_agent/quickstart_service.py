@@ -12037,7 +12037,7 @@ class AgentService:
                       'skills':cli_skills.catalogue_text() if cli_skills is not None else None}
             def build(sections):
                 context=turn_context([*run.history[:-1],{'role':'user','content':current_request}],'cli',
-                                     native_search=native,**sections,
+                                     native_search=native,work_budget=run.work_budget,**sections,
                                      # #997: what this request carries besides its words, as a fact.
                                      attachments=attachment_facts(images=len(run.image_inputs)),
                                      # #1380, #375: where the owner is writing from, as a fact of the Work's channel.
@@ -12334,6 +12334,7 @@ class AgentService:
         # #804, #820: every attempt carries the conversation, the profile, the current
         # context and the prepared answers; the plan's notes (``brief``) only add to them.
         api_context=turn_context(run.history,'api',
+                                 work_budget=run.work_budget,
                                  current_context=run.section_values['current_context'],
                                  profile=run.section_values['profile'],
                                  prepared=run.section_values['prepared'],brief=run.brief,
