@@ -12173,6 +12173,9 @@ class AgentService:
                                            'own_web_search':bool(native_search),
                                            'earlier_exchanges':information_use.section_references(engine_context.get('profile') if adapter_context is not None else '')['earlier_exchanges']},effort=getattr(run.attempt,'effort','') if run.attempt is not None else '')
         run.record('subscription_engine','running',json.dumps({'engine':run.subscription['id'],'mode':mode,
+            # #473: same resolved model as turn provenance; unknown remains null.
+            'model':(run.attempt.model if run.attempt is not None and run.attempt.model else None) or self.main_ai.subscription_model(run.subscription['id']) or None,
+            'effort':getattr(run.attempt,'effort','') if run.attempt is not None else '',
             'context_messages':len(engine_context['conversation']),'context_bytes':len(engine_prompt.encode()),
             'context_mode':engine_context.get('mode','shared-context')}))
         work_model=''

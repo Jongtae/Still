@@ -1077,9 +1077,9 @@ class BundledListing(__import__('test_decision_routes').ServiceFixture):
                   'model_efforts': {'gpt-6-astra': ['low', 'high']},
                   'model_notes': {'gpt-6-astra': 'Our most capable model for complex, demanding work.'}}
         rendered = render_catalogue([worker])
-        self.assertIn('gpt-6-astra (unranked; effort: low/high; "Our most capable model for complex, demanding work.")',
+        self.assertIn('gpt-6-astra (unranked; effort: low/high; "Our most capable model for complex, demanding work."; observed:',
                       rendered)
-        self.assertIn('gpt-5.6-luna (lowest-cost)', rendered)
+        self.assertIn('gpt-5.6-luna (lowest-cost; observed:', rendered)
 
     def test_a_failed_listing_is_cached_per_binary_too(self):
         """#735 review: a binary whose `--bundled` listing failed is not re-run on every Work."""
@@ -1462,6 +1462,112 @@ class NotPinned(Harness):
 
 
 class CatalogueData(Harness):
+    def observation_event(self, job, tool, status, detail, created):
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job, tool, status, json.dumps(detail), created))
+
+    def observed_attempt(self, job, model, seconds, usage=None, status='succeeded'):
+        self.observation_event(job, 'subscription_engine', 'running', {'engine': 'codex', 'model': model}, 10)
+        self.observation_event(job, 'subscription_engine', status, {'engine': 'codex', **(usage or {})}, 10 + seconds)
+
+    def catalogue_line(self):
+        from personal_agent.orchestrator import worker_catalogue
+        return render_catalogue([worker_catalogue(self.service).worker('codex')])
+
+    def test_observed_latency_and_reported_usage_per_model(self):
+        self.store.put('subscription_engine_models', {'codex': BUNDLED[0]})
+        # Use the fixture's configured default, including its empty/default catalogue entry.
+        from personal_agent.orchestrator import worker_catalogue
+        default = worker_catalogue(self.service).worker('codex')['default_model']
+        other = next(model for model in BUNDLED if model != default)
+        for index, seconds in enumerate((12, 42, 180)):
+            self.observed_attempt('samples', default, seconds,
+                                  {'usage': {'input_tokens': 100 + index * 100, 'output_tokens': 10 + index * 10},
+                                   'num_turns': index + 1, 'cli_tool_calls': index * 2},
+                                  status='failed' if index == 2 else 'succeeded')
+        self.observed_attempt('other', other, 8, {'usage': {'input_tokens': 700}})
+        line = self.catalogue_line()
+        self.assertIn('observed: 3 attempts, median 42 s (12–180 s)', line)
+        self.assertIn('input_tokens 200, output_tokens 20, num_turns 2, cli_tool_calls 2', line)
+        self.assertIn(f'{other} (', line)
+        self.assertIn('observed: 1 attempt, median 8.0 s (8.0–8.0 s)', line)
+        self.assertIn('input_tokens 700', line)
+        self.observed_attempt('fractional', other, 117.303, {'usage': {'input_tokens': 1234567.5}})
+        self.assertIn('median 63 s (8.0–117 s)', self.catalogue_line())
+        self.assertIn(f'worker default: {default}; observed: 3 attempts', line)
+
+    def test_no_observations_or_unavailable_read(self):
+        from personal_agent.orchestrator import worker_observations
+        self.assertEqual(worker_observations(object()), {})
+        for failure in (None, RuntimeError('unavailable')):
+            with mock.patch.object(self.store, 'worker_attempt_events', side_effect=failure, return_value=[]):
+                line = self.catalogue_line()
+                self.assertIn('observed: not measured', line)
+                self.assertIn('CLI-reported per attempt (median): not reported', line)
+
+    def test_old_attempt_attribution_requires_an_explicit_matching_plan(self):
+        from personal_agent.orchestrator import worker_observations
+        for job, planned in (('known', {'worker': 'codex', 'model': BUNDLED[0]}),
+                             ('default', {'worker': 'codex', 'model': ''}),
+                             ('wrong', {'worker': 'other', 'model': BUNDLED[0]}),
+                             ('unknown', {})):
+            self.observation_event(job, 'orchestrator', 'planned', planned, 1)
+            self.observation_event(job, 'subscription_engine', 'running', {'engine': 'codex'}, 2)
+            # A later plan cannot attribute the running attempt.
+            self.observation_event(job, 'orchestrator', 'planned', {'worker': 'codex', 'model': BUNDLED[1]}, 3)
+            self.observation_event(job, 'subscription_engine', 'succeeded', {'engine': 'codex'}, 12)
+        observations = worker_observations(self.store)
+        self.assertEqual(list(observations), [('codex', BUNDLED[0])])
+        self.assertEqual(observations[('codex', BUNDLED[0])]['seconds'], [10])
+        self.assertIn('CLI-reported per attempt (median): not reported', self.catalogue_line())
+
+    def test_observation_window_bounds_terminal_attempts(self):
+        from personal_agent.orchestrator import WORKER_OBSERVATION_WINDOW, worker_observations
+        self.observed_attempt('old', BUNDLED[0], 999)
+        for index in range(WORKER_OBSERVATION_WINDOW):
+            self.observed_attempt('recent', BUNDLED[1], 2)
+        observations = worker_observations(self.store)
+        self.assertNotIn(('codex', BUNDLED[0]), observations)
+        self.assertEqual(observations[('codex', BUNDLED[1])]['seconds'], [2] * WORKER_OBSERVATION_WINDOW)
+
+    def test_invalid_or_duplicate_attempts_do_not_add_observations(self):
+        from personal_agent.orchestrator import worker_observations
+        self.observed_attempt('valid', BUNDLED[0], 10, {'usage': {'input_tokens': 100}})
+        self.observation_event('valid', 'subscription_engine', 'succeeded', {'engine': 'codex'}, 30)
+        self.observed_attempt('negative', BUNDLED[0], -1)
+        self.observed_attempt('unknown', None, 5)
+        self.observation_event('orphan', 'subscription_engine', 'failed', {'engine': 'codex'}, 30)
+        self.observation_event('malformed', 'subscription_engine', 'running', [], 10)
+        self.observation_event('malformed', 'subscription_engine', 'failed', {'engine': 'codex'}, 20)
+        self.assertEqual(worker_observations(self.store), {
+            ('codex', BUNDLED[0]): {'seconds': [10], 'usage': {'input_tokens': [100]}}})
+
+    def test_usage_medians_ignore_missing_values_and_bound_cli_keys(self):
+        self.observed_attempt('first', BUNDLED[0], 10,
+                              {'usage': {'input_tokens': 100, 'output_tokens': 10, 'other': 999},
+                               'num_turns': 2, 'cli_tool_calls': 3})
+        self.observed_attempt('second', BUNDLED[0], 20, {'usage': {'output_tokens': 20}})
+        line = self.catalogue_line()
+        self.assertIn('input_tokens 100, output_tokens 15, num_turns 2, cli_tool_calls 3', line)
+        self.assertNotIn('other 999', line)
+
+    def test_subscription_cost_states_a_finite_allowance(self):
+        from personal_agent.orchestrator import KIND_SUBSCRIPTION, KIND_TIERS
+        cost = KIND_TIERS[KIND_SUBSCRIPTION]['cost']
+        self.assertNotIn('included', cost)
+        self.assertIn('finite', cost)
+        self.assertIn('limit', cost)
+
+    def test_running_event_records_resolved_model_and_effort(self):
+        self.service.decision_routes.bundled_efforts = lambda engine: {BUNDLED[1]: ['high']}
+        self.script([plan('codex', '', model=BUNDLED[1], effort='high')], goals=[True])
+        job, _ = self.run_work('알려줘')
+        with self.store.db() as db:
+            detail = json.loads(db.execute("SELECT detail FROM tool_events WHERE job_id=? "
+                                           "AND tool='subscription_engine' AND status='running'", (job,)).fetchone()[0])
+        self.assertEqual((detail['model'], detail['effort']), (BUNDLED[1], 'high'))
+
     def test_catalogue_lists_configured_routes_with_models_tiers_and_availability(self):
         from personal_agent.orchestrator import worker_catalogue
         catalogue = worker_catalogue(self.service)
@@ -1874,7 +1980,7 @@ class OrchestrationUnit(unittest.TestCase):
         self.assertEqual(orchestration.validate(plan('a', 'g', model='m1'), candidates, 2), (None, 'repeat'))
         again, _ = orchestration.validate(plan('a', 'g', model='m1', effort='high'), candidates, 2)
         self.assertEqual(again.effort, 'high', 'the same model may be retried at a higher effort')
-        self.assertIn('m1 (lowest-cost; effort: low/medium/high)', render_catalogue(candidates))
+        self.assertIn('m1 (lowest-cost; effort: low/medium/high; observed:', render_catalogue(candidates))
         self.assertIn('effort is "" for the model', QUESTION)
 
     def test_the_main_ai_is_offered_while_it_can_run(self):
@@ -1894,7 +2000,7 @@ class OrchestrationUnit(unittest.TestCase):
         offered = [row for row in self.catalogue().workers if row['available']]
         rendered = render_catalogue(offered)
         self.assertIn('tools: list_notes, web_search', rendered)
-        self.assertIn('m1 (lowest-cost)', rendered)
+        self.assertIn('m1 (lowest-cost; observed:', rendered)
         schema = plan_schema(offered)
         self.assertEqual(schema['properties']['worker']['enum'], ['a', 'b'])
         self.assertEqual(set(schema['required']), set(schema['properties']))

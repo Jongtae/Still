@@ -38,12 +38,14 @@ fallback is also said once in the conversation (``notice``).
 The worker catalogue is data: the configured Main AI routes (``main_ai``),
 their qualified or listed models (#679, ``decision_routes.known_models``),
 the agency observed at run time (#701: own web search, browser tools,
-availability) and cost/latency tiers.  See docs/decision-layer.en.md
+availability), cost tiers and observed per-model latency/usage.  See docs/decision-layer.en.md
 "Orchestration (#710)".
 """
 import copy
 import hashlib
 import json
+import math
+from statistics import median
 
 # #804/#833: the owner-model fact bounds and renderer shared with the direct route's outcome judgment.
 from . import owner_mcp
@@ -98,11 +100,16 @@ KIND_SUBSCRIPTION = 'subscription'
 KIND_API = 'api'
 #: Cost and latency per route kind: data the orchestrator weighs, never a branch.
 KIND_TIERS = {
-    KIND_SUBSCRIPTION: {'cost': 'included in the owner\'s subscription usage',
+    KIND_SUBSCRIPTION: {'cost': ('finite usage allowance of the owner\'s subscription plan; no per-token bill; '
+                                 'CLI stops at the limit until it resets'),
                         'latency': 'agent CLI process: slower start, can work through many steps'},
     KIND_API: {'cost': 'metered per token on the owner\'s API key',
                'latency': 'direct API call: faster start'},
 }
+#: #473: newest terminal CLI events across all workers, including failed attempts.
+WORKER_OBSERVATION_WINDOW = 200
+WORKER_USAGE_KEYS = 4
+
 #: Model cost tier from its rank in the route's cheapest-first list (#679).
 TIER_LOWEST, TIER_HIGHER, TIER_UNRANKED = 'lowest-cost', 'higher-cost', 'unranked'
 
@@ -339,6 +346,62 @@ def runnable_models(service, route_id, configured, known, refused):
     return [model for model in dict.fromkeys(candidates) if model and model not in gone]
 
 
+def worker_observations(store):
+    """#473: attributed attempt facts only; old default choices cannot establish a historical model."""
+    from .bounded_execution import reported_usage
+    try:
+        rows = store.worker_attempt_events(WORKER_OBSERVATION_WINDOW)
+    except Exception:
+        return {}
+    samples = {}
+    for row in rows:
+        try:
+            end = json.loads(row['detail'])
+            start = json.loads(row['start_detail'])
+            if not all(isinstance(item, dict) for item in (end, start)):
+                continue
+            worker = start.get('engine')
+            model = start.get('model')
+            # An explicit unknown/default model in a new event must not inherit an older plan.
+            if 'model' not in start:
+                planned = json.loads(row['plan_detail'] or '{}')
+                if isinstance(planned, dict) and planned.get('worker') == worker:
+                    model = planned.get('model')
+            duration = row['created'] - row['started']
+            if (not isinstance(worker, str) or not worker or not isinstance(model, str) or not model
+                    or end.get('engine') != worker or not math.isfinite(duration) or duration < 0):
+                continue
+        except (TypeError, ValueError, KeyError):
+            continue
+        sample = samples.setdefault((worker, model), {'seconds': [], 'usage': {}})
+        sample['seconds'].append(duration)
+        fields = reported_usage(end)
+        usage = dict(fields.get('usage') or {})
+        usage.update({key: fields[key] for key in ('num_turns', 'cli_tool_calls') if key in fields})
+        for key, value in usage.items():
+            sample['usage'].setdefault(key, []).append(value)
+    return samples
+
+
+def render_worker_observation(sample):
+    """#473: medians use only reported values, with their original numeric key names."""
+    if not sample:
+        return '; observed: not measured; CLI-reported per attempt (median): not reported'
+    seconds = sample['seconds']
+    usage = sample['usage']
+    preferred = ('input_tokens', 'output_tokens', 'num_turns', 'cli_tool_calls')
+    keys = [key for key in preferred if key in usage]
+    keys += [key for key in sorted(usage, key=lambda key: ('token' not in key, key)) if key not in keys]
+    values = ', '.join(f'{key} {round(median(usage[key]))}' for key in keys[:WORKER_USAGE_KEYS]) or 'not reported'
+    return (f'; observed: {len(seconds)} attempt{"" if len(seconds) == 1 else "s"}, median {seconds_text(median(seconds))} s '
+            f'({seconds_text(min(seconds))}–{seconds_text(max(seconds))} s); CLI-reported per attempt (median): {values}')
+
+
+def seconds_text(value):
+    """Whole seconds, or one decimal under ten (#473)."""
+    return f'{value:.1f}' if value < 10 else f'{value:.0f}'
+
+
 def worker_catalogue(service):
     """``Catalogue`` of every configured Main AI route as a worker (#710).
 
@@ -498,6 +561,11 @@ def worker_catalogue(service):
                         'default_model': str(config.get('model') or ''), 'models': [str(config.get('model') or '')],
                         'model_tiers': {}, 'tools': offered_now([tool for tool in package_tools if tool not in BROWSER_ACTIONS])})
         routes['other'] = {'kind': KIND_API, 'config': dict(config), 'key': key, 'test': None}
+    observations = worker_observations(store)
+    for worker in workers:
+        worker['model_observations'] = {model: observations[(worker['id'], model)]
+                                        for model in worker['models']
+                                        if (worker['id'], model) in observations}
     tools_by_id = {tool['id']: tool for package in service.runtime_packages() for tool in package['tools']}
     return Catalogue(workers, routes, current, descriptions=tool_descriptions(tools_by_id))
 
@@ -572,7 +640,8 @@ def render_catalogue(workers):
         def efforts_of(model):
             levels = efforts.get(model)
             note = notes.get(model)
-            return (f'; effort: {"/".join(levels)}' if levels else '') + (f'; "{note}"' if note else '')
+            return ((f'; effort: {"/".join(levels)}' if levels else '') + (f'; "{note}"' if note else '')
+                    + render_worker_observation((worker.get('model_observations') or {}).get(model)))
         models = ', '.join([f'"" (worker default: {default}{efforts_of(worker["default_model"])})',
                             *[f'{model} ({worker["model_tiers"].get(model, TIER_UNRANKED)}{efforts_of(model)})'
                               for model in worker['models'] if model != worker['default_model']]])
