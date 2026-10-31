@@ -891,7 +891,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             if path=='/api/family/pair' and method=='POST':
                 try:return self.reply(200,family_setup.pair_again(service,record))
                 except ValueError as exc:return self.reply(409,{'error':str(exc)})
-            return self.reply(405,{'error':'지원하지 않는 요청입니다.'})
+            return self.reply(405,{'error':msg('family_share.unsupported_request')})
 
         def remote_login_gate(self,path):
             """#939: once a remote login was started in this process, a tunneled request (other than
@@ -948,7 +948,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             if path==remote_login.DONE_PATH and method=='POST':
                 # Review P3-3: the answer leaves before the tunnel it travels through is stopped.
                 return self.reply(200,{'ok':bool(session.finish_later('done'))})
-            return self.reply(405,{'error':'지원하지 않는 요청입니다.'})
+            return self.reply(405,{'error':msg('family_share.unsupported_request')})
 
         def phone_input_gate(self,path):
             """#1213: once a phone input link was started in this process, a tunneled request (other than one
@@ -982,7 +982,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 nonce=secrets.token_urlsafe(16)
                 return self.reply(200,phone_input.page(session,nonce).encode(),'text/html; charset=utf-8',
                                   cookie=phone_input.cookie_header(issued) if issued else None,csp=phone_input.page_csp(nonce))
-            if method!='POST' or path==phone_input.PAGE_PATH:return self.reply(405,{'error':'지원하지 않는 요청입니다.'})
+            if method!='POST' or path==phone_input.PAGE_PATH:return self.reply(405,{'error':msg('family_share.unsupported_request')})
             if not session.client_ok(cookie):return self.reply(404,{'error':'링크가 만료되었거나 올바르지 않습니다.'})
             if self.headers.get('Content-Type','').split(';')[0].strip().lower()!='application/json':
                 return self.reply(415,{'error':'JSON 요청이 필요합니다.'})
@@ -1004,7 +1004,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 # #1213 review P2: a token exchange or delivery failure still answers the phone; nothing it carried is logged.
                 logging.getLogger('personal_agent.phone_input').warning('phone input request failed (%s)',type(exc).__name__)
                 return self.reply(502,{'ok':False,'error':'지금은 처리하지 못했어요. 잠시 후 다시 해 주세요.'})
-            return self.reply(405,{'error':'지원하지 않는 요청입니다.'})
+            return self.reply(405,{'error':msg('family_share.unsupported_request')})
 
         def cookie(self,token,max_age=86400):
             secure='; Secure' if os.environ.get('AGENTOS_SECURE_COOKIE')=='1' or public_hosts else ''

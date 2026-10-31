@@ -37,6 +37,9 @@ import json
 import time
 import uuid
 
+from .messages import msg
+
+
 #: #918 option B kept a forgotten item undoable for a week, then purged it.  #367: a forget is
 #: never purged; receipts written before #367 may still carry an ``undo_until``, which no
 #: longer limits undo.  Kept for readers of those receipts.
@@ -82,15 +85,14 @@ class ForgetError(ValueError):
 
 def _refuse(code):
     return ForgetError({
-        'bad_ref': ('잊을 항목을 확인할 수 없어요. 기억은 memory:<id>, 현재 상태는 state:<id>, 관찰은 obs:<id>, '
-                    '저장된 함수는 procedure:<id>, 대화 메시지는 message:<id>로 지정해 주세요.'),
-        'stale': '그 항목은 이미 바뀌었거나 없어요. 지금 값을 다시 확인해 주세요.',
-        'no_receipt': '되돌릴 기록을 찾지 못했어요.',
-        'expired': '되돌릴 수 있는 기간(7일)이 지났어요.',
-        'running': '아직 끝나지 않은 요청의 메시지는 잊거나 지울 수 없어요. 끝난 뒤에 다시 요청해 주세요.',
-        'later_value': '그 뒤에 새로 저장된 값이 있어 되돌리지 않았어요. 지금 값은 그대로예요.',
-        'settled': '이미 완전히 지워져 되돌릴 수 없어요.',
-        'authority_confirmation': '연결 권한 복원은 설정 변경 초안을 확인해야 해요. AI가 바로 복원할 수는 없어요.',
+        'bad_ref': msg('owner_forget.bad_ref'),
+        'stale': msg('owner_forget.stale'),
+        'no_receipt': msg('owner_forget.missing_receipt'),
+        'expired': msg('owner_forget.undo_expired'),
+        'running': msg('owner_forget.active_request'),
+        'later_value': msg('owner_forget.newer_value'),
+        'settled': msg('owner_forget.deleted'),
+        'authority_confirmation': msg('owner_forget.authority_restore'),
     }[code], code)
 
 

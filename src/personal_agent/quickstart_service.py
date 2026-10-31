@@ -925,7 +925,7 @@ class AgentService:
             raise ValueError('같은 이름에 다른 서버 설정이 있어 덮어쓰지 않았어요. 현재 연결을 확인하세요.')
         target=trust_record.connection(data['engine'],'owner-mcp',data['name'])
         record=trust_record.hand(self.store,target)
-        if record['state']=='forgotten':raise ValueError('잊은 연결은 별도의 복원 확인이 필요해요.')
+        if record['state']=='forgotten':raise ValueError(msg('trust_record.restore_confirmation'))
         if record['revision'] and (record['money']!=data['money'] or
                 any(record['operations'].get(op) not in (None,'read') for op in data['read_tools'])):
             raise ValueError('기존 동작 결정이나 돈 표시를 새 연결 설정으로 바꿀 수 없어요.')

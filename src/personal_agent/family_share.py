@@ -636,20 +636,20 @@ def accept(service, body, now=None):
     """
     now = time.time() if now is None else now
     if not isinstance(body, dict):
-        raise ValueError('요청 본문을 확인하세요.')
+        raise ValueError(msg('family_share.request_body'))
     op = body.get('op')
     site = normalize_site(body.get('site'))
     if site != str(body.get('site') or '').strip().lower():
-        raise ValueError('사이트 이름은 등록 가능한 도메인이어야 합니다.')
+        raise ValueError(msg('family_share.site_domain'))
     store = service.store
     if op not in ('put', 'remove'):
-        raise ValueError('지원하지 않는 요청입니다.')
+        raise ValueError(msg('family_share.unsupported_request'))
     with store_lock(store):
         marks = received(store)
         if op == 'put':
             rows = body.get('cookies')
             if not isinstance(rows, list):
-                raise ValueError('쿠키 목록을 확인하세요.')
+                raise ValueError(msg('family_share.cookie_list'))
             rows = [row for row in rows if isinstance(row, dict) and isinstance(row.get('name'), str)
                     and _belongs(row.get('domain'), site)]
             if site not in marks and _holds_own(service, site):
@@ -671,8 +671,8 @@ def accept(service, body, now=None):
                 store.put(SHARED_KEY, marks)
                 LOG.warning('family share: %s not imported (%s); the mark stays', site, type(exc).__name__)
                 if isinstance(exc, JarError):
-                    raise ValueError(f'이 비서의 로그인 세션 저장소를 쓸 수 없습니다({exc}).') from None
-                raise ValueError('이 비서에 로그인 세션을 저장하지 못했습니다.') from None
+                    raise ValueError(msg('family_share.session_store_unavailable', exc=exc)) from None
+                raise ValueError(msg('family_share.session_save_failed')) from None
             mark.update(updated=now, error=None)
             mark.pop('importing', None)
             store.put(SHARED_KEY, marks)
@@ -700,7 +700,7 @@ def _holds_own(service, site):
     try:
         return bool(jar.site_rows(site))
     except JarError as exc:
-        raise ValueError(f'이 비서의 로그인 세션 저장소를 읽을 수 없습니다({exc}).') from None
+        raise ValueError(msg('family_share.session_read_failed', exc=exc)) from None
 
 
 def _belongs(domain, site):

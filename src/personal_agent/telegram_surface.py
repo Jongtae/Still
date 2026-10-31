@@ -350,8 +350,8 @@ class TelegramSurface(ConversationSurface):
                             # approval controls, after earlier parts were delivered.
                             parts=[text[offset:offset+1900] for offset in range(0,len(text),1900)]
                             for index,part in enumerate(parts[:-1],1):
-                                service.telegram.send_message(notification['chat_id'],f'승인 내용 ({index}/{len(parts)})\n{part}')
-                            text=f'승인 내용 ({len(parts)}/{len(parts)})\n{parts[-1]}\n위에 나누어 보낸 전체 실행 내용을 확인한 뒤 승인하세요.'
+                                service.telegram.send_message(notification['chat_id'],msg('telegram_surface.approval_part', index=index, total=len(parts), part=part))
+                            text=msg('telegram_surface.approval_final', total=len(parts), part=parts[-1])
                         result=service.telegram.send_message(notification['chat_id'],text,reply_markup)
                 message_id=result.get('message_id') if isinstance(result,dict) else None
                 # #818 review: a memory prompt with nothing tappable is only a list ('memory_listed').
@@ -392,30 +392,30 @@ class TelegramSurface(ConversationSurface):
         still running or a result that was certainly delivered.
         """
         service=self.service
-        labels={'queued':'대기 중','running':'진행 중','succeeded':'완료','partial':'일부 완료',
-                'failed':'완료하지 못함','cancelled':'취소됨','interrupted':'중단됨','unknown':'외부 결과 불확실',
-                'awaiting_connection':'연결 대기'}
+        labels={'queued':msg('state.queued'),'running':msg('state.running'),'succeeded':msg('state.succeeded'),'partial':msg('label.partly_done'),
+                'failed':msg('state.failed'),'cancelled':msg('state.cancelled'),'interrupted':msg('state.interrupted'),'unknown':msg('state.unknown'),
+                'awaiting_connection':msg('label.waiting_for_a_connection')}
         with service.store.db() as db:
             job=db.execute('SELECT status,delivery FROM jobs WHERE id=?',(job_id,)).fetchone()
             rows=db.execute('SELECT tool,status FROM tool_events WHERE job_id=? AND tool!=? ORDER BY id LIMIT 12',(job_id,'model')).fetchall()
         if not job:return msg('service.i_can_t_find_this_task')
-        lines=[f"작업 상태: {labels.get(job['status'],job['status'])}"]
+        lines=[msg('telegram_surface.job_status', status=labels.get(job['status'], job['status']))]
         if rows:
-            lines.append(f'필요한 단계를 {len(rows)}개 처리했습니다.')
+            lines.append(msg('telegram_surface.steps_processed', count=len(rows)))
         elif job['status']=='queued':
             lines.append(msg('service.waiting_to_run'))
         elif job['status']=='running':
-            lines.append('에이전트가 작업을 처리하고 있습니다.')
+            lines.append(msg('telegram_surface.agent_working'))
         elif job['status']=='interrupted':
             lines.append(msg('service.the_task_was_interrupted_by_a'))
         elif job['status']=='awaiting_connection':
-            lines.append('필요한 연결을 기다리고 있습니다. 아직 아무 작업도 실행하지 않았습니다.')
+            lines.append(msg('telegram_surface.waiting_connection'))
         else:
             lines.append(msg('service.see_the_full_result_in_the'))
         if job['delivery']=='unknown':
             lines.append(msg('service.telegram_delivery_could_not_be_verified'))
         elif job['delivery']=='cancelled':
-            lines.append('Telegram 전달은 취소되었습니다.')
+            lines.append(msg('telegram_surface.delivery_cancelled'))
         return '\n'.join(lines)
 
     def update_task_card(self, job, state):
@@ -563,7 +563,7 @@ class TelegramSurface(ConversationSurface):
                 selected_name=None
             except Exception as exc:
                 LOG.warning('usage-limit route change failed work=%s kind=%s',job['id'],type(exc).__name__)
-                reason='AI 연결을 확인하지 못했어요. AI 설정에서 상태를 확인하세요.'
+                reason=msg('telegram_surface.check_ai')
         if selected_name:
             # Keep the existing retry/details controls, but consume every route
             # choice on this one failed reply. The failed Work is never queued.
@@ -572,7 +572,7 @@ class TelegramSurface(ConversationSurface):
                 service.telegram.edit_message_reply_markup(sender,message.get('message_id'),
                                                         reply_controls_markup(job['id'],controls))
             except ProviderError:pass
-            reason=f'{selected_name}로 전환했습니다. 실패한 요청은 자동으로 다시 실행하지 않았어요. 같은 요청을 다시 보내 주세요.'
+            reason=msg('telegram_surface.switched_ai', selected_name=selected_name)
         if isinstance(callback_id,str):
             try:service.telegram.answer_callback_query(callback_id,reason,show_alert=not bool(selected_name))
             except ProviderError:pass
@@ -640,7 +640,7 @@ class TelegramSurface(ConversationSurface):
                         card=service.store.telegram.card_row(db,job_id)
                     if (job and card and card['chat_id']==sender and card['message_id']==message.get('message_id')
                             and job['channel']==f"telegram:{generation}" and job['chat_id']==sender and job['status']=='queued'):
-                        db.execute("UPDATE jobs SET status='cancelled',error='소유자가 작업 카드를 통해 취소했습니다.',delivery='cancelled' WHERE id=? AND status='queued'",(job_id,))
+                        db.execute("UPDATE jobs SET status='cancelled',error=?,delivery='cancelled' WHERE id=? AND status='queued'",(msg('telegram_surface.cancelled_by_owner'),job_id))
                         changed=db.total_changes==1
                         job=dict(job)
                 if changed:
@@ -677,7 +677,7 @@ class TelegramSurface(ConversationSurface):
                         job=dict(job)
                     else:job=None
                 if job:
-                    try:service.telegram.edit_message_text(sender,message.get('message_id'),'컨텍스트 없이 이 요청을 시작할게요.',{'inline_keyboard':[]})
+                    try:service.telegram.edit_message_text(sender,message.get('message_id'),msg('telegram_surface.without_context'),{'inline_keyboard':[]})
                     except ProviderError:pass
                     changed=True
             elif authorized and isinstance(data,str) and data.startswith('p7a:'):
@@ -891,7 +891,7 @@ class TelegramSurface(ConversationSurface):
                             stopped=None
                         if stopped is not None:
                             LOG.info('preparation cancel by owner button id=%s changed=%s',preparation_id,stopped['changed'])
-                            alert=(msg('service.watching_has_stopped_no_more_updates') if stopped['changed'] else '이미 멈춘 지켜보기입니다.',False)
+                            alert=(msg('service.watching_has_stopped_no_more_updates') if stopped['changed'] else msg('telegram_surface.watch_stopped'),False)
                             try:service.telegram.edit_message_reply_markup(sender,notification['message_id'],{'inline_keyboard':[]})
                             except ProviderError:pass
                             changed=True
@@ -920,7 +920,7 @@ class TelegramSurface(ConversationSurface):
                             service.store.remove_telegram_photo(notification['job_id'])
                         service.store.update_notification(notification['id'],result_kind)
                         try:service.telegram.edit_message_text(sender,notification['message_id'],
-                            (msg('service.context_sharing_for_this_task_is') if parts[2]=='approve' else '이 작업의 컨텍스트 공유를 허용하지 않았습니다.'),
+                            (msg('service.context_sharing_for_this_task_is') if parts[2]=='approve' else msg('telegram_surface.context_denied')),
                             {'inline_keyboard':[]})
                         except ProviderError:pass
                         changed=True
@@ -1299,7 +1299,7 @@ class TelegramSurface(ConversationSurface):
                 route_options=[]
             provenance=service.store.turn_provenance(job['id']) or {}
             if (not blocked and provenance.get('failure_class')=='usage-limit' and not route_options):
-                text+='\n다른 AI 연결은 Still 웹의 AI 설정에서 선택할 수 있어요.'
+                text+='\n' + msg('telegram_surface.other_ai')
             # #818: whether this Work left pending memory candidates; its one ask
             # follows the reply (#836: the ask is the ask, no line is appended).
             try:memory_pending=not blocked and bool(service.pending_memory_candidates(job['id'])[0])
