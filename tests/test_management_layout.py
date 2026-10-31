@@ -174,7 +174,8 @@ const elsewhere=new El('elsewhere'),feedback=new El('slack-feedback');elsewhere.
 const slack=new El('slack','settings-section',{'data-add':'external','data-off':'',dataset:{addFeedback:'slack-feedback'}}),setup=new El('slack-setup','settings-editor',{tag:'details'}),form=new El('slack-form');
 setup.append(form);slack.append(new El('h','',{tag:'h3',text:'Slack'}),setup);card.append(slack);pane.append(card);root.append(pane,host,title,elsewhere);
 const nodes={'slack-feedback':feedback,'add-dialog-host':host,'add-dialog-title':title,'add-dialog-types':new El('types'),'add-dialog-back':new El('back')};
-let syncs=0;const ctx={$:id=>nodes[id],document:{createComment:()=>new El('placeholder','',{tag:'#comment'})},scheduleSettingsPaint:()=>syncs++,t:x=>x};
+const dialog={open:false,closed:0,close(){this.open=false;this.closed++;}};nodes['add-dialog']=dialog;const location={hash:'#settings/privacy'};
+let syncs=0;const ctx={$:id=>nodes[id],location,document:{createComment:()=>new El('placeholder','',{tag:'#comment'})},scheduleSettingsPaint:()=>syncs++,t:x=>x};
 vm.createContext(ctx);vm.runInContext(source,ctx);
 ctx.showAddType(slack,'Slack');
 assert.equal(slack.parent,host,'the type opens its own section in the dialog');
@@ -186,6 +187,11 @@ ctx.restoreAddSection();
 assert.equal(slack.parent,card,'closing puts the section back where it was');
 assert.equal(card.children.indexOf(slack),0);
 assert.equal(feedback.parent,elsewhere,'and the status line goes back too');
+// Codex review on #482: a link inside the moved section (a profile entry's 열기) changes the route.
+vm.runInContext("addRoute='#settings/privacy'",ctx);ctx.showAddType(slack,'Slack');dialog.open=true;
+ctx.closeAddOnRoute();assert.equal(dialog.closed,0,'the same route keeps the dialog open');
+location.hash='#item/memory/m1';ctx.closeAddOnRoute();
+assert.equal(dialog.closed,1,'navigating away closes the dialog');assert.equal(slack.parent,card,'and the section is back in its pane first');
 assert(syncs>0,'and re-checks what the pane shows');
 console.log('dialog ok');
 """
