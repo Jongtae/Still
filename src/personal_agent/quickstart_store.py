@@ -1967,6 +1967,29 @@ class QuickStore:
         with self.db() as db:
             db.execute('UPDATE context_job_attachments SET approved=1 WHERE job_id=?',(job_id,))
 
+    def worker_attempt_events(self, limit):
+        """#473: newest terminal CLI attempts with their start and preceding plan, one bounded read."""
+        with self.db() as db:
+            return [dict(row) for row in db.execute("""
+                WITH terminal AS (
+                    SELECT id,job_id,detail,created FROM tool_events
+                    WHERE tool='subscription_engine' AND status IN ('succeeded','failed')
+                    ORDER BY id DESC LIMIT ?
+                )
+                SELECT t.detail,t.created,s.detail AS start_detail,s.created AS started,
+                       p.detail AS plan_detail
+                FROM terminal t
+                LEFT JOIN tool_events s ON s.id=(
+                    SELECT MAX(id) FROM tool_events WHERE job_id=t.job_id
+                    AND tool='subscription_engine' AND id<t.id
+                ) AND s.status='running'
+                LEFT JOIN tool_events p ON p.id=(
+                    SELECT MAX(id) FROM tool_events WHERE job_id=t.job_id
+                    AND tool='orchestrator' AND status='planned' AND id<s.id
+                )
+                ORDER BY t.id DESC
+                """, (limit,))]
+
     def recent_tool_events(self):
         with self.db() as db:
             rows=[dict(r) for r in db.execute("SELECT id,job_id,tool,status,detail,created FROM tool_events WHERE tool!='model' ORDER BY id DESC LIMIT 30")]
