@@ -8,6 +8,8 @@ from pathlib import Path
 import shutil
 import subprocess
 
+import pytest
+
 ROOT = Path(__file__).parents[1] / "src" / "personal_agent" / "web"
 HTML = (ROOT / "index.html").read_text(encoding="utf-8")
 APP = (ROOT / "app.js").read_text(encoding="utf-8")
@@ -441,3 +443,47 @@ def test_decision_route_renderer_behaviour():
     result = subprocess.run([node, "-e", DOM_CHECKS, str(ROOT / "app.js")], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr + result.stdout
     assert "decision route DOM checks passed" in result.stdout
+
+
+@pytest.mark.parametrize("scenario", ["qualified", "candidate"])
+def test_judgment_follow_distinguishes_qualified_route_from_first_candidate(scenario):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for DOM checks")
+    # Reuse the DOM/VM setup without running the long editor interaction suite.
+    script = DOM_CHECKS.split("(async()=>{", 1)[0] + r"""
+const followBox=new Element('div');followBox.id='judgment-follow';
+const follow={available:true,model:'first-ranked-model',destination:'candidate.example.invalid'};
+const render=active=>{
+ ctx.aiSettings={decision_route:{mode:'follow_main',active,follow}};
+ ctx.renderJudgmentFollow();return $('judgment-follow').textContent;
+};
+if(process.argv[2]==='qualified'){
+ const active={source:'follow',available:true,transport:'subscription_cli',requested_model:'qualified-model',destination:'qualified.example.invalid'};
+ const text=render(active);
+ assert(text.includes('qualified-model'),'the qualified route supplies the model in use');
+ assert(!text.includes('first-ranked-model'),'the first candidate is not the qualified model');
+ assert(text.includes('을(를) 씁니다.'),'a qualified follow route is in use');
+ assert(text.includes('전송 대상: qualified.example.invalid'));
+ assert(!text.includes('candidate.example.invalid'),'the active destination takes precedence');
+ assert(render({...active,destination:undefined}).includes('전송 대상: candidate.example.invalid'),'missing active destination falls back to the preview');
+}else{
+ for(const active of [undefined,{transport:'none'},{source:'follow',available:false},
+   {source:'owner',available:true,requested_model:'explicit-model'},
+   {source:'default',available:true,requested_model:'default-model'}]){
+  const text=render(active);
+  assert(text.includes('first-ranked-model'),'unqualified follow shows the first candidate');
+  assert(!text.includes('을(를) 씁니다.'),'a candidate must not be described as in use');
+  assert(text.includes('부터 확인해 사용합니다.'),'the model will be checked first');
+  assert(text.includes('전송 대상: candidate.example.invalid'));
+ }
+ follow.available=false;follow.reason='synthetic unavailable reason';
+ assert(render({transport:'none'}).includes('기본 AI를 따라갈 수 없습니다: synthetic unavailable reason'));
+}
+assert.equal(calls.length,0,'rendering makes no API requests');
+"""
+    result = subprocess.run(
+        [node, "-e", script, str(ROOT / "app.js"), scenario],
+        capture_output=True, text=True, timeout=20,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
