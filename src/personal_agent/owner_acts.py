@@ -308,6 +308,9 @@ class OwnerActs:
                         row = service.budget_continue_offer(notification['job_id'], db=db)
                         if row.get('nonce') == notification['fingerprint'] and row.get('state') == 'offered':
                             service.store.put('budget_continue:' + notification['job_id'], {**row, 'state': 'declined'}, db=db)
+                    if ((service.store.job(notification['job_id']) or {}).get('status') in ('partial', 'failed')
+                            and not service.photo_work_has_pending_resume(notification['job_id'])):
+                        service.store.remove_telegram_photo(notification['job_id'])
                 service.store.update_notification(notification['id'], 'budget_continue_answered')
         elif kind == KIND_STEP:
             current = service.open_step_notification(service.store.notification(ref['notification_id']))

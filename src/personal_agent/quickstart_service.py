@@ -3350,7 +3350,8 @@ class AgentService:
 
     def photo_work_has_pending_resume(self, work_id):
         """Keep the Telegram photo available while an owner-approved continuation can requeue this Work."""
-        return self.work_has_pending_resume(work_id)
+        # #471: also while the budget boundary this run hit is still being turned into a Continue offer.
+        return self.work_has_pending_resume(work_id) or self.budget_continue_offer(work_id).get('state')=='pending'
 
     def work_has_pending_resume(self, work_id, now=None):
         """Existing owner-input waits shared by photo retention and scheduled settlement."""
@@ -3366,6 +3367,9 @@ class AgentService:
         if attachment and not attachment.get('approved'):
             return True
         if self.context_observations.awaiting_answer(work_id,now):
+            return True
+        offer=self.budget_continue_offer(work_id)
+        if offer.get('state')=='offered' and self.budget_continue_current(self.store.job(work_id),offer):
             return True
         return work_id in self._document_resume_rows()
 
@@ -9138,8 +9142,34 @@ class AgentService:
                     and row.get('generation')==self._owner_generation(self.issuer_owner_id(job))
                     and (not any(surface.claims_channel(job.get('channel')) for surface in self.surfaces) or self._surface_work(job)))
 
+    @staticmethod
+    def _attempt_stop_codes(rows):
+        """The failure codes of one attempt's tool events; ``None`` when a detail is unreadable."""
+        failed=[]
+        for event in rows:
+            try:data=json.loads(event['detail'] or '{}')
+            except (TypeError,ValueError):return None
+            if isinstance(data,dict) and event['status'] in ('failed','stopped'):
+                failed.append(data.get('code') or data.get('failure_class'))
+        return failed
+
+    @staticmethod
+    def _budget_boundary(codes):
+        from .agent_runtime import BUDGET_CODES
+        return bool(codes is not None and set(codes)&(BUDGET_CODES-{'stopped'}) and not set(codes)&{'stopped','work_stopped'})
+
     def offer_budget_continue(self, run):
-        from .agent_runtime import BUDGET_CODES, read_state_text
+        """Offer Continue at a budget boundary, or release what the run held for one (#471)."""
+        offered=self._offer_budget_continue(run)
+        work_id=run.job['id']
+        if not offered and self.budget_continue_offer(work_id).get('state')=='pending':
+            self.store.put('budget_continue:'+work_id,{'state':'none'})
+            if run.outcome in ('failed','partial') and not self.photo_work_has_pending_resume(work_id):
+                self.store.remove_telegram_photo(work_id)
+        return offered
+
+    def _offer_budget_continue(self, run):
+        from .agent_runtime import read_state_text
         job=self.store.job(run.job['id'])
         if not job or job['status'] not in ('partial','failed') or self.work_stopped(job['id']):return False
         with self.store.db() as db:
@@ -9147,14 +9177,9 @@ class AgentService:
                             (job['id'],run.claimed_at)).fetchall()
             receipts=db.execute("SELECT count(*) FROM tool_events WHERE job_id=? AND tool IN ('action_continuation','settings_continuation') AND status='queued'",(job['id'],)).fetchone()[0]
         tools=self.attempt_tool_rows(rows)
-        failed=[]
-        for event in rows:
-            try:data=json.loads(event['detail'] or '{}')
-            except (TypeError,ValueError):return False
-            if isinstance(data,dict) and event['status'] in ('failed','stopped'):
-                failed.append(data.get('code') or data.get('failure_class'))
+        failed=self._attempt_stop_codes(rows)
         # A completed read does not turn an owner/effect wait into a budget boundary.
-        if (not set(failed)&(BUDGET_CODES-{'stopped'}) or set(failed)&{'stopped','work_stopped'} or receipts>=8
+        if (not self._budget_boundary(failed) or receipts>=8
                 or any(code in {'needs_setup','input_required','approval_required','login_required','awaiting_connection'} for code in failed)
                 or run.approval_needed[0] or run.context_approval_needed[0] or run.waits_for_sign_in
                 or (run.agency_report or {}).get('question')
@@ -9219,6 +9244,7 @@ class AgentService:
                 'offer_digest':binding,'progress':row['progress']})
             self.store.put('budget_continue:'+work_id,{**row,'state':'resumed' if resumed else 'withheld'},db=db)
             db.execute("UPDATE telegram_notifications SET state='budget_continue_answered' WHERE job_id=? AND kind='budget_continue' AND fingerprint=?",(work_id,row['nonce']))
+        if not resumed and not self.photo_work_has_pending_resume(work_id):self.store.remove_telegram_photo(work_id)
         return {'resumed':resumed,'response':msg('budget_continue.resumed' if resumed else 'budget_continue.stale')}
 
     def action_continuation_note(self, job):
@@ -12729,6 +12755,11 @@ class AgentService:
                 cause=spoken=run.unknown_statement or None
             observed=verified_portion(run.verified_parts) if run.outcome=='partial' else None
             cause,spoken,observed,note=scrub(cause),scrub(spoken),scrub(observed),scrub(self._redact_reason(note) if note else None)
+            # #471: a budget stop holds the Work's photos (the status trigger reads this) until _after_work
+            # turns it into a Continue offer or releases it.
+            if run.outcome in ('failed','partial') and self._budget_boundary(self._attempt_stop_codes(db.execute(
+                    'SELECT status,detail FROM tool_events WHERE job_id=? AND created>=?',(job['id'],run.claimed_at)).fetchall())):
+                self.store.put('budget_continue:'+job['id'],{'state':'pending'},db=db)
             db.execute("UPDATE jobs SET status=?,response=?,error=?,provider=?,model=?,delivery=?,owner_cause=?,owner_verified=?,owner_note=? WHERE id=?",
                        (run.outcome,run.response,cause,run.provider,run.model,'pending' if job['chat_id'] else 'none',spoken,observed,note,job['id']))
             # #308 S1: the steers the attempt whose reply this is had in hand are answered by it.

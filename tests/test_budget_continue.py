@@ -242,3 +242,54 @@ class BudgetContinueTests(unittest.TestCase):
         self.assertEqual(result['text'],msg('budget_continue.resumed'))
         self.assertEqual(store.job(job)['status'],'queued')
         self.assertEqual(acts.open_items(store.job(job)),[])
+
+    def real_partial(self, script, *, photo=False, attempts=1):
+        service,store=self.service(script)
+        if attempts!=1:
+            limited=service.work_budget
+            def budget(work_id):
+                value=limited(work_id)
+                value.attempts=attempts
+                return value
+            service.work_budget=budget
+        job=store.enqueue('Read the material and produce a comparison','real-budget')
+        if photo:store.attach_telegram_photo(job,'photo-1')
+        with mock.patch.object(service.telegram,'download_photo',return_value={'data':b'\x89PNG\r\n','mime_type':'image/png'}):
+            self.assertTrue(service.run_one())
+        self.assertIn(store.job(job)['status'],('partial','failed'))
+        return service,store,job
+
+    def test_photos_are_kept_across_the_budget_boundary_until_the_offer_settles(self):
+        progress=lambda:loop.Script({'tool_calls':[loop.call('a','list_notes')]},
+                                    {'tool_calls':[loop.call('b','find_files',query='remaining')]},
+                                    {'content':'Compared A and B; C remains.'})
+        # The terminal status trigger and the after-work cleanup both keep the photo for the offer.
+        service,store,job=self.real_partial(progress(),photo=True)
+        self.assertEqual(service.budget_continue_offer(job)['state'],'offered')
+        self.assertEqual(store.telegram_photo_file_ids(job),['photo-1'])
+        self.assertTrue(self.press(service,job)['resumed'])
+        self.assertEqual(store.telegram_photo_file_ids(job),['photo-1'],'the resumed run reads the same photo')
+        # A budget stop that does not become an offer releases the photo.
+        service,store,job=self.real_partial(loop.Script({'tool_calls':[loop.call('a','list_notes')]},
+                                                        {'content':'Nothing read yet.'}),photo=True,attempts=0)
+        self.assertEqual(service.budget_continue_offer(job),{'state':'none'})
+        self.assertEqual(store.telegram_photo_file_ids(job),[])
+        # A declined or withheld offer releases it too.
+        service,store,job=self.real_partial(progress(),photo=True)
+        with store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job,'browser_open','failed',json.dumps({'effect':'unknown','code':'timeout'}),time.time()))
+        self.assertFalse(self.press(service,job)['resumed'])
+        self.assertEqual(store.telegram_photo_file_ids(job),[])
+
+    def test_an_open_offer_keeps_a_scheduled_run_waiting_until_it_settles(self):
+        service,store,job,run,_=self.stopped()
+        self.assertFalse(service.work_has_pending_resume(job))
+        self.assertTrue(service.offer_budget_continue(run))
+        self.assertTrue(service.work_has_pending_resume(job),'the scheduler must not settle while Continue is open')
+        store.put('budget_continue:'+job,{**service.budget_continue_offer(job),'deadline':0})
+        self.assertFalse(service.work_has_pending_resume(job),'an expired offer no longer holds the run')
+        service,store,job,run,_=self.stopped()
+        self.assertTrue(service.offer_budget_continue(run))
+        self.assertTrue(self.press(service,job)['resumed'])
+        self.assertFalse(service.work_has_pending_resume(job))
