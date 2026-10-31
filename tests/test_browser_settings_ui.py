@@ -157,6 +157,10 @@ const checks=[];
   render(available({sessions:rowsWithSignIn,settings_login:{state:'closed',at:4,...outcome}}));
   assert($('browser-feedback').textContent.includes(expected),expected);
  }
+ render(available({sessions:[{site:'old.test',cookies:2,last_used:null,sign_in:'expired',signed_in_at:1,login_url:'https://old.test/'},{site:'wait.test',cookies:1,last_used:null,sign_in:'checking',signed_in_at:1,login_url:'https://wait.test/'}]}));
+ assert(text().includes('다시 로그인 필요'));assert(text().includes('더 이상 저장되어 있지 않습니다'));assert(text().includes('확인 중…'));
+ assert(!text().includes('로그인됨'),'an expired or unchecked sign-in is never shown as signed in');
+ assert.equal(loginButton('old.test').textContent,'로그인');
  checks.push('rows tell a sign-in from leftover cookies, offer login per site, and the close reports what it saved');
  render(available({storage:{...storage,save_error:'key_missing'}}));assert(text().includes('키체인이 잠겨 있지 않은지'));
  render(available({legacy_profile_removed_at:Date.now()/1000}));assert(text().includes('이전 브라우저 프로필을 삭제했습니다'));

@@ -735,6 +735,7 @@ class AgentService:
         self._unsent_retry_at,self._unsent_backoff=0.0,0
         #: #749: the Settings login window's observed outcome (in memory; a restart forgets it).
         self._settings_login=None
+        self._signin_view,self._signin_view_refreshing={},False
         self.worker_lock=threading.Lock()
         # #655: the owner's configured search providers, read at call time.
         # #678: the connected AI's own search runs over this service's model
@@ -7928,19 +7929,28 @@ class AgentService:
         settings_login=self._settings_login or {}
         status['settings_login']={'state':settings_login.get('state'),'at':settings_login.get('at'),
                                   'saved':settings_login.get('saved'),'sites':settings_login.get('sites') or []} if settings_login else None
-        # #488: which stored sites the owner signed in to through a login window (the record only; no jar read on
-        # the poll), and whether a keep-alive was since refused.  ``login_url`` reopens the window for that site.
+        # #488: whether each stored site still holds the owner's login-window sign-in (``_owner_signed_in``, checked
+        # off the poll), and whether a keep-alive was since refused.  ``login_url`` reopens the window for that site.
         signins=self.store.config(BROWSER_OWNER_SIGNINS_KEY,{})
         signins=signins if isinstance(signins,dict) else {}
         paused=self.store.config(self.KEEPALIVE_PAUSED_KEY,{})
         paused=paused if isinstance(paused,dict) else {}
+        signed={}
+        for session in status.get('sessions') or []:
+            record=signins.get(session.get('site'))
+            at=record.get('at') if isinstance(record,dict) and record.get('marks') else None
+            if isinstance(at,(int,float)) and at>0:
+                signed[session['site']]=(session.get('cookies'),session.get('last_used'),at,tuple(map(str,record['marks'])))
+        current=self._owner_signin_view(signed)
         for session in status.get('sessions') or []:
             site=session.get('site')
             record=signins.get(site)
-            at=record.get('at') if isinstance(record,dict) and record.get('marks') else None
-            if isinstance(at,(int,float)) and at>0:
+            if site in signed:
+                at=signed[site][2]
+                held=current.get(site,'checking')
                 refused=isinstance(paused.get(site),(int,float)) and paused[site]>=at
-                session.update(sign_in='refresh_refused' if refused else 'signed_in',signed_in_at=at)
+                state='checking' if held=='checking' else 'unknown' if held is None else 'expired' if not held else 'refresh_refused' if refused else 'signed_in'
+                session.update(sign_in=state,signed_in_at=at)
             else:
                 session['sign_in']='none'
             host=ascii_host(record.get('host')) if isinstance(record,dict) and record.get('host') else None
@@ -7952,6 +7962,38 @@ class AgentService:
                                   for row in self.browser_login_requests().values()
                                   if isinstance(row,dict) and row.get('state')=='offered']
         return status
+
+    SIGNIN_VIEW_SECONDS=60
+
+    def _owner_signin_view(self, signed):
+        """``{site: True | False | None}`` of ``_owner_signed_in`` for the sites in ``signed`` (#488), never blocking.
+
+        ``signed`` maps each site with a login-window sign-in record to a key of
+        its stored row and record.  A result is kept while that key is unchanged
+        and for ``SIGNIN_VIEW_SECONDS`` (a cookie expires with time alone); a
+        site not checked for its current key is absent until the off-thread
+        check finishes, so the poll never waits on the Keychain.
+        """
+        now=time.time()
+        with self.lock:
+            view=self._signin_view
+            fresh={site:entry[1] for site,entry in view.items() if site in signed and entry[0]==signed[site]}
+            due=len(fresh)<len(signed) or any(now-view[site][2]>=self.SIGNIN_VIEW_SECONDS for site in fresh)
+            if not due or self._signin_view_refreshing:return fresh
+            self._signin_view_refreshing=True
+        def check():
+            results={}
+            try:
+                for site,key in signed.items():
+                    try:held=self._owner_signed_in(site)
+                    except Exception:held=None
+                    results[site]=(key,held,time.time())
+            finally:
+                with self.lock:
+                    self._signin_view=results
+                    self._signin_view_refreshing=False
+        threading.Thread(target=check,daemon=True,name='agentos-signin-view').start()
+        return fresh
 
     def open_browser_for_login(self, body):
         """Show the embedded engine's login window; Still types nothing in it (#680).
