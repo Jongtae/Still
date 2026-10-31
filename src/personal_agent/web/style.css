@@ -709,3 +709,14 @@ details.technical details>summary{color:var(--muted)}
 .ai-preference-group{padding:0 18px;border-radius:12px}
 .settings-pane .settings-list:not(:has(>:not([data-inactive]))){display:none}
 .settings-section p[role="status"]:empty,.settings-section .field-feedback:empty,.settings-pane #telegram-status:empty{min-height:0;margin:0}
+/* #535 Google card: one row per service with the routes it uses; each grant is a level under 세부 정보. */
+.google-routes{margin:2px 0 0;padding:0;list-style:none;display:grid;gap:2px}
+.google-routes>li{overflow-wrap:anywhere}
+.google-service-details .google-level{display:grid;gap:3px;margin:8px 0 0 16px;padding:8px 0 0;border-top:1px solid var(--line);min-width:0}
+.google-level-head{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;min-width:0}
+.google-level-title{font-size:var(--fs-2);font-weight:600;color:var(--ink-2);overflow-wrap:anywhere}
+.google-level>.settings-row-actions{justify-content:flex-start}
+.google-level>.settings-technical-line{padding-left:0}
+/* The route settings (AI-side switch, Still's own client) read as how the services above connect. */
+.settings-section .settings-row.settings-method{padding-left:var(--sp-3);border-left:2px solid var(--line)}
+.settings-method .settings-row-title{font-weight:500}
