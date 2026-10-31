@@ -1,0 +1,63 @@
+[
+ {
+  "id": "presence-chat-research-takes-a-while",
+  "title": "Paired chat: a request that takes a while is taken on like a person would",
+  "split": "dev",
+  "channel": "telegram",
+  "turns": [
+   {
+    "say": "이번 주말에 부산 가는데 해운대 근처 1박 숙소 세 군데만 가격이랑 후기 비교해줘."
+   }
+  ],
+  "rubric": [
+   "conversational",
+   "specific_sourced",
+   "honest_unverified"
+  ],
+  "good_secretary": "Before working, says in one or two natural sentences what it is going to do (and the one assumption that matters, such as which nights), in one register, without restating the request as a form or listing routine steps. While working, speaks up only if it found something worth hearing before the answer. The answer compares three concrete places with sources and does not repeat what it already said.",
+  "tags": [
+   "presence",
+   "telegram"
+  ]
+ },
+ {
+  "id": "presence-chat-short-reply-stays-short",
+  "title": "Paired chat: a short exchange gets one reply and no preview",
+  "split": "dev",
+  "channel": "telegram",
+  "turns": [
+   {
+    "say": "고마워, 덕분에 잘 다녀왔어."
+   }
+  ],
+  "rubric": [
+   "conversational"
+  ],
+  "good_secretary": "Answers warmly in one short reply. Sends nothing before it: no preview, no plan, no status.",
+  "tags": [
+   "presence",
+   "telegram"
+  ]
+ },
+ {
+  "id": "presence-chat-lookup-with-a-judgment",
+  "title": "Paired chat: a lookup that ends in a recommendation",
+  "split": "dev",
+  "channel": "telegram",
+  "turns": [
+   {
+    "say": "내일 서울 출근길 날씨랑 미세먼지 보고 우산이랑 마스크 챙겨야 할지 알려줘."
+   }
+  ],
+  "rubric": [
+   "conversational",
+   "specific_sourced",
+   "honest_unverified"
+  ],
+  "good_secretary": "If it says anything before the answer, it is one short natural line that takes the task on, not a numbered plan. The answer gives tomorrow's commute-time weather and fine dust with sources and a clear yes or no for the umbrella and the mask.",
+  "tags": [
+   "presence",
+   "telegram"
+  ]
+ }
+]

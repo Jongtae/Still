@@ -3,6 +3,7 @@
 Standard library only; ``task.py`` calls it from Inspect in a worker thread.
 """
 import json
+import re
 import time
 import uuid
 from datetime import datetime
@@ -84,21 +85,61 @@ def sent_time(timestamp, zone=None):
     return moment.strftime('%Y-%m-%d %H:%M %a ') + f'{getattr(zone, "key", None) or moment.tzname()} (UTC{moment:%z})'
 
 
-def run_turns(client, scenario, turn_timeout=900, poll_interval=2.0, clock=time.monotonic, wall=time.time, zone=None):
+#: #407: how long a paired-chat turn waits, after its Work stopped, for the reply to reach the chat.
+DELIVERY_WAIT_SECONDS = 20
+
+
+def chat_turn(client, telegram, text, turn_timeout, poll_interval, wall=time.time, sleep=time.sleep):
+    """One owner turn through the eval's Bot API stand-in: ``(task_id, detail, before_answer, delivered)``.
+
+    ``before_answer`` is every message the owner read before the reply (a plan preview, the worker's
+    interim messages), with its seconds after the owner's message; ``delivered`` is the reply as sent.
+    """
+    known = client.job_ids()
+    since = wall()
+    telegram.say(text)
+    task_id = client.find_task(text, known, interval=poll_interval)
+    detail = client.wait(task_id, timeout=turn_timeout, interval=poll_interval)
+    reply = (client.answer(task_id).get('response') or '').strip()
+    deadline = wall() + DELIVERY_WAIT_SECONDS
+    chat = telegram.chat_since(since)
+    while reply and not any(_same_reply(message['text'], reply) for message in chat) and wall() < deadline:
+        sleep(1.0)
+        chat = telegram.chat_since(since)
+    delivered = next((message for message in reversed(chat) if reply and _same_reply(message['text'], reply)), None)
+    before = [{'after_s': round(message['at'] - since, 1), 'text': message['text']}
+              for message in chat if message is not delivered and (delivered is None or message['at'] <= delivered['at'])]
+    return task_id, detail, before, delivered
+
+
+def _same_reply(sent, reply):
+    """Whether a sent chat text is the Work's reply (Telegram HTML rendering changes markup, not words)."""
+    plain = lambda text: ''.join(ch for ch in re.sub(r'<[^>]+>', '', text) if ch.isalnum())
+    return plain(reply)[:60] and plain(reply)[:60] in plain(sent)
+
+
+def run_turns(client, scenario, turn_timeout=900, poll_interval=2.0, clock=time.monotonic, wall=time.time, zone=None,
+              telegram=None):
     turns = []
     for turn in scenario['turns']:
         started = clock()
         # #392: the sandbox runs on the real clock; the judge reads timing against this, not the scenario note.
         sent_at = sent_time(wall(), zone)
-        task_id = client.send(owner_message(turn), f'eval-{scenario["id"]}-{uuid.uuid4().hex[:12]}')
-        detail = client.wait(task_id, timeout=turn_timeout, interval=poll_interval)
+        before = None
+        if scenario.get('channel') == 'telegram' and telegram is not None:
+            task_id, detail, before, _delivered = chat_turn(client, telegram, owner_message(turn), turn_timeout,
+                                                            poll_interval)
+        else:
+            task_id = client.send(owner_message(turn), f'eval-{scenario["id"]}-{uuid.uuid4().hex[:12]}')
+            detail = client.wait(task_id, timeout=turn_timeout, interval=poll_interval)
         answer = client.answer(task_id)
         turns.append({'say': turn['say'], 'note': turn.get('note', ''), 'sent_at': sent_at, 'task_id': task_id,
                       'status': detail.get('status'), 'answer': answer.get('response') or '',
                       'answer_withheld': answer.get('answer_withheld', False),
                       'timed_out': bool(detail.get('timed_out')), 'failure_class': detail.get('failure_class'),
                       'error': (detail.get('error') or '')[:300] if isinstance(detail.get('error'), str) else None,
-                      'events': compact_events(detail), 'elapsed': round(clock() - started, 1)})
+                      'events': compact_events(detail), 'elapsed': round(clock() - started, 1),
+                      **({'before_answer': before} if before is not None else {})})
         if detail.get('timed_out'):
             break  # the sandbox is still busy with this turn; later turns would queue behind it
         if detail.get('failure_class') == USAGE_LIMIT:
@@ -151,18 +192,26 @@ def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_time
     if worker not in WORKERS:
         raise ValueError(f'worker must be one of {WORKERS}')
     record = {'worker': worker, 'turns': [], 'diff': {}, 'error': None, 'judgment': None, 'upkeep': None}
+    telegram = None
     try:
-        with pool.sandbox(worker) as box:
+        if scenario.get('channel') == 'telegram':
+            from .fake_telegram import FakeTelegram
+            telegram = FakeTelegram(chat_id=0).start()
+        with pool.sandbox(worker, **({'telegram': telegram} if telegram is not None else {})) as box:
             client = client_factory(box.url)
             box.wait_healthy(client)
             client.login()
             client.select_worker(worker)
             record['judgment'] = prepare_judgment(client, pool, box, worker, judgment_timeout)
             before = client.snapshot()
-            record['turns'] = run_turns(client, scenario, turn_timeout, poll_interval, zone=sandbox_zone(before, box))
+            record['turns'] = run_turns(client, scenario, turn_timeout, poll_interval, zone=sandbox_zone(before, box),
+                                        telegram=telegram)
             # #832: upkeep proposes Memory asynchronously after a Work (#805); let it settle first.
             record['upkeep'] = client.wait_upkeep_idle(upkeep_timeout, poll_interval)
             record['diff'] = state_diff(before, client.snapshot())
     except (SandboxError, ClientError, OSError) as exc:
         record['error'] = f'{type(exc).__name__}: {exc}'
+    finally:
+        if telegram is not None:
+            telegram.stop()
     return record
