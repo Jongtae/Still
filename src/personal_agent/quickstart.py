@@ -1816,6 +1816,8 @@ def main():
         if handoff_server:handoff_server.server_close()
     # #438: the browser a terminal setup opens starts in the terminal's language.
     browser_language,term='',None
+    # #510: the installer's </dev/tty is reopened on the terminal device, so the setup's questions can be read.
+    first_run.attach_terminal_input()
     if sys.stdin.isatty():
         language=first_run.terminal_language()
         term=first_run.open_terminal(language)
