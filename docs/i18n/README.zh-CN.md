@@ -53,7 +53,7 @@
 curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh
 ```
 
-运行前可以先[检查脚本](https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh)；它会校验所下载的每一个文件。在 Windows 上，请在 PowerShell 中运行 `wsl --install` 并重启，然后在 Ubuntu 中运行这条命令。如果你在 macOS 上使用 [Homebrew](https://brew.sh)：
+运行前可以先[检查脚本](https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh)；它会校验所下载的每一个文件。在 Windows 上，请在 PowerShell 中运行 `wsl --install` 并重启，然后在 Ubuntu 中运行这条命令。如果你在 Apple 芯片的 Mac 上使用 [Homebrew](https://brew.sh)，也可以这样安装（Homebrew 已不再为 Intel Mac 构建软件包，Intel Mac 请使用上面的命令）：
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still

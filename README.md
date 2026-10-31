@@ -53,7 +53,7 @@ You need a Mac, Linux or Windows with [WSL2](docs/QUICKSTART.md#windows-wsl2) (s
 curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh
 ```
 
-[Inspect the script](https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh) first; it verifies everything it downloads. On Windows, run `wsl --install` in PowerShell, restart, and run the command in Ubuntu. With [Homebrew](https://brew.sh) on macOS instead:
+[Inspect the script](https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh) first; it verifies everything it downloads. On Windows, run `wsl --install` in PowerShell, restart, and run the command in Ubuntu. With [Homebrew](https://brew.sh) on an Apple silicon Mac instead (Homebrew no longer builds packages for Intel Macs, so use the command above there):
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still

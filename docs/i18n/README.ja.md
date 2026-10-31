@@ -53,7 +53,7 @@ Mac、Linux、または [WSL2](../../docs/QUICKSTART.md#windows-wsl2) を入れ�
 curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh
 ```
 
-実行前に[スクリプトを確認](https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh)できます。スクリプトはダウンロードするものをすべて検証します。Windows では PowerShell で `wsl --install` を実行して再起動し、Ubuntu でこのコマンドを実行してください。macOS で [Homebrew](https://brew.sh) を使う場合：
+実行前に[スクリプトを確認](https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh)できます。スクリプトはダウンロードするものをすべて検証します。Windows では PowerShell で `wsl --install` を実行して再起動し、Ubuntu でこのコマンドを実行してください。Apple シリコンの Mac で [Homebrew](https://brew.sh) を使う場合は次のとおりです（Homebrew は Intel Mac 向けのパッケージをビルドしなくなったため、Intel Mac では上のコマンドを使ってください）：
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still

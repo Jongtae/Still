@@ -53,7 +53,7 @@ Mac, Linux 또는 [WSL2](../../docs/QUICKSTART.md#windows-wsl2)가 설치된 Win
 curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh
 ```
 
-실행 전에 [스크립트를 직접 확인](https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh)해 보세요. 스크립트는 내려받는 모든 것을 검증합니다. Windows에서는 PowerShell에서 `wsl --install`을 실행하고 재시작한 뒤, Ubuntu에서 이 명령을 실행하세요. macOS에서 [Homebrew](https://brew.sh)를 쓴다면:
+실행 전에 [스크립트를 직접 확인](https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh)해 보세요. 스크립트는 내려받는 모든 것을 검증합니다. Windows에서는 PowerShell에서 `wsl --install`을 실행하고 재시작한 뒤, Ubuntu에서 이 명령을 실행하세요. Apple Silicon Mac에서 [Homebrew](https://brew.sh)를 쓴다면 아래처럼 설치할 수도 있습니다. Homebrew가 더 이상 Intel Mac용 패키지를 빌드하지 않으므로, Intel Mac에서는 위 명령을 쓰세요.
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still
