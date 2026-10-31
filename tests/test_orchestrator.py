@@ -539,7 +539,7 @@ class RoutingAndBriefs(Harness):
         context = self.engine.turns[-1]['context']
         self.assertEqual([m['content'] for m in context['conversation']], ['앞선 질문', 'first'])
         self.assertEqual(context['request'], '다음 질문')
-        self.assertEqual(context['brief'], 'Answer from general knowledge.')
+        self.assertTrue(context['brief'].startswith('Answer from general knowledge.\nAllowance left in this Work: '))
 
 
 class Redelegation(Harness):

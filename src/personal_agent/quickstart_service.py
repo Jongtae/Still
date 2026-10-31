@@ -43,7 +43,7 @@ from .conversation_projection import (BLOCKER_CLOUD_PROFILE, BLOCKER_DOCUMENT_AP
                                       answer_note, owner_cause, report_statement, terminal_text, tried_statement, turn_qualifier,
                                       verified_portion)
 from .subscription_engines import SubscriptionEngines
-from .bounded_execution import BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls
+from .bounded_execution import reported_usage, BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls
 from .bounded_execution import AgentOSMcpTools, ReadOnlyAgentOSMcpTools, StrictIsolatedAgentOSMcpTools, BoundedExecutionAdapter, ExecutionError, ExecutionResult, MAX_PROMPT_BYTES, BOUNDED_PROFILE, HOST_CLI_PROFILES, STRICT_PROFILE, profile_actions, profile_status, route_unavailable
 from .orchestrator import DEFAULT_MODEL_LABEL, MIN_ATTEMPT_SECONDS, model_refused, observations_with_pages, preview_text, remember_model_refusal
 from .orchestrator import (EVENT_TOOL as ORCHESTRATION_EVENT, PURPOSE as ORCHESTRATION_PURPOSE, NOT_JUDGED, NOT_REACHED, REACHED, UNJUDGED, WORKER_FAILED,
@@ -12048,7 +12048,7 @@ class AgentService:
                       'skills':cli_skills.catalogue_text() if cli_skills is not None else None}
             def build(sections):
                 context=turn_context([*run.history[:-1],{'role':'user','content':current_request}],'cli',
-                                     native_search=native,**sections,
+                                     native_search=native,work_budget=run.work_budget,**sections,
                                      # #997: what this request carries besides its words, as a fact.
                                      attachments=attachment_facts(images=len(run.image_inputs)),
                                      # #1380, #375: where the owner is writing from, as a fact of the Work's channel.
@@ -12264,7 +12264,7 @@ class AgentService:
             cloud_launch=bool((getattr(exc,'meta',None) or {}).get('cloud_provider'))
             if not isolated and diagnostics.get('failure_class')=='auth' and not cloud_launch:
                 self._remember_engine_login(run.subscription['id'],'signed-out','run')
-            run.record('subscription_engine','failed',json.dumps({'engine':run.subscription['id'],'error':str(exc),**diagnostics,'continuation_read_only':continuation_read_only,'continuation_accounted':continuation_accounted},ensure_ascii=False))
+            run.record('subscription_engine','failed',json.dumps({'engine':run.subscription['id'],'error':str(exc),**diagnostics,**reported_usage(getattr(exc,'meta',None)),'continuation_read_only':continuation_read_only,'continuation_accounted':continuation_accounted},ensure_ascii=False))
             # #710: a failed worker may be re-delegated within the Work's bounds.
             # #1130: not to another CLI when the shared Still bridge failed; it would run without tools too.
             if diagnostics.get('failure_class')==BRIDGE_UNAVAILABLE and run.orchestration is not None:
@@ -12286,7 +12286,7 @@ class AgentService:
         # #729: a bridge call the CLI never saw completed is a typed failure.
         self.close_incomplete_bridge_calls(job['id'],run.attempt_start,run.record)
         self.record_turn_provenance(job['id'],status='answered',exit_code=run.result.exit_code,**(getattr(run.result,'meta',None) or {}))
-        run.record('subscription_engine','succeeded',json.dumps({'engine':run.result.engine,'exit_code':run.result.exit_code,
+        run.record('subscription_engine','succeeded',json.dumps({'engine':run.result.engine,'exit_code':run.result.exit_code,**reported_usage(getattr(run.result,'meta',None)),
             'continuation_read_only':self.connector_turn_read_only(job['id'],run.result.engine,getattr(run.result,'meta',None)),
             'continuation_accounted':self._connector_turn_accounted(job['id'],run.result.engine,getattr(run.result,'meta',None),allow_effects=True)}))
         self.record_observed_tools(job['id'])
@@ -12345,6 +12345,7 @@ class AgentService:
         # #804, #820: every attempt carries the conversation, the profile, the current
         # context and the prepared answers; the plan's notes (``brief``) only add to them.
         api_context=turn_context(run.history,'api',
+                                 work_budget=run.work_budget,
                                  current_context=run.section_values['current_context'],
                                  profile=run.section_values['profile'],
                                  prepared=run.section_values['prepared'],brief=run.brief,

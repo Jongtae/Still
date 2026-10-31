@@ -31,6 +31,7 @@ tool, the destination), never the value or the outbound text.
 """
 from .manifests import HOST_TOOLS
 from .messages import msg
+from .bounded_execution import reported_usage
 import json
 import re
 from datetime import datetime, timezone
@@ -386,10 +387,17 @@ def work_information_use(store, job_id, redact=None):
         except (TypeError,ValueError):photo_count=1
         add('spliced', [f'Telegram 사진 {photo_count}개'])
     lookups, results, started, connections = [], [], {}, {}
+    attempts = []
     # #167 (#28 option A): labels of held values outbound calls carried, and the hosts the browser opened.
     matches, opened, cuts = [], [], {}
     for event in store.task_events(job_id):
         tool, status, trace = event.get('tool'), event.get('status'), event.get('trace') or {}
+        # #467: one terminal event per CLI attempt; reuse the numeric-only boundary.
+        if tool == 'subscription_engine' and status in ('succeeded', 'failed') and isinstance(trace, dict):
+            fields = reported_usage(trace)
+            attempts.append({'engine': label(trace.get('engine'), 60), 'status': status,
+                             **{key: fields.get(key) for key in ('usage', 'num_turns', 'cost_usd', 'cli_tool_calls')},
+                             **({'cli_tool_calls_partial': True} if fields.get('cli_tool_calls_partial') else {})})
         if tool in _NOT_TOOLS or not isinstance(trace, dict):
             continue
         action = trace.get('host_action') or tool
@@ -492,7 +500,17 @@ def work_information_use(store, job_id, redact=None):
         sent_to['held_value_comparison_cut'] = [{'kind': kind, 'limit': cuts[kind]} for kind in COMPARISON_CUTS if kind in cuts]
     if connections:sent_to['connections']=list(connections.values())[-MAX_ITEMS:]
     if photo_inputs:sent_to['attachments']=photo_inputs
-    return {'work_id': job_id, 'recorded': bool(record), 'evidence_class': EVIDENCE_CLASS,
+    # #467: sums include only reported values, never an inferred zero.
+    totals = {'usage': None, 'num_turns': None, 'cost_usd': None, 'cli_tool_calls': None,
+              'partial': any(row['usage'] is None for row in attempts)}
+    for row in attempts:
+        for key, value in (row['usage'] or {}).items():
+            if totals['usage'] is None:totals['usage'] = {}
+            totals['usage'][key] = totals['usage'].get(key, 0) + value
+        for key in ('num_turns', 'cost_usd', 'cli_tool_calls'):
+            if row[key] is not None:totals[key] = (totals[key] or 0) + row[key]
+        if row.get('cli_tool_calls_partial'):totals['cli_tool_calls_partial'] = True
+    return {'work_id': job_id, 'usage': {'attempts': attempts, 'totals': totals}, 'recorded': bool(record), 'evidence_class': EVIDENCE_CLASS,
             'used': used,
             # #275: a plan call's window counts too, so a Work parked before its worker shows it.
             'conversation_turns': max(int(record.get('context_messages') or 0), int(record.get('plan_context_messages') or 0),
@@ -543,6 +561,15 @@ def render_korean(audit):
     lines.append(f'- 이전 대화: {turns}개 메시지 포함' if turns else '- 이전 대화: 포함하지 않음')
     if not audit.get('used'):
         lines.append('- 개인 정보: 기록된 사용 없음')
+    attempts = (audit.get('usage') or {}).get('attempts') or ()
+    for row in attempts or ({'usage': None},):
+        values = [f'{key} {value:,}' for key, value in (row.get('usage') or {}).items()]
+        if not values:values.append(msg('information_use.usage_not_reported'))
+        for key in ('num_turns', 'cost_usd', 'cli_tool_calls'):
+            if row.get(key) is not None:values.append(f'{key} {row[key]:,}')
+        if row.get('cli_tool_calls_partial'):values.append(msg('information_use.usage_partial'))
+        attempt = f" ({row['engine']}, {row['status']})" if row.get('engine') else ''
+        lines.append(msg('information_use.usage', attempt=attempt, values=' · '.join(values)))
     sent = audit.get('sent_to') or {}
     workers = sent.get('workers') or ()
     lines.append('보낸 곳')
