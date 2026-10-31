@@ -735,6 +735,7 @@ class AgentService:
         self._unsent_retry_at,self._unsent_backoff=0.0,0
         #: #749: the Settings login window's observed outcome (in memory; a restart forgets it).
         self._settings_login=None
+        self._signin_view,self._signin_view_refreshing={},False
         self.worker_lock=threading.Lock()
         # #655: the owner's configured search providers, read at call time.
         # #678: the connected AI's own search runs over this service's model
@@ -7926,7 +7927,34 @@ class AgentService:
         # #709: logins waiting for the owner (host and times only); decided at /api/browser/login/decision.
         # #749: the Settings login window's observed outcome after its request answered ``opening``.
         settings_login=self._settings_login or {}
-        status['settings_login']={'state':settings_login.get('state'),'at':settings_login.get('at')} if settings_login else None
+        status['settings_login']={'state':settings_login.get('state'),'at':settings_login.get('at'),
+                                  'saved':settings_login.get('saved'),'sites':settings_login.get('sites') or []} if settings_login else None
+        # #488: whether each stored site still holds the owner's login-window sign-in (``_owner_signed_in``, checked
+        # off the poll), and whether a keep-alive was since refused.  ``login_url`` reopens the window for that site.
+        signins=self.store.config(BROWSER_OWNER_SIGNINS_KEY,{})
+        signins=signins if isinstance(signins,dict) else {}
+        paused=self.store.config(self.KEEPALIVE_PAUSED_KEY,{})
+        paused=paused if isinstance(paused,dict) else {}
+        signed={}
+        for session in status.get('sessions') or []:
+            record=signins.get(session.get('site'))
+            at=record.get('at') if isinstance(record,dict) and record.get('marks') else None
+            if isinstance(at,(int,float)) and at>0:
+                signed[session['site']]=(session.get('cookies'),session.get('last_used'),at,tuple(map(str,record['marks'])))
+        current=self._owner_signin_view(signed)
+        for session in status.get('sessions') or []:
+            site=session.get('site')
+            record=signins.get(site)
+            if site in signed:
+                at=signed[site][2]
+                held=current.get(site,'checking')
+                refused=isinstance(paused.get(site),(int,float)) and paused[site]>=at
+                state='checking' if held=='checking' else 'unknown' if held is None else 'expired' if not held else 'refresh_refused' if refused else 'signed_in'
+                session.update(sign_in=state,signed_in_at=at)
+            else:
+                session['sign_in']='none'
+            host=ascii_host(record.get('host')) if isinstance(record,dict) and record.get('host') else None
+            session['login_url']=f"https://{host or site}/"
         status['pending_logins']=[{'work_id':row['work_id'],'host':row.get('host',''),'site':row.get('site'),
                                    'landed_host':row.get('landed_host'),'landed_site':row.get('landed_site'),
                                    'stored_session':row.get('stored_session'),'offered_at':row.get('offered_at'),
@@ -7934,6 +7962,38 @@ class AgentService:
                                   for row in self.browser_login_requests().values()
                                   if isinstance(row,dict) and row.get('state')=='offered']
         return status
+
+    SIGNIN_VIEW_SECONDS=60
+
+    def _owner_signin_view(self, signed):
+        """``{site: True | False | None}`` of ``_owner_signed_in`` for the sites in ``signed`` (#488), never blocking.
+
+        ``signed`` maps each site with a login-window sign-in record to a key of
+        its stored row and record.  A result is kept while that key is unchanged
+        and for ``SIGNIN_VIEW_SECONDS`` (a cookie expires with time alone); a
+        site not checked for its current key is absent until the off-thread
+        check finishes, so the poll never waits on the Keychain.
+        """
+        now=time.time()
+        with self.lock:
+            view=self._signin_view
+            fresh={site:entry[1] for site,entry in view.items() if site in signed and entry[0]==signed[site]}
+            due=len(fresh)<len(signed) or any(now-view[site][2]>=self.SIGNIN_VIEW_SECONDS for site in fresh)
+            if not due or self._signin_view_refreshing:return fresh
+            self._signin_view_refreshing=True
+        def check():
+            results={}
+            try:
+                for site,key in signed.items():
+                    try:held=self._owner_signed_in(site)
+                    except Exception:held=None
+                    results[site]=(key,held,time.time())
+            finally:
+                with self.lock:
+                    self._signin_view=results
+                    self._signin_view_refreshing=False
+        threading.Thread(target=check,daemon=True,name='agentos-signin-view').start()
+        return fresh
 
     def open_browser_for_login(self, body):
         """Show the embedded engine's login window; Still types nothing in it (#680).
@@ -7961,10 +8021,10 @@ class AgentService:
         row={'host':host,'cookies_before':self._login_cookie_marks({'host':host}) if host else None}
         # What Settings shows after answering ``opening``: the window's observed outcome (in memory only).
         token=secrets.token_hex(8)
-        def mark(state):
+        def mark(state,**outcome):
             with self.lock:
                 if state=='opening' or (self._settings_login or {}).get('token')==token:
-                    self._settings_login={'token':token,'state':state,'at':time.time()}
+                    self._settings_login={'token':token,'state':state,'at':time.time(),**outcome}
         def opened(window,landed=None):
             # #765: the same baselines as the in-flow window (after the landing's own cookies were saved).
             row.update(self._login_window_baselines(window,host,landed))
@@ -7977,8 +8037,15 @@ class AgentService:
                     # Review P2-1: the window stays open for the owner at the Mac; the owner is told why.
                     self._notify_owner(f'telegram:{chat}',str(exc))
         def closed(window,reason,saved):
-            mark('failed' if reason=='failed' and (self._settings_login or {}).get('state')=='opening' else 'closed')
-            if saved:self._record_owner_signins(self._signed_in_sites({**row,'window':window}))
+            failed=reason=='failed' and (self._settings_login or {}).get('state')=='opening'
+            signed=self._signed_in_sites({**row,'window':window}) if saved else []
+            started=time.time()
+            if signed:self._record_owner_signins(signed)
+            # #488: Settings tells the owner what the close saved: the site(s) whose sign-in was just recorded.
+            signins=self.store.config(BROWSER_OWNER_SIGNINS_KEY,{}) if signed else {}
+            sites=sorted(site for site,record in (signins.items() if isinstance(signins,dict) else ())
+                         if isinstance(record,dict) and float(record.get('at') or 0)>=started)
+            mark('failed' if failed else 'closed',saved=bool(saved),sites=sites)
         mark('opening')
         result=self.browser_profile.open_for_login(url.strip(),on_opened=opened,on_closed=closed)
         if not isinstance(result,dict) or result.get('state')!='opening':

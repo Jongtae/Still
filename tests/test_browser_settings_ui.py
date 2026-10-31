@@ -132,6 +132,36 @@ const checks=[];
   render(available({settings_login:{state:outcome,at:2}}));assert($('browser-feedback').textContent.includes(expected),outcome);
  }
  checks.push('an opening Settings login window reports its observed outcome');
+ // #488: each row says whether the owner signed in there; rows without a current sign-in offer the login window.
+ const rowsWithSignIn=[{site:'shop.test',cookies:3,last_used:null,sign_in:'signed_in',signed_in_at:Date.now()/1000-3600,login_url:'https://www.shop.test/'},
+  {site:'news.test',cookies:1,last_used:null,sign_in:'none',login_url:'https://news.test/'},{site:'mail.test',cookies:2,last_used:null,sign_in:'refresh_refused',signed_in_at:1,login_url:'https://mail.test/'}];
+ render(available({sessions:rowsWithSignIn}));
+ assert(text().includes('로그인됨'));assert(text().includes('직접 로그인했습니다'));
+ assert(text().includes('로그인 안 됨'));assert(text().includes('직접 로그인한 기록이 없습니다'));
+ assert(text().includes('세션 연장을 거부했습니다'));assert(text().includes('다시 로그인 권장'));
+ assert(!text().includes('저장됨'),'a stored cookie is no longer called a saved sign-in');
+ const loginButton=site=>buttons().find(node=>node.dataset.focusKey==='browser-login:'+site);
+ assert.equal(loginButton('shop.test').textContent,'다시 로그인');assert.equal(loginButton('news.test').textContent,'로그인');assert.equal(loginButton('mail.test').textContent,'로그인');
+ ctx.api=async(path,body)=>{calls.push({path,body});return {state:'opening'};};
+ await loginButton('news.test').onclick({currentTarget:loginButton('news.test')});
+ assert.equal(JSON.stringify(calls.at(-1)),JSON.stringify({path:'/api/browser/login',body:{url:'https://news.test/'}}),'the row opens the login window for its own site');
+ render(available({sessions:rowsWithSignIn,login_window_open:true,settings_login:{state:'opened',at:2}}));
+ assert.equal(loginButton('news.test').disabled,true,'no second window while one is open');
+ assert($('browser-feedback').textContent.includes('로그인 창을 열었습니다'));
+ render(available({sessions:rowsWithSignIn,settings_login:{state:'closed',at:3,saved:true,sites:['news.test']}}));
+ assert($('browser-feedback').textContent.includes('news.test 로그인 세션을 저장했습니다'),'the close names the saved site');
+ $('browser-feedback').textContent='';render(available({sessions:rowsWithSignIn,settings_login:{state:'closed',at:3,saved:true,sites:['news.test']}}));
+ assert.equal($('browser-feedback').textContent,'','a reported close is not announced again');
+ for(const [outcome,expected] of [[{saved:true,sites:[]},'새 로그인을 확인하지 못했습니다'],[{saved:false,sites:[]},'저장하지 못했습니다']]){
+  await loginButton('news.test').onclick({currentTarget:loginButton('news.test')});
+  render(available({sessions:rowsWithSignIn,settings_login:{state:'closed',at:4,...outcome}}));
+  assert($('browser-feedback').textContent.includes(expected),expected);
+ }
+ render(available({sessions:[{site:'old.test',cookies:2,last_used:null,sign_in:'expired',signed_in_at:1,login_url:'https://old.test/'},{site:'wait.test',cookies:1,last_used:null,sign_in:'checking',signed_in_at:1,login_url:'https://wait.test/'}]}));
+ assert(text().includes('다시 로그인 필요'));assert(text().includes('더 이상 저장되어 있지 않습니다'));assert(text().includes('확인 중…'));
+ assert(!text().includes('로그인됨'),'an expired or unchecked sign-in is never shown as signed in');
+ assert.equal(loginButton('old.test').textContent,'로그인');
+ checks.push('rows tell a sign-in from leftover cookies, offer login per site, and the close reports what it saved');
  render(available({storage:{...storage,save_error:'key_missing'}}));assert(text().includes('키체인이 잠겨 있지 않은지'));
  render(available({legacy_profile_removed_at:Date.now()/1000}));assert(text().includes('이전 브라우저 프로필을 삭제했습니다'));
  assert(text().includes('/usr/bin/security'),'the Keychain limit is stated');
@@ -161,7 +191,7 @@ class BrowserSettingsUiTests(unittest.TestCase):
         result = subprocess.run([node, "-e", DOM_CHECKS, str(WEB / "app.js")], capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads(result.stdout.strip().splitlines()[-1])
-        self.assertEqual(report["passed"], 8, report)
+        self.assertEqual(report["passed"], 9, report)
 
 
 if __name__ == "__main__":

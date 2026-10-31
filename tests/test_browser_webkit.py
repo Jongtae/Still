@@ -398,6 +398,35 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(profile.status()['storage']['state'], 'stored')
         self.assertEqual([row['site'] for row in profile.status()['sessions']], ['shop.test'])
 
+    def test_a_sign_in_check_on_a_slow_keychain_never_holds_up_settings(self):
+        # #488 review P2: ``site_cookie_marks`` (the Settings sign-in check) decrypts outside the jar lock.
+        gate, entered = threading.Event(), threading.Event()
+        self.addCleanup(gate.set)
+
+        class Slow(MemoryKey):
+            slow = False
+
+            def get(self):
+                if self.slow:
+                    entered.set()
+                    gate.wait(5)
+                return super().get()
+        key = Slow(MemoryKey().create())
+        jar = CookieJar(self.jar.path, key, Clock())
+        jar.save_export({'shop.test': [cookie('shop.test')]})
+        profile = bs.BrowserProfile(Path(self.tmp.name), launcher=lambda d, h: self.driver, jar=jar)
+        self.assertEqual(profile.status()['storage']['state'], 'stored')
+        key.slow = True
+        reading = threading.Thread(target=profile.site_cookie_marks, args=('shop.test',), daemon=True)
+        reading.start()
+        self.assertTrue(entered.wait(2), 'the check is waiting on the Keychain')
+        started = time.monotonic()
+        status = profile.status()
+        self.assertLess(time.monotonic() - started, 1.0, 'the cached status does not wait behind it')
+        self.assertEqual([row['site'] for row in status['sessions']], ['shop.test'])
+        gate.set()
+        reading.join(2)
+
     def test_delete_all_clears_the_worker_the_jar_and_the_key(self):
         self.jar.save_export({'shop.test': [cookie('shop.test')]})
         session = self.profile.driver_factory('w1')()
