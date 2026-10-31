@@ -476,6 +476,44 @@ class NotesDays(Dream):
         self.assertEqual(om.WorkingNotes(self.store).current()['points'], ['답은 표로'])
 
 
+class CrossDayNotes(Dream):
+    """#496: an earlier daily record is another day, so a lesson can rest on this night's turns and an earlier day."""
+
+    def yesterday(self):
+        from datetime import date, timedelta
+        today = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD)._today()
+        return (date.fromisoformat(today) - timedelta(days=1)).isoformat()
+
+    def test_the_look_back_reads_earlier_records_under_their_refs(self):
+        day = self.yesterday()
+        self.store.save_memory(om.DIARY_PREFIX + day, '- 비교는 표로 받았다', MEMORY_OWNER)
+        self.day('a', 'b', 'c')
+        self.dreams = [dream()]
+        self.tick()
+        self.assertIn(f'[r{day}]\n- 비교는 표로 받았다', self.asked[0][0].facts['earlier_records'])
+
+    def test_a_lesson_from_a_turn_and_an_earlier_day_is_kept(self):
+        day = self.yesterday()
+        self.store.save_memory(om.DIARY_PREFIX + day, '- 비교는 표로 받았다', MEMORY_OWNER)
+        self.day('a', 'b', '이번에도 표로')
+        self.dreams = [dream(notes='- 비교는 표로', change='표', notes_sources=['t3', f'r{day}'])]
+        self.tick()
+        self.assertEqual(om.WorkingNotes(self.store).current()['points'], ['비교는 표로'])
+
+    def test_a_lesson_from_earlier_records_alone_is_refused(self):
+        from datetime import date, timedelta
+        day = self.yesterday()
+        before = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
+        for when in (day, before):
+            self.store.save_memory(om.DIARY_PREFIX + when, '- 표로 받았다', MEMORY_OWNER)
+        self.day('a', 'b', 'c')
+        self.dreams = [dream(notes='- 비교는 표로', change='표', notes_sources=[f'r{day}', f'r{before}'])]
+        self.tick()
+        self.assertIsNone(om.WorkingNotes(self.store).current())
+        [(_status, detail)] = self.evidence(self.dream_rows()[0]['job_id'])
+        self.assertIn({'note': 'notes', 'reason': 'no-turn'}, detail['dropped'])
+
+
 class Gates(unittest.TestCase):
     """``validate_dream``: Still's deterministic checks on one dream's facts."""
     refs = {'t1': '나는 판교에서 일해', 't2': '매주 금요일엔 재택이야', 't3': '이번 금요일도 재택'}

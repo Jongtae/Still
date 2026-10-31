@@ -1226,7 +1226,7 @@ class ConversationJudgments:
                     else StructuredDecision(OUTCOME_UNAVAILABLE))
         return self.policy.structured(decision), decision
 
-    def owner_model_dream(self, turns, profile, working_notes, previous_diary, clock, work_id=None, cancelled=None):
+    def owner_model_dream(self, turns, profile, working_notes, earlier_records, clock, work_id=None, cancelled=None):
         """``(data, decision)``: one look back over the requests since the last one (#402, the "dream").
 
         One ``structured`` call over the turns (each scrubbed by its own Work's values by the
@@ -1236,12 +1236,13 @@ class ConversationJudgments:
         deterministic validation.  Judgment only: it writes nothing.
         """
         from .decision import OUTCOME_UNAVAILABLE, StructuredDecision
-        from .owner_model import (CLOCK_CHARS, DIARY_CHARS, DREAM_PURPOSE, DREAM_QUESTION, DREAM_SCHEMA,
+        from .owner_model import (CLOCK_CHARS, EARLIER_RECORDS_CHARS, DREAM_PURPOSE, DREAM_QUESTION, DREAM_SCHEMA,
                                   DREAM_TIMEOUT_SECONDS, PROFILE_CHARS, dream_shape)
         facts = {'turns': str(turns or '') or 'none',
                  'owner_profile': self.redact(profile)[:PROFILE_CHARS] or 'none',
                  'working_notes': str(working_notes or '') or 'none',
-                 'previous_diary': self.redact(previous_diary)[:DIARY_CHARS] or 'none',
+                 # #496: the earlier daily records, each under its ref; bounded by the host.
+                 'earlier_records': self.redact(earlier_records)[:EARLIER_RECORDS_CHARS + 400] or 'none',
                  'clock': self.redact(clock)[:CLOCK_CHARS] or 'unknown'}
         # Once a day and off the conversation: the engine's strongest model, with the longer bound it may need.
         context = self._context(DREAM_PURPOSE, facts, work_id=work_id, uncut=('turns', 'owner_profile', 'working_notes'),

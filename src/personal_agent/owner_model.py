@@ -126,6 +126,9 @@ DREAM_END_FRACTION = 0.25
 DIARY_PREFIX = 'diary.'
 #: #442: one line per event, so a busy day needs more room than a summary did.
 DIARY_CHARS = 1500
+#: #496: the earlier daily records the look back reads, so a working-notes lesson can rest on another day.
+EARLIER_RECORD_DAYS = 7
+EARLIER_RECORDS_CHARS = 6000
 #: Why a self-review was enqueued (typed markers, never text rules).
 REVIEW_FAILED, REVIEW_CORRECTION, REVIEW_RETRY, REVIEW_REACTION = 'failed', 'correction', 'retry', 'reaction'
 REVIEW_REASONS = (REVIEW_FAILED, REVIEW_CORRECTION, REVIEW_RETRY, REVIEW_REACTION)
@@ -927,6 +930,20 @@ class Upkeep:
         rows = self.store.memories(owner_id, limit=1, key_prefix=DIARY_PREFIX)
         return rows[0] if rows else None
 
+    def earlier_records(self, owner_id, before_day):
+        """#496: ``{ref: (date, text)}`` of the daily records dated before ``before_day``, the newest
+        ``EARLIER_RECORD_DAYS``, within ``EARLIER_RECORDS_CHARS`` (the oldest give way); ref is ``r<date>``."""
+        rows = [row for row in self.store.memories(owner_id, limit=EARLIER_RECORD_DAYS + 2, key_prefix=DIARY_PREFIX)
+                if row['memory_key'][len(DIARY_PREFIX):] < str(before_day)][:EARLIER_RECORD_DAYS]
+        out, used = {}, 0
+        for row in rows:
+            day = row['memory_key'][len(DIARY_PREFIX):]
+            if used + len(row['content']) > EARLIER_RECORDS_CHARS:
+                break
+            out['r' + day] = (day, row['content'])
+            used += len(row['content'])
+        return dict(sorted(out.items()))
+
     def expire_interrupted(self, now):
         """Claimed rows a crash left behind: expired with an ``interrupted`` event (call only with no run in flight)."""
         with self.store.db() as db:
@@ -1406,15 +1423,15 @@ class Upkeep:
             first.update(proposed=len(found.get('proposals') or []), applied=gathered, dropped=refused)
         current = notes.current()
         current_text = current['text'] if current else ''
-        previous = self.diary_previous(MEMORY_OWNER)
+        earlier = self.earlier_records(MEMORY_OWNER, min(turn_days.values()) if turn_days else self._today())
         if stopped == STOPPED_PAUSED or (cancelled and cancelled()):
             return STATE_DONE, calls, EVENT_RECORDED, {'gather': first, 'sent': bool(calls), 'applied': gathered,
                                                        'dropped': [], 'notes': None, 'diary': None,
                                                        'stopped': stopped or STOPPED_DEADLINE,
                                                        'inputs': {'turns': len(lines)}}
         data, decision = judgments.owner_model_dream('\n'.join(lines), snapshot(), current_text,
-                                                     previous['content'] if previous else '', clock,
-                                                     work_id=job['id'], cancelled=cancelled)
+                                                     '\n'.join(f"[{ref}]\n{text}" for ref, (_day, text) in earlier.items()),
+                                                     clock, work_id=job['id'], cancelled=cancelled)
         confidence = decision.confidence
         calls += 1 if call_sent(decision) else 0
         self.count(job['id'], calls, KIND_DREAM)
@@ -1424,7 +1441,7 @@ class Upkeep:
                   'gather': first,
                   'inputs': {'turns': len(lines), 'turns_chars': sum(len(line) for line in lines), 'clock': bool(clock),
                              'working_notes_version': current['version'] if current else None,
-                             'previous_diary': bool(previous)}}
+                             'earlier_records': len(earlier)}}
         if data is None:
             detail.update(applied=gathered)
             return (STATE_DONE if gathered else STATE_UNAVAILABLE), calls, (EVENT_RECORDED if gathered else EVENT_UNAVAILABLE), detail
@@ -1453,13 +1470,16 @@ class Upkeep:
                                                          current['points'] if current else (), known)
             dropped.extend(refused)
             if revision:
-                cited = dream_refs(data.get('notes_sources'), refs)
+                cited = dream_refs(data.get('notes_sources'), {**refs, **earlier})
                 # #452: separate occasions are separate days when the turns are dated; two requests of one
                 # conversation are one occasion (the audit found one task's settings made standing this way).
-                days = {turn_days.get(ref) for ref in cited or ()}
+                # #496: an earlier daily record is another day; a lesson still rests on at least one of these turns.
+                days = {turn_days.get(ref) if ref in refs else earlier[ref][0] for ref in cited or ()}
                 if not cited or len(cited) < 2:
                     # A lesson about how to serve the owner needs two separate occasions (#402).
                     dropped.append({'note': 'notes', 'reason': 'one-occasion' if cited else 'sources'})
+                elif not any(ref in refs for ref in cited):
+                    dropped.append({'note': 'notes', 'reason': 'no-turn'})
                 elif None not in days and len(days) < 2:
                     dropped.append({'note': 'notes', 'reason': 'one-day'})
                 elif current and len(current['points']) > 1 and len(
