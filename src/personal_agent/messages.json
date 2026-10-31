@@ -3317,11 +3317,11 @@
   "ja": "入力を中止しました。何も変更していません。",
   "zh": "已停止输入。没有做任何更改。"
  },
- "terminal.working": {
-  "ko": "Still이 답을 준비하고 있어요…",
-  "en": "Still is working on the answer…",
-  "ja": "Still が答えを準備しています…",
-  "zh": "Still 正在准备回答…"
+ "terminal.working_for": {
+  "ko": "Still이 답을 준비하고 있어요… {seconds}초",
+  "en": "Still is working on the answer… {seconds}s",
+  "ja": "Still が答えを準備しています… {seconds}秒",
+  "zh": "Still 正在准备回答… {seconds} 秒"
  },
  "terminal.bye": {
   "ko": "대화를 마쳤어요. Still도 멈춥니다. 다시 시작하려면 `agentos start`를 실행하세요.",

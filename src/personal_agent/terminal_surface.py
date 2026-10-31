@@ -127,14 +127,18 @@ class TerminalSurface(DirectMessageSurface):
 
     def waiting(self):
         """Whether a Work of this conversation is still to be answered here (for the terminal's status line)."""
+        return self.waiting_since() is not None
+
+    def waiting_since(self):
+        """When the oldest Work of this conversation still to be answered here was received, or None (#512)."""
         cfg = self.config()
         if not self.usable(cfg):
-            return False
+            return None
         with self.service.store.db() as db:
-            row = db.execute("SELECT 1 FROM jobs WHERE channel=? AND (status IN ('queued','running') "
-                             "OR delivery IN ('pending','sending')) LIMIT 1",
+            row = db.execute("SELECT MIN(created) FROM jobs WHERE channel=? AND (status IN ('queued','running') "
+                             "OR delivery IN ('pending','sending'))",
                              (f'{self.channel_prefix}{cfg["generation"]}',)).fetchone()
-        return row is not None
+        return row[0] if row else None
 
     # -- the ConversationSurface boundary ---------------------------------------------------
     def connector_owner(self, job):
