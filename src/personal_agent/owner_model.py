@@ -512,6 +512,31 @@ def dream_refs(sources, refs):
     return named if all(ref in refs for ref in named) else None
 
 
+#: #452: the share of a quoted evidence's words that must be the owner's own for "the owner said it".
+OWNER_SAID_SHARE = 0.75
+BASIS_OWNER_SAID, BASIS_INFERRED = 'owner_said', 'inferred'
+
+
+def owner_said_evidence(evidence, content, owner_texts):
+    """The owner text the evidence or the fact comes from, or None (#452; provenance, not meaning).
+
+    The same word test as the explicit-save gate (``agent_runtime.owner_said``, stems, digits exact): the
+    quoted evidence when at least ``OWNER_SAID_SHARE`` of its words (two or more) are in one owner text,
+    or the fact's own words when all of them are.  Words the assistant said are never the owner's.
+    """
+    from .agent_runtime import memory_words, owner_covers, owner_said
+    quoted = memory_words(evidence)
+    for text in owner_texts:
+        words = memory_words(text)
+        if not words:
+            continue
+        if len(quoted) >= 2 and sum(owner_said(word, words) for word in quoted) >= OWNER_SAID_SHARE * len(quoted):
+            return text
+        if owner_covers(content, words):
+            return text
+    return None
+
+
 def validate_dream(proposals, refs, requests, known, pending, profile_rows, profile_ids=None, limit=MAX_PROPOSALS,
                    held=None):
     """``(kept, dropped)`` of a dream's proposals (#402, deterministic).
@@ -711,6 +736,8 @@ def validate(proposals, known, pending, noted_keys=(), request='', limit=MAX_PRO
                      'valid_until': (item.get('valid_until') or '').strip(),
                      # Same words as a current value: kept only as a lifecycle update (see ``Upkeep.run``).
                      'lifecycle': content in known,
+                     # #452: the quoted evidence, checked against the owner's own words when saved.
+                     'evidence': item.get('evidence') if isinstance(item.get('evidence'), str) else '',
                      **({'sources': item['sources']} if 'sources' in item else {})})
     return kept, dropped
 
@@ -1166,6 +1193,18 @@ class Upkeep:
             # A write is not a model call, so the cap and the deadline do not stop it; the pause does.
             cited_works = (list(dict.fromkeys(source_works[ref] for ref in item.get('sources', ())
                                               if ref in source_works)) if source_works is not None else None)
+            # #452: what the fact rests on.  "The owner said it" only when its evidence is found in the owner's own
+            # messages of the requests it cites (this Work's, for upkeep); otherwise it is an inference, and a
+            # dream's inference needs two separate requests, as validate_dream asks of one marked inferred.
+            basis, evidence, message = self._basis(item, job, cited_works)
+            if basis is None and cited_works:
+                if len(cited_works) < 2:
+                    dropped.append({'key_digest': key_digest(key), 'reason': 'not-owner-words'})
+                    continue
+                basis = BASIS_INFERRED
+            elif basis is None and cited_works is None:
+                basis = BASIS_INFERRED
+            row['basis'] = basis
             try:
                 # Review: the owner notice is held in the same transaction as the row, so a save is never untold.
                 memory = self.store.save_memory(key, content, MEMORY_OWNER, work_id=job['id'], notice=origin is None,
@@ -1174,7 +1213,8 @@ class Upkeep:
                                                 invalidates=[(full, end['reason'])
                                                              for full, end in zip(ends, item['invalidates'])],
                                                 # '' is the AI saying the fact has no last day.
-                                                valid_until=item['valid_until'])
+                                                valid_until=item['valid_until'],
+                                                basis=basis, evidence=evidence, evidence_message=message)
             except ValueError:
                 dropped.append({'key_digest': key_digest(key), 'reason': 'store-refused'})
                 continue
@@ -1184,6 +1224,34 @@ class Upkeep:
                 row['source_works']=cited_works
             applied.append(row)
         return applied, stopped
+
+    def _basis(self, item, job, cited_works):
+        """``(basis, evidence, message id)`` of one proposal (#452); basis None when "stated" is not found.
+
+        A proposal citing no request (a dream's tidy-up of existing lines) keeps the basis of the line it restates.
+        """
+        from .agent_runtime import MEMORY_OWNER
+        from .quickstart_store import FORGOTTEN_MESSAGE_IDS
+        evidence = ' '.join(str(item.get('evidence') or '').split())[:300] or None
+        if cited_works is not None and not cited_works:
+            same = self.store.current_memory(item['memory_key'], MEMORY_OWNER) or {}
+            return same.get('basis'), same.get('evidence'), same.get('evidence_message')
+        works = cited_works if cited_works is not None else [job['id']]
+        marks = ','.join('?' for _ in works)
+        with self.store.db() as db:
+            rows = [(row['id'], row['content']) for row in db.execute(
+                f"SELECT id,content FROM messages WHERE role='user' AND job_id IN ({marks}) "
+                f"AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id", works)]
+            if not rows:
+                # A Work without its transcript row: its own request copy.
+                rows = [(None, row['message']) for row in db.execute(
+                    f"SELECT message FROM jobs WHERE id IN ({marks})", works) if row['message']]
+        found = owner_said_evidence(evidence, item['content'], [text for _ident, text in rows])
+        if item.get('kind') != KIND_STATED:
+            return BASIS_INFERRED, evidence, None
+        if found is None:
+            return None, evidence, None
+        return BASIS_OWNER_SAID, evidence, next(ident for ident, text in rows if text == found)
 
     # -- one self-review (#998) ---------------------------------------------
     def run_review(self, job, row, judgments, *, answer, profile, clock, cancelled=None):
@@ -1297,6 +1365,8 @@ class Upkeep:
         if not notes.migrated():
             return STATE_UNAVAILABLE, 0, EVENT_UNAVAILABLE, {'sent': False, 'stopped': STOPPED_MIGRATION}
         refs = {turn[0]: turn[1] for turn in turns}
+        # #452: each turn's owner date ('YYYY-MM-DD' of its local time), when the caller gave one.
+        turn_days = {turn[0]: str(turn[3])[:10] for turn in turns if len(turn) > 3 and turn[3]}
         lines, used = [], 0
         for ref, owner, answer, *when in turns:
             # #438: the owner's local time of each request, so the daily record can date its events.
@@ -1384,9 +1454,14 @@ class Upkeep:
             dropped.extend(refused)
             if revision:
                 cited = dream_refs(data.get('notes_sources'), refs)
+                # #452: separate occasions are separate days when the turns are dated; two requests of one
+                # conversation are one occasion (the audit found one task's settings made standing this way).
+                days = {turn_days.get(ref) for ref in cited or ()}
                 if not cited or len(cited) < 2:
                     # A lesson about how to serve the owner needs two separate occasions (#402).
                     dropped.append({'note': 'notes', 'reason': 'one-occasion' if cited else 'sources'})
+                elif None not in days and len(days) < 2:
+                    dropped.append({'note': 'notes', 'reason': 'one-day'})
                 elif current and len(current['points']) > 1 and len(
                         {normalized(point) for point in current['points']}
                         - {normalized(point) for point in revision['points']}) * 2 > len(current['points']):

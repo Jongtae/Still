@@ -27,11 +27,12 @@ CHAT = 4242
 HOUR = 3600
 
 
-def fact(key, content, *sources, kind='stated', category='plan', invalidates=(), valid_until=''):
+def fact(key, content, *sources, kind='stated', category='plan', invalidates=(), valid_until='', evidence=None):
     """One dream proposal; each ``invalidates`` entry is ``(id, reason[, because[, turn]])``, a restate by default."""
     ends = [{'id': end[0], 'reason': end[1], 'because': end[2] if len(end) > 2 else om.END_RESTATES,
              'turn': end[3] if len(end) > 3 else ''} for end in invalidates]
-    return {'category': category, 'kind': kind, 'memory_key': key, 'content': content, 'evidence': 'the owner said so',
+    # #452: the evidence is checked against the owner's own words; by default the fact's own words are quoted.
+    return {'category': category, 'kind': kind, 'memory_key': key, 'content': content, 'evidence': evidence or content,
             'supersedes_key': '', 'invalidates': ends, 'valid_until': valid_until, 'sources': list(sources)}
 
 
@@ -85,6 +86,11 @@ class Dream(Harness):
 
     def day(self, *texts):
         return [self.settled(text) for text in texts]
+
+    def a_day_earlier(self, job):
+        """#452: move a request to the day before, so two requests are separate occasions."""
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET created=created-86400 WHERE id=?', (job,))
 
     def tick(self, now=None):
         self.upkeep.dream_checked = None
@@ -241,8 +247,10 @@ class Run(Dream):
     def test_one_dream_saves_cited_facts_notes_and_the_day_record_on_the_newest_request(self):
         first, second, newest = self.day('내년 3월까지 자동차 할부를 매달 45만 원씩 갚고 있어', '답은 표로 정리해줘',
                                          '이번에도 표로 보여줘')
+        self.a_day_earlier(first)
+        self.a_day_earlier(second)
         self.dreams = [dream([fact('profile.plan.car_installment', '2027년 3월까지 자동차 할부 매달 45만 원', 't1',
-                                   valid_until='2027-03-31')],
+                                   valid_until='2027-03-31', evidence='“내년 3월까지 자동차 할부를 매달 45만 원씩 갚고 있어”')],
                              notes='- 비교나 정리는 표로 보여 준다', change='표로 정리하는 습관을 적음',
                              notes_sources=['t2', 't3'],
                              diary='2026-10-29: 자동차 할부 계획을 말했고 정리를 두 번 표로 받았다.')]
@@ -365,6 +373,7 @@ class TwoPasses(Dream):
         self.gathers = [[fact('profile.routine.car', '주말에는 보통 자가용으로 이동함', 't1', 't3', kind='inferred',
                               category='routine'),
                          fact('profile.preference.cooking', '집에서 요리해 먹음', 't2', category='preference',
+                              evidence='집에서 김치찌개 끓여 먹었어',
                               invalidates=[('aaaaaaa1', 'not in this pass')])]]
         self.dreams = [dream()]
         self.tick()
@@ -382,7 +391,7 @@ class TwoPasses(Dream):
 
     def test_the_first_pass_keeps_up_to_its_own_limit(self):
         self.day(*[f'요청 {i}' for i in range(3)])
-        self.gathers = [[fact(f'profile.plan.item{i}', f'계획 {i}', 't1') for i in range(om.DREAM_GATHER_LIMIT + 2)]]
+        self.gathers = [[fact(f'profile.plan.item{i}', f'계획 {i}', 't1', evidence='요청 0') for i in range(om.DREAM_GATHER_LIMIT + 2)]]
         self.dreams = [dream()]
         self.tick()
         self.assertEqual(len(self.store.memories(MEMORY_OWNER, key_prefix='profile.')), om.DREAM_GATHER_LIMIT)
@@ -394,6 +403,77 @@ class TwoPasses(Dream):
         self.tick()
         self.assertEqual(len(self.gathered), 1)
         self.assertEqual(len(self.store.memories(MEMORY_OWNER, key_prefix=om.DIARY_PREFIX)), 1)
+
+
+class Basis(Dream):
+    """#452: a fact records what it rests on, and "the owner said it" only from the owner's own words."""
+
+    def test_a_fact_found_in_the_owners_words_records_them(self):
+        self.day('a', 'b')
+        trip_job = self.settled('11월에 제주 여행 가')
+        with self.store.db() as db:
+            db.execute("INSERT INTO messages(role,content,channel,created,job_id) VALUES ('user',?,'web',?,?)",
+                       ('11월에 제주 여행 가', time.time(), trip_job))
+        self.dreams = [dream([fact('profile.plan.trip', '2026년 11월 제주 여행', 't3', evidence='“11월에 제주 여행 가”')])]
+        self.tick()
+        [trip] = self.store.memories(MEMORY_OWNER, key_prefix='profile.')
+        self.assertEqual((trip['basis'], trip['evidence']), (om.BASIS_OWNER_SAID, '“11월에 제주 여행 가”'))
+        with self.store.db() as db:
+            said = db.execute("SELECT content FROM messages WHERE id=?", (trip['evidence_message'],)).fetchone()
+        self.assertEqual(said['content'], '11월에 제주 여행 가', 'the owner message it was found in')
+
+    def test_words_only_the_assistant_said_are_not_the_owners(self):
+        self.settled('a')
+        self.settled('b')
+        self.settled('판교 테크원 출입문 확인해줘', answer='이 시간에는 테크원 서편 출입문만 열려 있어요.')
+        self.dreams = [dream([fact('profile.place.techone_door', '테크원은 밤에 서편 출입문만 열려 있음', 't3',
+                                   evidence='이 시간에는 테크원 서편 출입문만 열려 있어요', category='place')])]
+        self.tick()
+        self.assertEqual(self.store.memories(MEMORY_OWNER, key_prefix='profile.'), [])
+        [(_status, detail)] = self.evidence(self.dream_rows()[0]['job_id'])
+        self.assertIn('not-owner-words', [item['reason'] for item in detail['dropped']])
+
+    def test_a_stated_fact_from_two_requests_without_the_owners_words_is_kept_as_an_inference(self):
+        self.day('주말에 골프 쳐', '이번 주말도 라운딩 가', 'c')
+        self.dreams = [dream([fact('profile.routine.weekend_golf', '주말마다 골프를 즐긴다', 't1', 't2',
+                                   evidence='골프를 자주 즐김', category='routine')])]
+        self.tick()
+        [golf] = self.store.memories(MEMORY_OWNER, key_prefix='profile.')
+        self.assertEqual(golf['basis'], om.BASIS_INFERRED)
+
+    def test_the_brief_says_what_a_fact_rests_on(self):
+        self.store.save_memory('profile.place.home', '분당', MEMORY_OWNER, basis=om.BASIS_OWNER_SAID, evidence='나 분당 살아')
+        self.store.save_memory('profile.routine.golf', '주말 골프', MEMORY_OWNER, basis=om.BASIS_INFERRED)
+        self.store.save_memory('profile.food.coffee', '라떼', MEMORY_OWNER)
+        text = MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD).profile_snapshot(MEMORY_OWNER)['text']
+        self.assertRegex(text, r'profile\.place\.home: 분당 \(saved [0-9-]+, owner said\)')
+        self.assertRegex(text, r'profile\.routine\.golf: 주말 골프 \(saved [0-9-]+, inferred\)')
+        self.assertRegex(text, r'profile\.food\.coffee: 라떼 \(saved [0-9-]+\)')
+
+    def test_an_unknown_basis_or_long_evidence_is_refused_by_the_store(self):
+        with self.assertRaises(ValueError):
+            self.store.save_memory('profile.a.b', 'x', MEMORY_OWNER, basis='rumour')
+        with self.assertRaises(ValueError):
+            self.store.save_memory('profile.a.b', 'x', MEMORY_OWNER, evidence='e' * 301)
+
+
+class NotesDays(Dream):
+    def test_a_lesson_from_two_requests_of_one_day_is_one_occasion(self):
+        """#452: the turns of the fixture are all today, so two of them are one occasion."""
+        self.day('a', 'b', 'c')
+        self.dreams = [dream(notes='- 답은 표로', change='표', notes_sources=['t1', 't2'])]
+        self.tick()
+        self.assertIsNone(om.WorkingNotes(self.store).current())
+        [(_status, detail)] = self.evidence(self.dream_rows()[0]['job_id'])
+        self.assertIn({'note': 'notes', 'reason': 'one-day'}, detail['dropped'])
+
+    def test_a_lesson_from_two_days_is_kept(self):
+        first, second, _third = self.day('a', 'b', 'c')
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET created=created-86400 WHERE id=?', (first,))
+        self.dreams = [dream(notes='- 답은 표로', change='표', notes_sources=['t1', 't2'])]
+        self.tick()
+        self.assertEqual(om.WorkingNotes(self.store).current()['points'], ['답은 표로'])
 
 
 class Gates(unittest.TestCase):
@@ -514,7 +594,8 @@ class Notes(Dream):
         self.assertTrue(notes.migrated())
         first = notes.save({'points': ['가', '나', '다'], 'text': om.notes_text(['가', '나', '다']), 'change': 'start'},
                            None)
-        self.day('a', 'b', 'c')
+        oldest, _second, _third = self.day('a', 'b', 'c')
+        self.a_day_earlier(oldest)
         self.dreams = [dream(notes='- 라', change='바꿈', notes_sources=['t1', 't2'])]
         self.tick()
         self.assertEqual(notes.current()['id'], first['id'])
@@ -553,7 +634,8 @@ class Told(Dream):
         self.day('a', 'b')
         newest = self.settled('11월에 제주 여행 가', telegram=True)
         self.notice(newest, MEMORY_SAVED_KIND)
-        self.dreams = [dream([fact('profile.plan.trip', '2026년 11월 제주 여행', 't3')], diary='제주 여행 계획을 말했다.')]
+        self.dreams = [dream([fact('profile.plan.trip', '2026년 11월 제주 여행', 't3', evidence='11월에 제주 여행 가')],
+                             diary='제주 여행 계획을 말했다.')]
         self.tick()
         self.assertEqual(self.notices(newest), {MEMORY_SAVED_KIND: 'sent'}, 'nothing queued, no edit')
         rows = self.store.memories(MEMORY_OWNER)
@@ -604,7 +686,8 @@ class Told(Dream):
 
     def test_a_notes_revision_whose_notice_is_taken_is_not_saved(self):
         self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': GENERATION})
-        self.day('a', 'b')
+        first, _second = self.day('a', 'b')
+        self.a_day_earlier(first)
         newest = self.settled('c', telegram=True)
         self.notice(newest, om.NOTICE_KIND, fingerprint={'ref': 'procedure:x', 'version': 1})
         self.dreams = [dream(notes='- 답은 짧게', change='짧게', notes_sources=['t1', 't2'])]

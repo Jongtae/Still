@@ -341,7 +341,9 @@ class MemoryService:
             if len(content) > line_chars:
                 content = content[:line_chars - 6] + ' [...]'
             until = f", until {row['valid_until']}" if row.get('valid_until') else ''
-            line = f"{row['memory_key']}: {content} (saved {self._saved_date(row.get('created'))}{until})"
+            # #452: what the row rests on, when known (older rows say nothing).
+            basis = {'owner_said': ', owner said', 'inferred': ', inferred', 'observed': ', observed'}.get(row.get('basis'), '')
+            line = f"{row['memory_key']}: {content} (saved {self._saved_date(row.get('created'))}{basis}{until})"
             note = ' '.join(str(annotations.get(row['id']) or '').split())[:2 * line_chars] if row['id'] in found else ''
             if note:
                 line = f'{line} {note}'
