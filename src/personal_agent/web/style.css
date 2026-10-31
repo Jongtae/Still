@@ -701,6 +701,9 @@ details.technical details>summary{color:var(--muted)}
  .settings-section .settings-row{grid-template-columns:minmax(0,1fr) auto}
  .settings-section .settings-row>.settings-state{justify-self:start}
  .task-tabs{display:flex}
+ .task-tabs button{flex:1;min-height:44px}
+ .note-more{min-height:44px;margin:-8px 0}
+ .add-dialog .dialog-actions button{min-height:44px}
  .add-type{min-height:60px}
 }
 .ai-preference-group{padding:0 18px;border-radius:12px}

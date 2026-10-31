@@ -106,7 +106,9 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 const app=fs.readFileSync(process.argv[1],'utf8');
 const source=app.slice(app.indexOf('function addableOn('),app.indexOf('function paintNoteClamps('));
 class El{constructor(cls='',attrs={},children=[]){this.cls=cls.split(' ').filter(Boolean);this.attrs={...attrs};this.hidden=Boolean(attrs.hidden);this.checked=Boolean(attrs.checked);this.children=children;for(const c of children)c.parent=this;}
- matches(sel){if(sel==='[hidden]')return this.hidden;if(sel==='input[role="switch"]')return this.attrs.role==='switch';if(sel.startsWith('.'))return this.cls.includes(sel.slice(1));throw new Error('selector '+sel);}
+ matches(sel){if(sel.includes(','))return sel.split(',').some(part=>this.matches(part));if(sel==='[hidden]')return this.hidden;if(sel==='input[role="switch"]')return this.attrs.role==='switch';
+  if(sel==='[role="status"]')return this.attrs.role==='status';if(sel.startsWith('#'))return this.attrs.id===sel.slice(1);if(sel.startsWith('.'))return this.cls.includes(sel.slice(1));throw new Error('selector '+sel);}
+ get textContent(){return this.attrs.text||'';}
  closest(sel){for(let n=this;n;n=n.parent)if(n.matches(sel))return n;return null;}
  querySelectorAll(sel){if(sel.startsWith(':scope>'))return this.children.filter(c=>c.matches(sel.slice(7)));const out=[],walk=n=>{for(const c of n.children){if(c.matches(sel))out.push(c);walk(c);}};walk(this);return out;}
  querySelector(sel){return this.querySelectorAll(sel)[0]||null;}
@@ -119,14 +121,18 @@ const empty=new El('settings-section',{},[new El('settings-list',{},[new El('set
 const hiddenSwitch=new El('settings-section',{},[new El('pref-list',{hidden:true},[new El('switch',{role:'switch',checked:true})])]);
 const company=new El('settings-section',{},[new El('pref-list',{},[new El('switch',{role:'switch',checked:true})])]);
 const confirming=new El('settings-section',{},[new El('settings-inline-confirm')]);
+const receipt=new El('settings-section',{},[new El('settings-list',{},[row({'data-inactive':''})]),new El('',{role:'status',text:'세션은 지웠지만 키체인 키는 지우지 못했습니다.'})]);
+const silent=new El('settings-section',{},[new El('settings-list',{},[row({'data-inactive':''})]),new El('field-feedback',{role:'status'})]);
+const editing=new El('settings-section',{},[new El('settings-list',{hidden:true}),new El('folder-edit',{},[new El('settings-list')])]);
+const closedEdit=new El('settings-section',{},[new El('folder-edit',{hidden:true})]);
 const card=new El('settings-card',{},[offRows,empty]),group=new El('settings-group',{},[card]);
 const card2=new El('settings-card',{},[on,new El('settings-section',{hidden:true})]),group2=new El('settings-group',{},[card2]);
-const sections=[on,offRows,empty,hiddenSwitch,company,confirming];
+const sections=[on,offRows,empty,hiddenSwitch,company,confirming,receipt,silent,editing,closedEdit];
 const ctx={document:{querySelectorAll:sel=>sel.includes('settings-group')?[group,group2]:sections}};
 vm.createContext(ctx);vm.runInContext(source,ctx);
 ctx.syncAddables();
-assert.deepEqual(sections.map(s=>s.hasAttribute('data-off')),[false,true,true,true,false,false],
- 'on: an active row, a visible switch that is on, or a pending confirmation; off: only inactive rows, an empty state, or a hidden switch');
+assert.deepEqual(sections.map(s=>s.hasAttribute('data-off')),[false,true,true,true,false,false,false,true,false,true],
+ 'on: an active row, a visible switch that is on, a pending confirmation, an action receipt or an open edit; off: only inactive rows, an empty state, a hidden switch, an empty status line or a closed editor');
 assert.equal(group.hasAttribute('data-off'),true,'a group whose sections are all off leaves the pane with its heading');
 assert.equal(group2.hasAttribute('data-off'),false);
 on.children[0].children[1].attrs['data-inactive']='';ctx.syncAddables();
@@ -153,19 +159,22 @@ class El{constructor(id,cls='',attrs={}){this.id=id;this.cls=cls;this.attrs={...
  focus(){focused=this;}}
 let focused=null;
 const root=new El('root'),pane=new El('settings-external'),card=new El('card'),host=new El('add-dialog-host'),title=new El('add-dialog-title');
-const slack=new El('slack','settings-section',{'data-add':'external','data-off':''}),setup=new El('slack-setup','settings-editor',{tag:'details'}),form=new El('slack-form');
-setup.append(form);slack.append(new El('h','',{tag:'h3',text:'Slack'}),setup);card.append(slack);pane.append(card);root.append(pane,host,title);
-const nodes={'add-dialog-host':host,'add-dialog-title':title,'add-dialog-types':new El('types'),'add-dialog-back':new El('back')};
+const elsewhere=new El('elsewhere'),feedback=new El('slack-feedback');elsewhere.append(feedback);
+const slack=new El('slack','settings-section',{'data-add':'external','data-off':'',dataset:{addFeedback:'slack-feedback'}}),setup=new El('slack-setup','settings-editor',{tag:'details'}),form=new El('slack-form');
+setup.append(form);slack.append(new El('h','',{tag:'h3',text:'Slack'}),setup);card.append(slack);pane.append(card);root.append(pane,host,title,elsewhere);
+const nodes={'slack-feedback':feedback,'add-dialog-host':host,'add-dialog-title':title,'add-dialog-types':new El('types'),'add-dialog-back':new El('back')};
 let syncs=0;const ctx={$:id=>nodes[id],document:{createComment:()=>new El('placeholder','',{tag:'#comment'})},scheduleSettingsPaint:()=>syncs++,t:x=>x};
 vm.createContext(ctx);vm.runInContext(source,ctx);
 ctx.showAddType(slack,'Slack');
 assert.equal(slack.parent,host,'the type opens its own section in the dialog');
 assert.equal(setup.open,true,'an off section opens its setup form');
 assert.equal(form.parent,setup,'the same form element (and its handlers) is used; nothing is copied');
+assert.equal(feedback.parent,host,'its status line comes along, so an error is shown next to the form');
 assert.equal(title.textContent,'Slack');assert.equal(nodes['add-dialog-back'].hidden,false);assert.equal(focused,title);
 ctx.restoreAddSection();
 assert.equal(slack.parent,card,'closing puts the section back where it was');
 assert.equal(card.children.indexOf(slack),0);
+assert.equal(feedback.parent,elsewhere,'and the status line goes back too');
 assert(syncs>0,'and re-checks what the pane shows');
 console.log('dialog ok');
 """
