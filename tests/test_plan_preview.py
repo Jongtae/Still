@@ -73,8 +73,13 @@ class PlanPreviewUnit(unittest.TestCase):
         orchestration, _asked, _events = self.orchestration([{**plan('a', ''), 'preview': EMPTY}], True)
         self.assertIsNone(orchestration.first().preview)
         orchestration, _asked, _events = self.orchestration(
-            [{**plan('a', ''), 'preview': {'understanding': '이해했어요.', 'approach': '', 'steps': []}}], True)
-        self.assertIsNone(orchestration.first().preview, 'an understanding without steps shows nothing')
+            [{**plan('a', ''), 'preview': {'understanding': '', 'approach': '찾아볼게요.', 'steps': ['찾기']}}], True)
+        self.assertIsNone(orchestration.first().preview, 'without an understanding nothing is shown')
+        orchestration, _asked, _events = self.orchestration(
+            [{**plan('a', ''), 'preview': {'understanding': '네, 22일 라운딩을 11시 12분으로 바꿀게요.', 'approach': '',
+                                          'steps': []}}], True)
+        self.assertEqual(preview_text(orchestration.first().preview), '네, 22일 라운딩을 11시 12분으로 바꿀게요.',
+                         'one natural message, no list (owner feedback 2026-10-31)')
         orchestration, _asked, _events = self.orchestration(
             [{**plan('a', ''), 'preview': {'understanding': 'x', 'approach': '', 'steps': '한 단계'}}], True)
         self.assertEqual(orchestration.first().fallback, 'plan_invalid')
@@ -86,7 +91,7 @@ class PlanPreviewUnit(unittest.TestCase):
         self.assertEqual(len(bounded['steps']), MAX_PREVIEW_STEPS)
         self.assertEqual(bounded['steps'][0], '하나', 'blank steps are dropped and whitespace folded')
         self.assertEqual(preview_text(PREVIEW),
-                         '이번 주말 부산 1박 숙소를 찾으시는 걸로 이해했어요.\n해운대 근처에서 가격과 후기를 비교해 볼게요.\n\n'
+                         '이번 주말 부산 1박 숙소를 찾으시는 걸로 이해했어요. 해운대 근처에서 가격과 후기를 비교해 볼게요.\n\n'
                          '1. 후보 숙소 찾기\n2. 가격과 후기 비교\n3. 세 곳 추천')
 
     def test_only_a_shown_preview_reaches_the_brief_and_every_later_attempt_keeps_it(self):
