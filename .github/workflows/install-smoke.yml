@@ -8,7 +8,7 @@ name: install-smoke
 # installer), and on demand. All runners are standard GitHub-hosted runners.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'maint/*']
     paths:
       - scripts/install.sh
       - scripts/dev/install_smoke.sh
@@ -18,7 +18,7 @@ on:
       - .gitattributes
       - .github/workflows/install-smoke.yml
   push:
-    branches: [main]
+    branches: [main, 'maint/*']
     paths:
       - scripts/install.sh
       - scripts/dev/install_smoke.sh
