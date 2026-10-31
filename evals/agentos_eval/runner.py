@@ -345,7 +345,7 @@ def run_world_scenario(scenario, pool, world_root=None, world_loader=None, clien
               'world': {'name': spec['name'], 'task_id': spec['task_id'], 'task_set': spec['task_set'],
                         'evidence_class': EVIDENCE_CLASS, 'result': None}}
     try:
-        with world_loader(spec['name'], spec['task_id'], Path(world_root or eval_home() / 'worlds')) as world:
+        with world_loader(spec['name'], spec['task_id'], Path(world_root or eval_home() / spec['name'])) as world:
             instruction = world.instruction()
             if embedded_world_text(json.dumps(scenario, ensure_ascii=False), instruction):
                 raise ScenarioError(f'{scenario["id"]}: the scenario holds the world task text; keep only its id')
