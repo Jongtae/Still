@@ -75,7 +75,8 @@ class Structure(unittest.TestCase):
         self.assertIn("<h1>파일 · 권한</h1>", files)
         self.assertLess(files.index('id="file-access-scope"'), files.index('id="root-list"'))
         self.assertLess(files.index('id="root-list"'), files.index('id="file-workspace-list"'))
-        self.assertLess(files.index('id="file-workspace-list"'), files.index('id="document-boundary"'))
+        # #474: what leaves this computer (document excerpts) sits with the execution scope, before the folders.
+        self.assertLess(files.index('id="document-boundary"'), files.index('id="root-list"'))
 
     def test_memory_comes_first_and_schedules_and_diagnostics_moved_out(self):
         privacy = pane("settings-privacy")
@@ -217,10 +218,10 @@ console.log('connections ok');
 CHANNEL = r"""
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const app=fs.readFileSync(process.argv[1],'utf8');
-const source=app.slice(app.indexOf('function renderMattermost('),app.indexOf("$('mattermost-form').onsubmit"));
+const source=app.slice(app.indexOf('function inactive('),app.indexOf('function settingsDisclosure('))+app.slice(app.indexOf('function renderMattermost('),app.indexOf("$('mattermost-form').onsubmit"));
 const node=()=>({hidden:false,disabled:false,checked:false,textContent:'',replaceChildren(){},append(){}});
 const nodes=Object.fromEntries(['mattermost-status','mattermost-disconnect','mattermost-setup-summary','mattermost-company','mattermost-company-approved'].map(id=>[id,node()]));
-const ctx={$:id=>nodes[id],t:(text,vars)=>vars?text.replace(/\{(\w+)\}/g,(m,k)=>vars[k]):text,settingsRow:()=>({}),element:()=>({})};
+const ctx={$:id=>nodes[id],t:(text,vars)=>vars?text.replace(/\{(\w+)\}/g,(m,k)=>vars[k]):text,settingsRow:()=>({dataset:{}}),element:()=>({})};
 vm.createContext(ctx);vm.runInContext(source,ctx);
 ctx.renderMattermost({connected:false});
 assert.equal(nodes['mattermost-disconnect'].hidden,true);assert.equal(nodes['mattermost-company'].hidden,true);
