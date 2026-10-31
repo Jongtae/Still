@@ -706,7 +706,7 @@ class Attempt:
     __slots__ = ('number', 'worker', 'model', 'notes', 'lens', 'sections', 'reason', 'planned',
                  'fallback', 'digest', 'signature', 'account_change', 'owner_situation', 'technical_work',
                  'lifted_from', 'ask_location', 'location_button', 'effort', 'unlisted_model', 'steer', 'context_digest',
-                 'preview', 'shown_preview', 'corrections')
+                 'preview', 'shown_preview', 'corrections', 'told')
 
     def __init__(self, number, worker, *, model='', notes='', reason='', planned=False, fallback='', effort='', lens=''):
         self.number, self.worker, self.model = number, worker, model
@@ -736,6 +736,8 @@ class Attempt:
         self.shown_preview = ''
         #: #428: the owner's own words that steered this Work before the attempt was planned.
         self.corrections = ()
+        #: #466: the interim messages an earlier attempt of this Work already sent the owner.
+        self.told = ()
 
     def brief(self, adjusted=False):
         """The notes section text a worker receives, or None (#820: supplementary only).
@@ -755,6 +757,11 @@ class Attempt:
                          'Where it conflicts with their earlier message, this wins'
                          + (', and it corrects the preview below' if self.shown_preview else '') + ':\n'
                          + '\n'.join(f'- {text}' for text in self.corrections))
+        if self.told:
+            # #466: an earlier attempt spoke to the owner; this attempt's conversation does not carry it.
+            lines.append('An earlier attempt at this request already sent the owner these messages. Do not send them '
+                         'again; if your findings change any of them, say so plainly in your answer:\n'
+                         + '\n'.join(f'- {text}' for text in self.told))
         if self.shown_preview:
             lines.append('Before you started, Still showed the owner this preview of how their message would be '
                          'handled (a preview, not an instruction; the owner\'s message is the goal). If the owner '
@@ -806,6 +813,8 @@ class Orchestration:
         self.shown_preview = ''
         #: #428: the owner's messages judged to steer this Work so far (``owner_corrected``), redacted.
         self.corrections = ()
+        #: #466: the interim messages this Work sent the owner so far (``owner_told``).
+        self.told = ()
         #: #275: the earlier turns, one line each, when the caller passes them as a list, so a plan
         #: call can say how many of them its bounded window reached (``sent_turns``).
         self.turns = [str(turn) for turn in conversation] if isinstance(conversation, (list, tuple)) else None
@@ -1139,6 +1148,7 @@ class Orchestration:
             attempt.preview = plan_preview(data.get('preview'))
         attempt.shown_preview = getattr(self, 'shown_preview', '')
         attempt.corrections = tuple(getattr(self, 'corrections', ()))
+        attempt.told = tuple(getattr(self, 'told', ()))
         attempt.signature = self.signature(worker, model, effort)
         attempt.context_digest = self._revision_context_digest()
         if (attempt.signature, attempt.digest, attempt.context_digest) in self.failed:
@@ -1154,6 +1164,14 @@ class Orchestration:
         kept = [' '.join(self._redact(text, private=False).split())[:MAX_CORRECTION_CHARS]
                 for text in texts or () if isinstance(text, str) and text.strip()]
         self.corrections = tuple(kept[-MAX_CORRECTIONS:])
+
+    def owner_told(self, texts):
+        """#466: the interim messages this Work sent the owner so far, which every later attempt's brief names.
+
+        Bounded like ``owner_corrected``; the texts were redacted before they were sent.
+        """
+        self.told = tuple(' '.join(text.split())[:MAX_CORRECTION_CHARS]
+                          for text in texts or () if isinstance(text, str) and text.strip())[-MAX_CORRECTIONS:]
 
     def preview_shown(self, attempt, text):
         """#407: the owner was sent ``text``; this attempt's brief and every later one's names it."""
