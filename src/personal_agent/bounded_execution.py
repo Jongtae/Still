@@ -2198,7 +2198,8 @@ class BoundedExecutionAdapter:
         when ``target`` is not readable inside: macOS Seatbelt refuses the
         listing, and Linux bubblewrap does not mount what the profile leaves
         out, so the target is missing or lists only the way to the workspace
-        (#450).  Only entry names are compared, in memory; no protected file is
+        (#450); ``-A`` lists hidden entries too, as the default runtime root
+        sits under ``~/.local``.  Only entry names are compared, in memory; no protected file is
         read and nothing of the output is kept.  Anything else fails closed.
         """
         from .cli_qualification import qualification_run
@@ -2206,7 +2207,7 @@ class BoundedExecutionAdapter:
         home.mkdir(exist_ok=True, mode=0o700)
         env = {**self.environment('codex', binary, run_dir), 'CODEX_HOME': str(home)}
         argv = [binary, 'sandbox', '-C', str(run_dir), '-c', CODEX_STRICT_TABLE, '-P', CODEX_STRICT_PERMISSIONS,
-                '--', '/bin/ls', str(target)]
+                '--', '/bin/ls', '-A', str(target)]
         done = qualification_run(self, argv, cwd=run_dir, env=env, timeout=30,
                                  deadline=deadline, interrupted=interrupted)
         if done.returncode != 0:

@@ -404,17 +404,19 @@ class StrictQualificationLogic(unittest.TestCase):
             if refuse:
                 return _Done(returncode=1, stderr=refuse)
             target, turn = Path(argv[-1]).resolve(), Path(kwargs['cwd']).resolve()
+            # /bin/ls hides dot entries unless asked with -A (review: the default runtime root is under ~/.local).
+            listed = (lambda names: '\n'.join(name for name in names if '-A' in argv or not name.startswith('.')))
             if target == turn:
-                return _Done(stdout='\n'.join(os.listdir(turn)))
+                return _Done(stdout=listed(os.listdir(turn)))
             if target in turn.parents:
-                return _Done(stdout='\n'.join([turn.relative_to(target).parts[0], *([leak] if leak else [])]))
+                return _Done(stdout=listed([turn.relative_to(target).parts[0], *([leak] if leak else [])]))
             return _Done(returncode=2, stderr=f"/bin/ls: cannot access '{target}': No such file or directory")
         return runner
 
     def _qualify_on_linux(self, runner):
         from unittest import mock
         (self.store / 'quickstart.db').write_text('')
-        adapter = BoundedExecutionAdapter(finder=self.finder, runner=runner, runtime_root=self.store / 'runtime',
+        adapter = BoundedExecutionAdapter(finder=self.finder, runner=runner, runtime_root=self.store / '.local' / 'runs',
                                           codex_home=self.folder / 'codex-home')
         with mock.patch.object(sys, 'platform', 'linux'):
             return adapter.qualify_strict('codex', store_root=self.store)
