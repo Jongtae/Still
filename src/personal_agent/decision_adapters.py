@@ -43,6 +43,7 @@ import logging
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -147,6 +148,31 @@ def codex_still_enabled(rows, allowed=CODEX_ALLOWED_ENABLED_FEATURES):
     """
     return sorted(name for name, stage, enabled in rows
                   if enabled and stage != 'removed' and name not in allowed)
+
+
+def codex_answer_complete():
+    """#469: a stdout-line predicate for ``bounded_run``: True at ``turn.completed`` after a final agent message.
+
+    ``codex exec --json`` reports the turn's last ``agent_message`` item and
+    then ``turn.completed``; the CLI itself exits about 0.46 s later (0.164.0,
+    observed).  Whether the message is a valid answer is still decided by
+    ``_structured`` and the schema check, never here.
+    """
+    seen = {'message': False}
+
+    def answered(line):
+        try:
+            record = json.loads(line)
+        except ValueError:
+            return False
+        if not isinstance(record, dict):
+            return False
+        item = record.get('item')
+        if (record.get('type') == 'item.completed' and isinstance(item, dict) and item.get('type') == 'agent_message'
+                and isinstance(item.get('text'), str) and item['text'].strip()):
+            seen['message'] = True
+        return record.get('type') == 'turn.completed' and seen['message']
+    return answered
 
 
 def valid_model_id(value):
@@ -266,7 +292,8 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
         started = self.now()
         identity = self._identity()
         self.last_failure = ''
-        cli_timing = {'spawn_s': None, 'first_event_s': None, 'exit_s': None}
+        # #469: ``answered_s`` - Still took a Codex answer at ``turn.completed`` without waiting for the exit.
+        cli_timing = {'spawn_s': None, 'first_event_s': None, 'answered_s': None, 'exit_s': None}
 
         def observed(moment):
             if cli_timing[moment] is None:
@@ -296,7 +323,11 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                   'Reply with only one JSON object that matches the required schema.')
         root = self.execution.runtime_root
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        with tempfile.TemporaryDirectory(dir=root, prefix='decision-') as folder:
+        # #469: not a context manager - an early answer leaves the CLI exiting in this
+        # directory, so bounded_run's ``on_reaped`` removes it once the CLI is gone.
+        folder = tempfile.mkdtemp(dir=root, prefix='decision-')
+        launched = False
+        try:
             run_dir = Path(folder)
             schema_path = run_dir / 'decision-schema.json'
             schema_path.write_text(json.dumps(schema), encoding='utf-8')
@@ -343,10 +374,20 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                 return done(OUTCOME_CANCELLED)
             try:
                 timeout = max(self.timeout, context.timeout) if getattr(context, 'timeout', None) else self.timeout
+                answer_seen = codex_answer_complete() if self.engine_id == 'codex' else None
+
+                def answered(line):
+                    if answer_seen(line):
+                        observed('answered_s')
+                        return True
+                    return False
+                launched = True
                 completed = bounded_run(self.execution.runner, argv, cwd=run_dir, env=env, timeout=timeout,
                                         on_spawn=lambda: observed('spawn_s'),
                                         on_line=lambda _line: observed('first_event_s'),
-                                        on_exit=lambda: observed('exit_s'))
+                                        on_exit=lambda: observed('exit_s'),
+                                        answered=answered if answer_seen else None,
+                                        on_reaped=lambda: shutil.rmtree(folder, ignore_errors=True))
             except subprocess.TimeoutExpired:
                 return done(OUTCOME_TIMEOUT, failure='timeout', sent=True)
             except OSError:
@@ -354,6 +395,9 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                 # OSError means it never actually started a process.
                 cli_timing['spawn_s'] = None
                 return done(OUTCOME_UNAVAILABLE, failure='start-failed')
+        finally:
+            if not launched:
+                shutil.rmtree(folder, ignore_errors=True)
         stdout = (completed.stdout or '')[-MAX_CLI_OUTPUT_BYTES:]
         stderr = getattr(completed, 'stderr', '') or ''
         observed = cli_metadata(self.engine_id, stdout).get('reported_model') or ''

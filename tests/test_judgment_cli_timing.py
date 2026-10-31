@@ -89,7 +89,7 @@ class JudgmentCliTimingTests(unittest.TestCase):
 
         self.assertEqual((result.outcome, result.data), ('decided', {'reply': MODEL_TEXT}))
         timing = records[-1]['cli_timing']
-        self.assertEqual(timing, {'spawn_s': 0.0, 'first_event_s': 2.0, 'exit_s': 6.0})
+        self.assertEqual(timing, {'spawn_s': 0.0, 'first_event_s': 2.0, 'answered_s': None, 'exit_s': 6.0})
         self.assertLessEqual(timing['spawn_s'], timing['first_event_s'])
         self.assertLessEqual(timing['first_event_s'], timing['exit_s'])
         self.assertTrue(all(value is None or isinstance(value, (int, float)) and not isinstance(value, bool)
@@ -100,10 +100,10 @@ class JudgmentCliTimingTests(unittest.TestCase):
 
     def test_batch_timeout_and_start_failure_leave_unobserved_moments_null(self):
         cases = (
-            ('batch', BatchRunner, 'decided', {'spawn_s': 0.0, 'first_event_s': None, 'exit_s': 3.0}),
-            ('timeout', TimeoutRunner, OUTCOME_TIMEOUT, {'spawn_s': 0.0, 'first_event_s': None, 'exit_s': None}),
+            ('batch', BatchRunner, 'decided', {'spawn_s': 0.0, 'first_event_s': None, 'answered_s': None, 'exit_s': 3.0}),
+            ('timeout', TimeoutRunner, OUTCOME_TIMEOUT, {'spawn_s': 0.0, 'first_event_s': None, 'answered_s': None, 'exit_s': None}),
             ('start-failed', StartFailureRunner, OUTCOME_UNAVAILABLE,
-             {'spawn_s': None, 'first_event_s': None, 'exit_s': None}),
+             {'spawn_s': None, 'first_event_s': None, 'answered_s': None, 'exit_s': None}),
         )
         for name, runner_type, outcome, expected in cases:
             with self.subTest(name=name):

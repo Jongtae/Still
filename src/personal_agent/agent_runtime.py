@@ -2345,6 +2345,17 @@ def call_effects(rows):
    calls[key][:]=[action,detail,status]
  return [(action,record_effect(action,detail,status),status) for action,detail,status in entries]
 
+def redelegation_effects(rows):
+ """The effect classes of recorded rows that stop a further attempt of the same Work (#466).
+
+ ``call_effects`` with one exception: an interim message to the owner (``OWNER_UPDATE_ACTIONS``) that
+ counts as ``changed``.  Still sent it to the owner on the Work's own chat; nothing outside the owner
+ changed, and a later attempt cannot exceed the Work's message limit.  It still counts everywhere else
+ (resumption, parking, steer continuation), and its ``unknown`` outcome still stops re-delegation.
+ """
+ return {effect for action,effect,_status in call_effects(rows)
+         if not (action in OWNER_UPDATE_ACTIONS and effect==EFFECT_CHANGED)}
+
 def event_trail(rows, tools=None):
  """``(trail, refusals)`` of the attempts in a Work's durable tool events.
 

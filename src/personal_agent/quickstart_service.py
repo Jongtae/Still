@@ -6257,7 +6257,10 @@ class AgentService:
         if callable(corrected):
             self._await_steer_judgments(job_id)
             corrected(self.store.work_steer_texts(job_id))
-        from .agent_runtime import EFFECT_NONE, call_effects, failed_steps_text, read_state_text, trail_steps
+        # #466: what this attempt already told the owner, so a further attempt does not say it again.
+        told=getattr(orchestration,'owner_told',None)
+        if callable(told):told(self.store.sent_updates(job_id))
+        from .agent_runtime import EFFECT_NONE, failed_steps_text, read_state_text, trail_steps
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',(job_id,since or 0)).fetchall()
         unknown=outcome=='unknown' or self._work_has_unknown_effect(job_id)
@@ -6270,9 +6273,10 @@ class AgentService:
         called,failed_codes,incomplete,sourceless=[],[],[],0
         # #1445 part 2: one effect classifier (``agent_runtime.record_effect``) over each call; any
         # call that is not ``none`` (a settings draft included) ends re-delegation, as before.
+        # #466: except an interim message to the owner, which changed nothing outside the owner's chat.
         tool_rows=self.attempt_tool_rows(rows)
-        from .agent_runtime import EFFECT_UNKNOWN
-        classes={effect_class for _action,effect_class,_status in call_effects(tool_rows)}
+        from .agent_runtime import EFFECT_UNKNOWN, redelegation_effects
+        classes=redelegation_effects(tool_rows)
         if classes-{EFFECT_NONE,EFFECT_UNKNOWN}:changed=True
         if EFFECT_UNKNOWN in classes:unknown=True
         # The owner is told "executed" only for an observed change; otherwise that it could not be confirmed.
@@ -7167,7 +7171,8 @@ class AgentService:
         """Show 👀, `typing…` and a Stop-able dots draft for running Work on a paired surface.
 
         #212: each part only where the surface declares it (``reactions``,
-        ``typing``, ``live_drafts``); without drafts the wait shows `typing…`.
+        ``typing``, ``live_drafts``, ``wait_status``); a one-line status uses
+        the same lock and observed step redaction, independently of drafts. Without drafts the wait shows `typing…`.
 
         The surface is chosen from elapsed time only (`PresenceTiming`); no
         sleep is ever added.  `typing…` is refreshed every
@@ -7210,6 +7215,12 @@ class AgentService:
                     if not job or job['status']!='running' or not conversation.owns(job):continue
                     state=self.presence.get(job['id'])
                     if state is None or state.stopped:continue
+                    if capabilities.wait_status:
+                        line=self._draft_step_text(job,state)
+                        text=msg('surface.waiting_work') if line == NO_STEP_LINE else line
+                        if conversation.show_wait_status(job,state,text,now):
+                            shown.append((job['id'],'wait_status'))
+                        continue
                     surface=timing.wait_surface(now-job['created'],
                                                 draft_available=capabilities.live_drafts and not state.draft_failed)
                     if surface not in (WAIT_CHAT_ACTION,WAIT_DRAFT):continue

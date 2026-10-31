@@ -247,6 +247,10 @@ class QuickStore:
             # #214: the same for Slack (message ts), and the Socket Mode events and button presses already taken.
             db.execute('CREATE TABLE IF NOT EXISTS slack_turns(job_id TEXT PRIMARY KEY, owner TEXT NOT NULL, '
                        'source_post_id TEXT, reply_post_id TEXT, reply_to_post_id TEXT, created REAL NOT NULL)')
+            turn_columns={row['name'] for row in db.execute('PRAGMA table_info(slack_turns)')}
+            for column, declaration in (('thread_ts', 'TEXT'), ('status_failed', 'INTEGER NOT NULL DEFAULT 0')):
+                if column not in turn_columns:
+                    db.execute(f'ALTER TABLE slack_turns ADD COLUMN {column} {declaration}')
             db.execute('CREATE TABLE IF NOT EXISTS slack_events(key TEXT PRIMARY KEY, created REAL NOT NULL)')
             # #438: the same for the terminal conversation (line ids within one terminal session).
             db.execute('CREATE TABLE IF NOT EXISTS terminal_turns(job_id TEXT PRIMARY KEY, owner TEXT NOT NULL, '
@@ -800,6 +804,13 @@ class QuickStore:
             row=db.execute(f"SELECT content FROM messages WHERE job_id=? AND role='assistant' AND delivery_projection=? "
                            f"AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id LIMIT 1",(job_id,PREVIEW_PROJECTION)).fetchone()
         return row['content'] if row else ''
+
+    def sent_updates(self, job_id):
+        """#466: the interim messages this Work sent the owner so far, oldest first (forgotten ones left out)."""
+        with self.db() as db:
+            rows=db.execute(f"SELECT content FROM messages WHERE job_id=? AND role='assistant' AND delivery_projection=? "
+                            f"AND id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id",(job_id,UPDATE_PROJECTION)).fetchall()
+        return [row['content'] for row in rows]
 
     def managed_owner_state(self, job_id):
         """#380: whether this Work, or a correction or retry linked to it, forgot, deleted or undid owner state.
