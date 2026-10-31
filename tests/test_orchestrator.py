@@ -1489,7 +1489,8 @@ class CatalogueData(Harness):
         self.observed_attempt('other', other, 8, {'usage': {'input_tokens': 700}})
         line = self.catalogue_line()
         self.assertIn('observed: 3 attempts, median 42 s (12–180 s)', line)
-        self.assertIn('input_tokens 200, output_tokens 20, num_turns 2, cli_tool_calls 2', line)
+        self.assertIn('(12–180 s); tool calls per attempt (median): 2, 33 s per call; '
+                      'CLI-reported per attempt (median): input_tokens 200, output_tokens 20, num_turns 2', line)
         self.assertIn(f'{other} (', line)
         self.assertIn('observed: 1 attempt, median 8.0 s (8.0–8.0 s)', line)
         self.assertIn('input_tokens 700', line)
@@ -1541,7 +1542,7 @@ class CatalogueData(Harness):
         self.observation_event('malformed', 'subscription_engine', 'running', [], 10)
         self.observation_event('malformed', 'subscription_engine', 'failed', {'engine': 'codex'}, 20)
         self.assertEqual(worker_observations(self.store), {
-            ('codex', BUNDLED[0]): {'seconds': [10], 'usage': {'input_tokens': [100]}}})
+            ('codex', BUNDLED[0]): {'seconds': [10], 'usage': {'input_tokens': [100]}, 'tool_calls': []}})
 
     def test_usage_medians_ignore_missing_values_and_bound_cli_keys(self):
         self.observed_attempt('first', BUNDLED[0], 10,
@@ -1549,8 +1550,34 @@ class CatalogueData(Harness):
                                'num_turns': 2, 'cli_tool_calls': 3})
         self.observed_attempt('second', BUNDLED[0], 20, {'usage': {'output_tokens': 20}})
         line = self.catalogue_line()
-        self.assertIn('input_tokens 100, output_tokens 15, num_turns 2, cli_tool_calls 3', line)
+        self.assertIn('input_tokens 100, output_tokens 15, num_turns 2', line)
         self.assertNotIn('other 999', line)
+
+    def test_reported_tool_calls_give_the_task_size_and_seconds_per_call(self):
+        """#498: a model that gets big tasks shows their size next to its time."""
+        for job, seconds, calls in (('a', 120, 30), ('b', 100, 25), ('c', 30, 3)):
+            self.observed_attempt(job, BUNDLED[0], seconds, {'cli_tool_calls': calls})
+        line = self.catalogue_line()
+        self.assertIn('observed: 3 attempts, median 100 s (30–120 s); tool calls per attempt (median): 25, '
+                      '4.0 s per call;', line)
+        self.assertNotIn('reported in', line)
+
+    def test_missing_or_partial_tool_calls_are_not_reported_never_inferred(self):
+        self.observed_attempt('none', BUNDLED[0], 40, {'usage': {'input_tokens': 100}})
+        self.observed_attempt('partial', BUNDLED[0], 60, {'cli_tool_calls': 2, 'cli_tool_calls_partial': True})
+        line = self.catalogue_line()
+        self.assertIn('(40–60 s); tool calls per attempt: not reported; CLI-reported per attempt (median): '
+                      'input_tokens 100', line)
+        self.assertNotIn('per call', line)
+
+    def test_mixed_attempts_count_only_reported_tool_calls(self):
+        self.observed_attempt('reported', BUNDLED[0], 50, {'cli_tool_calls': 5})
+        self.observed_attempt('idle', BUNDLED[0], 6, {'cli_tool_calls': 0})
+        self.observed_attempt('missing', BUNDLED[0], 300)
+        line = self.catalogue_line()
+        # The median over the two reporting attempts; zero calls give no per-call time.
+        self.assertIn('observed: 3 attempts, median 50 s (6.0–300 s); tool calls per attempt (median): 2 '
+                      '(reported in 2 of 3), 10 s per call;', line)
 
     def test_subscription_cost_states_a_finite_allowance(self):
         from personal_agent.orchestrator import KIND_SUBSCRIPTION, KIND_TIERS
