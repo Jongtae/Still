@@ -1287,6 +1287,18 @@ class LoginPromptAndThreads(LoginHarness):
         self.drivers[-1].login()
         self.drivers[-1].closed = True
         self.assertTrue(wait_until(lambda: 'fixture.test' in self.store.config(BROWSER_OWNER_SIGNINS_KEY, {})))
+        # #488: Settings is told the close saved this site's sign-in, and the row says it is signed in.
+        self.assertTrue(wait_until(lambda: self.service.browser_status()['settings_login']['state'] == 'closed'))
+        status = self.service.browser_status()
+        self.assertEqual((status['settings_login']['saved'], status['settings_login']['sites']), (True, ['fixture.test']))
+        row = next(row for row in status['sessions'] if row['site'] == 'fixture.test')
+        self.assertEqual(row['sign_in'], 'signed_in')
+        self.assertEqual(row['signed_in_at'], self.store.config(BROWSER_OWNER_SIGNINS_KEY, {})['fixture.test']['at'])
+        self.assertEqual(row['login_url'], 'https://fixture.test/')
+        # A keep-alive the site refused since that sign-in is shown, not hidden behind 'signed in'.
+        self.store.put(self.service.KEEPALIVE_PAUSED_KEY, {'fixture.test': row['signed_in_at'] + 1})
+        self.assertEqual(next(r for r in self.service.browser_status()['sessions'] if r['site'] == 'fixture.test')['sign_in'],
+                         'refresh_refused')
 
     def test_a_settings_window_that_never_shows_is_reported_failed(self):
         gate = threading.Event()
@@ -1307,6 +1319,11 @@ class LoginPromptAndThreads(LoginHarness):
         self.drivers[-1].closed = True
         self.assertTrue(wait_until(lambda: not self.profile.status()['login_window_open']))
         self.assertEqual(self.store.config(BROWSER_OWNER_SIGNINS_KEY, {}), {})
+        # #488: the close is reported with no site, and stored cookies without a sign-in are not 'signed in'.
+        self.assertTrue(wait_until(lambda: self.service.browser_status()['settings_login']['state'] == 'closed'))
+        status = self.service.browser_status()
+        self.assertEqual(status['settings_login']['sites'], [])
+        self.assertTrue(all(row['sign_in'] == 'none' and row['login_url'] == f"https://{row['site']}/" for row in status['sessions']))
 
     def test_the_run_does_not_wait_for_the_window_and_the_prompt_waits_for_it(self):
         gate = threading.Event()

@@ -7926,7 +7926,25 @@ class AgentService:
         # #709: logins waiting for the owner (host and times only); decided at /api/browser/login/decision.
         # #749: the Settings login window's observed outcome after its request answered ``opening``.
         settings_login=self._settings_login or {}
-        status['settings_login']={'state':settings_login.get('state'),'at':settings_login.get('at')} if settings_login else None
+        status['settings_login']={'state':settings_login.get('state'),'at':settings_login.get('at'),
+                                  'saved':settings_login.get('saved'),'sites':settings_login.get('sites') or []} if settings_login else None
+        # #488: which stored sites the owner signed in to through a login window (the record only; no jar read on
+        # the poll), and whether a keep-alive was since refused.  ``login_url`` reopens the window for that site.
+        signins=self.store.config(BROWSER_OWNER_SIGNINS_KEY,{})
+        signins=signins if isinstance(signins,dict) else {}
+        paused=self.store.config(self.KEEPALIVE_PAUSED_KEY,{})
+        paused=paused if isinstance(paused,dict) else {}
+        for session in status.get('sessions') or []:
+            site=session.get('site')
+            record=signins.get(site)
+            at=record.get('at') if isinstance(record,dict) and record.get('marks') else None
+            if isinstance(at,(int,float)) and at>0:
+                refused=isinstance(paused.get(site),(int,float)) and paused[site]>=at
+                session.update(sign_in='refresh_refused' if refused else 'signed_in',signed_in_at=at)
+            else:
+                session['sign_in']='none'
+            host=ascii_host(record.get('host')) if isinstance(record,dict) and record.get('host') else None
+            session['login_url']=f"https://{host or site}/"
         status['pending_logins']=[{'work_id':row['work_id'],'host':row.get('host',''),'site':row.get('site'),
                                    'landed_host':row.get('landed_host'),'landed_site':row.get('landed_site'),
                                    'stored_session':row.get('stored_session'),'offered_at':row.get('offered_at'),
@@ -7961,10 +7979,10 @@ class AgentService:
         row={'host':host,'cookies_before':self._login_cookie_marks({'host':host}) if host else None}
         # What Settings shows after answering ``opening``: the window's observed outcome (in memory only).
         token=secrets.token_hex(8)
-        def mark(state):
+        def mark(state,**outcome):
             with self.lock:
                 if state=='opening' or (self._settings_login or {}).get('token')==token:
-                    self._settings_login={'token':token,'state':state,'at':time.time()}
+                    self._settings_login={'token':token,'state':state,'at':time.time(),**outcome}
         def opened(window,landed=None):
             # #765: the same baselines as the in-flow window (after the landing's own cookies were saved).
             row.update(self._login_window_baselines(window,host,landed))
@@ -7977,8 +7995,15 @@ class AgentService:
                     # Review P2-1: the window stays open for the owner at the Mac; the owner is told why.
                     self._notify_owner(f'telegram:{chat}',str(exc))
         def closed(window,reason,saved):
-            mark('failed' if reason=='failed' and (self._settings_login or {}).get('state')=='opening' else 'closed')
-            if saved:self._record_owner_signins(self._signed_in_sites({**row,'window':window}))
+            failed=reason=='failed' and (self._settings_login or {}).get('state')=='opening'
+            signed=self._signed_in_sites({**row,'window':window}) if saved else []
+            started=time.time()
+            if signed:self._record_owner_signins(signed)
+            # #488: Settings tells the owner what the close saved: the site(s) whose sign-in was just recorded.
+            signins=self.store.config(BROWSER_OWNER_SIGNINS_KEY,{}) if signed else {}
+            sites=sorted(site for site,record in (signins.items() if isinstance(signins,dict) else ())
+                         if isinstance(record,dict) and float(record.get('at') or 0)>=started)
+            mark('failed' if failed else 'closed',saved=bool(saved),sites=sites)
         mark('opening')
         result=self.browser_profile.open_for_login(url.strip(),on_opened=opened,on_closed=closed)
         if not isinstance(result,dict) or result.get('state')!='opening':
