@@ -35,6 +35,9 @@ BOT, OWNER, INTRUDER = 'U0BOT0001', 'U0OWNER01', 'U0INTRUD1'
 DM, INTRUDER_DM, PUBLIC = 'D0OWNERDM', 'D0INTRDM1', 'C0PUBLIC1'
 
 
+#: #477: Slack's own loading state, with no words of Still's.
+PROCESSING = '(processing)'
+
 class FakeSlack:
     """The Web API methods the surface calls, against in-memory messages; ``guard()`` is asked first, as in the SDK client."""
 
@@ -69,6 +72,8 @@ class FakeSlack:
         if getattr(self, 'status_error', False):
             raise SlackError('missing_scope', code='missing_scope')
         return {'ok': True}
+
+    agents_sessions_setStatus = assistant_threads_setStatus
 
     def auth_test(self):
         return {'ok': True, 'team_id': TEAM, 'team': 'Test workspace', 'user_id': BOT}
@@ -791,7 +796,14 @@ class ThreadStatus(SlackCase):
         return self.store.job(job['id'])
 
     def statuses(self):
-        return [args for name, token, args in self.fake.calls if name == 'assistant_threads_setStatus']
+        """Every status call as the owner sees it: custom text, PROCESSING (Slack's own loading state) or '' (ended)."""
+        shown = []
+        for name, token, args in self.fake.calls:
+            if name == 'assistant_threads_setStatus':
+                shown.append(args)
+            elif name == 'agents_sessions_setStatus':
+                shown.append({**args, 'status': PROCESSING if args['status'] == 'processing' else ''})
+        return shown
 
     def finish(self, job, status='succeeded'):
         with self.store.db() as db:
@@ -820,7 +832,8 @@ class ThreadStatus(SlackCase):
 
     def test_observed_status_changes_refreshes_and_clears_after_terminal_post(self):
         job = self.running()
-        # #458: the waiting line names the launched worker and model.
+        # #458/#477: developer mode shows the launched worker and model.
+        self.store.put('developer_mode', True)
         self.service.live_workers[job['id']] = 'Codex · gpt-6.1-sol · medium'
         expected = self.service._draft_step_text(job, self.service.presence[job['id']])
         self.assertEqual(expected, 'Codex · gpt-6.1-sol · medium')
@@ -837,7 +850,7 @@ class ThreadStatus(SlackCase):
         self.finish(job)
         self.assertEqual(self.statuses()[-1], {'channel_id': DM, 'thread_ts': '1234.000001', 'status': ''})
         methods = [name for name, token, args in self.fake.calls]
-        self.assertEqual(methods[methods.index('chat_postMessage') + 1], 'assistant_threads_setStatus')
+        self.assertEqual(methods[methods.index('chat_postMessage') + 1], 'agents_sessions_setStatus', 'ended right after the answer')
         before = list(self.statuses())
         self.service.present_waiting_work(now=job['created'] + 900)
         self.service.deliver_one()
@@ -855,8 +868,15 @@ class ThreadStatus(SlackCase):
     def test_no_observed_step_uses_catalog_status(self):
         from personal_agent.messages import msg
         job = self.running()
+        self.service.live_workers[job['id']] = 'Codex · gpt-6.1-sol · medium'
         self.service.present_waiting_work(now=job['created'] + 10)
-        self.assertEqual(self.statuses()[-1]['status'], msg('surface.waiting_work'))
+        self.assertEqual(self.statuses()[-1]['status'], PROCESSING)
+        self.store.put('developer_mode', True)
+        self.service.present_waiting_work(now=job['created'] + 11)
+        self.assertEqual(self.statuses()[-1]['status'], 'Codex · gpt-6.1-sol · medium')
+        self.store.put('developer_mode', False)
+        self.service.present_waiting_work(now=job['created'] + 12)
+        self.assertEqual(self.statuses()[-1]['status'], PROCESSING)
 
     def test_approval_and_payment_show_no_step_and_clear_previous_status(self):
         job = self.running()
@@ -865,13 +885,16 @@ class ThreadStatus(SlackCase):
             with mock.patch.object(self.service, '_draft_step_text', return_value=line):
                 self.service.present_waiting_work(now=job['created'] + 3)
         from personal_agent.messages import msg
-        self.assertEqual([s['status'] for s in self.statuses()], [msg('surface.waiting_work'), ''])
+        self.assertEqual([s['status'] for s in self.statuses()], [PROCESSING, ''])
 
     def test_pending_approval_has_no_initial_status(self):
         job = self.running()
         self.service.queue_notification(job, 'approval_needed')
-        self.service.present_waiting_work(now=job['created'] + 10)
-        self.assertEqual(self.statuses(), [])
+        self.service.live_workers[job['id']] = 'Codex · gpt-6.1-sol · medium'
+        for enabled in (False, True):
+            self.store.put('developer_mode', enabled)
+            self.service.present_waiting_work(now=job['created'] + 10)
+            self.assertEqual(self.statuses(), [])
 
     def test_status_failure_is_disabled_for_work_even_after_restart(self):
         job = self.running()
@@ -898,8 +921,11 @@ class ThreadStatus(SlackCase):
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                        (job['id'], 'api_request', 'running', json.dumps({'call_id': 'pay',
                         'step': {'action': 'api_request', 'status': '결제 중', 'approval': True}}), job['created'] + 1))
-        self.service.present_waiting_work(now=job['created'] + 2)
-        self.assertEqual(self.statuses(), [])
+        self.service.live_workers[job['id']] = 'Codex · gpt-6.1-sol · medium'
+        for enabled in (False, True):
+            self.store.put('developer_mode', enabled)
+            self.service.present_waiting_work(now=job['created'] + 2)
+            self.assertEqual(self.statuses(), [])
 
     def test_thread_preserved_for_plain_fallback_and_all_parts(self):
         from personal_agent.slack_surface import POST_CHARS
@@ -970,6 +996,19 @@ class ThreadStatus(SlackCase):
         self.owner_says('응 진행해', thread='1234.000001')
         answer = next(row for row in self.sl_jobs() if row['id'] != job['id'])
         self.assertIsNone(self.surface.reply_to(answer['id']))
+
+    def test_without_developer_mode_slack_shows_only_its_own_loading_state(self):
+        """#477: no words of Still's own; Slack draws the standard loading state, then it is ended."""
+        job = self.running()
+        self.service.live_workers[job['id']] = 'Codex · gpt-6.1-sol · medium'
+        self.service.present_waiting_work(now=job['created'] + 2)
+        calls = [(name, args) for name, token, args in self.fake.calls if name.endswith('_setStatus')]
+        self.assertEqual(calls, [('agents_sessions_setStatus', {'channel_id': DM, 'thread_ts': '1234.000001', 'status': 'processing'})])
+        self.finish(job)
+        ended = [args for name, token, args in self.fake.calls if name.endswith('_setStatus')][-1]
+        self.assertEqual(ended, {'channel_id': DM, 'thread_ts': '1234.000001', 'status': 'active'})
+        self.assertFalse([args for name, token, args in self.fake.calls if name == 'assistant_threads_setStatus'],
+                         'no custom text without developer mode')
 
     def test_clear_failure_does_not_change_delivery_or_repost_answer(self):
         job = self.running()

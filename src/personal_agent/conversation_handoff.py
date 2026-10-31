@@ -481,6 +481,8 @@ INTENT_NOTE_CREATE = 'note-create'
 INTENT_NOTE_LIST = 'note-list'
 #: #1017: the owner-typed ``/ai`` form switches the Main AI with no model in between.
 INTENT_MAIN_AI = 'main-ai'
+#: #477: the owner-typed /dev controls waiting worker visibility without a model.
+INTENT_DEVELOPER_MODE = 'developer-mode'
 INTENT_CALENDAR_CREATE = 'calendar-create'
 INTENT_MAIL_SEARCH = 'mail-search'
 #: Read the owner's Picker-selected Google Drive files into this turn, or
@@ -522,6 +524,7 @@ INTENT_LABELS = {
     INTENT_NOTE_CREATE: '메모 기록',
     INTENT_NOTE_LIST: '메모 목록',
     INTENT_MAIN_AI: '기본 AI 바꾸기',
+    INTENT_DEVELOPER_MODE: '개발자 모드',
     INTENT_CALENDAR_CREATE: msg('handoff.create_event'),
     INTENT_MAIL_SEARCH: '메일 찾기',
     INTENT_DRIVE_READ: 'Google Drive 파일 읽기',
@@ -1408,6 +1411,8 @@ class IntentClassifier:
             return IntentDecision(INTENT_SETTINGS, AUTHORITY_OWNER, argument=text)
         if text == '/ai' or text.startswith('/ai '):
             return IntentDecision(INTENT_MAIN_AI, AUTHORITY_OWNER, argument=text[len('/ai'):].strip())
+        if text == '/dev' or text.startswith('/dev '):
+            return IntentDecision(INTENT_DEVELOPER_MODE, AUTHORITY_OWNER, argument=text[len('/dev'):].strip())
         if text == '/notes':
             return IntentDecision(INTENT_NOTE_LIST, AUTHORITY_OWNER)
         if text.startswith('/note '):

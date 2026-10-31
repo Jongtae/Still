@@ -1,9 +1,21 @@
 {
- "surface.waiting_work": {
-  "ko": "처리하고 있어요…",
-  "en": "Working on it…",
-  "ja": "処理しています…",
-  "zh": "正在处理…"
+ "service.developer_mode_on": {
+  "ko": "개발자 모드가 켜져 있어요. 기다리는 동안 AI와 모델을 보여 드려요.",
+  "en": "Developer mode is on. The AI and model appear while you wait.",
+  "ja": "開発者モードはオンです。待機中に AI とモデルを表示します。",
+  "zh": "开发者模式已开启。等待时会显示 AI 和模型。"
+ },
+ "service.developer_mode_off": {
+  "ko": "개발자 모드가 꺼져 있어요.",
+  "en": "Developer mode is off.",
+  "ja": "開発者モードはオフです。",
+  "zh": "开发者模式已关闭。"
+ },
+ "service.developer_mode_usage": {
+  "ko": "사용법: /dev on · /dev off · /dev (현재 상태)",
+  "en": "Usage: /dev on · /dev off · /dev (current state)",
+  "ja": "使い方: /dev on · /dev off · /dev（現在の状態）",
+  "zh": "用法：/dev on · /dev off · /dev（当前状态）"
  },
  "handoff.modify_gmail": {
   "ko": "Gmail 메일 정리",
