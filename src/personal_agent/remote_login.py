@@ -2,7 +2,7 @@
 
 An in-flow login (#709) or an explicit login request shows the Still login
 window on the Mac.  The owner who is not at the Mac gets a temporary HTTPS
-link (ngrok, as the family setup's, #897) to a page that shows that window
+link (ngrok or a Cloudflare Quick Tunnel, #523, as the family setup's, #897) to a page that shows that window
 as an image refreshed about twice a second; a tap on the image is pressed at
 the same point in the window and opens the phone keyboard while an editable
 element has focus there, each keystroke goes into that field (#293), and [완료]

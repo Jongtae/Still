@@ -238,9 +238,15 @@ def _tunnel_command(pid, run=subprocess.run):
 
 
 def _own_tunnel(command, port):
-    """Whether ``command`` is the ``ngrok http 127.0.0.1:<port>`` Still starts for ``port``."""
-    words = str(command or '').split()
-    return bool(words) and Path(words[0]).name == 'ngrok' and words[1:3] == ['http', f'127.0.0.1:{port}']
+    """Whether ``command`` is the ngrok or cloudflared tunnel Still starts for ``port`` (#523)."""
+    command = str(command or '')
+    words = command.split()
+    if bool(words) and Path(words[0]).name == 'ngrok' and words[1:3] == ['http', f'127.0.0.1:{port}']:
+        return True
+    # The pinned cloudflared may live under a path with spaces, so its tail is matched instead.
+    url = f'http://127.0.0.1:{port}'
+    return re.search(rf'(?:^|/)cloudflared tunnel --url {re.escape(url)} --http-host-header '
+                     rf'{re.escape(url[7:])} --no-autoupdate --config ', command) is not None
 
 
 def reclaim_orphan_tunnels(port, *, run=subprocess.run, kill=None):
@@ -277,8 +283,8 @@ def reclaim_orphan_tunnels(port, *, run=subprocess.run, kill=None):
 def stop_stale_tunnel(row, *, run=subprocess.run, kill=None):
     """End the tunnel a setup left behind when its watcher died with the process (#929).
 
-    Only a process whose command line is still this setup's own ``ngrok http
-    127.0.0.1:<port>`` is signalled, so a reused pid is never touched.
+    Only a process whose command line is still this setup's own tunnel to
+    ``127.0.0.1:<port>`` (``_own_tunnel``) is signalled, so a reused pid is never touched.
     Returns True when a tunnel was signalled.
     """
     import os
@@ -387,32 +393,85 @@ def retry_pending(owner_store, telegram_call, deliver=deliver_token, now=None):
     return succeeded
 
 
-# -- the temporary HTTPS link (ngrok, already installed on the owner's Mac) --
+# -- the temporary HTTPS link (ngrok when configured, else a Cloudflare Quick Tunnel, #523) --
 
-def start_tunnel(port, popen=subprocess.Popen, timeout=30, *, store):
-    """Start ``ngrok http`` for one loopback port; returns ``(process, https_url)``.
+def start_tunnel(port, popen=subprocess.Popen, timeout=30, *, store, find=None, fetch=None):
+    """Start a public HTTPS tunnel to one loopback port; returns ``(process, https_url)``.
 
     #208: the one place a public tunnel is started.  ``store`` is the owner
     store whose work mode is read first; while it is on this raises
-    ``work_mode.WorkModeRefused`` and nothing is spawned.
+    ``work_mode.WorkModeRefused`` and nothing is spawned or downloaded.
+
+    ngrok is used when it is installed and configured (unchanged).  When it
+    is missing, or reports no address (no authtoken, for one), a Cloudflare
+    Quick Tunnel opens instead (#523, ``quick_tunnel``): an installed
+    ``cloudflared``, else Still's own pinned and checksum-verified one.
+    ``find`` and ``fetch`` are the test seams for the program lookup and
+    the download.
+    """
+    from . import quick_tunnel, work_mode
+    from .subscription_engines import find_cli
+    work_mode.refuse(store, 'tunnel')
+    # #932: under launchd PATH lacks Homebrew; the real launcher runs the found binary.
+    find = find or (find_cli if popen is subprocess.Popen else (lambda command: command))
+    ngrok, failed = find('ngrok'), None
+    if ngrok:
+        try:
+            return _ngrok(ngrok, port, popen, timeout)
+        except (OSError, RuntimeError) as exc:
+            failed = exc
+    # Work mode may have been switched on while ngrok was trying.
+    work_mode.refuse(store, 'tunnel')
+    try:
+        binary = find('cloudflared') or quick_tunnel.ensure(store, **({'fetch': fetch} if fetch else {}))
+        process = popen(quick_tunnel.argv(binary, port, quick_tunnel.config_file(store)),
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        return process, _await_address(process, timeout, quick_tunnel.read_line,
+                                       'cloudflared did not report a public HTTPS address.')
+    except RuntimeError as exc:
+        # Both failed: the owner hears both reasons, ngrok's (say, no authtoken) included.
+        if isinstance(failed, RuntimeError):
+            raise RuntimeError(f'{failed} {exc}') from None
+        raise
+
+
+def _ngrok(binary, port, popen, timeout):
+    """``ngrok http`` for one loopback port.
 
     ``--host-header=rewrite`` makes the instance see ``localhost:<port>``.
     ngrok still adds forwarding headers, so every tunneled request is
     *relayed* and never local (#594).  ``--inspect=false`` keeps no request
-    log in ngrok's local inspector (review P3-2).  Its output is drained in a
-    daemon thread for the tunnel's life, so a full pipe never stalls it, and
-    the address is awaited with a real deadline (review P2-4).
+    log in ngrok's local inspector (review P3-2).
     """
-    from . import work_mode
-    from .subscription_engines import find_cli
-    work_mode.refuse(store, 'tunnel')
-    # #932: under launchd PATH lacks Homebrew; the real launcher runs the found binary.
-    binary = (find_cli('ngrok') or 'ngrok') if popen is subprocess.Popen else 'ngrok'
     process = popen([binary, 'http', f'127.0.0.1:{int(port)}', '--host-header=rewrite', '--inspect=false',
                      '--log', 'stdout', '--log-format', 'json'],
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    lines = queue.Queue()
+    return process, _await_address(process, timeout, _ngrok_line, 'ngrok did not report a public HTTPS address.')
 
+
+def _ngrok_line(line):
+    try:
+        entry = json.loads(line)
+    except ValueError:
+        entry = {}
+    if not isinstance(entry, dict):
+        return None, ''
+    url = entry.get('url')
+    if isinstance(url, str) and url.startswith('https://'):
+        return url, ''
+    if entry.get('lvl') in ('eror', 'error', 'crit') or entry.get('err'):
+        return None, str(entry.get('err') or entry.get('msg') or '')[:200]
+    return None, ''
+
+
+def _await_address(process, timeout, read, failure):
+    """The tunnel's https address from its output, within ``timeout`` seconds.
+
+    The output is drained in a daemon thread for the tunnel's life, so a full
+    pipe never stalls it, and the address is awaited with a real deadline
+    (review P2-4).  On failure the process is terminated.
+    """
+    lines = queue.Queue()
     found = threading.Event()
 
     def drain():
@@ -431,20 +490,13 @@ def start_tunnel(port, popen=subprocess.Popen, timeout=30, *, store):
             break
         if line is None:
             break
-        try:
-            entry = json.loads(line)
-        except ValueError:
-            entry = {}
-        if not isinstance(entry, dict):
-            continue
-        url = entry.get('url')
-        if isinstance(url, str) and url.startswith('https://'):
+        url, error = read(line)
+        if url:
             found.set()
-            return process, url
-        if entry.get('lvl') in ('eror', 'error', 'crit') or entry.get('err'):
-            last_error = str(entry.get('err') or entry.get('msg') or '')[:200]
+            return url
+        last_error = error or last_error
     process.terminate()
-    raise RuntimeError('ngrok did not report a public HTTPS address.' + (f' ({last_error})' if last_error else ''))
+    raise RuntimeError(failure + (f' ({last_error})' if last_error else ''))
 
 
 # -- the page --------------------------------------------------------------
@@ -675,10 +727,10 @@ def prepare_family_setup(owner_store, name, display_name, *, service_action, env
         raise SetupError(str(exc)) from None
     display_name = ' '.join(str(display_name or '').split())[:64] or f'{name} 비서'
     import shutil
-    from .subscription_engines import find_cli
-    if popen is subprocess.Popen and not find_cli('ngrok'):
+    from .quick_tunnel import available
+    if popen is subprocess.Popen and not available():
         # #913 review P2-2: checked before anything is created or copied.
-        raise SetupError('가족에게 보낼 임시 링크를 만들 ngrok이 이 Mac에 없어 가족 비서를 만들지 않았습니다.')
+        raise SetupError('가족에게 보낼 임시 링크를 만들 도구(ngrok이나 cloudflared)가 이 컴퓨터에 없어 가족 비서를 만들지 않았습니다.')
     cfg = owner_store.config('telegram', {})
     owner_token = owner_store.secret('telegram_token')
     if not (cfg.get('enabled') and cfg.get('username') and owner_token):

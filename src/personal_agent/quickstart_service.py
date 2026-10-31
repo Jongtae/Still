@@ -753,11 +753,11 @@ class AgentService:
         #: process: from then on a tunneled request reaches only the remote-login routes.
         self._remote_login=None
         self._remote_login_started=False
-        self.remote_login_popen=None   # a test injects a fake ngrok here
+        self.remote_login_popen=None   # a test injects a fake tunnel here
         # #1213: the one phone input session (own Google client, Google consent from the phone).
         self._phone_input=None
         self._phone_input_started=False
-        self.phone_input_popen=None   # a test injects a fake ngrok here
+        self.phone_input_popen=None   # a test injects a fake tunnel here
         #: #940 hook: ``(site) -> owner-facing refusal text or None``.  A login window (explicit, in-flow or
         #: from the phone) never opens for a site this refuses: the family-share follow-up (#935) sets it to
         #: refuse the sites this instance *received*, so a family member never re-drives the owner's session.
@@ -9704,10 +9704,10 @@ class AgentService:
 
         Returns the conversation's answer.  Raises ``ValueError`` (owner-facing)
         when the kind is not offered, Telegram is not paired, one is already
-        open, ngrok is missing or the link could not open or be delivered.
+        open, no tunnel tool is available or the link could not open or be delivered.
         """
         from . import phone_input
-        from .subscription_engines import find_cli
+        from .quick_tunnel import available
         kinds=self.phone_input_kinds()
         if kind not in kinds:raise ValueError('이 설치에서 휴대폰 링크로 할 수 있는 일이 아닙니다.')
         cfg=self.store.config('telegram',{})
@@ -9715,7 +9715,7 @@ class AgentService:
         popen=self.phone_input_popen or subprocess.Popen
         with self.lock:
             if self.phone_input_session() is not None:raise ValueError(phone_input.BUSY_TEXT)
-            if popen is subprocess.Popen and not find_cli('ngrok'):raise ValueError(phone_input.NO_NGROK_TEXT)
+            if popen is subprocess.Popen and not available():raise ValueError(phone_input.NO_NGROK_TEXT)
             port=self.local_server_port
             if not isinstance(port,int):raise ValueError(phone_input.NO_PORT_TEXT)
             session=phone_input.PhoneInput(kind,kinds[kind],store=self.store,popen=popen)
@@ -9761,17 +9761,17 @@ class AgentService:
 
         ``close(reason)`` closes that window the way its opener does.  Raises
         ``remote_login.RemoteLoginError`` (owner-facing message) when one is
-        already open, ngrok is missing, the local port is unknown or the
+        already open, no tunnel tool is available, the local port is unknown or the
         tunnel did not open.  ``chat_id`` must be the paired owner's chat when
         given; the link is sent there and nowhere else.
         """
-        from .subscription_engines import find_cli
+        from .quick_tunnel import available
         popen=self.remote_login_popen or subprocess.Popen
         refused=self.login_refusal(site)
         if refused:raise remote_login.RemoteLoginError(refused)
         with self.lock:
             if self.remote_login_session() is not None:raise remote_login.RemoteLoginError(remote_login.BUSY_TEXT)
-            if popen is subprocess.Popen and not find_cli('ngrok'):raise remote_login.RemoteLoginError(remote_login.NO_NGROK_TEXT)
+            if popen is subprocess.Popen and not available():raise remote_login.RemoteLoginError(remote_login.NO_NGROK_TEXT)
             port=self.local_server_port
             if not isinstance(port,int):raise remote_login.RemoteLoginError(remote_login.NO_PORT_TEXT)
             # #255: its end is said on the link message the owner got.

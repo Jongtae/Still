@@ -374,7 +374,9 @@ class PhoneSignInLines(unittest.TestCase):
             with self.subTest(owner=owner):
                 case = harness(self, local_case.HandoffTestCase, owner)
                 lang = lang_of(owner)
+                # #523: no ngrok, no cloudflared and no pinned cloudflared build for this computer.
                 with mock.patch('personal_agent.subscription_engines.find_cli', return_value=None), \
+                        mock.patch('personal_agent.quick_tunnel.asset', return_value=None), \
                         self.assertRaises(remote_login.RemoteLoginError) as no_ngrok:
                     case.service.start_remote_login('window-1', 'shop.test', lambda reason: None, chat_id=local_case.CHAT)
                 case.service.remote_login_popen = lambda *args, **kwargs: None

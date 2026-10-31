@@ -154,7 +154,8 @@ MAX_REASON_CHARS = 300
 SLOW_SETTINGS = frozenset({("judgment_ai", "model"), ("main_ai", "route"), ("main_ai", "model"),
                            # #961: adding a skill downloads and inspects one pinned GitHub folder.
                            ("skills", "add"), ("ai_connections", "connect"), ('api_connections', 'connect'),
-                           # #1213: opening a phone link starts an ngrok tunnel (up to ~30 seconds).
+                           # #1213: opening a phone link starts a tunnel (up to ~30 seconds; #523: a first
+                           # Quick Tunnel may download cloudflared first).
                            ("phone_link", "send"),
                            # #183: a disconnect asks Google to revoke the credential (one network call).
                            ("connections", "disconnect")})

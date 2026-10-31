@@ -156,6 +156,15 @@ When you connect your own bot, Still gives it the default assistant's profile on
 
 The computer must remain running and awake for remote requests to be processed. Installing Still does not start it at login: on macOS, register the background login service once with `agentos service install` so Still starts again after a restart without a terminal; see [Background service (macOS)](#background-service-macos) for exactly what that does and does not cover. Without that service, keep the terminal open; Ctrl-C stops Still.
 
+### Temporary phone links
+
+Signing in to a site from your phone, entering an API secret on your phone and family setup each open a one-time HTTPS link to this computer for a short time (#523). Only that link's own page answers, and only with its one-time code; a request through the link is never treated as coming from this Mac. Nothing to sign up for:
+
+- if `ngrok` is installed and has its authtoken, Still uses it, as before;
+- otherwise Still opens a **Cloudflare Quick Tunnel**, which needs no Cloudflare account. It uses an installed `cloudflared` (for example `brew install cloudflared`). Without one, the first link downloads cloudflared 2026.10.7 from Cloudflare's GitHub release into Still's data folder (`tools/`), checks its SHA-256 against the value pinned in Still and refuses to run it on a mismatch. It runs with Still's own empty configuration, so a `~/.cloudflared/config.yml` you have is not used, and it does not update itself.
+
+Cloudflare says Quick Tunnels are for testing and development, with no uptime guarantee; each link gets a new `trycloudflare.com` address. Requests through the link pass through Cloudflare (or ngrok). Work mode opens no link at all. Evidence so far is unit tests with fake tunnel processes and a fake download; a live Quick Tunnel has not been observed by Still's tests.
+
 ## Mattermost
 
 You can talk to Still in a direct message with a bot on your Mattermost server, typically a company one (#213). Still connects out to the server's API and checks the direct message every few seconds. Nothing on this Mac is opened to the outside, and no callback is received.
@@ -292,7 +301,7 @@ agentos family add spouse --display-name "아내 비서"
 
 Either way:
 - creates and starts the instance;
-- opens a temporary HTTPS link through your installed `ngrok` (about 30 minutes);
+- opens a [temporary HTTPS link](#temporary-phone-links) (about 30 minutes);
 - sends the link to you on Telegram so you can forward it.
 
 The family member opens the link on their phone:

@@ -449,10 +449,14 @@ class OwnerCommand(unittest.TestCase):
         self.assertIn('AI', self.output[-1])
         self.assertEqual(self.actions, [])
 
-    def test_a_missing_ngrok_stops_before_anything_is_created(self):
-        """#913 review P2-2: checked before the route is copied or the instance installed."""
+    def test_no_tunnel_tool_stops_before_anything_is_created(self):
+        """#913 review P2-2: checked before the route is copied or the instance installed.
+
+        #523: no ngrok, no cloudflared and no pinned cloudflared build for this computer.
+        """
         from unittest.mock import patch
-        with patch('personal_agent.subscription_engines.find_cli', return_value=None), patch('pathlib.Path.home', return_value=self.root / 'home'):
+        with patch('personal_agent.subscription_engines.find_cli', return_value=None), \
+                patch('personal_agent.quick_tunnel.asset', return_value=None), patch('pathlib.Path.home', return_value=self.root / 'home'):
             code = family_setup.family_main(['add', 'spouse'], service_action=self.service_action, owner_data=self.root / 'owner',
                                             environ=self.environ, opener=self.opener, out=self.output.append,
                                             sleep=lambda _s: None, free=lambda port: True)
