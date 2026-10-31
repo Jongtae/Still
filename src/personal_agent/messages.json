@@ -1,4 +1,10 @@
 {
+ "surface.waiting_work": {
+  "ko": "처리하고 있어요…",
+  "en": "Working on it…",
+  "ja": "処理しています…",
+  "zh": "正在处理…"
+ },
  "handoff.modify_gmail": {
   "ko": "Gmail 메일 정리",
   "en": "Gmail mailbox organisation",

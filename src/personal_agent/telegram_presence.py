@@ -568,6 +568,8 @@ class WaitState:
     reaction: str = None
     reaction_asked: bool = False
     chat_action_at: float = None
+    wait_status_at: float = None
+    wait_status_text: str = None
     draft_at: float = None
     draft_failed: bool = False
     #: #858: the rich (thinking-block) draft was refused for this Work, so

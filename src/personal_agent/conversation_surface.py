@@ -62,6 +62,8 @@ class SurfaceCapabilities:
     buttons: bool = False
     native_stop: bool = False
     action_approvals: bool = False
+    #: A one-line, best-effort wait status independent of editable drafts.
+    wait_status: bool = False
 
 
 @dataclass(frozen=True)
@@ -175,6 +177,10 @@ class ConversationSurface(ABC):
     @abstractmethod
     def deliver_conversation_notice(self, text):
         """Best effort: one conversation notice to the paired owner."""
+
+    def show_wait_status(self, job, state, text, now):
+        """Best effort wait line, or None to suppress it. Called under the delivery lock."""
+        return False
 
     # -- presence (best effort; only what ``capabilities`` declares is asked) -------
     @abstractmethod
