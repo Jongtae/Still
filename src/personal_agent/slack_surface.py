@@ -77,7 +77,7 @@ BODY_REFUSED = frozenset({'invalid_arguments', 'invalid_blocks', 'invalid_blocks
                           'msg_too_long'})
 OWNER_ID = re.compile(r'^[UW][A-Z0-9]{2,30}$')
 #: Notice kinds that carry an approve / decline button pair (the item each one shows is settled exactly).
-BUTTON_LABELS = {'settings_change_proposed': ('button.apply', 'button.keep'),
+BUTTON_LABELS = {'budget_continue': ('button.continue', 'button.deny'), 'settings_change_proposed': ('button.apply', 'button.keep'),
                  'preparation_proposed': ('button.accept', 'button.decline_schedule'),
                  'browser_approval_needed': ('button.approve', 'button.deny')}
 ACTION_APPROVE, ACTION_DECLINE = 'still_approve', 'still_decline'
@@ -295,6 +295,7 @@ class SlackSurface(DirectMessageSurface):
              'text': {'type': 'plain_text', 'text': msg(labels[0]), 'emoji': True}},
             {'type': 'button', 'action_id': ACTION_DECLINE, 'value': f'{nid}:decline',
              'text': {'type': 'plain_text', 'text': msg(labels[1]), 'emoji': True}}]}
+        if kind == 'budget_continue':actions['elements'] = actions['elements'][:1]
         client, channel, fallback = self.client(cfg), cfg['channel_id'], text[:SECTION_CHARS]
         posted = self._refused_as_plain(
             lambda: client.chat_postMessage(channel=channel, text=fallback,

@@ -49,6 +49,7 @@ SHOWN_CHARS = 700
 
 KIND_SETTINGS = 'settings-drafts'
 KIND_STEP = 'action-approval'
+KIND_BUDGET = 'budget-continue'
 KIND_MEMORY_SAVED = 'memory-saved'
 KIND_MEMORY_PROPOSAL = 'memory-proposal'
 KIND_PREPARATION = 'preparation-proposal'
@@ -58,6 +59,7 @@ LONG_LIVED = frozenset({KIND_MEMORY_SAVED, KIND_MEMORY_PROPOSAL, KIND_PREPARATIO
 
 #: What an answer does to an item of each kind, told to the judgment in generic words.
 ANSWERS = {
+    KIND_BUDGET: 'approve continues the same Work with its recorded progress and a fresh budget; decline leaves it stopped',
     KIND_SETTINGS: 'approve applies the settings change as shown; decline keeps the current setting',
     KIND_STEP: 'approve lets the waiting action run once, exactly as shown; decline stops it',
     KIND_MEMORY_SAVED: 'decline removes what the assistant said it remembered; approve keeps it',
@@ -154,7 +156,7 @@ class OwnerActs:
         from .quickstart_service import (MEMORY_CANDIDATES_TTL_SECONDS, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS,
                                          MEMORY_SAVED_TTL_SECONDS)
         service = self.service
-        kinds = ('browser_approval_needed', 'preparation_proposed', *MEMORY_SAVED_KINDS, *MEMORY_PROMPT_KINDS)
+        kinds = ('budget_continue', 'browser_approval_needed', 'preparation_proposed', *MEMORY_SAVED_KINDS, *MEMORY_PROMPT_KINDS)
         items = []
         for notification in service.store.telegram.sent_of_kinds(chat, kinds, limit=ITEM_LIMIT * 3, message_id=target,
                                                                 surface=surface.name):
@@ -167,7 +169,13 @@ class OwnerActs:
             # queued; a slow send or a prompt queued across a restart reaches the owner later.  A
             # prompt sent before ``sent_at`` existed keeps its earlier time.
             sent_at = notification.get('sent_at')
-            if kind == 'browser_approval_needed':
+            if kind == 'budget_continue':
+                row = service.budget_continue_offer(notification['job_id'])
+                if not service.budget_continue_current(service.store.job(notification['job_id']), row) or row.get('nonce') != notification['fingerprint']:
+                    continue
+                items.append({**base, 'kind': KIND_BUDGET, 'shown_text': row['text'],
+                              'shown_at': float(sent_at or notification['created']), 'expires_at': row['deadline']})
+            elif kind == 'browser_approval_needed':
                 current = service.open_step_notification(notification)
                 if not current:
                     continue
@@ -289,6 +297,18 @@ class OwnerActs:
                 notify=(lambda text, notify_job=notify_job: service.settings_followup(notify_job, text)) if notify_job else None)
             LOG.info('settings drafts %s by owner answer work=%s', 'confirm' if approve else 'cancel', job.get('id'))
             result.update(text=service.settings_response(outcome), source='owner-settings', focus=ref['work_id'])
+        elif kind == KIND_BUDGET:
+            notification = service.store.notification(ref['notification_id'])
+            if notification and notification['state'] == 'sent':
+                if approve:
+                    result['text'] = service.budget_continue_decision({'work_id': notification['job_id'], 'nonce': notification['fingerprint']})['response']
+                else:
+                    with service.lock, service.store.db() as db:
+                        db.execute('BEGIN IMMEDIATE')
+                        row = service.budget_continue_offer(notification['job_id'], db=db)
+                        if row.get('nonce') == notification['fingerprint'] and row.get('state') == 'offered':
+                            service.store.put('budget_continue:' + notification['job_id'], {**row, 'state': 'declined'}, db=db)
+                service.store.update_notification(notification['id'], 'budget_continue_answered')
         elif kind == KIND_STEP:
             current = service.open_step_notification(service.store.notification(ref['notification_id']))
             result['text'] = (service.answer_step_approval(current[0], approve) if current
