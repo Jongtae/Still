@@ -17,7 +17,6 @@ import secrets
 import subprocess
 import sys
 import threading
-import time
 import webbrowser
 
 from .messages import msg
@@ -111,8 +110,13 @@ class Terminal:
     def mark(self, mark, text):
         self.say(f'   {mark} {text}')
 
-    def choose(self, prompt, options, default=None):
-        """The key of one of ``options`` (key, catalog label); a typed number here, '' only without a default."""
+    def choose(self, prompt, options, default=None, preview=None):
+        """The key of one of ``options`` (key, catalog label); a typed number here, '' only without a default.
+
+        ``preview`` is what the choice settles, shown with it (not a catalog line).
+        """
+        if preview:
+            print(f'\n{preview}\n', flush=True)
         for _, label in options:
             self.say('   ' + label)
         return self.ask('   ' + prompt + ' ') or default or ''
@@ -225,10 +229,22 @@ class RichTerminal(Terminal):
         self.console.print(Markdown(text))
         self.console.print()
 
-    def choose(self, prompt, options, default=None):
+    def choose(self, prompt, options, default=None, preview=None):
         keys = [key for key, _ in options]
-        return self.chooser('', options=[(key, _OPTION_NUMBER.sub('', self.local(label))) for key, label in options],
+        return self.chooser(self._rendered(preview) if preview else '',
+                            options=[(key, _OPTION_NUMBER.sub('', self.local(label))) for key, label in options],
                             default=default if default in keys else None)
+
+    def _rendered(self, text):
+        """``text`` as Markdown in this terminal's width, for a prompt_toolkit message (drawn with the menu)."""
+        import io
+        from prompt_toolkit.formatted_text import ANSI
+        from rich.console import Console
+        from rich.markdown import Markdown
+        out = io.StringIO()
+        # A little narrower than the terminal and without Rich's trailing padding, so the menu does not re-wrap it.
+        Console(file=out, force_terminal=True, width=max(40, self.console.width - 4), highlight=False).print(Markdown(text))
+        return ANSI('\n'.join(line.rstrip() for line in out.getvalue().rstrip().split('\n')) + '\n')
 
 
 def open_terminal(lang, stdin=None, stdout=None, environ=None):
@@ -326,11 +342,10 @@ def _requested_input(service, term, kind):
         if kind == 'telegram':
             _telegram_connect(service, term)
         elif isinstance(kind, dict):
-            # A notice's button pair: the owner's choice is settled exactly, like a pressed button.
-            # patch_stdout writes on its own thread every 0.2 s; let the notice reach the screen before its menu.
-            time.sleep(0.3)
+            # A notice's button pair: the owner's choice is settled exactly, like a pressed button, and
+            # the notice it settles is drawn with the menu itself.
             options = [(str(index), f'{index}) ' + term.local(msg(label))) for index, label in enumerate(kind['labels'], 1)]
-            answer = term.choose(msg('first_run.choice_prompt'), options, '1')
+            answer = term.choose(msg('first_run.choice_prompt'), options, '1', preview=kind.get('text'))
             if answer in ('1', '2'):
                 service.terminal_surface.answer_choice(kind, answer == '1')
     except (KeyboardInterrupt, EOFError):

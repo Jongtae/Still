@@ -153,12 +153,20 @@ class TerminalSurface(DirectMessageSurface):
         return False, False
 
     def _post_notice(self, cfg, text, notification, bound):
-        post_id = self._post(cfg, text)
         labels = self.CHOICES.get(notification['kind'])
-        if labels:
-            ref = ({'work_id': notification['job_id']} if notification['kind'] == 'settings_change_proposed'
-                   else {'notification_id': notification['id']})
-            self._request({'labels': labels, 'ref': ref, 'message': post_id, 'generation': cfg['generation']})
+        if not labels:
+            return self._post(cfg, text)
+        # The notice is shown as part of its own choice (review on #456): a menu always names the item it
+        # settles, however many notices arrive while another menu is open.
+        with self._lock:
+            if self._writer is None:
+                raise TerminalNotSent('no terminal conversation is attached')
+            post_id = f'{cfg.get("generation")}-out-{next(self._ids)}'
+        ref = ({'work_id': notification['job_id']} if notification['kind'] == 'settings_change_proposed'
+               else {'notification_id': notification['id']})
+        if not self._request({'labels': labels, 'ref': ref, 'message': post_id, 'generation': cfg['generation'],
+                              'text': str(text or '')}):
+            raise TerminalNotSent('no terminal conversation is attached')
         return post_id
 
     def answer_choice(self, choice, approve):

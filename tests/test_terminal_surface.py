@@ -204,10 +204,36 @@ class TelegramFromConversation(TerminalCase):
         """On a fresh install the judgment AI may still be qualifying; a choice is an exact act, like a button."""
         choice = self.offered()
         self.assertEqual(choice['labels'], ('button.apply', 'button.keep'))
-        self.assertIn('Telegram을 연결해', self.printed[-1])
+        self.assertIn('Telegram을 연결해', choice['text'])
+        self.assertFalse([line for line in self.printed if 'Telegram을 연결해' in line],
+                         'the notice is drawn with its menu, not printed apart from it')
         self.service.decision_routes.engine = lambda *a, **k: self.fail('a choice needs no judgment')
         self.assertEqual(self.surface.answer_choice(choice, True), 'settings-drafts')
         self.assertEqual(self.surface.take_request(), 'telegram')
+
+    def test_each_menu_shows_the_notice_it_settles(self):
+        """Review P1 on #456: with two notices waiting, each menu carries its own preview."""
+        first = self.offered()
+        work_id = self.surface.say('주말 예약 하나 취소해 줘')
+        self.settings.propose(self.owner, self.channel, 'current_context', 'timezone', 'Europe/Paris', work_id=work_id)
+        self.service.queue_settings_confirmation(self.store.job(work_id))
+        self.assertTrue(self.service.deliver_notification())
+        second = self.surface.take_request()
+        self.assertIn('Telegram을 연결해', first['text'])
+        self.assertIn('Europe/Paris', second['text'])
+        self.assertNotIn('Europe/Paris', first['text'])
+        shown = []
+
+        class Menu(TokenChat):
+            def local(self, text):
+                return text
+
+            def choose(self, prompt, options, default=None, preview=None):
+                shown.append(preview)
+                return '2'
+        for choice in (first, second):
+            first_run._requested_input(self.service, Menu(TOKEN), choice)
+        self.assertEqual(shown, [first['text'], second['text']])
 
     def test_keeping_the_setting_asks_for_nothing(self):
         choice = self.offered()

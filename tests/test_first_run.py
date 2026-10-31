@@ -475,8 +475,11 @@ class RichTerminalTest(unittest.TestCase):
             self.reads.append((prompt, options))
             return answers.pop(0)
 
+        self.chosen_messages = []
+
         def chooser(message, **options):
             self.picks.append(options)
+            self.chosen_messages.append(message)
             return choice
         return first_run.RichTerminal(lang, Console(file=self.out, width=120, color_system=None),
                                       reader=reader, chooser=chooser)
@@ -540,6 +543,12 @@ class RichTerminalTest(unittest.TestCase):
         term.interrupt()
         self.assertEqual(self.exits, [''])
         self.assertFalse(term._woken, 'a running line is ended, not remembered')
+
+    def test_the_menu_is_drawn_with_the_notice_it_settles(self):
+        term = self.terminal('en', choice='1')
+        term.choose('', [('1', '1) Apply'), ('2', '2) Keep')], '1', preview='Change **timezone** to Europe/Paris')
+        self.assertEqual(self.chosen_messages[0].__class__.__name__, 'ANSI')
+        self.assertIn('Europe/Paris', ''.join(text for _style, text in self.chosen_messages[0].__pt_formatted_text__()))
 
     def test_plain_lines_when_the_terminal_is_redirected_or_dumb(self):
         tty, pipe = SimpleNamespace(isatty=lambda: True), SimpleNamespace(isatty=lambda: False)
