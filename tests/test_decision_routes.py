@@ -1016,6 +1016,13 @@ class ServiceRouteSelectionTests(ServiceFixture):
         self.assertNotIn('declared_candidates', active, 'the declaration stays internal to the route')
         tried = next(e for e in status['subscription_cli'] if e['id'] == 'codex')['check']['candidates']
         self.assertEqual([(row['model'], row['qualified']) for row in tried], [('tiny', False), ('small', True)])
+        # #470: a candidate that decided but answered wrong names the case and its answer, content free.
+        self.assertEqual({key: tried[0][key] for key in ('ran', 'failure', 'failed_case', 'failed_outcome',
+                                                         'failed_answer', 'failed_confidence')},
+                         {'ran': 2, 'failure': 'case-failed', 'failed_case': 'correction-replaces-parameters',
+                          'failed_outcome': 'yes', 'failed_answer': 'retry', 'failed_confidence': 0.95})
+        self.assertEqual(tried[1]['failure'], '')
+        self.assertNotIn('failed_case', tried[1])
         models = [call['argv'][call['argv'].index('--model') + 1] for call in self.runner.calls if '--model' in call['argv']]
         self.assertNotIn('large', models, 'a stronger candidate is not tried once a lighter one qualified')
         self.assertEqual(self.judge(service).value, 'retry')
