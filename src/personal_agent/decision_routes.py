@@ -318,6 +318,11 @@ def pick_fastest(rows):
     return min(tied, key=lambda index: (-rows[index].get('pass_rate', 0), -rows[index].get('score', 0), index))
 
 
+def observed_of(tried, model):
+    """The observed identity of the candidate that was chosen, not of the last one tried (#472)."""
+    return next((row.get('observed_model') or 'not reported' for row in tried if row.get('model') == model), 'not reported')
+
+
 class DecisionRouteError(ValueError):
     """An owner-facing refusal; the previous route stays active."""
 
@@ -973,7 +978,7 @@ class DecisionRoutes:
                                   'model_policy': policy,
                                   'qualification': self._qualification_record(model, result, tried=tried)},
                          {'model_policy': policy, 'requested_model': model, 'candidates': tried,
-                          'suite_version': result['suite_version'], 'observed_model': tried[-1]['observed_model']})
+                          'suite_version': result['suite_version'], 'observed_model': observed_of(tried, model)})
             return {'state': 'active'}
         try:
             # No candidates: the ranked list, filtered by the capability check
@@ -1065,7 +1070,13 @@ class DecisionRoutes:
                 starts[case_id] = len(seen)
                 if job_checkpoint is not None:
                     job_checkpoint(model, case_id, index)
-            result = qualify(engine, checkpoint=checkpoint, trials=FASTEST_TRIALS if fastest else 1, timer=self.timer)
+            def call_failed(engine=engine, seen=seen):
+                # Every adapter audits its calls; a direct API engine has no ``last_failure``.
+                last = seen[-1] if seen else {}
+                return bool(getattr(engine, 'last_failure', '') or last.get('failure')
+                            or (last and last.get('outcome') != OUTCOME_DECIDED))
+            result = qualify(engine, checkpoint=checkpoint, trials=FASTEST_TRIALS if fastest else 1, timer=self.timer,
+                             call_failed=call_failed)
             observed = sorted({row.get('observed_model') for row in seen
                                if row.get('observed_model') and row.get('observed_model') != 'not reported'})
             failures = [row.get('failure') for row in seen if row.get('failure')]
@@ -1712,7 +1723,7 @@ class DecisionRoutes:
                                                'requested_model': chosen, 'model_policy': policy,
                                                'qualification': self._qualification_record(chosen, result, tried=tried),
                                                'key_source': 'decision' if decision_key else 'existing'},
-                            {'observed_model': tried[-1]['observed_model'], 'model_policy': policy,
+                            {'observed_model': observed_of(tried, chosen), 'model_policy': policy,
                              'requested_model': chosen, 'candidates': tried, 'suite_version': result['suite_version']})
 
     def _codex_strict_profile(self, option, binary):
@@ -1898,7 +1909,7 @@ class DecisionRoutes:
         return self._commit(option, {**base, 'requested_model': chosen, 'effort': effort_for(chosen),
                                      'qualification': self._qualification_record(chosen, result, capability, tried)},
                             {'model_policy': policy, 'requested_model': chosen, 'candidates': tried,
-                             'observed_model': tried[-1]['observed_model'], 'effort': effort_for(chosen),
+                             'observed_model': observed_of(tried, chosen), 'effort': effort_for(chosen),
                              'suite_version': result['suite_version'], **warning})
 
     # -- model lists (explicit owner action only, #679) ------------------------

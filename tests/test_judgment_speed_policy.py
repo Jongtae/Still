@@ -10,7 +10,7 @@ import os
 from personal_agent.decision import DEFAULT_DECISION_PROVIDER, NO_CANDIDATE, ModelDecisionEngine, UnavailableDecisionEngine
 from personal_agent.decision_qualification import CASE_IDS, latency, qualify
 from personal_agent.decision_routes import pick_fastest
-from personal_agent.providers import ModelAdapter
+from personal_agent.providers import ModelAdapter, ProviderError
 from test_decision_routes import OPENAI_KEY, CliRunner, OpenAITransport, ServiceFixture, oracle, parse_prompt
 
 
@@ -99,6 +99,13 @@ def test_a_case_that_fails_most_runs_still_fails_and_stops_once_decided():
     assert all('trials' not in row for row in twice_wrong['results'][:REFERENCE])
 
 
+def test_a_failed_call_reported_by_the_caller_is_not_repeated():
+    clock = Clock()
+    result = qualify(engine(TimedTransport(clock, lambda purpose, facts: 1.0, flaky_reference([NO_CANDIDATE, 'reference']))),
+                     trials=3, timer=clock, call_failed=lambda: True)
+    assert not result['qualified'] and 'trials' not in result['results'][REFERENCE]
+
+
 def test_an_engine_failure_is_not_repeated_as_variance():
     unavailable = UnavailableDecisionEngine()
     unavailable.last_failure = 'timeout'
@@ -137,7 +144,10 @@ class TimedCli(CliRunner):
 
     def __call__(self, argv, *args, **kwargs):
         if '--output-schema' in argv or '--json-schema' in argv:
-            self.now += self.seconds.get(argv[argv.index('--model') + 1] if '--model' in argv else None, 1.0)
+            model = argv[argv.index('--model') + 1] if '--model' in argv else None
+            self.now += self.seconds.get(model, 1.0)
+            # Each alias reports its own resolved model, so the observed identity is attributable.
+            self.claude_model = f'claude-{model}-fixture'
         return super().__call__(argv, *args, **kwargs)
 
 
@@ -222,3 +232,30 @@ class FastestQualifiedServiceTests(ServiceFixture):
         self.assertTrue(service.run_due_qualification())
         active = service.decision_routes.active()
         self.assertEqual((active['model_policy'], active['requested_model']), ('lowest_qualified', 'haiku'))
+
+    def test_the_check_names_the_observed_model_of_the_chosen_candidate(self):
+        service = self.timed({'haiku': 3.0, 'sonnet': 7.5})
+        status = service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'claude-code'})
+        self.assertEqual(status['active']['requested_model'], 'haiku')
+        check = next(e for e in status['subscription_cli'] if e['id'] == 'claude-code')['check']
+        self.assertEqual(check['observed_model'], 'claude-haiku-fixture', 'not the last candidate tried (sonnet)')
+
+    def test_a_direct_api_engine_failure_is_not_retried_into_a_pass(self):
+        class OnceTimesOut(OpenAITransport):
+            failed = False
+
+            def __call__(self, url, body, headers=None, timeout=60):
+                purpose, facts = parse_prompt(body['messages'][-1]['content'])
+                if (body.get('model') == 'gpt-4o-mini' and facts.get('owner_message') == '그거 저장해'
+                        and facts.get('previous_reply') and not self.failed):
+                    self.failed = True
+                    raise ProviderError('timed out', status=504)
+                return super().__call__(url, body, headers, timeout)
+        service = self.service(openai=OnceTimesOut())
+        service.decision_routes.timer = lambda: 0.0
+        service.save_decision_route_credential({'transport': 'direct_api', 'key': OPENAI_KEY})
+        status = service.activate_decision_route({'transport': 'direct_api'})
+        self.assertEqual(status['active']['requested_model'], 'gpt-6-luna')
+        compared = {row['model']: row for row in status['active']['qualification']['compared']}
+        self.assertFalse(compared['gpt-4o-mini']['qualified'])
+        self.assertEqual(compared['gpt-4o-mini']['failed_case'], 'reference-to-previous-result')

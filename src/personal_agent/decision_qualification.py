@@ -146,7 +146,8 @@ def latency(seconds):
             'p95': round(ordered[math.ceil(0.95 * len(ordered)) - 1], 3), 'samples': len(ordered)}
 
 
-def qualify(engine, *, policy=None, stop_on_failure=True, checkpoint=None, trials=1, timer=time.monotonic):
+def qualify(engine, *, policy=None, stop_on_failure=True, checkpoint=None, trials=1, timer=time.monotonic,
+            call_failed=None):
     """Run the suite against one engine; return a content-free result record.
 
     ``stop_on_failure`` bounds the calls (and cost) spent on a candidate
@@ -159,10 +160,15 @@ def qualify(engine, *, policy=None, stop_on_failure=True, checkpoint=None, trial
     runs, and passes only when most of its runs passed, so one unlucky
     answer on a borderline case (#470) neither excludes nor admits a model
     by chance.  An engine failure (timeout, auth, rejected model) is not
-    variance and is not repeated.  ``timer`` times every run; the record
-    carries each case's run seconds and the candidate's p50/p95.
+    variance and is not repeated: ``call_failed()`` says whether the run's
+    last engine call failed (default: the CLI adapters' ``last_failure``;
+    the route passes one that reads every adapter's audit record).
+    ``timer`` times every run; the record carries each case's run seconds
+    and the candidate's p50/p95.
     """
     policy = policy or DecisionPolicy()
+    if call_failed is None:
+        call_failed = lambda: getattr(engine, 'last_failure', '')  # noqa: E731
     majority = trials // 2 + 1
     results, seconds = [], []
     for index, (case_id, run) in enumerate(CASES):
@@ -178,7 +184,7 @@ def qualify(engine, *, policy=None, stop_on_failure=True, checkpoint=None, trial
             runs.append((bool(passed), str(outcome), round(timer() - started, 3)))
             passes = sum(1 for ok, _outcome, _s in runs if ok)
             if (len(runs) == 1 and passed) or passes >= majority or len(runs) - passes >= majority \
-                    or len(runs) >= trials or getattr(engine, 'last_failure', ''):
+                    or len(runs) >= trials or call_failed():
                 break
         passed = runs[0][0] if len(runs) == 1 else passes >= majority
         seconds.extend(s for _ok, _outcome, s in runs)
