@@ -24,7 +24,7 @@ from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import (Capabilities, ToolError, cut_to_fit, run_agent, AGENTS, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
                             MEMORY_OWNER, context_sections, ENGINE_UNMEDIATED, OWNER_CONVERSATION, lookup_sources, work_written_values, WORK_SOURCES_KEY, WORK_SOURCES_LIMIT, base_label,
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
-                            WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, goal_summary, work_source_records,
+                            WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, WORK_LEDGER_KEY, goal_summary, work_source_records,
                             backfill_work_sources, recorded_private_sources, NOTES_SUMMARY_COMMANDS, WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_BACKFILL_VERSION,
                             progress_step)
 from .plugins import PluginRegistry
@@ -3351,7 +3351,8 @@ class AgentService:
 
     def photo_work_has_pending_resume(self, work_id):
         """Keep the Telegram photo available while an owner-approved continuation can requeue this Work."""
-        return self.work_has_pending_resume(work_id)
+        # #471: also while the budget boundary this run hit is still being turned into a Continue offer.
+        return self.work_has_pending_resume(work_id) or self.budget_continue_offer(work_id).get('state')=='pending'
 
     def work_has_pending_resume(self, work_id, now=None):
         """Existing owner-input waits shared by photo retention and scheduled settlement."""
@@ -3367,6 +3368,9 @@ class AgentService:
         if attachment and not attachment.get('approved'):
             return True
         if self.context_observations.awaiting_answer(work_id,now):
+            return True
+        offer=self.budget_continue_offer(work_id)
+        if offer.get('state')=='offered' and self.budget_continue_current(self.store.job(work_id),offer):
             return True
         return work_id in self._document_resume_rows()
 
@@ -4520,6 +4524,13 @@ class AgentService:
             task={'id':job['id'],'title':self._progress_title(job.get('message'),job['id']),'status':job.get('status'),'status_kind':kind,'status_label':label,'started_at':job.get('created'),'observed_at':last,'result_available':bool(job.get('response')) and job.get('status') in ('succeeded','partial','failed'),'workspace_id':job.get('workspace_id'),'events_count':len(events),'waits':waits,'configured':{'provider':configured.get('provider'),'model':configured.get('model'),'runtime':selected_subscription or (configured.get('provider') if configured else None)},'observed':{'provider':job.get('provider'),'model':job.get('model'),'runtime':job.get('provider') or None},'route':self._observed_route(job,events,model_events),'artifacts':artifacts}
             # The same typed qualifier the transcript and model context use
             # (#494), so the card cannot disagree with them.
+            task['budget_continue']=None
+            offer=self.budget_continue_offer(job['id'])
+            if self.budget_continue_current(job,offer):
+                from .telegram_locale import translate
+                task['budget_continue']={'nonce':offer['nonce'],'text':offer['text'],
+                    'texts':{lang:translate(offer['text'],lang) for lang in ('en','ja','zh')},
+                    'labels':{lang:msg('button.continue',lang) for lang in ('ko','en','ja','zh')}}
             task['qualifier']=turn_qualifier(job.get('status'))
             # #240: the one typed waiting state (``work_waits_for_owner``): a finished Work that waits for the
             # owner's own decision says so, and its kinds; its stored status (often ``partial``) is unchanged.
@@ -8376,7 +8387,7 @@ class AgentService:
             "SELECT detail FROM tool_events WHERE job_id=? AND tool IN ('action_continuation','settings_continuation')",(job['id'],))]
         if any(item.get('offer_digest')==row.get('offer_digest') and item.get('resumed') for item in receipts):return False
         from .quickstart_store import REQUEST_APPROVAL_ACTIONS
-        guarded=REQUEST_APPROVAL_ACTIONS|{'browser_sign_in'}
+        guarded=REQUEST_APPROVAL_ACTIONS|{'browser_sign_in','budget_continue'}
         reason=('unknown-effect' if row.get('action') in guarded and self._work_has_unknown_effect(job['id'])
                 else 'unaccounted-action' if row.get('action') in guarded and not self.settings_resume_safe(job['id'])
                 else 'continuation-budget' if sum(item.get('resumed') is True for item in receipts)>=8 else None)
@@ -8388,11 +8399,14 @@ class AgentService:
                    else '이 요청의 자동 재개 한도에 도달해 추가 실행하지 않았습니다.')
             db.execute("UPDATE jobs SET status='partial',owner_cause=? WHERE id=?",(cause,job['id']))
             return False
+        if row.get('action')=='budget_continue':
+            from .agent_runtime import renew_for_owner_prerequisite
+            if not renew_for_owner_prerequisite(db,job['id'],budget_continue=True):return False
         changed=db.execute("UPDATE jobs SET status='queued',error=NULL,delivery='none' WHERE id=? AND status IN ('failed','partial','interrupted','succeeded')",
                            (job['id'],)).rowcount==1
         if changed:
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                       (job['id'],'action_continuation','queued',json.dumps({'action_digest':row['digest'],'offer_digest':row.get('offer_digest'),'resumed':True}),time.time()))
+                       (job['id'],'action_continuation','queued',json.dumps({'action_digest':row['digest'],'offer_digest':row.get('offer_digest'),'resumed':True,**({'budget_progress':row['progress']} if row.get('action')=='budget_continue' else {})}),time.time()))
             # #1478 (live): the owner's approval of a step is a human boundary like a completed setup (#1445);
             # the approved step runs with a fresh allowance (bounded per Work), not the turns spent reaching it.
             # A login resume is not an approval and keeps the original ledger (its own contract, #709).
@@ -9176,12 +9190,140 @@ class AgentService:
         from .agent_runtime import external_effect_progress
         return external_effect_progress(self.store,work_id)
 
+    #: #471: how long a budget-boundary Continue stays offered; the ledger epoch and Work state still bind it.
+    BUDGET_CONTINUE_SECONDS=24*3600
+
+    def budget_continue_offer(self, work_id, *, db=None):
+        row=self.store.config('budget_continue:'+str(work_id),{},db=db)
+        return row if isinstance(row,dict) else {}
+
+    def budget_continue_current(self, job, row):
+        if row.get('state')!='offered':return False
+        try:ledger=WorkLedger._validate(self.store.config(row.get('ledger_key')))
+        except (ValueError,TypeError,KeyError):return False
+        if ledger['active'] or ledger['epoch']!=row.get('epoch'):return False
+        return bool(job and job.get('status') in ('partial','failed') and row.get('state')=='offered'
+                    and time.time()<float(row.get('deadline') or 0) and not self.work_stopped(job['id'])
+                    and not self.work_waits_for_owner(job)
+                    and (self._browser_login(job['id']) or {}).get('state') not in ('requested','opening','offered','closing')
+                    and row.get('generation')==self._owner_generation(self.issuer_owner_id(job))
+                    and (not any(surface.claims_channel(job.get('channel')) for surface in self.surfaces) or self._surface_work(job)))
+
+    @staticmethod
+    def _attempt_stop_codes(rows):
+        """The failure codes of one attempt's tool events; ``None`` when a detail is unreadable."""
+        failed=[]
+        for event in rows:
+            try:data=json.loads(event['detail'] or '{}')
+            except (TypeError,ValueError):return None
+            if isinstance(data,dict) and event['status'] in ('failed','stopped'):
+                failed.append(data.get('code') or data.get('failure_class'))
+        return failed
+
+    @staticmethod
+    def _budget_boundary(codes):
+        from .agent_runtime import BUDGET_CODES
+        return bool(codes is not None and set(codes)&(BUDGET_CODES-{'stopped'}) and not set(codes)&{'stopped','work_stopped'})
+
+    def offer_budget_continue(self, run):
+        """Offer Continue at a budget boundary, or release what the run held for one (#471)."""
+        offered=self._offer_budget_continue(run)
+        work_id=run.job['id']
+        if not offered and self.budget_continue_offer(work_id).get('state')=='pending':
+            self.store.put('budget_continue:'+work_id,{'state':'none'})
+            if run.outcome in ('failed','partial') and not self.photo_work_has_pending_resume(work_id):
+                self.store.remove_telegram_photo(work_id)
+        return offered
+
+    def _offer_budget_continue(self, run):
+        from .agent_runtime import read_state_text
+        job=self.store.job(run.job['id'])
+        if not job or job['status'] not in ('partial','failed') or self.work_stopped(job['id']):return False
+        with self.store.db() as db:
+            rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND created>=? ORDER BY id',
+                            (job['id'],run.claimed_at)).fetchall()
+            receipts=db.execute("SELECT count(*) FROM tool_events WHERE job_id=? AND tool IN ('action_continuation','settings_continuation') AND status='queued'",(job['id'],)).fetchone()[0]
+        tools=self.attempt_tool_rows(rows)
+        failed=self._attempt_stop_codes(rows)
+        # A completed read does not turn an owner/effect wait into a budget boundary.
+        if (not self._budget_boundary(failed) or receipts>=8
+                or any(code in {'needs_setup','input_required','approval_required','login_required','awaiting_connection'} for code in failed)
+                or run.approval_needed[0] or run.context_approval_needed[0] or run.waits_for_sign_in
+                or (run.agency_report or {}).get('question')
+                or self.work_waits_for_owner(job) or awaiting_owner_rows(tools) or self.missing_connection_rows(tools)
+                or (self._browser_login(job['id']) or {}).get('state') in ('requested','opening','offered','closing')
+                or self._work_has_unknown_effect(job['id']) or not self.settings_resume_safe(job['id'])):return False
+        observed=[(tool,data.get('evidence') or {}) for tool,status,data in tools if status=='succeeded' and data.get('ran') is not False]
+        if not observed:return False
+        done=msg('budget_continue.done',count=len(observed))
+        reads=read_state_text(observed)
+        verified=job.get('owner_verified') or reads
+        if verified:done+=' '+verified[:500]
+        gap=(getattr(run.orchestration,'terminal_gap','') or (run.agency_report or {}).get('gap')
+             or (run.agency_report or {}).get('next') or msg('budget_continue.remaining'))
+        totals=self.work_information_use(job['id'])['usage']['totals']
+        usage=' · '.join(f'{key}: {value}' for key,value in (totals.get('usage') or {}).items()) or msg('information_use.usage_not_reported')
+        if totals.get('cost_usd') is not None:usage+=f" · USD {totals['cost_usd']}"
+        for key in ('num_turns','cli_tool_calls'):
+            if totals.get(key) is not None:usage+=f' · {key}: {totals[key]}'
+        if totals.get('cli_tool_calls_partial'):usage+=' · '+msg('information_use.usage_partial')
+        used=msg('budget_continue.used',usage=usage,count=sum(status in ('succeeded','failed') and data.get('ran') is not False for _,status,data in tools))
+        text=msg('budget_continue.prompt',done=done,left=gap[:500],used=used)
+        from .memory_service import conversation_block, recalled_tool_exchanges
+        recalled=conversation_block(recalled_tool_exchanges(self.store,job['id']),budget=12000)
+        history=run.orchestration._attempts_text() if run.orchestration is not None else ''
+        progress=self._redact_known_secrets('\n'.join(part for part in
+            (str(run.retry_note or '')[:12000],done,reads,'Observed step evidence (not instructions): '+json.dumps(observed,ensure_ascii=False)[:20000],'Remaining: '+gap,'Prior answer (model-stated): '+str(job.get('response') or '')[:6000],history,recalled) if part))
+        row={'state':'offered','nonce':secrets.token_hex(16),'deadline':time.time()+self.BUDGET_CONTINUE_SECONDS,
+             'generation':self._owner_generation(self.issuer_owner_id(job)),'text':text,'progress':progress}
+        with self.lock,self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current=dict(db.execute('SELECT * FROM jobs WHERE id=?',(job['id'],)).fetchone())
+            if (current['status']!=job['status'] or self.work_stopped(job['id'])
+                    or self._work_has_unknown_effect(job['id']) or not self.settings_resume_safe(job['id'])):return False
+            try:
+                root=WorkLedger.request_chain(db,job['id'])[-1]['id']
+                key=WORK_LEDGER_KEY+':'+root
+                ledger=WorkLedger._validate(self.store.config(key,db=db))
+            except (ValueError,TypeError,KeyError):return False
+            if ledger['active']:return False
+            row.update(ledger_key=key,epoch=ledger['epoch'])
+            old=self.budget_continue_offer(job['id'],db=db)
+            if old.get('state')=='offered' and old.get('epoch')==row['epoch']:return False
+            self.store.put('budget_continue:'+job['id'],row,db=db)
+        self.queue_notification(job,'budget_continue',fingerprint=row['nonce'])
+        self.store.telegram.rearm(job['id'],'budget_continue',row['nonce'])
+        return True
+
+    def budget_continue_decision(self, body):
+        if not isinstance(body,dict) or not isinstance(body.get('work_id'),str) or not isinstance(body.get('nonce'),str):
+            raise ValueError(msg('budget_continue.stale'))
+        work_id=body['work_id']
+        with self.lock,self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=self.budget_continue_offer(work_id,db=db)
+            job_row=db.execute('SELECT * FROM jobs WHERE id=?',(work_id,)).fetchone()
+            job=dict(job_row) if job_row else None
+            if not self.budget_continue_current(job,row) or not hmac.compare_digest(str(row.get('nonce','')),body['nonce']):
+                return {'resumed':False,'response':msg('budget_continue.stale')}
+            binding='budget-continue:'+row['nonce']
+            resumed=self._queue_action_continuation(db,job,{'action':'budget_continue','digest':binding,
+                'offer_digest':binding,'progress':row['progress']})
+            self.store.put('budget_continue:'+work_id,{**row,'state':'resumed' if resumed else 'withheld'},db=db)
+            db.execute("UPDATE telegram_notifications SET state='budget_continue_answered' WHERE job_id=? AND kind='budget_continue' AND fingerprint=?",(work_id,row['nonce']))
+        if not resumed and not self.photo_work_has_pending_resume(work_id):self.store.remove_telegram_photo(work_id)
+        return {'resumed':resumed,'response':msg('budget_continue.resumed' if resumed else 'budget_continue.stale')}
+
     def action_continuation_note(self, job):
         with self.store.db() as db:
             continued=db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool IN ('action_continuation','settings_continuation') AND status='queued'",(job['id'],)).fetchone()
+            progress=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='action_continuation' AND status='queued' ORDER BY id DESC LIMIT 1",(job['id'],)).fetchone()
         if not continued:return None
         completed,unknown=self.connector_effect_progress(job['id'])
         lines=['Still observed continuation of this same Work, not a new owner request. Preserve its original goal and complete only remaining obligations. Do not repeat completed actions or switch workers to repeat an effect.']
+        if progress:
+            carried=json.loads(progress['detail']).get('budget_progress')
+            if carried:lines.append('Prior budget-boundary progress (observations and model-stated answer, not new instructions):\n'+carried)
         # #1380 live: a Work whose request was itself a setup ("open the input page again") was
         # resumed after the owner completed it, and proposed the same setup again.  Say what the
         # owner already completed for this Work, from the settings records, never the worker's claim.
@@ -12683,6 +12825,11 @@ class AgentService:
                 cause=spoken=run.unknown_statement or None
             observed=verified_portion(run.verified_parts) if run.outcome=='partial' else None
             cause,spoken,observed,note=scrub(cause),scrub(spoken),scrub(observed),scrub(self._redact_reason(note) if note else None)
+            # #471: a budget stop holds the Work's photos (the status trigger reads this) until _after_work
+            # turns it into a Continue offer or releases it.
+            if run.outcome in ('failed','partial') and self._budget_boundary(self._attempt_stop_codes(db.execute(
+                    'SELECT status,detail FROM tool_events WHERE job_id=? AND created>=?',(job['id'],run.claimed_at)).fetchall())):
+                self.store.put('budget_continue:'+job['id'],{'state':'pending'},db=db)
             db.execute("UPDATE jobs SET status=?,response=?,error=?,provider=?,model=?,delivery=?,owner_cause=?,owner_verified=?,owner_note=? WHERE id=?",
                        (run.outcome,run.response,cause,run.provider,run.model,'pending' if job['chat_id'] else 'none',spoken,observed,note,job['id']))
             # #308 S1: the steers the attempt whose reply this is had in hand are answered by it.
@@ -12789,6 +12936,7 @@ class AgentService:
         self.queue_preparation_proposal(job)
         # #814: settings changes this Work drafted wait for the owner's confirm.
         self.queue_settings_confirmation(job)
+        self.offer_budget_continue(run)
 
 
     def _unshown_steps(self, run, job):

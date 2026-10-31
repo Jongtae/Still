@@ -167,6 +167,8 @@ class QuickStore:
                        )
                    )
                    OR EXISTS (SELECT 1 FROM context_job_attachments WHERE job_id=NEW.id AND approved=0)
+                   OR EXISTS (SELECT 1 FROM config WHERE config.key='budget_continue:'||NEW.id AND json_valid(config.value)
+                                AND json_extract(config.value,'$.state') IN ('pending','offered'))
                  ))
                  OR EXISTS (SELECT 1 FROM context_location_requests WHERE job_id=NEW.id AND state='pending'
                               AND expires>CAST(strftime('%s','now') AS REAL))

@@ -1791,13 +1791,14 @@ WORK_LEDGER_KEY='work_budget'
 #: #1445: how many times one Work's allowance is renewed by an owner-completed prerequisite.
 MAX_OWNER_RENEWALS=3
 
-def renew_for_owner_prerequisite(db,job_id):
+def renew_for_owner_prerequisite(db,job_id,*,budget_continue=False):
  """Give a paused Work a fresh allowance because the owner completed its prerequisite (#1445).
 
  Called inside the transaction that queues the continuation.  The owner's confirmation and
  input are a human boundary, like a new request: without this, a Work that spent its turns
  discovering and proposing the setup resumed with none left (rehearsal: "모델 호출 한도(9회)").
- Never for an active run, at most ``MAX_OWNER_RENEWALS`` times per Work; returns whether it renewed.
+ Never for an active run. Prerequisites have ``MAX_OWNER_RENEWALS``; an exact
+ budget-continue offer uses the queue's eight-resume cap instead. Returns whether it renewed.
  """
  try:root=WorkLedger.request_chain(db,job_id)[-1]['id']
  except ValueError:return False
@@ -1805,9 +1806,13 @@ def renew_for_owner_prerequisite(db,job_id):
  found=db.execute('SELECT value FROM config WHERE key=?',(key,)).fetchone()
  try:row=WorkLedger._validate(json.loads(found[0])) if found else None
  except (TypeError,ValueError):return False
- if row is None or row['active'] or row.get('renewals',0)>=MAX_OWNER_RENEWALS:return False
+ if row is None or row['active'] or type(row.get('renewals',0)) is not int or row.get('renewals',0)<0:return False
+ if budget_continue:
+  # The exact owner offer and eight-resume bound are enforced by the queue transaction.
+  if row.get('active_work_id',root)!=job_id:return False
+ elif row.get('renewals',0)>=MAX_OWNER_RENEWALS:return False
  row.update(attempts=0,turns=0,nudges=0,presentation=0,remaining_seconds=WORK_DEADLINE_SECONDS,
-            renewals=row.get('renewals',0)+1)
+            renewals=row.get('renewals',0)+(0 if budget_continue else 1),epoch=row['epoch']+1)
  db.execute('UPDATE config SET value=? WHERE key=?',(json.dumps(row),key))
  return True
 

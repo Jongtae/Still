@@ -267,6 +267,8 @@ class TelegramSurface(ConversationSurface):
         if kind=='context_approval_needed':
             return {'inline_keyboard':[[{'text':APPROVE_BUTTON,'callback_data':f"v1c:{nid}:approve"},
                                         {'text':DENY_BUTTON,'callback_data':f"v1c:{nid}:deny"}]]}
+        if kind=='budget_continue':
+            return {'inline_keyboard':[[{'text':msg('button.continue'),'callback_data':f"p7b:{nid}:resume"}]]}
         if kind=='browser_login_needed':
             return {'inline_keyboard':[[{'text':msg('button.signed_in'),'callback_data':f"p7l:{nid}:done"},
                                         {'text':BROWSER_LOGIN_SKIP_LABEL,'callback_data':f"p7l:{nid}:skip"}],
@@ -723,6 +725,18 @@ class TelegramSurface(ConversationSurface):
                         try:service.telegram.edit_message_text(sender,notification['message_id'],said,{'inline_keyboard':[]})
                         except ProviderError:pass
                         changed=True
+            elif authorized and isinstance(data,str) and data.startswith('p7b:'):
+                parts=data.split(':')
+                notification=service.store.notification(parts[1]) if len(parts)==3 and parts[2]=='resume' else None
+                exact=(notification and notification['kind']=='budget_continue' and notification['state']=='sent'
+                       and notification['generation']==generation and notification['chat_id']==sender
+                       and notification['message_id']==message.get('message_id'))
+                if exact:
+                    result=service.budget_continue_decision({'work_id':notification['job_id'],'nonce':notification['fingerprint']})
+                    service.store.update_notification(notification['id'],'budget_continue_answered')
+                    try:service.telegram.edit_message_text(sender,notification['message_id'],result['response'],{'inline_keyboard':[]})
+                    except ProviderError:pass
+                    changed=True
             elif authorized and isinstance(data,str) and data.startswith('p7l:'):
                 # #709: the owner's answer to one Work's in-flow login.  Exact:
                 # this notification, sent, this chat and message, and the login
