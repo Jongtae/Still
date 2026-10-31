@@ -98,6 +98,7 @@ assert.deepEqual(nodes['connector-controls'].rows.map(off),[false,true,true,fals
 vm.runInContext("googlePending={'google-calendar':1}",ctx);nodes['connector-controls'].dataset={};
 ctx.renderConnectors(connectors);
 assert.equal(off(nodes['connector-controls'].rows[2]),false,'an unconfirmed Google-side revocation keeps its row visible');
+assert.equal(nodes['connector-controls'].rows[2].kind,'attention','and marks it as needing attention, so the add dialog does not call it 사용 중');
 console.log('rows ok');
 """
 
