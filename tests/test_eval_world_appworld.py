@@ -271,6 +271,8 @@ class AppWorldAdapter(unittest.TestCase):
         fake = Transports()
         with self.world(fake) as world:
             self.assertEqual(world.instruction(), SECRET)
+            self.assertIn('supervisor__complete_task', world.completion_note)
+            self.assertNotIn(SECRET, world.completion_note)
             self.assertNotIn(SECRET, repr(world))
             result = world.evaluate()
             self.assertEqual(result, {'passed': False, 'num_tests': 4,

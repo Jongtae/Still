@@ -359,7 +359,10 @@ def run_world_scenario(scenario, pool, world_root=None, world_loader=None, clien
                 record['judgment'] = prepare_judgment(client, pool, box, WORLD_WORKER, judgment_timeout,
                                                       cache_key=WORLD_CACHE_KEY)
                 started = time.monotonic()
-                task_id, detail, answers = world_turn(client, owner_message(scenario['turns'][0], instruction),
+                message = owner_message(scenario['turns'][0], instruction)
+                if getattr(world, 'completion_note', None):
+                    message = f'{message}\n\n{world.completion_note}'
+                task_id, detail, answers = world_turn(client, message,
                                                       scenario['id'], spec['approvals'], turn_timeout, poll_interval)
                 answer = client.answer(task_id)
                 record['turns'] = [{'say': '(world task)', 'task_id': task_id, 'status': detail.get('status'),
