@@ -5,9 +5,23 @@ Use AppWorld's ASGI apps on loopback: ``appworld serve`` binds publicly and
 kills existing port holders. AppWorld is Apache-2.0, but protected data/tests
 may be redistributed only encrypted; nothing from AppWorld is committed here
 and scoring outputs carry labels only. The task instruction is exposed only
-through its read-only property. Evaluate once, after the agent acts: early or
-repeated evaluation corrupts remote-mode scoring, so results are cached.
+through its instruction method.
+
+Default apps use AppWorld's ground-truth app list: an oracle setting analogous
+to APIPredictor(mode='ground_truth'), at app granularity. It is a hint the AI
+would not have with a real owner, so a world run's result does not show
+unaided app discovery. The narrowing keeps the tools within Still's
+64-operation trust record.
+
+The MCP server (``appworld_mcp.py``) logs the task's supervisor in on the
+world's side. It removes credential parameters from every tool and hides the
+account and password tools, because Still denies any tool call that carries
+credentials in its arguments.
+
+Evaluate once, after the agent acts: early or repeated evaluation corrupts
+remote-mode scoring, so results are cached.
 """
+import copy
 import json
 import os
 import re
@@ -19,21 +33,77 @@ import uuid
 from pathlib import Path
 
 APPWORLD_COMMIT = '42b5bcf3cd334fee33f0c37c02070a9f5807add5'
+ACCOUNT_APIS = frozenset({'login', 'logout', 'signup', 'delete_account',
+                          'send_password_reset_code', 'reset_password',
+                          'send_verification_code', 'verify_account'})
+HIDDEN_TOOLS = frozenset({'supervisor__show_account_passwords'})
+WORLD_CREDENTIALS = ('access_token', 'file_system_access_token')
+
+
+def exposed(app, api):
+    return app not in ('admin', 'api_docs') and api not in ACCOUNT_APIS and f'{app}__{api}' not in HIDDEN_TOOLS
+
+
+def strip_credentials(input_schema):
+    schema = copy.deepcopy(input_schema)
+    for name in WORLD_CREDENTIALS:
+        schema.get('properties', {}).pop(name, None)
+    if 'required' in schema:
+        schema['required'] = [name for name in schema['required'] if name not in WORLD_CREDENTIALS]
+    return schema
+
+
+def validated_apps(apps, docs_dir):
+    names = set()
+    for app in apps:
+        if not isinstance(app, str) or not re.fullmatch(r'[a-z_]{1,30}', app):
+            raise ValueError('invalid AppWorld app name')
+        if not (Path(docs_dir) / f'{app}.json').is_file():
+            raise ValueError('missing AppWorld app docs')
+        names.add(app)
+    names.difference_update(('admin', 'api_docs', 'supervisor'))
+    if not (Path(docs_dir) / 'supervisor.json').is_file():
+        raise ValueError('missing AppWorld app docs')
+    return tuple(sorted(names | {'supervisor'}))
+
+
+def operations_from_docs(apps, docs_dir):
+    operations = {}
+    for app in apps:
+        docs = json.loads((Path(docs_dir) / f'{app}.json').read_text())
+        for api, doc in docs.items():
+            if exposed(app, api):
+                operations[f'{app}__{api}'] = 'read' if doc['method'] == 'GET' else 'mutate'
+    return operations
 
 
 class AppWorldWorld:
     name = 'appworld'
 
-    def __init__(self, task_id: str, *, root: Path, python: Path | None = None,
+    def __init__(self, task_id: str, *, root: Path, apps=None, python: Path | None = None,
                  popen=subprocess.Popen, urlopen=urllib.request.urlopen,
                  startup_timeout: float = 120.0):
         if not isinstance(task_id, str) or not re.fullmatch(r'[0-9a-f]{7}_[0-9]+', task_id):
             raise ValueError('invalid AppWorld task id')
         self.root = Path(root).expanduser().resolve()
+        try:
+            tasks = set()
+            for split in ('train', 'dev'):
+                tasks.update((self.root / 'data/datasets' / f'{split}.txt').read_text().splitlines())
+        except OSError:
+            raise ValueError('AppWorld task is not a train/dev task') from None
+        if task_id not in tasks:
+            raise ValueError('AppWorld task is not a train/dev task')
         repo = Path(__file__).resolve().parents[3]
         if self.root == repo or repo in self.root.parents:
             raise ValueError('AppWorld root must be outside the repository')
         self.task_id = task_id
+        if apps is None:
+            apps = json.loads((self.root / 'data/tasks' / task_id /
+                               'ground_truth/required_apps.json').read_text())
+            if not isinstance(apps, list):
+                raise ValueError('invalid AppWorld required apps')
+        self.apps = validated_apps(apps, self.root / 'data/api_docs/standard')
         self.python = Path(python) if python is not None else self.root / 'venv/bin/python'
         self.experiment_name = f'still-eval-{uuid.uuid4().hex[:8]}'
         self._popen = popen
@@ -48,9 +118,11 @@ class AppWorldWorld:
         self._evaluation_attempted = False
         self._result = None
 
-    @property
     def instruction(self):
         return self._instruction
+
+    def operations(self):
+        return operations_from_docs(self.apps, self.root / 'data/api_docs/standard')
 
     def __enter__(self):
         if self._entered:
@@ -119,8 +191,9 @@ class AppWorldWorld:
         if not self._active:
             raise RuntimeError('AppWorld is not active')
         return {'command': str(self.python),
-                'args': ['-m', 'appworld.cli', 'serve', 'mcp', 'stdio', '--remote-apis-url', self._api_url,
-                         '--root', str(self.root), '--output-type', 'content_only'],
+                'args': ['-I', str(Path(__file__).resolve().parent / 'appworld_mcp.py'),
+                         '--remote-apis-url', self._api_url, '--root', str(self.root),
+                         '--apps', ','.join(self.apps)],
                 'env': {'APPWORLD_ROOT': str(self.root)}}
 
     def evaluate(self):
