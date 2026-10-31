@@ -17,6 +17,7 @@ import secrets
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 
 from .messages import msg
@@ -38,6 +39,9 @@ API_PROVIDERS = {
     '4': ('ollama', msg('first_run.api_ollama'), 'http://127.0.0.1:11434', '', ''),
 }
 STEP_MARKS = {'ready': '✓', 'attention': '!'}
+#: #512: the working line's spinner, one frame per ``SPIN_SECONDS``, so a long Work never looks frozen.
+SPINNER = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+SPIN_SECONDS = 0.125
 BOTFATHER_URL = 'https://t.me/BotFather'
 #: The README's wordmark, drawn above the first setup on a real terminal.
 LOGO = r"""   ________________   __
@@ -207,8 +211,11 @@ class RichTerminal(Terminal):
             if woken:
                 # A request arrived between two lines: this one ends at once so it is served now.
                 self._line.exit(result='')
-        return self.reader(ANSI('\x1b[1;36m› \x1b[0m'),
-                           bottom_toolbar=lambda: self.local(status()) if status() else None, refresh_interval=0.5,
+        def toolbar():
+            line = status()
+            # #512: the frame follows the clock, so the line keeps turning while Still works.
+            return f'{SPINNER[int(time.monotonic() / SPIN_SECONDS) % len(SPINNER)]} {self.local(line)}' if line else None
+        return self.reader(ANSI('\x1b[1;36m› \x1b[0m'), bottom_toolbar=toolbar, refresh_interval=SPIN_SECONDS,
                            pre_run=started)
 
     def interrupt(self):
@@ -314,18 +321,21 @@ def run(service, store, term, login_service=None, conversation=False):
     return True
 
 
-def converse(service, term):
+def converse(service, term, clock=time.time):
     """Talk to Still in this terminal until the owner ends it (Ctrl-D or Ctrl-C) (#438)."""
     surface = service.terminal_surface
     term.say('\n' + msg('terminal.ready'))
     if not service.store.config('telegram', {}).get('enabled'):
         term.say(msg('terminal.telegram_hint'))
-    working = msg('terminal.working')
+    def working():
+        # #512: measured time since the request was received; never an estimate of what is left.
+        since = surface.waiting_since()
+        return '' if since is None else msg('terminal.working_for', seconds=max(0, int(clock() - since)))
     with term.conversation():
         surface.attach(term.answer, term.interrupt)
         try:
             while True:
-                line = term.message(lambda: working if surface.waiting() else '')
+                line = term.message(working)
                 while (kind := surface.take_request()) is not None:
                     _requested_input(service, term, kind)
                 surface.say(line)

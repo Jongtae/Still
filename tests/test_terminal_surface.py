@@ -133,13 +133,29 @@ class ScriptedChat:
 class Converse(TerminalCase):
     def test_the_owner_talks_until_ctrl_d_and_the_terminal_is_released(self):
         chat = ScriptedChat(['요즘 고양이가 밥을 잘 안 먹어', '   '])
-        first_run.converse(self.service, chat)
+        first_run.converse(self.service, chat, clock=lambda: 10**10)
         self.assertEqual(chat.said[0].strip(), first_run.msg('terminal.ready'))
         self.assertEqual(chat.said[-1], first_run.msg('terminal.bye'))
         jobs = [job for job in self.store.jobs() if job['channel'].startswith('terminal:')]
         self.assertEqual([job['message'] for job in jobs], ['요즘 고양이가 밥을 잘 안 먹어'], 'a blank line is no request')
-        self.assertEqual(chat.statuses[1], first_run.msg('terminal.working'))
+        self.assertEqual(chat.statuses[0], '', 'nothing is shown before a request')
+        since = self.store.job(jobs[0]['id'])['created']
+        self.assertEqual(chat.statuses[1], first_run.msg('terminal.working_for', seconds=int(10**10 - since)))
         self.assertIsNone(self.surface.pairing())
+
+    def test_the_working_line_counts_the_seconds_since_the_request_and_ends_with_it(self):
+        """#512: measured time since the oldest open request of this conversation; nothing once it is answered."""
+        self.surface.attach(lambda text: None)
+        self.assertIsNone(self.surface.waiting_since())
+        work_id = self.surface.say('요즘 고양이가 밥을 잘 안 먹어')
+        since = self.surface.waiting_since()
+        self.assertEqual(since, self.store.job(work_id)['created'])
+        self.surface.say('하나 더')
+        self.assertEqual(self.surface.waiting_since(), since, 'the oldest open request sets the time')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded', delivery='delivered' WHERE channel LIKE 'terminal:%'")
+        self.assertIsNone(self.surface.waiting_since())
+        self.assertFalse(self.surface.waiting())
 
 
 

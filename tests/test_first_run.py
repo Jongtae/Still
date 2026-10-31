@@ -544,6 +544,24 @@ class RichTerminalTest(unittest.TestCase):
         self.assertEqual(self.exits, [''])
         self.assertFalse(term._woken, 'a running line is ended, not remembered')
 
+    def test_the_working_line_turns_while_still_works_and_is_gone_after(self):
+        """#512: a fixed line looked frozen; the frame follows the clock and the line follows the terminal language."""
+        from unittest import mock
+        toolbars = []
+        term = self.terminal('en')
+        term.reader = lambda prompt, **options: toolbars.append(options) or 'typed'
+        line = {'text': first_run.msg('terminal.working_for', seconds=12)}
+        with mock.patch('prompt_toolkit.application.current.get_app'):
+            term.message(lambda: line['text'])
+        options = toolbars[0]
+        self.assertLessEqual(options['refresh_interval'], first_run.SPIN_SECONDS)
+        with mock.patch.object(first_run.time, 'monotonic', side_effect=[0.0, first_run.SPIN_SECONDS]):
+            frames = [options['bottom_toolbar'](), options['bottom_toolbar']()]
+        english = first_run.msg('terminal.working_for', 'en', seconds=12)
+        self.assertEqual(frames, [f'{first_run.SPINNER[0]} {english}', f'{first_run.SPINNER[1]} {english}'])
+        line['text'] = ''
+        self.assertIsNone(options['bottom_toolbar'](), 'nothing is shown once the answer is in')
+
     def test_the_menu_is_drawn_with_the_notice_it_settles(self):
         term = self.terminal('en', choice='1')
         term.choose('', [('1', '1) Apply'), ('2', '2) Keep')], '1', preview='Change **timezone** to Europe/Paris')
