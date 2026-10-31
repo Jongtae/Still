@@ -6,3 +6,17 @@
 # Install into a separate virtualenv, e.g. ~/.local/share/agentos-evals/venv.
 inspect-ai==0.3.271
 openai==3.19.2
+
+# AppWorld (#484): Python >= 3.11, in its own venv, never this Inspect venv;
+# its dependency pins conflict. No AppWorld code/data/tests are committed here.
+# python3.12 -m venv ~/.local/share/agentos-evals/appworld/venv
+# ~/.local/share/agentos-evals/appworld/venv/bin/pip install --uploaded-prior-to 2026-09-04T00:00:00Z \
+#   'appworld[mcp] @ git+https://github.com/StonyBrookNLP/appworld@42b5bcf3cd334fee33f0c37c02070a9f5807add5'
+# pip's git install leaves appworld/.source/apps.bundle and tests.bundle as
+# Git LFS pointers. Fetch each from (substitute <name> with apps or tests):
+# https://media.githubusercontent.com/media/StonyBrookNLP/appworld/42b5bcf3cd334fee33f0c37c02070a9f5807add5/src/appworld/.source/<name>.bundle
+# Check its sha256 against the pointer's oid, then copy it over the pointer.
+# Using ~/.local/share/agentos-evals/appworld/venv/bin/appworld, run:
+# appworld install
+# appworld download data --root ~/.local/share/agentos-evals/appworld
+# --uploaded-prior-to matters: newer pydantic (2.14) breaks this commit's patch.
