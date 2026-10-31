@@ -510,6 +510,37 @@ class RichTerminalTest(unittest.TestCase):
         term.choose('', options, 'missing')
         self.assertIsNone(self.picks[1]['default'])
 
+    def line_terminal(self, app):
+        import io
+        from rich.console import Console
+        self.exits = []
+
+        def reader(prompt, **options):
+            before = len(self.exits)
+            options['pre_run']()
+            return '' if len(self.exits) > before else 'typed'
+        app.exit = lambda result=None: self.exits.append(result)
+        return first_run.RichTerminal('en', Console(file=io.StringIO()), reader=reader, chooser=lambda *a, **k: None)
+
+    def test_a_request_between_two_lines_ends_the_next_line_at_once(self):
+        """Review on #456: a wake-up with no line running is kept for the next line, and used once."""
+        from unittest import mock
+        app = SimpleNamespace(is_running=False)
+        term = self.line_terminal(app)
+        term.interrupt()
+        with mock.patch('prompt_toolkit.application.current.get_app', return_value=app):
+            self.assertEqual(term.message(lambda: ''), '')
+            self.assertEqual(term.message(lambda: ''), 'typed')
+        self.assertEqual(self.exits, [''])
+
+    def test_a_request_during_a_line_ends_that_line(self):
+        app = SimpleNamespace(is_running=True, loop=SimpleNamespace(call_soon_threadsafe=lambda callback: callback()))
+        term = self.line_terminal(app)
+        term._line = app
+        term.interrupt()
+        self.assertEqual(self.exits, [''])
+        self.assertFalse(term._woken, 'a running line is ended, not remembered')
+
     def test_plain_lines_when_the_terminal_is_redirected_or_dumb(self):
         tty, pipe = SimpleNamespace(isatty=lambda: True), SimpleNamespace(isatty=lambda: False)
         self.assertIs(type(first_run.open_terminal('en', tty, pipe, {})), first_run.Terminal)

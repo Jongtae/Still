@@ -16,6 +16,7 @@ import re
 import secrets
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 
@@ -149,6 +150,7 @@ class RichTerminal(Terminal):
             from prompt_toolkit.shortcuts import choice
             reader, chooser = reader or prompt, chooser or choice
         self.console, self.reader, self.chooser = console, reader, chooser
+        self._wake_lock, self._woken = threading.Lock(), False
 
     def say(self, text=''):
         from rich.padding import Padding
@@ -195,15 +197,25 @@ class RichTerminal(Terminal):
     def message(self, status):
         from prompt_toolkit.application.current import get_app
         from prompt_toolkit.formatted_text import ANSI
+        def started():
+            with self._wake_lock:
+                self._line, woken, self._woken = get_app(), self._woken, False
+            if woken:
+                # A request arrived between two lines: this one ends at once so it is served now.
+                self._line.exit(result='')
         return self.reader(ANSI('\x1b[1;36m› \x1b[0m'),
                            bottom_toolbar=lambda: self.local(status()) if status() else None, refresh_interval=0.5,
-                           pre_run=lambda: setattr(self, '_line', get_app()))
+                           pre_run=started)
 
     def interrupt(self):
-        # Called from the worker thread: the running line ends on its own event loop.
-        app = getattr(self, '_line', None)
-        if app is not None and app.is_running:
-            app.loop.call_soon_threadsafe(lambda: app.exit(result='') if app.is_running else None)
+        # Called from the worker thread: the running line ends on its own event loop; with no line
+        # running (the owner's message is being taken), the next line ends as soon as it starts.
+        with self._wake_lock:
+            app = getattr(self, '_line', None)
+            if app is None or not app.is_running:
+                self._woken = True
+                return
+        app.loop.call_soon_threadsafe(lambda: app.exit(result='') if app.is_running else None)
 
     def answer(self, text):
         from rich.markdown import Markdown
