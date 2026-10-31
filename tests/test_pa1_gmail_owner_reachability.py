@@ -432,7 +432,7 @@ class GmailRouteReachabilityTest(unittest.TestCase):
         script = (WEB / 'app.js').read_text()
         self.assertIn('id="connector-controls"', html)
         # The renderer is wired to the payload key the service actually emits.
-        self.assertIn('renderConnectors(settings.connectors)', script)
+        self.assertIn('renderConnectors(settings.google_services)', script)
         self.assertIn('connector.connect_path', script)
         self.assertIn('link.href=view.href', script)
         self.assertIn('href:connectable?connector.connect_path', script)

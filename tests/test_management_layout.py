@@ -78,11 +78,11 @@ const app=fs.readFileSync(process.argv[1],'utf8');
 const pick=(from,to)=>{const a=app.indexOf(from);assert(a>=0,from);return app.slice(a,app.indexOf(to,a));};
 const source=pick('function inactive(','function settingsDisclosure(')+pick('function renderMattermost(',"$('mattermost-form').onsubmit")
  +pick('const CONNECTOR_STATES=','function renderAiConnections(');
-const list=()=>({dataset:{},rows:[],hidden:false,replaceChildren(){this.rows=[];},append(...rows){this.rows.push(...rows);}});
+const list=()=>({dataset:{},rows:[],hidden:false,replaceChildren(){this.rows=[];},append(...rows){this.rows.push(...rows);},querySelectorAll:()=>[]});
 const node=()=>({hidden:false,disabled:false,checked:false,textContent:''});
 const nodes={'mattermost-status':list(),'connector-controls':list(),'mattermost-disconnect':node(),'mattermost-setup-summary':node(),'mattermost-company':node(),'mattermost-company-approved':node()};
 const ctx={$:id=>nodes[id]||node(),t:(text,vars)=>vars?text.replace(/\{(\w+)\}/g,(m,k)=>vars[k]):text,googleClientAvailable:false,
- settingsRow:(title,description,state,kind)=>({title,state,kind,dataset:{}}),element:(tag,text,cls)=>({tag,text,cls,dataset:{}}),
+ settingsRow:(title,description,state,kind)=>({title,state,kind,dataset:{}}),element:(tag,text,cls)=>({tag,text,cls,dataset:{},children:[],append(...nodes){this.children.push(...nodes);}}),
  settingsAction:label=>({label,dataset:{}}),settingsDisclosure:()=>null,focusKey:n=>n,rememberFocus:()=>'',restoreFocus(){},
  api:()=>{throw new Error('rendering calls no server');}};
 vm.createContext(ctx);vm.runInContext(source,ctx);
@@ -91,12 +91,18 @@ ctx.renderMattermost({connected:false});
 assert.equal(off(nodes['mattermost-status'].rows[0]),true,'an unconnected channel is not shown in the pane');
 ctx.renderMattermost({connected:true,usable:false,owner_username:'me',bot_username:'b'});
 assert.equal(off(nodes['mattermost-status'].rows[0]),false,'a connected channel stays, even when work mode stops it');
-const connectors=[{connector_id:'google-gmail-read',state:'connected',connect_path:'/c'},{connector_id:'google-drive-read',state:'disconnected',connect_path:'/c'},
- {connector_id:'google-calendar',state:'disconnected',connect_path:'/c'},{connector_id:'google-calendar-write',state:'reauth_required',connect_path:'/c'},{connector_id:'x',state:'new-state'}];
-ctx.renderConnectors(connectors);
-assert.deepEqual(nodes['connector-controls'].rows.map(off),[false,true,true,false,false],'only a disconnected service leaves the pane; attention and unknown states stay');
+// #535: one row per service; a service leaves the pane only when no grant is live and no AI-side route is known.
+const level=(connector_id,state,name)=>({connector_id,state,connect_path:'/c',level:name||'read'});
+const services=[{service:'gmail',name:'Gmail',levels:[level('google-gmail-read','connected')],ai_routes:[]},
+ {service:'google-drive',name:'Google Drive',levels:[level('google-drive-read','disconnected','picked')],ai_routes:[]},
+ {service:'google-calendar',name:'Google Calendar',levels:[level('google-calendar','disconnected')],ai_routes:[]},
+ {service:'google-calendar-write',name:'Google Calendar',levels:[level('google-calendar-write','reauth_required','create')],ai_routes:[]},
+ {service:'x',name:'x',levels:[{connector_id:'x',state:'new-state'}],ai_routes:[]},
+ {service:'ai',name:'AI only',levels:[],ai_routes:[{engine:'codex',engine_name:'Codex',kind:'owner-mcp',identity:'s',name:'s',state:'configured',usable:false,unusable_reason:'off'}]}];
+ctx.renderConnectors(services);
+assert.deepEqual(nodes['connector-controls'].rows.map(off),[false,true,true,false,false,false],'only a service with nothing live leaves the pane; attention, unknown and AI-side routes stay');
 vm.runInContext("googlePending={'google-calendar':1}",ctx);nodes['connector-controls'].dataset={};
-ctx.renderConnectors(connectors);
+ctx.renderConnectors(services);
 assert.equal(off(nodes['connector-controls'].rows[2]),false,'an unconfirmed Google-side revocation keeps its row visible');
 assert.equal(nodes['connector-controls'].rows[2].kind,'attention','and marks it as needing attention, so the add dialog does not call it 사용 중');
 console.log('rows ok');

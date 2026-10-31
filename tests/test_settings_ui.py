@@ -345,32 +345,69 @@ assert(descendants($('active-ai')).find(node=>node.dataset.disclosure==='technic
 ctx.renderTelegram({telegram:{enabled:true,paired:true,username:'fixture'},telegram_status:{message:'ok'}});
 const telegramButton=buttonIn('telegram-current');ctx.renderTelegram({telegram:{enabled:true,paired:true,username:'fixture'},telegram_status:{message:'ok'}});
 assert.equal(buttonIn('telegram-current'),telegramButton,'unchanged Telegram polling preserves its action node');
-// Connection state matrix (#506): every contract state, an unknown value and a long label.
-const stateOf=row=>descendants(row).find(node=>node.className.startsWith('settings-state'));
-const actionOf=row=>descendants(row).find(node=>node.tag==='a'&&node.className.includes('settings-row-action'));
+// Connection state matrix (#506), one service row per Google service (#535): every contract state, an unknown value and a long label.
+const stateOf=row=>row.children.find(node=>typeof node!=='string'&&node.className.startsWith('settings-state'));
+const rowActions=row=>{const box=row.children.find(node=>typeof node!=='string'&&node.className==='settings-row-actions');return box?descendants(box).filter(node=>node.tag==='a'):[];};
+const detailsOf=row=>row.children.find(node=>typeof node!=='string'&&node.tag==='details');
+const svc=(levels,routes=[],name='서비스')=>({service:'fixture',name,levels,ai_routes:routes});
 const matrix=[
- [{connector_id:'google-gmail-read',label:'Gmail',state:'connected',required_scopes:['gmail.readonly'],connect_path:'/google-gmail'},'Google Gmail','연결됨','active','다시 연결'],
- [{connector_id:'google-calendar',label:'google-calendar',state:'disconnected',required_scopes:['calendar.readonly'],connect_path:'/google-calendar'},'Google Calendar','연결 안 됨','neutral','연결'],
- [{connector_id:'google-calendar-write',label:'Google Calendar 일정 만들기',state:'reauth_required',required_scopes:['calendar.events'],connect_path:'/google-calendar'},'Google Calendar 일정 만들기','다시 인증 필요','attention','다시 연결'],
- [{connector_id:'gmail-modify',label:'Gmail 메일 정리',state:'disconnected',required_scopes:['gmail.modify'],connect_path:'/gmail-modify'},'Gmail 메일 정리','연결 안 됨','neutral','변경 권한 허용'],
- [{connector_id:'fixture-blocked',label:'Blocked',state:'blocked',required_scopes:[],connect_path:'/blocked'},'Blocked','차단됨','attention',null],
- [{connector_id:'fixture-unknown',label:'Unknown',state:'surprising',required_scopes:[],connect_path:'/unknown'},'Unknown','확인 필요','attention',null],
- [{connector_id:'google-drive-read',label:'Google Drive',state:'disconnected',required_scopes:['drive.file'],connect_path:'',connect_hint:'Telegram에서 Google Drive 파일을 요청하면 연결 링크를 보냅니다.',detail_state:'expired'},'Google Drive','연결 안 됨','neutral',null],
+ [{connector_id:'google-gmail-read',label:'Gmail',state:'connected',required_scopes:['gmail.readonly'],connect_path:'/google-gmail'},'Google Gmail','연결됨','active',null,'다시 연결'],
+ [{connector_id:'google-calendar',label:'google-calendar',state:'disconnected',required_scopes:['calendar.readonly'],connect_path:'/google-calendar'},'Google Calendar','연결 안 됨','neutral','연결','연결'],
+ [{connector_id:'google-calendar-write',label:'Google Calendar 일정 만들기',state:'reauth_required',required_scopes:['calendar.events'],connect_path:'/google-calendar'},'Google Calendar 일정 만들기','다시 인증 필요','attention','다시 연결','다시 연결'],
+ [{connector_id:'gmail-modify',label:'Gmail 메일 정리',state:'disconnected',required_scopes:['gmail.modify'],connect_path:'/gmail-modify'},'Gmail 메일 정리','연결 안 됨','neutral','연결','연결'],
+ [{connector_id:'fixture-blocked',label:'Blocked',state:'blocked',required_scopes:[],connect_path:'/blocked'},'Blocked','차단됨','attention',null,null],
+ [{connector_id:'fixture-unknown',label:'Unknown',state:'surprising',required_scopes:[],connect_path:'/unknown'},'Unknown','확인 필요','attention',null,null],
+ [{connector_id:'google-drive-read',label:'Google Drive',state:'disconnected',required_scopes:['drive.file'],connect_path:'',connect_hint:'Telegram에서 Google Drive 파일을 요청하면 연결 링크를 보냅니다.',detail_state:'expired'},'Google Drive','연결 안 됨','neutral',null,null],
 ];
-for(const [connector,name,label,kind,action] of matrix){
- ctx.renderConnectors([connector]);const row=$('connector-controls').children[0],title=descendants(row).find(node=>node.className==='settings-row-title');
- assert.equal(title.textContent,name,`${connector.connector_id} shows the owner service name`);
+for(const [connector,name,label,kind,action,levelAction] of matrix){
+ ctx.renderConnectors([svc([{...connector,level:'read'}])]);const row=$('connector-controls').children[0];
+ assert.equal(descendants(row).find(node=>node.className==='settings-row-title').textContent,'서비스','the row is the service');
  assert.equal(stateOf(row).textContent,label,`${connector.connector_id} state label`);assert(stateOf(row).className.endsWith(kind),`${connector.connector_id} tone`);
- const link=actionOf(row);if(action){assert.equal(link?.textContent,action,`${connector.connector_id} offers one action`);assert.equal(link.href,connector.connect_path);}else assert.equal(link,undefined,`${connector.connector_id} offers no action it cannot complete`);
- const details=descendants(row).find(node=>node.tag==='details');assert(details&&details.textContent.includes(`연결 ID: ${connector.connector_id}`),'connector ID only inside 세부 정보');
- assert(!descendants(row).filter(node=>node.tag!=='details'&&!descendants(details).includes(node)&&node!==details).some(node=>node._text&&node._text.includes(connector.connector_id)&&connector.connector_id!==name),'no raw connector ID outside 세부 정보');
+ const links=rowActions(row);if(action){assert.equal(links.length,1,`${connector.connector_id} offers one action`);assert.equal(links[0].textContent,action);assert.equal(links[0].href,connector.connect_path);}else assert.equal(links.length,0,`${connector.connector_id} offers no row action it cannot complete or does not need`);
+ const details=detailsOf(row);assert(details&&details.textContent.includes(`연결 ID: ${connector.connector_id}`),'connector ID only inside 세부 정보');
+ assert.equal(descendants(details).find(node=>node.className==='google-level-title').textContent,name,`${connector.connector_id} keeps its grant name as a level`);
+ const levelLink=descendants(details).find(node=>node.tag==='a');if(levelAction)assert.equal(levelLink?.textContent,levelAction,'the level keeps its own link');else assert.equal(levelLink,undefined);
+ assert(!descendants(row).filter(node=>node!==details&&!descendants(details).includes(node)).some(node=>node._text&&node._text.includes(connector.connector_id)&&connector.connector_id!==name),'no raw connector ID outside 세부 정보');
 }
-// #366: a connected read row whose change grant is not connected offers that grant first, not only 다시 연결.
-{const read={connector_id:'google-gmail-read',label:'Gmail',state:'connected',required_scopes:['gmail.readonly'],connect_path:'/google-gmail'},grant={connector_id:'gmail-modify',label:'Gmail 메일 정리',state:'disconnected',required_scopes:['gmail.modify'],connect_path:'/gmail-modify'};
- ctx.renderConnectors([grant,read]);const readRow=$('connector-controls').children[1],links=descendants(readRow).filter(node=>node.tag==='a'&&node.className.includes('settings-row-action'));
- same(links.map(node=>[node.textContent,node.href]),[['변경 권한 허용','/gmail-modify'],['다시 연결','/google-gmail']],'the read row offers the change grant first');
- ctx.renderConnectors([{...grant,state:'connected'},read]);assert.equal(descendants($('connector-controls').children[1]).filter(node=>node.tag==='a'&&node.textContent==='변경 권한 허용').length,0,'no grant action once it is connected');}
-ctx.renderConnectors([matrix.find(row=>row[0].connector_id==='google-drive-read')[0]]);assert($('connector-controls').textContent.includes('Telegram에서 Google Drive'),'Drive explains where a connection starts');assert($('connector-controls').textContent.includes('세부 상태: expired'),'the raw Drive handoff state stays inspectable');
+// #535: Gmail's read, modify and filters grants are one row; the one action is the next permission, never a second "allow changes".
+{const read={connector_id:'google-gmail-read',label:'Gmail',state:'connected',required_scopes:['gmail.readonly'],connect_path:'/google-gmail',level:'read',source:'own-client'},
+  modify={connector_id:'gmail-modify',label:'Gmail 메일 정리',state:'disconnected',required_scopes:['gmail.modify'],connect_path:'/gmail-modify',level:'modify'},
+  filters={connector_id:'gmail-filters',label:'Gmail 메일 필터',state:'disconnected',required_scopes:['gmail.settings.basic'],connect_path:'/gmail-filters',level:'filters'};
+ ctx.renderConnectors([svc([read,modify,filters],[],'Gmail')]);const box=$('connector-controls');assert.equal(box.children.length,1,'one Gmail row');const row=box.children[0];
+ same(rowActions(row).map(node=>[node.textContent,node.href]),[['정리 권한 추가','/gmail-modify']],'the next disconnected grant is the one action');
+ assert(!box.textContent.includes('변경 권한 허용'),'no duplicated allow-changes action');
+ assert(row.textContent.includes('Still 직접 연결 · 자체 Google client: 읽기'),'the Still-owned route names its method and what it can do');
+ const details=detailsOf(row),levels=descendants(details).filter(node=>node.className==='google-level');assert.equal(levels.length,3,'each grant is a level under 세부 정보');
+ same(levels.map(level=>descendants(level).find(node=>node.className.startsWith('settings-state')).textContent),['연결됨','연결 안 됨','연결 안 됨'],'each level has its own state');
+ same(descendants(details).filter(node=>node.tag==='button'&&node.textContent==='연결 해제').map(node=>node.dataset.focusKey),['google-disconnect:google-gmail-read'],'disconnect stays per grant, only on a live one');
+ ctx.renderConnectors([svc([read,{...modify,state:'connected'},filters],[],'Gmail')]);same(rowActions($('connector-controls').children[0]).map(node=>node.textContent),['필터 권한 추가']);
+ assert($('connector-controls').children[0].textContent.includes('읽기 · 정리'));
+ ctx.renderConnectors([svc([read,{...modify,state:'reauth_required'},filters],[],'Gmail')]);const attention=$('connector-controls').children[0];
+ same(rowActions(attention).map(node=>[node.textContent,node.href]),[['다시 연결','/gmail-modify']],'a level that needs sign-in again comes first');assert.equal(stateOf(attention).textContent,'다시 인증 필요');
+ ctx.renderConnectors([svc([read,{...modify,state:'connected'},{...filters,state:'connected'}],[],'Gmail')]);assert.equal(rowActions($('connector-controls').children[0]).length,0,'nothing to add once every grant is connected');
+ // A grant the connected modify level includes (server-declared covered_by) is covered, not missing.
+ ctx.renderConnectors([svc([{...read,state:'disconnected',covered_by:'gmail-modify'},{...modify,state:'connected'},filters],[],'Gmail')]);const covered=$('connector-controls').children[0];
+ same(rowActions(covered).map(node=>[node.textContent,node.href]),[['필터 권한 추가','/gmail-filters']],'the next action is the level really missing');
+ assert(covered.textContent.includes(': 읽기 · 정리'),'the capability list includes the covered level');
+ const readLevel=descendants(detailsOf(covered)).filter(node=>node.className==='google-level')[0];
+ assert.equal(descendants(readLevel).find(node=>node.className.startsWith('settings-state')).textContent,'정리에 포함됨');assert(readLevel.textContent.includes('Gmail 메일 정리 연결이 이 권한을 포함합니다'));
+ ctx.renderConnectors([svc([{...read,state:'disconnected',covered_by:'gmail-modify'},modify,filters],[],'Gmail')]);
+ same(rowActions($('connector-controls').children[0]).map(node=>node.textContent),['연결'],'coverage holds only while the covering level is connected');}
+// #535: the AI-side route shows which AI and which connection, and "configured" is never shown as "used".
+{const used={engine:'claude-code',engine_name:'Claude Code',kind:'ai-connection',identity:'Gmail',name:'Gmail',state:'used',configured:false,usable:true,unusable_reason:'',last_used_at:1700000000,last_outcome:'succeeded'},
+  configured={engine:'codex',engine_name:'Codex',kind:'owner-mcp',identity:'gmail-mcp',name:'gmail-mcp',state:'configured',configured:true,usable:false,unusable_reason:'not_confirmed',last_used_at:null,last_outcome:null};
+ ctx.renderConnectors([svc([],[configured],'Gmail')]);let row=$('connector-controls').children[0];
+ assert.equal(stateOf(row).textContent,'AI 연결 · 쓰지 않음','a configured server not allowed for tasks is not called used or configured-in-use');assert(!row.textContent.includes('사용 확인됨'));
+ assert(row.textContent.includes('AI 연결 · Codex의 gmail-mcp: 구성됨 · 작업에서 쓰지 않음'));assert(!row.dataset.hasOwnProperty('inactive'),'a known AI-side route keeps the service visible');
+ assert(row.textContent.includes('실행과 로그인 여부는 확인하지 않았습니다'),'configured means named in the AI settings, nothing more');
+ ctx.renderConnectors([svc([{connector_id:'google-gmail-read',label:'Gmail',state:'disconnected',required_scopes:[],connect_path:'/google-gmail',level:'read'}],[used,configured],'Gmail')]);row=$('connector-controls').children[0];
+ assert.equal(stateOf(row).textContent,'AI 연결 · 사용 확인됨');assert(stateOf(row).className.endsWith('active'));
+ assert(row.textContent.includes('AI 연결 · Claude Code의 Gmail: 사용 확인됨')&&row.textContent.includes('Still 직접 연결: 연결 안 됨'),'both routes are shown');
+ same(rowActions(row).map(node=>node.textContent),['Still로 직접 연결'],'with an AI route in use, connecting reads as an additional Still connection');
+ const details=detailsOf(row);assert(details.textContent.includes('Google에서 권한이 취소되는 것은 아닙니다'),'disconnecting there is not provider revocation');
+ assert(details.textContent.includes('claude.ai 커넥터'),'the route kind is named');assert.equal(descendants(details).filter(node=>node.tag==='button').length,0,'Still offers no disconnect for an AI-side route');
+ ctx.renderConnectors([svc([{connector_id:'google-gmail-read',label:'Gmail',state:'disconnected',required_scopes:[],connect_path:'/google-gmail',level:'read'}],[],'Gmail')]);assert(Object.hasOwn($('connector-controls').children[0].dataset,'inactive'),'nothing connected and no AI route: only in the add dialog');}
+ctx.renderConnectors([svc([{...matrix.find(row=>row[0].connector_id==='google-drive-read')[0],level:'picked'}])]);assert($('connector-controls').textContent.includes('Telegram에서 Google Drive'),'Drive explains where a connection starts');assert($('connector-controls').textContent.includes('세부 상태: expired'),'the raw Drive handoff state stays inspectable');
 ctx.renderConnectors([]);assert($('connector-controls').textContent.includes('연결할 수 있는 Google 서비스가 없습니다'));
 assert(app.includes("'ArrowLeft','ArrowRight'"),'settings tabs handle horizontal arrow keys');
 console.log('settings DOM regressions passed');
@@ -451,7 +488,9 @@ def test_setting_rows_translate_internal_connection_ids_and_keep_details_disclos
     assert "function settingsRow(" in APP
     assert "CONNECTOR_NAMES" in APP
     assert "CAPABILITY_NAMES" not in APP
-    assert "settingsDisclosure(t('세부 정보'),view.lines)" in APP
+    # #535: a service row's 세부 정보 holds each grant level with its raw lines.
+    assert "details.append(element('summary',t('세부 정보')))" in APP
+    assert "for(const line of view.lines)block.append(element('span',line,'settings-technical-line'))" in APP
     assert "element('strong',capability.id)" not in APP
     assert "(connector?.required_scopes||[]).join(', ')" in APP
     assert ".settings-row-action.destructive" in CSS
