@@ -95,6 +95,8 @@ class MainAiRouteTests(unittest.TestCase):
                                execution_adapter=_Engine())
         # #685: the claimed qualification job runs synchronously in the test.
         service.decision_routes.spawn = lambda run: run()
+        # #472: equal measured latency, so fastest_qualified falls back to the ranked order.
+        service.decision_routes.timer = lambda: 0.0
         return service
 
     def _activate(self, body):
@@ -289,7 +291,7 @@ class MainAiRouteTests(unittest.TestCase):
         route = result['decision_route']
         self.assertTrue(route['follow']['available'])
         self.assertEqual((route['follow']['transport'], route['follow']['model_policy'], route['follow']['candidates']),
-                         ('subscription_cli', 'lowest_qualified', ['gpt-6-luna', 'gpt-5.6-luna', 'gpt-5.6-terra']))
+                         ('subscription_cli', 'fastest_qualified', ['gpt-6-luna', 'gpt-5.6-luna', 'gpt-5.6-terra']))
         # The fake execution adapter here cannot run the strict qualification:
         # the follow row needs attention, and nothing falls back to OpenAI.
         self.assertEqual(result['judgment']['state'], 'attention')
@@ -299,7 +301,7 @@ class MainAiRouteTests(unittest.TestCase):
         self.assertNotEqual(decision.outcome, OUTCOME_DECIDED)
         self.assertEqual(len(self.transport.calls), calls, 'no judgment reached api.openai.com')
 
-    def test_claude_code_follow_uses_the_ranked_cheapest_first_list(self):
+    def test_claude_code_follow_uses_the_ranked_list(self):
         seen = []
 
         def fake_cli(body, extra=None):
@@ -309,23 +311,24 @@ class MainAiRouteTests(unittest.TestCase):
         result = self._activate({'route': 'claude-code'})
         # No explicit candidates: activation qualifies the ranked list
         # (haiku, then sonnet), filtered by its own capability check.
-        self.assertEqual(seen, [({'engine': 'claude-code', 'model_policy': 'lowest_qualified'},
+        self.assertEqual(seen, [({'engine': 'claude-code', 'model_policy': 'fastest_qualified'},
                                  {'mode': MODE_FOLLOW, 'main': 'claude-code'})])
         self.assertEqual(result['judgment']['state'], 'attention')
         self.assertIsNone(self.store.config('decision_route'), 'the previous (default) route is kept (#685)')
         self.assertEqual(result['decision_route']['follow']['candidates'], ['haiku', 'sonnet'])
 
-    # -- #679: API follow defaults are the cheapest qualified ranked model --------
-    def test_openai_follow_defaults_to_the_cheapest_qualified_model(self):
+    # -- #679/#472: API follow defaults are the fastest qualified ranked model ---
+    def test_openai_follow_defaults_to_the_fastest_qualified_model(self):
         self._save('openai', OPENAI_KEY)
         result = self._activate({'route': 'openai'})
         active = result['decision_route']['active']
         self.assertEqual((active['model_policy'], active['requested_model'], active['destination']),
-                         ('lowest_qualified', 'gpt-4o-mini', 'api.openai.com'))
+                         ('fastest_qualified', 'gpt-4o-mini', 'api.openai.com'), 'equal speed: the ranked order decides')
         self.assertEqual(active['qualification']['model'], 'gpt-4o-mini')
-        judged = [call for call in self.transport.calls if call['model'] == 'gpt-4o-mini']
-        self.assertGreaterEqual(len(judged), len(CASE_IDS), 'the full suite, not a single probe')
-        self.assertFalse(any(call['model'] == 'gpt-6-luna' for call in self.transport.calls))
+        for model in ('gpt-4o-mini', 'gpt-6-luna'):
+            judged = [call for call in self.transport.calls if call['model'] == model]
+            self.assertGreaterEqual(len(judged), len(CASE_IDS), 'the full suite on every candidate, not a single probe')
+        self.assertEqual([row['model'] for row in active['qualification']['compared']], ['gpt-4o-mini', 'gpt-6-luna'])
         self.assertEqual(result['decision_route']['effective']['text'], '기본 AI(OpenAI API)를 따라가는 중 — gpt-4o-mini, 검증됨')
 
     def test_openai_follow_tries_the_next_ranked_model_only_when_the_first_fails(self):
@@ -342,7 +345,7 @@ class MainAiRouteTests(unittest.TestCase):
     def test_anthropic_follow_defaults_to_haiku(self):
         self._save('anthropic', ANTHROPIC_KEY)
         active = self._activate({'route': 'anthropic'})['decision_route']['active']
-        self.assertEqual((active['model_policy'], active['requested_model']), ('lowest_qualified', 'claude-haiku-4-5'))
+        self.assertEqual((active['model_policy'], active['requested_model']), ('fastest_qualified', 'claude-haiku-4-5'))
 
     def test_explicit_follow_failure_keeps_previous_judgment(self):
         self._save('openai', OPENAI_KEY)

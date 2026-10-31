@@ -273,7 +273,7 @@ class QualificationJobTests(JobFixture):
         self.assertLess(job['queued_at'], job['started_at'])
         self.assertLess(job['started_at'], job['finished_at'])
         self.assertEqual(job['step']['model'], 'haiku')
-        self.assertEqual(len(self.judgments()), len(CASE_IDS))
+        self.assertEqual(len(self.judgments()), len(CASE_IDS) * 2, 'haiku and sonnet are both measured (#472)')
         route = self.store.config('decision_route')
         self.assertEqual((route['mode'], route['main'], route['requested_model']), (MODE_FOLLOW, 'claude-code', 'haiku'))
         self.assertEqual(service.decision_routes.status()['effective']['state'], 'active')

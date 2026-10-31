@@ -30,6 +30,9 @@ Invariants (tested in tests/test_decision_routes.py):
   or the ranked cheapest-first list below, #679) that pass the versioned
   qualification suite in order; none passing is an explicit failure, never a
   jump to another model or route;
+* ``fastest_qualified`` (#472, the default) selects among the same declared
+  candidates: every one runs the suite and the fastest that passes is used
+  (``pick_fastest``); none passing is the same explicit failure;
 * listing models (#679) runs only on the owner's explicit 모델 목록 새로고침,
   never on opening Settings; a listed model is not a verified model;
 * the Main AI switch never waits for the Judgment AI qualification (#685):
@@ -66,7 +69,21 @@ TRANSPORTS = (ROUTE_DIRECT_API, ROUTE_JEV, ROUTE_SUBSCRIPTION_CLI, ROUTE_OFF)
 POLICY_ENGINE_DEFAULT = 'engine_default'
 POLICY_EXPLICIT = 'explicit'
 POLICY_LOWEST_QUALIFIED = 'lowest_qualified'
-MODEL_POLICIES = (POLICY_ENGINE_DEFAULT, POLICY_EXPLICIT, POLICY_LOWEST_QUALIFIED)
+#: #472: owner direction 2026-10-31 - choose the Judgment model by speed and
+#: quality, not price.  The default in follow and separate mode.
+POLICY_FASTEST_QUALIFIED = 'fastest_qualified'
+MODEL_POLICIES = (POLICY_ENGINE_DEFAULT, POLICY_EXPLICIT, POLICY_LOWEST_QUALIFIED, POLICY_FASTEST_QUALIFIED)
+#: Policies that choose among several candidates.
+CANDIDATE_POLICIES = (POLICY_LOWEST_QUALIFIED, POLICY_FASTEST_QUALIFIED)
+#: #472/#470: runs of a case that answered but failed, for ``fastest_qualified``;
+#: the case passes on a majority of them (2 of 3).
+FASTEST_TRIALS = 3
+#: #472: a qualified candidate whose p95 is above this multiple of the best
+#: qualified p95 ranks behind every candidate within it (a slow tail).
+P95_GUARD_FACTOR = 1.5
+#: #472: p50s within this ratio of the fastest count as the same speed; among
+#: them the higher pass rate, then score, then the ranked order decides.
+LATENCY_TIE_RATIO = 1.10
 MAX_CANDIDATES = 3
 #: #619: the Judgment AI follows the Main AI (default for a fresh install and
 #: for owners on the #417 implicit default).  A follow row records the Main AI
@@ -77,9 +94,11 @@ MODE_FOLLOW = 'follow_main'
 
 # --- Judgment models (SEC-JUDGE-01 / #679) -------------------------------------
 #: Ranked, cheapest-first Judgment model candidates per route.  Data, not a
-#: component: ``lowest_qualified`` (the default in follow and separate mode)
-#: activates the first candidate that passes ``qualify()``.  Being listed here
-#: claims nothing about an account; only the qualification does.
+#: component: ``fastest_qualified`` (the default in follow and separate mode,
+#: #472) qualifies all of them and activates the fastest that passes; the order
+#: is only its last tie-break.  ``lowest_qualified`` activates the first that
+#: passes ``qualify()``.  Being listed here claims nothing about an account;
+#: only the qualification does.
 RANKED_MODELS = {
     # Codex subscription.  Sources, checked 2026-09-27 (#679/#677):
     # https://developers.openai.com/codex/models and the installed codex-cli
@@ -154,18 +173,19 @@ JEV_LIST_TEXT_LIMIT = 200
 
 #: Built-in Judgment candidates per Main AI route.  Direct API routes use the
 #: Main AI's own saved provider key; the subscription CLIs use their own login.
-#: Every entry runs ``lowest_qualified`` over its ranked list (#679).
+#: Every entry runs ``fastest_qualified`` over its ranked list (#472; #679 ran
+#: ``lowest_qualified``).
 FOLLOW_CANDIDATES = {
     'openai': {'transport': ROUTE_DIRECT_API, 'config': dict(DEFAULT_DECISION_PROVIDER),
-               'model_policy': POLICY_LOWEST_QUALIFIED, 'candidates': list(RANKED_MODELS['openai'])},
+               'model_policy': POLICY_FASTEST_QUALIFIED, 'candidates': list(RANKED_MODELS['openai'])},
     'anthropic': {'transport': ROUTE_DIRECT_API, 'config': dict(ANTHROPIC_CONFIG),
-                  'model_policy': POLICY_LOWEST_QUALIFIED, 'candidates': list(RANKED_MODELS['anthropic'])},
+                  'model_policy': POLICY_FASTEST_QUALIFIED, 'candidates': list(RANKED_MODELS['anthropic'])},
     'openrouter': {'transport': ROUTE_DIRECT_API, 'config': {'provider': 'compatible', 'endpoint': 'https://openrouter.ai/api/v1',
                                                               'model': 'openai/gpt-4o-mini'},
-                   'model_policy': POLICY_LOWEST_QUALIFIED, 'candidates': ['openai/gpt-4o-mini']},
-    'claude-code': {'transport': ROUTE_SUBSCRIPTION_CLI, 'engine': 'claude-code', 'model_policy': POLICY_LOWEST_QUALIFIED,
+                   'model_policy': POLICY_FASTEST_QUALIFIED, 'candidates': ['openai/gpt-4o-mini']},
+    'claude-code': {'transport': ROUTE_SUBSCRIPTION_CLI, 'engine': 'claude-code', 'model_policy': POLICY_FASTEST_QUALIFIED,
                     'candidates': list(RANKED_MODELS['claude-code'])},
-    'codex': {'transport': ROUTE_SUBSCRIPTION_CLI, 'engine': 'codex', 'model_policy': POLICY_LOWEST_QUALIFIED,
+    'codex': {'transport': ROUTE_SUBSCRIPTION_CLI, 'engine': 'codex', 'model_policy': POLICY_FASTEST_QUALIFIED,
               'candidates': list(RANKED_MODELS['codex'])},
 }
 
@@ -277,6 +297,32 @@ def has_flag(help_text, flag):
 PROBE_CONTEXT = {'owner_message': '다시 해봐', 'previous_intent': 'research', 'previous_status': 'failed'}
 
 
+def pick_fastest(rows):
+    """Index of the candidate ``fastest_qualified`` uses among qualified ``rows`` (#472).
+
+    ``rows`` are content-free candidate rows in ranked order, each with
+    ``p50_seconds``, ``p95_seconds``, ``pass_rate`` and ``score``.  A row
+    whose p95 is above ``P95_GUARD_FACTOR`` times the best p95 is used only
+    when every row is.  Among the rest, the rows whose p50 is within
+    ``LATENCY_TIE_RATIO`` of the fastest are the same speed; the higher pass
+    rate, then score, then the ranked order decides.  A row without a
+    measurement ranks last.
+    """
+    unmeasured = float('inf')
+    p95 = [row.get('p95_seconds', unmeasured) for row in rows]
+    best_p95 = min(p95)
+    guarded = [index for index in range(len(rows)) if p95[index] <= P95_GUARD_FACTOR * best_p95] or list(range(len(rows)))
+    p50 = {index: rows[index].get('p50_seconds', unmeasured) for index in guarded}
+    fastest = min(p50.values())
+    tied = [index for index in guarded if p50[index] <= fastest * LATENCY_TIE_RATIO]
+    return min(tied, key=lambda index: (-rows[index].get('pass_rate', 0), -rows[index].get('score', 0), index))
+
+
+def observed_of(tried, model):
+    """The observed identity of the candidate that was chosen, not of the last one tried (#472)."""
+    return next((row.get('observed_model') or 'not reported' for row in tried if row.get('model') == model), 'not reported')
+
+
 class DecisionRouteError(ValueError):
     """An owner-facing refusal; the previous route stays active."""
 
@@ -318,8 +364,11 @@ class DecisionRoutes:
     is the HTTP transport for Jev (tests inject a fixture).
     """
 
-    def __init__(self, service, *, jev_transport=None, models_transport=None, clock=time.time, spawn=None):
+    def __init__(self, service, *, jev_transport=None, models_transport=None, clock=time.time, spawn=None,
+                 timer=time.monotonic):
         self.service, self.clock = service, clock
+        #: #472: times each qualification run (latency, not a timestamp).
+        self.timer = timer
         # #685: how a claimed qualification job runs off the work loop thread
         # (tests pass a synchronous runner).
         self.spawn = spawn or _spawn_thread
@@ -775,9 +824,14 @@ class DecisionRoutes:
                 # keep_previous: the decision_route row changes only on a pass.
                 if job.get('target_identity') is not None:
                     route = job['route']
-                    body = {'engine': route['engine'], 'model_policy': route.get('model_policy'),
+                    policy = route.get('model_policy')
+                    if route.get('mode') == MODE_FOLLOW and route.get('main') in FOLLOW_CANDIDATES:
+                        # #472: a follow row's policy is the follow default, not an owner
+                        # choice, so a CLI update requalifies it under the current one.
+                        policy = FOLLOW_CANDIDATES[route['main']]['model_policy']
+                    body = {'engine': route['engine'], 'model_policy': policy,
                             'model': route.get('requested_model'), 'effort': route.get('effort')}
-                    if route.get('model_policy') == POLICY_LOWEST_QUALIFIED and 'declared_candidates' in route:
+                    if policy in CANDIDATE_POLICIES and 'declared_candidates' in route:
                         body['candidates'] = route['declared_candidates']
                     extra = {key: route[key] for key in ('mode', 'main') if key in route}
                     self._activate_cli(body, extra=extra)
@@ -908,22 +962,23 @@ class DecisionRoutes:
             if not key:
                 return failed('not-configured', '기본 AI의 API 키가 없어 판단 AI를 확인하지 못했습니다.')
             base = dict(candidate['config'])
-            # #679: the ranked cheapest-first list, each through the full
-            # qualification suite; the first that passes is used.
+            # #679/#472: the ranked list, each through the full qualification
+            # suite; the follow policy picks among those that pass.
+            policy = candidate['model_policy']
             model, result, tried = self._first_qualified(
                 candidate['candidates'],
                 lambda name, audit: ModelDecisionEngine(self.service.adapter,
-                                                        lambda: ({**base, 'model': name}, key), audit=audit))
+                                                        lambda: ({**base, 'model': name}, key), audit=audit), policy)
             if not model:
                 return failed('no-qualified-candidate',
                               f'판단 AI 후보({", ".join(candidate["candidates"])}) 중 적격성 검사({SUITE_VERSION})를 '
                               '통과한 모델이 없습니다.', candidates=tried, suite_version=SUITE_VERSION)
             self._commit(option, {**follow, 'transport': ROUTE_DIRECT_API, 'provider': base['provider'],
                                   'endpoint': base['endpoint'], 'requested_model': model, 'key_source': 'main',
-                                  'model_policy': POLICY_LOWEST_QUALIFIED,
-                                  'qualification': self._qualification_record(model, result)},
-                         {'model_policy': POLICY_LOWEST_QUALIFIED, 'requested_model': model, 'candidates': tried,
-                          'suite_version': result['suite_version'], 'observed_model': tried[-1]['observed_model']})
+                                  'model_policy': policy,
+                                  'qualification': self._qualification_record(model, result, tried=tried)},
+                         {'model_policy': policy, 'requested_model': model, 'candidates': tried,
+                          'suite_version': result['suite_version'], 'observed_model': observed_of(tried, model)})
             return {'state': 'active'}
         try:
             # No candidates: the ranked list, filtered by the capability check
@@ -992,13 +1047,18 @@ class DecisionRoutes:
             return ['version']
         return []
 
-    def _first_qualified(self, candidates, make_engine):
-        """Run ``qualify()`` on each candidate in order; ``(model, result, tried)``.
+    def _first_qualified(self, candidates, make_engine, policy=None):
+        """Run ``qualify()`` on candidates; ``(model, result, tried)``.
 
+        ``lowest_qualified`` and ``explicit`` stop at the first candidate in
+        order that passes.  ``fastest_qualified`` (#472) runs every
+        candidate, repeating a case that answered but failed
+        (``FASTEST_TRIALS``), and returns the one ``pick_fastest`` chooses.
         ``tried`` is content free.  ``(None, None, tried)`` when none passed;
         no other model is tried.
         """
-        tried = []
+        fastest = policy == POLICY_FASTEST_QUALIFIED
+        tried, passed = [], []
         # #685: a background job records progress and can stop between cases.
         job_checkpoint = self._checkpoint
         for model in candidates:
@@ -1010,14 +1070,26 @@ class DecisionRoutes:
                 starts[case_id] = len(seen)
                 if job_checkpoint is not None:
                     job_checkpoint(model, case_id, index)
-            result = qualify(engine, checkpoint=checkpoint)
+            def call_failed(engine=engine, seen=seen):
+                # Every adapter audits its calls; a direct API engine has no ``last_failure``.
+                last = seen[-1] if seen else {}
+                return bool(getattr(engine, 'last_failure', '') or last.get('failure')
+                            or (last and last.get('outcome') != OUTCOME_DECIDED))
+            result = qualify(engine, checkpoint=checkpoint, trials=FASTEST_TRIALS if fastest else 1, timer=self.timer,
+                             call_failed=call_failed)
             observed = sorted({row.get('observed_model') for row in seen
                                if row.get('observed_model') and row.get('observed_model') != 'not reported'})
             failures = [row.get('failure') for row in seen if row.get('failure')]
             row = {'model': model, 'qualified': result['qualified'], 'score': result['score'],
                    'ran': result['ran'], 'failure': getattr(engine, 'last_failure', '') or
                    (failures[-1] if failures else ''),
-                   'observed_model': ', '.join(observed) or 'not reported'}
+                   'observed_model': ', '.join(observed) or 'not reported', 'pass_rate': result['pass_rate'],
+                   **({'p50_seconds': result['latency']['p50'], 'p95_seconds': result['latency']['p95']}
+                      if result['latency'] else {})}
+            retried = [{'case': case['case'], 'trials': case['trials'], 'passes': case['passes']}
+                       for case in result['results'] if 'trials' in case]
+            if retried:
+                row['retried'] = retried
             failed = next((case for case in result['results'] if not case['passed']), None)
             if failed:
                 # #470: name the failed case and what the engine answered there.  The
@@ -1030,17 +1102,31 @@ class DecisionRoutes:
                            failed_confidence=calls[-1].get('confidence') if calls else None)
             tried.append(row)
             if result['qualified']:
-                if job_checkpoint is not None:
-                    # A cancellation that arrived during the last case wins over the commit.
-                    job_checkpoint(model, 'commit', len(CASE_IDS) - 1)
-                return model, result, tried
-        return None, None, tried
+                passed.append((model, result, row))
+                if not fastest:
+                    break
+        if not passed:
+            return None, None, tried
+        model, result, row = passed[pick_fastest([row for _m, _r, row in passed])] if fastest else passed[0]
+        if fastest:
+            row['selected'] = True
+        if job_checkpoint is not None:
+            # A cancellation that arrived during the last case wins over the commit.
+            job_checkpoint(model, 'commit', len(CASE_IDS) - 1)
+        return model, result, tried
 
-    def _qualification_record(self, model, result, capability=None):
+    def _qualification_record(self, model, result, capability=None, tried=None):
         record = {'suite_version': result['suite_version'], 'model': model, 'score': result['score'],
                   'at': self.clock()}
         if capability:
             record.update(cli_version=capability['version'], fingerprint=capability['fingerprint'])
+        if result.get('latency'):
+            # #472: why this model - its measured speed, pass rate and what it was compared with.
+            record.update(p50_seconds=result['latency']['p50'], p95_seconds=result['latency']['p95'],
+                          pass_rate=result['pass_rate'])
+        if tried and len(tried) > 1:
+            record['compared'] = [{key: row[key] for key in ('model', 'qualified', 'p50_seconds', 'p95_seconds',
+                                                             'failed_case') if key in row} for row in tried]
         return record
 
     def _cli_requalify(self, route):
@@ -1104,7 +1190,7 @@ class DecisionRoutes:
                   'model': direct_resolved[0]['model'] if direct_resolved else DEFAULT_DECISION_MODEL,
                   'destination': urlsplit((direct_config or DEFAULT_DECISION_PROVIDER)['endpoint']).hostname,
                   'key_source': key_source, 'has_decision_key': bool(self.store.secret('decision_model_key')),
-                  # #679: the ranked cheapest-first candidates the activation qualifies in order.
+                  # #679: the ranked candidates the activation qualifies (all of them under fastest_qualified, #472).
                   'ranked_models': list(RANKED_MODELS['openai']),
                   'check': checks.get(ROUTE_DIRECT_API)}
         jev_config = self.store.config('decision_jev', {})
@@ -1237,7 +1323,7 @@ class DecisionRoutes:
             if job_reason:
                 reason = job_reason
             elif follow.get('available') and follow.get('transport') == ROUTE_SUBSCRIPTION_CLI:
-                reason = ('기본 AI({main})를 따르는 구독 판단을 아직 확인하지 않았습니다. 확인을 누르면 가장 저렴한 모델부터 검증합니다.',
+                reason = ('기본 AI({main})를 따르는 구독 판단을 아직 확인하지 않았습니다. 확인을 누르면 후보 모델을 모두 검증해 가장 빠른 적격 모델을 씁니다.',
                           {'main': main_name})
             elif follow.get('available'):
                 reason = ('기본 AI({main})를 따르는 판단 AI를 아직 확인하지 않았습니다.', {'main': main_name})
@@ -1617,12 +1703,13 @@ class DecisionRoutes:
         if model:
             policy, candidates = POLICY_EXPLICIT, [model]
         elif base['provider'] == 'openai':
-            policy, candidates = POLICY_LOWEST_QUALIFIED, list(RANKED_MODELS['openai'])
+            policy, candidates = POLICY_FASTEST_QUALIFIED, list(RANKED_MODELS['openai'])
         else:
             policy, candidates = POLICY_EXPLICIT, [base['model']]
         chosen, result, tried = self._first_qualified(
             candidates, lambda name, audit: ModelDecisionEngine(self.service.adapter,
-                                                                lambda: ({**base, 'model': name}, key), audit=audit))
+                                                                lambda: ({**base, 'model': name}, key), audit=audit),
+            policy)
         if not chosen:
             self._fail(ROUTE_DIRECT_API, 'model-not-verified' if model else 'no-qualified-candidate',
                        f'OpenAI API 모델({", ".join(candidates)}) 중 대화 해석 적격성 검사({SUITE_VERSION})를 통과한 모델이 '
@@ -1634,9 +1721,9 @@ class DecisionRoutes:
                 self.store.put('decision_model', {**DEFAULT_DECISION_PROVIDER, 'model': chosen})
         return self._commit(ROUTE_DIRECT_API, {'transport': ROUTE_DIRECT_API, 'provider': base['provider'],
                                                'requested_model': chosen, 'model_policy': policy,
-                                               'qualification': self._qualification_record(chosen, result),
+                                               'qualification': self._qualification_record(chosen, result, tried=tried),
                                                'key_source': 'decision' if decision_key else 'existing'},
-                            {'observed_model': tried[-1]['observed_model'], 'model_policy': policy,
+                            {'observed_model': observed_of(tried, chosen), 'model_policy': policy,
                              'requested_model': chosen, 'candidates': tried, 'suite_version': result['suite_version']})
 
     def _codex_strict_profile(self, option, binary):
@@ -1698,7 +1785,7 @@ class DecisionRoutes:
         return present
 
     def _activate_cli(self, body, extra=None):
-        engine_id, policy = body.get('engine'), body.get('model_policy') or POLICY_LOWEST_QUALIFIED
+        engine_id, policy = body.get('engine'), body.get('model_policy') or POLICY_FASTEST_QUALIFIED
         if engine_id not in CLI_BINARIES:
             raise DecisionRouteError('지원하는 구독 엔진을 선택하세요.')
         if policy not in MODEL_POLICIES:
@@ -1788,8 +1875,8 @@ class DecisionRoutes:
             candidates = body.get('candidates')
             candidates_declared = candidates not in (None, '', [])
             if not candidates_declared:
-                # #679: the ranked cheapest-first list, filtered by what this
-                # binary bundles (checked just above).
+                # #679: the ranked list, filtered by what this binary bundles
+                # (checked just above).
                 candidates = self._ranked(engine_id, capability)
                 if not candidates:
                     self._fail(option, 'no-qualified-candidate',
@@ -1806,7 +1893,8 @@ class DecisionRoutes:
         chosen, result, tried = self._first_qualified(
             candidates, lambda model, audit: self._cli_engine(engine_id, model, policy, audit,
                                                               codex_disabled_features=disabled,
-                                                              effort=effort_for(model), expected_cloud=base['cloud_profile']))
+                                                              effort=effort_for(model), expected_cloud=base['cloud_profile']),
+            policy)
         if not chosen:
             if policy == POLICY_EXPLICIT:
                 model = candidates[0]
@@ -1819,9 +1907,9 @@ class DecisionRoutes:
                        f'후보 모델 중 대화 해석 적격성 검사({SUITE_VERSION})를 통과한 모델이 없습니다.',
                        candidates=tried, suite_version=SUITE_VERSION)
         return self._commit(option, {**base, 'requested_model': chosen, 'effort': effort_for(chosen),
-                                     'qualification': self._qualification_record(chosen, result, capability)},
+                                     'qualification': self._qualification_record(chosen, result, capability, tried)},
                             {'model_policy': policy, 'requested_model': chosen, 'candidates': tried,
-                             'observed_model': tried[-1]['observed_model'], 'effort': effort_for(chosen),
+                             'observed_model': observed_of(tried, chosen), 'effort': effort_for(chosen),
                              'suite_version': result['suite_version'], **warning})
 
     # -- model lists (explicit owner action only, #679) ------------------------
