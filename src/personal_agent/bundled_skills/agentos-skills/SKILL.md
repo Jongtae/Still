@@ -27,6 +27,7 @@ These are reviewed reference skills in the Still repository. They are added like
 - **Summary or analysis:** `https://github.com/Jongtae/Still/tree/main/skills/summary-or-analysis`. Which answer the owner asked for (summary, comparison, analysis, recommendation) and when an answer of that form is finished.
 - **Analysing claims and opinions:** `https://github.com/Jongtae/Still/tree/main/skills/claim-analysis`. Support, counter-evidence, disagreement, uncertainty and a justified conclusion.
 - **Cross-checking a source:** `https://github.com/Jongtae/Still/tree/main/skills/source-cross-check`. The original source, independent confirmation, dates and definitions, and an honest report of agreement or conflict.
+- **First conversations:** `https://github.com/Jongtae/Still/tree/main/skills/first-conversations`. Opening with what you are good at and one easy start, and learning a fact about the owner only when a request needs it.
 
 ## What Still refuses
 
