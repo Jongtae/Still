@@ -384,7 +384,15 @@ for(const [connector,name,label,kind,action,levelAction] of matrix){
  assert($('connector-controls').children[0].textContent.includes('읽기 · 정리'));
  ctx.renderConnectors([svc([read,{...modify,state:'reauth_required'},filters],[],'Gmail')]);const attention=$('connector-controls').children[0];
  same(rowActions(attention).map(node=>[node.textContent,node.href]),[['다시 연결','/gmail-modify']],'a level that needs sign-in again comes first');assert.equal(stateOf(attention).textContent,'다시 인증 필요');
- ctx.renderConnectors([svc([read,{...modify,state:'connected'},{...filters,state:'connected'}],[],'Gmail')]);assert.equal(rowActions($('connector-controls').children[0]).length,0,'nothing to add once every grant is connected');}
+ ctx.renderConnectors([svc([read,{...modify,state:'connected'},{...filters,state:'connected'}],[],'Gmail')]);assert.equal(rowActions($('connector-controls').children[0]).length,0,'nothing to add once every grant is connected');
+ // A grant the connected modify level includes (server-declared covered_by) is covered, not missing.
+ ctx.renderConnectors([svc([{...read,state:'disconnected',covered_by:'gmail-modify'},{...modify,state:'connected'},filters],[],'Gmail')]);const covered=$('connector-controls').children[0];
+ same(rowActions(covered).map(node=>[node.textContent,node.href]),[['필터 권한 추가','/gmail-filters']],'the next action is the level really missing');
+ assert(covered.textContent.includes(': 읽기 · 정리'),'the capability list includes the covered level');
+ const readLevel=descendants(detailsOf(covered)).filter(node=>node.className==='google-level')[0];
+ assert.equal(descendants(readLevel).find(node=>node.className.startsWith('settings-state')).textContent,'정리에 포함됨');assert(readLevel.textContent.includes('Gmail 메일 정리 연결이 이 권한을 포함합니다'));
+ ctx.renderConnectors([svc([{...read,state:'disconnected',covered_by:'gmail-modify'},modify,filters],[],'Gmail')]);
+ same(rowActions($('connector-controls').children[0]).map(node=>node.textContent),['연결'],'coverage holds only while the covering level is connected');}
 // #535: the AI-side route shows which AI and which connection, and "configured" is never shown as "used".
 {const used={engine:'claude-code',engine_name:'Claude Code',kind:'ai-connection',identity:'Gmail',name:'Gmail',state:'used',configured:false,usable:true,unusable_reason:'',last_used_at:1700000000,last_outcome:'succeeded'},
   configured={engine:'codex',engine_name:'Codex',kind:'owner-mcp',identity:'gmail-mcp',name:'gmail-mcp',state:'configured',configured:true,usable:false,unusable_reason:'not_confirmed',last_used_at:null,last_outcome:null};
@@ -395,7 +403,7 @@ for(const [connector,name,label,kind,action,levelAction] of matrix){
  ctx.renderConnectors([svc([{connector_id:'google-gmail-read',label:'Gmail',state:'disconnected',required_scopes:[],connect_path:'/google-gmail',level:'read'}],[used,configured],'Gmail')]);row=$('connector-controls').children[0];
  assert.equal(stateOf(row).textContent,'AI 연결 · 사용 확인됨');assert(stateOf(row).className.endsWith('active'));
  assert(row.textContent.includes('AI 연결 · Claude Code의 Gmail: 사용 확인됨')&&row.textContent.includes('Still 직접 연결: 연결 안 됨'),'both routes are shown');
- same(rowActions(row).map(node=>node.textContent),['연결'],'the Still-owned route can still be connected');
+ same(rowActions(row).map(node=>node.textContent),['Still로 직접 연결'],'with an AI route in use, connecting reads as an additional Still connection');
  const details=detailsOf(row);assert(details.textContent.includes('Google에서 권한이 취소되는 것은 아닙니다'),'disconnecting there is not provider revocation');
  assert(details.textContent.includes('claude.ai 커넥터'),'the route kind is named');assert.equal(descendants(details).filter(node=>node.tag==='button').length,0,'Still offers no disconnect for an AI-side route');
  ctx.renderConnectors([svc([{connector_id:'google-gmail-read',label:'Gmail',state:'disconnected',required_scopes:[],connect_path:'/google-gmail',level:'read'}],[],'Gmail')]);assert(Object.hasOwn($('connector-controls').children[0].dataset,'inactive'),'nothing connected and no AI route: only in the add dialog');}

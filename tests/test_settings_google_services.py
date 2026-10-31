@@ -46,7 +46,23 @@ class GmailAsOneService(Fixture):
         # The levels are the existing rows unchanged (state, scopes, connect path), plus their level name.
         flat = {item['connector_id']: item for item in self.service.google_connection_rows()}
         for level in gmail['levels']:
-            self.assertEqual({key: value for key, value in level.items() if key != 'level'}, flat[level['connector_id']])
+            self.assertEqual({key: value for key, value in level.items() if key not in ('level', 'covered_by')},
+                             flat[level['connector_id']])
+
+    def test_modify_covers_read_the_way_the_slot_reads(self):
+        self.connect()
+        levels = {level['connector_id']: level for level in self.gmail()['levels']}
+        self.assertEqual(levels['google-gmail-read'].get('covered_by'), 'gmail-modify')
+        self.assertNotIn('covered_by', levels['gmail-filters'], 'filters is not included in modify')
+        # The coverage is what connection_slots.build does: the gmail slot reads with the modify token.
+        slot = connection_slots.build(self.service, 'local-owner')['gmail']
+        self.assertFalse(slot['read_only'])
+        self.assertEqual(self.registry.status('local-owner', 'google-gmail-read').state, ConnectorState.DISCONNECTED)
+        self.service.google_revoke_transport = lambda *args: (200, {}, b'')
+        revoker = self.service.google_revocation()
+        offer = revoker.preview('owner-session', 'gmail-modify')
+        revoker.disconnect('owner-session', 'gmail-modify', offer['confirmation'])
+        self.assertNotIn('covered_by', self.gmail()['levels'][0], 'no coverage once the covering level is gone')
 
     def test_disconnecting_one_level_disconnects_only_that_grant(self):
         self.connect()
@@ -72,6 +88,21 @@ class GmailAsOneService(Fixture):
 
 class ServiceRows(Fixture):
     """The grouping itself, from declared data and fixture rows."""
+
+    def test_calendar_declares_no_coverage(self):
+        # connection_slots.build keeps the Calendar read grant for reads even with the write grant.
+        services = self.service.google_service_rows([row('google-calendar'), row('google-calendar-write', 'connected')], [])
+        self.assertNotIn('covered_by', services[0]['levels'][0])
+
+    def test_the_ai_switch_renders_the_servers_own_note(self):
+        import json
+        from pathlib import Path
+        app = (Path(slot_tests.__file__).parents[1] / 'src' / 'personal_agent' / 'web' / 'app.js').read_text(encoding='utf-8')
+        note = self.service.ai_connections_status()['note']
+        self.assertIn("settingsRow(t('AI에 연결된 서비스 사용'),t(view.note||'')", app)
+        self.assertIn(json.dumps(note, ensure_ascii=False) + ':', app, 'the note is translated in the catalog')
+        code = app[:app.index('// I18N-CATALOG-START')] + app[app.index('// I18N-CATALOG-END'):]
+        self.assertNotIn('읽기 전용으로 씁니다', code, 'no stale read-only claim in the renderer')
 
     def test_every_write_grant_belongs_to_a_declared_service(self):
         declared = {connector_id for spec in self.service.GOOGLE_SERVICES for connector_id, _level in spec['levels']}

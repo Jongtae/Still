@@ -717,6 +717,9 @@ details.technical details>summary{color:var(--muted)}
 .google-level-title{font-size:var(--fs-2);font-weight:600;color:var(--ink-2);overflow-wrap:anywhere}
 .google-level>.settings-row-actions{justify-content:flex-start}
 .google-level>.settings-technical-line{padding-left:0}
-/* The route settings (AI-side switch, Still's own client) read as how the services above connect. */
-.settings-section .settings-row.settings-method{padding-left:var(--sp-3);border-left:2px solid var(--line)}
-.settings-method .settings-row-title{font-weight:500}
+/* The route settings (AI-side switch, Still's own client) are their own group under a subheading,
+   apart from the service rows; the group leaves the pane when none of its rows is on. */
+.settings-methods{margin-top:var(--sp-5)}
+.settings-methods>.settings-subheading{margin:0;padding-bottom:6px;border-bottom:0}
+.settings-methods>.settings-list{margin-top:0}
+.settings-pane .settings-methods:not(:has(.settings-row:not([data-inactive]))){display:none}

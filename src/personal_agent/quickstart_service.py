@@ -7649,9 +7649,13 @@ class AgentService:
     #: ``levels`` are the service's separate grants in the order a connection grows (each keeps its own
     #: state and disconnect), and ``ai_names`` are the words an AI-side connection's name contains for
     #: Settings to show it under the service.  A connector in no service gets a row of its own.
+    #: ``covers`` names the grants a connected level already includes, only where ``connection_slots.build``
+    #: honours it: the Gmail slot reads with the modify token, while Calendar keeps its read grant for
+    #: reads (listing calendars) even with the write grant, so Calendar declares none.
     GOOGLE_SERVICES=(
         {'service':'gmail','name':'Gmail','ai_names':('gmail',),
-         'levels':((GMAIL_CONNECTOR_ID,'read'),(GMAIL_MODIFY_CONNECTOR_ID,'modify'),(GMAIL_FILTERS_CONNECTOR_ID,'filters'))},
+         'levels':((GMAIL_CONNECTOR_ID,'read'),(GMAIL_MODIFY_CONNECTOR_ID,'modify'),(GMAIL_FILTERS_CONNECTOR_ID,'filters')),
+         'covers':{GMAIL_MODIFY_CONNECTOR_ID:(GMAIL_CONNECTOR_ID,)}},
         {'service':'google-calendar','name':'Google Calendar','ai_names':('google calendar','gcal'),
          'levels':((CALENDAR_CONNECTOR_ID,'read'),(CALENDAR_WRITE_CONNECTOR_ID,'create'))},
         {'service':'google-drive','name':'Google Drive','ai_names':('google drive','gdrive'),
@@ -7728,7 +7732,8 @@ class AgentService:
         """#535: Settings' Google card, one row per service with its routes (contract §3: which hand it uses).
 
         ``levels`` are the existing per-grant rows unchanged, plus their level
-        name; disconnect still targets one ``connector_id``.  ``ai_routes`` are
+        name and, for a disconnected grant a connected level includes, ``covered_by``;
+        disconnect still targets one ``connector_id``.  ``ai_routes`` are
         the AI-side connections whose names match the service (``ai_side_routes``).
         """
         rows=self.google_connection_rows() if connections is None else connections
@@ -7739,6 +7744,12 @@ class AgentService:
         for spec in self.GOOGLE_SERVICES:
             declared.update(connector_id for connector_id,_level in spec['levels'])
             levels=[{**by_id[connector_id],'level':level} for connector_id,level in spec['levels'] if connector_id in by_id]
+            # A disconnected grant that a connected level already includes is covered, not missing.
+            for level in levels:
+                coverer=next((higher for higher,covered in (spec.get('covers') or {}).items()
+                              if level['connector_id'] in covered and (by_id.get(higher) or {}).get('state')=='connected'),None)
+                if coverer and level.get('state')=='disconnected':
+                    level['covered_by']=coverer
             ai=[route for route in routes if self._route_serves(route['name'],spec['ai_names'])]
             if levels or ai:
                 services.append({'service':spec['service'],'name':spec['name'],'levels':levels,'ai_routes':ai})
