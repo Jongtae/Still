@@ -674,7 +674,7 @@ SETTINGS_WEB_CHANGES={
     # setting, so a notice is sent only when a value there changed (a
     # re-submitted value says nothing).  A verb: the read model cannot show it
     # (a key, a folder, a policy), so the notice states the action taken.
-    '/api/ai-route':('기본 AI 경로',None),'/api/main-ai/activate':('기본 AI',None),'/api/model':('AI 모델',None),
+    '/api/ai-route':(msg('settings_orchestrator.label_main_ai_route'),None),'/api/main-ai/activate':('기본 AI',None),'/api/model':('AI 모델',None),
     '/api/decision-route/activate':('판단 AI',None),'/api/current-context':('현재 맥락',None),
     # #208: the read model shows on/off; the notice states which.
     '/api/work-mode':('회사 모드',None),
@@ -701,7 +701,7 @@ SETTINGS_WEB_CHANGES={
     '/api/context-inbox/telegram-policy':('임시 자료 Telegram 공유 설정','저장했습니다'),
     '/api/context-inbox/share-policy':('임시 자료 공유 설정','저장했습니다'),
     '/api/browser/sessions/delete':('브라우저 로그인 세션','지웠습니다'),
-    '/api/ai-connections':('AI의 연결 서비스 사용',None),
+    '/api/ai-connections':(msg('settings_orchestrator.label_ai_connections_enabled'),None),
 }
 
 #: CONNECTOR-REVOKE-01 #588 owner routes (backend only; Settings UI is #619).

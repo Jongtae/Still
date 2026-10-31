@@ -801,7 +801,7 @@ class AgentService:
         follow-up to that conversation for a setter applied off-thread.
         """
         if not isinstance(body, dict):
-            raise ValueError('설정 요청을 확인하세요.')
+            raise ValueError(msg('settings_orchestrator.check_request'))
         operation=body.get('operation', 'text')
         if operation == 'read':
             return self.settings_orchestrator.read(owner_id, body.get('category'))
