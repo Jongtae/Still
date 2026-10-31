@@ -441,6 +441,8 @@ def start_tunnel(port, popen=subprocess.Popen, timeout=30, *, store, locate=None
         except (OSError, RuntimeError) as exc:
             LOG.info('ngrok did not open a link (%s); trying a Cloudflare quick tunnel', type(exc).__name__)
             failure = exc
+    # Read again before the fallback is sought: finding it may download it (PR #529 review P1).
+    work_mode.refuse(store, 'tunnel')
     try:
         cloudflared = locate('cloudflared')
     except (OSError, RuntimeError):
@@ -449,7 +451,6 @@ def start_tunnel(port, popen=subprocess.Popen, timeout=30, *, store, locate=None
         raise
     if not cloudflared:
         raise failure or FileNotFoundError(2, 'No such file or directory', 'cloudflared')
-    work_mode.refuse(store, 'tunnel')
     return _start_cloudflared(cloudflared, port, popen, timeout, store)
 
 

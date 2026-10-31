@@ -363,7 +363,7 @@ class Tunnels(WorkModeCase):
         self.assertFalse((self.root / 'data' / 'tools').exists(), 'nothing was downloaded')
 
     def test_work_mode_switched_on_while_ngrok_failed_starts_no_quick_tunnel(self):
-        """#523: the second attempt reads the switch again."""
+        """#523: the second attempt reads the switch again, before the fallback is sought or downloaded."""
         started = []
 
         def popen(argv, **kwargs):
@@ -376,10 +376,15 @@ class Tunnels(WorkModeCase):
                 def terminate(inner):
                     pass
             return Process()
-        with self.assertRaises(work_mode.WorkModeRefused):
+        installed = {'ngrok': '/bin/ngrok'}.get  # no cloudflared installed: the real locator would download it
+        with mock.patch('personal_agent.subscription_engines.find_cli', side_effect=lambda name, **kw: installed(name)), \
+                mock.patch('personal_agent.quick_tunnel._fetch', side_effect=AssertionError('downloaded')) as fetch, \
+                self.assertRaises(work_mode.WorkModeRefused):
             family_setup.start_tunnel(8787, popen=popen, store=self.store, timeout=2,
-                                      locate={'ngrok': '/bin/ngrok', 'cloudflared': '/bin/cloudflared'}.get)
+                                      locate=family_setup._locator(self.store))
         self.assertEqual(started, ['/bin/ngrok'])
+        fetch.assert_not_called()
+        self.assertFalse((self.store.root / 'tools').exists(), 'nothing was downloaded or written')
 
     def test_remote_login_refuses_with_a_do_it_at_the_mac_reason_and_no_spawn(self):
         tunnel = FakeTunnel()
