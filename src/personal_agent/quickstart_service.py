@@ -31,7 +31,7 @@ from .plugins import PluginRegistry
 from .quickstart_store import INTERIM_PROJECTIONS, PREVIEW_PROJECTION, UPDATE_PROJECTION, QuickStore, owner_words_work
 from .providers import NOT_REPORTED, ModelAdapter, ProviderError, request_json, validate_model
 from .decision import DEFAULT_DECISION_PROVIDER, OUTCOME_DECIDED, RoutedDecisionEngine
-from .decision_routes import DecisionRoutes
+from .decision_routes import ROUTE_NAMES, DecisionRoutes
 from .main_ai import MainAiRoutes
 from .search_providers import (SEARCH_FAILED_TEXT, ProviderRegistry, SearchProviderSettings, public_http_url)
 from .cloud_engines import (BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIGURED as CLOUD_NOT_CONFIGURED,
@@ -45,7 +45,7 @@ from .conversation_projection import (BLOCKER_CLOUD_PROFILE, BLOCKER_DOCUMENT_AP
 from .subscription_engines import SubscriptionEngines
 from .bounded_execution import BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls
 from .bounded_execution import AgentOSMcpTools, ReadOnlyAgentOSMcpTools, StrictIsolatedAgentOSMcpTools, BoundedExecutionAdapter, ExecutionError, ExecutionResult, MAX_PROMPT_BYTES, BOUNDED_PROFILE, HOST_CLI_PROFILES, STRICT_PROFILE, profile_actions, profile_status, route_unavailable
-from .orchestrator import MIN_ATTEMPT_SECONDS, model_refused, observations_with_pages, preview_text, remember_model_refusal
+from .orchestrator import DEFAULT_MODEL_LABEL, MIN_ATTEMPT_SECONDS, model_refused, observations_with_pages, preview_text, remember_model_refusal
 from .orchestrator import (EVENT_TOOL as ORCHESTRATION_EVENT, PURPOSE as ORCHESTRATION_PURPOSE, NOT_JUDGED, NOT_REACHED, REACHED, UNJUDGED, WORKER_FAILED,
                            Orchestration, worker_catalogue)
 from .isolated_engine_gateway import EngineGatewayError
@@ -540,6 +540,19 @@ BROWSER_SIGNINS_LINE=('Browser sign-ins (stored sessions browser_open uses; no p
 SIDE_ANSWER_DELIVERY_PASSES=3
 
 
+
+def worker_line(entry, effort=''):
+    """The waiting bubble's line for one launched attempt: worker, model and effort, as launched.
+
+    ``entry`` is the ``record_turn_worker`` record: ``engine`` (a subscription CLI) or ``provider``
+    (an API route) and the ``model`` passed to it.  No model passed is the CLI's own default,
+    shown as such (``DEFAULT_MODEL_LABEL``); nothing is guessed.  "" when no worker is named.
+    """
+    source=str(entry.get('engine') or entry.get('provider') or '')
+    if not source:return ''
+    return ' · '.join(part for part in (ROUTE_NAMES.get(source) or source,str(entry.get('model') or DEFAULT_MODEL_LABEL),
+                                        str(effort or '')) if part)
+
 class AgentService:
     #: #953: a Telegram login prompt is followed by the phone link at once.  The test suite turns this
     #: off (tests/conftest.py) so no test ever starts a real tunnel; a test that wants it injects a fake.
@@ -631,6 +644,8 @@ class AgentService:
         self.presence={}
         # #718: the CLI's own streamed step per running Work (presentation only, never persisted).
         self.live_steps={}
+        #: The worker and model each running Work's current attempt was launched with (``worker_line``).
+        self.live_workers={}
         self.subscription_engines=subscription_engines or SubscriptionEngines()
         # The Claude Code token is read from the secret store per run and
         # handed to that CLI only as CLAUDE_CODE_OAUTH_TOKEN (#571).
@@ -3433,8 +3448,13 @@ class AgentService:
             LOG.warning('owner information references unavailable')
             return None
 
-    def record_turn_worker(self, job_id, entry):
-        """Append one attempt's worker (route, engine or provider, model, own web search) to the turn record (#826)."""
+    def record_turn_worker(self, job_id, entry, effort=''):
+        """Append one attempt's worker (route, engine or provider, model, own web search) to the turn record (#826).
+
+        It is also what the waiting bubble shows while this attempt runs (owner direction 2026-10-31):
+        the worker and the model it was launched with, never a guessed one.
+        """
+        self.live_workers[job_id]=worker_line(entry,effort)
         try:
             current=self.store.turn_provenance(job_id) or {}
             workers=[row for row in current.get('workers') or [] if isinstance(row,dict)]
@@ -7337,15 +7357,10 @@ class AgentService:
         if any(row['kind'] in self.APPROVAL_NOTIFICATIONS and row['state'] in ('queued','sent')
                for row in self.store.task_notifications(job['id'])):
             return None
-        text,approval=draft_step(self.store.task_events(job['id']),self.live_steps.get(job['id']))
+        _text,approval=draft_step(self.store.task_events(job['id']),self.live_steps.get(job['id']))
         if approval:return None
-        if not text:return NO_STEP_LINE
-        if state.scrubbed is None or state.scrubbed[0]!=text:
-            try:shown,_approval=draft_step(self.store.task_events(job['id']),self.live_steps.get(job['id']),
-                                           clean=lambda line:self.scrub_work_text(job['id'],line))
-            except Exception:shown=NO_STEP_LINE  # never show a line that could not be redacted
-            state.scrubbed=(text,shown or NO_STEP_LINE)
-        return state.scrubbed[1]
+        # Owner direction 2026-10-31: the per-tool step lines meant little; the bubble names who is working.
+        return self.live_workers.get(job['id']) or NO_STEP_LINE
 
     def _observe_cli_step(self, job_id, step):
         """Keep the CLI's own streamed step for Work status (#445); presentation only.
@@ -11211,6 +11226,7 @@ class AgentService:
             finally:
                 self._settle_work_judgments(run)
                 self.steer_closed.discard(job['id'])
+                self.live_workers.pop(job['id'],None)
             self._after_work(run)
             # The result delivery is the one terminal Telegram bubble.
             # Do not append a second generic completion notification.
@@ -12120,7 +12136,7 @@ class AgentService:
                                            'engine':run.subscription['id'],
                                            'model':(run.attempt.model if run.attempt is not None and run.attempt.model else None) or self.main_ai.subscription_model(run.subscription['id']) or None,
                                            'own_web_search':bool(native_search),
-                                           'earlier_exchanges':information_use.section_references(engine_context.get('profile') if adapter_context is not None else '')['earlier_exchanges']})
+                                           'earlier_exchanges':information_use.section_references(engine_context.get('profile') if adapter_context is not None else '')['earlier_exchanges']},effort=getattr(run.attempt,'effort','') if run.attempt is not None else '')
         run.record('subscription_engine','running',json.dumps({'engine':run.subscription['id'],'mode':mode,
             'context_messages':len(engine_context['conversation']),'context_bytes':len(engine_prompt.encode()),
             'context_mode':engine_context.get('mode','shared-context')}))
@@ -12391,7 +12407,7 @@ class AgentService:
                                            'steer_continuation':True if run.steer_note else None,'route':'direct-api',
                                            'provider':runtime_config.get('provider'),'model':runtime_config.get('model'),
                                            'own_web_search':False,
-                                           'earlier_exchanges':information_use.section_references(api_context.get('profile'))['earlier_exchanges']})
+                                           'earlier_exchanges':information_use.section_references(api_context.get('profile'))['earlier_exchanges']},effort=getattr(run.attempt,'effort','') if run.attempt is not None else '')
         try:
             # #658/#627: the direct route carries the owner profile and
             # current-context sections in its system text, the same
