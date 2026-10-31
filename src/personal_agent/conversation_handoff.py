@@ -518,20 +518,20 @@ DEFAULT_ROUTE_INTENTS = frozenset({INTENT_CONVERSATION, INTENT_RESEARCH})
 
 
 INTENT_LABELS = {
-    INTENT_KNOWLEDGE: '개인 공간 검색',
-    INTENT_SETTINGS: '연결 설정 확인/변경',
-    INTENT_WORKSPACE_SEARCH: '저장한 작업공간 결과 찾기',
-    INTENT_NOTE_CREATE: '메모 기록',
-    INTENT_NOTE_LIST: '메모 목록',
-    INTENT_MAIN_AI: '기본 AI 바꾸기',
-    INTENT_DEVELOPER_MODE: '개발자 모드',
+    INTENT_KNOWLEDGE: msg('conversation_handoff.knowledge'),
+    INTENT_SETTINGS: msg('conversation_handoff.settings'),
+    INTENT_WORKSPACE_SEARCH: msg('conversation_handoff.workspace_search'),
+    INTENT_NOTE_CREATE: msg('conversation_handoff.note_create'),
+    INTENT_NOTE_LIST: msg('conversation_handoff.note_list'),
+    INTENT_MAIN_AI: msg('conversation_handoff.main_ai'),
+    INTENT_DEVELOPER_MODE: msg('conversation_handoff.developer_mode'),
     INTENT_CALENDAR_CREATE: msg('handoff.create_event'),
-    INTENT_MAIL_SEARCH: '메일 찾기',
-    INTENT_DRIVE_READ: 'Google Drive 파일 읽기',
-    INTENT_SAVED_CONTEXT: '저장한 컨텍스트 선택',
-    INTENT_RESEARCH: '웹 조사',
-    INTENT_CONVERSATION: '대화로 답하기',
-    INTENT_UNSUPPORTED: '제공하지 않는 기능',
+    INTENT_MAIL_SEARCH: msg('projection.find_mail'),
+    INTENT_DRIVE_READ: msg('conversation_handoff.drive_read'),
+    INTENT_SAVED_CONTEXT: msg('conversation_handoff.saved_context'),
+    INTENT_RESEARCH: msg('conversation_handoff.research'),
+    INTENT_CONVERSATION: msg('conversation_handoff.conversation'),
+    INTENT_UNSUPPORTED: msg('conversation_handoff.unsupported'),
 }
 
 #: Capabilities an owner may reasonably ask for that this conversation does

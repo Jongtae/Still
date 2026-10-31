@@ -36,6 +36,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+from .messages import msg
 from .manifests import validate_package
 
 #: Agent Skills frontmatter fields (agentskills.io specification).
@@ -94,8 +95,7 @@ SETTINGS_KEY = 'skills'
 GITHUB_TREE = re.compile(r'^(?:https://)?github\.com/([A-Za-z0-9][A-Za-z0-9_.-]*)/([A-Za-z0-9_.-]+)/tree/([A-Za-z0-9_.-]+)/'
                          r'([A-Za-z0-9_./-]+?)/?$')
 
-REVOKED_TEXT = ('이 작업이 읽은 스킬({skill})이 작업 중에 꺼지거나 바뀌어 이 작업은 더 진행하지 않았어요. '
-                '같은 요청을 다시 보내면 지금 설정으로 새로 시작해요.')
+REVOKED_TEXT = msg('skills.revoked')
 UNAVAILABLE_TEXT = '이 작업에서 쓸 수 있는 스킬 목록에 없는 스킬이에요. 스킬 없이 진행하세요.'
 OUTDATED_TEXT = '이 작업이 시작될 때의 스킬({skill}) 버전이 바뀌었거나 꺼져 읽지 않았어요. 스킬 없이 진행하세요.'
 
@@ -143,17 +143,17 @@ def parse_frontmatter(text):
     """``(frontmatter, body)`` of a ``SKILL.md``, or ``SkillError('invalid_package')``."""
     text = text.replace('\r\n', '\n')
     if not text.startswith('---\n'):
-        raise SkillError('SKILL.md에 머리말(frontmatter)이 없어요.', 'invalid_package')
+        raise SkillError(msg('skills.missing_frontmatter'), 'invalid_package')
     head, sep, body = text[4:].partition('\n---')
     if not sep or (body and body[0] != '\n'):
-        raise SkillError('SKILL.md 머리말이 닫히지 않았어요.', 'invalid_package')
+        raise SkillError(msg('skills.unclosed_frontmatter'), 'invalid_package')
     yaml, loader = _loader()
     try:
         data = yaml.load(head, Loader=loader)  # noqa: S506 - SafeLoader subclass
     except yaml.YAMLError:
-        raise SkillError('SKILL.md 머리말을 읽을 수 없어요(형식 오류, 중복 키, 별칭 또는 허용하지 않는 태그).', 'invalid_package') from None
+        raise SkillError(msg('skills.invalid_frontmatter'), 'invalid_package') from None
     if not isinstance(data, dict):
-        raise SkillError('SKILL.md 머리말이 키-값 목록이 아니에요.', 'invalid_package')
+        raise SkillError(msg('skills.frontmatter_mapping'), 'invalid_package')
     return data, body[1:]
 
 
@@ -180,22 +180,22 @@ def _walk(root):
     root = Path(root)
     real = root.resolve()
     if root.is_symlink() or not root.is_dir():
-        raise SkillError('스킬 폴더를 찾을 수 없어요.', 'invalid_package')
+        raise SkillError(msg('skills.folder_missing'), 'invalid_package')
     files, total = {}, 0
     for path in sorted(root.rglob('*')):
         rel = path.relative_to(root).as_posix()
         if path.is_symlink():
-            raise SkillError(f'스킬 안에 링크({rel})가 있어 받지 않았어요.', 'invalid_package')
+            raise SkillError(msg('skills.symlink', rel=rel), 'invalid_package')
         if not path.resolve().is_relative_to(real):
-            raise SkillError(f'스킬 밖을 가리키는 경로({rel})가 있어요.', 'invalid_package')
+            raise SkillError(msg('skills.outside_path', rel=rel), 'invalid_package')
         if path.is_dir():
             continue
         if not path.is_file():
-            raise SkillError(f'일반 파일이 아닌 항목({rel})이 있어요.', 'invalid_package')
+            raise SkillError(msg('skills.nonregular_file', rel=rel), 'invalid_package')
         size = path.stat().st_size
         total += size
         if size > MAX_FILE_BYTES or total > MAX_PACKAGE_BYTES or len(files) >= MAX_FILES:
-            raise SkillError('스킬 파일이 너무 크거나 많아요.', 'invalid_package')
+            raise SkillError(msg('skills.package_limit'), 'invalid_package')
         files[rel] = path.read_bytes()
     return files
 
@@ -255,44 +255,44 @@ def inspect_skill(root, repository_licences=None):
     root = Path(root)
     files = _walk(root)
     if 'SKILL.md' not in files:
-        raise SkillError('SKILL.md가 없어요.', 'invalid_package')
+        raise SkillError(msg('skills.missing_skill_md'), 'invalid_package')
     try:
         text = files['SKILL.md'].decode('utf-8')
     except UnicodeDecodeError:
-        raise SkillError('SKILL.md가 UTF-8 글자가 아니에요.', 'invalid_package') from None
+        raise SkillError(msg('skills.invalid_utf8'), 'invalid_package') from None
     frontmatter, body = parse_frontmatter(text)
     name = frontmatter.get('name')
     if not isinstance(name, str) or len(name) > 64 or not NAME.match(name) or name != root.name:
-        raise SkillError('스킬 이름은 폴더 이름과 같은 소문자·숫자·하이픈(64자 이하)이어야 해요.', 'invalid_package')
+        raise SkillError(msg('skills.invalid_name'), 'invalid_package')
     description = frontmatter.get('description')
     if not isinstance(description, str) or not description.strip() or len(description) > 1024:
-        raise SkillError('스킬 설명은 1~1024자여야 해요.', 'invalid_package')
+        raise SkillError(msg('skills.description_limit'), 'invalid_package')
     compatibility = frontmatter.get('compatibility', '')
     if not isinstance(compatibility, str) or len(compatibility) > 500:
-        raise SkillError('compatibility는 500자 이하 글자여야 해요.', 'invalid_package')
+        raise SkillError(msg('skills.compatibility_limit'), 'invalid_package')
     metadata = frontmatter.get('metadata', {})
     if not isinstance(metadata, dict):
-        raise SkillError('metadata는 키-값 목록이어야 해요.', 'invalid_package')
+        raise SkillError(msg('skills.metadata_mapping'), 'invalid_package')
     status, notes = set(), []
     executable = sorted(rel for rel, data in files.items()
                         if any(part.lower() in EXECUTABLE_DIRS for part in rel.split('/')[:-1])
                         or Path(rel).suffix.lower() in EXECUTABLE_SUFFIXES or data.startswith(b'#!'))
     if executable:
         status.add('scripts_or_hooks_required')
-        notes.append('실행 파일: ' + ', '.join(executable[:5]))
+        notes.append(msg('skills.executables', files=', '.join(executable[:5])))
     extra = sorted(set(frontmatter) - SPEC_FIELDS)
     if extra:
         status.add('adapted')
-        notes.append('표준 밖 머리말(메타데이터로만 보관): ' + ', '.join(map(str, extra[:5])))
+        notes.append(msg('skills.extra_frontmatter', fields=', '.join(map(str, extra[:5]))))
     allowed_tools = frontmatter.get('allowed-tools') or ''
     if not isinstance(allowed_tools, str):
-        raise SkillError('allowed-tools는 글자여야 해요.', 'invalid_package')
+        raise SkillError(msg('skills.allowed_tools_text'), 'invalid_package')
     allowed_tools = allowed_tools.split()
     licence, recognised, licence_source = _licence(frontmatter, files, _repository_licences(repository_licences))
     if not recognised:
         status.add('licence_unknown')
     if len(body.encode()) > MAX_BODY_BYTES or body.count('\n') > MAX_BODY_LINES:
-        raise SkillError(f'SKILL.md 본문이 너무 길어요({MAX_BODY_LINES}줄, {MAX_BODY_BYTES // 1024}KB 이하).', 'invalid_package')
+        raise SkillError(msg('skills.body_limit', lines=MAX_BODY_LINES, kilobytes=MAX_BODY_BYTES // 1024), 'invalid_package')
     digests = {rel: hashlib.sha256(data).hexdigest() for rel, data in files.items()}
     return {'name': name, 'description': ' '.join(description.split()), 'compatibility': compatibility.strip(),
             'licence': licence, 'licence_source': licence_source, 'allowed_tools': allowed_tools[:32],
@@ -317,7 +317,7 @@ GITHUB_HOSTS = ('https://codeload.github.com/', 'https://api.github.com/')
 def http_get(url, limit=MAX_DOWNLOAD_BYTES, timeout=30):
     """Bytes of one HTTPS GET to GitHub, bounded; the default transport."""
     if not url.startswith(GITHUB_HOSTS):
-        raise SkillError('스킬은 GitHub에서만 받아요.', 'invalid_source')
+        raise SkillError(msg('skills.github_only'), 'invalid_source')
     # The commits API answers a ref with only its SHA under this documented media type
     # (the default JSON carries the whole diff).
     accept = 'application/vnd.github.sha' if url.startswith('https://api.github.com/') else 'application/octet-stream'
@@ -326,9 +326,9 @@ def http_get(url, limit=MAX_DOWNLOAD_BYTES, timeout=30):
         with urllib.request.build_opener(_GitHubRedirects).open(request, timeout=timeout) as response:
             data = response.read(limit + 1)
     except (urllib.error.URLError, TimeoutError, OSError):
-        raise SkillError('GitHub에서 스킬을 받지 못했어요. 잠시 뒤 다시 요청하세요.', 'source_unavailable') from None
+        raise SkillError(msg('skills.download_failed'), 'source_unavailable') from None
     if len(data) > limit:
-        raise SkillError('받을 파일이 너무 커요.', 'invalid_package')
+        raise SkillError(msg('skills.download_limit'), 'invalid_package')
     return data
 
 
@@ -340,12 +340,12 @@ def parse_source(value, transport=http_get):
     """
     match = GITHUB_TREE.match((value or '').strip())
     if not match:
-        raise SkillError('GitHub 스킬 폴더 주소를 주세요(예: https://github.com/<owner>/<repo>/tree/<브랜치 또는 커밋>/<폴더>).',
+        raise SkillError(msg('skills.github_url'),
                          'invalid_source')
     owner, repo, ref, path = match.groups()
     parts = path.split('/')
     if any(part in ('', '.', '..') for part in parts) or not NAME.match(parts[-1]):
-        raise SkillError('스킬 폴더 경로를 확인하세요.', 'invalid_source')
+        raise SkillError(msg('skills.folder_path'), 'invalid_source')
     revision = ref.lower() if COMMIT.match(ref.lower()) else None
     if revision is None:
         try:
@@ -354,7 +354,7 @@ def parse_source(value, transport=http_get):
         except (ValueError, AttributeError):
             revision = ''
         if not COMMIT.match(revision):
-            raise SkillError('브랜치나 태그의 커밋을 확인하지 못했어요. 커밋 주소로 다시 주세요.', 'source_unavailable')
+            raise SkillError(msg('skills.commit_unavailable'), 'source_unavailable')
     return {'kind': 'github', 'repo': f'{owner}/{repo}', 'revision': revision, 'path': path,
             'uri': f'https://github.com/{owner}/{repo}', 'publisher_claim': owner}
 
@@ -402,22 +402,22 @@ def fetch_github(source, dest, transport=http_get):
                     continue
                 parts = rel.split('/')
                 if any(part in ('', '.', '..') for part in parts) or rel.startswith('/'):
-                    raise SkillError('스킬 안에 허용하지 않는 경로가 있어요.', 'invalid_package')
+                    raise SkillError(msg('skills.invalid_path'), 'invalid_package')
                 if member.isdir():
                     continue
                 if not member.isfile():
-                    raise SkillError(f'스킬 안에 링크나 특수 파일({rel})이 있어 받지 않았어요.', 'invalid_package')
+                    raise SkillError(msg('skills.special_file', rel=rel), 'invalid_package')
                 written += member.size
                 count += 1
                 if member.size > MAX_FILE_BYTES or written > MAX_PACKAGE_BYTES or count > MAX_FILES:
-                    raise SkillError('스킬 파일이 너무 커요.', 'invalid_package')
+                    raise SkillError(msg('skills.file_limit'), 'invalid_package')
                 target = Path(dest, *parts)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(archive.extractfile(member).read())
     except (tarfile.TarError, EOFError, OSError):
-        raise SkillError('받은 스킬 묶음을 풀 수 없어요.', 'invalid_package') from None
+        raise SkillError(msg('skills.archive_failed'), 'invalid_package') from None
     if not (Path(dest) / 'SKILL.md').is_file():
-        raise SkillError('그 커밋의 그 폴더에 SKILL.md가 없어요.', 'invalid_package')
+        raise SkillError(msg('skills.commit_folder_missing'), 'invalid_package')
     return Path(dest)
 
 
@@ -558,12 +558,12 @@ class SkillLibrary:
         files = _walk(folder)  # links/escapes refused again on every read
         digests = {path: hashlib.sha256(data).hexdigest() for path, data in files.items()}
         if tree_digest(digests) != entry['digest']:
-            raise SkillError('스킬 파일이 설치된 내용과 달라 읽지 않았어요.', 'skill_revoked')
+            raise SkillError(msg('skills.file_changed'), 'skill_revoked')
         parts = rel.split('/') if isinstance(rel, str) else []
         if not parts or any(part in ('', '.', '..') for part in parts) or rel not in files:
-            raise SkillError('스킬 안에 그런 파일이 없어요.', 'skill_unavailable')
+            raise SkillError(msg('skills.file_missing'), 'skill_unavailable')
         if Path(rel).suffix.lower() not in TEXT_SUFFIXES:
-            raise SkillError('스킬의 글자 파일(.md, .txt, .json 등)만 읽을 수 있어요.', 'skill_unavailable')
+            raise SkillError(msg('skills.text_files_only'), 'skill_unavailable')
         data = files[rel]
         text = data[:limit].decode('utf-8', 'replace')
         return text, len(data) > limit, sorted(files)
@@ -587,13 +587,13 @@ class SkillLibrary:
             record = inspect_skill(folder, staging / REPOSITORY_LICENCES)
             blocked = sorted(set(record['status']) - ENABLE_STATUSES)
             if blocked:
-                reasons = {'scripts_or_hooks_required': '스크립트나 훅을 실행해야 하는 스킬이에요',
-                           'licence_unknown': '라이선스를 확인할 수 없어요'}
-                raise SkillError('추가하지 않았어요: ' + ' / '.join(reasons.get(code, code) for code in blocked) + '.',
+                reasons = {'scripts_or_hooks_required': msg('skills.requires_scripts'),
+                           'licence_unknown': msg('skills.unknown_license')}
+                raise SkillError(msg('skills.not_added', reasons=' / '.join(reasons.get(code, code) for code in blocked)),
                                  'unsupported')
             package_id = record['name']
             if package_id == BUNDLED_PACKAGE or package_id in {entry['name'] for entry in self.bundled()}:
-                raise SkillError('Still 기본 스킬과 이름이 같아 추가하지 않았어요.', 'identity_collision')
+                raise SkillError(msg('skills.bundled_collision'), 'identity_collision')
             existing = self._manifest_path(package_id)
             enabled = True
             if existing.exists():
@@ -604,7 +604,7 @@ class SkillLibrary:
                 same = isinstance(previous.get('source'), dict) and all(
                     previous['source'].get(key) == source[key] for key in ('repo', 'path'))
                 if not same:
-                    raise SkillError(f"이미 '{package_id}'라는 다른 패키지가 있어 추가하지 않았어요.", 'identity_collision')
+                    raise SkillError(msg('skills.package_collision', package_id=package_id), 'identity_collision')
                 # An update keeps the owner's on/off choice for this package (review P3).
                 enabled = previous.get('enabled') is True
             skill = {key: record[key] for key in ('name', 'description', 'digest', 'licence', 'licence_source', 'compatibility',
@@ -616,7 +616,7 @@ class SkillLibrary:
                                              'skills': [skill], 'source': source, 'adaptation': 1,
                                              'installed_at': time.time()})
             except ValueError as exc:
-                raise SkillError(f'{exc} 추가하지 않았어요.', 'identity_collision') from None
+                raise SkillError(msg('skills.add_failed', exc=exc), 'identity_collision') from None
             target = self.content / record['digest'] / name
             if not target.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -635,7 +635,7 @@ class SkillLibrary:
         for manifest in self.installed():
             if wanted == manifest['id'] or wanted in {skill.get('name') for skill in manifest['skills']}:
                 return manifest['id']
-        raise SkillError(f"설치된 스킬 중에 '{value}'이(가) 없어요.", 'skill_unavailable')
+        raise SkillError(msg('skills.not_installed', value=value), 'skill_unavailable')
 
     def remove(self, package_id):
         """Remove a declaration.  Stored content stays (Work evidence references it by digest)."""
@@ -644,7 +644,7 @@ class SkillLibrary:
 
     def summary(self):
         """Owner-readable rows of the installed and bundled skills."""
-        rows = [{'skill': entry['skill'], 'digest': entry['digest'], 'source': 'Still 기본', 'enabled': True} for entry in self.bundled()]
+        rows = [{'skill': entry['skill'], 'digest': entry['digest'], 'source': msg('skills.bundled'), 'enabled': True} for entry in self.bundled()]
         for manifest in self.installed():
             source = manifest.get('source') or {}
             rows.append({'skill': f"{manifest['id']}/{manifest['skills'][0]['name']}", 'enabled': manifest.get('enabled') is True,
@@ -728,7 +728,7 @@ class SkillBinding:
         for (detail,) in stopped:
             try:
                 if json.loads(detail).get('code') == 'skill_revoked':
-                    self.revoked = self.revoked or '이 작업이 읽은 스킬'
+                    self.revoked = self.revoked or msg('skills.used_skill')
             except (TypeError, ValueError, AttributeError):
                 continue
         headers, loads = 0, set()
@@ -771,7 +771,7 @@ class SkillBinding:
     def load(self, skill):
         entry = self._entry(skill)
         if skill not in self.loaded and self.loads >= MAX_LOADS:
-            raise SkillError(f'한 작업에서 스킬은 {MAX_LOADS}개까지 읽어요.', 'skill_limit')
+            raise SkillError(msg('skills.load_limit', count=MAX_LOADS), 'skill_limit')
         text, _cut, files = self.library.read(entry, 'SKILL.md', MAX_FILE_BYTES)
         if skill not in self.loaded:
             self.loads += 1
@@ -791,7 +791,7 @@ class SkillBinding:
         """
         entry = self._entry(skill)
         if self.header_reads >= MAX_HEADER_READS:
-            raise SkillError(f'한 작업에서 스킬 머리말은 {MAX_HEADER_READS}개까지 읽어요.', 'skill_limit')
+            raise SkillError(msg('skills.header_limit', count=MAX_HEADER_READS), 'skill_limit')
         text, _cut, _files = self.library.read(entry, 'SKILL.md', MAX_FILE_BYTES)
         self.header_reads += 1
         if skill not in self.loaded:
@@ -812,9 +812,9 @@ class SkillBinding:
         """
         text = ' '.join(str(note or '').split())
         if not text:
-            raise SkillError('어떤 방법이 없었는지 한 줄로 적어 주세요.', 'invalid_call')
+            raise SkillError(msg('skills.missing_method'), 'invalid_call')
         if self.gap_notes >= MAX_GAP_NOTES:
-            raise SkillError(f'한 작업에서 방법 공백은 {MAX_GAP_NOTES}개까지 남겨요.', 'skill_limit')
+            raise SkillError(msg('skills.gap_limit', count=MAX_GAP_NOTES), 'skill_limit')
         self.gap_notes += 1
         return {'method_gap': text[:MAX_GAP_CHARS], 'advisory': True,
                 'note': '기록만 했어요. 실패가 아니니 스킬 없이 요청에 계속 답하세요.'}
@@ -822,9 +822,9 @@ class SkillBinding:
     def resource(self, skill, path):
         entry = self._entry(skill)
         if skill not in self.loaded:
-            raise SkillError('먼저 skill_load로 그 스킬을 읽으세요.', 'skill_unavailable')
+            raise SkillError(msg('skills.load_first'), 'skill_unavailable')
         if self.resource_reads >= MAX_RESOURCE_READS:
-            raise SkillError(f'한 작업에서 스킬 파일은 {MAX_RESOURCE_READS}개까지 읽어요.', 'skill_limit')
+            raise SkillError(msg('skills.resource_limit', count=MAX_RESOURCE_READS), 'skill_limit')
         text, cut, _files = self.library.read(entry, path, MAX_RESOURCE_BYTES)
         self.resource_reads += 1
         return {**self.identity(entry), 'path': path, 'content': text, 'truncated': cut}
