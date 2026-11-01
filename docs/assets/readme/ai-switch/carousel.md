@@ -1,6 +1,6 @@
 # Localized homepage carousel
 
-The twelve `site/assets/ai-switch/<locale>-<1..3>.svg` images are translated,
+The `site/assets/ai-switch/<locale>-<1..3>.svg` images are translated,
 condensed **reconstructions**, not screenshots of localized application UI.
 They retell the three panels of `ai-switch-conversation.png`, supplied by the
 owner from one real Telegram session on **2026-10-08**. The source digests,
@@ -30,3 +30,11 @@ The carousel does not reclassify that video or the October 11 README demo.
 Regenerate the SVG assets with `python3 scripts/build_site_carousel.py`.
 This uses only Python's standard library. SVG keeps translated text legible
 when enlarged without adding fonts, image-generation services or browser scripts.
+
+Each locale has three mobile compositions and three `.wide.svg` desktop
+compositions (24 images total). The homepage selects them with native
+`picture`/`source` elements. The desktop composition places a short heading
+beside the dialogue; the mobile composition stacks them. Both use the same
+translated source text and disclosures. The neutral image treatment follows
+the owner-requested homepage redesign: a bright common canvas, centered hero,
+wide demo and alternating feature rows, with color confined to demonstrations.

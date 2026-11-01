@@ -21,6 +21,9 @@ def test_localized_images_match_copy_and_keep_uncertainty():
             svg = ET.fromstring(source)
             assert '<script' not in source and '<image' not in source
             assert copy['label'] in ''.join(svg.itertext())
+            wide = (builder.OUT / f'{lang}-{index + 1}.wide.svg').read_text()
+            assert wide == builder.render_wide(lang, copy, index)
+            ET.fromstring(wide)
         assert all(copy['replies'])
     # The redrawn excerpts retain both the source's unknown date and partial verification.
     assert 'cannot establish whether that was yesterday' in copies['en']['replies'][0]
@@ -39,7 +42,10 @@ def test_each_homepage_links_its_own_translated_images_and_all_controls_resolve(
         assert len(slides) == 3
         ids = {slide.get('id') for slide in slides}
         for index, slide in enumerate(slides):
-            img = slide.xpath('./img')[0]
+            img = slide.xpath('.//picture//img')[0]
+            source = slide.xpath('./picture/source')[0]
+            assert source.get('srcset') == f'assets/ai-switch/{lang}-{index + 1}.wide.svg'
+            assert (ROOT / 'site' / source.get('srcset')).is_file()
             assert img.get('src') == f'assets/ai-switch/{lang}-{index + 1}.svg'
             assert (ROOT / 'site' / img.get('src')).is_file()
             assert len(img.get('alt')) > 50

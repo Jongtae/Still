@@ -1,11 +1,14 @@
-/* Native scrolling keeps swipe, keyboard and anchor controls script-free. */
-html:has(.switch-slide:target) { scroll-behavior:auto; }
-.switch-carousel { margin-inline:0; }
-.switch-slides { display:flex; gap:1rem; overflow-x:auto; scroll-snap-type:x mandatory; border-radius:1.5rem; scrollbar-color:#e4d6c9 #36494a; padding-bottom:1rem; }
-.switch-slides:focus-visible,.switch-carousel a:focus-visible { outline:3px solid #e4d6c9; outline-offset:4px; }
-.switch-slide { flex:0 0 100%; min-width:0; margin:0; scroll-snap-align:start; scroll-snap-stop:always; }
-.switch-slide img { display:block; width:100%; max-width:48rem; height:auto; margin-inline:auto; border-radius:1.5rem; }
-.slide-controls { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem .25rem; }
-.slide-controls a,.slide-index a { display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; border:1px solid currentColor; border-radius:999px; text-decoration:none; padding:.4rem 1rem; }
-.slide-index { display:flex; justify-content:center; gap:.7rem; margin:1rem 0; }
-.switch-carousel > figcaption { max-width:50rem; font-size:.9rem; line-height:1.65; opacity:.85; }
+/* Native scrolling and fragment links keep every control script-free. */
+html:has(.switch-slide:target){scroll-behavior:auto}
+.switch-carousel{margin-inline:0}
+.switch-slides{display:flex;gap:1rem;overflow-x:auto;scroll-snap-type:x mandatory;border-radius:1.75rem;scrollbar-color:#aaa #eee;padding-bottom:.5rem}
+.switch-slides:focus-visible,.switch-carousel a:focus-visible{outline:2px solid #171717;outline-offset:4px}
+.switch-slide{flex:0 0 100%;min-width:0;margin:0;scroll-snap-align:start;scroll-snap-stop:always}
+.switch-slide picture,.switch-slide img{display:block;width:100%;height:auto;border-radius:1.75rem}
+.slide-controls{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem .25rem;font-size:.85rem}
+.slide-controls a,.slide-index a{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;border:1px solid #d5d5d5;border-radius:999px;text-decoration:none;padding:.4rem .85rem}
+.slide-controls a:hover,.slide-index a:hover{background:#eee}
+.slide-index{display:flex;justify-content:center;gap:.5rem;margin:.5rem 0 1rem}
+.slide-index a{min-width:36px;min-height:36px;font-size:.8rem}
+.switch-carousel>figcaption{max-width:56rem;font-size:.75rem;line-height:1.65;color:#626262}
+@media(max-width:520px){.switch-slides,.switch-slide picture,.switch-slide img{border-radius:1.25rem}.slide-controls{font-size:.8rem}}
