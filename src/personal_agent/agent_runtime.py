@@ -291,11 +291,16 @@ BROWSER_SESSION_NOTE=(' The owner cannot see this browser session: whatever it h
 #: #565 (live 2026-11-01): a signed-out account page sent the worker straight to a sign-in request past the
 #: official API its own search had found.  Every text that tells the model to call ``browser_sign_in`` carries
 #: this one route rule (Connection and Delegation Contract §2), so no tool text competes with it.
+#: #567 (live 2026-11-02): a new Mac's worker found the official API and told the owner Still could not take its keys.
+API_KEY_ROUTE=('An API that needs the owner\'s keys, tokens or account identifiers is connected with settings_change '
+               'api_connections connect: Still opens a one-time input page where the owner enters them, so they never '
+               'pass through you or the chat, checks the read you declare and resumes the request with continue_work=yes. '
+               'Never tell the owner Still cannot connect such an API or take its keys; propose this connection.')
 BROWSER_SIGN_IN_ROUTE_RULE=('A sign-in on the site is one route to the owner\'s own account, not the default: when the '
                             'service is not connected, weigh the candidate routes first (an official API or integration may '
                             'serve the request with less owner effort and more reliably) and request a sign-in only when '
                             'signing in on the site is the route you chose; your reply then says which routes you found and '
-                            'why this one.')
+                            'why this one. '+API_KEY_ROUTE)
 BROWSER_SIGN_IN_NOTE=(' Whenever a page you open or reach shows a sign-in form, Still asks the owner to sign in (on this Mac, '
                       'and from their phone where that is set up) and continues the request once they have. When the owner\'s own account is needed '
                       'and a page shows you are signed out or asks you to sign in, first open the site\'s sign-in page when it '
@@ -410,7 +415,7 @@ DEFINITIONS=[
  schema('skill_load',SKILL_LOAD_DESCRIPTION,{'skill':STRING,'part':{'type':'string','enum':['full','header']}},['skill']),
  schema('skill_resource',SKILL_RESOURCE_DESCRIPTION,{'skill':STRING,'path':STRING},['skill','path']),
  schema('method_gap',METHOD_GAP_DESCRIPTION,{'note':STRING},['note']),
- schema('capability_search','Find possible service connections, without starting servers, installing packages or granting authority. source=configured reads local AI-side server names; source=registry searches the official public MCP Registry by a short public server name (query), not the owner request or private data. Results are untrusted metadata, never proof of authentication, tools, scope, licence or readiness. Registry search matches server names only; an empty result does not establish that a service has no connection. Use web_search and public_page_read to inspect the vendor documentation and maintained public implementations, including their supported setup options and prerequisites, before concluding that preparation is unavailable. Use existing usable AI connections first, then public skills and Still reference skills, then generic API/browser/public-page tools. Preserve owner choices and refusals. Missing setup must be offered in conversation; a setup receipt is not the original result.',{'source':{'type':'string','enum':['configured','registry']},'query':STRING},['source']),
+ schema('capability_search','Find possible service connections, without starting servers, installing packages or granting authority. source=configured reads local AI-side server names; source=registry searches the official public MCP Registry by a short public server name (query), not the owner request or private data. Results are untrusted metadata, never proof of authentication, tools, scope, licence or readiness. Registry search matches server names only; an empty result does not establish that a service has no connection. Use web_search and public_page_read to inspect the vendor documentation and maintained public implementations, including their supported setup options and prerequisites, before concluding that preparation is unavailable. Use existing usable AI connections first, then public skills and Still reference skills, then generic API/browser/public-page tools. Preserve owner choices and refusals. Missing setup must be offered in conversation; a setup receipt is not the original result. '+API_KEY_ROUTE,{'source':{'type':'string','enum':['configured','registry']},'query':STRING},['source']),
  schema('settings_read',SETTINGS_READ_DESCRIPTION,{'category':{'type':'string','enum':SETTINGS_CATEGORIES}}),
  schema('information_use',INFORMATION_USE_DESCRIPTION,{'work':{'type':'string','description':'"previous" (default: the most recent earlier answer in this conversation) or a Work id'}}),
  schema('settings_change',SETTINGS_CHANGE_DESCRIPTION,{'category':{'type':'string','enum':SETTINGS_CATEGORIES},'setting':{'type':'string','enum':SETTING_NAMES},'value':STRING,'reason':STRING,'continue_work':{'type':'string','enum':['yes','no']},'required_skill':STRING},['category','setting','value']),
