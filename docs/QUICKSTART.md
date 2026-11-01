@@ -27,7 +27,7 @@ One command installs and starts Still. You do not need Homebrew, Python, Docker 
 curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh
 ```
 
-This command and the Homebrew commands below install the newest published release, `v0.3.0` (2026-10-31). To run unreleased `main`, use a checkout instead ([source installation](#remote-host--source-installation)).
+This command and the Homebrew commands below install the newest published release, `v0.4.0` (2026-11-01). To run unreleased `main`, use a checkout instead ([source installation](#remote-host--source-installation)).
 
 The [installer](../scripts/install.sh) first downloads the published release archive and checks its SHA-256 against the [release manifest](release-manifest.json); on a mismatch it installs nothing. If you do not already have a current [uv](https://docs.astral.sh/uv/), it installs a pinned version through Astral's official installer, which adds `~/.local/bin` to your shell `PATH`. It then installs Still with a uv-managed Python, ignoring your own uv settings, and starts it; the first setup described below then runs in the same terminal. Set `AGENTOS_NO_START=1` to install without starting. Later, open a new terminal and run `agentos start`. Running the same command again after a release updates Still. To remove it, see [Uninstall](#uninstall).
 

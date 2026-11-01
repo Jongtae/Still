@@ -80,7 +80,7 @@ agentos start
 
 所有设置、Windows 说明以及卸载方法（除非你另行选择，`agentos uninstall` 会保留你的数据）请见 [QUICKSTART](../../docs/QUICKSTART.md)。
 
-**发布状态：** 两种安装方式安装的都是从已打标签的 main 提交构建的 **v0.3.0**（2026-10-31）。演示和日常使用画面来自真实使用会话，并非该发行版本的端到端验证；架构图属于产品方向。[release manifest](../../docs/release-manifest.json) 记录每个版本的覆盖范围，[产品状态](../../docs/product-status.en.md) 区分已提供的功能、测试依据和发展方向。
+**发布状态：** 两种安装方式安装的都是从已打标签的 main 提交构建的 **v0.4.0**（2026-11-01）。演示和日常使用画面来自真实使用会话，并非该发行版本的端到端验证；架构图属于产品方向。[release manifest](../../docs/release-manifest.json) 记录每个版本的覆盖范围，[产品状态](../../docs/product-status.en.md) 区分已提供的功能、测试依据和发展方向。
 
 <!-- readme-section:ownership -->
 
