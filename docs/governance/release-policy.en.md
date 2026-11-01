@@ -31,7 +31,9 @@ The in-tree version after a release is a **placeholder** (the next patch) that o
 ## Scope and branches
 A GitHub milestone named `vX.Y.Z` is the scope of that release. Issues move between version milestones as plans change; a version that is skipped is closed with a note, as v1.2.0 was.
 
-There are no long-lived release branches: releases are tags on `main`. Release-preparation PRs use a short-lived `release/<issue>-vX.Y.Z` branch like any other issue branch. If a fix must ship while `main` carries unreleased work (for example during an RC), cut a maintenance branch from the tag at that point (`git checkout -b release/X.Y vX.Y.Z-rc.N`), cherry-pick the fix and tag there.
+Releases are tags on `main` or on a maintenance line. Release-preparation PRs use a short-lived `release/<issue>-vX.Y.Z` branch like any other issue branch.
+
+When a patch must ship while `main` already carries the next minor's work, cut a maintenance line `maint/X.Y` from that minor's newest tag (#533), and only then. Fixes land on `main` first and reach the line as cherry-pick PRs (`git cherry-pick -x`); a fix lands only on the line when the bug no longer exists on `main`. The line publishes only `X.Y.*` patches, through the same workflow and the same owner approval as `main`. The `vX.Y.Z` milestone of a line's patch holds those cherry-pick PRs, so an unmerged one blocks the release; each issue keeps the milestone of the `main` release it ships in. A patch of an older minor published after a newer minor is recorded but never becomes what the formula, the installer or the site install.
 
 ## Release cadence and authority
 Review readiness approximately monthly, **not** an automatic monthly publish. Security/critical regressions may justify an out-of-band patch. The authorized human release maintainer approves the exact tag and public distribution; an AI may prepare notes, compare risks and recommend a version, but may not independently tag, publish, update Homebrew, deploy, approve a `release` environment deployment or access release credentials. Release roles do not imply repository permissions.

@@ -45,6 +45,8 @@ vm.createContext(ctx);vm.runInContext(source,ctx);vm.runInContext("setLanguage('
 const same=(a,b,m)=>assert.equal(JSON.stringify(a),JSON.stringify(b),m);
 const buttons=()=>descendants($('connector-controls')).filter(node=>node.tag==='button');
 const button=text=>buttons().find(node=>node.textContent===text);
+// #535: the card is one row per service; each grant is a level of it.
+const svc=(...levels)=>levels.map(level=>({service:level.connector_id,name:'서비스',levels:[{...level,level:'read'}],ai_routes:[]}));
 const gmail={connector_id:'google-gmail-read',label:'Gmail',state:'connected',required_scopes:['gmail.readonly'],connect_path:'/google-gmail'};
 const effects={local_access:'stop',local_credentials:'delete',provider_revocation:'request',provider_destination:'oauth2.googleapis.com',retained_data:'preserve',remote_data_deletion:'none'};
 const receipt=(extra={})=>({connector_id:'google-gmail-read',operation:'disconnect',local_access:'stopped',local_credentials:'deleted',provider_revocation:'revoked',provider_request:'observed',provider_destination:'oauth2.googleapis.com',retained_data:'preserved',retry_available:false,label:'Gmail',state:'disconnected',message:'server text',...extra});
@@ -54,8 +56,8 @@ answers['/api/connections/google/revocations']={pending_provider_revocations:[]}
 (async()=>{
  // Only a connected or reauth_required row offers 연결 해제, next to its existing reconnect link.
  const rows=[gmail,{...gmail,connector_id:'google-calendar-write',state:'reauth_required'},{...gmail,connector_id:'google-calendar',state:'disconnected'},{...gmail,connector_id:'google-drive-read',state:'blocked'},{...gmail,connector_id:'google-drive-read',state:'surprising'}];
- for(const row of rows){ctx.renderConnectors([row]);assert.equal(Boolean(button('연결 해제')),['connected','reauth_required'].includes(row.state),`${row.state}: disconnect offered only for a live connection`);}
- ctx.renderConnectors([gmail]);const opener=button('연결 해제');assert(opener.className.includes('destructive'),'destructive grammar');
+ for(const row of rows){ctx.renderConnectors(svc(row));assert.equal(Boolean(button('연결 해제')),['connected','reauth_required'].includes(row.state),`${row.state}: disconnect offered only for a live connection`);}
+ ctx.renderConnectors(svc(gmail));const opener=button('연결 해제');assert(opener.className.includes('destructive'),'destructive grammar');
  assert(descendants($('connector-controls')).some(node=>node.tag==='a'&&node.textContent==='다시 연결'),'the reconnect link stays');
 
  // Opening shows a modal, focuses the safe action and asks for the preview; nothing can be confirmed before it answers.
@@ -85,11 +87,11 @@ answers['/api/connections/google/revocations']={pending_provider_revocations:[]}
  assert.equal(text('google-disconnect-cancel'),'닫기');
 
  // Closing returns focus to the row: the reconnect link once the disconnect button is gone.
- ctx.renderConnectors([{...gmail,state:'disconnected'}]);dialog.close();assert.equal(focused?.textContent,'연결','focus returns to the row, not the page top');
+ ctx.renderConnectors(svc({...gmail,state:'disconnected'}));dialog.close();assert.equal(focused?.textContent,'연결','focus returns to the row, not the page top');
 
  // Unconfirmed at Google: never presented as revoked; retry is offered and only the provider line changes.
  for(const [outcome,expected] of [['unconfirmed','요청이 도착했는지는 알 수 없습니다'],['failed','거절해'],['not_attempted','취소 요청을 보내지 않았습니다']]){
-  ctx.renderConnectors([gmail]);const again=button('연결 해제');again.onclick({currentTarget:again});await new Promise(resolve=>setTimeout(resolve,0));
+  ctx.renderConnectors(svc(gmail));const again=button('연결 해제');again.onclick({currentTarget:again});await new Promise(resolve=>setTimeout(resolve,0));
   answers['/api/connections/google/disconnect']=receipt({provider_revocation:outcome,retry_available:outcome!=='not_attempted',local_credentials:outcome==='not_attempted'?'none_stored':'deleted'});
   await ctx.confirmGoogleDisconnect($('google-disconnect-confirm'));
   assert(text('google-disconnect-title').includes('Google 쪽 취소는 확인되지 않음'),outcome+': heading says unconfirmed');
@@ -100,7 +102,7 @@ answers['/api/connections/google/revocations']={pending_provider_revocations:[]}
  }
 
  // local_access incomplete stays the headline even after a successful retry at Google.
- ctx.renderConnectors([gmail]);button('연결 해제').onclick({currentTarget:button('연결 해제')});await new Promise(resolve=>setTimeout(resolve,0));
+ ctx.renderConnectors(svc(gmail));button('연결 해제').onclick({currentTarget:button('연결 해제')});await new Promise(resolve=>setTimeout(resolve,0));
  answers['/api/connections/google/disconnect']=receipt({local_access:'incomplete',provider_revocation:'unconfirmed',provider_request:'unknown',retry_available:true});
  await ctx.confirmGoogleDisconnect($('google-disconnect-confirm'));
  assert.equal(text('google-disconnect-title'),'Google Gmail 연결을 모두 해제하지 못했습니다');assert(text('google-disconnect-effects').includes('아직 사용될 수 있습니다'));
@@ -112,7 +114,7 @@ answers['/api/connections/google/revocations']={pending_provider_revocations:[]}
  dialog.close();
 
  // A refused confirmation (expired/replayed/changed) is shown as refused; the next attempt asks for a fresh preview.
- ctx.renderConnectors([gmail]);button('연결 해제').onclick({currentTarget:button('연결 해제')});await new Promise(resolve=>setTimeout(resolve,0));
+ ctx.renderConnectors(svc(gmail));button('연결 해제').onclick({currentTarget:button('연결 해제')});await new Promise(resolve=>setTimeout(resolve,0));
  answers['/api/connections/google/disconnect']=new Error('확인 시간이 지났습니다. 연결 해제를 다시 확인해 주세요.');
  await ctx.confirmGoogleDisconnect($('google-disconnect-confirm'));
  assert(text('google-disconnect-feedback').includes('확인 시간이 지났습니다'));assert.equal(text('google-disconnect-confirm'),'다시 확인');assert.equal(text('google-disconnect-effects'),'','no stale effects after a refusal');
@@ -125,21 +127,21 @@ answers['/api/connections/google/revocations']={pending_provider_revocations:[]}
 
  // Unexpected effects are not paraphrased: the server's own statement is shown.
  answers['/api/connections/google/disconnect/preview']={connector_id:'google-drive-read',confirmation:'x',effects:{...effects,remote_data_deletion:'request'},message:'server preview text'};
- ctx.renderConnectors([{...gmail,connector_id:'google-drive-read'}]);button('연결 해제').onclick({currentTarget:button('연결 해제')});await new Promise(resolve=>setTimeout(resolve,0));
+ ctx.renderConnectors(svc({...gmail,connector_id:'google-drive-read'}));button('연결 해제').onclick({currentTarget:button('연결 해제')});await new Promise(resolve=>setTimeout(resolve,0));
  assert.equal(text('google-disconnect-effects'),'server preview text');dialog.close();
  answers['/api/connections/google/disconnect/preview']={connector_id:'google-drive-read',confirmation:'y',effects,message:''};
- ctx.renderConnectors([{...gmail,connector_id:'google-drive-read'}]);button('연결 해제').onclick({currentTarget:button('연결 해제')});await new Promise(resolve=>setTimeout(resolve,0));
+ ctx.renderConnectors(svc({...gmail,connector_id:'google-drive-read'}));button('연결 해제').onclick({currentTarget:button('연결 해제')});await new Promise(resolve=>setTimeout(resolve,0));
  assert(text('google-disconnect-effects').includes('Google Picker에서 골라 둔 파일 선택도 지웁니다'),'Drive preview names the file selection');dialog.close();
 
  // A still-unconfirmed revocation stays on the row; retry is offered only while not reconnected.
  answers['/api/connections/google/revocations']={pending_provider_revocations:[{connector_id:'google-gmail-read',label:'Gmail',since:1}]};
- ctx.lastState={settings:{connectors:[{...gmail,state:'disconnected'}]}};await ctx.loadGoogleRevocations();
+ ctx.lastState={settings:{google_services:svc({...gmail,state:'disconnected'})}};await ctx.loadGoogleRevocations();
  assert($('connector-controls').textContent.includes('Google 쪽 권한 취소가 아직 확인되지 않았습니다'));const retry=button('Google에 다시 요청');assert(retry,'retry on the row');
  answers['/api/connections/google/revocation/retry']={provider_revocation:'revoked',retry_available:false};answers['/api/connections/google/revocations']={pending_provider_revocations:[]};
  await retry.onclick({currentTarget:retry});await new Promise(resolve=>setTimeout(resolve,0));
  assert(text('connector-feedback').includes('Google에서도 권한 취소를 확인했습니다'));assert(!button('Google에 다시 요청'),'the row clears once Google confirmed');
  answers['/api/connections/google/revocations']={pending_provider_revocations:[{connector_id:'google-gmail-read',label:'Gmail',since:1}]};
- ctx.lastState={settings:{connectors:[gmail]}};await ctx.loadGoogleRevocations();
+ ctx.lastState={settings:{google_services:svc(gmail)}};await ctx.loadGoogleRevocations();
  assert($('connector-controls').textContent.includes('아직 확인되지 않았습니다')&&!button('Google에 다시 요청'),'a reconnected row keeps the note but offers no retry that would end the new grant');
  console.log('google disconnect DOM checks passed');
 })().catch(error=>{console.error(error);process.exit(1);});

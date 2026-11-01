@@ -753,11 +753,11 @@ class AgentService:
         #: process: from then on a tunneled request reaches only the remote-login routes.
         self._remote_login=None
         self._remote_login_started=False
-        self.remote_login_popen=None   # a test injects a fake ngrok here
+        self.remote_login_popen=None   # a test injects a fake tunnel here
         # #1213: the one phone input session (own Google client, Google consent from the phone).
         self._phone_input=None
         self._phone_input_started=False
-        self.phone_input_popen=None   # a test injects a fake ngrok here
+        self.phone_input_popen=None   # a test injects a fake tunnel here
         #: #940 hook: ``(site) -> owner-facing refusal text or None``.  A login window (explicit, in-flow or
         #: from the phone) never opens for a site this refuses: the family-share follow-up (#935) sets it to
         #: refuse the sites this instance *received*, so a family member never re-drives the owner's session.
@@ -801,7 +801,7 @@ class AgentService:
         follow-up to that conversation for a setter applied off-thread.
         """
         if not isinstance(body, dict):
-            raise ValueError('설정 요청을 확인하세요.')
+            raise ValueError(msg('settings_orchestrator.check_request'))
         operation=body.get('operation', 'text')
         if operation == 'read':
             return self.settings_orchestrator.read(owner_id, body.get('category'))
@@ -925,7 +925,7 @@ class AgentService:
             raise ValueError('같은 이름에 다른 서버 설정이 있어 덮어쓰지 않았어요. 현재 연결을 확인하세요.')
         target=trust_record.connection(data['engine'],'owner-mcp',data['name'])
         record=trust_record.hand(self.store,target)
-        if record['state']=='forgotten':raise ValueError('잊은 연결은 별도의 복원 확인이 필요해요.')
+        if record['state']=='forgotten':raise ValueError(msg('trust_record.restore_confirmation'))
         if record['revision'] and (record['money']!=data['money'] or
                 any(record['operations'].get(op) not in (None,'read') for op in data['read_tools'])):
             raise ValueError('기존 동작 결정이나 돈 표시를 새 연결 설정으로 바꿀 수 없어요.')
@@ -4334,7 +4334,10 @@ class AgentService:
     def settings(self):
         main_ai=self.main_ai.status()
         search_providers=self.search_settings.status()
+        # #535: read before the lock; it may read the AI CLIs' configuration files.
+        ai_routes=self.ai_side_routes()
         with self.lock:
+            connectors=self.google_connection_rows()
             model=self.store.config('model',{})
             tg=self.store.config('telegram',{})
             model_test=self.store.config('model_test')
@@ -4349,7 +4352,7 @@ class AgentService:
                     'subscription_engines':self.subscription_engine_status(),
                     'subscription_execution':self.subscription_execution_profile(),
                     'telegram':{'enabled':tg.get('enabled',False),'mode':tg.get('mode','owner-token'),'username':tg.get('username',''),'paired':bool(tg.get('user_id')),'user_id':tg.get('user_id')},
-                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':self.google_connection_rows(),'google_client':self.google_client_status(),'ai_connections':self.ai_connections_status(),'current_context':self.current_state.status(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status(),'mattermost':self.mattermost_status(),'slack':self.slack_status()}
+                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':connectors,'google_services':self.google_service_rows(connectors,ai_routes),'google_client':self.google_client_status(),'ai_connections':{**self.ai_connections_status(),'routes':ai_routes},'current_context':self.current_state.status(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status(),'mattermost':self.mattermost_status(),'slack':self.slack_status()}
 
     def home(self):
         """Return the minimal, credential-free read model for the owner home."""
@@ -7642,6 +7645,120 @@ class AgentService:
              if self.google_client_id and holder is not None and getattr(holder,'client_id',None)==self.google_client_id}
         return [{**row,'source':'own-client'} if row.get('connector_id') in own else row for row in rows]
 
+    #: #535: the Google services Settings shows, one row each.  Declared data, not renderer branches:
+    #: ``levels`` are the service's separate grants in the order a connection grows (each keeps its own
+    #: state and disconnect), and ``ai_names`` are the words an AI-side connection's name contains for
+    #: Settings to show it under the service.  A connector in no service gets a row of its own.
+    #: ``covers`` names the grants a connected level already includes, only where ``connection_slots.build``
+    #: honours it: the Gmail slot reads with the modify token, while Calendar keeps its read grant for
+    #: reads (listing calendars) even with the write grant, so Calendar declares none.
+    GOOGLE_SERVICES=(
+        {'service':'gmail','name':'Gmail','ai_names':('gmail',),
+         'levels':((GMAIL_CONNECTOR_ID,'read'),(GMAIL_MODIFY_CONNECTOR_ID,'modify'),(GMAIL_FILTERS_CONNECTOR_ID,'filters')),
+         'covers':{GMAIL_MODIFY_CONNECTOR_ID:(GMAIL_CONNECTOR_ID,)}},
+        {'service':'google-calendar','name':'Google Calendar','ai_names':('google calendar','gcal'),
+         'levels':((CALENDAR_CONNECTOR_ID,'read'),(CALENDAR_WRITE_CONNECTOR_ID,'create'))},
+        {'service':'google-drive','name':'Google Drive','ai_names':('google drive','gdrive'),
+         'levels':((DRIVE_CONNECTOR_ID,'read'),('google-drive-read','picked'))},
+    )
+    #: How long the AI CLIs' configured server names are reused between Settings polls (they are file reads).
+    AI_ROUTES_CACHE_SECONDS=30
+
+    def _configured_ai_servers(self):
+        """``owner_mcp_available`` for Settings, reused briefly so polling does not re-read the CLI files."""
+        cached=getattr(self,'_ai_servers_cache',None)
+        now=time.monotonic()
+        if cached and now-cached[0]<self.AI_ROUTES_CACHE_SECONDS:
+            return cached[1]
+        try:
+            found=self.owner_mcp_available() or {}
+        except Exception:
+            found={}
+        self._ai_servers_cache=(now,found)
+        return found
+
+    def ai_side_routes(self):
+        """#535: the AI-side connections Still knows of, by name and state only (contract §3).
+
+        Two sources, and only what they show: a server named in an AI CLI's own
+        configuration (``configured``; Still has not checked that it starts or is
+        signed in), and a connection a Work was seen calling, from the trust record
+        (``used``; a recorded connection never seen in use is ``recorded``).  A
+        claude.ai connector the CLI has not called yet cannot be read, so it is
+        absent rather than guessed.  No definition, token or argument is read here.
+        """
+        from .bounded_execution import ENGINE_NAMES
+        status=self.ai_connections_status()
+        if not status['available']:
+            return []
+        enabled=status['enabled']
+        routes={}
+        for engine,names in (self._configured_ai_servers() or {}).items():
+            if engine not in owner_mcp.ENGINES:continue
+            for name in names or ():
+                if owner_mcp.valid_name(name):
+                    routes[(engine,'owner-mcp',name)]={'engine':engine,'kind':'owner-mcp','identity':name,'name':name,
+                                                       'configured':True,'last_used_at':None,'last_outcome':None}
+        for record in trust_record.hands(self.store).values():
+            if (record.get('state')!='active' or record.get('engine') not in owner_mcp.ENGINES
+                    or record.get('kind') not in trust_record.KINDS):
+                continue
+            observed=[item for item in record.get('history') or () if item.get('change')=='observed']
+            key=(record['engine'],record['kind'],record['identity'])
+            row=routes.setdefault(key,{'engine':record['engine'],'kind':record['kind'],'identity':record['identity'],
+                                       'name':record.get('name') or record['identity'],'configured':False,
+                                       'last_used_at':None,'last_outcome':None})
+            if observed:
+                row['last_used_at']=observed[-1].get('at')
+                # The outcome of the AI's last call, not of the connection: a failed call is not a broken link.
+                row['last_outcome']=observed[-1].get('outcome')
+        result=[]
+        for (engine,kind,identity),row in sorted(routes.items()):
+            confirmed=kind!='owner-mcp' or identity in owner_mcp.confirmed(self.store,engine)
+            # A claude.ai connector is offered to Claude Code only; an owner server only once confirmed.
+            usable=enabled and confirmed and (kind!='ai-connection' or engine=='claude-code')
+            state='used' if row['last_used_at'] else 'configured' if row['configured'] else 'recorded'
+            result.append({**row,'engine_name':ENGINE_NAMES.get(engine,engine),'state':state,'confirmed':confirmed,
+                           'usable':usable,'unusable_reason':'' if usable else ('off' if not enabled else 'not_confirmed')})
+        return result
+
+    @staticmethod
+    def _route_serves(name, words):
+        """Whether an AI-side connection's name contains one of a service's declared words."""
+        text=' '.join(re.split(r'[\s_\-]+',str(name or '').lower())).strip()
+        return any(re.search(r'(?<![a-z0-9])'+re.escape(word)+r'(?![a-z0-9])',text) for word in words)
+
+    def google_service_rows(self, connections=None, routes=None):
+        """#535: Settings' Google card, one row per service with its routes (contract §3: which hand it uses).
+
+        ``levels`` are the existing per-grant rows unchanged, plus their level
+        name and, for a disconnected grant a connected level includes, ``covered_by``;
+        disconnect still targets one ``connector_id``.  ``ai_routes`` are
+        the AI-side connections whose names match the service (``ai_side_routes``).
+        """
+        rows=self.google_connection_rows() if connections is None else connections
+        routes=self.ai_side_routes() if routes is None else routes
+        by_id={row.get('connector_id'):row for row in rows}
+        declared=set()
+        services=[]
+        for spec in self.GOOGLE_SERVICES:
+            declared.update(connector_id for connector_id,_level in spec['levels'])
+            levels=[{**by_id[connector_id],'level':level} for connector_id,level in spec['levels'] if connector_id in by_id]
+            # A disconnected grant that a connected level already includes is covered, not missing.
+            for level in levels:
+                coverer=next((higher for higher,covered in (spec.get('covers') or {}).items()
+                              if level['connector_id'] in covered and (by_id.get(higher) or {}).get('state')=='connected'),None)
+                if coverer and level.get('state')=='disconnected':
+                    level['covered_by']=coverer
+            ai=[route for route in routes if self._route_serves(route['name'],spec['ai_names'])]
+            if levels or ai:
+                services.append({'service':spec['service'],'name':spec['name'],'levels':levels,'ai_routes':ai})
+        for row in rows:
+            if row.get('connector_id') not in declared:
+                services.append({'service':row.get('connector_id'),'name':row.get('label') or row.get('connector_id'),
+                                 'levels':[{**row,'level':'read'}],'ai_routes':[]})
+        return services
+
     CONNECTION_NAMES={GMAIL_FILTERS_CONNECTOR_ID:msg('handoff.gmail_filters'), GMAIL_MODIFY_CONNECTOR_ID:msg('handoff.modify_gmail'), 'google-gmail-read':'Google Gmail','google-calendar':'Google Calendar',
                       'google-calendar-write':msg('handoff.create_google_calendar_events'),'google-drive-read':'Google Drive',
                       DRIVE_CONNECTOR_ID:'Google Drive'}
@@ -9704,10 +9821,10 @@ class AgentService:
 
         Returns the conversation's answer.  Raises ``ValueError`` (owner-facing)
         when the kind is not offered, Telegram is not paired, one is already
-        open, ngrok is missing or the link could not open or be delivered.
+        open, no tunnel tool can be had or the link could not open or be delivered.
         """
         from . import phone_input
-        from .subscription_engines import find_cli
+        from .family_setup import tunnel_available
         kinds=self.phone_input_kinds()
         if kind not in kinds:raise ValueError('이 설치에서 휴대폰 링크로 할 수 있는 일이 아닙니다.')
         cfg=self.store.config('telegram',{})
@@ -9715,7 +9832,7 @@ class AgentService:
         popen=self.phone_input_popen or subprocess.Popen
         with self.lock:
             if self.phone_input_session() is not None:raise ValueError(phone_input.BUSY_TEXT)
-            if popen is subprocess.Popen and not find_cli('ngrok'):raise ValueError(phone_input.NO_NGROK_TEXT)
+            if popen is subprocess.Popen and not tunnel_available():raise ValueError(phone_input.NO_TUNNEL_TEXT)
             port=self.local_server_port
             if not isinstance(port,int):raise ValueError(phone_input.NO_PORT_TEXT)
             session=phone_input.PhoneInput(kind,kinds[kind],store=self.store,popen=popen)
@@ -9761,17 +9878,17 @@ class AgentService:
 
         ``close(reason)`` closes that window the way its opener does.  Raises
         ``remote_login.RemoteLoginError`` (owner-facing message) when one is
-        already open, ngrok is missing, the local port is unknown or the
+        already open, no tunnel tool can be had, the local port is unknown or the
         tunnel did not open.  ``chat_id`` must be the paired owner's chat when
         given; the link is sent there and nowhere else.
         """
-        from .subscription_engines import find_cli
+        from .family_setup import tunnel_available
         popen=self.remote_login_popen or subprocess.Popen
         refused=self.login_refusal(site)
         if refused:raise remote_login.RemoteLoginError(refused)
         with self.lock:
             if self.remote_login_session() is not None:raise remote_login.RemoteLoginError(remote_login.BUSY_TEXT)
-            if popen is subprocess.Popen and not find_cli('ngrok'):raise remote_login.RemoteLoginError(remote_login.NO_NGROK_TEXT)
+            if popen is subprocess.Popen and not tunnel_available():raise remote_login.RemoteLoginError(remote_login.NO_TUNNEL_TEXT)
             port=self.local_server_port
             if not isinstance(port,int):raise remote_login.RemoteLoginError(remote_login.NO_PORT_TEXT)
             # #255: its end is said on the link message the owner got.

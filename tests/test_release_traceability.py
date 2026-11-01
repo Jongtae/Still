@@ -53,6 +53,7 @@ EXPECTED_FORMULA = '''class Agentos < Formula
   url "https://github.com/Jongtae/Still/archive/refs/tags/v__VERSION__.tar.gz"
   sha256 "__SHA256__"
   version_scheme 1
+  depends_on arch: :arm64
   depends_on "python@3.13"
 
   def install
@@ -178,12 +179,15 @@ class ReleaseTraceabilityTests(unittest.TestCase):
             return
         # The release workflow merges the formula PR before the record PR adds
         # the release to `published` (docs/release.en.md steps 7 and 9, #301).
-        # In between, the formula names the release in progress: the in-tree
-        # version, still unpublished and newer than the newest published one.
-        self.assertEqual(version, project_version(),
-                         'the formula names neither the newest release nor the release in progress')
-        self.assertIn(version, {row['version'] for row in manifest()['unpublished']})
-        self.assertGreater(version_key(version), version_key(release['version']))
+        # In between, the formula names the release in progress, newer than the
+        # newest published one: the in-tree version, still unpublished, or a
+        # patch from a maintenance line below main's in-tree version (#533).
+        self.assertGreater(version_key(version), version_key(release['version']),
+                           'the formula names an older release than the newest published one')
+        self.assertLessEqual(version_key(version), version_key(project_version()),
+                             'the formula names neither the newest release nor the release in progress')
+        if version == project_version():
+            self.assertIn(version, {row['version'] for row in manifest()['unpublished']})
 
     def test_the_published_formula_matches_the_template(self):
         """A template change must re-sync ``Formula/agentos.rb`` in the same PR.

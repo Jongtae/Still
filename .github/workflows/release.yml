@@ -2,7 +2,8 @@ name: release
 
 # #1472: merging a release-preparation PR (branch `release/<issue>-vX.Y.Z`)
 # publishes that version after one owner approval. It runs on the push to
-# main, so the `release` environment can admit main only. `prepare` only reads; the
+# main or a maintenance line, so the `release` environment admits only those
+# (#533). `prepare` only reads; the
 # `publish` job runs in the `release` environment, whose required reviewer is
 # the owner and whose RELEASE_TOKEN secret is the only credential that can
 # open the PRs that run required CI. The Homebrew formula lives in this
@@ -12,9 +13,14 @@ name: release
 # docs/governance/release-policy.en.md.
 # #1535: every release-preparation PR changes the manifest; a patch release that
 # ships the in-tree placeholder version changes nothing else.
+# #533: a patch can also come from a maintenance line `maint/X.Y`, cut from that
+# minor's newest tag while main carries the next minor. The `release`
+# environment admits `main` and `maint/*`; the owner's approval is unchanged.
+# The line keeps its own record; main's manifest gains the row; only the newest
+# release moves the formula, the installer pins, the site and "Latest".
 on:
   push:
-    branches: [main]
+    branches: [main, 'maint/*']
     paths: [pyproject.toml, docs/release-manifest.json]
 
 permissions:
@@ -50,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           head_ref="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
-            --jq '[.[] | select(.merged_at != null and .base.ref == "main")][0].head.ref // ""')"
+            --jq '[.[] | select(.merged_at != null and .base.ref == env.GITHUB_REF_NAME)][0].head.ref // ""')"
           if [[ "$head_ref" == release/* ]]; then
             echo "release=true" >> "$GITHUB_OUTPUT"
             echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
@@ -72,7 +78,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(python3 scripts/dev/release.py check)"
+          version="$(python3 scripts/dev/release.py check --branch "$GITHUB_REF_NAME")"
           issue="$(sed -nE 's#^release/([0-9]+)-v[0-9.]+$#\1#p' <<<"$HEAD_REF")"
           if [[ -z "$issue" || "$HEAD_REF" != "release/$issue-v$version" ]]; then
             echo "::error::branch $HEAD_REF must be release/<issue>-v$version"; exit 1
@@ -117,6 +123,8 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       ISSUE: ${{ needs.prepare.outputs.issue }}
       COMMIT: ${{ github.sha }}
+      # main, or the maintenance line maint/X.Y this release was prepared on (#533).
+      BRANCH: ${{ github.ref_name }}
     steps:
       - name: Require the release environment credential before any change
         env:
@@ -164,10 +172,26 @@ jobs:
           echo "::error::validate did not finish on $COMMIT; nothing was published"
           exit 1
 
+      # #533: a patch of an older minor, published after a newer minor, must not
+      # move the formula, the installer pins, the site or GitHub's "Latest" badge.
+      - id: newest
+        name: Decide whether this release is the newest published one on main
+        shell: bash
+        run: |
+          set -euo pipefail
+          tree="$RUNNER_TEMP/main"
+          git fetch origin main
+          git worktree add --detach "$tree" origin/main
+          newest="$(python3 scripts/dev/release.py --root "$tree" newest --version "$VERSION")"
+          git worktree remove --force "$tree"
+          echo "v$VERSION is the newest published release on main: $newest"
+          echo "newest=$newest" >> "$GITHUB_OUTPUT"
+
       - name: Tag the release commit and create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           MILESTONE_URL: ${{ needs.prepare.outputs.milestone_url }}
+          NEWEST: ${{ steps.newest.outputs.newest }}
         run: |
           set -eu
           if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -176,7 +200,8 @@ jobs:
             python3 scripts/dev/release.py notes --version "$VERSION" --milestone-url "$MILESTONE_URL" \
               > "$RUNNER_TEMP/notes.md"
             gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$COMMIT" \
-              --title "Still v$VERSION" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes
+              --title "Still v$VERSION" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes \
+              --latest="$NEWEST"
           fi
 
       - id: archive
@@ -197,6 +222,7 @@ jobs:
 
       - id: formula
         name: Update the Homebrew formula and merge it after its install test passes
+        if: steps.newest.outputs.newest == 'true'
         timeout-minutes: 60
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -243,7 +269,7 @@ jobs:
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
 
       - id: record
-        name: Record the release in the manifest, installer and release-status prose
+        name: Record the release in the manifest, installer and release-status prose of its branch
         timeout-minutes: 60
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -256,8 +282,8 @@ jobs:
           tree="$RUNNER_TEMP/record"
           pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state all --json url --jq '.[0].url // ""')"
           if [[ -z "$pr" ]]; then
-            git fetch origin main
-            git worktree add -B "$branch" "$tree" origin/main
+            git fetch origin "$BRANCH"
+            git worktree add -B "$branch" "$tree" "origin/$BRANCH"
             tag_date="$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json createdAt --jq '.createdAt[0:10]')"
             next="$(python3 scripts/dev/release.py --root "$tree" record --version "$VERSION" --commit "$COMMIT" \
               --sha256 "$SHA256" --date "$tag_date" --formula-pr "$FORMULA_PR")"
@@ -266,11 +292,11 @@ jobs:
             git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
               commit -am "release: record published v$VERSION and set $next as the next placeholder (#$ISSUE)"
             git push --force -u origin "$branch"
-            pr="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+            pr="$(gh pr create --repo "$GITHUB_REPOSITORY" --base "$BRANCH" --head "$branch" \
               --title "release: record published v$VERSION (#$ISSUE)" --body "$(cat <<EOF
           ## What changed
 
-          Records the published v$VERSION: manifest \`published\` entry with the served archive SHA-256 \`$SHA256\`, \`scripts/install.sh\` pins, release-status prose, and $next as the next in-tree placeholder. Homebrew formula: $FORMULA_PR. Opened by the release workflow after owner approval; it merges after its checks pass.
+          Records the published v$VERSION on \`$BRANCH\`: manifest \`published\` entry with the served archive SHA-256 \`$SHA256\`, \`scripts/install.sh\` pins, release-status prose, and $next as the next in-tree placeholder. Homebrew formula: $FORMULA_PR. Opened by the release workflow after owner approval; it merges after its checks pass.
 
           ## Existing solutions review (Adopt / Adapt / Build)
 
@@ -295,11 +321,69 @@ jobs:
           if [[ -z "$merged" ]]; then echo "::error::$pr did not merge"; exit 1; fi
           echo "commit=$merged" >> "$GITHUB_OUTPUT"
 
+      # #533: main's manifest lists every published release. A release from a
+      # maintenance line adds its row to main here; main's in-tree version moves
+      # past it only if it does not already, and the installer and status prose
+      # move only when it is the newest release.
+      - id: register
+        name: Register a maintenance-line release on main
+        if: env.BRANCH != 'main'
+        timeout-minutes: 60
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          SHA256: ${{ steps.archive.outputs.sha256 }}
+          FORMULA_PR: ${{ steps.formula.outputs.pr }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="docs/$ISSUE-register-v$VERSION"
+          tree="$RUNNER_TEMP/register"
+          pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state all --json url --jq '.[0].url // ""')"
+          if [[ -z "$pr" ]]; then
+            git fetch origin main
+            git worktree add -B "$branch" "$tree" origin/main
+            tag_date="$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json createdAt --jq '.createdAt[0:10]')"
+            in_tree="$(python3 scripts/dev/release.py --root "$tree" register --source "$GITHUB_WORKSPACE" \
+              --version "$VERSION" --commit "$COMMIT" --sha256 "$SHA256" --date "$tag_date" --formula-pr "$FORMULA_PR")"
+            cd "$tree"
+            uv lock
+            git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              commit -am "release: register v$VERSION from $BRANCH on main (#$ISSUE)"
+            git push --force -u origin "$branch"
+            pr="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+              --title "release: register v$VERSION from $BRANCH (#$ISSUE)" --body "$(cat <<EOF
+          ## What changed
+
+          Adds the published v$VERSION, released from \`$BRANCH\`, to the manifest on main (served archive SHA-256 \`$SHA256\`). Main's in-tree version is $in_tree. The installer pins and release-status prose move only when v$VERSION is the newest published release. Opened by the release workflow after owner approval; it merges after its checks pass.
+
+          ## Existing solutions review (Adopt / Adapt / Build)
+
+          - decision: N/A
+          - N/A reason: release bookkeeping data written by scripts/dev/release.py; no component, dependency or framework is introduced.
+
+          Refs #$ISSUE
+          EOF
+          )")"
+          fi
+          case "$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state --jq .state)" in
+            MERGED) echo "$pr already merged" ;;
+            OPEN)
+              sleep 60
+              gh pr checks "$pr" --repo "$GITHUB_REPOSITORY" --watch --fail-fast --interval 30
+              gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --squash --delete-branch ;;
+            *) echo "::error::$pr was closed without merging"; exit 1 ;;
+          esac
+          merged="$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state,mergeCommit --jq 'select(.state == "MERGED") | .mergeCommit.oid')"
+          if [[ -z "$merged" ]]; then echo "::error::$pr did not merge"; exit 1; fi
+          echo "commit=$merged" >> "$GITHUB_OUTPUT"
+
+      # The commit on main whose scripts/install.sh installs this release.
       - name: Pin the README installer to the commit that installs this release
+        if: steps.newest.outputs.newest == 'true'
         timeout-minutes: 15
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          RECORDED: ${{ steps.record.outputs.commit }}
+          RECORDED: ${{ steps.register.outputs.commit || steps.record.outputs.commit }}
         shell: bash
         run: |
           set -euo pipefail
@@ -342,6 +426,7 @@ jobs:
       # too (#313): deploy-pages stamps the new pin and version from main. The
       # job's own token can dispatch a workflow; RELEASE_TOKEN is not used.
       - name: Deploy the site with the new release
+        if: steps.newest.outputs.newest == 'true'
         timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}

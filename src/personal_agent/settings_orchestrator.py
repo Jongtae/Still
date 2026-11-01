@@ -46,25 +46,23 @@ class SettingsError(ValueError):
 # Owner-visible words for the connection contract states.  An unknown value is
 # reported as needing a check rather than guessed as connected.
 STATE_LABELS = {
-    "connected": "연결됨",
+    "connected": msg('label.connected'),
     "disconnected": msg('family_share.not_connected'),
     "reauth_required": msg('settings_orchestrator.sign_in_again'),
-    "blocked": "차단됨",
-    "pending": "확인 필요",
+    "blocked": msg('label.blocked'),
+    "pending": msg('label.needs_attention'),
     # #1204: a saved credential is setup, not a connection or a grant.
-    "configured": "설정됨",
+    "configured": msg('settings_orchestrator.configured'),
     "not_configured": msg('settings_orchestrator.not_set_up'),
 }
-UNKNOWN_STATE_LABEL = "확인 필요"
+UNKNOWN_STATE_LABEL = msg('label.needs_attention')
 
 RETIRED_CONTROL_MESSAGE = (
-    "연결을 일시 정지하거나 다시 시작하는 기능은 아직 없습니다. 대화에서는 Google 연결 해제만 확인 후 적용할 수 있어요. "
-    "설정 > 외부 연결에서 서비스별 현재 상태와 실제로 가능한 작업을 확인하세요."
+    msg('settings_orchestrator.retired_control')
 )
 #: #183: what disconnecting a Google connection does, and what it leaves alone.  The same effects
 #: ``GoogleConnectionRevoker.preview`` states; forgetting or deleting records is a separate request.
-DISCONNECT_NOTE = ("해제하면 Still이 즉시 이 연결을 쓰지 않고, 이 기기에 저장된 인증 정보를 지우며, Google에 권한 취소를 요청합니다. "
-                   "저장된 결과물과 기록, Google에 있는 데이터는 지우지 않아요. 다시 쓰려면 다시 연결해야 합니다.")
+DISCONNECT_NOTE = msg('settings_orchestrator.disconnect_note')
 
 
 def state_label(state):
@@ -78,31 +76,31 @@ def next_action(row):
         return msg('settings_orchestrator.not_available_under_the_current_policy')
     if row.get("id") == "telegram":
         if state == "connected":
-            return "추가로 할 일이 없습니다. 해제는 설정 > 외부 연결에서 합니다."
+            return msg('settings_orchestrator.telegram_connected_action')
         if state == "pending":
-            return "Telegram에서 연결 링크를 열어 소유자 계정을 연결하세요."
-        return "Still을 실행한 터미널 대화에서 연결을 요청하거나, 설정 > 외부 연결에서 봇 토큰으로 연결하세요."
+            return msg('settings_orchestrator.telegram_pending_action')
+        return msg('settings_orchestrator.telegram_connect_action')
     if not row.get("connectable"):
         if state == "connected":
-            return "추가로 할 일이 없습니다."
-        return row.get("connect_hint") or "이 설치에서는 여기서 연결을 시작할 수 없습니다."
+            return msg('settings_orchestrator.no_further_action')
+        return row.get("connect_hint") or msg('settings_orchestrator.cannot_start_connection')
     if state == "connected":
-        return "추가로 할 일이 없습니다. 권한을 새로 받으려면 설정 > 외부 연결에서 다시 연결하세요."
+        return msg('settings_orchestrator.connected_action')
     # #1207: name the loopback start address when this install offers one.
     url = row.get("connect_url")
-    where = f"이 컴퓨터(Mac)의 브라우저에서 {url} 을 열거나 설정 > 외부 연결에서" if url else "설정 > 외부 연결에서"
+    where = msg('settings_orchestrator.connection_location_url', url=url) if url else msg('settings_orchestrator.connection_location')
     if state == "reauth_required":
-        return f"{where} 다시 연결하세요."
+        return msg('settings_orchestrator.reconnect_action', where=where)
     if state == "disconnected":
-        return f"{where} 연결하세요."
-    return "설정 > 외부 연결에서 상태를 확인하세요."
+        return msg('settings_orchestrator.connect_action', where=where)
+    return msg('settings_orchestrator.check_connection_action')
 
 
 #: #814: owner-visible names of the categories and settings the conversation may read/change.
-CATEGORY_LABELS = {"connections": "외부 연결", "current_context": "현재 맥락", "judgment_ai": "판단 AI", "main_ai": "기본 AI",
-                   "owner_model": "알아 두기", "family": "가족 비서", "skills": "스킬",
-                   "phone_link": "휴대폰 링크", "ai_connections": "AI의 연결 서비스", "api_connections": "API 연결",
-                   "preparations": "예약", "browser": "브라우저"}
+CATEGORY_LABELS = {"connections": msg('label.external_connections'), "current_context": msg('label.current_context'), "judgment_ai": msg('label.judgment_ai'), "main_ai": msg('label.main_ai'),
+                   "owner_model": msg('settings_orchestrator.owner_model_label'), "family": msg('settings_orchestrator.family_label'), "skills": msg('settings_orchestrator.skills_label'),
+                   "phone_link": msg('settings_orchestrator.phone_link_label'), "ai_connections": msg('settings_orchestrator.ai_connections_label'), "api_connections": msg('settings_orchestrator.api_connections_label'),
+                   "preparations": msg('settings_orchestrator.preparations_label'), "browser": msg('settings_orchestrator.browser_label')}
 SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", "model"), "main_ai": ("route", "model"),
             # #805 owner-model upkeep: its pause switch and rolling 24-hour call cap.
             # #402: the once-a-day look back over recent requests has its own switch.
@@ -124,29 +122,104 @@ SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", 
             # #183: disconnect one Google connection (``GoogleConnectionRevoker``), confirmed like any draft.
             # #438: connect a place to talk (Telegram) from the terminal conversation; its token is typed there, hidden.
             "connections": ("disconnect", "connect_chat")}
-SETTING_LABELS = {"enabled": "사용", "timezone": "시간대", "mode": "방식", "model": "모델", "route": "경로",
-                  "daily_calls": "하루 판단 횟수", "dream": "밤사이 기억 정리", "add": "새로 만들기", "share_site": "로그인 공유", "unshare_site": "공유 그만",
-                  "remove": "빼기", "send": "보내기", "servers": "MCP 서버", "review": "동작 검토", "money": "돈이 오가는 연결",
-                  "connect": "새 MCP 연결", "rung": "신뢰 단계", "undo": "정확히 되돌리기", "forget": "신뢰 기록 잊기", "restore": "잊은 신뢰 기록 복원",
-                  "cancel": "취소", "accept": "수락", "disconnect": "연결 해제", "close_login": "로그인 창 닫기",
-                  "connect_chat": "대화할 곳 연결"}
+SETTING_LABELS = {"enabled": msg('label.use'), "timezone": msg('label.time_zone'), "mode": msg('settings_orchestrator.mode_label'), "model": msg('label.model'), "route": msg('settings_orchestrator.route_label'),
+                  "daily_calls": msg('settings_orchestrator.daily_calls_label'), "dream": msg('settings_orchestrator.dream_label'), "add": msg('settings_orchestrator.add_label'), "share_site": msg('settings_orchestrator.share_site_label'), "unshare_site": msg('settings_orchestrator.unshare_site_label'),
+                  "remove": msg('label.remove'), "send": msg('settings_orchestrator.send_label'), "servers": msg('settings_orchestrator.servers_label'), "review": msg('settings_orchestrator.review_label'), "money": msg('settings_orchestrator.money_label'),
+                  "connect": msg('settings_orchestrator.connect_label'), "rung": msg('settings_orchestrator.rung_label'), "undo": msg('settings_orchestrator.undo_label'), "forget": msg('settings_orchestrator.forget_label'), "restore": msg('settings_orchestrator.restore_label'),
+                  "cancel": msg('label.cancel'), "accept": msg('button.accept'), "disconnect": msg('settings_orchestrator.disconnect_label'), "close_login": msg('settings_orchestrator.close_login_label'),
+                  "connect_chat": msg('settings_orchestrator.connect_chat_label')}
+_CATEGORY_LINE_IDS = {
+    'connections': 'settings_orchestrator.category_line_connections',
+    'current_context': 'settings_orchestrator.category_line_current_context',
+    'judgment_ai': 'settings_orchestrator.category_line_judgment_ai',
+    'main_ai': 'settings_orchestrator.category_line_main_ai',
+    'owner_model': 'settings_orchestrator.category_line_owner_model',
+    'family': 'settings_orchestrator.category_line_family',
+    'skills': 'settings_orchestrator.category_line_skills',
+    'phone_link': 'settings_orchestrator.category_line_phone_link',
+    'ai_connections': 'settings_orchestrator.category_line_ai_connections',
+    'api_connections': 'settings_orchestrator.category_line_api_connections',
+    'preparations': 'settings_orchestrator.category_line_preparations',
+    'browser': 'settings_orchestrator.category_line_browser',
+}
+# Catalog ids for whole setting/value pairs; unknown labels retain their original rendering.
+_SETTING_VALUE_IDS = {
+    SETTING_LABELS['enabled']: 'settings_orchestrator.setting_value_enabled',
+    SETTING_LABELS['timezone']: 'settings_orchestrator.setting_value_timezone',
+    SETTING_LABELS['mode']: 'settings_orchestrator.setting_value_mode',
+    SETTING_LABELS['model']: 'settings_orchestrator.setting_value_model',
+    SETTING_LABELS['route']: 'settings_orchestrator.setting_value_route',
+    SETTING_LABELS['daily_calls']: 'settings_orchestrator.setting_value_daily_calls',
+    SETTING_LABELS['dream']: 'settings_orchestrator.setting_value_dream',
+    SETTING_LABELS['add']: 'settings_orchestrator.setting_value_add',
+    SETTING_LABELS['share_site']: 'settings_orchestrator.setting_value_share_site',
+    SETTING_LABELS['unshare_site']: 'settings_orchestrator.setting_value_unshare_site',
+    SETTING_LABELS['remove']: 'settings_orchestrator.setting_value_remove',
+    SETTING_LABELS['send']: 'settings_orchestrator.setting_value_send',
+    SETTING_LABELS['servers']: 'settings_orchestrator.setting_value_servers',
+    SETTING_LABELS['review']: 'settings_orchestrator.setting_value_review',
+    SETTING_LABELS['money']: 'settings_orchestrator.setting_value_money',
+    SETTING_LABELS['connect']: 'settings_orchestrator.setting_value_connect',
+    SETTING_LABELS['rung']: 'settings_orchestrator.setting_value_rung',
+    SETTING_LABELS['undo']: 'settings_orchestrator.setting_value_undo',
+    SETTING_LABELS['forget']: 'settings_orchestrator.setting_value_forget',
+    SETTING_LABELS['restore']: 'settings_orchestrator.setting_value_restore',
+    SETTING_LABELS['cancel']: 'settings_orchestrator.setting_value_cancel',
+    SETTING_LABELS['accept']: 'settings_orchestrator.setting_value_accept',
+    SETTING_LABELS['disconnect']: 'settings_orchestrator.setting_value_disconnect',
+    SETTING_LABELS['close_login']: 'settings_orchestrator.setting_value_close_login',
+    SETTING_LABELS['connect_chat']: 'settings_orchestrator.setting_value_connect_chat',
+    msg('settings_orchestrator.new_api_connection'): 'settings_orchestrator.setting_value_new_api',
+}
+# Whole compound labels let the surface translate multiword category names unambiguously.
+_CHANGE_LABELS = {
+    ('current_context', 'enabled'): msg('settings_orchestrator.label_current_context_enabled'),
+    ('current_context', 'timezone'): msg('settings_orchestrator.label_current_context_timezone'),
+    ('judgment_ai', 'mode'): msg('settings_orchestrator.label_judgment_ai_mode'),
+    ('judgment_ai', 'model'): msg('settings_orchestrator.label_judgment_ai_model'),
+    ('main_ai', 'route'): msg('settings_orchestrator.label_main_ai_route'),
+    ('main_ai', 'model'): msg('settings_orchestrator.label_main_ai_model'),
+    ('owner_model', 'enabled'): msg('settings_orchestrator.label_owner_model_enabled'),
+    ('owner_model', 'daily_calls'): msg('settings_orchestrator.label_owner_model_daily_calls'),
+    ('owner_model', 'dream'): msg('settings_orchestrator.label_owner_model_dream'),
+    ('family', 'add'): msg('settings_orchestrator.label_family_add'),
+    ('family', 'share_site'): msg('settings_orchestrator.label_family_share_site'),
+    ('family', 'unshare_site'): msg('settings_orchestrator.label_family_unshare_site'),
+    ('skills', 'enabled'): msg('settings_orchestrator.label_skills_enabled'),
+    ('skills', 'add'): msg('settings_orchestrator.label_skills_add'),
+    ('skills', 'remove'): msg('settings_orchestrator.label_skills_remove'),
+    ('phone_link', 'send'): msg('settings_orchestrator.label_phone_link_send'),
+    ('api_connections', 'connect'): msg('settings_orchestrator.label_api_connections_connect'),
+    ('preparations', 'cancel'): msg('button.cancel_reservation'),
+    ('preparations', 'accept'): msg('settings_orchestrator.label_preparations_accept'),
+    ('browser', 'close_login'): msg('settings_orchestrator.label_browser_close_login'),
+    ('ai_connections', 'enabled'): msg('settings_orchestrator.label_ai_connections_enabled'),
+    ('ai_connections', 'connect'): msg('settings_orchestrator.label_ai_connections_connect'),
+    ('ai_connections', 'servers'): msg('settings_orchestrator.label_ai_connections_servers'),
+    ('ai_connections', 'review'): msg('settings_orchestrator.label_ai_connections_review'),
+    ('ai_connections', 'money'): msg('settings_orchestrator.label_ai_connections_money'),
+    ('ai_connections', 'rung'): msg('settings_orchestrator.label_ai_connections_rung'),
+    ('ai_connections', 'undo'): msg('settings_orchestrator.label_ai_connections_undo'),
+    ('ai_connections', 'forget'): msg('settings_orchestrator.label_ai_connections_forget'),
+    ('ai_connections', 'restore'): msg('settings_orchestrator.label_ai_connections_restore'),
+    ('connections', 'disconnect'): msg('settings_orchestrator.label_connections_disconnect'),
+    ('connections', 'connect_chat'): msg('settings_orchestrator.label_connections_connect_chat'),
+}
 #: #1297: trust values include "<engine>|<kind>|<stable identity>|..." so a
 #: decision cannot cross engines or connection kinds.
 TRUST_SETTINGS = frozenset({("ai_connections", "servers"), ("ai_connections", "review"), ("ai_connections", "money"),
                             ("ai_connections", "rung"), ("ai_connections", "undo"), ("ai_connections", "forget"),
                             ("ai_connections", "restore")})
-TRUST_CLASS_LABELS = {"read": "읽기", "mutate": "변경", "payment": "결제", "refused": "막음"}
-TRUST_RUNG_LABELS = {"report": "보고만", "propose": "제안까지", "approve": "건별 승인 후 실행", "mandate": "위임 범위 안에서 실행"}
+TRUST_CLASS_LABELS = {"read": msg('settings_orchestrator.read_class'), "mutate": msg('label.change'), "payment": msg('settings_orchestrator.payment_class'), "refused": msg('settings_orchestrator.refused_class')}
+TRUST_RUNG_LABELS = {"report": msg('settings_orchestrator.report_rung'), "propose": msg('settings_orchestrator.propose_rung'), "approve": msg('settings_orchestrator.approve_rung'), "mandate": msg('settings_orchestrator.mandate_rung')}
 #: #934: the value of a share is "<family assistant>|<site>"; a stop may name the site alone.
 FAMILY_SHARE_SETTINGS = frozenset({("family", "share_site"), ("family", "unshare_site")})
-FAMILY_SHARE_NOTE = "비밀번호는 넘기지 않고 지금 로그인된 세션만 전달해요. 내 세션이 갱신되면 따라가고, 결제는 계정 주인만 할 수 있어요."
-VALUE_LABELS = {"on": "켜짐", "off": "꺼짐", "follow_main": msg('settings_orchestrator.follow_main_ai'), "explicit": "따로 지정"}
+FAMILY_SHARE_NOTE = msg('settings_orchestrator.family_share_note')
+VALUE_LABELS = {"on": msg('label.on'), "off": msg('label.off'), "follow_main": msg('settings_orchestrator.follow_main_ai'), "explicit": msg('label.separate_configuration')}
 JUDGMENT_MODE_LABELS = {"off": msg('settings_orchestrator.not_used')}
-UNKNOWN_SETTING_MESSAGE = ("대화로 바꿀 수 있는 설정이 아닙니다. 현재 맥락(enabled, timezone), 판단 AI(mode, model), "
-                           "기본 AI(route, model), 알아 두기(enabled, daily_calls), 가족 비서(add, share_site, unshare_site), 스킬(enabled, add, remove), 휴대폰 링크(send), AI의 연결 서비스(enabled, connect, servers, review, money, rung, undo, forget, restore), 예약(cancel, accept), 브라우저(close_login)만 바꿀 수 있습니다. API 키, 토큰, 로그인은 비밀 입력 화면에서 직접 입력하세요.")
-CREDENTIAL_VALUE_MESSAGE = ("자격 증명처럼 보이는 값은 대화로 설정하지 않습니다. API 키, 토큰, 로그인은 설정 화면에서 직접 입력하세요. "
-                            "아무것도 바꾸지 않았습니다.")
-UNAVAILABLE_MESSAGE = "이 설정의 현재 상태를 확인하지 못해 바꾸지 않았습니다. 설정 화면에서 확인하세요."
+UNKNOWN_SETTING_MESSAGE = msg('settings_orchestrator.unknown_setting')
+CREDENTIAL_VALUE_MESSAGE = msg('settings_orchestrator.credential_value')
+UNAVAILABLE_MESSAGE = msg('settings_orchestrator.unavailable')
 MAX_VALUE_CHARS = 200
 MAX_REASON_CHARS = 300
 #: #814 review: settings whose setter probes or qualifies an AI (seconds to minutes).
@@ -154,31 +227,27 @@ MAX_REASON_CHARS = 300
 SLOW_SETTINGS = frozenset({("judgment_ai", "model"), ("main_ai", "route"), ("main_ai", "model"),
                            # #961: adding a skill downloads and inspects one pinned GitHub folder.
                            ("skills", "add"), ("ai_connections", "connect"), ('api_connections', 'connect'),
-                           # #1213: opening a phone link starts an ngrok tunnel (up to ~30 seconds).
+                           # #1213/#523: opening a phone link starts a tunnel (up to ~30 seconds; the first quick tunnel also downloads cloudflared).
                            ("phone_link", "send"),
                            # #183: a disconnect asks Google to revoke the credential (one network call).
                            ("connections", "disconnect")})
 #: #961: what adding a skill does, shown with the draft.
-SKILL_ADD_NOTE = ("확인하면 고정된 커밋에서 그 폴더만 받아 라이선스와 내용을 확인한 뒤 추가해요(브랜치 이름은 이 초안을 만들 때 "
-                  "GitHub에 물어 커밋으로 고정했어요). 스크립트·훅은 실행하지 않고, 라이선스를 확인할 수 없거나 실행 파일이 "
-                  "필요한 스킬은 추가하지 않아요. 스킬은 방법 안내일 뿐 권한이 아니에요.")
+SKILL_ADD_NOTE = msg('settings_orchestrator.skill_add_note')
 #: #438: what connecting Telegram from the terminal conversation does, shown with the draft.
 CONNECT_CHAT_NOTE = msg('settings_orchestrator.connect_chat_note')
 CONNECT_CHAT_TERMINAL_ONLY = msg('settings_orchestrator.connect_chat_terminal_only')
 #: How long a confirmation waits for another apply of the same category (#814 review).
 APPLY_WAIT_SECONDS = 5
 #: #814 review: a draft left ``applying`` by a restart: its setter may or may not have committed.
-IN_DOUBT_MESSAGE = ("설정 변경이 적용 중에 중단되어 적용됐는지 확인하지 못했어요. 현재 값을 확인해 주세요. "
-                    "필요하면 다시 요청하세요: {effect}")
+IN_DOUBT_MESSAGE = msg('settings_orchestrator.in_doubt')
 #: #814 review P1: text confirmation needs a message the owner typed, not one Still ran.
-NOT_OWNER_TYPED_MESSAGE = ("설정 변경은 소유자가 직접 보낸 메시지나 확인 버튼으로만 확인하거나 취소할 수 있습니다. "
-                           "아무것도 바꾸지 않았습니다.")
-BUSY_MESSAGE = "다른 설정을 적용하는 중입니다. 끝난 뒤 다시 확인하세요. 아직 아무것도 바꾸지 않았습니다."
-STALE_MESSAGE = "초안을 만든 뒤 설정이 바뀌었거나 이 값을 더 이상 고를 수 없어 적용하지 않았습니다. 다시 요청하세요."
-WORKER_START_MESSAGE = "설정을 적용하는 작업을 시작하지 못했습니다. 아무것도 바꾸지 않았습니다."
-FOLLOW_REQUESTED_MESSAGE = "판단 AI를 기본 AI 따라가기로 요청했어요. 확인이 끝나면 적용돼요."
+NOT_OWNER_TYPED_MESSAGE = msg('settings_orchestrator.not_owner_typed')
+BUSY_MESSAGE = msg('settings_orchestrator.busy')
+STALE_MESSAGE = msg('settings_orchestrator.stale')
+WORKER_START_MESSAGE = msg('settings_orchestrator.apply_not_started')
+FOLLOW_REQUESTED_MESSAGE = msg('settings_orchestrator.follow_requested')
 #: #912: the family setup runs in the background; its link and outcome follow on Telegram.
-FAMILY_REQUESTED_MESSAGE = "가족 비서를 만드는 중이에요. 준비되면 가족에게 보낼 설정 링크를 여기로 보내 드릴게요."
+FAMILY_REQUESTED_MESSAGE = msg('settings_orchestrator.family_requested')
 
 
 def canonical_timezone(name):
@@ -189,7 +258,7 @@ def canonical_timezone(name):
     return next((zone for zone in sorted(available_timezones()) if zone.lower() == name.lower()), name)
 
 
-RECOVERY_DECLINED_MESSAGE = '추가 연결 설정 시도를 취소했어요. 이전 시도의 등록이나 부분 설정은 남아 있을 수 있어요.'
+RECOVERY_DECLINED_MESSAGE = msg('settings_orchestrator.recovery_declined')
 
 
 class SettingsOrchestrator:
@@ -262,15 +331,17 @@ class SettingsOrchestrator:
     @staticmethod
     def _summary(rows):
         if not rows:
-            return "이 설치에 연결된 외부 서비스가 없습니다."
-        return "\n".join(f"{row['service']} · {row['state_label']}"
-                         + ("" if row["state"] == "connected" else f" · {row['next_action']}") for row in rows)
+            return msg('settings_orchestrator.no_connections')
+        return "\n".join(msg('settings_orchestrator.connection_summary', service=row['service'], state=row['state_label'])
+                         if row['state'] == 'connected' else
+                         msg('settings_orchestrator.connection_action_summary', service=row['service'],
+                             state=row['state_label'], action=row['next_action']) for row in rows)
 
     def read(self, owner, category=None):
         if not isinstance(owner, str) or not owner:
-            raise SettingsError("설정 소유자를 확인하세요.")
+            raise SettingsError(msg('settings_orchestrator.check_owner'))
         if category is not None and category not in self._CATEGORIES:
-            raise SettingsError("검토된 설정 범주를 선택하세요.")
+            raise SettingsError(msg('settings_orchestrator.select_category'))
         self.reconcile()
         rows = self._rows() if category in (None, "connections") else []
         result = {"state": "read", "category": category or "all", "connections": rows,
@@ -306,7 +377,7 @@ class SettingsOrchestrator:
         lines += [IN_DOUBT_MESSAGE.format(effect=row["effect"]) for row in self.in_doubt()
                   if category in (None, row.get("category"))]
         if category in (None, "connections"):
-            lines.append(f"{CATEGORY_LABELS['connections']}:\n{result['response']}" if category is None else result["response"])
+            lines.append(msg('settings_orchestrator.connections_read', connections=result['response']) if category is None else result["response"])
         if category is None:
             # #208: shown, never offered as a change; only Settings on the Mac switches it.
             on = work_mode.state(self.store)["enabled"]
@@ -327,9 +398,9 @@ class SettingsOrchestrator:
     def _api_connections(self):
         # #1445 part 3: the code-run set format is the validator's own JSON Schema.
         from .draft_formats import CodeSetDraft, schema_text
-        return {'connect': self._row('connect', '', '연결 요청', [],
-            label='새 API 연결',
-            note='비밀값은 확인 후 열리는 일회용 입력 화면에만 입력합니다. 필요한 읽기가 확인되면 원래 작업을 이어갑니다.',
+        return {'connect': self._row('connect', '', msg('settings_orchestrator.connection_request'), [],
+            label=msg('settings_orchestrator.new_api_connection'),
+            note=msg('settings_orchestrator.api_input_note'),
             format='JSON: name, hosts, header, scheme, money(boolean), note, subject_field/subject_value(null or strings), '
                    'probe: {url: public HTTPS read URL, required_fields: nonempty JSONPath array}. '
                    'Optional oauth: {token_url: public HTTPS URL, client_auth: basic or body, scope: string array}. '
@@ -351,8 +422,8 @@ class SettingsOrchestrator:
         enabled = "on" if settings.get("enabled") else "off"
         zone = settings.get("timezone") or ""
         return {"enabled": self._row("enabled", enabled, VALUE_LABELS[enabled], self._options(("on", "off"))),
-                "timezone": self._row("timezone", zone, zone or "설정 안 함(이 컴퓨터의 시간대)", None,
-                                      format="IANA 시간대 이름(예: Asia/Seoul)")}
+                "timezone": self._row("timezone", zone, zone or msg('settings_orchestrator.default_timezone'), None,
+                                      format=msg('settings_orchestrator.timezone_format'))}
 
     def _owner_model(self):
         from .owner_model import MAX_DAILY_CALLS
@@ -362,8 +433,8 @@ class SettingsOrchestrator:
         dream = "on" if settings.get("dream") else "off"
         return {"enabled": self._row("enabled", enabled, VALUE_LABELS[enabled], self._options(("on", "off"))),
                 "dream": self._row("dream", dream, VALUE_LABELS[dream], self._options(("on", "off"))),
-                "daily_calls": self._row("daily_calls", cap, f"{cap}회", None,
-                                         format=f"0~{MAX_DAILY_CALLS} 사이의 정수(24시간 동안 판단 AI 호출 수)")}
+                "daily_calls": self._row("daily_calls", cap, msg('settings_orchestrator.call_count', value=cap), None,
+                                         format=msg('settings_orchestrator.daily_calls_format', limit=MAX_DAILY_CALLS))}
 
     def _family(self):
         """#912: the family members' agents on this Mac; ``add`` takes the new one's display name.
@@ -379,18 +450,18 @@ class SettingsOrchestrator:
         assistants = {name: {**row, "state_label": family_share.STATE_LABELS.get(row.get("state"), "")}
                       for name, row in others.items()}
         shares = family_share.listing(self.store, others)
-        shared = ", ".join(f"{row['label']}: {row['site']}" + ("" if row["delivered"] else " (전달 대기)") for row in shares) or "없음"
+        shared = ", ".join((f"{row['label']}: {row['site']}" if row["delivered"] else msg('settings_orchestrator.share_delivery_pending', label=row['label'], site=row['site'])) for row in shares) or msg('label.none')
         signed_in = self._signed_in_sites()
-        family = ", ".join(family_share.describe(name, row) for name, row in others.items() if not row.get("main")) or "없음"
+        family = ", ".join(family_share.describe(name, row) for name, row in others.items() if not row.get("main")) or msg('label.none')
         return {"add": self._row("add", "", family, None,
-                                 format="새 가족 비서의 텔레그램 이름(예: 아내 비서)",
-                                 note="내 AI 구독을 함께 쓰는 가족 전용 비서를 만들고, 가족에게 보낼 설정 링크를 텔레그램으로 드립니다."),
-                "share_site": self._row("share_site", "", shared, None, format="비서 이름|사이트 주소(예: <비서 이름>|example.com)",
+                                 format=msg('settings_orchestrator.family_name_format'),
+                                 note=msg('settings_orchestrator.family_add_note')),
+                "share_site": self._row("share_site", "", shared, None, format=msg('settings_orchestrator.share_format'),
                                         note=FAMILY_SHARE_NOTE, assistants=assistants, signed_in_sites=signed_in,
                                         shared=[{"instance": row["instance"], "site": row["site"]} for row in shares],
                                         received_sites=sorted(family_share.received(self.store))),
                 "unshare_site": self._row("unshare_site", "", shared, None,
-                                          format="사이트 주소, 또는 비서 이름|사이트 주소(예: example.com)",
+                                          format=msg('settings_orchestrator.unshare_format'),
                                           shared=[{"instance": row["instance"], "site": row["site"]} for row in shares])}
 
     def _ai_connections(self):
@@ -403,9 +474,9 @@ class SettingsOrchestrator:
         from . import owner_mcp, trust_record
         available = self.service.owner_mcp_available()
         confirmed = {engine_id: owner_mcp.confirmed(self.store, engine_id) for engine_id in owner_mcp.ENGINES}
-        servers = " · ".join(f"{engine_id}: {', '.join(names) or '없음'}" for engine_id, names in confirmed.items())
+        servers = " · ".join(f"{engine_id}: {', '.join(names) or msg('label.none')}" for engine_id, names in confirmed.items())
         hands = trust_record.hands(self.store)
-        recorded = " / ".join(trust_record.describe(row) for row in hands.values()) or "기록 없음"
+        recorded = " / ".join(trust_record.describe(row) for row in hands.values()) or msg('label.not_recorded')
         from .agent_runtime import MEMORY_OWNER
         from .owner_forget import OwnerForget
         restores = OwnerForget(self.store).undoable(MEMORY_OWNER, limit=trust_record.MAX_HANDS, kind='trust')
@@ -419,55 +490,49 @@ class SettingsOrchestrator:
                              'label': trust_record.describe({**record, **previous})})
         return {"enabled": self._row("enabled", enabled, VALUE_LABELS[enabled], self._options(("on", "off")),
                                      note=status["note"]),
-                "connect": self._row("connect", "", "요청할 때 공개 서버 정보를 검토", None,
+                "connect": self._row("connect", "", msg('settings_orchestrator.server_review_on_request'), None,
                                      format="JSON: engine, name, url, source, publisher, licence, required_tools, read_tools, money",
-                                     note=("확인하면 설치된 Claude Code로 이 공개 HTTPS 서버를 등록하고 필요한 경우 Mac 브라우저에서 로그인해요. "
-                                           "게시자·출처·라이선스는 제안된 정보이며 안전성을 보증하지 않아요. "
-                                           "서버에 연결해 도구 목록을 확인한 뒤 AI 연결 사용을 켜고 이 서버를 허용해요. "
-                                           "지정한 읽기만 읽기로 기록하고, 돈이 오가는 연결의 다른 동작과 결제는 건별 승인이 필요해요. "
-                                           "현재 허용된 다른 AI 연결도 함께 사용 가능해져요. 계정·OAuth 동의 범위는 이 경로에서 검증하지 못해요.")),
-                "servers": self._row("servers", "", servers, None, format="AI|서버 이름(쉼표로 여럿, 비우면 모두 끔), 예: codex|notes",
-                                     note=("확인한 서버만 작업에서 켜지고, 그 서버의 도구 호출은 매번 Still이 허용하거나 막아요. "
-                                           "켜진 서버는 이 Mac에서 실행돼요."),
+                                     note=msg('settings_orchestrator.mcp_connect_note')),
+                "servers": self._row("servers", "", servers, None, format=msg('settings_orchestrator.servers_format'),
+                                     note=msg('settings_orchestrator.servers_note'),
                                      available=available, confirmed=confirmed),
                 "review": self._row("review", "", recorded, None,
-                                    format="AI|연결 종류|연결 식별자|동작 이름|read, mutate, payment, refused (예: codex|owner-mcp|notes|list_notes|read)",
-                                    note="읽기와 일반 변경은 요청 범위에서 실행하고, 결제·송금은 매번 실행 내용을 확인받아요. 거절한 동작은 실행하지 않아요.",
+                                    format=msg('settings_orchestrator.review_format'),
+                                    note=msg('settings_orchestrator.review_note'),
                                     hands={name: {key: row[key] for key in ('money', 'rung', 'operations', 'state', 'revision', 'history')}
                                            for name, row in hands.items()}),
-                "money": self._row("money", "", recorded, None, format="AI|연결 종류|연결 식별자|on 또는 off (예: codex|owner-mcp|broker|on)",
-                                   note="돈이 오가는 연결은 보고만 하는 단계에서 시작해요. 소유자가 읽기로 정한 동작 외에는 건별 결제 확인이 필요해요."),
-                "rung": self._row("rung", "", recorded, None, format="AI|연결 종류|연결 식별자|report, propose, approve, mandate 중 하나",
-                                  note="단계를 올리는 건 소유자만 할 수 있어요. 돈이 오가는 연결은 위임 단계로 올릴 수 없어요."),
+                "money": self._row("money", "", recorded, None, format=msg('settings_orchestrator.money_format'),
+                                   note=msg('settings_orchestrator.money_note')),
+                "rung": self._row("rung", "", recorded, None, format=msg('settings_orchestrator.rung_format'),
+                                  note=msg('settings_orchestrator.rung_note')),
                 "undo": self._row("undo", "", "", undoable,
-                                  note="선택한 변경 직전의 돈 표시·단계·동작 결정을 함께 복원해요. 이후 변경이 있으면 적용하지 않아요."),
+                                  note=msg('settings_orchestrator.undo_note')),
                 "forget": self._row("forget", "", "", self._options(tuple(name for name, record in hands.items()
                                                                                  if record['state'] == 'active')),
-                                    note="이전 권한과 대기 중인 확인을 중지해요. 기록은 남아 있어 설정 확인으로 언제든 복원할 수 있어요."),
+                                    note=msg('settings_orchestrator.forget_note')),
                 "restore": self._row("restore", "", "", [
                     {'value': row['item']['ref'][6:] + '|' + row['receipt'], 'label': row['item']['summary']}
-                    for row in restores], note="잊었던 권한을 복원해요. 이전 확인 요청이나 작업은 다시 실행하지 않아요.")}
+                    for row in restores], note=msg('settings_orchestrator.restore_note'))}
 
     def _phone_link(self):
         """#1213: what a one-time phone link can be opened for on this install now (``send``'s options)."""
         kinds = self.service.phone_input_kinds()
         return {"send": self._row("send", "", "", self._options(tuple(kinds), kinds),
-                                  note="확인하면 연결된 Telegram으로 약 10분 동안 열리는 일회용 링크를 보냅니다. "
-                                       "휴대폰에서 자체 Google client를 넣을 때 씁니다. Google 서비스 연결은 Mac에서 합니다.")}
+                                  note=msg('settings_orchestrator.phone_link_note'))}
 
     def _preparations(self):
         """#1455: the owner's active reservations; ``cancel`` offers each, ``accept`` the ones waiting for a yes."""
         from . import preparations as prep
         from .current_context import redact_known_secrets
-        states = {prep.STATE_PROPOSED: "수락 대기", prep.STATE_SCHEDULED: "예약됨", prep.STATE_RUNNING: "실행 중"}
+        states = {prep.STATE_PROPOSED: msg('settings_orchestrator.awaiting_acceptance'), prep.STATE_SCHEDULED: msg('settings_orchestrator.scheduled'), prep.STATE_RUNNING: msg('settings_orchestrator.running')}
         rows = [row for row in self.service.preparations.rows() if row.get("state") in states]
         labels = {row["id"]: f"{redact_known_secrets(self.store, prep.proposal_summary(row))} ({states[row['state']]})"
                   for row in rows}
-        listed = "\n".join(labels.values()) or "없음"
+        listed = "\n".join(labels.values()) or msg('label.none')
         proposed = [row["id"] for row in rows if row["state"] == prep.STATE_PROPOSED]
-        return {"cancel": self._row("cancel", "", listed, self._options(tuple(labels), labels), format="취소할 예약의 id"),
-                "accept": self._row("accept", "", ", ".join(labels[item] for item in proposed) or "없음",
-                                    self._options(tuple(proposed), labels), format="수락할 예약의 id")}
+        return {"cancel": self._row("cancel", "", listed, self._options(tuple(labels), labels), format=msg('settings_orchestrator.cancel_reservation_format')),
+                "accept": self._row("accept", "", ", ".join(labels[item] for item in proposed) or msg('label.none'),
+                                    self._options(tuple(proposed), labels), format=msg('settings_orchestrator.accept_reservation_format'))}
 
     def _connections(self):
         """#183: the Google connections that can be disconnected now, by connector id."""
@@ -475,8 +540,8 @@ class SettingsOrchestrator:
                   for row in self.service.connection_disconnect_options()}
         telegram = msg("label.connected" if self.service.store.config("telegram", {}).get("enabled")
                        else "family_share.not_connected")
-        return {"disconnect": self._row("disconnect", "", ", ".join(labels.values()) or "없음",
-                                        self._options(tuple(labels), labels), format="해제할 연결의 id",
+        return {"disconnect": self._row("disconnect", "", ", ".join(labels.values()) or msg('label.none'),
+                                        self._options(tuple(labels), labels), format=msg('settings_orchestrator.disconnect_format'),
                                         note=DISCONNECT_NOTE),
                 "connect_chat": self._row("connect_chat", "", f"Telegram: {telegram}",
                                           self._options(("telegram",), {"telegram": "Telegram"}), note=CONNECT_CHAT_NOTE)}
@@ -484,19 +549,18 @@ class SettingsOrchestrator:
     def _browser(self):
         """#1572: what holds the browser now, and the login windows waiting for the owner (``close_login``'s options)."""
         windows = self.service.open_login_windows()
-        occupancy = {"none": "쓰는 곳 없음", "login": "소유자의 로그인 창", "keepalive": "로그인 세션 유지(잠깐)",
-                     "work": "다른 작업"}[self.service.browser_profile.occupancy()]
-        return {"close_login": self._row("close_login", "", f"지금 브라우저: {occupancy}",
-                                         self._options(tuple(windows), windows), format="닫을 로그인 창의 값",
-                                         note="확인하면 그 창을 닫아요. 그 창에서 입력하던 로그인은 사라지고, 그 창을 연 요청은 "
-                                              "로그인 없이 끝나요. 이미 저장된 로그인 세션은 그대로예요.")}
+        occupancy = {"none": msg('settings_orchestrator.browser_idle'), "login": msg('settings_orchestrator.browser_login'), "keepalive": msg('settings_orchestrator.browser_keepalive'),
+                     "work": msg('settings_orchestrator.browser_other_work')}[self.service.browser_profile.occupancy()]
+        return {"close_login": self._row("close_login", "", msg('settings_orchestrator.browser_occupancy', browser_occupancy=occupancy),
+                                         self._options(tuple(windows), windows), format=msg('settings_orchestrator.close_login_format'),
+                                         note=msg('settings_orchestrator.close_login_note'))}
 
     def _skills(self):
         """#961: the switch, and the installed skills for ``add`` / ``remove`` (names and pinned sources only)."""
         status = self.service.skills_status()
         enabled = "on" if status.get("enabled") else "off"
         rows = status.get("skills") or []
-        listed = ", ".join(f"{row['skill']} ({row['source']}{'' if row.get('enabled') else ', 꺼짐'})" for row in rows) or "없음"
+        listed = ", ".join((f"{row['skill']} ({row['source']})" if row.get('enabled') else msg('settings_orchestrator.skill_disabled', skill=row['skill'], source=row['source'])) for row in rows) or msg('label.none')
         removable = [row["skill"].split("/", 1)[1] for row in rows if not row["skill"].startswith("agentos/")]
         # #963: Still's published reference skills, listed even while skills are off, addable by name.
         available = [{key: row[key] for key in ("name", "description", "address", "installed")}
@@ -504,10 +568,9 @@ class SettingsOrchestrator:
         return {"enabled": self._row("enabled", enabled, VALUE_LABELS[enabled], self._options(("on", "off")),
                                     required_skills=[item['skill']+'@'+item['digest'] for item in rows if item.get('enabled') and item.get('digest')]),
                 "add": self._row("add", "", listed, None,
-                                 format="GitHub 스킬 폴더 주소(예: github.com/<owner>/<repo>/tree/<브랜치 또는 커밋>/<폴더>), "
-                                        "또는 available에 있는 Still 참고 스킬 이름",
+                                 format=msg('settings_orchestrator.skill_source_format'),
                                  note=SKILL_ADD_NOTE, available=available),
-                "remove": self._row("remove", "", ", ".join(removable) or "없음", None, format="설치된 스킬 이름",
+                "remove": self._row("remove", "", ", ".join(removable) or msg('label.none'), None, format=msg('settings_orchestrator.skill_name_format'),
                                     installed=removable)}
 
     def _signed_in_sites(self):
@@ -536,9 +599,9 @@ class SettingsOrchestrator:
         if setting == "unshare_site" and not who.strip():
             holders = [item["instance"] for item in shared if item["site"] == site]
             if not holders:
-                raise SettingsError(f"{site} 로그인 세션은 공유하고 있지 않아요. 바꿀 것이 없어요.")
+                raise SettingsError(msg('family_share.not_shared', site=site))
             if len(holders) > 1:
-                raise SettingsError(f"{site}은(는) 여러 비서({', '.join(holders)})와 공유 중이에요. 어느 비서인지 이름을 주세요.")
+                raise SettingsError(msg('settings_orchestrator.share_ambiguous', site=site, assistants=', '.join(holders)))
             return f"{holders[0]}|{site}"
         if setting == "share_site" and site in (row["share_site"].get("received_sites") or ()):
             # Review P1-1: a session received from the owner is not this instance's to pass on.
@@ -549,9 +612,9 @@ class SettingsOrchestrator:
             raise SettingsError(str(exc)) from None
         already = any(item["instance"] == instance and item["site"] == site for item in shared)
         if setting == "share_site" and already:
-            raise SettingsError(f"{instance} 비서와 {site} 로그인 세션을 이미 공유하고 있어요. 바꿀 것이 없어요.")
+            raise SettingsError(msg('settings_orchestrator.share_already_enabled', instance=instance, site=site))
         if setting == "unshare_site" and not already:
-            raise SettingsError(f"{instance} 비서와 {site} 로그인 세션을 공유하고 있지 않아요. 바꿀 것이 없어요.")
+            raise SettingsError(msg('settings_orchestrator.share_already_disabled', instance=instance, site=site))
         return f"{instance}|{site}"
 
     def _model_lists(self):
@@ -568,9 +631,9 @@ class SettingsOrchestrator:
         models = known_models(route, self._model_lists()) if route else []
         return {"mode": self._row("mode", mode, JUDGMENT_MODE_LABELS.get(mode) or VALUE_LABELS.get(mode, mode or "-"),
                                   self._options(("follow_main", "off"), JUDGMENT_MODE_LABELS)),
-                "model": self._row("model", model, model or "기본 모델", self._options(models),
+                "model": self._row("model", model, model or msg('label.default_model'), self._options(models),
                                    route=ROUTE_NAMES.get(route, route or "-"),
-                                   note="모델을 바꾸면 기본 AI 따라가기 대신 따로 지정됩니다." if mode == "follow_main" else ""),
+                                   note=msg('settings_orchestrator.judgment_model_note') if mode == "follow_main" else ""),
                 "effective": (status.get("effective") or {}).get("text") or ""}
 
     @staticmethod
@@ -594,17 +657,18 @@ class SettingsOrchestrator:
         model = row.get("model") or ""
         selectable = (current in SUBSCRIPTION_ROUTES and row.get("model_selectable")) or current in API_ROUTES
         models = known_models(current, self._model_lists()) if selectable else []
-        return {"route": self._row("route", current, names.get(current) or ("기타 연결" if current else "없음"), options,
-                                   note="기본 AI를 바꾸면 이후 작업 내용이 새 경로의 목적지로 전송됩니다. 항상 확인 후 적용합니다."),
-                "model": self._row("model", model, model or "기본 모델", self._options(models))}
+        return {"route": self._row("route", current, names.get(current) or (msg('label.other_connection') if current else msg('label.none')), options,
+                                   note=msg('settings_orchestrator.main_route_note')),
+                "model": self._row("model", model, model or msg('label.default_model'), self._options(models))}
 
     @staticmethod
     def _category_line(category, row):
         if row.get("unavailable"):
-            return f"{CATEGORY_LABELS[category]} · {row['unavailable']}"
-        parts = [f"{item['label']}: {item['value_label']}" for item in row.values() if isinstance(item, dict)]
-        line = f"{CATEGORY_LABELS[category]} · " + " · ".join(parts)
-        return line + (f" ({row['effective']})" if row.get("effective") else "")
+            return msg(_CATEGORY_LINE_IDS[category], details=row['unavailable'])
+        parts = [(msg(_SETTING_VALUE_IDS[item['label']], value=item['value_label'])
+                  if item['label'] in _SETTING_VALUE_IDS else f"{item['label']}: {item['value_label']}") for item in row.values() if isinstance(item, dict)]
+        line = msg(_CATEGORY_LINE_IDS[category], details=' · '.join(parts))
+        return msg(_CATEGORY_LINE_IDS[category] + '_effective', details=' · '.join(parts), effective=row['effective']) if row.get('effective') else line
 
     def _normalized(self, category, setting, value):
         """The canonical allowed value, or a fail-closed ``SettingsError`` (#814)."""
@@ -622,7 +686,7 @@ class SettingsOrchestrator:
         if isinstance(value, int) and not isinstance(value, bool) and setting == "daily_calls":
             value = str(value)
         if not isinstance(value, str) or len(value) > (4000 if setting == 'connect' and category in ('ai_connections','api_connections') else MAX_VALUE_CHARS):
-            raise SettingsError("바꿀 값을 짧은 글자로 주세요. 아무것도 바꾸지 않았습니다.")
+            raise SettingsError(msg('settings_orchestrator.invalid_value'))
         value = value.strip()
         from .current_context import redact_known_secrets
         if redact_known_secrets(self.store, value) != value:
@@ -643,12 +707,12 @@ class SettingsOrchestrator:
             try:
                 return valid_timezone(canonical_timezone(value)), row
             except ValueError as exc:
-                raise SettingsError(f"{exc} 아무것도 바꾸지 않았습니다.") from None
+                raise SettingsError(msg('settings_orchestrator.error_unchanged', exc=exc)) from None
         if (category, setting) == ("family", "add"):
             # A display name only: letters and spaces, 1-64 characters, no control characters.
             name = " ".join(value.split())
             if not name or len(name) > 64 or any(ord(char) < 32 for char in value):
-                raise SettingsError("가족 비서 이름을 1~64자로 주세요. 아무것도 만들지 않았습니다.")
+                raise SettingsError(msg('settings_orchestrator.invalid_family_name'))
             # SKILL-MANAGE-01 (#962): a repeated request never makes a second assistant of the same name.
             # Only an already paired one blocks; an unfinished setup is reused by the setter itself.
             from . import family_share
@@ -657,12 +721,10 @@ class SettingsOrchestrator:
             # The listing leaves this instance out (it never offers itself), so its own bot name is checked here.
             own = " ".join(str(family_share.display_name(self.store.root) or "").split())
             if own and own.lower() == name.lower():
-                raise SettingsError(f"'{name}'은(는) 지금 대화하고 있는 이 비서의 이름이에요. 새로 만들지 않았어요. "
-                                    "가족의 비서라면 다른 이름으로 다시 요청해 주세요.")
+                raise SettingsError(msg('settings_orchestrator.family_name_is_self', name=name))
             if same:
                 listed = ", ".join(family_share.describe(instance, item) for instance, item in same)
-                raise SettingsError(f"'{name}' 비서는 이미 있어요: {listed}. 새로 만들지 않았어요. "
-                                    "다른 가족의 비서라면 다른 이름으로 다시 요청해 주세요.")
+                raise SettingsError(msg('settings_orchestrator.family_name_exists', name=name, listed=listed))
             return name, row
         if (category, setting) in FAMILY_SHARE_SETTINGS:
             return self._share_value(setting, value, row), row
@@ -673,17 +735,16 @@ class SettingsOrchestrator:
             try:
                 return self.service.skill_setting_value(setting, value), row
             except SkillError as exc:
-                raise SettingsError(f"{exc} 아무것도 바꾸지 않았습니다.") from None
+                raise SettingsError(msg('settings_orchestrator.error_unchanged', exc=exc)) from None
         if setting == "daily_calls":
             from .owner_model import MAX_DAILY_CALLS
             if not value.isascii() or not value.isdigit() or not 0 <= int(value) <= MAX_DAILY_CALLS:
-                raise SettingsError(f"하루 판단 횟수는 0~{MAX_DAILY_CALLS} 사이의 정수로 주세요. 아무것도 바꾸지 않았습니다.")
+                raise SettingsError(msg('settings_orchestrator.invalid_daily_calls', limit=MAX_DAILY_CALLS))
             return str(int(value)), row
         allowed = [option["value"] for option in row[setting]["options"] or ()]
         if value not in allowed:
-            listed = ", ".join(allowed) or "지금은 없음"
-            raise SettingsError(f"{CATEGORY_LABELS[category]} {SETTING_LABELS[setting]}은(는) 다음 중 하나만 고를 수 있습니다: "
-                                f"{listed}. 아무것도 바꾸지 않았습니다.")
+            listed = ", ".join(allowed) or msg('settings_orchestrator.none_available_now')
+            raise SettingsError(msg('settings_orchestrator.invalid_choice', label=_CHANGE_LABELS[category, setting], listed=listed))
         return value, row
 
     def _trust_value(self, setting, value, row):
@@ -695,72 +756,82 @@ class SettingsOrchestrator:
         """
         from . import owner_mcp, trust_record
         parts = [part.strip() for part in value.split("|")]
-        unchanged = " 아무것도 바꾸지 않았습니다."
         if setting == "servers":
             if len(parts) != 2 or parts[0] not in owner_mcp.ENGINES:
-                raise SettingsError("AI|서버 이름 형식으로 주세요(AI는 claude-code 또는 codex)." + unchanged)
+                raise SettingsError(msg('settings_orchestrator.invalid_servers_format'))
             names = [name.strip() for name in parts[1].split(",") if name.strip()]
             offered = set(row["servers"]["available"].get(parts[0]) or ())
             missing = [name for name in names if name not in offered]
             if missing:
-                raise SettingsError(f"{parts[0]}에 설정된 MCP 서버가 아니에요: {', '.join(missing)}. "
-                                    f"설정된 서버: {', '.join(sorted(offered)) or '없음'}." + unchanged)
+                raise SettingsError(msg('settings_orchestrator.unknown_servers', engine=parts[0], missing=', '.join(missing), available=', '.join(sorted(offered)) or msg('label.none')))
             if not all(owner_mcp.valid_name(name) for name in names) or len(set(names)) > owner_mcp.MAX_SERVERS:
-                raise SettingsError(f"MCP 서버는 {owner_mcp.MAX_SERVERS}개까지, 이름 형식에 맞게 주세요." + unchanged)
+                raise SettingsError(msg('settings_orchestrator.invalid_server_names', limit=owner_mcp.MAX_SERVERS))
             if names == row["servers"]["confirmed"].get(parts[0]):
-                raise SettingsError(f"{parts[0]}의 MCP 서버는 이미 그렇게 되어 있어요. 바꿀 것이 없습니다.")
+                raise SettingsError(msg('settings_orchestrator.servers_unchanged', engine=parts[0]))
             return f"{parts[0]}|{','.join(dict.fromkeys(names))}"
         if len(parts) < 3 or parts[0] not in trust_record.ENGINES or parts[1] not in trust_record.KINDS \
                 or not trust_record.valid_hand(parts[2]):
-            raise SettingsError("연결 이름을 확인하세요." + unchanged)
+            raise SettingsError(msg('settings_orchestrator.invalid_connection_name'))
         try:
             target = trust_record.connection(parts[0], parts[1], parts[2], parts[2])
         except ValueError:
-            raise SettingsError("연결 범위를 확인하세요." + unchanged) from None
+            raise SettingsError(msg('settings_orchestrator.invalid_connection_scope')) from None
         current = trust_record.hand(self.store, target)
         if setting in ("undo", "forget", "restore"):
             offered = {option['value'] for option in row[setting].get('options') or ()}
             if '|'.join(parts) not in offered:
-                raise SettingsError("현재 되돌리거나 잊을 수 있는 기록이 아니에요." + unchanged)
+                raise SettingsError(msg('settings_orchestrator.trust_record_unavailable'))
         elif setting == "review":
             if len(parts) != 5 or not trust_record.valid_operation(parts[3]) or parts[4] not in trust_record.CLASSES:
-                raise SettingsError("AI|연결 종류|연결 식별자|동작 이름|read, mutate, payment, refused 형식으로 주세요." + unchanged)
+                raise SettingsError(msg('settings_orchestrator.invalid_review_format'))
             if (current.get("operations") or {}).get(parts[3]) == parts[4]:
-                raise SettingsError("이미 그렇게 정해져 있어요. 바꿀 것이 없습니다.")
+                raise SettingsError(msg('settings_orchestrator.operation_unchanged'))
         elif setting == "money":
             if len(parts) != 4 or parts[3] not in ("on", "off"):
-                raise SettingsError("AI|연결 종류|연결 식별자|on 또는 off 형식으로 주세요." + unchanged)
+                raise SettingsError(msg('settings_orchestrator.invalid_money_format'))
             if bool(current.get("money")) == (parts[3] == "on"):
-                raise SettingsError("이미 그렇게 되어 있어요. 바꿀 것이 없습니다.")
+                raise SettingsError(msg('settings_orchestrator.money_unchanged'))
         else:
             if len(parts) != 4 or parts[3] not in trust_record.RUNGS:
-                raise SettingsError("AI|연결 종류|연결 식별자|report, propose, approve, mandate 형식으로 주세요." + unchanged)
+                raise SettingsError(msg('settings_orchestrator.invalid_rung_format'))
             if parts[3] == "mandate" and current.get("money"):
-                raise SettingsError("돈이 오가는 연결은 위임 단계로 올릴 수 없어요." + unchanged)
+                raise SettingsError(msg('settings_orchestrator.money_mandate_refused'))
             if (current.get("rung") or trust_record.default_rung(bool(current.get("money")))) == parts[3]:
-                raise SettingsError("이미 그 단계예요. 바꿀 것이 없습니다.")
+                raise SettingsError(msg('settings_orchestrator.rung_unchanged'))
         return "|".join(parts)
 
     def _trust_summary(self, setting, after):
         parts = after.split("|")
         if setting == "servers":
-            return (f"{parts[0]}에서 작업에 켤 MCP 서버를 {parts[1].replace(',', ', ')}(으)로 정합니다" if parts[1]
-                    else f"{parts[0]}에서 작업에 켠 MCP 서버를 모두 끕니다")
+            return (msg('settings_orchestrator.servers_summary', engine=parts[0], servers=parts[1].replace(',', ', ')) if parts[1]
+                    else msg('settings_orchestrator.servers_disable_summary', engine=parts[0]))
         if setting == "review":
-            return f"{parts[2]}({parts[0]} {parts[1]})의 {parts[3]}을(를) '{TRUST_CLASS_LABELS[parts[4]]}' 동작으로 정합니다"
+            return msg(
+                'settings_orchestrator.review_summary',
+                connection=parts[2],
+                engine=parts[0],
+                kind=parts[1],
+                operation=parts[3],
+                action_class=TRUST_CLASS_LABELS[parts[4]],
+            )
         if setting == "money":
-            return f"{parts[2]}({parts[0]} {parts[1]})을(를) 돈이 오가는 연결로 {'표시합니다(보고만 하는 단계에서 시작)' if parts[3] == 'on' else '표시하지 않습니다'}"
+            return msg(
+                'settings_orchestrator.money_mark_summary' if parts[3] == 'on' else 'settings_orchestrator.money_unmark_summary',
+                connection=parts[2],
+                engine=parts[0],
+                kind=parts[1],
+            )
         if setting == 'undo':
             from . import trust_record
             current = trust_record.hand(self.store, trust_record.connection(*parts[:3]))
             previous = trust_record.undo_snapshot(current, parts[3])
-            return '직전 기록으로 복원합니다: ' + trust_record.describe({**current, **previous})
+            return msg('settings_orchestrator.undo_summary', record=trust_record.describe({**current, **previous}))
         if setting == 'restore':
             option = next(item for item in self._ai_connections()['restore']['options'] if item['value'] == after)
-            return '잊었던 기록의 권한을 복원합니다: ' + option['label']
+            return msg('settings_orchestrator.restore_summary', record=option['label'])
         if setting == 'forget':
-            return f"{parts[2]}({parts[0]} {parts[1]})의 신뢰 기록을 잊습니다"
-        return f"{parts[2]}({parts[0]} {parts[1]})의 신뢰 단계를 '{TRUST_RUNG_LABELS[parts[3]]}'(으)로 정합니다"
+            return msg('settings_orchestrator.forget_summary', connection=parts[2], engine=parts[0], kind=parts[1])
+        return msg('settings_orchestrator.rung_summary', connection=parts[2], engine=parts[0], kind=parts[1], rung=TRUST_RUNG_LABELS[parts[3]])
 
     def _trust_before(self, setting, after):
         """Current value for the exact scoped trust target in a draft."""
@@ -798,8 +869,8 @@ class SettingsOrchestrator:
     def _describe(self, category, setting, value, row):
         options = {option["value"]: option["label"] for option in row[setting].get("options") or ()}
         if setting == "daily_calls":
-            return f"{value}회"
-        return options.get(value) or VALUE_LABELS.get(value) or value or "설정 안 함"
+            return msg('settings_orchestrator.call_count', value=value)
+        return options.get(value) or VALUE_LABELS.get(value) or value or msg('settings_orchestrator.value_not_set')
 
     @staticmethod
     def _digest(row):
@@ -821,58 +892,60 @@ class SettingsOrchestrator:
     def propose(self, owner, channel, category, setting, value, reason=None, work_id=None, *, continue_work=False, _recovery_of=None, _observe_only=False, required_skill=None):
         """A digest-bound draft of one owner setting change; applies nothing (#814)."""
         if not isinstance(owner, str) or not owner or not isinstance(channel, str) or not channel:
-            raise SettingsError("설정 요청의 소유자와 채널을 확인하세요.")
+            raise SettingsError(msg('settings_orchestrator.check_owner_channel'))
         if reason is not None and not isinstance(reason, str):
-            raise SettingsError("변경 이유는 짧은 글자로 주세요. 아무것도 바꾸지 않았습니다.")
+            raise SettingsError(msg('settings_orchestrator.invalid_reason'))
         if not isinstance(continue_work, bool):
-            raise SettingsError("원래 작업을 이어갈지 여부는 참 또는 거짓으로 주세요.")
+            raise SettingsError(msg('settings_orchestrator.invalid_continue_work'))
         if continue_work and (not work_id or not (
                 category == "skills" and (setting == "add" or setting == "enabled" and value == "on")
                 or setting == 'connect' and category in ('ai_connections', 'api_connections'))):
-            raise SettingsError("이 설정은 아직 원래 작업의 자동 재개를 지원하지 않아요.")
+            raise SettingsError(msg('settings_orchestrator.resume_unsupported'))
         after, row = self._normalized(category, setting, value)
         if (category, setting) == ("connections", "connect_chat"):
             # #438: the token is typed in the terminal that asked; no other conversation can show that prompt.
             if not self.service.terminal_surface.in_conversation(channel):
                 raise SettingsError(CONNECT_CHAT_TERMINAL_ONLY)
             if self.service.store.config("telegram", {}).get("enabled"):
-                raise SettingsError("Telegram은 이미 연결되어 있어요. 바꿀 것이 없습니다.")
+                raise SettingsError(msg('settings_orchestrator.telegram_already_connected'))
         if continue_work and setting == "enabled":
             if not isinstance(required_skill, str) or required_skill not in row["enabled"].get("required_skills", []):
-                raise SettingsError("이어갈 작업에 필요한 스킬을 현재 required_skills에서 정확히 골라 주세요.")
+                raise SettingsError(msg('settings_orchestrator.select_required_skill'))
         elif required_skill is not None:
-            raise SettingsError("required_skill은 원래 작업에 필요한 스킬 사용을 켤 때만 지정하세요.")
+            raise SettingsError(msg('settings_orchestrator.unexpected_required_skill'))
         if continue_work and (category, setting) == ("ai_connections", "connect") and not json.loads(after)["required_tools"]:
-            raise SettingsError("원래 작업에 필요한 도구를 적어 주세요. 서버 등록만으로 재개하지 않아요.")
+            raise SettingsError(msg('settings_orchestrator.missing_required_tools'))
         before = self._before(category, setting, after, row)
         if after == before:
-            raise SettingsError(f"{CATEGORY_LABELS[category]} {SETTING_LABELS[setting]}은(는) 이미 "
-                                f"{self._describe(category, setting, after, row)}입니다. 바꿀 것이 없습니다.")
+            raise SettingsError(msg('settings_orchestrator.setting_unchanged', label=_CHANGE_LABELS[category, setting], value=self._describe(category, setting, after, row)))
         if (category, setting) == ("family", "add"):
-            summary = f"가족 비서 '{after}'를 만듭니다"
+            summary = msg('settings_orchestrator.family_add_summary', after=after)
         elif (category, setting) == ("skills", "add"):
             from .skills import parse_source
             source = parse_source(after)
             name = source["path"].rstrip("/").split("/")[-1]
             replacing = any(row["skill"].split("/", 1)[-1] == name and not row["skill"].startswith("agentos/")
                             for row in self.service.skills_status().get("skills") or ())
-            summary = (f"스킬을 {'이 버전으로 바꿉니다' if replacing else '추가합니다'}: {source['repo']}의 {source['path']} "
-                       f"(커밋 {source['revision'][:7]})")
+            summary = (msg(
+                'settings_orchestrator.skill_replace_summary' if replacing else 'settings_orchestrator.skill_add_summary',
+                repo=source['repo'],
+                path=source['path'],
+                revision=source['revision'][:7],
+            ))
             if not self.service.skills_status().get("enabled"):
-                summary += ". 스킬 사용이 꺼져 있어 함께 켭니다"
+                summary = msg('settings_orchestrator.skill_enable_summary', summary=summary)
 
         elif (category, setting) == ("skills", "remove"):
-            summary = f"스킬 '{after}'를 뺍니다"
+            summary = msg('settings_orchestrator.skill_remove', after=after)
         elif (category, setting) == ("connections", "connect_chat"):
             summary = msg('settings_orchestrator.connect_chat_summary')
         elif category == "connections":
-            summary = f"{self._describe(category, setting, after, row)} 연결을 해제합니다"
+            summary = msg('settings_orchestrator.disconnect_summary', connection=self._describe(category, setting, after, row))
         elif category == "browser":
-            summary = (f"로그인 창을 닫습니다: {self._describe(category, setting, after, row)}. 그 창에서 입력하던 로그인은 "
-                       "사라지고, 그 창을 연 요청은 로그인 없이 끝나요. 이미 저장된 로그인 세션은 그대로예요")
+            summary = (msg('settings_orchestrator.close_login_summary', window=self._describe(category, setting, after, row)))
         elif category == "preparations":
-            summary = (f"예약을 취소합니다: {self._describe(category, setting, after, row)}" if setting == "cancel"
-                       else f"예약을 수락합니다: {self._describe(category, setting, after, row)}")
+            summary = (msg('settings_orchestrator.cancel_reservation_summary', reservation=self._describe(category, setting, after, row)) if setting == "cancel"
+                       else msg('settings_orchestrator.accept_reservation_summary', reservation=self._describe(category, setting, after, row)))
         elif (category, setting) == ('api_connections', 'connect'):
             data = json.loads(after)
             if 'fields' in data:
@@ -902,34 +975,51 @@ class SettingsOrchestrator:
                 lines.append(msg('settings_orchestrator.api_money' if data['money'] else 'settings_orchestrator.api_no_money'))
                 summary = '\n'.join(lines)
             else:
-                summary = (f"API 연결 {data['name']}: {', '.join(data['hosts'])}\n"
-                           f"읽기 확인: {data['probe']['url']} · 대상 확인: {data['subject_value'] or '지정 안 함'}\n"
-                           f"돈이 오가는 연결: {'예' if data['money'] else '아니요'}")
+                summary = (msg(
+                    'settings_orchestrator.api_connect_summary',
+                    name=data['name'],
+                    hosts=', '.join(data['hosts']),
+                    probe_url=data['probe']['url'],
+                    subject=data['subject_value'] or msg('settings_orchestrator.subject_not_set'),
+                    money=msg('settings_orchestrator.yes') if data['money'] else msg('settings_orchestrator.no'),
+                ))
             if data.get('oauth'):
-                summary += f"\n인증 정보를 보낼 주소: {data['oauth']['token_url']} · 요청 범위: {', '.join(data['oauth']['scope']) or '기본 범위'}"
+                summary += "\n" + msg(
+                    'settings_orchestrator.oauth_destination',
+                    token_url=data['oauth']['token_url'],
+                    scope=', '.join(data['oauth']['scope']) or msg('settings_orchestrator.default_scope'),
+                )
         elif (category, setting) == ("ai_connections", "connect"):
             data = json.loads(after)
-            summary = (f"{data['engine']}에 {data['name']} 연결: {data['url']}\n"
-                       f"출처: {data['source']} · 게시자: {data['publisher']} · 라이선스: {data['licence']}\n"
-                       f"필요한 도구: {', '.join(data['required_tools']) or '없음'}\n"
-                       f"읽기로 확인할 도구: {', '.join(data['read_tools']) or '없음'} · 돈이 오가는 연결: {'예' if data['money'] else '아니요'}")
+            summary = '\n'.join((
+                msg('settings_orchestrator.mcp_connect_line', engine=data['engine'], name=data['name'], url=data['url']),
+                msg('settings_orchestrator.mcp_connect_source', source=data['source'], publisher=data['publisher'],
+                    licence=data['licence']),
+                msg('settings_orchestrator.mcp_connect_required_tools',
+                    required_tools=', '.join(data['required_tools']) or msg('label.none')),
+                msg('settings_orchestrator.mcp_connect_read_tools', read_tools=', '.join(data['read_tools']) or msg('label.none'),
+                    money=msg('settings_orchestrator.yes') if data['money'] else msg('settings_orchestrator.no'))))
         elif (category, setting) in TRUST_SETTINGS:
             summary = self._trust_summary(setting, after)
         elif (category, setting) == ("phone_link", "send"):
-            summary = f"휴대폰으로 '{self._describe(category, setting, after, row)}' 링크를 보냅니다(약 10분 동안 열려요)"
+            summary = msg('settings_orchestrator.phone_link_summary', link=self._describe(category, setting, after, row))
         elif (category, setting) in FAMILY_SHARE_SETTINGS:
             from . import family_share
             instance, _sep, site = after.partition("|")
             label = family_share.names(row["share_site"].get("assistants") or {}).get(instance, instance)
-            summary = (f"'{label}' 비서에 {site} 로그인 세션을 공유합니다" if setting == "share_site"
-                       else f"'{label}' 비서의 {site} 로그인 공유를 그만둡니다")
+            summary = (msg('settings_orchestrator.share_summary', label=label, site=site) if setting == "share_site"
+                       else msg('settings_orchestrator.unshare_summary', label=label, site=site))
         else:
-            summary = (f"{CATEGORY_LABELS[category]} {SETTING_LABELS[setting]}: {self._describe(category, setting, before, row)}"
-                       f" → {self._describe(category, setting, after, row)}")
+            summary = (msg(
+                'settings_orchestrator.change_summary',
+                label=_CHANGE_LABELS[category, setting],
+                before=self._describe(category, setting, before, row),
+                after=self._describe(category, setting, after, row),
+            ))
         note = row[setting].get("note") or ""
         if (category, setting) == ("main_ai", "route"):
             destination = next((option.get("destination") for option in row["route"]["options"] if option["value"] == after), "")
-            note = f"이후 작업 내용이 {destination}(으)로 전송됩니다." if destination else note
+            note = msg('settings_orchestrator.route_destination_note', destination=destination) if destination else note
         reason = reason.strip()[:MAX_REASON_CHARS] if isinstance(reason, str) else ""
         from .current_context import redact_known_secrets
         now = self.now()
@@ -956,13 +1046,13 @@ class SettingsOrchestrator:
                 if required_skill is not None:
                     draft["required_skill"] = required_skill
                     skill, _, version = required_skill.partition('@')
-                    draft["note"] += f" 필요한 스킬: {skill}(버전 {version[:8]})."
-                draft["note"] += " 확인 후 필요한 기능을 사용할 수 있으면 이 설정을 필요로 했던 원래 작업을 이어갑니다."
+                    draft["note"] = (msg('settings_orchestrator.required_skill_note', note=draft['note'], skill=skill, version=version[:8]) if draft['note'] else ' ' + msg('settings_orchestrator.required_skill_note_only', skill=skill, version=version[:8]))
+                draft["note"] = (msg('settings_orchestrator.continue_work_note', note=draft['note']) if draft['note'] else ' ' + msg('settings_orchestrator.continue_work_note_only'))
             continuation = self.service.settings_continuation(draft)
             if continuation is not None:
                 draft["continuation"] = continuation
             elif continue_work:
-                raise SettingsError("원래 작업의 소유자와 채널을 확인하지 못해 재개 초안을 만들지 않았어요.")
+                raise SettingsError(msg('settings_orchestrator.resume_owner_unknown'))
         note = draft["note"]
         draft["digest"] = self._digest(draft)
         with self._confirming:
@@ -972,7 +1062,7 @@ class SettingsOrchestrator:
                 "category": category, "setting": setting, "before": before, "after": after, "summary": summary,
                 "note": note, "expires_at": draft["expires_at"], "requires_owner_confirmation": True, "applied": False,
                 "continues_work": bool(draft.get("continuation")),
-                "response": summary + (f"\n{note}" if note else "") + "\n확인해야 적용됩니다. 아직 아무것도 바꾸지 않았습니다."}
+                "response": summary + (f"\n{note}" if note else "") + "\n" + msg('settings_orchestrator.confirmation_required')}
 
     def _apply(self, row):
         """Run the service's own setter; ``applied``, or ``requested`` when it only queued the change."""
@@ -981,7 +1071,7 @@ class SettingsOrchestrator:
             from .api_input import reads_update, start
             if reads_update(self.service, row):
                 # Live 2026-10-14: only the set's reviewed reads changed; no keys are asked for again.
-                self.__dict__.setdefault('_apply_text', {})[row['id']] = '읽기로 취급할 요청을 연결에 추가했어요. 원래 작업을 이어갑니다.'
+                self.__dict__.setdefault('_apply_text', {})[row['id']] = msg('settings_orchestrator.reads_added')
                 return 'applied'
             self.__dict__.setdefault('_apply_text', {})[row['id']] = start(self.service, row)
             return 'awaiting-input'
@@ -1085,13 +1175,13 @@ class SettingsOrchestrator:
                         attempts = sum(item.get('api_attempts', 0) for item in rows.values()
                                        if isinstance(item, dict) and item.get('work_id') == row.get('work_id'))
                         if attempts >= 3:
-                            raise SettingsError('이 작업의 API 입력 확인 한도에 도달했어요. 다른 연결 방법을 검토하세요.')
+                            raise SettingsError(msg('settings_orchestrator.api_attempt_limit'))
                         fields['api_attempts'] = row.get('api_attempts', 0) + 1
                     if (state=='applying' and (row.get('category'),row.get('setting'))==('ai_connections','connect')
                             and sum(1 for item in rows.values() if isinstance(item,dict)
                                     and item.get('work_id')==row.get('work_id') and 'applying_at' in item
                                     and (item.get('category'),item.get('setting'))==('ai_connections','connect'))>=3):
-                        raise SettingsError('이 작업의 연결 설정 시도 한도에 도달했어요. 현재 연결 상태와 다른 경로를 검토하세요.')
+                        raise SettingsError(msg('settings_orchestrator.connection_attempt_limit'))
                     row.update(state=state, **fields)
                     db.execute('UPDATE config SET value=? WHERE key=?',
                                (json.dumps(rows), 'settings_change_drafts'))
@@ -1135,7 +1225,7 @@ class SettingsOrchestrator:
             self._settle(row["id"], state, state, type(exc).__name__, **fields)
             if setup and self.service is not None:
                 self.service.resume_settings_work()
-            message = str(exc) if isinstance(exc, ValueError) and str(exc) else "설정을 적용하지 못했습니다."
+            message = str(exc) if isinstance(exc, ValueError) and str(exc) else msg('settings_orchestrator.apply_failed_fallback')
             raise SettingsError(message) from None
         outcome_fields = {}
         if outcome == 'awaiting-input':
@@ -1145,14 +1235,14 @@ class SettingsOrchestrator:
         if settled.get('trust_revoked'):
             self.__dict__.get('_apply_text', {}).pop(row['id'], None)
             return {'state': 'cancelled', 'draft_id': row['id'], 'applied': False,
-                    'response': '신뢰 기록을 잊어 이 확인 요청과 이전 작업의 자동 재개를 취소했어요.'}
+                    'response': msg('settings_orchestrator.trust_revoked_receipt')}
         if settled.get('state') != outcome:
             self.__dict__.get('_apply_text', {}).pop(row['id'], None)
             raise SettingsError(IN_DOUBT_MESSAGE.format(effect=row['effect']))
         if self.service is not None:
             self.service.resume_settings_work()
         response = ((FAMILY_REQUESTED_MESSAGE if row.get("category") == "family" else FOLLOW_REQUESTED_MESSAGE)
-                    if outcome == "requested" else f"{row['effect']}(으)로 바꿨습니다.")
+                    if outcome == "requested" else msg('settings_orchestrator.changed_receipt', effect=row['effect']))
         # #934: a share's receipt says what was delivered (names and counts); it replaces the generic line.
         response = self.__dict__.get("_apply_text", {}).pop(row["id"], None) or response
         return {"state": outcome, "draft_id": row["id"], "target": row["target"], "before": row["before"],
@@ -1163,24 +1253,24 @@ class SettingsOrchestrator:
         with self._confirming:
             row = self._drafts().get(row["id"]) or row
             if row.get("state") in ("applied", "requested"):
-                raise SettingsError("이미 적용한 설정 초안입니다.")
+                raise SettingsError(msg('settings_orchestrator.draft_already_applied'))
             if row.get("state") == "unknown":
                 raise SettingsError(IN_DOUBT_MESSAGE.format(effect=row["effect"]))
             if row.get("state") != "awaiting-confirmation":
-                raise SettingsError("이 설정 초안은 더 이상 확인할 수 없습니다. 필요하면 다시 요청하세요.")
+                raise SettingsError(msg('settings_orchestrator.draft_no_longer_confirmable'))
             if not hmac.compare_digest(str(row.get("digest") or ""), digest) or self._digest(row) != row.get("digest"):
-                raise SettingsError("확인 정보가 이 설정 초안과 맞지 않아 적용하지 않았습니다.")
+                raise SettingsError(msg('settings_orchestrator.draft_digest_mismatch'))
             if self.now() > float(row.get("expires_at") or 0):
                 self._settle(row["id"], "expired", "expired")
-                raise SettingsError("설정 초안이 만료되어 적용하지 않았습니다. 필요하면 다시 요청하세요.")
+                raise SettingsError(msg('settings_orchestrator.draft_expired'))
             if ((row.get('category'),row.get('setting'))==('ai_connections','connect')
                     and self.service.mcp_setup_attempts(row.get('work_id'))>=3):
                 self._settle(row['id'],'failed','failed','setup-attempt-budget')
-                raise SettingsError('이 작업의 연결 설정 시도 한도에 도달했어요. 현재 연결 상태와 다른 경로를 검토하세요.')
+                raise SettingsError(msg('settings_orchestrator.connection_attempt_limit'))
             row = self._settle(row["id"], "applying", None,
                                expected={'state': 'awaiting-confirmation', 'digest': digest}, applying_at=self.now())
             if row.get('trust_revoked'):
-                raise SettingsError('신뢰 기록을 잊어 취소된 확인 요청이에요.')
+                raise SettingsError(msg('settings_orchestrator.trust_revoked_confirmation'))
             self._in_flight.add(row["id"])
             return row
 
@@ -1206,14 +1296,14 @@ class SettingsOrchestrator:
                         and self.service.satisfy_admitted_mcp_setup(row)):
                     self.service.resume_settings_work()
                     return {'state': 'satisfied', 'draft_id': row['id'], 'applied': False,
-                            'response': '다른 작업에서 확인한 같은 연결이 준비되어 있어 추가 설정하지 않았어요.'}
+                            'response': msg('settings_orchestrator.connection_ready_elsewhere')}
                 after, current = self._normalized(row["category"], row["setting"], row["after"])
                 current_before = self._before(row["category"], row["setting"], after, current)
                 if after != row["after"] or not self._before_covered(row, current_before):
                     raise SettingsError(STALE_MESSAGE)
             except Exception as exc:
                 self._settle(row["id"], "failed", "failed", type(exc).__name__)
-                message = str(exc) if isinstance(exc, ValueError) and str(exc) else "설정을 적용하지 못했습니다."
+                message = str(exc) if isinstance(exc, ValueError) and str(exc) else msg('settings_orchestrator.apply_failed_fallback')
                 raise SettingsError(message) from None
             return self._finish(row)
         finally:
@@ -1483,7 +1573,7 @@ class SettingsOrchestrator:
                 result = self.read(owner, category)
                 return {key: result[key] for key in ("category", "settings", "connections", "pending_changes", "response") if key in result}
             if args.get("continue_work", "no") not in ("yes", "no"):
-                raise SettingsError("continue_work는 yes 또는 no로 주세요.")
+                raise SettingsError(msg('settings_orchestrator.invalid_continue_work_option'))
             draft = self.propose(owner, channel, args.get("category"), args.get("setting"), args.get("value"),
                                  args.get("reason"), work_id, continue_work=args.get("continue_work") == "yes", required_skill=args.get("required_skill"))
             minutes = self.TTL_SECONDS // 60
@@ -1509,24 +1599,24 @@ class SettingsOrchestrator:
         owner setting change (``propose``); free text is still not parsed.
         """
         if not isinstance(owner, str) or not owner or not isinstance(channel, str) or not channel:
-            raise SettingsError("설정 요청의 소유자와 채널을 확인하세요.")
+            raise SettingsError(msg('settings_orchestrator.check_owner_channel'))
         if isinstance(intent, dict) and self.service is not None:
             return self.propose(owner, channel, intent.get("category"), intent.get("setting"), intent.get("value"),
                                 intent.get("reason"))
         if not isinstance(intent, str):
-            raise SettingsError("검토된 설정 요청을 구체적으로 말해 주세요.")
+            raise SettingsError(msg('settings_orchestrator.specify_reviewed_request'))
         return {"state": "unsupported", "response": RETIRED_CONTROL_MESSAGE}
 
     def _owned(self, owner, channel, draft_id):
         row = self._drafts().get(draft_id)
         if not row or row.get("owner") != owner or row.get("channel") != channel:
-            raise SettingsError("확인할 설정 초안을 찾지 못했습니다.")
+            raise SettingsError(msg('settings_orchestrator.draft_not_found'))
         return row
 
     def confirm(self, owner, channel, draft_id, digest, notify=None):
         """A draft made by the retired control plane can never apply."""
         if not isinstance(draft_id, str) or not isinstance(digest, str):
-            raise SettingsError("초안 ID와 정확한 확인 정보를 제공하세요.")
+            raise SettingsError(msg('settings_orchestrator.draft_confirmation_required'))
         row = self._owned(owner, channel, draft_id)
         if row.get("category") in SETTINGS and self.service is not None:
             self.reconcile()
@@ -1541,7 +1631,7 @@ class SettingsOrchestrator:
         with self._confirming:
             row = self._owned(owner, channel, draft_id)
             if row["state"] == "canceled": return {"state": "canceled", "idempotent": True}
-            if row["state"] not in ('awaiting-confirmation', 'awaiting-input'): raise SettingsError("이 설정 초안은 취소할 수 없습니다.")
+            if row["state"] not in ('awaiting-confirmation', 'awaiting-input'): raise SettingsError(msg('settings_orchestrator.draft_cannot_cancel'))
             self._settle(draft_id, "canceled", "canceled",
                          expected={'state': row['state'], 'digest': row['digest']})
             if row.get('category') == 'api_connections' and self.service is not None:
@@ -1554,11 +1644,11 @@ class SettingsOrchestrator:
 
     def recovery(self, owner, subject):
         if not isinstance(owner, str) or not owner or not isinstance(subject, str):
-            raise SettingsError("복구할 연결을 선택하세요.")
+            raise SettingsError(msg('settings_orchestrator.select_recovery_connection'))
         rows = {str(row.get("id")): row for row in self.connections() or [] if isinstance(row, dict)}
         row = rows.get(subject)
         if not row:
-            raise SettingsError("복구할 연결을 선택하세요.")
+            raise SettingsError(msg('settings_orchestrator.select_recovery_connection'))
         return {"state": "recovery", "target": subject, "action": next_action(row)}
 
     def handle_text(self, owner, channel, text, owner_typed=True, notify=None):
@@ -1574,7 +1664,7 @@ class SettingsOrchestrator:
         A settings request in the owner's own words reaches the worker, whose
         ``settings_read`` / ``settings_change`` tools read or draft it, including a
         connection disconnect (#183); pausing a connection does not exist."""
-        if not isinstance(text, str): raise SettingsError("설정 요청을 확인하세요.")
+        if not isinstance(text, str): raise SettingsError(msg('settings_orchestrator.check_request'))
         value = text.strip()
         match = re.fullmatch(r"(?:confirm|확인)\s+([A-Za-z0-9_-]+)", value, re.I)
         if match:

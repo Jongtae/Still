@@ -18,14 +18,14 @@ from .messages import msg
 def value(store, text):
     """Canonical non-secret draft; unsupported credential shapes stay explicit."""
     if not isinstance(text, str) or len(text) > 4000:
-        raise ValueError('인증 정보를 제외한 API 연결 정보를 JSON으로 주세요.')
+        raise ValueError(msg('api_input.public_json'))
     try:
         data = json.loads(text)
     except ValueError:
-        raise ValueError('인증 정보를 제외한 API 연결 정보를 JSON으로 주세요.') from None
+        raise ValueError(msg('api_input.public_json')) from None
     fields = {'name', 'hosts', 'header', 'scheme', 'money', 'note', 'subject_field', 'subject_value', 'probe'}
     if redact_known_secrets(store, text) != text or SECRET_PATTERN.search(text) or SENSITIVE.search(text):
-        raise ValueError('대화에는 비밀값 없이 API 연결의 공개 정보만 주세요.')
+        raise ValueError(msg('api_input.public_only'))
     if isinstance(data, dict) and 'fields' in data:
         # #1380: a code-run secret set; #1445 part 3: its format is one model (``draft_formats``).
         from .draft_formats import CodeSetDraft, FormatError, validate
@@ -35,38 +35,38 @@ def value(store, text):
             raise ValueError(str(exc)) from None
         return json.dumps(draft.model_dump(), sort_keys=True, ensure_ascii=False, separators=(',', ':'))
     if not isinstance(data, dict) or set(data) not in (fields, fields | {'oauth'}):
-        raise ValueError('API 연결 정보의 키를 settings_read의 형식대로 주세요.')
+        raise ValueError(msg('api_input.connection_keys'))
     if not isinstance(data['name'], str) or not api_requests.NAME.fullmatch(data['name']) or len(data['name']) > 40:
-        raise ValueError('연결 이름을 소문자·숫자·하이픈 40자 이하로 주세요.')
+        raise ValueError(msg('api_input.connection_name'))
     data['hosts'] = api_requests._normal_hosts(data['hosts'])
     for key in ('header', 'scheme'):
         if not isinstance(data[key], str) or not (key == 'scheme' and not data[key] or api_requests.HEADER.fullmatch(data[key])):
-            raise ValueError('API 인증 헤더와 방식 이름을 확인하세요.')
+            raise ValueError(msg('api_input.auth_header'))
     if not isinstance(data['money'], bool):
-        raise ValueError('돈이 오갈 수 있는 연결인지 표시하세요.')
+        raise ValueError(msg('api_input.money_flag'))
     if not isinstance(data['note'], str) or len(data['note']) > api_requests.MAX_NOTE_CHARS:
-        raise ValueError('연결 설명은 400자 이하로 주세요.')
+        raise ValueError(msg('api_input.description_limit'))
     if data['subject_field'] is not None or data['subject_value'] is not None:
         api_requests.parse_path(data['subject_field'])
         if not isinstance(data['subject_value'], str) or not data['subject_value'] or len(data['subject_value']) > 200:
-            raise ValueError('확인할 대상 필드와 값을 함께 주세요.')
+            raise ValueError(msg('api_input.target_fields'))
     probe = data['probe']
     if not isinstance(probe, dict) or set(probe) != {'url', 'required_fields'}:
-        raise ValueError('읽기 확인 주소와 필요한 응답 필드를 주세요.')
+        raise ValueError(msg('api_input.read_check'))
     # #209: a probe on a declared intranet host verifies an intranet API like any other.
     from . import intranet
     probe['url'] = remote_url(probe['url'], lambda v: redact_known_secrets(store, v),
                               lambda host, port: intranet.declared(store, host, port))
     fields = probe['required_fields']
     if not isinstance(fields, list) or not 1 <= len(fields) <= api_requests.MAX_CHECKS:
-        raise ValueError('필요한 응답 필드는 1~8개로 주세요.')
+        raise ValueError(msg('api_input.response_fields'))
     for field in fields:
         api_requests.parse_path(field)
     if 'oauth' in data:
         from .api_oauth import configuration
         data['oauth'] = configuration(data['oauth'])
         if data['header'] != 'Authorization' or data['scheme'] != 'Bearer':
-            raise ValueError('OAuth 연결은 Authorization 헤더의 Bearer 방식을 사용합니다.')
+            raise ValueError(msg('api_input.oauth_bearer'))
     api_requests.ApiRequests(store, '')._target({'name': data['name'], 'hosts': data['hosts']}, probe['url'])
     return json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
 
@@ -123,12 +123,12 @@ def guard(service, draft):
     job = service.store.job(draft.get('work_id')) if draft.get('work_id') else None
     if (not job or service.settings_owner(job) != draft['owner'] or job['channel'] != draft['channel']
             or service.work_stopped(job['id'])):
-        raise ValueError('원래 작업의 소유자와 현재 상태를 확인하지 못했습니다.')
+        raise ValueError(msg('api_input.work_state'))
     owner_id = service.issuer_owner_id(job)
     # #213: a Work from a conversation surface is held to that surface's paired owner.
     surface = service.surface_claiming(job)
     if surface is not None and not surface.paired_owner(job['chat_id']):
-        raise ValueError('원래 작업의 연결된 대화를 확인하지 못했습니다.')
+        raise ValueError(msg('api_input.work_chat'))
     return {'generation': service._owner_generation(owner_id),
             'request': hashlib.sha256(job['message'].encode()).hexdigest()}
 
@@ -140,7 +140,7 @@ def current(service, draft, session=None):
             or guard(service, row) != row.get('setup_guard')
             or before(service.store, row['after']) != row['before']
             or session is not None and not session.code_ok(session.code)):
-        raise ValueError('입력 요청이 만료되었거나 원래 작업 또는 연결이 바뀌었습니다.')
+        raise ValueError(msg('api_input.input_expired'))
     return row
 
 
@@ -170,7 +170,7 @@ def reads_update(service, draft):
         rows = json.loads(found['value']) if found else {}
         row = rows.get(data['name'])
         if not isinstance(row, dict) or row.get('credential_ref') != slot.get('credential_ref'):
-            raise ValueError('연결이 그사이 바뀌어 적용하지 않았습니다.')
+            raise ValueError(msg('api_input.connection_changed'))
         revision = hashlib.sha256(json.dumps([row.get('revision'), sorted(data['reads'])]).encode()).hexdigest()[:16]
         row.update(reads=sorted(data['reads']), revision=revision)
         db.execute('UPDATE config SET value=? WHERE key=?', (json.dumps(rows), api_requests.SLOTS_KEY))
@@ -179,7 +179,7 @@ def reads_update(service, draft):
         latest = drafts.get(draft['id']) or {}
         if latest.get('state') != 'applying' or latest.get('digest') != draft['digest'] \
                 or orchestrator._digest(latest) != draft['digest']:
-            raise ValueError('확인 요청이 바뀌어 적용하지 않았습니다.')
+            raise ValueError(msg('api_input.confirmation_changed'))
         latest['api_receipt'] = {'reference': row['credential_ref'], 'revision': revision, 'readiness': {'stored': True}}
         db.execute("UPDATE config SET value=? WHERE key='settings_change_drafts'", (json.dumps(drafts),))
     return True
@@ -194,7 +194,7 @@ def start(service, draft):
                 and row.get('work_id') == draft['work_id'] and row.get('category') == 'api_connections'
                 and 'applying_at' in row]
     if len(attempts) > 3:
-        raise ValueError('이 작업의 입력 링크 생성 한도에 도달했어요. 다른 연결 방법을 검토하세요.')
+        raise ValueError(msg('api_input.link_limit'))
 
     def ended(reason):
         if reason not in ('done', 'cancelled'):
@@ -204,7 +204,7 @@ def start(service, draft):
     with service.lock:
         if service.phone_input_session() is not None:
             raise ValueError(phone_input.BUSY_TEXT)
-        session = phone_input.PhoneInput(phone_input.API_SLOT, data['name'] + ' API 연결', store=service.store, on_end=ended,
+        session = phone_input.PhoneInput(phone_input.API_SLOT, msg('api_input.connection_label', name=data['name']), store=service.store, on_end=ended,
                                         popen=service.phone_input_popen or phone_input.subprocess.Popen)
         session.api_draft = dict(draft)
         session.api_kept = kept_fields(service.store, data)
@@ -221,22 +221,22 @@ def start(service, draft):
             try:
                 session.start(service.local_server_port)
             except phone_input.PhoneInputError as exc:
-                # #520: no phone link (ngrok missing or refusing): the same one-time page on this Mac, and why.
+                # #520: no phone link (no tunnel tool, or it refused): the same one-time page on this Mac, and why.
                 session.start_local(service.local_server_port)
                 return msg('api_input.phone_link_unavailable', reason=str(exc), link=session.link)
             service.telegram.call('sendMessage', {'chat_id': cfg['user_id'],
                 'text': phone_input.LINK_TEXT.format(label=session.label, minutes=10, link=session.link),
                 'link_preview_options': {'is_disabled': True}})
-            return 'API 인증 정보를 입력할 일회용 링크를 Telegram으로 보냈어요. 확인되면 원래 작업을 이어갑니다.'
+            return msg('api_input.link_sent')
         session.start_local(service.local_server_port)
-        return 'API 인증 정보는 이 일회용 화면에 입력해 주세요. 확인되면 원래 작업을 이어갑니다.\n' + session.link
+        return msg('api_input.enter_credentials') + '\n' + session.link
     except (ValueError, phone_input.PhoneInputError) as exc:
         # #520: the reason is already the owner's words (not paired, no port); a generic "try again" hid it.
         session.finish('failed')
         raise ValueError(str(exc)) from None
     except Exception:
         session.finish('failed')
-        raise ValueError('비밀 입력 링크를 열지 못했습니다. 같은 연결 요청에서 다시 시도해 주세요.') from None
+        raise ValueError(msg('api_input.link_failed')) from None
 
 
 def published(service, draft):
@@ -297,16 +297,16 @@ def reconcile(service, orchestrator=None):
 def submit(service, session, body):
     """HTTP-only secret boundary. One in-flight submission per input page."""
     if session.kind != phone_input.API_SLOT or not isinstance(body, dict):
-        raise ValueError('이 링크의 인증 정보 입력을 확인하세요.')
+        raise ValueError(msg('api_input.check_input'))
     data = json.loads(session.api_draft['after'])
     kept = getattr(session, 'api_kept', frozenset())
     expected = ({item['name'] for item in data['fields']} - kept if code_draft(data)
                 else {'client_id', 'client_secret'} if data.get('oauth') else {'secret'})
     if set(body) != expected:
-        raise ValueError('이 링크의 인증 정보 입력을 확인하세요.')
+        raise ValueError(msg('api_input.check_input'))
     refuse_probe_in_work_mode(service, data)
     if not session.submit_lock.acquire(blocking=False):
-        raise ValueError('입력을 확인하고 있어요. 잠시 기다려 주세요.')
+        raise ValueError(msg('api_input.checking_input'))
     orchestrator = service.settings_orchestrator
     draft = session.api_draft
     try:
@@ -335,7 +335,7 @@ def submit(service, session, body):
             if (latest.get('state') != 'applying' or latest.get('digest') != draft['digest']
                     or orchestrator._digest(latest) != draft['digest'] or not session.code_ok(session.code)
                     or guard(service, latest) != latest.get('setup_guard')):
-                raise ValueError('입력 요청 또는 원래 작업이 바뀌어 저장하지 않았습니다.')
+                raise ValueError(msg('api_input.work_changed'))
             latest['api_receipt'] = {'reference': candidate['credential_ref'], 'revision': candidate['revision'],
                                      'readiness': observed}
             db.execute("UPDATE config SET value=? WHERE key='settings_change_drafts'", (json.dumps(drafts),))
@@ -353,13 +353,13 @@ def submit(service, session, body):
             api_requests.save_slot(service.store, data['name'], data['hosts'], values,
                 note=data['note'], money=data['money'], encrypted=True, _publish=publish,
                 code={'fields': data['fields'], 'reads': data['reads']})
-            response = '값을 안전하게 저장했습니다. 원래 작업을 이어가며 실제로 동작하는지 확인합니다.'
+            response = msg('api_input.values_saved')
         else:
             api_requests.save_slot(service.store, data['name'], data['hosts'], body if data.get('oauth') else body['secret'],
                 header=data['header'], scheme=data['scheme'], note=data['note'], money=data['money'],
                 subject_field=data['subject_field'], subject_value=data['subject_value'], encrypted=True,
                 _verify=verify, _publish=publish, oauth=data.get('oauth'))
-            response = '연결에 필요한 읽기를 확인했습니다. 원래 작업을 이어갑니다.'
+            response = msg('api_input.read_verified')
         orchestrator._settle(draft['id'], 'applied', 'applied',
                             expected={'state': 'applying', 'digest': draft['digest']})
         session.finish_later('done')
@@ -373,7 +373,7 @@ def submit(service, session, body):
             state = 'unknown' if latest.get('api_receipt') else 'awaiting-input'
             orchestrator._settle(draft['id'], state, state, settled_at=orchestrator.now())
         from .settings_orchestrator import SettingsError
-        message = str(exc) if isinstance(exc, (ApiError, SettingsError)) else '입력 또는 작업 상태를 확인하지 못했습니다. 연결 요청을 확인해 주세요.'
+        message = str(exc) if isinstance(exc, (ApiError, SettingsError)) else msg('api_input.input_failed')
         raise ValueError(message) from None
     finally:
         orchestrator._in_flight.discard(draft['id'])

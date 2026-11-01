@@ -2,20 +2,21 @@ name: validate
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'maint/*']
     types: [opened, edited, reopened, synchronize]
   push:
-    branches: [main]
+    branches: [main, 'maint/*']
 
 permissions:
   contents: read
 
-# A pull request cancels its own superseded runs. Every main commit keeps its
-# own run: the release workflow requires validate to pass on the exact release
-# commit, and a later merge must not cancel it (#292).
+# A pull request cancels its own superseded runs. Every commit pushed to main or
+# to a maintenance line maint/X.Y (#533) keeps its own run: the release workflow
+# requires validate to pass on the exact release commit, and a later merge must
+# not cancel it (#292).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   validate:

@@ -33,6 +33,8 @@ REPO, COMMIT = 'Jongtae/Still', 'a' * 40
 SHOPPING, SITE = 'shopping-cart', 'emart-ssg'
 #: #32: the analysis methods Still publishes as reference skills.
 METHODS = ('summary-or-analysis', 'claim-analysis', 'source-cross-check')
+#: #530: the first-conversations method, listed after the analysis methods.
+FIRST = 'first-conversations'
 FIXTURE_SITE = Path(__file__).resolve().parent / 'fixtures' / 'skills' / 'fixture-mart'
 
 
@@ -263,7 +265,7 @@ class OwnerAddsAReferenceSkillByName(_Shop):
         read = self.settings.read('owner', 'skills')
         available = read['settings']['skills']['add']['available']
         self.assertEqual([(row['name'], row['installed']) for row in available], [(SHOPPING, False), (SITE, False), ('map-directions', False),
-                                                                        *[(name, False) for name in METHODS]])
+                                                                        *[(name, False) for name in METHODS], (FIRST, False)])
         self.assertNotIn('https://', json.dumps(read, ensure_ascii=False), 'no endpoint is reported')
 
     def test_adding_by_name_pins_the_commit_and_switches_skills_on_once_confirmed(self):
@@ -276,7 +278,7 @@ class OwnerAddsAReferenceSkillByName(_Shop):
         self.assertIn(f'{SHOPPING}/{SHOPPING}', self.service.skill_binding().entries)
         listed = self.settings.read('owner', 'skills')['settings']['skills']['add']['available']
         self.assertEqual([(row['name'], row['installed']) for row in listed], [(SHOPPING, True), (SITE, False), ('map-directions', False),
-                                                                     *[(name, False) for name in METHODS]])
+                                                                     *[(name, False) for name in METHODS], (FIRST, False)])
 
     def test_an_unknown_name_is_not_guessed(self):
         from personal_agent.settings_orchestrator import SettingsError

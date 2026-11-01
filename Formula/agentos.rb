@@ -7,6 +7,7 @@ class Agentos < Formula
   url "https://github.com/Jongtae/Still/archive/refs/tags/v0.3.0.tar.gz"
   sha256 "5fcede8864c7c8a36417dce7988c5f81c103f3fcce8e3c50821d5c685b580209"
   version_scheme 1
+  depends_on arch: :arm64
   depends_on "python@3.13"
 
   def install

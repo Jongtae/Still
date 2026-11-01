@@ -520,7 +520,7 @@ class InputPage(PhoneInputServiceCase):
         self.assertEqual(result['state'], 'awaiting-input')
         session = self.service.phone_input_session()
         self.assertTrue(session.link.startswith(f'http://localhost:{self.server.server_port}{phone_input.PAGE_PATH}?code='))
-        self.assertIn(phone_input.NO_NGROK_TEXT, result['response'])
+        self.assertIn(phone_input.NO_TUNNEL_TEXT, result['response'])
         self.assertIn(session.link, result['response'])
         self.assertNotIn('Errno', result['response'])
         self.assertEqual([call for call in self.calls if call[0] == 'sendMessage'], [], 'no phone link was sent')
