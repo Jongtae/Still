@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 from personal_agent import isolated_engine_mcp_bridge
-from personal_agent.agent_runtime import (SKILL_ACTIONS, BROWSER_ACTIONS, BROWSER_SESSION_NOTE, BROWSER_SIGN_IN_DESCRIPTION, BROWSER_SIGN_IN_NOTE, DEFINITIONS, STATUS_ARGUMENT, STATUS_SCHEMA,
+from personal_agent.agent_runtime import (SKILL_ACTIONS, BROWSER_ACTIONS, BROWSER_SESSION_NOTE, BROWSER_SIGN_IN_DESCRIPTION, BROWSER_SIGN_IN_NOTE, BROWSER_SIGN_IN_ROUTE_RULE, DEFINITIONS, STATUS_ARGUMENT, STATUS_SCHEMA,
                                           Capabilities,
                                           check_arguments)
 from personal_agent.bounded_execution import (
@@ -151,6 +151,7 @@ class OneActionSource(_Store):
         self.assertIn("call browser_sign_in with the site's address", BROWSER_SIGN_IN_NOTE)
         self.assertIn('from their phone where that is set up', BROWSER_SIGN_IN_DESCRIPTION)
         self.assertIn('Never tell the person to sign in in a browser yourself', BROWSER_SIGN_IN_DESCRIPTION)
+        self.assertNotIn('home page', BROWSER_SIGN_IN_DESCRIPTION)
         for text in (BROWSER_SIGN_IN_NOTE, BROWSER_SIGN_IN_DESCRIPTION):
             for scripted in ('cart', 'order', 'saved item', 'mall', 'shop'):
                 self.assertNotIn(scripted, text, 'the capability, not a task (C16)')
@@ -164,6 +165,25 @@ class OneActionSource(_Store):
         # #953: the sign-in request reaches the CLI bridge with the same text as the API definition.
         self.assertEqual(wire['browser_sign_in']['description'], BROWSER_SIGN_IN_DESCRIPTION)
         self.assertEqual(static['browser_sign_in']['description'], BROWSER_SIGN_IN_DESCRIPTION)
+
+    def test_every_text_that_asks_for_a_sign_in_carries_the_route_rule(self):
+        """#565 (live 2026-11-01): a signed-out account page sent the worker straight to a sign-in request past
+        the official API its own search had found, and browser_open's note kept saying so after the tool's own
+        description changed.  Every tool text on every route (API, CLI bridge, static profile) that tells the
+        model to request a sign-in now carries the one route rule; a competing text fails here.  Whether a live
+        model then weighs the API first is a model observation, not established by this test."""
+        wire = {tool['name']: tool for tool in AgentOSMcpTools(self.caps(browser=lambda: None)).definitions()}
+        static = {tool['name']: tool for tool in profile_mcp_tools(BOUNDED_PROFILE)}
+        seen = 0
+        for route, tools in (('native', NATIVE), ('wire', wire), ('static', static)):
+            for name, tool in tools.items():
+                text = str(tool.get('description') or '')
+                if name != 'browser_sign_in' and 'browser_sign_in' not in text:
+                    continue
+                seen += 1
+                with self.subTest(route=route, tool=name):
+                    self.assertIn(BROWSER_SIGN_IN_ROUTE_RULE, text)
+        self.assertGreaterEqual(seen, 6, 'browser_open and browser_sign_in on each of the three routes')
 
 
 class DeclaredProfileLimits(unittest.TestCase):
