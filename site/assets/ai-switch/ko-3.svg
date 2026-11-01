@@ -1,10 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1320" viewBox="0 0 1000 1320" xml:lang="ko">
-<title>다시 설명하지 않습니다.</title><desc>앞선 맥락 · 요약 라떼용 원두를 고르는 대화입니다. 장바구니에는 쟈뎅이 있고, 모모스커피 에스쇼콜라 500g도 라떼용으로 추천받았습니다. 전환 후 · Claude Code 쟈뎅 말고 오랜만에 비싼 걸로 해볼까 해. 라떼용으로 제일 괜찮다고 말씀드렸던 모모스커피 에스쇼콜라 500g이 있어요. 실제 대화를 번역·축약해 재구성한 이미지 2026-10-12</desc>
-<rect width="1000" height="1320" rx="32" fill="#f0f1f3"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1400" viewBox="0 0 1000 1400" xml:lang="ko">
+<title>같은 대화에서 AI를 바꿉니다</title><desc>같은 대화에서 AI를 바꿉니다 /ai 현재 일하는 AI는 Codex입니다. /ai claude-code Codex → Claude Code 쟈뎅 말고 오랜만에 비싼 걸로 해볼까해 제가 아까 라떼용으로 제일 괜찮다고 했던 모모스커피 에스쇼콜라 500g이 있어요. 실제 대화 · 번역·축약 2026-10-12</desc>
+<rect width="1000" height="1400" rx="32" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="50" y="65" font-size="28" fill="#626262">Still / 03 · 2026-10-12</text>
-<text x="50" y="145" font-size="54" font-weight="550" fill="#171717">다시 설명하지 않습니다.</text>
-<rect x="50" y="230" width="900" height="269" rx="24" fill="#ffffff" stroke="#d5d5d5"/><text x="80" y="270" font-size="24" fill="#626262">앞선 맥락 · 요약</text><text x="80" y="320" font-size="32" fill="#171717">라떼용 원두를 고르는 대화입니다.</text><text x="80" y="366" font-size="32" fill="#171717">장바구니에는 쟈뎅이 있고, 모모스커피</text><text x="80" y="412" font-size="32" fill="#171717">에스쇼콜라 500g도 라떼용으로</text><text x="80" y="458" font-size="32" fill="#171717">추천받았습니다.</text><text x="80" y="541" font-size="24" fill="#626262">이어서</text><rect x="90" y="565" width="840" height="122" rx="26" fill="#e5e7e9"/><text x="120" y="600" font-size="24" fill="#626262">나</text><text x="120" y="650" font-size="36" fill="#171717">쟈뎅 말고 오랜만에 비싼 걸로 해볼까 해.</text><rect x="50" y="713" width="880" height="174" rx="26" fill="#ffffff"/><text x="80" y="748" font-size="24" fill="#626262">Still · 응답 발췌</text><text x="80" y="798" font-size="36" fill="#171717">라떼용으로 제일 괜찮다고 말씀드렸던</text><text x="80" y="850" font-size="36" fill="#171717">모모스커피 에스쇼콜라 500g이 있어요.</text>
-<path d="M50 1250H950" stroke="#d5d5d5"/>
-<text x="50" y="1290" font-size="27" fill="#626262">실제 대화를 번역·축약해 재구성한 이미지</text>
+<text x="60" y="65" font-size="28" font-weight="550" fill="#171717">Still</text>
+<text x="940" y="65" text-anchor="end" font-size="24" fill="#626262">2026-10-12 · Telegram</text>
+<path d="M60 100H940" stroke="#d5d5d5"/>
+<text x="60" y="160" font-size="42" fill="#171717">같은 대화에서 AI를 바꿉니다</text>
+<g transform="translate(0 96.0)"><rect x="180" y="213" width="770" height="129" rx="28" fill="#e5e7e9"/><text x="212" y="243" font-size="24" fill="#626262">나</text><text x="212" y="278" font-size="48" fill="#171717">/ai</text><rect x="50" y="358" width="900" height="129" rx="28" fill="#ffffff"/><text x="82" y="388" font-size="24" fill="#626262">Still · Codex</text><text x="82" y="423" font-size="48" fill="#171717">현재 일하는 AI는 Codex입니다.</text><path d="M50 547H950" stroke="#c7cbd0"/><rect x="275.0" y="503" width="450" height="86" rx="22" fill="#e1e4e8"/><text x="500.0" y="538" text-anchor="middle" font-size="28" fill="#171717">Codex → Claude Code</text><text x="500.0" y="569" text-anchor="middle" font-size="22" fill="#626262">/ai claude-code</text><rect x="180" y="611" width="770" height="198" rx="28" fill="#e5e7e9"/><text x="212" y="641" font-size="24" fill="#626262">나</text><text x="212" y="676" font-size="48" fill="#171717">쟈뎅 말고 오랜만에 비싼</text><text x="212" y="745" font-size="48" fill="#171717">걸로 해볼까해</text><rect x="50" y="825" width="900" height="267" rx="28" fill="#ffffff"/><text x="82" y="855" font-size="24" fill="#626262">Still · Claude Code</text><text x="82" y="890" font-size="48" fill="#171717">제가 아까 라떼용으로 제일</text><text x="82" y="959" font-size="48" fill="#171717">괜찮다고 했던 모모스커피</text><text x="82" y="1028" font-size="48" fill="#171717">에스쇼콜라 500g이 있어요.</text></g>
+<text x="60" y="1365" font-size="30" fill="#626262">실제 대화 · 번역·축약</text>
 </g></svg>

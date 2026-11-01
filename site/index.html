@@ -15,9 +15,9 @@
 <link rel="alternate" hreflang="zh-CN" href="zh-CN.html">
 <link rel="alternate" hreflang="x-default" href="./">
 <link rel="preload" href="assets/fonts/figtree-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/home.css?v=s11">
+<link rel="stylesheet" href="assets/home.css?v=s12">
 <link rel="stylesheet" href="assets/engineering.css?v=2">
-<link rel="stylesheet" href="assets/carousel.css?v=2">
+<link rel="stylesheet" href="assets/carousel.css?v=3">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -87,38 +87,29 @@ fill="currentColor" stroke="none">
 </nav>
 
 <section class="demo-section" id="concept" aria-labelledby="concept-title">
-  <div class="copy">
-    <h2 id="concept-title">Keep the conversation going after you switch AI.</h2>
-    <p>After choosing coffee beans together, the owner switches from Codex to Claude Code. The next request carries on without restating the earlier recommendation.</p>
-  </div>
+  <div class="copy"><h2 id="concept-title">See Still in real conversations.</h2></div>
   <figure class="switch-carousel">
-    <div class="switch-slides" tabindex="0" role="region" aria-label="One conversation across an AI switch">
+    <nav class="slide-index" aria-label="Real use cases">
+      <a href="#switch-slide-1">Remember preferences</a>
+      <a href="#switch-slide-2">Continue research</a>
+      <a href="#switch-slide-3">Switch AI</a>
+    </nav>
+    <div class="switch-slides" tabindex="0" role="region" aria-label="Real use cases">
       <figure class="switch-slide" id="switch-slide-1" tabindex="-1" aria-labelledby="switch-title-1">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-1.wide.svg" width="1440" height="900"><img src="assets/ai-switch/en-1.svg" width="1000" height="1320" loading="lazy" alt="Earlier context · summary Earlier recommendation summary: Jardin was in the cart; Momos Coffee Es Chocolat 500 g had also been suggested for lattes. Before the switch · Codex /ai The current AI doing the work is Codex. Translated &amp; condensed from a real conversation"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="Previous image">←</a><span id="switch-title-1">1 / 3 · A conversation to carry on.</span><a href="#switch-slide-2" aria-label="Next image">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-1.wide.svg?v=cases1" width="1440" height="960"><img src="assets/ai-switch/en-1.svg?v=cases1" width="1000" height="1400" loading="lazy" alt="Choose beans using a remembered preference I had a latte at coffee coffee coffee yesterday, but I can’t remember the menu name. You said it was nutty and sweet and you’d like it again. I haven’t confirmed the exact menu name. I’m almost out of coffee beans at home. I can look for a nutty taste like the latte you liked earlier. … Do you use a coffee machine or make pour-over at home? Real conversation · translated and condensed 2026-10-11"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="Previous example">←</a><span id="switch-title-1">1 / 3 · Remember preferences</span><a href="#switch-slide-2" aria-label="Next example">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-2" tabindex="-1" aria-labelledby="switch-title-2">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-2.wide.svg" width="1440" height="900"><img src="assets/ai-switch/en-2.svg" width="1000" height="1320" loading="lazy" alt="Earlier context · summary Earlier recommendation summary: Jardin was in the cart; Momos Coffee Es Chocolat 500 g had also been suggested for lattes. Codex → Claude Code /ai claude-code The default AI is now Claude Code. It applies from the next request. Translated &amp; condensed from a real conversation"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="Previous image">←</a><span id="switch-title-2">2 / 3 · Change the AI.</span><a href="#switch-slide-3" aria-label="Next image">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-2.wide.svg?v=cases1" width="1440" height="960"><img src="assets/ai-switch/en-2.svg?v=cases1" width="1000" height="1400" loading="lazy" alt="Continue researching the same F1 models on Amazon I am interested in f1 model car. where can i get order? Continue looking for the same models Would you find more at the amazon? Yes—I found more on Amazon US, with delivery to South Korea shown. These are all Bburago 1:43 models. … My pick would be the McLaren MCL38 for a first model. Your final total needs checking at checkout. Some steps could not be verified. Real conversation · translated and condensed 2026-10-11"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="Previous example">←</a><span id="switch-title-2">2 / 3 · Continue research</span><a href="#switch-slide-3" aria-label="Next example">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-3" tabindex="-1" aria-labelledby="switch-title-3">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-3.wide.svg" width="1440" height="900"><img src="assets/ai-switch/en-3.svg" width="1000" height="1320" loading="lazy" alt="Earlier context · summary Earlier recommendation summary: Jardin was in the cart; Momos Coffee Es Chocolat 500 g had also been suggested for lattes. After the switch · Claude Code Not the Jardin—something pricier this time. There’s the Momos Coffee Es Chocolat 500 g I recommended earlier as best for lattes. Translated &amp; condensed from a real conversation"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="Previous image">←</a><span id="switch-title-3">3 / 3 · Continue without starting over.</span><a href="#switch-slide-1" aria-label="Next image">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-3.wide.svg?v=cases1" width="1440" height="960"><img src="assets/ai-switch/en-3.svg?v=cases1" width="1000" height="1400" loading="lazy" alt="Switch AI within the same conversation /ai The current AI doing the work is Codex. /ai claude-code Codex → Claude Code Not the Jardin—something pricier this time. There’s the Momos Coffee Es Chocolat 500 g I recommended earlier as best for lattes. Real conversation · translated and condensed 2026-10-12"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="Previous example">←</a><span id="switch-title-3">3 / 3 · Switch AI</span><a href="#switch-slide-1" aria-label="Next example">→</a></figcaption>
       </figure>
     </div>
-    <nav class="slide-index" aria-label="One conversation across an AI switch"><a href="#switch-slide-1" aria-label="1 / 3 · A conversation to carry on.">1</a><a href="#switch-slide-2" aria-label="2 / 3 · Change the AI.">2</a><a href="#switch-slide-3" aria-label="3 / 3 · Continue without starting over.">3</a></nav>
-    <figcaption>One recorded session on 12 October 2026, translated and condensed. Earlier recommendations are summarized from the later reply. This shows recalled context across an AI switch, not a completed cart swap or release-wide validation. <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">Recording & provenance</a></figcaption>
+    <figcaption>These images redraw translated, condensed excerpts of real Telegram conversations. Original records and evidence limits are linked below. <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">Original conversations and sources</a></figcaption>
   </figure>
-  <div class="swap">
-    <div>
-      <h3>Choose the AI and tools you want to use</h3>
-      <ul class="pills"><li>Codex</li><li>Claude Code</li><li>AI connected through APIs</li><li>Ollama</li><li>Connected tools</li></ul>
-    </div>
-    <div>
-      <h3>Your memory and work records stay with Still</h3>
-      <ul class="pills solid"><li>What it knows about you</li><li>Unfinished work</li><li>The permissions you gave</li><li>A record of what ran</li></ul>
-    </div>
-  </div>
 </section>
 
 <section class="install" id="install" aria-labelledby="install-title">
@@ -128,6 +119,7 @@ fill="currentColor" stroke="none">
   </div>
   <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
   <p class="note">The URL pins the installer to one version; <a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">read the script</a> before you run it. On an Apple silicon Mac with Homebrew: <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>, <code>brew install jongtae/still/agentos</code>, then <code>agentos start</code>. On Windows, run <code>wsl --install</code> in PowerShell, restart, open Ubuntu and paste the command there.</p>
+  <div class="setup-grid">
   <ol class="steps">
     <li>
       <h3>Connect the AI you want to use</h3>
@@ -161,10 +153,9 @@ Connect a subscription you already have, or an API key.
 4) Connect later in the browser</pre></div>
   <figcaption>An excerpt of the current program’s setup messages, laid out for this page. Not a recording of a new installation. <a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/first_run.py">Read the source</a></figcaption>
 </figure>
+  </div>
   <p class="note">Everything else is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">quick start guide</a>.</p>
 </section>
-
-<section class="section-intro" aria-labelledby="experience-title"><h2 id="experience-title">Start your next task with context from earlier conversations.</h2><p>Still uses earlier conversations and saved memories to help with your next request, using the tools you connect.</p></section>
 
 <section class="feature-row memory-row" id="remembers" aria-labelledby="remember-title">
   <div class="copy">

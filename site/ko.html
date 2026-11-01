@@ -15,9 +15,9 @@
 <link rel="alternate" hreflang="zh-CN" href="zh-CN.html">
 <link rel="alternate" hreflang="x-default" href="./">
 <link rel="preload" href="assets/fonts/figtree-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/home.css?v=s11">
+<link rel="stylesheet" href="assets/home.css?v=s12">
 <link rel="stylesheet" href="assets/engineering.css?v=2">
-<link rel="stylesheet" href="assets/carousel.css?v=2">
+<link rel="stylesheet" href="assets/carousel.css?v=3">
 </head>
 <body>
 <a class="skip" href="#main">본문으로 건너뛰기</a>
@@ -88,38 +88,29 @@ fill="currentColor" stroke="none">
 </nav>
 
 <section class="demo-section" id="concept" aria-labelledby="concept-title">
-  <div class="copy">
-    <h2 id="concept-title">AI를 바꾼 뒤에도 이전 대화를 이어갑니다.</h2>
-    <p>함께 원두를 고르던 중 Codex에서 Claude Code로 바꿨습니다. 다음 요청에서 이전 추천을 다시 설명하지 않고 대화를 이어갑니다.</p>
-  </div>
+  <div class="copy"><h2 id="concept-title">Still과 나눈 실제 대화를 살펴보세요.</h2></div>
   <figure class="switch-carousel">
-    <div class="switch-slides" tabindex="0" role="region" aria-label="AI를 바꿔도 이어지는 하나의 대화">
+    <nav class="slide-index" aria-label="실제 사용 사례">
+      <a href="#switch-slide-1">취향 기억</a>
+      <a href="#switch-slide-2">조사 이어가기</a>
+      <a href="#switch-slide-3">AI 바꾸기</a>
+    </nav>
+    <div class="switch-slides" tabindex="0" role="region" aria-label="실제 사용 사례">
       <figure class="switch-slide" id="switch-slide-1" tabindex="-1" aria-labelledby="switch-title-1">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ko-1.wide.svg" width="1440" height="900"><img src="assets/ai-switch/ko-1.svg" width="1000" height="1320" loading="lazy" alt="앞선 맥락 · 요약 라떼용 원두를 고르는 대화입니다. 장바구니에는 쟈뎅이 있고, 모모스커피 에스쇼콜라 500g도 라떼용으로 추천받았습니다. 전환 직전 · Codex /ai 지금 일하는 AI는 Codex입니다. 실제 대화를 번역·축약해 재구성한 이미지"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="이전 이미지">←</a><span id="switch-title-1">1 / 3 · 이어갈 대화가 있고,</span><a href="#switch-slide-2" aria-label="다음 이미지">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ko-1.wide.svg?v=cases1" width="1440" height="960"><img src="assets/ai-switch/ko-1.svg?v=cases1" width="1000" height="1400" loading="lazy" alt="기억한 취향으로 원두를 고릅니다 어제 coffee coffee coffee에서 라떼를 마셨는데 메뉴 이름이 기억이 안나네. 고소하고 달콤해서 다음에도 먹고 싶다고 하셨던 라떼예요. 다만 정확한 메뉴명까지 확인해 둔 건 아니에요. 집에서 먹는 원두 거의 다 떨어졌어 아까 좋아하셨던 커피커피커피 라떼처럼 고소한 맛을 기준으로 찾아볼 수 있어요. … 집에서는 커피머신으로 내려 드세요, 핸드드립으로 드세요? 실제 대화 · 번역·축약 2026-10-11"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="이전 사례">←</a><span id="switch-title-1">1 / 3 · 취향 기억</span><a href="#switch-slide-2" aria-label="다음 사례">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-2" tabindex="-1" aria-labelledby="switch-title-2">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ko-2.wide.svg" width="1440" height="900"><img src="assets/ai-switch/ko-2.svg" width="1000" height="1320" loading="lazy" alt="앞선 맥락 · 요약 라떼용 원두를 고르는 대화입니다. 장바구니에는 쟈뎅이 있고, 모모스커피 에스쇼콜라 500g도 라떼용으로 추천받았습니다. Codex → Claude Code /ai claude-code 기본 AI를 Claude Code로 바꿨어요. 다음 요청부터 적용됩니다. 실제 대화를 번역·축약해 재구성한 이미지"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="이전 이미지">←</a><span id="switch-title-2">2 / 3 · 일하는 AI를 바꿔도,</span><a href="#switch-slide-3" aria-label="다음 이미지">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ko-2.wide.svg?v=cases1" width="1440" height="960"><img src="assets/ai-switch/ko-2.svg?v=cases1" width="1000" height="1400" loading="lazy" alt="찾던 F1 모형을 아마존에서도 조사합니다 F1 모형 자동차에 관심이 있어. 어디서 주문할 수 있을까? 이어서 같은 모형을 더 찾아봅니다 아마존에서도 더 찾아봐 줄래? 네. 한국 배송이 표시된 Amazon US 상품을 더 찾았어요. 모두 Bburago 1:43 모형이에요. … 첫 모형으로는 McLaren MCL38을 추천해요. 최종 금액은 결제 단계에서 확인해야 합니다. 일부 단계는 확인하지 못했어요. 실제 대화 · 번역·축약 2026-10-11"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="이전 사례">←</a><span id="switch-title-2">2 / 3 · 조사 이어가기</span><a href="#switch-slide-3" aria-label="다음 사례">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-3" tabindex="-1" aria-labelledby="switch-title-3">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ko-3.wide.svg" width="1440" height="900"><img src="assets/ai-switch/ko-3.svg" width="1000" height="1320" loading="lazy" alt="앞선 맥락 · 요약 라떼용 원두를 고르는 대화입니다. 장바구니에는 쟈뎅이 있고, 모모스커피 에스쇼콜라 500g도 라떼용으로 추천받았습니다. 전환 후 · Claude Code 쟈뎅 말고 오랜만에 비싼 걸로 해볼까 해. 라떼용으로 제일 괜찮다고 말씀드렸던 모모스커피 에스쇼콜라 500g이 있어요. 실제 대화를 번역·축약해 재구성한 이미지"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="이전 이미지">←</a><span id="switch-title-3">3 / 3 · 다시 설명하지 않습니다.</span><a href="#switch-slide-1" aria-label="다음 이미지">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ko-3.wide.svg?v=cases1" width="1440" height="960"><img src="assets/ai-switch/ko-3.svg?v=cases1" width="1000" height="1400" loading="lazy" alt="같은 대화에서 AI를 바꿉니다 /ai 현재 일하는 AI는 Codex입니다. /ai claude-code Codex → Claude Code 쟈뎅 말고 오랜만에 비싼 걸로 해볼까해 제가 아까 라떼용으로 제일 괜찮다고 했던 모모스커피 에스쇼콜라 500g이 있어요. 실제 대화 · 번역·축약 2026-10-12"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="이전 사례">←</a><span id="switch-title-3">3 / 3 · AI 바꾸기</span><a href="#switch-slide-1" aria-label="다음 사례">→</a></figcaption>
       </figure>
     </div>
-    <nav class="slide-index" aria-label="AI를 바꿔도 이어지는 하나의 대화"><a href="#switch-slide-1" aria-label="1 / 3 · 이어갈 대화가 있고,">1</a><a href="#switch-slide-2" aria-label="2 / 3 · 일하는 AI를 바꿔도,">2</a><a href="#switch-slide-3" aria-label="3 / 3 · 다시 설명하지 않습니다.">3</a></nav>
-    <figcaption>2026년 10월 12일 하나의 실제 세션을 번역·축약했습니다. 앞선 추천은 이후 응답을 근거로 요약했습니다. AI 교체 뒤 맥락을 떠올리는 장면이며, 장바구니 교체 완료나 배포본 전체 검증을 뜻하지 않습니다. <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">녹화 출처와 한계</a></figcaption>
+    <figcaption>실제 Telegram 대화를 번역·축약해 다시 그린 이미지입니다. 각 사례의 원문과 확인 범위를 함께 공개합니다. <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">대화 원문과 출처</a></figcaption>
   </figure>
-  <div class="swap">
-    <div>
-      <h3>필요에 따라 AI와 도구를 바꿔 쓰세요</h3>
-      <ul class="pills"><li>Codex</li><li>Claude Code</li><li>API로 연결한 AI</li><li>Ollama</li><li>연결한 도구</li></ul>
-    </div>
-    <div>
-      <h3>AI를 바꿔도 기억과 작업 기록은 남습니다</h3>
-      <ul class="pills solid"><li>나에 대한 기억과 대화 맥락</li><li>진행 중인 작업</li><li>내가 설정한 권한</li><li>실제로 실행된 기록</li></ul>
-    </div>
-  </div>
 </section>
 
 <section class="install" id="install" aria-labelledby="install-title">
@@ -129,6 +120,7 @@ fill="currentColor" stroke="none">
   </div>
   <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
   <p class="note">설치 스크립트는 주소에 특정 버전으로 고정되어 있습니다. 실행하기 전에 <a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">스크립트 내용을 확인</a>하세요. Apple Silicon Mac에서 Homebrew를 쓴다면 <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>, <code>brew install jongtae/still/agentos</code>로 설치한 뒤 <code>agentos start</code>로 시작합니다. Windows에서는 PowerShell에서 <code>wsl --install</code>을 실행하고 다시 시작한 뒤, Ubuntu를 열고 위 명령을 붙여 넣으세요.</p>
+  <div class="setup-grid">
   <ol class="steps">
     <li>
       <h3>사용할 AI를 선택하세요</h3>
@@ -162,10 +154,9 @@ AI 연결
 4) 나중에 브라우저에서 연결</pre></div>
   <figcaption>현재 프로그램의 초기 설정 문구를 발췌해 배치한 미리보기입니다. 새로운 실제 설치를 녹화한 화면은 아닙니다. <a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/first_run.py">원문 코드</a></figcaption>
 </figure>
+  </div>
   <p class="note">자세한 설치·연결 방법은 <a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">빠른 시작 안내</a>에서 확인하세요.</p>
 </section>
-
-<section class="section-intro" aria-labelledby="experience-title"><h2 id="experience-title">이전 대화를 바탕으로 다음 일을 시작합니다.</h2><p>앞서 나눈 대화와 저장한 기억을 다음 요청에 활용하고, 내가 연결한 도구로 일을 진행합니다.</p></section>
 
 <section class="feature-row memory-row" id="remembers" aria-labelledby="remember-title">
   <div class="copy">

@@ -1,10 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1320" viewBox="0 0 1000 1320" xml:lang="ko">
-<title>일하는 AI를 바꿔도,</title><desc>앞선 맥락 · 요약 라떼용 원두를 고르는 대화입니다. 장바구니에는 쟈뎅이 있고, 모모스커피 에스쇼콜라 500g도 라떼용으로 추천받았습니다. Codex → Claude Code /ai claude-code 기본 AI를 Claude Code로 바꿨어요. 다음 요청부터 적용됩니다. 실제 대화를 번역·축약해 재구성한 이미지 2026-10-12</desc>
-<rect width="1000" height="1320" rx="32" fill="#f0f1f3"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1400" viewBox="0 0 1000 1400" xml:lang="ko">
+<title>찾던 F1 모형을 아마존에서도 조사합니다</title><desc>찾던 F1 모형을 아마존에서도 조사합니다 F1 모형 자동차에 관심이 있어. 어디서 주문할 수 있을까? 이어서 같은 모형을 더 찾아봅니다 아마존에서도 더 찾아봐 줄래? 네. 한국 배송이 표시된 Amazon US 상품을 더 찾았어요. 모두 Bburago 1:43 모형이에요. … 첫 모형으로는 McLaren MCL38을 추천해요. 최종 금액은 결제 단계에서 확인해야 합니다. 일부 단계는 확인하지 못했어요. 실제 대화 · 번역·축약 2026-10-11</desc>
+<rect width="1000" height="1400" rx="32" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="50" y="65" font-size="28" fill="#626262">Still / 02 · 2026-10-12</text>
-<text x="50" y="145" font-size="54" font-weight="550" fill="#171717">일하는 AI를 바꿔도,</text>
-<rect x="50" y="230" width="900" height="269" rx="24" fill="#ffffff" stroke="#d5d5d5"/><text x="80" y="270" font-size="24" fill="#626262">앞선 맥락 · 요약</text><text x="80" y="320" font-size="32" fill="#171717">라떼용 원두를 고르는 대화입니다.</text><text x="80" y="366" font-size="32" fill="#171717">장바구니에는 쟈뎅이 있고, 모모스커피</text><text x="80" y="412" font-size="32" fill="#171717">에스쇼콜라 500g도 라떼용으로</text><text x="80" y="458" font-size="32" fill="#171717">추천받았습니다.</text><text x="80" y="541" font-size="24" fill="#626262">이어서</text><rect x="90" y="565" width="840" height="122" rx="26" fill="#e5e7e9"/><text x="120" y="600" font-size="24" fill="#626262">나</text><text x="120" y="650" font-size="36" fill="#171717">/ai claude-code</text><rect x="50" y="713" width="880" height="174" rx="26" fill="#ffffff"/><text x="80" y="748" font-size="24" fill="#626262">Still · 응답 발췌</text><text x="80" y="798" font-size="36" fill="#171717">기본 AI를 Claude Code로 바꿨어요. 다음</text><text x="80" y="850" font-size="36" fill="#171717">요청부터 적용됩니다.</text>
-<path d="M50 1250H950" stroke="#d5d5d5"/>
-<text x="50" y="1290" font-size="27" fill="#626262">실제 대화를 번역·축약해 재구성한 이미지</text>
+<text x="60" y="65" font-size="28" font-weight="550" fill="#171717">Still</text>
+<text x="940" y="65" text-anchor="end" font-size="24" fill="#626262">2026-10-11 · Telegram</text>
+<path d="M60 100H940" stroke="#d5d5d5"/>
+<text x="60" y="160" font-size="42" fill="#171717">찾던 F1 모형을 아마존에서도 조사합니다</text>
+<g transform="translate(0 44.5)"><rect x="180" y="213" width="770" height="264" rx="28" fill="#e5e7e9"/><text x="212" y="243" font-size="24" fill="#626262">나</text><text x="212" y="278" font-size="47" fill="#171717">F1 모형 자동차에 관심이</text><text x="212" y="346" font-size="47" fill="#171717">있어. 어디서 주문할 수</text><text x="212" y="414" font-size="47" fill="#171717">있을까?</text><text x="65" y="536" font-size="43" fill="#626262">이어서 같은 모형을 더 찾아봅니다</text><rect x="180" y="575" width="770" height="128" rx="28" fill="#e5e7e9"/><text x="212" y="605" font-size="24" fill="#626262">나</text><text x="212" y="640" font-size="47" fill="#171717">아마존에서도 더 찾아봐 줄래?</text><rect x="50" y="719" width="900" height="332" rx="28" fill="#ffffff"/><text x="82" y="749" font-size="24" fill="#626262">Still</text><text x="82" y="784" font-size="47" fill="#171717">네. 한국 배송이 표시된 Amazon US</text><text x="82" y="852" font-size="47" fill="#171717">상품을 더 찾았어요. 모두 Bburago</text><text x="82" y="920" font-size="47" fill="#171717">1:43 모형이에요. … 첫 모형으로는</text><text x="82" y="988" font-size="47" fill="#171717">McLaren MCL38을 추천해요.</text><text x="65" y="1110" font-size="43" fill="#626262">최종 금액은 결제 단계에서 확인해야</text><text x="65" y="1172" font-size="43" fill="#626262">합니다. 일부 단계는 확인하지 못했어요.</text></g>
+<text x="60" y="1365" font-size="30" fill="#626262">실제 대화 · 번역·축약</text>
 </g></svg>

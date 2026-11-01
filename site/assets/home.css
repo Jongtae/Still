@@ -38,24 +38,17 @@ main>.hero{padding:clamp(4rem,9vw,8rem) 0 clamp(3rem,6vw,5rem);text-align:center
 .button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:.65rem 1.25rem;background:var(--ink);color:white;border-radius:999px;text-decoration:none;font-size:.9rem}
 .button:hover{background:#333}
 .text-link{display:inline-flex;align-items:center;min-height:44px;font-size:.9rem}
-.demo-section{padding-top:1rem}
-.entry-points{width:min(100% - 3rem,72rem);margin:0 auto 4rem;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-block:1px solid var(--line)}
+.demo-section{padding-top:1rem;max-width:60rem}
+.entry-points{width:min(100% - 3rem,72rem);margin:0 auto 2.5rem;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-block:1px solid var(--line)}
 .entry-points>a{display:flex;flex-direction:column;gap:.65rem;text-decoration:none;padding:1.5rem 1.25rem}
 .entry-points>a+ a{border-left:1px solid var(--line)}
 .entry-points strong{font-size:1.15rem;font-weight:550;display:flex;justify-content:space-between;gap:.5rem}
 .entry-points>a>span{font-size:.85rem;color:var(--muted)}
 .entry-points>a:hover{background:#f0f0f0}
-.demo-section>.copy{max-width:45rem;margin:0 auto 2rem;text-align:center}
+.demo-section>.copy{margin:0 0 1.5rem;text-align:left}
 .demo-section>.copy h2{font-size:clamp(1.35rem,2.5vw,2rem)}
 .demo-section>.copy p{max-width:40rem;margin:1rem auto 0;color:var(--muted)}
-.swap{display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:2rem;padding-top:1.5rem;border-top:1px solid var(--line)}
-.swap h3{font-size:.85rem;letter-spacing:0;margin-bottom:.75rem}
-.pills,.bubbles{display:flex;flex-wrap:wrap;gap:.6rem;list-style:none;padding:0;margin:0}
-.pills li{font-size:.85rem;color:var(--muted)}
-.pills li+li::before{content:"·";padding-right:.6rem;color:#999}
-.section-intro{padding:clamp(5rem,12vw,10rem) 0 3rem;text-align:center}
-.section-intro h2{font-size:clamp(2rem,4vw,3.2rem);font-weight:550}
-.section-intro p{max-width:36rem;margin:1rem auto 0;color:var(--muted);font-size:1.05rem}
+.bubbles{display:flex;flex-wrap:wrap;gap:.6rem;list-style:none;padding:0;margin:0}
 .feature-row{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,4fr);gap:2rem clamp(2rem,5vw,5rem);align-items:center;padding:1.5rem 0}
 .feature-row>.copy{grid-column:2;grid-row:1}
 .feature-row>.visual{grid-column:1;grid-row:1}
@@ -87,7 +80,7 @@ main>.hero{padding:clamp(4rem,9vw,8rem) 0 clamp(3rem,6vw,5rem);text-align:center
 .limits{grid-column:1/-1;list-style:none;padding:2rem 0 0;margin:1rem 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2rem;border-top:1px solid var(--line)}
 .limits li{font-size:.85rem;color:var(--muted)}
 .limits b{display:block;color:var(--ink);font-size:.95rem;margin-bottom:.5rem;font-weight:550}
-.install{padding:clamp(5rem,10vw,8rem) 0}
+.install{padding:clamp(4rem,7vw,6rem) 0}
 .install>.copy{max-width:40rem;margin:auto;text-align:center}
 .install .copy h2{font-size:clamp(2rem,3.5vw,3rem)}
 .command{margin:2rem 0 1rem;padding:1.5rem;border:1px solid var(--line);border-radius:1rem;background:white;font-size:.9rem;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -98,6 +91,11 @@ main>.hero{padding:clamp(4rem,9vw,8rem) 0 clamp(3rem,6vw,5rem);text-align:center
 .steps li::before{content:counter(step,decimal-leading-zero);display:block;color:var(--muted);font-size:.8rem;margin-bottom:.8rem}
 .steps h3{font-size:1rem;font-weight:550;letter-spacing:0}
 .steps p{font-size:.9rem;color:var(--muted);margin-top:.7rem}
+.setup-grid{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,6fr);gap:3rem;align-items:start;margin:2.5rem 0}
+.setup-grid .steps{grid-template-columns:1fr;gap:1.75rem;margin:0}
+.setup-grid .steps li{position:relative;padding-left:2.5rem}
+.setup-grid .steps li::before{position:absolute;left:0;top:0}
+.setup-grid .setup-preview{margin:0;min-width:0}
 .setup-preview{margin:2.5rem 0}
 .setup-preview h3{font-size:1.1rem;margin-bottom:1rem;font-weight:550;letter-spacing:0}
 .terminal-frame{border-radius:1rem;overflow:hidden;background:#1b1b1d;color:#eee}
@@ -128,6 +126,7 @@ main>.hero{padding:clamp(4rem,9vw,8rem) 0 clamp(3rem,6vw,5rem);text-align:center
 .langs{border:0;padding:0;flex-basis:100%;justify-content:flex-end}
 .feature-row,.connections-row{grid-template-columns:1fr;gap:1.5rem;padding:2rem 0}
 .build-grid{grid-template-columns:1fr}
+.setup-grid{grid-template-columns:1fr;gap:2rem}
 .feature-row>.copy,.connections-row>.copy{grid-column:1;grid-row:1}
 .feature-row>.visual,.connections-row>.cloud{grid-column:1;grid-row:2}
 .fine{grid-column:1;margin:0}
@@ -152,7 +151,6 @@ main>.hero{padding:3.5rem 0 3rem}
 .demo-section>.copy{text-align:left}
 .demo-section>.copy h2{font-size:1.5rem}
 .demo-section>.copy p{font-size:.9rem}
-.swap{grid-template-columns:1fr;gap:1.25rem}
 .visual,.cloud{border-radius:1.25rem;padding:1.2rem}
 .b{font-size:.9rem}
 .limits,.steps{grid-template-columns:1fr;gap:1.5rem}

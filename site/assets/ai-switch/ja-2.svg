@@ -1,10 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1320" viewBox="0 0 1000 1320" xml:lang="ja">
-<title>働く AI を替えても、</title><desc>前の文脈 · 要約 前の提案の要約：カートには Jardin があり、ラテ用に Momos Coffee Es Chocolat 500 g も薦められていました。 Codex → Claude Code /ai claude-code 既定の AI を Claude Code に変更しました。次の依頼から適用されます。 実際の会話を翻訳・要約した再構成画像 2026-10-12</desc>
-<rect width="1000" height="1320" rx="32" fill="#f0f1f3"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1400" viewBox="0 0 1000 1400" xml:lang="ja">
+<title>探していた F1 模型を Amazon でも調べます</title><desc>探していた F1 模型を Amazon でも調べます F1 のモデルカーに興味がある。どこで注文できる？ 同じ模型を続けて探します Amazon でももっと探してくれる？ 韓国への配送が表示された Amazon US の商品を見つけました。すべて Bburago の 1:43 模型です。… 最初の1台には McLaren MCL38 をおすすめします。 最終金額は購入手続きで確認が必要です。一部の手順は確認できませんでした。 実際の会話 · 翻訳・要約 2026-10-11</desc>
+<rect width="1000" height="1400" rx="32" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="50" y="65" font-size="28" fill="#626262">Still / 02 · 2026-10-12</text>
-<text x="50" y="145" font-size="54" font-weight="550" fill="#171717">働く AI を替えても、</text>
-<rect x="50" y="230" width="900" height="223" rx="24" fill="#ffffff" stroke="#d5d5d5"/><text x="80" y="270" font-size="24" fill="#626262">前の文脈 · 要約</text><text x="80" y="320" font-size="32" fill="#171717">前の提案の要約：カートには Jardin があり、</text><text x="80" y="366" font-size="32" fill="#171717">ラテ用に Momos Coffee Es Chocolat 500 g も</text><text x="80" y="412" font-size="32" fill="#171717">薦められていました。</text><text x="80" y="495" font-size="24" fill="#626262">続いて</text><rect x="90" y="519" width="840" height="122" rx="26" fill="#e5e7e9"/><text x="120" y="554" font-size="24" fill="#626262">あなた</text><text x="120" y="604" font-size="36" fill="#171717">/ai claude-code</text><rect x="50" y="667" width="880" height="174" rx="26" fill="#ffffff"/><text x="80" y="702" font-size="24" fill="#626262">Still · 返答の抜粋</text><text x="80" y="752" font-size="36" fill="#171717">既定の AI を Claude Code に変更しました。</text><text x="80" y="804" font-size="36" fill="#171717">次の依頼から適用されます。</text>
-<path d="M50 1250H950" stroke="#d5d5d5"/>
-<text x="50" y="1290" font-size="27" fill="#626262">実際の会話を翻訳・要約した再構成画像</text>
+<text x="60" y="65" font-size="28" font-weight="550" fill="#171717">Still</text>
+<text x="940" y="65" text-anchor="end" font-size="24" fill="#626262">2026-10-11 · Telegram</text>
+<path d="M60 100H940" stroke="#d5d5d5"/>
+<text x="60" y="160" font-size="42" fill="#171717">探していた F1 模型を Amazon でも調べます</text>
+<g transform="translate(0 4.5)"><rect x="180" y="213" width="770" height="198" rx="28" fill="#e5e7e9"/><text x="212" y="243" font-size="24" fill="#626262">あなた</text><text x="212" y="278" font-size="48" fill="#171717">F1 のモデルカーに興味がある</text><text x="212" y="347" font-size="48" fill="#171717">。どこで注文できる？</text><text x="65" y="471" font-size="44" fill="#626262">同じ模型を続けて探します</text><rect x="180" y="510" width="770" height="198" rx="28" fill="#e5e7e9"/><text x="212" y="540" font-size="24" fill="#626262">あなた</text><text x="212" y="575" font-size="48" fill="#171717">Amazon でももっと探してくれ</text><text x="212" y="644" font-size="48" fill="#171717">る？</text><rect x="50" y="724" width="900" height="405" rx="28" fill="#ffffff"/><text x="82" y="754" font-size="24" fill="#626262">Still</text><text x="82" y="789" font-size="48" fill="#171717">韓国への配送が表示された Amazon </text><text x="82" y="858" font-size="48" fill="#171717">US の商品を見つけました。すべて </text><text x="82" y="927" font-size="48" fill="#171717">Bburago の 1:43 模型です。… 最初</text><text x="82" y="996" font-size="48" fill="#171717">の1台には McLaren MCL38 をおすす</text><text x="82" y="1065" font-size="48" fill="#171717">めします。</text><text x="65" y="1189" font-size="44" fill="#626262">最終金額は購入手続きで確認が必要です</text><text x="65" y="1252" font-size="44" fill="#626262">。一部の手順は確認できませんでした。</text></g>
+<text x="60" y="1365" font-size="30" fill="#626262">実際の会話 · 翻訳・要約</text>
 </g></svg>

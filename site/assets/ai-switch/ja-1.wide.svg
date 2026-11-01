@@ -1,9 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" xml:lang="ja">
-<title>続けたい会話があり、</title><desc>前の文脈 · 要約 前の提案の要約：カートには Jardin があり、ラテ用に Momos Coffee Es Chocolat 500 g も薦められていました。 切り替え前 · Codex /ai 今、仕事をしている AI は Codex です。 実際の会話を翻訳・要約した再構成画像 2026-10-12</desc>
-<rect width="1440" height="900" rx="40" fill="#f0f1f3"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" xml:lang="ja">
+<title>覚えていた好みを使ってコーヒー豆を選びます</title><desc>覚えていた好みを使ってコーヒー豆を選びます 昨日 coffee coffee coffee でラテを飲んだけど、メニュー名を思い出せない。 香ばしくて甘く、また飲みたいとおっしゃっていたラテですね。ただ、正確なメニュー名までは確認できていません。 家で飲むコーヒー豆がもうすぐなくなる。 先ほど気に入ったラテのような、香ばしい味を基準に探せます。… 自宅ではコーヒーマシンですか、ハンドドリップですか？ 実際の会話 · 翻訳・要約 2026-10-11</desc>
+<rect width="1440" height="960" rx="32" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="70" y="85" font-size="24" fill="#626262">Still / 01 · 2026-10-12</text>
-<text x="70" y="200" font-size="48" fill="#171717">続けたい会話があ</text><text x="70" y="264" font-size="48" fill="#171717">り、</text>
-<text x="70" y="780" font-size="23" fill="#626262">実際の会話を翻訳・要約した再構</text><text x="70" y="814" font-size="23" fill="#626262">成画像</text>
-<rect x="70" y="370" width="400" height="265" rx="24" fill="#ffffff" stroke="#d5d5d5"/><text x="94" y="410" font-size="20" fill="#626262">前の文脈 · 要約</text><text x="94" y="455" font-size="26" fill="#171717">前の提案の要約：カートには</text><text x="94" y="491" font-size="26" fill="#171717"> Jardin があり、ラテ用に </text><text x="94" y="527" font-size="26" fill="#171717">Momos Coffee Es Chocolat </text><text x="94" y="563" font-size="26" fill="#171717">500 g も薦められていました</text><text x="94" y="599" font-size="26" fill="#171717">。</text><text x="520" y="76" font-size="24" fill="#626262">切り替え前 · Codex</text><rect x="570" y="150" width="800" height="116" rx="26" fill="#e5e7e9"/><text x="600" y="184" font-size="23" fill="#626262">あなた</text><text x="600" y="232" font-size="32" fill="#171717">/ai</text><rect x="520" y="292" width="850" height="116" rx="26" fill="#ffffff"/><text x="550" y="326" font-size="23" fill="#626262">Still · 返答の抜粋</text><text x="550" y="374" font-size="32" fill="#171717">今、仕事をしている AI は Codex です。</text>
+<text x="60" y="65" font-size="28" font-weight="550" fill="#171717">Still</text>
+<text x="1380" y="65" text-anchor="end" font-size="24" fill="#626262">2026-10-11 · Telegram</text>
+<path d="M60 100H1380" stroke="#d5d5d5"/>
+<text x="60" y="160" font-size="42" fill="#171717">覚えていた好みを使ってコーヒー豆を選びます</text>
+<g transform="translate(0 0)"><rect x="420" y="213" width="900" height="166" rx="28" fill="#e5e7e9"/><text x="452" y="243" font-size="22" fill="#626262">あなた</text><text x="452" y="278" font-size="37" fill="#171717">昨日 coffee coffee coffee でラテを飲んだけ</text><text x="452" y="331" font-size="37" fill="#171717">ど、メニュー名を思い出せない。</text><rect x="120" y="395" width="1200" height="166" rx="28" fill="#ffffff"/><text x="152" y="425" font-size="22" fill="#626262">Still</text><text x="152" y="460" font-size="37" fill="#171717">香ばしくて甘く、また飲みたいとおっしゃっていたラテですね。</text><text x="152" y="513" font-size="37" fill="#171717">ただ、正確なメニュー名までは確認できていません。</text><rect x="420" y="577" width="900" height="113" rx="28" fill="#e5e7e9"/><text x="452" y="607" font-size="22" fill="#626262">あなた</text><text x="452" y="642" font-size="37" fill="#171717">家で飲むコーヒー豆がもうすぐなくなる。</text><rect x="120" y="706" width="1200" height="166" rx="28" fill="#ffffff"/><text x="152" y="736" font-size="22" fill="#626262">Still</text><text x="152" y="771" font-size="37" fill="#171717">先ほど気に入ったラテのような、香ばしい味を基準に探せます。</text><text x="152" y="824" font-size="37" fill="#171717">… 自宅ではコーヒーマシンですか、ハンドドリップですか？</text></g>
+<text x="60" y="925" font-size="30" fill="#626262">実際の会話 · 翻訳・要約</text>
 </g></svg>

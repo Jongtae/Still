@@ -46,79 +46,87 @@ def text_rows(rows, x, y, size=36, color='#171717', leading=52):
     return ''.join(f'<text x="{x}" y="{y + i * leading}" font-size="{size}" fill="{color}">{escape(row)}</text>' for i, row in enumerate(rows))
 
 
+def scene_messages(copy, index):
+    return copy['scenes'][index]['messages']
+
+
 def description(copy, index):
-    return ' '.join([copy['context_labels'][index], copy['contexts'][index],
-                     copy['notes'][index], copy['users'][index], copy['replies'][index],
-                     copy['label'], copy['sources'][index]['date']])
+    scene = copy['scenes'][index]
+    return ' '.join([scene['title'], *[
+        (row.get('command', '') + ' ' + row['text']).strip()
+        for row in scene_messages(copy, index)], copy['label'], scene['date']])
+
+
+def dialogue_body(lang, copy, index, wide, font):
+    frame_width = 1440 if wide else 1000
+    title_rows = lines(copy['scenes'][index]['title'], lang, 62 if wide else 40)
+    start = y = 155 + len(title_rows) * 58
+    left, common_width = (120, 1200) if wide else (50, 900)
+    content, engine = '', copy['scenes'][index].get('engine')
+    for row in scene_messages(copy, index):
+        role, message = row['role'], row['text']
+        if role == 'switch':
+            content += f'<path d="M{left} {y + 44}H{frame_width - left}" stroke="#c7cbd0"/>'
+            content += f'<rect x="{frame_width / 2 - 225}" y="{y}" width="450" height="86" rx="22" fill="#e1e4e8"/>'
+            content += f'<text x="{frame_width / 2}" y="{y + 35}" text-anchor="middle" font-size="28" fill="#171717">{escape(message)}</text>'
+            content += f'<text x="{frame_width / 2}" y="{y + 66}" text-anchor="middle" font-size="22" fill="#626262">{escape(row["command"])}</text>'
+            engine = row['engine']
+            y += 108
+            continue
+        if role in ('marker', 'notice'):
+            size = font - 4
+            limit = int((common_width - 25) / size * 1.9)
+            rows = lines(message, lang, limit)
+            leading = int(size * 1.45)
+            content += text_rows(rows, left + 15, y + size, size, '#626262', leading)
+            y += len(rows) * leading + 20
+            continue
+        user = role == 'user'
+        x, width = ((420, 900) if wide else (180, 770)) if user else (left, common_width)
+        leading = int(font * 1.45)
+        rows = lines(message, lang, int((width - 64) / font * 1.9))
+        height = len(rows) * leading + 60
+        background = '#e5e7e9' if user else '#ffffff'
+        speaker = copy['you'] if user else copy['assistant'] + (f' · {engine}' if engine else '')
+        content += f'<rect x="{x}" y="{y}" width="{width}" height="{height}" rx="28" fill="{background}"/>'
+        content += text_rows([speaker], x + 32, y + 30, 22 if wide else 24, '#626262')
+        content += text_rows(rows, x + 32, y + 65, font, leading=leading)
+        y += height + 16
+    return content, y, start
+
+
+def render_scene(lang, copy, index, wide):
+    width, height = (1440, 960) if wide else (1000, 1400)
+    maximum, minimum = (42, 32) if wide else (48, 40)
+    scene = copy['scenes'][index]
+    for font in range(maximum, minimum - 1, -1):
+        content, end, start = dialogue_body(lang, copy, index, wide, font)
+        if end <= height - 70:
+            break
+    else:
+        raise ValueError(f'Dialogue overflows {lang} slide {index + 1} wide={wide}')
+    shift = max(0, (height - 100 - end) / 2)
+    title_rows = lines(scene['title'], lang, 62 if wide else 40)
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" xml:lang="{lang}">
+<title>{escape(scene['title'])}</title><desc>{escape(description(copy, index))}</desc>
+<rect width="{width}" height="{height}" rx="32" fill="#f0f1f3"/>
+<g font-family="system-ui, -apple-system, sans-serif">
+<text x="60" y="65" font-size="28" font-weight="550" fill="#171717">Still</text>
+<text x="{width - 60}" y="65" text-anchor="end" font-size="24" fill="#626262">{scene['date']} · Telegram</text>
+<path d="M60 100H{width - 60}" stroke="#d5d5d5"/>
+{text_rows(title_rows, 60, 160, 42, leading=58)}
+<g transform="translate(0 {shift})">{content}</g>
+<text x="60" y="{height - 35}" font-size="30" fill="#626262">{escape(copy['label'])}</text>
+</g></svg>
+'''
 
 
 def render(lang, copy, index):
-    prior = lines(copy['contexts'][index], lang)
-    prior_height = len(prior) * 46 + 85
-    content = f'<rect x="50" y="230" width="900" height="{prior_height}" rx="24" fill="#ffffff" stroke="#d5d5d5"/>'
-    content += text_rows([copy['context_labels'][index]], 80, 270, 24, '#626262')
-    content += text_rows(prior, 80, 320, 32, leading=46)
-    y = 230 + prior_height + 42
-    content += text_rows([copy['later_label']], 80, y, 24, '#626262')
-    y += 24
-    for speaker, message, x, width, background in (
-        (copy['you'], copy['users'][index], 90, 840, '#e5e7e9'),
-        (copy['assistant'], copy['replies'][index], 50, 880, '#ffffff'),
-    ):
-        rows = lines(message, lang)
-        height = len(rows) * 52 + 70
-        content += f'<rect x="{x}" y="{y}" width="{width}" height="{height}" rx="26" fill="{background}"/>'
-        content += text_rows([speaker], x + 30, y + 35, 24, '#626262')
-        content += text_rows(rows, x + 30, y + 85)
-        y += height + 26
-    if y > 1220:
-        raise ValueError(f'Dialogue overflows {lang} slide {index + 1}: {y}')
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1320" viewBox="0 0 1000 1320" xml:lang="{lang}">
-<title>{escape(copy['titles'][index])}</title><desc>{escape(description(copy, index))}</desc>
-<rect width="1000" height="1320" rx="32" fill="#f0f1f3"/>
-<g font-family="system-ui, -apple-system, sans-serif">
-<text x="50" y="65" font-size="28" fill="#626262">Still / {index + 1:02d} · {copy['sources'][index]['date']}</text>
-<text x="50" y="145" font-size="54" font-weight="550" fill="#171717">{escape(copy['titles'][index])}</text>
-{content}
-<path d="M50 1250H950" stroke="#d5d5d5"/>
-<text x="50" y="1290" font-size="27" fill="#626262">{escape(copy['label'])}</text>
-</g></svg>
-'''
+    return render_scene(lang, copy, index, False)
 
 
 def render_wide(lang, copy, index):
-    """Earlier context is visible beside the later request and observed reply."""
-    prior = lines(copy['contexts'][index], lang, 26)
-    prior_height = len(prior) * 36 + 85
-    content = f'<rect x="70" y="370" width="400" height="{prior_height}" rx="24" fill="#ffffff" stroke="#d5d5d5"/>'
-    content += text_rows([copy['context_labels'][index]], 94, 410, 20, '#626262')
-    content += text_rows(prior, 94, 455, 26, leading=36)
-    y = 150
-    content += text_rows(lines(copy['notes'][index], lang), 520, 76, 24, '#626262', leading=34)
-    for speaker, message, x, width, background in (
-        (copy['you'], copy['users'][index], 570, 800, '#e5e7e9'),
-        (copy['assistant'], copy['replies'][index], 520, 850, '#ffffff'),
-    ):
-        rows = lines(message, lang)
-        height = len(rows) * 46 + 70
-        content += f'<rect x="{x}" y="{y}" width="{width}" height="{height}" rx="26" fill="{background}"/>'
-        content += text_rows([speaker], x + 30, y + 34, 23, '#626262')
-        content += text_rows(rows, x + 30, y + 82, 32, leading=46)
-        y += height + 26
-    if y > 825 or 370 + prior_height > 735:
-        raise ValueError(f'Wide dialogue overflows {lang} slide {index + 1}')
-    title = lines(copy['titles'][index], lang, 16)
-    label = lines(copy['label'], lang, 30)
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" xml:lang="{lang}">
-<title>{escape(copy['titles'][index])}</title><desc>{escape(description(copy, index))}</desc>
-<rect width="1440" height="900" rx="40" fill="#f0f1f3"/>
-<g font-family="system-ui, -apple-system, sans-serif">
-<text x="70" y="85" font-size="24" fill="#626262">Still / {index + 1:02d} · {copy['sources'][index]['date']}</text>
-{text_rows(title, 70, 200, 48, leading=64)}
-{text_rows(label, 70, 780, 23, '#626262', leading=34)}
-{content}
-</g></svg>
-'''
+    return render_scene(lang, copy, index, True)
 
 
 def main():

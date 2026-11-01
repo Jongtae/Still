@@ -15,9 +15,9 @@
 <link rel="alternate" hreflang="zh-CN" href="zh-CN.html">
 <link rel="alternate" hreflang="x-default" href="./">
 <link rel="preload" href="assets/fonts/figtree-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/home.css?v=s11">
+<link rel="stylesheet" href="assets/home.css?v=s12">
 <link rel="stylesheet" href="assets/engineering.css?v=2">
-<link rel="stylesheet" href="assets/carousel.css?v=2">
+<link rel="stylesheet" href="assets/carousel.css?v=3">
 </head>
 <body>
 <a class="skip" href="#main">跳到正文</a>
@@ -87,38 +87,29 @@ fill="currentColor" stroke="none">
 </nav>
 
 <section class="demo-section" id="concept" aria-labelledby="concept-title">
-  <div class="copy">
-    <h2 id="concept-title">更换 AI 后，仍能接着之前的对话继续。</h2>
-    <p>一起挑选咖啡豆时，从 Codex 切换到 Claude Code。下一个请求无需重新解释之前的推荐，对话仍能继续。</p>
-  </div>
+  <div class="copy"><h2 id="concept-title">看看与 Still 进行过的真实对话。</h2></div>
   <figure class="switch-carousel">
-    <div class="switch-slides" tabindex="0" role="region" aria-label="更换 AI 后仍延续的同一段对话">
+    <nav class="slide-index" aria-label="真实使用案例">
+      <a href="#switch-slide-1">记住喜好</a>
+      <a href="#switch-slide-2">继续调查</a>
+      <a href="#switch-slide-3">更换 AI</a>
+    </nav>
+    <div class="switch-slides" tabindex="0" role="region" aria-label="真实使用案例">
       <figure class="switch-slide" id="switch-slide-1" tabindex="-1" aria-labelledby="switch-title-1">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/zh-CN-1.wide.svg" width="1440" height="900"><img src="assets/ai-switch/zh-CN-1.svg" width="1000" height="1320" loading="lazy" alt="先前上下文 · 摘要 先前推荐摘要：购物车中有 Jardin，也曾推荐 Momos Coffee Es Chocolat 500 g 来做拿铁。 切换前 · Codex /ai 当前工作的 AI 是 Codex。 根据真实对话翻译、缩写并重构的图片"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="上一张">←</a><span id="switch-title-1">1 / 3 · 已经聊过的事情，</span><a href="#switch-slide-2" aria-label="下一张">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/zh-CN-1.wide.svg?v=cases1" width="1440" height="960"><img src="assets/ai-switch/zh-CN-1.svg?v=cases1" width="1000" height="1400" loading="lazy" alt="参考记住的喜好挑选咖啡豆 昨天在 coffee coffee coffee 喝了拿铁，但想不起菜单上的名字了。 你说那杯拿铁香浓、甜润，下次还想喝。不过，我还没有确认准确的菜单名称。 家里喝的咖啡豆快没了。 可以按照你刚才喜欢的拿铁那种香浓口味来找。… 你在家用咖啡机，还是手冲？ 真实对话 · 翻译、缩写 2026-10-11"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="上一个案例">←</a><span id="switch-title-1">1 / 3 · 记住喜好</span><a href="#switch-slide-2" aria-label="下一个案例">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-2" tabindex="-1" aria-labelledby="switch-title-2">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/zh-CN-2.wide.svg" width="1440" height="900"><img src="assets/ai-switch/zh-CN-2.svg" width="1000" height="1320" loading="lazy" alt="先前上下文 · 摘要 先前推荐摘要：购物车中有 Jardin，也曾推荐 Momos Coffee Es Chocolat 500 g 来做拿铁。 Codex → Claude Code /ai claude-code 默认 AI 已切换为 Claude Code，从下一个请求开始生效。 根据真实对话翻译、缩写并重构的图片"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="上一张">←</a><span id="switch-title-2">2 / 3 · 更换工作的 AI，</span><a href="#switch-slide-3" aria-label="下一张">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/zh-CN-2.wide.svg?v=cases1" width="1440" height="960"><img src="assets/ai-switch/zh-CN-2.svg?v=cases1" width="1000" height="1400" loading="lazy" alt="在亚马逊继续调查之前找的 F1 模型 我对 F1 汽车模型感兴趣，在哪里可以订购？ 接着寻找同类模型 也帮我在亚马逊多找一些好吗？ 我在 Amazon US 找到了更多标有可配送至韩国的商品，都是 Bburago 1:43 模型。… 如果是第一台模型，我会推荐 McLaren MCL38。 最终金额需要在结账时确认。部分步骤未能核实。 真实对话 · 翻译、缩写 2026-10-11"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="上一个案例">←</a><span id="switch-title-2">2 / 3 · 继续调查</span><a href="#switch-slide-3" aria-label="下一个案例">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-3" tabindex="-1" aria-labelledby="switch-title-3">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/zh-CN-3.wide.svg" width="1440" height="900"><img src="assets/ai-switch/zh-CN-3.svg" width="1000" height="1320" loading="lazy" alt="先前上下文 · 摘要 先前推荐摘要：购物车中有 Jardin，也曾推荐 Momos Coffee Es Chocolat 500 g 来做拿铁。 切换后 · Claude Code 不要 Jardin，这次想换贵一点的。 有之前我推荐为最适合拿铁的 Momos Coffee Es Chocolat 500 g 咖啡豆。 根据真实对话翻译、缩写并重构的图片"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="上一张">←</a><span id="switch-title-3">3 / 3 · 无需从头解释。</span><a href="#switch-slide-1" aria-label="下一张">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/zh-CN-3.wide.svg?v=cases1" width="1440" height="960"><img src="assets/ai-switch/zh-CN-3.svg?v=cases1" width="1000" height="1400" loading="lazy" alt="在同一段对话中更换 AI /ai 当前执行工作的 AI 是 Codex。 /ai claude-code Codex → Claude Code 不要 Jardin，这次想换贵一点的。 有之前推荐最适合拿铁的 Momos Coffee Es Chocolat 500 g 咖啡豆。 真实对话 · 翻译、缩写 2026-10-12"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="上一个案例">←</a><span id="switch-title-3">3 / 3 · 更换 AI</span><a href="#switch-slide-1" aria-label="下一个案例">→</a></figcaption>
       </figure>
     </div>
-    <nav class="slide-index" aria-label="更换 AI 后仍延续的同一段对话"><a href="#switch-slide-1" aria-label="1 / 3 · 已经聊过的事情，">1</a><a href="#switch-slide-2" aria-label="2 / 3 · 更换工作的 AI，">2</a><a href="#switch-slide-3" aria-label="3 / 3 · 无需从头解释。">3</a></nav>
-    <figcaption>根据2026年10月12日的一次真实会话翻译、缩写。先前推荐根据后续回复概括。这展示 AI 切换后对上下文的回忆，并不证明购物车替换已完成或整个发行版已验证。 <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">录像来源与限制</a></figcaption>
+    <figcaption>这些图片根据真实 Telegram 对话翻译、缩写并重新排版。下方提供原始记录和证据范围说明。 <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">原始对话与来源</a></figcaption>
   </figure>
-  <div class="swap">
-    <div>
-      <h3>按需要选择和更换 AI 与工具</h3>
-      <ul class="pills"><li>Codex</li><li>Claude Code</li><li>通过 API 连接的 AI</li><li>Ollama</li><li>连接的工具</li></ul>
-    </div>
-    <div>
-      <h3>更换 AI 后，记忆和工作记录仍会保留</h3>
-      <ul class="pills solid"><li>它对你的了解</li><li>没做完的事</li><li>你交给它的权限</li><li>实际执行过的记录</li></ul>
-    </div>
-  </div>
 </section>
 
 <section class="install" id="install" aria-labelledby="install-title">
@@ -128,6 +119,7 @@ fill="currentColor" stroke="none">
   </div>
   <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
   <p class="note">安装脚本的地址固定在一个版本上，运行前可以<a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">先查看脚本内容</a>。在 Apple 芯片的 Mac 上用 Homebrew 的话：<code>brew tap jongtae/still https://github.com/Jongtae/Still</code>、<code>brew install jongtae/still/agentos</code>，再运行 <code>agentos start</code>。Windows 上，在 PowerShell 中运行 <code>wsl --install</code> 并重启，打开 Ubuntu，把上面的命令粘贴进去。</p>
+  <div class="setup-grid">
   <ol class="steps">
     <li>
       <h3>连接你想使用的 AI</h3>
@@ -161,10 +153,9 @@ fill="currentColor" stroke="none">
 4) 稍后在浏览器中连接</pre></div>
   <figcaption>根据当前程序的首次设置文案摘录、排版的预览，并非一次新安装的实际录像。 <a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/first_run.py">查看源码</a></figcaption>
 </figure>
+  </div>
   <p class="note">其余内容见<a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">快速开始指南</a>（英文）。</p>
 </section>
-
-<section class="section-intro" aria-labelledby="experience-title"><h2 id="experience-title">参考之前的对话，开始下一项工作。</h2><p>Still 会参考之前的对话和保存的记忆来处理下一次请求，并使用你连接的工具完成工作。</p></section>
 
 <section class="feature-row memory-row" id="remembers" aria-labelledby="remember-title">
   <div class="copy">

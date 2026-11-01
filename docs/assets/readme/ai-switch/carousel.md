@@ -1,55 +1,25 @@
-# Localized homepage carousel
+# Localized homepage conversation examples
 
-The homepage tells **one continuing coffee conversation across an AI switch**.
-It uses the same owner-supplied Telegram session from **2026-10-12** as the
-[archived site clip](clip/README.md), with digests and segments preserved in
-[the clip manifest](clip/manifest.json).
+The three images are separate examples, not three stages of one conversation. Each contains its own dialogue in reading order. No sidebar reconstructs an unseen earlier conversation, and no dialogue is moved across sessions.
 
-## Story and evidence
+| Example | Source | What the excerpt shows |
+| --- | --- | --- |
+| Remembered coffee preference | [October 11 screenshot figure](../readme-examples-v4.ko.png), [demo manifest](../demo/manifest.json) | The owner asks about a remembered latte, then says their beans are running out. The reply refers to the earlier taste and asks about brewing equipment. The exact menu name remains unconfirmed. |
+| F1 research continued on Amazon | Same October 11 sources | The initial F1 model question and the follow-up asking for Amazon results. The reply identifies Bburago 1:43 models and recommends a McLaren MCL38. Final-total and unverified-step disclosures remain. Prices are omitted rather than presented as current. |
+| Switch AI in the same conversation | [October 12 clip record](clip/README.md), [clip manifest](clip/manifest.json), [localized source copy](clip/copy.json) | `/ai` identifies Codex, `/ai claude-code` changes the AI, and the follow-up receives a reply recalling the earlier Momos Coffee recommendation. |
 
-1. **Context before switching:** Jardin is already in the cart, and Momos
-   Coffee Es Chocolat 500 g had been suggested for lattes. The prior
-   recommendation is an explicit **summary reconstructed from the later
-   assistant reply**, not a newly supplied screenshot of the original turn.
-   The recorded `/ai` output shows Codex immediately before switching.
-2. **Change the worker:** `/ai claude-code` changes the selected AI to Claude
-   Code. The illustration condenses the recorded change receipt.
-3. **Continue the conversation:** the owner says “not the Jardin, something
-   pricier this time.” Claude Code refers back to the Momos beans it had
-   earlier called best for lattes. The owner does not restate that recommendation.
+## Evidence boundaries
 
-Every image repeats the earlier context so a visitor can understand any slide
-without first seeing another. The summary label stays visible, and the
-context is separate from the current request and response. This does not
-fabricate a verbatim earlier owner utterance or establish who made the
-original recommendation. The chosen AI before the switch is an observed
-configuration, not proof of the worker used for every earlier turn.
+These are translated, condensed SVG redrawings, not pixel-for-pixel product screenshots. Assistant branding is normalized to Still. All four locales have the same scenes, message order, dates and source records. The English F1 owner messages retain the source wording; other languages translate them. Ellipses mark cuts within replies. The research continuation marker is editorial, not an assistant utterance.
 
-The clip stops at the subsequent replacement offer. After the owner accepted,
-the run removed the old beans but failed to add the replacement and hit a
-limit; that outcome is not in the clip. Neither the carousel nor its source
-establishes a completed swap, checkout, payment or release validation. The
-images represent what the assistant reported, not independent tool/account
-traces or proof of identical capabilities across models.
+The October 11 recordings name no application revision or model. Those examples therefore identify the assistant only as Still and do not claim to demonstrate a model switch.
 
-## Localization and rendering
+The October 12 model-switch excerpt does not contain the original Momos Coffee recommendation. It shows the later reply recalling it; no earlier recommendation turn is invented. The clip ends at the recommendation. The later requested cart swap removed Jardin but failed to add Momos Coffee and reached its limit. Neither the images nor the page claim a completed swap.
 
-[carousel-copy.json](carousel-copy.json) contains explicit English, Korean,
-Japanese and Simplified Chinese copy and source references. These are
-translated, condensed **reconstructions**, not screenshots of localized
-application UI. Korean is also redrawn.
+Responses are not independent verification of an external service operation or repeatability evidence for the current release. No checkout or payment is shown. The older [October 8 screenshots](ai-switch-conversation.png) remain available with their own [manifest](manifest.json), but are not used in this carousel.
 
-Each locale has three mobile SVGs and three `.wide.svg` desktop SVGs
-(24 images total). Native `picture`/`source` selects the composition.
-Regenerate with `python3 scripts/build_site_carousel.py`; it uses only the
-standard library. Earlier-context summaries, AI-transition labels, dialogue
-and evidence disclosures remain in both layouts and in accessible alt text.
+## Reproduction
 
-The October 8 [screenshots](manifest.json) and October 11
-[README demo](../demo/README.md) remain separate historical records. They are
-not spliced into this session or used to imply that every remembered
-preference/research example demonstrates a model switch.
+`carousel-copy.json` holds the localized dialogue and per-example provenance. `scripts/build_site_carousel.py` uses Python's standard library to render 24 SVGs: three examples × four languages × narrow/wide layouts. Run it from the repository root. No models, account actions, image-generation service, browser runtime or new dependency are needed. Text is escaped; the SVGs contain no scripts or external resources.
 
-The owner-requested visual design uses a neutral canvas, centered hero, wide
-demo, prominent installation/Engineering/contribution entry points and
-alternating feature rows. No third-party artwork or product promises are copied.
+The homepage uses native horizontal scrolling, fragment links and keyboard-focusable targets. Each example has a descriptive navigation link, previous/next controls, alt text and a source link. The image URLs include a version query so older coffee-summary or spam images are not reused from cache.

@@ -15,9 +15,9 @@
 <link rel="alternate" hreflang="zh-CN" href="zh-CN.html">
 <link rel="alternate" hreflang="x-default" href="./">
 <link rel="preload" href="assets/fonts/figtree-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/home.css?v=s11">
+<link rel="stylesheet" href="assets/home.css?v=s12">
 <link rel="stylesheet" href="assets/engineering.css?v=2">
-<link rel="stylesheet" href="assets/carousel.css?v=2">
+<link rel="stylesheet" href="assets/carousel.css?v=3">
 </head>
 <body>
 <a class="skip" href="#main">本文へ移動</a>
@@ -87,38 +87,29 @@ fill="currentColor" stroke="none">
 </nav>
 
 <section class="demo-section" id="concept" aria-labelledby="concept-title">
-  <div class="copy">
-    <h2 id="concept-title">AI を替えた後も、それまでの会話を続けられます。</h2>
-    <p>コーヒー豆を選ぶ途中で Codex から Claude Code へ。次の依頼では、前の提案を説明し直さずに会話が続きます。</p>
-  </div>
+  <div class="copy"><h2 id="concept-title">Still との実際の会話をご覧ください。</h2></div>
   <figure class="switch-carousel">
-    <div class="switch-slides" tabindex="0" role="region" aria-label="AI を替えても続く一つの会話">
+    <nav class="slide-index" aria-label="実際の利用例">
+      <a href="#switch-slide-1">好みを覚える</a>
+      <a href="#switch-slide-2">調査を続ける</a>
+      <a href="#switch-slide-3">AI を替える</a>
+    </nav>
+    <div class="switch-slides" tabindex="0" role="region" aria-label="実際の利用例">
       <figure class="switch-slide" id="switch-slide-1" tabindex="-1" aria-labelledby="switch-title-1">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ja-1.wide.svg" width="1440" height="900"><img src="assets/ai-switch/ja-1.svg" width="1000" height="1320" loading="lazy" alt="前の文脈 · 要約 前の提案の要約：カートには Jardin があり、ラテ用に Momos Coffee Es Chocolat 500 g も薦められていました。 切り替え前 · Codex /ai 今、仕事をしている AI は Codex です。 実際の会話を翻訳・要約した再構成画像"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="前の画像">←</a><span id="switch-title-1">1 / 3 · 続けたい会話があり、</span><a href="#switch-slide-2" aria-label="次の画像">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ja-1.wide.svg?v=cases1" width="1440" height="960"><img src="assets/ai-switch/ja-1.svg?v=cases1" width="1000" height="1400" loading="lazy" alt="覚えていた好みを使ってコーヒー豆を選びます 昨日 coffee coffee coffee でラテを飲んだけど、メニュー名を思い出せない。 香ばしくて甘く、また飲みたいとおっしゃっていたラテですね。ただ、正確なメニュー名までは確認できていません。 家で飲むコーヒー豆がもうすぐなくなる。 先ほど気に入ったラテのような、香ばしい味を基準に探せます。… 自宅ではコーヒーマシンですか、ハンドドリップですか？ 実際の会話 · 翻訳・要約 2026-10-11"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="前の例">←</a><span id="switch-title-1">1 / 3 · 好みを覚える</span><a href="#switch-slide-2" aria-label="次の例">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-2" tabindex="-1" aria-labelledby="switch-title-2">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ja-2.wide.svg" width="1440" height="900"><img src="assets/ai-switch/ja-2.svg" width="1000" height="1320" loading="lazy" alt="前の文脈 · 要約 前の提案の要約：カートには Jardin があり、ラテ用に Momos Coffee Es Chocolat 500 g も薦められていました。 Codex → Claude Code /ai claude-code 既定の AI を Claude Code に変更しました。次の依頼から適用されます。 実際の会話を翻訳・要約した再構成画像"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="前の画像">←</a><span id="switch-title-2">2 / 3 · 働く AI を替えても、</span><a href="#switch-slide-3" aria-label="次の画像">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ja-2.wide.svg?v=cases1" width="1440" height="960"><img src="assets/ai-switch/ja-2.svg?v=cases1" width="1000" height="1400" loading="lazy" alt="探していた F1 模型を Amazon でも調べます F1 のモデルカーに興味がある。どこで注文できる？ 同じ模型を続けて探します Amazon でももっと探してくれる？ 韓国への配送が表示された Amazon US の商品を見つけました。すべて Bburago の 1:43 模型です。… 最初の1台には McLaren MCL38 をおすすめします。 最終金額は購入手続きで確認が必要です。一部の手順は確認できませんでした。 実際の会話 · 翻訳・要約 2026-10-11"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="前の例">←</a><span id="switch-title-2">2 / 3 · 調査を続ける</span><a href="#switch-slide-3" aria-label="次の例">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-3" tabindex="-1" aria-labelledby="switch-title-3">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ja-3.wide.svg" width="1440" height="900"><img src="assets/ai-switch/ja-3.svg" width="1000" height="1320" loading="lazy" alt="前の文脈 · 要約 前の提案の要約：カートには Jardin があり、ラテ用に Momos Coffee Es Chocolat 500 g も薦められていました。 切り替え後 · Claude Code Jardin じゃなくて、久しぶりに高いものにしようかな。 以前ラテに一番合うとお薦めした Momos Coffee Es Chocolat 500 g があります。 実際の会話を翻訳・要約した再構成画像"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="前の画像">←</a><span id="switch-title-3">3 / 3 · 説明し直さず続けます。</span><a href="#switch-slide-1" aria-label="次の画像">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ja-3.wide.svg?v=cases1" width="1440" height="960"><img src="assets/ai-switch/ja-3.svg?v=cases1" width="1000" height="1400" loading="lazy" alt="同じ会話の中で AI を切り替えます /ai 現在作業している AI は Codex です。 /ai claude-code Codex → Claude Code Jardin じゃなくて、久しぶりに高いのにしようかな。 先ほどラテに一番合うとおすすめした Momos Coffee Es Chocolat 500 g があります。 実際の会話 · 翻訳・要約 2026-10-12"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="前の例">←</a><span id="switch-title-3">3 / 3 · AI を替える</span><a href="#switch-slide-1" aria-label="次の例">→</a></figcaption>
       </figure>
     </div>
-    <nav class="slide-index" aria-label="AI を替えても続く一つの会話"><a href="#switch-slide-1" aria-label="1 / 3 · 続けたい会話があり、">1</a><a href="#switch-slide-2" aria-label="2 / 3 · 働く AI を替えても、">2</a><a href="#switch-slide-3" aria-label="3 / 3 · 説明し直さず続けます。">3</a></nav>
-    <figcaption>2026年10月12日の一つの実際のセッションを翻訳・要約しました。前の提案は後の返答から要約しています。AI 切替後の文脈の想起を示し、カート入替の完了や版全体の検証ではありません。 <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">録画の出典と限界</a></figcaption>
+    <figcaption>実際の Telegram 会話を翻訳・要約し、画像として再構成しました。元の記録と、確認できた範囲を公開しています。 <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">元の会話と出典</a></figcaption>
   </figure>
-  <div class="swap">
-    <div>
-      <h3>必要に応じて AI やツールを替えられます</h3>
-      <ul class="pills"><li>Codex</li><li>Claude Code</li><li>API で接続する AI</li><li>Ollama</li><li>接続したツール</li></ul>
-    </div>
-    <div>
-      <h3>AI を替えても記憶や作業の記録は残ります</h3>
-      <ul class="pills solid"><li>あなたについて知ったこと</li><li>やりかけの仕事</li><li>あなたが任せた権限</li><li>実際に実行された記録</li></ul>
-    </div>
-  </div>
 </section>
 
 <section class="install" id="install" aria-labelledby="install-title">
@@ -128,6 +119,7 @@ fill="currentColor" stroke="none">
   </div>
   <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
   <p class="note">インストールスクリプトはアドレスでバージョンが固定されています。実行する前に<a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">スクリプトの内容を確認</a>してください。Apple シリコンの Mac で Homebrew を使うなら <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>、<code>brew install jongtae/still/agentos</code> のあと <code>agentos start</code> で起動します。Windows では PowerShell で <code>wsl --install</code> を実行して再起動し、Ubuntu を開いてそこにコマンドを貼り付けてください。</p>
+  <div class="setup-grid">
   <ol class="steps">
     <li>
       <h3>使いたい AI を接続してください</h3>
@@ -161,10 +153,9 @@ AI の接続
 4) 後でブラウザで接続</pre></div>
   <figcaption>現在のプログラムの初期設定文言を抜粋して配置したプレビューです。新しい実際のインストール録画ではありません。 <a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/first_run.py">ソースコード</a></figcaption>
 </figure>
+  </div>
   <p class="note">そのほかは<a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">クイックスタートガイド</a>（英語）にあります。</p>
 </section>
-
-<section class="section-intro" aria-labelledby="experience-title"><h2 id="experience-title">以前の会話を踏まえて、次の作業を始められます。</h2><p>これまでの会話や保存した記憶を次の依頼に活かし、自分で接続したツールを使って作業します。</p></section>
 
 <section class="feature-row memory-row" id="remembers" aria-labelledby="remember-title">
   <div class="copy">

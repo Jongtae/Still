@@ -1,10 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1320" viewBox="0 0 1000 1320" xml:lang="zh-CN">
-<title>无需从头解释。</title><desc>先前上下文 · 摘要 先前推荐摘要：购物车中有 Jardin，也曾推荐 Momos Coffee Es Chocolat 500 g 来做拿铁。 切换后 · Claude Code 不要 Jardin，这次想换贵一点的。 有之前我推荐为最适合拿铁的 Momos Coffee Es Chocolat 500 g 咖啡豆。 根据真实对话翻译、缩写并重构的图片 2026-10-12</desc>
-<rect width="1000" height="1320" rx="32" fill="#f0f1f3"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1400" viewBox="0 0 1000 1400" xml:lang="zh-CN">
+<title>在同一段对话中更换 AI</title><desc>在同一段对话中更换 AI /ai 当前执行工作的 AI 是 Codex。 /ai claude-code Codex → Claude Code 不要 Jardin，这次想换贵一点的。 有之前推荐最适合拿铁的 Momos Coffee Es Chocolat 500 g 咖啡豆。 真实对话 · 翻译、缩写 2026-10-12</desc>
+<rect width="1000" height="1400" rx="32" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="50" y="65" font-size="28" fill="#626262">Still / 03 · 2026-10-12</text>
-<text x="50" y="145" font-size="54" font-weight="550" fill="#171717">无需从头解释。</text>
-<rect x="50" y="230" width="900" height="177" rx="24" fill="#ffffff" stroke="#d5d5d5"/><text x="80" y="270" font-size="24" fill="#626262">先前上下文 · 摘要</text><text x="80" y="320" font-size="32" fill="#171717">先前推荐摘要：购物车中有 Jardin，也曾推荐 </text><text x="80" y="366" font-size="32" fill="#171717">Momos Coffee Es Chocolat 500 g 来做拿铁。</text><text x="80" y="449" font-size="24" fill="#626262">接着</text><rect x="90" y="473" width="840" height="122" rx="26" fill="#e5e7e9"/><text x="120" y="508" font-size="24" fill="#626262">你</text><text x="120" y="558" font-size="36" fill="#171717">不要 Jardin，这次想换贵一点的。</text><rect x="50" y="621" width="880" height="174" rx="26" fill="#ffffff"/><text x="80" y="656" font-size="24" fill="#626262">Still · 回复节选</text><text x="80" y="706" font-size="36" fill="#171717">有之前我推荐为最适合拿铁的 Momos Coffee Es</text><text x="80" y="758" font-size="36" fill="#171717"> Chocolat 500 g 咖啡豆。</text>
-<path d="M50 1250H950" stroke="#d5d5d5"/>
-<text x="50" y="1290" font-size="27" fill="#626262">根据真实对话翻译、缩写并重构的图片</text>
+<text x="60" y="65" font-size="28" font-weight="550" fill="#171717">Still</text>
+<text x="940" y="65" text-anchor="end" font-size="24" fill="#626262">2026-10-12 · Telegram</text>
+<path d="M60 100H940" stroke="#d5d5d5"/>
+<text x="60" y="160" font-size="42" fill="#171717">在同一段对话中更换 AI</text>
+<g transform="translate(0 130.5)"><rect x="180" y="213" width="770" height="129" rx="28" fill="#e5e7e9"/><text x="212" y="243" font-size="24" fill="#626262">你</text><text x="212" y="278" font-size="48" fill="#171717">/ai</text><rect x="50" y="358" width="900" height="129" rx="28" fill="#ffffff"/><text x="82" y="388" font-size="24" fill="#626262">Still · Codex</text><text x="82" y="423" font-size="48" fill="#171717">当前执行工作的 AI 是 Codex。</text><path d="M50 547H950" stroke="#c7cbd0"/><rect x="275.0" y="503" width="450" height="86" rx="22" fill="#e1e4e8"/><text x="500.0" y="538" text-anchor="middle" font-size="28" fill="#171717">Codex → Claude Code</text><text x="500.0" y="569" text-anchor="middle" font-size="22" fill="#626262">/ai claude-code</text><rect x="180" y="611" width="770" height="198" rx="28" fill="#e5e7e9"/><text x="212" y="641" font-size="24" fill="#626262">你</text><text x="212" y="676" font-size="48" fill="#171717">不要 Jardin，这次想换贵一点</text><text x="212" y="745" font-size="48" fill="#171717">的。</text><rect x="50" y="825" width="900" height="198" rx="28" fill="#ffffff"/><text x="82" y="855" font-size="24" fill="#626262">Still · Claude Code</text><text x="82" y="890" font-size="48" fill="#171717">有之前推荐最适合拿铁的 Momos </text><text x="82" y="959" font-size="48" fill="#171717">Coffee Es Chocolat 500 g 咖啡豆。</text></g>
+<text x="60" y="1365" font-size="30" fill="#626262">真实对话 · 翻译、缩写</text>
 </g></svg>
