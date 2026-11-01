@@ -1,0 +1,126 @@
+{
+  "en": {
+    "label": "Translated & condensed from a real conversation",
+    "source": "Owner session · 8 Oct 2026",
+    "you": "You",
+    "assistant": "Still",
+    "titles": [
+      "Change the AI.",
+      "Keep the conversation.",
+      "Continue with another AI."
+    ],
+    "notes": [
+      "After switching to Claude Code",
+      "After signing in",
+      "After switching to Codex"
+    ],
+    "users": [
+      "Did we end up adding the Spam yesterday, or taking it out?",
+      "",
+      "Take the Spam out."
+    ],
+    "replies": [
+      "From the conversation, I last said I had put one Spam Classic 200 g back in the cart. I cannot establish whether that was yesterday. Sign in so I can check the current cart.",
+      "I checked the cart directly: one CJ Spam Classic 200 g is there. It has not been removed. Some steps could not be checked.",
+      "I removed one Spam Classic 200 g from the cart and checked again. The other 22 products remain. The decision AI is unavailable, so the default AI handles requests directly for now."
+    ],
+    "nav": "Conversation scenes",
+    "prev": "Previous image",
+    "next": "Next image",
+    "caption": "Translated and condensed reconstructions of owner-supplied Telegram screenshots from 8 October 2026. These show what the assistant reported, not independent verification of cart effects or release-wide validation.",
+    "sources": "Original screenshots & provenance"
+  },
+  "ko": {
+    "label": "실제 대화를 번역·축약해 재구성한 이미지",
+    "source": "사용자 세션 · 2026년 10월 8일",
+    "you": "나",
+    "assistant": "Still",
+    "titles": [
+      "AI를 바꿔도,",
+      "대화는 이어지고,",
+      "다른 AI로 계속합니다."
+    ],
+    "notes": [
+      "Claude Code로 바꾼 뒤",
+      "로그인한 뒤",
+      "Codex로 바꾼 뒤"
+    ],
+    "users": [
+      "어제 스팸을 최종 넣었나? 뺐나?",
+      "",
+      "스팸 빼줘"
+    ],
+    "replies": [
+      "대화 기록상으로는 마지막으로 스팸 클래식 200g 한 개를 장바구니에 다시 넣었다고 안내했어요. 다만 그게 어제였는지는 이 맥락만으로 확정할 수 없어요. 로그인하시면 현재 장바구니를 확인할게요.",
+      "장바구니를 직접 확인했는데, CJ 스팸 클래식 200g 한 개가 들어 있어요. 빼지 않으셨고 그대로 담긴 상태예요. 일부 단계는 확인하지 못했어요.",
+      "스팸 클래식 200g 한 개를 장바구니에서 뺐어요. 다시 확인했고, 나머지 22개 상품은 그대로 있어요. 지금은 판단 AI를 사용할 수 없어 기본 AI가 요청을 바로 처리합니다."
+    ],
+    "nav": "대화 장면",
+    "prev": "이전 이미지",
+    "next": "다음 이미지",
+    "caption": "2026년 10월 8일 사용자가 제공한 실제 Telegram 화면을 각 언어로 번역·축약해 재구성했습니다. 비서가 보고한 내용이며 장바구니 변경의 독립 검증이나 배포본 전체 검증은 아닙니다.",
+    "sources": "원본 화면과 출처"
+  },
+  "ja": {
+    "label": "実際の会話を翻訳・要約した再構成画像",
+    "source": "所有者のセッション · 2026年10月8日",
+    "you": "あなた",
+    "assistant": "Still",
+    "titles": [
+      "AI を替えても、",
+      "会話は続き、",
+      "別の AI で続けられます。"
+    ],
+    "notes": [
+      "Claude Code に切り替えたあと",
+      "ログインしたあと",
+      "Codex に切り替えたあと"
+    ],
+    "users": [
+      "昨日、結局 Spam を入れた？ それとも外した？",
+      "",
+      "Spam を外して。"
+    ],
+    "replies": [
+      "会話の記録では、最後に Spam Classic 200 g を1個カートへ戻したとお伝えしました。ただ、それが昨日だったかはこの文脈だけでは確定できません。ログイン後に今のカートを確認します。",
+      "カートを直接確認しました。CJ Spam Classic 200 g が1個入っています。削除されず、そのまま残っています。一部の手順は確認できませんでした。",
+      "Spam Classic 200 g を1個カートから外し、再確認しました。ほかの22商品は残っています。現在は判断 AI が使えないため、既定の AI が依頼を直接処理します。"
+    ],
+    "nav": "会話の場面",
+    "prev": "前の画像",
+    "next": "次の画像",
+    "caption": "2026年10月8日に所有者が提供した実際の Telegram 画面を各言語に翻訳・要約して再構成しました。アシスタントの報告を示すもので、カート変更の独立検証やリリース全体の検証ではありません。",
+    "sources": "元の画面と出典"
+  },
+  "zh-CN": {
+    "label": "根据真实对话翻译、缩写并重构的图片",
+    "source": "用户会话 · 2026年10月8日",
+    "you": "你",
+    "assistant": "Still",
+    "titles": [
+      "更换 AI，",
+      "对话仍在继续，",
+      "换个 AI 也能接着做。"
+    ],
+    "notes": [
+      "切换到 Claude Code 之后",
+      "登录之后",
+      "切换到 Codex 之后"
+    ],
+    "users": [
+      "昨天最后是把 Spam 加进去了，还是拿出来了？",
+      "",
+      "把 Spam 拿出来。"
+    ],
+    "replies": [
+      "从对话记录看，我最后说已把一罐 Spam Classic 200 g 放回购物车。但仅凭这段上下文，无法确定是不是昨天。登录后我会检查当前购物车。",
+      "我直接检查了购物车：里面有一罐 CJ Spam Classic 200 g，没有被移除，仍然在购物车中。部分步骤未能核实。",
+      "我已从购物车移除一罐 Spam Classic 200 g，并再次检查，其他22件商品仍在。目前判断 AI 不可用，由默认 AI 直接处理请求。"
+    ],
+    "nav": "对话场景",
+    "prev": "上一张",
+    "next": "下一张",
+    "caption": "根据用户提供的2026年10月8日真实 Telegram 截图，翻译、缩写并重构为各语言图片。这些展示助手所报告的内容，并非购物车操作的独立验证或整个发行版的验证。",
+    "sources": "原始截图与来源"
+  }
+}

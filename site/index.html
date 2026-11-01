@@ -17,6 +17,7 @@
 <link rel="preload" href="assets/fonts/figtree-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/home.css?v=s9">
 <link rel="stylesheet" href="assets/engineering.css?v=1">
+<link rel="stylesheet" href="assets/carousel.css?v=1">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -180,11 +181,23 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
     <h2 id="concept-title">Change the AI. Keep the assistant.</h2>
     <p>Your ChatGPT plan through Codex or your Claude plan through Claude Code does the work. Switch with one command in the middle of a conversation; Still carries on.</p>
   </div>
-  <figure class="switch-clip">
-    <video controls muted playsinline preload="none" width="1200" height="720" poster="assets/still-ai-switch-poster.en.jpg" aria-label="A real Telegram session in Korean. /ai shows Codex; /ai claude-code switches to Claude Code. Asked for something pricier than the Jardin, Claude Code recalls the Momos Coffee Es Chocolat 500 g it had called best for lattes and offers it instead.">
-      <source src="assets/still-ai-switch.en.mp4" type="video/mp4">
-    </video>
-    <figcaption>A real session, edited: after switching to Claude Code, “something pricier this time” was enough. It remembered the beans suggested earlier. Recorded owner session; edited, Korean interface. This shows conversation continuity, not independent verification of cart effects or release-wide validation. <a href="engineering/index.html#research">Sources</a></figcaption>
+  <figure class="switch-carousel">
+    <div class="switch-slides" tabindex="0" role="region" aria-label="Conversation scenes">
+      <figure class="switch-slide" id="switch-slide-1" tabindex="-1" aria-labelledby="switch-title-1">
+        <img src="assets/ai-switch/en-1.svg" width="1000" height="1040" loading="lazy" alt="After switching to Claude Code Did we end up adding the Spam yesterday, or taking it out? From the conversation, I last said I had put one Spam Classic 200 g back in the cart. I cannot establish whether that was yesterday. Sign in so I can check the current cart. Translated &amp; condensed from a real conversation">
+        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="Previous image">←</a><span id="switch-title-1">1 / 3 · Change the AI.</span><a href="#switch-slide-2" aria-label="Next image">→</a></figcaption>
+      </figure>
+      <figure class="switch-slide" id="switch-slide-2" tabindex="-1" aria-labelledby="switch-title-2">
+        <img src="assets/ai-switch/en-2.svg" width="1000" height="1040" loading="lazy" alt="After signing in I checked the cart directly: one CJ Spam Classic 200 g is there. It has not been removed. Some steps could not be checked. Translated &amp; condensed from a real conversation">
+        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="Previous image">←</a><span id="switch-title-2">2 / 3 · Keep the conversation.</span><a href="#switch-slide-3" aria-label="Next image">→</a></figcaption>
+      </figure>
+      <figure class="switch-slide" id="switch-slide-3" tabindex="-1" aria-labelledby="switch-title-3">
+        <img src="assets/ai-switch/en-3.svg" width="1000" height="1040" loading="lazy" alt="After switching to Codex Take the Spam out. I removed one Spam Classic 200 g from the cart and checked again. The other 22 products remain. The decision AI is unavailable, so the default AI handles requests directly for now. Translated &amp; condensed from a real conversation">
+        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="Previous image">←</a><span id="switch-title-3">3 / 3 · Continue with another AI.</span><a href="#switch-slide-1" aria-label="Next image">→</a></figcaption>
+      </figure>
+    </div>
+    <nav class="slide-index" aria-label="Conversation scenes"><a href="#switch-slide-1" aria-label="1 / 3 · Change the AI.">1</a><a href="#switch-slide-2" aria-label="2 / 3 · Keep the conversation.">2</a><a href="#switch-slide-3" aria-label="3 / 3 · Continue with another AI.">3</a></nav>
+    <figcaption>Translated and condensed reconstructions of owner-supplied Telegram screenshots from 8 October 2026. These show what the assistant reported, not independent verification of cart effects or release-wide validation. <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">Original screenshots & provenance</a> · <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/ai-switch-conversation.png">Telegram · 2026-10-08</a></figcaption>
   </figure>
   <div class="swap">
     <div>

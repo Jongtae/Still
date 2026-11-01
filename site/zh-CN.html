@@ -17,6 +17,7 @@
 <link rel="preload" href="assets/fonts/figtree-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/home.css?v=s9">
 <link rel="stylesheet" href="assets/engineering.css?v=1">
+<link rel="stylesheet" href="assets/carousel.css?v=1">
 </head>
 <body>
 <a class="skip" href="#main">跳到正文</a>
@@ -180,11 +181,23 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
     <h2 id="concept-title">AI 可以换，助手还是那一个。</h2>
     <p>干活的是你的 ChatGPT 订阅（经由 Codex）或 Claude 订阅（经由 Claude Code）。聊到一半也能用一条命令切换，Still 接着往下做。</p>
   </div>
-  <figure class="switch-clip">
-    <video controls muted playsinline preload="none" width="1200" height="720" poster="assets/still-ai-switch-poster.zh-CN.jpg" aria-label="韩语 Telegram 真实对话。用 /ai 确认当前 AI 是 Codex，再用 /ai claude-code 换成 Claude Code。说想换比 Jardin 贵一点的，Claude Code 想起之前说最适合拿铁的 Momos Coffee Es Chocolat 500 克，并改为推荐它。">
-      <source src="assets/still-ai-switch.zh-CN.mp4" type="video/mp4">
-    </video>
-    <figcaption>由真实录屏剪辑而成：换成 Claude Code 后，只说一句“这次换贵一点的”就够了。它记得之前推荐过的咖啡豆。 经过剪辑的真实用户会话，界面为韩语。它展示对话延续，并非购物车操作的独立验证或整个发行版的验证。 <a href="engineering/zh-CN.html#research">原文</a></figcaption>
+  <figure class="switch-carousel">
+    <div class="switch-slides" tabindex="0" role="region" aria-label="对话场景">
+      <figure class="switch-slide" id="switch-slide-1" tabindex="-1" aria-labelledby="switch-title-1">
+        <img src="assets/ai-switch/zh-CN-1.svg" width="1000" height="1040" loading="lazy" alt="切换到 Claude Code 之后 昨天最后是把 Spam 加进去了，还是拿出来了？ 从对话记录看，我最后说已把一罐 Spam Classic 200 g 放回购物车。但仅凭这段上下文，无法确定是不是昨天。登录后我会检查当前购物车。 根据真实对话翻译、缩写并重构的图片">
+        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="上一张">←</a><span id="switch-title-1">1 / 3 · 更换 AI，</span><a href="#switch-slide-2" aria-label="下一张">→</a></figcaption>
+      </figure>
+      <figure class="switch-slide" id="switch-slide-2" tabindex="-1" aria-labelledby="switch-title-2">
+        <img src="assets/ai-switch/zh-CN-2.svg" width="1000" height="1040" loading="lazy" alt="登录之后 我直接检查了购物车：里面有一罐 CJ Spam Classic 200 g，没有被移除，仍然在购物车中。部分步骤未能核实。 根据真实对话翻译、缩写并重构的图片">
+        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="上一张">←</a><span id="switch-title-2">2 / 3 · 对话仍在继续，</span><a href="#switch-slide-3" aria-label="下一张">→</a></figcaption>
+      </figure>
+      <figure class="switch-slide" id="switch-slide-3" tabindex="-1" aria-labelledby="switch-title-3">
+        <img src="assets/ai-switch/zh-CN-3.svg" width="1000" height="1040" loading="lazy" alt="切换到 Codex 之后 把 Spam 拿出来。 我已从购物车移除一罐 Spam Classic 200 g，并再次检查，其他22件商品仍在。目前判断 AI 不可用，由默认 AI 直接处理请求。 根据真实对话翻译、缩写并重构的图片">
+        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="上一张">←</a><span id="switch-title-3">3 / 3 · 换个 AI 也能接着做。</span><a href="#switch-slide-1" aria-label="下一张">→</a></figcaption>
+      </figure>
+    </div>
+    <nav class="slide-index" aria-label="对话场景"><a href="#switch-slide-1" aria-label="1 / 3 · 更换 AI，">1</a><a href="#switch-slide-2" aria-label="2 / 3 · 对话仍在继续，">2</a><a href="#switch-slide-3" aria-label="3 / 3 · 换个 AI 也能接着做。">3</a></nav>
+    <figcaption>根据用户提供的2026年10月8日真实 Telegram 截图，翻译、缩写并重构为各语言图片。这些展示助手所报告的内容，并非购物车操作的独立验证或整个发行版的验证。 <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">原始截图与来源</a> · <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/ai-switch-conversation.png">Telegram · 2026-10-08</a></figcaption>
   </figure>
   <div class="swap">
     <div>

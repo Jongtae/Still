@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1040" viewBox="0 0 1000 1040" xml:lang="zh-CN">
+<title>换个 AI 也能接着做。</title><desc>切换到 Codex 之后 把 Spam 拿出来。 我已从购物车移除一罐 Spam Classic 200 g，并再次检查，其他22件商品仍在。目前判断 AI 不可用，由默认 AI 直接处理请求。 根据真实对话翻译、缩写并重构的图片</desc>
+<rect width="1000" height="1040" rx="32" fill="#f3eee9"/>
+<g font-family="system-ui, -apple-system, sans-serif">
+<text x="50" y="65" font-size="28" fill="#53655c">Still / 03</text>
+<text x="50" y="145" font-size="58" font-weight="650" fill="#293c35">换个 AI 也能接着做。</text>
+<text x="50" y="210" font-size="32" fill="#53655c">切换到 Codex 之后</text>
+<rect x="90" y="265" width="840" height="122" rx="28" fill="#e6d8ce"/><text x="120" y="300" font-size="24" fill="#293c35">你</text><text x="120" y="350" font-size="36" fill="#293c35">把 Spam 拿出来。</text><rect x="50" y="417" width="880" height="226" rx="28" fill="#fffdfa"/><text x="80" y="452" font-size="24" fill="#293c35">Still</text><text x="80" y="502" font-size="36" fill="#293c35">我已从购物车移除一罐 Spam Classic 200 g，</text><text x="80" y="554" font-size="36" fill="#293c35">并再次检查，其他22件商品仍在。目前判断 AI </text><text x="80" y="606" font-size="36" fill="#293c35">不可用，由默认 AI 直接处理请求。</text>
+<path d="M50 950H950" stroke="#bdc9bd"/>
+<text x="50" y="990" font-size="27" fill="#53655c">根据真实对话翻译、缩写并重构的图片</text>
+</g></svg>

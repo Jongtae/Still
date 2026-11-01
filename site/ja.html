@@ -17,6 +17,7 @@
 <link rel="preload" href="assets/fonts/figtree-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/home.css?v=s9">
 <link rel="stylesheet" href="assets/engineering.css?v=1">
+<link rel="stylesheet" href="assets/carousel.css?v=1">
 </head>
 <body>
 <a class="skip" href="#main">本文へ移動</a>
@@ -180,11 +181,23 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
     <h2 id="concept-title">AI を替えても、アシスタントはそのまま。</h2>
     <p>ChatGPT のプランで使う Codex、または Claude のプランで使う Claude Code が仕事をします。会話の途中でもコマンド一つで替えられ、Still はそのまま続けます。</p>
   </div>
-  <figure class="switch-clip">
-    <video controls muted playsinline preload="none" width="1200" height="720" poster="assets/still-ai-switch-poster.ja.jpg" aria-label="韓国語の Telegram の実際の会話。/ai で今の AI が Codex だと確かめ、/ai claude-code で Claude Code に替えます。Jardin より高いものをと頼むと、Claude Code はラテに一番合うと言っていた Momos Coffee の Es Chocolat 500g を思い出し、代わりに提案します。">
-      <source src="assets/still-ai-switch.ja.mp4" type="video/mp4">
-    </video>
-    <figcaption>実際のセッションを編集したもの：Claude Code に替えたあと「今回は高いのを」と言うだけで十分でした。前に勧めた豆を覚えていました。 実際の利用セッションを編集した韓国語画面です。会話の継続を示しますが、カート変更の独立検証やリリース全体の検証ではありません。 <a href="engineering/ja.html#research">原文</a></figcaption>
+  <figure class="switch-carousel">
+    <div class="switch-slides" tabindex="0" role="region" aria-label="会話の場面">
+      <figure class="switch-slide" id="switch-slide-1" tabindex="-1" aria-labelledby="switch-title-1">
+        <img src="assets/ai-switch/ja-1.svg" width="1000" height="1040" loading="lazy" alt="Claude Code に切り替えたあと 昨日、結局 Spam を入れた？ それとも外した？ 会話の記録では、最後に Spam Classic 200 g を1個カートへ戻したとお伝えしました。ただ、それが昨日だったかはこの文脈だけでは確定できません。ログイン後に今のカートを確認します。 実際の会話を翻訳・要約した再構成画像">
+        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="前の画像">←</a><span id="switch-title-1">1 / 3 · AI を替えても、</span><a href="#switch-slide-2" aria-label="次の画像">→</a></figcaption>
+      </figure>
+      <figure class="switch-slide" id="switch-slide-2" tabindex="-1" aria-labelledby="switch-title-2">
+        <img src="assets/ai-switch/ja-2.svg" width="1000" height="1040" loading="lazy" alt="ログインしたあと カートを直接確認しました。CJ Spam Classic 200 g が1個入っています。削除されず、そのまま残っています。一部の手順は確認できませんでした。 実際の会話を翻訳・要約した再構成画像">
+        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="前の画像">←</a><span id="switch-title-2">2 / 3 · 会話は続き、</span><a href="#switch-slide-3" aria-label="次の画像">→</a></figcaption>
+      </figure>
+      <figure class="switch-slide" id="switch-slide-3" tabindex="-1" aria-labelledby="switch-title-3">
+        <img src="assets/ai-switch/ja-3.svg" width="1000" height="1040" loading="lazy" alt="Codex に切り替えたあと Spam を外して。 Spam Classic 200 g を1個カートから外し、再確認しました。ほかの22商品は残っています。現在は判断 AI が使えないため、既定の AI が依頼を直接処理します。 実際の会話を翻訳・要約した再構成画像">
+        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="前の画像">←</a><span id="switch-title-3">3 / 3 · 別の AI で続けられます。</span><a href="#switch-slide-1" aria-label="次の画像">→</a></figcaption>
+      </figure>
+    </div>
+    <nav class="slide-index" aria-label="会話の場面"><a href="#switch-slide-1" aria-label="1 / 3 · AI を替えても、">1</a><a href="#switch-slide-2" aria-label="2 / 3 · 会話は続き、">2</a><a href="#switch-slide-3" aria-label="3 / 3 · 別の AI で続けられます。">3</a></nav>
+    <figcaption>2026年10月8日に所有者が提供した実際の Telegram 画面を各言語に翻訳・要約して再構成しました。アシスタントの報告を示すもので、カート変更の独立検証やリリース全体の検証ではありません。 <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">元の画面と出典</a> · <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/ai-switch-conversation.png">Telegram · 2026-10-08</a></figcaption>
   </figure>
   <div class="swap">
     <div>

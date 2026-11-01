@@ -17,6 +17,7 @@
 <link rel="preload" href="assets/fonts/figtree-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/home.css?v=s9">
 <link rel="stylesheet" href="assets/engineering.css?v=1">
+<link rel="stylesheet" href="assets/carousel.css?v=1">
 </head>
 <body>
 <a class="skip" href="#main">본문으로 건너뛰기</a>
@@ -182,11 +183,23 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
     <h2 id="concept-title">AI는 바꿔도, 비서는 그대로.</h2>
     <p>ChatGPT 구독으로 쓰는 Codex나 Claude 구독으로 쓰는 Claude Code가 일을 합니다. 대화 도중 명령 하나로 바꿔도 Still은 하던 대로 이어 갑니다.</p>
   </div>
-  <figure class="switch-clip">
-    <video controls muted playsinline preload="none" width="1200" height="720" poster="assets/still-ai-switch-poster.ko.jpg" aria-label="한국어 Telegram 실제 대화. /ai로 지금 AI가 Codex인 것을 확인하고 /ai claude-code로 Claude Code로 바꿉니다. 쟈뎅 말고 비싼 걸로 하자는 말에 Claude Code가 라테용으로 제일 괜찮다고 했던 모모스커피 에스쇼콜라 500g을 떠올려 대신 제안합니다.">
-      <source src="assets/still-ai-switch.ko.mp4" type="video/mp4">
-    </video>
-    <figcaption>실제 녹화 화면을 편집했습니다. Claude Code로 바꾼 뒤 “쟈뎅 말고 오랜만에 비싼 걸로”라고만 했는데, 앞서 추천했던 원두를 기억했습니다. 편집한 실제 사용자 세션이며 화면은 한국어입니다. 대화의 연속성을 보여 주지만, 장바구니 변경의 독립 검증이나 배포본 전체 검증은 아닙니다. <a href="engineering/ko.html#research">원문</a></figcaption>
+  <figure class="switch-carousel">
+    <div class="switch-slides" tabindex="0" role="region" aria-label="대화 장면">
+      <figure class="switch-slide" id="switch-slide-1" tabindex="-1" aria-labelledby="switch-title-1">
+        <img src="assets/ai-switch/ko-1.svg" width="1000" height="1040" loading="lazy" alt="Claude Code로 바꾼 뒤 어제 스팸을 최종 넣었나? 뺐나? 대화 기록상으로는 마지막으로 스팸 클래식 200g 한 개를 장바구니에 다시 넣었다고 안내했어요. 다만 그게 어제였는지는 이 맥락만으로 확정할 수 없어요. 로그인하시면 현재 장바구니를 확인할게요. 실제 대화를 번역·축약해 재구성한 이미지">
+        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="이전 이미지">←</a><span id="switch-title-1">1 / 3 · AI를 바꿔도,</span><a href="#switch-slide-2" aria-label="다음 이미지">→</a></figcaption>
+      </figure>
+      <figure class="switch-slide" id="switch-slide-2" tabindex="-1" aria-labelledby="switch-title-2">
+        <img src="assets/ai-switch/ko-2.svg" width="1000" height="1040" loading="lazy" alt="로그인한 뒤 장바구니를 직접 확인했는데, CJ 스팸 클래식 200g 한 개가 들어 있어요. 빼지 않으셨고 그대로 담긴 상태예요. 일부 단계는 확인하지 못했어요. 실제 대화를 번역·축약해 재구성한 이미지">
+        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="이전 이미지">←</a><span id="switch-title-2">2 / 3 · 대화는 이어지고,</span><a href="#switch-slide-3" aria-label="다음 이미지">→</a></figcaption>
+      </figure>
+      <figure class="switch-slide" id="switch-slide-3" tabindex="-1" aria-labelledby="switch-title-3">
+        <img src="assets/ai-switch/ko-3.svg" width="1000" height="1040" loading="lazy" alt="Codex로 바꾼 뒤 스팸 빼줘 스팸 클래식 200g 한 개를 장바구니에서 뺐어요. 다시 확인했고, 나머지 22개 상품은 그대로 있어요. 지금은 판단 AI를 사용할 수 없어 기본 AI가 요청을 바로 처리합니다. 실제 대화를 번역·축약해 재구성한 이미지">
+        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="이전 이미지">←</a><span id="switch-title-3">3 / 3 · 다른 AI로 계속합니다.</span><a href="#switch-slide-1" aria-label="다음 이미지">→</a></figcaption>
+      </figure>
+    </div>
+    <nav class="slide-index" aria-label="대화 장면"><a href="#switch-slide-1" aria-label="1 / 3 · AI를 바꿔도,">1</a><a href="#switch-slide-2" aria-label="2 / 3 · 대화는 이어지고,">2</a><a href="#switch-slide-3" aria-label="3 / 3 · 다른 AI로 계속합니다.">3</a></nav>
+    <figcaption>2026년 10월 8일 사용자가 제공한 실제 Telegram 화면을 각 언어로 번역·축약해 재구성했습니다. 비서가 보고한 내용이며 장바구니 변경의 독립 검증이나 배포본 전체 검증은 아닙니다. <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">원본 화면과 출처</a> · <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/ai-switch-conversation.png">Telegram · 2026-10-08</a></figcaption>
   </figure>
   <div class="swap">
     <div>
