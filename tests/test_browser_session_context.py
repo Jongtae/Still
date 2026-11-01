@@ -33,10 +33,9 @@ class BrowserSessionsInContext(unittest.TestCase):
         line = self.text()
         self.assertIn("shop.test (the owner's sign-in shared with you", line)
         self.assertIn('payment is the owner', line)
-        self.assertIn(', news.test', line)
-        self.assertNotIn("news.test (the owner's", line)
+        self.assertNotIn('news.test', line, '#563: a site with cookies only is not a sign-in')
         labels = [claim['label'] for claim in context_claims('legend\n{}\n' + line)]
-        self.assertEqual(labels, ['로그인한 사이트: shop.test (공유받은 로그인)', '로그인한 사이트: news.test'])
+        self.assertEqual(labels, ['로그인한 사이트: shop.test (공유받은 로그인)'])
 
     def test_a_site_the_owner_signed_in_to_names_when_and_that_a_site_can_end_it(self):
         """#1006 (live 2026-10-04): stored cookies outlived the site's session; the guest cart read as the owner's."""
@@ -48,9 +47,27 @@ class BrowserSessionsInContext(unittest.TestCase):
         self.assertIn('shop.test (owner signed in 2026-10-03 15:24)', line)
         self.assertIn('as a guest, the sign-in has ended', line)
         self.assertIn('call browser_sign_in', line)
-        self.assertTrue(line.endswith(', news.test'))
+        self.assertNotIn('news.test', line)
         labels = [claim['label'] for claim in context_claims('legend\n{}\n' + line)]
-        self.assertEqual(labels, ['로그인한 사이트: shop.test', '로그인한 사이트: news.test'])
+        self.assertEqual(labels, ['로그인한 사이트: shop.test'])
+
+    def test_cookies_a_work_only_left_are_no_sign_in(self):
+        """#563 (live 2026-11-01): a broker's cookies from browsing read as "the available signed-in session",
+        so a new Mac's planner went to the browser and never weighed the official API."""
+        from personal_agent.quickstart_service import BROWSER_OWNER_SIGNINS_KEY
+        self.view('broker.test', 'news.test')
+        self.assertIsNone(self.text(), 'no recorded sign-in, no share: nothing is claimed')
+        self.store.put(BROWSER_OWNER_SIGNINS_KEY, {'news.test': {'at': 0, 'marks': ['m']}, 'broker.test': 'bad'})
+        self.assertIsNone(self.text(), 'a record without a sign-in time is not one')
+
+    def test_cookie_only_sites_never_crowd_out_a_sign_in(self):
+        from personal_agent.quickstart_service import BROWSER_OWNER_SIGNINS_KEY, BROWSER_SESSION_SITES
+        visited = [f'visited{index}.test' for index in range(BROWSER_SESSION_SITES + 5)]
+        self.view(*visited, 'shop.test')
+        self.store.put(BROWSER_OWNER_SIGNINS_KEY, {'shop.test': {'at': time.time(), 'marks': ['m']}})
+        line = self.text()
+        self.assertIn('shop.test (owner signed in', line)
+        self.assertNotIn('visited', line)
 
     def test_a_broken_view_is_no_line(self):
         def broken():
@@ -65,8 +82,11 @@ class BrowserSessionsInContext(unittest.TestCase):
         self.assertIn({'ref': 'browser:shop.test', 'label': '로그인한 사이트: shop.test'}, claims, 'the audit names the sites sent')
 
     def test_an_unreadable_share_row_never_blocks_the_turn(self):
+        from personal_agent.quickstart_service import BROWSER_OWNER_SIGNINS_KEY
         self.view('shop.test')
-        self.store.config = lambda key, default=None: (_ for _ in ()).throw(ValueError('corrupt')) if key == family_share.SHARED_KEY else default
+        self.store.put(BROWSER_OWNER_SIGNINS_KEY, {'shop.test': {'at': time.time(), 'marks': ['m']}})
+        config = self.store.config
+        self.store.config = lambda key, default=None, **kw: (_ for _ in ()).throw(ValueError('corrupt')) if key == family_share.SHARED_KEY else config(key, default, **kw)
         self.assertIn('shop.test', self.text())
 
 
