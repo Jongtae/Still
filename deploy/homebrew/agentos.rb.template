@@ -38,6 +38,11 @@
 # change here must be copied into `Formula/agentos.rb` (url and sha256 kept) in
 # the same PR; tests/test_release_traceability.py checks that.
 #
+# `depends_on arch: :arm64` (#543): Homebrew moved Intel macOS to Tier 3 in
+# September 2026, so an Intel install has no dependency bottles and can fail
+# partway. Homebrew refuses it before it starts; Intel Macs use the one-line
+# installer, which brings its own Python through uv.
+#
 # See docs/release.en.md for the full procedure.
 
 class Agentos < Formula
@@ -46,6 +51,7 @@ class Agentos < Formula
   url "https://github.com/Jongtae/Still/archive/refs/tags/v__VERSION__.tar.gz"
   sha256 "__SHA256__"
   version_scheme 1
+  depends_on arch: :arm64
   depends_on "python@3.13"
 
   def install

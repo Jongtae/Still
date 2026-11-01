@@ -31,7 +31,7 @@ This command and the Homebrew commands below install the newest published releas
 
 The [installer](../scripts/install.sh) first downloads the published release archive and checks its SHA-256 against the [release manifest](release-manifest.json); on a mismatch it installs nothing. If you do not already have a current [uv](https://docs.astral.sh/uv/), it installs a pinned version through Astral's official installer, which adds `~/.local/bin` to your shell `PATH`. It then installs Still with a uv-managed Python, ignoring your own uv settings, and starts it; the first setup described below then runs in the same terminal. Set `AGENTOS_NO_START=1` to install without starting. Later, open a new terminal and run `agentos start`. Running the same command again after a release updates Still. To remove it, see [Uninstall](#uninstall).
 
-If you use Homebrew on macOS, this installs the same release. This repository is its own tap, so add it once by URL:
+If you use Homebrew on an Apple silicon Mac, this installs the same release; on an Intel Mac the formula refuses to install, so use the command above. This repository is its own tap, so add it once by URL:
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still
