@@ -185,6 +185,40 @@ class OneActionSource(_Store):
                     self.assertIn(BROWSER_SIGN_IN_ROUTE_RULE, text)
         self.assertGreaterEqual(seen, 6, 'browser_open and browser_sign_in on each of the three routes')
 
+    def test_route_texts_name_a_real_setup_tool_for_an_api_that_needs_keys(self):
+        """#567 (live 2026-11-02): on a new Mac with no API connection the worker found the official API and
+        told the owner Still could not connect it or take its keys safely.  The setup tool existed, but no route
+        text named it.  The worker guidance, and capability_search and the sign-in tools on every route, now name a
+        settings_change setting that exists and resumes the Work.  Whether a live model then proposes it is a model
+        observation, not established here."""
+        import re
+        from personal_agent.agent_runtime import API_KEY_ROUTE, GOAL_FIRST_GUIDANCE
+        from personal_agent.settings_orchestrator import SETTINGS
+
+        def names_the_setup_tool(text):
+            named = re.findall(r'settings_change (\w+) (\w+)', text)
+            self.assertIn(('api_connections', 'connect'), named)
+            for category, setting in named:
+                self.assertIn(setting, SETTINGS.get(category, ()))
+
+        names_the_setup_tool(GOAL_FIRST_GUIDANCE)
+        names_the_setup_tool(API_KEY_ROUTE)
+        self.assertIn('continue_work=yes', API_KEY_ROUTE)
+        wire = {tool['name']: tool for tool in AgentOSMcpTools(self.caps(browser=lambda: None)).definitions()}
+        static = {tool['name']: tool for tool in profile_mcp_tools(BOUNDED_PROFILE)}
+        for route, tools in (('native', NATIVE), ('wire', wire), ('static', static)):
+            for name in ('capability_search', 'browser_sign_in'):
+                if route == 'wire' and name not in tools:
+                    continue  # these test capabilities gate capability_search off the wire list
+                with self.subTest(route=route, tool=name):
+                    self.assertIn(API_KEY_ROUTE, str(tools[name].get('description') or ''))
+        self.assertIn('settings_change', profile_actions(BOUNDED_PROFILE))
+        for profile in CLI_PROFILES:
+            actions = profile_actions(profile)
+            if {'capability_search', 'browser_sign_in'} & set(actions):
+                with self.subTest(profile=profile):
+                    self.assertIn('settings_change', actions)
+
 
 class DeclaredProfileLimits(unittest.TestCase):
     def test_every_host_action_is_offered_or_has_a_declared_reason(self):
