@@ -80,7 +80,7 @@ agentos start
 
 Every setting, Windows details and uninstalling (`agentos uninstall` keeps your data unless you choose otherwise) are in [QUICKSTART](docs/QUICKSTART.md).
 
-**Release status:** both installers install **v0.3.0** (2026-10-31), built from the tagged main commit. The demo and the everyday-use image come from real sessions and are not release-specific end-to-end validation; the architecture figure is product direction. The [release manifest](docs/release-manifest.json) records what each release covers, and [product status](docs/product-status.en.md) separates shipped behavior, test evidence and direction.
+**Release status:** both installers install **v0.4.0** (2026-11-01), built from the tagged main commit. The demo and the everyday-use image come from real sessions and are not release-specific end-to-end validation; the architecture figure is product direction. The [release manifest](docs/release-manifest.json) records what each release covers, and [product status](docs/product-status.en.md) separates shipped behavior, test evidence and direction.
 
 <!-- readme-section:ownership -->
 

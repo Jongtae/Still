@@ -80,7 +80,7 @@ agentos start
 
 모든 설정과 Windows 안내, 제거 방법(`agentos uninstall`은 지우겠다고 고르지 않는 한 데이터를 남깁니다)은 [QUICKSTART](../../docs/QUICKSTART.md)에 있습니다.
 
-**배포 상태:** 두 설치 방법 모두 태그가 붙은 main 커밋으로 빌드한 **v0.3.0**(2026-10-31)을 설치합니다. 데모와 일상 사용 화면은 실제 사용 세션에서 가져온 것으로, 이 배포본을 처음부터 끝까지 검증한 결과는 아닙니다. 구조 그림은 제품 방향을 보여 주는 예시입니다. 배포본별 포함 범위는 [release manifest](../../docs/release-manifest.json)에, 제공 기능·테스트 근거·방향의 구분은 [현재 상태](../../docs/product-status.ko.md)에 정리되어 있습니다.
+**배포 상태:** 두 설치 방법 모두 태그가 붙은 main 커밋으로 빌드한 **v0.4.0**(2026-11-01)을 설치합니다. 데모와 일상 사용 화면은 실제 사용 세션에서 가져온 것으로, 이 배포본을 처음부터 끝까지 검증한 결과는 아닙니다. 구조 그림은 제품 방향을 보여 주는 예시입니다. 배포본별 포함 범위는 [release manifest](../../docs/release-manifest.json)에, 제공 기능·테스트 근거·방향의 구분은 [현재 상태](../../docs/product-status.ko.md)에 정리되어 있습니다.
 
 <!-- readme-section:ownership -->
 
