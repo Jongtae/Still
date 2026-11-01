@@ -1,11 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1040" viewBox="0 0 1000 1040" xml:lang="ja">
-<title>会話は続き、</title><desc>ログインしたあと  カートを直接確認しました。CJ Spam Classic 200 g が1個入っています。削除されず、そのまま残っています。一部の手順は確認できませんでした。 実際の会話を翻訳・要約した再構成画像</desc>
-<rect width="1000" height="1040" rx="32" fill="#f0f1f3"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1320" viewBox="0 0 1000 1320" xml:lang="ja">
+<title>働く AI を替えても、</title><desc>前の文脈 · 要約 前の提案の要約：カートには Jardin があり、ラテ用に Momos Coffee Es Chocolat 500 g も薦められていました。 Codex → Claude Code /ai claude-code 既定の AI を Claude Code に変更しました。次の依頼から適用されます。 実際の会話を翻訳・要約した再構成画像 2026-10-12</desc>
+<rect width="1000" height="1320" rx="32" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="50" y="65" font-size="28" fill="#626262">Still / 02</text>
-<text x="50" y="145" font-size="58" font-weight="550" fill="#171717">会話は続き、</text>
-<text x="50" y="210" font-size="32" fill="#626262">ログインしたあと</text>
-<rect x="50" y="265" width="880" height="278" rx="28" fill="#ffffff"/><text x="80" y="300" font-size="24" fill="#171717">Still</text><text x="80" y="350" font-size="36" fill="#171717">カートを直接確認しました。CJ Spam Classic </text><text x="80" y="402" font-size="36" fill="#171717">200 g が1個入っています。削除されず、その</text><text x="80" y="454" font-size="36" fill="#171717">まま残っています。一部の手順は確認できませ</text><text x="80" y="506" font-size="36" fill="#171717">んでした。</text>
-<path d="M50 950H950" stroke="#d5d5d5"/>
-<text x="50" y="990" font-size="27" fill="#626262">実際の会話を翻訳・要約した再構成画像</text>
+<text x="50" y="65" font-size="28" fill="#626262">Still / 02 · 2026-10-12</text>
+<text x="50" y="145" font-size="54" font-weight="550" fill="#171717">働く AI を替えても、</text>
+<rect x="50" y="230" width="900" height="223" rx="24" fill="#ffffff" stroke="#d5d5d5"/><text x="80" y="270" font-size="24" fill="#626262">前の文脈 · 要約</text><text x="80" y="320" font-size="32" fill="#171717">前の提案の要約：カートには Jardin があり、</text><text x="80" y="366" font-size="32" fill="#171717">ラテ用に Momos Coffee Es Chocolat 500 g も</text><text x="80" y="412" font-size="32" fill="#171717">薦められていました。</text><text x="80" y="495" font-size="24" fill="#626262">続いて</text><rect x="90" y="519" width="840" height="122" rx="26" fill="#e5e7e9"/><text x="120" y="554" font-size="24" fill="#626262">あなた</text><text x="120" y="604" font-size="36" fill="#171717">/ai claude-code</text><rect x="50" y="667" width="880" height="174" rx="26" fill="#ffffff"/><text x="80" y="702" font-size="24" fill="#626262">Still · 返答の抜粋</text><text x="80" y="752" font-size="36" fill="#171717">既定の AI を Claude Code に変更しました。</text><text x="80" y="804" font-size="36" fill="#171717">次の依頼から適用されます。</text>
+<path d="M50 1250H950" stroke="#d5d5d5"/>
+<text x="50" y="1290" font-size="27" fill="#626262">実際の会話を翻訳・要約した再構成画像</text>
 </g></svg>

@@ -23,6 +23,7 @@ code{overflow-wrap:anywhere}
 .crumb{text-decoration:none;font-weight:650;font-size:1.1rem}
 .bar nav{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:.4rem 1.5rem}
 .bar nav>a{text-decoration:none}
+.bar .nav-start,.bar .nav-engineering{font-weight:650;text-decoration:underline;text-underline-offset:.35em}
 .langs{display:flex;gap:.85rem;padding-left:1.25rem;border-left:1px solid var(--line)}
 .langs a{text-decoration:none;color:var(--muted)}
 .langs [aria-current=page]{color:var(--ink);font-weight:650}
@@ -38,6 +39,12 @@ main>.hero{padding:clamp(4rem,9vw,8rem) 0 clamp(3rem,6vw,5rem);text-align:center
 .button:hover{background:#333}
 .text-link{display:inline-flex;align-items:center;min-height:44px;font-size:.9rem}
 .demo-section{padding-top:1rem}
+.entry-points{width:min(100% - 3rem,72rem);margin:0 auto 4rem;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-block:1px solid var(--line)}
+.entry-points>a{display:flex;flex-direction:column;gap:.65rem;text-decoration:none;padding:1.5rem 1.25rem}
+.entry-points>a+ a{border-left:1px solid var(--line)}
+.entry-points strong{font-size:1.15rem;font-weight:550;display:flex;justify-content:space-between;gap:.5rem}
+.entry-points>a>span{font-size:.85rem;color:var(--muted)}
+.entry-points>a:hover{background:#f0f0f0}
 .demo-section>.copy{max-width:45rem;margin:0 auto 2rem;text-align:center}
 .demo-section>.copy h2{font-size:clamp(1.35rem,2.5vw,2rem)}
 .demo-section>.copy p{max-width:40rem;margin:1rem auto 0;color:var(--muted)}
@@ -91,6 +98,19 @@ main>.hero{padding:clamp(4rem,9vw,8rem) 0 clamp(3rem,6vw,5rem);text-align:center
 .steps li::before{content:counter(step,decimal-leading-zero);display:block;color:var(--muted);font-size:.8rem;margin-bottom:.8rem}
 .steps h3{font-size:1rem;font-weight:550;letter-spacing:0}
 .steps p{font-size:.9rem;color:var(--muted);margin-top:.7rem}
+.setup-preview{margin:2.5rem 0}
+.setup-preview h3{font-size:1.1rem;margin-bottom:1rem;font-weight:550;letter-spacing:0}
+.terminal-frame{border-radius:1rem;overflow:hidden;background:#1b1b1d;color:#eee}
+.terminal-bar{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.8rem 1.2rem;background:#29292c;font:400 .75rem var(--sans);color:#ccc}
+.terminal-bar>span:first-child{color:#999;letter-spacing:.15rem}
+.terminal-frame pre{margin:0;padding:1.5rem;font:400 .85rem/1.8 ui-monospace,"SF Mono",Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.setup-preview figcaption{margin-top:.8rem;color:var(--muted);font-size:.8rem;max-width:50rem}
+.build-grid{width:min(100% - 3rem,72rem);margin:2rem auto 4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}
+.build-grid>.engineering-entry,.build-grid>.github{padding:2rem;border:1px solid var(--line);border-radius:1.25rem;background:white;text-align:left}
+.build-grid>.engineering-entry h2,.build-grid>.github h2{font-size:clamp(1.5rem,2.5vw,2rem);font-weight:550}
+.build-grid p{margin:1rem 0 0}
+.build-grid .actions{justify-content:flex-start;margin-top:1.5rem}
+.build-grid .button{color:white}
 .engineering-entry{padding:3rem 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .engineering-entry h2{font-size:1.65rem;font-weight:550}
 .engineering-entry p{max-width:48rem;margin-top:1rem;color:var(--muted)}
@@ -106,6 +126,7 @@ main>.hero{padding:clamp(4rem,9vw,8rem) 0 clamp(3rem,6vw,5rem);text-align:center
 .bar nav{gap:.5rem 1rem;font-size:.8rem}
 .langs{border:0;padding:0;flex-basis:100%;justify-content:flex-end}
 .feature-row,.connections-row{grid-template-columns:1fr;gap:1.5rem;padding:2rem 0}
+.build-grid{grid-template-columns:1fr}
 .feature-row>.copy,.connections-row>.copy{grid-column:1;grid-row:1}
 .feature-row>.visual,.connections-row>.cloud{grid-column:1;grid-row:2}
 .fine{grid-column:1;margin:0}
@@ -114,6 +135,12 @@ main>.hero{padding:clamp(4rem,9vw,8rem) 0 clamp(3rem,6vw,5rem);text-align:center
 }
 @media(max-width:520px){
 .bar,main>section,.foot{width:calc(100% - 2.5rem)}
+.entry-points,.build-grid{width:calc(100% - 2.5rem)}
+.entry-points{grid-template-columns:1fr;margin-bottom:3rem}
+.entry-points>a{padding:1.25rem .5rem}
+.entry-points>a+ a{border-left:0;border-top:1px solid var(--line)}
+.build-grid>.engineering-entry,.build-grid>.github{padding:1.5rem}
+.terminal-frame pre{font-size:.75rem;padding:1rem}
 .bar{display:block;padding-top:1rem}
 .bar nav{justify-content:flex-start;margin-top:.8rem;gap:.65rem 1rem}
 .langs{justify-content:flex-start;gap:1rem}

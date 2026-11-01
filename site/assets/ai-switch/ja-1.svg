@@ -1,11 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1040" viewBox="0 0 1000 1040" xml:lang="ja">
-<title>AI を替えても、</title><desc>Claude Code に切り替えたあと 昨日、結局 Spam を入れた？ それとも外した？ 会話の記録では、最後に Spam Classic 200 g を1個カートへ戻したとお伝えしました。ただ、それが昨日だったかはこの文脈だけでは確定できません。ログイン後に今のカートを確認します。 実際の会話を翻訳・要約した再構成画像</desc>
-<rect width="1000" height="1040" rx="32" fill="#f0f1f3"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1320" viewBox="0 0 1000 1320" xml:lang="ja">
+<title>続けたい会話があり、</title><desc>前の文脈 · 要約 前の提案の要約：カートには Jardin があり、ラテ用に Momos Coffee Es Chocolat 500 g も薦められていました。 切り替え前 · Codex /ai 今、仕事をしている AI は Codex です。 実際の会話を翻訳・要約した再構成画像 2026-10-12</desc>
+<rect width="1000" height="1320" rx="32" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="50" y="65" font-size="28" fill="#626262">Still / 01</text>
-<text x="50" y="145" font-size="58" font-weight="550" fill="#171717">AI を替えても、</text>
-<text x="50" y="210" font-size="32" fill="#626262">Claude Code に切り替えたあと</text>
-<rect x="90" y="265" width="840" height="174" rx="28" fill="#e5e7e9"/><text x="120" y="300" font-size="24" fill="#171717">あなた</text><text x="120" y="350" font-size="36" fill="#171717">昨日、結局 Spam を入れた？ それとも外した</text><text x="120" y="402" font-size="36" fill="#171717">？</text><rect x="50" y="469" width="880" height="330" rx="28" fill="#ffffff"/><text x="80" y="504" font-size="24" fill="#171717">Still</text><text x="80" y="554" font-size="36" fill="#171717">会話の記録では、最後に Spam Classic 200 g </text><text x="80" y="606" font-size="36" fill="#171717">を1個カートへ戻したとお伝えしました。ただ</text><text x="80" y="658" font-size="36" fill="#171717">、それが昨日だったかはこの文脈だけでは確定</text><text x="80" y="710" font-size="36" fill="#171717">できません。ログイン後に今のカートを確認し</text><text x="80" y="762" font-size="36" fill="#171717">ます。</text>
-<path d="M50 950H950" stroke="#d5d5d5"/>
-<text x="50" y="990" font-size="27" fill="#626262">実際の会話を翻訳・要約した再構成画像</text>
+<text x="50" y="65" font-size="28" fill="#626262">Still / 01 · 2026-10-12</text>
+<text x="50" y="145" font-size="54" font-weight="550" fill="#171717">続けたい会話があり、</text>
+<rect x="50" y="230" width="900" height="223" rx="24" fill="#ffffff" stroke="#d5d5d5"/><text x="80" y="270" font-size="24" fill="#626262">前の文脈 · 要約</text><text x="80" y="320" font-size="32" fill="#171717">前の提案の要約：カートには Jardin があり、</text><text x="80" y="366" font-size="32" fill="#171717">ラテ用に Momos Coffee Es Chocolat 500 g も</text><text x="80" y="412" font-size="32" fill="#171717">薦められていました。</text><text x="80" y="495" font-size="24" fill="#626262">続いて</text><rect x="90" y="519" width="840" height="122" rx="26" fill="#e5e7e9"/><text x="120" y="554" font-size="24" fill="#626262">あなた</text><text x="120" y="604" font-size="36" fill="#171717">/ai</text><rect x="50" y="667" width="880" height="122" rx="26" fill="#ffffff"/><text x="80" y="702" font-size="24" fill="#626262">Still · 返答の抜粋</text><text x="80" y="752" font-size="36" fill="#171717">今、仕事をしている AI は Codex です。</text>
+<path d="M50 1250H950" stroke="#d5d5d5"/>
+<text x="50" y="1290" font-size="27" fill="#626262">実際の会話を翻訳・要約した再構成画像</text>
 </g></svg>

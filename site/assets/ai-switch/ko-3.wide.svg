@@ -1,10 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" xml:lang="ko">
-<title>다른 AI로 계속합니다.</title><desc>Codex로 바꾼 뒤 스팸 빼줘 스팸 클래식 200g 한 개를 장바구니에서 뺐어요. 다시 확인했고, 나머지 22개 상품은 그대로 있어요. 지금은 판단 AI를 사용할 수 없어 기본 AI가 요청을 바로 처리합니다. 실제 대화를 번역·축약해 재구성한 이미지</desc>
+<title>다시 설명하지 않습니다.</title><desc>앞선 맥락 · 요약 라떼용 원두를 고르는 대화입니다. 장바구니에는 쟈뎅이 있고, 모모스커피 에스쇼콜라 500g도 라떼용으로 추천받았습니다. 전환 후 · Claude Code 쟈뎅 말고 오랜만에 비싼 걸로 해볼까 해. 라떼용으로 제일 괜찮다고 말씀드렸던 모모스커피 에스쇼콜라 500g이 있어요. 실제 대화를 번역·축약해 재구성한 이미지 2026-10-12</desc>
 <rect width="1440" height="900" rx="40" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="70" y="85" font-size="26" fill="#626262">Still / 03</text>
-<text x="70" y="300" font-size="50" fill="#171717">다른 AI로</text><text x="70" y="364" font-size="50" fill="#171717">계속합니다.</text>
-<text x="70" y="530" font-size="28" fill="#626262">Codex로 바꾼 뒤</text>
-<text x="70" y="760" font-size="23" fill="#626262">실제 대화를 번역·축약해</text><text x="70" y="794" font-size="23" fill="#626262">재구성한 이미지</text>
-<rect x="570" y="135" width="800" height="116" rx="26" fill="#e5e7e9"/><text x="600" y="169" font-size="23" fill="#626262">나</text><text x="600" y="217" font-size="32" fill="#171717">스팸 빼줘</text><rect x="520" y="277" width="850" height="254" rx="26" fill="#ffffff"/><text x="550" y="311" font-size="23" fill="#626262">Still</text><text x="550" y="359" font-size="32" fill="#171717">스팸 클래식 200g 한 개를 장바구니에서</text><text x="550" y="405" font-size="32" fill="#171717">뺐어요. 다시 확인했고, 나머지 22개 상품은</text><text x="550" y="451" font-size="32" fill="#171717">그대로 있어요. 지금은 판단 AI를 사용할 수</text><text x="550" y="497" font-size="32" fill="#171717">없어 기본 AI가 요청을 바로 처리합니다.</text>
+<text x="70" y="85" font-size="24" fill="#626262">Still / 03 · 2026-10-12</text>
+<text x="70" y="200" font-size="48" fill="#171717">다시 설명하지</text><text x="70" y="264" font-size="48" fill="#171717">않습니다.</text>
+<text x="70" y="780" font-size="23" fill="#626262">실제 대화를 번역·축약해</text><text x="70" y="814" font-size="23" fill="#626262">재구성한 이미지</text>
+<rect x="70" y="370" width="400" height="265" rx="24" fill="#ffffff" stroke="#d5d5d5"/><text x="94" y="410" font-size="20" fill="#626262">앞선 맥락 · 요약</text><text x="94" y="455" font-size="26" fill="#171717">라떼용 원두를 고르는</text><text x="94" y="491" font-size="26" fill="#171717">대화입니다. 장바구니에는</text><text x="94" y="527" font-size="26" fill="#171717">쟈뎅이 있고, 모모스커피</text><text x="94" y="563" font-size="26" fill="#171717">에스쇼콜라 500g도</text><text x="94" y="599" font-size="26" fill="#171717">라떼용으로 추천받았습니다.</text><text x="520" y="76" font-size="24" fill="#626262">전환 후 · Claude Code</text><rect x="570" y="150" width="800" height="116" rx="26" fill="#e5e7e9"/><text x="600" y="184" font-size="23" fill="#626262">나</text><text x="600" y="232" font-size="32" fill="#171717">쟈뎅 말고 오랜만에 비싼 걸로 해볼까 해.</text><rect x="520" y="292" width="850" height="162" rx="26" fill="#ffffff"/><text x="550" y="326" font-size="23" fill="#626262">Still · 응답 발췌</text><text x="550" y="374" font-size="32" fill="#171717">라떼용으로 제일 괜찮다고 말씀드렸던</text><text x="550" y="420" font-size="32" fill="#171717">모모스커피 에스쇼콜라 500g이 있어요.</text>
 </g></svg>

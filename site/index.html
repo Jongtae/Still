@@ -25,9 +25,9 @@
   <a class="crumb" href="./">Still</a>
   <nav aria-label="Site">
     <a href="#remembers">What it does</a>
-    <a href="#install">Install</a>
-    <a href="engineering/index.html">Engineering</a>
-    <a href="https://github.com/Jongtae/Still">GitHub</a>
+    <a class="nav-start" href="#install">Install</a>
+    <a class="nav-engineering" href="engineering/index.html">Engineering</a>
+    <a href="#contribute">GitHub · Contribute</a>
     <span class="langs"><a href="./" hreflang="en" lang="en" aria-current="page">English</a><a href="ko.html" hreflang="ko" lang="ko">한국어</a><a href="ja.html" hreflang="ja" lang="ja">日本語</a><a href="zh-CN.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></span>
   </nav>
 </header>
@@ -80,28 +80,34 @@ fill="currentColor" stroke="none">
   </div>
 </section>
 
+<nav class="entry-points" aria-label="Start here">
+  <a href="#install"><strong>Install Still <span aria-hidden="true">↓</span></strong><span>One command, then connect your AI.</span></a>
+  <a href="engineering/index.html"><strong>Engineering <span aria-hidden="true">→</span></strong><span>Memory, decisions, authority and the evidence.</span></a>
+  <a href="#contribute"><strong>Contribute <span aria-hidden="true">↓</span></strong><span>Read the code, suggest a change, help build Still.</span></a>
+</nav>
+
 <section class="demo-section" id="concept" aria-labelledby="concept-title">
   <div class="copy">
-    <h2 id="concept-title">Change the AI. Keep the assistant.</h2>
-    <p>Your ChatGPT plan through Codex or your Claude plan through Claude Code does the work. Switch with one command in the middle of a conversation; Still carries on.</p>
+    <h2 id="concept-title">Same context. A different AI.</h2>
+    <p>After choosing coffee beans together, the owner switches from Codex to Claude Code. The next request carries on without restating the earlier recommendation.</p>
   </div>
   <figure class="switch-carousel">
-    <div class="switch-slides" tabindex="0" role="region" aria-label="Conversation scenes">
+    <div class="switch-slides" tabindex="0" role="region" aria-label="One conversation across an AI switch">
       <figure class="switch-slide" id="switch-slide-1" tabindex="-1" aria-labelledby="switch-title-1">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-1.wide.svg" width="1440" height="900"><img src="assets/ai-switch/en-1.svg" width="1000" height="1040" loading="lazy" alt="After switching to Claude Code Did we end up adding the Spam yesterday, or taking it out? From the conversation, I last said I had put one Spam Classic 200 g back in the cart. I cannot establish whether that was yesterday. Sign in so I can check the current cart. Translated &amp; condensed from a real conversation"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="Previous image">←</a><span id="switch-title-1">1 / 3 · Change the AI.</span><a href="#switch-slide-2" aria-label="Next image">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-1.wide.svg" width="1440" height="900"><img src="assets/ai-switch/en-1.svg" width="1000" height="1320" loading="lazy" alt="Earlier context · summary Earlier recommendation summary: Jardin was in the cart; Momos Coffee Es Chocolat 500 g had also been suggested for lattes. Before the switch · Codex /ai The current AI doing the work is Codex. Translated &amp; condensed from a real conversation"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="Previous image">←</a><span id="switch-title-1">1 / 3 · A conversation to carry on.</span><a href="#switch-slide-2" aria-label="Next image">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-2" tabindex="-1" aria-labelledby="switch-title-2">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-2.wide.svg" width="1440" height="900"><img src="assets/ai-switch/en-2.svg" width="1000" height="1040" loading="lazy" alt="After signing in I checked the cart directly: one CJ Spam Classic 200 g is there. It has not been removed. Some steps could not be checked. Translated &amp; condensed from a real conversation"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="Previous image">←</a><span id="switch-title-2">2 / 3 · Keep the conversation.</span><a href="#switch-slide-3" aria-label="Next image">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-2.wide.svg" width="1440" height="900"><img src="assets/ai-switch/en-2.svg" width="1000" height="1320" loading="lazy" alt="Earlier context · summary Earlier recommendation summary: Jardin was in the cart; Momos Coffee Es Chocolat 500 g had also been suggested for lattes. Codex → Claude Code /ai claude-code The default AI is now Claude Code. It applies from the next request. Translated &amp; condensed from a real conversation"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="Previous image">←</a><span id="switch-title-2">2 / 3 · Change the AI.</span><a href="#switch-slide-3" aria-label="Next image">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-3" tabindex="-1" aria-labelledby="switch-title-3">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-3.wide.svg" width="1440" height="900"><img src="assets/ai-switch/en-3.svg" width="1000" height="1040" loading="lazy" alt="After switching to Codex Take the Spam out. I removed one Spam Classic 200 g from the cart and checked again. The other 22 products remain. The decision AI is unavailable, so the default AI handles requests directly for now. Translated &amp; condensed from a real conversation"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="Previous image">←</a><span id="switch-title-3">3 / 3 · Continue with another AI.</span><a href="#switch-slide-1" aria-label="Next image">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-3.wide.svg" width="1440" height="900"><img src="assets/ai-switch/en-3.svg" width="1000" height="1320" loading="lazy" alt="Earlier context · summary Earlier recommendation summary: Jardin was in the cart; Momos Coffee Es Chocolat 500 g had also been suggested for lattes. After the switch · Claude Code Not the Jardin—something pricier this time. There’s the Momos Coffee Es Chocolat 500 g I recommended earlier as best for lattes. Translated &amp; condensed from a real conversation"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="Previous image">←</a><span id="switch-title-3">3 / 3 · Continue without starting over.</span><a href="#switch-slide-1" aria-label="Next image">→</a></figcaption>
       </figure>
     </div>
-    <nav class="slide-index" aria-label="Conversation scenes"><a href="#switch-slide-1" aria-label="1 / 3 · Change the AI.">1</a><a href="#switch-slide-2" aria-label="2 / 3 · Keep the conversation.">2</a><a href="#switch-slide-3" aria-label="3 / 3 · Continue with another AI.">3</a></nav>
-    <figcaption>Translated and condensed reconstructions of owner-supplied Telegram screenshots from 8 October 2026. These show what the assistant reported, not independent verification of cart effects or release-wide validation. <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">Original screenshots & provenance</a> · <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/ai-switch-conversation.png">Telegram · 2026-10-08</a></figcaption>
+    <nav class="slide-index" aria-label="One conversation across an AI switch"><a href="#switch-slide-1" aria-label="1 / 3 · A conversation to carry on.">1</a><a href="#switch-slide-2" aria-label="2 / 3 · Change the AI.">2</a><a href="#switch-slide-3" aria-label="3 / 3 · Continue without starting over.">3</a></nav>
+    <figcaption>One recorded session on 12 October 2026, translated and condensed. Earlier recommendations are summarized from the later reply. This shows recalled context across an AI switch, not a completed cart swap or release-wide validation. <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">Recording & provenance</a></figcaption>
   </figure>
   <div class="swap">
     <div>
@@ -113,6 +119,44 @@ fill="currentColor" stroke="none">
       <ul class="pills solid"><li>What it knows about you</li><li>Unfinished work</li><li>The permissions you gave</li><li>A record of what ran</li></ul>
     </div>
   </div>
+</section>
+
+<section class="install" id="install" aria-labelledby="install-title">
+  <div class="copy">
+    <h2 id="install-title">Get started with Still</h2>
+    <p>A Mac, Linux or Windows (WSL2) computer and the ChatGPT or Claude subscription you already have.</p>
+  </div>
+  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
+  <p class="note">The URL pins the installer to one version; <a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">read the script</a> before you run it. On an Apple silicon Mac with Homebrew: <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>, <code>brew install jongtae/still/agentos</code>, then <code>agentos start</code>. On Windows, run <code>wsl --install</code> in PowerShell, restart, open Ubuntu and paste the command there.</p>
+  <ol class="steps">
+    <li>
+      <h3>Choose your AI</h3>
+      <p>Setup runs in the terminal. Pick Codex, Claude Code or an API key; one you’re already signed in to is preselected. Still never sees that login.</p>
+    </li>
+    <li>
+      <h3>Say hello</h3>
+      <p>Talk to Still right there in the terminal, or on the Still screen at <code>127.0.0.1:8787</code>.</p>
+    </li>
+    <li>
+      <h3>Bring it to your phone</h3>
+      <p>Say “connect Telegram”, paste the token @BotFather gives you, and press Start in the pairing link.</p>
+      <p class="note">Optional: give the chat Still’s look with a wallpaper (<a href="assets/still-wallpaper-presence.jpg" download>with Still</a> or <a href="assets/still-wallpaper-plain.jpg" download>plain</a>): in the Telegram chat, open the menu, choose <b>Change Wallpaper</b> and pick it from your photos.</p>
+    </li>
+  </ol>
+  <figure class="setup-preview" aria-labelledby="setup-preview-title">
+  <h3 id="setup-preview-title">What first setup looks like</h3>
+  <div class="terminal-frame"><div class="terminal-bar"><span aria-hidden="true">● ● ●</span><span>Terminal · agentos start</span></div><pre>Let's set up Still here in the terminal. Press Enter to take the default.
+
+AI connection
+Connect a subscription you already have, or an API key.
+
+1) ChatGPT subscription (Codex)
+2) Claude subscription (Claude Code)
+3) API key (OpenAI, Anthropic, compatible server, Ollama)
+4) Connect later in the browser</pre></div>
+  <figcaption>An excerpt of the current program’s setup messages, laid out for this page. Not a recording of a new installation. <a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/first_run.py">Read the source</a></figcaption>
+</figure>
+  <p class="note">Everything else is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">quick start guide</a>.</p>
 </section>
 
 <section class="section-intro" aria-labelledby="experience-title"><h2 id="experience-title">A little less to explain.</h2><p>Your memory, your conversations and the things you choose to connect.</p></section>
@@ -183,43 +227,21 @@ fill="currentColor" stroke="none">
   </ul>
 </section>
 
-<section class="install" id="install" aria-labelledby="install-title">
-  <div class="copy">
-    <h2 id="install-title">Bring Still home tonight</h2>
-    <p>A Mac, Linux or Windows (WSL2) computer and the ChatGPT or Claude subscription you already have.</p>
-  </div>
-  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
-  <p class="note">The URL pins the installer to one version; <a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">read the script</a> before you run it. On an Apple silicon Mac with Homebrew: <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>, <code>brew install jongtae/still/agentos</code>, then <code>agentos start</code>. On Windows, run <code>wsl --install</code> in PowerShell, restart, open Ubuntu and paste the command there.</p>
-  <ol class="steps">
-    <li>
-      <h3>Choose your AI</h3>
-      <p>Setup runs in the terminal. Pick Codex, Claude Code or an API key; one you’re already signed in to is preselected. Still never sees that login.</p>
-    </li>
-    <li>
-      <h3>Say hello</h3>
-      <p>Talk to Still right there in the terminal, or on the Still screen at <code>127.0.0.1:8787</code>.</p>
-    </li>
-    <li>
-      <h3>Bring it to your phone</h3>
-      <p>Say “connect Telegram”, paste the token @BotFather gives you, and press Start in the pairing link.</p>
-      <p class="note">Optional: give the chat Still’s look with a wallpaper (<a href="assets/still-wallpaper-presence.jpg" download>with Still</a> or <a href="assets/still-wallpaper-plain.jpg" download>plain</a>): in the Telegram chat, open the menu, choose <b>Change Wallpaper</b> and pick it from your photos.</p>
-    </li>
-  </ol>
-  <p class="note">Everything else is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">quick start guide</a>.</p>
-</section>
 
-<section class="engineering-entry" aria-labelledby="engineering-title">
+
+<div class="build-grid"><section class="engineering-entry" aria-labelledby="engineering-title">
   <h2 id="engineering-title">Engineering — Why this design?</h2>
   <p>Read the engineering philosophy, Ontology & Context, Decision Model, Presence, model independence, Owner Authority, and Research & Evidence. Each topic links implementation, evidence and open design questions.</p>
-  <p><a href="engineering/index.html">How Still keeps continuity →</a> · <a href="engineering/index.html#research">Research &amp; Evidence</a></p>
+  <p class="actions"><a class="button" href="engineering/index.html">How Still keeps continuity →</a> · <a href="engineering/index.html#research">Research &amp; Evidence</a></p>
 </section>
 
-<section class="github" aria-labelledby="github-title">
-  <h2 id="github-title">Open code, built in the open.</h2>
+<section class="github" id="contribute" aria-labelledby="github-title">
+  <h2 id="github-title">Build Still with us.</h2>
+  <p>Report what did not work, discuss an idea, improve the docs or contribute code. Start with the contribution guide.</p>
   <p>Still is open source under AGPL-3.0. <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">Product status</a> lists what works today and what is still rough. The current version is <span data-release="version">v0.3.0</span>.</p>
-  <p class="actions"><a class="button" href="https://github.com/Jongtae/Still">View on GitHub</a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">Talk with us in Discussions</a></p>
+  <p class="actions"><a class="button" href="https://github.com/Jongtae/Still/blob/main/.github/CONTRIBUTING.md">Contribution guide</a><a class="text-link" href="https://github.com/Jongtae/Still">GitHub →</a><a class="text-link" href="https://github.com/Jongtae/Still/issues">Report an issue</a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">Discussions</a></p>
   <p class="note">If Still helps you, a star on GitHub helps the next person find it.</p>
-</section>
+</section></div>
 
 </main>
 

@@ -46,67 +46,76 @@ def text_rows(rows, x, y, size=36, color='#171717', leading=52):
     return ''.join(f'<text x="{x}" y="{y + i * leading}" font-size="{size}" fill="{color}">{escape(row)}</text>' for i, row in enumerate(rows))
 
 
+def description(copy, index):
+    return ' '.join([copy['context_labels'][index], copy['contexts'][index],
+                     copy['notes'][index], copy['users'][index], copy['replies'][index],
+                     copy['label'], copy['sources'][index]['date']])
+
+
 def render(lang, copy, index):
-    user = lines(copy['users'][index], lang)
-    reply = lines(copy['replies'][index], lang)
-    y = 265
-    content = ''
-    if user:
-        height = len(user) * 52 + 70
-        content += f'<rect x="90" y="{y}" width="840" height="{height}" rx="28" fill="#e5e7e9"/>'
-        content += text_rows([copy['you']], 120, y + 35, 24)
-        content += text_rows(user, 120, y + 85)
-        y += height + 30
-    height = len(reply) * 52 + 70
-    if y + height > 915:
-        raise ValueError(f'Dialogue overflows {lang} slide {index + 1}: {y + height}')
-    content += f'<rect x="50" y="{y}" width="880" height="{height}" rx="28" fill="#ffffff"/>'
-    content += text_rows([copy['assistant']], 80, y + 35, 24)
-    content += text_rows(reply, 80, y + 85)
-    description = ' '.join([copy['notes'][index], copy['users'][index], copy['replies'][index], copy['label']])
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1040" viewBox="0 0 1000 1040" xml:lang="{lang}">
-<title>{escape(copy['titles'][index])}</title><desc>{escape(description)}</desc>
-<rect width="1000" height="1040" rx="32" fill="#f0f1f3"/>
+    prior = lines(copy['contexts'][index], lang)
+    prior_height = len(prior) * 46 + 85
+    content = f'<rect x="50" y="230" width="900" height="{prior_height}" rx="24" fill="#ffffff" stroke="#d5d5d5"/>'
+    content += text_rows([copy['context_labels'][index]], 80, 270, 24, '#626262')
+    content += text_rows(prior, 80, 320, 32, leading=46)
+    y = 230 + prior_height + 42
+    content += text_rows([copy['later_label']], 80, y, 24, '#626262')
+    y += 24
+    for speaker, message, x, width, background in (
+        (copy['you'], copy['users'][index], 90, 840, '#e5e7e9'),
+        (copy['assistant'], copy['replies'][index], 50, 880, '#ffffff'),
+    ):
+        rows = lines(message, lang)
+        height = len(rows) * 52 + 70
+        content += f'<rect x="{x}" y="{y}" width="{width}" height="{height}" rx="26" fill="{background}"/>'
+        content += text_rows([speaker], x + 30, y + 35, 24, '#626262')
+        content += text_rows(rows, x + 30, y + 85)
+        y += height + 26
+    if y > 1220:
+        raise ValueError(f'Dialogue overflows {lang} slide {index + 1}: {y}')
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1320" viewBox="0 0 1000 1320" xml:lang="{lang}">
+<title>{escape(copy['titles'][index])}</title><desc>{escape(description(copy, index))}</desc>
+<rect width="1000" height="1320" rx="32" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="50" y="65" font-size="28" fill="#626262">Still / {index + 1:02d}</text>
-<text x="50" y="145" font-size="58" font-weight="550" fill="#171717">{escape(copy['titles'][index])}</text>
-<text x="50" y="210" font-size="32" fill="#626262">{escape(copy['notes'][index])}</text>
+<text x="50" y="65" font-size="28" fill="#626262">Still / {index + 1:02d} · {copy['sources'][index]['date']}</text>
+<text x="50" y="145" font-size="54" font-weight="550" fill="#171717">{escape(copy['titles'][index])}</text>
 {content}
-<path d="M50 950H950" stroke="#d5d5d5"/>
-<text x="50" y="990" font-size="27" fill="#626262">{escape(copy['label'])}</text>
+<path d="M50 1250H950" stroke="#d5d5d5"/>
+<text x="50" y="1290" font-size="27" fill="#626262">{escape(copy['label'])}</text>
 </g></svg>
 '''
 
 
 def render_wide(lang, copy, index):
-    """Desktop composition: short editorial heading beside legible dialogue."""
-    y, content = 135, ''
+    """Earlier context is visible beside the later request and observed reply."""
+    prior = lines(copy['contexts'][index], lang, 26)
+    prior_height = len(prior) * 36 + 85
+    content = f'<rect x="70" y="370" width="400" height="{prior_height}" rx="24" fill="#ffffff" stroke="#d5d5d5"/>'
+    content += text_rows([copy['context_labels'][index]], 94, 410, 20, '#626262')
+    content += text_rows(prior, 94, 455, 26, leading=36)
+    y = 150
+    content += text_rows(lines(copy['notes'][index], lang), 520, 76, 24, '#626262', leading=34)
     for speaker, message, x, width, background in (
         (copy['you'], copy['users'][index], 570, 800, '#e5e7e9'),
         (copy['assistant'], copy['replies'][index], 520, 850, '#ffffff'),
     ):
-        if not message:
-            continue
         rows = lines(message, lang)
         height = len(rows) * 46 + 70
         content += f'<rect x="{x}" y="{y}" width="{width}" height="{height}" rx="26" fill="{background}"/>'
         content += text_rows([speaker], x + 30, y + 34, 23, '#626262')
         content += text_rows(rows, x + 30, y + 82, 32, leading=46)
         y += height + 26
-    if y > 825:
-        raise ValueError(f'Wide dialogue overflows {lang} slide {index + 1}: {y}')
+    if y > 825 or 370 + prior_height > 735:
+        raise ValueError(f'Wide dialogue overflows {lang} slide {index + 1}')
     title = lines(copy['titles'][index], lang, 16)
-    notes = lines(copy['notes'][index], lang, 27)
     label = lines(copy['label'], lang, 30)
-    description = ' '.join([copy['notes'][index], copy['users'][index], copy['replies'][index], copy['label']])
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" xml:lang="{lang}">
-<title>{escape(copy['titles'][index])}</title><desc>{escape(description)}</desc>
+<title>{escape(copy['titles'][index])}</title><desc>{escape(description(copy, index))}</desc>
 <rect width="1440" height="900" rx="40" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="70" y="85" font-size="26" fill="#626262">Still / {index + 1:02d}</text>
-{text_rows(title, 70, 300, 50, leading=64)}
-{text_rows(notes, 70, 530, 28, '#626262', leading=42)}
-{text_rows(label, 70, 760, 23, '#626262', leading=34)}
+<text x="70" y="85" font-size="24" fill="#626262">Still / {index + 1:02d} · {copy['sources'][index]['date']}</text>
+{text_rows(title, 70, 200, 48, leading=64)}
+{text_rows(label, 70, 780, 23, '#626262', leading=34)}
 {content}
 </g></svg>
 '''

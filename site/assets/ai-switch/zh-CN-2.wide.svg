@@ -1,10 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" xml:lang="zh-CN">
-<title>对话仍在继续，</title><desc>登录之后  我直接检查了购物车：里面有一罐 CJ Spam Classic 200 g，没有被移除，仍然在购物车中。部分步骤未能核实。 根据真实对话翻译、缩写并重构的图片</desc>
+<title>更换工作的 AI，</title><desc>先前上下文 · 摘要 先前推荐摘要：购物车中有 Jardin，也曾推荐 Momos Coffee Es Chocolat 500 g 来做拿铁。 Codex → Claude Code /ai claude-code 默认 AI 已切换为 Claude Code，从下一个请求开始生效。 根据真实对话翻译、缩写并重构的图片 2026-10-12</desc>
 <rect width="1440" height="900" rx="40" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="70" y="85" font-size="26" fill="#626262">Still / 02</text>
-<text x="70" y="300" font-size="50" fill="#171717">对话仍在继续，</text>
-<text x="70" y="530" font-size="28" fill="#626262">登录之后</text>
-<text x="70" y="760" font-size="23" fill="#626262">根据真实对话翻译、缩写并重构的</text><text x="70" y="794" font-size="23" fill="#626262">图片</text>
-<rect x="520" y="135" width="850" height="208" rx="26" fill="#ffffff"/><text x="550" y="169" font-size="23" fill="#626262">Still</text><text x="550" y="217" font-size="32" fill="#171717">我直接检查了购物车：里面有一罐 CJ Spam </text><text x="550" y="263" font-size="32" fill="#171717">Classic 200 g，没有被移除，仍然在购物车中</text><text x="550" y="309" font-size="32" fill="#171717">。部分步骤未能核实。</text>
+<text x="70" y="85" font-size="24" fill="#626262">Still / 02 · 2026-10-12</text>
+<text x="70" y="200" font-size="48" fill="#171717">更换工作的 AI，</text>
+<text x="70" y="780" font-size="23" fill="#626262">根据真实对话翻译、缩写并重构的</text><text x="70" y="814" font-size="23" fill="#626262">图片</text>
+<rect x="70" y="370" width="400" height="229" rx="24" fill="#ffffff" stroke="#d5d5d5"/><text x="94" y="410" font-size="20" fill="#626262">先前上下文 · 摘要</text><text x="94" y="455" font-size="26" fill="#171717">先前推荐摘要：购物车中有 </text><text x="94" y="491" font-size="26" fill="#171717">Jardin，也曾推荐 Momos </text><text x="94" y="527" font-size="26" fill="#171717">Coffee Es Chocolat 500 g </text><text x="94" y="563" font-size="26" fill="#171717">来做拿铁。</text><text x="520" y="76" font-size="24" fill="#626262">Codex → Claude Code</text><rect x="570" y="150" width="800" height="116" rx="26" fill="#e5e7e9"/><text x="600" y="184" font-size="23" fill="#626262">你</text><text x="600" y="232" font-size="32" fill="#171717">/ai claude-code</text><rect x="520" y="292" width="850" height="162" rx="26" fill="#ffffff"/><text x="550" y="326" font-size="23" fill="#626262">Still · 回复节选</text><text x="550" y="374" font-size="32" fill="#171717">默认 AI 已切换为 Claude Code，从下一个请求</text><text x="550" y="420" font-size="32" fill="#171717">开始生效。</text>
 </g></svg>

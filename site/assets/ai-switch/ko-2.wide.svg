@@ -1,10 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" xml:lang="ko">
-<title>대화는 이어지고,</title><desc>로그인한 뒤  장바구니를 직접 확인했는데, CJ 스팸 클래식 200g 한 개가 들어 있어요. 빼지 않으셨고 그대로 담긴 상태예요. 일부 단계는 확인하지 못했어요. 실제 대화를 번역·축약해 재구성한 이미지</desc>
+<title>일하는 AI를 바꿔도,</title><desc>앞선 맥락 · 요약 라떼용 원두를 고르는 대화입니다. 장바구니에는 쟈뎅이 있고, 모모스커피 에스쇼콜라 500g도 라떼용으로 추천받았습니다. Codex → Claude Code /ai claude-code 기본 AI를 Claude Code로 바꿨어요. 다음 요청부터 적용됩니다. 실제 대화를 번역·축약해 재구성한 이미지 2026-10-12</desc>
 <rect width="1440" height="900" rx="40" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="70" y="85" font-size="26" fill="#626262">Still / 02</text>
-<text x="70" y="300" font-size="50" fill="#171717">대화는 이어지고,</text>
-<text x="70" y="530" font-size="28" fill="#626262">로그인한 뒤</text>
-<text x="70" y="760" font-size="23" fill="#626262">실제 대화를 번역·축약해</text><text x="70" y="794" font-size="23" fill="#626262">재구성한 이미지</text>
-<rect x="520" y="135" width="850" height="254" rx="26" fill="#ffffff"/><text x="550" y="169" font-size="23" fill="#626262">Still</text><text x="550" y="217" font-size="32" fill="#171717">장바구니를 직접 확인했는데, CJ 스팸 클래식</text><text x="550" y="263" font-size="32" fill="#171717">200g 한 개가 들어 있어요. 빼지 않으셨고</text><text x="550" y="309" font-size="32" fill="#171717">그대로 담긴 상태예요. 일부 단계는 확인하지</text><text x="550" y="355" font-size="32" fill="#171717">못했어요.</text>
+<text x="70" y="85" font-size="24" fill="#626262">Still / 02 · 2026-10-12</text>
+<text x="70" y="200" font-size="48" fill="#171717">일하는 AI를</text><text x="70" y="264" font-size="48" fill="#171717">바꿔도,</text>
+<text x="70" y="780" font-size="23" fill="#626262">실제 대화를 번역·축약해</text><text x="70" y="814" font-size="23" fill="#626262">재구성한 이미지</text>
+<rect x="70" y="370" width="400" height="265" rx="24" fill="#ffffff" stroke="#d5d5d5"/><text x="94" y="410" font-size="20" fill="#626262">앞선 맥락 · 요약</text><text x="94" y="455" font-size="26" fill="#171717">라떼용 원두를 고르는</text><text x="94" y="491" font-size="26" fill="#171717">대화입니다. 장바구니에는</text><text x="94" y="527" font-size="26" fill="#171717">쟈뎅이 있고, 모모스커피</text><text x="94" y="563" font-size="26" fill="#171717">에스쇼콜라 500g도</text><text x="94" y="599" font-size="26" fill="#171717">라떼용으로 추천받았습니다.</text><text x="520" y="76" font-size="24" fill="#626262">Codex → Claude Code</text><rect x="570" y="150" width="800" height="116" rx="26" fill="#e5e7e9"/><text x="600" y="184" font-size="23" fill="#626262">나</text><text x="600" y="232" font-size="32" fill="#171717">/ai claude-code</text><rect x="520" y="292" width="850" height="162" rx="26" fill="#ffffff"/><text x="550" y="326" font-size="23" fill="#626262">Still · 응답 발췌</text><text x="550" y="374" font-size="32" fill="#171717">기본 AI를 Claude Code로 바꿨어요. 다음</text><text x="550" y="420" font-size="32" fill="#171717">요청부터 적용됩니다.</text>
 </g></svg>

@@ -26,9 +26,9 @@
   <nav aria-label="사이트">
     <a href="#remembers">하는 일</a>
     <a href="read/ko/">개념 가이드</a>
-    <a href="#install">설치</a>
-    <a href="engineering/ko.html">Engineering</a>
-    <a href="https://github.com/Jongtae/Still">GitHub</a>
+    <a class="nav-start" href="#install">설치</a>
+    <a class="nav-engineering" href="engineering/ko.html">Engineering</a>
+    <a href="#contribute">GitHub · 개발 참여</a>
     <span class="langs"><a href="./" hreflang="en" lang="en">English</a><a href="ko.html" hreflang="ko" lang="ko" aria-current="page">한국어</a><a href="ja.html" hreflang="ja" lang="ja">日本語</a><a href="zh-CN.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></span>
   </nav>
 </header>
@@ -81,28 +81,34 @@ fill="currentColor" stroke="none">
   </div>
 </section>
 
+<nav class="entry-points" aria-label="시작할 곳">
+  <a href="#install"><strong>설치하고 써보기 <span aria-hidden="true">↓</span></strong><span>명령 한 줄로 시작하고, 쓰던 AI를 연결하세요.</span></a>
+  <a href="engineering/ko.html"><strong>Engineering <span aria-hidden="true">→</span></strong><span>기억·판단·권한의 설계와 검증 근거를 읽어보세요.</span></a>
+  <a href="#contribute"><strong>개발에 참여하기 <span aria-hidden="true">↓</span></strong><span>코드를 읽고, 아이디어를 제안하고, 함께 만드세요.</span></a>
+</nav>
+
 <section class="demo-section" id="concept" aria-labelledby="concept-title">
   <div class="copy">
-    <h2 id="concept-title">AI는 바꿔도, 비서는 그대로.</h2>
-    <p>ChatGPT 구독으로 쓰는 Codex나 Claude 구독으로 쓰는 Claude Code가 일을 합니다. 대화 도중 명령 하나로 바꿔도 Still은 하던 대로 이어 갑니다.</p>
+    <h2 id="concept-title">같은 맥락, 다른 AI.</h2>
+    <p>함께 원두를 고르던 중 Codex에서 Claude Code로 바꿨습니다. 다음 요청에서 이전 추천을 다시 설명하지 않고 대화를 이어갑니다.</p>
   </div>
   <figure class="switch-carousel">
-    <div class="switch-slides" tabindex="0" role="region" aria-label="대화 장면">
+    <div class="switch-slides" tabindex="0" role="region" aria-label="AI를 바꿔도 이어지는 하나의 대화">
       <figure class="switch-slide" id="switch-slide-1" tabindex="-1" aria-labelledby="switch-title-1">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ko-1.wide.svg" width="1440" height="900"><img src="assets/ai-switch/ko-1.svg" width="1000" height="1040" loading="lazy" alt="Claude Code로 바꾼 뒤 어제 스팸을 최종 넣었나? 뺐나? 대화 기록상으로는 마지막으로 스팸 클래식 200g 한 개를 장바구니에 다시 넣었다고 안내했어요. 다만 그게 어제였는지는 이 맥락만으로 확정할 수 없어요. 로그인하시면 현재 장바구니를 확인할게요. 실제 대화를 번역·축약해 재구성한 이미지"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="이전 이미지">←</a><span id="switch-title-1">1 / 3 · AI를 바꿔도,</span><a href="#switch-slide-2" aria-label="다음 이미지">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ko-1.wide.svg" width="1440" height="900"><img src="assets/ai-switch/ko-1.svg" width="1000" height="1320" loading="lazy" alt="앞선 맥락 · 요약 라떼용 원두를 고르는 대화입니다. 장바구니에는 쟈뎅이 있고, 모모스커피 에스쇼콜라 500g도 라떼용으로 추천받았습니다. 전환 직전 · Codex /ai 지금 일하는 AI는 Codex입니다. 실제 대화를 번역·축약해 재구성한 이미지"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="이전 이미지">←</a><span id="switch-title-1">1 / 3 · 이어갈 대화가 있고,</span><a href="#switch-slide-2" aria-label="다음 이미지">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-2" tabindex="-1" aria-labelledby="switch-title-2">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ko-2.wide.svg" width="1440" height="900"><img src="assets/ai-switch/ko-2.svg" width="1000" height="1040" loading="lazy" alt="로그인한 뒤 장바구니를 직접 확인했는데, CJ 스팸 클래식 200g 한 개가 들어 있어요. 빼지 않으셨고 그대로 담긴 상태예요. 일부 단계는 확인하지 못했어요. 실제 대화를 번역·축약해 재구성한 이미지"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="이전 이미지">←</a><span id="switch-title-2">2 / 3 · 대화는 이어지고,</span><a href="#switch-slide-3" aria-label="다음 이미지">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ko-2.wide.svg" width="1440" height="900"><img src="assets/ai-switch/ko-2.svg" width="1000" height="1320" loading="lazy" alt="앞선 맥락 · 요약 라떼용 원두를 고르는 대화입니다. 장바구니에는 쟈뎅이 있고, 모모스커피 에스쇼콜라 500g도 라떼용으로 추천받았습니다. Codex → Claude Code /ai claude-code 기본 AI를 Claude Code로 바꿨어요. 다음 요청부터 적용됩니다. 실제 대화를 번역·축약해 재구성한 이미지"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="이전 이미지">←</a><span id="switch-title-2">2 / 3 · 일하는 AI를 바꿔도,</span><a href="#switch-slide-3" aria-label="다음 이미지">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-3" tabindex="-1" aria-labelledby="switch-title-3">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ko-3.wide.svg" width="1440" height="900"><img src="assets/ai-switch/ko-3.svg" width="1000" height="1040" loading="lazy" alt="Codex로 바꾼 뒤 스팸 빼줘 스팸 클래식 200g 한 개를 장바구니에서 뺐어요. 다시 확인했고, 나머지 22개 상품은 그대로 있어요. 지금은 판단 AI를 사용할 수 없어 기본 AI가 요청을 바로 처리합니다. 실제 대화를 번역·축약해 재구성한 이미지"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="이전 이미지">←</a><span id="switch-title-3">3 / 3 · 다른 AI로 계속합니다.</span><a href="#switch-slide-1" aria-label="다음 이미지">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ko-3.wide.svg" width="1440" height="900"><img src="assets/ai-switch/ko-3.svg" width="1000" height="1320" loading="lazy" alt="앞선 맥락 · 요약 라떼용 원두를 고르는 대화입니다. 장바구니에는 쟈뎅이 있고, 모모스커피 에스쇼콜라 500g도 라떼용으로 추천받았습니다. 전환 후 · Claude Code 쟈뎅 말고 오랜만에 비싼 걸로 해볼까 해. 라떼용으로 제일 괜찮다고 말씀드렸던 모모스커피 에스쇼콜라 500g이 있어요. 실제 대화를 번역·축약해 재구성한 이미지"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="이전 이미지">←</a><span id="switch-title-3">3 / 3 · 다시 설명하지 않습니다.</span><a href="#switch-slide-1" aria-label="다음 이미지">→</a></figcaption>
       </figure>
     </div>
-    <nav class="slide-index" aria-label="대화 장면"><a href="#switch-slide-1" aria-label="1 / 3 · AI를 바꿔도,">1</a><a href="#switch-slide-2" aria-label="2 / 3 · 대화는 이어지고,">2</a><a href="#switch-slide-3" aria-label="3 / 3 · 다른 AI로 계속합니다.">3</a></nav>
-    <figcaption>2026년 10월 8일 사용자가 제공한 실제 Telegram 화면을 각 언어로 번역·축약해 재구성했습니다. 비서가 보고한 내용이며 장바구니 변경의 독립 검증이나 배포본 전체 검증은 아닙니다. <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">원본 화면과 출처</a> · <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/ai-switch-conversation.png">Telegram · 2026-10-08</a></figcaption>
+    <nav class="slide-index" aria-label="AI를 바꿔도 이어지는 하나의 대화"><a href="#switch-slide-1" aria-label="1 / 3 · 이어갈 대화가 있고,">1</a><a href="#switch-slide-2" aria-label="2 / 3 · 일하는 AI를 바꿔도,">2</a><a href="#switch-slide-3" aria-label="3 / 3 · 다시 설명하지 않습니다.">3</a></nav>
+    <figcaption>2026년 10월 12일 하나의 실제 세션을 번역·축약했습니다. 앞선 추천은 이후 응답을 근거로 요약했습니다. AI 교체 뒤 맥락을 떠올리는 장면이며, 장바구니 교체 완료나 배포본 전체 검증을 뜻하지 않습니다. <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">녹화 출처와 한계</a></figcaption>
   </figure>
   <div class="swap">
     <div>
@@ -114,6 +120,44 @@ fill="currentColor" stroke="none">
       <ul class="pills solid"><li>나에 대해 알게 된 것</li><li>하던 일</li><li>내가 맡긴 권한</li><li>실제로 실행된 기록</li></ul>
     </div>
   </div>
+</section>
+
+<section class="install" id="install" aria-labelledby="install-title">
+  <div class="copy">
+    <h2 id="install-title">지금 Still을 시작하세요</h2>
+    <p>Mac, Linux, Windows(WSL2) 컴퓨터와 이미 쓰고 있는 ChatGPT나 Claude 구독이면 충분합니다.</p>
+  </div>
+  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
+  <p class="note">설치 스크립트는 주소에 특정 버전으로 고정되어 있습니다. 실행하기 전에 <a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">스크립트 내용을 확인</a>하세요. Apple Silicon Mac에서 Homebrew를 쓴다면 <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>, <code>brew install jongtae/still/agentos</code>로 설치한 뒤 <code>agentos start</code>로 시작합니다. Windows에서는 PowerShell에서 <code>wsl --install</code>을 실행하고 다시 시작한 뒤, Ubuntu를 열고 위 명령을 붙여 넣으세요.</p>
+  <ol class="steps">
+    <li>
+      <h3>AI 고르기</h3>
+      <p>설정은 터미널에서 진행됩니다. Codex, Claude Code, API 키 중에서 고르세요. 이미 로그인한 것이 미리 선택되어 있고, Still은 그 로그인 정보를 보지 않습니다.</p>
+    </li>
+    <li>
+      <h3>인사하기</h3>
+      <p>그 터미널에서 바로 Still과 대화하거나, <code>127.0.0.1:8787</code>의 Still 화면에서 대화하세요.</p>
+    </li>
+    <li>
+      <h3>휴대폰으로 데려가기</h3>
+      <p>“Telegram 연결해 줘”라고 말하고, @BotFather가 준 토큰을 붙여 넣은 뒤 페어링 링크에서 시작을 누르세요.</p>
+      <p class="note">원하면 대화방도 Still 분위기로 꾸며 보세요. 배경화면(<a href="assets/still-wallpaper-presence.jpg" download>Still 모습</a> 또는 <a href="assets/still-wallpaper-plain.jpg" download>단색</a>)을 내려받은 뒤, Telegram 대화방 메뉴 → <b>배경화면 변경</b>에서 사진으로 고르면 됩니다.</p>
+    </li>
+  </ol>
+  <figure class="setup-preview" aria-labelledby="setup-preview-title">
+  <h3 id="setup-preview-title">처음 설정할 때 만나는 화면</h3>
+  <div class="terminal-frame"><div class="terminal-bar"><span aria-hidden="true">● ● ●</span><span>Terminal · agentos start</span></div><pre>Still 첫 설정을 이 터미널에서 진행합니다. Enter를 누르면 기본값으로 넘어갑니다.
+
+AI 연결
+이미 쓰는 구독이나 API 키 중 하나를 연결합니다.
+
+1) ChatGPT 구독 (Codex)
+2) Claude 구독 (Claude Code)
+3) API 키 (OpenAI, Anthropic, 호환 서버, Ollama)
+4) 나중에 브라우저에서 연결</pre></div>
+  <figcaption>현재 프로그램의 초기 설정 문구를 발췌해 배치한 미리보기입니다. 새로운 실제 설치를 녹화한 화면은 아닙니다. <a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/first_run.py">원문 코드</a></figcaption>
+</figure>
+  <p class="note">나머지는 <a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">빠른 시작 안내</a>에 있습니다.</p>
 </section>
 
 <section class="section-intro" aria-labelledby="experience-title"><h2 id="experience-title">다시 설명할 일은 줄이고.</h2><p>나에 대한 기억과 대화, 내가 연결한 도구를 함께 이어갑니다.</p></section>
@@ -184,43 +228,21 @@ fill="currentColor" stroke="none">
   </ul>
 </section>
 
-<section class="install" id="install" aria-labelledby="install-title">
-  <div class="copy">
-    <h2 id="install-title">오늘 밤, Still을 들여 보세요</h2>
-    <p>Mac, Linux, Windows(WSL2) 컴퓨터와 이미 쓰고 있는 ChatGPT나 Claude 구독이면 충분합니다.</p>
-  </div>
-  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
-  <p class="note">설치 스크립트는 주소에 특정 버전으로 고정되어 있습니다. 실행하기 전에 <a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">스크립트 내용을 확인</a>하세요. Apple Silicon Mac에서 Homebrew를 쓴다면 <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>, <code>brew install jongtae/still/agentos</code>로 설치한 뒤 <code>agentos start</code>로 시작합니다. Windows에서는 PowerShell에서 <code>wsl --install</code>을 실행하고 다시 시작한 뒤, Ubuntu를 열고 위 명령을 붙여 넣으세요.</p>
-  <ol class="steps">
-    <li>
-      <h3>AI 고르기</h3>
-      <p>설정은 터미널에서 진행됩니다. Codex, Claude Code, API 키 중에서 고르세요. 이미 로그인한 것이 미리 선택되어 있고, Still은 그 로그인 정보를 보지 않습니다.</p>
-    </li>
-    <li>
-      <h3>인사하기</h3>
-      <p>그 터미널에서 바로 Still과 대화하거나, <code>127.0.0.1:8787</code>의 Still 화면에서 대화하세요.</p>
-    </li>
-    <li>
-      <h3>휴대폰으로 데려가기</h3>
-      <p>“Telegram 연결해 줘”라고 말하고, @BotFather가 준 토큰을 붙여 넣은 뒤 페어링 링크에서 시작을 누르세요.</p>
-      <p class="note">원하면 대화방도 Still 분위기로 꾸며 보세요. 배경화면(<a href="assets/still-wallpaper-presence.jpg" download>Still 모습</a> 또는 <a href="assets/still-wallpaper-plain.jpg" download>단색</a>)을 내려받은 뒤, Telegram 대화방 메뉴 → <b>배경화면 변경</b>에서 사진으로 고르면 됩니다.</p>
-    </li>
-  </ol>
-  <p class="note">나머지는 <a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">빠른 시작 안내</a>에 있습니다.</p>
-</section>
 
-<section class="engineering-entry" aria-labelledby="engineering-title">
+
+<div class="build-grid"><section class="engineering-entry" aria-labelledby="engineering-title">
   <h2 id="engineering-title">Engineering — 왜 이렇게 설계했을까요?</h2>
   <p>기술 철학, Ontology & Context, Decision Model, Presence, 모델 독립성, Owner Authority, Research & Evidence를 읽어보세요. 각 주제에서 구현·증거·남은 설계 과제를 원문으로 연결합니다.</p>
-  <p><a href="engineering/ko.html">Still은 어떻게 이어지는가 →</a> · <a href="engineering/ko.html#research">Research &amp; Evidence</a></p>
+  <p class="actions"><a class="button" href="engineering/ko.html">Still은 어떻게 이어지는가 →</a> · <a href="engineering/ko.html#research">Research &amp; Evidence</a></p>
 </section>
 
-<section class="github" aria-labelledby="github-title">
-  <h2 id="github-title">코드도, 만드는 과정도 열려 있습니다.</h2>
+<section class="github" id="contribute" aria-labelledby="github-title">
+  <h2 id="github-title">함께 Still을 만들어 가요.</h2>
+  <p>안 된 점을 알려 주거나, 아이디어를 논의하거나, 문서와 코드를 고쳐 주세요. 기여 안내에서 시작할 수 있습니다.</p>
   <p>Still은 AGPL-3.0 오픈소스입니다. 지금 되는 것과 아직 다듬는 중인 것은 <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">제품 현황</a>에 정리해 두었습니다. 현재 버전은 <span data-release="version">v0.3.0</span>입니다.</p>
-  <p class="actions"><a class="button" href="https://github.com/Jongtae/Still">GitHub에서 보기</a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">Discussions에서 이야기 나누기</a></p>
+  <p class="actions"><a class="button" href="https://github.com/Jongtae/Still/blob/main/.github/CONTRIBUTING.md">기여 안내</a><a class="text-link" href="https://github.com/Jongtae/Still">GitHub →</a><a class="text-link" href="https://github.com/Jongtae/Still/issues">이슈 제안</a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">Discussions</a></p>
   <p class="note">Still이 도움이 됐다면 GitHub에서 Star를 눌러 주세요. 다음 사람이 Still을 찾는 데 도움이 됩니다.</p>
-</section>
+</section></div>
 
 </main>
 

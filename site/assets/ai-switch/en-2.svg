@@ -1,11 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1040" viewBox="0 0 1000 1040" xml:lang="en">
-<title>Keep the conversation.</title><desc>After signing in  I checked the cart directly: one CJ Spam Classic 200 g is there. It has not been removed. Some steps could not be checked. Translated &amp; condensed from a real conversation</desc>
-<rect width="1000" height="1040" rx="32" fill="#f0f1f3"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1320" viewBox="0 0 1000 1320" xml:lang="en">
+<title>Change the AI.</title><desc>Earlier context · summary Earlier recommendation summary: Jardin was in the cart; Momos Coffee Es Chocolat 500 g had also been suggested for lattes. Codex → Claude Code /ai claude-code The default AI is now Claude Code. It applies from the next request. Translated &amp; condensed from a real conversation 2026-10-12</desc>
+<rect width="1000" height="1320" rx="32" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="50" y="65" font-size="28" fill="#626262">Still / 02</text>
-<text x="50" y="145" font-size="58" font-weight="550" fill="#171717">Keep the conversation.</text>
-<text x="50" y="210" font-size="32" fill="#626262">After signing in</text>
-<rect x="50" y="265" width="880" height="226" rx="28" fill="#ffffff"/><text x="80" y="300" font-size="24" fill="#171717">Still</text><text x="80" y="350" font-size="36" fill="#171717">I checked the cart directly: one CJ Spam</text><text x="80" y="402" font-size="36" fill="#171717">Classic 200 g is there. It has not been</text><text x="80" y="454" font-size="36" fill="#171717">removed. Some steps could not be checked.</text>
-<path d="M50 950H950" stroke="#d5d5d5"/>
-<text x="50" y="990" font-size="27" fill="#626262">Translated &amp; condensed from a real conversation</text>
+<text x="50" y="65" font-size="28" fill="#626262">Still / 02 · 2026-10-12</text>
+<text x="50" y="145" font-size="54" font-weight="550" fill="#171717">Change the AI.</text>
+<rect x="50" y="230" width="900" height="223" rx="24" fill="#ffffff" stroke="#d5d5d5"/><text x="80" y="270" font-size="24" fill="#626262">Earlier context · summary</text><text x="80" y="320" font-size="32" fill="#171717">Earlier recommendation summary: Jardin was</text><text x="80" y="366" font-size="32" fill="#171717">in the cart; Momos Coffee Es Chocolat 500</text><text x="80" y="412" font-size="32" fill="#171717">g had also been suggested for lattes.</text><text x="80" y="495" font-size="24" fill="#626262">This turn</text><rect x="90" y="519" width="840" height="122" rx="26" fill="#e5e7e9"/><text x="120" y="554" font-size="24" fill="#626262">You</text><text x="120" y="604" font-size="36" fill="#171717">/ai claude-code</text><rect x="50" y="667" width="880" height="174" rx="26" fill="#ffffff"/><text x="80" y="702" font-size="24" fill="#626262">Still · response excerpt</text><text x="80" y="752" font-size="36" fill="#171717">The default AI is now Claude Code. It</text><text x="80" y="804" font-size="36" fill="#171717">applies from the next request.</text>
+<path d="M50 1250H950" stroke="#d5d5d5"/>
+<text x="50" y="1290" font-size="27" fill="#626262">Translated &amp; condensed from a real conversation</text>
 </g></svg>

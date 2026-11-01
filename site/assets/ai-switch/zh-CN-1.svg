@@ -1,11 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1040" viewBox="0 0 1000 1040" xml:lang="zh-CN">
-<title>更换 AI，</title><desc>切换到 Claude Code 之后 昨天最后是把 Spam 加进去了，还是拿出来了？ 从对话记录看，我最后说已把一罐 Spam Classic 200 g 放回购物车。但仅凭这段上下文，无法确定是不是昨天。登录后我会检查当前购物车。 根据真实对话翻译、缩写并重构的图片</desc>
-<rect width="1000" height="1040" rx="32" fill="#f0f1f3"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1320" viewBox="0 0 1000 1320" xml:lang="zh-CN">
+<title>已经聊过的事情，</title><desc>先前上下文 · 摘要 先前推荐摘要：购物车中有 Jardin，也曾推荐 Momos Coffee Es Chocolat 500 g 来做拿铁。 切换前 · Codex /ai 当前工作的 AI 是 Codex。 根据真实对话翻译、缩写并重构的图片 2026-10-12</desc>
+<rect width="1000" height="1320" rx="32" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="50" y="65" font-size="28" fill="#626262">Still / 01</text>
-<text x="50" y="145" font-size="58" font-weight="550" fill="#171717">更换 AI，</text>
-<text x="50" y="210" font-size="32" fill="#626262">切换到 Claude Code 之后</text>
-<rect x="90" y="265" width="840" height="122" rx="28" fill="#e5e7e9"/><text x="120" y="300" font-size="24" fill="#171717">你</text><text x="120" y="350" font-size="36" fill="#171717">昨天最后是把 Spam 加进去了，还是拿出来了？</text><rect x="50" y="417" width="880" height="278" rx="28" fill="#ffffff"/><text x="80" y="452" font-size="24" fill="#171717">Still</text><text x="80" y="502" font-size="36" fill="#171717">从对话记录看，我最后说已把一罐 Spam </text><text x="80" y="554" font-size="36" fill="#171717">Classic 200 g 放回购物车。但仅凭这段上下文</text><text x="80" y="606" font-size="36" fill="#171717">，无法确定是不是昨天。登录后我会检查当前购</text><text x="80" y="658" font-size="36" fill="#171717">物车。</text>
-<path d="M50 950H950" stroke="#d5d5d5"/>
-<text x="50" y="990" font-size="27" fill="#626262">根据真实对话翻译、缩写并重构的图片</text>
+<text x="50" y="65" font-size="28" fill="#626262">Still / 01 · 2026-10-12</text>
+<text x="50" y="145" font-size="54" font-weight="550" fill="#171717">已经聊过的事情，</text>
+<rect x="50" y="230" width="900" height="177" rx="24" fill="#ffffff" stroke="#d5d5d5"/><text x="80" y="270" font-size="24" fill="#626262">先前上下文 · 摘要</text><text x="80" y="320" font-size="32" fill="#171717">先前推荐摘要：购物车中有 Jardin，也曾推荐 </text><text x="80" y="366" font-size="32" fill="#171717">Momos Coffee Es Chocolat 500 g 来做拿铁。</text><text x="80" y="449" font-size="24" fill="#626262">接着</text><rect x="90" y="473" width="840" height="122" rx="26" fill="#e5e7e9"/><text x="120" y="508" font-size="24" fill="#626262">你</text><text x="120" y="558" font-size="36" fill="#171717">/ai</text><rect x="50" y="621" width="880" height="122" rx="26" fill="#ffffff"/><text x="80" y="656" font-size="24" fill="#626262">Still · 回复节选</text><text x="80" y="706" font-size="36" fill="#171717">当前工作的 AI 是 Codex。</text>
+<path d="M50 1250H950" stroke="#d5d5d5"/>
+<text x="50" y="1290" font-size="27" fill="#626262">根据真实对话翻译、缩写并重构的图片</text>
 </g></svg>

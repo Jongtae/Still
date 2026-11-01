@@ -1,11 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1040" viewBox="0 0 1000 1040" xml:lang="en">
-<title>Continue with another AI.</title><desc>After switching to Codex Take the Spam out. I removed one Spam Classic 200 g from the cart and checked again. The other 22 products remain. The decision AI is unavailable, so the default AI handles requests directly for now. Translated &amp; condensed from a real conversation</desc>
-<rect width="1000" height="1040" rx="32" fill="#f0f1f3"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1320" viewBox="0 0 1000 1320" xml:lang="en">
+<title>Continue without starting over.</title><desc>Earlier context · summary Earlier recommendation summary: Jardin was in the cart; Momos Coffee Es Chocolat 500 g had also been suggested for lattes. After the switch · Claude Code Not the Jardin—something pricier this time. There’s the Momos Coffee Es Chocolat 500 g I recommended earlier as best for lattes. Translated &amp; condensed from a real conversation 2026-10-12</desc>
+<rect width="1000" height="1320" rx="32" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="50" y="65" font-size="28" fill="#626262">Still / 03</text>
-<text x="50" y="145" font-size="58" font-weight="550" fill="#171717">Continue with another AI.</text>
-<text x="50" y="210" font-size="32" fill="#626262">After switching to Codex</text>
-<rect x="90" y="265" width="840" height="122" rx="28" fill="#e5e7e9"/><text x="120" y="300" font-size="24" fill="#171717">You</text><text x="120" y="350" font-size="36" fill="#171717">Take the Spam out.</text><rect x="50" y="417" width="880" height="330" rx="28" fill="#ffffff"/><text x="80" y="452" font-size="24" fill="#171717">Still</text><text x="80" y="502" font-size="36" fill="#171717">I removed one Spam Classic 200 g from the</text><text x="80" y="554" font-size="36" fill="#171717">cart and checked again. The other 22</text><text x="80" y="606" font-size="36" fill="#171717">products remain. The decision AI is</text><text x="80" y="658" font-size="36" fill="#171717">unavailable, so the default AI handles</text><text x="80" y="710" font-size="36" fill="#171717">requests directly for now.</text>
-<path d="M50 950H950" stroke="#d5d5d5"/>
-<text x="50" y="990" font-size="27" fill="#626262">Translated &amp; condensed from a real conversation</text>
+<text x="50" y="65" font-size="28" fill="#626262">Still / 03 · 2026-10-12</text>
+<text x="50" y="145" font-size="54" font-weight="550" fill="#171717">Continue without starting over.</text>
+<rect x="50" y="230" width="900" height="223" rx="24" fill="#ffffff" stroke="#d5d5d5"/><text x="80" y="270" font-size="24" fill="#626262">Earlier context · summary</text><text x="80" y="320" font-size="32" fill="#171717">Earlier recommendation summary: Jardin was</text><text x="80" y="366" font-size="32" fill="#171717">in the cart; Momos Coffee Es Chocolat 500</text><text x="80" y="412" font-size="32" fill="#171717">g had also been suggested for lattes.</text><text x="80" y="495" font-size="24" fill="#626262">This turn</text><rect x="90" y="519" width="840" height="174" rx="26" fill="#e5e7e9"/><text x="120" y="554" font-size="24" fill="#626262">You</text><text x="120" y="604" font-size="36" fill="#171717">Not the Jardin—something pricier this</text><text x="120" y="656" font-size="36" fill="#171717">time.</text><rect x="50" y="719" width="880" height="174" rx="26" fill="#ffffff"/><text x="80" y="754" font-size="24" fill="#626262">Still · response excerpt</text><text x="80" y="804" font-size="36" fill="#171717">There’s the Momos Coffee Es Chocolat 500 g</text><text x="80" y="856" font-size="36" fill="#171717">I recommended earlier as best for lattes.</text>
+<path d="M50 1250H950" stroke="#d5d5d5"/>
+<text x="50" y="1290" font-size="27" fill="#626262">Translated &amp; condensed from a real conversation</text>
 </g></svg>

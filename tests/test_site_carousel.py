@@ -2,6 +2,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import re
 from xml.etree import ElementTree as ET
 
 from lxml import html
@@ -24,11 +25,15 @@ def test_localized_images_match_copy_and_keep_uncertainty():
             wide = (builder.OUT / f'{lang}-{index + 1}.wide.svg').read_text()
             assert wide == builder.render_wide(lang, copy, index)
             ET.fromstring(wide)
+            # Context must be visibly rendered, not merely hidden in alt/description metadata.
+            visible = ''.join(node.text or '' for node in svg.findall('.//{http://www.w3.org/2000/svg}text'))
+            normalize = lambda value: re.sub(r'\s+', '', value)
+            assert normalize(copy['contexts'][index]) in normalize(visible)
+            for key in ('manifest', 'record'):
+                assert (ROOT / copy['sources'][index][key]).is_file()
         assert all(copy['replies'])
-    # The redrawn excerpts retain both the source's unknown date and partial verification.
-    assert 'cannot establish whether that was yesterday' in copies['en']['replies'][0]
-    assert 'Some steps could not be checked' in copies['en']['replies'][1]
-    assert 'decision AI is unavailable' in copies['en']['replies'][2]
+        assert len(set(copy['contexts'])) == 1, 'the same context must persist across the AI switch'
+        assert {row['date'] for row in copy['sources']} == {'2026-10-12'}
 
 
 def test_each_homepage_links_its_own_translated_images_and_all_controls_resolve():
@@ -54,3 +59,15 @@ def test_each_homepage_links_its_own_translated_images_and_all_controls_resolve(
                 assert control.get('aria-label')
         assert len(carousel.xpath('.//nav/a')) == 3
         assert 'carousel.md' in html.tostring(carousel).decode()
+
+
+def test_start_engineering_and_contribution_paths_and_truthful_setup_preview():
+    catalog = json.loads((ROOT / 'src/personal_agent/messages.json').read_text())
+    for lang, name in {'en':'index.html', 'ko':'ko.html', 'ja':'ja.html', 'zh':'zh-CN.html'}.items():
+        doc = html.fromstring((ROOT / 'site' / name).read_text())
+        links = doc.xpath('//nav[@class="entry-points"]/a/@href')
+        assert links == ['#install', f'engineering/{name}', '#contribute']
+        assert doc.xpath('//*[@id="contribute"]//a[contains(@href,"CONTRIBUTING.md")]')
+        preview = doc.xpath('//figure[@class="setup-preview"]//pre')[0].text_content()
+        for key in ('intro', 'ai_codex', 'ai_claude', 'ai_api', 'ai_later'):
+            assert catalog[f'first_run.{key}'][lang] in preview

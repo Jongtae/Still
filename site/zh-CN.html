@@ -25,9 +25,9 @@
   <a class="crumb" href="./">Still</a>
   <nav aria-label="网站">
     <a href="#remembers">它能做什么</a>
-    <a href="#install">安装</a>
-    <a href="engineering/zh-CN.html">Engineering</a>
-    <a href="https://github.com/Jongtae/Still">GitHub</a>
+    <a class="nav-start" href="#install">安装</a>
+    <a class="nav-engineering" href="engineering/zh-CN.html">Engineering</a>
+    <a href="#contribute">GitHub · 参与开发</a>
     <span class="langs"><a href="./" hreflang="en" lang="en">English</a><a href="ko.html" hreflang="ko" lang="ko">한국어</a><a href="ja.html" hreflang="ja" lang="ja">日本語</a><a href="zh-CN.html" hreflang="zh-CN" lang="zh-CN" aria-current="page">简体中文</a></span>
   </nav>
 </header>
@@ -80,28 +80,34 @@ fill="currentColor" stroke="none">
   </div>
 </section>
 
+<nav class="entry-points" aria-label="从这里开始">
+  <a href="#install"><strong>安装并试用 <span aria-hidden="true">↓</span></strong><span>一条命令开始，连接你正在使用的 AI。</span></a>
+  <a href="engineering/zh-CN.html"><strong>Engineering <span aria-hidden="true">→</span></strong><span>阅读记忆、判断、权限的设计与验证依据。</span></a>
+  <a href="#contribute"><strong>参与开发 <span aria-hidden="true">↓</span></strong><span>阅读代码、提出想法，一起构建 Still。</span></a>
+</nav>
+
 <section class="demo-section" id="concept" aria-labelledby="concept-title">
   <div class="copy">
-    <h2 id="concept-title">AI 可以换，助手还是那一个。</h2>
-    <p>干活的是你的 ChatGPT 订阅（经由 Codex）或 Claude 订阅（经由 Claude Code）。聊到一半也能用一条命令切换，Still 接着往下做。</p>
+    <h2 id="concept-title">同样的上下文，不同的 AI。</h2>
+    <p>一起挑选咖啡豆时，从 Codex 切换到 Claude Code。下一个请求无需重新解释之前的推荐，对话仍能继续。</p>
   </div>
   <figure class="switch-carousel">
-    <div class="switch-slides" tabindex="0" role="region" aria-label="对话场景">
+    <div class="switch-slides" tabindex="0" role="region" aria-label="更换 AI 后仍延续的同一段对话">
       <figure class="switch-slide" id="switch-slide-1" tabindex="-1" aria-labelledby="switch-title-1">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/zh-CN-1.wide.svg" width="1440" height="900"><img src="assets/ai-switch/zh-CN-1.svg" width="1000" height="1040" loading="lazy" alt="切换到 Claude Code 之后 昨天最后是把 Spam 加进去了，还是拿出来了？ 从对话记录看，我最后说已把一罐 Spam Classic 200 g 放回购物车。但仅凭这段上下文，无法确定是不是昨天。登录后我会检查当前购物车。 根据真实对话翻译、缩写并重构的图片"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="上一张">←</a><span id="switch-title-1">1 / 3 · 更换 AI，</span><a href="#switch-slide-2" aria-label="下一张">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/zh-CN-1.wide.svg" width="1440" height="900"><img src="assets/ai-switch/zh-CN-1.svg" width="1000" height="1320" loading="lazy" alt="先前上下文 · 摘要 先前推荐摘要：购物车中有 Jardin，也曾推荐 Momos Coffee Es Chocolat 500 g 来做拿铁。 切换前 · Codex /ai 当前工作的 AI 是 Codex。 根据真实对话翻译、缩写并重构的图片"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="上一张">←</a><span id="switch-title-1">1 / 3 · 已经聊过的事情，</span><a href="#switch-slide-2" aria-label="下一张">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-2" tabindex="-1" aria-labelledby="switch-title-2">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/zh-CN-2.wide.svg" width="1440" height="900"><img src="assets/ai-switch/zh-CN-2.svg" width="1000" height="1040" loading="lazy" alt="登录之后 我直接检查了购物车：里面有一罐 CJ Spam Classic 200 g，没有被移除，仍然在购物车中。部分步骤未能核实。 根据真实对话翻译、缩写并重构的图片"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="上一张">←</a><span id="switch-title-2">2 / 3 · 对话仍在继续，</span><a href="#switch-slide-3" aria-label="下一张">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/zh-CN-2.wide.svg" width="1440" height="900"><img src="assets/ai-switch/zh-CN-2.svg" width="1000" height="1320" loading="lazy" alt="先前上下文 · 摘要 先前推荐摘要：购物车中有 Jardin，也曾推荐 Momos Coffee Es Chocolat 500 g 来做拿铁。 Codex → Claude Code /ai claude-code 默认 AI 已切换为 Claude Code，从下一个请求开始生效。 根据真实对话翻译、缩写并重构的图片"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="上一张">←</a><span id="switch-title-2">2 / 3 · 更换工作的 AI，</span><a href="#switch-slide-3" aria-label="下一张">→</a></figcaption>
       </figure>
       <figure class="switch-slide" id="switch-slide-3" tabindex="-1" aria-labelledby="switch-title-3">
-        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/zh-CN-3.wide.svg" width="1440" height="900"><img src="assets/ai-switch/zh-CN-3.svg" width="1000" height="1040" loading="lazy" alt="切换到 Codex 之后 把 Spam 拿出来。 我已从购物车移除一罐 Spam Classic 200 g，并再次检查，其他22件商品仍在。目前判断 AI 不可用，由默认 AI 直接处理请求。 根据真实对话翻译、缩写并重构的图片"></picture>
-        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="上一张">←</a><span id="switch-title-3">3 / 3 · 换个 AI 也能接着做。</span><a href="#switch-slide-1" aria-label="下一张">→</a></figcaption>
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/zh-CN-3.wide.svg" width="1440" height="900"><img src="assets/ai-switch/zh-CN-3.svg" width="1000" height="1320" loading="lazy" alt="先前上下文 · 摘要 先前推荐摘要：购物车中有 Jardin，也曾推荐 Momos Coffee Es Chocolat 500 g 来做拿铁。 切换后 · Claude Code 不要 Jardin，这次想换贵一点的。 有之前我推荐为最适合拿铁的 Momos Coffee Es Chocolat 500 g 咖啡豆。 根据真实对话翻译、缩写并重构的图片"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="上一张">←</a><span id="switch-title-3">3 / 3 · 无需从头解释。</span><a href="#switch-slide-1" aria-label="下一张">→</a></figcaption>
       </figure>
     </div>
-    <nav class="slide-index" aria-label="对话场景"><a href="#switch-slide-1" aria-label="1 / 3 · 更换 AI，">1</a><a href="#switch-slide-2" aria-label="2 / 3 · 对话仍在继续，">2</a><a href="#switch-slide-3" aria-label="3 / 3 · 换个 AI 也能接着做。">3</a></nav>
-    <figcaption>根据用户提供的2026年10月8日真实 Telegram 截图，翻译、缩写并重构为各语言图片。这些展示助手所报告的内容，并非购物车操作的独立验证或整个发行版的验证。 <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">原始截图与来源</a> · <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/ai-switch-conversation.png">Telegram · 2026-10-08</a></figcaption>
+    <nav class="slide-index" aria-label="更换 AI 后仍延续的同一段对话"><a href="#switch-slide-1" aria-label="1 / 3 · 已经聊过的事情，">1</a><a href="#switch-slide-2" aria-label="2 / 3 · 更换工作的 AI，">2</a><a href="#switch-slide-3" aria-label="3 / 3 · 无需从头解释。">3</a></nav>
+    <figcaption>根据2026年10月12日的一次真实会话翻译、缩写。先前推荐根据后续回复概括。这展示 AI 切换后对上下文的回忆，并不证明购物车替换已完成或整个发行版已验证。 <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">录像来源与限制</a></figcaption>
   </figure>
   <div class="swap">
     <div>
@@ -113,6 +119,44 @@ fill="currentColor" stroke="none">
       <ul class="pills solid"><li>它对你的了解</li><li>没做完的事</li><li>你交给它的权限</li><li>实际执行过的记录</li></ul>
     </div>
   </div>
+</section>
+
+<section class="install" id="install" aria-labelledby="install-title">
+  <div class="copy">
+    <h2 id="install-title">现在开始使用 Still</h2>
+    <p>一台 Mac、Linux 或 Windows（WSL2）电脑，加上你已经在用的 ChatGPT 或 Claude 订阅，就够了。</p>
+  </div>
+  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
+  <p class="note">安装脚本的地址固定在一个版本上，运行前可以<a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">先查看脚本内容</a>。在 Apple 芯片的 Mac 上用 Homebrew 的话：<code>brew tap jongtae/still https://github.com/Jongtae/Still</code>、<code>brew install jongtae/still/agentos</code>，再运行 <code>agentos start</code>。Windows 上，在 PowerShell 中运行 <code>wsl --install</code> 并重启，打开 Ubuntu，把上面的命令粘贴进去。</p>
+  <ol class="steps">
+    <li>
+      <h3>选择你的 AI</h3>
+      <p>设置在终端里进行。选择 Codex、Claude Code 或 API 密钥；已经登录过的那个会预先选好。Still 不会看到这次登录。</p>
+    </li>
+    <li>
+      <h3>打个招呼</h3>
+      <p>直接在终端里和 Still 对话，或者在 <code>127.0.0.1:8787</code> 的 Still 页面上聊。</p>
+    </li>
+    <li>
+      <h3>带到手机上</h3>
+      <p>说一句“连接 Telegram”，粘贴 @BotFather 给你的令牌，再在配对链接里点 Start（开始）。</p>
+      <p class="note">可选：用壁纸把聊天背景换成 Still 的风格（<a href="assets/still-wallpaper-presence.jpg" download>Still 形象</a>或<a href="assets/still-wallpaper-plain.jpg" download>纯色</a>）：在 Telegram 聊天里打开菜单，选择<b>更换壁纸</b>，再从相册中选它。</p>
+    </li>
+  </ol>
+  <figure class="setup-preview" aria-labelledby="setup-preview-title">
+  <h3 id="setup-preview-title">首次设置时的画面</h3>
+  <div class="terminal-frame"><div class="terminal-bar"><span aria-hidden="true">● ● ●</span><span>Terminal · agentos start</span></div><pre>将在此终端中完成 Still 的首次设置。按 Enter 即采用默认选项。
+
+连接 AI
+连接你已有的订阅或 API 密钥。
+
+1) ChatGPT 订阅 (Codex)
+2) Claude 订阅 (Claude Code)
+3) API 密钥 (OpenAI、Anthropic、兼容服务器、Ollama)
+4) 稍后在浏览器中连接</pre></div>
+  <figcaption>根据当前程序的首次设置文案摘录、排版的预览，并非一次新安装的实际录像。 <a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/first_run.py">查看源码</a></figcaption>
+</figure>
+  <p class="note">其余内容见<a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">快速开始指南</a>（英文）。</p>
 </section>
 
 <section class="section-intro" aria-labelledby="experience-title"><h2 id="experience-title">少一点重复解释。</h2><p>让关于你的记忆、对话和你选择的工具相互连接。</p></section>
@@ -183,43 +227,21 @@ fill="currentColor" stroke="none">
   </ul>
 </section>
 
-<section class="install" id="install" aria-labelledby="install-title">
-  <div class="copy">
-    <h2 id="install-title">今晚就把 Still 带回家</h2>
-    <p>一台 Mac、Linux 或 Windows（WSL2）电脑，加上你已经在用的 ChatGPT 或 Claude 订阅，就够了。</p>
-  </div>
-  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
-  <p class="note">安装脚本的地址固定在一个版本上，运行前可以<a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">先查看脚本内容</a>。在 Apple 芯片的 Mac 上用 Homebrew 的话：<code>brew tap jongtae/still https://github.com/Jongtae/Still</code>、<code>brew install jongtae/still/agentos</code>，再运行 <code>agentos start</code>。Windows 上，在 PowerShell 中运行 <code>wsl --install</code> 并重启，打开 Ubuntu，把上面的命令粘贴进去。</p>
-  <ol class="steps">
-    <li>
-      <h3>选择你的 AI</h3>
-      <p>设置在终端里进行。选择 Codex、Claude Code 或 API 密钥；已经登录过的那个会预先选好。Still 不会看到这次登录。</p>
-    </li>
-    <li>
-      <h3>打个招呼</h3>
-      <p>直接在终端里和 Still 对话，或者在 <code>127.0.0.1:8787</code> 的 Still 页面上聊。</p>
-    </li>
-    <li>
-      <h3>带到手机上</h3>
-      <p>说一句“连接 Telegram”，粘贴 @BotFather 给你的令牌，再在配对链接里点 Start（开始）。</p>
-      <p class="note">可选：用壁纸把聊天背景换成 Still 的风格（<a href="assets/still-wallpaper-presence.jpg" download>Still 形象</a>或<a href="assets/still-wallpaper-plain.jpg" download>纯色</a>）：在 Telegram 聊天里打开菜单，选择<b>更换壁纸</b>，再从相册中选它。</p>
-    </li>
-  </ol>
-  <p class="note">其余内容见<a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">快速开始指南</a>（英文）。</p>
-</section>
 
-<section class="engineering-entry" aria-labelledby="engineering-title">
+
+<div class="build-grid"><section class="engineering-entry" aria-labelledby="engineering-title">
   <h2 id="engineering-title">Engineering — 为什么这样设计？</h2>
   <p>阅读技术理念、Ontology & Context、Decision Model、Presence、模型独立性、Owner Authority 和 Research & Evidence。每个主题连接实现、证据和待解决的设计问题。</p>
-  <p><a href="engineering/zh-CN.html">Still 如何保持延续 →</a> · <a href="engineering/zh-CN.html#research">Research &amp; Evidence</a></p>
+  <p class="actions"><a class="button" href="engineering/zh-CN.html">Still 如何保持延续 →</a> · <a href="engineering/zh-CN.html#research">Research &amp; Evidence</a></p>
 </section>
 
-<section class="github" aria-labelledby="github-title">
-  <h2 id="github-title">代码和开发过程都是公开的。</h2>
+<section class="github" id="contribute" aria-labelledby="github-title">
+  <h2 id="github-title">一起构建 Still。</h2>
+  <p>反馈问题、讨论想法、改进文档或贡献代码。从贡献指南开始。</p>
   <p>Still 是 AGPL-3.0 开源项目。<a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">产品现状</a>（英文）列出了现在能用的功能和还不完善的地方。当前版本是 <span data-release="version">v0.3.0</span>。</p>
-  <p class="actions"><a class="button" href="https://github.com/Jongtae/Still">在 GitHub 查看</a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">在 Discussions 交流</a></p>
+  <p class="actions"><a class="button" href="https://github.com/Jongtae/Still/blob/main/.github/CONTRIBUTING.md">贡献指南</a><a class="text-link" href="https://github.com/Jongtae/Still">GitHub →</a><a class="text-link" href="https://github.com/Jongtae/Still/issues">提出问题</a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">Discussions</a></p>
   <p class="note">用了觉得不错，就在 GitHub 上点个 Star 吧，能帮下一个人找到 Still。</p>
-</section>
+</section></div>
 
 </main>
 
