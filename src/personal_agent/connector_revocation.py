@@ -65,6 +65,7 @@ from urllib.request import Request
 
 from oauthlib.oauth2 import Client as _OAuthClient
 
+from .messages import msg
 from .connector_http import contained_opener
 
 
@@ -94,14 +95,14 @@ class RevocationError(ValueError):
 
 
 REFUSALS = {
-    "unknown_connection": "해제할 Google 연결을 찾지 못했습니다.",
-    "invalid_confirmation": "확인 정보가 올바르지 않습니다. 연결 해제를 처음부터 다시 진행해 주세요.",
-    "replayed_confirmation": "이미 사용한 확인입니다. 연결 해제를 다시 하려면 새로 확인해 주세요.",
-    "expired_confirmation": "확인 시간이 지났습니다. 연결 해제를 다시 확인해 주세요.",
-    "wrong_owner": "다른 로그인 세션에서 만든 확인이라 사용할 수 없습니다.",
-    "connection_changed": "확인 이후 연결 상태가 바뀌었습니다. 현재 상태를 다시 확인한 뒤 해제해 주세요.",
-    "nothing_to_retry": "Google에 다시 취소를 요청할 항목이 없습니다.",
-    "reconnected": "그 사이 다시 연결되어, 이전 토큰 취소를 재시도하면 새 연결까지 끊길 수 있어 요청하지 않았습니다.",
+    "unknown_connection": msg('connector_revocation.unknown_connection'),
+    "invalid_confirmation": msg('connector_revocation.invalid_confirmation'),
+    "replayed_confirmation": msg('connector_revocation.replayed_confirmation'),
+    "expired_confirmation": msg('connector_revocation.expired_confirmation'),
+    "wrong_owner": msg('connector_revocation.wrong_owner'),
+    "connection_changed": msg('connector_revocation.connection_changed'),
+    "nothing_to_retry": msg('connector_revocation.nothing_to_retry'),
+    "reconnected": msg('connector_revocation.reconnected'),
 }
 
 
@@ -371,10 +372,7 @@ class GoogleConnectionRevoker:
                 "retained_data": "preserve",
                 "remote_data_deletion": "none",
             },
-            "message": (f"{connection.label} 연결을 해제하면 Still이 즉시 이 연결을 쓰지 않고, "
-                        f"이 기기에 저장된 인증 정보를 삭제하며, Google({GOOGLE_REVOKE_HOST})에 "
-                        "권한 취소를 요청합니다. 저장된 결과물과 기록은 지우지 않고, Google에 있는 "
-                        "데이터도 삭제하지 않습니다."),
+            "message": msg('connector_revocation.disconnect_notice', label=connection.label, host=GOOGLE_REVOKE_HOST),
         }
 
     def _consume(self, session, connector_id, confirmation) -> _Connection:
@@ -425,10 +423,8 @@ class GoogleConnectionRevoker:
             self.on_disconnected(connection.connector_id, parked)
         receipt = self._revoke(connection, local_credentials="deleted" if stashed.get("credential") else "none_stored")
         if connection.residual():
-            receipt.update(local_access="incomplete", message=(
-                f"{connection.label} 연결 중 이 기기에서 확인할 수 없는 소유자(예: 이전에 연결했던 Telegram 계정)로 "
-                "남아 있는 연결이 있어 모두 해제하지 못했습니다. 이 연결은 아직 사용될 수 있습니다. "
-                "Google 계정의 타사 앱 액세스에서 Still 권한을 직접 제거해 주세요."))
+            receipt.update(local_access="incomplete",
+                           message=msg('connector_revocation.unresolved_owners', label=connection.label))
             self._audit_residual(connection)
         return receipt
 
@@ -478,14 +474,11 @@ class GoogleConnectionRevoker:
 
 
 def _message(label: str, outcome: str) -> str:
-    stopped = f"{label} 연결을 해제했습니다. Still은 더 이상 이 연결을 사용하지 않으며, 저장된 결과물과 기록은 그대로 남아 있습니다. "
-    return stopped + {
-        REVOKED: "Google에서도 권한 취소를 확인했습니다.",
-        ALREADY_INVALID: "Google은 이 인증이 이미 유효하지 않다고 답했습니다(이미 취소되었거나 만료됨).",
-        FAILED: ("Google이 권한 취소 요청을 거절해 Google 쪽 권한 취소는 확인되지 않았습니다. "
-                 "나중에 다시 시도하거나 Google 계정의 타사 앱 액세스에서 직접 제거할 수 있습니다."),
-        UNCONFIRMED: ("Google에 연결하지 못해 Google 쪽 권한 취소는 확인되지 않았습니다. "
-                      "나중에 다시 시도하거나 Google 계정의 타사 앱 액세스에서 직접 제거할 수 있습니다."),
-        NOT_ATTEMPTED: ("이 기기에 남은 인증 정보가 없어 Google에 취소 요청을 보내지 않았습니다. "
-                        "Google 쪽 권한이 남아 있을 수 있으니 Google 계정의 타사 앱 액세스에서 확인하세요."),
+    outcome_text = {
+        REVOKED: msg('connector_revocation.revoked'),
+        ALREADY_INVALID: msg('connector_revocation.already_invalid'),
+        FAILED: msg('connector_revocation.revocation_failed'),
+        UNCONFIRMED: msg('connector_revocation.revocation_unconfirmed'),
+        NOT_ATTEMPTED: msg('connector_revocation.not_attempted'),
     }[outcome]
+    return msg('connector_revocation.disconnected', label=label, outcome=outcome_text)

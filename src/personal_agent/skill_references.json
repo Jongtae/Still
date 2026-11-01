@@ -16,5 +16,8 @@
    "address": "github.com/Jongtae/Still/tree/main/skills/claim-analysis"},
   {"name": "source-cross-check",
    "description": "Checking a fact across sources: the original source, independent confirmation, dates and definitions, and agreement, conflict or a single source reported as such.",
-   "address": "github.com/Jongtae/Still/tree/main/skills/source-cross-check"}
+   "address": "github.com/Jongtae/Still/tree/main/skills/source-cross-check"},
+  {"name": "first-conversations",
+   "description": "Opening a first conversation with what you are good at and one easy start, and learning a fact about the owner only when a request needs it, with one gentle question.",
+   "address": "github.com/Jongtae/Still/tree/main/skills/first-conversations"}
 ]

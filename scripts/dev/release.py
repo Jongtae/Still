@@ -8,10 +8,16 @@ temporary copy:
 
 * ``check``    print the in-tree version once it is ready to publish;
 * ``notes``    print the GitHub release notes from its manifest entry;
+* ``newest``   say whether a version is the newest published release on main;
 * ``formula``  write ``Formula/agentos.rb`` for the published tag archive;
 * ``record``   move the entry to ``published``, re-pin ``scripts/install.sh``,
                update the release-status prose and set the next placeholder;
+* ``register`` record a maintenance-line release on main (#533);
 * ``pin``      pin the README installer to the commit that installs it.
+
+A release comes from ``main`` or from a maintenance line ``maint/X.Y`` (#533).
+``main``'s manifest lists every published release; each branch keeps an
+in-tree version that is unpublished and newer than everything published on it.
 
 Nothing here measures a checksum or claims an installed observation: the
 workflow passes in the served archive digest, and ``observed`` stays pending
@@ -71,6 +77,8 @@ FIRST_RELEASE_PROSE = {
                  "([source installation](#remote-host--source-installation))."),
 }
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
+#: A maintenance line: patches of one minor, cut from its newest tag (#533).
+LINE = re.compile(r"^maint/(\d+)\.(\d+)$")
 
 
 class ReleaseError(RuntimeError):
@@ -108,11 +116,16 @@ def unpublished_entry(data: dict, version: str) -> dict:
     raise ReleaseError(f"{MANIFEST} has no unpublished entry for {version}")
 
 
-def check(root: Path) -> str:
-    """Return the in-tree version if the preparation PR made it publishable."""
+def check(root: Path, branch: str = "main") -> str:
+    """Return the in-tree version if the preparation PR made it publishable on ``branch``."""
     version = project_version(root)
     if not SEMVER.match(version):
         raise ReleaseError(f"{version} is not a stable X.Y.Z version")
+    line = LINE.match(branch)
+    if branch != "main" and not line:
+        raise ReleaseError(f"{branch} is neither main nor a maintenance line maint/X.Y")
+    if line and version_key(version)[:2] != (int(line[1]), int(line[2])):
+        raise ReleaseError(f"{version} is not a patch of the {branch} line")
     data = load_manifest(root)
     newest = newest_published(data)
     if newest and version_key(version) <= version_key(newest["version"]):
@@ -132,6 +145,17 @@ def notes(root: Path, version: str, milestone_url: str) -> str:
     if milestone_url:
         lines += ["", f"Scope: {milestone_url}"]
     return "\n".join(lines) + "\n"
+
+
+def newest(root: Path, version: str) -> bool:
+    """Whether ``version`` is (or is about to be) the newest published release in ``root``.
+
+    Run on main's tree: only the newest release moves the formula, the installer
+    pin, the README pin, the site and GitHub's "Latest" badge (#533). A re-run
+    after main recorded it still answers true.
+    """
+    current = newest_published(load_manifest(root))
+    return current is None or version_key(version) >= version_key(current["version"])
 
 
 def _replace_once(text: str, pattern: str, value: str, what: str) -> str:
@@ -181,19 +205,20 @@ def _set_installer_pin(text: str, name: str, value: str) -> str:
     return _replace_once(text, rf'^{name}="[^"]*"$', f'{name}="{value}"', f"{name} in {INSTALLER}")
 
 
-def record(root: Path, version: str, commit: str, sha256: str, tag_date: str, formula_pr: str) -> str:
-    """Record a published release and return the next placeholder version."""
+def _check_measurements(commit: str, sha256: str, tag_date: str) -> None:
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ReleaseError("commit must be a full 40-character SHA")
     if not re.fullmatch(r"[0-9a-f]{64}", sha256):
         raise ReleaseError("sha256 must be 64 lowercase hex characters")
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", tag_date):
         raise ReleaseError("tag date must be YYYY-MM-DD")
-    data = load_manifest(root)
-    previous = newest_published(data)
-    entry = unpublished_entry(data, version)
-    data["unpublished"].remove(entry)
-    data["published"].append({
+
+
+def _published_row(entry: dict, version: str, commit: str, sha256: str, tag_date: str, formula_pr: str) -> dict:
+    formula_note = (f"Homebrew formula PR {formula_pr} merged after its macOS formula install and brew test passed."
+                    if formula_pr else
+                    "The Homebrew formula and installer were left on the newer release they already install.")
+    return {
         "version": version,
         "tag": f"v{version}",
         "commit": commit,
@@ -202,38 +227,47 @@ def record(root: Path, version: str, commit: str, sha256: str, tag_date: str, fo
         "carries": entry["carries"],
         "tag_date": tag_date,
         "observed": (f"Published by the release workflow after owner approval. The served tag archive "
-                     f"SHA-256 was measured twice and matched; Homebrew formula PR {formula_pr} merged after its "
-                     "macOS formula install and brew test passed. The owner's own installed upgrade is "
+                     f"SHA-256 was measured twice and matched; {formula_note} The owner's own installed upgrade is "
                      "not yet recorded."),
         "not_claimed": entry["not_claimed"],
-    })
-    major, minor, patch = version_key(version)
-    following = f"{major}.{minor}.{patch + 1}"
-    data["unpublished"].append({
-        "version": following,
+    }
+
+
+def _placeholder(version: str, after: str) -> dict:
+    return {
+        "version": version,
         "tag": None,
         "commit": None,
-        "why_no_commit": "The future tagged main merge commit does not exist; no earlier source SHA can stand in for it.",
+        "why_no_commit": "The future tagged release commit does not exist; no earlier source SHA can stand in for it.",
         "archive_sha256": None,
         "state": "unpublished",
-        "why_no_checksum": f"No v{following} GitHub tag archive exists; its served SHA-256 must be measured only after publication.",
-        "carries": (f"Next development-source version after v{version}. This placeholder does not choose the "
+        "why_no_checksum": f"No v{version} GitHub tag archive exists; its served SHA-256 must be measured only after publication.",
+        "carries": (f"Next development-source version after v{after}. This placeholder does not choose the "
                     "next release's version or claim a new product capability; the release-preparation PR does."),
-    })
-    save_manifest(root, data)
+    }
 
-    installer = root / INSTALLER
-    text = _set_installer_pin(installer.read_text(encoding="utf-8"), "AGENTOS_VERSION", version)
-    installer.write_text(_set_installer_pin(text, "AGENTOS_ARCHIVE_SHA256", sha256), encoding="utf-8")
 
+def _next_patch(version: str) -> str:
+    major, minor, patch = version_key(version)
+    return f"{major}.{minor}.{patch + 1}"
+
+
+def _set_project_version(root: Path, version: str) -> None:
     pyproject = root / PYPROJECT
     pyproject.write_text(_replace_once(pyproject.read_text(encoding="utf-8"), r'^version = "[^"]+"$',
-                                       f'version = "{following}"', f"the version in {PYPROJECT}"),
+                                       f'version = "{version}"', f"the version in {PYPROJECT}"),
                          encoding="utf-8")
 
+
+def _move_to_release(root: Path, previous: dict | None, version: str, sha256: str, tag_date: str) -> None:
+    """Point the installer and the release-status prose at ``version``, all or nothing."""
+    installer = root / INSTALLER
+    pinned = _set_installer_pin(installer.read_text(encoding="utf-8"), "AGENTOS_VERSION", version)
+    pinned = _set_installer_pin(pinned, "AGENTOS_ARCHIVE_SHA256", sha256)
     if previous is None:
         _record_first_release_prose(root, version, tag_date)
-        return following
+        installer.write_text(pinned, encoding="utf-8")
+        return
     # Only the release-status sentence moves; a line about an earlier
     # release's behavior keeps naming that release (#313).
     texts = {}
@@ -247,7 +281,63 @@ def record(root: Path, version: str, commit: str, sha256: str, tag_date: str, fo
         texts[name] = text.replace(before, sentence.format(version=version, date=tag_date))
     for name, text in texts.items():
         (root / name).write_text(text, encoding="utf-8")
+    installer.write_text(pinned, encoding="utf-8")
+
+
+def record(root: Path, version: str, commit: str, sha256: str, tag_date: str, formula_pr: str) -> str:
+    """Record a published release on the branch it came from and return the next placeholder version.
+
+    The branch's formula moves with it. On main the formula PR already did
+    that, so nothing changes; a maintenance line's formula is not the tap's,
+    but it must name the line's newest release like main's does (#533).
+    """
+    _check_measurements(commit, sha256, tag_date)
+    data = load_manifest(root)
+    previous = newest_published(data)
+    entry = unpublished_entry(data, version)
+    following = _next_patch(version)
+    if (root / FORMULA).exists():
+        formula(root, version, sha256)
+    _move_to_release(root, previous, version, sha256, tag_date)
+    data["unpublished"].remove(entry)
+    data["published"].append(_published_row(entry, version, commit, sha256, tag_date, formula_pr))
+    data["unpublished"].append(_placeholder(following, version))
+    save_manifest(root, data)
+    _set_project_version(root, following)
     return following
+
+
+def register(root: Path, source: Path, version: str, commit: str, sha256: str, tag_date: str,
+             formula_pr: str) -> str:
+    """Record on main a release published from a maintenance line (#533).
+
+    ``source`` is the approved release commit's tree, which holds the prepared
+    entry. Main's manifest gains the published row. Main's in-tree version moves
+    past ``version`` only when it does not already exceed it. The installer and
+    release-status prose move only when ``version`` is the newest published
+    release: a patch of an older minor never moves them backwards. Returns
+    main's in-tree version afterwards.
+    """
+    _check_measurements(commit, sha256, tag_date)
+    entry = unpublished_entry(load_manifest(source), version)
+    data = load_manifest(root)
+    if version in {row["version"] for row in data["published"]}:
+        raise ReleaseError(f"{MANIFEST} on main already records {version}")
+    previous = newest_published(data)
+    if previous is None or version_key(version) > version_key(previous["version"]):
+        _move_to_release(root, previous, version, sha256, tag_date)
+    data["published"].append(_published_row(entry, version, commit, sha256, tag_date, formula_pr))
+    data["published"].sort(key=lambda row: version_key(row["version"]))
+    data["unpublished"] = [row for row in data["unpublished"] if row["version"] != version]
+    in_tree = project_version(root)
+    if version_key(in_tree) <= version_key(version):
+        in_tree = _next_patch(version)
+        data["unpublished"] = [row for row in data["unpublished"]
+                               if version_key(row["version"]) > version_key(version)]
+        data["unpublished"].append(_placeholder(in_tree, version))
+        _set_project_version(root, in_tree)
+    save_manifest(root, data)
+    return in_tree
 
 
 def _record_first_release_prose(root: Path, version: str, tag_date: str) -> None:
@@ -280,10 +370,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=ROOT)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("check")
+    p = sub.add_parser("check")
+    p.add_argument("--branch", default="main")
     p = sub.add_parser("notes")
     p.add_argument("--version", required=True)
     p.add_argument("--milestone-url", default="")
+    p = sub.add_parser("newest")
+    p.add_argument("--version", required=True)
     p = sub.add_parser("formula")
     p.add_argument("--version", required=True)
     p.add_argument("--sha256", required=True)
@@ -293,18 +386,30 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--sha256", required=True)
     p.add_argument("--date", required=True)
     p.add_argument("--formula-pr", required=True)
+    p = sub.add_parser("register")
+    p.add_argument("--source", type=Path, required=True)
+    p.add_argument("--version", required=True)
+    p.add_argument("--commit", required=True)
+    p.add_argument("--sha256", required=True)
+    p.add_argument("--date", required=True)
+    p.add_argument("--formula-pr", default="")
     p = sub.add_parser("pin")
     p.add_argument("--commit", required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "check":
-            print(check(args.root))
+            print(check(args.root, args.branch))
         elif args.command == "notes":
             sys.stdout.write(notes(args.root, args.version, args.milestone_url))
+        elif args.command == "newest":
+            print("true" if newest(args.root, args.version) else "false")
         elif args.command == "formula":
             formula(args.root, args.version, args.sha256)
         elif args.command == "record":
             print(record(args.root, args.version, args.commit, args.sha256, args.date, args.formula_pr))
+        elif args.command == "register":
+            print(register(args.root, args.source, args.version, args.commit, args.sha256, args.date,
+                           args.formula_pr))
         else:
             pin(args.root, args.commit)
     except ReleaseError as exc:

@@ -51,14 +51,13 @@ MAX_CLIENT_CHARS = 20_000
 ISSUED_KEPT = 8
 DONE_DELAY_SECONDS = 0.3
 
-LINK_TEXT = ('휴대폰에서 {label} 설정을 하는 링크예요. 이 링크를 연 휴대폰 한 대만 쓸 수 있고, 약 {minutes}분 뒤에 닫혀요. '
-             '중간에 이 화면을 닫았다면 새 링크를 요청해 주세요.\n{link}')
-NO_TUNNEL_TEXT = '이 Mac에서는 휴대폰 링크를 만들 수 없어요(ngrok도 cloudflared도 없어요). Mac에서 설정해 주세요.'
-NO_PORT_TEXT = '이 Mac의 Still 주소를 아직 알 수 없어 휴대폰 링크를 만들지 못했어요.'
-BUSY_TEXT = '이미 휴대폰 링크가 열려 있어요. 그 링크가 닫힌 뒤에 다시 요청해 주세요.'
-NOT_PAIRED_TEXT = '휴대폰 링크는 연결된 Telegram 대화로만 보내요. Telegram을 먼저 연결해 주세요.'
-TUNNEL_FAILED_TEXT = '휴대폰 링크를 열지 못했어요. Mac에서 설정해 주세요.'
-SENT_TEXT = '휴대폰 링크를 Telegram으로 보냈어요. 약 {minutes}분 동안 열려 있어요.'
+LINK_TEXT = msg('phone_input.link')
+NO_TUNNEL_TEXT = msg('phone_input.no_tunnel')
+NO_PORT_TEXT = msg('phone_input.no_port')
+BUSY_TEXT = msg('phone_input.busy')
+NOT_PAIRED_TEXT = msg('phone_input.not_paired')
+TUNNEL_FAILED_TEXT = msg('phone_input.tunnel_failed')
+SENT_TEXT = msg('phone_input.sent')
 
 
 class PhoneInputError(RuntimeError):
@@ -219,23 +218,23 @@ def page(session, nonce):
     label = escape(session.label)
     code = json.dumps(session.code)
     nonce = escape(nonce)
-    body = f'''<p class="note">Google Cloud에서 만든 데스크톱 앱(Desktop app) client의 JSON 파일을 고르거나 내용을 붙여 넣고 저장하세요.</p>
-<label class="note" for="file">JSON 파일</label><input id="file" type="file" accept=".json,application/json">
-<label class="note" for="json">또는 JSON 내용</label><textarea id="json" rows="6" autocomplete="off" spellcheck="false" maxlength="{MAX_CLIENT_CHARS}"></textarea>
-<button id="save" class="main">저장</button>'''
-    script = f'''$('file').onchange=async()=>{{const f=$('file').files[0];if(!f)return;if(f.size>{MAX_CLIENT_CHARS}){{say('파일이 너무 커요.');return}}$('json').value=await f.text()}};
-$('save').onclick=async()=>{{const d=await post('{CLIENT_PATH}',{{client_json:$('json').value}});if(d&&d.ok)end('저장했어요. 서비스 연결은 Mac의 설정 → 외부 연결에서 해 주세요.');else say(d&&d.error||'저장하지 못했어요.')}};'''
+    body = f'''<p class="note">{msg('phone_input.client_instructions')}</p>
+<label class="note" for="file">{msg('phone_input.json_file')}</label><input id="file" type="file" accept=".json,application/json">
+<label class="note" for="json">{msg('phone_input.json_contents')}</label><textarea id="json" rows="6" autocomplete="off" spellcheck="false" maxlength="{MAX_CLIENT_CHARS}"></textarea>
+<button id="save" class="main">{msg('label.save')}</button>'''
+    script = f'''$('file').onchange=async()=>{{const f=$('file').files[0];if(!f)return;if(f.size>{MAX_CLIENT_CHARS}){{say('{msg('phone_input.file_too_large')}');return}}$('json').value=await f.text()}};
+$('save').onclick=async()=>{{const d=await post('{CLIENT_PATH}',{{client_json:$('json').value}});if(d&&d.ok)end('{msg('phone_input.client_saved')}');else say(d&&d.error||'{msg('phone_input.save_failed')}')}};'''
     if session.kind == API_SLOT:
-        body = '''<p class="note">이 연결에 사용할 API 키를 입력하세요. 값은 대화에 보내지 않습니다. 필요한 읽기를 확인한 뒤 연결을 저장합니다.</p>
-<label class="note" for="secret">API 키</label><input id="secret" type="password" autocomplete="off" spellcheck="false" maxlength="4096">
-<button id="save" class="main">연결 확인</button>'''
-        script = f'''$('save').onclick=async()=>{{const b=$('save');b.disabled=true;try{{const d=await post('{API_PATH}',{{secret:$('secret').value}});if(d&&d.ok){{$('secret').value='';end(d.response||'연결을 확인했어요.')}}else say(d&&d.error||'연결을 확인하지 못했어요.');}}finally{{b.disabled=false;}}}};'''
+        body = f'''<p class="note">{msg('phone_input.api_instructions')}</p>
+<label class="note" for="secret">{msg('phone_input.api_key')}</label><input id="secret" type="password" autocomplete="off" spellcheck="false" maxlength="4096">
+<button id="save" class="main">{msg('phone_input.check_connection')}</button>'''
+        script = f'''$('save').onclick=async()=>{{const b=$('save');b.disabled=true;try{{const d=await post('{API_PATH}',{{secret:$('secret').value}});if(d&&d.ok){{$('secret').value='';end(d.response||'{msg('phone_input.connection_verified')}')}}else say(d&&d.error||'{msg('phone_input.connection_failed')}');}}finally{{b.disabled=false;}}}};'''
         draft = json.loads(session.api_draft['after'])
         if draft.get('fields'):
             # #1380: one masked input per named value of a code-run secret set. Labels come from the
             # AI's draft (escaped); names are validated UPPER_SNAKE identifiers.
-            uses = {'header_or_body': '코드에는 가려져 있다가 보낼 때만 채워져요',
-                    'in_code': '실행 코드 안에서 직접 쓰여요(출력에는 가려져요)'}
+            uses = {'header_or_body': msg('phone_input.use_at_send'),
+                    'in_code': msg('phone_input.use_in_code')}
             # #1566: values a draft that only adds fields keeps are not asked again.
             kept = [item for item in draft['fields'] if item['name'] in getattr(session, 'api_kept', ())]
             asked = [item for item in draft['fields'] if item not in kept]
@@ -244,22 +243,20 @@ $('save').onclick=async()=>{{const d=await post('{CLIENT_PATH}',{{client_json:$(
                 f'<input id="f_{item["name"]}" type="password" autocomplete="off" spellcheck="false" maxlength="4096">'
                 for item in asked)
             hosts = escape(', '.join(draft['hosts']))
-            kept_note = (f'<p class="note">이미 저장된 값({escape(", ".join(item["label"] for item in kept))})은 '
-                         '그대로 써요. 새로 필요한 값만 입력하세요.</p>\n') if kept else ''
-            body = (f'<p class="note">이 값들은 대화에 보내지 않고 암호화해 저장해요. {hosts}로 보내는 요청에만 쓰이고, '
-                    '조회만 할 수 있어요. 저장하면 원래 작업을 이어갑니다.</p>\n' + kept_note + inputs
-                    + '\n<button id="save" class="main">저장하고 이어가기</button>')
+            kept_note = ('<p class="note">' + msg('phone_input.kept_values', labels=escape(", ".join(item["label"] for item in kept))) + '</p>\n') if kept else ''
+            body = ('<p class="note">' + msg('phone_input.secret_values', hosts=hosts) + '</p>\n' + kept_note + inputs
+                    + f'\n<button id="save" class="main">{msg('phone_input.save_continue')}</button>')
             names = json.dumps([item['name'] for item in asked])
             script = (f"$('save').onclick=async()=>{{const b=$('save');b.disabled=true;try{{const v={{}};"
                       f"for(const n of {names})v[n]=$('f_'+n).value;const d=await post('{API_PATH}',v);"
-                      f"if(d&&d.ok){{for(const n of {names})$('f_'+n).value='';end(d.response||'저장했어요.')}}"
-                      "else say(d&&d.error||'저장하지 못했어요.');}finally{b.disabled=false;}};")
+                      f"if(d&&d.ok){{for(const n of {names})$('f_'+n).value='';end(d.response||'{msg('phone_input.saved')}')}}"
+                      f"else say(d&&d.error||'{msg('phone_input.save_failed')}');}}finally{{b.disabled=false;}}}};")
         elif draft.get('oauth'):
-            body = '''<p class="note">이 연결의 클라이언트 ID와 비밀값을 입력하세요. 토큰 발급과 필요한 읽기를 확인한 뒤 원래 작업을 이어갑니다.</p>
-<label class="note" for="client">클라이언트 ID (8자 이상)</label><input id="client" type="password" autocomplete="off" spellcheck="false" maxlength="4096">
-<label class="note" for="secret">클라이언트 비밀값 (8자 이상)</label><input id="secret" type="password" autocomplete="off" spellcheck="false" maxlength="4096">
-<button id="save" class="main">연결 확인</button>'''
-            script = f'''$('save').onclick=async()=>{{const b=$('save');b.disabled=true;try{{const d=await post('{API_PATH}',{{client_id:$('client').value,client_secret:$('secret').value}});if(d&&d.ok){{$('client').value='';$('secret').value='';end(d.response||'연결을 확인했어요.')}}else say(d&&d.error||'연결을 확인하지 못했어요.');}}finally{{b.disabled=false;}}}};'''
+            body = f'''<p class="note">{msg('phone_input.oauth_instructions')}</p>
+<label class="note" for="client">{msg('phone_input.client_id')}</label><input id="client" type="password" autocomplete="off" spellcheck="false" maxlength="4096">
+<label class="note" for="secret">{msg('phone_input.client_secret')}</label><input id="secret" type="password" autocomplete="off" spellcheck="false" maxlength="4096">
+<button id="save" class="main">{msg('phone_input.check_connection')}</button>'''
+            script = f'''$('save').onclick=async()=>{{const b=$('save');b.disabled=true;try{{const d=await post('{API_PATH}',{{client_id:$('client').value,client_secret:$('secret').value}});if(d&&d.ok){{$('client').value='';$('secret').value='';end(d.response||'{msg('phone_input.connection_verified')}')}}else say(d&&d.error||'{msg('phone_input.connection_failed')}');}}finally{{b.disabled=false;}}}};'''
 
     return f'''<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{label}</title>
@@ -274,7 +271,7 @@ const code={code};const q='?code='+encodeURIComponent(code);const $=id=>document
 function say(text){{$('msg').textContent=text}}
 function end(text){{$('live').classList.add('hidden');$('end').style.display='block';$('end').textContent=text}}
 async function post(path,body){{try{{const r=await fetch(path+q,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body||{{}}),credentials:'same-origin'}});
-if(r.status===404){{end('이 링크는 닫혔어요.');return null}}return await r.json()}}catch(e){{return null}}}}
+if(r.status===404){{end('{msg('phone_input.link_closed')}');return null}}return await r.json()}}catch(e){{return null}}}}
 {script}
 </script></body></html>'''
 

@@ -1,4 +1,5 @@
-/* Still · Still homepage. Tokens follow the Still starter identity kit v1.0 (2026-10-10).
+/* Still homepage. Tokens follow the Still starter identity kit v1.0 (2026-10-10).
+   Each section is one colour field with one visual and a line or two of copy (#540).
    The Still lockup is traced from the owner's mockup (inline SVG); Figtree (SIL OFL, fonts/) for Latin UI text; Korean uses the system Gothic. Rose and Sage are never used for small text. */
 @font-face { font-family: "Figtree"; src: url("fonts/figtree-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 :root {
@@ -43,149 +44,153 @@ b { font-weight: 600; }
 .skip:focus { left: 1rem; top: 1rem; z-index: 2; background: var(--paper); padding: .5rem .75rem; }
 
 .bar, main > section, .foot { max-width: 70rem; margin-inline: auto; padding-inline: clamp(1.25rem, 4.5vw, 3.5rem); }
-.bar { position: absolute; z-index: 3; top: 0; left: 0; right: 0; max-width: none !important; background: linear-gradient(to bottom, rgb(243 238 233 / .82), rgb(243 238 233 / .62)); display: flex; flex-wrap: wrap; gap: .5rem 2rem; justify-content: space-between; align-items: center; padding-block: 1.4rem 1.2rem; border-bottom: 1px solid rgb(46 58 68 / .1); font-size: 1.0625rem; letter-spacing: .01em; }
+.bar { position: absolute; z-index: 3; top: 0; left: 0; right: 0; max-width: none !important; background: transparent; display: flex; flex-wrap: wrap; gap: .5rem 2rem; justify-content: space-between; align-items: center; padding-block: 1.4rem 1.2rem; font-size: 1.0625rem; letter-spacing: .01em; }
 .crumb { text-decoration: none; }
-.crumb span { color: var(--muted); margin-inline: .5rem; }
 .bar nav { display: flex; flex-wrap: wrap; gap: .25rem 2.5rem; }
 .bar nav a { color: var(--ink); text-decoration: none; padding-block: .5rem; }
 .bar nav a:hover { color: var(--ink); }
 
-/* Hero: name and warmth first. Text on the left, the presence on the right. */
-main > .hero { position: relative; max-width: none; padding: 0; display: grid; align-items: center; overflow: hidden; min-height: 0; background: var(--mist); }
 
-.hero-art::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 30%; background: linear-gradient(to bottom, rgb(243 238 233 / 0), var(--mist)); pointer-events: none; }
-main > section.hero + section { border-top: 0; }
-.hero-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 68% 22%; }
-.hero-copy { position: relative; width: 100%; padding: 8rem clamp(1.25rem, 7vw, 7.5rem) 3.25rem; }
-.hero-copy > * { max-width: 40rem; }
+/* Hero: Still's own image, the name, and one conversation that plays once. */
+main > .hero { position: relative; max-width: none; padding: 0; min-height: min(100svh, 62rem); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; overflow: hidden; background: var(--mist); }
+.hero-art { position: absolute; inset: 0; }
+.hero-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 62% 22%; }
+.hero-art::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to right, rgb(243 238 233 / .92) 0%, rgb(243 238 233 / .55) 45%, rgb(243 238 233 / 0) 70%), linear-gradient(to bottom, transparent 70%, var(--mist)); pointer-events: none; }
+.hero-copy { position: relative; z-index: 1; padding: 8rem 0 4rem clamp(1.25rem, 7vw, 7.5rem); }
+.hero-copy > * { max-width: 34rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .lockup { display: flex; flex-direction: column; align-items: flex-start; gap: clamp(1rem, 1.6vw, 1.6rem); margin: 0; color: var(--ink); }
 .lockup svg { display: block; height: auto; }
-.wm-still { width: clamp(9.5rem, 12.5vw, 13rem); }
-.wm-here { width: clamp(13rem, 18vw, 18.5rem); }
+.wm-still { width: clamp(11rem, 16vw, 17rem); }
+.wm-here { width: clamp(14rem, 21vw, 22rem); }
 .ko-line { margin: 1.6rem 0 0; font-size: clamp(1.1875rem, 1.6vw, 1.375rem); font-weight: 400; }
-.lede { margin: 1rem 0 1.5rem; color: var(--ink); opacity: .85; font-size: 1rem; }
-.lockup + .lede { margin-top: 2rem; }
-.quick-line { margin: 0 0 1rem; font-size: .9375rem; color: var(--ink); opacity: .8; }
-.quick-label { margin: 0 0 .6rem; font-size: .9375rem; color: var(--ink); opacity: .85; }
-.quick pre { margin: 0; padding: .85rem 1.15rem; background: var(--ink); color: var(--paper); border-radius: .7rem; font: 400 .9375rem/1.6 var(--sans); letter-spacing: .01em; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
-.quick pre code { font: inherit; }
-.actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 2.25rem; margin: 0; }
-.button { display: inline-flex; align-items: center; gap: 1.25rem; min-height: 3.25rem; padding: .8rem 1.75rem; background: var(--ink); color: var(--paper); border-radius: 999px; text-decoration: none; font-size: .9375rem; }
+.lede { margin: 2.25rem 0 2rem; font-size: clamp(1.125rem, 1.5vw, 1.3125rem); line-height: 1.55; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 2rem; margin: 0; }
+.button { display: inline-flex; align-items: center; min-height: 3.25rem; padding: .8rem 1.9rem; background: var(--ink); color: var(--paper); border-radius: 999px; text-decoration: none; font-size: 1rem; }
 .button:hover { background: var(--night); }
-.text-link { padding-block: .6rem; font-size: 1rem; text-underline-offset: .45em; }
-.arrow { font-size: 1.1em; line-height: 1; }
+.text-link { padding-block: .6rem; text-underline-offset: .4em; }
 
-/* Hero scene: plays over the artwork with no box, like the teaser film. */
-.stage { position: absolute; z-index: 1; right: clamp(1.25rem, 3vw, 3rem); bottom: 1.75rem; width: min(21rem, 26vw); }
-.stage-label { display: inline-block; margin: 0 0 .9rem; padding: .15rem .6rem; border-radius: 999px; background: rgb(255 253 250 / .78); font-size: .75rem; color: var(--ink); letter-spacing: .01em; }
-.thread { position: relative; display: flex; flex-direction: column; gap: .9rem; }
-.thread::before { content: ""; position: absolute; z-index: -1; inset: -3.5rem -3rem -3rem -4rem; background: radial-gradient(closest-side, rgb(243 238 233 / .82), rgb(243 238 233 / .55) 60%, rgb(243 238 233 / 0)); }
-.thread p { margin: 0; max-width: 92%; font-size: 1rem; line-height: 1.45; color: var(--ink); }
-.thread .who { display: flex; align-items: center; gap: .45rem; font-size: .75rem; font-weight: 600; letter-spacing: .02em; opacity: .7; margin-bottom: .15rem; }
-.thread .who i { font-style: normal; font-weight: 500; padding: 0 .45rem; border-radius: 999px; background: rgb(255 253 250 / .75); }
-.thread .who i.new { background: var(--rose); }
-.t-you { align-self: flex-end; text-align: right; }
-.thread-static { max-width: 32rem; gap: 1.4rem; justify-self: end; width: 100%; }
-.thread-static::before { display: none; }
-.thread-static p { font-size: 1.0625rem; }
-.t-you .who { justify-content: flex-end; }
-.t-still { align-self: flex-start; }
-.t-switch { align-self: stretch; max-width: none !important; padding: .2rem 0 !important; text-align: center; font-size: .8125rem !important; color: var(--ink); }
-.t-switch span { display: inline-flex; align-items: center; gap: .6rem; font-weight: 600; color: var(--ink); }
-.t-switch span::before, .t-switch span::after { content: ""; width: 2.5rem; height: 1px; background: rgb(46 58 68 / .6); }
-
+/* Bubbles: the same shapes as the conversation surfaces. */
+.b { margin: 0; padding: .75rem 1.05rem; border-radius: 1.35rem; max-width: 26rem; font-size: 1.0625rem; line-height: 1.45; }
+.b.you { align-self: flex-end; background: var(--ink); color: var(--paper); border-bottom-right-radius: .4rem; }
+.b.still { align-self: flex-start; background: var(--paper); color: var(--ink); border-bottom-left-radius: .4rem; box-shadow: 0 1px 0 rgb(46 58 68 / .06), 0 12px 32px -18px rgb(58 74 107 / .35); }
+.ai { display: block; width: fit-content; margin-bottom: .3rem; padding: .05rem .55rem; border-radius: 999px; background: var(--mist); font-size: .75rem; font-weight: 600; }
+.ai.new { background: var(--rose); }
+.dots { display: inline-flex; gap: .3rem; padding: 1rem 1.1rem; border-radius: 1.35rem 1.35rem 1.35rem .4rem; background: var(--paper); }
+.dots i { width: .5rem; height: .5rem; border-radius: 50%; background: var(--ink); opacity: .35; }
 @media (prefers-reduced-motion: no-preference) {
-  .thread p { animation: 20s ease-in-out infinite both; }
-  .thread .t1 { animation-name: say-1; }
-  .thread .t2 { animation-name: say-2; }
-  .thread .t3 { animation-name: say-3; }
-  .thread .t4 { animation-name: say-4; }
-  .thread .t5 { animation-name: say-5; }
+  .dots i { animation: blink 1.2s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .2s; }
+  .dots i:nth-child(3) { animation-delay: .4s; }
 }
-@keyframes say-1 { 0%, 3% { opacity: 0; transform: translateY(8px); } 7%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
-@keyframes say-2 { 0%, 13% { opacity: 0; transform: translateY(8px); } 19%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
-@keyframes say-3 { 0%, 31% { opacity: 0; } 36%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
-@keyframes say-4 { 0%, 45% { opacity: 0; transform: translateY(8px); } 49%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
-@keyframes say-5 { 0%, 56% { opacity: 0; transform: translateY(8px); } 63%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+@keyframes blink { 0%, 60%, 100% { opacity: .25; transform: none; } 30% { opacity: .8; transform: translateY(-3px); } }
 
-main > section:not(.hero) { padding-block: clamp(3.5rem, 8vw, 6rem); border-top: 1px solid var(--line); }
-h2 { font-weight: 300; font-size: clamp(1.75rem, 3.3vw, 2.5rem); line-height: 1.22; max-width: 22ch; }
-h3 { font-size: 1.0625rem; font-weight: 600; letter-spacing: 0; }
+.stage { position: relative; z-index: 1; justify-self: end; width: min(27rem, 100%); padding: 8rem clamp(1.25rem, 6vw, 6.5rem) 4rem 0; }
+.thread { display: flex; flex-direction: column; gap: .7rem; }
+.reply { display: grid; align-self: flex-start; }
+.reply > * { grid-area: 1 / 1; align-self: start; }
+.reply .dots { width: fit-content; }
+.switch { align-self: center; margin: .5rem 0; padding: .3rem .9rem; border-radius: 999px; background: rgb(255 253 250 / .7); font-size: .8125rem; font-weight: 600; }
+.stage-note { margin: 1.25rem 0 0; font-size: .8125rem; color: var(--muted); text-align: right; }
+.reply .dots { visibility: hidden; }
+@media (prefers-reduced-motion: no-preference) {
+  .thread > * { animation: 1 both ease-out; }
+  .thread .s1 { animation: rise .5s .6s both; }
+  .thread .s2 > .dots { visibility: visible; animation: flash 1.6s 1.3s both; }
+  .thread .s2 > .b { animation: rise .5s 2.9s both; }
+  .thread .s3 { animation: rise .5s 4.6s both; }
+  .thread .s4 { animation: rise .5s 5.6s both; }
+  .thread .s5 > .dots { visibility: visible; animation: flash 1.6s 6.3s both; }
+  .thread .s5 > .b { animation: rise .5s 7.9s both; }
+}
+@keyframes rise { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes flash { 0% { opacity: 0; } 12%, 88% { opacity: 1; } 100% { opacity: 0; } }
 
-/* Three attitudes */
-.manner h2 { margin-bottom: 2.25rem; }
-.three { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
-.three li { background: var(--panel); border-radius: 1.25rem; padding: 1.6rem 1.6rem 1.75rem; }
-.three p { margin: .6rem 0 0; color: var(--muted); font-size: .9375rem; }
+/* Bands: one colour field each. */
+main > section:not(.hero) { padding-block: clamp(4.5rem, 10vw, 8rem); }
+.band, .install, .github { max-width: none !important; padding-inline: max(clamp(1.25rem, 6vw, 5rem), calc((100% - 72rem) / 2)) !important; }
+.rose { background: var(--rose); }
+.sage { background: var(--sage); }
+.mist { background: var(--mist); }
+.night { background: var(--night); color: var(--paper); }
+.install { background: var(--paper); }
+.github { background: var(--mist); }
+h2 { font-weight: 300; font-size: clamp(2.25rem, 5.2vw, 4.25rem); line-height: 1.05; letter-spacing: -.03em; max-width: 16ch; }
+h3 { font-size: 1rem; font-weight: 600; letter-spacing: 0; }
+.copy p { max-width: var(--measure); margin: 1.5rem 0 0; font-size: 1.125rem; opacity: .85; }
+.copy + * { margin-top: clamp(2.5rem, 5vw, 4rem); }
 
-/* Say less: copy beside an example conversation */
-.talk { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2.5rem clamp(2rem, 6vw, 5rem); align-items: start; }
-.talk-copy p, .concept-copy p, .install-copy p, .github p { max-width: var(--measure); color: var(--muted); margin: 1.25rem 0 0; }
-
-/* Concept */
-.swap { display: grid; grid-template-columns: 1fr 1fr; margin-top: 2.5rem; border-top: 1px solid var(--ink); }
-.swap > div { padding: 1.25rem 2rem 0 0; }
-.swap > div + div { padding-left: 2rem; border-left: 1px solid var(--line); }
-.swap ul { list-style: none; margin: .75rem 0 0; padding: 0; }
-.swap li { padding-block: .55rem; border-bottom: 1px solid var(--line); }
-.swap div:first-child li { color: var(--muted); }
-.stays { background: linear-gradient(to bottom, color-mix(in srgb, var(--sage) 28%, transparent), transparent 85%); }
-.proof { margin: 2rem 0 0; max-width: var(--measure); font-size: .9375rem; color: var(--muted); }
-.evidence { margin-top: 1.25rem; }
-.evidence summary { display: inline-flex; align-items: center; gap: .5rem; min-height: 2.75rem; padding: .55rem 1.1rem; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); cursor: pointer; font-size: .9375rem; list-style: none; }
+/* Remembers: two days, side by side. */
+.days { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
+.day { display: flex; flex-direction: column; gap: .7rem; padding: 1.5rem; border-radius: 2rem; background: rgb(255 253 250 / .45); }
+.when { margin: 0 0 .25rem; font-size: .875rem; font-weight: 600; }
+.day + .day { margin-top: 3.5rem; }
+.evidence { margin-top: 2rem; }
+.evidence summary { display: inline-flex; align-items: center; gap: .6rem; min-height: 2.75rem; padding: .55rem 1.2rem; border-radius: 999px; background: var(--paper); cursor: pointer; list-style: none; }
 .evidence summary::-webkit-details-marker { display: none; }
-.evidence summary::after { content: "+"; color: var(--muted); }
+.evidence summary::after { content: "+"; opacity: .6; }
 .evidence[open] summary::after { content: "−"; }
 .evidence figure { margin: 1.25rem 0 0; }
-.evidence img { display: block; width: 100%; height: auto; border-radius: 1.25rem; }
-.evidence figcaption ol { margin: 1.25rem 0 0; padding-left: 1.25rem; display: grid; gap: .5rem; max-width: 46rem; font-size: .9375rem; }
-.evidence figcaption p { margin: .75rem 0 0; font-size: .8125rem; color: var(--muted); }
-.limits { list-style: none; margin: 2.25rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
-.limits li { padding-top: 1rem; border-top: 1px solid var(--line); font-size: .9375rem; color: var(--muted); }
-.limits b { display: block; color: var(--ink); margin-bottom: .2rem; }
+.evidence img { display: block; width: 100%; height: auto; border-radius: 1.5rem; }
+.evidence figcaption { margin: .9rem 0 0; max-width: 46rem; font-size: .875rem; }
 
-/* Install */
-.steps { list-style: none; counter-reset: step; margin: 2.5rem 0 1.5rem; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
-.steps li { counter-increment: step; position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: 1.25rem; padding: 1.4rem 1.6rem 1.5rem 4.25rem; }
-.steps li::before { content: counter(step); position: absolute; left: 1.5rem; top: 1.3rem; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--panel); display: grid; place-items: center; font-size: .875rem; }
-.steps p { margin: .5rem 0 0; color: var(--muted); font-size: .9375rem; max-width: var(--measure); }
-.steps pre { margin: .9rem 0 0; padding: .9rem 1.1rem; background: var(--ink); color: var(--paper); border-radius: .75rem; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8125rem; line-height: 1.6; }
-.steps pre code { font-size: inherit; }
-.steps pre:first-of-type { user-select: all; }
-.note { font-size: .875rem; color: var(--muted); }
+/* AI switch: the recording, then what changes and what stays. */
+.switch-clip { margin-inline: 0; }
+.switch-clip video { display: block; width: 100%; height: auto; border-radius: 1.75rem; background: #2c3a56; }
+.switch-clip figcaption { margin: .9rem 0 0; max-width: 46rem; font-size: .875rem; opacity: .8; }
+.swap { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; margin-top: 3rem; }
+.swap h3 { margin-bottom: .9rem; }
+.pills, .bubbles { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .6rem; }
+.pills li { padding: .5rem 1.05rem; border-radius: 999px; border: 1px solid rgb(255 253 250 / .45); }
+.pills.solid li { border-color: transparent; background: var(--paper); color: var(--ink); }
 
-.github h2 { max-width: none; }
+/* Where: a cloud of the places and things it works with. */
+.cloud { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2.5rem; }
+.cloud h3 { margin-bottom: 1.1rem; }
+.bubbles { gap: .8rem; align-items: center; }
+.bubbles li { padding: .7rem 1.35rem; border-radius: 999px; background: var(--paper); font-size: 1.125rem; }
+.bubbles li.l { padding: 1rem 1.8rem; font-size: 1.5rem; }
+.bubbles li.xl { padding: 1.25rem 2.3rem; font-size: 2.125rem; font-weight: 300; background: var(--ink); color: var(--paper); }
+.fine { margin: 2.5rem 0 0; max-width: var(--measure); font-size: .9375rem; }
+
+/* Works while you talk: copy beside the conversation. */
+.mist { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 clamp(2rem, 6vw, 5rem); align-items: start; }
+.mist > .copy + * { margin-top: 0; }
+.mist > .limits { grid-column: 1 / -1; }
+.thread-live { display: flex; flex-direction: column; gap: .7rem; max-width: 34rem; margin-left: auto; }
+.waiting { padding: 0; background: none; box-shadow: none; }
+.limits { list-style: none; margin: clamp(3rem, 6vw, 4.5rem) 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem; }
+.limits li { font-size: .9375rem; color: var(--muted); }
+.limits b { display: block; margin-bottom: .3rem; color: var(--ink); font-size: 1.125rem; font-weight: 600; }
+
+/* Install. */
+.command { margin: 0; padding: 1.4rem 1.6rem; border-radius: 1.25rem; background: var(--ink); color: var(--paper); font-size: clamp(.875rem, 1.4vw, 1.0625rem); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.command code { font-size: inherit; }
+.note { font-size: .875rem; color: var(--muted); max-width: 46rem; }
+.steps { list-style: none; counter-reset: step; margin: 3rem 0 1.5rem; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem; }
+.steps li { counter-increment: step; }
+.steps li::before { content: counter(step); display: grid; place-items: center; width: 2.75rem; height: 2.75rem; margin-bottom: 1rem; border-radius: 50%; background: var(--rose); font-size: 1.125rem; }
+.steps p { margin: .5rem 0 0; color: var(--muted); }
+
+.github p { max-width: var(--measure); color: var(--muted); margin: 1.5rem 0 0; }
 .github .actions { margin-top: 2rem; }
-.github .note { margin-top: 1.25rem; }
-.ko-summary h2 { font-size: 1.25rem; font-weight: 600; }
-.ko-summary p { color: var(--muted); max-width: 40rem; margin: .75rem 0 0; }
 
 .foot { display: flex; flex-wrap: wrap; gap: 1rem 3rem; justify-content: space-between; padding-block: 2.5rem 3rem; border-top: 1px solid var(--line); font-size: .8125rem; color: var(--muted); }
 .foot p { margin: 0; max-width: 28rem; }
 .foot nav { display: flex; gap: 1.25rem; }
 
-/* Wide screens: the hero image stays full-bleed; the header, hero copy and
-   dialogue keep to a centred frame instead of drifting to the screen edges.
-   Each side matches its narrow value at exactly the frame width, so nothing jumps. */
 .bar { padding-inline: max(clamp(1.25rem, 4.5vw, 3.5rem), calc((100% - var(--frame)) / 2 + 3.5rem)); }
-.hero-copy { padding-inline: max(clamp(1.25rem, 7vw, 7.5rem), calc((100% - var(--frame)) / 2 + 6.3rem)); }
-.stage { right: max(clamp(1.25rem, 3vw, 3rem), calc((100% - var(--frame)) / 2 + 2.7rem + min(8rem, (100% - var(--frame)) * .3))); }
-@media (min-width: 1441px) {
-  /* The figure keeps its 1440px composition, centred, so it gathers with the
-     copy and the dialogue instead of sliding to the right edge; its sides fade
-     into the page colour. */
-  .hero-art img { left: 50%; right: auto; width: var(--frame); transform: translateX(-50%);
-    -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
-    mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); }
-}
 
 @media (max-width: 1000px) {
-  .stage { position: relative; right: auto; bottom: auto; width: auto; max-width: 26rem; margin: 0 clamp(1.25rem, 7vw, 7.5rem) 3rem; }
-}
-@media (max-width: 900px) {
-  .three, .limits { grid-template-columns: 1fr; }
-  .talk { grid-template-columns: 1fr; }
+  main > .hero { grid-template-columns: 1fr; min-height: 0; }
+  .hero-art::after { background: linear-gradient(to bottom, rgb(243 238 233 / .3), rgb(243 238 233 / .85) 55%, var(--mist)); }
+  .hero-copy { padding: 7rem clamp(1.25rem, 7vw, 7.5rem) 1rem; }
+  .stage { justify-self: start; padding: 2rem clamp(1.25rem, 7vw, 7.5rem) 4rem; width: min(30rem, 100%); box-sizing: content-box; }
+  .stage-note { text-align: left; }
+  .limits, .steps { grid-template-columns: 1fr; gap: 1.5rem; }
+  .mist { grid-template-columns: 1fr; }
+  .mist > .copy + * { margin-top: 2.5rem; }
+  .hero-art { position: absolute; }
 }
 @media (max-width: 720px) {
   body { font-size: .9375rem; }
@@ -194,18 +199,11 @@ h3 { font-size: 1.0625rem; font-weight: 600; letter-spacing: 0; }
   .bar nav a { padding-block: .65rem; }
   .langs { width: 100%; gap: 1.1rem; padding: .2rem 0 0; border-left: 0; border-top: 1px solid rgb(46 58 68 / .12); font-size: .875rem; }
   .langs a { font-size: .875rem; }
-  main > .hero { display: block; min-height: 0; }
-  .hero-art { position: relative; display: block; }
-  .hero-art img { position: static; display: block; width: 100%; height: 20rem; object-fit: cover; object-position: 62% 25%; }
-  .hero-art::after { height: 40%; }
-  .hero-copy { margin-top: -2.5rem; padding-top: 0; padding-bottom: 2.5rem; }
-  .swap { grid-template-columns: 1fr; }
-  .swap > div, .swap > div + div { padding: 1.25rem 0 0; border-left: 0; }
-  .steps li { padding: 1.25rem 1.25rem 1.4rem; }
-  .steps li::before { position: static; margin-bottom: .6rem; }
+  .hero-copy { padding-top: 3rem; }
+  .stage { width: auto; padding-inline: 1.25rem; }
+  .days, .swap, .cloud { grid-template-columns: 1fr; }
+  .day + .day { margin-top: 0; }
+  .b { font-size: 1rem; }
+  .bubbles li.l { font-size: 1.25rem; padding: .8rem 1.4rem; }
+  .bubbles li.xl { font-size: 1.625rem; padding: 1rem 1.8rem; }
 }
-.talk > .proof, .talk > .evidence { grid-column: 1 / -1; }
-.talk > .proof { margin-top: 0; }
-.switch-clip { margin: 1.25rem 0 0; }
-.switch-clip video { display: block; width: 100%; height: auto; border-radius: 1.25rem; background: var(--mist); }
-.switch-clip figcaption { margin: .75rem 0 0; font-size: .8125rem; color: var(--muted); }

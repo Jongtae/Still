@@ -2507,6 +2507,3156 @@
   "ja": "ターミナルにボットトークンの入力欄を開きました。",
   "zh": "已在终端打开机器人令牌输入框。"
  },
+ "telegram_surface.approval_part": {
+  "ko": "승인 내용 ({index}/{total})\n{part}",
+  "en": "Approval details ({index}/{total})\n{part}",
+  "ja": "承認内容 ({index}/{total})\n{part}",
+  "zh": "批准详情 ({index}/{total})\n{part}"
+ },
+ "telegram_surface.approval_final": {
+  "ko": "승인 내용 ({total}/{total})\n{part}\n위에 나누어 보낸 전체 실행 내용을 확인한 뒤 승인하세요.",
+  "en": "Approval details ({total}/{total})\n{part}\nReview all execution details sent above before approving.",
+  "ja": "承認内容 ({total}/{total})\n{part}\n上に分けて送った実行内容をすべて確認してから承認してください。",
+  "zh": "批准详情 ({total}/{total})\n{part}\n请检查上方分段发送的全部执行详情后再批准。"
+ },
+ "telegram_surface.job_status": {
+  "ko": "작업 상태: {status}",
+  "en": "Task status: {status}",
+  "ja": "タスクの状態: {status}",
+  "zh": "任务状态：{status}"
+ },
+ "telegram_surface.steps_processed": {
+  "ko": "필요한 단계를 {count}개 처리했습니다.",
+  "en": "Processed {count} required steps.",
+  "ja": "必要な手順を {count} 件処理しました。",
+  "zh": "已处理 {count} 个必要步骤。"
+ },
+ "telegram_surface.agent_working": {
+  "ko": "에이전트가 작업을 처리하고 있습니다.",
+  "en": "The agent is working on the task.",
+  "ja": "エージェントがタスクを処理しています。",
+  "zh": "智能体正在处理任务。"
+ },
+ "telegram_surface.waiting_connection": {
+  "ko": "필요한 연결을 기다리고 있습니다. 아직 아무 작업도 실행하지 않았습니다.",
+  "en": "Waiting for the required connection. No actions have run yet.",
+  "ja": "必要な接続を待っています。まだ何も実行していません。",
+  "zh": "正在等待必要的连接。尚未执行任何操作。"
+ },
+ "telegram_surface.delivery_cancelled": {
+  "ko": "Telegram 전달은 취소되었습니다.",
+  "en": "Telegram delivery was cancelled.",
+  "ja": "Telegram への送信はキャンセルされました。",
+  "zh": "Telegram 发送已取消。"
+ },
+ "telegram_surface.check_ai": {
+  "ko": "AI 연결을 확인하지 못했어요. AI 설정에서 상태를 확인하세요.",
+  "en": "Could not verify the AI connection. Check its status in AI settings.",
+  "ja": "AI 接続を確認できませんでした。AI 設定で状態を確認してください。",
+  "zh": "无法验证 AI 连接。请在 AI 设置中查看状态。"
+ },
+ "telegram_surface.switched_ai": {
+  "ko": "{selected_name}로 전환했습니다. 실패한 요청은 자동으로 다시 실행하지 않았어요. 같은 요청을 다시 보내 주세요.",
+  "en": "Switched to {selected_name}. The failed request was not retried automatically. Please send it again.",
+  "ja": "{selected_name} に切り替えました。失敗したリクエストは自動再実行していません。もう一度送ってください。",
+  "zh": "已切换至 {selected_name}。失败的请求未自动重试，请重新发送。"
+ },
+ "telegram_surface.without_context": {
+  "ko": "컨텍스트 없이 이 요청을 시작할게요.",
+  "en": "Starting this request without context.",
+  "ja": "コンテキストなしでこのリクエストを開始します。",
+  "zh": "将不使用上下文开始此请求。"
+ },
+ "telegram_surface.watch_stopped": {
+  "ko": "이미 멈춘 지켜보기입니다.",
+  "en": "This watch has already stopped.",
+  "ja": "この見守りはすでに停止しています。",
+  "zh": "此监控已停止。"
+ },
+ "telegram_surface.context_denied": {
+  "ko": "이 작업의 컨텍스트 공유를 허용하지 않았습니다.",
+  "en": "Context sharing for this task was not allowed.",
+  "ja": "このタスクのコンテキスト共有は許可されませんでした。",
+  "zh": "未允许此任务共享上下文。"
+ },
+ "telegram_surface.other_ai": {
+  "ko": "다른 AI 연결은 Still 웹의 AI 설정에서 선택할 수 있어요.",
+  "en": "You can select another AI connection in AI settings on Still web.",
+  "ja": "Still ウェブの AI 設定で別の AI 接続を選べます。",
+  "zh": "可在 Still 网页的 AI 设置中选择其他 AI 连接。"
+ },
+ "api_input.public_json": {
+  "ko": "인증 정보를 제외한 API 연결 정보를 JSON으로 주세요.",
+  "en": "Provide API connection details as JSON, excluding credentials.",
+  "ja": "認証情報を除いた API 接続情報を JSON で指定してください。",
+  "zh": "请以 JSON 提供 API 连接信息，不含凭据。"
+ },
+ "api_input.public_only": {
+  "ko": "대화에는 비밀값 없이 API 연결의 공개 정보만 주세요.",
+  "en": "Share only public API connection details in chat, without secrets.",
+  "ja": "会話には秘密情報を含めず、API 接続の公開情報だけを指定してください。",
+  "zh": "请在对话中仅提供 API 连接的公开信息，不含秘密值。"
+ },
+ "api_input.connection_keys": {
+  "ko": "API 연결 정보의 키를 settings_read의 형식대로 주세요.",
+  "en": "Use the API connection keys shown by settings_read.",
+  "ja": "API 接続のキーは settings_read の形式で指定してください。",
+  "zh": "请按 settings_read 的格式提供 API 连接键。"
+ },
+ "api_input.connection_name": {
+  "ko": "연결 이름을 소문자·숫자·하이픈 40자 이하로 주세요.",
+  "en": "Use a connection name of up to 40 lowercase letters, digits, or hyphens.",
+  "ja": "接続名は小文字・数字・ハイフンで 40 文字以内にしてください。",
+  "zh": "连接名称限 40 个小写字母、数字或连字符。"
+ },
+ "api_input.auth_header": {
+  "ko": "API 인증 헤더와 방식 이름을 확인하세요.",
+  "en": "Check the API authentication header and scheme names.",
+  "ja": "API 認証ヘッダーと方式名を確認してください。",
+  "zh": "请检查 API 认证标头及方案名称。"
+ },
+ "api_input.money_flag": {
+  "ko": "돈이 오갈 수 있는 연결인지 표시하세요.",
+  "en": "Indicate whether this connection may involve money.",
+  "ja": "金銭を扱う可能性がある接続か指定してください。",
+  "zh": "请注明此连接是否可能涉及资金。"
+ },
+ "api_input.description_limit": {
+  "ko": "연결 설명은 400자 이하로 주세요.",
+  "en": "Keep the connection description within 400 characters.",
+  "ja": "接続の説明は 400 文字以内にしてください。",
+  "zh": "连接说明限 400 字以内。"
+ },
+ "api_input.target_fields": {
+  "ko": "확인할 대상 필드와 값을 함께 주세요.",
+  "en": "Provide both the target fields and values to verify.",
+  "ja": "確認する対象のフィールドと値を両方指定してください。",
+  "zh": "请同时提供待验证的目标字段和值。"
+ },
+ "api_input.read_check": {
+  "ko": "읽기 확인 주소와 필요한 응답 필드를 주세요.",
+  "en": "Provide the read-check URL and required response fields.",
+  "ja": "読み取り確認用の URL と必要な応答フィールドを指定してください。",
+  "zh": "请提供读取验证地址及必要的响应字段。"
+ },
+ "api_input.response_fields": {
+  "ko": "필요한 응답 필드는 1~8개로 주세요.",
+  "en": "Provide 1–8 required response fields.",
+  "ja": "必要な応答フィールドを 1～8 個指定してください。",
+  "zh": "请提供 1 至 8 个必要的响应字段。"
+ },
+ "api_input.oauth_bearer": {
+  "ko": "OAuth 연결은 Authorization 헤더의 Bearer 방식을 사용합니다.",
+  "en": "OAuth connections use the Bearer scheme in the Authorization header.",
+  "ja": "OAuth 接続は Authorization ヘッダーの Bearer 方式を使用します。",
+  "zh": "OAuth 连接使用 Authorization 标头的 Bearer 方案。"
+ },
+ "api_input.work_state": {
+  "ko": "원래 작업의 소유자와 현재 상태를 확인하지 못했습니다.",
+  "en": "Could not verify the original task's owner and current state.",
+  "ja": "元のタスクの所有者と現在の状態を確認できませんでした。",
+  "zh": "无法验证原任务的所有者及当前状态。"
+ },
+ "api_input.work_chat": {
+  "ko": "원래 작업의 연결된 대화를 확인하지 못했습니다.",
+  "en": "Could not verify the chat linked to the original task.",
+  "ja": "元のタスクに接続された会話を確認できませんでした。",
+  "zh": "无法验证原任务关联的对话。"
+ },
+ "api_input.input_expired": {
+  "ko": "입력 요청이 만료되었거나 원래 작업 또는 연결이 바뀌었습니다.",
+  "en": "The input request expired, or the original task or connection changed.",
+  "ja": "入力リクエストが期限切れか、元のタスクまたは接続が変わりました。",
+  "zh": "输入请求已过期，或原任务或连接已更改。"
+ },
+ "api_input.connection_changed": {
+  "ko": "연결이 그사이 바뀌어 적용하지 않았습니다.",
+  "en": "The connection changed in the meantime, so nothing was applied.",
+  "ja": "その間に接続が変わったため、適用していません。",
+  "zh": "连接期间已更改，未应用任何更改。"
+ },
+ "api_input.confirmation_changed": {
+  "ko": "확인 요청이 바뀌어 적용하지 않았습니다.",
+  "en": "The confirmation request changed, so nothing was applied.",
+  "ja": "確認リクエストが変わったため、適用していません。",
+  "zh": "确认请求已更改，未应用任何更改。"
+ },
+ "api_input.link_limit": {
+  "ko": "이 작업의 입력 링크 생성 한도에 도달했어요. 다른 연결 방법을 검토하세요.",
+  "en": "This task has reached its input-link limit. Consider another connection method.",
+  "ja": "このタスクの入力リンク作成上限に達しました。別の接続方法を検討してください。",
+  "zh": "此任务已达输入链接创建上限。请考虑其他连接方式。"
+ },
+ "api_input.connection_label": {
+  "ko": "{name} API 연결",
+  "en": "{name} API connection",
+  "ja": "{name} API 接続",
+  "zh": "{name} API 连接"
+ },
+ "api_input.link_sent": {
+  "ko": "API 인증 정보를 입력할 일회용 링크를 Telegram으로 보냈어요. 확인되면 원래 작업을 이어갑니다.",
+  "en": "Sent a one-time link for API credentials to Telegram. The original task will resume after verification.",
+  "ja": "API 認証情報の入力用ワンタイムリンクを Telegram に送りました。確認後、元のタスクを再開します。",
+  "zh": "已向 Telegram 发送 API 凭据一次性输入链接。验证后将继续原任务。"
+ },
+ "api_input.enter_credentials": {
+  "ko": "API 인증 정보는 이 일회용 화면에 입력해 주세요. 확인되면 원래 작업을 이어갑니다.",
+  "en": "Enter API credentials on this one-time page. The original task will resume after verification.",
+  "ja": "API 認証情報はこのワンタイム画面に入力してください。確認後、元のタスクを再開します。",
+  "zh": "请在此一次性页面输入 API 凭据。验证后将继续原任务。"
+ },
+ "api_input.link_failed": {
+  "ko": "비밀 입력 링크를 열지 못했습니다. 같은 연결 요청에서 다시 시도해 주세요.",
+  "en": "Could not open the private input link. Retry from the same connection request.",
+  "ja": "秘密情報の入力リンクを開けませんでした。同じ接続リクエストから再試行してください。",
+  "zh": "无法打开私密输入链接。请从同一连接请求重试。"
+ },
+ "api_input.check_input": {
+  "ko": "이 링크의 인증 정보 입력을 확인하세요.",
+  "en": "Check the credentials entered for this link.",
+  "ja": "このリンクの認証情報入力を確認してください。",
+  "zh": "请检查此链接的凭据输入。"
+ },
+ "api_input.checking_input": {
+  "ko": "입력을 확인하고 있어요. 잠시 기다려 주세요.",
+  "en": "Checking your input. Please wait.",
+  "ja": "入力を確認しています。しばらくお待ちください。",
+  "zh": "正在检查输入，请稍候。"
+ },
+ "api_input.work_changed": {
+  "ko": "입력 요청 또는 원래 작업이 바뀌어 저장하지 않았습니다.",
+  "en": "The input request or original task changed, so nothing was saved.",
+  "ja": "入力リクエストまたは元のタスクが変わったため、保存していません。",
+  "zh": "输入请求或原任务已更改，未保存。"
+ },
+ "api_input.values_saved": {
+  "ko": "값을 안전하게 저장했습니다. 원래 작업을 이어가며 실제로 동작하는지 확인합니다.",
+  "en": "Saved the values securely. Resuming the original task to check that it works.",
+  "ja": "値を安全に保存しました。元のタスクを再開し、実際に動作するか確認します。",
+  "zh": "已安全保存值。将继续原任务并验证是否正常工作。"
+ },
+ "api_input.read_verified": {
+  "ko": "연결에 필요한 읽기를 확인했습니다. 원래 작업을 이어갑니다.",
+  "en": "Verified the reads required for this connection. Resuming the original task.",
+  "ja": "接続に必要な読み取りを確認しました。元のタスクを再開します。",
+  "zh": "已验证连接所需的读取。将继续原任务。"
+ },
+ "api_input.input_failed": {
+  "ko": "입력 또는 작업 상태를 확인하지 못했습니다. 연결 요청을 확인해 주세요.",
+  "en": "Could not verify the input or task state. Check the connection request.",
+  "ja": "入力またはタスクの状態を確認できませんでした。接続リクエストを確認してください。",
+  "zh": "无法验证输入或任务状态。请检查连接请求。"
+ },
+ "connector_revocation.unknown_connection": {
+  "ko": "해제할 Google 연결을 찾지 못했습니다.",
+  "en": "Could not find the Google connection to disconnect.",
+  "ja": "解除する Google 接続が見つかりませんでした。",
+  "zh": "找不到要断开的 Google 连接。"
+ },
+ "connector_revocation.invalid_confirmation": {
+  "ko": "확인 정보가 올바르지 않습니다. 연결 해제를 처음부터 다시 진행해 주세요.",
+  "en": "The confirmation is invalid. Start the disconnection again.",
+  "ja": "確認情報が正しくありません。接続解除を最初からやり直してください。",
+  "zh": "确认信息无效。请重新开始断开连接。"
+ },
+ "connector_revocation.replayed_confirmation": {
+  "ko": "이미 사용한 확인입니다. 연결 해제를 다시 하려면 새로 확인해 주세요.",
+  "en": "This confirmation was already used. Confirm again to disconnect.",
+  "ja": "この確認は使用済みです。接続解除には改めて確認してください。",
+  "zh": "此确认已使用。要断开连接，请重新确认。"
+ },
+ "connector_revocation.expired_confirmation": {
+  "ko": "확인 시간이 지났습니다. 연결 해제를 다시 확인해 주세요.",
+  "en": "The confirmation expired. Confirm the disconnection again.",
+  "ja": "確認の期限が切れました。接続解除を再確認してください。",
+  "zh": "确认已过期。请重新确认断开连接。"
+ },
+ "connector_revocation.wrong_owner": {
+  "ko": "다른 로그인 세션에서 만든 확인이라 사용할 수 없습니다.",
+  "en": "This confirmation was created in another login session and cannot be used.",
+  "ja": "別のログインセッションで作成された確認のため、使用できません。",
+  "zh": "此确认创建于其他登录会话，无法使用。"
+ },
+ "connector_revocation.connection_changed": {
+  "ko": "확인 이후 연결 상태가 바뀌었습니다. 현재 상태를 다시 확인한 뒤 해제해 주세요.",
+  "en": "The connection changed after confirmation. Check its current state before disconnecting.",
+  "ja": "確認後に接続状態が変わりました。現在の状態を確認してから解除してください。",
+  "zh": "确认后连接状态已更改。请检查当前状态后再断开。"
+ },
+ "connector_revocation.nothing_to_retry": {
+  "ko": "Google에 다시 취소를 요청할 항목이 없습니다.",
+  "en": "There is no Google revocation request to retry.",
+  "ja": "Google への取り消しを再要求する項目はありません。",
+  "zh": "没有可向 Google 重试的撤销请求。"
+ },
+ "connector_revocation.reconnected": {
+  "ko": "그 사이 다시 연결되어, 이전 토큰 취소를 재시도하면 새 연결까지 끊길 수 있어 요청하지 않았습니다.",
+  "en": "The connection was restored in the meantime. Revocation was not retried because it could disconnect the new connection.",
+  "ja": "その間に再接続されたため、古いトークンの取り消しで新しい接続まで切れないよう再要求しませんでした。",
+  "zh": "期间已重新连接。重试撤销旧令牌可能断开新连接，因此未重试。"
+ },
+ "connector_revocation.disconnect_notice": {
+  "ko": "{label} 연결을 해제하면 Still이 즉시 이 연결을 쓰지 않고, 이 기기에 저장된 인증 정보를 삭제하며, Google({host})에 권한 취소를 요청합니다. 저장된 결과물과 기록은 지우지 않고, Google에 있는 데이터도 삭제하지 않습니다.",
+  "en": "Disconnecting {label} immediately stops Still from using it, deletes credentials saved on this device, and requests revocation from Google ({host}). Saved artifacts, records, and data on Google are kept.",
+  "ja": "{label} を解除すると Still は直ちに使用を止め、この端末の認証情報を削除し、Google（{host}）に権限取り消しを要求します。保存済みの成果物や記録、Google 上のデータは削除しません。",
+  "zh": "断开 {label} 后，Still 会立即停止使用此连接，删除本机凭据，并向 Google（{host}）请求撤销授权。已保存的成果、记录及 Google 上的数据将保留。"
+ },
+ "connector_revocation.unresolved_owners": {
+  "ko": "{label} 연결 중 이 기기에서 확인할 수 없는 소유자(예: 이전에 연결했던 Telegram 계정)로 남아 있는 연결이 있어 모두 해제하지 못했습니다. 이 연결은 아직 사용될 수 있습니다. Google 계정의 타사 앱 액세스에서 Still 권한을 직접 제거해 주세요.",
+  "en": "Some {label} connections belong to owners this device cannot identify, such as a previous Telegram account, and could not be disconnected. They may still be usable. Remove Still's access in your Google account's third-party app settings.",
+  "ja": "{label} には、この端末で確認できない所有者（以前の Telegram アカウントなど）の接続があり、すべて解除できませんでした。これらはまだ使える可能性があります。Google アカウントのサードパーティアプリ設定で Still の権限を削除してください。",
+  "zh": "部分 {label} 连接属于本机无法确认的所有者（如之前关联的 Telegram 账户），未能全部断开。这些连接可能仍可使用。请在 Google 账户的第三方应用设置中移除 Still 权限。"
+ },
+ "connector_revocation.disconnected": {
+  "ko": "{label} 연결을 해제했습니다. Still은 더 이상 이 연결을 사용하지 않으며, 저장된 결과물과 기록은 그대로 남아 있습니다. {outcome}",
+  "en": "Disconnected {label}. Still no longer uses this connection. Saved artifacts and records are kept. {outcome}",
+  "ja": "{label} を解除しました。Still はこの接続を使用しません。保存済みの成果物と記録は残ります。 {outcome}",
+  "zh": "已断开 {label}。Still 不再使用此连接，已保存的成果和记录将保留。 {outcome}"
+ },
+ "connector_revocation.revoked": {
+  "ko": "Google에서도 권한 취소를 확인했습니다.",
+  "en": "Google also confirmed that access was revoked.",
+  "ja": "Google 側でも権限取り消しを確認しました。",
+  "zh": "Google 也已确认撤销授权。"
+ },
+ "connector_revocation.already_invalid": {
+  "ko": "Google은 이 인증이 이미 유효하지 않다고 답했습니다(이미 취소되었거나 만료됨).",
+  "en": "Google reported that these credentials are already invalid (revoked or expired).",
+  "ja": "Google はこの認証がすでに無効（取り消し済みまたは期限切れ）と回答しました。",
+  "zh": "Google 表示此凭据已无效（已撤销或过期）。"
+ },
+ "connector_revocation.revocation_failed": {
+  "ko": "Google이 권한 취소 요청을 거절해 Google 쪽 권한 취소는 확인되지 않았습니다. 나중에 다시 시도하거나 Google 계정의 타사 앱 액세스에서 직접 제거할 수 있습니다.",
+  "en": "Google rejected the revocation request, so revocation there is unconfirmed. Retry later or remove access in your Google account's third-party app settings.",
+  "ja": "Google が取り消し要求を拒否したため、Google 側の取り消しは未確認です。後で再試行するか、Google アカウントのサードパーティアプリ設定で削除できます。",
+  "zh": "Google 拒绝了撤销请求，尚未确认其授权已撤销。请稍后重试，或在 Google 账户的第三方应用设置中移除权限。"
+ },
+ "connector_revocation.revocation_unconfirmed": {
+  "ko": "Google에 연결하지 못해 Google 쪽 권한 취소는 확인되지 않았습니다. 나중에 다시 시도하거나 Google 계정의 타사 앱 액세스에서 직접 제거할 수 있습니다.",
+  "en": "Could not reach Google, so revocation there is unconfirmed. Retry later or remove access in your Google account's third-party app settings.",
+  "ja": "Google に接続できず、Google 側の取り消しは未確認です。後で再試行するか、Google アカウントのサードパーティアプリ設定で削除できます。",
+  "zh": "无法连接 Google，尚未确认其授权已撤销。请稍后重试，或在 Google 账户的第三方应用设置中移除权限。"
+ },
+ "connector_revocation.not_attempted": {
+  "ko": "이 기기에 남은 인증 정보가 없어 Google에 취소 요청을 보내지 않았습니다. Google 쪽 권한이 남아 있을 수 있으니 Google 계정의 타사 앱 액세스에서 확인하세요.",
+  "en": "No credentials remain on this device, so no revocation request was sent to Google. Access may remain there; check your Google account's third-party app settings.",
+  "ja": "この端末に認証情報が残っていないため、Google に取り消しを要求していません。権限が残っている可能性があるので、Google アカウントのサードパーティアプリ設定で確認してください。",
+  "zh": "本机未留存凭据，因此未向 Google 发送撤销请求。Google 上可能仍有授权，请在 Google 账户的第三方应用设置中检查。"
+ },
+ "mcp_setup.retry_step": {
+  "ko": "같은 연결 설정을 다시 확인하면 현재 상태부터 확인하고 원래 작업을 이어갈게요.",
+  "en": "Retry the same connection setup to check its current state and resume the original task.",
+  "ja": "同じ接続設定を再確認すると、現在の状態を確認して元のタスクを再開します。",
+  "zh": "重新确认相同连接设置后，将检查当前状态并继续原任务。"
+ },
+ "mcp_setup.uncertain_step": {
+  "ko": "결과가 불확실해 자동으로 다시 등록하거나 로그인하지 않았어요. 현재 연결 상태 확인이 필요해요.",
+  "en": "The outcome is uncertain, so registration or login was not retried automatically. Check the current connection state.",
+  "ja": "結果が不確かなため、自動で再登録や再ログインはしていません。現在の接続状態の確認が必要です。",
+  "zh": "结果不确定，未自动重新注册或登录。需要检查当前连接状态。"
+ },
+ "mcp_setup.unsupported_step": {
+  "ko": "취소되었거나 지원되지 않는 연결은 다시 실행하지 않았어요. 다른 사용 가능한 연결을 검토할 수 있어요.",
+  "en": "Cancelled or unsupported connections were not retried. You can consider other available connections.",
+  "ja": "キャンセル済みまたは未対応の接続は再実行していません。ほかの利用可能な接続を検討できます。",
+  "zh": "已取消或不支持的连接未重试。可考虑其他可用连接。"
+ },
+ "mcp_setup.phase_failed": {
+  "ko": "연결 설정의 {phase} 단계에서 준비를 확인하지 못했어요 ({state}). {step}",
+  "en": "Could not verify readiness at the {phase} stage of connection setup ({state}). {step}",
+  "ja": "接続設定の {phase} 段階で準備を確認できませんでした（{state}）。 {step}",
+  "zh": "无法在连接设置的 {phase} 阶段确认就绪状态（{state}）。 {step}"
+ },
+ "mcp_setup.public_https": {
+  "ko": "공개 HTTPS 서버 주소를 확인하세요.",
+  "en": "Check the public HTTPS server URL.",
+  "ja": "公開 HTTPS サーバーの URL を確認してください。",
+  "zh": "请检查公开 HTTPS 服务器地址。"
+ },
+ "mcp_setup.credential_free_https": {
+  "ko": "인증 정보 없는 공개 HTTPS 서버 주소를 확인하세요.",
+  "en": "Check the public HTTPS server URL without credentials.",
+  "ja": "認証情報を含まない公開 HTTPS サーバーの URL を確認してください。",
+  "zh": "请检查不含凭据的公开 HTTPS 服务器地址。"
+ },
+ "mcp_setup.encoded_host": {
+  "ko": "인코딩된 호스트 주소는 연결할 수 없어요.",
+  "en": "Encoded host addresses cannot be connected.",
+  "ja": "エンコードされたホストアドレスには接続できません。",
+  "zh": "无法连接编码后的主机地址。"
+ },
+ "mcp_setup.nonstandard_ip": {
+  "ko": "축약하거나 다른 진법으로 적은 IP 주소는 연결할 수 없어요.",
+  "en": "Abbreviated IP addresses or addresses in other bases cannot be connected.",
+  "ja": "省略形や別の基数で書かれた IP アドレスには接続できません。",
+  "zh": "无法连接缩写或其他进制的 IP 地址。"
+ },
+ "mcp_setup.public_info": {
+  "ko": "연결할 서버의 공개 정보를 확인하세요.",
+  "en": "Check the server's public connection information.",
+  "ja": "接続するサーバーの公開情報を確認してください。",
+  "zh": "请检查待连接服务器的公开信息。"
+ },
+ "mcp_setup.public_json": {
+  "ko": "연결할 서버의 공개 정보를 JSON으로 주세요.",
+  "en": "Provide the server's public connection information as JSON.",
+  "ja": "接続するサーバーの公開情報を JSON で指定してください。",
+  "zh": "请以 JSON 提供待连接服务器的公开信息。"
+ },
+ "mcp_setup.reviewed_info": {
+  "ko": "인증 정보 없이 검토된 연결 정보만 주세요.",
+  "en": "Provide only reviewed connection details without credentials.",
+  "ja": "認証情報を含まない、確認済みの接続情報だけを指定してください。",
+  "zh": "请仅提供已审查且不含凭据的连接信息。"
+ },
+ "mcp_setup.unsupported_ai": {
+  "ko": "이 AI의 새 서버 인증·준비 확인은 아직 지원하지 않아요. 현재 연결이나 일반 API·브라우저 경로를 검토하세요.",
+  "en": "New server authentication and readiness checks are not supported for this AI yet. Consider an existing connection, API, or browser route.",
+  "ja": "この AI の新規サーバー認証・準備確認にはまだ対応していません。既存の接続や通常の API・ブラウザ経路を検討してください。",
+  "zh": "此 AI 暂不支持新服务器认证及就绪检查。请考虑现有连接、常规 API 或浏览器方式。"
+ },
+ "mcp_setup.server_name": {
+  "ko": "MCP 서버 이름을 확인하세요.",
+  "en": "Check the MCP server name.",
+  "ja": "MCP サーバー名を確認してください。",
+  "zh": "请检查 MCP 服务器名称。"
+ },
+ "mcp_setup.publisher_license": {
+  "ko": "게시자와 라이선스를 짧게 적고, 확인하지 못한 값은 unknown으로 주세요.",
+  "en": "Briefly state the publisher and license; use unknown for unverified values.",
+  "ja": "発行者とライセンスを短く記載し、未確認の値は unknown にしてください。",
+  "zh": "请简要注明发布者及许可证，未确认的值请填 unknown。"
+ },
+ "mcp_setup.operation_names": {
+  "ko": "필요한 동작 이름은 중복 없이 16개까지 주세요.",
+  "en": "Provide up to 16 unique required operation names.",
+  "ja": "必要な操作名を重複なく 16 個まで指定してください。",
+  "zh": "请提供最多 16 个不重复的必要操作名称。"
+ },
+ "mcp_setup.read_operations": {
+  "ko": "읽기로 검토할 동작은 필요한 동작 목록 안에서 골라 주세요.",
+  "en": "Choose operations to review as reads from the required operations list.",
+  "ja": "読み取りとして確認する操作は、必要な操作一覧から選んでください。",
+  "zh": "请从必要操作列表中选择按读取审查的操作。"
+ },
+ "mcp_setup.executable_path": {
+  "ko": "설치된 AI 실행 파일의 전체 경로를 확인하세요.",
+  "en": "Check the full path to the installed AI executable.",
+  "ja": "インストール済み AI 実行ファイルの絶対パスを確認してください。",
+  "zh": "请检查已安装 AI 可执行文件的完整路径。"
+ },
+ "mcp_setup.server_changed": {
+  "ko": "서버 설정이 바뀌어 명령을 실행하지 않았어요.",
+  "en": "Server settings changed, so the command was not run.",
+  "ja": "サーバー設定が変わったため、コマンドは実行していません。",
+  "zh": "服务器设置已更改，未执行命令。"
+ },
+ "skills.revoked": {
+  "ko": "이 작업이 읽은 스킬({skill})이 작업 중에 꺼지거나 바뀌어 이 작업은 더 진행하지 않았어요. 같은 요청을 다시 보내면 지금 설정으로 새로 시작해요.",
+  "en": "A skill used by this task ({skill}) was disabled or changed, so the task stopped. Send the same request again to start with the current settings.",
+  "ja": "このタスクが読んだスキル（{skill}）が無効化または変更されたため、処理を停止しました。同じリクエストを送ると現在の設定で新しく開始します。",
+  "zh": "此任务读取的技能（{skill}）已禁用或更改，任务已停止。重新发送相同请求可使用当前设置重新开始。"
+ },
+ "skills.missing_frontmatter": {
+  "ko": "SKILL.md에 머리말(frontmatter)이 없어요.",
+  "en": "SKILL.md has no frontmatter.",
+  "ja": "SKILL.md にフロントマターがありません。",
+  "zh": "SKILL.md 缺少前置元数据。"
+ },
+ "skills.unclosed_frontmatter": {
+  "ko": "SKILL.md 머리말이 닫히지 않았어요.",
+  "en": "SKILL.md frontmatter is not closed.",
+  "ja": "SKILL.md のフロントマターが閉じられていません。",
+  "zh": "SKILL.md 前置元数据未闭合。"
+ },
+ "skills.invalid_frontmatter": {
+  "ko": "SKILL.md 머리말을 읽을 수 없어요(형식 오류, 중복 키, 별칭 또는 허용하지 않는 태그).",
+  "en": "Could not read SKILL.md frontmatter (invalid format, duplicate keys, aliases, or unsupported tags).",
+  "ja": "SKILL.md のフロントマターを読めません（形式エラー、重複キー、別名、未対応のタグ）。",
+  "zh": "无法读取 SKILL.md 前置元数据（格式错误、重复键、别名或不支持的标签）。"
+ },
+ "skills.frontmatter_mapping": {
+  "ko": "SKILL.md 머리말이 키-값 목록이 아니에요.",
+  "en": "SKILL.md frontmatter must be a key-value mapping.",
+  "ja": "SKILL.md のフロントマターはキーと値の一覧で指定してください。",
+  "zh": "SKILL.md 前置元数据必须为键值映射。"
+ },
+ "skills.folder_missing": {
+  "ko": "스킬 폴더를 찾을 수 없어요.",
+  "en": "Could not find the skill folder.",
+  "ja": "スキルフォルダーが見つかりません。",
+  "zh": "找不到技能文件夹。"
+ },
+ "skills.symlink": {
+  "ko": "스킬 안에 링크({rel})가 있어 받지 않았어요.",
+  "en": "The skill contains a link ({rel}) and was not downloaded.",
+  "ja": "スキル内にリンク（{rel}）があるため、取得していません。",
+  "zh": "技能包含链接（{rel}），未下载。"
+ },
+ "skills.outside_path": {
+  "ko": "스킬 밖을 가리키는 경로({rel})가 있어요.",
+  "en": "A path points outside the skill ({rel}).",
+  "ja": "スキルの外を指すパス（{rel}）があります。",
+  "zh": "存在指向技能外部的路径（{rel}）。"
+ },
+ "skills.nonregular_file": {
+  "ko": "일반 파일이 아닌 항목({rel})이 있어요.",
+  "en": "An item is not a regular file ({rel}).",
+  "ja": "通常のファイルではない項目（{rel}）があります。",
+  "zh": "有项目不是普通文件（{rel}）。"
+ },
+ "skills.package_limit": {
+  "ko": "스킬 파일이 너무 크거나 많아요.",
+  "en": "Skill files are too large or too numerous.",
+  "ja": "スキルのファイルが大きすぎるか、多すぎます。",
+  "zh": "技能文件过大或过多。"
+ },
+ "skills.missing_skill_md": {
+  "ko": "SKILL.md가 없어요.",
+  "en": "SKILL.md is missing.",
+  "ja": "SKILL.md がありません。",
+  "zh": "缺少 SKILL.md。"
+ },
+ "skills.invalid_utf8": {
+  "ko": "SKILL.md가 UTF-8 글자가 아니에요.",
+  "en": "SKILL.md is not valid UTF-8 text.",
+  "ja": "SKILL.md は UTF-8 テキストではありません。",
+  "zh": "SKILL.md 不是有效的 UTF-8 文本。"
+ },
+ "skills.invalid_name": {
+  "ko": "스킬 이름은 폴더 이름과 같은 소문자·숫자·하이픈(64자 이하)이어야 해요.",
+  "en": "The skill name must match its folder: lowercase letters, digits, and hyphens, up to 64 characters.",
+  "ja": "スキル名はフォルダー名と一致する小文字・数字・ハイフンで、64 文字以内にしてください。",
+  "zh": "技能名称必须与文件夹名一致，限 64 个小写字母、数字或连字符。"
+ },
+ "skills.description_limit": {
+  "ko": "스킬 설명은 1~1024자여야 해요.",
+  "en": "The skill description must contain 1–1024 characters.",
+  "ja": "スキルの説明は 1～1024 文字にしてください。",
+  "zh": "技能说明须为 1 至 1024 字。"
+ },
+ "skills.compatibility_limit": {
+  "ko": "compatibility는 500자 이하 글자여야 해요.",
+  "en": "compatibility must be text of up to 500 characters.",
+  "ja": "compatibility は 500 文字以内のテキストにしてください。",
+  "zh": "compatibility 须为不超过 500 字的文本。"
+ },
+ "skills.metadata_mapping": {
+  "ko": "metadata는 키-값 목록이어야 해요.",
+  "en": "metadata must be a key-value mapping.",
+  "ja": "metadata はキーと値の一覧にしてください。",
+  "zh": "metadata 必须为键值映射。"
+ },
+ "skills.executables": {
+  "ko": "실행 파일: {files}",
+  "en": "Executables: {files}",
+  "ja": "実行ファイル: {files}",
+  "zh": "可执行文件： {files}"
+ },
+ "skills.extra_frontmatter": {
+  "ko": "표준 밖 머리말(메타데이터로만 보관): {fields}",
+  "en": "Nonstandard frontmatter (kept only as metadata): {fields}",
+  "ja": "標準外のフロントマター（メタデータとしてのみ保存）: {fields}",
+  "zh": "非标准前置元数据（仅作为元数据保留）： {fields}"
+ },
+ "skills.allowed_tools_text": {
+  "ko": "allowed-tools는 글자여야 해요.",
+  "en": "allowed-tools must be text.",
+  "ja": "allowed-tools はテキストにしてください。",
+  "zh": "allowed-tools 必须为文本。"
+ },
+ "skills.body_limit": {
+  "ko": "SKILL.md 본문이 너무 길어요({lines}줄, {kilobytes}KB 이하).",
+  "en": "SKILL.md body is too long (maximum {lines} lines, {kilobytes}KB).",
+  "ja": "SKILL.md の本文が長すぎます（{lines} 行、{kilobytes}KB 以下）。",
+  "zh": "SKILL.md 正文过长（最多 {lines} 行、{kilobytes}KB）。"
+ },
+ "skills.github_only": {
+  "ko": "스킬은 GitHub에서만 받아요.",
+  "en": "Skills can only be downloaded from GitHub.",
+  "ja": "スキルは GitHub からのみ取得できます。",
+  "zh": "仅可从 GitHub 下载技能。"
+ },
+ "skills.download_failed": {
+  "ko": "GitHub에서 스킬을 받지 못했어요. 잠시 뒤 다시 요청하세요.",
+  "en": "Could not download the skill from GitHub. Try again later.",
+  "ja": "GitHub からスキルを取得できませんでした。しばらくしてから再度依頼してください。",
+  "zh": "无法从 GitHub 下载技能。请稍后重试。"
+ },
+ "skills.download_limit": {
+  "ko": "받을 파일이 너무 커요.",
+  "en": "The file to download is too large.",
+  "ja": "取得するファイルが大きすぎます。",
+  "zh": "要下载的文件过大。"
+ },
+ "skills.github_url": {
+  "ko": "GitHub 스킬 폴더 주소를 주세요(예: https://github.com/<owner>/<repo>/tree/<브랜치 또는 커밋>/<폴더>).",
+  "en": "Provide a GitHub skill folder URL (e.g. https://github.com/<owner>/<repo>/tree/<branch-or-commit>/<folder>).",
+  "ja": "GitHub のスキルフォルダー URL を指定してください（例: https://github.com/<owner>/<repo>/tree/<branch-or-commit>/<folder>）。",
+  "zh": "请提供 GitHub 技能文件夹地址（如 https://github.com/<owner>/<repo>/tree/<branch-or-commit>/<folder>）。"
+ },
+ "skills.folder_path": {
+  "ko": "스킬 폴더 경로를 확인하세요.",
+  "en": "Check the skill folder path.",
+  "ja": "スキルフォルダーのパスを確認してください。",
+  "zh": "请检查技能文件夹路径。"
+ },
+ "skills.commit_unavailable": {
+  "ko": "브랜치나 태그의 커밋을 확인하지 못했어요. 커밋 주소로 다시 주세요.",
+  "en": "Could not resolve the branch or tag to a commit. Provide a commit URL.",
+  "ja": "ブランチやタグのコミットを確認できませんでした。コミット URL で指定してください。",
+  "zh": "无法确认分支或标签对应的提交。请提供提交地址。"
+ },
+ "skills.invalid_path": {
+  "ko": "스킬 안에 허용하지 않는 경로가 있어요.",
+  "en": "The skill contains a disallowed path.",
+  "ja": "スキル内に許可されないパスがあります。",
+  "zh": "技能包含不允许的路径。"
+ },
+ "skills.special_file": {
+  "ko": "스킬 안에 링크나 특수 파일({rel})이 있어 받지 않았어요.",
+  "en": "The skill contains a link or special file ({rel}) and was not downloaded.",
+  "ja": "スキル内にリンクや特殊ファイル（{rel}）があるため、取得していません。",
+  "zh": "技能包含链接或特殊文件（{rel}），未下载。"
+ },
+ "skills.file_limit": {
+  "ko": "스킬 파일이 너무 커요.",
+  "en": "The skill file is too large.",
+  "ja": "スキルファイルが大きすぎます。",
+  "zh": "技能文件过大。"
+ },
+ "skills.archive_failed": {
+  "ko": "받은 스킬 묶음을 풀 수 없어요.",
+  "en": "Could not extract the downloaded skill archive.",
+  "ja": "取得したスキルのアーカイブを展開できません。",
+  "zh": "无法解压下载的技能包。"
+ },
+ "skills.commit_folder_missing": {
+  "ko": "그 커밋의 그 폴더에 SKILL.md가 없어요.",
+  "en": "That folder at that commit has no SKILL.md.",
+  "ja": "そのコミットのフォルダーに SKILL.md がありません。",
+  "zh": "该提交的该文件夹中没有 SKILL.md。"
+ },
+ "skills.file_changed": {
+  "ko": "스킬 파일이 설치된 내용과 달라 읽지 않았어요.",
+  "en": "The skill file differs from the installed version and was not read.",
+  "ja": "スキルファイルがインストール時の内容と異なるため、読んでいません。",
+  "zh": "技能文件与安装版本不同，未读取。"
+ },
+ "skills.file_missing": {
+  "ko": "스킬 안에 그런 파일이 없어요.",
+  "en": "The skill has no such file.",
+  "ja": "スキル内にそのファイルはありません。",
+  "zh": "技能中没有该文件。"
+ },
+ "skills.text_files_only": {
+  "ko": "스킬의 글자 파일(.md, .txt, .json 등)만 읽을 수 있어요.",
+  "en": "Only skill text files (.md, .txt, .json, etc.) can be read.",
+  "ja": "スキルのテキストファイル（.md、.txt、.json など）のみ読めます。",
+  "zh": "仅读取技能的文本文件（.md、.txt、.json 等）。"
+ },
+ "skills.requires_scripts": {
+  "ko": "스크립트나 훅을 실행해야 하는 스킬이에요",
+  "en": "This skill requires scripts or hooks to run",
+  "ja": "スクリプトやフックの実行が必要なスキルです",
+  "zh": "此技能需要运行脚本或钩子"
+ },
+ "skills.unknown_license": {
+  "ko": "라이선스를 확인할 수 없어요",
+  "en": "The license could not be verified",
+  "ja": "ライセンスを確認できません",
+  "zh": "无法确认许可证"
+ },
+ "skills.not_added": {
+  "ko": "추가하지 않았어요: {reasons}.",
+  "en": "Not added: {reasons}.",
+  "ja": "追加していません: {reasons}.",
+  "zh": "未添加： {reasons}."
+ },
+ "skills.bundled_collision": {
+  "ko": "Still 기본 스킬과 이름이 같아 추가하지 않았어요.",
+  "en": "Not added because its name matches a bundled Still skill.",
+  "ja": "Still 標準スキルと同名のため、追加していません。",
+  "zh": "名称与 Still 内置技能相同，未添加。"
+ },
+ "skills.package_collision": {
+  "ko": "이미 '{package_id}'라는 다른 패키지가 있어 추가하지 않았어요.",
+  "en": "Not added because another package named '{package_id}' already exists.",
+  "ja": "'{package_id}' という別のパッケージがあるため、追加していません。",
+  "zh": "已存在名为“{package_id}”的其他包，未添加。"
+ },
+ "skills.add_failed": {
+  "ko": "{exc} 추가하지 않았어요.",
+  "en": "{exc} Not added.",
+  "ja": "{exc} 追加していません。",
+  "zh": "{exc} 未添加。"
+ },
+ "skills.not_installed": {
+  "ko": "설치된 스킬 중에 '{value}'이(가) 없어요.",
+  "en": "No installed skill named '{value}'.",
+  "ja": "インストール済みスキルに '{value}' はありません。",
+  "zh": "已安装技能中没有“{value}”。"
+ },
+ "skills.bundled": {
+  "ko": "Still 기본",
+  "en": "Still built-in",
+  "ja": "Still 標準",
+  "zh": "Still 内置"
+ },
+ "skills.used_skill": {
+  "ko": "이 작업이 읽은 스킬",
+  "en": "A skill used by this task",
+  "ja": "このタスクが読んだスキル",
+  "zh": "此任务读取的技能"
+ },
+ "skills.load_limit": {
+  "ko": "한 작업에서 스킬은 {count}개까지 읽어요.",
+  "en": "Up to {count} skills can be read per task.",
+  "ja": "1 タスクで読めるスキルは {count} 個までです。",
+  "zh": "每个任务最多读取 {count} 个技能。"
+ },
+ "skills.header_limit": {
+  "ko": "한 작업에서 스킬 머리말은 {count}개까지 읽어요.",
+  "en": "Up to {count} skill headers can be read per task.",
+  "ja": "1 タスクで読めるスキルのヘッダーは {count} 個までです。",
+  "zh": "每个任务最多读取 {count} 个技能头部。"
+ },
+ "skills.missing_method": {
+  "ko": "어떤 방법이 없었는지 한 줄로 적어 주세요.",
+  "en": "Describe the missing method in one line.",
+  "ja": "不足していた方法を 1 行で記載してください。",
+  "zh": "请用一行描述缺少的方法。"
+ },
+ "skills.gap_limit": {
+  "ko": "한 작업에서 방법 공백은 {count}개까지 남겨요.",
+  "en": "Up to {count} method gaps can be recorded per task.",
+  "ja": "1 タスクで記録できる方法の不足は {count} 件までです。",
+  "zh": "每个任务最多记录 {count} 个方法缺口。"
+ },
+ "skills.load_first": {
+  "ko": "먼저 skill_load로 그 스킬을 읽으세요.",
+  "en": "Read that skill with skill_load first.",
+  "ja": "先に skill_load でそのスキルを読んでください。",
+  "zh": "请先使用 skill_load 读取该技能。"
+ },
+ "skills.resource_limit": {
+  "ko": "한 작업에서 스킬 파일은 {count}개까지 읽어요.",
+  "en": "Up to {count} skill files can be read per task.",
+  "ja": "1 タスクで読めるスキルファイルは {count} 個までです。",
+  "zh": "每个任务最多读取 {count} 个技能文件。"
+ },
+ "trust_record.scope": {
+  "ko": "연결 범위를 확인하세요.",
+  "en": "Check the connection scope.",
+  "ja": "接続範囲を確認してください。",
+  "zh": "请检查连接范围。"
+ },
+ "trust_record.name_format": {
+  "ko": "연결 이름 형식이 아닙니다.",
+  "en": "Invalid connection name format.",
+  "ja": "接続名の形式が正しくありません。",
+  "zh": "连接名称格式无效。"
+ },
+ "trust_record.connection_limit": {
+  "ko": "기록할 수 있는 연결은 {count}개까지입니다.",
+  "en": "Up to {count} connections can be recorded.",
+  "ja": "記録できる接続は {count} 個までです。",
+  "zh": "最多可记录 {count} 个连接。"
+ },
+ "trust_record.draft_changed": {
+  "ko": "초안을 만든 뒤 신뢰 기록이 바뀌어 적용하지 않았어요.",
+  "en": "The trust record changed after the draft was created, so nothing was applied.",
+  "ja": "下書きの作成後に信頼記録が変わったため、適用していません。",
+  "zh": "草稿创建后信任记录已更改，未应用。"
+ },
+ "trust_record.operation_limit": {
+  "ko": "한 연결에 기록할 수 있는 동작은 {count}개까지입니다.",
+  "en": "Up to {count} operations can be recorded per connection.",
+  "ja": "1 つの接続に記録できる操作は {count} 個までです。",
+  "zh": "每个连接最多可记录 {count} 个操作。"
+ },
+ "trust_record.review_permissions": {
+  "ko": "확인한 연결 권한을 검토하세요.",
+  "en": "Review the verified connection permissions.",
+  "ja": "確認した接続権限を検討してください。",
+  "zh": "请审查已验证的连接权限。"
+ },
+ "trust_record.money_unchanged": {
+  "ko": "기존 돈 표시를 연결 설정으로 바꿀 수 없어요.",
+  "en": "Connection setup cannot change an existing money flag.",
+  "ja": "既存の金銭フラグは接続設定では変更できません。",
+  "zh": "连接设置无法更改现有资金标记。"
+ },
+ "trust_record.decisions_unchanged": {
+  "ko": "기존 동작 결정을 연결 설정으로 바꿀 수 없어요.",
+  "en": "Connection setup cannot change existing operation decisions.",
+  "ja": "既存の操作判断は接続設定では変更できません。",
+  "zh": "连接设置无法更改现有操作决定。"
+ },
+ "trust_record.restore_confirmation": {
+  "ko": "잊은 연결은 별도의 복원 확인이 필요해요.",
+  "en": "A forgotten connection requires separate confirmation to restore.",
+  "ja": "忘れた接続の復元には、別途確認が必要です。",
+  "zh": "恢复已忘记的连接需要单独确认。"
+ },
+ "trust_record.operation_class": {
+  "ko": "동작 이름이나 분류를 확인하세요.",
+  "en": "Check the operation name or classification.",
+  "ja": "操作名または分類を確認してください。",
+  "zh": "请检查操作名称或分类。"
+ },
+ "trust_record.trust_level": {
+  "ko": "신뢰 단계를 확인하세요.",
+  "en": "Check the trust level.",
+  "ja": "信頼段階を確認してください。",
+  "zh": "请检查信任级别。"
+ },
+ "trust_record.money_mandate": {
+  "ko": "돈이 오가는 연결은 상시 위임 단계로 올릴 수 없습니다.",
+  "en": "Connections involving money cannot be given standing delegation.",
+  "ja": "金銭を扱う接続は常時委任の段階に上げられません。",
+  "zh": "涉及资金的连接不能授予长期委托权限。"
+ },
+ "trust_record.record_changed": {
+  "ko": "그 뒤에 신뢰 기록이 바뀌었어요. 지금 기록을 다시 확인해 주세요.",
+  "en": "The trust record has changed since then. Check the current record again.",
+  "ja": "その後、信頼記録が変わりました。現在の記録を再確認してください。",
+  "zh": "此后信任记录已更改。请重新检查当前记录。"
+ },
+ "trust_record.no_previous_record": {
+  "ko": "정확히 되돌릴 이전 기록이 없어요.",
+  "en": "There is no previous record to restore exactly.",
+  "ja": "正確に戻せる以前の記録がありません。",
+  "zh": "没有可精确恢复的之前记录。"
+ },
+ "trust_record.observed_results": {
+  "ko": "관찰한 동작과 결과를 확인하세요.",
+  "en": "Check the observed operations and results.",
+  "ja": "観察した操作と結果を確認してください。",
+  "zh": "请检查观察到的操作及结果。"
+ },
+ "trust_record.forgotten": {
+  "ko": "{name}: 잊음 · 이전 권한 사용 중지",
+  "en": "{name}: Forgotten · Previous permissions disabled",
+  "ja": "{name}: 忘却済み · 以前の権限は無効",
+  "zh": "{name}：已忘记 · 之前权限已停用"
+ },
+ "trust_record.no_operations": {
+  "ko": "검토한 동작 없음",
+  "en": "No reviewed operations",
+  "ja": "確認済みの操作なし",
+  "zh": "无已审查操作"
+ },
+ "family_share.request_body": {
+  "ko": "요청 본문을 확인하세요.",
+  "en": "Check the request body.",
+  "ja": "リクエスト本文を確認してください。",
+  "zh": "请检查请求正文。"
+ },
+ "family_share.site_domain": {
+  "ko": "사이트 이름은 등록 가능한 도메인이어야 합니다.",
+  "en": "The site name must be a registrable domain.",
+  "ja": "サイト名は登録可能なドメインにしてください。",
+  "zh": "网站名称必须为可注册域名。"
+ },
+ "family_share.unsupported_request": {
+  "ko": "지원하지 않는 요청입니다.",
+  "en": "This request is not supported.",
+  "ja": "未対応のリクエストです。",
+  "zh": "不支持此请求。"
+ },
+ "family_share.cookie_list": {
+  "ko": "쿠키 목록을 확인하세요.",
+  "en": "Check the cookie list.",
+  "ja": "Cookie 一覧を確認してください。",
+  "zh": "请检查 Cookie 列表。"
+ },
+ "family_share.session_store_unavailable": {
+  "ko": "이 비서의 로그인 세션 저장소를 쓸 수 없습니다({exc}).",
+  "en": "This assistant's login session store is unavailable ({exc}).",
+  "ja": "このアシスタントのログインセッション保存先を使用できません（{exc}）。",
+  "zh": "此助手的登录会话存储不可用（{exc}）。"
+ },
+ "family_share.session_save_failed": {
+  "ko": "이 비서에 로그인 세션을 저장하지 못했습니다.",
+  "en": "Could not save the login session for this assistant.",
+  "ja": "このアシスタントにログインセッションを保存できませんでした。",
+  "zh": "无法为此助手保存登录会话。"
+ },
+ "family_share.session_read_failed": {
+  "ko": "이 비서의 로그인 세션 저장소를 읽을 수 없습니다({exc}).",
+  "en": "Could not read this assistant's login session store ({exc}).",
+  "ja": "このアシスタントのログインセッション保存先を読めません（{exc}）。",
+  "zh": "无法读取此助手的登录会话存储（{exc}）。"
+ },
+ "conversation_handoff.knowledge": {
+  "ko": "개인 공간 검색",
+  "en": "Search personal space",
+  "ja": "個人スペースを検索",
+  "zh": "搜索个人空间"
+ },
+ "conversation_handoff.settings": {
+  "ko": "연결 설정 확인/변경",
+  "en": "Check/change connection settings",
+  "ja": "接続設定の確認・変更",
+  "zh": "检查或更改连接设置"
+ },
+ "conversation_handoff.workspace_search": {
+  "ko": "저장한 작업공간 결과 찾기",
+  "en": "Find saved workspace results",
+  "ja": "保存済みの作業スペースの結果を検索",
+  "zh": "查找已保存的工作空间结果"
+ },
+ "conversation_handoff.note_create": {
+  "ko": "메모 기록",
+  "en": "Save a note",
+  "ja": "メモを記録",
+  "zh": "记录笔记"
+ },
+ "conversation_handoff.note_list": {
+  "ko": "메모 목록",
+  "en": "List notes",
+  "ja": "メモ一覧",
+  "zh": "笔记列表"
+ },
+ "conversation_handoff.main_ai": {
+  "ko": "기본 AI 바꾸기",
+  "en": "Change Main AI",
+  "ja": "メイン AI を変更",
+  "zh": "更改主 AI"
+ },
+ "conversation_handoff.developer_mode": {
+  "ko": "개발자 모드",
+  "en": "Developer mode",
+  "ja": "開発者モード",
+  "zh": "开发者模式"
+ },
+ "conversation_handoff.drive_read": {
+  "ko": "Google Drive 파일 읽기",
+  "en": "Read a Google Drive file",
+  "ja": "Google Drive ファイルを読む",
+  "zh": "读取 Google Drive 文件"
+ },
+ "conversation_handoff.saved_context": {
+  "ko": "저장한 컨텍스트 선택",
+  "en": "Select saved context",
+  "ja": "保存済みコンテキストを選択",
+  "zh": "选择已保存的上下文"
+ },
+ "conversation_handoff.research": {
+  "ko": "웹 조사",
+  "en": "Web research",
+  "ja": "ウェブ調査",
+  "zh": "网页研究"
+ },
+ "conversation_handoff.conversation": {
+  "ko": "대화로 답하기",
+  "en": "Answer in conversation",
+  "ja": "会話で回答",
+  "zh": "在对话中回答"
+ },
+ "conversation_handoff.unsupported": {
+  "ko": "제공하지 않는 기능",
+  "en": "Unavailable feature",
+  "ja": "未提供の機能",
+  "zh": "不可用功能"
+ },
+ "owner_forget.bad_ref": {
+  "ko": "잊을 항목을 확인할 수 없어요. 기억은 memory:<id>, 현재 상태는 state:<id>, 관찰은 obs:<id>, 저장된 함수는 procedure:<id>, 대화 메시지는 message:<id>로 지정해 주세요.",
+  "en": "Could not identify the item to forget. Use memory:<id> for memory, state:<id> for current state, obs:<id> for observations, procedure:<id> for saved functions, or message:<id> for chat messages.",
+  "ja": "忘れる項目を確認できません。記憶は memory:<id>、現在の状態は state:<id>、観察は obs:<id>、保存済み関数は procedure:<id>、会話メッセージは message:<id> で指定してください。",
+  "zh": "无法确认要忘记的项目。记忆请用 memory:<id>，当前状态用 state:<id>，观察用 obs:<id>，已保存函数用 procedure:<id>，对话消息用 message:<id>。"
+ },
+ "owner_forget.stale": {
+  "ko": "그 항목은 이미 바뀌었거나 없어요. 지금 값을 다시 확인해 주세요.",
+  "en": "That item has changed or no longer exists. Check its current value.",
+  "ja": "その項目は変更済みか、存在しません。現在の値を再確認してください。",
+  "zh": "该项目已更改或不存在。请重新检查当前值。"
+ },
+ "owner_forget.missing_receipt": {
+  "ko": "되돌릴 기록을 찾지 못했어요.",
+  "en": "Could not find a record to undo.",
+  "ja": "元に戻す記録が見つかりません。",
+  "zh": "找不到可撤销的记录。"
+ },
+ "owner_forget.undo_expired": {
+  "ko": "되돌릴 수 있는 기간(7일)이 지났어요.",
+  "en": "The undo period (7 days) has expired.",
+  "ja": "元に戻せる期間（7 日）が過ぎました。",
+  "zh": "可撤销期限（7 天）已过。"
+ },
+ "owner_forget.active_request": {
+  "ko": "아직 끝나지 않은 요청의 메시지는 잊거나 지울 수 없어요. 끝난 뒤에 다시 요청해 주세요.",
+  "en": "Messages from unfinished requests cannot be forgotten or deleted. Try again after the request finishes.",
+  "ja": "未完了のリクエストのメッセージは忘れたり削除したりできません。完了後に再度依頼してください。",
+  "zh": "无法忘记或删除未完成请求的消息。请在请求完成后重试。"
+ },
+ "owner_forget.newer_value": {
+  "ko": "그 뒤에 새로 저장된 값이 있어 되돌리지 않았어요. 지금 값은 그대로예요.",
+  "en": "A newer value was saved, so nothing was undone. The current value is unchanged.",
+  "ja": "その後に新しい値が保存されたため、元に戻していません。現在の値はそのままです。",
+  "zh": "此后已保存新值，未撤销。当前值保持不变。"
+ },
+ "owner_forget.deleted": {
+  "ko": "이미 완전히 지워져 되돌릴 수 없어요.",
+  "en": "This item was permanently deleted and cannot be restored.",
+  "ja": "完全に削除済みのため、元に戻せません。",
+  "zh": "此项目已永久删除，无法恢复。"
+ },
+ "owner_forget.authority_restore": {
+  "ko": "연결 권한 복원은 설정 변경 초안을 확인해야 해요. AI가 바로 복원할 수는 없어요.",
+  "en": "Restoring connection permissions requires confirmation of a settings draft. AI cannot restore them directly.",
+  "ja": "接続権限の復元には設定変更の下書きの確認が必要です。AI が直接復元することはできません。",
+  "zh": "恢复连接权限需要确认设置更改草稿。AI 无法直接恢复。"
+ },
+ "telegram_surface.cancelled_by_owner": {
+  "ko": "소유자가 작업 카드를 통해 취소했습니다.",
+  "en": "The owner cancelled the task from its card.",
+  "ja": "所有者がタスクカードからキャンセルしました。",
+  "zh": "所有者通过任务卡片取消了任务。"
+ },
+ "phone_input.link": {
+  "ko": "휴대폰에서 {label} 설정을 하는 링크예요. 이 링크를 연 휴대폰 한 대만 쓸 수 있고, 약 {minutes}분 뒤에 닫혀요. 중간에 이 화면을 닫았다면 새 링크를 요청해 주세요.\n{link}",
+  "en": "Use this link to set up {label} on your phone. Only the first phone to open it can use it. It closes in about {minutes} minutes. If you close this page, request a new link.\n{link}",
+  "ja": "スマートフォンで {label} を設定するリンクです。最初に開いた 1 台のみ使え、約 {minutes} 分後に閉じます。途中で画面を閉じた場合は新しいリンクを依頼してください。\n{link}",
+  "zh": "使用此链接在手机上设置 {label}。仅首台打开链接的手机可用，约 {minutes} 分钟后关闭。若中途关闭页面，请请求新链接。\n{link}"
+ },
+ "phone_input.no_tunnel": {
+  "ko": "이 Mac에서는 휴대폰 링크를 만들 수 없어요(ngrok도 cloudflared도 없어요). Mac에서 설정해 주세요.",
+  "en": "This Mac can't make a phone link (it has neither ngrok nor cloudflared). Set up on the Mac.",
+  "ja": "この Mac ではスマートフォン用リンクを作れません(ngrok も cloudflared もありません)。Mac で設定してください。",
+  "zh": "这台 Mac 无法创建手机链接(既没有 ngrok 也没有 cloudflared)。请在 Mac 上设置。"
+ },
+ "phone_input.no_port": {
+  "ko": "이 Mac의 Still 주소를 아직 알 수 없어 휴대폰 링크를 만들지 못했어요.",
+  "en": "Could not create a phone link because this Mac's Still address is not yet known.",
+  "ja": "この Mac の Still のアドレスがまだ不明なため、スマートフォン用リンクを作れませんでした。",
+  "zh": "尚不清楚此 Mac 的 Still 地址，无法创建手机链接。"
+ },
+ "phone_input.busy": {
+  "ko": "이미 휴대폰 링크가 열려 있어요. 그 링크가 닫힌 뒤에 다시 요청해 주세요.",
+  "en": "A phone link is already open. Request another after it closes.",
+  "ja": "スマートフォン用リンクがすでに開いています。閉じてから再度依頼してください。",
+  "zh": "已有手机链接打开。请在该链接关闭后重新请求。"
+ },
+ "phone_input.not_paired": {
+  "ko": "휴대폰 링크는 연결된 Telegram 대화로만 보내요. Telegram을 먼저 연결해 주세요.",
+  "en": "Phone links are sent only to your connected Telegram chat. Connect Telegram first.",
+  "ja": "スマートフォン用リンクは接続済み Telegram の会話にのみ送ります。先に Telegram を接続してください。",
+  "zh": "手机链接仅发送至已关联的 Telegram 对话。请先连接 Telegram。"
+ },
+ "phone_input.tunnel_failed": {
+  "ko": "휴대폰 링크를 열지 못했어요. Mac에서 설정해 주세요.",
+  "en": "Could not open the phone link. Set up on the Mac.",
+  "ja": "スマートフォン用リンクを開けませんでした。Mac で設定してください。",
+  "zh": "无法打开手机链接。请在 Mac 上设置。"
+ },
+ "phone_input.sent": {
+  "ko": "휴대폰 링크를 Telegram으로 보냈어요. 약 {minutes}분 동안 열려 있어요.",
+  "en": "Sent the phone link to Telegram. It stays open for about {minutes} minutes.",
+  "ja": "スマートフォン用リンクを Telegram に送りました。約 {minutes} 分間開いています。",
+  "zh": "已向 Telegram 发送手机链接，约 {minutes} 分钟内有效。"
+ },
+ "phone_input.client_instructions": {
+  "ko": "Google Cloud에서 만든 데스크톱 앱(Desktop app) client의 JSON 파일을 고르거나 내용을 붙여 넣고 저장하세요.",
+  "en": "Select the JSON file for your Google Cloud Desktop app client, or paste its contents, then save.",
+  "ja": "Google Cloud で作成したデスクトップアプリ（Desktop app）のクライアント JSON ファイルを選ぶか、内容を貼り付けて保存してください。",
+  "zh": "请选择 Google Cloud 创建的桌面应用（Desktop app）客户端 JSON 文件，或粘贴内容后保存。"
+ },
+ "phone_input.json_file": {
+  "ko": "JSON 파일",
+  "en": "JSON file",
+  "ja": "JSON ファイル",
+  "zh": "JSON 文件"
+ },
+ "phone_input.json_contents": {
+  "ko": "또는 JSON 내용",
+  "en": "Or JSON contents",
+  "ja": "または JSON の内容",
+  "zh": "或 JSON 内容"
+ },
+ "phone_input.file_too_large": {
+  "ko": "파일이 너무 커요.",
+  "en": "The file is too large.",
+  "ja": "ファイルが大きすぎます。",
+  "zh": "文件过大。"
+ },
+ "phone_input.client_saved": {
+  "ko": "저장했어요. 서비스 연결은 Mac의 설정 → 외부 연결에서 해 주세요.",
+  "en": "Saved. Connect services in Settings → External connections on your Mac.",
+  "ja": "保存しました。サービスの接続は Mac の設定 → 外部接続で行ってください。",
+  "zh": "已保存。请在 Mac 的设置 → 外部连接中连接服务。"
+ },
+ "phone_input.save_failed": {
+  "ko": "저장하지 못했어요.",
+  "en": "Could not save.",
+  "ja": "保存できませんでした。",
+  "zh": "无法保存。"
+ },
+ "phone_input.api_instructions": {
+  "ko": "이 연결에 사용할 API 키를 입력하세요. 값은 대화에 보내지 않습니다. 필요한 읽기를 확인한 뒤 연결을 저장합니다.",
+  "en": "Enter the API key for this connection. The value is not sent to chat. The connection is saved after the required reads are verified.",
+  "ja": "この接続に使う API キーを入力してください。値は会話に送りません。必要な読み取りを確認してから接続を保存します。",
+  "zh": "请输入此连接的 API 密钥。值不会发送到对话。验证必要的读取后将保存连接。"
+ },
+ "phone_input.api_key": {
+  "ko": "API 키",
+  "en": "API key",
+  "ja": "API キー",
+  "zh": "API 密钥"
+ },
+ "phone_input.check_connection": {
+  "ko": "연결 확인",
+  "en": "Verify connection",
+  "ja": "接続を確認",
+  "zh": "验证连接"
+ },
+ "phone_input.connection_verified": {
+  "ko": "연결을 확인했어요.",
+  "en": "Connection verified.",
+  "ja": "接続を確認しました。",
+  "zh": "连接已验证。"
+ },
+ "phone_input.connection_failed": {
+  "ko": "연결을 확인하지 못했어요.",
+  "en": "Could not verify the connection.",
+  "ja": "接続を確認できませんでした。",
+  "zh": "无法验证连接。"
+ },
+ "phone_input.use_at_send": {
+  "ko": "코드에는 가려져 있다가 보낼 때만 채워져요",
+  "en": "Masked in code; filled in only when sent",
+  "ja": "コード内では伏せられ、送信時のみ設定されます",
+  "zh": "在代码中隐藏，仅发送时填入"
+ },
+ "phone_input.use_in_code": {
+  "ko": "실행 코드 안에서 직접 쓰여요(출력에는 가려져요)",
+  "en": "Used directly in running code (masked in output)",
+  "ja": "実行コード内で直接使用されます（出力では非表示）",
+  "zh": "直接用于运行代码中（输出中隐藏）"
+ },
+ "phone_input.kept_values": {
+  "ko": "이미 저장된 값({labels})은 그대로 써요. 새로 필요한 값만 입력하세요.",
+  "en": "Saved values ({labels}) will be kept. Enter only the new values needed.",
+  "ja": "保存済みの値（{labels}）はそのまま使います。新しく必要な値だけ入力してください。",
+  "zh": "将保留已保存的值（{labels}）。请仅输入新需要的值。"
+ },
+ "phone_input.secret_values": {
+  "ko": "이 값들은 대화에 보내지 않고 암호화해 저장해요. {hosts}로 보내는 요청에만 쓰이고, 조회만 할 수 있어요. 저장하면 원래 작업을 이어갑니다.",
+  "en": "These values are encrypted and saved without being sent to chat. They are used only for read requests to {hosts}. Saving resumes the original task.",
+  "ja": "値は会話に送らず、暗号化して保存します。{hosts} への読み取りリクエストにのみ使います。保存すると元のタスクを再開します。",
+  "zh": "这些值经加密保存，不会发送到对话。仅用于向 {hosts} 发送的读取请求。保存后将继续原任务。"
+ },
+ "phone_input.save_continue": {
+  "ko": "저장하고 이어가기",
+  "en": "Save and continue",
+  "ja": "保存して続ける",
+  "zh": "保存并继续"
+ },
+ "phone_input.saved": {
+  "ko": "저장했어요.",
+  "en": "Saved.",
+  "ja": "保存しました。",
+  "zh": "已保存。"
+ },
+ "phone_input.oauth_instructions": {
+  "ko": "이 연결의 클라이언트 ID와 비밀값을 입력하세요. 토큰 발급과 필요한 읽기를 확인한 뒤 원래 작업을 이어갑니다.",
+  "en": "Enter this connection's client ID and secret. The original task resumes after token issuance and required reads are verified.",
+  "ja": "この接続のクライアント ID とシークレットを入力してください。トークン発行と必要な読み取りを確認してから元のタスクを再開します。",
+  "zh": "请输入此连接的客户端 ID 和密钥。验证令牌签发及必要的读取后将继续原任务。"
+ },
+ "phone_input.client_id": {
+  "ko": "클라이언트 ID (8자 이상)",
+  "en": "Client ID (at least 8 characters)",
+  "ja": "クライアント ID（8 文字以上）",
+  "zh": "客户端 ID（至少 8 个字符）"
+ },
+ "phone_input.client_secret": {
+  "ko": "클라이언트 비밀값 (8자 이상)",
+  "en": "Client secret (at least 8 characters)",
+  "ja": "クライアントシークレット（8 文字以上）",
+  "zh": "客户端密钥（至少 8 个字符）"
+ },
+ "phone_input.link_closed": {
+  "ko": "이 링크는 닫혔어요.",
+  "en": "This link has closed.",
+  "ja": "このリンクは閉じられました。",
+  "zh": "此链接已关闭。"
+ },
+ "trust_record.summary_report": {
+  "ko": "{label}: 보고만 · {operations}",
+  "en": "{label}: Report only · {operations}",
+  "ja": "{label}: 報告のみ · {operations}",
+  "zh": "{label}: 仅报告 · {operations}"
+ },
+ "trust_record.summary_report_money": {
+  "ko": "{label}: 보고만 · 돈이 오가는 연결 · {operations}",
+  "en": "{label}: Report only · Connection involving money · {operations}",
+  "ja": "{label}: 報告のみ · 金銭を扱う接続 · {operations}",
+  "zh": "{label}: 仅报告 · 涉及资金的连接 · {operations}"
+ },
+ "trust_record.summary_propose": {
+  "ko": "{label}: 제안까지 · {operations}",
+  "en": "{label}: Propose only · {operations}",
+  "ja": "{label}: 提案まで · {operations}",
+  "zh": "{label}: 仅提议 · {operations}"
+ },
+ "trust_record.summary_propose_money": {
+  "ko": "{label}: 제안까지 · 돈이 오가는 연결 · {operations}",
+  "en": "{label}: Propose only · Connection involving money · {operations}",
+  "ja": "{label}: 提案まで · 金銭を扱う接続 · {operations}",
+  "zh": "{label}: 仅提议 · 涉及资金的连接 · {operations}"
+ },
+ "trust_record.summary_approve": {
+  "ko": "{label}: 건별 승인 후 실행 · {operations}",
+  "en": "{label}: Run after approval for each action · {operations}",
+  "ja": "{label}: 操作ごとの承認後に実行 · {operations}",
+  "zh": "{label}: 逐项批准后执行 · {operations}"
+ },
+ "trust_record.summary_approve_money": {
+  "ko": "{label}: 건별 승인 후 실행 · 돈이 오가는 연결 · {operations}",
+  "en": "{label}: Run after approval for each action · Connection involving money · {operations}",
+  "ja": "{label}: 操作ごとの承認後に実行 · 金銭を扱う接続 · {operations}",
+  "zh": "{label}: 逐项批准后执行 · 涉及资金的连接 · {operations}"
+ },
+ "trust_record.summary_mandate": {
+  "ko": "{label}: 위임 범위 안에서 실행 · {operations}",
+  "en": "{label}: Run within delegated scope · {operations}",
+  "ja": "{label}: 委任範囲内で実行 · {operations}",
+  "zh": "{label}: 在委托范围内执行 · {operations}"
+ },
+ "trust_record.summary_mandate_money": {
+  "ko": "{label}: 위임 범위 안에서 실행 · 돈이 오가는 연결 · {operations}",
+  "en": "{label}: Run within delegated scope · Connection involving money · {operations}",
+  "ja": "{label}: 委任範囲内で実行 · 金銭を扱う接続 · {operations}",
+  "zh": "{label}: 在委托范围内执行 · 涉及资金的连接 · {operations}"
+ },
+ "trust_record.operation_read": {
+  "ko": "{operation}(읽기)",
+  "en": "{operation}(Read)",
+  "ja": "{operation}(読み取り)",
+  "zh": "{operation}(读取)"
+ },
+ "trust_record.operation_read_remaining": {
+  "ko": "{operation}(읽기), {remaining}",
+  "en": "{operation}(Read), {remaining}",
+  "ja": "{operation}(読み取り), {remaining}",
+  "zh": "{operation}(读取), {remaining}"
+ },
+ "trust_record.operation_mutate": {
+  "ko": "{operation}(변경)",
+  "en": "{operation}(Change)",
+  "ja": "{operation}(変更)",
+  "zh": "{operation}(更改)"
+ },
+ "trust_record.operation_mutate_remaining": {
+  "ko": "{operation}(변경), {remaining}",
+  "en": "{operation}(Change), {remaining}",
+  "ja": "{operation}(変更), {remaining}",
+  "zh": "{operation}(更改), {remaining}"
+ },
+ "trust_record.operation_payment": {
+  "ko": "{operation}(결제)",
+  "en": "{operation}(Payment)",
+  "ja": "{operation}(支払い)",
+  "zh": "{operation}(付款)"
+ },
+ "trust_record.operation_payment_remaining": {
+  "ko": "{operation}(결제), {remaining}",
+  "en": "{operation}(Payment), {remaining}",
+  "ja": "{operation}(支払い), {remaining}",
+  "zh": "{operation}(付款), {remaining}"
+ },
+ "trust_record.operation_refused": {
+  "ko": "{operation}(막음)",
+  "en": "{operation}(Blocked)",
+  "ja": "{operation}(拒否)",
+  "zh": "{operation}(阻止)"
+ },
+ "trust_record.operation_refused_remaining": {
+  "ko": "{operation}(막음), {remaining}",
+  "en": "{operation}(Blocked), {remaining}",
+  "ja": "{operation}(拒否), {remaining}",
+  "zh": "{operation}(阻止), {remaining}"
+ },
+ "skills.requires_scripts_remaining": {
+  "ko": "스크립트나 훅을 실행해야 하는 스킬이에요 / {remaining}",
+  "en": "This skill requires scripts or hooks to run / {remaining}",
+  "ja": "スクリプトやフックの実行が必要なスキルです / {remaining}",
+  "zh": "此技能需要运行脚本或钩子 / {remaining}"
+ },
+ "skills.unknown_license_remaining": {
+  "ko": "라이선스를 확인할 수 없어요 / {remaining}",
+  "en": "The license could not be verified / {remaining}",
+  "ja": "ライセンスを確認できません / {remaining}",
+  "zh": "无法确认许可证 / {remaining}"
+ },
+ "settings_orchestrator.configured": {
+  "ko": "설정됨",
+  "en": "Configured",
+  "ja": "設定済み",
+  "zh": "已配置"
+ },
+ "settings_orchestrator.retired_control": {
+  "ko": "연결을 일시 정지하거나 다시 시작하는 기능은 아직 없습니다. 대화에서는 Google 연결 해제만 확인 후 적용할 수 있어요. 설정 > 외부 연결에서 서비스별 현재 상태와 실제로 가능한 작업을 확인하세요.",
+  "en": "Pausing and resuming connections is not available yet. In conversation, you can only disconnect Google after confirmation. Check each service's current status and available actions in Settings > External connections.",
+  "ja": "接続の一時停止と再開にはまだ対応していません。会話では、確認後に Google の接続解除のみ適用できます。設定 > 外部接続で各サービスの状態と可能な操作を確認してください。",
+  "zh": "暂不支持暂停或恢复连接。在对话中只能确认后断开 Google 连接。请在设置 > 外部连接中查看各服务的当前状态及可用操作。"
+ },
+ "settings_orchestrator.disconnect_note": {
+  "ko": "해제하면 Still이 즉시 이 연결을 쓰지 않고, 이 기기에 저장된 인증 정보를 지우며, Google에 권한 취소를 요청합니다. 저장된 결과물과 기록, Google에 있는 데이터는 지우지 않아요. 다시 쓰려면 다시 연결해야 합니다.",
+  "en": "Disconnecting immediately stops Still from using this connection, removes credentials saved on this device, and requests revocation from Google. Saved artifacts, records, and data on Google are kept. Reconnect to use it again.",
+  "ja": "解除すると Still は直ちにこの接続の使用を止め、この端末に保存した認証情報を削除し、Google に権限の取り消しを要求します。保存済みの成果物や記録、Google 上のデータは削除しません。再利用には再接続が必要です。",
+  "zh": "断开后，Still 会立即停止使用此连接，删除本机保存的凭据，并请求 Google 撤销授权。已保存的成果、记录及 Google 上的数据不会删除。再次使用需重新连接。"
+ },
+ "settings_orchestrator.telegram_connected_action": {
+  "ko": "추가로 할 일이 없습니다. 해제는 설정 > 외부 연결에서 합니다.",
+  "en": "Nothing else to do. To disconnect, go to Settings > External connections.",
+  "ja": "追加の操作は不要です。解除は設定 > 外部接続で行います。",
+  "zh": "无需其他操作。要断开，请前往设置 > 外部连接。"
+ },
+ "settings_orchestrator.telegram_pending_action": {
+  "ko": "Telegram에서 연결 링크를 열어 소유자 계정을 연결하세요.",
+  "en": "Open the connection link in Telegram to link your account.",
+  "ja": "Telegram で接続リンクを開き、所有者のアカウントを接続してください。",
+  "zh": "请在 Telegram 中打开连接链接，关联所有者账户。"
+ },
+ "settings_orchestrator.telegram_connect_action": {
+  "ko": "Still을 실행한 터미널 대화에서 연결을 요청하거나, 설정 > 외부 연결에서 봇 토큰으로 연결하세요.",
+  "en": "Ask to connect in the terminal conversation running Still, or use a bot token in Settings > External connections.",
+  "ja": "Still を実行したターミナルの会話で接続を依頼するか、設定 > 外部接続でボットトークンを使って接続してください。",
+  "zh": "请在运行 Still 的终端对话中请求连接，或在设置 > 外部连接中使用机器人令牌连接。"
+ },
+ "settings_orchestrator.no_further_action": {
+  "ko": "추가로 할 일이 없습니다.",
+  "en": "Nothing else to do.",
+  "ja": "追加の操作は不要です。",
+  "zh": "无需其他操作。"
+ },
+ "settings_orchestrator.cannot_start_connection": {
+  "ko": "이 설치에서는 여기서 연결을 시작할 수 없습니다.",
+  "en": "This installation cannot start a connection here.",
+  "ja": "この環境では、ここから接続を開始できません。",
+  "zh": "此安装环境无法在此发起连接。"
+ },
+ "settings_orchestrator.connected_action": {
+  "ko": "추가로 할 일이 없습니다. 권한을 새로 받으려면 설정 > 외부 연결에서 다시 연결하세요.",
+  "en": "Nothing else to do. To renew permissions, reconnect in Settings > External connections.",
+  "ja": "追加の操作は不要です。権限を更新するには、設定 > 外部接続で再接続してください。",
+  "zh": "无需其他操作。要更新授权，请在设置 > 外部连接中重新连接。"
+ },
+ "settings_orchestrator.connection_location_url": {
+  "ko": "이 컴퓨터(Mac)의 브라우저에서 {url} 을 열거나 설정 > 외부 연결에서",
+  "en": "Open {url} in a browser on this computer (Mac), or go to Settings > External connections and",
+  "ja": "このコンピュータ（Mac）のブラウザで {url} を開くか、設定 > 外部接続で",
+  "zh": "在此电脑（Mac）的浏览器中打开 {url}，或前往设置 > 外部连接，然后"
+ },
+ "settings_orchestrator.connection_location": {
+  "ko": "설정 > 외부 연결에서",
+  "en": "In Settings > External connections,",
+  "ja": "設定 > 外部接続で",
+  "zh": "在设置 > 外部连接中，"
+ },
+ "settings_orchestrator.reconnect_action": {
+  "ko": "{where} 다시 연결하세요.",
+  "en": "{where} reconnect.",
+  "ja": "{where} 再接続してください。",
+  "zh": "{where} 重新连接。"
+ },
+ "settings_orchestrator.connect_action": {
+  "ko": "{where} 연결하세요.",
+  "en": "{where} connect.",
+  "ja": "{where} 接続してください。",
+  "zh": "{where} 连接。"
+ },
+ "settings_orchestrator.check_connection_action": {
+  "ko": "설정 > 외부 연결에서 상태를 확인하세요.",
+  "en": "Check the status in Settings > External connections.",
+  "ja": "設定 > 外部接続で状態を確認してください。",
+  "zh": "请在设置 > 外部连接中查看状态。"
+ },
+ "settings_orchestrator.owner_model_label": {
+  "ko": "알아 두기",
+  "en": "Things to remember",
+  "ja": "覚えておくこと",
+  "zh": "需要记住的事"
+ },
+ "settings_orchestrator.family_label": {
+  "ko": "가족 비서",
+  "en": "Family assistant",
+  "ja": "家族用アシスタント",
+  "zh": "家庭助手"
+ },
+ "settings_orchestrator.skills_label": {
+  "ko": "스킬",
+  "en": "Skills",
+  "ja": "スキル",
+  "zh": "技能"
+ },
+ "settings_orchestrator.phone_link_label": {
+  "ko": "휴대폰 링크",
+  "en": "Phone link",
+  "ja": "スマートフォン用リンク",
+  "zh": "手机链接"
+ },
+ "settings_orchestrator.ai_connections_label": {
+  "ko": "AI의 연결 서비스",
+  "en": "AI connections",
+  "ja": "AI の接続サービス",
+  "zh": "AI 连接服务"
+ },
+ "settings_orchestrator.api_connections_label": {
+  "ko": "API 연결",
+  "en": "API connections",
+  "ja": "API 接続",
+  "zh": "API 连接"
+ },
+ "settings_orchestrator.preparations_label": {
+  "ko": "예약",
+  "en": "Reservations",
+  "ja": "予約",
+  "zh": "预约"
+ },
+ "settings_orchestrator.browser_label": {
+  "ko": "브라우저",
+  "en": "Browser",
+  "ja": "ブラウザ",
+  "zh": "浏览器"
+ },
+ "settings_orchestrator.mode_label": {
+  "ko": "방식",
+  "en": "Mode",
+  "ja": "方式",
+  "zh": "模式"
+ },
+ "settings_orchestrator.route_label": {
+  "ko": "경로",
+  "en": "Route",
+  "ja": "経路",
+  "zh": "路径"
+ },
+ "settings_orchestrator.daily_calls_label": {
+  "ko": "하루 판단 횟수",
+  "en": "Daily decision limit",
+  "ja": "1 日の判断回数",
+  "zh": "每日判断次数"
+ },
+ "settings_orchestrator.dream_label": {
+  "ko": "밤사이 기억 정리",
+  "en": "Overnight memory review",
+  "ja": "夜間の記憶整理",
+  "zh": "夜间记忆整理"
+ },
+ "settings_orchestrator.add_label": {
+  "ko": "새로 만들기",
+  "en": "Create new",
+  "ja": "新規作成",
+  "zh": "新建"
+ },
+ "settings_orchestrator.share_site_label": {
+  "ko": "로그인 공유",
+  "en": "Share login",
+  "ja": "ログイン共有",
+  "zh": "共享登录"
+ },
+ "settings_orchestrator.unshare_site_label": {
+  "ko": "공유 그만",
+  "en": "Stop sharing",
+  "ja": "共有を停止",
+  "zh": "停止共享"
+ },
+ "settings_orchestrator.send_label": {
+  "ko": "보내기",
+  "en": "Send",
+  "ja": "送信",
+  "zh": "发送"
+ },
+ "settings_orchestrator.servers_label": {
+  "ko": "MCP 서버",
+  "en": "MCP servers",
+  "ja": "MCP サーバー",
+  "zh": "MCP 服务器"
+ },
+ "settings_orchestrator.review_label": {
+  "ko": "동작 검토",
+  "en": "Review actions",
+  "ja": "操作の確認",
+  "zh": "审查操作"
+ },
+ "settings_orchestrator.money_label": {
+  "ko": "돈이 오가는 연결",
+  "en": "Connection involving money",
+  "ja": "金銭を扱う接続",
+  "zh": "涉及资金的连接"
+ },
+ "settings_orchestrator.connect_label": {
+  "ko": "새 MCP 연결",
+  "en": "New MCP connection",
+  "ja": "新しい MCP 接続",
+  "zh": "新建 MCP 连接"
+ },
+ "settings_orchestrator.rung_label": {
+  "ko": "신뢰 단계",
+  "en": "Trust level",
+  "ja": "信頼段階",
+  "zh": "信任级别"
+ },
+ "settings_orchestrator.undo_label": {
+  "ko": "정확히 되돌리기",
+  "en": "Undo exact change",
+  "ja": "変更を正確に戻す",
+  "zh": "精确撤销更改"
+ },
+ "settings_orchestrator.forget_label": {
+  "ko": "신뢰 기록 잊기",
+  "en": "Forget trust record",
+  "ja": "信頼記録を忘れる",
+  "zh": "忘记信任记录"
+ },
+ "settings_orchestrator.restore_label": {
+  "ko": "잊은 신뢰 기록 복원",
+  "en": "Restore forgotten trust record",
+  "ja": "忘れた信頼記録を復元",
+  "zh": "恢复已忘记的信任记录"
+ },
+ "settings_orchestrator.disconnect_label": {
+  "ko": "연결 해제",
+  "en": "Disconnect",
+  "ja": "接続解除",
+  "zh": "断开连接"
+ },
+ "settings_orchestrator.close_login_label": {
+  "ko": "로그인 창 닫기",
+  "en": "Close login window",
+  "ja": "ログイン画面を閉じる",
+  "zh": "关闭登录窗口"
+ },
+ "settings_orchestrator.connect_chat_label": {
+  "ko": "대화할 곳 연결",
+  "en": "Connect a chat",
+  "ja": "会話先を接続",
+  "zh": "连接对话渠道"
+ },
+ "settings_orchestrator.read_class": {
+  "ko": "읽기",
+  "en": "Read",
+  "ja": "読み取り",
+  "zh": "读取"
+ },
+ "settings_orchestrator.payment_class": {
+  "ko": "결제",
+  "en": "Payment",
+  "ja": "支払い",
+  "zh": "付款"
+ },
+ "settings_orchestrator.refused_class": {
+  "ko": "막음",
+  "en": "Blocked",
+  "ja": "拒否",
+  "zh": "阻止"
+ },
+ "settings_orchestrator.report_rung": {
+  "ko": "보고만",
+  "en": "Report only",
+  "ja": "報告のみ",
+  "zh": "仅报告"
+ },
+ "settings_orchestrator.propose_rung": {
+  "ko": "제안까지",
+  "en": "Propose only",
+  "ja": "提案まで",
+  "zh": "仅提议"
+ },
+ "settings_orchestrator.approve_rung": {
+  "ko": "건별 승인 후 실행",
+  "en": "Run after approval for each action",
+  "ja": "操作ごとの承認後に実行",
+  "zh": "逐项批准后执行"
+ },
+ "settings_orchestrator.mandate_rung": {
+  "ko": "위임 범위 안에서 실행",
+  "en": "Run within delegated scope",
+  "ja": "委任範囲内で実行",
+  "zh": "在委托范围内执行"
+ },
+ "settings_orchestrator.family_share_note": {
+  "ko": "비밀번호는 넘기지 않고 지금 로그인된 세션만 전달해요. 내 세션이 갱신되면 따라가고, 결제는 계정 주인만 할 수 있어요.",
+  "en": "Only the current signed-in session is shared, never the password. It follows updates to your session. Only the account owner can make payments.",
+  "ja": "パスワードは渡さず、現在ログイン中のセッションだけを共有します。自分のセッションの更新に追従し、支払いはアカウント所有者のみが行えます。",
+  "zh": "只共享当前登录会话，不传递密码。你的会话更新时会同步，只有账户所有者可以付款。"
+ },
+ "settings_orchestrator.unknown_setting": {
+  "ko": "대화로 바꿀 수 있는 설정이 아닙니다. 현재 맥락(enabled, timezone), 판단 AI(mode, model), 기본 AI(route, model), 알아 두기(enabled, daily_calls), 가족 비서(add, share_site, unshare_site), 스킬(enabled, add, remove), 휴대폰 링크(send), AI의 연결 서비스(enabled, connect, servers, review, money, rung, undo, forget, restore), 예약(cancel, accept), 브라우저(close_login)만 바꿀 수 있습니다. API 키, 토큰, 로그인은 비밀 입력 화면에서 직접 입력하세요.",
+  "en": "This setting cannot be changed in conversation. Supported settings: current context (enabled, timezone), Judgment AI (mode, model), Main AI (route, model), things to remember (enabled, daily_calls), family assistant (add, share_site, unshare_site), skills (enabled, add, remove), phone link (send), AI connections (enabled, connect, servers, review, money, rung, undo, forget, restore), reservations (cancel, accept), browser (close_login). Enter API keys, tokens, and logins directly on the private input page.",
+  "ja": "この設定は会話では変更できません。変更できるのは、現在のコンテキスト（enabled, timezone）、判断 AI（mode, model）、メイン AI（route, model）、覚えておくこと（enabled, daily_calls）、家族用アシスタント（add, share_site, unshare_site）、スキル（enabled, add, remove）、スマートフォン用リンク（send）、AI の接続サービス（enabled, connect, servers, review, money, rung, undo, forget, restore）、予約（cancel, accept）、ブラウザ（close_login）です。API キー、トークン、ログイン情報は秘密情報の入力画面に直接入力してください。",
+  "zh": "此设置无法在对话中更改。支持的设置：当前上下文（enabled, timezone）、判断 AI（mode, model）、主 AI（route, model）、需要记住的事（enabled, daily_calls）、家庭助手（add, share_site, unshare_site）、技能（enabled, add, remove）、手机链接（send）、AI 连接服务（enabled, connect, servers, review, money, rung, undo, forget, restore）、预约（cancel, accept）、浏览器（close_login）。API 密钥、令牌和登录信息请直接在私密输入页面填写。"
+ },
+ "settings_orchestrator.credential_value": {
+  "ko": "자격 증명처럼 보이는 값은 대화로 설정하지 않습니다. API 키, 토큰, 로그인은 설정 화면에서 직접 입력하세요. 아무것도 바꾸지 않았습니다.",
+  "en": "Values that look like credentials cannot be set in conversation. Enter API keys, tokens, and logins directly in Settings. Nothing was changed.",
+  "ja": "認証情報のような値は会話では設定できません。API キー、トークン、ログイン情報は設定画面に直接入力してください。何も変更していません。",
+  "zh": "疑似凭据的值不能在对话中设置。请在设置页面直接输入 API 密钥、令牌和登录信息。未作任何更改。"
+ },
+ "settings_orchestrator.unavailable": {
+  "ko": "이 설정의 현재 상태를 확인하지 못해 바꾸지 않았습니다. 설정 화면에서 확인하세요.",
+  "en": "The current state of this setting could not be checked, so it was not changed. Check Settings.",
+  "ja": "この設定の現在の状態を確認できなかったため、変更していません。設定画面で確認してください。",
+  "zh": "无法确认此设置的当前状态，因此未作更改。请在设置页面查看。"
+ },
+ "settings_orchestrator.skill_add_note": {
+  "ko": "확인하면 고정된 커밋에서 그 폴더만 받아 라이선스와 내용을 확인한 뒤 추가해요(브랜치 이름은 이 초안을 만들 때 GitHub에 물어 커밋으로 고정했어요). 스크립트·훅은 실행하지 않고, 라이선스를 확인할 수 없거나 실행 파일이 필요한 스킬은 추가하지 않아요. 스킬은 방법 안내일 뿐 권한이 아니에요.",
+  "en": "After confirmation, only that folder is downloaded from the pinned commit and added after its license and contents are checked. The branch was resolved to a commit on GitHub when this draft was created. Scripts and hooks are not run. Skills with unverifiable licenses or required executables are not added. Skills provide guidance, not authority.",
+  "ja": "確認後、固定したコミットからそのフォルダーだけを取得し、ライセンスと内容を確認して追加します。ブランチ名はこの案の作成時に GitHub でコミットに固定しました。スクリプトやフックは実行しません。ライセンスを確認できないスキルや実行ファイルが必要なスキルは追加しません。スキルは手順の案内であり、権限ではありません。",
+  "zh": "确认后，仅从固定提交下载该文件夹，检查许可证和内容后再添加。创建此草案时已通过 GitHub 将分支解析为固定提交。不运行脚本或钩子，不添加许可证无法核实或需要可执行文件的技能。技能仅提供方法指导，不授予权限。"
+ },
+ "settings_orchestrator.in_doubt": {
+  "ko": "설정 변경이 적용 중에 중단되어 적용됐는지 확인하지 못했어요. 현재 값을 확인해 주세요. 필요하면 다시 요청하세요: {effect}",
+  "en": "The settings change was interrupted, so its outcome is unknown. Check the current value. Ask again if needed: {effect}",
+  "ja": "設定の適用が中断され、適用されたか確認できませんでした。現在の値を確認し、必要なら再度依頼してください: {effect}",
+  "zh": "设置更改中途被打断，无法确认是否已生效。请检查当前值，必要时重新请求：{effect}"
+ },
+ "settings_orchestrator.not_owner_typed": {
+  "ko": "설정 변경은 소유자가 직접 보낸 메시지나 확인 버튼으로만 확인하거나 취소할 수 있습니다. 아무것도 바꾸지 않았습니다.",
+  "en": "Only a message you typed or a confirmation button can confirm or cancel a settings change. Nothing was changed.",
+  "ja": "設定変更の確認や取り消しは、所有者が直接送信したメッセージか確認ボタンでのみ行えます。何も変更していません。",
+  "zh": "只有所有者亲自发送的消息或确认按钮才能确认或取消设置更改。未作任何更改。"
+ },
+ "settings_orchestrator.busy": {
+  "ko": "다른 설정을 적용하는 중입니다. 끝난 뒤 다시 확인하세요. 아직 아무것도 바꾸지 않았습니다.",
+  "en": "Another settings change is being applied. Confirm again when it finishes. Nothing has been changed yet.",
+  "ja": "別の設定を適用中です。完了後に再度確認してください。まだ何も変更していません。",
+  "zh": "另一项设置正在应用中。完成后请再次确认。尚未作任何更改。"
+ },
+ "settings_orchestrator.stale": {
+  "ko": "초안을 만든 뒤 설정이 바뀌었거나 이 값을 더 이상 고를 수 없어 적용하지 않았습니다. 다시 요청하세요.",
+  "en": "The setting changed after this draft was created, or this value is no longer available. Nothing was applied. Please ask again.",
+  "ja": "案の作成後に設定が変わったか、この値を選べなくなったため適用していません。再度依頼してください。",
+  "zh": "草案创建后设置已改变，或此值已不可选，因此未应用。请重新请求。"
+ },
+ "settings_orchestrator.apply_not_started": {
+  "ko": "설정을 적용하는 작업을 시작하지 못했습니다. 아무것도 바꾸지 않았습니다.",
+  "en": "The settings change could not be started. Nothing was changed.",
+  "ja": "設定の適用を開始できませんでした。何も変更していません。",
+  "zh": "无法开始应用设置。未作任何更改。"
+ },
+ "settings_orchestrator.follow_requested": {
+  "ko": "판단 AI를 기본 AI 따라가기로 요청했어요. 확인이 끝나면 적용돼요.",
+  "en": "Judgment AI was asked to follow Main AI. It will apply once the check finishes.",
+  "ja": "判断 AI をメイン AI に合わせるよう依頼しました。確認が終わると適用されます。",
+  "zh": "已请求让判断 AI 跟随主 AI，检查完成后会应用。"
+ },
+ "settings_orchestrator.family_requested": {
+  "ko": "가족 비서를 만드는 중이에요. 준비되면 가족에게 보낼 설정 링크를 여기로 보내 드릴게요.",
+  "en": "Creating the family assistant. When ready, its setup link will appear here for you to share with your family.",
+  "ja": "家族用アシスタントを作成中です。準備ができたら、家族に送る設定リンクをここにお届けします。",
+  "zh": "正在创建家庭助手。准备好后，会在这里提供可转发给家人的设置链接。"
+ },
+ "settings_orchestrator.recovery_declined": {
+  "ko": "추가 연결 설정 시도를 취소했어요. 이전 시도의 등록이나 부분 설정은 남아 있을 수 있어요.",
+  "en": "Canceled the additional connection setup attempt. Registration or partial setup from earlier attempts may remain.",
+  "ja": "追加の接続設定の試行を取り消しました。以前の登録や途中の設定が残っている場合があります。",
+  "zh": "已取消额外的连接设置尝试。之前尝试的注册或部分设置可能仍然保留。"
+ },
+ "settings_orchestrator.no_connections": {
+  "ko": "이 설치에 연결된 외부 서비스가 없습니다.",
+  "en": "No external services are connected to this installation.",
+  "ja": "この環境に接続された外部サービスはありません。",
+  "zh": "此安装环境尚未连接外部服务。"
+ },
+ "settings_orchestrator.check_owner": {
+  "ko": "설정 소유자를 확인하세요.",
+  "en": "Check the settings owner.",
+  "ja": "設定の所有者を確認してください。",
+  "zh": "请确认设置所有者。"
+ },
+ "settings_orchestrator.select_category": {
+  "ko": "검토된 설정 범주를 선택하세요.",
+  "en": "Select a reviewed settings category.",
+  "ja": "確認済みの設定カテゴリを選んでください。",
+  "zh": "请选择已审查的设置类别。"
+ },
+ "settings_orchestrator.connection_request": {
+  "ko": "연결 요청",
+  "en": "Connection request",
+  "ja": "接続リクエスト",
+  "zh": "连接请求"
+ },
+ "settings_orchestrator.new_api_connection": {
+  "ko": "새 API 연결",
+  "en": "New API connection",
+  "ja": "新しい API 接続",
+  "zh": "新建 API 连接"
+ },
+ "settings_orchestrator.api_input_note": {
+  "ko": "비밀값은 확인 후 열리는 일회용 입력 화면에만 입력합니다. 필요한 읽기가 확인되면 원래 작업을 이어갑니다.",
+  "en": "Enter secrets only on the one-time input page opened after confirmation. The original task continues once the required read is verified.",
+  "ja": "秘密情報は確認後に開く一度限りの入力画面にのみ入力してください。必要な読み取りを確認できたら元の作業を続けます。",
+  "zh": "秘密值只在确认后打开的一次性输入页面填写。所需读取经确认后会继续原来的任务。"
+ },
+ "settings_orchestrator.default_timezone": {
+  "ko": "설정 안 함(이 컴퓨터의 시간대)",
+  "en": "Not set (this computer's time zone)",
+  "ja": "未設定（このコンピュータのタイムゾーン）",
+  "zh": "未设置（使用此电脑的时区）"
+ },
+ "settings_orchestrator.timezone_format": {
+  "ko": "IANA 시간대 이름(예: Asia/Seoul)",
+  "en": "IANA time zone name (e.g. Asia/Seoul)",
+  "ja": "IANA タイムゾーン名（例: Asia/Seoul）",
+  "zh": "IANA 时区名称（例如 Asia/Seoul）"
+ },
+ "settings_orchestrator.call_count": {
+  "ko": "{value}회",
+  "en": "{value} calls",
+  "ja": "{value} 回",
+  "zh": "{value} 次"
+ },
+ "settings_orchestrator.daily_calls_format": {
+  "ko": "0~{limit} 사이의 정수(24시간 동안 판단 AI 호출 수)",
+  "en": "Integer from 0 to {limit} (Judgment AI calls over 24 hours)",
+  "ja": "0～{limit} の整数（24 時間の判断 AI 呼び出し回数）",
+  "zh": "0 至 {limit} 的整数（24 小时内判断 AI 的调用次数）"
+ },
+ "settings_orchestrator.family_name_format": {
+  "ko": "새 가족 비서의 텔레그램 이름(예: 아내 비서)",
+  "en": "Telegram name for the new family assistant (e.g. Partner's assistant)",
+  "ja": "新しい家族用アシスタントの Telegram 名（例: パートナーのアシスタント）",
+  "zh": "新家庭助手的 Telegram 名称（例如：伴侣的助手）"
+ },
+ "settings_orchestrator.family_add_note": {
+  "ko": "내 AI 구독을 함께 쓰는 가족 전용 비서를 만들고, 가족에게 보낼 설정 링크를 텔레그램으로 드립니다.",
+  "en": "Creates a family assistant sharing your AI subscription and sends its setup link to you on Telegram.",
+  "ja": "自分の AI サブスクリプションを共有する家族専用アシスタントを作成し、家族に送る設定リンクを Telegram でお届けします。",
+  "zh": "创建共享你 AI 订阅的家庭专用助手，并通过 Telegram 发送可转发给家人的设置链接。"
+ },
+ "settings_orchestrator.share_format": {
+  "ko": "비서 이름|사이트 주소(예: <비서 이름>|example.com)",
+  "en": "Assistant name and site address, separated by a vertical bar (e.g. Assistant name followed by example.com)",
+  "ja": "アシスタント名とサイトのアドレスを縦線で区切って指定（例: アシスタント名と example.com）",
+  "zh": "助手名称和网站地址，用竖线分隔（例如助手名称与 example.com）"
+ },
+ "settings_orchestrator.unshare_format": {
+  "ko": "사이트 주소, 또는 비서 이름|사이트 주소(예: example.com)",
+  "en": "Site address, or assistant name and site address separated by a vertical bar (e.g. example.com)",
+  "ja": "サイトのアドレス、またはアシスタント名とサイトのアドレスを縦線で区切って指定（例: example.com）",
+  "zh": "网站地址，或用竖线分隔的助手名称和网站地址（例如 example.com）"
+ },
+ "settings_orchestrator.server_review_on_request": {
+  "ko": "요청할 때 공개 서버 정보를 검토",
+  "en": "Review public server information when requested",
+  "ja": "依頼時に公開サーバー情報を確認",
+  "zh": "请求时审查公开服务器信息"
+ },
+ "settings_orchestrator.mcp_connect_note": {
+  "ko": "확인하면 설치된 Claude Code로 이 공개 HTTPS 서버를 등록하고 필요한 경우 Mac 브라우저에서 로그인해요. 게시자·출처·라이선스는 제안된 정보이며 안전성을 보증하지 않아요. 서버에 연결해 도구 목록을 확인한 뒤 AI 연결 사용을 켜고 이 서버를 허용해요. 지정한 읽기만 읽기로 기록하고, 돈이 오가는 연결의 다른 동작과 결제는 건별 승인이 필요해요. 현재 허용된 다른 AI 연결도 함께 사용 가능해져요. 계정·OAuth 동의 범위는 이 경로에서 검증하지 못해요.",
+  "en": "After confirmation, the installed Claude Code registers this public HTTPS server and opens login in the Mac browser if needed. Publisher, source, and license are proposed information, not a safety guarantee. After connecting and checking its tools, AI connections and this server are enabled. Only the specified reads are recorded as reads; other actions on connections involving money and payments require approval each time. Other currently allowed AI connections also become available. Account and OAuth consent scopes cannot be verified through this path.",
+  "ja": "確認後、インストール済みの Claude Code でこの公開 HTTPS サーバーを登録し、必要なら Mac のブラウザでログインします。発行者、出典、ライセンスは提案された情報であり、安全性を保証しません。接続してツール一覧を確認した後、AI 接続の使用とこのサーバーを有効にします。指定した読み取りだけを読み取りとして記録し、金銭を扱う接続の他の操作や支払いには毎回承認が必要です。現在許可されている他の AI 接続も利用可能になります。アカウントや OAuth の同意範囲はこの経路では検証できません。",
+  "zh": "确认后，已安装的 Claude Code 会注册此公开 HTTPS 服务器，必要时在 Mac 浏览器中登录。发布者、来源和许可证均为提议信息，不保证安全。连接并检查工具列表后，将启用 AI 连接及此服务器。只有指定的读取会记为读取；涉及资金的连接的其他操作及付款均需逐次批准。当前允许的其他 AI 连接也会可用。此路径无法验证账户及 OAuth 同意范围。"
+ },
+ "settings_orchestrator.servers_format": {
+  "ko": "AI|서버 이름(쉼표로 여럿, 비우면 모두 끔), 예: codex|notes",
+  "en": "AI and server names separated by a vertical bar (comma-separated names; empty disables all), e.g. codex and notes",
+  "ja": "AI とサーバー名を縦線で区切って指定（複数名はカンマ区切り、空ならすべて無効）。例: codex と notes",
+  "zh": "用竖线分隔 AI 和服务器名称（多个名称用逗号分隔，留空则全部关闭），例如 codex 与 notes"
+ },
+ "settings_orchestrator.servers_note": {
+  "ko": "확인한 서버만 작업에서 켜지고, 그 서버의 도구 호출은 매번 Still이 허용하거나 막아요. 켜진 서버는 이 Mac에서 실행돼요.",
+  "en": "Only confirmed servers are enabled for tasks. Still allows or blocks every tool call. Enabled servers run on this Mac.",
+  "ja": "確認したサーバーだけを作業で有効にし、ツール呼び出しは毎回 Still が許可または拒否します。有効なサーバーはこの Mac で動作します。",
+  "zh": "只有已确认的服务器会在任务中启用，每次工具调用均由 Still 允许或阻止。启用的服务器在此 Mac 上运行。"
+ },
+ "settings_orchestrator.review_format": {
+  "ko": "AI|연결 종류|연결 식별자|동작 이름|read, mutate, payment, refused (예: codex|owner-mcp|notes|list_notes|read)",
+  "en": "AI, connection kind, connection ID, operation name, and read/mutate/payment/refused, separated by vertical bars (e.g. codex, owner-mcp, notes, list_notes, read)",
+  "ja": "AI、接続の種類、接続 ID、操作名、read/mutate/payment/refused を縦線区切りで指定（例: codex、owner-mcp、notes、list_notes、read）",
+  "zh": "用竖线分隔 AI、连接类型、连接标识、操作名称及 read/mutate/payment/refused（例如 codex、owner-mcp、notes、list_notes、read）"
+ },
+ "settings_orchestrator.review_note": {
+  "ko": "읽기와 일반 변경은 요청 범위에서 실행하고, 결제·송금은 매번 실행 내용을 확인받아요. 거절한 동작은 실행하지 않아요.",
+  "en": "Reads and ordinary changes run within the request's scope. Payments and transfers require confirmation each time. Refused actions are never run.",
+  "ja": "読み取りと通常の変更は依頼の範囲内で実行し、支払いや送金は毎回内容を確認します。拒否した操作は実行しません。",
+  "zh": "读取和一般更改在请求范围内执行；付款和转账每次都需确认。被拒绝的操作不会执行。"
+ },
+ "settings_orchestrator.money_format": {
+  "ko": "AI|연결 종류|연결 식별자|on 또는 off (예: codex|owner-mcp|broker|on)",
+  "en": "AI, connection kind, connection ID, and on/off, separated by vertical bars (e.g. codex, owner-mcp, broker, on)",
+  "ja": "AI、接続の種類、接続 ID、on/off を縦線区切りで指定（例: codex、owner-mcp、broker、on）",
+  "zh": "用竖线分隔 AI、连接类型、连接标识及 on/off（例如 codex、owner-mcp、broker、on）"
+ },
+ "settings_orchestrator.money_note": {
+  "ko": "돈이 오가는 연결은 보고만 하는 단계에서 시작해요. 소유자가 읽기로 정한 동작 외에는 건별 결제 확인이 필요해요.",
+  "en": "Connections involving money start at report only. Every action other than owner-designated reads requires payment confirmation.",
+  "ja": "金銭を扱う接続は報告のみの段階から始まります。所有者が読み取りと指定した操作以外は、操作ごとの支払い確認が必要です。",
+  "zh": "涉及资金的连接从仅报告级别开始。除所有者指定的读取外，每项操作均需付款确认。"
+ },
+ "settings_orchestrator.rung_format": {
+  "ko": "AI|연결 종류|연결 식별자|report, propose, approve, mandate 중 하나",
+  "en": "AI, connection kind, connection ID, and one of report/propose/approve/mandate, separated by vertical bars",
+  "ja": "AI、接続の種類、接続 ID、report/propose/approve/mandate のいずれかを縦線区切りで指定",
+  "zh": "用竖线分隔 AI、连接类型、连接标识及 report/propose/approve/mandate 之一"
+ },
+ "settings_orchestrator.rung_note": {
+  "ko": "단계를 올리는 건 소유자만 할 수 있어요. 돈이 오가는 연결은 위임 단계로 올릴 수 없어요.",
+  "en": "Only the owner can raise the level. Connections involving money cannot use the delegated level.",
+  "ja": "段階を上げられるのは所有者だけです。金銭を扱う接続は委任段階に上げられません。",
+  "zh": "只有所有者可以提升级别。涉及资金的连接不能提升至委托级别。"
+ },
+ "settings_orchestrator.undo_note": {
+  "ko": "선택한 변경 직전의 돈 표시·단계·동작 결정을 함께 복원해요. 이후 변경이 있으면 적용하지 않아요.",
+  "en": "Restores the money flag, level, and operation decisions from just before the selected change. Later changes prevent application.",
+  "ja": "選んだ変更の直前の金銭フラグ、段階、操作の判断をまとめて復元します。その後の変更があれば適用しません。",
+  "zh": "一并恢复所选更改之前的资金标记、级别和操作决定。若之后有更改则不应用。"
+ },
+ "settings_orchestrator.forget_note": {
+  "ko": "이전 권한과 대기 중인 확인을 중지해요. 기록은 남아 있어 설정 확인으로 언제든 복원할 수 있어요.",
+  "en": "Stops previous permissions and pending confirmations. Records are kept and can be restored through settings confirmation.",
+  "ja": "以前の権限と確認待ちの要求を停止します。記録は残り、設定の確認でいつでも復元できます。",
+  "zh": "停止之前的权限和待确认请求。记录会保留，可随时通过设置确认恢复。"
+ },
+ "settings_orchestrator.restore_note": {
+  "ko": "잊었던 권한을 복원해요. 이전 확인 요청이나 작업은 다시 실행하지 않아요.",
+  "en": "Restores forgotten permissions. Previous confirmations and tasks are not rerun.",
+  "ja": "忘れた権限を復元します。以前の確認要求や作業は再実行しません。",
+  "zh": "恢复已忘记的权限。不会重新执行之前的确认请求或任务。"
+ },
+ "settings_orchestrator.phone_link_note": {
+  "ko": "확인하면 연결된 Telegram으로 약 10분 동안 열리는 일회용 링크를 보냅니다. 휴대폰에서 자체 Google client를 넣을 때 씁니다. Google 서비스 연결은 Mac에서 합니다.",
+  "en": "After confirmation, a one-time link valid for about 10 minutes is sent to the connected Telegram. Use it on your phone to enter your own Google client. Connect Google services on the Mac.",
+  "ja": "確認後、約 10 分間有効な一度限りのリンクを接続済みの Telegram に送ります。スマートフォンで自分の Google client を入力するときに使います。Google サービスの接続は Mac で行ってください。",
+  "zh": "确认后，会向已连接的 Telegram 发送约 10 分钟有效的一次性链接，用于在手机上输入自己的 Google client。Google 服务连接请在 Mac 上完成。"
+ },
+ "settings_orchestrator.awaiting_acceptance": {
+  "ko": "수락 대기",
+  "en": "Awaiting acceptance",
+  "ja": "承諾待ち",
+  "zh": "等待接受"
+ },
+ "settings_orchestrator.scheduled": {
+  "ko": "예약됨",
+  "en": "Scheduled",
+  "ja": "予約済み",
+  "zh": "已预约"
+ },
+ "settings_orchestrator.running": {
+  "ko": "실행 중",
+  "en": "Running",
+  "ja": "実行中",
+  "zh": "运行中"
+ },
+ "settings_orchestrator.cancel_reservation_format": {
+  "ko": "취소할 예약의 id",
+  "en": "Reservation ID to cancel",
+  "ja": "取り消す予約の ID",
+  "zh": "要取消的预约 ID"
+ },
+ "settings_orchestrator.accept_reservation_format": {
+  "ko": "수락할 예약의 id",
+  "en": "Reservation ID to accept",
+  "ja": "承諾する予約の ID",
+  "zh": "要接受的预约 ID"
+ },
+ "settings_orchestrator.disconnect_format": {
+  "ko": "해제할 연결의 id",
+  "en": "Connection ID to disconnect",
+  "ja": "解除する接続の ID",
+  "zh": "要断开的连接 ID"
+ },
+ "settings_orchestrator.browser_idle": {
+  "ko": "쓰는 곳 없음",
+  "en": "Not in use",
+  "ja": "使用なし",
+  "zh": "未使用"
+ },
+ "settings_orchestrator.browser_login": {
+  "ko": "소유자의 로그인 창",
+  "en": "Owner's login window",
+  "ja": "所有者のログイン画面",
+  "zh": "所有者的登录窗口"
+ },
+ "settings_orchestrator.browser_keepalive": {
+  "ko": "로그인 세션 유지(잠깐)",
+  "en": "Keeping login session alive briefly",
+  "ja": "ログインセッションを一時維持",
+  "zh": "暂时保持登录会话"
+ },
+ "settings_orchestrator.browser_other_work": {
+  "ko": "다른 작업",
+  "en": "Another task",
+  "ja": "別の作業",
+  "zh": "其他任务"
+ },
+ "settings_orchestrator.browser_occupancy": {
+  "ko": "지금 브라우저: {browser_occupancy}",
+  "en": "Browser now: {browser_occupancy}",
+  "ja": "現在のブラウザ: {browser_occupancy}",
+  "zh": "当前浏览器：{browser_occupancy}"
+ },
+ "settings_orchestrator.close_login_format": {
+  "ko": "닫을 로그인 창의 값",
+  "en": "Value of the login window to close",
+  "ja": "閉じるログイン画面の値",
+  "zh": "要关闭的登录窗口值"
+ },
+ "settings_orchestrator.close_login_note": {
+  "ko": "확인하면 그 창을 닫아요. 그 창에서 입력하던 로그인은 사라지고, 그 창을 연 요청은 로그인 없이 끝나요. 이미 저장된 로그인 세션은 그대로예요.",
+  "en": "Confirmation closes that window. Login input in that window is lost, and the request that opened it ends without signing in. Saved login sessions are kept.",
+  "ja": "確認するとその画面を閉じます。入力中のログイン情報は失われ、その画面を開いた依頼はログインせずに終了します。保存済みのログインセッションはそのままです。",
+  "zh": "确认后会关闭该窗口，窗口中正在输入的登录信息将丢失，打开它的请求会在未登录的状态下结束。已保存的登录会话保持不变。"
+ },
+ "settings_orchestrator.skill_source_format": {
+  "ko": "GitHub 스킬 폴더 주소(예: github.com/<owner>/<repo>/tree/<브랜치 또는 커밋>/<폴더>), 또는 available에 있는 Still 참고 스킬 이름",
+  "en": "GitHub skill folder URL (e.g. github.com/<owner>/<repo>/tree/<branch-or-commit>/<folder>), or a Still reference skill name from available",
+  "ja": "GitHub のスキルフォルダー URL（例: github.com/<owner>/<repo>/tree/<branch-or-commit>/<folder>）、または available にある Still 参考スキル名",
+  "zh": "GitHub 技能文件夹地址（例如 github.com/<owner>/<repo>/tree/<branch-or-commit>/<folder>），或 available 中的 Still 参考技能名称"
+ },
+ "settings_orchestrator.skill_name_format": {
+  "ko": "설치된 스킬 이름",
+  "en": "Installed skill name",
+  "ja": "インストール済みのスキル名",
+  "zh": "已安装的技能名称"
+ },
+ "settings_orchestrator.share_ambiguous": {
+  "ko": "{site}은(는) 여러 비서({assistants})와 공유 중이에요. 어느 비서인지 이름을 주세요.",
+  "en": "{site} is shared with several assistants ({assistants}). Specify which one.",
+  "ja": "{site} は複数のアシスタント（{assistants}）と共有中です。対象の名前を指定してください。",
+  "zh": "{site} 正与多个助手（{assistants}）共享。请指定助手名称。"
+ },
+ "settings_orchestrator.share_already_enabled": {
+  "ko": "{instance} 비서와 {site} 로그인 세션을 이미 공유하고 있어요. 바꿀 것이 없어요.",
+  "en": "The {site} login session is already shared with {instance}. Nothing to change.",
+  "ja": "{instance} と {site} のログインセッションをすでに共有しています。変更は不要です。",
+  "zh": "已与 {instance} 共享 {site} 登录会话，无需更改。"
+ },
+ "settings_orchestrator.share_already_disabled": {
+  "ko": "{instance} 비서와 {site} 로그인 세션을 공유하고 있지 않아요. 바꿀 것이 없어요.",
+  "en": "The {site} login session is not shared with {instance}. Nothing to change.",
+  "ja": "{instance} と {site} のログインセッションは共有していません。変更は不要です。",
+  "zh": "未与 {instance} 共享 {site} 登录会话，无需更改。"
+ },
+ "settings_orchestrator.judgment_model_note": {
+  "ko": "모델을 바꾸면 기본 AI 따라가기 대신 따로 지정됩니다.",
+  "en": "Changing the model selects it separately instead of following Main AI.",
+  "ja": "モデルを変えると、メイン AI に合わせず個別指定になります。",
+  "zh": "更改模型后将单独指定，不再跟随主 AI。"
+ },
+ "settings_orchestrator.main_route_note": {
+  "ko": "기본 AI를 바꾸면 이후 작업 내용이 새 경로의 목적지로 전송됩니다. 항상 확인 후 적용합니다.",
+  "en": "Changing Main AI sends future task content to the new route's destination. Confirmation is always required.",
+  "ja": "メイン AI を変えると、以降の作業内容は新しい経路の送信先に送られます。必ず確認後に適用します。",
+  "zh": "更改主 AI 后，后续任务内容会发送至新路径的目标地址。始终在确认后应用。"
+ },
+ "settings_orchestrator.invalid_value": {
+  "ko": "바꿀 값을 짧은 글자로 주세요. 아무것도 바꾸지 않았습니다.",
+  "en": "Provide a short text value. Nothing was changed.",
+  "ja": "変更する値は短い文字列で指定してください。何も変更していません。",
+  "zh": "请提供简短文本值。未作任何更改。"
+ },
+ "settings_orchestrator.error_unchanged": {
+  "ko": "{exc} 아무것도 바꾸지 않았습니다.",
+  "en": "{exc} Nothing was changed.",
+  "ja": "{exc} 何も変更していません。",
+  "zh": "{exc} 未作任何更改。"
+ },
+ "settings_orchestrator.invalid_family_name": {
+  "ko": "가족 비서 이름을 1~64자로 주세요. 아무것도 만들지 않았습니다.",
+  "en": "Use 1–64 characters for the family assistant's name. Nothing was created.",
+  "ja": "家族用アシスタントの名前は 1～64 文字で指定してください。何も作成していません。",
+  "zh": "家庭助手名称需为 1 至 64 个字符。未创建任何内容。"
+ },
+ "settings_orchestrator.family_name_is_self": {
+  "ko": "'{name}'은(는) 지금 대화하고 있는 이 비서의 이름이에요. 새로 만들지 않았어요. 가족의 비서라면 다른 이름으로 다시 요청해 주세요.",
+  "en": "'{name}' is the name of the assistant you are talking to. Nothing was created. Use a different name for a family assistant.",
+  "ja": "「{name}」は今話しているこのアシスタントの名前です。新規作成していません。家族用なら別の名前で依頼してください。",
+  "zh": "“{name}”是当前对话助手的名称，未新建。若要创建家庭助手，请使用其他名称。"
+ },
+ "settings_orchestrator.family_name_exists": {
+  "ko": "'{name}' 비서는 이미 있어요: {listed}. 새로 만들지 않았어요. 다른 가족의 비서라면 다른 이름으로 다시 요청해 주세요.",
+  "en": "An assistant named '{name}' already exists: {listed}. Nothing was created. Use a different name for another family member's assistant.",
+  "ja": "「{name}」というアシスタントはすでに存在します: {listed}。新規作成していません。別の家族用なら別の名前で依頼してください。",
+  "zh": "名为“{name}”的助手已存在：{listed}。未新建。若是其他家人的助手，请使用其他名称。"
+ },
+ "settings_orchestrator.invalid_daily_calls": {
+  "ko": "하루 판단 횟수는 0~{limit} 사이의 정수로 주세요. 아무것도 바꾸지 않았습니다.",
+  "en": "Daily decisions must be an integer from 0 to {limit}. Nothing was changed.",
+  "ja": "1 日の判断回数は 0～{limit} の整数で指定してください。何も変更していません。",
+  "zh": "每日判断次数需为 0 至 {limit} 的整数。未作任何更改。"
+ },
+ "settings_orchestrator.none_available_now": {
+  "ko": "지금은 없음",
+  "en": "None available now",
+  "ja": "現在なし",
+  "zh": "当前没有"
+ },
+ "settings_orchestrator.invalid_choice": {
+  "ko": "{label}은(는) 다음 중 하나만 고를 수 있습니다: {listed}. 아무것도 바꾸지 않았습니다.",
+  "en": "For {label}, choose one of: {listed}. Nothing was changed.",
+  "ja": "{label} は次から選んでください: {listed}。何も変更していません。",
+  "zh": "{label}只能选择以下值之一：{listed}。未作任何更改。"
+ },
+ "settings_orchestrator.invalid_servers_format": {
+  "ko": "AI|서버 이름 형식으로 주세요(AI는 claude-code 또는 codex). 아무것도 바꾸지 않았습니다.",
+  "en": "Use AI and server names separated by a vertical bar (AI must be claude-code or codex). Nothing was changed.",
+  "ja": "AI とサーバー名を縦線で区切って指定してください（AI は claude-code または codex）。何も変更していません。",
+  "zh": "请用竖线分隔 AI 和服务器名称（AI 必须为 claude-code 或 codex）。未作任何更改。"
+ },
+ "settings_orchestrator.unknown_servers": {
+  "ko": "{engine}에 설정된 MCP 서버가 아니에요: {missing}. 설정된 서버: {available}. 아무것도 바꾸지 않았습니다.",
+  "en": "These MCP servers are not configured for {engine}: {missing}. Configured servers: {available}. Nothing was changed.",
+  "ja": "{engine} に設定されていない MCP サーバーです: {missing}。設定済み: {available}。何も変更していません。",
+  "zh": "这些 MCP 服务器未在 {engine} 中配置：{missing}。已配置：{available}。未作任何更改。"
+ },
+ "settings_orchestrator.invalid_server_names": {
+  "ko": "MCP 서버는 {limit}개까지, 이름 형식에 맞게 주세요. 아무것도 바꾸지 않았습니다.",
+  "en": "Use valid MCP server names, up to {limit} servers. Nothing was changed.",
+  "ja": "MCP サーバーは名前の形式に合わせて最大 {limit} 個まで指定してください。何も変更していません。",
+  "zh": "请使用有效的 MCP 服务器名称，最多 {limit} 个。未作任何更改。"
+ },
+ "settings_orchestrator.servers_unchanged": {
+  "ko": "{engine}의 MCP 서버는 이미 그렇게 되어 있어요. 바꿀 것이 없습니다.",
+  "en": "MCP servers for {engine} are already set that way. Nothing to change.",
+  "ja": "{engine} の MCP サーバーはすでにその設定です。変更は不要です。",
+  "zh": "{engine} 的 MCP 服务器已如此设置，无需更改。"
+ },
+ "settings_orchestrator.invalid_connection_name": {
+  "ko": "연결 이름을 확인하세요. 아무것도 바꾸지 않았습니다.",
+  "en": "Check the connection name. Nothing was changed.",
+  "ja": "接続名を確認してください。何も変更していません。",
+  "zh": "请检查连接名称。未作任何更改。"
+ },
+ "settings_orchestrator.invalid_connection_scope": {
+  "ko": "연결 범위를 확인하세요. 아무것도 바꾸지 않았습니다.",
+  "en": "Check the connection scope. Nothing was changed.",
+  "ja": "接続範囲を確認してください。何も変更していません。",
+  "zh": "请检查连接范围。未作任何更改。"
+ },
+ "settings_orchestrator.trust_record_unavailable": {
+  "ko": "현재 되돌리거나 잊을 수 있는 기록이 아니에요. 아무것도 바꾸지 않았습니다.",
+  "en": "This record cannot currently be undone or forgotten. Nothing was changed.",
+  "ja": "現在、元に戻したり忘れたりできる記録ではありません。何も変更していません。",
+  "zh": "当前无法撤销或忘记此记录。未作任何更改。"
+ },
+ "settings_orchestrator.invalid_review_format": {
+  "ko": "AI|연결 종류|연결 식별자|동작 이름|read, mutate, payment, refused 형식으로 주세요. 아무것도 바꾸지 않았습니다.",
+  "en": "Use AI, connection kind, connection ID, operation name, and read/mutate/payment/refused, separated by vertical bars. Nothing was changed.",
+  "ja": "AI、接続の種類、接続 ID、操作名、read/mutate/payment/refused を縦線区切りで指定してください。何も変更していません。",
+  "zh": "请用竖线分隔 AI、连接类型、连接标识、操作名称及 read/mutate/payment/refused。未作任何更改。"
+ },
+ "settings_orchestrator.operation_unchanged": {
+  "ko": "이미 그렇게 정해져 있어요. 바꿀 것이 없습니다.",
+  "en": "That operation is already classified that way. Nothing to change.",
+  "ja": "すでにその分類です。変更は不要です。",
+  "zh": "该操作已如此分类，无需更改。"
+ },
+ "settings_orchestrator.invalid_money_format": {
+  "ko": "AI|연결 종류|연결 식별자|on 또는 off 형식으로 주세요. 아무것도 바꾸지 않았습니다.",
+  "en": "Use AI, connection kind, connection ID, and on/off, separated by vertical bars. Nothing was changed.",
+  "ja": "AI、接続の種類、接続 ID、on/off を縦線区切りで指定してください。何も変更していません。",
+  "zh": "请用竖线分隔 AI、连接类型、连接标识及 on/off。未作任何更改。"
+ },
+ "settings_orchestrator.money_unchanged": {
+  "ko": "이미 그렇게 되어 있어요. 바꿀 것이 없습니다.",
+  "en": "It is already set that way. Nothing to change.",
+  "ja": "すでにその設定です。変更は不要です。",
+  "zh": "已如此设置，无需更改。"
+ },
+ "settings_orchestrator.invalid_rung_format": {
+  "ko": "AI|연결 종류|연결 식별자|report, propose, approve, mandate 형식으로 주세요. 아무것도 바꾸지 않았습니다.",
+  "en": "Use AI, connection kind, connection ID, and report/propose/approve/mandate, separated by vertical bars. Nothing was changed.",
+  "ja": "AI、接続の種類、接続 ID、report/propose/approve/mandate を縦線区切りで指定してください。何も変更していません。",
+  "zh": "请用竖线分隔 AI、连接类型、连接标识及 report/propose/approve/mandate。未作任何更改。"
+ },
+ "settings_orchestrator.money_mandate_refused": {
+  "ko": "돈이 오가는 연결은 위임 단계로 올릴 수 없어요. 아무것도 바꾸지 않았습니다.",
+  "en": "Connections involving money cannot use the delegated level. Nothing was changed.",
+  "ja": "金銭を扱う接続は委任段階に上げられません。何も変更していません。",
+  "zh": "涉及资金的连接不能提升至委托级别。未作任何更改。"
+ },
+ "settings_orchestrator.rung_unchanged": {
+  "ko": "이미 그 단계예요. 바꿀 것이 없습니다.",
+  "en": "It is already at that level. Nothing to change.",
+  "ja": "すでにその段階です。変更は不要です。",
+  "zh": "已处于该级别，无需更改。"
+ },
+ "settings_orchestrator.servers_summary": {
+  "ko": "{engine}에서 작업에 켤 MCP 서버를 {servers}(으)로 정합니다",
+  "en": "Set MCP servers enabled for tasks in {engine} to {servers}",
+  "ja": "{engine} の作業で有効にする MCP サーバーを {servers} に設定します",
+  "zh": "将 {engine} 中任务启用的 MCP 服务器设置为 {servers}"
+ },
+ "settings_orchestrator.servers_disable_summary": {
+  "ko": "{engine}에서 작업에 켠 MCP 서버를 모두 끕니다",
+  "en": "Disable all MCP servers enabled for tasks in {engine}",
+  "ja": "{engine} の作業で有効な MCP サーバーをすべて無効にします",
+  "zh": "关闭 {engine} 中所有已为任务启用的 MCP 服务器"
+ },
+ "settings_orchestrator.review_summary": {
+  "ko": "{connection}({engine} {kind})의 {operation}을(를) '{action_class}' 동작으로 정합니다",
+  "en": "Classify {operation} on {connection} ({engine} {kind}) as '{action_class}'",
+  "ja": "{connection}（{engine} {kind}）の {operation} を「{action_class}」操作に分類します",
+  "zh": "将 {connection}（{engine} {kind}）的 {operation} 归为“{action_class}”操作"
+ },
+ "settings_orchestrator.undo_summary": {
+  "ko": "직전 기록으로 복원합니다: {record}",
+  "en": "Restore the preceding record: {record}",
+  "ja": "直前の記録に戻します: {record}",
+  "zh": "恢复至上一条记录：{record}"
+ },
+ "settings_orchestrator.restore_summary": {
+  "ko": "잊었던 기록의 권한을 복원합니다: {record}",
+  "en": "Restore permissions from the forgotten record: {record}",
+  "ja": "忘れた記録の権限を復元します: {record}",
+  "zh": "恢复已忘记记录中的权限：{record}"
+ },
+ "settings_orchestrator.forget_summary": {
+  "ko": "{connection}({engine} {kind})의 신뢰 기록을 잊습니다",
+  "en": "Forget the trust record for {connection} ({engine} {kind})",
+  "ja": "{connection}（{engine} {kind}）の信頼記録を忘れます",
+  "zh": "忘记 {connection}（{engine} {kind}）的信任记录"
+ },
+ "settings_orchestrator.rung_summary": {
+  "ko": "{connection}({engine} {kind})의 신뢰 단계를 '{rung}'(으)로 정합니다",
+  "en": "Set the trust level of {connection} ({engine} {kind}) to '{rung}'",
+  "ja": "{connection}（{engine} {kind}）の信頼段階を「{rung}」に設定します",
+  "zh": "将 {connection}（{engine} {kind}）的信任级别设为“{rung}”"
+ },
+ "settings_orchestrator.value_not_set": {
+  "ko": "설정 안 함",
+  "en": "Not set",
+  "ja": "未設定",
+  "zh": "未设置"
+ },
+ "settings_orchestrator.check_owner_channel": {
+  "ko": "설정 요청의 소유자와 채널을 확인하세요.",
+  "en": "Check the owner and channel for this settings request.",
+  "ja": "設定リクエストの所有者とチャネルを確認してください。",
+  "zh": "请确认此设置请求的所有者和渠道。"
+ },
+ "settings_orchestrator.invalid_reason": {
+  "ko": "변경 이유는 짧은 글자로 주세요. 아무것도 바꾸지 않았습니다.",
+  "en": "Keep the reason for the change short. Nothing was changed.",
+  "ja": "変更理由は短い文字列で指定してください。何も変更していません。",
+  "zh": "请简短说明更改原因。未作任何更改。"
+ },
+ "settings_orchestrator.invalid_continue_work": {
+  "ko": "원래 작업을 이어갈지 여부는 참 또는 거짓으로 주세요.",
+  "en": "Specify true or false for whether to continue the original task.",
+  "ja": "元の作業を続けるかどうかは真または偽で指定してください。",
+  "zh": "是否继续原任务请指定为真或假。"
+ },
+ "settings_orchestrator.resume_unsupported": {
+  "ko": "이 설정은 아직 원래 작업의 자동 재개를 지원하지 않아요.",
+  "en": "This setting does not yet support automatically resuming the original task.",
+  "ja": "この設定は、元の作業の自動再開にまだ対応していません。",
+  "zh": "此设置尚不支持自动恢复原任务。"
+ },
+ "settings_orchestrator.telegram_already_connected": {
+  "ko": "Telegram은 이미 연결되어 있어요. 바꿀 것이 없습니다.",
+  "en": "Telegram is already connected. Nothing to change.",
+  "ja": "Telegram は接続済みです。変更は不要です。",
+  "zh": "Telegram 已连接，无需更改。"
+ },
+ "settings_orchestrator.select_required_skill": {
+  "ko": "이어갈 작업에 필요한 스킬을 현재 required_skills에서 정확히 골라 주세요.",
+  "en": "Choose the exact skill needed for the task from the current required_skills.",
+  "ja": "続ける作業に必要なスキルを、現在の required_skills から正確に選んでください。",
+  "zh": "请从当前 required_skills 中精确选择继续任务所需的技能。"
+ },
+ "settings_orchestrator.unexpected_required_skill": {
+  "ko": "required_skill은 원래 작업에 필요한 스킬 사용을 켤 때만 지정하세요.",
+  "en": "Specify required_skill only when enabling a skill needed for the original task.",
+  "ja": "required_skill は、元の作業に必要なスキルを有効にするときだけ指定してください。",
+  "zh": "仅在启用原任务所需技能时指定 required_skill。"
+ },
+ "settings_orchestrator.missing_required_tools": {
+  "ko": "원래 작업에 필요한 도구를 적어 주세요. 서버 등록만으로 재개하지 않아요.",
+  "en": "Specify the tools needed for the original task. Registering a server alone will not resume it.",
+  "ja": "元の作業に必要なツールを指定してください。サーバーの登録だけでは再開しません。",
+  "zh": "请指定原任务所需工具。仅注册服务器不会恢复任务。"
+ },
+ "settings_orchestrator.setting_unchanged": {
+  "ko": "{label}은(는) 이미 {value}입니다. 바꿀 것이 없습니다.",
+  "en": "{label} is already {value}. Nothing to change.",
+  "ja": "{label} はすでに {value} です。変更は不要です。",
+  "zh": "{label}已为{value}，无需更改。"
+ },
+ "settings_orchestrator.family_add_summary": {
+  "ko": "가족 비서 '{after}'를 만듭니다",
+  "en": "Create family assistant '{after}'",
+  "ja": "家族用アシスタント「{after}」を作成します",
+  "zh": "创建家庭助手“{after}”"
+ },
+ "settings_orchestrator.skill_add_summary": {
+  "ko": "스킬을 추가합니다: {repo}의 {path} (커밋 {revision})",
+  "en": "Add skill: {path} in {repo} (commit {revision})",
+  "ja": "スキルを追加します: {repo} の {path}（コミット {revision}）",
+  "zh": "添加技能：{repo} 中的 {path}（提交 {revision}）"
+ },
+ "settings_orchestrator.skill_enable_summary": {
+  "ko": "{summary}. 스킬 사용이 꺼져 있어 함께 켭니다",
+  "en": "{summary}. Skills are off, so they will be enabled too",
+  "ja": "{summary}。スキルが無効なため、合わせて有効にします",
+  "zh": "{summary}。技能当前已关闭，将同时启用"
+ },
+ "settings_orchestrator.skill_remove": {
+  "ko": "스킬 '{after}'를 뺍니다",
+  "en": "Remove skill '{after}'",
+  "ja": "スキル「{after}」を削除します",
+  "zh": "移除技能“{after}”"
+ },
+ "settings_orchestrator.disconnect_summary": {
+  "ko": "{connection} 연결을 해제합니다",
+  "en": "Disconnect {connection}",
+  "ja": "{connection} の接続を解除します",
+  "zh": "断开 {connection} 连接"
+ },
+ "settings_orchestrator.close_login_summary": {
+  "ko": "로그인 창을 닫습니다: {window}. 그 창에서 입력하던 로그인은 사라지고, 그 창을 연 요청은 로그인 없이 끝나요. 이미 저장된 로그인 세션은 그대로예요",
+  "en": "Close login window: {window}. Login input in that window is lost, and the request that opened it ends without signing in. Saved login sessions are kept",
+  "ja": "ログイン画面を閉じます: {window}。入力中のログイン情報は失われ、その画面を開いた依頼はログインせずに終了します。保存済みのログインセッションはそのままです",
+  "zh": "关闭登录窗口：{window}。窗口中正在输入的登录信息将丢失，打开它的请求会在未登录的状态下结束。已保存的登录会话保持不变"
+ },
+ "settings_orchestrator.cancel_reservation_summary": {
+  "ko": "예약을 취소합니다: {reservation}",
+  "en": "Cancel reservation: {reservation}",
+  "ja": "予約を取り消します: {reservation}",
+  "zh": "取消预约：{reservation}"
+ },
+ "settings_orchestrator.accept_reservation_summary": {
+  "ko": "예약을 수락합니다: {reservation}",
+  "en": "Accept reservation: {reservation}",
+  "ja": "予約を承諾します: {reservation}",
+  "zh": "接受预约：{reservation}"
+ },
+ "settings_orchestrator.api_connect_summary": {
+  "ko": "API 연결 {name}: {hosts}\n읽기 확인: {probe_url} · 대상 확인: {subject}\n돈이 오가는 연결: {money}",
+  "en": "API connection {name}: {hosts}\nRead check: {probe_url} · Subject check: {subject}\nConnection involving money: {money}",
+  "ja": "API 接続 {name}: {hosts}\n読み取り確認: {probe_url} · 対象確認: {subject}\n金銭を扱う接続: {money}",
+  "zh": "API 连接 {name}：{hosts}\n读取检查：{probe_url} · 对象检查：{subject}\n涉及资金的连接：{money}"
+ },
+ "settings_orchestrator.oauth_destination": {
+  "ko": "인증 정보를 보낼 주소: {token_url} · 요청 범위: {scope}",
+  "en": "Credentials destination: {token_url} · Requested scope: {scope}",
+  "ja": "認証情報の送信先: {token_url} · 要求範囲: {scope}",
+  "zh": "凭据发送地址：{token_url} · 请求范围：{scope}"
+ },
+ "settings_orchestrator.mcp_connect_line": {
+  "ko": "{engine}에 {name} 연결: {url}",
+  "en": "Connect {name} to {engine}: {url}",
+  "ja": "{engine} に {name} を接続: {url}",
+  "zh": "将 {name} 连接到 {engine}：{url}"
+ },
+ "settings_orchestrator.mcp_connect_source": {
+  "ko": "출처: {source} · 게시자: {publisher} · 라이선스: {licence}",
+  "en": "Source: {source} · Publisher: {publisher} · License: {licence}",
+  "ja": "出典: {source} · 発行者: {publisher} · ライセンス: {licence}",
+  "zh": "来源：{source} · 发布者：{publisher} · 许可证：{licence}"
+ },
+ "settings_orchestrator.mcp_connect_required_tools": {
+  "ko": "필요한 도구: {required_tools}",
+  "en": "Required tools: {required_tools}",
+  "ja": "必要なツール: {required_tools}",
+  "zh": "所需工具：{required_tools}"
+ },
+ "settings_orchestrator.mcp_connect_read_tools": {
+  "ko": "읽기로 확인할 도구: {read_tools} · 돈이 오가는 연결: {money}",
+  "en": "Tools to verify as reads: {read_tools} · Connection involving money: {money}",
+  "ja": "読み取りとして確認するツール: {read_tools} · 金銭を扱う接続: {money}",
+  "zh": "要验证为读取的工具：{read_tools} · 涉及资金的连接：{money}"
+ },
+ "settings_orchestrator.phone_link_summary": {
+  "ko": "휴대폰으로 '{link}' 링크를 보냅니다(약 10분 동안 열려요)",
+  "en": "Send the '{link}' link to your phone (valid for about 10 minutes)",
+  "ja": "「{link}」のリンクをスマートフォンに送ります（約 10 分間有効）",
+  "zh": "将“{link}”链接发送到手机（约 10 分钟有效）"
+ },
+ "settings_orchestrator.share_summary": {
+  "ko": "'{label}' 비서에 {site} 로그인 세션을 공유합니다",
+  "en": "Share the {site} login session with assistant '{label}'",
+  "ja": "アシスタント「{label}」に {site} のログインセッションを共有します",
+  "zh": "与助手“{label}”共享 {site} 登录会话"
+ },
+ "settings_orchestrator.unshare_summary": {
+  "ko": "'{label}' 비서의 {site} 로그인 공유를 그만둡니다",
+  "en": "Stop sharing the {site} login with assistant '{label}'",
+  "ja": "アシスタント「{label}」との {site} のログイン共有を停止します",
+  "zh": "停止与助手“{label}”共享 {site} 登录"
+ },
+ "settings_orchestrator.route_destination_note": {
+  "ko": "이후 작업 내용이 {destination}(으)로 전송됩니다.",
+  "en": "Future task content will be sent to {destination}.",
+  "ja": "以降の作業内容は {destination} に送信されます。",
+  "zh": "后续任务内容将发送到 {destination}。"
+ },
+ "settings_orchestrator.required_skill_note": {
+  "ko": "{note} 필요한 스킬: {skill}(버전 {version}).",
+  "en": "{note} Required skill: {skill} (version {version}).",
+  "ja": "{note} 必要なスキル: {skill}（バージョン {version}）。",
+  "zh": "{note} 所需技能：{skill}（版本 {version}）。"
+ },
+ "settings_orchestrator.continue_work_note": {
+  "ko": "{note} 확인 후 필요한 기능을 사용할 수 있으면 이 설정을 필요로 했던 원래 작업을 이어갑니다.",
+  "en": "{note} After confirmation, the original task requiring this setting will continue if the needed capability is available.",
+  "ja": "{note} 確認後、必要な機能が使える場合は、この設定を必要とした元の作業を続けます。",
+  "zh": "{note} 确认后，如果所需功能可用，将继续需要此设置的原任务。"
+ },
+ "settings_orchestrator.resume_owner_unknown": {
+  "ko": "원래 작업의 소유자와 채널을 확인하지 못해 재개 초안을 만들지 않았어요.",
+  "en": "The original task's owner and channel could not be verified, so no resume draft was created.",
+  "ja": "元の作業の所有者とチャネルを確認できなかったため、再開の案は作成していません。",
+  "zh": "无法确认原任务的所有者和渠道，因此未创建恢复草案。"
+ },
+ "settings_orchestrator.confirmation_required": {
+  "ko": "확인해야 적용됩니다. 아직 아무것도 바꾸지 않았습니다.",
+  "en": "Confirmation is required to apply this. Nothing has been changed yet.",
+  "ja": "適用には確認が必要です。まだ何も変更していません。",
+  "zh": "确认后才会应用。尚未作任何更改。"
+ },
+ "settings_orchestrator.reads_added": {
+  "ko": "읽기로 취급할 요청을 연결에 추가했어요. 원래 작업을 이어갑니다.",
+  "en": "Added the requests to treat as reads to the connection. Continuing the original task.",
+  "ja": "読み取りとして扱うリクエストを接続に追加しました。元の作業を続けます。",
+  "zh": "已将视为读取的请求添加到连接，继续原任务。"
+ },
+ "settings_orchestrator.api_attempt_limit": {
+  "ko": "이 작업의 API 입력 확인 한도에 도달했어요. 다른 연결 방법을 검토하세요.",
+  "en": "This task has reached its API input confirmation limit. Consider another way to connect.",
+  "ja": "この作業の API 入力確認の上限に達しました。他の接続方法を検討してください。",
+  "zh": "此任务已达到 API 输入确认次数上限。请考虑其他连接方式。"
+ },
+ "settings_orchestrator.connection_attempt_limit": {
+  "ko": "이 작업의 연결 설정 시도 한도에 도달했어요. 현재 연결 상태와 다른 경로를 검토하세요.",
+  "en": "This task has reached its connection setup attempt limit. Review the current connection state and other routes.",
+  "ja": "この作業の接続設定の試行上限に達しました。現在の接続状態と他の経路を検討してください。",
+  "zh": "此任务已达到连接设置尝试次数上限。请检查当前连接状态及其他路径。"
+ },
+ "settings_orchestrator.apply_failed_fallback": {
+  "ko": "설정을 적용하지 못했습니다.",
+  "en": "The settings could not be applied.",
+  "ja": "設定を適用できませんでした。",
+  "zh": "无法应用设置。"
+ },
+ "settings_orchestrator.trust_revoked_receipt": {
+  "ko": "신뢰 기록을 잊어 이 확인 요청과 이전 작업의 자동 재개를 취소했어요.",
+  "en": "Forgetting the trust record canceled this confirmation and automatic resumption of the earlier task.",
+  "ja": "信頼記録を忘れたため、この確認要求と以前の作業の自動再開を取り消しました。",
+  "zh": "已忘记信任记录，因此取消了此确认请求及之前任务的自动恢复。"
+ },
+ "settings_orchestrator.changed_receipt": {
+  "ko": "{effect}(으)로 바꿨습니다.",
+  "en": "Changed to {effect}.",
+  "ja": "{effect} に変更しました。",
+  "zh": "已更改为 {effect}。"
+ },
+ "settings_orchestrator.draft_already_applied": {
+  "ko": "이미 적용한 설정 초안입니다.",
+  "en": "This settings draft has already been applied.",
+  "ja": "この設定案は適用済みです。",
+  "zh": "此设置草案已应用。"
+ },
+ "settings_orchestrator.draft_no_longer_confirmable": {
+  "ko": "이 설정 초안은 더 이상 확인할 수 없습니다. 필요하면 다시 요청하세요.",
+  "en": "This settings draft can no longer be confirmed. Ask again if needed.",
+  "ja": "この設定案はもう確認できません。必要なら再度依頼してください。",
+  "zh": "此设置草案已无法确认。必要时请重新请求。"
+ },
+ "settings_orchestrator.draft_digest_mismatch": {
+  "ko": "확인 정보가 이 설정 초안과 맞지 않아 적용하지 않았습니다.",
+  "en": "The confirmation does not match this settings draft. Nothing was applied.",
+  "ja": "確認情報がこの設定案と一致しないため、適用していません。",
+  "zh": "确认信息与此设置草案不匹配，因此未应用。"
+ },
+ "settings_orchestrator.draft_expired": {
+  "ko": "설정 초안이 만료되어 적용하지 않았습니다. 필요하면 다시 요청하세요.",
+  "en": "This settings draft expired and was not applied. Ask again if needed.",
+  "ja": "設定案が期限切れのため適用していません。必要なら再度依頼してください。",
+  "zh": "此设置草案已过期，未应用。必要时请重新请求。"
+ },
+ "settings_orchestrator.trust_revoked_confirmation": {
+  "ko": "신뢰 기록을 잊어 취소된 확인 요청이에요.",
+  "en": "This confirmation was canceled when the trust record was forgotten.",
+  "ja": "信頼記録を忘れたため取り消された確認要求です。",
+  "zh": "此确认请求已因信任记录被忘记而取消。"
+ },
+ "settings_orchestrator.connection_ready_elsewhere": {
+  "ko": "다른 작업에서 확인한 같은 연결이 준비되어 있어 추가 설정하지 않았어요.",
+  "en": "The same connection was confirmed and prepared by another task. No additional setup was done.",
+  "ja": "別の作業で確認した同じ接続が準備済みのため、追加設定はしていません。",
+  "zh": "同一连接已在其他任务中确认并准备就绪，未作额外设置。"
+ },
+ "settings_orchestrator.invalid_continue_work_option": {
+  "ko": "continue_work는 yes 또는 no로 주세요.",
+  "en": "Set continue_work to yes or no.",
+  "ja": "continue_work は yes または no で指定してください。",
+  "zh": "请将 continue_work 设为 yes 或 no。"
+ },
+ "settings_orchestrator.specify_reviewed_request": {
+  "ko": "검토된 설정 요청을 구체적으로 말해 주세요.",
+  "en": "Describe the reviewed settings request specifically.",
+  "ja": "確認済みの設定リクエストを具体的に伝えてください。",
+  "zh": "请具体说明已审查的设置请求。"
+ },
+ "settings_orchestrator.draft_not_found": {
+  "ko": "확인할 설정 초안을 찾지 못했습니다.",
+  "en": "The settings draft to confirm was not found.",
+  "ja": "確認する設定案が見つかりませんでした。",
+  "zh": "未找到要确认的设置草案。"
+ },
+ "settings_orchestrator.draft_confirmation_required": {
+  "ko": "초안 ID와 정확한 확인 정보를 제공하세요.",
+  "en": "Provide the draft ID and exact confirmation details.",
+  "ja": "案の ID と正確な確認情報を指定してください。",
+  "zh": "请提供草案 ID 及准确的确认信息。"
+ },
+ "settings_orchestrator.draft_cannot_cancel": {
+  "ko": "이 설정 초안은 취소할 수 없습니다.",
+  "en": "This settings draft cannot be canceled.",
+  "ja": "この設定案は取り消せません。",
+  "zh": "此设置草案无法取消。"
+ },
+ "settings_orchestrator.select_recovery_connection": {
+  "ko": "복구할 연결을 선택하세요.",
+  "en": "Select a connection to recover.",
+  "ja": "復旧する接続を選んでください。",
+  "zh": "请选择要恢复的连接。"
+ },
+ "settings_orchestrator.check_request": {
+  "ko": "설정 요청을 확인하세요.",
+  "en": "Check the settings request.",
+  "ja": "設定リクエストを確認してください。",
+  "zh": "请检查设置请求。"
+ },
+ "settings_orchestrator.yes": {
+  "ko": "예",
+  "en": "Yes",
+  "ja": "はい",
+  "zh": "是"
+ },
+ "settings_orchestrator.no": {
+  "ko": "아니요",
+  "en": "No",
+  "ja": "いいえ",
+  "zh": "否"
+ },
+ "settings_orchestrator.subject_not_set": {
+  "ko": "지정 안 함",
+  "en": "Not specified",
+  "ja": "指定なし",
+  "zh": "未指定"
+ },
+ "settings_orchestrator.default_scope": {
+  "ko": "기본 범위",
+  "en": "Default scope",
+  "ja": "既定の範囲",
+  "zh": "默认范围"
+ },
+ "settings_orchestrator.money_mark_summary": {
+  "ko": "{connection}({engine} {kind})을(를) 돈이 오가는 연결로 표시합니다(보고만 하는 단계에서 시작)",
+  "en": "Mark {connection} ({engine} {kind}) as a connection involving money (starting at report only)",
+  "ja": "{connection}（{engine} {kind}）を金銭を扱う接続に指定します（報告のみから開始）",
+  "zh": "将 {connection}（{engine} {kind}）标记为涉及资金的连接（从仅报告级别开始）"
+ },
+ "settings_orchestrator.money_unmark_summary": {
+  "ko": "{connection}({engine} {kind})을(를) 돈이 오가는 연결로 표시하지 않습니다",
+  "en": "Do not mark {connection} ({engine} {kind}) as a connection involving money",
+  "ja": "{connection}（{engine} {kind}）を金銭を扱う接続に指定しません",
+  "zh": "不将 {connection}（{engine} {kind}）标记为涉及资金的连接"
+ },
+ "settings_orchestrator.skill_replace_summary": {
+  "ko": "스킬을 이 버전으로 바꿉니다: {repo}의 {path} (커밋 {revision})",
+  "en": "Update skill to this version: {path} in {repo} (commit {revision})",
+  "ja": "スキルをこのバージョンに更新します: {repo} の {path}（コミット {revision}）",
+  "zh": "将技能更新至此版本：{repo} 中的 {path}（提交 {revision}）"
+ },
+ "settings_orchestrator.share_delivery_pending": {
+  "ko": "{label}: {site} (전달 대기)",
+  "en": "{label}: {site} (delivery pending)",
+  "ja": "{label}: {site}（送信待ち）",
+  "zh": "{label}：{site}（等待发送）"
+ },
+ "settings_orchestrator.skill_disabled": {
+  "ko": "{skill} ({source}, 꺼짐)",
+  "en": "{skill} ({source}, off)",
+  "ja": "{skill}（{source}、オフ）",
+  "zh": "{skill}（{source}，已关闭）"
+ },
+ "settings_orchestrator.change_summary": {
+  "ko": "{label}: {before} → {after}",
+  "en": "{label}: {before} → {after}",
+  "ja": "{label}: {before} → {after}",
+  "zh": "{label}：{before} → {after}"
+ },
+ "settings_orchestrator.required_skill_note_only": {
+  "ko": "필요한 스킬: {skill}(버전 {version}).",
+  "en": "Required skill: {skill} (version {version}).",
+  "ja": "必要なスキル: {skill}（バージョン {version}）。",
+  "zh": "所需技能：{skill}（版本 {version}）。"
+ },
+ "settings_orchestrator.continue_work_note_only": {
+  "ko": "확인 후 필요한 기능을 사용할 수 있으면 이 설정을 필요로 했던 원래 작업을 이어갑니다.",
+  "en": "After confirmation, the original task requiring this setting will continue if the needed capability is available.",
+  "ja": "確認後、必要な機能が使える場合は、この設定を必要とした元の作業を続けます。",
+  "zh": "确认后，如果所需功能可用，将继续需要此设置的原任务。"
+ },
+ "settings_orchestrator.label_current_context_enabled": {
+  "ko": "현재 맥락 사용",
+  "en": "Current context · Use",
+  "ja": "現在のコンテキスト · 使う",
+  "zh": "当前情境 · 使用"
+ },
+ "settings_orchestrator.label_current_context_timezone": {
+  "ko": "현재 맥락 시간대",
+  "en": "Current context · Time zone",
+  "ja": "現在のコンテキスト · タイムゾーン",
+  "zh": "当前情境 · 时区"
+ },
+ "settings_orchestrator.label_judgment_ai_mode": {
+  "ko": "판단 AI 방식",
+  "en": "Judgment AI · Mode",
+  "ja": "判断 AI · 方式",
+  "zh": "判断 AI · 模式"
+ },
+ "settings_orchestrator.label_judgment_ai_model": {
+  "ko": "판단 AI 모델",
+  "en": "Judgment AI · Model",
+  "ja": "判断 AI · モデル",
+  "zh": "判断 AI · 模型"
+ },
+ "settings_orchestrator.label_main_ai_route": {
+  "ko": "기본 AI 경로",
+  "en": "Main AI · Route",
+  "ja": "メイン AI · 経路",
+  "zh": "主 AI · 路径"
+ },
+ "settings_orchestrator.label_main_ai_model": {
+  "ko": "기본 AI 모델",
+  "en": "Main AI · Model",
+  "ja": "メイン AI · モデル",
+  "zh": "主 AI · 模型"
+ },
+ "settings_orchestrator.label_owner_model_enabled": {
+  "ko": "알아 두기 사용",
+  "en": "Things to remember · Use",
+  "ja": "覚えておくこと · 使う",
+  "zh": "需要记住的事 · 使用"
+ },
+ "settings_orchestrator.label_owner_model_daily_calls": {
+  "ko": "알아 두기 하루 판단 횟수",
+  "en": "Things to remember · Daily decision limit",
+  "ja": "覚えておくこと · 1 日の判断回数",
+  "zh": "需要记住的事 · 每日判断次数"
+ },
+ "settings_orchestrator.label_owner_model_dream": {
+  "ko": "알아 두기 밤사이 기억 정리",
+  "en": "Things to remember · Overnight memory review",
+  "ja": "覚えておくこと · 夜間の記憶整理",
+  "zh": "需要记住的事 · 夜间记忆整理"
+ },
+ "settings_orchestrator.label_family_add": {
+  "ko": "가족 비서 새로 만들기",
+  "en": "Family assistant · Create new",
+  "ja": "家族用アシスタント · 新規作成",
+  "zh": "家庭助手 · 新建"
+ },
+ "settings_orchestrator.label_family_share_site": {
+  "ko": "가족 비서 로그인 공유",
+  "en": "Family assistant · Share login",
+  "ja": "家族用アシスタント · ログイン共有",
+  "zh": "家庭助手 · 共享登录"
+ },
+ "settings_orchestrator.label_family_unshare_site": {
+  "ko": "가족 비서 공유 그만",
+  "en": "Family assistant · Stop sharing",
+  "ja": "家族用アシスタント · 共有を停止",
+  "zh": "家庭助手 · 停止共享"
+ },
+ "settings_orchestrator.label_skills_enabled": {
+  "ko": "스킬 사용",
+  "en": "Skills · Use",
+  "ja": "スキル · 使う",
+  "zh": "技能 · 使用"
+ },
+ "settings_orchestrator.label_skills_add": {
+  "ko": "스킬 새로 만들기",
+  "en": "Skills · Create new",
+  "ja": "スキル · 新規作成",
+  "zh": "技能 · 新建"
+ },
+ "settings_orchestrator.label_skills_remove": {
+  "ko": "스킬 빼기",
+  "en": "Skills · Remove",
+  "ja": "スキル · 外す",
+  "zh": "技能 · 移除"
+ },
+ "settings_orchestrator.label_phone_link_send": {
+  "ko": "휴대폰 링크 보내기",
+  "en": "Phone link · Send",
+  "ja": "スマートフォン用リンク · 送信",
+  "zh": "手机链接 · 发送"
+ },
+ "settings_orchestrator.label_api_connections_connect": {
+  "ko": "API 연결 새 MCP 연결",
+  "en": "API connections · New MCP connection",
+  "ja": "API 接続 · 新しい MCP 接続",
+  "zh": "API 连接 · 新建 MCP 连接"
+ },
+ "settings_orchestrator.label_preparations_accept": {
+  "ko": "예약 수락",
+  "en": "Reservations · Accept",
+  "ja": "予約 · 承認",
+  "zh": "预约 · 接受"
+ },
+ "settings_orchestrator.label_browser_close_login": {
+  "ko": "브라우저 로그인 창 닫기",
+  "en": "Browser · Close login window",
+  "ja": "ブラウザ · ログイン画面を閉じる",
+  "zh": "浏览器 · 关闭登录窗口"
+ },
+ "settings_orchestrator.label_ai_connections_enabled": {
+  "ko": "AI의 연결 서비스 사용",
+  "en": "AI connections · Use",
+  "ja": "AI の接続サービス · 使う",
+  "zh": "AI 连接服务 · 使用"
+ },
+ "settings_orchestrator.label_ai_connections_connect": {
+  "ko": "AI의 연결 서비스 새 MCP 연결",
+  "en": "AI connections · New MCP connection",
+  "ja": "AI の接続サービス · 新しい MCP 接続",
+  "zh": "AI 连接服务 · 新建 MCP 连接"
+ },
+ "settings_orchestrator.label_ai_connections_servers": {
+  "ko": "AI의 연결 서비스 MCP 서버",
+  "en": "AI connections · MCP servers",
+  "ja": "AI の接続サービス · MCP サーバー",
+  "zh": "AI 连接服务 · MCP 服务器"
+ },
+ "settings_orchestrator.label_ai_connections_review": {
+  "ko": "AI의 연결 서비스 동작 검토",
+  "en": "AI connections · Review actions",
+  "ja": "AI の接続サービス · 操作の確認",
+  "zh": "AI 连接服务 · 审查操作"
+ },
+ "settings_orchestrator.label_ai_connections_money": {
+  "ko": "AI의 연결 서비스 돈이 오가는 연결",
+  "en": "AI connections · Connection involving money",
+  "ja": "AI の接続サービス · 金銭を扱う接続",
+  "zh": "AI 连接服务 · 涉及资金的连接"
+ },
+ "settings_orchestrator.label_ai_connections_rung": {
+  "ko": "AI의 연결 서비스 신뢰 단계",
+  "en": "AI connections · Trust level",
+  "ja": "AI の接続サービス · 信頼段階",
+  "zh": "AI 连接服务 · 信任级别"
+ },
+ "settings_orchestrator.label_ai_connections_undo": {
+  "ko": "AI의 연결 서비스 정확히 되돌리기",
+  "en": "AI connections · Undo exact change",
+  "ja": "AI の接続サービス · 変更を正確に戻す",
+  "zh": "AI 连接服务 · 精确撤销更改"
+ },
+ "settings_orchestrator.label_ai_connections_forget": {
+  "ko": "AI의 연결 서비스 신뢰 기록 잊기",
+  "en": "AI connections · Forget trust record",
+  "ja": "AI の接続サービス · 信頼記録を忘れる",
+  "zh": "AI 连接服务 · 忘记信任记录"
+ },
+ "settings_orchestrator.label_ai_connections_restore": {
+  "ko": "AI의 연결 서비스 잊은 신뢰 기록 복원",
+  "en": "AI connections · Restore forgotten trust record",
+  "ja": "AI の接続サービス · 忘れた信頼記録を復元",
+  "zh": "AI 连接服务 · 恢复已忘记的信任记录"
+ },
+ "settings_orchestrator.label_connections_disconnect": {
+  "ko": "외부 연결 연결 해제",
+  "en": "External connections · Disconnect",
+  "ja": "外部接続 · 接続解除",
+  "zh": "外部连接 · 断开连接"
+ },
+ "settings_orchestrator.label_connections_connect_chat": {
+  "ko": "외부 연결 대화할 곳 연결",
+  "en": "External connections · Connect a chat",
+  "ja": "外部接続 · 会話先を接続",
+  "zh": "外部连接 · 连接对话渠道"
+ },
+ "settings_orchestrator.change_summary_receipt": {
+  "ko": "{label}: {before} → {after}(으)로 바꿨습니다.",
+  "en": "Changed {label}: {before} → {after}.",
+  "ja": "{label} を変更しました: {before} → {after}。",
+  "zh": "已更改{label}：{before} → {after}。"
+ },
+ "settings_orchestrator.setting_value_enabled": {
+  "ko": "사용: {value}",
+  "en": "Use: {value}",
+  "ja": "使う: {value}",
+  "zh": "使用：{value}"
+ },
+ "settings_orchestrator.setting_value_timezone": {
+  "ko": "시간대: {value}",
+  "en": "Time zone: {value}",
+  "ja": "タイムゾーン: {value}",
+  "zh": "时区：{value}"
+ },
+ "settings_orchestrator.setting_value_mode": {
+  "ko": "방식: {value}",
+  "en": "Mode: {value}",
+  "ja": "方式: {value}",
+  "zh": "模式：{value}"
+ },
+ "settings_orchestrator.setting_value_model": {
+  "ko": "모델: {value}",
+  "en": "Model: {value}",
+  "ja": "モデル: {value}",
+  "zh": "模型：{value}"
+ },
+ "settings_orchestrator.setting_value_route": {
+  "ko": "경로: {value}",
+  "en": "Route: {value}",
+  "ja": "経路: {value}",
+  "zh": "路径：{value}"
+ },
+ "settings_orchestrator.setting_value_daily_calls": {
+  "ko": "하루 판단 횟수: {value}",
+  "en": "Daily decision limit: {value}",
+  "ja": "1 日の判断回数: {value}",
+  "zh": "每日判断次数：{value}"
+ },
+ "settings_orchestrator.setting_value_dream": {
+  "ko": "밤사이 기억 정리: {value}",
+  "en": "Overnight memory review: {value}",
+  "ja": "夜間の記憶整理: {value}",
+  "zh": "夜间记忆整理：{value}"
+ },
+ "settings_orchestrator.setting_value_add": {
+  "ko": "새로 만들기: {value}",
+  "en": "Create new: {value}",
+  "ja": "新規作成: {value}",
+  "zh": "新建：{value}"
+ },
+ "settings_orchestrator.setting_value_share_site": {
+  "ko": "로그인 공유: {value}",
+  "en": "Share login: {value}",
+  "ja": "ログイン共有: {value}",
+  "zh": "共享登录：{value}"
+ },
+ "settings_orchestrator.setting_value_unshare_site": {
+  "ko": "공유 그만: {value}",
+  "en": "Stop sharing: {value}",
+  "ja": "共有を停止: {value}",
+  "zh": "停止共享：{value}"
+ },
+ "settings_orchestrator.setting_value_remove": {
+  "ko": "빼기: {value}",
+  "en": "Remove: {value}",
+  "ja": "外す: {value}",
+  "zh": "移除：{value}"
+ },
+ "settings_orchestrator.setting_value_send": {
+  "ko": "보내기: {value}",
+  "en": "Send: {value}",
+  "ja": "送信: {value}",
+  "zh": "发送：{value}"
+ },
+ "settings_orchestrator.setting_value_servers": {
+  "ko": "MCP 서버: {value}",
+  "en": "MCP servers: {value}",
+  "ja": "MCP サーバー: {value}",
+  "zh": "MCP 服务器：{value}"
+ },
+ "settings_orchestrator.setting_value_review": {
+  "ko": "동작 검토: {value}",
+  "en": "Review actions: {value}",
+  "ja": "操作の確認: {value}",
+  "zh": "审查操作：{value}"
+ },
+ "settings_orchestrator.setting_value_money": {
+  "ko": "돈이 오가는 연결: {value}",
+  "en": "Connection involving money: {value}",
+  "ja": "金銭を扱う接続: {value}",
+  "zh": "涉及资金的连接：{value}"
+ },
+ "settings_orchestrator.setting_value_connect": {
+  "ko": "새 MCP 연결: {value}",
+  "en": "New MCP connection: {value}",
+  "ja": "新しい MCP 接続: {value}",
+  "zh": "新建 MCP 连接：{value}"
+ },
+ "settings_orchestrator.setting_value_rung": {
+  "ko": "신뢰 단계: {value}",
+  "en": "Trust level: {value}",
+  "ja": "信頼段階: {value}",
+  "zh": "信任级别：{value}"
+ },
+ "settings_orchestrator.setting_value_undo": {
+  "ko": "정확히 되돌리기: {value}",
+  "en": "Undo exact change: {value}",
+  "ja": "変更を正確に戻す: {value}",
+  "zh": "精确撤销更改：{value}"
+ },
+ "settings_orchestrator.setting_value_forget": {
+  "ko": "신뢰 기록 잊기: {value}",
+  "en": "Forget trust record: {value}",
+  "ja": "信頼記録を忘れる: {value}",
+  "zh": "忘记信任记录：{value}"
+ },
+ "settings_orchestrator.setting_value_restore": {
+  "ko": "잊은 신뢰 기록 복원: {value}",
+  "en": "Restore forgotten trust record: {value}",
+  "ja": "忘れた信頼記録を復元: {value}",
+  "zh": "恢复已忘记的信任记录：{value}"
+ },
+ "settings_orchestrator.setting_value_cancel": {
+  "ko": "취소: {value}",
+  "en": "Cancel: {value}",
+  "ja": "キャンセル: {value}",
+  "zh": "取消：{value}"
+ },
+ "settings_orchestrator.setting_value_accept": {
+  "ko": "수락: {value}",
+  "en": "Accept: {value}",
+  "ja": "承認: {value}",
+  "zh": "接受：{value}"
+ },
+ "settings_orchestrator.setting_value_disconnect": {
+  "ko": "연결 해제: {value}",
+  "en": "Disconnect: {value}",
+  "ja": "接続解除: {value}",
+  "zh": "断开连接：{value}"
+ },
+ "settings_orchestrator.setting_value_close_login": {
+  "ko": "로그인 창 닫기: {value}",
+  "en": "Close login window: {value}",
+  "ja": "ログイン画面を閉じる: {value}",
+  "zh": "关闭登录窗口：{value}"
+ },
+ "settings_orchestrator.setting_value_connect_chat": {
+  "ko": "대화할 곳 연결: {value}",
+  "en": "Connect a chat: {value}",
+  "ja": "会話先を接続: {value}",
+  "zh": "连接对话渠道：{value}"
+ },
+ "settings_orchestrator.setting_value_new_api": {
+  "ko": "새 API 연결: {value}",
+  "en": "New API connection: {value}",
+  "ja": "新しい API 接続: {value}",
+  "zh": "新建 API 连接：{value}"
+ },
+ "settings_orchestrator.category_line_connections": {
+  "ko": "외부 연결 · {details}",
+  "en": "External connections · {details}",
+  "ja": "外部接続 · {details}",
+  "zh": "外部连接 · {details}"
+ },
+ "settings_orchestrator.category_line_current_context": {
+  "ko": "현재 맥락 · {details}",
+  "en": "Current context · {details}",
+  "ja": "現在のコンテキスト · {details}",
+  "zh": "当前情境 · {details}"
+ },
+ "settings_orchestrator.category_line_judgment_ai": {
+  "ko": "판단 AI · {details}",
+  "en": "Judgment AI · {details}",
+  "ja": "判断 AI · {details}",
+  "zh": "判断 AI · {details}"
+ },
+ "settings_orchestrator.category_line_main_ai": {
+  "ko": "기본 AI · {details}",
+  "en": "Main AI · {details}",
+  "ja": "メイン AI · {details}",
+  "zh": "主 AI · {details}"
+ },
+ "settings_orchestrator.category_line_owner_model": {
+  "ko": "알아 두기 · {details}",
+  "en": "Things to remember · {details}",
+  "ja": "覚えておくこと · {details}",
+  "zh": "需要记住的事 · {details}"
+ },
+ "settings_orchestrator.category_line_family": {
+  "ko": "가족 비서 · {details}",
+  "en": "Family assistant · {details}",
+  "ja": "家族用アシスタント · {details}",
+  "zh": "家庭助手 · {details}"
+ },
+ "settings_orchestrator.category_line_skills": {
+  "ko": "스킬 · {details}",
+  "en": "Skills · {details}",
+  "ja": "スキル · {details}",
+  "zh": "技能 · {details}"
+ },
+ "settings_orchestrator.category_line_phone_link": {
+  "ko": "휴대폰 링크 · {details}",
+  "en": "Phone link · {details}",
+  "ja": "スマートフォン用リンク · {details}",
+  "zh": "手机链接 · {details}"
+ },
+ "settings_orchestrator.category_line_ai_connections": {
+  "ko": "AI의 연결 서비스 · {details}",
+  "en": "AI connections · {details}",
+  "ja": "AI の接続サービス · {details}",
+  "zh": "AI 连接服务 · {details}"
+ },
+ "settings_orchestrator.category_line_api_connections": {
+  "ko": "API 연결 · {details}",
+  "en": "API connections · {details}",
+  "ja": "API 接続 · {details}",
+  "zh": "API 连接 · {details}"
+ },
+ "settings_orchestrator.category_line_preparations": {
+  "ko": "예약 · {details}",
+  "en": "Reservations · {details}",
+  "ja": "予約 · {details}",
+  "zh": "预约 · {details}"
+ },
+ "settings_orchestrator.category_line_browser": {
+  "ko": "브라우저 · {details}",
+  "en": "Browser · {details}",
+  "ja": "ブラウザ · {details}",
+  "zh": "浏览器 · {details}"
+ },
+ "settings_orchestrator.setting_value_enabled_remaining": {
+  "ko": "사용: {value} · {remaining}",
+  "en": "Use: {value} · {remaining}",
+  "ja": "使う: {value} · {remaining}",
+  "zh": "使用：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_timezone_remaining": {
+  "ko": "시간대: {value} · {remaining}",
+  "en": "Time zone: {value} · {remaining}",
+  "ja": "タイムゾーン: {value} · {remaining}",
+  "zh": "时区：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_mode_remaining": {
+  "ko": "방식: {value} · {remaining}",
+  "en": "Mode: {value} · {remaining}",
+  "ja": "方式: {value} · {remaining}",
+  "zh": "模式：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_model_remaining": {
+  "ko": "모델: {value} · {remaining}",
+  "en": "Model: {value} · {remaining}",
+  "ja": "モデル: {value} · {remaining}",
+  "zh": "模型：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_route_remaining": {
+  "ko": "경로: {value} · {remaining}",
+  "en": "Route: {value} · {remaining}",
+  "ja": "経路: {value} · {remaining}",
+  "zh": "路径：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_daily_calls_remaining": {
+  "ko": "하루 판단 횟수: {value} · {remaining}",
+  "en": "Daily decision limit: {value} · {remaining}",
+  "ja": "1 日の判断回数: {value} · {remaining}",
+  "zh": "每日判断次数：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_dream_remaining": {
+  "ko": "밤사이 기억 정리: {value} · {remaining}",
+  "en": "Overnight memory review: {value} · {remaining}",
+  "ja": "夜間の記憶整理: {value} · {remaining}",
+  "zh": "夜间记忆整理：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_add_remaining": {
+  "ko": "새로 만들기: {value} · {remaining}",
+  "en": "Create new: {value} · {remaining}",
+  "ja": "新規作成: {value} · {remaining}",
+  "zh": "新建：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_share_site_remaining": {
+  "ko": "로그인 공유: {value} · {remaining}",
+  "en": "Share login: {value} · {remaining}",
+  "ja": "ログイン共有: {value} · {remaining}",
+  "zh": "共享登录：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_unshare_site_remaining": {
+  "ko": "공유 그만: {value} · {remaining}",
+  "en": "Stop sharing: {value} · {remaining}",
+  "ja": "共有を停止: {value} · {remaining}",
+  "zh": "停止共享：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_remove_remaining": {
+  "ko": "빼기: {value} · {remaining}",
+  "en": "Remove: {value} · {remaining}",
+  "ja": "外す: {value} · {remaining}",
+  "zh": "移除：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_send_remaining": {
+  "ko": "보내기: {value} · {remaining}",
+  "en": "Send: {value} · {remaining}",
+  "ja": "送信: {value} · {remaining}",
+  "zh": "发送：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_servers_remaining": {
+  "ko": "MCP 서버: {value} · {remaining}",
+  "en": "MCP servers: {value} · {remaining}",
+  "ja": "MCP サーバー: {value} · {remaining}",
+  "zh": "MCP 服务器：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_review_remaining": {
+  "ko": "동작 검토: {value} · {remaining}",
+  "en": "Review actions: {value} · {remaining}",
+  "ja": "操作の確認: {value} · {remaining}",
+  "zh": "审查操作：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_money_remaining": {
+  "ko": "돈이 오가는 연결: {value} · {remaining}",
+  "en": "Connection involving money: {value} · {remaining}",
+  "ja": "金銭を扱う接続: {value} · {remaining}",
+  "zh": "涉及资金的连接：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_connect_remaining": {
+  "ko": "새 MCP 연결: {value} · {remaining}",
+  "en": "New MCP connection: {value} · {remaining}",
+  "ja": "新しい MCP 接続: {value} · {remaining}",
+  "zh": "新建 MCP 连接：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_rung_remaining": {
+  "ko": "신뢰 단계: {value} · {remaining}",
+  "en": "Trust level: {value} · {remaining}",
+  "ja": "信頼段階: {value} · {remaining}",
+  "zh": "信任级别：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_undo_remaining": {
+  "ko": "정확히 되돌리기: {value} · {remaining}",
+  "en": "Undo exact change: {value} · {remaining}",
+  "ja": "変更を正確に戻す: {value} · {remaining}",
+  "zh": "精确撤销更改：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_forget_remaining": {
+  "ko": "신뢰 기록 잊기: {value} · {remaining}",
+  "en": "Forget trust record: {value} · {remaining}",
+  "ja": "信頼記録を忘れる: {value} · {remaining}",
+  "zh": "忘记信任记录：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_restore_remaining": {
+  "ko": "잊은 신뢰 기록 복원: {value} · {remaining}",
+  "en": "Restore forgotten trust record: {value} · {remaining}",
+  "ja": "忘れた信頼記録を復元: {value} · {remaining}",
+  "zh": "恢复已忘记的信任记录：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_cancel_remaining": {
+  "ko": "취소: {value} · {remaining}",
+  "en": "Cancel: {value} · {remaining}",
+  "ja": "キャンセル: {value} · {remaining}",
+  "zh": "取消：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_accept_remaining": {
+  "ko": "수락: {value} · {remaining}",
+  "en": "Accept: {value} · {remaining}",
+  "ja": "承認: {value} · {remaining}",
+  "zh": "接受：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_disconnect_remaining": {
+  "ko": "연결 해제: {value} · {remaining}",
+  "en": "Disconnect: {value} · {remaining}",
+  "ja": "接続解除: {value} · {remaining}",
+  "zh": "断开连接：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_close_login_remaining": {
+  "ko": "로그인 창 닫기: {value} · {remaining}",
+  "en": "Close login window: {value} · {remaining}",
+  "ja": "ログイン画面を閉じる: {value} · {remaining}",
+  "zh": "关闭登录窗口：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_connect_chat_remaining": {
+  "ko": "대화할 곳 연결: {value} · {remaining}",
+  "en": "Connect a chat: {value} · {remaining}",
+  "ja": "会話先を接続: {value} · {remaining}",
+  "zh": "连接对话渠道：{value} · {remaining}"
+ },
+ "settings_orchestrator.setting_value_new_api_remaining": {
+  "ko": "새 API 연결: {value} · {remaining}",
+  "en": "New API connection: {value} · {remaining}",
+  "ja": "新しい API 接続: {value} · {remaining}",
+  "zh": "新建 API 连接：{value} · {remaining}"
+ },
+ "settings_orchestrator.category_line_connections_effective": {
+  "ko": "외부 연결 · {details} ({effective})",
+  "en": "External connections · {details} ({effective})",
+  "ja": "外部接続 · {details} ({effective})",
+  "zh": "外部连接 · {details} ({effective})"
+ },
+ "settings_orchestrator.category_line_current_context_effective": {
+  "ko": "현재 맥락 · {details} ({effective})",
+  "en": "Current context · {details} ({effective})",
+  "ja": "現在のコンテキスト · {details} ({effective})",
+  "zh": "当前情境 · {details} ({effective})"
+ },
+ "settings_orchestrator.category_line_judgment_ai_effective": {
+  "ko": "판단 AI · {details} ({effective})",
+  "en": "Judgment AI · {details} ({effective})",
+  "ja": "判断 AI · {details} ({effective})",
+  "zh": "判断 AI · {details} ({effective})"
+ },
+ "settings_orchestrator.category_line_main_ai_effective": {
+  "ko": "기본 AI · {details} ({effective})",
+  "en": "Main AI · {details} ({effective})",
+  "ja": "メイン AI · {details} ({effective})",
+  "zh": "主 AI · {details} ({effective})"
+ },
+ "settings_orchestrator.category_line_owner_model_effective": {
+  "ko": "알아 두기 · {details} ({effective})",
+  "en": "Things to remember · {details} ({effective})",
+  "ja": "覚えておくこと · {details} ({effective})",
+  "zh": "需要记住的事 · {details} ({effective})"
+ },
+ "settings_orchestrator.category_line_family_effective": {
+  "ko": "가족 비서 · {details} ({effective})",
+  "en": "Family assistant · {details} ({effective})",
+  "ja": "家族用アシスタント · {details} ({effective})",
+  "zh": "家庭助手 · {details} ({effective})"
+ },
+ "settings_orchestrator.category_line_skills_effective": {
+  "ko": "스킬 · {details} ({effective})",
+  "en": "Skills · {details} ({effective})",
+  "ja": "スキル · {details} ({effective})",
+  "zh": "技能 · {details} ({effective})"
+ },
+ "settings_orchestrator.category_line_phone_link_effective": {
+  "ko": "휴대폰 링크 · {details} ({effective})",
+  "en": "Phone link · {details} ({effective})",
+  "ja": "スマートフォン用リンク · {details} ({effective})",
+  "zh": "手机链接 · {details} ({effective})"
+ },
+ "settings_orchestrator.category_line_ai_connections_effective": {
+  "ko": "AI의 연결 서비스 · {details} ({effective})",
+  "en": "AI connections · {details} ({effective})",
+  "ja": "AI の接続サービス · {details} ({effective})",
+  "zh": "AI 连接服务 · {details} ({effective})"
+ },
+ "settings_orchestrator.category_line_api_connections_effective": {
+  "ko": "API 연결 · {details} ({effective})",
+  "en": "API connections · {details} ({effective})",
+  "ja": "API 接続 · {details} ({effective})",
+  "zh": "API 连接 · {details} ({effective})"
+ },
+ "settings_orchestrator.category_line_preparations_effective": {
+  "ko": "예약 · {details} ({effective})",
+  "en": "Reservations · {details} ({effective})",
+  "ja": "予約 · {details} ({effective})",
+  "zh": "预约 · {details} ({effective})"
+ },
+ "settings_orchestrator.category_line_browser_effective": {
+  "ko": "브라우저 · {details} ({effective})",
+  "en": "Browser · {details} ({effective})",
+  "ja": "ブラウザ · {details} ({effective})",
+  "zh": "浏览器 · {details} ({effective})"
+ },
+ "settings_orchestrator.connection_summary": {
+  "ko": "{service} · {state}",
+  "en": "{service} · {state}",
+  "ja": "{service} · {state}",
+  "zh": "{service} · {state}"
+ },
+ "settings_orchestrator.connection_action_summary": {
+  "ko": "{service} · {state} · {action}",
+  "en": "{service} · {state} · {action}",
+  "ja": "{service} · {state} · {action}",
+  "zh": "{service} · {state} · {action}"
+ },
+ "settings_orchestrator.connections_read": {
+  "ko": "외부 연결:\n{connections}",
+  "en": "External connections:\n{connections}",
+  "ja": "外部接続:\n{connections}",
+  "zh": "外部连接：\n{connections}"
+ },
  "state.cancelled": {
   "ko": "취소됨",
   "en": "cancelled",

@@ -24,6 +24,9 @@ import re
 import time
 import uuid
 
+from .messages import msg
+
+
 KEY = 'trust_record'
 CLASSES = ('read', 'mutate', 'payment', 'refused')
 #: Contract §6: report → propose → act after per-action approval → act within a standing mandate.
@@ -58,10 +61,10 @@ def connection(engine, kind, identity, name=None):
     kind are part of the key so an approval cannot cross either boundary.
     """
     if engine not in ENGINES or kind not in KINDS or not valid_hand(identity):
-        raise ValueError('연결 범위를 확인하세요.')
+        raise ValueError(msg('trust_record.scope'))
     display = name if name is not None else identity
     if not valid_hand(display):
-        raise ValueError('연결 이름 형식이 아닙니다.')
+        raise ValueError(msg('trust_record.name_format'))
     return {'engine': engine, 'kind': kind, 'identity': identity, 'name': display}
 
 
@@ -72,12 +75,12 @@ def _descriptor(value, engine=None, kind=None, identity=None):
         if engine is None and kind is None and valid_hand(identity) and valid_hand(name):
             return {'name': name, 'engine': None, 'kind': None, 'identity': identity}
         if engine not in ENGINES or kind not in KINDS or not valid_hand(identity) or not valid_hand(name):
-            raise ValueError('연결 범위를 확인하세요.')
+            raise ValueError(msg('trust_record.scope'))
         return connection(engine, kind, identity, name)
     if engine is not None or kind is not None or identity is not None:
         return connection(engine, kind, identity, value)
     if not valid_hand(value):
-        raise ValueError('연결 이름 형식이 아닙니다.')
+        raise ValueError(msg('trust_record.name_format'))
     # Legacy, unscoped calls remain usable for local state migration/tests only.
     return {'name': value, 'engine': None, 'kind': None, 'identity': value}
 
@@ -168,11 +171,11 @@ def _write(store, name, change, update, *, authority=True, automatic=False, expe
         rows = dict(rows) if isinstance(rows, dict) else {}
         all_hands = dict(rows.get('hands') or {}) if isinstance(rows.get('hands'), dict) else {}
         if key not in all_hands and len(all_hands) >= MAX_HANDS:
-            raise ValueError(f'기록할 수 있는 연결은 {MAX_HANDS}개까지입니다.')
+            raise ValueError(msg('trust_record.connection_limit', count=MAX_HANDS))
         current = _normalised_hand(descriptor, all_hands.get(key))
         if (expected_revision is not None and current['revision'] != expected_revision
                 and not (commuting_read and read_revision_covers(current, expected_revision, commuting_read))):
-            raise ValueError('초안을 만든 뒤 신뢰 기록이 바뀌어 적용하지 않았어요.')
+            raise ValueError(msg('trust_record.draft_changed'))
         if current['state'] == 'forgotten' and automatic:
             return current
         record = {'money': current['money'], 'rung': current['rung'], 'operations': dict(current['operations']),
@@ -187,7 +190,7 @@ def _write(store, name, change, update, *, authority=True, automatic=False, expe
         before['revision'] = current['revision']
         update(record)
         if len(record['operations']) > MAX_OPERATIONS:
-            raise ValueError(f'한 연결에 기록할 수 있는 동작은 {MAX_OPERATIONS}개까지입니다.')
+            raise ValueError(msg('trust_record.operation_limit', count=MAX_OPERATIONS))
         if authority:
             record['revision'] = uuid.uuid4().hex
         entry = {'at': time.time(), **change}
@@ -218,18 +221,18 @@ def introduce_connection(store, name, read_tools, money, *, expected_revision, t
     Its caller atomically settles the draft and server admission in the same DB.
     """
     if not isinstance(money, bool) or not all(valid_operation(op) for op in read_tools):
-        raise ValueError('확인한 연결 권한을 검토하세요.')
+        raise ValueError(msg('trust_record.review_permissions'))
     def update(record):
         if record['revision'] and record['money'] != money:
-            raise ValueError('기존 돈 표시를 연결 설정으로 바꿀 수 없어요.')
+            raise ValueError(msg('trust_record.money_unchanged'))
         if any(record['operations'].get(op) not in (None, 'read') for op in read_tools):
-            raise ValueError('기존 동작 결정을 연결 설정으로 바꿀 수 없어요.')
+            raise ValueError(msg('trust_record.decisions_unchanged'))
         if not record['revision']:
             record['money'], record['rung'] = money, default_rung(money)
         record['operations'].update({op: 'read' for op in read_tools})
     current = hand(store, name)
     if current['state'] == 'forgotten':
-        raise ValueError('잊은 연결은 별도의 복원 확인이 필요해요.')
+        raise ValueError(msg('trust_record.restore_confirmation'))
     return _write(store, name, {'change': 'connection-introduction', 'reads': list(read_tools), 'money': money},
                   update, expected_revision=expected_revision, transaction=transaction)
 
@@ -237,7 +240,7 @@ def introduce_connection(store, name, read_tools, money, *, expected_revision, t
 def set_operation(store, name, operation, cls, *, expected_revision=None):
     """The owner's decision for one operation (through a confirmed draft)."""
     if not valid_operation(operation) or cls not in CLASSES:
-        raise ValueError('동작 이름이나 분류를 확인하세요.')
+        raise ValueError(msg('trust_record.operation_class'))
     change = {'change': 'operation', 'operation': operation, 'class': cls}
     def update(record):
         previous = record['operations'].get(operation)
@@ -261,10 +264,10 @@ def set_money(store, name, money, *, expected_revision=None):
 def set_rung(store, name, rung, *, expected_revision=None):
     """The owner's chosen rung (through a confirmed draft)."""
     if rung not in RUNGS:
-        raise ValueError('신뢰 단계를 확인하세요.')
+        raise ValueError(msg('trust_record.trust_level'))
     def update(record):
         if rung == 'mandate' and record['money']:
-            raise ValueError('돈이 오가는 연결은 상시 위임 단계로 올릴 수 없습니다.')
+            raise ValueError(msg('trust_record.money_mandate'))
         record['rung'] = rung
     return _write(store, name, {'change': 'rung', 'rung': rung}, update, expected_revision=expected_revision)
 
@@ -282,10 +285,10 @@ def lower(store, name, reason):
 def undo_snapshot(record, change_id):
     """Only the current authority revision is exactly undoable; older changes cannot overwrite it."""
     if record['state'] != 'active' or not change_id or record['revision'] != change_id:
-        raise ValueError('그 뒤에 신뢰 기록이 바뀌었어요. 지금 기록을 다시 확인해 주세요.')
+        raise ValueError(msg('trust_record.record_changed'))
     entry = next((row for row in reversed(record['history']) if row.get('id') == change_id), {})
     if not isinstance(entry.get('before'), dict):
-        raise ValueError('정확히 되돌릴 이전 기록이 없어요.')
+        raise ValueError(msg('trust_record.no_previous_record'))
     return entry['before']
 
 
@@ -299,7 +302,7 @@ def undo(store, name, change_id):
 def observe(store, name, operation, outcome, work_id):
     """Observed tool outcome only, without arguments/results. Success never grants authority."""
     if not valid_operation(operation) or outcome not in ('succeeded', 'failed'):
-        raise ValueError('관찰한 동작과 결과를 확인하세요.')
+        raise ValueError(msg('trust_record.observed_results'))
     change = {'change': 'observed', 'operation': operation, 'outcome': outcome, 'work_id': str(work_id)[:64]}
     def update(record):
         if outcome == 'failed':
@@ -336,9 +339,10 @@ def readable(store, name, seed=frozenset()):
 def describe(record):
     """An owner-readable one-line summary (names and decisions only)."""
     if record.get('state') == 'forgotten':
-        return f"{record['name']}: 잊음 · 이전 권한 사용 중지"
-    labels = {'read': '읽기', 'mutate': '변경', 'payment': '결제', 'refused': '막음'}
-    rungs = {'report': '보고만', 'propose': '제안까지', 'approve': '건별 승인 후 실행', 'mandate': '위임 범위 안에서 실행'}
-    operations = ', '.join(f'{op}({labels[cls]})' for op, cls in sorted(record['operations'].items())) or '검토한 동작 없음'
+        return msg('trust_record.forgotten', name=record['name'])
+    operations = ', '.join(msg('trust_record.operation_' + cls, operation=op)
+                           for op, cls in sorted(record['operations'].items())) or msg('trust_record.no_operations')
     scope = f"{record['engine']} {record['kind']} " if record.get('engine') else ''
-    return f"{scope}{record['name']}: {rungs[record['rung']]}{' · 돈이 오가는 연결' if record['money'] else ''} · {operations}"
+    # Each rung has fixed wording: a punctuation-only template would shadow unrelated lines.
+    message_id = 'trust_record.summary_' + record['rung'] + ('_money' if record['money'] else '')
+    return msg(message_id, label=scope + record['name'], operations=operations)

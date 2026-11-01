@@ -17,6 +17,7 @@ import sys
 import tempfile
 from urllib.parse import urlsplit, unquote
 
+from .messages import msg
 from .bounded_execution import bounded_run, EngineInterrupted, ExecutionError, SECRET_PATTERN
 from .context_inbox import SENSITIVE
 from .providers import ProviderError
@@ -36,11 +37,11 @@ class SetupFailure(ValueError):
         self.observed_state = state if state in STATES else 'unknown'
         self.retryable = self.observed_state in {'failed', 'pending', 'needs-auth', 'connected'}
         self.settled_state = 'unknown' if self.observed_state == 'unknown' else 'failed'
-        step = ('같은 연결 설정을 다시 확인하면 현재 상태부터 확인하고 원래 작업을 이어갈게요.' if self.retryable else
-                '결과가 불확실해 자동으로 다시 등록하거나 로그인하지 않았어요. 현재 연결 상태 확인이 필요해요.'
+        step = (msg('mcp_setup.retry_step') if self.retryable else
+                msg('mcp_setup.uncertain_step')
                 if self.observed_state == 'unknown' else
-                '취소되었거나 지원되지 않는 연결은 다시 실행하지 않았어요. 다른 사용 가능한 연결을 검토할 수 있어요.')
-        super().__init__(f"연결 설정의 {phase} 단계에서 준비를 확인하지 못했어요 ({self.observed_state}). " + step)
+                msg('mcp_setup.unsupported_step'))
+        super().__init__(msg('mcp_setup.phase_failed', phase=phase, state=self.observed_state, step=step))
 
 def remote_url(url, redact=lambda value: value, declared=None):
     """Public definition only. Credential/header input needs a secret channel.
@@ -49,11 +50,11 @@ def remote_url(url, redact=lambda value: value, declared=None):
     destinations; a declared host may have a private name.
     """
     if not isinstance(url, str) or len(url) > 1000 or SENSITIVE.search(url):
-        raise ValueError('공개 HTTPS 서버 주소를 확인하세요.')
+        raise ValueError(msg('mcp_setup.public_https'))
     decoded = url
     while True:
         if SENSITIVE.search(decoded) or SECRET_PATTERN.search(decoded) or redact(decoded) != decoded:
-            raise ValueError('인증 정보 없는 공개 HTTPS 서버 주소를 확인하세요.')
+            raise ValueError(msg('mcp_setup.credential_free_https'))
         current = unquote(decoded)
         if current == decoded:
             break
@@ -68,56 +69,56 @@ def remote_url(url, redact=lambda value: value, declared=None):
     except ValueError:
         valid = False
     if not valid:
-        raise ValueError('인증 정보 없는 공개 HTTPS 서버 주소를 확인하세요.')
+        raise ValueError(msg('mcp_setup.credential_free_https'))
     # Reuse the existing public-destination syntax/literal policy. Resolution
     # and OAuth redirects remain CLI-owned, not an Still-pinned egress path.
     from .local_tools import normalize_public_url
     normalize_public_url(url, declared)
     host = parts.hostname.rstrip('.')
     if '%' in host:
-        raise ValueError('인코딩된 호스트 주소는 연결할 수 없어요.')
+        raise ValueError(msg('mcp_setup.encoded_host'))
     try:
         numeric = str(ipaddress.IPv4Address(socket.inet_aton(host)))
     except OSError:
         numeric = None
     if numeric is not None and host != numeric:
-        raise ValueError('축약하거나 다른 진법으로 적은 IP 주소는 연결할 수 없어요.')
+        raise ValueError(msg('mcp_setup.nonstandard_ip'))
     return url
 
 
 def setup_value(value, redact=lambda value: value, declared=None):
     """Canonical public owner-confirmation content, not executable instructions."""
     if not isinstance(value, str) or len(value) > 4000:
-        raise ValueError('연결할 서버의 공개 정보를 확인하세요.')
+        raise ValueError(msg('mcp_setup.public_info'))
     try:
         data = json.loads(value)
     except ValueError:
-        raise ValueError('연결할 서버의 공개 정보를 JSON으로 주세요.') from None
+        raise ValueError(msg('mcp_setup.public_json')) from None
     fields = {'engine', 'name', 'url', 'source', 'publisher', 'licence', 'required_tools', 'read_tools', 'money'}
     if not isinstance(data, dict) or set(data) != fields or redact(value) != value or SECRET_PATTERN.search(value) or SENSITIVE.search(value):
-        raise ValueError('인증 정보 없이 검토된 연결 정보만 주세요.')
+        raise ValueError(msg('mcp_setup.reviewed_info'))
     if data['engine'] != 'claude-code':
-        raise ValueError('이 AI의 새 서버 인증·준비 확인은 아직 지원하지 않아요. 현재 연결이나 일반 API·브라우저 경로를 검토하세요.')
+        raise ValueError(msg('mcp_setup.unsupported_ai'))
     name = data['name']
     if not valid_name(name) or name.startswith('-'):
-        raise ValueError('MCP 서버 이름을 확인하세요.')
+        raise ValueError(msg('mcp_setup.server_name'))
     for key in ('url', 'source'):
         data[key] = remote_url(data[key], redact, declared)
     for key in ('publisher', 'licence'):
         text = data[key]
         if not isinstance(text, str) or not text.strip() or len(text) > 120 or any(ord(c) < 32 for c in text):
-            raise ValueError('게시자와 라이선스를 짧게 적고, 확인하지 못한 값은 unknown으로 주세요.')
+            raise ValueError(msg('mcp_setup.publisher_license'))
     if not isinstance(data['money'], bool):
-        raise ValueError('돈이 오갈 수 있는 연결인지 표시하세요.')
+        raise ValueError(msg('api_input.money_flag'))
     for key in ('required_tools', 'read_tools'):
         names = data[key]
         if (not isinstance(names, list) or len(names) > 16
                 or any(not isinstance(n, str) or not TOOL_NAME.fullmatch(n) for n in names)
                 or len(set(names)) != len(names)):
-            raise ValueError('필요한 동작 이름은 중복 없이 16개까지 주세요.')
+            raise ValueError(msg('mcp_setup.operation_names'))
         data[key] = sorted(names)
     if not set(data['read_tools']) <= set(data['required_tools']):
-        raise ValueError('읽기로 검토할 동작은 필요한 동작 목록 안에서 골라 주세요.')
+        raise ValueError(msg('mcp_setup.read_operations'))
     return json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
 
 
@@ -172,7 +173,7 @@ class RemoteMcpSetup:
     def __init__(self, binary, home, *, runner=subprocess.run, interrupted=None, redact=lambda value: value, resolver=None,
                  declared=None):
         if not isinstance(binary, (str, Path)) or not str(binary) or not Path(binary).is_absolute():
-            raise ValueError('설치된 AI 실행 파일의 전체 경로를 확인하세요.')
+            raise ValueError(msg('mcp_setup.executable_path'))
         self.binary, self.home = str(binary), Path(home)
         self.runner, self.interrupted, self.redact = runner, interrupted, redact
         from .local_tools import PublicPageReader
@@ -198,7 +199,7 @@ class RemoteMcpSetup:
             self.destinations._validate_host(destination)
             self._check_interrupted()
             if before_dispatch is not None and not before_dispatch():
-                raise ExecutionError('서버 설정이 바뀌어 명령을 실행하지 않았어요.')
+                raise ExecutionError(msg('mcp_setup.server_changed'))
             return bounded_run(self.runner, argv, cwd=cwd, env=env or environment(self.home),
                                timeout=timeout, interrupted=self.interrupted)
 
@@ -220,7 +221,7 @@ class RemoteMcpSetup:
         if engine != 'claude-code':
             return {'state': 'unsupported'}
         if not valid_name(name) or name.startswith('-') or SECRET_PATTERN.search(name) or self.redact(name) != name:
-            raise ValueError('MCP 서버 이름을 확인하세요.')
+            raise ValueError(msg('mcp_setup.server_name'))
         url = remote_url(url, self.redact, self.declared)
         state = self._registration_state(name)
         if state != 'absent':
@@ -239,7 +240,7 @@ class RemoteMcpSetup:
         if engine != 'claude-code':
             return {'state': 'unsupported'}
         if not valid_name(name) or name.startswith('-') or SECRET_PATTERN.search(name) or self.redact(name) != name:
-            raise ValueError('MCP 서버 이름을 확인하세요.')
+            raise ValueError(msg('mcp_setup.server_name'))
         expected = {'type': 'http', 'url': remote_url(url, self.redact, self.declared)}
         if claude_definitions(self.home, [name]).get(name) != expected:
             return {'state': 'definition-changed', 'authentication': 'unknown'}
@@ -256,7 +257,7 @@ class RemoteMcpSetup:
         if engine != 'claude-code':
             return status_result('unsupported')
         if not valid_name(name) or name.startswith('-') or SECRET_PATTERN.search(name) or self.redact(name) != name:
-            raise ValueError('MCP 서버 이름을 확인하세요.')
+            raise ValueError(msg('mcp_setup.server_name'))
         url = remote_url(url, self.redact, self.declared)
         from .intranet import destination
         from .local_tools import _declared

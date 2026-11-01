@@ -3,26 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Still · Still — いつも、そばに</title>
-<meta name="description" content="Still は Still の最初の姿です。自分のコンピューターで動くオープンソースのパーソナル AI で、日々のことを一緒に片づけ、裏で考える AI を替えても同じアシスタントのままです。">
-<meta property="og:title" content="Still · Still">
+<title>Still — いつも、そばに</title>
+<meta name="description" content="Still は、自分のコンピューターで動くオープンソースのパーソナル AI です。いま料金を払っている AI で動き、あなたのことを覚え、裏で考える AI を替えても同じアシスタントのままです。">
+<meta property="og:title" content="Still">
 <meta property="og:description" content="Here with you. 自分のコンピューターで動くオープンソースのパーソナル AI。">
 <meta property="og:image" content="https://jongtae.github.io/Still/assets/social-preview.png">
-<meta name="theme-color" content="#f6f4f2">
+<meta name="theme-color" content="#f3eee9">
 <link rel="alternate" hreflang="en" href="./">
 <link rel="alternate" hreflang="ko" href="ko.html">
 <link rel="alternate" hreflang="ja" href="ja.html">
 <link rel="alternate" hreflang="zh-CN" href="zh-CN.html">
 <link rel="alternate" hreflang="x-default" href="./">
 <link rel="preload" href="assets/fonts/figtree-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/home.css?v=s7">
+<link rel="stylesheet" href="assets/home.css?v=s8">
 </head>
 <body>
 <a class="skip" href="#main">本文へ移動</a>
 <header class="bar">
-  <a class="crumb" href="./">Still <span>/</span> Still</a>
+  <a class="crumb" href="./">Still</a>
   <nav aria-label="サイト">
-    <a href="#concept">コンセプト</a>
+    <a href="#remembers">できること</a>
     <a href="#install">インストール</a>
     <a href="https://github.com/Jongtae/Still">GitHub</a>
     <span class="langs"><a href="./" hreflang="en" lang="en">English</a><a href="ko.html" hreflang="ko" lang="ko">한국어</a><a href="ja.html" hreflang="ja" lang="ja" aria-current="page">日本語</a><a href="zh-CN.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></span>
@@ -157,130 +157,126 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
 -20 195 -132 148z"/>
 </g>
 </svg></h1>
-    <p class="lede">会話で日々のことを一緒に片づけるパーソナル AI。Still は、自分のコンピューターで動くオープンソースのアシスタント Still の最初の姿です。</p>
-    <p class="quick-line">コマンド一つでインストール · Mac、Linux、Windows（WSL2）</p>
-    <p class="actions"><a class="button" href="#install">インストールの4ステップ<span class="arrow" aria-hidden="true">→</span></a><a class="text-link" href="https://github.com/Jongtae/Still">GitHub で見る</a></p>
+    <p class="lede">自分のコンピューターで動くパーソナル AI。いま使っている AI のプランで動き、AI を替えてもあなたのアシスタントのままです。</p>
+    <p class="actions"><a class="button" href="#install">Still をインストール</a><a class="text-link" href="https://github.com/Jongtae/Still">GitHub で見る</a></p>
   </div>
-  <div class="stage" role="img" aria-label="使い方の一例. AI が替わっても続く会話。あなた：「この前のコーヒー豆、すごくよかった。」Claude Code で考える Still：「気に入ってもらえてよかったです。エチオピア・グジ 500g、覚えておきますね。いつでも取り消せます。」AI が Claude Code から Codex に替わります。あなた：「コーヒーが切れた。」Codex で考える Still：「前回と同じエチオピア・グジ 500g をカートに入れました。お支払いは、言われるまでしません。」">
-    <p class="stage-label" aria-hidden="true">使い方の一例</p>
+  <div class="stage" role="img" aria-label="使い方の一例。あなた：「この前のコーヒー豆、すごくよかった。」Claude Code で考える Still：「気に入ってもらえてよかったです。エチオピア・グジ 500g、覚えておきますね。いつでも取り消せます。」AI が Claude Code から Codex に替わります。あなた：「コーヒーが切れた。」Codex で考える Still：「前回と同じエチオピア・グジ 500g をカートに入れました。お支払いは、言われるまでしません。」">
     <div class="thread" aria-hidden="true">
-      <p class="t-you t1"><span class="who">あなた</span>この前のコーヒー豆、すごくよかった。</p>
-      <p class="t-still t2"><span class="who">Still <i>Claude Code</i></span>気に入ってもらえてよかったです。エチオピア・グジ 500g、覚えておきますね。いつでも取り消せます。</p>
-      <p class="t-switch t3"><span>AI 変更：Claude Code → Codex</span></p>
-      <p class="t-you t4"><span class="who">あなた</span>コーヒーが切れた。</p>
-      <p class="t-still t5"><span class="who">Still <i class="new">Codex</i></span>前回と同じエチオピア・グジ 500g をカートに入れました。お支払いは、言われるまでしません。</p>
+      <p class="b you s1">この前のコーヒー豆、すごくよかった。</p>
+      <div class="reply s2"><span class="dots"><i></i><i></i><i></i></span><p class="b still"><span class="ai">Claude Code</span>気に入ってもらえてよかったです。エチオピア・グジ 500g、覚えておきますね。いつでも取り消せます。</p></div>
+      <p class="switch s3">AI が Codex に替わりました</p>
+      <p class="b you s4">コーヒーが切れた。</p>
+      <div class="reply s5"><span class="dots"><i></i><i></i><i></i></span><p class="b still"><span class="ai new">Codex</span>前回と同じエチオピア・グジ 500g をカートに入れました。お支払いは、言われるまでしません。</p></div>
+    </div>
+    <p class="stage-note" aria-hidden="true">使い方の一例</p>
+  </div>
+</section>
+
+<section class="band rose" id="remembers" aria-labelledby="remember-title">
+  <div class="copy">
+    <h2 id="remember-title">多くを語らなくても、覚えています。</h2>
+    <p>先週話したことが、必要なときに戻ってきます。それぞれの記憶が何にもとづくかも伝えます。保存したことは、どれも取り消せます。</p>
+  </div>
+  <div class="visual days" role="group" aria-label="数日あいだをおいた二つの会話">
+    <div class="day">
+      <p class="when">月曜日</p>
+      <p class="b you">最近、猫がごはんをあまり食べない。どうしたらいい？</p>
+      <p class="b still">まず試してみたいことがいくつかあります…猫を飼っていることを覚えておきますね。</p>
+    </div>
+    <div class="day">
+      <p class="when">木曜日</p>
+      <p class="b you">5万円以下のロボット掃除機を選んで。</p>
+      <p class="b still">5万円以下で3台あります。猫の毛にいちばん強いものを最初に置きました。</p>
     </div>
   </div>
-</section>
-
-<section class="manner" aria-labelledby="manner-title">
-  <h2 id="manner-title">気づかい、あたたかく。静かでも、受け身ではなく。</h2>
-  <ul class="three">
-    <li>
-      <h3>あたたかさは文脈から。</h3>
-      <p>実際に伝えられた好みや状況を判断に生かします。感情を装ったり、むやみにほめたりしません。</p>
-    </li>
-    <li>
-      <h3>誠実さは結果に。</h3>
-      <p>完了・確認・記憶は、確かめられたときだけ伝えます。わからないことや失敗したことは、はっきり伝えます。</p>
-    </li>
-    <li>
-      <h3>頼もしさは次の一歩に。</h3>
-      <p>状態をくり返すより、何が進んで次に何をするかを伝えます。静かさは受け身という意味ではありません。</p>
-    </li>
-  </ul>
-</section>
-
-<section class="talk" aria-labelledby="talk-title">
-  <div class="talk-copy">
-    <h2 id="talk-title">多くを語らなくても、話したことを覚えています。</h2>
-    <p>細かいことを並べた長いプロンプトはいりません。Still はすでに聞いていることを生かして面倒な部分を引き受け、あなたの判断が必要なところで止まります。</p>
-  </div>
-  <div class="thread thread-static" role="group" aria-label="Still との会話">
-    <p class="t-still"><span class="who">Still</span>こんにちは、Still です。今日はどんなことからお手伝いしましょうか。</p>
-    <p class="t-you"><span class="who">あなた</span>午後に作業しやすいカフェを探して。</p>
-    <p class="t-still"><span class="who">Still</span>雰囲気だけでなく、長く座って作業しやすいかも見ますね。それが大事だと言っていましたよね。近くに3軒あります。</p>
-  </div>
-  <p class="proof">実際のセッションから：以前話したラテの好みがコーヒーマシン用の豆選びでまた基準になり、F1 モデルの検索は言い直さなくても Amazon へ続き、選んだ豆はログインしたカートに入ったことまで確かめました。</p>
   <details class="evidence">
     <summary>実際の画面を開く</summary>
     <figure>
       <a href="assets/still-examples-v4.ja.jpg"><img src="assets/still-examples-v4.ja.jpg" width="1800" height="1320" loading="lazy" alt="実際の画面抜粋：好みの記憶、Amazonへ続くF1検索、カートで確認したJardin Espresso Blend 500g 1点。"></a>
-      <figcaption>
-        <ol>
-          <li><b>好みを覚えている。</b> 名前を思い出せない昨日のラテ。あとで豆が切れたとき、その好みを基準に選びます。</li>
-          <li><b>同じ検索の続き。</b> 「Would you find more at the amazon?」F1 モデルの検索を続け、おすすめと確認できなかった点を伝えます。</li>
-          <li><b>選んで、入れて、確認。</b> 「じゃあ Jardin を入れて」。ログイン後のカートに Jardin Espresso Blend 500g が 1 点入っています。</li>
-        </ol>
-        <p>Telegram と SSG のカート、2026年10月11日、韓国語の画面。</p>
-      </figcaption>
+      <figcaption>以前話したラテが豆選びでまた基準になり、F1 モデルの検索は言い直さなくても Amazon へ続き、選んだ豆はログインしたカートに入っていました。Telegram と SSG のカート、2026年10月11日、韓国語の画面。</figcaption>
     </figure>
   </details>
 </section>
 
-<section class="concept" id="concept" aria-labelledby="concept-title">
-  <div class="concept-copy">
-    <h2 id="concept-title">頭脳は借りても、Still はあなたのもの。</h2>
-    <p>トニー・スタークは J.A.R.V.I.S. を支える技術を自ら持っていました。私たちの多くは、モデルも価格もルールも変わり続ける提供元から、アシスタントの頭脳を借りることになります。Still はアシスタントをあなたの側、あなたのコンピューターに置き、その裏で考える AI だけを入れ替えられるようにします。</p>
+<section class="band night" id="concept" aria-labelledby="concept-title">
+  <div class="copy">
+    <h2 id="concept-title">AI を替えても、アシスタントはそのまま。</h2>
+    <p>ChatGPT のプランで使う Codex、または Claude のプランで使う Claude Code が仕事をします。会話の途中でもコマンド一つで替えられ、Still はそのまま続けます。</p>
   </div>
-  <div class="swap">
-    <div>
-      <h3>いつでも替えられるもの</h3>
-      <ul>
-        <li>モデルと提供元</li>
-        <li>ChatGPT のプランで使う Codex、Claude のプランで使う Claude Code</li>
-        <li>ツールと接続</li>
-      </ul>
-    </div>
-    <div class="stays">
-      <h3>Still に残るもの</h3>
-      <ul>
-        <li>あなたについて知ったこと</li>
-        <li>やりかけの仕事と次の一歩</li>
-        <li>あなたが任せた権限</li>
-        <li>実際に実行された記録</li>
-      </ul>
-    </div>
-  </div>
-  <p class="proof">実際のセッションから：コマンドひとつで Codex を Claude Code に替えたあと「Jardin じゃなくて、久しぶりに高いのを」と言うだけで、Claude Code は前にラテ向けに勧めた Momos Coffee の豆を覚えていて、代わりに提案しました。</p>
   <figure class="switch-clip">
     <video controls muted playsinline preload="none" width="1200" height="720" poster="assets/still-ai-switch-poster.ja.jpg" aria-label="韓国語の Telegram の実際の会話。/ai で今の AI が Codex だと確かめ、/ai claude-code で Claude Code に替えます。Jardin より高いものをと頼むと、Claude Code はラテに一番合うと言っていた Momos Coffee の Es Chocolat 500g を思い出し、代わりに提案します。">
       <source src="assets/still-ai-switch.ja.mp4" type="video/mp4">
     </video>
-    <figcaption>実際の録画を編集。</figcaption>
+    <figcaption>実際のセッションを編集したもの：Claude Code に替えたあと「今回は高いのを」と言うだけで十分でした。前に勧めた豆を覚えていました。</figcaption>
   </figure>
-  <ul class="limits" aria-label="境界">
-    <li><b>接続したものだけ。</b> 選んだフォルダー・アカウント・ツールだけを使います。接続したフォルダーは、特に言わない限り読み取り専用です。</li>
+  <div class="swap">
+    <div>
+      <h3>いつでも替えられるもの</h3>
+      <ul class="pills"><li>Codex</li><li>Claude Code</li><li>API キー</li><li>Ollama</li><li>ツールと接続</li></ul>
+    </div>
+    <div>
+      <h3>あなたのもとに残るもの</h3>
+      <ul class="pills solid"><li>あなたについて知ったこと</li><li>やりかけの仕事</li><li>あなたが任せた権限</li><li>実際に実行された記録</li></ul>
+    </div>
+  </div>
+</section>
+
+<section class="band sage" aria-labelledby="where-title">
+  <div class="copy">
+    <h2 id="where-title">いつも話している場所で。いつも使っているものと。</h2>
+  </div>
+  <div class="cloud">
+    <div>
+      <h3>話せる場所</h3>
+      <ul class="bubbles"><li class="xl">Telegram</li><li>Slack</li><li class="l">ターミナル</li><li>Mattermost</li><li class="l">ブラウザー</li></ul>
+    </div>
+    <div>
+      <h3>一緒に使えるもの</h3>
+      <ul class="bubbles"><li class="l">あなたのフォルダー</li><li class="xl">Gmail</li><li>Google カレンダー</li><li>Google ドライブ</li><li class="l">ログインしているサイト</li></ul>
+    </div>
+  </div>
+  <p class="fine">フォルダーは、特に言わない限り読み取り専用です。Gmail の整理は別の権限で、Still がメールを送ることはありません。</p>
+</section>
+
+<section class="band mist" aria-labelledby="wait-title">
+  <div class="copy">
+    <h2 id="wait-title">話す間も働き、あなたが決めたところで止まる。</h2>
+    <p>長い作業の前に、計画とどの AI が担当するかを伝えます。その間に別のことを聞いても、途中で直してもかまいません。</p>
+  </div>
+  <div class="visual thread-live" role="group" aria-label="作業を進めている間の会話">
+    <p class="b you">母の誕生日プレゼントを5千円以下で探して。</p>
+    <p class="b still"><span class="ai">Codex</span>毎日使えそうなものを探して、レビューと配達日を確かめてから、3つお見せします。</p>
+    <p class="b still waiting" aria-label="作業中"><span class="dots"><i></i><i></i><i></i></span></p>
+    <p class="b you">「ありがとう」って英語でなんて言う？</p>
+    <p class="b still">Thank you です。プレゼント探しはまだ続いています。</p>
+  </div>
+  <ul class="limits">
+    <li><b>接続したものだけ。</b> 選んだフォルダー・アカウント・ツールだけを使います。</li>
     <li><b>支払いはあなたを待ちます。</b> カートに入れることと支払うことは別の操作で、すべての支払いにあなたの承認が必要です。</li>
-    <li><b>秘密は外に。</b> パスワードやトークンは、モデルへのプロンプト、ログ、実行記録に入りません。</li>
+    <li><b>秘密は外に。</b> パスワードやトークンは、プロンプト、ログ、実行記録に入りません。</li>
   </ul>
 </section>
 
 <section class="install" id="install" aria-labelledby="install-title">
-  <div class="install-copy">
+  <div class="copy">
     <h2 id="install-title">今夜、Still を迎えましょう</h2>
     <p>Mac、Linux、Windows（WSL2）のコンピューターと、いま使っている ChatGPT か Claude のサブスクリプションがあれば十分です。</p>
   </div>
+  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh</code></pre>
+  <p class="note">インストールスクリプトはアドレスでバージョンが固定されています。実行する前に<a href="https://github.com/Jongtae/Still/blob/main/scripts/install.sh">スクリプトの内容を確認</a>してください。Apple シリコンの Mac で Homebrew を使うなら <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>、<code>brew install jongtae/still/agentos</code> のあと <code>agentos start</code> で起動します。Windows では PowerShell で <code>wsl --install</code> を実行して再起動し、Ubuntu を開いてそこにコマンドを貼り付けてください。</p>
   <ol class="steps">
     <li>
-      <h3>インストールして起動</h3>
-      <pre><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh</code></pre>
-      <p class="note">インストールスクリプトはアドレスでバージョンが固定されています。実行する前に<a href="https://github.com/Jongtae/Still/blob/main/scripts/install.sh">スクリプトの内容を確認</a>できます。</p>
-      <p class="note">Homebrew を使うなら、<code>brew tap jongtae/still https://github.com/Jongtae/Still</code>, <code>brew install jongtae/still/agentos</code> でインストールしてから <code>agentos start</code> で起動することもできます。</p>
-      <p class="note"><b>Windows</b> では WSL2 の中にインストールします。PowerShell で <code>wsl --install</code> を実行してコンピューターを再起動し、スタートメニューから Ubuntu を開いて上のインストールコマンドを貼り付けてください。</p>
+      <h3>AI を選ぶ</h3>
+      <p>セットアップはターミナルで進みます。Codex、Claude Code、API キーから選びます。すでにログインしているものは最初から選ばれています。Still はそのログイン情報を見ません。</p>
     </li>
     <li>
-      <h3>AI をつなぐ</h3>
-      <p>ChatGPT なら公式の Codex CLI にログインします（<code>codex login</code>）。Still はそのログイン情報を見ません。Claude なら <code>claude setup-token</code> を実行し、表示されたトークンを一度貼り付けます。このコンピューターの資格情報ストアにだけ保存されます。そのあと <code>127.0.0.1:8787</code> で開くページで選びます。あとで替えても、Still が知っていることはそのままです。</p>
+      <h3>あいさつする</h3>
+      <p>そのままターミナルで、または <code>127.0.0.1:8787</code> の Still の画面で話しかけてください。</p>
     </li>
     <li>
-      <h3>Telegram をつなぐ</h3>
-      <p>Telegram の @BotFather で自分のボットを作り（<code>/newbot</code>）、受け取ったトークンを 設定 → 外部接続 に貼り付けて、ペアリングリンクを開きます。これで、スマートフォンから Still と話せます。</p>
-      <p class="note">お好みで、トークの背景も Still の雰囲気に。壁紙（<a href="assets/still-wallpaper-presence.jpg" download>Still の姿</a>または<a href="assets/still-wallpaper-plain.jpg" download>無地</a>）をダウンロードし、Telegram のトーク画面のメニュー →<b>壁紙を変更</b>で写真から選んでください。この設定はボットからは変えられません。</p>
-    </li>
-    <li>
-      <h3>本当の用事を一つ</h3>
-      <p>普段どおり、必要なことを聞いてみてください。たとえば「最近、猫がごはんをあまり食べない。どうしたらいい？」Still は答えながら、猫を飼っていることを自分で覚え、そのことを伝えます。数日後に「5万円以下のロボット掃除機を選んで」と言うだけで、猫の毛まで考えて選びます。</p>
+      <h3>スマートフォンでも</h3>
+      <p>「Telegram をつないで」と言い、@BotFather から受け取ったトークンを貼り付けて、ペアリングリンクで「開始」を押します。</p>
+      <p class="note">お好みで、トークの背景も Still の雰囲気に。壁紙（<a href="assets/still-wallpaper-presence.jpg" download>Still の姿</a>または<a href="assets/still-wallpaper-plain.jpg" download>無地</a>）を使うなら、Telegram のトーク画面でメニューを開き、<b>壁紙を変更</b>を選んで写真から選んでください。</p>
     </li>
   </ol>
   <p class="note">そのほかは<a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">クイックスタートガイド</a>（英語）にあります。</p>
@@ -288,8 +284,8 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
 
 <section class="github" aria-labelledby="github-title">
   <h2 id="github-title">コードも、作る過程も開かれています。</h2>
-  <p>Still は AGPL-3.0 のオープンソースです。コードと開発の過程はすべて GitHub に公開されていて、いまできることとまだ準備中のことは<a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">製品の現状</a>（英語）にまとめています。現在のバージョンは <span data-release="version">v1.3.0</span> です。</p>
-  <p class="actions"><a class="button" href="https://github.com/Jongtae/Still">GitHub で見る<span class="arrow" aria-hidden="true">→</span></a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">Discussions で話す</a></p>
+  <p>Still は AGPL-3.0 のオープンソースです。いまできることとまだ荒削りなところは<a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">製品の現状</a>（英語）にまとめています。現在のバージョンは <span data-release="version">v1.3.0</span> です。</p>
+  <p class="actions"><a class="button" href="https://github.com/Jongtae/Still">GitHub で見る</a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">Discussions で話す</a></p>
   <p class="note">使ってみて気に入ったら、GitHub で Star を押してください。次の人が Still を見つける手助けになります。</p>
 </section>
 
