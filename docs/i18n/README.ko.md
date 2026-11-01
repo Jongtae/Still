@@ -13,7 +13,7 @@
 
 [English](../../README.md) | [한국어](README.ko.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
-[지금 할 수 있는 것](#지금-할-수-있는-것) · [빠른 시작](#빠른-시작) · [나에게 남는 것](#나에게-남는-것) · [문서](#문서)
+[지금 할 수 있는 것](#지금-할-수-있는-것) · [빠른 시작](#빠른-시작) · [나에게 남는 것](#나에게-남는-것) · [문서](#문서) · [Engineering](https://jongtae.github.io/Still/engineering/ko.html)
 
 </div>
 
@@ -21,7 +21,7 @@
 
 <!-- readme-section:hero -->
 
-## 두뇌는 빌려 써도, 나만의 자비스
+## AI는 바뀌어도, 나의 비서는 이어집니다.
 
 우리 대부분은 직접 쓰는 AI 모델을 소유하지 못합니다. 모델을 만든 기업은 가격과 규칙, 이용 여부를 언제든 바꿀 수 있습니다. Still은 내 컴퓨터에 설치하는 오픈소스 비서입니다. 나에 대해 아는 것과 끝내지 못한 일, 맡겨 둔 권한은 내 컴퓨터에 두고, 실제로 일하는 AI(이미 구독 중인 바로 그 AI)는 얼마든지 바꿀 수 있습니다.
 
@@ -29,6 +29,19 @@
   <img src="../../docs/assets/readme/demo/demo-v5.ko.gif" width="800" alt="실제 대화 녹화: 커피 취향 기억, 아마존으로 이어지는 F1 모형 검색, 원두 추천과 로그인 후 장바구니 확인.">
 </p>
 <p align="center"><sub>실제 녹화 화면을 편집했습니다.</sub></p>
+
+<!-- readme-section:ai-switch -->
+
+## AI를 바꿔도 이어지는 대화
+
+<p align="center">
+  <img src="../../docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="한국어 Telegram 화면 세 장을 잘라 붙인 이미지. 1: Claude Code로 바꾼 뒤 어제 스팸을 넣었는지 뺐는지 묻자, PA가 이전 장바구니 대화를 이어받고 로그인을 요청합니다. 2: 로그인 후 CJ 스팸 클래식 200g 1개가 장바구니에 있다고 답하고, 일부 단계는 확인하지 못했다고 알립니다. 3: Codex로 바꾼 뒤 스팸을 빼 달라고 하자, 뺐고 나머지 22개 상품은 그대로라고 답합니다.">
+</p>
+<p align="center"><sub>실제 대화에서 발췌한 화면입니다. 로그인 링크는 잘라내고 이름은 가렸습니다. · <a href="../../docs/assets/readme/ai-switch/ai-switch-conversation.png">크게 보기</a></sub></p>
+
+Claude Code로 바꾼 뒤에는 PA가 어제의 쇼핑 대화를 이어받아 장바구니를 확인합니다. Codex로 바꾼 뒤에도 같은 대화에서 “스팸 빼 줘.”라고 하면 그대로 처리됩니다.
+
+*편집한 실제 사용자 세션이며 화면은 한국어입니다. 대화의 연속성을 보여 주지만, 장바구니 변경의 독립 검증이나 배포본 전체 검증은 아닙니다.* [원문](https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/manifest.json)
 
 <!-- readme-section:capabilities -->
 
@@ -86,23 +99,17 @@ agentos start
 
 ## 동작 방식
 
+<details>
+<summary>구조와 보조 화면 펼치기</summary>
+
 <picture>
   <source media="(max-width: 600px)" srcset="../../docs/assets/readme/presence-overview.ko.narrow.svg">
   <img src="../../docs/assets/readme/presence-overview.ko.svg" alt="개념 그림: 나와의 관계(목적·기억·선호·약속·권한)가 Assistant·Finance·Research 전문 관점으로 이어지고, 도메인·역할·위임 범위·권한이 Decision Model로 들어갑니다. Unified Presence는 하나의 관계를 지키며, 작업 중 나의 개입을 판단에 되돌립니다. 배포 기능이 아닌 제품 방향 예시입니다.">
 </picture>
 
+</details>
+
 Still은 나와의 관계(목적, 기억, 선호, 권한)를 하나로 유지하면서, 요청마다 그에 맞는 역할의 눈으로 읽고 답할지, 실행할지, 물을지, 결과를 알릴지 판단합니다. 일하는 도중에 내가 한 말은 진행 중인 일에 반영됩니다. 그림은 설계 방향을 나타낼 뿐, 실제 실행을 관찰한 것이 아닙니다. 자세히 보기: [아키텍처](../../docs/personal-agentos-architecture.en.md) · [Presence](../../docs/presence-experience-contract.en.md)
-
-<!-- readme-section:ai-switch -->
-
-## AI를 바꿔도 이어지는 대화
-
-<p align="center">
-  <img src="../../docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="한국어 Telegram 화면 세 장을 잘라 붙인 이미지. 1: Claude Code로 바꾼 뒤 어제 스팸을 넣었는지 뺐는지 묻자, PA가 이전 장바구니 대화를 이어받고 로그인을 요청합니다. 2: 로그인 후 CJ 스팸 클래식 200g 1개가 장바구니에 있다고 답하고, 일부 단계는 확인하지 못했다고 알립니다. 3: Codex로 바꾼 뒤 스팸을 빼 달라고 하자, 뺐고 나머지 22개 상품은 그대로라고 답합니다.">
-</p>
-<p align="center"><sub>실제 대화에서 발췌한 화면입니다. 로그인 링크는 잘라내고 이름은 가렸습니다. · <a href="../../docs/assets/readme/ai-switch/ai-switch-conversation.png">크게 보기</a></sub></p>
-
-Claude Code로 바꾼 뒤에는 PA가 어제의 쇼핑 대화를 이어받아 장바구니를 확인합니다. Codex로 바꾼 뒤에도 같은 대화에서 “스팸 빼 줘.”라고 하면 그대로 처리됩니다.
 
 <!-- readme-section:conversation -->
 
@@ -110,12 +117,25 @@ Claude Code로 바꾼 뒤에는 PA가 어제의 쇼핑 대화를 이어받아 �
 
 *실제 Telegram 대화(한국어 화면)에서 발췌하고 짧은 장면 설명을 붙였습니다.*
 
+<details>
+<summary>구조와 보조 화면 펼치기</summary>
+
 <picture>
   <source media="(max-width: 600px)" srcset="../../docs/assets/readme/readme-examples-v4.ko.png">
   <img src="../../docs/assets/readme/readme-examples-v4.ko.png" alt="실제 화면 발췌: 기억한 취향, 아마존으로 이어지는 F1 검색, 장바구니에서 확인한 자뎅 에스프레소 블렌드 500g 1개.">
 </picture>
 
+</details>
+
 전에 말한 라테 취향은 원두를 고를 때 다시 기준이 되고, F1 모형 검색은 다시 설명하지 않아도 아마존으로 이어지며, 고른 원두는 로그인된 장바구니에 담긴 것까지 확인합니다. 장바구니에 담는 것과 결제하는 것은 별개의 행동입니다.
+
+<!-- readme-section:engineering -->
+
+## Engineering
+
+기술 철학, Ontology & Context, Decision Model, Presence, 모델 독립성, Owner Authority, Research & Evidence를 읽어보세요. 각 주제에서 구현·증거·남은 설계 과제를 원문으로 연결합니다.
+
+[왜 이렇게 설계했을까요?](https://jongtae.github.io/Still/engineering/ko.html) · [Research & Evidence](https://jongtae.github.io/Still/engineering/ko.html#research)
 
 <!-- readme-section:more -->
 

@@ -35,7 +35,7 @@ def release_values(root: Path = ROOT) -> tuple[str, str]:
 
 def stamp(site: Path, commit: str, version: str) -> list[Path]:
     changed = []
-    for page in sorted(site.glob("*.html")):
+    for page in sorted(site.rglob("*.html")):
         text = page.read_text(encoding="utf-8")
         new = PIN.sub(lambda m: m.group(1) + commit + m.group(3), text)
         new = VERSION.sub(lambda m: f"{m.group(1)}v{version}{m.group(2)}", new)

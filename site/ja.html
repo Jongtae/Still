@@ -15,7 +15,8 @@
 <link rel="alternate" hreflang="zh-CN" href="zh-CN.html">
 <link rel="alternate" hreflang="x-default" href="./">
 <link rel="preload" href="assets/fonts/figtree-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/home.css?v=s8">
+<link rel="stylesheet" href="assets/home.css?v=s9">
+<link rel="stylesheet" href="assets/engineering.css?v=1">
 </head>
 <body>
 <a class="skip" href="#main">本文へ移動</a>
@@ -24,6 +25,7 @@
   <nav aria-label="サイト">
     <a href="#remembers">できること</a>
     <a href="#install">インストール</a>
+    <a href="engineering/ja.html">Engineering</a>
     <a href="https://github.com/Jongtae/Still">GitHub</a>
     <span class="langs"><a href="./" hreflang="en" lang="en">English</a><a href="ko.html" hreflang="ko" lang="ko">한국어</a><a href="ja.html" hreflang="ja" lang="ja" aria-current="page">日本語</a><a href="zh-CN.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></span>
   </nav>
@@ -157,10 +159,11 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
 -20 195 -132 148z"/>
 </g>
 </svg></h1>
-    <p class="lede">自分のコンピューターで動くパーソナル AI。いま使っている AI のプランで動き、AI を替えてもあなたのアシスタントのままです。</p>
-    <p class="actions"><a class="button" href="#install">Still をインストール</a><a class="text-link" href="https://github.com/Jongtae/Still">GitHub で見る</a></p>
+    <p class="product-promise">AI が変わっても、あなたのアシスタントは続きます。</p>
+    <p class="lede">自分のコンピューターで動くオープンソースの個人エージェント。記憶、進行中の仕事、許可を保ちながら AI を替えられます。</p>
+    <p class="actions"><a class="button" href="#install">Still をインストール</a><a class="text-link" href="#concept">実際の利用を見る</a></p>
   </div>
-  <div class="stage" role="img" aria-label="使い方の一例。あなた：「この前のコーヒー豆、すごくよかった。」Claude Code で考える Still：「気に入ってもらえてよかったです。エチオピア・グジ 500g、覚えておきますね。いつでも取り消せます。」AI が Claude Code から Codex に替わります。あなた：「コーヒーが切れた。」Codex で考える Still：「前回と同じエチオピア・グジ 500g をカートに入れました。お支払いは、言われるまでしません。」">
+  <div class="stage" role="img" aria-label="製品の方向性を示す例です。録画や自律決済の実装証拠ではありません。 使い方の一例。あなた：「この前のコーヒー豆、すごくよかった。」Claude Code で考える Still：「気に入ってもらえてよかったです。エチオピア・グジ 500g、覚えておきますね。いつでも取り消せます。」AI が Claude Code から Codex に替わります。あなた：「コーヒーが切れた。」Codex で考える Still：「前回と同じエチオピア・グジ 500g をカートに入れました。お支払いは、言われるまでしません。」">
     <div class="thread" aria-hidden="true">
       <p class="b you s1">この前のコーヒー豆、すごくよかった。</p>
       <div class="reply s2"><span class="dots"><i></i><i></i><i></i></span><p class="b still"><span class="ai">Claude Code</span>気に入ってもらえてよかったです。エチオピア・グジ 500g、覚えておきますね。いつでも取り消せます。</p></div>
@@ -168,7 +171,30 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
       <p class="b you s4">コーヒーが切れた。</p>
       <div class="reply s5"><span class="dots"><i></i><i></i><i></i></span><p class="b still"><span class="ai new">Codex</span>前回と同じエチオピア・グジ 500g をカートに入れました。お支払いは、言われるまでしません。</p></div>
     </div>
-    <p class="stage-note" aria-hidden="true">使い方の一例</p>
+    <p class="stage-note">製品の方向性を示す例です。録画や自律決済の実装証拠ではありません。</p>
+  </div>
+</section>
+
+<section class="band night" id="concept" aria-labelledby="concept-title">
+  <div class="copy">
+    <h2 id="concept-title">AI を替えても、アシスタントはそのまま。</h2>
+    <p>ChatGPT のプランで使う Codex、または Claude のプランで使う Claude Code が仕事をします。会話の途中でもコマンド一つで替えられ、Still はそのまま続けます。</p>
+  </div>
+  <figure class="switch-clip">
+    <video controls muted playsinline preload="none" width="1200" height="720" poster="assets/still-ai-switch-poster.ja.jpg" aria-label="韓国語の Telegram の実際の会話。/ai で今の AI が Codex だと確かめ、/ai claude-code で Claude Code に替えます。Jardin より高いものをと頼むと、Claude Code はラテに一番合うと言っていた Momos Coffee の Es Chocolat 500g を思い出し、代わりに提案します。">
+      <source src="assets/still-ai-switch.ja.mp4" type="video/mp4">
+    </video>
+    <figcaption>実際のセッションを編集したもの：Claude Code に替えたあと「今回は高いのを」と言うだけで十分でした。前に勧めた豆を覚えていました。 実際の利用セッションを編集した韓国語画面です。会話の継続を示しますが、カート変更の独立検証やリリース全体の検証ではありません。 <a href="engineering/ja.html#research">原文</a></figcaption>
+  </figure>
+  <div class="swap">
+    <div>
+      <h3>いつでも替えられるもの</h3>
+      <ul class="pills"><li>Codex</li><li>Claude Code</li><li>API キー</li><li>Ollama</li><li>ツールと接続</li></ul>
+    </div>
+    <div>
+      <h3>あなたのもとに残るもの</h3>
+      <ul class="pills solid"><li>あなたについて知ったこと</li><li>やりかけの仕事</li><li>あなたが任せた権限</li><li>実際に実行された記録</li></ul>
+    </div>
   </div>
 </section>
 
@@ -198,28 +224,7 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
   </details>
 </section>
 
-<section class="band night" id="concept" aria-labelledby="concept-title">
-  <div class="copy">
-    <h2 id="concept-title">AI を替えても、アシスタントはそのまま。</h2>
-    <p>ChatGPT のプランで使う Codex、または Claude のプランで使う Claude Code が仕事をします。会話の途中でもコマンド一つで替えられ、Still はそのまま続けます。</p>
-  </div>
-  <figure class="switch-clip">
-    <video controls muted playsinline preload="none" width="1200" height="720" poster="assets/still-ai-switch-poster.ja.jpg" aria-label="韓国語の Telegram の実際の会話。/ai で今の AI が Codex だと確かめ、/ai claude-code で Claude Code に替えます。Jardin より高いものをと頼むと、Claude Code はラテに一番合うと言っていた Momos Coffee の Es Chocolat 500g を思い出し、代わりに提案します。">
-      <source src="assets/still-ai-switch.ja.mp4" type="video/mp4">
-    </video>
-    <figcaption>実際のセッションを編集したもの：Claude Code に替えたあと「今回は高いのを」と言うだけで十分でした。前に勧めた豆を覚えていました。</figcaption>
-  </figure>
-  <div class="swap">
-    <div>
-      <h3>いつでも替えられるもの</h3>
-      <ul class="pills"><li>Codex</li><li>Claude Code</li><li>API キー</li><li>Ollama</li><li>ツールと接続</li></ul>
-    </div>
-    <div>
-      <h3>あなたのもとに残るもの</h3>
-      <ul class="pills solid"><li>あなたについて知ったこと</li><li>やりかけの仕事</li><li>あなたが任せた権限</li><li>実際に実行された記録</li></ul>
-    </div>
-  </div>
-</section>
+
 
 <section class="band sage" aria-labelledby="where-title">
   <div class="copy">
@@ -262,8 +267,8 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
     <h2 id="install-title">今夜、Still を迎えましょう</h2>
     <p>Mac、Linux、Windows（WSL2）のコンピューターと、いま使っている ChatGPT か Claude のサブスクリプションがあれば十分です。</p>
   </div>
-  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh</code></pre>
-  <p class="note">インストールスクリプトはアドレスでバージョンが固定されています。実行する前に<a href="https://github.com/Jongtae/Still/blob/main/scripts/install.sh">スクリプトの内容を確認</a>してください。Apple シリコンの Mac で Homebrew を使うなら <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>、<code>brew install jongtae/still/agentos</code> のあと <code>agentos start</code> で起動します。Windows では PowerShell で <code>wsl --install</code> を実行して再起動し、Ubuntu を開いてそこにコマンドを貼り付けてください。</p>
+  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
+  <p class="note">インストールスクリプトはアドレスでバージョンが固定されています。実行する前に<a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">スクリプトの内容を確認</a>してください。Apple シリコンの Mac で Homebrew を使うなら <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>、<code>brew install jongtae/still/agentos</code> のあと <code>agentos start</code> で起動します。Windows では PowerShell で <code>wsl --install</code> を実行して再起動し、Ubuntu を開いてそこにコマンドを貼り付けてください。</p>
   <ol class="steps">
     <li>
       <h3>AI を選ぶ</h3>
@@ -282,9 +287,15 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
   <p class="note">そのほかは<a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">クイックスタートガイド</a>（英語）にあります。</p>
 </section>
 
+<section class="engineering-entry" aria-labelledby="engineering-title">
+  <h2 id="engineering-title">Engineering — この設計を選ぶ理由</h2>
+  <p>技術思想、Ontology & Context、Decision Model、Presence、モデル独立性、Owner Authority、Research & Evidence。実装、証拠、残る設計課題を原文につなぎます。</p>
+  <p><a href="engineering/ja.html">Still が継続する仕組み →</a> · <a href="engineering/ja.html#research">Research &amp; Evidence</a></p>
+</section>
+
 <section class="github" aria-labelledby="github-title">
   <h2 id="github-title">コードも、作る過程も開かれています。</h2>
-  <p>Still は AGPL-3.0 のオープンソースです。いまできることとまだ荒削りなところは<a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">製品の現状</a>（英語）にまとめています。現在のバージョンは <span data-release="version">v1.3.0</span> です。</p>
+  <p>Still は AGPL-3.0 のオープンソースです。いまできることとまだ荒削りなところは<a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">製品の現状</a>（英語）にまとめています。現在のバージョンは <span data-release="version">v0.3.0</span> です。</p>
   <p class="actions"><a class="button" href="https://github.com/Jongtae/Still">GitHub で見る</a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">Discussions で話す</a></p>
   <p class="note">使ってみて気に入ったら、GitHub で Star を押してください。次の人が Still を見つける手助けになります。</p>
 </section>

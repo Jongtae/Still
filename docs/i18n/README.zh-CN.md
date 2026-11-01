@@ -13,7 +13,7 @@
 
 [English](../../README.md) | [한국어](README.ko.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
-[目前能做什么](#目前能做什么) · [快速开始](#快速开始) · [留给你的东西](#留给你的东西) · [文档](#文档)
+[目前能做什么](#目前能做什么) · [快速开始](#快速开始) · [留给你的东西](#留给你的东西) · [文档](#文档) · [Engineering](https://jongtae.github.io/Still/engineering/zh-CN.html)
 
 </div>
 
@@ -21,7 +21,7 @@
 
 <!-- readme-section:hero -->
 
-## 借来的大脑，属于你自己的 J.A.R.V.I.S.
+## AI 可以更换，你的助手始终延续。
 
 我们大多数人并不拥有自己使用的 AI 模型；模型的提供方随时可能改变价格、规则和可用性。Still 是一个安装在你自己电脑上的开源助手。它把关于你的了解、尚未完成的工作和你交付的权限都保存在那里，而真正干活的 AI，也就是你已经订阅的那个，可以更换。
 
@@ -29,6 +29,19 @@
   <img src="../../docs/assets/readme/demo/demo-v5.zh-CN.gif" width="800" alt="真实对话记录：记住咖啡喜好、在亚马逊继续搜索F1模型、推荐咖啡豆及登录后确认购物车。">
 </p>
 <p align="center"><sub>由真实录屏剪辑而成。</sub></p>
+
+<!-- readme-section:ai-switch -->
+
+## 换了 AI，对话照样继续
+
+<p align="center">
+  <img src="../../docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="三张裁剪后的韩语 Telegram 截图。1：切换到 Claude Code 后，主人问昨天的午餐肉最后放进去了还是拿出来了，PA 接上之前的购物车对话并请求登录。2：登录后，它回答购物车里有 1 罐 CJ 经典午餐肉 200g，并说明有些步骤未能确认。3：切换到 Codex 后，主人让它把午餐肉拿掉，PA 回复已删除，其余 22 件商品仍在。">
+</p>
+<p align="center"><sub>截取自真实对话（Telegram，韩语界面）。登录链接已裁掉，姓名已模糊处理。 · <a href="../../docs/assets/readme/ai-switch/ai-switch-conversation.png">查看大图</a></sub></p>
+
+切换到 Claude Code 后，PA 接上昨天的购物对话并查看购物车。切换到 Codex 后，“把午餐肉拿掉”在同一段对话里照样有效。
+
+*经过剪辑的真实用户会话，界面为韩语。它展示对话延续，并非购物车操作的独立验证或整个发行版的验证。* [原文](https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/manifest.json)
 
 <!-- readme-section:capabilities -->
 
@@ -86,23 +99,17 @@ agentos start
 
 ## 工作原理
 
+<details>
+<summary>展开架构和补充画面</summary>
+
 <picture>
   <source media="(max-width: 600px)" srcset="../../docs/assets/readme/presence-overview.zh-CN.narrow.svg">
   <img src="../../docs/assets/readme/presence-overview.zh-CN.svg" alt="概念图：与你的关系（目标、记忆、偏好、承诺、权限）连接 Assistant、Finance、Research 三种专业视角；领域、角色、委托范围与权限进入 Decision Model。Unified Presence 维持同一段关系，并把你在工作进行中的介入反馈给判断。这是产品方向示例，并非已发布的功能。">
 </picture>
 
+</details>
+
 Still 与你保持同一段关系（你的目标、记忆、偏好和权限），按每个请求所需的角色来解读它，并决定是回答、执行、询问还是回头汇报。它工作时你说的话，会改变进行中的工作。此图展示的是预期设计，并非已观测的运行：[架构](../../docs/personal-agentos-architecture.en.md) · [Presence](../../docs/presence-experience-contract.en.md)。
-
-<!-- readme-section:ai-switch -->
-
-## 换了 AI，对话照样继续
-
-<p align="center">
-  <img src="../../docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="三张裁剪后的韩语 Telegram 截图。1：切换到 Claude Code 后，主人问昨天的午餐肉最后放进去了还是拿出来了，PA 接上之前的购物车对话并请求登录。2：登录后，它回答购物车里有 1 罐 CJ 经典午餐肉 200g，并说明有些步骤未能确认。3：切换到 Codex 后，主人让它把午餐肉拿掉，PA 回复已删除，其余 22 件商品仍在。">
-</p>
-<p align="center"><sub>截取自真实对话（Telegram，韩语界面）。登录链接已裁掉，姓名已模糊处理。 · <a href="../../docs/assets/readme/ai-switch/ai-switch-conversation.png">查看大图</a></sub></p>
-
-切换到 Claude Code 后，PA 接上昨天的购物对话并查看购物车。切换到 Codex 后，“把午餐肉拿掉”在同一段对话里照样有效。
 
 <!-- readme-section:conversation -->
 
@@ -110,12 +117,25 @@ Still 与你保持同一段关系（你的目标、记忆、偏好和权限）�
 
 *节选自真实的 Telegram 对话画面（韩语界面），并配有简短的场景说明。*
 
+<details>
+<summary>展开架构和补充画面</summary>
+
 <picture>
   <source media="(max-width: 600px)" srcset="../../docs/assets/readme/readme-examples-v4.zh-CN.png">
   <img src="../../docs/assets/readme/readme-examples-v4.zh-CN.png" alt="真实画面节选：记住喜好、在亚马逊继续搜索F1模型、购物车中确认有一件Jardin Espresso Blend 500克咖啡豆。">
 </picture>
 
+</details>
+
 之前提到的拿铁口味，会在挑选咖啡豆时再次用上；F1 模型的搜索无需重新说明就延续到亚马逊；选定的咖啡豆出现在已登录的购物车里。加入购物车和付款仍是两种不同的行动。
+
+<!-- readme-section:engineering -->
+
+## Engineering
+
+阅读技术理念、Ontology & Context、Decision Model、Presence、模型独立性、Owner Authority 和 Research & Evidence。每个主题连接实现、证据和待解决的设计问题。
+
+[为什么这样设计？](https://jongtae.github.io/Still/engineering/zh-CN.html) · [Research & Evidence](https://jongtae.github.io/Still/engineering/zh-CN.html#research)
 
 <!-- readme-section:more -->
 
