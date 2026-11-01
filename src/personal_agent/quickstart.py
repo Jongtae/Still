@@ -143,7 +143,7 @@ GOOGLE_CLIENT_FORMAT='Google OAuth client must be the JSON download of a Google 
 
 def connected_page(name):
     """The OAuth callback page after a committed connection (#1207)."""
-    return f'{name} 연결이 완료되었습니다. 이 창을 닫아도 됩니다. 대화에도 알려 드렸습니다. / {name} connected. You can close this window.'.encode()
+    return msg('quickstart.connection_completed_page',name=name).encode()
 
 
 def google_client_from_json(value):
@@ -449,43 +449,49 @@ def picker_page(config, grant, nonce):
     """
     safe_config=json.dumps(config, separators=(',', ':')).replace('<','\\u003c')
     safe_grant=json.dumps(grant).replace('<','\\u003c')
+    # Keep the emitted JavaScript byte-identical: the template values carry
+    # its existing concatenation expressions, rather than adding runtime formatting.
+    script_error=msg('quickstart.picker_script_failed',source="source+'")+"'"
+    picker_error=msg('quickstart.picker_init_error',error=(
+        "'+(event.message|| (source ? "+script_error+" : '"+
+        msg('quickstart.picker_script_blocked')+"')).slice(0,160)"))
     return f'''<!doctype html><html lang="ko"><meta charset="utf-8">
-<meta name="referrer" content="no-referrer"><title>Google Drive 파일 선택</title>
-<main><h1>Google Drive 파일 선택</h1><p id="status">Google Drive Picker를 준비하고 있습니다.</p><button id="retry" disabled>파일 선택 열기</button></main>
+<meta name="referrer" content="no-referrer"><title>{msg('quickstart.picker_title')}</title>
+<main><h1>{msg('quickstart.picker_title')}</h1><p id="status">{msg('quickstart.picker_preparing')}</p><button id="retry" disabled>{msg('quickstart.picker_open')}</button></main>
 <script src="https://apis.google.com/js/api.js"></script><script src="https://accounts.google.com/gsi/client"></script>
 <script nonce="{nonce}">
 const pickerConfig={safe_config}; const selectionGrant={safe_grant};
 const status=document.getElementById('status'), retry=document.getElementById('retry');
 let pickerReady=false;
-function fail(message) {{ status.textContent=message; retry.hidden=false; retry.disabled=false; retry.textContent='다시 열기'; }}
+function fail(message) {{ status.textContent=message; retry.hidden=false; retry.disabled=false; retry.textContent='{msg('quickstart.picker_reopen')}'; }}
 window.addEventListener('error',event=>{{
   const source=event.target && event.target.src ? new URL(event.target.src).hostname : '';
-  fail('Google Picker 초기화 오류: '+(event.message|| (source ? source+' 스크립트를 불러오지 못했습니다.' : '브라우저에서 스크립트를 차단했습니다.')).slice(0,160));
+  fail('{picker_error});
 }},true);
 function sendSelection(documents) {{
   const files=documents.map(d=>({{id:d.id,name:d.name||'',mime_type:d.mimeType||''}}));
   fetch('/api/drive/picker-selection',{{method:'POST',headers:{{'Content-Type':'application/json'}},
     body:JSON.stringify({{grant:selectionGrant,files}})}}).then(async response=>{{
       if(!response.ok) throw new Error('selection rejected');
-      status.textContent='파일 선택을 저장했습니다. Telegram에서 결과를 확인하세요.';
-    }}).catch(()=>fail('파일 선택을 저장하지 못했습니다. Telegram에서 새 연결을 요청하세요.'));
+      status.textContent='{msg('quickstart.picker_selection_saved')}';
+    }}).catch(()=>fail('{msg('quickstart.picker_selection_failed')}'));
 }}
 function openPicker() {{
   retry.disabled=true;
-  if(!pickerReady || !window.google || !google.accounts) return fail('Google Picker를 불러오지 못했습니다.');
+  if(!pickerReady || !window.google || !google.accounts) return fail('{msg('quickstart.picker_load_failed')}');
   const tokenClient=google.accounts.oauth2.initTokenClient({{client_id:pickerConfig.client_id,
     scope:'https://www.googleapis.com/auth/drive.file', callback:token=>{{
-      if(token.error) return fail('Google Drive 권한이 필요합니다. 다시 시도하세요.');
+      if(token.error) return fail('{msg('quickstart.picker_permission_required')}');
       const picker=new google.picker.PickerBuilder().setDeveloperKey(pickerConfig.developer_key)
         .setAppId(pickerConfig.app_id).setOAuthToken(token.access_token)
         .setCallback(data=>{{if(data.action===google.picker.Action.PICKED) sendSelection(data.docs||[]);
-          else if(data.action===google.picker.Action.CANCEL) status.textContent='파일 선택을 취소했습니다. Telegram에서 새 연결을 요청하세요.';}})
+          else if(data.action===google.picker.Action.CANCEL) status.textContent='{msg('quickstart.picker_cancelled')}';}})
         .build(); picker.setVisible(true);
     }}}}); tokenClient.requestAccessToken({{prompt:''}});
 }}
-gapi.load('picker',{{callback:()=>{{pickerReady=true; status.textContent='준비되었습니다. 아래 버튼을 눌러 파일을 선택하세요.'; retry.disabled=false;}},
-  onerror:()=>fail('Google Picker를 불러오지 못했습니다. API 및 브라우저 설정을 확인하세요.'),
-  timeout:7000, ontimeout:()=>fail('Google Picker 로딩 시간이 초과되었습니다. 다시 열어 보세요.')}});
+gapi.load('picker',{{callback:()=>{{pickerReady=true; status.textContent='{msg('quickstart.picker_ready')}'; retry.disabled=false;}},
+  onerror:()=>fail('{msg('quickstart.picker_check_settings')}'),
+  timeout:7000, ontimeout:()=>fail('{msg('quickstart.picker_load_timeout')}')}});
 retry.addEventListener('click',openPicker);
 </script></html>'''.encode()
 
@@ -674,33 +680,33 @@ SETTINGS_WEB_CHANGES={
     # setting, so a notice is sent only when a value there changed (a
     # re-submitted value says nothing).  A verb: the read model cannot show it
     # (a key, a folder, a policy), so the notice states the action taken.
-    '/api/ai-route':(msg('settings_orchestrator.label_main_ai_route'),None),'/api/main-ai/activate':('기본 AI',None),'/api/model':('AI 모델',None),
-    '/api/decision-route/activate':('판단 AI',None),'/api/current-context':('현재 맥락',None),
+    '/api/ai-route':(msg('settings_orchestrator.label_main_ai_route'),None),'/api/main-ai/activate':(msg('label.main_ai'),None),'/api/model':(msg('quickstart.ai_model'),None),
+    '/api/decision-route/activate':(msg('label.judgment_ai'),None),'/api/current-context':(msg('label.current_context'),None),
     # #208: the read model shows on/off; the notice states which.
-    '/api/work-mode':('회사 모드',None),
+    '/api/work-mode':(msg('work_mode.label'),None),
     # #209: the read model does not list the hosts; the notice states the action only.
-    '/api/intranet-destinations':('사내 주소 목록','바꿨습니다'),
+    '/api/intranet-destinations':(msg('quickstart.intranet_addresses'),msg('quickstart_service.changed_verb')),
     # #213: the read model does not show the token; the notice states the action only.
-    '/api/mattermost/connect':('Mattermost 연결','연결했습니다'),'/api/mattermost/disconnect':('Mattermost 연결','해제했습니다'),
-    '/api/mattermost/company-approved':('Mattermost 회사 승인 표시','바꿨습니다'),
+    '/api/mattermost/connect':(msg('quickstart.mattermost_connection'),msg('quickstart.connected')),'/api/mattermost/disconnect':(msg('quickstart.mattermost_connection'),msg('quickstart.disconnected')),
+    '/api/mattermost/company-approved':(msg('quickstart.mattermost_company_approval'),msg('quickstart_service.changed_verb')),
     # #214: the read model does not show the tokens; the notice states the action only.
-    '/api/slack/connect':('Slack 연결','연결했습니다'),'/api/slack/disconnect':('Slack 연결','해제했습니다'),
-    '/api/slack/company-approved':('Slack 회사 승인 표시','바꿨습니다'),
-    '/api/subscription-engines/connect':('구독 AI 연결',None),'/api/connections/google/disconnect':('Google 연결',None),
-    '/api/telegram':('Telegram 봇',None),'/api/telegram/disconnect':('Telegram 연결',None),
-    '/api/main-ai/key':('기본 AI 키','저장했습니다'),'/api/decision-route/credential':('판단 AI 키','저장했습니다'),
-    '/api/subscription-engines/credential':('구독 AI 인증 정보','저장했습니다'),
-    '/api/subscription-engines/isolation':('구독 AI 격리 방식','저장했습니다'),
+    '/api/slack/connect':(msg('quickstart.slack_connection'),msg('quickstart.connected')),'/api/slack/disconnect':(msg('quickstart.slack_connection'),msg('quickstart.disconnected')),
+    '/api/slack/company-approved':(msg('quickstart.slack_company_approval'),msg('quickstart_service.changed_verb')),
+    '/api/subscription-engines/connect':(msg('quickstart.subscription_ai_connection'),None),'/api/connections/google/disconnect':(msg('quickstart.google_connection'),None),
+    '/api/telegram':(msg('quickstart.telegram_bot'),None),'/api/telegram/disconnect':(msg('quickstart.telegram_connection'),None),
+    '/api/main-ai/key':(msg('quickstart.main_ai_key'),msg('quickstart_service.saved_verb')),'/api/decision-route/credential':(msg('quickstart.judgment_ai_key'),msg('quickstart_service.saved_verb')),
+    '/api/subscription-engines/credential':(msg('quickstart.subscription_ai_credentials'),msg('quickstart_service.saved_verb')),
+    '/api/subscription-engines/isolation':(msg('quickstart.subscription_ai_isolation'),msg('quickstart_service.saved_verb')),
     # #211: the read model cannot show a credential; the notice states the action only.
-    '/api/cloud-engines/profile':('클라우드 AI 제공자','저장했습니다'),'/api/cloud-engines/credential':('클라우드 AI 인증 정보','저장했습니다'),
-    '/api/openrouter/connect':('OpenRouter 연결','저장했습니다'),
-    '/api/search-providers/key':('웹 검색 키','저장했습니다'),'/api/search-providers/default':('기본 웹 검색 제공자','저장했습니다'),
-    '/api/search-providers/bing':('Bing 검색 설정','저장했습니다'),'/api/google/client':(msg('quickstart.own_google_client'),'저장했습니다'),
-    '/api/google/client/remove':(msg('quickstart.own_google_client'),'지웠습니다'),
-    '/api/files/roots':('연결 폴더 설정','저장했습니다'),'/api/context-inbox/config':('임시 자료 수집 설정','저장했습니다'),
-    '/api/context-inbox/telegram-policy':('임시 자료 Telegram 공유 설정','저장했습니다'),
-    '/api/context-inbox/share-policy':('임시 자료 공유 설정','저장했습니다'),
-    '/api/browser/sessions/delete':('브라우저 로그인 세션','지웠습니다'),
+    '/api/cloud-engines/profile':(msg('quickstart.cloud_ai_provider'),msg('quickstart_service.saved_verb')),'/api/cloud-engines/credential':(msg('quickstart.cloud_ai_credentials'),msg('quickstart_service.saved_verb')),
+    '/api/openrouter/connect':(msg('quickstart.openrouter_connection'),msg('quickstart_service.saved_verb')),
+    '/api/search-providers/key':(msg('quickstart.web_search_key'),msg('quickstart_service.saved_verb')),'/api/search-providers/default':(msg('quickstart.default_web_search_provider'),msg('quickstart_service.saved_verb')),
+    '/api/search-providers/bing':(msg('quickstart.bing_search_settings'),msg('quickstart_service.saved_verb')),'/api/google/client':(msg('quickstart.own_google_client'),msg('quickstart_service.saved_verb')),
+    '/api/google/client/remove':(msg('quickstart.own_google_client'),msg('quickstart.deleted')),
+    '/api/files/roots':(msg('quickstart.connected_folder_settings'),msg('quickstart_service.saved_verb')),'/api/context-inbox/config':(msg('quickstart.context_inbox_settings'),msg('quickstart_service.saved_verb')),
+    '/api/context-inbox/telegram-policy':(msg('quickstart.context_inbox_telegram_policy'),msg('quickstart_service.saved_verb')),
+    '/api/context-inbox/share-policy':(msg('quickstart.context_inbox_share_policy'),msg('quickstart_service.saved_verb')),
+    '/api/browser/sessions/delete':(msg('quickstart.browser_login_session'),msg('quickstart.deleted')),
     '/api/ai-connections':(msg('settings_orchestrator.label_ai_connections_enabled'),None),
 }
 
@@ -803,12 +809,12 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             # #680 review P1-2: the embedded browser marks every request with a
             # user-agent token; no page it shows may use this owner's UI or API.
             if EMBEDDED_UA_TOKEN in self.headers.get('User-Agent',''):
-                self.reply(403,{'error':'Still 내장 브라우저에서는 Still 화면을 열 수 없습니다.'})
+                self.reply(403,{'error':msg('quickstart.embedded_browser_refused')})
                 return False
             if self.server.server_address[0] not in ('127.0.0.1', '::1'):return True
             allowed={f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}',f'agentos.localhost:{self.server.server_port}',f'[::1]:{self.server.server_port}'}
             if self.headers.get('Host','').lower() in allowed | public_hosts:return True
-            self.reply(403,{'error':'로컬 주소로 Still을 열어 주세요.'})
+            self.reply(403,{'error':msg('quickstart.open_local_address')})
             return False
 
         def public_host(self):
@@ -848,7 +854,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             # paths pass here and ``remote_login_gate`` (exact code, bound client) decides them.
             if (self.tunneled() and family_setup.setup_recorded(store) and path not in family_setup.PUBLIC_PATHS
                     and path not in remote_login.PUBLIC_PATHS and path not in phone_input.PUBLIC_PATHS):
-                self.reply(404,{'error':'찾을 수 없습니다.'})
+                self.reply(404,{'error':msg('quickstart.not_found')})
                 return True
             return False
 
@@ -860,10 +866,10 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 # secret it wrote into this instance's private folder (same macOS user); never through a tunnel or
                 # a forwarded request.  Routed on every instance, the owner's main one included.
                 if not (self.local_setup() and family_share.link_ok(store.root,self.headers.get(family_share.LINK_HEADER,''))):
-                    return self.reply(404,{'error':'찾을 수 없습니다.'})
+                    return self.reply(404,{'error':msg('quickstart.not_found')})
                 try:
                     length=int(self.headers.get('Content-Length','0'))
-                    if not 0<length<=family_share.MAX_BODY:raise ValueError('요청 크기가 올바르지 않습니다.')
+                    if not 0<length<=family_share.MAX_BODY:raise ValueError(msg('quickstart.invalid_request_size'))
                     return self.reply(200,family_share.accept(service,json.loads(self.rfile.read(length))))
                 except family_share.Refused as exc:return self.reply(400,{'error':str(exc),'code':exc.code})
                 except ValueError as exc:return self.reply(400,{'error':str(exc)})
@@ -871,10 +877,10 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 record=family_setup.read_setup(store)
                 # Loopback from the owner's instance only: never through a tunnel.
                 if not (self.local_setup() and family_setup.handoff_ok(record,self.headers.get(family_setup.HANDOFF_HEADER,''))):
-                    return self.reply(404,{'error':'찾을 수 없습니다.'})
+                    return self.reply(404,{'error':msg('quickstart.not_found')})
                 try:
                     length=int(self.headers.get('Content-Length','0'))
-                    if not 0<length<=4096:raise ValueError('요청 크기가 올바르지 않습니다.')
+                    if not 0<length<=4096:raise ValueError(msg('quickstart.invalid_request_size'))
                     body=json.loads(self.rfile.read(length))
                     token=body.get('token','') if isinstance(body,dict) else ''
                     creator=body.get('creator_id') if isinstance(body,dict) else None
@@ -883,7 +889,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             if path not in family_setup.PUBLIC_PATHS:return None
             record=family_setup.read_setup(store)
             if not family_setup.code_ok(record,parse_qs(parts.query).get('code',[''])[0]):
-                return self.reply(404,{'error':'설정 링크가 만료되었거나 올바르지 않습니다.'})
+                return self.reply(404,{'error':msg('quickstart.setup_link_invalid')})
             if path=='/family-setup' and method=='GET':
                 nonce=secrets.token_urlsafe(16)
                 return self.reply(200,family_setup.page(record,nonce).encode(),'text/html; charset=utf-8',csp=family_setup.page_csp(nonce))
@@ -902,7 +908,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             """
             if (self.tunneled() and not self.public_host() and service.remote_login_started()
                     and path not in remote_login.PUBLIC_PATHS and path not in phone_input.PUBLIC_PATHS):
-                self.reply(404,{'error':'찾을 수 없습니다.'})
+                self.reply(404,{'error':msg('quickstart.not_found')})
                 return True
             return False
 
@@ -922,15 +928,15 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             if path not in remote_login.PUBLIC_PATHS:return None
             session=service.remote_login_session()
             if session is None or not session.code_ok(parse_qs(parts.query).get('code',[''])[0]):
-                return self.reply(404,{'error':'로그인 링크가 만료되었거나 올바르지 않습니다.'})
+                return self.reply(404,{'error':msg('quickstart.login_link_invalid')})
             cookie=self.remote_login_cookie()
             if path==remote_login.PAGE_PATH and method=='GET':
                 issued=session.open_page(cookie)
-                if issued is False:return self.reply(404,{'error':'로그인 링크가 만료되었거나 올바르지 않습니다.'})
+                if issued is False:return self.reply(404,{'error':msg('quickstart.login_link_invalid')})
                 nonce=secrets.token_urlsafe(16)
                 return self.reply(200,remote_login.page(session,nonce).encode(),'text/html; charset=utf-8',
                                   cookie=remote_login.cookie_header(issued) if issued else None,csp=remote_login.page_csp(nonce))
-            if not session.client_ok(cookie):return self.reply(404,{'error':'로그인 링크가 만료되었거나 올바르지 않습니다.'})
+            if not session.client_ok(cookie):return self.reply(404,{'error':msg('quickstart.login_link_invalid')})
             if path==remote_login.FRAME_PATH and method=='GET':
                 frame=session.frame(full=parse_qs(parts.query).get('full',[''])[0]=='1')
                 # Review P3-2: a frame the window could not answer now is retried; only a dead session is 404 (above).
@@ -943,7 +949,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     if not 0<length<=4096:raise ValueError
                     body=json.loads(self.rfile.read(length))
                 except (TypeError,ValueError):
-                    return self.reply(400,{'error':'요청이 올바르지 않습니다.'})
+                    return self.reply(400,{'error':msg('quickstart.invalid_request')})
                 return self.reply(200,{'ok':bool(session.input(body))})
             if path==remote_login.DONE_PATH and method=='POST':
                 # Review P3-3: the answer leaves before the tunnel it travels through is stopped.
@@ -959,7 +965,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             """
             if (self.tunneled() and not self.public_host() and service.phone_input_started()
                     and path not in phone_input.PUBLIC_PATHS and path not in remote_login.PUBLIC_PATHS):
-                self.reply(404,{'error':'찾을 수 없습니다.'})
+                self.reply(404,{'error':msg('quickstart.not_found')})
                 return True
             return False
 
@@ -974,25 +980,25 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             path=parts.path
             session=service.phone_input_session()
             if session is None or not session.code_ok(parse_qs(parts.query).get('code',[''])[0]):
-                return self.reply(404,{'error':'링크가 만료되었거나 올바르지 않습니다.'})
+                return self.reply(404,{'error':msg('quickstart.link_invalid')})
             cookie=self.phone_input_cookie()
             if path==phone_input.PAGE_PATH and method=='GET':
                 issued=session.open_page(cookie)
-                if issued is False:return self.reply(404,{'error':'링크가 만료되었거나 올바르지 않습니다.'})
+                if issued is False:return self.reply(404,{'error':msg('quickstart.link_invalid')})
                 nonce=secrets.token_urlsafe(16)
                 return self.reply(200,phone_input.page(session,nonce).encode(),'text/html; charset=utf-8',
                                   cookie=phone_input.cookie_header(issued) if issued else None,csp=phone_input.page_csp(nonce))
             if method!='POST' or path==phone_input.PAGE_PATH:return self.reply(405,{'error':msg('family_share.unsupported_request')})
-            if not session.client_ok(cookie):return self.reply(404,{'error':'링크가 만료되었거나 올바르지 않습니다.'})
+            if not session.client_ok(cookie):return self.reply(404,{'error':msg('quickstart.link_invalid')})
             if self.headers.get('Content-Type','').split(';')[0].strip().lower()!='application/json':
-                return self.reply(415,{'error':'JSON 요청이 필요합니다.'})
+                return self.reply(415,{'error':msg('quickstart.json_required')})
             try:
                 length=int(self.headers.get('Content-Length','0'))
                 if not 0<length<=32768:raise ValueError
                 body=json.loads(self.rfile.read(length))
                 if not isinstance(body,dict):raise ValueError
             except (TypeError,ValueError):
-                return self.reply(400,{'error':'요청이 올바르지 않습니다.'})
+                return self.reply(400,{'error':msg('quickstart.invalid_request')})
             try:
                 if path==phone_input.CLIENT_PATH:return self.reply(200,service.phone_input_client(session,body))
                 if path==phone_input.API_PATH:
@@ -1003,7 +1009,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             except Exception as exc:
                 # #1213 review P2: a token exchange or delivery failure still answers the phone; nothing it carried is logged.
                 logging.getLogger('personal_agent.phone_input').warning('phone input request failed (%s)',type(exc).__name__)
-                return self.reply(502,{'ok':False,'error':'지금은 처리하지 못했어요. 잠시 후 다시 해 주세요.'})
+                return self.reply(502,{'ok':False,'error':msg('quickstart.try_again_later')})
             return self.reply(405,{'error':msg('family_share.unsupported_request')})
 
         def cookie(self,token,max_age=86400):
@@ -1186,7 +1192,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             if path.startswith('/api/tasks/'):
                 return self.reply(200,service.task_progress(path.rsplit('/',1)[-1]))
             if path=='/api/connections/google/revocations':
-                if self.tunneled():return self.reply(403,{'error':'이 작업은 이 기기에서만 할 수 있습니다.'})
+                if self.tunneled():return self.reply(403,{'error':msg('quickstart.local_device_required')})
                 return self.reply(200,service.google_revocations())
             if path=='/api/settings':return self.reply(200,service.conversation_settings_request({'operation':'read'}))
             if path=='/api/personal-knowledge':return self.reply(200,service.personal_knowledge_request({'query':parse_qs(parts.query).get('query',[''])[0]}, channel='local-companion'))
@@ -1206,10 +1212,10 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 # Same owner session gate as /api/personal-records, which
                 # already returns every such item; this returns one.
                 item_parts=path.split('/')
-                if len(item_parts)!=6:return self.reply(404,{'error':'기록을 찾을 수 없습니다.'})
+                if len(item_parts)!=6:return self.reply(404,{'error':msg('quickstart.record_not_found')})
                 try:item=service.personal_item(item_parts[4],unquote(item_parts[5]))
                 except ValueError as error:return self.reply(400,{'error':str(error)})
-                if not item:return self.reply(404,{'error':'이 기록은 지금 저장돼 있지 않습니다. 이미 지웠거나 바뀌었을 수 있습니다.'})
+                if not item:return self.reply(404,{'error':msg('quickstart.record_no_longer_stored')})
                 return self.reply(200,{'item':item})
             if path=='/api/personal-space':return self.reply(200,store.personal_space())
             if path=='/api/personal-records':
@@ -1228,7 +1234,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 jobs=service.owner_jobs(store.jobs())
                 return self.reply(200,{'settings':service.settings(),'messages':service.owner_messages(store.history(include_forgotten=True)),'jobs':jobs,'notes':store.notes(),'tool_events':store.recent_tool_events(),'evidence':{job['id']:store.evidence_summary(job['id']) for job in jobs if job['status'] in ('succeeded','partial')},'healthy':service.healthy()})
             if path=='/api/onboarding':return self.reply(200,service.onboarding())
-            self.reply(404,{'error':'경로를 찾을 수 없습니다.'})
+            self.reply(404,{'error':msg('quickstart.path_not_found')})
 
         def do_DELETE(self):
             if not self.valid_host():return
@@ -1237,7 +1243,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             parts=path.split('/')
             if len(parts)==5 and parts[:3]==['','api','personal-space'] and parts[3] in ('memories','results'):
                 return self.reply(200,store.delete_personal_space_item(parts[3],parts[4]))
-            self.reply(404,{'error':'경로를 찾을 수 없습니다.'})
+            self.reply(404,{'error':msg('quickstart.path_not_found')})
 
         def do_POST(self):
             self.settings_change=None
@@ -1252,36 +1258,36 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 # session cookie never authorizes it and public tunnel hosts
                 # cannot route it even when the bearer itself is valid.
                 if parts.query or parts.fragment or self.public_host() or self.headers.get('Origin'):
-                    return self.reply(403,{'error':'격리 엔진 전용 경로입니다.'})
+                    return self.reply(403,{'error':msg('quickstart.isolated_engine_only')})
                 if self.headers.get('Content-Type','').split(';')[0].strip().lower()!='application/json':
-                    return self.reply(415,{'error':'JSON 요청이 필요합니다.'})
+                    return self.reply(415,{'error':msg('quickstart.json_required')})
                 authorization=self.headers.get('Authorization','')
                 prefix='Bearer '
                 token=authorization[len(prefix):] if authorization.startswith(prefix) else ''
                 task_id=self.headers.get('X-Still-Task-ID','')
                 if not token or not task_id:
-                    return self.reply(401,{'error':'격리 엔진 인증이 필요합니다.'})
+                    return self.reply(401,{'error':msg('quickstart.isolated_engine_auth_required')})
                 try:
                     length=int(self.headers.get('Content-Length','0'))
                     if not 0<length<=65536:raise ValueError
                     raw=self.rfile.read(length)
                 except (TypeError,ValueError):
-                    return self.reply(400,{'error':'요청 크기가 올바르지 않습니다.'})
+                    return self.reply(400,{'error':msg('quickstart.invalid_request_size')})
                 return self.reply(200,service.isolated_mcp_proxy.handle(raw,token=token,task_id=task_id))
             origin=self.headers.get('Origin')
             if origin and (urlsplit(origin).netloc!=self.headers.get('Host') or urlsplit(origin).scheme not in ('http','https')):
-                return self.reply(403,{'error':'다른 사이트에서의 요청은 허용하지 않습니다.'})
+                return self.reply(403,{'error':msg('quickstart.cross_site_refused')})
             if self.headers.get('Content-Type','').split(';')[0]!='application/json':
-                return self.reply(415,{'error':'JSON 요청이 필요합니다.'})
+                return self.reply(415,{'error':msg('quickstart.json_required')})
             try:
                 length=int(self.headers.get('Content-Length','0'))
-                if not 0<length<=65536:raise ValueError('요청 크기가 올바르지 않습니다.')
+                if not 0<length<=65536:raise ValueError(msg('quickstart.invalid_request_size'))
                 body=json.loads(self.rfile.read(length))
-                if not isinstance(body,dict):raise ValueError('JSON 객체가 필요합니다.')
+                if not isinstance(body,dict):raise ValueError(msg('quickstart.json_object_required'))
                 path=urlsplit(self.path).path
                 if path=='/api/local-login':
                     if not self.local_setup() or not store.config('local_access',False):
-                        return self.reply(403,{'error':'이 환경에서는 로그인이 필요합니다.'})
+                        return self.reply(403,{'error':msg('quickstart.login_required')})
                     token=store.local_session()
                     return self.reply(200,{'ok':True},cookie=f'agentos_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400')
                 if path=='/api/drive/picker-selection':
@@ -1290,7 +1296,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 if path in ('/api/claim','/api/login'):
                     with attempts_lock:
                         attempts[:]=[t for t in attempts if t>time.time()-60]
-                        if len(attempts)>=10:return self.reply(429,{'error':'로그인 시도가 많습니다. 1분 뒤 다시 시도하세요.'})
+                        if len(attempts)>=10:return self.reply(429,{'error':msg('quickstart.login_rate_limited')})
                         attempts.append(time.time())
                     if path=='/api/claim':
                         code=body.get('code','')
@@ -1301,7 +1307,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                         store.claim(code,password,local_access=local_access)
                         body['password']=password
                     token=store.login(body.get('password',''))
-                    if not token:return self.reply(401,{'error':'비밀번호가 올바르지 않습니다.'})
+                    if not token:return self.reply(401,{'error':msg('quickstart.incorrect_password')})
                     return self.reply(200,{'ok':True},cookie=self.cookie(token))
                 if not self.auth():return
                 # #1211: a change made on the Settings web is told to the
@@ -1332,11 +1338,11 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 if path=='/api/ai-connections':return self.reply(200,service.set_ai_connections(body))
                 # #1172: the owner's own Google client, entered on this computer only.
                 if path=='/api/google/client':
-                    if self.tunneled():return self.reply(400,{'error':'자체 Google client는 이 컴퓨터의 Still 화면에서만 설정할 수 있습니다.'})
+                    if self.tunneled():return self.reply(400,{'error':msg('quickstart.google_client_local_only')})
                     return self.reply(200,service.save_google_client(body))
                 # #8: remove the saved client once its services are disconnected.
                 if path=='/api/google/client/remove':
-                    if self.tunneled():return self.reply(400,{'error':'자체 Google client는 이 컴퓨터의 Still 화면에서만 설정할 수 있습니다.'})
+                    if self.tunneled():return self.reply(400,{'error':msg('quickstart.google_client_local_only')})
                     return self.reply(200,service.remove_google_client())
                 if path=='/api/search-providers/default':return self.reply(200,service.set_search_provider_default(body))
                 if path=='/api/search-providers/bing':return self.reply(200,service.set_search_provider_bing(body))
@@ -1356,7 +1362,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     # Origin (browsers send it on every POST).  Settings never
                     # calls it on open.  Listed is not verified.
                     if urlsplit(origin or '').netloc!=self.headers.get('Host') or urlsplit(origin or '').scheme not in ('http','https'):
-                        return self.reply(403,{'error':'이 화면에서 직접 누른 요청만 모델 목록을 가져올 수 있습니다.'})
+                        return self.reply(403,{'error':msg('quickstart.model_refresh_direct_only')})
                     return self.reply(200,service.list_decision_models(body.get('route','')))
                 if path=='/api/openrouter/models':return self.reply(200,service.free_models())
                 if path=='/api/ollama/models':return self.reply(200,service.local_models())
@@ -1365,7 +1371,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     # Mac.  Declining removes authority, so any owner session may.
                     action=path.rsplit('/',1)[-1]
                     if action!='deny' and not self.owner_local_surface():
-                        return self.reply(403,{'error':'Mac에서 계속: 폴더 선택과 허용은 이 Mac에서 Still을 직접 열어야 할 수 있습니다. 요청은 그대로 기다립니다.'})
+                        return self.reply(403,{'error':msg('quickstart.folder_continue_on_mac')})
                     try:
                         handler={'select':service.select_local_folder,'approve':service.approve_local_folder,'deny':service.deny_local_folder}[action]
                         return self.reply(200,handler(body))
@@ -1400,14 +1406,14 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     # #659: the owner accepts, cancels or deletes one preparation.
                     return self.reply(200,service.preparation_request(body))
                 if path=='/api/work/continue':
-                    if self.tunneled():return self.reply(403,{'error':'이 작업은 이 기기에서만 할 수 있습니다.'})
+                    if self.tunneled():return self.reply(403,{'error':msg('quickstart.local_device_required')})
                     try:return self.reply(200,service.budget_continue_decision(body))
                     except ValueError as exc:return self.reply(400,{'error':str(exc)})
                 if path in ('/api/browser/login','/api/browser/approval','/api/browser/sessions/delete','/api/browser/login/decision'):
                     # #656: a headed window on this Mac, and the approval of a
                     # guarded step in the owner's session; #680: deleting saved
                     # sign-in sessions.  Owner session, loopback only.
-                    if self.tunneled():return self.reply(403,{'error':'이 작업은 이 기기에서만 할 수 있습니다.'})
+                    if self.tunneled():return self.reply(403,{'error':msg('quickstart.local_device_required')})
                     try:
                         if path=='/api/browser/login':return self.reply(200,service.open_browser_for_login(body))
                         if path=='/api/browser/sessions/delete':return self.reply(200,service.delete_browser_sessions(body))
@@ -1454,7 +1460,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 if path in GOOGLE_DISCONNECT_PATHS:
                     # CONNECTOR-REVOKE-01 #588: owner-session only, and never
                     # through a public tunnel host, like the connect routes.
-                    if self.tunneled():return self.reply(403,{'error':'이 작업은 이 기기에서만 할 수 있습니다.'})
+                    if self.tunneled():return self.reply(403,{'error':msg('quickstart.local_device_required')})
                     if path=='/api/connections/google/disconnect/preview':
                         return self.reply(200,service.google_disconnect_preview(body,self.token()))
                     if path=='/api/connections/google/disconnect':
@@ -1474,10 +1480,10 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     try:service.consider_steer(task_id,body.get('message'))
                     except Exception:pass  # Enqueue succeeded; steering is best effort.
                     return self.reply(202,{'id':task_id})
-                self.reply(404,{'error':'경로를 찾을 수 없습니다.'})
+                self.reply(404,{'error':msg('quickstart.path_not_found')})
             except (ValueError,UnicodeDecodeError) as exc:self.reply(400,{'error':str(exc)})
             except ProviderError as exc:self.reply(502,{'error':str(exc)})
-            except Exception:self.reply(500,{'error':'처리 중 오류가 발생했습니다. 저장소와 서버 상태를 확인하세요.'})
+            except Exception:self.reply(500,{'error':msg('quickstart.processing_failed')})
     return Handler
 
 

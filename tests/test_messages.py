@@ -123,6 +123,7 @@ MIGRATED_MODULES = {
     'telegram_surface.py': {
         '[사진 첨부]',  # Stored photo-only message sentinel, also compared when assembling albums.
     },
+    'quickstart.py': set(),  # All Korean literals in this module are owner-visible.
     'api_input.py': set(),
     'phone_input.py': set(),
     'connector_revocation.py': set(),
@@ -327,6 +328,18 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(telegram_locale.translate(reply, 'en'),
                          "Note: The data's reference time is unknown, so it is unconfirmed whether the values are current. "
                          '(source Unknown, data as of Unknown)')
+
+    def test_quickstart_callback_and_picker_error_translate(self):
+        from personal_agent.quickstart import connected_page
+        callback = connected_page('Google Drive').decode()
+        self.assertEqual(callback, 'Google Drive 연결이 완료되었습니다. 이 창을 닫아도 됩니다. 대화에도 알려 드렸습니다. / Google Drive connected. You can close this window.')
+        self.assertEqual(telegram_locale.translate(callback, 'en'),
+                         'Google Drive is connected. You can close this window. I also posted a Google Drive connection notice in the conversation.')
+        error = messages.msg('quickstart.picker_init_error', error=messages.msg(
+            'quickstart.picker_script_failed', source='apis.google.com'))
+        self.assertEqual(error, 'Google Picker 초기화 오류: apis.google.com 스크립트를 불러오지 못했습니다.')
+        self.assertEqual(telegram_locale.translate(error, 'en'),
+                         'Google Picker initialization error: Could not load the apis.google.com script.')
 
     def test_the_telegram_seam_translates_catalog_lines(self):
         self.assertEqual(telegram_locale.translate(messages.msg('card.queued'), 'en'), messages.msg('card.queued', 'en'))

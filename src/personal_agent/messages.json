@@ -9940,5 +9940,419 @@
   "en": "Checked the browser page",
   "ja": "ブラウザーページを確認しました",
   "zh": "已检查浏览器页面"
+ },
+ "quickstart.ai_model": {
+  "ko": "AI 모델",
+  "en": "AI model",
+  "ja": "AIモデル",
+  "zh": "AI 模型"
+ },
+ "quickstart.intranet_addresses": {
+  "ko": "사내 주소 목록",
+  "en": "Intranet addresses",
+  "ja": "社内アドレス一覧",
+  "zh": "内网地址列表"
+ },
+ "quickstart.connected": {
+  "ko": "연결했습니다",
+  "en": "Connected",
+  "ja": "接続しました",
+  "zh": "已连接"
+ },
+ "quickstart.disconnected": {
+  "ko": "해제했습니다",
+  "en": "Disconnected",
+  "ja": "解除しました",
+  "zh": "已断开"
+ },
+ "quickstart.deleted": {
+  "ko": "지웠습니다",
+  "en": "Deleted",
+  "ja": "削除しました",
+  "zh": "已删除"
+ },
+ "quickstart.mattermost_connection": {
+  "ko": "Mattermost 연결",
+  "en": "Mattermost connection",
+  "ja": "Mattermost接続",
+  "zh": "Mattermost 连接"
+ },
+ "quickstart.mattermost_company_approval": {
+  "ko": "Mattermost 회사 승인 표시",
+  "en": "Mattermost company approval indicator",
+  "ja": "Mattermostの会社承認表示",
+  "zh": "Mattermost 公司批准标记"
+ },
+ "quickstart.slack_connection": {
+  "ko": "Slack 연결",
+  "en": "Slack connection",
+  "ja": "Slack接続",
+  "zh": "Slack 连接"
+ },
+ "quickstart.slack_company_approval": {
+  "ko": "Slack 회사 승인 표시",
+  "en": "Slack company approval indicator",
+  "ja": "Slackの会社承認表示",
+  "zh": "Slack 公司批准标记"
+ },
+ "quickstart.subscription_ai_connection": {
+  "ko": "구독 AI 연결",
+  "en": "Subscription AI connection",
+  "ja": "サブスクリプションAI接続",
+  "zh": "订阅 AI 连接"
+ },
+ "quickstart.google_connection": {
+  "ko": "Google 연결",
+  "en": "Google connection",
+  "ja": "Google接続",
+  "zh": "Google 连接"
+ },
+ "quickstart.telegram_bot": {
+  "ko": "Telegram 봇",
+  "en": "Telegram bot",
+  "ja": "Telegramボット",
+  "zh": "Telegram 机器人"
+ },
+ "quickstart.telegram_connection": {
+  "ko": "Telegram 연결",
+  "en": "Telegram connection",
+  "ja": "Telegram接続",
+  "zh": "Telegram 连接"
+ },
+ "quickstart.main_ai_key": {
+  "ko": "기본 AI 키",
+  "en": "Main AI key",
+  "ja": "メインAIキー",
+  "zh": "主 AI 密钥"
+ },
+ "quickstart.judgment_ai_key": {
+  "ko": "판단 AI 키",
+  "en": "Decision AI key",
+  "ja": "判断AIキー",
+  "zh": "决策 AI 密钥"
+ },
+ "quickstart.subscription_ai_credentials": {
+  "ko": "구독 AI 인증 정보",
+  "en": "Subscription AI credentials",
+  "ja": "サブスクリプションAI認証情報",
+  "zh": "订阅 AI 凭据"
+ },
+ "quickstart.subscription_ai_isolation": {
+  "ko": "구독 AI 격리 방식",
+  "en": "Subscription AI isolation method",
+  "ja": "サブスクリプションAIの隔離方式",
+  "zh": "订阅 AI 隔离方式"
+ },
+ "quickstart.cloud_ai_provider": {
+  "ko": "클라우드 AI 제공자",
+  "en": "Cloud AI provider",
+  "ja": "クラウドAIプロバイダー",
+  "zh": "云 AI 提供商"
+ },
+ "quickstart.cloud_ai_credentials": {
+  "ko": "클라우드 AI 인증 정보",
+  "en": "Cloud AI credentials",
+  "ja": "クラウドAI認証情報",
+  "zh": "云 AI 凭据"
+ },
+ "quickstart.openrouter_connection": {
+  "ko": "OpenRouter 연결",
+  "en": "OpenRouter connection",
+  "ja": "OpenRouter接続",
+  "zh": "OpenRouter 连接"
+ },
+ "quickstart.web_search_key": {
+  "ko": "웹 검색 키",
+  "en": "Web search key",
+  "ja": "ウェブ検索キー",
+  "zh": "网页搜索密钥"
+ },
+ "quickstart.default_web_search_provider": {
+  "ko": "기본 웹 검색 제공자",
+  "en": "Default web search provider",
+  "ja": "既定のウェブ検索プロバイダー",
+  "zh": "默认网页搜索提供商"
+ },
+ "quickstart.bing_search_settings": {
+  "ko": "Bing 검색 설정",
+  "en": "Bing search settings",
+  "ja": "Bing検索設定",
+  "zh": "Bing 搜索设置"
+ },
+ "quickstart.connected_folder_settings": {
+  "ko": "연결 폴더 설정",
+  "en": "Connected folder settings",
+  "ja": "接続フォルダー設定",
+  "zh": "已连接文件夹设置"
+ },
+ "quickstart.context_inbox_settings": {
+  "ko": "임시 자료 수집 설정",
+  "en": "Temporary material collection settings",
+  "ja": "一時資料の収集設定",
+  "zh": "临时资料收集设置"
+ },
+ "quickstart.context_inbox_telegram_policy": {
+  "ko": "임시 자료 Telegram 공유 설정",
+  "en": "Temporary material sharing settings for Telegram",
+  "ja": "一時資料のTelegram共有設定",
+  "zh": "临时资料 Telegram 共享设置"
+ },
+ "quickstart.context_inbox_share_policy": {
+  "ko": "임시 자료 공유 설정",
+  "en": "Temporary material sharing settings",
+  "ja": "一時資料の共有設定",
+  "zh": "临时资料共享设置"
+ },
+ "quickstart.browser_login_session": {
+  "ko": "브라우저 로그인 세션",
+  "en": "Browser login session",
+  "ja": "ブラウザーのログインセッション",
+  "zh": "浏览器登录会话"
+ },
+ "quickstart.embedded_browser_refused": {
+  "ko": "Still 내장 브라우저에서는 Still 화면을 열 수 없습니다.",
+  "en": "You cannot open Still in its embedded browser.",
+  "ja": "Stillの内蔵ブラウザーではStill画面を開けません。",
+  "zh": "无法在 Still 内置浏览器中打开 Still 界面。"
+ },
+ "quickstart.open_local_address": {
+  "ko": "로컬 주소로 Still을 열어 주세요.",
+  "en": "Open Still using its local address.",
+  "ja": "ローカルアドレスでStillを開いてください。",
+  "zh": "请通过本地地址打开 Still。"
+ },
+ "quickstart.not_found": {
+  "ko": "찾을 수 없습니다.",
+  "en": "Not found.",
+  "ja": "見つかりません。",
+  "zh": "未找到。"
+ },
+ "quickstart.invalid_request_size": {
+  "ko": "요청 크기가 올바르지 않습니다.",
+  "en": "Invalid request size.",
+  "ja": "リクエストのサイズが正しくありません。",
+  "zh": "请求大小无效。"
+ },
+ "quickstart.setup_link_invalid": {
+  "ko": "설정 링크가 만료되었거나 올바르지 않습니다.",
+  "en": "This setup link has expired or is invalid.",
+  "ja": "設定リンクの有効期限が切れているか、正しくありません。",
+  "zh": "设置链接已过期或无效。"
+ },
+ "quickstart.login_link_invalid": {
+  "ko": "로그인 링크가 만료되었거나 올바르지 않습니다.",
+  "en": "This login link has expired or is invalid.",
+  "ja": "ログインリンクの有効期限が切れているか、正しくありません。",
+  "zh": "登录链接已过期或无效。"
+ },
+ "quickstart.link_invalid": {
+  "ko": "링크가 만료되었거나 올바르지 않습니다.",
+  "en": "This link has expired or is invalid.",
+  "ja": "リンクの有効期限が切れているか、正しくありません。",
+  "zh": "链接已过期或无效。"
+ },
+ "quickstart.invalid_request": {
+  "ko": "요청이 올바르지 않습니다.",
+  "en": "Invalid request.",
+  "ja": "リクエストが正しくありません。",
+  "zh": "请求无效。"
+ },
+ "quickstart.json_required": {
+  "ko": "JSON 요청이 필요합니다.",
+  "en": "A JSON request is required.",
+  "ja": "JSONリクエストが必要です。",
+  "zh": "需要 JSON 请求。"
+ },
+ "quickstart.try_again_later": {
+  "ko": "지금은 처리하지 못했어요. 잠시 후 다시 해 주세요.",
+  "en": "This could not be processed right now. Please try again shortly.",
+  "ja": "今は処理できませんでした。少し待ってからもう一度お試しください。",
+  "zh": "暂时无法处理，请稍后重试。"
+ },
+ "quickstart.local_device_required": {
+  "ko": "이 작업은 이 기기에서만 할 수 있습니다.",
+  "en": "This action is only available on this device.",
+  "ja": "この操作はこのデバイスでのみ行えます。",
+  "zh": "此操作只能在本设备上执行。"
+ },
+ "quickstart.record_not_found": {
+  "ko": "기록을 찾을 수 없습니다.",
+  "en": "Record not found.",
+  "ja": "記録が見つかりません。",
+  "zh": "未找到记录。"
+ },
+ "quickstart.record_no_longer_stored": {
+  "ko": "이 기록은 지금 저장돼 있지 않습니다. 이미 지웠거나 바뀌었을 수 있습니다.",
+  "en": "This record is no longer stored. It may have been deleted or changed.",
+  "ja": "この記録は現在保存されていません。削除または変更された可能性があります。",
+  "zh": "此记录当前未保存，可能已被删除或更改。"
+ },
+ "quickstart.path_not_found": {
+  "ko": "경로를 찾을 수 없습니다.",
+  "en": "Path not found.",
+  "ja": "パスが見つかりません。",
+  "zh": "未找到路径。"
+ },
+ "quickstart.isolated_engine_only": {
+  "ko": "격리 엔진 전용 경로입니다.",
+  "en": "This path is reserved for isolated engines.",
+  "ja": "隔離エンジン専用のパスです。",
+  "zh": "此路径仅供隔离引擎使用。"
+ },
+ "quickstart.isolated_engine_auth_required": {
+  "ko": "격리 엔진 인증이 필요합니다.",
+  "en": "Isolated engine authentication is required.",
+  "ja": "隔離エンジンの認証が必要です。",
+  "zh": "需要隔离引擎身份验证。"
+ },
+ "quickstart.cross_site_refused": {
+  "ko": "다른 사이트에서의 요청은 허용하지 않습니다.",
+  "en": "Requests from other sites are not allowed.",
+  "ja": "他のサイトからのリクエストは許可されていません。",
+  "zh": "不允许来自其他网站的请求。"
+ },
+ "quickstart.json_object_required": {
+  "ko": "JSON 객체가 필요합니다.",
+  "en": "A JSON object is required.",
+  "ja": "JSONオブジェクトが必要です。",
+  "zh": "需要 JSON 对象。"
+ },
+ "quickstart.login_required": {
+  "ko": "이 환경에서는 로그인이 필요합니다.",
+  "en": "You need to sign in in this environment.",
+  "ja": "この環境ではログインが必要です。",
+  "zh": "在此环境中需要登录。"
+ },
+ "quickstart.login_rate_limited": {
+  "ko": "로그인 시도가 많습니다. 1분 뒤 다시 시도하세요.",
+  "en": "Too many sign-in attempts. Try again in one minute.",
+  "ja": "ログイン試行が多すぎます。1分後にもう一度お試しください。",
+  "zh": "登录尝试过多，请在一分钟后重试。"
+ },
+ "quickstart.incorrect_password": {
+  "ko": "비밀번호가 올바르지 않습니다.",
+  "en": "Incorrect password.",
+  "ja": "パスワードが正しくありません。",
+  "zh": "密码错误。"
+ },
+ "quickstart.google_client_local_only": {
+  "ko": "자체 Google client는 이 컴퓨터의 Still 화면에서만 설정할 수 있습니다.",
+  "en": "You can only configure your own Google client in Still on this computer.",
+  "ja": "独自のGoogleクライアントは、このコンピューターのStill画面でのみ設定できます。",
+  "zh": "只能在本电脑的 Still 界面中设置您自己的 Google 客户端。"
+ },
+ "quickstart.model_refresh_direct_only": {
+  "ko": "이 화면에서 직접 누른 요청만 모델 목록을 가져올 수 있습니다.",
+  "en": "Use the button on this screen to fetch the model list.",
+  "ja": "モデル一覧を取得するには、この画面のボタンを直接押してください。",
+  "zh": "请直接点击此界面上的按钮以获取模型列表。"
+ },
+ "quickstart.folder_continue_on_mac": {
+  "ko": "Mac에서 계속: 폴더 선택과 허용은 이 Mac에서 Still을 직접 열어야 할 수 있습니다. 요청은 그대로 기다립니다.",
+  "en": "Continue on Mac: You may need to open Still directly on this Mac to select and allow a folder. Your request will keep waiting.",
+  "ja": "Macで続ける：フォルダーの選択と許可には、このMacでStillを直接開く必要がある場合があります。リクエストはそのまま待機します。",
+  "zh": "在 Mac 上继续：选择和授权文件夹可能需要在此 Mac 上直接打开 Still。您的请求将继续等待。"
+ },
+ "quickstart.processing_failed": {
+  "ko": "처리 중 오류가 발생했습니다. 저장소와 서버 상태를 확인하세요.",
+  "en": "An error occurred while processing. Check the storage and server status.",
+  "ja": "処理中にエラーが発生しました。ストレージとサーバーの状態を確認してください。",
+  "zh": "处理时发生错误，请检查存储和服务器状态。"
+ },
+ "quickstart.connection_completed_page": {
+  "ko": "{name} 연결이 완료되었습니다. 이 창을 닫아도 됩니다. 대화에도 알려 드렸습니다. / {name} connected. You can close this window.",
+  "en": "{name} is connected. You can close this window. I also posted a {name} connection notice in the conversation.",
+  "ja": "{name}に接続しました。このウィンドウを閉じても構いません。会話にも{name}の接続完了をお知らせしました。",
+  "zh": "{name} 已连接。您可以关闭此窗口，已在对话中通知您 {name} 连接完成。"
+ },
+ "quickstart.picker_title": {
+  "ko": "Google Drive 파일 선택",
+  "en": "Choose Google Drive files",
+  "ja": "Google Driveのファイルを選択",
+  "zh": "选择 Google Drive 文件"
+ },
+ "quickstart.picker_preparing": {
+  "ko": "Google Drive Picker를 준비하고 있습니다.",
+  "en": "Preparing Google Drive Picker.",
+  "ja": "Google Drive Pickerを準備しています。",
+  "zh": "正在准备 Google Drive Picker。"
+ },
+ "quickstart.picker_open": {
+  "ko": "파일 선택 열기",
+  "en": "Open file picker",
+  "ja": "ファイル選択を開く",
+  "zh": "打开文件选择器"
+ },
+ "quickstart.picker_reopen": {
+  "ko": "다시 열기",
+  "en": "Open again",
+  "ja": "もう一度開く",
+  "zh": "重新打开"
+ },
+ "quickstart.picker_init_error": {
+  "ko": "Google Picker 초기화 오류: {error}",
+  "en": "Google Picker initialization error: {error}",
+  "ja": "Google Pickerの初期化エラー：{error}",
+  "zh": "Google Picker 初始化错误：{error}"
+ },
+ "quickstart.picker_script_failed": {
+  "ko": "{source} 스크립트를 불러오지 못했습니다.",
+  "en": "Could not load the {source} script.",
+  "ja": "{source}のスクリプトを読み込めませんでした。",
+  "zh": "无法加载 {source} 脚本。"
+ },
+ "quickstart.picker_script_blocked": {
+  "ko": "브라우저에서 스크립트를 차단했습니다.",
+  "en": "The browser blocked the script.",
+  "ja": "ブラウザーがスクリプトをブロックしました。",
+  "zh": "浏览器已阻止此脚本。"
+ },
+ "quickstart.picker_selection_saved": {
+  "ko": "파일 선택을 저장했습니다. Telegram에서 결과를 확인하세요.",
+  "en": "File selection saved. Check Telegram for the result.",
+  "ja": "ファイルの選択を保存しました。Telegramで結果を確認してください。",
+  "zh": "已保存文件选择，请在 Telegram 中查看结果。"
+ },
+ "quickstart.picker_selection_failed": {
+  "ko": "파일 선택을 저장하지 못했습니다. Telegram에서 새 연결을 요청하세요.",
+  "en": "Could not save the file selection. Request a new connection in Telegram.",
+  "ja": "ファイルの選択を保存できませんでした。Telegramで新しい接続をリクエストしてください。",
+  "zh": "无法保存文件选择，请在 Telegram 中请求新连接。"
+ },
+ "quickstart.picker_load_failed": {
+  "ko": "Google Picker를 불러오지 못했습니다.",
+  "en": "Could not load Google Picker.",
+  "ja": "Google Pickerを読み込めませんでした。",
+  "zh": "无法加载 Google Picker。"
+ },
+ "quickstart.picker_permission_required": {
+  "ko": "Google Drive 권한이 필요합니다. 다시 시도하세요.",
+  "en": "Google Drive permission is required. Please try again.",
+  "ja": "Google Driveの権限が必要です。もう一度お試しください。",
+  "zh": "需要 Google Drive 权限，请重试。"
+ },
+ "quickstart.picker_cancelled": {
+  "ko": "파일 선택을 취소했습니다. Telegram에서 새 연결을 요청하세요.",
+  "en": "File selection cancelled. Request a new connection in Telegram.",
+  "ja": "ファイルの選択をキャンセルしました。Telegramで新しい接続をリクエストしてください。",
+  "zh": "已取消文件选择，请在 Telegram 中请求新连接。"
+ },
+ "quickstart.picker_ready": {
+  "ko": "준비되었습니다. 아래 버튼을 눌러 파일을 선택하세요.",
+  "en": "Ready. Use the button below to select files.",
+  "ja": "準備ができました。下のボタンでファイルを選択してください。",
+  "zh": "已准备就绪，请点击下方按钮选择文件。"
+ },
+ "quickstart.picker_check_settings": {
+  "ko": "Google Picker를 불러오지 못했습니다. API 및 브라우저 설정을 확인하세요.",
+  "en": "Could not load Google Picker. Check your API and browser settings.",
+  "ja": "Google Pickerを読み込めませんでした。APIとブラウザーの設定を確認してください。",
+  "zh": "无法加载 Google Picker，请检查 API 和浏览器设置。"
+ },
+ "quickstart.picker_load_timeout": {
+  "ko": "Google Picker 로딩 시간이 초과되었습니다. 다시 열어 보세요.",
+  "en": "Google Picker took too long to load. Try opening it again.",
+  "ja": "Google Pickerの読み込みがタイムアウトしました。もう一度開いてください。",
+  "zh": "Google Picker 加载超时，请重新打开。"
  }
 }
