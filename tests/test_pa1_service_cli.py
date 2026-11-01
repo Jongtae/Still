@@ -110,6 +110,17 @@ class ServiceCliTests(unittest.TestCase):
     def test_cli_calls_the_service_control_seam_itself(self):
         self.assertIs(quickstart.service_action, service_control.service_action)
 
+    def test_top_level_help_lists_every_command_main_dispatches(self):
+        """#553: `agentos --help` names the service command and every other subcommand ``main`` routes."""
+        import inspect, re
+        commands=re.findall(r"sys\.argv\[1\]=='([\w-]+)'",inspect.getsource(quickstart.main))
+        self.assertIn('service',commands)
+        out=io.StringIO()
+        with patch.object(sys,'argv',['agentos','--help']),patch('sys.stdout',out),self.assertRaises(SystemExit):
+            quickstart.main()
+        for command in commands:
+            self.assertRegex(out.getvalue(),rf'(agentos |\| ){re.escape(command)}\b',command)
+
     def test_every_lifecycle_action_reaches_the_seam(self):
         for action in ACTIONS:
             with self.subTest(action=action):

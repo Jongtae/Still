@@ -6605,6 +6605,18 @@
   "ja": "会話を終えました。Still も停止します。再開するには `agentos start` を実行してください。",
   "zh": "对话已结束，Still 也随之停止。要重新开始，请运行 `agentos start`。"
  },
+ "terminal.login_service_hint": {
+  "ko": "터미널을 닫아도 Still이 계속 켜져 있게 하려면, 여기서 대화를 끝낸 뒤 `agentos service install`을 실행하세요. 그러면 Mac에 로그인할 때마다 백그라운드에서 시작됩니다.",
+  "en": "To keep Still running after you close this terminal, finish here and run `agentos service install`. Still then starts in the background every time you log in to this Mac.",
+  "ja": "このターミナルを閉じても Still を動かし続けるには、ここで会話を終えてから `agentos service install` を実行してください。Mac にログインするたびにバックグラウンドで起動します。",
+  "zh": "如果希望关闭此终端后 Still 仍继续运行，请在这里结束对话，然后运行 `agentos service install`。之后每次登录这台 Mac 时，Still 都会在后台启动。"
+ },
+ "terminal.bye_login_service": {
+  "ko": "대화를 마쳤어요. Still도 멈춥니다. 다시 시작하려면 `agentos start`를, 터미널 없이 백그라운드에서 계속 켜 두려면 `agentos service install`을 실행하세요.",
+  "en": "Conversation finished, and Still stops. Run `agentos start` to start again, or `agentos service install` to keep it running in the background without a terminal.",
+  "ja": "会話を終えました。Still も停止します。再開するには `agentos start` を、ターミナルなしでバックグラウンドで動かし続けるには `agentos service install` を実行してください。",
+  "zh": "对话已结束，Still 也随之停止。要重新开始，请运行 `agentos start`；要在没有终端的情况下在后台持续运行，请运行 `agentos service install`。"
+ },
  "first_run.finished_without_ai": {
   "ko": "AI가 아직 연결되지 않았습니다. 브라우저의 AI 설정에서 연결하면 바로 쓸 수 있습니다.",
   "en": "No AI is connected yet. Connect one in the browser's AI settings and Still is ready to use.",

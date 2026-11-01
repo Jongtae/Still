@@ -106,6 +106,9 @@ bin_dir=$("$UV" --no-config tool dir --bin)
 
 say ""
 say "Still $AGENTOS_VERSION is installed. Next time, open a new terminal and run: agentos start"
+if [ "$(uname -s)" = "Darwin" ]; then
+  say "To keep Still running in the background without a terminal (it starts again at every login): agentos service install"
+fi
 if [ "${AGENTOS_NO_START:-0}" = "1" ]; then exit 0; fi
 say "Starting Still now (press Ctrl-C to stop)."
 rm -rf "$work"; trap - EXIT INT TERM

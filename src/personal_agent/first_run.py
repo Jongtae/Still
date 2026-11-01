@@ -385,12 +385,20 @@ def run(service, store, term, login_service=None, conversation=False):
     return True
 
 
-def converse(service, term, clock=time.time):
-    """Talk to Still in this terminal until the owner ends it (Ctrl-D or Ctrl-C) (#438)."""
+def converse(service, term, clock=time.time, login_service=None):
+    """Talk to Still in this terminal until the owner ends it (Ctrl-D or Ctrl-C) (#438).
+
+    ``login_service`` reads the macOS login service's status, as for first
+    setup's offer; while none is installed, the opening and closing lines say
+    how to keep Still running without this terminal (#553).
+    """
     surface = service.terminal_surface
+    background = bool(login_service) and login_service().get('status') == 'not_installed'
     term.say('\n' + msg('terminal.ready'))
     if not service.store.config('telegram', {}).get('enabled'):
         term.say(msg('terminal.telegram_hint'))
+    if background:
+        term.say(msg('terminal.login_service_hint'))
     def working():
         # #512: measured time since the request was received; never an estimate of what is left.
         since = surface.waiting_since()
@@ -407,7 +415,7 @@ def converse(service, term, clock=time.time):
             pass
         finally:
             surface.detach()
-    term.say(msg('terminal.bye'))
+    term.say(msg('terminal.bye_login_service' if background else 'terminal.bye'))
 
 
 def _requested_input(service, term, kind):

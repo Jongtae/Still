@@ -1750,6 +1750,20 @@ def configure_logging(store):
     logger.propagate=False
 
 
+#: #553: the subcommands ``main`` dispatches before this parser, so ``agentos --help`` shows them.
+COMMANDS_HELP="""other commands (each has its own --help):
+  agentos service install|status|restart|stop|start|uninstall|upgrade
+                        keep Still running in the background without a
+                        terminal; it starts again at every login (macOS)
+  agentos uninstall     remove Still from this computer
+  agentos guide         show onboarding and recovery guidance
+  agentos family        create a family member's own agent on this Mac
+  agentos browser-login open the embedded browser window for manual login
+  agentos plugins       manage local plugin manifests
+  agentos gmail-config | calendar-config | drive-config
+                        create an owner-only local Google credential file"""
+
+
 def main():
     if len(sys.argv)>1 and sys.argv[1]=='plugins':
         return plugins_main(sys.argv[2:])
@@ -1775,13 +1789,14 @@ def main():
         args=guide.parse_args(sys.argv[2:])
         print(json.dumps(AgentService(QuickStore(args.data)).onboarding(),ensure_ascii=False,indent=2))
         return
-    parser=argparse.ArgumentParser(description=__doc__)
+    parser=argparse.ArgumentParser(prog='agentos',description=__doc__,epilog=COMMANDS_HELP,
+                                   formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('action',nargs='?',choices=['start'],default='start')
     parser.add_argument('--host',default='127.0.0.1')
     parser.add_argument('--port',type=int,default=8787)
     parser.add_argument('--drive-handoff-port',type=int,default=None,help='Local HTTPS entry port for Telegram Drive buttons (default: port + 1).')
     parser.add_argument('--data',default=os.environ.get('AGENTOS_DATA',str(Path.home()/'.local/share/agentos')))
-    parser.add_argument('--no-browser',action='store_true')
+    parser.add_argument('--no-browser',action='store_true',help='Do not open the browser when Still starts.')
     parser.add_argument('--public-tunnel-host',action='append',default=[],help='Allow one exact HTTPS tunnel host for mobile access.')
     parser.add_argument('--public-access-token',default=os.environ.get('AGENTOS_PUBLIC_ACCESS_TOKEN',''),help='One-time mobile pairing token. Generated when omitted.')
     args=parser.parse_args()
@@ -1883,7 +1898,7 @@ def main():
         # The conversation reads on this thread: a stop request ends its prompt, then Still stops.
         signal.signal(signal.SIGTERM,interrupted)
         def run():
-            first_run.converse(service,term)
+            first_run.converse(service,term,login_service=login_service_status(args))
             shutdown(None,None)
             serving.join(timeout=5)
     else:

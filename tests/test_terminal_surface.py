@@ -143,6 +143,19 @@ class Converse(TerminalCase):
         self.assertEqual(chat.statuses[1], first_run.msg('terminal.working_for', seconds=int(10**10 - since)))
         self.assertIsNone(self.surface.pairing())
 
+    def test_without_a_login_service_the_conversation_says_how_to_run_without_this_terminal(self):
+        """#553: the opening and closing lines name `agentos service install` only while none is installed."""
+        for status, hinted in (('not_installed', True), ('running', False), ('stopped', False)):
+            with self.subTest(status=status):
+                chat = ScriptedChat([])
+                first_run.converse(self.service, chat, login_service=lambda status=status: {'status': status})
+                self.assertEqual(first_run.msg('terminal.login_service_hint') in chat.said, hinted)
+                self.assertEqual(chat.said[-1], first_run.msg('terminal.bye_login_service' if hinted else 'terminal.bye'))
+        chat = ScriptedChat([])
+        first_run.converse(self.service, chat)
+        self.assertNotIn(first_run.msg('terminal.login_service_hint'), chat.said, 'no offer where the service cannot reproduce this start')
+        self.assertEqual(chat.said[-1], first_run.msg('terminal.bye'))
+
     def test_the_working_line_counts_the_seconds_since_the_request_and_ends_with_it(self):
         """#512: measured time since the oldest open request of this conversation; nothing once it is answered."""
         self.surface.attach(lambda text: None)
