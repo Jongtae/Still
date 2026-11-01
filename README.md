@@ -63,10 +63,10 @@ Some of this still has rough edges; [product status](docs/product-status.en.md) 
 You need a Mac, Linux or Windows with [WSL2](docs/QUICKSTART.md#windows-wsl2) (some limits), and one AI: a ChatGPT plan with the [Codex CLI](https://github.com/openai/codex), a Claude plan with [Claude Code](https://code.claude.com/docs/en/setup), an API key, or Ollama. One command installs and starts Still, with no Homebrew, Python or Docker needed:
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/dc946a70d584c33cfde6425da9d07813eea1a2ab/scripts/install.sh | sh
 ```
 
-[Inspect the script](https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh) first; it verifies everything it downloads. On Windows, run `wsl --install` in PowerShell, restart, and run the command in Ubuntu. With [Homebrew](https://brew.sh) on an Apple silicon Mac instead (Homebrew no longer builds packages for Intel Macs, so use the command above there):
+[Inspect the script](https://github.com/Jongtae/Still/blob/dc946a70d584c33cfde6425da9d07813eea1a2ab/scripts/install.sh) first; it verifies everything it downloads. On Windows, run `wsl --install` in PowerShell, restart, and run the command in Ubuntu. With [Homebrew](https://brew.sh) on an Apple silicon Mac instead (Homebrew no longer builds packages for Intel Macs, so use the command above there):
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still
