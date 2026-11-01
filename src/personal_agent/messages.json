@@ -8608,5 +8608,551 @@
   "en": "{fact} → Check My records",
   "ja": "{fact} → 自分の記録で確認してください",
   "zh": "{fact} → 请在我的记录中查看"
+ },
+ "decision_routes.listed_unverified": {
+  "ko": "목록에 있음(검증 전)",
+  "en": "Listed (not verified)",
+  "ja": "一覧にあり（未検証）",
+  "zh": "已列出（未验证）"
+ },
+ "decision_routes.codex_instruction_files_limitation": {
+  "ko": "Codex는 로그인 프로필(CODEX_HOME)의 AGENTS.override.md 또는 AGENTS.md를 판단 요청에 함께 보냅니다. 끌 수 있는 공식 옵션이 없고, Still은 그 내용을 읽거나 기록하지 않습니다.",
+  "en": "Codex includes AGENTS.override.md or AGENTS.md from the login profile (CODEX_HOME) with judgment requests. There is no official option to disable this. Still does not read or record its contents.",
+  "ja": "Codex はログインプロファイル（CODEX_HOME）の AGENTS.override.md または AGENTS.md を判断リクエストに含めます。無効にする公式オプションはなく、Still は内容を読み取ったり記録したりしません。",
+  "zh": "Codex 会随判断请求发送登录配置（CODEX_HOME）中的 AGENTS.override.md 或 AGENTS.md。没有官方选项可关闭此行为，Still 不读取或记录其内容。"
+ },
+ "decision_routes.follow_model_undefined": {
+  "ko": "이 기본 AI 연결에는 판단 AI가 따라갈 가벼운 모델이 정해져 있지 않습니다.",
+  "en": "No lightweight Judgment AI model is defined for this Main AI connection.",
+  "ja": "このメイン AI 接続には、判断 AI が使用できる軽量モデルが定義されていません。",
+  "zh": "此主 AI 连接尚未指定判断 AI 可使用的轻量模型。"
+ },
+ "decision_routes.interrupted": {
+  "ko": "Still이 다시 시작되어 중단됨",
+  "en": "Interrupted by Still restart",
+  "ja": "Still の再起動により中断",
+  "zh": "因 Still 重启而中断"
+ },
+ "decision_routes.superseded": {
+  "ko": "다른 선택으로 대체됨",
+  "en": "Replaced by another choice",
+  "ja": "別の選択に置き換え済み",
+  "zh": "已被其他选择替代"
+ },
+ "decision_routes.no_qualified_model": {
+  "ko": "적격 모델 없음",
+  "en": "No qualified model",
+  "ja": "適格モデルなし",
+  "zh": "无合格模型"
+ },
+ "decision_routes.setup_required": {
+  "ko": "설정 필요",
+  "en": "Setup required",
+  "ja": "設定が必要",
+  "zh": "需要设置"
+ },
+ "decision_routes.auth_failed": {
+  "ko": "로그인 또는 인증 실패",
+  "en": "Sign-in or authentication failed",
+  "ja": "ログインまたは認証に失敗",
+  "zh": "登录或认证失败"
+ },
+ "decision_routes.cli_missing": {
+  "ko": "CLI 없음",
+  "en": "CLI missing",
+  "ja": "CLI なし",
+  "zh": "缺少 CLI"
+ },
+ "decision_routes.strict_isolation_failed": {
+  "ko": "엄격 격리 검증 실패",
+  "en": "Strict isolation verification failed",
+  "ja": "厳密な分離の検証に失敗",
+  "zh": "严格隔离验证失败"
+ },
+ "decision_routes.timeout": {
+  "ko": "시간 초과",
+  "en": "Timed out",
+  "ja": "タイムアウト",
+  "zh": "超时"
+ },
+ "decision_routes.usage_limit": {
+  "ko": "사용량 한도",
+  "en": "Usage limit",
+  "ja": "使用量の上限",
+  "zh": "用量上限"
+ },
+ "decision_routes.follow_unsupported": {
+  "ko": "기본 AI를 따라갈 수 없음",
+  "en": "Cannot follow Main AI",
+  "ja": "メイン AI に追従できません",
+  "zh": "无法跟随主 AI"
+ },
+ "decision_routes.check_failed": {
+  "ko": "확인 실패",
+  "en": "Check failed",
+  "ja": "確認に失敗",
+  "zh": "检查失败"
+ },
+ "decision_routes.cloud_daily_limit": {
+  "ko": "클라우드 하루 호출 한도",
+  "en": "Daily cloud call limit",
+  "ja": "クラウドの一日あたりの呼び出し上限",
+  "zh": "云端每日调用上限"
+ },
+ "decision_routes.cloud_setup_required": {
+  "ko": "클라우드 제공자 설정 필요",
+  "en": "Cloud provider setup required",
+  "ja": "クラウドプロバイダーの設定が必要",
+  "zh": "需要设置云服务提供商"
+ },
+ "decision_routes.isolated_judgment_unavailable": {
+  "ko": "격리 런타임 배포에서는 구독 AI를 판단 AI로 쓸 수 없습니다.",
+  "en": "Subscription AI cannot serve as Judgment AI in an isolated runtime deployment.",
+  "ja": "分離ランタイム環境では、サブスクリプション AI を判断 AI として使用できません。",
+  "zh": "隔离运行时部署中无法将订阅 AI 用作判断 AI。"
+ },
+ "decision_routes.check_start_failed": {
+  "ko": "판단 AI 확인을 시작하지 못했습니다.",
+  "en": "Could not start the Judgment AI check.",
+  "ja": "判断 AI の確認を開始できませんでした。",
+  "zh": "无法启动判断 AI 检查。"
+ },
+ "decision_routes.check_error": {
+  "ko": "판단 AI를 확인하는 중 오류가 났습니다({error_type}). 현재 대화 해석 경로는 그대로 유지됩니다.",
+  "en": "An error occurred while checking Judgment AI ({error_type}). The current conversation interpretation route is unchanged.",
+  "ja": "判断 AI の確認中にエラーが発生しました（{error_type}）。現在の会話解釈ルートは変更されません。",
+  "zh": "检查判断 AI 时出错（{error_type}）。当前对话解析路径保持不变。"
+ },
+ "decision_routes.auto_check_error": {
+  "ko": "판단 AI의 자동 확인에 실패했습니다({error_type}). 이전에 검증한 판단 경로도 지금은 사용할 수 없습니다.",
+  "en": "Automatic Judgment AI check failed ({error_type}). The previously verified judgment route is also unavailable now.",
+  "ja": "判断 AI の自動確認に失敗しました（{error_type}）。以前検証した判断ルートも現在は使用できません。",
+  "zh": "判断 AI 自动检查失败（{error_type}）。之前验证的判断路径目前也不可用。"
+ },
+ "decision_routes.no_check_to_cancel": {
+  "ko": "취소할 판단 AI 확인이 없습니다.",
+  "en": "There is no Judgment AI check to cancel.",
+  "ja": "キャンセルできる判断 AI の確認はありません。",
+  "zh": "没有可取消的判断 AI 检查。"
+ },
+ "decision_routes.check_interrupted": {
+  "ko": "판단 AI 확인 중 Still이 다시 시작되어 중단되었습니다. 현재 대화 해석 경로는 그대로 유지됩니다.",
+  "en": "Still restarted during the Judgment AI check. The current conversation interpretation route is unchanged.",
+  "ja": "判断 AI の確認中に Still が再起動したため中断しました。現在の会話解釈ルートは変更されません。",
+  "zh": "判断 AI 检查因 Still 重启而中断。当前对话解析路径保持不变。"
+ },
+ "decision_routes.main_key_missing": {
+  "ko": "기본 AI의 API 키가 없어 판단 AI를 확인하지 못했습니다.",
+  "en": "Could not check Judgment AI because Main AI has no API key.",
+  "ja": "メイン AI の API キーがないため、判断 AI を確認できませんでした。",
+  "zh": "主 AI 缺少 API 密钥，无法检查判断 AI。"
+ },
+ "decision_routes.follow_candidates_failed": {
+  "ko": "판단 AI 후보({candidates}) 중 적격성 검사({suite_version})를 통과한 모델이 없습니다.",
+  "en": "No Judgment AI candidate ({candidates}) passed qualification ({suite_version}).",
+  "ja": "判断 AI の候補（{candidates}）に適格性検査（{suite_version}）を通過したモデルがありません。",
+  "zh": "判断 AI 候选模型（{candidates}）均未通过资格检查（{suite_version}）。"
+ },
+ "decision_routes.main_missing": {
+  "ko": "기본 AI가 아직 없습니다.",
+  "en": "No Main AI yet.",
+  "ja": "メイン AI がまだありません。",
+  "zh": "尚无主 AI。"
+ },
+ "decision_routes.verified": {
+  "ko": "검증됨",
+  "en": "Verified",
+  "ja": "検証済み",
+  "zh": "已验证"
+ },
+ "decision_routes.checked": {
+  "ko": "확인됨",
+  "en": "Checked",
+  "ja": "確認済み",
+  "zh": "已检查"
+ },
+ "decision_routes.cancelling": {
+  "ko": "취소하는 중",
+  "en": "Cancelling",
+  "ja": "キャンセル中",
+  "zh": "正在取消"
+ },
+ "decision_routes.checking_keep_route": {
+  "ko": "판단 AI를 확인하는 중({progress}) — 통과할 때까지 지금 판단 경로를 그대로 씁니다.",
+  "en": "Checking Judgment AI ({progress}) — keeping the current judgment route until it passes.",
+  "ja": "判断 AI を確認中（{progress}）— 通過するまで現在の判断ルートを使用します。",
+  "zh": "正在检查判断 AI（{progress}）— 通过前继续使用当前判断路径。"
+ },
+ "decision_routes.checking_skip": {
+  "ko": "판단 AI를 확인하는 중({progress}) — 끝날 때까지 판단이 필요한 기능은 건너뜁니다. 다른 경로로 자동 전환하지 않습니다.",
+  "en": "Checking Judgment AI ({progress}) — skipping features that need judgment until it finishes. No automatic switch to another route.",
+  "ja": "判断 AI を確認中（{progress}）— 終了するまで判断が必要な機能をスキップします。別のルートに自動で切り替えません。",
+  "zh": "正在检查判断 AI（{progress}）— 完成前跳过需要判断的功能。不会自动切换到其他路径。"
+ },
+ "decision_routes.follow_check_incomplete": {
+  "ko": "기본 AI({main})에 맞는 판단 AI 확인이 끝나지 않았습니다: {detail}",
+  "en": "Judgment AI check for Main AI ({main}) is incomplete: {detail}",
+  "ja": "メイン AI（{main}）に対応する判断 AI の確認が完了していません: {detail}",
+  "zh": "主 AI（{main}）对应的判断 AI 检查尚未完成：{detail}"
+ },
+ "decision_routes.off": {
+  "ko": "판단 AI를 쓰지 않습니다. 판단이 필요한 기능은 건너뜁니다.",
+  "en": "Judgment AI is off. Features that need judgment are skipped.",
+  "ja": "判断 AI は使用しません。判断が必要な機能はスキップします。",
+  "zh": "不使用判断 AI。跳过需要判断的功能。"
+ },
+ "decision_routes.subscription_follow_unchecked": {
+  "ko": "기본 AI({main})를 따르는 구독 판단을 아직 확인하지 않았습니다. 확인을 누르면 후보 모델을 모두 검증해 가장 빠른 적격 모델을 씁니다.",
+  "en": "Subscription judgment following Main AI ({main}) has not been checked yet. Select Check to verify all candidate models and use the fastest qualified model.",
+  "ja": "メイン AI（{main}）に追従するサブスクリプション判断は未確認です。「確認」で全候補を検証し、最速の適格モデルを使用します。",
+  "zh": "尚未检查跟随主 AI（{main}）的订阅判断。选择检查以验证所有候选模型，并使用最快的合格模型。"
+ },
+ "decision_routes.follow_unchecked": {
+  "ko": "기본 AI({main})를 따르는 판단 AI를 아직 확인하지 않았습니다.",
+  "en": "Judgment AI following Main AI ({main}) has not been checked yet.",
+  "ja": "メイン AI（{main}）に追従する判断 AI はまだ確認されていません。",
+  "zh": "尚未检查跟随主 AI（{main}）的判断 AI。"
+ },
+ "decision_routes.cannot_follow": {
+  "ko": "기본 AI를 따라갈 수 없습니다.",
+  "en": "Cannot follow Main AI.",
+  "ja": "メイン AI に追従できません。",
+  "zh": "无法跟随主 AI。"
+ },
+ "decision_routes.unavailable_skip": {
+  "ko": "판단 AI를 쓸 수 없어 판단이 필요한 기능은 건너뜁니다: {reason}",
+  "en": "Judgment AI is unavailable; skipping features that need judgment: {reason}",
+  "ja": "判断 AI を使用できないため、判断が必要な機能をスキップします: {reason}",
+  "zh": "判断 AI 不可用，跳过需要判断的功能：{reason}"
+ },
+ "decision_routes.subscription_fallback": {
+  "ko": "구독 판단을 쓸 수 없어 OpenAI API({model})를 쓰는 중: {reason}",
+  "en": "Using OpenAI API ({model}) because subscription judgment is unavailable: {reason}",
+  "ja": "サブスクリプション判断を使用できないため OpenAI API（{model}）を使用中: {reason}",
+  "zh": "订阅判断不可用，正在使用 OpenAI API（{model}）：{reason}"
+ },
+ "decision_routes.unchecked_fallback": {
+  "ko": "판단 AI를 아직 확인하지 않아 OpenAI API({model})를 쓰는 중: {reason}",
+  "en": "Using OpenAI API ({model}) because Judgment AI has not been checked yet: {reason}",
+  "ja": "判断 AI が未確認のため OpenAI API（{model}）を使用中: {reason}",
+  "zh": "判断 AI 尚未检查，正在使用 OpenAI API（{model}）：{reason}"
+ },
+ "decision_routes.following": {
+  "ko": "기본 AI({main})를 따라가는 중 — {model}, {verified}",
+  "en": "Following Main AI ({main}) — {model}, {verified}",
+  "ja": "メイン AI（{main}）に追従中 — {model}、{verified}",
+  "zh": "正在跟随主 AI（{main}）— {model}，{verified}"
+ },
+ "decision_routes.main_changed": {
+  "ko": "기본 AI가 {main}(으)로 바뀌어 판단 AI를 다시 확인해야 합니다.",
+  "en": "Main AI changed to {main}; Judgment AI needs another check.",
+  "ja": "メイン AI が {main} に変わったため、判断 AI の再確認が必要です。",
+  "zh": "主 AI 已更改为 {main}，需要重新检查判断 AI。"
+ },
+ "decision_routes.follow_check_failed": {
+  "ko": "기본 AI({main})를 따르는 판단 AI 확인에 실패했습니다.",
+  "en": "Judgment AI check following Main AI ({main}) failed.",
+  "ja": "メイン AI（{main}）に追従する判断 AI の確認に失敗しました。",
+  "zh": "跟随主 AI（{main}）的判断 AI 检查失败。"
+ },
+ "decision_routes.cli_changed": {
+  "ko": "CLI가 바뀌어 다시 확인해야 합니다.",
+  "en": "CLI changed; another check is needed.",
+  "ja": "CLI が変わったため再確認が必要です。",
+  "zh": "CLI 已更改，需要重新检查。"
+ },
+ "decision_routes.judgment_unavailable": {
+  "ko": "판단 AI를 지금 쓸 수 없습니다.",
+  "en": "Judgment AI is currently unavailable.",
+  "ja": "判断 AI は現在使用できません。",
+  "zh": "判断 AI 目前不可用。"
+ },
+ "decision_routes.attention": {
+  "ko": "판단 AI를 쓰지 못하는 중: {reason} 다른 경로로 자동 전환하지 않습니다.",
+  "en": "Judgment AI is unavailable: {reason} No automatic switch to another route.",
+  "ja": "判断 AI を使用できません: {reason} 別のルートに自動で切り替えません。",
+  "zh": "判断 AI 不可用：{reason} 不会自动切换到其他路径。"
+ },
+ "decision_routes.strict_verification_required": {
+  "ko": "엄격 격리 검증이 필요합니다.",
+  "en": "Strict isolation verification is required.",
+  "ja": "厳密な分離の検証が必要です。",
+  "zh": "需要严格隔离验证。"
+ },
+ "decision_routes.connection_check_required": {
+  "ko": "연결 정보가 없거나 확인이 필요합니다.",
+  "en": "Connection details are missing or need checking.",
+  "ja": "接続情報がないか、確認が必要です。",
+  "zh": "缺少连接信息或需要检查。"
+ },
+ "decision_routes.separate_attention": {
+  "ko": "따로 지정한 판단 AI({label})를 쓰지 못하는 중: {reason} 다른 경로로 자동 전환하지 않습니다.",
+  "en": "The separately selected Judgment AI ({label}) is unavailable: {reason} No automatic switch to another route.",
+  "ja": "個別に指定した判断 AI（{label}）を使用できません: {reason} 別のルートに自動で切り替えません。",
+  "zh": "单独指定的判断 AI（{label}）不可用：{reason} 不会自动切换到其他路径。"
+ },
+ "decision_routes.separate_active": {
+  "ko": "따로 지정한 판단 AI를 쓰는 중: {label} — {model}, {verified}",
+  "en": "Using separately selected Judgment AI: {label} — {model}, {verified}",
+  "ja": "個別に指定した判断 AI を使用中: {label} — {model}、{verified}",
+  "zh": "正在使用单独指定的判断 AI：{label} — {model}，{verified}"
+ },
+ "decision_routes.check_connection_details": {
+  "ko": "저장할 연결 정보를 확인하세요.",
+  "en": "Check the connection details to save.",
+  "ja": "保存する接続情報を確認してください。",
+  "zh": "请检查要保存的连接信息。"
+ },
+ "decision_routes.invalid_jev_model": {
+  "ko": "Jev 모델 이름 형식을 확인하세요.",
+  "en": "Check the Jev model name format.",
+  "ja": "Jev モデル名の形式を確認してください。",
+  "zh": "请检查 Jev 模型名称格式。"
+ },
+ "decision_routes.paste_api_key": {
+  "ko": "API 키 한 줄을 그대로 붙여 넣으세요.",
+  "en": "Paste the API key exactly as one line.",
+  "ja": "API キーをそのまま一行で貼り付けてください。",
+  "zh": "请将 API 密钥原样粘贴为一行。"
+ },
+ "decision_routes.route_cannot_save_key": {
+  "ko": "키를 저장할 수 있는 대화 해석 경로가 아닙니다.",
+  "en": "This conversation interpretation route cannot store a key.",
+  "ja": "この会話解釈ルートにはキーを保存できません。",
+  "zh": "此对话解析路径无法保存密钥。"
+ },
+ "decision_routes.cli_not_found": {
+  "ko": "{name} CLI를 찾지 못했습니다.",
+  "en": "Could not find the {name} CLI.",
+  "ja": "{name} CLI が見つかりませんでした。",
+  "zh": "未找到 {name} CLI。"
+ },
+ "decision_routes.cli_check_failed": {
+  "ko": "{name} CLI 기능을 확인하지 못했습니다 ({error_type}).",
+  "en": "Could not check {name} CLI capabilities ({error_type}).",
+  "ja": "{name} CLI の機能を確認できませんでした（{error_type}）。",
+  "zh": "无法检查 {name} CLI 功能（{error_type}）。"
+ },
+ "decision_routes.connection_changed_during_check": {
+  "ko": "확인 중 CLI 또는 연결 정보가 바뀌었습니다.",
+  "en": "CLI or connection details changed during the check.",
+  "ja": "確認中に CLI または接続情報が変わりました。",
+  "zh": "检查期间 CLI 或连接信息已更改。"
+ },
+ "decision_routes.check_in_progress": {
+  "ko": "이미 대화 해석 경로를 확인하고 있습니다. 끝난 뒤 다시 시도하세요.",
+  "en": "A conversation interpretation route check is already running. Try again when it finishes.",
+  "ja": "会話解釈ルートを確認中です。終了後に再試行してください。",
+  "zh": "对话解析路径检查正在进行中。请完成后重试。"
+ },
+ "decision_routes.no_main_to_follow": {
+  "ko": "기본 AI가 아직 없어 따라갈 수 없습니다.",
+  "en": "Cannot follow Main AI because none is set yet.",
+  "ja": "メイン AI がまだないため追従できません。",
+  "zh": "尚未设置主 AI，无法跟随。"
+ },
+ "decision_routes.select_route": {
+  "ko": "대화 해석에 사용할 방식을 선택하세요.",
+  "en": "Select a method for conversation interpretation.",
+  "ja": "会話解釈に使用する方式を選択してください。",
+  "zh": "请选择对话解析方式。"
+ },
+ "decision_routes.jev_key_missing": {
+  "ko": "Jev(TypeSafe) API 키가 저장되어 있지 않습니다.",
+  "en": "No Jev(TypeSafe) API key is saved.",
+  "ja": "Jev(TypeSafe) API キーが保存されていません。",
+  "zh": "未保存 Jev(TypeSafe) API 密钥。"
+ },
+ "decision_routes.jev_probe_failed": {
+  "ko": "Jev가 확인 판단에 답하지 않았습니다.",
+  "en": "Jev did not answer the test judgment.",
+  "ja": "Jev が確認用の判断に応答しませんでした。",
+  "zh": "Jev 未响应测试判断。"
+ },
+ "decision_routes.openai_key_missing": {
+  "ko": "OpenAI API 키가 없어 대화 해석에 사용할 수 없습니다.",
+  "en": "Conversation interpretation is unavailable without an OpenAI API key.",
+  "ja": "OpenAI API キーがないため会話解釈に使用できません。",
+  "zh": "缺少 OpenAI API 密钥，无法用于对话解析。"
+ },
+ "decision_routes.invalid_model": {
+  "ko": "사용할 모델 이름 형식을 확인하세요.",
+  "en": "Check the model name format.",
+  "ja": "使用するモデル名の形式を確認してください。",
+  "zh": "请检查要使用的模型名称格式。"
+ },
+ "decision_routes.openai_candidates_failed": {
+  "ko": "OpenAI API 모델({candidates}) 중 대화 해석 적격성 검사({suite_version})를 통과한 모델이 없습니다.",
+  "en": "No OpenAI API model ({candidates}) passed conversation interpretation qualification ({suite_version}).",
+  "ja": "OpenAI API モデル（{candidates}）に会話解釈の適格性検査（{suite_version}）を通過したモデルがありません。",
+  "zh": "OpenAI API 模型（{candidates}）均未通过对话解析资格检查（{suite_version}）。"
+ },
+ "decision_routes.codex_isolation_unverifiable": {
+  "ko": "이 실행 환경에서는 Codex 판단의 엄격 격리를 검증할 수 없습니다.",
+  "en": "Strict isolation for Codex judgments cannot be verified in this environment.",
+  "ja": "この実行環境では Codex 判断の厳密な分離を検証できません。",
+  "zh": "此运行环境无法验证 Codex 判断的严格隔离。"
+ },
+ "decision_routes.select_model_policy": {
+  "ko": "판단 모델 방식을 선택하세요.",
+  "en": "Select a judgment model policy.",
+  "ja": "判断モデルの方式を選択してください。",
+  "zh": "请选择判断模型策略。"
+ },
+ "decision_routes.invalid_effort": {
+  "ko": "추론 강도를 확인하세요.",
+  "en": "Check the reasoning effort.",
+  "ja": "推論強度を確認してください。",
+  "zh": "请检查推理强度。"
+ },
+ "decision_routes.isolated_interpretation_unavailable": {
+  "ko": "격리 런타임 배포에서는 구독 AI를 대화 해석에 아직 사용할 수 없습니다.",
+  "en": "Subscription AI cannot yet be used for conversation interpretation in an isolated runtime deployment.",
+  "ja": "分離ランタイム環境では、サブスクリプション AI を会話解釈にまだ使用できません。",
+  "zh": "隔离运行时部署中尚无法使用订阅 AI 进行对话解析。"
+ },
+ "decision_routes.not_signed_in": {
+  "ko": "{name}에 로그인되어 있지 않습니다.",
+  "en": "Not signed in to {name}.",
+  "ja": "{name} にログインしていません。",
+  "zh": "尚未登录 {name}。"
+ },
+ "decision_routes.cli_isolation_unsupported": {
+  "ko": "설치된 {name} CLI가 격리 실행에 필요한 옵션을 지원하지 않습니다.",
+  "en": "The installed {name} CLI does not support the options required for isolated execution.",
+  "ja": "インストール済みの {name} CLI は分離実行に必要なオプションに対応していません。",
+  "zh": "已安装的 {name} CLI 不支持隔离运行所需的选项。"
+ },
+ "decision_routes.cli_tools_unverified": {
+  "ko": "설치된 {name} CLI에서 도구 기능을 모두 끌 수 있는지 확인하지 못했습니다.",
+  "en": "Could not verify that all tool features can be disabled in the installed {name} CLI.",
+  "ja": "インストール済みの {name} CLI ですべてのツール機能を無効にできるか確認できませんでした。",
+  "zh": "无法确认已安装的 {name} CLI 能否关闭所有工具功能。"
+ },
+ "decision_routes.auto_judgment_failed": {
+  "ko": "{name}의 자동 판단 확인에 실패했습니다.",
+  "en": "Automatic judgment check failed for {name}.",
+  "ja": "{name} の自動判断の確認に失敗しました。",
+  "zh": "{name} 自动判断检查失败。"
+ },
+ "decision_routes.probe_no_answer": {
+  "ko": "{name}이(가) 확인 판단에 답하지 않았습니다.",
+  "en": "{name} did not answer the test judgment.",
+  "ja": "{name} が確認用の判断に応答しませんでした。",
+  "zh": "{name} 未响应测试判断。"
+ },
+ "decision_routes.cli_model_unsupported": {
+  "ko": "설치된 {name} CLI는 모델 지정을 지원하지 않습니다. 구독 AI 기본 모델만 사용할 수 있습니다.",
+  "en": "The installed {name} CLI does not support model selection. Only the subscription AI default model is available.",
+  "ja": "インストール済みの {name} CLI はモデル指定に対応していません。サブスクリプション AI の既定モデルのみ使用できます。",
+  "zh": "已安装的 {name} CLI 不支持指定模型。只能使用订阅 AI 默认模型。"
+ },
+ "decision_routes.model_effort_unverified": {
+  "ko": "모델 {model}은(는) 추론 강도 {requested_effort}를 지원한다고 확인되지 않았습니다.",
+  "en": "Model {model} has not been confirmed to support reasoning effort {requested_effort}.",
+  "ja": "モデル {model} が推論強度 {requested_effort} に対応することは確認されていません。",
+  "zh": "尚未确认模型 {model} 支持推理强度 {requested_effort}。"
+ },
+ "decision_routes.cli_no_default_candidates": {
+  "ko": "설치된 {name} CLI의 모델 목록에 기본 후보가 없습니다. 모델을 직접 고르세요.",
+  "en": "The installed {name} CLI model list has no default candidates. Select a model yourself.",
+  "ja": "インストール済みの {name} CLI のモデル一覧に既定の候補がありません。モデルを直接選んでください。",
+  "zh": "已安装的 {name} CLI 模型列表中没有默认候选模型。请手动选择模型。"
+ },
+ "decision_routes.enter_candidates": {
+  "ko": "후보 모델을 가벼운 순서로 1~{max_candidates}개 입력하세요.",
+  "en": "Enter 1–{max_candidates} candidate models, lightest first.",
+  "ja": "候補モデルを軽い順に 1～{max_candidates} 個入力してください。",
+  "zh": "请按从轻到重的顺序输入 1～{max_candidates} 个候选模型。"
+ },
+ "decision_routes.model_rejected": {
+  "ko": "{name}에서 모델 {model}을(를) 확인하지 못했습니다(이 계정/CLI가 거부).",
+  "en": "Could not verify model {model} on {name} (rejected by this account/CLI).",
+  "ja": "{name} でモデル {model} を確認できませんでした（このアカウント/CLI が拒否）。",
+  "zh": "无法在 {name} 上验证模型 {model}（此账户/CLI 已拒绝）。"
+ },
+ "decision_routes.model_unqualified": {
+  "ko": "{name}에서 모델 {model}을(를) 확인하지 못했습니다(적격성 검사 {suite_version} 미통과).",
+  "en": "Could not verify model {model} on {name} (qualification {suite_version} not passed).",
+  "ja": "{name} でモデル {model} を確認できませんでした（適格性検査 {suite_version} 未通過）。",
+  "zh": "无法在 {name} 上验证模型 {model}（未通过资格检查 {suite_version}）。"
+ },
+ "decision_routes.candidates_unqualified": {
+  "ko": "후보 모델 중 대화 해석 적격성 검사({suite_version})를 통과한 모델이 없습니다.",
+  "en": "No candidate model passed conversation interpretation qualification ({suite_version}).",
+  "ja": "会話解釈の適格性検査（{suite_version}）を通過した候補モデルがありません。",
+  "zh": "没有候选模型通过对话解析资格检查（{suite_version}）。"
+ },
+ "decision_routes.jev_list_key_missing": {
+  "ko": "Jev(TypeSafe) API 키가 저장되어 있지 않아 모델 목록을 가져올 수 없습니다.",
+  "en": "Cannot fetch the model list because no Jev(TypeSafe) API key is saved.",
+  "ja": "Jev(TypeSafe) API キーが保存されていないためモデル一覧を取得できません。",
+  "zh": "未保存 Jev(TypeSafe) API 密钥，无法获取模型列表。"
+ },
+ "decision_routes.jev_list_failed": {
+  "ko": "Jev(TypeSafe) 모델 목록을 가져오지 못했습니다({status}). 현재 판단 AI와 Jev 모델 설정은 그대로입니다.",
+  "en": "Could not fetch the Jev(TypeSafe) model list ({status}). Current Judgment AI and Jev model settings are unchanged.",
+  "ja": "Jev(TypeSafe) のモデル一覧を取得できませんでした（{status}）。現在の判断 AI と Jev モデルの設定は変更されません。",
+  "zh": "无法获取 Jev(TypeSafe) 模型列表（{status}）。当前判断 AI 和 Jev 模型设置保持不变。"
+ },
+ "decision_routes.connection_error": {
+  "ko": "연결 오류",
+  "en": "Connection error",
+  "ja": "接続エラー",
+  "zh": "连接错误"
+ },
+ "decision_routes.jev_list_invalid": {
+  "ko": "Jev(TypeSafe)가 모델 목록 형식으로 답하지 않았습니다. 현재 판단 AI와 Jev 모델 설정은 그대로입니다.",
+  "en": "Jev(TypeSafe) did not return a model list. Current Judgment AI and Jev model settings are unchanged.",
+  "ja": "Jev(TypeSafe) がモデル一覧の形式で応答しませんでした。現在の判断 AI と Jev モデルの設定は変更されません。",
+  "zh": "Jev(TypeSafe) 未返回模型列表格式。当前判断 AI 和 Jev 模型设置保持不变。"
+ },
+ "decision_routes.select_list_route": {
+  "ko": "모델 목록을 볼 경로를 선택하세요.",
+  "en": "Select a route to view its model list.",
+  "ja": "モデル一覧を表示するルートを選択してください。",
+  "zh": "请选择要查看模型列表的路径。"
+ },
+ "decision_routes.isolated_list_unavailable": {
+  "ko": "격리 런타임 배포에서는 구독 AI 모델 목록을 읽지 않습니다.",
+  "en": "Subscription AI model lists are not read in an isolated runtime deployment.",
+  "ja": "分離ランタイム環境ではサブスクリプション AI のモデル一覧を読み取りません。",
+  "zh": "隔离运行时部署中不读取订阅 AI 模型列表。"
+ },
+ "decision_routes.codex_missing": {
+  "ko": "Codex CLI를 찾지 못했습니다.",
+  "en": "Could not find the Codex CLI.",
+  "ja": "Codex CLI が見つかりませんでした。",
+  "zh": "未找到 Codex CLI。"
+ },
+ "decision_routes.codex_list_failed": {
+  "ko": "Codex CLI의 내장 모델 목록을 읽지 못했습니다.",
+  "en": "Could not read the Codex CLI bundled model list.",
+  "ja": "Codex CLI の内蔵モデル一覧を読み取れませんでした。",
+  "zh": "无法读取 Codex CLI 内置模型列表。"
+ },
+ "decision_routes.list_key_missing": {
+  "ko": "{name} 키가 저장되어 있지 않아 모델 목록을 가져올 수 없습니다.",
+  "en": "Cannot fetch the model list because no {name} key is saved.",
+  "ja": "{name} キーが保存されていないためモデル一覧を取得できません。",
+  "zh": "未保存 {name} 密钥，无法获取模型列表。"
+ },
+ "decision_routes.list_failed": {
+  "ko": "{name} 모델 목록을 가져오지 못했습니다({status}). 현재 판단 AI는 그대로입니다.",
+  "en": "Could not fetch the {name} model list ({status}). Current Judgment AI is unchanged.",
+  "ja": "{name} のモデル一覧を取得できませんでした（{status}）。現在の判断 AI は変更されません。",
+  "zh": "无法获取 {name} 模型列表（{status}）。当前判断 AI 保持不变。"
+ },
+ "decision_routes.failure_unchanged": {
+  "ko": "{message} 현재 대화 해석 경로는 그대로 유지됩니다.",
+  "en": "{message} The current conversation interpretation route is unchanged.",
+  "ja": "{message} 現在の会話解釈ルートは変更されません。",
+  "zh": "{message} 当前对话解析路径保持不变。"
+ },
+ "decision_routes.previous_route_unavailable": {
+  "ko": "{message} 이전에 검증한 판단 경로도 지금은 사용할 수 없습니다.",
+  "en": "{message} The previously verified judgment route is also unavailable now.",
+  "ja": "{message} 以前検証した判断ルートも現在は使用できません。",
+  "zh": "{message} 之前验证的判断路径目前也不可用。"
  }
 }

@@ -216,7 +216,7 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
         if model is not None and not valid_model_id(model):
             raise ValueError('모델 이름 형식을 확인하세요.')
         if effort is not None and not valid_effort(effort):
-            raise ValueError('추론 강도를 확인하세요.')
+            raise ValueError(msg('decision_routes.invalid_effort'))
         self.execution, self.engine_id, self.model, self.effort = execution, engine_id, model, effort
         self.model_policy, self.timeout, self.guard = model_policy, timeout, guard
         # #211: the cloud profile identity the route was qualified on (``subscription`` or

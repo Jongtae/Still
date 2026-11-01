@@ -157,7 +157,7 @@ def known_models(route_id, listed=None):
 
 
 #: Owner-visible label of a listed model: a listing is not a qualification.
-LISTED_LABEL = '목록에 있음(검증 전)'
+LISTED_LABEL = msg('decision_routes.listed_unverified')
 #: Official model-list endpoints for the API routes (explicit refresh only).
 ANTHROPIC_CONFIG = {'provider': 'anthropic', 'endpoint': 'https://api.anthropic.com', 'model': 'claude-haiku-4-5'}
 API_MODEL_LISTS = {
@@ -223,18 +223,16 @@ CODEX_INSTRUCTION_FILES_QUALIFIED = frozenset({'0.153.4', '0.162.1', '0.164.0'})
 #: The global instruction files Codex loads from CODEX_HOME (#624), in precedence order.
 CODEX_INSTRUCTION_FILES = ('AGENTS.override.md', 'AGENTS.md')
 #: Owner-visible limitation for the Codex route (#624, observed on 0.153.4).
-CODEX_INSTRUCTION_FILES_LIMITATION = ('Codex는 로그인 프로필(CODEX_HOME)의 AGENTS.override.md 또는 AGENTS.md를 '
-                                      '판단 요청에 함께 보냅니다. 끌 수 있는 공식 옵션이 없고, Still은 그 내용을 '
-                                      '읽거나 기록하지 않습니다.')
+CODEX_INSTRUCTION_FILES_LIMITATION = (msg('decision_routes.codex_instruction_files_limitation'))
 
 
 #: Main AI routes the Judgment AI cannot follow, with the owner-visible reason.
 #: #679: Codex is followable (strict-isolated judgments, 0.153.4 qualified).
 FOLLOW_UNAVAILABLE = {
-    'other': '이 기본 AI 연결에는 판단 AI가 따라갈 가벼운 모델이 정해져 있지 않습니다.',
+    'other': msg('decision_routes.follow_model_undefined'),
 }
 ROUTE_NAMES = {'codex': 'Codex', 'claude-code': 'Claude Code', 'openai': 'OpenAI API', 'anthropic': 'Anthropic API',
-               'openrouter': 'OpenRouter', 'other': '기타 연결'}
+               'openrouter': 'OpenRouter', 'other': msg('label.other_connection')}
 
 
 def supported_efforts(engine_id, model, capability=None):
@@ -346,12 +344,12 @@ MAX_REQUEUES = 1
 JOB_HISTORY = 5
 #: Owner-visible reason of a job that ended without passing (Settings translates it).
 JOB_FAILURE_TEXT = {
-    'interrupted': 'Still이 다시 시작되어 중단됨', 'cancelled': '취소됨', 'superseded': '다른 선택으로 대체됨',
-    'no-qualified-candidate': '적격 모델 없음', 'not-configured': '설정 필요', 'auth': '로그인 또는 인증 실패',
-    'cli-not-found': 'CLI 없음', 'strict-profile-unqualified': '엄격 격리 검증 실패', 'timeout': '시간 초과',
-    'usage-limit': '사용량 한도', 'follow-unsupported': '기본 AI를 따라갈 수 없음', 'probe-failed': '확인 실패',
+    'interrupted': msg('decision_routes.interrupted'), 'cancelled': msg('state.cancelled'), 'superseded': msg('decision_routes.superseded'),
+    'no-qualified-candidate': msg('decision_routes.no_qualified_model'), 'not-configured': msg('decision_routes.setup_required'), 'auth': msg('decision_routes.auth_failed'),
+    'cli-not-found': msg('decision_routes.cli_missing'), 'strict-profile-unqualified': msg('decision_routes.strict_isolation_failed'), 'timeout': msg('decision_routes.timeout'),
+    'usage-limit': msg('decision_routes.usage_limit'), 'follow-unsupported': msg('decision_routes.follow_unsupported'), 'probe-failed': msg('decision_routes.check_failed'),
     # #211: the engine's cloud provider profile refused the call before launch.
-    'cloud-budget': '클라우드 하루 호출 한도', 'cloud-not-configured': '클라우드 제공자 설정 필요',
+    'cloud-budget': msg('decision_routes.cloud_daily_limit'), 'cloud-not-configured': msg('decision_routes.cloud_setup_required'),
 }
 
 
@@ -580,7 +578,7 @@ class DecisionRoutes:
                     'destination': urlsplit(candidate['config']['endpoint']).hostname}
         if self.service.isolated_engine_adapter:
             return {'main': main_id, 'available': False,
-                    'reason': '격리 런타임 배포에서는 구독 AI를 판단 AI로 쓸 수 없습니다.'}
+                    'reason': msg('decision_routes.isolated_judgment_unavailable')}
         candidates = self._ranked(candidate['engine'])
         return {'main': main_id, 'available': True, 'transport': ROUTE_SUBSCRIPTION_CLI,
                 'model': candidates[0] if candidates else '', 'candidates': candidates,
@@ -618,7 +616,7 @@ class DecisionRoutes:
             job = self.queue_qualification(main_id)
         except Exception:  # never report a committed Main AI switch as failed
             return {'state': 'attention', 'failure': 'probe-failed',
-                    'message': '판단 AI 확인을 시작하지 못했습니다.'}
+                    'message': msg('decision_routes.check_start_failed')}
         return {'state': 'queued', 'job': job}
 
     # -- background qualification jobs (#685) --------------------------------
@@ -846,17 +844,15 @@ class DecisionRoutes:
                 self._record_check(option, {'state': 'failed', 'failure': failure})
                 message = str(exc)[:300]
                 if job.get('target_identity') is not None:
-                    message = message.removesuffix(' 현재 대화 해석 경로는 그대로 유지됩니다.')
-                    message += ' 이전에 검증한 판단 경로도 지금은 사용할 수 없습니다.'
+                    message = message.removesuffix(msg('decision_routes.failure_unchanged', message=''))
+                    message = msg('decision_routes.previous_route_unavailable', message=message)
                 return finish(JOB_FAILED, failure=failure, message=message,
                               result={'state': 'attention', 'failure': failure, 'message': message})
             except Exception as exc:  # noqa: BLE001 - reported as a failure, never a pass
                 self._record_check(option, {'state': 'failed', 'failure': 'probe-failed'})
-                message = (f'판단 AI를 확인하는 중 오류가 났습니다({type(exc).__name__}). '
-                           '현재 대화 해석 경로는 그대로 유지됩니다.')
+                message = (msg('decision_routes.check_error', error_type=type(exc).__name__))
                 if job.get('target_identity') is not None:
-                    message = (f'판단 AI의 자동 확인에 실패했습니다({type(exc).__name__}). '
-                               '이전에 검증한 판단 경로도 지금은 사용할 수 없습니다.')
+                    message = (msg('decision_routes.auto_check_error', error_type=type(exc).__name__))
                 return finish(JOB_FAILED, failure='probe-failed', message=message,
                               result={'state': 'attention', 'failure': 'probe-failed', 'message': message})
             return finish(JOB_PASSED, result={'state': 'active'})
@@ -887,7 +883,7 @@ class DecisionRoutes:
                 option = update
             row = rows.get(option)
             if not row or row.get('state') not in JOB_OPEN:
-                raise DecisionRouteError('취소할 판단 AI 확인이 없습니다.')
+                raise DecisionRouteError(msg('decision_routes.no_check_to_cancel'))
             if row['state'] == JOB_QUEUED:
                 row.update(state=JOB_CANCELLED, failure='cancelled', finished_at=self.clock())
             else:
@@ -918,8 +914,7 @@ class DecisionRoutes:
                     row.update(state=JOB_CANCELLED, finished_at=now, recovered_at=now)
                 else:
                     row.update(state=JOB_FAILED, failure='interrupted', finished_at=now, recovered_at=now,
-                               message='판단 AI 확인 중 Still이 다시 시작되어 중단되었습니다. '
-                                       '현재 대화 해석 경로는 그대로 유지됩니다.')
+                               message=msg('decision_routes.check_interrupted'))
                 changed.append((option, row['state']))
             if changed:
                 self._put_jobs(rows)
@@ -960,7 +955,7 @@ class DecisionRoutes:
         if candidate['transport'] == ROUTE_DIRECT_API:
             key = self._main_key(main_id)
             if not key:
-                return failed('not-configured', '기본 AI의 API 키가 없어 판단 AI를 확인하지 못했습니다.')
+                return failed('not-configured', msg('decision_routes.main_key_missing'))
             base = dict(candidate['config'])
             # #679/#472: the ranked list, each through the full qualification
             # suite; the follow policy picks among those that pass.
@@ -971,8 +966,7 @@ class DecisionRoutes:
                                                         lambda: ({**base, 'model': name}, key), audit=audit), policy)
             if not model:
                 return failed('no-qualified-candidate',
-                              f'판단 AI 후보({", ".join(candidate["candidates"])}) 중 적격성 검사({SUITE_VERSION})를 '
-                              '통과한 모델이 없습니다.', candidates=tried, suite_version=SUITE_VERSION)
+                              msg('decision_routes.follow_candidates_failed', candidates=", ".join(candidate["candidates"]), suite_version=SUITE_VERSION), candidates=tried, suite_version=SUITE_VERSION)
             self._commit(option, {**follow, 'transport': ROUTE_DIRECT_API, 'provider': base['provider'],
                                   'endpoint': base['endpoint'], 'requested_model': model, 'key_source': 'main',
                                   'model_policy': policy,
@@ -1223,7 +1217,7 @@ class DecisionRoutes:
                             'check': checks.get(f'{ROUTE_SUBSCRIPTION_CLI}:{engine_id}')})
         main = self.service.main_ai.current()
         follow = self.follow_preview(main) if main else {'main': '', 'available': False,
-                                                            'reason': '기본 AI가 아직 없습니다.'}
+                                                            'reason': msg('decision_routes.main_missing')}
         if route is not None and route.get('mode') == MODE_FOLLOW:
             stale = route.get('main') != main
             active = {**{k: v for k, v in route.items() if k not in ('fingerprint', 'binary_identity', 'declared_candidates')}, 'source': 'follow', 'stale': stale}
@@ -1286,7 +1280,7 @@ class DecisionRoutes:
                     'reason_template': reason_template, 'reason_params': reason_params, 'reason': reason_text,
                     'text': template.format(**params, reason=reason_text)}
 
-        verified = '검증됨' if active.get('qualification') else '확인됨'
+        verified = msg('decision_routes.verified') if active.get('qualification') else msg('decision_routes.checked')
         # #685: a background qualification for the current Main AI.  Until it
         # passes, whatever answered before still answers (or nothing does).
         # #760: this includes an explicit 기본 AI 따라가기 while the Judgment
@@ -1294,20 +1288,19 @@ class DecisionRoutes:
         job = qualification or {}
         if job.get('state') in JOB_OPEN:
             step = job.get('step') or {}
-            progress = ('취소하는 중' if job['state'] == JOB_CANCELLING
+            progress = (msg('decision_routes.cancelling') if job['state'] == JOB_CANCELLING
                         else f'{step.get("model")} {step.get("index")}/{step.get("cases")}'
-                        if job['state'] == JOB_RUNNING and step.get('model') else '대기 중')
+                        if job['state'] == JOB_RUNNING and step.get('model') else msg('state.queued'))
             if active.get('available'):
-                return said('checking', '판단 AI를 확인하는 중({progress}) — 통과할 때까지 지금 판단 경로를 그대로 씁니다.',
+                return said('checking', msg('decision_routes.checking_keep_route'),
                             progress=progress)
-            return said('checking', '판단 AI를 확인하는 중({progress}) — 끝날 때까지 판단이 필요한 기능은 건너뜁니다. '
-                        '다른 경로로 자동 전환하지 않습니다.', progress=progress)
+            return said('checking', msg('decision_routes.checking_skip'), progress=progress)
         job_reason = None
         if job.get('state') in (JOB_FAILED, JOB_CANCELLED) and not (
                 active.get('source') == 'follow' and active.get('available') and route.get('main') == main):
-            job_reason = ('기본 AI({main})에 맞는 판단 AI 확인이 끝나지 않았습니다: {detail}',
+            job_reason = (msg('decision_routes.follow_check_incomplete'),
                           {'main': main_name, 'detail': (job.get('message') if job.get('target_identity') is not None else None)
-                           or JOB_FAILURE_TEXT.get(job.get('failure'), '확인 실패')})
+                           or JOB_FAILURE_TEXT.get(job.get('failure'), msg('decision_routes.check_failed'))})
 
         def noted(result):
             # #760: an off / explicitly chosen Judgment AI keeps its sentence;
@@ -1318,50 +1311,50 @@ class DecisionRoutes:
             return result
 
         if route is not None and route.get('transport') == ROUTE_OFF and route.get('mode') != MODE_FOLLOW:
-            return noted(said('off', '판단 AI를 쓰지 않습니다. 판단이 필요한 기능은 건너뜁니다.'))
+            return noted(said('off', msg('decision_routes.off')))
         if active.get('source') == 'default':
             if job_reason:
                 reason = job_reason
             elif follow.get('available') and follow.get('transport') == ROUTE_SUBSCRIPTION_CLI:
-                reason = ('기본 AI({main})를 따르는 구독 판단을 아직 확인하지 않았습니다. 확인을 누르면 후보 모델을 모두 검증해 가장 빠른 적격 모델을 씁니다.',
+                reason = (msg('decision_routes.subscription_follow_unchecked'),
                           {'main': main_name})
             elif follow.get('available'):
-                reason = ('기본 AI({main})를 따르는 판단 AI를 아직 확인하지 않았습니다.', {'main': main_name})
+                reason = (msg('decision_routes.follow_unchecked'), {'main': main_name})
             else:
-                reason = (follow.get('reason') or '기본 AI를 따라갈 수 없습니다.', {})
+                reason = (follow.get('reason') or msg('decision_routes.cannot_follow'), {})
             if active.get('transport') != ROUTE_DIRECT_API:
-                return said('attention', '판단 AI를 쓸 수 없어 판단이 필요한 기능은 건너뜁니다: {reason}', reason)
-            template = ('구독 판단을 쓸 수 없어 OpenAI API({model})를 쓰는 중: {reason}' if main in CLI_BINARIES
-                        else '판단 AI를 아직 확인하지 않아 OpenAI API({model})를 쓰는 중: {reason}')
+                return said('attention', msg('decision_routes.unavailable_skip'), reason)
+            template = (msg('decision_routes.subscription_fallback') if main in CLI_BINARIES
+                        else msg('decision_routes.unchecked_fallback'))
             return said('fallback', template, reason, model=model)
         if active.get('source') == 'follow':
             if active.get('available'):
-                return said('active', '기본 AI({main})를 따라가는 중 — {model}, {verified}',
+                return said('active', msg('decision_routes.following'),
                             main=main_name, model=model or '-', verified=verified)
             if job_reason:
                 reason = job_reason
             elif active.get('stale'):
-                reason = ('기본 AI가 {main}(으)로 바뀌어 판단 AI를 다시 확인해야 합니다.', {'main': main_name})
+                reason = (msg('decision_routes.main_changed'), {'main': main_name})
             elif active.get('transport') == ROUTE_OFF:
-                reason = ('기본 AI({main})를 따르는 판단 AI 확인에 실패했습니다.', {'main': main_name})
+                reason = (msg('decision_routes.follow_check_failed'), {'main': main_name})
             elif active.get('requalification_needed'):
-                reason = ('CLI가 바뀌어 다시 확인해야 합니다.', {})
+                reason = (msg('decision_routes.cli_changed'), {})
             else:
-                reason = ('판단 AI를 지금 쓸 수 없습니다.', {})
-            return said('attention', '판단 AI를 쓰지 못하는 중: {reason} 다른 경로로 자동 전환하지 않습니다.', reason)
+                reason = (msg('decision_routes.judgment_unavailable'), {})
+            return said('attention', msg('decision_routes.attention'), reason)
         # Explicitly chosen (따로 지정).
         transport = active.get('transport')
         label = ({ROUTE_DIRECT_API: 'OpenAI API' if active.get('provider') == 'openai' else 'API', ROUTE_JEV: 'Jev (TypeSafe)',
                   ROUTE_SUBSCRIPTION_CLI: ENGINE_NAMES.get(active.get('engine'), active.get('engine') or '-')}
                  .get(transport, transport or '-'))
         if active.get('available') is False:
-            reason = (('CLI가 바뀌어 다시 확인해야 합니다.' if active.get('requalification_needed')
-                       else '엄격 격리 검증이 필요합니다.' if active.get('strict_profile_unqualified')
-                       else '연결 정보가 없거나 확인이 필요합니다.'), {})
-            return noted(said('attention', '따로 지정한 판단 AI({label})를 쓰지 못하는 중: {reason} 다른 경로로 자동 전환하지 않습니다.',
+            reason = ((msg('decision_routes.cli_changed') if active.get('requalification_needed')
+                       else msg('decision_routes.strict_verification_required') if active.get('strict_profile_unqualified')
+                       else msg('decision_routes.connection_check_required')), {})
+            return noted(said('attention', msg('decision_routes.separate_attention'),
                               reason, label=label))
-        return noted(said('active', '따로 지정한 판단 AI를 쓰는 중: {label} — {model}, {verified}', label=label,
-                          model=model or '기본 모델', verified=verified))
+        return noted(said('active', msg('decision_routes.separate_active'), label=label,
+                          model=model or msg('label.default_model'), verified=verified))
 
     def _model_lists(self):
         rows = self.store.config('decision_model_lists', {})
@@ -1371,7 +1364,7 @@ class DecisionRoutes:
     def save_credential(self, body):
         """Store (or remove) a decision-route credential.  Never activates."""
         if not isinstance(body, dict):
-            raise DecisionRouteError('저장할 연결 정보를 확인하세요.')
+            raise DecisionRouteError(msg('decision_routes.check_connection_details'))
         transport, key = body.get('transport'), body.get('key')
         if transport == ROUTE_JEV and key is None and 'model' in body:
             # #609: choose a (discovered) Jev model without re-entering the
@@ -1379,17 +1372,17 @@ class DecisionRoutes:
             # the owner presses 사용 again.
             model = body.get('model') or JEV_DEFAULT_MODEL
             if not valid_model_id(model):
-                raise DecisionRouteError('Jev 모델 이름 형식을 확인하세요.')
+                raise DecisionRouteError(msg('decision_routes.invalid_jev_model'))
             with self.service.lock:
                 self.store.put('decision_jev', {'model': model})
             return self.status()
         if not isinstance(key, str) or len(key) > 4096 or any(ch.isspace() for ch in key.strip()):
-            raise DecisionRouteError('API 키 한 줄을 그대로 붙여 넣으세요.')
+            raise DecisionRouteError(msg('decision_routes.paste_api_key'))
         key = key.strip()
         if transport == ROUTE_JEV:
             model = body.get('model') or JEV_DEFAULT_MODEL
             if not valid_model_id(model):
-                raise DecisionRouteError('Jev 모델 이름 형식을 확인하세요.')
+                raise DecisionRouteError(msg('decision_routes.invalid_jev_model'))
             with self.service.lock:
                 self.store.secret('decision_jev_key', key)
                 self.store.put('decision_jev', {'model': model})
@@ -1400,7 +1393,7 @@ class DecisionRoutes:
             with self.service.lock:
                 self.store.secret('decision_model_key', key)
         else:
-            raise DecisionRouteError('키를 저장할 수 있는 대화 해석 경로가 아닙니다.')
+            raise DecisionRouteError(msg('decision_routes.route_cannot_save_key'))
         return self.status()
 
     def check_cli_capabilities(self, engine_id):
@@ -1411,7 +1404,7 @@ class DecisionRoutes:
         execution = self.service.execution_adapter
         binary = execution.finder(CLI_BINARIES[engine_id])
         if not binary:
-            raise DecisionRouteError(f'{ENGINE_NAMES[engine_id]} CLI를 찾지 못했습니다.')
+            raise DecisionRouteError(msg('decision_routes.cli_not_found', name=ENGINE_NAMES[engine_id]))
         help_argv = [binary, 'exec', '--help'] if engine_id == 'codex' else [binary, '--help']
         record = self._with_local_run(engine_id, binary,
                                       lambda run: self._capability_record(engine_id, binary, help_argv, run))
@@ -1439,7 +1432,7 @@ class DecisionRoutes:
                 try:
                     done = bounded_run(execution.runner, argv, cwd=folder, env=env, timeout=20)
                 except (subprocess.TimeoutExpired, OSError) as exc:
-                    raise DecisionRouteError(f'{name} CLI 기능을 확인하지 못했습니다 ({type(exc).__name__}).') from None
+                    raise DecisionRouteError(msg('decision_routes.cli_check_failed', name=name, error_type=type(exc).__name__)) from None
                 return done.returncode, (done.stdout or ''), (getattr(done, 'stderr', '') or '')
 
             return action(run)
@@ -1595,7 +1588,7 @@ class DecisionRoutes:
 
     def _fail(self, option, failure, message, **extra):
         self._record_check(option, {'state': 'failed', 'failure': failure, **extra})
-        raise DecisionRouteError(message + ' 현재 대화 해석 경로는 그대로 유지됩니다.')
+        raise DecisionRouteError(msg('decision_routes.failure_unchanged', message=message))
 
     def _commit(self, option, route, check):
         route = {**route, 'activated_at': self.clock()}
@@ -1606,7 +1599,7 @@ class DecisionRoutes:
             if self._job_live is not None and not self._job_live():
                 raise QualificationCancelled()
             if route.get('transport') == ROUTE_SUBSCRIPTION_CLI and self._cli_requalify(route):
-                self._fail(option, 'requalification-needed', '확인 중 CLI 또는 연결 정보가 바뀌었습니다.')
+                self._fail(option, 'requalification-needed', msg('decision_routes.connection_changed_during_check'))
             self._record_check(option, {'state': 'active', **check})
             # Only the decision route row.  The Work-execution rows
             # (`subscription_engine`, `model`) are never written here.
@@ -1625,7 +1618,7 @@ class DecisionRoutes:
         if isinstance(body, dict) and body.get('transport') == MODE_FOLLOW:
             return self._request_follow()
         if not self._activating.acquire(blocking=False):
-            raise DecisionRouteError('이미 대화 해석 경로를 확인하고 있습니다. 끝난 뒤 다시 시도하세요.')
+            raise DecisionRouteError(msg('decision_routes.check_in_progress'))
         try:
             return self._activate(body)
         finally:
@@ -1642,7 +1635,7 @@ class DecisionRoutes:
         """
         main = self.service.main_ai.current()
         if not main:
-            raise DecisionRouteError('기본 AI가 아직 없어 따라갈 수 없습니다.')
+            raise DecisionRouteError(msg('decision_routes.no_main_to_follow'))
         if main not in FOLLOW_CANDIDATES:
             self._fail(f'{MODE_FOLLOW}:{main}', 'follow-unsupported',
                        FOLLOW_UNAVAILABLE.get(main, FOLLOW_UNAVAILABLE['other']))
@@ -1658,13 +1651,13 @@ class DecisionRoutes:
         else:
             with self.service.lock:
                 if not self._job_holds_lock:
-                    raise DecisionRouteError('이미 대화 해석 경로를 확인하고 있습니다. 끝난 뒤 다시 시도하세요.')
+                    raise DecisionRouteError(msg('decision_routes.check_in_progress'))
                 self.queue_qualification(main, explicit=True)
         return self.status()
 
     def _activate(self, body):
         if not isinstance(body, dict) or body.get('transport') not in TRANSPORTS:
-            raise DecisionRouteError('대화 해석에 사용할 방식을 선택하세요.')
+            raise DecisionRouteError(msg('decision_routes.select_route'))
         transport = body['transport']
         if transport == ROUTE_OFF:
             return self._commit(ROUTE_OFF, {'transport': ROUTE_OFF}, {})
@@ -1672,13 +1665,13 @@ class DecisionRoutes:
             return self._activate_direct(body)
         if transport == ROUTE_JEV:
             if not self.store.secret('decision_jev_key'):
-                self._fail(ROUTE_JEV, 'not-configured', 'Jev(TypeSafe) API 키가 저장되어 있지 않습니다.')
+                self._fail(ROUTE_JEV, 'not-configured', msg('decision_routes.jev_key_missing'))
             config = self.store.config('decision_jev', {})
             model = (config.get('model') if isinstance(config, dict) else None) or JEV_DEFAULT_MODEL
             engine = self._jev_engine(model, None)
             ok, decision = self._probe(engine)
             if not ok:
-                self._fail(ROUTE_JEV, engine.last_failure or decision.outcome, 'Jev가 확인 판단에 답하지 않았습니다.')
+                self._fail(ROUTE_JEV, engine.last_failure or decision.outcome, msg('decision_routes.jev_probe_failed'))
             return self._commit(ROUTE_JEV, {'transport': ROUTE_JEV, 'provider': 'typesafe', 'requested_model': model},
                                 {'observed_model': decision.confidence.observed_model or 'not reported'})
         return self._activate_cli(body)
@@ -1696,10 +1689,10 @@ class DecisionRoutes:
         elif self.service.decision_route():
             base, key = self.service.decision_route()
         else:
-            self._fail(ROUTE_DIRECT_API, 'not-configured', 'OpenAI API 키가 없어 대화 해석에 사용할 수 없습니다.')
+            self._fail(ROUTE_DIRECT_API, 'not-configured', msg('decision_routes.openai_key_missing'))
         model = body.get('model') or None
         if model is not None and not valid_model_id(model):
-            raise DecisionRouteError('사용할 모델 이름 형식을 확인하세요.')
+            raise DecisionRouteError(msg('decision_routes.invalid_model'))
         if model:
             policy, candidates = POLICY_EXPLICIT, [model]
         elif base['provider'] == 'openai':
@@ -1712,8 +1705,7 @@ class DecisionRoutes:
             policy)
         if not chosen:
             self._fail(ROUTE_DIRECT_API, 'model-not-verified' if model else 'no-qualified-candidate',
-                       f'OpenAI API 모델({", ".join(candidates)}) 중 대화 해석 적격성 검사({SUITE_VERSION})를 통과한 모델이 '
-                       '없습니다.', candidates=tried, suite_version=SUITE_VERSION,
+                       msg('decision_routes.openai_candidates_failed', candidates=", ".join(candidates), suite_version=SUITE_VERSION), candidates=tried, suite_version=SUITE_VERSION,
                        **({'requested_model': model} if model else {}))
         if decision_key:
             # Written only here, after the qualification passed (#580 review F1).
@@ -1741,7 +1733,7 @@ class DecisionRoutes:
         qualify_local = getattr(self.service.execution_adapter, 'qualified_identity', None)
         if not callable(qualify_local):
             self._fail(option, 'strict-profile-unqualified',
-                       '이 실행 환경에서는 Codex 판단의 엄격 격리를 검증할 수 없습니다.')
+                       msg('decision_routes.codex_isolation_unverifiable'))
         # Background qualification already tracks cancellation/replacement.
         # Let the local probes and their shared lock wait obey it as well.
         live = getattr(self, '_job_live', None)
@@ -1789,32 +1781,32 @@ class DecisionRoutes:
         if engine_id not in CLI_BINARIES:
             raise DecisionRouteError(msg('quickstart_service.select_subscription_engine'))
         if policy not in MODEL_POLICIES:
-            raise DecisionRouteError('판단 모델 방식을 선택하세요.')
+            raise DecisionRouteError(msg('decision_routes.select_model_policy'))
         requested_effort = body.get('effort') or None
         if requested_effort is not None and not valid_effort(requested_effort):
-            raise DecisionRouteError('추론 강도를 확인하세요.')
+            raise DecisionRouteError(msg('decision_routes.invalid_effort'))
         option = f'{ROUTE_SUBSCRIPTION_CLI}:{engine_id}'
         name = ENGINE_NAMES[engine_id]
         if self.service.isolated_engine_adapter:
-            self._fail(option, 'isolated-deployment', '격리 런타임 배포에서는 구독 AI를 대화 해석에 아직 사용할 수 없습니다.')
+            self._fail(option, 'isolated-deployment', msg('decision_routes.isolated_interpretation_unavailable'))
         execution = self.service.execution_adapter
         binary = execution.finder(CLI_BINARIES[engine_id])
         if not binary:
-            self._fail(option, 'cli-not-found', f'{name} CLI를 찾지 못했습니다.')
+            self._fail(option, 'cli-not-found', msg('decision_routes.cli_not_found', name=name))
         login = self.service.check_engine_login(engine_id)
         if login.get('state') == 'signed-out':
-            self._fail(option, 'auth', f'{name}에 로그인되어 있지 않습니다.')
+            self._fail(option, 'auth', msg('decision_routes.not_signed_in', name=name))
         capability = self.check_cli_capabilities(engine_id)
         if not capability['isolation_flags']:
             self._fail(option, 'isolation-flags-missing',
-                       f'설치된 {name} CLI가 격리 실행에 필요한 옵션을 지원하지 않습니다.',
+                       msg('decision_routes.cli_isolation_unsupported', name=name),
                        missing_flags=capability['missing_flags'])
         disabled = capability.get('codex_disabled_features') if engine_id == 'codex' else None
         if engine_id == 'codex' and capability.get('tool_surface') != 'allowlisted-features-only':
             # Fail closed: the tool-bearing feature set could not be reduced to
             # the allowlist on this CLI version (#580 review F2).
             self._fail(option, 'tool-surface-unverified',
-                       f'설치된 {name} CLI에서 도구 기능을 모두 끌 수 있는지 확인하지 못했습니다.',
+                       msg('decision_routes.cli_tools_unverified', name=name),
                        detail=capability.get('tool_surface_detail') or capability.get('tool_surface') or '')
         codex_extra = {}
         if engine_id == 'codex':
@@ -1848,7 +1840,7 @@ class DecisionRoutes:
                                                              codex_disabled_features=disabled,
                                                              expected_cloud=base['cloud_profile']))
             if not result:
-                self._fail(option, 'not-qualified', f'{name}의 자동 판단 확인에 실패했습니다.')
+                self._fail(option, 'not-qualified', msg('decision_routes.auto_judgment_failed', name=name))
             return self._commit(option, {**base, 'requested_model': None, 'effort': None,
                                 'qualification': self._qualification_record(None, result, capability)},
                                 {'model_policy': policy, 'candidates': tried, **warning})
@@ -1857,19 +1849,19 @@ class DecisionRoutes:
                                       expected_cloud=base['cloud_profile'])
             ok, decision = self._probe(engine)
             if not ok:
-                self._fail(option, engine.last_failure or decision.outcome, f'{name}이(가) 확인 판단에 답하지 않았습니다.')
+                self._fail(option, engine.last_failure or decision.outcome, msg('decision_routes.probe_no_answer', name=name))
             return self._commit(option, {**base, 'requested_model': None, 'effort': None},
                                 {'observed_model': decision.confidence.observed_model or 'not reported',
                                  'model_policy': policy, **warning})
         if not capability['model_override']:
             self._fail(option, 'model-selection-unsupported',
-                       f'설치된 {name} CLI는 모델 지정을 지원하지 않습니다. 구독 AI 기본 모델만 사용할 수 있습니다.')
+                       msg('decision_routes.cli_model_unsupported', name=name))
         if policy == POLICY_EXPLICIT:
             model = body.get('model')
             if not valid_model_id(model):
                 raise DecisionRouteError(msg('providers.enter_model_name'))
             if requested_effort and not effort_omitted and effort_for(model) != requested_effort:
-                raise DecisionRouteError(f'모델 {model}은(는) 추론 강도 {requested_effort}를 지원한다고 확인되지 않았습니다.')
+                raise DecisionRouteError(msg('decision_routes.model_effort_unverified', model=model, requested_effort=requested_effort))
             candidates = [model]
         else:
             candidates = body.get('candidates')
@@ -1880,12 +1872,12 @@ class DecisionRoutes:
                 candidates = self._ranked(engine_id, capability)
                 if not candidates:
                     self._fail(option, 'no-qualified-candidate',
-                               f'설치된 {name} CLI의 모델 목록에 기본 후보가 없습니다. 모델을 직접 고르세요.')
+                               msg('decision_routes.cli_no_default_candidates', name=name))
             if isinstance(candidates, str):
                 candidates = [part.strip() for part in candidates.split(',') if part.strip()]
             if not isinstance(candidates, list) or not 1 <= len(candidates) <= MAX_CANDIDATES \
                     or not all(valid_model_id(item) for item in candidates) or len(set(candidates)) != len(candidates):
-                raise DecisionRouteError(f'후보 모델을 가벼운 순서로 1~{MAX_CANDIDATES}개 입력하세요.')
+                raise DecisionRouteError(msg('decision_routes.enter_candidates', max_candidates=MAX_CANDIDATES))
             if candidates_declared:
                 # Keep the full validated declaration, including untried models.
                 # Without it, later CLI updates continue to use the fresh ranking.
@@ -1900,11 +1892,10 @@ class DecisionRoutes:
                 model = candidates[0]
                 rejected = tried[0]['failure'] == 'request-rejected'
                 self._fail(option, 'model-not-verified' if rejected else 'not-qualified',
-                           f'{name}에서 모델 {model}을(를) 확인하지 못했습니다'
-                           + ('(이 계정/CLI가 거부).' if rejected else f'(적격성 검사 {SUITE_VERSION} 미통과).'),
+                           (msg('decision_routes.model_rejected', name=name, model=model) if rejected else msg('decision_routes.model_unqualified', name=name, model=model, suite_version=SUITE_VERSION)),
                            requested_model=model, candidates=tried, suite_version=SUITE_VERSION)
             self._fail(option, 'no-qualified-candidate',
-                       f'후보 모델 중 대화 해석 적격성 검사({SUITE_VERSION})를 통과한 모델이 없습니다.',
+                       msg('decision_routes.candidates_unqualified', suite_version=SUITE_VERSION),
                        candidates=tried, suite_version=SUITE_VERSION)
         return self._commit(option, {**base, 'requested_model': chosen, 'effort': effort_for(chosen),
                                      'qualification': self._qualification_record(chosen, result, capability, tried)},
@@ -1932,17 +1923,15 @@ class DecisionRoutes:
         """
         key = self.store.secret('decision_jev_key') or ''
         if not key:
-            raise DecisionRouteError('Jev(TypeSafe) API 키가 저장되어 있지 않아 모델 목록을 가져올 수 없습니다.')
+            raise DecisionRouteError(msg('decision_routes.jev_list_key_missing'))
         try:
             reply = self.models_transport(API_MODEL_LISTS[ROUTE_JEV]['url'], None,
                                           {'Authorization': 'Bearer ' + key}, 15)
         except ProviderError as exc:
-            raise DecisionRouteError(f'Jev(TypeSafe) 모델 목록을 가져오지 못했습니다({exc.status or "연결 오류"}). '
-                                     '현재 판단 AI와 Jev 모델 설정은 그대로입니다.') from None
+            raise DecisionRouteError(msg('decision_routes.jev_list_failed', status=exc.status or msg('decision_routes.connection_error'))) from None
         rows = reply.get('models') if isinstance(reply, dict) else None
         if not isinstance(rows, list):
-            raise DecisionRouteError('Jev(TypeSafe)가 모델 목록 형식으로 답하지 않았습니다. '
-                                     '현재 판단 AI와 Jev 모델 설정은 그대로입니다.')
+            raise DecisionRouteError(msg('decision_routes.jev_list_invalid'))
         models, seen = [], set()
         for row in rows:
             name = row.get('name') if isinstance(row, dict) else None
@@ -1969,7 +1958,7 @@ class DecisionRoutes:
         Choosing an entry is a separate activation that runs ``qualify()``.
         """
         if route_id not in MODEL_LIST_ROUTES:
-            raise DecisionRouteError('모델 목록을 볼 경로를 선택하세요.')
+            raise DecisionRouteError(msg('decision_routes.select_list_route'))
         ranked = [JEV_DEFAULT_MODEL] if route_id == ROUTE_JEV else list(RANKED_MODELS[route_id])
         if route_id == ROUTE_JEV:
             models, source = self._jev_models(), 'GET /v1/models'
@@ -1978,27 +1967,26 @@ class DecisionRoutes:
                 'documented-aliases'
         elif route_id == 'codex':
             if self.service.isolated_engine_adapter:
-                raise DecisionRouteError('격리 런타임 배포에서는 구독 AI 모델 목록을 읽지 않습니다.')
+                raise DecisionRouteError(msg('decision_routes.isolated_list_unavailable'))
             binary = self.service.execution_adapter.finder(CLI_BINARIES['codex'])
             if not binary:
-                raise DecisionRouteError('Codex CLI를 찾지 못했습니다.')
+                raise DecisionRouteError(msg('decision_routes.codex_missing'))
             rows = self._with_local_run('codex', binary, lambda run: self._codex_bundled_models(run, binary))
             if rows is None:
-                raise DecisionRouteError('Codex CLI의 내장 모델 목록을 읽지 못했습니다.')
+                raise DecisionRouteError(msg('decision_routes.codex_list_failed'))
             models = [{'id': row['id'], 'efforts': row['efforts']} for row in rows
                       if row['visible'] or row['id'] in ranked]
             source = 'codex debug models --bundled'
         else:
             key = self._api_list_key(route_id)
             if not key:
-                raise DecisionRouteError(f'{ROUTE_NAMES[route_id]} 키가 저장되어 있지 않아 모델 목록을 가져올 수 없습니다.')
+                raise DecisionRouteError(msg('decision_routes.list_key_missing', name=ROUTE_NAMES[route_id]))
             headers = ({'Authorization': 'Bearer ' + key} if route_id == 'openai'
                        else {'x-api-key': key, 'anthropic-version': '2023-06-01'})
             try:
                 reply = self.models_transport(API_MODEL_LISTS[route_id]['url'], None, headers, 15)
             except ProviderError as exc:
-                raise DecisionRouteError(f'{ROUTE_NAMES[route_id]} 모델 목록을 가져오지 못했습니다'
-                                         f'({exc.status or "연결 오류"}). 현재 판단 AI는 그대로입니다.') from None
+                raise DecisionRouteError(msg('decision_routes.list_failed', name=ROUTE_NAMES[route_id], status=exc.status or msg('decision_routes.connection_error'))) from None
             rows = reply.get('data') if isinstance(reply, dict) else None
             ids = {row.get('id') for row in rows or () if isinstance(row, dict) and isinstance(row.get('id'), str)}
             # A dated id (e.g. `claude-haiku-4-5-20251001`) lists its alias.
