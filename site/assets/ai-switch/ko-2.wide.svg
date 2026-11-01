@@ -1,11 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" xml:lang="ko">
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="940" viewBox="0 0 1440 940" xml:lang="ko">
 <title>찾던 F1 모형을 아마존에서도 조사합니다</title><desc>찾던 F1 모형을 아마존에서도 조사합니다 F1 모형 자동차에 관심이 있어. 어디서 주문할 수 있을까? 이어서 같은 모형을 더 찾아봅니다 아마존에서도 더 찾아봐 줄래? 네. 한국 배송이 표시된 Amazon US 상품을 더 찾았어요. 모두 Bburago 1:43 모형이에요. … 첫 모형으로는 McLaren MCL38을 추천해요. 최종 금액은 결제 단계에서 확인해야 합니다. 일부 단계는 확인하지 못했어요. 실제 대화 · 번역·축약 2026-10-11</desc>
-<rect width="1440" height="960" rx="32" fill="#f0f1f3"/>
+<rect width="1440" height="940" rx="32" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="60" y="65" font-size="28" font-weight="550" fill="#171717">Still</text>
-<text x="1380" y="65" text-anchor="end" font-size="24" fill="#626262">2026-10-11 · Telegram</text>
-<path d="M60 100H1380" stroke="#d5d5d5"/>
-<text x="60" y="160" font-size="42" fill="#171717">찾던 F1 모형을 아마존에서도 조사합니다</text>
-<g transform="translate(0 0)"><rect x="420" y="213" width="900" height="158" rx="28" fill="#e5e7e9"/><text x="452" y="243" font-size="22" fill="#626262">나</text><text x="452" y="278" font-size="34" fill="#171717">F1 모형 자동차에 관심이 있어. 어디서 주문할 수</text><text x="452" y="327" font-size="34" fill="#171717">있을까?</text><text x="135" y="417" font-size="30" fill="#626262">이어서 같은 모형을 더 찾아봅니다</text><rect x="420" y="450" width="900" height="109" rx="28" fill="#e5e7e9"/><text x="452" y="480" font-size="22" fill="#626262">나</text><text x="452" y="515" font-size="34" fill="#171717">아마존에서도 더 찾아봐 줄래?</text><rect x="120" y="575" width="1200" height="207" rx="28" fill="#ffffff"/><text x="152" y="605" font-size="22" fill="#626262">Still</text><text x="152" y="640" font-size="34" fill="#171717">네. 한국 배송이 표시된 Amazon US 상품을 더 찾았어요. 모두</text><text x="152" y="689" font-size="34" fill="#171717">Bburago 1:43 모형이에요. … 첫 모형으로는 McLaren MCL38을</text><text x="152" y="738" font-size="34" fill="#171717">추천해요.</text><text x="135" y="828" font-size="30" fill="#626262">최종 금액은 결제 단계에서 확인해야 합니다. 일부 단계는 확인하지 못했어요.</text></g>
-<text x="60" y="925" font-size="30" fill="#626262">실제 대화 · 번역·축약</text>
+<text x="60" y="44" font-size="26" font-weight="550" fill="#171717">Still</text>
+<text x="1380" y="44" text-anchor="end" font-size="22" fill="#626262">2026-10-11 · Telegram</text>
+<path d="M60 68H1380" stroke="#d5d5d5"/>
+<text x="60" y="120" font-size="40" fill="#171717">찾던 F1 모형을 아마존에서도 조사합니다</text>
+<g transform="translate(0 40)"><g class="bubble" data-role="user"><rect x="440.0" y="160" width="880.0" height="138" rx="28" fill="#e5e7e9"/><text x="472.0" y="214" font-size="34" fill="#171717">F1 모형 자동차에 관심이 있어. 어디서 주문할 수</text><text x="472.0" y="263" font-size="34" fill="#171717">있을까?</text></g><text x="135" y="344" font-size="30" fill="#626262">이어서 같은 모형을 더 찾아봅니다</text><g class="bubble" data-role="user"><rect x="766.4" y="377" width="553.6" height="89" rx="28" fill="#e5e7e9"/><text x="798.4" y="431" font-size="34" fill="#171717">아마존에서도 더 찾아봐 줄래?</text></g><g class="bubble" data-role="assistant"><rect x="120" y="482" width="1124.8" height="187" rx="28" fill="#ffffff"/><text x="152" y="536" font-size="34" fill="#171717">네. 한국 배송이 표시된 Amazon US 상품을 더 찾았어요. 모두</text><text x="152" y="585" font-size="34" fill="#171717">Bburago 1:43 모형이에요. … 첫 모형으로는 McLaren MCL38을</text><text x="152" y="634" font-size="34" fill="#171717">추천해요.</text></g><text x="135" y="715" font-size="30" fill="#626262">최종 금액은 결제 단계에서 확인해야 합니다. 일부 단계는 확인하지 못했어요.</text></g>
+<text x="60" y="905" font-size="30" fill="#626262">실제 대화 · 번역·축약</text>
 </g></svg>

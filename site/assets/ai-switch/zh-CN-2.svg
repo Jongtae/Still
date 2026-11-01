@@ -1,11 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1400" viewBox="0 0 1000 1400" xml:lang="zh-CN">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1280" viewBox="0 0 1000 1280" xml:lang="zh-CN">
 <title>在亚马逊继续调查之前找的 F1 模型</title><desc>在亚马逊继续调查之前找的 F1 模型 我对 F1 汽车模型感兴趣，在哪里可以订购？ 接着寻找同类模型 也帮我在亚马逊多找一些好吗？ 我在 Amazon US 找到了更多标有可配送至韩国的商品，都是 Bburago 1:43 模型。… 如果是第一台模型，我会推荐 McLaren MCL38。 最终金额需要在结账时确认。部分步骤未能核实。 真实对话 · 翻译、缩写 2026-10-11</desc>
-<rect width="1000" height="1400" rx="32" fill="#f0f1f3"/>
+<rect width="1000" height="1280" rx="32" fill="#f0f1f3"/>
 <g font-family="system-ui, -apple-system, sans-serif">
-<text x="60" y="65" font-size="28" font-weight="550" fill="#171717">Still</text>
-<text x="940" y="65" text-anchor="end" font-size="24" fill="#626262">2026-10-11 · Telegram</text>
-<path d="M60 100H940" stroke="#d5d5d5"/>
-<text x="60" y="160" font-size="42" fill="#171717">在亚马逊继续调查之前找的 F1 模型</text>
-<g transform="translate(0 39.0)"><rect x="180" y="213" width="770" height="198" rx="28" fill="#e5e7e9"/><text x="212" y="243" font-size="24" fill="#626262">你</text><text x="212" y="278" font-size="48" fill="#171717">我对 F1 汽车模型感兴趣，在</text><text x="212" y="347" font-size="48" fill="#171717">哪里可以订购？</text><text x="65" y="471" font-size="44" fill="#626262">接着寻找同类模型</text><rect x="180" y="510" width="770" height="198" rx="28" fill="#e5e7e9"/><text x="212" y="540" font-size="24" fill="#626262">你</text><text x="212" y="575" font-size="48" fill="#171717">也帮我在亚马逊多找一些好吗</text><text x="212" y="644" font-size="48" fill="#171717">？</text><rect x="50" y="724" width="900" height="336" rx="28" fill="#ffffff"/><text x="82" y="754" font-size="24" fill="#626262">Still</text><text x="82" y="789" font-size="48" fill="#171717">我在 Amazon US 找到了更多标有可配</text><text x="82" y="858" font-size="48" fill="#171717">送至韩国的商品，都是 Bburago 1:43</text><text x="82" y="927" font-size="48" fill="#171717"> 模型。… 如果是第一台模型，我会推</text><text x="82" y="996" font-size="48" fill="#171717">荐 McLaren MCL38。</text><text x="65" y="1120" font-size="44" fill="#626262">最终金额需要在结账时确认。部分步骤未</text><text x="65" y="1183" font-size="44" fill="#626262">能核实。</text></g>
-<text x="60" y="1365" font-size="30" fill="#626262">真实对话 · 翻译、缩写</text>
+<text x="60" y="44" font-size="26" font-weight="550" fill="#171717">Still</text>
+<text x="940" y="44" text-anchor="end" font-size="22" fill="#626262">2026-10-11 · Telegram</text>
+<path d="M60 68H940" stroke="#d5d5d5"/>
+<text x="60" y="120" font-size="40" fill="#171717">在亚马逊继续调查之前找的 F1 模型</text>
+<g transform="translate(0 40)"><g class="bubble" data-role="user"><rect x="239.19999999999993" y="160" width="710.8000000000001" height="160" rx="28" fill="#e5e7e9"/><text x="271.19999999999993" y="222" font-size="42" fill="#171717">我对 F1 汽车模型感兴趣，在哪里</text><text x="271.19999999999993" y="282" font-size="42" fill="#171717">可以订购？</text></g><text x="65" y="374" font-size="38" fill="#626262">接着寻找同类模型</text><g class="bubble" data-role="user"><rect x="298" y="411" width="652" height="100" rx="28" fill="#e5e7e9"/><text x="330" y="473" font-size="42" fill="#171717">也帮我在亚马逊多找一些好吗？</text></g><g class="bubble" data-role="assistant"><rect x="50" y="527" width="900" height="280" rx="28" fill="#ffffff"/><text x="82" y="589" font-size="42" fill="#171717">我在 Amazon US 找到了更多标有可配送至</text><text x="82" y="649" font-size="42" fill="#171717">韩国的商品，都是 Bburago 1:43 模型。…</text><text x="82" y="709" font-size="42" fill="#171717"> 如果是第一台模型，我会推荐 McLaren </text><text x="82" y="769" font-size="42" fill="#171717">MCL38。</text></g><text x="65" y="861" font-size="38" fill="#626262">最终金额需要在结账时确认。部分步骤未能核实</text><text x="65" y="916" font-size="38" fill="#626262">。</text></g>
+<text x="60" y="1245" font-size="30" fill="#626262">真实对话 · 翻译、缩写</text>
 </g></svg>

@@ -6,8 +6,8 @@
     "nav": "실제 사용 사례",
     "prev": "이전 사례",
     "next": "다음 사례",
-    "heading": "Still과 나눈 실제 대화를 살펴보세요.",
-    "caption": "실제 Telegram 대화를 번역·축약해 다시 그린 이미지입니다. 각 사례의 원문과 확인 범위를 함께 공개합니다.",
+    "heading": "Still과 나누는 대화를 살펴보세요.",
+    "caption": "앞의 두 장은 실제 대화 발췌이며, AI 교체 장면은 기록을 바탕으로 구성한 사용 흐름 예시입니다.",
     "sourceLabel": "대화 원문과 출처",
     "scenes": [
       {
@@ -69,22 +69,24 @@
         ]
       },
       {
-        "title": "같은 대화에서 AI를 바꿉니다",
+        "title": "앞선 추천을 다른 AI와 이어갑니다",
         "short": "AI 바꾸기",
-        "date": "2026-10-12",
+        "evidence_class": "illustrative_reconstruction",
+        "label": "사용 흐름 예시 · 실제 대화 원문 아님",
+        "meta": "설명용 예시 대화",
         "engine": "Codex",
-        "source": {
+        "based_on": {
           "manifest": "docs/assets/readme/ai-switch/clip/manifest.json",
           "record": "docs/assets/readme/ai-switch/clip/README.md"
         },
         "messages": [
           {
             "role": "user",
-            "text": "/ai"
+            "text": "라떼로 마실 원두 추천해 줘. 고소하고 단맛 나는 게 좋아."
           },
           {
             "role": "assistant",
-            "text": "현재 일하는 AI는 Codex입니다."
+            "text": "자뎅 에스프레소 블렌드와 모모스 에스쇼콜라를 추천해요."
           },
           {
             "role": "switch",
@@ -94,11 +96,11 @@
           },
           {
             "role": "user",
-            "text": "쟈뎅 말고 오랜만에 비싼 걸로 해볼까해"
+            "text": "그럼 이번엔 두 번째 걸로 해볼래."
           },
           {
             "role": "assistant",
-            "text": "제가 아까 라떼용으로 제일 괜찮다고 했던 모모스커피 에스쇼콜라 500g이 있어요."
+            "text": "모모스 에스쇼콜라로 볼게요. 라떼에 넣었을 때도 고소하고 달콤한 맛이 나는지 이어서 확인해 볼게요."
           }
         ]
       }
@@ -111,8 +113,8 @@
     "nav": "Real use cases",
     "prev": "Previous example",
     "next": "Next example",
-    "heading": "See Still in real conversations.",
-    "caption": "These images redraw translated, condensed excerpts of real Telegram conversations. Original records and evidence limits are linked below.",
+    "heading": "Explore conversations with Still.",
+    "caption": "The first two examples are real conversation excerpts. The AI-switch example illustrates a flow reconstructed from the recorded use case.",
     "sourceLabel": "Original conversations and sources",
     "scenes": [
       {
@@ -174,18 +176,24 @@
         }
       },
       {
-        "title": "Switch AI within the same conversation",
+        "title": "Continue an earlier recommendation with another AI",
         "short": "Switch AI",
-        "date": "2026-10-12",
+        "evidence_class": "illustrative_reconstruction",
+        "label": "Illustrative dialogue · not a transcript",
+        "meta": "Illustrative dialogue",
         "engine": "Codex",
+        "based_on": {
+          "manifest": "docs/assets/readme/ai-switch/clip/manifest.json",
+          "record": "docs/assets/readme/ai-switch/clip/README.md"
+        },
         "messages": [
           {
             "role": "user",
-            "text": "/ai"
+            "text": "Recommend beans for lattes. I like a nutty, sweet taste."
           },
           {
             "role": "assistant",
-            "text": "The current AI doing the work is Codex."
+            "text": "I suggest Jardin Espresso Blend and Momos Es Chocolat."
           },
           {
             "role": "switch",
@@ -195,17 +203,13 @@
           },
           {
             "role": "user",
-            "text": "Not the Jardin—something pricier this time."
+            "text": "Let’s try the second one this time."
           },
           {
             "role": "assistant",
-            "text": "There’s the Momos Coffee Es Chocolat 500 g I recommended earlier as best for lattes."
+            "text": "Momos Es Chocolat, then. I’ll keep looking into whether it gives you the nutty, sweet latte you want."
           }
-        ],
-        "source": {
-          "manifest": "docs/assets/readme/ai-switch/clip/manifest.json",
-          "record": "docs/assets/readme/ai-switch/clip/README.md"
-        }
+        ]
       }
     ]
   },
@@ -216,8 +220,8 @@
     "nav": "実際の利用例",
     "prev": "前の例",
     "next": "次の例",
-    "heading": "Still との実際の会話をご覧ください。",
-    "caption": "実際の Telegram 会話を翻訳・要約し、画像として再構成しました。元の記録と、確認できた範囲を公開しています。",
+    "heading": "Still との会話をご覧ください。",
+    "caption": "最初の2例は実際の会話の抜粋です。AI 切替の例は、利用記録をもとに会話の流れを再構成しています。",
     "sourceLabel": "元の会話と出典",
     "scenes": [
       {
@@ -279,18 +283,24 @@
         }
       },
       {
-        "title": "同じ会話の中で AI を切り替えます",
+        "title": "別の AI と、それまでの提案を引き継ぎます",
         "short": "AI を替える",
-        "date": "2026-10-12",
+        "evidence_class": "illustrative_reconstruction",
+        "label": "会話の例 · 実際の会話の記録ではありません",
+        "meta": "説明用の会話例",
         "engine": "Codex",
+        "based_on": {
+          "manifest": "docs/assets/readme/ai-switch/clip/manifest.json",
+          "record": "docs/assets/readme/ai-switch/clip/README.md"
+        },
         "messages": [
           {
             "role": "user",
-            "text": "/ai"
+            "text": "ラテ用の豆をおすすめして。香ばしくて甘みのあるものが好き。"
           },
           {
             "role": "assistant",
-            "text": "現在作業している AI は Codex です。"
+            "text": "Jardin Espresso Blend と Momos Es Chocolat をおすすめします。"
           },
           {
             "role": "switch",
@@ -300,17 +310,13 @@
           },
           {
             "role": "user",
-            "text": "Jardin じゃなくて、久しぶりに高いのにしようかな。"
+            "text": "じゃあ、今回は2つ目にしてみたい。"
           },
           {
             "role": "assistant",
-            "text": "先ほどラテに一番合うとおすすめした Momos Coffee Es Chocolat 500 g があります。"
+            "text": "では Momos Es Chocolat ですね。ラテにしたときも香ばしさと甘みを楽しめるか、続けて確認します。"
           }
-        ],
-        "source": {
-          "manifest": "docs/assets/readme/ai-switch/clip/manifest.json",
-          "record": "docs/assets/readme/ai-switch/clip/README.md"
-        }
+        ]
       }
     ]
   },
@@ -321,8 +327,8 @@
     "nav": "真实使用案例",
     "prev": "上一个案例",
     "next": "下一个案例",
-    "heading": "看看与 Still 进行过的真实对话。",
-    "caption": "这些图片根据真实 Telegram 对话翻译、缩写并重新排版。下方提供原始记录和证据范围说明。",
+    "heading": "看看与 Still 的对话。",
+    "caption": "前两个案例摘录自真实对话。AI 切换案例根据使用记录重新构成，用来说明完整的对话流程。",
     "sourceLabel": "原始对话与来源",
     "scenes": [
       {
@@ -384,18 +390,24 @@
         }
       },
       {
-        "title": "在同一段对话中更换 AI",
+        "title": "换一个 AI，继续之前的推荐",
         "short": "更换 AI",
-        "date": "2026-10-12",
+        "evidence_class": "illustrative_reconstruction",
+        "label": "对话示例 · 非真实对话原文",
+        "meta": "演示对话",
         "engine": "Codex",
+        "based_on": {
+          "manifest": "docs/assets/readme/ai-switch/clip/manifest.json",
+          "record": "docs/assets/readme/ai-switch/clip/README.md"
+        },
         "messages": [
           {
             "role": "user",
-            "text": "/ai"
+            "text": "推荐些做拿铁的咖啡豆吧。我喜欢香浓、带甜味的。"
           },
           {
             "role": "assistant",
-            "text": "当前执行工作的 AI 是 Codex。"
+            "text": "我推荐 Jardin Espresso Blend 和 Momos Es Chocolat。"
           },
           {
             "role": "switch",
@@ -405,17 +417,13 @@
           },
           {
             "role": "user",
-            "text": "不要 Jardin，这次想换贵一点的。"
+            "text": "那这次试试第二种吧。"
           },
           {
             "role": "assistant",
-            "text": "有之前推荐最适合拿铁的 Momos Coffee Es Chocolat 500 g 咖啡豆。"
+            "text": "那就看 Momos Es Chocolat。我会接着确认它做成拿铁后，是否还有你喜欢的香浓和甜味。"
           }
-        ],
-        "source": {
-          "manifest": "docs/assets/readme/ai-switch/clip/manifest.json",
-          "record": "docs/assets/readme/ai-switch/clip/README.md"
-        }
+        ]
       }
     ]
   }

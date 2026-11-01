@@ -22,7 +22,7 @@ def test_localized_images_match_copy_and_keep_uncertainty():
             assert source == builder.render(lang, copy, index)
             svg = ET.fromstring(source)
             assert '<script' not in source and '<image' not in source
-            assert copy['label'] in ''.join(svg.itertext())
+            assert copy['scenes'][index].get('label', copy['label']) in ''.join(svg.itertext())
             wide = (builder.OUT / f'{lang}-{index + 1}.wide.svg').read_text()
             assert wide == builder.render_wide(lang, copy, index)
             ET.fromstring(wide)
@@ -37,11 +37,19 @@ def test_localized_images_match_copy_and_keep_uncertainty():
         assert 'contexts' not in copy, 'do not replace dialogue with sidebar summaries'
         assert len(copy['scenes']) == 3
         for scene in copy['scenes']:
+            illustrative = scene.get('evidence_class') == 'illustrative_reconstruction'
+            provenance = scene['based_on'] if illustrative else scene['source']
             for key in ('manifest', 'record'):
-                assert (ROOT / scene['source'][key]).is_file()
-            manifest = json.loads((ROOT / scene['source']['manifest']).read_text())
-            record = ROOT / scene['source']['record']
-            assert manifest.get('created') == scene['date'] or scene['date'] in record.read_text()
+                assert (ROOT / provenance[key]).is_file()
+            manifest = json.loads((ROOT / provenance['manifest']).read_text())
+            record = ROOT / provenance['record']
+            if illustrative:
+                assert 'date' not in scene and scene['label'] and scene['meta']
+                switch = next(i for i, row in enumerate(scene['messages']) if row['role'] == 'switch')
+                assert {row['role'] for row in scene['messages'][:switch]} >= {'user', 'assistant'}
+                assert {row['role'] for row in scene['messages'][switch + 1:]} >= {'user', 'assistant'}
+            else:
+                assert manifest.get('created') == scene['date'] or scene['date'] in record.read_text()
             # The October 11 recordings do not identify the model. Only the
             # separately sourced switch session may name one in dialogue.
             if manifest.get('model_identity') == 'not shown':
@@ -69,6 +77,9 @@ def test_each_homepage_links_its_own_translated_images_and_all_controls_resolve(
             assert mobile_url.path == f'assets/ai-switch/{lang}-{index + 1}.svg'
             assert (ROOT / 'site' / mobile_url.path).is_file()
             assert wide_url.query and mobile_url.query, 'invalidate cached dialogue images'
+            for element, path in ((source, wide_url.path), (img, mobile_url.path)):
+                svg = ET.fromstring((ROOT / 'site' / path).read_text())
+                assert (element.get('width'), element.get('height')) == (svg.get('width'), svg.get('height'))
             assert len(img.get('alt')) > 50
             for control in slide.xpath('.//a'):
                 assert control.get('href').removeprefix('#') in ids
