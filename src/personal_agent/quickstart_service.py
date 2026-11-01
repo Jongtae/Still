@@ -1528,6 +1528,10 @@ class AgentService:
         Names only, from the profile's non-blocking view.  A site the owner
         shared with this (family) instance says so, and that payment there is the
         owner's.  Without it the AI did not know it could act on a shared site.
+        #563: only a shared site or one with the owner's recorded login-window
+        sign-in is named.  The jar also keeps the cookies of every site a Work only
+        visited; naming those as sign-ins sent a new Mac's planner to the browser
+        for an account it had never signed in to, past the official API.
         """
         from . import family_share
         view=getattr(self.browser_profile,'_jar_view',None)
@@ -1535,8 +1539,8 @@ class AgentService:
             _state,rows=view() if callable(view) else (None,[])
         except Exception:
             return None
-        sites=[row['site'] for row in rows if isinstance(row,dict) and row.get('site')][:BROWSER_SESSION_SITES]
-        if not sites:return None
+        stored=[row['site'] for row in rows if isinstance(row,dict) and row.get('site')]
+        if not stored:return None
         try:
             shared=family_share.received(self.store)
         except Exception:
@@ -1547,15 +1551,18 @@ class AgentService:
             signins={}
         signins=signins if isinstance(signins,dict) else {}
 
+        def signed_at(site):
+            record=signins.get(site)
+            at=record.get('at') if isinstance(record,dict) else None
+            return at if isinstance(at,(int,float)) and at>0 else None
+
         def named(site):
             if site in shared:
                 return (f"{site} (the owner's sign-in shared with you: you act in the owner's account; reading and cart "
                         'changes only; payment is the owner\'s)')
-            record=signins.get(site)
-            at=record.get('at') if isinstance(record,dict) else None
-            if isinstance(at,(int,float)) and at>0:
-                return f"{site} (owner signed in {time.strftime('%Y-%m-%d %H:%M',time.localtime(at))})"
-            return site
+            return f"{site} (owner signed in {time.strftime('%Y-%m-%d %H:%M',time.localtime(signed_at(site)))})"
+        sites=[site for site in stored if site in shared or signed_at(site) is not None][:BROWSER_SESSION_SITES]
+        if not sites:return None
         return BROWSER_SIGNINS_LINE+', '.join(named(site) for site in sites)
 
     # -- SEC-ATTN-01 (#659): owner-accepted preparations ------------------------
