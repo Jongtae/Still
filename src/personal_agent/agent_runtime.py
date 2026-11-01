@@ -263,7 +263,7 @@ def progress_step(action,args,status=None,redact=None):
  return step
 
 #: #627: a lookup whose only terms were withdrawn current-context location text.
-CONTEXT_WITHDRAWN_TEXT='이 조회에 들어 있던 현재 맥락 위치·장소를 소유자가 멈추거나 지웠거나 바뀌어서 보내지 않았습니다. 남은 검색어가 없으니 소유자에게 지역을 한 번 물어보세요.'
+CONTEXT_WITHDRAWN_TEXT=msg('agent_runtime.context_withdrawn')
 #: #709, #739: the one generic statement about results that live in the embedded
 #: browser session.  The owner never sees that session, so a link to state kept
 #: only in its cookies opens empty on the owner's own browser or phone.
@@ -435,14 +435,14 @@ MEMORY_OWNER='local-owner'
 #: refusal is never silent: the reason also reaches the durable tool event
 #: (``evidence_summary``) and the candidate itself stays owner-inspectable.
 MEMORY_REFUSALS={
- 'no-owner-memory-request':'소유자 확인이 필요해 기억 후보로 보관했습니다. 승인 후 저장할 수 있습니다.',
- 'value-not-in-owner-request':'요청에 없는 내용이라 기억으로 저장하지 않고 기억 후보로 보관했습니다. 개인 공간에서 확인 후 승인할 수 있습니다.',
- 'value-is-the-request':'요청 문장 자체는 기억이 아니라서 저장하지 않았습니다. 필요하면 지켜보기로 제안합니다.',
- 'replaces-a-memory-the-request-did-not-name':'요청에 없던 기존 기억을 대체하는 값이라 저장하지 않고 기억 후보로 보관했습니다. 개인 공간에서 확인 후 승인할 수 있습니다.',
+ 'no-owner-memory-request':msg('agent_runtime.memory_confirmation_required'),
+ 'value-not-in-owner-request':msg('agent_runtime.memory_not_requested'),
+ 'value-is-the-request':msg('agent_runtime.request_not_memory'),
+ 'replaces-a-memory-the-request-did-not-name':msg('agent_runtime.memory_replacement_not_requested'),
  # #918 slice (a): a write by a package tool or a delegated specialist stays a MemoryCandidate (C5).
- 'third-party-write':'소유자 확인이 필요해 기억 후보로 보관했습니다. 승인 후 저장할 수 있습니다.',
+ 'third-party-write':msg('agent_runtime.memory_confirmation_required'),
  # #918 review P1: a stored secret or a credential-shaped value never enters Memory (pilot invariant a).
- 'secret-shaped-value':'자격 증명으로 보이는 값이라 기억으로 저장하지 않았습니다.',
+ 'secret-shaped-value':msg('agent_runtime.credential_not_remembered'),
 }
 SECRET_SHAPED_VALUE='secret-shaped-value'
 
@@ -975,11 +975,11 @@ def backfill_work_sources(store, tools=None, document_jobs=(), keep_messages=100
 #: work, and in a clean context too (excluded values, place wording).
 PUBLIC_TASK_ACTIONS=frozenset({'web_search','weather','public_page_read'})
 #: #23: a page that is neither an owner-approved page nor a result of this Work's own search.
-PAGE_NOT_IN_SCOPE_TEXT='이 Work의 web_search 결과에 나온 주소나 소유자가 승인한 공개 페이지가 아니어서 조회하지 않았습니다. 먼저 web_search로 찾은 결과 주소를 읽으세요.'
+PAGE_NOT_IN_SCOPE_TEXT=msg('agent_runtime.page_outside_scope')
 #: #23: a search-result page that redirected to an address no search returned.
-PAGE_REDIRECT_LEFT_SCOPE_TEXT='검색 결과 주소가 다른 주소로 이동해 읽지 않았습니다. 소유자 승인 범위와는 무관합니다.'
+PAGE_REDIRECT_LEFT_SCOPE_TEXT=msg('agent_runtime.page_redirect_left_scope')
 #: A lookup whose query (or weather place) is empty once stored secrets are removed (#826).
-PUBLIC_TASK_UNRESOLVED='공개 조회에 보낼 검색어(또는 도시)가 비어 있거나 비밀값뿐이라 보내지 않았습니다. 조회할 내용을 직접 적어 주세요.'
+PUBLIC_TASK_UNRESOLVED=msg('agent_runtime.public_query_empty')
 #: #605 D1: the explicit owner command whose typed query is sent as typed
 #: (a convenience since #654; an ordinary request needs no command).
 EXPLICIT_SEARCH_PREFIX='/search '
@@ -1321,7 +1321,7 @@ def lookup_sources(store, job_id):
  """
  job=store.job(job_id) if isinstance(job_id,str) and job_id else None
  if not job or job.get('status')!='running':
-  raise ValueError('이 작업은 더 이상 실행 중이 아니어서 공개 조회를 실행하지 않았습니다.')
+  raise ValueError(msg('agent_runtime.work_no_longer_running'))
  return {'current':job.get('message') or '','excluded':work_written_values(store,job_id)}
 
 # --- AUDIT-OUTBOUND-01 (#167, #28 option A): held values seen in outbound text --
@@ -1650,11 +1650,11 @@ def check_arguments(parameters,args):
  declared properties are strings or bounded numeric scalars, ``additionalProperties: false``.
  Unknown and missing fields are refused rather than dropped.
  """
- if not isinstance(args,dict) or set(args)-set(parameters['properties']) or set(parameters['required'])-set(args):raise ValueError('허용하지 않은 도구 또는 인수입니다.')
+ if not isinstance(args,dict) or set(args)-set(parameters['properties']) or set(parameters['required'])-set(args):raise ValueError(msg('agent_runtime.invalid_tool_arguments'))
  for key,value in args.items():
   spec=parameters['properties'][key];kind=spec.get('type')
   if kind not in ('integer','number'):
-   if not isinstance(value,str):raise ValueError('도구 인수는 문자열이어야 합니다.')
+   if not isinstance(value,str):raise ValueError(msg('agent_runtime.tool_argument_type'))
   else:
    import math
    if isinstance(value,bool) or not isinstance(value,(int,float)) or (isinstance(value,float) and not math.isfinite(value)) or (kind=='integer' and not isinstance(value,int)):
@@ -1682,10 +1682,10 @@ WORK_JUDGMENT_RESERVE=1
 #: #1418: optional start/progress/closing reaction judgments of one request spend their
 #: own small counter in the same ledger row, never the work turns.
 WORK_PRESENTATION_TURNS=6
-WORK_STOPPED='소유자가 멈춤을 요청해 다음 단계를 실행하지 않았습니다.'
-WORK_DEADLINE='이 작업의 처리 시간 한도에 도달해 다음 단계를 실행하지 않았습니다.'
-WORK_TURNS_EXHAUSTED=f'이 작업의 모델 호출 한도({WORK_MODEL_TURNS}회)에 도달해 더 진행하지 않았습니다.'
-WORK_ATTEMPTS_EXHAUSTED=f'이 작업의 도구 실행 한도({WORK_TOOL_ATTEMPTS}회)에 도달해 더 실행하지 않았습니다.'
+WORK_STOPPED=msg('agent_runtime.work_stopped')
+WORK_DEADLINE=msg('agent_runtime.work_deadline')
+WORK_TURNS_EXHAUSTED=msg('agent_runtime.model_turns_exhausted', count=WORK_MODEL_TURNS)
+WORK_ATTEMPTS_EXHAUSTED=msg('agent_runtime.tool_attempts_exhausted', count=WORK_TOOL_ATTEMPTS)
 #: Codes that end the Work's remaining steps; never a recoverable read failure.
 #: ``deadline`` is the pre-#607 spelling kept for older events.
 BUDGET_CODES=frozenset({'stopped','deadline','deadline_exceeded','turn_budget','attempt_budget'})
@@ -2152,8 +2152,8 @@ def page_load_only(action,detail,status=None):
 
 #: Public network reads that may be retried once after a transient failure.
 NETWORK_READS=frozenset({'web_search','public_page_read','weather'})
-TRANSIENT_READ_TEXT='공개 조회가 일시적인 네트워크 오류로 실패해 한 번 다시 시도했습니다.'
-TRANSIENT_FAILURE_TEXT='도구 실행이 일시적인 연결 오류로 실패했습니다.'
+TRANSIENT_READ_TEXT=msg('agent_runtime.transient_read_retry')
+TRANSIENT_FAILURE_TEXT=msg('agent_runtime.transient_tool_failure')
 
 def classify_failure(exc,action=None):
  """``(code, retry, effect)`` of one failed tool attempt (#607 AX-06).
@@ -2214,7 +2214,7 @@ def memory_proposal(action, result):
 MEMORY_ASK_WORKER_NOTE=('Not remembered yet: the owner will be asked with one tap whether to remember this. '
                         'Do not describe how remembering works; you may say you would like to remember it.')
 #: #836: the same, in the owner's words, where a verified step is listed.
-MEMORY_ASK_OWNER_TEXT='기억해 둘지 여쭤볼게요.'
+MEMORY_ASK_OWNER_TEXT=msg('agent_runtime.memory_ask_owner')
 #: #918 slice (a): what the worker reads for a ``save_memory`` the owner's worker saved at once.
 #: Truthful (remembered) and free of storage talk; the owner is told by Still, with undo.
 MEMORY_SAVED_WORKER_NOTE=('Remembered. The owner is shown what was remembered and can undo it; '
@@ -2820,7 +2820,7 @@ class Capabilities:
   """
   if not hasattr(self.store,'db'):return []
   try:return self.current_context().withdrawn_strings(self.job_id)
-  except Exception:raise ToolError('현재 맥락 상태를 확인하지 못해 이 조회를 보내지 않았습니다. 잠시 후 다시 시도하거나 지역을 직접 알려 주세요.','context_unverified') from None
+  except Exception:raise ToolError(msg('agent_runtime.context_unverified'),'context_unverified') from None
  def source_revision(self,action,args):
   """The resolved source revision a ``weather(location_ref)`` call is keyed on, or None (#627)."""
   if action!='weather' or not isinstance(args,dict) or 'location_ref' not in args:return None
@@ -2834,7 +2834,7 @@ class Capabilities:
   source refuses with a typed reason (a validity check, not a disclosure
   judgment).  Returns the outbound arguments and the source description.
   """
-  if set(args)&{'city','country'}:raise ValueError('날씨는 도시(city) 또는 위치 참조(location_ref) 중 하나만 주세요.')
+  if set(args)&{'city','country'}:raise ValueError(msg('agent_runtime.weather_location_conflict'))
   from .current_context import ContextRefusal, refusal
   try:
    if self.delegated:raise refusal('location_ref_delegated')
@@ -2995,13 +2995,13 @@ class Capabilities:
   # Search/list operations may inspect many files under a root. Revalidate only
   # the selected stored grant on each read instead of rescanning every root.
   root=next((r for r in self.store.config('file_roots',[]) if r.get('id')==root_id),None)
-  if not root or folder_grants.blocked(root.get('path',''),self.store):raise ValueError('먼저 연결 설정에서 파일 폴더를 연결해 주세요.')
+  if not root or folder_grants.blocked(root.get('path',''),self.store):raise ValueError(msg('agent_runtime.connect_file_folder'))
   base=Path(root['path']).resolve();relative=Path(path)
-  if relative.is_absolute() or '..' in relative.parts or any(p.startswith('.') for p in relative.parts):raise ValueError('허용하지 않은 파일 경로입니다.')
+  if relative.is_absolute() or '..' in relative.parts or any(p.startswith('.') for p in relative.parts):raise ValueError(msg('agent_runtime.file_path_not_allowed'))
   resolved=(base/relative).resolve()
-  if not resolved.is_relative_to(base) or resolved.is_relative_to(self.store.private):raise ValueError('연결 폴더 밖의 파일에는 접근할 수 없습니다.')
-  if not resolved.is_file() or resolved.stat().st_size>MAX_FILE_BYTES:raise ValueError('10MB 이하 지원 문서만 읽을 수 있습니다.')
-  if not supported_document(resolved):raise ValueError('지원 형식은 TXT, MD, PDF, DOCX, XLSX입니다.')
+  if not resolved.is_relative_to(base) or resolved.is_relative_to(self.store.private):raise ValueError(msg('agent_runtime.file_outside_connected_folder'))
+  if not resolved.is_file() or resolved.stat().st_size>MAX_FILE_BYTES:raise ValueError(msg('agent_runtime.file_size_limit'))
+  if not supported_document(resolved):raise ValueError(msg('agent_runtime.supported_document_formats'))
   return resolved
  def read_file(self,root_id,path,cite=True):
   """One document by the ``root_id`` and ``path`` find_files returned.
@@ -3009,19 +3009,19 @@ class Capabilities:
   ``cite``: a file-workspace reference read here is a source a later ``save_result`` cites;
   find_files' own scan reads with ``cite=False``, so only what the worker read is cited (#182).
   """
-  if not self.document_access:raise ValueError('연결 문서 발췌문을 외부 AI에 전달하려면 설정에서 문서 공유를 승인하세요.')
+  if not self.document_access:raise ValueError(msg('agent_runtime.document_excerpt_sharing'))
   if root_id==SAVED_RESULTS_ROOT:return self._read_saved_result(path)
   if isinstance(root_id,str) and root_id.startswith(WORKSPACE_REFERENCE_PREFIX):return self._read_reference(root_id,path,cite)
   resolved=self.resolve_file(root_id,path)
   document=read_document(resolved)
   segments=document.segments
   content='\n'.join(f"[{segment['location']}] {segment['text']}" for segment in segments)[:24000]
-  source=f'파일: {path} · {segments[0]["location"]}' if segments else f'파일: {path}'
+  source=msg('agent_runtime.file_source_location', path=path, location=segments[0]["location"]) if segments else msg('agent_runtime.file_source', path=path)
   return {'root_id':root_id,'path':path,'kind':document.kind,'content':content,'locations':[segment['location'] for segment in segments[:100]],'sources':[source],'truncated':len(document.text)>len(content)}
  def _read_reference(self,root_id,path,cite=True):
   """#182: one original in a file-workspace reference folder, through ``FileWorkspace.read``'s own grant checks."""
   reference_id=root_id[len(WORKSPACE_REFERENCE_PREFIX):]
-  if not any(root['id']==root_id for root in self.workspace_references()):raise ValueError('허용된 참고 폴더가 아닙니다.')
+  if not any(root['id']==root_id for root in self.workspace_references()):raise ValueError(msg('agent_runtime.reference_folder_not_allowed'))
   source=FileWorkspace(self.store).read(reference_id,path)
   # The read itself is what a saved result cites (``save_result``): its exact version, not a model's claim.
   # #182 review: keyed by version too, so a file read again after it changed is cited at both versions
@@ -3030,26 +3030,26 @@ class Capabilities:
   text=source['content'];content=text[:24000]
   locations=re.findall(r'^\[([^\]\n]{1,80})\] ',content,flags=re.M)[:100]
   return {'root_id':root_id,'path':source['path'],'kind':Path(source['path']).suffix.lower().lstrip('.'),'content':content,
-          'locations':locations,'sources':[f"참고 자료: {source['path']} @ {source['version'][:12]}"],'truncated':len(text)>len(content),
+          'locations':locations,'sources':[msg('agent_runtime.reference_source', path=source['path'], version=source['version'][:12])],'truncated':len(text)>len(content),
           'read_only':True,
           # #182 review: the read's identity and content version (no content), kept in the durable event so a
           # bridge restarted within the Work can still cite it (``save_result``).
           **({'citation':{key:source[key] for key in ('reference_id','source_id','path','version')}} if cite else {})}
  def _read_saved_result(self,path):
   """#182: one saved result by the path ``find_files`` returned (a result file name or ``project/<id>``)."""
-  if not isinstance(path,str):raise ValueError('저장된 결과를 찾지 못했습니다. find_files로 다시 찾아 주세요.')
+  if not isinstance(path,str):raise ValueError(msg('agent_runtime.saved_result_not_found'))
   # #182 review: the source checks are bounded like a search; cut short, nothing is returned as checked.
   rows=self.saved_results(path=path,deadline=time.monotonic()+5)
   if self.saved_results_unavailable:
    return {'root_id':SAVED_RESULTS_ROOT,'path':path,'content':'','needs_setup':True,'requires':'local-result-write',
-           'message':'저장된 결과가 있는 폴더를 지금 쓸 수 없습니다. 결과 저장 폴더를 다시 연결해 주세요.'}
+           'message':msg('agent_runtime.result_folder_unavailable')}
   if self.saved_results_stopped:
-   raise ValueError('저장된 결과의 원본 확인이 제한 시간 안에 끝나지 않아 읽지 않았습니다. 잠시 후 다시 시도해 주세요.')
+   raise ValueError(msg('agent_runtime.result_source_timeout'))
   item=next((row for row in rows if row['path']==path),None)
-  if item is None:raise ValueError('저장된 결과를 찾지 못했습니다. find_files로 다시 찾아 주세요.')
+  if item is None:raise ValueError(msg('agent_runtime.saved_result_not_found'))
   content=item['content'][:24000]
   return {'root_id':SAVED_RESULTS_ROOT,'path':path,'kind':'saved-result','title':item['title'],'content':content,'locations':[],
-          'sources':[f"저장된 결과: {item['title']}"],'truncated':len(item['content'])>len(content),'read_only':True}
+          'sources':[msg('agent_runtime.saved_result_source', title=item['title'])],'truncated':len(item['content'])>len(content),'read_only':True}
  def find_files(self,query,root_id=''):
   # No covering folder grant is checked first: saying so reads nothing and
   # sends nothing, and it lets Still ask for the one folder (#505) before
@@ -3064,14 +3064,14 @@ class Capabilities:
   only=root_id.strip() if isinstance(root_id,str) else ''
   if only and only!=SAVED_RESULTS_ROOT:
    roots=[root for root in roots if root['id']==only]
-   if not roots:raise ValueError('그 root_id의 폴더를 찾지 못했습니다. list_roots로 확인해 주세요.')
+   if not roots:raise ValueError(msg('agent_runtime.root_not_found'))
   if only==SAVED_RESULTS_ROOT and not workspace.has_results():
    # #182 review: no folder grant creates a saved result; an empty saved-results search is complete.
    return {'files':[],'truncated':False}
   if not roots and not workspace.has_results():
-   return {'files':[],'needs_setup':True,'requires':'local-folder-read','message':'연결 설정에서 접근할 폴더를 먼저 연결해 주세요.'}
-  if not self.document_access:raise ValueError('연결 문서 검색 결과를 외부 AI에 전달하려면 설정에서 문서 공유를 승인하세요.')
-  if not query.strip() or len(query)>200:raise ValueError('검색어는 1~200자로 입력하세요.')
+   return {'files':[],'needs_setup':True,'requires':'local-folder-read','message':msg('agent_runtime.connect_access_folder')}
+  if not self.document_access:raise ValueError(msg('agent_runtime.document_search_sharing'))
+  if not query.strip() or len(query)>200:raise ValueError(msg('agent_runtime.query_length'))
   terms=[query.casefold()]+[t.casefold() for t in re.findall(r'[\w-]+',query) if len(t)>=3]
   hits=[];visited=0;deadline=time.monotonic()+5
   # One deadline bounds the saved-result checks and the folder scan together.
@@ -3110,7 +3110,7 @@ class Capabilities:
      if len(hits)>=20:return {'files':hits,'truncated':True}
   if self.saved_results_unavailable and not hits:
    return {'files':[],'needs_setup':True,'requires':'local-result-write',
-           'message':'저장된 결과가 있는 폴더를 지금 쓸 수 없습니다. 결과 저장 폴더를 다시 연결해 주세요.'}
+           'message':msg('agent_runtime.result_folder_unavailable')}
   return {'files':hits,'truncated':saved_truncated or self.saved_results_stopped or self.saved_results_unavailable}
  def _recorded_workspace_reads(self):
   """#182 review: the reference reads this Work's durable ``read_file`` events cite (another bridge process
@@ -3135,19 +3135,19 @@ class Capabilities:
   actually read, with their exact versions; nothing else is written and no original changes.
   """
   # #182 review: refusals before anything is written are marked ``ran: false`` (no effect), so another attempt can read and save.
-  if not isinstance(title,str) or not 1<=len(title.strip())<=120:raise not_run(ValueError('결과 제목은 1~120자로 입력하세요.'))
-  if not isinstance(content,str) or not content.strip() or len(content)>60000:raise not_run(ValueError('결과 내용은 1~60000자로 입력하세요.'))
+  if not isinstance(title,str) or not 1<=len(title.strip())<=120:raise not_run(ValueError(msg('agent_runtime.result_title_length')))
+  if not isinstance(content,str) or not content.strip() or len(content)>60000:raise not_run(ValueError(msg('agent_runtime.result_content_length')))
   workspace=FileWorkspace(self.store)
   active=workspace.active()
   # #505: the missing folder is a declared local authority the owner grants once; nothing is written.
   if not active.get('references'):
-   return {'saved':False,'needs_setup':True,'requires':'local-reference-read','message':'정리할 원본 폴더를 먼저 연결해 주세요.'}
+   return {'saved':False,'needs_setup':True,'requires':'local-reference-read','message':msg('agent_runtime.connect_original_folder')}
   if not active.get('workspace'):
-   return {'saved':False,'needs_setup':True,'requires':'local-result-write','message':'결과를 저장할 폴더를 먼저 연결해 주세요.'}
+   return {'saved':False,'needs_setup':True,'requires':'local-result-write','message':msg('agent_runtime.connect_result_folder')}
   # #182 review: every read this Work recorded (an earlier or restarted bridge too), with this process's own.
   self.workspace_reads={**self._recorded_workspace_reads(),**self.workspace_reads}
   if not self.workspace_reads:
-   raise not_run(ValueError('저장할 결과의 원본을 먼저 find_files와 read_file로 참고 폴더에서 읽어 주세요.'))
+   raise not_run(ValueError(msg('agent_runtime.read_result_sources_first')))
   # #182 review: settle an interrupted save first (finalize a published file, drop an unpublished
   # reservation), so only a real earlier result counts as one.
   workspace.recover()
@@ -3156,25 +3156,25 @@ class Capabilities:
    # Its reservation belongs to a result folder that has since changed (``detached``) or a source that
    # changed (``stale``): this Work cannot save another result, and says so instead of a receipt.
    return {'saved':False,'already_saved':False,'id':earlier['id'],'path':earlier['path'],
-           'message':'이 작업의 이전 결과 저장이 다른 결과 폴더에 묶여 있어 새로 저장하지 않았습니다. 새 요청으로 다시 저장해 주세요.'}
+           'message':msg('agent_runtime.result_folder_changed')}
   check=workspace.intact(earlier) if earlier else None
   if earlier and check is workspace.UNKNOWN:
    # The earlier result could not be checked now (its folder unusable, or the check ran out of time): no new save.
    return {'saved':False,'already_saved':False,'id':earlier['id'],'path':earlier['path'],
-           'message':'이 작업이 저장한 결과를 지금 확인하지 못해 새로 저장하지 않았습니다. 잠시 후 다시 시도해 주세요.'}
+           'message':msg('agent_runtime.result_unverified')}
   if earlier and check is False:
    # #182 review: the earlier file was deleted, edited or replaced: no receipt for what is not there.
    return {'saved':False,'already_saved':False,'id':earlier['id'],'path':earlier['path'],
-           'message':'이 작업이 저장한 결과 파일이나 그 원본이 지워졌거나 바뀌어 있어 새로 저장하지 않았습니다. 새 요청으로 다시 저장해 주세요.'}
+           'message':msg('agent_runtime.result_source_changed')}
   if earlier:
    # #182 review: one Work saves one result; a second save writes nothing and says so (the first stays).
    return {'saved':False,'already_saved':True,'id':earlier['id'],'path':earlier['path'],
-           'message':f"이 작업은 이미 결과를 저장했습니다: {earlier['path']}. 한 작업은 결과 하나만 저장하며, 이번 내용은 저장하지 않았습니다."}
+           'message':msg('agent_runtime.result_already_saved', path=earlier['path'])}
   saved=workspace.save(self.job_id,title.strip(),content,list(self.workspace_reads.values()))
   if not saved.get('inserted'):
    # #182 review: a concurrent save of the same Work won the atomic insert; this content was not published.
    return {'saved':False,'already_saved':True,'id':saved['id'],'path':saved['path'],
-           'message':f"이 작업은 이미 결과를 저장했습니다: {saved['path']}. 한 작업은 결과 하나만 저장하며, 이번 내용은 저장하지 않았습니다."}
+           'message':msg('agent_runtime.result_already_saved', path=saved['path'])}
   # #182 review: like save_note, the text this Work wrote to a private store stays in its private-write
   # set, so a later outbound lookup or browser step carrying it is attributed (``held_values``).
   # The title (and file name it became) were written too, and may be derived from a private reference.
@@ -3445,7 +3445,7 @@ class Capabilities:
   tool=self.tools.get(name)
   # #1484: a refusal here comes before the tool runs, so its record says ``ran: false``.
   try:
-   if not tool or name not in self.allowed_tools:raise ValueError('활성 패키지에 선언되지 않은 도구입니다.')
+   if not tool or name not in self.allowed_tools:raise ValueError(msg('agent_runtime.tool_not_declared'))
    # #208: while work mode is on, a tool that would leave this Mac is refused here, on every
    # route, before it runs; the switch is read per call, so it applies from the next call.
    # #209: a call that names only declared intranet destinations may run.
@@ -3461,7 +3461,7 @@ class Capabilities:
     try:current=next((item for package in self.current_packages() for item in package['tools'] if item['id']==name),None)
     except Exception:current=None
     if current is None or current['host_action']!=tool['host_action']:
-     raise ValueError('이 도구는 작업 시작 후 비활성화되었거나 선언이 바뀌어 실행하지 않았습니다. 새 요청으로 다시 시도해 주세요.')
+     raise ValueError(msg('agent_runtime.tool_changed'))
   except ValueError as exc:raise not_run(exc)
   tool_id,name=name,tool['host_action']
   if name=='web_search':
@@ -3537,11 +3537,11 @@ class Capabilities:
     result=(self.drive.search(args.get('query','')) if name=='drive_search' else self.drive.read(args.get('file_id','')))
    except CalendarOAuthError as exc:
     if exc.reason in ('connection_required','reauth_required'):return unconnected
-    raise ToolError('Google Drive에 접근하지 못했습니다. 잠시 후 다시 시도해 주세요.','drive_unavailable') from None
+    raise ToolError(msg('agent_runtime.drive_unavailable'),'drive_unavailable') from None
    except DriveHTTPError as exc:
-    if exc.status==404:raise ToolError('Drive에서 그 파일을 찾지 못했습니다. drive_search로 다시 찾아 주세요.','drive_not_found') from None
-    if exc.status==403:raise ToolError('이 Drive 파일을 읽을 권한이 없거나 내보낼 수 없는 파일입니다.','drive_forbidden') from None
-    raise ToolError('Google Drive가 응답하지 않았습니다. 잠시 후 다시 시도해 주세요.','drive_unavailable') from None
+    if exc.status==404:raise ToolError(msg('agent_runtime.drive_file_not_found'),'drive_not_found') from None
+    if exc.status==403:raise ToolError(msg('agent_runtime.drive_file_forbidden'),'drive_forbidden') from None
+    raise ToolError(msg('agent_runtime.drive_not_responding'),'drive_unavailable') from None
    except DriveReadError as exc:
     raise ToolError(str(exc),exc.reason) from None
    return self._from_private('owner-drive',self._shortcut_read(name,result,'files'))
@@ -3555,10 +3555,10 @@ class Capabilities:
     result=(self.mail.search(args.get('query','')) if name=='mail_search' else self.mail.read(args.get('message_id','')))
    except GmailError as exc:
     if exc.reason in ('connection_required','reauth_required'):return unconnected
-    if exc.reason=='invalid_query':raise ToolError('메일 검색어가 비었거나 너무 깁니다.','mail_invalid_query') from None
-    if exc.reason=='invalid_message_id':raise ToolError('mail_search가 돌려준 message_id로 읽어 주세요.','mail_invalid_id') from None
-    if exc.reason=='provider_rejected':raise ToolError('Gmail에서 그 메일을 찾지 못했거나 읽을 수 없습니다. mail_search로 다시 찾아 주세요.','mail_not_found') from None
-    raise ToolError('Gmail에 접근하지 못했습니다. 잠시 후 다시 시도해 주세요.','mail_unavailable') from None
+    if exc.reason=='invalid_query':raise ToolError(msg('agent_runtime.mail_invalid_query'),'mail_invalid_query') from None
+    if exc.reason=='invalid_message_id':raise ToolError(msg('agent_runtime.mail_invalid_id'),'mail_invalid_id') from None
+    if exc.reason=='provider_rejected':raise ToolError(msg('agent_runtime.mail_not_found'),'mail_not_found') from None
+    raise ToolError(msg('agent_runtime.mail_unavailable'),'mail_unavailable') from None
    return self._from_private('owner-mail',result)
   if name=='calendar_query':
    # Calendar contents are owner-private.  Changes go through api_request's
@@ -3586,14 +3586,14 @@ class Capabilities:
    # very property `test_private_provenance_egress` asserts.
    resolved=None
    if 'location_ref' in args:args,resolved=self._location_ref_args(args)
-   elif 'city' not in args:raise ValueError('날씨를 조회할 도시나 위치 참조를 알려 주세요.')
+   elif 'city' not in args:raise ValueError(msg('agent_runtime.weather_location_required'))
    composed=self._public_task(tool_id,name,args)
    result=composed if composed is not None else self._read_network({'tool':name,**args})
    if resolved is not None and isinstance(result,dict):
     # What the ref stood for, so the answer cannot present a shared pin or
     # a saved anchor as a measured current position.
     location=dict(result.get('location') or {})
-    if 'latitude' in args:location['name']=resolved.get('label') or ('공유한 현재 위치 부근' if resolved['source']['kind'] in ('current_position_report','live_position_report') else '공유한 장소')
+    if 'latitude' in args:location['name']=resolved.get('label') or (msg('agent_runtime.shared_current_location') if resolved['source']['kind'] in ('current_position_report','live_position_report') else msg('agent_runtime.shared_place'))
     result={**result,'location':location,'location_source':resolved['source']}
    return result
   if name=='propose_current_state':
@@ -3609,7 +3609,7 @@ class Capabilities:
    # #659: a proposal the owner accepts; the service decides whether the
    # owner's own message already is that acceptance (DecisionEngine).
    if self.preparations is None or self.delegated:
-    raise ToolError('이 경로에서는 준비를 예약할 수 없습니다.','needs_setup',requires='owner-preparations')
+    raise ToolError(msg('agent_runtime.preparations_unavailable'),'needs_setup',requires='owner-preparations')
    # The Work's saved private values leave the goal before it is stored (the
    # service also removes stored secrets), as for a current-state value.
    # #393: so do the title and offer the owner reads.
@@ -3621,10 +3621,10 @@ class Capabilities:
   if name=='ask_location':
    # #774: one Telegram prompt to the owner; the reply continues this request once.
    if self.location_request is None or self.delegated:
-    raise ToolError('이 경로에서는 위치를 요청할 수 없습니다.','location_unavailable')
+    raise ToolError(msg('agent_runtime.location_unavailable'),'location_unavailable')
    reason=args.get('reason')
    if not isinstance(reason,str) or not 0<len(reason.strip())<=300:
-    raise ToolError('위치를 요청하는 목적을 300자 이내로 적어 주세요.','invalid_reason')
+    raise ToolError(msg('agent_runtime.location_reason_length'),'invalid_reason')
    from .browser_session import redact_private_values
    label=args.get('button_label')
    label=redact_private_values(label.strip(),self._browser_excluded())[0] if isinstance(label,str) and 0<len(label.strip())<=40 else None
@@ -3637,16 +3637,16 @@ class Capabilities:
   if name=='tell_owner':
    # #407: one interim message in the owner's chat; the Work goes on and its answer still comes at the end.
    if self.owner_update is None or self.delegated:
-    raise ToolError('이 경로에서는 작업 중에 메시지를 보낼 수 없어요.','owner_update_unavailable')
+    raise ToolError(msg('agent_runtime.owner_update_unavailable'),'owner_update_unavailable')
    text=args.get('text')
    if not isinstance(text,str) or not 0<len(text.strip())<=500:
-    raise ToolError('보낼 말을 500자 이내로 적어 주세요.','invalid_text')
+    raise ToolError(msg('agent_runtime.owner_update_length'),'invalid_text')
    from .browser_session import redact_private_values
    self.owner_update(redact_private_values(text.strip(),self._browser_excluded())[0])
    return {'sent':True,'channel':'telegram'}
   if name in SKILL_ACTIONS:
    from .skills import SkillError
-   if self.skills is None:raise ToolError('이 작업에서는 스킬을 쓸 수 없어요.','skill_unavailable')
+   if self.skills is None:raise ToolError(msg('agent_runtime.skill_unavailable'),'skill_unavailable')
    try:
     if name=='method_gap':
      # #32 review: the note is model text; secrets and credential shapes are masked before it is kept.
@@ -3664,17 +3664,17 @@ class Capabilities:
    return result
   if name in INFORMATION_USE_ACTIONS:
    # #826: a read of Still's own records of an earlier Work; never a payload.
-   if self.information_use is None:raise ToolError('이 경로에서는 사용한 정보 기록을 볼 수 없습니다.','information_use_unavailable')
+   if self.information_use is None:raise ToolError(msg('agent_runtime.information_use_unavailable'),'information_use_unavailable')
    return self.information_use(args)
   if name in SETTINGS_ACTIONS:
    # #814: a redacted read, or a draft the owner confirms in this conversation; never applied here.
    if self.settings is None or self.delegated:
-    raise ToolError('이 경로에서는 설정을 확인하거나 바꿀 수 없습니다.','settings_unavailable')
+    raise ToolError(msg('agent_runtime.settings_unavailable'),'settings_unavailable')
    if name=='capability_search' and self.judgment_text(args.get('query',''))!=args.get('query',''):
-    raise ToolError('공개 서버 이름만 검색하세요.','private_capability_query')
+    raise ToolError(msg('agent_runtime.public_server_query'),'private_capability_query')
    try:return self.settings(name,args)
    except ToolError:raise
-   except ValueError as exc:raise ToolError(str(exc) or '설정 요청을 처리하지 못했습니다.','settings_refused') from None
+   except ValueError as exc:raise ToolError(str(exc) or msg('agent_runtime.settings_request_failed'),'settings_refused') from None
   # Folder basenames are owner-private: `이혼소송_2026` is a fact about the
   # owner's life, not a public string, and independent review put one
   # straight into a web_search query from an otherwise clean context. Less
@@ -3710,7 +3710,7 @@ class Capabilities:
   if name=='list_notes':return self._from_private('personal-space',{'notes':self.store.notes()})
   if name=='save_note':
    content=args['content'].strip()
-   if not content or len(content)>12000:raise ValueError('메모는 1~12000자로 입력하세요.')
+   if not content or len(content)>12000:raise ValueError(msg('agent_runtime.note_length'))
    # #605: a note is a private store; what this Work writes to it is never
    # a public lookup word, and the Work now holds private-store material.
    self.written_private.append(content);self.written_labels.add('personal-space');self.private_provenance.add('personal-space')
@@ -3771,32 +3771,32 @@ class Capabilities:
    try:
     if action=='list':
      rows=forget.undoable(MEMORY_OWNER)
-     result={'action':'list','undoable':rows,'message':f'되돌릴 수 있는 항목 {len(rows)}개'}
+     result={'action':'list','undoable':rows,'message':msg('agent_runtime.undoable_count', count=len(rows))}
     elif action=='find':
      # #367: candidate conversation messages for the AI to choose from; nothing is forgotten here.
      # #367 review: document-backed Works stay out unless this AI may read connected documents (#826 boundary).
      try:rows=self.store.find_messages(args.get('query'),include_documents=self.document_access)
      except ValueError as exc:raise ToolError(str(exc),'invalid_arguments') from None
-     result={'action':'find','messages':rows,'message':f'찾은 대화 메시지 {len(rows)}개'}
+     result={'action':'find','messages':rows,'message':msg('agent_runtime.conversation_messages_count', count=len(rows))}
     elif action=='undo':
      result={'action':'undo',**forget.undo(MEMORY_OWNER,args.get('receipt'))}
      result['message']=msg('agent_runtime.undone')
     elif action=='delete' and not args.get('ref') and args.get('receipt'):
      # #367 review P2: an item already forgotten is erased through its receipt (from list).
      result={'action':action,**forget.delete_forgotten(MEMORY_OWNER,args.get('receipt'))}
-     result['message']=('신뢰 기록 내용은 지웠고 이전 권한을 막는 최소한의 표시는 남겼어요. 되돌릴 수 없어요.'
-                        if result['kind']=='trust' else '완전히 지웠어요. 되돌릴 수 없어요.')
+     result['message']=(msg('agent_runtime.trust_deleted')
+                        if result['kind']=='trust' else msg('agent_runtime.record_deleted'))
     elif action in ('forget','delete'):
      result={'action':action,**forget.forget(MEMORY_OWNER,args.get('ref'),delete=action=='delete',work_id=self.job_id)}
-     result['message']=('완전히 지웠어요. 되돌릴 수 없어요.' if action=='delete' else '잊었어요. 언제든 되돌릴 수 있어요.')
+     result['message']=(msg('agent_runtime.record_deleted') if action=='delete' else msg('agent_runtime.record_forgotten'))
      if result['kind']=='procedure' and action=='forget':
-      result['message']='저장해 둔 그 방법은 이제 쓰지 않아요. 이전에 저장한 방법이 있으면 그걸 다시 써요. 언제든 되돌릴 수 있어요.'
+      result['message']=msg('agent_runtime.procedure_forgotten')
      if result['kind']=='trust':
-      result['message']=('신뢰 기록 내용은 지웠고 이전 권한을 막는 최소한의 표시는 남겼어요. 되돌릴 수 없어요.'
+      result['message']=(msg('agent_runtime.trust_deleted')
                          if action=='delete' else
-                         '이전 권한 사용을 중지했어요. 설정 확인으로 언제든 복원할 수 있어요.')
+                         msg('agent_runtime.trust_forgotten'))
     else:
-     raise ToolError('action은 forget, delete, undo, list, find 중 하나여야 합니다.','invalid_arguments')
+     raise ToolError(msg('agent_runtime.invalid_forget_action'),'invalid_arguments')
    except ForgetError as exc:
     raise ToolError(str(exc),exc.code) from None
    self.evidence.append({'tool':name,'result':evidence_summary(name,result)}); return result
@@ -3845,7 +3845,7 @@ class Capabilities:
   if name=='list_agents':return {'agents':[{'id':role_id,'name':role['name'],'permissions':role['permissions'],'package_id':role['package_id']} for role_id,role in self.roles.items()]}
   if name=='delegate_agent':
    agent=self.roles.get(args['agent_id'])
-   if not agent:raise ValueError('활성 전문 에이전트를 선택하세요.')
+   if not agent:raise ValueError(msg('agent_runtime.select_active_agent'))
    # #604: a role whose package was disabled, removed or re-declared since
    # discovery is refused, exactly as a stale tool is.
    # Built-in is decided by the declaration itself, not by a package id a
@@ -3854,8 +3854,8 @@ class Capabilities:
     try:current=next((role for package in self.current_packages() if package['id']==agent['package_id'] for role in package['roles'] if role['id']==args['agent_id']),None)
     except Exception:current=None
     if current is None or {**current,'package_id':agent['package_id']}!=agent:
-     raise ValueError('이 전문 에이전트는 작업 시작 후 비활성화되었거나 선언이 바뀌어 실행하지 않았습니다. 새 요청으로 다시 시도해 주세요.')
-   if not args['task'].strip() or len(args['task'])>12000:raise ValueError('위임할 작업은 1~12000자로 입력하세요.')
+     raise ValueError(msg('agent_runtime.agent_changed'))
+   if not args['task'].strip() or len(args['task'])>12000:raise ValueError(msg('agent_runtime.delegation_task_length'))
    # The child prompt below is built from `self.evidence`, so the child's
    # context inherits this Work's provenance.  Each label keeps its own
    # window so the #448 decision applies identically on both sides of the
@@ -3888,7 +3888,7 @@ class Capabilities:
    self.private_provenance.update(label if label.startswith(DELEGATED_PREFIX) else DELEGATED_PREFIX+label
                                   for label in child.private_provenance)
    return {'agent_id':args['agent_id'],'agent_name':agent['name'],'package_id':agent['package_id'],'model':result.model,'report':result.content,'outcome':result.outcome,'execution':'separate specialist conversation using the configured model provider'}
-  raise ValueError('허용하지 않은 도구입니다.')
+  raise ValueError(msg('agent_runtime.tool_not_allowed'))
 
 # Route-neutral Still instructions (#569). Every AI route -- direct API,
 # Codex CLI, Claude Code CLI -- receives exactly this text, so the assistant's
@@ -4162,22 +4162,22 @@ OWNER_STATE_ACTIONS=frozenset(name for name,tool in HOST_TOOLS.items() if tool.s
 #: Every action a trusted-local CLI turn runs in the service rather than in its bridge.
 HOST_RELAYED_ACTIONS=BROWSER_ACTIONS|OWNER_STATE_ACTIONS
 #: #606 T5: a calendar read with no calendar read nothing; never a satisfied read.
-CALENDAR_UNCONFIGURED='Google Calendar가 연결 또는 구성되어 있지 않아 일정을 읽지 못했습니다. 먼저 캘린더를 연결해 주세요.'
+CALENDAR_UNCONFIGURED=msg('agent_runtime.calendar_unconfigured')
 #: #1172: a Drive read with no current connection read nothing.
-DRIVE_UNCONNECTED='Google Drive가 아직 연결되지 않아 파일을 읽지 못했습니다. 먼저 Google Drive를 연결해 주세요.'
+DRIVE_UNCONNECTED=msg('agent_runtime.drive_unconnected')
 #: #150: a mail read with no current Gmail connection read nothing.
-MAIL_UNCONNECTED='Gmail이 아직 연결되지 않아 메일을 읽지 못했습니다. 먼저 Gmail을 연결해 주세요.'
+MAIL_UNCONNECTED=msg('agent_runtime.mail_unconnected')
 
 #: An effect a tool declined or deferred, and whether the call still advanced
 #: this Work.  See ``withheld_effect``.
 Withheld=namedtuple('Withheld','reason advanced')
 
 #: #659: a preparation the owner has not accepted yet.
-PREPARATION_PROPOSED='준비를 제안했습니다. 소유자가 수락해야 예약됩니다.'
+PREPARATION_PROPOSED=msg('agent_runtime.preparation_proposed')
 #: #814: a settings change drafted, waiting for the owner's confirmation.
-SETTINGS_PENDING='설정 변경 초안만 만들었습니다. 소유자가 확인해야 적용됩니다.'
-DELEGATE_INCOMPLETE='위임한 전문 에이전트가 요청을 끝까지 완료하지 못했습니다.'
-DELEGATE_FAILED='위임한 전문 에이전트가 요청을 완료하지 못했습니다. 완료된 단계가 없습니다.'
+SETTINGS_PENDING=msg('agent_runtime.settings_pending')
+DELEGATE_INCOMPLETE=msg('agent_runtime.delegate_incomplete')
+DELEGATE_FAILED=msg('agent_runtime.delegate_failed')
 
 def withheld_effect(name,result):
  """Why a tool that returned normally did not do the thing it was asked to do.
@@ -4222,7 +4222,7 @@ def withheld_effect(name,result):
   return Withheld(result.get('next_step') or msg('agent_runtime.this_page_needs_a_sign_in'),advanced=False)
  if result.get('refused_because'):
   return Withheld(MEMORY_REFUSALS.get(result['refused_because'],
-                                      '소유자 확인이 필요해 기억 후보로 보관했습니다. 승인 후 저장할 수 있습니다.'),
+                                      msg('agent_runtime.memory_confirmation_required')),
                   advanced=False)
  # Keyed on the tool, not on the shape alone: a future connector returning
  # this shape with a remote ``next_step`` would otherwise push that text to
@@ -4275,16 +4275,16 @@ INCOMPLETE_QUALIFIERS=('partial',
 QUALIFIER_NOTES={
  'setup-required':msg('agent_runtime.a_needed_connection_isn_t_set'),
  'truncated':msg('agent_runtime.searching_or_reading_stopped_at_its'),
- 'partial':'일부 자료는 읽지 못했습니다.',
- 'inconsistent':'응답의 세부 숫자 합계가 응답이 밝힌 합계와 맞지 않습니다. 어느 쪽이 맞는지 확인되지 않았습니다.',
- 'stale':'응답 자료의 기준 시각이 허용한 시간보다 오래되어 현재 값이 아닐 수 있습니다.',
- 'as-of-unknown':'응답 자료가 언제 기준인지 알 수 없어 현재 값인지 확인되지 않았습니다.',
- 'failed':'이 단계는 완료되지 않았습니다.',
+ 'partial':msg('agent_runtime.partial_data'),
+ 'inconsistent':msg('agent_runtime.inconsistent_data'),
+ 'stale':msg('agent_runtime.stale_data'),
+ 'as-of-unknown':msg('agent_runtime.unknown_data_time'),
+ 'failed':msg('agent_runtime.step_incomplete'),
 }
 
 #: #1216: response-truth qualifiers Still always tells the owner, whatever the outcome or the judgment.
 DISCLOSED_QUALIFIERS=('stale','inconsistent','partial','as-of-unknown')
-DISCLOSURE_TEXT='참고: {note} (출처 {source}, 자료 기준 시각 {as_of})'
+DISCLOSURE_TEXT=msg('agent_runtime.disclosure')
 
 def work_disclosures(rows):
  """Still's own sentences for the response-truth qualifiers one Work's tool events recorded (#1216).
@@ -4302,21 +4302,21 @@ def work_disclosures(rows):
   except (TypeError,ValueError):continue
   evidence=data.get('evidence') if isinstance(data,dict) else None
   if _tool=='connector_read' and isinstance(evidence,dict) and evidence.get('trust_record_unavailable'):
-   line='연결 동작의 결과는 작업에 기록했지만, 신뢰 기록의 저장 한도 때문에 그 기록은 갱신하지 못했어요.'
+   line=msg('agent_runtime.trust_record_capacity')
    if line not in lines:lines.append(line)
   if _tool=='connector_read' and status=='failed' and isinstance(evidence,dict) and evidence.get('trust_rung'):
    from .settings_orchestrator import TRUST_RUNG_LABELS
    rung=TRUST_RUNG_LABELS.get(evidence['trust_rung'])
    if rung:
-    line=f"{evidence.get('service', '연결')}의 동작 실패를 기록하고 신뢰 단계를 '{rung}'로 낮췄어요. 설정에서 기록을 확인하거나 되돌릴 수 있어요."
+    line=msg('agent_runtime.trust_rung_lowered', service=evidence.get('service', msg('agent_runtime.connection_label')), rung=rung)
     if line not in lines:lines.append(line)
   if status!='succeeded':continue
   if not isinstance(evidence,dict) or 'freshness' not in evidence:continue
   source=evidence.get('source') if isinstance(evidence.get('source'),dict) else {}
-  where=f"{source.get('host') or ''}{source.get('path') or ''}" or '알 수 없음'
+  where=f"{source.get('host') or ''}{source.get('path') or ''}" or msg('agent_runtime.unknown_label')
   for label in evidence.get('qualifiers') or ():
    if label in DISCLOSED_QUALIFIERS:
-    sources=grouped.setdefault((label,evidence.get('as_of') or '알 수 없음'),[])
+    sources=grouped.setdefault((label,evidence.get('as_of') or msg('agent_runtime.unknown_label')),[])
     if where not in sources:sources.append(where)
  return lines+[DISCLOSURE_TEXT.format(note=QUALIFIER_NOTES[label],source=', '.join(sources),as_of=as_of)
          for (label,as_of),sources in grouped.items()]
@@ -4550,48 +4550,51 @@ def _fallback_text(name, result, sources):
   except (KeyError,TypeError):pass
  if name=='web_search' and isinstance(result,dict):
   rows=result.get('results',[])
-  lines=['검색 결과를 가져왔습니다.']
+  lines=[msg('agent_runtime.search_results_fetched')]
   for row in rows[:5]:
    if isinstance(row,dict) and row.get('title') and row.get('url'):lines.append(f"- {row['title']}: {row['url']}")
   return '\n'.join(lines)+(('\n\n'+msg('agent_runtime.sources_looked_up')+'\n'+'\n'.join(dict.fromkeys(sources))) if sources else '')
  if name=='public_page_read' and isinstance(result,dict):
-  return (result.get('content','')[:12000] + '\n\n출처: ' + result.get('url',''))
- if name=='save_note' and isinstance(result,dict) and result.get('saved'):return '메모를 저장했습니다.'
+  return (result.get('content','')[:12000] + '\n\n' + msg('agent_runtime.page_source', url=result.get('url','')))
+ if name=='save_note' and isinstance(result,dict) and result.get('saved'):return msg('agent_runtime.note_saved')
  if name=='save_result' and isinstance(result,dict):
-  return f"결과를 저장했습니다: {result.get('path')}" if result.get('saved') else str(result.get('message') or '결과를 저장하지 않았습니다.')
+  return msg('agent_runtime.result_saved', path=result.get('path')) if result.get('saved') else str(result.get('message') or msg('agent_runtime.result_not_saved'))
  if name=='forget_record' and isinstance(result,dict):return str(result.get('message') or '')
  if name=='schedule_preparation' and isinstance(result,dict):
-  return str(result.get('next_step') or '준비를 기록했습니다.')
+  return str(result.get('next_step') or msg('agent_runtime.preparation_recorded'))
  if name=='tell_owner' and isinstance(result,dict) and result.get('sent'):
-  return '보냈어요. 하던 일을 이어서 하고, 끝나면 이미 말한 내용은 반복하지 말고 답을 주세요.'
+  return msg('agent_runtime.owner_told')
  if name=='ask_location' and isinstance(result,dict) and result.get('requested'):
-  if result.get('with_answer'):return '답에 현재 위치 공유 버튼을 함께 붙입니다. 다른 곳이면 위치를 보내 주시면 그 위치로 다시 처리합니다.'
-  return 'Telegram으로 현재 위치를 요청했습니다. 위치를 보내 주시면 이어서 처리합니다.'
+  if result.get('with_answer'):return msg('agent_runtime.location_with_answer')
+  return msg('agent_runtime.location_requested')
  if name=='settings_read' and isinstance(result,dict) and result.get('response'):return str(result['response'])
  if name=='information_use' and isinstance(result,dict) and result.get('response'):return str(result['response'])
  if name=='settings_change' and isinstance(result,dict):return str(result.get('next_step') or SETTINGS_PENDING)
  if name=='propose_current_state' and isinstance(result,dict):
-  return '오늘의 현재 상황을 임시로 기록했습니다. 기억이나 프로필은 바꾸지 않았습니다.' if result.get('recorded') else str(result.get('message') or '현재 상황을 기록하지 않았습니다.')
+  return msg('agent_runtime.current_state_recorded') if result.get('recorded') else str(result.get('message') or msg('agent_runtime.current_state_not_recorded'))
  if name=='save_memory' and isinstance(result,dict):
   if memory_proposal(name,result):return MEMORY_ASK_OWNER_TEXT
-  if result.get('state')=='pending':return MEMORY_REFUSALS.get(result.get('refused_because'),'소유자 확인이 필요해 기억 후보로 보관했습니다. 승인 후 저장할 수 있습니다.')
+  if result.get('state')=='pending':return MEMORY_REFUSALS.get(result.get('refused_because'),msg('agent_runtime.memory_confirmation_required'))
   if result.get('id'):return msg('agent_runtime.remembered')
  if name=='find_files' and isinstance(result,dict):
   files=result.get('files',[])
-  return '찾은 파일:\n'+('\n'.join('- '+str(f.get('path')) for f in files[:12] if isinstance(f,dict)) or '일치하는 파일이 없습니다.')
- if name=='read_file' and isinstance(result,dict):return f"{result.get('path','요청한 파일')}을 읽었습니다. 이어서 필요한 내용을 질문해 주세요."
- if name=='list_notes':return f"저장된 메모 {len(result.get('notes',[]))}개를 확인했습니다."
+  return msg('agent_runtime.files_found')+'\n'+('\n'.join('- '+str(f.get('path')) for f in files[:12] if isinstance(f,dict)) or msg('agent_runtime.no_matching_files'))
+ if name=='read_file' and isinstance(result,dict):return msg('agent_runtime.file_read', path=result.get('path',msg('agent_runtime.requested_file')))
+ if name=='list_notes':return msg('agent_runtime.notes_checked', count=len(result.get('notes',[])))
  if name in BROWSER_ACTIONS and isinstance(result,dict):
   if result.get('state')=='login_required':return str(result.get('next_step') or msg('agent_runtime.this_page_needs_a_sign_in'))
-  if name=='browser_find':return '페이지에서 텍스트를 찾았습니다.' if result.get('found') else '페이지에서 해당 텍스트를 찾지 못했습니다.'
+  if name=='browser_find':return msg('agent_runtime.browser_text_found') if result.get('found') else msg('agent_runtime.browser_text_not_found')
   loaded=result.get('loaded') if name=='browser_read' else None
   if isinstance(loaded,dict):
    # #11: the outcome of loading more, never the loaded text itself.
-   found='새 내용을 불러왔습니다' if loaded.get('new_content') else '새 내용은 없었습니다'
-   return f"브라우저 페이지를 {loaded.get('rounds',0)}번 더 불러와 확인했습니다({found}): {result.get('title') or result.get('url') or ''}".rstrip(': ')
-  return f"브라우저 페이지를 확인했습니다: {result.get('title') or result.get('url') or ''}".rstrip(': ')
- if name=='list_agents':return '사용 가능한 전문 에이전트를 확인했습니다.'
- if name=='delegate_agent' and isinstance(result,dict):return str(result.get('report') or '전문 에이전트가 보고서를 반환하지 않았습니다.')
+   found=msg('agent_runtime.new_content_loaded') if loaded.get('new_content') else msg('agent_runtime.no_new_content')
+   title=result.get('title') or result.get('url') or ''
+   return (msg('agent_runtime.browser_loaded_more', count=loaded.get('rounds',0), found=found, title=title).rstrip(': ')
+           if title else msg('agent_runtime.browser_loaded_more_untitled', count=loaded.get('rounds',0), found=found))
+  title=result.get('title') or result.get('url') or ''
+  return msg('agent_runtime.browser_page_checked', title=title).rstrip(': ') if title else msg('agent_runtime.browser_page_checked_untitled')
+ if name=='list_agents':return msg('agent_runtime.agents_checked')
+ if name=='delegate_agent' and isinstance(result,dict):return str(result.get('report') or msg('agent_runtime.agent_no_report'))
  return FALLBACK_UNDESCRIBED
 
 #: Host actions that write owner text into a private store.
@@ -4668,8 +4671,7 @@ FINISH_DEFINITION={'type':'function','function':{'name':FINISH_ACTION,
 #: same page, keyed on the digest of the page state the session last returned.
 PAGE_STEP_ACTIONS=frozenset({'browser_click','browser_type'})
 
-REPEAT_PATH_TEXT=('같은 경로를 같은 입력으로 다시 실행하지 않습니다. 다른 제공자, 바꾼 검색어, 사이트 자체 검색, '
-                  '다른 결과나 다른 경로를 고르거나 소유자에게 구체적인 질문 하나를 하세요.')
+REPEAT_PATH_TEXT=(msg('agent_runtime.repeat_path'))
 ALTERNATIVE_NUDGE=('Path check: the last path did not yield the goal. Choose a different path (another provider, a rewritten '
                    'query, the site\'s own search, another result or another route) or ask the owner one specific question. '
                    'Do not repeat the same call.')
@@ -4677,7 +4679,7 @@ COMPLETION_CHECK=('Completion check: tools have run for this request but no comp
                   'only if the results you name in evidence_refs show the request fulfilled; otherwise partial or needs_owner '
                   'with what failed, what is unknown and the next step. If a different path could still reach the goal, take it first.')
 #: What Still states when completion could not be established.
-GOAL_NOT_CLAIMED='완료를 뒷받침하는 관찰 결과가 제시되지 않아 요청이 끝났는지 확인하지 못했습니다.'
+GOAL_NOT_CLAIMED=msg('agent_runtime.goal_not_claimed')
 #: #173 slice C: truth floors, said only when the outcome judgment gave no gap of its own.
 GOAL_NOT_SHOWN=msg('agent_runtime.goal_not_shown')
 GOAL_UNJUDGED=msg('agent_runtime.goal_unjudged')
@@ -5305,13 +5307,13 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
     try:
      name=function.get('name')
      if not isinstance(name,str):
-      name='unknown';raise ValueError('도구 이름은 문자열이어야 합니다.')
+      name='unknown';raise ValueError(msg('agent_runtime.tool_name_type'))
      args=json.loads(function.get('arguments','{}'))
      # #718: the status is display text only; it never reaches validation,
      # the repeat/duplicate keys or the tool itself.
      args,status=split_status(args)
      spec=specs.get(name)
-     if not spec:raise ValueError('허용하지 않은 도구 또는 인수입니다.')
+     if not spec:raise ValueError(msg('agent_runtime.invalid_tool_arguments'))
      check_arguments(spec,args)
      validated=True
      action=capabilities.tools[name]['host_action']
@@ -5331,7 +5333,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       paths.add(path)
      # #656: a browser call reads or changes page state, so the same call may run again.
      stateful=action in BROWSER_ACTIONS
-     if attempt>1 and not stateful:raise ToolError('같은 도구 요청은 현재 작업에서 한 번만 실행합니다. 결과를 사용하거나 새 요청을 보내 주세요.','duplicate_call')
+     if attempt>1 and not stateful:raise ToolError(msg('agent_runtime.duplicate_tool_call'),'duplicate_call')
      kind=alternative_kind(action,keyed,last_search,bool(trail) and trail[-1][1] in ('failed','incomplete'))
      if action in SEARCH_BACKED_ACTIONS:last_search=keyed
      # #656: typed browser text is replaced before this (or any) record.

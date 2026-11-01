@@ -9154,5 +9154,791 @@
   "en": "{message} The previously verified judgment route is also unavailable now.",
   "ja": "{message} 以前検証した判断ルートも現在は使用できません。",
   "zh": "{message} 之前验证的判断路径目前也不可用。"
+ },
+ "agent_runtime.context_withdrawn": {
+  "ko": "이 조회에 들어 있던 현재 맥락 위치·장소를 소유자가 멈추거나 지웠거나 바뀌어서 보내지 않았습니다. 남은 검색어가 없으니 소유자에게 지역을 한 번 물어보세요.",
+  "en": "The current-context location in this lookup was stopped, deleted or changed, so it was not sent. No search terms remain; ask the owner for an area.",
+  "ja": "この検索の現在の状況に含まれる位置・場所は停止、削除、変更されたため送信しませんでした。検索語が残っていないため、地域を確認してください。",
+  "zh": "此次查询中的当前情境位置已被停用、删除或更改，因此未发送。没有剩余搜索词，请询问所在区域。"
+ },
+ "agent_runtime.memory_confirmation_required": {
+  "ko": "소유자 확인이 필요해 기억 후보로 보관했습니다. 승인 후 저장할 수 있습니다.",
+  "en": "Kept as a memory candidate for your review. It can be saved after approval.",
+  "ja": "確認が必要なため記憶候補として保管しました。承認後に保存できます。",
+  "zh": "已保留为记忆候选，待你确认后保存。"
+ },
+ "agent_runtime.memory_not_requested": {
+  "ko": "요청에 없는 내용이라 기억으로 저장하지 않고 기억 후보로 보관했습니다. 개인 공간에서 확인 후 승인할 수 있습니다.",
+  "en": "Kept as a memory candidate because it was not in your request. You can review and approve it in your personal space.",
+  "ja": "依頼に含まれない内容のため、記憶候補として保管しました。個人スペースで確認して承認できます。",
+  "zh": "内容不在你的请求中，已保留为记忆候选。可在个人空间确认并批准。"
+ },
+ "agent_runtime.request_not_memory": {
+  "ko": "요청 문장 자체는 기억이 아니라서 저장하지 않았습니다. 필요하면 지켜보기로 제안합니다.",
+  "en": "The request itself was not saved as a memory. A watch can be proposed if needed.",
+  "ja": "依頼文自体は記憶として保存しませんでした。必要なら見守りを提案します。",
+  "zh": "请求本身未保存为记忆。需要时可提议持续关注。"
+ },
+ "agent_runtime.memory_replacement_not_requested": {
+  "ko": "요청에 없던 기존 기억을 대체하는 값이라 저장하지 않고 기억 후보로 보관했습니다. 개인 공간에서 확인 후 승인할 수 있습니다.",
+  "en": "Kept as a memory candidate because it would replace a memory you did not name. You can review and approve it in your personal space.",
+  "ja": "指定されていない既存の記憶を置き換える内容のため、記憶候補として保管しました。個人スペースで確認して承認できます。",
+  "zh": "内容会替换你未指定的现有记忆，已保留为记忆候选。可在个人空间确认并批准。"
+ },
+ "agent_runtime.credential_not_remembered": {
+  "ko": "자격 증명으로 보이는 값이라 기억으로 저장하지 않았습니다.",
+  "en": "This looks like a credential, so it was not saved as a memory.",
+  "ja": "認証情報と思われるため、記憶として保存しませんでした。",
+  "zh": "内容疑似凭据，未保存为记忆。"
+ },
+ "agent_runtime.page_outside_scope": {
+  "ko": "이 Work의 web_search 결과에 나온 주소나 소유자가 승인한 공개 페이지가 아니어서 조회하지 않았습니다. 먼저 web_search로 찾은 결과 주소를 읽으세요.",
+  "en": "This URL was not in this Work's web_search results or among your approved public pages, so it was not read. Read a URL from web_search first.",
+  "ja": "このURLはこの作業のweb_search結果にも承認済み公開ページにもないため読みませんでした。まずweb_searchの結果URLを読んでください。",
+  "zh": "此网址不在本次工作的web_search结果或你批准的公开页面中，因此未读取。请先读取web_search结果中的网址。"
+ },
+ "agent_runtime.page_redirect_left_scope": {
+  "ko": "검색 결과 주소가 다른 주소로 이동해 읽지 않았습니다. 소유자 승인 범위와는 무관합니다.",
+  "en": "The search result redirected to another URL, so it was not read. This is unrelated to your approval scope.",
+  "ja": "検索結果が別のURLに移動したため読みませんでした。承認範囲とは無関係です。",
+  "zh": "搜索结果跳转到了其他网址，因此未读取。这与批准范围无关。"
+ },
+ "agent_runtime.public_query_empty": {
+  "ko": "공개 조회에 보낼 검색어(또는 도시)가 비어 있거나 비밀값뿐이라 보내지 않았습니다. 조회할 내용을 직접 적어 주세요.",
+  "en": "The public search terms (or city) were empty or contained only secrets, so nothing was sent. Enter what to look up.",
+  "ja": "公開検索の検索語（または都市）が空か秘密情報のみのため送信しませんでした。調べる内容を入力してください。",
+  "zh": "公开查询的搜索词（或城市）为空或仅含秘密信息，因此未发送。请输入要查询的内容。"
+ },
+ "agent_runtime.work_no_longer_running": {
+  "ko": "이 작업은 더 이상 실행 중이 아니어서 공개 조회를 실행하지 않았습니다.",
+  "en": "This Work is no longer running, so the public lookup was not run.",
+  "ja": "この作業は実行中ではないため、公開検索を実行しませんでした。",
+  "zh": "此工作已不再运行，未执行公开查询。"
+ },
+ "agent_runtime.invalid_tool_arguments": {
+  "ko": "허용하지 않은 도구 또는 인수입니다.",
+  "en": "Tool or arguments not allowed.",
+  "ja": "許可されていないツールまたは引数です。",
+  "zh": "工具或参数不被允许。"
+ },
+ "agent_runtime.tool_argument_type": {
+  "ko": "도구 인수는 문자열이어야 합니다.",
+  "en": "Tool arguments must be strings.",
+  "ja": "ツールの引数は文字列にしてください。",
+  "zh": "工具参数必须是字符串。"
+ },
+ "agent_runtime.work_stopped": {
+  "ko": "소유자가 멈춤을 요청해 다음 단계를 실행하지 않았습니다.",
+  "en": "You asked to stop, so the next step was not run.",
+  "ja": "停止の依頼があったため、次の手順は実行しませんでした。",
+  "zh": "你要求停止，未执行下一步。"
+ },
+ "agent_runtime.work_deadline": {
+  "ko": "이 작업의 처리 시간 한도에 도달해 다음 단계를 실행하지 않았습니다.",
+  "en": "This Work reached its time limit, so the next step was not run.",
+  "ja": "この作業の処理時間の上限に達したため、次の手順は実行しませんでした。",
+  "zh": "此工作已达到处理时间上限，未执行下一步。"
+ },
+ "agent_runtime.model_turns_exhausted": {
+  "ko": "이 작업의 모델 호출 한도({count}회)에 도달해 더 진행하지 않았습니다.",
+  "en": "This Work reached its model-call limit ({count}), so it did not continue.",
+  "ja": "この作業のモデル呼び出し上限（{count}回）に達したため、続行しませんでした。",
+  "zh": "此工作已达到模型调用上限（{count}次），未继续处理。"
+ },
+ "agent_runtime.tool_attempts_exhausted": {
+  "ko": "이 작업의 도구 실행 한도({count}회)에 도달해 더 실행하지 않았습니다.",
+  "en": "This Work reached its tool-run limit ({count}), so no more tools were run.",
+  "ja": "この作業のツール実行上限（{count}回）に達したため、これ以上実行しませんでした。",
+  "zh": "此工作已达到工具执行上限（{count}次），未继续执行。"
+ },
+ "agent_runtime.transient_read_retry": {
+  "ko": "공개 조회가 일시적인 네트워크 오류로 실패해 한 번 다시 시도했습니다.",
+  "en": "The public lookup failed with a temporary network error and was retried once.",
+  "ja": "公開検索が一時的なネットワークエラーで失敗したため、1回再試行しました。",
+  "zh": "公开查询因临时网络错误失败，已重试一次。"
+ },
+ "agent_runtime.transient_tool_failure": {
+  "ko": "도구 실행이 일시적인 연결 오류로 실패했습니다.",
+  "en": "The tool run failed with a temporary connection error.",
+  "ja": "ツールの実行が一時的な接続エラーで失敗しました。",
+  "zh": "工具执行因临时连接错误失败。"
+ },
+ "agent_runtime.memory_ask_owner": {
+  "ko": "기억해 둘지 여쭤볼게요.",
+  "en": "I'll ask whether to remember this.",
+  "ja": "記憶しておくか確認します。",
+  "zh": "我会询问是否记住此内容。"
+ },
+ "agent_runtime.context_unverified": {
+  "ko": "현재 맥락 상태를 확인하지 못해 이 조회를 보내지 않았습니다. 잠시 후 다시 시도하거나 지역을 직접 알려 주세요.",
+  "en": "The current context could not be checked, so this lookup was not sent. Try again shortly or provide an area.",
+  "ja": "現在の状況を確認できなかったため、この検索は送信しませんでした。しばらくしてから再試行するか、地域を教えてください。",
+  "zh": "无法确认当前情境，未发送此查询。请稍后重试或直接提供区域。"
+ },
+ "agent_runtime.weather_location_conflict": {
+  "ko": "날씨는 도시(city) 또는 위치 참조(location_ref) 중 하나만 주세요.",
+  "en": "For weather, provide either city or location_ref, not both.",
+  "ja": "天気にはcityまたはlocation_refのどちらか一方を指定してください。",
+  "zh": "查询天气时，请仅提供city或location_ref中的一个。"
+ },
+ "agent_runtime.connect_file_folder": {
+  "ko": "먼저 연결 설정에서 파일 폴더를 연결해 주세요.",
+  "en": "Connect a file folder in connection settings first.",
+  "ja": "まず接続設定でファイルフォルダーを接続してください。",
+  "zh": "请先在连接设置中连接文件夹。"
+ },
+ "agent_runtime.file_path_not_allowed": {
+  "ko": "허용하지 않은 파일 경로입니다.",
+  "en": "File path not allowed.",
+  "ja": "許可されていないファイルパスです。",
+  "zh": "文件路径不被允许。"
+ },
+ "agent_runtime.file_outside_connected_folder": {
+  "ko": "연결 폴더 밖의 파일에는 접근할 수 없습니다.",
+  "en": "Files outside the connected folder cannot be accessed.",
+  "ja": "接続フォルダー外のファイルにはアクセスできません。",
+  "zh": "无法访问已连接文件夹以外的文件。"
+ },
+ "agent_runtime.file_size_limit": {
+  "ko": "10MB 이하 지원 문서만 읽을 수 있습니다.",
+  "en": "Only supported documents up to 10 MB can be read.",
+  "ja": "10MB以下の対応文書のみ読めます。",
+  "zh": "只能读取不超过10MB的受支持文档。"
+ },
+ "agent_runtime.supported_document_formats": {
+  "ko": "지원 형식은 TXT, MD, PDF, DOCX, XLSX입니다.",
+  "en": "Supported formats: TXT, MD, PDF, DOCX and XLSX.",
+  "ja": "対応形式はTXT、MD、PDF、DOCX、XLSXです。",
+  "zh": "支持的格式：TXT、MD、PDF、DOCX和XLSX。"
+ },
+ "agent_runtime.document_excerpt_sharing": {
+  "ko": "연결 문서 발췌문을 외부 AI에 전달하려면 설정에서 문서 공유를 승인하세요.",
+  "en": "Approve document sharing in Settings to send excerpts from connected documents to an external AI.",
+  "ja": "接続文書の抜粋を外部AIに送るには、設定で文書共有を承認してください。",
+  "zh": "要将已连接文档的摘录发送给外部AI，请在设置中批准文档共享。"
+ },
+ "agent_runtime.file_source_location": {
+  "ko": "파일: {path} · {location}",
+  "en": "File: {path} · {location}",
+  "ja": "ファイル: {path} · {location}",
+  "zh": "文件：{path} · {location}"
+ },
+ "agent_runtime.file_source": {
+  "ko": "파일: {path}",
+  "en": "File: {path}",
+  "ja": "ファイル: {path}",
+  "zh": "文件：{path}"
+ },
+ "agent_runtime.reference_folder_not_allowed": {
+  "ko": "허용된 참고 폴더가 아닙니다.",
+  "en": "This reference folder is not allowed.",
+  "ja": "許可された参照フォルダーではありません。",
+  "zh": "此参考文件夹未获授权。"
+ },
+ "agent_runtime.reference_source": {
+  "ko": "참고 자료: {path} @ {version}",
+  "en": "Reference: {path} @ {version}",
+  "ja": "参照資料: {path} @ {version}",
+  "zh": "参考资料：{path} @ {version}"
+ },
+ "agent_runtime.saved_result_not_found": {
+  "ko": "저장된 결과를 찾지 못했습니다. find_files로 다시 찾아 주세요.",
+  "en": "Saved result not found. Search again with find_files.",
+  "ja": "保存済みの結果が見つかりませんでした。find_filesで再検索してください。",
+  "zh": "未找到已保存的结果。请使用find_files重新查找。"
+ },
+ "agent_runtime.result_folder_unavailable": {
+  "ko": "저장된 결과가 있는 폴더를 지금 쓸 수 없습니다. 결과 저장 폴더를 다시 연결해 주세요.",
+  "en": "The saved-results folder is unavailable. Reconnect the results folder.",
+  "ja": "保存済みの結果があるフォルダーを現在使えません。結果保存フォルダーを再接続してください。",
+  "zh": "当前无法使用已保存结果所在的文件夹。请重新连接结果保存文件夹。"
+ },
+ "agent_runtime.result_source_timeout": {
+  "ko": "저장된 결과의 원본 확인이 제한 시간 안에 끝나지 않아 읽지 않았습니다. 잠시 후 다시 시도해 주세요.",
+  "en": "The saved result's sources could not be checked in time, so it was not read. Try again shortly.",
+  "ja": "保存済みの結果の原本確認が制限時間内に終わらなかったため、読みませんでした。しばらくしてから再試行してください。",
+  "zh": "未能在时限内确认已保存结果的原始资料，因此未读取。请稍后重试。"
+ },
+ "agent_runtime.saved_result_source": {
+  "ko": "저장된 결과: {title}",
+  "en": "Saved result: {title}",
+  "ja": "保存済みの結果: {title}",
+  "zh": "已保存的结果：{title}"
+ },
+ "agent_runtime.root_not_found": {
+  "ko": "그 root_id의 폴더를 찾지 못했습니다. list_roots로 확인해 주세요.",
+  "en": "No folder found for that root_id. Check with list_roots.",
+  "ja": "そのroot_idのフォルダーが見つかりませんでした。list_rootsで確認してください。",
+  "zh": "未找到该root_id对应的文件夹。请使用list_roots确认。"
+ },
+ "agent_runtime.connect_access_folder": {
+  "ko": "연결 설정에서 접근할 폴더를 먼저 연결해 주세요.",
+  "en": "Connect a folder to access in connection settings first.",
+  "ja": "まず接続設定でアクセスするフォルダーを接続してください。",
+  "zh": "请先在连接设置中连接要访问的文件夹。"
+ },
+ "agent_runtime.document_search_sharing": {
+  "ko": "연결 문서 검색 결과를 외부 AI에 전달하려면 설정에서 문서 공유를 승인하세요.",
+  "en": "Approve document sharing in Settings to send connected-document search results to an external AI.",
+  "ja": "接続文書の検索結果を外部AIに送るには、設定で文書共有を承認してください。",
+  "zh": "要将已连接文档的搜索结果发送给外部AI，请在设置中批准文档共享。"
+ },
+ "agent_runtime.query_length": {
+  "ko": "검색어는 1~200자로 입력하세요.",
+  "en": "Enter a search query of 1–200 characters.",
+  "ja": "検索語は1～200文字で入力してください。",
+  "zh": "请输入1至200个字符的搜索词。"
+ },
+ "agent_runtime.result_title_length": {
+  "ko": "결과 제목은 1~120자로 입력하세요.",
+  "en": "Enter a result title of 1–120 characters.",
+  "ja": "結果のタイトルは1～120文字で入力してください。",
+  "zh": "请输入1至120个字符的结果标题。"
+ },
+ "agent_runtime.result_content_length": {
+  "ko": "결과 내용은 1~60000자로 입력하세요.",
+  "en": "Enter result content of 1–60,000 characters.",
+  "ja": "結果の内容は1～60000文字で入力してください。",
+  "zh": "请输入1至60000个字符的结果内容。"
+ },
+ "agent_runtime.connect_original_folder": {
+  "ko": "정리할 원본 폴더를 먼저 연결해 주세요.",
+  "en": "Connect the source folder to organize first.",
+  "ja": "まず整理する原本フォルダーを接続してください。",
+  "zh": "请先连接要整理的原始资料文件夹。"
+ },
+ "agent_runtime.connect_result_folder": {
+  "ko": "결과를 저장할 폴더를 먼저 연결해 주세요.",
+  "en": "Connect a folder for saving results first.",
+  "ja": "まず結果を保存するフォルダーを接続してください。",
+  "zh": "请先连接用于保存结果的文件夹。"
+ },
+ "agent_runtime.read_result_sources_first": {
+  "ko": "저장할 결과의 원본을 먼저 find_files와 read_file로 참고 폴더에서 읽어 주세요.",
+  "en": "Read the result's sources from a reference folder with find_files and read_file before saving.",
+  "ja": "保存する結果の原本を、まずfind_filesとread_fileで参照フォルダーから読んでください。",
+  "zh": "请先使用find_files和read_file从参考文件夹读取要保存结果的原始资料。"
+ },
+ "agent_runtime.result_folder_changed": {
+  "ko": "이 작업의 이전 결과 저장이 다른 결과 폴더에 묶여 있어 새로 저장하지 않았습니다. 새 요청으로 다시 저장해 주세요.",
+  "en": "This Work's earlier save is tied to another results folder, so nothing new was saved. Save again in a new request.",
+  "ja": "この作業の以前の保存が別の結果フォルダーに紐づいているため、新たに保存しませんでした。新しい依頼で保存してください。",
+  "zh": "此工作之前的保存已绑定到其他结果文件夹，未另行保存。请通过新请求重新保存。"
+ },
+ "agent_runtime.result_unverified": {
+  "ko": "이 작업이 저장한 결과를 지금 확인하지 못해 새로 저장하지 않았습니다. 잠시 후 다시 시도해 주세요.",
+  "en": "This Work's saved result could not be checked, so nothing new was saved. Try again shortly.",
+  "ja": "この作業の保存済みの結果を確認できなかったため、新たに保存しませんでした。しばらくしてから再試行してください。",
+  "zh": "当前无法确认此工作保存的结果，未另行保存。请稍后重试。"
+ },
+ "agent_runtime.result_source_changed": {
+  "ko": "이 작업이 저장한 결과 파일이나 그 원본이 지워졌거나 바뀌어 있어 새로 저장하지 않았습니다. 새 요청으로 다시 저장해 주세요.",
+  "en": "This Work's saved file or its source was deleted or changed, so nothing new was saved. Save again in a new request.",
+  "ja": "この作業の保存済みファイルまたは原本が削除・変更されているため、新たに保存しませんでした。新しい依頼で保存してください。",
+  "zh": "此工作保存的文件或其原始资料已被删除或更改，未另行保存。请通过新请求重新保存。"
+ },
+ "agent_runtime.result_already_saved": {
+  "ko": "이 작업은 이미 결과를 저장했습니다: {path}. 한 작업은 결과 하나만 저장하며, 이번 내용은 저장하지 않았습니다.",
+  "en": "This Work already saved a result: {path}. Each Work saves only one result; this content was not saved.",
+  "ja": "この作業はすでに結果を保存しています: {path}。1つの作業で保存できる結果は1つだけで、今回の内容は保存しませんでした。",
+  "zh": "此工作已保存结果：{path}。每项工作仅保存一个结果，本次内容未保存。"
+ },
+ "agent_runtime.tool_not_declared": {
+  "ko": "활성 패키지에 선언되지 않은 도구입니다.",
+  "en": "This tool is not declared in the active package.",
+  "ja": "有効なパッケージに宣言されていないツールです。",
+  "zh": "此工具未在当前启用的包中声明。"
+ },
+ "agent_runtime.tool_changed": {
+  "ko": "이 도구는 작업 시작 후 비활성화되었거나 선언이 바뀌어 실행하지 않았습니다. 새 요청으로 다시 시도해 주세요.",
+  "en": "This tool was disabled or its declaration changed after the Work started, so it was not run. Try again in a new request.",
+  "ja": "作業開始後にこのツールが無効化されたか宣言が変わったため、実行しませんでした。新しい依頼で再試行してください。",
+  "zh": "此工具在工作开始后被禁用或声明已更改，未执行。请通过新请求重试。"
+ },
+ "agent_runtime.drive_unavailable": {
+  "ko": "Google Drive에 접근하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+  "en": "Could not access Google Drive. Try again shortly.",
+  "ja": "Google Driveにアクセスできませんでした。しばらくしてから再試行してください。",
+  "zh": "无法访问Google Drive。请稍后重试。"
+ },
+ "agent_runtime.drive_file_not_found": {
+  "ko": "Drive에서 그 파일을 찾지 못했습니다. drive_search로 다시 찾아 주세요.",
+  "en": "File not found in Drive. Search again with drive_search.",
+  "ja": "Driveにそのファイルが見つかりませんでした。drive_searchで再検索してください。",
+  "zh": "未在Drive中找到该文件。请使用drive_search重新查找。"
+ },
+ "agent_runtime.drive_file_forbidden": {
+  "ko": "이 Drive 파일을 읽을 권한이 없거나 내보낼 수 없는 파일입니다.",
+  "en": "You do not have permission to read this Drive file, or it cannot be exported.",
+  "ja": "このDriveファイルの読み取り権限がないか、エクスポートできないファイルです。",
+  "zh": "无权读取此Drive文件，或该文件无法导出。"
+ },
+ "agent_runtime.drive_not_responding": {
+  "ko": "Google Drive가 응답하지 않았습니다. 잠시 후 다시 시도해 주세요.",
+  "en": "Google Drive did not respond. Try again shortly.",
+  "ja": "Google Driveが応答しませんでした。しばらくしてから再試行してください。",
+  "zh": "Google Drive未响应。请稍后重试。"
+ },
+ "agent_runtime.mail_invalid_query": {
+  "ko": "메일 검색어가 비었거나 너무 깁니다.",
+  "en": "The mail search query is empty or too long.",
+  "ja": "メールの検索語が空か長すぎます。",
+  "zh": "邮件搜索词为空或过长。"
+ },
+ "agent_runtime.mail_invalid_id": {
+  "ko": "mail_search가 돌려준 message_id로 읽어 주세요.",
+  "en": "Use a message_id returned by mail_search to read a message.",
+  "ja": "mail_searchが返したmessage_idで読んでください。",
+  "zh": "请使用mail_search返回的message_id读取邮件。"
+ },
+ "agent_runtime.mail_not_found": {
+  "ko": "Gmail에서 그 메일을 찾지 못했거나 읽을 수 없습니다. mail_search로 다시 찾아 주세요.",
+  "en": "Gmail could not find or read that message. Search again with mail_search.",
+  "ja": "Gmailでそのメールが見つからないか読めません。mail_searchで再検索してください。",
+  "zh": "Gmail未找到该邮件或无法读取。请使用mail_search重新查找。"
+ },
+ "agent_runtime.mail_unavailable": {
+  "ko": "Gmail에 접근하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+  "en": "Could not access Gmail. Try again shortly.",
+  "ja": "Gmailにアクセスできませんでした。しばらくしてから再試行してください。",
+  "zh": "无法访问Gmail。请稍后重试。"
+ },
+ "agent_runtime.weather_location_required": {
+  "ko": "날씨를 조회할 도시나 위치 참조를 알려 주세요.",
+  "en": "Provide a city or location reference for the weather lookup.",
+  "ja": "天気を調べる都市または位置参照を教えてください。",
+  "zh": "请提供天气查询的城市或位置引用。"
+ },
+ "agent_runtime.shared_current_location": {
+  "ko": "공유한 현재 위치 부근",
+  "en": "Near your shared current location",
+  "ja": "共有した現在地の周辺",
+  "zh": "共享的当前位置附近"
+ },
+ "agent_runtime.shared_place": {
+  "ko": "공유한 장소",
+  "en": "Shared place",
+  "ja": "共有した場所",
+  "zh": "共享的地点"
+ },
+ "agent_runtime.preparations_unavailable": {
+  "ko": "이 경로에서는 준비를 예약할 수 없습니다.",
+  "en": "Preparations cannot be scheduled through this route.",
+  "ja": "この経路では準備を予約できません。",
+  "zh": "此途径无法预约准备工作。"
+ },
+ "agent_runtime.location_unavailable": {
+  "ko": "이 경로에서는 위치를 요청할 수 없습니다.",
+  "en": "Location cannot be requested through this route.",
+  "ja": "この経路では位置をリクエストできません。",
+  "zh": "此途径无法请求位置。"
+ },
+ "agent_runtime.location_reason_length": {
+  "ko": "위치를 요청하는 목적을 300자 이내로 적어 주세요.",
+  "en": "Enter a reason for requesting location within 300 characters.",
+  "ja": "位置をリクエストする目的は300文字以内で入力してください。",
+  "zh": "请在300个字符以内说明请求位置的目的。"
+ },
+ "agent_runtime.owner_update_unavailable": {
+  "ko": "이 경로에서는 작업 중에 메시지를 보낼 수 없어요.",
+  "en": "Messages cannot be sent during a Work through this route.",
+  "ja": "この経路では作業中にメッセージを送れません。",
+  "zh": "此途径无法在工作期间发送消息。"
+ },
+ "agent_runtime.owner_update_length": {
+  "ko": "보낼 말을 500자 이내로 적어 주세요.",
+  "en": "Enter a message within 500 characters.",
+  "ja": "送る内容は500文字以内で入力してください。",
+  "zh": "请输入不超过500个字符的消息。"
+ },
+ "agent_runtime.skill_unavailable": {
+  "ko": "이 작업에서는 스킬을 쓸 수 없어요.",
+  "en": "Skills are unavailable in this Work.",
+  "ja": "この作業ではスキルを使えません。",
+  "zh": "此工作中无法使用技能。"
+ },
+ "agent_runtime.information_use_unavailable": {
+  "ko": "이 경로에서는 사용한 정보 기록을 볼 수 없습니다.",
+  "en": "Information-use records cannot be viewed through this route.",
+  "ja": "この経路では使用した情報の記録を見られません。",
+  "zh": "此途径无法查看信息使用记录。"
+ },
+ "agent_runtime.settings_unavailable": {
+  "ko": "이 경로에서는 설정을 확인하거나 바꿀 수 없습니다.",
+  "en": "Settings cannot be checked or changed through this route.",
+  "ja": "この経路では設定を確認・変更できません。",
+  "zh": "此途径无法查看或更改设置。"
+ },
+ "agent_runtime.public_server_query": {
+  "ko": "공개 서버 이름만 검색하세요.",
+  "en": "Search only public server names.",
+  "ja": "公開サーバー名のみ検索してください。",
+  "zh": "请仅搜索公开服务器名称。"
+ },
+ "agent_runtime.settings_request_failed": {
+  "ko": "설정 요청을 처리하지 못했습니다.",
+  "en": "Could not process the settings request.",
+  "ja": "設定の依頼を処理できませんでした。",
+  "zh": "无法处理设置请求。"
+ },
+ "agent_runtime.note_length": {
+  "ko": "메모는 1~12000자로 입력하세요.",
+  "en": "Enter a note of 1–12,000 characters.",
+  "ja": "メモは1～12000文字で入力してください。",
+  "zh": "请输入1至12000个字符的笔记。"
+ },
+ "agent_runtime.undoable_count": {
+  "ko": "되돌릴 수 있는 항목 {count}개",
+  "en": "Items you can undo: {count}",
+  "ja": "元に戻せる項目 {count}件",
+  "zh": "可撤销的项目：{count}项"
+ },
+ "agent_runtime.conversation_messages_count": {
+  "ko": "찾은 대화 메시지 {count}개",
+  "en": "Conversation messages found: {count}",
+  "ja": "見つかった会話メッセージ {count}件",
+  "zh": "找到的对话消息：{count}条"
+ },
+ "agent_runtime.trust_deleted": {
+  "ko": "신뢰 기록 내용은 지웠고 이전 권한을 막는 최소한의 표시는 남겼어요. 되돌릴 수 없어요.",
+  "en": "The trust record's content was erased; a minimal marker blocking old permissions remains. This cannot be undone.",
+  "ja": "信頼記録の内容を消し、以前の権限を止める最小限の印だけ残しました。元には戻せません。",
+  "zh": "信任记录内容已删除，仅保留阻止旧权限的最小标记。无法撤销。"
+ },
+ "agent_runtime.record_deleted": {
+  "ko": "완전히 지웠어요. 되돌릴 수 없어요.",
+  "en": "Permanently erased. This cannot be undone.",
+  "ja": "完全に消しました。元には戻せません。",
+  "zh": "已彻底删除，无法撤销。"
+ },
+ "agent_runtime.record_forgotten": {
+  "ko": "잊었어요. 언제든 되돌릴 수 있어요.",
+  "en": "Forgotten. You can undo this at any time.",
+  "ja": "忘れました。いつでも元に戻せます。",
+  "zh": "已忘记，可随时撤销。"
+ },
+ "agent_runtime.procedure_forgotten": {
+  "ko": "저장해 둔 그 방법은 이제 쓰지 않아요. 이전에 저장한 방법이 있으면 그걸 다시 써요. 언제든 되돌릴 수 있어요.",
+  "en": "That saved method is no longer used. The previous saved method, if any, is used instead. You can undo this at any time.",
+  "ja": "保存したその方法はもう使いません。以前の保存済みの方法があればそちらを使います。いつでも元に戻せます。",
+  "zh": "不再使用该已保存的方法。如有之前保存的方法，将恢复使用。可随时撤销。"
+ },
+ "agent_runtime.trust_forgotten": {
+  "ko": "이전 권한 사용을 중지했어요. 설정 확인으로 언제든 복원할 수 있어요.",
+  "en": "Stopped using the previous permissions. You can restore them at any time by confirming in Settings.",
+  "ja": "以前の権限の使用を止めました。設定で確認すればいつでも復元できます。",
+  "zh": "已停止使用旧权限，可随时在设置中确认恢复。"
+ },
+ "agent_runtime.invalid_forget_action": {
+  "ko": "action은 forget, delete, undo, list, find 중 하나여야 합니다.",
+  "en": "action must be forget, delete, undo, list or find.",
+  "ja": "actionはforget、delete、undo、list、findのいずれかにしてください。",
+  "zh": "action必须是forget、delete、undo、list或find。"
+ },
+ "agent_runtime.select_active_agent": {
+  "ko": "활성 전문 에이전트를 선택하세요.",
+  "en": "Select an active specialist agent.",
+  "ja": "有効な専門エージェントを選択してください。",
+  "zh": "请选择已启用的专业代理。"
+ },
+ "agent_runtime.agent_changed": {
+  "ko": "이 전문 에이전트는 작업 시작 후 비활성화되었거나 선언이 바뀌어 실행하지 않았습니다. 새 요청으로 다시 시도해 주세요.",
+  "en": "This specialist agent was disabled or its declaration changed after the Work started, so it was not run. Try again in a new request.",
+  "ja": "作業開始後にこの専門エージェントが無効化されたか宣言が変わったため、実行しませんでした。新しい依頼で再試行してください。",
+  "zh": "此专业代理在工作开始后被禁用或声明已更改，未执行。请通过新请求重试。"
+ },
+ "agent_runtime.delegation_task_length": {
+  "ko": "위임할 작업은 1~12000자로 입력하세요.",
+  "en": "Enter a task to delegate of 1–12,000 characters.",
+  "ja": "委任する作業は1～12000文字で入力してください。",
+  "zh": "请输入1至12000个字符的委派任务。"
+ },
+ "agent_runtime.tool_not_allowed": {
+  "ko": "허용하지 않은 도구입니다.",
+  "en": "Tool not allowed.",
+  "ja": "許可されていないツールです。",
+  "zh": "工具不被允许。"
+ },
+ "agent_runtime.calendar_unconfigured": {
+  "ko": "Google Calendar가 연결 또는 구성되어 있지 않아 일정을 읽지 못했습니다. 먼저 캘린더를 연결해 주세요.",
+  "en": "Google Calendar is not connected or configured, so events could not be read. Connect your calendar first.",
+  "ja": "Google Calendarが接続・設定されていないため予定を読めませんでした。まずカレンダーを接続してください。",
+  "zh": "Google Calendar尚未连接或配置，无法读取日程。请先连接日历。"
+ },
+ "agent_runtime.drive_unconnected": {
+  "ko": "Google Drive가 아직 연결되지 않아 파일을 읽지 못했습니다. 먼저 Google Drive를 연결해 주세요.",
+  "en": "Google Drive is not connected yet, so files could not be read. Connect Google Drive first.",
+  "ja": "Google Driveがまだ接続されていないためファイルを読めませんでした。まずGoogle Driveを接続してください。",
+  "zh": "Google Drive尚未连接，无法读取文件。请先连接Google Drive。"
+ },
+ "agent_runtime.mail_unconnected": {
+  "ko": "Gmail이 아직 연결되지 않아 메일을 읽지 못했습니다. 먼저 Gmail을 연결해 주세요.",
+  "en": "Gmail is not connected yet, so mail could not be read. Connect Gmail first.",
+  "ja": "Gmailがまだ接続されていないためメールを読めませんでした。まずGmailを接続してください。",
+  "zh": "Gmail尚未连接，无法读取邮件。请先连接Gmail。"
+ },
+ "agent_runtime.preparation_proposed": {
+  "ko": "준비를 제안했습니다. 소유자가 수락해야 예약됩니다.",
+  "en": "A preparation was proposed. It will be scheduled only after you accept.",
+  "ja": "準備を提案しました。承諾すると予約されます。",
+  "zh": "已提议准备工作，需你接受后才会预约。"
+ },
+ "agent_runtime.settings_pending": {
+  "ko": "설정 변경 초안만 만들었습니다. 소유자가 확인해야 적용됩니다.",
+  "en": "Only a settings draft was created. It will be applied after you confirm.",
+  "ja": "設定変更の下書きのみ作成しました。確認後に適用されます。",
+  "zh": "仅创建了设置更改草稿，需你确认后才会应用。"
+ },
+ "agent_runtime.delegate_incomplete": {
+  "ko": "위임한 전문 에이전트가 요청을 끝까지 완료하지 못했습니다.",
+  "en": "The delegated specialist agent did not fully complete the request.",
+  "ja": "委任した専門エージェントは依頼を最後まで完了できませんでした。",
+  "zh": "受委派的专业代理未能完成整个请求。"
+ },
+ "agent_runtime.delegate_failed": {
+  "ko": "위임한 전문 에이전트가 요청을 완료하지 못했습니다. 완료된 단계가 없습니다.",
+  "en": "The delegated specialist agent did not complete the request. No steps were completed.",
+  "ja": "委任した専門エージェントは依頼を完了できませんでした。完了した手順はありません。",
+  "zh": "受委派的专业代理未能完成请求，没有已完成的步骤。"
+ },
+ "agent_runtime.partial_data": {
+  "ko": "일부 자료는 읽지 못했습니다.",
+  "en": "Some data could not be read.",
+  "ja": "一部の資料を読めませんでした。",
+  "zh": "部分资料无法读取。"
+ },
+ "agent_runtime.inconsistent_data": {
+  "ko": "응답의 세부 숫자 합계가 응답이 밝힌 합계와 맞지 않습니다. 어느 쪽이 맞는지 확인되지 않았습니다.",
+  "en": "The response's itemized numbers do not match its stated total. It is unconfirmed which is correct.",
+  "ja": "応答の内訳の合計と記載された合計が一致しません。どちらが正しいかは未確認です。",
+  "zh": "响应中的明细数字之和与所述总数不一致，尚未确认哪一方正确。"
+ },
+ "agent_runtime.stale_data": {
+  "ko": "응답 자료의 기준 시각이 허용한 시간보다 오래되어 현재 값이 아닐 수 있습니다.",
+  "en": "The data's reference time is older than allowed, so it may not reflect current values.",
+  "ja": "資料の基準時刻が許容範囲より古いため、現在の値ではない可能性があります。",
+  "zh": "资料的基准时间早于允许范围，可能不反映当前数值。"
+ },
+ "agent_runtime.unknown_data_time": {
+  "ko": "응답 자료가 언제 기준인지 알 수 없어 현재 값인지 확인되지 않았습니다.",
+  "en": "The data's reference time is unknown, so it is unconfirmed whether the values are current.",
+  "ja": "資料の基準時刻が不明なため、現在の値か確認できません。",
+  "zh": "资料的基准时间不明，无法确认是否为当前数值。"
+ },
+ "agent_runtime.step_incomplete": {
+  "ko": "이 단계는 완료되지 않았습니다.",
+  "en": "This step was not completed.",
+  "ja": "この手順は完了していません。",
+  "zh": "此步骤未完成。"
+ },
+ "agent_runtime.disclosure": {
+  "ko": "참고: {note} (출처 {source}, 자료 기준 시각 {as_of})",
+  "en": "Note: {note} (source {source}, data as of {as_of})",
+  "ja": "注: {note}（出典 {source}、資料の基準時刻 {as_of}）",
+  "zh": "说明：{note}（来源 {source}，资料基准时间 {as_of}）"
+ },
+ "agent_runtime.trust_record_capacity": {
+  "ko": "연결 동작의 결과는 작업에 기록했지만, 신뢰 기록의 저장 한도 때문에 그 기록은 갱신하지 못했어요.",
+  "en": "The connection result was recorded in the Work, but its trust record could not be updated because the storage limit was reached.",
+  "ja": "接続操作の結果は作業に記録しましたが、信頼記録の保存上限のため記録を更新できませんでした。",
+  "zh": "连接操作结果已记入工作，但因达到存储上限，无法更新信任记录。"
+ },
+ "agent_runtime.trust_rung_lowered": {
+  "ko": "{service}의 동작 실패를 기록하고 신뢰 단계를 '{rung}'로 낮췄어요. 설정에서 기록을 확인하거나 되돌릴 수 있어요.",
+  "en": "Recorded an operation failure for {service} and lowered its trust level to '{rung}'. You can review or undo this in Settings.",
+  "ja": "{service}の操作失敗を記録し、信頼段階を「{rung}」に下げました。設定で記録を確認したり元に戻したりできます。",
+  "zh": "已记录{service}的操作失败，并将信任级别降至“{rung}”。可在设置中查看记录或撤销。"
+ },
+ "agent_runtime.connection_label": {
+  "ko": "연결",
+  "en": "Connection",
+  "ja": "接続",
+  "zh": "连接"
+ },
+ "agent_runtime.unknown_label": {
+  "ko": "알 수 없음",
+  "en": "Unknown",
+  "ja": "不明",
+  "zh": "未知"
+ },
+ "agent_runtime.search_results_fetched": {
+  "ko": "검색 결과를 가져왔습니다.",
+  "en": "Search results retrieved.",
+  "ja": "検索結果を取得しました。",
+  "zh": "已获取搜索结果。"
+ },
+ "agent_runtime.note_saved": {
+  "ko": "메모를 저장했습니다.",
+  "en": "Note saved.",
+  "ja": "メモを保存しました。",
+  "zh": "笔记已保存。"
+ },
+ "agent_runtime.result_saved": {
+  "ko": "결과를 저장했습니다: {path}",
+  "en": "Result saved: {path}",
+  "ja": "結果を保存しました: {path}",
+  "zh": "结果已保存：{path}"
+ },
+ "agent_runtime.result_not_saved": {
+  "ko": "결과를 저장하지 않았습니다.",
+  "en": "The result was not saved.",
+  "ja": "結果を保存しませんでした。",
+  "zh": "结果未保存。"
+ },
+ "agent_runtime.preparation_recorded": {
+  "ko": "준비를 기록했습니다.",
+  "en": "Preparation recorded.",
+  "ja": "準備を記録しました。",
+  "zh": "已记录准备工作。"
+ },
+ "agent_runtime.owner_told": {
+  "ko": "보냈어요. 하던 일을 이어서 하고, 끝나면 이미 말한 내용은 반복하지 말고 답을 주세요.",
+  "en": "Sent. Continue your work and give your answer when finished without repeating what you already said.",
+  "ja": "送りました。作業を続け、終わったらすでに伝えた内容を繰り返さずに回答してください。",
+  "zh": "已发送。请继续工作，完成后给出答复，无需重复已说过的内容。"
+ },
+ "agent_runtime.location_with_answer": {
+  "ko": "답에 현재 위치 공유 버튼을 함께 붙입니다. 다른 곳이면 위치를 보내 주시면 그 위치로 다시 처리합니다.",
+  "en": "A current-location sharing button is included with the answer. If you mean somewhere else, send that location to continue there.",
+  "ja": "回答に現在地共有ボタンを付けます。別の場所なら、その位置を送っていただければそこで処理し直します。",
+  "zh": "答复中将附上当前位置共享按钮。如需查询其他地点，请发送位置以重新处理。"
+ },
+ "agent_runtime.location_requested": {
+  "ko": "Telegram으로 현재 위치를 요청했습니다. 위치를 보내 주시면 이어서 처리합니다.",
+  "en": "Requested your current location on Telegram. Send your location to continue.",
+  "ja": "Telegramで現在地をリクエストしました。位置を送っていただければ続けます。",
+  "zh": "已通过Telegram请求当前位置。发送位置后即可继续。"
+ },
+ "agent_runtime.current_state_recorded": {
+  "ko": "오늘의 현재 상황을 임시로 기록했습니다. 기억이나 프로필은 바꾸지 않았습니다.",
+  "en": "Temporarily recorded today's current situation. Memory and profile were not changed.",
+  "ja": "今日の現在の状況を一時的に記録しました。記憶やプロフィールは変更していません。",
+  "zh": "已临时记录今天的当前情况，未更改记忆或个人资料。"
+ },
+ "agent_runtime.current_state_not_recorded": {
+  "ko": "현재 상황을 기록하지 않았습니다.",
+  "en": "The current situation was not recorded.",
+  "ja": "現在の状況を記録しませんでした。",
+  "zh": "未记录当前情况。"
+ },
+ "agent_runtime.no_matching_files": {
+  "ko": "일치하는 파일이 없습니다.",
+  "en": "No matching files.",
+  "ja": "一致するファイルはありません。",
+  "zh": "没有匹配的文件。"
+ },
+ "agent_runtime.file_read": {
+  "ko": "{path}을 읽었습니다. 이어서 필요한 내용을 질문해 주세요.",
+  "en": "Read {path}. Ask about anything you need next.",
+  "ja": "{path}を読みました。続けて必要な内容を質問してください。",
+  "zh": "已读取{path}。请继续询问所需内容。"
+ },
+ "agent_runtime.requested_file": {
+  "ko": "요청한 파일",
+  "en": "the requested file",
+  "ja": "リクエストされたファイル",
+  "zh": "请求的文件"
+ },
+ "agent_runtime.notes_checked": {
+  "ko": "저장된 메모 {count}개를 확인했습니다.",
+  "en": "Checked {count} saved notes.",
+  "ja": "保存済みメモ{count}件を確認しました。",
+  "zh": "已查看{count}条已保存笔记。"
+ },
+ "agent_runtime.browser_text_found": {
+  "ko": "페이지에서 텍스트를 찾았습니다.",
+  "en": "Found the text on the page.",
+  "ja": "ページでテキストが見つかりました。",
+  "zh": "已在页面中找到文本。"
+ },
+ "agent_runtime.browser_text_not_found": {
+  "ko": "페이지에서 해당 텍스트를 찾지 못했습니다.",
+  "en": "The text was not found on the page.",
+  "ja": "ページでそのテキストが見つかりませんでした。",
+  "zh": "未在页面中找到该文本。"
+ },
+ "agent_runtime.new_content_loaded": {
+  "ko": "새 내용을 불러왔습니다",
+  "en": "New content loaded",
+  "ja": "新しい内容を読み込みました",
+  "zh": "已加载新内容"
+ },
+ "agent_runtime.no_new_content": {
+  "ko": "새 내용은 없었습니다",
+  "en": "No new content",
+  "ja": "新しい内容はありませんでした",
+  "zh": "没有新内容"
+ },
+ "agent_runtime.browser_loaded_more": {
+  "ko": "브라우저 페이지를 {count}번 더 불러와 확인했습니다({found}): {title}",
+  "en": "Checked the browser page after loading {count} more times ({found}): {title}",
+  "ja": "ブラウザーページをさらに{count}回読み込んで確認しました（{found}）: {title}",
+  "zh": "额外加载{count}次后检查了浏览器页面（{found}）：{title}"
+ },
+ "agent_runtime.browser_page_checked": {
+  "ko": "브라우저 페이지를 확인했습니다: {title}",
+  "en": "Checked the browser page: {title}",
+  "ja": "ブラウザーページを確認しました: {title}",
+  "zh": "已检查浏览器页面：{title}"
+ },
+ "agent_runtime.agents_checked": {
+  "ko": "사용 가능한 전문 에이전트를 확인했습니다.",
+  "en": "Checked available specialist agents.",
+  "ja": "利用可能な専門エージェントを確認しました。",
+  "zh": "已查看可用的专业代理。"
+ },
+ "agent_runtime.agent_no_report": {
+  "ko": "전문 에이전트가 보고서를 반환하지 않았습니다.",
+  "en": "The specialist agent did not return a report.",
+  "ja": "専門エージェントから報告が返されませんでした。",
+  "zh": "专业代理未返回报告。"
+ },
+ "agent_runtime.repeat_path": {
+  "ko": "같은 경로를 같은 입력으로 다시 실행하지 않습니다. 다른 제공자, 바꾼 검색어, 사이트 자체 검색, 다른 결과나 다른 경로를 고르거나 소유자에게 구체적인 질문 하나를 하세요.",
+  "en": "The same path will not run again with the same input. Choose another provider, revised search terms, the site's own search, another result or another path, or ask the owner one specific question.",
+  "ja": "同じ経路を同じ入力で再実行しません。別の提供元、変更した検索語、サイト内検索、別の結果や経路を選ぶか、具体的な質問を1つしてください。",
+  "zh": "不会以相同输入重新执行相同途径。请选择其他提供方、修改搜索词、使用站内搜索、其他结果或途径，或向所有者提出一个具体问题。"
+ },
+ "agent_runtime.goal_not_claimed": {
+  "ko": "완료를 뒷받침하는 관찰 결과가 제시되지 않아 요청이 끝났는지 확인하지 못했습니다.",
+  "en": "No observations supporting completion were provided, so it could not be confirmed whether the request was finished.",
+  "ja": "完了を裏付ける観察結果が示されなかったため、依頼が完了したか確認できませんでした。",
+  "zh": "未提供支持完成的观察结果，无法确认请求是否已完成。"
+ },
+ "agent_runtime.tool_name_type": {
+  "ko": "도구 이름은 문자열이어야 합니다.",
+  "en": "The tool name must be a string.",
+  "ja": "ツール名は文字列にしてください。",
+  "zh": "工具名称必须是字符串。"
+ },
+ "agent_runtime.duplicate_tool_call": {
+  "ko": "같은 도구 요청은 현재 작업에서 한 번만 실행합니다. 결과를 사용하거나 새 요청을 보내 주세요.",
+  "en": "The same tool request runs only once per Work. Use its result or send a new request.",
+  "ja": "同じツールの依頼は1つの作業で1回だけ実行します。結果を使うか、新しい依頼を送ってください。",
+  "zh": "每项工作中相同工具请求仅执行一次。请使用其结果或发送新请求。"
+ },
+ "agent_runtime.page_source": {
+  "ko": "출처: {url}",
+  "en": "Source: {url}",
+  "ja": "出典: {url}",
+  "zh": "来源：{url}"
+ },
+ "agent_runtime.files_found": {
+  "ko": "찾은 파일:",
+  "en": "Files found:",
+  "ja": "見つかったファイル:",
+  "zh": "找到的文件："
+ },
+ "agent_runtime.browser_loaded_more_untitled": {
+  "ko": "브라우저 페이지를 {count}번 더 불러와 확인했습니다({found})",
+  "en": "Checked the browser page after loading {count} more times ({found})",
+  "ja": "ブラウザーページをさらに{count}回読み込んで確認しました（{found}）",
+  "zh": "额外加载{count}次后检查了浏览器页面（{found}）"
+ },
+ "agent_runtime.browser_page_checked_untitled": {
+  "ko": "브라우저 페이지를 확인했습니다",
+  "en": "Checked the browser page",
+  "ja": "ブラウザーページを確認しました",
+  "zh": "已检查浏览器页面"
  }
 }

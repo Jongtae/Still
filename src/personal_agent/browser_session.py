@@ -1186,7 +1186,7 @@ class BrowserSession:
             return self.type(args)
         if action == 'browser_sign_in':
             return self.sign_in(args)
-        raise ValueError('허용하지 않은 도구입니다.')
+        raise ValueError(msg('agent_runtime.tool_not_allowed'))
 
     def sign_in(self, args):
         """Ask the owner to sign in at ``url`` now, without a sign-in page in the session (#953, BROWSE-09).
