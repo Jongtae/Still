@@ -139,7 +139,7 @@ class MainAiRoutes:
             raise MainAiError('키를 저장할 API를 선택하세요.')
         route_id, key = body['provider'], body.get('key')
         if not isinstance(key, str) or len(key) > 4096 or any(ch.isspace() for ch in key.strip()):
-            raise MainAiError('API 키 한 줄을 그대로 붙여 넣으세요.')
+            raise MainAiError(msg('decision_routes.paste_api_key'))
         self.migrate()
         key = key.strip()
         with self.service.lock:
