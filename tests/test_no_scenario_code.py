@@ -217,8 +217,6 @@ CLASSIFIED_TABLES = {
         'own-text', 'deduplicates status lines Still itself wrote'),
     ('quickstart_service.py', 'lines'): (
         'own-text', 'deduplicates footer and status lines Still itself wrote'),
-    ('quickstart_service.py', 'UNKNOWN_EFFECT_RETRY_REFUSAL'): (
-        'own-text', "Still's own retry refusal, matched on the reason Still returned"),
     ('decision_routes.py', 'DecisionRoutes._first_qualified'): (
         'own-text', 'the "not reported" sentinel Still writes when a model does not report its identity'),
     ('information_use.py', 'BROWSER_SIGNINS_PREFIX'): (

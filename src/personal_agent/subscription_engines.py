@@ -4,6 +4,7 @@ This module deliberately does not start an engine or inspect credential files.
 Codex and Claude Code retain their official login sessions; Still only
 records an owner's choice for a later bounded adapter.
 """
+from .messages import msg
 import os
 from dataclasses import dataclass
 from shutil import which
@@ -62,7 +63,7 @@ class SubscriptionEngines:
 
     def connect(self, engine_id, officially_authenticated):
         if engine_id not in ENGINES:
-            raise ValueError('지원하는 구독 엔진을 선택하세요.')
+            raise ValueError(msg('quickstart_service.select_subscription_engine'))
         engine = ENGINES[engine_id]
         if not self.finder(engine.command):
             raise ValueError(f'{engine.name} CLI를 찾지 못했습니다. 공식 설치 안내를 확인하세요.')

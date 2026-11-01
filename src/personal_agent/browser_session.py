@@ -2619,7 +2619,7 @@ class BrowserProfile:
         """
         site = str(site or '').strip().lower()
         if not site:
-            raise ValueError('삭제할 사이트를 지정하세요.')
+            raise ValueError(msg('quickstart_service.specify_site_to_delete'))
         with self._jar_lock:
             self._save_mark = None
             live = self._live

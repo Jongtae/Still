@@ -7360,5 +7360,1253 @@
   "en": "This message was not added to the earlier reply, so I handled it as a new request.",
   "ja": "このメッセージは前の回答に反映されなかったため、新しい依頼として対応しました。",
   "zh": "这条消息没有纳入上一条回复，所以我把它当作新请求处理了。"
+ },
+ "quickstart_service.search_title_format": {
+  "ko": "자료 검색어와 결과 제목을 ` :: `로 구분해 입력하세요.",
+  "en": "Separate the search query and result title with ` :: `.",
+  "ja": "検索語と結果のタイトルを ` :: ` で区切って入力してください。",
+  "zh": "请用 ` :: ` 分隔搜索词和结果标题。"
+ },
+ "quickstart_service.retry_unknown_result": {
+  "ko": "이전 요청의 외부 결과가 불확실해 자동으로 다시 실행하지 않았습니다. 중복으로 만들어질 수 있으니 먼저 실제 결과를 확인해 주세요.",
+  "en": "The previous request's external result is uncertain, so it was not retried automatically. Check the actual result first to avoid duplicates.",
+  "ja": "前のリクエストの外部結果が不明なため、自動再実行しませんでした。重複を避けるため、先に実際の結果を確認してください。",
+  "zh": "上次请求的外部结果不确定，因此未自动重试。请先确认实际结果，以免重复。"
+ },
+ "quickstart_service.retry_after_setup": {
+  "ko": "필요한 연결이나 승인을 마친 뒤 다시 요청해 주세요.",
+  "en": "Complete the required connection or approval, then try again.",
+  "ja": "必要な接続や承認を済ませてから、もう一度リクエストしてください。",
+  "zh": "请完成所需连接或批准后重试。"
+ },
+ "quickstart_service.retry_after_review": {
+  "ko": "실행 기록을 확인한 뒤 필요하면 요청을 바꿔 다시 보내 주세요.",
+  "en": "Check the execution history, then revise and resend the request if needed.",
+  "ja": "実行履歴を確認し、必要ならリクエストを変更して再送してください。",
+  "zh": "请查看执行记录，必要时修改请求并重新发送。"
+ },
+ "quickstart_service.login_request": {
+  "ko": "곧 보내는 휴대폰 로그인 링크나 이 Mac에 열린 Still 로그인 창에서 직접 로그인한 뒤 완료하면(링크의 완료, 창 닫기 또는 \"로그인 완료\") 요청을 한 번 이어서 처리합니다. 예상한 사이트가 아니면 로그인하지 말고 건너뛰세요. 지금까지의 결과로 마칩니다. 10분 안에 응답이 없으면 창을 닫습니다. Still은 로그인 창의 입력 내용을 보지 않습니다.",
+  "en": "Sign in directly using the phone link sent shortly or the Still sign-in window on this Mac, then finish (Done on the link, close the window, or “Sign-in complete”) to resume this request once. If this is not the site you expected, skip it without signing in. The request ends with the results so far. The window closes after 10 minutes without a response. Still does not see what you enter in the sign-in window.",
+  "ja": "まもなく届くスマートフォン用リンクか、このMacのStillログイン画面で直接ログインし、完了（リンクの完了、画面を閉じる、または「ログイン完了」）すると、このリクエストを一度再開します。予期しないサイトならログインせずスキップしてください。現在の結果で終了します。10分間応答がなければ画面を閉じます。Stillはログイン画面への入力を見ません。",
+  "zh": "请通过即将发送的手机登录链接或此Mac上的Still登录窗口直接登录，然后完成（链接中的完成、关闭窗口或“登录完成”），即可继续此请求一次。如果不是预期网站，请跳过，不要登录。请求将以目前的结果结束。10分钟无响应后窗口将关闭。Still不会查看登录窗口中的输入。"
+ },
+ "quickstart_service.login_request_heading": {
+  "ko": "로그인 요청 사이트: {site}",
+  "en": "Sign-in requested for: {site}",
+  "ja": "ログイン先: {site}",
+  "zh": "请求登录的网站：{site}"
+ },
+ "quickstart_service.login_full_address": {
+  "ko": "전체 주소: {host}",
+  "en": "Full address: {host}",
+  "ja": "完全なアドレス: {host}",
+  "zh": "完整地址：{host}"
+ },
+ "quickstart_service.login_redirected": {
+  "ko": "요청한 주소({site})에서 이 사이트로 이동했습니다.",
+  "en": "Redirected here from the requested address ({site}).",
+  "ja": "リクエストしたアドレス（{site}）から移動しました。",
+  "zh": "已从请求地址（{site}）跳转至此。"
+ },
+ "quickstart_service.login_first_visit": {
+  "ko": "주의: 이 사이트는 Still 로그인 창으로 로그인한 기록이 없습니다. 처음 로그인하는 사이트가 맞는지 확인하세요.",
+  "en": "Caution: This site has no sign-in history in the Still sign-in window. Check that you intended to sign in here for the first time.",
+  "ja": "注意: このサイトはStillのログイン画面でログインした記録がありません。初めてログインするサイトで間違いないか確認してください。",
+  "zh": "注意：此网站没有通过Still登录窗口登录的记录。请确认这确实是您首次登录的网站。"
+ },
+ "quickstart_service.check_my_records": {
+  "ko": "내 기록에서 확인해 주세요",
+  "en": "Check My records",
+  "ja": "自分の記録で確認してください",
+  "zh": "请在我的记录中查看"
+ },
+ "quickstart_service.check_original_work": {
+  "ko": "진행 중인 원래 작업을 확인하세요.",
+  "en": "Check the original work in progress.",
+  "ja": "進行中の元の作業を確認してください。",
+  "zh": "请确认正在进行的原始任务。"
+ },
+ "quickstart_service.check_reviewed_settings_request": {
+  "ko": "검토된 설정 요청을 확인하세요.",
+  "en": "Check the reviewed settings request.",
+  "ja": "確認済みの設定リクエストを確認してください。",
+  "zh": "请确认已审核的设置请求。"
+ },
+ "quickstart_service.work_record_missing": {
+  "ko": "그 작업 기록을 찾지 못했습니다. 최근 답변은 work 없이 물어보세요.",
+  "en": "That work record was not found. Ask about recent replies without specifying work.",
+  "ja": "その作業記録が見つかりません。最近の回答はworkを指定せずに質問してください。",
+  "zh": "未找到该任务记录。询问最近的回复时请勿指定work。"
+ },
+ "quickstart_service.previous_reply_missing": {
+  "ko": "이 대화에서 확인할 이전 답변을 찾지 못했습니다.",
+  "en": "No previous reply was found in this conversation.",
+  "ja": "この会話に以前の回答が見つかりません。",
+  "zh": "此对话中未找到之前的回复。"
+ },
+ "quickstart_service.work_missing": {
+  "ko": "작업을 찾지 못했습니다.",
+  "en": "Work not found.",
+  "ja": "作業が見つかりません。",
+  "zh": "未找到任务。"
+ },
+ "quickstart_service.apply_or_cancel_only": {
+  "ko": "적용 또는 취소만 할 수 있습니다.",
+  "en": "Choose apply or cancel.",
+  "ja": "適用かキャンセルを選んでください。",
+  "zh": "请选择应用或取消。"
+ },
+ "quickstart_service.no_pending_settings": {
+  "ko": "확인을 기다리는 설정 변경이 없습니다.",
+  "en": "No settings change is awaiting confirmation.",
+  "ja": "確認待ちの設定変更はありません。",
+  "zh": "没有等待确认的设置更改。"
+ },
+ "quickstart_service.credentials_secret_input_only": {
+  "ko": "인증 정보는 연결의 비밀 입력 경로로만 주세요.",
+  "en": "Provide credentials only through the connection's secret input path.",
+  "ja": "認証情報は接続の秘密情報入力経路からのみ入力してください。",
+  "zh": "请仅通过连接的机密输入渠道提供凭据。"
+ },
+ "quickstart_service.server_name_conflict": {
+  "ko": "같은 이름에 다른 서버 설정이 있어 덮어쓰지 않았어요. 현재 연결을 확인하세요.",
+  "en": "A different server configuration already uses this name, so nothing was overwritten. Check the current connection.",
+  "ja": "同じ名前で別のサーバー設定があるため、上書きしませんでした。現在の接続を確認してください。",
+  "zh": "同名服务器已有不同配置，因此未覆盖。请检查当前连接。"
+ },
+ "quickstart_service.preserve_operation_decisions": {
+  "ko": "기존 동작 결정이나 돈 표시를 새 연결 설정으로 바꿀 수 없어요.",
+  "en": "New connection settings cannot replace existing operation decisions or money indicators.",
+  "ja": "新しい接続設定で既存の操作判断や金銭表示は変更できません。",
+  "zh": "新连接设置不能替换现有操作决定或资金标记。"
+ },
+ "quickstart_service.check_connection_work_owner": {
+  "ko": "연결을 요청한 작업과 소유자를 확인하세요.",
+  "en": "Check the work and owner that requested the connection.",
+  "ja": "接続をリクエストした作業と所有者を確認してください。",
+  "zh": "请确认请求连接的任务及所有者。"
+ },
+ "quickstart_service.connection_owner_changed": {
+  "ko": "연결을 요청한 대화의 소유자 연결이 바뀌었어요.",
+  "en": "The owner connection for the requesting conversation has changed.",
+  "ja": "接続をリクエストした会話の所有者接続が変わりました。",
+  "zh": "请求连接的对话的所有者连接已更改。"
+ },
+ "quickstart_service.claude_missing": {
+  "ko": "설치된 Claude Code를 찾지 못했어요. 사용 가능한 일반 API·브라우저 경로를 검토하세요.",
+  "en": "Installed Claude Code was not found. Consider the available API or browser options.",
+  "ja": "インストール済みのClaude Codeが見つかりません。利用可能なAPIやブラウザーの経路を検討してください。",
+  "zh": "未找到已安装的Claude Code。请考虑可用的API或浏览器途径。"
+ },
+ "quickstart_service.setup_authority_changed": {
+  "ko": "작업이나 연결 권한이 바뀌어 설정하지 않았어요.",
+  "en": "The work or connection permissions changed, so setup was not applied.",
+  "ja": "作業か接続権限が変わったため、設定しませんでした。",
+  "zh": "任务或连接权限已更改，因此未设置。"
+ },
+ "quickstart_service.server_configuration_changed": {
+  "ko": "확인한 서버 설정과 현재 값이 달라 이어가지 않았어요.",
+  "en": "The server configuration differs from what was confirmed, so work did not continue.",
+  "ja": "確認したサーバー設定と現在の値が異なるため、続行しませんでした。",
+  "zh": "服务器配置与已确认内容不同，因此未继续。"
+ },
+ "quickstart_service.login_authority_changed": {
+  "ko": "작업이 멈추거나 권한이 바뀌어 로그인하지 않았어요.",
+  "en": "The work stopped or permissions changed, so sign-in was not performed.",
+  "ja": "作業が停止したか権限が変わったため、ログインしませんでした。",
+  "zh": "任务已停止或权限已更改，因此未登录。"
+ },
+ "quickstart_service.connection_authority_changed": {
+  "ko": "작업·권한·서버 설정이 바뀌어 사용 권한을 적용하지 않았어요.",
+  "en": "The work, permissions, or server configuration changed, so access was not applied.",
+  "ja": "作業・権限・サーバー設定が変わったため、使用権限を適用しませんでした。",
+  "zh": "任务、权限或服务器配置已更改，因此未应用访问权限。"
+ },
+ "quickstart_service.check_knowledge_request": {
+  "ko": "개인 지식 검색 요청을 확인하세요.",
+  "en": "Check the personal knowledge search request.",
+  "ja": "個人知識の検索リクエストを確認してください。",
+  "zh": "请确认个人知识搜索请求。"
+ },
+ "quickstart_service.check_memory_candidate_request": {
+  "ko": "기억 후보 요청을 확인하세요.",
+  "en": "Check the memory candidate request.",
+  "ja": "記憶候補のリクエストを確認してください。",
+  "zh": "请确认记忆候选请求。"
+ },
+ "quickstart_service.check_reviewed_memory_request": {
+  "ko": "검토된 기억 후보 요청을 확인하세요.",
+  "en": "Check the reviewed memory candidate request.",
+  "ja": "確認済みの記憶候補リクエストを確認してください。",
+  "zh": "请确认已审核的记忆候选请求。"
+ },
+ "quickstart_service.scheduled_input_incomplete": {
+  "ko": "필요한 입력이 완료되지 않아 예약된 요청의 결과를 만들지 못했습니다.",
+  "en": "The scheduled request could not produce a result because the required input was incomplete.",
+  "ja": "必要な入力が完了していないため、予約したリクエストの結果を作成できませんでした。",
+  "zh": "所需输入尚未完成，因此未能生成定时请求的结果。"
+ },
+ "quickstart_service.check_request": {
+  "ko": "요청을 확인하세요.",
+  "en": "Check the request.",
+  "ja": "リクエストを確認してください。",
+  "zh": "请确认请求。"
+ },
+ "quickstart_service.watch_notification": {
+  "ko": "지켜보던 일에서 알려 드립니다 ({title}).",
+  "en": "An update on what I was watching ({title}).",
+  "ja": "見守っていたことのお知らせです（{title}）。",
+  "zh": "关注事项有更新（{title}）。"
+ },
+ "quickstart_service.stop_watching_hint": {
+  "ko": "더 알릴 필요가 없으면 아래 버튼으로 지켜보기를 멈출 수 있습니다.",
+  "en": "If you no longer need updates, stop watching with the button below.",
+  "ja": "これ以上のお知らせが不要なら、下のボタンで見守りを停止できます。",
+  "zh": "如果不再需要更新，可用下方按钮停止关注。"
+ },
+ "quickstart_service.memory_more": {
+  "ko": "그 밖의 {count}가지는 내 기록에서 정할 수 있어요.",
+  "en": "Decide the other {count} items in My records.",
+  "ja": "残りの{count}件は自分の記録で決められます。",
+  "zh": "其余{count}项可在我的记录中决定。"
+ },
+ "quickstart_service.all_button": {
+  "ko": "모두 {label}",
+  "en": "All {label}",
+  "ja": "すべて{label}",
+  "zh": "全部{label}"
+ },
+ "quickstart_service.prepared_result": {
+  "ko": "미리 준비한 결과입니다 ({title}).",
+  "en": "Prepared result ({title}).",
+  "ja": "事前に準備した結果です（{title}）。",
+  "zh": "预先准备的结果（{title}）。"
+ },
+ "quickstart_service.check_preparation_request": {
+  "ko": "준비 요청을 확인하세요.",
+  "en": "Check the preparation request.",
+  "ja": "準備のリクエストを確認してください。",
+  "zh": "请确认准备请求。"
+ },
+ "quickstart_service.select_preparation": {
+  "ko": "준비를 선택하세요.",
+  "en": "Select a preparation.",
+  "ja": "準備を選んでください。",
+  "zh": "请选择准备事项。"
+ },
+ "quickstart_service.unsupported_preparation": {
+  "ko": "지원하지 않는 준비 작업입니다.",
+  "en": "This preparation action is not supported.",
+  "ja": "この準備操作はサポートされていません。",
+  "zh": "不支持此准备操作。"
+ },
+ "quickstart_service.check_profile_request": {
+  "ko": "프로필 요청을 확인하세요.",
+  "en": "Check the profile request.",
+  "ja": "プロファイルのリクエストを確認してください。",
+  "zh": "请确认配置方案请求。"
+ },
+ "quickstart_service.retry_not_failed": {
+  "ko": "이전 요청이 실패 또는 중단 상태가 아니어서 자동으로 다시 실행하지 않았습니다.",
+  "en": "The previous request did not fail or stop, so it was not retried automatically.",
+  "ja": "前のリクエストは失敗・中断状態ではないため、自動再実行しませんでした。",
+  "zh": "上次请求并未失败或中断，因此未自动重试。"
+ },
+ "quickstart_service.retry_delivery_unknown": {
+  "ko": "이전 Telegram 전달 여부를 확인할 수 없어 자동으로 다시 실행하지 않았습니다.",
+  "en": "The previous Telegram delivery could not be confirmed, so the request was not retried automatically.",
+  "ja": "前のTelegram配信を確認できないため、自動再実行しませんでした。",
+  "zh": "无法确认之前的Telegram送达情况，因此未自动重试。"
+ },
+ "quickstart_service.retry_photo": {
+  "ko": "사진이 포함된 이전 요청은 첨부를 다시 확인할 수 없어 자동 재시도하지 않았습니다. 사진을 다시 첨부해 새 요청으로 보내 주세요.",
+  "en": "Photos from the previous request could not be checked, so it was not retried automatically. Attach the photos again and send a new request.",
+  "ja": "前のリクエストの写真を再確認できないため、自動再実行しませんでした。写真を再添付して新しいリクエストを送ってください。",
+  "zh": "无法重新确认上次请求的照片，因此未自动重试。请重新附加照片并发送新请求。"
+ },
+ "quickstart_service.retry_private_context": {
+  "ko": "이전 요청에 일회성 개인 컨텍스트가 연결되어 있어 자동으로 다시 실행하지 않았습니다.",
+  "en": "The previous request had one-time personal context attached, so it was not retried automatically.",
+  "ja": "前のリクエストに一回限りの個人コンテキストがあるため、自動再実行しませんでした。",
+  "zh": "上次请求附有一次性个人上下文，因此未自动重试。"
+ },
+ "quickstart_service.retry_private_document": {
+  "ko": "이전 요청이 개인 문서 내용을 사용해 자동으로 다시 실행하지 않았습니다.",
+  "en": "The previous request used personal documents, so it was not retried automatically.",
+  "ja": "前のリクエストが個人文書を使用したため、自動再実行しませんでした。",
+  "zh": "上次请求使用了个人文档，因此未自动重试。"
+ },
+ "quickstart_service.retry_saved_result": {
+  "ko": "이전 요청에 이미 저장된 결과가 있어 자동으로 다시 실행하지 않았습니다.",
+  "en": "The previous request already has a saved result, so it was not retried automatically.",
+  "ja": "前のリクエストに保存済みの結果があるため、自動再実行しませんでした。",
+  "zh": "上次请求已有保存结果，因此未自动重试。"
+ },
+ "quickstart_service.retry_unmediated_action": {
+  "ko": "이전 요청이 설정 변경 또는 Still이 중개하지 않은 엔진 작업을 포함해 자동으로 다시 실행하지 않았습니다.",
+  "en": "The previous request included settings changes or engine actions outside Still mediation, so it was not retried automatically.",
+  "ja": "前のリクエストに設定変更やStillが仲介していないエンジン操作が含まれるため、自動再実行しませんでした。",
+  "zh": "上次请求包含设置更改或未经Still中介的引擎操作，因此未自动重试。"
+ },
+ "quickstart_service.cancelled_followup": {
+  "ko": "소유자가 후속 대화에서 취소했습니다.",
+  "en": "The owner cancelled in a follow-up conversation.",
+  "ja": "所有者が後の会話でキャンセルしました。",
+  "zh": "所有者已在后续对话中取消。"
+ },
+ "quickstart_service.cancelled_settings": {
+  "ko": "이전 요청을 취소했습니다. 설정 확인이 끝나도 실행하지 않습니다.",
+  "en": "The previous request was cancelled. It will not run after settings confirmation.",
+  "ja": "前のリクエストをキャンセルしました。設定の確認後も実行しません。",
+  "zh": "已取消上次请求。设置确认后也不会执行。"
+ },
+ "quickstart_service.cancelled_document": {
+  "ko": "이전 요청을 취소했습니다. 문서 공유를 승인해도 이어서 처리하지 않습니다.",
+  "en": "The previous request was cancelled. It will not resume after document sharing approval.",
+  "ja": "前のリクエストをキャンセルしました。文書共有を承認しても再開しません。",
+  "zh": "已取消上次请求。批准文档共享后也不会继续。"
+ },
+ "quickstart_service.cancelled_connection": {
+  "ko": "이전 요청을 취소했습니다. 연결이 끝나도 실행하지 않습니다.",
+  "en": "The previous request was cancelled. It will not run after connection.",
+  "ja": "前のリクエストをキャンセルしました。接続完了後も実行しません。",
+  "zh": "已取消上次请求。连接完成后也不会执行。"
+ },
+ "quickstart_service.cancelled_request": {
+  "ko": "이전 요청을 취소했습니다.",
+  "en": "The previous request was cancelled.",
+  "ja": "前のリクエストをキャンセルしました。",
+  "zh": "已取消上次请求。"
+ },
+ "quickstart_service.cancelled_location": {
+  "ko": "이전 요청을 취소했습니다. 위치를 보내도 이어서 처리하지 않습니다.",
+  "en": "The previous request was cancelled. It will not resume after you send a location.",
+  "ja": "前のリクエストをキャンセルしました。位置情報を送っても再開しません。",
+  "zh": "已取消上次请求。发送位置后也不会继续。"
+ },
+ "quickstart_service.no_reviewed_connections": {
+  "ko": "검토된 연결이 없습니다.",
+  "en": "There are no reviewed connections.",
+  "ja": "確認済みの接続はありません。",
+  "zh": "没有已审核的连接。"
+ },
+ "quickstart_service.setting_state_changed": {
+  "ko": "{target}을(를) {state} 상태로 변경했습니다.",
+  "en": "Changed {target} to {state}.",
+  "ja": "{target}を{state}に変更しました。",
+  "zh": "已将{target}更改为{state}状态。"
+ },
+ "quickstart_service.settings_draft_cancelled": {
+  "ko": "설정 초안을 취소했습니다.",
+  "en": "The settings draft was cancelled.",
+  "ja": "設定の下書きをキャンセルしました。",
+  "zh": "已取消设置草案。"
+ },
+ "quickstart_service.settings_processed": {
+  "ko": "설정 요청을 처리했습니다.",
+  "en": "The settings request was processed.",
+  "ja": "設定リクエストを処理しました。",
+  "zh": "已处理设置请求。"
+ },
+ "quickstart_service.select_execution_profile": {
+  "ko": "선택할 실행 프로필을 확인하세요.",
+  "en": "Check the execution profile to select.",
+  "ja": "選択する実行プロファイルを確認してください。",
+  "zh": "请确认要选择的执行配置方案。"
+ },
+ "quickstart_service.sidecar_profile": {
+  "ko": "격리 사이드카 경로는 자체 제한 프로필을 사용합니다. 현재 프로필은 그대로 유지됩니다.",
+  "en": "The isolated sidecar uses its own restricted profile. The current profile is unchanged.",
+  "ja": "隔離サイドカーは独自の制限プロファイルを使用します。現在のプロファイルは変わりません。",
+  "zh": "隔离边车使用自身的受限配置方案。当前方案保持不变。"
+ },
+ "quickstart_service.connect_engine_for_isolation": {
+  "ko": "엄격 격리를 검증할 구독 엔진을 먼저 연결하세요. 현재 프로필은 그대로 유지됩니다.",
+  "en": "Connect a subscription engine before verifying strict isolation. The current profile is unchanged.",
+  "ja": "厳密な隔離を検証するには、先にサブスクリプションエンジンを接続してください。現在のプロファイルは変わりません。",
+  "zh": "请先连接订阅引擎再验证严格隔离。当前方案保持不变。"
+ },
+ "quickstart_service.isolation_unsupported": {
+  "ko": "이 실행 환경은 엄격 격리 검증을 지원하지 않습니다. 현재 프로필은 그대로 유지됩니다.",
+  "en": "This environment does not support strict isolation verification. The current profile is unchanged.",
+  "ja": "この環境は厳密な隔離の検証に対応していません。現在のプロファイルは変わりません。",
+  "zh": "此环境不支持严格隔离验证。当前方案保持不变。"
+ },
+ "quickstart_service.isolation_failed": {
+  "ko": "엄격 격리 검증을 통과하지 못했습니다({reason}). 현재 프로필({profile})은 그대로 유지됩니다.",
+  "en": "Strict isolation verification failed ({reason}). The current profile ({profile}) is unchanged.",
+  "ja": "厳密な隔離の検証に失敗しました（{reason}）。現在のプロファイル（{profile}）は変わりません。",
+  "zh": "严格隔离验证未通过（{reason}）。当前配置方案（{profile}）保持不变。"
+ },
+ "quickstart_service.profile_changed_during_check": {
+  "ko": "검증하는 동안 실행 프로필이 바뀌어 결과를 적용하지 않았습니다. 다시 시도하세요.",
+  "en": "The execution profile changed during verification, so the result was not applied. Try again.",
+  "ja": "検証中に実行プロファイルが変わったため、結果を適用しませんでした。再試行してください。",
+  "zh": "验证期间执行配置方案已更改，因此未应用结果。请重试。"
+ },
+ "quickstart_service.work_delivery_uncertain": {
+  "ko": "중단되었거나 전달 여부가 불확실한 작업이 있습니다. 기록에서 결과를 확인하세요.",
+  "en": "Some work was interrupted or its delivery is uncertain. Check the results in history.",
+  "ja": "中断した作業や配信が不明な作業があります。履歴で結果を確認してください。",
+  "zh": "有任务已中断或送达情况不确定。请在记录中查看结果。"
+ },
+ "quickstart_service.agent_processing": {
+  "ko": "에이전트가 요청을 처리하고 있습니다.",
+  "en": "The agent is processing your request.",
+  "ja": "エージェントがリクエストを処理しています。",
+  "zh": "智能体正在处理请求。"
+ },
+ "quickstart_service.notes_without_ai": {
+  "ko": "메모는 바로 남길 수 있어요. 대화가 필요할 때 AI를 연결하세요.",
+  "en": "You can save notes right away. Connect an AI when you want to chat.",
+  "ja": "メモはすぐに保存できます。会話が必要になったらAIを接続してください。",
+  "zh": "可以直接保存笔记。需要对话时再连接AI。"
+ },
+ "quickstart_service.redacted": {
+  "ko": "[가림]",
+  "en": "[Redacted]",
+  "ja": "[非表示]",
+  "zh": "[已隐藏]"
+ },
+ "quickstart_service.path_redacted": {
+  "ko": "[경로 가림]",
+  "en": "[Path redacted]",
+  "ja": "[パス非表示]",
+  "zh": "[路径已隐藏]"
+ },
+ "quickstart_service.work_title": {
+  "ko": "작업 {work_id}",
+  "en": "Work {work_id}",
+  "ja": "作業 {work_id}",
+  "zh": "任务 {work_id}"
+ },
+ "quickstart_service.setup_not_checked": {
+  "ko": "필요한 연결이 설정되지 않아 확인하지 못했습니다.",
+  "en": "Could not check because the required connection is not configured.",
+  "ja": "必要な接続が設定されていないため、確認できませんでした。",
+  "zh": "所需连接尚未设置，因此无法检查。"
+ },
+ "quickstart_service.file_result": {
+  "ko": "파일 결과",
+  "en": "File result",
+  "ja": "ファイル結果",
+  "zh": "文件结果"
+ },
+ "quickstart_service.check_workspace": {
+  "ko": "작업공간 정보를 확인하세요.",
+  "en": "Check the workspace information.",
+  "ja": "ワークスペース情報を確認してください。",
+  "zh": "请确认工作区信息。"
+ },
+ "quickstart_service.workspace_missing": {
+  "ko": "작업공간을 찾을 수 없습니다.",
+  "en": "Workspace not found.",
+  "ja": "ワークスペースが見つかりません。",
+  "zh": "未找到工作区。"
+ },
+ "quickstart_service.check_saved_result": {
+  "ko": "저장할 결과를 확인하세요.",
+  "en": "Check the result to save.",
+  "ja": "保存する結果を確認してください。",
+  "zh": "请确认要保存的结果。"
+ },
+ "quickstart_service.telegram_context_approval": {
+  "ko": "Telegram 작업용 컨텍스트 공유는 명시적으로 승인해야 합니다.",
+  "en": "Context sharing for Telegram work requires explicit approval.",
+  "ja": "Telegram作業へのコンテキスト共有には明示的な承認が必要です。",
+  "zh": "Telegram任务的上下文共享需要明确批准。"
+ },
+ "quickstart_service.connect_model_first": {
+  "ko": "먼저 모델을 연결하세요.",
+  "en": "Connect a model first.",
+  "ja": "先にモデルを接続してください。",
+  "zh": "请先连接模型。"
+ },
+ "quickstart_service.context_command_format": {
+  "ko": "컨텍스트 요청은 /context 항목ID[,항목ID] -- 요청 형식으로 보내세요.",
+  "en": "Send context requests as /context itemID[,itemID] -- request.",
+  "ja": "コンテキストのリクエストは /context 項目ID[,項目ID] -- リクエスト の形式で送ってください。",
+  "zh": "请按 /context 项目ID[,项目ID] -- 请求 的格式发送上下文请求。"
+ },
+ "quickstart_service.duplicate_context": {
+  "ko": "같은 컨텍스트 항목을 두 번 연결할 수 없습니다.",
+  "en": "The same context item cannot be attached twice.",
+  "ja": "同じコンテキスト項目を2回添付できません。",
+  "zh": "同一上下文项目不能附加两次。"
+ },
+ "quickstart_service.recent_context": {
+  "ko": "최근 {kind} {index}",
+  "en": "Recent {kind} {index}",
+  "ja": "最近の{kind} {index}",
+  "zh": "最近的{kind} {index}"
+ },
+ "quickstart_service.select_subscription_engine": {
+  "ko": "지원하는 구독 엔진을 선택하세요.",
+  "en": "Select a supported subscription engine.",
+  "ja": "対応するサブスクリプションエンジンを選んでください。",
+  "zh": "请选择支持的订阅引擎。"
+ },
+ "quickstart_service.claude_token_only": {
+  "ko": "토큰은 Claude Code에만 저장할 수 있습니다.",
+  "en": "Tokens can only be saved in Claude Code.",
+  "ja": "トークンはClaude Codeにのみ保存できます。",
+  "zh": "令牌只能保存在Claude Code中。"
+ },
+ "quickstart_service.enter_token": {
+  "ko": "토큰을 입력하세요.",
+  "en": "Enter a token.",
+  "ja": "トークンを入力してください。",
+  "zh": "请输入令牌。"
+ },
+ "quickstart_service.paste_claude_token": {
+  "ko": "`claude setup-token`이 표시한 토큰 한 줄을 그대로 붙여 넣으세요.",
+  "en": "Paste the single token line shown by `claude setup-token` exactly as displayed.",
+  "ja": "`claude setup-token`が表示したトークン1行をそのまま貼り付けてください。",
+  "zh": "请原样粘贴 `claude setup-token` 显示的单行令牌。"
+ },
+ "quickstart_service.select_ai_connection": {
+  "ko": "사용할 AI 연결을 선택하세요.",
+  "en": "Select an AI connection to use.",
+  "ja": "使用するAI接続を選んでください。",
+  "zh": "请选择要使用的AI连接。"
+ },
+ "quickstart_service.direct_api_missing": {
+  "ko": "직접 API가 아직 설정되지 않았습니다. 현재 경로는 그대로 유지됩니다.",
+  "en": "The direct API is not configured yet. The current route is unchanged.",
+  "ja": "直接APIはまだ設定されていません。現在の経路は変わりません。",
+  "zh": "直接API尚未设置。当前途径保持不变。"
+ },
+ "quickstart_service.verify_direct_api_first": {
+  "ko": "직접 API 연결 확인을 먼저 통과해야 전환할 수 있습니다. 현재 경로는 그대로 유지됩니다.",
+  "en": "Verify the direct API connection before switching. The current route is unchanged.",
+  "ja": "切り替える前に直接API接続の確認を完了してください。現在の経路は変わりません。",
+  "zh": "请先通过直接API连接验证再切换。当前途径保持不变。"
+ },
+ "quickstart_service.select_supported_ai": {
+  "ko": "지원하는 AI 연결을 선택하세요.",
+  "en": "Select a supported AI connection.",
+  "ja": "対応するAI接続を選んでください。",
+  "zh": "请选择支持的AI连接。"
+ },
+ "quickstart_service.usage_request_expired": {
+  "ko": "이 사용량 한도 요청은 이미 처리되었거나 더 이상 유효하지 않습니다. AI 설정에서 다시 확인하세요.",
+  "en": "This usage-limit request was already handled or is no longer valid. Check AI settings again.",
+  "ja": "この使用量制限リクエストは処理済みか無効です。AI設定で再確認してください。",
+  "zh": "此用量限制请求已处理或已失效。请在AI设置中重新确认。"
+ },
+ "quickstart_service.usage_selection_changed": {
+  "ko": "선택할 수 있는 로그인된 AI 연결이 아니거나 현재 선택이 바뀌었습니다. AI 설정에서 다시 확인하세요.",
+  "en": "This is not an available signed-in AI connection, or the current selection changed. Check AI settings again.",
+  "ja": "選べるログイン済みAI接続ではないか、現在の選択が変わりました。AI設定で再確認してください。",
+  "zh": "此AI连接未登录或不可选，或当前选择已更改。请在AI设置中重新确认。"
+ },
+ "quickstart_service.check_connection_info": {
+  "ko": "연결 정보를 확인하세요.",
+  "en": "Check the connection information.",
+  "ja": "接続情報を確認してください。",
+  "zh": "请确认连接信息。"
+ },
+ "quickstart_service.usage_ai_unknown": {
+  "ko": "사용량 한도 요청의 현재 AI 정보를 확인할 수 없습니다. AI 설정에서 다시 선택하세요.",
+  "en": "The current AI for this usage-limit request could not be identified. Select it again in AI settings.",
+  "ja": "使用量制限リクエストの現在のAIを確認できません。AI設定で選び直してください。",
+  "zh": "无法确认此用量限制请求的当前AI。请在AI设置中重新选择。"
+ },
+ "quickstart_service.signin_status_unknown": {
+  "ko": "로그인 상태를 확인할 수 없어 전환하지 않았습니다. AI 설정에서 상태를 확인하세요.",
+  "en": "Sign-in status could not be confirmed, so no switch was made. Check the status in AI settings.",
+  "ja": "ログイン状態を確認できないため、切り替えませんでした。AI設定で状態を確認してください。",
+  "zh": "无法确认登录状态，因此未切换。请在AI设置中查看状态。"
+ },
+ "quickstart_service.selected_ai_changed": {
+  "ko": "현재 선택된 AI가 바뀌어 전환하지 않았습니다. AI 설정에서 다시 선택하세요.",
+  "en": "The selected AI changed, so no switch was made. Select it again in AI settings.",
+  "ja": "選択中のAIが変わったため、切り替えませんでした。AI設定で選び直してください。",
+  "zh": "所选AI已更改，因此未切换。请在AI设置中重新选择。"
+ },
+ "quickstart_service.skill_already_installed": {
+  "ko": "이 스킬({skill_id})은 이미 그 커밋으로 설치되어 있어요.",
+  "en": "This skill ({skill_id}) is already installed at that commit.",
+  "ja": "このスキル（{skill_id}）はそのコミットでインストール済みです。",
+  "zh": "此技能（{skill_id}）已安装为该提交版本。"
+ },
+ "quickstart_service.skills_enabled": {
+  "ko": "스킬을 켰어요. 새로 시작하거나 이어가는 작업에서 설치된 스킬을 쓸 수 있어요.",
+  "en": "Skills are on. Installed skills are available to new or resumed work.",
+  "ja": "スキルを有効にしました。新規・再開する作業でインストール済みスキルを使えます。",
+  "zh": "已启用技能。新建或继续的任务可使用已安装的技能。"
+ },
+ "quickstart_service.skills_disabled": {
+  "ko": "스킬을 껐어요. 다음 요청부터 스킬 없이 진행해요.",
+  "en": "Skills are off. New requests will proceed without them.",
+  "ja": "スキルを無効にしました。次のリクエストからスキルなしで進めます。",
+  "zh": "已关闭技能。后续请求将不使用技能。"
+ },
+ "quickstart_service.skill_removed": {
+  "ko": "스킬 '{skill}'를 뺐어요. 다음 요청부터 쓰지 않아요.",
+  "en": "Removed skill '{skill}'. It will not be used for new requests.",
+  "ja": "スキル「{skill}」を削除しました。次のリクエストから使いません。",
+  "zh": "已移除技能“{skill}”。后续请求将不再使用。"
+ },
+ "quickstart_service.document_approval_label": {
+  "ko": "현재 선택 모델과 연결 폴더의 문서 발췌문",
+  "en": "Currently selected model and excerpts from connected folders",
+  "ja": "現在選択中のモデルと接続フォルダーの文書抜粋",
+  "zh": "当前所选模型及已连接文件夹的文档摘录"
+ },
+ "quickstart_service.document_approval_only": {
+  "ko": "문서 공유 승인만 설정할 수 있습니다.",
+  "en": "Only document sharing approval can be set here.",
+  "ja": "ここでは文書共有の承認のみ設定できます。",
+  "zh": "这里只能设置文档共享批准。"
+ },
+ "quickstart_service.public_url_approval_label": {
+  "ko": "소유자가 승인한 정규화된 공개 페이지 주소와 매개변수",
+  "en": "Owner-approved normalized public page addresses and parameters",
+  "ja": "所有者が承認した正規化済みの公開ページアドレスとパラメーター",
+  "zh": "所有者批准的规范化公开页面地址和参数"
+ },
+ "quickstart_service.explicit_public_url_approval": {
+  "ko": "공개 페이지 주소 승인은 명시적으로 설정해야 합니다.",
+  "en": "Public page address approval must be set explicitly.",
+  "ja": "公開ページアドレスの承認は明示的に設定してください。",
+  "zh": "请明确设置公开页面地址批准。"
+ },
+ "quickstart_service.public_url_count": {
+  "ko": "승인할 공개 페이지 주소를 1~20개 입력하세요.",
+  "en": "Enter 1–20 public page addresses to approve.",
+  "ja": "承認する公開ページアドレスを1～20件入力してください。",
+  "zh": "请输入1至20个要批准的公开页面地址。"
+ },
+ "quickstart_service.folder_limit": {
+  "ko": "폴더는 최대 8개까지 연결할 수 있습니다.",
+  "en": "You can connect up to 8 folders.",
+  "ja": "接続できるフォルダーは最大8個です。",
+  "zh": "最多可连接8个文件夹。"
+ },
+ "quickstart_service.check_file_workspace": {
+  "ko": "파일 작업공간 정보를 확인하세요.",
+  "en": "Check the file workspace information.",
+  "ja": "ファイルワークスペース情報を確認してください。",
+  "zh": "请确认文件工作区信息。"
+ },
+ "quickstart_service.public_query_changed": {
+  "ko": "이 작업의 요청이 바뀌어 공개 조회를 실행하지 않았습니다.",
+  "en": "This work's request changed, so the public lookup was not performed.",
+  "ja": "この作業のリクエストが変わったため、公開情報の照会を実行しませんでした。",
+  "zh": "此任务的请求已更改，因此未执行公开查询。"
+ },
+ "quickstart_service.enter_valid_api_key": {
+  "ko": "올바른 API 키를 입력하세요.",
+  "en": "Enter a valid API key.",
+  "ja": "有効なAPIキーを入力してください。",
+  "zh": "请输入有效的API密钥。"
+ },
+ "quickstart_service.api_target_changed_apply": {
+  "ko": "연결 대상이 바뀌었습니다. 새 API 키를 입력한 뒤 적용하세요.",
+  "en": "The connection target changed. Enter a new API key before applying.",
+  "ja": "接続先が変わりました。新しいAPIキーを入力してから適用してください。",
+  "zh": "连接目标已更改。请重新输入API密钥后应用。"
+ },
+ "quickstart_service.apply_tested_settings_only": {
+  "ko": "테스트한 정확한 설정만 적용할 수 있습니다. 다시 테스트하세요.",
+  "en": "Only the exact tested settings can be applied. Test again.",
+  "ja": "テストした設定だけを適用できます。もう一度テストしてください。",
+  "zh": "只能应用测试过的确切设置。请重新测试。"
+ },
+ "quickstart_service.restart_connection": {
+  "ko": "연결을 다시 시작해 주세요.",
+  "en": "Start the connection again.",
+  "ja": "接続をやり直してください。",
+  "zh": "请重新开始连接。"
+ },
+ "quickstart_service.api_target_changed_test": {
+  "ko": "연결 대상이 바뀌었습니다. 새 API 키를 입력한 뒤 테스트하세요.",
+  "en": "The connection target changed. Enter a new API key before testing.",
+  "ja": "接続先が変わりました。新しいAPIキーを入力してからテストしてください。",
+  "zh": "连接目标已更改。请重新输入API密钥后测试。"
+ },
+ "quickstart_service.select_model_first": {
+  "ko": "먼저 모델을 선택하세요.",
+  "en": "Select a model first.",
+  "ja": "先にモデルを選んでください。",
+  "zh": "请先选择模型。"
+ },
+ "quickstart_service.pick_read_folder": {
+  "ko": "Still이 읽기만 할 폴더를 선택하세요.",
+  "en": "Select a folder for Still to read only.",
+  "ja": "Stillが読み取り専用で使うフォルダーを選んでください。",
+  "zh": "请选择仅供Still读取的文件夹。"
+ },
+ "quickstart_service.pick_reference_folder": {
+  "ko": "Still이 정리할 원본으로 읽기만 할 폴더를 선택하세요.",
+  "en": "Select a folder for Still to read as originals to organize.",
+  "ja": "Stillが整理用の原本として読み取るフォルダーを選んでください。",
+  "zh": "请选择供Still只读、用于整理原始资料的文件夹。"
+ },
+ "quickstart_service.pick_result_folder": {
+  "ko": "Still이 새 결과 파일만 만들 폴더를 선택하세요.",
+  "en": "Select a folder where Still will create only new result files.",
+  "ja": "Stillが新しい結果ファイルのみ作成するフォルダーを選んでください。",
+  "zh": "请选择仅供Still创建新结果文件的文件夹。"
+ },
+ "quickstart_service.pick_folder_on_mac": {
+  "ko": "먼저 이 Mac에서 폴더를 선택해 주세요.",
+  "en": "Select a folder on this Mac first.",
+  "ja": "先にこのMacでフォルダーを選んでください。",
+  "zh": "请先在此Mac上选择文件夹。"
+ },
+ "quickstart_service.retry_link_missing": {
+  "ko": "이전 요청의 재시도 연결 기록을 확인할 수 없어 자동으로 다시 실행하지 않았습니다.",
+  "en": "The previous request's retry link record could not be confirmed, so it was not retried automatically.",
+  "ja": "前のリクエストの再試行リンク記録を確認できないため、自動再実行しませんでした。",
+  "zh": "无法确认上次请求的重试关联记录，因此未自动重试。"
+ },
+ "quickstart_service.changed_verb": {
+  "ko": "바꿨습니다",
+  "en": "changed",
+  "ja": "変更しました",
+  "zh": "更改"
+ },
+ "quickstart_service.connection_ready_resume": {
+  "ko": "{name} 연결이 완료되었습니다. 기다리던 요청을 이어서 처리합니다.",
+  "en": "{name} is connected. Resuming the waiting request.",
+  "ja": "{name}の接続が完了しました。待機中のリクエストを再開します。",
+  "zh": "{name}连接已完成。正在继续等待中的请求。"
+ },
+ "quickstart_service.connection_ready": {
+  "ko": "{name} 연결이 완료되었습니다. 이제 대화에서 바로 요청하시면 됩니다.",
+  "en": "{name} is connected. You can now make requests in the conversation.",
+  "ja": "{name}の接続が完了しました。会話ですぐにリクエストできます。",
+  "zh": "{name}连接已完成。现在可以直接在对话中提出请求。"
+ },
+ "quickstart_service.google_client_mac_hint": {
+  "ko": "이 컴퓨터(Mac)의 브라우저에서 {base}#settings/external 을 열면 자체 Google client를 넣을 수 있고, 만드는 방법도 그 화면에 있습니다.",
+  "en": "Open {base}#settings/external in this computer's (Mac) browser to enter your own Google client. Instructions are on that page too.",
+  "ja": "このコンピューター（Mac）のブラウザーで{base}#settings/externalを開くと、独自のGoogle clientを入力できます。作成方法もその画面にあります。",
+  "zh": "在此电脑（Mac）的浏览器中打开{base}#settings/external，即可输入自有Google client。该页面也有创建说明。"
+ },
+ "quickstart_service.google_client_hint": {
+  "ko": "설정 > 외부 연결 > 자체 Google client에서 넣을 수 있고, 만드는 방법도 그 화면에 있습니다.",
+  "en": "Enter your own Google client in Settings > External connections > Own Google client. Instructions are on that page too.",
+  "ja": "設定 > 外部接続 > 独自のGoogle clientで入力できます。作成方法もその画面にあります。",
+  "zh": "可在设置 > 外部连接 > 自有Google client中输入，该页面也有创建说明。"
+ },
+ "quickstart_service.google_service_connect_hint": {
+  "ko": "Google 서비스마다 설정 > 외부 연결에서 연결하세요.",
+  "en": "Connect each Google service in Settings > External connections.",
+  "ja": "Googleサービスごとに設定 > 外部接続で接続してください。",
+  "zh": "请在设置 > 外部连接中分别连接各项Google服务。"
+ },
+ "quickstart_service.google_disconnected_work": {
+  "ko": "연결을 해제해서 이 요청은 이어서 처리하지 않았습니다. 필요하면 다시 연결한 뒤 요청해 주세요.",
+  "en": "The connection was disconnected, so this request was not resumed. Reconnect and request again if needed.",
+  "ja": "接続を解除したため、このリクエストは再開しませんでした。必要なら再接続してリクエストしてください。",
+  "zh": "连接已断开，因此未继续此请求。需要时请重新连接并提出请求。"
+ },
+ "quickstart_service.disconnect_target_missing": {
+  "ko": "해제할 연결을 찾지 못해 해제하지 않았습니다. 다시 요청하세요.",
+  "en": "The connection to disconnect was not found, so nothing was disconnected. Request again.",
+  "ja": "解除する接続が見つからないため、解除しませんでした。もう一度リクエストしてください。",
+  "zh": "未找到要断开的连接，因此未断开。请重新请求。"
+ },
+ "quickstart_service.disconnect_target_changed": {
+  "ko": "초안을 만든 뒤 연결이 바뀌어 해제하지 않았습니다. 다시 요청하세요.",
+  "en": "The connection changed after the draft was created, so it was not disconnected. Request again.",
+  "ja": "下書き作成後に接続が変わったため、解除しませんでした。もう一度リクエストしてください。",
+  "zh": "草案创建后连接已更改，因此未断开。请重新请求。"
+ },
+ "quickstart_service.phone_login_no_destination": {
+  "ko": "휴대폰 로그인 링크를 보낼 곳이 없어요. 먼저 텔레그램을 연결해 주세요.",
+  "en": "There is nowhere to send the phone sign-in link. Connect Telegram first.",
+  "ja": "スマートフォン用ログインリンクの送信先がありません。先にTelegramを接続してください。",
+  "zh": "没有可发送手机登录链接的位置。请先连接Telegram。"
+ },
+ "quickstart_service.specify_site_to_delete": {
+  "ko": "삭제할 사이트를 지정하세요.",
+  "en": "Specify the site to delete.",
+  "ja": "削除するサイトを指定してください。",
+  "zh": "请指定要删除的网站。"
+ },
+ "quickstart_service.browser_step_label": {
+  "ko": "브라우저 단계",
+  "en": "Browser step",
+  "ja": "ブラウザー操作",
+  "zh": "浏览器步骤"
+ },
+ "quickstart_service.check_browser_approval": {
+  "ko": "승인할 브라우저 단계와 결정을 확인하세요.",
+  "en": "Check the browser step and decision to approve.",
+  "ja": "承認するブラウザー操作と判断を確認してください。",
+  "zh": "请确认要批准的浏览器步骤及决定。"
+ },
+ "quickstart_service.no_browser_approval": {
+  "ko": "승인 대기 중인 브라우저 단계가 없습니다.",
+  "en": "No browser step is awaiting approval.",
+  "ja": "承認待ちのブラウザー操作はありません。",
+  "zh": "没有等待批准的浏览器步骤。"
+ },
+ "quickstart_service.browser_approval_changed": {
+  "ko": "지금 표시된 실행 내용을 다시 확인하세요. 이전 확인으로 다른 동작을 승인하지 않았습니다.",
+  "en": "Review the execution details shown now. The previous confirmation did not approve a different action.",
+  "ja": "今表示されている実行内容を再確認してください。以前の確認で別の操作は承認していません。",
+  "zh": "请重新确认当前显示的执行内容。之前的确认并未批准其他操作。"
+ },
+ "quickstart_service.previous_effect_unknown": {
+  "ko": "앞선 동작의 결과가 확인되지 않아 반복하거나 다음 변경을 실행하지 않았습니다.",
+  "en": "The previous action's result is unconfirmed, so no repeat or further change was performed.",
+  "ja": "前の操作の結果が確認できないため、繰り返しや次の変更は実行しませんでした。",
+  "zh": "之前操作的结果尚未确认，因此未重复或执行下一项更改。"
+ },
+ "quickstart_service.resume_limit": {
+  "ko": "이 요청의 자동 재개 한도에 도달해 추가 실행하지 않았습니다.",
+  "en": "This request reached its automatic resume limit, so no further action was performed.",
+  "ja": "このリクエストの自動再開上限に達したため、追加実行しませんでした。",
+  "zh": "此请求已达到自动继续次数上限，因此未继续执行。"
+ },
+ "quickstart_service.resume_authority_expired": {
+  "ko": "실행 확인의 유효 시간이 지났거나 요청 권한이 끝나 자동으로 이어서 실행하지 않았습니다.",
+  "en": "Execution confirmation expired or request authority ended, so work was not resumed automatically.",
+  "ja": "実行確認の期限が過ぎたかリクエストの権限が終了したため、自動再開しませんでした。",
+  "zh": "执行确认已过期或请求权限已结束，因此未自动继续。"
+ },
+ "quickstart_service.this_site": {
+  "ko": "이 사이트",
+  "en": "this site",
+  "ja": "このサイト",
+  "zh": "此网站"
+ },
+ "quickstart_service.check_login_decision": {
+  "ko": "로그인 요청과 결정을 확인하세요.",
+  "en": "Check the sign-in request and decision.",
+  "ja": "ログインのリクエストと判断を確認してください。",
+  "zh": "请确认登录请求及决定。"
+ },
+ "quickstart_service.no_waiting_login": {
+  "ko": "로그인을 기다리는 요청이 없습니다.",
+  "en": "No request is waiting for sign-in.",
+  "ja": "ログインを待つリクエストはありません。",
+  "zh": "没有等待登录的请求。"
+ },
+ "quickstart_service.login_window_title": {
+  "ko": "{site} 로그인 창 (요청 {work_id}, 약 {minutes}분 뒤 자동으로 닫힘)",
+  "en": "{site} sign-in window (request {work_id}, closes in about {minutes} minutes)",
+  "ja": "{site}のログイン画面（リクエスト{work_id}、約{minutes}分後に自動終了）",
+  "zh": "{site}登录窗口（请求{work_id}，约{minutes}分钟后自动关闭）"
+ },
+ "quickstart_service.login_window_changed": {
+  "ko": "그 로그인 창은 이미 닫혔거나 바뀌었어요. 아무것도 닫지 않았어요.",
+  "en": "That sign-in window is already closed or has changed. Nothing was closed.",
+  "ja": "そのログイン画面はすでに閉じたか変わっています。何も閉じていません。",
+  "zh": "该登录窗口已关闭或已更改。未关闭任何窗口。"
+ },
+ "quickstart_service.login_window_closing": {
+  "ko": "로그인 창을 닫고 있어요. 닫히면 브라우저를 다시 쓸 수 있어요. 그 창을 연 요청은 로그인 없이 끝나요.",
+  "en": "The sign-in window is closing. You can use the browser again once it closes. The request that opened it ends without signing in.",
+  "ja": "ログイン画面を閉じています。閉じるとブラウザーを再び使えます。その画面を開いたリクエストはログインせず終了します。",
+  "zh": "正在关闭登录窗口。关闭后即可再次使用浏览器。打开该窗口的请求将不登录并结束。"
+ },
+ "quickstart_service.trust_policy_summary": {
+  "ko": "소유자가 연결한 AI 서비스와 확인한 MCP 서버를 사용합니다. 읽기와 일반 변경은 요청 범위에서 실행하고 결과를 알립니다. 결제·송금 등 돈이 오가는 동작은 매번 정확한 실행 내용을 확인받으며, 거절한 동작은 실행하지 않습니다.",
+  "en": "Uses the AI services you connected and MCP servers you confirmed. Reads and ordinary changes run within the request scope, and results are reported. Each payment or transfer requires confirmation of the exact action, and rejected actions never run.",
+  "ja": "所有者が接続したAIサービスと確認済みMCPサーバーを使います。読み取りと通常の変更はリクエストの範囲内で実行し、結果をお知らせします。支払い・送金などは毎回正確な実行内容を確認し、拒否した操作は実行しません。",
+  "zh": "使用所有者连接的AI服务和确认的MCP服务器。在请求范围内执行读取和普通更改并告知结果。付款、转账等资金操作每次都需确认确切执行内容，已拒绝的操作不会执行。"
+ },
+ "quickstart_service.trust_revoked": {
+  "ko": "{name}의 이전 권한 사용을 중지했어요. 설정 확인으로 언제든 복원할 수 있어요.",
+  "en": "Stopped using the previous permissions for {name}. You can restore them through settings confirmation at any time.",
+  "ja": "{name}の以前の権限使用を停止しました。設定の確認でいつでも復元できます。",
+  "zh": "已停止使用{name}的之前权限。随时可通过设置确认恢复。"
+ },
+ "quickstart_service.check_trust_restore": {
+  "ko": "복원할 신뢰 기록을 확인하세요.",
+  "en": "Check the trust record to restore.",
+  "ja": "復元する信頼記録を確認してください。",
+  "zh": "请确认要恢复的信任记录。"
+ },
+ "quickstart_service.trust_restored": {
+  "ko": "{name}의 신뢰 기록을 복원했어요. 이전 확인 요청이나 작업은 다시 실행하지 않아요.",
+  "en": "Restored the trust record for {name}. Previous confirmation requests or work will not run again.",
+  "ja": "{name}の信頼記録を復元しました。以前の確認リクエストや作業は再実行しません。",
+  "zh": "已恢复{name}的信任记录。之前的确认请求或任务不会重新执行。"
+ },
+ "quickstart_service.check_reviewed_settings": {
+  "ko": "검토된 설정을 확인하세요.",
+  "en": "Check the reviewed settings.",
+  "ja": "確認済みの設定を確認してください。",
+  "zh": "请确认已审核的设置。"
+ },
+ "quickstart_service.select_on_off": {
+  "ko": "켜기 또는 끄기를 선택하세요.",
+  "en": "Select on or off.",
+  "ja": "有効か無効を選んでください。",
+  "zh": "请选择开启或关闭。"
+ },
+ "quickstart_service.unmediated_mcp_disabled": {
+  "ko": "AI가 Still의 확인 없이 연결된 서비스의 도구를 실행한 기록이 있어, 그 AI에서 소유자가 연결한 MCP 서버 사용을 껐어요.",
+  "en": "An AI ran a connected service tool without Still confirmation, so owner-connected MCP servers were disabled for that AI.",
+  "ja": "AIがStillの確認なく接続サービスのツールを実行した記録があるため、そのAIで所有者接続のMCPサーバー使用を無効にしました。",
+  "zh": "记录显示AI未经Still确认便执行了已连接服务的工具，因此已禁用该AI使用所有者连接的MCP服务器。"
+ },
+ "quickstart_service.phone_link_unsupported": {
+  "ko": "이 설치에서 휴대폰 링크로 할 수 있는 일이 아닙니다.",
+  "en": "This action is not available through a phone link on this installation.",
+  "ja": "このインストールではスマートフォン用リンクで行えない操作です。",
+  "zh": "此安装不支持通过手机链接执行此操作。"
+ },
+ "quickstart_service.phone_client_link_invalid": {
+  "ko": "이 링크로는 client를 넣을 수 없습니다.",
+  "en": "This link cannot be used to enter a client.",
+  "ja": "このリンクではclientを入力できません。",
+  "zh": "此链接不能用于输入client。"
+ },
+ "quickstart_service.saved_verb": {
+  "ko": "저장했습니다",
+  "en": "saved",
+  "ja": "保存しました",
+  "zh": "保存"
+ },
+ "quickstart_service.phone_link_location": {
+  "ko": "휴대폰 링크에서",
+  "en": "from the phone link",
+  "ja": "スマートフォン用リンクで",
+  "zh": "通过手机链接"
+ },
+ "quickstart_service.google_client_unsupported": {
+  "ko": "이 실행 방식에서는 자체 Google client를 설정할 수 없습니다.",
+  "en": "Your own Google client cannot be configured in this execution mode.",
+  "ja": "この実行方法では独自のGoogle clientを設定できません。",
+  "zh": "此执行方式无法设置自有Google client。"
+ },
+ "quickstart_service.paste_google_client": {
+  "ko": "Google Cloud에서 내려받은 Desktop app client JSON을 붙여 넣어 주세요.",
+  "en": "Paste the Desktop app client JSON downloaded from Google Cloud.",
+  "ja": "Google CloudからダウンロードしたDesktop app client JSONを貼り付けてください。",
+  "zh": "请粘贴从Google Cloud下载的Desktop app client JSON。"
+ },
+ "quickstart_service.google_client_env_locked": {
+  "ko": "자체 Google client가 AGENTOS_GOOGLE_CLIENT_FILE로 지정돼 있어 설정에서 바꿀 수 없습니다.",
+  "en": "Your own Google client is set by AGENTOS_GOOGLE_CLIENT_FILE and cannot be changed in Settings.",
+  "ja": "独自のGoogle clientはAGENTOS_GOOGLE_CLIENT_FILEで指定されているため、設定では変更できません。",
+  "zh": "自有Google client由AGENTOS_GOOGLE_CLIENT_FILE指定，无法在设置中更改。"
+ },
+ "quickstart_service.google_client_connections_active": {
+  "ko": "지금 client로 연결된 Google 서비스가 있습니다. 서비스마다 연결을 해제한 뒤 client를 바꿔 주세요.",
+  "en": "Google services are connected using this client. Disconnect each service before changing the client.",
+  "ja": "現在のclientで接続中のGoogleサービスがあります。各サービスを切断してからclientを変更してください。",
+  "zh": "有Google服务正在使用此client连接。请先逐项断开服务再更改client。"
+ },
+ "quickstart_service.check_calendar_scope": {
+  "ko": "캘린더 연결 범위를 확인하세요.",
+  "en": "Check the calendar connection scope.",
+  "ja": "カレンダーの接続範囲を確認してください。",
+  "zh": "请确认日历连接范围。"
+ },
+ "quickstart_service.drive_reconnect_required": {
+  "ko": "Google Drive 연결 또는 재연결이 필요합니다. Telegram에서 Google Drive 연결을 요청해 주세요.",
+  "en": "Connect or reconnect Google Drive. Request a Google Drive connection in Telegram.",
+  "ja": "Google Driveの接続か再接続が必要です。TelegramでGoogle Driveの接続をリクエストしてください。",
+  "zh": "需要连接或重新连接Google Drive。请在Telegram中请求连接Google Drive。"
+ },
+ "quickstart_service.drive_telegram_only": {
+  "ko": "Google Drive 파일은 연결한 Telegram 대화에서만 읽을 수 있습니다.",
+  "en": "Google Drive files can only be read in the connected Telegram conversation.",
+  "ja": "Google Driveのファイルは接続したTelegramの会話でのみ読めます。",
+  "zh": "只能在已连接的Telegram对话中读取Google Drive文件。"
+ },
+ "quickstart_service.drive_files_ready": {
+  "ko": "선택한 Google Drive 파일을 준비했습니다. 요청을 계속합니다.",
+  "en": "The selected Google Drive files are ready. Continuing the request.",
+  "ja": "選択したGoogle Driveファイルを準備しました。リクエストを続行します。",
+  "zh": "已准备好所选Google Drive文件。正在继续请求。"
+ },
+ "quickstart_service.select_drive_files": {
+  "ko": "Google Picker에서 요약할 파일을 먼저 선택해 주세요.",
+  "en": "Select files to summarize in Google Picker first.",
+  "ja": "先にGoogle Pickerで要約するファイルを選んでください。",
+  "zh": "请先在Google Picker中选择要总结的文件。"
+ },
+ "quickstart_service.drive_read_failed": {
+  "ko": "선택한 Google Drive 파일을 읽지 못했습니다.",
+  "en": "Could not read the selected Google Drive files.",
+  "ja": "選択したGoogle Driveファイルを読めませんでした。",
+  "zh": "无法读取所选Google Drive文件。"
+ },
+ "quickstart_service.drive_read_reconnect": {
+  "ko": "선택한 Google Drive 파일을 읽지 못했습니다. Telegram에서 다시 연결해 주세요.",
+  "en": "Could not read the selected Google Drive files. Reconnect in Telegram.",
+  "ja": "選択したGoogle Driveファイルを読めませんでした。Telegramで再接続してください。",
+  "zh": "无法读取所选Google Drive文件。请在Telegram中重新连接。"
+ },
+ "quickstart_service.enter_bot_token": {
+  "ko": "BotFather에서 발급한 봇 토큰을 입력하세요.",
+  "en": "Enter the bot token issued by BotFather.",
+  "ja": "BotFatherが発行したボットトークンを入力してください。",
+  "zh": "请输入BotFather签发的机器人令牌。"
+ },
+ "quickstart_service.bot_webhook_active": {
+  "ko": "이 봇은 webhook을 사용 중입니다. 새 전용 봇을 연결하거나 기존 webhook을 먼저 해제하세요.",
+  "en": "This bot uses a webhook. Connect a new dedicated bot or remove the existing webhook first.",
+  "ja": "このボットはwebhookを使用中です。新しい専用ボットを接続するか、先に既存のwebhookを解除してください。",
+  "zh": "此机器人正在使用webhook。请连接新的专用机器人或先移除现有webhook。"
+ },
+ "quickstart_service.connect_bot_first": {
+  "ko": "먼저 봇 토큰을 연결하세요.",
+  "en": "Connect a bot token first.",
+  "ja": "先にボットトークンを接続してください。",
+  "zh": "请先连接机器人令牌。"
+ },
+ "quickstart_service.telegram_connected_manual_check": {
+  "ko": "개인 계정이 연결되었습니다. 자동 연결 확인은 Codex 경로에서만 실행됩니다. Telegram에서 메시지를 보내 직접 확인하세요.",
+  "en": "Your personal account is connected. Automatic connection verification runs only on the Codex route. Send a message in Telegram to check it yourself.",
+  "ja": "個人アカウントを接続しました。自動接続確認はCodex経路でのみ実行します。Telegramでメッセージを送って確認してください。",
+  "zh": "个人账号已连接。自动连接验证仅在Codex途径运行。请在Telegram中发送消息进行确认。"
+ },
+ "quickstart_service.location_unavailable": {
+  "ko": "이 작업은 Telegram에서 위치를 요청할 수 없습니다.",
+  "en": "This work cannot request a location through Telegram.",
+  "ja": "この作業ではTelegramで位置情報をリクエストできません。",
+  "zh": "此任务无法通过Telegram请求位置。"
+ },
+ "quickstart_service.location_purpose_required": {
+  "ko": "위치를 요청하는 목적을 짧게 적어 주세요.",
+  "en": "Briefly describe why you need the location.",
+  "ja": "位置情報が必要な目的を短く入力してください。",
+  "zh": "请简要说明请求位置的目的。"
+ },
+ "quickstart_service.location_send_failed": {
+  "ko": "Telegram으로 위치 요청을 보내지 못했습니다.",
+  "en": "Could not send the location request through Telegram.",
+  "ja": "Telegramで位置情報リクエストを送れませんでした。",
+  "zh": "无法通过Telegram发送位置请求。"
+ },
+ "quickstart_service.conversation_label": {
+  "ko": "대화",
+  "en": "Conversation",
+  "ja": "会話",
+  "zh": "对话"
+ },
+ "quickstart_service.other_running_request": {
+  "ko": "진행 중인 다른 요청",
+  "en": "Another request in progress",
+  "ja": "進行中の別のリクエスト",
+  "zh": "正在进行的其他请求"
+ },
+ "quickstart_service.family_link_no_destination": {
+  "ko": "설정 링크를 보낼 곳이 없어요. 텔레그램을 연결한 뒤 대화에서 다시 요청해 주세요.",
+  "en": "There is nowhere to send the setup link. Connect Telegram, then request it again in the conversation.",
+  "ja": "設定リンクの送信先がありません。Telegramを接続し、会話でもう一度リクエストしてください。",
+  "zh": "没有可发送设置链接的位置。请连接Telegram后在对话中重新请求。"
+ },
+ "quickstart_service.family_setup_active": {
+  "ko": "이미 가족 비서를 만드는 중이에요. 그 설정이 끝난 뒤에 다시 요청해 주세요.",
+  "en": "A family assistant is already being set up. Try again after setup finishes.",
+  "ja": "家族用アシスタントを作成中です。設定が終わってから再度リクエストしてください。",
+  "zh": "正在创建家庭助手。请等设置完成后再试。"
+ },
+ "quickstart_service.family_setup_failed": {
+  "ko": "가족 비서를 만들지 못했어요. 잠시 뒤에 다시 요청해 주세요.",
+  "en": "Could not create the family assistant. Try again shortly.",
+  "ja": "家族用アシスタントを作成できませんでした。少し待って再度リクエストしてください。",
+  "zh": "无法创建家庭助手。请稍后重试。"
+ },
+ "quickstart_service.original_work_link_missing": {
+  "ko": "원래 요청의 연결 기록을 확인할 수 없어 추가 실행하지 않았습니다.",
+  "en": "The original request's link record could not be confirmed, so no further action was performed.",
+  "ja": "元のリクエストのリンク記録を確認できないため、追加実行しませんでした。",
+  "zh": "无法确认原始请求的关联记录，因此未继续执行。"
+ },
+ "quickstart_service.forgotten_request": {
+  "ko": "잊기로 한 요청이라 다시 실행하지 않았어요.",
+  "en": "This request was marked to be forgotten, so it was not run again.",
+  "ja": "忘れることにしたリクエストのため、再実行しませんでした。",
+  "zh": "此请求已被指定遗忘，因此未重新执行。"
+ },
+ "quickstart_service.saved_result_missing": {
+  "ko": "현재 원본과 일치하는 저장 결과를 찾지 못했습니다.",
+  "en": "No saved result matching the current originals was found.",
+  "ja": "現在の原本と一致する保存結果が見つかりません。",
+  "zh": "未找到与当前原始资料匹配的保存结果。"
+ },
+ "quickstart_service.saved_result": {
+  "ko": "저장 결과: {path}\n{content}",
+  "en": "Saved result: {path}\n{content}",
+  "ja": "保存結果: {path}\n{content}",
+  "zh": "保存结果：{path}\n{content}"
+ },
+ "quickstart_service.enter_note": {
+  "ko": "기록할 내용을 입력하세요.",
+  "en": "Enter something to record.",
+  "ja": "記録する内容を入力してください。",
+  "zh": "请输入要记录的内容。"
+ },
+ "quickstart_service.main_ai_owner_only": {
+  "ko": "기본 AI는 소유자가 직접 보낸 메시지로만 바꿉니다. 기본 AI는 그대로입니다.",
+  "en": "Only a message sent directly by the owner can change the main AI. The main AI is unchanged.",
+  "ja": "メインAIは所有者が直接送ったメッセージでのみ変更できます。メインAIは変わりません。",
+  "zh": "只有所有者直接发送的消息才能更改主AI。主AI保持不变。"
+ },
+ "quickstart_service.enter_result_title": {
+  "ko": "결과 제목을 입력하세요.",
+  "en": "Enter a result title.",
+  "ja": "結果のタイトルを入力してください。",
+  "zh": "请输入结果标题。"
+ },
+ "quickstart_service.reference_material_missing": {
+  "ko": "연결한 참고 폴더에서 일치하는 자료를 찾지 못했습니다.",
+  "en": "No matching material was found in the connected reference folders.",
+  "ja": "接続した参照フォルダーに一致する資料が見つかりません。",
+  "zh": "已连接的参考文件夹中未找到匹配资料。"
+ },
+ "quickstart_service.context_model_changed": {
+  "ko": "선택한 모델이 바뀌어 연결한 컨텍스트를 공유하지 않았습니다. 새 요청으로 다시 선택하세요.",
+  "en": "The selected model changed, so the attached context was not shared. Select it again in a new request.",
+  "ja": "選択したモデルが変わったため、添付したコンテキストを共有しませんでした。新しいリクエストで選び直してください。",
+  "zh": "所选模型已更改，因此未共享附加的上下文。请在新请求中重新选择。"
+ },
+ "quickstart_service.approve_context_policy": {
+  "ko": "이 Telegram 작업에 컨텍스트를 공유할 모델 정책을 먼저 로컬 설정에서 승인하세요.",
+  "en": "Approve the model policy for sharing context with this Telegram work in local settings first.",
+  "ja": "先にローカル設定で、このTelegram作業にコンテキストを共有するモデルポリシーを承認してください。",
+  "zh": "请先在本地设置中批准向此Telegram任务共享上下文的模型策略。"
+ },
+ "quickstart_service.context_telegram_approval": {
+  "ko": "개인 컨텍스트를 외부 모델에 전달하려면 이 작업의 Telegram 승인이 필요합니다.",
+  "en": "Sharing personal context with an external model requires Telegram approval for this work.",
+  "ja": "個人コンテキストを外部モデルに送るには、この作業のTelegram承認が必要です。",
+  "zh": "向外部模型传送个人上下文需要对此任务的Telegram批准。"
+ },
+ "quickstart_service.selected_context_label": {
+  "ko": "선택한 컨텍스트",
+  "en": "Selected context",
+  "ja": "選択したコンテキスト",
+  "zh": "所选上下文"
+ },
+ "quickstart_service.save_note_first": {
+  "ko": "먼저 /note 내용으로 메모를 저장하세요.",
+  "en": "Save a note with /note followed by its content first.",
+  "ja": "先に /note 内容 でメモを保存してください。",
+  "zh": "请先用 /note 内容 保存笔记。"
+ },
+ "quickstart_service.saved_notes_count": {
+  "ko": "저장된 메모 {count}개",
+  "en": "{count} saved notes",
+  "ja": "保存したメモ{count}件",
+  "zh": "已保存{count}条笔记"
+ },
+ "quickstart_service.isolated_photos_unsupported": {
+  "ko": "격리 런타임 배포는 사진 입력을 지원하지 않습니다. 현재 AI 연결을 바꿔 실행해 주세요.",
+  "en": "Isolated runtime deployment does not support photos. Change the current AI connection to run this request.",
+  "ja": "隔離ランタイムは写真入力に対応していません。現在のAI接続を変更して実行してください。",
+  "zh": "隔离运行时部署不支持照片输入。请更改当前AI连接后执行。"
+ },
+ "quickstart_service.isolated_work_model_unsupported": {
+  "ko": "격리 런타임 배포는 작업 모델 지정을 지원하지 않습니다. 설정에서 작업 모델을 비우거나 격리 없이 실행하세요.",
+  "en": "Isolated runtime deployment does not support a work model override. Clear the work model in Settings or run without isolation.",
+  "ja": "隔離ランタイムは作業モデルの指定に対応していません。設定で作業モデルを空にするか、隔離なしで実行してください。",
+  "zh": "隔离运行时部署不支持指定任务模型。请在设置中清空任务模型，或不使用隔离运行。"
+ },
+ "quickstart_service.connect_ai_first": {
+  "ko": "설정에서 모델 또는 구독 엔진을 먼저 연결하세요. 모델 없이도 /note와 /notes는 사용할 수 있습니다.",
+  "en": "Connect a model or subscription engine in Settings first. You can use /note and /notes without a model.",
+  "ja": "先に設定でモデルかサブスクリプションエンジンを接続してください。モデルなしでも /note と /notes は使えます。",
+  "zh": "请先在设置中连接模型或订阅引擎。没有模型也可以使用 /note 和 /notes。"
+ },
+ "quickstart_service.verify_model_tools": {
+  "ko": "모델의 도구 호출 연결을 아직 확인하지 못했습니다. 설정에서 “모델 연결 확인”을 실행한 뒤 다시 요청하세요.",
+  "en": "The model's tool connection has not been verified yet. Run “Verify model connection” in Settings, then try again.",
+  "ja": "モデルのツール接続がまだ確認できていません。設定で「モデル接続確認」を実行してから再度リクエストしてください。",
+  "zh": "尚未确认模型的工具调用连接。请在设置中运行“验证模型连接”后重试。"
+ },
+ "quickstart_service.file_saved": {
+  "ko": "저장됨: {path}",
+  "en": "Saved: {path}",
+  "ja": "保存済み: {path}",
+  "zh": "已保存：{path}"
+ },
+ "quickstart_service.mcp_ready_resume": {
+  "ko": "원래 작업을 이어갈 준비가 됐어요.",
+  "en": "Ready to resume the original work.",
+  "ja": "元の作業を再開する準備ができました。",
+  "zh": "已准备好继续原始任务。"
+ },
+ "quickstart_service.mcp_settings_applied": {
+  "ko": "연결 설정을 적용했어요.",
+  "en": "Connection settings applied.",
+  "ja": "接続設定を適用しました。",
+  "zh": "已应用连接设置。"
+ },
+ "quickstart_service.mcp_setup_receipt": {
+  "ko": "{name}의 필요한 도구를 확인했어요. 인증 정보는 CLI가 관리하며 계정·동의 범위는 별도 검증하지 않았어요. {result}",
+  "en": "Verified the required tools for {name}. The CLI manages credentials; account and consent scopes were not separately verified. {result}",
+  "ja": "{name}の必要なツールを確認しました。認証情報はCLIが管理し、アカウント・同意範囲は別途検証していません。{result}",
+  "zh": "已确认{name}所需的工具。凭据由CLI管理，账号及同意范围未另行验证。{result}"
+ },
+ "quickstart_service.settings_resume_failed": {
+  "ko": "설정 확인 후 원래 작업을 이어가지 못했습니다: {reason}",
+  "en": "Could not resume the original work after settings confirmation: {reason}",
+  "ja": "設定確認後に元の作業を再開できませんでした: {reason}",
+  "zh": "设置确认后无法继续原始任务：{reason}"
+ },
+ "quickstart_service.memory_current_line": {
+  "ko": "{fact} (지금은 {current})",
+  "en": "{fact} (currently {current})",
+  "ja": "{fact}（現在は{current}）",
+  "zh": "{fact}（目前为{current}）"
+ },
+ "quickstart_service.failed_tools": {
+  "ko": "완료하지 못한 도구 실행 — {reasons}",
+  "en": "Tool runs that could not complete — {reasons}",
+  "ja": "完了できなかったツール実行 — {reasons}",
+  "zh": "未能完成的工具执行 — {reasons}"
+ },
+ "quickstart_service.skill_added": {
+  "ko": "스킬 '{skill}'을(를) 추가했어요. 출처 {repo}의 {path}, 커밋 {revision}, 라이선스 {licence}.",
+  "en": "Added skill '{skill}'. Source: {repo}, {path}, commit {revision}, license {licence}.",
+  "ja": "スキル「{skill}」を追加しました。出典: {repo}の{path}、コミット{revision}、ライセンス{licence}。",
+  "zh": "已添加技能“{skill}”。来源：{repo}的{path}，提交{revision}，许可证{licence}。"
+ },
+ "quickstart_service.skill_added_enabled": {
+  "ko": "스킬 '{skill}'을(를) 추가했어요. 출처 {repo}의 {path}, 커밋 {revision}, 라이선스 {licence}. 스킬 사용도 켰어요. 새로 시작하거나 이어가는 작업에서 쓸 수 있어요.",
+  "en": "Added skill '{skill}'. Source: {repo}, {path}, commit {revision}, license {licence}. Skills are also on and available to new or resumed work.",
+  "ja": "スキル「{skill}」を追加しました。出典: {repo}の{path}、コミット{revision}、ライセンス{licence}。 スキルも有効にしました。新規・再開する作業で使えます。",
+  "zh": "已添加技能“{skill}”。来源：{repo}的{path}，提交{revision}，许可证{licence}。 也已启用技能，新建或继续的任务均可使用。"
+ },
+ "quickstart_service.settings_location": {
+  "ko": "설정 화면에서",
+  "en": "in Settings",
+  "ja": "設定画面で",
+  "zh": "在设置页面"
+ },
+ "quickstart_service.settings_web_changed": {
+  "ko": "{location} {label}을(를) {verb}.",
+  "en": "{label}: {verb} {location}.",
+  "ja": "{location}{label}を{verb}。",
+  "zh": "{location}对{label}执行：{verb}。"
+ },
+ "quickstart_service.browser_step_prompt": {
+  "ko": "{prompt} 단계: {label}.",
+  "en": "{prompt} Step: {label}.",
+  "ja": "{prompt} 操作: {label}。",
+  "zh": "{prompt} 步骤：{label}。"
+ },
+ "quickstart_service.trust_lowered_notice": {
+  "ko": "이전 동작 결정을 교정해 신뢰 단계를 낮췄어요. 설정에서 정확히 되돌릴 수 있어요.",
+  "en": "Corrected the previous operation decision and lowered trust. You can undo this precisely in Settings.",
+  "ja": "以前の操作判断を修正し、信頼段階を下げました。設定で正確に元に戻せます。",
+  "zh": "已纠正之前的操作决定并降低信任级别。可在设置中精确撤销。"
+ },
+ "quickstart_service.family_setup_link": {
+  "ko": "{name} 설정 링크예요. 가족에게 보내 주세요. 약 {minutes}분 동안 열려 있어요.",
+  "en": "Setup link for {name}. Send it to your family member. It stays open for about {minutes} minutes.",
+  "ja": "{name}の設定リンクです。家族に送ってください。約{minutes}分間有効です。",
+  "zh": "这是{name}的设置链接。请发送给家人。有效期约{minutes}分钟。"
+ },
+ "quickstart_service.memory_in_records_line": {
+  "ko": "{fact} → 내 기록에서 확인해 주세요",
+  "en": "{fact} → Check My records",
+  "ja": "{fact} → 自分の記録で確認してください",
+  "zh": "{fact} → 请在我的记录中查看"
  }
 }

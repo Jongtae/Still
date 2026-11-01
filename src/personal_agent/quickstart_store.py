@@ -1,4 +1,5 @@
 """Private, single-owner persistence for the quickstart."""
+from .messages import msg
 from contextlib import contextmanager
 from functools import cached_property
 import datetime
@@ -661,7 +662,7 @@ class QuickStore:
                 conn.execute('BEGIN IMMEDIATE')
                 return self.enqueue(message,request_key,channel,chat_id,workspace_id,conn,owner_typed,owner_words)
         if workspace_id is not None and not self.workspace(workspace_id, db=db):
-            raise ValueError('작업공간을 찾을 수 없습니다.')
+            raise ValueError(msg('quickstart_service.workspace_missing'))
         old=db.execute('SELECT * FROM jobs WHERE request_key=?',(request_key,)).fetchone()
         if old:
             if old['message']!=message or old['channel']!=channel or old['chat_id']!=chat_id or old['workspace_id']!=workspace_id:
@@ -1916,7 +1917,7 @@ class QuickStore:
 
     def update_workspace(self, workspace_id, title=None, purpose=None, archive=None):
         current=self.workspace(workspace_id)
-        if not current:raise ValueError('작업공간을 찾을 수 없습니다.')
+        if not current:raise ValueError(msg('quickstart_service.workspace_missing'))
         next_title=current['title'] if title is None else title
         next_purpose=current['purpose'] if purpose is None else purpose
         next_status=current['status'] if archive is None else ('archived' if archive else 'active')
@@ -1927,7 +1928,7 @@ class QuickStore:
 
     def save_workspace_result(self, workspace_id, job_id):
         workspace=self.workspace(workspace_id)
-        if not workspace:raise ValueError('작업공간을 찾을 수 없습니다.')
+        if not workspace:raise ValueError(msg('quickstart_service.workspace_missing'))
         with self.db() as db:
             job=db.execute("SELECT * FROM jobs WHERE id=? AND status IN ('succeeded','partial')",(job_id,)).fetchone()
             if not job:raise ValueError('저장할 완료 결과를 찾을 수 없습니다.')
