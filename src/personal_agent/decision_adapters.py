@@ -38,6 +38,7 @@ docs/decision-layer.en.md "DecisionEngine routes"):
 Whether a given *account* accepts a model is never inferred from these
 flags; it is established only by an explicit owner-triggered probe.
 """
+from .messages import msg
 import json
 import logging
 import os
@@ -211,7 +212,7 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                  codex_disabled_features=None, effort=None, expected_cloud=None, strongest=None):
         super().__init__(audit=audit, now=now)
         if engine_id not in CLI_BINARIES:
-            raise ValueError('지원하는 구독 엔진을 선택하세요.')
+            raise ValueError(msg('quickstart_service.select_subscription_engine'))
         if model is not None and not valid_model_id(model):
             raise ValueError('모델 이름 형식을 확인하세요.')
         if effort is not None and not valid_effort(effort):

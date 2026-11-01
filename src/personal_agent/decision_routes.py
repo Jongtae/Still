@@ -1407,7 +1407,7 @@ class DecisionRoutes:
         """Read what the installed CLI's own help declares.  Local only: no
         login, no model request, no owner configuration read."""
         if engine_id not in CLI_BINARIES:
-            raise DecisionRouteError('지원하는 구독 엔진을 선택하세요.')
+            raise DecisionRouteError(msg('quickstart_service.select_subscription_engine'))
         execution = self.service.execution_adapter
         binary = execution.finder(CLI_BINARIES[engine_id])
         if not binary:
@@ -1787,7 +1787,7 @@ class DecisionRoutes:
     def _activate_cli(self, body, extra=None):
         engine_id, policy = body.get('engine'), body.get('model_policy') or POLICY_FASTEST_QUALIFIED
         if engine_id not in CLI_BINARIES:
-            raise DecisionRouteError('지원하는 구독 엔진을 선택하세요.')
+            raise DecisionRouteError(msg('quickstart_service.select_subscription_engine'))
         if policy not in MODEL_POLICIES:
             raise DecisionRouteError('판단 모델 방식을 선택하세요.')
         requested_effort = body.get('effort') or None

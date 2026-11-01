@@ -344,7 +344,7 @@ def strict_launch_arguments(engine_id, disabled_features=()):
         return argv
     if engine_id == 'claude-code':
         return ['--tools', '', '--restricted', *claude_bridge_allowlist(STRICT_PROFILE)]
-    raise ExecutionError('지원하는 구독 엔진을 선택하세요.')
+    raise ExecutionError(msg('quickstart_service.select_subscription_engine'))
 
 
 #: #709: Codex's per-MCP-server approval mode for the ``agentos`` bridge only.
@@ -2132,7 +2132,7 @@ class BoundedExecutionAdapter:
             else:
                 argv += claude_bridge_allowlist(BOUNDED_PROFILE, read_paths=[Path(path).name for path in image_paths])
             return argv
-        raise ExecutionError('지원하는 구독 엔진을 선택하세요.')
+        raise ExecutionError(msg('quickstart_service.select_subscription_engine'))
 
     def _session_identity(self, engine_id, binary):
         identity = self._strict_binary_identity(engine_id, binary)
@@ -2702,7 +2702,7 @@ class BoundedExecutionAdapter:
             raise ExecutionError('요청은 비어 있지 않은 48KB 이하의 텍스트여야 합니다.')
         binaries = {'codex': 'codex', 'claude-code': 'claude'}
         if engine_id not in binaries:
-            raise ExecutionError('지원하는 구독 엔진을 선택하세요.')
+            raise ExecutionError(msg('quickstart_service.select_subscription_engine'))
         binary = self.finder(binaries[engine_id])
         if not binary:
             raise ExecutionError('연결한 구독 엔진 CLI를 격리된 런타임에서 찾지 못했습니다.')
