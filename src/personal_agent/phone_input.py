@@ -32,7 +32,7 @@ from html import escape
 from urllib.parse import quote
 
 from .family_setup import start_tunnel
-from . import work_mode
+from . import telegram_locale, work_mode
 from .messages import msg
 from .work_mode import WorkModeRefused
 
@@ -213,28 +213,42 @@ class PhoneInput:
 
 # -- the page ----------------------------------------------------------------
 
+def owner_language(store):
+    """The phone link uses the paired Telegram owner's language."""
+    return telegram_locale.language(store.config('telegram', {}).get('owner_language') if store is not None else None)
+
+
+def _js_string(text):
+    """Escape text inside a single-quoted literal in an inline script."""
+    return (text.replace('\\', '\\\\').replace("'", "\\'")
+            .replace('\r', '\\r').replace('\n', '\\n')
+            .replace('<', '\\u003c').replace('>', '\\u003e')
+            .replace('\u2028', '\\u2028').replace('\u2029', '\\u2029'))
+
+
 def page(session, nonce):
     """The phone page: one mobile page, no external resources; it talks only to its own API."""
-    label = escape(session.label)
+    lang = owner_language(session._store)
+    label = escape(telegram_locale.translate(session.label, lang))
     code = json.dumps(session.code)
     nonce = escape(nonce)
-    body = f'''<p class="note">{msg('phone_input.client_instructions')}</p>
-<label class="note" for="file">{msg('phone_input.json_file')}</label><input id="file" type="file" accept=".json,application/json">
-<label class="note" for="json">{msg('phone_input.json_contents')}</label><textarea id="json" rows="6" autocomplete="off" spellcheck="false" maxlength="{MAX_CLIENT_CHARS}"></textarea>
-<button id="save" class="main">{msg('label.save')}</button>'''
-    script = f'''$('file').onchange=async()=>{{const f=$('file').files[0];if(!f)return;if(f.size>{MAX_CLIENT_CHARS}){{say('{msg('phone_input.file_too_large')}');return}}$('json').value=await f.text()}};
-$('save').onclick=async()=>{{const d=await post('{CLIENT_PATH}',{{client_json:$('json').value}});if(d&&d.ok)end('{msg('phone_input.client_saved')}');else say(d&&d.error||'{msg('phone_input.save_failed')}')}};'''
+    body = f'''<p class="note">{msg('phone_input.client_instructions', lang=lang)}</p>
+<label class="note" for="file">{msg('phone_input.json_file', lang=lang)}</label><input id="file" type="file" accept=".json,application/json">
+<label class="note" for="json">{msg('phone_input.json_contents', lang=lang)}</label><textarea id="json" rows="6" autocomplete="off" spellcheck="false" maxlength="{MAX_CLIENT_CHARS}"></textarea>
+<button id="save" class="main">{msg('label.save', lang=lang)}</button>'''
+    script = f'''$('file').onchange=async()=>{{const f=$('file').files[0];if(!f)return;if(f.size>{MAX_CLIENT_CHARS}){{say('{_js_string(msg('phone_input.file_too_large', lang=lang))}');return}}$('json').value=await f.text()}};
+$('save').onclick=async()=>{{const d=await post('{CLIENT_PATH}',{{client_json:$('json').value}});if(d&&d.ok)end('{_js_string(msg('phone_input.client_saved', lang=lang))}');else say(d&&d.error||'{_js_string(msg('phone_input.save_failed', lang=lang))}')}};'''
     if session.kind == API_SLOT:
-        body = f'''<p class="note">{msg('phone_input.api_instructions')}</p>
-<label class="note" for="secret">{msg('phone_input.api_key')}</label><input id="secret" type="password" autocomplete="off" spellcheck="false" maxlength="4096">
-<button id="save" class="main">{msg('phone_input.check_connection')}</button>'''
-        script = f'''$('save').onclick=async()=>{{const b=$('save');b.disabled=true;try{{const d=await post('{API_PATH}',{{secret:$('secret').value}});if(d&&d.ok){{$('secret').value='';end(d.response||'{msg('phone_input.connection_verified')}')}}else say(d&&d.error||'{msg('phone_input.connection_failed')}');}}finally{{b.disabled=false;}}}};'''
+        body = f'''<p class="note">{msg('phone_input.api_instructions', lang=lang)}</p>
+<label class="note" for="secret">{msg('phone_input.api_key', lang=lang)}</label><input id="secret" type="password" autocomplete="off" spellcheck="false" maxlength="4096">
+<button id="save" class="main">{msg('phone_input.check_connection', lang=lang)}</button>'''
+        script = f'''$('save').onclick=async()=>{{const b=$('save');b.disabled=true;try{{const d=await post('{API_PATH}',{{secret:$('secret').value}});if(d&&d.ok){{$('secret').value='';end(d.response||'{_js_string(msg('phone_input.connection_verified', lang=lang))}')}}else say(d&&d.error||'{_js_string(msg('phone_input.connection_failed', lang=lang))}');}}finally{{b.disabled=false;}}}};'''
         draft = json.loads(session.api_draft['after'])
         if draft.get('fields'):
             # #1380: one masked input per named value of a code-run secret set. Labels come from the
             # AI's draft (escaped); names are validated UPPER_SNAKE identifiers.
-            uses = {'header_or_body': msg('phone_input.use_at_send'),
-                    'in_code': msg('phone_input.use_in_code')}
+            uses = {'header_or_body': msg('phone_input.use_at_send', lang=lang),
+                    'in_code': msg('phone_input.use_in_code', lang=lang)}
             # #1566: values a draft that only adds fields keeps are not asked again.
             kept = [item for item in draft['fields'] if item['name'] in getattr(session, 'api_kept', ())]
             asked = [item for item in draft['fields'] if item not in kept]
@@ -243,22 +257,22 @@ $('save').onclick=async()=>{{const d=await post('{CLIENT_PATH}',{{client_json:$(
                 f'<input id="f_{item["name"]}" type="password" autocomplete="off" spellcheck="false" maxlength="4096">'
                 for item in asked)
             hosts = escape(', '.join(draft['hosts']))
-            kept_note = ('<p class="note">' + msg('phone_input.kept_values', labels=escape(", ".join(item["label"] for item in kept))) + '</p>\n') if kept else ''
-            body = ('<p class="note">' + msg('phone_input.secret_values', hosts=hosts) + '</p>\n' + kept_note + inputs
-                    + f'\n<button id="save" class="main">{msg('phone_input.save_continue')}</button>')
+            kept_note = ('<p class="note">' + msg('phone_input.kept_values', lang=lang, labels=escape(", ".join(item["label"] for item in kept))) + '</p>\n') if kept else ''
+            body = ('<p class="note">' + msg('phone_input.secret_values', lang=lang, hosts=hosts) + '</p>\n' + kept_note + inputs
+                    + f'\n<button id="save" class="main">{msg('phone_input.save_continue', lang=lang)}</button>')
             names = json.dumps([item['name'] for item in asked])
             script = (f"$('save').onclick=async()=>{{const b=$('save');b.disabled=true;try{{const v={{}};"
                       f"for(const n of {names})v[n]=$('f_'+n).value;const d=await post('{API_PATH}',v);"
-                      f"if(d&&d.ok){{for(const n of {names})$('f_'+n).value='';end(d.response||'{msg('phone_input.saved')}')}}"
-                      f"else say(d&&d.error||'{msg('phone_input.save_failed')}');}}finally{{b.disabled=false;}}}};")
+                      f"if(d&&d.ok){{for(const n of {names})$('f_'+n).value='';end(d.response||'{_js_string(msg('phone_input.saved', lang=lang))}')}}"
+                      f"else say(d&&d.error||'{_js_string(msg('phone_input.save_failed', lang=lang))}');}}finally{{b.disabled=false;}}}};")
         elif draft.get('oauth'):
-            body = f'''<p class="note">{msg('phone_input.oauth_instructions')}</p>
-<label class="note" for="client">{msg('phone_input.client_id')}</label><input id="client" type="password" autocomplete="off" spellcheck="false" maxlength="4096">
-<label class="note" for="secret">{msg('phone_input.client_secret')}</label><input id="secret" type="password" autocomplete="off" spellcheck="false" maxlength="4096">
-<button id="save" class="main">{msg('phone_input.check_connection')}</button>'''
-            script = f'''$('save').onclick=async()=>{{const b=$('save');b.disabled=true;try{{const d=await post('{API_PATH}',{{client_id:$('client').value,client_secret:$('secret').value}});if(d&&d.ok){{$('client').value='';$('secret').value='';end(d.response||'{msg('phone_input.connection_verified')}')}}else say(d&&d.error||'{msg('phone_input.connection_failed')}');}}finally{{b.disabled=false;}}}};'''
+            body = f'''<p class="note">{msg('phone_input.oauth_instructions', lang=lang)}</p>
+<label class="note" for="client">{msg('phone_input.client_id', lang=lang)}</label><input id="client" type="password" autocomplete="off" spellcheck="false" maxlength="4096">
+<label class="note" for="secret">{msg('phone_input.client_secret', lang=lang)}</label><input id="secret" type="password" autocomplete="off" spellcheck="false" maxlength="4096">
+<button id="save" class="main">{msg('phone_input.check_connection', lang=lang)}</button>'''
+            script = f'''$('save').onclick=async()=>{{const b=$('save');b.disabled=true;try{{const d=await post('{API_PATH}',{{client_id:$('client').value,client_secret:$('secret').value}});if(d&&d.ok){{$('client').value='';$('secret').value='';end(d.response||'{_js_string(msg('phone_input.connection_verified', lang=lang))}')}}else say(d&&d.error||'{_js_string(msg('phone_input.connection_failed', lang=lang))}');}}finally{{b.disabled=false;}}}};'''
 
-    return f'''<!doctype html><html lang="ko"><head><meta charset="utf-8">
+    return f'''<!doctype html><html lang="{lang or 'ko'}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{label}</title>
 <style nonce="{nonce}">body{{font:16px/1.45 -apple-system,system-ui,sans-serif;margin:0;padding:14px;background:#1c1c1e;color:#f2f2f7}}
 h1{{font-size:17px;margin:0 0 10px}}.note{{display:block;font-size:14px;color:#c7c7cc;margin:10px 0 6px}}
@@ -271,7 +285,7 @@ const code={code};const q='?code='+encodeURIComponent(code);const $=id=>document
 function say(text){{$('msg').textContent=text}}
 function end(text){{$('live').classList.add('hidden');$('end').style.display='block';$('end').textContent=text}}
 async function post(path,body){{try{{const r=await fetch(path+q,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body||{{}}),credentials:'same-origin'}});
-if(r.status===404){{end('{msg('phone_input.link_closed')}');return null}}return await r.json()}}catch(e){{return null}}}}
+if(r.status===404){{end('{_js_string(msg('phone_input.link_closed', lang=lang))}');return null}}return await r.json()}}catch(e){{return null}}}}
 {script}
 </script></body></html>'''
 

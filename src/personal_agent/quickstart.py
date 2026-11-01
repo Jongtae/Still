@@ -977,40 +977,49 @@ def make_handler(service, public_hosts=(), public_access_token=''):
 
         def phone_input_route(self,method,parts):
             """The phone input page and its APIs (#1213): exact code or 404, then the bound client only."""
+            from .telegram_locale import translate
+            lang=phone_input.owner_language(service.store)
+
+            def reply(status,body,*args,**kwargs):
+                if isinstance(body,dict):
+                    body={key:translate(value,lang) if key in ('error','response') else value
+                          for key,value in body.items()}
+                return self.reply(status,body,*args,**kwargs)
+
             path=parts.path
             session=service.phone_input_session()
             if session is None or not session.code_ok(parse_qs(parts.query).get('code',[''])[0]):
-                return self.reply(404,{'error':msg('quickstart.link_invalid')})
+                return reply(404,{'error':msg('quickstart.link_invalid')})
             cookie=self.phone_input_cookie()
             if path==phone_input.PAGE_PATH and method=='GET':
                 issued=session.open_page(cookie)
-                if issued is False:return self.reply(404,{'error':msg('quickstart.link_invalid')})
+                if issued is False:return reply(404,{'error':msg('quickstart.link_invalid')})
                 nonce=secrets.token_urlsafe(16)
-                return self.reply(200,phone_input.page(session,nonce).encode(),'text/html; charset=utf-8',
+                return reply(200,phone_input.page(session,nonce).encode(),'text/html; charset=utf-8',
                                   cookie=phone_input.cookie_header(issued) if issued else None,csp=phone_input.page_csp(nonce))
-            if method!='POST' or path==phone_input.PAGE_PATH:return self.reply(405,{'error':msg('family_share.unsupported_request')})
-            if not session.client_ok(cookie):return self.reply(404,{'error':msg('quickstart.link_invalid')})
+            if method!='POST' or path==phone_input.PAGE_PATH:return reply(405,{'error':msg('family_share.unsupported_request')})
+            if not session.client_ok(cookie):return reply(404,{'error':msg('quickstart.link_invalid')})
             if self.headers.get('Content-Type','').split(';')[0].strip().lower()!='application/json':
-                return self.reply(415,{'error':msg('quickstart.json_required')})
+                return reply(415,{'error':msg('quickstart.json_required')})
             try:
                 length=int(self.headers.get('Content-Length','0'))
                 if not 0<length<=32768:raise ValueError
                 body=json.loads(self.rfile.read(length))
                 if not isinstance(body,dict):raise ValueError
             except (TypeError,ValueError):
-                return self.reply(400,{'error':msg('quickstart.invalid_request')})
+                return reply(400,{'error':msg('quickstart.invalid_request')})
             try:
-                if path==phone_input.CLIENT_PATH:return self.reply(200,service.phone_input_client(session,body))
+                if path==phone_input.CLIENT_PATH:return reply(200,service.phone_input_client(session,body))
                 if path==phone_input.API_PATH:
                     from .api_input import submit
-                    return self.reply(200,submit(service,session,body))
+                    return reply(200,submit(service,session,body))
             except ValueError as exc:
-                return self.reply(400,{'ok':False,'error':str(exc)})
+                return reply(400,{'ok':False,'error':str(exc)})
             except Exception as exc:
                 # #1213 review P2: a token exchange or delivery failure still answers the phone; nothing it carried is logged.
                 logging.getLogger('personal_agent.phone_input').warning('phone input request failed (%s)',type(exc).__name__)
-                return self.reply(502,{'ok':False,'error':msg('quickstart.try_again_later')})
-            return self.reply(405,{'error':msg('family_share.unsupported_request')})
+                return reply(502,{'ok':False,'error':msg('quickstart.try_again_later')})
+            return reply(405,{'error':msg('family_share.unsupported_request')})
 
         def cookie(self,token,max_age=86400):
             secure='; Secure' if os.environ.get('AGENTOS_SECURE_COOKIE')=='1' or public_hosts else ''
