@@ -288,6 +288,14 @@ BROWSER_SESSION_NOTE=(' The owner cannot see this browser session: whatever it h
 #: directly (``browser_sign_in``); Still runs the same in-flow login.
 #: #1269 (SESSION-KEEP-05): a site's own session can lapse within hours while the account the owner signs in
 #: to it with stays signed in for days; continuing with that account signs in again without a password.
+#: #565 (live 2026-11-01): a signed-out account page sent the worker straight to a sign-in request past the
+#: official API its own search had found.  Every text that tells the model to call ``browser_sign_in`` carries
+#: this one route rule (Connection and Delegation Contract §2), so no tool text competes with it.
+BROWSER_SIGN_IN_ROUTE_RULE=('A sign-in on the site is one route to the owner\'s own account, not the default: when the '
+                            'service is not connected, weigh the candidate routes first (an official API or integration may '
+                            'serve the request with less owner effort and more reliably) and request a sign-in only when '
+                            'signing in on the site is the route you chose; your reply then says which routes you found and '
+                            'why this one.')
 BROWSER_SIGN_IN_NOTE=(' Whenever a page you open or reach shows a sign-in form, Still asks the owner to sign in (on this Mac, '
                       'and from their phone where that is set up) and continues the request once they have. When the owner\'s own account is needed '
                       'and a page shows you are signed out or asks you to sign in, first open the site\'s sign-in page when it '
@@ -295,12 +303,9 @@ BROWSER_SIGN_IN_NOTE=(' Whenever a page you open or reach shows a sign-in form, 
                       'it - where the owner is still signed in to that account, it signs in without a password, and you carry '
                       'on with the request. If no such option is offered, or a password or a verification is asked, call '
                       'browser_sign_in with the site\'s address instead of telling the owner to sign in somewhere. Never type '
-                      'a password yourself.')
+                      'a password yourself. '+BROWSER_SIGN_IN_ROUTE_RULE)
 #: #953: the model-facing text of ``browser_sign_in`` (generic: no site, provider or category is named).
-BROWSER_SIGN_IN_DESCRIPTION=('A sign-in on the site is one route to the owner\'s own account, not the default (#565): when the '
-                             'service is not connected, weigh the candidate routes first (an official API or integration may '
-                             'serve the request with less owner effort and more reliably) and call this only when signing in '
-                             'on the site is the route you chose; your reply then says which routes you found and why this one. '
+BROWSER_SIGN_IN_DESCRIPTION=(BROWSER_SIGN_IN_ROUTE_RULE+' '
                              'When the request needs the owner\'s own account on a site and you are not signed in there (a page shows '
                              'you are signed out or asks you to sign in), and its sign-in page offers no way to continue with an '
                              'account the owner is already signed in to, call this with the site\'s address (its sign-in page or '
