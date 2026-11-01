@@ -211,10 +211,6 @@ CLASSIFIED_TABLES = {
     ('preparations.py', 'COLUMN_MIGRATIONS'): (
         'adapter', 'SQL column definitions of the preparations store migration'),
     # --- own-text ------------------------------------------------------------
-    ('agent_runtime.py', 'PUBLIC_TASK_UNRESOLVED'): (
-        'own-text', "Still's own refusal message, matched on the error it raised to pick the input_required code"),
-    ('agent_runtime.py', 'lines'): (
-        'own-text', 'deduplicates status lines Still itself wrote'),
     ('quickstart_service.py', 'lines'): (
         'own-text', 'deduplicates footer and status lines Still itself wrote'),
     ('decision_routes.py', 'DecisionRoutes._first_qualified'): (

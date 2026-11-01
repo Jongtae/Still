@@ -1,4 +1,5 @@
 """Local, bounded extraction for documents inside a user-connected folder."""
+from .messages import msg
 from dataclasses import dataclass
 from pathlib import Path
 import zipfile
@@ -109,7 +110,7 @@ def read(path):
     path=Path(path)
     if not path.is_file() or path.stat().st_size>MAX_FILE_BYTES:raise ValueError('10MB 이하의 지원 문서만 읽을 수 있습니다.')
     kind=SUPPORTED_SUFFIXES.get(path.suffix.lower())
-    if not kind:raise ValueError('지원 형식은 TXT, MD, PDF, DOCX, XLSX입니다.')
+    if not kind:raise ValueError(msg('agent_runtime.supported_document_formats'))
     if kind in ('text','markdown'):return _text(path)
     if kind=='pdf':return _pdf(path)
     if kind=='docx':return _docx(path)
