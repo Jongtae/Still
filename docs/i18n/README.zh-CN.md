@@ -74,7 +74,7 @@ brew install jongtae/still/agentos
 agentos start
 ```
 
-1. 设置在终端中进行：先是可选的访问密码，然后选择你的 AI（已登录的 AI 会预先选中）。可以直接在终端里和 Still 对话，也可以在 [http://127.0.0.1:8787](http://127.0.0.1:8787/) 的 Still 界面中对话。对话期间请保持 `agentos start` 运行。
+1. 设置在终端中进行：先是可选的访问密码，然后选择你的 AI（已登录的 AI 会预先选中）。可以直接在终端里和 Still 对话，也可以在 [http://127.0.0.1:8787](http://127.0.0.1:8787/) 的 Still 界面中对话。对话期间请保持 `agentos start` 运行。在 Mac 上运行一次 `agentos service install`，Still 就会在没有终端的情况下在后台持续运行，并在每次登录时重新启动（[详情](../../docs/QUICKSTART.md#background-service-macos)）。
 2. 使用 Telegram 时，说“帮我连接 Telegram”，把 @BotFather 的令牌粘贴到隐藏输入框中，然后打开配对链接并点击 Start。
 3. 问你真正需要的事：**“我家猫最近不怎么吃饭，该怎么办？”** 几天后再说 **“帮我挑一台 3000 元以内的扫地机器人。”** 它会记得你的猫。
 

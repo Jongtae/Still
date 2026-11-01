@@ -74,7 +74,7 @@ brew install jongtae/still/agentos
 agentos start
 ```
 
-1. Setup runs in the terminal: an optional password, then your AI (a signed-in one is preselected). Talk to Still right there, or on the Still screen at [http://127.0.0.1:8787](http://127.0.0.1:8787/). Keep `agentos start` running while you talk.
+1. Setup runs in the terminal: an optional password, then your AI (a signed-in one is preselected). Talk to Still right there, or on the Still screen at [http://127.0.0.1:8787](http://127.0.0.1:8787/). Keep `agentos start` running while you talk, or on a Mac run `agentos service install` once to keep it running in the background ([details](docs/QUICKSTART.md#background-service-macos)).
 2. For Telegram, say “connect Telegram”, paste your @BotFather token into the hidden prompt, open the pairing link and press Start.
 3. Ask for something real: **“My cat has been off her food lately. What should I try?”** Days later, **“Find me a robot vacuum under $500.”** It remembers the cat.
 
