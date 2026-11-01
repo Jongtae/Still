@@ -385,12 +385,13 @@ def run(service, store, term, login_service=None, conversation=False):
     return True
 
 
-def converse(service, term, clock=time.time, login_service=None):
+def converse(service, term, clock=time.time, login_service=None, install_command='agentos service install'):
     """Talk to Still in this terminal until the owner ends it (Ctrl-D or Ctrl-C) (#438).
 
     ``login_service`` reads the macOS login service's status, as for first
     setup's offer; while none is installed, the opening and closing lines say
-    how to keep Still running without this terminal (#553).
+    how to keep Still running without this terminal with ``install_command``,
+    which keeps this start's data folder (#553).
     """
     surface = service.terminal_surface
     background = bool(login_service) and login_service().get('status') == 'not_installed'
@@ -398,7 +399,7 @@ def converse(service, term, clock=time.time, login_service=None):
     if not service.store.config('telegram', {}).get('enabled'):
         term.say(msg('terminal.telegram_hint'))
     if background:
-        term.say(msg('terminal.login_service_hint'))
+        term.say(msg('terminal.login_service_hint', command=install_command))
     def working():
         # #512: measured time since the request was received; never an estimate of what is left.
         since = surface.waiting_since()
@@ -415,7 +416,7 @@ def converse(service, term, clock=time.time, login_service=None):
             pass
         finally:
             surface.detach()
-    term.say(msg('terminal.bye_login_service' if background else 'terminal.bye'))
+    term.say(msg('terminal.bye_login_service', command=install_command) if background else msg('terminal.bye'))
 
 
 def _requested_input(service, term, kind):

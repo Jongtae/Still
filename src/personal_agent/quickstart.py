@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import signal
 import secrets
+import shlex
 import ssl
 import stat
 import sys
@@ -46,7 +47,7 @@ from . import family_setup
 from . import family_share
 from . import remote_login
 from . import phone_input
-from .service_control import DEFAULT_PORT as SERVICE_PORT, service_action
+from .service_control import DEFAULT_DATA_RELATIVE, DEFAULT_PORT as SERVICE_PORT, service_action
 from .connector_http import contained_opener
 from .gmail import (GMAIL_CONNECTOR, EncryptedGmailSecretStore, GmailConnector,
                     GmailError)
@@ -1705,6 +1706,19 @@ def login_service_status(args, *, platform=None, interactive=None, environ=None,
     return lambda:action('status',data_dir=args.data)
 
 
+def login_service_install_command(data_dir, home=None):
+    """The ``agentos service install`` command that serves this start's data folder (#553).
+
+    With no ``--data`` the service uses the default folder, so a start from
+    another folder names it; otherwise the service would leave this folder's
+    configuration, Memory and conversations behind.
+    """
+    folder=Path(data_dir).expanduser()
+    if folder.resolve()==(Path(home or Path.home())/DEFAULT_DATA_RELATIVE).resolve():
+        return 'agentos service install'
+    return 'agentos service install --data '+shlex.quote(str(folder))
+
+
 def hand_over_to_login_service(data_dir, term, release, action=service_action):
     """Register the login service and let it serve this data folder; True once it is observed healthy.
 
@@ -1898,7 +1912,8 @@ def main():
         # The conversation reads on this thread: a stop request ends its prompt, then Still stops.
         signal.signal(signal.SIGTERM,interrupted)
         def run():
-            first_run.converse(service,term,login_service=login_service_status(args))
+            first_run.converse(service,term,login_service=login_service_status(args),
+                               install_command=login_service_install_command(args.data))
             shutdown(None,None)
             serving.join(timeout=5)
     else:
