@@ -172,6 +172,22 @@ class StartTunnel(TunnelCase):
         self.assertIs(caught.exception, broken)
         self.assertEqual([name for name, *_ in launcher.spawned], ['ngrok'], 'an unverified cloudflared is never run')
 
+    def test_work_mode_switched_on_during_the_download_starts_no_quick_tunnel(self):
+        """#554: finding cloudflared may download it; the switch can land meanwhile (#208)."""
+        from personal_agent import work_mode
+        launcher = Launcher(cloudflared=cloudflared_lines())
+
+        def downloading(name):
+            self.located.append(name)
+            if name != 'cloudflared':
+                return None
+            work_mode.set_enabled(self.store, True, surface='settings')  # the owner switches it on mid-download
+            return '/data/tools/cloudflared-pinned/cloudflared'
+        with self.assertRaises(work_mode.WorkModeRefused):
+            family_setup.start_tunnel(8787, popen=launcher, store=self.store, timeout=5, locate=downloading)
+        self.assertEqual(self.located, ['ngrok', 'cloudflared'])
+        self.assertEqual(launcher.spawned, [], 'the located cloudflared is never started')
+
     def test_no_tool_at_all_is_a_missing_file_for_the_owner_facing_text(self):
         with self.assertRaises(FileNotFoundError):
             family_setup.start_tunnel(8787, popen=Launcher(), store=self.store, timeout=5, locate=self.locate())

@@ -451,6 +451,8 @@ def start_tunnel(port, popen=subprocess.Popen, timeout=30, *, store, locate=None
         raise
     if not cloudflared:
         raise failure or FileNotFoundError(2, 'No such file or directory', 'cloudflared')
+    # #554: a first download takes a while; a switch that landed meanwhile still refuses the spawn.
+    work_mode.refuse(store, 'tunnel')
     return _start_cloudflared(cloudflared, port, popen, timeout, store)
 
 
