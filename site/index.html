@@ -15,7 +15,8 @@
 <link rel="alternate" hreflang="zh-CN" href="zh-CN.html">
 <link rel="alternate" hreflang="x-default" href="./">
 <link rel="preload" href="assets/fonts/figtree-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/home.css?v=s8">
+<link rel="stylesheet" href="assets/home.css?v=s9">
+<link rel="stylesheet" href="assets/engineering.css?v=1">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -24,6 +25,7 @@
   <nav aria-label="Site">
     <a href="#remembers">What it does</a>
     <a href="#install">Install</a>
+    <a href="engineering/index.html">Engineering</a>
     <a href="https://github.com/Jongtae/Still">GitHub</a>
     <span class="langs"><a href="./" hreflang="en" lang="en" aria-current="page">English</a><a href="ko.html" hreflang="ko" lang="ko">한국어</a><a href="ja.html" hreflang="ja" lang="ja">日本語</a><a href="zh-CN.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></span>
   </nav>
@@ -157,10 +159,11 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
 -20 195 -132 148z"/>
 </g>
 </svg></h1>
-    <p class="lede">A personal AI on your own computer. It works with the AI you already pay for, and stays yours when you change it.</p>
-    <p class="actions"><a class="button" href="#install">Install Still</a><a class="text-link" href="https://github.com/Jongtae/Still">View on GitHub</a></p>
+    <p class="product-promise">Your AI can change. Your assistant stays.</p>
+    <p class="lede">An open-source personal agent on your computer, with memory, ongoing work and permissions that stay with you.</p>
+    <p class="actions"><a class="button" href="#install">Install Still</a><a class="text-link" href="#concept">See real use</a></p>
   </div>
-  <div class="stage" role="img" aria-label="An example of everyday use. You: “That coffee from last time was great.” Still, thinking with Claude Code: “Glad you liked it. Ethiopia Guji, 500 g. I’ll remember that; you can undo it anytime.” The AI changes from Claude Code to Codex. You: “Out of coffee.” Still, now thinking with Codex: “The same Ethiopia Guji, 500 g, is in your cart. Nothing is paid until you say so.”">
+  <div class="stage" role="img" aria-label="Illustrative product direction — not a recording or a claim of shipped autonomous checkout. An example of everyday use. You: “That coffee from last time was great.” Still, thinking with Claude Code: “Glad you liked it. Ethiopia Guji, 500 g. I’ll remember that; you can undo it anytime.” The AI changes from Claude Code to Codex. You: “Out of coffee.” Still, now thinking with Codex: “The same Ethiopia Guji, 500 g, is in your cart. Nothing is paid until you say so.”">
     <div class="thread" aria-hidden="true">
       <p class="b you s1">That coffee from last time was great.</p>
       <div class="reply s2"><span class="dots"><i></i><i></i><i></i></span><p class="b still"><span class="ai">Claude Code</span>Glad you liked it. Ethiopia Guji, 500 g. I’ll remember that; you can undo it anytime.</p></div>
@@ -168,7 +171,30 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
       <p class="b you s4">Out of coffee.</p>
       <div class="reply s5"><span class="dots"><i></i><i></i><i></i></span><p class="b still"><span class="ai new">Codex</span>The same Ethiopia Guji, 500 g, is in your cart. Nothing is paid until you say so.</p></div>
     </div>
-    <p class="stage-note" aria-hidden="true">An example of everyday use</p>
+    <p class="stage-note">Illustrative product direction — not a recording or a claim of shipped autonomous checkout.</p>
+  </div>
+</section>
+
+<section class="band night" id="concept" aria-labelledby="concept-title">
+  <div class="copy">
+    <h2 id="concept-title">Change the AI. Keep the assistant.</h2>
+    <p>Your ChatGPT plan through Codex or your Claude plan through Claude Code does the work. Switch with one command in the middle of a conversation; Still carries on.</p>
+  </div>
+  <figure class="switch-clip">
+    <video controls muted playsinline preload="none" width="1200" height="720" poster="assets/still-ai-switch-poster.en.jpg" aria-label="A real Telegram session in Korean. /ai shows Codex; /ai claude-code switches to Claude Code. Asked for something pricier than the Jardin, Claude Code recalls the Momos Coffee Es Chocolat 500 g it had called best for lattes and offers it instead.">
+      <source src="assets/still-ai-switch.en.mp4" type="video/mp4">
+    </video>
+    <figcaption>A real session, edited: after switching to Claude Code, “something pricier this time” was enough. It remembered the beans suggested earlier. Recorded owner session; edited, Korean interface. This shows conversation continuity, not independent verification of cart effects or release-wide validation. <a href="engineering/index.html#research">Sources</a></figcaption>
+  </figure>
+  <div class="swap">
+    <div>
+      <h3>Changes when you want</h3>
+      <ul class="pills"><li>Codex</li><li>Claude Code</li><li>An API key</li><li>Ollama</li><li>Tools and connectors</li></ul>
+    </div>
+    <div>
+      <h3>Stays with you</h3>
+      <ul class="pills solid"><li>What it knows about you</li><li>Unfinished work</li><li>The permissions you gave</li><li>A record of what ran</li></ul>
+    </div>
   </div>
 </section>
 
@@ -198,28 +224,7 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
   </details>
 </section>
 
-<section class="band night" id="concept" aria-labelledby="concept-title">
-  <div class="copy">
-    <h2 id="concept-title">Change the AI. Keep the assistant.</h2>
-    <p>Your ChatGPT plan through Codex or your Claude plan through Claude Code does the work. Switch with one command in the middle of a conversation; Still carries on.</p>
-  </div>
-  <figure class="switch-clip">
-    <video controls muted playsinline preload="none" width="1200" height="720" poster="assets/still-ai-switch-poster.en.jpg" aria-label="A real Telegram session in Korean. /ai shows Codex; /ai claude-code switches to Claude Code. Asked for something pricier than the Jardin, Claude Code recalls the Momos Coffee Es Chocolat 500 g it had called best for lattes and offers it instead.">
-      <source src="assets/still-ai-switch.en.mp4" type="video/mp4">
-    </video>
-    <figcaption>A real session, edited: after switching to Claude Code, “something pricier this time” was enough. It remembered the beans suggested earlier.</figcaption>
-  </figure>
-  <div class="swap">
-    <div>
-      <h3>Changes when you want</h3>
-      <ul class="pills"><li>Codex</li><li>Claude Code</li><li>An API key</li><li>Ollama</li><li>Tools and connectors</li></ul>
-    </div>
-    <div>
-      <h3>Stays with you</h3>
-      <ul class="pills solid"><li>What it knows about you</li><li>Unfinished work</li><li>The permissions you gave</li><li>A record of what ran</li></ul>
-    </div>
-  </div>
-</section>
+
 
 <section class="band sage" aria-labelledby="where-title">
   <div class="copy">
@@ -262,8 +267,8 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
     <h2 id="install-title">Bring Still home tonight</h2>
     <p>A Mac, Linux or Windows (WSL2) computer and the ChatGPT or Claude subscription you already have.</p>
   </div>
-  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.sh | sh</code></pre>
-  <p class="note">The URL pins the installer to one version; <a href="https://github.com/Jongtae/Still/blob/main/scripts/install.sh">read the script</a> before you run it. On an Apple silicon Mac with Homebrew: <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>, <code>brew install jongtae/still/agentos</code>, then <code>agentos start</code>. On Windows, run <code>wsl --install</code> in PowerShell, restart, open Ubuntu and paste the command there.</p>
+  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
+  <p class="note">The URL pins the installer to one version; <a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">read the script</a> before you run it. On an Apple silicon Mac with Homebrew: <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>, <code>brew install jongtae/still/agentos</code>, then <code>agentos start</code>. On Windows, run <code>wsl --install</code> in PowerShell, restart, open Ubuntu and paste the command there.</p>
   <ol class="steps">
     <li>
       <h3>Choose your AI</h3>
@@ -282,9 +287,15 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
   <p class="note">Everything else is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">quick start guide</a>.</p>
 </section>
 
+<section class="engineering-entry" aria-labelledby="engineering-title">
+  <h2 id="engineering-title">Engineering — Why this design?</h2>
+  <p>Read the engineering philosophy, Ontology & Context, Decision Model, Presence, model independence, Owner Authority, and Research & Evidence. Each topic links implementation, evidence and open design questions.</p>
+  <p><a href="engineering/index.html">How Still keeps continuity →</a> · <a href="engineering/index.html#research">Research &amp; Evidence</a></p>
+</section>
+
 <section class="github" aria-labelledby="github-title">
   <h2 id="github-title">Open code, built in the open.</h2>
-  <p>Still is open source under AGPL-3.0. <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">Product status</a> lists what works today and what is still rough. The current version is <span data-release="version">v1.3.0</span>.</p>
+  <p>Still is open source under AGPL-3.0. <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">Product status</a> lists what works today and what is still rough. The current version is <span data-release="version">v0.3.0</span>.</p>
   <p class="actions"><a class="button" href="https://github.com/Jongtae/Still">View on GitHub</a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">Talk with us in Discussions</a></p>
   <p class="note">If Still helps you, a star on GitHub helps the next person find it.</p>
 </section>

@@ -13,7 +13,7 @@
 
 [English](../../README.md) | [한국어](README.ko.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
-[いまできること](#いまできること) · [クイックスタート](#クイックスタート) · [自分に残るもの](#自分に残るもの) · [ドキュメント](#ドキュメント)
+[いまできること](#いまできること) · [クイックスタート](#クイックスタート) · [自分に残るもの](#自分に残るもの) · [ドキュメント](#ドキュメント) · [Engineering](https://jongtae.github.io/Still/engineering/ja.html)
 
 </div>
 
@@ -21,7 +21,7 @@
 
 <!-- readme-section:hero -->
 
-## 頭脳は借りものでも、自分だけの J.A.R.V.I.S.
+## AI が変わっても、あなたのアシスタントは続きます。
 
 私たちの多くは、使う AI モデルを所有することはありません。価格もルールも提供状況も、作り手がいつでも変えられます。Still は、自分のコンピューターにインストールするオープンソースのアシスタントです。あなたについて知っていること、終わっていない仕事、任せた権限はそこに残し、実際に働く AI（すでに契約しているもの）は替えられます。
 
@@ -29,6 +29,19 @@
   <img src="../../docs/assets/readme/demo/demo-v5.ja.gif" width="800" alt="実際の会話記録：コーヒーの好み、Amazonへ続くF1モデル検索、豆のおすすめとログイン後のカート確認。">
 </p>
 <p align="center"><sub>実際の録画を編集。</sub></p>
+
+<!-- readme-section:ai-switch -->
+
+## AI を替えても続く会話
+
+<p align="center">
+  <img src="../../docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="韓国語の Telegram 画面 3 枚を切り出した画像。1: Claude Code に切り替えたあと、昨日スパムを入れたか抜いたかを尋ねると、PA が前のカートの会話を引き継ぎ、ログインを求めます。2: ログイン後、CJ スパム クラシック 200g が 1 個カートにあると答え、一部の手順は確認できなかったと伝えます。3: Codex に切り替えてスパムを抜くよう頼むと、抜いたこと、残り 22 点はそのままであることを伝えます。">
+</p>
+<p align="center"><sub>実際の会話から抜き出した画面です（Telegram、韓国語 UI）。ログインリンクは切り取り、名前はぼかしています。 · <a href="../../docs/assets/readme/ai-switch/ai-switch-conversation.png">原寸で見る</a></sub></p>
+
+Claude Code に切り替えたあと、PA は昨日の買い物の会話を引き継いでカートを確認します。Codex に切り替えたあとも、同じ会話の中で「スパムを抜いて」が通じます。
+
+*実際の利用セッションを編集した韓国語画面です。会話の継続を示しますが、カート変更の独立検証やリリース全体の検証ではありません。* [原文](https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/manifest.json)
 
 <!-- readme-section:capabilities -->
 
@@ -86,23 +99,17 @@ agentos start
 
 ## 仕組み
 
+<details>
+<summary>構成図と補足画面を開く</summary>
+
 <picture>
   <source media="(max-width: 600px)" srcset="../../docs/assets/readme/presence-overview.ja.narrow.svg">
   <img src="../../docs/assets/readme/presence-overview.ja.svg" alt="概念図：あなたとの関係（目的・記憶・好み・約束・権限）が Assistant・Finance・Research の専門的視点につながり、ドメイン・役割・委任範囲・権限が Decision Model に入ります。Unified Presence は一つの関係を保ち、作業中のあなたの介入を判断に戻します。提供済みの機能ではなく、製品の方向性の例です。">
 </picture>
 
+</details>
+
 Still はあなたとの一つの関係（目的、記憶、好み、権限）を保ち、依頼ごとに必要な役割の視点で読み解いて、答えるか、実行するか、尋ねるか、あとで知らせるかを判断します。作業中にあなたが言ったことは、進行中の仕事を変えます。図は設計の方向性であり、観測された実行ではありません：[アーキテクチャ](../../docs/personal-agentos-architecture.en.md) · [Presence](../../docs/presence-experience-contract.en.md)。
-
-<!-- readme-section:ai-switch -->
-
-## AI を替えても続く会話
-
-<p align="center">
-  <img src="../../docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="韓国語の Telegram 画面 3 枚を切り出した画像。1: Claude Code に切り替えたあと、昨日スパムを入れたか抜いたかを尋ねると、PA が前のカートの会話を引き継ぎ、ログインを求めます。2: ログイン後、CJ スパム クラシック 200g が 1 個カートにあると答え、一部の手順は確認できなかったと伝えます。3: Codex に切り替えてスパムを抜くよう頼むと、抜いたこと、残り 22 点はそのままであることを伝えます。">
-</p>
-<p align="center"><sub>実際の会話から抜き出した画面です（Telegram、韓国語 UI）。ログインリンクは切り取り、名前はぼかしています。 · <a href="../../docs/assets/readme/ai-switch/ai-switch-conversation.png">原寸で見る</a></sub></p>
-
-Claude Code に切り替えたあと、PA は昨日の買い物の会話を引き継いでカートを確認します。Codex に切り替えたあとも、同じ会話の中で「スパムを抜いて」が通じます。
 
 <!-- readme-section:conversation -->
 
@@ -110,12 +117,25 @@ Claude Code に切り替えたあと、PA は昨日の買い物の会話を引�
 
 *実際の Telegram の会話画面（韓国語）を抜き出し、短い場面説明とともに並べました。*
 
+<details>
+<summary>構成図と補足画面を開く</summary>
+
 <picture>
   <source media="(max-width: 600px)" srcset="../../docs/assets/readme/readme-examples-v4.ja.png">
   <img src="../../docs/assets/readme/readme-examples-v4.ja.png" alt="実際の画面抜粋：好みの記憶、Amazonへ続くF1検索、カートで確認したJardin Espresso Blend 500g 1点。">
 </picture>
 
+</details>
+
 以前話したラテの好みは、豆を選ぶときにまた戻ってきます。F1 モデルの検索は言い直さなくても Amazon へ続き、選んだ豆はログインしたカートに入ります。カートへの追加と支払いは別の行動です。
+
+<!-- readme-section:engineering -->
+
+## Engineering
+
+技術思想、Ontology & Context、Decision Model、Presence、モデル独立性、Owner Authority、Research & Evidence。実装、証拠、残る設計課題を原文につなぎます。
+
+[この設計を選ぶ理由](https://jongtae.github.io/Still/engineering/ja.html) · [Research & Evidence](https://jongtae.github.io/Still/engineering/ja.html#research)
 
 <!-- readme-section:more -->
 

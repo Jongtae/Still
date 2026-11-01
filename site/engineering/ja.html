@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Still Engineering — Still が継続する仕組み</title>
+<meta name="description" content="AI を替えても続く個人エージェントの設計と根拠。">
+<link rel="alternate" hreflang="en" href="index.html">
+<link rel="alternate" hreflang="ko" href="ko.html">
+<link rel="alternate" hreflang="ja" href="ja.html">
+<link rel="alternate" hreflang="zh-CN" href="zh-CN.html">
+<link rel="stylesheet" href="../assets/engineering.css?v=1">
+</head>
+<body class="engineering">
+<a class="skip" href="#main">Still が継続する仕組み</a>
+<header><a href="../ja.html">Still / 製品</a><nav aria-label="Language"><a href="index.html" lang="en" hreflang="en">English</a> <a href="ko.html" lang="ko" hreflang="ko">한국어</a> <a href="ja.html" lang="ja" hreflang="ja" aria-current="page">日本語</a> <a href="zh-CN.html" lang="zh-CN" hreflang="zh-CN">简体中文</a></nav></header>
+<main id="main">
+<p class="eyebrow">STILL / ENGINEERING</p>
+<h1>Still が継続する仕組み</h1>
+<p class="intro">AI を替えても続く個人エージェントの設計と根拠。</p>
+<p class="boundary">実装、検証、設計の方向性を区別します。コードは仕組み、テストは実行範囲、録画は選ばれたセッションを示します。相違があれば現在の契約が優先します。研究の公開は実装の開始を意味しません。</p>
+<p>公開リリース: <a href="https://github.com/Jongtae/Still/releases"><span data-release="version">v0.3.0</span></a> · <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">main / 実装 / 証拠</a></p>
+<nav class="topics" aria-label="Engineering"><a href="#philosophy">01 Engineering philosophy</a>
+<a href="#ontology">02 Ontology & Context</a>
+<a href="#decision">03 Decision Model</a>
+<a href="#presence">04 Presence</a>
+<a href="#models">05 Model independence</a>
+<a href="#authority">06 Owner Authority</a>
+<a href="#research">07 Research & Evidence</a></nav>
+<section id="philosophy" aria-labelledby="philosophy-title">
+<p class="eyebrow">01 / Engineering philosophy</p>
+<h2 id="philosophy-title">関係を実行 AI の外に保つ。</h2>
+<p><strong>実装 / 証拠.</strong> Still が所有者の状態を保ち、選ばれた AI が仕事をします。C15 は再利用を優先し、C16 は意味判断を AI に、権限・秘密・予算・実行事実の厳密な制約をコードに割り当てます。</p>
+<p><strong>設計 / 限界.</strong> これらは開発原則です。五つのプレーンと配布基盤は現在の提供範囲より広く、パッケージスキーマは稼働する市場の証拠ではありません。</p>
+<details><summary>原文 (3)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/VISION.md">docs/VISION.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/development-constitution.en.md">docs/development-constitution.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/personal-agentos-architecture.en.md">docs/personal-agentos-architecture.en.md</a></li></ul></details>
+</section>
+<section id="ontology" aria-labelledby="ontology-title">
+<p class="eyebrow">02 / Ontology & Context</p>
+<h2 id="ontology-title">何を、誰から、いつまで知っているか。</h2>
+<p><strong>実装 / 証拠.</strong> CurrentContext と所有者モデルは現在の観察と持続する知識を扱います。契約は情報源の報告、解釈、期限付き仮説、正式な Memory を区別します。</p>
+<p><strong>設計 / 限界.</strong> 役割オントロジー研究の関係・提案・合意・委任は概念提案であり、汎用エンジンの実装ではありません。領域の事実、専門的な視点、委任範囲、実際の権限を分けます。</p>
+<details><summary>原文 (5)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/personal-agentos-architecture.en.md">docs/personal-agentos-architecture.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/current-context-contract.en.md">docs/current-context-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/role-ontology-and-mandate-2026-10-05.ko.md">docs/research/role-ontology-and-mandate-2026-10-05.ko.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/current_context.py">src/personal_agent/current_context.py</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/owner_model.py">src/personal_agent/owner_model.py</a></li></ul></details>
+</section>
+<section id="decision" aria-labelledby="decision-title">
+<p class="eyebrow">03 / Decision Model</p>
+<h2 id="decision-title">いつ答え、問い、委任するか。</h2>
+<p><strong>実装 / 証拠.</strong> DecisionEngine は提供元に依存しない意味判断を供給します。オーケストレーターは実行 AI・モデル・指示を選び、goal_reached で観察結果を評価して制限内で修正します。現在の改訂が過去の計画フィールドに優先します。</p>
+<p><strong>設計 / 限界.</strong> 判断は Grant を作らず、未観察の効果を検証せず、不明を成功に変えません。資格テストは指定経路のみの証拠で、全モデルの実用品質を証明しません。</p>
+<details><summary>原文 (3)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/decision-layer.en.md">docs/decision-layer.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/decision.py">src/personal_agent/decision.py</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/orchestrator.py">src/personal_agent/orchestrator.py</a></li></ul></details>
+</section>
+<section id="presence" aria-labelledby="presence-title">
+<p class="eyebrow">04 / Presence</p>
+<h2 id="presence-title">作業中も一つの関係として応答する。</h2>
+<p><strong>実装 / 証拠.</strong> 会話の引き継ぎと編成は所有者の修正を作業と後続計画へ渡します。専門役割契約は実装済みの介入経路と残る不足を記録し、製品状況は観察範囲と意図する体験を分けます。</p>
+<p><strong>設計 / 限界.</strong> 継続性、一つの声、状況への応答、記憶、可用性、会話による復旧が研究上の定義です。作業中の意味ある報告や役割別の対話には契約に記された不足があり、進捗表示だけでは実装の証拠になりません。</p>
+<details><summary>原文 (4)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/presence-experience-contract.en.md">docs/presence-experience-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/professional-roles-and-communication-contract.en.md">docs/professional-roles-and-communication-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/presence-and-settings-ux.ko.md">docs/research/presence-and-settings-ux.ko.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/conversation_handoff.py">src/personal_agent/conversation_handoff.py</a></li></ul></details>
+</section>
+<section id="models" aria-labelledby="models-title">
+<p class="eyebrow">05 / Model independence</p>
+<h2 id="models-title">実行 AI を替えても関係を作り直さない。</h2>
+<p><strong>実装 / 証拠.</strong> AI 切替マニフェストは 2026 年 10 月 8 日に所有者が提供した Telegram の一セッションを記録します。Claude Code と Codex の切替後も以前の会話を参照する様子を示します。状態の所有権は実行 AI と別に定義されます。</p>
+<p><strong>設計 / 限界.</strong> 選ばれた返答のスクリーンショット証拠であり、アカウント効果の独立追跡や版ごとの再現性検証ではありません。モデルごとに道具や動作は異なり得ます。ローカル導入でもリモート AI には必要な文脈を送ります。</p>
+<details><summary>原文 (3)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/personal-agentos-architecture.en.md">docs/personal-agentos-architecture.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/manifest.json">docs/assets/readme/ai-switch/manifest.json</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/subscription_engines.py">src/personal_agent/subscription_engines.py</a></li></ul></details>
+</section>
+<section id="authority" aria-labelledby="authority-title">
+<p class="eyebrow">06 / Owner Authority</p>
+<h2 id="authority-title">誰が許可し、何が実際に起きたか。</h2>
+<p><strong>実装 / 証拠.</strong> 現行の単一所有者パイロットはフォルダー範囲、秘密保護、支払いごとの承認、再実行防止、Memory 権限を保持します。現行の外部送信方針は作業ごとの情報利用監査を使い、Secretary 契約が以前の制限の改訂を記録します。</p>
+<p><strong>設計 / 限界.</strong> 六つの所有者権利は受入要件で、全実装済みの宣言ではありません。委任、スキル導入、アカウント接続だけで行為の権限は生まれません。要求・観察・部分完了・失敗・不明を区別します。</p>
+<details><summary>原文 (4)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/owner-control-contract.en.md">docs/owner-control-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/secretary-agency-contract.en.md">docs/secretary-agency-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assistant-execution-contract.en.md">docs/assistant-execution-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/development-constitution.en.md">docs/development-constitution.en.md</a></li></ul></details>
+</section>
+<section id="research" aria-labelledby="research-title">
+<p class="eyebrow">07 / Research & Evidence</p>
+<h2 id="research-title">証拠の実際の範囲を読む。</h2>
+<p><strong>実装 / 証拠.</strong> リリースマニフェストは配布版の範囲とローカル導入確認を記録します。製品状況は新しい main、合成シナリオ、所有者録画を分けます。デモは 2026 年 10 月 11 日の録画を編集したもので、サイトの AI 切替映像は別の出典を持ちます。</p>
+<p>サイト映像は提案で終わります。出典は、その後の入替要求で元の豆を削除したものの代替品を追加できず、制限に達したと記録します。その失敗は映像には含まれません。</p>
+<p><strong>設計 / 限界.</strong> 合成テストの成功は実サービスの証拠ではなく、返答は外部効果の独立検証ではありません。研究公開や編集審査は機能を有効化しません。保存されたオントロジー審査は一モデルによる順次の役割審査で、独立専門家や複数モデルの審査ではありません。旧非公開リポジトリの課題は閲覧できない場合がありますが、公開本文と出典ファイルは読めます。</p>
+<details><summary>原文 (7)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">docs/product-status.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/release-manifest.json">docs/release-manifest.json</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/demo/README.md">docs/assets/readme/demo/README.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/clip/README.md">docs/assets/readme/ai-switch/clip/README.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/README.md">docs/research/README.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/role-ontology-reuse-2026-10-05.ko.md">docs/research/role-ontology-reuse-2026-10-05.ko.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/role-ontology-review-cycle-2-2026-10-05.ko.md">docs/research/role-ontology-review-cycle-2-2026-10-05.ko.md</a></li></ul></details>
+</section>
+</main>
+<footer><a href="../ja.html">製品</a> · <a href="../guide.ja.html">ドキュメント</a> · <a href="https://github.com/Jongtae/Still">GitHub</a><p>AGPL-3.0-only · Still Engineering</p></footer>
+</body>
+</html>

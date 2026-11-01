@@ -1,5 +1,7 @@
 # Documentation map
 
+[Engineering hub](https://jongtae.github.io/Still/engineering/) — philosophy, ontology, decisions, Presence, model independence, authority and research, with implementation/evidence/design boundaries.
+
 Still keeps current contracts, delivery selection, research, evidence and historical records separate. Start here instead of inferring authority from a document's age or filename.
 
 ## What is authoritative

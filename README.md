@@ -13,7 +13,7 @@
 
 [English](README.md) | [한국어](docs/i18n/README.ko.md) | [简体中文](docs/i18n/README.zh-CN.md) | [日本語](docs/i18n/README.ja.md)
 
-[What it does](#what-it-does-today) · [Quick start](#quick-start) · [What stays yours](#what-stays-yours) · [Docs](#documentation)
+[What it does](#what-it-does-today) · [Quick start](#quick-start) · [What stays yours](#what-stays-yours) · [Docs](#documentation) · [Engineering](https://jongtae.github.io/Still/engineering/index.html)
 
 </div>
 
@@ -21,7 +21,7 @@
 
 <!-- readme-section:hero -->
 
-## Your own J.A.R.V.I.S., with a borrowed brain
+## Your AI can change. Your assistant stays.
 
 Most of us won't own the AI models we use; their makers can change prices, rules and availability at any time. Still is an open-source assistant you install on your own computer. It keeps what it knows about you, your unfinished work and your permissions there, while the AI doing the work, the one you already subscribe to, can change.
 
@@ -29,6 +29,19 @@ Most of us won't own the AI models we use; their makers can change prices, rules
   <img src="docs/assets/readme/demo/demo-v5.en.gif" width="800" alt="Real recorded conversations: remembered coffee taste, F1 model research continued on Amazon, a bean recommendation and post-login cart confirmation.">
 </p>
 <p align="center"><sub>Edited from real recordings.</sub></p>
+
+<!-- readme-section:ai-switch -->
+
+## A conversation that continues when the AI changes
+
+<p align="center">
+  <img src="docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="Three cropped Telegram screenshots in Korean. 1: after switching to Claude Code, the owner asks whether the Spam was added or taken out yesterday; the PA recalls the earlier cart conversation and asks to sign in. 2: after signing in, it reports one CJ Spam Classic 200 g in the cart and says some steps could not be checked. 3: after switching to Codex, the owner says to take the Spam out; the PA reports it removed and 22 items remaining.">
+</p>
+<p align="center"><sub>Excerpts from a real conversation (Telegram, Korean UI). The sign-in link is cropped out and the name is blurred. · <a href="docs/assets/readme/ai-switch/ai-switch-conversation.png">Open full size</a></sub></p>
+
+After switching to Claude Code, the PA picks up yesterday's shopping conversation and checks the cart. After switching to Codex, “take the Spam out” works in the same conversation.
+
+*Recorded owner session; edited, Korean interface. This shows conversation continuity, not independent verification of cart effects or release-wide validation.* [Sources](https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/manifest.json)
 
 <!-- readme-section:capabilities -->
 
@@ -86,23 +99,17 @@ When a better AI appears, you switch the worker, not the agent. Local-first is n
 
 ## How it works
 
+<details>
+<summary>Architecture and supporting screens</summary>
+
 <picture>
   <source media="(max-width: 600px)" srcset="docs/assets/readme/presence-overview.en.narrow.svg">
   <img src="docs/assets/readme/presence-overview.en.svg" alt="Concept diagram: the owner relationship (goals, memory, preferences, commitments, authority) informs Assistant, Finance and Research professional lenses; domain, role, mandate and authority feed the Decision Model; Unified Presence keeps one relationship, and your interventions during the work feed back into decisions. Illustrative product direction, not shipped implementation.">
 </picture>
 
+</details>
+
 Still keeps one relationship with you (your goals, memory, preferences and permissions), reads each request through the role it calls for, and decides whether to answer, act, ask or report back. What you say while it works changes the work in progress. The figure shows the intended design, not an observed run: [architecture](docs/personal-agentos-architecture.en.md) · [Presence](docs/presence-experience-contract.en.md).
-
-<!-- readme-section:ai-switch -->
-
-## A conversation that continues when the AI changes
-
-<p align="center">
-  <img src="docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="Three cropped Telegram screenshots in Korean. 1: after switching to Claude Code, the owner asks whether the Spam was added or taken out yesterday; the PA recalls the earlier cart conversation and asks to sign in. 2: after signing in, it reports one CJ Spam Classic 200 g in the cart and says some steps could not be checked. 3: after switching to Codex, the owner says to take the Spam out; the PA reports it removed and 22 items remaining.">
-</p>
-<p align="center"><sub>Excerpts from a real conversation (Telegram, Korean UI). The sign-in link is cropped out and the name is blurred. · <a href="docs/assets/readme/ai-switch/ai-switch-conversation.png">Open full size</a></sub></p>
-
-After switching to Claude Code, the PA picks up yesterday's shopping conversation and checks the cart. After switching to Codex, “take the Spam out” works in the same conversation.
 
 <!-- readme-section:conversation -->
 
@@ -110,12 +117,25 @@ After switching to Claude Code, the PA picks up yesterday's shopping conversatio
 
 *Excerpts from real Telegram sessions (Korean interface), arranged with short scene notes.*
 
+<details>
+<summary>Architecture and supporting screens</summary>
+
 <picture>
   <source media="(max-width: 600px)" srcset="docs/assets/readme/readme-examples-v4.en.png">
   <img src="docs/assets/readme/readme-examples-v4.en.png" alt="Real screen excerpts: remembered taste, an F1 search continued on Amazon, and Jardin Espresso Blend 500 g, quantity 1, confirmed in the cart.">
 </picture>
 
+</details>
+
 A latte you mentioned earlier comes back when you choose beans; an F1 model search continues on Amazon without being restated; the chosen beans show up in the signed-in cart. Adding to a cart and paying stay different actions.
+
+<!-- readme-section:engineering -->
+
+## Engineering
+
+Read the engineering philosophy, Ontology & Context, Decision Model, Presence, model independence, Owner Authority, and Research & Evidence. Each topic links implementation, evidence and open design questions.
+
+[Why this design?](https://jongtae.github.io/Still/engineering/index.html) · [Research & Evidence](https://jongtae.github.io/Still/engineering/index.html#research)
 
 <!-- readme-section:more -->
 
