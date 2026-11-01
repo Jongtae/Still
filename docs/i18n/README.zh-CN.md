@@ -63,10 +63,10 @@
 你需要一台 Mac、Linux 电脑或装有 [WSL2](../../docs/QUICKSTART.md#windows-wsl2) 的 Windows（有一些限制），以及一个 AI：ChatGPT 订阅加 [Codex CLI](https://github.com/openai/codex)、Claude 订阅加 [Claude Code](https://code.claude.com/docs/en/setup)、API 密钥或 Ollama。一条命令即可安装并启动 Still，无需 Homebrew、Python 或 Docker：
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/dc946a70d584c33cfde6425da9d07813eea1a2ab/scripts/install.sh | sh
 ```
 
-运行前可以先[检查脚本](https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh)；它会校验所下载的每一个文件。在 Windows 上，请在 PowerShell 中运行 `wsl --install` 并重启，然后在 Ubuntu 中运行这条命令。如果你在 Apple 芯片的 Mac 上使用 [Homebrew](https://brew.sh)，也可以这样安装（Homebrew 已不再为 Intel Mac 构建软件包，Intel Mac 请使用上面的命令）：
+运行前可以先[检查脚本](https://github.com/Jongtae/Still/blob/dc946a70d584c33cfde6425da9d07813eea1a2ab/scripts/install.sh)；它会校验所下载的每一个文件。在 Windows 上，请在 PowerShell 中运行 `wsl --install` 并重启，然后在 Ubuntu 中运行这条命令。如果你在 Apple 芯片的 Mac 上使用 [Homebrew](https://brew.sh)，也可以这样安装（Homebrew 已不再为 Intel Mac 构建软件包，Intel Mac 请使用上面的命令）：
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still

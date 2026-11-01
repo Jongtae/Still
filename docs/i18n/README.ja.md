@@ -63,10 +63,10 @@ Claude Code に切り替えたあと、PA は昨日の買い物の会話を引�
 Mac、Linux、または [WSL2](../../docs/QUICKSTART.md#windows-wsl2) を入れた Windows（一部制限あり）と、AI を一つ用意してください。ChatGPT のプランと [Codex CLI](https://github.com/openai/codex)、Claude のプランと [Claude Code](https://code.claude.com/docs/en/setup)、API キー、または Ollama です。コマンド一つで Still をインストールして起動します。Homebrew、Python、Docker は不要です。
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/dc946a70d584c33cfde6425da9d07813eea1a2ab/scripts/install.sh | sh
 ```
 
-実行前に[スクリプトを確認](https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh)できます。スクリプトはダウンロードするものをすべて検証します。Windows では PowerShell で `wsl --install` を実行して再起動し、Ubuntu でこのコマンドを実行してください。Apple シリコンの Mac で [Homebrew](https://brew.sh) を使う場合は次のとおりです（Homebrew は Intel Mac 向けのパッケージをビルドしなくなったため、Intel Mac では上のコマンドを使ってください）：
+実行前に[スクリプトを確認](https://github.com/Jongtae/Still/blob/dc946a70d584c33cfde6425da9d07813eea1a2ab/scripts/install.sh)できます。スクリプトはダウンロードするものをすべて検証します。Windows では PowerShell で `wsl --install` を実行して再起動し、Ubuntu でこのコマンドを実行してください。Apple シリコンの Mac で [Homebrew](https://brew.sh) を使う場合は次のとおりです（Homebrew は Intel Mac 向けのパッケージをビルドしなくなったため、Intel Mac では上のコマンドを使ってください）：
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still
