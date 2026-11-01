@@ -48,11 +48,11 @@ After switching to Claude Code, the PA picks up yesterday's shopping conversatio
 ## What it does today
 
 - **Works with the AI you already pay for.** Your ChatGPT plan through Codex or your Claude plan through Claude Code does the work; an API key or [Ollama](https://ollama.com) also works. Switch with `/ai` in the middle of a conversation and it carries on.
-- **Talks where you are.** In the terminal and the browser, on Telegram, and in a Slack or Mattermost direct message.
-- **Remembers without being reminded.** What you told it last week comes back when it matters. Once a day it looks back over recent requests to tidy its memory, and each fact says whether it rests on your own words or on an inference. Every save can be undone.
-- **Works with your things.** Folders you connect (read-only unless you say otherwise), Gmail search and, if you allow it, mailbox organising (it never sends), Google Calendar and Drive, and websites you sign in to, even from your phone.
-- **Doesn't make you wait.** It tells you its plan and which AI is on it before a long task. Ask something else while it runs, or correct it halfway.
-- **Stops where it should.** Every payment needs your yes. [Secrets](.github/SECURITY.md) never reach a prompt or a log. Each task lists which of your information it used and where it went.
+- **Chat in the terminal, browser or messenger.** In the terminal and the browser, on Telegram, and in a Slack or Mattermost direct message.
+- **Uses earlier conversations to help with later requests.** What you told it last week comes back when it matters. Once a day it looks back over recent requests to tidy its memory, and each fact says whether it rests on your own words or on an inference. Every save can be undone.
+- **Uses the folders and services you connect.** Folders you connect (read-only unless you say otherwise), Gmail search and, if you allow it, mailbox organising (it never sends), Google Calendar and Drive, and websites you sign in to, even from your phone.
+- **Accepts questions and corrections while a task runs.** It tells you its plan and which AI is on it before a long task. Ask something else while it runs, or correct it halfway.
+- **Requires your approval for every payment and protects secrets.** Every payment needs your yes. [Secrets](.github/SECURITY.md) never reach a prompt or a log. Each task lists which of your information it used and where it went.
 
 Some of this still has rough edges; [product status](docs/product-status.en.md) says which.
 
@@ -133,7 +133,7 @@ A latte you mentioned earlier comes back when you choose beans; an F1 model sear
 
 ## Engineering
 
-Read the engineering philosophy, Ontology & Context, Decision Model, Presence, model independence, Owner Authority, and Research & Evidence. Each topic links implementation, evidence and open design questions.
+Explore how Still keeps memory and work, makes decisions, and handles user permissions. The guide separates implemented features, what has been verified, and future design, with links to the source documents and code.
 
 [Why this design?](https://jongtae.github.io/Still/engineering/index.html) · [Research & Evidence](https://jongtae.github.io/Still/engineering/index.html#research)
 

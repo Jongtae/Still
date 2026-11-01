@@ -1,0 +1,430 @@
+{
+  "ko": {
+    "label": "실제 대화 · 번역·축약",
+    "you": "나",
+    "assistant": "Still",
+    "nav": "실제 사용 사례",
+    "prev": "이전 사례",
+    "next": "다음 사례",
+    "heading": "Still과 나누는 대화를 살펴보세요.",
+    "caption": "앞의 두 장은 실제 대화 발췌이며, AI 교체 장면은 기록을 바탕으로 구성한 사용 흐름 예시입니다.",
+    "sourceLabel": "대화 원문과 출처",
+    "scenes": [
+      {
+        "title": "기억한 취향으로 원두를 고릅니다",
+        "short": "취향 기억",
+        "date": "2026-10-11",
+        "source": {
+          "manifest": "docs/assets/readme/demo/manifest.json",
+          "record": "docs/assets/readme/readme-examples-v4.ko.png"
+        },
+        "messages": [
+          {
+            "role": "user",
+            "text": "어제 coffee coffee coffee에서 라떼를 마셨는데 메뉴 이름이 기억이 안나네."
+          },
+          {
+            "role": "assistant",
+            "text": "고소하고 달콤해서 다음에도 먹고 싶다고 하셨던 라떼예요. 다만 정확한 메뉴명까지 확인해 둔 건 아니에요."
+          },
+          {
+            "role": "user",
+            "text": "집에서 먹는 원두 거의 다 떨어졌어"
+          },
+          {
+            "role": "assistant",
+            "text": "아까 좋아하셨던 커피커피커피 라떼처럼 고소한 맛을 기준으로 찾아볼 수 있어요. … 집에서는 커피머신으로 내려 드세요, 핸드드립으로 드세요?"
+          }
+        ]
+      },
+      {
+        "title": "찾던 F1 모형을 아마존에서도 조사합니다",
+        "short": "조사 이어가기",
+        "date": "2026-10-11",
+        "source": {
+          "manifest": "docs/assets/readme/demo/manifest.json",
+          "record": "docs/assets/readme/readme-examples-v4.ko.png"
+        },
+        "messages": [
+          {
+            "role": "user",
+            "text": "F1 모형 자동차에 관심이 있어. 어디서 주문할 수 있을까?"
+          },
+          {
+            "role": "marker",
+            "text": "이어서 같은 모형을 더 찾아봅니다"
+          },
+          {
+            "role": "user",
+            "text": "아마존에서도 더 찾아봐 줄래?"
+          },
+          {
+            "role": "assistant",
+            "text": "네. 한국 배송이 표시된 Amazon US 상품을 더 찾았어요. 모두 Bburago 1:43 모형이에요. … 첫 모형으로는 McLaren MCL38을 추천해요."
+          },
+          {
+            "role": "notice",
+            "text": "최종 금액은 결제 단계에서 확인해야 합니다. 일부 단계는 확인하지 못했어요."
+          }
+        ]
+      },
+      {
+        "title": "앞선 추천을 다른 AI와 이어갑니다",
+        "short": "AI 바꾸기",
+        "evidence_class": "illustrative_reconstruction",
+        "label": "사용 흐름 예시 · 실제 대화 원문 아님",
+        "meta": "설명용 예시 대화",
+        "engine": "Codex",
+        "based_on": {
+          "manifest": "docs/assets/readme/ai-switch/clip/manifest.json",
+          "record": "docs/assets/readme/ai-switch/clip/README.md"
+        },
+        "messages": [
+          {
+            "role": "user",
+            "text": "라떼로 마실 원두 추천해 줘. 고소하고 단맛 나는 게 좋아."
+          },
+          {
+            "role": "assistant",
+            "text": "자뎅 에스프레소 블렌드와 모모스 에스쇼콜라를 추천해요."
+          },
+          {
+            "role": "switch",
+            "text": "Codex → Claude Code",
+            "command": "/ai claude-code",
+            "engine": "Claude Code"
+          },
+          {
+            "role": "user",
+            "text": "그럼 이번엔 두 번째 걸로 해볼래."
+          },
+          {
+            "role": "assistant",
+            "text": "모모스 에스쇼콜라로 볼게요. 라떼에 넣었을 때도 고소하고 달콤한 맛이 나는지 이어서 확인해 볼게요."
+          }
+        ]
+      }
+    ]
+  },
+  "en": {
+    "label": "Real conversation · translated and condensed",
+    "you": "You",
+    "assistant": "Still",
+    "nav": "Real use cases",
+    "prev": "Previous example",
+    "next": "Next example",
+    "heading": "Explore conversations with Still.",
+    "caption": "The first two examples are real conversation excerpts. The AI-switch example illustrates a flow reconstructed from the recorded use case.",
+    "sourceLabel": "Original conversations and sources",
+    "scenes": [
+      {
+        "title": "Choose beans using a remembered preference",
+        "short": "Remember preferences",
+        "date": "2026-10-11",
+        "messages": [
+          {
+            "role": "user",
+            "text": "I had a latte at coffee coffee coffee yesterday, but I can’t remember the menu name."
+          },
+          {
+            "role": "assistant",
+            "text": "You said it was nutty and sweet and you’d like it again. I haven’t confirmed the exact menu name."
+          },
+          {
+            "role": "user",
+            "text": "I’m almost out of coffee beans at home."
+          },
+          {
+            "role": "assistant",
+            "text": "I can look for a nutty taste like the latte you liked earlier. … Do you use a coffee machine or make pour-over at home?"
+          }
+        ],
+        "source": {
+          "manifest": "docs/assets/readme/demo/manifest.json",
+          "record": "docs/assets/readme/readme-examples-v4.ko.png"
+        }
+      },
+      {
+        "title": "Continue researching the same F1 models on Amazon",
+        "short": "Continue research",
+        "date": "2026-10-11",
+        "messages": [
+          {
+            "role": "user",
+            "text": "I am interested in f1 model car. where can i get order?"
+          },
+          {
+            "role": "marker",
+            "text": "Continue looking for the same models"
+          },
+          {
+            "role": "user",
+            "text": "Would you find more at the amazon?"
+          },
+          {
+            "role": "assistant",
+            "text": "Yes—I found more on Amazon US, with delivery to South Korea shown. These are all Bburago 1:43 models. … My pick would be the McLaren MCL38 for a first model."
+          },
+          {
+            "role": "notice",
+            "text": "Your final total needs checking at checkout. Some steps could not be verified."
+          }
+        ],
+        "source": {
+          "manifest": "docs/assets/readme/demo/manifest.json",
+          "record": "docs/assets/readme/readme-examples-v4.ko.png"
+        }
+      },
+      {
+        "title": "Continue an earlier recommendation with another AI",
+        "short": "Switch AI",
+        "evidence_class": "illustrative_reconstruction",
+        "label": "Illustrative dialogue · not a transcript",
+        "meta": "Illustrative dialogue",
+        "engine": "Codex",
+        "based_on": {
+          "manifest": "docs/assets/readme/ai-switch/clip/manifest.json",
+          "record": "docs/assets/readme/ai-switch/clip/README.md"
+        },
+        "messages": [
+          {
+            "role": "user",
+            "text": "Recommend beans for lattes. I like a nutty, sweet taste."
+          },
+          {
+            "role": "assistant",
+            "text": "I suggest Jardin Espresso Blend and Momos Es Chocolat."
+          },
+          {
+            "role": "switch",
+            "text": "Codex → Claude Code",
+            "command": "/ai claude-code",
+            "engine": "Claude Code"
+          },
+          {
+            "role": "user",
+            "text": "Let’s try the second one this time."
+          },
+          {
+            "role": "assistant",
+            "text": "Momos Es Chocolat, then. I’ll keep looking into whether it gives you the nutty, sweet latte you want."
+          }
+        ]
+      }
+    ]
+  },
+  "ja": {
+    "label": "実際の会話 · 翻訳・要約",
+    "you": "あなた",
+    "assistant": "Still",
+    "nav": "実際の利用例",
+    "prev": "前の例",
+    "next": "次の例",
+    "heading": "Still との会話をご覧ください。",
+    "caption": "最初の2例は実際の会話の抜粋です。AI 切替の例は、利用記録をもとに会話の流れを再構成しています。",
+    "sourceLabel": "元の会話と出典",
+    "scenes": [
+      {
+        "title": "覚えていた好みを使ってコーヒー豆を選びます",
+        "short": "好みを覚える",
+        "date": "2026-10-11",
+        "messages": [
+          {
+            "role": "user",
+            "text": "昨日 coffee coffee coffee でラテを飲んだけど、メニュー名を思い出せない。"
+          },
+          {
+            "role": "assistant",
+            "text": "香ばしくて甘く、また飲みたいとおっしゃっていたラテですね。ただ、正確なメニュー名までは確認できていません。"
+          },
+          {
+            "role": "user",
+            "text": "家で飲むコーヒー豆がもうすぐなくなる。"
+          },
+          {
+            "role": "assistant",
+            "text": "先ほど気に入ったラテのような、香ばしい味を基準に探せます。… 自宅ではコーヒーマシンですか、ハンドドリップですか？"
+          }
+        ],
+        "source": {
+          "manifest": "docs/assets/readme/demo/manifest.json",
+          "record": "docs/assets/readme/readme-examples-v4.ko.png"
+        }
+      },
+      {
+        "title": "探していた F1 模型を Amazon でも調べます",
+        "short": "調査を続ける",
+        "date": "2026-10-11",
+        "messages": [
+          {
+            "role": "user",
+            "text": "F1 のモデルカーに興味がある。どこで注文できる？"
+          },
+          {
+            "role": "marker",
+            "text": "同じ模型を続けて探します"
+          },
+          {
+            "role": "user",
+            "text": "Amazon でももっと探してくれる？"
+          },
+          {
+            "role": "assistant",
+            "text": "韓国への配送が表示された Amazon US の商品を見つけました。すべて Bburago の 1:43 模型です。… 最初の1台には McLaren MCL38 をおすすめします。"
+          },
+          {
+            "role": "notice",
+            "text": "最終金額は購入手続きで確認が必要です。一部の手順は確認できませんでした。"
+          }
+        ],
+        "source": {
+          "manifest": "docs/assets/readme/demo/manifest.json",
+          "record": "docs/assets/readme/readme-examples-v4.ko.png"
+        }
+      },
+      {
+        "title": "別の AI と、それまでの提案を引き継ぎます",
+        "short": "AI を替える",
+        "evidence_class": "illustrative_reconstruction",
+        "label": "会話の例 · 実際の会話の記録ではありません",
+        "meta": "説明用の会話例",
+        "engine": "Codex",
+        "based_on": {
+          "manifest": "docs/assets/readme/ai-switch/clip/manifest.json",
+          "record": "docs/assets/readme/ai-switch/clip/README.md"
+        },
+        "messages": [
+          {
+            "role": "user",
+            "text": "ラテ用の豆をおすすめして。香ばしくて甘みのあるものが好き。"
+          },
+          {
+            "role": "assistant",
+            "text": "Jardin Espresso Blend と Momos Es Chocolat をおすすめします。"
+          },
+          {
+            "role": "switch",
+            "text": "Codex → Claude Code",
+            "command": "/ai claude-code",
+            "engine": "Claude Code"
+          },
+          {
+            "role": "user",
+            "text": "じゃあ、今回は2つ目にしてみたい。"
+          },
+          {
+            "role": "assistant",
+            "text": "では Momos Es Chocolat ですね。ラテにしたときも香ばしさと甘みを楽しめるか、続けて確認します。"
+          }
+        ]
+      }
+    ]
+  },
+  "zh-CN": {
+    "label": "真实对话 · 翻译、缩写",
+    "you": "你",
+    "assistant": "Still",
+    "nav": "真实使用案例",
+    "prev": "上一个案例",
+    "next": "下一个案例",
+    "heading": "看看与 Still 的对话。",
+    "caption": "前两个案例摘录自真实对话。AI 切换案例根据使用记录重新构成，用来说明完整的对话流程。",
+    "sourceLabel": "原始对话与来源",
+    "scenes": [
+      {
+        "title": "参考记住的喜好挑选咖啡豆",
+        "short": "记住喜好",
+        "date": "2026-10-11",
+        "messages": [
+          {
+            "role": "user",
+            "text": "昨天在 coffee coffee coffee 喝了拿铁，但想不起菜单上的名字了。"
+          },
+          {
+            "role": "assistant",
+            "text": "你说那杯拿铁香浓、甜润，下次还想喝。不过，我还没有确认准确的菜单名称。"
+          },
+          {
+            "role": "user",
+            "text": "家里喝的咖啡豆快没了。"
+          },
+          {
+            "role": "assistant",
+            "text": "可以按照你刚才喜欢的拿铁那种香浓口味来找。… 你在家用咖啡机，还是手冲？"
+          }
+        ],
+        "source": {
+          "manifest": "docs/assets/readme/demo/manifest.json",
+          "record": "docs/assets/readme/readme-examples-v4.ko.png"
+        }
+      },
+      {
+        "title": "在亚马逊继续调查之前找的 F1 模型",
+        "short": "继续调查",
+        "date": "2026-10-11",
+        "messages": [
+          {
+            "role": "user",
+            "text": "我对 F1 汽车模型感兴趣，在哪里可以订购？"
+          },
+          {
+            "role": "marker",
+            "text": "接着寻找同类模型"
+          },
+          {
+            "role": "user",
+            "text": "也帮我在亚马逊多找一些好吗？"
+          },
+          {
+            "role": "assistant",
+            "text": "我在 Amazon US 找到了更多标有可配送至韩国的商品，都是 Bburago 1:43 模型。… 如果是第一台模型，我会推荐 McLaren MCL38。"
+          },
+          {
+            "role": "notice",
+            "text": "最终金额需要在结账时确认。部分步骤未能核实。"
+          }
+        ],
+        "source": {
+          "manifest": "docs/assets/readme/demo/manifest.json",
+          "record": "docs/assets/readme/readme-examples-v4.ko.png"
+        }
+      },
+      {
+        "title": "换一个 AI，继续之前的推荐",
+        "short": "更换 AI",
+        "evidence_class": "illustrative_reconstruction",
+        "label": "对话示例 · 非真实对话原文",
+        "meta": "演示对话",
+        "engine": "Codex",
+        "based_on": {
+          "manifest": "docs/assets/readme/ai-switch/clip/manifest.json",
+          "record": "docs/assets/readme/ai-switch/clip/README.md"
+        },
+        "messages": [
+          {
+            "role": "user",
+            "text": "推荐些做拿铁的咖啡豆吧。我喜欢香浓、带甜味的。"
+          },
+          {
+            "role": "assistant",
+            "text": "我推荐 Jardin Espresso Blend 和 Momos Es Chocolat。"
+          },
+          {
+            "role": "switch",
+            "text": "Codex → Claude Code",
+            "command": "/ai claude-code",
+            "engine": "Claude Code"
+          },
+          {
+            "role": "user",
+            "text": "那这次试试第二种吧。"
+          },
+          {
+            "role": "assistant",
+            "text": "那就看 Momos Es Chocolat。我会接着确认它做成拿铁后，是否还有你喜欢的香浓和甜味。"
+          }
+        ]
+      }
+    ]
+  }
+}

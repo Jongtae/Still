@@ -3,21 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Still Engineering — Still 如何保持延续</title>
-<meta name="description" content="更换 AI 后仍能延续的个人智能体，其设计与依据。">
+<title>Still Engineering — 更换 AI 后保留记忆和工作的设计</title>
+<meta name="description" content="了解 Still 如何保留记忆和工作、将任务交给 AI 执行并遵守用户权限，以及这些设计背后的原因。">
 <link rel="alternate" hreflang="en" href="index.html">
 <link rel="alternate" hreflang="ko" href="ko.html">
 <link rel="alternate" hreflang="ja" href="ja.html">
 <link rel="alternate" hreflang="zh-CN" href="zh-CN.html">
-<link rel="stylesheet" href="../assets/engineering.css?v=1">
+<link rel="stylesheet" href="../assets/engineering.css?v=2">
 </head>
 <body class="engineering">
-<a class="skip" href="#main">Still 如何保持延续</a>
+<a class="skip" href="#main">更换 AI 后保留记忆和工作的设计</a>
 <header><a href="../zh-CN.html">Still / 产品</a><nav aria-label="Language"><a href="index.html" lang="en" hreflang="en">English</a> <a href="ko.html" lang="ko" hreflang="ko">한국어</a> <a href="ja.html" lang="ja" hreflang="ja">日本語</a> <a href="zh-CN.html" lang="zh-CN" hreflang="zh-CN" aria-current="page">简体中文</a></nav></header>
 <main id="main">
 <p class="eyebrow">STILL / ENGINEERING</p>
-<h1>Still 如何保持延续</h1>
-<p class="intro">更换 AI 后仍能延续的个人智能体，其设计与依据。</p>
+<h1>更换 AI 后保留记忆和工作的设计</h1>
+<p class="intro">了解 Still 如何保留记忆和工作、将任务交给 AI 执行并遵守用户权限，以及这些设计背后的原因。</p>
 <p class="boundary">实现、验证和设计方向分别说明。代码展示机制，测试仅证明所执行的范围，录像展示选定的会话。如有差异，以当前契约为准。发布研究文档不等于启动实现。</p>
 <p>公开发行版: <a href="https://github.com/Jongtae/Still/releases"><span data-release="version">v0.3.0</span></a> · <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">main / 实现 / 证据</a></p>
 <nav class="topics" aria-label="Engineering"><a href="#philosophy">01 Engineering philosophy</a>
@@ -29,52 +29,53 @@
 <a href="#research">07 Research & Evidence</a></nav>
 <section id="philosophy" aria-labelledby="philosophy-title">
 <p class="eyebrow">01 / Engineering philosophy</p>
-<h2 id="philosophy-title">把持续关系保存在执行模型之外。</h2>
+<h2 id="philosophy-title">由 Still 保留记忆和工作，由 AI 执行任务。</h2>
 <p><strong>实现 / 证据.</strong> Still 保留用户状态，由用户选择的 AI 执行工作。C15 优先复用；C16 将语义判断交给 AI，将权限、密钥、预算和实际效果等精确约束交给代码。</p>
 <p><strong>设计 / 限制.</strong> 这些是工程原则。五平面架构和分发平台的范围超出当前已发布功能；包结构的存在不能证明市场已可用。</p>
 <details><summary>原文 (3)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/VISION.md">docs/VISION.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/development-constitution.en.md">docs/development-constitution.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/personal-agentos-architecture.en.md">docs/personal-agentos-architecture.en.md</a></li></ul></details>
 </section>
 <section id="ontology" aria-labelledby="ontology-title">
 <p class="eyebrow">02 / Ontology & Context</p>
-<h2 id="ontology-title">知道什么，来自哪里，有效多久？</h2>
+<h2 id="ontology-title">如何记录信息的来源和有效期限？</h2>
 <p><strong>实现 / 证据.</strong> CurrentContext 和用户模型模块处理当前观察与持久知识。上下文契约区分来源报告、解释、有时效的假设与正式 Memory，不能将它们当成同一种事实。</p>
 <p><strong>设计 / 限制.</strong> 角色本体研究讨论关系、提议、协议与委托，是概念提案，并非通用本体引擎。领域事实、专业视角、委托和实际权限分别处理。</p>
 <details><summary>原文 (5)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/personal-agentos-architecture.en.md">docs/personal-agentos-architecture.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/current-context-contract.en.md">docs/current-context-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/role-ontology-and-mandate-2026-10-05.ko.md">docs/research/role-ontology-and-mandate-2026-10-05.ko.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/current_context.py">src/personal_agent/current_context.py</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/owner_model.py">src/personal_agent/owner_model.py</a></li></ul></details>
 </section>
 <section id="decision" aria-labelledby="decision-title">
 <p class="eyebrow">03 / Decision Model</p>
-<h2 id="decision-title">何时回答、询问或委派？</h2>
+<h2 id="decision-title">什么时候直接回答、提问或将任务交给其他 AI？</h2>
 <p><strong>实现 / 证据.</strong> DecisionEngine 提供与供应商无关的语义判断。编排器选择执行 AI、模型及任务说明，通过 goal_reached 评估所观察的结果，并在限制内调整。当前修订优先于历史计划字段。</p>
 <p><strong>设计 / 限制.</strong> 判断不能授予权限、验证未观察的效果或把未知改成成功。资格测试仅覆盖指定路径，不能证明所有模型的真实任务质量。</p>
 <details><summary>原文 (3)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/decision-layer.en.md">docs/decision-layer.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/decision.py">src/personal_agent/decision.py</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/orchestrator.py">src/personal_agent/orchestrator.py</a></li></ul></details>
 </section>
 <section id="presence" aria-labelledby="presence-title">
 <p class="eyebrow">04 / Presence</p>
-<h2 id="presence-title">工作进行时，仍保持同一段关系。</h2>
+<h2 id="presence-title">如何处理任务进行中的提问和修改？</h2>
 <p><strong>实现 / 证据.</strong> 对话交接与编排将用户修正带入工作和后续计划。专业角色契约列出已交付的引导路径与剩余缺口；产品状态文档区分支持证据和预期体验。</p>
 <p><strong>设计 / 限制.</strong> 延续、同一声音、情境响应、记忆、可用性与对话恢复构成研究定义。前台相关性反馈与跨角色沟通仍有契约所列缺口；进度动画不能证明已实现。</p>
 <details><summary>原文 (4)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/presence-experience-contract.en.md">docs/presence-experience-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/professional-roles-and-communication-contract.en.md">docs/professional-roles-and-communication-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/presence-and-settings-ux.ko.md">docs/research/presence-and-settings-ux.ko.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/conversation_handoff.py">src/personal_agent/conversation_handoff.py</a></li></ul></details>
 </section>
 <section id="models" aria-labelledby="models-title">
 <p class="eyebrow">05 / Model independence</p>
-<h2 id="models-title">更换执行引擎，保留关系。</h2>
+<h2 id="models-title">更换 AI 后，仍然保留记忆和工作记录。</h2>
 <p><strong>实现 / 证据.</strong> AI 切换清单记录了 2026 年 10 月 8 日用户提供的一次 Telegram 会话，展示 Claude Code 与 Codex 切换后的上下文引用。状态所有权独立于执行模型定义。</p>
 <p><strong>设计 / 限制.</strong> 这是选定回复的截图证据，并非账户操作的独立轨迹或发行版可重复性验证。模型的工具和行为可能不同；本地安装仍会向配置的远程 AI 发送所需上下文。</p>
 <details><summary>原文 (3)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/personal-agentos-architecture.en.md">docs/personal-agentos-architecture.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/manifest.json">docs/assets/readme/ai-switch/manifest.json</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/subscription_engines.py">src/personal_agent/subscription_engines.py</a></li></ul></details>
 </section>
 <section id="authority" aria-labelledby="authority-title">
 <p class="eyebrow">06 / Owner Authority</p>
-<h2 id="authority-title">谁有权执行，实际发生了什么？</h2>
+<h2 id="authority-title">如何确认获准执行的操作和实际结果？</h2>
 <p><strong>实现 / 证据.</strong> 当前单用户试用保留文件夹范围、密钥、逐次付款批准、防重放及 Memory 权限边界。当前信息外发策略使用每项工作的使用审计；Secretary 契约记录对旧限制的修订。</p>
 <p><strong>设计 / 限制.</strong> 六项用户权利是验收要求，并非全部已执行的声明。委托、安装技能或连接账户本身都不授予操作权限。请求、观察、部分完成、失败和未知必须分别记录。</p>
 <details><summary>原文 (4)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/owner-control-contract.en.md">docs/owner-control-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/secretary-agency-contract.en.md">docs/secretary-agency-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assistant-execution-contract.en.md">docs/assistant-execution-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/development-constitution.en.md">docs/development-constitution.en.md</a></li></ul></details>
 </section>
 <section id="research" aria-labelledby="research-title">
 <p class="eyebrow">07 / Research & Evidence</p>
-<h2 id="research-title">按证据的实际范围阅读。</h2>
-<p><strong>实现 / 证据.</strong> 发行清单记录构建覆盖与本地安装检查。产品状态区分较新的 main、模拟流程与用户录像。演示剪辑自 2026 年 10 月 11 日会话；网站 AI 切换片段另有来源记录。</p>
-<p>网站片段止于推荐。来源文档记录，随后要求的替换删除了原有咖啡豆，但未能添加替代品并达到限制；片段未展示这次失败。</p>
+<h2 id="research-title">区分已实现的功能、测试结果和真实使用记录。</h2>
+<p><strong>实现 / 证据.</strong> 发行清单记录构建覆盖与本地安装检查。产品状态区分较新的 main、模拟流程与用户录像。演示剪辑自 2026 年 10 月 11 日会话；原网站 AI 切换片段另有来源记录。</p>
+<p>原网站片段止于推荐。来源文档记录，随后要求的替换删除了原有咖啡豆，但未能添加替代品并达到限制；片段未展示这次失败。</p>
 <p><strong>设计 / 限制.</strong> 模拟成功不是在线服务证明，助手回复不是操作效果的独立验证。研究和编辑审阅不启动功能实现。本体研究的保留审阅由一个模型顺序扮演角色，并非独立专家或多模型审阅。旧私有仓库的问题链接可能无法访问，公开文稿和来源文件仍可阅读。</p>
+<p>首页前两个案例摘录自10月11日的真实对话。AI 切换案例根据10月12日的使用记录重新构成，并非真实对话的逐字记录。 <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">原始对话与来源</a></p>
 <details><summary>原文 (7)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">docs/product-status.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/release-manifest.json">docs/release-manifest.json</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/demo/README.md">docs/assets/readme/demo/README.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/clip/README.md">docs/assets/readme/ai-switch/clip/README.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/README.md">docs/research/README.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/role-ontology-reuse-2026-10-05.ko.md">docs/research/role-ontology-reuse-2026-10-05.ko.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/role-ontology-review-cycle-2-2026-10-05.ko.md">docs/research/role-ontology-review-cycle-2-2026-10-05.ko.md</a></li></ul></details>
 </section>
 </main>

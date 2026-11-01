@@ -15,8 +15,9 @@
 <link rel="alternate" hreflang="zh-CN" href="zh-CN.html">
 <link rel="alternate" hreflang="x-default" href="./">
 <link rel="preload" href="assets/fonts/figtree-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/home.css?v=s9">
-<link rel="stylesheet" href="assets/engineering.css?v=1">
+<link rel="stylesheet" href="assets/home.css?v=s13">
+<link rel="stylesheet" href="assets/engineering.css?v=2">
+<link rel="stylesheet" href="assets/carousel.css?v=4">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -24,21 +25,17 @@
   <a class="crumb" href="./">Still</a>
   <nav aria-label="Site">
     <a href="#remembers">What it does</a>
-    <a href="#install">Install</a>
-    <a href="engineering/index.html">Engineering</a>
-    <a href="https://github.com/Jongtae/Still">GitHub</a>
+    <a class="nav-start" href="#install">Install</a>
+    <a class="nav-engineering" href="engineering/index.html">Engineering</a>
+    <a href="#contribute">GitHub · Contribute</a>
     <span class="langs"><a href="./" hreflang="en" lang="en" aria-current="page">English</a><a href="ko.html" hreflang="ko" lang="ko">한국어</a><a href="ja.html" hreflang="ja" lang="ja">日本語</a><a href="zh-CN.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></span>
   </nav>
 </header>
 
 <main id="main">
 <section class="hero" aria-labelledby="hero-title">
-  <picture class="hero-art">
-    <source media="(max-width: 720px)" srcset="assets/still-b-mobile.jpg" width="1080" height="1440">
-    <img src="assets/still-b-desktop.jpg" alt="" width="2400" height="1351" fetchpriority="high">
-  </picture>
   <div class="hero-copy">
-    <h1 id="hero-title" class="lockup"><span class="sr-only">Still. Here with you.</span><svg class="wm-still" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1119.810031 547.897567" fill="currentColor" aria-hidden="true"><g transform="translate(-86.114194,621.904865) scale(0.100000,-0.100000)"
+    <a class="hero-brand" href="index.html" aria-label="Still"><svg class="wm-still" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1119.810031 547.897567" fill="currentColor" aria-hidden="true"><g transform="translate(-86.114194,621.904865) scale(0.100000,-0.100000)"
 fill="currentColor" stroke="none">
 <path d="M2290 6209 c-484 -54 -825 -238 -1085 -584 -83 -110 -130 -216 -171
 -385 -22 -90 -18 -371 6 -478 46 -203 111 -345 214 -467 241 -287 611 -548
@@ -75,135 +72,99 @@ fill="currentColor" stroke="none">
 13 -10 55 -15 159 -17 210 -3 186 -71 190 553 2 397 7 3160 5 3222 -1 36 -29
 43 -170 43 -121 0 -141 -2 -161 -19z"/>
 </g>
-</svg><svg class="wm-here" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1796.738519 282.488428" fill="currentColor" aria-hidden="true"><g transform="translate(-56.993856,407.868580) scale(0.100000,-0.100000)"
-fill="currentColor" stroke="none">
-<path d="M11323 4068 c-12 -6 -25 -18 -28 -27 -4 -9 -8 -482 -11 -1052 -4
--1135 -8 -1063 51 -1069 85 -9 80 -38 80 482 0 451 1 465 23 548 41 150 132
-248 287 310 165 66 374 25 480 -92 97 -109 112 -203 121 -780 8 -482 6 -468
-68 -468 58 0 57 -14 58 527 0 488 0 499 -22 568 -80 252 -247 365 -537 365
--146 0 -247 -45 -359 -160 -62 -63 -89 -79 -107 -61 -8 8 -11 145 -12 452 0
-424 -1 441 -19 455 -23 16 -42 17 -73 2z"/>
-<path d="M2000 3962 c-22 -18 -22 -18 -21 -449 2 -366 0 -433 -13 -445 -23
--23 -1207 -36 -1242 -13 -24 15 -24 15 -24 449 0 481 2 466 -67 466 -59 0 -56
-55 -61 -1030 -4 -998 -4 -998 22 -1015 27 -18 89 -15 101 5 3 5 5 232 5 504 0
-481 0 495 19 506 13 6 223 10 624 10 572 0 605 -1 620 -18 15 -17 17 -66 17
--500 0 -533 -3 -512 65 -512 67 0 65 -13 65 438 2 1631 2 1585 -21 1605 -27
-22 -61 22 -89 -1z"/>
-<path d="M9939 3901 c-59 -59 -48 -147 26 -195 64 -42 155 27 155 117 0 53
--61 117 -110 117 -24 0 -42 -10 -71 -39z"/>
-<path d="M10572 3677 c-22 -26 -31 -67 -37 -168 -7 -121 -17 -139 -79 -139
--50 0 -86 -23 -86 -54 0 -37 22 -48 78 -40 43 5 53 3 72 -16 23 -23 23 -23 17
--544 -7 -587 -5 -612 58 -698 92 -126 290 -155 387 -58 62 62 15 98 -64 50
--92 -56 -211 -3 -246 110 -26 83 -21 1113 5 1142 16 17 31 19 156 17 127 -2
-141 -1 153 16 41 55 7 71 -147 67 -128 -4 -129 -3 -155 23 -26 27 -27 28 -22
-140 5 108 0 140 -26 157 -17 12 -53 9 -64 -5z"/>
-<path d="M3034 3370 c-140 -28 -335 -166 -420 -299 -104 -159 -128 -241 -129
--436 0 -133 2 -145 33 -236 78 -228 211 -361 454 -455 92 -36 92 -36 253 -32
-158 4 161 4 241 40 168 73 342 232 332 301 -7 51 -44 34 -152 -71 -157 -153
--267 -198 -460 -190 -241 11 -457 182 -528 420 -49 163 -54 248 -16 248 537 0
-1149 10 1176 20 44 16 48 41 28 168 -40 264 -238 474 -491 521 -67 13 -260 13
--321 1z m367 -118 c107 -50 169 -101 223 -182 48 -72 96 -199 96 -253 0 -58 1
--58 -570 -55 -591 3 -551 -9 -490 151 54 142 166 270 297 336 131 66 310 67
-444 3z"/>
-<path d="M4665 3367 c-77 -20 -154 -67 -199 -121 -114 -137 -133 -143 -126
--33 6 100 4 127 -9 140 -15 15 -87 15 -102 0 -17 -17 -26 -1398 -9 -1418 14
--17 72 -20 101 -5 18 10 19 26 19 463 0 510 4 542 74 654 124 198 306 282 475
-219 49 -18 76 -14 91 14 16 30 -7 68 -49 81 -57 17 -210 20 -266 6z"/>
-<path d="M5650 3369 c-158 -30 -348 -187 -432 -356 -148 -294 -109 -655 92
--867 185 -194 351 -260 604 -238 187 16 304 71 438 205 99 99 124 167 63 167
--19 0 -49 -24 -118 -93 -145 -146 -250 -192 -442 -192 -108 0 -127 3 -188 28
--203 82 -330 250 -383 505 -17 81 -13 107 18 123 15 8 198 13 592 16 667 5
-612 -5 602 113 -26 291 -241 540 -510 589 -69 13 -270 13 -336 0z m372 -114
-c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
--615 4 -570 -10 -506 162 40 109 88 183 159 245 153 135 363 169 548 89z"/>
-<path d="M15480 3369 c-198 -27 -427 -224 -512 -439 -67 -170 -66 -370 2 -567
-146 -421 711 -601 1086 -346 478 327 410 1073 -120 1313 -106 48 -278 63 -456
-39z m268 -79 c285 -47 494 -325 494 -660 0 -270 -133 -494 -358 -602 -89 -43
--89 -43 -214 -43 -125 0 -125 0 -220 43 -257 114 -399 353 -387 651 7 199 62
-328 194 459 135 134 296 183 491 152z"/>
-<path d="M8514 3360 c-24 -9 -28 -19 -54 -110 -10 -36 -34 -110 -53 -165 -20
--55 -63 -176 -96 -270 -33 -93 -82 -228 -109 -300 -27 -71 -64 -175 -82 -230
--35 -107 -52 -135 -82 -135 -20 0 -26 11 -56 115 -32 109 -145 422 -232 645
--82 210 -110 286 -126 350 -19 78 -37 100 -79 100 -83 0 -84 7 131 -600 91
--256 103 -287 144 -385 23 -55 46 -118 51 -140 24 -104 84 -272 104 -294 27
--28 97 -33 121 -9 8 7 32 63 53 123 22 61 63 173 91 250 29 77 102 288 164
-469 75 221 117 333 129 340 29 18 53 -22 92 -153 51 -168 102 -320 153 -451
-24 -63 52 -137 62 -165 10 -27 36 -93 57 -145 22 -52 52 -128 68 -168 31 -79
-62 -112 104 -112 52 0 55 6 214 405 197 494 361 957 355 998 -2 11 -11 25 -21
-31 -31 19 -67 -11 -92 -79 -32 -87 -147 -407 -180 -500 -86 -246 -116 -330
--140 -390 -15 -38 -36 -95 -48 -125 -67 -181 -95 -192 -142 -54 -13 38 -39
-110 -58 159 -32 86 -113 307 -162 445 -13 36 -37 102 -54 148 -17 46 -31 88
--31 94 0 6 -15 45 -34 87 -19 42 -39 101 -46 132 -15 77 -61 112 -116 89z"/>
-<path d="M9990 3359 c-13 -6 -28 -15 -32 -22 -4 -7 -8 -323 -8 -704 0 -674 1
--693 19 -703 29 -15 66 -12 90 8 21 17 21 17 23 705 2 737 4 707 -47 720 -11
-3 -31 1 -45 -4z"/>
-<path d="M13492 3348 c-19 -19 -14 -49 14 -98 14 -25 36 -72 49 -106 13 -33
-36 -87 53 -120 39 -77 122 -259 122 -269 0 -4 11 -33 25 -64 44 -102 127 -295
-152 -356 14 -33 28 -64 33 -70 4 -5 23 -53 43 -105 19 -52 45 -115 56 -140 11
--25 21 -54 21 -65 0 -24 -56 -169 -104 -269 -18 -39 -52 -110 -74 -158 -65
--139 -150 -218 -235 -218 -43 0 -77 -23 -59 -41 23 -24 191 -18 233 8 61 38
-154 196 254 428 52 122 115 280 115 289 0 6 22 55 49 111 27 55 77 165 111
-245 74 172 150 346 230 525 32 72 74 168 94 215 20 47 53 117 72 157 41 82 37
-113 -15 113 -41 0 -66 -34 -116 -154 -24 -59 -62 -147 -85 -195 -22 -48 -40
--91 -40 -94 0 -3 -20 -48 -44 -99 -25 -51 -63 -140 -86 -198 -49 -125 -102
--253 -136 -331 -13 -31 -24 -63 -24 -71 0 -25 -31 -58 -55 -58 -24 0 -55 33
--55 57 0 20 -80 221 -143 358 -30 66 -67 149 -82 185 -15 36 -48 109 -72 163
--63 140 -129 298 -138 327 -26 87 -119 142 -163 98z"/>
-<path d="M16742 3347 c-14 -17 -24 -754 -12 -912 18 -232 96 -373 262 -470
-196 -116 467 -73 660 104 97 89 112 84 109 -39 -2 -87 10 -110 58 -110 69 0
-64 -47 73 706 8 760 11 727 -59 732 -75 6 -73 18 -70 -484 2 -429 1 -441 -21
--517 -50 -175 -129 -265 -287 -332 -103 -44 -280 -44 -367 -2 -113 56 -198
-173 -218 303 -5 33 -12 272 -15 533 -4 322 -9 479 -16 488 -14 17 -83 17 -97
-0z"/>
-<path d="M18375 2100 c-71 -29 -89 -106 -36 -151 56 -46 117 -45 168 3 83 78
--20 195 -132 148z"/>
-</g>
-</svg></h1>
-    <p class="product-promise">Your AI can change. Your assistant stays.</p>
-    <p class="lede">An open-source personal agent on your computer, with memory, ongoing work and permissions that stay with you.</p>
-    <p class="actions"><a class="button" href="#install">Install Still</a><a class="text-link" href="#concept">See real use</a></p>
-  </div>
-  <div class="stage" role="img" aria-label="Illustrative product direction — not a recording or a claim of shipped autonomous checkout. An example of everyday use. You: “That coffee from last time was great.” Still, thinking with Claude Code: “Glad you liked it. Ethiopia Guji, 500 g. I’ll remember that; you can undo it anytime.” The AI changes from Claude Code to Codex. You: “Out of coffee.” Still, now thinking with Codex: “The same Ethiopia Guji, 500 g, is in your cart. Nothing is paid until you say so.”">
-    <div class="thread" aria-hidden="true">
-      <p class="b you s1">That coffee from last time was great.</p>
-      <div class="reply s2"><span class="dots"><i></i><i></i><i></i></span><p class="b still"><span class="ai">Claude Code</span>Glad you liked it. Ethiopia Guji, 500 g. I’ll remember that; you can undo it anytime.</p></div>
-      <p class="switch s3">AI changed to Codex</p>
-      <p class="b you s4">Out of coffee.</p>
-      <div class="reply s5"><span class="dots"><i></i><i></i><i></i></span><p class="b still"><span class="ai new">Codex</span>The same Ethiopia Guji, 500 g, is in your cart. Nothing is paid until you say so.</p></div>
-    </div>
-    <p class="stage-note">Illustrative product direction — not a recording or a claim of shipped autonomous checkout.</p>
+</svg></a>
+    <p class="eyebrow">Here with you.</p>
+    <h1 id="hero-title" class="product-promise">Your AI can change. Your assistant stays.</h1>
+    <p class="lede">Still is an open-source personal agent that runs on your computer. You can change AI providers while keeping your memory, ongoing work and the permissions you set.</p>
+    <p class="actions"><a class="button" href="#install">Install Still</a><a class="text-link" href="#concept">See how it works</a></p>
   </div>
 </section>
 
-<section class="band night" id="concept" aria-labelledby="concept-title">
-  <div class="copy">
-    <h2 id="concept-title">Change the AI. Keep the assistant.</h2>
-    <p>Your ChatGPT plan through Codex or your Claude plan through Claude Code does the work. Switch with one command in the middle of a conversation; Still carries on.</p>
-  </div>
-  <figure class="switch-clip">
-    <video controls muted playsinline preload="none" width="1200" height="720" poster="assets/still-ai-switch-poster.en.jpg" aria-label="A real Telegram session in Korean. /ai shows Codex; /ai claude-code switches to Claude Code. Asked for something pricier than the Jardin, Claude Code recalls the Momos Coffee Es Chocolat 500 g it had called best for lattes and offers it instead.">
-      <source src="assets/still-ai-switch.en.mp4" type="video/mp4">
-    </video>
-    <figcaption>A real session, edited: after switching to Claude Code, “something pricier this time” was enough. It remembered the beans suggested earlier. Recorded owner session; edited, Korean interface. This shows conversation continuity, not independent verification of cart effects or release-wide validation. <a href="engineering/index.html#research">Sources</a></figcaption>
+<nav class="entry-points" aria-label="Start here">
+  <a href="#install"><strong>Install Still <span aria-hidden="true">↓</span></strong><span>Install with one command and connect the AI you use.</span></a>
+  <a href="engineering/index.html"><strong>Engineering <span aria-hidden="true">→</span></strong><span>Explore how Still handles memory, decisions and permissions.</span></a>
+  <a href="#contribute"><strong>Contribute <span aria-hidden="true">↓</span></strong><span>Read the code, suggest improvements and help build Still.</span></a>
+</nav>
+
+<section class="demo-section" id="concept" aria-labelledby="concept-title">
+  <div class="copy"><h2 id="concept-title">Explore conversations with Still.</h2></div>
+  <figure class="switch-carousel">
+    <nav class="slide-index" aria-label="Real use cases">
+      <a href="#switch-slide-1">Remember preferences</a>
+      <a href="#switch-slide-2">Continue research</a>
+      <a href="#switch-slide-3">Switch AI</a>
+    </nav>
+    <div class="switch-slides" tabindex="0" role="region" aria-label="Real use cases">
+      <figure class="switch-slide" id="switch-slide-1" tabindex="-1" aria-labelledby="switch-title-1">
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-1.wide.svg?v=cases2" width="1440" height="940"><img src="assets/ai-switch/en-1.svg?v=cases2" width="1000" height="1280" loading="lazy" alt="Choose beans using a remembered preference I had a latte at coffee coffee coffee yesterday, but I can’t remember the menu name. You said it was nutty and sweet and you’d like it again. I haven’t confirmed the exact menu name. I’m almost out of coffee beans at home. I can look for a nutty taste like the latte you liked earlier. … Do you use a coffee machine or make pour-over at home? Real conversation · translated and condensed 2026-10-11"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="Previous example">←</a><span id="switch-title-1">1 / 3 · Remember preferences</span><a href="#switch-slide-2" aria-label="Next example">→</a></figcaption>
+      </figure>
+      <figure class="switch-slide" id="switch-slide-2" tabindex="-1" aria-labelledby="switch-title-2">
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-2.wide.svg?v=cases2" width="1440" height="940"><img src="assets/ai-switch/en-2.svg?v=cases2" width="1000" height="1280" loading="lazy" alt="Continue researching the same F1 models on Amazon I am interested in f1 model car. where can i get order? Continue looking for the same models Would you find more at the amazon? Yes—I found more on Amazon US, with delivery to South Korea shown. These are all Bburago 1:43 models. … My pick would be the McLaren MCL38 for a first model. Your final total needs checking at checkout. Some steps could not be verified. Real conversation · translated and condensed 2026-10-11"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="Previous example">←</a><span id="switch-title-2">2 / 3 · Continue research</span><a href="#switch-slide-3" aria-label="Next example">→</a></figcaption>
+      </figure>
+      <figure class="switch-slide" id="switch-slide-3" tabindex="-1" aria-labelledby="switch-title-3">
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/en-3.wide.svg?v=cases2" width="1440" height="940"><img src="assets/ai-switch/en-3.svg?v=cases2" width="1000" height="1280" loading="lazy" alt="Continue an earlier recommendation with another AI Recommend beans for lattes. I like a nutty, sweet taste. I suggest Jardin Espresso Blend and Momos Es Chocolat. /ai claude-code Codex → Claude Code Let’s try the second one this time. Momos Es Chocolat, then. I’ll keep looking into whether it gives you the nutty, sweet latte you want. Illustrative dialogue · not a transcript Illustrative dialogue"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="Previous example">←</a><span id="switch-title-3">3 / 3 · Switch AI</span><a href="#switch-slide-1" aria-label="Next example">→</a></figcaption>
+      </figure>
+    </div>
+    <figcaption>The first two examples are real conversation excerpts. The AI-switch example illustrates a flow reconstructed from the recorded use case. <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">Original conversations and sources</a></figcaption>
   </figure>
-  <div class="swap">
-    <div>
-      <h3>Changes when you want</h3>
-      <ul class="pills"><li>Codex</li><li>Claude Code</li><li>An API key</li><li>Ollama</li><li>Tools and connectors</li></ul>
-    </div>
-    <div>
-      <h3>Stays with you</h3>
-      <ul class="pills solid"><li>What it knows about you</li><li>Unfinished work</li><li>The permissions you gave</li><li>A record of what ran</li></ul>
-    </div>
-  </div>
 </section>
 
-<section class="band rose" id="remembers" aria-labelledby="remember-title">
+<section class="install" id="install" aria-labelledby="install-title">
   <div class="copy">
-    <h2 id="remember-title">Say less. It remembers.</h2>
-    <p>What you told it last week comes back when it matters, and it says what each memory rests on. Every save can be undone.</p>
+    <h2 id="install-title">Get started with Still</h2>
+    <p>Use Still on Mac, Linux or Windows (WSL2). Connect a ChatGPT or Claude subscription, an API key, or Ollama to get started.</p>
+  </div>
+  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
+  <p class="note">The URL pins the installer to one version; <a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">read the script</a> before you run it. </p>
+  <details class="install-options"><summary>Homebrew and Windows installation</summary><p class="note">On an Apple silicon Mac with Homebrew: <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>, <code>brew install jongtae/still/agentos</code>, then <code>agentos start</code>. On Windows, run <code>wsl --install</code> in PowerShell, restart, open Ubuntu and paste the command there.</p></details>
+  <div class="setup-grid">
+  <ol class="steps">
+    <li>
+      <h3>Connect the AI you want to use</h3>
+      <p>After installation, connect your AI in the terminal. Use a ChatGPT subscription through Codex, a Claude subscription through Claude Code, an API key, or Ollama. An AI you are already signed in to is preselected.</p>
+    </li>
+    <li>
+      <h3>Start a conversation with Still</h3>
+      <p>Talk to Still in the terminal, or open <code>127.0.0.1:8787</code> in your browser. Keep <code>agentos start</code> running in the terminal while you use Still.</p>
+    </li>
+    <li>
+      <h3>Chat on your phone through Telegram</h3>
+      <p>Say “connect Telegram”, paste the token @BotFather gives you into the hidden input field, and press Start in the pairing link.</p>
+      <details class="install-options"><summary>Change your Telegram wallpaper (optional)</summary><p class="note">Optional: give the chat Still’s look with a wallpaper (<a href="assets/still-wallpaper-presence.jpg" download>with Still</a> or <a href="assets/still-wallpaper-plain.jpg" download>plain</a>): in the Telegram chat, open the menu, choose <b>Change Wallpaper</b> and pick it from your photos.</p></details>
+    </li>
+  </ol>
+  <figure class="setup-preview" aria-labelledby="setup-preview-title">
+  <h3 id="setup-preview-title">What first setup looks like</h3>
+  <div class="terminal-frame"><div class="terminal-bar"><span aria-hidden="true">● ● ●</span><span>Terminal · agentos start</span></div><pre><span class="terminal-logo" role="img" aria-label="Still">   ________________   __
+  / __/_  __/  _/ /  / /
+ _\ \  / / _/ // /__/ /__
+/___/ /_/ /___/____/____/</span>
+
+Let's set up Still here in the terminal. Press Enter to take the default.
+
+AI connection
+Connect a subscription you already have, or an API key.
+
+1) ChatGPT subscription (Codex)
+2) Claude subscription (Claude Code)
+3) API key (OpenAI, Anthropic, compatible server, Ollama)
+4) Connect later in the browser</pre></div>
+  <figcaption>An excerpt of the current program’s setup messages, laid out for this page. Not a recording of a new installation. <a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/first_run.py">Read the source</a></figcaption>
+</figure>
+  </div>
+  <p class="note">Everything else is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">quick start guide</a>.</p>
+</section>
+
+<section class="feature-row memory-row" id="remembers" aria-labelledby="remember-title">
+  <div class="copy">
+    <h2 id="remember-title">Use what you shared before to guide the next request.</h2>
+    <p>Still remembers preferences and circumstances you share, and refers to them for related requests. You can check each memory’s source and undo saved memories.</p>
   </div>
   <div class="visual days" role="group" aria-label="Two conversations a few days apart">
+    <p class="visual-note">Illustrative conversation</p>
     <div class="day">
       <p class="when">Monday</p>
       <p class="b you">My cat has been off her food lately. What should I try?</p>
@@ -226,29 +187,30 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
 
 
 
-<section class="band sage" aria-labelledby="where-title">
+<section class="feature-row connections-row" aria-labelledby="where-title">
   <div class="copy">
-    <h2 id="where-title">Where you already talk. With what you already use.</h2>
+    <h2 id="where-title">Talk in a familiar app and connect the tools you use.</h2>
   </div>
   <div class="cloud">
     <div>
-      <h3>Talk to it in</h3>
+      <h3>Where you can talk to Still</h3>
       <ul class="bubbles"><li class="xl">Telegram</li><li>Slack</li><li class="l">Terminal</li><li>Mattermost</li><li class="l">Browser</li></ul>
     </div>
     <div>
-      <h3>It works with</h3>
+      <h3>Tools you can connect</h3>
       <ul class="bubbles"><li class="l">Your folders</li><li class="xl">Gmail</li><li>Google Calendar</li><li>Google Drive</li><li class="l">Sites you sign in to</li></ul>
     </div>
   </div>
   <p class="fine">Folders are read-only unless you say otherwise. Gmail organising is a separate permission, and Still never sends mail.</p>
 </section>
 
-<section class="band mist" aria-labelledby="wait-title">
+<section class="feature-row work-row" aria-labelledby="wait-title">
   <div class="copy">
-    <h2 id="wait-title">It works while you talk. It stops where you decide.</h2>
-    <p>Before a long task it tells you the plan and which AI is on it. Ask something else meanwhile, or correct it halfway.</p>
+    <h2 id="wait-title">Ask questions or change your request while a task runs.</h2>
+    <p>Before a longer task, Still explains its plan and which AI will do the work. You can ask another question or change direction while the task runs.</p>
   </div>
   <div class="visual thread-live" role="group" aria-label="A conversation while a task runs">
+    <p class="visual-note">Illustrative conversation</p>
     <p class="b you">Find a birthday gift for Mum under $50.</p>
     <p class="b still"><span class="ai">Codex</span>I’ll look for something she’d use every day, check reviews and delivery dates, then show you three.</p>
     <p class="b still waiting" aria-label="Working"><span class="dots"><i></i><i></i><i></i></span></p>
@@ -256,49 +218,27 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
     <p class="b still">Arigatō gozaimasu. The gift search is still going.</p>
   </div>
   <ul class="limits">
-    <li><b>Only what you connect.</b> Folders, accounts and tools you choose.</li>
-    <li><b>Payment waits for you.</b> Adding to a cart and paying are different actions; every payment needs your yes.</li>
-    <li><b>Secrets stay out.</b> Passwords and tokens never reach a prompt, a log or the record of what ran.</li>
+    <li><b>Work stays within the permissions you set.</b> Still follows the access scope and action permissions set for your folders, accounts and tools.</li>
+    <li><b>Every payment needs your approval.</b> Even after an item is added to a cart, you must separately approve payment.</li>
+    <li><b>Passwords and tokens are protected.</b> They are excluded from content sent to the AI model, logs and execution records.</li>
   </ul>
 </section>
 
-<section class="install" id="install" aria-labelledby="install-title">
-  <div class="copy">
-    <h2 id="install-title">Bring Still home tonight</h2>
-    <p>A Mac, Linux or Windows (WSL2) computer and the ChatGPT or Claude subscription you already have.</p>
-  </div>
-  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
-  <p class="note">The URL pins the installer to one version; <a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">read the script</a> before you run it. On an Apple silicon Mac with Homebrew: <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>, <code>brew install jongtae/still/agentos</code>, then <code>agentos start</code>. On Windows, run <code>wsl --install</code> in PowerShell, restart, open Ubuntu and paste the command there.</p>
-  <ol class="steps">
-    <li>
-      <h3>Choose your AI</h3>
-      <p>Setup runs in the terminal. Pick Codex, Claude Code or an API key; one you’re already signed in to is preselected. Still never sees that login.</p>
-    </li>
-    <li>
-      <h3>Say hello</h3>
-      <p>Talk to Still right there in the terminal, or on the Still screen at <code>127.0.0.1:8787</code>.</p>
-    </li>
-    <li>
-      <h3>Bring it to your phone</h3>
-      <p>Say “connect Telegram”, paste the token @BotFather gives you, and press Start in the pairing link.</p>
-      <p class="note">Optional: give the chat Still’s look with a wallpaper (<a href="assets/still-wallpaper-presence.jpg" download>with Still</a> or <a href="assets/still-wallpaper-plain.jpg" download>plain</a>): in the Telegram chat, open the menu, choose <b>Change Wallpaper</b> and pick it from your photos.</p>
-    </li>
-  </ol>
-  <p class="note">Everything else is in the <a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">quick start guide</a>.</p>
-</section>
 
-<section class="engineering-entry" aria-labelledby="engineering-title">
+
+<div class="build-grid"><section class="engineering-entry" aria-labelledby="engineering-title">
   <h2 id="engineering-title">Engineering — Why this design?</h2>
-  <p>Read the engineering philosophy, Ontology & Context, Decision Model, Presence, model independence, Owner Authority, and Research & Evidence. Each topic links implementation, evidence and open design questions.</p>
-  <p><a href="engineering/index.html">How Still keeps continuity →</a> · <a href="engineering/index.html#research">Research &amp; Evidence</a></p>
+  <p>Explore how Still keeps memory and work, makes decisions, and handles user permissions. The guide separates implemented features, what has been verified, and future design, with links to the source documents and code.</p>
+  <p class="actions"><a class="button" href="engineering/index.html">Explore the design and implementation →</a> · <a href="engineering/index.html#research">Research &amp; Evidence</a></p>
 </section>
 
-<section class="github" aria-labelledby="github-title">
-  <h2 id="github-title">Open code, built in the open.</h2>
+<section class="github" id="contribute" aria-labelledby="github-title">
+  <h2 id="github-title">Build Still with us.</h2>
+  <p>Report what did not work, discuss an idea, improve the docs or contribute code. Start with the contribution guide.</p>
   <p>Still is open source under AGPL-3.0. <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">Product status</a> lists what works today and what is still rough. The current version is <span data-release="version">v0.3.0</span>.</p>
-  <p class="actions"><a class="button" href="https://github.com/Jongtae/Still">View on GitHub</a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">Talk with us in Discussions</a></p>
+  <p class="actions"><a class="button" href="https://github.com/Jongtae/Still/blob/main/.github/CONTRIBUTING.md">Contribution guide</a><a class="text-link" href="https://github.com/Jongtae/Still">GitHub →</a><a class="text-link" href="https://github.com/Jongtae/Still/issues">Report an issue</a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">Discussions</a></p>
   <p class="note">If Still helps you, a star on GitHub helps the next person find it.</p>
-</section>
+</section></div>
 
 </main>
 

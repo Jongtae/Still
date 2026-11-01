@@ -15,8 +15,9 @@
 <link rel="alternate" hreflang="zh-CN" href="zh-CN.html">
 <link rel="alternate" hreflang="x-default" href="./">
 <link rel="preload" href="assets/fonts/figtree-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="assets/home.css?v=s9">
-<link rel="stylesheet" href="assets/engineering.css?v=1">
+<link rel="stylesheet" href="assets/home.css?v=s13">
+<link rel="stylesheet" href="assets/engineering.css?v=2">
+<link rel="stylesheet" href="assets/carousel.css?v=4">
 </head>
 <body>
 <a class="skip" href="#main">本文へ移動</a>
@@ -24,21 +25,17 @@
   <a class="crumb" href="./">Still</a>
   <nav aria-label="サイト">
     <a href="#remembers">できること</a>
-    <a href="#install">インストール</a>
-    <a href="engineering/ja.html">Engineering</a>
-    <a href="https://github.com/Jongtae/Still">GitHub</a>
+    <a class="nav-start" href="#install">インストール</a>
+    <a class="nav-engineering" href="engineering/ja.html">Engineering</a>
+    <a href="#contribute">GitHub · 開発参加</a>
     <span class="langs"><a href="./" hreflang="en" lang="en">English</a><a href="ko.html" hreflang="ko" lang="ko">한국어</a><a href="ja.html" hreflang="ja" lang="ja" aria-current="page">日本語</a><a href="zh-CN.html" hreflang="zh-CN" lang="zh-CN">简体中文</a></span>
   </nav>
 </header>
 
 <main id="main">
 <section class="hero" aria-labelledby="hero-title">
-  <picture class="hero-art">
-    <source media="(max-width: 720px)" srcset="assets/still-b-mobile.jpg" width="1080" height="1440">
-    <img src="assets/still-b-desktop.jpg" alt="" width="2400" height="1351" fetchpriority="high">
-  </picture>
   <div class="hero-copy">
-    <h1 id="hero-title" class="lockup"><span class="sr-only">Still. Here with you.</span><svg class="wm-still" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1119.810031 547.897567" fill="currentColor" aria-hidden="true"><g transform="translate(-86.114194,621.904865) scale(0.100000,-0.100000)"
+    <a class="hero-brand" href="ja.html" aria-label="Still"><svg class="wm-still" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1119.810031 547.897567" fill="currentColor" aria-hidden="true"><g transform="translate(-86.114194,621.904865) scale(0.100000,-0.100000)"
 fill="currentColor" stroke="none">
 <path d="M2290 6209 c-484 -54 -825 -238 -1085 -584 -83 -110 -130 -216 -171
 -385 -22 -90 -18 -371 6 -478 46 -203 111 -345 214 -467 241 -287 611 -548
@@ -75,135 +72,99 @@ fill="currentColor" stroke="none">
 13 -10 55 -15 159 -17 210 -3 186 -71 190 553 2 397 7 3160 5 3222 -1 36 -29
 43 -170 43 -121 0 -141 -2 -161 -19z"/>
 </g>
-</svg><svg class="wm-here" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1796.738519 282.488428" fill="currentColor" aria-hidden="true"><g transform="translate(-56.993856,407.868580) scale(0.100000,-0.100000)"
-fill="currentColor" stroke="none">
-<path d="M11323 4068 c-12 -6 -25 -18 -28 -27 -4 -9 -8 -482 -11 -1052 -4
--1135 -8 -1063 51 -1069 85 -9 80 -38 80 482 0 451 1 465 23 548 41 150 132
-248 287 310 165 66 374 25 480 -92 97 -109 112 -203 121 -780 8 -482 6 -468
-68 -468 58 0 57 -14 58 527 0 488 0 499 -22 568 -80 252 -247 365 -537 365
--146 0 -247 -45 -359 -160 -62 -63 -89 -79 -107 -61 -8 8 -11 145 -12 452 0
-424 -1 441 -19 455 -23 16 -42 17 -73 2z"/>
-<path d="M2000 3962 c-22 -18 -22 -18 -21 -449 2 -366 0 -433 -13 -445 -23
--23 -1207 -36 -1242 -13 -24 15 -24 15 -24 449 0 481 2 466 -67 466 -59 0 -56
-55 -61 -1030 -4 -998 -4 -998 22 -1015 27 -18 89 -15 101 5 3 5 5 232 5 504 0
-481 0 495 19 506 13 6 223 10 624 10 572 0 605 -1 620 -18 15 -17 17 -66 17
--500 0 -533 -3 -512 65 -512 67 0 65 -13 65 438 2 1631 2 1585 -21 1605 -27
-22 -61 22 -89 -1z"/>
-<path d="M9939 3901 c-59 -59 -48 -147 26 -195 64 -42 155 27 155 117 0 53
--61 117 -110 117 -24 0 -42 -10 -71 -39z"/>
-<path d="M10572 3677 c-22 -26 -31 -67 -37 -168 -7 -121 -17 -139 -79 -139
--50 0 -86 -23 -86 -54 0 -37 22 -48 78 -40 43 5 53 3 72 -16 23 -23 23 -23 17
--544 -7 -587 -5 -612 58 -698 92 -126 290 -155 387 -58 62 62 15 98 -64 50
--92 -56 -211 -3 -246 110 -26 83 -21 1113 5 1142 16 17 31 19 156 17 127 -2
-141 -1 153 16 41 55 7 71 -147 67 -128 -4 -129 -3 -155 23 -26 27 -27 28 -22
-140 5 108 0 140 -26 157 -17 12 -53 9 -64 -5z"/>
-<path d="M3034 3370 c-140 -28 -335 -166 -420 -299 -104 -159 -128 -241 -129
--436 0 -133 2 -145 33 -236 78 -228 211 -361 454 -455 92 -36 92 -36 253 -32
-158 4 161 4 241 40 168 73 342 232 332 301 -7 51 -44 34 -152 -71 -157 -153
--267 -198 -460 -190 -241 11 -457 182 -528 420 -49 163 -54 248 -16 248 537 0
-1149 10 1176 20 44 16 48 41 28 168 -40 264 -238 474 -491 521 -67 13 -260 13
--321 1z m367 -118 c107 -50 169 -101 223 -182 48 -72 96 -199 96 -253 0 -58 1
--58 -570 -55 -591 3 -551 -9 -490 151 54 142 166 270 297 336 131 66 310 67
-444 3z"/>
-<path d="M4665 3367 c-77 -20 -154 -67 -199 -121 -114 -137 -133 -143 -126
--33 6 100 4 127 -9 140 -15 15 -87 15 -102 0 -17 -17 -26 -1398 -9 -1418 14
--17 72 -20 101 -5 18 10 19 26 19 463 0 510 4 542 74 654 124 198 306 282 475
-219 49 -18 76 -14 91 14 16 30 -7 68 -49 81 -57 17 -210 20 -266 6z"/>
-<path d="M5650 3369 c-158 -30 -348 -187 -432 -356 -148 -294 -109 -655 92
--867 185 -194 351 -260 604 -238 187 16 304 71 438 205 99 99 124 167 63 167
--19 0 -49 -24 -118 -93 -145 -146 -250 -192 -442 -192 -108 0 -127 3 -188 28
--203 82 -330 250 -383 505 -17 81 -13 107 18 123 15 8 198 13 592 16 667 5
-612 -5 602 113 -26 291 -241 540 -510 589 -69 13 -270 13 -336 0z m372 -114
-c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
--615 4 -570 -10 -506 162 40 109 88 183 159 245 153 135 363 169 548 89z"/>
-<path d="M15480 3369 c-198 -27 -427 -224 -512 -439 -67 -170 -66 -370 2 -567
-146 -421 711 -601 1086 -346 478 327 410 1073 -120 1313 -106 48 -278 63 -456
-39z m268 -79 c285 -47 494 -325 494 -660 0 -270 -133 -494 -358 -602 -89 -43
--89 -43 -214 -43 -125 0 -125 0 -220 43 -257 114 -399 353 -387 651 7 199 62
-328 194 459 135 134 296 183 491 152z"/>
-<path d="M8514 3360 c-24 -9 -28 -19 -54 -110 -10 -36 -34 -110 -53 -165 -20
--55 -63 -176 -96 -270 -33 -93 -82 -228 -109 -300 -27 -71 -64 -175 -82 -230
--35 -107 -52 -135 -82 -135 -20 0 -26 11 -56 115 -32 109 -145 422 -232 645
--82 210 -110 286 -126 350 -19 78 -37 100 -79 100 -83 0 -84 7 131 -600 91
--256 103 -287 144 -385 23 -55 46 -118 51 -140 24 -104 84 -272 104 -294 27
--28 97 -33 121 -9 8 7 32 63 53 123 22 61 63 173 91 250 29 77 102 288 164
-469 75 221 117 333 129 340 29 18 53 -22 92 -153 51 -168 102 -320 153 -451
-24 -63 52 -137 62 -165 10 -27 36 -93 57 -145 22 -52 52 -128 68 -168 31 -79
-62 -112 104 -112 52 0 55 6 214 405 197 494 361 957 355 998 -2 11 -11 25 -21
-31 -31 19 -67 -11 -92 -79 -32 -87 -147 -407 -180 -500 -86 -246 -116 -330
--140 -390 -15 -38 -36 -95 -48 -125 -67 -181 -95 -192 -142 -54 -13 38 -39
-110 -58 159 -32 86 -113 307 -162 445 -13 36 -37 102 -54 148 -17 46 -31 88
--31 94 0 6 -15 45 -34 87 -19 42 -39 101 -46 132 -15 77 -61 112 -116 89z"/>
-<path d="M9990 3359 c-13 -6 -28 -15 -32 -22 -4 -7 -8 -323 -8 -704 0 -674 1
--693 19 -703 29 -15 66 -12 90 8 21 17 21 17 23 705 2 737 4 707 -47 720 -11
-3 -31 1 -45 -4z"/>
-<path d="M13492 3348 c-19 -19 -14 -49 14 -98 14 -25 36 -72 49 -106 13 -33
-36 -87 53 -120 39 -77 122 -259 122 -269 0 -4 11 -33 25 -64 44 -102 127 -295
-152 -356 14 -33 28 -64 33 -70 4 -5 23 -53 43 -105 19 -52 45 -115 56 -140 11
--25 21 -54 21 -65 0 -24 -56 -169 -104 -269 -18 -39 -52 -110 -74 -158 -65
--139 -150 -218 -235 -218 -43 0 -77 -23 -59 -41 23 -24 191 -18 233 8 61 38
-154 196 254 428 52 122 115 280 115 289 0 6 22 55 49 111 27 55 77 165 111
-245 74 172 150 346 230 525 32 72 74 168 94 215 20 47 53 117 72 157 41 82 37
-113 -15 113 -41 0 -66 -34 -116 -154 -24 -59 -62 -147 -85 -195 -22 -48 -40
--91 -40 -94 0 -3 -20 -48 -44 -99 -25 -51 -63 -140 -86 -198 -49 -125 -102
--253 -136 -331 -13 -31 -24 -63 -24 -71 0 -25 -31 -58 -55 -58 -24 0 -55 33
--55 57 0 20 -80 221 -143 358 -30 66 -67 149 -82 185 -15 36 -48 109 -72 163
--63 140 -129 298 -138 327 -26 87 -119 142 -163 98z"/>
-<path d="M16742 3347 c-14 -17 -24 -754 -12 -912 18 -232 96 -373 262 -470
-196 -116 467 -73 660 104 97 89 112 84 109 -39 -2 -87 10 -110 58 -110 69 0
-64 -47 73 706 8 760 11 727 -59 732 -75 6 -73 18 -70 -484 2 -429 1 -441 -21
--517 -50 -175 -129 -265 -287 -332 -103 -44 -280 -44 -367 -2 -113 56 -198
-173 -218 303 -5 33 -12 272 -15 533 -4 322 -9 479 -16 488 -14 17 -83 17 -97
-0z"/>
-<path d="M18375 2100 c-71 -29 -89 -106 -36 -151 56 -46 117 -45 168 3 83 78
--20 195 -132 148z"/>
-</g>
-</svg></h1>
-    <p class="product-promise">AI が変わっても、あなたのアシスタントは続きます。</p>
-    <p class="lede">自分のコンピューターで動くオープンソースの個人エージェント。記憶、進行中の仕事、許可を保ちながら AI を替えられます。</p>
-    <p class="actions"><a class="button" href="#install">Still をインストール</a><a class="text-link" href="#concept">実際の利用を見る</a></p>
-  </div>
-  <div class="stage" role="img" aria-label="製品の方向性を示す例です。録画や自律決済の実装証拠ではありません。 使い方の一例。あなた：「この前のコーヒー豆、すごくよかった。」Claude Code で考える Still：「気に入ってもらえてよかったです。エチオピア・グジ 500g、覚えておきますね。いつでも取り消せます。」AI が Claude Code から Codex に替わります。あなた：「コーヒーが切れた。」Codex で考える Still：「前回と同じエチオピア・グジ 500g をカートに入れました。お支払いは、言われるまでしません。」">
-    <div class="thread" aria-hidden="true">
-      <p class="b you s1">この前のコーヒー豆、すごくよかった。</p>
-      <div class="reply s2"><span class="dots"><i></i><i></i><i></i></span><p class="b still"><span class="ai">Claude Code</span>気に入ってもらえてよかったです。エチオピア・グジ 500g、覚えておきますね。いつでも取り消せます。</p></div>
-      <p class="switch s3">AI が Codex に替わりました</p>
-      <p class="b you s4">コーヒーが切れた。</p>
-      <div class="reply s5"><span class="dots"><i></i><i></i><i></i></span><p class="b still"><span class="ai new">Codex</span>前回と同じエチオピア・グジ 500g をカートに入れました。お支払いは、言われるまでしません。</p></div>
-    </div>
-    <p class="stage-note">製品の方向性を示す例です。録画や自律決済の実装証拠ではありません。</p>
+</svg></a>
+    <p class="eyebrow">Here with you.</p>
+    <h1 id="hero-title" class="product-promise">AI が変わっても、あなたのアシスタントは続きます。</h1>
+    <p class="lede">Still は自分のコンピューターで動くオープンソースの個人エージェントです。記憶、進行中の作業、自分で設定した権限を保ちながら、使う AI を替えられます。</p>
+    <p class="actions"><a class="button" href="#install">Still をインストール</a><a class="text-link" href="#concept">利用例を見る</a></p>
   </div>
 </section>
 
-<section class="band night" id="concept" aria-labelledby="concept-title">
-  <div class="copy">
-    <h2 id="concept-title">AI を替えても、アシスタントはそのまま。</h2>
-    <p>ChatGPT のプランで使う Codex、または Claude のプランで使う Claude Code が仕事をします。会話の途中でもコマンド一つで替えられ、Still はそのまま続けます。</p>
-  </div>
-  <figure class="switch-clip">
-    <video controls muted playsinline preload="none" width="1200" height="720" poster="assets/still-ai-switch-poster.ja.jpg" aria-label="韓国語の Telegram の実際の会話。/ai で今の AI が Codex だと確かめ、/ai claude-code で Claude Code に替えます。Jardin より高いものをと頼むと、Claude Code はラテに一番合うと言っていた Momos Coffee の Es Chocolat 500g を思い出し、代わりに提案します。">
-      <source src="assets/still-ai-switch.ja.mp4" type="video/mp4">
-    </video>
-    <figcaption>実際のセッションを編集したもの：Claude Code に替えたあと「今回は高いのを」と言うだけで十分でした。前に勧めた豆を覚えていました。 実際の利用セッションを編集した韓国語画面です。会話の継続を示しますが、カート変更の独立検証やリリース全体の検証ではありません。 <a href="engineering/ja.html#research">原文</a></figcaption>
+<nav class="entry-points" aria-label="ここから始める">
+  <a href="#install"><strong>インストールして試す <span aria-hidden="true">↓</span></strong><span>コマンド一つでインストールし、使っている AI を接続できます。</span></a>
+  <a href="engineering/ja.html"><strong>Engineering <span aria-hidden="true">→</span></strong><span>記憶・判断・権限を扱う仕組みと検証資料を読めます。</span></a>
+  <a href="#contribute"><strong>開発に参加する <span aria-hidden="true">↓</span></strong><span>コードを読んだり、改善案を提案したりして、開発に参加できます。</span></a>
+</nav>
+
+<section class="demo-section" id="concept" aria-labelledby="concept-title">
+  <div class="copy"><h2 id="concept-title">Still との会話をご覧ください。</h2></div>
+  <figure class="switch-carousel">
+    <nav class="slide-index" aria-label="実際の利用例">
+      <a href="#switch-slide-1">好みを覚える</a>
+      <a href="#switch-slide-2">調査を続ける</a>
+      <a href="#switch-slide-3">AI を替える</a>
+    </nav>
+    <div class="switch-slides" tabindex="0" role="region" aria-label="実際の利用例">
+      <figure class="switch-slide" id="switch-slide-1" tabindex="-1" aria-labelledby="switch-title-1">
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ja-1.wide.svg?v=cases2" width="1440" height="940"><img src="assets/ai-switch/ja-1.svg?v=cases2" width="1000" height="1280" loading="lazy" alt="覚えていた好みを使ってコーヒー豆を選びます 昨日 coffee coffee coffee でラテを飲んだけど、メニュー名を思い出せない。 香ばしくて甘く、また飲みたいとおっしゃっていたラテですね。ただ、正確なメニュー名までは確認できていません。 家で飲むコーヒー豆がもうすぐなくなる。 先ほど気に入ったラテのような、香ばしい味を基準に探せます。… 自宅ではコーヒーマシンですか、ハンドドリップですか？ 実際の会話 · 翻訳・要約 2026-10-11"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-3" aria-label="前の例">←</a><span id="switch-title-1">1 / 3 · 好みを覚える</span><a href="#switch-slide-2" aria-label="次の例">→</a></figcaption>
+      </figure>
+      <figure class="switch-slide" id="switch-slide-2" tabindex="-1" aria-labelledby="switch-title-2">
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ja-2.wide.svg?v=cases2" width="1440" height="940"><img src="assets/ai-switch/ja-2.svg?v=cases2" width="1000" height="1280" loading="lazy" alt="探していた F1 模型を Amazon でも調べます F1 のモデルカーに興味がある。どこで注文できる？ 同じ模型を続けて探します Amazon でももっと探してくれる？ 韓国への配送が表示された Amazon US の商品を見つけました。すべて Bburago の 1:43 模型です。… 最初の1台には McLaren MCL38 をおすすめします。 最終金額は購入手続きで確認が必要です。一部の手順は確認できませんでした。 実際の会話 · 翻訳・要約 2026-10-11"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-1" aria-label="前の例">←</a><span id="switch-title-2">2 / 3 · 調査を続ける</span><a href="#switch-slide-3" aria-label="次の例">→</a></figcaption>
+      </figure>
+      <figure class="switch-slide" id="switch-slide-3" tabindex="-1" aria-labelledby="switch-title-3">
+        <picture><source media="(min-width: 721px)" srcset="assets/ai-switch/ja-3.wide.svg?v=cases2" width="1440" height="940"><img src="assets/ai-switch/ja-3.svg?v=cases2" width="1000" height="1280" loading="lazy" alt="別の AI と、それまでの提案を引き継ぎます ラテ用の豆をおすすめして。香ばしくて甘みのあるものが好き。 Jardin Espresso Blend と Momos Es Chocolat をおすすめします。 /ai claude-code Codex → Claude Code じゃあ、今回は2つ目にしてみたい。 では Momos Es Chocolat ですね。ラテにしたときも香ばしさと甘みを楽しめるか、続けて確認します。 会話の例 · 実際の会話の記録ではありません 説明用の会話例"></picture>
+        <figcaption class="slide-controls"><a href="#switch-slide-2" aria-label="前の例">←</a><span id="switch-title-3">3 / 3 · AI を替える</span><a href="#switch-slide-1" aria-label="次の例">→</a></figcaption>
+      </figure>
+    </div>
+    <figcaption>最初の2例は実際の会話の抜粋です。AI 切替の例は、利用記録をもとに会話の流れを再構成しています。 <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">元の会話と出典</a></figcaption>
   </figure>
-  <div class="swap">
-    <div>
-      <h3>いつでも替えられるもの</h3>
-      <ul class="pills"><li>Codex</li><li>Claude Code</li><li>API キー</li><li>Ollama</li><li>ツールと接続</li></ul>
-    </div>
-    <div>
-      <h3>あなたのもとに残るもの</h3>
-      <ul class="pills solid"><li>あなたについて知ったこと</li><li>やりかけの仕事</li><li>あなたが任せた権限</li><li>実際に実行された記録</li></ul>
-    </div>
-  </div>
 </section>
 
-<section class="band rose" id="remembers" aria-labelledby="remember-title">
+<section class="install" id="install" aria-labelledby="install-title">
   <div class="copy">
-    <h2 id="remember-title">多くを語らなくても、覚えています。</h2>
-    <p>先週話したことが、必要なときに戻ってきます。それぞれの記憶が何にもとづくかも伝えます。保存したことは、どれも取り消せます。</p>
+    <h2 id="install-title">Still を始めましょう</h2>
+    <p>Mac、Linux、Windows（WSL2）で利用できます。ChatGPT・Claude のサブスクリプション、API キー、Ollama のいずれかを接続して始められます。</p>
+  </div>
+  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
+  <p class="note">インストールスクリプトはアドレスでバージョンが固定されています。実行する前に<a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">スクリプトの内容を確認</a>してください。</p>
+  <details class="install-options"><summary>Homebrew・Windows でのインストール</summary><p class="note">Apple シリコンの Mac で Homebrew を使うなら <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>、<code>brew install jongtae/still/agentos</code> のあと <code>agentos start</code> で起動します。Windows では PowerShell で <code>wsl --install</code> を実行して再起動し、Ubuntu を開いてそこにコマンドを貼り付けてください。</p></details>
+  <div class="setup-grid">
+  <ol class="steps">
+    <li>
+      <h3>使いたい AI を接続してください</h3>
+      <p>インストール後、ターミナルで AI を接続します。ChatGPT は Codex、Claude は Claude Code で利用でき、API キーや Ollama も選べます。ログイン済みの AI はあらかじめ選択されます。</p>
+    </li>
+    <li>
+      <h3>Still と会話を始めてください</h3>
+      <p>ターミナルで話しかけるか、ブラウザーで <code>127.0.0.1:8787</code> を開いて会話できます。利用中はターミナルの <code>agentos start</code> を実行したままにしてください。</p>
+    </li>
+    <li>
+      <h3>Telegram でスマートフォンからも話せます</h3>
+      <p>「Telegram をつないで」と言い、@BotFather から受け取ったトークンを非表示の入力欄に貼り付けて、ペアリングリンクで「開始」を押します。</p>
+      <details class="install-options"><summary>Telegram の壁紙を変える（任意）</summary><p class="note">お好みで、トークの背景も Still の雰囲気に。壁紙（<a href="assets/still-wallpaper-presence.jpg" download>Still の姿</a>または<a href="assets/still-wallpaper-plain.jpg" download>無地</a>）を使うなら、Telegram のトーク画面でメニューを開き、<b>壁紙を変更</b>を選んで写真から選んでください。</p></details>
+    </li>
+  </ol>
+  <figure class="setup-preview" aria-labelledby="setup-preview-title">
+  <h3 id="setup-preview-title">最初の設定画面</h3>
+  <div class="terminal-frame"><div class="terminal-bar"><span aria-hidden="true">● ● ●</span><span>Terminal · agentos start</span></div><pre><span class="terminal-logo" role="img" aria-label="Still">   ________________   __
+  / __/_  __/  _/ /  / /
+ _\ \  / / _/ // /__/ /__
+/___/ /_/ /___/____/____/</span>
+
+Still の初期設定をこのターミナルで行います。Enter を押すと既定の選択で進みます。
+
+AI の接続
+お使いのサブスクリプションか API キーのどちらかを接続します。
+
+1) ChatGPT サブスクリプション (Codex)
+2) Claude サブスクリプション (Claude Code)
+3) API キー (OpenAI、Anthropic、互換サーバー、Ollama)
+4) 後でブラウザで接続</pre></div>
+  <figcaption>現在のプログラムの初期設定文言を抜粋して配置したプレビューです。新しい実際のインストール録画ではありません。 <a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/first_run.py">ソースコード</a></figcaption>
+</figure>
+  </div>
+  <p class="note">そのほかは<a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">クイックスタートガイド</a>（英語）にあります。</p>
+</section>
+
+<section class="feature-row memory-row" id="remembers" aria-labelledby="remember-title">
+  <div class="copy">
+    <h2 id="remember-title">会話で伝えた好みを、次の依頼に活かします。</h2>
+    <p>以前伝えた好みや状況を覚えておき、関連する依頼で参考にします。記憶の根拠を確認し、保存した内容を取り消すこともできます。</p>
   </div>
   <div class="visual days" role="group" aria-label="数日あいだをおいた二つの会話">
+    <p class="visual-note">会話の例</p>
     <div class="day">
       <p class="when">月曜日</p>
       <p class="b you">最近、猫がごはんをあまり食べない。どうしたらいい？</p>
@@ -226,29 +187,30 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
 
 
 
-<section class="band sage" aria-labelledby="where-title">
+<section class="feature-row connections-row" aria-labelledby="where-title">
   <div class="copy">
-    <h2 id="where-title">いつも話している場所で。いつも使っているものと。</h2>
+    <h2 id="where-title">使い慣れたアプリで話し、普段使うツールを接続できます。</h2>
   </div>
   <div class="cloud">
     <div>
-      <h3>話せる場所</h3>
+      <h3>Still と話せる場所</h3>
       <ul class="bubbles"><li class="xl">Telegram</li><li>Slack</li><li class="l">ターミナル</li><li>Mattermost</li><li class="l">ブラウザー</li></ul>
     </div>
     <div>
-      <h3>一緒に使えるもの</h3>
+      <h3>作業に接続できるツール</h3>
       <ul class="bubbles"><li class="l">あなたのフォルダー</li><li class="xl">Gmail</li><li>Google カレンダー</li><li>Google ドライブ</li><li class="l">ログインしているサイト</li></ul>
     </div>
   </div>
   <p class="fine">フォルダーは、特に言わない限り読み取り専用です。Gmail の整理は別の権限で、Still がメールを送ることはありません。</p>
 </section>
 
-<section class="band mist" aria-labelledby="wait-title">
+<section class="feature-row work-row" aria-labelledby="wait-title">
   <div class="copy">
-    <h2 id="wait-title">話す間も働き、あなたが決めたところで止まる。</h2>
-    <p>長い作業の前に、計画とどの AI が担当するかを伝えます。その間に別のことを聞いても、途中で直してもかまいません。</p>
+    <h2 id="wait-title">作業中も質問したり、依頼を変更したりできます。</h2>
+    <p>時間のかかる作業を始める前に、計画と担当する AI を伝えます。作業中も別の質問をしたり、進め方を変更したりできます。</p>
   </div>
   <div class="visual thread-live" role="group" aria-label="作業を進めている間の会話">
+    <p class="visual-note">会話の例</p>
     <p class="b you">母の誕生日プレゼントを5千円以下で探して。</p>
     <p class="b still"><span class="ai">Codex</span>毎日使えそうなものを探して、レビューと配達日を確かめてから、3つお見せします。</p>
     <p class="b still waiting" aria-label="作業中"><span class="dots"><i></i><i></i><i></i></span></p>
@@ -256,49 +218,27 @@ c100 -43 182 -106 232 -178 35 -50 106 -236 106 -276 0 -46 -2 -46 -539 -42
     <p class="b still">Thank you です。プレゼント探しはまだ続いています。</p>
   </div>
   <ul class="limits">
-    <li><b>接続したものだけ。</b> 選んだフォルダー・アカウント・ツールだけを使います。</li>
-    <li><b>支払いはあなたを待ちます。</b> カートに入れることと支払うことは別の操作で、すべての支払いにあなたの承認が必要です。</li>
-    <li><b>秘密は外に。</b> パスワードやトークンは、プロンプト、ログ、実行記録に入りません。</li>
+    <li><b>設定した権限の範囲で作業します。</b> フォルダー、アカウント、ツールに設定したアクセス範囲と操作権限に従います。</li>
+    <li><b>支払いのたびに承認が必要です。</b> 商品をカートに入れた後も、支払いには別途あなたの承認が必要です。</li>
+    <li><b>パスワードやトークンを保護します。</b> AI モデルに渡す内容、ログ、実行記録には含めません。</li>
   </ul>
 </section>
 
-<section class="install" id="install" aria-labelledby="install-title">
-  <div class="copy">
-    <h2 id="install-title">今夜、Still を迎えましょう</h2>
-    <p>Mac、Linux、Windows（WSL2）のコンピューターと、いま使っている ChatGPT か Claude のサブスクリプションがあれば十分です。</p>
-  </div>
-  <pre class="command"><code>curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh | sh</code></pre>
-  <p class="note">インストールスクリプトはアドレスでバージョンが固定されています。実行する前に<a href="https://github.com/Jongtae/Still/blob/ebf97d4150be3eb867649a31e79287f05db02886/scripts/install.sh">スクリプトの内容を確認</a>してください。Apple シリコンの Mac で Homebrew を使うなら <code>brew tap jongtae/still https://github.com/Jongtae/Still</code>、<code>brew install jongtae/still/agentos</code> のあと <code>agentos start</code> で起動します。Windows では PowerShell で <code>wsl --install</code> を実行して再起動し、Ubuntu を開いてそこにコマンドを貼り付けてください。</p>
-  <ol class="steps">
-    <li>
-      <h3>AI を選ぶ</h3>
-      <p>セットアップはターミナルで進みます。Codex、Claude Code、API キーから選びます。すでにログインしているものは最初から選ばれています。Still はそのログイン情報を見ません。</p>
-    </li>
-    <li>
-      <h3>あいさつする</h3>
-      <p>そのままターミナルで、または <code>127.0.0.1:8787</code> の Still の画面で話しかけてください。</p>
-    </li>
-    <li>
-      <h3>スマートフォンでも</h3>
-      <p>「Telegram をつないで」と言い、@BotFather から受け取ったトークンを貼り付けて、ペアリングリンクで「開始」を押します。</p>
-      <p class="note">お好みで、トークの背景も Still の雰囲気に。壁紙（<a href="assets/still-wallpaper-presence.jpg" download>Still の姿</a>または<a href="assets/still-wallpaper-plain.jpg" download>無地</a>）を使うなら、Telegram のトーク画面でメニューを開き、<b>壁紙を変更</b>を選んで写真から選んでください。</p>
-    </li>
-  </ol>
-  <p class="note">そのほかは<a href="https://github.com/Jongtae/Still/blob/main/docs/QUICKSTART.md">クイックスタートガイド</a>（英語）にあります。</p>
-</section>
 
-<section class="engineering-entry" aria-labelledby="engineering-title">
+
+<div class="build-grid"><section class="engineering-entry" aria-labelledby="engineering-title">
   <h2 id="engineering-title">Engineering — この設計を選ぶ理由</h2>
-  <p>技術思想、Ontology & Context、Decision Model、Presence、モデル独立性、Owner Authority、Research & Evidence。実装、証拠、残る設計課題を原文につなぎます。</p>
-  <p><a href="engineering/ja.html">Still が継続する仕組み →</a> · <a href="engineering/ja.html#research">Research &amp; Evidence</a></p>
+  <p>記憶や作業を保つ仕組み、AI の判断、利用者の権限を扱う設計を説明します。実装済みの機能、検証した範囲、今後の設計を区別し、元の文書やコードを案内します。</p>
+  <p class="actions"><a class="button" href="engineering/ja.html">設計と実装を読む →</a> · <a href="engineering/ja.html#research">研究と検証資料</a></p>
 </section>
 
-<section class="github" aria-labelledby="github-title">
-  <h2 id="github-title">コードも、作る過程も開かれています。</h2>
+<section class="github" id="contribute" aria-labelledby="github-title">
+  <h2 id="github-title">一緒に Still を作りましょう。</h2>
+  <p>不具合を報告し、アイデアを話し合い、文書やコードを改善できます。まず貢献ガイドをご覧ください。</p>
   <p>Still は AGPL-3.0 のオープンソースです。いまできることとまだ荒削りなところは<a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">製品の現状</a>（英語）にまとめています。現在のバージョンは <span data-release="version">v0.3.0</span> です。</p>
-  <p class="actions"><a class="button" href="https://github.com/Jongtae/Still">GitHub で見る</a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">Discussions で話す</a></p>
+  <p class="actions"><a class="button" href="https://github.com/Jongtae/Still/blob/main/.github/CONTRIBUTING.md">貢献ガイド</a><a class="text-link" href="https://github.com/Jongtae/Still">GitHub →</a><a class="text-link" href="https://github.com/Jongtae/Still/issues">課題を提案</a><a class="text-link" href="https://github.com/Jongtae/Still/discussions">Discussions</a></p>
   <p class="note">使ってみて気に入ったら、GitHub で Star を押してください。次の人が Still を見つける手助けになります。</p>
-</section>
+</section></div>
 
 </main>
 

@@ -3,23 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Still Engineering — Still은 어떻게 이어지는가</title>
-<meta name="description" content="AI가 바뀌어도 이어지는 개인 에이전트의 설계와 근거.">
+<title>Still Engineering — AI를 바꿔도 기억과 작업을 유지하는 설계</title>
+<meta name="description" content="Still이 기억과 작업을 보관하고, AI에 일을 맡기며, 사용자 권한을 지키도록 설계한 이유를 설명합니다.">
 <link rel="alternate" hreflang="en" href="index.html">
 <link rel="alternate" hreflang="ko" href="ko.html">
 <link rel="alternate" hreflang="ja" href="ja.html">
 <link rel="alternate" hreflang="zh-CN" href="zh-CN.html">
-<link rel="stylesheet" href="../assets/engineering.css?v=1">
+<link rel="stylesheet" href="../assets/engineering.css?v=2">
 </head>
 <body class="engineering">
-<a class="skip" href="#main">Still은 어떻게 이어지는가</a>
+<a class="skip" href="#main">AI를 바꿔도 기억과 작업을 유지하는 설계</a>
 <header><a href="../ko.html">Still / 제품</a><nav aria-label="Language"><a href="index.html" lang="en" hreflang="en">English</a> <a href="ko.html" lang="ko" hreflang="ko" aria-current="page">한국어</a> <a href="ja.html" lang="ja" hreflang="ja">日本語</a> <a href="zh-CN.html" lang="zh-CN" hreflang="zh-CN">简体中文</a></nav></header>
 <main id="main">
 <p class="eyebrow">STILL / ENGINEERING</p>
-<h1>Still은 어떻게 이어지는가</h1>
-<p class="intro">AI가 바뀌어도 이어지는 개인 에이전트의 설계와 근거.</p>
-<p class="boundary">구현·검증·설계 방향을 구분합니다. 코드는 구조를, 테스트는 실행한 범위를, 녹화는 선택한 세션을 보여 줍니다. 원문과 다르면 현재 계약이 우선합니다. 연구 문서의 공개가 구현 착수를 뜻하지 않습니다.</p>
-<p>공개 배포본: <a href="https://github.com/Jongtae/Still/releases"><span data-release="version">v0.3.0</span></a> · <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">main / 구현 / 증거</a></p>
+<h1>AI를 바꿔도 기억과 작업을 유지하는 설계</h1>
+<p class="intro">Still이 기억과 작업을 보관하고, AI에 일을 맡기며, 사용자 권한을 지키도록 설계한 이유를 설명합니다.</p>
+<p class="boundary">구현·검증·설계 방향을 구분합니다. 코드는 동작 구조를, 테스트는 시험한 범위를, 사용자 녹화는 해당 세션에서 관찰한 결과를 보여 줍니다. 이 안내와 차이가 있으면 현재 제품 계약 문서를 따릅니다. 연구 문서를 공개했더라도 해당 기능의 구현을 시작했다는 뜻은 아닙니다.</p>
+<p>공개 배포본: <a href="https://github.com/Jongtae/Still/releases"><span data-release="version">v0.3.0</span></a> · <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">최신 코드의 구현·검증 현황</a></p>
 <nav class="topics" aria-label="Engineering"><a href="#philosophy">01 Engineering philosophy</a>
 <a href="#ontology">02 Ontology & Context</a>
 <a href="#decision">03 Decision Model</a>
@@ -29,52 +29,53 @@
 <a href="#research">07 Research & Evidence</a></nav>
 <section id="philosophy" aria-labelledby="philosophy-title">
 <p class="eyebrow">01 / Engineering philosophy</p>
-<h2 id="philosophy-title">관계를 실행 AI 바깥에 보관합니다.</h2>
+<h2 id="philosophy-title">기억과 작업은 Still이 보관하고, AI는 일을 수행합니다.</h2>
 <p><strong>구현 / 증거.</strong> Still은 사용자 상태를 보관하고 사용자가 선택한 AI가 일을 합니다. C15는 재사용을, C16은 AI의 의미 판단과 코드의 정확한 권한·비밀·예산·실행 사실 보장을 규정합니다.</p>
 <p><strong>설계 / 한계.</strong> 이는 개발 원칙입니다. 다섯 평면 아키텍처와 배포 플랫폼은 현재 제공 범위보다 넓으며, 패키지 스키마가 있다는 사실이 동작하는 마켓플레이스를 증명하지 않습니다.</p>
 <details><summary>원문 (3)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/VISION.md">docs/VISION.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/development-constitution.en.md">docs/development-constitution.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/personal-agentos-architecture.en.md">docs/personal-agentos-architecture.en.md</a></li></ul></details>
 </section>
 <section id="ontology" aria-labelledby="ontology-title">
 <p class="eyebrow">02 / Ontology & Context</p>
-<h2 id="ontology-title">무엇을, 누구에게서, 언제까지 아는가?</h2>
+<h2 id="ontology-title">정보의 출처와 유효 기간을 어떻게 다룰까요?</h2>
 <p><strong>구현 / 증거.</strong> CurrentContext와 사용자 모델 모듈은 현재 관찰과 지속 지식을 다룹니다. 맥락 계약은 출처의 보고, 해석, 기한이 있는 가설, 정식 Memory를 구분합니다.</p>
 <p><strong>설계 / 한계.</strong> 역할 온톨로지 연구의 관계·제안·합의·위임은 개념 제안이며 범용 온톨로지 엔진이 구현됐다는 뜻이 아닙니다. 도메인 사실, 전문 역할 렌즈, 위임 범위, 실제 권한을 구분합니다.</p>
 <details><summary>원문 (5)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/personal-agentos-architecture.en.md">docs/personal-agentos-architecture.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/current-context-contract.en.md">docs/current-context-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/role-ontology-and-mandate-2026-10-05.ko.md">docs/research/role-ontology-and-mandate-2026-10-05.ko.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/current_context.py">src/personal_agent/current_context.py</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/owner_model.py">src/personal_agent/owner_model.py</a></li></ul></details>
 </section>
 <section id="decision" aria-labelledby="decision-title">
 <p class="eyebrow">03 / Decision Model</p>
-<h2 id="decision-title">언제 답하고, 묻고, 위임하는가?</h2>
+<h2 id="decision-title">AI는 언제 직접 답하고, 질문하고, 다른 AI에 일을 맡길까요?</h2>
 <p><strong>구현 / 증거.</strong> DecisionEngine은 제공자와 독립된 의미 판단을 제공합니다. 오케스트레이터는 작업 AI·모델·브리프를 선택하고 goal_reached로 관찰 결과를 평가해 제한 안에서 수정합니다. 현재 수정 규칙이 과거 계획 필드보다 우선합니다.</p>
 <p><strong>설계 / 한계.</strong> 판단은 Grant를 만들거나 관찰하지 않은 효과를 검증하거나 unknown을 성공으로 바꿀 수 없습니다. 자격 테스트는 지정 경로의 증거이며 모든 모델의 실사용 품질을 입증하지 않습니다.</p>
 <details><summary>원문 (3)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/decision-layer.en.md">docs/decision-layer.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/decision.py">src/personal_agent/decision.py</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/orchestrator.py">src/personal_agent/orchestrator.py</a></li></ul></details>
 </section>
 <section id="presence" aria-labelledby="presence-title">
 <p class="eyebrow">04 / Presence</p>
-<h2 id="presence-title">일하는 중에도 하나의 관계로 반응합니다.</h2>
+<h2 id="presence-title">작업 중의 질문과 수정은 어떻게 반영할까요?</h2>
 <p><strong>구현 / 증거.</strong> 대화 핸드오프와 오케스트레이션은 사용자 수정을 작업과 후속 계획에 전달합니다. 전문 역할 계약은 구현된 개입 경로와 남은 공백을 기록하고, 제품 상태 문서는 관찰 범위와 의도한 경험을 구분합니다.</p>
 <p><strong>설계 / 한계.</strong> 연속성·하나의 목소리·상황 반응·기억·가용성·대화 복구는 연구의 정의입니다. 진행 중 의미 있는 보고와 역할별 소통에는 계약에 적힌 공백이 남아 있으며, 진행 표시만으로 구현을 입증할 수 없습니다.</p>
 <details><summary>원문 (4)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/presence-experience-contract.en.md">docs/presence-experience-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/professional-roles-and-communication-contract.en.md">docs/professional-roles-and-communication-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/presence-and-settings-ux.ko.md">docs/research/presence-and-settings-ux.ko.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/conversation_handoff.py">src/personal_agent/conversation_handoff.py</a></li></ul></details>
 </section>
 <section id="models" aria-labelledby="models-title">
 <p class="eyebrow">05 / Model independence</p>
-<h2 id="models-title">실행 AI를 바꿔도 관계를 다시 만들지 않습니다.</h2>
+<h2 id="models-title">AI를 바꿔도 기억과 작업 기록을 유지합니다.</h2>
 <p><strong>구현 / 증거.</strong> AI 교체 매니페스트는 2026년 10월 8일 사용자가 제공한 Telegram 세션 하나를 기록합니다. Claude Code와 Codex 전환 뒤 이전 대화를 참조하는 모습을 보여 줍니다. 상태 소유권은 작업 AI와 독립적으로 정의합니다.</p>
 <p><strong>설계 / 한계.</strong> 선택한 응답의 스크린샷 증거이며 계정 효과의 독립 추적이나 배포본의 반복 검증이 아닙니다. 모델마다 도구와 동작이 다를 수 있습니다. 로컬 설치여도 원격 AI에는 해당 요청의 맥락이 전송됩니다.</p>
 <details><summary>원문 (3)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/personal-agentos-architecture.en.md">docs/personal-agentos-architecture.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/manifest.json">docs/assets/readme/ai-switch/manifest.json</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/subscription_engines.py">src/personal_agent/subscription_engines.py</a></li></ul></details>
 </section>
 <section id="authority" aria-labelledby="authority-title">
 <p class="eyebrow">06 / Owner Authority</p>
-<h2 id="authority-title">누가 허용했고, 실제로 무엇이 일어났는가?</h2>
+<h2 id="authority-title">허용한 작업 범위와 실제 실행 결과를 어떻게 확인할까요?</h2>
 <p><strong>구현 / 증거.</strong> 현재 단일 사용자 파일럿은 폴더 범위, 비밀 보호, 결제 건별 승인, 재실행 방지, Memory 권한 경계를 유지합니다. 현행 정보 전송 정책은 작업별 정보 사용 감사를 적용하며, Secretary 계약에 과거 제한의 수정 내역이 있습니다.</p>
 <p><strong>설계 / 한계.</strong> 여섯 사용자 권리는 수용 기준이며 전부 구현됐다는 선언이 아닙니다. 위임·스킬 설치·계정 연결만으로 행동 권한이 생기지 않습니다. 요청·관찰·부분 완료·실패·미확인을 구분해야 합니다.</p>
 <details><summary>원문 (4)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/owner-control-contract.en.md">docs/owner-control-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/secretary-agency-contract.en.md">docs/secretary-agency-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assistant-execution-contract.en.md">docs/assistant-execution-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/development-constitution.en.md">docs/development-constitution.en.md</a></li></ul></details>
 </section>
 <section id="research" aria-labelledby="research-title">
 <p class="eyebrow">07 / Research & Evidence</p>
-<h2 id="research-title">증거가 보여 주는 범위만 읽습니다.</h2>
-<p><strong>구현 / 증거.</strong> 릴리스 매니페스트는 배포본 소스 범위와 로컬 설치 검사를 기록합니다. 제품 상태는 최신 main, 합성 여정, 사용자 녹화를 구분합니다. 데모는 2026년 10월 11일 세션의 편집본이며 사이트 AI 교체 영상에는 별도 출처 기록이 있습니다.</p>
-<p>사이트 영상은 추천에서 끝납니다. 출처 문서는 이후 요청한 교체 작업에서 기존 원두는 제거했지만 새 원두 추가는 실패하고 제한에 도달했다고 기록합니다. 그 실패는 영상에 나오지 않습니다.</p>
+<h2 id="research-title">구현된 기능과 테스트·실사용 결과를 구분해 공개합니다.</h2>
+<p><strong>구현 / 증거.</strong> 릴리스 매니페스트는 배포본 소스 범위와 로컬 설치 검사를 기록합니다. 제품 상태는 최신 main, 합성 여정, 사용자 녹화를 구분합니다. 데모는 2026년 10월 11일 세션의 편집본이며 이전 사이트의 AI 교체 영상에는 별도 출처 기록이 있습니다.</p>
+<p>이전 사이트 영상은 추천에서 끝납니다. 출처 문서는 이후 요청한 교체 작업에서 기존 원두는 제거했지만 새 원두 추가는 실패하고 제한에 도달했다고 기록합니다. 그 실패는 영상에 나오지 않습니다.</p>
 <p><strong>설계 / 한계.</strong> 합성 성공은 실서비스 증거가 아니며 비서 응답은 외부 효과의 독립 검증이 아닙니다. 연구 공개나 편집 검토는 기능을 활성화하지 않습니다. 온톨로지 검토는 한 모델의 순차 역할 검토였으며 독립 전문가·다중 모델 검토가 아닙니다. 이전 비공개 저장소 이슈 링크는 접근이 제한될 수 있지만 공개 원문과 출처 파일은 읽을 수 있습니다.</p>
+<p>홈페이지의 첫 두 사례는 10월 11일 실제 대화 발췌입니다. AI 교체 사례는 10월 12일 사용 기록을 바탕으로 새로 구성한 흐름 예시이며 실제 대화 원문이 아닙니다. <a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/carousel.md">대화 원문과 출처</a></p>
 <details><summary>원문 (7)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">docs/product-status.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/release-manifest.json">docs/release-manifest.json</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/demo/README.md">docs/assets/readme/demo/README.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/clip/README.md">docs/assets/readme/ai-switch/clip/README.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/README.md">docs/research/README.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/role-ontology-reuse-2026-10-05.ko.md">docs/research/role-ontology-reuse-2026-10-05.ko.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/role-ontology-review-cycle-2-2026-10-05.ko.md">docs/research/role-ontology-review-cycle-2-2026-10-05.ko.md</a></li></ul></details>
 </section>
 </main>

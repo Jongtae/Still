@@ -1,0 +1,14 @@
+/* Native scrolling and fragment links keep every control script-free. */
+html:has(.switch-slide:target){scroll-behavior:auto}
+.switch-carousel{margin-inline:0}
+.switch-slides{display:flex;gap:1rem;overflow-x:auto;scroll-snap-type:x mandatory;border-radius:1.25rem;scrollbar-color:#aaa #eee}
+.switch-slides:focus-visible,.switch-carousel a:focus-visible{outline:2px solid #171717;outline-offset:4px}
+.switch-slide{flex:0 0 100%;min-width:0;margin:0;scroll-snap-align:start;scroll-snap-stop:always;scroll-margin-block-start:5rem}
+.switch-slide picture,.switch-slide img{display:block;width:100%;height:auto;border-radius:1.25rem}
+.slide-controls{display:flex;align-items:center;justify-content:flex-end;gap:.8rem;padding:.5rem 0;font-size:.8rem}
+.slide-controls a,.slide-index a{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;border:1px solid #d5d5d5;border-radius:999px;text-decoration:none;padding:.4rem .85rem}
+.slide-controls a:hover,.slide-index a:hover{background:#eee}
+.slide-index{display:flex;flex-wrap:wrap;gap:.5rem 1.5rem;margin:0 0 .75rem}
+.slide-index a{min-height:44px;font-size:.9rem;padding:.35rem 0;border:0;border-radius:0;text-align:center;text-decoration:underline;text-underline-offset:.4em}
+.switch-carousel>figcaption{max-width:56rem;margin-top:.25rem;font-size:.8rem;line-height:1.65;color:#626262}
+@media(max-width:520px){.switch-slides,.switch-slide picture,.switch-slide img{border-radius:1rem}.slide-controls{font-size:.8rem}.slide-index{gap:.35rem}.slide-index a{font-size:.8rem;padding:.5rem .25rem}}
