@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT / 'scripts' / 'dev'))
 import release  # noqa: E402
 
 WORKFLOW = ROOT / '.github' / 'workflows' / 'release.yml'
+VALIDATE = ROOT / '.github' / 'workflows' / 'validate.yml'
 SHA = 'a' * 64
 COMMIT = 'b' * 40
 
@@ -265,6 +266,142 @@ class ReleaseScriptTests(unittest.TestCase):
         with self.assertRaisesRegex(release.ReleaseError, 'sha256'):
             release.formula(self.root, '9.0.0', SHA)
 
+    # #533: a release from a maintenance line maint/X.Y.
+
+    def in_tree(self):
+        return release.project_version(self.root)
+
+    def main_after(self, previous):
+        """Main right after `previous` was recorded: placeholder = its next patch."""
+        following = release._next_patch(previous['version'])
+        data = release.load_manifest(self.root)
+        data['unpublished'] = [release._placeholder(following, previous['version'])]
+        release.save_manifest(self.root, data)
+        release._set_project_version(self.root, following)
+        return following
+
+    def line_source(self, version):
+        """The approved release commit's tree on the line: its prepared entry."""
+        source = self.root / 'line'
+        (source / 'docs').mkdir(parents=True, exist_ok=True)
+        data = release.load_manifest(self.root)
+        data['unpublished'] = [{'version': version, 'tag': None, 'commit': None, 'why_no_commit': 'not merged',
+                                'archive_sha256': None, 'state': 'unpublished', 'why_no_checksum': 'not tagged',
+                                'carries': 'Fixes only.', 'not_claimed': 'No live upgrade was observed.'}]
+        release.save_manifest(source, data)
+        return source
+
+    def snapshot(self):
+        return {name: (self.root / name).read_text(encoding='utf-8')
+                for name in (release.INSTALLER, *release.RELEASE_PROSE)}
+
+    def test_a_maintenance_line_publishes_only_its_own_patches(self):
+        self.prepare(version='9.0.3')
+        self.assertEqual(release.check(self.root, 'maint/9.0'), '9.0.3')
+        for branch in ('maint/9.1', 'maint/8.0'):
+            with self.subTest(branch=branch), self.assertRaisesRegex(release.ReleaseError, 'not a patch'):
+                release.check(self.root, branch)
+
+    def test_only_main_and_maintenance_lines_publish(self):
+        """A preparation branch, or any other ref, is not a release line."""
+        self.prepare(version='9.0.3')
+        for branch in ('release/533-v9.0.3', 'release/9.0', 'maint/9', 'maint/9.0/x', 'feature/9.0'):
+            with self.subTest(branch=branch), self.assertRaisesRegex(release.ReleaseError, 'neither main'):
+                release.check(self.root, branch)
+
+    def test_newest_compares_with_mains_newest_published_release(self):
+        previous = self.publish_previous()
+        major, minor, patch = release.version_key(previous['version'])
+        self.assertTrue(release.newest(self.root, release._next_patch(previous['version'])))
+        self.assertTrue(release.newest(self.root, previous['version']), 'a re-run after register still moves on')
+        older = f'{major}.{minor - 1}.99' if minor else f'{major - 1}.99.99'
+        self.assertFalse(release.newest(self.root, older))
+
+    def test_a_line_record_moves_the_lines_formula_with_it(self):
+        """Codex on #536: the line's formula must name the line's newest release after record."""
+        previous = self.publish_previous()
+        release.formula(self.root, previous['version'], previous['archive_sha256'])
+        patch = self.main_after(previous)
+        self.prepare(version=patch)
+        release.record(self.root, patch, COMMIT, SHA, '2026-11-02', '')
+        text = (self.root / release.FORMULA).read_text(encoding='utf-8')
+        self.assertIn(f'/archive/refs/tags/v{patch}.tar.gz"', text)
+        self.assertIn(f'sha256 "{SHA}"', text)
+
+    def test_record_on_main_leaves_the_formula_the_formula_pr_merged(self):
+        self.prepare()
+        release.formula(self.root, '9.0.0', SHA)
+        before = (self.root / release.FORMULA).read_text(encoding='utf-8')
+        release.record(self.root, '9.0.0', COMMIT, SHA, '2026-11-02', 'formula-pr')
+        self.assertEqual((self.root / release.FORMULA).read_text(encoding='utf-8'), before)
+
+    def test_register_of_the_newest_patch_moves_main_past_it(self):
+        """The v0.3.1 case: main still carries the placeholder the line now publishes."""
+        previous = self.publish_previous()
+        patch = self.main_after(previous)
+        source = self.line_source(patch)
+        in_tree = release.register(self.root, source, patch, COMMIT, SHA, '2026-11-02', 'formula-pr')
+        following = release._next_patch(patch)
+        self.assertEqual((in_tree, self.in_tree()), (following, following))
+        data = release.load_manifest(self.root)
+        self.assertEqual(release.newest_published(data)['version'], patch)
+        self.assertEqual(release.newest_published(data)['not_claimed'], 'No live upgrade was observed.')
+        self.assertEqual([row['version'] for row in data['unpublished']], [following])
+        installer = (self.root / release.INSTALLER).read_text(encoding='utf-8')
+        self.assertIn(f'AGENTOS_VERSION="{patch}"', installer)
+        self.assertIn(f'AGENTOS_ARCHIVE_SHA256="{SHA}"', installer)
+        for name in release.RELEASE_PROSE:
+            with self.subTest(name=name):
+                self.assertIn(f'v{patch}', (self.root / name).read_text(encoding='utf-8'))
+
+    def test_register_keeps_a_main_already_ahead_of_the_patch(self):
+        previous = self.publish_previous()
+        patch = release._next_patch(previous['version'])
+        major, minor, _ = release.version_key(previous['version'])
+        self.prepare(version=f'{major}.{minor + 1}.0')
+        release.register(self.root, self.line_source(patch), patch, COMMIT, SHA, '2026-11-02', 'formula-pr')
+        self.assertEqual(self.in_tree(), f'{major}.{minor + 1}.0')
+        data = release.load_manifest(self.root)
+        self.assertEqual([row['version'] for row in data['unpublished']], [f'{major}.{minor + 1}.0'])
+        self.assertIn('not_claimed', data['unpublished'][0], 'the prepared next minor keeps its boundary')
+        self.assertIn(f'AGENTOS_VERSION="{patch}"', (self.root / release.INSTALLER).read_text(encoding='utf-8'))
+
+    def test_a_patch_of_an_older_minor_never_moves_main_backwards(self):
+        previous = self.publish_previous()
+        patch = release._next_patch(previous['version'])
+        self.prepare(version='9.0.0')
+        release.record(self.root, '9.0.0', COMMIT, SHA, '2026-11-02', 'formula-pr')
+        before = self.snapshot()
+        in_tree = release.register(self.root, self.line_source(patch), patch, 'c' * 40, 'e' * 64,
+                                   '2026-11-03', '')
+        self.assertEqual((in_tree, self.in_tree()), ('9.0.1', '9.0.1'))
+        self.assertEqual(self.snapshot(), before, 'installer or release-status prose moved to an older release')
+        data = release.load_manifest(self.root)
+        versions = [row['version'] for row in data['published']]
+        self.assertEqual(versions, sorted(versions, key=release.version_key))
+        self.assertEqual(release.newest_published(data)['version'], '9.0.0')
+        row = next(row for row in data['published'] if row['version'] == patch)
+        self.assertEqual((row['commit'], row['archive_sha256']), ('c' * 40, 'e' * 64))
+        self.assertIn('left on the newer release', row['observed'])
+        self.assertEqual([row['version'] for row in data['unpublished']], ['9.0.1'])
+
+    def test_register_refuses_a_release_main_already_records(self):
+        previous = self.publish_previous()
+        self.main_after(previous)
+        source = self.line_source(previous['version'])
+        with self.assertRaisesRegex(release.ReleaseError, 'already records'):
+            release.register(self.root, source, previous['version'], COMMIT, SHA, '2026-11-02', '')
+
+    def test_register_refuses_values_that_are_not_measurements_and_changes_nothing(self):
+        previous = self.publish_previous()
+        patch = self.main_after(previous)
+        source = self.line_source(patch)
+        before = (self.snapshot(), (self.root / release.MANIFEST).read_text(encoding='utf-8'))
+        for commit, sha in (('main', SHA), (COMMIT, 'latest')):
+            with self.subTest(commit=commit, sha=sha), self.assertRaises(release.ReleaseError):
+                release.register(self.root, source, patch, commit, sha, '2026-11-02', '')
+        self.assertEqual((self.snapshot(), (self.root / release.MANIFEST).read_text(encoding='utf-8')), before)
+
     def test_pin_moves_every_readme_installer_url(self):
         release.pin(self.root, COMMIT)
         for name in release.READMES:
@@ -278,9 +415,54 @@ class ReleaseWorkflowShapeTests(unittest.TestCase):
         self.workflow = yaml.safe_load(WORKFLOW.read_text(encoding='utf-8'))
         self.jobs = self.workflow['jobs']
 
-    def test_it_runs_only_from_main(self):
-        self.assertEqual(self.workflow[True], {'push': {'branches': ['main'],
+    def step(self, needle):
+        return next(step for step in self.jobs['publish']['steps'] if needle in step.get('run', ''))
+
+    def test_it_runs_only_from_main_and_maintenance_lines(self):
+        """#533: a preparation branch release/<issue>-vX.Y.Z never matches."""
+        self.assertEqual(self.workflow[True], {'push': {'branches': ['main', 'maint/*'],
                                                         'paths': ['pyproject.toml', 'docs/release-manifest.json']}})
+        source = next(step for step in self.jobs['prepare']['steps'] if step.get('id') == 'source')['run']
+        self.assertIn('.base.ref == env.GITHUB_REF_NAME', source)
+        self.assertNotIn('"main"', source)
+        check = next(step for step in self.jobs['prepare']['steps'] if step.get('id') == 'check')['run']
+        self.assertIn('release.py check --branch "$GITHUB_REF_NAME"', check)
+
+    def test_only_the_newest_release_moves_what_owners_install(self):
+        """#533: a patch of an older minor leaves the formula, pins, site and "Latest" alone."""
+        steps = self.jobs['publish']['steps']
+        newest = next(i for i, step in enumerate(steps) if step.get('id') == 'newest')
+        create = next(i for i, step in enumerate(steps) if 'gh release create' in step.get('run', ''))
+        self.assertLess(newest, create)
+        self.assertIn('--root "$tree" newest', steps[newest]['run'])
+        self.assertIn('--latest="$NEWEST"', steps[create]['run'])
+        self.assertEqual(steps[create]['env']['NEWEST'], '${{ steps.newest.outputs.newest }}')
+        gated = [step for step in steps if step.get('if') == "steps.newest.outputs.newest == 'true'"]
+        self.assertEqual([step.get('id') or step['name'] for step in gated],
+                         ['formula', 'Pin the README installer to the commit that installs this release',
+                          'Deploy the site with the new release'])
+
+    def test_a_line_records_on_itself_and_registers_on_main(self):
+        record = next(step for step in self.jobs['publish']['steps'] if step.get('id') == 'record')
+        self.assertIn('git worktree add -B "$branch" "$tree" "origin/$BRANCH"', record['run'])
+        self.assertIn('--base "$BRANCH"', record['run'])
+        self.assertEqual(self.jobs['publish']['env']['BRANCH'], '${{ github.ref_name }}')
+        register = next(step for step in self.jobs['publish']['steps'] if step.get('id') == 'register')
+        self.assertEqual(register['if'], "env.BRANCH != 'main'")
+        self.assertIn('git worktree add -B "$branch" "$tree" origin/main', register['run'])
+        self.assertIn('--base main', register['run'])
+        self.assertIn('register --source "$GITHUB_WORKSPACE"', register['run'])
+        pin = self.step('release.py --root "$tree" pin')
+        self.assertEqual(pin['env']['RECORDED'],
+                         '${{ steps.register.outputs.commit || steps.record.outputs.commit }}')
+
+    def test_validate_keeps_every_release_line_commits_run(self):
+        """#292 on maint/* too: a later merge must not cancel the release commit's validate."""
+        validate = yaml.safe_load(VALIDATE.read_text(encoding='utf-8'))
+        self.assertEqual(validate[True]['push']['branches'], ['main', 'maint/*'])
+        self.assertEqual(validate[True]['pull_request']['branches'], ['main', 'maint/*'])
+        self.assertIn("github.event_name == 'push' && github.sha", validate['concurrency']['group'])
+        self.assertEqual(validate['concurrency']['cancel-in-progress'], "${{ github.event_name != 'push' }}")
     def test_the_read_only_job_holds_no_secret_and_no_write_permission(self):
         prepare = json.dumps(self.jobs['prepare'])
         self.assertNotIn('secrets.', prepare)
@@ -295,7 +477,7 @@ class ReleaseWorkflowShapeTests(unittest.TestCase):
         self.assertEqual(checkout['with']['ref'], '${{ github.sha }}')
         for step in steps:
             run = step.get('run', '')
-            if 'origin/main' in run:
+            if 'origin/' in run:
                 with self.subTest(step=step.get('name')):
                     self.assertIn('worktree add', run)
                     self.assertIn('--root "$tree"', run)
@@ -423,7 +605,7 @@ class ReleaseWorkflowShapeTests(unittest.TestCase):
     def test_every_workflow_pr_merges_only_after_its_checks_pass(self):
         """#79: auto-merge needs branch protection on main, so no step relies on it."""
         steps = [step for step in self.jobs['publish']['steps'] if 'gh pr create' in step.get('run', '')]
-        self.assertEqual(len(steps), 3)
+        self.assertEqual(len(steps), 4)
         for step in steps:
             run = step['run']
             with self.subTest(step=step.get('name')):
