@@ -151,6 +151,11 @@ class OneActionSource(_Store):
         self.assertIn("call browser_sign_in with the site's address", BROWSER_SIGN_IN_NOTE)
         self.assertIn('from their phone where that is set up', BROWSER_SIGN_IN_DESCRIPTION)
         self.assertIn('Never tell the person to sign in in a browser yourself', BROWSER_SIGN_IN_DESCRIPTION)
+        # #565 (live 2026-11-01): a signed-out account page went straight to a sign-in request past the
+        # official API the worker's own search had found; the tool now defers to the route rule.
+        self.assertIn('weigh the candidate routes first', BROWSER_SIGN_IN_DESCRIPTION)
+        self.assertIn('which routes you found and why this one', BROWSER_SIGN_IN_DESCRIPTION)
+        self.assertNotIn('home page', BROWSER_SIGN_IN_DESCRIPTION)
         for text in (BROWSER_SIGN_IN_NOTE, BROWSER_SIGN_IN_DESCRIPTION):
             for scripted in ('cart', 'order', 'saved item', 'mall', 'shop'):
                 self.assertNotIn(scripted, text, 'the capability, not a task (C16)')

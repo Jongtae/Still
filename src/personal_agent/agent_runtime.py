@@ -297,9 +297,13 @@ BROWSER_SIGN_IN_NOTE=(' Whenever a page you open or reach shows a sign-in form, 
                       'browser_sign_in with the site\'s address instead of telling the owner to sign in somewhere. Never type '
                       'a password yourself.')
 #: #953: the model-facing text of ``browser_sign_in`` (generic: no site, provider or category is named).
-BROWSER_SIGN_IN_DESCRIPTION=('When the request needs the owner\'s own account on a site and you are not signed in there (a page shows '
+BROWSER_SIGN_IN_DESCRIPTION=('A sign-in on the site is one route to the owner\'s own account, not the default (#565): when the '
+                             'service is not connected, weigh the candidate routes first (an official API or integration may '
+                             'serve the request with less owner effort and more reliably) and call this only when signing in '
+                             'on the site is the route you chose; your reply then says which routes you found and why this one. '
+                             'When the request needs the owner\'s own account on a site and you are not signed in there (a page shows '
                              'you are signed out or asks you to sign in), and its sign-in page offers no way to continue with an '
-                             'account the owner is already signed in to, call this with the site\'s address (its home page or '
+                             'account the owner is already signed in to, call this with the site\'s address (its sign-in page or '
                              'the page you need) instead of telling the person to sign in somewhere: Still asks them to sign '
                              'in (on this Mac, and from their phone where that is set up) and continues the request '
                              'afterwards, so end your turn after calling it and say the sign-in was requested, unless the '
