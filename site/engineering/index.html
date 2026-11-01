@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Still Engineering — How Still keeps continuity</title>
-<meta name="description" content="The decisions behind a personal agent that outlasts its workers.">
+<title>Still Engineering — How Still keeps memory and work across AI changes</title>
+<meta name="description" content="Why Still is designed to keep memory and work, delegate tasks to AI, and enforce user permissions.">
 <link rel="alternate" hreflang="en" href="index.html">
 <link rel="alternate" hreflang="ko" href="ko.html">
 <link rel="alternate" hreflang="ja" href="ja.html">
@@ -12,12 +12,12 @@
 <link rel="stylesheet" href="../assets/engineering.css?v=2">
 </head>
 <body class="engineering">
-<a class="skip" href="#main">How Still keeps continuity</a>
+<a class="skip" href="#main">How Still keeps memory and work across AI changes</a>
 <header><a href="../index.html">Still / Product</a><nav aria-label="Language"><a href="index.html" lang="en" hreflang="en" aria-current="page">English</a> <a href="ko.html" lang="ko" hreflang="ko">한국어</a> <a href="ja.html" lang="ja" hreflang="ja">日本語</a> <a href="zh-CN.html" lang="zh-CN" hreflang="zh-CN">简体中文</a></nav></header>
 <main id="main">
 <p class="eyebrow">STILL / ENGINEERING</p>
-<h1>How Still keeps continuity</h1>
-<p class="intro">The decisions behind a personal agent that outlasts its workers.</p>
+<h1>How Still keeps memory and work across AI changes</h1>
+<p class="intro">Why Still is designed to keep memory and work, delegate tasks to AI, and enforce user permissions.</p>
 <p class="boundary">Implementation, evidence and direction are separate. Source code shows mechanisms; tests show only their exercised scope; owner recordings show selected sessions. Canonical contracts take precedence over this guide. Research does not activate implementation.</p>
 <p>Published release: <a href="https://github.com/Jongtae/Still/releases"><span data-release="version">v0.3.0</span></a> · <a href="https://github.com/Jongtae/Still/blob/main/docs/product-status.en.md">main / Implementation / evidence</a></p>
 <nav class="topics" aria-label="Engineering"><a href="#philosophy">01 Engineering philosophy</a>
@@ -29,14 +29,14 @@
 <a href="#research">07 Research & Evidence</a></nav>
 <section id="philosophy" aria-labelledby="philosophy-title">
 <p class="eyebrow">01 / Engineering philosophy</p>
-<h2 id="philosophy-title">Keep the relationship outside the worker.</h2>
+<h2 id="philosophy-title">Still keeps memory and work; the AI carries out tasks.</h2>
 <p><strong>Implementation / evidence.</strong> Still keeps owner state while the chosen AI does the work. C15 favours reuse; C16 assigns semantic judgment to AI and exact authority, secret, budget and effect invariants to code.</p>
 <p><strong>Design / limits.</strong> These are engineering commitments. The five-plane architecture and distribution platform are broader than the shipped slice; package schemas do not establish a working marketplace.</p>
 <details><summary>Sources (3)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/VISION.md">docs/VISION.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/development-constitution.en.md">docs/development-constitution.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/personal-agentos-architecture.en.md">docs/personal-agentos-architecture.en.md</a></li></ul></details>
 </section>
 <section id="ontology" aria-labelledby="ontology-title">
 <p class="eyebrow">02 / Ontology & Context</p>
-<h2 id="ontology-title">What is known, from whom, and for how long?</h2>
+<h2 id="ontology-title">How does Still track where information came from and how long it applies?</h2>
 <p><strong>Implementation / evidence.</strong> CurrentContext and owner-model modules represent current observations and durable knowledge. The context contract distinguishes source reports, interpretations, time-limited hypotheses and canonical Memory; they are not interchangeable facts.</p>
 <p><strong>Design / limits.</strong> The role-ontology research explores relationships, offers, agreements and mandates. It is a concept proposal, not a universal ontology engine. Domain facts, professional lenses, mandate and enforced authority stay distinct.</p>
 <details><summary>Sources (5)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/personal-agentos-architecture.en.md">docs/personal-agentos-architecture.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/current-context-contract.en.md">docs/current-context-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/role-ontology-and-mandate-2026-10-05.ko.md">docs/research/role-ontology-and-mandate-2026-10-05.ko.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/current_context.py">src/personal_agent/current_context.py</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/owner_model.py">src/personal_agent/owner_model.py</a></li></ul></details>
@@ -50,28 +50,28 @@
 </section>
 <section id="presence" aria-labelledby="presence-title">
 <p class="eyebrow">04 / Presence</p>
-<h2 id="presence-title">One relationship, responsive while work continues.</h2>
+<h2 id="presence-title">How should Still handle questions and corrections during a task?</h2>
 <p><strong>Implementation / evidence.</strong> Conversation handoff and orchestration carry owner corrections into work and later plans. The professional-roles contract inventories delivered steering paths and remaining gaps. The product-status page keeps observed support separate from intended experience.</p>
 <p><strong>Design / limits.</strong> Continuity, one voice, responsiveness, memory, availability and conversational recovery are the research definition. Full foreground relevance reporting and cross-role communication remain bounded by the documented gaps; a progress animation does not prove them.</p>
 <details><summary>Sources (4)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/presence-experience-contract.en.md">docs/presence-experience-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/professional-roles-and-communication-contract.en.md">docs/professional-roles-and-communication-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/research/presence-and-settings-ux.ko.md">docs/research/presence-and-settings-ux.ko.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/conversation_handoff.py">src/personal_agent/conversation_handoff.py</a></li></ul></details>
 </section>
 <section id="models" aria-labelledby="models-title">
 <p class="eyebrow">05 / Model independence</p>
-<h2 id="models-title">Change the engine without rebuilding the relationship.</h2>
+<h2 id="models-title">Keep memory and work records when you change AI.</h2>
 <p><strong>Implementation / evidence.</strong> The AI-switch manifest records one owner-supplied Telegram session on 8 October 2026. It shows switching between Claude Code and Codex with prior conversation references. State ownership is defined independently of workers.</p>
 <p><strong>Design / limits.</strong> This is screenshot evidence of selected replies, not an independent account trace or a release-specific repeatability test. Models may differ in tools and behavior. Local installation still sends selected context to a configured remote AI.</p>
 <details><summary>Sources (3)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/personal-agentos-architecture.en.md">docs/personal-agentos-architecture.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/manifest.json">docs/assets/readme/ai-switch/manifest.json</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/src/personal_agent/subscription_engines.py">src/personal_agent/subscription_engines.py</a></li></ul></details>
 </section>
 <section id="authority" aria-labelledby="authority-title">
 <p class="eyebrow">06 / Owner Authority</p>
-<h2 id="authority-title">Who may act, and what actually happened?</h2>
+<h2 id="authority-title">How can you check permitted actions and what actually ran?</h2>
 <p><strong>Implementation / evidence.</strong> The current single-owner pilot keeps folder scope, secrets, per-action payment approval, no replay and Memory authority boundaries. Its current egress policy uses a per-Work information-use audit; the Secretary contract records amendments to older gates.</p>
 <p><strong>Design / limits.</strong> The six owner rights are acceptance requirements, not a blanket enforcement claim. A mandate, installed skill or connected account never grants an action by itself. Requested, observed, partial, failed and unknown outcomes must remain distinct.</p>
 <details><summary>Sources (4)</summary><ul><li><a href="https://github.com/Jongtae/Still/blob/main/docs/owner-control-contract.en.md">docs/owner-control-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/secretary-agency-contract.en.md">docs/secretary-agency-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/assistant-execution-contract.en.md">docs/assistant-execution-contract.en.md</a></li><li><a href="https://github.com/Jongtae/Still/blob/main/docs/development-constitution.en.md">docs/development-constitution.en.md</a></li></ul></details>
 </section>
 <section id="research" aria-labelledby="research-title">
 <p class="eyebrow">07 / Research & Evidence</p>
-<h2 id="research-title">Read the evidence at its actual scope.</h2>
+<h2 id="research-title">Separate implemented features from test and real-use results.</h2>
 <p><strong>Implementation / evidence.</strong> The release manifest records published-build coverage and installed smoke checks. Product status distinguishes newer main, synthetic journeys and owner recordings. The demo was edited from 11 October 2026 sessions; the archived AI-switch clip has its own provenance.</p>
 <p>The former site clip stops after a recommendation. Its provenance records that the subsequent requested cart swap removed the old beans but failed to add the replacement and hit a limit; that failure is outside the clip.</p>
 <p><strong>Design / limits.</strong> Synthetic success is not live-service proof; a recorded assistant reply is not independent effect verification. Research and editorial reviews do not activate runtime features. The preserved ontology review was one model in sequential roles, not independent expert or multi-model review. Private predecessor issue links may be inaccessible; public manuscript and provenance files remain readable.</p>
