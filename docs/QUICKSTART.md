@@ -292,7 +292,7 @@ agentos family add spouse --display-name "아내 비서"
 
 Either way:
 - creates and starts the instance;
-- opens a temporary HTTPS link through your installed `ngrok` (about 30 minutes);
+- opens a temporary HTTPS link (about 30 minutes): through your `ngrok` when it is installed and signed in, otherwise through a Cloudflare quick tunnel, which needs no account (Still downloads a pinned, checksum-verified `cloudflared` the first time unless one is installed);
 - sends the link to you on Telegram so you can forward it.
 
 The family member opens the link on their phone:

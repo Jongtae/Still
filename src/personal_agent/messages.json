@@ -3521,11 +3521,11 @@
   "ja": "スマートフォンで {label} を設定するリンクです。最初に開いた 1 台のみ使え、約 {minutes} 分後に閉じます。途中で画面を閉じた場合は新しいリンクを依頼してください。\n{link}",
   "zh": "使用此链接在手机上设置 {label}。仅首台打开链接的手机可用，约 {minutes} 分钟后关闭。若中途关闭页面，请请求新链接。\n{link}"
  },
- "phone_input.no_ngrok": {
-  "ko": "휴대폰 링크를 만들 ngrok이 이 Mac에 없어요. Mac에서 설정해 주세요.",
-  "en": "ngrok is not installed on this Mac, so a phone link cannot be created. Set up on the Mac.",
-  "ja": "この Mac に ngrok がないため、スマートフォン用リンクを作れません。Mac で設定してください。",
-  "zh": "此 Mac 未安装 ngrok，无法创建手机链接。请在 Mac 上设置。"
+ "phone_input.no_tunnel": {
+  "ko": "이 Mac에서는 휴대폰 링크를 만들 수 없어요(ngrok도 cloudflared도 없어요). Mac에서 설정해 주세요.",
+  "en": "This Mac can't make a phone link (it has neither ngrok nor cloudflared). Set up on the Mac.",
+  "ja": "この Mac ではスマートフォン用リンクを作れません(ngrok も cloudflared もありません)。Mac で設定してください。",
+  "zh": "这台 Mac 无法创建手机链接(既没有 ngrok 也没有 cloudflared)。请在 Mac 上设置。"
  },
  "phone_input.no_port": {
   "ko": "이 Mac의 Still 주소를 아직 알 수 없어 휴대폰 링크를 만들지 못했어요.",
@@ -6803,11 +6803,11 @@
   "ja": "Telegram から対応していない形式の写真を受け取りました。",
   "zh": "从 Telegram 收到了不支持的照片格式。"
  },
- "remote_login.no_ngrok": {
-  "ko": "휴대폰에서 로그인할 임시 링크를 만들 ngrok이 이 Mac에 없어요. Mac의 로그인 창에서 로그인해 주세요.",
-  "en": "This Mac doesn't have ngrok, which is needed to make a temporary link for signing in from your phone. Please sign in in the Mac's sign-in window.",
-  "ja": "スマートフォンからログインするための一時リンクを作る ngrok がこの Mac にありません。Mac のログイン画面でログインしてください。",
-  "zh": "这台 Mac 上没有用来创建手机登录临时链接的 ngrok。请在 Mac 的登录窗口中登录。"
+ "remote_login.no_tunnel": {
+  "ko": "이 Mac에서는 휴대폰에서 로그인할 임시 링크를 만들 수 없어요(ngrok도 cloudflared도 없어요). Mac의 로그인 창에서 로그인해 주세요.",
+  "en": "This Mac can't make a temporary link for signing in from your phone (it has neither ngrok nor cloudflared). Please sign in in the Mac's sign-in window.",
+  "ja": "この Mac ではスマートフォンからログインするための一時リンクを作れません(ngrok も cloudflared もありません)。Mac のログイン画面でログインしてください。",
+  "zh": "这台 Mac 无法创建手机登录的临时链接(既没有 ngrok 也没有 cloudflared)。请在 Mac 的登录窗口中登录。"
  },
  "remote_login.no_local_address": {
   "ko": "이 Mac의 Still 주소를 아직 알 수 없어 휴대폰 로그인 링크를 만들지 못했어요. Mac의 로그인 창에서 로그인해 주세요.",

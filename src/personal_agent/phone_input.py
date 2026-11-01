@@ -1,7 +1,8 @@
 """A one-time phone page for inputs only a page can safely take (PHONE-INPUT-01 #1213).
 
 The owner who is not at the Mac asks in conversation, confirms the draft, and
-gets a temporary HTTPS link (ngrok, as the remote login's, #939, and the family
+gets a temporary HTTPS link (``family_setup.start_tunnel``: ngrok when installed,
+else a Cloudflare quick tunnel, #523; as the remote login's, #939, and the family
 setup's, #897) in the paired Telegram chat.  The page does one of two things:
 
 * ``google-client``: take the owner's own Google "Desktop app" client JSON
@@ -51,7 +52,7 @@ ISSUED_KEPT = 8
 DONE_DELAY_SECONDS = 0.3
 
 LINK_TEXT = msg('phone_input.link')
-NO_NGROK_TEXT = msg('phone_input.no_ngrok')
+NO_TUNNEL_TEXT = msg('phone_input.no_tunnel')
 NO_PORT_TEXT = msg('phone_input.no_port')
 BUSY_TEXT = msg('phone_input.busy')
 NOT_PAIRED_TEXT = msg('phone_input.not_paired')
@@ -106,10 +107,10 @@ class PhoneInput:
             raise PhoneInputError(str(exc)) from None
         except FileNotFoundError:
             # #520: the owner's words, not "[Errno 2] No such file or directory: 'ngrok'".
-            raise PhoneInputError(NO_NGROK_TEXT) from None
+            raise PhoneInputError(NO_TUNNEL_TEXT) from None
         except (OSError, RuntimeError) as exc:
             raise PhoneInputError(TUNNEL_FAILED_TEXT + ' ' + str(exc)) from None
-        # #208 review: work mode switched on, or the session ended, while ngrok was starting: the
+        # #208 review: work mode switched on, or the session ended, while the tunnel was starting: the
         # switch's ``finish`` may already have run and found no process, so this end stops it.
         if work_mode.active(self._store) or self._ended.is_set():
             self._stop_unpublished_tunnel()

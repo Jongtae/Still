@@ -375,6 +375,7 @@ class PhoneSignInLines(unittest.TestCase):
                 case = harness(self, local_case.HandoffTestCase, owner)
                 lang = lang_of(owner)
                 with mock.patch('personal_agent.subscription_engines.find_cli', return_value=None), \
+                        mock.patch('personal_agent.quick_tunnel.pin', return_value=None), \
                         self.assertRaises(remote_login.RemoteLoginError) as no_ngrok:
                     case.service.start_remote_login('window-1', 'shop.test', lambda reason: None, chat_id=local_case.CHAT)
                 case.service.remote_login_popen = lambda *args, **kwargs: None
@@ -382,7 +383,7 @@ class PhoneSignInLines(unittest.TestCase):
                 with self.assertRaises(remote_login.RemoteLoginError) as no_port:
                     case.service.start_remote_login('window-1', 'shop.test', lambda reason: None, chat_id=local_case.CHAT)
                 # As the in-flow and Settings starts tell the owner (``_notify_owner(str(exc))``).
-                for error, message_id in ((no_ngrok, 'remote_login.no_ngrok'), (no_port, 'remote_login.no_local_address')):
+                for error, message_id in ((no_ngrok, 'remote_login.no_tunnel'), (no_port, 'remote_login.no_local_address')):
                     self.assertTrue(case.service._notify_owner(local_case.OWNER, str(error.exception)))
                     self.assertEqual(case.sent[-1], msg(message_id, lang))
 

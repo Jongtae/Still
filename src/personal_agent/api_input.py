@@ -221,7 +221,7 @@ def start(service, draft):
             try:
                 session.start(service.local_server_port)
             except phone_input.PhoneInputError as exc:
-                # #520: no phone link (ngrok missing or refusing): the same one-time page on this Mac, and why.
+                # #520: no phone link (no tunnel tool, or it refused): the same one-time page on this Mac, and why.
                 session.start_local(service.local_server_port)
                 return msg('api_input.phone_link_unavailable', reason=str(exc), link=session.link)
             service.telegram.call('sendMessage', {'chat_id': cfg['user_id'],
