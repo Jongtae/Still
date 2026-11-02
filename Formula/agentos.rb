@@ -9,6 +9,7 @@ class Agentos < Formula
   version_scheme 1
   depends_on arch: :arm64
   depends_on "python@3.13"
+  depends_on "node"
 
   def install
     system Formula["python@3.13"].opt_bin/"python3.13", "-m", "venv", libexec

@@ -43,6 +43,10 @@
 # partway. Homebrew refuses it before it starts; Intel Macs use the one-line
 # installer, which brings its own Python through uv.
 #
+# `depends_on "node"` (#593): code runs (`code_run`) need Node.js 18 or newer for
+# the pinned sandbox runtime. Homebrew's bottle is found on the host; installs
+# without it get the pinned official release that `node_runtime` downloads.
+#
 # See docs/release.en.md for the full procedure.
 
 class Agentos < Formula
@@ -53,6 +57,7 @@ class Agentos < Formula
   version_scheme 1
   depends_on arch: :arm64
   depends_on "python@3.13"
+  depends_on "node"
 
   def install
     system Formula["python@3.13"].opt_bin/"python3.13", "-m", "venv", libexec

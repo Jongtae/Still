@@ -45,7 +45,7 @@ Design and threat model for phase 2 of [#1380](https://github.com/Jongtae/agento
   - Caveat: Apple's `/usr/bin/python3` 3.9 rejected the terminating CA, so the runner uses a modern interpreter.
 - **Maintenance/security/supply chain:** npm package with 4 runtime dependencies (`zod`, `commander`, `node-forge`, `@pondwader/socks5-server`). Install it from a committed lockfile with integrity hashes using `npm ci --ignore-scripts`. Record the version and digest in Evidence.
 - **Licence:** Apache-2.0 is compatible with AGPL-3.0-only as an unmodified dependency.
-- **Runtime fit:** needs Node ≥ 18 on the host. When Node is missing the capability is reported as unavailable, never faked.
+- **Runtime fit:** needs Node ≥ 18. A Node ≥ 18 on the host is used as is (the Homebrew formula depends on `node`, #593). Otherwise Still downloads the pinned official Node.js release from nodejs.org into its own tool directory on the first run (`node_runtime`: archive and `bin/node` SHA-256 pinned, only node and npm extracted, digest rechecked before use). Only on a platform without a pin is the capability reported as unavailable, never faked.
 - **Decision: Adapt.** sandbox-runtime runs behind a thin Still runner. Still owns policy, secrets, approval and Evidence.
 - **Rejected:** hand-written Seatbelt profiles and a proxy (Build without an unmet contract); Docker (owner burden); one more fixed API shape (the treadmill).
 

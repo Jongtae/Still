@@ -154,11 +154,51 @@ class Failures(unittest.TestCase):
         self.assertEqual(caught.exception.code, 'code_run_interrupted')
         self.assertTrue(process.terminated)
 
-    def test_without_node_the_capability_is_unavailable(self):
-        store = types.SimpleNamespace(root=tempfile.mkdtemp())
-        with mock.patch.object(code_run, 'find_node', return_value=None):
-            run = CodeRunner(store, 'work-1')
+    def test_without_node_or_a_pin_the_capability_is_unavailable(self):
+        store = types.SimpleNamespace(root=tempfile.mkdtemp(), config=lambda key, default=None: default)
+        with mock.patch.object(code_run, 'find_node', return_value=None), \
+                mock.patch.object(code_run.node_runtime, 'pin', return_value=None):
+            run = CodeRunner(store, 'work-1', provide_node=lambda directory: self.fail('nothing to download'))
             self.assertFalse(run.available())
+            with self.assertRaises(CodeRunError) as caught:
+                run.run({'code': 'print(1)'})
+        self.assertEqual(caught.exception.code, 'code_run_unavailable')
+
+    def test_a_host_without_node_still_runs_code_on_the_pinned_node(self):
+        """#593 (live 2026-11-02): a new Mac without Homebrew Node lost code_run silently.  Where a pin exists the
+        capability stays offered, and the first run gets the pinned Node into Still's own tool directory."""
+        store = types.SimpleNamespace(root=tempfile.mkdtemp(), config=lambda key, default=None: default)
+        provided, installed = [], []
+
+        def provide(directory):
+            provided.append(directory)
+            return '/still/tools/node-v26/bin/node'
+
+        def install(store, node):
+            installed.append(node)
+            return store.root
+
+        with mock.patch.object(code_run, 'find_node', return_value=None), \
+                mock.patch.object(code_run.node_runtime, 'pin', return_value=('darwin-arm64', 'a' * 64, 'b' * 64)):
+            run = CodeRunner(store, 'work-1', popen=lambda *a, **k: FakeProcess(result={'stdout': 'ok', 'stderr': ''}),
+                             install=install, provide_node=provide)
+            self.assertTrue(run.available())
+            self.assertEqual(provided, [], 'offering the tool downloads nothing')
+            run.run({'code': 'print(1)'})
+            run.run({'code': 'print(2)'})
+        self.assertEqual([str(directory) for directory in provided], [os.path.join(store.root, 'tools')])
+        self.assertEqual(installed, ['/still/tools/node-v26/bin/node'] * 2)
+
+    def test_a_failed_node_download_runs_nothing(self):
+        store = types.SimpleNamespace(root=tempfile.mkdtemp(), config=lambda key, default=None: default)
+
+        def provide(directory):
+            raise RuntimeError('the Node.js 26.13.0 download did not match its pinned SHA-256; nothing was run.')
+
+        with mock.patch.object(code_run, 'find_node', return_value=None), \
+                mock.patch.object(code_run.node_runtime, 'pin', return_value=('darwin-arm64', 'a' * 64, 'b' * 64)):
+            run = CodeRunner(store, 'work-1', popen=lambda *a, **k: self.fail('nothing runs'),
+                             install=lambda store, node: self.fail('nothing installs'), provide_node=provide)
             with self.assertRaises(CodeRunError) as caught:
                 run.run({'code': 'print(1)'})
         self.assertEqual(caught.exception.code, 'code_run_unavailable')

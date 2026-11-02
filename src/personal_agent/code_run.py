@@ -31,10 +31,12 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 import time
 
+from . import node_runtime
 from .messages import msg
 from .prompt_files import prompt
 
@@ -58,6 +60,8 @@ PIN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,99}==[A-Za-z0-9][A-Za-z0-9.+!_-]
 HOST = re.compile(r'^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$')
 NODE_CANDIDATES = ('/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node')
 UNAVAILABLE_TEXT = '이 Mac에 Node.js 18 이상이 없어 코드를 실행할 수 없어요.'
+#: #593: the pinned Node.js could not be downloaded or did not match; nothing ran.
+NODE_DOWNLOAD_FAILED_TEXT = '코드 실행에 필요한 Node.js를 받지 못해 코드를 실행하지 않았어요.'
 #: #1456: what the run's code is told when a state-changing request waits for the owner's approval.
 APPROVAL_REQUESTED_TEXT = ('this request changes state, so Still asked the owner to approve exactly this request '
                            '(method, path, query and body). First check it is the change the owner asked for: if it is a '
@@ -432,10 +436,12 @@ class CodeRunner:
     """One Work's sandboxed code runs; every request decision is made here."""
 
     def __init__(self, store, work_id, *, popen=subprocess.Popen, node=None, interrupted=None,
-                 install=ensure_runtime, clock=time.monotonic, approvals=None):
+                 install=ensure_runtime, clock=time.monotonic, approvals=None, provide_node=node_runtime.ensure):
         self.store, self.work_id = store, work_id
         self.popen, self.interrupted, self.install, self.clock = popen, interrupted, install, clock
         self._node = node
+        #: #593: obtains the pinned Node.js into Still's tool directory when the host has none.
+        self.provide_node = provide_node
         #: #1456: the Work's per-action approval surface (``consume``/``request``), as ``api_request`` uses.
         #: Without one, every state-changing request is refused as before.
         self.approvals = approvals
@@ -455,13 +461,32 @@ class CodeRunner:
         from . import intranet
         return intranet.host_declared(self.store, _hostname(host))
 
+    def _tool_dir(self):
+        from .quick_tunnel import tool_dir
+        return tool_dir(self.store)
+
     def node(self):
+        """The host's Node.js 18+, else the pinned one Still already downloaded (#593), else None."""
         if self._node is None:
-            self._node = find_node() or ''
+            self._node = find_node() or node_runtime.installed(self._tool_dir()) or ''
         return self._node or None
 
     def available(self):
-        return self.node() is not None
+        """#593: a host without Node.js still runs code where Still can download the pinned release."""
+        return self.node() is not None or node_runtime.pin() is not None
+
+    def _provided_node(self):
+        """The Node.js for this run, downloading the pinned release on first need (#593)."""
+        node = self.node()
+        if node is not None:
+            return node
+        if node_runtime.pin() is None:
+            raise CodeRunError(UNAVAILABLE_TEXT, 'code_run_unavailable')
+        try:
+            self._node = self.provide_node(self._tool_dir())
+        except (OSError, RuntimeError, tarfile.TarError):
+            raise CodeRunError(NODE_DOWNLOAD_FAILED_TEXT, 'code_run_unavailable') from None
+        return self._node
 
     def secret_sets(self, names, hosts):
         """``(masked, plain env, {host: reviewed reads})`` for the named code-run secret sets (#1380).
@@ -523,9 +548,6 @@ class CodeRunner:
         self._fields = parse_approval_fields(fields)
         if seconds is not None:
             timeout = max(1, min(timeout, int(seconds)))
-        node = self.node()
-        if node is None:
-            raise CodeRunError(UNAVAILABLE_TEXT, 'code_run_unavailable')
         masked, plain, set_hosts = self.secret_sets(names, hosts)
         # #209: a run that reaches a declared intranet host reaches only declared hosts, so the sandbox can
         # refuse private-use addresses to every run that names none (``_session``).
@@ -534,6 +556,8 @@ class CodeRunner:
             raise CodeRunError(msg('intranet.code_run_mixed'), 'code_run_argument_invalid')
         self._intranet_hosts = frozenset(_hostname(host) for host in intranet)
         libraries = self._libraries(names, proposed)
+        # #593: provided only once the run's arguments and secret sets were accepted.
+        node = self._provided_node()
         runtime = self.install(self.store, node)
         python, roots = interpreter()
         requests = []
