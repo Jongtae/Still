@@ -55,6 +55,15 @@ class SiteLayout(unittest.TestCase):
         later.close()
         self.assertEqual(json.loads((Path(self.tmp.name) / 'profile' / bs.LAYOUTS_NAME).read_text()), {})
 
+    def test_desktop_sites_reads_the_saved_choices_and_mobile_removes_one(self):
+        self.assertEqual(self.profile.desktop_sites(), [])
+        self.profile.set_layout('www.shop.co.kr', 'desktop')
+        self.profile.set_layout('www.other.co.kr', 'desktop')
+        saved = bs.BrowserProfile(self.profile.profile_dir)
+        self.assertEqual(saved.desktop_sites(), ['other.co.kr', 'shop.co.kr'])
+        saved.set_layout('m.shop.co.kr', 'mobile')
+        self.assertEqual(self.profile.desktop_sites(), ['other.co.kr'])
+
     def test_an_unknown_layout_is_refused_before_anything_is_opened(self):
         work = self.work('w1')
         with self.assertRaises(ValueError):

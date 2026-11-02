@@ -115,7 +115,7 @@ SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", 
             # #1455: the owner's reservations (#659), seen and managed in the conversation first.
             "preparations": ("cancel", "accept", "pause", "resume", "edit", "run_now"),
             # #1572: close one exact login window that holds the browser while the owner will not sign in.
-            "browser": ("close_login",),
+            "browser": ("close_login", "use_mobile"),
             # #1197: Works may use the owner's AI-side connections (claude.ai connectors), read-only.
             # #1297: which of the owner's MCP servers load, and the owner's trust record per connection.
             "ai_connections": ("enabled", "connect", "servers", "review", "money", "rung", "undo", "forget", "restore"),
@@ -127,6 +127,7 @@ SETTING_LABELS = {"enabled": msg('label.use'), "timezone": msg('label.time_zone'
                   "remove": msg('label.remove'), "send": msg('settings_orchestrator.send_label'), "servers": msg('settings_orchestrator.servers_label'), "review": msg('settings_orchestrator.review_label'), "money": msg('settings_orchestrator.money_label'),
                   "connect": msg('settings_orchestrator.connect_label'), "rung": msg('settings_orchestrator.rung_label'), "undo": msg('settings_orchestrator.undo_label'), "forget": msg('settings_orchestrator.forget_label'), "restore": msg('settings_orchestrator.restore_label'),
                   "cancel": msg('label.cancel'), "accept": msg('button.accept'), "disconnect": msg('settings_orchestrator.disconnect_label'), "close_login": msg('settings_orchestrator.close_login_label'),
+                  "use_mobile": msg('settings_orchestrator.use_mobile_label'),
                   "connect_chat": msg('settings_orchestrator.connect_chat_label'),
                   **{operation: msg('settings_orchestrator.label_preparations_' + operation)
                      for operation in ('pause', 'resume', 'edit', 'run_now')}}
@@ -170,6 +171,7 @@ _SETTING_VALUE_IDS = {
     SETTING_LABELS['accept']: 'settings_orchestrator.setting_value_accept',
     SETTING_LABELS['disconnect']: 'settings_orchestrator.setting_value_disconnect',
     SETTING_LABELS['close_login']: 'settings_orchestrator.setting_value_close_login',
+    SETTING_LABELS['use_mobile']: 'settings_orchestrator.setting_value_use_mobile',
     SETTING_LABELS['connect_chat']: 'settings_orchestrator.setting_value_connect_chat',
     msg('settings_orchestrator.new_api_connection'): 'settings_orchestrator.setting_value_new_api',
 }
@@ -197,6 +199,7 @@ _CHANGE_LABELS = {
     **{('preparations', operation): msg('settings_orchestrator.label_preparations_' + operation)
        for operation in ('pause', 'resume', 'edit', 'run_now')},
     ('browser', 'close_login'): msg('settings_orchestrator.label_browser_close_login'),
+    ('browser', 'use_mobile'): msg('settings_orchestrator.label_browser_use_mobile'),
     ('ai_connections', 'enabled'): msg('settings_orchestrator.label_ai_connections_enabled'),
     ('ai_connections', 'connect'): msg('settings_orchestrator.label_ai_connections_connect'),
     ('ai_connections', 'servers'): msg('settings_orchestrator.label_ai_connections_servers'),
@@ -558,13 +561,16 @@ class SettingsOrchestrator:
                                           self._options(("telegram",), {"telegram": "Telegram"}), note=CONNECT_CHAT_NOTE)}
 
     def _browser(self):
-        """#1572: what holds the browser now, and the login windows waiting for the owner (``close_login``'s options)."""
+        """Browser occupancy, waiting login windows and kept desktop sites (names only)."""
+        sites = self.service.browser_profile.desktop_sites()
         windows = self.service.open_login_windows()
         occupancy = {"none": msg('settings_orchestrator.browser_idle'), "login": msg('settings_orchestrator.browser_login'), "keepalive": msg('settings_orchestrator.browser_keepalive'),
                      "work": msg('settings_orchestrator.browser_other_work')}[self.service.browser_profile.occupancy()]
         return {"close_login": self._row("close_login", "", msg('settings_orchestrator.browser_occupancy', browser_occupancy=occupancy),
                                          self._options(tuple(windows), windows), format=msg('settings_orchestrator.close_login_format'),
-                                         note=msg('settings_orchestrator.close_login_note'))}
+                                         note=msg('settings_orchestrator.close_login_note')),
+                "use_mobile": self._row("use_mobile", "", ", ".join(sites) or msg('label.none'),
+                                        self._options(sites, {site: site for site in sites}))}
 
     def _skills(self):
         """#961: the switch, and the installed skills for ``add`` / ``remove`` (names and pinned sources only)."""
@@ -884,6 +890,8 @@ class SettingsOrchestrator:
         if category == "connections":
             # #183: bound to the connection's state and revision, so a reconnect or disconnect since makes it stale.
             return self.service.connection_disconnect_before(value)
+        if (category, setting) == ("browser", "use_mobile"):
+            return self.service.browser_profile.layout_for(value)
         if category == "browser":
             # #1572: bound to the login's state; the value already names the exact window.
             work_id = value.partition("|")[0]
@@ -973,6 +981,8 @@ class SettingsOrchestrator:
             summary = msg('settings_orchestrator.connect_chat_summary')
         elif category == "connections":
             summary = msg('settings_orchestrator.disconnect_summary', connection=self._describe(category, setting, after, row))
+        elif (category, setting) == ("browser", "use_mobile"):
+            summary = msg('settings_orchestrator.use_mobile_summary', site=after)
         elif category == "browser":
             summary = (msg('settings_orchestrator.close_login_summary', window=self._describe(category, setting, after, row)))
         elif category == "preparations":
@@ -1144,6 +1154,8 @@ class SettingsOrchestrator:
             # #183: the same disconnect as Settings (local stop, credential delete, Google revocation request).
             receipt = self.service.apply_connection_disconnect(row)
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = (receipt or {}).get("message")
+        elif (category, setting) == ("browser", "use_mobile"):
+            self.service.browser_profile.set_layout(after, "mobile")
         elif category == "browser":
             # #1572: the prompt's own 건너뛰기 settlement for exactly this window; its text is the answer.
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = self.service.close_login_window_by_owner(after)
