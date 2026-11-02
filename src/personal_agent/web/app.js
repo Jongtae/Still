@@ -1334,9 +1334,10 @@ $('owner-profile-form').onsubmit=event=>{event.preventDefault();const key=$('own
 // #659 owner-accepted preparations: reminders and prepared answers the
 // service loop runs when due. 수락 turns a proposal into a schedule, 취소
 // stops every future run, 삭제 removes the row (its past Works stay).
-let preparationRows=null,preparationLoadSequence=0,preparationDeletePending=null;
-const PREPARATION_ACTIVE=['proposed','scheduled','running'];
-function preparationStateLabel(state){const labels={proposed:t('수락 대기'),scheduled:t('예약됨'),running:t('실행 중'),delivered:t('완료'),unknown:t('전달 확인 안 됨'),failed:t('실패'),cancelled:t('취소됨'),expired:t('기한 지남')};return labels[state]||state;}
+let preparationRows=null,preparationLoadSequence=0,preparationDeletePending=null,preparationEditPending=null,preparationLabels={};
+function preparationLabel(key){const value=preparationLabels[key];return typeof value==='string'?value:value?.[currentLanguage]||value?.ko||'';}
+const PREPARATION_ACTIVE=['proposed','scheduled','running','paused'];
+function preparationStateLabel(state){const labels={proposed:t('수락 대기'),scheduled:t('예약됨'),running:t('실행 중'),paused:preparationLabel('paused'),delivered:t('완료'),unknown:t('전달 확인 안 됨'),failed:t('실패'),cancelled:t('취소됨'),expired:t('기한 지남')};return labels[state]||state;}
 function preparationStateKind(state){return {proposed:'attention',scheduled:'active',running:'run',failed:'danger',unknown:'unknown'}[state]||'neutral';}
 function preparationRepeatLabel(value){const labels={daily:t('매일'),weekdays:t('평일마다'),weekly:t('매주')};return labels[value]||t('한 번');}
 // #719: a watch - every N minutes until a deadline, bounded - and its last typed decision.
@@ -1345,23 +1346,38 @@ function preparationDeliveryLabel(value){return {send:t('결과를 Telegram으�
 function preparationDecisionLabel(row){const reasons={'judged-needed':t('알려야 한다고 판단'),'judged-not-needed':t('알릴 일이 없다고 판단'),'same-as-last-notification':t('지난 알림과 같음'),'run-did-not-finish':t('결과를 얻지 못함'),'run-did-not-finish-told':t('결과를 얻지 못해 알림'),'run-stopped':t('실행을 멈춤'),'judgment-unavailable':t('판단 AI를 쓸 수 없어 결과를 보냄'),'judgment-unavailable-already-notified':t('판단 AI를 쓸 수 없음, 이미 한 번 보냄')};
  return t(row.last_decision==='notify'?'마지막 실행: 알림 ({reason})':'마지막 실행: 조용히 넘어감 ({reason})',{reason:reasons[row.last_decision_reason]||row.last_decision_reason||''});}
 async function loadPreparations(){const request=++preparationLoadSequence;
- try{const data=await api('/api/preparations');if(request!==preparationLoadSequence)return;preparationRows=data.preparations||[];renderPreparations();}
+ try{const data=await api('/api/preparations');if(request!==preparationLoadSequence)return;preparationRows=data.preparations||[];preparationLabels=data.management||{};renderPreparations();}
  catch(error){if(request===preparationLoadSequence)setError('preparations-feedback',error);}}
-async function preparationAction(operation,id,done){try{const data=await api('/api/preparations/request',{operation,id});preparationRows=data.preparations||[];setFeedback('preparations-feedback',done);renderPreparations();}catch(error){setError('preparations-feedback',error);await loadPreparations();}}
+async function preparationAction(operation,id,done,changes={}){try{const data=await api('/api/preparations/request',{operation,id,...changes});preparationRows=data.preparations||[];preparationLabels=data.management||{};preparationEditPending=null;setFeedback('preparations-feedback',done);renderPreparations();}catch(error){setError('preparations-feedback',error);await loadPreparations();}}
 function preparationDescription(row){const active=PREPARATION_ACTIVE.includes(row.state),parts=[row.kind==='reminder'?t('알림'):t('미리 준비'),row.recurrence==='window'?preparationWindowLabel(row):preparationRepeatLabel(row.recurrence),active?t('{time} 예정',{time:row.due_local}):row.due_local,preparationDeliveryLabel(row.delivery)];
  if(row.last_decision)parts.push(preparationDecisionLabel(row));
  if(row.last_result)parts.push(t('마지막 결과: {text}',{text:row.last_result}));return parts.join(' · ');}
-function renderPreparations(){const list=$('preparations-list');if(!list||!preparationRows)return;const fingerprint=JSON.stringify([preparationRows,preparationDeletePending,currentLanguage]);if(list.dataset.state===fingerprint)return;list.dataset.state=fingerprint;const focusKey=rememberFocus(list);list.replaceChildren();
+function renderPreparations(){const list=$('preparations-list');if(!list||!preparationRows)return;const fingerprint=JSON.stringify([preparationRows,preparationDeletePending,preparationEditPending,preparationLabels,currentLanguage]);if(list.dataset.state===fingerprint)return;list.dataset.state=fingerprint;const focusKey=rememberFocus(list);list.replaceChildren();
  for(const row of preparationRows){const actions=[],pending=preparationDeletePending===row.id;
   if(row.state==='proposed'){const accept=settingsAction(t('수락'),event=>busy(event.currentTarget,()=>preparationAction('accept',row.id,t('준비를 수락했습니다.'))));accept.dataset.focusKey='preparation-accept:'+row.id;actions.push(accept);}
   if(PREPARATION_ACTIVE.includes(row.state)&&!pending){const cancel=settingsAction(t('취소'),event=>busy(event.currentTarget,()=>preparationAction('cancel',row.id,t('준비를 취소했습니다.'))));cancel.dataset.focusKey='preparation-cancel:'+row.id;actions.push(cancel);}
+  // #575: each button is the owner's Settings action, as for cancel.
+  if(!pending){
+   for(const operation of row.state==='scheduled'?['pause','run_now']:row.state==='paused'?['resume','run_now']:[]){const action=settingsAction(preparationLabel(operation),event=>busy(event.currentTarget,()=>preparationAction(operation,row.id,preparationLabel('saved'))));action.dataset.focusKey='preparation-'+operation+':'+row.id;actions.push(action);}
+   if(['proposed','scheduled','paused'].includes(row.state)){const edit=settingsAction(preparationLabel('edit'),()=>{preparationEditPending=preparationEditPending===row.id?null:row.id;renderPreparations();});edit.dataset.focusKey='preparation-edit:'+row.id;actions.push(edit);}
+  }
   if(row.state!=='running'){
    if(pending){actions.push(element('span',t('이 준비를 지웁니다. 지난 실행 기록은 남습니다.'),'confirm-text'));const keep=settingsAction(t('취소'),()=>{preparationDeletePending=null;renderPreparations();$('preparations-list').querySelector('[data-focus-key="preparation-delete:'+row.id+'"]')?.focus();});keep.dataset.focusKey='preparation-keep:'+row.id;actions.push(keep);}
    const remove=settingsAction(pending?t('삭제 확인'):t('삭제'),event=>{if(!pending){preparationDeletePending=row.id;setFeedback('preparations-feedback','');renderPreparations();$('preparations-list').querySelector('[data-focus-key="preparation-delete:'+row.id+'"]')?.focus();return;}
     preparationDeletePending=null;return busy(event.currentTarget,()=>preparationAction('delete',row.id,t('지웠습니다.')));},'destructive'+(pending?' confirm':''));remove.dataset.focusKey='preparation-delete:'+row.id;actions.push(remove);}
-  list.append(settingsRow(row.title||row.goal,(row.offer?row.offer.split('\n').join(' · ')+' · ':'')+preparationDescription(row),preparationStateLabel(row.state),preparationStateKind(row.state),actions));}
+  list.append(settingsRow(row.title||row.goal,(row.offer?row.offer.split('\n').join(' · ')+' · ':'')+preparationDescription(row),preparationStateLabel(row.state),preparationStateKind(row.state),actions));
+  if(preparationEditPending===row.id&&!pending)list.append(preparationEditForm(row));}
  if(!preparationRows.length)list.append(element('p',t('아직 등록한 알림이나 준비가 없습니다. 대화에서 시간 알림이나 미리 준비할 일을 요청하세요.'),'settings-empty'));
  restoreFocus(list,focusKey);}
+// #575: edit only schedule fields; saving is an explicit owner action.
+function preparationEditForm(row){const form=element('form',undefined,'settings-form'),inputs={};
+ const fields=row.recurrence==='window'?['due','timezone','every_minutes','until','max_runs']:['due','timezone','recurrence'];
+ for(const field of fields){const label=element('label'),input=element(field==='recurrence'?'select':'input');label.append(element('span',preparationLabel(field)));
+  if(field==='recurrence'){for(const value of ['none','daily','weekdays','weekly']){const option=element('option',preparationRepeatLabel(value));option.value=value;input.append(option);}}
+  else{input.type=['every_minutes','max_runs'].includes(field)?'number':'text';input.required=true;if(input.type==='number'){input.min=field==='every_minutes'?'5':'1';input.max=field==='every_minutes'?'720':'96';}}
+  input.name=field;input.value=field==='due'?row.due_iso:field==='recurrence'?(row.recurrence||'none'):row[field];inputs[field]=input;label.append(input);form.append(label);}
+ const save=element('button',preparationLabel('edit'));save.type='submit';form.append(save);
+ form.onsubmit=event=>{event.preventDefault();const changes={};for(const [field,input] of Object.entries(inputs))changes[field]=input.type==='number'?Number(input.value):input.value;return busy(event.submitter||save,()=>preparationAction('edit',row.id,preparationLabel('saved'),changes));};return form;}
 // end of #659 preparations
 $('context-config').onsubmit=event=>{event.preventDefault();void saveContextSources();};
 ['context-text','context-url'].forEach(id=>$(id).onchange=()=>{contextDraftDirty=true;void saveContextSources();});

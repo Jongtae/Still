@@ -16,7 +16,7 @@ from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 import hashlib
 from urllib.parse import urlsplit
-from .messages import msg
+from .messages import LANGUAGES, msg
 from .prompt_files import prompt
 from .local_tools import LocalTools, normalize_public_url
 from functools import cached_property
@@ -2886,7 +2886,7 @@ class AgentService:
             rows.append({'id':row['id'],'kind':row['kind'],'goal':row['goal_text'],'state':row['state'],
                          # #393: the owner's name and offer for it, when the AI wrote them.
                          'title':row.get('title_text'),'offer':row.get('offer_text'),
-                         'due':row['due_at'],'due_local':prep.local_text(row['due_at'],row['timezone']),
+                         'due':row['due_at'],'due_iso':datetime.fromtimestamp(row['due_at'],prep.zone(row['timezone'])).isoformat(),'due_local':prep.local_text(row['due_at'],row['timezone']),
                          'timezone':row['timezone'],'recurrence':row['recurrence'],'delivery':self.preparation_delivery(row),
                          'accepted_by':row['accepted_by'],'last_outcome':row['last_outcome'],'last_work_id':row['last_run_job_id'],
                          'last_status':row.get('last_status'),'last_delivery':row.get('last_delivery'),
@@ -2895,9 +2895,14 @@ class AgentService:
                          # #719: the watch window, its bound and the last typed decision.
                          'every_minutes':(row['every_seconds']//60) if row.get('every_seconds') else None,
                          'until_local':prep.local_text(row['window_end'],row['timezone']) if row.get('window_end') else None,
+                         'until':datetime.fromtimestamp(row['window_end'],prep.zone(row['timezone'])).isoformat() if row.get('window_end') else None,
                          'max_runs':row.get('max_runs'),'run_count':row.get('run_count') or 0,
                          'last_decision':row.get('last_decision'),'last_decision_reason':row.get('last_decision_reason')})
-        return {'preparations':rows}
+        # #575: the page uses the same catalog in its selected language.
+        labels={**{operation:'settings_orchestrator.label_preparations_'+operation for operation in ('pause','resume','edit','run_now')},
+                **{field:'preparations.field_'+field for field in ('due','recurrence','every_minutes','until','max_runs')},
+                'timezone':'label.time_zone','paused':'settings_orchestrator.paused','saved':'preparations.saved'}
+        return {'preparations':rows,'management':{key:{lang:msg(message_id,lang) for lang in LANGUAGES} for key,message_id in labels.items()}}
 
     def cancel_preparation(self, preparation_id):
         """``Preparations.cancel`` plus withdrawing its run's pending location request (#774).
@@ -2912,7 +2917,7 @@ class AgentService:
         return row
 
     def preparation_request(self, body):
-        """Owner Settings operations on one preparation: list, accept, cancel, delete (#659)."""
+        """Owner Settings operations on one preparation (#659, #575)."""
         if not isinstance(body,dict):raise ValueError(msg('quickstart_service.check_preparation_request'))
         operation=body.get('operation')
         if operation=='list':return self.preparations_status()
@@ -2921,6 +2926,16 @@ class AgentService:
         if operation=='accept':self.preparations.accept(preparation_id,prep.ACCEPTED_OWNER_SETTINGS)
         elif operation=='cancel':self.cancel_preparation(preparation_id)
         elif operation=='delete':self.preparations.delete(preparation_id)
+        elif operation=='pause':self.preparations.pause(preparation_id)
+        elif operation=='resume':self.preparations.resume(preparation_id)
+        elif operation=='edit':self.preparations.edit(preparation_id,**{key:value for key,value in body.items() if key not in ('operation','id')})
+        elif operation=='run_now':
+            row=self.preparations.get(preparation_id)
+            if not row:raise prep.PreparationRefusal('not_found')
+            surface=next((item for item in self.surfaces if item.name==row['channel']),None)
+            pairing=surface.pairing() if surface is not None else None
+            send=pairing is not None and row.get('delivery_mode')!=prep.DELIVERY_WHEN_NEEDED
+            self.preparations.run_now(preparation_id,channel=pairing.channel if send else 'web',chat_id=pairing.owner if send else None)
         else:raise ValueError(msg('quickstart_service.unsupported_preparation'))
         LOG.info('preparation %s id=%s by owner settings',operation,preparation_id)
         return self.preparations_status()

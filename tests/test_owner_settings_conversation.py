@@ -1142,3 +1142,51 @@ class TypedConfirmation(ReviewRemediation):
             self.service.work_settings_draft(work, {'action': 'confirm'})
         self.assertEqual(self.applies, [])
         self.assertEqual(self.store.config('settings_change_drafts')[draft['id']]['state'], 'canceled')
+
+
+class PreparationManagementConversation(_Case):
+    """Schedule changes use the same digest and owner-typed confirmation as cancel (#575)."""
+
+    def setUp(self):
+        super().setUp()
+        self.clock[0] = 1_791_979_230.0
+        self.service.preparations.clock = lambda: self.clock[0]
+        self.row = self.service.preparations.create(kind='prepare', goal='자료 준비', due_at=self.clock[0] + 3600,
+                                                   timezone='Asia/Seoul', recurrence='daily', channel='web',
+                                                   created_from=None, state=prep.STATE_SCHEDULED)
+
+    def apply(self, operation, value):
+        draft = self.settings.propose('owner', 'http', 'preparations', operation, value)
+        self.assertTrue(draft['requires_owner_confirmation'])
+        with self.assertRaisesRegex(SettingsError, NOT_OWNER_TYPED_MESSAGE):
+            self.settings.handle_text('owner', 'http', 'confirm ' + draft['draft_id'], owner_typed=False)
+        self.settings.handle_text('owner', 'http', 'confirm ' + draft['draft_id'], owner_typed=True)
+        return self.service.preparations.get(self.row['id'])
+
+    def test_pause_resume_edit_and_run_now_are_confirmed_owner_changes(self):
+        read = self.settings.read('preparations')['settings']['preparations']
+        self.assertEqual(set(read), {'cancel', 'accept', 'pause', 'resume', 'edit', 'run_now'})
+        draft = self.settings.propose('owner', 'http', 'preparations', 'pause', self.row['id'])
+        self.assertEqual(self.service.preparations.get(self.row['id'])['state'], prep.STATE_SCHEDULED)
+        self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+        read = self.settings.read('preparations')['settings']['preparations']
+        self.assertEqual(read['resume']['options'][0]['value'], self.row['id'])
+        self.assertEqual(read['cancel']['options'][0]['value'], self.row['id'])
+        edit = json.dumps({'id': self.row['id'], 'recurrence': 'weekly'})
+        self.assertEqual(self.apply('edit', edit)['state'], prep.STATE_PAUSED)
+        self.assertEqual(self.apply('resume', self.row['id'])['state'], prep.STATE_SCHEDULED)
+        self.assertEqual(self.apply('pause', self.row['id'])['state'], prep.STATE_PAUSED)
+        current = self.apply('run_now', self.row['id'])
+        self.assertEqual((current['state'], current['due_at'], current['recurrence']),
+                         (prep.STATE_RUNNING, self.row['due_at'], 'weekly'))
+        self.assertIsNotNone(current['last_run_job_id'])
+
+    def test_edit_draft_is_bound_to_schedule_and_rejects_goal_changes(self):
+        value = json.dumps({'id': self.row['id'], 'recurrence': 'weekly'})
+        draft = self.settings.propose('owner', 'http', 'preparations', 'edit', value)
+        self.service.preparations.edit(self.row['id'], recurrence='weekdays')
+        with self.assertRaises(SettingsError):
+            self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+        with self.assertRaises(prep.PreparationRefusal) as caught:
+            self.settings.propose('owner', 'http', 'preparations', 'edit', json.dumps({'id': self.row['id'], 'goal': '다른 목표'}))
+        self.assertEqual(caught.exception.code, 'goal_not_editable')
