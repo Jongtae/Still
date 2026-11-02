@@ -187,11 +187,13 @@ class WorkerOpsWhileParked(unittest.TestCase):
         worker = self.worker()
         worker.owner_visible = True
         worker.held_dialog = {'kind': 'confirm', 'text': 'delete?', 'handler': None, 'sheet': None}
-        worker.last_frame = ('AAAA', 1280.0, 900.0)
+        worker.last_frame = ('AAAA', 1280.0, 900.0, ['https://auth.example/qr?q=1'])
         worker.front_view = lambda: self.fail('no snapshot while a dialog is held')
         worker.handle({'id': 9, 'op': 'frame'})
         self.assertEqual(worker.replies[-1], {'id': 9, 'ok': True, 'jpeg': 'AAAA', 'width': 1280.0, 'height': 900.0,
-                                              'dialog': {'kind': 'confirm', 'text': 'delete?'}, 'focus': None})
+                                              'dialog': {'kind': 'confirm', 'text': 'delete?'}, 'focus': None,
+                                              'fields': [], 'links': ['https://auth.example/qr?q=1']},
+                         'nothing can be typed now; the last frame\'s QR links stay')
 
     def test_a_page_dialog_is_held_for_the_phone_only_during_a_phone_session(self):
         """#936's rule stays in force without a phone session; with one, the phone (or the Mac's sheet) answers."""
@@ -283,7 +285,64 @@ class WorkerOpsWhileParked(unittest.TestCase):
                     worker.handle({'id': 11, 'op': 'frame'})
                     self.assertEqual(worker.scripts, [browser_worker.REMOTE_FOCUS_SCRIPT])
                     self.assertEqual(worker.replies[-1], {'id': 11, 'ok': True, 'jpeg': 'anBn', 'width': 390.0, 'height': 844.0,
-                                                          'dialog': None, 'focus': expected})
+                                                          'dialog': None, 'focus': expected, 'fields': [], 'links': []})
+
+    def test_a_frame_names_the_editable_fields_by_kind_and_place_only(self):
+        """#596: where the text and password fields are, as fractions of the viewport; anything else is dropped."""
+        from unittest import mock
+        fields = [{'kind': 'text', 'x': 0.1, 'y': 0.2, 'w': 0.5, 'h': 0.05, 'value': 'kim', 'name': 'user'},
+                  {'kind': 'password', 'x': 0.1, 'y': 0.3, 'w': 0.5, 'h': 0.05},
+                  {'kind': 'checkbox', 'x': 0.1, 'y': 0.4, 'w': 0.1, 'h': 0.1},
+                  {'kind': 'text', 'x': 'left', 'y': 0.4, 'w': 0.1, 'h': 0.1},
+                  {'kind': 'text', 'x': float('nan'), 'y': 0.4, 'w': 0.1, 'h': 0.1},
+                  {'kind': 'text', 'x': 0.1, 'y': 0.4, 'w': 0, 'h': 0.1},
+                  {'kind': 'text', 'x': 0.1, 'y': 0.4, 'w': 0.1}, 'text']
+        with mock.patch.object(browser_worker, '_jpeg_bytes', return_value=b'jpg'):
+            worker = self.snapshot_worker({'focus': None, 'fields': fields})
+            worker.handle({'id': 12, 'op': 'frame'})
+        self.assertEqual(worker.replies[-1]['fields'], [{'kind': 'text', 'x': 0.1, 'y': 0.2, 'w': 0.5, 'h': 0.05},
+                                                        {'kind': 'password', 'x': 0.1, 'y': 0.3, 'w': 0.5, 'h': 0.05}])
+        many = [{'kind': 'text', 'x': 0, 'y': index / 100, 'w': 1, 'h': 0.01} for index in range(100)]
+        self.assertEqual(len(browser_worker.remote_fields(many)), browser_worker.REMOTE_FIELDS_LIMIT)
+        for broken in (None, 'text', {'kind': 'text'}, 7):
+            self.assertEqual(browser_worker.remote_fields(broken), [])
+
+    def test_a_phone_frame_carries_the_links_of_qr_codes_it_shows_read_once_per_image(self):
+        """#596: the owner signing in from the phone cannot scan a code on that phone's own screen."""
+        from unittest import mock
+        reads = []
+
+        def read(foundation, data):
+            reads.append(data)
+            return ['https://auth.example/qr?q=1', 'supertoss://login', 'not a link', 'https://auth.example/qr?q=1']
+        with mock.patch.object(browser_worker, '_jpeg_bytes', return_value=b'jpg'), \
+                mock.patch.object(browser_worker, 'read_qr_payloads', side_effect=read):
+            worker = self.snapshot_worker({'focus': None})
+            worker.Foundation = None
+            worker.handle({'id': 13, 'op': 'frame'})
+            self.assertEqual(worker.replies[-1]['links'], [], 'no phone session: no code is read')
+            self.assertEqual(reads, [])
+            worker.remote = True
+            worker.handle({'id': 14, 'op': 'frame'})
+            worker.handle({'id': 15, 'op': 'frame'})
+            self.assertEqual(worker.replies[-1]['links'], ['https://auth.example/qr?q=1'], 'http(s) only, once each')
+            self.assertEqual(reads, [b'jpg'], 'an unchanged image is not read again')
+            worker.answer_dialog = lambda ok: False
+            worker.end_remote()
+            self.assertIsNone(worker.qr_cache)
+
+    def test_only_http_links_of_bounded_length_pass(self):
+        links = browser_worker.qr_links
+        self.assertEqual(links(['https://a.example/x?y=1', 'HTTP://b.example/', 'https://a.example/x?y=1']),
+                         ['https://a.example/x?y=1', 'HTTP://b.example/'])
+        for bad in ('javascript:alert(1)', 'data:text/html,x', 'intent://x', 'https://', 'https://user@evil.example/',
+                    'https://a.example/x y', 'https://a.example/\nx', 'https://a.example/' + 'x' * 2048, '', 7, None,
+                    'https://[::1', 'file:///etc/passwd'):
+            with self.subTest(bad=bad):
+                self.assertEqual(links([bad]), [])
+        self.assertEqual(len(links([f'https://a.example/{index}' for index in range(9)])), browser_worker.QR_LINKS_LIMIT)
+        self.assertEqual(links('https://a.example/'), [], 'a list only')
+        self.assertEqual(browser_worker.QR_LINKS_LIMIT, remote_login.QR_LINKS_SHOWN)
 
     def test_the_focus_probe_names_the_kind_through_shadow_roots_and_frames(self):
         """#293: the probe's own logic over a minimal DOM (Node; WebKit itself is the opt-in real-browser path)."""
@@ -311,10 +370,26 @@ const cases = {
   crossOrigin: el('IFRAME', {contentDocument: null}),
   blocked: Object.defineProperty(el('IFRAME'), 'contentDocument', {get() { throw new Error('denied'); }}),
 };
-const probe = new Function('document', %s);
+const probe = new Function('document', 'window', %s);
+const view = {innerWidth: 400, innerHeight: 800};
 const out = {};
-for (const [name, active] of Object.entries(cases)) out[name] = JSON.parse(probe({activeElement: active, body})).focus;
-out.empty = JSON.parse(probe({activeElement: null})).focus;
+for (const [name, active] of Object.entries(cases)) out[name] = JSON.parse(probe({activeElement: active, body}, view)).focus;
+out.empty = JSON.parse(probe({activeElement: null}, view)).focus;
+// #596: the visible editable fields, by kind and place only.
+const at = (node, left, top, width, height) => Object.assign(node, {getBoundingClientRect: () =>
+  ({left, top, width, height, right: left + width, bottom: top + height})});
+const nodes = [at(el('INPUT', {attrs: {type: 'text'}, value: 'kim'}), 40, 200, 320, 40),
+  at(el('INPUT', {attrs: {type: 'password'}}), 40, 260, 320, 40),
+  at(el('INPUT', {attrs: {type: 'checkbox'}}), 40, 320, 20, 20),
+  at(el('INPUT', {readOnly: true}), 40, 360, 320, 40),
+  at(el('INPUT'), 40, 900, 320, 40),
+  at(el('TEXTAREA'), -400, 100, 100, 40),
+  at(el('INPUT', {attrs: {type: 'hidden'}}), 0, 0, 0, 0),
+  at(el('DIV', {isContentEditable: true}), 0, 400, 400, 80)];
+const many = Array.from({length: 60}, (_, index) => at(el('INPUT'), 0, index * 10, 400, 10));
+const fields = (list) => JSON.parse(probe({activeElement: null, body, querySelectorAll: () => list}, view)).fields;
+out.fields = fields(nodes);
+out.many = fields(many).length;
 console.log(JSON.stringify(out));
 """ % json.dumps(browser_worker.REMOTE_FOCUS_SCRIPT)
         result = subprocess.run([node, '-e', harness], capture_output=True, text=True, timeout=30)
@@ -322,7 +397,11 @@ console.log(JSON.stringify(out));
         self.assertEqual(json.loads(result.stdout), {
             'none': None, 'text': 'text', 'untyped': 'text', 'password': 'password', 'checkbox': None, 'readonly': None,
             'disabled': None, 'textarea': 'text', 'editable': 'text', 'button': None, 'shadow': 'password',
-            'sameOrigin': 'text', 'crossOrigin': 'frame', 'blocked': 'frame', 'empty': None})
+            'sameOrigin': 'text', 'crossOrigin': 'frame', 'blocked': 'frame', 'empty': None,
+            'fields': [{'kind': 'text', 'x': 0.1, 'y': 0.25, 'w': 0.8, 'h': 0.05},
+                       {'kind': 'password', 'x': 0.1, 'y': 0.325, 'w': 0.8, 'h': 0.05},
+                       {'kind': 'text', 'x': 0, 'y': 0.5, 'w': 1, 'h': 0.1}],
+            'many': browser_worker.REMOTE_FIELDS_LIMIT})
 
     def test_the_focus_probe_reads_the_kind_never_a_value_or_the_page_text(self):
         script = browser_worker.REMOTE_FOCUS_SCRIPT
@@ -338,6 +417,19 @@ console.log(JSON.stringify(out));
                 driver._request_shown = lambda op, **kw: {'jpeg': 'AAAA', 'width': 1.0, 'height': 1.0, 'focus': focus}
                 self.assertEqual(driver.frame()['focus'], expected)
 
+    def test_the_driver_passes_only_checked_fields_and_links(self):
+        """#596: the parent process checks again what the worker (and so the page) reported."""
+        driver = bs.WebKitWorkerDriver.__new__(bs.WebKitWorkerDriver)
+        driver._request_shown = lambda op, **kw: {
+            'jpeg': 'AAAA', 'width': 1.0, 'height': 1.0, 'focus': None,
+            'fields': [{'kind': 'text', 'x': 0, 'y': 0, 'w': 1, 'h': 0.1, 'value': 'x'}, {'kind': 'secret', 'x': 0, 'y': 0, 'w': 1, 'h': 1}],
+            'links': ['https://auth.example/qr', 'javascript:alert(1)']}
+        frame = driver.frame()
+        self.assertEqual(frame['fields'], [{'kind': 'text', 'x': 0, 'y': 0, 'w': 1, 'h': 0.1}])
+        self.assertEqual(frame['links'], ['https://auth.example/qr'])
+        driver._request_shown = lambda op, **kw: {'jpeg': 'AAAA', 'width': 1.0, 'height': 1.0, 'focus': None}
+        self.assertEqual((driver.frame()['fields'], driver.frame()['links']), ([], []))
+
     def test_the_keys_and_actions_the_phone_offers_are_the_ones_the_worker_knows(self):
         self.assertEqual(set(remote_login.KEYS), set(browser_worker.REMOTE_KEYS))
         self.assertEqual(set(remote_login.NAV_ACTIONS), set(browser_worker.REMOTE_NAV_ACTIONS))
@@ -345,25 +437,28 @@ console.log(JSON.stringify(out));
 
 
 class PhoneWindowFitsThePage(unittest.TestCase):
-    """#254: in a phone session a page laid out wider than the window widens it (a resize only, no reload);
-    each new page starts from the phone width; the session's end restores the window exactly."""
+    """#254/#596: in a phone session a page laid out wider than the window is zoomed out to fit it (no reload,
+    no resize: the window and its frames stay phone-shaped); each new page starts at zoom 1; the session's end
+    restores zoom 1 and the window exactly."""
 
-    def test_the_width_rule(self):
-        fit = browser_worker.phone_fit_width
-        limit = 1440.0
-        # page, inner (CSS px), view (points), fitted (the page width last widened for), limit -> next width
-        for args, expected in (((390, 390, 390.0, None, limit), None),          # fits: kept
-                               ((1200, 390, 390.0, None, limit), 1200.0),       # desktop-only: as wide as the page
-                               ((1200.4, 390, 390.0, None, limit), 1201.0),     # whole points, never short
-                               ((1200, 1200, 1200.0, 1200, limit), None),       # widened and fits now
-                               ((3000, 390, 390.0, None, limit), limit),        # never wider than the screen holds
-                               ((3000, 1440, 1440.0, 3000, limit), None),       # already at the limit: kept
-                               ((1560, 780, 780.0, 780, limit), 'phone'),       # grew with the window: back
-                               ((900, 450, 585.0, None, limit), 1170.0),        # page zoom: CSS px to points
-                               ((800, 390, 390.0, None, 300.0), None),          # a screen narrower than the window
-                               ((float('inf'), 390, 390.0, None, limit), limit),
-                               ((float('nan'), 390, 390.0, None, limit), None),
-                               ((1200, 0, 390.0, None, limit), None)):
+    def test_the_zoom_rule(self):
+        fit = browser_worker.phone_fit_zoom
+        # page, inner (CSS px at the current zoom), zoom, fitted (the page width last zoomed out for) -> next zoom
+        for args, expected in (((390, 390, 1.0, None), None),            # fits: kept
+                               ((1024, 390, 1.0, None), 0.38),           # desktop-only: zoomed out to fit
+                               ((1000, 390, 1.0, None), 0.39),
+                               ((1200, 390, 1.0, None), 0.325),
+                               ((1201, 390, 1.0, None), 0.324),          # rounded down: never a pixel short
+                               ((1024, 1026, 0.38, 1024), None),         # zoomed out and fits now
+                               ((5000, 390, 1.0, None), browser_worker.MIN_PHONE_ZOOM),   # never below the least zoom
+                               ((5000, 1560, 0.25, 5000), None),         # already at the least zoom: kept
+                               ((1560, 780, 0.5, 780), 'phone'),         # grew with the viewport: back to 1
+                               ((900, 450, 1.3, None), 0.65),            # from another zoom
+                               ((float('inf'), 390, 1.0, None), browser_worker.MIN_PHONE_ZOOM),
+                               ((float('nan'), 390, 1.0, None), None),
+                               ((1200, 0, 1.0, None), None),
+                               ((1200, 390, 0, None), None),
+                               (('wide', 390, 1.0, None), None)):
             with self.subTest(args=args):
                 self.assertEqual(fit(*args), expected)
 
@@ -419,12 +514,22 @@ class PhoneWindowFitsThePage(unittest.TestCase):
         class View:
             loading = False
 
+            def __init__(self):
+                self.zoom, self.zooms = 1.0, []   # #596: WKWebView ``pageZoom``
+
             def frame(self):
                 content = window.contentRectForFrameRect_(window.rect)
                 return Rect(0.0, 0.0, content.size.width, content.size.height)
 
             def isLoading(self):
                 return self.loading
+
+            def pageZoom(self):
+                return self.zoom
+
+            def setPageZoom_(self, zoom):
+                self.zoom = zoom
+                self.zooms.append(zoom)
         worker.window, worker.view = window, View()
         worker.Foundation = type('Foundation', (), {'NSMakeSize': staticmethod(lambda width, height: (width, height))})
         worker.scripts = []
@@ -514,82 +619,84 @@ class PhoneWindowFitsThePage(unittest.TestCase):
                 if initial == 'desktop':
                     self.assertEqual(self.content(window), browser_worker.DESKTOP_SIZE)
 
-    def test_a_wide_page_widens_the_window_a_new_page_starts_phone_sized_and_the_end_restores_it(self):
+    def test_a_wide_page_is_zoomed_out_in_the_phone_window_a_new_page_starts_at_1_and_the_end_restores_it(self):
         measures = [{'page': 1200, 'inner': 390}, {'page': 1200, 'inner': 1200}, {'page': 390, 'inner': 390}]
         worker, window = self.worker(measures)
         original = window.rect
         worker.handle({'id': 1, 'op': 'remote_begin'})
         self.assertEqual(self.content(window), (390.0, 844.0), '#955: phone-sized first')
         worker.fit_phone_page()
-        self.assertEqual(self.content(window), (1200.0, 844.0), 'as wide as the page, the same height')
+        self.assertEqual((self.content(window), worker.view.zoom), ((390.0, 844.0), 0.325),
+                         'zoomed out to the page; the window stays phone-shaped')
         self.assertEqual(worker.scripts[-1], (browser_worker.PAGE_WIDTH_SCRIPT, None), 'measured in the main view')
         worker.fit_phone_page()
-        self.assertEqual(self.content(window), (1200.0, 844.0), 'it fits now: kept')
+        self.assertEqual(worker.view.zoom, 0.325, 'it fits now: kept')
         worker.phone_navigated()
-        self.assertEqual(self.content(window), (390.0, 844.0), 'a new page is measured from the phone width')
+        self.assertEqual(worker.view.zoom, 1.0, 'a new page is measured at zoom 1')
         worker.fit_phone_page()
-        self.assertEqual(self.content(window), (390.0, 844.0), 'a page that fits stays phone-sized')
+        self.assertEqual((self.content(window), worker.view.zoom), ((390.0, 844.0), 1.0), 'a page that fits stays')
         worker.handle({'id': 2, 'op': 'remote_end'})
         self.assertIs(window.rect, original, 'the frame from before the session, exactly')
         self.assertEqual(window.calls[-1], ('frame', original))
 
-    def test_the_end_restores_the_frame_from_before_the_session_while_widened(self):
+    def test_the_end_restores_zoom_1_and_the_frame_from_before_the_session(self):
         worker, window = self.worker([{'page': 1200, 'inner': 390}])
         original = window.rect
         worker.handle({'id': 1, 'op': 'remote_begin'})
         worker.fit_phone_page()
-        self.assertEqual(self.content(window), (1200.0, 844.0))
+        self.assertEqual(worker.view.zoom, 0.325)
         worker.handle({'id': 2, 'op': 'remote_end'})
         self.assertIs(window.rect, original)
-        calls = len(window.calls)
+        self.assertEqual(worker.view.zoom, 1.0)
+        calls, zooms = len(window.calls), len(worker.view.zooms)
         worker.phone_navigated()
         worker.fit_phone_page()
-        self.assertEqual(len(window.calls), calls, 'no phone session: nothing measured or resized')
-        self.assertIs(window.rect, original)
+        self.assertEqual((len(window.calls), len(worker.view.zooms)), (calls, zooms),
+                         'no phone session: nothing measured, zoomed or resized')
 
-    def test_overflow_that_grows_with_the_window_goes_back_to_phone_width_until_the_next_page(self):
+    def test_overflow_that_grows_with_the_viewport_goes_back_to_zoom_1_until_the_next_page(self):
         measures = [{'page': 780, 'inner': 390}, {'page': 1560, 'inner': 780}, {'page': 780, 'inner': 390}]
         worker, window = self.worker(measures)
         worker.handle({'id': 1, 'op': 'remote_begin'})
         worker.fit_phone_page()
-        self.assertEqual(self.content(window), (780.0, 844.0))
+        self.assertEqual(worker.view.zoom, 0.5)
         worker.fit_phone_page()
-        self.assertEqual(self.content(window), (390.0, 844.0), 'an off-canvas panel is not a page width')
+        self.assertEqual(worker.view.zoom, 1.0, 'an off-canvas panel is not a page width')
         measured = len(worker.scripts)
         worker.fit_phone_page()
-        self.assertEqual((len(worker.scripts), self.content(window)), (measured, (390.0, 844.0)),
-                         'not measured again on this page')
+        self.assertEqual((len(worker.scripts), worker.view.zoom), (measured, 1.0), 'not measured again on this page')
         worker.phone_navigated()
         worker.fit_phone_page()
         self.assertEqual(len(worker.scripts), measured + 1, 'the next page is measured')
 
-    def test_the_window_narrows_when_a_navigation_starts_and_the_next_page_is_measured_once_it_loads(self):
-        """The next document's own scripts read the phone width, not the last page's widened one."""
+    def test_zoom_1_is_back_when_a_navigation_starts_and_the_next_page_is_measured_once_it_loads(self):
+        """The next document's own scripts read the phone width, not the last page's zoomed-out one."""
         measures = [{'page': 1200, 'inner': 390}, {'page': 390, 'inner': 390}, {'page': 1200, 'inner': 390}]
         worker, window = self.worker(measures)
         worker.handle({'id': 1, 'op': 'remote_begin'})
         worker.fit_phone_page()
-        self.assertEqual(self.content(window), (1200.0, 844.0))
+        self.assertEqual(worker.view.zoom, 0.325)
         worker.phone_navigated(committed=False)   # allowed: the request has not even started
-        self.assertEqual(self.content(window), (390.0, 844.0))
+        self.assertEqual(worker.view.zoom, 1.0)
         worker.view.loading = True
         worker.fit_phone_page()
-        self.assertEqual((len(worker.scripts), self.content(window)), (1, (390.0, 844.0)),
-                         'the page being left is not measured (it would widen the window again)')
+        self.assertEqual((len(worker.scripts), worker.view.zoom), (1, 1.0),
+                         'the page being left is not measured (it would zoom out again)')
         worker.phone_navigated()
         worker.view.loading = False
         worker.fit_phone_page()
-        self.assertEqual((len(worker.scripts), self.content(window)), (2, (390.0, 844.0)), 'the new page fits')
+        self.assertEqual((len(worker.scripts), worker.view.zoom), (2, 1.0), 'the new page fits')
         # A navigation that never commits (a download, a same-document move): the page is measured again.
         worker.phone_navigated(committed=False)
         worker.fit_phone_page()
-        self.assertEqual((len(worker.scripts), self.content(window)), (3, (1200.0, 844.0)))
+        self.assertEqual((len(worker.scripts), worker.view.zoom), (3, 0.325))
+        self.assertEqual({call[0] for call in window.calls}, {'content', 'center'}, 'only #955\'s phone sizing')
 
-    def test_never_wider_than_the_screen_holds(self):
+    def test_never_below_the_least_zoom(self):
         worker, window = self.worker([{'page': 5000, 'inner': 390}])
         worker.handle({'id': 1, 'op': 'remote_begin'})
         worker.fit_phone_page()
-        self.assertEqual(self.content(window), (1440.0, 844.0), 'the visible frame less the window frame')
+        self.assertEqual((self.content(window), worker.view.zoom), ((390.0, 844.0), browser_worker.MIN_PHONE_ZOOM))
 
     def test_only_the_main_view_in_a_shown_phone_session_without_a_held_dialog_is_measured(self):
         worker, window = self.worker([{'page': 1200, 'inner': 390}] * 4)
@@ -603,27 +710,28 @@ class PhoneWindowFitsThePage(unittest.TestCase):
         worker.fit_phone_page()
         worker.held_dialog = None
         self.assertEqual(worker.scripts, [], 'a sign-in popup in front, or a page blocked on its dialog')
-        self.assertEqual(self.content(window), (390.0, 844.0))
+        self.assertEqual(worker.view.zoom, 1.0)
         for broken in (None, {'page': 'wide', 'inner': 390}, {'inner': 390}):
             with self.subTest(broken=broken):
                 worker.run = lambda body, arguments, done, world=None, view=None, answer=broken: done(answer, None)
                 worker.fit_phone_page()
-                self.assertEqual(self.content(window), (390.0, 844.0))
+                self.assertEqual(worker.view.zoom, 1.0)
         worker.run = lambda body, arguments, done, world=None, view=None: done(None, 'script_failed')
         worker.fit_phone_page()
-        self.assertEqual(self.content(window), (390.0, 844.0))
+        self.assertEqual(worker.view.zoom, 1.0)
 
-    def test_a_phone_frame_also_measures_the_page(self):
+    def test_a_phone_frame_also_measures_the_page_and_draws_a_zoomed_page_at_its_layout_width(self):
         from unittest import mock
-        worker, window = self.worker([{'focus': None}, {'page': 1200, 'inner': 390}])
+        worker, window = self.worker([{'focus': None}, {'page': 1200, 'inner': 390}, {'focus': None}])
         worker.deadline = lambda ident, seconds: worker.pending.__setitem__(ident, True)
+        widths = []
 
         class Config:
             def init(self):
                 return self
 
             def setSnapshotWidth_(self, width):
-                pass
+                widths.append(width)
 
             def setAfterScreenUpdates_(self, flag):
                 pass
@@ -631,15 +739,18 @@ class PhoneWindowFitsThePage(unittest.TestCase):
         worker.AppKit = None
         worker.view.takeSnapshotWithConfiguration_completionHandler_ = lambda config, done: done('image', None)
         worker.handle({'id': 1, 'op': 'remote_begin'})
-        with mock.patch.object(browser_worker, '_jpeg_bytes', return_value=b'jpg'):
+        with mock.patch.object(browser_worker, '_jpeg_bytes', return_value=b'jpg'), \
+                mock.patch.object(browser_worker, 'read_qr_payloads', return_value=[]):
             worker.handle({'id': 2, 'op': 'frame'})
             self.assertEqual(worker.replies[-1]['width'], 390.0, 'this frame is the image it was taken from')
             self.assertEqual([body for body, _ in worker.scripts],
                              [browser_worker.REMOTE_FOCUS_SCRIPT, browser_worker.PAGE_WIDTH_SCRIPT])
-            self.assertEqual(self.content(window), (1200.0, 844.0))
+            self.assertEqual(worker.view.zoom, 0.325)
             worker.handle({'id': 3, 'op': 'frame'})
-            self.assertEqual((worker.replies[-1]['width'], worker.replies[-1]['height']), (1200.0, 844.0),
-                             'the next frame reports the wider view: the phone maps taps by it')
+            self.assertEqual((worker.replies[-1]['width'], worker.replies[-1]['height']), (390.0, 844.0),
+                             'the next frame is still phone-shaped: the phone maps taps by it, in view points')
+        self.assertEqual(widths, [390.0, browser_worker.FRAME_MAX_WIDTH],
+                         'a zoomed-out page is drawn wider than the view, up to the frame limit')
 
     def test_the_width_probe_reads_layout_widths_never_content(self):
         script = browser_worker.PAGE_WIDTH_SCRIPT
@@ -1476,6 +1587,7 @@ const script=fs.readFileSync(process.argv[1],'utf8');
 const ids=new Map();let active=null;
 class Element{
  constructor(id){this.id=id;this.value='';this.type='text';this.attrs={};this.style={};this.listeners={};this._cls=new Set();this.textContent='';ids.set(id,this);}
+ get textContent(){return this._text;} set textContent(v){this._text=v;this.children=[];} appendChild(c){this.children.push(c);}
  get classList(){const c=this._cls;return {add:n=>c.add(n),remove:n=>c.delete(n),toggle:(n,on)=>on?c.add(n):c.delete(n),contains:n=>c.has(n)};}
  addEventListener(name,fn){(this.listeners[name]=this.listeners[name]||[]).push(fn);}
  fire(name,event={}){event.currentTarget=this;for(const fn of this.listeners[name]||[])fn(event);return event;}
@@ -1483,9 +1595,9 @@ class Element{
  setSelectionRange(){} getBoundingClientRect(){return {left:0,top:0,width:390,height:844};}
 }
 for(const id of ['live','end','keys','shot','dialog','dialog-text','dialog-ok','dialog-cancel','typing-failed','enter','tab','back',
- 'nav-back','reload','done','expire','cred','user','pass'])new Element(id);
-ids.get('keys').type='password';
-const document={getElementById:id=>ids.get(id),get activeElement(){return active;}};
+ 'nav-back','reload','done','expire','cred','user','pass','qr','qr-links'])new Element(id);
+ids.get('keys').type='password';ids.get('qr').classList.add('hidden');let made=0;
+const document={getElementById:id=>ids.get(id),get activeElement(){return active;},createElement:tag=>Object.assign(new Element('made-'+(++made)),{tag})};
 const posts=[];let frameAnswer={status:200,body:{jpeg:'AAAA',width:390,height:844,dialog:null,focus:null}};
 let inputAnswer=()=>({ok:true});const holds=[];
 const respond=(status,body)=>({status,ok:status>=200&&status<300,json:async()=>body});
@@ -1496,7 +1608,7 @@ async function fetch(url,opts={}){
  return respond(200,inputAnswer(body));
 }
 const timers=[];
-const ctx={document,fetch,console,Date,Math,JSON,Object,Promise,encodeURIComponent,
+const ctx={document,fetch,console,Date,Math,JSON,Object,Promise,encodeURIComponent,URL,Array,
  setTimeout:fn=>timers.push(fn),setInterval:()=>0,window:{addEventListener(){}}};
 vm.createContext(ctx);vm.runInContext(script,ctx);
 const $=id=>ids.get(id),keys=$('keys');
@@ -1515,16 +1627,24 @@ const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
  assert.deepEqual(sent(),[{type:'tap',x:195,y:422}]);
  assert.equal(keys.type,'text','a plain text field gets a text input (the Korean keyboard)');
  assert.equal(keys.attrs.autocomplete,'username');
- // Each keystroke goes out in order and the page keeps nothing.
- type(S+'a',{inputType:'insertText'});type(S+'b',{inputType:'insertText'});await tick();
- assert.equal(sent().filter(p=>p.type==='text').map(p=>p.text).join(''),'ab');assert.equal(keys.value,S);
- type(S.slice(0,-1),{inputType:'deleteContentBackward'});await tick();
+ // Each keystroke goes out in order; a text input keeps its value until the focus moves (#596).
+ type(S+'a',{inputType:'insertText'});type(S+'ab',{inputType:'insertText'});await tick();
+ assert.equal(sent().filter(p=>p.type==='text').map(p=>p.text).join(''),'ab');assert.equal(keys.value,S+'ab');
+ type(S+'a',{inputType:'deleteContentBackward'});await tick();
  assert.deepEqual(sent(),[{type:'key',key:'Backspace'}]);
- // Korean: nothing while a syllable is composed; the committed syllable once.
+ // A Backspace past what this field was given still reaches the window, and the sentinel is put back.
+ type(S,{inputType:'deleteContentBackward'});type(S.slice(0,-1),{inputType:'deleteContentBackward'});await tick();
+ assert.deepEqual(sent(),[{type:'key',key:'Backspace'},{type:'key',key:'Backspace'}]);assert.equal(keys.value,S);
+ // Korean by composition: nothing while a syllable is composed; the committed syllable once.
  keys.fire('compositionstart');type(S+'ㅎ',{isComposing:true});type(S+'하',{isComposing:true});type(S+'한',{isComposing:true});
  await tick();assert.deepEqual(sent(),[]);
  keys.fire('compositionend');await tick();
- assert.deepEqual(sent(),[{type:'text',text:'한'}]);assert.equal(keys.value,S);
+ assert.deepEqual(sent(),[{type:'text',text:'한'}]);assert.equal(keys.value,S+'한');
+ // #596: Korean by replacement (a keyboard that rewrites the last letter, no composition events): the
+ // letter it replaces is still there to rewrite, and the window gets a Backspace and the new letter.
+ type(S+'한ㄱ',{inputType:'insertText'});type(S+'한그',{inputType:'insertText'});type(S+'한글',{inputType:'insertText'});await tick();
+ assert.deepEqual(sent(),[{type:'text',text:'ㄱ'},{type:'key',key:'Backspace'},{type:'text',text:'그'},
+  {type:'key',key:'Backspace'},{type:'text',text:'글'}],'the window ends with 한글, never separate letters');
  // AutoFill replaces the value: what it filled is text, never a run of Backspaces.
  type('pw-filled',{inputType:'insertReplacementText'});await tick();
  assert.deepEqual(sent(),[{type:'text',text:'pw-filled'}]);
@@ -1580,11 +1700,11 @@ const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
  type(S+'日本',{isComposing:true});keys.fire('compositionend');await tick();
  assert.deepEqual(sent(),[{type:'text',text:'日本'}]);
  // A paste over the limit goes in bounded pieces; a refused input says so on the page.
- type(S+'x'.repeat(600),{inputType:'insertFromPaste'});await tick();
+ type(keys.value+'x'.repeat(600),{inputType:'insertFromPaste'});await tick();
  assert.deepEqual(sent().map(p=>p.text.length),[512,88]);
  // An astral character across the boundary stays whole: no chunk ends or starts inside a surrogate pair.
  const lone=/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
- type(S+'x'.repeat(511)+'😀'+'y',{inputType:'insertFromPaste'});await tick();
+ type(keys.value+'x'.repeat(511)+'😀'+'y',{inputType:'insertFromPaste'});await tick();
  const chunks=sent().map(p=>p.text);assert.equal(chunks.join(''),'x'.repeat(511)+'😀'+'y');
  assert(chunks.every(c=>!lone.test(c)&&c.length<=512),'whole code points only');assert.deepEqual(chunks.map(c=>c.length),[511,3]);
  assert($('typing-failed').classList.contains('hidden'));
@@ -1597,12 +1717,12 @@ const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
  assert.deepEqual(sent(),[{type:'key',key:'Tab'},{type:'key',key:'Backspace'},{type:'key',key:'Enter'}]);
  // 뒤로 and 새로고침 go behind what is still being typed.
  sent();let typing;holds.push({type:'text',wait:new Promise(r=>{typing=r;})});
- type(S+'a',{inputType:'insertText'});type(S+'b',{inputType:'insertText'});$('reload').onclick();$('nav-back').onclick();
+ type(S+'a',{inputType:'insertText'});type(keys.value+'b',{inputType:'insertText'});$('reload').onclick();$('nav-back').onclick();
  await settle();typing();await tick();
  assert.deepEqual(sent(),[{type:'text',text:'a'},{type:'text',text:'b'},{type:'nav',action:'reload'},{type:'nav',action:'back'}]);
  // 완료 waits for what is still queued: the window never closes before the sign-in Enter reaches it.
  sent();let held;holds.push({type:'text',wait:new Promise(r=>{held=r;})});
- type(S+'p',{inputType:'insertText'});type(S+'w',{inputType:'insertText'});
+ type(S+'p',{inputType:'insertText'});type(keys.value+'w',{inputType:'insertText'});
  keys.fire('keydown',{key:'Enter',preventDefault(){}});await settle();
  const closing=$('done').onclick();$('done').onclick();await settle();
  assert.deepEqual(sent(),[{type:'text',text:'p'}],'nothing else goes out while the first text is held');
@@ -1613,6 +1733,38 @@ const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
 })().catch(error=>{console.error(error);process.exit(1);});
 """
 
+
+PAGE_FIELDS_AND_QR_CHECKS = PAGE_TYPING_CHECKS.split("(async()=>{")[0] + r"""(async()=>{
+ // #596: a frame names the window's fields; a tap on a plain text field opens a text input in the tap itself.
+ frameAnswer.body={jpeg:'AAAA',width:390,height:844,dialog:null,focus:null,
+  fields:[{kind:'text',x:0.1,y:0.2,w:0.8,h:0.05},{kind:'password',x:0.1,y:0.3,w:0.8,h:0.05}]};
+ await tick();await ctx.frame();sent();
+ const order=[];const realFocus=keys.focus;keys.focus=function(){order.push(keys.type);realFocus.call(this);};
+ tap(195,0.22*844);assert.equal(active,keys);assert.deepEqual(order,['text'],'a text input before it is focused');
+ assert.equal(keys.attrs.autocomplete,'username');
+ tap(195,0.32*844);assert.deepEqual(order,['text','password'],'a password field: a password input');
+ tap(195,0.9*844);assert.deepEqual(order,['text','password','password'],'no known field: a password input');
+ await tick();sent();
+ // Typing after a tap starts from the sentinel: the last field's text is never kept into the next one.
+ tap(195,0.22*844);type(S+'김',{inputType:'insertText'});await tick();
+ tap(195,0.22*844);assert.equal(keys.value,S);await tick();sent();
+ // QR codes the window shows: one link each, http(s) only, named by host, opening outside this page.
+ assert($('qr').classList.contains('hidden'));
+ frameAnswer.body={...frameAnswer.body,jpeg:'BBBB',links:['https://auth.example/qr?q=1','javascript:alert(1)','nonsense']};
+ await ctx.frame();
+ assert(!$('qr').classList.contains('hidden'),'shown');
+ const links=$('qr-links').children;
+ assert.equal(links.length,1);assert.equal(links[0].href,'https://auth.example/qr?q=1');
+ assert.equal(links[0].target,'_blank');assert.equal(links[0].rel,'noopener noreferrer');
+ assert.equal(links[0].textContent,'QR 코드 열기 · auth.example');
+ // The same links again do not rebuild it; none hides it.
+ const first=links[0];await ctx.frame();assert.equal($('qr-links').children[0],first);
+ frameAnswer.body={...frameAnswer.body,jpeg:'CCCC',links:[]};await ctx.frame();
+ assert($('qr').classList.contains('hidden'));assert.equal($('qr-links').children.length,0);
+ assert.deepEqual(sent(),[],'nothing is posted for a link');
+ console.log('ok');
+})().catch(error=>{console.error(error);process.exit(1);});
+"""
 
 class PhonePageTyping(unittest.TestCase):
     """#293: typing on the phone keyboard goes straight into the window; run in Node against a fake DOM."""
@@ -1638,6 +1790,31 @@ class PhonePageTyping(unittest.TestCase):
             result = subprocess.run([node, '-e', PAGE_TYPING_CHECKS, str(path)], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
         self.assertIn('ok', result.stdout)
+
+    def test_the_page_opens_the_right_keyboard_in_the_tap_and_offers_qr_links(self):
+        """#596: a text field gets a text input before the tap focuses it; a QR code's link is offered."""
+        import shutil
+        import subprocess
+        node = shutil.which('node')
+        if node is None:
+            self.skipTest('Node is needed to run the phone page script')
+
+        class Session:
+            site, code, expires = 'shop.test', 'c0de', 1000.0
+
+            @staticmethod
+            def clock():
+                return 400.0
+        html = remote_login.page(Session(), 'n0nce')
+        script = html.split('<script nonce="n0nce">')[1].split('</script>')[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'page.js'
+            path.write_text(script, encoding='utf-8')
+            result = subprocess.run([node, '-e', PAGE_FIELDS_AND_QR_CHECKS, str(path)], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+        self.assertIn('ok', result.stdout)
+        self.assertIn('<meta name="viewport" content="width=device-width,initial-scale=1">', html,
+                      'the owner can pinch-zoom a page drawn small')
 
     def test_the_separate_text_box_is_gone_and_autofill_stays_folded(self):
         class Session:

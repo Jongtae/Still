@@ -80,7 +80,7 @@ from .agent_runtime import BROWSER_ACTIONS, ToolError, lookup_norm, lookup_text_
 from .bounded_execution import SECRET_PATTERN
 from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, KeychainKey, latest_token_expiry,
                           store_account)
-from .browser_worker import LAYOUTS, PAYMENT_TOKENS, SECRET_TOKENS, destination_refusal
+from .browser_worker import LAYOUTS, PAYMENT_TOKENS, SECRET_TOKENS, destination_refusal, qr_links, remote_fields
 
 #: The model's declared effect class of one action.
 EFFECTS = ('read', 'navigate', 'mutate', 'payment')
@@ -2270,14 +2270,17 @@ class WebKitWorkerDriver:
 
     def frame(self):
         """``{'jpeg': base64, 'width': points, 'height': points, 'dialog': {'kind', 'text'} or None, 'focus': kind
-        or None}`` of the frontmost login view; never kept here.  ``dialog`` is a page dialog waiting for an
-        answer; ``focus`` is what kind of element has focus (``text``, ``password`` or ``frame``, #293)."""
+        or None, 'fields': [...], 'links': [...]}`` of the frontmost login view; never kept here.  ``dialog`` is a
+        page dialog waiting for an answer; ``focus`` is what kind of element has focus (``text``, ``password`` or
+        ``frame``, #293); ``fields`` where the visible editable fields are and of which kind, and ``links`` the
+        links of QR codes the window shows (#596)."""
         message = self._request_shown('frame')
         dialog = message.get('dialog') if isinstance(message.get('dialog'), dict) else None
         focus = message.get('focus')
         return {'jpeg': str(message.get('jpeg') or ''), 'width': message.get('width'), 'height': message.get('height'),
                 'dialog': {'kind': str(dialog.get('kind') or ''), 'text': str(dialog.get('text') or '')} if dialog else None,
-                'focus': focus if focus in REMOTE_FOCUS_KINDS else None}
+                'focus': focus if focus in REMOTE_FOCUS_KINDS else None,
+                'fields': remote_fields(message.get('fields')), 'links': qr_links(message.get('links'))}
 
     def remote_input(self, kind, **fields):
         """One phone input into the login window: ``tap`` (x, y), ``text`` (text), ``key`` (key), ``nav``

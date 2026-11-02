@@ -21,6 +21,7 @@ Evidence classes, named separately:
 
 No site, provider or category is named in ``src``; the fixture site is the test's own.
 """
+import base64
 import json
 import os
 
@@ -38,6 +39,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from personal_agent import browser_session as bs
+from personal_agent import browser_worker as bw
 from personal_agent.agent_runtime import ToolError, WorkBudget
 from personal_agent.browser_jar import JAR_NAME, CookieJar, JarError, KeychainKey, MemoryKey, SERVICE, store_account
 from personal_agent.portable_state import export_owner_state
@@ -1441,6 +1443,26 @@ class DestinationTests(unittest.TestCase):
 REAL_BROWSER_TESTS = __import__('os').environ.get('AGENTOS_REAL_BROWSER_TESTS') == '1'
 
 
+#: #596: a QR code of ``https://auth.example/qr?q=596`` (PNG), as a sign-in page shows one for the owner's phone.
+QR_PNG = ('iVBORw0KGgoAAAANSUhEUgAAAIQAAACECAYAAABRRIOnAAAAAklEQVR4AewaftIAAARgSURBVO3BQY4cyREAQfdE///LrjnoEKck'
+          'CtXkcqUwsx+s9V+HtYbDWsNhreGw1nBYazisNRzWGj78gsqfVHGjMlVMKlPFEyo3FTcqNxWTyp9UcXNYazisNRzWGj48VPFNKr+T'
+          'ylRxU3GjclMxqTxR8U0qTxzWGg5rDYe1hg8vqTxR8YTKjcpNxY3KVDGpTBWTyk3FGypPVLxxWGs4rDUc1ho+/MtVvFHxhMoTKlPF'
+          '3+yw1nBYazisNXz4P6PyRMWkMlVMKv9mh7WGw1rDYa3hw0sV/ySVm4o3VJ6omFTeqPiTDmsNh7WGw1rDh4dU/kkVk8pUMalMFZPK'
+          'VDGpTBWTylTxhso/6bDWcFhrOKw12A/+Yio3FTcqNxWTylTxhMpNxd/ssNZwWGs4rDV8+AWVqWJS+aaKqWJSmVSmipuKSeUJlani'
+          'puJG5Zsq3jisNRzWGg5rDR9eqvgmlZuKG5Wp4qZiUplUpoo3VG4qJpWp4gmVqeLmsNZwWGs4rDV8+IWKSWWqmFSmihuVN1Smikll'
+          'qripeEJlqphUpopJ5XeqeOKw1nBYazisNdgPLlSmiknliYrfSWWquFGZKiaVqeIJlScqblSmikllqnjisNZwWGs4rDXYDy5Upoob'
+          'lW+qeELlpuIJlScqfieVm4o3DmsNh7WGw1qD/eBC5aZiUpkqJpWpYlK5qXhC5Y2KSWWqmFR+p4onVKaKm8Naw2Gt4bDWYD+4UJkq'
+          'nlB5o2JSuamYVL6p4k9SeaLijcNaw2Gt4bDW8OEXKiaVqeKNihuVqWJSuamYVKaKSWWqeENlqrhRuam4UZkqnjisNRzWGg5rDR9+'
+          'QeWbKiaVm4qbihuVqWJSeUPlpuKNiknlpuKNw1rDYa3hsNZgP7hQmSomlaliUrmpuFG5qfgmlZuKG5WbiknliYpJZaqYVKaKm8Na'
+          'w2Gt4bDW8OGlikllqrhRmSqeUJkqJpWp4qbiCZWp4kblT6p44rDWcFhrOKw1fHhJ5Y2KNyomlSdUpopJZar4popJ5YmKSWWqeOKw'
+          '1nBYazisNXz4sopJ5ZsqJpWp4omK30nlRuUNlRuVqeLmsNZwWGs4rDXYD/5iKlPFpPI7VUwqb1Q8ofJNFTeHtYbDWsNhreHDL6j8'
+          'SRVTxaTyJ6ncVEwqT6hMFW9UvHFYazisNRzWGj48VPFNKjcqU8WkclMxqUwVk8pUcaPyRsUTFTcqNxU3h7WGw1rDYa3hw0sqT1R8'
+          'U8WkclMxqbxRcaMyqXyTyjcd1hoOaw2HtYYP/3IqU8WkMlVMFZPKpDJV3KhMFU+oTBWTyk3FG4e1hsNaw2Gt4cP/GJU3Kr5J5Q2V'
+          'J1SmiicOaw2HtYbDWsOHlyp+p4pJ5YmKSWWquFGZKiaVqWJSuamYVJ6omFTeOKw1HNYaDmsNHx5S+ZNUpoonVKaKSWWqmCqeUJkq'
+          'nqiYVKaKSWWqeOOw1nBYazisNdgP1vqvw1rDYa3hsNZwWGs4rDUc1hoOaw3/AV/BPhSfRxunAAAAAElFTkSuQmCC'
+          )
+
+
 def _webkit_ready():
     return REAL_BROWSER_TESTS and bs.webkit_unavailable_reason() is None and Path('/usr/bin/security').exists()
 
@@ -1487,6 +1509,7 @@ class SessionFixtureHandler(FixtureHandler):
             return self._send('<html><head><title>넓은 페이지</title><meta name="viewport" content="width=device-width">'
                               '</head><body style="margin:0"><div style="min-width:1000px;height:600px;position:relative">'
                               '<input id="name" aria-label="이름" style="position:absolute;left:860px;top:100px;width:120px;height:40px">'
+                              f'<img alt="QR" src="data:image/png;base64,{QR_PNG}" style="position:absolute;left:40px;top:100px">'
                               '<button id="go" style="position:absolute;left:860px;top:200px;width:120px;height:60px"'
                               ' onclick="document.getElementById(\'r\').textContent = \'눌림 \' + document.getElementById(\'name\').value">'
                               '로그인</button><p id="r" style="position:absolute;left:860px;top:300px">대기</p></div>'
@@ -2515,9 +2538,11 @@ class WebKitIntegrationTests(unittest.TestCase):
         finally:
             worker.close()
 
-    def test_a_desktop_only_page_widens_the_phone_window_and_its_far_right_controls_work(self):
-        """#254: in a phone session a page wider than the window widens it (no reload); taps and typing land;
-        the next page is measured afresh from the phone width; the session's end restores the window."""
+    def test_a_desktop_only_page_is_zoomed_out_in_the_phone_window_and_its_far_right_controls_work(self):
+        """#254/#596: in a phone session a page wider than the window is zoomed out to fit it (no reload, no
+        resize): the frame stays phone-shaped and is drawn at the page's width; the fields are named by kind and
+        place; a QR code's link is read; taps (view points) and typing land; the next page starts at zoom 1; the
+        session's end restores the window."""
         worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
 
         def frame_until(check, seconds=8):
@@ -2535,38 +2560,64 @@ class WebKitIntegrationTests(unittest.TestCase):
                 seen.append(worker.frame()['width'])
                 time.sleep(0.3)
             return seen
+
+        def zoomed(frame):
+            return any(field['x'] > 0.5 for field in frame['fields'])
+
+        def image_width(frame):
+            # The JPEG's own size, from its start-of-frame marker.
+            data = base64.b64decode(frame['jpeg'])
+            index = 2
+            while index < len(data):
+                marker, length = data[index + 1], int.from_bytes(data[index + 2:index + 4], 'big')
+                if marker in (0xC0, 0xC1, 0xC2):
+                    return int.from_bytes(data[index + 7:index + 9], 'big')
+                index += 2 + length
+            return 0
         try:
             worker.show(self.origin + '/desktop-only', 10)
             before = worker.frame()
             self.assertEqual(before['width'], 390.0)
+            self.assertEqual(before['links'], [], 'no phone session: no code is read')
             navigations = worker.navigations()
             worker.remote_begin()
-            frame = frame_until(lambda frame: frame['width'] > 390.0)
-            self.assertEqual((frame['width'], frame['height']), (1000.0, before['height']),
-                             'as wide as the page, the same height')
-            self.assertEqual(worker.navigations(), navigations, 'only a resize: the page was not reloaded')
+            frame = frame_until(zoomed)
+            self.assertEqual((frame['width'], frame['height']), (390.0, before['height']), 'phone-shaped still')
+            self.assertEqual(worker.navigations(), navigations, 'only a zoom: the page was not reloaded')
+            self.assertGreater(image_width(frame), 780, 'drawn at the page width, sharper than the view')
+            zoom = bw.phone_fit_zoom(1000, 390, 1.0, None)   # the page is 1000 CSS px wide
+            name = [field for field in frame['fields'] if field['kind'] == 'text']
+            self.assertEqual(len(name), 1, frame['fields'])
+            self.assertAlmostEqual(name[0]['x'] * frame['width'], 860 * zoom, delta=2)
+            self.assertEqual(frame_until(lambda frame: frame['links'])['links'], ['https://auth.example/qr?q=596'])
             # The phone maps a tap by the frame's own width and height: view points.
-            worker.remote_input('tap', x=920.0, y=120.0)
+            worker.remote_input('tap', x=920.0 * zoom, y=120.0 * zoom)
             self.assertEqual(frame_until(lambda frame: frame['focus'] == 'text')['focus'], 'text', '#293 focus')
+            worker.remote_input('text', text='홍')
+            worker.remote_input('key', key='Backspace')
             worker.remote_input('text', text='홍길동')
-            worker.remote_input('tap', x=920.0, y=230.0)
+            worker.remote_input('tap', x=920.0 * zoom, y=230.0 * zoom)
             deadline = time.monotonic() + 5
             while '눌림' not in (text := worker.snapshot()['text']) and time.monotonic() < deadline:
                 time.sleep(0.2)
             self.assertIn('눌림 홍길동', text, 'the far-right button got the tap after the typed name')
-            # A later phone page is measured from the phone width again.
+            # A later phone page is measured at zoom 1 again.
             worker.goto(self.origin + '/device', 10)
-            self.assertEqual(set(widths()), {390.0}, 'a page that fits stays phone-sized')
+            self.assertEqual(set(widths()), {390.0}, 'the window stays phone-sized')
             self.assertIn('폭 390', worker.snapshot()['text'], 'its own scripts read the phone width')
-            # A page whose overflow grows with the window is not widened for good.
+            self.assertEqual(worker.frame()['links'], [])
+            # A page whose overflow grows with the viewport is not zoomed out for good.
             worker.goto(self.origin + '/off-canvas', 10)
-            seen = widths()
-            self.assertEqual(seen[-3:], [390.0] * 3, seen)
-            # Back on the wide page; the session ends and the window is as it was before it.
+            self.assertEqual(set(widths()), {390.0})
+            time.sleep(1)
+            self.assertEqual(worker.frame()['fields'], [])
+            # Back on the wide page; the session ends and the window is as it was before it, at zoom 1.
             worker.goto(self.origin + '/desktop-only', 10)
-            self.assertEqual(frame_until(lambda frame: frame['width'] > 390.0)['width'], 1000.0)
+            self.assertTrue(zoomed(frame_until(zoomed)))
             worker.remote_end()
-            self.assertEqual((worker.frame()['width'], worker.frame()['height']), (before['width'], before['height']))
+            after = worker.frame()
+            self.assertEqual((after['width'], after['height']), (before['width'], before['height']))
+            self.assertFalse(zoomed(after), 'zoom 1: the far-right field is off the phone-wide view again')
         finally:
             worker.close()
 
