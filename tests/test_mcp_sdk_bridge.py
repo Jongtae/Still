@@ -56,7 +56,13 @@ PEER_SERVER = textwrap.dedent('''\
     def execute(self, plan, **kwargs):
         record('enter', plan=plan)
         if mode == 'slow':
-            time.sleep(0.03)
+            # #570: hold until a second read has entered, not a fixed sleep a loaded runner can
+            # outlast. A bridge that serializes reads leaves this waiting to the deadline, so the
+            # trace still reads enter, exit, enter, exit and the overlap test fails.
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and sum(
+                    json.loads(line)['kind'] == 'enter' for line in trace.read_text().splitlines()) < 2:
+                time.sleep(0.01)
         if mode == 'noisy':
             print('synthetic helper output', flush=True)
         if mode == 'transient':
