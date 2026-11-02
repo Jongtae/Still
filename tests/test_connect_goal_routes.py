@@ -147,6 +147,19 @@ class GoalRouteContract(unittest.TestCase):
         orchestration.next(attempt, verdict, answer='It usually opens at 10:30; I could not confirm today.')
         self.assertEqual(len(plans), 2, 'a re-plan is asked instead of stopping as reached')
 
+    def test_the_judgment_knows_still_takes_an_api_s_keys(self):
+        """#586 (live 2026-11-02): a worker's "Still cannot take this API's keys" was accepted as a limitation and the
+        Work stopped unconfirmed.  The proposition names the setup tool, which must exist and resume the Work."""
+        import re
+        from personal_agent.settings_orchestrator import SETTINGS
+        sentence = GOAL_REACHED_PROPOSITION.split('(#586)')[0].rsplit('\n', 1)[-1]
+        named = re.findall(r'settings_change (\w+) (\w+)', sentence)
+        self.assertEqual(named, [('api_connections', 'connect')])
+        self.assertIn('connect', SETTINGS['api_connections'])
+        self.assertIn('retry_warranted true', sentence)
+        from test_no_scenario_code import scenario_tokens
+        self.assertEqual(scenario_tokens(sentence), [])
+
     def test_setup_and_proposal_verdicts_stop_short_of_execution_completion(self):
         for reply, observed in (
                 ('Use the available export; shall I connect it?', 'Candidate found; no connection or input binding.'),
