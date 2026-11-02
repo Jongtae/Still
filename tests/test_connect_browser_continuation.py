@@ -43,7 +43,14 @@ class BrowserSettlement(unittest.TestCase):
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                        (self.work,tool,status,json.dumps(detail),time.time()))
 
+    def paused_budget(self):
+        ledger=WorkLedger(self.store,self.work,fresh=True)
+        self.assertTrue(ledger.spend(9,'turns'))
+        ledger.pause()
+        return ledger.key,self.store.config(ledger.key)
+
     def test_failure_at_final_login_write_rolls_back_queue_receipt_and_signin(self):
+        key,before=self.paused_budget()
         original=self.service._put_browser_login
         def fail_after_write(*args,**kwargs):
             original(*args,**kwargs)
@@ -54,7 +61,9 @@ class BrowserSettlement(unittest.TestCase):
         self.assertEqual(self.service._browser_login(self.work)['state'],'offered')
         self.assertEqual(self.receipts(),[])
         self.assertIsNone(self.store.config(BROWSER_OWNER_SIGNINS_KEY))
+        self.assertEqual(self.store.config(key),before,'renewal rolls back with the continuation')
         self.assertEqual(self.settle(),'resumed')
+        self.assertEqual(self.store.config(key)['renewals'],1)
 
     def test_postcommit_notification_loss_survives_restart_without_requeue(self):
         with patch.object(self.service,'_finish_login_notification',side_effect=RuntimeError('after commit')):
@@ -70,6 +79,7 @@ class BrowserSettlement(unittest.TestCase):
         self.assertEqual(len(self.receipts()),1)
 
     def test_duplicate_concurrent_completion_has_one_receipt(self):
+        key,_before=self.paused_budget()
         other=AgentService(self.store)
         with patch.object(other,'_login_cookie_marks',return_value=self.marks):
             with ThreadPoolExecutor(max_workers=2) as pool:
@@ -79,20 +89,25 @@ class BrowserSettlement(unittest.TestCase):
                 outcomes=[first.result(),second.result()]
         self.assertEqual(outcomes.count('resumed'),1)
         self.assertEqual(len(self.receipts()),1)
+        self.assertEqual(self.store.config(key)['renewals'],1)
 
     def test_stale_nonce_and_missing_readiness_do_not_queue(self):
+        key,before=self.paused_budget()
         self.assertIsNone(self.service._settle_browser_login(self.work,'other','resume',True,signed=(('fixture.test',None),)))
         self.assertEqual(self.service._settle_browser_login(self.work,self.row['nonce'],'resume',True,signed=()),'not_logged_in')
         self.assertEqual(self.store.job(self.work)['status'],'partial')
         self.assertEqual(self.receipts(),[])
+        self.assertEqual(self.store.config(key),before)
 
     def test_deadline_and_stop_prevent_late_resume(self):
+        key,before=self.paused_budget()
         self.service._put_browser_login(self.work,{**self.row,'deadline':time.time()-1})
         self.assertEqual(self.settle(),'expired')
         self.service._put_browser_login(self.work,self.row)
         self.store.put(WORK_STOP_KEY,[self.work])
         self.assertEqual(self.settle(),'not_resumed')
         self.assertEqual(self.receipts(),[])
+        self.assertEqual(self.store.config(key),before)
 
     def test_cancelled_or_replaced_owner_is_not_resumed(self):
         with self.store.db() as db:db.execute("UPDATE jobs SET status='cancelled' WHERE id=?",(self.work,))
@@ -105,12 +120,14 @@ class BrowserSettlement(unittest.TestCase):
         self.assertEqual(self.receipts(),[])
 
     def test_unknown_effect_refuses_resume_and_preserves_uncertainty(self):
+        key,before=self.paused_budget()
         self.event('api_dispatch','claiming',{'evidence':{'work_id':self.work,'effect':'mutate'}})
         self.assertEqual(self.settle(),'not_resumed')
         self.assertEqual(self.receipts()[0]['reason'],'unknown-effect')
         self.assertIn('확인되지',self.store.job(self.work)['owner_cause'])
         self.assertTrue(self.service._work_has_unknown_effect(self.work))
         self.assertNotEqual(self.store.job(self.work)['status'],'queued')
+        self.assertEqual(self.store.config(key),before)
 
     def test_unaccounted_effect_is_not_replayed(self):
         self.event('write_note','succeeded',{})
@@ -186,17 +203,17 @@ class BrowserSettlement(unittest.TestCase):
         self.assertEqual(self.store.job(self.work)['status'],'unknown')
         self.assertIn('불확실',self.store.job(self.work)['owner_cause'])
 
-    def test_original_ledger_survives_login_and_exhaustion_blocks_worker(self):
+    def test_verified_login_renews_an_exhausted_paused_ledger(self):
         now=[time.time()]
         ledger=WorkLedger(self.store,self.work,fresh=True,wall=lambda:now[0])
-        self.assertTrue(ledger.spend(40));before=ledger.used()
+        self.assertTrue(ledger.spend(40))
         now[0]+=601;ledger.pause()
         self.assertEqual(self.settle(),'resumed')
-        self.service=AgentService(self.store)
-        with patch.object(self.service,'start_early_judgment',side_effect=AssertionError('expired active time')):
-            self.assertTrue(self.service.run_one())
-        self.assertEqual(self.store.job(self.work)['status'],'failed')
-        self.assertEqual(WorkLedger(self.store,self.work,existing_only=True).used(),before)
+        renewed=self.store.config(ledger.key)
+        self.assertEqual((renewed['attempts'],renewed['turns'],renewed['renewals']),(0,0,1))
+        self.assertGreater(renewed['remaining_seconds'],0)
+        self.assertFalse(ledger.spend(40),'the old epoch cannot use the fresh allowance')
+        self.assertTrue(WorkLedger(self.store,self.work,fresh=True).spend(40))
 
     def test_login_keeps_existing_scheduled_slot_and_refuses_expired_window(self):
         now=[time.time()];self.service.preparations.clock=lambda:now[0]

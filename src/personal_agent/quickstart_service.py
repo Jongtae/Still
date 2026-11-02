@@ -425,6 +425,10 @@ BROWSER_LOGIN_PROMPT=(msg('quickstart_service.login_request_heading')+'\n{addres
                       +msg('quickstart_service.login_request'))
 #: #255: the same site lines while the phone link drives the window; no buttons go with it.
 BROWSER_LOGIN_PHONE_PROMPT=msg('quickstart_service.login_request_heading')+'\n{address}{moved}{session}'+remote_login.PROMPT_PHONE_ACTIVE_LINE.replace('{','{{').replace('}','}}')
+BROWSER_LOGIN_PHONE_PREPARING_PROMPT=(msg('quickstart_service.login_request_heading')+'\n{address}{moved}{session}'
+                                    +msg('quickstart_service.login_phone_preparing'))
+BROWSER_LOGIN_PHONE_FAILED_PROMPT=(msg('quickstart_service.login_request_heading')+'\n{address}{moved}{session}'
+                                 +msg('quickstart_service.login_phone_failed'))
 #: The full host, shown only when it is longer than the site.
 BROWSER_LOGIN_ADDRESS_LINE=(msg('quickstart_service.login_full_address')+'\n')
 #: #749: shown when the window's first navigation landed on another site than the one requested.
@@ -8714,10 +8718,9 @@ class AgentService:
         if changed:
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                        (job['id'],'action_continuation','queued',json.dumps({'action_digest':row['digest'],'offer_digest':row.get('offer_digest'),'resumed':True,**({'budget_progress':row['progress']} if row.get('action')=='budget_continue' else {})}),time.time()))
-            # #1478 (live): the owner's approval of a step is a human boundary like a completed setup (#1445);
-            # the approved step runs with a fresh allowance (bounded per Work), not the turns spent reaching it.
-            # A login resume is not an approval and keeps the original ledger (its own contract, #709).
-            if row.get('state')=='issued':
+            # #599: a verified owner sign-in is a completed prerequisite too. The same bounded
+            # renewal as setup/step approval leaves execution for the original task after discovery.
+            if row.get('state')=='issued' or row.get('action')=='browser_sign_in':
                 from .agent_runtime import renew_for_owner_prerequisite
                 renew_for_owner_prerequisite(db,job['id'])
         return changed
@@ -9096,7 +9099,7 @@ class AgentService:
         self.queue_notification(job,'browser_login_needed',fingerprint=nonce)
         self.store.telegram.rearm(job['id'],'browser_login_needed',nonce)
 
-    def browser_login_prompt(self, work_id, phone=False):
+    def browser_login_prompt(self, work_id, phone=False, *, preparing=False, failed=False):
         """The owner's login prompt: the site first, the full host when longer, and a note when no
         sign-in for that site is stored (#716).  Names only; never the page path.  ``phone``: the
         same lines while the phone link drives the window, ending in its one way to finish (#255)."""
@@ -9105,7 +9108,9 @@ class AgentService:
         # #749: the site the window actually landed on (after redirects) leads; the requested one is named.
         host=ascii_host(row.get('landed_host') or row.get('host'))
         site=row.get('landed_site') or requested or registrable_domain(host) or msg('quickstart_service.this_site')
-        return (BROWSER_LOGIN_PHONE_PROMPT if phone else BROWSER_LOGIN_PROMPT).format(
+        template=(BROWSER_LOGIN_PHONE_PREPARING_PROMPT if preparing else BROWSER_LOGIN_PHONE_FAILED_PROMPT if failed
+                  else BROWSER_LOGIN_PHONE_PROMPT if phone else BROWSER_LOGIN_PROMPT)
+        return template.format(
             site=site,address=BROWSER_LOGIN_ADDRESS_LINE.format(host=host) if host and host!=site else '',
             moved=BROWSER_LOGIN_MOVED_LINE.format(site=requested) if row.get('landed_site') and requested and requested!=site else '',
             session=BROWSER_LOGIN_NO_SESSION_LINE if row.get('stored_session') is False else '')
@@ -9320,7 +9325,7 @@ class AgentService:
         try:self.telegram.edit_message_text(note['chat_id'],note['message_id'],text,markup)
         except ProviderError:pass
 
-    def _show_phone_login_prompt(self, work_id, nonce):
+    def _show_phone_login_prompt(self, work_id, nonce, *, failed=False):
         """#255 (owner choice 2026-10-24): once the phone link was delivered, the prompt drops its buttons.
 
         Its 로그인 완료 and 건너뛰기 sat above the link, next to the phone page's [완료]; one tap there
@@ -9330,12 +9335,13 @@ class AgentService:
         session=self.remote_login_session()
         note=self.store.notification_of(work_id,'browser_login_needed')
         row=self._browser_login(work_id) or {}
-        if not (session is not None and session.window==row.get('window') and note and note['state']=='sent'
+        if not ((failed or session is not None and session.window==row.get('window')) and note and note['state']=='sent'
                 and note['fingerprint']==nonce and row.get('state')=='offered' and row.get('nonce')==nonce
                 and isinstance(note.get('message_id'),int) and note['message_id']>0):
             return False
-        try:self.telegram.edit_message_text(note['chat_id'],note['message_id'],self.browser_login_prompt(work_id,phone=True),
-                                            {'inline_keyboard':[]})
+        # #599: an automatic start had no buttons; restore the Mac path and phone retry on failure.
+        markup=self.telegram_surface._notice_markup(note,{}) if failed else {'inline_keyboard':[]}
+        try:self.telegram.edit_message_text(note['chat_id'],note['message_id'],self.browser_login_prompt(work_id,phone=not failed,failed=failed),markup)
         except ProviderError:return False
         after=self.store.notification(note['id']) or {}
         state=str(after.get('state') or '')
@@ -10113,7 +10119,7 @@ class AgentService:
         except Exception as exc:
             LOG.warning('remote login: link message not updated (%s)',type(exc).__name__)
 
-    def _start_remote_login_for_work(self, work_id, nonce, chat_id):
+    def _start_remote_login_for_work(self, work_id, nonce, chat_id, *, automatic=False):
         """The prompt's 휴대폰에서 로그인: start the session for this Work's offered window on its own thread."""
         if self.remote_login_session() is not None:return False
         row=self._browser_login(work_id) or {}
@@ -10124,18 +10130,20 @@ class AgentService:
         close=lambda reason:self._request_login_decision(work_id,nonce,'resume' if reason=='done' else 'expire')
 
         def run():
-            try:self.start_remote_login(window,site,close,chat_id=chat_id)
+            opened=False
+            try:
+                self.start_remote_login(window,site,close,chat_id=chat_id)
+                opened=True
             except remote_login.RemoteLoginError as exc:
                 self._notify_owner(f'telegram:{chat_id}',str(exc))
-                return
             except Exception as exc:
                 LOG.warning('remote login failed to start (%s)',type(exc).__name__)
                 self._notify_owner(f'telegram:{chat_id}',remote_login.TUNNEL_FAILED_TEXT)
-                return
-            # The link is out: the prompt is not a second place to finish (#255).
-            try:self._show_phone_login_prompt(work_id,nonce)
-            except Exception as exc:
-                LOG.warning('remote login: prompt not updated (%s)',type(exc).__name__)
+            finally:
+                if opened or automatic:
+                    try:self._show_phone_login_prompt(work_id,nonce,failed=not opened)
+                    except Exception as exc:
+                        LOG.warning('remote login: prompt not updated (%s)',type(exc).__name__)
         threading.Thread(target=run,name='agentos-remote-login-start',daemon=True).start()
         return True
 
