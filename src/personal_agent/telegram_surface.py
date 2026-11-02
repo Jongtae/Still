@@ -29,6 +29,8 @@ exactly as before the move, so authority checks, approvals, budgets and database
 semantics are unchanged.  The constants these methods share with the rest of
 the service are still defined in ``quickstart_service``.
 """
+from .telegram_locale import ai_text
+
 import hashlib
 import hmac
 import json
@@ -179,7 +181,7 @@ class TelegramSurface(ConversationSurface):
         on the owner's iOS client, #581).  The same `draft_id` maps Stop back
         to the Work either way (``ingest_stop``, the ``native_stop`` capability).
         """
-        text=text or draft_frame('',0)
+        text=ai_text(text or draft_frame('',0))
         draft_id=draft_id_for(job['id'],state.said)
         can_stop=self.capabilities.native_stop
         if not state.rich_draft_failed:
@@ -1281,13 +1283,14 @@ class TelegramSurface(ConversationSurface):
                 db.execute('UPDATE jobs SET delivery=? WHERE id=?',('sending' if allowed else 'cancelled',job['id']))
             if not allowed:return
             blocked=service.store.blocked_delivery_reply(job['id'])
+            system=service.store.projected_delivery_reply(job['id'],'system')
             # The owner-language cause when one was recorded (#598 X1); the
             # technical ``error`` remains the Task-detail record.
             # #1470: a Work waiting for the owner's approval is not "unconfirmed".  #173 slice C: nor is one
             # whose drafts or proposals wait on Still's own preview, unless something else is left to say.
             # #240: the one typed waiting state (``work_waits_for_owner``) every surface reads.
             waits=service.work_waits_for_owner(job)
-            text=blocked or service.telegram_result_text(job['response'],
+            text=blocked or system or service.telegram_result_text(job['response'],
                                                       job.get('owner_cause') or job['error'],job.get('status'),
                                                       verified=job.get('owner_verified'),note=job.get('owner_note'),
                                                       waiting=service.wait_explains_outcome(job,waits))

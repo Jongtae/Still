@@ -1,14 +1,8 @@
 """Telegram system lines in the owner's language (#1350).
 
-AI answers already follow the owner's language.  Still's own fixed lines
-(progress, task cards, buttons, terminal and memory notices) are written in
-Korean at their call sites.  This module translates them at the one place
-they leave for Telegram, so no call site changes.
-
-The lines come from the id-keyed catalog (``messages.json``, #1356).  Only
-a whole line that exactly matches a catalog line or template is
-translated.  An AI answer never matches and passes through unchanged, and a
-line the table does not know stays Korean.  Korean owners see no change.
+Only Still-authored text is eligible for catalog matching. ``Text`` preserves
+that provenance while composers join AI prose and fixed lines. Matching a
+catalog template is never evidence that a sentence was written by Still.
 
 A catalog entry may span several lines (#235).  It is matched as one block,
 as the whole message or as consecutive lines inside a longer one, before the
@@ -29,10 +23,85 @@ _PLACEHOLDER = re.compile(r'\{([a-z_]+)\}')
 _TRAILER = re.compile(r'(\s*(?:·\s*){2,}·?\s*|…\s*)$')
 
 
-def language(code):
-    """The table language for a Telegram ``language_code``, or None for Korean or unknown."""
+class Text(str):
+    """Outgoing text segments paired with whether Still may translate them.
+
+    A str subclass keeps the existing send/store APIs; concatenation and preview
+    slicing retain the boundary until localization, before wire serialization.
+    """
+
+    def __new__(cls, parts):
+        parts = tuple(parts)
+        obj = super().__new__(cls, ''.join(text for text, _fixed in parts))
+        obj.parts = tuple(parts)
+        return obj
+
+    def __getnewargs__(self):
+        return (self.parts,)
+
+    def __add__(self, other):
+        return Text(self.parts + (other.parts if isinstance(other, Text) else ((other, True),)))
+
+    def __radd__(self, other):
+        return Text(((other, True),) + self.parts)
+
+    def __getitem__(self, key):
+        if not isinstance(key, slice) or key.step not in (None, 1):
+            return super().__getitem__(key)
+        start, stop, _ = key.indices(len(self))
+        parts, offset = [], 0
+        for text, fixed in self.parts:
+            left, right = max(0, start - offset), min(len(text), stop - offset)
+            if left < right:
+                parts.append((text[left:right], fixed))
+            offset += len(text)
+        return Text(parts)
+
+
+def ai_text(text):
+    """Mark AI prose at its composer; its words never enter catalog matching."""
+    return Text(((str(text or ''), False),))
+
+
+def language(code, text=None):
+    """Writing script first, then Telegram language_code; None means Korean/unknown."""
+    text = text or ''
+    if re.search(r'[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7ff]', text):
+        return None
+    if re.search(r'[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9f]', text):
+        return 'ja'
+    if re.search(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U000323af]', text):
+        return 'zh'
     lang = str(code or '').lower().split('-')[0]
     return lang if lang in LANGUAGES else ('en' if lang and lang != 'ko' else None)
+
+
+def owner_language(store, work_id=None):
+    """One language decision, from the latest owner words in this Work/chat.
+
+    Read existing owner state; never overwrite Telegram's language_code.
+    Minimal stores used by phone pages may only expose config().
+    """
+    if store is None:
+        return None
+    cfg = store.config('telegram', {})
+    text = None
+    if hasattr(store, 'db'):
+        scope = "j.id=?" if work_id else "j.chat_id=? AND j.channel LIKE 'telegram:%'"
+        value = work_id or cfg.get('user_id')
+        with store.db() as db:
+            # Queued turns already exist in jobs before their transcript row is
+            # written; later owner corrections may instead be newer message rows.
+            row = db.execute(
+                "SELECT content FROM ("
+                "SELECT m.content,m.created FROM messages m JOIN jobs j ON j.id=m.job_id "
+                "WHERE m.role='user' AND j.owner_typed=1 AND " + scope +
+                " UNION ALL SELECT j.message AS content,j.created FROM jobs j "
+                "WHERE j.owner_typed=1 AND " + scope +
+                ") ORDER BY created DESC LIMIT 1", (value, value)).fetchone()
+            if row:
+                text = row['content']
+    return language(cfg.get('owner_language'), text)
 
 
 @lru_cache(maxsize=1)
@@ -98,6 +167,8 @@ def _line(line, lang):
 
 def translate(text, lang):
     """``text`` with every known fixed line translated into ``lang``; unchanged for Korean or None."""
+    if isinstance(text, Text):
+        return ''.join(translate(part, lang) if fixed else part for part, fixed in text.parts)
     if not lang or not isinstance(text, str) or not text:
         return text
     exact, templates = _table()

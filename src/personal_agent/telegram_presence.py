@@ -61,6 +61,7 @@ animated"), the ``stopped_message_generation`` update
 ``InlineKeyboardButton.disabled`` / ``DisabledButton`` and the HTML parse mode.
 """
 from .messages import msg
+from .telegram_locale import Text, ai_text
 import hashlib
 import html
 import re
@@ -109,14 +110,17 @@ def draft_frame(line, frame, note=None):
     its own line.  Never empty.
     """
     dots = DOTS_FRAMES[frame % len(DOTS_FRAMES)]
+    model = isinstance(line, Text)
     line = _TRAILING_ELLIPSIS.sub('', str(line or '')).strip()
-    return with_note(f'{line} {dots}' if line else dots, note)
+    if model:
+        line = ai_text(line)
+    return with_note(line + ' ' + dots if line else dots, note)
 
 
 def with_note(text, note=None):
     """``text`` followed, on its own line, by the one attention ``note`` (#839) if any."""
     note = ' '.join(str(note or '').split())
-    return f'{text}\n{note}' if note else text
+    return text + '\n' + ai_text(note) if note else text
 
 
 def rich_draft_blocks(text, note=None):
@@ -129,7 +133,7 @@ def rich_draft_blocks(text, note=None):
     blocks = [{'type': 'thinking', 'text': text or draft_frame('', 0)}]
     note = ' '.join(str(note or '').split())
     if note:
-        blocks.append({'type': 'paragraph', 'text': note})
+        blocks.append({'type': 'paragraph', 'text': ai_text(note)})
     return blocks
 
 
@@ -183,18 +187,20 @@ ATTENTION_PHRASES = {ATTENTION_PREPARED: msg('attention.prepared'),
                      ATTENTION_ASK: msg('attention.ask')}
 
 
-def attention_line(kind, text):
+def attention_line(kind, text, lang=None):
     """The one "참, …" line for an item of ``kind`` whose own words are ``text``, or None."""
     text = ' '.join(str(text or '').split())
     if not text or kind not in ATTENTION_PHRASES:
         return None
-    line = ATTENTION_PREFIX + ATTENTION_PHRASES[kind].format(text=text)
+    # Localize fixed templates before inserting the item's own words.
+    line = msg('compose.by_the_way_text', lang or 'ko',
+               text=msg('attention.' + kind, lang or 'ko', text=text))
     if len(line) > ATTENTION_LINE_CHARS:
         line = line[:ATTENTION_LINE_CHARS - 1].rstrip() + '…'
     return line
 
 
-def pick_attention(items, now, surfaced=None, cooldown=ATTENTION_COOLDOWN):
+def pick_attention(items, now, surfaced=None, cooldown=ATTENTION_COOLDOWN, lang=None):
     """The one item to surface, or None: the best-ranked item not surfaced within ``cooldown``.
 
     ``items`` are ``{'ref', 'kind', 'text', 'at'}`` dicts (``at``: the
@@ -210,7 +216,7 @@ def pick_attention(items, now, surfaced=None, cooldown=ATTENTION_COOLDOWN):
         last = surfaced.get(item['ref'])
         if isinstance(last, (int, float)) and now - last < cooldown:
             continue
-        line = attention_line(item['kind'], item.get('text'))
+        line = attention_line(item['kind'], item.get('text'), lang)
         if line:
             return {**item, 'line': line}
     return None
@@ -327,7 +333,7 @@ def step_line(step, last_host=None, clean=None):
         except Exception:
             continue  # never show a line that could not be redacted
         if shown and not masked(shown):
-            return shown
+            return ai_text(shown) if line in (step.get('announce'), step.get('status')) else shown
     return NO_STEP_LINE
 
 
@@ -824,6 +830,8 @@ def render_telegram_html(text):
     delivery ``unknown``, so validity is a correctness property here, not a
     cosmetic one.
     """
+    if isinstance(text, Text):
+        return Text(tuple((render_telegram_html(part), fixed) for part, fixed in text.parts))
     text = str(text or '')
     out, pos = [], 0
     for match in _FENCE.finditer(text):

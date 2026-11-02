@@ -858,11 +858,16 @@ class QuickStore:
             return db.execute(f"SELECT 1 FROM messages WHERE job_id=? AND role='user' AND id IN ({FORGOTTEN_MESSAGE_IDS}) LIMIT 1",
                               (job_id,)).fetchone() is not None
 
+    def projected_delivery_reply(self, job_id, projection):
+        """Recover an explicitly Still-authored delivery projection."""
+        with self.db() as db:
+            row=db.execute("SELECT content FROM messages WHERE job_id=? AND role='assistant' AND delivery_projection=? ORDER BY id DESC LIMIT 1",
+                           (job_id,projection)).fetchone()
+            return row['content'] if row else None
+
     def blocked_delivery_reply(self, job_id):
         """Recover the owner-facing blocked-turn projection from its transcript row."""
-        with self.db() as db:
-            row=db.execute("SELECT content FROM messages WHERE job_id=? AND role='assistant' AND delivery_projection='blocked-turn' ORDER BY id DESC LIMIT 1",(job_id,)).fetchone()
-            return row['content'] if row else None
+        return self.projected_delivery_reply(job_id,'blocked-turn')
 
     def jobs(self):
         with self.db() as db:

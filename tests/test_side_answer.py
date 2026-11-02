@@ -41,6 +41,15 @@ class SideAnswerTests(_SteerCase):
         with self.store.db() as db:
             return [r[0] for r in db.execute("SELECT content FROM messages WHERE job_id=? AND role='assistant'", (work['id'],))]
 
+    def test_side_reply_catalog_collisions_are_delivered_verbatim(self):
+        self.store.put('telegram', {**self.store.config('telegram', {}), 'owner_language': 'en'})
+        answer = '다시 접속했지만 아직 확인하지 못했어요.\n요청을 처리했어요.'
+        self.side_script = lambda: result(reply=answer)
+        running, side = self.pair()
+        self.service._side_answer(running, side)
+        self.assertIn(answer, self.texts())
+        self.assertEqual(self.replies(side), [answer])
+
     def test_side_reply_uses_shared_default_voice_without_expanding_its_context(self):
         from personal_agent.agent_runtime import MEMORY_OWNER
         from personal_agent.memory_service import MemoryService
