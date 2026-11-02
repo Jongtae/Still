@@ -43,6 +43,8 @@ from .prompt_files import prompt
 import hashlib
 import json
 import math
+import re
+from dateutil.rrule import rrulestr
 import time
 import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone
@@ -144,7 +146,9 @@ COLUMN_MIGRATIONS = (('prepared_text', 'TEXT'),
                      # #393: what the owner reads and accepts, apart from the run's brief (goal_text).
                      ('title_text', 'TEXT'), ('offer_text', 'TEXT'),
                      # #575: restore the regular schedule after an immediate run.
-                     ('run_return_state', 'TEXT'))
+                     ('run_return_state', 'TEXT'),
+                     # #580: due_at advances; the rule keeps its original wall-clock anchor.
+                     ('rule_start', 'REAL'))
 
 
 def migrate(db):
@@ -179,7 +183,7 @@ REFUSALS = {
     'expired': '지켜보는 기간이 이미 끝나 시작하지 않았습니다.',
     'running': '지금 실행 중인 준비는 지울 수 없습니다. 먼저 취소하세요.',
     **{code: msg('preparations.' + code) for code in
-       ('already_running', 'invalid_state', 'goal_not_editable', 'invalid_edit', 'resume_expired', 'queue_full')},
+       ('invalid_rrule', 'already_running', 'invalid_state', 'goal_not_editable', 'invalid_edit', 'resume_expired', 'queue_full')},
 }
 
 
@@ -271,9 +275,99 @@ def parse_due(due, timezone_name, default_timezone, now):
 def normalize_recurrence(value):
     if value in (None, '', 'none'):
         return None
+    if isinstance(value, str) and value.upper().startswith('RRULE:'):
+        return normalize_rrule(value)
     if value not in RECURRENCES:
         raise PreparationRefusal('invalid_recurrence')
     return value
+
+
+# #580: validate our bounded language before handing anything to dateutil.
+RULE_PARTS = ('FREQ', 'INTERVAL', 'BYDAY', 'BYMONTHDAY', 'UNTIL', 'COUNT')
+RULE_DAYS = ('MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU')
+
+
+def normalize_rrule(value):
+    """A single bounded RFC 5545 rule, never arbitrary dateutil input (#580)."""
+    if not isinstance(value, str) or not value or len(value) > 512:
+        raise PreparationRefusal('invalid_rrule')
+    text = value.strip().upper()
+    if text.startswith('RRULE:'):
+        text = text[6:]
+    parts = {}
+    for part in text.split(';'):
+        pair = part.split('=')
+        if len(pair) != 2 or pair[0] not in RULE_PARTS or pair[0] in parts or not pair[1]:
+            raise PreparationRefusal('invalid_rrule')
+        parts[pair[0]] = pair[1]
+    if parts.get('FREQ') not in ('DAILY', 'WEEKLY', 'MONTHLY') or 'COUNT' in parts and 'UNTIL' in parts:
+        raise PreparationRefusal('invalid_rrule')
+    for key, maximum in (('INTERVAL', 12), ('COUNT', 366)):
+        if key in parts:
+            if not re.fullmatch(r'[0-9]{1,3}', parts[key]) or not 1 <= int(parts[key]) <= maximum:
+                raise PreparationRefusal('invalid_rrule')
+            parts[key] = str(int(parts[key]))
+    if 'BYDAY' in parts:
+        days = []
+        for day in parts['BYDAY'].split(','):
+            match = re.fullmatch(r'([+-]?[1-9][0-9]?)?(MO|TU|WE|TH|FR|SA|SU)', day)
+            if not match or match[1] and (parts['FREQ'] != 'MONTHLY' or abs(int(match[1])) > 53):
+                raise PreparationRefusal('invalid_rrule')
+            days.append((str(int(match[1])) if match[1] else '') + match[2])
+        parts['BYDAY'] = ','.join(dict.fromkeys(days))
+    if 'BYMONTHDAY' in parts:
+        days = parts['BYMONTHDAY'].split(',')
+        if any(not re.fullmatch(r'(?:[1-9]|[12][0-9]|3[01]|-1)', day) for day in days):
+            raise PreparationRefusal('invalid_rrule')
+        # RFC 5545 excludes BYMONTHDAY on weekly rules.
+        if parts['FREQ'] == 'WEEKLY':
+            raise PreparationRefusal('invalid_rrule')
+        parts['BYMONTHDAY'] = ','.join(dict.fromkeys(days))
+    if 'UNTIL' in parts:
+        until = parts['UNTIL']
+        try:
+            if not re.fullmatch(r'[0-9]{8}(?:T[0-9]{6}Z?)?', until):
+                raise ValueError()
+            datetime.strptime(until.rstrip('Z'), '%Y%m%d' if len(until) == 8 else '%Y%m%dT%H%M%S')
+        except ValueError:
+            raise PreparationRefusal('invalid_rrule') from None
+    return 'RRULE:' + ';'.join(key + '=' + parts[key] for key in RULE_PARTS if key in parts)
+
+
+def rule_parts(recurrence):
+    return dict(part.split('=') for part in recurrence[6:].split(';'))
+
+
+def next_rule_slot(due_at, timezone_name, recurrence, now, rule_start=None, run_count=0):
+    """Expand naive local times and localise candidates, preserving DST wall time (#580)."""
+    recurrence = normalize_rrule(recurrence)
+    parts = rule_parts(recurrence)
+    if 'COUNT' in parts and run_count >= int(parts['COUNT']):
+        return None
+    tz = zone(timezone_name) or dt_timezone.utc
+    start = datetime.fromtimestamp(rule_start if rule_start is not None else due_at, tz).replace(tzinfo=None)
+    # UNTIL dates include the entire local day; UTC bounds are converted to local
+    # before parsing a naive rule. No TZID or other parser extensions are accepted.
+    if 'UNTIL' in parts:
+        until = parts['UNTIL']
+        if len(until) == 8:
+            until += 'T235959'
+        elif until.endswith('Z'):
+            until = datetime.strptime(until, '%Y%m%dT%H%M%SZ').replace(tzinfo=dt_timezone.utc).astimezone(tz).strftime('%Y%m%dT%H%M%S')
+        parts['UNTIL'] = until
+    text = 'RRULE:' + ';'.join(key + '=' + value for key, value in parts.items())
+    rule = rrulestr(text + ';WKST=MO', dtstart=start)
+    threshold = max(now, due_at)
+    wall = datetime.fromtimestamp(threshold, tz).replace(tzinfo=None)
+    for candidate in rule.xafter(wall):
+        local = candidate.replace(tzinfo=tz)
+        slot = local.timestamp()
+        # Ignore nonexistent spring-forward wall times rather than shifting them.
+        if datetime.fromtimestamp(slot, tz).replace(tzinfo=None) != candidate:
+            continue
+        if slot > threshold:
+            return slot
+    return None
 
 
 def normalize_goal(goal, limit=GOAL_MAX_CHARS, kind=KIND_REMINDER):
@@ -360,7 +454,7 @@ def next_window_slot(row, now):
     return slot if slot < end else None
 
 
-def next_due(due_at, timezone_name, recurrence, now):
+def next_due(due_at, timezone_name, recurrence, now, rule_start=None, run_count=0):
     """The first slot of ``recurrence`` strictly after ``now`` (and ``due_at``), or None.
 
     Computed on the owner's wall clock, so a daily 11:30 stays 11:30 across a
@@ -368,6 +462,8 @@ def next_due(due_at, timezone_name, recurrence, now):
     """
     if not recurrence:
         return None
+    if recurrence.startswith('RRULE:'):
+        return next_rule_slot(due_at, timezone_name, recurrence, now, rule_start, run_count)
     tz = zone(timezone_name) or dt_timezone.utc
     first = datetime.fromtimestamp(due_at, tz)
     day = max(first.date(), datetime.fromtimestamp(now, tz).date()) - timedelta(days=1)
@@ -504,6 +600,35 @@ def last_slot(row):
     return row['due_at'] + int(row['every_seconds']) * (max(1, int(row['max_runs'])) - 1)
 
 
+def rule_text(recurrence, lang='ko'):
+    """Plain owner words for the supported rule parts (#580)."""
+    parts = rule_parts(recurrence)
+    interval = int(parts.get('INTERVAL', 1))
+    if interval == 1:
+        text = msg('preparations.rule_every_' + {'DAILY':'day', 'WEEKLY':'week', 'MONTHLY':'month'}[parts['FREQ']], lang)
+    elif interval == 2 and parts['FREQ'] == 'WEEKLY':
+        text = msg('preparations.rule_every_two_weeks', lang)
+    else:
+        text = msg('preparations.rule_' + parts['FREQ'].lower(), lang, interval=interval)
+    if 'BYDAY' in parts:
+        days = []
+        for day in parts['BYDAY'].split(','):
+            name = msg('preparations.day_' + day[-2:], lang)
+            ordinal = day[:-2]
+            days.append(msg('preparations.rule_ordinal', lang, ordinal=ordinal, day=name) if ordinal else name)
+        text += ' ' + '·'.join(days)
+    if 'BYMONTHDAY' in parts:
+        text += ' ' + '·'.join(msg('preparations.rule_last_day', lang) if day == '-1' else
+                               msg('preparations.rule_monthday', lang, day=day) for day in parts['BYMONTHDAY'].split(','))
+    if 'UNTIL' in parts:
+        until = parts['UNTIL']
+        text += ' · ' + msg('preparations.rule_until', lang, until=until[:4] + '-' + until[4:6] + '-' + until[6:8] +
+                    ((' ' + until[9:11] + ':' + until[11:13] + (' UTC' if until.endswith('Z') else '')) if len(until) > 8 else ''))
+    if 'COUNT' in parts:
+        text += ' · ' + msg('preparations.rule_count', lang, count=parts['COUNT'])
+    return text
+
+
 def schedule_text(row, home_zone=None):
     """#393: one owner-readable line - when it runs and how the owner hears of it.
 
@@ -520,7 +645,9 @@ def schedule_text(row, home_zone=None):
     day, at, date = _local_parts(row['due_at'], row['timezone'])
     zone_note = '' if home_zone and row['timezone'] == home_zone else f" ({row['timezone']})"
     recurrence = row.get('recurrence') or ''
-    if recurrence == RECURRENCE_WINDOW:
+    if recurrence.startswith('RRULE:'):
+        when = msg('preparations.rule_schedule', start=f'{day} {at}{zone_note}', rule=rule_text(recurrence))
+    elif recurrence == RECURRENCE_WINDOW:
         runs = max(1, int(row['max_runs']))
         every, deadline = int(row['every_seconds']), row['window_end']
         last_minute = deadline - 60
@@ -690,6 +817,7 @@ class Preparations:
             raise ValueError('unknown delivery mode')
         if delivery_mode == DELIVERY_WHEN_NEEDED and kind != KIND_PREPARE:
             raise PreparationRefusal('invalid_delivery')
+        recurrence = normalize_recurrence(recurrence)
         every_seconds = window_end = max_runs = None
         if window is not None:
             if recurrence:
@@ -722,6 +850,7 @@ class Preparations:
                    'last_run_job_id': None, 'last_outcome': None, 'prepared_result_ref': None, 'prepared_at': None, 'prepared_text': None,
                    'created_from': created_from, 'accepted_by': accepted_by, 'created_at': now, 'updated_at': now,
                    'every_seconds': every_seconds, 'window_end': window_end, 'max_runs': max_runs, 'run_count': 0,
+                   'rule_start': due_at if recurrence and recurrence.startswith('RRULE:') else None,
                    'delivery_mode': delivery_mode, 'last_decision': None, 'last_decision_reason': None,
                    'last_notified_digest': None, 'last_notified_text': None, 'last_notified_at': None,
                    'title_text': title, 'offer_text': offer}
@@ -790,7 +919,7 @@ class Preparations:
                 if following <= now:
                     following = next_window_slot(row, now)
             elif following <= now:
-                following = next_due(following, row['timezone'], row['recurrence'], now)
+                following = next_due(following, row['timezone'], row['recurrence'], now, row.get('rule_start'), row.get('run_count', 0))
             if following is None or following <= now:
                 raise PreparationRefusal('resume_expired')
             db.execute('UPDATE preparations SET state=?,due_at=?,updated_at=? WHERE id=?',
@@ -814,13 +943,16 @@ class Preparations:
         """The same validation for a Settings draft and its application (#575)."""
         if 'goal' in changes or 'goal_text' in changes:
             raise PreparationRefusal('goal_not_editable')
-        if not changes or set(changes) - {'due', 'timezone', 'recurrence', 'every_minutes', 'until', 'max_runs'}:
+        if not changes or set(changes) - {'due', 'timezone', 'recurrence', 'rrule', 'every_minutes', 'until', 'max_runs'}:
             raise PreparationRefusal('invalid_edit')
         due_at, timezone_name = row['due_at'], row['timezone']
         if 'due' in changes or 'timezone' in changes:
             due_at, timezone_name = parse_due(changes.get('due', datetime.fromtimestamp(due_at, zone(timezone_name)).isoformat()),
                                                changes.get('timezone', timezone_name), timezone_name, now)
         updates = {'due_at': due_at, 'timezone': timezone_name}
+        if 'rrule' in changes and ('recurrence' in changes or row['recurrence'] == RECURRENCE_WINDOW
+                                  or set(changes) & {'every_minutes', 'until', 'max_runs'}):
+            raise PreparationRefusal('invalid_rrule')
         if row['recurrence'] == RECURRENCE_WINDOW:
             if 'recurrence' in changes:
                 raise PreparationRefusal('invalid_window')
@@ -831,7 +963,11 @@ class Preparations:
         else:
             if set(changes) & {'every_minutes', 'until', 'max_runs'}:
                 raise PreparationRefusal('invalid_window')
-            updates['recurrence'] = normalize_recurrence(changes.get('recurrence', row['recurrence']))
+            updates['recurrence'] = (normalize_rrule(changes['rrule']) if 'rrule' in changes else
+                                     normalize_recurrence(changes.get('recurrence', row['recurrence'])))
+            if (due_at, timezone_name, updates['recurrence']) != (row['due_at'], row['timezone'], row['recurrence']):
+                updates['rule_start'] = due_at if updates['recurrence'] and updates['recurrence'].startswith('RRULE:') else None
+                updates['run_count'] = 0
         return updates
 
     def run_now(self, preparation_id, *, channel, chat_id, now=None):
@@ -982,7 +1118,9 @@ class Preparations:
                     if immediate:
                         raise PreparationRefusal('queue_full') from None
                     return None
-            run = int(current['run_count'] or 0) + (0 if existing else 1)
+            # #580: an extra immediate run does not consume a rule's scheduled count.
+            extra_rule = immediate and str(current['recurrence'] or '').startswith('RRULE:')
+            run = int(current['run_count'] or 0) + (0 if existing or extra_rule else 1)
             db.execute('UPDATE preparations SET state=?,last_run_job_id=?,run_count=?,updated_at=?,run_return_state=? WHERE id=?',
                        (STATE_RUNNING, job_id, run, now, current['state'] if immediate else None, current['id']))
             # Evidence: preparation id -> Work id; the Work's delivery is the receipt.
@@ -1067,7 +1205,8 @@ class Preparations:
             if current['recurrence'] == RECURRENCE_WINDOW:
                 following = next_window_slot(current, now)
             else:
-                following = next_due(current['due_at'], current['timezone'], current['recurrence'], now)
+                following = next_due(current['due_at'], current['timezone'], current['recurrence'], now,
+                                     current.get('rule_start'), current.get('run_count', 0))
             if following is None:
                 updates['state'] = outcome
             else:

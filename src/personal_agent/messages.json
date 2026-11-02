@@ -10504,5 +10504,161 @@
   "en": "Updated the preparation schedule.",
   "ja": "準備の予定を変更しました。",
   "zh": "已更改准备计划。"
+ },
+ "preparations.invalid_rrule": {
+  "ko": "rrule은 FREQ=DAILY/WEEKLY/MONTHLY, INTERVAL=1–12, BYDAY(서수는 MONTHLY만), BYMONTHDAY=1–31 또는 -1, UNTIL(날짜/시각) 또는 COUNT=1–366만 허용합니다. UNTIL과 COUNT, recurrence나 window를 함께 쓰지 않습니다.",
+  "en": "rrule allows only FREQ=DAILY/WEEKLY/MONTHLY, INTERVAL=1–12, BYDAY (ordinals only with MONTHLY), BYMONTHDAY=1–31 or -1, and UNTIL (date/date-time) or COUNT=1–366. Do not combine UNTIL with COUNT, or rrule with recurrence or a window.",
+  "ja": "rrule は FREQ=DAILY/WEEKLY/MONTHLY、INTERVAL=1–12、BYDAY（序数はMONTHLYのみ）、BYMONTHDAY=1–31または-1、UNTIL（日付/日時）またはCOUNT=1–366のみ対応します。UNTILとCOUNT、rruleとrecurrenceやwindowは併用できません。",
+  "zh": "rrule 仅支持 FREQ=DAILY/WEEKLY/MONTHLY、INTERVAL=1–12、BYDAY（序数仅用于MONTHLY）、BYMONTHDAY=1–31或-1，以及UNTIL（日期/时间）或COUNT=1–366。UNTIL与COUNT、rrule与recurrence或window不能同时使用。"
+ },
+ "preparations.rule_daily": {
+  "ko": "{interval}일마다",
+  "en": "Every {interval} day(s)",
+  "ja": "{interval}日ごと",
+  "zh": "每{interval}天"
+ },
+ "preparations.rule_weekly": {
+  "ko": "{interval}주마다",
+  "en": "Every {interval} week(s)",
+  "ja": "{interval}週ごと",
+  "zh": "每{interval}周"
+ },
+ "preparations.rule_monthly": {
+  "ko": "{interval}개월마다",
+  "en": "Every {interval} month(s)",
+  "ja": "{interval}か月ごと",
+  "zh": "每{interval}个月"
+ },
+ "preparations.rule_ordinal": {
+  "ko": "{ordinal}번째 {day}",
+  "en": "{day} (ordinal {ordinal})",
+  "ja": "{ordinal}番目の{day}",
+  "zh": "第{ordinal}个{day}"
+ },
+ "preparations.rule_last_day": {
+  "ko": "마지막 날",
+  "en": "last day",
+  "ja": "最終日",
+  "zh": "最后一天"
+ },
+ "preparations.rule_monthday": {
+  "ko": "{day}일",
+  "en": "day {day}",
+  "ja": "{day}日",
+  "zh": "{day}日"
+ },
+ "preparations.rule_until": {
+  "ko": "{until}까지",
+  "en": "until {until}",
+  "ja": "{until}まで",
+  "zh": "截至{until}"
+ },
+ "preparations.rule_count": {
+  "ko": "{count}번",
+  "en": "{count} times",
+  "ja": "{count}回",
+  "zh": "{count}次"
+ },
+ "preparations.rule_schedule": {
+  "ko": "{start}부터 {rule}",
+  "en": "From {start}, {rule}",
+  "ja": "{start}から{rule}",
+  "zh": "从{start}开始，{rule}"
+ },
+ "preparations.field_rule": {
+  "ko": "반복 규칙",
+  "en": "Repeat rule",
+  "ja": "繰り返しルール",
+  "zh": "重复规则"
+ },
+ "preparations.field_weekly_days": {
+  "ko": "요일",
+  "en": "Weekdays",
+  "ja": "曜日",
+  "zh": "星期"
+ },
+ "preparations.field_monthly_day": {
+  "ko": "매월 날짜",
+  "en": "Monthly on day",
+  "ja": "毎月の日",
+  "zh": "每月日期"
+ },
+ "preparations.field_interval": {
+  "ko": "몇 주마다",
+  "en": "Every N weeks",
+  "ja": "何週ごと",
+  "zh": "每几周"
+ },
+ "preparations.field_rule_until": {
+  "ko": "종료 날짜 (선택)",
+  "en": "End date (optional)",
+  "ja": "終了日（任意）",
+  "zh": "结束日期（可选）"
+ },
+ "preparations.day_MO": {
+  "ko": "월",
+  "en": "Mon",
+  "ja": "月",
+  "zh": "周一"
+ },
+ "preparations.day_TU": {
+  "ko": "화",
+  "en": "Tue",
+  "ja": "火",
+  "zh": "周二"
+ },
+ "preparations.day_WE": {
+  "ko": "수",
+  "en": "Wed",
+  "ja": "水",
+  "zh": "周三"
+ },
+ "preparations.day_TH": {
+  "ko": "목",
+  "en": "Thu",
+  "ja": "木",
+  "zh": "周四"
+ },
+ "preparations.day_FR": {
+  "ko": "금",
+  "en": "Fri",
+  "ja": "金",
+  "zh": "周五"
+ },
+ "preparations.day_SA": {
+  "ko": "토",
+  "en": "Sat",
+  "ja": "土",
+  "zh": "周六"
+ },
+ "preparations.day_SU": {
+  "ko": "일",
+  "en": "Sun",
+  "ja": "日",
+  "zh": "周日"
+ },
+ "preparations.rule_every_day": {
+  "ko": "매일",
+  "en": "Every day",
+  "ja": "毎日",
+  "zh": "每天"
+ },
+ "preparations.rule_every_week": {
+  "ko": "매주",
+  "en": "Every week",
+  "ja": "毎週",
+  "zh": "每周"
+ },
+ "preparations.rule_every_month": {
+  "ko": "매월",
+  "en": "Every month",
+  "ja": "毎月",
+  "zh": "每月"
+ },
+ "preparations.rule_every_two_weeks": {
+  "ko": "격주",
+  "en": "Every two weeks",
+  "ja": "隔週",
+  "zh": "每两周"
  }
 }

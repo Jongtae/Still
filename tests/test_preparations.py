@@ -1886,7 +1886,7 @@ const press=async(label)=>{const button=descendants(rows()[0]).find(n=>n.tag==='
  assert.deepEqual(texts(rows()[0],'settings-row-title'),['5종목 지켜보기']);
  assert.ok(texts(rows()[0],'settings-row-description')[0].startsWith('예산 10만 원 · 주문은 하지 않아요 · 미리 준비'));
  // #575: paused rows remain cancellable and expose resume, run-now and schedule-only editing.
- ctx.rows=[{id:'p4',kind:'prepare',goal:'자료 준비',state:'paused',due_iso:'2026-10-15T09:00:00+09:00',timezone:'Asia/Seoul',recurrence:'daily'}];
+ ctx.rows=[{id:'p4',kind:'prepare',goal:'자료 준비',state:'paused',due_iso:'2026-10-15T09:00:00+09:00',due_local_input:'2026-10-15T09:00',timezone:'Asia/Seoul',recurrence:'daily'}];
  await ctx.loadPreparations();
  assert.deepEqual(buttons(rows()[0]),['취소','다시 시작','지금 실행','일정 변경','삭제']);
  assert.deepEqual(texts(rows()[0],'settings-state neutral'),['일시 정지됨']);
@@ -1894,17 +1894,39 @@ const press=async(label)=>{const button=descendants(rows()[0]).find(n=>n.tag==='
  await press('지금 실행');assert.equal(calls.at(-1).body.operation,'run_now');
  await press('일정 변경');
  const form=$('preparations-list').children.find(n=>n.tag==='form'),fields=descendants(form).filter(n=>n.tag==='input'||n.tag==='select');
- assert.deepEqual(fields.map(n=>n.name),['due','timezone','recurrence']);
+ assert.deepEqual(fields.slice(0,3).map(n=>n.name),['due','timezone','recurrence']);
+ assert.equal(fields[0].type,'datetime-local');assert.equal(fields[0].value,'2026-10-15T09:00');
  fields.find(n=>n.name==='recurrence').value='weekly';
  await form.onsubmit({preventDefault(){}});
- assert.equal(JSON.stringify(calls.at(-1).body),JSON.stringify({operation:'edit',id:'p4',due:'2026-10-15T09:00:00+09:00',timezone:'Asia/Seoul',recurrence:'weekly'}));
+ assert.equal(JSON.stringify(calls.at(-1).body),JSON.stringify({operation:'edit',id:'p4',due:'2026-10-15T09:00',timezone:'Asia/Seoul',recurrence:'weekly'}));
  assert(!Object.hasOwn(calls.at(-1).body,'goal'));
- ctx.rows=[{...ctx.rows[0],recurrence:'window',every_minutes:10,until:'2026-10-15T12:00:00+09:00',max_runs:6}];
+ ctx.rows=[{...ctx.rows[0],recurrence:'window',every_minutes:10,until:'2026-10-15T12:00:00+09:00',until_local_input:'2026-10-15T12:00',max_runs:6}];
  await ctx.loadPreparations();await press('일정 변경');
  const watchForm=$('preparations-list').children.find(n=>n.tag==='form'),watchFields=descendants(watchForm).filter(n=>n.tag==='input');
  assert.deepEqual(watchFields.map(n=>n.name),['due','timezone','every_minutes','until','max_runs']);
  watchFields.find(n=>n.name==='max_runs').value='3';await watchForm.onsubmit({preventDefault(){}});
  assert.equal(calls.at(-1).body.max_runs,3);assert(!Object.hasOwn(calls.at(-1).body,'recurrence'));
+ assert.equal(watchFields.find(n=>n.name==='until').type,'datetime-local');
+ assert.equal(calls.at(-1).body.until,'2026-10-15T12:00');
+ // #581: rule controls submit one rule, without recurrence or JS offset conversion.
+ ctx.rows=[{...ctx.rows[0],recurrence:'weekly'}];await ctx.loadPreparations();await press('일정 변경');
+ const ruleForm=$('preparations-list').children.find(n=>n.tag==='form'),ruleFields=descendants(ruleForm).filter(n=>n.tag==='input'||n.tag==='select');
+ const field=name=>ruleFields.find(n=>n.name===name);
+ field('day_MO').checked=true;field('day_TH').checked=true;field('day_TH').onchange();
+ field('interval').value='2';field('interval').onchange();field('rule_until').value='2026-12-31';field('rule_until').onchange();
+ await ruleForm.onsubmit({preventDefault(){}});
+ assert.equal(calls.at(-1).body.rrule,'RRULE:FREQ=WEEKLY;BYDAY=MO,TH;INTERVAL=2;UNTIL=20261231');
+ assert(!Object.hasOwn(calls.at(-1).body,'recurrence'));assert.equal(calls.at(-1).body.timezone,'Asia/Seoul');
+ field('monthly_day').value='31';field('monthly_day').onchange();await ruleForm.onsubmit({preventDefault(){}});
+ assert.equal(calls.at(-1).body.rrule,'RRULE:FREQ=MONTHLY;BYMONTHDAY=31;UNTIL=20261231');
+ // Existing count/ordinal rules round trip unchanged when editing the time only.
+ ctx.rows=[{...ctx.rows[0],recurrence:'RRULE:FREQ=MONTHLY;BYDAY=-1FR;COUNT=3'}];await ctx.loadPreparations();await press('일정 변경');
+ await $('preparations-list').children.find(n=>n.tag==='form').onsubmit({preventDefault(){}});
+ assert.equal(calls.at(-1).body.rrule,ctx.rows[0].recurrence);
+ await press('일정 변경');
+ const ordinalForm=$('preparations-list').children.find(n=>n.tag==='form'),endDate=descendants(ordinalForm).find(n=>n.name==='rule_until');
+ endDate.value='2026-12-31';endDate.onchange();await ordinalForm.onsubmit({preventDefault(){}});
+ assert.equal(calls.at(-1).body.rrule,'RRULE:FREQ=MONTHLY;BYDAY=-1FR;UNTIL=20261231');
  console.log('ok');
 })().catch(error=>{console.error(error);process.exit(1);});
 """
@@ -2048,3 +2070,180 @@ class PreparationManagementTests(unittest.TestCase):
         restored = self.preparations.get(row['id'])
         self.assertEqual(restored['goal_text'], row['goal_text'])
         self.assertIsNone(restored['run_return_state'])
+
+
+class RecurrenceRuleTests(unittest.TestCase):
+    """Bounded rules through the real claim/settle store, with a fake clock (#580)."""
+
+    setUp = PreparationManagementTests.setUp
+    make = PreparationManagementTests.make
+    refusal = PreparationManagementTests.refusal
+
+    def timestamp(self, text, zone='Asia/Seoul'):
+        return datetime.fromisoformat(text).replace(tzinfo=ZoneInfo(zone)).timestamp()
+
+    def test_allowed_parts_normalize(self):
+        for rule in ('FREQ=DAILY', 'FREQ=WEEKLY;INTERVAL=12;BYDAY=MO,TH',
+                     'FREQ=MONTHLY;BYDAY=1MO,-1FR', 'FREQ=MONTHLY;BYMONTHDAY=1,31,-1',
+                     'FREQ=DAILY;COUNT=366', 'FREQ=DAILY;UNTIL=20261231',
+                     'FREQ=DAILY;UNTIL=20261231T090000', 'FREQ=DAILY;UNTIL=20261231T090000Z'):
+            with self.subTest(rule=rule):
+                self.assertEqual(prep.normalize_rrule(rule), 'RRULE:' + rule)
+        self.assertEqual(prep.normalize_rrule('rrule:freq=weekly;interval=02'), 'RRULE:FREQ=WEEKLY;INTERVAL=2')
+
+    def test_refused_parts_before_dateutil(self):
+        from unittest.mock import patch
+        rules = ['FREQ=HOURLY', 'FREQ=YEARLY', 'FREQ=MINUTELY', 'FREQ=SECONDLY',
+                 'FREQ=DAILY;BYHOUR=9', 'FREQ=DAILY;BYMINUTE=1', 'FREQ=DAILY;BYSECOND=0',
+                 'FREQ=DAILY;BYSETPOS=1', 'FREQ=DAILY;BYMONTH=1', 'FREQ=DAILY;WKST=SU',
+                 'FREQ=DAILY;BYWEEKNO=1', 'FREQ=DAILY;BYYEARDAY=1', 'FREQ=DAILY;BYEASTER=0',
+                 'FREQ=WEEKLY;BYDAY=1MO', 'FREQ=DAILY;BYDAY=-1FR', 'FREQ=MONTHLY;BYDAY=0MO',
+                 'FREQ=MONTHLY;BYDAY=54MO', 'FREQ=MONTHLY;BYMONTHDAY=0', 'FREQ=MONTHLY;BYMONTHDAY=32',
+                 'FREQ=MONTHLY;BYMONTHDAY=-2', 'FREQ=WEEKLY;BYMONTHDAY=1', 'FREQ=DAILY;INTERVAL=0',
+                 'FREQ=DAILY;INTERVAL=13', 'FREQ=DAILY;COUNT=0', 'FREQ=DAILY;COUNT=367',
+                 'FREQ=DAILY;COUNT=2;UNTIL=20261231', 'FREQ=DAILY;UNTIL=20260230',
+                 'FREQ=DAILY;UNTIL=20261231T250000', 'FREQ=DAILY;COUNT=1;COUNT=2',
+                 'BYDAY=MO', 'FREQ=DAILY\nDTSTART:20260101', 'FREQ=DAILY;', '', None, 3]
+        with patch.object(prep, 'rrulestr', side_effect=AssertionError('parser must not be called')):
+            for rule in rules:
+                with self.subTest(rule=rule):
+                    self.refusal('invalid_rrule', prep.normalize_rrule, rule)
+
+    def next(self, first, rule, now=None, zone='Asia/Seoul'):
+        due = self.timestamp(first, zone)
+        return prep.next_due(due, zone, prep.normalize_rrule(rule), self.timestamp(now, zone) if now else due)
+
+    def test_weekdays_across_week_and_biweekly(self):
+        rule = 'FREQ=WEEKLY;BYDAY=MO,TH'
+        self.assertEqual(self.next('2026-10-12T09:00', rule), self.timestamp('2026-10-15T09:00'))
+        self.assertEqual(self.next('2026-10-12T09:00', rule, '2026-10-15T09:00'), self.timestamp('2026-10-19T09:00'))
+        self.assertEqual(self.next('2026-10-12T09:00', 'FREQ=WEEKLY;INTERVAL=2'), self.timestamp('2026-10-26T09:00'))
+
+    def test_month_days_and_ordinals(self):
+        self.assertEqual(self.next('2026-01-31T09:00', 'FREQ=MONTHLY;BYMONTHDAY=31'), self.timestamp('2026-03-31T09:00'))
+        self.assertEqual(self.next('2026-01-31T09:00', 'FREQ=MONTHLY;BYMONTHDAY=-1'), self.timestamp('2026-02-28T09:00'))
+        self.assertEqual(self.next('2026-01-05T09:00', 'FREQ=MONTHLY;BYDAY=1MO'), self.timestamp('2026-02-02T09:00'))
+        self.assertEqual(self.next('2026-01-30T09:00', 'FREQ=MONTHLY;BYDAY=-1FR'), self.timestamp('2026-02-27T09:00'))
+
+    def test_dst_keeps_wall_time_and_skips_nonexistent_time(self):
+        self.assertEqual(self.next('2026-03-07T09:00', 'FREQ=DAILY', zone='America/New_York'),
+                         self.timestamp('2026-03-08T09:00', 'America/New_York'))
+        self.assertEqual(self.next('2026-10-31T09:00', 'FREQ=DAILY', zone='America/New_York'),
+                         self.timestamp('2026-11-01T09:00', 'America/New_York'))
+        self.assertEqual(self.next('2026-03-07T02:30', 'FREQ=DAILY', zone='America/New_York'),
+                         self.timestamp('2026-03-09T02:30', 'America/New_York'))
+
+    def finish_run(self, row):
+        self.now = row['due_at']
+        work = self.preparations.start(row, channel='web', chat_id=None, now=self.now)
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded',delivery='none',response='done' WHERE id=?", (work,))
+        return self.preparations.settle(self.preparations.get(row['id']), self.now)
+
+    def test_count_ends_after_three_runs_preserving_anchor_across_restart(self):
+        row = self.make(prep.normalize_rrule('FREQ=WEEKLY;INTERVAL=2;COUNT=3'))
+        anchor = row['due_at']
+        for count in range(1, 4):
+            row = self.finish_run(row)
+            self.assertEqual(row['rule_start'], anchor)
+            self.assertEqual(row['run_count'], count)
+            self.assertEqual(row['state'], prep.STATE_DELIVERED if count == 3 else prep.STATE_SCHEDULED)
+            self.preparations = prep.Preparations(QuickStore(self.store.root), clock=lambda: self.now)
+        self.assertEqual(row['due_at'], anchor + 28 * 86400)
+
+    def test_until_date_and_datetime_end_after_last_run(self):
+        for ending in ('20261015', '20261015T210130', '20261015T120130Z'):
+            self.now = START
+            row = self.make(prep.normalize_rrule('FREQ=DAILY;UNTIL=' + ending))
+            row = self.finish_run(row)
+            self.assertEqual(row['state'], prep.STATE_SCHEDULED)
+            row = self.finish_run(row)
+            self.assertEqual(row['state'], prep.STATE_DELIVERED)
+
+    def test_missed_slots_are_skipped_and_legacy_unchanged(self):
+        due = self.timestamp('2026-10-12T09:00')
+        now = self.timestamp('2026-10-21T11:00')
+        self.assertEqual(prep.next_due(due, 'Asia/Seoul', prep.normalize_rrule('FREQ=WEEKLY;BYDAY=MO,TH'), now),
+                         self.timestamp('2026-10-22T09:00'))
+        for recurrence, expected in (('daily', '2026-10-22T09:00'), ('weekdays', '2026-10-22T09:00'), ('weekly', '2026-10-26T09:00')):
+            self.assertEqual(prep.next_due(due, 'Asia/Seoul', recurrence, now), self.timestamp(expected))
+        self.assertIsNone(prep.next_due(due, 'Asia/Seoul', 'RRULE:FREQ=DAILY;COUNT=3', now, due, 1))
+
+    def test_edit_rule_and_conflicts(self):
+        row = self.make()
+        updated = self.preparations.edit(row['id'], rrule='FREQ=MONTHLY;BYMONTHDAY=-1')
+        self.assertEqual(updated['recurrence'], 'RRULE:FREQ=MONTHLY;BYMONTHDAY=-1')
+        self.assertEqual(updated['rule_start'], row['due_at'])
+        for changes in ({'rrule':'FREQ=DAILY', 'recurrence':'daily'}, {'rrule':'FREQ=DAILY', 'until':'20261231'}):
+            self.refusal('invalid_rrule', self.preparations.edit, row['id'], **changes)
+        window = self.make(window=(300, self.now + 1800, 6))
+        self.refusal('invalid_rrule', self.preparations.edit, window['id'], rrule='FREQ=DAILY')
+
+    def test_rule_schedule_words(self):
+        row = self.make('RRULE:FREQ=WEEKLY;BYDAY=MO,TH;COUNT=3')
+        text = prep.schedule_text(row)
+        self.assertIn('월·목', text)
+        self.assertIn('3번', text)
+        self.assertIn(text, prep.proposal_summary(row))
+        self.assertIn('격주', prep.rule_text('RRULE:FREQ=WEEKLY;INTERVAL=2'))
+        self.assertIn('매주', text)
+        self.assertIn('31일', prep.rule_text('RRULE:FREQ=MONTHLY;BYMONTHDAY=31'))
+        self.assertIn('2026-12-31까지', prep.rule_text('RRULE:FREQ=DAILY;UNTIL=20261231'))
+
+    def test_rule_start_column_migration_preserves_legacy_row(self):
+        row = self.make('daily')
+        with self.store.db() as db:
+            db.execute('ALTER TABLE preparations DROP COLUMN rule_start')
+            prep.migrate(db)
+            prep.migrate(db)
+        self.assertIsNone(self.preparations.get(row['id'])['rule_start'])
+
+
+class RuleHandlerTests(_Case):
+    """The actual service tool handler accepts rules and refuses mixed languages (#580)."""
+
+    def test_rule_handler_and_status_local_inputs(self):
+        job = {'id':'rule-work', 'message':'schedule'}
+        schedule = self.service.preparation_scheduler(job, job['message'])
+        args = {'kind':'reminder', 'goal':'message', 'due':self.due_iso(600), 'timezone':'Asia/Seoul'}
+        for extra in ({'recurrence':'daily'}, {'every_minutes':10}, {'until':self.due_iso(1200)}):
+            with self.assertRaises(ToolError) as caught:
+                schedule({**args, 'rrule':'FREQ=WEEKLY;BYDAY=MO,TH', **extra})
+            self.assertEqual(caught.exception.code, 'invalid_rrule')
+        result = schedule({**args, 'rrule':'FREQ=WEEKLY;BYDAY=MO,TH'})
+        row = self.service.preparations.get(result['preparation_id'])
+        self.assertEqual(row['recurrence'], 'RRULE:FREQ=WEEKLY;BYDAY=MO,TH')
+        status = self.service.preparations_status()
+        self.assertEqual(status['preparations'][0]['due_local_input'],
+                         datetime.fromtimestamp(row['due_at'], SEOUL).strftime('%Y-%m-%dT%H:%M'))
+        for key in ('rule','weekly_days','monthly_day','interval','rule_until','day_MO','last_day'):
+            self.assertEqual(set(status['management'][key]), {'ko','en','ja','zh'})
+
+
+class RuleContinuityTests(unittest.TestCase):
+    """Exercise persisted anchor use across Settings saves and pause/resume (#580)."""
+
+    setUp = RecurrenceRuleTests.setUp
+    make = RecurrenceRuleTests.make
+    finish_run = RecurrenceRuleTests.finish_run
+
+    def test_resume_and_unchanged_edit_keep_anchor_and_count(self):
+        row = self.make('RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=3')
+        anchor = row['due_at']
+        row = self.finish_run(row)
+        row = self.preparations.edit(row['id'], rrule=row['recurrence'])
+        self.assertEqual((row['rule_start'], row['run_count']), (anchor, 1))
+        self.preparations.pause(row['id'])
+        self.now = anchor + 15 * 86400
+        row = self.preparations.resume(row['id'])
+        self.assertEqual(row['due_at'], anchor + 28 * 86400)
+        self.assertEqual(row['rule_start'], anchor)
+
+    def test_immediate_run_does_not_consume_scheduled_count(self):
+        row = self.make('RRULE:FREQ=DAILY;COUNT=1')
+        work = self.preparations.run_now(row['id'], channel='web', chat_id=None)
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded',delivery='none',response='done' WHERE id=?", (work,))
+        row = self.preparations.settle(self.preparations.get(row['id']), self.now)
+        self.assertEqual((row['state'], row['run_count']), (prep.STATE_SCHEDULED, 0))
+        self.assertEqual(self.finish_run(row)['state'], prep.STATE_DELIVERED)

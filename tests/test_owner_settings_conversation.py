@@ -1181,6 +1181,14 @@ class PreparationManagementConversation(_Case):
                          (prep.STATE_RUNNING, self.row['due_at'], 'weekly'))
         self.assertIsNotNone(current['last_run_job_id'])
 
+    def test_rule_edit_uses_the_same_owner_confirmation(self):
+        """Rules remain schedule edits with the existing confirmation boundary (#580)."""
+        value = json.dumps({'id':self.row['id'], 'due':'2026-10-15T09:00',
+                            'timezone':'Asia/Seoul', 'rrule':'FREQ=WEEKLY;BYDAY=MO,TH;COUNT=3'})
+        edited = self.apply('edit', value)
+        self.assertEqual(edited['recurrence'], 'RRULE:FREQ=WEEKLY;BYDAY=MO,TH;COUNT=3')
+        self.assertEqual(edited['rule_start'], edited['due_at'])
+
     def test_edit_draft_is_bound_to_schedule_and_rejects_goal_changes(self):
         value = json.dumps({'id': self.row['id'], 'recurrence': 'weekly'})
         draft = self.settings.propose('owner', 'http', 'preparations', 'edit', value)

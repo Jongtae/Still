@@ -1695,7 +1695,12 @@ class AgentService:
                     raise prep.PreparationRefusal('window_retry_required')
                 zone_name=self.context_observations.settings().get('timezone') or ''
                 due_at,timezone=prep.parse_due(args.get('due'),args.get('timezone') or '',zone_name,now)
-                recurrence=prep.normalize_recurrence(args.get('recurrence'))
+                # #580: rules and the legacy/window languages are mutually exclusive.
+                if args.get('rrule') is not None and (args.get('recurrence') is not None or has_window
+                                                         or args.get('max_runs') not in (None,'')):
+                    raise prep.PreparationRefusal('invalid_rrule')
+                recurrence=(prep.normalize_rrule(args['rrule']) if args.get('rrule') is not None else
+                            prep.normalize_recurrence(args.get('recurrence')))
                 # #719: a watch - every N minutes from due until a deadline, bounded.
                 window=None
                 if has_window:
@@ -2911,7 +2916,10 @@ class AgentService:
             rows.append({'id':row['id'],'kind':row['kind'],'goal':row['goal_text'],'state':row['state'],
                          # #393: the owner's name and offer for it, when the AI wrote them.
                          'title':row.get('title_text'),'offer':row.get('offer_text'),
+                         # #581: native form values are local wall times; parse_due owns zone resolution.
+                         'due_local_input':datetime.fromtimestamp(row['due_at'],prep.zone(row['timezone'])).strftime('%Y-%m-%dT%H:%M'),
                          'due':row['due_at'],'due_iso':datetime.fromtimestamp(row['due_at'],prep.zone(row['timezone'])).isoformat(),'due_local':prep.local_text(row['due_at'],row['timezone']),
+                         'recurrence_labels':{lang:prep.rule_text(row['recurrence'],lang) for lang in LANGUAGES} if str(row['recurrence'] or '').startswith('RRULE:') else None,
                          'timezone':row['timezone'],'recurrence':row['recurrence'],'delivery':self.preparation_delivery(row),
                          'accepted_by':row['accepted_by'],'last_outcome':row['last_outcome'],'last_work_id':row['last_run_job_id'],
                          'last_status':row.get('last_status'),'last_delivery':row.get('last_delivery'),
@@ -2919,14 +2927,17 @@ class AgentService:
                          'created_at':row['created_at'],
                          # #719: the watch window, its bound and the last typed decision.
                          'every_minutes':(row['every_seconds']//60) if row.get('every_seconds') else None,
+                         'until_local_input':datetime.fromtimestamp(row['window_end'],prep.zone(row['timezone'])).strftime('%Y-%m-%dT%H:%M') if row.get('window_end') else None,
                          'until_local':prep.local_text(row['window_end'],row['timezone']) if row.get('window_end') else None,
                          'until':datetime.fromtimestamp(row['window_end'],prep.zone(row['timezone'])).isoformat() if row.get('window_end') else None,
                          'max_runs':row.get('max_runs'),'run_count':row.get('run_count') or 0,
                          'last_decision':row.get('last_decision'),'last_decision_reason':row.get('last_decision_reason')})
         # #575: the page uses the same catalog in its selected language.
         labels={**{operation:'settings_orchestrator.label_preparations_'+operation for operation in ('pause','resume','edit','run_now')},
-                **{field:'preparations.field_'+field for field in ('due','recurrence','every_minutes','until','max_runs')},
-                'timezone':'label.time_zone','paused':'settings_orchestrator.paused','saved':'preparations.saved'}
+                **{field:'preparations.field_'+field for field in ('due','recurrence','every_minutes','until','max_runs',
+                                                                              'rule','weekly_days','monthly_day','interval','rule_until')},
+                **{'day_'+day:'preparations.day_'+day for day in prep.RULE_DAYS},
+                'last_day':'preparations.rule_last_day','timezone':'label.time_zone','paused':'settings_orchestrator.paused','saved':'preparations.saved'}
         return {'preparations':rows,'management':{key:{lang:msg(message_id,lang) for lang in LANGUAGES} for key,message_id in labels.items()}}
 
     def cancel_preparation(self, preparation_id):

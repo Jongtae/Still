@@ -1349,7 +1349,7 @@ async function loadPreparations(){const request=++preparationLoadSequence;
  try{const data=await api('/api/preparations');if(request!==preparationLoadSequence)return;preparationRows=data.preparations||[];preparationLabels=data.management||{};renderPreparations();}
  catch(error){if(request===preparationLoadSequence)setError('preparations-feedback',error);}}
 async function preparationAction(operation,id,done,changes={}){try{const data=await api('/api/preparations/request',{operation,id,...changes});preparationRows=data.preparations||[];preparationLabels=data.management||{};preparationEditPending=null;setFeedback('preparations-feedback',done);renderPreparations();}catch(error){setError('preparations-feedback',error);await loadPreparations();}}
-function preparationDescription(row){const active=PREPARATION_ACTIVE.includes(row.state),parts=[row.kind==='reminder'?t('알림'):t('미리 준비'),row.recurrence==='window'?preparationWindowLabel(row):preparationRepeatLabel(row.recurrence),active?t('{time} 예정',{time:row.due_local}):row.due_local,preparationDeliveryLabel(row.delivery)];
+function preparationDescription(row){const active=PREPARATION_ACTIVE.includes(row.state),parts=[row.kind==='reminder'?t('알림'):t('미리 준비'),row.recurrence==='window'?preparationWindowLabel(row):row.recurrence_labels?.[currentLanguage]||preparationRepeatLabel(row.recurrence),active?t('{time} 예정',{time:row.due_local}):row.due_local,preparationDeliveryLabel(row.delivery)];
  if(row.last_decision)parts.push(preparationDecisionLabel(row));
  if(row.last_result)parts.push(t('마지막 결과: {text}',{text:row.last_result}));return parts.join(' · ');}
 function renderPreparations(){const list=$('preparations-list');if(!list||!preparationRows)return;const fingerprint=JSON.stringify([preparationRows,preparationDeletePending,preparationEditPending,preparationLabels,currentLanguage]);if(list.dataset.state===fingerprint)return;list.dataset.state=fingerprint;const focusKey=rememberFocus(list);list.replaceChildren();
@@ -1370,14 +1370,39 @@ function renderPreparations(){const list=$('preparations-list');if(!list||!prepa
  if(!preparationRows.length)list.append(element('p',t('아직 등록한 알림이나 준비가 없습니다. 대화에서 시간 알림이나 미리 준비할 일을 요청하세요.'),'settings-empty'));
  restoreFocus(list,focusKey);}
 // #575: edit only schedule fields; saving is an explicit owner action.
-function preparationEditForm(row){const form=element('form',undefined,'settings-form'),inputs={};
- const fields=row.recurrence==='window'?['due','timezone','every_minutes','until','max_runs']:['due','timezone','recurrence'];
+// #581: native inputs carry wall times; the service resolves them in the row's zone.
+function preparationEditForm(row){const form=element('form',undefined,'settings-form'),inputs={},days={};
+ const windowed=row.recurrence==='window',rule=row.recurrence?.startsWith('RRULE:')?Object.fromEntries(row.recurrence.slice(6).split(';').map(part=>part.split('='))):null;
+ const fields=windowed?['due','timezone','every_minutes','until','max_runs']:['due','timezone','recurrence'];
  for(const field of fields){const label=element('label'),input=element(field==='recurrence'?'select':'input');label.append(element('span',preparationLabel(field)));
-  if(field==='recurrence'){for(const value of ['none','daily','weekdays','weekly']){const option=element('option',preparationRepeatLabel(value));option.value=value;input.append(option);}}
-  else{input.type=['every_minutes','max_runs'].includes(field)?'number':'text';input.required=true;if(input.type==='number'){input.min=field==='every_minutes'?'5':'1';input.max=field==='every_minutes'?'720':'96';}}
-  input.name=field;input.value=field==='due'?row.due_iso:field==='recurrence'?(row.recurrence||'none'):row[field];inputs[field]=input;label.append(input);form.append(label);}
+  if(field==='recurrence'){for(const value of ['none','daily','weekdays','weekly','rule_weekly','rule_monthly']){const option=element('option',value==='rule_weekly'?preparationLabel('weekly_days'):value==='rule_monthly'?preparationLabel('monthly_day'):preparationRepeatLabel(value));option.value=value;input.append(option);}}
+  else{input.type=['due','until'].includes(field)?'datetime-local':['every_minutes','max_runs'].includes(field)?'number':'text';input.required=true;if(input.type==='number'){input.min=field==='every_minutes'?'5':'1';input.max=field==='every_minutes'?'720':'96';}}
+  input.name=field;input.dataset.focusKey='preparation-'+row.id+'-'+field;input.value=field==='due'?row.due_local_input:field==='until'?row.until_local_input:field==='recurrence'?(rule?(rule.FREQ==='MONTHLY'?'rule_monthly':rule.FREQ==='WEEKLY'?'rule_weekly':'daily'):(row.recurrence||'none')):row[field];inputs[field]=input;label.append(input);form.append(label);}
+ let ruleChanged=false,monthlyDayChanged=false,endDateChanged=false,section;
+ if(!windowed){section=element('fieldset');section.append(element('legend',preparationLabel('rule')));
+  const weekdays=element('div');weekdays.append(element('span',preparationLabel('weekly_days')));
+  for(const day of ['MO','TU','WE','TH','FR','SA','SU']){const label=element('label'),input=element('input');input.type='checkbox';input.name='day_'+day;input.dataset.focusKey='preparation-'+row.id+'-day-'+day;input.checked=!!rule?.BYDAY?.split(',').includes(day);input.onchange=()=>{ruleChanged=true;inputs.recurrence.value='rule_weekly';};days[day]=input;label.append(input,element('span',preparationLabel('day_'+day)));weekdays.append(label);}section.append(weekdays);
+  for(const field of ['monthly_day','interval','rule_until']){const label=element('label'),input=element(field==='monthly_day'?'select':'input');label.append(element('span',preparationLabel(field)));input.name=field;input.dataset.focusKey='preparation-'+row.id+'-'+field;if(field!=='monthly_day')input.type=field==='rule_until'?'date':'number';
+   if(field==='monthly_day'){for(const value of [...Array.from({length:31},(_,i)=>String(i+1)),'-1']){const option=element('option',value==='-1'?preparationLabel('last_day'):value);option.value=value;input.append(option);}}
+   if(field==='interval'){input.min='1';input.max='12';}
+   input.value=field==='monthly_day'?(rule?.BYMONTHDAY||'1'):field==='interval'?(rule?.INTERVAL||'1'):(rule?.UNTIL?rule.UNTIL.slice(0,4)+'-'+rule.UNTIL.slice(4,6)+'-'+rule.UNTIL.slice(6,8):'');
+   input.onchange=()=>{ruleChanged=true;if(field==='monthly_day'){monthlyDayChanged=true;inputs.recurrence.value='rule_monthly';}if(field==='interval')inputs.recurrence.value='rule_weekly';if(field==='rule_until')endDateChanged=true;};inputs[field]=input;label.append(input);section.append(label);}
+  inputs.recurrence.onchange=()=>{ruleChanged=true;section.hidden=inputs.recurrence.value==='none';};section.hidden=inputs.recurrence.value==='none';form.append(section);}
  const save=element('button',preparationLabel('edit'));save.type='submit';form.append(save);
- form.onsubmit=event=>{event.preventDefault();const changes={};for(const [field,input] of Object.entries(inputs))changes[field]=input.type==='number'?Number(input.value):input.value;return busy(event.submitter||save,()=>preparationAction('edit',row.id,preparationLabel('saved'),changes));};return form;}
+ form.onsubmit=event=>{event.preventDefault();const changes={due:inputs.due.value,timezone:inputs.timezone.value};
+  if(windowed){for(const field of ['every_minutes','until','max_runs'])changes[field]=inputs[field].type==='number'?Number(inputs[field].value):inputs[field].value;}
+  else{const repeat=inputs.recurrence.value;
+   if(rule&&!ruleChanged){changes.rrule=row.recurrence;}
+   else if(repeat.startsWith('rule_')||(repeat!=='none'&&inputs.rule_until.value)){
+    const frequency=repeat==='rule_monthly'?'MONTHLY':repeat==='daily'?'DAILY':'WEEKLY',parts=rule?.FREQ===frequency?{...rule}:{FREQ:frequency};
+    if(parts.FREQ==='MONTHLY'){if(!rule?.BYDAY||monthlyDayChanged){delete parts.BYDAY;parts.BYMONTHDAY=inputs.monthly_day.value;}}
+    else if(repeat==='weekdays')parts.BYDAY='MO,TU,WE,TH,FR';
+    else if(repeat==='rule_weekly'){const selected=Object.entries(days).filter(([,input])=>input.checked).map(([day])=>day);if(selected.length)parts.BYDAY=selected.join(',');else delete parts.BYDAY;parts.INTERVAL=inputs.interval.value;}
+    if(inputs.rule_until.value){if(endDateChanged||!parts.UNTIL)parts.UNTIL=inputs.rule_until.value.replaceAll('-','');delete parts.COUNT;}
+    else delete parts.UNTIL;
+    changes.rrule='RRULE:'+Object.entries(parts).map(([key,value])=>key+'='+value).join(';');
+   }else changes.recurrence=repeat;}
+  return busy(event.submitter||save,()=>preparationAction('edit',row.id,preparationLabel('saved'),changes));};return form;}
 // end of #659 preparations
 $('context-config').onsubmit=event=>{event.preventDefault();void saveContextSources();};
 ['context-text','context-url'].forEach(id=>$(id).onchange=()=>{contextDraftDirty=true;void saveContextSources();});
