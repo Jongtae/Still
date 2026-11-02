@@ -107,7 +107,7 @@ def _encodable(text):
 def validate_input(body):
     """``(kind, fields)`` of one phone input, or None when it is not one.
 
-    ``tap`` carries ``x``/``y`` (numbers), ``text`` a bounded string, ``key``
+    ``tap`` carries ``x``/``y`` (numbers), ``text`` a bounded string (and ``replace``, a bool, #602), ``key``
     one of ``KEYS``, ``nav`` one of ``NAV_ACTIONS`` and ``dialog`` (the
     answer to a page's own dialog) one of ``DIALOG_ANSWERS``.  Nothing else passes.
     """
@@ -120,9 +120,11 @@ def validate_input(body):
             return 'tap', {'x': float(x), 'y': float(y)}
     elif kind == 'text':
         text = body.get('text')
+        replace = body.get('replace', False)
         if isinstance(text, str) and 0 < len(text) <= TEXT_LIMIT and '\n' not in text and '\r' not in text \
-                and _encodable(text):
-            return 'text', {'text': text}
+                and _encodable(text) and isinstance(replace, bool):
+            # #602: ``replace`` (the phone's input box) puts the text in place of what the field holds.
+            return 'text', ({'text': text, 'replace': True} if replace else {'text': text})
     elif kind == 'key':
         if body.get('key') in KEYS:
             return 'key', {'key': body['key']}
@@ -362,13 +364,16 @@ opacity:0;font-size:16px;color:transparent;background:transparent;caret-color:tr
 details{{margin:8px 0}}summary{{font-size:14px;color:#aeaeb2;padding:6px 0}}
 #qr{{background:#2c2c2e;border:1px solid #0a84ff;border-radius:10px;padding:12px;margin:8px 0}}#qr p{{margin:0 0 8px}}
 #qr a{{display:block;padding:12px;border-radius:10px;background:#0a84ff;color:#fff;text-decoration:none;font-weight:600;
-margin-top:6px;overflow-wrap:anywhere}}</style></head><body>
+margin-top:6px;overflow-wrap:anywhere}}
+#compose{{background:#2c2c2e;border:1px solid #30d158;border-radius:10px;padding:10px 12px;margin:8px 0}}#compose p{{margin:0 0 6px}}</style></head><body>
 <h1>{site} 로그인</h1>
 <div id="live"><div id="dialog" class="hidden"><p class="note">Mac의 로그인 창이 이 질문에 답하기를 기다리고 있어요.</p><p id="dialog-text"></p>
 <div class="row"><button id="dialog-ok" class="main wide">확인</button><button id="dialog-cancel" class="wide">취소</button></div></div>
-<div id="qr" class="hidden"><p class="note">Mac 창에 QR 코드가 보여요. 이 휴대폰에서는 찍을 수 없으니, 아래 링크를 누르면 카메라로 찍은 것처럼 그 주소가 열려요.</p><div id="qr-links"></div></div>
+<div id="qr" class="hidden"><p class="note">Mac 창에 QR 코드가 보여요. 화면의 QR 코드나 아래 링크를 누르면 카메라로 찍은 것처럼 그 주소가 이 휴대폰에서 열려요.</p><div id="qr-links"></div></div>
 <div id="screen"><img id="shot" alt="Mac의 로그인 창"><input id="keys" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Mac 창의 선택한 칸에 바로 입력"></div>
-<p class="note">화면을 누르면 Mac의 로그인 창에서 같은 자리가 눌려요. 입력할 칸을 누르면 키보드가 열리고, 치는 글자가 그 칸에 바로 들어가요.</p>
+<div id="compose" class="hidden"><p class="note">누른 칸에 넣을 내용을 여기에 쓰고 [넣기]를 누르세요. 한글도 이 휴대폰 키보드 그대로 써져요. 넣으면 그 칸의 원래 내용은 바뀌어요.</p>
+<div class="row"><input id="line" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" maxlength="{TEXT_LIMIT}" aria-label="누른 칸에 넣을 내용"><button id="put" class="main">넣기</button></div></div>
+<p class="note">화면을 누르면 Mac의 로그인 창에서 같은 자리가 눌려요. 글자 칸을 누르면 아래 입력창이 열리고, 비밀번호 칸을 누르면 치는 글자가 그 칸에 바로 들어가요.</p>
 <p class="note hidden" id="typing-failed">글자가 Mac 창에 들어가지 않았어요. 입력할 칸을 다시 누르고 쳐 주세요.</p>
 <div class="row"><button id="enter" class="wide">엔터</button><button id="tab" class="wide">다음 칸</button><button id="back" class="wide">←지우기</button><button id="nav-back" class="wide">뒤로</button><button id="reload" class="wide">새로고침</button></div>
 <details id="autofill"><summary>iPhone 암호로 채우기</summary>
@@ -380,15 +385,15 @@ margin-top:6px;overflow-wrap:anywhere}}</style></head><body>
 <p id="end"></p>
 <script nonce="{nonce}">
 const code={code};const q='?code='+encodeURIComponent(code);const $=id=>document.getElementById(id);
-let W=0,H=0,busy=false,ended=false,full=true,F=null,FS=[],qrKey='',checkAfter=0,moveSeq=0,composing=false,sending=false;const sendQ=[],idle=[];
-function end(text){{ended=true;$('keys').blur();$('live').classList.add('hidden');$('end').style.display='block';$('end').textContent=text}}
+let W=0,H=0,busy=false,ended=false,full=true,F=null,FS=[],QRS=[],qrKey='',checkAfter=0,moveSeq=0,composing=false,sending=false;const sendQ=[],idle=[];
+function end(text){{ended=true;$('keys').blur();$('line').blur();$('line').value='';$('live').classList.add('hidden');$('end').style.display='block';$('end').textContent=text}}
 async function post(path,body){{try{{const r=await fetch(path+q,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body||{{}}),credentials:'same-origin'}});
 if(r.status===404){{end('이 링크는 닫혔어요.');return false}}if(!r.ok)return false;const d=await r.json();return d&&d.ok===true}}catch(e){{return false}}}}
 async function frame(){{if(ended||busy)return;busy=true;const t0=Date.now();try{{const r=await fetch('{FRAME_PATH}'+q+(full?'&full=1':''),{{cache:'no-store',credentials:'same-origin'}});
 if(r.status===404){{end('이 링크는 닫혔어요.');return}}
 if(r.status===204){{full=false;if(t0>=checkAfter)applyFocus();return}}
 if(r.ok){{const d=await r.json();full=false;W=d.width;H=d.height;$('shot').src='data:image/jpeg;base64,'+d.jpeg;dialog(d.dialog);
-F=d.focus||null;FS=Array.isArray(d.fields)?d.fields:[];qr(d.links);if(t0>=checkAfter)applyFocus()}}}}catch(e){{}}finally{{busy=false}}}}
+F=d.focus||null;FS=Array.isArray(d.fields)?d.fields:[];qr(d.links);if(t0>=checkAfter){{applyFocus();if(F==='text')$('compose').classList.remove('hidden')}}}}}}catch(e){{}}finally{{busy=false}}}}
 // #293: typing goes straight into the Mac window.  A tap focuses the invisible #keys over the image in
 // the same gesture (iOS opens the keyboard only then); each change to it is read against a sentinel
 // value (noVNC's hidden keyboard input) and sent in order as text, Backspace or Enter, and it is reset
@@ -412,18 +417,25 @@ function resetKeys(){{const k=$('keys');k.value=S;last=S;try{{k.setSelectionRang
 function fieldAt(x,y){{if(!W||!H)return null;const fx=x/W,fy=y/H;
 for(const f of FS)if(f&&fx>=f.x&&fx<=f.x+f.w&&fy>=f.y&&fy<=f.y+f.h)return f.kind==='text'?'text':'password';return null}}
 // The QR codes the window shows, as links that open here as the camera would: http(s) only, named by host.
-function qr(list){{const urls=[];for(const u of Array.isArray(list)?list:[]){{try{{const p=new URL(u);
-if((p.protocol==='https:'||p.protocol==='http:')&&urls.length<{QR_LINKS_SHOWN})urls.push(p)}}catch(e){{}}}}
-const key=urls.map(p=>p.href).join(' ');if(key===qrKey)return;qrKey=key;const out=$('qr-links');out.textContent='';
-for(const p of urls){{const a=document.createElement('a');a.href=p.href;a.target='_blank';a.rel='noopener noreferrer';
-a.textContent='QR 코드 열기 · '+p.host;out.appendChild(a)}}$('qr').classList.toggle('hidden',!urls.length)}}
+// #602: a tap on a code in the picture opens its link in that tap's gesture (QRS: each code's box, as
+// fractions of the frame) instead of pressing the window.
+function qr(list){{const codes=[];for(const c of Array.isArray(list)?list:[]){{try{{const p=new URL(c&&c.url);
+if((p.protocol==='https:'||p.protocol==='http:')&&codes.length<{QR_LINKS_SHOWN})codes.push({{p,box:c}})}}catch(e){{}}}}
+const key=JSON.stringify(codes.map(c=>[c.p.href,c.box.x,c.box.y,c.box.w,c.box.h]));if(key===qrKey)return;qrKey=key;
+const out=$('qr-links');out.textContent='';QRS=[];
+for(const c of codes){{const a=document.createElement('a');a.href=c.p.href;a.target='_blank';a.rel='noopener noreferrer';
+a.textContent='QR 코드 열기 · '+c.p.host;out.appendChild(a);
+if([c.box.x,c.box.y,c.box.w,c.box.h].every(v=>typeof v==='number'&&isFinite(v)))QRS.push({{a,x:c.box.x,y:c.box.y,w:c.box.w,h:c.box.h}})}}
+$('qr').classList.toggle('hidden',!codes.length)}}
+function qrAt(x,y){{if(!W||!H)return null;const fx=x/W,fy=y/H;
+for(const c of QRS)if(fx>=c.x&&fx<=c.x+c.w&&fy>=c.y&&fy<=c.y+c.h)return c.a;return null}}
 function keyType(){{return F==='text'?'text':'password'}}
 function setKeyType(t){{const k=$('keys');t=t||keyType();if(k.type===t)return;k.type=t;
 k.setAttribute('autocomplete',t==='password'?'current-password':'username');resetKeys()}}
 function applyFocus(){{const k=$('keys');if(document.activeElement!==k)return;if(!F){{k.blur();return}}setKeyType()}}
 // Text is split only between code points (for..of), never inside a surrogate pair.
 function addText(part){{const last=sendQ[sendQ.length-1];
-if(last&&last.type==='text'&&!last.sent&&last.text.length+part.length<={TEXT_LIMIT})last.text+=part;else sendQ.push({{type:'text',text:part}})}}
+if(last&&last.type==='text'&&!last.sent&&!last.replace&&last.text.length+part.length<={TEXT_LIMIT})last.text+=part;else sendQ.push({{type:'text',text:part}})}}
 function enqueue(item){{if(item.type==='text'){{let part='';for(const ch of item.text.replace(/[\\r\\n]+/g,'')){{
 if(part.length+ch.length>{TEXT_LIMIT}){{addText(part);part=''}}part+=ch}}if(part)addText(part)}}
 else sendQ.push(item);pump()}}
@@ -449,13 +461,25 @@ function dialog(d){{const box=$('dialog');if(!d){{box.classList.add('hidden');re
 $('dialog-ok').onclick=()=>post('{INPUT_PATH}',{{type:'dialog',answer:'ok'}}).then(()=>setTimeout(frame,150));
 $('dialog-cancel').onclick=()=>post('{INPUT_PATH}',{{type:'dialog',answer:'cancel'}}).then(()=>setTimeout(frame,150));
 setInterval(frame,{REFRESH_MS});frame();
+// #602: a tap on a plain text field opens the visible input box (#line): an ordinary text input, so the
+// phone's own keyboard and IME (Korean included) work as anywhere else, and nothing is sent while
+// typing.  [넣기] or Return (outside composition) puts the whole text in place of what the field holds
+// (``replace``) and clears the box; a tap anywhere else drops an unsent draft, so it never lands in
+// another field.  A password field or a point with no known field keeps the hidden direct typing (#293).
+const line=$('line');
+function put(){{const v=line.value.replace(/[\\r\\n]+/g,'');line.value='';if(!v)return;sendQ.push({{type:'text',text:v,replace:true}});pump()}}
+$('put').onclick=put;
+line.addEventListener('keydown',e=>{{if(e.key!=='Enter'||e.isComposing||e.keyCode===229)return;e.preventDefault();put()}});
 $('shot').addEventListener('click',e=>{{if(!W||!H)return;const r=e.currentTarget.getBoundingClientRect();
 const x=Math.max(0,Math.min(W,(e.clientX-r.left)/r.width*W)),y=Math.max(0,Math.min(H,(e.clientY-r.top)/r.height*H));
-const k=$('keys'),kind=fieldAt(x,y);k.style.top=Math.round(e.clientY-r.top)+'px';setKeyType(kind==='text'?'text':'password');
+const code=qrAt(x,y);if(code){{code.click();return}}
+const k=$('keys'),kind=fieldAt(x,y);line.value='';
+if(kind==='text'){{$('compose').classList.remove('hidden');k.blur();line.focus();moving({{type:'tap',x:x,y:y}},kind);return}}
+$('compose').classList.add('hidden');k.style.top=Math.round(e.clientY-r.top)+'px';setKeyType(kind==='text'?'text':'password');
 resetKeys();k.focus();moving({{type:'tap',x:x,y:y}},kind)}});
 // #1170: the phone's own AutoFill fills these two; they go out like typed text (ID, Tab, password) and are
 // cleared at once: the page keeps neither.
-function clearCred(){{$('user').value='';$('pass').value=''}}
+function clearCred(){{$('user').value='';$('pass').value='';line.value=''}}
 $('cred').addEventListener('submit',async e=>{{e.preventDefault();const u=$('user').value,p=$('pass').value;clearCred();await drained();
 if(u&&!(await post('{INPUT_PATH}',{{type:'text',text:u}})))return;
 if(u&&p&&!(await post('{INPUT_PATH}',{{type:'key',key:'Tab'}})))return;

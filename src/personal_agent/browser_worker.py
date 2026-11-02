@@ -876,6 +876,11 @@ const el = document.activeElement;
 if (!el || el === document.body || el === document.documentElement || el.tagName === 'IFRAME') {
   return JSON.stringify({error: 'not_focused'});
 }
+// #602: the phone's input box replaces what the field holds: its content is selected first, so the
+// insert below takes its place (the same insertText path, so the page sees ordinary input events).
+if (replace) {
+  if (typeof el.select === 'function') el.select(); else document.execCommand('selectAll', false, null);
+}
 const done = document.execCommand('insertText', false, text);
 return JSON.stringify(done ? {ok: true} : {error: 'not_typable'});
 """
@@ -933,6 +938,17 @@ QR_LINKS_LIMIT = 3
 QR_LINK_CHARS = 2048
 
 
+def _box(item):
+    """#596: ``{'x', 'y', 'w', 'h'}`` of ``item`` as fractions of the frame (rounded), or None when it is not one."""
+    try:
+        box = [float(item[key]) for key in ('x', 'y', 'w', 'h')]
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(number) and -1.0 <= number <= 2.0 for number in box) or box[2] <= 0 or box[3] <= 0:
+        return None
+    return {key: round(number, 4) for key, number in zip(('x', 'y', 'w', 'h'), box)}
+
+
 def remote_fields(value):
     """#596: the editable fields a frame names (``REMOTE_FOCUS_SCRIPT``): at most ``REMOTE_FIELDS_LIMIT`` of
     ``{'kind', 'x', 'y', 'w', 'h'}``, a kind of ``REMOTE_FIELD_KINDS`` and a box as fractions of the
@@ -941,36 +957,41 @@ def remote_fields(value):
     for item in value[:REMOTE_FIELDS_LIMIT] if isinstance(value, list) else ():
         if not isinstance(item, dict) or item.get('kind') not in REMOTE_FIELD_KINDS:
             continue
-        try:
-            box = [float(item[key]) for key in ('x', 'y', 'w', 'h')]
-        except (KeyError, TypeError, ValueError):
-            continue
-        if not all(math.isfinite(number) and -1.0 <= number <= 2.0 for number in box) or box[2] <= 0 or box[3] <= 0:
-            continue
-        fields.append({'kind': item['kind'], **{key: round(number, 4) for key, number in zip(('x', 'y', 'w', 'h'), box)}})
+        box = _box(item)
+        if box is not None:
+            fields.append({'kind': item['kind'], **box})
     return fields
 
 
+def _http_link(url):
+    """#596: ``url`` when it is an ``http(s)`` link of bounded length with a host, no userinfo and no
+    whitespace or control character; else None."""
+    if not isinstance(url, str) or not 0 < len(url) <= QR_LINK_CHARS:
+        return None
+    if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in url):
+        return None
+    try:
+        parts = urlsplit(url)
+        host, user = parts.hostname, parts.username
+    except ValueError:
+        return None
+    return url if parts.scheme.lower() in ('http', 'https') and host and user is None else None
+
+
 def qr_links(value):
-    """#596: at most ``QR_LINKS_LIMIT`` distinct ``http(s)`` links among QR payloads; anything else is dropped.
+    """#596/#602: at most ``QR_LINKS_LIMIT`` QR codes with distinct ``http(s)`` links, as ``{'url'}`` plus the
+    code's box in the frame (``x``, ``y``, ``w``, ``h`` as fractions) when it is known; anything else is dropped.
 
     A QR code shown in the login window is there for the owner's phone to scan, which the owner signing in
-    from that phone cannot do: the phone page offers its link instead, as the camera would."""
+    from that phone cannot do: the phone page opens its link instead, as the camera would, when the owner
+    taps the code in the picture or its link under it."""
     links = []
     for item in value if isinstance(value, (list, tuple)) else ():
-        if not isinstance(item, str) or not 0 < len(item) <= QR_LINK_CHARS:
+        url = _http_link(item.get('url') if isinstance(item, dict) else None)
+        if url is None or any(link['url'] == url for link in links):
             continue
-        if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in item):
-            continue
-        try:
-            parts = urlsplit(item)
-            host, user = parts.hostname, parts.username
-        except ValueError:
-            continue
-        if parts.scheme.lower() not in ('http', 'https') or not host or user is not None:
-            continue
-        if item not in links:
-            links.append(item)
+        box = _box(item)
+        links.append({'url': url, **(box or {})})
         if len(links) >= QR_LINKS_LIMIT:
             break
     return links
@@ -979,8 +1000,9 @@ def qr_links(value):
 _VISION = []
 
 
-def read_qr_payloads(Foundation, data):
-    """#596: the payload strings of the QR codes in an image (``data``: JPEG bytes), or [].
+def read_qr_codes(Foundation, data):
+    """#596/#602: the QR codes in an image (``data``: JPEG bytes) as ``{'url': payload, 'x', 'y', 'w', 'h'}``
+    (the box as fractions of the image, top-left origin), or [].
 
     macOS Vision's ``VNDetectBarcodesRequest`` (a system framework since macOS 10.13), loaded at its first
     use through ``NSBundle`` and the Objective-C runtime: no extra package.  Synchronous, a few
@@ -1001,8 +1023,22 @@ def read_qr_payloads(Foundation, data):
         done = handler.performRequests_error_([request], None)
         if not (done[0] if isinstance(done, tuple) else done):
             return []
-        return [str(found.payloadStringValue()) for found in list(request.results() or [])
-                if found.payloadStringValue() is not None][:QR_LINKS_LIMIT * 4]
+        codes = []
+        for found in list(request.results() or [])[:QR_LINKS_LIMIT * 4]:
+            payload = found.payloadStringValue()
+            if payload is None:
+                continue
+            code = {'url': str(payload)}
+            try:
+                # Vision's box is normalized with its origin at the bottom left.
+                rect = found.boundingBox()
+                x, y, w, h = (float(rect.origin.x), float(rect.origin.y), float(rect.size.width),
+                              float(rect.size.height))
+                code.update({'x': x, 'y': 1.0 - y - h, 'w': w, 'h': h})
+            except Exception:
+                pass
+            codes.append(code)
+        return codes
     except Exception:
         return []
 #: #254: in a phone session, how wide the main view's document is laid out and how wide its
@@ -2456,7 +2492,7 @@ class Worker:
         cached = getattr(self, 'qr_cache', None)
         if cached is not None and cached[0] == digest:
             return list(cached[1])
-        links = qr_links(read_qr_payloads(self.Foundation, data))
+        links = qr_links(read_qr_codes(self.Foundation, data))
         self.qr_cache = (digest, links)
         return list(links)
 
@@ -2478,7 +2514,8 @@ class Worker:
     def op_remote_text(self, ident, command, timeout):
         """Insert ``text`` into the element the page has focused: the ``insertText`` path
         ``op_type`` uses, then the native text-input path when nothing in the main frame
-        has focus (a field inside a frame).  The text is never kept or echoed."""
+        has focus (a field inside a frame).  ``replace`` (#602) selects the field's content first,
+        in the main frame only.  The text is never kept or echoed."""
         if not self._remote_allowed(ident):
             return
         text = command.get('text')
@@ -2497,7 +2534,7 @@ class Worker:
             except Exception:
                 return self.fail(ident, (value or {}).get('error') if error is None and isinstance(value, dict) else 'not_typable')
             self.reply(ident)
-        self.run(REMOTE_INSERT_SCRIPT, {'text': text}, inserted, view=view)
+        self.run(REMOTE_INSERT_SCRIPT, {'text': text, 'replace': command.get('replace') is True}, inserted, view=view)
 
     def op_remote_key(self, ident, command, timeout):
         if not self._remote_allowed(ident):
