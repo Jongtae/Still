@@ -60,6 +60,8 @@ NAV_ACTIONS = ('back', 'reload')
 TEXT_LIMIT = 512
 #: How often the page refreshes the image, in milliseconds.
 REFRESH_MS = 500
+#: #596: at most how many QR links the page shows (the worker's ``QR_LINKS_LIMIT``).
+QR_LINKS_SHOWN = 3
 
 #: #242: the Telegram message follows the owner's language; the phone page itself (``page``) is
 #: still Korean, so the other languages name its finish button by place rather than by its Korean word.
@@ -304,17 +306,20 @@ class RemoteLogin:
 
     # -- the window ----------------------------------------------------------------
     def frame(self, full=False):
-        """The window's current image (``{'jpeg', 'width', 'height', 'dialog', 'focus'}``), ``{'unchanged': True}``
-        when nothing changed since the last one sent (review P3-4; ``full`` sends it anyway), or None when
-        the window could not answer now.  ``focus`` (#293) is what kind of element has focus, so the page
-        knows when to keep the phone keyboard up; a change of it alone is a change."""
+        """The window's current image (``{'jpeg', 'width', 'height', 'dialog', 'focus', 'fields', 'links'}``),
+        ``{'unchanged': True}`` when nothing changed since the last one sent (review P3-4; ``full`` sends it
+        anyway), or None when the window could not answer now.  ``focus`` (#293) is what kind of element has
+        focus, so the page knows when to keep the phone keyboard up; ``fields`` (#596) where the editable fields
+        are, so a tap on a text field opens a text keyboard at once; ``links`` (#596) the links of QR codes the
+        window shows.  A change of any of them alone is a change."""
         if not self.alive():
             return None
         frame = self.profile.login_window_frame(self.window)
         if not isinstance(frame, dict):
             return None
         digest = hashlib.sha256(json.dumps([frame.get('jpeg'), frame.get('width'), frame.get('height'), frame.get('dialog'),
-                                            frame.get('focus')], sort_keys=True).encode()).hexdigest()
+                                            frame.get('focus'), frame.get('fields'), frame.get('links')],
+                                           sort_keys=True).encode()).hexdigest()
         if not full and digest == self._last_frame:
             return {'unchanged': True}
         self._last_frame = digest
@@ -343,7 +348,7 @@ def page(session, nonce):
     code = json.dumps(session.code)
     nonce = escape(nonce)
     return f'''<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>{site} 로그인</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>{site} 로그인</title>
 <style nonce="{nonce}">body{{font:16px/1.4 -apple-system,system-ui,sans-serif;margin:0;padding:10px;background:#1c1c1e;color:#f2f2f7}}
 h1{{font-size:16px;margin:0 0 8px;font-weight:600}}.note{{font-size:13px;color:#aeaeb2;margin:6px 0}}
 #shot{{display:block;width:100%;background:#000;border-radius:8px;touch-action:manipulation;-webkit-user-select:none;user-select:none}}
@@ -354,10 +359,14 @@ button.wide{{flex:1}}#done{{width:100%;font-size:19px;padding:16px;background:#3
 #dialog{{background:#2c2c2e;border:1px solid #ffd60a;border-radius:10px;padding:12px;margin:8px 0}}#dialog p{{margin:0 0 8px;white-space:pre-wrap}}
 #screen{{position:relative}}#keys{{position:absolute;left:0;top:0;width:1px;height:1px;min-width:0;flex:none;padding:0;margin:0;border:0;
 opacity:0;font-size:16px;color:transparent;background:transparent;caret-color:transparent}}
-details{{margin:8px 0}}summary{{font-size:14px;color:#aeaeb2;padding:6px 0}}</style></head><body>
+details{{margin:8px 0}}summary{{font-size:14px;color:#aeaeb2;padding:6px 0}}
+#qr{{background:#2c2c2e;border:1px solid #0a84ff;border-radius:10px;padding:12px;margin:8px 0}}#qr p{{margin:0 0 8px}}
+#qr a{{display:block;padding:12px;border-radius:10px;background:#0a84ff;color:#fff;text-decoration:none;font-weight:600;
+margin-top:6px;overflow-wrap:anywhere}}</style></head><body>
 <h1>{site} 로그인</h1>
 <div id="live"><div id="dialog" class="hidden"><p class="note">Mac의 로그인 창이 이 질문에 답하기를 기다리고 있어요.</p><p id="dialog-text"></p>
 <div class="row"><button id="dialog-ok" class="main wide">확인</button><button id="dialog-cancel" class="wide">취소</button></div></div>
+<div id="qr" class="hidden"><p class="note">Mac 창에 QR 코드가 보여요. 이 휴대폰에서는 찍을 수 없으니, 아래 링크를 누르면 카메라로 찍은 것처럼 그 주소가 열려요.</p><div id="qr-links"></div></div>
 <div id="screen"><img id="shot" alt="Mac의 로그인 창"><input id="keys" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Mac 창의 선택한 칸에 바로 입력"></div>
 <p class="note">화면을 누르면 Mac의 로그인 창에서 같은 자리가 눌려요. 입력할 칸을 누르면 키보드가 열리고, 치는 글자가 그 칸에 바로 들어가요.</p>
 <p class="note hidden" id="typing-failed">글자가 Mac 창에 들어가지 않았어요. 입력할 칸을 다시 누르고 쳐 주세요.</p>
@@ -371,7 +380,7 @@ details{{margin:8px 0}}summary{{font-size:14px;color:#aeaeb2;padding:6px 0}}</st
 <p id="end"></p>
 <script nonce="{nonce}">
 const code={code};const q='?code='+encodeURIComponent(code);const $=id=>document.getElementById(id);
-let W=0,H=0,busy=false,ended=false,full=true,F=null,checkAfter=0,moveSeq=0,composing=false,sending=false;const sendQ=[],idle=[];
+let W=0,H=0,busy=false,ended=false,full=true,F=null,FS=[],qrKey='',checkAfter=0,moveSeq=0,composing=false,sending=false;const sendQ=[],idle=[];
 function end(text){{ended=true;$('keys').blur();$('live').classList.add('hidden');$('end').style.display='block';$('end').textContent=text}}
 async function post(path,body){{try{{const r=await fetch(path+q,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body||{{}}),credentials:'same-origin'}});
 if(r.status===404){{end('이 링크는 닫혔어요.');return false}}if(!r.ok)return false;const d=await r.json();return d&&d.ok===true}}catch(e){{return false}}}}
@@ -379,7 +388,7 @@ async function frame(){{if(ended||busy)return;busy=true;const t0=Date.now();try{
 if(r.status===404){{end('이 링크는 닫혔어요.');return}}
 if(r.status===204){{full=false;if(t0>=checkAfter)applyFocus();return}}
 if(r.ok){{const d=await r.json();full=false;W=d.width;H=d.height;$('shot').src='data:image/jpeg;base64,'+d.jpeg;dialog(d.dialog);
-F=d.focus||null;if(t0>=checkAfter)applyFocus()}}}}catch(e){{}}finally{{busy=false}}}}
+F=d.focus||null;FS=Array.isArray(d.fields)?d.fields:[];qr(d.links);if(t0>=checkAfter)applyFocus()}}}}catch(e){{}}finally{{busy=false}}}}
 // #293: typing goes straight into the Mac window.  A tap focuses the invisible #keys over the image in
 // the same gesture (iOS opens the keyboard only then); each change to it is read against a sentinel
 // value (noVNC's hidden keyboard input) and sent in order as text, Backspace or Enter, and it is reset
@@ -392,8 +401,22 @@ F=d.focus||null;if(t0>=checkAfter)applyFocus()}}}}catch(e){{}}finally{{busy=fals
 // decide.
 // Enter while an IME composes confirms the composition (a Japanese or Chinese candidate): it is left to
 // the IME, and only an Enter outside composition goes to the window.
-const S='__________';
-function resetKeys(){{const k=$('keys');k.value=S;try{{k.setSelectionRange(S.length,S.length)}}catch(e){{}}}}
+// #596: a frame also says where the window's editable fields are (FS): a tap on a plain text field makes
+// #keys a text input before it is focused, since iOS gives a password input no Korean keyboard and does
+// not swap the keyboard of a focused input whose type changes.  In a text input a change is sent as the
+// difference from the previous value (Backspaces, then the new text) and the value is kept until the
+// focus moves, so a Hangul keyboard that builds a syllable by replacing the last letter (ㅎ, 하, 한) finds
+// that letter there and the window gets the syllable; a password input still keeps nothing.
+const S='__________';let last=S;
+function resetKeys(){{const k=$('keys');k.value=S;last=S;try{{k.setSelectionRange(S.length,S.length)}}catch(e){{}}}}
+function fieldAt(x,y){{if(!W||!H)return null;const fx=x/W,fy=y/H;
+for(const f of FS)if(f&&fx>=f.x&&fx<=f.x+f.w&&fy>=f.y&&fy<=f.y+f.h)return f.kind==='text'?'text':'password';return null}}
+// The QR codes the window shows, as links that open here as the camera would: http(s) only, named by host.
+function qr(list){{const urls=[];for(const u of Array.isArray(list)?list:[]){{try{{const p=new URL(u);
+if((p.protocol==='https:'||p.protocol==='http:')&&urls.length<{QR_LINKS_SHOWN})urls.push(p)}}catch(e){{}}}}
+const key=urls.map(p=>p.href).join(' ');if(key===qrKey)return;qrKey=key;const out=$('qr-links');out.textContent='';
+for(const p of urls){{const a=document.createElement('a');a.href=p.href;a.target='_blank';a.rel='noopener noreferrer';
+a.textContent='QR 코드 열기 · '+p.host;out.appendChild(a)}}$('qr').classList.toggle('hidden',!urls.length)}}
 function keyType(){{return F==='text'?'text':'password'}}
 function setKeyType(t){{const k=$('keys');t=t||keyType();if(k.type===t)return;k.type=t;
 k.setAttribute('autocomplete',t==='password'?'current-password':'username');resetKeys()}}
@@ -408,14 +431,15 @@ async function pump(){{if(sending)return;sending=true;let failed=false;
 while(sendQ.length&&!ended){{const item=sendQ[0];item.sent=true;const body=Object.assign({{}},item);delete body.sent;delete body.seq;
 const ok=await post('{INPUT_PATH}',body);sendQ.shift();if(item.seq!==undefined&&item.seq===moveSeq)checkAfter=Date.now();if(item.type!=='tap'&&!ok)failed=true}}
 sending=false;idle.splice(0).forEach(done=>done());$('typing-failed').classList.toggle('hidden',!failed);setTimeout(frame,150)}}
-function moving(item){{setKeyType('password');checkAfter=Infinity;item.seq=++moveSeq;enqueue(item)}}
+function moving(item,kind){{setKeyType(kind==='text'?'text':'password');resetKeys();checkAfter=Infinity;item.seq=++moveSeq;enqueue(item)}}
 // 완료 closes the window: everything typed before it (the sign-in Enter included) reaches the window first.
 function drained(){{return sending||sendQ.length?new Promise(done=>idle.push(done)):Promise.resolve()}}
 // A whole-value replacement (AutoFill: insertReplacementText, or an input event with no inputType) is
 // the value itself, sent intact: a leading '_' in it is never taken for the sentinel.
-function flush(whole){{const k=$('keys'),v=k.value;resetKeys();if(whole){{if(v)enqueue({{type:'text',text:v}});return}}if(v===S)return;
-let p=0;while(p<S.length&&p<v.length&&v[p]===S[p])p++;const added=v.slice(p);
-if(added){{enqueue({{type:'text',text:added}});return}}for(let i=p;i<S.length;i++)enqueue({{type:'key',key:'Backspace'}})}}
+function flush(whole){{const k=$('keys'),v=k.value,was=last;if(whole){{resetKeys();if(v)enqueue({{type:'text',text:v}});return}}if(v===was)return;
+let p=0;while(p<was.length&&p<v.length&&v[p]===was[p])p++;for(let i=p;i<was.length;i++)enqueue({{type:'key',key:'Backspace'}});
+const added=v.slice(p);if(added)enqueue({{type:'text',text:added}});
+if(k.type==='password'||!v.startsWith(S))resetKeys();else last=v}}
 resetKeys();
 $('keys').addEventListener('compositionstart',()=>{{composing=true}});
 $('keys').addEventListener('compositionend',()=>{{composing=false;flush()}});
@@ -427,8 +451,8 @@ $('dialog-cancel').onclick=()=>post('{INPUT_PATH}',{{type:'dialog',answer:'cance
 setInterval(frame,{REFRESH_MS});frame();
 $('shot').addEventListener('click',e=>{{if(!W||!H)return;const r=e.currentTarget.getBoundingClientRect();
 const x=Math.max(0,Math.min(W,(e.clientX-r.left)/r.width*W)),y=Math.max(0,Math.min(H,(e.clientY-r.top)/r.height*H));
-const k=$('keys');k.style.top=Math.round(e.clientY-r.top)+'px';resetKeys();k.focus();
-moving({{type:'tap',x:x,y:y}})}});
+const k=$('keys'),kind=fieldAt(x,y);k.style.top=Math.round(e.clientY-r.top)+'px';setKeyType(kind==='text'?'text':'password');
+resetKeys();k.focus();moving({{type:'tap',x:x,y:y}},kind)}});
 // #1170: the phone's own AutoFill fills these two; they go out like typed text (ID, Tab, password) and are
 // cleared at once: the page keeps neither.
 function clearCred(){{$('user').value='';$('pass').value=''}}

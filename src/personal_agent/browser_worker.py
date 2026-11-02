@@ -898,18 +898,113 @@ for (let depth = 0; el && depth < 8; depth++) {
   }
   break;
 }
-let focus = null;
-if (el && !el.disabled && !el.readOnly) {
-  if (el.tagName === 'INPUT') {
-    const type = (el.getAttribute('type') || 'text').toLowerCase();
-    focus = type === 'password' ? 'password' : (TEXT_TYPES.includes(type) ? 'text' : null);
-  } else if (el.tagName === 'TEXTAREA' || el.isContentEditable) {
-    focus = 'text';
+const kindOf = (node) => {
+  if (!node || node.disabled || node.readOnly) return null;
+  if (node.tagName === 'INPUT') {
+    const type = (node.getAttribute('type') || 'text').toLowerCase();
+    return type === 'password' ? 'password' : (TEXT_TYPES.includes(type) ? 'text' : null);
+  }
+  return node.tagName === 'TEXTAREA' || node.isContentEditable ? 'text' : null;
+};
+const focus = kindOf(el);
+// #596: where the visible editable fields of the main document are, as fractions of the viewport, so a
+// tap on a plain text field opens the phone's own (Korean) keyboard inside the tap's gesture.
+const fields = [];
+const W = window.innerWidth, H = window.innerHeight;
+const round = (v) => Math.round(v * 10000) / 10000;
+if (W > 0 && H > 0 && document.querySelectorAll) {
+  for (const node of document.querySelectorAll('input, textarea, [contenteditable]')) {
+    if (fields.length >= 40) break;
+    const kind = kindOf(node);
+    if (!kind) continue;
+    const r = node.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0 || r.right <= 0 || r.bottom <= 0 || r.left >= W || r.top >= H) continue;
+    fields.push({kind, x: round(r.left / W), y: round(r.top / H), w: round(r.width / W), h: round(r.height / H)});
   }
 }
-return JSON.stringify({focus});
+return JSON.stringify({focus, fields});
 """
 REMOTE_FOCUS_KINDS = ('text', 'password', 'frame')
+#: #596: the field kinds a frame names for the phone keyboard, and at most how many fields.
+REMOTE_FIELD_KINDS = ('text', 'password')
+REMOTE_FIELDS_LIMIT = 40
+#: #596: at most how many links of QR codes shown in the login window a frame carries, and how long each.
+QR_LINKS_LIMIT = 3
+QR_LINK_CHARS = 2048
+
+
+def remote_fields(value):
+    """#596: the editable fields a frame names (``REMOTE_FOCUS_SCRIPT``): at most ``REMOTE_FIELDS_LIMIT`` of
+    ``{'kind', 'x', 'y', 'w', 'h'}``, a kind of ``REMOTE_FIELD_KINDS`` and a box as fractions of the
+    viewport.  Never a value or a name; anything else is dropped."""
+    fields = []
+    for item in value[:REMOTE_FIELDS_LIMIT] if isinstance(value, list) else ():
+        if not isinstance(item, dict) or item.get('kind') not in REMOTE_FIELD_KINDS:
+            continue
+        try:
+            box = [float(item[key]) for key in ('x', 'y', 'w', 'h')]
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not all(math.isfinite(number) and -1.0 <= number <= 2.0 for number in box) or box[2] <= 0 or box[3] <= 0:
+            continue
+        fields.append({'kind': item['kind'], **{key: round(number, 4) for key, number in zip(('x', 'y', 'w', 'h'), box)}})
+    return fields
+
+
+def qr_links(value):
+    """#596: at most ``QR_LINKS_LIMIT`` distinct ``http(s)`` links among QR payloads; anything else is dropped.
+
+    A QR code shown in the login window is there for the owner's phone to scan, which the owner signing in
+    from that phone cannot do: the phone page offers its link instead, as the camera would."""
+    links = []
+    for item in value if isinstance(value, (list, tuple)) else ():
+        if not isinstance(item, str) or not 0 < len(item) <= QR_LINK_CHARS:
+            continue
+        if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in item):
+            continue
+        try:
+            parts = urlsplit(item)
+            host, user = parts.hostname, parts.username
+        except ValueError:
+            continue
+        if parts.scheme.lower() not in ('http', 'https') or not host or user is not None:
+            continue
+        if item not in links:
+            links.append(item)
+        if len(links) >= QR_LINKS_LIMIT:
+            break
+    return links
+
+
+_VISION = []
+
+
+def read_qr_payloads(Foundation, data):
+    """#596: the payload strings of the QR codes in an image (``data``: JPEG bytes), or [].
+
+    macOS Vision's ``VNDetectBarcodesRequest`` (a system framework since macOS 10.13), loaded at its first
+    use through ``NSBundle`` and the Objective-C runtime: no extra package.  Synchronous, a few
+    milliseconds for a frame; any failure is no codes."""
+    try:
+        if not _VISION:
+            import objc
+            bundle = Foundation.NSBundle.bundleWithPath_('/System/Library/Frameworks/Vision.framework')
+            _VISION.append((objc.lookUpClass('VNDetectBarcodesRequest'), objc.lookUpClass('VNImageRequestHandler'))
+                           if bundle is not None and bundle.load() else None)
+        if _VISION[0] is None:
+            return []
+        request_class, handler_class = _VISION[0]
+        request = request_class.alloc().init()
+        request.setSymbologies_(['VNBarcodeSymbologyQR'])
+        image = Foundation.NSData.dataWithBytes_length_(data, len(data))
+        handler = handler_class.alloc().initWithData_options_(image, Foundation.NSDictionary.dictionary())
+        done = handler.performRequests_error_([request], None)
+        if not (done[0] if isinstance(done, tuple) else done):
+            return []
+        return [str(found.payloadStringValue()) for found in list(request.results() or [])
+                if found.payloadStringValue() is not None][:QR_LINKS_LIMIT * 4]
+    except Exception:
+        return []
 #: #254: in a phone session, how wide the main view's document is laid out and how wide its
 #: viewport is (CSS px).  Layout widths only: nothing of the page's content is read.
 PAGE_WIDTH_SCRIPT = r"""
@@ -1146,31 +1241,37 @@ def destination_refusal(url, allowed_origins=(), resolver=None, intranet=()):
     return None
 
 
-def phone_fit_width(page, inner, view, fitted, limit):
-    """#254: the login window's next content width (points) in a phone session, ``'phone'`` to go
-    back to ``WIDTH``, or None to keep it.  Pure; the worker asks it after each phone frame.
+#: #596: the smallest page zoom a phone session fits a wide page with: a page laid out wider than
+#: ``WIDTH / MIN_PHONE_ZOOM`` CSS px is still cut, less.
+MIN_PHONE_ZOOM = 0.25
+
+
+def phone_fit_zoom(page, inner, zoom, fitted):
+    """#254/#596: the login view's next page zoom in a phone session, ``'phone'`` to go back to 1,
+    or None to keep it.  Pure; the worker asks it after each phone frame.
 
     A desktop-only page (its layout follows ``pointer: fine``, which a Mac always matches, or a
     fixed minimum width) is laid out wider than the phone-sized window, so the phone saw it cut
-    off at the right edge.  The window widens to the page instead (a resize, never a reload or a
-    user-agent change, #1183/#13); the phone's frame is downscaled anyway and taps map back by
-    the frame's own width.  ``page`` and ``inner`` are the document's and the viewport's widths
-    (CSS px), ``view`` the view's width (points; it differs from ``inner`` only under page zoom),
-    ``limit`` the widest content the window's screen holds: the window never outgrows the
-    screen, so a page wider than that is still cut, less.  ``fitted`` is the page width the
-    window last widened for on this page (None: not yet).  A page that grew with the window is
-    not a wider layout but overflow tied to the viewport (an off-canvas panel): ``'phone'``.
+    off at the right edge.  #254 widened the window to the page, which showed the phone a short,
+    wide picture; the page is now zoomed out until its layout fits the phone-sized window (a
+    zoom, never a reload or a user-agent change, #1183/#13), so the frame stays phone-shaped and
+    taps still map back by the frame's own size in view points.  ``page`` and ``inner`` are the
+    document's and the viewport's widths (CSS px) at the current ``zoom``; ``fitted`` is the page
+    width the view last zoomed out for on this page (None: not yet).  A page that grew with the
+    viewport is not a wider layout but overflow tied to the viewport (an off-canvas panel):
+    ``'phone'``.
     """
     try:
-        page, inner, view, limit = float(page), float(inner), float(view), float(limit)
+        page, inner, zoom = float(page), float(inner), float(zoom)
     except (TypeError, ValueError):
         return None
-    if not (page > inner > 0 and view > 0 and limit > 0):
+    if not (page > inner > 0 and zoom > 0):
         return None
     if fitted is not None and page > fitted:
         return 'phone'
-    width = float(math.ceil(min(page * view / inner, limit)))
-    return width if width > view else None
+    # Rounded down, so the zoomed viewport is never a fraction of a pixel narrower than the page.
+    target = max(MIN_PHONE_ZOOM, math.floor(zoom * inner / page * 1000) / 1000)
+    return target if target < zoom else None
 
 
 def click_settled(elapsed, quiet, loading, started, landed, deciding=False):
@@ -1406,6 +1507,7 @@ class Worker:
         """The phone session ended (or the window hid): a held dialog is cancelled, nothing more is held."""
         self.remote = False
         self.last_frame = None   # never shown to a later session
+        self.qr_cache = None
         self.answer_dialog(False)
         try:
             self.leave_mobile()
@@ -2309,12 +2411,13 @@ class Worker:
             # snapshot would never complete: the phone gets the last frame and the question.
             # Its scripts are blocked too, so no focus is asked: nothing can be typed now.
             return self.reply(ident, jpeg=last[0], width=last[1], height=last[2],
-                              dialog={'kind': held['kind'], 'text': held['text']}, focus=None)
+                              dialog={'kind': held['kind'], 'text': held['text']}, focus=None, fields=[], links=last[3])
         view = self.front_view()
         size = view.frame().size
         width, height = float(size.width), float(size.height)
         config = self.WebKit.WKSnapshotConfiguration.alloc().init()
-        config.setSnapshotWidth_(min(FRAME_MAX_WIDTH, width))
+        # #596: a page zoomed out to fit is drawn at its layout width, so its text stays legible on the phone.
+        config.setSnapshotWidth_(min(FRAME_MAX_WIDTH, width / self.page_zoom(view)))
         config.setAfterScreenUpdates_(True)
         self.deadline(ident, timeout)
 
@@ -2325,21 +2428,37 @@ class Worker:
             if data is None:
                 return self.fail(ident, 'frame_failed')
             encoded = base64.b64encode(data).decode('ascii')
-            self.last_frame = (encoded, width, height)
+            links = self.frame_links(data)
+            self.last_frame = (encoded, width, height, links)
 
             def focused(value, error):
                 if ident not in self.pending:
                     return
-                kind = value.get('focus') if error is None and isinstance(value, dict) else None
+                answer = value if error is None and isinstance(value, dict) else {}
+                kind = answer.get('focus')
                 held = self.held_dialog
                 dialog = {'kind': held['kind'], 'text': held['text']} if held is not None else None
                 self.reply(ident, jpeg=encoded, width=width, height=height, dialog=dialog,
-                           focus=kind if kind in REMOTE_FOCUS_KINDS else None)
+                           focus=kind if kind in REMOTE_FOCUS_KINDS else None, fields=remote_fields(answer.get('fields')),
+                           links=links)
                 self.fit_phone_page()   # #254: the next frame shows a wide page whole
             if self.held_dialog is not None:
                 return focused(None, 'held')
             self.run(REMOTE_FOCUS_SCRIPT, {}, focused, view=view)
         view.takeSnapshotWithConfiguration_completionHandler_(config, done)
+
+    def frame_links(self, data):
+        """#596: the links of the QR codes in a phone frame (``qr_links``), read again only when the image
+        changed; none outside a phone session.  Neither the image nor its codes are kept beyond the last one."""
+        if not getattr(self, 'remote', False):
+            return []
+        digest = hashlib.sha256(data).digest()
+        cached = getattr(self, 'qr_cache', None)
+        if cached is not None and cached[0] == digest:
+            return list(cached[1])
+        links = qr_links(read_qr_payloads(self.Foundation, data))
+        self.qr_cache = (digest, links)
+        return list(links)
 
     def op_remote_tap(self, ident, command, timeout):
         """A native press at ``(x, y)`` in view points of the frontmost view."""
@@ -2431,28 +2550,30 @@ class Worker:
             return
         self.mobile_restore = None
         self.phone_fit = None
+        self.set_page_zoom(1.0)
         self.window.setFrame_display_(restore, True)
 
-    def set_phone_width(self, width):
-        """#254: the phone-session window's content this wide; its height is kept."""
-        height = self.window.contentRectForFrameRect_(self.window.frame()).size.height
-        self.window.setContentSize_(self.Foundation.NSMakeSize(float(width), float(height)))
-        if self.owner_visible:
-            self.window.center()
+    def page_zoom(self, view=None):
+        """#596: the page zoom of ``view`` (the main view by default); 1 when it cannot say."""
+        try:
+            zoom = float((view or self.view).pageZoom())
+        except Exception:
+            return 1.0
+        return zoom if math.isfinite(zoom) and zoom > 0 else 1.0
 
-    def phone_width_limit(self):
-        """#254: the widest content the window's screen holds (its visible frame less the window's own frame)."""
-        screen = self.window.screen()
-        if screen is None:
-            screen = self.AppKit.NSScreen.mainScreen()
-        if screen is None:
-            return float(WIDTH)
-        return float(self.window.contentRectForFrameRect_(screen.visibleFrame()).size.width)
+    def set_page_zoom(self, zoom):
+        """#596: zoom the main view's page (WKWebView ``pageZoom``, macOS 11+): its layout viewport becomes
+        ``1 / zoom`` times as wide while the window keeps its phone size."""
+        try:
+            if self.page_zoom() != zoom:
+                self.view.setPageZoom_(float(zoom))
+        except Exception:
+            pass
 
     def fit_phone_page(self):
-        """#254: in a phone session, a main-view page laid out wider than the window widens it
-        (``phone_fit_width``).  Asked after each phone frame, so a page that becomes wide once its
-        scripts ran is caught too; ``phone_navigated`` starts each new page from the phone width."""
+        """#254/#596: in a phone session, a main-view page laid out wider than the window is zoomed out
+        to fit it (``phone_fit_zoom``).  Asked after each phone frame, so a page that becomes wide once
+        its scripts ran is caught too; ``phone_navigated`` starts each new page at zoom 1."""
         if not (getattr(self, 'remote', False) and self.owner_visible) or getattr(self, 'mobile_restore', None) is None:
             return
         if self.held_dialog is not None or self.front_view() is not self.view:
@@ -2471,27 +2592,26 @@ class Worker:
             if getattr(self, 'mobile_restore', None) is None or getattr(self, 'phone_fit', None) != fitted:
                 return   # the session ended or a new page started while this was measured
             try:
-                width = phone_fit_width(value.get('page'), value.get('inner'), self.view.frame().size.width,
-                                        fitted, self.phone_width_limit())
+                zoom = phone_fit_zoom(value.get('page'), value.get('inner'), self.page_zoom(), fitted)
             except Exception:
                 return
-            if width == 'phone':
+            if zoom == 'phone':
                 self.phone_fit = 'phone'
-                self.set_phone_width(WIDTH)
-            elif width is not None:
+                self.set_page_zoom(1.0)
+            elif zoom is not None:
                 self.phone_fit = float(value['page'])
-                self.set_phone_width(width)
+                self.set_page_zoom(zoom)
         self.run(PAGE_WIDTH_SCRIPT, {}, measured)
 
     def phone_navigated(self, committed=True):
         """#254: a main-view, main-frame navigation was allowed (``committed`` False) or committed.
 
-        In a phone session the next page starts from the phone width: the window narrows when the
+        In a phone session the next page starts at zoom 1 (the phone width): the zoom is reset when the
         navigation is allowed, before the next document's scripts can read a widened viewport, and
-        is measured again once that document committed (or the load ended without one)."""
+        the page is measured again once that document committed (or the load ended without one)."""
         fitted, self.phone_fit = getattr(self, 'phone_fit', None), (None if committed else 'loading')
         if isinstance(fitted, float) and getattr(self, 'mobile_restore', None) is not None:
-            self.set_phone_width(WIDTH)
+            self.set_page_zoom(1.0)
 
     def op_remote_end(self, ident, command, timeout):
         self.end_remote()
