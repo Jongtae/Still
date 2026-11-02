@@ -1949,6 +1949,18 @@
   "ja": "ログイン画面（{site}）が閉じたため、スマートフォン用のログインリンクも閉じました。このリンクはもう開けません。",
   "zh": "登录窗口（{site}）已关闭，手机登录链接也随之关闭。此链接已无法打开。"
  },
+ "quickstart_service.login_phone_preparing": {
+  "ko": "휴대폰 로그인 링크를 준비하고 있어요. 준비되면 이 대화로 보내드릴게요.",
+  "en": "I'm preparing your phone sign-in link. I'll send it in this conversation when it's ready.",
+  "ja": "スマートフォン用のログインリンクを準備しています。準備ができたら、この会話に送ります。",
+  "zh": "正在准备手机登录链接。准备好后，我会发送到此对话。"
+ },
+ "quickstart_service.login_phone_failed": {
+  "ko": "휴대폰 로그인 링크를 보내지 못했어요. 이 Mac의 로그인 창에서 로그인한 뒤 창을 닫거나, 아래 버튼으로 휴대폰 로그인을 다시 시도해 주세요.",
+  "en": "I couldn't send the phone sign-in link. Sign in using the window on this Mac and close it, or use the button below to try phone sign-in again.",
+  "ja": "スマートフォン用のログインリンクを送れませんでした。このMacのログイン画面でログインして画面を閉じるか、下のボタンでスマートフォンからのログインを再試行してください。",
+  "zh": "未能发送手机登录链接。请在此Mac的登录窗口中登录后关闭窗口，或点击下方按钮重试手机登录。"
+ },
  "remote_login.prompt_phone_active": {
   "ko": "휴대폰 로그인 링크로 로그인하는 중이에요. 로그인한 뒤 휴대폰 페이지의 [완료]를 누르면 요청을 한 번 이어서 처리해요. 예상한 사이트가 아니면 로그인하지 말고 그대로 두세요. 링크가 닫히면 지금까지의 결과로 마쳐요.",
   "en": "Signing in through the phone login link. After you sign in, tap [Done] on the phone page and I'll continue the request once. If this isn't the site you expected, don't sign in; just leave it. When the link closes, I'll finish with what I have so far.",

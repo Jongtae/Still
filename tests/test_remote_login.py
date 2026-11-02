@@ -1337,6 +1337,72 @@ class PhoneButton(_flow_harness()):
         time.sleep(0.3)
         self.assertEqual(len(self.tunnel.processes), 1, 'a tap while the link is open starts no second session')
 
+    def test_automatic_start_has_no_controls_before_the_link_arrives(self):
+        """#599: tunnel startup is not an open link, and offers no duplicate start or finish."""
+        self.service.AUTO_PHONE_LOGIN = True
+        started, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+
+        def held_popen(argv, **kwargs):
+            started.set()
+            if not release.wait(5):
+                raise OSError('fixture tunnel was not released')
+            return self.tunnel(argv, **kwargs)
+
+        self.service.remote_login_popen = held_popen
+        job_id, prompt, buttons, notification = self.login_work()
+        self.assertTrue(started.wait(5))
+        self.assertEqual(self.link_messages(), [])
+        self.assertEqual(prompt['reply_markup'], {'inline_keyboard': []})
+        self.assertNotIn('로그인 완료', prompt['text'])
+        self.assertNotIn('[완료]', prompt['text'])
+        self.assertEqual(self.state(job_id), 'offered')
+        release.set()
+        self.assertTrue(wait_until(lambda: self.phone_prompt(notification)))
+        self.assertEqual(len(self.link_messages()), 1)
+        self.assertEqual(self.phone_prompt(notification)[-1]['reply_markup'], {'inline_keyboard': []})
+
+    def test_automatic_start_failure_restores_manual_controls_and_retry(self):
+        self.service.AUTO_PHONE_LOGIN = True
+
+        def broken_popen(argv, **kwargs):
+            raise OSError('fixture tunnel unavailable')
+
+        self.service.remote_login_popen = broken_popen
+        job_id, prompt, buttons, notification = self.login_work()
+        self.assertEqual(prompt['reply_markup'], {'inline_keyboard': []})
+        self.assertTrue(wait_until(lambda: any(body.get('reply_markup', {}).get('inline_keyboard')
+                                              for body in self.prompt_edits(notification))))
+        restored = self.prompt_edits(notification)[-1]
+        controls = [button['callback_data'] for row in restored['reply_markup']['inline_keyboard'] for button in row]
+        self.assertEqual(controls, [f"p7l:{notification['id']}:{action}" for action in ('done', 'skip', 'phone')])
+        self.assertTrue(self.window().is_open())
+        self.assertEqual(self.state(job_id), 'offered')
+        self.service.remote_login_popen = self.tunnel
+        self.tap(f"p7l:{notification['id']}:phone", notification['message_id'])
+        self.assertTrue(wait_until(lambda: self.phone_prompt(notification)))
+        self.assertEqual(len(self.link_messages()), 1)
+
+    def test_automatic_link_delivery_failure_restores_manual_controls(self):
+        from personal_agent.providers import ProviderError
+        self.service.AUTO_PHONE_LOGIN = True
+        original = self.service.telegram.call
+
+        def call(method, body):
+            if method == 'sendMessage' and 'remote-login?code=' in body.get('text', ''):
+                raise ProviderError('fixture delivery rejected')
+            return original(method, body)
+
+        self.service.telegram.call = call
+        job_id, prompt, buttons, notification = self.login_work()
+        self.assertTrue(wait_until(lambda: any(body.get('reply_markup', {}).get('inline_keyboard')
+                                              for body in self.prompt_edits(notification))))
+        self.assertTrue(self.tunnel.processes[0].terminated)
+        self.assertIsNone(self.service.remote_login_session())
+        self.assertTrue(self.window().is_open())
+        self.owner_closes(job_id)
+        self.assertEqual(self.state(job_id), 'resumed')
+
     def test_the_prompt_offers_the_phone_and_the_link_goes_to_the_owner_chat_only(self):
         from test_flow_login import CHAT as FLOW_CHAT
         job_id, prompt, buttons, notification = self.login_work()

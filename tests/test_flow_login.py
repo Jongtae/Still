@@ -43,6 +43,7 @@ from personal_agent.bounded_execution import (AgentOSMcpTools, BoundedExecutionA
                                               CODEX_BRIDGE_APPROVAL_MODE, STRICT_PROFILE, profile_actions)
 from personal_agent.conversation_projection import TELEGRAM_RESULT_PREVIEW_CHARS, clip_keeping_links, terminal_text
 from personal_agent.providers import ModelAdapter
+from personal_agent.messages import msg
 from personal_agent.quickstart_service import (AgentService, BROWSER_LOGIN_CLOSE_SECONDS, BROWSER_LOGIN_MOVED_LINE,
                                                BROWSER_LOGIN_NO_SESSION_LINE, BROWSER_LOGIN_OFFERED_TEXT, BROWSER_LOGIN_OTHER_PENDING_TEXT,
                                                BROWSER_LOGIN_PAGE_OFFERED_TEXT,
@@ -396,7 +397,7 @@ class LoginHarness(unittest.TestCase):
 
     def prompts(self):
         return [body for method, body in self.calls if method == 'sendMessage' and body.get('reply_markup')
-                and 'p7l:' in flat(body['reply_markup'])]
+                and body.get('text', '').startswith(msg('quickstart_service.login_request_heading').split('{site}')[0])]
 
     def login_work(self):
         """A Work whose browser step lands on a login page, run once and its prompt delivered."""
@@ -411,8 +412,9 @@ class LoginHarness(unittest.TestCase):
         self.assertTrue(wait_until(self.service.deliver_notification), "the prompt is armed on the window thread (#716)")
         prompts = self.prompts()
         self.assertEqual(len(prompts), 1)
-        buttons = prompts[-1]['reply_markup']['inline_keyboard'][0]
-        notification = self.store.notification(buttons[0]['callback_data'].split(':')[1])
+        rows = prompts[-1]['reply_markup']['inline_keyboard']
+        buttons = rows[0] if rows else []
+        notification = self.store.notification_of(job_id, 'browser_login_needed')
         return job_id, prompts[-1], buttons, notification
 
     def window(self):
@@ -463,6 +465,76 @@ class LoginHarness(unittest.TestCase):
         with self.store.db() as db:
             return [row['content'] for row in db.execute("SELECT content FROM messages WHERE job_id=? AND role='assistant' ORDER BY id",
                                                          (job_id,))]
+
+
+class LoginBudgetRenewal(LoginHarness):
+    """#599: a verified login resumes useful execution after discovery spent the allowance."""
+
+    def exhaust_and_pause(self, job_id):
+        budget = self.service.work_budget(job_id)
+        while budget.turns_used < budget.turn_limit():
+            budget.spend_turn()
+        budget.spend_turn(reserve=True)
+        budget.ledger.pause()
+        return budget.ledger
+
+    def test_verified_login_renews_and_the_original_worker_reads_the_signed_in_page(self):
+        from test_agency_loop import finish, goal_engine
+        job_id, _prompt, _buttons, notification = self.login_work()
+        old = self.exhaust_and_pause(job_id)
+        self.owner_closes(job_id)
+        self.assertEqual(self.state(job_id), 'resumed')
+        row = self.store.config(old.key)
+        self.assertEqual((row['turns'], row['attempts'], row['renewals']), (0, 0, 1))
+        self.assertFalse(old.spend(9, 'turns'), 'the pre-login run cannot spend the renewed allowance')
+        self.scripts = [Script({'tool_calls': [call('read', 'browser_open', url=ORIGIN + '/product', effect='read')]},
+                               finish('done', 'read', summary='세탁세제 3L의 표시 가격은 12,900원입니다.'))]
+        self.service.use_decision_engine(goal_engine(True))
+        self.assertTrue(self.service.run_one())
+        self.assertEqual(self.store.job(job_id)['status'], 'succeeded', self.store.job(job_id))
+        self.assertTrue(any(event['tool'] == 'browser_open' and event['status'] == 'succeeded'
+                            for event in self.store.task_events(job_id)))
+        after = self.store.config(old.key)
+        self.tap(f"p7l:{notification['id']}:done", notification['message_id'])
+        self.service.process_browser_logins()
+        self.assertEqual(self.store.config(old.key), after, 'stale completion grants no further renewal')
+
+    def test_closing_without_signing_in_does_not_renew(self):
+        job_id, _prompt, _buttons, _notification = self.login_work()
+        old = self.exhaust_and_pause(job_id)
+        before = self.store.config(old.key)
+        self.owner_closes(job_id, logged_in=False)
+        self.assertEqual(self.state(job_id), 'not_logged_in')
+        self.assertEqual(self.store.config(old.key), before)
+
+    def unresumed_login(self, action):
+        job_id, _prompt, _buttons, notification = self.login_work()
+        old = self.exhaust_and_pause(job_id)
+        before = self.store.config(old.key)
+        self.window().login()
+        if action == 'skip':
+            self.tap(f"p7l:{notification['id']}:skip", notification['message_id'])
+            self.settle(job_id)
+        else:
+            self.settle(job_id, now=time.time() + BROWSER_LOGIN_SECONDS + 1)
+        self.assertNotEqual(self.store.job(job_id)['status'], 'queued')
+        self.assertEqual(self.store.config(old.key), before)
+
+    def test_skip_does_not_renew(self):
+        self.unresumed_login('skip')
+
+    def test_expiry_does_not_renew(self):
+        self.unresumed_login('expire')
+
+    def test_login_shares_the_existing_owner_prerequisite_renewal_cap(self):
+        from personal_agent.agent_runtime import MAX_OWNER_RENEWALS
+        job_id, _prompt, _buttons, _notification = self.login_work()
+        old = self.exhaust_and_pause(job_id)
+        row = self.store.config(old.key)
+        row['renewals'] = MAX_OWNER_RENEWALS
+        self.store.put(old.key, row)
+        self.owner_closes(job_id)
+        self.assertEqual(self.store.config(old.key), row, 'sign-in cannot exceed the shared renewal cap')
 
 
 class AccountProviderTextTests(unittest.TestCase):

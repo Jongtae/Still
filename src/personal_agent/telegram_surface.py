@@ -262,7 +262,7 @@ class TelegramSurface(ConversationSurface):
         fingerprint=service.document_fingerprint() if kind=='approval_needed' else fingerprint
         service.store.queue_notification(job['id'],job['chat_id'],cfg['generation'],kind,fingerprint,surface=self.name)
 
-    def _notice_markup(self, notification, bound):
+    def _notice_markup(self, notification, bound, *, phone_preparing=False):
         """Telegram's buttons for a notice that is still shown (``notice_binding``), or None."""
         service,kind,nid=self.service,notification['kind'],notification['id']
         if kind=='approval_needed':
@@ -274,6 +274,7 @@ class TelegramSurface(ConversationSurface):
         if kind=='budget_continue':
             return {'inline_keyboard':[[{'text':msg('button.continue'),'callback_data':f"p7b:{nid}:resume"}]]}
         if kind=='browser_login_needed':
+            if phone_preparing:return {'inline_keyboard':[]}
             return {'inline_keyboard':[[{'text':msg('button.signed_in'),'callback_data':f"p7l:{nid}:done"},
                                         {'text':BROWSER_LOGIN_SKIP_LABEL,'callback_data':f"p7l:{nid}:skip"}],
                                        # #939: the same login window, driven from the phone through a one-time link.
@@ -321,9 +322,11 @@ class TelegramSurface(ConversationSurface):
                 service.store.update_notification(notification['id'],'cancelled')
                 return True
             memory_prompt,memory_saved=bound.get('memory_prompt'),bound.get('memory_saved')
-            reply_markup=self._notice_markup(notification,bound)
+            phone_preparing=notification['kind']=='browser_login_needed' and service.AUTO_PHONE_LOGIN
+            reply_markup=self._notice_markup(notification,bound,phone_preparing=phone_preparing)
             try:
-                text=notice_text(service,notification,bound)
+                text=(service.browser_login_prompt(notification.get('job_id'),preparing=True) if phone_preparing
+                      else notice_text(service,notification,bound))
                 if notification['kind']==prep.NOTIFY_KIND:
                     # #719: a result bubble, rendered like deliver_one's (#581); a parse refusal is a definite non-delivery.
                     try:
@@ -366,11 +369,14 @@ class TelegramSurface(ConversationSurface):
                 if notification['kind']=='browser_login_needed' and service.AUTO_PHONE_LOGIN:
                     # #953 (owner 2026-10-01): the person on Telegram is on their phone; the one-time
                     # link follows the prompt at once instead of waiting for 휴대폰에서 로그인.
+                    started=False
                     try:
-                        service._start_remote_login_for_work(notification.get('job_id'),notification.get('fingerprint'),
-                                                          notification['chat_id'])
+                        started=service._start_remote_login_for_work(notification.get('job_id'),notification.get('fingerprint'),
+                                                                    notification['chat_id'],automatic=True)
                     except Exception as exc:
                         LOG.warning('remote login auto start skipped (%s)',type(exc).__name__)
+                    if not started:
+                        service._show_phone_login_prompt(notification.get('job_id'),notification.get('fingerprint'),failed=True)
                 if notification['kind']==prep.NOTIFY_KIND:
                     # #719: only a confirmed send is what the owner was last told.
                     try:
