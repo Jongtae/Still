@@ -507,6 +507,91 @@ class AcceptanceContextTests(_Case):
         self.assertEqual((row['state'], row['accepted_by']), ('proposed', None))
 
 
+class DeclinedOfferTests(_Case):
+    """#582: the worker may offer a preparation; one the owner declined is not offered again."""
+
+    def offer(self, goal='아침 요약 준비', text='오늘 아침 요약해줘'):
+        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal=goal,
+                                                             due=self.due_iso(86400), recurrence='weekdays', delivery='send')]},
+                       {'content': '요약했어요. 평일 아침마다 준비해 둘까요?'}]
+        work = self.receive(text)
+        results = [json.loads(m['content']) for m in self.model_calls[-1]['messages'] if m['role'] == 'tool']
+        return work, results[-1]
+
+    def declined_asked(self):
+        return [item[1] for item in self.judge.asked if item[0] == 'judge' and item[1].purpose == 'declined-preparation-goal']
+
+    def test_an_offer_waits_for_the_owner_and_never_runs(self):
+        self.judge = engine(preparation=False)
+        self.service.use_decision_engine(self.judge)
+        _work, result = self.offer()
+        [row] = self.rows()
+        self.assertEqual((row['state'], row['accepted_by']), ('proposed', None))
+        self.assertTrue(result['requires_owner_acceptance'])
+        self.now += 2 * 86400
+        self.assertFalse(self.tick())
+        self.assertEqual(self.runs(row['id']), [])
+        self.assertEqual(self.declined_asked(), [], 'no declined proposal, no extra judgment')
+
+    def test_a_declined_offer_is_refused_the_second_time(self):
+        self.judge = engine(preparation=False)
+        self.service.use_decision_engine(self.judge)
+        self.offer()
+        [row] = self.rows()
+        self.service.cancel_preparation(row['id'])
+        self.now += 86400
+        _work, result = self.offer(text='오늘도 아침 요약해줘')
+        self.assertEqual(result.get('code'), 'declined_before', result)
+        self.assertEqual([r['id'] for r in self.rows()], [row['id']], 'no second proposal')
+        self.assertEqual(self.declined_asked(), [], 'the same goal text needs no judgment')
+
+    def test_a_reworded_offer_is_judged_and_a_different_one_is_allowed(self):
+        def judge(context, proposition):
+            if context.purpose == 'declined-preparation-goal':
+                return BinaryDecision(OUTCOME_DECIDED, '날씨' in context.facts['proposed_goal'], fixture_confidence())
+            if context.purpose == 'goal-reached':
+                return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+            if context.purpose == 'explicit-preparation-request':
+                return BinaryDecision(OUTCOME_DECIDED, False, fixture_confidence())
+            return None
+        self.judge = FixtureDecisionEngine(judge=judge)
+        self.service.use_decision_engine(self.judge)
+        self.offer(goal='아침 날씨 요약')
+        [first] = self.rows()
+        self.service.cancel_preparation(first['id'])
+        _work, result = self.offer(goal='출근 전 날씨 정리')
+        self.assertEqual(result.get('code'), 'declined_before')
+        [asked] = self.declined_asked()
+        self.assertIn('아침 날씨 요약', asked.facts['declined_goals'])
+        _work, result = self.offer(goal='주간 일정 정리')
+        self.assertEqual(result.get('state'), 'proposed', result)
+
+    def test_the_owners_own_request_is_never_blocked_by_an_earlier_decline(self):
+        self.judge = engine(preparation=False)
+        self.service.use_decision_engine(self.judge)
+        self.offer()
+        [row] = self.rows()
+        self.service.cancel_preparation(row['id'])
+        self.judge = engine(preparation=True)
+        self.service.use_decision_engine(self.judge)
+        _work, result = self.offer(text='평일 아침마다 요약 준비해줘')
+        self.assertEqual((result.get('state'), result.get('accepted_by')), ('scheduled', 'owner-request'), result)
+
+    def test_a_decline_is_forgotten_after_thirty_days_and_an_accepted_row_is_not_a_decline(self):
+        self.judge = engine(preparation=False)
+        self.service.use_decision_engine(self.judge)
+        self.offer()
+        [row] = self.rows()
+        self.service.cancel_preparation(row['id'])
+        accepted = self.scheduled(goal='다른 준비')
+        self.service.cancel_preparation(accepted['id'])
+        self.assertEqual(self.service.preparations.declined_goals(self.now), ['아침 요약 준비'])
+        self.now += prep.DECLINED_SECONDS + 60
+        self.assertEqual(self.service.preparations.declined_goals(self.now), [])
+        _work, result = self.offer()
+        self.assertEqual(result.get('state'), 'proposed', result)
+
+
 class AcceptanceTests(_Case):
     def propose(self, text='점심 메뉴 추천해줘'):
         self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal='점심 후보 준비',

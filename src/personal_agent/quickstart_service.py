@@ -1616,6 +1616,19 @@ class AgentService:
         judged=self.decision_judge.same_preparation_goal(goal,refused,work_id=job_id)
         return judged.outcome!=JUDGMENT_NO
 
+    def declined_before(self, job_id, goal, now):
+        """Did the owner recently decline a proposal of this same preparation (#582)?
+
+        The same stored goal text is the exact identity; any other wording is the
+        Judgment AI's ``declined_preparation_goal`` call, asked only when there are
+        declined goals.  Unavailable lets the proposal through: it still waits for
+        the owner's yes.
+        """
+        declined=self.preparations.declined_goals(now)
+        if not declined:return False
+        if goal in declined:return True
+        return self.decision_judge.declined_preparation_goal(goal,declined,work_id=job_id).outcome==JUDGMENT_YES
+
     def prepared_text(self, job):
         """The bounded "Prepared for you" section for this Work, or None (#659).
 
@@ -1713,6 +1726,9 @@ class AgentService:
             accepted=own_request and self.decision_judge.explicit_preparation_request(
                 prompt,summary,self.preparation_conversation(job)).outcome==JUDGMENT_YES
             try:
+                # #582: an offer the owner did not ask for is never repeated after they declined it.
+                if not accepted and self.declined_before(job['id'],goal,now):
+                    raise prep.PreparationRefusal('declined_before')
                 row=self.preparations.create(kind=kind,goal=goal,due_at=due_at,timezone=timezone,recurrence=recurrence,
                                              channel=channel,created_from=job['id'],
                                              state=prep.STATE_SCHEDULED if accepted else prep.STATE_PROPOSED,

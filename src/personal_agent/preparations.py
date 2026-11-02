@@ -87,6 +87,9 @@ STATE_PAUSED = 'paused'
 #: States whose row may still cause a run.
 ACTIVE_STATES = (STATE_PROPOSED, STATE_SCHEDULED, STATE_RUNNING, STATE_PAUSED)
 
+#: #582: a proposal the owner declined is not offered again for this long; at most this many are compared.
+DECLINED_SECONDS = 30 * 86400
+DECLINED_GOALS_LIMIT = 20
 #: ``accepted_by`` values: who turned a proposal into a schedule.
 ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_SETTINGS = 'owner-request', 'owner-button', 'owner-settings'
 #: #172: the owner's reply or reaction to the proposal message, judged a plain yes to it.
@@ -152,6 +155,8 @@ def migrate(db):
             db.execute(f'ALTER TABLE preparations ADD COLUMN {name} {kind}')
 
 REFUSALS = {
+    'declined_before': ('소유자가 최근에 같은 준비 제안을 거절했습니다. 다시 제안하지 말고, 지금 요청에 대한 답만 하세요. '
+                        '소유자가 직접 요청하면 그때 예약할 수 있습니다.'),
     'invalid_kind': 'kind는 reminder(정해진 때에 이 문장을 알려 주기) 또는 prepare(정해진 때에 이 목표를 미리 처리해 두기)입니다.',
     'invalid_goal': 'goal은 한 가지 목표로 적어 주세요.',
     'invalid_offer': (f'title은 {TITLE_MAX_CHARS}자 이내의 짧은 이름, offer는 {OFFER_MAX_LINES}줄·'
@@ -844,6 +849,16 @@ class Preparations:
                 raise PreparationRefusal('running')
             db.execute('DELETE FROM preparations WHERE id=?', (preparation_id,))
         return {'deleted': True, 'id': preparation_id}
+
+    def declined_goals(self, now, limit=DECLINED_GOALS_LIMIT):
+        """Goals of proposals the owner declined or let lapse in the last ``DECLINED_SECONDS`` (#582).
+
+        A declined proposal is a row cancelled without ever being accepted; newest first.
+        """
+        with self.store.db() as db:
+            return [row['goal_text'] for row in db.execute(
+                "SELECT goal_text FROM preparations WHERE state=? AND accepted_by IS NULL AND updated_at>=? "
+                'ORDER BY updated_at DESC LIMIT ?', (STATE_CANCELLED, now - DECLINED_SECONDS, int(limit)))]
 
     def proposed_from(self, work_id):
         with self.store.db() as db:
