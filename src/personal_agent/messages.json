@@ -10366,5 +10366,119 @@
   "en": "Google Picker took too long to load. Try opening it again.",
   "ja": "Google Pickerの読み込みがタイムアウトしました。もう一度開いてください。",
   "zh": "Google Picker 加载超时，请重新打开。"
+ },
+ "preparations.already_running": {
+  "ko": "지금 실행 중인 준비입니다. 실행이 끝난 뒤 다시 해 주세요.",
+  "en": "This preparation is already running. Try again after it finishes.",
+  "ja": "この準備は実行中です。完了してからもう一度お試しください。",
+  "zh": "此准备正在运行。请在完成后重试。"
+ },
+ "preparations.invalid_state": {
+  "ko": "지금 상태에서는 이 준비를 변경할 수 없습니다.",
+  "en": "This preparation cannot be changed in its current state.",
+  "ja": "現在の状態ではこの準備を変更できません。",
+  "zh": "无法在当前状态下更改此准备。"
+ },
+ "preparations.goal_not_editable": {
+  "ko": "준비의 목표는 바꿀 수 없습니다. 새 준비를 만들어 주세요.",
+  "en": "The goal cannot be edited. Create a new preparation.",
+  "ja": "準備の目標は変更できません。新しい準備を作成してください。",
+  "zh": "无法更改准备目标。请创建新的准备。"
+ },
+ "preparations.invalid_edit": {
+  "ko": "바꿀 일정 항목을 확인해 주세요.",
+  "en": "Check the schedule fields to edit.",
+  "ja": "変更する予定の項目を確認してください。",
+  "zh": "请检查要更改的计划字段。"
+ },
+ "preparations.resume_expired": {
+  "ko": "다음 실행 시각이나 실행 기간이 지나 시작하지 않았습니다. 일정을 바꿔 주세요.",
+  "en": "No future slot remains. Edit the schedule before starting.",
+  "ja": "次の実行時刻または実行期間が過ぎたため開始しませんでした。予定を変更してください。",
+  "zh": "下次运行时间或运行期限已过，未启动。请更改计划。"
+ },
+ "preparations.queue_full": {
+  "ko": "작업을 시작할 수 없습니다. 잠시 뒤 다시 해 주세요.",
+  "en": "The run could not be queued. Try again shortly.",
+  "ja": "作業を開始できません。しばらくしてからもう一度お試しください。",
+  "zh": "无法启动任务。请稍后重试。"
+ },
+ "settings_orchestrator.paused": {
+  "ko": "일시 정지됨",
+  "en": "Paused",
+  "ja": "一時停止中",
+  "zh": "已暂停"
+ },
+ "settings_orchestrator.label_preparations_pause": {
+  "ko": "일시 정지",
+  "en": "Pause",
+  "ja": "一時停止",
+  "zh": "暂停"
+ },
+ "settings_orchestrator.label_preparations_resume": {
+  "ko": "다시 시작",
+  "en": "Resume",
+  "ja": "再開",
+  "zh": "恢复"
+ },
+ "settings_orchestrator.label_preparations_edit": {
+  "ko": "일정 변경",
+  "en": "Edit schedule",
+  "ja": "予定の変更",
+  "zh": "更改计划"
+ },
+ "settings_orchestrator.label_preparations_run_now": {
+  "ko": "지금 실행",
+  "en": "Run now",
+  "ja": "今すぐ実行",
+  "zh": "立即运行"
+ },
+ "settings_orchestrator.preparation_change_summary": {
+  "ko": "{reservation} — {operation}할까요?",
+  "en": "{operation}: {reservation}?",
+  "ja": "{reservation} — {operation}しますか？",
+  "zh": "{reservation} — 要{operation}吗？"
+ },
+ "settings_orchestrator.preparation_edit_format": {
+  "ko": "id와 바꿀 due, timezone, recurrence 또는 watch의 every_minutes, until, max_runs를 JSON으로 주세요. 목표는 바꿀 수 없습니다.",
+  "en": "Provide JSON with id and due, timezone, recurrence, or watch every_minutes, until, max_runs. The goal cannot be edited.",
+  "ja": "idと変更するdue、timezone、recurrence、またはwatchのevery_minutes、until、max_runsをJSONで指定してください。目標は変更できません。",
+  "zh": "请提供包含id及要更改的due、timezone、recurrence或watch的every_minutes、until、max_runs的JSON。无法更改目标。"
+ },
+ "preparations.field_due": {
+  "ko": "실행 시각",
+  "en": "Due time",
+  "ja": "実行時刻",
+  "zh": "运行时间"
+ },
+ "preparations.field_recurrence": {
+  "ko": "반복",
+  "en": "Repeat",
+  "ja": "繰り返し",
+  "zh": "重复"
+ },
+ "preparations.field_every_minutes": {
+  "ko": "실행 간격(분)",
+  "en": "Interval (minutes)",
+  "ja": "実行間隔（分）",
+  "zh": "运行间隔（分钟）"
+ },
+ "preparations.field_until": {
+  "ko": "종료 시각",
+  "en": "End time",
+  "ja": "終了時刻",
+  "zh": "结束时间"
+ },
+ "preparations.field_max_runs": {
+  "ko": "최대 실행 횟수",
+  "en": "Maximum runs",
+  "ja": "最大実行回数",
+  "zh": "最大运行次数"
+ },
+ "preparations.saved": {
+  "ko": "준비 일정을 변경했습니다.",
+  "en": "Updated the preparation schedule.",
+  "ja": "準備の予定を変更しました。",
+  "zh": "已更改准备计划。"
  }
 }

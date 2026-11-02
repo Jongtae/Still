@@ -113,7 +113,7 @@ SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", 
             # #1213: a one-time phone link for an input only a page can take (own Google client, Google consent).
             "phone_link": ("send",), "api_connections": ("connect",),
             # #1455: the owner's reservations (#659), seen and managed in the conversation first.
-            "preparations": ("cancel", "accept"),
+            "preparations": ("cancel", "accept", "pause", "resume", "edit", "run_now"),
             # #1572: close one exact login window that holds the browser while the owner will not sign in.
             "browser": ("close_login",),
             # #1197: Works may use the owner's AI-side connections (claude.ai connectors), read-only.
@@ -127,7 +127,9 @@ SETTING_LABELS = {"enabled": msg('label.use'), "timezone": msg('label.time_zone'
                   "remove": msg('label.remove'), "send": msg('settings_orchestrator.send_label'), "servers": msg('settings_orchestrator.servers_label'), "review": msg('settings_orchestrator.review_label'), "money": msg('settings_orchestrator.money_label'),
                   "connect": msg('settings_orchestrator.connect_label'), "rung": msg('settings_orchestrator.rung_label'), "undo": msg('settings_orchestrator.undo_label'), "forget": msg('settings_orchestrator.forget_label'), "restore": msg('settings_orchestrator.restore_label'),
                   "cancel": msg('label.cancel'), "accept": msg('button.accept'), "disconnect": msg('settings_orchestrator.disconnect_label'), "close_login": msg('settings_orchestrator.close_login_label'),
-                  "connect_chat": msg('settings_orchestrator.connect_chat_label')}
+                  "connect_chat": msg('settings_orchestrator.connect_chat_label'),
+                  **{operation: msg('settings_orchestrator.label_preparations_' + operation)
+                     for operation in ('pause', 'resume', 'edit', 'run_now')}}
 _CATEGORY_LINE_IDS = {
     'connections': 'settings_orchestrator.category_line_connections',
     'current_context': 'settings_orchestrator.category_line_current_context',
@@ -192,6 +194,8 @@ _CHANGE_LABELS = {
     ('api_connections', 'connect'): msg('settings_orchestrator.label_api_connections_connect'),
     ('preparations', 'cancel'): msg('button.cancel_reservation'),
     ('preparations', 'accept'): msg('settings_orchestrator.label_preparations_accept'),
+    **{('preparations', operation): msg('settings_orchestrator.label_preparations_' + operation)
+       for operation in ('pause', 'resume', 'edit', 'run_now')},
     ('browser', 'close_login'): msg('settings_orchestrator.label_browser_close_login'),
     ('ai_connections', 'enabled'): msg('settings_orchestrator.label_ai_connections_enabled'),
     ('ai_connections', 'connect'): msg('settings_orchestrator.label_ai_connections_connect'),
@@ -521,18 +525,25 @@ class SettingsOrchestrator:
                                   note=msg('settings_orchestrator.phone_link_note'))}
 
     def _preparations(self):
-        """#1455: the owner's active reservations; ``cancel`` offers each, ``accept`` the ones waiting for a yes."""
+        """Active reservations and owner schedule operations (#1455, #575)."""
         from . import preparations as prep
         from .current_context import redact_known_secrets
-        states = {prep.STATE_PROPOSED: msg('settings_orchestrator.awaiting_acceptance'), prep.STATE_SCHEDULED: msg('settings_orchestrator.scheduled'), prep.STATE_RUNNING: msg('settings_orchestrator.running')}
+        states = {prep.STATE_PROPOSED: msg('settings_orchestrator.awaiting_acceptance'), prep.STATE_SCHEDULED: msg('settings_orchestrator.scheduled'), prep.STATE_RUNNING: msg('settings_orchestrator.running'), prep.STATE_PAUSED: msg('settings_orchestrator.paused')}
         rows = [row for row in self.service.preparations.rows() if row.get("state") in states]
         labels = {row["id"]: f"{redact_known_secrets(self.store, prep.proposal_summary(row))} ({states[row['state']]})"
                   for row in rows}
         listed = "\n".join(labels.values()) or msg('label.none')
         proposed = [row["id"] for row in rows if row["state"] == prep.STATE_PROPOSED]
-        return {"cancel": self._row("cancel", "", listed, self._options(tuple(labels), labels), format=msg('settings_orchestrator.cancel_reservation_format')),
+        result = {"cancel": self._row("cancel", "", listed, self._options(tuple(labels), labels), format=msg('settings_orchestrator.cancel_reservation_format')),
                 "accept": self._row("accept", "", ", ".join(labels[item] for item in proposed) or msg('label.none'),
                                     self._options(tuple(proposed), labels), format=msg('settings_orchestrator.accept_reservation_format'))}
+        for operation, states_ in (("pause", (prep.STATE_SCHEDULED,)), ("resume", (prep.STATE_PAUSED,)),
+                                   ("run_now", (prep.STATE_SCHEDULED, prep.STATE_PAUSED)),
+                                   ("edit", (prep.STATE_PROPOSED, prep.STATE_SCHEDULED, prep.STATE_PAUSED))):
+            ids = tuple(item["id"] for item in rows if item["state"] in states_)
+            result[operation] = self._row(operation, "", listed, self._options(ids, labels),
+                                          format=msg('settings_orchestrator.preparation_edit_format') if operation == 'edit' else None)
+        return result
 
     def _connections(self):
         """#183: the Google connections that can be disconnected now, by connector id."""
@@ -685,7 +696,7 @@ class SettingsOrchestrator:
             value = "on" if value else "off"
         if isinstance(value, int) and not isinstance(value, bool) and setting == "daily_calls":
             value = str(value)
-        if not isinstance(value, str) or len(value) > (4000 if setting == 'connect' and category in ('ai_connections','api_connections') else MAX_VALUE_CHARS):
+        if not isinstance(value, str) or len(value) > (4000 if setting == 'connect' and category in ('ai_connections','api_connections') or (category, setting) == ('preparations', 'edit') else MAX_VALUE_CHARS):
             raise SettingsError(msg('settings_orchestrator.invalid_value'))
         value = value.strip()
         from .current_context import redact_known_secrets
@@ -694,6 +705,23 @@ class SettingsOrchestrator:
         row = self._snapshot(category)
         if row.get("unavailable"):
             raise SettingsError(row["unavailable"])
+        if (category, setting) == ('preparations', 'edit'):
+            from . import preparations as prep
+            try:
+                changes = json.loads(value)
+            except (ValueError, TypeError):
+                raise prep.PreparationRefusal('invalid_edit') from None
+            if not isinstance(changes, dict) or not isinstance(changes.get('id'), str):
+                raise prep.PreparationRefusal('invalid_edit')
+            current = self.service.preparations.get(changes['id'])
+            if current is None:
+                raise prep.PreparationRefusal('not_found')
+            if current['state'] == prep.STATE_RUNNING:
+                raise prep.PreparationRefusal('already_running')
+            if current['state'] not in (prep.STATE_PROPOSED, prep.STATE_SCHEDULED, prep.STATE_PAUSED):
+                raise prep.PreparationRefusal('invalid_state')
+            prep.Preparations.edit_values(current, {k: v for k, v in changes.items() if k != 'id'}, self.service.preparations.clock())
+            return json.dumps(changes, sort_keys=True, ensure_ascii=False), row
         if (category, setting) == ('api_connections', 'connect'):
             from .api_input import value as api_value
             return api_value(self.store, value), row
@@ -861,9 +889,13 @@ class SettingsOrchestrator:
             work_id = value.partition("|")[0]
             return f"{value}:{(self.service._browser_login(work_id) or {}).get('state')}"
         if category == "preparations":
-            # #1455: bound to the reservation's state, so a run, a cancel or an accept since the draft makes it stale.
-            current = self.service.preparations.get(value) or {}
-            return f"{value}:{current.get('state')}"
+            # #575: bind the schedule as well as state, so a run, a change or an edit since the draft makes it stale;
+            # bookkeeping columns (run counts, last result) do not.  Persist only its digest.
+            preparation_id = json.loads(value)['id'] if setting == 'edit' else value
+            current = self.service.preparations.get(preparation_id) or {}
+            bound = {key: current.get(key) for key in ('id', 'state', 'goal_text', 'due_at', 'timezone', 'recurrence',
+                                                       'every_seconds', 'window_end', 'max_runs')}
+            return hashlib.sha256(json.dumps(bound, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         return self._trust_before(setting, value) if (category, setting) in TRUST_SETTINGS else row[setting]["value"]
 
     def _describe(self, category, setting, value, row):
@@ -945,7 +977,9 @@ class SettingsOrchestrator:
             summary = (msg('settings_orchestrator.close_login_summary', window=self._describe(category, setting, after, row)))
         elif category == "preparations":
             summary = (msg('settings_orchestrator.cancel_reservation_summary', reservation=self._describe(category, setting, after, row)) if setting == "cancel"
-                       else msg('settings_orchestrator.accept_reservation_summary', reservation=self._describe(category, setting, after, row)))
+                       else msg('settings_orchestrator.accept_reservation_summary', reservation=self._describe(category, setting, after, row)) if setting == "accept"
+                       else msg('settings_orchestrator.preparation_change_summary', reservation=self._describe(category, setting, after, row),
+                                operation=_CHANGE_LABELS[category, setting]))
         elif (category, setting) == ('api_connections', 'connect'):
             data = json.loads(after)
             if 'fields' in data:
@@ -1115,7 +1149,7 @@ class SettingsOrchestrator:
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = self.service.close_login_window_by_owner(after)
         elif category == "preparations":
             # #1455: the same operations as the Settings list (#659), confirmed by the owner in the conversation.
-            self.service.preparation_request({"operation": setting, "id": after})
+            self.service.preparation_request({"operation": setting, **(json.loads(after) if setting == "edit" else {"id": after})})
         elif category == "skills":
             # #961: the service's own setters; adding returns the installed identity as the answer.
             receipt = self.service.apply_skill_setting(setting, after)

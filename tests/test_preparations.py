@@ -527,7 +527,7 @@ class AcceptanceTests(_Case):
             self.service.preparation_request({'operation': 'accept', 'id': row['id']})
         self.service.preparation_request({'operation': 'cancel', 'id': row['id']})
         self.service.preparation_request({'operation': 'delete', 'id': row['id']})
-        self.assertEqual(self.service.preparation_request({'operation': 'list'}), {'preparations': []})
+        self.assertEqual(self.service.preparation_request({'operation': 'list'})['preparations'], [])
 
     def test_a_preparation_run_cannot_accept_a_new_preparation_itself(self):
         row = self.scheduled(goal='내일도 점심 후보 준비해 둬', channel='web')
@@ -1613,7 +1613,7 @@ const part=(start,end)=>app.slice(app.indexOf(start),app.indexOf(end));
 const source=part('const LANGUAGES=','function normalizeEndpoint(')+part('function element(','function setError(')+part('let preparationRows=','// end of #659 preparations');
 const calls=[];
 const ctx={document,$,console,calls,
- api:async(path,body)=>{calls.push({path,body});if(body&&body.operation==='accept')ctx.rows=[{...ctx.rows[0],state:'scheduled',accepted_by:'owner-settings'}];if(body&&body.operation==='delete')ctx.rows=[];return {preparations:ctx.rows};},
+ api:async(path,body)=>{calls.push({path,body});if(body&&body.operation==='accept')ctx.rows=[{...ctx.rows[0],state:'scheduled',accepted_by:'owner-settings'}];if(body&&body.operation==='delete')ctx.rows=[];return {preparations:ctx.rows,management:{pause:'일시 정지',resume:'다시 시작',edit:'일정 변경',run_now:'지금 실행',paused:'일시 정지됨',saved:'준비 일정을 변경했습니다.'}};},
  busy:async(button,fn)=>fn(),setError:(id,error)=>{$(id).textContent=error?.message||String(error||'');},setFeedback:(id,text)=>{$(id).textContent=text||'';}};
 vm.createContext(ctx);vm.runInContext(source,ctx);vm.runInContext("setLanguage('ko')",ctx);
 const rows=()=>$('preparations-list').children.filter(node=>node.tag==='div'&&node.className.split(' ')[0]==='settings-row');
@@ -1628,11 +1628,11 @@ const press=async(label)=>{const button=descendants(rows()[0]).find(n=>n.tag==='
  assert.deepEqual(texts(rows()[0],'settings-row-title'),['점심 후보 준비']);
  assert.equal(texts(rows()[0],'settings-row-description')[0],'미리 준비 · 매일 · 2026-09-28 11:30 (Mon, Asia/Seoul) 예정 · 결과는 보관만 함');
  assert.deepEqual(texts(rows()[0],'settings-state attention'),['수락 대기']);
- assert.deepEqual(buttons(rows()[0]),['수락','취소','삭제']);
+ assert.deepEqual(buttons(rows()[0]),['수락','취소','일정 변경','삭제']);
  await press('수락');
  assert.equal(JSON.stringify(calls.at(-1)),JSON.stringify({path:'/api/preparations/request',body:{operation:'accept',id:'p1'}}));
  assert.deepEqual(texts(rows()[0],'settings-state active'),['예약됨']);
- assert.deepEqual(buttons(rows()[0]),['취소','삭제']);
+ assert.deepEqual(buttons(rows()[0]),['취소','일시 정지','지금 실행','일정 변경','삭제']);
  await press('삭제');
  assert.equal(calls.filter(c=>c.body).length,1,'the first press deletes nothing');
  assert(texts(rows()[0],'confirm-text')[0].includes('지난 실행 기록은 남습니다'));
@@ -1646,7 +1646,7 @@ const press=async(label)=>{const button=descendants(rows()[0]).find(n=>n.tag==='
  ctx.rows=[{id:'p3',kind:'prepare',goal:'출발 확인',state:'scheduled',due_local:'D',recurrence:'window',every_minutes:10,until_local:'U',max_runs:6,run_count:2,delivery:'when_needed',last_decision:'quiet',last_decision_reason:'judged-not-needed',last_result:''}];
  await ctx.loadPreparations();
  assert.equal(texts(rows()[0],'settings-row-description')[0],'미리 준비 · 10분마다 U까지 · 2/6회 실행 · D 예정 · 알려야 할 때만 Telegram으로 알림 · 마지막 실행: 조용히 넘어감 (알릴 일이 없다고 판단)');
- assert.deepEqual(buttons(rows()[0]),['취소','삭제']);
+ assert.deepEqual(buttons(rows()[0]),['취소','일시 정지','지금 실행','일정 변경','삭제']);
  await press('취소');
  assert.equal(JSON.stringify(calls.at(-1).body),JSON.stringify({operation:'cancel',id:'p3'}));
  vm.runInContext("setLanguage('en')",ctx);ctx.rows=[{...ctx.rows[0],state:'expired',last_decision:'notify',last_decision_reason:'judged-needed'}];
@@ -1658,6 +1658,26 @@ const press=async(label)=>{const button=descendants(rows()[0]).find(n=>n.tag==='
  await ctx.loadPreparations();
  assert.deepEqual(texts(rows()[0],'settings-row-title'),['5종목 지켜보기']);
  assert.ok(texts(rows()[0],'settings-row-description')[0].startsWith('예산 10만 원 · 주문은 하지 않아요 · 미리 준비'));
+ // #575: paused rows remain cancellable and expose resume, run-now and schedule-only editing.
+ ctx.rows=[{id:'p4',kind:'prepare',goal:'자료 준비',state:'paused',due_iso:'2026-10-15T09:00:00+09:00',timezone:'Asia/Seoul',recurrence:'daily'}];
+ await ctx.loadPreparations();
+ assert.deepEqual(buttons(rows()[0]),['취소','다시 시작','지금 실행','일정 변경','삭제']);
+ assert.deepEqual(texts(rows()[0],'settings-state neutral'),['일시 정지됨']);
+ await press('다시 시작');assert.equal(calls.at(-1).body.operation,'resume');
+ await press('지금 실행');assert.equal(calls.at(-1).body.operation,'run_now');
+ await press('일정 변경');
+ const form=$('preparations-list').children.find(n=>n.tag==='form'),fields=descendants(form).filter(n=>n.tag==='input'||n.tag==='select');
+ assert.deepEqual(fields.map(n=>n.name),['due','timezone','recurrence']);
+ fields.find(n=>n.name==='recurrence').value='weekly';
+ await form.onsubmit({preventDefault(){}});
+ assert.equal(JSON.stringify(calls.at(-1).body),JSON.stringify({operation:'edit',id:'p4',due:'2026-10-15T09:00:00+09:00',timezone:'Asia/Seoul',recurrence:'weekly'}));
+ assert(!Object.hasOwn(calls.at(-1).body,'goal'));
+ ctx.rows=[{...ctx.rows[0],recurrence:'window',every_minutes:10,until:'2026-10-15T12:00:00+09:00',max_runs:6}];
+ await ctx.loadPreparations();await press('일정 변경');
+ const watchForm=$('preparations-list').children.find(n=>n.tag==='form'),watchFields=descendants(watchForm).filter(n=>n.tag==='input');
+ assert.deepEqual(watchFields.map(n=>n.name),['due','timezone','every_minutes','until','max_runs']);
+ watchFields.find(n=>n.name==='max_runs').value='3';await watchForm.onsubmit({preventDefault(){}});
+ assert.equal(calls.at(-1).body.max_runs,3);assert(!Object.hasOwn(calls.at(-1).body,'recurrence'));
  console.log('ok');
 })().catch(error=>{console.error(error);process.exit(1);});
 """
@@ -1678,3 +1698,126 @@ class PreparationSettingsUi(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PreparationManagementTests(unittest.TestCase):
+    """Owner schedule management through the real store and claim boundary (#575)."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.store = QuickStore(Path(tmp.name))
+        self.now = START
+        self.preparations = prep.Preparations(self.store, clock=lambda: self.now)
+
+    def make(self, recurrence=None, state=prep.STATE_SCHEDULED, window=None):
+        return self.preparations.create(kind='prepare', goal='자료 준비', due_at=self.now + 60,
+                                        timezone='Asia/Seoul', recurrence=recurrence, channel='web',
+                                        created_from=None, state=state, window=window)
+
+    def refusal(self, code, action, *args, **kwargs):
+        with self.assertRaises(prep.PreparationRefusal) as caught:
+            action(*args, **kwargs)
+        self.assertEqual(caught.exception.code, code)
+
+    def test_pause_skips_tick_and_stale_claim_and_still_counts_and_cancels(self):
+        from unittest.mock import patch
+        row = self.make()
+        self.preparations.pause(row['id'])
+        self.now += 120
+        self.assertEqual(self.preparations.due(self.now), [])
+        self.assertIsNone(self.preparations.start(row, channel='web', chat_id=None, now=self.now))
+        self.assertEqual(self.preparations.rows()[0]['state'], prep.STATE_PAUSED)
+        with patch.object(prep, 'MAX_ACTIVE', 1):
+            self.refusal('too_many', self.make)
+        self.assertTrue(self.preparations.cancel(row['id'])['changed'])
+
+    def test_resume_skips_missed_recurrences_and_refuses_expired_one_shot(self):
+        for recurrence in ('daily', 'weekdays', 'weekly'):
+            row = self.make(recurrence)
+            self.preparations.pause(row['id'])
+            self.now += 8 * 86400
+            resumed = self.preparations.resume(row['id'])
+            self.assertEqual(resumed['due_at'], prep.next_due(row['due_at'], row['timezone'], recurrence, self.now))
+            self.assertGreater(resumed['due_at'], self.now)
+        row = self.make()
+        self.preparations.pause(row['id'])
+        self.now += 61
+        self.refusal('resume_expired', self.preparations.resume, row['id'])
+        self.assertEqual(self.preparations.get(row['id'])['state'], prep.STATE_PAUSED)
+
+    def test_resume_watch_skips_missed_slots_and_refuses_closed_window(self):
+        row = self.make(window=(300, self.now + 1800, 6))
+        self.preparations.pause(row['id'])
+        self.now += 700
+        self.assertEqual(self.preparations.resume(row['id'])['due_at'], row['due_at'] + 900)
+        self.preparations.pause(row['id'])
+        self.now = row['window_end']
+        self.refusal('resume_expired', self.preparations.resume, row['id'])
+
+    def test_edit_validates_schedule_keeps_proposed_and_preserves_goal(self):
+        row = self.make(state=prep.STATE_PROPOSED)
+        due = datetime.fromtimestamp(self.now + 3600, SEOUL).isoformat()
+        edited = self.preparations.edit(row['id'], due=due, timezone='Asia/Seoul', recurrence='weekdays')
+        self.assertEqual((edited['due_at'], edited['recurrence'], edited['state'], edited['goal_text']),
+                         (self.now + 3600, 'weekdays', prep.STATE_PROPOSED, row['goal_text']))
+        self.assertIsNone(edited['accepted_by'])
+        self.assertEqual(self.preparations.edit(row['id'], timezone='UTC')['timezone'], 'UTC')
+        for changes, code in (({'goal': '다른 목표'}, 'goal_not_editable'), ({'goal_text': row['goal_text']}, 'goal_not_editable'),
+                              ({'due': 'wrong'}, 'invalid_due'), ({'timezone': 'Mars/Olympus'}, 'timezone_unknown'),
+                              ({'recurrence': 'hourly'}, 'invalid_recurrence'), ({'kind': 'reminder'}, 'invalid_edit')):
+            self.refusal(code, self.preparations.edit, row['id'], **changes)
+        self.assertIsNone(self.preparations.edit(row['id'], recurrence='none')['recurrence'])
+        scheduled = self.make()
+        self.preparations.pause(scheduled['id'])
+        self.assertEqual(self.preparations.edit(scheduled['id'], recurrence='daily')['state'], prep.STATE_PAUSED)
+        self.preparations.run_now(scheduled['id'], channel='web', chat_id=None)
+        self.refusal('already_running', self.preparations.edit, scheduled['id'], due=due)
+        self.refusal('already_running', self.preparations.pause, scheduled['id'])
+
+    def test_edit_watch_reuses_window_validation(self):
+        row = self.make(window=(300, self.now + 1800, 6))
+        until = datetime.fromtimestamp(self.now + 3600, SEOUL).isoformat()
+        edited = self.preparations.edit(row['id'], every_minutes=10, until=until, max_runs=3)
+        self.assertEqual((edited['every_seconds'], edited['window_end'], edited['max_runs']), (600, self.now + 3600, 3))
+        self.refusal('invalid_window', self.preparations.edit, row['id'], every_minutes=1)
+        self.refusal('invalid_max_runs', self.preparations.edit, row['id'], max_runs=0)
+
+    def test_run_now_uses_one_atomic_work_and_preserves_schedule_across_restart(self):
+        for paused in (False, True):
+            recurrence = 'daily' if paused else None
+            row = self.make(recurrence=recurrence)
+            if paused:
+                self.preparations.pause(row['id'])
+            work = self.preparations.run_now(row['id'], channel='web', chat_id=None)
+            self.assertEqual(self.store.job(work)['request_key'], prep.request_key(row['id'], self.now))
+            self.assertEqual(self.preparations.get(row['id'])['due_at'], row['due_at'])
+            restarted = prep.Preparations(QuickStore(self.store.root), clock=lambda: self.now)
+            self.refusal('already_running', restarted.run_now, row['id'], channel='web', chat_id=None)
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET status='succeeded',delivery='none',response='준비 완료' WHERE id=?", (work,))
+            self.assertIn(row['id'], [item['id'] for item in restarted.due(self.now)])
+            settled = restarted.settle(restarted.get(row['id']), self.now)
+            self.assertEqual((settled['state'], settled['due_at'], settled['recurrence']),
+                             (prep.STATE_PAUSED if paused else prep.STATE_SCHEDULED, row['due_at'], recurrence))
+            self.assertEqual(restarted.run_now(row['id'], channel='web', chat_id=None), work)
+            with self.store.db() as db:
+                self.assertEqual(db.execute('SELECT count(*) FROM jobs WHERE request_key=?',
+                                            (prep.request_key(row['id'], self.now),)).fetchone()[0], 1)
+
+    def test_run_now_refuses_unaccepted_or_expired_watch(self):
+        proposed = self.make(state=prep.STATE_PROPOSED)
+        self.refusal('invalid_state', self.preparations.run_now, proposed['id'], channel='web', chat_id=None)
+        row = self.make(window=(300, self.now + 1800, 6))
+        self.now = row['window_end']
+        self.refusal('resume_expired', self.preparations.run_now, row['id'], channel='web', chat_id=None)
+
+    def test_migration_preserves_old_rows_and_adds_nullable_return_state(self):
+        row = self.make()
+        with self.store.db() as db:
+            db.execute('ALTER TABLE preparations DROP COLUMN run_return_state')
+            prep.migrate(db)
+            prep.migrate(db)
+        restored = self.preparations.get(row['id'])
+        self.assertEqual(restored['goal_text'], row['goal_text'])
+        self.assertIsNone(restored['run_return_state'])

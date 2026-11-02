@@ -83,8 +83,9 @@ STATE_PROPOSED, STATE_SCHEDULED, STATE_RUNNING = 'proposed', 'scheduled', 'runni
 STATE_DELIVERED, STATE_UNKNOWN, STATE_FAILED, STATE_CANCELLED = 'delivered', 'unknown', 'failed', 'cancelled'
 #: #719: a watch whose window closed before its slot could run (downtime).
 STATE_EXPIRED = 'expired'
+STATE_PAUSED = 'paused'
 #: States whose row may still cause a run.
-ACTIVE_STATES = (STATE_PROPOSED, STATE_SCHEDULED, STATE_RUNNING)
+ACTIVE_STATES = (STATE_PROPOSED, STATE_SCHEDULED, STATE_RUNNING, STATE_PAUSED)
 
 #: ``accepted_by`` values: who turned a proposal into a schedule.
 ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_SETTINGS = 'owner-request', 'owner-button', 'owner-settings'
@@ -138,7 +139,9 @@ COLUMN_MIGRATIONS = (('prepared_text', 'TEXT'),
                      ('delivery_mode', 'TEXT'), ('last_decision', 'TEXT'), ('last_decision_reason', 'TEXT'),
                      ('last_notified_digest', 'TEXT'), ('last_notified_text', 'TEXT'), ('last_notified_at', 'REAL'),
                      # #393: what the owner reads and accepts, apart from the run's brief (goal_text).
-                     ('title_text', 'TEXT'), ('offer_text', 'TEXT'))
+                     ('title_text', 'TEXT'), ('offer_text', 'TEXT'),
+                     # #575: restore the regular schedule after an immediate run.
+                     ('run_return_state', 'TEXT'))
 
 
 def migrate(db):
@@ -171,6 +174,8 @@ REFUSALS = {
     'not_proposed': '이미 처리된 준비입니다.',
     'expired': '지켜보는 기간이 이미 끝나 시작하지 않았습니다.',
     'running': '지금 실행 중인 준비는 지울 수 없습니다. 먼저 취소하세요.',
+    **{code: msg('preparations.' + code) for code in
+       ('already_running', 'invalid_state', 'goal_not_editable', 'invalid_edit', 'resume_expired', 'queue_full')},
 }
 
 
@@ -685,10 +690,10 @@ class Preparations:
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             same = db.execute('SELECT * FROM preparations WHERE created_from=? AND kind=? AND goal_text=? AND due_at=? '
-                              'AND state IN (?,?,?)', (created_from, kind, goal, due_at, *ACTIVE_STATES)).fetchone()
+                              'AND state IN (?,?,?,?)', (created_from, kind, goal, due_at, *ACTIVE_STATES)).fetchone()
             if same:
                 return dict(same)
-            active = db.execute('SELECT count(*) FROM preparations WHERE state IN (?,?,?)', ACTIVE_STATES).fetchone()[0]
+            active = db.execute('SELECT count(*) FROM preparations WHERE state IN (?,?,?,?)', ACTIVE_STATES).fetchone()[0]
             if active >= MAX_ACTIVE:
                 raise PreparationRefusal('too_many')
             row = {'id': uuid.uuid4().hex[:16], 'owner': owner, 'kind': kind, 'goal_text': goal, 'due_at': due_at,
@@ -724,12 +729,94 @@ class Preparations:
         """Stop every future run.  A Work already running finishes as its own Work."""
         now = self.clock()
         with self.store.db() as db:
-            changed = db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=? AND state IN (?,?,?)',
+            changed = db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=? AND state IN (?,?,?,?)',
                                  (STATE_CANCELLED, now, preparation_id, *ACTIVE_STATES)).rowcount
         row = self.get(preparation_id)
         if row is None:
             raise PreparationRefusal('not_found')
         return {**row, 'changed': bool(changed)}
+
+    def pause(self, preparation_id):
+        """Keep a schedule without allowing the tick to run it (#575)."""
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = self._editable(db, preparation_id, (STATE_SCHEDULED, STATE_PAUSED))
+            db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=?',
+                       (STATE_PAUSED, self.clock(), row['id']))
+        return self.get(preparation_id)
+
+    @staticmethod
+    def _editable(db, preparation_id, states):
+        row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
+        if row is None:
+            raise PreparationRefusal('not_found')
+        if row['state'] == STATE_RUNNING:
+            raise PreparationRefusal('already_running')
+        if row['state'] not in states:
+            raise PreparationRefusal('invalid_state')
+        return dict(row)
+
+    def resume(self, preparation_id):
+        """Resume at a future slot, never catch up missed slots (#575)."""
+        now = self.clock()
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = self._editable(db, preparation_id, (STATE_PAUSED,))
+            following = row['due_at']
+            if row['recurrence'] == RECURRENCE_WINDOW:
+                if window_ended(row, now) or row['run_count'] >= row['max_runs']:
+                    raise PreparationRefusal('resume_expired')
+                if following <= now:
+                    following = next_window_slot(row, now)
+            elif following <= now:
+                following = next_due(following, row['timezone'], row['recurrence'], now)
+            if following is None or following <= now:
+                raise PreparationRefusal('resume_expired')
+            db.execute('UPDATE preparations SET state=?,due_at=?,updated_at=? WHERE id=?',
+                       (STATE_SCHEDULED, following, now, row['id']))
+        return self.get(preparation_id)
+
+    def edit(self, preparation_id, **changes):
+        """Validate schedule changes without accepting a proposal or changing its goal (#575)."""
+        now = self.clock()
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = self._editable(db, preparation_id, (STATE_PROPOSED, STATE_SCHEDULED, STATE_PAUSED))
+            updates = self.edit_values(row, changes, now)
+            updates['updated_at'] = now
+            db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=?",
+                       (*updates.values(), preparation_id))
+        return self.get(preparation_id)
+
+    @staticmethod
+    def edit_values(row, changes, now):
+        """The same validation for a Settings draft and its application (#575)."""
+        if 'goal' in changes or 'goal_text' in changes:
+            raise PreparationRefusal('goal_not_editable')
+        if not changes or set(changes) - {'due', 'timezone', 'recurrence', 'every_minutes', 'until', 'max_runs'}:
+            raise PreparationRefusal('invalid_edit')
+        due_at, timezone_name = row['due_at'], row['timezone']
+        if 'due' in changes or 'timezone' in changes:
+            due_at, timezone_name = parse_due(changes.get('due', datetime.fromtimestamp(due_at, zone(timezone_name)).isoformat()),
+                                               changes.get('timezone', timezone_name), timezone_name, now)
+        updates = {'due_at': due_at, 'timezone': timezone_name}
+        if row['recurrence'] == RECURRENCE_WINDOW:
+            if 'recurrence' in changes:
+                raise PreparationRefusal('invalid_window')
+            every, end, runs = normalize_window(changes.get('every_minutes', row['every_seconds'] // 60),
+                                                changes.get('until', datetime.fromtimestamp(row['window_end'], zone(timezone_name)).isoformat()),
+                                                changes.get('max_runs', row['max_runs']), due_at, timezone_name, now)
+            updates.update(every_seconds=every, window_end=end, max_runs=runs)
+        else:
+            if set(changes) & {'every_minutes', 'until', 'max_runs'}:
+                raise PreparationRefusal('invalid_window')
+            updates['recurrence'] = normalize_recurrence(changes.get('recurrence', row['recurrence']))
+        return updates
+
+    def run_now(self, preparation_id, *, channel, chat_id, now=None):
+        """Claim an extra current-time slot through the tick's atomic claim (#575)."""
+        now = self.clock() if now is None else now
+        return self.start({'id': preparation_id}, channel=channel, chat_id=chat_id, now=now, immediate=True)
 
     def delete(self, preparation_id):
         """Remove the row.  Its past Works and their Evidence stay."""
@@ -753,7 +840,7 @@ class Preparations:
             return [dict(row) for row in db.execute(
                 'SELECT p.*, j.status AS last_status, j.delivery AS last_delivery, j.response AS last_response '
                 'FROM preparations p LEFT JOIN jobs j ON j.id=p.last_run_job_id '
-                "ORDER BY CASE p.state WHEN 'proposed' THEN 0 WHEN 'running' THEN 1 WHEN 'scheduled' THEN 2 ELSE 3 END, "
+                "ORDER BY CASE p.state WHEN 'proposed' THEN 0 WHEN 'running' THEN 1 WHEN 'scheduled' THEN 2 WHEN 'paused' THEN 3 ELSE 4 END, "
                 'p.due_at LIMIT ?', (int(limit),))]
 
     # -- the tick ----------------------------------------------------------
@@ -765,12 +852,13 @@ class Preparations:
         once its Work is no longer queued, running or awaiting a connection
         and its delivery is no longer pending or in flight. Expired windows
         also surface so an unanswered prerequisite can terminate without AI.
+        Immediate runs settle even before the regular due time (#575).
         """
         with self.store.db() as db:
             return [dict(row) for row in db.execute(
                 'SELECT p.*, j.status AS job_status, j.delivery AS job_delivery FROM preparations p '
                 'LEFT JOIN jobs j ON j.id=p.last_run_job_id '
-                "WHERE p.state IN ('scheduled','running') AND p.due_at<=? "
+                "WHERE ((p.state='scheduled' AND p.due_at<=?) OR p.state='running') "
                 "AND (p.state='scheduled' OR j.id IS NULL OR (p.recurrence='window' AND p.window_end<=?) "
                 "OR (j.status NOT IN ('queued','running','awaiting_connection') "
                 "AND j.delivery NOT IN ('pending','sending'))) ORDER BY p.due_at LIMIT ?", (now, now, TICK_LIMIT))]
@@ -812,7 +900,7 @@ class Preparations:
                    (work_id, 'preparation', 'withheld', json.dumps({'reason': reason, 'resumed': False}), now))
         return True
 
-    def start(self, row, *, channel, chat_id, now):
+    def start(self, row, *, channel, chat_id, now, immediate=False):
         """Claim one due slot and create its Work in ONE transaction.
 
         Returns the Work id, or None when the slot is no longer due (another
@@ -820,17 +908,24 @@ class Preparations:
         is tried again on a later tick).  The Work's request key names the
         slot, so a replayed claim finds the same Work instead of a second.
         """
-        key = request_key(row['id'], row['due_at'])
+        slot = now if immediate else row['due_at']
+        key = request_key(row['id'], slot)
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
-            if not current or current['state'] != STATE_SCHEDULED or current['due_at'] != row['due_at']:
+            if immediate:
+                current = self._editable(db, row['id'], (STATE_SCHEDULED, STATE_PAUSED))
+            elif not current or current['state'] != STATE_SCHEDULED or current['due_at'] != row['due_at']:
                 return None
             current = dict(current)
             existing = db.execute('SELECT id FROM jobs WHERE request_key=?', (key,)).fetchone()
+            if immediate and existing:
+                return existing['id']
             window = current['recurrence'] == RECURRENCE_WINDOW
             if window and not existing and (now >= current['window_end']
                                             or int(current['run_count'] or 0) >= int(current['max_runs'] or 0)):
+                if immediate:
+                    raise PreparationRefusal('resume_expired')
                 # #719: a watch never runs after its deadline or beyond its bound.
                 db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=? AND state=?',
                            (STATE_EXPIRED, now, current['id'], STATE_SCHEDULED))
@@ -842,7 +937,7 @@ class Preparations:
                 # no AI ran, as for notes); the existing terminal delivery
                 # sends it once (mark-before-send).
                 job_id = str(uuid.uuid4())
-                text = reminder_text(current['goal_text'], current['due_at'], current['timezone'], now)
+                text = reminder_text(current['goal_text'], slot, current['timezone'], now)
                 db.execute('INSERT INTO jobs(id,request_key,message,channel,chat_id,status,response,error,delivery,provider,model,created) '
                            'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
                            (job_id, key, current['goal_text'], channel, chat_id, 'succeeded', text, None,
@@ -853,12 +948,14 @@ class Preparations:
                 try:
                     job_id = self.store.enqueue(current['goal_text'], key, channel, chat_id, db=db)
                 except ValueError:
+                    if immediate:
+                        raise PreparationRefusal('queue_full') from None
                     return None
             run = int(current['run_count'] or 0) + (0 if existing else 1)
-            db.execute('UPDATE preparations SET state=?,last_run_job_id=?,run_count=?,updated_at=? WHERE id=?',
-                       (STATE_RUNNING, job_id, run, now, current['id']))
+            db.execute('UPDATE preparations SET state=?,last_run_job_id=?,run_count=?,updated_at=?,run_return_state=? WHERE id=?',
+                       (STATE_RUNNING, job_id, run, now, current['state'] if immediate else None, current['id']))
             # Evidence: preparation id -> Work id; the Work's delivery is the receipt.
-            detail = {'preparation_id': current['id'], 'kind': current['kind'], 'slot': iso(current['due_at']),
+            detail = {'preparation_id': current['id'], 'kind': current['kind'], 'slot': iso(slot),
                       'recurrence': current['recurrence'], 'accepted_by': current['accepted_by'],
                       'channel': channel.split(':', 1)[0]}
             if window:
@@ -944,6 +1041,10 @@ class Preparations:
                 updates['state'] = outcome
             else:
                 updates.update(state=STATE_SCHEDULED, due_at=following)
+            if current.get('run_return_state'):
+                # #575: the extra run does not consume or advance the regular schedule.
+                updates.update(state=current['run_return_state'], due_at=current['due_at'], run_return_state=None)
+                following = current['due_at']
             notified = False
             if decision is not None and job:
                 updates.update(last_decision=decision[0], last_decision_reason=decision[1])
