@@ -14,6 +14,14 @@ from personal_agent.telegram_presence import FALLBACK_STEP_LINES
 
 
 class OneDeclaration(unittest.TestCase):
+    def test_preparation_rrule_is_in_the_shared_tool_schema(self):
+        """All protocol surfaces consume the same parameter declaration (#580)."""
+        definition = next(item['function'] for item in agent_runtime.DEFINITIONS
+                          if item['function']['name'] == 'schedule_preparation')
+        self.assertEqual(definition['parameters']['properties']['rrule'], {'type':'string'})
+        self.assertNotIn('rrule', definition['parameters']['required'])
+        self.assertIn('repeats from due', definition['description'])
+
     def test_no_attribute_has_a_default(self):
         for field in dataclasses.fields(manifests.HostTool):
             with self.subTest(field.name):
