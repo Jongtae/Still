@@ -4025,6 +4025,30 @@
   "ja": "接続解除",
   "zh": "断开连接"
  },
+ "settings_orchestrator.use_mobile_label": {
+  "ko": "모바일 버전으로 보기",
+  "en": "Use mobile version",
+  "ja": "モバイル版を使う",
+  "zh": "使用移动版"
+ },
+ "settings_orchestrator.label_browser_use_mobile": {
+  "ko": "브라우저 모바일 버전",
+  "en": "Browser mobile version",
+  "ja": "ブラウザのモバイル版",
+  "zh": "浏览器移动版"
+ },
+ "settings_orchestrator.setting_value_use_mobile": {
+  "ko": "모바일 버전으로 보기: {value}",
+  "en": "Use mobile version: {value}",
+  "ja": "モバイル版を使う: {value}",
+  "zh": "使用移动版：{value}"
+ },
+ "settings_orchestrator.use_mobile_summary": {
+  "ko": "{site} 사이트를 모바일 버전으로 되돌립니다",
+  "en": "Reset {site} to the mobile version",
+  "ja": "{site} をモバイル版に戻します",
+  "zh": "将 {site} 恢复为移动版"
+ },
  "settings_orchestrator.close_login_label": {
   "ko": "로그인 창 닫기",
   "en": "Close login window",
@@ -4086,10 +4110,10 @@
   "zh": "只共享当前登录会话，不传递密码。你的会话更新时会同步，只有账户所有者可以付款。"
  },
  "settings_orchestrator.unknown_setting": {
-  "ko": "대화로 바꿀 수 있는 설정이 아닙니다. 현재 맥락(enabled, timezone), 판단 AI(mode, model), 기본 AI(route, model), 알아 두기(enabled, daily_calls), 가족 비서(add, share_site, unshare_site), 스킬(enabled, add, remove), 휴대폰 링크(send), AI의 연결 서비스(enabled, connect, servers, review, money, rung, undo, forget, restore), 예약(cancel, accept), 브라우저(close_login)만 바꿀 수 있습니다. API 키, 토큰, 로그인은 비밀 입력 화면에서 직접 입력하세요.",
-  "en": "This setting cannot be changed in conversation. Supported settings: current context (enabled, timezone), Judgment AI (mode, model), Main AI (route, model), things to remember (enabled, daily_calls), family assistant (add, share_site, unshare_site), skills (enabled, add, remove), phone link (send), AI connections (enabled, connect, servers, review, money, rung, undo, forget, restore), reservations (cancel, accept), browser (close_login). Enter API keys, tokens, and logins directly on the private input page.",
-  "ja": "この設定は会話では変更できません。変更できるのは、現在のコンテキスト（enabled, timezone）、判断 AI（mode, model）、メイン AI（route, model）、覚えておくこと（enabled, daily_calls）、家族用アシスタント（add, share_site, unshare_site）、スキル（enabled, add, remove）、スマートフォン用リンク（send）、AI の接続サービス（enabled, connect, servers, review, money, rung, undo, forget, restore）、予約（cancel, accept）、ブラウザ（close_login）です。API キー、トークン、ログイン情報は秘密情報の入力画面に直接入力してください。",
-  "zh": "此设置无法在对话中更改。支持的设置：当前上下文（enabled, timezone）、判断 AI（mode, model）、主 AI（route, model）、需要记住的事（enabled, daily_calls）、家庭助手（add, share_site, unshare_site）、技能（enabled, add, remove）、手机链接（send）、AI 连接服务（enabled, connect, servers, review, money, rung, undo, forget, restore）、预约（cancel, accept）、浏览器（close_login）。API 密钥、令牌和登录信息请直接在私密输入页面填写。"
+  "ko": "대화로 바꿀 수 있는 설정이 아닙니다. 현재 맥락(enabled, timezone), 판단 AI(mode, model), 기본 AI(route, model), 알아 두기(enabled, daily_calls), 가족 비서(add, share_site, unshare_site), 스킬(enabled, add, remove), 휴대폰 링크(send), AI의 연결 서비스(enabled, connect, servers, review, money, rung, undo, forget, restore), 예약(cancel, accept), 브라우저(close_login, use_mobile)만 바꿀 수 있습니다. API 키, 토큰, 로그인은 비밀 입력 화면에서 직접 입력하세요.",
+  "en": "This setting cannot be changed in conversation. Supported settings: current context (enabled, timezone), Judgment AI (mode, model), Main AI (route, model), things to remember (enabled, daily_calls), family assistant (add, share_site, unshare_site), skills (enabled, add, remove), phone link (send), AI connections (enabled, connect, servers, review, money, rung, undo, forget, restore), reservations (cancel, accept), browser (close_login, use_mobile). Enter API keys, tokens, and logins directly on the private input page.",
+  "ja": "この設定は会話では変更できません。変更できるのは、現在のコンテキスト（enabled, timezone）、判断 AI（mode, model）、メイン AI（route, model）、覚えておくこと（enabled, daily_calls）、家族用アシスタント（add, share_site, unshare_site）、スキル（enabled, add, remove）、スマートフォン用リンク（send）、AI の接続サービス（enabled, connect, servers, review, money, rung, undo, forget, restore）、予約（cancel, accept）、ブラウザ（close_login, use_mobile）です。API キー、トークン、ログイン情報は秘密情報の入力画面に直接入力してください。",
+  "zh": "此设置无法在对话中更改。支持的设置：当前上下文（enabled, timezone）、判断 AI（mode, model）、主 AI（route, model）、需要记住的事（enabled, daily_calls）、家庭助手（add, share_site, unshare_site）、技能（enabled, add, remove）、手机链接（send）、AI 连接服务（enabled, connect, servers, review, money, rung, undo, forget, restore）、预约（cancel, accept）、浏览器（close_login, use_mobile）。API 密钥、令牌和登录信息请直接在私密输入页面填写。"
  },
  "settings_orchestrator.credential_value": {
   "ko": "자격 증명처럼 보이는 값은 대화로 설정하지 않습니다. API 키, 토큰, 로그인은 설정 화면에서 직접 입력하세요. 아무것도 바꾸지 않았습니다.",

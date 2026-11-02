@@ -2400,6 +2400,10 @@ class BrowserProfile:
             return {}
         return {str(site): 'desktop' for site, layout in data.items() if layout == 'desktop'} if isinstance(data, dict) else {}
 
+    def desktop_sites(self):
+        """The sites kept in desktop version, names only."""
+        return sorted(self._layouts())
+
     def layout_for(self, host):
         """#572: the layout ``host``'s site loads in: ``desktop`` when the AI asked for it there, else ``mobile``."""
         site = registrable_domain(host) if host else ''
