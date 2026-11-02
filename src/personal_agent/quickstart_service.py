@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import hashlib
 from urllib.parse import urlsplit
 from .messages import LANGUAGES, msg
+from .telegram_locale import ai_text, owner_language
 from .prompt_files import prompt
 from .local_tools import LocalTools, normalize_public_url
 from functools import cached_property
@@ -603,7 +604,7 @@ class AgentService:
                                       lambda:self.store.secret('telegram_token'),
                                       lambda:self.telegram_file_transport,
                                       lambda:self.telegram_upload_transport,
-                                      lambda:self.store.config('telegram',{}).get('owner_language'),
+                                      lambda:owner_language(self.store),
                                       # #208: no Bot API or file request leaves this Mac in work mode.
                                       guard=lambda:work_mode.refuse(self.store,'telegram'))
         # #581: which Telegram messages belong to a Work (reaction target,
@@ -4184,7 +4185,7 @@ class AgentService:
         # Pilot boundary 1: a stored secret never reaches the chat or the transcript.
         text=self._redact_known_secrets(preview_text(preview))
         try:
-            self.telegram.send_message(job['chat_id'],text,reply_to=self.telegram_turns.source(job['id']))
+            self.telegram.send_message(job['chat_id'],ai_text(text),reply_to=self.telegram_turns.source(job['id']))
         except Exception as exc:  # presentation never fails or delays the Work
             LOG.info('plan preview not sent job=%s kind=%s',job['id'],type(exc).__name__)
             return False
@@ -4220,7 +4221,7 @@ class AgentService:
             # Pilot boundary 1: a stored secret never reaches the chat or the transcript.
             text=self._redact_known_secrets(text)
             try:
-                self.telegram.send_message(job['chat_id'],text)
+                self.telegram.send_message(job['chat_id'],ai_text(text))
             except ProviderError:
                 raise ToolError('메시지를 보내지 못했어요. 답에 담아 주세요.','owner_update_not_sent') from None
             with self.store.db() as db:
@@ -4269,8 +4270,8 @@ class AgentService:
         # Still-authored continuity text read from no private store (#605).
         self.record_work_sources(job['id'],{OWNER_CONVERSATION})
         with self.store.db() as db:
-            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',
-                       ('assistant',response,job['channel'],time.time(),job.get('workspace_id'),job['id']))
+            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
+                       ('assistant',response,job['channel'],time.time(),job.get('workspace_id'),job['id'],'system'))
             db.execute("UPDATE jobs SET status='succeeded',response=?,error=NULL,provider='builtin',model='continuity',delivery=? WHERE id=?",
                        (response,'pending' if job['chat_id'] else 'none',job['id']))
         self.update_task_card(job,'succeeded')
@@ -7376,7 +7377,8 @@ class AgentService:
         """
         try:
             items=self._attention_items(job,now)
-            chosen=pick_attention(items,now,self.store.config(self.ATTENTION_SURFACED_KEY,{}),ATTENTION_COOLDOWN)
+            chosen=pick_attention(items,now,self.store.config(self.ATTENTION_SURFACED_KEY,{}),ATTENTION_COOLDOWN,
+                                  lang=owner_language(self.store,job['id']))
             if not chosen:return None
             shown=' '.join(str(self.scrub_work_text(job['id'],chosen['line'])).split())
             return {**chosen,'line':shown} if shown else None
@@ -11990,6 +11992,7 @@ class AgentService:
             # effect that was only inferred.  Answer the owner and
             # invoke nothing.
             run.response=run.decision.clarification
+            run.system_response=run.decision.authority==AUTHORITY_RULE
         elif run.decision.intent==INTENT_GREETING:
             run.response=__import__('personal_agent.still_profile',fromlist=['welcome']).welcome(
                 self.store.config('telegram',{}).get('owner_language'))
@@ -13002,7 +13005,9 @@ class AgentService:
                                          and run.orchestration.terminal==REACHED)
         self.record_work_sources(job['id'],run.work_sources)
         with self.store.db() as db:
-            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',('assistant',run.response,job['channel'],time.time(),job.get('workspace_id'),job['id']))
+            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
+                       ('assistant',run.response,job['channel'],time.time(),job.get('workspace_id'),job['id'],
+                        'system' if run.system_response else None))
             # #709: a run that reached a login page did not finish its request -
             # unless (#752) the goal judgment saw it met another way.
             if run.outcome=='succeeded' and ((self._browser_login(job['id']) or {}).get('state')=='requested' or run.waits_for_sign_in) \
@@ -13023,7 +13028,7 @@ class AgentService:
             note_steps,note_kept=self._unshown_steps(run,job)
             note=answer_note([(tool,scrub(self._redact_reason(reason))) for tool,reason in note_steps],run.outcome,
                              kept={scrub(self._redact_reason(reason)) for reason in note_kept},
-                             report=run.agency_report) if run.outcome in ('failed','partial') else None
+                             report=run.agency_report,lang=owner_language(self.store,job['id'])) if run.outcome in ('failed','partial') else None
             # #657: what stayed unverified and the proposed next step follow the failed steps.
             statement=report_statement(run.agency_report) if run.outcome in ('failed','partial') else None
             if statement:

@@ -89,5 +89,124 @@ class ChannelTests(unittest.TestCase):
         self.assertEqual(sent[0]['text'], '상세')
 
 
+class AnswerBoundaryTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from personal_agent.quickstart_store import QuickStore
+        from personal_agent.quickstart_service import AgentService
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.store = QuickStore(self.temp.name)
+        self.sent = []
+        def transport(url, body, headers=None, timeout=None):
+            self.sent.append((url.rsplit('/', 1)[-1], body))
+            return {'ok': True, 'result': {'message_id': len(self.sent)}}
+        self.service = AgentService(self.store, telegram_transport=transport)
+        self.store.put('telegram', {'enabled': True, 'user_id': 42, 'generation': 'g', 'owner_language': 'en'})
+
+    def enqueue(self, message):
+        return self.store.enqueue(message, 'request-' + message,
+                                  'telegram:g', 42, owner_typed=True)
+
+    def test_real_delivery_preserves_ai_even_when_it_is_a_catalog_line(self):
+        from personal_agent.messages import msg
+        from unittest.mock import patch
+        # An exact catalog hit and a broad template hit must both be protected.
+        answer = '다시 접속했지만 보유 종목은 아직 확인하지 못했어요.\n요청을 처리했어요.\n참, 다른 문장입니다.'
+        work = self.enqueue('Please check.')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='partial',response=?,delivery='pending' WHERE id=?", (answer, work))
+        with patch.object(loc, '_match', wraps=loc._match) as match:
+            self.service.deliver_one()
+        body = next(body for method, body in self.sent if method == 'sendMessage')
+        self.assertEqual(body['text'], answer + '\n\n' + msg('projection.answer_not_confirmed', 'en'))
+        for call in match.call_args_list:
+            for line in answer.splitlines():
+                self.assertNotIn(line, call.args[0], 'AI words must not enter catalog matching')
+        self.service.telegram.send_message(42, '요청을 처리했어요.')
+        self.assertEqual(self.sent[-1][1]['text'], 'Done.', 'the same words still translate as a Still notice')
+
+    def test_latest_owner_script_controls_fixed_lines_without_changing_telegram_code(self):
+        from personal_agent.phone_input import owner_language
+        from personal_agent.messages import msg
+        for text, expected in [('한국어로 알려 주세요.', None), ('Please answer.', 'en'),
+                               ('確認してください', 'ja'), ('请确认结果', 'zh')]:
+            with self.subTest(text=text):
+                work = self.enqueue(text)
+                self.assertEqual(loc.owner_language(self.store, work), expected)
+                self.assertEqual(owner_language(self.store), expected)
+                with self.store.db() as db:
+                    db.execute("UPDATE jobs SET status='partial',response='AI answer',delivery='pending' WHERE id=?", (work,))
+                self.service.deliver_one()
+                bodies = [body for method, body in self.sent if method == 'sendMessage']
+                self.assertEqual(bodies[-1]['text'], 'AI answer\n\n' + msg('projection.answer_not_confirmed', expected or 'ko'))
+        self.assertEqual(self.store.config('telegram')['owner_language'], 'en')
+
+    def test_presence_prose_is_protected_in_rich_and_plain_drafts(self):
+        from types import SimpleNamespace
+        from personal_agent.telegram_presence import draft_frame, step_line
+        work = self.enqueue('Please answer.')
+        answer = '다시 접속했지만 아직 확인 중이에요.'
+        state = SimpleNamespace(said=0, rich_draft_failed=False, rich_draft_retry=False)
+        job = self.store.job(work)
+        line = draft_frame(step_line({'status': answer}), 0)
+        self.service.telegram_surface.show_draft(job, state, line, '참, AI가 쓴 문장입니다.')
+        rich = self.sent[-1][1]['rich_message']['blocks']
+        self.assertEqual(rich[0]['text'], answer + ' · · ·')
+        self.assertEqual(rich[1]['text'], '참, AI가 쓴 문장입니다.')
+        state.rich_draft_failed = True
+        self.service.telegram_surface.show_draft(job, state, line)
+        self.assertEqual(self.sent[-1][1]['text'], answer + ' · · ·')
+
+    def test_provenance_survives_rendering_preview_slicing_and_plain_fallback(self):
+        from personal_agent.conversation_projection import terminal_text
+        from personal_agent.telegram_presence import render_telegram_html
+        answer = '다시 접속했지만 확인 중이에요.'
+        for projected in (terminal_text(answer, outcome='partial'),
+                          terminal_text(answer * 200, outcome='succeeded')):
+            for text in (projected, render_telegram_html(projected)):
+                self.service.telegram.send_message(42, text)
+                self.assertTrue(self.sent[-1][1]['text'].startswith(answer))
+
+    def test_script_priority_and_fallback(self):
+        for text, expected in [('漢字とかな', 'ja'), ('漢字 한글 かな', None), ('ㄱㄴ', None),
+                               ('English text', 'en'), ('123?!', 'en')]:
+            self.assertEqual(loc.language('en', text), expected)
+
+    def test_plan_previews_and_interim_updates_keep_ai_prose(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        answer = '다시 접속했지만 아직 확인 중이에요.'
+        work = self.enqueue('Please answer.')
+        job = self.store.job(work)
+        attempt = SimpleNamespace(number=1, preview={'understanding': answer, 'steps': []})
+        self.assertTrue(self.service.show_plan_preview(job, Mock(), attempt))
+        self.assertEqual(self.sent[-1][1]['text'], answer)
+        tell = self.service.owner_updater(job)
+        self.assertIsNotNone(tell)
+        tell(answer)
+        self.assertEqual(self.sent[-1][1]['text'], answer)
+
+    def test_judgment_note_is_prose_while_fixed_truth_floor_is_localized(self):
+        from personal_agent.conversation_projection import answer_note, terminal_text
+        from personal_agent.messages import msg
+        note = '다시 접속했지만 아직 확인 중이에요.'
+        projected = terminal_text('Answer', outcome='partial', note=answer_note([], 'partial', report={'note': note}, lang='en'))
+        self.service.telegram.send_message(42, projected)
+        self.assertEqual(self.sent[-1][1]['text'], 'Answer\n\n' + note)
+        fixed = answer_note([('model', 'failed')], 'partial', lang='en')
+        self.assertEqual(fixed, msg('projection.some_steps_unfinished', 'en'))
+
+    def test_attention_localizes_templates_before_inserting_prose(self):
+        from personal_agent.telegram_presence import attention_line, draft_frame
+        from personal_agent.messages import msg
+        answer = '다시 접속했지만 확인 중이에요.'
+        note = attention_line('prepared', answer, 'en')
+        self.assertEqual(note, msg('compose.by_the_way_text', 'en',
+                                  text=msg('attention.prepared', 'en', text=answer)))
+        self.service.telegram.send_message_draft(42, 1, draft_frame('', 0, note))
+        self.assertEqual(self.sent[-1][1]['text'], '· · ·\n' + note)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -215,7 +215,7 @@ class PhoneInput:
 
 def owner_language(store):
     """The phone link uses the paired Telegram owner's language."""
-    return telegram_locale.language(store.config('telegram', {}).get('owner_language') if store is not None else None)
+    return telegram_locale.owner_language(store)
 
 
 def _js_string(text):

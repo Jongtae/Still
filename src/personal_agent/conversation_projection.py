@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 import json
 
 from .messages import msg
+from .telegram_locale import ai_text, translate
 import re
 import time
 
@@ -157,7 +158,7 @@ def owner_cause(steps):
     return (TERMINAL_UNFINISHED_LABEL + ' — ' + ' · '.join(entries[:3]))[:400]
 
 
-def answer_note(steps, outcome, kept=(), report=None):
+def answer_note(steps, outcome, kept=(), report=None, lang=None):
     """The one closing note after a failed/partial answer, or ``None`` (#847).
 
     ``steps`` are the same ``(tool_id, reason)`` pairs ``owner_cause`` reads.
@@ -189,9 +190,9 @@ def answer_note(steps, outcome, kept=(), report=None):
     judged = any(' '.join(str(report.get(key) or '').split()) for key in ('note', 'gap'))
     parts = []
     if not judged and outcome == 'failed':
-        parts.append(TERMINAL_FAILED_NOTE)
+        parts.append(translate(TERMINAL_FAILED_NOTE, lang))
     elif not judged and counted:
-        parts.append(TERMINAL_PARTIAL_NOTE)
+        parts.append(translate(TERMINAL_PARTIAL_NOTE, lang))
     parts.extend(spoken[:3])
     # #1459: the judgment's line to the owner; its internal gap only where no note was given.
     for key in ('note', 'gap', 'question', 'next'):
@@ -241,7 +242,7 @@ def clip_keeping_links(text, limit, keep=LINK_KEEP_CHARS):
     bound would split is dropped rather than left broken.  Text within the
     bound is returned unchanged.
     """
-    text = str(text or '')
+    text = text if isinstance(text, str) else str(text or '')
     if len(text) <= limit:
         return text
     for match in _LINK.finditer(text):
@@ -254,7 +255,8 @@ def clip_keeping_links(text, limit, keep=LINK_KEEP_CHARS):
                 break
             if end - limit <= keep and _public_link(url):
                 return text[:end]
-            return text[:match.start()].rstrip()
+            prefix = text[:match.start()]
+            return prefix[:len(prefix.rstrip())]
     return text[:limit]
 
 
@@ -375,7 +377,7 @@ def terminal_text(response, error=None, outcome=None, next_action=None, verified
     """
     cause = (error or '').strip()
     action = next_action or TERMINAL_NEXT_ACTION
-    answer = (response or '').strip()
+    answer = ai_text((response or '').strip())
     if outcome in ('failed', 'partial', 'interrupted') and answer:
         # #847: the answer is the message.  The recorded note (owner words,
         # no tool names) or one outcome sentence follows it; never a header.
@@ -386,7 +388,7 @@ def terminal_text(response, error=None, outcome=None, next_action=None, verified
         elif outcome == 'interrupted':
             closing = TERMINAL_INTERRUPTED_NOTE
         else:
-            closing = (note or '').strip() or (TERMINAL_FAILED_NOTE if outcome == 'failed'
+            closing = ai_text((note or '').strip()) or (TERMINAL_FAILED_NOTE if outcome == 'failed'
                                                else TERMINAL_UNCONFIRMED_NOTE)
         text = answer + '\n\n' + closing if closing else answer
     elif outcome == 'failed':
@@ -407,7 +409,7 @@ def terminal_text(response, error=None, outcome=None, next_action=None, verified
     elif outcome == 'unknown':
         text = cause or TERMINAL_UNKNOWN_EFFECT
     else:
-        text = response or (TERMINAL_FAILED_HEADER + ' ' + (cause or action))
+        text = (ai_text(response) if outcome in (None, 'succeeded') else response) if response else (TERMINAL_FAILED_HEADER + ' ' + (cause or action))
     if len(text) > TELEGRAM_RESULT_PREVIEW_CHARS:
         # #709: a link the preview bound would split stays whole (Telegram's 4096-character limit holds).
         return clip_keeping_links(text, TELEGRAM_RESULT_PREVIEW_CHARS, keep=TELEGRAM_LINK_KEEP_CHARS) + '\n\n전체 결과는 Still 웹에서 확인하세요.'
