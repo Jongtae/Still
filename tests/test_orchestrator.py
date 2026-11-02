@@ -585,6 +585,26 @@ class Redelegation(Harness):
         self.assertEqual(row['status'], 'failed')
         self.assertIn(GOAL_NOT_SHOWN, row['owner_cause'])
 
+    def test_the_default_turns_reach_the_redelegation_limit_after_the_opening_judgments(self):
+        # #601: a live Work spends a few judgments (capability need, follow-up, self-review)
+        # before its first plan; the default turns still leave room for every attempt.
+        opened, work_budget = set(), self.service.work_budget
+
+        def budget(job_id):
+            spent = work_budget(job_id)
+            if job_id not in opened:
+                opened.add(job_id)
+                for _ in range(3):
+                    spent.spend_turn()
+            return spent
+        self.service.work_budget = budget
+        self.script([plan('codex', f'Try path {n}.', model=model)
+                     for n, model in enumerate(('', 'gpt-5.6-luna', 'gpt-5.6-terra'))], goals=[False] * 3)
+        job, _row = self.run_work('끝까지 해줘')
+        self.assertEqual(len(self.engine.turns), 1 + MAX_REDELEGATIONS)
+        last = self.events(job, 'evaluated')[-1][1]
+        self.assertEqual((last['attempt'], last['stop']), (1 + MAX_REDELEGATIONS, 'limit'))
+
     def test_a_cli_attempt_judged_short_with_an_observation_is_partial(self):
         def search(tools):
             tools.capabilities.record('web_search', 'succeeded',

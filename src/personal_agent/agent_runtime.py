@@ -1691,7 +1691,9 @@ def check_arguments(parameters,args):
 # (`WorkLedger`), so the host and a separate CLI bridge process spend ONE
 # budget, and `bounded_execution` kills the CLI process group on Stop or at
 # the deadline.
-WORK_MODEL_TURNS=9
+#: #601: a plan, a worker run and an outcome judgment per attempt, for every attempt
+#: ``MAX_REDELEGATIONS`` allows after a Work's opening judgments; a runaway guard, not a quality bound.
+WORK_MODEL_TURNS=15
 #: #353: a click, a typed field or an API call is one attempt, so browser and API Works
 #: need many; the deadline and model turns still bound a runaway Work.
 WORK_TOOL_ATTEMPTS=200

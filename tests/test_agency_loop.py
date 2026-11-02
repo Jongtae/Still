@@ -358,8 +358,8 @@ class OwnerEntryPointTests(unittest.TestCase):
     def test_d_final_failure_after_caps_and_alternatives(self):
         for route in self.CHANNELS:
             with self.subTest(route=route[0]):
-                cities = ('Seongnam', 'Seongnam-si', 'Sungnam', 'Seongnam City', 'Bundang', 'Pangyo',
-                          'Seongnam KR', 'Seongnam Gyeonggi', 'Seongnam-si Gyeonggi', 'Sujeong')
+                # One more distinct spelling than the turns allow, so the bound ends the loop.
+                cities = tuple(f'Seongnam {n}' for n in range(WORK_MODEL_TURNS + 1))
                 script = Script(*[{'tool_calls': [call(str(i), 'weather', city=city, country='KR')]}
                                   for i, city in enumerate(cities)])
                 row, failed = self.run_turn('내일 성남 날씨 알려줘', script, Network(), route)
