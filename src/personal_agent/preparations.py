@@ -92,6 +92,10 @@ ACTIVE_STATES = (STATE_PROPOSED, STATE_SCHEDULED, STATE_RUNNING, STATE_PAUSED)
 #: #582: a proposal the owner declined is not offered again for this long; at most this many are compared.
 DECLINED_SECONDS = 30 * 86400
 DECLINED_GOALS_LIMIT = 20
+#: #583: the ``origin`` of a proposal the daily look-back suggested; one still unanswered this long
+#: lapses as ``expired`` (not ``cancelled``, so it is not a decline).
+ORIGIN_DREAM = 'dream'
+SUGGESTION_EXPIRY_SECONDS = 7 * 86400
 #: ``accepted_by`` values: who turned a proposal into a schedule.
 ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_SETTINGS = 'owner-request', 'owner-button', 'owner-settings'
 #: #172: the owner's reply or reaction to the proposal message, judged a plain yes to it.
@@ -148,7 +152,9 @@ COLUMN_MIGRATIONS = (('prepared_text', 'TEXT'),
                      # #575: restore the regular schedule after an immediate run.
                      ('run_return_state', 'TEXT'),
                      # #580: due_at advances; the rule keeps its original wall-clock anchor.
-                     ('rule_start', 'REAL'))
+                     ('rule_start', 'REAL'),
+                     # #583: a look-back suggestion, and when its one proposal message was queued.
+                     ('origin', 'TEXT'), ('offered_at', 'REAL'))
 
 
 def migrate(db):
@@ -801,7 +807,7 @@ class Preparations:
             return dict(row) if row else None
 
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
-               accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None):
+               accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
@@ -809,7 +815,8 @@ class Preparations:
         is returned with ``already_proposed`` instead of a duplicate.
 
         ``window`` is ``(every_seconds, window_end, max_runs)`` from
-        ``normalize_window`` (#719); it replaces ``recurrence``.
+        ``normalize_window`` (#719); it replaces ``recurrence``.  ``origin``
+        ``ORIGIN_DREAM`` marks a look-back suggestion (#583); it only ever starts proposed.
         """
         if kind not in KINDS:
             raise PreparationRefusal('invalid_kind')
@@ -826,6 +833,8 @@ class Preparations:
             recurrence = RECURRENCE_WINDOW
         if state not in (STATE_PROPOSED, STATE_SCHEDULED):
             raise ValueError('a preparation starts proposed or scheduled')
+        if origin not in (None, ORIGIN_DREAM) or (origin and state != STATE_PROPOSED):
+            raise ValueError('a suggestion starts proposed')
         now = self.clock()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -853,7 +862,7 @@ class Preparations:
                    'rule_start': due_at if recurrence and recurrence.startswith('RRULE:') else None,
                    'delivery_mode': delivery_mode, 'last_decision': None, 'last_decision_reason': None,
                    'last_notified_digest': None, 'last_notified_text': None, 'last_notified_at': None,
-                   'title_text': title, 'offer_text': offer}
+                   'title_text': title, 'offer_text': offer, 'origin': origin, 'offered_at': None}
             db.execute(f"INSERT INTO preparations({','.join(row)}) VALUES ({','.join('?' * len(row))})", tuple(row.values()))
             return row
 
@@ -996,10 +1005,72 @@ class Preparations:
                 "SELECT goal_text FROM preparations WHERE state=? AND accepted_by IS NULL AND updated_at>=? "
                 'ORDER BY updated_at DESC LIMIT ?', (STATE_CANCELLED, now - DECLINED_SECONDS, int(limit)))]
 
-    def proposed_from(self, work_id):
+    def proposed_from(self, work_id, suggestions=True):
+        """The proposals ``work_id`` created; ``suggestions`` False leaves out the look-back's (#583)."""
         with self.store.db() as db:
             return [dict(row) for row in db.execute("SELECT * FROM preparations WHERE created_from=? AND state='proposed' "
-                                                    'ORDER BY created_at', (work_id,))]
+                                                    + ('' if suggestions else 'AND origin IS NULL ')
+                                                    + 'ORDER BY created_at', (work_id,))]
+
+    def has_active_goal(self, goal):
+        """Whether a proposed, scheduled, running or paused preparation has exactly this goal (#583)."""
+        with self.store.db() as db:
+            return db.execute('SELECT 1 FROM preparations WHERE goal_text=? AND state IN (?,?,?,?) LIMIT 1',
+                              (goal, *ACTIVE_STATES)).fetchone() is not None
+
+    def active_titles(self, limit=20):
+        """The owner's names of the active preparations, for the look-back not to suggest them again (#583)."""
+        with self.store.db() as db:
+            rows = db.execute('SELECT title_text,goal_text FROM preparations WHERE state IN (?,?,?,?) '
+                              'ORDER BY created_at DESC LIMIT ?', (*ACTIVE_STATES, int(limit))).fetchall()
+        return [owner_title(dict(row)) for row in rows]
+
+    # -- look-back suggestions (#583) ----------------------------------------
+
+    def last_suggestion_offered(self):
+        """When the last look-back suggestion message was queued, or None."""
+        with self.store.db() as db:
+            row = db.execute('SELECT MAX(offered_at) FROM preparations WHERE origin=?', (ORIGIN_DREAM,)).fetchone()
+        return float(row[0]) if row and row[0] is not None else None
+
+    def unoffered_suggestions(self, now):
+        """The oldest look-back's suggestions not offered yet, ``(work_id, rows)``, or ``(None, [])``.
+
+        A first slot that has passed meanwhile moves to the recurrence's next slot,
+        so the message shows the schedule an acceptance would keep.
+        """
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            anchor = db.execute('SELECT created_from FROM preparations WHERE origin=? AND state=? AND offered_at IS NULL '
+                                'ORDER BY created_at LIMIT 1', (ORIGIN_DREAM, STATE_PROPOSED)).fetchone()
+            if anchor is None:
+                return None, []
+            for row in db.execute('SELECT * FROM preparations WHERE created_from=? AND origin=? AND state=? AND due_at<=?',
+                                  (anchor[0], ORIGIN_DREAM, STATE_PROPOSED, now)).fetchall():
+                following = next_due(row['due_at'], row['timezone'], row['recurrence'], now)
+                if following is not None:
+                    db.execute('UPDATE preparations SET due_at=?,updated_at=? WHERE id=?', (following, now, row['id']))
+        return anchor[0], self.proposed_from(anchor[0])
+
+    def mark_offered(self, rows, now):
+        """The rows one suggestion message offered: never offered again."""
+        with self.store.db() as db:
+            for row in rows:
+                db.execute('UPDATE preparations SET offered_at=? WHERE id=? AND offered_at IS NULL', (now, row['id']))
+
+    def expire_suggestions(self, now):
+        """Look-back suggestions still unanswered after ``SUGGESTION_EXPIRY_SECONDS`` lapse; returns how many.
+
+        ``expired``, not ``cancelled``: the owner never said no, so ``declined_goals`` does not count it.
+        Nothing to expire is one read.
+        """
+        cutoff = now - SUGGESTION_EXPIRY_SECONDS
+        with self.store.db() as db:
+            if db.execute('SELECT 1 FROM preparations WHERE state=? AND origin=? AND created_at<=? LIMIT 1',
+                          (STATE_PROPOSED, ORIGIN_DREAM, cutoff)).fetchone() is None:
+                return 0
+            return db.execute('UPDATE preparations SET state=?,updated_at=? WHERE state=? AND origin=? AND created_at<=?',
+                              (STATE_EXPIRED, now, STATE_PROPOSED, ORIGIN_DREAM, cutoff)).rowcount
 
     def rows(self, limit=100):
         """Every row with its last run's Work status and delivery, active first."""

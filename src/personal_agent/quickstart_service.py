@@ -1617,18 +1617,18 @@ class AgentService:
         judged=self.decision_judge.same_preparation_goal(goal,refused,work_id=job_id)
         return judged.outcome!=JUDGMENT_NO
 
-    def declined_before(self, job_id, goal, now):
+    def declined_before(self, job_id, goal, now, judge=None):
         """Did the owner recently decline a proposal of this same preparation (#582)?
 
         The same stored goal text is the exact identity; any other wording is the
         Judgment AI's ``declined_preparation_goal`` call, asked only when there are
         declined goals.  Unavailable lets the proposal through: it still waits for
-        the owner's yes.
+        the owner's yes.  ``judge`` is the caller's ``ConversationJudgments`` (#583: the look-back's own).
         """
         declined=self.preparations.declined_goals(now)
         if not declined:return False
         if goal in declined:return True
-        return self.decision_judge.declined_preparation_goal(goal,declined,work_id=job_id).outcome==JUDGMENT_YES
+        return (judge or self.decision_judge).declined_preparation_goal(goal,declined,work_id=job_id).outcome==JUDGMENT_YES
 
     def prepared_text(self, job):
         """The bounded "Prepared for you" section for this Work, or None (#659).
@@ -1670,6 +1670,54 @@ class AgentService:
             LOG.info('preparation conversation unavailable job=%s',job.get('id'))
             return ''
 
+    def preparation_fields(self, args, now, refused_watch=None):
+        """The validated fields of one ``schedule_preparation`` call (#659), or a ``PreparationRefusal``.
+
+        Shared by the worker's tool and the look-back's suggestions (#583), so both pass the same
+        normalisers.  ``refused_watch(goal)`` is the tool's check that a refused watch is not split.
+        """
+        has_window=args.get('every_minutes') not in (None,'') or args.get('until') not in (None,'')
+        kind=args.get('kind')
+        if kind not in prep.KINDS:raise prep.PreparationRefusal('invalid_kind')
+        # Pilot boundary 1: a stored secret never becomes goal text.
+        goal=prep.normalize_goal(self._redact_known_secrets(args.get('goal')),
+                                 prep.BRIEF_MAX_CHARS if kind==prep.KIND_PREPARE else prep.GOAL_MAX_CHARS,kind)
+        # #393: what the owner reads and accepts, apart from the run's brief (a reminder's goal already is it).
+        title,offer=(prep.normalize_offer(self._redact_known_secrets(args.get('title') or ''),
+                                          self._redact_known_secrets(args.get('offer') or ''))
+                     if kind==prep.KIND_PREPARE else (None,None))
+        if not has_window and refused_watch is not None and refused_watch(goal):
+            raise prep.PreparationRefusal('window_retry_required')
+        zone_name=self.context_observations.settings().get('timezone') or ''
+        due_at,timezone=prep.parse_due(args.get('due'),args.get('timezone') or '',zone_name,now)
+        # #580: rules and the legacy/window languages are mutually exclusive.
+        if args.get('rrule') is not None and (args.get('recurrence') is not None or has_window
+                                                 or args.get('max_runs') not in (None,'')):
+            raise prep.PreparationRefusal('invalid_rrule')
+        recurrence=(prep.normalize_rrule(args['rrule']) if args.get('rrule') is not None else
+                    prep.normalize_recurrence(args.get('recurrence')))
+        # #719: a watch - every N minutes from due until a deadline, bounded.
+        window=None
+        if has_window:
+            if recurrence:raise prep.PreparationRefusal('invalid_window')
+            window=prep.normalize_window(args.get('every_minutes'),args.get('until'),args.get('max_runs'),
+                                         due_at,timezone,now)
+        when_needed=args.get('delivery')==prep.DELIVERY_WHEN_NEEDED
+        if when_needed and kind!=prep.KIND_PREPARE:raise prep.PreparationRefusal('invalid_delivery')
+        return {'kind':kind,'goal':goal,'title':title,'offer':offer,'due_at':due_at,'timezone':timezone,
+                'recurrence':recurrence,'window':window,'delivery_mode':prep.DELIVERY_WHEN_NEEDED if when_needed else None}
+
+    def preparation_channel(self, job, kind, delivery):
+        """Where a preparation's results go (#306 review): the surface ``job`` came from, or kept in Still.
+
+        A reminder is sent back to the surface the request came from (Telegram for a request made
+        elsewhere, as before); ``CHANNEL_WEB`` keeps the result in Still.
+        """
+        surface=self.surface_of(job) if job else None
+        return ((surface.name if surface else prep.CHANNEL_TELEGRAM)
+                if kind==prep.KIND_REMINDER or delivery in ('send',prep.DELIVERY_WHEN_NEEDED)
+                else prep.CHANNEL_WEB)
+
     def preparation_scheduler(self, job, prompt):
         """The ``schedule_preparation`` handler bound to one Work (#659).
 
@@ -1681,44 +1729,14 @@ class AgentService:
         """
         def schedule(args):
             now=self.preparations.clock()
-            has_window=args.get('every_minutes') not in (None,'') or args.get('until') not in (None,'')
             try:
-                kind=args.get('kind')
-                if kind not in prep.KINDS:raise prep.PreparationRefusal('invalid_kind')
-                # Pilot boundary 1: a stored secret never becomes goal text.
-                goal=prep.normalize_goal(self._redact_known_secrets(args.get('goal')),
-                                         prep.BRIEF_MAX_CHARS if kind==prep.KIND_PREPARE else prep.GOAL_MAX_CHARS,kind)
-                # #393: what the owner reads and accepts, apart from the run's brief (a reminder's goal already is it).
-                title,offer=(prep.normalize_offer(self._redact_known_secrets(args.get('title') or ''),
-                                                  self._redact_known_secrets(args.get('offer') or ''))
-                             if kind==prep.KIND_PREPARE else (None,None))
-                if not has_window and self.repeats_refused_watch(job['id'],goal):
-                    raise prep.PreparationRefusal('window_retry_required')
-                zone_name=self.context_observations.settings().get('timezone') or ''
-                due_at,timezone=prep.parse_due(args.get('due'),args.get('timezone') or '',zone_name,now)
-                # #580: rules and the legacy/window languages are mutually exclusive.
-                if args.get('rrule') is not None and (args.get('recurrence') is not None or has_window
-                                                         or args.get('max_runs') not in (None,'')):
-                    raise prep.PreparationRefusal('invalid_rrule')
-                recurrence=(prep.normalize_rrule(args['rrule']) if args.get('rrule') is not None else
-                            prep.normalize_recurrence(args.get('recurrence')))
-                # #719: a watch - every N minutes from due until a deadline, bounded.
-                window=None
-                if has_window:
-                    if recurrence:raise prep.PreparationRefusal('invalid_window')
-                    window=prep.normalize_window(args.get('every_minutes'),args.get('until'),args.get('max_runs'),
-                                                 due_at,timezone,now)
-                when_needed=args.get('delivery')==prep.DELIVERY_WHEN_NEEDED
-                if when_needed and kind!=prep.KIND_PREPARE:raise prep.PreparationRefusal('invalid_delivery')
+                fields=self.preparation_fields(args,now,lambda goal:self.repeats_refused_watch(job['id'],goal))
             except prep.PreparationRefusal as exc:
                 raise ToolError(str(exc),exc.code) from None
-            # #306 review: a reminder is sent back to the surface the request came from (Telegram for
-            # a request made elsewhere, as before); ``CHANNEL_WEB`` keeps the result in Still.
-            surface=self.surface_of(job)
-            channel=((surface.name if surface else prep.CHANNEL_TELEGRAM)
-                     if kind==prep.KIND_REMINDER or args.get('delivery') in ('send',prep.DELIVERY_WHEN_NEEDED)
-                     else prep.CHANNEL_WEB)
-            delivery_mode=prep.DELIVERY_WHEN_NEEDED if when_needed else None
+            kind,goal,title,offer=fields['kind'],fields['goal'],fields['title'],fields['offer']
+            due_at,timezone,recurrence,window=fields['due_at'],fields['timezone'],fields['recurrence'],fields['window']
+            delivery_mode=fields['delivery_mode']
+            channel=self.preparation_channel(job,kind,args.get('delivery'))
             summary=prep.proposal_summary({'kind':kind,'goal_text':goal,'due_at':due_at,'timezone':timezone,
                                            'recurrence':prep.RECURRENCE_WINDOW if window else recurrence,
                                            'every_seconds':window and window[0],'window_end':window and window[1],
@@ -1786,6 +1804,8 @@ class AgentService:
         existing ``deliver_one``, so a slot is sent at most once.
         """
         now=self.preparations.clock() if now is None else now
+        # #583: an unanswered look-back suggestion lapses after a week (one read when there is none).
+        self.preparations.expire_suggestions(now)
         rows=self.preparations.due(now)
         if not rows:return False
         for row in rows:
@@ -1973,7 +1993,10 @@ class AgentService:
             job,row,self._owner_model_judgments(work_id),turns=turns,source_works=source_works,
             profile=lambda:self.owner_profile_snapshot(None,notes=False,ids=True),clock=self._owner_model_clock(),
             diary_date=owner_today(self.store,works[-1]['created']),ends_after=now,
-            cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline)
+            cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline,
+            # #583: the active preparations by name, so the look back does not suggest one again.
+            preparations='\n'.join('- '+title for title in self.preparations.active_titles(om.DREAM_PREPARATIONS_SHOWN)),
+            suggest=lambda items,judgments:self.suggest_preparations(work_id,items,judgments))
         detail['period']=period
         upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
         LOG.info('owner-model dream work=%s state=%s calls=%s turns=%s applied=%s notes=%s diary=%s',work_id,state,calls,
@@ -2139,7 +2162,9 @@ class AgentService:
         """
         rows=[]
         row=self.preparations.get(prep.preparation_of(job.get('request_key')))
-        origin=self.store.job(row['created_from']) if row and row.get('created_from') else None
+        # #583: a look-back suggestion was not made from its anchor's request; it is shown none.
+        origin=(self.store.job(row['created_from'])
+                if row and row.get('created_from') and row.get('origin')!=prep.ORIGIN_DREAM else None)
         # #367 review P1: a request the owner forgot is not shown to the preparation's Work again.
         if origin and origin.get('message') and not self.store.work_request_forgotten(origin['id']):
             rows.append({'role':'user','content':self.scrub_work_text(origin['id'],origin['message']),
@@ -2174,6 +2199,81 @@ class AgentService:
             scheduled=[row['id'] for row in db.execute("SELECT id FROM preparations WHERE created_from=? AND state='scheduled' "
                                                       "AND accepted_by=? ORDER BY created_at",(job['id'],prep.ACCEPTED_OWNER_REQUEST))]
         if scheduled:self.queue_notification(job,'preparation_scheduled',fingerprint=PREPARED_IDS_PREFIX+','.join(scheduled))
+
+    def suggest_preparations(self, anchor_id, items, judgments=None):
+        """Store the look-back's suggestions (#583) as ``proposed`` rows of its anchor Work; ``(outcomes, calls)``.
+
+        ``items`` passed ``om.validate_suggestions`` (two cited turns on different days).  Each is then
+        validated by ``schedule_preparation``'s own normalisers and skipped when a preparation with the
+        same goal is active or the owner declined it recently (``declined_before``, whose judgment is the
+        only model call here, counted in ``calls`` and asked only while the upkeep budget has one left).
+        A suggestion never runs: only the owner's yes schedules it.  The anchor's one proposal message
+        carries them, so an anchor that already had one gets none.  Outcomes hold ids and reasons, no text.
+        """
+        now=self.preparations.clock()
+        anchor=self.store.job(anchor_id)
+        if (not anchor or self.preparations.proposed_from(anchor_id)
+                or self.store.notification_of(anchor_id,'preparation_proposed')):
+            return [{'reason':'anchor-offered'} for _item in items],0
+        outcomes,calls=[],0
+        for item in items:
+            args={name:item.get(name) for name in ('kind','goal','due','recurrence','delivery','title','offer')}
+            try:
+                fields=self.preparation_fields(args,now)
+                if fields['recurrence'] is None:raise prep.PreparationRefusal('invalid_recurrence')
+                goal=fields['goal']
+                if self.preparations.has_active_goal(goal):
+                    outcomes.append({'reason':'active'})
+                    continue
+                declined=self.preparations.declined_goals(now)
+                if declined and goal not in declined:
+                    if self.owner_model.allowance(self.owner_model.clock())[0]<1:
+                        outcomes.append({'reason':om.STOPPED_CAP})
+                        continue
+                    calls+=1
+                if self.declined_before(anchor_id,goal,now,judge=judgments):
+                    outcomes.append({'reason':'declined_before'})
+                    continue
+                row=self.preparations.create(kind=fields['kind'],goal=goal,due_at=fields['due_at'],timezone=fields['timezone'],
+                                             recurrence=fields['recurrence'],
+                                             channel=self.preparation_channel(anchor,fields['kind'],args['delivery']),
+                                             created_from=anchor_id,state=prep.STATE_PROPOSED,
+                                             delivery_mode=fields['delivery_mode'],title=fields['title'],offer=fields['offer'],
+                                             origin=prep.ORIGIN_DREAM)
+            except prep.PreparationRefusal as exc:
+                outcomes.append({'reason':exc.code})
+                continue
+            if row.get('already_proposed'):
+                outcomes.append({'reason':'active'})
+                continue
+            outcomes.append({'preparation_id':row['id'],'kind':row['kind'],'recurrence':row['recurrence']})
+            LOG.info('preparation suggested id=%s work=%s kind=%s',row['id'],anchor_id,row['kind'])
+        return outcomes,calls
+
+    def queue_preparation_suggestion(self, job):
+        """With the owner's own Work, offer once the look-back's suggestions not offered yet (#583).
+
+        No push of its own: one ``preparation_proposed`` message on ``job``'s conversation, with the
+        usual accept/decline buttons, bound (digest) to exactly the suggestions of one look back and
+        recorded on their anchor Work, so ``offered_proposals`` and the answer paths act on those rows
+        only.  At most one such message per owner day, none while the owner paused upkeep; a message
+        queued marks its rows offered, so each is offered once.  Returns the notification or None.
+        """
+        from .current_context import owner_today
+        now=self.preparations.clock()
+        last=self.preparations.last_suggestion_offered()
+        if last is not None and owner_today(self.store,last)==owner_today(self.store,now):return None
+        if not self.owner_model.settings()['enabled']:return None
+        anchor,rows=self.preparations.unoffered_suggestions(now)
+        if not rows:return None
+        shown=prep.proposal_page(rows)[0]
+        self.queue_notification({**job,'id':anchor},'preparation_proposed',fingerprint=prep.digest(shown))
+        # A surface queues it only for its current paired conversation (and not every surface returns the row).
+        notification=self.store.notification_of(anchor,'preparation_proposed')
+        if notification is None:return None
+        self.preparations.mark_offered(rows,now)
+        LOG.info('preparation suggestion offered work=%s anchor=%s count=%s',job['id'],anchor,len(shown))
+        return notification
 
     def preparation_cancel_markup(self, notification_id):
         """#1455: the one button that cancels exactly the reservations a message confirmed."""
@@ -8453,7 +8553,8 @@ class AgentService:
         try:
             if self.step_approval_pending(job['id']):kinds.append(KIND_STEP)
             if self.settings_orchestrator.pending_for_work(job['id']):kinds.append(KIND_SETTINGS)
-            if self.preparations.proposed_from(job['id']):kinds.append(KIND_PREPARATION)
+            # #583: the look-back's suggestions are not this Work's own wait.
+            if self.preparations.proposed_from(job['id'],suggestions=False):kinds.append(KIND_PREPARATION)
         except Exception:
             LOG.info('owner wait unavailable job=%s',job.get('id'))
             return ()
@@ -13147,6 +13248,11 @@ class AgentService:
         if run.context_approval_needed[0]:self.queue_notification(job,'context_approval_needed')
         # #659: preparations this Work proposed wait for the owner's yes.
         self.queue_preparation_proposal(job)
+        # #583: the look-back's suggestions are offered once, after the owner's own request.
+        if self.owner_model_eligible(job,run.outcome,run.provider):
+            try:self.queue_preparation_suggestion(job)
+            except Exception as exc:  # noqa: BLE001 - an offer never fails the Work's finish
+                LOG.warning('preparation suggestion not offered work=%s kind=%s',job['id'],type(exc).__name__)
         # #814: settings changes this Work drafted wait for the owner's confirm.
         self.queue_settings_confirmation(job)
         self.offer_budget_continue(run)

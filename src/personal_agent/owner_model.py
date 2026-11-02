@@ -75,6 +75,7 @@ from datetime import datetime, timezone
 from .memory_service import _PROFILE_ROWS_CAP, PROFILE_SECTION_CHARS, MemoryService
 from .owner_forget import OwnerForget
 from .prompt_files import prompt
+from . import preparations as prep
 
 #: The source Work's tool-event name of every upkeep run (#794 shows it).
 EVENT_TOOL = 'owner_model'
@@ -118,6 +119,11 @@ DREAM_RUN_SECONDS = 600
 DREAM_GATHER_PURPOSE = 'owner-model-dream-gather'
 #: How many facts the first pass may keep: it reads up to a day of requests.
 DREAM_GATHER_LIMIT = 10
+#: #583: at most this many standing preparations one look back may suggest, and how many active
+#: preparations it is shown so it does not suggest them again.
+DREAM_SUGGESTIONS = 2
+DREAM_PREPARATIONS_SHOWN = 20
+DREAM_PREPARATIONS_CHARS = 2000
 #: #402: one dream may end at most this share of the current profile rows (at least one);
 #: more is refused whole, the OpenClaw ``maxPriorEntryLossFraction`` lesson.
 DREAM_END_FRACTION = 0.25
@@ -460,7 +466,8 @@ def shape(data):
 
 DREAM_QUESTION = prompt('owner_model_dream').format(categories=', '.join(CATEGORIES), notes_points=NOTES_POINTS,
                                                     point_chars=POINT_CHARS, notes_chars=NOTES_CHARS,
-                                                    diary_chars=DIARY_CHARS)
+                                                    diary_chars=DIARY_CHARS, suggestions=DREAM_SUGGESTIONS,
+                                                    title_chars=prep.TITLE_MAX_CHARS)
 DREAM_QUESTION += ('\n\nThe shared Voice instructions below apply to diary and change, which the owner may read. '
                    'They never relax the rules above.\n\n' + prompt('voice'))
 
@@ -481,12 +488,22 @@ _DREAM_ITEM['required'] = [*_DREAM_ITEM['required'], 'sources']
 _DREAM_END = _DREAM_ITEM['properties']['invalidates']['items']
 _DREAM_END['properties'].update(because={'type': 'string', 'enum': list(END_BECAUSE)}, turn={'type': 'string'})
 _DREAM_END['required'] = [*_DREAM_END['required'], 'because', 'turn']
+#: #583: one standing preparation the look back suggests; the owner accepts or declines it.
+_DREAM_SUGGESTION = {'type': 'object', 'additionalProperties': False,
+                     'properties': {'kind': {'type': 'string', 'enum': list(prep.KINDS)},
+                                    'goal': {'type': 'string'}, 'due': {'type': 'string'},
+                                    'recurrence': {'type': 'string', 'enum': list(prep.RECURRENCES)},
+                                    'delivery': {'type': 'string', 'enum': ['send', 'keep', prep.DELIVERY_WHEN_NEEDED]},
+                                    'title': {'type': 'string'}, 'offer': {'type': 'string'},
+                                    'sources': {'type': 'array', 'items': {'type': 'string'}}},
+                     'required': ['kind', 'goal', 'due', 'recurrence', 'delivery', 'title', 'offer', 'sources']}
 DREAM_SCHEMA = {'type': 'object', 'additionalProperties': False,
                 'properties': {'proposals': {'type': 'array', 'items': _DREAM_ITEM},
                                'notes': {'type': 'string'}, 'change': {'type': 'string'},
                                'notes_sources': {'type': 'array', 'items': {'type': 'string'}},
-                               'diary': {'type': 'string'}},
-                'required': ['proposals', 'notes', 'change', 'notes_sources', 'diary']}
+                               'diary': {'type': 'string'},
+                               'suggestions': {'type': 'array', 'items': _DREAM_SUGGESTION}},
+                'required': ['proposals', 'notes', 'change', 'notes_sources', 'diary', 'suggestions']}
 
 
 DREAM_GATHER_SCHEMA = {'type': 'object', 'additionalProperties': False,
@@ -499,9 +516,41 @@ def gather_shape(data):
 
 
 def dream_shape(data):
-    """Types only; what may be kept is ``validate_dream``'s and the run's."""
+    """Types only; what may be kept is ``validate_dream``'s and the run's (no ``suggestions`` is none)."""
     return (isinstance(data.get('proposals'), list) and isinstance(data.get('notes_sources'), list)
+            and isinstance(data.get('suggestions', []), list)
             and all(isinstance(data.get(name), str) for name in ('notes', 'change', 'diary')))
+
+
+def validate_suggestions(suggestions, refs, turn_days, limit=DREAM_SUGGESTIONS):
+    """``(kept, dropped)`` of a look back's preparation suggestions (#583, deterministic).
+
+    A suggestion rests on a repetition: at least two turns the dream read (``refs``), from different
+    owner dates (``turn_days``; an undated turn dates nothing) - the same two-occasion rule a pattern
+    fact follows.  At most ``limit`` are kept.  What the suggestion asks for is the AI's (C16); its
+    fields are validated where it is stored, by ``schedule_preparation``'s own normalisers.  A dropped
+    entry names its position and reason, never its text.
+    """
+    kept, dropped = [], []
+    for index, item in enumerate(suggestions if isinstance(suggestions, list) else []):
+        named = dream_refs(item.get('sources'), refs) if isinstance(item, dict) else None
+        days = {turn_days.get(ref) for ref in named or ()} - {None}
+        reason = None
+        if not isinstance(item, dict):
+            reason = 'shape'
+        elif not named:
+            reason = 'sources'
+        elif len(named) < 2:
+            reason = 'one-occasion'
+        elif len(days) < 2:
+            reason = 'one-day'
+        elif len(kept) >= limit:
+            reason = 'limit'
+        if reason:
+            dropped.append({'suggestion': index, 'reason': reason})
+        else:
+            kept.append({**item, 'sources': named, 'index': index})
+    return kept, dropped
 
 
 def dream_refs(sources, refs):
@@ -1347,7 +1396,8 @@ class Upkeep:
 
 
     # -- one dream (#402) ---------------------------------------------------
-    def run_dream(self, job, row, judgments, *, turns, profile, clock, diary_date, ends_after, cancelled=None, source_works=None):
+    def run_dream(self, job, row, judgments, *, turns, profile, clock, diary_date, ends_after, cancelled=None, source_works=None,
+                  preparations='', suggest=None):
         """Look back over ``turns`` once and keep the owner model in order; returns ``(state, calls, event_status, detail)``.
 
         ``job`` is the anchor Work (the newest request the dream covers): what is kept is attributed to
@@ -1358,7 +1408,10 @@ class Upkeep:
         (``ConversationJudgments.owner_model_dream``), then Still's deterministic checks:
         ``validate_dream`` for facts, ``validate_review`` and two separate cited turns for the working
         notes, the size bound, a secret shape and the pause for the daily record (``diary_date``).
-        Facts may end any profile row that existed at ``ends_after`` (the claim).
+        Facts may end any profile row that existed at ``ends_after`` (the claim).  #583: the same
+        judgment may suggest standing preparations; ``preparations`` names the active ones (so they are
+        not suggested again) and ``suggest(kept, judgments)`` -> ``(outcomes, calls)`` stores those that
+        pass ``validate_suggestions`` as proposals, never while paused.
         """
         from .agent_runtime import MEMORY_OWNER, SECRET_SHAPED_VALUE, memory_value_has_secret
         notes = WorkingNotes(self.store, self.clock)
@@ -1414,7 +1467,7 @@ class Upkeep:
                                                        'inputs': {'turns': len(lines)}}
         data, decision = judgments.owner_model_dream('\n'.join(lines), snapshot(), current_text,
                                                      previous['content'] if previous else '', clock,
-                                                     work_id=job['id'], cancelled=cancelled)
+                                                     work_id=job['id'], cancelled=cancelled, preparations=preparations)
         confidence = decision.confidence
         calls += 1 if call_sent(decision) else 0
         self.count(job['id'], calls, KIND_DREAM)
@@ -1473,6 +1526,9 @@ class Upkeep:
                 else:
                     self._save_notes(notes, current, revision, job['id'], judgments, dropped, detail)
             stopped = detail.get('stopped') or stopped
+        if stopped != STOPPED_PAUSED:
+            calls, stopped = self._suggest(job, data.get('suggestions'), refs, turn_days, judgments, suggest, calls,
+                                           detail, stopped, cancelled)
         # #438: one line per event; each line's spacing is collapsed, the lines are kept.
         diary = '\n'.join(' '.join(line.split()) for line in str(data.get('diary') or '').splitlines() if line.strip())
         if diary and stopped != STOPPED_PAUSED:
@@ -1494,6 +1550,37 @@ class Upkeep:
                                        'chars': len(diary), 'superseded': bool(memory.get('supersedes'))}
         detail['stopped'] = stopped
         return STATE_DONE, calls, EVENT_RECORDED, detail
+
+
+    def _suggest(self, job, suggestions, refs, turn_days, judgments, suggest, calls, detail, stopped, cancelled):
+        """#583: the look back's preparation suggestions; returns ``(calls, stopped)`` and records ``detail['suggestions']``.
+
+        Only what passes ``validate_suggestions`` reaches ``suggest``, and nothing does while the owner
+        paused upkeep or the run's deadline passed.  The Evidence holds refs, ids and reasons, no text.
+        """
+        suggestions = suggestions if isinstance(suggestions, list) else []
+        if not suggestions:
+            return calls, stopped
+        kept, dropped = validate_suggestions(suggestions, refs, turn_days)
+        record = {'proposed': len(suggestions), 'kept': [], 'dropped': dropped}
+        detail['suggestions'] = record
+        if not kept or suggest is None:
+            return calls, stopped
+        if self.allowance(self.clock())[1] == STOPPED_PAUSED:
+            record['dropped'].extend({'suggestion': item['index'], 'reason': STOPPED_PAUSED} for item in kept)
+            return calls, STOPPED_PAUSED
+        if cancelled and cancelled():
+            record['dropped'].extend({'suggestion': item['index'], 'reason': STOPPED_DEADLINE} for item in kept)
+            return calls, stopped
+        outcomes, used = suggest(kept, judgments)
+        if used:
+            calls += used
+            self.count(job['id'], calls, KIND_DREAM)
+            detail['sent'] = True
+        for item, outcome in zip(kept, outcomes):
+            entry = {'suggestion': item['index'], 'sources': item['sources'], **outcome}
+            (record['kept'] if outcome.get('preparation_id') else record['dropped']).append(entry)
+        return calls, stopped
 
 
 #: #425: the ``memories.origin`` of what a dream writes (its facts and the daily record).
