@@ -644,6 +644,12 @@ SAME_PREPARATION_GOAL_PROPOSITION = (
     'would replace that refused repeated check with separate one-time preparations. It is false when the new '
     'goal is a different preparation, even if it shares words with a refused goal. This judgment does not '
     'authorize any action.')
+#: #582: the owner already declined a proposal; is this new one the same offer again?
+DECLINED_PREPARATION_PROPOSITION = (
+    'The owner declined (or let lapse without accepting) the preparation proposals in declined_goals. The new '
+    'proposal (proposed_goal) offers the same thing again - the same subject and purpose, even if reworded, '
+    'retimed or with another repetition. It is false when the new goal is a different preparation, even if it '
+    'shares words with a declined one. This judgment does not authorize any action.')
 #: #999: a message that arrives while an earlier request is still being worked on.
 STEER_PROPOSITION = ('The assistant is still working on the owner\'s earlier request (given). The owner\'s latest '
                      'message is meant for that running task: a remark, preference, constraint, choice or correction '
@@ -1035,6 +1041,22 @@ class ConversationJudgments:
             'refused_goals': '; '.join(refused_goals),
         }, work_id=work_id)
         decision = self.engine.judge(context, SAME_PREPARATION_GOAL_PROPOSITION)
+        verdict = self.policy.binary(decision)
+        return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
+                        source=decision.confidence.provider or decision.outcome)
+
+    def declined_preparation_goal(self, proposed_goal, declined_goals, work_id=None):
+        """Does ``proposed_goal`` offer again a preparation the owner declined (#582)?
+
+        Asked only when the worker proposes a preparation the owner's message did not
+        ask for and the owner has declined some recently, so no turn gains a call
+        otherwise.  Both texts are worker-written goals, redacted.
+        """
+        context = self._context('declined-preparation-goal', {
+            'proposed_goal': proposed_goal,
+            'declined_goals': '; '.join(declined_goals),
+        }, work_id=work_id)
+        decision = self.engine.judge(context, DECLINED_PREPARATION_PROPOSITION)
         verdict = self.policy.binary(decision)
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
                         source=decision.confidence.provider or decision.outcome)

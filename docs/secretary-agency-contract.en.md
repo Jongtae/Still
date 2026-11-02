@@ -360,6 +360,13 @@ Attention is the anticipatory half of the secretary. In this program it is bound
 
 It builds on the merged current-context work and CONTEXT-STATE-01 #627, which is re-parented into this program. Background pattern mining and unsolicited interruptions outside accepted preparations remain out of scope.
 
+**Offered preparations (owner direction 2026-11-02, #582, #583).** The owner asked Still to offer a repeating preparation ahead of time and let them choose, instead of waiting for them to ask. Two offers are in scope:
+
+- **In the reply (#582).** When the owner's current request is plausibly one they would want again on a rhythm, the worker may answer it and propose one preparation for it. The proposal stays `proposed` and never runs until the owner says yes or taps accept. A proposal the owner declined (cancelled without ever being accepted) is not offered again for 30 days (`declined_before`). Identity is the exact goal, or else one Judgment AI call.
+- **From the daily look-back (#583).** When the dream sees the same kind of request on separate days, it may suggest a standing preparation. The suggestion is shown with the owner's next own Work, with no separate push, and follows the same accept and decline rules.
+
+Neither changes authority. No preparation runs without the owner's acceptance. Habit inference for anything other than offering a preparation stays out of scope.
+
 ## Family collaboration (phase 2)
 
 A request such as "put laundry detergent in my spouse's cart" is fulfilled by delegating to the spouse's agent, never by acting with the spouse's session. A new delegation adapter implementing the D-04 interface (Agent Card validation, bounded task prompt, status polling, artifact validation, cancellation) is built by adapting `a2a-sdk`; the earlier compatibility adapter was removed from `main` with the retired MP1 surface and is prior art only. It lets a family peer can be configured by the owner and so that the peer's agent runs the same agency loop under its own owner's Grants. Where the peer's owner has not allowed the requested effect, the peer reports that and the requesting assistant reports it truthfully. Phase 2 starts only after the phase 1 completion audit.
@@ -381,7 +388,7 @@ Completion does not select a successor. The hardening program and any further ca
 ## Non-goals
 
 - Payment, order submission or any effect the owner has not connected.
-- Background pattern mining, habit inference or unsolicited interruptions beyond accepted preparations.
+- Background pattern mining, habit inference or unsolicited interruptions beyond accepted preparations, except the offered preparations above (#582, #583).
 - Multiple principals on one installation; the family peer is a separate agent.
 - A new coordinator, planner framework, graph store or evaluation platform.
 - Rewriting merged Presence, Settings, Telegram or current-context work; they are regression inputs.
