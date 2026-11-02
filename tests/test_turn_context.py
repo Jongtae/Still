@@ -40,7 +40,7 @@ class TurnContextBuilder(unittest.TestCase):
         for _ in range(2):
             budget.spend_turn()
         now[0] += 61.5
-        line = 'Allowance left in this Work: 187 of 200 tool calls, 6 of 8 model turns, 538 seconds.'
+        line = 'Allowance left in this Work: 187 of 200 tool calls, 12 of 14 model turns, 538 seconds.'
         for route in ('cli', 'api'):
             with self.subTest(route=route):
                 context = turn_context([{'role': 'user', 'content': 'request'}], route,
@@ -76,7 +76,7 @@ class TurnContextBuilder(unittest.TestCase):
         budget.turns_used = budget.turns
         now[0] += 601
         context = turn_context([{'role': 'user', 'content': 'request'}], 'api', work_budget=budget)
-        self.assertIn('0 of 200 tool calls, 0 of 8 model turns, 0 seconds.', context_sections(context))
+        self.assertIn('0 of 200 tool calls, 0 of 14 model turns, 0 seconds.', context_sections(context))
 
     def test_every_route_shares_the_core_instructions(self):
         api = turn_context([{'role': 'user', 'content': 'hi'}], 'api')
