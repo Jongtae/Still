@@ -153,8 +153,7 @@ def migrate(db):
 
 REFUSALS = {
     'invalid_kind': 'kind는 reminder(정해진 때에 이 문장을 알려 주기) 또는 prepare(정해진 때에 이 목표를 미리 처리해 두기)입니다.',
-    'invalid_goal': (f'goal은 한 가지 목표로 적어 주세요(reminder는 {GOAL_MAX_CHARS}자, '
-                     f'prepare는 {BRIEF_MAX_CHARS}자 이내).'),
+    'invalid_goal': 'goal은 한 가지 목표로 적어 주세요.',
     'invalid_offer': (f'title은 {TITLE_MAX_CHARS}자 이내의 짧은 이름, offer는 {OFFER_MAX_LINES}줄·'
                       f'{OFFER_MAX_CHARS}자 이내로 적어 주세요.'),
     'invalid_due': 'due는 RFC3339 시각입니다(예: 2026-09-28T09:00:00+09:00). 오프셋이 없으면 timezone이 필요합니다.',
@@ -272,10 +271,14 @@ def normalize_recurrence(value):
     return value
 
 
-def normalize_goal(goal, limit=GOAL_MAX_CHARS):
+def normalize_goal(goal, limit=GOAL_MAX_CHARS, kind=KIND_REMINDER):
+    """The goal with whitespace collapsed, or ``invalid_goal`` saying the kind's limit (#574: one retry is enough)."""
     goal = ' '.join(str(goal or '').split())
-    if not goal or len(goal) > limit:
-        raise PreparationRefusal('invalid_goal')
+    if not goal:
+        raise PreparationRefusal('invalid_goal', 'goal이 비어 있습니다. 채워서 한 번 다시 호출하세요.')
+    if len(goal) > limit:
+        raise PreparationRefusal('invalid_goal', f'kind {kind}의 goal은 {limit}자 이내인데 지금 {len(goal)}자입니다. '
+                                                 f'{limit}자 이내로 줄여서 한 번 다시 호출하세요.')
     return goal
 
 
@@ -669,6 +672,10 @@ class Preparations:
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
+        #574: when another Work already proposed the same kind, goal, due and
+        recurrence (and window) and the owner has not answered it yet, that row
+        is returned with ``already_proposed`` instead of a duplicate.
+
         ``window`` is ``(every_seconds, window_end, max_runs)`` from
         ``normalize_window`` (#719); it replaces ``recurrence``.
         """
@@ -693,6 +700,15 @@ class Preparations:
                               'AND state IN (?,?,?,?)', (created_from, kind, goal, due_at, *ACTIVE_STATES)).fetchone()
             if same:
                 return dict(same)
+            # #574: another Work's identical proposal still waiting for the owner is that same proposal,
+            # not a second one.  Scheduled rows are left alone: the owner may want two.
+            proposed = db.execute('SELECT * FROM preparations WHERE state=? AND created_from IS NOT ? AND kind=? AND goal_text=? '
+                                  'AND due_at=? AND recurrence IS ? AND every_seconds IS ? AND window_end IS ? AND max_runs IS ? '
+                                  'ORDER BY created_at LIMIT 1',
+                                  (STATE_PROPOSED, created_from, kind, goal, due_at, recurrence,
+                                   every_seconds, window_end, max_runs)).fetchone()
+            if proposed:
+                return {**dict(proposed), 'already_proposed': True}
             active = db.execute('SELECT count(*) FROM preparations WHERE state IN (?,?,?,?)', ACTIVE_STATES).fetchone()[0]
             if active >= MAX_ACTIVE:
                 raise PreparationRefusal('too_many')

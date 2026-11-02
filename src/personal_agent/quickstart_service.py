@@ -1673,7 +1673,7 @@ class AgentService:
                 if kind not in prep.KINDS:raise prep.PreparationRefusal('invalid_kind')
                 # Pilot boundary 1: a stored secret never becomes goal text.
                 goal=prep.normalize_goal(self._redact_known_secrets(args.get('goal')),
-                                         prep.BRIEF_MAX_CHARS if kind==prep.KIND_PREPARE else prep.GOAL_MAX_CHARS)
+                                         prep.BRIEF_MAX_CHARS if kind==prep.KIND_PREPARE else prep.GOAL_MAX_CHARS,kind)
                 # #393: what the owner reads and accepts, apart from the run's brief (a reminder's goal already is it).
                 title,offer=(prep.normalize_offer(self._redact_known_secrets(args.get('title') or ''),
                                                   self._redact_known_secrets(args.get('offer') or ''))
@@ -1718,20 +1718,29 @@ class AgentService:
                                              state=prep.STATE_SCHEDULED if accepted else prep.STATE_PROPOSED,
                                              accepted_by=prep.ACCEPTED_OWNER_REQUEST if accepted else None,
                                              window=window,delivery_mode=delivery_mode,title=title,offer=offer)
+                # #574: another Work's identical proposal is this one; the owner's own request accepts it.
+                already=bool(row.get('already_proposed'))
+                if already and accepted:row=self.preparations.accept(row['id'],prep.ACCEPTED_OWNER_REQUEST)
             except prep.PreparationRefusal as exc:
                 raise ToolError(str(exc),exc.code) from None
-            LOG.info('preparation %s id=%s work=%s kind=%s',row['state'],row['id'],job['id'],kind)
+            LOG.info('preparation %s id=%s work=%s kind=%s already_proposed=%s',row['state'],row['id'],job['id'],kind,already)
             scheduled=row['state']==prep.STATE_SCHEDULED
             when=prep.local_text(row['due_at'],row['timezone'])
             label='알림' if kind==prep.KIND_REMINDER else '준비'
+            if already:
+                # The earlier proposal's own message already went; no new message follows for it.
+                next_step=(f'이미 제안되어 있던 {when} {label}을 소유자의 요청대로 예약했습니다. 대화로 취소를 요청할 수 있습니다.' if scheduled else
+                           f'{when} {label}은 이미 제안되어 있어 새로 만들지 않았습니다. 소유자가 그 제안을 수락해야 예약됩니다(Telegram의 수락 버튼이나 대화로 수락).')
+            else:
+                # #1455: managed in the conversation: a cancel button follows, and the owner may just say so.
+                next_step=(f'{when}에 {label}을 예약했습니다. 취소 버튼이 담긴 메시지가 따로 가고, 대화로 취소를 요청해도 됩니다.' if scheduled else
+                           f'{when} {label}을 제안했습니다. 소유자가 수락해야 예약됩니다(Telegram의 수락 버튼이나 대화로 수락).')
             result={'preparation_id':row['id'],'kind':kind,'state':row['state'],'scheduled':scheduled,
                     'requires_owner_acceptance':row['state']==prep.STATE_PROPOSED,
+                    'already_proposed':already,
                     'due':prep.iso(row['due_at'],row['timezone']),'due_local':when,'now_local':prep.local_text(now,row['timezone']),
                     'recurrence':row['recurrence'] or 'none','delivery':self.preparation_delivery(row),
-                    'accepted_by':row['accepted_by'],
-                    # #1455: managed in the conversation: a cancel button follows, and the owner may just say so.
-                    'next_step':(f'{when}에 {label}을 예약했습니다. 취소 버튼이 담긴 메시지가 따로 가고, 대화로 취소를 요청해도 됩니다.' if scheduled else
-                                 f'{when} {label}을 제안했습니다. 소유자가 수락해야 예약됩니다(Telegram의 수락 버튼이나 대화로 수락).')}
+                    'accepted_by':row['accepted_by'],'next_step':next_step}
             if window:
                 result.update(every_minutes=row['every_seconds']//60,until=prep.iso(row['window_end'],row['timezone']),
                               max_runs=row['max_runs'],

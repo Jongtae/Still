@@ -58,6 +58,9 @@ MIGRATED_MODULES = {
         '에 ',  # Model-only tool result or next_step guidance.
         '을 예약했습니다. 취소 버튼이 담긴 메시지가 따로 가고, 대화로 취소를 요청해도 됩니다.',  # Model-only tool result or next_step guidance.
         '을 제안했습니다. 소유자가 수락해야 예약됩니다(Telegram의 수락 버튼이나 대화로 수락).',  # Model-only tool result or next_step guidance.
+        '이미 제안되어 있던 ',  # Model-only tool result or next_step guidance (#574).
+        '을 소유자의 요청대로 예약했습니다. 대화로 취소를 요청할 수 있습니다.',  # Model-only tool result or next_step guidance (#574).
+        '은 이미 제안되어 있어 새로 만들지 않았습니다. 소유자가 그 제안을 수락해야 예약됩니다(Telegram의 수락 버튼이나 대화로 수락).',  # Model-only tool result or next_step guidance (#574).
         '이번 요청에서는 이미 충분히 알렸어요. 남은 내용은 답에 담아 주세요.',  # Model-only tool result or next_step guidance.
         '지금은 대화로 메시지를 보낼 수 없어요. 답에 담아 주세요.',  # Model-only tool result or next_step guidance.
         '메시지를 보내지 못했어요. 답에 담아 주세요.',  # Model-only tool result or next_step guidance.
