@@ -80,7 +80,7 @@ from .agent_runtime import BROWSER_ACTIONS, ToolError, lookup_norm, lookup_text_
 from .bounded_execution import SECRET_PATTERN
 from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, KeychainKey, latest_token_expiry,
                           store_account)
-from .browser_worker import PAYMENT_TOKENS, SECRET_TOKENS, destination_refusal
+from .browser_worker import LAYOUTS, PAYMENT_TOKENS, SECRET_TOKENS, destination_refusal
 
 #: The model's declared effect class of one action.
 EFFECTS = ('read', 'navigate', 'mutate', 'payment')
@@ -1224,6 +1224,9 @@ class BrowserSession:
         parts = urlsplit(url)
         if parts.scheme not in ('http', 'https') or not parts.netloc:
             raise ValueError('http 또는 https 주소만 열 수 있습니다.')
+        asked = args.get('layout')
+        if asked not in (None, '') + LAYOUTS:
+            raise ValueError('layout은 mobile 또는 desktop입니다.')
         # #680 review P1-2: never this computer or its private network (the
         # Still UI included).  Name and literal here; the worker checks every
         # navigation again after DNS resolution (redirects, forms, new windows).
@@ -1245,13 +1248,33 @@ class BrowserSession:
         driver = self._driver()
         from .agent_runtime import handed_off
         handed_off()   # the address goes to the browser from here
+        layout = self._layout(parts.hostname, asked or None)
+        sent = {'layout': layout} if getattr(driver, 'takes_layout', False) else {}
         try:
-            self._call(lambda timeout: driver.goto(url, timeout))
+            self._call(lambda timeout: driver.goto(url, timeout, **sent))
         except ToolError as exc:
             self._navigation_error = exc.code if exc.code in ('browser_timeout', 'unsupported_navigation') else None
             raise
         self._settle()
-        return self._page_state(requested_url=url)
+        page = self._page_state(requested_url=url)
+        if sent and layout == 'desktop':
+            page['layout'] = layout
+        return page
+
+    def _layout(self, host, asked):
+        """#572: the layout to load ``host`` in: the one asked for (kept for its site), else the site's kept one."""
+        keep = getattr(self._factory, 'set_layout', None)
+        if asked and callable(keep):
+            try:
+                keep(host, asked)
+            except Exception:
+                LOG.warning('browser layout not kept for this site')
+            return asked
+        kept = getattr(self._factory, 'layout_for', None)
+        try:
+            return asked or (kept(host) if callable(kept) else 'mobile')
+        except Exception:
+            return 'mobile'
 
     def read(self, args=None):
         rounds = load_more_rounds((args or {}).get('load_more'))
@@ -1725,6 +1748,11 @@ WORKER_START_SECONDS = 30
 WORKER_GRACE_SECONDS = 5
 WORKER_QUIT_SECONDS = 5
 LOGIN_OPEN_SECONDS = 45
+#: #572: the page layout a site loads in: ``mobile`` (the default since #1183) or ``desktop``, which the AI asks
+#: for when a site sends its mobile user agent away from the page asked for.  Kept per registrable domain in
+#: the profile directory, so a site's user agent changes once, not back and forth (a sign-in may drop on a change).
+LAYOUTS_NAME = 'layouts.json'
+LAYOUTS_KEPT = 200
 #: #939: the phone inputs a login window accepts, as the worker's ``remote_*`` ops.
 REMOTE_INPUT_KINDS = ('tap', 'text', 'key', 'nav', 'dialog')
 #: #293: the focused-element kinds a frame may report (the worker's ``REMOTE_FOCUS_KINDS``).
@@ -2110,8 +2138,11 @@ class WebKitWorkerDriver:
             return self._send(op, timeout, stop=stop, **arguments)
 
     # -- PageDriver ------------------------------------------------------------
-    def goto(self, url, timeout):
-        self._request('navigate', timeout, url=url)
+    #: #572: ``goto``/``show`` take the site's ``layout``; a driver without this attribute is sent none.
+    takes_layout = True
+
+    def goto(self, url, timeout, layout=None):
+        self._request('navigate', timeout, url=url, **({'layout': layout} if layout else {}))
 
     def settle(self, seconds, timeout):
         """Wait, bounded by ``seconds``, until a client-rendered page's content stops changing (#709)."""
@@ -2202,13 +2233,13 @@ class WebKitWorkerDriver:
         return {'navigated': bool(message.get('navigated')), **step_posted(message)}
 
     # -- the owner's login window ---------------------------------------------------
-    def show(self, url, timeout):
+    def show(self, url, timeout, layout=None):
         """Show the window at ``url``; returns the URL its first navigation landed on (after redirects, #749)."""
         # Visible before the request: a ``hidden`` event that arrives while the
         # request is pending (the owner closed the window at once) must win.
         self._visible = True
         try:
-            message = self._request('show', timeout, url=url)
+            message = self._request('show', timeout, url=url, **({'layout': layout} if layout else {}))
         except Exception:
             self._visible = False
             raise
@@ -2321,6 +2352,7 @@ class BrowserProfile:
         self.clock = clock
         self._lock = threading.Lock()
         self._jar_lock = threading.RLock()
+        self._layout_lock = threading.Lock()
         self._holder = None
         self._live = None
         self._suppressed = set()
@@ -2360,6 +2392,41 @@ class BrowserProfile:
             return frozenset(str(key) for key in keys)
         except Exception:
             return frozenset()
+
+    def _layouts(self):
+        try:
+            data = json.loads((self.profile_dir / LAYOUTS_NAME).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return {}
+        return {str(site): 'desktop' for site, layout in data.items() if layout == 'desktop'} if isinstance(data, dict) else {}
+
+    def layout_for(self, host):
+        """#572: the layout ``host``'s site loads in: ``desktop`` when the AI asked for it there, else ``mobile``."""
+        site = registrable_domain(host) if host else ''
+        return self._layouts().get(site, 'mobile') if site else 'mobile'
+
+    def set_layout(self, host, layout):
+        """#572: keep ``layout`` for ``host``'s site; ``mobile`` forgets the site's desktop choice."""
+        if layout not in LAYOUTS:
+            raise ValueError(layout)
+        site = registrable_domain(host) if host else ''
+        if not site:
+            return
+        with self._layout_lock:
+            layouts = self._layouts()
+            if layouts.get(site, 'mobile') == layout:
+                return
+            layouts.pop(site, None)
+            if layout == 'desktop':
+                layouts[site] = layout
+            layouts = dict(list(layouts.items())[-LAYOUTS_KEPT:])
+            self.profile_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            path = self.profile_dir / LAYOUTS_NAME
+            temporary = path.with_suffix('.tmp')
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+                json.dump(layouts, handle)   # insertion order: LAYOUTS_KEPT keeps the latest
+            os.replace(temporary, path)
 
     def allow_origins_for_tests(self, *origins):
         """Test-only: exact ``host:port`` fixture origins the worker may load.  Never set by config."""
@@ -2593,6 +2660,7 @@ class BrowserProfile:
             self._live = driver
             return _ReleasingDriver(driver, self._save, self._release)
         launch.intranet = self.intranet_keys
+        launch.layout_for, launch.set_layout = self.layout_for, self.set_layout   # #572
         return launch
 
     # -- the owner's sessions (Settings) -------------------------------------------
@@ -2783,10 +2851,12 @@ class BrowserProfile:
                 self._live = driver
                 record['driver'] = driver   # #939: what the phone drives, while the window is open
                 show = getattr(driver, 'show', None)
+                # #572: the login window loads the site in the layout its Works use.
+                layout = {'layout': self.layout_for(urlsplit(str(url or '')).hostname)} if getattr(driver, 'takes_layout', False) else {}
                 if show is not None:
-                    landed = show(url, LOGIN_OPEN_SECONDS)
+                    landed = show(url, LOGIN_OPEN_SECONDS, **layout)
                 else:
-                    landed = driver.goto(url, ACTION_TIMEOUT_SECONDS)
+                    landed = driver.goto(url, ACTION_TIMEOUT_SECONDS, **layout)
                 record['landed_host'] = landed_host(landed)
                 # #762: what the landing itself set (a sign-in domain's CSRF or anonymous cookies) is
                 # in the jar before the owner can act, so a later change there is the owner's doing.

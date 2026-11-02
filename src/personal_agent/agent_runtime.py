@@ -301,6 +301,11 @@ BROWSER_SIGN_IN_ROUTE_RULE=('A sign-in on the site is one route to the owner\'s 
                             'serve the request with less owner effort and more reliably) and request a sign-in only when '
                             'signing in on the site is the route you chose; your reply then says which routes you found and '
                             'why this one. '+API_KEY_ROUTE)
+#: #572: pages load as the site's mobile version; a site that sends a phone away from the page asked for gets its desktop version.
+BROWSER_LAYOUT_NOTE=(' Pages load as the site\'s mobile version. When the page you reach is the site\'s mobile home page '
+                     'instead of the address you asked for (landed on another host or the path is gone), open that address '
+                     'again with layout=desktop: Still then loads the site, its sign-in window included, as on a Mac, '
+                     'and keeps that for the site until you pass layout=mobile. Omit layout otherwise.')
 BROWSER_SIGN_IN_NOTE=(' Whenever a page you open or reach shows a sign-in form, Still asks the owner to sign in (on this Mac, '
                       'and from their phone where that is set up) and continues the request once they have. When the owner\'s own account is needed '
                       'and a page shows you are signed out or asks you to sign in, first open the site\'s sign-in page when it '
@@ -431,7 +436,7 @@ DEFINITIONS=[
  schema('search_memory','Search the owner\'s current saved Memory for a fact relevant to this request. Use concise terms from the request and likely synonyms (for example, sushi and 초밥); results include saved_at and a source reference with source_status, as in list_memory, so you can say why you know something. Search only when prior saved information can help. It returns a bounded set and never reads another owner\'s data.',{'query':STRING},['query']),
  schema('forget_record',FORGET_RECORD_DESCRIPTION,{'action':{'type':'string','enum':['forget','delete','undo','list','find']},'ref':STRING,'receipt':STRING,'query':STRING},['action']),
  schema('list_agents','List available specialist agents and their roles.'),
- schema('browser_open','Open a URL in the owner\'s own logged-in browser profile and return the page state: bounded visible text and a numbered list of interactive elements. Use for sites where the owner is signed in (shopping carts, account pages); public_page_read is enough for anonymous pages. A login_required state means the owner must log in first; never enter credentials. An element marked offscreen sits in a closed menu or panel and cannot be pressed yet: press the control that opens it first, or open its href with browser_open.'+BROWSER_SIGN_IN_NOTE+BROWSER_SESSION_NOTE+BROWSER_EFFECT_NOTE,{'url':STRING,'effect':EFFECT},['url','effect']),
+ schema('browser_open','Open a URL in the owner\'s own logged-in browser profile and return the page state: bounded visible text and a numbered list of interactive elements. Use for sites where the owner is signed in (shopping carts, account pages); public_page_read is enough for anonymous pages. A login_required state means the owner must log in first; never enter credentials. An element marked offscreen sits in a closed menu or panel and cannot be pressed yet: press the control that opens it first, or open its href with browser_open.'+BROWSER_LAYOUT_NOTE+BROWSER_SIGN_IN_NOTE+BROWSER_SESSION_NOTE+BROWSER_EFFECT_NOTE,{'url':STRING,'effect':EFFECT,'layout':{'type':'string','enum':['mobile','desktop']}},['url','effect']),
  schema('browser_read','Return the current page state of the owner\'s browser session again (visible text and numbered interactive elements), for example after the page changed. load_more (optional, 1-5): first scroll the page to its end up to that many times, for a list that adds rows only when scrolled; it stops early when nothing new appears and is bounded in time. The result then has loaded: rounds, why it stopped, new_content and the text that appeared (use browser_find to reach controls in the added rows). Scrolling never presses a control.',{'load_more':STRING}),
  schema('browser_find','Find visible text on the current browser page. Returns the matching lines and interactive elements, each element with its number for browser_click and its nearby text (near). It searches the first 300 interactive elements of the page, including those beyond the listed ones (more_elements counts them), by name or nearby text; when the page state says elements_capped, later controls are not searched, so scroll or narrow the page (for example a search or filter) instead of concluding a control is absent. Use it to reach the right control and to confirm the right item or price before acting.',{'text':STRING},['text']),
  schema('browser_click','Click one interactive element of the current browser page. target is the element number from the page state or its exact visible name. Returns the resulting page state.'+BROWSER_EFFECT_NOTE,{'target':STRING,'effect':EFFECT},['target','effect']),
@@ -4509,6 +4514,7 @@ def _evidence_detail(name,result):
   summary={'state':result.get('state'),'url':result.get('url'),'title':result.get('title'),
            'element_count':len(result.get('elements',[])),'characters':len(result.get('text','')),
            'redacted_values':int(result.get('redacted_values') or 0),'found':result.get('found')}
+  if result.get('layout')=='desktop':summary['layout']='desktop'   # #572
   loaded=result.get('loaded')
   if isinstance(loaded,dict):
    # #11: the load-more operation and its outcome, never the loaded text.
