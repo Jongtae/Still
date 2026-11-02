@@ -15,6 +15,7 @@ import time
 LOG = sys.argv[1]
 cookies = []
 page = {'url': 'about:blank'}
+layout = 'mobile'
 held = None
 
 
@@ -35,8 +36,18 @@ sys.stderr.write('library noise that must never reach a log\n')
 emit({'event': 'ready', 'pid': os.getpid()})
 for line in sys.stdin:
     command = json.loads(line)
-    log(command)
     ident, op = command.get('id'), command.get('op')
+    if op == 'navigate':
+        requested_layout = command.get('layout')
+        if requested_layout is None:
+            requested_layout = layout
+        if requested_layout not in ('mobile', 'desktop'):
+            log(command)
+            emit({'id': ident, 'ok': False, 'error': 'bad_layout'})
+            continue
+        layout = requested_layout
+        command['layout'] = layout
+    log(command)
     if op == 'navigate':
         url = command['url']
         if '/crash' in url:
@@ -55,7 +66,7 @@ for line in sys.stdin:
             emit({'id': ident, 'ok': False, 'error': 'timeout'})
             continue
         page['url'] = url
-        emit({'id': ident, 'ok': True, 'url': url})
+        emit({'id': ident, 'ok': True, 'url': url, 'layout': layout})
     elif op == 'snapshot':
         emit({'id': ident, 'ok': True, 'page': {'url': page['url'], 'title': 't', 'forms': [],
                                                  'text': 'landed page' if page['url'].endswith(('/landed', '/opened')) else 'x',

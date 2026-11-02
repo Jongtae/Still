@@ -505,6 +505,26 @@ class DriverProtocolTests(unittest.TestCase):
     def commands(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
 
+    def test_fake_navigate_remembers_reports_and_records_layout(self):
+        driver = self.driver()
+        for fields, expected in (({}, 'mobile'), ({'layout': 'desktop'}, 'desktop'),
+                                 ({}, 'desktop'), ({'layout': None}, 'desktop'),
+                                 ({'layout': 'mobile'}, 'mobile')):
+            answer = driver._request('navigate', 5, url='https://shop.test/deep', **fields)
+            self.assertEqual(answer['layout'], expected)
+            self.assertEqual(self.commands()[-1]['layout'], expected)
+        for layout in ('tablet', '', False, [], {}):
+            with self.subTest(layout=layout):
+                with self.assertRaises(bs.WorkerError) as raised:
+                    driver._request('navigate', 5, url='https://shop.test/other', layout=layout)
+                self.assertEqual(str(raised.exception), 'bad_layout')
+                self.assertEqual(driver.snapshot()['url'], 'https://shop.test/deep')
+        self.assertEqual(driver._request('navigate', 5, url='https://shop.test/deep')['layout'], 'mobile')
+        # #572: the session's driver sends the site's layout with goto (and show, which navigates the same way).
+        self.assertTrue(driver.takes_layout)
+        driver.goto('https://shop.test/deep', 5, layout='desktop')
+        self.assertEqual(self.commands()[-1]['layout'], 'desktop')
+
     def test_the_owners_stop_ends_a_running_load_more(self):
         """#244: a Stop while the worker scrolls asks it to end that request; it answers at once, stopped."""
         driver = self.driver()

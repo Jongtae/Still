@@ -924,9 +924,10 @@ FRAME_JPEG_QUALITY = 0.6
 REMOTE_KEYS = {'Enter': ('\r', 36), 'Backspace': ('\x7f', 51), 'Tab': ('\t', 48)}
 REMOTE_NAV_ACTIONS = ('back', 'reload')
 
-#: #1183: every page is loaded as its mobile version: phone-sized, with a mobile Safari
-#: user agent (``mobile_user_agent``).  Mobile pages are usually simpler (fewer hover menus,
-#: overlays and desktop-only widgets), so the owner's AI acts on them more reliably.
+#: #1183: pages load as their mobile version by default: phone-sized, with a mobile Safari user agent
+#: (``mobile_user_agent``).  Mobile pages are usually simpler (fewer hover menus, overlays and desktop-only
+#: widgets), so the owner's AI acts on them more reliably.  #572: a site that sends a phone away from the page
+#: asked for loads as its desktop version (``desktop_user_agent``, ``DESKTOP_SIZE``) once the AI asks.
 WIDTH, HEIGHT = 390, 844
 SETTLE_QUIET_SECONDS = 0.4
 #: #736: after a click, how long a navigation it may start (a script handler, a
@@ -982,6 +983,8 @@ def safari_application_name():
 
 #: #955: the phone-sized window (points), the default since #1183.
 MOBILE_SIZE = (float(WIDTH), float(HEIGHT))
+DESKTOP_SIZE = (1280.0, 900.0)
+LAYOUTS = ('mobile', 'desktop')
 
 
 #: #13: the OS token Safari on iOS 26 and later sends.  Apple's Safari 26.0 and 26.2
@@ -1015,6 +1018,17 @@ def mobile_user_agent():
     version = safari_application_name().split()[0].split('/', 1)[-1]
     return (f'Mozilla/5.0 (iPhone; CPU iPhone OS {ios_os_token(version)} like Mac OS X) AppleWebKit/605.1.15 '
             f'(KHTML, like Gecko) Version/{version} Mobile/15E148 Safari/604.1 {EMBEDDED_UA_TOKEN}')
+
+
+def desktop_user_agent():
+    """This Mac's desktop Safari user agent with the embedded marker (#572)."""
+    return ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
+            '(KHTML, like Gecko) ' + safari_application_name())
+
+
+def user_agent_for(layout):
+    """The Safari user agent for a supported view layout (#572)."""
+    return {'mobile': mobile_user_agent, 'desktop': desktop_user_agent}[layout]()
 
 
 def _host(url):
@@ -1257,7 +1271,8 @@ class Worker:
         self._install_guard_scripts()
         self.controller.addScriptMessageHandler_contentWorld_name_(self.delegate, self.world, GUARD_HANDLER)
         self.view = WebKit.WKWebView.alloc().initWithFrame_configuration_(Foundation.NSMakeRect(0, 0, WIDTH, HEIGHT), config)
-        # #1183: one user agent for the whole session (a site may drop a sign-in when it changes).
+        # #1183: default to mobile; switch to desktop only at the AI's request (#572).
+        self.layout = 'mobile'
         self.view.setCustomUserAgent_(mobile_user_agent())
         self.view.setNavigationDelegate_(self.delegate)
         self.view.setUIDelegate_(self.delegate)
@@ -1795,9 +1810,20 @@ class Worker:
             self.fail(ident, 'worker_error')
 
     def op_navigate(self, ident, command, timeout):
+        layout = command.get('layout')
+        if layout is None:
+            layout = self.layout
+        if layout not in LAYOUTS:
+            return self.fail(ident, 'bad_layout')
         url = str(command.get('url') or '')
         if urlsplit(url).scheme not in ('http', 'https'):
             return self.fail(ident, 'bad_url')
+        if layout != self.layout:
+            self.view.setCustomUserAgent_(user_agent_for(layout))
+            if getattr(self, 'mobile_restore', None) is None:
+                size = DESKTOP_SIZE if layout == 'desktop' else MOBILE_SIZE
+                self.window.setContentSize_(self.Foundation.NSMakeSize(*size))
+            self.layout = layout
         request = self.Foundation.NSURLRequest.requestWithURL_(self.Foundation.NSURL.URLWithString_(url))
         self.deadline(ident, timeout, on_timeout=self.view.stopLoading)
         self.navigation = (ident, None)
@@ -1851,7 +1877,7 @@ class Worker:
             return
         if error is not None:
             return self.fail(ident, navigation_error_code(error))
-        self.reply(ident, url=str(self.view.URL().absoluteString()) if self.view.URL() else '')
+        self.reply(ident, url=str(self.view.URL().absoluteString()) if self.view.URL() else '', layout=self.layout)
 
     def op_snapshot(self, ident, command, timeout):
         self.deadline(ident, timeout)
@@ -2218,7 +2244,7 @@ class Worker:
         view.setNavigationDelegate_(delegate)
         view.setUIDelegate_(delegate)
         try:
-            view.setCustomUserAgent_(mobile_user_agent())   # #955, #1183: the same phone browser as the page
+            view.setCustomUserAgent_(user_agent_for(getattr(self, 'layout', 'mobile')))   # #572: match the page
         except Exception:
             pass
         style = (AppKit.NSWindowStyleMaskTitled | AppKit.NSWindowStyleMaskClosable | AppKit.NSWindowStyleMaskResizable)
@@ -2388,8 +2414,7 @@ class Worker:
         self.reply(ident)
 
     def enter_mobile(self):
-        """#955: phone-sized for the phone session.  The page is already the mobile one (#1183):
-        the user agent never changes, so no reload; only a window the owner resized is reset."""
+        """#955: phone-sized for the phone session; keep the selected user agent (#572)."""
         if getattr(self, 'mobile_restore', None) is not None:
             return
         # #956 review: the whole frame (origin and title bar included) is restored as it was.
@@ -2400,7 +2425,7 @@ class Worker:
             self.window.center()
 
     def leave_mobile(self):
-        """The window as it was before the phone session (the user agent stays mobile, #1183)."""
+        """Restore the pre-phone frame; keep the selected user agent (#572)."""
         restore = getattr(self, 'mobile_restore', None)
         if restore is None:
             return

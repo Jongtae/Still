@@ -439,6 +439,81 @@ class PhoneWindowFitsThePage(unittest.TestCase):
         content = window.contentRectForFrameRect_(window.rect).size
         return (content.width, content.height)
 
+    def navigate_worker(self):
+        from unittest import mock
+        worker, window = self.worker([])
+        worker.layout = 'mobile'
+        worker.warming = None
+        worker.navigation = None
+        worker.Foundation.NSURL = type('URL', (), {'URLWithString_': staticmethod(lambda url: url)})
+        worker.Foundation.NSURLRequest = type('Request', (), {'requestWithURL_': staticmethod(lambda url: url)})
+        worker.view.setCustomUserAgent_ = mock.Mock()
+        worker.view.stopLoading = mock.Mock()
+        worker.view.loadRequest_ = mock.Mock(return_value=object())
+        worker.view.URL = lambda: type('URL', (), {'absoluteString': lambda self: 'https://shop.test/deep'})()
+        worker.deadline = lambda ident, timeout, **kwargs: worker.pending.update({ident: True})
+        return worker, window
+
+    def test_navigate_switches_layout_before_loading_and_reports_it_on_finish(self):
+        worker, window = self.navigate_worker()
+
+        def load(request):
+            self.assertEqual(worker.layout, 'desktop')
+            self.assertEqual(self.content(window), browser_worker.DESKTOP_SIZE)
+            worker.view.setCustomUserAgent_.assert_called_once_with(browser_worker.desktop_user_agent())
+            return object()
+        worker.view.loadRequest_.side_effect = load
+        worker.op_navigate(1, {'url': 'https://shop.test/deep', 'layout': 'desktop'}, 5)
+        worker.navigation_finished(worker.navigation[1])
+        self.assertEqual(worker.replies, [{'id': 1, 'ok': True, 'url': 'https://shop.test/deep', 'layout': 'desktop'}])
+        worker.view.loadRequest_.side_effect = None
+        worker.op_navigate(2, {'url': 'https://shop.test/deep', 'layout': 'mobile'}, 5)
+        self.assertEqual(self.content(window), browser_worker.MOBILE_SIZE)
+        self.assertEqual(worker.layout, 'mobile')
+        self.assertEqual(worker.view.setCustomUserAgent_.call_args.args, (browser_worker.mobile_user_agent(),))
+
+    def test_navigate_keeps_the_layout_when_unchanged_absent_or_none(self):
+        for current in browser_worker.LAYOUTS:
+            for fields in ({}, {'layout': None}, {'layout': current}):
+                with self.subTest(current=current, fields=fields):
+                    worker, window = self.navigate_worker()
+                    worker.layout = current
+                    worker.op_navigate(1, {'url': 'https://shop.test/deep', **fields}, 5)
+                    worker.view.setCustomUserAgent_.assert_not_called()
+                    self.assertEqual(window.calls, [])
+                    self.assertEqual(worker.layout, current)
+                    worker.view.loadRequest_.assert_called_once()
+
+    def test_navigate_rejects_unknown_layout_without_loading_or_changing_the_view(self):
+        for layout in ('tablet', '', False, [], {}):
+            with self.subTest(layout=layout):
+                worker, window = self.navigate_worker()
+                worker.op_navigate(1, {'url': 'https://shop.test/deep', 'layout': layout}, 5)
+                self.assertEqual(worker.replies, [{'id': 1, 'ok': False, 'error': 'bad_layout'}])
+                worker.view.loadRequest_.assert_not_called()
+                worker.view.setCustomUserAgent_.assert_not_called()
+                self.assertEqual(window.calls, [])
+                self.assertEqual(worker.layout, 'mobile')
+
+    def test_navigate_during_a_phone_session_changes_only_the_ua_and_restores_the_saved_frame(self):
+        for initial, requested in (('mobile', 'desktop'), ('desktop', 'mobile')):
+            with self.subTest(initial=initial):
+                worker, window = self.navigate_worker()
+                if initial == 'desktop':
+                    worker.op_navigate(1, {'url': 'https://shop.test/deep', 'layout': initial}, 5)
+                original = window.frame()
+                worker.enter_mobile()
+                window.calls.clear()
+                worker.op_navigate(2, {'url': 'https://shop.test/deep', 'layout': requested}, 5)
+                self.assertEqual(self.content(window), browser_worker.MOBILE_SIZE)
+                self.assertEqual(window.calls, [])
+                self.assertEqual(worker.layout, requested)
+                self.assertEqual(worker.view.setCustomUserAgent_.call_args.args, (browser_worker.user_agent_for(requested),))
+                worker.leave_mobile()
+                self.assertIs(window.frame(), original)
+                if initial == 'desktop':
+                    self.assertEqual(self.content(window), browser_worker.DESKTOP_SIZE)
+
     def test_a_wide_page_widens_the_window_a_new_page_starts_phone_sized_and_the_end_restores_it(self):
         measures = [{'page': 1200, 'inner': 390}, {'page': 1200, 'inner': 1200}, {'page': 390, 'inner': 390}]
         worker, window = self.worker(measures)
@@ -1332,6 +1407,23 @@ class MobileUserAgent(unittest.TestCase):
         self.assertTrue(agent.endswith(EMBEDDED_UA_TOKEN), 'Still still refuses its own pages to this browser (#680)')
         self.assertEqual(MOBILE_SIZE, (390.0, 844.0))
 
+
+    def test_the_desktop_agent_uses_this_safaris_version_and_the_embedded_marker(self):
+        from unittest import mock
+        from personal_agent import browser_worker as bw
+        with mock.patch.object(bw, 'safari_application_name', return_value=f'Version/27.0.1 Safari/605.1.15 {bw.EMBEDDED_UA_TOKEN}'):
+            agent = bw.desktop_user_agent()
+            version = bw.mobile_user_agent().split('Version/', 1)[1].split()[0]
+            self.assertIn('Macintosh; Intel Mac OS X 10_15_7', agent)
+            self.assertIn(f'Version/{version}', agent)
+            self.assertIn('Safari/605.1.15', agent)
+            self.assertIn(bw.EMBEDDED_UA_TOKEN, agent)
+            self.assertNotIn('iPhone', agent)
+            self.assertNotIn('Mobile/', agent)
+            self.assertEqual(bw.user_agent_for('mobile'), bw.mobile_user_agent())
+            self.assertEqual(bw.user_agent_for('desktop'), bw.desktop_user_agent())
+        self.assertEqual(bw.DESKTOP_SIZE, (1280.0, 900.0))
+        self.assertEqual(bw.LAYOUTS, ('mobile', 'desktop'))
 
     def test_the_os_token_is_one_a_real_iphone_sends(self):
         """#13: Safari 26+ on iOS freezes the OS token (Apple Safari 26.0/26.2 release notes; WebKit 298717, 298473)."""
