@@ -1588,6 +1588,89 @@ class OwnerOfferTests(_WatchCase):
             prep.normalize_goal('가' * (prep.GOAL_MAX_CHARS + 1))
 
 
+class CrossWorkProposalTests(_Case):
+    """#574: one waiting proposal per preparation, whichever Work proposed it first."""
+
+    def propose(self, work, *, due=600, recurrence=None, window=None, state=prep.STATE_PROPOSED, goal='매일 아침 일정 정리'):
+        return self.service.preparations.create(
+            kind='prepare', goal=goal, due_at=self.now + due, timezone='Asia/Seoul', recurrence=recurrence,
+            channel='web', created_from=work, state=state,
+            accepted_by=prep.ACCEPTED_OWNER_SETTINGS if state == prep.STATE_SCHEDULED else None, window=window)
+
+    def test_an_identical_proposal_from_another_work_is_the_same_row(self):
+        first = self.propose('work-1', recurrence='daily')
+        again = self.propose('work-2', recurrence='daily')
+        self.assertEqual(again['id'], first['id'])
+        self.assertTrue(again['already_proposed'])
+        self.assertNotIn('already_proposed', first)
+        self.assertEqual(len(self.rows()), 1)
+        self.assertEqual(self.service.preparations.proposed_from('work-2'), [], 'the second Work offers nothing new')
+
+    def test_a_scheduled_row_from_another_work_is_not_reused(self):
+        first = self.propose('work-1', recurrence='daily', state=prep.STATE_SCHEDULED)
+        again = self.propose('work-2', recurrence='daily')
+        self.assertNotEqual(again['id'], first['id'])
+        self.assertNotIn('already_proposed', again)
+        self.assertEqual(len(self.rows()), 2)
+
+    def test_a_different_due_recurrence_or_window_is_a_new_proposal(self):
+        base = self.propose('work-1', recurrence='daily')
+        window = prep.normalize_window(360, self.due_iso(3 * 86400), None, self.now + 600, 'Asia/Seoul', self.now)
+        others = [self.propose('work-2', due=1200, recurrence='daily'),
+                  self.propose('work-3', recurrence='weekly'),
+                  self.propose('work-4'),
+                  self.propose('work-5', window=window)]
+        self.assertEqual(len({row['id'] for row in [base, *others]}), 5)
+        self.assertFalse(any(row.get('already_proposed') for row in others))
+        shorter = prep.normalize_window(360, self.due_iso(2 * 86400), None, self.now + 600, 'Asia/Seoul', self.now)
+        self.assertNotEqual(self.propose('work-6', window=shorter)['id'], others[-1]['id'], 'a different window is new')
+        self.assertEqual(self.propose('work-7', window=window)['id'], others[-1]['id'], 'the same window is the same watch')
+
+    def schedule(self, work, message):
+        job = {'id': work, 'message': message}
+        return self.service.preparation_scheduler(job, message)(
+            {'kind': 'prepare', 'goal': '매일 아침 일정 정리', 'due': self.due_iso(600), 'recurrence': 'daily'})
+
+    def test_the_tool_result_says_the_proposal_already_existed(self):
+        self.judge = engine(preparation=False)
+        self.service.use_decision_engine(self.judge)
+        first = self.schedule('work-1', '아침마다 일정 정리해 줄래?')
+        again = self.schedule('work-2', '아침 일정 정리 얘기 기억해?')
+        self.assertFalse(first['already_proposed'])
+        self.assertTrue(again['already_proposed'])
+        self.assertEqual(again['preparation_id'], first['preparation_id'])
+        self.assertTrue(again['requires_owner_acceptance'])
+        self.assertIn('이미 제안', again['next_step'])
+        [row] = self.rows()
+        self.assertEqual(row['state'], prep.STATE_PROPOSED)
+
+    def test_the_owners_own_request_accepts_the_existing_proposal(self):
+        self.judge = engine(preparation=False)
+        self.service.use_decision_engine(self.judge)
+        first = self.schedule('work-1', '아침마다 일정 정리해 줄래?')
+        self.judge = engine(preparation=True)
+        self.service.use_decision_engine(self.judge)
+        again = self.schedule('work-2', '매일 아침 일정 정리 예약해 줘')
+        self.assertEqual(again['preparation_id'], first['preparation_id'])
+        self.assertTrue(again['already_proposed'])
+        self.assertTrue(again['scheduled'])
+        self.assertEqual(again['accepted_by'], prep.ACCEPTED_OWNER_REQUEST)
+        [row] = self.rows()
+        self.assertEqual((row['state'], row['accepted_by'], row['created_from']),
+                         (prep.STATE_SCHEDULED, prep.ACCEPTED_OWNER_REQUEST, 'work-1'))
+
+    def test_a_too_long_goal_refusal_states_the_kinds_limit_and_one_retry(self):
+        job = {'id': 'work-1', 'message': '알려줘'}
+        scheduler = self.service.preparation_scheduler(job, job['message'])
+        for kind, limit in (('reminder', prep.GOAL_MAX_CHARS), ('prepare', prep.BRIEF_MAX_CHARS)):
+            with self.assertRaises(ToolError) as caught:
+                scheduler({'kind': kind, 'goal': '가' * (limit + 1), 'due': self.due_iso(600)})
+            self.assertEqual(caught.exception.code, 'invalid_goal')
+            self.assertIn(f'kind {kind}의 goal은 {limit}자 이내', str(caught.exception))
+            self.assertIn('줄여서 한 번 다시 호출', str(caught.exception))
+        self.assertEqual(self.rows(), [])
+
+
 class ScheduleTextTests(unittest.TestCase):
     """#393: the schedule line in the owner's words."""
 
