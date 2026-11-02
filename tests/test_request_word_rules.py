@@ -319,7 +319,7 @@ class JudgmentRedactionTests(unittest.TestCase):
         # Owner words: stored secrets only (like #657's goal judgment); anything
         # else: the Work's saved private values too.
         self.assertEqual(dict((text, private) for text, private in seen),
-                         {'내일 아침 SAVED 알려줘': False, 'remind about SAVED': True})
+                         {'내일 아침 SAVED 알려줘': False, 'none': True, 'remind about SAVED': True})
         self.assertEqual(context.facts['proposed_preparation'], 'remind about [redacted]')
 
     def test_credential_shapes_go_without_a_redactor_and_a_failing_redactor_withholds(self):

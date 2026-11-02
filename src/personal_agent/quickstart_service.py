@@ -227,6 +227,9 @@ TELEGRAM_WORK_PHOTO_BYTES_LIMIT = 20 * 1024 * 1024
 TELEGRAM_VERIFICATION_QUERY = '/search Still personal assistant verification'
 
 
+#: #573: the earlier turns, and their characters, the preparation acceptance judgment reads.
+PREPARATION_CONVERSATION_TURNS = 6
+PREPARATION_CONVERSATION_CHARS = 4000
 #: The longest owner message one Work stores (``QuickStore.enqueue``).
 MAX_OWNER_MESSAGE_CHARS = 12000
 OVERLONG_MESSAGE_NOTE = ('\n\n[Still observation, not an owner instruction] This message had {total} characters; '
@@ -1627,6 +1630,32 @@ class AgentService:
             LOG.warning('prepared answers unavailable job=%s',job.get('id'))
             return None
 
+    def preparation_conversation(self, job):
+        """The exchange before this Work's request, as the acceptance judgment reads it (#573).
+
+        The last ``PREPARATION_CONVERSATION_TURNS`` earlier owner and assistant
+        rows, labelled as earlier Works like the plan call's (#170), document
+        excerpts left out (#826), stored secrets redacted and the text bounded.
+        '' when there is none or it cannot be read; the judgment then reads the
+        message alone, as before.
+        """
+        try:
+            rows=self.store.history(through=job['id'])
+            if not rows or rows[-1].get('job_id')!=job['id']:return ''
+            earlier=self.planner_history(rows,self.store.config('file_workspace_document_jobs',[]))
+            earlier=earlier[-PREPARATION_CONVERSATION_TURNS:]
+            try:
+                from .current_context import host_zone
+                _zone,tz=host_zone(self.store)
+            except Exception:
+                tz=None
+            lines=[earlier_turn_line(row,{'role':row['role'],'content':self._redact_known_secrets(row.get('content') or '')},tz)
+                   for row in earlier]
+            return '\n'.join(lines)[-PREPARATION_CONVERSATION_CHARS:]
+        except Exception:
+            LOG.info('preparation conversation unavailable job=%s',job.get('id'))
+            return ''
+
     def preparation_scheduler(self, job, prompt):
         """The ``schedule_preparation`` handler bound to one Work (#659).
 
@@ -1681,7 +1710,8 @@ class AgentService:
                          # #774: a location continuation re-runs an earlier message; the owner's own
                          # latest message was the location, so it never accepts a preparation.
                          and continuation_request(job.get('request_key')) is None)
-            accepted=own_request and self.decision_judge.explicit_preparation_request(prompt,summary).outcome==JUDGMENT_YES
+            accepted=own_request and self.decision_judge.explicit_preparation_request(
+                prompt,summary,self.preparation_conversation(job)).outcome==JUDGMENT_YES
             try:
                 row=self.preparations.create(kind=kind,goal=goal,due_at=due_at,timezone=timezone,recurrence=recurrence,
                                              channel=channel,created_from=job['id'],
