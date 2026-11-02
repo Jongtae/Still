@@ -743,13 +743,17 @@ MEMORY_FACT_PROPOSITION = ('The owner\'s latest message itself asks the assistan
 #: SEC-ATTN-01 (#659): is the owner's own message the acceptance of this preparation?
 PREPARATION_REQUEST_PROPOSITION = ('The owner\'s latest message itself asks the assistant to remind them of something, or '
                                    'to prepare or look something up for them ahead of a later time or on a repeating '
-                                   'schedule, and the proposed preparation matches that request: its kind, its goal, its '
-                                   'time (as the owner stated it, or derived from what the owner referred to, such as '
-                                   'shortly before an event the owner asked to be reminded of) and its repetition (none '
-                                   'unless the owner asked for one). It is false when the owner only asks something to be '
-                                   'answered now, when the assistant would be offering the preparation on its own '
-                                   'initiative, when the time or repetition differs from what the owner asked, or when it '
-                                   'is unclear. This judgment schedules nothing.')
+                                   'schedule, or says yes to such a preparation the assistant has just offered, and the '
+                                   'proposed preparation matches that request: its kind, its goal, its time (as the owner '
+                                   'stated it, or derived from what the owner referred to, such as shortly before an event '
+                                   'the owner asked to be reminded of) and its repetition (none unless the owner asked for '
+                                   'one). recent_conversation is the exchange before the latest message (#573); read it '
+                                   'only to resolve what the latest message refers to (that time, the check asked for '
+                                   'before, the offer it answers), never as a request of its own. It is false when the '
+                                   'owner only asks something to be answered now, when the assistant would be offering '
+                                   'the preparation on its own initiative without the owner\'s yes in the latest message, '
+                                   'when the time or repetition differs from what the owner asked, or when it is unclear. '
+                                   'This judgment schedules nothing.')
 #: SEC-ATTN-02 (#719): does one run of an owner-accepted watch need to reach the owner now?
 WATCH_NOTIFY_PROPOSITION = ('The owner accepted a standing watch with the goal shown (and, when given, the offer they '
                             'read and accepted, whose limits and conditions for being told come first) and asked to be '
@@ -1268,16 +1272,20 @@ class ConversationJudgments:
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
                         source=decision.confidence.provider or decision.outcome), decision
 
-    def explicit_preparation_request(self, utterance, proposal):
+    def explicit_preparation_request(self, utterance, proposal, conversation=''):
         """Is ``utterance`` the owner's own request for ``proposal`` (#659)?
 
         Judgment only, over the owner's message and a one-line summary of the
         proposed preparation.  A yes lets Still schedule it as accepted by
         the owner's request; no / unavailable keeps it a proposal the owner
-        accepts explicitly (Telegram button or Settings).
+        accepts explicitly (Telegram button or Settings).  #573: ``conversation``
+        is the caller-bounded exchange before the message, so a request that
+        refers back to it ("at that time") is read as the owner meant it.
         """
         context = self._context('explicit-preparation-request', {'owner_message': utterance,
-                                                                   'proposed_preparation': proposal})
+                                                                   'recent_conversation': conversation or 'none',
+                                                                   'proposed_preparation': proposal},
+                                uncut=('owner_message', 'recent_conversation'))
         decision = self.engine.judge(context, PREPARATION_REQUEST_PROPOSITION)
         verdict = self.policy.binary(decision)
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,

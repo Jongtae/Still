@@ -24,7 +24,7 @@ from personal_agent.conversation_handoff import ConversationJudgments, PREPARATI
 from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
 from personal_agent.memory_service import MemoryService
 from personal_agent.providers import ModelAdapter, ProviderError
-from personal_agent.quickstart_service import AgentService
+from personal_agent.quickstart_service import AgentService, PREPARATION_CONVERSATION_CHARS, PREPARATION_CONVERSATION_TURNS
 from personal_agent.quickstart_store import QuickStore
 
 CHAT, GENERATION = 77, 'gen-1'
@@ -449,6 +449,64 @@ class PreparedAnswerTests(_Case):
         self.assertEqual(turn_context([{'role': 'user', 'content': '점심'}], 'cli').get('prepared'), None)
 
 
+class AcceptanceContextTests(_Case):
+    """#573: the acceptance judgment reads the exchange the request refers to."""
+
+    def asked(self):
+        return [item[1] for item in self.judge.asked if item[0] == 'judge' and item[1].purpose == 'explicit-preparation-request']
+
+    def remind_at_that_time(self, text='그 시간에 먼저 알려줘'):
+        self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='reminder', goal='출발할 시간이에요.',
+                                                             due=self.due_iso(3600))]},
+                       finish('f', '1', summary='그 시간에 알려 드릴게요.')]
+        return self.receive(text)
+
+    def test_the_earlier_turns_reach_the_judgment_labelled_and_apart_from_the_message(self):
+        # The worker's answer, then the same text as its final reply.
+        self.script = [{'content': '좋아요, 한 시간 뒤에 출발하시는군요.'}] * 2
+        self.receive('나 한 시간 뒤에 출발해')
+        self.now += 60
+        work = self.remind_at_that_time()
+        [context] = self.asked()
+        self.assertEqual(context.facts['owner_message'], '그 시간에 먼저 알려줘')
+        conversation = context.facts['recent_conversation']
+        self.assertIn('[owner, earlier Work', conversation)
+        self.assertIn('나 한 시간 뒤에 출발해', conversation)
+        self.assertIn('[assistant, earlier Work', conversation)
+        self.assertIn('한 시간 뒤에 출발하시는군요', conversation)
+        self.assertNotIn('그 시간에 먼저 알려줘', conversation, 'the message itself is its own fact')
+        [row] = self.rows()
+        self.assertEqual((row['state'], row['accepted_by'], row['created_from']), ('scheduled', 'owner-request', work))
+
+    def test_a_first_message_has_no_conversation(self):
+        self.remind_at_that_time('한 시간 뒤에 출발한다고 알려줘')
+        [context] = self.asked()
+        self.assertEqual(context.facts['recent_conversation'], 'none')
+
+    def test_the_window_is_bounded_and_stored_secrets_never_reach_it(self):
+        for index in range(8):
+            self.script = [{'content': f'답변 {index}'}]
+            self.receive(f'이전 질문 {index} {SECRET}' if index == 7 else f'이전 질문 {index}')
+            self.now += 60
+        self.remind_at_that_time()
+        [context] = self.asked()
+        conversation = context.facts['recent_conversation']
+        self.assertNotIn(SECRET, conversation)
+        self.assertEqual(conversation.count('earlier Work'), PREPARATION_CONVERSATION_TURNS)
+        self.assertNotIn('이전 질문 4', conversation)
+        self.assertIn('이전 질문 5', conversation)
+        self.assertLessEqual(len(conversation), PREPARATION_CONVERSATION_CHARS)
+
+    def test_a_no_keeps_the_proposal_waiting_for_the_owner(self):
+        self.judge = engine(preparation=False)
+        self.service.use_decision_engine(self.judge)
+        self.script = [{'content': '좋아요.'}]
+        self.receive('나 한 시간 뒤에 출발해')
+        self.remind_at_that_time()
+        [row] = self.rows()
+        self.assertEqual((row['state'], row['accepted_by']), ('proposed', None))
+
+
 class AcceptanceTests(_Case):
     def propose(self, text='점심 메뉴 추천해줘'):
         self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal='점심 후보 준비',
@@ -547,7 +605,8 @@ class AcceptanceTests(_Case):
         self.assertEqual(judged.outcome, 'yes')
         [(_kind, context, proposition)] = engine_.asked
         self.assertEqual(proposition, PREPARATION_REQUEST_PROPOSITION)
-        self.assertEqual(set(context.facts), {'owner_message', 'proposed_preparation'})
+        self.assertEqual(set(context.facts), {'owner_message', 'recent_conversation', 'proposed_preparation'})
+        self.assertEqual(context.facts['recent_conversation'], 'none')
 
 
 class CancelTests(_Case):
