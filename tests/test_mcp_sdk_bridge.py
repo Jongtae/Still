@@ -136,6 +136,13 @@ class InstalledHostBridge(unittest.TestCase):
         self.assertEqual(process.returncode, 0, error[-1500:])
         self.last_stderr = error
         replies = [json.loads(line) for line in output.splitlines()]
+        # #457: concurrent calls may answer in any order, and JSON-RPC
+        # correlates by id, so put replies in request order by id.
+        order = {}
+        for row in requests:
+            if isinstance(row, dict) and 'id' in row:
+                order.setdefault(json.dumps(row['id']), len(order))
+        replies.sort(key=lambda row: order.get(json.dumps(row.get('id')), len(order)))
         events = self._trace(trace)
         self._assert_sdk(events)
         return replies, events
