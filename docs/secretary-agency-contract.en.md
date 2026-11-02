@@ -364,6 +364,9 @@ It builds on the merged current-context work and CONTEXT-STATE-01 #627, which is
 
 - **In the reply (#582).** When the owner's current request is plausibly one they would want again on a rhythm, the worker may answer it and propose one preparation for it. The proposal stays `proposed` and never runs until the owner says yes or taps accept. A proposal the owner declined (cancelled without ever being accepted) is not offered again for 30 days (`declined_before`). Identity is the exact goal, or else one Judgment AI call.
 - **From the daily look-back (#583).** When the dream sees the same kind of request on separate days, it may suggest a standing preparation. The suggestion is shown with the owner's next own Work, with no separate push, and follows the same accept and decline rules.
+  - Still keeps at most 2 per look-back, each citing at least two turns the dream read on different local days, and skips one whose goal an active preparation already has or the owner declined (`declined_before`). Each passes the `schedule_preparation` normalisers and is stored `proposed`, created from the dream's anchor Work.
+  - It is offered once, in the existing proposal message with its buttons, bound to exactly its rows; at most one such message a day, and none while upkeep is paused.
+  - One still unanswered after 7 days lapses as `expired`. That is not a decline, so it does not block a later offer.
 
 Neither changes authority. No preparation runs without the owner's acceptance. Habit inference for anything other than offering a preparation stays out of scope.
 
