@@ -187,12 +187,12 @@ class WorkerOpsWhileParked(unittest.TestCase):
         worker = self.worker()
         worker.owner_visible = True
         worker.held_dialog = {'kind': 'confirm', 'text': 'delete?', 'handler': None, 'sheet': None}
-        worker.last_frame = ('AAAA', 1280.0, 900.0, ['https://auth.example/qr?q=1'])
+        worker.last_frame = ('AAAA', 1280.0, 900.0, [{'url': 'https://auth.example/qr?q=1'}])
         worker.front_view = lambda: self.fail('no snapshot while a dialog is held')
         worker.handle({'id': 9, 'op': 'frame'})
         self.assertEqual(worker.replies[-1], {'id': 9, 'ok': True, 'jpeg': 'AAAA', 'width': 1280.0, 'height': 900.0,
                                               'dialog': {'kind': 'confirm', 'text': 'delete?'}, 'focus': None,
-                                              'fields': [], 'links': ['https://auth.example/qr?q=1']},
+                                              'fields': [], 'links': [{'url': 'https://auth.example/qr?q=1'}]},
                          'nothing can be typed now; the last frame\'s QR links stay')
 
     def test_a_page_dialog_is_held_for_the_phone_only_during_a_phone_session(self):
@@ -314,9 +314,11 @@ class WorkerOpsWhileParked(unittest.TestCase):
 
         def read(foundation, data):
             reads.append(data)
-            return ['https://auth.example/qr?q=1', 'supertoss://login', 'not a link', 'https://auth.example/qr?q=1']
+            box = {'x': 0.4, 'y': 0.3, 'w': 0.2, 'h': 0.1}
+            return [{'url': 'https://auth.example/qr?q=1', **box}, {'url': 'supertoss://login', **box},
+                    {'url': 'not a link'}, {'url': 'https://auth.example/qr?q=1', **box}]
         with mock.patch.object(browser_worker, '_jpeg_bytes', return_value=b'jpg'), \
-                mock.patch.object(browser_worker, 'read_qr_payloads', side_effect=read):
+                mock.patch.object(browser_worker, 'read_qr_codes', side_effect=read):
             worker = self.snapshot_worker({'focus': None})
             worker.Foundation = None
             worker.handle({'id': 13, 'op': 'frame'})
@@ -325,14 +327,16 @@ class WorkerOpsWhileParked(unittest.TestCase):
             worker.remote = True
             worker.handle({'id': 14, 'op': 'frame'})
             worker.handle({'id': 15, 'op': 'frame'})
-            self.assertEqual(worker.replies[-1]['links'], ['https://auth.example/qr?q=1'], 'http(s) only, once each')
+            self.assertEqual(worker.replies[-1]['links'], [{'url': 'https://auth.example/qr?q=1', 'x': 0.4, 'y': 0.3,
+                                                            'w': 0.2, 'h': 0.1}], 'http(s) only, once each, with its box')
             self.assertEqual(reads, [b'jpg'], 'an unchanged image is not read again')
             worker.answer_dialog = lambda ok: False
             worker.end_remote()
             self.assertIsNone(worker.qr_cache)
 
     def test_only_http_links_of_bounded_length_pass(self):
-        links = browser_worker.qr_links
+        def links(urls):
+            return [link['url'] for link in browser_worker.qr_links([{'url': url} for url in urls])]
         self.assertEqual(links(['https://a.example/x?y=1', 'HTTP://b.example/', 'https://a.example/x?y=1']),
                          ['https://a.example/x?y=1', 'HTTP://b.example/'])
         for bad in ('javascript:alert(1)', 'data:text/html,x', 'intent://x', 'https://', 'https://user@evil.example/',
@@ -341,7 +345,15 @@ class WorkerOpsWhileParked(unittest.TestCase):
             with self.subTest(bad=bad):
                 self.assertEqual(links([bad]), [])
         self.assertEqual(len(links([f'https://a.example/{index}' for index in range(9)])), browser_worker.QR_LINKS_LIMIT)
-        self.assertEqual(links('https://a.example/'), [], 'a list only')
+        self.assertEqual(browser_worker.qr_links('https://a.example/'), [], 'a list only')
+        self.assertEqual(browser_worker.qr_links(['https://a.example/']), [], 'a code is a dict')
+        # #602: a code's box passes only as four finite fractions with a size; otherwise the link has none.
+        for box, kept in (({'x': 0.25, 'y': 0.5, 'w': 0.125, 'h': 0.1}, True), ({'x': 0.25, 'y': 0.5, 'w': 0, 'h': 0.1}, False),
+                          ({'x': 'left', 'y': 0.5, 'w': 0.1, 'h': 0.1}, False), ({'x': float('nan'), 'y': 0.5, 'w': 0.1, 'h': 0.1}, False),
+                          ({'x': 0.25, 'y': 9, 'w': 0.1, 'h': 0.1}, False), ({}, False)):
+            with self.subTest(box=box):
+                self.assertEqual(browser_worker.qr_links([{'url': 'https://a.example/', **box, 'value': 'x'}]),
+                                 [{'url': 'https://a.example/', **(box if kept else {})}])
         self.assertEqual(browser_worker.QR_LINKS_LIMIT, remote_login.QR_LINKS_SHOWN)
 
     def test_the_focus_probe_names_the_kind_through_shadow_roots_and_frames(self):
@@ -423,10 +435,10 @@ console.log(JSON.stringify(out));
         driver._request_shown = lambda op, **kw: {
             'jpeg': 'AAAA', 'width': 1.0, 'height': 1.0, 'focus': None,
             'fields': [{'kind': 'text', 'x': 0, 'y': 0, 'w': 1, 'h': 0.1, 'value': 'x'}, {'kind': 'secret', 'x': 0, 'y': 0, 'w': 1, 'h': 1}],
-            'links': ['https://auth.example/qr', 'javascript:alert(1)']}
+            'links': [{'url': 'https://auth.example/qr', 'x': 0.1, 'y': 0.1, 'w': 0.2, 'h': 0.1}, {'url': 'javascript:alert(1)'}]}
         frame = driver.frame()
         self.assertEqual(frame['fields'], [{'kind': 'text', 'x': 0, 'y': 0, 'w': 1, 'h': 0.1}])
-        self.assertEqual(frame['links'], ['https://auth.example/qr'])
+        self.assertEqual(frame['links'], [{'url': 'https://auth.example/qr', 'x': 0.1, 'y': 0.1, 'w': 0.2, 'h': 0.1}])
         driver._request_shown = lambda op, **kw: {'jpeg': 'AAAA', 'width': 1.0, 'height': 1.0, 'focus': None}
         self.assertEqual((driver.frame()['fields'], driver.frame()['links']), ([], []))
 
@@ -740,7 +752,7 @@ class PhoneWindowFitsThePage(unittest.TestCase):
         worker.view.takeSnapshotWithConfiguration_completionHandler_ = lambda config, done: done('image', None)
         worker.handle({'id': 1, 'op': 'remote_begin'})
         with mock.patch.object(browser_worker, '_jpeg_bytes', return_value=b'jpg'), \
-                mock.patch.object(browser_worker, 'read_qr_payloads', return_value=[]):
+                mock.patch.object(browser_worker, 'read_qr_codes', return_value=[]):
             worker.handle({'id': 2, 'op': 'frame'})
             self.assertEqual(worker.replies[-1]['width'], 390.0, 'this frame is the image it was taken from')
             self.assertEqual([body for body, _ in worker.scripts],
@@ -763,12 +775,17 @@ class InputValidation(unittest.TestCase):
         self.assertEqual(remote_login.validate_input({'type': 'tap', 'x': 10, 'y': 20.5}), ('tap', {'x': 10.0, 'y': 20.5}))
         self.assertEqual(remote_login.validate_input({'type': 'text', 'text': 'abc'}), ('text', {'text': 'abc'}))
         self.assertEqual(remote_login.validate_input({'type': 'text', 'text': '한😀'}), ('text', {'text': '한😀'}))
+        # #602: the phone's input box replaces what the field holds.
+        self.assertEqual(remote_login.validate_input({'type': 'text', 'text': '홍길동', 'replace': True}),
+                         ('text', {'text': '홍길동', 'replace': True}))
+        self.assertEqual(remote_login.validate_input({'type': 'text', 'text': 'a', 'replace': False}), ('text', {'text': 'a'}))
         self.assertEqual(remote_login.validate_input({'type': 'key', 'key': 'Backspace'}), ('key', {'key': 'Backspace'}))
         self.assertEqual(remote_login.validate_input({'type': 'nav', 'action': 'reload'}), ('nav', {'action': 'reload'}))
         self.assertEqual(remote_login.validate_input({'type': 'dialog', 'answer': 'cancel'}), ('dialog', {'answer': 'cancel'}))
         for bad in ({'type': 'dialog', 'answer': 'yes'}, {'type': 'dialog', 'answer': True},{'type': 'tap', 'x': -1, 'y': 0}, {'type': 'tap', 'x': True, 'y': 1}, {'type': 'text', 'text': ''},
                     {'type': 'text', 'text': 'a\nb'}, {'type': 'text', 'text': 'x' * (remote_login.TEXT_LIMIT + 1)},
                     {'type': 'text', 'text': 'ab\ud83d'}, {'type': 'text', 'text': '\ude00'},
+                    {'type': 'text', 'text': 'a', 'replace': 'yes'}, {'type': 'text', 'text': 'a', 'replace': 1},
                     {'type': 'key', 'key': 'F5'}, {'type': 'nav', 'action': 'forward'}, {'type': 'script'}, [], None):
             with self.subTest(bad=bad):
                 self.assertIsNone(remote_login.validate_input(bad))
@@ -1588,6 +1605,7 @@ const ids=new Map();let active=null;
 class Element{
  constructor(id){this.id=id;this.value='';this.type='text';this.attrs={};this.style={};this.listeners={};this._cls=new Set();this.textContent='';ids.set(id,this);}
  get textContent(){return this._text;} set textContent(v){this._text=v;this.children=[];} appendChild(c){this.children.push(c);}
+ click(){clicks.push(this.href);}
  get classList(){const c=this._cls;return {add:n=>c.add(n),remove:n=>c.delete(n),toggle:(n,on)=>on?c.add(n):c.delete(n),contains:n=>c.has(n)};}
  addEventListener(name,fn){(this.listeners[name]=this.listeners[name]||[]).push(fn);}
  fire(name,event={}){event.currentTarget=this;for(const fn of this.listeners[name]||[])fn(event);return event;}
@@ -1595,8 +1613,8 @@ class Element{
  setSelectionRange(){} getBoundingClientRect(){return {left:0,top:0,width:390,height:844};}
 }
 for(const id of ['live','end','keys','shot','dialog','dialog-text','dialog-ok','dialog-cancel','typing-failed','enter','tab','back',
- 'nav-back','reload','done','expire','cred','user','pass','qr','qr-links'])new Element(id);
-ids.get('keys').type='password';ids.get('qr').classList.add('hidden');let made=0;
+ 'nav-back','reload','done','expire','cred','user','pass','qr','qr-links','compose','line','put'])new Element(id);
+ids.get('keys').type='password';ids.get('qr').classList.add('hidden');ids.get('compose').classList.add('hidden');let made=0;const clicks=[];
 const document={getElementById:id=>ids.get(id),get activeElement(){return active;},createElement:tag=>Object.assign(new Element('made-'+(++made)),{tag})};
 const posts=[];let frameAnswer={status:200,body:{jpeg:'AAAA',width:390,height:844,dialog:null,focus:null}};
 let inputAnswer=()=>({ok:true});const holds=[];
@@ -1735,33 +1753,56 @@ const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
 
 
 PAGE_FIELDS_AND_QR_CHECKS = PAGE_TYPING_CHECKS.split("(async()=>{")[0] + r"""(async()=>{
- // #596: a frame names the window's fields; a tap on a plain text field opens a text input in the tap itself.
+ // #596/#602: a frame names the window's fields by kind and place.
  frameAnswer.body={jpeg:'AAAA',width:390,height:844,dialog:null,focus:null,
   fields:[{kind:'text',x:0.1,y:0.2,w:0.8,h:0.05},{kind:'password',x:0.1,y:0.3,w:0.8,h:0.05}]};
  await tick();await ctx.frame();sent();
- const order=[];const realFocus=keys.focus;keys.focus=function(){order.push(keys.type);realFocus.call(this);};
- tap(195,0.22*844);assert.equal(active,keys);assert.deepEqual(order,['text'],'a text input before it is focused');
- assert.equal(keys.attrs.autocomplete,'username');
- tap(195,0.32*844);assert.deepEqual(order,['text','password'],'a password field: a password input');
- tap(195,0.9*844);assert.deepEqual(order,['text','password','password'],'no known field: a password input');
+ const line=$('line');
+ assert($('compose').classList.contains('hidden'));
+ // #602: a tap on a text field opens the visible input box in the tap itself, and the field is pressed.
+ tap(195,0.22*844);assert.equal(active,line,'the box has the keyboard');assert(!$('compose').classList.contains('hidden'));
+ await tick();assert.deepEqual(sent(),[{type:'tap',x:195,y:0.22*844}]);
+ // Typing in it (any IME, Korean included) sends nothing until 넣기.
+ line.value='홍길';line.fire('input',{isComposing:true});line.value='홍길동';line.fire('input',{});await tick();
+ assert.deepEqual(sent(),[]);
+ // Return while composing is the IME's.
+ let kept=true;line.fire('keydown',{key:'Enter',isComposing:true,keyCode:229,preventDefault(){kept=false;}});await tick();
+ assert(kept);assert.deepEqual(sent(),[]);
+ // Return (or 넣기) puts the whole text in place of the field's content, once, and clears the box.
+ let prevented=false;line.fire('keydown',{key:'Enter',preventDefault(){prevented=true;}});await tick();
+ assert(prevented);assert.deepEqual(sent(),[{type:'text',text:'홍길동',replace:true}]);assert.equal(line.value,'');
+ line.value='김';$('put').onclick();await tick();assert.deepEqual(sent(),[{type:'text',text:'김',replace:true}]);
+ $('put').onclick();await tick();assert.deepEqual(sent(),[],'an empty box sends nothing');
+ // A draft is dropped by a tap elsewhere: it never lands in another field.
+ tap(195,0.22*844);line.value='남은 글';tap(195,0.32*844);
+ assert.equal(line.value,'');assert.equal(active,keys,'a password field: the hidden direct input');
+ assert.equal(keys.type,'password');assert($('compose').classList.contains('hidden'));
+ tap(195,0.9*844);assert.equal(active,keys);assert.equal(keys.type,'password','no known field: the hidden password input');
  await tick();sent();
- // Typing after a tap starts from the sentinel: the last field's text is never kept into the next one.
- tap(195,0.22*844);type(S+'김',{inputType:'insertText'});await tick();
- tap(195,0.22*844);assert.equal(keys.value,S);await tick();sent();
+ // A frame saying a text field has focus (one the page could not place) shows the box to tap.
+ frameAnswer.body={...frameAnswer.body,jpeg:'A2',focus:'text'};await ctx.frame();
+ assert(!$('compose').classList.contains('hidden'));
+ frameAnswer.body={...frameAnswer.body,jpeg:'A3',focus:null};await ctx.frame();sent();
  // QR codes the window shows: one link each, http(s) only, named by host, opening outside this page.
  assert($('qr').classList.contains('hidden'));
- frameAnswer.body={...frameAnswer.body,jpeg:'BBBB',links:['https://auth.example/qr?q=1','javascript:alert(1)','nonsense']};
+ frameAnswer.body={...frameAnswer.body,jpeg:'BBBB',links:[{url:'https://auth.example/qr?q=1',x:0.4,y:0.5,w:0.2,h:0.1},
+  {url:'javascript:alert(1)',x:0,y:0,w:1,h:1},{url:'nonsense'}]};
  await ctx.frame();
  assert(!$('qr').classList.contains('hidden'),'shown');
  const links=$('qr-links').children;
  assert.equal(links.length,1);assert.equal(links[0].href,'https://auth.example/qr?q=1');
  assert.equal(links[0].target,'_blank');assert.equal(links[0].rel,'noopener noreferrer');
  assert.equal(links[0].textContent,'QR 코드 열기 · auth.example');
- // The same links again do not rebuild it; none hides it.
+ // #602: a tap on the code in the picture opens its link in that tap and presses nothing in the window.
+ tap(195,0.55*844);assert.deepEqual(clicks,['https://auth.example/qr?q=1']);await tick();
+ assert.deepEqual(sent(),[],'the window is not pressed');
+ tap(20,20);await tick();assert.deepEqual(clicks,['https://auth.example/qr?q=1']);
+ assert.deepEqual(sent().filter(p=>p.type==='tap'),[{type:'tap',x:20,y:20}],'outside the code: a press as before');
+ // The same codes again do not rebuild it; none hides it, and the old place is the window again.
  const first=links[0];await ctx.frame();assert.equal($('qr-links').children[0],first);
  frameAnswer.body={...frameAnswer.body,jpeg:'CCCC',links:[]};await ctx.frame();
  assert($('qr').classList.contains('hidden'));assert.equal($('qr-links').children.length,0);
- assert.deepEqual(sent(),[],'nothing is posted for a link');
+ sent();tap(195,0.55*844);await tick();assert.equal(clicks.length,1);assert.equal(sent().filter(p=>p.type==='tap').length,1);
  console.log('ok');
 })().catch(error=>{console.error(error);process.exit(1);});
 """
@@ -1791,8 +1832,8 @@ class PhonePageTyping(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
         self.assertIn('ok', result.stdout)
 
-    def test_the_page_opens_the_right_keyboard_in_the_tap_and_offers_qr_links(self):
-        """#596: a text field gets a text input before the tap focuses it; a QR code's link is offered."""
+    def test_the_page_opens_the_input_box_for_text_fields_and_opens_qr_links(self):
+        """#596/#602: a text field opens the visible input box in the tap; a QR code's link opens from the code."""
         import shutil
         import subprocess
         node = shutil.which('node')

@@ -2589,18 +2589,26 @@ class WebKitIntegrationTests(unittest.TestCase):
             name = [field for field in frame['fields'] if field['kind'] == 'text']
             self.assertEqual(len(name), 1, frame['fields'])
             self.assertAlmostEqual(name[0]['x'] * frame['width'], 860 * zoom, delta=2)
-            self.assertEqual(frame_until(lambda frame: frame['links'])['links'], ['https://auth.example/qr?q=596'])
+            links = frame_until(lambda frame: frame['links'])['links']
+            self.assertEqual([link['url'] for link in links], ['https://auth.example/qr?q=596'])
+            # #602: the code's box in the frame holds the code's middle (CSS 98, 158 at this zoom), so a
+            # tap there on the phone opens its link.
+            box, middle = links[0], (98 * zoom / frame['width'], 158 * zoom / frame['height'])
+            self.assertTrue(box['x'] < middle[0] < box['x'] + box['w'] and box['y'] < middle[1] < box['y'] + box['h'], box)
             # The phone maps a tap by the frame's own width and height: view points.
             worker.remote_input('tap', x=920.0 * zoom, y=120.0 * zoom)
             self.assertEqual(frame_until(lambda frame: frame['focus'] == 'text')['focus'], 'text', '#293 focus')
             worker.remote_input('text', text='홍')
             worker.remote_input('key', key='Backspace')
-            worker.remote_input('text', text='홍길동')
+            worker.remote_input('text', text='김')
+            # #602: the phone's input box puts its text in place of what the field holds.
+            worker.remote_input('text', text='홍길동', replace=True)
             worker.remote_input('tap', x=920.0 * zoom, y=230.0 * zoom)
             deadline = time.monotonic() + 5
             while '눌림' not in (text := worker.snapshot()['text']) and time.monotonic() < deadline:
                 time.sleep(0.2)
-            self.assertIn('눌림 홍길동', text, 'the far-right button got the tap after the typed name')
+            self.assertIn('눌림 홍길동', text, 'the far-right button got the tap after the replaced name')
+            self.assertNotIn('김', text)
             # A later phone page is measured at zoom 1 again.
             worker.goto(self.origin + '/device', 10)
             self.assertEqual(set(widths()), {390.0}, 'the window stays phone-sized')
