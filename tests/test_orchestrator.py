@@ -900,12 +900,39 @@ class ToolsAndReplan(Harness):
         self.assertNotIn('result_count', seen[0]['observations'])
         self.assertIn('own web searches that reported no source URL: 1', self.asked_plans[1][0].facts['previous_attempts'])
 
+    def test_goal_reached_sees_the_workers_reported_sources_text_and_cited_urls(self):
+        """#621: the worker's own search evidence reaches the one outcome judgment, labelled by evidence class."""
+        seen = []
+        self.engine.meta = {**NO_TOOL_CALLS, 'cited_urls': ['https://museum.example/special'], 'native_searches': [
+            {'id': 'n1', 'state': 'succeeded', 'queries': ['museum hours'], 'action': 'search',
+             'results': [{'title': 'Visit', 'url': 'https://museum.example/visit'}], 'excerpt': 'Open daily 10:00-17:00.'},
+            {'id': 'n2', 'state': 'succeeded', 'queries': ['special exhibition'], 'results': []}]}
+        self.engine.answers = ['Open 10:00-17:00 (https://museum.example/visit); the exhibition runs until 30 November '
+                               '(https://museum.example/special).']
+        self.script([plan('codex', 'Answer it.')])
+
+        def judge(context, proposition):
+            seen.append(dict(context.facts))
+            return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+        self.service.decision_engine._judge = judge
+        self.run_work('박물관 몇 시까지 해?')
+        observations = seen[0]['observations']
+        self.assertIn('worker-reported', observations)
+        self.assertIn('Visit <https://museum.example/visit>', observations)
+        self.assertIn('Open daily 10:00-17:00.', observations)
+        self.assertIn("Still cannot see its results", observations)
+        self.assertIn('worker-cited', observations)
+        self.assertIn('https://museum.example/special', observations)
+
     def test_the_goal_judgment_reads_an_unseen_search_as_looked_up_not_as_proof_of_an_action(self):
         """#1308: a hidden native search shows a lookup ran; action claims still need observations."""
         from personal_agent.conversation_handoff import GOAL_REACHED_PROPOSITION
         self.assertIn('own web search whose results Still could not see', GOAL_REACHED_PROPOSITION)
         self.assertIn('looked up, not invented, though unverified', GOAL_REACHED_PROPOSITION)
         self.assertIn('still needs the observations', GOAL_REACHED_PROPOSITION)
+        # #621: worker-reported sources count as observed; worker-cited URLs are the worker's statement.
+        self.assertIn('is worker-reported', GOAL_REACHED_PROPOSITION)
+        self.assertIn('worker-cited', GOAL_REACHED_PROPOSITION)
 
 
     def test_goal_reached_reads_the_attempts_latest_page_text_and_the_next_attempt_does_not(self):

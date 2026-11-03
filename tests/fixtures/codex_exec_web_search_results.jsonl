@@ -1,0 +1,9 @@
+{"type": "thread.started", "thread_id": "thread-fixture-621"}
+{"type": "turn.started"}
+{"type": "item.started", "item": {"id": "item_1", "type": "web_search", "query": "", "action": {"type": "other"}}}
+{"type": "item.completed", "item": {"id": "item_1", "type": "web_search", "query": "museum opening hours", "action": {"type": "search", "query": "museum opening hours", "queries": ["museum opening hours", "museum holiday closure"]}, "results": [{"title": "Visit", "url": "https://museum.example/visit", "snippet": "Open daily 10:00-17:00. Closed on Mondays."}, {"title": "unsafe", "url": "javascript:alert(1)"}]}}
+{"type": "item.completed", "item": {"id": "item_2", "type": "web_search", "query": "museum special exhibition", "action": {"type": "search", "query": "museum special exhibition"}}}
+{"type": "item.completed", "item": {"id": "item_3", "type": "web_search", "query": "", "action": {"type": "find_in_page", "url": "https://museum.example/exhibitions", "pattern": "until"}}}
+not json at all
+{"type": "item.completed", "item": {"id": "item_4", "type": "agent_message", "text": "Open daily 10:00-17:00, closed Mondays (https://museum.example/visit). The special exhibition runs until 30 November [details](https://museum.example/exhibitions/special)."}}
+{"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 10}}
