@@ -220,6 +220,37 @@ class PreparationDraftBinding(_Case):
         self.assertEqual(self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])['state'], 'applied')
         self.assertEqual(self.service.preparations.get(self.row['id'])['state'], prep.STATE_CANCELLED)
 
+    def edit_draft(self, **changes):
+        return self.settings.propose('owner', 'http', 'preparations', 'edit', json.dumps({'id': self.row['id'], **changes}))
+
+    def test_a_timezone_change_cannot_move_an_approved_wall_clock_time(self):
+        """Codex P1 on #626: an offset-free ``due`` is bound to the timezone it was resolved in."""
+        draft = self.edit_draft(due='2026-11-05T09:00')
+        self.assertEqual(json.loads(draft['after'])['timezone'], 'Asia/Seoul')
+        expected = prep.parse_due('2026-11-05T09:00', 'Asia/Seoul', 'Asia/Seoul', self.clock[0])[0]
+        self.service.preparations.edit(self.row['id'], timezone='America/New_York')
+        self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+        current = self.service.preparations.get(self.row['id'])
+        self.assertEqual((current['due_at'], current['timezone']), (expected, 'Asia/Seoul'),
+                         'the time the owner approved, not 14 hours later')
+
+    def test_a_watch_run_does_not_make_an_edit_draft_stale(self):
+        draft = self.edit_draft(due='2026-11-05T09:00')
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET due_at=?,run_count=run_count+1 WHERE id=?',
+                       (self.row['due_at'] + 86400, self.row['id']))
+        self.assertEqual(self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])['state'], 'applied')
+        expected = prep.parse_due('2026-11-05T09:00', 'Asia/Seoul', 'Asia/Seoul', self.clock[0])[0]
+        self.assertEqual(self.service.preparations.get(self.row['id'])['due_at'], expected)
+
+    def test_a_rule_edit_binds_its_timezone_and_an_explicit_one_is_kept(self):
+        draft = self.edit_draft(recurrence='weekly')
+        self.assertEqual(json.loads(draft['after'])['timezone'], 'Asia/Seoul')
+        draft = self.settings.propose('owner', 'http', 'preparations', 'edit',
+                                      json.dumps({'id': self.row['id'], 'due': '2026-11-05T09:00+09:00',
+                                                  'timezone': 'Asia/Tokyo'}))
+        self.assertEqual(json.loads(draft['after'])['timezone'], 'Asia/Tokyo', 'an explicit timezone is kept')
+
     def test_a_draft_names_its_own_preparation(self):
         other = self.service.preparations.create(kind='prepare', goal='다른 준비', due_at=self.clock[0] + 7200,
                                                  timezone='Asia/Seoul', recurrence='daily', channel='web',
@@ -227,6 +258,33 @@ class PreparationDraftBinding(_Case):
         draft = self.settings.propose('owner', 'http', 'preparations', 'cancel', self.row['id'])
         self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
         self.assertEqual(self.service.preparations.get(other['id'])['state'], prep.STATE_SCHEDULED)
+
+
+class ModelDraftBinding(_Case):
+    """Codex P1 on #626: a model change is applied on the route current at apply time, so it binds that route."""
+
+    def setUp(self):
+        super().setUp()
+        self.route = ['openai']
+        self.applied = []
+        self.service.main_ai.current = lambda: self.route[0]
+        self.service.activate_main_ai = lambda body: self.applied.append(dict(body))
+        self.row = {'route': {'value': self.route[0]}, 'model': {'value': ''}}
+        self.settings._snapshot = lambda category: self.row if category == 'main_ai' else {}
+        self.settings._normalized = lambda category, setting, value: (value, self.row)
+
+    def test_a_route_switch_before_confirming_makes_the_model_draft_stale(self):
+        draft = self.settings.propose('owner', 'http', 'main_ai', 'model', 'model-x')
+        self.assertEqual(draft['before'], ' @ openai')
+        self.route[0] = 'openrouter'
+        with self.assertRaises(SettingsError):
+            self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+        self.assertEqual(self.applied, [], 'the model is never set on another provider')
+
+    def test_on_the_same_route_it_applies(self):
+        draft = self.settings.propose('owner', 'http', 'main_ai', 'model', 'model-x')
+        self.assertEqual(self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])['state'], 'applied')
+        self.assertEqual(self.applied, [{'route': 'openai', 'model': 'model-x'}])
 
 
 # -- decision 4: non-payment approvals stay open; payment keeps its bound -------------------------

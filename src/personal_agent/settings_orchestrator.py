@@ -285,6 +285,11 @@ UNATTENDED_SETTINGS_TEXT = ('No owner is present in this scheduled run, so no se
                             'make; the owner can ask for it in the conversation.')
 
 
+#: #619: settings whose apply resolves the route from current state; their drafts bind that route.
+MODEL_SETTINGS = frozenset({("main_ai", "model"), ("judgment_ai", "model")})
+MODEL_ROUTE_SEP = " @ "
+
+
 def direct_request_setting(category, setting, after):
     """Whether this change may apply on the owner's own request without a second confirmation (#619)."""
     return (category, setting) in DIRECT_REQUEST_SETTINGS or (category, setting, after) == ('skills', 'enabled', 'off')
@@ -767,6 +772,14 @@ class SettingsOrchestrator:
                 raise prep.PreparationRefusal('already_running')
             if current['state'] not in (prep.STATE_PROPOSED, prep.STATE_SCHEDULED, prep.STATE_PAUSED):
                 raise prep.PreparationRefusal('invalid_state')
+            # #619 (Codex P1 on #626): the draft binds the preparation's identity, not its schedule, so
+            # every value an edit would otherwise resolve from the current row at apply time is fixed
+            # here.  A wall-clock time (an offset-free ``due`` or ``until``, a rule or a recurrence)
+            # is read in a timezone: the one it was resolved in now becomes part of the change, so a
+            # timezone change before the owner confirms cannot move the approved time.  ``due_at``
+            # itself stays unbound, so a watch run that advances it does not make the draft stale.
+            if 'timezone' not in changes and set(changes) & {'due', 'until', 'rrule', 'recurrence'}:
+                changes['timezone'] = current['timezone']
             prep.Preparations.edit_values(current, {k: v for k, v in changes.items() if k != 'id'}, self.service.preparations.clock())
             return json.dumps(changes, sort_keys=True, ensure_ascii=False), row
         if (category, setting) == ('api_connections', 'connect'):
@@ -947,7 +960,24 @@ class SettingsOrchestrator:
             current = self.service.preparations.get(preparation_id) or {}
             bound = {key: current.get(key) for key in ('id', 'kind', 'goal_text')}
             return hashlib.sha256(json.dumps(bound, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        if (category, setting) in MODEL_SETTINGS:
+            # #619 (Codex P1 on #626): a model change is applied on the route current at apply time, so
+            # the route it was proposed on is bound too; a route switch before the owner confirms makes
+            # the draft stale instead of setting that model on another provider.
+            return row[setting]["value"] + MODEL_ROUTE_SEP + self._model_route(category)
         return self._trust_before(setting, value) if (category, setting) in TRUST_SETTINGS else row[setting]["value"]
+
+    def _model_route(self, category):
+        """The route a ``model`` change of ``category`` would be applied on now (#619)."""
+        if category == "main_ai":
+            return str(self.service.main_ai.current() or "")
+        active = self.service.decision_routes.status().get("active") or {}
+        return f"{active.get('transport') or ''}:{active.get('engine') or active.get('provider') or ''}"
+
+    @staticmethod
+    def _shown_before(category, setting, before):
+        """The current value a draft's ``before`` names, without what it is only bound to (#619)."""
+        return before.split(MODEL_ROUTE_SEP, 1)[0] if (category, setting) in MODEL_SETTINGS else before
 
     def _describe(self, category, setting, value, row):
         options = {option["value"]: option["label"] for option in row[setting].get("options") or ()}
@@ -999,7 +1029,7 @@ class SettingsOrchestrator:
         if continue_work and (category, setting) == ("ai_connections", "connect") and not json.loads(after)["required_tools"]:
             raise SettingsError(msg('settings_orchestrator.missing_required_tools'))
         before = self._before(category, setting, after, row)
-        if after == before:
+        if after == self._shown_before(category, setting, before):
             raise SettingsError(msg('settings_orchestrator.setting_unchanged', label=_CHANGE_LABELS[category, setting], value=self._describe(category, setting, after, row)))
         if (category, setting) == ("family", "add"):
             summary = msg('settings_orchestrator.family_add_summary', after=after)
@@ -1100,7 +1130,7 @@ class SettingsOrchestrator:
             summary = (msg(
                 'settings_orchestrator.change_summary',
                 label=_CHANGE_LABELS[category, setting],
-                before=self._describe(category, setting, before, row),
+                before=self._describe(category, setting, self._shown_before(category, setting, before), row),
                 after=self._describe(category, setting, after, row),
             ))
         note = row[setting].get("note") or ""
