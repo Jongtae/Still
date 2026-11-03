@@ -30,14 +30,16 @@ independently of anything the model says (pilot posture, #653):
   is asked of the owner bound to that form and the digest of what it would
   send (hidden amounts included); once exactly that is approved, the worker
   releases the held submit (``release_submit``).  A press whose label or
-  nearby text commits a purchase (the fixed ``COMMIT_*`` floor) needs approval
-  too; any other press, whatever effect the worker declared, is judged once
-  (``ConversationJudgments.press_commits_payment``), and a confident yes only
-  adds the requirement (#174, #188).
+  nearby text commits a purchase (the fixed ``COMMIT_*`` floor), or that the
+  worker declared ``payment``, needs approval too.  #619 (owner decision
+  2026-11-03): these deterministic checks are the browser's one payment gate;
+  the per-press AI judgment that used to sit beside them is removed.  Where the
+  request leaves is the held non-GET payment-form submit, approved bound to the
+  digest of exactly what it sends (amount and payee fields included).
 * **Page confirmations.**  A page's own ``confirm()`` during a step is
-  accepted only for a press the owner approved, or a step declared to change
-  state whose question is not a payment question on a page without a payment
-  field; any other is declined and returned in the step's ``dialogs`` (#174).
+  accepted unless its question is a payment question (``commit_question``) or
+  the page shows a payment field; those are accepted only for a press the owner
+  approved.  A declined one is returned in the step's ``dialogs`` (#174, #619).
 
 Engine (#680): ``WebKitWorkerDriver`` drives ``personal_agent.browser_worker``,
 a subprocess that owns the Cocoa run loop and a ``WKWebView`` with an
@@ -155,8 +157,11 @@ NAVIGATION_REFUSALS = {
     'destination_check_failed': DESTINATION_CHECK_FAILED_TEXT,
     'blocked_destination': BLOCKED_TEXT,
 }
-SUBMIT_REFUSED_TEXT = ('결제 양식일 수 있는 제출을 확인할 수 없어 멈췄습니다. 페이지를 다시 읽고 결제 버튼을 직접 눌러 '
-                       '승인을 요청하세요.')
+#: #619: said only of a non-GET form post (a GET form is a page load and goes through
+#: on an unknown answer); it no longer tells the AI to ask for a payment approval.
+SUBMIT_REFUSED_TEXT = ('페이지가 이 양식 전송(POST)이 결제 양식인지 제때 답하지 않아 보내지 않았습니다. 아무것도 '
+                       '전송되지 않았습니다. 페이지를 다시 읽고 같은 단계를 다시 실행하세요. 결제 양식이면 Still이 그 '
+                       '전송 내용 그대로 주인에게 묻습니다.')
 LOGIN_WINDOW_TEXT = ('로그인 창에서 직접 로그인한 뒤 창을 닫아 주세요. Still은 입력 내용을 보지 않으며, 창을 닫으면 '
                      '로그인 세션을 암호화해 저장합니다.')
 LIMITATION_TEXT = ('카드번호·CVC·일회용 코드 입력, 그 양식의 버튼, 한국어·영어·일본어·중국어의 흔한 결제·구매·주문 '
@@ -293,13 +298,21 @@ def commit_name(name, link=False):
 
 #: #936: a site's own confirmation question that a purchase, payment or transfer hangs on.
 #: Deliberately over-inclusive (a false match only leaves the question unconfirmed and says so).
+#: #619: a bare order noun (주문, order, 注文) no longer counts: "cancel the order?" is not a payment
+#: question.  Money and subscription words, an amount of money, and an order with a word that
+#: commits it ("주문을 진행할까요?", "주문하시겠습니까?", "confirm your order?") still do.
 COMMIT_QUESTION = re.compile(
-    r"결제|구매|주문|송금|이체|충전|구독|후원|\b(?:pay(?:ment)?|purchase|checkout|order|subscri\w*|donat\w*|transfer)\b"
-    r"|注文|購入|支払|決済|送金|支付|付款|购买|購買|下单|下單|订购|訂購|转账|轉帳", re.IGNORECASE)
+    r"결제|구매|송금|이체|충전|구독|후원|\b(?:pay(?:ment)?|purchase|checkout|subscri\w*|donat\w*|transfer)\b"
+    r"|購入|支払|決済|送金|支付|付款|购买|購買|转账|轉帳|下单|下單|订购|訂購"
+    r"|[$€£¥₩]\s*\d|\d[\d,.]*\s*(?:원|円|元)"
+    r"|주문\s*(?:을|를)?\s*(?:진행|확정|완료|신청|접수)|주문\s*(?:하|할)"
+    r"|\b(?:proceed|place|confirm|complete|submit|finali[sz]e)\b[^.?!]{0,30}\border\b"
+    r"|\border\b[^.?!]{0,20}\b(?:proceed|confirm|complete|submit)"
+    r"|注文\s*(?:を)?\s*(?:確定|する|します)|(?:确认|確認|提交)\s*(?:订单|訂單)", re.IGNORECASE)
 
 
 def commit_question(text):
-    """A confirmation question that may commit a purchase or payment (#936)."""
+    """A confirmation question that may commit a purchase or payment (#936, #619)."""
     text = _commit_text(text)
     return bool(text) and (commit_name(text) or bool(COMMIT_QUESTION.search(text)))
 
@@ -311,9 +324,6 @@ DIALOG_OUTCOMES = {
     'shown': '알림을 닫았습니다',
     'declined': '취소했습니다',
     'declined_payment': '결제·주문 확인이라 주인 승인 없이 확인하지 않았습니다',
-    # #174: the step's own declared effect does not cover a confirmation; the AI weighs the question.
-    'declined_effect': ('이 단계의 effect가 mutate가 아니어서 확인하지 않고 취소했습니다. 이 질문에 확인하는 것이 '
-                        '요청에 맞으면 effect를 mutate로 선언해 이 단계를 다시 실행하세요'),
     'dismissed': '입력 창을 닫았습니다',
     'owner': '이 기기에서 주인이 답했습니다',
 }
@@ -852,9 +862,8 @@ class BrowserSession:
     approval, a busy browser, a missing target or a blocked address spends none;
     without one the session keeps its own default ``WorkBudget``); ``excluded`` returns the private values to redact;
     ``approvals`` has ``consume(binding)`` and ``request(binding, text)``;
-    ``judgments`` is the Work's ``ConversationJudgments`` (or None), asked
-    only whether a ``mutate`` press the payment floor did not flag could
-    commit a charge (#174).
+    ``judgments`` is the Work's ``ConversationJudgments`` (or None); #619
+    removed the per-press payment judgment, so no browser step asks it.
     """
 
     def __init__(self, driver_factory, *, work_id, budget=None, excluded=None, approvals=None, judgments=None,
@@ -883,8 +892,6 @@ class BrowserSession:
         # owner, the reason it may not approve anything; it then holds for the rest of the Work.
         self._refusal = None
         self.judgments = judgments
-        # #174: the press judgment's answer per approval binding, so one press is judged at most once.
-        self._press_judged = {}
 
     # -- plumbing --
     def _driver(self):
@@ -1394,48 +1401,6 @@ class BrowserSession:
                 controls.append({'index': n, 'name': scrub(str(item.get('name') or '')[:NAME_LIMIT], excluded)[0]})
         return {'text': scrub(str(cover.get('text') or '')[:400], excluded)[0], 'controls': controls}
 
-    @staticmethod
-    def _row(snapshot, element):
-        """``element``'s numbered row: its label and nearby text, already scrubbed and bounded."""
-        return next((row for row in snapshot.get('_rows') or () if row.get('n') == element.get('n')), None) or {}
-
-    @staticmethod
-    def _press_facts(row, snapshot):
-        """What the payment judgment reads about a press: its label, nearby text and the page title, bounded."""
-        return (f"{row.get('role') or 'element'}: {row.get('name') or ''}"[:NAME_LIMIT],
-                str(row.get('_near') or '')[:NEAR_LIMIT], str(snapshot.get('title') or '')[:NAME_LIMIT])
-
-    def _press_may_pay(self, binding, facts):
-        """Whether the Work's judgment says, confidently, that this press could commit a charge (#174).
-
-        Asked for every press the payment floor did not flag, whatever effect
-        the worker declared (#188), at most once per approval binding (the same press on the
-        same page state is never asked again in this session).  The facts are
-        the control's mediated label, its mediated nearby text and the page
-        title, all bounded and scrubbed of the Work's private values, and
-        redacted again by the judgments.  Like the Work's other judgments, the
-        engine admits it against the Work's turns when it contacts a provider
-        (``RoutedDecisionEngine``), so an engine that cannot answer costs no
-        turn.  Only a confident yes is True: no, low confidence, an
-        unavailable engine or an exhausted budget leave the floor's answer.
-        ``binding`` already covers ``facts`` (#188), so a changed price, nearby
-        text or title is judged again and needs its own approval.
-        """
-        ask = getattr(self.judgments, 'press_commits_payment', None)
-        if not callable(ask):
-            return False
-        cache = binding_digest(binding)
-        if cache in self._press_judged:
-            return self._press_judged[cache]
-        self._press_judged[cache] = False
-        control, near, title = facts
-        try:
-            judged = ask(control, near, title, work_id=self.work_id)
-        except Exception:
-            return False
-        self._press_judged[cache] = getattr(judged, 'outcome', None) == 'yes'
-        return self._press_judged[cache]
-
     def click(self, args):
         effect = self._effect(args)
         self._require_page()
@@ -1460,25 +1425,11 @@ class BrowserSession:
                 description += f' · {context[:80]}'
         # #758: a control whose name commits a purchase needs approval whatever form it
         # is in (a stored payment method or a fetch charge leaves no card field to see).
+        # #619: this deterministic floor, the payment form and the worker's ``payment``
+        # declaration are the whole press check; no AI judgment is asked per press.
         required = bool(element['submit_guarded'] or element['commit'] or effect == 'payment')
-        row = facts = None
-        if not required:
-            # #188 (Codex on #186's diff): every fact the payment judgment reads is bound too, so a
-            # judged answer and the owner's approval both cover exactly that label, text and title.
-            row = self._row(snapshot, element)
-            facts = self._press_facts(row, snapshot)
-            state += '\n\x1ejudged ' + '\n'.join(facts)
         binding = step_binding(self.work_id, 'browser_click', snapshot['_page'], key, key, state)
         self._note_refusal(self._destinations(snapshot, element))
-        if not required:
-            # #174: the floor above is fixed language; a press it did not flag is judged once, and
-            # a confident yes only adds the owner's approval.  No or unavailable leaves it as it was.
-            # #188: whatever effect the worker declared - a press it calls ``read`` or ``navigate``
-            # is the same press, so the declared effect cannot skip the payment check.
-            if self._press_may_pay(binding, facts):
-                required = True
-                name, near = str(row.get('name') or row.get('role') or ''), str(row.get('_near') or '')
-                description = f"결제 가능성 · '{name[:40]}' 버튼 누르기" + (f' · {near[:80]}' if near else '')
         approved = self._guard(binding, description, required)
         self._spend_step()   # #620: a press held for approval, or on a missing target, spends nothing
         before = page_reference(snapshot.get('url'))

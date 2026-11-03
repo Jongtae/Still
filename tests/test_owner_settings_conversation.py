@@ -301,8 +301,11 @@ class OrchestratorCategories(_Case):
         self.assertEqual(self.settings.cancel('owner', 'http', cancelled['draft_id'])['state'], 'canceled')
         with self.assertRaises(SettingsError):
             self.settings.confirm('owner', 'http', cancelled['draft_id'], cancelled['digest'])
+        # #619: these cases cover a draft made before #619, which carries its own 10-minute expiry.
+        self.settings.TTL_SECONDS = 600
         expired = self.draft('current_context', 'timezone', 'Asia/Seoul')
-        self.clock[0] += self.settings.TTL_SECONDS + 1
+        self.settings.TTL_SECONDS = None
+        self.clock[0] += 600 + 1
         with self.assertRaisesRegex(SettingsError, '만료'):
             self.settings.confirm('owner', 'http', expired['draft_id'], expired['digest'])
         stale = self.draft('current_context', 'timezone', 'Asia/Seoul')
@@ -425,6 +428,8 @@ class ToolSurface(_Case):
 class ConversationConfirmation(_Case):
     def setUp(self):
         super().setUp()
+        # #619: these cases cover a draft made before #619, which carries its own 10-minute expiry.
+        self.settings.TTL_SECONDS = 600
         self.service.save_model({'provider': 'compatible', 'endpoint': 'https://example.test/v1', 'model': 'test-model', 'api_key': 'k'})
         self.assertTrue(self.service.test_model()['ok'])
         self.applies = []
@@ -1189,12 +1194,14 @@ class PreparationManagementConversation(_Case):
         self.assertEqual(edited['recurrence'], 'RRULE:FREQ=WEEKLY;BYDAY=MO,TH;COUNT=3')
         self.assertEqual(edited['rule_start'], edited['due_at'])
 
-    def test_edit_draft_is_bound_to_schedule_and_rejects_goal_changes(self):
+    def test_edit_draft_is_bound_to_the_preparation_and_the_change_and_rejects_goal_changes(self):
+        # #619 (owner decision 2026-11-03): the draft binds to the preparation's identity and the
+        # requested change; a schedule change since does not void it, the requested change is applied.
         value = json.dumps({'id': self.row['id'], 'recurrence': 'weekly'})
         draft = self.settings.propose('owner', 'http', 'preparations', 'edit', value)
         self.service.preparations.edit(self.row['id'], recurrence='weekdays')
-        with self.assertRaises(SettingsError):
-            self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+        self.assertEqual(self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])['state'], 'applied')
+        self.assertEqual(self.service.preparations.get(self.row['id'])['recurrence'], 'weekly')
         with self.assertRaises(prep.PreparationRefusal) as caught:
             self.settings.propose('owner', 'http', 'preparations', 'edit', json.dumps({'id': self.row['id'], 'goal': '다른 목표'}))
         self.assertEqual(caught.exception.code, 'goal_not_editable')

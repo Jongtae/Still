@@ -680,8 +680,13 @@ class AcceptanceTests(_Case):
         self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal='점심 후보',
                                                              due=self.due_iso(86400))]}, {'content': '제안했습니다.'}]
         self.assertTrue(self.service.run_one())
+        # #619 (owner decision 2026-11-03): a scheduled run leaves nothing waiting for the owner, so it
+        # makes no proposal either; the tool tells the worker to say what it would schedule.
         created = [r for r in self.rows() if r['id'] != row['id']]
-        self.assertEqual([r['state'] for r in created], ['proposed'])
+        self.assertEqual(created, [])
+        [work] = [job for job in self.store.jobs() if prep.preparation_of(job.get('request_key')) == row['id']]
+        refused = [e['trace'] for e in self.store.task_events(work['id']) if e['tool'] == 'schedule_preparation']
+        self.assertTrue(refused and refused[-1].get('code') == 'unattended_run', refused)
         self.assertFalse(any(item[1].purpose == 'explicit-preparation-request' for item in self.judge.asked[before:]))
 
     def test_the_judgment_is_a_bounded_proposition_not_a_rule(self):

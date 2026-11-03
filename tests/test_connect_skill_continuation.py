@@ -20,6 +20,8 @@ class SkillContinuation(_Case):
         self.library = SkillLibrary(self.store, transport=self.github)
         self.service.skill_library = lambda: self.library
         self.job = self.store.job(self.store.enqueue('Prepare the requested project update', 'original'))
+        # #619: these cases cover a draft made before #619, which carries its own 10-minute expiry.
+        self.settings.TTL_SECONDS = 600
 
     def status(self, state):
         with self.store.db() as db:

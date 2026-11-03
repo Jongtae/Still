@@ -280,9 +280,31 @@ class Negative(OwnerActCase):
         self.assertEqual(self.applies, [])
         self.assertEqual(self.offered_state(), 'awaiting-confirmation')
 
-    def test_an_expired_change_is_not_open(self):
+    def test_a_change_stays_open_until_the_owner_settles_it(self):
+        """#619 (owner decision 2026-11-03): a non-payment change has no 10-minute expiry.
+
+        A day later the owner's plain yes still settles exactly that change, through its own path,
+        and the reply starts no Work that could draft it again.
+        """
         self.offered()
-        self.now += self.settings.TTL_SECONDS + self.settings.RENEW_GRACE_SECONDS + 1
+        self.now += 24 * 3600
+        self.rule = lambda act, items: (items[0]['id'], 'approve', '')
+        [pending] = self.settings.pending_drafts()
+        self.assertIsNone(pending['expires_at'])
+        jobs_before = len(self.store.jobs())
+        self.receive('승인')
+        self.assertEqual(len(self.acts), 1)
+        self.assertEqual(self.applies, [{'enabled': True}])
+        self.assertEqual(self.settings._drafts()[self.offered_draft]['state'], 'applied')
+        self.assertEqual(self.settings.pending_drafts(), [], 'the approve reply drafted nothing new')
+        self.assertEqual(len(self.store.jobs()), jobs_before + 1, 'only the reply itself')
+        self.assertNotIn(self.store.jobs()[0]['status'], ('queued', 'running'))
+
+    def test_a_legacy_expired_change_is_not_open(self):
+        # #619: a draft made before #619 carries its own 10-minute expiry and keeps it.
+        self.settings.TTL_SECONDS = 600
+        self.offered()
+        self.now += 600 + self.settings.RENEW_GRACE_SECONDS + 1
         self.rule = lambda act, items: (items[0]['id'], 'approve', '')
         self.receive('승인')
         self.assertEqual(self.acts, [])

@@ -1855,16 +1855,16 @@ class WebKitIntegrationTests(unittest.TestCase):
     def session(self, work_id):
         return bs.BrowserSession(self.profile.driver_factory(work_id), work_id=work_id, approvals=Approvals(), excluded=lambda: [PASSPORT], allowed_origins_for_tests=(self.fixture,))
 
-    def test_a_page_confirm_is_answered_by_the_steps_own_declared_effect(self):
-        """#174: after a step declared navigate the question is declined and reported; after mutate it is accepted."""
+    def test_a_non_payment_page_confirm_is_accepted_whatever_the_declared_effect(self):
+        """#619: a non-payment question is accepted after a step declared navigate as after mutate."""
         sess = self.session('work-174-effect')
         try:
             sess.open({'url': self.origin + '/confirm', 'effect': 'navigate'})
             page = sess.click({'target': '탈퇴', 'effect': 'navigate'})
-            self.assertIn('탈퇴 취소됨', page['text'])
+            self.assertIn('탈퇴 확인됨', page['text'])
             self.assertEqual(page['dialogs'], [{'kind': 'confirm', 'message': '정말 탈퇴하시겠습니까?',
-                                                'answer': bs.DIALOG_OUTCOMES['declined_effect']}],
-                             'the worker AI reads the question and why it was declined')
+                                                'answer': bs.DIALOG_OUTCOMES['accepted']}])
+            sess.open({'url': self.origin + '/confirm', 'effect': 'navigate'})
             page = sess.click({'target': '탈퇴', 'effect': 'mutate'})
             self.assertIn('탈퇴 확인됨', page['text'])
             self.assertEqual(page['dialogs'], [{'kind': 'confirm', 'message': '정말 탈퇴하시겠습니까?',

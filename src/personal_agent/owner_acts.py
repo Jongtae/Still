@@ -119,9 +119,13 @@ class OwnerActs:
         for draft in settings.pending_or_renewable(owner, channel):
             groups.setdefault(draft.get('work_id') or draft['id'], []).append(draft)
         for work_id, rows in groups.items():
-            deadline = max(float(draft.get('expires_at') or 0) for draft in rows)
-            if deadline <= now:
-                deadline += settings.RENEW_GRACE_SECONDS
+            # #619: a draft with no expiry (a non-payment change waits until settled) has no deadline.
+            if any(draft.get('expires_at') is None and draft.get('state') == 'awaiting-confirmation' for draft in rows):
+                deadline = None
+            else:
+                deadline = max(float(draft.get('expires_at') or 0) for draft in rows)
+                if deadline <= now:
+                    deadline += settings.RENEW_GRACE_SECONDS
             notice = service.store.notification_of(work_id, 'settings_change_proposed') if conversation_of else None
             bound = (notice and notice.get('surface', 'telegram') == conversation_of[0].name
                      and notice['chat_id'] == conversation_of[1] and notice['generation'] == conversation_of[2]
@@ -154,7 +158,7 @@ class OwnerActs:
         With ``target``, only those sent as that message, however many newer ones were sent since (#188).
         """
         from .quickstart_service import (MEMORY_CANDIDATES_TTL_SECONDS, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS,
-                                         MEMORY_SAVED_TTL_SECONDS)
+                                         MEMORY_SAVED_TTL_SECONDS, PAYMENT_APPROVAL_SECONDS)
         service = self.service
         kinds = ('budget_continue', 'browser_approval_needed', 'preparation_proposed', *MEMORY_SAVED_KINDS, *MEMORY_PROMPT_KINDS)
         items = []
@@ -181,7 +185,7 @@ class OwnerActs:
                     continue
                 requested = float(current[1].get('requested_at') or 0)
                 items.append({**base, 'kind': KIND_STEP, 'shown_text': service.browser_step_prompt(notification['job_id']),
-                              'shown_at': max(requested, float(sent_at or 0)), 'expires_at': requested + 600})
+                              'shown_at': max(requested, float(sent_at or 0)), 'expires_at': requested + PAYMENT_APPROVAL_SECONDS})
             elif kind in MEMORY_SAVED_KINDS:
                 current = service.open_memory_notice(notification)
                 if not current:

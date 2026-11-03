@@ -97,7 +97,17 @@ def set_confirmed(store, engine_id, names, *, transaction=None):
         found = db.execute('SELECT value FROM config WHERE key=?', (CONFIRMED_KEY,)).fetchone()
         rows = json.loads(found['value']) if found else {}
         rows = dict(rows) if isinstance(rows, dict) else {}
+        previous = rows.get(engine_id) if isinstance(rows.get(engine_id), list) else []
         rows[engine_id] = clean
+        # #619: each server's own confirmation revision, new whenever it is (re)confirmed, so an
+        # approval bound to one connection changes with that server alone (a disconnect and
+        # reconnect of the same name included), never with another server's confirmation.
+        servers = rows.get('_server_revisions', {})
+        servers = dict(servers) if isinstance(servers, dict) else {}
+        current = servers.get(engine_id) if isinstance(servers.get(engine_id), dict) else {}
+        servers[engine_id] = {name: (current.get(name, '') if name in previous else secrets.token_hex(16))
+                              for name in clean}
+        rows['_server_revisions'] = servers
         revisions=rows.get('_revisions',{})
         revisions=dict(revisions) if isinstance(revisions,dict) else {}
         revisions[engine_id]=secrets.token_hex(16)
@@ -112,6 +122,14 @@ def revision(store, engine_id):
     rows=store.config(CONFIRMED_KEY,{})
     revisions=rows.get('_revisions',{}) if isinstance(rows,dict) else {}
     return revisions.get(engine_id,'') if isinstance(revisions,dict) else ''
+
+
+def server_revision(store, engine_id, name):
+    """#619: the confirmation revision of one server the owner confirmed ('' before its first change)."""
+    rows = store.config(CONFIRMED_KEY, {})
+    servers = rows.get('_server_revisions', {}) if isinstance(rows, dict) else {}
+    engine = servers.get(engine_id) if isinstance(servers, dict) else None
+    return str(engine.get(name, '')) if isinstance(engine, dict) else ''
 
 
 def all_confirmed(store):

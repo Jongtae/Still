@@ -174,7 +174,8 @@ CLASSIFIED_TABLES = {
     **{('browser_session.py', name): (
         'enforcement', '#758/#899/#936 payment floor: a control label or a site confirm question that may commit '
                        "a purchase or payment needs the owner's approval; over-inclusive by design, a match only "
-                       'adds that requirement (#174 keeps these as the floor; its judgment can only add to them)')
+                       'adds that requirement (#619: with the payment form, the one deterministic payment gate; '
+                       'no per-press judgment)')
        for name in ('COMMIT_PHRASES', 'COMMIT_VERBS', 'COMMIT_NOUN_END', 'COMMIT_NOUN_ALONE', 'COMMIT_NOUN_PRICE',
                     'COMMIT_QUESTION')},
     ('browser_session.py', 'action_input_safe.sensitive_name'): (

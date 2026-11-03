@@ -267,9 +267,34 @@ def canonical_timezone(name):
 
 RECOVERY_DECLINED_MESSAGE = msg('settings_orchestrator.recovery_declined')
 
+#: #619 (owner decision 2026-11-03): an owner's direct request is its own approval, except payment.
+#: The settings a Work the owner's own typed message started may apply without a second
+#: confirmation, once the ``explicit-settings-request`` judgment says that message asked for exactly
+#: this change.  Only changes that add no authority, no data destination and no external send:
+#: a new connection, server, trust level, skill, family member or share, phone link, Telegram
+#: pairing, AI route or Judgment AI keeps the owner's confirmation of Still's exact preview.
+DIRECT_REQUEST_SETTINGS = frozenset({
+    ('current_context', 'enabled'), ('current_context', 'timezone'),
+    ('owner_model', 'enabled'), ('owner_model', 'daily_calls'), ('owner_model', 'dream'),
+    ('main_ai', 'model'), ('skills', 'remove'),
+    *(('preparations', operation) for operation in ('cancel', 'accept', 'pause', 'resume', 'edit', 'run_now')),
+    ('browser', 'close_login'), ('browser', 'use_mobile'), ('connections', 'disconnect')})
+#: #619: what the worker reads when a scheduled run (no owner present) asks for a settings change.
+UNATTENDED_SETTINGS_TEXT = ('No owner is present in this scheduled run, so no settings change was proposed and '
+                            'nothing waits for the owner. Say in your answer what you found and the change you would '
+                            'make; the owner can ask for it in the conversation.')
+
+
+def direct_request_setting(category, setting, after):
+    """Whether this change may apply on the owner's own request without a second confirmation (#619)."""
+    return (category, setting) in DIRECT_REQUEST_SETTINGS or (category, setting, after) == ('skills', 'enabled', 'off')
+
 
 class SettingsOrchestrator:
-    TTL_SECONDS = 10 * 60
+    #: #619 (owner decision 2026-11-03): a settings change is never a payment, so its draft waits
+    #: until the owner settles it or its Work is cancelled (None: no expiry).  A draft made before
+    #: carries its own ``expires_at`` and keeps it.
+    TTL_SECONDS = None
     _CATEGORIES = ("connections",)
 
     def __init__(self, store, now=time.time, connections=None, service=None):
@@ -298,6 +323,22 @@ class SettingsOrchestrator:
     def _drafts(self):
         rows = self.store.config("settings_change_drafts", {})
         return rows if isinstance(rows, dict) else {}
+
+    def expired(self, row, now=None):
+        """Whether ``row`` ran out of time; a draft with no ``expires_at`` never does (#619)."""
+        if row.get("expires_at") is None:
+            return False
+        return float(row.get("expires_at") or 0) < (self.now() if now is None else now)
+
+    def _work_cancelled(self, row):
+        """#619: a draft's Work the owner stopped or cancelled ends what it left waiting."""
+        stopped = getattr(self.service, 'work_stopped', None)
+        if not row.get("work_id") or not callable(stopped):
+            return False
+        try:
+            return bool(stopped(row["work_id"]))
+        except Exception:
+            return False
 
     def _put_drafts(self, rows):
         # OwnerForget can revoke drafts through another store instance. A stale
@@ -362,7 +403,7 @@ class SettingsOrchestrator:
                     if isinstance(row, dict) and row.get('owner') == owner}
         result['pending_changes'] = [
             {**{key: row.get(key) for key in ('id', 'work_id', 'category', 'effect', 'expires_at')},
-             'renewable': row.get('state') in ('expired','failed','unknown') or float(row.get('expires_at') or 0) < self.now(),
+             'renewable': row.get('state') in ('expired','failed','unknown') or self.expired(row),
              'state': row.get('state'), 'setup_failure': row.get('setup_failure'),
              'recovery_mode': 'observe-only' if row.get('state')=='unknown' else 'retry' if row.get('state')=='failed' else None}
             for channel in sorted(channels, key=str) for row in self.pending_or_renewable(owner, channel)
@@ -897,12 +938,14 @@ class SettingsOrchestrator:
             work_id = value.partition("|")[0]
             return f"{value}:{(self.service._browser_login(work_id) or {}).get('state')}"
         if category == "preparations":
-            # #575: bind the schedule as well as state, so a run, a change or an edit since the draft makes it stale;
-            # bookkeeping columns (run counts, last result) do not.  Persist only its digest.
+            # #619 (owner decision 2026-11-03): an approval binds to the exact action, never unrelated state.
+            # The draft names the preparation (its identity: id, kind and goal, which no edit changes) and
+            # the requested change (``after``); a run, the next due time or a schedule change since does not
+            # make it stale.  Whether the operation still applies is the operation's own check when it runs
+            # (cancel of a finished one changes nothing; pause of a running one is refused).  Digest only.
             preparation_id = json.loads(value)['id'] if setting == 'edit' else value
             current = self.service.preparations.get(preparation_id) or {}
-            bound = {key: current.get(key) for key in ('id', 'state', 'goal_text', 'due_at', 'timezone', 'recurrence',
-                                                       'every_seconds', 'window_end', 'max_runs')}
+            bound = {key: current.get(key) for key in ('id', 'kind', 'goal_text')}
             return hashlib.sha256(json.dumps(bound, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         return self._trust_before(setting, value) if (category, setting) in TRUST_SETTINGS else row[setting]["value"]
 
@@ -1070,7 +1113,8 @@ class SettingsOrchestrator:
         draft = {"id": uuid.uuid4().hex[:12], "owner": owner, "channel": channel, "category": category, "setting": setting,
                  "target": f"{category}.{setting}", "before": before, "after": after, "effect": summary, "note": note,
                  "reason": redact_known_secrets(self.store, reason), "work_id": work_id if isinstance(work_id, str) else None,
-                 "created_at": now, "expires_at": now + self.TTL_SECONDS, "state": "awaiting-confirmation"}
+                 "created_at": now, "expires_at": now + self.TTL_SECONDS if self.TTL_SECONDS else None,
+                 "state": "awaiting-confirmation"}
         if _recovery_of is not None:
             draft['recovery_of'] = _recovery_of
         if _observe_only:
@@ -1306,9 +1350,12 @@ class SettingsOrchestrator:
                 raise SettingsError(msg('settings_orchestrator.draft_no_longer_confirmable'))
             if not hmac.compare_digest(str(row.get("digest") or ""), digest) or self._digest(row) != row.get("digest"):
                 raise SettingsError(msg('settings_orchestrator.draft_digest_mismatch'))
-            if self.now() > float(row.get("expires_at") or 0):
+            if self.expired(row):
                 self._settle(row["id"], "expired", "expired")
                 raise SettingsError(msg('settings_orchestrator.draft_expired'))
+            if self._work_cancelled(row):
+                self._settle(row["id"], "canceled", "canceled", "work-cancelled")
+                raise SettingsError(msg('settings_orchestrator.draft_no_longer_confirmable'))
             if ((row.get('category'),row.get('setting'))==('ai_connections','connect')
                     and self.service.mcp_setup_attempts(row.get('work_id'))>=3):
                 self._settle(row['id'],'failed','failed','setup-attempt-budget')
@@ -1421,10 +1468,11 @@ class SettingsOrchestrator:
             category_lock.release()
 
     def pending_drafts(self):
-        """Every draft still awaiting the owner (not expired), oldest first."""
+        """Every draft still awaiting the owner (not expired, its Work not cancelled), oldest first."""
         now = self.now()
         rows = [row for row in self._drafts().values() if isinstance(row, dict)
-                and row.get("state") == "awaiting-confirmation" and float(row.get("expires_at") or 0) >= now]
+                and row.get("state") == "awaiting-confirmation" and not self.expired(row, now)
+                and not self._work_cancelled(row)]
         return sorted(rows, key=lambda row: (row.get("created_at") or 0, row["id"]))
 
     def pending_for_conversation(self, owner, channel):
@@ -1444,8 +1492,7 @@ class SettingsOrchestrator:
         with self._confirming:
             for row in rows:
                 try:
-                    if apply and (row.get("state") != "awaiting-confirmation"
-                                  or float(row.get("expires_at") or 0) < self.now()):
+                    if apply and (row.get("state") != "awaiting-confirmation" or self.expired(row)):
                         row = self._renew(owner, channel, row)
                     prepared.append((row, None))
                 except SettingsError as exc:
@@ -1454,7 +1501,7 @@ class SettingsOrchestrator:
             try:
                 if error is not None:
                     raise error
-                if row.get("state") != "awaiting-confirmation" or float(row.get("expires_at") or 0) < self.now():
+                if row.get("state") != "awaiting-confirmation" or self.expired(row):
                     # Only time ran out: the owner's answer carries the exact change forward (or declines it).
                     if not apply:
                         with self._confirming:
@@ -1491,6 +1538,7 @@ class SettingsOrchestrator:
         def deadline(row):
             return float(row.get('settled_at') or 0) if row.get('category') == 'api_connections' and row.get('state') == 'expired' else float(row.get('expires_at') or 0)
         return sorted((row for row in self._drafts().values() if isinstance(row, dict)
+                       and (row.get("expires_at") is not None or row.get("state") == "expired")
                        and row.get("owner") == owner and row.get("channel") == channel
                        and (work_id is None or row.get("work_id") == work_id)
                        and (row.get("state") == "expired" or row.get("state") == "awaiting-confirmation")
@@ -1602,13 +1650,20 @@ class SettingsOrchestrator:
                 lines.append("  " + msg('settings_orchestrator.draft_reason', reason=row['reason']))
         return "\n".join(lines)
 
-    def work_tools(self, owner, channel, work_id, telegram=False):
+    def work_tools(self, owner, channel, work_id, telegram=False, *, unattended=False, owner_request=None):
         """``settings_read`` / ``settings_change`` bound to one Work (#814).
 
         A change is only a draft bound to this conversation; the model gets
         no digest and no way to confirm.  The owner confirms in the same
         conversation: the 적용 button, or a plain yes (#855).  ``telegram`` is
         kept for callers; the wording no longer differs by channel.
+
+        #619 (owner decision 2026-11-03): ``unattended`` (a scheduled run, no
+        owner present) checks the change and drafts nothing: nothing is left
+        waiting, and the worker says what it would change.  ``owner_request``
+        (``summary -> bool``, the service's judgment over the owner's own
+        typed message) lets a ``DIRECT_REQUEST_SETTINGS`` change apply at once
+        through the same ``confirm`` path (digest, stale check, audit, receipt).
         """
         def call(action, args):
             args = args if isinstance(args, dict) else {}
@@ -1620,14 +1675,52 @@ class SettingsOrchestrator:
                 return {key: result[key] for key in ("category", "settings", "connections", "pending_changes", "response") if key in result}
             if args.get("continue_work", "no") not in ("yes", "no"):
                 raise SettingsError(msg('settings_orchestrator.invalid_continue_work_option'))
+            if unattended:
+                after, _row = self._normalized(args.get("category"), args.get("setting"), args.get("value"))
+                return {"state": "not_proposed", "unattended": True, "category": args.get("category"),
+                        "setting": args.get("setting"), "after": after, "applied": False,
+                        "next_step": UNATTENDED_SETTINGS_TEXT}
             draft = self.propose(owner, channel, args.get("category"), args.get("setting"), args.get("value"),
                                  args.get("reason"), work_id, continue_work=args.get("continue_work") == "yes", required_skill=args.get("required_skill"))
-            minutes = self.TTL_SECONDS // 60
-            how = (f"소유자에게 이 대화에서 확인을 요청합니다: 적용 버튼을 누르거나 그렇게 하라고 답하면 적용되고, "
-                   f"아니라고 답하면 취소됩니다({minutes}분 안에).")
+            if (callable(owner_request) and args.get("continue_work", "no") == "no"
+                    and direct_request_setting(draft["category"], draft["setting"], draft["after"])):
+                applied = self._apply_owner_request(owner, channel, draft, owner_request)
+                if applied is not None:
+                    return applied
+            how = ("소유자에게 이 대화에서 확인을 요청합니다: 적용 버튼을 누르거나 그렇게 하라고 답하면 적용되고, "
+                   "아니라고 답하면 취소됩니다. 소유자가 답하거나 이 작업이 취소될 때까지 기다립니다.")
             return {**{key: value for key, value in draft.items() if key not in ("digest", "response", "expires_at")},
                     "next_step": f"{draft['summary']} 변경은 소유자 확인을 기다립니다. {how} 확인 전에는 아무것도 바뀌지 않았습니다."}
         return call
+
+    def _apply_owner_request(self, owner, channel, draft, owner_request):
+        """Apply a draft the owner's own typed message asked for exactly (#619), or None to leave it waiting.
+
+        The judgment (``owner_request``) reads the owner's message against Still's exact preview;
+        no, unavailable or a refused apply leaves the draft waiting for the owner as before.
+        """
+        try:
+            asked = bool(owner_request(draft["summary"]))
+        except Exception:
+            asked = False
+        if not asked:
+            return None
+        try:
+            result = self.confirm(owner, channel, draft["draft_id"], draft["digest"])
+        except SettingsError as exc:
+            current = self._drafts().get(draft["draft_id"]) or {}
+            if current.get("state") == "awaiting-confirmation":
+                return None
+            raise exc
+        self._audit({"id": draft["draft_id"], "target": f"{draft['category']}.{draft['setting']}",
+                     "before": draft["before"], "after": draft["after"]}, "owner-request")
+        state = result.get("state")
+        return {"state": state, "draft_id": draft["draft_id"], "category": draft["category"],
+                "setting": draft["setting"], "before": draft["before"], "after": draft["after"],
+                "summary": draft["summary"], "applied": state == "applied", "owner_request": True,
+                "response": result.get("response"),
+                "next_step": ("The owner's own message asked for exactly this change, so Still applied it without a "
+                              "second confirmation. Tell the owner what changed, in their terms.")}
 
     def _audit(self, row, terminal, error_class=None):
         with self._confirming:
