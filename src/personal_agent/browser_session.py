@@ -298,23 +298,32 @@ def commit_name(name, link=False):
 
 #: #936: a site's own confirmation question that a purchase, payment or transfer hangs on.
 #: Deliberately over-inclusive (a false match only leaves the question unconfirmed and says so).
-#: #619: a bare order noun (주문, order, 注文) no longer counts: "cancel the order?" is not a payment
-#: question.  Money and subscription words, an amount of money, and an order with a word that
-#: commits it ("주문을 진행할까요?", "주문하시겠습니까?", "confirm your order?") still do.
+#: #619 (Codex P1 on #626): fail-closed.  Every word the #936 table had still counts, and an amount of
+#: money counts too; the one exclusion is ``ORDER_QUESTION`` alone with a word that withdraws the order.
 COMMIT_QUESTION = re.compile(
     r"결제|구매|송금|이체|충전|구독|후원|\b(?:pay(?:ment)?|purchase|checkout|subscri\w*|donat\w*|transfer)\b"
-    r"|購入|支払|決済|送金|支付|付款|购买|購買|转账|轉帳|下单|下單|订购|訂購"
-    r"|[$€£¥₩]\s*\d|\d[\d,.]*\s*(?:원|円|元)"
-    r"|주문\s*(?:을|를)?\s*(?:진행|확정|완료|신청|접수)|주문\s*(?:하|할)"
-    r"|\b(?:proceed|place|confirm|complete|submit|finali[sz]e)\b[^.?!]{0,30}\border\b"
-    r"|\border\b[^.?!]{0,20}\b(?:proceed|confirm|complete|submit)"
-    r"|注文\s*(?:を)?\s*(?:確定|する|します)|(?:确认|確認|提交)\s*(?:订单|訂單)", re.IGNORECASE)
+    r"|購入|支払|決済|送金|支付|付款|购买|購買|转账|轉帳"
+    r"|[$€£¥₩]\s*\d|\d[\d,.]*\s*(?:원|円|元)", re.IGNORECASE)
+#: The order words of the #936 table: a purchase question, unless it withdraws the order.
+ORDER_QUESTION = re.compile(r"주문|\b(?:re)?order\w*|注文|下单|下單|订购|訂購", re.IGNORECASE)
+#: #619: an order question that cancels, withdraws or refunds the order is not a purchase ("주문을 취소할까요?").
+WITHDRAW_QUESTION = re.compile(r"취소|철회|환불|\b(?:cancel\w*|withdraw\w*|refund\w*)\b|キャンセル|取り?消|撤回|取消|退款",
+                               re.IGNORECASE)
 
 
 def commit_question(text):
-    """A confirmation question that may commit a purchase or payment (#936, #619)."""
+    """A confirmation question that may commit a purchase or payment (#936, #619).
+
+    Fail-closed: a commit phrase, a money word or an amount always counts; an order word counts
+    unless the question withdraws the order and names no money.  A false match only declines a
+    dialog the AI can see; a missed one could charge the owner.
+    """
     text = _commit_text(text)
-    return bool(text) and (commit_name(text) or bool(COMMIT_QUESTION.search(text)))
+    if not text:
+        return False
+    if commit_name(text) or COMMIT_QUESTION.search(text):
+        return True
+    return bool(ORDER_QUESTION.search(text)) and not WITHDRAW_QUESTION.search(text)
 
 
 #: #936: what a page's own alert/confirm/prompt during a step said, and how it was answered.

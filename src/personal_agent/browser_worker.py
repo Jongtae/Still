@@ -1729,11 +1729,14 @@ class Worker:
         cancelled submit.  No answer in ``FORM_CHECK_SECONDS`` (or a script
         error) refuses a non-GET submission with nothing held, answered
         ``submit_refused``.  #619: the same unknown lets a GET submission (a
-        search form) through to the destination check: it sends its fields as
-        a page address, and a payment request leaves as a non-GET submit, the
-        one the guard holds for the owner's exact approval.
+        search form) through to the destination check, but only during an AI
+        step on a page the step saw with no payment field (``confirm_ok``):
+        there the page's answer could only have been "no payment form", so the
+        unknown changes nothing.  Outside a step, or on a page that shows a
+        payment field, it is refused as before (Codex P1 on #626: fail-closed).
         """
-        get = str(method or 'GET').upper() == 'GET'
+        step = self.dialog_step if isinstance(getattr(self, 'dialog_step', None), dict) else {}
+        get = str(method or 'GET').upper() == 'GET' and step.get('confirm_ok') is True
         answered = []
         self.deciding += 1   # a click waits for this decision (#736)
 

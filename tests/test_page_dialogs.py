@@ -119,9 +119,11 @@ class StepDialogsMediation(unittest.TestCase):
     def test_commit_question(self):
         self.assertTrue(bs.commit_question('결제하시겠습니까?'))
         self.assertFalse(bs.commit_question('해당 상품을 삭제하시겠습니까?'))
-        # #619: withdrawing an order is not paying; committing one, or naming an amount, still is.
+        # #619: withdrawing an order is not paying; every other order question, or an amount, still is.
         for text in ('Cancel the order?', '주문을 취소하시겠습니까?', 'Do you want to cancel this order?'):
             self.assertFalse(bs.commit_question(text), text)
+        for text in ('Would you like to order this item?', '注文してもよろしいですか?', 'Place order?'):
+            self.assertTrue(bs.commit_question(text), text)
         for text in ('주문을 진행할까요?', '주문하시겠습니까?', 'Confirm your order?', '₩12,000 주문하시겠습니까?',
                      'Proceed to checkout?', '12,000원을 송금합니다. 계속할까요?'):
             self.assertTrue(bs.commit_question(text), text)

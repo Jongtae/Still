@@ -81,9 +81,12 @@ class FormCheckUnknown(unittest.TestCase):
 
     WORKER = next(value for value in vars(bw).values() if isinstance(value, type) and hasattr(value, 'check_form_navigation'))
 
-    def check(self, method, page=None):
+    #: An AI step on a page it saw with no payment field (``confirm_ok``).
+    STEP = {'approved': False, 'confirm_ok': True, 'dialogs': []}
+
+    def check(self, method, page=None, step=STEP):
         later = []
-        state = types.SimpleNamespace(deciding=0, refused_submits=0, held=[])
+        state = types.SimpleNamespace(deciding=0, refused_submits=0, held=[], dialog_step=step)
         state.receive_cancelled = lambda record: state.held.append(record)
         state.AppHelper = types.SimpleNamespace(callLater=lambda seconds, fn: later.append(fn))
         state.run = lambda script, args, done: page(done) if page else None
@@ -99,6 +102,13 @@ class FormCheckUnknown(unittest.TestCase):
         decided, state = self.check('POST')
         self.assertEqual((decided, state.refused_submits, state.deciding), ([False], 1, 0))
 
+    def test_an_unanswered_get_form_is_refused_outside_a_step_or_on_a_payment_page(self):
+        """Codex P1 on #626: fail-closed where the page's answer could have named a payment form."""
+        for step in (None, {'approved': False, 'confirm_ok': False, 'dialogs': []}, {'approved': False, 'dialogs': []}):
+            with self.subTest(step=step):
+                decided, state = self.check('GET', step=step)
+                self.assertEqual((decided, state.refused_submits), ([False], 1))
+
     def test_a_script_error_lets_a_get_through_and_refuses_a_post(self):
         decided, state = self.check('get', page=lambda done: done(None, RuntimeError('page went away')))
         self.assertEqual((decided, state.refused_submits), ([True], 0))
@@ -109,6 +119,27 @@ class FormCheckUnknown(unittest.TestCase):
         record = {'dom': 0, 'method': 'get', 'action': 'https://shop.test/pay'}
         decided, state = self.check('GET', page=lambda done: done({'allow': False, 'cancelled': record}, None))
         self.assertEqual((decided, state.held, state.refused_submits), ([False], [record], 0))
+
+    def test_purchase_questions_stay_guarded_on_a_page_with_no_payment_field(self):
+        """Codex P1 on #626: an unapproved step's purchase confirmation is declined, with or without an amount."""
+        WORKER = next(value for value in vars(bw).values() if isinstance(value, type) and hasattr(value, 'js_dialog'))
+        for question in ('Would you like to order this item?', '注文してもよろしいですか?', '주문하시겠습니까?',
+                         'Place order?', 'Buy now?', 'Would you like to order this item for $20?',
+                         '注文してもよろしいですか? ¥2,000', '12,000원 주문하시겠습니까?', 'Place order ($20)?',
+                         'Buy now for €5?', 'Reorder this item?', 'Cancel this order and pay $5?'):
+            for effect in ('read', 'navigate', 'mutate'):
+                with self.subTest(question=question, effect=effect):
+                    self.assertTrue(bs.commit_question(question))
+                    state = types.SimpleNamespace(owner_visible=False, dialog_step={
+                        'approved': False, 'confirm_ok': True, 'effect': effect, 'dialogs': []})
+                    self.assertIs(WORKER.js_dialog(state, 'confirm', question), False)
+                    self.assertEqual(state.dialog_step['dialogs'][0]['outcome'], 'declined_payment')
+            approved = types.SimpleNamespace(owner_visible=False, dialog_step={'approved': True, 'dialogs': []})
+            self.assertIs(WORKER.js_dialog(approved, 'confirm', question), True, 'the owner approved that press')
+
+    def test_cancelling_an_order_is_not_a_payment_question(self):
+        for question in ('주문을 취소하시겠습니까?', 'Cancel this order?', '注文をキャンセルしますか?', '取消订单?'):
+            self.assertFalse(bs.commit_question(question), question)
 
     def test_the_refusal_no_longer_asks_for_a_payment_approval(self):
         self.assertIn('POST', bs.SUBMIT_REFUSED_TEXT)
