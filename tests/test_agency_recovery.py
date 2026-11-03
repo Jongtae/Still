@@ -414,7 +414,9 @@ class UnknownEffectTests(unittest.TestCase):
         self.assertEqual(interrupted['status'], 'interrupted')
         allowed, reason = service.safe_retry(interrupted)
         self.assertFalse(allowed)
-        self.assertIn('상태를 바꾸는', reason)
+        # #618 E1: a write cut off before its terminal record got no definite answer: unknown, not "changed".
+        from personal_agent.quickstart_service import UNKNOWN_EFFECT_RETRY_REFUSAL
+        self.assertEqual(reason, UNKNOWN_EFFECT_RETRY_REFUSAL)
         self.assertEqual(service.retry_from_control(interrupted, 'g', 77), (None, reason))
 
     def test_a_failed_run_after_an_unknown_effect_stays_unknown(self):

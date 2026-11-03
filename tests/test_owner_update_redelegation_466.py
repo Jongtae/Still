@@ -11,8 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from personal_agent.agent_runtime import (EFFECT_CHANGED, EFFECT_NONE, EFFECT_UNKNOWN, call_effects,
-                                          redelegation_effects)
+from personal_agent.agent_runtime import EFFECT_CHANGED, EFFECT_NONE, EFFECT_UNKNOWN, call_effects
 from personal_agent.orchestrator import EFFECT_UNKNOWN_STOP, MAX_CORRECTIONS, Attempt, Orchestration
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import UPDATE_PROJECTION, QuickStore
@@ -46,25 +45,30 @@ STILL_STOPS = {
     'unknown package tool': (_pair('acme.place_order', {}, call_id='k1'), EFFECT_CHANGED),
     'post with an unknown outcome': (gmail('POST', '/gmail/v1/users/me/messages/batchModify', 'mutate', 'u1',
                                            status='failed', effect='unknown', code='effect_unknown'), EFFECT_UNKNOWN),
-    'interim message with an unknown outcome': (_pair('tell_owner', {'effect': 'unknown', 'code': 'effect_unknown'},
-                                                      'failed', call_id='t2'), EFFECT_UNKNOWN),
 }
+#: #618 E1: an interim message to the owner is an owner-local write, whatever its outcome.
+TOLD_UNKNOWN = _pair('tell_owner', {'effect': 'unknown', 'code': 'effect_unknown'}, 'failed', call_id='t2')
+
+
+def classes(rows):
+    return {effect for _action, effect, _status in call_effects(rows)}
 
 
 class TheClassifier(unittest.TestCase):
     def test_an_attempt_that_only_read_and_told_the_owner_has_no_blocking_effect(self):
-        self.assertEqual(redelegation_effects(READS + TOLD), {EFFECT_NONE})
-        self.assertEqual(redelegation_effects(READS + TOLD + TOLD[:1]), {EFFECT_NONE}, 'still running')
+        self.assertEqual(classes(READS + TOLD), {EFFECT_NONE})
+        self.assertEqual(classes(READS + TOLD + TOLD[:1]), {EFFECT_NONE}, 'still running')
 
-    def test_the_interim_message_still_counts_for_every_other_consumer(self):
-        # Resumption, parking and steer continuation read ``call_effects`` unchanged.
-        self.assertIn(('tell_owner', EFFECT_CHANGED, 'succeeded'), call_effects(TOLD))
+    def test_the_interim_message_is_no_effect_for_any_consumer(self):
+        # #618 E1: one classifier, read by every continuation; an owner-local write never holds one.
+        self.assertIn(('tell_owner', EFFECT_NONE, 'succeeded'), call_effects(TOLD))
+        self.assertEqual(classes(TOLD_UNKNOWN), {EFFECT_NONE})
 
     def test_real_changes_and_unknown_outcomes_still_stop(self):
         for name, (rows, expected) in STILL_STOPS.items():
             with self.subTest(name):
-                self.assertIn(expected, redelegation_effects(READS + TOLD + rows))
-                self.assertIn(expected, redelegation_effects(rows))
+                self.assertIn(expected, classes(READS + TOLD + rows))
+                self.assertIn(expected, classes(rows))
 
 
 class TheEvaluation(unittest.TestCase):

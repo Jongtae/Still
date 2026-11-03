@@ -511,7 +511,7 @@ class GmailModify(unittest.TestCase):
     def test_a_cli_route_turn_that_changed_nothing_parks_for_the_write_connection(self):
         self.read_connect()
         self.cli_turn(accounted=True)
-        self.assertFalse(self.service.attempted_only_reads(self.job))  # the engine's records, as live
+        self.assertTrue(self.service.may_continue(self.job, 'resume')[0])  # the engine's records, as live
         self.assertEqual(self.service.connector_need(type('C', (), {'memo': {}})(), self.job), 'gmail-modify')
         self.assertTrue(self.service.park_for_connector_read(self.store.job(self.job), 'gmail-modify'))
         self.assertEqual(self.store.job(self.job)['status'], 'awaiting_connection')

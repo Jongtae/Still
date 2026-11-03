@@ -1855,14 +1855,14 @@ class ReadIsNotAnEffect(Harness):
         last = self.events(job, 'evaluated')[-1][1]
         self.assertEqual((last['next'], last['stop']), ('stop', 'effect'), 'an unobservable turn is never re-delegated')
         self.assertIn(NEXT_TEXT[STOP_EFFECT + ':unknown'], row['owner_cause'])
-        self.assertNotIn('되돌릴 수 없는 작업이 실행되어', row['owner_cause'])
+        self.assertNotIn(NEXT_TEXT[STOP_EFFECT], row['owner_cause'])
 
     def test_the_report_after_a_state_change_names_the_effect_stop_and_no_retry(self):
         from personal_agent.quickstart_service import FAILED_NEXT_REVIEW
         job, row = self.attempt_with(('browser_open', 'read'), ('browser_click', 'mutate'))
         report = row['owner_cause']
         self.assertIn('브라우저에서 누르기 (page.example.test) 완료', report)
-        self.assertIn('되돌릴 수 없는 작업이 실행되어 같은 요청을 다시 맡기지 않았습니다.', report)
+        self.assertIn('바깥의 상태를 바꾼 동작이 기록되어, 같은 일이 두 번 일어나지 않도록 같은 요청을 다시 맡기지 않았습니다.', report)
         self.assertIn('다음 단계 제안: ' + FAILED_NEXT_REVIEW, report)
         self.assertFalse(self.service.safe_retry(row)[0])
         # Without the unmediated-turn gate, the recorded click alone refuses the retry.
@@ -2319,7 +2319,10 @@ class SignInWaitsForTheOwner(Harness):
         self.script([plan('codex', 'Add it.'), plan('openai', 'Other path.')], goals=[True])
         job, row = self.run_work('장바구니에 우유 담아줘')
         self.assertEqual(len(self.engine.turns), 1, 'no re-delegation while the owner is asked to sign in')
-        self.assertEqual(self.asked_goals, [], 'no goal judgment can declare it reached')
+        # #618 E2: the one outcome judgment still runs; its verdict is recorded but cannot finish the Work.
+        self.assertEqual(len(self.asked_goals), 1)
+        evaluated = self.events(job, 'evaluated')[-1][1]
+        self.assertEqual((evaluated['outcome'], evaluated['stop'], evaluated.get('judged')), ('owner_needed', 'owner', 'reached'))
         self.assertIn(row['status'], ('failed', 'partial'))
         self.assertNotEqual((self.service._browser_login(job) or {}).get('state'), 'requested',
                             'the login was taken up after the run instead of expiring unseen')
@@ -2337,7 +2340,9 @@ class SignInRefusedStillWaits(Harness):
         self.script([plan('codex', 'Add it.'), plan('openai', 'Other path.')], goals=[True])
         job, row = self.run_work('장바구니에 우유 담아줘')
         self.assertIsNone(self.service._browser_login(job), 'no login row was made')
-        self.assertEqual(self.asked_goals, [])
+        # #618 E2: judged once, never reached: the stop stays the owner's.
+        self.assertEqual(len(self.asked_goals), 1)
+        self.assertEqual(self.events(job, 'evaluated')[-1][1]['stop'], 'owner')
         self.assertEqual(len(self.engine.turns), 1)
         self.assertIn(row['status'], ('failed', 'partial'))
 
@@ -2498,7 +2503,7 @@ class RelayAuthority(Harness):
         self.assertEqual(list(tools.capabilities.memo.values()), [needs])
         # The service's own park decision reads it (#606 T5 logic, unchanged).
         self.service.connector_handoff = type('H', (), {'known': staticmethod(lambda cid: cid == 'google-calendar')})()
-        self.service.attempted_only_reads = lambda job_id: True
+        self.service.may_continue = lambda job_id, purpose, **_: (True, None)
         self.assertEqual(self.service.connector_read_need(tools.capabilities, 'job'), 'google-calendar')
 
 

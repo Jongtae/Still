@@ -97,9 +97,12 @@ UNKNOWN_EFFECT_TEXT = ('상태를 바꾸는 API 요청이 응답 없이 끝나 �
 class ApiError(ValueError):
     """A refusal with a stable ``code``; ``agent_runtime`` turns it into a ``ToolError``."""
 
-    def __init__(self, message, code, requires=None, effect=None):
+    def __init__(self, message, code, requires=None, effect=None, executed=None):
         super().__init__(message)
         self.code, self.requires, self.effect = code, requires, effect
+        # #618 E1: ``False`` when the service answered that it did not execute the request
+        # (``REFUSED_STATUSES``); ``agent_runtime.not_executed`` carries it to the call's record.
+        self.executed = executed
 
 
 # -- slots ----------------------------------------------------------------------------
@@ -693,7 +696,10 @@ def http_request(method, url, headers, body, timeout):
 #: Statuses that say the service did not carry out the request: authentication and authorization
 #: refusals, and (#432) a request refused as invalid (400), against a changed version (412) or as
 #: unprocessable (422).  A refused change is settled as rejected, not unknown; anything else stays unknown.
-REFUSED_STATUSES = frozenset({400, 401, 403, 412, 422})
+#: #618 E1: and a conflict with the target's current state (409, RFC 9110 §15.5.10) or a rate limit
+#: (429, RFC 6585 §4): neither applies the request (Stripe treats both as not executed).  Each
+#: such refusal is recorded ``executed: false`` and classified ``none``.
+REFUSED_STATUSES = frozenset({400, 401, 403, 409, 412, 422, 429})
 #: #432: the most of a provider's own error reason handed back to the AI.
 MAX_PROVIDER_REASON_CHARS = 400
 
@@ -960,7 +966,8 @@ class ApiRequests:
         approval. Reservation is after credentials/currentness and immediately
         before transport. A crash after reservation is conservatively unknown.
         """
-        from .agent_runtime import WorkLedger, external_effect_progress, work_stop_requested, unknown_effect
+        from .agent_runtime import (TARGET_API, WorkLedger, effect_target, external_effect_progress, unknown_effect_holds, unknown_effect_targets,
+                                    work_stop_requested)
         from .api_credentials import fingerprint
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -978,15 +985,16 @@ class ApiRequests:
             if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
                 raise ApiError('API 연결이 바뀌어 요청을 보내지 않았습니다.', 'needs_setup',
                                requires=f"api-slot:{slot['name']}")
-            observed, unknown = external_effect_progress(self.store, self.work_id)
-            if unknown:
+            observed, _unknown = external_effect_progress(self.store, self.work_id)
+            # #618 E1: an unknown effect holds this slot, or a slot sharing one of its hosts; a write to
+            # another slot is independent of it.  An unknown on another route (a page, a connection) or
+            # an unscoped one still holds it: no blind cross-route replay.
+            target = effect_target(TARGET_API, slot['name'], slot.get('hosts') or ())
+            if unknown_effect_holds(unknown_effect_targets(self.store, self.work_id), target):
                 raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown')
             if any(row.get('kind') == 'api-slot' and row.get('input_digest') == identity for row in observed):
                 raise ApiError('이미 보낸 API 동작이라 반복 실행하지 않았습니다. 기존 결과와 남은 일을 확인하세요.',
                                'api_effect_replayed')
-            # Unmatched effect observations also prevent blind cross-route replay.
-            if any(unknown_effect(event.get('trace')) for work in chain for event in self.store.task_events(work['id'])):
-                raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown')
             if method is None:
                 return None
             # #208 review: asked in the reservation's own transaction, so work mode switched on
@@ -1239,7 +1247,8 @@ class ApiRequests:
             except Exception:
                 raise ApiError(f"연결 '{slot['name']}'이 그사이 바뀌어 응답을 쓰지 않았습니다. 연결을 다시 확인해 주세요.",
                                'needs_setup', requires=f"connection:{slot['name']}",
-                               effect='unknown' if identity and status not in REFUSED_STATUSES else None) from None
+                               effect='unknown' if identity and status not in REFUSED_STATUSES else None,
+                               executed=False if status in REFUSED_STATUSES else None) from None
         if identity and status not in REFUSED_STATUSES:
             from .api_credentials import fingerprint
             current = self.slots().get(slot['name'])
@@ -1268,13 +1277,14 @@ class ApiRequests:
                            effect='unknown' if identity else None)
         if status in (401, 403):
             raise ApiError(f"API가 인증을 거절했습니다(HTTP {status}). 슬롯 '{slot['name']}'의 키나 권한을 확인해 주세요." + said,
-                           'api_unauthorized', requires=f"api-slot:{slot['name']}")
+                           'api_unauthorized', requires=f"api-slot:{slot['name']}", executed=False)
         if status >= 400:
             refused = status in REFUSED_STATUSES
             raise ApiError(f'API가 오류로 답했습니다(HTTP {status}, {method} {path}).'
                            + (' 이 경로가 없습니다. 슬롯 설명의 경로를 확인하세요.' if status == 404 else '')
                            + (' 서비스가 이 요청을 처리하지 않아 바뀐 것은 없습니다. 이유를 보고 요청을 고쳐 보내세요.' if refused and identity else '')
-                           + said, 'api_error', effect='unknown' if identity and not refused else None)
+                           + said, 'api_error', effect='unknown' if identity and not refused else None,
+                           executed=False if refused else None)
         if len(raw) > MAX_RESPONSE_BYTES:
             raise ApiError('응답이 너무 커서 읽지 않았습니다.' + (' ' + SENT_UNREADABLE_TEXT if effect in STATE_CHANGING_EFFECTS else ''),
                            'api_response_too_large', effect='unknown' if effect in STATE_CHANGING_EFFECTS else None)

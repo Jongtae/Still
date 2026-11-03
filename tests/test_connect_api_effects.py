@@ -196,7 +196,7 @@ class ApiEffects(unittest.TestCase):
         self.assertNotIn(self.key, json.dumps(prompts))
         self.assertNotIn(self.key, json.dumps(self.store.task_events(self.work)))
         self.assertIn('Observed API response', self.service.action_continuation_note(self.job))
-        self.assertTrue(self.service.settings_resume_safe(self.work), 'an observed effect must not block a later prerequisite')
+        self.assertTrue(self.service.may_continue(self.work, 'resume')[0], 'an observed effect must not block a later prerequisite')
 
     def test_approval_description_preserves_long_exact_body_and_refuses_hidden_secrets(self):
         self.save(money=True)

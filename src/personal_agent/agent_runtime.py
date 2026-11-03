@@ -1756,6 +1756,21 @@ def ran_field(exc):
  """``{'ran': False}`` for a failure marked by ``not_run``, else nothing."""
  return {'ran':False} if getattr(exc,'ran',None) is False else {}
 
+def not_executed(exc):
+ """Mark a failure the receiving service said it did not execute (#618 E1): its record says ``executed: false``.
+
+ The request was handed to a transport (so it is not ``not_run``: what it carried left Still), and
+ the service answered with a definite refusal before execution - an HTTP status the API layer
+ settles as ``rejected`` (RFC 9110 §15.5: the request was not applied; Stripe's pre-execution
+ failures).  Only the transport that read that answer marks it; ``record_effect`` then classifies
+ the call ``none``.
+ """
+ exc.executed=False;return exc
+
+def executed_field(exc):
+ """``{'executed': False}`` for a failure marked by ``not_executed``, else nothing (#618)."""
+ return {'executed':False} if getattr(exc,'executed',None) is False else {}
+
 #: #233: whether the tool call running on this thread has handed what it carries to a transport.
 _HANDOFF=threading.local()
 
@@ -1779,17 +1794,23 @@ def handed_off():
  """
  _HANDOFF.reached=True
 
-def refused_before_hand_off(execute):
- """``Capabilities.execute``, marking an outbound call refused before its transport ``not_run`` (#233).
+#: #618 E1: the actions whose transport marks its hand-off (``handed_off``): the outbound calls,
+#: and a browser click, whose press goes to the page from ``BrowserSession._input``.
+HAND_OFF_ACTIONS=OUTBOUND_MATCH_ACTIONS|frozenset({'browser_click'})
 
- Entering ``execute`` is not dispatch: a call of an outbound action
- (``OUTBOUND_MATCH_ACTIONS``) that fails before it was handed to a transport
- (``handed_off``) - a page outside the Work's scope, no browser, a weather
- call without a place, an API call refused before sending, a code run that
- never started - was refused by Still, so its record says ``ran: false``.
+def refused_before_hand_off(execute):
+ """``Capabilities.execute``, marking a call refused before its transport ``not_run`` (#233, #618).
+
+ Entering ``execute`` is not dispatch: a call of an action whose transport
+ marks its hand-off (``HAND_OFF_ACTIONS``) that fails before it was handed to
+ a transport (``handed_off``) - a page outside the Work's scope, no browser,
+ a weather call without a place, an API call refused before sending, a code
+ run that never started, a click held for an approval or refused by the step
+ budget, the Work's Stop or deadline, a missing page or an invalid effect -
+ was refused by Still, so its record says ``ran: false``.
  """
  def run(self,name,args):
-  outbound=(self.tools.get(name) or {}).get('host_action') in OUTBOUND_MATCH_ACTIONS
+  outbound=(self.tools.get(name) or {}).get('host_action') in HAND_OFF_ACTIONS
   previous=getattr(_HANDOFF,'reached',None);_HANDOFF.reached=False
   try:return execute(self,name,args)
   except Exception as exc:
@@ -2168,8 +2189,16 @@ class PresentationBudget(WorkBudget):
   self._refused(WORK_PRESENTATION_TURNS,'presentation',PRESENTATION_TURNS_EXHAUSTED,'presentation_budget')
 
 def unknown_effect(value):
- """Shared projection of recorded unresolved effects, including nested traces."""
+ """Shared projection of recorded unresolved effects, including nested traces.
+
+ #618 E1: unknown is the answer of one call that was handed off and got no definite answer.  A
+ call record Still refused before any hand-off (``ran: false``), one the service said it did not
+ execute (``executed: false``), and a click or typing step declared ``read``/``navigate`` that
+ Still observed starting no non-GET submission and spending no approval (``observed_step``) are
+ settled, whatever ``effect`` their failure carried.
+ """
  if isinstance(value,dict):
+  if value.get('ran') is False or value.get('executed') is False or observed_page_load(value):return False
   return (value.get('effect')=='unknown' or value.get('state')=='outcome-unknown'
           or any(unknown_effect(item) for item in value.values()))
  return isinstance(value,list) and any(unknown_effect(item) for item in value)
@@ -2202,6 +2231,88 @@ def external_effect_progress(store, work_id):
    if detail.get('effect') in ('mutate','payment') and row['status']=='succeeded':
     observed.append(claim);claims.pop(detail['permission_event'])
  return observed,list(claims.values())
+
+
+#: #618 E1: the kinds of target an unknown effect can be scoped to.  Targets of one kind are compared
+#: (an API slot with its hosts, a connection by kind and identity, a browser page by host); Still cannot
+#: tell whether targets of different kinds are one service (an API slot and an MCP connection to the
+#: same provider), so across kinds an unknown still holds the write: no blind cross-route replay.
+TARGET_API,TARGET_CONNECTION,TARGET_PAGE='api','connection','page'
+
+def effect_target(kind,name,hosts=()):
+ """One target an effect acted on (#618): ``(kind, name, hosts)``."""
+ return (kind,str(name),frozenset(host for host in hosts if isinstance(host,str) and host))
+
+def _claim_target(evidence):
+ """The target of a dispatch claim (#618): an API slot with its host, or a connection, else None."""
+ if not isinstance(evidence,dict) or not isinstance(evidence.get('identity'),str):return None
+ if evidence.get('kind')=='api-slot':return effect_target(TARGET_API,evidence['identity'],(evidence.get('host'),))
+ if isinstance(evidence.get('kind'),str):return effect_target(TARGET_CONNECTION,evidence['kind']+':'+evidence['identity'])
+ return None
+
+def _url_host(holder):
+ return _url_parts(holder.get('url'))[1] if isinstance(holder,dict) and isinstance(holder.get('url'),str) else ''
+
+def _call_target(action,detail):
+ """The target one recorded call acted on, for scoping its unknown effect (#618 E1), or None.
+
+ An API call's slot (with the host it named), a connector call's connection, a browser step's
+ page host.  None when Still cannot name it: such an unknown holds every write.
+ """
+ detail=detail if isinstance(detail,dict) else {}
+ arguments=detail.get('arguments') if isinstance(detail.get('arguments'),dict) else {}
+ evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
+ hosts=[_url_host(holder) for holder in (detail,arguments,evidence)]
+ if action in API_ACTIONS and isinstance(arguments.get('slot'),str):return effect_target(TARGET_API,arguments['slot'],hosts)
+ target=_claim_target(evidence)
+ if target:return target
+ host=next((host for host in hosts if host),'')
+ if action in BROWSER_ACTIONS and host:return effect_target(TARGET_PAGE,host,(host,))
+ return None
+
+def unknown_effect_targets(store, work_id):
+ """The targets of this request chain's calls whose effect is unknown (#618 E1).
+
+ Unknown is scoped to the call that has no definite answer (Temporal/Restate/DBOS: uncertainty
+ is per activity or step): an unresolved dispatch claim's slot or connection, and each call
+ ``record_effect`` classifies ``unknown`` with its target (``_call_target``).  ``None`` stands for
+ an unknown Still cannot scope (an unnamed target, or one of Still's own records carrying it).
+ """
+ _observed,claims=external_effect_progress(store,work_id)
+ targets=[_claim_target(evidence) for evidence in claims]
+ with store.db() as db:
+  exists=db.execute('SELECT 1 FROM jobs WHERE id=?',(work_id,)).fetchone()
+  chain=WorkLedger.request_chain(db,work_id) if exists else [{'id':work_id}]
+  ids=[work['id'] for work in chain]
+  rows=db.execute("SELECT tool,status,detail FROM tool_events WHERE job_id IN ("+','.join('?' for _ in ids)+") ORDER BY id",ids).fetchall()
+ calls,arguments=[],{}
+ for row in rows:
+  try:detail=json.loads(row['detail'] or '{}')
+  except (TypeError,ValueError):detail=None
+  if not isinstance(detail,dict):
+   targets.append(None);continue
+  if row['tool'] in EFFECT_LEDGER_TOOLS:continue
+  if not (detail.get('call_id') or detail.get('host_action')):
+   # Still's own records (a CLI turn, bookkeeping): an unknown they carry cannot be scoped.
+   if unknown_effect(detail):targets.append(None)
+   continue
+  key=(detail.get('scope'),detail.get('call_id'))
+  if row['status']=='running' and 'arguments' in detail:arguments[key]=detail['arguments']
+  elif 'arguments' not in detail and key in arguments:detail={**detail,'arguments':arguments[key]}
+  calls.append((row['tool'],row['status'],detail))
+ for action,effect,_status,detail in call_effects(calls,with_detail=True):
+  if effect==EFFECT_UNKNOWN:targets.append(_call_target(action,detail))
+ return targets
+
+def unknown_effect_holds(targets,target):
+ """Whether an unknown effect (``unknown_effect_targets``) holds a write to ``target`` (#618 E1).
+
+ Held by an unscoped unknown, by an unknown on a target of another kind (Still cannot tell them
+ apart), and by one on the same target - the same name or a shared host.  A write to another
+ target of the same kind is independent of it.
+ """
+ kind,name,hosts=target
+ return any(other is None or other[0]!=kind or other[1]==name or bool(other[2]&hosts) for other in targets)
 
 
 #: Durable Stop requests of running Works, so a separate process serving the
@@ -2244,6 +2355,19 @@ def declared_effect(action,args):
  value=args.get('effect') if action in BROWSER_ACTIONS and isinstance(args,dict) else None
  return {'declared_effect':value} if isinstance(value,str) and value in EFFECT['enum'] else {}
 
+def observed_page_load(detail):
+ """Whether a failed click or typing step's record shows it only navigated (#618 E1, #1496, #103).
+
+ Declared ``read``/``navigate``, and its failure record carries Still's observation
+ (``observed_step``) that the step started no non-GET form submission and spent no owner
+ approval.  Such a step changed nothing Still could observe, so its ``press_unconfirmed`` or
+ timeout is settled, not unknown.  Only a failure record carries ``observed_step`` at its top level.
+ """
+ if not isinstance(detail,dict):return False
+ value=detail.get('declared_effect');seen=detail.get('observed_step')
+ return (isinstance(value,str) and value in PAGE_LOAD_EFFECTS and isinstance(seen,dict)
+         and seen.get('posted') is False and seen.get('approved') is False)
+
 def page_load_only(action,detail,status=None):
  """Whether one recorded call only loaded a page: a ``browser_open`` declared ``read``/``navigate`` (#787).
 
@@ -2284,9 +2408,12 @@ def classify_failure(exc,action=None):
  deadline or caps) or ``never`` (an effect may have happened: reconcile, do
  not replay).  ``effect`` is ``none`` or ``unknown``; a typed ``effect``
  attribute (Calendar errors) wins.  Nothing here grants a retry to a write.
+ #618 E1: a call Still refused before any hand-off (``not_run``) has effect ``none`` even when
+ the refusal names an earlier call's unknown effect: this call sent nothing.
  """
  code=getattr(exc,'code',None)
- if getattr(exc,'effect',None)=='unknown':return 'effect_unknown','never','unknown'
+ if getattr(exc,'effect',None)=='unknown':
+  return 'effect_unknown','never','none' if getattr(exc,'ran',None) is False else 'unknown'
  if not code and isinstance(exc,ValueError):
   # Still's own fixed #605 refusals: the owner must supply words.
   if str(exc)==PUBLIC_TASK_UNRESOLVED:code='input_required'
@@ -2411,22 +2538,44 @@ def unrun_page_step(action, detail):
 # --- HARDEN-GENERIC-01 part 2 (#1445): one effect classifier --------------------------------
 #: What one tool call did to state outside this conversation, as recorded.
 EFFECT_NONE,EFFECT_DRAFT,EFFECT_CHANGED,EFFECT_UNKNOWN='none','draft','changed','unknown'
+#: #618 E1: writes that stay with the owner: an interim message on the Work's own chat, a result
+#: file in the owner's result folder, a Memory save (C5: current or a MemoryCandidate).  None is an
+#: external effect, and each has its own idempotency (the Work's message limit, one result file per
+#: Work, Memory keys), so none ever blocks continuation.  A location request is not listed: a Work
+#: that already prompted the owner for a location is not replayed (#774).
+OWNER_LOCAL_ACTIONS=frozenset({'tell_owner','save_result','save_memory'})
 
 def record_effect(action,detail,status):
- """The effect class of one recorded tool event (#1445): the one rule every consumer applies.
+ """The effect class of one recorded tool call (#1445, #618 E1): the one rule every consumer applies.
 
- ``none``: changed nothing (an effect-free read, a page load, a step Still refused before it
- ran, a request refused before anything was sent, a settings value refused before a draft
- existed). ``draft``: a settings draft that waits for the owner's confirmation and changed
- nothing yet. ``unknown``: the outcome of a possible change is not known. ``changed``:
- anything else, including every action this rule does not know (an AgentPackage tool too).
- Re-delegation, resumption and retry differ only in what they do with these classes.
+ In this order (RFC 9110 §9.2: retry only what is known not applied; MCP ToolAnnotations
+ semantics on Still's own declaration; Stripe's pre-execution vs indeterminate failures):
+
+ - ``none`` when the call was never handed to a transport (Still refused it: ``ran: false``),
+   whatever its failure named, even an earlier call's unknown effect;
+ - ``none`` for an owner-local write (``OWNER_LOCAL_ACTIONS``);
+ - ``none`` when the service answered that it did not execute it (``executed: false``: a
+   pre-execution refusal the API layer settles as ``rejected``);
+ - ``none`` for a declared read-only action, a page load, or a click/typing step declared
+   ``read``/``navigate`` that Still observed starting no submission and spending no approval;
+ - ``unknown`` when it was handed off and got no definite answer - for that call only;
+ - ``draft`` for a settings draft that waits for the owner's confirmation;
+ - ``changed`` for anything else: a definite success or a definite failure after execution,
+   and every action this rule does not know (an AgentPackage tool too).
+
+ Every continuation (re-delegation, resume, retry, parking, steer, budget-continue) reads these
+ classes through one rule (``AgentService.continuation_reasons``).
  """
  from .api_requests import PRE_DISPATCH_CODES
  detail=detail if isinstance(detail,dict) else {}
- if unknown_effect(detail):return EFFECT_UNKNOWN
- # #1484: Still refused the call before the tool ran (a guard, the budget, a closed relay).
+ # #1484/#618: Still refused the call before it was handed to a transport (a guard, the budget,
+ # an approval wait, a closed relay): nothing left, so nothing is unknown about it.
  if status=='failed' and detail.get('ran') is False:return EFFECT_NONE
+ if action in OWNER_LOCAL_ACTIONS:return EFFECT_NONE
+ # #618: handed off, and the service answered that it did not execute the request.
+ if status=='failed' and detail.get('executed') is False:return EFFECT_NONE
+ if action in OBSERVED_INPUT_ACTIONS and status=='failed' and observed_page_load(detail):return EFFECT_NONE
+ if unknown_effect(detail):return EFFECT_UNKNOWN
  # A browser_open is a read only by its declaration (#787): page_load_only decides it below.
  # #1456: a code run that sent an owner-approved state-changing request changed something.
  if action in CODE_ACTIONS and isinstance(detail.get('evidence'),dict) and detail['evidence'].get('effects'):return EFFECT_CHANGED
@@ -2448,14 +2597,14 @@ def record_effect(action,detail,status):
  if action=='connector_read' and detail.get('effect')=='none':return EFFECT_NONE
  return EFFECT_CHANGED
 
-def call_effects(rows):
+def call_effects(rows,with_detail=False):
  """``[(action, effect class, status)]``, one per tool call of recorded rows (#1445).
 
  ``rows`` are ``(tool, status, detail)``.  A running record and its terminal record (same
  ``scope``/``call_id``) are one call, classified by the terminal record: what the call turned out
  to be, not what it might have been while running.  A call still running is classified as it
  runs (a declared page load stays ``none``; anything else is ``changed``).  Records without a
- call id are classified one by one.
+ call id are classified one by one.  ``with_detail`` adds the classified record as a fourth item.
  """
  entries,calls=[],{}
  for tool,status,detail in rows:
@@ -2468,18 +2617,30 @@ def call_effects(rows):
    calls[key]=[action,detail,status];entries.append(calls[key])
   elif status!='running':
    calls[key][:]=[action,detail,status]
+ if with_detail:
+  return [(action,record_effect(action,detail,status),status,detail) for action,detail,status in entries]
  return [(action,record_effect(action,detail,status),status) for action,detail,status in entries]
 
-def redelegation_effects(rows):
- """The effect classes of recorded rows that stop a further attempt of the same Work (#466).
+#: #618 E2: Still's own effect-ledger records (an API dispatch claim, a connector permission); their
+#: outcome is read through ``external_effect_progress`` (observed or unresolved), never as a call.
+EFFECT_LEDGER_TOOLS=frozenset({'api_dispatch','connector_permission'})
 
- ``call_effects`` with one exception: an interim message to the owner (``OWNER_UPDATE_ACTIONS``) that
- counts as ``changed``.  Still sent it to the owner on the Work's own chat; nothing outside the owner
- changed, and a later attempt cannot exceed the Work's message limit.  It still counts everywhere else
- (resumption, parking, steer continuation), and its ``unknown`` outcome still stops re-delegation.
+def keyed_change(action,detail,status,observed_dispatch=()):
+ """Whether a changed call is one Still's own replay key already guards (#618 E2).
+
+ An API change whose dispatch Still observed for this Work (``dispatch_event`` in
+ ``observed_dispatch``; ``api_effect_replayed`` refuses the same input again), and a connector
+ change its permission claimed (``permission_event``; the input-digest claim refuses it again).
+ A continuation that carries the Work's progress forward accounts for such a change instead of
+ repeating it (the Idempotency-Key pattern); nothing else is keyed.
  """
- return {effect for action,effect,_status in call_effects(rows)
-         if not (action in OWNER_UPDATE_ACTIONS and effect==EFFECT_CHANGED)}
+ detail=detail if isinstance(detail,dict) else {}
+ if status!='succeeded':return False
+ if action in API_ACTIONS:
+  evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
+  return evidence.get('dispatch_event') in set(observed_dispatch)
+ return (action=='connector_read' and detail.get('effect') in ('mutate','payment')
+         and bool(detail.get('permission_event')))
 
 def event_trail(rows, tools=None):
  """``(trail, refusals)`` of the attempts in a Work's durable tool events.
@@ -3642,6 +3803,8 @@ class Capabilities:
    except ApiError as exc:
     error=ToolError(str(exc),exc.code,requires=exc.requires)
     if exc.effect:error.effect=exc.effect
+    # #618 E1: the service refused the request before executing it (``rejected`` dispatch).
+    if getattr(exc,'executed',None) is False:not_executed(error)
     raise error from None
    self.evidence.append({'tool':name,'result':result})
    return self._from_private('owner-api',result)
@@ -4767,13 +4930,14 @@ def _error_observation(exc,validated,action=None):
  """The tool message a failed call returns to the model (#606 T2, #607 AX-06).
 
  Text, a stable code, the retry class, the effect, ``requires`` when
- known and ``ran: false`` when Still refused it before the tool ran (#1484).  An untyped transport failure gets Still's fixed text, never the
+ known, ``ran: false`` when Still refused it before the tool ran (#1484) and ``executed: false``
+ when the service said it did not execute it (#618).  An untyped transport failure gets Still's fixed text, never the
  exception's own (which may carry a URL or credential).
  """
  if not validated:return {'error':str(exc),'code':getattr(exc,'code',None) or 'invalid_call','retry':'permanent','effect':'none',**ran_field(exc)}
  code,retry,effect=classify_failure(exc,action)
  text=TRANSIENT_FAILURE_TEXT if code=='transient_failure' and not isinstance(exc,(ProviderError,ToolError)) else str(exc)
- observation={'error':text,'code':code,'retry':retry,'effect':effect,**ran_field(exc),**observed_field(exc)}
+ observation={'error':text,'code':code,'retry':retry,'effect':effect,**ran_field(exc),**executed_field(exc),**observed_field(exc)}
  if getattr(exc,'requires',None):observation['requires']=exc.requires
  return observation
 

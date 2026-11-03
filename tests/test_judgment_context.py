@@ -53,10 +53,13 @@ class Case(unittest.TestCase):
 
 
 class AwaitingTheOwner(Case):
-    def test_a_draft_left_for_the_owner_stops_for_the_owner_without_a_goal_judgment(self):
+    def test_a_draft_left_for_the_owner_stops_for_the_owner_and_is_still_judged_once(self):
+        # #618 E2: the one outcome judgment always runs (final: nothing follows); the stop stays the owner's.
         orchestration = self.step(('settings_change', 'succeeded', DRAFT))
-        orchestration.evaluate_answer.assert_not_called()
+        orchestration.evaluate_answer.assert_called_once()
+        self.assertIs(orchestration.evaluate_answer.call_args.kwargs.get('final'), True)
         self.assertEqual(orchestration.next.call_args.args[1], 'owner_needed')
+        self.assertIn('judged', orchestration.next.call_args.kwargs)
 
     def test_an_applied_change_or_a_refused_candidate_is_still_judged(self):
         applied = {**DRAFT, 'evidence': {**DRAFT['evidence'], 'applied': True}}

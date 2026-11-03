@@ -178,7 +178,10 @@ NEXT_TEXT = {
     STOP_REACHED: '',
     STOP_LIMIT: f'다시 맡기는 횟수 한도({MAX_REDELEGATIONS}회)에 도달해 더 맡기지 않았습니다.',
     STOP_BUDGET: '남은 작업 시간이나 턴이 부족해 더 맡기지 않았습니다.',
-    STOP_EFFECT: '이 시도에서 되돌릴 수 없는 작업이 실행되어 같은 요청을 다시 맡기지 않았습니다.',
+    # #618 E2: said only when a changed external effect was recorded; it names no irreversibility
+    # Still did not observe.
+    STOP_EFFECT: ('이 시도에서 바깥의 상태를 바꾼 동작이 기록되어, 같은 일이 두 번 일어나지 않도록 '
+                  '같은 요청을 다시 맡기지 않았습니다.'),
     # Truthful variant: nothing is known to have changed, but Still could not confirm that either.
     STOP_EFFECT + ':unknown': ('이 시도에서 결과를 확인할 수 없는 동작이 있어, 같은 일이 두 번 일어나지 않도록 '
                                '같은 요청을 다시 맡기지 않았습니다.'),
@@ -1426,15 +1429,19 @@ class Orchestration:
         return attempt
 
     def evaluate_run(self, result, *, owner_needed=False):
-        """What a direct-route run showed: its own #657 completion judgment, no new call."""
+        """What a direct-route run showed: its own #657 completion judgment, no new call.
+
+        #618 E2: ``OWNER_NEEDED`` only with a recorded owner prerequisite (``owner_needed``: an open
+        approval, an observed sign-in page, a draft or a missing connection); a question the worker
+        asked is judged by the one outcome judgment like any reply (``orchestration_step``).
+        """
         outcome = getattr(result, 'outcome', 'succeeded')
-        report = getattr(result, 'report', None) or {}
         # #1451: the run's own judgment's gap, when it said no.
         self.gap = self._redact(getattr(getattr(result, 'judgment', None), 'gap', '') or '', private=False)[:GAP_CHARS]
         self.retry_warranted = getattr(getattr(result, 'judgment', None), 'retry_warranted', None)
         if outcome == 'succeeded':
             return REACHED
-        if owner_needed or report.get('question'):
+        if owner_needed:
             return OWNER_NEEDED
         if getattr(result, 'judgment', None) == 'unavailable':
             return UNJUDGED
@@ -1508,17 +1515,21 @@ class Orchestration:
         except Exception:
             return False
 
-    def next(self, attempt, evaluation, *, answer='', failed='', effect=False):
+    def next(self, attempt, evaluation, *, answer='', failed='', effect=False, judged=None):
         """The next attempt after ``attempt`` was evaluated, or None (recorded either way).
 
         Only an orchestrated Work re-delegates: a fallback run is the owner's
         default Main AI exactly as before #710 and records no evaluation.
+        ``effect`` is the one continuation rule's reason (#618 E2): ``'changed'`` for a recorded
+        change, ``EFFECT_UNKNOWN_STOP`` for an outcome Still could not confirm, else False.
+        ``judged`` is the outcome judgment of an attempt that stops for the owner (#618).
         """
         if not self.orchestrated:
             return None
         self.history.append((attempt, evaluation, answer, failed))
-        gap, self.gap = (self.gap if evaluation == NOT_REACHED else ''), ''
-        note, self.note = (self.note if evaluation == NOT_REACHED else None), None
+        short = NOT_REACHED in (evaluation, judged)
+        gap, self.gap = (self.gap if short else ''), ''
+        note, self.note = (self.note if short else None), None
         if gap:
             self.gaps[attempt.number] = gap
         worker = self.catalogue.worker(attempt.worker)
@@ -1565,7 +1576,7 @@ class Orchestration:
                                 'brief_digest': attempt.digest or None, 'outcome': evaluation,
                                 'next': 'redelegate' if following is not None else 'stop', 'stop': stop or None,
                                 'invalid': (invalid or None) if not stop or stop == STOP_REPLAN else None,
-                                'gap': gap or None,
+                                'gap': gap or None, **({'judged': judged} if judged else {}),
                                 'text': ' '.join(part for part in (EVALUATED_TEXT[evaluation], gap, after) if part)})
         if following is not None:
             self.attempts.append(following)

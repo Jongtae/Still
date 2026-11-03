@@ -15,7 +15,7 @@ from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS, LATEST_HANDSHAKE_VERS
 
 from .agent_runtime import (ENGINE_UNMEDIATED, OWNER_STATE_ACTIONS, TRANSIENT_FAILURE_TEXT,
                             Capabilities, ToolError, WorkBudget, WorkLedger, attempted_outbound, classify_failure, declared_effect,
-                            claim_owner_steers, evidence_summary, lookup_sources, outbound_evidence, observed_field, progress_step, ran_field, worker_result,
+                            claim_owner_steers, evidence_summary, lookup_sources, outbound_evidence, executed_field, observed_field, progress_step, ran_field, worker_result,
                             recorded_private_sources, split_status, work_source_records,
                             work_stop_requested)
 from .current_context import redact_known_secrets
@@ -381,7 +381,7 @@ def tool_error_result(exc, action):
         text = TRANSIENT_FAILURE_TEXT
     else:
         text = TOOL_FAILED_TEXT
-    typed = {'code': code, 'retry': retry, 'effect': effect, **ran_field(exc), **observed_field(exc)}
+    typed = {'code': code, 'retry': retry, 'effect': effect, **ran_field(exc), **executed_field(exc), **observed_field(exc)}
     if getattr(exc, 'requires', None):
         typed['requires'] = exc.requires
     return {'content': [{'type': 'text', 'text': text}], 'structuredContent': typed, 'isError': True}, typed

@@ -56,13 +56,13 @@ class ApiInput(PhoneInputServiceCase):
         event('browser_click', 'running', {**call, 'declared_effect': 'read'})
         event('browser_click', 'failed', {**call, 'declared_effect': 'read', 'effect': 'none', 'code': 'target_unavailable'})
         event('subscription_engine', 'succeeded', {'continuation_read_only': True, 'continuation_accounted': True})
-        self.assertTrue(self.service.settings_resume_safe(self.job['id']))
+        self.assertTrue(self.service.may_continue(self.job['id'], 'resume')[0])
         # A click still running, or one refused for another reason, keeps the continuation withheld.
         event('browser_click', 'running', {**call, 'call_id': 'c2', 'declared_effect': 'read'})
-        self.assertFalse(self.service.settings_resume_safe(self.job['id']))
+        self.assertFalse(self.service.may_continue(self.job['id'], 'resume')[0])
         event('browser_click', 'failed', {**call, 'call_id': 'c2', 'declared_effect': 'read', 'effect': 'none',
                                           'code': 'approval_required'})
-        self.assertFalse(self.service.settings_resume_safe(self.job['id']))
+        self.assertFalse(self.service.may_continue(self.job['id'], 'resume')[0])
 
     def test_a_refused_draft_before_the_corrected_one_does_not_block_resumption(self):
         # #1445 rehearsal: the worker's first draft was refused (malformed), the corrected one was
@@ -79,11 +79,11 @@ class ApiInput(PhoneInputServiceCase):
         event('settings_change', 'running', second)
         event('settings_change', 'succeeded', {**second, 'evidence': {'applied': False, 'requires_owner_confirmation': True}})
         event('subscription_engine', 'succeeded', {'continuation_read_only': True, 'continuation_accounted': True})
-        self.assertTrue(self.service.settings_resume_safe(self.job['id']))
+        self.assertTrue(self.service.may_continue(self.job['id'], 'resume')[0])
         # Any other settings failure still withholds it.
         event('settings_change', 'running', {**first, 'call_id': 's3'})
         event('settings_change', 'failed', {**first, 'call_id': 's3', 'code': 'tool_failed', 'effect': 'unknown'})
-        self.assertFalse(self.service.settings_resume_safe(self.job['id']))
+        self.assertFalse(self.service.may_continue(self.job['id'], 'resume')[0])
 
     def test_page_submission_checks_read_and_queues_original_once(self):
         draft, session, cookie = self.open_input()
