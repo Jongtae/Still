@@ -51,14 +51,14 @@ Permission diff, signature/provenance re-evaluation, advisory/revocation, rollba
 
 ## Existing solutions review (Adopt / Adapt / Build)
 
-Required when this issue proposes a new design, contract, architecture element, loop, component or framework adoption, and before non-trivial implementation that introduces or replaces a component, abstraction, integration, dependency, framework, or commodity infrastructure. Start with internal repository reuse. For a pure bug fix/data/content change that introduces none of those, set the decision to `N/A` and give a concrete reason.
+Required when this issue proposes a new design, contract, architecture element, loop, component or framework adoption, and before non-trivial implementation that introduces or replaces a component, abstraction, integration, dependency, framework, or commodity infrastructure. Look outside first: standards, platform facilities, official SDKs and maintained OSS; use a good external source when one covers the need. An internal candidate counts as reuse only when it already follows that solution. Adding a case, exception or list entry to existing Still machinery is `Build`, not `N/A`. For a data/content change, or a bug fix that introduces none of those and adds no case to existing machinery, set the decision to `N/A` and give a concrete reason.
 
 - problem/boundary:
-- internal repository candidates:
-- search evidence (paths/symbols/docs checked):
 - standard-library/platform candidates:
 - official SDK/reference/standard candidates:
 - mature open-source/framework candidates:
+- internal repository candidates:
+- search evidence (paths/symbols/docs checked):
 - maintenance/security/supply-chain fit:
 - licence fit:
 - runtime/deployment/compatibility fit:
