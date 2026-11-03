@@ -711,8 +711,16 @@ LOGIN_COMMANDS = {'claude-code': 'claude setup-token', 'codex': 'codex login'}
 
 #: Claude Code's built-in web search tool name (``claude --help``, 2.1.280).
 CLAUDE_NATIVE_SEARCH_TOOL = 'WebSearch'
+#: #621: Claude Code's built-in page fetch tool.  Still does not offer it (``--tools`` names WebSearch only);
+#: a turn that reports one anyway is read the same way, as the worker's own page open.
+CLAUDE_NATIVE_FETCH_TOOL = 'WebFetch'
 MAX_NATIVE_SEARCHES = 10
 MAX_NATIVE_RESULTS = 10
+#: #621: the most characters of one search's or page open's reported result text kept as evidence.
+MAX_NATIVE_EXCERPT = 1500
+#: #621: the most URLs of the worker's final answer kept beside a search that reported none.
+MAX_CITED_URLS = 8
+_ANSWER_URL = re.compile(r'https?://[^\s<>()\[\]{}"\'`|\\^]+')
 #: A CLI's own words that its web search cannot run for this account or region
 #: (protocol classification of its tool error, as ``_NOT_SIGNED_IN``).  Any
 #: other tool error is a per-call failure, never a remembered refusal.
@@ -734,6 +742,55 @@ def _native_row(value):
     return {'title': ' '.join(str(value.get('title') or '').replace('\x7f', ' ').split())[:300], 'url': value['url']}
 
 
+def _native_excerpt(*values):
+    """#621: the reported result text of one search or page open: strings only, whitespace-collapsed, capped.
+
+    Raw CLI text; the recorder applies the secret redactor before it is stored or judged.
+    """
+    text = ' '.join(' '.join(str(value).replace('\x7f', ' ').split()) for value in values
+                    if isinstance(value, str) and value.strip())
+    return text[:MAX_NATIVE_EXCERPT]
+
+
+def cited_urls(text):
+    """#621: the public http(s) URLs a worker's answer text cites, in order, at most ``MAX_CITED_URLS``.
+
+    These are the worker's own statement of where its findings came from, never
+    a reported search result: the recorder keeps them apart (``worker_cited``).
+    """
+    from .search_providers import public_http_url
+    found = []
+    for match in _ANSWER_URL.finditer(str(text or '')[:200000]):
+        url = match.group(0).rstrip('.,;:!?*_~')[:300]
+        if public_http_url(url) and url not in found:
+            found.append(url)
+        if len(found) >= MAX_CITED_URLS:
+            break
+    return found
+
+
+def final_answer_text(engine_id, records, answer=None):
+    """#621: the worker's final answer text in one turn's stream: Codex's last ``agent_message``
+    item, Claude Code's chosen (``answer``) or last ``result`` record.  '' when none was reported."""
+    if engine_id == 'codex':
+        for record in reversed(records):
+            item = record.get('item')
+            if record.get('type') == 'item.completed' and isinstance(item, dict) and item.get('type') == 'agent_message':
+                return str(item.get('text') or '')
+        return ''
+    if engine_id == 'claude-code':
+        try:
+            chosen = json.loads(answer) if answer else None
+        except ValueError:
+            chosen = None
+        if isinstance(chosen, dict) and isinstance(chosen.get('result'), str):
+            return chosen['result']
+        for record in reversed(records):
+            if record.get('type') == 'result' and isinstance(record.get('result'), str):
+                return record['result']
+    return ''
+
+
 def _codex_searches(records):
     found = []
     for record in records:
@@ -741,7 +798,9 @@ def _codex_searches(records):
         if record.get('type') != 'item.completed' or not isinstance(item, dict) or item.get('type') != 'web_search':
             continue
         action = item.get('action') if isinstance(item.get('action'), dict) else {}
-        queries = [str(value)[:200] for value in [item.get('query'), action.get('query'), *(action.get('queries') or [])]
+        # #621: find_in_page's ``pattern`` is what the worker looked for on that page.
+        queries = [str(value)[:200] for value in [item.get('query'), action.get('query'), *(action.get('queries') or []),
+                                                  action.get('pattern')]
                    if isinstance(value, str) and value.strip()]
         results = item.get('results') if isinstance(item.get('results'), list) else []
         rows = [row for row in (_native_row(value) for value in results) if row]
@@ -749,9 +808,12 @@ def _codex_searches(records):
         if opened and opened['url'] not in {row['url'] for row in rows}:
             rows.append(opened)
         failed = str(item.get('status') or '') == 'failed'
+        # #621: ``results`` is optional and its entries are untyped JSON; any text they carry is kept bounded.
+        excerpt = _native_excerpt(*(value.get(key) for value in results if isinstance(value, dict)
+                                    for key in ('snippet', 'text', 'content')))
         found.append({'id': str(item.get('id') or '')[:80], 'engine': 'codex', 'action': str(action.get('type') or 'search')[:20],
                       'queries': list(dict.fromkeys(queries))[:5], 'results': [] if failed else rows[:MAX_NATIVE_RESULTS],
-                      'state': 'failed' if failed else 'succeeded', 'reason': ''})
+                      'excerpt': '' if failed else excerpt, 'state': 'failed' if failed else 'succeeded', 'reason': ''})
     return found
 
 
@@ -772,14 +834,25 @@ def _claude_searches(records):
                 call = call_for(str(part.get('id') or ''))
                 if isinstance(query, str) and query.strip():
                     call['queries'] = [query[:200]]
+            elif record.get('type') == 'assistant' and part.get('type') == 'tool_use' and part.get('name') == CLAUDE_NATIVE_FETCH_TOOL:
+                # #621: a page open; the requested URL is kept only once its result reports the page read.
+                values = part.get('input') if isinstance(part.get('input'), dict) else {}
+                call_for(str(part.get('id') or '')).update(action='open_page', requested_url=values.get('url'))
             elif record.get('type') == 'user' and part.get('type') == 'tool_result' and str(part.get('tool_use_id') or '') in calls:
                 call = calls[str(part.get('tool_use_id'))]
                 reported = record.get('tool_use_result')
-                rows = []
-                if isinstance(reported, dict):
+                rows, excerpt = [], ''
+                if call['action'] == 'open_page':
+                    if isinstance(reported, dict):
+                        opened = _native_row({'url': reported.get('url') or call.get('requested_url')})
+                        rows = [opened] if opened else []
+                        excerpt = _native_excerpt(reported.get('result'))
+                elif isinstance(reported, dict):
                     for block in reported.get('results') or []:
                         if isinstance(block, dict):
                             rows += [row for row in (_native_row(value) for value in block.get('content') or []) if row]
+                    # #621: the search's own text (Claude Code's account of what the results say).
+                    excerpt = _native_excerpt(*(block for block in reported.get('results') or [] if isinstance(block, str)))
                 text = part.get('content') if isinstance(part.get('content'), str) else (reported if isinstance(reported, str) else '')
                 if part.get('is_error') is True or not isinstance(reported, dict):
                     # Only the CLI's own availability refusal is 'unavailable';
@@ -787,11 +860,13 @@ def _claude_searches(records):
                     state = 'unavailable' if _NATIVE_REFUSAL.search(str(text or '')) else 'failed'
                     call.update(state=state, reason=redact_reason(str(text or 'web search error')))
                 else:
-                    call.update(state='succeeded', results=rows[:MAX_NATIVE_RESULTS])
+                    call.update(state='succeeded', results=rows[:MAX_NATIVE_RESULTS], excerpt=excerpt)
         for denial in record.get('permission_denials') or []:
-            if isinstance(denial, dict) and denial.get('tool_name') == CLAUDE_NATIVE_SEARCH_TOOL:
+            if isinstance(denial, dict) and denial.get('tool_name') in (CLAUDE_NATIVE_SEARCH_TOOL, CLAUDE_NATIVE_FETCH_TOOL):
                 # A permission denial is Still's own setting, not the CLI's availability.
                 call_for(str(denial.get('tool_use_id') or 'denied')).update(state='denied', reason='permission denied')
+    for call in calls.values():
+        call.pop('requested_url', None)
     return [call for call in calls.values() if call['state'] != 'requested']
 
 
@@ -816,6 +891,14 @@ def native_searches(engine_id, records):
     URL of the turn is markdown prose inside the final ``agent_message``,
     which is the model's own claim, not a reported search result, so it is
     not recorded as a source (``tests/fixtures/codex_exec_web_search.jsonl``).
+
+    #621: each call also keeps ``excerpt``, the result text the CLI reported
+    (Claude Code's string ``results`` of a WebSearch, the ``result`` of a
+    WebFetch, any ``snippet``/``text``/``content`` a Codex ``results`` entry
+    carries), raw and capped at ``MAX_NATIVE_EXCERPT``; the recorder redacts
+    it.  A Claude Code ``WebFetch`` is a call with ``action == 'open_page'``.
+    The answer's own URLs are read separately (``cited_urls``) and never
+    become ``results``.
     """
     if engine_id == 'codex':
         return _codex_searches(records)[:MAX_NATIVE_SEARCHES]
@@ -1081,6 +1164,10 @@ def cli_metadata(engine_id, raw, connector_digest=None, answer=None):
     if not meta['connector_reads']:
         meta.pop('connector_reads')
     meta['native_searches'] = native_searches(engine_id, records)
+    # #621: where the worker's final answer says its findings came from, kept only beside its own
+    # searches (the recorder attaches them to a search that reported no URL, labelled worker-cited).
+    if meta['native_searches']:
+        meta['cited_urls'] = cited_urls(final_answer_text(engine_id, records, answer))
     # #795: how the stream ended, content-free, so a run with no final answer is
     # diagnosable: the last event types and any error text the CLI itself reported.
     meta['stream_tail'] = [str(record.get('type') or '')[:40] for record in records[-12:]]

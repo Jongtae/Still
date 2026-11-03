@@ -44,7 +44,7 @@ from .conversation_projection import (BLOCKER_CLOUD_PROFILE, BLOCKER_DOCUMENT_AP
                                       answer_note, owner_cause, report_statement, terminal_text, tried_statement, turn_qualifier,
                                       verified_portion)
 from .subscription_engines import SubscriptionEngines
-from .bounded_execution import reported_usage, BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls
+from .bounded_execution import reported_usage, BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls, MAX_NATIVE_EXCERPT
 from .bounded_execution import AgentOSMcpTools, ReadOnlyAgentOSMcpTools, StrictIsolatedAgentOSMcpTools, BoundedExecutionAdapter, ExecutionError, ExecutionResult, MAX_PROMPT_BYTES, BOUNDED_PROFILE, HOST_CLI_PROFILES, STRICT_PROFILE, profile_actions, profile_status, route_unavailable
 from .orchestrator import DEFAULT_MODEL_LABEL, MIN_ATTEMPT_SECONDS, model_refused, observations_with_pages, preview_text, remember_model_refusal
 from .orchestrator import (EVENT_TOOL as ORCHESTRATION_EVENT, PURPOSE as ORCHESTRATION_PURPOSE, NOT_JUDGED, NOT_REACHED, REACHED, UNJUDGED, WORKER_FAILED,
@@ -384,6 +384,42 @@ LOCATION_NOT_CONTINUED_TEXT=msg('notice.location_not_continued')
 #: #1308: how a CLI's own web search with unreported results reads in the goal judgment's observations.
 NATIVE_SEARCH_UNSEEN=("the worker's own web search ran; Still cannot see its results (its sources were not reported, "
                       "which is not the same as finding nothing);")
+#: #621: how a CLI's own search or page open that reported sources reads there (worker-reported, C6).
+NATIVE_SEARCH_REPORTED=("the worker's own {what} (worker-reported: its CLI reported these sources and text; "
+                        "Still did not open the pages itself);")
+#: #621: the answer's own URLs beside a search that reported none (the worker's statement, C6).
+NATIVE_SEARCH_CITED=("the worker's answer cites these URLs as where its findings came from (worker-cited: the "
+                     "worker's own statement; neither its search nor Still reported or opened them):")
+#: #621: the most characters one native search's observation line carries.
+NATIVE_OBSERVATION_CHARS=2400
+
+
+def native_observation_line(tool, data, evidence):
+    """#1308, #621: one CLI-native search or page open as the outcome judgment reads it.
+
+    Built only from the recorded (already redacted) web_search event: the
+    queries, the reported sources with their titles, the reported result
+    text, and for a search that reported no URL the answer's ``worker_cited``
+    URLs, each labelled with its evidence class.  "0 results" is never said
+    for a search whose results were not reported.
+    """
+    queries=[query for query in (evidence.get('search_queries') or [((data.get('arguments') or {}).get('query') or '')]) if query]
+    parts=[]
+    sources=[url for url in evidence.get('sources') or () if isinstance(url,str)]
+    if sources:
+        titles=evidence.get('source_titles') if isinstance(evidence.get('source_titles'),list) else []
+        what='page open' if evidence.get('action')=='open_page' else 'web search'
+        parts.append(NATIVE_SEARCH_REPORTED.format(what=what))
+        if queries:parts.append(f"queries: {json.dumps(queries,ensure_ascii=False)[:500]};")
+        rows=[f"{titles[index]} <{url}>" if index<len(titles) and titles[index] else url for index,url in enumerate(sources)]
+        parts.append(f"sources: {json.dumps(rows,ensure_ascii=False)[:1200]};")
+    else:
+        parts.append(f"{NATIVE_SEARCH_UNSEEN} queries: {json.dumps(queries,ensure_ascii=False)[:500]}")
+        cited=[url for url in evidence.get('worker_cited') or () if isinstance(url,str)]
+        if cited:parts.append(f"{NATIVE_SEARCH_CITED} {json.dumps(cited,ensure_ascii=False)[:1000]}")
+    if evidence.get('result_text'):
+        parts.append(f"reported result text: {json.dumps(str(evidence['result_text']),ensure_ascii=False)}")
+    return f"- {tool}: {' '.join(parts)}"[:NATIVE_OBSERVATION_CHARS]
 #: #1305: the one line that carries the location keyboard's removal once the owner's location arrived.
 LOCATION_RECEIVED_TEXT=msg('service.got_your_location_carrying_on')
 #: Owner direction 2026-09-30: approval prompts answer with the same pair as the
@@ -3380,9 +3416,20 @@ class AgentService:
         its own availability refusal is native search remembered as
         unavailable for this CLI; a permission denial (Still's own setting)
         and any other tool error are never remembered.  Returns the URLs.
+
+        #621: the evidence says what it is (``evidence_class:
+        'worker-reported'``): the CLI's own account of the search or page open
+        (``action``), with the titles and result text it reported
+        (``source_titles``, ``result_text``), redacted by the same pass as the
+        queries and capped.  A search that reported no URL carries the URLs the
+        worker's final answer cites as ``worker_cited``, never as ``sources``.
         """
         urls=[]
         searches=(meta or {}).get('native_searches') if isinstance(meta,dict) else None
+        # #621: the URLs the worker's final answer cites, redacted; attached only to a search that
+        # reported none itself, labelled worker-cited (the worker's statement, not a reported result).
+        cited=[url for url in (self._redact_provenance(str(url))[:300] for url in ((meta or {}).get('cited_urls') or [])
+                               if isinstance(meta,dict)) if public_http_url(url)][:8]
         registry=ProviderRegistry.from_store(self.store)
         for index,search in enumerate(searches if isinstance(searches,list) else []):
             if not isinstance(search,dict):continue
@@ -3409,9 +3456,17 @@ class AgentService:
             rows=[row for row in search.get('results') or [] if isinstance(row,dict) and public_http_url(row.get('url'))]
             found=[row['url'] for row in rows]
             urls.extend(found)
+            # #621: worker-reported (C6): the CLI's own account of its search or page open, not a page Still opened.
             evidence={'sources':found[:8],'result_count':len(rows),'retrieved_at':time.time(),'provider':f'{engine}-native',
-                      'route':engine,'search_queries':queries}
-            if not found:evidence['sources_not_reported']=True
+                      'route':engine,'search_queries':queries,'evidence_class':'worker-reported',
+                      'action':str(search.get('action') or 'search')[:20]}
+            titles=[' '.join(self._redact_provenance(str(row.get('title') or '')).split())[:200] for row in rows[:8]]
+            if any(titles):evidence['source_titles']=titles
+            excerpt=' '.join(self._redact_provenance(str(search.get('excerpt') or '')).split())[:MAX_NATIVE_EXCERPT]
+            if excerpt:evidence['result_text']=excerpt
+            if not found:
+                evidence['sources_not_reported']=True
+                if cited:evidence['worker_cited']=cited
             record('web_search','succeeded',json.dumps({**base,'evidence':evidence},ensure_ascii=False))
             if enabled:registry.record_native(engine,engine,'available')
         return list(dict.fromkeys(urls))
@@ -3484,6 +3539,18 @@ class AgentService:
             for key in ('tool_calls','agentos_tool_calls'):
                 if isinstance(fields.get(key),list):
                     fields[key]=[{k:self._redact_provenance(v)[:80] for k,v in call.items() if isinstance(v,str)} for call in fields[key] if isinstance(call,dict)]
+            # #621: the CLI's own searches as the turn record keeps them: queries, reasons and titles
+            # redacted; their result text only in the redacted web_search events, never here.
+            if isinstance(fields.get('native_searches'),list):
+                fields['native_searches']=[{**{k:v for k,v in search.items() if k not in ('excerpt','queries','reason','results')},
+                                            'queries':[self._redact_provenance(str(query))[:200] for query in search.get('queries') or []][:5],
+                                            'reason':self._redact_provenance(str(search.get('reason') or ''))[:200],
+                                            'results':[{'title':self._redact_provenance(str(row.get('title') or ''))[:300],'url':row.get('url')}
+                                                       for row in search.get('results') or [] if isinstance(row,dict)][:10]}
+                                           for search in fields['native_searches'] if isinstance(search,dict)]
+            if isinstance(fields.get('cited_urls'),list):
+                fields['cited_urls']=[url for url in (self._redact_provenance(str(url))[:300] for url in fields['cited_urls'])
+                                      if public_http_url(url)][:8]
             if isinstance(fields.get('stream_errors'),list):
                 # #792 review: a CLI error may echo the request or owner values: withheld when it
                 # echoes the request, then the Work's saved values, stored secrets and paths removed.
@@ -6499,13 +6566,10 @@ class AgentService:
             if row['tool'] not in called:called.append(row['tool'])
             if row['status']=='succeeded':
                 evidence=data.get('evidence') if isinstance(data.get('evidence'),dict) else {}
-                if data.get('scope')=='cli-native' and not evidence.get('sources'):
-                    sourceless+=1
-                    # #1308: the CLI reports its own search's queries, never its results; "0 results"
-                    # would read as "nothing found", so the line says what Still could not see.
-                    queries=evidence.get('search_queries') or [((data.get('arguments') or {}).get('query') or '')]
-                    observed.append(f"- {row['tool']}: {NATIVE_SEARCH_UNSEEN} queries: "
-                                    f"{json.dumps([query for query in queries if query],ensure_ascii=False)[:500]}")
+                if data.get('scope')=='cli-native':
+                    # #1308, #621: the worker's own search or page open, as its CLI reported it.
+                    if not evidence.get('sources'):sourceless+=1
+                    observed.append(native_observation_line(row['tool'],data,evidence))
                 else:
                     observed.append(f"- {row['tool']}: {json.dumps(evidence,ensure_ascii=False)[:600]}")
             elif row['status']=='failed':

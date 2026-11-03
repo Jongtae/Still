@@ -799,6 +799,62 @@ class CliNativeSearch(unittest.TestCase):
         self.assertEqual(refused['state'], 'unavailable')
         self.assertIn('only available in the US', refused['reason'])
 
+    def test_a_claude_stream_keeps_search_text_page_opens_and_the_answers_urls_apart(self):
+        """#621: Claude Code ``stream-json`` (fixture): the WebSearch links and text, a WebFetch, a malformed line."""
+        raw = (Path(__file__).parent / 'fixtures' / 'claude_stream_web_search.jsonl').read_text()
+        meta = cli_metadata('claude-code', raw)
+        search, fetch = meta['native_searches']
+        self.assertEqual((search['action'], search['queries'], [row['url'] for row in search['results']]),
+                         ('search', ['Seoul library hours November'],
+                          ['https://library.example/hours', 'https://library.example/notice']))
+        self.assertTrue(search['excerpt'].startswith('The library is open 09:00-18:00'))
+        self.assertEqual((fetch['action'], fetch['state'], [row['url'] for row in fetch['results']]),
+                         ('open_page', 'succeeded', ['https://library.example/notice']))
+        self.assertIn('public holidays', fetch['excerpt'])
+        self.assertNotIn('requested_url', fetch)
+        # The answer's own URLs are read apart from what the CLI reported; the malformed line makes the summary partial.
+        self.assertEqual(meta['cited_urls'], ['https://library.example/hours', 'https://library.example/notice'])
+        self.assertTrue(meta['tool_calls_partial'])
+
+    def test_a_claude_page_open_that_failed_keeps_no_url_and_long_text_is_capped(self):
+        from personal_agent.bounded_execution import MAX_NATIVE_EXCERPT
+        lines = [
+            {'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'id': 'f1', 'name': 'WebFetch',
+                                                           'input': {'url': 'https://down.example/'}}]}},
+            {'type': 'user', 'message': {'content': [{'type': 'tool_result', 'tool_use_id': 'f1', 'is_error': True,
+                                                      'content': 'Error: request failed'}]}, 'tool_use_result': 'Error: failed'},
+            {'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'id': 's1', 'name': 'WebSearch', 'input': {'query': 'q'}}]}},
+            {'type': 'user', 'message': {'content': [{'type': 'tool_result', 'tool_use_id': 's1', 'content': 'ok'}]},
+             'tool_use_result': {'query': 'q', 'results': ['x' * 5000]}}]
+        failed, long = cli_metadata('claude-code', '\n'.join(json.dumps(line) for line in lines))['native_searches']
+        self.assertEqual((failed['action'], failed['state'], failed['results']), ('open_page', 'failed', []))
+        self.assertEqual(len(long['excerpt']), MAX_NATIVE_EXCERPT)
+
+    def test_codex_web_search_items_with_and_without_results(self):
+        """#621: Codex ``exec --json`` (fixture): results with a snippet, none, a find_in_page, a malformed line."""
+        raw = (Path(__file__).parent / 'fixtures' / 'codex_exec_web_search_results.jsonl').read_text()
+        meta = cli_metadata('codex', raw)
+        with_results, without, find = meta['native_searches']
+        self.assertEqual(([row['url'] for row in with_results['results']], with_results['excerpt']),
+                         (['https://museum.example/visit'], 'Open daily 10:00-17:00. Closed on Mondays.'))
+        self.assertEqual(with_results['queries'], ['museum opening hours', 'museum holiday closure'])
+        self.assertEqual((without['queries'], without['results'], without['excerpt'], without['state']),
+                         (['museum special exhibition'], [], '', 'succeeded'))
+        self.assertEqual((find['action'], find['queries'], [row['url'] for row in find['results']]),
+                         ('find_in_page', ['until'], ['https://museum.example/exhibitions']))
+        self.assertNotIn('javascript:', json.dumps(meta))
+        self.assertEqual(meta['cited_urls'], ['https://museum.example/visit', 'https://museum.example/exhibitions/special'])
+        self.assertTrue(meta['tool_calls_partial'])
+
+    def test_the_answers_urls_are_read_only_beside_a_native_search(self):
+        from personal_agent.bounded_execution import MAX_CITED_URLS, cited_urls
+        message = {'type': 'item.completed', 'item': {'id': 'm', 'type': 'agent_message', 'text': 'see https://a.example/x'}}
+        self.assertNotIn('cited_urls', cli_metadata('codex', json.dumps(message)))
+        text = ' '.join(f'https://s{index}.example/p.' for index in range(20))
+        self.assertEqual(cited_urls(text), [f'https://s{index}.example/p' for index in range(MAX_CITED_URLS)])
+        self.assertEqual(cited_urls('file:///etc/passwd ftp://x.example/ (https://a.example/b), https://a.example/b'),
+                         ['https://a.example/b'])
+
 
 class _Engine:
     """A fake subscription engine that reports what it was launched with and native searches."""
@@ -1011,6 +1067,58 @@ class ServiceIntegration(unittest.TestCase):
                 last = json.loads(events[-1][2])
                 self.assertEqual((events[-1][1], last['code']), (status, code))
                 self.assertEqual(service.store.config(NATIVE_STATUS_KEY, {}), {})
+
+    def test_worker_reported_search_text_is_redacted_capped_and_labelled(self):
+        """#621: the fixture's searches become worker-reported evidence; secrets never reach it or the turn record."""
+        from personal_agent.quickstart_service import native_observation_line
+        service = self.service()
+        service.save_search_provider_key({'provider': 'brave', 'key': BRAVE_KEY})
+        meta = cli_metadata('claude-code', (Path(__file__).parent / 'fixtures' / 'claude_stream_web_search.jsonl').read_text())
+        meta['native_searches'][0]['excerpt'] += f' key {BRAVE_KEY}'
+        events = []
+        service.record_cli_native_searches('job', 'claude-code', meta, lambda *e: events.append(e))
+        search, fetch = [json.loads(detail)['evidence'] for _, status, detail in events if status == 'succeeded']
+        self.assertEqual((search['evidence_class'], search['action'], search['source_titles']),
+                         ('worker-reported', 'search', ['Library hours', 'Holiday notice']))
+        self.assertIn('closed on the first Monday', search['result_text'])
+        for secret in ('fixture-secret-value-7781', BRAVE_KEY):
+            self.assertNotIn(secret, json.dumps(events))
+        self.assertEqual((fetch['action'], fetch['sources']), ('open_page', ['https://library.example/notice']))
+        # Sources were reported, so the answer's URLs are not attached as worker-cited.
+        self.assertNotIn('worker_cited', search)
+        line = native_observation_line('web_search', {}, search)
+        self.assertIn('worker-reported', line)
+        self.assertIn('Library hours <https://library.example/hours>', line)
+        self.assertIn('reported result text', line)
+        self.assertIn('page open', native_observation_line('web_search', {}, fetch))
+        # The turn record keeps the searches redacted and without their result text.
+        job = service.store.enqueue('도서관 시간', 'provenance-621')
+        service.record_turn_provenance(job, status='answered', **meta)
+        record = service.store.turn_provenance(job)
+        self.assertNotIn('excerpt', json.dumps(record['native_searches']))
+        self.assertNotIn(BRAVE_KEY, json.dumps(record))
+        self.assertEqual(record['cited_urls'], ['https://library.example/hours', 'https://library.example/notice'])
+
+    def test_a_codex_search_without_results_carries_the_answers_urls_as_worker_cited(self):
+        """#621: Codex reported no result URL; the answer's URLs are attached as worker-cited, never as sources."""
+        from personal_agent.quickstart_service import NATIVE_SEARCH_UNSEEN, native_observation_line
+        service = self.service()
+        meta = cli_metadata('codex', (Path(__file__).parent / 'fixtures' / 'codex_exec_web_search_results.jsonl').read_text())
+        events = []
+        urls = service.record_cli_native_searches('job', 'codex', meta, lambda *e: events.append(e))
+        with_results, without, find = [json.loads(detail)['evidence'] for _, status, detail in events if status == 'succeeded']
+        self.assertEqual(urls, ['https://museum.example/visit', 'https://museum.example/exhibitions'])
+        self.assertNotIn('worker_cited', with_results)
+        self.assertEqual(with_results['result_text'], 'Open daily 10:00-17:00. Closed on Mondays.')
+        self.assertEqual((without['sources'], without['sources_not_reported'], without['evidence_class']), ([], True, 'worker-reported'))
+        self.assertEqual(without['worker_cited'], ['https://museum.example/visit', 'https://museum.example/exhibitions/special'])
+        line = native_observation_line('web_search', {}, without)
+        self.assertIn(NATIVE_SEARCH_UNSEEN, line)
+        self.assertIn('worker-cited', line)
+        self.assertIn('https://museum.example/exhibitions/special', line)
+        self.assertNotIn('result_count', line)
+        # The information-use audit lists only what the CLI reported as sources.
+        self.assertNotIn('exhibitions/special', json.dumps([search.get('sources') for search in (with_results, without, find)]))
 
     def test_injected_cli_urls_never_reach_evidence_or_the_answer(self):
         searches = [{'id': 'ws_1', 'engine': 'codex', 'action': 'search', 'queries': ['x'], 'state': 'succeeded', 'reason': '',
