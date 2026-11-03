@@ -298,32 +298,20 @@ def commit_name(name, link=False):
 
 #: #936: a site's own confirmation question that a purchase, payment or transfer hangs on.
 #: Deliberately over-inclusive (a false match only leaves the question unconfirmed and says so).
-#: #619 (Codex P1 on #626): fail-closed.  Every word the #936 table had still counts, and an amount of
-#: money counts too; the one exclusion is ``ORDER_QUESTION`` alone with a word that withdraws the order.
+#: #619 (owner decision on Codex P1, #626): the #936 table unchanged, with no exclusion of any kind;
+#: it only widens: an amount of money counts, and so do any form of "order" ("reorder", "ordering") and 订单.
+#: "Cancel this order?" is declined unless the owner approved the press: a false positive costs one
+#: step, a missed purchase question could charge the owner.
 COMMIT_QUESTION = re.compile(
-    r"결제|구매|송금|이체|충전|구독|후원|\b(?:pay(?:ment)?|purchase|checkout|subscri\w*|donat\w*|transfer)\b"
-    r"|購入|支払|決済|送金|支付|付款|购买|購買|转账|轉帳"
+    r"결제|구매|주문|송금|이체|충전|구독|후원|\b(?:pay(?:ment)?|purchase|checkout|(?:re)?order\w*|subscri\w*|donat\w*|transfer)\b"
+    r"|注文|購入|支払|決済|送金|支付|付款|购买|購買|下单|下單|订购|訂購|订单|訂單|转账|轉帳"
     r"|[$€£¥₩]\s*\d|\d[\d,.]*\s*(?:원|円|元)", re.IGNORECASE)
-#: The order words of the #936 table: a purchase question, unless it withdraws the order.
-ORDER_QUESTION = re.compile(r"주문|\b(?:re)?order\w*|注文|下单|下單|订购|訂購", re.IGNORECASE)
-#: #619: an order question that cancels, withdraws or refunds the order is not a purchase ("주문을 취소할까요?").
-WITHDRAW_QUESTION = re.compile(r"취소|철회|환불|\b(?:cancel\w*|withdraw\w*|refund\w*)\b|キャンセル|取り?消|撤回|取消|退款",
-                               re.IGNORECASE)
 
 
 def commit_question(text):
-    """A confirmation question that may commit a purchase or payment (#936, #619).
-
-    Fail-closed: a commit phrase, a money word or an amount always counts; an order word counts
-    unless the question withdraws the order and names no money.  A false match only declines a
-    dialog the AI can see; a missed one could charge the owner.
-    """
+    """A confirmation question that may commit a purchase or payment (#936, #619)."""
     text = _commit_text(text)
-    if not text:
-        return False
-    if commit_name(text) or COMMIT_QUESTION.search(text):
-        return True
-    return bool(ORDER_QUESTION.search(text)) and not WITHDRAW_QUESTION.search(text)
+    return bool(text) and (commit_name(text) or bool(COMMIT_QUESTION.search(text)))
 
 
 #: #936: what a page's own alert/confirm/prompt during a step said, and how it was answered.

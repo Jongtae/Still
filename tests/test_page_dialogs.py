@@ -30,8 +30,7 @@ class PageDialogRule(unittest.TestCase):
         question, or any question on a page that shows a payment field, waits for an approved press.
         """
         for effect in ('read', 'navigate', None, 'MUTATE', 'anything'):
-            for message in ('정말 탈퇴하시겠습니까?', '예약을 취소하시겠습니까?', 'Are you sure?',
-                            'Cancel the order?', '주문을 취소하시겠습니까?'):
+            for message in ('정말 탈퇴하시겠습니까?', '예약을 취소하시겠습니까?', 'Are you sure?'):
                 state = worker({'approved': False, 'confirm_ok': True, 'effect': effect, 'dialogs': []})
                 self.assertIs(answer(state, 'confirm', message), True, (effect, message))
                 self.assertEqual(state.dialog_step['dialogs'], [{'kind': 'confirm', 'message': message,
@@ -119,9 +118,9 @@ class StepDialogsMediation(unittest.TestCase):
     def test_commit_question(self):
         self.assertTrue(bs.commit_question('결제하시겠습니까?'))
         self.assertFalse(bs.commit_question('해당 상품을 삭제하시겠습니까?'))
-        # #619: withdrawing an order is not paying; every other order question, or an amount, still is.
+        # #619: every order or purchase question, a cancellation included, and any amount of money.
         for text in ('Cancel the order?', '주문을 취소하시겠습니까?', 'Do you want to cancel this order?'):
-            self.assertFalse(bs.commit_question(text), text)
+            self.assertTrue(bs.commit_question(text), text)
         for text in ('Would you like to order this item?', '注文してもよろしいですか?', 'Place order?'):
             self.assertTrue(bs.commit_question(text), text)
         for text in ('주문을 진행할까요?', '주문하시겠습니까?', 'Confirm your order?', '₩12,000 주문하시겠습니까?',

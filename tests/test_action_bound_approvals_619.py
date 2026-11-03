@@ -137,9 +137,17 @@ class FormCheckUnknown(unittest.TestCase):
             approved = types.SimpleNamespace(owner_visible=False, dialog_step={'approved': True, 'dialogs': []})
             self.assertIs(WORKER.js_dialog(approved, 'confirm', question), True, 'the owner approved that press')
 
-    def test_cancelling_an_order_is_not_a_payment_question(self):
-        for question in ('주문을 취소하시겠습니까?', 'Cancel this order?', '注文をキャンセルしますか?', '取消订单?'):
-            self.assertFalse(bs.commit_question(question), question)
+    def test_every_order_question_stays_guarded_cancellation_included(self):
+        """Owner decision on Codex P1 (#626): no keyword exclusion narrows the payment question floor."""
+        WORKER = next(value for value in vars(bw).values() if isinstance(value, type) and hasattr(value, 'js_dialog'))
+        for question in ('Would you like to order this non-refundable item?', 'This order cannot be cancelled. Continue?',
+                         'Cancel this order?', '주문을 취소하시겠습니까?', '注文をキャンセルしますか?', '取消订单?'):
+            with self.subTest(question=question):
+                self.assertTrue(bs.commit_question(question))
+                state = types.SimpleNamespace(owner_visible=False, dialog_step={
+                    'approved': False, 'confirm_ok': True, 'effect': 'mutate', 'dialogs': []})
+                self.assertIs(WORKER.js_dialog(state, 'confirm', question), False)
+        self.assertFalse(hasattr(bs, 'WITHDRAW_QUESTION'))
 
     def test_the_refusal_no_longer_asks_for_a_payment_approval(self):
         self.assertIn('POST', bs.SUBMIT_REFUSED_TEXT)

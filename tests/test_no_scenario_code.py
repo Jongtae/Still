@@ -177,11 +177,7 @@ CLASSIFIED_TABLES = {
                        'adds that requirement (#619: with the payment form, the one deterministic payment gate; '
                        'no per-press judgment)')
        for name in ('COMMIT_PHRASES', 'COMMIT_VERBS', 'COMMIT_NOUN_END', 'COMMIT_NOUN_ALONE', 'COMMIT_NOUN_PRICE',
-                    'COMMIT_QUESTION', 'ORDER_QUESTION')},
-    ('browser_session.py', 'WITHDRAW_QUESTION'): (
-        'enforcement', "#619 (Codex P1 on #626): the one exclusion from the #936 floor: an order question that "
-                       'cancels, withdraws or refunds the order and names no money or commit phrase is not a '
-                       'purchase; every other order or money question stays guarded (fail-closed)'),
+                    'COMMIT_QUESTION')},
     ('browser_session.py', 'action_input_safe.sensitive_name'): (
         'enforcement', 'secret field names (비밀번호, 인증번호, 토큰, 키): a value typed into such a field is never '
                        'approved silently; a match only refuses'),
