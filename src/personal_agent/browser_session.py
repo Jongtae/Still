@@ -932,9 +932,10 @@ class BrowserSession:
 
         The same observation a finished step's result carries (``observe_step``): whether the page
         started a non-GET form submission, and whether the step spent an owner approval.  #103: a
-        press that reached the page with no click on the target carries it too.
+        press that reached the page with no click on the target carries it too; #610: so does a
+        press whose navigation Still refused.
         """
-        if (isinstance(exc, ToolError) and exc.code in ('browser_timeout', PRESS_UNCONFIRMED_CODE)
+        if (isinstance(exc, ToolError) and exc.code in ('browser_timeout', PRESS_UNCONFIRMED_CODE, 'blocked_destination')
                 and isinstance(getattr(exc, 'posted', None), bool)):
             exc.observed_step = {'posted': exc.posted, 'approved': bool(approved)}
         return exc
@@ -2114,7 +2115,10 @@ class WebKitWorkerDriver:
             if code == 'destination_check_timeout':
                 raise ToolError(DESTINATION_CHECK_TIMEOUT_TEXT, 'destination_check_timeout')
             if code == 'blocked_destination':
-                raise ToolError(BLOCKED_TEXT, 'blocked_destination')
+                exc = ToolError(BLOCKED_TEXT, 'blocked_destination')
+                if isinstance(message.get('posted'), bool):
+                    exc.posted = message['posted']   # #610: a step's refused navigation, completed by ``_observed``
+                raise exc
             if code == 'host_not_found':
                 raise ToolError(HOST_NOT_FOUND_TEXT, 'host_not_found')
             if code == 'host_unreachable':

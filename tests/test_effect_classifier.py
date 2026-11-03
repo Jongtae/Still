@@ -83,6 +83,15 @@ CORPUS = {
     'mutate typing timed out, nothing posted': (_pair('browser_type', {
         'declared_effect': 'mutate', 'effect': 'none', 'code': 'browser_timeout',
         'observed_step': {'posted': False, 'approved': False}}, 'failed'), EFFECT_CHANGED),
+    # #610 (live): a navigation click led to a private address and Still refused it; nothing was posted.
+    'navigation click refused, nothing posted': (_pair('browser_click', {
+        'declared_effect': 'navigate', 'effect': 'none', 'code': 'blocked_destination',
+        'observed_step': {'posted': False, 'approved': False}}, 'failed'), EFFECT_NONE),
+    'navigation click refused after a form post': (_pair('browser_click', {
+        'declared_effect': 'navigate', 'effect': 'none', 'code': 'blocked_destination',
+        'observed_step': {'posted': True, 'approved': False}}, 'failed'), EFFECT_CHANGED),
+    'navigation click refused, unobserved': (_pair('browser_click', {
+        'declared_effect': 'navigate', 'effect': 'none', 'code': 'blocked_destination'}, 'failed'), EFFECT_CHANGED),
     'approved click timed out': (_pair('browser_click', {
         'declared_effect': 'navigate', 'effect': 'none', 'code': 'browser_timeout',
         'observed_step': {'posted': False, 'approved': True}}, 'failed'), EFFECT_CHANGED),

@@ -2192,6 +2192,42 @@ class ObservedStepTests(unittest.TestCase):
                 expected = None if posted is None else {'posted': posted, 'approved': False}
                 self.assertEqual(getattr(caught.exception, 'observed_step', None), expected)
 
+    def test_a_step_whose_navigation_was_refused_carries_what_the_worker_observed(self):
+        # #610 (live): a navigation click led to a private address; the refusal still knew whether it posted.
+        for posted in (False, True, None):
+            with self.subTest(posted=posted):
+                class Refused(FakeDriver):
+                    def click(inner, index, timeout, approved=False, confirm_ok=False, effect=None):
+                        exc = ToolError(bs.BLOCKED_TEXT, 'blocked_destination')
+                        if posted is not None:
+                            exc.posted = posted
+                        raise exc
+                browser, _driver = session(Refused())
+                browser.open({'url': ORIGIN + '/product', 'effect': 'read'})
+                with self.assertRaises(ToolError) as caught:
+                    browser.click({'target': '내 계정', 'effect': 'navigate'})
+                self.assertEqual(caught.exception.code, 'blocked_destination')
+                expected = None if posted is None else {'posted': posted, 'approved': False}
+                self.assertEqual(getattr(caught.exception, 'observed_step', None), expected)
+
+    def test_the_worker_driver_keeps_a_refused_navigation_observation(self):
+        import itertools
+        import queue as queue_module
+        for message, posted in (({'id': 1, 'ok': False, 'error': 'blocked_destination', 'posted': False}, False),
+                                ({'id': 1, 'ok': False, 'error': 'blocked_destination', 'posted': True}, True),
+                                ({'id': 1, 'ok': False, 'error': 'blocked_destination'}, None)):
+            with self.subTest(posted=posted):
+                driver = bs.WebKitWorkerDriver.__new__(bs.WebKitWorkerDriver)
+                driver._proc = types.SimpleNamespace(stdin=io.StringIO())
+                driver._queue = queue_module.Queue()
+                driver._queue.put(message)
+                driver._ids = itertools.count(1)
+                driver.grace_seconds = 1
+                with self.assertRaises(ToolError) as caught:
+                    driver._send('click', 5, index=1)
+                self.assertEqual(caught.exception.code, 'blocked_destination')
+                self.assertEqual(getattr(caught.exception, 'posted', None), posted)
+
     def test_the_worker_driver_keeps_the_timeout_observation(self):
         import itertools
         import queue as queue_module
