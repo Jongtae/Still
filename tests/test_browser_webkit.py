@@ -845,12 +845,28 @@ class WorkerGuardLogicTests(unittest.TestCase):
                 worker.finish_input(5, 0)
                 self.assertEqual(replies, [{'posted': expected}])
 
+    def test_a_step_answers_the_reason_its_navigation_was_refused(self):
+        # #615 (live, #610): a sign-in control opened an app link; the step said "private network".
+        for reason in ('unsupported_navigation', 'destination_check_timeout', 'destination_check_failed',
+                       'blocked_destination'):
+            with self.subTest(reason=reason):
+                bw, worker = self.worker()
+                worker.posted_submits, worker.step_posted, worker.blocked = 3, 3, 0
+                worker.blocked_reason, worker.navigation = None, None
+                worker.pending[5] = True
+                worker.fail = lambda ident, code, **fields: worker.failed.append((ident, code, fields))
+                worker.run = lambda body, arguments, done, world=None: done({'cancelled': None}, None)
+                worker.navigation_refused(True, reason)
+                worker.finish_input(5, 0)
+                self.assertEqual(worker.failed, [(5, reason, {'posted': False})])
+
     def test_a_step_whose_navigation_was_refused_answers_whether_it_posted(self):
         """#610: the press ran before Still refused where it led; its answer carries ``posted`` as a finished one."""
         for posted, expected in ((0, False), (1, True)):
             with self.subTest(posted=posted):
                 bw, worker = self.worker()
                 worker.posted_submits, worker.step_posted, worker.blocked = 3 + posted, 3, 1
+                worker.blocked_reason = 'blocked_destination'
                 worker.pending[5] = True
                 worker.fail = lambda ident, code, **fields: worker.failed.append((ident, code, fields))
                 worker.run = lambda body, arguments, done, world=None: done({'cancelled': None}, None)
@@ -947,8 +963,29 @@ class WorkerGuardLogicTests(unittest.TestCase):
                 time.sleep(0.02)
             function, arguments = later[0]
             function(*arguments)
-        self.assertEqual(answers, [(True, None), (False, 'blocked_destination')])
+        # #615: a failed answer is not a private address.
+        self.assertEqual(answers, [(True, None), (False, 'destination_check_failed')])
         self.assertEqual(events[0]['where'], 'navigation_answer')
+
+    def test_a_resolver_fault_refuses_as_a_failed_check_and_is_not_cached(self):
+        # #615: a fault in the destination check is reported as such, still refuses, and does not
+        # make every later navigation to the same site a "private network" refusal.
+        bw, worker = self.worker(resolved={}, allowed_origins=(), intranet=None)
+        later = []
+        worker.AppHelper = type('Helper', (), {'callAfter': staticmethod(lambda fn, *a: later.append((fn, a))),
+                                               'callLater': staticmethod(lambda seconds, fn: None)})
+        answers = []
+        from unittest import mock
+        with mock.patch.object(bw, "destination_refusal", side_effect=RuntimeError('resolver')):
+            worker.decide('https://shop.example/', False, lambda allowed, reason=None: answers.append((allowed, reason)))
+            for _ in range(50):
+                if later:
+                    break
+                time.sleep(0.02)
+            function, arguments = later[0]
+            function(*arguments)
+        self.assertEqual(answers, [(False, 'destination_check_failed')])
+        self.assertEqual(worker.resolved, {})
 
     def test_navigation_delegates_answer_once_and_contain_decision_errors(self):
         """#1579 / #328: execute both real delegate methods without Cocoa (including on Linux)."""

@@ -168,6 +168,14 @@ class BrowserSettlement(unittest.TestCase):
                                              'observed_step':{'posted':False,'approved':False}})
         self.assertEqual(self.settle(),'resumed')
 
+    def test_a_click_that_opened_an_app_link_does_not_withhold_the_sign_in_resume(self):
+        # #615 (live, #610): the refused navigation was an app link, now reported as such.
+        click={'scope':'s','call_id':'c1','host_action':'browser_click','declared_effect':'navigate'}
+        self.event('browser_click','running',click)
+        self.event('browser_click','failed',{**click,'code':'unsupported_navigation','retry':'permanent','effect':'none',
+                                             'observed_step':{'posted':False,'approved':False}})
+        self.assertEqual(self.settle(),'resumed')
+
     def test_a_refused_navigation_click_without_its_observation_is_still_withheld(self):
         click={'scope':'s','call_id':'c1','host_action':'browser_click','declared_effect':'navigate'}
         self.event('browser_click','running',click)

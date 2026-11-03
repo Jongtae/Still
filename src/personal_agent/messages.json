@@ -6659,6 +6659,12 @@
   "ja": "AI はまだ接続されていません。ブラウザの AI 設定で接続すれば、すぐに使えます。",
   "zh": "尚未连接 AI。在浏览器的 AI 设置中连接后即可使用。"
  },
+ "browser.destination_check_failed": {
+  "ko": "이 주소가 공개 네트워크인지 확인하는 중 오류가 나서 이번 이동을 중단했습니다. 접근 금지가 확인된 것은 아니니 잠시 뒤 다시 시도할 수 있습니다.",
+  "en": "Checking whether this address is on the public network failed, so this navigation was stopped. No access restriction was established; it can be tried again shortly.",
+  "ja": "このアドレスが公開ネットワークか確認する際にエラーが起きたため、今回の移動を停止しました。アクセス禁止が確認されたわけではなく、少し後に再試行できます。",
+  "zh": "检查此地址是否属于公共网络时出错，已停止本次导航。尚未确认存在访问限制，可稍后重试。"
+ },
  "browser.destination_check_timeout": {
   "ko": "주소의 공개 네트워크 여부를 시간 안에 확인하지 못해 이번 이동을 중단했습니다. 실제 접근 금지가 확인된 것은 아닙니다.",
   "en": "The public-network address check timed out, so this navigation was stopped. An access restriction was not established.",
@@ -6666,10 +6672,10 @@
   "zh": "公共网络地址检查超时，已停止本次导航。尚未确认存在访问限制。"
  },
  "browser.unsupported_navigation": {
-  "ko": "페이지가 브라우저에서 열 수 없는 앱 전용 주소로 이동하려 해 중단했습니다. 웹 화면이 남아 있다면 읽어서 확인하세요.",
-  "en": "The page tried to open an unsupported app address, so the navigation was stopped. Read the web document if it remains available.",
-  "ja": "ページがブラウザで開けないアプリ専用アドレスに移動しようとしたため停止しました。ウェブ画面が残っていれば読み取って確認してください。",
-  "zh": "页面尝试打开浏览器不支持的应用地址，已停止导航。如果网页仍在，请读取并确认。"
+  "ko": "이 동작이 http(s)가 아닌 앱 전용 주소(앱 실행 링크 등)로 이동하려 해 중단했습니다. 이 브라우저는 앱을 열 수 없습니다. 페이지의 웹 경로를 쓰고, 앱으로 넘어가는 로그인이라면 browser_sign_in으로 소유자에게 로그인을 맡기세요.",
+  "en": "This step tried to go to an app-only address (not http/https, such as an app launch link), so it was stopped. This browser cannot open apps. Use the page's web route; if it was a sign-in that hands off to an app, give the sign-in to the owner with browser_sign_in.",
+  "ja": "この操作が http(s) ではないアプリ専用アドレス（アプリ起動リンクなど）へ移動しようとしたため停止しました。このブラウザはアプリを開けません。ページのウェブ経路を使い、アプリに渡るログインなら browser_sign_in でオーナーにログインを任せてください。",
+  "zh": "此操作试图前往非 http(s) 的应用专用地址（如应用启动链接），已停止。此浏览器无法打开应用。请使用页面的网页路径；如果是转到应用的登录，请用 browser_sign_in 交给所有者登录。"
  },
  "button.reopen_sign_in": {
   "ko": "로그인 창 다시 열기",

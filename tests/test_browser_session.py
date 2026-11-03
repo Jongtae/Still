@@ -2194,11 +2194,12 @@ class ObservedStepTests(unittest.TestCase):
 
     def test_a_step_whose_navigation_was_refused_carries_what_the_worker_observed(self):
         # #610 (live): a navigation click led to a private address; the refusal still knew whether it posted.
-        for posted in (False, True, None):
-            with self.subTest(posted=posted):
+        for code, posted in [(code, posted) for code in ('blocked_destination', 'unsupported_navigation')
+                             for posted in (False, True, None)]:
+            with self.subTest(code=code, posted=posted):
                 class Refused(FakeDriver):
                     def click(inner, index, timeout, approved=False, confirm_ok=False, effect=None):
-                        exc = ToolError(bs.BLOCKED_TEXT, 'blocked_destination')
+                        exc = ToolError(bs.NAVIGATION_REFUSALS[code], code)
                         if posted is not None:
                             exc.posted = posted
                         raise exc
@@ -2206,17 +2207,20 @@ class ObservedStepTests(unittest.TestCase):
                 browser.open({'url': ORIGIN + '/product', 'effect': 'read'})
                 with self.assertRaises(ToolError) as caught:
                     browser.click({'target': '내 계정', 'effect': 'navigate'})
-                self.assertEqual(caught.exception.code, 'blocked_destination')
+                self.assertEqual(caught.exception.code, code)
                 expected = None if posted is None else {'posted': posted, 'approved': False}
                 self.assertEqual(getattr(caught.exception, 'observed_step', None), expected)
 
     def test_the_worker_driver_keeps_a_refused_navigation_observation(self):
         import itertools
         import queue as queue_module
-        for message, posted in (({'id': 1, 'ok': False, 'error': 'blocked_destination', 'posted': False}, False),
-                                ({'id': 1, 'ok': False, 'error': 'blocked_destination', 'posted': True}, True),
-                                ({'id': 1, 'ok': False, 'error': 'blocked_destination'}, None)):
-            with self.subTest(posted=posted):
+        # #615: every refused-navigation code keeps its own reason and the step's observation.
+        cases = [({'id': 1, 'ok': False, 'error': code, **({'posted': posted} if posted is not None else {})}, posted, code)
+                 for code in ('blocked_destination', 'unsupported_navigation', 'destination_check_timeout',
+                              'destination_check_failed')
+                 for posted in (False, True, None)]
+        for message, posted, code in cases:
+            with self.subTest(code=code, posted=posted):
                 driver = bs.WebKitWorkerDriver.__new__(bs.WebKitWorkerDriver)
                 driver._proc = types.SimpleNamespace(stdin=io.StringIO())
                 driver._queue = queue_module.Queue()
@@ -2225,7 +2229,8 @@ class ObservedStepTests(unittest.TestCase):
                 driver.grace_seconds = 1
                 with self.assertRaises(ToolError) as caught:
                     driver._send('click', 5, index=1)
-                self.assertEqual(caught.exception.code, 'blocked_destination')
+                self.assertEqual(caught.exception.code, code)
+                self.assertEqual(str(caught.exception), bs.NAVIGATION_REFUSALS[code])
                 self.assertEqual(getattr(caught.exception, 'posted', None), posted)
 
     def test_the_worker_driver_keeps_the_timeout_observation(self):
