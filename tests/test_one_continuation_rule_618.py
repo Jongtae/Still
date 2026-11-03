@@ -85,6 +85,31 @@ class NotHandedOff(unittest.TestCase):
         observation = _error_observation(caught.exception, True, 'browser_click')
         self.assertNotEqual(record_effect('browser_click', {**observation, 'declared_effect': 'mutate'}, 'failed'), EFFECT_NONE)
 
+    def test_budget_refusals_before_any_tool_runs_are_none(self):
+        # #617/#620: a superseded run, an unreadable budget record and a spent attempt budget refuse
+        # a write before it runs (``Capabilities.execute``): ``ran: false``, so nothing to hold.
+        from personal_agent.agent_runtime import Capabilities
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        store = QuickStore(Path(temp.name))
+        job = store.enqueue('note it', 'k618-budget')
+        for code in ('run_superseded', 'budget_unavailable', 'attempt_budget'):
+            with self.subTest(code=code):
+                class Budget:
+                    def check(self):
+                        pass
+
+                    def spend_attempt(self, code=code):
+                        raise ToolError('refused', code)
+                caps = Capabilities(store, None, {}, '', job, lambda *a: None, budget=Budget())
+                with self.assertRaises(ToolError) as caught:
+                    caps.execute('save_note', {'content': 'x'})
+                self.assertIs(caught.exception.ran, False)
+                observation = _error_observation(caught.exception, True, 'save_note')
+                self.assertEqual(record_effect('save_note', observation, 'failed'), EFFECT_NONE)
+        redaction = ToolError('redactor unavailable', 'redaction_unavailable', ran=False)
+        self.assertEqual(record_effect('web_search', _error_observation(redaction, True, 'web_search'), 'failed'), EFFECT_NONE)
+
     def test_a_pre_send_refusal_naming_an_earlier_unknown_records_no_new_unknown(self):
         held = ToolError('earlier effect unknown', 'effect_unknown', ran=False)
         held.effect = 'unknown'
