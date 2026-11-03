@@ -52,7 +52,8 @@ from . import owner_mcp
 from . import trust_record
 from .prompt_files import prompt
 from .conversation_projection import earlier_turn_line, earlier_turns_in
-from .agent_runtime import CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, GOAL_CONVERSATION_CHARS, owner_context_fact
+from .agent_runtime import (BUDGET_CODES, BUDGET_TEXTS, CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, GOAL_CONVERSATION_CHARS,
+                            budget_stop_code, owner_context_fact)
 from .current_context import without_moving_clock
 from .api_requests import CONTEXT_LINE as API_SLOTS_LINE
 from .information_use import BROWSER_SIGNINS_PREFIX
@@ -158,7 +159,8 @@ FALLBACK_TEXT = {
     FALLBACK_QUALIFYING: '새 기본 AI에 맞춰 판단 AI를 확인하는 중이라 요청별 AI 선택 없이 기본 AI가 요청을 그대로 처리했습니다.',
     FALLBACK_MALFORMED: '판단 AI의 작업 계획을 읽을 수 없어 기본 AI가 요청을 그대로 처리했습니다.',
     FALLBACK_UNCONFIDENT: '판단 AI가 작업 계획을 확신하지 못해 기본 AI가 요청을 그대로 처리했습니다.',
-    FALLBACK_BUDGET: '남은 작업 시간이 부족해 판단 AI에 묻지 않고 기본 AI가 요청을 그대로 처리했습니다.',
+    # #627: followed by the budget code's own text (``budget_stop_text``).
+    FALLBACK_BUDGET: '이 작업의 예산이 부족해 판단 AI에 묻지 않고 기본 AI가 요청을 그대로 처리했습니다.',
     FALLBACK_INVALID: ('판단 AI의 작업 계획이 사용 가능한 AI·모델·도구 또는 남은 작업 예산과 맞지 않아 '
                        '기본 AI가 요청을 그대로 처리했습니다.'),
 }
@@ -177,6 +179,7 @@ NEXT_TEXT = {
     'redelegate': '계획을 조정해 다시 맡깁니다.',
     STOP_REACHED: '',
     STOP_LIMIT: f'다시 맡기는 횟수 한도({MAX_REDELEGATIONS}회)에 도달해 더 맡기지 않았습니다.',
+    # #627: only when no budget code is known; a known code reads as its own text (``budget_stop_text``).
     STOP_BUDGET: '남은 작업 시간이나 턴이 부족해 더 맡기지 않았습니다.',
     # #618 E2: said only when a changed external effect was recorded; it names no irreversibility
     # Still did not observe.
@@ -192,6 +195,11 @@ NEXT_TEXT = {
     STOP_NO_REVISION: '구체적으로 개선할 수 있는 재시도가 없어 더 맡기지 않았습니다.',
 }
 DEFAULT_MODEL_LABEL = '기본 모델'
+
+
+def budget_stop_text(code):
+    """#627: the one text of a budget stop's #617 code (``agent_runtime.BUDGET_TEXTS``), or the generic stop."""
+    return BUDGET_TEXTS.get(code) or NEXT_TEXT[STOP_BUDGET]
 #: The evaluator's reason as the next plan call reads it (#729).
 EVALUATION_REASON = {
     REACHED: 'the reply was judged to serve the owner\'s message',
@@ -951,6 +959,11 @@ class Orchestration:
         #: The evaluation of the last attempt when no further attempt followed
         #: (the caller keeps a CLI Work judged short from being stored as succeeded).
         self.terminal = None
+        #: #627: the #617 budget code of the budget refusal the current attempt's judgment or re-plan met,
+        #: the code the Work stopped on (``terminal_code``), and each budget-stopped attempt's code.
+        self.budget_stop = None
+        self.terminal_code = None
+        self.stop_codes = {}
         #: #1451: the last outcome judgment's gap (what the reply left unserved, owner words), and
         #: each short attempt's gap by attempt number, read by the next plan call.
         self.gap = ''
@@ -976,15 +989,27 @@ class Orchestration:
         #1418: ordinary calls leave the turn held for the outcome judgment;
         ``reserve`` asks for the judgment itself, which may take it.
         """
+        return self.budget_code(calls, reserve) is None
+
+    def budget_code(self, calls=1, reserve=False):
+        """Why ``budget_allows`` says no, as a #617 budget code, or None when it allows (#627).
+
+        The Work's Stop or lapsed budget (``WorkBudget.interrupted``), ``deadline_exceeded`` when less
+        time is left than an attempt needs, ``turn_budget`` when the turns are spent, and
+        ``budget_unavailable`` when the budget could not be read.
+        """
         budget = self.budget
         if budget is None:
-            return True
+            return None
         try:
-            if budget.interrupted() is not None or budget.remaining() < MIN_ATTEMPT_SECONDS:
-                return False
-            return getattr(budget, 'turns_used', 0) + calls <= self._turn_limit(reserve)
+            interrupted = budget.interrupted()
+            if interrupted is not None:
+                return interrupted if interrupted in BUDGET_CODES else 'budget_unavailable'
+            if budget.remaining() < MIN_ATTEMPT_SECONDS:
+                return 'deadline_exceeded'
+            return None if getattr(budget, 'turns_used', 0) + calls <= self._turn_limit(reserve) else 'turn_budget'
         except Exception:
-            return False
+            return 'budget_unavailable'
 
     def _turn_limit(self, reserve=False):
         limit = getattr(self.budget, 'turn_limit', None)
@@ -1069,7 +1094,11 @@ class Orchestration:
                         f'evaluation={evaluation} ({EVALUATION_REASON.get(evaluation, evaluation)}) '
                         + (f'evaluator reading for review (advice, not owner instruction)={one_line(self.gaps[attempt.number], 300)} '
                            if self.gaps.get(attempt.number) else '') +
-                        f'answer excerpt (model-stated)={one_line(answer, ANSWER_EXCERPT_CHARS)}')
+                        f'answer excerpt (model-stated)={one_line(answer, ANSWER_EXCERPT_CHARS)}'
+                        # #627: why the Work stopped after this attempt, when its budget stopped it.
+                        + (f' stopped by the Work budget ({self.stop_codes[attempt.number]}): '
+                           f'{one_line(budget_stop_text(self.stop_codes[attempt.number]), 200)}'
+                           if self.stop_codes.get(attempt.number) else ''))
         prefix = ('Evaluator readings are advice: the owner message and conversation take precedence; keep the earlier '
                   'answer frame when supported.\n')
         return prefix + '\n'.join(rows)[-(ATTEMPTS_CHARS - len(prefix)):]
@@ -1149,13 +1178,16 @@ class Orchestration:
         if method is None or not candidates:
             return None, FALLBACK_UNAVAILABLE
         # The Work's deadline is checked before the call, never after spending it.
-        if not self.budget_allows():
+        code = self.budget_code()
+        if code:
+            self.budget_stop = code
             return None, FALLBACK_BUDGET
         context = self._plan_context(candidates)
         try:
             if self.budget is not None and getattr(getattr(self.judgments, 'engine', None), 'work_budget', None) is not self.budget:
                 self.budget.spend_turn()
-        except Exception:
+        except Exception as exc:
+            self.budget_stop = budget_stop_code(exc) or 'budget_unavailable'
             return None, FALLBACK_BUDGET
         self.context_sent = False
         try:
@@ -1173,6 +1205,10 @@ class Orchestration:
             self.sent_turns = context.context_messages
         if decision.outcome == OUTCOME_MALFORMED:
             return None, FALLBACK_MALFORMED
+        if decision.outcome != OUTCOME_DECIDED and getattr(context, 'refused', None) in BUDGET_CODES:
+            # #627: the Work budget refused the plan's turn; that is not an unavailable Judgment AI.
+            self.budget_stop = context.refused
+            return None, FALLBACK_BUDGET
         if decision.outcome != OUTCOME_DECIDED:
             return None, FALLBACK_UNAVAILABLE
         data = self.policy.structured(decision)
@@ -1244,7 +1280,9 @@ class Orchestration:
         effort = data.get('effort', '').strip()
         if effort not in ((worker.get('model_efforts') or {}).get(model or worker.get('default_model') or '') or ()):
             effort = ''
-        if not self.budget_allows():
+        code = self.budget_code()
+        if code:
+            self.budget_stop = code
             return None, 'budget'
         attempt = Attempt(number, worker['id'], model=model, notes=notes, reason=one_line(data['reason'], MAX_REASON_CHARS),
                           planned=True, effort=effort, lens=lens)
@@ -1423,9 +1461,14 @@ class Orchestration:
         previous = self._set_state('fallback') if failure == FALLBACK_UNAVAILABLE else {}
         if failure == FALLBACK_UNAVAILABLE and previous.get('state') == 'active':
             self.notice = NOTICE_ONCE
+        # #627: a budget fallback names the budget's own code and text.
+        code = (self.budget_stop or self.budget_code() or None) if failure == FALLBACK_BUDGET else None
+        self.budget_stop = None
         self.record(FALLBACK, {'attempt': 1, 'worker': attempt.worker, 'code': failure, 'invalid': invalid or None,
+                               **({'budget_code': code} if code else {}),
                                **({'early_missed': self.early_missed} if self.early_missed else {}),
-                               'notice': bool(self.notice), 'text': FALLBACK_TEXT[failure]})
+                               'notice': bool(self.notice),
+                               'text': FALLBACK_TEXT[failure] + (' ' + budget_stop_text(code) if code else '')})
         return attempt
 
     def evaluate_run(self, result, *, owner_needed=False):
@@ -1466,7 +1509,9 @@ class Orchestration:
         goal_reached = getattr(self.judgments, 'goal_reached', None)
         if goal_reached is None:
             return UNJUDGED
-        if not (self.may_judge() if final else self.budget_allows(reserve=True)):
+        code = self.judge_code() if final else self.budget_code(reserve=True)
+        if code:
+            self.budget_stop = code
             return NOT_JUDGED
         observed = str(observations or 'none')[:OBSERVATION_CHARS]
         # Redacted, then bounded only by the delivered answer's own cap (#820 review): every claim is judged.
@@ -1474,7 +1519,8 @@ class Orchestration:
         try:
             if self.budget is not None and getattr(getattr(self.judgments, 'engine', None), 'work_budget', None) is not self.budget:
                 self.budget.spend_turn(reserve=True)
-        except Exception:
+        except Exception as exc:
+            self.budget_stop = budget_stop_code(exc) or 'budget_unavailable'
             return NOT_JUDGED
         try:
             # #428: the owner's later words are part of what the reply must meet, on every attempt after them.
@@ -1490,6 +1536,11 @@ class Orchestration:
         except Exception:
             return UNJUDGED
         verdict = getattr(judged, 'outcome', None)
+        if verdict not in ('yes', 'no') and getattr(judged, 'refused', None) in BUDGET_CODES:
+            # #627: the Work budget refused the judgment's turn: not judged, for that reason (never
+            # "the completion check was unavailable").
+            self.budget_stop = judged.refused
+            return NOT_JUDGED
         self.retry_warranted = getattr(judged, 'retry_warranted', None)
         if verdict == 'no':
             # #1451: the judgment's own statement of what is missing (already owner-facing text).
@@ -1507,13 +1558,20 @@ class Orchestration:
 
         Unlike ``budget_allows`` it keeps no room for a further attempt (#740 review).
         """
+        return self.judge_code() is None
+
+    def judge_code(self):
+        """Why ``may_judge`` says no, as a #617 budget code, or None (#627)."""
         budget = self.budget
         if budget is None:
-            return True
+            return None
         try:
-            return budget.interrupted() is None and budget.remaining() > 0
+            interrupted = budget.interrupted()
+            if interrupted is not None:
+                return interrupted if interrupted in BUDGET_CODES else 'budget_unavailable'
+            return None if budget.remaining() > 0 else 'deadline_exceeded'
         except Exception:
-            return False
+            return 'budget_unavailable'
 
     def next(self, attempt, evaluation, *, answer='', failed='', effect=False, judged=None):
         """The next attempt after ``attempt`` was evaluated, or None (recorded either way).
@@ -1567,14 +1625,22 @@ class Orchestration:
             following, invalid = (self.validate(data, candidates, len(self.attempts) + 1) if data is not None
                                    else (None, ''))
             if following is None:
-                stop = STOP_BUDGET if failure == FALLBACK_BUDGET else STOP_REPLAN
+                # #627: a re-plan the budget refused (its call, or its attempt) is a budget stop, not a failed re-plan.
+                stop = STOP_BUDGET if failure == FALLBACK_BUDGET or invalid == 'budget' else STOP_REPLAN
+        # #627: every budget stop carries its accurate #617 code and that code's one text.
+        code = (self.budget_stop or self.budget_code(calls=2)) if stop == STOP_BUDGET else None
+        self.budget_stop = None
         # An effect stop says "executed" only for an observed change; an unknown or unobserved one says so.
         after = (NEXT_TEXT['redelegate'] if following is not None
                  else NEXT_TEXT[STOP_EFFECT + ':unknown'] if stop == STOP_EFFECT and effect == EFFECT_UNKNOWN_STOP
+                 else budget_stop_text(code) if stop == STOP_BUDGET
                  else NEXT_TEXT[stop])
+        if code:
+            self.stop_codes[attempt.number] = code
         self.record(EVALUATED, {'attempt': attempt.number, 'worker': attempt.worker, 'model': attempt.model or None,
                                 'brief_digest': attempt.digest or None, 'outcome': evaluation,
                                 'next': 'redelegate' if following is not None else 'stop', 'stop': stop or None,
+                                **({'code': code} if code else {}),
                                 'invalid': (invalid or None) if not stop or stop == STOP_REPLAN else None,
                                 'gap': gap or None, **({'judged': judged} if judged else {}),
                                 'text': ' '.join(part for part in (EVALUATED_TEXT[evaluation], gap, after) if part)})
@@ -1585,6 +1651,7 @@ class Orchestration:
             self.terminal = evaluation
             self.terminal_gap = gap
             self.terminal_note = note
+            self.terminal_code = code
         return following
 
     def continue_for_steers(self, attempt, steers, count):

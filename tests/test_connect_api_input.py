@@ -345,9 +345,10 @@ class ApiInput(PhoneInputServiceCase):
         budget_after = self.store.config('work_budget:' + self.job['id'])
         self.assertFalse(budget_after['active'])
         # #1445: the owner completed the prerequisite, so the remaining work ran on one renewed
-        # allowance (bounded per Work); its own spending is recorded from zero.
-        from personal_agent.agent_runtime import WORK_DEADLINE_SECONDS
-        self.assertEqual(budget_after.get('renewals'), 1)
+        # allowance (#627: one counted continuation); its own spending is recorded from zero.
+        from personal_agent.agent_runtime import WORK_DEADLINE_SECONDS, continuation_count
+        with self.store.db() as db:
+            self.assertEqual(continuation_count(db, self.job['id']), 1)
         self.assertGreater(budget_after['turns'], 0)
         self.assertGreater(budget_after['attempts'], 0)
         self.assertLessEqual(budget_after['remaining_seconds'], WORK_DEADLINE_SECONDS)

@@ -1722,6 +1722,16 @@ BUDGET_LAPSE_TEXTS={'deadline_exceeded':WORK_DEADLINE,'run_superseded':msg('agen
 #: separate browser step counter (now the Work's one ``attempt_budget``), kept for older events.
 BUDGET_CODES=frozenset({'stopped','deadline','deadline_exceeded','turn_budget','attempt_budget','run_superseded','budget_unavailable',
                         'browser_step_budget'})
+#: #627: the one text of each budget code, what the owner and the model read for every budget stop
+#: (a refused tool step, a refused model turn, the orchestrator's stop).
+BUDGET_TEXTS={'stopped':WORK_STOPPED,'deadline':WORK_DEADLINE,'deadline_exceeded':WORK_DEADLINE,
+              'turn_budget':WORK_TURNS_EXHAUSTED,'attempt_budget':WORK_ATTEMPTS_EXHAUSTED,
+              'browser_step_budget':WORK_ATTEMPTS_EXHAUSTED,**BUDGET_LAPSE_TEXTS}
+
+def budget_stop_code(exc):
+ """The #617 budget code a refusal carries (``ToolError.code`` in ``BUDGET_CODES``), else None (#627)."""
+ code=getattr(exc,'code',None)
+ return code if code in BUDGET_CODES else None
 #: #620 (LangGraph ``RemainingSteps``): below these the run is told to wind down - finish with what
 #: is done and say what remains - before a limit stops it.
 WIND_DOWN_STEPS=10
@@ -1859,8 +1869,28 @@ def observed_value(seen):
 
 #: One durable budget row per original Work, shared by host and CLI processes.
 WORK_LEDGER_KEY='work_budget'
-#: #1445: how many times one Work's allowance is renewed by an owner-completed prerequisite.
-MAX_OWNER_RENEWALS=3
+#: #627 (E4 of #614): the one continuation count of a request.  Every time an owner act continues a
+#: paused Work - a settings or setup prerequisite completed, a step approval or sign-in, a budget
+#: Continue - one queued continuation receipt is recorded; at most this many per request (its whole
+#: request chain), read through the one continuation rule (``continuation_reasons`` reason
+#: ``limit``).  It replaces the overlapping eight-resume counts and the separate three-renewal cap
+#: (``MAX_OWNER_RENEWALS``).  Adopted from the OpenAI Agents SDK's single run limit (``max_turns``)
+#: and LangGraph's ``recursion_limit``: one finite bound, kept across interrupts and resumes.
+MAX_CONTINUATIONS=8
+#: The receipts that count (``tool_events.tool``, status ``queued``).
+CONTINUATION_RECEIPTS=('settings_continuation','action_continuation')
+
+def continuation_count(db,job_id):
+ """How many continuations the request of ``job_id`` has queued (#627), across its request chain.
+
+ Read from the durable queued receipts, so it survives a restart and is counted in the same
+ transaction that queues the next one.  An unreadable chain counts as the limit (fails closed).
+ """
+ try:chain=[work['id'] for work in WorkLedger.request_chain(db,job_id)]
+ except ValueError:return MAX_CONTINUATIONS
+ marks=','.join('?'*len(chain))
+ return db.execute(f"SELECT count(*) FROM tool_events WHERE job_id IN ({marks}) AND tool IN (?,?) AND status='queued'",
+                   (*chain,*CONTINUATION_RECEIPTS)).fetchone()[0]
 
 def renew_for_owner_prerequisite(db,job_id,*,budget_continue=False):
  """Give a paused Work a fresh allowance because the owner completed its prerequisite (#1445).
@@ -1868,8 +1898,9 @@ def renew_for_owner_prerequisite(db,job_id,*,budget_continue=False):
  Called inside the transaction that queues the continuation.  The owner's confirmation and
  input are a human boundary, like a new request: without this, a Work that spent its turns
  discovering and proposing the setup resumed with none left (rehearsal: "모델 호출 한도(9회)").
- Never for an active run. Prerequisites have ``MAX_OWNER_RENEWALS``; an exact
- budget-continue offer uses the queue's eight-resume cap instead. Returns whether it renewed.
+ Never for an active run.  #627: bounded by the one continuation count (``MAX_CONTINUATIONS``),
+ which the caller's continuation rule checked before queueing; there is no separate renewal cap.
+ A budget-continue renews only the run its offer was made for.  Returns whether it renewed.
  """
  try:root=WorkLedger.request_chain(db,job_id)[-1]['id']
  except ValueError:return False
@@ -1877,13 +1908,11 @@ def renew_for_owner_prerequisite(db,job_id,*,budget_continue=False):
  found=db.execute('SELECT value FROM config WHERE key=?',(key,)).fetchone()
  try:row=WorkLedger._validate(json.loads(found[0])) if found else None
  except (TypeError,ValueError):return False
- if row is None or row['active'] or type(row.get('renewals',0)) is not int or row.get('renewals',0)<0:return False
- if budget_continue:
-  # The exact owner offer and eight-resume bound are enforced by the queue transaction.
-  if row.get('active_work_id',root)!=job_id:return False
- elif row.get('renewals',0)>=MAX_OWNER_RENEWALS:return False
- row.update(attempts=0,turns=0,nudges=0,presentation=0,remaining_seconds=WORK_DEADLINE_SECONDS,
-            renewals=row.get('renewals',0)+(0 if budget_continue else 1),epoch=row['epoch']+1)
+ if row is None or row['active']:return False
+ # The exact owner offer is enforced by the queue transaction.
+ if budget_continue and row.get('active_work_id',root)!=job_id:return False
+ row.pop('renewals',None)  # the pre-#627 separate renewal cap
+ row.update(attempts=0,turns=0,nudges=0,presentation=0,remaining_seconds=WORK_DEADLINE_SECONDS,epoch=row['epoch']+1)
  db.execute('UPDATE config SET value=? WHERE key=?',(json.dumps(row),key))
  return True
 

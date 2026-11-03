@@ -372,7 +372,8 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                 if cloud is not None:
                     try:self.execution.release_cloud(cloud)
                     except Exception:pass
-                return done(OUTCOME_CANCELLED)
+                # #627: with the Work budget's own reason (its #617 code), never a reasonless refusal.
+                return done(OUTCOME_CANCELLED, failure=getattr(context, 'refused', None) or '')
             try:
                 timeout = max(self.timeout, context.timeout) if getattr(context, 'timeout', None) else self.timeout
                 answer_seen = codex_answer_complete() if self.engine_id == 'codex' else None
@@ -632,7 +633,7 @@ class JevDecisionEngine(DecisionEngine):
             return done(OUTCOME_REJECTED)
         body = {'state': {'purpose': context.purpose, **context.facts}, 'model': self.model,
                 'questions': {_QUESTION: question}}
-        if not context.admit():return done(OUTCOME_CANCELLED)
+        if not context.admit():return done(OUTCOME_CANCELLED, failure=getattr(context, 'refused', None) or '')
         try:
             reply = self.transport(JEV_ENDPOINT, body, {'Authorization': 'Bearer ' + key}, self.timeout)
         except ProviderError as exc:

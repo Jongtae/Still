@@ -781,13 +781,15 @@ GOAL_GAP_CHARS = 300
 class Judgment:
     """One bounded judgment reduced by policy.  It informs routing; it never authorizes."""
 
-    __slots__ = ('outcome', 'value', 'source', 'note', 'retry_warranted')
+    __slots__ = ('outcome', 'value', 'source', 'note', 'retry_warranted', 'refused')
 
-    def __init__(self, outcome, value=None, source='policy', note=None, retry_warranted=None):
+    def __init__(self, outcome, value=None, source='policy', note=None, retry_warranted=None, refused=None):
         self.outcome, self.value, self.source = outcome, value, source
         #: #1459: the outcome judgment's owner-facing line (``BinaryDecision.note``), when it said no.
         self.note = note
         self.retry_warranted = retry_warranted
+        #: #627: the Work budget's code when it refused this judgment's turn (``DecisionContext.refused``).
+        self.refused = refused
 
     def __repr__(self):  # pragma: no cover - diagnostic only
         return f'<Judgment {self.outcome} from {self.source}>'
@@ -1149,7 +1151,8 @@ class ConversationJudgments:
         note = ' '.join(str(note).split())[:GOAL_GAP_CHARS] if isinstance(note, str) else None
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict, gap or None,
                         source=decision.confidence.provider or decision.outcome, note=note,
-                        retry_warranted=getattr(decision, 'retry_warranted', None) if verdict == 'no' else False)
+                        retry_warranted=getattr(decision, 'retry_warranted', None) if verdict == 'no' else False,
+                        refused=context.refused if verdict == 'unknown' else None)
 
     def explicit_memory_request(self, utterance):
         """Does ``utterance`` explicitly ask Still to remember a stated value (#597)?
