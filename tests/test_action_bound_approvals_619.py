@@ -284,6 +284,43 @@ class PreparationDraftBinding(_Case):
                                                   'timezone': 'Asia/Tokyo'}))
         self.assertEqual(json.loads(draft['after'])['timezone'], 'Asia/Tokyo', 'an explicit timezone is kept')
 
+    def proposed(self):
+        return self.service.preparations.create(kind='prepare', goal='한 번 준비', due_at=self.clock[0] + 7200,
+                                                timezone='Asia/Seoul', recurrence=None, channel='web',
+                                                created_from=None, state=prep.STATE_PROPOSED)
+
+    def test_accepting_binds_the_schedule_the_owner_was_shown(self):
+        """Codex P1 on #626: accepting authorizes the schedule, so a schedule change since makes it stale."""
+        for change in ({'recurrence': 'daily'}, {'due': '2026-11-20T10:00', 'timezone': 'Asia/Seoul'}):
+            with self.subTest(change=change):
+                proposal = self.proposed()
+                draft = self.settings.propose('owner', 'http', 'preparations', 'accept', proposal['id'])
+                self.service.preparations.edit(proposal['id'], **change)
+                with self.assertRaises(SettingsError):
+                    self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+                self.assertEqual(self.service.preparations.get(proposal['id'])['state'], prep.STATE_PROPOSED,
+                                 'nothing is scheduled')
+
+    def test_accepting_the_unchanged_proposal_schedules_it(self):
+        proposal = self.proposed()
+        draft = self.settings.propose('owner', 'http', 'preparations', 'accept', proposal['id'])
+        self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+        current = self.service.preparations.get(proposal['id'])
+        self.assertEqual((current['state'], current['recurrence']), (prep.STATE_SCHEDULED, None))
+
+    def test_pause_and_cancel_survive_a_watch_run_but_resume_binds_the_paused_schedule(self):
+        pause = self.settings.propose('owner', 'http', 'preparations', 'pause', self.row['id'])
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET due_at=?,run_count=run_count+1 WHERE id=?',
+                       (self.row['due_at'] + 86400, self.row['id']))
+        self.settings.confirm('owner', 'http', pause['draft_id'], pause['digest'])
+        self.assertEqual(self.service.preparations.get(self.row['id'])['state'], prep.STATE_PAUSED)
+        resume = self.settings.propose('owner', 'http', 'preparations', 'resume', self.row['id'])
+        self.service.preparations.edit(self.row['id'], recurrence='weekly')
+        with self.assertRaises(SettingsError):
+            self.settings.confirm('owner', 'http', resume['draft_id'], resume['digest'])
+        self.assertEqual(self.service.preparations.get(self.row['id'])['state'], prep.STATE_PAUSED)
+
     def test_a_draft_names_its_own_preparation(self):
         other = self.service.preparations.create(kind='prepare', goal='다른 준비', due_at=self.clock[0] + 7200,
                                                  timezone='Asia/Seoul', recurrence='daily', channel='web',

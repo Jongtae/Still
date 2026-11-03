@@ -285,6 +285,13 @@ UNATTENDED_SETTINGS_TEXT = ('No owner is present in this scheduled run, so no se
                             'make; the owner can ask for it in the conversation.')
 
 
+#: #619: what each preparation operation authorizes, and so what its draft binds (Codex P1 on #626).
+_PREPARATION_IDENTITY = ('id', 'kind', 'goal_text')
+_PREPARATION_RUN = (*_PREPARATION_IDENTITY, 'title_text', 'offer_text', 'delivery_mode', 'channel')
+_PREPARATION_SCHEDULE = (*_PREPARATION_RUN, 'due_at', 'timezone', 'recurrence', 'rule_start', 'every_seconds',
+                         'window_end', 'max_runs')
+PREPARATION_BINDINGS = {'cancel': _PREPARATION_IDENTITY, 'pause': _PREPARATION_IDENTITY, 'edit': _PREPARATION_IDENTITY,
+                        'run_now': _PREPARATION_RUN, 'accept': _PREPARATION_SCHEDULE, 'resume': _PREPARATION_SCHEDULE}
 #: #619: settings whose apply resolves the route from current state; their drafts bind that route.
 MODEL_SETTINGS = frozenset({("main_ai", "model"), ("judgment_ai", "model")})
 MODEL_ROUTE_SEP = " @ "
@@ -952,13 +959,15 @@ class SettingsOrchestrator:
             return f"{value}:{(self.service._browser_login(work_id) or {}).get('state')}"
         if category == "preparations":
             # #619 (owner decision 2026-11-03): an approval binds to the exact action, never unrelated state.
-            # The draft names the preparation (its identity: id, kind and goal, which no edit changes) and
-            # the requested change (``after``); a run, the next due time or a schedule change since does not
-            # make it stale.  Whether the operation still applies is the operation's own check when it runs
-            # (cancel of a finished one changes nothing; pause of a running one is refused).  Digest only.
+            # Each operation binds what it authorizes (``PREPARATION_BINDINGS``): cancel, pause and edit the
+            # preparation's identity (id, kind, goal; an edit's resolved change is ``after``), so a run
+            # advancing its next due time does not make them stale; run_now also what one run uses; accept
+            # and resume the whole schedule the owner was shown (a proposal or a paused one has no runs to
+            # advance it), so a schedule change since makes them stale (Codex P1 on #626).  Whether the
+            # operation still applies is the operation's own check when it runs.  Digest only.
             preparation_id = json.loads(value)['id'] if setting == 'edit' else value
             current = self.service.preparations.get(preparation_id) or {}
-            bound = {key: current.get(key) for key in ('id', 'kind', 'goal_text')}
+            bound = {key: current.get(key) for key in PREPARATION_BINDINGS[setting]}
             return hashlib.sha256(json.dumps(bound, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         if (category, setting) in MODEL_SETTINGS:
             # #619 (Codex P1 on #626): a model change is applied on the route current at apply time, so
