@@ -1718,10 +1718,20 @@ BUDGET_LAPSE_TEXTS={'deadline_exceeded':WORK_DEADLINE,'run_superseded':msg('agen
                     'budget_unavailable':msg('agent_runtime.budget_unavailable')}
 #: Codes that end the Work's remaining steps; never a recoverable read failure.
 #: ``deadline`` is the pre-#607 spelling kept for older events.
-BUDGET_CODES=frozenset({'stopped','deadline','deadline_exceeded','turn_budget','attempt_budget','run_superseded','budget_unavailable'})
-#: SEC-LOOP-01 (#657): "try a different path" system turns one Work may get
-#: after a failed path; spent on the Work's own ``WorkBudget``.
-WORK_ALTERNATIVE_NUDGES=2
+#: #620: ``browser_step_budget`` is the pre-#620 spelling of a browser step refused by the
+#: separate browser step counter (now the Work's one ``attempt_budget``), kept for older events.
+BUDGET_CODES=frozenset({'stopped','deadline','deadline_exceeded','turn_budget','attempt_budget','run_superseded','budget_unavailable',
+                        'browser_step_budget'})
+#: #620 (LangGraph ``RemainingSteps``): below these the run is told to wind down - finish with what
+#: is done and say what remains - before a limit stops it.
+WIND_DOWN_STEPS=10
+WIND_DOWN_SECONDS=60
+WIND_DOWN_TEXT=('Little of this Work\'s budget is left: do not start new paths; finish now with what is done '
+                'and say what remains.')
+#: #620 (OpenAI Agents SDK ``max_turns`` with a controlled final output): the system turn the last
+#: model turn of a run gets, so the run ends with the model's own answer rather than a cut.
+LAST_TURN_TEXT=('Budget check: this is your last model turn for this Work. Do not call tools. Give the final answer now: '
+                'what was done, with what the results showed, and what remains undone.')
 
 class ToolError(ValueError):
  """A tool refusal with a stable ``code`` and, when known, the authority it ``requires`` (#606 T2).
@@ -1984,6 +1994,11 @@ class WorkLedger:
    return min(self.deadline,row['deadline'])-self.wall()
   except Exception:return 0
 
+ def counts(self):
+  """The request's spent counters as recorded (#620: what ``WorkBudget.left`` reports), or None; read only."""
+  try:return self._validate(self.store.config(self.key))
+  except Exception:return None
+
  def lapse(self):
   """Why this run may take no further step, or None (#617).
 
@@ -2041,22 +2056,24 @@ class WorkBudget:
  ``clock`` is injectable (tests use a fake); ``stop`` is a zero-argument
  callable answering whether the owner stopped or cancelled this Work.  An
  optional ``ledger`` (``WorkLedger``) keeps tool attempts, host-visible model
- turns, recovery nudges and active time across processes and resumptions.
+ turns and active time across processes and resumptions.
  It does not measure model calls or token costs hidden inside a vendor CLI.
+
+ #620 (one Work budget): one deadline, the model turns and one step counter
+ (``attempts``) that every tool call spends - a browser step included, which
+ had its own duplicate counter of the same calls.  ``left`` shows what remains
+ (LangGraph ``RemainingSteps``), so the model can wind down before a limit.
  """
- def __init__(self,*,turns=WORK_MODEL_TURNS,attempts=WORK_TOOL_ATTEMPTS,seconds=WORK_DEADLINE_SECONDS,clock=time.monotonic,stop=None,ledger=None,nudges=WORK_ALTERNATIVE_NUDGES):
+ def __init__(self,*,turns=WORK_MODEL_TURNS,attempts=WORK_TOOL_ATTEMPTS,seconds=WORK_DEADLINE_SECONDS,clock=time.monotonic,stop=None,ledger=None):
   self.turns,self.attempts,self.clock,self.stop,self.ledger=turns,attempts,clock,stop,ledger
   # #16: reads of one model turn may spend from several threads; each spend is one step.
   self._spending=threading.RLock()
   self.deadline=clock()+seconds;self.turns_used=0;self.attempts_used=0
-  self.nudges,self.nudges_used=nudges,0
   if ledger is not None:
    self.turns_used=ledger.used('turns')
    self.attempts_used=ledger.used()
-   self.nudges_used=ledger.used('nudges')
    if self.turns_used is None:self.turns_used=turns
    if self.attempts_used is None:self.attempts_used=attempts
-   if self.nudges_used is None:self.nudges_used=nudges
  def interrupted(self):
   """``'stopped'``, ``'deadline_exceeded'`` or None, without raising (polled while a CLI runs)."""
   if self.stop is not None:
@@ -2107,11 +2124,35 @@ class WorkBudget:
    if self.attempts_used>=self.attempts:raise ToolError(WORK_ATTEMPTS_EXHAUSTED,'attempt_budget')
    self._refused(self.attempts,'attempts',WORK_ATTEMPTS_EXHAUSTED,'attempt_budget')
    self.attempts_used+=1
- def spend_nudge(self):
-  """Whether one more "try a different path" turn is allowed (#657); never raises."""
-  with self._spending:
-   if self.nudges_used>=self.nudges or self.ledger is not None and not self.ledger.spend(self.nudges,'nudges'):return False
-   self.nudges_used+=1;return True
+ def left(self):
+  """What this Work may still spend (#620, LangGraph ``RemainingSteps``); never raises.
+
+  ``turns`` (model turns before the outcome judgment's reserve), ``steps``
+  (tool calls) and ``seconds``, read from the shared ledger when there is one
+  (the host and a CLI bridge spend one budget), else from this object.
+  """
+  turns,steps=self.turns_used,self.attempts_used
+  counts=self.ledger.counts() if self.ledger is not None and callable(getattr(self.ledger,'counts',None)) else None
+  if isinstance(counts,dict):turns,steps=max(turns,counts['turns']),max(steps,counts['attempts'])
+  try:seconds=max(0,int(self.remaining()))
+  except Exception:seconds=0
+  return {'turns':max(0,self.turn_limit()-turns),'steps':max(0,self.attempts-steps),'seconds':seconds}
+
+def remaining_budget(budget,turns=True):
+ """The compact remaining budget a tool result carries to the model (#620), or None.
+
+ ``{'steps': n, 'seconds': n}`` (and ``turns`` on a route where each model turn
+ is Still's), with ``note`` when little is left: LangGraph's ``RemainingSteps``,
+ so the run winds down with its own answer instead of being cut at the limit.
+ """
+ left=getattr(budget,'left',None)
+ if not callable(left):return None
+ try:value=dict(left())
+ except Exception:return None
+ if not turns:value.pop('turns',None)
+ if (value.get('steps',WIND_DOWN_STEPS+1)<=WIND_DOWN_STEPS or value.get('seconds',WIND_DOWN_SECONDS+1)<=WIND_DOWN_SECONDS
+     or value.get('turns',2)<=1):value['note']=WIND_DOWN_TEXT
+ return value
 
 class PresentationBudget(WorkBudget):
  """A Work's optional reaction judgments (#1418): its Stop, deadline and run, its own counter.
@@ -3541,8 +3582,10 @@ class Capabilities:
    # #209: a call that names only declared intranet destinations may run.
    refused=work_mode.tool_refusal(self.store,tool['host_action'],args)
    if refused is not None:raise refused
-   # #606 T1: every route's attempt, Stop and deadline check happens here.
-   self.budget.spend_attempt()
+   # #606 T1: every route's attempt, Stop and deadline check happens here.  #620: a browser step
+   # spends its attempt in the session, once it reaches the browser (one counter, no refused step spent).
+   if tool['host_action'] in BROWSER_ACTIONS:self.budget.check()
+   else:self.budget.spend_attempt()
    if self.current_packages is not None and BUILTIN_TOOLS.get(name)!=tool['host_action']:
     # Built-in tools cannot be disabled, so only package tools are rechecked;
     # an unreadable/invalid registry refuses package tools, never built-ins.
@@ -4832,13 +4875,13 @@ def canonical_search_args(args,default_provider=''):
  return canon
 
 def path_key(action,args,page=None):
- """The identity a repeated path is refused on (#657), or None.
+ """The identity a repeated path is checked on (#657), or None.
 
  A search is the same path when every argument matches after whitespace and
  case normalisation (query, provider, locale, mode); a page step is the same
- when action, target and input digests match on the same page digest.  The model's
- declared ``effect`` label is not part of the path.  Other actions keep the
- exact-argument ``duplicate_call`` guard.
+ when action, target, input digests and the declared ``effect`` match on the
+ same page digest (#620: a step re-declared ``payment`` after a refusal is
+ another call).  Other actions keep the exact-argument ``duplicate_call`` guard.
  """
  if action in SEARCH_BACKED_ACTIONS:
   return json.dumps([action,sorted((key,_normalized(value)) for key,value in args.items())],ensure_ascii=False)
@@ -4846,8 +4889,98 @@ def path_key(action,args,page=None):
   # Digests only: typed text (possibly a password or card number, #656) is
   # never held, even in memory, as part of a key.
   return json.dumps([action,sorted((key,hashlib.sha256(_normalized(value).encode()).hexdigest())
-                                   for key,value in args.items() if key!='effect'),page])
+                                   for key,value in args.items()),page])
  return None
+
+#: #620 (OpenHands StuckDetector): failures that say nothing about the call's own input - a
+#: timeout, a busy browser, a destination check that could not finish, a rate limit or server
+#: fault (``transient_failure``) - so the same call may run once more.
+TRANSIENT_STEP_CODES=frozenset({'transient_failure','browser_timeout','browser_busy','destination_check_timeout',
+                                'destination_check_failed','dns_timeout'})
+#: #620: how many times the same call may run again after such a failure.
+TRANSIENT_RETRIES=1
+#: #620: the loop guard's own refusals; they ran nothing, so they ask for no different path.
+LOOP_GUARD_CODES=frozenset({'repeat_path','duplicate_call'})
+
+def loop_outcome(action,args,observation):
+ """What one failed call tells the loop guard (#620): ``transient`` or ``failed``.
+
+ ``transient`` only for a ``TRANSIENT_STEP_CODES`` failure whose repeat cannot
+ duplicate an effect: an effect-free read, a page step declared ``read`` or
+ ``navigate``, or a call Still refused before it ran.  Anything else -
+ including a click or typing that may have acted, and every unknown effect -
+ is ``failed``: the same input is not run again (C8).
+ """
+ observation=observation if isinstance(observation,dict) else {}
+ if observation.get('code') not in TRANSIENT_STEP_CODES or observation.get('effect')=='unknown':return 'failed'
+ declared=args.get('effect') if isinstance(args,dict) else None
+ if (action in EFFECT_FREE_READS or observation.get('ran') is False
+     or action in PAGE_STEP_ACTIONS and declared in PAGE_LOAD_EFFECTS):return 'transient'
+ return 'failed'
+
+def loop_keys(capabilities,guard,attempts,name,args,action,page):
+ """One validated call's loop-guard admission (#657, #620), as the loop and its read prediction apply it.
+
+ ``(memo_key, keys, attempt, keyed, read, refusal)``; ``refusal`` is None or the
+ guard's error: ``repeat_path`` for a search or page step (``path_key``), ``duplicate_call``
+ for an exact repeat of another read that already met its observation, and
+ for any exact repeat of a call that may change state (no duplicate effect).
+ #627: a weather(location_ref) repeat is keyed on the resolved source revision.
+ #657: omitted search selectors are the owner's current default.
+ """
+ revision=capabilities.source_revision(action,args) if hasattr(capabilities,'source_revision') else None
+ cache_key=json.dumps([name,args] if revision is None else [name,args,revision],sort_keys=True)
+ stateful=action in BROWSER_ACTIONS
+ read=not stateful and (action in EFFECT_FREE_READS or concurrent_read(action,args))
+ memo_key=guard.scoped(cache_key,read)
+ attempts[memo_key]=attempts.get(memo_key,0)+1;attempt=attempts[memo_key]
+ keyed=canonical_search_args(args,capabilities.default_search_provider()) if action in SEARCH_BACKED_ACTIONS else args
+ path=guard.scoped(path_key(action,keyed,page),read)
+ refusal=None
+ if guard.refused(path):refusal=repeat_path_error(action)
+ elif not stateful and (guard.refused(memo_key) if read else attempt>1):
+  refusal=ToolError(msg('agent_runtime.duplicate_tool_call'),'duplicate_call')
+ return memo_key,(path,memo_key if read else None),attempt,keyed,read,refusal
+
+class LoopGuard:
+ """One run's stuck detector (#620), adopting OpenHands' ``StuckDetector``.
+
+ A loop is the same action meeting the same observation again, not merely the
+ same path.  Keys are ``path_key`` / exact-call keys.  A key is refused when
+ it is in flight in this turn, when it already produced its observation (a
+ successful read: Still knows what it returns; a page step on the same page),
+ or when it failed on its own terms.  After a ``transient`` failure the same
+ call may run ``TRANSIENT_RETRIES`` more time.  A read's key is scoped to the
+ writes before it (``wrote``): re-reading after a write is a new observation.
+ """
+ def __init__(self,history=None,writes=0):
+  self.history={key:list(value) for key,value in (history or {}).items()};self.writes=writes
+
+ def copy(self):
+  return LoopGuard(self.history,self.writes)
+
+ def scoped(self,key,read):
+  """``key`` scoped to the writes so far when the call is a read."""
+  return json.dumps([key,self.writes]) if read and key is not None else key
+
+ def refused(self,key):
+  if key is None:return False
+  seen=self.history.get(key)
+  if not seen:return False
+  return not (seen[-1]=='transient' and seen.count('transient')<=TRANSIENT_RETRIES)
+
+ def admit(self,*keys):
+  for key in keys:
+   if key is not None:self.history.setdefault(key,[]).append('pending')
+
+ def settle(self,outcome,*keys):
+  """Record one admitted call's outcome: ``seen``, ``transient`` or ``failed``."""
+  for key in keys:
+   seen=self.history.get(key) if key is not None else None
+   if seen and seen[-1]=='pending':seen[-1]=outcome
+
+ def wrote(self):
+  self.writes+=1
 
 def alternative_kind(action,args,last_search,after_failure):
  """What kind of different path this call is, or None when it is not one.
@@ -5042,6 +5175,9 @@ def _budget_end(exc,executions,sources,successful,incomplete,verified,config,act
  Nothing observed: the Work fails with the reason.  Otherwise it is at most
  partial, carrying the model's own reply when it already wrote one (#820:
  the AI's answer is delivered), else Still's rendering of what did complete.
+ #620: the run's last model turn is told it is the last (``LAST_TURN_TEXT``),
+ so a run reaching its turn limit normally ends in the model's own final
+ answer; this is the floor when it called tools instead.
  """
  if not successful:raise ProviderError(str(exc))
  text=(draft if isinstance(draft,str) and draft.strip() else fallback_response(executions,sources))+'\n\n'+str(exc)
@@ -5118,11 +5254,11 @@ class ReadOverlap:
   self.capabilities,self.specs=capabilities,specs
   self.started={};self.reached=set();self.sink=None;self.local=threading.local()
 
- def admitted(self,call,attempts,paths):
+ def admitted(self,call,attempts,guard):
   """``(name, args)`` when the loop would send this call as a public read, else None.
 
   The same checks, in the same order, as ``run_agent``; ``attempts`` and
-  ``paths`` are copies the prediction advances as the loop would.
+  ``guard`` (``LoopGuard``) are copies the prediction advances as the loop would.
   """
   function=call.get('function') if isinstance(call,dict) and isinstance(call.get('function'),dict) else {}
   name=function.get('name')
@@ -5137,23 +5273,16 @@ class ReadOverlap:
   tool=self.capabilities.tools.get(name) or {}
   action=tool.get('host_action')
   if action not in NETWORK_READS:return None
-  capabilities=self.capabilities
-  revision=capabilities.source_revision(action,args) if hasattr(capabilities,'source_revision') else None
-  cache_key=json.dumps([name,args] if revision is None else [name,args,revision],sort_keys=True)
-  attempts[cache_key]=attempts.get(cache_key,0)+1
-  if attempts[cache_key]>1 or cache_key in capabilities.memo:return None
-  keyed=canonical_search_args(args,capabilities.default_search_provider()) if action in SEARCH_BACKED_ACTIONS else args
-  path=path_key(action,keyed,None)
-  if path is not None:
-   if path in paths:return None
-   paths.add(path)
+  cache_key,guarded,_attempt,_keyed,_read,refusal=loop_keys(self.capabilities,guard,attempts,name,args,action,None)
+  if refusal is not None or cache_key in self.capabilities.memo:return None
+  guard.admit(*guarded)
   return name,args,action
 
- def group(self,calls,index,attempts,paths):
+ def group(self,calls,index,attempts,guard):
   """The consecutive public reads from ``index`` the loop would send, as ``(call_id, name, args)``."""
-  attempts,paths=dict(attempts),set(paths);members=[];searched=False
+  attempts,guard=dict(attempts),guard.copy();members=[];searched=False
   for call in calls[index:]:
-   plan=self.admitted(call,attempts,paths)
+   plan=self.admitted(call,attempts,guard)
    if plan is None:break
    name,args,action=plan
    if action=='public_page_read' and searched:break
@@ -5170,10 +5299,10 @@ class ReadOverlap:
   searches=sum(1 for _id,_name,_args,action in members if action in SEARCH_BACKED_ACTIONS)
   return budget.turn_limit()-budget.turns_used>=2*searches
 
- def start(self,calls,index,attempts,paths):
+ def start(self,calls,index,attempts,guard):
   """At the walk's ``index``: start the group of reads that begins here, if any."""
   if index in self.reached:return
-  members=self.group(calls,index,attempts,paths)
+  members=self.group(calls,index,attempts,guard)
   self.reached.update(range(index,index+max(1,len(members))))
   if len(members)<2 or not self.covered(members):return
   if self.sink is None:
@@ -5240,10 +5369,10 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  # #606 T2: ordered (host_action, state) of every validated attempt, for `recovered`.
  trail=[]
  # #657: call id -> (name, host_action, state, result) of every validated
- # attempt (what a completion claim may cite); the refusable paths already
+ # attempt (what a completion claim may cite); the loop guard (#620) of the paths already
  # taken; the digest of the page state last returned; the last search input;
  # the alternatives tried; and this run's typed failures as (tool, reason).
- observations={};paths=set();page=None;last_search=None;alternatives=[];failures=[]
+ observations={};guard=LoopGuard();page=None;last_search=None;alternatives=[];failures=[]
  # #14: (tool, host_action, state, detail, reason) of every validated attempt, as ``trail_steps``
  # reads recorded events, so the outcome judgment sees which failures a later call made up for.
  steps=[]
@@ -5254,7 +5383,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
                 if isinstance(m,dict) and m.get('role') in ('user','assistant') and isinstance(m.get('content'),str)]
  conversation_turns=[earlier_turn_line(m,m) for m in judgment_rows]
  conversation='\n'.join(conversation_turns)
- judged=0;nudges=0;checked_completion=False;draft=None
+ judged=0;nudges=0;nudged=False;checked_completion=False;draft=None
  budget=capabilities.budget
  active_config=dict(config);rerouted=False;checked_direct=False;attempts={};actual=None
 
@@ -5311,6 +5440,12 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   except ToolError as exc:
    record('model','stopped',json.dumps({'scope':scope,'code':exc.code,'reason':str(exc)},ensure_ascii=False))
    return _budget_end(exc,executions,sources,successful,incomplete,verified,config,actual,draft)
+  # #620 (OpenAI Agents SDK ``max_turns``, LangGraph ``RemainingSteps``): the last turn before the
+  # outcome judgment's reserve is told so, and its plain reply concludes the run (judged as any
+  # reply after tools).  Only once a tool ran: a run with no observation is never told to answer
+  # without one, which would read as ordinary conversation.
+  last_turn=bool(trail) and (remaining_budget(budget) or {}).get('turns',1)<=0
+  if last_turn:messages.append({'role':'system','content':LAST_TURN_TEXT})
   try:
    # report_observed: an unreported response model stays unreported (#598 R1);
    # the configured name is the *requested* model, never the observed one.
@@ -5336,12 +5471,12 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   actual=actual or NOT_REPORTED
   calls=message.get('tool_calls') or []
   record('model','responded',json.dumps({'scope':scope,'model':actual,'requested_model':requested,'tool_calls':recorded_calls(calls,capabilities.tools,getattr(capabilities,'judgment_text',None)),'has_text':bool(message.get('content'))},ensure_ascii=False))
-  if not calls and not successful and not failed and not proposals and not checked_direct:
+  if not calls and not successful and not failed and not proposals and not checked_direct and not last_turn:
    checked_direct=True
    messages.append(message)
    messages.append({'role':'system','content':'Execution check: NO tool has run for the current request. The preceding assistant text is only a draft. If the latest user requested an action, retrieval, saving, or delegation, actually call the appropriate tool now. Never say saved, searched, read, or delegated without execution. If this is ordinary conversation or requires no tool, return the final answer directly. Do not work on older requests.'})
    continue
-  if not calls and successful and _external(trail) and finish_offered and not checked_completion:
+  if not calls and successful and _external(trail) and finish_offered and not checked_completion and not last_turn:
    # #657: a plain reply after tools ran is a draft until a completion is
    # claimed with the observations that show it.  One check per run.
    checked_completion=True
@@ -5407,7 +5542,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      continue
     # #16: the consecutive public reads that begin here are sent together; each is still
     # admitted, recorded and judged below, in this order.
-    overlap.start(calls,index,attempts,paths)
+    overlap.start(calls,index,attempts,guard)
     name='unknown';validated=False;attempt=0;args={};action=None;ran=False;dispatched=False;failed_before=len(failures);advisory=False
     try:
      name=function.get('name')
@@ -5422,23 +5557,12 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      check_arguments(spec,args)
      validated=True
      action=capabilities.tools[name]['host_action']
-     # #627: a weather(location_ref) repeat is keyed on the resolved source
-     # revision, so the same ref after a new live point is a new path.
-     revision=capabilities.source_revision(action,args) if hasattr(capabilities,'source_revision') else None
-     cache_key=json.dumps([name,args] if revision is None else [name,args,revision],sort_keys=True)
-     attempts[cache_key]=attempts.get(cache_key,0)+1;attempt=attempts[cache_key]
-     # #657: the same path with the same input is refused, not re-run.  A
-     # browser step is keyed on the page digest it acts on, so the same target
-     # on a changed page is a new path; its input is keyed as a digest only.
-     # #657: omitted search selectors are the owner's current default.
-     keyed=canonical_search_args(args,capabilities.default_search_provider()) if action in SEARCH_BACKED_ACTIONS else args
-     path=path_key(action,keyed,page)
-     if path is not None:
-      if path in paths:raise repeat_path_error(action)
-      paths.add(path)
+     # #657/#620: the loop guard (OpenHands' stuck detector): the same call meeting the same
+     # observation again is refused, not re-run; a retry after a transient failure is not.
+     cache_key,guarded,attempt,keyed,read,refusal=loop_keys(capabilities,guard,attempts,name,args,action,page)
+     if refusal is not None:raise refusal
      # #656: a browser call reads or changes page state, so the same call may run again.
      stateful=action in BROWSER_ACTIONS
-     if attempt>1 and not stateful:raise ToolError(msg('agent_runtime.duplicate_tool_call'),'duplicate_call')
      kind=alternative_kind(action,keyed,last_search,bool(trail) and trail[-1][1] in ('failed','incomplete'))
      if action in SEARCH_BACKED_ACTIONS:last_search=keyed
      # #656: typed browser text is replaced before this (or any) record.
@@ -5449,12 +5573,16 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      if kind:
       alternatives.append({'kind':kind,'action':action});running['alternative']=kind
      record(name,'running',json.dumps(running,ensure_ascii=False))
+     guard.admit(*guarded)
+     # #620: a call that may change state makes every later read a new observation.
+     if not read:guard.wrote()
      dispatched=True
      if stateful:result=capabilities.execute(name,args)
      else:
       if cache_key not in capabilities.memo:capabilities.memo[cache_key]=overlap.result(call['id'],name,args)
       result=capabilities.memo[cache_key]
      ran=True
+     guard.settle('seen',*guarded)
      executions.append((name,result))
      if name in ('find_files','read_file','list_notes','list_memory','search_memory','save_memory','calendar_query','drive_search','drive_read','mail_search','mail_read'):capabilities.evidence.append({'tool':name,'result':result})
      invalid_calls.discard(name)
@@ -5502,6 +5630,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      if not dispatched:not_run(exc)
      action=(capabilities.tools.get(name) or {}).get('host_action',name) if validated else None
      result=_error_observation(exc,validated,action)
+     if dispatched:guard.settle(loop_outcome(action,args,result),*guarded)
      # #617: an advisory call (a method_gap note) that fails is recorded and answered, but is no
      # failed step of the Work: it neither lowers the outcome nor asks for a different path.
      advisory=validated and action in ADVISORY_ACTIONS
@@ -5512,8 +5641,10 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       trail.append((action,'exhausted' if result['code'] in BUDGET_CODES else 'failed'))
       failures.append((name,result['error']))
       # A path that failed on its own terms (not the budget, not a missing
-      # connection, login or approval) is where a different path helps.
-      if result['retry'] in ('permanent','transient') and not result.get('requires'):path_failed=True
+      # connection, login or approval) is where a different path helps.  #620: not the loop
+      # guard's own refusal: it ran nothing, and its text already asks for a different path.
+      if (result['retry'] in ('permanent','transient') and not result.get('requires')
+          and result['code'] not in LOOP_GUARD_CODES):path_failed=True
      else:invalid_calls.add(name if isinstance(name,str) else 'unknown')
      # #167: a call that failed after it was handed to a transport may still have carried a held value out.
      record(name,'failed',json.dumps({'scope':scope,'call_id':call['id'],'attempt':attempt,**result,
@@ -5529,12 +5660,18 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
     # (a provider that hides tool call ids from the model still shows this).
     ref={'ref':call['id']} if ran else {}
     shown=worker_result(action,result) if ran else result
-    encoded=json.dumps({**ref,**shown} if ran and isinstance(shown,dict) else shown,ensure_ascii=False)
-    if len(encoded)>24000:encoded=json.dumps({**ref,'truncated':True,'preview':encoded[:22000]},ensure_ascii=False)
+    # #620: what the Work may still spend rides on every result (LangGraph ``RemainingSteps``).
+    left=remaining_budget(budget)
+    left={'remaining':left} if left and isinstance(shown,dict) else {}
+    encoded=json.dumps({**ref,**shown,**left} if ran and isinstance(shown,dict) else {**shown,**left} if isinstance(shown,dict) else shown,ensure_ascii=False)
+    if len(encoded)>24000:encoded=json.dumps({**ref,'truncated':True,'preview':encoded[:22000],**left},ensure_ascii=False)
     messages.append({'role':'tool','tool_call_id':call['id'],'content':encoded})
   finally:overlap.settle()
   steer=claim_owner_steers(capabilities.store,capabilities.job_id,record)
   if steer:messages.append({'role':'user','content':steer})
-  if path_failed and budget.spend_nudge():
+  # #620: the "try a different path" turn is no budget of its own (the turn after it is spent like
+  # any other); it is said once per run of failed batches, not after every one.
+  if path_failed and not nudged:
    nudges+=1
    messages.append({'role':'system','content':ALTERNATIVE_NUDGE})
+  nudged=path_failed

@@ -153,6 +153,10 @@ class LoopUnitTests(unittest.TestCase):
         # in the log; #657 follows it with one "different path" turn.
         observation = json.loads(script.bodies[1]['messages'][-2]['content'])
         self.assertIn('Path check', script.bodies[1]['messages'][-1]['content'])
+        # #620: what the Work may still spend rides on the result (one turn, one step and a little time spent).
+        remaining = observation.pop('remaining')
+        self.assertEqual((remaining['turns'], remaining['steps']), (WORK_MODEL_TURNS - WORK_JUDGMENT_RESERVE - 1, 199))
+        self.assertNotIn('note', remaining)
         self.assertEqual(observation, {'error': NOT_FOUND, 'code': 'tool_failed', 'retry': 'permanent', 'effect': 'none'})
         self.assertEqual([row['code'] for row in self.failed()], ['tool_failed'])
 
@@ -461,9 +465,11 @@ class AlternativesAndCompletionTests(unittest.TestCase):
         self.assertEqual(self.failed_codes(), ['repeat_path'])
         refusal = self.tool_reply(script.bodies[2], '2')
         self.assertEqual((refusal['code'], refusal['retry'], refusal.get('ran')), ('repeat_path', 'permanent', False))
-        # The failed path earned one explicit "different path" turn.
-        self.assertEqual(script.bodies[2]['messages'][-1]['role'], 'system')
-        self.assertIn('Path check', script.bodies[2]['messages'][-1]['content'])
+        # #620: the loop guard's own refusal ran nothing and already asks for a different path, so it
+        # earns no separate "different path" turn.
+        self.assertEqual(script.bodies[2]['messages'][-1]['role'], 'tool')
+        self.assertFalse(any(m['role'] == 'system' and m['content'].startswith('Path check')
+                             for m in script.bodies[2]['messages']))
         # Evidence: one alternative, its kind, and the claim with its ref.
         self.assertEqual(result.alternatives, [{'kind': 'provider_switch', 'action': 'web_search'}])
         running = [json.loads(detail) for tool, status, detail in self.events if status == 'running']
@@ -593,7 +599,9 @@ class AlternativesAndCompletionTests(unittest.TestCase):
         budget = WorkBudget()
         result, _caps = self.run_script(script, budget=budget, answer=False)
         nudges = [m for m in script.bodies[-1]['messages'] if m['role'] == 'system' and m['content'].startswith('Path check')]
-        self.assertEqual((len(nudges), budget.nudges_used), (2, 2))
+        # #620: no counter of its own (each turn after a nudge spends the Work's turns); said once per
+        # run of failed batches, not after every one.
+        self.assertEqual(len(nudges), 1)
         self.assertEqual(result.outcome, 'failed')
         # Each different city after a failure is a recorded route change.
         self.assertEqual(self.concluded()['alternatives_tried']['count'], 3)

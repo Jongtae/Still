@@ -173,8 +173,8 @@ class SharedBudgetTests(unittest.TestCase):
         job = _running(store)
         now = [1000.0]
         ledger = WorkLedger(store, job, seconds=5, wall=lambda: now[0], fresh=True)
-        parked = WorkBudget(attempts=2, turns=2, nudges=2, ledger=ledger)
-        parked.spend_attempt(); parked.spend_turn(); self.assertTrue(parked.spend_nudge())
+        parked = WorkBudget(attempts=2, turns=2, ledger=ledger)
+        parked.spend_attempt(); parked.spend_turn()
         now[0] += 2
         ledger.pause()
         with store.db() as db:
@@ -184,16 +184,15 @@ class SharedBudgetTests(unittest.TestCase):
         with store.db() as db:
             db.execute("UPDATE jobs SET status='running' WHERE id=?", (job,))
         # #1418: turns=3 keeps two ordinary turns; the third is the outcome judgment's.
-        resumed = WorkBudget(attempts=2, turns=3, nudges=2,
+        resumed = WorkBudget(attempts=2, turns=3,
                              ledger=WorkLedger(store, job, seconds=600, wall=lambda: now[0], fresh=True))
-        bridge = WorkBudget(attempts=2, turns=3, nudges=2,
+        bridge = WorkBudget(attempts=2, turns=3,
                             ledger=WorkLedger(store, job, wall=lambda: now[0]))
         self.assertEqual(resumed.ledger.remaining(), 3)
-        self.assertEqual((resumed.attempts_used, resumed.turns_used, resumed.nudges_used), (1, 1, 1))
-        resumed.spend_attempt(); bridge.spend_turn(); self.assertTrue(bridge.spend_nudge())
+        self.assertEqual((resumed.attempts_used, resumed.turns_used), (1, 1))
+        resumed.spend_attempt(); bridge.spend_turn()
         for spend in (bridge.spend_attempt, resumed.spend_turn):
             with self.assertRaises(ToolError):spend()
-        self.assertFalse(resumed.spend_nudge())
         self.assertFalse(ledger.spend(40), 'a previous run cannot spend the resumed run budget')
         ledger.pause()
         self.assertEqual(resumed.ledger.remaining(), 3, 'stale completion cannot pause the new run')
@@ -216,13 +215,14 @@ class SharedBudgetTests(unittest.TestCase):
     def test_two_process_views_share_model_and_recovery_counters(self):
         store, _ = _store(self)
         job = _running(store)
-        host = WorkBudget(turns=1, nudges=1, ledger=WorkLedger(store, job))
-        bridge = WorkBudget(turns=1, nudges=1, ledger=WorkLedger(store, job))
+        host = WorkBudget(turns=1, ledger=WorkLedger(store, job))
+        bridge = WorkBudget(turns=1, ledger=WorkLedger(store, job))
         host.spend_turn()
         with self.assertRaises(ToolError) as caught:bridge.spend_turn()
         self.assertEqual(caught.exception.code, 'turn_budget')
-        self.assertTrue(host.spend_nudge())
-        self.assertFalse(bridge.spend_nudge())
+        # #620: the shared steps and time the two views report are one.
+        host.spend_attempt()
+        self.assertEqual(bridge.left()['steps'], host.attempts - 1)
 
     def test_legacy_budget_preserves_attempts_and_deadline_without_inventing_counts(self):
         store, _ = _store(self)

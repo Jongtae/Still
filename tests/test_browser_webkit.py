@@ -629,7 +629,7 @@ class DriverProtocolTests(unittest.TestCase):
 
     def test_press_misses_cross_the_process_and_session_boundary_without_replay(self):
         driver = self.driver()
-        sess = bs.BrowserSession(lambda: driver, work_id='press-misses', approvals=Approvals(), steps=40)
+        sess = bs.BrowserSession(lambda: driver, work_id='press-misses', approvals=Approvals())
         self.addCleanup(sess.close)
         for path, text, code, effect in (
                 ('intercepted', bs.press_text(), bs.PRESS_UNCONFIRMED_CODE, 'unknown'),
@@ -1426,7 +1426,7 @@ class DestinationTests(unittest.TestCase):
                 sess.open({'url': url, 'effect': 'read'})
             self.assertEqual(caught.exception.code, 'blocked_destination')
         self.assertEqual(driver.log, [])
-        self.assertEqual(sess.steps_used, 0)
+        self.assertEqual(sess.budget.attempts_used, 0)
         allowed = bs.BrowserSession(lambda: driver, work_id='w', allowed_origins_for_tests=('127.0.0.1:9',))
         with self.assertRaises(ToolError) as caught:
             allowed.open({'url': 'http://127.0.0.1:10/', 'effect': 'read'})
@@ -1853,8 +1853,7 @@ class WebKitIntegrationTests(unittest.TestCase):
         self.profile.allow_origins_for_tests(self.fixture)
 
     def session(self, work_id):
-        return bs.BrowserSession(self.profile.driver_factory(work_id), work_id=work_id, approvals=Approvals(), steps=40,
-                                 excluded=lambda: [PASSPORT], allowed_origins_for_tests=(self.fixture,))
+        return bs.BrowserSession(self.profile.driver_factory(work_id), work_id=work_id, approvals=Approvals(), excluded=lambda: [PASSPORT], allowed_origins_for_tests=(self.fixture,))
 
     def test_a_page_confirm_is_answered_by_the_steps_own_declared_effect(self):
         """#174: after a step declared navigate the question is declined and reported; after mutate it is accepted."""
@@ -2085,7 +2084,7 @@ class WebKitIntegrationTests(unittest.TestCase):
         stopped_at = []
         budget = WorkBudget(seconds=120, stop=lambda: bool(stopped_at) and time.monotonic() >= stopped_at[0])
         sess = bs.BrowserSession(self.profile.driver_factory('work-244'), work_id='work-244', approvals=Approvals(),
-                                 steps=40, excluded=lambda: [PASSPORT], allowed_origins_for_tests=(self.fixture,),
+                                 excluded=lambda: [PASSPORT], allowed_origins_for_tests=(self.fixture,),
                                  budget=budget)
         try:
             sess.open({'url': self.origin + '/lazy-endless', 'effect': 'read'})
@@ -2270,8 +2269,7 @@ class WebKitIntegrationTests(unittest.TestCase):
     def test_label_and_script_forwarded_payment_submits_need_an_approval(self):
         """#698: repro of the #687 re-review gap on the real worker, and the approved and ordinary paths."""
         approvals = Approvals()
-        sess = bs.BrowserSession(self.profile.driver_factory('work-698'), work_id='work-698', approvals=approvals, steps=40,
-                                 allowed_origins_for_tests=(self.fixture,))
+        sess = bs.BrowserSession(self.profile.driver_factory('work-698'), work_id='work-698', approvals=approvals, allowed_origins_for_tests=(self.fixture,))
         page_url = self.origin + '/checkout-forwarded'
 
         def number(target):
@@ -2328,8 +2326,7 @@ class WebKitIntegrationTests(unittest.TestCase):
     def test_deferred_payment_submits_stay_guarded_for_the_page_lifetime(self):
         """#698 review P1-1 (timer, fetch-then-submit) and P2-3 (a handler that changes the DOM first)."""
         approvals = Approvals()
-        sess = bs.BrowserSession(self.profile.driver_factory('work-698b'), work_id='work-698b', approvals=approvals, steps=60,
-                                 allowed_origins_for_tests=(self.fixture,))
+        sess = bs.BrowserSession(self.profile.driver_factory('work-698b'), work_id='work-698b', approvals=approvals, allowed_origins_for_tests=(self.fixture,))
         page_url = self.origin + '/checkout-forwarded'
 
         def refused_eventually(target):
@@ -2391,8 +2388,7 @@ class WebKitIntegrationTests(unittest.TestCase):
         """#700 review (Codex): payload-bound, one submit per approval, submitter overrides bound."""
         page_url = self.origin + '/checkout-bound'
         approvals = Approvals()
-        sess = bs.BrowserSession(self.profile.driver_factory('work-700c'), work_id='work-700c', approvals=approvals, steps=40,
-                                 allowed_origins_for_tests=(self.fixture,))
+        sess = bs.BrowserSession(self.profile.driver_factory('work-700c'), work_id='work-700c', approvals=approvals, allowed_origins_for_tests=(self.fixture,))
         try:
             # An approved press whose handler changes an amount that was already set: held and asked.
             sess.open({'url': page_url, 'effect': 'navigate'})
@@ -2439,8 +2435,7 @@ class WebKitIntegrationTests(unittest.TestCase):
     def test_one_click_commit_controls_need_approval_through_the_real_worker(self):
         """#758: no card field anywhere; the real snapshot names the label's control, the session refuses first."""
         approvals = Approvals()
-        sess = bs.BrowserSession(self.profile.driver_factory('work-758'), work_id='work-758', approvals=approvals, steps=40,
-                                 allowed_origins_for_tests=(self.fixture,))
+        sess = bs.BrowserSession(self.profile.driver_factory('work-758'), work_id='work-758', approvals=approvals, allowed_origins_for_tests=(self.fixture,))
         try:
             sess.open({'url': self.origin + '/one-click', 'effect': 'navigate'})
             rows = sess.last['_elements']
@@ -2466,7 +2461,7 @@ class WebKitIntegrationTests(unittest.TestCase):
     def test_a_list_page_link_navigates_and_a_scripted_one_is_judged_as_a_button(self):
         """#899 review P1/P2-3/P2-4/P2-5: the real worker's navLink, end to end."""
         sess = bs.BrowserSession(self.profile.driver_factory('work-899'), work_id='work-899', approvals=Approvals(),
-                                 steps=20, allowed_origins_for_tests=(self.fixture,))
+                                 allowed_origins_for_tests=(self.fixture,))
         try:
             sess.open({'url': self.origin + '/nav-links', 'effect': 'navigate'})
             flagged = {row['name']: row['commit'] for row in sess.last['_elements']}
@@ -2479,7 +2474,7 @@ class WebKitIntegrationTests(unittest.TestCase):
     def test_a_closed_off_canvas_menu_item_is_marked_offscreen_until_its_menu_opens(self):
         """#1575 (live 2026-10-16): items of a closed menu were listed as pressable, then refused as hidden."""
         sess = bs.BrowserSession(self.profile.driver_factory('work-1575'), work_id='work-1575', approvals=Approvals(),
-                                 steps=20, allowed_origins_for_tests=(self.fixture,))
+                                 allowed_origins_for_tests=(self.fixture,))
         try:
             page = sess.open({'url': self.origin + '/offscreen-menu', 'effect': 'navigate'})
             rows = {row['name']: row for row in page['elements']}
@@ -2500,7 +2495,7 @@ class WebKitIntegrationTests(unittest.TestCase):
     def test_accessible_names_images_hidden_roles_and_children_of_pay_controls_are_classified(self):
         """Review of #763: aria-labelledby, a descendant image's alt, role=none, a child of a pay link."""
         sess = bs.BrowserSession(self.profile.driver_factory('work-758b'), work_id='work-758b', approvals=Approvals(),
-                                 steps=40, allowed_origins_for_tests=(self.fixture,))
+                                 allowed_origins_for_tests=(self.fixture,))
         try:
             sess.open({'url': self.origin + '/one-click-names', 'effect': 'navigate'})
             rows = sess.last['_elements']

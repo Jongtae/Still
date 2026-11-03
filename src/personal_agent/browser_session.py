@@ -76,7 +76,7 @@ import unicodedata
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit, unquote_plus
 
-from .agent_runtime import BROWSER_ACTIONS, ToolError, lookup_norm, lookup_text_violations, lookup_words
+from .agent_runtime import BROWSER_ACTIONS, ToolError, WorkBudget, lookup_norm, lookup_text_violations, lookup_words
 from .bounded_execution import SECRET_PATTERN
 from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, KeychainKey, latest_token_expiry,
                           store_account)
@@ -101,8 +101,6 @@ NEAR_LIMIT = 120
 NAME_LIMIT = 120
 VALUE_LIMIT = 200
 FIND_LINES = 12
-#: #353: matches ``WORK_TOOL_ATTEMPTS``; the Work's deadline still bounds the session.
-STEPS_PER_WORK = 200
 ACTION_TIMEOUT_SECONDS = 20
 #: #11: a ``browser_read`` may first scroll the page to its end up to this many
 #: times, within ``LOAD_MORE_SECONDS``, to load rows a list adds only when scrolled.
@@ -123,7 +121,6 @@ REDACTED = '[가림]'
 CANCELLED_NOTE = '승인 없이 시도된 결제 양식 제출을 멈췄습니다'
 APPROVAL_TEXT = '결제 단계는 승인이 필요합니다. 소유자가 이 단계를 승인하면 이 요청을 한 번만 이어서 처리합니다.'
 LOGIN_REQUIRED_TEXT = '이 페이지는 로그인이 필요합니다. 설정의 브라우저 로그인 세션에서 "로그인 창 열기"로 먼저 로그인해 주세요. Still은 비밀번호를 입력하지 않습니다.'
-STEP_BUDGET_TEXT = f'이 작업의 브라우저 단계 한도({STEPS_PER_WORK}회)에 도달해 더 실행하지 않았습니다.'
 TIMEOUT_TEXT = '브라우저 동작이 시간 안에 끝나지 않았습니다.'
 DESTINATION_CHECK_TIMEOUT_TEXT = msg('browser.destination_check_timeout')
 DESTINATION_CHECK_FAILED_TEXT = msg('browser.destination_check_failed')
@@ -850,7 +847,10 @@ class BrowserSession:
 
     ``driver_factory`` returns the driver on first use (the engine is started
     only when a browser tool actually runs); ``budget`` is the Work's shared
-    ``WorkBudget``; ``excluded`` returns the private values to redact;
+    ``WorkBudget`` (#620: a step spends one of its tool attempts, the Work's one
+    step counter, only once it is handed to the browser - a step refused for an
+    approval, a busy browser, a missing target or a blocked address spends none;
+    without one the session keeps its own default ``WorkBudget``); ``excluded`` returns the private values to redact;
     ``approvals`` has ``consume(binding)`` and ``request(binding, text)``;
     ``judgments`` is the Work's ``ConversationJudgments`` (or None), asked
     only whether a ``mutate`` press the payment floor did not flag could
@@ -858,7 +858,7 @@ class BrowserSession:
     """
 
     def __init__(self, driver_factory, *, work_id, budget=None, excluded=None, approvals=None, judgments=None,
-                 steps=STEPS_PER_WORK, action_seconds=ACTION_TIMEOUT_SECONDS, allowed_origins_for_tests=()):
+                 action_seconds=ACTION_TIMEOUT_SECONDS, allowed_origins_for_tests=()):
         self._factory = driver_factory
         # Test-only exact ``host:port`` allowance for a local fixture site; only
         # a test constructor sets it (never config or environment).
@@ -868,10 +868,9 @@ class BrowserSession:
         self._intranet = getattr(driver_factory, 'intranet', None) or frozenset
         self.driver = None
         self.work_id = work_id
-        self.budget = budget
+        self.budget = budget if budget is not None else WorkBudget()
         self.excluded = excluded
         self.approvals = approvals or NoApprovals()
-        self.steps, self.steps_used = steps, 0
         self.action_seconds = action_seconds
         self.last = None
         self._navigation_error = None
@@ -916,12 +915,18 @@ class BrowserSession:
         except Exception:
             return False
 
+    def _check(self):
+        """The Work's Stop and deadline, before a step does anything (#620: nothing is spent here)."""
+        self.budget.check()
+
     def _spend_step(self):
-        if self.budget is not None:
-            self.budget.check()
-        if self.steps_used >= self.steps:
-            raise ToolError(STEP_BUDGET_TEXT, 'browser_step_budget')
-        self.steps_used += 1
+        """Spend one of the Work's tool attempts for a step about to reach the browser (#620).
+
+        Called after everything that may refuse the step without running it,
+        so a refused step spends nothing; ``Capabilities.execute`` does not
+        spend a browser step again.
+        """
+        self.budget.spend_attempt()
 
     def _call(self, operation, *args):
         try:
@@ -1242,7 +1247,7 @@ class BrowserSession:
         # navigation again after DNS resolution (redirects, forms, new windows).
         if local_destination(url, self._allowed_origins, self._intranet()):
             raise ToolError(BLOCKED_TEXT, 'blocked_destination')
-        self._spend_step()
+        self._check()
         # #934: the requested destination counts before the page is opened: a shared site's payment
         # deep link is refused here (no approval consumed), and any open of one makes the Work's
         # refusal sticky.
@@ -1256,6 +1261,7 @@ class BrowserSession:
         # #233: a browser that could not be started (the factory raised or gave none) received nothing,
         # so the driver is obtained before the address is handed to it.
         driver = self._driver()
+        self._spend_step()   # #620: after the approval and a busy browser, which spend nothing
         from .agent_runtime import handed_off
         handed_off()   # the address goes to the browser from here
         layout = self._layout(parts.hostname, asked or None)
@@ -1433,7 +1439,7 @@ class BrowserSession:
     def click(self, args):
         effect = self._effect(args)
         self._require_page()
-        self._spend_step()
+        self._check()
         snapshot = self._snapshot()
         element = resolve_target(snapshot, args.get('target'))
         key = target_key(element)
@@ -1474,6 +1480,7 @@ class BrowserSession:
                 name, near = str(row.get('name') or row.get('role') or ''), str(row.get('_near') or '')
                 description = f"결제 가능성 · '{name[:40]}' 버튼 누르기" + (f' · {near[:80]}' if near else '')
         approved = self._guard(binding, description, required)
+        self._spend_step()   # #620: a press held for approval, or on a missing target, spends nothing
         before = page_reference(snapshot.get('url'))
         confirm_ok = not page_shows_payment(snapshot)
         try:
@@ -1508,7 +1515,7 @@ class BrowserSession:
         text = str(args.get('text') or '')
         if len(text) > 2000:
             raise ValueError('입력 텍스트는 2000자 이하여야 합니다.')
-        self._spend_step()
+        self._check()
         snapshot = self._snapshot()
         element = resolve_target(snapshot, args.get('target'))
         binding = step_binding(self.work_id, 'browser_type', snapshot['_page'], target_key(element), text,
@@ -1518,6 +1525,7 @@ class BrowserSession:
         # Typing presses the field first, so a label forwarding that press is guarded too.
         required = element['payment'] or element.get('forwards_payment') or effect == 'payment'
         approved = self._guard(binding, description, required)
+        self._spend_step()   # #620: typing held for approval, or into a missing field, spends nothing
         confirm_ok = not page_shows_payment(snapshot)
         try:
             answer = self._input(lambda timeout: self._driver().type(element['index'], text, timeout, approved=approved,
