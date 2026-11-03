@@ -845,6 +845,18 @@ class WorkerGuardLogicTests(unittest.TestCase):
                 worker.finish_input(5, 0)
                 self.assertEqual(replies, [{'posted': expected}])
 
+    def test_a_step_whose_navigation_was_refused_answers_whether_it_posted(self):
+        """#610: the press ran before Still refused where it led; its answer carries ``posted`` as a finished one."""
+        for posted, expected in ((0, False), (1, True)):
+            with self.subTest(posted=posted):
+                bw, worker = self.worker()
+                worker.posted_submits, worker.step_posted, worker.blocked = 3 + posted, 3, 1
+                worker.pending[5] = True
+                worker.fail = lambda ident, code, **fields: worker.failed.append((ident, code, fields))
+                worker.run = lambda body, arguments, done, world=None: done({'cancelled': None}, None)
+                worker.finish_input(5, 0)
+                self.assertEqual(worker.failed, [(5, 'blocked_destination', {'posted': expected})])
+
     def test_a_decision_still_pending_when_a_step_answers_counts_as_posted(self):
         """#899 review P1: unknown is not "nothing posted"."""
         bw, worker = self.worker()

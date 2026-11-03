@@ -160,6 +160,21 @@ class BrowserSettlement(unittest.TestCase):
         self.assertEqual(self.settle(),'not_resumed')
         self.assertEqual(self.receipts()[0]['reason'],'unaccounted-action')
 
+    def test_a_navigation_click_refused_for_a_private_address_does_not_withhold_the_sign_in_resume(self):
+        # #610 (live): a cart lookup clicked a control that led to a loopback address, then asked for sign-in.
+        click={'scope':'s','call_id':'c1','host_action':'browser_click','declared_effect':'navigate'}
+        self.event('browser_click','running',click)
+        self.event('browser_click','failed',{**click,'code':'blocked_destination','retry':'permanent','effect':'none',
+                                             'observed_step':{'posted':False,'approved':False}})
+        self.assertEqual(self.settle(),'resumed')
+
+    def test_a_refused_navigation_click_without_its_observation_is_still_withheld(self):
+        click={'scope':'s','call_id':'c1','host_action':'browser_click','declared_effect':'navigate'}
+        self.event('browser_click','running',click)
+        self.event('browser_click','failed',{**click,'code':'blocked_destination','retry':'permanent','effect':'none'})
+        self.assertEqual(self.settle(),'not_resumed')
+        self.assertEqual(self.receipts()[0]['reason'],'unaccounted-action')
+
     def test_a_click_failure_without_the_not_run_mark_is_still_withheld(self):
         click={'scope':'s','call_id':'c1','host_action':'browser_click','declared_effect':'mutate'}
         self.event('browser_click','running',click)

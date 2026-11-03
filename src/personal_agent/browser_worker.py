@@ -1813,7 +1813,8 @@ class Worker:
                 self.reported_refused = self.refused_submits
                 return self.fail(ident, 'submit_refused')
             if blocked_before is not None and self.blocked > blocked_before:
-                return self.fail(ident, 'blocked_destination')
+                # #610: the press ran; whether it started a form post decides its effect, as on a timeout.
+                return self.fail(ident, 'blocked_destination', **self.step_posted_field())
             dialogs = (step or {}).get('dialogs') or []
             # #899: whether the page started a non-GET form submission during this step; a decision
             # still pending when the step answers counts as one (review P1: unknown is not "none").
