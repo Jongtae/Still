@@ -448,7 +448,8 @@ class CodeRunner:
         #: #1456: the Work's per-action approval surface (``consume``/``request``), as ``api_request`` uses.
         #: Without one, every state-changing request is refused as before.
         self.approvals = approvals
-        #: Per run: host -> (set name, slot) of the named secret sets, approval requests, dispatch claims.
+        #: Per run: host -> [(set name, slot), ...] of every named secret set on it (#619: all of them, so a
+        #: money set is never hidden behind another set on the same host), approval requests, dispatch claims.
         self._owners, self._asked, self._claims = {}, [], []
         #: #1489: the sets this Work's runs were already told how to keep their steps for.
         self._hinted = set()
@@ -524,7 +525,7 @@ class CodeRunner:
                                    'injectHosts': sorted({_hostname(host) for host in slot['hosts']})})
             for host in slot['hosts']:
                 set_hosts.setdefault(_host(host), set()).update(slot['reads'])
-                self._owners.setdefault(_host(host), (name, slot))
+                self._owners.setdefault(_host(host), []).append((name, slot))
         if plain and set(hosts) - set(set_hosts):
             raise CodeRunError('코드 안에서 직접 쓰는 비밀값이 있는 실행은 그 묶음의 호스트에만 접속할 수 있어요.',
                                'code_run_argument_invalid')
@@ -885,15 +886,20 @@ class CodeRunner:
         from .api_requests import ApiError, ApiRequests
         from .browser_session import step_binding
         from .current_context import redact_known_secrets
-        name, slot = self._owners[host]
+        # #619 (Codex P1 on #626): every loaded set's credentials reach the sandbox, and a request does not
+        # say which one it used, so a host is money when any set loaded for it is (fail-closed). The
+        # binding and the dispatch claim use that money set; a host only non-money sets cover is not.
+        owners = self._owners[host]
+        money = [owner for owner in owners if owner[1].get('money') is True]
+        name, slot = (money or owners)[0]
         body = message.get('bodyText')
         if body is None or len(body) > APPROVAL_BODY_CHARS:
             return False, 'this request body cannot be shown to the owner for approval (not text, or too long)'
         path, query = str(message.get('path') or '/'), str(message.get('query') or '')
         url = f'https://{host}{path}' + (f'?{query}' if query else '')
-        # #619: ``slots`` already reads a legacy set with no money mark as money; a set marked
-        # ``money: false`` is not a payment, so its changes are not labelled one.
-        effect = 'payment' if slot.get('money') is True else 'mutate'
+        # #619: ``slots`` already reads a legacy set with no money mark as money; only a host whose every
+        # loaded set is marked ``money: false`` has changes that are not labelled a payment.
+        effect = 'payment' if money else 'mutate'
         api = ApiRequests(self.store, self.work_id, approvals=self.approvals)
         try:
             identity = api._effect_identity(slot, method, url, body)

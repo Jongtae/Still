@@ -160,6 +160,39 @@ class CodeRunMoneyOnly(unittest.TestCase):
         self.assertIn('"note":"renamed"', label)
         self.assertEqual(self.dispatches(), [], 'payment never runs without a matching owner confirmation')
 
+    def run_sets(self, names, approvals=None):
+        from personal_agent.code_run import CodeRunner
+        process = FakeProcess(requests=[{'method': 'POST', 'host': HOST, 'path': '/v1/orders', 'query': '',
+                                         'bodyText': '{"KEY":"{{EXAMPLE_BROKER_APP_KEY}}","qty":"2"}'}],
+                              result={'stdout': 'ok', 'stderr': ''})
+        runner = CodeRunner(self.store, self.work, popen=lambda *a, **k: process, node='/usr/bin/node',
+                            install=lambda store, node: store.root, approvals=approvals or self.approvals)
+        return process, runner.run({'code': 'print(1)', 'hosts': '', 'secrets': ','.join(names)})
+
+    def test_a_money_set_on_a_shared_host_is_never_hidden_by_another_set(self):
+        """Codex P1 on #626: a request does not say which set's credential it used, so any money set counts."""
+        for other in ('aaa-notes', 'zzz-notes'):   # sorts before and after the money set
+            with self.subTest(other=other):
+                self.setUp()
+                self.save(money=True)                    # example-broker: moves money
+                self.save(name=other, money=False)       # same host, marked not money
+                process, _result = self.run_sets([other, 'example-broker'])
+                self.assertEqual([item['allow'] for item in process.decisions], [False])
+                [(binding, label)] = self.approvals.requested
+                self.assertIn('/v1/orders', label)
+                self.assertEqual(self.dispatches(), [], "no payment without the owner's matching approval")
+                self.approvals.granted.append(binding)
+                process, _result = self.run_sets(['example-broker', other])
+                self.assertEqual([item['allow'] for item in process.decisions], [True], 'that exact approval sends it')
+
+    def test_a_host_only_non_money_sets_cover_needs_no_approval(self):
+        self.save(money=False)
+        self.save(name='aaa-notes', money=False)
+        process, _result = self.run_sets(['aaa-notes', 'example-broker'])
+        self.assertEqual([item['allow'] for item in process.decisions], [True])
+        self.assertEqual(self.approvals.requested, [])
+        self.assertEqual(self.dispatches(), ['observed'])
+
     def test_an_unattended_run_asks_nothing_and_says_why(self):
         self.save(money=True)
 
