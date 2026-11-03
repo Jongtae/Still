@@ -233,6 +233,84 @@ class OneContinuationRule(Store):
                          ('unknown', 'unaccounted', 'owner'))
 
 
+class ThroughTheCliBridge(Store):
+    """#624 review: the subscription-CLI route - the real MCP bridge, the service relay and the service's API layer."""
+
+    def setUp(self):
+        super().setUp()
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='running' WHERE id=?", (self.work,))
+        self.answers = {}
+
+    def bridge(self, *calls):
+        import contextlib
+        import io
+        import sys
+        from unittest import mock
+        from personal_agent import mcp_bridge
+        from personal_agent.agent_runtime import Capabilities
+        from personal_agent.bounded_execution import AgentOSMcpTools
+        from personal_agent.cli_browser_relay import BrowserRelay
+
+        def transport(method, url, *rest):
+            self.sent.append(url)
+            answer = self.answers[url]
+            if isinstance(answer, BaseException):
+                raise answer
+            return answer, {'last-modified': email.utils.formatdate(usegmt=True)}, b'{"result":"ok"}'
+
+        def record(tool, status, detail):
+            with self.store.db() as db:
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,0)',
+                           (self.work, tool, status, detail))
+        service = Capabilities(self.store, None, {}, '', self.work, record)
+        service._api = ApiRequests(self.store, self.work, transport=transport)
+        relay = BrowserRelay(AgentOSMcpTools(service))
+        requests = [{'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}}]
+        requests += [{'jsonrpc': '2.0', 'id': n + 2, 'method': 'tools/call', 'params': {'name': 'api_request', 'arguments': call}}
+                     for n, call in enumerate(calls)]
+        out = io.StringIO()
+        try:
+            with mock.patch.object(sys, 'stdin', io.StringIO(''.join(json.dumps(r) + '\n' for r in requests))), \
+                    contextlib.redirect_stdout(out):
+                mcp_bridge.serve(str(self.store.root), self.work, browser_relay=relay.address, relay_browser=False)
+        finally:
+            relay.close()
+        replies = {reply['id']: reply for reply in map(json.loads, out.getvalue().splitlines())}
+        return [replies[n + 2]['result'] for n in range(len(calls))]
+
+    def failed_records(self):
+        return [event['trace'] for event in self.store.task_events(self.work)
+                if event['tool'] == 'api_request' and event['status'] == 'failed']
+
+    def test_a_post_the_service_refused_keeps_executed_false_across_the_relay(self):
+        self.answers[POST['url']] = 429
+        [result] = self.bridge(POST)
+        self.assertTrue(result['isError'])
+        self.assertIs(result['structuredContent']['executed'], False)
+        [failed] = self.failed_records()
+        self.assertIs(failed['executed'], False)
+        self.assertEqual(record_effect('api_request', failed, 'failed'), EFFECT_NONE)
+        for purpose in ('retry', 'redelegate', 'resume', 'steer'):
+            with self.subTest(purpose=purpose):
+                self.assertEqual(self.service.may_continue(self.work, purpose), (True, None))
+
+    def test_a_timeout_on_one_slot_does_not_hold_another_slot_through_the_bridge(self):
+        self.answers[POST['url']] = TimeoutError()
+        self.answers[OTHER['url']] = 200
+        first, other, again = self.bridge(POST, OTHER, {**POST, 'body': '{"v":2}'})
+        self.assertEqual(first['structuredContent']['effect'], 'unknown')
+        [failed_first, failed_again] = self.failed_records()
+        self.assertEqual(failed_first['target'], {'slot': 'alpha'}, 'the bridge records the slot its unknown is scoped to')
+        self.assertFalse(other.get('isError'), other)
+        # Negative: the slot whose outcome is unknown stays held through the bridge too.
+        self.assertTrue(again['isError'])
+        self.assertEqual(again['structuredContent']['code'], 'effect_unknown')
+        self.assertEqual(self.sent, [POST['url'], OTHER['url']])
+        self.assertEqual(failed_again['code'], 'effect_unknown')
+        self.assertEqual(self.service.may_continue(self.work, 'retry'), (False, 'unknown'))
+
+
 class OwnerFacingReason(unittest.TestCase):
     """E2: the stop text names what was recorded; ``owner_needed`` only with a recorded prerequisite."""
 

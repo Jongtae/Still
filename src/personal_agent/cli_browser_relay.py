@@ -38,8 +38,8 @@ import tempfile
 import threading
 
 from .agent_runtime import (BROWSER_ACTIONS, CODE_ACTIONS, EFFECT_FREE_READS, HOST_RELAYED_ACTIONS, LoopGuard, ToolError,
-                            classify_failure, concurrent_read, loop_outcome, not_run, observed_field, observed_value, path_key,
-                            ran_field, repeat_path_error, result_page_digest)
+                            classify_failure, concurrent_read, executed_field, loop_outcome, not_executed, not_run, observed_field,
+                            observed_value, path_key, ran_field, repeat_path_error, result_page_digest)
 
 SOCKET_NAME = 's'
 KEY_NAME = 'key'
@@ -68,6 +68,8 @@ def _error_payload(exc):
     #1484: ``ran: false`` when Still refused the call before the tool ran.
     #1496: ``observed_step`` of a click or typing step that timed out after it was observed.
     #103: ``effect: unknown`` of a step whose outcome is not known (``classify_failure``).
+    #618: ``executed: false`` when the service refused the request before executing it (a relayed
+    ``api_request`` the API layer settled ``rejected``).
     """
     from .bounded_execution import ExecutionError
     if isinstance(exc, ExecutionError):
@@ -75,11 +77,11 @@ def _error_payload(exc):
     if isinstance(exc, ToolError):
         # #103: an unknown effect (a press that reached the page unconfirmed) is never replayed by the bridge either.
         return {'kind': 'tool', 'message': str(exc), 'code': exc.code, 'requires': exc.requires, **ran_field(exc),
-                **observed_field(exc), **({'effect': 'unknown'} if getattr(exc, 'effect', None) == 'unknown' else {})}
+                **executed_field(exc), **observed_field(exc), **({'effect': 'unknown'} if getattr(exc, 'effect', None) == 'unknown' else {})}
     if isinstance(exc, (TimeoutError, ConnectionError)) or (isinstance(exc, OSError) and not isinstance(exc, FileNotFoundError)):
         return {'kind': 'transient', 'message': ''}
     if isinstance(exc, ValueError):
-        return {'kind': 'refused', 'message': str(exc), **ran_field(exc)}
+        return {'kind': 'refused', 'message': str(exc), **ran_field(exc), **executed_field(exc)}
     return {'kind': 'failed', 'message': ''}
 
 
@@ -91,6 +93,9 @@ def relay_exception(error):
         exc.observed_step = seen
     if isinstance(error, dict) and error.get('effect') == 'unknown' and isinstance(exc, ToolError):
         exc.effect = 'unknown'
+    # #618: the service's own answer that the request was not executed survives the relay.
+    if isinstance(error, dict) and error.get('executed') is False and isinstance(exc, ValueError):
+        not_executed(exc)
     return not_run(exc) if isinstance(error, dict) and error.get('ran') is False else exc
 
 

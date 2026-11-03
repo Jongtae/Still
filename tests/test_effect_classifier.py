@@ -202,6 +202,15 @@ class NotRunMark(unittest.TestCase):
         self.assertNotIn('effect', _error_payload(ToolError('x', 'target_unavailable')))
         self.assertIsNone(getattr(relay_exception(_error_payload(ToolError('x', 'target_unavailable'))), 'effect', None))
 
+    def test_the_relay_carries_the_not_executed_mark_and_never_invents_it(self):
+        # #618 (#624 review): a relayed request the service refused before executing it stays ``none``.
+        from personal_agent.agent_runtime import not_executed
+        from personal_agent.cli_browser_relay import _error_payload, relay_exception
+        back = relay_exception(_error_payload(not_executed(ToolError('refused', 'api_error'))))
+        self.assertEqual((back.code, back.executed), ('api_error', False))
+        self.assertNotIn('executed', _error_payload(ToolError('x', 'api_error')))
+        self.assertIsNone(getattr(relay_exception(_error_payload(ToolError('x', 'api_error'))), 'executed', None))
+
     def test_the_relay_carries_a_timed_out_steps_observation(self):
         # #1496: what the browser worker saw of a step that timed out reaches the bridge's record.
         from personal_agent.cli_browser_relay import _error_payload, relay_exception

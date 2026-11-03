@@ -1771,6 +1771,16 @@ def executed_field(exc):
  """``{'executed': False}`` for a failure marked by ``not_executed``, else nothing (#618)."""
  return {'executed':False} if getattr(exc,'executed',None) is False else {}
 
+def call_target_field(action,args):
+ """``{'target': {'slot': name}}`` of an API call, recorded on each of its events (#618 E1).
+
+ The slot an unknown effect of this call is scoped to (``unknown_effect_targets``) on a route that
+ records no arguments (the CLI bridge).  The slot is the owner's configured connection name, never
+ a value the call carries.  Nothing for any other action.
+ """
+ slot=args.get('slot') if action in API_ACTIONS and isinstance(args,dict) else None
+ return {'target':{'slot':slot[:120]}} if isinstance(slot,str) and slot.strip() else {}
+
 #: #233: whether the tool call running on this thread has handed what it carries to a transport.
 _HANDOFF=threading.local()
 
@@ -2263,7 +2273,9 @@ def _call_target(action,detail):
  arguments=detail.get('arguments') if isinstance(detail.get('arguments'),dict) else {}
  evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
  hosts=[_url_host(holder) for holder in (detail,arguments,evidence)]
- if action in API_ACTIONS and isinstance(arguments.get('slot'),str):return effect_target(TARGET_API,arguments['slot'],hosts)
+ # The recorded arguments (direct route), else the slot the bridge recorded (``call_target_field``).
+ slot=arguments.get('slot') if isinstance(arguments.get('slot'),str) else (detail.get('target') or {}).get('slot') if isinstance(detail.get('target'),dict) else None
+ if action in API_ACTIONS and isinstance(slot,str) and slot:return effect_target(TARGET_API,slot,hosts)
  target=_claim_target(evidence)
  if target:return target
  host=next((host for host in hosts if host),'')
@@ -2297,8 +2309,11 @@ def unknown_effect_targets(store, work_id):
    if unknown_effect(detail):targets.append(None)
    continue
   key=(detail.get('scope'),detail.get('call_id'))
-  if row['status']=='running' and 'arguments' in detail:arguments[key]=detail['arguments']
-  elif 'arguments' not in detail and key in arguments:detail={**detail,'arguments':arguments[key]}
+  if row['status']=='running':
+   for field in ('arguments','target'):
+    if field in detail:arguments[(key,field)]=detail[field]
+  else:
+   detail={**{field:arguments[(key,field)] for field in ('arguments','target') if (key,field) in arguments},**detail}
   calls.append((row['tool'],row['status'],detail))
  for action,effect,_status,detail in call_effects(calls,with_detail=True):
   if effect==EFFECT_UNKNOWN:targets.append(_call_target(action,detail))
