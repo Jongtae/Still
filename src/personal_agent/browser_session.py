@@ -125,6 +125,7 @@ LOGIN_REQUIRED_TEXT = '이 페이지는 로그인이 필요합니다. 설정의 
 STEP_BUDGET_TEXT = f'이 작업의 브라우저 단계 한도({STEPS_PER_WORK}회)에 도달해 더 실행하지 않았습니다.'
 TIMEOUT_TEXT = '브라우저 동작이 시간 안에 끝나지 않았습니다.'
 DESTINATION_CHECK_TIMEOUT_TEXT = msg('browser.destination_check_timeout')
+DESTINATION_CHECK_FAILED_TEXT = msg('browser.destination_check_failed')
 UNSUPPORTED_NAVIGATION_TEXT = msg('browser.unsupported_navigation')
 FAILED_TEXT = '브라우저 동작을 실행하지 못했습니다.'
 #: #932: the address's name has no DNS record (a typo or a guessed subdomain such as www.).
@@ -148,6 +149,14 @@ KEY_DELETE_FAILED_TEXT = ('로그인 세션은 삭제했지만 macOS 키체인�
 BLOCKED_TEXT = ('이 컴퓨터나 내부 네트워크(루프백·사설·링크 로컬·.local) 주소는 브라우저로 열지 않습니다. '
                 '공개 웹 주소만 열 수 있습니다.')
 UNAVAILABLE_TEXT = '이 작업 경로에는 브라우저 기능이 연결되어 있지 않습니다.'
+#: #615: the worker's reason a navigation was refused, as the model reads it (OWASP SSRF: the scheme
+#: is checked first, then the resolved address; a check that could not finish is not a verdict).
+NAVIGATION_REFUSALS = {
+    'unsupported_navigation': UNSUPPORTED_NAVIGATION_TEXT,
+    'destination_check_timeout': DESTINATION_CHECK_TIMEOUT_TEXT,
+    'destination_check_failed': DESTINATION_CHECK_FAILED_TEXT,
+    'blocked_destination': BLOCKED_TEXT,
+}
 SUBMIT_REFUSED_TEXT = ('결제 양식일 수 있는 제출을 확인할 수 없어 멈췄습니다. 페이지를 다시 읽고 결제 버튼을 직접 눌러 '
                        '승인을 요청하세요.')
 LOGIN_WINDOW_TEXT = ('로그인 창에서 직접 로그인한 뒤 창을 닫아 주세요. Still은 입력 내용을 보지 않으며, 창을 닫으면 '
@@ -932,11 +941,10 @@ class BrowserSession:
 
         The same observation a finished step's result carries (``observe_step``): whether the page
         started a non-GET form submission, and whether the step spent an owner approval.  #103: a
-        press that reached the page with no click on the target carries it too; #610: so does a
-        press whose navigation Still refused.
+        press that reached the page with no click on the target carries it too.  #615: any failed
+        step the worker observed carries it, whatever the failure code.
         """
-        if (isinstance(exc, ToolError) and exc.code in ('browser_timeout', PRESS_UNCONFIRMED_CODE, 'blocked_destination')
-                and isinstance(getattr(exc, 'posted', None), bool)):
+        if isinstance(exc, ToolError) and isinstance(getattr(exc, 'posted', None), bool):
             exc.observed_step = {'posted': exc.posted, 'approved': bool(approved)}
         return exc
 
@@ -2110,14 +2118,11 @@ class WebKitWorkerDriver:
                 # #12: the field the page moved the focus to, named by the session the same way.
                 exc.focused = message.get('focused') if code == 'focus_moved' else None
                 raise exc
-            if code == 'unsupported_navigation':
-                raise ToolError(UNSUPPORTED_NAVIGATION_TEXT, 'unsupported_navigation')
-            if code == 'destination_check_timeout':
-                raise ToolError(DESTINATION_CHECK_TIMEOUT_TEXT, 'destination_check_timeout')
-            if code == 'blocked_destination':
-                exc = ToolError(BLOCKED_TEXT, 'blocked_destination')
+            refused = NAVIGATION_REFUSALS.get(code)
+            if refused is not None:
+                exc = ToolError(refused, code)
                 if isinstance(message.get('posted'), bool):
-                    exc.posted = message['posted']   # #610: a step's refused navigation, completed by ``_observed``
+                    exc.posted = message['posted']   # #610/#615: a step's refused navigation, completed by ``_observed``
                 raise exc
             if code == 'host_not_found':
                 raise ToolError(HOST_NOT_FOUND_TEXT, 'host_not_found')

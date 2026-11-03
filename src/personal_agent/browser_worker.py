@@ -1355,6 +1355,7 @@ class Worker:
         self.pending = {}          # op id -> True while the op has not answered
         self.navigation = None     # (id, WKNavigation) the navigate op waits for
         self.blocked = 0           # main-frame navigations refused so far
+        self.blocked_reason = None  # #615: why the latest one was refused
         self.refused_submits = 0   # form navigations refused with no page form to hold (#700 review)
         self.step_refused = 0      # ``refused_submits`` when the current step began
         self.posted_submits = 0    # #899: non-GET form submissions the page started so far
@@ -1814,7 +1815,8 @@ class Worker:
                 return self.fail(ident, 'submit_refused')
             if blocked_before is not None and self.blocked > blocked_before:
                 # #610: the press ran; whether it started a form post decides its effect, as on a timeout.
-                return self.fail(ident, 'blocked_destination', **self.step_posted_field())
+                # #615: the step answers why its navigation was refused, not always "private network".
+                return self.fail(ident, self.blocked_reason or 'blocked_destination', **self.step_posted_field())
             dialogs = (step or {}).get('dialogs') or []
             # #899: whether the page started a non-GET form submission during this step; a decision
             # still pending when the step answers counts as one (review P1: unknown is not "none").
@@ -1849,8 +1851,8 @@ class Worker:
             if main_frame:
                 self.deciding -= 1
             # A slow resolver is unknown, not evidence of a private address.
-            # Refuse this navigation but do not poison the origin cache.
-            if refusal != 'destination_check_timeout':
+            # Refuse this navigation but do not poison the origin cache (#615: nor with a failed check).
+            if refusal not in ('destination_check_timeout', 'destination_check_failed'):
                 self.resolved[key] = refusal
             # #1579: this runs later on the main loop, outside the delegate's own guard.
             try:
@@ -1858,7 +1860,7 @@ class Worker:
             except Exception as exc:
                 self.delegate_failed('navigation_answer', exc)
                 try:
-                    decision(False, 'blocked_destination')
+                    decision(False, 'destination_check_failed')
                 except Exception:
                     pass
 
@@ -1866,7 +1868,7 @@ class Worker:
             try:
                 refusal = destination_refusal(url, self.allowed_origins, intranet=self.intranet)
             except Exception:
-                refusal = 'blocked_destination'
+                refusal = 'destination_check_failed'   # #615: a fault is not a private address
             self.AppHelper.callAfter(answer, refusal)
         try:
             threading.Thread(target=resolve, name='agentos-browser-resolve', daemon=True).start()
@@ -1891,6 +1893,7 @@ class Worker:
         if not main_frame:
             return
         self.blocked += 1
+        self.blocked_reason = reason
         if self.navigation is not None:
             ident, _ = self.navigation
             self.navigation = None
