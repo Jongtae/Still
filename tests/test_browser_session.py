@@ -1223,12 +1223,16 @@ class LoadMoreTests(unittest.TestCase):
         self.assertTrue(sess.run('browser_read', {'load_more': '1'})['loaded']['text_truncated'],
                         'rows the element cap left out make the loaded text partial')
 
-    def test_a_driver_that_cannot_load_more_says_so(self):
+    def test_a_driver_that_cannot_load_more_says_so_and_returns_the_page(self):
+        """#617: the step is spent on a read, so the page as shown comes back with the reason no more did."""
         sess, driver = session(steps=40)
         sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
-        with self.assertRaises(ToolError) as caught:
-            sess.run('browser_read', {'load_more': '1'})
-        self.assertEqual(caught.exception.code, 'load_more_unavailable')
+        result = sess.run('browser_read', {'load_more': '1'})
+        self.assertEqual(result['state'], 'page')
+        self.assertTrue(result['text'], 'the current page is returned')
+        self.assertEqual((result['loaded']['rounds'], result['loaded']['stopped'], result['loaded']['new_content']),
+                         (0, 'unavailable', False))
+        self.assertEqual(result['loaded']['note'], bs.LOAD_MORE_UNAVAILABLE_TEXT)
 
     def test_evidence_records_the_operation_and_outcome_without_the_text(self):
         from personal_agent.agent_runtime import evidence_summary, fallback_response

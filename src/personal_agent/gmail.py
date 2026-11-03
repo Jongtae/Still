@@ -126,9 +126,12 @@ _OAUTH_LOCK = threading.RLock()
 class GmailError(ValueError):
     """A fail-closed Gmail error whose text does not disclose private data."""
 
-    def __init__(self, reason: str = "rejected"):
+    def __init__(self, reason: str = "rejected", status: int | None = None):
         super().__init__("Gmail request rejected")
         self.reason = reason
+        #: #617: the provider's HTTP status of a ``provider_rejected`` answer, so the
+        #: worker is told the true reason (missing message, permission, rate limit).
+        self.status = status
 
 
 class GmailReauthenticationRequired(GmailError):
@@ -1244,7 +1247,7 @@ class GmailConnector:
                     self.registry.transition(owner_id, GMAIL_CONNECTOR_ID, ConnectorState.REAUTH_REQUIRED)
                 raise GmailReauthenticationRequired("reauth_required")
             if isinstance(status, int) and not 200 <= status < 300:
-                raise GmailError("provider_rejected")
+                raise GmailError("provider_rejected", status)
             return response
         raise GmailError("invalid_provider_response")
 

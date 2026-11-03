@@ -1308,6 +1308,9 @@ def interruption_error(reason, meta=None):
     if reason == WORK_MODE_INTERRUPT:
         return ExecutionError(msg('work_mode.native_search_stopped'), failure_class=WORK_MODE_INTERRUPT,
                               meta=meta)
+    if reason in ('run_superseded', 'budget_unavailable'):
+        # #617: a newer run of the request, or an unreadable budget record, is not the time limit.
+        return ExecutionError(msg('agent_runtime.' + reason), failure_class=reason, meta=meta)
     return ExecutionError('이 작업의 처리 시간 한도에 도달해 구독 엔진 실행과 그 하위 프로세스를 종료했습니다.',
                           failure_class='deadline_exceeded', meta=meta)
 
@@ -1821,14 +1824,6 @@ class AgentOSMcpTools:
         from .agent_runtime import HOST_RELAYED_ACTIONS
         host_action = ((getattr(self.capabilities, 'tools', {}) or {}).get(name) or {}).get('host_action')
         if host_action in HOST_RELAYED_ACTIONS and self.relay is not None:
-            # #961: a relayed call bypasses this process's ``execute``, where a withdrawn
-            # skill this Work loaded is refused; the same check runs before relaying.
-            check = getattr(self.capabilities, 'check_skills', None)
-            if callable(check):
-                try:
-                    check()
-                except ValueError as exc:
-                    raise not_run(exc)
             return self.relay.call(name, arguments)
         # Capabilities is Still-owned and applies its normal validation,
         # document boundary, egress, evidence and idempotency rules.

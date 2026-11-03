@@ -158,10 +158,15 @@ class RelayTests(unittest.TestCase):
         self.caps.settings=None
         self.assertNotIn('capability_search',self.caps.offered_tools())
 
-    def test_private_query_is_rejected_before_registry(self):
-        self.caps.written_private=['private-value']
-        with self.assertRaises(ToolError):self.tools.call('capability_search',{'source':'registry','query':'private-value'})
+    def test_a_secret_query_is_rejected_before_registry_and_a_saved_value_is_not(self):
+        """#617: only a secret blocks the query; #826 removed the saved-private-value guard."""
+        with self.assertRaises(ToolError) as caught:
+            self.tools.call('capability_search',{'source':'registry','query':'password:hunter2'})
+        self.assertEqual(caught.exception.code,'private_capability_query')
         self.transport.assert_not_called()
+        self.caps.written_private=['private-value']
+        self.tools.call('capability_search',{'source':'registry','query':'private-value'})
+        self.transport.assert_called_once()
 
     def test_existing_connection_controls_are_representable_in_model_schema(self):
         definitions={row['function']['name']:row['function'] for row in DEFINITIONS}

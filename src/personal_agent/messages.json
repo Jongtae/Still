@@ -2964,10 +2964,10 @@
   "zh": "服务器设置已更改，未执行命令。"
  },
  "skills.revoked": {
-  "ko": "이 작업이 읽은 스킬({skill})이 작업 중에 꺼지거나 바뀌어 이 작업은 더 진행하지 않았어요. 같은 요청을 다시 보내면 지금 설정으로 새로 시작해요.",
-  "en": "A skill used by this task ({skill}) was disabled or changed, so the task stopped. Send the same request again to start with the current settings.",
-  "ja": "このタスクが読んだスキル（{skill}）が無効化または変更されたため、処理を停止しました。同じリクエストを送ると現在の設定で新しく開始します。",
-  "zh": "此任务读取的技能（{skill}）已禁用或更改，任务已停止。重新发送相同请求可使用当前设置重新开始。"
+  "ko": "이 작업이 읽은 스킬({skill})이 꺼지거나 지워지거나 바뀌어 더는 읽지 않습니다. 그 방법에 기대지 말고 진행하세요. 다른 도구는 그대로 쓸 수 있습니다.",
+  "en": "The skill {skill} this Work read was switched off, removed or changed, so it is no longer read. Continue without relying on its method; other tools are unaffected.",
+  "ja": "この作業が読んだスキル（{skill}）がオフ・削除・変更されたため、もう読みません。その方法に頼らずに進めてください。他のツールはそのまま使えます。",
+  "zh": "此工作读取的技能（{skill}）已被关闭、删除或更改，因此不再读取。请不要依赖其方法继续；其他工具不受影响。"
  },
  "skills.missing_frontmatter": {
   "ko": "SKILL.md에 머리말(frontmatter)이 없어요.",
@@ -3214,12 +3214,6 @@
   "en": "Still built-in",
   "ja": "Still 標準",
   "zh": "Still 内置"
- },
- "skills.used_skill": {
-  "ko": "이 작업이 읽은 스킬",
-  "en": "A skill used by this task",
-  "ja": "このタスクが読んだスキル",
-  "zh": "此任务读取的技能"
  },
  "skills.load_limit": {
   "ko": "한 작업에서 스킬은 {count}개까지 읽어요.",
@@ -9263,6 +9257,12 @@
   "ja": "公開検索の検索語（または都市）が空か秘密情報のみのため送信しませんでした。調べる内容を入力してください。",
   "zh": "公开查询的搜索词（或城市）为空或仅含秘密信息，因此未发送。请输入要查询的内容。"
  },
+ "agent_runtime.redaction_unavailable": {
+  "ko": "Still이 이 글에 저장된 비밀값이 들어 있는지 확인하지 못해 아무것도 보내거나 남기지 않았습니다. 글 자체의 문제는 아니니 잠시 후 다시 시도하세요.",
+  "en": "Still could not check this text for stored secrets, so nothing was sent or kept. The text itself was not the problem; try again shortly.",
+  "ja": "Stillがこの文章に保存済みの秘密情報が含まれるか確認できなかったため、何も送信・保存していません。文章自体の問題ではないので、しばらくしてから再試行してください。",
+  "zh": "Still无法检查此文本是否含有已保存的秘密信息，因此未发送或保留任何内容。这不是文本本身的问题，请稍后重试。"
+ },
  "agent_runtime.work_no_longer_running": {
   "ko": "이 작업은 더 이상 실행 중이 아니어서 공개 조회를 실행하지 않았습니다.",
   "en": "This Work is no longer running, so the public lookup was not run.",
@@ -9305,6 +9305,24 @@
   "ja": "この作業のツール実行上限（{count}回）に達したため、これ以上実行しませんでした。",
   "zh": "此工作已达到工具执行上限（{count}次），未继续执行。"
  },
+ "agent_runtime.presentation_turns_exhausted": {
+  "ko": "이 작업의 반응 판단 한도({count}회)를 다 써서 반응을 고르지 않았습니다. 요청 처리는 계속됩니다.",
+  "en": "This Work used up its allowance for optional reaction judgments ({count}), so no reaction was chosen. The request itself continues.",
+  "ja": "この作業のリアクション判断の上限（{count}回）を使い切ったため、リアクションは選びませんでした。依頼の処理は続きます。",
+  "zh": "此工作的反应判断额度（{count}次）已用完，因此未选择反应。请求本身继续处理。"
+ },
+ "agent_runtime.run_superseded": {
+  "ko": "이 실행은 더 이상 이 요청의 단계·시간 한도를 갖고 있지 않아(요청이 멈춰 기다리는 중이거나 다른 실행이 재개·이어받음) 다음 단계를 실행하지 않았습니다.",
+  "en": "This run no longer holds this request's step and time allowance (the request was paused, or another run resumed or continued it), so the next step was not run.",
+  "ja": "この実行はもうこの依頼の手順・時間の枠を持っていないため（依頼が一時停止中か、別の実行が再開・継続した）、次の手順を実行しませんでした。",
+  "zh": "本次运行不再持有此请求的步骤和时间额度（请求已暂停，或另一个运行已恢复或继续它），因此未执行下一步。"
+ },
+ "agent_runtime.budget_unavailable": {
+  "ko": "이 작업의 단계·시간 기록을 읽지 못해 다음 단계를 실행하지 않았습니다. 아무것도 실행하지 않았고, 요청은 나중에 이어서 할 수 있습니다.",
+  "en": "Still could not read this Work's step and time record, so the next step was not run. Nothing was run; the request can be continued later.",
+  "ja": "この作業の手順・時間の記録を読めなかったため、次の手順は実行しませんでした。何も実行しておらず、依頼は後で続けられます。",
+  "zh": "无法读取此工作的步骤和时间记录，因此未执行下一步。未执行任何操作，请求可稍后继续。"
+ },
  "agent_runtime.transient_read_retry": {
   "ko": "공개 조회가 일시적인 네트워크 오류로 실패해 한 번 다시 시도했습니다.",
   "en": "The public lookup failed with a temporary network error and was retried once.",
@@ -9324,10 +9342,10 @@
   "zh": "我会询问是否记住此内容。"
  },
  "agent_runtime.context_unverified": {
-  "ko": "현재 맥락 상태를 확인하지 못해 이 조회를 보내지 않았습니다. 잠시 후 다시 시도하거나 지역을 직접 알려 주세요.",
-  "en": "The current context could not be checked, so this lookup was not sent. Try again shortly or provide an area.",
-  "ja": "現在の状況を確認できなかったため、この検索は送信しませんでした。しばらくしてから再試行するか、地域を教えてください。",
-  "zh": "无法确认当前情境，未发送此查询。请稍后重试或直接提供区域。"
+  "ko": "이 작업에 보여 준 위치 정보 기록을 읽지 못해 이 조회를 보내지 않았습니다. 잠시 후 다시 시도하거나, 위치 없이 조회하세요.",
+  "en": "Still could not read which location details this Work was shown, so this lookup was not sent. Try again shortly, or look up without location details.",
+  "ja": "この作業に示した位置情報の記録を読めなかったため、この検索は送信しませんでした。しばらくしてから再試行するか、位置情報なしで検索してください。",
+  "zh": "无法读取此工作所显示的位置信息记录，因此未发送此查询。请稍后重试，或不带位置信息进行查询。"
  },
  "agent_runtime.weather_location_conflict": {
   "ko": "날씨는 도시(city) 또는 위치 참조(location_ref) 중 하나만 주세요.",
@@ -9546,10 +9564,64 @@
   "zh": "请使用mail_search返回的message_id读取邮件。"
  },
  "agent_runtime.mail_not_found": {
-  "ko": "Gmail에서 그 메일을 찾지 못했거나 읽을 수 없습니다. mail_search로 다시 찾아 주세요.",
-  "en": "Gmail could not find or read that message. Search again with mail_search.",
-  "ja": "Gmailでそのメールが見つからないか読めません。mail_searchで再検索してください。",
-  "zh": "Gmail未找到该邮件或无法读取。请使用mail_search重新查找。"
+  "ko": "Gmail에 그 message_id의 메일이 없습니다(지워졌을 수 있습니다). mail_search로 다시 찾아 거기서 받은 id를 쓰세요.",
+  "en": "Gmail has no message with that message_id (it may have been deleted). Search again with mail_search and use an id it returns.",
+  "ja": "Gmailにそのmessage_idのメールはありません（削除された可能性があります）。mail_searchで再検索し、返されたidを使ってください。",
+  "zh": "Gmail中没有该message_id的邮件（可能已被删除）。请用mail_search重新查找并使用其返回的id。"
+ },
+ "agent_runtime.mail_forbidden": {
+  "ko": "Gmail이 접근을 거부했습니다(403). 지금 연결에 이 요청을 할 권한이 없어 아무것도 읽지 않았습니다. 소유자가 Gmail을 다시 연결해야 할 수 있다고 알려 주세요.",
+  "en": "Gmail refused access (403): the current connection is not permitted to make this request, so nothing was read. Tell the owner Gmail may need to be reconnected.",
+  "ja": "Gmailがアクセスを拒否しました（403）。現在の接続にはこのリクエストの権限がないため、何も読んでいません。Gmailの再接続が必要かもしれないと所有者に伝えてください。",
+  "zh": "Gmail拒绝了访问（403）：当前连接无权执行此请求，因此未读取任何内容。请告知所有者可能需要重新连接Gmail。"
+ },
+ "agent_runtime.mail_rate_limited": {
+  "ko": "Gmail이 지금 요청 수를 제한하고 있어(429) 아무것도 읽지 않았습니다. 이미 얻은 내용으로 진행하고, 메일은 지금 읽지 못했다고 알려 주세요.",
+  "en": "Gmail is limiting requests right now (429), so nothing was read. Continue with what you already have and say the mail could not be read at the moment.",
+  "ja": "Gmailが現在リクエスト数を制限しているため（429）、何も読んでいません。すでに得た内容で進め、メールは今は読めなかったと伝えてください。",
+  "zh": "Gmail当前正在限制请求（429），因此未读取任何内容。请用已有的内容继续，并说明邮件暂时无法读取。"
+ },
+ "agent_runtime.mail_rejected": {
+  "ko": "Gmail이 요청을 잘못된 요청으로 거부했습니다. 검색어를 고치거나 mail_search가 돌려준 message_id를 쓰세요.",
+  "en": "Gmail rejected the request as invalid. Fix the search query, or use a message_id returned by mail_search.",
+  "ja": "Gmailがリクエストを無効として拒否しました。検索語を直すか、mail_searchが返したmessage_idを使ってください。",
+  "zh": "Gmail以无效请求为由拒绝了该请求。请修改搜索词，或使用mail_search返回的message_id。"
+ },
+ "calendar.invalid_start": {
+  "ko": "start는 UTC 오프셋이 붙은 RFC3339 시각이어야 합니다(예: 2026-11-03T09:00:00+09:00). 아무것도 읽지 않았습니다.",
+  "en": "start must be an RFC3339 timestamp with an explicit UTC offset (for example 2026-11-03T09:00:00+09:00). Nothing was read.",
+  "ja": "startはUTCオフセット付きのRFC3339時刻にしてください（例: 2026-11-03T09:00:00+09:00）。何も読んでいません。",
+  "zh": "start必须是带明确UTC偏移的RFC3339时间（例如 2026-11-03T09:00:00+09:00）。未读取任何内容。"
+ },
+ "calendar.invalid_end": {
+  "ko": "end는 UTC 오프셋이 붙은 RFC3339 시각이어야 합니다(예: 2026-11-03T18:00:00+09:00). 아무것도 읽지 않았습니다.",
+  "en": "end must be an RFC3339 timestamp with an explicit UTC offset (for example 2026-11-03T18:00:00+09:00). Nothing was read.",
+  "ja": "endはUTCオフセット付きのRFC3339時刻にしてください（例: 2026-11-03T18:00:00+09:00）。何も読んでいません。",
+  "zh": "end必须是带明确UTC偏移的RFC3339时间（例如 2026-11-03T18:00:00+09:00）。未读取任何内容。"
+ },
+ "calendar.invalid_window": {
+  "ko": "end는 start보다 늦어야 하고, 기간은 366일 이내여야 합니다. 아무것도 읽지 않았습니다.",
+  "en": "end must be later than start, and the window may span at most 366 days. Nothing was read.",
+  "ja": "endはstartより後にし、期間は366日以内にしてください。何も読んでいません。",
+  "zh": "end必须晚于start，且时间范围最多366天。未读取任何内容。"
+ },
+ "calendar.invalid_timezone": {
+  "ko": "timezone은 Asia/Seoul 같은 IANA 시간대 이름이어야 합니다. 아무것도 읽지 않았습니다.",
+  "en": "timezone must be an IANA time zone name such as Asia/Seoul. Nothing was read.",
+  "ja": "timezoneはAsia/SeoulのようなIANAタイムゾーン名にしてください。何も読んでいません。",
+  "zh": "timezone必须是IANA时区名称，例如 Asia/Seoul。未读取任何内容。"
+ },
+ "calendar.truncated": {
+  "ko": "이 기간의 일정이 {count}건을 넘어 앞의 {count}건만 읽었습니다. 나머지를 보려면 기간을 좁혀 다시 조회하세요.",
+  "en": "This window has more than {count} events, so only the first {count} were read. Narrow the window to see the rest.",
+  "ja": "この期間の予定が{count}件を超えるため、最初の{count}件だけ読みました。残りを見るには期間を狭めて再検索してください。",
+  "zh": "此时间范围内的日程超过{count}条，因此只读取了前{count}条。如需查看其余日程，请缩小时间范围后重新查询。"
+ },
+ "browser_session.load_more_unavailable": {
+  "ko": "이 브라우저는 스크롤로 더 불러올 수 없어 더 불러오지 않았습니다. 아래는 지금 보이는 그대로의 페이지입니다. 더 보려면 사이트의 페이지 이동 링크나 검색을 쓰세요.",
+  "en": "This browser cannot scroll to load more, so nothing more was loaded; the page below is as currently shown. Use the site's own paging links or search to see more.",
+  "ja": "このブラウザはスクロールで追加読み込みができないため、追加では読み込んでいません。下は現在表示されているままのページです。さらに見るにはサイトのページ移動リンクや検索を使ってください。",
+  "zh": "此浏览器无法通过滚动加载更多内容，因此未加载更多；下面是当前显示的页面。如需查看更多，请使用网站自身的翻页链接或搜索。"
  },
  "agent_runtime.mail_unavailable": {
   "ko": "Gmail에 접근하지 못했습니다. 잠시 후 다시 시도해 주세요.",
@@ -9624,10 +9696,16 @@
   "zh": "此途径无法查看或更改设置。"
  },
  "agent_runtime.public_server_query": {
-  "ko": "공개 서버 이름만 검색하세요.",
-  "en": "Search only public server names.",
-  "ja": "公開サーバー名のみ検索してください。",
-  "zh": "请仅搜索公开服务器名称。"
+  "ko": "기능 검색어에 저장된 비밀값이나 자격 증명 형태의 값이 들어 있어 보내지 않았습니다. 공개 서버 이름 하나로 검색하세요.",
+  "en": "The capability search query contained a stored secret or a credential-shaped value, so it was not sent. Search with one public server name instead.",
+  "ja": "機能検索の検索語に保存済みの秘密情報または認証情報の形の値が含まれていたため、送信しませんでした。公開サーバー名を1つ指定して検索してください。",
+  "zh": "功能搜索词中含有已保存的秘密信息或凭据形式的值，因此未发送。请改用一个公开服务器名称搜索。"
+ },
+ "agent_runtime.registry_query_shape": {
+  "ko": "레지스트리 검색어는 공개 서버 이름 하나입니다. ASCII 영문자·숫자와 . _ / - 만 쓰고, 영문자나 숫자로 시작하며, 공백 없이 80자 이내로 적으세요(예: github, io.github.owner/server). 아무것도 보내지 않았습니다.",
+  "en": "A registry search query is one public server name: ASCII letters, digits and . _ / - only, starting with a letter or digit, no spaces, at most 80 characters (for example github or io.github.owner/server). Nothing was sent.",
+  "ja": "レジストリの検索語は公開サーバー名1つです。ASCIIの英字・数字と . _ / - のみを使い、英字か数字で始め、空白なしで80文字以内にしてください（例: github、io.github.owner/server）。何も送信していません。",
+  "zh": "注册表搜索词是一个公开服务器名称：仅使用ASCII字母、数字和 . _ / -，以字母或数字开头，不含空格，最多80个字符（例如 github 或 io.github.owner/server）。未发送任何内容。"
  },
  "agent_runtime.settings_request_failed": {
   "ko": "설정 요청을 처리하지 못했습니다.",
@@ -9948,10 +10026,16 @@
   "zh": "专业代理未返回报告。"
  },
  "agent_runtime.repeat_path": {
-  "ko": "같은 경로를 같은 입력으로 다시 실행하지 않습니다. 다른 제공자, 바꾼 검색어, 사이트 자체 검색, 다른 결과나 다른 경로를 고르거나 소유자에게 구체적인 질문 하나를 하세요.",
-  "en": "The same path will not run again with the same input. Choose another provider, revised search terms, the site's own search, another result or another path, or ask the owner one specific question.",
-  "ja": "同じ経路を同じ入力で再実行しません。別の提供元、変更した検索語、サイト内検索、別の結果や経路を選ぶか、具体的な質問を1つしてください。",
-  "zh": "不会以相同输入重新执行相同途径。请选择其他提供方、修改搜索词、使用站内搜索、其他结果或途径，或向所有者提出一个具体问题。"
+  "ko": "같은 검색을 같은 입력으로 이미 실행해 다시 보내지 않았습니다. 다른 검색어나 다른 제공자를 쓰거나 이미 받은 결과 중 하나를 열거나, 소유자에게 구체적인 질문 하나를 하세요.",
+  "en": "This search already ran with the same input, so it was not sent again. Use different search terms or another provider, open one of the results already returned, or ask the owner one specific question.",
+  "ja": "同じ入力でこの検索はすでに実行したため、再送信しませんでした。別の検索語や別の提供元を使うか、すでに得た結果のいずれかを開くか、所有者に具体的な質問を1つしてください。",
+  "zh": "此搜索已用相同输入执行过，因此未再次发送。请换用其他搜索词或提供方，打开已返回的结果之一，或向所有者提出一个具体问题。"
+ },
+ "agent_runtime.repeat_page_step": {
+  "ko": "같은 페이지에서 같은 대상과 입력으로 이 단계를 이미 실행했고 그 뒤 페이지가 바뀌지 않아 다시 실행하지 않았습니다. 페이지를 다시 읽거나(browser_read), 다른 요소나 입력을 고르거나, 사이트 자체 메뉴나 검색을 쓰거나, 소유자에게 구체적인 질문 하나를 하세요.",
+  "en": "This step already ran on this page with the same target and input, and the page has not changed since, so it was not run again. Read the page again (browser_read), choose another element or input, use the site's own navigation or search, or ask the owner one specific question.",
+  "ja": "同じページで同じ対象と入力のこの手順はすでに実行され、その後ページが変わっていないため、再実行しませんでした。ページを読み直す（browser_read）か、別の要素や入力を選ぶか、サイト内のメニューや検索を使うか、所有者に具体的な質問を1つしてください。",
+  "zh": "此步骤已在此页面上以相同目标和输入执行过，且页面此后未变化，因此未再次执行。请重新读取页面（browser_read）、选择其他元素或输入、使用站内导航或搜索，或向所有者提出一个具体问题。"
  },
  "agent_runtime.goal_not_claimed": {
   "ko": "완료를 뒷받침하는 관찰 결과가 제시되지 않아 요청이 끝났는지 확인하지 못했습니다.",

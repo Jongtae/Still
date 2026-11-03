@@ -389,21 +389,27 @@ class RevocationAfterLoading(_Store):
         self.caps_.execute('skill_load', {'skill': 'internal-comms/internal-comms'})
 
     def assert_revoked(self, caps=None):
+        """#617: a withdrawn skill refuses the calls that use it, and only those: the Work's other tools run."""
+        caps = caps or self.caps_
         with self.assertRaises(ToolError) as raised:
-            (caps or self.caps_).execute('list_notes', {})
+            caps.execute('skill_load', {'skill': 'internal-comms/internal-comms'})
         self.assertEqual(raised.exception.code, 'skill_revoked')
+        with self.assertRaises(ToolError) as raised:
+            caps.execute('skill_resource', {'skill': 'internal-comms/internal-comms', 'path': 'examples/faq-answers.md'})
+        self.assertEqual(raised.exception.code, 'skill_revoked')
+        self.assertIn('notes', caps.execute('list_notes', {}), 'a skill grants no authority, so its withdrawal stops no other tool')
 
-    def test_disabling_the_package_stops_every_later_call_not_only_the_next_load(self):
+    def test_disabling_the_package_refuses_its_skill_calls_not_the_works_other_tools(self):
         self.caps_.execute('list_notes', {})
         PluginRegistry(self.store.root).set_enabled('internal-comms', False)
         self.assert_revoked()
 
-    def test_removing_or_switching_off_stops_the_work(self):
+    def test_removing_or_switching_off_refuses_the_skill(self):
         self.library.set_enabled(False)
         self.assert_revoked()
-        # #977 review: switching back on does not revive the stopped Work; a new request starts afresh.
+        # Switching back on makes the pinned revision current again: it is know-how, not authority.
         self.library.set_enabled(True)
-        self.assert_revoked()
+        self.caps_.execute('skill_load', {'skill': 'internal-comms/internal-comms'})
         fresh = self.caps(skills=self.library.binding())
         fresh.execute('skill_load', {'skill': 'internal-comms/internal-comms'})
         self.library.remove('internal-comms')
@@ -438,25 +444,21 @@ class RevocationAfterLoading(_Store):
         self.assert_revoked()  # the setUp Work loaded COMMIT and saw it withdrawn by the update
         rolled = self.library.install(ADDRESS)  # back to COMMIT
         self.assertEqual(rolled['source']['revision'], COMMIT)
-        with self.assertRaises(ToolError) as raised:
-            newer.execute('list_notes', {})
-        self.assertEqual(raised.exception.code, 'skill_revoked', 'the newer revision is no longer current')
+        self.assert_revoked(newer)  # the newer revision is no longer current
         self.assertNotIn('Newer guidance.', self.library.binding().load('internal-comms/internal-comms')['instructions'])
-        # #977 review P1: the same content coming back never revives a Work that was stopped.
-        self.assert_revoked()
-        with self.assertRaises(ToolError):
-            self.caps_.execute('skill_load', {'skill': 'internal-comms/internal-comms'})
+        # The Work pinned to COMMIT may read it again: the same content is current once more.
+        self.assertNotIn('Newer guidance.', self.caps_.execute('skill_load', {'skill': 'internal-comms/internal-comms'})['instructions'])
 
-    def test_a_stop_recorded_by_another_process_stays_a_stop(self):
-        """#977 review P1: a bridge process that recorded the stop keeps the Work stopped in any later process."""
+    def test_an_earlier_skill_refusal_never_latches_the_work(self):
+        """#617: a skill_revoked recorded by another process stops no later call of the Work."""
         job = self.store.enqueue('stopped', 'stopped-skill')
         with self.store.db() as db:
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,0)',
-                       (job, 'list_notes', 'failed', json.dumps({'code': 'skill_revoked', 'retry': 'permanent'})))
+                       (job, 'skill_load', 'failed', json.dumps({'code': 'skill_revoked', 'retry': 'permanent'})))
         later = Capabilities(self.store, None, CFG, '', job, lambda *a: None, skills=self.library.binding())
-        with self.assertRaises(ToolError) as raised:
-            later.execute('list_notes', {})
-        self.assertEqual(raised.exception.code, 'skill_revoked')
+        self.assertIn('notes', later.execute('list_notes', {}))
+        self.assertEqual(later.execute('skill_load', {'skill': 'internal-comms/internal-comms'})['skill'],
+                         'internal-comms/internal-comms')
 
     def test_unloaded_skills_never_block_a_work(self):
         other = self.caps(skills=self.library.binding())
@@ -484,7 +486,8 @@ class RoutesShareContentAndVersion(_Store):
         self.assertEqual({k: served[k] for k in ('digest', 'revision', 'instructions')},
                          {k: direct[k] for k in ('digest', 'revision', 'instructions')})
 
-    def test_a_relayed_call_is_refused_when_a_loaded_skill_was_withdrawn(self):
+    def test_a_relayed_call_still_runs_when_a_loaded_skill_was_withdrawn(self):
+        """#617: a skill grants no authority, so its withdrawal holds back no relayed call."""
         class Relay:
             def __init__(self): self.calls = []
             def call(self, name, arguments): self.calls.append(name); return {'ok': True}
@@ -494,9 +497,11 @@ class RoutesShareContentAndVersion(_Store):
         tools.call('skill_load', {'skill': 'internal-comms/internal-comms'})
         tools.call('settings_read', {})
         self.library.set_enabled(False)
-        with self.assertRaises(ToolError):
-            tools.call('settings_read', {})
-        self.assertEqual(tools.relay.calls, ['settings_read'], 'the withdrawn call never reached the service')
+        tools.call('settings_read', {})
+        self.assertEqual(tools.relay.calls, ['settings_read', 'settings_read'])
+        with self.assertRaises(ToolError) as raised:
+            tools.call('skill_load', {'skill': 'internal-comms/internal-comms'})
+        self.assertEqual(raised.exception.code, 'skill_revoked')
 
     def _bridge(self, profile, refs):
         job = self.store.enqueue('bridge turn', 'bridge-skill')
@@ -615,7 +620,8 @@ class ReviewRemediations(_Store):
         with self.assertRaises(SkillError):
             inspect_skill(listed)
 
-    def test_a_delegated_specialist_stops_when_a_loaded_skill_is_withdrawn(self):
+    def test_a_delegated_specialist_keeps_its_tools_when_a_loaded_skill_is_withdrawn(self):
+        """#617: a skill grants no authority, so withdrawing one the parent read stops no specialist call."""
         from personal_agent.providers import ModelAdapter
         self.library.install(ADDRESS)
         self.library.set_enabled(True)
@@ -631,8 +637,11 @@ class ReviewRemediations(_Store):
                             skills=self.library.binding())
         caps.execute('skill_load', {'skill': 'internal-comms/internal-comms'})
         caps.execute('delegate_agent', {'agent_id': 'researcher', 'task': 'look at my notes'})
-        refused = [json.loads(detail) for tool, status, detail in events if tool == 'list_notes' and status == 'failed']
-        self.assertEqual(refused[0]['code'], 'skill_revoked', "the specialist's own call was refused")
+        ran = [status for tool, status, _detail in events if tool == 'list_notes' and status in ('succeeded', 'failed')]
+        self.assertEqual(ran, ['succeeded'], "the specialist's own call ran")
+        with self.assertRaises(ToolError) as raised:
+            caps.execute('skill_load', {'skill': 'internal-comms/internal-comms'})
+        self.assertEqual(raised.exception.code, 'skill_revoked', 'the withdrawn skill itself is refused')
         offered = {tool['function']['name'] for tool in turns[0]['tools']}
         self.assertFalse(SKILL_ACTIONS & offered, 'a specialist is never offered the skill tools')
 
@@ -781,7 +790,7 @@ class ReviewRemediations(_Store):
         original = skills.CATALOGUE_ENTRIES
         skills.CATALOGUE_ENTRIES = 1
         try:
-            binding.check_current()
+            self.assertEqual(binding.load('internal-comms/internal-comms')['skill'], 'internal-comms/internal-comms')
         finally:
             skills.CATALOGUE_ENTRIES = original
 
@@ -819,8 +828,9 @@ class CodexReviewRemediations(_Store):
         second.execute('list_notes', {})
         self.library.set_enabled(False)
         with self.assertRaises(ToolError) as raised:
-            second.execute('list_notes', {})
-        self.assertEqual(raised.exception.code, 'skill_revoked')
+            second.execute('skill_load', {'skill': 'internal-comms/internal-comms'})
+        self.assertEqual(raised.exception.code, 'skill_revoked', 'the load the first process recorded counts')
+        second.execute('list_notes', {})
 
     def test_the_catalogue_bound_counts_utf8_bytes(self):
         from personal_agent import skills

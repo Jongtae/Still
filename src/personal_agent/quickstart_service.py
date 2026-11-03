@@ -9599,7 +9599,9 @@ class AgentService:
     @staticmethod
     def _budget_boundary(codes):
         from .agent_runtime import BUDGET_CODES
-        return bool(codes is not None and set(codes)&(BUDGET_CODES-{'stopped'}) and not set(codes)&{'stopped','work_stopped'})
+        # #617: a run another run superseded, or whose budget record was unreadable, offers no Continue.
+        return bool(codes is not None and set(codes)&(BUDGET_CODES-{'stopped','run_superseded','budget_unavailable'})
+                    and not set(codes)&{'stopped','work_stopped','run_superseded','budget_unavailable'})
 
     def offer_budget_continue(self, run):
         """Offer Continue at a budget boundary, or release what the run held for one (#471)."""
